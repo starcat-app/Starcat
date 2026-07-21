@@ -488,28 +488,53 @@ struct RepoAIOpenButton: View {
     }
 }
 
-struct RepoShareButton: View {
+/// 仓库分享菜单。
+///
+/// 基础链接是免费、无登录依赖的主路径；AI 分享是已 Star 仓库可选的增强路径。
+/// 两者放在同一个系统分享入口里，避免用户把「复制公开链接」误解为 Pro 能力。
+struct RepoShareMenu: View {
+    let publicURL: URL
     let isSharing: Bool
     let isShared: Bool
-    let action: () -> Void
+    let canCreateAIShare: Bool
+    let createAIShare: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            Group {
-                if isSharing {
-                    ProgressView()
-                        .controlSize(.small)
-                        .frame(
-                            width: ToolbarIconMetrics.frameSize,
-                            height: ToolbarIconMetrics.frameSize
-                        )
-                } else {
-                    ToolbarIcon(isShared ? "square.and.arrow.up.circle.fill" : "square.and.arrow.up.circle")
-                        .accessibilityLabel(Text("repo.share.button.label"))
+        Menu {
+            CopyFeedbackButton(
+                providesContent: { publicURL.absoluteString },
+                tooltip: "repo.share.link.copy.help"
+            ) { didCopy in
+                Label(
+                    didCopy ? "common.copy.copied" : "repo.share.link.copy",
+                    systemImage: didCopy ? "checkmark.circle.fill" : "link"
+                )
+                .foregroundStyle(didCopy ? Color.green : Color.primary)
+            }
+
+            if canCreateAIShare {
+                Divider()
+                Button(action: createAIShare) {
+                    Label(
+                        isShared ? "repo.share.ai.created" : "repo.share.ai.create",
+                        systemImage: isShared ? "sparkles.rectangle.stack.fill" : "sparkles.rectangle.stack"
+                    )
                 }
+                .disabled(isSharing)
+            }
+        } label: {
+            if isSharing {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(
+                        width: ToolbarIconMetrics.frameSize,
+                        height: ToolbarIconMetrics.frameSize
+                    )
+            } else {
+                ToolbarIcon("square.and.arrow.up.circle")
+                    .accessibilityLabel(Text("repo.share.button.label"))
             }
         }
-        .disabled(isSharing)
         .accessibilityLabel(Text("repo.share.button.label"))
         .help("repo.share.button.help")
     }

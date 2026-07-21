@@ -1,0 +1,18 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": [
+          "8WCUMGCWMB.com.starcat.app.store",
+          "8WCUMGCWMB.com.starcat.app.direct"
+        ],
+        "components": [
+          {
+            "/": "/r/*",
+            "comment": "Open public repository links in Starcat."
+          }
+        ]
+      }
+    ]
+  }
+}

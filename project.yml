@@ -19,7 +19,8 @@ options:
   createIntermediateGroups: true
   groupSortPosition: top
   # XcodeGen 2.45.4 不能可靠生成嵌套的 SystemCapabilities 字典；
-  # App Store 版的 In-App Purchase capability 由后处理脚本写入生成后的 .xcodeproj。
+  # App Store 版的 In-App Purchase、双渠道 Associated Domains capability
+  # 由后处理脚本写入生成后的 .xcodeproj。
   postGenCommand: python3 scripts/postprocess-xcodeproj.py
 
 # 全局 Build Settings：

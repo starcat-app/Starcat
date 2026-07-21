@@ -48,6 +48,8 @@ final class MainWindowNavigationDispatcher {
     enum Destination: Equatable {
         case manage(SidebarItem)
         case revealTags
+        /// Universal Link 只携带稳定的 owner / repo，不把网页端数据写入本地库。
+        case repository(RepositoryDeepLink)
     }
 
     struct Request: Identifiable, Equatable {

@@ -39141,6 +39141,40 @@
         }
       }
     },
+    "repo.share.ai.create" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Create AI Share Page"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创建 AI 分享页"
+          }
+        }
+      }
+    },
+    "repo.share.ai.created" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recreate AI Share Page"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新创建 AI 分享页"
+          }
+        }
+      }
+    },
     "repo.share.button.help" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -39272,6 +39306,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "分享失败"
+          }
+        }
+      }
+    },
+    "repo.share.link.copy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Repository Link"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制仓库链接"
+          }
+        }
+      }
+    },
+    "repo.share.link.copy.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy the public Starcat repository link"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制 Starcat 公开仓库链接"
+          }
+        }
+      }
+    },
+    "repo.share.open.error.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to Open Repository"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法打开仓库"
+          }
+        }
+      }
+    },
+    "repo.share.open.error.unavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The repository may be private, deleted, or temporarily unavailable."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该仓库可能是私有仓库、已被删除，或暂时无法访问。"
           }
         }
       }

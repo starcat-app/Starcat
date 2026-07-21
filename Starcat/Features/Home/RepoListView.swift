@@ -1078,10 +1078,10 @@ struct RepoListView: View {
 
     /// 当前选中 repo 的 toolbar 操作组。
     ///
-    /// Share 已从详情 hero 迁到 toolbar，仍沿用旧可见性：必须登录且当前 repo
-    /// 真实处于 starred 状态。Wiki 留在详情 hero，避免异步探测结果让 toolbar 重排跳动。
-    /// Trending / Weekly 的临时 Repo 自身 `isStarred` 恒为 false，所以调用方要先用
-    /// `StarredRegistry` 派生 `isShareAvailable` 再传进来。
+    /// Share 已从详情 hero 迁到 toolbar。公开仓库始终可复制基础 HTTPS 链接；只有
+    /// AI 分享增强项继续要求登录且仓库已 Star。私有仓库不生成可被服务端抓取的链接。
+    /// Trending / Weekly 的临时 Repo 自身 `isStarred` 恒为 false，所以调用方仍用
+    /// `StarredRegistry` 派生 `isShareAvailable` 作为 AI 分享可用性。
     @ViewBuilder
     private func selectedRepoToolbarActions(
         selection: ToolbarRepoSelection,
@@ -1101,12 +1101,16 @@ struct RepoListView: View {
         CloneMenu(selection: selection) { toastKey in
             toastMessage = toastKey
         }
-        if authSession.state.isAuthenticated, isShareAvailable {
-            let targetRepo = toolbarShareRepo(shareRepo, isStarred: true)
-            RepoShareButton(
+        if !shareRepo.isPrivate,
+           let deepLink = RepositoryDeepLink(fullName: shareRepo.fullName, repositoryID: shareRepo.id) {
+            let canCreateAIShare = authSession.state.isAuthenticated && isShareAvailable
+            let targetRepo = toolbarShareRepo(shareRepo, isStarred: canCreateAIShare)
+            RepoShareMenu(
+                publicURL: deepLink.publicURL,
                 isSharing: shareInFlightRepoID == targetRepo.id,
                 isShared: sharedRepoIDs.contains(targetRepo.id),
-                action: {
+                canCreateAIShare: canCreateAIShare,
+                createAIShare: {
                     Task { await runShare(targetRepo) }
                 }
             )

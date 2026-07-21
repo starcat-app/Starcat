@@ -10,6 +10,12 @@
     <key>com.apple.security.network.client</key>
     <true/>
 
+    <!-- Universal Links：把 https://starcat.ink/r/... 交回仓库详情导航。 -->
+    <key>com.apple.developer.associated-domains</key>
+    <array>
+        <string>applinks:starcat.ink</string>
+    </array>
+
     <!-- MCP Service：仅监听 127.0.0.1，供本机 Agent 通过 HTTP MCP 访问 Starcat 能力 -->
     <key>com.apple.security.network.server</key>
     <true/>

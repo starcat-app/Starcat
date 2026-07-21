@@ -1,9 +1,9 @@
 # 仓库分享链接与 OG 预览正式方案
 
 > 日期: 2026-07-21
-> 状态: 方案已记录,待排期开发
+> 状态: 核心代码已实现,待生产部署与人工验收
 > 范围: Starcat 仓库分享链接、Open Graph 图片卡片、Universal Link、未 Star 仓库临时预览
-> 不包含: 本轮不修改 App、网站、后端或数据库,不更新 `docs/功能实现总览.md`
+> 不包含: 私有仓库分享、AI `/s/{id}` 视觉升级、匿名访问统计；本轮不更新 `docs/功能实现总览.md`
 
 ## 1. 方案结论
 
@@ -33,7 +33,9 @@ https://starcat.ink/r/{owner}/{repo}?v=1&rid={github_repo_id}
 - `Starcat/Features/Home/HomeView.swift` 已有本地仓库的外部导航、分页加载和选中链路。
 - `Starcat/Core/Sync/RepoResolver.swift` 已有本地、远端、最小数据的仓库解析思路。
 - `Starcat/Features/Home/RepoListView.swift` 当前的分享操作会检查 Pro、生成 AI 摘要并调用 sharing API,它不是本方案的基础仓库链接。
-- `pages/appstore/index.html` 等公开页面已经包含静态 `og:title`、`og:description`、`og:image` 等 metadata,但还没有按仓库动态生成的 OG 页面和图片。
+- `pages/direct/index.html` 等公开页面已经包含静态 `og:title`、`og:description`、`og:image` 等 metadata,但还没有按仓库动态生成的 OG 页面和图片。
+- `pages/direct/starcat.ink.conf` 当前由阿里云 Nginx 承接 `starcat.ink`,静态文件部署到 `/var/www/starcat`。
+- `supports/starcat-sharing-api` 已在 Fly.io 常驻运行,并通过 Go `html/template` 服务端渲染公开 `/s/{id}` AI 分享页,是本功能最接近的现有服务边界。
 
 因此本方案不是从零新增仓库模型,而是补齐「公开链接协议 + 网页预览 + App 路由 + 外部仓库临时详情」之间的闭环。
 
@@ -497,26 +499,77 @@ enum RepositoryOpenResult {
 
 ### 11.1 推荐部署边界
 
-使用 `starcat.ink` 域名下的轻量 Cloudflare Worker 处理限定路径:
+不新增 Cloudflare Worker 或新的 Fly.io App。扩展现有 `supports/starcat-sharing-api`,继续部署到 Fly.io,由 `starcat.ink` 的阿里云 Nginx 统一承接外部域名和按路径反向代理。
+
+最终路由拓扑:
+
+```text
+https://starcat.ink
+        │
+        ▼
+阿里云 Nginx · pages/direct/starcat.ink.conf
+        │
+        ├── /、/downloads/*、/privacy* 等 ──> /var/www/starcat 静态文件
+        ├── /.well-known/apple-app-site-association ──> pages/direct 静态文件
+        └── /r/*、/og/repo/*、/s/* ──> starcat-sharing-api.fly.dev
+```
+
+`starcat-sharing-api` 增加两个公开、无鉴权路由:
 
 ```text
 GET /r/{owner}/{repo}
 GET /og/repo/{owner}/{repo}.png
-GET /.well-known/apple-app-site-association
 ```
 
-其它官网、下载、changelog、支付相关路径继续走现有 Pages / Direct 网站,不迁移整个站点。
+现有路由保持:
 
-不建议把基础仓库链接强行塞进现有 `starcat-sharing-api` 的持久 share 模型,原因是:
+```text
+POST /api/v1/share   # AI 分享记录,鉴权
+GET  /s/{id}         # AI 分享页面,公开
+```
+
+复用 `starcat-sharing-api` 的理由:
+
+- 它已经负责 Starcat 对外分享页面的 Go 服务端渲染和公开托管。
+- Fly.io 配置当前 `min_machines_running = 1`,能避免 Link Preview crawler 命中冷启动空窗。
+- `/r/*`、`/og/*` 与 `/s/*` 可以共享品牌模板、字体、HTML 安全和诊断日志。
+- 继续使用当前 Go 技术栈和部署链路,无需额外维护 Worker runtime、Cloudflare secret 和第二套告警。
+
+基础仓库链接仍与 AI 分享持久模型严格分层:
 
 - 基础链接是 stateless canonical URL。
-- sharing API 当前职责是保存 `/s/{id}` AI 分享快照。
-- 基础链接需要 GitHub 公共 metadata 与 OG 缓存,生命周期不同。
-- 两种能力可以共享视觉资源,但不应共享数据库表。
+- `/r/*` 不创建 share ID,不写 `sharing.db`,不读取 AI 分享记录。
+- `/s/{id}` 继续只读取现有 SQLite AI 分享快照。
+- 两类能力共享 HTTP 服务和视觉资源,但不共享 handler、model 或数据库表。
 
-### 11.2 GitHub metadata
+### 11.2 Nginx 与静态站职责
 
-Worker 只读取公开仓库 metadata:
+`pages/direct/starcat.ink.conf` 增加精确路由:
+
+```text
+/r/*         -> https://starcat-sharing-api.fly.dev
+/og/repo/*   -> https://starcat-sharing-api.fly.dev
+/s/*         -> https://starcat-sharing-api.fly.dev
+```
+
+反向代理必须保留原始 path 和 query,并正确配置上游 TLS SNI、`Host`、`X-Forwarded-Proto`、请求超时和响应大小限制。`/r/*` 与 `/og/repo/*` 可以使用独立 Nginx proxy cache zone:
+
+- `/r/*`: 正常缓存 1 小时。
+- `/og/repo/*`: 正常缓存 24 小时。
+- GitHub 限流、上游超时或 `5xx`: 允许返回 stale cache。
+- `/s/*`: 不套用仓库 metadata 缓存策略,避免影响已有 AI 分享页更新语义。
+
+AASA 不经过 Fly.io,直接新增静态文件:
+
+```text
+pages/direct/.well-known/apple-app-site-association
+```
+
+Nginx 使用 exact location 返回该文件,Content-Type 为 `application/json`,禁止 redirect 和 SPA fallback。`pages/direct/deploy.sh` 需要允许同步 `.well-known/` 目录并校验远端文件可读。
+
+### 11.3 GitHub metadata
+
+`starcat-sharing-api` 只读取公开仓库 metadata:
 
 ```text
 GET https://api.github.com/repos/{owner}/{repo}
@@ -524,13 +577,15 @@ GET https://api.github.com/repos/{owner}/{repo}
 
 约束:
 
-- GitHub server token 只存 Cloudflare secret,不得进入网页或 App 链接。
-- Cache API 缓存仓库 metadata,避免每次 crawler 请求都消耗 GitHub quota。
+- GitHub token pool 使用现有支撑服务约定的 `GITHUB_TOKENS`,只存 Fly secret,不得进入网页或 App 链接。
+- token 选择必须识别剩余 quota 和无效 token,不能把所有 crawler 流量固定压在单个 token 上。
+- 服务内使用有容量上限的内存 TTL cache 和同仓库请求合并,Nginx 使用 proxy cache,避免每次 crawler 请求都消耗 GitHub quota。
 - 404、私有、无权限统一返回通用 landing + 通用 OG 卡片。
-- 远端超时或限流优先返回 stale cache。
+- 远端超时或限流优先由 Nginx 返回 stale cache;无缓存时返回静态 fallback。
 - 不请求用户 Star 状态、不请求用户私有数据。
+- 基础仓库 metadata cache 不写入现有 `sharing.db`。
 
-### 11.3 图片生成
+### 11.4 图片生成
 
 图片生成实现放在独立 renderer 边界:
 
@@ -538,7 +593,7 @@ GET https://api.github.com/repos/{owner}/{repo}
 RepositoryPreviewModel -> RepositoryOGRenderer -> PNG bytes
 ```
 
-推荐首选 Worker 可运行的 SVG layout + WASM rasterizer,最终必须输出 PNG。renderer 不直接请求 GitHub,只消费已经验证和截断的 `RepositoryPreviewModel`,便于单测和快照测试。
+renderer 使用 Go 标准 `image` 能力或纯 Go 图像库输出 PNG,不能依赖浏览器截图、Node runtime 或系统 GUI。renderer 不直接请求 GitHub,只消费已经验证和截断的 `RepositoryPreviewModel`,便于单测和快照测试。
 
 字体、头像和语言颜色均需有超时与 fallback:
 
@@ -547,13 +602,29 @@ RepositoryPreviewModel -> RepositoryOGRenderer -> PNG bytes
 - description 异常或超长时截断,不允许撑破布局。
 - renderer 失败时返回静态 Starcat 仓库分享图,不能让 `og:image` 404。
 
-### 11.4 HTML 安全
+### 11.5 HTML 安全
 
 - 所有 GitHub 文本必须 HTML escape。
 - OG 图片 renderer 不解析 Markdown/HTML。
 - description 只当纯文本。
 - URL path 和 canonical URL 必须重新编码,不能拼接未验证输入。
 - 页面设置合理 CSP,不加载不必要的第三方脚本。
+
+### 11.6 域名与发布顺序
+
+当前配置存在需要收口的差异:
+
+- `starcat-sharing-api` 的代码默认值和部署文档以 `BASE_URL=https://starcat.ink` 为目标。
+- `supports/scripts/fly-secrets-sync.sh` 当前会强制写入 `BASE_URL=https://starcat-sharing-api.fly.dev`。
+
+实施时必须按以下顺序处理:
+
+1. 先在 `starcat.ink` Nginx 配置并验证 `/r/*`、`/og/repo/*`、`/s/*` 反向代理。
+2. 验证 `https://starcat.ink/s/{existing_id}` 不改变现有 AI 分享页行为。
+3. 再把统一 secrets 同步规则改为 `BASE_URL=https://starcat.ink`。
+4. 最后验证新创建 AI 分享返回 `starcat.ink/s/{id}`,基础链接返回 `starcat.ink/r/{owner}/{repo}`。
+
+不能先切 `BASE_URL` 再上线 Nginx 路由,否则新生成的 AI 分享链接会先落到静态站的 SPA fallback。
 
 ## 12. 分享入口设计
 
@@ -594,12 +665,18 @@ RepositoryPreviewModel -> RepositoryOGRenderer -> PNG bytes
 
 ## 14. 实施阶段
 
+> 2026-07-21 实施快照：Phase 1～4 的核心代码与自动化构建已完成；生产部署、
+> Apple provisioning profile 更新、真实 AASA/CDN、聊天平台 crawler 与四种窗口状态
+> 人工验收尚未执行。Phase 2 的 AI `/s/{id}` 视觉升级和 Phase 5 继续保留为后续项。
+
 ### Phase 1: 链接与网页基础
 
 - 固化 URL parser 和测试向量。
-- 部署 `/r/*` landing page。
-- 部署 AASA。
-- 部署基础 OG metadata 和静态 fallback 图片。
+- 在 `starcat-sharing-api` 增加 `/r/*` 服务端 landing page 和基础 OG metadata。
+- 在 `pages/direct` 增加 AASA 静态文件。
+- 在阿里云 Nginx 增加 `/r/*`、`/og/repo/*`、`/s/*` 反向代理。
+- 部署静态 fallback 图片。
+- 验证现有 `/s/{id}` 经过 `starcat.ink` 代理后保持兼容。
 - 验证 crawler 可以匿名读取 HTML 和图片。
 
 验收结果: 链接未安装 App 时已经有用,且不会 404。
@@ -609,8 +686,9 @@ RepositoryPreviewModel -> RepositoryOGRenderer -> PNG bytes
 - 接入 GitHub public metadata cache。
 - 实现 `RepositoryPreviewModel`。
 - 实现 1280 × 640 PNG renderer。
-- 增加模板版本和缓存刷新策略。
+- 增加服务内 TTL cache、Nginx proxy cache、模板版本和缓存刷新策略。
 - 为 AI `/s/{id}` 分享页补同视觉体系的增强 OG 卡片。
+- Nginx 路由稳定后,把 production `BASE_URL` 与 secrets 同步脚本统一为 `https://starcat.ink`。
 
 验收结果: 不同公开仓库分享时显示对应的图片、名称、描述和统计。
 
@@ -642,7 +720,7 @@ RepositoryPreviewModel -> RepositoryOGRenderer -> PNG bytes
 
 ## 15. 预计文件影响
 
-以下是实施阶段的候选文件,不是本轮已修改清单。
+以下是方案阶段的影响评估；实际实现以当前 Git diff 和各独立 support 仓库状态为准。
 
 ### 15.1 App
 
@@ -668,16 +746,32 @@ Starcat/Core/Navigation/PendingDeepLinkStore.swift
 Starcat/Core/Navigation/RepositoryOpenCoordinator.swift
 ```
 
-### 15.2 Website / Worker
+### 15.2 网站 / Sharing API
 
-建议新增独立路径,最终目录名以实施时现有 Pages 部署结构为准:
+现有静态站和 Nginx:
 
 ```text
-pages/link-preview-worker/
-pages/link-preview-worker/src/router.*
-pages/link-preview-worker/src/github-repository.*
-pages/link-preview-worker/src/repository-og-renderer.*
-pages/link-preview-worker/assets/
+pages/direct/starcat.ink.conf
+pages/direct/deploy.sh
+pages/direct/.well-known/apple-app-site-association
+```
+
+现有 `starcat-sharing-api` 候选改动:
+
+```text
+supports/starcat-sharing-api/cmd/server/main.go
+supports/starcat-sharing-api/internal/handler/repository_preview.go
+supports/starcat-sharing-api/internal/model/repository_preview.go
+supports/starcat-sharing-api/internal/github/repository_client.go
+supports/starcat-sharing-api/internal/cache/repository_cache.go
+supports/starcat-sharing-api/internal/render/repository_og.go
+supports/starcat-sharing-api/templates/repository.html
+supports/starcat-sharing-api/assets/
+supports/starcat-sharing-api/.env.example
+supports/starcat-sharing-api/README.md
+supports/starcat-sharing-api/README-ZH.md
+supports/starcat-sharing-api/docs/deploy-env.md
+supports/scripts/fly-secrets-sync.sh
 ```
 
 ### 15.3 Tests
@@ -686,7 +780,9 @@ pages/link-preview-worker/assets/
 StarcatTests/DeepLinkRouteTests.swift
 StarcatTests/PendingDeepLinkStoreTests.swift
 StarcatTests/RepositoryOpenCoordinatorTests.swift
-pages/link-preview-worker/tests/
+supports/starcat-sharing-api/internal/handler/repository_preview_test.go
+supports/starcat-sharing-api/internal/cache/repository_cache_test.go
+supports/starcat-sharing-api/internal/render/repository_og_test.go
 ```
 
 新增 Swift 文件后必须先执行 `xcodegen generate`。跑测试前关闭 Xcode IDE,避免与 `xcodebuild test` 争抢 `testmanagerd`。
@@ -751,13 +847,15 @@ Swift 学习索引关键词:
 |---|---|---|
 | 平台缓存旧 OG | 分享后仍显示旧图 | `rev` + 模板版本 + 调试刷新工具 |
 | Apple CDN 缓存旧 AASA | Universal Link 延迟生效 | 先发 AASA,再发 App,保留 Scheme fallback |
-| GitHub API 限流 | 页面或图片生成失败 | server token + Cache API + stale-if-error |
+| GitHub API 限流 | 页面或图片生成失败 | `GITHUB_TOKENS` pool + 服务内 TTL cache + Nginx stale cache |
 | 仓库改名/转移 | 旧 URL owner/repo 过期 | `rid` 辅助校验,展示 canonical full name |
 | 私有仓库泄密 | 暴露名称/描述 | MVP 禁用私有分享,错误统一模糊化 |
 | crawler 不执行 JS | 无图片卡片 | metadata 必须服务端输出 |
 | renderer 字体缺失 | 中文乱码/方块 | 开源字体覆盖 + description 降级 |
 | 两个 bundle ID 竞争 | 打开渠道不可预测 | 两个 App 解析结果保持一致,不绑定渠道状态 |
-| Worker 故障 | 分享链接不可用 | 静态 fallback HTML/图片,GitHub URL 始终可达 |
+| Sharing API 或 Fly.io 故障 | `/r/*`、`/og/*`、`/s/*` 不可用 | Nginx stale cache + 静态 fallback,GitHub URL 始终可达 |
+| Nginx 路由先后顺序错误 | 动态路由落入 SPA fallback | `^~`/exact location 优先于 `location /`,上线前逐路径验收 |
+| `BASE_URL` 提前切换 | 新 AI 分享链接在代理上线前失效 | 先发布并验证 Nginx,再同步 Fly secret |
 
 ## 19. 开发前确认项
 
@@ -775,7 +873,8 @@ Swift 学习索引关键词:
 
 - OG 卡片最终视觉稿。
 - `TEAM_ID` 与 AASA 正式 app IDs。
-- Link Preview Worker 的部署路径和 Cloudflare 资源配置。
+- Nginx proxy cache 的容量、磁盘目录和过期策略。
+- `starcat-sharing-api` 使用的 `GITHUB_TOKENS` pool 与 Fly secret 配置。
 - 私有仓库分享是否进入后续版本。
 - 人工验收平台清单的优先级。
 

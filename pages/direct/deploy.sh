@@ -91,7 +91,7 @@ rsync -avz --delete --progress \
     "$REMOTE_HOST:$REMOTE_WEB_DIR/"
 
 echo "设置文件权限..."
-"${SSH_CMD[@]}" "$REMOTE_HOST" "find '$REMOTE_WEB_DIR' -maxdepth 1 -type f \( -name '*.html' -o -name '*.png' -o -name '*.webp' -o -name '*.jpg' \) -exec chmod 644 {} +"
+"${SSH_CMD[@]}" "$REMOTE_HOST" "find '$REMOTE_WEB_DIR' -type d -exec chmod 755 {} + && find '$REMOTE_WEB_DIR' -type f \( -name '*.html' -o -name '*.json' -o -name '*.png' -o -name '*.webp' -o -name '*.jpg' -o -name 'apple-app-site-association' \) -exec chmod 644 {} +"
 
 echo "✓ 生产 nginx 与静态资源部署完成"
 echo "访问地址: https://starcat.ink"

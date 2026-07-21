@@ -12,8 +12,8 @@
 #     PROBE_USER_AGENT 含括号，bash source 会 parse error）。
 #   - STORE_FILE / REPO_DIR 在 Fly 上强制覆盖为 /data/*（与 fly.toml volume 挂载一致）。
 #     recommend-api 无持久化卷，不同步 STORE_FILE。
-#   - sharing 的 BASE_URL 在 Fly 上强制为 https://starcat-sharing-api.fly.dev
-#     （本地 .env 常见 localhost，不能直接同步）。
+#   - sharing 的 BASE_URL 在 Fly 上强制为 https://starcat.ink；公开仓库、OG 与既有
+#     AI 分享链接都由阿里云 Nginx 统一代理（本地 .env 常见 localhost，不能直接同步）。
 #   - trending / weekly 的 WIKI_API_URL 在 Fly 上强制为
 #     https://starcat-wiki-api.fly.dev（本地 .env 常见 127.0.0.1:5004，不能直接同步）。
 #     仅当 .env 配置了 WIKI_API_KEY 时才同步 wiki 预热相关 secrets。
@@ -82,10 +82,12 @@ echo ">>> Syncing fly secrets for $APP (from .env, values redacted in output)"
 case "$APP" in
   starcat-sharing-api)
     API_KEYS="$(require_env_val API_KEYS)"
+    GITHUB_TOKENS="$(require_env_val GITHUB_TOKENS)"
     fly secrets set -a "$APP" \
       "API_KEYS=$API_KEYS" \
+      "GITHUB_TOKENS=$GITHUB_TOKENS" \
       "STORE_FILE=/data/sharing.db" \
-      "BASE_URL=https://starcat-sharing-api.fly.dev"
+      "BASE_URL=https://starcat.ink"
     ;;
   starcat-trending-api)
     API_KEYS="$(require_env_val API_KEYS)"

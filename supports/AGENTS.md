@@ -178,7 +178,7 @@ fly ssh console               # SSH 进容器
 | Secret | 用途 | 共享? |
 |--------|------|--------|
 | `FLY_API_TOKEN` | Fly.io 部署 token | 6 个项目共用同一个 |
-| `GITHUB_TOKEN` / `GITHUB_TOKENS` | 调用 GitHub API | 项目特定(trending / weekly / discovery 需要) |
+| `GITHUB_TOKEN` / `GITHUB_TOKENS` | 调用 GitHub API | 项目特定(sharing / trending / weekly / discovery 需要) |
 
 ---
 
@@ -213,7 +213,7 @@ R-01 起,各 API 服务**统一**使用 `github.com/joho/godotenv` 加载 `.env`
 | `PORT` | 5001 | 5002 | 5003 | 5004 | 5005 | 5006 | 服务端口 |
 | `STORE_FILE` | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | SQLite 文件路径；本地默认 `./*.db`，Fly 默认 `/data/*.db` |
 | `API_KEYS` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | API 鉴权白名单（详见 §API 鉴权约定） |
-| `GITHUB_TOKENS` | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | GitHub PAT 池（多 token 轮换） |
+| `GITHUB_TOKENS` | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | GitHub PAT 池（多 token 轮换；sharing 用于公开仓库预览） |
 | `ADMIN_API_KEYS` | ❌ | ⚠️ 按需 | ⚠️ 按需 | ❌ | ❌ | ✅ | 管理接口鉴权白名单 |
 | `SIMREPO_API_KEY` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | recommend-api 访问 SimRepo 的服务端密钥 |
 
@@ -286,7 +286,7 @@ ghp_xxx****abcd
 | `internal/model/envelope.go` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 6 份保持同一响应语义 |
 | `internal/middleware/auth.go` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Bearer 鉴权；改一份时检查其他服务是否需要同步 |
 | `internal/enricher/ratelimit.go` | — | ✅ | ✅ | — | — | — | GitHub enrich 服务使用 |
-| `internal/tokenpool/tokenpool.go` | — | ✅ | ✅ | — | — | ✅ | GitHub PAT 池轮换 |
+| `internal/tokenpool/tokenpool.go` | ✅ | ✅ | ✅ | — | — | ✅ | GitHub PAT 池轮换 |
 | `internal/middleware/cors.go` | ⚠️ 按需 | ⚠️ 按需 | ⚠️ 按需 | ⚠️ 按需 | ⚠️ 按需 | ⚠️ 按需 | 若都需要 CORS 则保持一致 |
 
 > 未来若需要,dong4j 可决定升级到「Go workspace mode + 共享 supports/pkg/*」,但本次 R-01 沿用现有约束。
@@ -299,7 +299,7 @@ ghp_xxx****abcd
 2. **数据文件不能进 git**:`*.db`(有状态 API,R-01 起 sharing 也是)、`.weekly-repo/`(weekly)、历史遗留 `data.json`(sharing,R-01 后弃用)
 3. **`.env` 文件不能进 git**:各 API 都用 `.env`,**只**提交 `.env.example`
 4. **环境变量配置**(R-01 改造后)：
-   - sharing: `PORT`、`BASE_URL`、`STORE_FILE`、`API_KEYS`
+   - sharing: `PORT`、`BASE_URL`、`STORE_FILE`、`API_KEYS`、`GITHUB_TOKENS`
    - trending: `PORT`、`STORE_FILE`、`API_KEYS`、`GITHUB_TOKENS`
    - weekly: `PORT`、`STORE_FILE`、`REPO_DIR`、`API_KEYS`、`GITHUB_TOKENS`（**注意**：R-01 起 `GITHUB_TOKEN` 单值改为 `GITHUB_TOKENS` 多值池）
    - wiki: `PORT`、`STORE_FILE`、`API_KEYS`

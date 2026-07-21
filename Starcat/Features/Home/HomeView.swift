@@ -113,6 +113,8 @@ struct HomeView: View {
     @State private var showsResetListPreferencesConfirmation: Bool = false
     /// 重置成功只给轻量 toast，不写诊断日志，也不影响用户业务数据。
     @State private var listPreferenceResetToast: String?
+    /// Universal Link 定位失败时保留可读错误。它只描述本次打开动作，不写入仓库数据。
+    @State private var repositoryDeepLinkErrorMessage: String?
 
     @Environment(\.firstRunOnboardingActive) private var firstRunOnboardingActive
 
@@ -782,6 +784,17 @@ struct HomeView: View {
             }
         } message: {
             Text("settings.listPreferences.reset.message")
+        }
+        .alert(
+            "repo.share.open.error.title",
+            isPresented: Binding(
+                get: { repositoryDeepLinkErrorMessage != nil },
+                set: { if !$0 { repositoryDeepLinkErrorMessage = nil } }
+            )
+        ) {
+            Button("general.ok", role: .cancel) {}
+        } message: {
+            Text(repositoryDeepLinkErrorMessage ?? "")
         }
         .toast(
             message: $listPreferenceResetToast,
@@ -1491,9 +1504,53 @@ struct HomeView: View {
             selectedSidebarPage = .manage
             columnVisibility = .all
             tagsExpanded = true
+
+        case .repository(let repository):
+            // 先消费请求再异步查库/拉 GitHub，避免 HomeView 重挂载时重复发网络请求。
+            dependencies.mainWindowNavigationDispatcher.pendingRequest = nil
+            Task { await openRepositoryDeepLink(repository) }
+            return
         }
 
         dependencies.mainWindowNavigationDispatcher.pendingRequest = nil
+    }
+
+    /// 打开分享仓库：本地命中直接定位；未命中只创建会话内 Repo，不自动 Star、
+    /// 不写 tags/notes，也不污染本地仓库表。详情页现有 Star 入口仍由用户主动决定。
+    @MainActor
+    private func openRepositoryDeepLink(_ target: RepositoryDeepLink) async {
+        do {
+            if let repositoryID = target.repositoryID,
+               let localRepo = try await dependencies.repoRepository.findById(repositoryID) {
+                openCompanionRepository(localRepo)
+                return
+            }
+            if let localRepo = try await dependencies.repoRepository.findByOwnerName(
+                owner: target.owner,
+                name: target.name
+            ) {
+                openCompanionRepository(localRepo)
+                return
+            }
+
+            let dto = try await dependencies.apiClient.repo(owner: target.owner, repo: target.name)
+            guard !dto.isPrivate else {
+                repositoryDeepLinkErrorMessage = String.l10n("repo.share.open.error.unavailable")
+                return
+            }
+            let transientRepo = GRDBRepoRepository.repoFromDTO(
+                dto,
+                starredAt: nil,
+                cachedAt: ISO8601DateFormatter.shared.string(from: Date()),
+                isStarred: false
+            )
+            openCompanionRepository(transientRepo)
+        } catch {
+            AppLog.ui.error(
+                "Repository deep link failed for \(target.owner, privacy: .public)/\(target.name, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            repositoryDeepLinkErrorMessage = String.l10n("repo.share.open.error.unavailable")
+        }
     }
 
     // MARK: - 辅助

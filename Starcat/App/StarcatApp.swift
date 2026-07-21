@@ -89,12 +89,16 @@ struct StarcatApp: App {
 
     /// 处理从 macOS URL handler 进来的 Starcat URL。
     ///
-    /// OAuth 和 Direct License 支付回跳都走同一个 scheme。这里先识别支付成功页的
-    /// `starcat://license/activate?...`，其余 URL 再交给 GitHub OAuth，避免 license
-    /// deep link 被 OAuth callback parser 当作无效登录回调吞掉。
+    /// OAuth、Direct License 支付回跳和仓库 Universal Link 共用本入口。仓库链接
+    /// 必须先于 OAuth 解析并投递到主窗口，否则会被 callback parser 当作无效登录
+    /// 回调吞掉。Dispatcher 会保存未消费请求，所以冷启动完成登录后仍可继续定位。
     private func handleIncomingURL(_ url: URL) {
         guard let dependencies else {
             AppLog.auth.warning("StarcatApp.handleIncomingURL: dependencies not ready, ignoring \(url.absoluteString, privacy: .public)")
+            return
+        }
+        if let repository = RepositoryDeepLink(url: url) {
+            dependencies.mainWindowNavigationDispatcher.navigate(to: .repository(repository))
             return
         }
         if url.host == "license", url.path == "/activate" {
