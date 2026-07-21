@@ -44,6 +44,7 @@
 //  - 监听用 `task(id: repo.id)` 包裹的 async for-loop；切换 repo 时 task 自动取消
 //
 
+import MarkdownUI
 import SwiftUI
 
 // MARK: - View
@@ -76,12 +77,16 @@ struct RepoNotesSection: View {
     /// 私有笔记默认折叠，避免右侧详情页顶部长期占掉大块高度。
     @State private var isNotesExpanded: Bool = false
 
-    /// 大窗口编辑 sheet 显隐控制（2026-06-13）。
+    /// 当前详情页内联编辑器是否扩展。扩展后仍留在详情上下文中，并提供编辑 / Markdown 预览。
+    @State private var isEditorExpanded: Bool = false
+
+    /// 内联编辑器模式只在扩展态显示；收起时强制回到编辑，避免 3 行区域渲染不可读的预览。
+    @State private var inlineEditorMode: InlineEditorMode = .edit
+
+    /// 旧大窗口编辑 sheet 显隐控制（2026-06-13）。
     ///
-    /// inline 输入框右下角的「展开成弹窗」按钮（`arrow.up.left.and.arrow.down.right`）翻转这个值，
-    /// `NoteEditorSheet` 通过 sheet modifier 弹起，提供「编辑 / 预览」Tab 切换。
-    /// 弹窗与 inline 共享同一份 `editingContent` `@State`（通过 `@Binding` 传入），关闭弹窗时
-    /// 由 sheet 主动 await `flushContent()` 落库，避免 800ms 防抖 timer 在关闭瞬间未结算造成丢失。
+    /// 2026-07-22 起入口暂时隐藏，右下角按钮改为原位扩展；保留状态和 `.sheet` 装配，
+    /// 方便 dong4j 后续确认后恢复或删除，当前没有任何可达交互会把它设为 true。
     @State private var showEditorSheet: Bool = false
 
     /// 2026-06-12 向量索引改进：笔记保存后的"向量重建"二级 debounce 任务。
@@ -98,6 +103,8 @@ struct RepoNotesSection: View {
     @State private var statusToast: String?
 
     enum SaveState { case idle, saving, saved }
+
+    enum InlineEditorMode: Hashable { case edit, preview }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -173,7 +180,7 @@ struct RepoNotesSection: View {
             guard !Task.isCancelled, hasUnsavedChanges else { return }
             await flushContent()
         }
-        // 大窗口编辑 sheet（2026-06-13 新增）。
+        // 旧大窗口编辑 sheet 暂时保留但隐藏入口，方便后续确认恢复；当前内联扩展不经过这里。
         //
         // 共享数据：`$editingContent` 双向绑定到 NoteEditorSheet.content，sheet 内输入直接更新 inline buffer
         // → 上方 `.onChange(of: editingContent)` 同样会触发 → `.task(id: editingContent)` 防抖照常运行。
@@ -289,7 +296,7 @@ struct RepoNotesSection: View {
         .disclosureGroupStyle(.automatic)
     }
 
-    /// inline 笔记编辑器（2026-06-13 v2 重做：固定 3 行高 + 右下角「展开成弹窗」按钮）。
+    /// 详情页内联笔记编辑器：默认 3 行，点击右下角按钮后原位扩展并提供 Markdown 预览。
     ///
     /// 视觉/交互设计要点（grill 决策表 A1–A3）：
     /// - **固定 3 行高度**：`minHeight = maxHeight = 76pt`。来源精算：
@@ -298,8 +305,8 @@ struct RepoNotesSection: View {
     ///   - 累加 64pt 仅"刚够"3 行（第 3 行光标贴底，v1 错误值）
     ///   - **v2 升到 76pt**：加 12pt buffer（约 0.7 行），保证第 3 行下方仍有视觉余量
     ///   - 不能再加大（如 80+ 会显示第 4 行 1/3 残影）
-    /// - **超过 3 行内部纵向滚动**：TextEditor 在 macOS 包装 NSTextView,原生 vertical scroll 自动出现；
-    ///   长笔记走右下角「展开成弹窗」按钮进入大窗口编辑。
+    /// - **超过 3 行内部纵向滚动**：TextEditor 在 macOS 包装 NSTextView，原生 vertical scroll 自动出现；
+    ///   长笔记可原位扩展到 320pt，用户仍能同时查看仓库详情。
     /// - **右下角 overlay 按钮（v2 关键修正）**：始终可见、半透明，hover 时加深。
     ///   - **重要约束**：NSScroller 绘制层级**在 SwiftUI overlay 之上**（SwiftUI 限制，与 z-index 无关），
     ///     滚动条出现时会**覆盖**按钮 → trailing padding 必须留出 ~14pt 完全避开 NSScroller 宽度 (~12pt)。
@@ -307,28 +314,55 @@ struct RepoNotesSection: View {
     /// - **vertical padding 留呼吸感**：`.padding(.vertical, 6)` 而非旧版 `.padding(8)` —— TextEditor 内部
     ///   NSTextView 自带 textContainerInset 已经吃掉一部分上下空间，外层 6pt 即可，过大会让 inline 看起来臃肿。
     private var notesEditor: some View {
+        VStack(spacing: 0) {
+            if isEditorExpanded {
+                HStack {
+                    Picker("", selection: $inlineEditorMode) {
+                        Text("repo.notes.editor.tabEdit").tag(InlineEditorMode.edit)
+                        Text("repo.notes.editor.tabPreview").tag(InlineEditorMode.preview)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .controlSize(.small)
+                    .frame(width: 150)
+                    Spacer()
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                Divider()
+            }
+
+            if isEditorExpanded, inlineEditorMode == .preview {
+                inlineMarkdownPreview
+            } else {
+                inlineTextEditor
+            }
+        }
+        .frame(minHeight: isEditorExpanded ? 320 : 76, maxHeight: isEditorExpanded ? 320 : 76)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color(nsColor: .textBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(Color.secondary.opacity(0.2))
+        )
+        .overlay(alignment: .bottomTrailing) {
+            expandButton
+                .padding(.trailing, 22)
+                .padding(.bottom, 6)
+        }
+    }
+
+    /// 编辑模式继续绑定原来的 `editingContent`，所以扩展 / 收起不会产生第二份保存状态。
+    private var inlineTextEditor: some View {
         TextEditor(text: $editingContent)
             .font(.system(.body, design: .default))
             .scrollContentBackground(.hidden)
-            .frame(minHeight: 76, maxHeight: 76)
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color(nsColor: .textBackgroundColor))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(Color.secondary.opacity(0.2))
-            )
             .overlay(alignment: .topLeading) {
                 if editingContent.isEmpty {
-                    // v2.2（2026-06-17）光标 ↔ placeholder 对齐修正：
-                    // SwiftUI TextEditor 包装的 NSTextView 在 macOS 15+ 上首行 insertion point 的 Y
-                    // 不再额外叠加 textContainerInset.height（实测与 v2.1 假设的 +5pt 不符），
-                    // 光标实际落在「外层 padding」之后的第一行基线，即 (8+5, 6) = (13, 6)。
-                    // placeholder 必须与 TextEditor 同字体，且只用 leading/top 偏移，避免 vertical
-                    // padding 把文字整体下推导致「光标在上、提示在下」。
                     Text("repo.notesPlaceholder")
                         .font(.system(.body, design: .default))
                         .foregroundStyle(.secondary)
@@ -337,32 +371,43 @@ struct RepoNotesSection: View {
                         .allowsHitTesting(false)
                 }
             }
-            .overlay(alignment: .bottomTrailing) {
-                // v2.1（2026-06-13）按钮 trailing padding 精算（v2 给的 14pt 仍重叠）：
-                // - 外层 padding(.horizontal, 8) → TextEditor 内部右边距 RoundedRectangle 8pt
-                // - NSScroller 宽度 ≈ 12pt（macOS overlay scroller） → NSScroller 占据距右 8-20pt 区域
-                // - 按钮圆形直径 = 5(padding) + 10(icon) + 5(padding) = 20pt
-                // - 旧 trailing=14 → 按钮占据距右 14-34pt → **与 NSScroller 20-14 = 6pt 重合**
-                // - 新 trailing=22 → 按钮占据距右 22-42pt → 完全避开 NSScroller 20pt 边界 + 2pt 余量
-                expandButton
-                    .padding(.trailing, 22)
-                    .padding(.bottom, 6)
-            }
     }
 
-    /// 右下角「展开成大窗口编辑」按钮。
-    ///
-    /// 视觉：半透明 secondary 圆背景 + `arrow.up.left.and.arrow.down.right` 图标。
-    /// 交互：点击 → `showEditorSheet = true` → 触发 sheet 弹起；hover 时背景透明度加深给反馈。
-    /// 不打架细节（v2 更新）：
-    /// - 与 SwiftUI placeholder（topLeading 对齐）不冲突；
-    /// - 与 NSScroller **会冲突**（NSScroller 在 SwiftUI overlay 上方绘制，是 SwiftUI 固有限制），
-    ///   靠外层 `.padding(.trailing, 14)` 让位 ~12pt 完全避开 NSScroller 宽度。
+    /// 扩展态 Markdown 预览。渲染源与编辑器是同一 Binding，不引入保存或同步分支。
+    @ViewBuilder
+    private var inlineMarkdownPreview: some View {
+        let trimmed = editingContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        ScrollView {
+            if trimmed.isEmpty {
+                HStack {
+                    Text("repo.notes.editor.emptyPreview")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(12)
+            } else {
+                Markdown(editingContent)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+            }
+        }
+    }
+
+    /// 右下角按钮只切换当前详情页内的高度，不再创建新的窗口。
     private var expandButton: some View {
         Button {
-            showEditorSheet = true
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                isEditorExpanded.toggle()
+                if !isEditorExpanded {
+                    inlineEditorMode = .edit
+                }
+            }
         } label: {
-            Image(systemName: "arrow.up.left.and.arrow.down.right")
+            Image(systemName: isEditorExpanded
+                  ? "arrow.down.right.and.arrow.up.left"
+                  : "arrow.up.left.and.arrow.down.right")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .padding(5)
@@ -372,7 +417,7 @@ struct RepoNotesSection: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .help(Text("repo.notes.expandEditor"))
+        .help(Text(isEditorExpanded ? "repo.notes.collapseEditor" : "repo.notes.expandEditor"))
     }
 
     // MARK: - 行为
@@ -404,6 +449,8 @@ struct RepoNotesSection: View {
         editingContent = viewModel?.note?.content ?? ""
         hasUnsavedChanges = false
         saveState = .idle
+        isEditorExpanded = false
+        inlineEditorMode = .edit
         isNotesExpanded = false
     }
 

@@ -39326,6 +39326,22 @@
         }
       }
     },
+    "repo.notes.collapseEditor" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collapse the note editor"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收起笔记编辑器"
+          }
+        }
+      }
+    },
     "repo.notes.editor.done" : {
       "localizations" : {
         "en" : {
@@ -39412,13 +39428,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open full editor (supports Markdown preview)"
+            "value" : "Expand the note editor (supports Markdown preview)"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开大窗口编辑(支持 Markdown 预览)"
+            "value" : "展开笔记编辑器(支持 Markdown 预览)"
           }
         }
       }
