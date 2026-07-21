@@ -74,6 +74,9 @@ marker：
 覆盖项目包括：
 
 - `supports/homebrew-starcat`
+- `supports/homebrew-starcat-cli`
+- `supports/starcat-cli`
+- `supports/starcat-skill`
 - Chrome/Safari 浏览器插件
 - `starcat-discovery-api`
 - `starcat-license-api`
@@ -83,6 +86,12 @@ marker：
 - `starcat-weekly-api`
 - `starcat-wiki-api`
 - `supports/starcat-localization`
+
+明确排除：
+
+- `supports/.github`：组织主页使用信息密度更高的专属双语介绍，不插入通用区块。
+- `supports/starcat-pro`：作为推广图片与公开支持内容的单一来源，避免生成自引用区块。
+- `supports/ai-file-wall`：仅供本地多 AI 协作，不属于 `starcat-app` 公开生态。
 
 公开图片统一引用：
 

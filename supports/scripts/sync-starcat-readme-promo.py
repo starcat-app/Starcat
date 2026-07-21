@@ -53,6 +53,30 @@ PROJECTS = [
         "Official Homebrew tap for installing and updating Starcat.",
     ),
     Project(
+        Path("supports/homebrew-starcat-cli"),
+        "Homebrew Starcat CLI",
+        "homebrew-cli",
+        "Homebrew Starcat CLI",
+        "这是 Starcat CLI 与 MCP bridge 的官方 Homebrew tap。",
+        "Official Homebrew tap for the Starcat CLI and MCP bridge.",
+    ),
+    Project(
+        Path("supports/starcat-cli"),
+        "Starcat CLI",
+        "cli",
+        "Starcat CLI",
+        "这是 Starcat 的跨平台命令行客户端，也是面向 AI Agent 的 MCP bridge。",
+        "Cross-platform Starcat CLI and MCP bridge for AI agents.",
+    ),
+    Project(
+        Path("supports/starcat-skill"),
+        "Starcat Skill",
+        "skill",
+        "Starcat Skill",
+        "这是供 Codex、Claude Code 等 AI Agent 读取和整理 Starcat 数据的官方 Skill。",
+        "Official skill for AI agents such as Codex and Claude Code to read and organize Starcat data.",
+    ),
+    Project(
         Path("supports/extensions/starcat-chrome-plugin"),
         "Starcat Chrome Plugin",
         "browser",
@@ -153,19 +177,21 @@ def promo(project: Project, lang: str) -> str:
     )
     colon = "：" if is_zh else ":"
     links_title = "相关链接" if is_zh else "Useful links"
-    ecosystem_title = "Starcat 生态项目" if is_zh else "Starcat ecosystem"
+    ecosystem_title = "可自部署支撑 API" if is_zh else "Self-hostable support APIs"
     link_rows = (
-        """- 官网: https://starcat.ink
-- 下载: https://starcat.ink/downloads/Starcat-1.1.0-arm64.dmg
+        """- 官网与下载: https://starcat.ink
 - 公开支持与发布说明: https://github.com/starcat-app/starcat-pro
-- Homebrew tap: https://github.com/starcat-app/homebrew-starcat
+- Starcat App Homebrew tap: https://github.com/starcat-app/homebrew-starcat
+- CLI / MCP: [starcat-cli](https://github.com/starcat-app/starcat-cli) / [Homebrew tap](https://github.com/starcat-app/homebrew-starcat-cli)
+- AI Agent Skill: https://github.com/starcat-app/starcat-skill
 - 浏览器插件: [Chrome](https://github.com/starcat-app/starcat-chrome-plugin) / [Safari](https://github.com/starcat-app/starcat-safari-plugin)
 - 本地化: https://github.com/starcat-app/starcat-localization"""
         if is_zh
-        else """- Home: https://starcat.ink
-- Download: https://starcat.ink/downloads/Starcat-1.1.0-arm64.dmg
+        else """- Home and downloads: https://starcat.ink
 - Public support and release notes: https://github.com/starcat-app/starcat-pro
-- Homebrew tap: https://github.com/starcat-app/homebrew-starcat
+- Starcat App Homebrew tap: https://github.com/starcat-app/homebrew-starcat
+- CLI / MCP: [starcat-cli](https://github.com/starcat-app/starcat-cli) / [Homebrew tap](https://github.com/starcat-app/homebrew-starcat-cli)
+- AI Agent Skill: https://github.com/starcat-app/starcat-skill
 - Browser plugins: [Chrome](https://github.com/starcat-app/starcat-chrome-plugin) / [Safari](https://github.com/starcat-app/starcat-safari-plugin)
 - Localization: https://github.com/starcat-app/starcat-localization"""
     )
