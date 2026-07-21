@@ -128,6 +128,33 @@ struct RepoNoteAIGenerationViewModelTests {
         #expect(viewModel.errorMessageKey == RepoNoteAIGenerationError.noteChanged.messageKey)
     }
 
+    @Test("旧生成的迟到回包不能覆盖新草稿")
+    func staleGenerationCannotOverwriteNewDraft() async throws {
+        let ai = RepoNoteControllableDraftStub()
+        let viewModel = RepoNoteAIGenerationViewModel(
+            readmeProvider: RepoNoteReadmeStub(cached: "# Demo"),
+            aiService: ai
+        )
+
+        viewModel.start(repo: Self.repo, existingNote: "first note")
+        try await waitUntil { ai.pendingCount == 1 }
+        viewModel.start(repo: Self.repo, existingNote: "second note")
+        try await waitUntil { ai.pendingCount == 2 }
+
+        ai.complete(call: 1, snapshot: "second draft", result: "second draft")
+        try await waitUntil { viewModel.phase == .awaitingConfirmation }
+        #expect(viewModel.draftMarkdown == "second draft")
+        #expect(viewModel.sourceNoteSnapshot == "second note")
+
+        // 第一次调用不响应 cancellation，直到新生成完成后才回传；generationID 必须拦住它。
+        ai.complete(call: 0, snapshot: "late first draft", result: "late first draft")
+        await Task.yield()
+
+        #expect(viewModel.phase == .awaitingConfirmation)
+        #expect(viewModel.draftMarkdown == "second draft")
+        #expect(viewModel.sourceNoteSnapshot == "second note")
+    }
+
     @Test("保存失败后保留草稿并可重试")
     func saveFailureKeepsDraftForRetry() async throws {
         let viewModel = RepoNoteAIGenerationViewModel(
@@ -256,5 +283,36 @@ private final class RepoNoteDraftStub: RepoNoteAIDraftGenerating {
         }
         onDelta(result)
         return result
+    }
+}
+
+/// 不自动响应 Task cancellation 的 AI stub，用来复现第三方 Provider 迟到回包。
+@MainActor
+private final class RepoNoteControllableDraftStub: RepoNoteAIDraftGenerating {
+    private struct PendingCall {
+        let onDelta: @MainActor (String) -> Void
+        let continuation: CheckedContinuation<String, Error>
+    }
+
+    private var pendingCalls: [PendingCall] = []
+
+    var pendingCount: Int { pendingCalls.count }
+
+    func ensureNoteGenerationReady() throws {}
+
+    func generateNoteDraft(
+        readmeMarkdown: String,
+        existingNote: String,
+        onDelta: @escaping @MainActor (String) -> Void
+    ) async throws -> String {
+        try await withCheckedThrowingContinuation { continuation in
+            pendingCalls.append(PendingCall(onDelta: onDelta, continuation: continuation))
+        }
+    }
+
+    func complete(call index: Int, snapshot: String, result: String) {
+        let call = pendingCalls[index]
+        call.onDelta(snapshot)
+        call.continuation.resume(returning: result)
     }
 }

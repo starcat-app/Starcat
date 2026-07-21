@@ -94,12 +94,87 @@ struct RepoNoteAIServiceTests {
         }
     }
 
+    @Test("取消后第三方流的迟到尾包不会进入草稿")
+    @MainActor
+    func cancellationRejectsLateStreamEvent() async throws {
+        let client = RepoNoteControllableAIClient()
+        var snapshots: [String] = []
+        let task = Task {
+            try await RepoAIInsightService.generateText(
+                client: client,
+                request: Self.request,
+                streamEnabled: true,
+                onDelta: { snapshots.append($0) }
+            )
+        }
+
+        client.yield(.delta("first"))
+        for _ in 0..<100 where snapshots.isEmpty {
+            await Task.yield()
+        }
+        #expect(snapshots == ["first"])
+
+        task.cancel()
+        // 故意模拟不响应父 Task 取消、仍发送尾包的第三方 Provider。
+        client.yield(.delta("-late"))
+        client.finish()
+
+        await #expect(throws: CancellationError.self) {
+            try await task.value
+        }
+        #expect(snapshots == ["first"])
+    }
+
     private static let request = AIChatRequest(
         systemPrompt: "system",
         userPrompt: "user",
         model: "test",
         parameters: .summaryDefault
     )
+}
+
+/// 可由测试精确驱动事件的流客户端；Continuation 的 yield / finish 本身支持跨任务调用。
+private final class RepoNoteControllableAIClient: AIClientProtocol, @unchecked Sendable {
+    private let stream: AsyncThrowingStream<AIChatStreamEvent, Error>
+    private let continuation: AsyncThrowingStream<AIChatStreamEvent, Error>.Continuation
+
+    init() {
+        var captured: AsyncThrowingStream<AIChatStreamEvent, Error>.Continuation?
+        stream = AsyncThrowingStream { captured = $0 }
+        continuation = captured!
+    }
+
+    func yield(_ event: AIChatStreamEvent) {
+        continuation.yield(event)
+    }
+
+    func finish() {
+        continuation.finish()
+    }
+
+    func chat(request: AIChatRequest) async throws -> AIChatResponse {
+        throw AIClientError.emptyResponse
+    }
+
+    func chatStream(request: AIChatRequest) -> AsyncThrowingStream<AIChatStreamEvent, Error> {
+        stream
+    }
+
+    func chat(systemPrompt: String, userPrompt: String, model: String?) async throws -> String {
+        throw AIClientError.emptyResponse
+    }
+
+    func embedding(input: String, model: String?) async throws -> [Float] {
+        throw AIClientError.emptyResponse
+    }
+
+    func embeddings(inputs: [String], model: String?) async throws -> [[Float]] {
+        throw AIClientError.emptyResponse
+    }
+
+    func listModels() async throws -> [AIModelDescriptor] { [] }
+
+    func testConnection() async throws {}
 }
 
 /// 只支持本 Suite 需要的 chat / stream，其余能力若被误调即明确失败。
