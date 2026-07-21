@@ -685,6 +685,19 @@ final class RepoAIInsightService {
         }
     }
 
+    /// 个人笔记生成的轻量预检。
+    ///
+    /// 只验证 Pro 权益和摘要任务的 Provider / API Key，不发起网络请求。
+    /// UI 必须在 README 下载之前调用，避免未配置 AI 时做无意义的 GitHub IO。
+    func ensureNoteGenerationReady() throws {
+        try enforceGenerationEntitlement(includeSummary: true, includeTags: false)
+        _ = try makeClient(
+            task: settings.aiSummaryTask,
+            fallbackModel: settings.aiChatModel,
+            taskName: String.l10n("ai.taskName.summary")
+        )
+    }
+
     /// 2026-06-14 v4 重构：拼装对话路径的 system prompt，走 `aiChatTask.prompt` 模板
     /// + 占位符渲染（详见 `AIDefaultPrompts.chat` 注释，2026-06-15 起 8 占位符）。
     ///
@@ -827,7 +840,74 @@ final class RepoAIInsightService {
             usageContext: AIUsageContext(feature: .repoSummary, phase: "generation")
         )
 
-        if params.streamEnabled {
+        return try await Self.generateText(
+            client: client,
+            request: request,
+            streamEnabled: params.streamEnabled,
+            onDelta: onDelta
+        )
+    }
+
+    /// 使用摘要任务配置生成个人笔记草稿，不写入摘要缓存或个人笔记表。
+    func generateNoteDraft(
+        readmeMarkdown: String,
+        existingNote: String,
+        onDelta: @escaping @MainActor (String) -> Void
+    ) async throws -> String {
+        let task = settings.aiSummaryTask
+        let (client, model) = try makeClient(
+            task: task,
+            fallbackModel: settings.aiChatModel,
+            taskName: String.l10n("ai.taskName.summary")
+        )
+        let params = settings.effectiveParameters(for: task)
+        let request = Self.makeRepoNoteRequest(
+            readmeMarkdown: readmeMarkdown,
+            existingNote: existingNote,
+            model: model,
+            parameters: params,
+            outputLanguage: Self.outputLanguageDescriptor()
+        )
+        return try await Self.generateText(
+            client: client,
+            request: request,
+            streamEnabled: params.streamEnabled,
+            onDelta: onDelta
+        )
+    }
+
+    /// 纯请求构造器，便于单测精确验证笔记与 README 的边界。
+    static func makeRepoNoteRequest(
+        readmeMarkdown: String,
+        existingNote: String,
+        model: String,
+        parameters: AIModelParameters,
+        outputLanguage: String
+    ) -> AIChatRequest {
+        AIChatRequest(
+            systemPrompt: AIDefaultPrompts.repoNote.renderedSystemPrompt(placeholders: [
+                "outputLanguage": outputLanguage
+            ]),
+            userPrompt: AIDefaultPrompts.repoNote.renderedUserPrompt(placeholders: [
+                "outputLanguage": outputLanguage,
+                "existingNote": existingNote,
+                "readme": readmeMarkdown
+            ]),
+            model: model,
+            parameters: parameters,
+            responseFormat: .text,
+            usageContext: AIUsageContext(feature: .repoNote, phase: "generation")
+        )
+    }
+
+    /// 摘要与个人笔记共用同一套流式语义，避免两条路径在取消、空响应上漂移。
+    static func generateText(
+        client: any AIClientProtocol,
+        request: AIChatRequest,
+        streamEnabled: Bool,
+        onDelta: (@MainActor (String) -> Void)?
+    ) async throws -> String {
+        if streamEnabled {
             var accumulated = ""
             for try await event in client.chatStream(request: request) {
                 // 部分自定义流实现不会主动因父 Task 取消而结束，逐事件检查才能及时停流。
@@ -840,7 +920,10 @@ final class RepoAIInsightService {
                     onDelta?(accumulated)
                 case .completed(let response):
                     try Task.checkCancellation()
-                    return response.content
+                    guard let final = response.content.nilIfBlank ?? accumulated.nilIfBlank else {
+                        throw AIClientError.emptyResponse
+                    }
+                    return final
                 }
             }
             try Task.checkCancellation()
@@ -849,7 +932,8 @@ final class RepoAIInsightService {
         } else {
             let response = try await client.chat(request: request)
             try Task.checkCancellation()
-            return response.content
+            guard let final = response.content.nilIfBlank else { throw AIClientError.emptyResponse }
+            return final
         }
     }
 

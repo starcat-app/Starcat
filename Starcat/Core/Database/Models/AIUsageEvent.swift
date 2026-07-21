@@ -14,6 +14,7 @@ enum AIUsageFeature: String, Codable, CaseIterable, Identifiable, Sendable {
     case knowledgeIndexing = "knowledge_indexing"
     case semanticSearch = "semantic_search"
     case repoSummary = "repo_summary"
+    case repoNote = "repo_note"
     case repoTags = "repo_tags"
     case repoChat = "repo_chat"
     case readmeTranslation = "readme_translation"
