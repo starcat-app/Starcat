@@ -229,13 +229,31 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
     }
 
     /// 仅更新 status；行不存在则创建一行（content=NULL）。editedAt 自动设为 now。
+    ///
+    /// 只有状态真正从非 `using` 进入 `using` 时才自动入库。这样用户把仍在使用的
+    /// repo 明确移出知识库后，UI / Companion 重复保存同一个 `using` 值不会覆盖用户选择。
+    /// 从 `using` 改成其它状态也只更新阅读状态，不反向修改知识库归属。
     func updateStatus(repoId: Int64, status: RepoStatus) async throws {
         let nowISO = ISO8601DateFormatter.shared.string(from: Date())
         let insertedLibraryState = status == .using
             ? LibraryState.inLibrary.rawValue
             : LibraryState.outsideLibrary.rawValue
         let insertedLibraryUpdatedAt: String? = status == .using ? nowISO : nil
-        try await database.writer.write { db in
+        let didEnterLibrary = try await database.writer.write { db in
+            let previous = try Row.fetchOne(
+                db,
+                sql: "SELECT status, library_state FROM repo_notes WHERE repo_id = ?",
+                arguments: [repoId]
+            )
+            let previousStatus: RepoStatus? = previous.map { row in
+                let raw: String = row["status"]
+                return RepoStatus.parse(raw)
+            }
+            let previousLibraryState: LibraryState = previous.map { row in
+                let raw: String? = row["library_state"]
+                return LibraryState.parse(raw)
+            } ?? .outsideLibrary
+
             try db.execute(
                 sql: """
                 INSERT INTO repo_notes (
@@ -245,11 +263,14 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
                 ON CONFLICT(repo_id) DO UPDATE SET
                     status = excluded.status,
                     library_state = CASE
-                        WHEN excluded.status = 'using' THEN 'in_library'
+                        WHEN excluded.status = 'using' AND repo_notes.status != 'using'
+                            THEN 'in_library'
                         ELSE repo_notes.library_state
                     END,
                     library_updated_at = CASE
-                        WHEN excluded.status = 'using' AND repo_notes.library_state != 'in_library'
+                        WHEN excluded.status = 'using'
+                            AND repo_notes.status != 'using'
+                            AND repo_notes.library_state != 'in_library'
                             THEN excluded.edited_at
                         ELSE repo_notes.library_updated_at
                     END,
@@ -257,8 +278,11 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
                 """,
                 arguments: [repoId, status.rawValue, insertedLibraryState, insertedLibraryUpdatedAt, nowISO]
             )
+            return status == .using
+                && previousStatus != .using
+                && previousLibraryState != .inLibrary
         }
-        if status == .using {
+        if didEnterLibrary {
             postLibraryStateDidChange(repoId: repoId, state: .inLibrary)
         }
     }

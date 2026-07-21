@@ -161,7 +161,6 @@ struct CompanionLibraryStateUpdateRequest: Codable, Equatable {
     let owner: String
     let repo: String
     let state: String
-    let downgradeUsingStatus: Bool?
 }
 
 struct CompanionLibraryStateUpdateResponse: Codable, Equatable {

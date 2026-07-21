@@ -225,14 +225,13 @@
 
 建议规则:
 
-- 用户设置 `RepoStatus.using` 时,如果 library state 不是 `.inLibrary`,同步设为 `.inLibrary`。
+- 用户的状态真正从非 `RepoStatus.using` 变为 `.using` 时,如果 library state 不是 `.inLibrary`,同步设为 `.inLibrary`;重复保存已有 `.using` 不覆盖用户明确移出后的 `.outsideLibrary`。
 - 自动入库时不弹确认,但应给轻量 toast,例如“已标记正在使用,并加入知识库”,避免用户不理解 ❤️ 为什么点亮。
-- 用户从 `RepoStatus.using` 改成 `read` / `unread` 时,不自动移出知识库。`using` 是“当前正在使用”的工作状态,`libraryState == .inLibrary` 是“值得长期保存”的知识库归属,取消使用状态不能推导出取消入库。
-- 用户从知识库移除时,如果 repo 仍是 `using`,需要二次确认。确认后同时把 `libraryState` 设为 `.outsideLibrary`,并把 `RepoStatus.using` 降级为 `read`,避免留下“正在使用但不在知识库”的矛盾状态。
-- 二次确认只用于 `using` repo,文案必须明确会把状态从“正在使用”改为“已读”。普通已入库 repo 移出知识库不弹确认。
+- 用户从 `RepoStatus.using` 改成 `read` / `unread` 时,保持当前 `libraryState` 不变。`using` 是“当前正在使用”的工作状态,知识库归属由用户单独管理,取消使用状态不能推导出加入或移出知识库。
+- 用户从知识库移除时只把 `libraryState` 设为 `.outsideLibrary`;即使 repo 仍是 `using` 也不修改阅读状态、不弹状态降级确认。
 - 未入库 repo 加入知识库时默认写入 `RepoStatus.unread`;如果是从 `RepoStatus.using` 自动入库,则保持 `using`。
 
-不采用“取消 using 自动取消入库”的规则,因为这会把一个短期工作状态误用成知识库生命周期。用户结束当前使用后,repo 仍可能值得保留用于搜索、笔记、AI 摘要和后续复用。
+两个状态只保留一次单向联动:真正进入 `using` 时自动入库。后续移出知识库、结束使用状态或重复保存 `using` 都只尊重用户当前操作,不反向覆盖另一状态。
 
 涉及文件:
 
@@ -355,7 +354,7 @@
 - Trending / Discovery / Weekly: 继续展示 GitHub Star ✓,同时可叠加知识库 ❤️。
 - Activity: 当前注释说明 Activity repo-backed 行不展示 star ✓,因为过滤后大多是 starred。知识库 ❤️ 不应套用这个规则,只要 `libraryState == .inLibrary` 就展示。
 - Search Center 搜索结果需要展示入库状态,并允许直接通过空心/实心 ❤️ 加入或移出知识库。若复用 `UnifiedRepoRow`,应单独提供 row 外或 trailing action 入口,不要把 logo 左上角小标识变成可点击控件。
-- Search Center 直接移出知识库时沿用详情页规则: `using` repo 弹二次确认,非 `using` repo 直接移出。
+- Search Center 直接移出知识库时沿用详情页规则:只更新 `libraryState`,不修改阅读状态。
 - 推荐弹窗若复用 `UnifiedRepoRow`,也可自然获得 ❤️;正式需求先验收 Manage / Trending / Discovery / Weekly / Activity。
 
 数据接入点:

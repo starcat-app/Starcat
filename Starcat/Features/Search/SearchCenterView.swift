@@ -54,8 +54,6 @@ struct SearchCenterView: View {
     /// Search Center 行内 ❤️ 操作中的 repo。用 repo id 控制单按钮 loading，避免
     /// 点击一个结果时把整张搜索列表都置灰。
     @State private var libraryOperationRepoID: Int64?
-    @State private var pendingUsingRemovalCandidate: RepositoryCandidate?
-    @State private var isConfirmingUsingLibraryRemoval = false
     @State private var libraryToast: String?
 
     var body: some View {
@@ -177,27 +175,6 @@ struct SearchCenterView: View {
             if !filtersAvailable {
                 isFilterDrawerPresented = false
             }
-        }
-        .alert(
-            "library.removeUsing.confirmTitle",
-            isPresented: $isConfirmingUsingLibraryRemoval
-        ) {
-            Button("library.removeUsing.confirmAction", role: .destructive) {
-                if let candidate = pendingUsingRemovalCandidate {
-                    Task {
-                        await setLibraryState(
-                            .outsideLibrary,
-                            for: candidate,
-                            downgradeUsingStatus: true
-                        )
-                    }
-                }
-            }
-            Button("general.cancel", role: .cancel) {
-                pendingUsingRemovalCandidate = nil
-            }
-        } message: {
-            Text("library.removeUsing.confirmMessage")
         }
         .toast(
             message: $libraryToast,
@@ -1310,28 +1287,16 @@ struct SearchCenterView: View {
         let currentState = (try? await dependencies.repoNoteRepository.fetchLibraryState(repoId: repo.id))
             ?? (candidate.card.isInLibrary ? .inLibrary : .outsideLibrary)
         if currentState == .inLibrary {
-            let status = (try? await dependencies.repoNoteRepository.find(repoId: repo.id))
-                .map { RepoStatus.parse($0.status) } ?? homeViewModel.readStatus(for: repo.id)
-            guard status != .using else {
-                viewModel.updateRepositoryLibraryState(
-                    identity: candidate.identity,
-                    state: currentState,
-                    persistedRepo: candidate.localRepo
-                )
-                pendingUsingRemovalCandidate = candidate
-                isConfirmingUsingLibraryRemoval = true
-                return true
-            }
-            return await setLibraryState(.outsideLibrary, for: candidate, downgradeUsingStatus: false)
+            // 搜索入口与详情页保持同一规则：移出只改知识库归属，不降级阅读状态。
+            return await setLibraryState(.outsideLibrary, for: candidate)
         } else {
-            return await setLibraryState(.inLibrary, for: candidate, downgradeUsingStatus: false)
+            return await setLibraryState(.inLibrary, for: candidate)
         }
     }
 
     private func setLibraryState(
         _ targetState: LibraryState,
-        for candidate: RepositoryCandidate,
-        downgradeUsingStatus: Bool
+        for candidate: RepositoryCandidate
     ) async -> Bool? {
         guard dependencies.authSession.state.isAuthenticated else {
             dependencies.authSession.requestLoginSheet()
@@ -1345,7 +1310,6 @@ struct SearchCenterView: View {
         libraryOperationRepoID = repo.id
         defer {
             libraryOperationRepoID = nil
-            pendingUsingRemovalCandidate = nil
         }
 
         do {
@@ -1359,9 +1323,6 @@ struct SearchCenterView: View {
                 persistedRepo = candidate.localRepo
             }
             try await dependencies.repoNoteRepository.updateLibraryState(repoId: repo.id, state: targetState)
-            if downgradeUsingStatus {
-                try await dependencies.repoNoteRepository.updateStatus(repoId: repo.id, status: .read)
-            }
 
             viewModel.updateRepositoryLibraryState(
                 identity: candidate.identity,

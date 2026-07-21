@@ -182,7 +182,6 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// 乐观 UI。Scaffold 会被详情浮窗复用，不能只依赖 HomeViewModel 当前列表页缓存。
     @State private var libraryState: LibraryState = .outsideLibrary
     @State private var isLibraryOperationInFlight = false
-    @State private var isConfirmingUsingLibraryRemoval = false
     @State private var libraryToast: String?
 
     /// Pro 付费墙展示上下文。Wiki / 推荐入口在已登录但非 Pro 时弹出付费墙。
@@ -308,19 +307,6 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         }
         .sheet(item: $proPaywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
-        }
-        .alert(
-            "library.removeUsing.confirmTitle",
-            isPresented: $isConfirmingUsingLibraryRemoval
-        ) {
-            Button("library.removeUsing.confirmAction", role: .destructive) {
-                Task {
-                    await setLibraryState(.outsideLibrary, downgradeUsingStatus: true)
-                }
-            }
-            Button("general.cancel", role: .cancel) {}
-        } message: {
-            Text("library.removeUsing.confirmMessage")
         }
         .toast(
             message: $libraryToast,
@@ -636,21 +622,15 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
 
         let currentState = (try? await dependencies.repoNoteRepository.fetchLibraryState(repoId: repo.id)) ?? libraryState
         if currentState == .inLibrary {
-            let status = (try? await dependencies.repoNoteRepository.find(repoId: repo.id))
-                .map { RepoStatus.parse($0.status) } ?? homeViewModel.readStatus(for: repo.id)
-            guard status != .using else {
-                libraryState = currentState
-                isConfirmingUsingLibraryRemoval = true
-                return
-            }
-            await setLibraryState(.outsideLibrary, downgradeUsingStatus: false)
+            // 知识库归属与阅读状态相互独立；用户明确移出时保留当前 status。
+            await setLibraryState(.outsideLibrary)
         } else {
             NotificationCenter.default.post(name: .gettingStartedDidAddRepoToLibrary, object: nil)
-            await setLibraryState(.inLibrary, downgradeUsingStatus: false)
+            await setLibraryState(.inLibrary)
         }
     }
 
-    private func setLibraryState(_ targetState: LibraryState, downgradeUsingStatus: Bool) async {
+    private func setLibraryState(_ targetState: LibraryState) async {
         guard dependencies.authSession.state.isAuthenticated else {
             dependencies.authSession.requestLoginSheet()
             return
@@ -668,9 +648,6 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                 _ = try await dependencies.repoRepository.upsertRepoMetadataForLibrary(repo: repo, syncedAt: Date())
             }
             try await dependencies.repoNoteRepository.updateLibraryState(repoId: repo.id, state: targetState)
-            if downgradeUsingStatus {
-                try await dependencies.repoNoteRepository.updateStatus(repoId: repo.id, status: .read)
-            }
             libraryState = targetState
             homeViewModel.applyLibraryStateChange(repoId: repo.id, state: targetState)
             await homeViewModel.refreshSidebar()

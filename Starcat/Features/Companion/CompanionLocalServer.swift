@@ -428,8 +428,7 @@ final class CompanionLocalServer {
             let result = try await libraryStateWriter.save(
                 owner: payload.owner,
                 repo: payload.repo,
-                state: payload.state,
-                downgradeUsingStatus: payload.downgradeUsingStatus ?? false
+                state: payload.state
             )
             return response(
                 status: 200,
@@ -445,8 +444,6 @@ final class CompanionLocalServer {
             return response(status: 400, body: ["error": "invalid_library_state"], origin: origin)
         } catch CompanionLibraryStateWriteError.repoNotFound {
             return response(status: 404, body: ["error": "repo_not_found"], origin: origin)
-        } catch CompanionLibraryStateWriteError.usingRemovalRequiresConfirmation {
-            return response(status: 409, body: ["error": "using_removal_requires_confirmation"], origin: origin)
         } catch {
             Self.recordInternalFailure(endpoint: "library-state", error: error)
             return response(status: 500, body: ["error": "internal_error"], origin: origin)

@@ -463,10 +463,8 @@ private final class KnowledgeRAGBrowserViewModel {
     var isLoadingMoreRepositories = false
     var isIndexing = false
     var isLibraryOperationInFlight = false
-    var isConfirmingUsingLibraryRemoval = false
     /// 用户主动移出仓库后保持右栏空态；索引异步刷新不得把选择跳回第一条。
     private var preservesEmptySelection = false
-    private var pendingUsingLibraryRemovalRepoID: Int64?
     /// 浏览器独立于 Composer「+」面板；默认最近加入知识库倒序。
     var repositorySortOption: RepoSortOption = RAGComposerMentionSort.default {
         didSet {
@@ -682,7 +680,7 @@ private final class KnowledgeRAGBrowserViewModel {
         }
     }
 
-    /// 复用主详情页的知识库移出规则；正在使用的仓库需要先由用户确认状态降级。
+    /// 移出知识库只更新知识库归属；阅读状态由用户在状态入口单独管理。
     func requestSelectedRepositoryRemoval() async {
         guard dependencies.authSession.state.isAuthenticated else {
             dependencies.authSession.requestLoginSheet()
@@ -700,32 +698,10 @@ private final class KnowledgeRAGBrowserViewModel {
                 clearRemovedRepository(repoID: repoID)
                 return
             }
-            let status = try await dependencies.repoNoteRepository.find(repoId: repoID)
-                .map { RepoStatus.parse($0.status) } ?? homeViewModel.readStatus(for: repoID)
-            guard status != .using else {
-                pendingUsingLibraryRemovalRepoID = repoID
-                isConfirmingUsingLibraryRemoval = true
-                return
-            }
-            await removeRepositoryFromLibrary(repoID: repoID, downgradeUsingStatus: false)
+            await removeRepositoryFromLibrary(repoID: repoID)
         } catch {
             errorMessage = error.localizedDescription
         }
-    }
-
-    func confirmUsingRepositoryRemoval() async {
-        guard !isLibraryOperationInFlight,
-              let repoID = pendingUsingLibraryRemovalRepoID else { return }
-        pendingUsingLibraryRemovalRepoID = nil
-        isConfirmingUsingLibraryRemoval = false
-        isLibraryOperationInFlight = true
-        defer { isLibraryOperationInFlight = false }
-        await removeRepositoryFromLibrary(repoID: repoID, downgradeUsingStatus: true)
-    }
-
-    func cancelUsingRepositoryRemoval() {
-        pendingUsingLibraryRemovalRepoID = nil
-        isConfirmingUsingLibraryRemoval = false
     }
 
     func loadMoreChunks() async {
@@ -1015,12 +991,9 @@ private final class KnowledgeRAGBrowserViewModel {
         }
     }
 
-    private func removeRepositoryFromLibrary(repoID: Int64, downgradeUsingStatus: Bool) async {
+    private func removeRepositoryFromLibrary(repoID: Int64) async {
         do {
             try await dependencies.repoNoteRepository.updateLibraryState(repoId: repoID, state: .outsideLibrary)
-            if downgradeUsingStatus {
-                try await dependencies.repoNoteRepository.updateStatus(repoId: repoID, status: .read)
-            }
 
             // 数据库写入成功后再清空 UI，失败时保留当前详情供用户重试。
             homeViewModel.applyLibraryStateChange(repoId: repoID, state: .outsideLibrary)
@@ -1251,19 +1224,6 @@ private struct KnowledgeRAGBrowserView: View {
             }
         } message: {
             Text("rag.browser.repoContext.settings.message")
-        }
-        .alert(
-            "library.removeUsing.confirmTitle",
-            isPresented: $viewModel.isConfirmingUsingLibraryRemoval
-        ) {
-            Button("library.removeUsing.confirmAction", role: .destructive) {
-                Task { await viewModel.confirmUsingRepositoryRemoval() }
-            }
-            Button("general.cancel", role: .cancel) {
-                viewModel.cancelUsingRepositoryRemoval()
-            }
-        } message: {
-            Text("library.removeUsing.confirmMessage")
         }
     }
 
