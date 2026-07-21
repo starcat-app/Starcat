@@ -98,6 +98,17 @@ final class RepoNoteAIGenerationViewModel {
 
     var isBusy: Bool { phase == .running || phase == .applying }
 
+    /// 切回仓库时，仍需用户关注的会话应自动展开笔记区域。
+    /// `completed` 已经把草稿写入编辑器，无需强制展开；其余非 idle 状态都需要露出结果或错误。
+    var shouldExpandNotesOnReturn: Bool {
+        switch phase {
+        case .running, .awaitingConfirmation, .applying, .failed, .cancelled:
+            true
+        case .idle, .completed:
+            false
+        }
+    }
+
     var canApplyDraft: Bool {
         phase == .awaitingConfirmation && draftMarkdown.repoNoteNonBlank != nil
     }

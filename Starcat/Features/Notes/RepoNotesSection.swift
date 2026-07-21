@@ -130,9 +130,7 @@ struct RepoNotesSection: View {
             }
         }
         .onDisappear {
-            // View 已离开详情层级后不再有合法的 UI 接收方，主动终止流式响应与索引防抖。
-            // generationID 仍会拦截不响应取消的第三方 Provider 尾包，形成双重保护。
-            aiGenerationViewModel?.cancel()
+            // AI 会话由 repo 级内存仓库继续持有，切换详情时不能取消；语义索引防抖仍属于当前 View。
             refreshIndexTask?.cancel()
             refreshIndexTask = nil
         }
@@ -260,7 +258,7 @@ struct RepoNotesSection: View {
                         viewModel: aiViewModel,
                         onRetry: startAIGeneration,
                         onCancel: { aiViewModel.cancel() },
-                        onDiscard: { aiViewModel.discard() },
+                        onDiscard: discardAIGeneration,
                         onApply: { Task { await applyAIDraft() } }
                     )
                 }
@@ -432,21 +430,19 @@ struct RepoNotesSection: View {
     // MARK: - 行为
 
     private func onRepoChange(to newId: Int64) async {
-        aiGenerationViewModel?.discard()
         if viewModel == nil {
             viewModel = RepoNotesSectionViewModel(repoNoteRepository: dependencies.repoNoteRepository)
         }
-        aiGenerationViewModel = RepoNoteAIGenerationViewModel(
-            readmeProvider: RepoNoteAIReadmeProvider(
-                repository: dependencies.readmeRepository,
-                readmeAPI: dependencies.readmeAPI
-            ),
-            aiService: dependencies.repoAIInsightService,
-            maxReadmeLength: dependencies.settings.aiReadmeTruncateLength
-        )
         // 切换前 flush 上一个 repo 的 buffer，避免丢失
         if let prevId = previousRepoId, prevId != newId, hasUnsavedChanges {
             await viewModel?.saveContent(repoId: prevId, content: editingContent)
+        }
+        // 已完成或未启动的临时会话没有跨仓库保留价值；运行中 / 待确认 / 失败态继续留在内存中，
+        // 这样切回原仓库时可以看到同一条流式响应和完整步骤，而不是重新生成。
+        if let prevId = previousRepoId,
+           let previousSession = aiGenerationViewModel,
+           !previousSession.shouldExpandNotesOnReturn {
+            RepoNoteAIGenerationSessionStore.shared.removeSession(for: prevId)
         }
         // 切换 repo 时，取消上一个 repo 的"向量索引重建" debounce 任务——
         // 否则前一个 repo 的 1.5s timer 还会触发一次 refreshIndexIfChanged(prevRepo)，
@@ -461,7 +457,9 @@ struct RepoNotesSection: View {
         isEditorExpanded = false
         inlineEditorMode = .edit
         isCompletedDraftExpanded = false
-        isNotesExpanded = false
+        let session = RepoNoteAIGenerationSessionStore.shared.session(for: newId) ?? makeAIGenerationViewModel()
+        aiGenerationViewModel = session
+        isNotesExpanded = session.shouldExpandNotesOnReturn
     }
 
     /// 主动落库 + 触发语义索引重建。
@@ -494,12 +492,31 @@ struct RepoNotesSection: View {
     /// 从当前编辑 buffer 冻结原笔记后启动 AI，不要求用户先等防抖保存。
     private func startAIGeneration() {
         guard let aiGenerationViewModel else { return }
+        RepoNoteAIGenerationSessionStore.shared.retain(aiGenerationViewModel, for: repo.id)
         if !isNotesExpanded {
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
                 isNotesExpanded = true
             }
         }
         aiGenerationViewModel.start(repo: repo, existingNote: editingContent)
+    }
+
+    /// 用户明确放弃后同时移除 repo 会话；这与页面切换不同，后者必须继续保留生成任务。
+    private func discardAIGeneration() {
+        aiGenerationViewModel?.discard()
+        RepoNoteAIGenerationSessionStore.shared.removeSession(for: repo.id)
+    }
+
+    /// 未启动 AI 的仓库只创建轻量 ViewModel，不放入共享会话仓库，避免浏览大量详情时积累空会话。
+    private func makeAIGenerationViewModel() -> RepoNoteAIGenerationViewModel {
+        RepoNoteAIGenerationViewModel(
+            readmeProvider: RepoNoteAIReadmeProvider(
+                repository: dependencies.readmeRepository,
+                readmeAPI: dependencies.readmeAPI
+            ),
+            aiService: dependencies.repoAIInsightService,
+            maxReadmeLength: dependencies.settings.aiReadmeTruncateLength
+        )
     }
 
     /// 只有通过快照冲突检查后才写入 AI 草稿，并复用原笔记的索引刷新链路。

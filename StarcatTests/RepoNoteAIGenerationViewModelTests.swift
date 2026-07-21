@@ -175,6 +175,34 @@ struct RepoNoteAIGenerationViewModelTests {
         ))
     }
 
+    @Test("切换仓库后可取回原生成会话且保持展开提示")
+    func sessionStoreRestoresRunningRepo() async throws {
+        let store = RepoNoteAIGenerationSessionStore()
+        let running = RepoNoteAIGenerationViewModel(
+            readmeProvider: RepoNoteReadmeStub(cached: "# Demo"),
+            aiService: RepoNoteDraftStub(result: "draft", suspendsUntilCancelled: true)
+        )
+        let other = RepoNoteAIGenerationViewModel(
+            readmeProvider: RepoNoteReadmeStub(cached: "# Other"),
+            aiService: RepoNoteDraftStub(result: "other")
+        )
+
+        running.start(repo: Self.repo, existingNote: "")
+        try await waitUntil { running.currentStep == .generating }
+        store.retain(running, for: Self.repo.id)
+        store.retain(other, for: 2)
+
+        let restored = store.session(for: Self.repo.id)
+        #expect(restored === running)
+        #expect(restored?.shouldExpandNotesOnReturn == true)
+        #expect(store.session(for: 2) === other)
+
+        store.removeSession(for: Self.repo.id)
+        #expect(store.session(for: Self.repo.id) == nil)
+        #expect(store.session(for: 2) === other)
+        running.cancel()
+    }
+
     private func waitUntil(
         _ predicate: @escaping @MainActor () -> Bool
     ) async throws {
