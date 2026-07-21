@@ -39293,6 +39293,74 @@
         }
       }
     },
+    "repo.share.cancelled.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The AI summary and share link creation have stopped."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 摘要和分享链接创建已停止。"
+          }
+        }
+      }
+    },
+    "repo.share.cancelled.retry" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Create Again"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新创建"
+          }
+        }
+      }
+    },
+    "repo.share.cancelled.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No share page was created. You can start again at any time."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本次未创建分享页，你可以随时重新创建。"
+          }
+        }
+      }
+    },
+    "repo.share.cancelled.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Creation Cancelled"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创建已取消"
+          }
+        }
+      }
+    },
     "repo.share.error.cancel" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -39429,6 +39497,40 @@
         }
       }
     },
+    "repo.share.notification.failureFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed to create the AI share page for %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 的 AI 分享页创建失败"
+          }
+        }
+      }
+    },
+    "repo.share.notification.successFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI share page ready for %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 的 AI 分享页已生成"
+          }
+        }
+      }
+    },
     "repo.share.open.error.title" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -39459,6 +39561,142 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "该仓库可能是私有仓库、已被删除，或暂时无法访问。"
+          }
+        }
+      }
+    },
+    "repo.share.progress.cancel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel Creation"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消创建"
+          }
+        }
+      }
+    },
+    "repo.share.progress.checkingCache" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checking for an existing AI summary…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在检查已有 AI 摘要…"
+          }
+        }
+      }
+    },
+    "repo.share.progress.creatingLink" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Creating the share link…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在创建分享链接…"
+          }
+        }
+      }
+    },
+    "repo.share.progress.generatingSummary" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generating an AI summary…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在生成 AI 摘要…"
+          }
+        }
+      }
+    },
+    "repo.share.progress.hide" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide and Continue in Background"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收起并在后台继续"
+          }
+        }
+      }
+    },
+    "repo.share.progress.reopen" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View AI Share Progress"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看 AI 分享进度"
+          }
+        }
+      }
+    },
+    "repo.share.progress.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can hide this sheet. Creation will continue while Starcat is running."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可以收起此窗口；Starcat 运行期间，创建任务会继续执行。"
+          }
+        }
+      }
+    },
+    "repo.share.progress.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Creating AI Share Page"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在创建 AI 分享页"
           }
         }
       }

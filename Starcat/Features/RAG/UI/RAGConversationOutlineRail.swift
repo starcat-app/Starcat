@@ -86,6 +86,8 @@ struct RAGConversationOutlineRail: View {
 
     private let idleDashWidth: CGFloat = 10
     private let activeDashWidth: CGFloat = 16
+    private let firstNeighborDashWidth: CGFloat = 14
+    private let secondNeighborDashWidth: CGFloat = 12
     private let dashHeight: CGFloat = 2
     private let dashSpacing: CGFloat = 4
     private let previewCardWidth: CGFloat = 280
@@ -113,10 +115,11 @@ struct RAGConversationOutlineRail: View {
     }
 
     private func dashTrack(containerHeight: CGFloat) -> some View {
-        ScrollView(.vertical, showsIndicators: false) {
+        let hoveredIndex = turns.firstIndex(where: { $0.id == hoveredTurnID })
+        return ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: dashSpacing) {
-                ForEach(turns) { turn in
-                    dashButton(turn)
+                ForEach(Array(turns.enumerated()), id: \.element.id) { index, turn in
+                    dashButton(turn, at: index, hoveredIndex: hoveredIndex)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -127,15 +130,19 @@ struct RAGConversationOutlineRail: View {
         .frame(maxHeight: .infinity)
     }
 
-    private func dashButton(_ turn: RAGConversationOutlineTurn) -> some View {
-        let isHovered = hoveredTurnID == turn.id
+    private func dashButton(
+        _ turn: RAGConversationOutlineTurn,
+        at index: Int,
+        hoveredIndex: Int?
+    ) -> some View {
+        let style = dashStyle(at: index, hoveredIndex: hoveredIndex)
         return Button {
             onSelect(turn)
         } label: {
             Capsule()
-                .fill(isHovered ? Color.primary.opacity(0.85) : Color.secondary.opacity(0.45))
+                .fill(style.color)
                 .frame(
-                    width: isHovered ? activeDashWidth : idleDashWidth,
+                    width: style.width,
                     height: dashHeight
                 )
                 .frame(width: activeDashWidth, height: dashHeight + 6, alignment: .leading)
@@ -148,6 +155,24 @@ struct RAGConversationOutlineRail: View {
         .pointerStyle(.link)
         .onHover { hovering in
             updateHover(turnID: turn.id, isHovered: hovering)
+        }
+    }
+
+    /// hover 波峰向上下各扩散两级；命中区仍固定为最大宽度，动画时不会改变指针判定范围。
+    private func dashStyle(at index: Int, hoveredIndex: Int?) -> (width: CGFloat, color: Color) {
+        guard let hoveredIndex else {
+            return (idleDashWidth, Color.secondary.opacity(0.45))
+        }
+
+        switch abs(index - hoveredIndex) {
+        case 0:
+            return (activeDashWidth, Color.primary.opacity(0.85))
+        case 1:
+            return (firstNeighborDashWidth, Color.primary.opacity(0.55))
+        case 2:
+            return (secondNeighborDashWidth, Color.secondary.opacity(0.55))
+        default:
+            return (idleDashWidth, Color.secondary.opacity(0.45))
         }
     }
 

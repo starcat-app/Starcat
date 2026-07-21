@@ -517,7 +517,7 @@ struct RepoShareMenu: View {
                 Button(action: createAIShare) {
                     if isSharing {
                         Label {
-                            Text("repo.share.ai.create")
+                            Text("repo.share.progress.reopen")
                         } icon: {
                             ProgressView()
                                 .controlSize(.small)
@@ -529,7 +529,6 @@ struct RepoShareMenu: View {
                         )
                     }
                 }
-                .disabled(isSharing)
             }
         } label: {
             // macOS 的 Menu 由 AppKit 承载；异步操作期间替换 label 的根视图类型，
@@ -542,86 +541,114 @@ struct RepoShareMenu: View {
     }
 }
 
-struct RepoShareSheetItem: Identifiable, Equatable {
-    enum Kind: Equatable {
-        case success(String)
-        case failure(String)
-    }
-
-    let id = UUID()
-    let kind: Kind
-
-    static func success(_ url: String) -> RepoShareSheetItem {
-        RepoShareSheetItem(kind: .success(url))
-    }
-
-    static func failure(_ message: String) -> RepoShareSheetItem {
-        RepoShareSheetItem(kind: .failure(message))
-    }
-}
-
-struct RepoShareResultSheet: View {
-    let item: RepoShareSheetItem
+/// AI 分享任务 Sheet。
+///
+/// Sheet 只读取 `repoID` 对应的任务，不观察当前列表选择；用户收起后 Task 仍由
+/// RepoShareTaskStore 持有，再次点击同一 repo 会恢复当前阶段或最终结果。
+struct RepoShareTaskSheet: View {
+    let taskStore: RepoShareTaskStore
+    let repoID: Int64
+    let onCancel: () -> Void
     let onRetry: () -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var didCopy = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            header
-            content
-            actions
+        Group {
+            if let job = taskStore.job(for: repoID) {
+                VStack(alignment: .leading, spacing: 18) {
+                    header(job)
+                    content(job)
+                    actions(job)
+                }
+            } else {
+                ProgressView()
+                    .controlSize(.regular)
+                    .frame(maxWidth: .infinity, minHeight: 180)
+            }
         }
         .padding(22)
-        .frame(width: 430)
+        .frame(width: 460)
     }
 
-    private var header: some View {
+    private func header(_ job: RepoShareJob) -> some View {
         HStack(alignment: .top, spacing: 14) {
             ZStack {
                 Circle()
-                    .fill(headerTint.gradient)
+                    .fill(headerTint(for: job.state).gradient)
                     .frame(width: 48, height: 48)
-                    .shadow(color: headerTint.opacity(0.25), radius: 16, x: 0, y: 8)
-                Image(systemName: headerIcon)
+                    .shadow(color: headerTint(for: job.state).opacity(0.25), radius: 16, x: 0, y: 8)
+                Image(systemName: headerIcon(for: job.state))
                     .font(.system(size: 21, weight: .semibold))
                     .foregroundStyle(.white)
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(titleKey)
+                Text(titleKey(for: job.state))
                     .font(.title3.weight(.semibold))
-                Text(subtitleKey)
+                Text(verbatim: job.repo.fullName)
+                    .font(.callout.weight(.medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(subtitleKey(for: job.state))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            Spacer(minLength: 8)
+
+            SheetCloseButton(action: { dismiss() })
         }
     }
 
     @ViewBuilder
-    private var content: some View {
-        switch item.kind {
+    private func content(_ job: RepoShareJob) -> some View {
+        switch job.state {
+        case .checkingCache, .generatingSummary, .creatingLink:
+            HStack(spacing: 12) {
+                ProgressView()
+                    .controlSize(.small)
+                Label(phaseKey(for: job.state), systemImage: phaseIcon(for: job.state))
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(.primary)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10))
+
         case .success(let url):
             VStack(alignment: .leading, spacing: 8) {
                 Text("repo.share.success.linkLabel")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                Text(verbatim: url)
-                    .font(.callout.monospaced())
-                    .textSelection(.enabled)
-                    .lineLimit(3)
-                    .truncationMode(.middle)
+
+                // 整行都是复制命中区；右侧图标承担 1.5s 绿色成功反馈，不再新增提示行。
+                CopyFeedbackButton(
+                    providesContent: { url },
+                    tooltip: "repo.share.success.copyLink"
+                ) { didCopy in
+                    HStack(spacing: 10) {
+                        Text(verbatim: url)
+                            .font(.callout.monospaced())
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                            .truncationMode(.middle)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        // 固定布局盒消除两个 Symbol 固有尺寸差异，同时恢复项目统一的
+                        // replace 过渡；动画只发生在盒内，不再触发链接行或 Sheet 重排。
+                        Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(didCopy ? Color.green : Color.secondary)
+                            .frame(width: 18, height: 18)
+                            .contentTransition(.symbolEffect(.replace))
+                    }
                     .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                     .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
-                if didCopy {
-                    Label("repo.share.success.copied", systemImage: "checkmark.circle.fill")
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(.green)
                 }
             }
+
         case .failure(let message):
             VStack(alignment: .leading, spacing: 8) {
                 Label("repo.share.error.reason", systemImage: "exclamationmark.triangle.fill")
@@ -633,64 +660,119 @@ struct RepoShareResultSheet: View {
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+        case .cancelled:
+            Label("repo.share.cancelled.message", systemImage: "xmark.circle.fill")
+                .font(.callout.weight(.medium))
+                .foregroundStyle(.secondary)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10))
         }
     }
 
-    private var actions: some View {
+    private func actions(_ job: RepoShareJob) -> some View {
         HStack {
-            switch item.kind {
-            case .success(let url):
-                Button("repo.share.success.copyLink") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(url, forType: .string)
-                    didCopy = true
+            switch job.state {
+            case .checkingCache, .generatingSummary, .creatingLink:
+                Button(role: .destructive) {
+                    onCancel()
+                } label: {
+                    Label("repo.share.progress.cancel", systemImage: "xmark.circle")
                 }
-                Button("repo.share.success.openInBrowser") {
+
+                Button {
+                    dismiss()
+                } label: {
+                    Label("repo.share.progress.hide", systemImage: "rectangle.compress.vertical")
+                }
+
+            case .success(let url):
+                Button {
                     if let target = URL(string: url) {
                         NSWorkspace.shared.open(target)
                     }
+                } label: {
+                    Label("repo.share.success.openInBrowser", systemImage: "arrow.up.right.square")
                 }
+
             case .failure:
-                Button("repo.share.error.retry") {
-                    dismiss()
+                Button {
                     onRetry()
+                } label: {
+                    Label("repo.share.error.retry", systemImage: "arrow.clockwise")
+                }
+
+            case .cancelled:
+                Button {
+                    onRetry()
+                } label: {
+                    Label("repo.share.cancelled.retry", systemImage: "arrow.clockwise")
                 }
             }
 
             Spacer()
 
-            Button("repo.share.success.close") {
-                dismiss()
+            if !job.state.isRunning {
+                Button("repo.share.success.close") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
             }
-            .keyboardShortcut(.cancelAction)
         }
     }
 
-    private var titleKey: LocalizedStringKey {
-        switch item.kind {
+    private func titleKey(for state: RepoShareJob.State) -> LocalizedStringKey {
+        switch state {
+        case .checkingCache, .generatingSummary, .creatingLink: return "repo.share.progress.title"
+        case .cancelled: return "repo.share.cancelled.title"
         case .success: return "repo.share.success.title"
         case .failure: return "repo.share.error.title"
         }
     }
 
-    private var subtitleKey: LocalizedStringKey {
-        switch item.kind {
+    private func subtitleKey(for state: RepoShareJob.State) -> LocalizedStringKey {
+        switch state {
+        case .checkingCache, .generatingSummary, .creatingLink: return "repo.share.progress.subtitle"
+        case .cancelled: return "repo.share.cancelled.subtitle"
         case .success: return "repo.share.success.subtitle"
         case .failure: return "repo.share.error.subtitle"
         }
     }
 
-    private var headerIcon: String {
-        switch item.kind {
-        case .success: return "link.circle.fill"
+    private func headerIcon(for state: RepoShareJob.State) -> String {
+        switch state {
+        case .checkingCache: return "magnifyingglass.circle.fill"
+        case .generatingSummary: return "sparkles"
+        case .creatingLink, .success: return "link.circle.fill"
+        case .cancelled: return "xmark.circle.fill"
         case .failure: return "exclamationmark.triangle.fill"
         }
     }
 
-    private var headerTint: Color {
-        switch item.kind {
-        case .success: return .accentColor
+    private func headerTint(for state: RepoShareJob.State) -> Color {
+        switch state {
         case .failure: return .orange
+        case .cancelled: return .secondary
+        case .checkingCache, .generatingSummary, .creatingLink, .success: return .accentColor
+        }
+    }
+
+    private func phaseKey(for state: RepoShareJob.State) -> LocalizedStringKey {
+        switch state {
+        case .checkingCache: return "repo.share.progress.checkingCache"
+        case .generatingSummary: return "repo.share.progress.generatingSummary"
+        case .creatingLink: return "repo.share.progress.creatingLink"
+        case .cancelled, .success, .failure: return "repo.share.progress.creatingLink"
+        }
+    }
+
+    private func phaseIcon(for state: RepoShareJob.State) -> String {
+        switch state {
+        case .checkingCache: return "tray.and.arrow.down"
+        case .generatingSummary: return "sparkles"
+        case .creatingLink, .success, .failure: return "link"
+        case .cancelled: return "xmark.circle"
         }
     }
 }

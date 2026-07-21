@@ -308,7 +308,7 @@ struct RAGWorkspaceAnswerSurface: View {
                             isMessageNearBottom = false
                             revealAndScrollMessageIntoView(turn.userMessageID, using: proxy)
                         },
-                        timeLabel: messageTimeLabel
+                        timeLabel: outlineTimeLabel
                     )
                     .padding(.leading, 6)
                     .padding(.vertical, 12)
@@ -599,6 +599,14 @@ struct RAGWorkspaceAnswerSurface: View {
             ?? ISO8601DateFormatter().date(from: iso8601)
         guard let date else { return "" }
         return date.formatted(Date.FormatStyle(time: .shortened).locale(locale))
+    }
+
+    /// 快速跳转卡片需要精确到日期；沿用系统 Locale，避免硬编码中英文年月日顺序。
+    func outlineTimeLabel(_ iso8601: String) -> String {
+        let date = ISO8601DateFormatter.shared.date(from: iso8601)
+            ?? ISO8601DateFormatter().date(from: iso8601)
+        guard let date else { return "" }
+        return localizedTimestamp(date)
     }
 
     var remoteConfirmation: some View {

@@ -361,6 +361,9 @@ final class RepoAIInsightService {
             codeContextRequest: codeContextRequest,
             onContextProgress: onContextProgress
         )
+        // 分享任务允许用户取消。部分 provider 可能在最后一个 checkpoint 后正常返回，
+        // 这里必须重新检查外层 Task，避免继续进入外部搜索或 LLM 请求。
+        try Task.checkCancellation()
         // 代码上下文已经确定后切到请求阶段，避免继续展示可点击的“跳过”入口。
         onContextResolved?()
         let generatedAt = ISO8601DateFormatter.shared.string(from: Date())
@@ -377,6 +380,11 @@ final class RepoAIInsightService {
             do {
                 resolvedExternalContext = try await externalContextProvider.collect(for: repo)
             } catch {
+                // Cancellation 代表用户明确终止任务，不能按“外部搜索降级”吞掉后继续生成。
+                // URLSession 取消有时表现为 URLError.cancelled，因此同时检查 Task 状态。
+                if error is CancellationError || Task.isCancelled {
+                    throw CancellationError()
+                }
                 // 外部搜索是补充能力，失败不能阻断本地 README 摘要。
                 AppLog.ai.error("External Search context skipped: \(error.localizedDescription, privacy: .public)")
                 resolvedExternalContext = nil
@@ -386,6 +394,7 @@ final class RepoAIInsightService {
         } else {
             resolvedExternalContext = nil
         }
+        try Task.checkCancellation()
 
         // 2026-06-14 dong4j 反馈重构：Tags 双层 hints 改走占位符渲染路径
         //   ({repoTags} / {libraryTags}，详见 AIDefaultPrompts.tags 注释)，
@@ -436,6 +445,9 @@ final class RepoAIInsightService {
             summaryText = ""
             resolvedTagResult = .success([])
         }
+        // Provider 可能在收到 cancellation 后仍返回最后一段结果。用户取消优先：
+        // 不再组装结果、写摘要缓存或触发后续向量索引刷新。
+        try Task.checkCancellation()
         let suggestions = (try? resolvedTagResult.get()) ?? []
         if let context = resolvedExternalContext, !summaryText.isEmpty {
             let links = context.sources.map { "- [\($0.host ?? $0.absoluteString)](\($0.absoluteString))" }
@@ -498,6 +510,7 @@ final class RepoAIInsightService {
         // HOM-52：只跑标签（includeSummary == false）时不写 ai_summaries 缓存——
         // 否则会用空 summaryText 覆盖已有的有效摘要缓存。调用方仍能拿到 suggestions。
         if includeSummary, repo.isStarred {
+            try Task.checkCancellation()
             let jsonData = try JSONEncoder().encode(insight)
             let record = AISummaryRecord(
                 repoId: repo.id,
@@ -817,6 +830,8 @@ final class RepoAIInsightService {
         if params.streamEnabled {
             var accumulated = ""
             for try await event in client.chatStream(request: request) {
+                // 部分自定义流实现不会主动因父 Task 取消而结束，逐事件检查才能及时停流。
+                try Task.checkCancellation()
                 switch event {
                 case .reasoningDelta, .reasoningCompleted:
                     break
@@ -824,13 +839,16 @@ final class RepoAIInsightService {
                     accumulated += delta
                     onDelta?(accumulated)
                 case .completed(let response):
+                    try Task.checkCancellation()
                     return response.content
                 }
             }
+            try Task.checkCancellation()
             guard let final = accumulated.nilIfBlank else { throw AIClientError.emptyResponse }
             return final
         } else {
             let response = try await client.chat(request: request)
+            try Task.checkCancellation()
             return response.content
         }
     }
@@ -876,6 +894,7 @@ final class RepoAIInsightService {
             responseFormat: .jsonObject,
             usageContext: AIUsageContext(feature: .repoTags, phase: "recommendation")
         ))
+        try Task.checkCancellation()
         let decoded = try Self.decodeTagSuggestions(json: response.content)
         // Prompt 是概率约束，不能直接作为写库边界。repo 标签排在词表前面，确保历史
         // 同义形式冲突时优先沿用当前仓库已经绑定的标准拼写。

@@ -215,13 +215,12 @@ struct RepoListView: View {
     /// 否则关闭 CodeFlow 时 presentation host 被替换，窗口会短暂再次出现。
     @State private var codeFlowSheetItem: CodeGraphSheetItem?
     @State private var codebaseMemorySheetItem: CodeGraphSheetItem?
-    /// 分享入口已迁到 toolbar；结果 sheet 同样必须由稳定根节点承载，避免 toolbar
-    /// 子树重建时 presentation host 被替换。
-    @State private var shareSheetItem: RepoShareSheetItem?
-    @State private var shareRetryRepo: Repo?
-    @State private var shareInFlightRepoID: Int64?
-    /// 当前会话内已成功创建分享链接的 repo。分享 API 暂无列表查询，本地只负责即时反馈图标态。
-    @State private var sharedRepoIDs: Set<Int64> = []
+    /// 分享入口已迁到 toolbar；进度 Sheet 同样必须由稳定根节点承载，避免 toolbar
+    /// 子树重建时 presentation host 被替换。任务状态按 repoID 隔离，切换仓库不会串写结果。
+    @State private var shareTaskStore = RepoShareTaskStore()
+    @State private var sharePresentation: RepoSharePresentation?
+    /// Sheet 收起后任务仍会完成；轻量 toast 明确指出是哪个仓库，避免当前选择造成误解。
+    @State private var shareCompletionMessage: String?
     /// CodeFlow 为 Pro 功能；免费用户点入口时弹出统一付费墙，不打开执行面板。
     @State private var paywallContext: ProPaywallContext?
     @State private var ruleEditorSheetItem: SmartCollectionRuleEditorItem?
@@ -282,16 +281,19 @@ struct RepoListView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .toast(message: $toastMessage, icon: "doc.on.clipboard")
+        .toast(message: $shareCompletionMessage, icon: "link.circle")
         .sheet(isPresented: $showGitHubStarListOAuthRestrictionSheet) {
             GitHubStarListOAuthRestrictionSheet()
                 .appLocaleEnvironment()
         }
-        .sheet(item: $shareSheetItem) { item in
-            RepoShareResultSheet(item: item) {
-                guard let repo = shareRetryRepo else { return }
-                shareSheetItem = nil
-                Task { await runShare(repo) }
-            }
+        .sheet(item: $sharePresentation) { presentation in
+            RepoShareTaskSheet(
+                taskStore: shareTaskStore,
+                repoID: presentation.repoID,
+                onCancel: { shareTaskStore.cancel(repoID: presentation.repoID) },
+                onRetry: { retryShare(repoID: presentation.repoID) }
+            )
+            .id(presentation.repoID)
             .appLocaleEnvironment()
         }
         .sheet(item: $paywallContext) { context in
@@ -318,6 +320,17 @@ struct RepoListView: View {
             CodebaseMemoryPanel(repo: item.repo)
                 .id(item.id)
                 .appSheetRootEnvironment(dependencies)
+        }
+        .onChange(of: shareTaskStore.latestCompletion) { _, completion in
+            guard let completion, sharePresentation?.repoID != completion.repoID else { return }
+            let key: String
+            switch completion.outcome {
+            case .success:
+                key = "repo.share.notification.successFormat"
+            case .failure:
+                key = "repo.share.notification.failureFormat"
+            }
+            shareCompletionMessage = String(format: String.l10n(key), completion.repoFullName)
         }
         .onAppear {
             // Browser Plugin 请求可能先于主窗口恢复到达；窗口重新挂载时需要补消费
@@ -1107,11 +1120,11 @@ struct RepoListView: View {
             let targetRepo = toolbarShareRepo(shareRepo, isStarred: canCreateAIShare)
             RepoShareMenu(
                 publicURL: deepLink.publicURL,
-                isSharing: shareInFlightRepoID == targetRepo.id,
-                isShared: sharedRepoIDs.contains(targetRepo.id),
+                isSharing: shareTaskStore.isRunning(repoID: targetRepo.id),
+                isShared: shareTaskStore.isSuccessful(repoID: targetRepo.id),
                 canCreateAIShare: canCreateAIShare,
                 createAIShare: {
-                    Task { await runShare(targetRepo) }
+                    presentOrStartShare(targetRepo)
                 }
             )
         }
@@ -1132,11 +1145,14 @@ struct RepoListView: View {
         return copy
     }
 
-    /// 分享请求仍沿用旧 hero 按钮的流程；这里只改变入口与 sheet 承载位置。
+    /// 创建或恢复 repo 自己的分享任务。
+    ///
+    /// 先同步写入 task store 再设置 presentation，保证 Sheet 下一帧立即出现；任务持有
+    /// 点击时的 Repo 值快照，因此 selectedRepo 随后切换也不会改变请求目标。
     @MainActor
-    private func runShare(_ repo: Repo) async {
+    private func presentOrStartShare(_ repo: Repo) {
         do {
-            // 分享页依赖 AI 摘要内容；先做 Pro preflight，避免免费用户先看到 toolbar loading。
+            // 分享页依赖 AI 摘要内容；先做 Pro preflight，免费用户仍走统一付费墙。
             try dependencies.entitlementGate.requirePro(.aiSummary)
         } catch let error as EntitlementGateError {
             paywallContext = ProPaywallContext(feature: error.feature, message: error.localizedDescription)
@@ -1146,65 +1162,41 @@ struct RepoListView: View {
             return
         }
 
-        shareInFlightRepoID = repo.id
-        shareRetryRepo = repo
-        shareSheetItem = nil
-        defer {
-            if shareInFlightRepoID == repo.id {
-                shareInFlightRepoID = nil
-            }
-        }
+        shareTaskStore.start(repo: repo, operations: shareOperations)
+        sharePresentation = RepoSharePresentation(repoID: repo.id)
+    }
 
+    /// 失败重试复用原任务保存的 Repo 快照，不读取当前列表选择。
+    @MainActor
+    private func retryShare(repoID: Int64) {
         do {
-            var aiInsight: RepoAIInsight?
-            aiInsight = try await dependencies.repoAIInsightService.cachedInsight(for: repo)
-            if aiInsight == nil {
-                let result = try await dependencies.repoAIInsightService.generateInsight(for: repo)
-                aiInsight = result.insight
-            }
-
-            guard let insight = aiInsight else { return }
-
-            let shareRepoDTO = ShareRepoDTO(
-                fullName: repo.fullName,
-                description: repo.description,
-                language: repo.language,
-                starsCount: repo.starsCount,
-                forksCount: repo.forksCount,
-                topics: repo.topicsArray,
-                homepage: repo.homepage,
-                url: repo.htmlUrl
-            )
-
-            let shareTagDTOs = insight.suggestedTags.map { ShareTagDTO(name: $0.name, confidence: $0.confidence) }
-            let shareAISummaryDTO = ShareAISummaryDTO(
-                oneLiner: insight.oneLiner,
-                summary: insight.summary,
-                platforms: insight.platforms,
-                suitableFor: insight.suitableFor,
-                strengths: insight.strengths,
-                risks: insight.risks,
-                suggestedTags: shareTagDTOs
-            )
-
-            let request = ShareRepoRequest(repo: shareRepoDTO, aiSummary: shareAISummaryDTO)
-            let response = try await dependencies.shareAPI.shareRepo(request: request)
-
-            sharedRepoIDs.insert(repo.id)
-            shareSheetItem = .success(response.shareUrl)
-        } catch let error as RepoAIInsightError {
-            switch error {
-            case .missingAPIKey:
-                shareSheetItem = .failure(String.l10n("repo.share.error.missingAIConfig"))
-            case .missingProvider, .invalidJSON:
-                shareSheetItem = .failure(error.localizedDescription)
-            }
+            try dependencies.entitlementGate.requirePro(.aiSummary)
         } catch let error as EntitlementGateError {
-            // 试用耗尽 / 需 Pro：走统一付费墙，避免「分享失败 + 重试」误导用户。
             paywallContext = ProPaywallContext(feature: error.feature, message: error.localizedDescription)
+            return
         } catch {
-            shareSheetItem = .failure(error.localizedDescription)
+            paywallContext = ProPaywallContext(feature: .aiSummary, message: error.localizedDescription)
+            return
         }
+
+        shareTaskStore.retry(repoID: repoID, operations: shareOperations)
+    }
+
+    /// 生产环境操作直接桥接既有 service。摘要读取必须走 cachedInsightFast，复用其
+    /// “当前语言优先、缺失时回退最近摘要”的规则，同时避免 makeSource/hash 的耗时准备。
+    @MainActor
+    private var shareOperations: RepoShareOperations {
+        RepoShareOperations(
+            cachedInsight: { repo in
+                try await dependencies.repoAIInsightService.cachedInsightFast(for: repo)
+            },
+            generateInsight: { repo in
+                (try await dependencies.repoAIInsightService.generateInsight(for: repo)).insight
+            },
+            createShare: { request in
+                try await dependencies.shareAPI.shareRepo(request: request)
+            }
+        )
     }
 
     private func openSmartCollectionEditor() {
