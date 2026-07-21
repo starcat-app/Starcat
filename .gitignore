@@ -247,4 +247,5 @@ Starcat/Resources/Codebase/codebase
 sparkle-private-key
 
 # AI
-.playwright-cli
+.playwright-cli/
+apple-skills/

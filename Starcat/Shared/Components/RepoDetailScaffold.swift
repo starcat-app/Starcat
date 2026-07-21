@@ -299,6 +299,13 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         .task(id: repo.id) {
             await loadLibraryState(for: repo)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .repoLibraryStateDidChange)) { notification in
+            // 阅读状态切到“使用中”会在 Repository 层自动入库；详情页必须消费同一通知，
+            // 否则列表与数据库已经更新，Scaffold 自己持有的 ❤️ 状态仍会停留在旧值。
+            guard notification.userInfo?["repoId"] as? Int64 == repo.id,
+                  let rawState = notification.userInfo?["libraryState"] as? String else { return }
+            libraryState = LibraryState.parse(rawState)
+        }
         .sheet(item: $proPaywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
