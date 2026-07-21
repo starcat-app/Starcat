@@ -41,6 +41,8 @@
 | 36 | [CodebaseMemory 集成设计](36-CodebaseMemory集成设计.md) | codebase-memory-mcp 二进制打包进 bundle + 持久解压 + POSIX 端口探测 + Process spawn UI 子进程 + 6 步状态机 + 设置页/Storage Tab 集成 + App Store 沙盒与签名策略 |
 | 37 | [外部搜索服务设计](37-外部搜索服务设计.md) | External Search Provider 抽象、设置页、SearchCenter Provider View、External Context 单 Provider / Pro 聚合与缓存策略 |
 | 42 | [Weekly 多来源采集与置顶](42-Weekly多来源采集与置顶.md) | 固定来源目录、持久化 enrich 队列、HelloGitHub 回填、AI 情报 Skill、动态来源缓存与多项目置顶的落地契约 |
+| 45 | [后端服务版本注入与 Ping 契约](45-后端服务版本注入与Ping契约.md) | 六个 Go 服务统一以 release tag 为真源，经 Docker build arg 与 linker `-X` 注入版本，并由 `/api/v1/ping` 返回 |
+| 46 | [快捷键与应用命令设计](46-快捷键与应用命令设计.md) | Stars 同步、RAG 工作台与当前仓库 AI 的快捷键、上下文命令路由、冲突校验和设置页归属 |
 
 ---
 
@@ -75,6 +77,8 @@
 
 | 日期 | 更新内容 |
 |------|---------|
+| 2026-07-21 | 新增 45 文档：六个后端服务的版本真源、构建注入、ping 契约、发布流程与分批验收方案 |
+| 2026-07-21 | 新增 46 文档：记录快捷键首轮范围、应用命令路由、键位冲突和设置页归属 |
 | 2026-07-18 | 同步 31 文档当前缓存策略：Trending 客户端改为 1h/6h/24h 分桶，Weekly 客户端与后端统一为 6h |
 | 2026-07-16 | 新增 42 文档：Weekly 多来源采集、异步 Worker、HelloGitHub、AI 情报 Skill、动态来源缓存与置顶实现契约 |
 | 2026-07-03 | 新增 37 文档：External Search Provider 抽象、SearchCenter 单 Provider View、AI External Context 单 Provider / Pro 聚合、Provider 隔离缓存与本机凭据边界 |
