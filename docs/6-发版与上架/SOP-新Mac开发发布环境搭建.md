@@ -210,6 +210,26 @@ chmod +x scripts/setup-macos-development.sh
 
 `--check` 会访问 Apple Notary、线上 AASA 和两个 SSH 端点来验证凭据/连通性，但不会修改本地或远端状态，也不会为了验收自动触发 provisioning build。
 
+### 5.3 Codex / SSH 执行时如何处理人工输入
+
+Codex 可以通过 SSH 完成文件同步、工具检查、XcodeGen、SPM 解析和只读审计。脚本检测到 SSH 会话后，会主动跳过 Xcode GUI、签名私钥、notary 凭据和 Sparkle 私钥等 Keychain 敏感步骤。
+
+需要输入 macOS 登录密码、`.p12` 密码、Apple ID 验证码或 App-specific password 时：
+
+1. 不要把密码发到聊天中，也不要拼进 SSH 命令或环境变量。
+2. 在目标 Mac 的图形界面中打开 Terminal。
+3. 在本机 Terminal 执行：
+
+   ```bash
+   cd ~/Developer/1.AI/ai-incubator/Starcat
+   ./scripts/setup-macos-development.sh
+   ```
+
+4. 只在目标 Mac 的本机安全提示中输入密码；完成后告知 Codex“本机输入已完成”。
+5. Codex 再通过 SSH 执行 `./scripts/setup-macos-development.sh --check` 和后续只读验收。
+
+这套交接方式让自动化负责可重复步骤，让开发者本人只接管系统明确要求的人机认证步骤。
+
 ## 6. Homebrew 与项目工具
 
 Starcat 必需或直接相关的工具：
@@ -749,6 +769,12 @@ security find-identity -v -p codesigning
 ```
 
 只下载 `.cer` 不够；导入原 Mac 的 `.p12`，或让 Xcode 创建新 identity。
+
+### SSH 构建在 `CodeSign` 阶段报 `errSecInternalComponent`
+
+如果 `security find-identity` 能看到 Development identity，Xcode 也已选中正确的 Development Profile，但给 App 或内嵌 Framework 签名时出现 `errSecInternalComponent`，通常不是 provisioning 或源码问题，而是 SSH 会话不能弹出 Keychain 私钥授权。
+
+在目标 Mac 的图形界面中打开 Terminal，重新执行 §8.2 的 Development Provisioning 构建；若 macOS 弹出 `codesign` 访问私钥的提示，核对请求进程后选择“始终允许”。不要把 login Keychain 密码发给 Codex，也不要把密码写进 SSH 命令。若本机 Terminal 仍失败，再到 Keychain Access 的“My Certificates”确认目标证书下能展开 private key，并检查该私钥的 Access Control。
 
 ### `keychainLocked`
 

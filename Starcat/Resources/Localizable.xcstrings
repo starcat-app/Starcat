@@ -21604,6 +21604,23 @@
         }
       }
     },
+    "paywall.button.buyLifetimeFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buy Lifetime · %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "购买终身版 · %@"
+          }
+        }
+      }
+    },
     "paywall.button.close" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -21668,6 +21685,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "恢复购买"
+          }
+        }
+      }
+    },
+    "paywall.button.subscribeMonthlyFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subscribe Monthly · %@ / month"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "订阅月度版 · %@ / 月"
+          }
+        }
+      }
+    },
+    "paywall.button.subscribeYearlyFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subscribe Yearly · %@ / year"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "订阅年度版 · %@ / 年"
           }
         }
       }
@@ -21753,6 +21804,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "支付会在浏览器打开。完成后粘贴成功页或收据里的授权码，即可在这台 Mac 激活 Pro。"
+          }
+        }
+      }
+    },
+    "paywall.plan.yearlyMonthlyEquivalentFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "About %@ / month"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "约 %@ / 月"
+          }
+        }
+      }
+    },
+    "paywall.plan.yearlySavingsFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recommended · Save %d%%"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "推荐 · 省 %d%%"
           }
         }
       }

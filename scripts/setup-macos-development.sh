@@ -108,6 +108,25 @@ command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
 
+is_ssh_session() {
+  [ -n "${SSH_CONNECTION:-}" ] || [ -n "${SSH_TTY:-}" ]
+}
+
+# Finder / Terminal 通常会通过 shell profile 注入 Homebrew PATH，但 `ssh host cmd`
+# 这类非交互会话不会读取相同配置。审计阶段主动加载标准安装路径，避免把“已安装
+# 但不在 PATH”误报为缺失；不执行安装，也不修改远端 shell 配置。
+activate_homebrew_path() {
+  if command_exists brew; then
+    return
+  fi
+
+  if [ -x /opt/homebrew/bin/brew ]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+  elif [ -x /usr/local/bin/brew ]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+  fi
+}
+
 # 只读取指定 xcconfig key，不打印其他私密配置。值可能包含 `=`，因此不能简单
 # 依赖 `awk -F= '$2'`，必须从第一个等号之后截取完整内容。
 xcconfig_value() {
@@ -197,6 +216,8 @@ audit_host_and_xcode() {
 
 audit_tools() {
   log "项目工具"
+
+  activate_homebrew_path
 
   local tool_name
   for tool_name in git python3 rsync ssh curl codesign security plutil xcrun; do
@@ -335,6 +356,11 @@ has_any_identity() {
     | grep -F "${identity_prefix}:" >/dev/null 2>&1
 }
 
+has_certificate() {
+  local certificate_name="$1"
+  security find-certificate -c "$certificate_name" >/dev/null 2>&1
+}
+
 audit_signing() {
   log "Apple 签名身份"
 
@@ -347,12 +373,16 @@ audit_signing() {
   # 共同约束；这里先确认本机确实有一把可用的 Development 私钥。
   if has_any_identity "Apple Development"; then
     ok "Apple Development（Team 由 build settings / provisioning 绑定）"
+  elif has_certificate "Apple Development"; then
+    dev_issue "Apple Development 证书存在，但私钥在当前会话不可用（可能未导入或 login Keychain 被锁定）"
   else
     dev_issue "缺少带私钥的 Apple Development identity"
   fi
 
   if has_identity "Apple Distribution" "$team_id"; then
     ok "Apple Distribution (${team_id})"
+  elif has_certificate "Apple Distribution"; then
+    release_issue "Apple Distribution 证书存在，但 Team ${team_id} 的私钥在当前会话不可用（可能未导入或 login Keychain 被锁定）"
   else
     release_issue "缺少带私钥的 Apple Distribution (${team_id})"
   fi
@@ -605,6 +635,8 @@ prepare_xcode() {
 prepare_homebrew_and_tools() {
   log "准备 Homebrew 与项目工具"
 
+  activate_homebrew_path
+
   if ! command_exists brew; then
     warn "Homebrew 未安装。即将使用 brew.sh 官方安装脚本，运行前会显示安装内容。"
     if ask_yes_no "安装 Homebrew 吗？" "Y"; then
@@ -612,11 +644,7 @@ prepare_homebrew_and_tools() {
     fi
   fi
 
-  if [ -x /opt/homebrew/bin/brew ]; then
-    eval "$(/opt/homebrew/bin/brew shellenv)"
-  elif [ -x /usr/local/bin/brew ]; then
-    eval "$(/usr/local/bin/brew shellenv)"
-  fi
+  activate_homebrew_path
 
   if ! command_exists brew; then
     warn "Homebrew 仍不可用，跳过工具安装"
@@ -688,6 +716,8 @@ prepare_project_dependencies() {
     && ask_yes_no "解析 StarcatDirect 的 Swift Package（会联网下载依赖）吗？" "Y"; then
     (cd "$PROJECT_ROOT" && xcodebuild \
       -resolvePackageDependencies \
+      -disableAutomaticPackageResolution \
+      -onlyUsePackageVersionsFromResolvedFile \
       -project Starcat.xcodeproj \
       -scheme StarcatDirect)
   fi
@@ -741,6 +771,11 @@ prepare_signing_guidance() {
   仅登录 Xcode 账号不等于这些私钥已经存在，脚本不会自动创建或吊销证书。
 EOF
 
+  if is_ssh_session; then
+    warn "当前是 SSH 会话，跳过打开 Xcode；请在这台 Mac 的 GUI 中完成证书导入或创建"
+    return
+  fi
+
   if ask_yes_no "打开 Xcode 的账号设置吗？" "Y"; then
     open -a Xcode
   fi
@@ -755,6 +790,11 @@ prepare_notary_profile() {
   fi
 
   warn "${DEFAULT_NOTARY_PROFILE} 尚不可用；请在 GUI 登录后的本机 Terminal 中配置，SSH 会话可能遇到 Keychain locked"
+  if is_ssh_session; then
+    warn "当前是 SSH 会话，跳过 notary 凭据输入；不要通过聊天或远程命令传递 App-specific password"
+    return
+  fi
+
   if ! ask_yes_no "现在创建 / 更新 ${DEFAULT_NOTARY_PROFILE} 吗？" "N"; then
     return
   fi
@@ -787,6 +827,11 @@ prepare_sparkle_key() {
   fi
 
   warn "Keychain 中没有可读取的 Sparkle 私钥。Starcat 已有线上用户，禁止在这台 Mac 重新生成一组新 key。"
+
+  if is_ssh_session; then
+    warn "当前是 SSH 会话，跳过 Sparkle 私钥导入；请在这台 Mac 的 GUI Terminal 中重跑脚本"
+    return
+  fi
 
   local import_path
   import_path="$SPARKLE_EXPORT_DEFAULT"

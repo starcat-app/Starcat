@@ -43,6 +43,8 @@ struct ProPaywallSheet: View {
     @State private var didActivate: Bool = false
     @State private var isOfferCodeRedemptionPresented = false
     @State private var directLicenseKey: String = ""
+    @State private var selectedProductID: String?
+    @State private var hoveredProductID: String?
 
     private var isDirectBuild: Bool { DistributionChannel.current.isDirect }
 
@@ -71,6 +73,7 @@ struct ProPaywallSheet: View {
                 _ = await directLicenseManager.validateStoredLicense()
             } else {
                 await subscriptionManager.loadProducts()
+                selectDefaultProductIfNeeded()
                 await subscriptionManager.refreshEntitlements()
             }
         }
@@ -97,6 +100,11 @@ struct ProPaywallSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+
+            Spacer(minLength: 8)
+
+            SheetCloseButton { dismiss() }
+                .keyboardShortcut(.cancelAction)
         }
     }
 
@@ -126,24 +134,24 @@ struct ProPaywallSheet: View {
             Text("settings.pro.products.empty")
                 .foregroundStyle(.secondary)
         } else {
-            VStack(spacing: 8) {
+            VStack(spacing: 10) {
                 ForEach(subscriptionManager.products, id: \.id) { product in
+                    productSelectionButton(product)
+                }
+
+                if let selectedProduct {
                     Button {
-                        Task { await purchase(product) }
+                        Task { await purchase(selectedProduct) }
                     } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(product.displayName)
-                                    .font(.callout.weight(.semibold))
-                                Text(product.description)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                        HStack(spacing: 8) {
+                            if subscriptionManager.isPurchasing {
+                                ProgressView()
+                                    .controlSize(.small)
                             }
-                            Spacer()
-                            Text(product.displayPrice)
+                            Text(purchaseButtonTitle(for: selectedProduct))
                                 .font(.callout.weight(.semibold))
                         }
-                        .contentShape(Rectangle())
+                        .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(subscriptionManager.isPurchasing)
@@ -184,14 +192,6 @@ struct ProPaywallSheet: View {
                         openURL(SubscriptionExternalLinks.manageSubscriptions)
                     }
                 }
-            }
-
-            HStack {
-                Spacer()
-                Button("paywall.button.close") {
-                    dismiss()
-                }
-                .keyboardShortcut(.cancelAction)
             }
         }
     }
@@ -240,13 +240,6 @@ struct ProPaywallSheet: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(directLicenseManager.isRequestInFlight || directLicenseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                Button {
-                    dismiss()
-                } label: {
-                    Label("paywall.button.close", systemImage: "xmark.circle")
-                }
-                .keyboardShortcut(.cancelAction)
             }
 
             Text("paywall.direct.footer")
@@ -264,6 +257,163 @@ struct ProPaywallSheet: View {
             Text(titleKey)
                 .fixedSize(horizontal: true, vertical: false)
         }
+    }
+
+    /// 商品行只负责选择方案，避免三个高饱和按钮同时争夺主操作层级。
+    /// 购买动作统一收口到底部 CTA，用户可以先比较价格，再触发 StoreKit 确认。
+    private func productSelectionButton(_ product: Product) -> some View {
+        let isSelected = product.id == selectedProductID
+        let isHovered = product.id == hoveredProductID
+
+        return Button {
+            selectedProductID = product.id
+        } label: {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 7) {
+                        Text(product.displayName)
+                            .font(.callout.weight(.semibold))
+
+                        if ProProductID(rawValue: product.id) == .yearly {
+                            Text(yearlyBadgeText)
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.orange)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.orange.opacity(0.14))
+                                )
+                        }
+                    }
+
+                    Text(product.description)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    if let equivalent = yearlyMonthlyEquivalentText(for: product) {
+                        Text(equivalent)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer(minLength: 8)
+
+                HStack(spacing: 7) {
+                    Text(planPriceText(for: product))
+                        .font(.callout.weight(.semibold))
+                        .monospacedDigit()
+                        .fixedSize(horizontal: true, vertical: false)
+
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.primary)
+                            .accessibilityHidden(true)
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(productBackgroundColor(isSelected: isSelected, isHovered: isHovered))
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(
+                        isSelected ? Color.accentColor.opacity(0.75) : Color.secondary.opacity(0.18),
+                        lineWidth: isSelected ? 1.5 : 1
+                    )
+            }
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .disabled(subscriptionManager.isPurchasing)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .onHover { isHovering in
+            hoveredProductID = isHovering ? product.id : nil
+        }
+    }
+
+    private var selectedProduct: Product? {
+        subscriptionManager.products.first { $0.id == selectedProductID }
+    }
+
+    private var yearlyBadgeText: String {
+        guard let savingsPercent = yearlySavingsPercent else {
+            return String.l10n("settings.pro.plan.badge.bestValue")
+        }
+        return String(
+            format: String.l10n("paywall.plan.yearlySavingsFormat"),
+            savingsPercent
+        )
+    }
+
+    /// 价格始终来自 StoreKit；优惠比例仅用于当前已加载商品之间的展示比较。
+    /// 这样不同商店地区调整价格时，付费墙不会继续显示过期的硬编码折扣。
+    private var yearlySavingsPercent: Int? {
+        guard
+            let monthly = subscriptionManager.products.first(where: { ProProductID(rawValue: $0.id) == .monthly }),
+            let yearly = subscriptionManager.products.first(where: { ProProductID(rawValue: $0.id) == .yearly })
+        else { return nil }
+
+        let monthlyAnnualPrice = NSDecimalNumber(decimal: monthly.price).doubleValue * 12
+        let yearlyPrice = NSDecimalNumber(decimal: yearly.price).doubleValue
+        guard monthlyAnnualPrice > 0, yearlyPrice < monthlyAnnualPrice else { return nil }
+        return Int(((monthlyAnnualPrice - yearlyPrice) / monthlyAnnualPrice * 100).rounded())
+    }
+
+    private func yearlyMonthlyEquivalentText(for product: Product) -> String? {
+        guard ProProductID(rawValue: product.id) == .yearly else { return nil }
+        let monthlyEquivalent = product.price / 12
+        let displayPrice = monthlyEquivalent.formatted(product.priceFormatStyle)
+        return String(
+            format: String.l10n("paywall.plan.yearlyMonthlyEquivalentFormat"),
+            displayPrice
+        )
+    }
+
+    private func planPriceText(for product: Product) -> String {
+        let key: String
+        switch ProProductID(rawValue: product.id) {
+        case .monthly: key = "settings.pro.plan.price.monthlyFormat"
+        case .yearly: key = "settings.pro.plan.price.yearlyFormat"
+        case .lifetime: key = "settings.pro.plan.price.lifetimeFormat"
+        case .none: return product.displayPrice
+        }
+        return String(format: String.l10n(key), product.displayPrice)
+    }
+
+    private func purchaseButtonTitle(for product: Product) -> String {
+        let key: String
+        switch ProProductID(rawValue: product.id) {
+        case .monthly: key = "paywall.button.subscribeMonthlyFormat"
+        case .yearly: key = "paywall.button.subscribeYearlyFormat"
+        case .lifetime: key = "paywall.button.buyLifetimeFormat"
+        case .none: key = "settings.pro.plan.subscribeFormat"
+        }
+        return String(format: String.l10n(key), product.displayPrice)
+    }
+
+    private func productBackgroundColor(isSelected: Bool, isHovered: Bool) -> Color {
+        if isSelected {
+            return Color.accentColor.opacity(0.12)
+        }
+        return Color.secondary.opacity(isHovered ? 0.10 : 0.06)
+    }
+
+    private func selectDefaultProductIfNeeded() {
+        if let selectedProductID,
+           subscriptionManager.products.contains(where: { $0.id == selectedProductID }) {
+            return
+        }
+
+        // 年付是推荐档；如果商店暂未返回该商品，仍保证首个可用方案可购买。
+        selectedProductID = subscriptionManager.products.first {
+            ProProductID(rawValue: $0.id) == .yearly
+        }?.id ?? subscriptionManager.products.first?.id
     }
 
     private func paywallBenefit(_ systemImage: String, _ key: LocalizedStringKey) -> some View {

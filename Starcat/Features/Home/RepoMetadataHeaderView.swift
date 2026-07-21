@@ -515,25 +515,27 @@ struct RepoShareMenu: View {
             if canCreateAIShare {
                 Divider()
                 Button(action: createAIShare) {
-                    Label(
-                        isShared ? "repo.share.ai.created" : "repo.share.ai.create",
-                        systemImage: isShared ? "sparkles.rectangle.stack.fill" : "sparkles.rectangle.stack"
-                    )
+                    if isSharing {
+                        Label {
+                            Text("repo.share.ai.create")
+                        } icon: {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                    } else {
+                        Label(
+                            isShared ? "repo.share.ai.created" : "repo.share.ai.create",
+                            systemImage: isShared ? "sparkles.rectangle.stack.fill" : "sparkles.rectangle.stack"
+                        )
+                    }
                 }
                 .disabled(isSharing)
             }
         } label: {
-            if isSharing {
-                ProgressView()
-                    .controlSize(.small)
-                    .frame(
-                        width: ToolbarIconMetrics.frameSize,
-                        height: ToolbarIconMetrics.frameSize
-                    )
-            } else {
-                ToolbarIcon("square.and.arrow.up.circle")
-                    .accessibilityLabel(Text("repo.share.button.label"))
-            }
+            // macOS 的 Menu 由 AppKit 承载；异步操作期间替换 label 的根视图类型，
+            // 可能让 toolbar 复用到空的菜单宿主，因此入口图标必须始终保持稳定。
+            ToolbarIcon("square.and.arrow.up.circle")
+                .accessibilityLabel(Text("repo.share.button.label"))
         }
         .accessibilityLabel(Text("repo.share.button.label"))
         .help("repo.share.button.help")
