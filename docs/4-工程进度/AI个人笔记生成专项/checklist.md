@@ -19,7 +19,7 @@
 ## 2. 笔记保存语义
 
 - [x] `RepoNoteRepositoryProtocol` 支持显式传入 `isAIGenerated`。
-- [ ] AI 草稿确认保存时写入 `is_ai_generated = true`。
+- [x] AI 草稿确认保存时写入 `is_ai_generated = true`。
 - [x] 用户后续手工修改或清空笔记时写入 `is_ai_generated = false`。
 - [x] 新增 Repository 单测，覆盖 AI 标记设置、手工修改清除与删除语义。
 
@@ -41,20 +41,20 @@
 - [x] 步骤状态覆盖 pending / running / completed / skipped / failed / cancelled。
 - [x] 实现总体阶段 idle / running / awaitingConfirmation / applying / completed / failed / cancelled。
 - [x] 每个 `await` 返回后校验 generation ID 与取消状态，防止旧任务回写新 UI。
-- [ ] 切换仓库、折叠分区或点击取消时，中止生成且不写库。
+- [x] 切换仓库、折叠分区或点击取消时，中止生成且不写库。
 - [x] 生成期间笔记发生变化时阻止强制覆盖，保留草稿并提示重新生成。
 - [x] 保存失败时保留 AI 草稿，支持用户重试。
 - [x] 新增 ViewModel 单元测试，覆盖缓存命中、下载、错误步骤、流式、取消、冲突与保存重试。
 
 ## 5. UI 与交互
 
-- [ ] 个人笔记折叠标题行右侧新增 AI 生成入口。
-- [ ] 标题行生成期显示紧凑进度：已完成数 / 总步骤、当前步骤和成功 / 失败状态。
-- [ ] 展开后显示全量步骤列表，可看见 README 下载的 completed / skipped / failed。
-- [ ] 流式草稿单独显示，提供取消、重试、放弃和“使用此草稿”操作。
-- [ ] 保留个人笔记折叠标题整行可点击，且不形成嵌套 Button。
-- [ ] 所有 `.buttonStyle(.plain)` 的 Button 禁用 focus ring，文字 / 图标仅使用 `.primary` / `.secondary`。
-- [ ] 动画遵循 Reduce Motion，步骤状态同时用图标与文字表达，不仅依赖颜色。
+- [x] 个人笔记折叠标题行右侧新增 AI 生成入口。
+- [x] 标题行生成期显示紧凑进度：已完成数 / 总步骤、当前步骤和成功 / 失败状态。
+- [x] 展开后显示全量步骤列表，可看见 README 下载的 completed / skipped / failed。
+- [x] 流式草稿单独显示，提供取消、重试、放弃和“使用此草稿”操作。
+- [x] 保留个人笔记折叠标题整行可点击，且不形成嵌套 Button。
+- [x] 所有 `.buttonStyle(.plain)` 的 Button 禁用 focus ring，文字 / 图标仅使用 `.primary` / `.secondary`。
+- [x] 动画遵循 Reduce Motion，步骤状态同时用图标与文字表达，不仅依赖颜色。
 - [ ] 不可用时给出稳定解锁原因与辅助功能标签。
 
 ## 6. 国际化、测试与验收

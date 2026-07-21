@@ -58,6 +58,9 @@ struct RepoNotesSection: View {
 
     @State private var viewModel: RepoNotesSectionViewModel?
 
+    /// AI 草稿与正式笔记 buffer 分离；只有用户确认后才通过 `applyAIDraft()` 写库。
+    @State private var aiGenerationViewModel: RepoNoteAIGenerationViewModel?
+
     /// 笔记本地编辑 buffer；与 viewModel.note?.content 分离，避免边输入边重新加载。
     @State private var editingContent: String = ""
 
@@ -109,6 +112,12 @@ struct RepoNotesSection: View {
         .toast(message: $statusToast, icon: "heart.fill")
         .task(id: repo.id) {
             await onRepoChange(to: repo.id)
+        }
+        .onChange(of: isNotesExpanded) { _, expanded in
+            // 折叠时中止正在进行的网络 / AI 任务；已生成的草稿仍保留在标题状态中。
+            if !expanded, aiGenerationViewModel?.phase == .running {
+                aiGenerationViewModel?.cancel()
+            }
         }
         // 监听 README 加载完成事件 → 把 unread 升级为 read（仅匹配当前 repo.id）。
         //
@@ -214,32 +223,55 @@ struct RepoNotesSection: View {
     @ViewBuilder
     private var notesDisclosure: some View {
         DisclosureGroup(isExpanded: $isNotesExpanded) {
-            notesEditor
-                .padding(.top, 4)
-        } label: {
-            Button {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
-                    isNotesExpanded.toggle()
+            VStack(alignment: .leading, spacing: 10) {
+                notesEditor
+                if let aiViewModel = aiGenerationViewModel,
+                   aiViewModel.phase != .idle {
+                    RepoNoteAIGenerationPanel(
+                        viewModel: aiViewModel,
+                        onRetry: startAIGeneration,
+                        onCancel: { aiViewModel.cancel() },
+                        onDiscard: { aiViewModel.discard() },
+                        onApply: { Task { await applyAIDraft() } }
+                    )
                 }
-            } label: {
-                HStack(spacing: 8) {
-                    Label("repo.privateNotes", systemImage: hasNoteContent ? "note.text" : "note.text.badge.plus")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if let edited = viewModel?.note?.editedAt {
-                        Text(String(format: String.l10n("repo.lastEditedFormat"), formattedEditedAt(edited)))
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    SaveIndicator(state: saveState, hasUnsaved: hasUnsavedChanges)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .help(isNotesExpanded ? Text("repo.notesCollapse") : Text("repo.notesExpand"))
+            .padding(.top, 4)
+        } label: {
+            ZStack(alignment: .trailing) {
+                Button {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                        isNotesExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Label("repo.privateNotes", systemImage: hasNoteContent ? "note.text" : "note.text.badge.plus")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if let edited = viewModel?.note?.editedAt {
+                            Text(String(format: String.l10n("repo.lastEditedFormat"), formattedEditedAt(edited)))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        SaveIndicator(state: saveState, hasUnsaved: hasUnsavedChanges)
+                    }
+                    .padding(.trailing, 220)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help(isNotesExpanded ? Text("repo.notesCollapse") : Text("repo.notesExpand"))
+
+                if let aiViewModel = aiGenerationViewModel {
+                    RepoNoteAIGenerationHeaderControl(
+                        viewModel: aiViewModel,
+                        onGenerate: startAIGeneration,
+                        onCancel: { aiViewModel.cancel() }
+                    )
+                }
+            }
         }
         .disclosureGroupStyle(.automatic)
     }
@@ -333,9 +365,18 @@ struct RepoNotesSection: View {
     // MARK: - 行为
 
     private func onRepoChange(to newId: Int64) async {
+        aiGenerationViewModel?.discard()
         if viewModel == nil {
             viewModel = RepoNotesSectionViewModel(repoNoteRepository: dependencies.repoNoteRepository)
         }
+        aiGenerationViewModel = RepoNoteAIGenerationViewModel(
+            readmeProvider: RepoNoteAIReadmeProvider(
+                repository: dependencies.readmeRepository,
+                readmeAPI: dependencies.readmeAPI
+            ),
+            aiService: dependencies.repoAIInsightService,
+            maxReadmeLength: dependencies.settings.aiReadmeTruncateLength
+        )
         // 切换前 flush 上一个 repo 的 buffer，避免丢失
         if let prevId = previousRepoId, prevId != newId, hasUnsavedChanges {
             await viewModel?.saveContent(repoId: prevId, content: editingContent)
@@ -367,12 +408,53 @@ struct RepoNotesSection: View {
     private func flushContent() async {
         guard let vm = viewModel, hasUnsavedChanges else { return }
         saveState = .saving
-        await vm.saveContent(repoId: repo.id, content: editingContent)
+        let succeeded = await vm.saveContent(repoId: repo.id, content: editingContent)
+        guard succeeded else {
+            saveState = .idle
+            return
+        }
         hasUnsavedChanges = false
         saveState = .saved
         if vm.errorMessage == nil, !editingContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             NotificationCenter.default.post(name: .gettingStartedDidOrganizeRepo, object: nil)
         }
+        scheduleSemanticIndexRefresh()
+    }
+
+    /// 从当前编辑 buffer 冻结原笔记后启动 AI，不要求用户先等防抖保存。
+    private func startAIGeneration() {
+        guard let aiGenerationViewModel else { return }
+        if !isNotesExpanded {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                isNotesExpanded = true
+            }
+        }
+        aiGenerationViewModel.start(repo: repo, existingNote: editingContent)
+    }
+
+    /// 只有通过快照冲突检查后才写入 AI 草稿，并复用原笔记的索引刷新链路。
+    private func applyAIDraft() async {
+        guard let vm = viewModel,
+              let aiViewModel = aiGenerationViewModel,
+              let draft = aiViewModel.beginApplying(currentNote: editingContent)
+        else { return }
+
+        saveState = .saving
+        let succeeded = await vm.saveContent(
+            repoId: repo.id,
+            content: draft,
+            isAIGenerated: true
+        )
+        aiViewModel.finishApplying(success: succeeded)
+        guard succeeded else {
+            saveState = .idle
+            return
+        }
+
+        editingContent = draft
+        hasUnsavedChanges = false
+        saveState = .saved
+        NotificationCenter.default.post(name: .gettingStartedDidOrganizeRepo, object: nil)
         scheduleSemanticIndexRefresh()
     }
 
@@ -521,13 +603,24 @@ final class RepoNotesSectionViewModel {
 
     /// 单独修改正文（防抖之后调用）。
     /// 空字符串视为"无内容"（content=nil），但保留行（status 仍存在）。
-    func saveContent(repoId: Int64, content: String) async {
+    @discardableResult
+    func saveContent(
+        repoId: Int64,
+        content: String,
+        isAIGenerated: Bool = false
+    ) async -> Bool {
         do {
             let normalized: String? = content.isEmpty ? nil : content
-            try await repoNoteRepository.updateContent(repoId: repoId, content: normalized)
+            try await repoNoteRepository.updateContent(
+                repoId: repoId,
+                content: normalized,
+                isAIGenerated: isAIGenerated
+            )
             await loadFor(repoId: repoId)
+            return true
         } catch {
             errorMessage = "repo.notes.saveContentFailed"
+            return false
         }
     }
 

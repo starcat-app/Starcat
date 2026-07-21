@@ -60,6 +60,22 @@ struct RepoNotesSectionViewModelTests {
         #expect(vm.note?.content == "this is a note")
     }
 
+    @Test("saveContent: AI 确认保存显式标记内容来源")
+    func saveAIContentMarksSource() async throws {
+        let (vm, _, db) = try makeVM()
+        try await db.insertRepoFixture(id: 1)
+
+        let succeeded = await vm.saveContent(
+            repoId: 1,
+            content: "AI draft",
+            isAIGenerated: true
+        )
+
+        #expect(succeeded)
+        #expect(vm.note?.content == "AI draft")
+        #expect(vm.note?.isAIGenerated == true)
+    }
+
     @Test("saveContent: 空字符串归一为 nil，保留行（status 仍存在）")
     func saveContentEmptyNormalized() async throws {
         let (vm, _, db) = try makeVM()
