@@ -170,6 +170,7 @@ xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' \
 | `docs/3-设计/详细设计/*.md` | 模块详细设计 |
 | `docs/5-规范/*.md` | UI / i18n / 开源致谢 等强制规范 |
 | `docs/5-规范/Git-提交规范.md` | Git commit message 格式与更新日志分类规则 |
+| `docs/5-规范/Changelog-更新规范.md` | Changelog 询问时机、授权边界、日常文件范围与发版生成规则 |
 | `docs/6-发版与上架/SOP-发版流程.md` | 发版 SOP（git tag 自动驱动版本号） |
 
 > **阅读顺序建议**：先读 `CLAUDE.md` 了解概览，再根据任务需要查阅对应文档。
@@ -279,6 +280,7 @@ Section {
 - 修改任何文档前，先检查 `docs/1-立项/开发前问题清单.md` 确认是否有相关决策
 - 跨文档的一致性修改（如技术栈变更），需要同步更新所有相关文档
 - 新增设计决策时，在 `docs/1-立项/开发前问题清单.md` 中记录
+- 所有 Changelog 询问时机、授权边界、日常文件范围与发版生成规则，必须遵循 [`docs/5-规范/Changelog-更新规范.md`](docs/5-规范/Changelog-更新规范.md)
 
 ### 代码规范
 

@@ -224,6 +224,7 @@ docs/
 - 代码必须添加必要注释；**较复杂的代码（actor / Concurrency / WKWebView delegate / URLProtocol / FTS5 / 三阶段 SWR 这类）必须写详细的"为什么 + 关键约束 + 已踩过的坑"级注释**，参考 `Starcat/Features/Home/ReadmeViewModel.swift` / `Starcat/Shared/Components/ReadmeWebView.swift` / `StarcatTests/URLProtocolStub.swift` 三份样板
 - **dong4j 是 Swift 初学者**：写新代码或解释已有代码时，遇到关键 Swift / SwiftUI / Concurrency / WebKit / GRDB 概念应主动提示去查 `docs/7-工具与脚本/Swift-学习索引.md` 对应条目
 - 所有 Git commit message 必须遵循 [`docs/5-规范/Git-提交规范.md`](docs/5-规范/Git-提交规范.md)，确保提交可以被脚本稳定转换为更新日志
+- 所有 Changelog 询问时机、授权边界、日常文件范围与发版生成规则，必须遵循 [`docs/5-规范/Changelog-更新规范.md`](docs/5-规范/Changelog-更新规范.md)
 - 详细开发规范见 `docs/` 各文档
 
 ### UI 设计契约：DESIGN.md（强制，2026-07-04 起生效）
