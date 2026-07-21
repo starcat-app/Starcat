@@ -55,11 +55,11 @@
 - [x] 保留个人笔记折叠标题整行可点击，且不形成嵌套 Button。
 - [x] 所有 `.buttonStyle(.plain)` 的 Button 禁用 focus ring，文字 / 图标仅使用 `.primary` / `.secondary`。
 - [x] 动画遵循 Reduce Motion，步骤状态同时用图标与文字表达，不仅依赖颜色。
-- [ ] 不可用时给出稳定解锁原因与辅助功能标签。
+- [x] 不可用时给出稳定解锁原因与辅助功能标签。
 
 ## 6. 国际化、测试与验收
 
-- [ ] 新增 en / zh-Hans 国际化 key，保持 `Localizable.xcstrings` 目录编辑与最小 diff。
+- [x] 新增 en / zh-Hans 国际化 key，保持 `Localizable.xcstrings` 目录编辑与最小 diff。
 - [ ] 新增人工验收步骤，覆盖本地 README、下载 README、既有笔记、取消、冲突、失败重试和主题切换。
 - [ ] 新增 Swift 关键概念学习索引引用，指向本专项的 `@Observable`、`Task`、`AsyncThrowingStream` 与 SwiftUI 组合位置。
 - [ ] 运行专项单测并通过。
