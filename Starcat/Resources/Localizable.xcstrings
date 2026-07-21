@@ -38995,13 +38995,45 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Send the README and current personal note to your configured AI provider to generate an editable draft"
+            "value" : "Send the README to your configured AI provider to generate an editable personal note draft"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "将 README 和当前个人笔记发送到你配置的 AI Provider，以生成可编辑草稿"
+            "value" : "将 README 发送到你配置的 AI Provider，以生成可编辑的个人笔记草稿"
+          }
+        }
+      }
+    },
+    "repo.notes.ai.optimize" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Improve with AI"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 优化"
+          }
+        }
+      }
+    },
+    "repo.notes.ai.optimizeHelp" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send the README and current personal note to your configured AI provider to create an editable improved draft"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将 README 和当前个人笔记发送到你配置的 AI Provider，以生成可编辑的优化草稿"
           }
         }
       }

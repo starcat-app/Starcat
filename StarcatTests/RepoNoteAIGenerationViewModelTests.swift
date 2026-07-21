@@ -56,8 +56,23 @@ struct RepoNoteAIGenerationViewModelTests {
         try await waitUntil { viewModel.phase == .failed }
 
         #expect(viewModel.stepStates[.checkingAI] == .failed(messageKey: "repo.notes.ai.error.generic"))
+        #expect(viewModel.errorDetail == AIClientError.missingAPIKey.errorDescription)
         #expect(readme.cacheReadCount == 0)
         #expect(readme.downloadCount == 0)
+    }
+
+    @Test("未知底层错误不进入用户可见详情")
+    func unknownErrorIsRedacted() async throws {
+        let viewModel = RepoNoteAIGenerationViewModel(
+            readmeProvider: RepoNoteReadmeStub(cached: nil, downloadError: RepoNoteUnknownError.sensitive),
+            aiService: RepoNoteDraftStub(result: "draft")
+        )
+
+        viewModel.start(repo: Self.repo, existingNote: "")
+        try await waitUntil { viewModel.phase == .failed }
+
+        #expect(viewModel.errorMessageKey == "repo.notes.ai.error.generic")
+        #expect(viewModel.errorDetail == nil)
     }
 
     @Test("README 下载失败精确标记下载步骤")
@@ -173,6 +188,12 @@ struct RepoNoteAIGenerationViewModelTests {
 
 private enum RepoNoteViewModelTestError: Error {
     case timeout
+}
+
+private enum RepoNoteUnknownError: Error, LocalizedError {
+    case sensitive
+
+    var errorDescription: String? { "provider-response-body-must-not-appear" }
 }
 
 @MainActor

@@ -11,6 +11,7 @@ import SwiftUI
 /// 折叠标题行右侧的紧凑控件。与整行展开 Button 是 ZStack 兄弟，禁止嵌套 Button。
 struct RepoNoteAIGenerationHeaderControl: View {
     let viewModel: RepoNoteAIGenerationViewModel
+    let hasExistingNote: Bool
     let onGenerate: () -> Void
     let onCancel: () -> Void
 
@@ -52,15 +53,23 @@ struct RepoNoteAIGenerationHeaderControl: View {
 
     private var generateButton: some View {
         Button(action: onGenerate) {
-            Label("repo.notes.ai.generate", systemImage: "sparkles")
+            Label(generateTitleKey, systemImage: "sparkles")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .labelStyle(.titleAndIcon)
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .help(Text("repo.notes.ai.generateHelp"))
-        .accessibilityHint(Text("repo.notes.ai.generateHelp"))
+        .help(Text(generateHelpKey))
+        .accessibilityHint(Text(generateHelpKey))
+    }
+
+    private var generateTitleKey: LocalizedStringKey {
+        hasExistingNote ? "repo.notes.ai.optimize" : "repo.notes.ai.generate"
+    }
+
+    private var generateHelpKey: LocalizedStringKey {
+        hasExistingNote ? "repo.notes.ai.optimizeHelp" : "repo.notes.ai.generateHelp"
     }
 
     private var cancelButton: some View {

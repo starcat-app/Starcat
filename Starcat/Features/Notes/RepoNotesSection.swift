@@ -279,6 +279,7 @@ struct RepoNotesSection: View {
                 if let aiViewModel = aiGenerationViewModel {
                     RepoNoteAIGenerationHeaderControl(
                         viewModel: aiViewModel,
+                        hasExistingNote: hasNoteContent,
                         onGenerate: startAIGeneration,
                         onCancel: { aiViewModel.cancel() }
                     )

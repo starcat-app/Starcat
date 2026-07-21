@@ -248,7 +248,24 @@ final class RepoNoteAIGenerationViewModel {
         stepStates[step] = .failed(messageKey: key)
         phase = .failed
         errorMessageKey = key
-        errorDetail = error.localizedDescription
+        errorDetail = Self.userFacingDetail(for: error)
+    }
+
+    /// 只把经过本项目审计、明确提供用户文案的错误类型送到 UI。
+    /// 未知底层错误可能包含数据库路径、HTTP 响应片段或 SDK dump，只显示通用 i18n 错误。
+    private static func userFacingDetail(for error: Error) -> String? {
+        switch error {
+        case let error as RepoNoteAIGenerationError:
+            return error.errorDescription
+        case let error as RepoAIInsightError:
+            return error.errorDescription
+        case let error as AIClientError:
+            return error.errorDescription
+        case let error as EntitlementGateError:
+            return error.errorDescription
+        default:
+            return nil
+        }
     }
 
     private func cancelCurrentTask(markVisible: Bool) {
