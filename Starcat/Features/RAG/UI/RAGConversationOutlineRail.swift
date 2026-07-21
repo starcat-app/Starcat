@@ -85,10 +85,12 @@ struct RAGConversationOutlineRail: View {
     @State private var hoverClearTask: Task<Void, Never>?
 
     private let idleDashWidth: CGFloat = 10
-    private let activeDashWidth: CGFloat = 16
-    private let firstNeighborDashWidth: CGFloat = 14
-    private let secondNeighborDashWidth: CGFloat = 12
+    private let activeDashWidth: CGFloat = 24
+    private let firstNeighborDashWidth: CGFloat = 18
+    private let secondNeighborDashWidth: CGFloat = 14
     private let dashHeight: CGFloat = 2
+    private let activeDashHeight: CGFloat = 3
+    private let dashHitHeight: CGFloat = 8
     private let dashSpacing: CGFloat = 4
     private let previewCardWidth: CGFloat = 280
 
@@ -143,9 +145,9 @@ struct RAGConversationOutlineRail: View {
                 .fill(style.color)
                 .frame(
                     width: style.width,
-                    height: dashHeight
+                    height: style.height
                 )
-                .frame(width: activeDashWidth, height: dashHeight + 6, alignment: .leading)
+                .frame(width: activeDashWidth, height: dashHitHeight, alignment: .leading)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -159,20 +161,23 @@ struct RAGConversationOutlineRail: View {
     }
 
     /// hover 波峰向上下各扩散两级；命中区仍固定为最大宽度，动画时不会改变指针判定范围。
-    private func dashStyle(at index: Int, hoveredIndex: Int?) -> (width: CGFloat, color: Color) {
+    private func dashStyle(
+        at index: Int,
+        hoveredIndex: Int?
+    ) -> (width: CGFloat, height: CGFloat, color: Color) {
         guard let hoveredIndex else {
-            return (idleDashWidth, Color.secondary.opacity(0.45))
+            return (idleDashWidth, dashHeight, Color.secondary.opacity(0.45))
         }
 
         switch abs(index - hoveredIndex) {
         case 0:
-            return (activeDashWidth, Color.primary.opacity(0.85))
+            return (activeDashWidth, activeDashHeight, Color.primary.opacity(0.95))
         case 1:
-            return (firstNeighborDashWidth, Color.primary.opacity(0.55))
+            return (firstNeighborDashWidth, dashHeight, Color.primary.opacity(0.60))
         case 2:
-            return (secondNeighborDashWidth, Color.secondary.opacity(0.55))
+            return (secondNeighborDashWidth, dashHeight, Color.secondary.opacity(0.55))
         default:
-            return (idleDashWidth, Color.secondary.opacity(0.45))
+            return (idleDashWidth, dashHeight, Color.secondary.opacity(0.45))
         }
     }
 

@@ -7,12 +7,15 @@
 
 import SwiftUI
 
-/// RAG 对话正文与左侧会话标题共用的字号 token。
+/// RAG 对话区的阅读层级 token。
 ///
-/// 用户问题、AI 正文和 Composer 必须保持同一字号；字重仍由各自场景决定，
-/// 避免选中会话标题的 semibold 意外传到正文。
+/// 左侧标题、用户问题和 Composer 维持紧凑基线；AI 正文单独提高一级，补偿
+/// Markdown regular 相对选中标题 semibold 的视觉尺寸差。执行步骤再按标题/详情递减。
 enum RAGConversationTypography {
     static let text = StarcatTypography.bodyEmphasis
+    static let answerText = StarcatTypography.rowTitle
+    static let executionTitle = StarcatTypography.bodyEmphasis
+    static let executionDetail = StarcatTypography.body
 }
 
 enum RAGFontRole {

@@ -203,8 +203,8 @@ struct RAGMarkdownText: View {
             .text {
                 ForegroundColor(.primary)
                 // MarkdownUI 使用自己的 FontProperties，不读取外层 SwiftUI font。
-                // 必须在 theme 内显式绑定会话字号 token，完成态与流式冻结块才会真正跟随左栏标题。
-                FontSize(interfaceScale.scaled(RAGConversationTypography.text.pointSize))
+                // 必须在 theme 内显式绑定回答字号，完成态与流式冻结块才会同步生效。
+                FontSize(interfaceScale.scaled(RAGConversationTypography.answerText.pointSize))
             }
             .code {
                 FontFamilyVariant(.monospaced)

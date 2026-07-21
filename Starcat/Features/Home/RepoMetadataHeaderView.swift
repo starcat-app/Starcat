@@ -675,16 +675,18 @@ struct RepoShareTaskSheet: View {
         HStack {
             switch job.state {
             case .checkingCache, .generatingSummary, .creatingLink:
-                Button(role: .destructive) {
-                    onCancel()
-                } label: {
-                    Label("repo.share.progress.cancel", systemImage: "xmark.circle")
-                }
-
                 Button {
                     dismiss()
                 } label: {
                     Label("repo.share.progress.hide", systemImage: "rectangle.compress.vertical")
+                }
+
+                Spacer()
+
+                Button(role: .destructive) {
+                    onCancel()
+                } label: {
+                    Label("repo.share.progress.cancel", systemImage: "xmark.circle")
                 }
 
             case .success(let url):
@@ -711,9 +713,9 @@ struct RepoShareTaskSheet: View {
                 }
             }
 
-            Spacer()
-
             if !job.state.isRunning {
+                Spacer()
+
                 Button("repo.share.success.close") {
                     dismiss()
                 }

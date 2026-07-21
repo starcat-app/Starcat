@@ -113,7 +113,10 @@ struct RAGExecutionTimeline: View {
                             height: RAGMessageAvatarMetrics.size
                         )
                     Text(titleKey(for: step.kind))
-                        .font(interfaceScale.font(.body, weight: .medium))
+                        .font(interfaceScale.font(
+                            RAGConversationTypography.executionTitle,
+                            weight: .medium
+                        ))
                         .foregroundStyle(.primary)
                     // 摘要、耗时与 chevron 均紧随标题，和主窗口 AI 对话的 Think 行保持一致；
                     // 此处不能用 Spacer 将折叠信息推到窗口最右侧。
@@ -145,10 +148,10 @@ struct RAGExecutionTimeline: View {
                             // 步骤继续复用现有 Text 布局，不跟着数组快照重复测量。
                             RAGReasoningDetailText(text: detail)
                                 .equatable()
-                                .font(interfaceScale.font(.caption))
+                                .font(interfaceScale.font(RAGConversationTypography.executionDetail))
                         } else {
                             Label(detail, systemImage: "minus")
-                                .font(interfaceScale.font(.caption))
+                                .font(interfaceScale.font(RAGConversationTypography.executionDetail))
                                 .foregroundStyle(.secondary)
                                 .labelStyle(.titleAndIcon)
                         }
