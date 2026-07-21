@@ -54089,6 +54089,23 @@
         }
       }
     },
+    "settings.services.health.versionSuffixFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : ", Version: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : ", 版本号: %@"
+          }
+        }
+      }
+    },
     "settings.services.health.serverError" : {
       "extractionState" : "stale",
       "localizations" : {

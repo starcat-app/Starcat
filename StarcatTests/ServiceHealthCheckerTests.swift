@@ -6,7 +6,7 @@
 //  对应实现：`Starcat/Core/Network/ServiceHealthChecker.swift`
 //
 //  关键路径：
-//   - 200 → ok(200)
+//   - 200 → ok(200, version?)；旧后端缺少 version 时仍兼容
 //   - 401 → unauthorized(401)
 //   - 4xx 非 401（如 404 / 405 / 400）→ serverError(code)
 //   - 5xx → serverError(code)
@@ -53,24 +53,51 @@ struct ServiceHealthCheckerTests {
         }
     }
 
-    /// 构造 ping 200 的标准 envelope body（`data.service` 与探测目标一致）。
-    private func pingOKBody(for service: ThirdPartyService) -> Data {
-        let json = #"{"schema_version":1,"data":{"service":"\#(service.rawValue)","ok":true}}"#
+    /// 构造 ping 200 的标准 envelope body；version 可选用于覆盖新旧后端兼容路径。
+    private func pingOKBody(for service: ThirdPartyService, version: String? = nil) -> Data {
+        let versionField = version.map { ",\"version\":\"\($0)\"" } ?? ""
+        let json = #"{"schema_version":1,"data":{"service":"\#(service.rawValue)","ok":true\#(versionField)}}"#
         return Data(json.utf8)
     }
 
-    private func stubPingOK(service: ThirdPartyService, statusCode: Int = 200) {
-        stubAll(statusCode: statusCode, body: pingOKBody(for: service))
+    private func stubPingOK(
+        service: ThirdPartyService,
+        statusCode: Int = 200,
+        version: String? = nil
+    ) {
+        stubAll(statusCode: statusCode, body: pingOKBody(for: service, version: version))
     }
 
     // MARK: - 单步探测状态机（R-03 2026-06-11）
 
-    @Test("200 + service 匹配 → ok(200)")
+    @Test("200 + service 匹配且无 version → 成功但不显示副文本")
     func ping200ReturnsOk() async {
         let checker = makeChecker()
         stubPingOK(service: .trending)
         let outcome = await checker.check(service: .trending, baseURL: fakeBaseURL, apiKey: "sk-real")
-        #expect(outcome == .ok(statusCode: 200))
+        #expect(outcome == .ok(statusCode: 200, version: nil))
+        #expect(outcome.subtitle.isEmpty)
+        #expect(outcome.successVersionSuffix == nil)
+    }
+
+    @Test("200 + version → 成功并显示后端版本")
+    func ping200ReturnsVersion() async {
+        let checker = makeChecker()
+        stubPingOK(service: .trending, version: "1.2.3")
+        let outcome = await checker.check(service: .trending, baseURL: fakeBaseURL, apiKey: "sk-real")
+        #expect(outcome == .ok(statusCode: 200, version: "1.2.3"))
+        #expect(outcome.subtitle == "1.2.3")
+        #expect(outcome.successVersionSuffix?.hasSuffix("1.2.3") == true)
+    }
+
+    @Test("200 + 空白 version → 成功但不显示副文本")
+    func ping200IgnoresBlankVersion() async {
+        let checker = makeChecker()
+        stubPingOK(service: .trending, version: "   ")
+        let outcome = await checker.check(service: .trending, baseURL: fakeBaseURL, apiKey: "sk-real")
+        #expect(outcome == .ok(statusCode: 200, version: nil))
+        #expect(outcome.subtitle.isEmpty)
+        #expect(outcome.successVersionSuffix == nil)
     }
 
     @Test("200 但 service 不匹配 → serviceMismatch（典型：地址填错端口 / 服务）")
