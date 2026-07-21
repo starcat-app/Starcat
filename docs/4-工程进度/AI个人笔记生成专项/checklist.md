@@ -25,9 +25,9 @@
 
 ## 3. README 准备与 AI 流式生成
 
-- [ ] 新增可测试的 README 准备边界：先查本地 Markdown 缓存，缺失时下载原始 README Markdown。
-- [ ] README 主记录未建立时，先刷新 README 主记录，再下载 Markdown。
-- [ ] 无 README、下载失败或 Markdown 仍为空时结束流程并显示可诊断错误。
+- [x] 新增可测试的 README 准备边界：先查本地 Markdown 缓存，缺失时下载原始 README Markdown。
+- [x] README 主记录未建立时，先刷新 README 主记录，再下载 Markdown。
+- [x] 无 README、下载失败或 Markdown 仍为空时结束流程并显示可诊断错误。
 - [x] AI 就绪预检可在 README 网络请求之前执行，避免无配置时无意义下载。
 - [x] 新增个人笔记专用 prompt，要求快速上手、必要大纲和简短描述，并显式保留既有笔记。
 - [x] 输入按 UI 语言指定输出语言，README 和笔记被标记为不可信数据。
@@ -37,14 +37,14 @@
 
 ## 4. 状态机与取消安全
 
-- [ ] 实现七个固定步骤：检查 AI、读取 README、下载 README、准备笔记、AI 生成、等待确认、保存笔记。
-- [ ] 步骤状态覆盖 pending / running / completed / skipped / failed / cancelled。
-- [ ] 实现总体阶段 idle / running / awaitingConfirmation / applying / completed / failed / cancelled。
-- [ ] 每个 `await` 返回后校验 generation ID 与取消状态，防止旧任务回写新 UI。
+- [x] 实现七个固定步骤：检查 AI、读取 README、下载 README、准备笔记、AI 生成、等待确认、保存笔记。
+- [x] 步骤状态覆盖 pending / running / completed / skipped / failed / cancelled。
+- [x] 实现总体阶段 idle / running / awaitingConfirmation / applying / completed / failed / cancelled。
+- [x] 每个 `await` 返回后校验 generation ID 与取消状态，防止旧任务回写新 UI。
 - [ ] 切换仓库、折叠分区或点击取消时，中止生成且不写库。
-- [ ] 生成期间笔记发生变化时阻止强制覆盖，保留草稿并提示重新生成。
-- [ ] 保存失败时保留 AI 草稿，支持用户重试。
-- [ ] 新增 ViewModel 单元测试，覆盖缓存命中、下载、错误步骤、流式、取消、冲突与保存重试。
+- [x] 生成期间笔记发生变化时阻止强制覆盖，保留草稿并提示重新生成。
+- [x] 保存失败时保留 AI 草稿，支持用户重试。
+- [x] 新增 ViewModel 单元测试，覆盖缓存命中、下载、错误步骤、流式、取消、冲突与保存重试。
 
 ## 5. UI 与交互
 

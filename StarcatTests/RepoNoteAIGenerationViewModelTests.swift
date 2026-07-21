@@ -1,0 +1,239 @@
+//
+//  RepoNoteAIGenerationViewModelTests.swift
+//  StarcatTests
+//
+//  AI 个人笔记七步状态机、README 分支、取消与冲突保护测试。
+//
+
+import Foundation
+import Testing
+@testable import Starcat
+
+@Suite("AI 个人笔记状态机")
+@MainActor
+struct RepoNoteAIGenerationViewModelTests {
+
+    @Test("本地 README 命中时跳过下载并传入原笔记")
+    func cachedReadmeSkipsDownloadAndPreservesNote() async throws {
+        let readme = RepoNoteReadmeStub(cached: "# Demo")
+        let ai = RepoNoteDraftStub(result: "# 个人笔记")
+        let viewModel = RepoNoteAIGenerationViewModel(readmeProvider: readme, aiService: ai)
+
+        viewModel.start(repo: Self.repo, existingNote: "保留我的决策")
+        try await waitUntil { viewModel.phase == .awaitingConfirmation }
+
+        #expect(viewModel.stepStates[.downloadingReadme] == .skipped)
+        #expect(readme.downloadCount == 0)
+        #expect(ai.receivedReadme == "# Demo")
+        #expect(ai.receivedNote == "保留我的决策")
+        #expect(viewModel.draftMarkdown == "# 个人笔记")
+        #expect(viewModel.stepStates[.awaitingConfirmation] == .running)
+    }
+
+    @Test("README 缺失时显式走下载步骤")
+    func missingReadmeDownloadsMarkdown() async throws {
+        let readme = RepoNoteReadmeStub(cached: nil, downloaded: "# Downloaded")
+        let viewModel = RepoNoteAIGenerationViewModel(
+            readmeProvider: readme,
+            aiService: RepoNoteDraftStub(result: "draft")
+        )
+
+        viewModel.start(repo: Self.repo, existingNote: "")
+        try await waitUntil { viewModel.phase == .awaitingConfirmation }
+
+        #expect(readme.downloadCount == 1)
+        #expect(viewModel.stepStates[.downloadingReadme] == .completed)
+        #expect(viewModel.preparedInput?.readmeMarkdown == "# Downloaded")
+    }
+
+    @Test("AI 预检失败时不读取 README")
+    func preflightFailureStopsBeforeReadme() async throws {
+        let readme = RepoNoteReadmeStub(cached: "# Demo")
+        let ai = RepoNoteDraftStub(result: "draft", readinessError: AIClientError.missingAPIKey)
+        let viewModel = RepoNoteAIGenerationViewModel(readmeProvider: readme, aiService: ai)
+
+        viewModel.start(repo: Self.repo, existingNote: "")
+        try await waitUntil { viewModel.phase == .failed }
+
+        #expect(viewModel.stepStates[.checkingAI] == .failed(messageKey: "repo.notes.ai.error.generic"))
+        #expect(readme.cacheReadCount == 0)
+        #expect(readme.downloadCount == 0)
+    }
+
+    @Test("README 下载失败精确标记下载步骤")
+    func downloadFailureMarksDownloadStep() async throws {
+        let readme = RepoNoteReadmeStub(
+            cached: nil,
+            downloadError: RepoNoteAIGenerationError.readmeNotFound
+        )
+        let viewModel = RepoNoteAIGenerationViewModel(
+            readmeProvider: readme,
+            aiService: RepoNoteDraftStub(result: "draft")
+        )
+
+        viewModel.start(repo: Self.repo, existingNote: "")
+        try await waitUntil { viewModel.phase == .failed }
+
+        #expect(viewModel.stepStates[.downloadingReadme] == .failed(
+            messageKey: RepoNoteAIGenerationError.readmeNotFound.messageKey
+        ))
+    }
+
+    @Test("取消生成会标记当前步骤且不进入确认")
+    func cancellationStopsGeneration() async throws {
+        let ai = RepoNoteDraftStub(result: "draft", suspendsUntilCancelled: true)
+        let viewModel = RepoNoteAIGenerationViewModel(
+            readmeProvider: RepoNoteReadmeStub(cached: "# Demo"),
+            aiService: ai
+        )
+        viewModel.start(repo: Self.repo, existingNote: "")
+        try await waitUntil { viewModel.currentStep == .generating }
+
+        viewModel.cancel()
+
+        #expect(viewModel.phase == .cancelled)
+        #expect(viewModel.stepStates[.generating] == .cancelled)
+        #expect(!viewModel.canApplyDraft)
+    }
+
+    @Test("生成期笔记变化时阻止覆盖并保留草稿")
+    func changedNoteBlocksApply() async throws {
+        let viewModel = RepoNoteAIGenerationViewModel(
+            readmeProvider: RepoNoteReadmeStub(cached: "# Demo"),
+            aiService: RepoNoteDraftStub(result: "AI draft")
+        )
+        viewModel.start(repo: Self.repo, existingNote: "original")
+        try await waitUntil { viewModel.phase == .awaitingConfirmation }
+
+        let draft = viewModel.beginApplying(currentNote: "user changed")
+
+        #expect(draft == nil)
+        #expect(viewModel.phase == .failed)
+        #expect(viewModel.draftMarkdown == "AI draft")
+        #expect(viewModel.errorMessageKey == RepoNoteAIGenerationError.noteChanged.messageKey)
+    }
+
+    @Test("保存失败后保留草稿并可重试")
+    func saveFailureKeepsDraftForRetry() async throws {
+        let viewModel = RepoNoteAIGenerationViewModel(
+            readmeProvider: RepoNoteReadmeStub(cached: "# Demo"),
+            aiService: RepoNoteDraftStub(result: "AI draft")
+        )
+        viewModel.start(repo: Self.repo, existingNote: "original")
+        try await waitUntil { viewModel.phase == .awaitingConfirmation }
+        #expect(viewModel.beginApplying(currentNote: "original") == "AI draft")
+
+        viewModel.finishApplying(success: false)
+
+        #expect(viewModel.phase == .awaitingConfirmation)
+        #expect(viewModel.draftMarkdown == "AI draft")
+        #expect(viewModel.canApplyDraft)
+        #expect(viewModel.stepStates[.saving] == .failed(
+            messageKey: RepoNoteAIGenerationError.saveFailed.messageKey
+        ))
+    }
+
+    private func waitUntil(
+        _ predicate: @escaping @MainActor () -> Bool
+    ) async throws {
+        for _ in 0..<100 {
+            if predicate() { return }
+            await Task.yield()
+        }
+        throw RepoNoteViewModelTestError.timeout
+    }
+
+    private static let repo = Repo(
+        id: 1,
+        owner: "owner",
+        name: "demo",
+        fullName: "owner/demo",
+        description: nil,
+        language: "Swift",
+        starsCount: 1,
+        forksCount: 0,
+        watchersCount: 1,
+        topics: nil,
+        license: nil,
+        homepage: nil,
+        htmlUrl: "https://github.com/owner/demo",
+        cloneUrl: nil,
+        sshUrl: nil,
+        isPrivate: false,
+        isFork: false,
+        isArchived: false,
+        isStarred: true,
+        pushedAt: nil,
+        createdAt: nil,
+        updatedAt: nil,
+        starredAt: nil,
+        cachedAt: nil
+    )
+}
+
+private enum RepoNoteViewModelTestError: Error {
+    case timeout
+}
+
+@MainActor
+private final class RepoNoteReadmeStub: RepoNoteAIReadmeProviding {
+    let cached: String?
+    let downloaded: String
+    let downloadError: Error?
+    private(set) var cacheReadCount = 0
+    private(set) var downloadCount = 0
+
+    init(cached: String?, downloaded: String = "", downloadError: Error? = nil) {
+        self.cached = cached
+        self.downloaded = downloaded
+        self.downloadError = downloadError
+    }
+
+    func cachedMarkdown(repoID: Int64) async throws -> String? {
+        cacheReadCount += 1
+        return cached
+    }
+
+    func downloadMarkdown(for repo: Repo) async throws -> String {
+        downloadCount += 1
+        if let downloadError { throw downloadError }
+        return downloaded
+    }
+}
+
+@MainActor
+private final class RepoNoteDraftStub: RepoNoteAIDraftGenerating {
+    let result: String
+    let readinessError: Error?
+    let suspendsUntilCancelled: Bool
+    private(set) var receivedReadme: String?
+    private(set) var receivedNote: String?
+
+    init(
+        result: String,
+        readinessError: Error? = nil,
+        suspendsUntilCancelled: Bool = false
+    ) {
+        self.result = result
+        self.readinessError = readinessError
+        self.suspendsUntilCancelled = suspendsUntilCancelled
+    }
+
+    func ensureNoteGenerationReady() throws {
+        if let readinessError { throw readinessError }
+    }
+
+    func generateNoteDraft(
+        readmeMarkdown: String,
+        existingNote: String,
+        onDelta: @escaping @MainActor (String) -> Void
+    ) async throws -> String {
+        receivedReadme = readmeMarkdown
+        receivedNote = existingNote
+        if suspendsUntilCancelled {
+            try await Task.sleep(for: .seconds(60))
+        }
+        onDelta(result)
+        return result
+    }
+}
