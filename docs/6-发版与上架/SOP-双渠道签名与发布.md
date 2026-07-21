@@ -3,6 +3,7 @@
 > 创建：2026-07-08
 > 适用：Starcat App Store 版与 Direct 官网 DMG 版。
 > 目标：同一代码仓库维护两套独立分发产物，签名、支付、更新和审核边界互不污染。
+> 新 Mac 从零准备 Xcode、证书、notary profile 与 Sparkle key：见 `SOP-新Mac开发发布环境搭建.md`。
 
 ## 1. 当前渠道边界
 
