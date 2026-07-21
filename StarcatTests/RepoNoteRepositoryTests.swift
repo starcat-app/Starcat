@@ -115,6 +115,32 @@ struct RepoNoteRepositoryTests {
         let got = try #require(try await repo.find(repoId: 1))
         #expect(got.content == nil)
         #expect(got.status == "read")
+        #expect(got.isAIGenerated == false)
+    }
+
+    @Test("updateContent: AI 确认保存会设置来源标记")
+    func updateContentMarksAIGenerated() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 1)
+
+        try await repo.updateContent(repoId: 1, content: "AI 草稿", isAIGenerated: true)
+
+        let got = try #require(try await repo.find(repoId: 1))
+        #expect(got.content == "AI 草稿")
+        #expect(got.isAIGenerated == true)
+    }
+
+    @Test("updateContent: 手工修改会清除 AI 来源标记")
+    func manualUpdateContentClearsAIGenerated() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 1)
+        try await repo.updateContent(repoId: 1, content: "AI 草稿", isAIGenerated: true)
+
+        try await repo.updateContent(repoId: 1, content: "用户修改")
+
+        let got = try #require(try await repo.find(repoId: 1))
+        #expect(got.content == "用户修改")
+        #expect(got.isAIGenerated == false)
     }
 
     // MARK: - updateStatus

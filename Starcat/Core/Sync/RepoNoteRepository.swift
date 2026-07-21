@@ -206,23 +206,24 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
         )
     }
 
-    /// 仅更新 content；行不存在则创建一行（status="unread"，is_ai_generated=0）。
+    /// 仅更新 content 与 AI 来源标记；行不存在则创建一行（status="unread"）。
     /// content 传 nil 表示清空。editedAt 自动设为 now。
-    func updateContent(repoId: Int64, content: String?) async throws {
+    func updateContent(repoId: Int64, content: String?, isAIGenerated: Bool) async throws {
         let nowISO = ISO8601DateFormatter.shared.string(from: Date())
         try await database.writer.write { db in
-            // 用 UPSERT 语义：先 INSERT（如不存在），ON CONFLICT 时 UPDATE content + edited_at
+            // AI 标记必须与 content 同步更新，否则用户手改 AI 笔记后仍会被误标。
             try db.execute(
                 sql: """
                 INSERT INTO repo_notes (
                     repo_id, content, status, library_state, library_updated_at, is_ai_generated, edited_at
                 )
-                VALUES (?, ?, 'unread', 'outside_library', NULL, 0, ?)
+                VALUES (?, ?, 'unread', 'outside_library', NULL, ?, ?)
                 ON CONFLICT(repo_id) DO UPDATE SET
                     content = excluded.content,
+                    is_ai_generated = excluded.is_ai_generated,
                     edited_at = excluded.edited_at
                 """,
-                arguments: [repoId, content, nowISO]
+                arguments: [repoId, content, isAIGenerated, nowISO]
             )
         }
         postContentDidChange(repoId: repoId, content: content, editedAt: nowISO)

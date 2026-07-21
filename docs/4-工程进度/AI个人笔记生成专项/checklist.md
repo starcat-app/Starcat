@@ -18,10 +18,10 @@
 
 ## 2. 笔记保存语义
 
-- [ ] `RepoNoteRepositoryProtocol` 支持显式传入 `isAIGenerated`。
+- [x] `RepoNoteRepositoryProtocol` 支持显式传入 `isAIGenerated`。
 - [ ] AI 草稿确认保存时写入 `is_ai_generated = true`。
-- [ ] 用户后续手工修改或清空笔记时写入 `is_ai_generated = false`。
-- [ ] 新增 Repository 单测，覆盖 AI 标记设置、手工修改清除与删除语义。
+- [x] 用户后续手工修改或清空笔记时写入 `is_ai_generated = false`。
+- [x] 新增 Repository 单测，覆盖 AI 标记设置、手工修改清除与删除语义。
 
 ## 3. README 准备与 AI 流式生成
 

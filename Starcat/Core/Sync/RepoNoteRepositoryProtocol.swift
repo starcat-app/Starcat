@@ -69,9 +69,10 @@ protocol RepoNoteRepositoryProtocol: Sendable {
     /// 整记录 upsert（同时落 content + status，调用方负责把 editedAt 设为现在）。
     func upsert(_ note: RepoNote) async throws
 
-    /// 仅更新笔记内容。不存在的 repo_notes 行会被自动创建（status 默认 "unread"）。
+    /// 仅更新笔记内容和当前内容的 AI 来源标记。
+    /// 不存在的 repo_notes 行会被自动创建（status 默认 "unread"）。
     /// editedAt 自动设为 now。
-    func updateContent(repoId: Int64, content: String?) async throws
+    func updateContent(repoId: Int64, content: String?, isAIGenerated: Bool) async throws
 
     /// 仅更新状态。不存在的 repo_notes 行会被自动创建（content 为 nil）。
     /// editedAt 自动设为 now。
@@ -101,6 +102,16 @@ protocol RepoNoteRepositoryProtocol: Sendable {
     /// **绝不下行**（不会从 using 退回 read）。UI 层可以无脑调，不需要先 find 判断当前状态。
     /// editedAt 仅在真正发生变更时更新，避免无意义改动触发 CloudKit 同步。
     func markAsReadIfNeeded(repoId: Int64) async throws
+}
+
+extension RepoNoteRepositoryProtocol {
+    /// 手工编辑入口默认清除 AI 来源标记。
+    ///
+    /// 为什么放在协议扩展：现有 UI、MCP 和 Companion 都属于用户主动写入，
+    /// 保留两参数调用可以让这些入口自动获得正确语义，只有 AI 确认保存需要显式传 `true`。
+    func updateContent(repoId: Int64, content: String?) async throws {
+        try await updateContent(repoId: repoId, content: content, isAIGenerated: false)
+    }
 }
 
 // 注意：`GRDBRepoNoteRepository: RepoNoteRepositoryProtocol` 的 conformance 直接写在
