@@ -123,12 +123,6 @@ struct RepoNotesSection: View {
         .task(id: repo.id) {
             await onRepoChange(to: repo.id)
         }
-        .onChange(of: isNotesExpanded) { _, expanded in
-            // 折叠时中止正在进行的网络 / AI 任务；已生成的草稿仍保留在标题状态中。
-            if !expanded, aiGenerationViewModel?.phase == .running {
-                aiGenerationViewModel?.cancel()
-            }
-        }
         .onDisappear {
             // AI 会话由 repo 级内存仓库继续持有，切换详情时不能取消；语义索引防抖仍属于当前 View。
             refreshIndexTask?.cancel()
