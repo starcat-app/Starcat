@@ -71,6 +71,31 @@ struct SettingsView: View {
     /// 快捷键录制失败时只在 General 页就地提示，不修改已保存配置。
     @State private var shortcutValidationError: KeyboardShortcutConfiguration.ValidationError?
 
+    /// 五个可配置应用命令的设置页标识。
+    /// 这里只负责冲突矩阵和“恢复默认”级联，不参与菜单动作路由。
+    private enum ConfigurableShortcutAction: CaseIterable, Hashable {
+        case globalSearch
+        case regularSearch
+        case refreshCurrentContent
+        case knowledgeRAG
+        case selectedRepoAI
+
+        var defaultShortcut: KeyboardShortcutConfiguration {
+            switch self {
+            case .globalSearch:
+                return .globalSearchDefault
+            case .regularSearch:
+                return .regularSearchDefault
+            case .refreshCurrentContent:
+                return StarcatShortcutCatalog.refreshCurrentContentDefault
+            case .knowledgeRAG:
+                return StarcatShortcutCatalog.openKnowledgeRAGDefault
+            case .selectedRepoAI:
+                return StarcatShortcutCatalog.openSelectedRepoAIDefault
+            }
+        }
+    }
+
     /// Settings 各 Tab 的内容尺寸。
     ///
     /// HOM-68 follow-up v12 (dong4j 反馈 2026-06-06 00:32)：
@@ -361,61 +386,77 @@ struct SettingsView: View {
                     }
                 }
 
-                HStack(spacing: 8) {
-                    Text("settings.general.shortcuts.search.title")
-                        .lineLimit(1)
-
-                    Spacer()
-
-                    HStack(spacing: 8) {
-                        ShortcutRecorderView(
-                            shortcut: $settings.globalSearchShortcut,
-                            onValidationError: { shortcutValidationError = $0 },
-                            helpKey: "settings.general.shortcuts.search.help"
-                        )
-                        .onChange(of: settings.globalSearchShortcut) { _, _ in
-                            shortcutValidationError = nil
-                        }
-
-                        ResetIconButton(
-                            help: Text("settings.general.shortcuts.restoreDefault")
-                        ) {
-                            settings.globalSearchShortcut = .globalSearchDefault
-                            shortcutValidationError = nil
-                        }
+                // 应用命令快捷键总开关只控制键盘触发；AI 输入发送方式是独立偏好，
+                // 因此保留在总开关上方且不会被 `.disabled(...)` 连带关闭。
+                Toggle(isOn: $settings.keyboardShortcutsEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings.general.shortcuts.enabled.title")
+                        Text("settings.general.shortcuts.enabled.description")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
-                HStack(spacing: 8) {
-                    Text("settings.general.shortcuts.regularSearch.title")
-                        .lineLimit(1)
+                ConfigurableShortcutSettingRow(
+                    titleKey: "settings.general.shortcuts.search.title",
+                    shortcut: $settings.globalSearchShortcut,
+                    isEnabled: $settings.globalSearchShortcutEnabled,
+                    onValidationError: { shortcutValidationError = $0 },
+                    conflictingShortcuts: conflictingShortcuts(excluding: .globalSearch),
+                    helpKey: "settings.general.shortcuts.search.help",
+                    onShortcutChanged: { shortcutValidationError = nil },
+                    onRestoreDefault: { restoreShortcutDefault(.globalSearch) }
+                )
+                .disabled(!settings.keyboardShortcutsEnabled)
 
-                    Spacer()
+                ConfigurableShortcutSettingRow(
+                    titleKey: "settings.general.shortcuts.regularSearch.title",
+                    shortcut: $settings.regularSearchShortcut,
+                    isEnabled: $settings.regularSearchShortcutEnabled,
+                    onValidationError: { shortcutValidationError = $0 },
+                    conflictingShortcuts: conflictingShortcuts(excluding: .regularSearch),
+                    helpKey: "settings.general.shortcuts.regularSearch.help",
+                    onShortcutChanged: { shortcutValidationError = nil },
+                    onRestoreDefault: { restoreShortcutDefault(.regularSearch) }
+                )
+                .disabled(!settings.keyboardShortcutsEnabled)
 
-                    HStack(spacing: 8) {
-                        ShortcutRecorderView(
-                            shortcut: $settings.regularSearchShortcut,
-                            onValidationError: { shortcutValidationError = $0 },
-                            helpKey: "settings.general.shortcuts.regularSearch.help"
-                        )
-                        .onChange(of: settings.regularSearchShortcut) { _, _ in
-                            shortcutValidationError = nil
-                        }
+                ConfigurableShortcutSettingRow(
+                    titleKey: "settings.general.shortcuts.refreshCurrentContent.title",
+                    shortcut: $settings.refreshCurrentContentShortcut,
+                    isEnabled: $settings.refreshCurrentContentShortcutEnabled,
+                    onValidationError: { shortcutValidationError = $0 },
+                    conflictingShortcuts: conflictingShortcuts(excluding: .refreshCurrentContent),
+                    helpKey: "settings.general.shortcuts.refreshCurrentContent.help",
+                    onShortcutChanged: { shortcutValidationError = nil },
+                    onRestoreDefault: { restoreShortcutDefault(.refreshCurrentContent) }
+                )
+                .disabled(!settings.keyboardShortcutsEnabled)
 
-                        ResetIconButton(
-                            help: Text("settings.general.shortcuts.restoreDefault")
-                        ) {
-                            settings.regularSearchShortcut = .regularSearchDefault
-                            shortcutValidationError = nil
-                        }
-                    }
-                }
+                ConfigurableShortcutSettingRow(
+                    titleKey: "settings.general.shortcuts.knowledgeRAG.title",
+                    shortcut: $settings.knowledgeRAGShortcut,
+                    isEnabled: $settings.knowledgeRAGShortcutEnabled,
+                    onValidationError: { shortcutValidationError = $0 },
+                    conflictingShortcuts: conflictingShortcuts(excluding: .knowledgeRAG),
+                    helpKey: "settings.general.shortcuts.knowledgeRAG.help",
+                    onShortcutChanged: { shortcutValidationError = nil },
+                    onRestoreDefault: { restoreShortcutDefault(.knowledgeRAG) }
+                )
+                .disabled(!settings.keyboardShortcutsEnabled)
 
-                Text("settings.general.shortcuts.search.description")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: false, vertical: true)
+                ConfigurableShortcutSettingRow(
+                    titleKey: "settings.general.shortcuts.selectedRepoAI.title",
+                    shortcut: $settings.selectedRepoAIShortcut,
+                    isEnabled: $settings.selectedRepoAIShortcutEnabled,
+                    onValidationError: { shortcutValidationError = $0 },
+                    conflictingShortcuts: conflictingShortcuts(excluding: .selectedRepoAI),
+                    helpKey: "settings.general.shortcuts.selectedRepoAI.help",
+                    onShortcutChanged: { shortcutValidationError = nil },
+                    onRestoreDefault: { restoreShortcutDefault(.selectedRepoAI) }
+                )
+                .disabled(!settings.keyboardShortcutsEnabled)
 
                 if let shortcutValidationError {
                     Text(shortcutValidationMessageKey(shortcutValidationError))
@@ -423,6 +464,11 @@ struct SettingsView: View {
                         .foregroundStyle(.red)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+
+                Text("settings.general.shortcuts.configuration.description")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             } header: {
                 SettingsSectionHeader(
                     "settings.general.shortcuts",
@@ -606,6 +652,75 @@ struct SettingsView: View {
             return "settings.general.shortcuts.error.missingModifier"
         case .reserved:
             return "settings.general.shortcuts.error.reserved"
+        case .duplicateConfiguredAction:
+            return "settings.general.shortcuts.error.duplicateConfiguredAction"
+        }
+    }
+
+    /// 返回除当前动作外的四个已保存键位。
+    /// 关闭状态仍参与冲突检查，确保重新开启时不会与其它命令竞争同一组合。
+    private func conflictingShortcuts(
+        excluding action: ConfigurableShortcutAction
+    ) -> Set<KeyboardShortcutConfiguration> {
+        Set(ConfigurableShortcutAction.allCases.compactMap { candidate in
+            candidate == action ? nil : shortcut(for: candidate)
+        })
+    }
+
+    /// 恢复默认值时递归释放被其它动作占用的默认组合。
+    ///
+    /// 例如 A 使用 B 的默认键、B 又使用 A 的默认键时，先把整条占用链恢复到各自默认，
+    /// 再落当前动作；`visited` 用于打断这种交换环，最终仍保持五项唯一。
+    private func restoreShortcutDefault(_ action: ConfigurableShortcutAction) {
+        var visited: Set<ConfigurableShortcutAction> = []
+
+        func restore(_ current: ConfigurableShortcutAction) {
+            guard visited.insert(current).inserted else { return }
+            let defaultShortcut = current.defaultShortcut
+            if let occupant = ConfigurableShortcutAction.allCases.first(where: {
+                $0 != current && shortcut(for: $0) == defaultShortcut
+            }) {
+                restore(occupant)
+            }
+            setShortcut(defaultShortcut, for: current)
+        }
+
+        restore(action)
+        shortcutValidationError = nil
+    }
+
+    private func shortcut(
+        for action: ConfigurableShortcutAction
+    ) -> KeyboardShortcutConfiguration {
+        switch action {
+        case .globalSearch:
+            return settings.globalSearchShortcut
+        case .regularSearch:
+            return settings.regularSearchShortcut
+        case .refreshCurrentContent:
+            return settings.refreshCurrentContentShortcut
+        case .knowledgeRAG:
+            return settings.knowledgeRAGShortcut
+        case .selectedRepoAI:
+            return settings.selectedRepoAIShortcut
+        }
+    }
+
+    private func setShortcut(
+        _ shortcut: KeyboardShortcutConfiguration,
+        for action: ConfigurableShortcutAction
+    ) {
+        switch action {
+        case .globalSearch:
+            settings.globalSearchShortcut = shortcut
+        case .regularSearch:
+            settings.regularSearchShortcut = shortcut
+        case .refreshCurrentContent:
+            settings.refreshCurrentContentShortcut = shortcut
+        case .knowledgeRAG:
+            settings.knowledgeRAGShortcut = shortcut
+        case .selectedRepoAI:
+            settings.selectedRepoAIShortcut = shortcut
         }
     }
 }

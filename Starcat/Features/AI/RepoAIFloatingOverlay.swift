@@ -5,8 +5,9 @@
 //  README 详情页内的 AI 对话浮层入口。
 //
 //  设计约束：
-//  - 不替换旧的独立 AI 窗口入口；这是详情页里的新增入口，用于验证“贴着 README 问 AI”
-//    的交互是否更自然。
+//  - 这是 AI 摘要 / 对话的主承载面板；快捷键、搜索和详情入口都先展开这里。
+//  - 独立 AI 窗口是本面板的附属展示形态，只能由“在独立窗口中打开”继续进入，
+//    不能与底部面板并列成为外部主入口。
 //  - 浮层只在右侧详情页区域内展开 / 最大化，避免跨列覆盖 repo 列表或 sidebar。
 //  - 展开态宽度按详情区 70% 比例缩放（硬顶 720），高度铺满 README 可用区：hero 折叠 /
 //    主窗口变高时浮层跟着长高，避免顶部留白。最大化态再铺满宽度。
@@ -198,6 +199,8 @@ struct RepoAIFloatingOverlay: View {
         autoGenerateSummaryOnOpen = false
         presentation = .collapsed
         DispatchQueue.main.async {
+            // 独立窗口只从底部面板内部派生；它与 inline panel 共享内容 View，
+            // 但保留独立窗口生命周期，便于用户脱离详情布局持续对话或并排比较。
             RepoAIWindowController.show(
                 repo: detachedRepo,
                 dependencies: dependencies,
@@ -209,7 +212,8 @@ struct RepoAIFloatingOverlay: View {
 
     private func handleExternalSummaryRequest(_ notification: Notification) {
         guard let repoID = notification.userInfo?["repoId"] as? Repo.ID, repoID == repo.id else { return }
-        // Browser Plugin 的“生成摘要”必须复用详情页底部横条入口，而不是旧的独立 AI window。
+        // Browser Plugin 的“生成摘要”必须先落到详情页底部面板；附属独立窗口
+        // 只能由用户在面板内主动选择，外部动作不能越级打开。
         // 若面板尚未创建，先记录 auto-generate 意图，展开后由 RepoAIWindowContentView 的 task 消费。
         autoGenerateSummaryOnOpen = true
         if presentation == .collapsed {
@@ -255,10 +259,10 @@ struct RepoAIFloatingOverlay: View {
 extension Notification.Name {
     /// 外部入口请求详情页底部 AI 横条展开并生成指定 repo 的摘要。
     ///
-    /// 这个通知只面向 inline overlay。旧的独立 AI window 仍可被历史入口打开，
-    /// 但 Browser Plugin 的 generate-summary 动作必须落到当前详情页入口。
+    /// 这个通知只面向 inline overlay。附属独立窗口不消费外部生成请求；
+    /// Browser Plugin 的 generate-summary 动作必须先落到当前详情页入口。
     static let repoAIInlineGenerateSummaryRequested = Notification.Name("StarcatRepoAIInlineGenerateSummaryRequested")
-    /// 侧栏后台摘要任务点击后，只展开对应 repo 的摘要面板，不重复发起生成。
+    /// 外部入口只展开对应 repo 的详情页底部面板，不重复发起生成。
     static let repoAIInlineOpenRequested = Notification.Name("StarcatRepoAIInlineOpenRequested")
 }
 

@@ -385,6 +385,23 @@ struct ReadmeStateView: View {
                 translationControl?.translationVM.dismissError()
             }
         }
+        .starcatRefreshCommand(
+            pane: .detail,
+            identity: "\(refreshCommandIdentity)-\(readmeVM.isRefreshing)",
+            title: String.l10n("commands.actions.refreshCurrentDetail"),
+            isEnabled: !readmeVM.isRefreshing,
+            action: onRetry
+        )
+    }
+
+    /// 注册身份必须随真实 README 对象变化，避免详情切换后 Settings 仍刷新上一仓库。
+    private var refreshCommandIdentity: String {
+        switch contentScope {
+        case .manage(let repoId):
+            return "manage-\(repoId)"
+        case .trending(let owner, let repo):
+            return "public-\(owner.lowercased())/\(repo.lowercased())"
+        }
     }
 
     private var readmePlaceholderTransition: AnyTransition {

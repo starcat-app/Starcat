@@ -451,8 +451,9 @@ struct RepoListView: View {
             EmptyView()
         }
         .keyboardShortcut(
-            settings.regularSearchShortcut.keyEquivalent,
-            modifiers: settings.regularSearchShortcut.eventModifiers
+            settings.keyboardShortcutsEnabled && settings.regularSearchShortcutEnabled
+                ? settings.regularSearchShortcut.swiftUIShortcut
+                : nil
         )
         .disabled(selectedPage != .manage)
         .hidden()
@@ -508,7 +509,7 @@ struct RepoListView: View {
                         workspaceToolbarIcon("r.circle", tint: Color(nsColor: .systemTeal))
                             .accessibilityLabel(Text("toolbar.knowledgeRAGWorkspace.label"))
                     }
-                    .help("toolbar.knowledgeRAGWorkspace.help")
+                    .help(Text(verbatim: knowledgeRAGWorkspaceHelp))
                     .gettingStartedAnchor(.ragWorkspace)
                 }
                 let spec = currentToolbarSpec
@@ -528,6 +529,16 @@ struct RepoListView: View {
                     }
                 }
             }
+    }
+
+    private var knowledgeRAGWorkspaceHelp: String {
+        guard settings.keyboardShortcutsEnabled, settings.knowledgeRAGShortcutEnabled else {
+            return String.l10n("toolbar.knowledgeRAGWorkspace.help.shortcutDisabled")
+        }
+        return String(
+            format: String.l10n("toolbar.knowledgeRAGWorkspace.help"),
+            settings.knowledgeRAGShortcut.displayText
+        )
     }
 
     private func workspaceToolbarIcon(_ systemName: String, tint: Color) -> some View {
@@ -1323,6 +1334,31 @@ struct RepoListView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(.clear)
+        .starcatRefreshCommand(
+            pane: .list,
+            identity: "manage-\(String(describing: viewModel.selection))-\(isManageRefreshInProgress)",
+            title: String.l10n("commands.actions.refreshCurrentList"),
+            isEnabled: !isManageRefreshInProgress
+        ) {
+            refreshManageList()
+        }
+    }
+
+    /// Manage 分类来自本地标签 / 状态 / GitHub Star List 等投影，GitHub 无法按分类增量同步。
+    /// 因此列表刷新先重读当前投影，同时发起一次完整 Stars 对比；同步完成后的既有监听会再刷新行缓存。
+    private func refreshManageList() {
+        Task { await viewModel.reloadItems(forceRefresh: true) }
+
+        guard let user = authSession.state.user else {
+            authSession.requestLoginSheet()
+            return
+        }
+        syncManager.performFullSync(userID: user.id, force: true)
+    }
+
+    private var isManageRefreshInProgress: Bool {
+        if case .syncing = syncManager.state { return true }
+        return false
     }
 
     /// Manage 中栏列表顶栏（排序 / 同步 / Smart Collections 规则行）+ 底部分割线。
@@ -1534,6 +1570,12 @@ struct RepoListView: View {
             onOpenGlobalSearch: {
                 onOpenSearchCenter?()
             },
+            globalSearchShortcutDisplayText: settings.keyboardShortcutsEnabled && settings.globalSearchShortcutEnabled
+                ? settings.globalSearchShortcut.displayText
+                : nil,
+            regularSearchShortcutDisplayText: settings.keyboardShortcutsEnabled && settings.regularSearchShortcutEnabled
+                ? settings.regularSearchShortcut.displayText
+                : nil,
             isProUser: isProUser,
             onRequestProUpgrade: {
                 // 与现有 paywallContext 写入对齐(line 657 / 660 / 718 / 1490):

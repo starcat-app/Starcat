@@ -5495,13 +5495,30 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open AI Assistant (summary + chat)"
+            "value" : "Open AI Assistant (summary + chat) (%@)"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开 AI 助手(摘要 + 对话)"
+            "value" : "打开 AI 助手(摘要 + 对话) (%@)"
+          }
+        }
+      }
+    },
+    "ai.assistant.openButton.help.shortcutDisabled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open AI Assistant (summary + chat); keyboard shortcut disabled"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开 AI 助手（摘要 + 对话）；键盘快捷键已停用"
           }
         }
       }
@@ -14167,19 +14184,87 @@
         }
       }
     },
-    "commands.actions.syncStars" : {
+    "commands.actions.openKnowledgeRAGWorkspace" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sync Stars"
+            "value" : "Open Knowledge RAG Workspace"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "同步 Stars"
+            "value" : "打开知识库 RAG 工作台"
+          }
+        }
+      }
+    },
+    "commands.actions.openSelectedRepoAI" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open AI for Current Repository"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开当前仓库 AI"
+          }
+        }
+      }
+    },
+    "commands.actions.refreshCurrentContent" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh Repository List/Details"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刷新仓库列表/详情"
+          }
+        }
+      }
+    },
+    "commands.actions.refreshCurrentDetail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh Current Details"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刷新当前详情"
+          }
+        }
+      }
+    },
+    "commands.actions.refreshCurrentList" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh Current List"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刷新当前列表"
           }
         }
       }
@@ -49038,19 +49123,36 @@
         }
       }
     },
+    "settings.general.shortcuts.error.duplicateConfiguredAction" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This shortcut is already assigned to another action."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该快捷键已分配给另一项操作。"
+          }
+        }
+      }
+    },
     "settings.general.shortcuts.error.missingModifier" : {
       "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add Command, Option, Control, or Shift to avoid interfering with text input."
+            "value" : "Add Command, Option, or Control to avoid interfering with text input."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请至少搭配 Command、Option、Control 或 Shift，避免影响正常输入。"
+            "value" : "请至少搭配 Command、Option 或 Control，避免影响正常输入。"
           }
         }
       }
@@ -49068,6 +49170,108 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "该快捷键已被 Starcat 使用，请选择其他组合。"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.configuration.description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click a shortcut to record it. Disabled shortcuts keep their saved key and still participate in conflict checks."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击快捷键即可录制；关闭后仍会保留键位并参与冲突检查。"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.enabled.description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disables keyboard triggers only. Menus, buttons, and AI message sending remain available."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅停用键盘触发；菜单、按钮和 AI 消息发送不受影响。"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.enabled.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enable Application Shortcuts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用应用快捷键"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.itemEnabled.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enable or disable this keyboard shortcut"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用或停用此键盘快捷键"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.knowledgeRAG.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click to record a new Knowledge RAG workspace shortcut"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击录制新的知识库 RAG 工作台快捷键"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.knowledgeRAG.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Knowledge RAG Workspace"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "知识库 RAG 工作台"
           }
         }
       }
@@ -49137,18 +49341,70 @@
         }
       }
     },
-    "settings.general.shortcuts.search.description" : {
+    "settings.general.shortcuts.selectedRepoAI.title" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Click the field, then press the shortcut."
+            "value" : "Current Repository AI"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "点击输入框后按下快捷键。"
+            "value" : "当前仓库 AI"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.selectedRepoAI.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click to record a new current repository AI shortcut"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击录制新的当前仓库 AI 快捷键"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.refreshCurrentContent.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh Repository List/Details"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刷新仓库列表/详情"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.refreshCurrentContent.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click to record a new repository refresh shortcut"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击录制新的仓库刷新快捷键"
           }
         }
       }
@@ -65582,13 +65838,30 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Global search (⌘K)"
+            "value" : "Global search (%@)"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "全局搜索 (⌘K)"
+            "value" : "全局搜索 (%@)"
+          }
+        }
+      }
+    },
+    "toolbar.globalSearchHelp.shortcutDisabled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Global search; keyboard shortcut disabled"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全局搜索；键盘快捷键已停用"
           }
         }
       }
@@ -65599,13 +65872,30 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open Knowledge RAG Workspace"
+            "value" : "Open Knowledge RAG Workspace (%@)"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开知识库 RAG 工作台"
+            "value" : "打开知识库 RAG 工作台 (%@)"
+          }
+        }
+      }
+    },
+    "toolbar.knowledgeRAGWorkspace.help.shortcutDisabled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Knowledge RAG Workspace; keyboard shortcut disabled"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开知识库 RAG 工作台；键盘快捷键已停用"
           }
         }
       }
@@ -65623,6 +65913,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "知识库 RAG 工作台"
+          }
+        }
+      }
+    },
+    "toolbar.regularSearchHelp" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search repositories (%@)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索仓库 (%@)"
+          }
+        }
+      }
+    },
+    "toolbar.regularSearchHelp.shortcutDisabled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search repositories; keyboard shortcut disabled"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索仓库；键盘快捷键已停用"
           }
         }
       }

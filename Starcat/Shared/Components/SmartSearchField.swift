@@ -35,6 +35,29 @@ struct SmartSearchField: View {
     let onSubmitSearch: (String) -> Void
     let onRefreshSemanticIndex: () -> Void
     var onOpenGlobalSearch: (() -> Void)?
+    /// tooltip 必须展示当前用户配置，而不是把默认 `⌘K` 写死在 String Catalog。
+    var globalSearchShortcutDisplayText: String? = KeyboardShortcutConfiguration.globalSearchDefault.displayText
+    var regularSearchShortcutDisplayText: String? = KeyboardShortcutConfiguration.regularSearchDefault.displayText
+
+    private var globalSearchHelp: String {
+        guard let globalSearchShortcutDisplayText else {
+            return String.l10n("toolbar.globalSearchHelp.shortcutDisabled")
+        }
+        return String(
+            format: String.l10n("toolbar.globalSearchHelp"),
+            globalSearchShortcutDisplayText
+        )
+    }
+
+    private var regularSearchHelp: String {
+        guard let regularSearchShortcutDisplayText else {
+            return String.l10n("toolbar.regularSearchHelp.shortcutDisabled")
+        }
+        return String(
+            format: String.l10n("toolbar.regularSearchHelp"),
+            regularSearchShortcutDisplayText
+        )
+    }
 
     /// 当前用户是否为 Pro 订阅者。`.semantic` 是 Pro 能力(W6 拍板:菜单层先拦截,
     /// service 内 `requirePro(.semanticSearch)` 再兜底做双层防御)。
@@ -213,7 +236,7 @@ struct SmartSearchField: View {
                 } primaryAction: {
                     onOpenGlobalSearch?()
                 }
-                .help("toolbar.globalSearchHelp")
+                .help(Text(verbatim: globalSearchHelp))
             } else {
                 Button {
                     // PR-2 禁用态：点击 no-op；外层 `.help(disabledHelpKey)` 已说明原因。
@@ -233,6 +256,7 @@ struct SmartSearchField: View {
                 .background(searchBackground)
                 .overlay(searchBorder)
                 .overlay(aiGlow)
+                .help(Text(verbatim: regularSearchHelp))
             }
         }
     }

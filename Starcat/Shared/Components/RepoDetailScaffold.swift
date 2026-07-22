@@ -306,6 +306,13 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             metadataPanelViewport
             body_(updateScrollReport)
+                .overlay(alignment: .bottom) {
+                    if isRepositoryAIAvailable {
+                        // 所有 repo-backed 详情共用同一个底部 AI 主入口；独立窗口
+                        // 仍只能从该面板内部的“在独立窗口中打开”派生。
+                        RepoAIFloatingOverlay(repo: repo)
+                    }
+                }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onGeometryChange(for: CGFloat.self) { proxy in
@@ -379,6 +386,41 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         .onChange(of: detailViewportHeight) { _, _ in
             restoreExpandedHeroIfNeeded(naturalPanelHeight: metadataPanelHeight)
         }
+        .starcatRepositoryAICommand(
+            identity: "\(repo.id)-\(repo.fullName)-\(isRepositoryAIAvailable)",
+            isEnabled: isRepositoryAIAvailable
+        ) {
+            openRepositoryAIFromCommand()
+        }
+    }
+
+    /// 快捷键必须与详情现有 `.ai` action 使用同一门禁；`id == 0` 是公共列表 fallback，
+    /// 不能把它交给按 repo ID 缓存会话的 AI 服务。
+    private var isRepositoryAIAvailable: Bool {
+        guard repo.id != 0 else { return false }
+        return viewData.trailingActions.contains { action in
+            if case .ai = action { return true }
+            return false
+        }
+    }
+
+    /// 展开当前详情页底部 AI 面板，但不自动生成摘要。
+    ///
+    /// Settings 成为 key window 时，命令路由仍保存主窗口最后一个有效详情动作；
+    /// 因此先前置主窗口，再向已经挂载的 inline overlay 发送展开请求。
+    private func openRepositoryAIFromCommand() {
+        guard isRepositoryAIAvailable else { return }
+        AppDelegate.activateMainWindowIfPossible()
+        NotificationCenter.default.post(name: .gettingStartedDidOpenAI, object: nil)
+        dependencies.telemetryManager.track(
+            .aiPanelOpened,
+            properties: [.source: .string("command")]
+        )
+        NotificationCenter.default.post(
+            name: .repoAIInlineOpenRequested,
+            object: nil,
+            userInfo: ["repoId": repo.id]
+        )
     }
 
     // recommendationOverlay 已删除（v1.1 推荐按钮从右下角浮动迁到 hero trailing actions），
@@ -811,8 +853,8 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             EmptyView()
 
         case .ai:
-            // AI 主入口已迁到 README 状态栏横条。旧独立窗口能力保留在
-            // RepoAIOpenButton / RepoAIWindowController 中，当前只隐藏 Hero 按钮入口。
+            // AI 主入口已迁到 README 状态栏横条。独立窗口是底部面板内部
+            // “在独立窗口中打开”的附属展示形态，Hero 不再提供第二个并列入口。
             EmptyView()
 
         case .weeklyIssue(let number, let url):

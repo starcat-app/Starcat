@@ -445,7 +445,6 @@ struct RepoAIOpenButton: View {
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(HomeViewModel.self) private var viewModel
-    @Environment(\.openSettings) private var openSettings
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
@@ -455,11 +454,10 @@ struct RepoAIOpenButton: View {
                 .aiPanelOpened,
                 properties: [.source: .string("detail")]
             )
-            RepoAIWindowController.show(
-                repo: repo,
-                dependencies: dependencies,
-                homeViewModel: viewModel,
-                openSettings: openSettings
+            NotificationCenter.default.post(
+                name: .repoAIInlineOpenRequested,
+                object: nil,
+                userInfo: ["repoId": repo.id]
             )
         } label: {
             HStack(spacing: 6) {
@@ -484,7 +482,18 @@ struct RepoAIOpenButton: View {
         .focusEffectDisabled()
         .pressableHover()
         .gettingStartedPopoverTip(GettingStartedTips.ai)
-        .help("ai.assistant.openButton.help")
+        .help(Text(verbatim: openButtonHelp))
+    }
+
+    private var openButtonHelp: String {
+        let settings = dependencies.settings
+        guard settings.keyboardShortcutsEnabled, settings.selectedRepoAIShortcutEnabled else {
+            return String.l10n("ai.assistant.openButton.help.shortcutDisabled")
+        }
+        return String(
+            format: String.l10n("ai.assistant.openButton.help"),
+            settings.selectedRepoAIShortcut.displayText
+        )
     }
 }
 

@@ -194,6 +194,14 @@ struct TrendingView: View {
             applyTrendingDetailSelectionPolicy()
         }
         .environment(\.trendingViewModel, viewModel)
+        .starcatRefreshCommand(
+            pane: .list,
+            identity: "trending-\(viewModel.selectedPeriod.rawValue)-\(viewModel.selectedSort.rawValue)-\(selectedLanguage.rawValue)-\(viewModel.isRefreshing)-\(viewModel.isLoading)",
+            title: String.l10n("commands.actions.refreshCurrentList"),
+            isEnabled: !viewModel.isRefreshing && !viewModel.isLoading
+        ) {
+            refreshCurrentTrendingList()
+        }
     }
 
     private func reportRepoCount() {
@@ -435,10 +443,15 @@ struct TrendingView: View {
             disabled: viewModel.isRefreshing || viewModel.isLoading,
             tooltip: refreshButtonHelpText
         ) {
-            Task {
-                await viewModel.reload(cachePolicy: .forceNetwork)
-                reportRepoCount()
-            }
+            refreshCurrentTrendingList()
+        }
+    }
+
+    /// Toolbar 与 `⌘R` 都只刷新当前周期 / 语言桶，避免误刷新其它 Explore 分类。
+    private func refreshCurrentTrendingList() {
+        Task {
+            await viewModel.reload(cachePolicy: .forceNetwork)
+            reportRepoCount()
         }
     }
 

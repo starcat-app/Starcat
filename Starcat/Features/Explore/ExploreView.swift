@@ -232,6 +232,14 @@ private struct ExploreDiscoveryListView: View {
             guard enabled else { return }
             applySelectionPolicy()
         }
+        .starcatRefreshCommand(
+            pane: .list,
+            identity: "explore-\(queryIdentity)-\(viewModel.isRefreshing)-\(viewModel.isLoading)",
+            title: String.l10n("commands.actions.refreshCurrentList"),
+            isEnabled: !viewModel.isRefreshing && !viewModel.isLoading
+        ) {
+            refreshCurrentDiscoveryList()
+        }
     }
 
     private var filterBar: some View {
@@ -259,27 +267,32 @@ private struct ExploreDiscoveryListView: View {
                 disabled: viewModel.isRefreshing || viewModel.isLoading,
                 tooltip: String.l10n("explore.refresh.tooltip")
             ) {
-                let requestedIdentity = queryIdentity
-                Task {
-                    await viewModel.reload(
-                        repository: dependencies.discoveryRepository,
-                        mode: mode,
-                        language: mode == .discover ? nil : selectedLanguage,
-                        topic: mode == .discover ? selectedTopic : nil,
-                        platform: mode == .discover ? selectedPlatform : nil,
-                        sort: currentSort,
-                        showsRefreshIndicator: true
-                    )
-                    guard viewModel.publishedQueryIdentity == requestedIdentity else { return }
-                    publishLatestSummary()
-                    applySelectionPolicy()
-                    reportRepoCount()
-                }
+                refreshCurrentDiscoveryList()
             }
         }
         .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
         .padding(.top, ManageListFilterBarMetrics.topPadding)
         .padding(.bottom, ManageListFilterBarMetrics.bottomPadding)
+    }
+
+    /// Toolbar 与 `⌘R` 共用同一刷新路径，只请求当前 Explore 模式及其筛选身份。
+    private func refreshCurrentDiscoveryList() {
+        let requestedIdentity = queryIdentity
+        Task {
+            await viewModel.reload(
+                repository: dependencies.discoveryRepository,
+                mode: mode,
+                language: mode == .discover ? nil : selectedLanguage,
+                topic: mode == .discover ? selectedTopic : nil,
+                platform: mode == .discover ? selectedPlatform : nil,
+                sort: currentSort,
+                showsRefreshIndicator: true
+            )
+            guard viewModel.publishedQueryIdentity == requestedIdentity else { return }
+            publishLatestSummary()
+            applySelectionPolicy()
+            reportRepoCount()
+        }
     }
 
     private var sortBinding: Binding<ExploreSortOption> {

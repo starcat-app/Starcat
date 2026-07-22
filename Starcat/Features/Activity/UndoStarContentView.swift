@@ -168,6 +168,23 @@ struct UndoStarContentView: View {
                 }
             }
         }
+        .starcatRefreshCommand(
+            pane: .list,
+            identity: "undo-star-\(viewModel.sortOption.rawValue)-\(viewModel.isLoading)",
+            title: String.l10n("commands.actions.refreshCurrentList"),
+            isEnabled: !viewModel.isLoading
+        ) {
+            refreshCurrentUndoStarList()
+        }
+    }
+
+    /// `⌘R` 与首次加载复用同一个本地历史查询，并同步侧栏计数。
+    private func refreshCurrentUndoStarList() {
+        Task {
+            await viewModel.reload()
+            dependencies.activityCategoryCountService.applyUndoStarCount(viewModel.records.count)
+            selectFirstRecordIfRequested()
+        }
     }
 
     private func selectFirstRecordIfRequested() {

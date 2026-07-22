@@ -58,6 +58,8 @@ struct HomeView: View {
     @Environment(\.openSettings) private var openSettings
     /// HOM-47：拿到 ReleasePoller 启动后台调度。
     @Environment(AppDependencies.self) private var dependencies
+    /// 主窗口向菜单和 Settings Scene 发布当前可执行的快捷键动作。
+    @Environment(StarcatCommandRouter.self) private var commandRouter
 
     /// HOM-47：Release 时间线 sheet 显示状态。
     @State private var showReleaseTimeline: Bool = false
@@ -115,6 +117,8 @@ struct HomeView: View {
     @State private var listPreferenceResetToast: String?
     /// Universal Link 定位失败时保留可读错误。它只描述本次打开动作，不写入仓库数据。
     @State private var repositoryDeepLinkErrorMessage: String?
+    /// 用 owner ID 保护主窗口动作注销，避免窗口重建期间旧 HomeView 清掉新实例动作。
+    @State private var commandRouterOwnerID = UUID()
 
     @Environment(\.firstRunOnboardingActive) private var firstRunOnboardingActive
 
@@ -320,15 +324,6 @@ struct HomeView: View {
         .animation(reduceMotion ? nil : .easeOut(duration: 0.20), value: searchCenterViewModel.isPresented)
         .onReceive(NotificationCenter.default.publisher(for: DebugFlags.agentToolbarEntryDidChangeNotification)) { _ in
             showsAgentToolbarEntry = DebugFlags.agentToolbarEntry
-        }
-        // 隐藏按钮只用于向当前 window 注册快捷键；实际入口仍是 toolbar 按钮。
-        .background {
-            Button("") { presentSearchCenterForGettingStarted() }
-                .keyboardShortcut(
-                    settings.globalSearchShortcut.keyEquivalent,
-                    modifiers: settings.globalSearchShortcut.eventModifiers
-                )
-                .hidden()
         }
         )
     }
@@ -639,6 +634,13 @@ struct HomeView: View {
             syncGettingStartedProgressFromCurrentState()
             prepareDetailCoachMarkIfNeeded(for: gettingStartedActiveStepID)
             handleMainWindowNavigationRequest(dependencies.mainWindowNavigationDispatcher.pendingRequest)
+            registerMainWindowCommandActions()
+        }
+        .onDisappear {
+            commandRouter.unregisterMainWindowActions(ownerID: commandRouterOwnerID)
+        }
+        .onChange(of: settings.globalSearchShortcut) { _, _ in
+            registerMainWindowCommandActions()
         }
         .onChange(of: dependencies.mainWindowNavigationDispatcher.pendingRequest) { _, request in
             handleMainWindowNavigationRequest(request)
@@ -680,6 +682,7 @@ struct HomeView: View {
         }
         // Manage ↔ Trending 切换时，记住各自的上次选择，切换回来时恢复
         .onChange(of: selectedSidebarPage) { oldPage, newPage in
+            commandRouter.activate(.list)
             handleSidebarPageChange(oldPage: oldPage, newPage: newPage)
         }
         )
@@ -693,9 +696,6 @@ struct HomeView: View {
         .onReceive(NotificationCenter.default.publisher(for: FirstRunOnboardingPreferences.debugReplayNotification)) { _ in
             gettingStartedStore.reset()
             syncGettingStartedProgressFromCurrentState()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .starcatCommandOpenGlobalSearch)) { _ in
-            presentSearchCenterForGettingStarted()
         }
         .onReceive(NotificationCenter.default.publisher(for: .starcatResetListPreferencesRequested)) { _ in
             guard authSession.state.isAuthenticated else { return }
@@ -748,9 +748,11 @@ struct HomeView: View {
     private var navigationWithPreferenceLifecycle: AnyView {
         AnyView(navigationWithNotificationLifecycle
         .onChange(of: selectedActivityCategory) { _, newCategory in
+            commandRouter.activate(.list)
             handleActivityCategoryChange(newCategory)
         }
         .onChange(of: selectedExploreMode) { _, mode in
+            commandRouter.activate(.list)
             persistListPreference(mode.rawValue, key: ListPreferenceKey.exploreMode)
             restoreExploreLanguagePreference(for: mode)
         }
@@ -929,7 +931,8 @@ struct HomeView: View {
     private func openCompanionRepository(
         _ repo: Repo,
         generateSummary: Bool = false,
-        openSummaryPanel: Bool = false
+        openSummaryPanel: Bool = false,
+        aiPanelSource: String? = nil
     ) {
         selectedSidebarPage = .manage
         viewModel.selection = .allStars
@@ -955,7 +958,9 @@ struct HomeView: View {
             guard generateSummary || openSummaryPanel else { return }
             NotificationCenter.default.post(name: .gettingStartedDidOpenAI, object: nil)
             dependencies.telemetryManager.track(.aiPanelOpened, properties: [
-                .source: .string(generateSummary ? "browser-plugin" : "sidebar-background-task")
+                .source: .string(
+                    generateSummary ? "browser-plugin" : (aiPanelSource ?? "sidebar-background-task")
+                )
             ])
             let repoID = repo.id
             if generateSummary {
@@ -990,16 +995,24 @@ struct HomeView: View {
     }
 
     private func openSearchRepositoryAI(_ repo: Repo) {
-        NotificationCenter.default.post(name: .gettingStartedDidOpenAI, object: nil)
-        dependencies.telemetryManager.track(
-            .aiPanelOpened,
-            properties: [.source: .string("search")]
+        searchCenterViewModel.dismiss()
+        // Search Center 可能指向尚未渲染的 repo，必须先走统一详情导航；目标 overlay
+        // 挂载后再消费 pending 请求，不能直接打开附属独立窗口。
+        openCompanionRepository(
+            repo,
+            openSummaryPanel: true,
+            aiPanelSource: "search"
         )
-        RepoAIWindowController.show(
-            repo: repo,
-            dependencies: dependencies,
-            homeViewModel: viewModel,
-            openSettings: openSettings
+    }
+
+    /// 把主窗口级动作登记到应用路由。Settings 独立 Scene 会复用这些动作，
+    /// 因此用户在设置页查看快捷键时可直接验证，不会因 key window 切换而失效。
+    private func registerMainWindowCommandActions() {
+        commandRouter.registerMainWindowActions(
+            ownerID: commandRouterOwnerID,
+            globalSearchShortcut: settings.globalSearchShortcut,
+            openGlobalSearch: { presentSearchCenterForGettingStarted() },
+            openKnowledgeRAGWorkspace: { openKnowledgeRAGWorkspaceForGettingStarted() }
         )
     }
 
@@ -1027,7 +1040,8 @@ struct HomeView: View {
     }
 
     /// 开始使用清单里的 AI 入口必须走详情页底部横条。
-    /// 这里不复用搜索结果的独立窗口入口，避免最后一步和用户在详情页看到的 AI 入口不一致。
+    /// 与搜索、快捷键入口一致，先落到详情页底部面板；只有用户随后主动点击
+    /// “在独立窗口中打开”时，才切换到附属独立窗口。
     private func openSelectedRepoAIForGettingStarted() {
         guard let repo = viewModel.selectedRepo else {
             selectFirstRepoForGettingStarted()

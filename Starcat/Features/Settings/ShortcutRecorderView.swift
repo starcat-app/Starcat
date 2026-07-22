@@ -2,8 +2,9 @@
 //  ShortcutRecorderView.swift
 //  Starcat
 //
-//  macOS 设置页快捷键录制控件。点击后让底层 NSView 成为 first responder，下一次
-//  keyDown 直接转成 KeyboardShortcutConfiguration；Esc 取消，不修改原值。
+//  macOS 设置页快捷键控件：录制组合键，并为每个应用命令提供独立启停和恢复默认。
+//  录制控件点击后让底层 NSView 成为 first responder，下一次 keyDown 直接转成
+//  KeyboardShortcutConfiguration；Esc 取消，不修改原值。
 //
 
 import AppKit
@@ -12,6 +13,7 @@ import SwiftUI
 struct ShortcutRecorderView: View {
     @Binding var shortcut: KeyboardShortcutConfiguration
     let onValidationError: (KeyboardShortcutConfiguration.ValidationError) -> Void
+    var conflictingShortcuts: Set<KeyboardShortcutConfiguration> = []
     var helpKey: LocalizedStringKey = "settings.general.shortcuts.search.help"
 
     @State private var isRecording = false
@@ -53,11 +55,61 @@ struct ShortcutRecorderView: View {
     }
 
     private func capture(_ candidate: KeyboardShortcutConfiguration) {
-        if let error = candidate.validationError {
+        if let error = candidate.validationError(conflictingWith: conflictingShortcuts) {
             onValidationError(error)
             return
         }
         shortcut = candidate
+    }
+}
+
+/// 设置页中的单个可配置应用快捷键行。
+///
+/// 开关只控制键盘注册，不会清空已经录制的组合，也不会禁用对应菜单或按钮。
+/// 即使当前关闭，键位仍参与五项命令的冲突检查，保证重新启用时不会抢占。
+struct ConfigurableShortcutSettingRow: View {
+    let titleKey: LocalizedStringKey
+    @Binding var shortcut: KeyboardShortcutConfiguration
+    @Binding var isEnabled: Bool
+    let onValidationError: (KeyboardShortcutConfiguration.ValidationError) -> Void
+    let conflictingShortcuts: Set<KeyboardShortcutConfiguration>
+    let helpKey: LocalizedStringKey
+    let onShortcutChanged: () -> Void
+    let onRestoreDefault: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(titleKey)
+                .lineLimit(1)
+
+            Spacer()
+
+            HStack(spacing: 8) {
+                ShortcutRecorderView(
+                    shortcut: $shortcut,
+                    onValidationError: onValidationError,
+                    conflictingShortcuts: conflictingShortcuts,
+                    helpKey: helpKey
+                )
+                .onChange(of: shortcut) { _, _ in
+                    onShortcutChanged()
+                }
+
+                ResetIconButton(
+                    help: Text("settings.general.shortcuts.restoreDefault"),
+                    action: onRestoreDefault
+                )
+
+                // 与 Section 中的总开关保持同一紧凑尺寸，并放在末尾对齐设置卡片右缘。
+                Toggle(isOn: $isEnabled) {
+                    Text(titleKey)
+                }
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .help("settings.general.shortcuts.itemEnabled.help")
+            }
+        }
     }
 }
 

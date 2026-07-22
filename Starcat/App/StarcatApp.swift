@@ -18,8 +18,6 @@ import MarkdownUI
 import TipKit
 
 extension Notification.Name {
-    /// 顶部菜单触发全局搜索。HomeView 持有 SearchCenterViewModel，因此命令层只发意图。
-    static let starcatCommandOpenGlobalSearch = Notification.Name("starcat.command.openGlobalSearch")
     /// 三处系统入口共用的列表偏好重置意图；实际重置由 HomeView 在当前账号上下文执行。
     static let starcatResetListPreferencesRequested = Notification.Name("starcat.resetListPreferencesRequested")
 }
@@ -43,6 +41,10 @@ struct StarcatApp: App {
 
     /// 启动期核心依赖失败时给用户展示的友好错误。
     @State private var startupError: UserFacingError?
+
+    /// 主窗口与 Settings Scene 共用的快捷键路由。
+    /// Settings 成为 key window 后仍需操作主窗口最后一个有效仓库，不能依赖 scene-local FocusedValue。
+    @State private var commandRouter = StarcatCommandRouter()
 
     // MARK: - 用户语言切换（生产可用）
     //
@@ -136,10 +138,13 @@ struct StarcatApp: App {
                 Button("app.about") {
                     AboutPanelController.show()
                 }
-                .keyboardShortcut("I", modifiers: .command)
             }
 
-            StarcatAppCommands(dependencies: dependencies)
+            StarcatAppCommands(
+                dependencies: dependencies,
+                commandRouter: commandRouter,
+                settings: dependencies?.settings ?? AppSettings.shared
+            )
 
             // DEBUG-only 菜单：作为后续调试入口的容器（清缓存 / 强制制造网络
             // 错误 / Dump 数据库等）。语言切换 2026-06-16 移除（已在设置页落地）。
@@ -177,6 +182,7 @@ struct StarcatApp: App {
                 .environment(dependencies.subscriptionManager)
                 .environment(dependencies.directLicenseManager)
                 .environment(dependencies.entitlementGate)
+                .environment(commandRouter)
                 // HOM-PROFILE 2026-06-05：贡献草坪服务，Sidebar 直接消费 @Observable 实例。
                 .environment(dependencies.contributionService)
                 // 2026-06-06 A 方案：用户 profile 缓存服务。Sidebar / ShareCardSheet 会调
@@ -235,6 +241,7 @@ struct StarcatApp: App {
                 .environment(dependencies.subscriptionManager)
                 .environment(dependencies.directLicenseManager)
                 .environment(dependencies.entitlementGate)
+                .environment(commandRouter)
                 // HOM-126：AI 设置「自动整理」分组的「立刻手动触发一次」按钮直接
                 // 调 scheduler.triggerManually()。不依赖 AppDependencies 间接路径，
                 // 让 Settings tab 与 scheduler 解耦但显式可见。
@@ -388,23 +395,65 @@ private extension View {
 
 /// Starcat 顶部菜单命令。
 ///
-/// 这些入口全部复用已有业务路径：同步走 `SyncManager`，搜索由 HomeView 持有的
-/// `SearchCenterViewModel` 响应通知，外链 / 诊断导出仍走原 AppKit / 工具类。
+/// 这些入口全部复用已有业务路径：同步走 `SyncManager`，主窗口动作通过 focused
+/// context 路由，外链 / 诊断导出仍走原 AppKit / 工具类。
 /// 这样菜单只是 macOS 可发现性增强，不新增第二套业务状态。
 private struct StarcatAppCommands: Commands {
     let dependencies: AppDependencies?
+    let commandRouter: StarcatCommandRouter
+    let settings: AppSettings
+    @FocusedValue(\.starcatRefreshAction) private var focusedRefreshAction
 
     var body: some Commands {
         CommandMenu("commands.actions.menu") {
-            Button("commands.actions.syncStars") {
-                syncStars()
-            }
-            .disabled(dependencies == nil)
-
             Button("commands.actions.openGlobalSearch") {
-                NSApp.activate(ignoringOtherApps: true)
-                NotificationCenter.default.post(name: .starcatCommandOpenGlobalSearch, object: nil)
+                commandRouter.openGlobalSearch()
             }
+            .keyboardShortcut(
+                settings.keyboardShortcutsEnabled && settings.globalSearchShortcutEnabled
+                    ? settings.globalSearchShortcut.swiftUIShortcut
+                    : nil
+            )
+            .disabled(!commandRouter.canOpenGlobalSearch)
+
+            Button("commands.actions.openKnowledgeRAGWorkspace") {
+                commandRouter.openKnowledgeRAGWorkspace()
+            }
+            .keyboardShortcut(
+                settings.keyboardShortcutsEnabled && settings.knowledgeRAGShortcutEnabled
+                    ? settings.knowledgeRAGShortcut.swiftUIShortcut
+                    : nil
+            )
+            .disabled(!commandRouter.canOpenKnowledgeRAGWorkspace)
+
+            Button("commands.actions.openSelectedRepoAI") {
+                commandRouter.openCurrentRepositoryAI()
+            }
+            .keyboardShortcut(
+                settings.keyboardShortcutsEnabled && settings.selectedRepoAIShortcutEnabled
+                    ? settings.selectedRepoAIShortcut.swiftUIShortcut
+                    : nil
+            )
+            .disabled(!commandRouter.canOpenCurrentRepositoryAI)
+
+            Divider()
+
+            Button("commands.actions.refreshCurrentContent") {
+                if let focusedRefreshAction, focusedRefreshAction.isEnabled {
+                    focusedRefreshAction.perform()
+                } else {
+                    commandRouter.refreshCurrentContent()
+                }
+            }
+            .keyboardShortcut(
+                settings.keyboardShortcutsEnabled && settings.refreshCurrentContentShortcutEnabled
+                    ? settings.refreshCurrentContentShortcut.swiftUIShortcut
+                    : nil
+            )
+            .disabled(
+                focusedRefreshAction?.isEnabled != true
+                    && commandRouter.currentRefreshAction?.isEnabled != true
+            )
 
             Button("ai.usage.open") {
                 if let dependencies {
@@ -412,6 +461,8 @@ private struct StarcatAppCommands: Commands {
                 }
             }
             .disabled(dependencies == nil)
+
+            Divider()
 
             if dependencies?.directUpdateController.isDirectBuild == true {
                 Button("commands.actions.checkForUpdates") {
@@ -444,18 +495,6 @@ private struct StarcatAppCommands: Commands {
                 ReleaseNotesWindowController.show()
             }
         }
-    }
-
-    @MainActor
-    private func syncStars() {
-        guard let dependencies,
-              let user = dependencies.authSession.state.user
-        else {
-            NSApp.activate(ignoringOtherApps: true)
-            dependencies?.authSession.requestLoginSheet()
-            return
-        }
-        dependencies.syncManager.performFullSync(userID: user.id, force: true)
     }
 
     @MainActor

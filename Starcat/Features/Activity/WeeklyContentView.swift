@@ -135,6 +135,14 @@ struct WeeklyContentView: View {
         .task(id: settings.wikiAvailabilityFilter.rawValue) {
             await reloadWikiAvailabilityMap(for: viewModel.items)
         }
+        .starcatRefreshCommand(
+            pane: .list,
+            identity: "weekly-\(selectedLanguage ?? "")-\(viewModel.selectedSort.rawValue)-\(viewModel.filterSummaryTitle)-\(viewModel.isLoading)",
+            title: String.l10n("commands.actions.refreshCurrentList"),
+            isEnabled: !viewModel.isLoading
+        ) {
+            refreshCurrentWeeklyList(viewModel)
+        }
     }
 
     @ViewBuilder
@@ -449,8 +457,13 @@ struct WeeklyContentView: View {
             disabled: viewModel.isLoading,
             tooltip: String.l10n("weekly.refresh")
         ) {
-            Task { await viewModel.reload() }
+            refreshCurrentWeeklyList(viewModel)
         }
+    }
+
+    /// Weekly 底层会更新 bulk 快照，但发布到 UI 的始终是当前筛选结果。
+    private func refreshCurrentWeeklyList(_ viewModel: WeeklyContentViewModel) {
+        Task { await viewModel.reload() }
     }
 
     // MARK: - Project List

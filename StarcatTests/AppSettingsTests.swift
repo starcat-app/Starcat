@@ -91,6 +91,11 @@ struct AppSettingsTests {
         settings.setExternalSearchSettings(anySearchSettings, for: .anySearch)
         settings.notificationsEnabled = false
         settings.hideDockIcon = true
+        settings.keyboardShortcutsEnabled = false
+        settings.refreshCurrentContentShortcutEnabled = false
+        settings.refreshCurrentContentShortcut = .init(
+            key: "r", command: true, option: true, control: false, shift: false
+        )
         settings.mcpServiceEnabled = true
         settings.mcpServicePort = 7777
         settings.mcpAllowDestructiveWrites = true
@@ -121,6 +126,9 @@ struct AppSettingsTests {
         #expect(settings.externalSearchSettings(for: .anySearch).isEnabled == false)
         #expect(settings.notificationsEnabled == true)
         #expect(settings.hideDockIcon == false)
+        #expect(settings.keyboardShortcutsEnabled == true)
+        #expect(settings.refreshCurrentContentShortcutEnabled == true)
+        #expect(settings.refreshCurrentContentShortcut == StarcatShortcutCatalog.refreshCurrentContentDefault)
         #expect(settings.mcpServiceEnabled == false)
         #expect(settings.mcpServicePort == AppSettings.defaultMCPServicePort)
         #expect(settings.mcpAllowDestructiveWrites == false)
@@ -258,19 +266,34 @@ struct AppSettingsTests {
 
     // MARK: - 快捷键偏好
 
-    @Test("快捷键: 默认 AI 用 Return 发送，全局搜索为 Command+K，常规搜索为 Command+F")
+    @Test("快捷键: AI 发送独立，五项应用命令默认启用并使用预设键位")
     func shortcutDefaults() {
         let settings = AppSettings(defaults: makeIsolatedDefaults())
         #expect(settings.aiChatRequiresCommandReturn == false)
+        #expect(settings.keyboardShortcutsEnabled)
         #expect(settings.globalSearchShortcut == .globalSearchDefault)
+        #expect(settings.globalSearchShortcutEnabled)
         #expect(settings.regularSearchShortcut == .regularSearchDefault)
+        #expect(settings.regularSearchShortcutEnabled)
+        #expect(settings.refreshCurrentContentShortcut == StarcatShortcutCatalog.refreshCurrentContentDefault)
+        #expect(settings.refreshCurrentContentShortcutEnabled)
+        #expect(settings.knowledgeRAGShortcut == StarcatShortcutCatalog.openKnowledgeRAGDefault)
+        #expect(settings.knowledgeRAGShortcutEnabled)
+        #expect(settings.selectedRepoAIShortcut == StarcatShortcutCatalog.openSelectedRepoAIDefault)
+        #expect(settings.selectedRepoAIShortcutEnabled)
     }
 
-    @Test("快捷键: AI 发送方式与全局搜索组合应持久化")
+    @Test("快捷键: 五项键位与两层开关持久化，AI 发送方式不随总开关改变")
     func shortcutSettingsPersist() {
         let defaults = makeIsolatedDefaults()
         let settings = AppSettings(defaults: defaults)
         settings.aiChatRequiresCommandReturn = true
+        settings.keyboardShortcutsEnabled = false
+        settings.globalSearchShortcutEnabled = false
+        settings.regularSearchShortcutEnabled = false
+        settings.refreshCurrentContentShortcutEnabled = false
+        settings.knowledgeRAGShortcutEnabled = false
+        settings.selectedRepoAIShortcutEnabled = false
         settings.globalSearchShortcut = .init(
             key: "p",
             command: true,
@@ -285,11 +308,41 @@ struct AppSettingsTests {
             control: false,
             shift: false
         )
+        settings.refreshCurrentContentShortcut = .init(
+            key: "r",
+            command: true,
+            option: true,
+            control: false,
+            shift: false
+        )
+        settings.knowledgeRAGShortcut = .init(
+            key: "j",
+            command: true,
+            option: false,
+            control: true,
+            shift: false
+        )
+        settings.selectedRepoAIShortcut = .init(
+            key: "a",
+            command: true,
+            option: true,
+            control: false,
+            shift: true
+        )
 
         let restored = AppSettings(defaults: defaults)
         #expect(restored.aiChatRequiresCommandReturn == true)
+        #expect(restored.keyboardShortcutsEnabled == false)
         #expect(restored.globalSearchShortcut.displayText == "⌥⌘P")
+        #expect(restored.globalSearchShortcutEnabled == false)
         #expect(restored.regularSearchShortcut.displayText == "⌘G")
+        #expect(restored.regularSearchShortcutEnabled == false)
+        #expect(restored.refreshCurrentContentShortcut.displayText == "⌥⌘R")
+        #expect(restored.refreshCurrentContentShortcutEnabled == false)
+        #expect(restored.knowledgeRAGShortcut.displayText == "⌃⌘J")
+        #expect(restored.knowledgeRAGShortcutEnabled == false)
+        #expect(restored.selectedRepoAIShortcut.displayText == "⌥⇧⌘A")
+        #expect(restored.selectedRepoAIShortcutEnabled == false)
     }
 
     @Test("快捷键: 损坏或不合法的持久化值回退 Command+K")
@@ -312,22 +365,145 @@ struct AppSettingsTests {
         #expect(settings.globalSearchShortcut == .globalSearchDefault)
     }
 
-    @Test("快捷键: 普通字符无修饰键非法，应用内固定组合不可覆盖")
+    @Test("快捷键: 普通字符无修饰键非法，仅真正固定的应用组合不可覆盖")
     func shortcutValidation() {
         let plainK = KeyboardShortcutConfiguration(
             key: "k", command: false, option: false, control: false, shift: false
         )
-        let commandI = KeyboardShortcutConfiguration(
-            key: "i", command: true, option: false, control: false, shift: false
-        )
         let shiftOnlyK = KeyboardShortcutConfiguration(
             key: "k", command: false, option: false, control: false, shift: true
         )
+        let formerAboutShortcut = KeyboardShortcutConfiguration(
+            key: "i", command: true, option: false, control: false, shift: false
+        )
+        let selectAllShortcut = KeyboardShortcutConfiguration(
+            key: "a", command: true, option: false, control: false, shift: false
+        )
         #expect(plainK.validationError == .missingModifier)
         #expect(shiftOnlyK.validationError == .missingModifier)
-        #expect(commandI.validationError == .reserved)
+        #expect(selectAllShortcut.validationError == .reserved)
+        #expect(StarcatShortcutCatalog.refreshCurrentContentDefault.validationError == nil)
+        #expect(StarcatShortcutCatalog.openKnowledgeRAGDefault.validationError == nil)
+        #expect(StarcatShortcutCatalog.openSelectedRepoAIDefault.validationError == nil)
+        #expect(formerAboutShortcut.validationError == nil)
         #expect(KeyboardShortcutConfiguration.globalSearchDefault.validationError == nil)
         #expect(KeyboardShortcutConfiguration.regularSearchDefault.validationError == nil)
+    }
+
+    @Test("快捷键: 五个可配置动作不能使用相同组合")
+    func configurableShortcutConflict() {
+        let candidate = KeyboardShortcutConfiguration.globalSearchDefault
+
+        #expect(
+            candidate.validationError(conflictingWith: [.globalSearchDefault])
+                == .duplicateConfiguredAction
+        )
+        #expect(candidate.validationError(conflictingWith: [.regularSearchDefault]) == nil)
+    }
+
+    @Test("快捷键: 任意持久化重复配置都会让五项一起回退默认组合")
+    func duplicatedStoredShortcutsFallBackTogether() throws {
+        let defaults = makeIsolatedDefaults()
+        let duplicated = KeyboardShortcutConfiguration(
+            key: "g",
+            command: true,
+            option: true,
+            control: false,
+            shift: false
+        )
+        let encoded = String(decoding: try JSONEncoder().encode(duplicated), as: UTF8.self)
+        defaults.set(encoded, forKey: AppSettings.Keys.globalSearchShortcut)
+        defaults.set(encoded, forKey: AppSettings.Keys.refreshCurrentContentShortcut)
+
+        let settings = AppSettings(defaults: defaults)
+
+        #expect(settings.globalSearchShortcut == .globalSearchDefault)
+        #expect(settings.regularSearchShortcut == .regularSearchDefault)
+        #expect(settings.refreshCurrentContentShortcut == StarcatShortcutCatalog.refreshCurrentContentDefault)
+        #expect(settings.knowledgeRAGShortcut == StarcatShortcutCatalog.openKnowledgeRAGDefault)
+        #expect(settings.selectedRepoAIShortcut == StarcatShortcutCatalog.openSelectedRepoAIDefault)
+    }
+
+    @Test("快捷键路由: 最后操作详情时只刷新详情")
+    func commandRouterPrefersActiveDetail() {
+        let router = StarcatCommandRouter()
+        let listOwner = UUID()
+        let detailOwner = UUID()
+        var calls: [String] = []
+
+        router.registerRefreshAction(
+            StarcatCommandAction(title: "list", isEnabled: true) { calls.append("list") },
+            pane: .list,
+            ownerID: listOwner
+        )
+        router.registerRefreshAction(
+            StarcatCommandAction(title: "detail", isEnabled: true) { calls.append("detail") },
+            pane: .detail,
+            ownerID: detailOwner
+        )
+        router.activate(.detail)
+        router.refreshCurrentContent()
+
+        #expect(calls == ["detail"])
+    }
+
+    @Test("快捷键路由: 详情不可刷新时回退当前列表")
+    func commandRouterFallsBackToList() {
+        let router = StarcatCommandRouter()
+        var calls: [String] = []
+
+        router.registerRefreshAction(
+            StarcatCommandAction(title: "list", isEnabled: true) { calls.append("list") },
+            pane: .list,
+            ownerID: UUID()
+        )
+        router.registerRefreshAction(
+            StarcatCommandAction(title: "detail", isEnabled: false) { calls.append("detail") },
+            pane: .detail,
+            ownerID: UUID()
+        )
+        router.activate(.detail)
+        router.refreshCurrentContent()
+
+        #expect(calls == ["list"])
+    }
+
+    @Test("快捷键路由: 旧详情消失不能清掉新详情动作")
+    func commandRouterIgnoresStaleUnregister() {
+        let router = StarcatCommandRouter()
+        let oldOwner = UUID()
+        let newOwner = UUID()
+        var calls: [String] = []
+
+        router.registerRefreshAction(
+            StarcatCommandAction(title: "old", isEnabled: true) { calls.append("old") },
+            pane: .detail,
+            ownerID: oldOwner
+        )
+        router.registerRefreshAction(
+            StarcatCommandAction(title: "new", isEnabled: true) { calls.append("new") },
+            pane: .detail,
+            ownerID: newOwner
+        )
+        router.unregisterRefreshAction(pane: .detail, ownerID: oldOwner)
+        router.activate(.detail)
+        router.refreshCurrentContent()
+
+        #expect(calls == ["new"])
+    }
+
+    @Test("快捷键路由: 当前仓库 AI 使用最新详情动作")
+    func commandRouterUsesLatestRepositoryAI() {
+        let router = StarcatCommandRouter()
+        var opened = false
+        router.registerRepositoryAIAction(
+            StarcatCommandAction(title: "AI", isEnabled: true) { opened = true },
+            ownerID: UUID()
+        )
+
+        router.openCurrentRepositoryAI()
+
+        #expect(opened)
     }
 
     // MARK: - AI BYOK 设置

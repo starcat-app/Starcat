@@ -178,6 +178,14 @@ struct ActivityView: View {
                 activityItemList(viewModel)
             }
         }
+        .starcatRefreshCommand(
+            pane: .list,
+            identity: "activity-\(selectedCategory.rawValue)-\(viewModel.isRefreshing)",
+            title: String.l10n("commands.actions.refreshCurrentList"),
+            isEnabled: !viewModel.isRefreshing
+        ) {
+            refreshCurrentActivityList(viewModel)
+        }
         .alert(
             "activity.following.clear.confirm",
             isPresented: $showClearFollowingConfirmation
@@ -470,11 +478,16 @@ struct ActivityView: View {
             disabled: viewModel.isRefreshing,
             tooltip: String.l10n("activity.refresh")
         ) {
-            Task {
-                await viewModel.refresh(category: selectedCategory)
-                applySelectionPolicy(from: viewModel.items)
-                reportItemCount(viewModel)
-            }
+            refreshCurrentActivityList(viewModel)
+        }
+    }
+
+    /// Activity 只请求当前分类所需网络，并在发布后重新应用当前详情选择策略。
+    private func refreshCurrentActivityList(_ viewModel: ActivityViewModel) {
+        Task {
+            await viewModel.refresh(category: selectedCategory)
+            applySelectionPolicy(from: viewModel.items)
+            reportItemCount(viewModel)
         }
     }
 

@@ -2,12 +2,14 @@
 //  RepoAIWindowController.swift
 //  Starcat
 //
-//  详情页 AI 助手玻璃态浮动面板的 AppKit 外壳（HOM-150）。
+//  详情页底部 AI 面板的附属独立窗口 AppKit 外壳（HOM-150）。
 //
 //  设计要点：
-//  - **按 repo.id 复用单例**：同一仓库再点 AI 按钮不会开第二个面板，而是把已有面板
-//    带到前台，避免堆积一批"同 repo 不同对话"的浮动窗口，与 macOS 用户的浮窗心智
-//    （Finder 单文件 quicklook、Preview 单文件预览）对齐。
+//  - **不是外部主入口**：快捷键、搜索、详情入口先打开 `RepoAIFloatingOverlay`；
+//    只有用户在底部面板内点击“在独立窗口中打开”才进入本控制器。
+//  - **按 repo.id 复用单例**：同一仓库再次选择“在独立窗口中打开”不会开第二个面板，
+//    而是把已有面板带到前台，避免堆积一批"同 repo 不同对话"的浮动窗口；这与
+//    macOS 用户的浮窗心智（Finder 单文件 quicklook、Preview 单文件预览）对齐。
 //  - **不同 repo 各自独立窗口**：用户可以继续打开其他 repo 做对比；所有面板默认
 //    常驻、保持浮动层级，只有主动点关闭按钮才销毁。
 //  - **窗口关闭后释放控制器**：单例 map 在 `windowWillClose` 里清掉对应条目；
@@ -44,7 +46,7 @@ private enum RepoAIWindowMetrics {
     static let minContentSize = NSSize(width: 480, height: 600)
 }
 
-/// 详情页 AI 助手窗口的控制器。
+/// 详情页底部 AI 面板所派生的附属独立窗口控制器。
 final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
 
     /// repo.id → controller 单例 map。

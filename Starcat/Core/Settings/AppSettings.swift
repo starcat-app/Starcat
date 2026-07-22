@@ -1025,8 +1025,14 @@ final class AppSettings {
     }
 
     /// 开启后 AI 多行输入必须按 Command+Return 才发送；普通 Return 始终换行。
+    /// 这是输入行为偏好，不属于应用命令快捷键，不受下方总开关或逐项开关影响。
     var aiChatRequiresCommandReturn: Bool {
         didSet { persistBool(key: Keys.aiChatRequiresCommandReturn, value: aiChatRequiresCommandReturn) }
+    }
+
+    /// 应用命令快捷键总开关。关闭只停止键盘注册，菜单、toolbar 和详情按钮仍可使用。
+    var keyboardShortcutsEnabled: Bool {
+        didSet { persistBool(key: Keys.keyboardShortcutsEnabled, value: keyboardShortcutsEnabled) }
     }
 
     /// 全局搜索入口快捷键，默认 Command+K。值对象在写入设置页前已完成合法性校验。
@@ -1034,9 +1040,49 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.globalSearchShortcut, value: globalSearchShortcut) }
     }
 
+    var globalSearchShortcutEnabled: Bool {
+        didSet { persistBool(key: Keys.globalSearchShortcutEnabled, value: globalSearchShortcutEnabled) }
+    }
+
     /// 列表 toolbar 常规搜索快捷键，默认 Command+F。展开 SmartSearchField 并聚焦输入框。
     var regularSearchShortcut: KeyboardShortcutConfiguration {
         didSet { persistJSON(key: Keys.regularSearchShortcut, value: regularSearchShortcut) }
+    }
+
+    var regularSearchShortcutEnabled: Bool {
+        didSet { persistBool(key: Keys.regularSearchShortcutEnabled, value: regularSearchShortcutEnabled) }
+    }
+
+    /// 刷新当前中栏列表或右栏详情的快捷键，默认 Command+R。
+    var refreshCurrentContentShortcut: KeyboardShortcutConfiguration {
+        didSet { persistJSON(key: Keys.refreshCurrentContentShortcut, value: refreshCurrentContentShortcut) }
+    }
+
+    var refreshCurrentContentShortcutEnabled: Bool {
+        didSet {
+            persistBool(
+                key: Keys.refreshCurrentContentShortcutEnabled,
+                value: refreshCurrentContentShortcutEnabled
+            )
+        }
+    }
+
+    /// 打开知识库 RAG 工作台的快捷键，默认 Shift+Command+K。
+    var knowledgeRAGShortcut: KeyboardShortcutConfiguration {
+        didSet { persistJSON(key: Keys.knowledgeRAGShortcut, value: knowledgeRAGShortcut) }
+    }
+
+    var knowledgeRAGShortcutEnabled: Bool {
+        didSet { persistBool(key: Keys.knowledgeRAGShortcutEnabled, value: knowledgeRAGShortcutEnabled) }
+    }
+
+    /// 打开当前详情仓库 AI 窗口的快捷键，默认 Shift+Command+A。
+    var selectedRepoAIShortcut: KeyboardShortcutConfiguration {
+        didSet { persistJSON(key: Keys.selectedRepoAIShortcut, value: selectedRepoAIShortcut) }
+    }
+
+    var selectedRepoAIShortcutEnabled: Bool {
+        didSet { persistBool(key: Keys.selectedRepoAIShortcutEnabled, value: selectedRepoAIShortcutEnabled) }
     }
 
     // MARK: - 通知（2026-06-20）
@@ -1619,25 +1665,80 @@ final class AppSettings {
         self.disableAnimations = defaults.object(forKey: Keys.disableAnimations) as? Bool ?? false
         self.hideDockIcon = defaults.object(forKey: Keys.hideDockIcon) as? Bool ?? false
         self.aiChatRequiresCommandReturn = defaults.object(forKey: Keys.aiChatRequiresCommandReturn) as? Bool ?? false
+        self.keyboardShortcutsEnabled = defaults.object(forKey: Keys.keyboardShortcutsEnabled) as? Bool ?? true
+        self.globalSearchShortcutEnabled = defaults.object(forKey: Keys.globalSearchShortcutEnabled) as? Bool ?? true
+        self.regularSearchShortcutEnabled = defaults.object(forKey: Keys.regularSearchShortcutEnabled) as? Bool ?? true
+        self.refreshCurrentContentShortcutEnabled = defaults.object(
+            forKey: Keys.refreshCurrentContentShortcutEnabled
+        ) as? Bool ?? true
+        self.knowledgeRAGShortcutEnabled = defaults.object(forKey: Keys.knowledgeRAGShortcutEnabled) as? Bool ?? true
+        self.selectedRepoAIShortcutEnabled = defaults.object(forKey: Keys.selectedRepoAIShortcutEnabled) as? Bool ?? true
+
         let storedSearchShortcut = Self.decodeJSON(
             KeyboardShortcutConfiguration.self,
             key: Keys.globalSearchShortcut,
             defaults: defaults
         )
-        if let storedSearchShortcut, storedSearchShortcut.validationError == nil {
-            self.globalSearchShortcut = storedSearchShortcut
-        } else {
-        self.globalSearchShortcut = .globalSearchDefault
-        }
         let storedRegularSearchShortcut = Self.decodeJSON(
             KeyboardShortcutConfiguration.self,
             key: Keys.regularSearchShortcut,
             defaults: defaults
         )
-        if let storedRegularSearchShortcut, storedRegularSearchShortcut.validationError == nil {
-            self.regularSearchShortcut = storedRegularSearchShortcut
-        } else {
+        let storedRefreshShortcut = Self.decodeJSON(
+            KeyboardShortcutConfiguration.self,
+            key: Keys.refreshCurrentContentShortcut,
+            defaults: defaults
+        )
+        let storedKnowledgeRAGShortcut = Self.decodeJSON(
+            KeyboardShortcutConfiguration.self,
+            key: Keys.knowledgeRAGShortcut,
+            defaults: defaults
+        )
+        let storedSelectedRepoAIShortcut = Self.decodeJSON(
+            KeyboardShortcutConfiguration.self,
+            key: Keys.selectedRepoAIShortcut,
+            defaults: defaults
+        )
+
+        let resolvedSearchShortcut = storedSearchShortcut.flatMap {
+            $0.validationError == nil ? $0 : nil
+        } ?? .globalSearchDefault
+        let resolvedRegularSearchShortcut = storedRegularSearchShortcut.flatMap {
+            $0.validationError == nil ? $0 : nil
+        } ?? .regularSearchDefault
+        let resolvedRefreshShortcut = storedRefreshShortcut.flatMap {
+            $0.validationError == nil ? $0 : nil
+        } ?? StarcatShortcutCatalog.refreshCurrentContentDefault
+        let resolvedKnowledgeRAGShortcut = storedKnowledgeRAGShortcut.flatMap {
+            $0.validationError == nil ? $0 : nil
+        } ?? StarcatShortcutCatalog.openKnowledgeRAGDefault
+        let resolvedSelectedRepoAIShortcut = storedSelectedRepoAIShortcut.flatMap {
+            $0.validationError == nil ? $0 : nil
+        } ?? StarcatShortcutCatalog.openSelectedRepoAIDefault
+
+        let resolvedShortcuts = [
+            resolvedSearchShortcut,
+            resolvedRegularSearchShortcut,
+            resolvedRefreshShortcut,
+            resolvedKnowledgeRAGShortcut,
+            resolvedSelectedRepoAIShortcut
+        ]
+
+        // 五项应用命令始终保持唯一，即使某项暂时关闭也不能占用另一项键位。
+        // 这样重新开启时不会突然产生两个命令竞争；遇到手工篡改或旧版本重复值时，
+        // 五项一起恢复默认，比静默偏袒其中一个动作更可预测。
+        if Set(resolvedShortcuts).count != resolvedShortcuts.count {
+            self.globalSearchShortcut = .globalSearchDefault
             self.regularSearchShortcut = .regularSearchDefault
+            self.refreshCurrentContentShortcut = StarcatShortcutCatalog.refreshCurrentContentDefault
+            self.knowledgeRAGShortcut = StarcatShortcutCatalog.openKnowledgeRAGDefault
+            self.selectedRepoAIShortcut = StarcatShortcutCatalog.openSelectedRepoAIDefault
+        } else {
+            self.globalSearchShortcut = resolvedSearchShortcut
+            self.regularSearchShortcut = resolvedRegularSearchShortcut
+            self.refreshCurrentContentShortcut = resolvedRefreshShortcut
+            self.knowledgeRAGShortcut = resolvedKnowledgeRAGShortcut
+            self.selectedRepoAIShortcut = resolvedSelectedRepoAIShortcut
         }
         self.notificationsEnabled = defaults.object(forKey: Keys.notificationsEnabled) as? Bool ?? true
         self.releaseNotificationsEnabled = defaults.object(forKey: Keys.releaseNotificationsEnabled) as? Bool ?? true
@@ -1798,8 +1899,17 @@ final class AppSettings {
         disableAnimations = false
         hideDockIcon = false
         aiChatRequiresCommandReturn = false
+        keyboardShortcutsEnabled = true
         globalSearchShortcut = .globalSearchDefault
+        globalSearchShortcutEnabled = true
         regularSearchShortcut = .regularSearchDefault
+        regularSearchShortcutEnabled = true
+        refreshCurrentContentShortcut = StarcatShortcutCatalog.refreshCurrentContentDefault
+        refreshCurrentContentShortcutEnabled = true
+        knowledgeRAGShortcut = StarcatShortcutCatalog.openKnowledgeRAGDefault
+        knowledgeRAGShortcutEnabled = true
+        selectedRepoAIShortcut = StarcatShortcutCatalog.openSelectedRepoAIDefault
+        selectedRepoAIShortcutEnabled = true
         notificationsEnabled = true
         releaseNotificationsEnabled = true
         batchAINotificationsEnabled = true
@@ -2151,8 +2261,17 @@ final class AppSettings {
         static let disableAnimations = "settings.general.disableAnimations.v1"  // 2026-06-15
         static let hideDockIcon = "settings.general.hideDockIcon.v1"  // 2026-07-02
         static let aiChatRequiresCommandReturn = "settings.general.shortcuts.aiCommandReturn.v1"
+        static let keyboardShortcutsEnabled = "settings.general.shortcuts.enabled.v1"
         static let globalSearchShortcut = "settings.general.shortcuts.globalSearch.v1"
+        static let globalSearchShortcutEnabled = "settings.general.shortcuts.globalSearch.enabled.v1"
         static let regularSearchShortcut = "settings.general.shortcuts.regularSearch.v1"
+        static let regularSearchShortcutEnabled = "settings.general.shortcuts.regularSearch.enabled.v1"
+        static let refreshCurrentContentShortcut = "settings.general.shortcuts.refreshCurrentContent.v1"
+        static let refreshCurrentContentShortcutEnabled = "settings.general.shortcuts.refreshCurrentContent.enabled.v1"
+        static let knowledgeRAGShortcut = "settings.general.shortcuts.knowledgeRAG.v1"
+        static let knowledgeRAGShortcutEnabled = "settings.general.shortcuts.knowledgeRAG.enabled.v1"
+        static let selectedRepoAIShortcut = "settings.general.shortcuts.selectedRepoAI.v1"
+        static let selectedRepoAIShortcutEnabled = "settings.general.shortcuts.selectedRepoAI.enabled.v1"
         static let notificationsEnabled = "settings.notifications.enabled.v1"
         static let releaseNotificationsEnabled = "settings.notifications.release.enabled.v1"
         static let batchAINotificationsEnabled = "settings.notifications.batchAI.enabled.v1"
@@ -2238,8 +2357,17 @@ final class AppSettings {
             disableAnimations,
             hideDockIcon,
             aiChatRequiresCommandReturn,
+            keyboardShortcutsEnabled,
             globalSearchShortcut,
+            globalSearchShortcutEnabled,
             regularSearchShortcut,
+            regularSearchShortcutEnabled,
+            refreshCurrentContentShortcut,
+            refreshCurrentContentShortcutEnabled,
+            knowledgeRAGShortcut,
+            knowledgeRAGShortcutEnabled,
+            selectedRepoAIShortcut,
+            selectedRepoAIShortcutEnabled,
             notificationsEnabled,
             releaseNotificationsEnabled,
             batchAINotificationsEnabled,

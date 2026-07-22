@@ -24,6 +24,7 @@ struct ActivityReleaseDetailScaffoldShell: View {
 
     @State private var displayRepo: Repo?
     @State private var releases: [ReleaseRecord]
+    @State private var isRefreshing = false
 
     init(item: ActivityItem) {
         self.item = item
@@ -43,6 +44,14 @@ struct ActivityReleaseDetailScaffoldShell: View {
             displayRepo = item.repo
             releases = item.releases
             await reloadReleases()
+        }
+        .starcatRefreshCommand(
+            pane: .detail,
+            identity: "activity-release-\(item.id)-\(isRefreshing)",
+            title: String.l10n("commands.actions.refreshCurrentDetail"),
+            isEnabled: !isRefreshing && item.repo != nil
+        ) {
+            refreshReleaseDetail()
         }
     }
 
@@ -102,6 +111,16 @@ struct ActivityReleaseDetailScaffoldShell: View {
             releases = try await dependencies.releaseRepository.fetch(forRepo: repo.id, limit: 200)
         } catch {
             AppLog.database.error("ActivityReleaseDetail: load releases failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Release 详情没有 README 状态栏，单独把当前仓库的本地 Release 时间线接入 `⌘R`。
+    private func refreshReleaseDetail() {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        Task {
+            await reloadReleases()
+            isRefreshing = false
         }
     }
 
