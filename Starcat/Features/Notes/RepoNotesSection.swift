@@ -307,7 +307,7 @@ struct RepoNotesSection: View {
     ///   - **v2 升到 76pt**：加 12pt buffer（约 0.7 行），保证第 3 行下方仍有视觉余量
     ///   - 不能再加大（如 80+ 会显示第 4 行 1/3 残影）
     /// - **超过 3 行内部纵向滚动**：TextEditor 在 macOS 包装 NSTextView，原生 vertical scroll 自动出现；
-    ///   长笔记可原位扩展到 320pt，用户仍能同时查看仓库详情。
+    ///   长笔记可原位扩展到 480pt，用户仍能同时查看仓库详情。
     /// - **右下角 overlay 按钮（v2 关键修正）**：始终可见、半透明，hover 时加深。
     ///   - **重要约束**：NSScroller 绘制层级**在 SwiftUI overlay 之上**（SwiftUI 限制，与 z-index 无关），
     ///     滚动条出现时会**覆盖**按钮 → trailing padding 必须留出 ~14pt 完全避开 NSScroller 宽度 (~12pt)。
@@ -339,7 +339,7 @@ struct RepoNotesSection: View {
                 inlineTextEditor
             }
         }
-        .frame(minHeight: isEditorExpanded ? 320 : 76, maxHeight: isEditorExpanded ? 320 : 76)
+        .frame(minHeight: isEditorExpanded ? 480 : 76, maxHeight: isEditorExpanded ? 480 : 76)
         .background(
             RoundedRectangle(cornerRadius: 6)
                 .fill(Color(nsColor: .textBackgroundColor))
