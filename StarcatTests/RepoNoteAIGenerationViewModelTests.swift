@@ -111,7 +111,7 @@ struct RepoNoteAIGenerationViewModelTests {
         #expect(!viewModel.canApplyDraft)
     }
 
-    @Test("步骤耗时运行中增长并在状态解决后冻结")
+    @Test("可计时步骤运行中增长并在状态解决后冻结")
     func stepDurationAdvancesAndFreezes() async throws {
         let clock = RepoNoteStepClockStub(now: 100)
         let ai = RepoNoteControllableDraftStub()
@@ -132,17 +132,18 @@ struct RepoNoteAIGenerationViewModelTests {
         #expect(abs((viewModel.elapsedDuration(for: .generating) ?? 0) - 2.4) < 0.001)
 
         clock.advance(by: 3.2)
-        #expect(abs((viewModel.elapsedDuration(for: .awaitingConfirmation) ?? 0) - 3.2) < 0.001)
+        #expect(viewModel.elapsedDuration(for: .awaitingConfirmation) == nil)
+        #expect(viewModel.stepStartedAt[.awaitingConfirmation] == nil)
         #expect(viewModel.beginApplying(currentNote: "original") == "AI draft")
-        #expect(abs((viewModel.elapsedDuration(for: .awaitingConfirmation) ?? 0) - 3.2) < 0.001)
+        #expect(viewModel.elapsedDuration(for: .awaitingConfirmation) == nil)
 
         clock.advance(by: 0.8)
         viewModel.finishApplying(success: false)
         #expect(abs((viewModel.elapsedDuration(for: .saving) ?? 0) - 0.8) < 0.001)
-        #expect(abs((viewModel.elapsedDuration(for: .awaitingConfirmation) ?? -1)) < 0.001)
+        #expect(viewModel.elapsedDuration(for: .awaitingConfirmation) == nil)
 
         clock.advance(by: 1.1)
-        #expect(abs((viewModel.elapsedDuration(for: .awaitingConfirmation) ?? 0) - 1.1) < 0.001)
+        #expect(viewModel.elapsedDuration(for: .awaitingConfirmation) == nil)
 
         viewModel.discard()
         #expect(RepoNoteAIGenerationStep.allCases.allSatisfy {

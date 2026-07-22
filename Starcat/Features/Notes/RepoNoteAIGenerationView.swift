@@ -118,21 +118,26 @@ struct RepoNoteAIGenerationPanel: View {
                 .font(.caption)
                 .foregroundStyle(state == .running ? .primary : .secondary)
             Spacer()
+            stepDuration(step: step, state: state)
             Text(LocalizedStringKey(stateTitleKey(state)))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .frame(minWidth: 44, alignment: .trailing)
-            stepDuration(step: step, state: state)
         }
     }
 
-    /// 只让 running 行定时刷新；已解决行直接渲染冻结值，避免面板停止后仍保留无意义定时器。
+    /// 只让真正执行任务的 running 行定时刷新。“等待确认”取决于用户操作，
+    /// 它的停留时间不是系统耗时，因此保留列宽但不显示任何数值。
     @ViewBuilder
     private func stepDuration(
         step: RepoNoteAIGenerationStep,
         state: RepoNoteAIGenerationStepState
     ) -> some View {
-        if state == .running {
+        if step == .awaitingConfirmation {
+            Color.clear
+                .frame(width: 54, height: 1)
+                .accessibilityHidden(true)
+        } else if state == .running {
             TimelineView(.periodic(from: .now, by: 0.1)) { _ in
                 stepDurationText(for: step)
             }

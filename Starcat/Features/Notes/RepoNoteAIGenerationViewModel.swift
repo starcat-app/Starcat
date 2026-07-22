@@ -121,8 +121,10 @@ final class RepoNoteAIGenerationViewModel {
         phase == .awaitingConfirmation && draftMarkdown.repoNoteNonBlank != nil
     }
 
-    /// 返回已冻结或正在增长的步骤耗时。pending / skipped 没有虚假 0 秒。
+    /// 返回已冻结或正在增长的步骤耗时。pending / skipped 没有虚假 0 秒，
+    /// “等待确认”是用户停留阶段，不计入系统步骤耗时。
     func elapsedDuration(for step: RepoNoteAIGenerationStep) -> TimeInterval? {
+        guard Self.shouldTrackDuration(for: step) else { return nil }
         if let duration = stepDurations[step] {
             return duration
         }
@@ -324,6 +326,14 @@ final class RepoNoteAIGenerationViewModel {
         _ state: RepoNoteAIGenerationStepState,
         for step: RepoNoteAIGenerationStep
     ) {
+        guard Self.shouldTrackDuration(for: step) else {
+            // 用户确认时长不是系统处理耗时，进入该阶段时主动清理计时数据。
+            stepStartedAt.removeValue(forKey: step)
+            stepDurations.removeValue(forKey: step)
+            stepStates[step] = state
+            return
+        }
+
         let previousState = stepStates[step]
 
         if previousState == .running, state != .running,
@@ -337,6 +347,10 @@ final class RepoNoteAIGenerationViewModel {
         }
 
         stepStates[step] = state
+    }
+
+    private static func shouldTrackDuration(for step: RepoNoteAIGenerationStep) -> Bool {
+        step != .awaitingConfirmation
     }
 
     private func resetStepTimings() {
