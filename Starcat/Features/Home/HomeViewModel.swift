@@ -344,6 +344,11 @@ final class HomeViewModel {
     /// 缓存搜索结果（isSearching=true）单独处理，不进此缓存。
     private var listCache: [SidebarItem: CacheEntry] = [:]
 
+    /// 全局 Repo Pin 快照。DB 分页列表直接由 SQL 排序；这份轻量映射负责右键菜单状态，
+    /// 并让 Smart Collections 等无法下推 SQLite 的列表使用同一套置顶语义。
+    private var pinnedRepoTimestamps: [Int64: TimeInterval] = [:]
+    private var hasLoadedRepoPins = false
+
     /// 数据库分页分类的查询级首屏快照。
     ///
     /// 旧 `listCache` 只按 SidebarItem 保存全量内存路径，数据库分页完成后又会主动移除它；
@@ -700,6 +705,50 @@ final class HomeViewModel {
 
     func libraryState(for repoId: Int64) -> LibraryState {
         libraryStateMap[repoId] ?? .outsideLibrary
+    }
+
+    /// Repo Pin 是全局用户状态：同一个仓库在任意 Manage 分类里都显示相同菜单状态。
+    func isRepoPinned(_ repoId: Int64) -> Bool {
+        pinnedRepoTimestamps[repoId] != nil
+    }
+
+    /// 更新 Repo Pin，并立即刷新当前 Manage 列表的顺序。
+    ///
+    /// 搜索期间只更新菜单状态，不改变当前搜索结果顺序；退出搜索后的常规列表会使用新顺序。
+    func setRepoPinned(repoId: Int64, pinned: Bool) async throws {
+        let pinnedAt = pinned ? Date() : nil
+        try await repository.setPinned(repoId: repoId, pinnedAt: pinnedAt)
+
+        if let pinnedAt {
+            pinnedRepoTimestamps[repoId] = pinnedAt.timeIntervalSince1970
+        } else {
+            pinnedRepoTimestamps.removeValue(forKey: repoId)
+        }
+        hasLoadedRepoPins = true
+
+        // Pin 会影响所有 Manage 分类的顺序，旧快照即使成员相同也不能继续复用。
+        listCache.removeAll()
+        clearDatabaseSnapshots()
+
+        guard !isSearching else { return }
+        if currentRepoListScopeForDatabasePaging() != nil {
+            await reloadItems(forceRefresh: true, reason: .externalMutation)
+        } else {
+            // Smart Collections 走内存派生路径。直接 applyView，避免 reloadItems 的
+            // “repo IDs 未变化”优化跳过这次纯顺序更新。
+            applyView(resetPage: false)
+        }
+    }
+
+    /// 首次列表加载时读取一次全局 Pin 快照；失败不阻断 repo list，后续 reload 会重试。
+    private func loadRepoPinsIfNeeded() async {
+        guard !hasLoadedRepoPins else { return }
+        do {
+            pinnedRepoTimestamps = try await repository.fetchPinnedRepoTimestamps()
+            hasLoadedRepoPins = true
+        } catch {
+            AppLog.database.warning("Repo Pin snapshot load failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// 知识库状态写入成功后的本地同步入口。
@@ -1168,6 +1217,8 @@ final class HomeViewModel {
         repoTagsMap = [:]
         wikiAvailabilityMap = [:]
         semanticHitMap = [:]
+        pinnedRepoTimestamps = [:]
+        hasLoadedRepoPins = false
         temporaryGlobalFilterSession = nil
         selectedTagIds = []
         repoLanguageFilter = .all
@@ -1984,6 +2035,9 @@ final class HomeViewModel {
         #if DEBUG
         AppLog.ui.notice("[switch-cat] reload begin generation=\(generation) reason=\(reloadReason.rawValue, privacy: .public) scope=\(identity.safeSelectionKind, privacy: .public)")
         #endif
+
+        await loadRepoPinsIfNeeded()
+        guard reloadCoordinator.isCurrent(generation: generation, identity: identity) else { return }
 
         let databaseScope = PerformanceTracer.shared.trace(.manageRoute) {
             currentRepoListScopeForDatabasePaging()
@@ -2845,15 +2899,45 @@ final class HomeViewModel {
             && smartSearchMode == .semantic
             && !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         if !isSemanticSearching && !userCollectionSemanticSearch {
+            let selectedSort: (Repo, Repo) -> Bool
             if sortOption == .healthScoreDesc {
-                view.sort(by: healthScoreComparator)
+                selectedSort = healthScoreComparator
             } else if sortOption == .openSSFScoreDesc {
-                view.sort(by: openSSFScoreComparator)
+                selectedSort = openSSFScoreComparator
             } else {
-                view.sort(by: sortOption.comparator)
+                selectedSort = sortOption.comparator
+            }
+
+            if isSearching {
+                // 搜索结果的相关性 / 用户显式排序优先，Pin 不参与搜索结果重排。
+                view.sort(by: selectedSort)
+            } else {
+                view.sort { lhs, rhs in
+                    pinnedRepoComparator(lhs, rhs, fallback: selectedSort)
+                }
             }
         }
         return view
+    }
+
+    /// Pin 只建立顶层分组；同为 Pin 或同为未 Pin 时继续使用用户选中的原排序。
+    private func pinnedRepoComparator(
+        _ lhs: Repo,
+        _ rhs: Repo,
+        fallback: (Repo, Repo) -> Bool
+    ) -> Bool {
+        let lhsPinnedAt = pinnedRepoTimestamps[lhs.id]
+        let rhsPinnedAt = pinnedRepoTimestamps[rhs.id]
+        switch (lhsPinnedAt, rhsPinnedAt) {
+        case let (lhs?, rhs?) where lhs != rhs:
+            return lhs > rhs
+        case (_?, nil):
+            return true
+        case (nil, _?):
+            return false
+        default:
+            return fallback(lhs, rhs)
+        }
     }
 
     private func applyGlobalRepoFilters(to repos: inout [Repo]) {

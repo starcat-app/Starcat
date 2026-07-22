@@ -212,6 +212,7 @@ struct RepoListView: View {
     // 中栏自身操作的轻量反馈；仓库链接与 Clone URL 属于当前详情对象，改由右栏
     // RepoDetailScaffold 的共用 Toast 显示，避免提示落在错误列。
     @State private var toastMessage: String?
+    @State private var repoPinToastMessage: String?
     /// toolbar spec 会通过 `AnyView` 频繁重建，sheet 必须由稳定的页面根节点承载。
     /// 否则关闭 CodeFlow 时 presentation host 被替换，窗口会短暂再次出现。
     @State private var codeFlowSheetItem: CodeGraphSheetItem?
@@ -282,6 +283,7 @@ struct RepoListView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .toast(message: $toastMessage, icon: "doc.on.clipboard")
+        .toast(message: $repoPinToastMessage, icon: "pin.fill")
         .toast(message: $shareCompletionMessage, icon: "link.circle")
         .sheet(isPresented: $showGitHubStarListOAuthRestrictionSheet) {
             GitHubStarListOAuthRestrictionSheet()
@@ -1699,7 +1701,7 @@ struct RepoListView: View {
                         await readmeAPI.prefetch(for: repo)
                     }
                     .contextMenu {
-                        githubStarListContextMenu(for: repo)
+                        repoContextMenu(for: repo)
                     }
                     // R-07：滚到倒数第 3 行 → 追加下一页（Weekly 同款范式）。
                     // 用 `viewModel.items.count` 实时读，配合 hasMore 守卫天然幂等：
@@ -1865,9 +1867,9 @@ struct RepoListView: View {
         }
     }
 
-    // MARK: - 右键菜单（仓库分组操作）
+    // MARK: - Repo 右键菜单
 
-    /// repo 列表右键菜单：分组移入 / 移出 / 移动。
+    /// Manage repo 列表右键菜单：Pin + 分组移入 / 移出 / 移动。
     ///
     /// **2026-07-05 优化（扁平化）**：
     /// 之前用 `Menu` 嵌套做「添加到... / 移动到...」子菜单，macOS 上层级展开箭头需要精确
@@ -1876,8 +1878,24 @@ struct RepoListView: View {
     /// - 数量尾标辅助判断目标分组大小
     /// - 当前分组不可点（"移动到"模式），避免无意义操作
     @ViewBuilder
-    private func githubStarListContextMenu(for repo: Repo) -> some View {
+    private func repoContextMenu(for repo: Repo) -> some View {
         if selectedPage == .manage {
+            if viewModel.isRepoPinned(repo.id) {
+                Button {
+                    mutateRepoPin(repo, pinned: false)
+                } label: {
+                    Label("repoList.context.unpin", systemImage: "pin.slash")
+                }
+            } else {
+                Button {
+                    mutateRepoPin(repo, pinned: true)
+                } label: {
+                    Label("repoList.context.pin", systemImage: "pin")
+                }
+            }
+
+            Divider()
+
             if case .githubStarList(let currentListID) = viewModel.selection {
                 // ──── 在某个分组内：移出 + 移到其他分组 ────
                 if let currentList = viewModel.githubStarLists.first(where: { $0.id == currentListID }) {
@@ -1927,6 +1945,21 @@ struct RepoListView: View {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// Pin 写库成功后再发布列表顺序，避免数据库失败时 UI 与持久化状态分叉。
+    private func mutateRepoPin(_ repo: Repo, pinned: Bool) {
+        Task {
+            do {
+                try await viewModel.setRepoPinned(repoId: repo.id, pinned: pinned)
+                repoPinToastMessage = pinned
+                    ? "repoList.toast.pinned"
+                    : "repoList.toast.unpinned"
+            } catch {
+                AppLog.database.error("Repo Pin mutation failed: \(error.localizedDescription, privacy: .public)")
+                repoPinToastMessage = "repoList.toast.pinFailed"
             }
         }
     }
@@ -2545,6 +2578,7 @@ private struct ManageRepoRowContent: View {
                 healthBadge: dependencies.repoHealthStore.badge(for: repo.id)
             ),
             isSelected: isSelected,
+            isPinned: viewModel.isRepoPinned(repo.id),
             semanticHit: viewModel.semanticHit(for: repo.id),
             hasAISummary: aiSummaryAvailability.contains(repo.id)
         )

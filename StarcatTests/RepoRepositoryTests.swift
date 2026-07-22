@@ -822,4 +822,43 @@ struct RepoRepositoryTests {
         #expect(page.map(\.id) == [2])
         #expect(try await repo.fetchListCount(scope: .githubStarListUngrouped, filters: .empty) == 1)
     }
+
+    @Test("Repo Pin: 最近置顶优先，组内保留用户排序，取消后恢复")
+    func repoPinsPrecedeSelectedSortAndUnpinRestores() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 1, owner: "octo", name: "one", starredAt: "2026-06-26T03:00:00Z")
+        try await db.insertRepoFixture(id: 2, owner: "octo", name: "two", starredAt: "2026-06-26T02:00:00Z")
+        try await db.insertRepoFixture(id: 3, owner: "octo", name: "three", starredAt: "2026-06-26T01:00:00Z")
+
+        try await repo.setPinned(repoId: 1, pinnedAt: Date(timeIntervalSince1970: 100))
+        try await repo.setPinned(repoId: 3, pinnedAt: Date(timeIntervalSince1970: 200))
+
+        let pinnedPage = try await repo.fetchListPage(
+            scope: .allStars,
+            filters: .empty,
+            sort: .starredAtDesc,
+            limit: 2,
+            offset: 0
+        )
+        let pinnedIDs = try await repo.fetchListIDs(
+            scope: .allStars,
+            filters: .empty,
+            sort: .starredAtDesc
+        )
+        #expect(pinnedPage.map(\.id) == [3, 1], "置顶仓库必须跨分页边界进入首页，且最近置顶在前")
+        #expect(pinnedIDs == [3, 1, 2])
+        #expect(try await repo.fetchPinnedRepoTimestamps() == [1: 100, 3: 200])
+        #expect(try await repo.fetchListCount(scope: .allStars, filters: .empty) == 3)
+
+        try await repo.setPinned(repoId: 3, pinnedAt: nil)
+        let afterUnpin = try await repo.fetchListPage(
+            scope: .allStars,
+            filters: .empty,
+            sort: .starredAtDesc,
+            limit: 10,
+            offset: 0
+        )
+        #expect(afterUnpin.map(\.id) == [1, 2, 3])
+        #expect(try await repo.fetchPinnedRepoTimestamps() == [1: 100])
+    }
 }

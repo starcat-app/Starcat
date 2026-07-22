@@ -152,6 +152,15 @@ protocol RepoRepositoryProtocol: Sendable {
         sort: RepoSortOption
     ) async throws -> [SelectionSnapshot]
 
+    // MARK: - Manage Repo Pin
+
+    /// 返回全局置顶仓库及其置顶时间。HomeViewModel 只缓存这份轻量映射，供右键菜单状态
+    /// 和无法下推 SQLite 的 Smart Collections 内存排序使用。
+    func fetchPinnedRepoTimestamps() async throws -> [Int64: TimeInterval]
+
+    /// 写入或删除一个仓库的全局 Pin 状态。传 nil 表示取消置顶。
+    func setPinned(repoId: Int64, pinnedAt: Date?) async throws
+
     // MARK: - 同步状态
 
     /// 更新 sync_state 表中当前用户的同步统计。

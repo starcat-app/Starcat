@@ -108,6 +108,10 @@ struct UnifiedRepoRow: View {
     /// 是否选中（驱动 RepoRowSurface 视觉变化）。
     let isSelected: Bool
 
+    /// 是否在卡片左上角显示 Pin 状态。只有 Manage 场景注入，避免把本地整理状态
+    /// 扩散到 Trending / Weekly / Activity 等共享卡片场景。
+    let isPinned: Bool
+
     /// 语义搜索命中（仅 Manage 场景非 nil；其它场景一律 nil）。
     /// chip 行右侧紧跟 SemanticScoreBadge 显示相似度分数。
     let semanticHit: SemanticSearchHit?
@@ -143,6 +147,7 @@ struct UnifiedRepoRow: View {
     init(
         card: RepoCardViewData,
         isSelected: Bool = false,
+        isPinned: Bool = false,
         semanticHit: SemanticSearchHit? = nil,
         showStarredCheckmark: Bool = false,
         showLibraryBadge: Bool = true,
@@ -152,6 +157,7 @@ struct UnifiedRepoRow: View {
     ) {
         self.card = card
         self.isSelected = isSelected
+        self.isPinned = isPinned
         self.semanticHit = semanticHit
         self.showStarredCheckmark = showStarredCheckmark
         self.showLibraryBadge = showLibraryBadge
@@ -259,6 +265,18 @@ struct UnifiedRepoRow: View {
                 .padding(.trailing, trailingReservedWidth)
 
                 Spacer(minLength: 0)
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if isPinned {
+                // Pin 属于整张卡片的排序状态，必须贴卡片左上角；不能复用头像角标，
+                // 否则会和头像左上角的“已加入知识库”心形混淆。
+                Image(systemName: "pin.fill")
+                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(8)
+                    .accessibilityLabel(Text("repo.card.pinned"))
+                    .help("repo.card.pinned")
             }
         }
     }

@@ -36,7 +36,7 @@
 //    `v8-rag-suggested-actions` / `v9-rag-metadata-keyword-only` /
 //    `v10-rag-conversation-pinned-at` / `v11-rag-embedding-claim` /
 //    `v12-rag-metadata-revision` / `v13-weekly-multi-source` /
-//    `v14-ai-usage-events`
+//    `v14-ai-usage-events` / `v15-repo-pins`
 //
 
 import Foundation
@@ -67,6 +67,23 @@ enum DatabaseMigrations {
         registerV12(into: &migrator)
         registerV13(into: &migrator)
         registerV14(into: &migrator)
+        registerV15(into: &migrator)
+    }
+
+    // MARK: - v15-repo-pins：Manage 仓库置顶（2026-07-22）
+
+    /// Repo Pin 是用户私有的整理状态，不能写进可由 GitHub 重新拉取的 `repos` 缓存表。
+    /// 独立关系表让同步刷新只更新仓库元数据，不会覆盖用户的置顶选择；`repo_id` 主键同时
+    /// 保证一个仓库只有一份全局 Pin 状态。`pinned_at` 用于多个置顶仓库按最近操作排序。
+    private static func registerV15(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v15-repo-pins") { db in
+            try db.create(table: "repo_pins") { table in
+                table.column("repo_id", .integer).primaryKey()
+                    .references("repos", column: "id", onDelete: .cascade)
+                table.column("pinned_at", .double).notNull()
+            }
+            try db.create(index: "idx_repo_pins_pinned_at", on: "repo_pins", columns: ["pinned_at"])
+        }
     }
 
     // MARK: - v14-ai-usage-events：AI 请求用量事件（2026-07-19）

@@ -106,6 +106,61 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.items.map(\.id) == [2, 1], "默认 starredAtDesc → 最近 star 在前")
     }
 
+    @Test("Repo Pin: DB 分页加载持久状态，取消后恢复当前排序")
+    func repoPinReordersDatabasePagedList() async throws {
+        let (vm, db, _) = try makeSUT()
+        try await insertRepo(db, id: 1, fullName: "o/older", stars: 1, starredAt: "2026-05-01T00:00:00Z")
+        try await insertRepo(db, id: 2, fullName: "o/newer", stars: 1, starredAt: "2026-05-30T00:00:00Z")
+        try await db.writer.write { db in
+            try db.execute(
+                sql: "INSERT INTO repo_pins (repo_id, pinned_at) VALUES (?, ?)",
+                arguments: [Int64(1), 100.0]
+            )
+        }
+        await vm.reloadItems()
+        #expect(vm.isRepoPinned(1))
+        #expect(vm.items.map(\.id) == [1, 2])
+
+        try await vm.setRepoPinned(repoId: 1, pinned: false)
+        #expect(!vm.isRepoPinned(1))
+        #expect(vm.items.map(\.id) == [2, 1])
+
+        try await vm.setRepoPinned(repoId: 1, pinned: true)
+        #expect(vm.items.map(\.id) == [1, 2])
+    }
+
+    @Test("Repo Pin: Smart Collection 内存路径也立即按置顶排序")
+    func repoPinReordersSmartCollection() async throws {
+        let (vm, db, noteRepo) = try makeSUT()
+        try await insertRepo(db, id: 1, fullName: "o/older", stars: 1, starredAt: "2026-05-01T00:00:00Z")
+        try await insertRepo(db, id: 2, fullName: "o/newer", stars: 1, starredAt: "2026-05-30T00:00:00Z")
+        try await noteRepo.updateStatus(repoId: 1, status: .using)
+        try await noteRepo.updateStatus(repoId: 2, status: .using)
+        vm.selectSidebar(.smartCollection(.using))
+        await vm.reloadItems()
+        #expect(vm.items.map(\.id) == [2, 1])
+
+        try await vm.setRepoPinned(repoId: 1, pinned: true)
+
+        #expect(vm.isRepoPinned(1))
+        #expect(vm.items.map(\.id) == [1, 2])
+    }
+
+    @Test("Repo Pin: 关键词搜索期间不重排搜索结果")
+    func repoPinDoesNotOverrideKeywordSearchOrder() async throws {
+        let (vm, db, _) = try makeSUT()
+        try await insertRepo(db, id: 1, fullName: "o/common-older", stars: 1, starredAt: "2026-05-01T00:00:00Z")
+        try await insertRepo(db, id: 2, fullName: "o/common-newer", stars: 1, starredAt: "2026-05-30T00:00:00Z")
+        await vm.reloadItems()
+        try await vm.setRepoPinned(repoId: 1, pinned: true)
+        #expect(vm.items.map(\.id) == [1, 2])
+
+        vm.submitSearch("common")
+        await vm.reloadItems(forceRefresh: true)
+
+        #expect(vm.items.map(\.id) == [2, 1], "搜索期间应继续使用原有搜索/排序规则，不应用 Pin 分组")
+    }
+
     @Test("D1: sortOption 改成 starsDesc → 通过数据库分页重查当前页")
     func switchSortReorders() async throws {
         let (vm, db, _) = try makeSUT()

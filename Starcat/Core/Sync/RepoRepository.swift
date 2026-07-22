@@ -572,6 +572,39 @@ struct GRDBRepoRepository {
         }
     }
 
+    // MARK: - Manage Repo Pin
+
+    /// 读取全部 Pin 很轻量：表中只保存用户主动置顶的少量 repo，不随 stars 总量线性膨胀。
+    func fetchPinnedRepoTimestamps() async throws -> [Int64: TimeInterval] {
+        try await database.writer.read { db in
+            let rows = try Row.fetchAll(db, sql: "SELECT repo_id, pinned_at FROM repo_pins")
+            return Dictionary(uniqueKeysWithValues: rows.map { row in
+                (row["repo_id"] as Int64, row["pinned_at"] as TimeInterval)
+            })
+        }
+    }
+
+    /// Pin 属于用户整理状态，取消时只删关系行，不触碰 repo 元数据、标签或笔记。
+    func setPinned(repoId: Int64, pinnedAt: Date?) async throws {
+        try await database.writer.write { db in
+            if let pinnedAt {
+                try db.execute(
+                    sql: """
+                    INSERT INTO repo_pins (repo_id, pinned_at)
+                    VALUES (?, ?)
+                    ON CONFLICT(repo_id) DO UPDATE SET pinned_at = excluded.pinned_at
+                    """,
+                    arguments: [repoId, pinnedAt.timeIntervalSince1970]
+                )
+            } else {
+                try db.execute(
+                    sql: "DELETE FROM repo_pins WHERE repo_id = ?",
+                    arguments: [repoId]
+                )
+            }
+        }
+    }
+
     private static func makeListQuery(
         projection: String,
         scope: RepoListScope,
@@ -765,6 +798,12 @@ struct GRDBRepoRepository {
             joins.append("LEFT JOIN repo_notes rn_library_sort ON rn_library_sort.repo_id = r.id")
         }
 
+        // Pin 只改变排序，不改变分类成员关系。COUNT 查询不需要这张表，避免无意义 JOIN；
+        // 分页、Cmd+A ID 和多选快照都走 includeOrderBy=true，因此会共享完全一致的顺序。
+        if includeOrderBy {
+            joins.append("LEFT JOIN repo_pins rp_sort ON rp_sort.repo_id = r.id")
+        }
+
         let orderBy: String
         switch sort {
         case .starredAtDesc:
@@ -807,7 +846,8 @@ struct GRDBRepoRepository {
             WHERE \(whereClauses.joined(separator: "\nAND "))
             """
         if includeOrderBy {
-            sql += "\nORDER BY \(orderBy)"
+            // 多个 Pin 按最近置顶时间排序；未 Pin 的仓库继续严格遵守用户当前排序选项。
+            sql += "\nORDER BY rp_sort.pinned_at IS NULL ASC, rp_sort.pinned_at DESC, \(orderBy)"
         }
         if let limit {
             sql += "\nLIMIT ?"

@@ -38814,6 +38814,23 @@
         }
       }
     },
+    "repo.card.pinned" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pinned"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已置顶"
+          }
+        }
+      }
+    },
     "repo.created" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -42089,6 +42106,91 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "这个仓库可能还没有本地缓存记录，或快照刷新失败。同步完成后可以再刷新。"
+          }
+        }
+      }
+    },
+    "repoList.context.pin" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pin"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "置顶"
+          }
+        }
+      }
+    },
+    "repoList.context.unpin" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unpin"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消置顶"
+          }
+        }
+      }
+    },
+    "repoList.toast.pinFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed to update pin"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新置顶失败"
+          }
+        }
+      }
+    },
+    "repoList.toast.pinned" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repository pinned"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仓库已置顶"
+          }
+        }
+      }
+    },
+    "repoList.toast.unpinned" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repository unpinned"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已取消置顶"
           }
         }
       }

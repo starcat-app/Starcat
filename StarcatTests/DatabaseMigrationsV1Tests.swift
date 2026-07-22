@@ -26,6 +26,7 @@ struct DatabaseMigrationsV1Tests {
             "repos", "starred_repos", "tags", "repo_tags",
             "repo_notes", "readmes", "saved_searches", "smart_collections",
             "sync_state", "tag_stats_cache", "open_ssf_scores",
+            "repo_pins",
             "rag_chunks", "rag_chunks_fts", "rag_conversation_groups",
             "rag_conversations", "rag_messages", "rag_message_citations",
             "rag_message_remote_contexts", "rag_metadata_revision"
@@ -35,6 +36,26 @@ struct DatabaseMigrationsV1Tests {
                 let exists = try db.tableExists(table)
                 #expect(exists, "Table \(table) should exist")
             }
+        }
+    }
+
+    @Test("Repo Pin v15 应建立独立用户状态表与时间索引")
+    func repoPinMigrationCreatesTable() throws {
+        let db = try makeDB()
+        try db.read { db in
+            var migrator = DatabaseMigrator()
+            DatabaseMigrations.registerAll(into: &migrator)
+            let applied = try migrator.appliedMigrations(db)
+            #expect(applied.contains("v15-repo-pins"))
+
+            let columns = try db.columns(in: "repo_pins").map(\.name)
+            #expect(columns == ["repo_id", "pinned_at"])
+
+            let indexes = try String.fetchAll(
+                db,
+                sql: "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'repo_pins'"
+            )
+            #expect(indexes.contains("idx_repo_pins_pinned_at"))
         }
     }
 
