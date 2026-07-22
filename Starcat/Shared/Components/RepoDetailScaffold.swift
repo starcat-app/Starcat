@@ -182,8 +182,12 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// 顶部面板自然高度（由 CollapsibleRepoMetadataPanel 内部回填）。
     @State private var metadataPanelHeight: CGFloat = 0
 
-    /// 当前详情栏的可用高度。Hero 超高时用它计算内部滚动视口，
+    /// 父级详情栏明确提议的可用高度。Hero 超高时用它计算内部滚动视口，
     /// 避免 480pt 笔记和 AI 步骤面板把下方 README 完全挤出屏幕。
+    ///
+    /// 这里不能再测量 Scaffold 自己布局完成后的高度：AI 面板会抬高子树自然高度，
+    /// 自测结果再反过来放宽 Hero 上限会形成尺寸反馈，最终让 NavigationSplitView
+    /// 三栏一起高于最小窗口并被上下裁切。唯一可信边界是 GeometryReader 收到的父级 proposal。
     @State private var detailViewportHeight: CGFloat = 0
 
     /// README / Release 时间线在 Hero 展开时的可滚动余量（由 body slot 上报）。
@@ -301,26 +305,41 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     }
 
     var body: some View {
-        // v2.1 修订（2026-06-11）：原 `.overlay(alignment: .bottomTrailing)` 浮动刷新
-        // 按钮已删除（与 cacheFooter 内置按钮视觉重叠造成 bug,详见文件头 v2.1 修订段）。
-        VStack(alignment: .leading, spacing: 0) {
-            metadataPanelViewport
-            body_(updateScrollReport)
-                .overlay(alignment: .bottom) {
-                    if isRepositoryAIAvailable {
-                        // 所有 repo-backed 详情共用同一个底部 AI 主入口；独立窗口
-                        // 仍只能从该面板内部的“在独立窗口中打开”派生。
-                        RepoAIFloatingOverlay(repo: repo)
+        // GeometryReader 在布局开始时就锁定 NavigationSplitView 给详情栏的真实 proposal。
+        // 子树即使因 AI 步骤、草稿或 480pt 编辑器突然增高，也只能在这个 viewport 内滚动，
+        // 不能把自己的自然高度继续向上传给三栏根容器。
+        GeometryReader { proxy in
+            let viewportSize = proxy.size
+
+            // v2.1 修订（2026-06-11）：原 `.overlay(alignment: .bottomTrailing)` 浮动刷新
+            // 按钮已删除（与 cacheFooter 内置按钮视觉重叠造成 bug,详见文件头 v2.1 修订段）。
+            VStack(alignment: .leading, spacing: 0) {
+                metadataPanelViewport(availableHeight: viewportSize.height)
+                body_(updateScrollReport)
+                    .overlay(alignment: .bottom) {
+                        if isRepositoryAIAvailable {
+                            // 所有 repo-backed 详情共用同一个底部 AI 主入口；独立窗口
+                            // 仍只能从该面板内部的“在独立窗口中打开”派生。
+                            RepoAIFloatingOverlay(repo: repo)
+                        }
                     }
-                }
+            }
+            .frame(
+                width: viewportSize.width,
+                height: viewportSize.height,
+                alignment: .top
+            )
+            // 这是详情栏的最终隔离边界。正常内容通过 Hero / README 自己的滚动容器访问；
+            // clipped 只阻止异常的自然尺寸再次污染 NavigationSplitView 三栏布局。
+            .clipped()
+            .onAppear {
+                updateDetailViewportHeight(viewportSize.height)
+            }
+            .onChange(of: viewportSize.height) { _, newHeight in
+                updateDetailViewportHeight(newHeight)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.height
-        } action: { newHeight in
-            guard abs(newHeight - detailViewportHeight) > 0.5 else { return }
-            detailViewportHeight = newHeight
-        }
         // 根节点 tint：必须在 `CollapsibleRepoMetadataPanel` 外，否则 `.clipped()` 裁掉
         // 向上延伸；滚 README 折叠 hero 时同步淡出。
         .detailHeroTintBackground(
@@ -494,6 +513,15 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         ) ?? naturalHeight
     }
 
+    /// 记录父级 viewport 仅供 README 折叠资格计算使用；Hero 实际 frame 在同一布局轮次
+    /// 直接读取 GeometryReader 的 proxy，不等待 @State 回写，因此首帧也不会泄漏自然高度。
+    private func updateDetailViewportHeight(_ newHeight: CGFloat) {
+        guard newHeight > 0,
+              abs(newHeight - detailViewportHeight) > 0.5
+        else { return }
+        detailViewportHeight = newHeight
+    }
+
     /// 把 WebView 当前上报的余量折算回 Hero 展开态，避免折叠动作本身改变 `clientHeight`
     /// 后让可折叠资格在边界 README 上反复翻转。
     static func expandedScrollOverflow(
@@ -544,22 +572,25 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
 
     /// Hero 内部滚动视口。始终保留同一个 ScrollView 结构，避免长笔记展开后
     /// 因条件分支重建 `RepoNotesSection`，进而丢失编辑 buffer 或中断 AI 会话。
-    private var metadataPanelViewport: some View {
+    private func metadataPanelViewport(availableHeight: CGFloat) -> some View {
         ScrollView(.vertical) {
             metadataPanel
         }
         .defaultScrollAnchor(.top)
         .detailScrollViewStyle()
-        .frame(height: metadataPanelVisibleHeight, alignment: .top)
+        .frame(
+            height: metadataPanelVisibleHeight(availableHeight: availableHeight),
+            alignment: .top
+        )
         .clipped()
     }
 
     /// 折叠期间按同一 progress 缩小外层滚动视口，避免自然高度被 cap 后
     /// 前半段折叠只改变内容、不改变实际占位的视觉迟滞。
-    private var metadataPanelVisibleHeight: CGFloat? {
+    private func metadataPanelVisibleHeight(availableHeight: CGFloat) -> CGFloat? {
         guard let expandedHeight = Self.cappedMetadataPanelHeight(
             naturalHeight: metadataPanelHeight,
-            availableHeight: detailViewportHeight,
+            availableHeight: availableHeight,
             minimumBodyHeight: Self.minimumBodyViewportHeight
         ) else { return nil }
         let progress = min(max(metadataPanelCollapseProgress, 0), 1)

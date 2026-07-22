@@ -129,6 +129,21 @@ final class RepoDetailScaffoldTests: XCTestCase {
         XCTAssertEqual(height, 740)
     }
 
+    func testCappedMetadataPanelHeight_keepsMinimumWindowWithinParentViewport() throws {
+        let minimumWindowContentHeight: CGFloat = 763
+        let minimumBodyHeight: CGFloat = 160
+        let heroHeight = try XCTUnwrap(
+            RepoDetailScaffold<EmptyView, EmptyView>.cappedMetadataPanelHeight(
+                naturalHeight: 1_200,
+                availableHeight: minimumWindowContentHeight,
+                minimumBodyHeight: minimumBodyHeight
+            )
+        )
+
+        XCTAssertEqual(heroHeight, 603)
+        XCTAssertEqual(heroHeight + minimumBodyHeight, minimumWindowContentHeight)
+    }
+
     func testCappedMetadataPanelHeight_waitsForValidMeasurements() {
         XCTAssertNil(RepoDetailScaffold<EmptyView, EmptyView>.cappedMetadataPanelHeight(
             naturalHeight: 0,
