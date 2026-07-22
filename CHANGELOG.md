@@ -10,6 +10,7 @@ Release notes for the Mac App Store edition of Starcat.
 
 ### Improvements
 
+- Improved personal notes with README-based AI generation and refinement, visible progress, Markdown editing and preview, draft copying, and clearer save status.
 - Improved AI sharing by reusing existing AI summaries, with support for cancelling creation and generating a new AI share link.
 - Improved the RAG workspace UI.
 
