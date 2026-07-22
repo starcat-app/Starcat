@@ -265,8 +265,8 @@ struct RepoNotesSection: View {
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
-                        Spacer()
                         SaveIndicator(state: saveState, hasUnsaved: hasUnsavedChanges)
+                        Spacer()
                     }
                     .padding(.trailing, 120)
                     .frame(maxWidth: .infinity, alignment: .leading)
