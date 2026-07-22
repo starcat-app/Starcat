@@ -38979,6 +38979,22 @@
         }
       }
     },
+    "repo.notes.ai.duration.format" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%.1f s"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%.1f 秒"
+          }
+        }
+      }
+    },
     "repo.notes.ai.error.generic" : {
       "localizations" : {
         "en" : {

@@ -55,6 +55,7 @@ struct RepoNoteAIGenerationPanel: View {
     let onApply: () -> Void
 
     @State private var isDraftExpanded: Bool = true
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -120,7 +121,42 @@ struct RepoNoteAIGenerationPanel: View {
             Text(LocalizedStringKey(stateTitleKey(state)))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+                .frame(minWidth: 44, alignment: .trailing)
+            stepDuration(step: step, state: state)
         }
+    }
+
+    /// 只让 running 行定时刷新；已解决行直接渲染冻结值，避免面板停止后仍保留无意义定时器。
+    @ViewBuilder
+    private func stepDuration(
+        step: RepoNoteAIGenerationStep,
+        state: RepoNoteAIGenerationStepState
+    ) -> some View {
+        if state == .running {
+            TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+                stepDurationText(for: step)
+            }
+        } else {
+            stepDurationText(for: step)
+        }
+    }
+
+    private func stepDurationText(for step: RepoNoteAIGenerationStep) -> some View {
+        Group {
+            if let duration = viewModel.elapsedDuration(for: step) {
+                Text(String(
+                    format: String.l10n("repo.notes.ai.duration.format"),
+                    locale: locale,
+                    duration
+                ))
+            } else {
+                // pending / skipped 都没有实际执行时段，用破折号避免伪造 0 秒。
+                Text(verbatim: "—")
+            }
+        }
+        .font(.caption2.monospacedDigit())
+        .foregroundStyle(.secondary)
+        .frame(minWidth: 54, alignment: .trailing)
     }
 
     @ViewBuilder
