@@ -80,8 +80,8 @@ struct RepoNotesSection: View {
     /// 当前详情页内联编辑器是否扩展。扩展后仍留在详情上下文中，并提供编辑 / Markdown 预览。
     @State private var isEditorExpanded: Bool = false
 
-    /// 内联编辑器模式只在扩展态显示；收起时强制回到编辑，避免 3 行区域渲染不可读的预览。
-    @State private var inlineEditorMode: InlineEditorMode = .edit
+    /// 内联编辑器模式只在扩展态显示；默认预览，让放大入口优先承担阅读长笔记的场景。
+    @State private var inlineEditorMode: InlineEditorMode = .preview
 
     /// 用户确认 AI 草稿后仅保留折叠标题，避免已完成的过程面板继续占据详情空间。
     @State private var isCompletedDraftExpanded: Bool = false
@@ -318,6 +318,7 @@ struct RepoNotesSection: View {
         VStack(spacing: 0) {
             if isEditorExpanded {
                 HStack {
+                    Spacer()
                     Picker("", selection: $inlineEditorMode) {
                         Text("repo.notes.editor.tabEdit").tag(InlineEditorMode.edit)
                         Text("repo.notes.editor.tabPreview").tag(InlineEditorMode.preview)
@@ -326,7 +327,6 @@ struct RepoNotesSection: View {
                     .pickerStyle(.segmented)
                     .controlSize(.small)
                     .frame(width: 150)
-                    Spacer()
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
@@ -402,7 +402,8 @@ struct RepoNotesSection: View {
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
                 isEditorExpanded.toggle()
                 if !isEditorExpanded {
-                    inlineEditorMode = .edit
+                    // 收起态始终显示 TextEditor；预先恢复 preview，保证下次放大默认进入预览。
+                    inlineEditorMode = .preview
                 }
             }
         } label: {
@@ -449,7 +450,7 @@ struct RepoNotesSection: View {
         hasUnsavedChanges = false
         saveState = .idle
         isEditorExpanded = false
-        inlineEditorMode = .edit
+        inlineEditorMode = .preview
         isCompletedDraftExpanded = false
         let session = RepoNoteAIGenerationSessionStore.shared.session(for: newId) ?? makeAIGenerationViewModel()
         aiGenerationViewModel = session
