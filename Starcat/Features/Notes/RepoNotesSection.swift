@@ -309,7 +309,7 @@ struct RepoNotesSection: View {
         VStack(spacing: 0) {
             if isEditorExpanded {
                 // 仅保留模式栏的固有高度；真正的控件由卡片 overlay 直接锚定到右边框。
-                editorModePicker
+                editorModeControl
                     .hidden()
                     .padding(.vertical, 8)
                 Divider()
@@ -333,7 +333,7 @@ struct RepoNotesSection: View {
         .overlay(alignment: .topTrailing) {
             if isEditorExpanded {
                 // overlay 的尺寸就是笔记卡片尺寸，避免 DisclosureGroup / VStack 的理想宽度影响右对齐。
-                editorModePicker
+                editorModeControl
                     .padding(.top, 8)
                     .padding(.trailing, 10)
             }
@@ -345,16 +345,30 @@ struct RepoNotesSection: View {
         }
     }
 
-    /// 放大后的编辑 / 预览模式切换器；布局锚点由笔记卡片 overlay 统一控制。
-    private var editorModePicker: some View {
-        Picker("", selection: $inlineEditorMode) {
-            Text("repo.notes.editor.tabEdit").tag(InlineEditorMode.edit)
-            Text("repo.notes.editor.tabPreview").tag(InlineEditorMode.preview)
+    /// 放大后的编辑 / 预览模式切换器；两个独立系统按钮保留原有观感，只增加必要间距。
+    private var editorModeControl: some View {
+        HStack(spacing: 6) {
+            editorModeButton("repo.notes.editor.tabEdit", mode: .edit)
+            editorModeButton("repo.notes.editor.tabPreview", mode: .preview)
         }
-        .labelsHidden()
-        .pickerStyle(.segmented)
         .controlSize(.small)
-        .frame(width: 150, alignment: .trailing)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    /// 仅用系统 bordered 样式表达模式状态，避免为间距需求引入额外自定义外观。
+    @ViewBuilder
+    private func editorModeButton(_ titleKey: LocalizedStringKey, mode: InlineEditorMode) -> some View {
+        if inlineEditorMode == mode {
+            Button(titleKey) {
+                inlineEditorMode = mode
+            }
+            .buttonStyle(.borderedProminent)
+        } else {
+            Button(titleKey) {
+                inlineEditorMode = mode
+            }
+            .buttonStyle(.bordered)
+        }
     }
 
     /// 编辑模式继续绑定原来的 `editingContent`，所以扩展 / 收起不会产生第二份保存状态。
