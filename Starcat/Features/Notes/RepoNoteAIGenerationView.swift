@@ -88,9 +88,13 @@ struct RepoNoteAIGenerationPanel: View {
                     markdown: viewModel.draftMarkdown,
                     isExpanded: $isDraftExpanded
                 )
+                // 草稿操作属于预览的一部分；折叠标题时一起隐藏，避免孤立按钮失去上下文。
+                if isDraftExpanded {
+                    actionRow
+                }
+            } else {
+                actionRow
             }
-
-            actionRow
         }
         .padding(12)
         .background(
