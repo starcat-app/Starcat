@@ -38931,6 +38931,22 @@
         }
       }
     },
+    "repo.notes.ai.copyDraft" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy AI draft"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制 AI 草稿"
+          }
+        }
+      }
+    },
     "repo.notes.ai.discard" : {
       "localizations" : {
         "en" : {

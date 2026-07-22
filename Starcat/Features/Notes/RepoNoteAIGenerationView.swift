@@ -268,25 +268,43 @@ struct RepoNoteAIDraftDisclosure: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Button {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
-                    isExpanded.toggle()
+            ZStack(alignment: .trailing) {
+                Button {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                        isExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 10)
+                        Text("repo.notes.ai.draftTitle")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        Spacer()
+                    }
+                    // 给右侧独立复制命中区留位，避免标题行文字与按钮重叠。
+                    .padding(.trailing, 26)
+                    .contentShape(Rectangle())
                 }
-            } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 10)
-                    Text("repo.notes.ai.draftTitle")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.primary)
-                    Spacer()
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+
+                // 复制与折叠是同级 Button；折叠草稿时仍能直接复制最新 Markdown。
+                CopyFeedbackButton(
+                    providesContent: { markdown },
+                    tooltip: "repo.notes.ai.copyDraft"
+                ) { didCopy in
+                    Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(didCopy ? Color.green : .secondary)
+                        .frame(width: 14, height: 14)
+                        .accessibilityLabel(
+                            didCopy ? Text("common.copy.copied") : Text("repo.notes.ai.copyDraft")
+                        )
                 }
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
 
             if isExpanded {
                 ScrollView {
