@@ -309,7 +309,6 @@ struct RepoNotesSection: View {
         VStack(spacing: 0) {
             if isEditorExpanded {
                 HStack {
-                    Spacer()
                     Picker("", selection: $inlineEditorMode) {
                         Text("repo.notes.editor.tabEdit").tag(InlineEditorMode.edit)
                         Text("repo.notes.editor.tabPreview").tag(InlineEditorMode.preview)
@@ -319,6 +318,8 @@ struct RepoNotesSection: View {
                     .controlSize(.small)
                     .frame(width: 150)
                 }
+                // VStack 会按子视图理想宽度居中；显式撑满后 trailing 对齐才是真正贴右。
+                .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
                 Divider()
