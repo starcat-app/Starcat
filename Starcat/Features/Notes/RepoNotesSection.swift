@@ -331,6 +331,8 @@ struct RepoNotesSection: View {
                 inlineTextEditor
             }
         }
+        // 先让编辑器容器接收卡片的完整宽度，模式栏的 trailing 才会以卡片右边缘为基准。
+        .frame(maxWidth: .infinity)
         .frame(minHeight: isEditorExpanded ? 480 : 76, maxHeight: isEditorExpanded ? 480 : 76)
         .background(
             RoundedRectangle(cornerRadius: 6)
