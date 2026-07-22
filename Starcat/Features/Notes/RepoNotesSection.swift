@@ -354,7 +354,7 @@ struct RepoNotesSection: View {
         .labelsHidden()
         .pickerStyle(.segmented)
         .controlSize(.small)
-        .frame(width: 150)
+        .frame(width: 150, alignment: .trailing)
     }
 
     /// 编辑模式继续绑定原来的 `editingContent`，所以扩展 / 收起不会产生第二份保存状态。
