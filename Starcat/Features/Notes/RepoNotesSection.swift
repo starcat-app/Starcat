@@ -308,20 +308,10 @@ struct RepoNotesSection: View {
     private var notesEditor: some View {
         VStack(spacing: 0) {
             if isEditorExpanded {
-                HStack {
-                    Picker("", selection: $inlineEditorMode) {
-                        Text("repo.notes.editor.tabEdit").tag(InlineEditorMode.edit)
-                        Text("repo.notes.editor.tabPreview").tag(InlineEditorMode.preview)
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                    .controlSize(.small)
-                    .frame(width: 150)
-                }
-                // VStack 会按子视图理想宽度居中；显式撑满后 trailing 对齐才是真正贴右。
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+                // 仅保留模式栏的固有高度；真正的控件由卡片 overlay 直接锚定到右边框。
+                editorModePicker
+                    .hidden()
+                    .padding(.vertical, 8)
                 Divider()
             }
 
@@ -331,8 +321,6 @@ struct RepoNotesSection: View {
                 inlineTextEditor
             }
         }
-        // 先让编辑器容器接收卡片的完整宽度，模式栏的 trailing 才会以卡片右边缘为基准。
-        .frame(maxWidth: .infinity)
         .frame(minHeight: isEditorExpanded ? 480 : 76, maxHeight: isEditorExpanded ? 480 : 76)
         .background(
             RoundedRectangle(cornerRadius: 6)
@@ -342,11 +330,31 @@ struct RepoNotesSection: View {
             RoundedRectangle(cornerRadius: 6)
                 .strokeBorder(Color.secondary.opacity(0.2))
         )
+        .overlay(alignment: .topTrailing) {
+            if isEditorExpanded {
+                // overlay 的尺寸就是笔记卡片尺寸，避免 DisclosureGroup / VStack 的理想宽度影响右对齐。
+                editorModePicker
+                    .padding(.top, 8)
+                    .padding(.trailing, 10)
+            }
+        }
         .overlay(alignment: .bottomTrailing) {
             expandButton
                 .padding(.trailing, 22)
                 .padding(.bottom, 6)
         }
+    }
+
+    /// 放大后的编辑 / 预览模式切换器；布局锚点由笔记卡片 overlay 统一控制。
+    private var editorModePicker: some View {
+        Picker("", selection: $inlineEditorMode) {
+            Text("repo.notes.editor.tabEdit").tag(InlineEditorMode.edit)
+            Text("repo.notes.editor.tabPreview").tag(InlineEditorMode.preview)
+        }
+        .labelsHidden()
+        .pickerStyle(.segmented)
+        .controlSize(.small)
+        .frame(width: 150)
     }
 
     /// 编辑模式继续绑定原来的 `editingContent`，所以扩展 / 收起不会产生第二份保存状态。
