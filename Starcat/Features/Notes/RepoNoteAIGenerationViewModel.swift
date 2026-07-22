@@ -65,6 +65,8 @@ final class RepoNoteAIGenerationViewModel {
     private let readmeProvider: any RepoNoteAIReadmeProviding
     private let aiService: any RepoNoteAIDraftGenerating
     private let maxReadmeLength: Int
+    /// 使用单调时间源避免系统校时让步骤耗时跳变；注入闭包便于单测精确推进时间。
+    private let now: @MainActor () -> TimeInterval
 
     private var generationTask: Task<Void, Never>?
     private var generationID: UUID?
@@ -76,15 +78,21 @@ final class RepoNoteAIGenerationViewModel {
     private(set) var preparedInput: RepoNoteAIGenerationInput?
     private(set) var errorMessageKey: String?
     private(set) var errorDetail: String?
+    /// running 步骤的单调起点；步骤解决后移入 `stepDurations`。
+    private(set) var stepStartedAt: [RepoNoteAIGenerationStep: TimeInterval] = [:]
+    /// 已解决步骤的冻结耗时，折叠面板或切换 repo 不会丢失。
+    private(set) var stepDurations: [RepoNoteAIGenerationStep: TimeInterval] = [:]
 
     init(
         readmeProvider: any RepoNoteAIReadmeProviding,
         aiService: any RepoNoteAIDraftGenerating,
-        maxReadmeLength: Int = ReadmePreprocessor.defaultMaxLength
+        maxReadmeLength: Int = ReadmePreprocessor.defaultMaxLength,
+        now: @escaping @MainActor () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) {
         self.readmeProvider = readmeProvider
         self.aiService = aiService
         self.maxReadmeLength = maxReadmeLength
+        self.now = now
         self.stepStates = Self.pendingSteps()
     }
 
@@ -113,12 +121,24 @@ final class RepoNoteAIGenerationViewModel {
         phase == .awaitingConfirmation && draftMarkdown.repoNoteNonBlank != nil
     }
 
+    /// 返回已冻结或正在增长的步骤耗时。pending / skipped 没有虚假 0 秒。
+    func elapsedDuration(for step: RepoNoteAIGenerationStep) -> TimeInterval? {
+        if let duration = stepDurations[step] {
+            return duration
+        }
+        guard stepStates[step] == .running, let startedAt = stepStartedAt[step] else {
+            return nil
+        }
+        return max(0, now() - startedAt)
+    }
+
     func start(repo: Repo, existingNote: String) {
         cancelCurrentTask(markVisible: false)
         let runID = UUID()
         generationID = runID
         phase = .running
         stepStates = Self.pendingSteps()
+        resetStepTimings()
         draftMarkdown = ""
         sourceNoteSnapshot = existingNote
         preparedInput = nil
@@ -140,6 +160,7 @@ final class RepoNoteAIGenerationViewModel {
         cancelCurrentTask(markVisible: false)
         phase = .idle
         stepStates = Self.pendingSteps()
+        resetStepTimings()
         draftMarkdown = ""
         sourceNoteSnapshot = ""
         preparedInput = nil
@@ -154,8 +175,8 @@ final class RepoNoteAIGenerationViewModel {
             fail(step: .awaitingConfirmation, error: RepoNoteAIGenerationError.noteChanged)
             return nil
         }
-        stepStates[.awaitingConfirmation] = .completed
-        stepStates[.saving] = .running
+        setStepState(.completed, for: .awaitingConfirmation)
+        setStepState(.running, for: .saving)
         phase = .applying
         errorMessageKey = nil
         errorDetail = nil
@@ -166,13 +187,16 @@ final class RepoNoteAIGenerationViewModel {
     func finishApplying(success: Bool) {
         guard phase == .applying else { return }
         if success {
-            stepStates[.saving] = .completed
+            setStepState(.completed, for: .saving)
             phase = .completed
             errorMessageKey = nil
             errorDetail = nil
         } else {
-            stepStates[.saving] = .failed(messageKey: RepoNoteAIGenerationError.saveFailed.messageKey)
-            stepStates[.awaitingConfirmation] = .running
+            setStepState(
+                .failed(messageKey: RepoNoteAIGenerationError.saveFailed.messageKey),
+                for: .saving
+            )
+            setStepState(.running, for: .awaitingConfirmation)
             phase = .awaitingConfirmation
             errorMessageKey = RepoNoteAIGenerationError.saveFailed.messageKey
             errorDetail = RepoNoteAIGenerationError.saveFailed.localizedDescription
@@ -184,22 +208,22 @@ final class RepoNoteAIGenerationViewModel {
             setRunning(.checkingAI)
             try aiService.ensureNoteGenerationReady()
             try validate(runID)
-            stepStates[.checkingAI] = .completed
+            setStepState(.completed, for: .checkingAI)
 
             setRunning(.readingReadme)
             let cached = try await readmeProvider.cachedMarkdown(repoID: repo.id)
             try validate(runID)
-            stepStates[.readingReadme] = .completed
+            setStepState(.completed, for: .readingReadme)
 
             let markdown: String
             if let cached {
                 markdown = cached
-                stepStates[.downloadingReadme] = .skipped
+                setStepState(.skipped, for: .downloadingReadme)
             } else {
                 setRunning(.downloadingReadme)
                 markdown = try await readmeProvider.downloadMarkdown(for: repo)
                 try validate(runID)
-                stepStates[.downloadingReadme] = .completed
+                setStepState(.completed, for: .downloadingReadme)
             }
 
             setRunning(.preparingNote)
@@ -214,7 +238,7 @@ final class RepoNoteAIGenerationViewModel {
             )
             preparedInput = input
             sourceNoteSnapshot = existingNote
-            stepStates[.preparingNote] = .completed
+            setStepState(.completed, for: .preparingNote)
 
             setRunning(.generating)
             let final = try await aiService.generateNoteDraft(
@@ -227,8 +251,8 @@ final class RepoNoteAIGenerationViewModel {
             try validate(runID)
             guard let final = final.repoNoteNonBlank else { throw AIClientError.emptyResponse }
             draftMarkdown = final
-            stepStates[.generating] = .completed
-            stepStates[.awaitingConfirmation] = .running
+            setStepState(.completed, for: .generating)
+            setStepState(.running, for: .awaitingConfirmation)
             phase = .awaitingConfirmation
             generationTask = nil
         } catch is CancellationError {
@@ -251,12 +275,12 @@ final class RepoNoteAIGenerationViewModel {
     }
 
     private func setRunning(_ step: RepoNoteAIGenerationStep) {
-        stepStates[step] = .running
+        setStepState(.running, for: step)
     }
 
     private func fail(step: RepoNoteAIGenerationStep, error: Error) {
         let key = (error as? RepoNoteAIGenerationError)?.messageKey ?? "repo.notes.ai.error.generic"
-        stepStates[step] = .failed(messageKey: key)
+        setStepState(.failed(messageKey: key), for: step)
         phase = .failed
         errorMessageKey = key
         errorDetail = Self.userFacingDetail(for: error)
@@ -291,8 +315,33 @@ final class RepoNoteAIGenerationViewModel {
 
     private func markCurrentStepCancelled() {
         if let currentStep {
-            stepStates[currentStep] = .cancelled
+            setStepState(.cancelled, for: currentStep)
         }
+    }
+
+    /// 统一收口步骤状态和计时，避免失败 / 取消 / 保存重试分别漏掉冻结逻辑。
+    private func setStepState(
+        _ state: RepoNoteAIGenerationStepState,
+        for step: RepoNoteAIGenerationStep
+    ) {
+        let previousState = stepStates[step]
+
+        if previousState == .running, state != .running,
+           let startedAt = stepStartedAt.removeValue(forKey: step) {
+            stepDurations[step] = max(0, now() - startedAt)
+        }
+
+        if state == .running, previousState != .running {
+            stepDurations.removeValue(forKey: step)
+            stepStartedAt[step] = now()
+        }
+
+        stepStates[step] = state
+    }
+
+    private func resetStepTimings() {
+        stepStartedAt.removeAll(keepingCapacity: true)
+        stepDurations.removeAll(keepingCapacity: true)
     }
 
     private static func pendingSteps() -> [RepoNoteAIGenerationStep: RepoNoteAIGenerationStepState] {

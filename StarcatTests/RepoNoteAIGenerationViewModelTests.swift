@@ -111,6 +111,63 @@ struct RepoNoteAIGenerationViewModelTests {
         #expect(!viewModel.canApplyDraft)
     }
 
+    @Test("步骤耗时运行中增长并在状态解决后冻结")
+    func stepDurationAdvancesAndFreezes() async throws {
+        let clock = RepoNoteStepClockStub(now: 100)
+        let ai = RepoNoteControllableDraftStub()
+        let viewModel = RepoNoteAIGenerationViewModel(
+            readmeProvider: RepoNoteReadmeStub(cached: "# Demo"),
+            aiService: ai,
+            now: { clock.now }
+        )
+
+        viewModel.start(repo: Self.repo, existingNote: "original")
+        try await waitUntil { viewModel.currentStep == .generating }
+
+        clock.advance(by: 2.4)
+        #expect(abs((viewModel.elapsedDuration(for: .generating) ?? 0) - 2.4) < 0.001)
+
+        ai.complete(call: 0, snapshot: "AI draft", result: "AI draft")
+        try await waitUntil { viewModel.phase == .awaitingConfirmation }
+        #expect(abs((viewModel.elapsedDuration(for: .generating) ?? 0) - 2.4) < 0.001)
+
+        clock.advance(by: 3.2)
+        #expect(abs((viewModel.elapsedDuration(for: .awaitingConfirmation) ?? 0) - 3.2) < 0.001)
+        #expect(viewModel.beginApplying(currentNote: "original") == "AI draft")
+        #expect(abs((viewModel.elapsedDuration(for: .awaitingConfirmation) ?? 0) - 3.2) < 0.001)
+
+        clock.advance(by: 0.8)
+        viewModel.finishApplying(success: false)
+        #expect(abs((viewModel.elapsedDuration(for: .saving) ?? 0) - 0.8) < 0.001)
+        #expect(abs((viewModel.elapsedDuration(for: .awaitingConfirmation) ?? -1)) < 0.001)
+
+        clock.advance(by: 1.1)
+        #expect(abs((viewModel.elapsedDuration(for: .awaitingConfirmation) ?? 0) - 1.1) < 0.001)
+
+        viewModel.discard()
+        #expect(RepoNoteAIGenerationStep.allCases.allSatisfy {
+            viewModel.elapsedDuration(for: $0) == nil
+        })
+    }
+
+    @Test("取消生成会冻结当前步骤耗时")
+    func cancellationFreezesCurrentStepDuration() async throws {
+        let clock = RepoNoteStepClockStub(now: 20)
+        let viewModel = RepoNoteAIGenerationViewModel(
+            readmeProvider: RepoNoteReadmeStub(cached: "# Demo"),
+            aiService: RepoNoteDraftStub(result: "draft", suspendsUntilCancelled: true),
+            now: { clock.now }
+        )
+        viewModel.start(repo: Self.repo, existingNote: "")
+        try await waitUntil { viewModel.currentStep == .generating }
+
+        clock.advance(by: 1.5)
+        viewModel.cancel()
+        clock.advance(by: 4)
+
+        #expect(abs((viewModel.elapsedDuration(for: .generating) ?? 0) - 1.5) < 0.001)
+    }
+
     @Test("生成期笔记变化时阻止覆盖并保留草稿")
     func changedNoteBlocksApply() async throws {
         let viewModel = RepoNoteAIGenerationViewModel(
@@ -342,5 +399,19 @@ private final class RepoNoteControllableDraftStub: RepoNoteAIDraftGenerating {
         let call = pendingCalls[index]
         call.onDelta(snapshot)
         call.continuation.resume(returning: result)
+    }
+}
+
+/// 不依赖真实 sleep 的单调时钟，让步骤耗时断言可重复。
+@MainActor
+private final class RepoNoteStepClockStub {
+    private(set) var now: TimeInterval
+
+    init(now: TimeInterval) {
+        self.now = now
+    }
+
+    func advance(by duration: TimeInterval) {
+        now += duration
     }
 }
