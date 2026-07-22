@@ -251,7 +251,7 @@ setup-production-api-keys: ## 从 supports 各 API .env 写入 Secrets.xcconfig�
 	@bash scripts/sync-production-api-keys-from-env.sh
 
 deploy-pages: ## 部署生产 nginx + 静态页到 https://starcat.ink
-	@cd pages/direct && ./deploy.sh
+	@cd supports/starcat-site/direct && ./deploy.sh
 
 deploy-pages-test: ## 部署测试 nginx + 静态页到 https://test.starcat.ink
-	@cd pages/direct-test && ./deploy.sh
+	@cd supports/starcat-site/direct-test && ./deploy.sh

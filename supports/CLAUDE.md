@@ -1,6 +1,6 @@
-# supports/CLAUDE.md — Claude Code 在 supports/ 下的协作规则
+# supports/CLAUDE.md — Claude Code 在 supports/ 配套项目工作区下的协作规则
 
-> 这是 Starcat 项目后端 API 服务目录(supports/)的 Claude Code 协作规则。
+> 这是 Starcat 配套项目工作区（supports/）的 Claude Code 协作规则。
 > 与根 `Starcat/CLAUDE.md` 配合使用,本文档**只覆盖 supports/ 特有的硬性约束**。
 
 ---
@@ -8,12 +8,14 @@
 ## 必读清单(开工前)
 
 1. **根 Starcat/CLAUDE.md** — 全局规则(本目录所有 AI 协作者必须遵守)
-2. **supports/AGENTS.md** — supports/ 整体结构、6 个 API 项目对照表、通用技术栈
+2. **supports/AGENTS.md** — supports/ 整体结构、独立仓库边界、6 个公共 API 与私有 License API 对照表
 3. **被修改项目的 `AGENTS.md`** — 项目特定的开发规范、命令、commit 规范；若项目没有单独 `AGENTS.md`，以本文件和项目 README 为准
 
 ---
 
 ## 关键约束(强制)
+
+`supports/` 下的 `.github`、官网、文档、API、CLI、插件、Homebrew 和本地化目录均可能是独立 Git 仓库。修改前先在目标目录运行 `git status -sb` 并核对 remote；不要把多个独立仓库的改动混成主仓库提交。官网源码统一位于 `starcat-site/`，根目录 `pages/` 仅为待删除的迁移验证副本。
 
 ### 1. Go 版本一致性(2026-06-08 起)
 

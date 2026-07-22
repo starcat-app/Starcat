@@ -10,9 +10,9 @@
 | `scripts/release.sh` | 基础/内测发版编排入口 | 本地 tag -> `build-dmg.sh` -> push tag；不部署官网和 appcast |
 | `scripts/package-direct.sh` | Direct 包构建入口 | 构建 `StarcatDirect`，校验 Sparkle 与非沙箱 entitlement，生成 DMG/SHA，可选 notarization/appcast |
 | `scripts/build-dmg.sh` | 内测 DMG 构建入口 | 构建 `Starcat` ad-hoc/内部 DMG，输出到 `build/dmg/` |
-| `scripts/merge-appcast.py` | appcast 合并工具 | 把当前版本 appcast item 合并进 `pages/appcast.xml` |
-| `pages/deploy.sh` | 官网/nginx 部署脚本 | `-n` 部署 nginx 配置；无参数部署静态官网 |
-| `pages/generate-changelog.py` | 官网 changelog 生成脚本 | 官网部署前生成 `pages/changelog.html` |
+| `scripts/merge-appcast.py` | appcast 合并工具 | 把当前版本 appcast item 合并进 `supports/starcat-site/direct/appcast.xml` |
+| `supports/starcat-site/direct/deploy.sh` | 官网/nginx 部署脚本 | 一次完成 nginx 校验/reload 与静态官网同步 |
+| `supports/starcat-site/direct/generate-changelog.py` | 官网 changelog 生成脚本 | 官网部署前生成 `supports/starcat-site/direct/changelog.html` |
 | `docs/6-发版与上架/SOP-发版流程.md` | 较早的发版 SOP | 当前主要强调 `release.sh`；更新 Direct 发版文档时要检查漂移 |
 
 ## Direct 发版契约
@@ -26,14 +26,13 @@
 3. 除非设置 `STARCAT_RELEASE_SKIP_FETCH=1`，否则先同步远端 tags；
 4. 创建 annotated tag `v<version>`；
 5. 推送 tag 到 `STARCAT_RELEASE_REMOTE`，默认 `origin`；
-6. 使用 `pages/deploy.sh -n` 部署 nginx 配置；
-7. 使用 `pages/generate-changelog.py` 生成 changelog；
-8. 使用 `pages/deploy.sh` 部署静态官网；
-9. 带 `STARCAT_GENERATE_APPCAST=1` 调用 `package-direct.sh`；
-10. 验证本地 DMG/SHA/appcast-current 文件；
-11. 使用 `rsync` 上传 DMG/SHA；
-12. 合并并上传 `pages/appcast.xml`；
-13. 使用 `curl -fsSI` 校验线上 appcast、DMG 和 changelog URL。
+6. 使用 `supports/starcat-site/direct/generate-changelog.py` 生成 changelog；
+7. 使用 `supports/starcat-site/direct/deploy.sh` 部署 nginx 配置与静态官网；
+8. 带 `STARCAT_GENERATE_APPCAST=1` 调用 `package-direct.sh`；
+9. 验证本地 DMG/SHA/appcast-current 文件；
+10. 使用 `rsync` 上传 DMG/SHA；
+11. 合并并上传 `supports/starcat-site/direct/appcast.xml`；
+12. 使用 `curl -fsSI` 校验线上 appcast、DMG 和 changelog URL。
 
 重要环境变量：
 
@@ -41,8 +40,9 @@
 |---|---|
 | `STARCAT_NOTARIZE=1` | 在 `package-direct.sh` 内启用 notarization；公开发布建议开启 |
 | `APPLE_ID`、`APPLE_TEAM_ID`、`APPLE_APP_PASSWORD` | 开启 notarization 时必需 |
-| `STARCAT_RELEASE_HOST` | SSH host，默认 `aliyun` |
+| `STARCAT_RELEASE_HOST` | SSH host，默认 `aliyun2` |
 | `STARCAT_RELEASE_WEB_DIR` | 远程网站根目录，默认 `/var/www/starcat` |
+| `STARCAT_SITE_ROOT` | 独立官网仓库路径，默认 `supports/starcat-site` |
 | `STARCAT_DOWNLOAD_BASE_URL` | DMG URL 前缀，默认 `https://starcat.ink/downloads/` |
 | `STARCAT_RELEASE_SKIP_TAG=1` | tag 已存在时重跑发布 |
 | `STARCAT_RELEASE_SKIP_NGINX=1` | 跳过 nginx 部署 |
@@ -96,7 +96,7 @@
 | Direct 包缺少 Sparkle | 视为构建/渠道配置问题；先检查 `project.yml` 和 target 设置，再重试 |
 | Direct 包带 sandbox entitlement | 停止；Direct 必须非沙箱；检查 target entitlements 和 scheme |
 | notarization 失败 | 检查 notarytool 输出和 Apple 凭证；除非用户明确选择，否则不要上传未 notarize 的公开 DMG |
-| appcast 合并后缺少新 DMG/版本 | 停止；检查 `appcast-current.xml`、`pages/appcast.xml` 和 `merge-appcast.py` |
+| appcast 合并后缺少新 DMG/版本 | 停止；检查 `appcast-current.xml`、`supports/starcat-site/direct/appcast.xml` 和 `merge-appcast.py` |
 | 线上 URL 校验失败 | 停止；检查上传路径、nginx/site 部署、DNS/TLS 和远程文件权限 |
 
 ## 已知漂移

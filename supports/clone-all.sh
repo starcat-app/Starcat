@@ -12,6 +12,7 @@
 #   - starcat-pro / starcat-license-api / starcat-localization
 #   - starcat-skill / starcat-cli / homebrew-starcat-cli
 #   - homebrew-starcat
+#   - .github / starcat-docs / starcat-site
 #   - extensions/ 下 2 个浏览器插件
 #
 # 前置条件: git 可用; starcat-license-api 是私有仓库,需要 gh CLI 或 SSH key 已配置
@@ -67,6 +68,9 @@ if $SHOW_HELP; then
   echo "  starcat-skill       Starcat AI Agent Skill"
   echo "  starcat-cli         跨平台 Starcat CLI"
   echo "  homebrew-starcat-cli  Starcat CLI Homebrew Formula tap"
+  echo "  .github             组织主页与共享社区健康文件"
+  echo "  starcat-docs        Starcat 官方文档"
+  echo "  starcat-site        Starcat 官方网站源码"
   echo "  starcat-chrome-plugin     Chrome 浏览器插件"
   echo "  starcat-safari-plugin     Safari 浏览器插件"
   exit 0
@@ -83,6 +87,9 @@ PROJECTS=(
   "starcat-recommend-api|https://github.com/starcat-app/starcat-recommend-api.git|Go API - 推荐服务"
   "starcat-discovery-api|https://github.com/starcat-app/starcat-discovery-api.git|Go API - 发现服务"
   "starcat-pro|https://github.com/starcat-app/starcat-pro.git|公开支持与发布说明"
+  ".github|https://github.com/starcat-app/.github.git|组织主页与共享社区健康文件"
+  "starcat-docs|https://github.com/starcat-app/starcat-docs.git|Starcat 官方文档"
+  "starcat-site|https://github.com/starcat-app/starcat-site.git|Starcat 官方网站源码"
   "starcat-license-api|https://github.com/starcat-app/starcat-license-api.git|Direct 分发授权 API 🔒"
   "starcat-localization|https://github.com/starcat-app/starcat-localization.git|本地化资源"
   "homebrew-starcat|https://github.com/starcat-app/homebrew-starcat.git|Starcat App Homebrew Cask tap"

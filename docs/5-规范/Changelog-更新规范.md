@@ -40,8 +40,8 @@
 - 写入当前待发布版本，例如 `## 1.2.0-待发布`，不得提前把它标记为正式发布版本。
 - 中英文内容语义保持一致；App Store 与 Direct 的公共功能保持同步，渠道专属内容只写入对应渠道。
 - 只记录对用户有意义的结果，不记录实现过程、测试命令、文件数量或 Agent 工作说明。
-- 不修改 `pages/direct/changelog.html` 或 `pages/direct/changelog-zh.html`。
-- 不运行 `pages/direct/generate-changelog.py`，也不部署官网更新日志页。
+- 不修改 `supports/starcat-site/direct/changelog.html` 或 `supports/starcat-site/direct/changelog-zh.html`。
+- 不运行 `supports/starcat-site/direct/generate-changelog.py`，也不部署官网更新日志页。
 
 ## 4. 正式发版
 
@@ -49,8 +49,8 @@
 
 1. 根据实际发布范围审计 4 份 Markdown，补漏、去重并复核中英文表述。
 2. 将目标版本标题从“待发布”状态改为正式版本标题。
-3. 运行 `python3 pages/direct/generate-changelog.py`，生成官网中英文更新日志页。
-4. 检查 `pages/direct/changelog.html` 与 `pages/direct/changelog-zh.html` 只展示已正式发布的版本。
+3. 运行 `python3 supports/starcat-site/direct/generate-changelog.py`，生成官网中英文更新日志页。
+4. 检查 `supports/starcat-site/direct/changelog.html` 与 `supports/starcat-site/direct/changelog-zh.html` 只展示已正式发布的版本。
 5. 是否部署官网仍以 dong4j 的明确指令为准，不得因生成 HTML 而自动执行部署。
 
 ## 5. 验证要求

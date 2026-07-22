@@ -11,5 +11,5 @@
 | `docs/3-设计/详细设计/41-分发渠道详细设计.md` | Sparkle Info.plist、entitlements、appcast、打包脚本详细设计 |
 | `docs/4-工程进度/分发渠道专项/checklist.md` | Sparkle 实施 checklist |
 
-Direct appcast 静态入口为：`pages/appcast.xml`，部署地址为 `https://starcat.ink/appcast.xml`。
+Direct appcast 静态入口为：`supports/starcat-site/direct/appcast.xml`，部署地址为 `https://starcat.ink/appcast.xml`。
 

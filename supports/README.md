@@ -7,7 +7,7 @@
 
 ---
 
-## 📦 项目清单（共 16 个）
+## 📦 项目清单（共 19 个）
 
 ### Go API 服务（7 个）
 
@@ -21,11 +21,14 @@
 | [`starcat-discovery-api/`](./starcat-discovery-api/) | [`starcat-app/starcat-discovery-api`](https://github.com/starcat-app/starcat-discovery-api) | 5006 | 探索发现、热门、新发布榜单 |
 | [`starcat-license-api/`](./starcat-license-api/) | [`starcat-app/starcat-license-api`](https://github.com/starcat-app/starcat-license-api) 🔒 | 5010 | Direct 分发授权 API |
 
-### 其他支撑项目（9 个）
+### 其他支撑项目（12 个）
 
 | 子目录 | GitHub | 说明 |
 |--------|--------|------|
 | [`starcat-pro/`](./starcat-pro/) | [`starcat-app/starcat-pro`](https://github.com/starcat-app/starcat-pro) | 公开支持、Issue 与发布说明 |
+| [`.github/`](./.github/) | [`starcat-app/.github`](https://github.com/starcat-app/.github) | 组织主页与共享社区健康文件 |
+| [`starcat-docs/`](./starcat-docs/) | [`starcat-app/starcat-docs`](https://github.com/starcat-app/starcat-docs) | Starcat 官方用户文档 |
+| [`starcat-site/`](./starcat-site/) | [`starcat-app/starcat-site`](https://github.com/starcat-app/starcat-site) | Direct、App Store 官网、博客与公开法律页面源码 |
 | [`starcat-localization/`](./starcat-localization/) | [`starcat-app/starcat-localization`](https://github.com/starcat-app/starcat-localization) | 本地化资源管理 |
 | [`homebrew-starcat/`](./homebrew-starcat/) | [`starcat-app/homebrew-starcat`](https://github.com/starcat-app/homebrew-starcat) | Starcat App Homebrew Cask（`brew install --cask starcat`） |
 | [`starcat-skill/`](./starcat-skill/) | [`starcat-app/starcat-skill`](https://github.com/starcat-app/starcat-skill) | 供 Codex / Claude 等 AI Agent 使用的 Starcat Skill |
@@ -101,7 +104,7 @@
 ```bash
 cd supports
 
-# 首次 clone 全部 15 个独立仓库
+# 首次 clone 全部 18 个 GitHub 独立仓库
 ./clone-all.sh
 
 # 后续批量更新
@@ -146,7 +149,7 @@ go run ./cmd/server
 
 ### 独立 git 仓库（各自管理）
 
-- 上表除 `ai-file-wall` 外的 15 个独立仓库目录
+- 上表除 `ai-file-wall` 外的 18 个 GitHub 独立仓库目录
 
 ### 跨机器同步（`sync-untracked.sh`）
 

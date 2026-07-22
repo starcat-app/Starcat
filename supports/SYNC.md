@@ -41,7 +41,7 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 
 ---
 
-## 独立 git 仓库（15 个）
+## GitHub 独立仓库（18 个）
 
 以下目录各自是**独立的 git 仓库**，有自己的 GitHub remote、CI/CD 和版本号：
 
@@ -54,21 +54,24 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 | 5 | `starcat-recommend-api/` | `starcat-app/starcat-recommend-api` |
 | 6 | `starcat-discovery-api/` | `starcat-app/starcat-discovery-api` |
 | 7 | `starcat-pro/` | `starcat-app/starcat-pro` |
-| 8 | `starcat-license-api/` | `starcat-app/starcat-license-api` 🔒 私有 |
-| 9 | `starcat-localization/` | `starcat-app/starcat-localization` |
-| 10 | `homebrew-starcat/` | `starcat-app/homebrew-starcat` |
-| 11 | `starcat-skill/` | `starcat-app/starcat-skill` |
-| 12 | `starcat-cli/` | `starcat-app/starcat-cli` |
-| 13 | `homebrew-starcat-cli/` | `starcat-app/homebrew-starcat-cli` |
-| 14 | `extensions/starcat-chrome-plugin/` | `starcat-app/starcat-chrome-plugin` |
-| 15 | `extensions/starcat-safari-plugin/` | `starcat-app/starcat-safari-plugin` |
+| 8 | `.github/` | `starcat-app/.github` |
+| 9 | `starcat-docs/` | `starcat-app/starcat-docs` |
+| 10 | `starcat-site/` | `starcat-app/starcat-site` |
+| 11 | `starcat-license-api/` | `starcat-app/starcat-license-api` 🔒 私有 |
+| 12 | `starcat-localization/` | `starcat-app/starcat-localization` |
+| 13 | `homebrew-starcat/` | `starcat-app/homebrew-starcat` |
+| 14 | `starcat-skill/` | `starcat-app/starcat-skill` |
+| 15 | `starcat-cli/` | `starcat-app/starcat-cli` |
+| 16 | `homebrew-starcat-cli/` | `starcat-app/homebrew-starcat-cli` |
+| 17 | `extensions/starcat-chrome-plugin/` | `starcat-app/starcat-chrome-plugin` |
+| 18 | `extensions/starcat-safari-plugin/` | `starcat-app/starcat-safari-plugin` |
 
 ### 一键拉取所有独立仓库
 
 ```bash
 cd supports
 
-# 首次 clone 全部 15 个项目
+# 首次 clone 全部 18 个项目
 ./clone-all.sh
 
 # 后续更新全部
@@ -145,6 +148,7 @@ make sync-fly-secrets
 
 | 日期 | 决策 | 原因 |
 |------|------|------|
+| 2026-07-22 | GitHub 独立仓库从 15 个扩展到 18 个 | 补齐组织配置、官方文档与独立官网仓库 |
 | 2026-07-20 | 独立仓库从 12 个扩展到 15 个 | 新增 `starcat-skill`、`starcat-cli`、`homebrew-starcat-cli` |
 | 2026-07-06 | `supports/` 运维文件转主仓库 git 管理 | 减少 sync-untracked 清单维护负担，git 管理更可靠 |
 | 2026-07-06 | 独立仓库从 6 个扩展到 12 个 | 新增 starcat-pro、starcat-license-api、starcat-localization、homebrew、浏览器插件 |

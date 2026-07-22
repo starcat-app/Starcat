@@ -10,7 +10,7 @@
 #   - 构建逻辑仍由 package-direct.sh 负责，本脚本只做发布编排。
 #   - 默认走完整发布流程；重跑某一段时用 STARCAT_RELEASE_SKIP_* 显式跳过。
 #   - 默认要求 main 分支和干净工作区，避免从临时状态打 tag 或发布不可复现产物。
-#   - appcast 使用增量合并，历史版本以 pages/direct/appcast.xml 为准，不依赖本地保留旧 DMG。
+#   - appcast 使用增量合并，历史版本以 supports/starcat-site/direct/appcast.xml 为准，不依赖本地保留旧 DMG。
 #
 
 set -euo pipefail
@@ -47,8 +47,8 @@ Starcat Direct 一键发布脚本
   4. 确认 tag v<version> 不存在
   5. 创建 annotated tag
   6. 推送 tag 到 origin
-  7. 生成 pages/direct/changelog.html
-  8. 部署 pages/direct/starcat.ink.conf 并 reload nginx
+  7. 生成 supports/starcat-site/direct/changelog.html
+  8. 部署 supports/starcat-site/direct/starcat.ink.conf 并 reload nginx
   9. 部署官网静态页
  10. 调用 scripts/package-direct.sh <version> 打包 Direct DMG 并生成 appcast
  11. 上传 appcast.xml、DMG、SHA256
@@ -78,10 +78,13 @@ Starcat Direct 一键发布脚本
       SSH host，默认 aliyun2，需要在 ~/.ssh/config 中配置。
 
   STARCAT_RELEASE_SSH_KEY=~/.ssh/server
-      发布服务器私钥。设置后会透传给 pages/deploy.sh，并用于本脚本的 ssh / rsync。
+      发布服务器私钥。设置后会透传给 starcat-site/direct/deploy.sh，并用于本脚本的 ssh / rsync。
 
   STARCAT_RELEASE_WEB_DIR=/var/www/starcat
       远程网站根目录，默认 /var/www/starcat。
+
+  STARCAT_SITE_ROOT=/path/to/starcat-site
+      独立官网仓库路径，默认使用主仓库下的 supports/starcat-site。
 
   STARCAT_DOWNLOAD_BASE_URL=https://starcat.ink/downloads/
       appcast 中使用的 DMG 下载前缀。
@@ -99,7 +102,7 @@ Starcat Direct 一键发布脚本
       跳过创建和推送 tag。用于 tag 已存在时重跑发布。
 
   STARCAT_RELEASE_SKIP_NGINX=1
-      兼容旧变量；由于 pages/direct/deploy.sh 已合并 nginx 与静态资源部署，
+      兼容旧变量；由于 starcat-site/direct/deploy.sh 已合并 nginx 与静态资源部署，
       设置后会跳过整个官网部署。
 
   STARCAT_RELEASE_SKIP_SITE=1
@@ -135,7 +138,9 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PAGES_DIR="${PROJECT_ROOT}/pages/direct"
+# 官网已拆为独立仓库；保留环境变量覆盖，便于维护者把 starcat-site 放在其他位置。
+STARCAT_SITE_ROOT="${STARCAT_SITE_ROOT:-${PROJECT_ROOT}/supports/starcat-site}"
+PAGES_DIR="${STARCAT_SITE_ROOT}/direct"
 DOWNLOADS_DIR="${PROJECT_ROOT}/dist/direct/downloads"
 DERIVED_DIR="${PROJECT_ROOT}/dist/direct/DerivedData"
 APPCAST_INPUT_DIR="${PROJECT_ROOT}/dist/direct/appcast-input"
@@ -471,6 +476,11 @@ main() {
   require_command ssh
 
   cd "$PROJECT_ROOT"
+
+  [ -d "$STARCAT_SITE_ROOT/.git" ] \
+    || fail "未找到独立官网仓库: ${STARCAT_SITE_ROOT}；请先运行 supports/clone-all.sh"
+  [ -f "$PAGES_DIR/deploy.sh" ] \
+    || fail "未找到 Direct 官网部署脚本: ${PAGES_DIR}/deploy.sh"
 
   require_branch
   require_clean_worktree

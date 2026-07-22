@@ -33,8 +33,8 @@ https://starcat.ink/r/{owner}/{repo}?v=1&rid={github_repo_id}
 - `Starcat/Features/Home/HomeView.swift` 已有本地仓库的外部导航、分页加载和选中链路。
 - `Starcat/Core/Sync/RepoResolver.swift` 已有本地、远端、最小数据的仓库解析思路。
 - `Starcat/Features/Home/RepoListView.swift` 当前的分享操作会检查 Pro、生成 AI 摘要并调用 sharing API,它不是本方案的基础仓库链接。
-- `pages/direct/index.html` 等公开页面已经包含静态 `og:title`、`og:description`、`og:image` 等 metadata,但还没有按仓库动态生成的 OG 页面和图片。
-- `pages/direct/starcat.ink.conf` 当前由阿里云 Nginx 承接 `starcat.ink`,静态文件部署到 `/var/www/starcat`。
+- `supports/starcat-site/direct/index.html` 等公开页面已经包含静态 `og:title`、`og:description`、`og:image` 等 metadata,但还没有按仓库动态生成的 OG 页面和图片。
+- `supports/starcat-site/direct/starcat.ink.conf` 当前由阿里云 Nginx 承接 `starcat.ink`,静态文件部署到 `/var/www/starcat`。
 - `supports/starcat-sharing-api` 已在 Fly.io 常驻运行,并通过 Go `html/template` 服务端渲染公开 `/s/{id}` AI 分享页,是本功能最接近的现有服务边界。
 
 因此本方案不是从零新增仓库模型,而是补齐「公开链接协议 + 网页预览 + App 路由 + 外部仓库临时详情」之间的闭环。
@@ -507,10 +507,10 @@ enum RepositoryOpenResult {
 https://starcat.ink
         │
         ▼
-阿里云 Nginx · pages/direct/starcat.ink.conf
+阿里云 Nginx · supports/starcat-site/direct/starcat.ink.conf
         │
         ├── /、/downloads/*、/privacy* 等 ──> /var/www/starcat 静态文件
-        ├── /.well-known/apple-app-site-association ──> pages/direct 静态文件
+        ├── /.well-known/apple-app-site-association ──> supports/starcat-site/direct 静态文件
         └── /r/*、/og/repo/*、/s/* ──> starcat-sharing-api.fly.dev
 ```
 
@@ -544,7 +544,7 @@ GET  /s/{id}         # AI 分享页面,公开
 
 ### 11.2 Nginx 与静态站职责
 
-`pages/direct/starcat.ink.conf` 增加精确路由:
+`supports/starcat-site/direct/starcat.ink.conf` 增加精确路由:
 
 ```text
 /r/*         -> https://starcat-sharing-api.fly.dev
@@ -562,10 +562,10 @@ GET  /s/{id}         # AI 分享页面,公开
 AASA 不经过 Fly.io,直接新增静态文件:
 
 ```text
-pages/direct/.well-known/apple-app-site-association
+supports/starcat-site/direct/.well-known/apple-app-site-association
 ```
 
-Nginx 使用 exact location 返回该文件,Content-Type 为 `application/json`,禁止 redirect 和 SPA fallback。`pages/direct/deploy.sh` 需要允许同步 `.well-known/` 目录并校验远端文件可读。
+Nginx 使用 exact location 返回该文件,Content-Type 为 `application/json`,禁止 redirect 和 SPA fallback。`supports/starcat-site/direct/deploy.sh` 需要允许同步 `.well-known/` 目录并校验远端文件可读。
 
 ### 11.3 GitHub metadata
 
@@ -673,7 +673,7 @@ renderer 使用 Go 标准 `image` 能力或纯 Go 图像库输出 PNG,不能依�
 
 - 固化 URL parser 和测试向量。
 - 在 `starcat-sharing-api` 增加 `/r/*` 服务端 landing page 和基础 OG metadata。
-- 在 `pages/direct` 增加 AASA 静态文件。
+- 在 `supports/starcat-site/direct` 增加 AASA 静态文件。
 - 在阿里云 Nginx 增加 `/r/*`、`/og/repo/*`、`/s/*` 反向代理。
 - 部署静态 fallback 图片。
 - 验证现有 `/s/{id}` 经过 `starcat.ink` 代理后保持兼容。
@@ -751,9 +751,9 @@ Starcat/Core/Navigation/RepositoryOpenCoordinator.swift
 现有静态站和 Nginx:
 
 ```text
-pages/direct/starcat.ink.conf
-pages/direct/deploy.sh
-pages/direct/.well-known/apple-app-site-association
+supports/starcat-site/direct/starcat.ink.conf
+supports/starcat-site/direct/deploy.sh
+supports/starcat-site/direct/.well-known/apple-app-site-association
 ```
 
 现有 `starcat-sharing-api` 候选改动:

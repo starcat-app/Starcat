@@ -1,13 +1,24 @@
-# supports/AGENTS.md — Starcat 后端 API 服务群
+# supports/AGENTS.md — Starcat 配套项目工作区
 
-> 本目录包含 Starcat 项目的**所有后端 Go 服务**,统一部署到 Fly.io。
-> 本文档给所有 AI 协作者(Claude / Cursor / Gemini CLI 等)阅读,介绍目录结构、通用约定、各项目对照。
+> 本目录包含 Starcat 的后端 Go 服务、官网、用户文档、CLI、插件、Homebrew tap 等独立配套项目。
+> 本文档给所有 AI 协作者(Claude / Cursor / Gemini CLI 等)阅读，重点记录 Go API 通用约定，并说明其它独立仓库的边界。
 
 ---
 
 ## 目录定位
 
-`supports/` 是 Starcat 主项目的**后端 API 服务群**。Starcat 主项目(根目录)是 macOS 客户端,本目录是给客户端提供数据的后端。
+`supports/` 是 Starcat 主项目的**配套项目工作区**。Starcat 主项目（根目录）是 macOS 客户端；本目录中的 GitHub 项目各自拥有独立 remote、分支、CI/CD 和发布边界。
+
+| 项目类型 | 目录 | 说明 |
+|----------|------|------|
+| 官网 | `starcat-site/` | Direct、Direct Test、App Store 官网与本地运营控制台的源码单一来源 |
+| 用户文档 | `starcat-docs/` | Mintlify 官方使用文档 |
+| 公开支持 | `starcat-pro/` | Issue、公开发布说明与营销图片源 |
+| 工具与集成 | `starcat-cli/`、`starcat-skill/`、`extensions/` | CLI/MCP、AI Agent Skill 与浏览器插件 |
+| 分发与协作 | `homebrew-starcat*/`、`starcat-localization/`、`.github/` | Homebrew、本地化和组织主页 |
+| 后端 API | `starcat-*-api/` | 下表列出的 Go 服务；Fly.io 规则只适用于这些项目 |
+
+> 官网已从根目录 `pages/` 拆分到 `starcat-site/`。旧 `pages/` 只用于迁移验证，不再作为官网源码来源。
 
 | 子项目 | 用途 | 客户端哪里用 |
 |--------|------|--------------|

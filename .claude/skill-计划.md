@@ -28,8 +28,8 @@
 - `scripts/package-direct.sh`
 - `scripts/build-dmg.sh`
 - `scripts/merge-appcast.py`
-- `pages/deploy.sh`
-- `pages/generate-changelog.py`
+- `supports/starcat-site/direct/deploy.sh`
+- `supports/starcat-site/direct/generate-changelog.py`
 - `docs/6-发版与上架/SOP-发版流程.md`
 
 建议触发场景：
@@ -46,7 +46,7 @@
 - `release.sh` 的核心顺序是先创建本地 tag，再 build DMG，最后 push tag；这样 build 失败时不会污染远端 tag。
 - Direct 正式公开分发应设置 `STARCAT_NOTARIZE=1`，并准备 `APPLE_ID`、`APPLE_TEAM_ID`、`APPLE_APP_PASSWORD`。
 - `package-direct.sh` 会验证 Direct 包必须包含 `Sparkle.framework`，且不能带 sandbox entitlement。
-- Sparkle appcast 采用“当前版本生成 + 历史 appcast 增量合并”，历史版本以 `pages/appcast.xml` 为准。
+- Sparkle appcast 采用“当前版本生成 + 历史 appcast 增量合并”，历史版本以 `supports/starcat-site/direct/appcast.xml` 为准。
 - 发布后必须校验 `https://starcat.ink/appcast.xml`、DMG 下载地址和 `https://starcat.ink/changelog.html`。
 
 建议 skill 结构：
@@ -129,8 +129,8 @@
 
 覆盖文件：
 
-- `pages/deploy.sh`
-- `pages/generate-changelog.py`
+- `supports/starcat-site/direct/deploy.sh`
+- `supports/starcat-site/direct/generate-changelog.py`
 - `supports/scripts/sync-starcat-readme-promo.py`
 
 建议触发场景：

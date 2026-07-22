@@ -102,7 +102,7 @@ Direct 发布后验证：
 - 本地 DMG 存在：`dist/direct/downloads/Starcat-<version>-arm64.dmg`；
 - SHA 文件存在于 DMG 同目录；
 - 当前版本 appcast 存在：`dist/direct/downloads/appcast-current.xml`；
-- 合并后的 appcast 存在：`pages/appcast.xml`，且引用新 DMG 和新版本号；
+- 合并后的 appcast 存在：`supports/starcat-site/direct/appcast.xml`，且引用新 DMG 和新版本号；
 - 线上 URL 可访问：
   - `https://starcat.ink/appcast.xml`
   - `https://starcat.ink/downloads/Starcat-<version>-arm64.dmg`

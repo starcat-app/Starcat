@@ -92,7 +92,7 @@ tail -120 /Users/dong4j/Developer/1.AI/ai-incubator/Starcat/dist/direct/xcodebui
 cat /Users/dong4j/Developer/1.AI/ai-incubator/Starcat/dist/direct/downloads/Starcat-1.0.0-arm64.dmg.sha256
 
 # 查看当前 Direct appcast。
-cat /Users/dong4j/Developer/1.AI/ai-incubator/Starcat/pages/direct/appcast.xml
+cat /Users/dong4j/Developer/1.AI/ai-incubator/Starcat/supports/starcat-site/direct/appcast.xml
 ```
 
 ## 双渠道通用检查

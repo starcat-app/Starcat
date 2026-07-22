@@ -6,6 +6,7 @@ Release notes for the Mac App Store edition of Starcat.
 
 ### New
 
+- Added repository pinning in Manage, with Pin and Unpin actions, most-recently-pinned ordering within each category, and a card-corner indicator.
 - Added repository share links that open Starcat and locate the shared repository.
 - Added customizable app shortcuts for search, refreshing the current content, opening the Knowledge RAG workspace, and opening AI for the current repository, with global and per-shortcut enable controls.
 

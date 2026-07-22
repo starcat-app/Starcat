@@ -157,6 +157,48 @@ xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' \
 
 ---
 
+## 仓库目录结构
+
+```text
+Starcat/
+├── Starcat/                         # macOS App 源码
+│   ├── App/                         # App 入口与生命周期
+│   ├── Core/                        # 数据库、网络、同步、AI 等核心能力
+│   ├── Features/                    # 按产品功能划分的 SwiftUI 模块
+│   ├── Shared/                      # 共享组件、工具与扩展
+│   ├── Resources/                   # 本地化、Assets、entitlements 等资源
+│   └── Generated/                   # xcodegen 等流程生成的文件
+├── StarcatTests/                    # 单元测试与集成测试
+├── Configs/                         # 构建配置；真实 secrets 不进 Git
+├── docs/                            # 产品、设计、规范、进度与发版文档
+├── scripts/                         # 构建、打包、发布与本地工具脚本
+├── resources/                       # 仓库级素材与辅助资源
+├── screenshots/                     # 商店、文档与验收截图
+├── supports/                        # 配套项目工作区
+│   ├── .github/                     # starcat-app 组织主页与共享社区文件（独立仓库）
+│   ├── starcat-docs/                # 官方用户文档（独立仓库）
+│   ├── starcat-site/                # 官网源码单一来源（独立仓库）
+│   │   ├── direct/                  # starcat.ink Direct 正式站
+│   │   ├── direct-test/             # Direct 测试站
+│   │   ├── appstore/                # Mac App Store 官网
+│   │   └── _local-admin/            # 本地运营控制台
+│   ├── starcat-*-api/               # 各后端 API 独立仓库
+│   ├── starcat-pro/                 # 公开支持与发布说明独立仓库
+│   ├── starcat-cli/                 # CLI / MCP 独立仓库
+│   ├── starcat-skill/               # AI Agent Skill 独立仓库
+│   ├── starcat-localization/        # 本地化资源独立仓库
+│   ├── homebrew-starcat*/           # App / CLI Homebrew taps
+│   ├── extensions/                  # Chrome / Safari 插件独立仓库
+│   └── scripts/                     # 跨 supports 项目运维脚本
+├── pages/                           # 官网拆仓后的旧副本；验证完成前保留，不再作为源码来源
+├── project.yml                      # xcodegen 单一配置源
+└── Makefile                         # 常用开发与运维命令入口
+```
+
+`supports/` 下的产品配套目录多数是独立 Git 仓库，不能按主仓库文件处理。首次拉取或补齐这些仓库使用 `supports/clone-all.sh`；官网修改、Changelog 生成和部署统一在 `supports/starcat-site/` 完成。原 `pages/` 只保留作迁移验证，验证通过并由 dong4j 明确确认前不得删除。
+
+---
+
 ## 文档导航
 
 | 文档 | 用途 |

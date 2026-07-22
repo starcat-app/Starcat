@@ -9,7 +9,7 @@
 
 - 已有 Apple Developer ID Application 证书。
 - 已生成 Sparkle EdDSA key，并把公钥写入 `Configs/Secrets.xcconfig`。
-- `pages/appcast.xml` 可部署到 `https://starcat.ink/appcast.xml`。
+- `supports/starcat-site/direct/appcast.xml` 可部署到 `https://starcat.ink/appcast.xml`。
 - 公开发版前准备好 notarization 凭证：
 
 ```bash
@@ -171,10 +171,10 @@ dong4j 当前本机已配置 SSH、Sparkle 公钥、Developer ID 默认签名和
 1. 确认当前分支是 `main` 且工作区干净。
 2. 创建并推送 `v1.0.0` annotated tag。
 3. 生成并部署官网 changelog 页面。
-4. 部署 `pages/direct/starcat.ink.conf` 并 reload nginx。
+4. 部署 `supports/starcat-site/direct/starcat.ink.conf` 并 reload nginx。
 5. 调用 `scripts/package-direct.sh 1.0.0` 完成本地 Direct 打包。
 6. 生成 Sparkle appcast。
-7. 上传 `pages/appcast.xml` 到 `https://starcat.ink/appcast.xml`。
+7. 上传 `supports/starcat-site/direct/appcast.xml` 到 `https://starcat.ink/appcast.xml`。
 8. 上传 DMG / SHA256 到 `https://starcat.ink/downloads/`。
 9. 通过 `STARCAT_RELEASE_HOST` 在发布服务器上执行 `curl -I`，校验线上 appcast、DMG 和 changelog 可访问，避免本机 TUN / Fake-IP / 代理分流造成 TLS 误判。
 
@@ -185,7 +185,7 @@ xcrun notarytool info <submission-id> --keychain-profile starcat-notary
 STARCAT_NOTARIZE=1 STARCAT_RELEASE_SKIP_TAG=1 STARCAT_NOTARY_SUBMISSION_ID=<submission-id> ./scripts/release-direct.sh 1.0.0
 ```
 
-默认远程配置与 `pages/deploy.sh` 保持一致：
+默认远程配置与 `supports/starcat-site/direct/deploy.sh` 保持一致：
 
 ```text
 STARCAT_RELEASE_HOST=aliyun
@@ -225,7 +225,7 @@ STARCAT_DOWNLOAD_BASE_URL="https://starcat.ink/downloads/" \
 本地会生成并覆盖：
 
 ```text
-pages/appcast.xml
+supports/starcat-site/direct/appcast.xml
 dist/direct/downloads/appcast.xml
 dist/direct/downloads/Starcat-1.0.0-arm64.dmg
 dist/direct/downloads/Starcat-1.0.0-arm64.dmg.sha256
@@ -290,5 +290,5 @@ STARCAT_RELEASE_SKIP_TAG=1 ./scripts/release-direct.sh 1.0.1
 - 使用 `scripts/release-direct.sh` 发布，或单独运行 `package-direct.sh` 时设置 `STARCAT_GENERATE_APPCAST=1`
 - `STARCAT_DOWNLOAD_BASE_URL` 以 `/downloads/` 结尾
 - DMG 已 notarize/staple 后再生成 appcast
-- nginx 已部署 `pages/direct/starcat.ink.conf` 中 `/appcast.xml` 的 no-cache 规则
+- nginx 已部署 `supports/starcat-site/direct/starcat.ink.conf` 中 `/appcast.xml` 的 no-cache 规则
 - 测试 / 生产落地页部署方式见 `docs/6-发版与上架/Direct-测试与生产环境隔离.md`

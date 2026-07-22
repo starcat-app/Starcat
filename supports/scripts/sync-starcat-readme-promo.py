@@ -43,7 +43,25 @@ class Project:
 ROOT = Path(__file__).resolve().parents[2]
 
 
+# `.github` 使用专属组织主页，`starcat-pro` 同时承担图片与公开支持内容源；
+# 两者不适合插入会自引用的通用推广区块，因此不进入生成目标。
 PROJECTS = [
+    Project(
+        Path("supports/starcat-docs"),
+        "Starcat Documentation",
+        "docs",
+        "Starcat 官方文档",
+        "这是 Starcat 的官方使用文档，覆盖安装配置、GitHub Stars 管理、AI 功能、RAG 知识库与集成能力。",
+        "Official documentation for Starcat, covering setup, GitHub Stars management, AI features, RAG knowledge base, and integrations.",
+    ),
+    Project(
+        Path("supports/starcat-site"),
+        "Starcat Site",
+        "site",
+        "Starcat 官网",
+        "这是 Starcat 的官方开源网站，包含 Direct 与 Mac App Store 落地页、产品博客、更新记录和公开法律页面。",
+        "Official open-source website for Starcat, including Direct and Mac App Store landing pages, the product blog, release notes, and public legal pages.",
+    ),
     Project(
         Path("supports/homebrew-starcat"),
         "Homebrew Starcat",
@@ -185,6 +203,8 @@ def promo(project: Project, lang: str) -> str:
 - CLI / MCP: [starcat-cli](https://github.com/starcat-app/starcat-cli) / [Homebrew tap](https://github.com/starcat-app/homebrew-starcat-cli)
 - AI Agent Skill: https://github.com/starcat-app/starcat-skill
 - 浏览器插件: [Chrome](https://github.com/starcat-app/starcat-chrome-plugin) / [Safari](https://github.com/starcat-app/starcat-safari-plugin)
+- 官方文档: https://github.com/starcat-app/starcat-docs
+- 官网源码: https://github.com/starcat-app/starcat-site
 - 本地化: https://github.com/starcat-app/starcat-localization"""
         if is_zh
         else """- Home and downloads: https://starcat.ink
@@ -193,6 +213,8 @@ def promo(project: Project, lang: str) -> str:
 - CLI / MCP: [starcat-cli](https://github.com/starcat-app/starcat-cli) / [Homebrew tap](https://github.com/starcat-app/homebrew-starcat-cli)
 - AI Agent Skill: https://github.com/starcat-app/starcat-skill
 - Browser plugins: [Chrome](https://github.com/starcat-app/starcat-chrome-plugin) / [Safari](https://github.com/starcat-app/starcat-safari-plugin)
+- Documentation: https://github.com/starcat-app/starcat-docs
+- Website source: https://github.com/starcat-app/starcat-site
 - Localization: https://github.com/starcat-app/starcat-localization"""
     )
     language_link = (
