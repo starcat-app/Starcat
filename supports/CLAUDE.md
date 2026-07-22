@@ -15,7 +15,7 @@
 
 ## 关键约束(强制)
 
-`supports/` 下的 `.github`、官网、文档、API、CLI、插件、Homebrew 和本地化目录均可能是独立 Git 仓库。修改前先在目标目录运行 `git status -sb` 并核对 remote；不要把多个独立仓库的改动混成主仓库提交。官网源码统一位于 `starcat-site/`，根目录 `pages/` 仅为待删除的迁移验证副本。
+`supports/` 下的 `.github`、官网、文档、API、CLI、插件、Homebrew 和本地化目录均可能是独立 Git 仓库。修改前先在目标目录运行 `git status -sb` 并核对 remote；不要把多个独立仓库的改动混成主仓库提交。官网源码、Changelog 生成与部署统一位于 `starcat-site/`。
 
 ### 1. Go 版本一致性(2026-06-08 起)
 

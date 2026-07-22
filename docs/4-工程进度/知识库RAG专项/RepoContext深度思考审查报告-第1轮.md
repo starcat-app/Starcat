@@ -23,7 +23,7 @@
 - 历史 XML 必须同时匹配 repo、commit 与原文 SHA-256，再按当轮 sentTokens 重建投影。
 - RepoContext 专用 Debug stage 只存摘要；完整 XML 仅随既有最终 Prompt stage 写入本地 Debug 文件，UI 已明确隐私和清理边界。
 - External Search 不接收 XML；私有仓库 identity 仍受原有 `externalSearchAllowPrivateRepos` 门禁。
-- 当前工作区另有 `docs/功能实现总览.md`、`pages/appstore/index.html` 的并行改动，本需求未暂存、未提交这些文件。
+- 当前工作区另有 `docs/功能实现总览.md`、`supports/starcat-site/appstore/index.html` 的并行改动，本需求未暂存、未提交这些文件。
 
 ## 3. 发现的问题
 

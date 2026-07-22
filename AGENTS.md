@@ -190,12 +190,11 @@ Starcat/
 │   ├── homebrew-starcat*/           # App / CLI Homebrew taps
 │   ├── extensions/                  # Chrome / Safari 插件独立仓库
 │   └── scripts/                     # 跨 supports 项目运维脚本
-├── pages/                           # 官网拆仓后的旧副本；验证完成前保留，不再作为源码来源
 ├── project.yml                      # xcodegen 单一配置源
 └── Makefile                         # 常用开发与运维命令入口
 ```
 
-`supports/` 下的产品配套目录多数是独立 Git 仓库，不能按主仓库文件处理。首次拉取或补齐这些仓库使用 `supports/clone-all.sh`；官网修改、Changelog 生成和部署统一在 `supports/starcat-site/` 完成。原 `pages/` 只保留作迁移验证，验证通过并由 dong4j 明确确认前不得删除。
+`supports/` 下的产品配套目录多数是独立 Git 仓库，不能按主仓库文件处理。首次拉取或补齐这些仓库使用 `supports/clone-all.sh`；官网修改、Changelog 生成和部署统一在 `supports/starcat-site/` 完成。
 
 ---
 

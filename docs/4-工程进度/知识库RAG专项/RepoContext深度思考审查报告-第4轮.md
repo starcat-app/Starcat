@@ -25,7 +25,7 @@
 
 ## 3. 工作区与人工验收边界
 
-- 当前仅有 `docs/功能实现总览.md` 和 `pages/appstore/index.html` 两个未提交文件，内容属于并行 Direct Pro/App Store 工作，本专项从未暂存或提交。
+- 当前仅有 `docs/功能实现总览.md` 和 `supports/starcat-site/appstore/index.html` 两个未提交文件，内容属于并行 Direct Pro/App Store 工作，本专项从未暂存或提交。
 - 根据仓库铁律，本专项没有写 `docs/功能实现总览.md`；待确认草案保存在第 3 轮报告。
 - 本轮没有启动真实用户数据库中的 RAG 问答，也没有调用外部 AI/GitHub Provider；因此不把代码/自动化检查表述为“人工 UI 点选验收”。UI 顺序、门禁、可访问性和 Inspector read model 由源码契约与定向测试验证。
 - 未执行打包、发布、上传或 push。

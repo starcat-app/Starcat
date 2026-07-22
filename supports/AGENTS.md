@@ -18,7 +18,7 @@
 | 分发与协作 | `homebrew-starcat*/`、`starcat-localization/`、`.github/` | Homebrew、本地化和组织主页 |
 | 后端 API | `starcat-*-api/` | 下表列出的 Go 服务；Fly.io 规则只适用于这些项目 |
 
-> 官网已从根目录 `pages/` 拆分到 `starcat-site/`。旧 `pages/` 只用于迁移验证，不再作为官网源码来源。
+> 官网源码、Changelog 生成与部署统一归 `starcat-site/`，不要在主仓库另建平行站点目录。
 
 | 子项目 | 用途 | 客户端哪里用 |
 |--------|------|--------------|

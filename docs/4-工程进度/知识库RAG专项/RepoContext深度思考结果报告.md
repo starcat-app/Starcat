@@ -85,7 +85,7 @@
 
 - 本轮没有用真实用户数据库执行外部 AI/GitHub 问答，也没有把源码/自动化检查冒充人工 UI 点选验收。UI 行为由源码契约、read model 和定向测试覆盖；如需视觉验收，可在单项目会话中人工核对图标、时间线和 XML popover。
 - `docs/功能实现总览.md` 受仓库铁律保护，本专项未写入。第 3 轮报告已提供 checkbox、`> 实现：` 和变更日志草案，等待 dong4j 明确说“可以写总览”后再同步。
-- 当前工作区另有 `docs/功能实现总览.md` 与 `pages/appstore/index.html` 的并行改动，本专项未暂存、未提交。
+- 当前工作区另有 `docs/功能实现总览.md` 与 `supports/starcat-site/appstore/index.html` 的并行改动，本专项未暂存、未提交。
 - 未执行打包、发布、上传或 push。
 
 ## 9. Go / No-Go
