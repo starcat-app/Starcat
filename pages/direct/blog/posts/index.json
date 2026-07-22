@@ -1,0 +1,76 @@
+{
+  "posts": [
+    {
+      "slug": "why-local-first",
+      "title": "Why GitHub Stars Need a Local-First Knowledge Base",
+      "summary": "Stars are not a feed. They are a personal library — and libraries only work when the data stays with you.",
+      "date": "2026-07-22",
+      "author": "Starcat",
+      "minutes": 5
+    },
+    {
+      "slug": "asking-your-starred-library",
+      "title": "Asking Questions of Your Starred Library",
+      "summary": "RAG is useful when the answers cite your Stars — not when they invent a confident tour of the public web.",
+      "date": "2026-07-21",
+      "author": "Starcat",
+      "minutes": 4
+    },
+    {
+      "slug": "suggestions-not-writes",
+      "title": "AI That Suggests, Never Auto-Writes",
+      "summary": "Starcat's AI rule is simple: recommend tags and summaries, but never write into your library without confirmation.",
+      "date": "2026-07-20",
+      "author": "Starcat",
+      "minutes": 4
+    },
+    {
+      "slug": "bring-your-own-keys",
+      "title": "Bring Your Own Keys — AI Without a Black Box Default",
+      "summary": "Starcat's AI path is BYOK-first: your provider, your keys, your rate limits — and your library stays local.",
+      "date": "2026-07-19",
+      "author": "Starcat",
+      "minutes": 4
+    },
+    {
+      "slug": "from-stars-to-knowledge",
+      "title": "From Flat Bookmarks to a Searchable Knowledge Base",
+      "summary": "A starred repo is a promise to your future self. Tags, notes, and local search are how you keep that promise.",
+      "date": "2026-07-18",
+      "author": "Starcat",
+      "minutes": 5
+    },
+    {
+      "slug": "release-tracking-without-noise",
+      "title": "Release Tracking Without Turning Into Noise",
+      "summary": "Subscribe to the repositories that matter. Ignore the rest. Release alerts should shrink attention, not expand it.",
+      "date": "2026-07-17",
+      "author": "Starcat",
+      "minutes": 3
+    },
+    {
+      "slug": "why-native-macos",
+      "title": "Why Starcat Is Native macOS — Not Electron",
+      "summary": "Native is not nostalgia. For a tool you live in every day, platform fit is a product feature.",
+      "date": "2026-07-15",
+      "author": "Starcat",
+      "minutes": 4
+    },
+    {
+      "slug": "github-companion-workflow",
+      "title": "Stay on GitHub Pages Without Losing Your Library Context",
+      "summary": "The browser Companion keeps notes, tags, and Starcat context next to the repository you are already reading.",
+      "date": "2026-07-14",
+      "author": "Starcat",
+      "minutes": 4
+    },
+    {
+      "slug": "tags-that-survive-monday",
+      "title": "A Tag System You Will Still Understand on Monday",
+      "summary": "Fancy taxonomies collapse. A small, selfish vocabulary survives — especially when AI only suggests and you confirm.",
+      "date": "2026-07-12",
+      "author": "Starcat",
+      "minutes": 4
+    }
+  ]
+}

@@ -1,63 +1,118 @@
 // ============================================================================
-// dong4j.app — 应用橱窗路由 Worker
+// dong4j.app — 个人项目导航 + 本域应用路由 Worker
 //
 // 架构:
-//   dong4j.app/               → 内置应用橱窗首页 (列出所有 App)
+//   dong4j.app/               → 内置导航首页 (LINKS 卡片列表)
 //   dong4j.app/starcat/*      → 反向代理到 starcat-appstore.pages.dev
 //   dong4j.app/<未来应用>/*    → 反向代理到对应 Pages 项目
 //
-// 添加新应用: 只需在 APPS 对象里加一行
+// 添加首页卡片: 在 LINKS 数组里加一项
+// 添加本域反代应用: 在 APPS 对象里加一行（并可选同步到 LINKS）
 //
-// 部署: npx wrangler deploy
-// 路由: npx wrangler routes add 'dong4j.app/*' --worker dong4j-app-router
+// 部署: 走 pages/appstore/deploy.sh（末尾 wrangler deploy）
+// 单独部署: cd pages/appstore/worker && wrangler deploy
 // ============================================================================
 
-// --- 应用路由表 ------------------------------------------------------------
+// --- 首页导航卡片 ------------------------------------------------------------
+// 只负责首页展示；外链与本域路径都可挂。
+// iconEmoji: 纯 emoji；iconUrl: 图片（与 emoji 二选一，优先 iconUrl）
+// external: true 时新标签打开；false / 省略则同标签进本域路径。
+const LINKS = [
+    {
+        name: "Home",
+        desc: "Personal homepage",
+        href: "https://home.dong4j.site/",
+        iconEmoji: "🏠",
+        external: true,
+    },
+    {
+        name: "GitHub",
+        desc: "Code & open source",
+        href: "https://github.com/dong4j",
+        // GitHub 官方头像快捷地址，随账号头像自动更新
+        iconUrl: "https://github.com/dong4j.png?size=96",
+        external: true,
+    },
+    {
+        name: "Blog",
+        desc: "Writing & notes",
+        href: "https://blog.dong4j.site/",
+        iconEmoji: "✍️",
+        external: true,
+    },
+    {
+        name: "Starcat for GitHub",
+        desc: "Turn GitHub Stars into a searchable AI knowledge base. Native macOS app.",
+        href: "/starcat",
+        // 经本 Worker 反代，路径对应 Pages 里的应用图标
+        iconUrl: "/starcat/starcat-logo.png",
+        // 与其余卡片一致：新标签打开，避免盖掉导航首页
+        external: true,
+    },
+    {
+        name: "ZekaStack",
+        desc: "Cloud-native infrastructure toolkit.",
+        href: "https://zekastack.dong4j.site/",
+        iconEmoji: "🧩",
+        external: true,
+    },
+];
+
+// --- 本域应用反代表 ------------------------------------------------------------
 // key: URL 子路径前缀 (如 "/starcat")
-// val: { host: Cloudflare Pages .dev 域名, name: 应用展示名, desc: 简介 }
+// val: { host: Cloudflare Pages .dev 域名 }
+// 首页卡片与反代解耦：外链只进 LINKS，不进这里。
 const APPS = {
     "/starcat": {
         host: "starcat-appstore.pages.dev",
-        name: "Starcat for GitHub",
-        desc: "Turn GitHub Stars into a searchable AI knowledge base. Native macOS app.",
-        icon: "⭐",
     },
     // 未来应用示例:
     // "/another-app": {
     //     host: "another-app.pages.dev",
-    //     name: "Another App",
-    //     desc: "Description here.",
-    //     icon: "🆕",
     // },
 };
 
 // --- 处理函数 --------------------------------------------------------------
 
 /**
- * 首页 — dong4j.app 应用橱窗
- * 列出 APPS 表中的所有应用，每个应用一个卡片，点击进入对应子路径
+ * 渲染单张导航卡片的图标区域。
+ * 有 iconUrl 用图片（圆角），否则回退 emoji。
+ */
+function renderCardIcon(link) {
+    if (link.iconUrl) {
+        return `<img class="app-icon-img" src="${link.iconUrl}" alt="" width="48" height="48" loading="lazy">`;
+    }
+    return `<div class="app-icon">${link.iconEmoji || "🔗"}</div>`;
+}
+
+/**
+ * 首页 — dong4j.app 个人项目导航
+ * 按 LINKS 顺序输出卡片；外链新标签，本域路径同标签。
  */
 function serveIndex() {
-    const appCards = Object.entries(APPS)
-        .map(([path, app]) => {
-            return `
-            <a href="${path}" class="app-card">
-                <div class="app-icon">${app.icon}</div>
+    const appCards = LINKS.map((link) => {
+        const externalAttrs = link.external
+            ? ' target="_blank" rel="noopener noreferrer"'
+            : "";
+        return `
+            <a href="${link.href}" class="app-card"${externalAttrs}>
+                ${renderCardIcon(link)}
                 <div class="app-info">
-                    <h2>${app.name}</h2>
-                    <p>${app.desc}</p>
+                    <h2>${link.name}</h2>
+                    <p>${link.desc}</p>
                 </div>
                 <div class="app-arrow">→</div>
             </a>`;
-        })
-        .join("\n");
+    }).join("\n");
 
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>dong4j.app — Apps</title>
+    <title>dong4j.app — Projects</title>
+    <link rel="icon" type="image/png" href="https://github.com/dong4j.png?size=64">
+    <link rel="apple-touch-icon" href="https://github.com/dong4j.png?size=180">
     <style>
         :root {
             --bg: #090B10;
@@ -92,7 +147,16 @@ function serveIndex() {
             background: rgba(255,255,255,0.08);
             transform: translateY(-1px);
         }
-        .app-icon { font-size: 32px; flex-shrink: 0; width: 48px; text-align: center; }
+        .app-icon {
+            font-size: 32px; flex-shrink: 0; width: 48px; height: 48px;
+            display: flex; align-items: center; justify-content: center;
+            text-align: center; line-height: 1;
+        }
+        .app-icon-img {
+            flex-shrink: 0; width: 48px; height: 48px;
+            border-radius: 12px; object-fit: cover;
+            background: rgba(255,255,255,0.06);
+        }
         .app-info { flex: 1; min-width: 0; }
         .app-info h2 { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
         .app-info p { font-size: 14px; color: var(--text-secondary); line-height: 1.5; }
@@ -108,7 +172,7 @@ function serveIndex() {
 <body>
     <header>
         <h1>dong4j.app</h1>
-        <p>Independent apps for developers</p>
+        <p>Projects &amp; links</p>
     </header>
     <main class="app-list">
         ${appCards}

@@ -20,6 +20,66 @@
     <xhtml:link rel="alternate" hreflang="x-default" href="https://starcat.ink/"/>
   </url>
   <url>
+    <loc>https://starcat.ink/blog/</loc>
+    <lastmod>2026-07-22</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://starcat.ink/blog/post.html?slug=why-local-first</loc>
+    <lastmod>2026-07-22</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://starcat.ink/blog/post.html?slug=asking-your-starred-library</loc>
+    <lastmod>2026-07-21</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://starcat.ink/blog/post.html?slug=suggestions-not-writes</loc>
+    <lastmod>2026-07-20</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://starcat.ink/blog/post.html?slug=bring-your-own-keys</loc>
+    <lastmod>2026-07-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://starcat.ink/blog/post.html?slug=from-stars-to-knowledge</loc>
+    <lastmod>2026-07-18</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://starcat.ink/blog/post.html?slug=release-tracking-without-noise</loc>
+    <lastmod>2026-07-17</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://starcat.ink/blog/post.html?slug=why-native-macos</loc>
+    <lastmod>2026-07-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://starcat.ink/blog/post.html?slug=github-companion-workflow</loc>
+    <lastmod>2026-07-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://starcat.ink/blog/post.html?slug=tags-that-survive-monday</loc>
+    <lastmod>2026-07-12</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
     <loc>https://starcat.ink/changelog.html</loc>
     <lastmod>2026-07-10</lastmod>
     <changefreq>weekly</changefreq>

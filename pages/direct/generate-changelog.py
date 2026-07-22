@@ -20,10 +20,12 @@ CHANGELOG_PAGES = [
         "title": "Changelog · Starcat",
         "home_href": "./index.html",
         "privacy_href": "./privacy.html",
+        "blog_href": "./blog/",
         "current_href": "./changelog.html",
         "nav_label": "Navigation",
         "home_label": "Home",
         "privacy_label": "Privacy",
+        "blog_label": "Blog",
         "changelog_label": "Changelog",
         "hero_eyebrow": "Release Notes",
         "hero_title": "Changelog",
@@ -38,10 +40,13 @@ CHANGELOG_PAGES = [
         "title": "更新记录 · Starcat",
         "home_href": "./index-zh.html",
         "privacy_href": "./privacy-zh.html",
+        # 博客目前仅英文；中文 changelog 仍链到英文 blog，避免入口丢失。
+        "blog_href": "./blog/",
         "current_href": "./changelog-zh.html",
         "nav_label": "导航",
         "home_label": "首页",
         "privacy_label": "隐私",
+        "blog_label": "Blog",
         "changelog_label": "更新记录",
         "hero_eyebrow": "版本记录",
         "hero_title": "更新记录",
@@ -160,6 +165,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </a>
         <nav class="topbar-nav" aria-label="{nav_label}">
             <a href="{home_href}">{home_label}</a>
+            <a href="{blog_href}">{blog_label}</a>
             <a href="{privacy_href}">{privacy_label}</a>
             <a href="{current_href}" style="color:var(--color-text);font-weight:500;">{changelog_label}</a>
         </nav>
@@ -182,6 +188,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <footer class="site-footer" role="contentinfo">
     <div class="links">
         <a href="{home_href}">{home_label}</a>
+        <a href="{blog_href}">{blog_label}</a>
         <a href="{privacy_href}">{privacy_footer_label}</a>
         <a href="{current_href}">{changelog_label}</a>
         <a href="mailto:dong4j@gmail.com">{contact_label}</a>

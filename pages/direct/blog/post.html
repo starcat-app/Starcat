@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Starcat Blog post">
+    <meta name="robots" content="index, follow">
+    <meta property="og:type" content="article">
+    <title>Blog · Starcat</title>
+    <link rel="icon" type="image/png" href="../starcat-logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="blog.css">
+</head>
+<body>
+
+<header class="topbar" role="banner">
+    <div class="topbar-inner">
+        <a class="brand" href="../index.html">
+            <img src="../starcat-logo.png" alt="Starcat" class="brand-logo" width="28" height="28">
+            <span>Starcat</span>
+        </a>
+        <nav class="topbar-nav" aria-label="Navigation">
+            <a href="../index.html">Home</a>
+            <a href="./" class="is-active">Blog</a>
+            <a href="../changelog.html">Changelog</a>
+            <a href="../privacy.html">Privacy</a>
+        </nav>
+    </div>
+</header>
+
+<main class="article-main">
+    <article id="article-root" aria-live="polite">
+        <p class="status-msg">Loading post…</p>
+    </article>
+</main>
+
+<footer class="site-footer" role="contentinfo">
+    <div class="links">
+        <a href="../index.html">Home</a>
+        <a href="./">Blog</a>
+        <a href="../changelog.html">Changelog</a>
+        <a href="../privacy.html">Privacy Policy</a>
+        <a href="mailto:dong4j@gmail.com">Contact</a>
+    </div>
+    <p class="copyright">Copyright &copy; 2026 Starcat. All rights reserved.</p>
+</footer>
+
+<script src="vendor/marked.min.js"></script>
+<script src="blog.js"></script>
+<script>
+(function () {
+    var root = document.getElementById('article-root');
+    var slug = StarcatBlog.getSlugFromQuery();
+    var avatarSrc = '../starcat-logo.png';
+
+    function setPageMeta(title, summary, slugValue) {
+        document.title = title + ' · Starcat Blog';
+        var desc = document.querySelector('meta[name="description"]');
+        if (desc && summary) desc.setAttribute('content', summary);
+        var canonical = document.querySelector('link[rel="canonical"]');
+        if (!canonical) {
+            canonical = document.createElement('link');
+            canonical.rel = 'canonical';
+            document.head.appendChild(canonical);
+        }
+        canonical.href = 'https://starcat.ink/blog/post.html?slug=' + encodeURIComponent(slugValue);
+    }
+
+    function showError(message) {
+        root.innerHTML = '<a class="article-back" href="./">← Back to Blog</a>'
+            + '<p class="status-msg error">' + StarcatBlog.escapeHtml(message) + '</p>';
+    }
+
+    if (!slug) {
+        showError('Missing post slug. Open a post from the blog list.');
+        return;
+    }
+
+    Promise.all([
+        StarcatBlog.loadPost(slug),
+        StarcatBlog.loadIndex().catch(function () { return []; })
+    ]).then(function (results) {
+        var post = results[0];
+        var index = results[1];
+        var listed = null;
+        for (var i = 0; i < index.length; i++) {
+            if (index[i].slug === slug) { listed = index[i]; break; }
+        }
+
+        var title = (listed && listed.title) || post.meta.title || slug;
+        var summary = (listed && listed.summary) || post.meta.summary || '';
+        var author = (listed && listed.author) || post.meta.author || 'Starcat';
+        var dateIso = (listed && listed.date) || post.meta.date || '';
+        var minutes = (listed && listed.minutes) || post.minutes;
+        var dateLabel = StarcatBlog.formatDate(dateIso);
+        var metaBits = [];
+        if (dateLabel) metaBits.push(dateLabel);
+        if (minutes) metaBits.push(String(minutes) + ' min read');
+
+        setPageMeta(title, summary, slug);
+
+        var authorHtml = '<div class="author-row">'
+            + '<img class="author-avatar" src="' + avatarSrc + '" alt="" width="36" height="36">'
+            + '<div class="author-text">'
+            + '<span class="author-name">' + StarcatBlog.escapeHtml(author) + '</span>'
+            + (metaBits.length ? '<span class="author-meta">' + StarcatBlog.escapeHtml(metaBits.join(' · ')) + '</span>' : '')
+            + '</div></div>';
+
+        root.innerHTML = '<a class="article-back" href="./">← Back to Blog</a>'
+            + '<header class="article-header">'
+            + '<h1>' + StarcatBlog.escapeHtml(title) + '</h1>'
+            + authorHtml
+            + '</header>'
+            + '<div class="article-body">' + StarcatBlog.renderMarkdown(post.body) + '</div>';
+    }).catch(function (err) {
+        showError(err.message || String(err));
+    });
+})();
+</script>
+</body>
+</html>

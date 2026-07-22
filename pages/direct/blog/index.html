@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Starcat Blog — notes on local-first GitHub Stars, AI knowledge bases, and native macOS tooling.">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://starcat.ink/blog/">
+    <meta property="og:title" content="Blog · Starcat">
+    <meta property="og:description" content="Thoughts on turning GitHub Stars into a searchable, local-first knowledge base.">
+    <meta property="og:url" content="https://starcat.ink/blog/">
+    <meta property="og:type" content="website">
+    <title>Blog · Starcat</title>
+    <link rel="icon" type="image/png" href="../starcat-logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="blog.css">
+</head>
+<body>
+
+<header class="topbar" role="banner">
+    <div class="topbar-inner">
+        <a class="brand" href="../index.html">
+            <img src="../starcat-logo.png" alt="Starcat" class="brand-logo" width="28" height="28">
+            <span>Starcat</span>
+        </a>
+        <nav class="topbar-nav" aria-label="Navigation">
+            <a href="../index.html">Home</a>
+            <a href="./" class="is-active">Blog</a>
+            <a href="../changelog.html">Changelog</a>
+            <a href="../privacy.html">Privacy</a>
+        </nav>
+    </div>
+</header>
+
+<section class="hero">
+    <div class="hero-inner">
+        <h1>Blog</h1>
+        <p class="hero-lead">A collection of thoughts, ideas, and stories around Starcat.</p>
+    </div>
+</section>
+
+<main class="blog-main">
+    <div id="post-list-root" aria-live="polite">
+        <p class="status-msg">Loading posts…</p>
+    </div>
+</main>
+
+<footer class="site-footer" role="contentinfo">
+    <div class="links">
+        <a href="../index.html">Home</a>
+        <a href="./">Blog</a>
+        <a href="../changelog.html">Changelog</a>
+        <a href="../privacy.html">Privacy Policy</a>
+        <a href="mailto:dong4j@gmail.com">Contact</a>
+    </div>
+    <p class="copyright">Copyright &copy; 2026 Starcat. All rights reserved.</p>
+</footer>
+
+<script src="blog.js"></script>
+<script>
+(function () {
+    var root = document.getElementById('post-list-root');
+    var avatarSrc = '../starcat-logo.png';
+
+    function renderList(posts) {
+        if (!posts.length) {
+            root.innerHTML = '<p class="status-msg">No posts yet.</p>';
+            return;
+        }
+        var html = '<ul class="post-list">';
+        posts.forEach(function (post) {
+            var title = StarcatBlog.escapeHtml(post.title || post.slug || '');
+            var summary = StarcatBlog.escapeHtml(post.summary || '');
+            var author = StarcatBlog.escapeHtml(post.author || 'Starcat');
+            var date = StarcatBlog.formatDate(post.date);
+            var minutes = post.minutes ? (Number(post.minutes) + ' min read') : '';
+            var metaBits = [];
+            if (date) metaBits.push(date);
+            if (minutes) metaBits.push(minutes);
+            var metaLine = StarcatBlog.escapeHtml(metaBits.join(' · '));
+
+            html += '<li><a class="post-card" href="post.html?slug=' + encodeURIComponent(post.slug) + '">'
+                + '<div class="post-card-body">'
+                + '<h2>' + title + '</h2>'
+                + (summary ? '<p class="summary">' + summary + '</p>' : '')
+                + '</div>'
+                + '<div class="author-row">'
+                + '<img class="author-avatar" src="' + avatarSrc + '" alt="" width="36" height="36">'
+                + '<div class="author-text">'
+                + '<span class="author-name">' + author + '</span>'
+                + (metaLine ? '<span class="author-meta">' + metaLine + '</span>' : '')
+                + '</div></div></a></li>';
+        });
+        html += '</ul>';
+        root.innerHTML = html;
+    }
+
+    StarcatBlog.loadIndex()
+        .then(renderList)
+        .catch(function (err) {
+            root.innerHTML = '<p class="status-msg error">' + StarcatBlog.escapeHtml(err.message || String(err)) + '</p>';
+        });
+})();
+</script>
+</body>
+</html>
