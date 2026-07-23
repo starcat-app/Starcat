@@ -18,6 +18,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DERIVED_DATA="$PROJECT_ROOT/build/DerivedData-NoSandbox"
 APP_PATH="$DERIVED_DATA/Build/Products/Debug/Starcat.app"
+APP_EXECUTABLE="$APP_PATH/Contents/MacOS/Starcat"
 
 # 正式 Apple Developer Team ID。后续如果换账号，可用环境变量覆盖：
 #   STARCAT_DEVELOPMENT_TEAM=XXXXXXXXXX ./scripts/run-debug-direct.sh
@@ -27,7 +28,22 @@ cd "$PROJECT_ROOT"
 
 echo "==> 关闭已运行的 Starcat（如有）..."
 pkill -x Starcat 2>/dev/null || true
-sleep 0.3
+
+# `pkill` 只发送终止信号，数据库收尾等异步清理可能明显超过固定 0.3 秒。
+# 如果旧实例仍在退出，普通 `open` 会把启动请求误判为“激活已有实例”，随后旧实例
+# 退出，最终表现为构建成功但没有应用进程。这里等待真实退出，超时则保留现场并报错，
+# 不升级成 SIGKILL，避免强杀时损坏用户数据。
+for _ in {1..100}; do
+  if ! pgrep -x Starcat >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.1
+done
+if pgrep -x Starcat >/dev/null 2>&1; then
+  echo "ERROR: 等待旧 Starcat 退出超时，拒绝启动新实例。"
+  pgrep -fl -x Starcat || true
+  exit 1
+fi
 
 echo "==> 生成 Xcode 工程..."
 xcodegen generate
@@ -77,4 +93,56 @@ echo "    data: ~/Library/Application Support/com.starcat.app"
 echo "    app support: ~/Library/Application Support/com.starcat.app"
 echo "    app: $APP_PATH"
 
+echo "==> 启动 StarcatDirect..."
 open "$APP_PATH"
+LAUNCH_METHOD="LaunchServices"
+
+# `open` 成功只代表 LaunchServices 接收了请求，不代表目标进程已真正建立。按完整
+# executable path 校验，避免误把另一个渠道或另一个 DerivedData 下的 Starcat 算作成功。
+# 这里不能使用 `open -n`：它会要求 LaunchServices 强制创建新实例，与 Starcat 的
+# 单实例身份冲突，进程可能停在 xpcproxy 阶段并被系统回收。
+DIRECT_PID=""
+for _ in {1..100}; do
+  DIRECT_PID="$(pgrep -f -x "$APP_EXECUTABLE" | head -n 1 || true)"
+  if [ -n "$DIRECT_PID" ]; then
+    break
+  fi
+  sleep 0.1
+done
+
+if [ -z "$DIRECT_PID" ]; then
+  # 某些 macOS LaunchServices 状态异常时，`open` 会创建 xpcproxy 后立即回收，
+  # 系统日志表现为 `Failed sending SIGCONT ... errno=3`。构建产物本身仍可正常执行，
+  # 因此只在主路径失败后使用 detached executable 兜底；nohup 避免 Make 退出时向
+  # App 转发 SIGHUP，stdout/stderr 则显式丢弃，防止后台进程长期占用终端管道。
+  echo "WARN: LaunchServices 未建立 StarcatDirect 进程，尝试直接启动构建产物..."
+  /usr/bin/nohup "$APP_EXECUTABLE" >/dev/null 2>&1 &
+  LAUNCH_METHOD="direct executable fallback"
+
+  for _ in {1..100}; do
+    DIRECT_PID="$(pgrep -f -x "$APP_EXECUTABLE" | head -n 1 || true)"
+    if [ -n "$DIRECT_PID" ]; then
+      break
+    fi
+    sleep 0.1
+  done
+
+  if [ -z "$DIRECT_PID" ]; then
+    echo "ERROR: LaunchServices 与直接启动均未建立 StarcatDirect 进程。"
+    echo "       executable: $APP_EXECUTABLE"
+    exit 1
+  fi
+fi
+
+# 冷启动刚建立进程并不等于启动完成。此前 `open -n` 产生的异常进程会在约 1 秒后
+# 被 LaunchServices 回收，因此再观察 2 秒，只有持续存活才向调用方报告成功。
+for _ in {1..20}; do
+  if ! kill -0 "$DIRECT_PID" 2>/dev/null; then
+    echo "ERROR: StarcatDirect 进程在启动后提前退出（PID: ${DIRECT_PID}）。"
+    exit 1
+  fi
+  sleep 0.1
+done
+
+echo "==> StarcatDirect 已稳定启动（PID: ${DIRECT_PID}，方式: ${LAUNCH_METHOD}）"
+exit 0
