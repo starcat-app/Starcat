@@ -55,10 +55,16 @@ enum AIUsageEventFactory {
         cachedInputTokens: Int?,
         reasoningOutputTokens: Int?,
         itemCount: Int,
+        usageSource: AIUsageSource? = nil,
         status: AIUsageStatus,
         error: Error? = nil
     ) -> AIUsageEvent {
         let hasUsage = inputTokens != nil || outputTokens != nil || totalTokens != nil
+        // 显式来源只允许描述真实存在的 token 数值；避免调用方误把全 nil 事件标成
+        // provider / estimated，破坏统计面板的“可用率”口径。
+        let resolvedUsageSource = hasUsage
+            ? (usageSource ?? .provider)
+            : .unavailable
         return AIUsageEvent(
             id: UUID().uuidString,
             startedAt: startedAt,
@@ -76,7 +82,7 @@ enum AIUsageEventFactory {
             cachedInputTokens: cachedInputTokens,
             reasoningOutputTokens: reasoningOutputTokens,
             itemCount: max(1, itemCount),
-            usageSource: hasUsage ? AIUsageSource.provider.rawValue : AIUsageSource.unavailable.rawValue,
+            usageSource: resolvedUsageSource.rawValue,
             status: status.rawValue,
             // 用户取消是独立终态，不属于 Provider / 网络错误；保持 NULL，避免错误分布
             // 将主动取消混入 unknown。

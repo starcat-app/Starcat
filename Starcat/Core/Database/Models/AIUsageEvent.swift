@@ -66,6 +66,13 @@ struct AIUsageContext: Equatable, Sendable {
     static let unknown = AIUsageContext(feature: .unknown, phase: "unknown")
 }
 
+/// Provider 缺少 usage 时的本地估算结果；只携带统计数字，不保存 Prompt 或响应正文。
+struct AIUsageTokenEstimate: Equatable, Sendable {
+    var inputTokens: Int
+    var outputTokens: Int
+    var totalTokens: Int
+}
+
 /// `ai_usage_events` 单行记录。
 struct AIUsageEvent: Codable, FetchableRecord, PersistableRecord, Equatable, Identifiable, Sendable {
     static let databaseTableName = "ai_usage_events"

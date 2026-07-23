@@ -5,6 +5,7 @@
 //  验证底层 usage 到持久化事件的统计口径。
 //
 
+import Foundation
 import Testing
 @testable import Starcat
 
@@ -60,6 +61,65 @@ struct AIUsageCaptureTests {
         #expect(event.usageSource == AIUsageSource.unavailable.rawValue)
         #expect(event.errorCategory == AIUsageErrorCategory.rateLimit.rawValue)
         #expect(event.itemCount == 8)
+    }
+
+    @Test("无 Provider usage 的文本 Chat 使用本地估算并标记来源")
+    func missingProviderUsageUsesLocalEstimate() {
+        let request = AIChatRequest(
+            systemPrompt: "Translate the README segments.",
+            userPrompt: #"{"segments":[{"id":"p1","text":"Hello Starcat"}]}"#,
+            history: [
+                AIChatMessage(role: .assistant, content: "Previous context")
+            ],
+            model: "chat-model",
+            parameters: .summaryDefault
+        )
+
+        let estimate = OpenAIClient.estimatedChatUsage(
+            request: request,
+            responseContent: #"{"translations":[{"id":"p1","translation":"你好，Starcat"}]}"#
+        )
+        #expect(estimate != nil)
+        #expect(estimate?.inputTokens ?? 0 > 0)
+        #expect(estimate?.outputTokens ?? 0 > 0)
+        #expect(estimate?.totalTokens == (estimate?.inputTokens ?? 0) + (estimate?.outputTokens ?? 0))
+
+        let event = AIUsageEventFactory.make(
+            startedAt: 10,
+            completedAt: 11,
+            configuration: configuration,
+            usageContext: AIUsageContext(feature: .readmeTranslation, phase: "translation"),
+            model: request.model,
+            operation: .chat,
+            inputTokens: estimate?.inputTokens,
+            outputTokens: estimate?.outputTokens,
+            totalTokens: estimate?.totalTokens,
+            cachedInputTokens: nil,
+            reasoningOutputTokens: nil,
+            itemCount: 1,
+            usageSource: .estimated,
+            status: .succeeded
+        )
+
+        #expect(event.feature == AIUsageFeature.readmeTranslation.rawValue)
+        #expect(event.usageSource == AIUsageSource.estimated.rawValue)
+        #expect(event.totalTokens == estimate?.totalTokens)
+    }
+
+    @Test("含图片请求不伪造文本 Token 估算")
+    func visionRequestKeepsUnavailableUsage() {
+        let request = AIChatRequest(
+            systemPrompt: "Describe the image.",
+            userPrompt: "What is shown?",
+            images: [AIChatImageInput(data: Data([0x01]), contentType: "image/png")],
+            model: "vision-model",
+            parameters: .summaryDefault
+        )
+
+        #expect(OpenAIClient.estimatedChatUsage(
+            request: request,
+            responseContent: "A cat."
+        ) == nil)
     }
 
     @Test("流式 usage fallback 只接受明确的参数不兼容错误")

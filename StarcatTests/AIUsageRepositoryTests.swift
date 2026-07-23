@@ -122,6 +122,48 @@ struct AIUsageRepositoryTests {
         #expect(snapshot.recentEvents.map(\.id) == ["rag-chat", "rag-unknown"])
     }
 
+    @Test("功能筛选先于最近调用数量限制且保持时间倒序")
+    func recentEventsApplyFeatureFilterBeforeLimit() async throws {
+        let database = try InMemoryDatabaseManager()
+        let repository = GRDBAIUsageRepository(database: database)
+        let now = Date(timeIntervalSince1970: 1_752_921_600)
+
+        // 更晚的其它功能调用不能占掉 README 翻译筛选后的 LIMIT 名额。
+        try await repository.insert(makeEvent(
+            id: "newer-rag",
+            completedAt: now.timeIntervalSince1970 - 10,
+            inputTokens: 20,
+            totalTokens: 30,
+            feature: .rag
+        ))
+        try await repository.insert(makeEvent(
+            id: "translation-newer",
+            completedAt: now.timeIntervalSince1970 - 20,
+            inputTokens: 40,
+            totalTokens: 60,
+            feature: .readmeTranslation
+        ))
+        try await repository.insert(makeEvent(
+            id: "translation-older",
+            completedAt: now.timeIntervalSince1970 - 30,
+            inputTokens: 30,
+            totalTokens: 50,
+            feature: .readmeTranslation
+        ))
+
+        let snapshot = try await repository.statistics(
+            filter: AIUsageFilter(timeRange: .thirtyDays, feature: .readmeTranslation),
+            now: now,
+            calendar: Calendar(identifier: .gregorian),
+            recentLimit: 1
+        )
+
+        #expect(snapshot.recentEvents.map(\.id) == ["translation-newer"])
+        #expect(snapshot.recentEvents.allSatisfy {
+            $0.feature == AIUsageFeature.readmeTranslation.rawValue
+        })
+    }
+
     private func makeEvent(
         id: String,
         completedAt: Double,

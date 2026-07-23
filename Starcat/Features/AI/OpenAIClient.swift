@@ -93,6 +93,8 @@ struct OpenAIClient: AIClientProtocol {
                 model: result.model,
                 context: request.usageContext,
                 usage: capturedUsage,
+                request: request,
+                responseContent: content,
                 status: .succeeded
             )
             return response
@@ -244,6 +246,8 @@ struct OpenAIClient: AIClientProtocol {
                         model: resolvedModel,
                         context: request.usageContext,
                         usage: capturedUsage,
+                        request: request,
+                        responseContent: final,
                         status: .succeeded
                     )
                     continuation.yield(.completed(AIChatResponse(
@@ -592,24 +596,65 @@ struct OpenAIClient: AIClientProtocol {
         model: String,
         context: AIUsageContext?,
         usage: ChatResult.CompletionUsage?,
+        request: AIChatRequest? = nil,
+        responseContent: String? = nil,
         status: AIUsageStatus,
         error: Error? = nil
     ) async {
+        let estimate: AIUsageTokenEstimate?
+        if usage == nil,
+           status == .succeeded,
+           let request,
+           let responseContent {
+            estimate = Self.estimatedChatUsage(
+                request: request,
+                responseContent: responseContent
+            )
+        } else {
+            estimate = nil
+        }
+
         await usageRecorder.record(AIUsageEventFactory.make(
             startedAt: startedAt,
             configuration: configuration,
             usageContext: context,
             model: model,
             operation: .chat,
-            inputTokens: usage?.promptTokens,
-            outputTokens: usage?.completionTokens,
-            totalTokens: usage?.totalTokens,
+            inputTokens: usage?.promptTokens ?? estimate?.inputTokens,
+            outputTokens: usage?.completionTokens ?? estimate?.outputTokens,
+            totalTokens: usage?.totalTokens ?? estimate?.totalTokens,
             cachedInputTokens: usage?.promptTokensDetails?.cachedTokens,
             reasoningOutputTokens: usage?.completionTokensDetails?.reasoningTokens,
             itemCount: 1,
+            usageSource: estimate == nil ? nil : .estimated,
             status: status,
             error: error
         ))
+    }
+
+    /// 为不返回 `usage` 的 OpenAI-compatible Provider 估算成功文本调用的 token。
+    ///
+    /// 使用 UTF-8 byte count 而不是 Swift Character count：README 翻译同时包含英文与
+    /// 中文，byte 口径能避免中文每个字符只按 0.27 token 计算而严重低估。图片 token
+    /// 依赖模型的视觉切片规则，无法用文本可靠推导，因此含图片请求继续保持 unavailable。
+    static func estimatedChatUsage(
+        request: AIChatRequest,
+        responseContent: String
+    ) -> AIUsageTokenEstimate? {
+        guard request.images.isEmpty else { return nil }
+
+        var inputParts = [request.systemPrompt]
+        inputParts.append(contentsOf: request.history.map { "\($0.role.rawValue):\n\($0.content)" })
+        inputParts.append(request.userPrompt)
+        let inputText = inputParts.joined(separator: "\n")
+
+        let inputTokens = max(1, TokenEstimator.estimate(byteCount: inputText.utf8.count))
+        let outputTokens = max(1, TokenEstimator.estimate(byteCount: responseContent.utf8.count))
+        return AIUsageTokenEstimate(
+            inputTokens: inputTokens,
+            outputTokens: outputTokens,
+            totalTokens: inputTokens + outputTokens
+        )
     }
 
     private func recordEmbeddingFailure(
