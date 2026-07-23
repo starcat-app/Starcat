@@ -40,14 +40,9 @@ extension View {
     /// `ProPaywallSheet.hosted` 与本 modifier 共用同一注入口径。
     @MainActor
     func appSheetRootEnvironment(_ dependencies: AppDependencies) -> some View {
-        self
-            .environment(dependencies)
-            .environment(dependencies.authSession)
-            .environment(dependencies.subscriptionManager)
-            .environment(dependencies.directLicenseManager)
-            .environment(dependencies.entitlementGate)
-            .environment(dependencies.developerLanguageService)
-            .appLocaleEnvironment()
+        // Sheet 与 AppKit hosting root 面临同一种边界：都不能假设 presenter 的
+        // Observation environment 永远完整继承。复用标准链，避免两份清单再次漂移。
+        appHostEnvironment(dependencies)
     }
 }
 
@@ -79,6 +74,9 @@ private struct AppHostEnvironmentContainer<Content: View>: View {
             .environment(dependencies.subscriptionManager)
             .environment(dependencies.directLicenseManager)
             .environment(dependencies.entitlementGate)
+            // 独立窗口不会继承 StarcatApp Scene；漏掉命令路由会在详情页的
+            // refresh / repository AI modifier 读取 @Environment 时直接断言崩溃。
+            .starcatCommandRouterEnvironment()
             .environment(dependencies.contributionService)
             .environment(dependencies.userProfileService)
             .environment(dependencies.developerLanguageService)

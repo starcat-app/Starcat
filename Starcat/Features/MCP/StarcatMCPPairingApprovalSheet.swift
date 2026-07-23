@@ -17,7 +17,7 @@ struct StarcatMCPPairingApprovalSheet: View {
         VStack(alignment: .leading, spacing: 20) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("settings.mcp.pairing.sheet.title")
+                    Label("settings.mcp.pairing.sheet.title", systemImage: "terminal")
                         .font(.title3.weight(.semibold))
                     Text("settings.mcp.pairing.sheet.help")
                         .font(.subheadline)
@@ -86,6 +86,7 @@ private struct StarcatMCPPairingApprovalPresenter: ViewModifier {
                     reject: { store.rejectPendingPairing() }
                 )
                 .interactiveDismissDisabled()
+                .appLocaleEnvironment()
             }
         }
     }

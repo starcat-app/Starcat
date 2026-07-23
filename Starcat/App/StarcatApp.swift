@@ -44,7 +44,7 @@ struct StarcatApp: App {
 
     /// 主窗口与 Settings Scene 共用的快捷键路由。
     /// Settings 成为 key window 后仍需操作主窗口最后一个有效仓库，不能依赖 scene-local FocusedValue。
-    @State private var commandRouter = StarcatCommandRouter()
+    @State private var commandRouter = StarcatCommandRouter.shared
 
     // MARK: - 用户语言切换（生产可用）
     //
@@ -182,7 +182,7 @@ struct StarcatApp: App {
                 .environment(dependencies.subscriptionManager)
                 .environment(dependencies.directLicenseManager)
                 .environment(dependencies.entitlementGate)
-                .environment(commandRouter)
+                .starcatCommandRouterEnvironment(commandRouter)
                 // HOM-PROFILE 2026-06-05：贡献草坪服务，Sidebar 直接消费 @Observable 实例。
                 .environment(dependencies.contributionService)
                 // 2026-06-06 A 方案：用户 profile 缓存服务。Sidebar / ShareCardSheet 会调
@@ -241,7 +241,7 @@ struct StarcatApp: App {
                 .environment(dependencies.subscriptionManager)
                 .environment(dependencies.directLicenseManager)
                 .environment(dependencies.entitlementGate)
-                .environment(commandRouter)
+                .starcatCommandRouterEnvironment(commandRouter)
                 // HOM-126：AI 设置「自动整理」分组的「立刻手动触发一次」按钮直接
                 // 调 scheduler.triggerManually()。不依赖 AppDependencies 间接路径，
                 // 让 Settings tab 与 scheduler 解耦但显式可见。
@@ -403,6 +403,7 @@ private struct StarcatAppCommands: Commands {
     let commandRouter: StarcatCommandRouter
     let settings: AppSettings
     @FocusedValue(\.starcatRefreshAction) private var focusedRefreshAction
+    @FocusedValue(\.starcatRepositoryAIAction) private var focusedRepositoryAIAction
 
     var body: some Commands {
         CommandMenu("commands.actions.menu") {
@@ -427,33 +428,26 @@ private struct StarcatAppCommands: Commands {
             .disabled(!commandRouter.canOpenKnowledgeRAGWorkspace)
 
             Button("commands.actions.openSelectedRepoAI") {
-                commandRouter.openCurrentRepositoryAI()
+                commandRouter.openCurrentRepositoryAI(preferred: focusedRepositoryAIAction)
             }
             .keyboardShortcut(
                 settings.keyboardShortcutsEnabled && settings.selectedRepoAIShortcutEnabled
                     ? settings.selectedRepoAIShortcut.swiftUIShortcut
                     : nil
             )
-            .disabled(!commandRouter.canOpenCurrentRepositoryAI)
+            .disabled(!commandRouter.isRepositoryAIAvailable(preferred: focusedRepositoryAIAction))
 
             Divider()
 
             Button("commands.actions.refreshCurrentContent") {
-                if let focusedRefreshAction, focusedRefreshAction.isEnabled {
-                    focusedRefreshAction.perform()
-                } else {
-                    commandRouter.refreshCurrentContent()
-                }
+                commandRouter.refreshCurrentContent(preferred: focusedRefreshAction)
             }
             .keyboardShortcut(
                 settings.keyboardShortcutsEnabled && settings.refreshCurrentContentShortcutEnabled
                     ? settings.refreshCurrentContentShortcut.swiftUIShortcut
                     : nil
             )
-            .disabled(
-                focusedRefreshAction?.isEnabled != true
-                    && commandRouter.currentRefreshAction?.isEnabled != true
-            )
+            .disabled(!commandRouter.isRefreshAvailable(preferred: focusedRefreshAction))
 
             Button("ai.usage.open") {
                 if let dependencies {

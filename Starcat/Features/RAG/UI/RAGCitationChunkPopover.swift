@@ -436,7 +436,6 @@ struct RAGCitationChunkMissingPopoverContent: View {
             height: RAGCitationChunkPopoverMetrics.height,
             alignment: .topLeading
         )
-        .appLocaleEnvironment()
     }
 }
 
@@ -640,6 +639,7 @@ final class RAGCitationChunkNSPopoverPresenter: NSObject, NSPopoverDelegate {
             return AnyView(
                 RAGCitationChunkPopoverContent(citation: citation, chunk: chunk)
                     .environment(\.starcatInterfaceScale, interfaceScale)
+                    .appLocaleEnvironment()
                     .starcatAnimationOverride()
                     .environment(settings)
             )
@@ -648,6 +648,7 @@ final class RAGCitationChunkNSPopoverPresenter: NSObject, NSPopoverDelegate {
             return AnyView(
                 RAGCitationChunkMissingPopoverContent(citation: citation)
                     .environment(\.starcatInterfaceScale, interfaceScale)
+                    .appLocaleEnvironment()
                     .starcatAnimationOverride()
                     .environment(settings)
             )
@@ -655,6 +656,7 @@ final class RAGCitationChunkNSPopoverPresenter: NSObject, NSPopoverDelegate {
         return AnyView(
             RAGCitationChunkLoadingPopoverContent(citation: citation)
                 .environment(\.starcatInterfaceScale, interfaceScale)
+                .appLocaleEnvironment()
                 .starcatAnimationOverride()
                 .environment(settings)
         )

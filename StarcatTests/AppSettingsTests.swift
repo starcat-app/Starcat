@@ -6,8 +6,10 @@
 //  用 UserDefaults(suiteName:) 隔离测试，不污染共享 .standard。
 //
 
-import Testing
+import AppKit
 import Foundation
+import SwiftUI
+import Testing
 @testable import Starcat
 
 @MainActor
@@ -504,6 +506,79 @@ struct AppSettingsTests {
         router.openCurrentRepositoryAI()
 
         #expect(opened)
+    }
+
+    @Test("快捷键路由: key window 的仓库 AI 动作优先于后台窗口")
+    func commandRouterPrefersFocusedRepositoryAI() {
+        let router = StarcatCommandRouter()
+        var calls: [String] = []
+        router.registerRepositoryAIAction(
+            StarcatCommandAction(title: "background", isEnabled: true) {
+                calls.append("background")
+            },
+            ownerID: UUID()
+        )
+
+        let focused = StarcatCommandAction(title: "focused", isEnabled: true) {
+            calls.append("focused")
+        }
+        router.openCurrentRepositoryAI(preferred: focused)
+
+        #expect(calls == ["focused"])
+        #expect(router.isRepositoryAIAvailable(preferred: focused))
+    }
+
+    @Test("快捷键路由: focused 刷新动作优先于最后登记的 fallback")
+    func commandRouterPrefersFocusedRefreshAction() {
+        let router = StarcatCommandRouter()
+        var calls: [String] = []
+        router.registerRefreshAction(
+            StarcatCommandAction(title: "fallback", isEnabled: true) {
+                calls.append("fallback")
+            },
+            pane: .detail,
+            ownerID: UUID()
+        )
+        router.activate(.detail)
+
+        let focused = StarcatCommandAction(title: "focused", isEnabled: true) {
+            calls.append("focused")
+        }
+        router.refreshCurrentContent(preferred: focused)
+
+        #expect(calls == ["focused"])
+        #expect(router.isRefreshAvailable(preferred: focused))
+    }
+
+    @Test("快捷键路由: AppKit 独立窗口注入路由后可安全挂载命令视图")
+    func commandRouterEnvironmentSupportsAppKitHostingRoot() {
+        let router = StarcatCommandRouter()
+        let rootView = Color.clear
+            .starcatRefreshCommand(
+                pane: .detail,
+                identity: "appkit-host-regression",
+                title: "refresh"
+            ) {}
+            .starcatRepositoryAICommand(
+                identity: "appkit-host-regression",
+                isEnabled: true
+            ) {}
+            // 必须位于消费命令路由的 modifier 外层，模拟 appHostEnvironment 的注入顺序。
+            .starcatCommandRouterEnvironment(router)
+
+        let hostingController = NSHostingController(rootView: rootView)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+
+        // 生产崩溃发生在同一赋值：SwiftUI 首次解析 DynamicProperty 时若缺少 router，
+        // 会从 EnvironmentValues.subscript.getter 触发 assertionFailure。
+        window.contentViewController = hostingController
+
+        #expect(window.contentViewController === hostingController)
     }
 
     // MARK: - AI BYOK 设置

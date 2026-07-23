@@ -36,9 +36,8 @@ final class AIUsageWindowController: NSWindowController, NSWindowDelegate {
     private init(dependencies: AppDependencies) {
         let viewModel = AIUsageDashboardViewModel(repository: dependencies.aiUsageRepository)
         let content = AIUsageDashboardView(viewModel: viewModel)
-            .starcatAnimationOverride()
-            .appLocaleEnvironment()
-            .environment(dependencies.settings)
+            // 独立窗口统一走标准 hosting 环境，避免后续新增依赖时再次漏注入。
+            .appHostEnvironment(dependencies)
         let hostingController = NSHostingController(rootView: content)
         let window = NSWindow(contentViewController: hostingController)
         window.title = String.l10n("ai.usage.window.title")

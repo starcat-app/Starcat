@@ -35,6 +35,14 @@ enum StarcatRefreshPane: String, Sendable {
 @Observable
 final class StarcatCommandRouter {
 
+    /// 应用进程内唯一的命令路由。
+    ///
+    /// AppKit 自建的 `NSHostingController` 不继承 `StarcatApp` Scene 的 environment，
+    /// 但它们仍要把刷新与仓库 AI 动作登记到同一套菜单命令中。集中实例既避免漏注入
+    /// 导致 `@Environment(StarcatCommandRouter.self)` 断言崩溃，也避免独立窗口创建
+    /// 第二套路由后让快捷键操作到错误窗口。
+    static let shared = StarcatCommandRouter()
+
     private struct RegisteredAction {
         let ownerID: UUID
         let action: StarcatCommandAction
@@ -60,7 +68,9 @@ final class StarcatCommandRouter {
 
     var canOpenGlobalSearch: Bool { mainWindowActions != nil }
     var canOpenKnowledgeRAGWorkspace: Bool { mainWindowActions != nil }
-    var canOpenCurrentRepositoryAI: Bool { repositoryAIAction?.action.isEnabled == true }
+    var canOpenCurrentRepositoryAI: Bool {
+        isRepositoryAIAvailable(preferred: nil)
+    }
 
     /// 当前 `⌘R` 目标。详情不可刷新时必须回退列表，不能让按键静默失效。
     var currentRefreshAction: StarcatCommandAction? {
@@ -99,14 +109,29 @@ final class StarcatCommandRouter {
         mainWindowActions?.openKnowledgeRAGWorkspace()
     }
 
-    func openCurrentRepositoryAI() {
-        guard repositoryAIAction?.action.isEnabled == true else { return }
-        repositoryAIAction?.action.perform()
+    /// 优先执行 key window 通过 FocusedValues 发布的仓库 AI 动作。
+    ///
+    /// 多个详情窗口会同时存在，单例路由里的 fallback 只能表示最后登记者；focused
+    /// action 才能准确表示当前 key window，避免快捷键操作到后台窗口的仓库。
+    func openCurrentRepositoryAI(preferred action: StarcatCommandAction? = nil) {
+        guard let resolved = resolvedRepositoryAIAction(preferred: action) else { return }
+        resolved.perform()
     }
 
-    func refreshCurrentContent() {
-        guard let action = currentRefreshAction, action.isEnabled else { return }
-        action.perform()
+    func isRepositoryAIAvailable(preferred action: StarcatCommandAction?) -> Bool {
+        resolvedRepositoryAIAction(preferred: action) != nil
+    }
+
+    /// Refresh 同样优先服从 key window；router 状态只用于 first responder
+    /// 暂时没有发布 focused value 时的菜单 fallback。
+    func refreshCurrentContent(preferred action: StarcatCommandAction? = nil) {
+        let resolved = action?.isEnabled == true ? action : currentRefreshAction
+        guard let resolved, resolved.isEnabled else { return }
+        resolved.perform()
+    }
+
+    func isRefreshAvailable(preferred action: StarcatCommandAction?) -> Bool {
+        action?.isEnabled == true || currentRefreshAction?.isEnabled == true
     }
 
     func activate(_ pane: StarcatRefreshPane) {
@@ -146,9 +171,23 @@ final class StarcatCommandRouter {
         guard repositoryAIAction?.ownerID == ownerID else { return }
         repositoryAIAction = nil
     }
+
+    private func resolvedRepositoryAIAction(
+        preferred action: StarcatCommandAction?
+    ) -> StarcatCommandAction? {
+        if let action, action.isEnabled {
+            return action
+        }
+        guard repositoryAIAction?.action.isEnabled == true else { return nil }
+        return repositoryAIAction?.action
+    }
 }
 
 private struct StarcatRefreshActionFocusedValueKey: FocusedValueKey {
+    typealias Value = StarcatCommandAction
+}
+
+private struct StarcatRepositoryAIActionFocusedValueKey: FocusedValueKey {
     typealias Value = StarcatCommandAction
 }
 
@@ -157,6 +196,12 @@ extension FocusedValues {
     var starcatRefreshAction: StarcatCommandAction? {
         get { self[StarcatRefreshActionFocusedValueKey.self] }
         set { self[StarcatRefreshActionFocusedValueKey.self] = newValue }
+    }
+
+    /// 当前 key window 的仓库 AI 动作；避免多详情窗口共用 fallback 时串仓库。
+    var starcatRepositoryAIAction: StarcatCommandAction? {
+        get { self[StarcatRepositoryAIActionFocusedValueKey.self] }
+        set { self[StarcatRepositoryAIActionFocusedValueKey.self] = newValue }
     }
 }
 
@@ -212,6 +257,7 @@ private struct StarcatRepositoryAICommandModifier: ViewModifier {
         )
 
         content
+            .focusedValue(\.starcatRepositoryAIAction, command)
             .simultaneousGesture(TapGesture().onEnded {
                 router.activate(.detail)
             })
@@ -231,6 +277,16 @@ private struct StarcatRepositoryAICommandModifier: ViewModifier {
 }
 
 extension View {
+    /// 注入应用级命令路由；SwiftUI Scene 与 AppKit hosting root 必须统一走这里。
+    ///
+    /// 参数主要用于隔离测试；生产根视图省略参数时始终使用进程内共享实例。
+    @MainActor
+    func starcatCommandRouterEnvironment(
+        _ commandRouter: StarcatCommandRouter = .shared
+    ) -> some View {
+        environment(commandRouter)
+    }
+
     /// 发布一个列表或详情刷新动作；`identity` 必须覆盖会改变刷新目标的筛选条件。
     func starcatRefreshCommand(
         pane: StarcatRefreshPane,

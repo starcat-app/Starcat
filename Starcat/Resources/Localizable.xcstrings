@@ -8483,6 +8483,7 @@
       }
     },
     "ai.usage.feature.repo_note" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -40141,23 +40142,6 @@
         }
       }
     },
-    "repo.share.link.copy" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copy Repository Link"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "复制仓库链接"
-          }
-        }
-      }
-    },
     "repo.share.link.copied" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -40171,6 +40155,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "仓库链接已复制"
+          }
+        }
+      }
+    },
+    "repo.share.link.copy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Repository Link"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制仓库链接"
           }
         }
       }
@@ -49240,74 +49241,6 @@
         }
       }
     },
-    "settings.general.shortcuts.error.invalidKey" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Use a single letter or number."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请使用单个英文字母或数字。"
-          }
-        }
-      }
-    },
-    "settings.general.shortcuts.error.duplicateConfiguredAction" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This shortcut is already assigned to another action."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "该快捷键已分配给另一项操作。"
-          }
-        }
-      }
-    },
-    "settings.general.shortcuts.error.missingModifier" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add Command, Option, or Control to avoid interfering with text input."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请至少搭配 Command、Option 或 Control，避免影响正常输入。"
-          }
-        }
-      }
-    },
-    "settings.general.shortcuts.error.reserved" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This shortcut is already used by Starcat. Choose another combination."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "该快捷键已被 Starcat 使用，请选择其他组合。"
-          }
-        }
-      }
-    },
     "settings.general.shortcuts.configuration.description" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -49355,6 +49288,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "启用应用快捷键"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.error.duplicateConfiguredAction" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This shortcut is already assigned to another action."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该快捷键已分配给另一项操作。"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.error.invalidKey" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use a single letter or number."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请使用单个英文字母或数字。"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.error.missingModifier" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Command, Option, or Control to avoid interfering with text input."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请至少搭配 Command、Option 或 Control，避免影响正常输入。"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.error.reserved" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This shortcut is already used by Starcat. Choose another combination."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该快捷键已被 Starcat 使用，请选择其他组合。"
           }
         }
       }
@@ -49426,6 +49427,40 @@
         }
       }
     },
+    "settings.general.shortcuts.refreshCurrentContent.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click to record a new repository refresh shortcut"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击录制新的仓库刷新快捷键"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.refreshCurrentContent.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh Repository List/Details"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刷新仓库列表/详情"
+          }
+        }
+      }
+    },
     "settings.general.shortcuts.regularSearch.help" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -49475,74 +49510,6 @@
         }
       }
     },
-    "settings.general.shortcuts.selectedRepoAI.title" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Current Repository AI"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "当前仓库 AI"
-          }
-        }
-      }
-    },
-    "settings.general.shortcuts.selectedRepoAI.help" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Click to record a new current repository AI shortcut"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "点击录制新的当前仓库 AI 快捷键"
-          }
-        }
-      }
-    },
-    "settings.general.shortcuts.refreshCurrentContent.title" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Refresh Repository List/Details"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "刷新仓库列表/详情"
-          }
-        }
-      }
-    },
-    "settings.general.shortcuts.refreshCurrentContent.help" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Click to record a new repository refresh shortcut"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "点击录制新的仓库刷新快捷键"
-          }
-        }
-      }
-    },
     "settings.general.shortcuts.search.help" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -49572,6 +49539,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "全局搜索"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.selectedRepoAI.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click to record a new current repository AI shortcut"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击录制新的当前仓库 AI 快捷键"
+          }
+        }
+      }
+    },
+    "settings.general.shortcuts.selectedRepoAI.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Current Repository AI"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前仓库 AI"
           }
         }
       }
@@ -55414,23 +55415,6 @@
         }
       }
     },
-    "settings.services.health.versionSuffixFormat" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : ", Version: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : ", 版本号: %@"
-          }
-        }
-      }
-    },
     "settings.services.health.serverError" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -55495,6 +55479,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不可达"
+          }
+        }
+      }
+    },
+    "settings.services.health.versionSuffixFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : ", Version: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : ", 版本号: %@"
           }
         }
       }
