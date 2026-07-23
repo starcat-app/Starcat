@@ -72,6 +72,15 @@ struct BatchAIFailurePresentationTests {
         #expect(!mapped.localizedDescription.lowercased().contains("nshttpurlresponse"))
     }
 
+    @Test("OpenAIClient 识别 URLSession 的 Swift 与 NSError 取消错误")
+    func recognizesWrappedCancellationErrors() {
+        #expect(OpenAIClient.isCancellation(URLError(.cancelled)))
+        #expect(OpenAIClient.isCancellation(
+            NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)
+        ))
+        #expect(!OpenAIClient.isCancellation(URLError(.timedOut)))
+    }
+
     @Test("OpenAIClient.mapChatFailure 把 401 收成 authenticationRejected 并保留诊断")
     func mapChatFailureUnauthorized() {
         let url = URL(string: "https://api.openai.com/v1/chat/completions")!

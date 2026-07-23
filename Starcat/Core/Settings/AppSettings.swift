@@ -1574,7 +1574,15 @@ final class AppSettings {
             profileID: defaultProfile.id,
             modelName: resolvedAIChatModel
         )
-        self.aiTranslationTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiTranslationTask, defaults: defaults) ?? defaultTranslationTask
+        let persistedTranslationTask = Self.decodeJSON(
+            AIModelTaskConfiguration.self,
+            key: Keys.aiTranslationTask,
+            defaults: defaults
+        ) ?? defaultTranslationTask
+        self.aiTranslationTask = Self.migrateLegacyDefaultTranslationPromptIfNeeded(
+            persistedTranslationTask,
+            defaults: defaults
+        )
         // 2026-06-14 v4：对话任务首次升级时与摘要使用同一 provider+model + summaryDefault
         // 参数（chat 跟摘要场景接近，参数没必要再分一套）。老用户没有 aiChatTask key →
         // decode 失败 fallback 到默认值，行为跟之前"复用 aiSummaryTask"基本等价（model 一致），
@@ -2118,6 +2126,24 @@ final class AppSettings {
         migrated.prompt = AIDefaultPrompts.tags
         if let data = try? JSONEncoder().encode(migrated) {
             defaults.set(String(decoding: data, as: UTF8.self), forKey: Keys.aiTagsTask)
+        }
+        return migrated
+    }
+
+    /// 只迁移仍等于已发布“整份 HTML 翻译”默认值的 Prompt。
+    ///
+    /// Provider、Model 与参数全部保留；用户自定义 Prompt 不覆盖。旧自定义模板中的
+    /// `{readmeHTML}` 仍由 Service 作为段落 JSON 别名替换，避免升级后直接失效。
+    private static func migrateLegacyDefaultTranslationPromptIfNeeded(
+        _ task: AIModelTaskConfiguration,
+        defaults: UserDefaults
+    ) -> AIModelTaskConfiguration {
+        guard task.prompt == AIDefaultPrompts.legacyTranslationHTMLV1 else { return task }
+
+        var migrated = task
+        migrated.prompt = AIDefaultPrompts.translation
+        if let data = try? JSONEncoder().encode(migrated) {
+            defaults.set(String(decoding: data, as: UTF8.self), forKey: Keys.aiTranslationTask)
         }
         return migrated
     }

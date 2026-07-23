@@ -17,7 +17,7 @@
 //    （CloudKit 同步 / FTS 全文 / JSON 导入导出 / 设置页缓存管理全 0 引用），
 //    DB 表的全部"理由"都是惯性，砍掉无任何业务损失。
 //  - **接口由 `(repoId, language)` 改为 `(owner, repo, language)`**：磁盘 cache 路径
-//    用 `<owner>/<repo>/<lang>.{html,json}`，让 Finder 用户可读，与 RepoContextStorage
+//    用 `<owner>/<repo>/<lang>.json`，让 Finder 用户可读，与 RepoContextStorage
 //    / CodeFlowStorage 一致。trending repo 拿不到稳定 ID 时（极少），owner/repo 在
 //    上游 DTO 里始终是真值。
 //  - **依旧协议化**：service 持有 `any ReadmeTranslationRepositoryProtocol` 注入，便于

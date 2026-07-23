@@ -2,37 +2,20 @@
 //  ReadmeTranslationService.swift
 //  Starcat
 //
-//  README 翻译服务（HOM-68）。
+//  README 分段翻译服务。
 //
 //  模块职责：
-//  - 把"GitHub HTML render 端点返回的 README 片段"作为源，调用 LLM 翻译成目标语言；
-//  - 翻译结果按 `(repo_id, target_language)` 缓存到本地（`readme_translations` 表）；
-//  - 提供 `cachedTranslation` / `translate` 两类接口给 ViewModel，UI 端不直接接触 AI 客户端。
+//  - 接收 WebView 已提取的可见文本段落，不再把整份 HTML 交给模型；
+//  - 先翻译一个小批次尽快首屏回填，再以最多 2 路并发完成后续批次；
+//  - 每完成一批立即写入磁盘，因此用户取消后下次可以从未完成段落继续；
+//  - 以“源段落指纹 → 译文”作为共享产物，当前双语模式和未来全文模式复用同一缓存。
 //
-//  **关键约束**（HOM-68 验收）：
-//  1. **保留结构**：必须保留 Markdown/HTML 标签、代码块、表格、链接、图片不变；
-//     - 实现方式：system prompt 用强约束语言要求模型"只翻译可见文本，禁止改动任何
-//       HTML tag / attribute / code block 内部内容"；
-//     - 后处理：调用方在拿到模型输出后，若发现 `<` / `>` 数量与原文严重失衡，
-//       视作模型破坏结构 → 抛错并丢弃译文（不写缓存），让用户手动重试；
-//     - 第一版不做 DOM 解析重写。原因：原 README HTML 大小受控（GitHub render 端
-//       默认会做合理截断），强 system prompt + Markdown 输入习惯下，主流 chat 模型
-//       已经能保留绝大多数结构；引入 SwiftSoup 类依赖只是为了一个 P2 推迟功能性价比低。
-//  2. **缓存复用**：`source_hash` 命中即返回缓存。源 README 变更（hash 不同）需要
-//     用户主动触发重新翻译（避免静默吃 AI 配额做隐式翻译）。
-//  3. **翻译失败保留原文**：本 service 失败抛错即可，UI 端 ViewModel 在错误分支
-//     不切换显示状态，README 区域继续渲染原文。
-//
-//  **任务配置独立于摘要**（HOM-68 follow-up 2026-06-05）：
-//  - 用户在设置页里可以为「README 翻译」单独选择 provider + model + 参数（与摘要 /
-//    推荐标签 / 向量 三类并列），所以本 service 读 `settings.aiTranslationTask`，
-//    而不是把摘要任务的配置二次借用；
-//  - 首次升级时 AppSettings.init 会把翻译任务的默认 provider/model 与摘要对齐
-//    （但参数走 `AIModelParameters.translationDefault` —— 更低温度 + 更大 maxToken，
-//    适合"保结构、不发挥"的翻译场景）；
-//  - chat client 构造仍与 RepoAIInsightService 同一套（按 providerID 查 profile +
-//    按 profile 取 keychain API Key），但 RepoAIInsightService 把 makeClient 设为
-//    private 且 system prompt 完全是"摘要专用"，所以这里维持独立实现。
+//  关键约束：
+//  - AI 只处理纯文本和稳定 id，不拥有 HTML；标签、链接、图片与代码结构不会被模型改坏；
+//  - 并发上限固定为 2，避免大量短请求同时触发 Provider rate limit；
+//  - 结果必须是严格 JSON，且 id 集合与输入完全一致，否则整批丢弃，不注入错误位置；
+//  - Service 为 `@MainActor`，但真正的网络等待在 Sendable AI client 的异步方法中，
+//    最多两个 child task 可以并行等待，不会阻塞主线程。
 //
 
 import CryptoKit
@@ -40,13 +23,10 @@ import Foundation
 
 /// README 翻译错误。
 enum ReadmeTranslationError: Error, LocalizedError, Equatable {
-    /// 当前任务对应的 provider 不存在。
     case missingProvider
-    /// provider 需要 API Key 但用户未配置。
     case missingAPIKey
-    /// 源 README 为空（仓库没有 README）。
     case emptySource
-    /// 模型输出明显破坏了 HTML 结构（标签数量与原文严重失衡）。
+    /// 模型没有返回可安全对齐到源段落的完整 JSON。
     case structureBroken
 
     var errorDescription: String? {
@@ -63,15 +43,24 @@ enum ReadmeTranslationError: Error, LocalizedError, Equatable {
     }
 }
 
-/// 调用上下文（避免 service 方法签名爆炸）。
+/// 一次 README 翻译的完整上下文。
 struct ReadmeTranslationRequest: Sendable {
     var repo: Repo
+    /// 只用于完整文档指纹；不会发送给 AI。
     var sourceHtml: String
+    /// WebView 从可见 DOM 中提取的自然语言段落。
+    var sourceSegments: [ReadmeSourceSegment]
     var targetLanguage: ReadmeTranslationLanguage
 }
 
 @MainActor
 final class ReadmeTranslationService {
+
+    typealias BatchProgressHandler = @MainActor (
+        _ rendered: [ReadmeRenderedTranslation],
+        _ completedCount: Int,
+        _ totalCount: Int
+    ) -> Void
 
     private let translationRepository: any ReadmeTranslationRepositoryProtocol
     private let settings: AppSettings
@@ -92,18 +81,6 @@ final class ReadmeTranslationService {
 
     // MARK: - 公开接口
 
-    /// 读取已缓存的翻译。
-    ///
-    /// 返回逻辑：
-    /// - 缓存不存在 → nil；
-    /// - 缓存存在但 `source_hash` 不匹配当前 `sourceHtml` → 仍返回缓存（让 UI 显示
-    ///   旧译文并提示"原 README 已更新，建议重新翻译"），由上层 ViewModel 用
-    ///   `isCacheFresh(...)` 决定是否提示用户。
-    ///
-    /// **签名变更（HOM-68 v2 / 2026-06-15）**：`repoId` 改为 `owner / repo`。背景
-    /// 见 `ReadmeTranslationRepositoryProtocol` 顶部注释——磁盘 cache 路径用 owner/
-    /// repo 而非 repo_id，让 trending / activity 这类 ephemeral repo（id 不稳定）
-    /// 也能正确命中。
     func cachedTranslation(
         owner: String,
         repo: String,
@@ -116,101 +93,276 @@ final class ReadmeTranslationService {
         )
     }
 
-    /// 判断已缓存的翻译是否仍与当前源 HTML 对齐。
+    /// 完整命中必须同时满足文档指纹一致和全部段落完成。
     nonisolated func isCacheFresh(
         cached: ReadmeTranslation,
         sourceHtml: String
     ) -> Bool {
-        cached.sourceHash == Self.hash(sourceHtml)
+        cached.isComplete && cached.sourceHash == Self.hash(sourceHtml)
     }
 
-    /// 翻译并写缓存。
+    /// 把缓存中的段落译文重新对齐到当前 DOM id。
     ///
-    /// - Parameter request: 包含 repo / sourceHtml / targetLanguage。
-    /// - Parameter onDelta: 流式 token 累积值回调（已包含到目前为止的全部内容），
-    ///   `nil` 时走非流式路径。
-    /// - Throws: `ReadmeTranslationError` 或底层 `AIClientError`。
-    /// - Returns: 新写入的 `ReadmeTranslation` 记录（同时已 upsert 到本地表）。
+    /// README 小改或段落重排后，未变化段落仍能命中；DOM id 不落盘，所以不会把旧位置
+    /// 误套到新页面。
+    nonisolated func renderedTranslations(
+        from cached: ReadmeTranslation,
+        matching sourceSegments: [ReadmeSourceSegment]
+    ) -> [ReadmeRenderedTranslation] {
+        let translatedByHash = Dictionary(
+            cached.segments.map { ($0.sourceHash, $0.translatedText) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return sourceSegments.compactMap { source in
+            guard let text = translatedByHash[source.sourceHash] else { return nil }
+            return ReadmeRenderedTranslation(id: source.id, translatedText: text)
+        }
+    }
+
+    /// 分批翻译并增量写缓存。
+    ///
+    /// - Parameters:
+    ///   - cached: 允许复用的旧缓存；强制重新翻译时传 nil。
+    ///   - onBatch: 首批和每个并发批次完成后回调当前累计可渲染结果。
+    /// - Returns: 完整或部分记录。正常返回一定完整；用户取消时，已完成批次已提前落盘。
     func translate(
         request: ReadmeTranslationRequest,
-        onDelta: (@MainActor (String) -> Void)? = nil
+        cached: ReadmeTranslation?,
+        onBatch: BatchProgressHandler? = nil
     ) async throws -> ReadmeTranslation {
         try entitlementGate?.requirePro(.readmeTranslation)
-        let trimmedSource = request.sourceHtml.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedSource.isEmpty else { throw ReadmeTranslationError.emptySource }
 
-        // HOM-68 follow-up：翻译任务有独立配置，不再借用摘要任务。
+        let trimmedSource = request.sourceHtml.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedSource.isEmpty, !request.sourceSegments.isEmpty else {
+            throw ReadmeTranslationError.emptySource
+        }
+
         let task = settings.aiTranslationTask
         let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel)
-
-        // HOM-68 follow-up v2 (2026-06-05 22:30)：prompt 从 task 配置读，
-        // 用户可在 设置 → AI → Prompt 区改；service 只负责按目标语言渲染占位符
-        // + 结构校验 / fence 剥离等后处理，承担"安全网"角色。
+        let parameters = settings.effectiveParameters(for: task)
         let prompt = Self.effectivePromptConfiguration(task.prompt)
-        let systemPrompt = Self.renderTemplate(
-            prompt.systemPrompt,
-            targetLanguage: request.targetLanguage,
-            sourceHtml: trimmedSource
-        )
-        let userPrompt = Self.renderTemplate(
-            prompt.userPromptTemplate,
-            targetLanguage: request.targetLanguage,
-            sourceHtml: trimmedSource
-        )
+        let documentHash = Self.hash(trimmedSource)
 
-        // 翻译走 chat 协议。复用 summary 的 temperature / maxToken / timeout，
-        // 但**强制 text 响应**（不能要求 JSON）——README 翻译输出必须保留 HTML，
-        // 包裹一层 JSON 等于二次序列化逃逸字符。
-        // HOM-68 follow-up v9：从 model descriptor 拿覆盖参数（若设过），
-        // 否则按 capability 默认；任务粒度的 task.parameters 仅做最终兜底。
-        let effectiveParams = settings.effectiveParameters(for: task)
+        // 同一段落可能在 README 中重复出现；按 hash 去重请求，渲染时再映射回每个 DOM id。
+        let uniqueSources = Self.uniqueSegments(request.sourceSegments)
+        let currentSourceHashes = Set(uniqueSources.map(\.sourceHash))
+        var translatedByHash: [String: String] = [:]
+        if let cached {
+            for item in cached.segments where currentSourceHashes.contains(item.sourceHash) {
+                translatedByHash[item.sourceHash] = item.translatedText
+            }
+        }
 
-        let aiRequest = AIChatRequest(
-            systemPrompt: systemPrompt,
-            userPrompt: userPrompt,
-            history: [],
+        let missing = uniqueSources.filter { translatedByHash[$0.sourceHash] == nil }
+        var record = Self.makeRecord(
+            request: request,
             model: model,
-            parameters: effectiveParams,
-            responseFormat: .text
+            documentHash: documentHash,
+            translatedByHash: translatedByHash,
+            isComplete: missing.isEmpty
         )
 
-        let translatedHtml = try await runChat(
-            client: client,
-            request: aiRequest,
-            preferStream: effectiveParams.streamEnabled,
-            onDelta: onDelta
-        )
+        // 先把可复用缓存立即交给 UI。即使后续网络失败，用户也能看到已完成段落。
+        if !translatedByHash.isEmpty {
+            onBatch?(
+                renderedTranslations(from: record, matching: request.sourceSegments),
+                translatedByHash.count,
+                uniqueSources.count
+            )
+        }
 
-        let trimmedOutput = translatedHtml.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleaned = Self.stripFenceWrapping(trimmedOutput)
-        try Self.assertStructureNotBroken(source: trimmedSource, translated: cleaned)
+        guard !missing.isEmpty else {
+            // 旧缓存可能是“内容重排但段落全复用”；写回当前文档 hash，后续即可完整命中。
+            try await translationRepository.upsert(
+                record,
+                owner: request.repo.owner,
+                repo: request.repo.name
+            )
+            return record
+        }
 
-        let record = ReadmeTranslation(
-            repoId: request.repo.id,
-            targetLanguage: request.targetLanguage.rawValue,
+        let batches = Self.makeBatches(missing)
+        let firstBatch = batches[0]
+        let firstRequest = try Self.makeAIRequest(
+            batch: firstBatch,
+            targetLanguage: request.targetLanguage,
+            prompt: prompt,
             model: model,
-            sourceHash: Self.hash(trimmedSource),
-            translatedHtml: cleaned,
-            size: cleaned.utf8.count,
-            createdAt: ISO8601DateFormatter.shared.string(from: Date())
+            parameters: parameters
         )
 
-        // 写入磁盘缓存：路径用 `<owner>/<repo>/<lang>.{html,json}`（HOM-68 v2 / 砍 DB
-        // 走纯磁盘后，写入不再受 FK 约束 → trending / activity 未 star 也能命中缓存）。
+        // 首批只放 5 段 / 1800 字符，优先降低首段译文出现时间。
+        let firstResult = try await Self.performBatch(client: client, request: firstRequest, source: firstBatch)
+        try Task.checkCancellation()
+        Self.merge(firstResult, into: &translatedByHash)
+        record = Self.makeRecord(
+            request: request,
+            model: model,
+            documentHash: documentHash,
+            translatedByHash: translatedByHash,
+            isComplete: translatedByHash.count == uniqueSources.count
+        )
+        try await persistAndPublish(
+            record,
+            request: request,
+            sourceSegments: request.sourceSegments,
+            completedCount: translatedByHash.count,
+            totalCount: uniqueSources.count,
+            onBatch: onBatch
+        )
+
+        let remainingBatches = Array(batches.dropFirst())
+        if !remainingBatches.isEmpty {
+            let aiRequests = try remainingBatches.map {
+                try Self.makeAIRequest(
+                    batch: $0,
+                    targetLanguage: request.targetLanguage,
+                    prompt: prompt,
+                    model: model,
+                    parameters: parameters
+                )
+            }
+
+            // 固定 2 路并发：一个任务完成后才补下一个，避免长 README 一次性创建几十个请求。
+            try await withThrowingTaskGroup(of: [ReadmeTranslatedSegment].self) { group in
+                let initialCount = min(2, remainingBatches.count)
+                for index in 0..<initialCount {
+                    let batch = remainingBatches[index]
+                    let aiRequest = aiRequests[index]
+                    group.addTask {
+                        try await Self.performBatch(client: client, request: aiRequest, source: batch)
+                    }
+                }
+
+                var nextIndex = initialCount
+                while let result = try await group.next() {
+                    try Task.checkCancellation()
+                    Self.merge(result, into: &translatedByHash)
+                    record = Self.makeRecord(
+                        request: request,
+                        model: model,
+                        documentHash: documentHash,
+                        translatedByHash: translatedByHash,
+                        isComplete: translatedByHash.count == uniqueSources.count
+                    )
+                    try await persistAndPublish(
+                        record,
+                        request: request,
+                        sourceSegments: request.sourceSegments,
+                        completedCount: translatedByHash.count,
+                        totalCount: uniqueSources.count,
+                        onBatch: onBatch
+                    )
+
+                    if nextIndex < remainingBatches.count {
+                        let batch = remainingBatches[nextIndex]
+                        let aiRequest = aiRequests[nextIndex]
+                        nextIndex += 1
+                        group.addTask {
+                            try await Self.performBatch(client: client, request: aiRequest, source: batch)
+                        }
+                    }
+                }
+            }
+        }
+
+        return record
+    }
+
+    // MARK: - 缓存与批处理
+
+    private func persistAndPublish(
+        _ record: ReadmeTranslation,
+        request: ReadmeTranslationRequest,
+        sourceSegments: [ReadmeSourceSegment],
+        completedCount: Int,
+        totalCount: Int,
+        onBatch: BatchProgressHandler?
+    ) async throws {
         try await translationRepository.upsert(
             record,
             owner: request.repo.owner,
             repo: request.repo.name
         )
-        return record
+        onBatch?(
+            renderedTranslations(from: record, matching: sourceSegments),
+            completedCount,
+            totalCount
+        )
     }
 
-    // MARK: - 内部：AI 调用
+    private nonisolated static func uniqueSegments(
+        _ segments: [ReadmeSourceSegment]
+    ) -> [ReadmeSourceSegment] {
+        var seen = Set<String>()
+        return segments.filter { seen.insert($0.sourceHash).inserted }
+    }
 
-    /// 构造 `AIClientProtocol` 实例与最终使用的 model 名。
-    ///
-    /// 与 `RepoAIInsightService.makeClient` 逻辑一致：复用 aiSummaryTask 选择的
-    /// provider/model，从 keychain 加载该 profile 的 API Key（local provider 允许空）。
+    /// 首批更小，后续批次略大；两者都同时受段落数和字符预算限制。
+    nonisolated static func makeBatches(
+        _ segments: [ReadmeSourceSegment]
+    ) -> [[ReadmeSourceSegment]] {
+        guard !segments.isEmpty else { return [] }
+        var remaining = segments[...]
+        var result: [[ReadmeSourceSegment]] = []
+
+        let first = takeBatch(from: &remaining, maxCount: 5, maxCharacters: 1_800)
+        result.append(first)
+        while !remaining.isEmpty {
+            result.append(takeBatch(from: &remaining, maxCount: 10, maxCharacters: 3_500))
+        }
+        return result
+    }
+
+    private nonisolated static func takeBatch(
+        from remaining: inout ArraySlice<ReadmeSourceSegment>,
+        maxCount: Int,
+        maxCharacters: Int
+    ) -> [ReadmeSourceSegment] {
+        var batch: [ReadmeSourceSegment] = []
+        var characters = 0
+        while let next = remaining.first, batch.count < maxCount {
+            if !batch.isEmpty, characters + next.text.count > maxCharacters { break }
+            batch.append(next)
+            characters += next.text.count
+            remaining = remaining.dropFirst()
+        }
+        return batch
+    }
+
+    private nonisolated static func merge(
+        _ segments: [ReadmeTranslatedSegment],
+        into translatedByHash: inout [String: String]
+    ) {
+        for segment in segments {
+            translatedByHash[segment.sourceHash] = segment.translatedText
+        }
+    }
+
+    private nonisolated static func makeRecord(
+        request: ReadmeTranslationRequest,
+        model: String,
+        documentHash: String,
+        translatedByHash: [String: String],
+        isComplete: Bool
+    ) -> ReadmeTranslation {
+        let segments = translatedByHash
+            .map { ReadmeTranslatedSegment(sourceHash: $0.key, translatedText: $0.value) }
+            .sorted { $0.sourceHash < $1.sourceHash }
+        return ReadmeTranslation(
+            repoId: request.repo.id,
+            targetLanguage: request.targetLanguage.rawValue,
+            model: model,
+            sourceHash: documentHash,
+            segments: segments,
+            isComplete: isComplete,
+            size: segments.reduce(0) { $0 + $1.translatedText.utf8.count },
+            createdAt: ISO8601DateFormatter.shared.string(from: Date())
+        )
+    }
+
+    // MARK: - AI 调用
+
     private func makeClient(
         task: AIModelTaskConfiguration,
         fallbackModel: String
@@ -224,7 +376,6 @@ final class ReadmeTranslationService {
             throw ReadmeTranslationError.missingAPIKey
         }
         let model = resolvedModelName(task: task, fallback: fallbackModel)
-
         let client = try OpenAIClient(configuration: AIClientConfiguration(
             providerID: profile.id,
             provider: profile.provider,
@@ -243,130 +394,231 @@ final class ReadmeTranslationService {
         return candidate.isEmpty ? fallback : candidate
     }
 
-    /// 跑一次 chat（流式 / 非流式）并返回完整文本。
-    private func runChat(
-        client: any AIClientProtocol,
-        request: AIChatRequest,
-        preferStream: Bool,
-        onDelta: (@MainActor (String) -> Void)?
-    ) async throws -> String {
-        if preferStream {
-            var accumulated = ""
-            for try await event in client.chatStream(request: request) {
-                switch event {
-                case .reasoningDelta, .reasoningCompleted:
-                    break
-                case .delta(let delta):
-                    accumulated += delta
-                    onDelta?(accumulated)
-                case .completed(let response):
-                    return response.content
-                }
-            }
-            guard !accumulated.isEmpty else { throw AIClientError.emptyResponse }
-            return accumulated
-        } else {
-            let response = try await client.chat(request: request)
-            return response.content
-        }
+    private nonisolated static func makeAIRequest(
+        batch: [ReadmeSourceSegment],
+        targetLanguage: ReadmeTranslationLanguage,
+        prompt: AIPromptConfiguration,
+        model: String,
+        parameters: AIModelParameters
+    ) throws -> AIChatRequest {
+        let payload = TranslationBatchInput(
+            segments: batch.map { .init(id: $0.id, text: $0.text) }
+        )
+        let data = try JSONEncoder().encode(payload)
+        let json = String(decoding: data, as: UTF8.self)
+        var batchParameters = parameters
+        // 整页时代的 128K 输出上限会被部分 Provider 当成长生成请求处理。单批最多
+        // 3500 字符，8K 已覆盖中英长度膨胀并显著缩小服务端预留；流式 JSON 也没有
+        // 可消费的中间态，所以固定走非流式。
+        batchParameters.maxCompletionTokens = min(max(parameters.maxCompletionTokens, 512), 8 * 1_024)
+        batchParameters.streamEnabled = false
+        return AIChatRequest(
+            systemPrompt: renderTemplate(
+                prompt.systemPrompt,
+                targetLanguage: targetLanguage,
+                sourceSegmentsJSON: json
+            ),
+            userPrompt: renderTemplate(
+                prompt.userPromptTemplate,
+                targetLanguage: targetLanguage,
+                sourceSegmentsJSON: json
+            ),
+            history: [],
+            model: model,
+            parameters: batchParameters,
+            responseFormat: .jsonObject
+        )
     }
 
-    // MARK: - Prompt 构造（HOM-68 follow-up v2）
+    nonisolated static func performBatch(
+        client: any AIClientProtocol,
+        request: AIChatRequest,
+        source: [ReadmeSourceSegment]
+    ) async throws -> [ReadmeTranslatedSegment] {
+        var currentRequest = request
+        for attempt in 0...1 {
+            let response = try await client.chat(request: currentRequest)
+            try Task.checkCancellation()
+            if let result = decodeBatchResponse(response.content, source: source) {
+                return result
+            }
 
-    /// 占位符：将被替换为 `ReadmeTranslationLanguage.promptName`（如 `Simplified Chinese`）。
+            guard attempt == 0 else {
+                throw ReadmeTranslationError.structureBroken
+            }
+
+            // 只重试当前失败批次，已完成批次仍由上层缓存复用。补一条纠错指令，
+            // 避免低温度模型原样重复第一次的非 JSON 输出。
+            AppLog.ai.warning(
+                "README translation batch returned invalid structure; retrying once sourceCount=\(source.count, privacy: .public) responseChars=\(response.content.count, privacy: .public)"
+            )
+            currentRequest.userPrompt += """
+
+            Your previous response could not be parsed. Return only the required JSON object, with exactly one non-empty translation for every input id.
+            """
+        }
+
+        throw ReadmeTranslationError.structureBroken
+    }
+
+    /// 从模型正文中提取并校验一个批次。
     ///
-    /// 标 `nonisolated` 与下面 `renderTemplate` 一致：纯字符串常量，无任何 actor
-    /// 状态依赖，在 Swift 6 严格隔离下，被 `nonisolated` 函数引用必须是 nonisolated。
+    /// 部分兼容服务即使收到 `response_format=json_object`，仍可能包一层 Markdown fence、
+    /// `<think>` 或简短说明。这里允许从外围文本中提取 JSON，但最终仍要求数量、id、
+    /// 唯一性和非空译文全部严格匹配，不能把错位翻译注入 README。
+    nonisolated static func decodeBatchResponse(
+        _ content: String,
+        source: [ReadmeSourceSegment]
+    ) -> [ReadmeTranslatedSegment]? {
+        let cleaned = stripFenceWrapping(
+            content.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        var candidates = [cleaned]
+        candidates.append(contentsOf: jsonObjectCandidates(in: cleaned))
+
+        var visited = Set<String>()
+        for candidate in candidates where visited.insert(candidate).inserted {
+            guard let data = candidate.data(using: .utf8),
+                  let decoded = try? JSONDecoder().decode(TranslationBatchOutput.self, from: data),
+                  let result = validatedTranslations(decoded, source: source)
+            else { continue }
+            return result
+        }
+        return nil
+    }
+
+    private nonisolated static func validatedTranslations(
+        _ decoded: TranslationBatchOutput,
+        source: [ReadmeSourceSegment]
+    ) -> [ReadmeTranslatedSegment]? {
+        let expectedIDs = Set(source.map(\.id))
+        guard expectedIDs.count == source.count,
+              decoded.translations.count == source.count
+        else { return nil }
+
+        let sourceByID = Dictionary(uniqueKeysWithValues: source.map { ($0.id, $0) })
+        var seen = Set<String>()
+        var result: [ReadmeTranslatedSegment] = []
+        for item in decoded.translations {
+            guard seen.insert(item.id).inserted,
+                  let original = sourceByID[item.id]
+            else { return nil }
+
+            let text = item.translation.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            result.append(
+                ReadmeTranslatedSegment(
+                    sourceHash: original.sourceHash,
+                    translatedText: text
+                )
+            )
+        }
+        guard seen == expectedIDs else { return nil }
+        return result
+    }
+
+    /// 扫描外围文本中的完整顶层 JSON object；字符串内部的花括号不参与层级计算。
+    private nonisolated static func jsonObjectCandidates(in text: String) -> [String] {
+        var candidates: [String] = []
+        var start: String.Index?
+        var depth = 0
+        var isInsideString = false
+        var isEscaped = false
+
+        for index in text.indices {
+            let character = text[index]
+            if isInsideString {
+                if isEscaped {
+                    isEscaped = false
+                } else if character == "\\" {
+                    isEscaped = true
+                } else if character == "\"" {
+                    isInsideString = false
+                }
+                continue
+            }
+
+            if character == "\"" {
+                isInsideString = true
+            } else if character == "{" {
+                if depth == 0 { start = index }
+                depth += 1
+            } else if character == "}", depth > 0 {
+                depth -= 1
+                if depth == 0, let candidateStart = start {
+                    candidates.append(String(text[candidateStart...index]))
+                    start = nil
+                }
+            }
+        }
+        return candidates
+    }
+
+    // MARK: - Prompt
+
     nonisolated static let targetLanguagePlaceholder = "{targetLanguage}"
+    nonisolated static let readmeSegmentsPlaceholder = "{readmeSegments}"
+    /// 自定义旧 Prompt 的数据安全兼容：仍替换旧占位符，但注入内容已经是段落 JSON。
+    nonisolated static let legacyReadmeHTMLPlaceholder = "{readmeHTML}"
 
-    /// 占位符：将被替换为源 README HTML 片段。
-    ///
-    /// **2026-06-14 v2 重命名**：原 `{context}` → `{readmeHTML}`，原因：
-    /// - 业务化命名，与 Tags / Embedding 重构对齐（每个任务局部命名空间）；
-    /// - 与 user prompt 中的 `<README_FRAGMENT>` 包裹标签语义呼应；
-    /// - 区别于 summary 任务的 `{context}`，避免用户在不同任务间复用模板时混淆。
-    /// pre-launch 直接换名，不做兼容（详见 `AIDefaultPrompts.translation` 注释）。
-    nonisolated static let readmeHTMLPlaceholder = "{readmeHTML}"
-
-    /// 替换 prompt 模板里的 `{targetLanguage}` / `{readmeHTML}` 占位符。
-    ///
-    /// 与 `AIPromptConfiguration.renderedUserPrompt(context:)` 同等地位，
-    /// 但翻译比摘要 / 标签多一个目标语言变量，所以这里独立一份 renderer。
-    /// 故意不写到 `AIPromptConfiguration` 上：那样会污染摘要 / 标签的 API，
-    /// 而它们根本没有目标语言概念。
     nonisolated static func renderTemplate(
         _ template: String,
         targetLanguage: ReadmeTranslationLanguage,
-        sourceHtml: String
+        sourceSegmentsJSON: String
     ) -> String {
         template
             .replacingOccurrences(of: targetLanguagePlaceholder, with: targetLanguage.promptName)
-            .replacingOccurrences(of: readmeHTMLPlaceholder, with: sourceHtml)
+            .replacingOccurrences(of: readmeSegmentsPlaceholder, with: sourceSegmentsJSON)
+            .replacingOccurrences(of: legacyReadmeHTMLPlaceholder, with: sourceSegmentsJSON)
     }
 
-    /// 从用户设置中取出有效 prompt 配置，必要时回退到 `AIDefaultPrompts.translation`。
-    ///
-    /// 触发回退条件：system 或 user prompt 任一为空（trim 后）。这是"用户误清空"
-    /// 安全网——若用户在设置页把 system 或 user prompt 改成空白，回退到默认能让翻译
-    /// 继续可用，避免以"空 system prompt + 只发原文"的方式调用 LLM 拿到破坏结构的输出。
     nonisolated static func effectivePromptConfiguration(
         _ prompt: AIPromptConfiguration
     ) -> AIPromptConfiguration {
         let trimmedSystem = prompt.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedUser = prompt.userPromptTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedSystem.isEmpty || trimmedUser.isEmpty {
+        if trimmedSystem.isEmpty || trimmedUser.isEmpty || prompt == AIDefaultPrompts.legacyTranslationHTMLV1 {
             return AIDefaultPrompts.translation
         }
         return prompt
     }
 
-    // MARK: - 输出清洗 / 结构校验
-
-    /// 去掉模型偶尔加上的 ```html / ``` 围栏，避免把围栏当 HTML 渲染。
-    ///
-    /// 即便 system prompt 已经禁止，部分模型在长输出时仍会习惯性套一层；
-    /// 这里做一次幂等剥离比反复改 prompt 更鲁棒。
     nonisolated static func stripFenceWrapping(_ text: String) -> String {
         var result = text
-        let lower = result.lowercased()
-        // 仅在以 ``` 开头并以 ``` 结尾时才剥（避免误吞内嵌的代码围栏）
-        if lower.hasPrefix("```") {
+        if result.lowercased().hasPrefix("```") {
             if let firstNewline = result.firstIndex(of: "\n") {
                 result.removeSubrange(result.startIndex...firstNewline)
             } else {
                 result.removeSubrange(result.startIndex..<result.index(result.startIndex, offsetBy: 3))
             }
         }
-        if result.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("```") {
-            if let range = result.range(of: "```", options: [.backwards]) {
-                result.removeSubrange(range.lowerBound..<result.endIndex)
-            }
+        if result.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("```"),
+           let range = result.range(of: "```", options: [.backwards]) {
+            result.removeSubrange(range.lowerBound..<result.endIndex)
         }
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// 结构破坏粗检。
-    ///
-    /// 思路：统计源与译文里 `<` 字符的出现次数（HTML 标签起始符的近似指标），
-    /// 若译文相对源减少超过 30% 就视作结构被破坏（模型擅自删/合并/翻译了标签）。
-    /// 30% 阈值是经验值：少量误差（如模型把 `<br>` 变成 `<br />`）容忍；大幅减少
-    /// （如把整段 `<ul><li>` 改成中文段落）拦截。
-    ///
-    /// 故意不用 `>` / `</` 联合判定：HTML 中 `>` 还会出现在 alert blockquote 等内联
-    /// 文本，统计噪声更大。
-    nonisolated static func assertStructureNotBroken(source: String, translated: String) throws {
-        let sourceTagOpens = source.filter { $0 == "<" }.count
-        guard sourceTagOpens > 0 else { return } // 纯文本 README（极少见），跳过校验
-        let translatedTagOpens = translated.filter { $0 == "<" }.count
-        let retention = Double(translatedTagOpens) / Double(sourceTagOpens)
-        if retention < 0.7 {
-            throw ReadmeTranslationError.structureBroken
-        }
-    }
-
-    /// SHA256 十六进制串，用于 `source_hash` 字段。
     nonisolated static func hash(_ text: String) -> String {
         let digest = SHA256.hash(data: Data(text.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
     }
+}
+
+private struct TranslationBatchInput: Codable, Sendable {
+    struct Segment: Codable, Sendable {
+        let id: String
+        let text: String
+    }
+
+    let segments: [Segment]
+}
+
+private struct TranslationBatchOutput: Codable, Sendable {
+    struct Item: Codable, Sendable {
+        let id: String
+        let translation: String
+    }
+
+    let translations: [Item]
 }

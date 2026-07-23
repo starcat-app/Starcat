@@ -5,12 +5,12 @@
 //  README AI 翻译磁盘缓存（HOM-68 v2 / 2026-06-15 砍 DB 走纯磁盘）。
 //
 //  模块职责：
-//  - 把 LLM 翻译产物落盘到 `~/Library/Application Support/com.starcat.app/translations-cache/<owner>/<repo>/<lang>.{html,json}`；
+//  - 把分段翻译产物落盘到 `~/Library/Application Support/com.starcat.app/translations-cache/<owner>/<repo>/<lang>.json`；
 //  - 提供 find / upsert / delete / deleteAll(repo) / deleteEverything（4+1）接口给
 //    `ReadmeTranslationService` 走业务；
 //  - 暴露 `totalBytes` / `itemCount` / `latestCreatedAt` 三个 `@Observable` 派生量
 //    给设置页存储 Tab 渲染「翻译缓存 xxx」用量行；
-//  - LRU 淘汰：总占用 > 50 MB 或单条 `.json` 文件 mtime 超过 60 天的，由 `lruSweep`
+//  - LRU 淘汰：总占用 > 50 MB 或单条 JSON 的 mtime 超过 60 天的，由 `lruSweep`
 //    清掉（在每 N 次 upsert 后由 service 主动触发，不在 read 路径里跑）。
 //
 //  关键约束（与历史 DB 方案的差异 / 已踩过的坑）：
@@ -22,15 +22,10 @@
 //    2. **`lastAccessedAt` 用文件 mtime 表达，不存进 JSON**：每次 `find` 命中后调
 //       `setAttributes(.modificationDate)` 更新 `<lang>.json` 的 mtime。这样 LRU
 //       sweep 不需要解析 JSON 就能判过期，read 路径也不需要 rewrite JSON 重写整文件。
-//    3. **`.html` + `.json` 双文件**：HTML 体积大（最大几百 KB），JSON 仅 ~300 字节。
-//       拆开让 list / lruSweep 只需要扫 JSON，体积小快；UI 显示用量需要文件大小时
-//       再读 `.html` 的 `.fileSizeKey`。
-//    4. **写入原子性**：`Data.write(to:options:.atomic)` 已经保证原子重命名，不会出
-//       现 .json 写完但 .html 半截的状况。但写 HTML 失败时要清掉同 dir 的 .json
-//       残留——这通过"先写 HTML 后写 JSON"的顺序保证：若 HTML 写挂，JSON 还没写，
-//       自然不会留半残；若 JSON 写挂，HTML 已就位但 metadata 缺失，下次 find 会按
-//       "JSON 不存在 → 无缓存"处理，并不会上屏错乱译文。
-//    5. **目录扫描容错**：第三方工具误塞文件 / metadata JSON 损坏 → 跳过该条不
+//    3. **v2 单 JSON**：HTML 不再交给 AI，缓存只保存源段落指纹和纯文本译文。
+//       `Data.write(.atomic)` 保证单文件替换不会留下半份结果。
+//    4. **旧缓存一次性清理**：旧 metadata 解码失败时连同同名 `.html` 删除，不维护双轨。
+//    5. **目录扫描容错**：第三方工具误塞文件 / JSON 损坏 → 跳过该条不
 //       crash，由 `AppLog` warning 提示开发者。生产用户不会看到。
 //    6. **@MainActor + 同步 IO**：与 `RepoContextStorage` 同款。翻译写入是 LLM 流
 //       式完成后的一次性 < 200 KB 写操作，主线程 IO < 10 ms 不卡 UI；read 类似。
@@ -82,7 +77,7 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
     // 通过 `reload()` 同步扫盘更新；`upsert` / `delete*` 写入后自动调 `reload()`，
     // 让 UI 立即看到最新数字。
 
-    /// 全部翻译产物（含 .html + .json）总字节数。
+    /// 全部分段翻译 JSON 总字节数。
     private(set) var totalBytes: Int64 = 0
 
     /// 缓存条目数（按 `(owner, repo, lang)` 元组计）。
@@ -117,85 +112,62 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
     init(fileManager: FileManager = .default, rootOverride: URL? = nil) {
         self.fileManager = fileManager
         self.rootOverride = rootOverride
+        removeUnsupportedEntries()
         reload()
     }
 
     // MARK: - ReadmeTranslationRepositoryProtocol
 
-    /// 查 `<owner>/<repo>/<targetLanguage>.json` + `<targetLanguage>.html`，命中时
-    /// 重组 `ReadmeTranslation` 返回；同时 `touch` JSON 文件的 mtime（标记"最近访问"）。
+    /// 查 `<owner>/<repo>/<targetLanguage>.json`；命中时同时 `touch` mtime。
     ///
     /// **为什么不存 lastAccessedAt 字段**：那样每次命中都要重写 ~300B JSON，IO 浪费；
     /// 用文件 mtime 表达"最近访问"是 POSIX 标准做法，0 解析成本。
     func find(owner: String, repo: String, targetLanguage: String) async throws -> ReadmeTranslation? {
         let metadataURL = try metadataFile(owner: owner, repo: repo, targetLanguage: targetLanguage)
-        let htmlURL = try htmlFile(owner: owner, repo: repo, targetLanguage: targetLanguage)
+        guard fileManager.fileExists(atPath: metadataURL.path) else { return nil }
 
-        guard fileManager.fileExists(atPath: metadataURL.path),
-              fileManager.fileExists(atPath: htmlURL.path) else {
-            return nil
-        }
-
-        let metadataData: Data
-        let html: String
+        let data: Data
         do {
-            metadataData = try Data(contentsOf: metadataURL)
-            html = try String(contentsOf: htmlURL, encoding: .utf8)
+            data = try Data(contentsOf: metadataURL)
         } catch {
             AppLog.ai.warning("Translation disk cache: read failed owner=\(owner, privacy: .public) repo=\(repo, privacy: .public) lang=\(targetLanguage, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
             return nil
         }
 
-        let stored: StoredMetadata
+        let stored: ReadmeTranslation
         do {
-            stored = try decoder.decode(StoredMetadata.self, from: metadataData)
+            stored = try decoder.decode(ReadmeTranslation.self, from: data)
         } catch {
-            // 损坏的 metadata → 删掉这对文件让下次重翻覆盖，避免一直返回 nil 又一直
-            // 占空间。删除失败也不抛错，最坏情况是占着位等下次 lruSweep 兜底清。
-            AppLog.ai.warning("Translation disk cache: metadata decode failed, removing pair owner=\(owner, privacy: .public) repo=\(repo, privacy: .public) lang=\(targetLanguage, privacy: .public)")
+            // 旧整页 HTML metadata 和损坏 JSON 都走一次性清理；下次点击只翻缺失段落。
+            AppLog.ai.warning("Translation disk cache: unsupported or corrupt entry, removing owner=\(owner, privacy: .public) repo=\(repo, privacy: .public) lang=\(targetLanguage, privacy: .public)")
             try? fileManager.removeItem(at: metadataURL)
-            try? fileManager.removeItem(at: htmlURL)
+            let legacyHTML = metadataURL.deletingPathExtension().appendingPathExtension("html")
+            try? fileManager.removeItem(at: legacyHTML)
+            return nil
+        }
+        guard stored.formatVersion == ReadmeTranslation.currentFormatVersion else {
+            try? fileManager.removeItem(at: metadataURL)
+            try? fileManager.removeItem(
+                at: metadataURL.deletingPathExtension().appendingPathExtension("html")
+            )
             return nil
         }
 
-        // touch mtime 表达 "最近访问"，LRU sweep 用这个字段决定淘汰顺序。
         try? fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: metadataURL.path)
-
-        return ReadmeTranslation(
-            repoId: stored.repoId,
-            targetLanguage: stored.targetLanguage,
-            model: stored.model,
-            sourceHash: stored.sourceHash,
-            translatedHtml: html,
-            size: stored.size,
-            createdAt: stored.createdAt
-        )
+        return stored
     }
 
-    /// 写入 `<owner>/<repo>/<targetLanguage>.{html,json}`。先写 HTML 后写 JSON，
-    /// 半失败的最坏情况是 HTML 在 JSON 缺失，`find` 会按"无缓存"处理（不上屏脏数据）。
+    /// 原子写入单个 v2 JSON，并删除同名旧 `.html` 残留。
     func upsert(_ translation: ReadmeTranslation, owner: String, repo: String) async throws {
         let dir = try projectDirectory(owner: owner, repo: repo)
         try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
 
-        let htmlURL = dir.appendingPathComponent("\(translation.targetLanguage).html")
         let metadataURL = dir.appendingPathComponent("\(translation.targetLanguage).json")
-
-        let htmlData = Data(translation.translatedHtml.utf8)
-        try htmlData.write(to: htmlURL, options: .atomic)
-
-        let stored = StoredMetadata(
-            repoId: translation.repoId,
-            owner: owner,
-            repo: repo,
-            targetLanguage: translation.targetLanguage,
-            model: translation.model,
-            sourceHash: translation.sourceHash,
-            size: translation.size,
-            createdAt: translation.createdAt
-        )
-        let metadataData = try encoder.encode(stored)
+        let metadataData = try encoder.encode(translation)
         try metadataData.write(to: metadataURL, options: .atomic)
+        try? fileManager.removeItem(
+            at: dir.appendingPathComponent("\(translation.targetLanguage).html")
+        )
 
         upsertCountSinceLastSweep += 1
         reload()
@@ -204,10 +176,9 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
 
     /// 删某仓库的某个语言版本（用户主动"丢弃译文"入口；当前 UI 暂不接，但留接口）。
     func delete(owner: String, repo: String, targetLanguage: String) async throws {
-        let htmlURL = try htmlFile(owner: owner, repo: repo, targetLanguage: targetLanguage)
         let metadataURL = try metadataFile(owner: owner, repo: repo, targetLanguage: targetLanguage)
-        try? fileManager.removeItem(at: htmlURL)
         try? fileManager.removeItem(at: metadataURL)
+        try? fileManager.removeItem(at: metadataURL.deletingPathExtension().appendingPathExtension("html"))
         try? removeEmptyProjectDirectory(owner: owner, repo: repo)
         reload()
     }
@@ -248,7 +219,7 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
         guard fileManager.fileExists(atPath: root.path) else { return }
 
         let now = Date()
-        var entries: [(metadataURL: URL, htmlURL: URL, mtime: Date, size: Int64)] = []
+        var entries: [(url: URL, mtime: Date, size: Int64)] = []
 
         let ownerDirs = (try? fileManager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
         for ownerDir in ownerDirs where ownerDir.hasDirectoryPath {
@@ -256,22 +227,19 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
             for repoDir in repoDirs where repoDir.hasDirectoryPath {
                 let files = (try? fileManager.contentsOfDirectory(at: repoDir, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey])) ?? []
                 for file in files where file.pathExtension == "json" {
-                    let html = file.deletingPathExtension().appendingPathExtension("html")
-                    let metaSize = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-                    let htmlSize = (try? html.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                    let fileSize = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
                     let mtime = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-                    entries.append((file, html, mtime, Int64(metaSize + htmlSize)))
+                    entries.append((file, mtime, Int64(fileSize)))
                 }
             }
         }
 
         // 1) 删 60 天未访问的
         var totalBytes: Int64 = entries.reduce(0) { $0 + $1.size }
-        var remaining: [(metadataURL: URL, htmlURL: URL, mtime: Date, size: Int64)] = []
+        var remaining: [(url: URL, mtime: Date, size: Int64)] = []
         for entry in entries {
             if now.timeIntervalSince(entry.mtime) > maxIdleInterval {
-                try? fileManager.removeItem(at: entry.metadataURL)
-                try? fileManager.removeItem(at: entry.htmlURL)
+                try? fileManager.removeItem(at: entry.url)
                 totalBytes -= entry.size
             } else {
                 remaining.append(entry)
@@ -283,8 +251,7 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
             remaining.sort { $0.mtime < $1.mtime }
             for entry in remaining {
                 guard totalBytes > maxTotalBytes else { break }
-                try? fileManager.removeItem(at: entry.metadataURL)
-                try? fileManager.removeItem(at: entry.htmlURL)
+                try? fileManager.removeItem(at: entry.url)
                 totalBytes -= entry.size
             }
         }
@@ -319,19 +286,15 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
             for repoDir in repoDirs where repoDir.hasDirectoryPath {
                 let files = (try? fileManager.contentsOfDirectory(at: repoDir, includingPropertiesForKeys: [.fileSizeKey])) ?? []
                 for file in files where file.pathExtension == "json" {
-                    let html = file.deletingPathExtension().appendingPathExtension("html")
-                    guard fileManager.fileExists(atPath: html.path) else { continue }
-                    itemCount += 1
-                    if let metaSize = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize {
-                        totalBytes += Int64(metaSize)
-                    }
-                    if let htmlSize = try? html.resourceValues(forKeys: [.fileSizeKey]).fileSize {
-                        totalBytes += Int64(htmlSize)
-                    }
                     if let data = try? Data(contentsOf: file),
-                       let stored = try? decoder.decode(StoredMetadata.self, from: data),
-                       let created = ISO8601DateFormatter.shared.date(from: stored.createdAt) {
-                        if latestCreatedAt == nil || created > latestCreatedAt! {
+                       let stored = try? decoder.decode(ReadmeTranslation.self, from: data),
+                       stored.formatVersion == ReadmeTranslation.currentFormatVersion {
+                        itemCount += 1
+                        if let fileSize = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                            totalBytes += Int64(fileSize)
+                        }
+                        if let created = ISO8601DateFormatter.githubDate(from: stored.createdAt),
+                           latestCreatedAt == nil || created > latestCreatedAt! {
                             latestCreatedAt = created
                         }
                     }
@@ -345,6 +308,32 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
     }
 
     // MARK: - 私有：路径 / 触发 / 清扫
+
+    /// 启动时一次性清掉旧整页 HTML 缓存和损坏 JSON，避免孤立 `.html` 永久占空间。
+    ///
+    /// 这里只触碰 translations-cache 专用目录；v2 JSON 能完整 decode 且版本匹配才保留。
+    private func removeUnsupportedEntries() {
+        guard let root = try? rootURL(),
+              fileManager.fileExists(atPath: root.path)
+        else { return }
+
+        let enumerator = fileManager.enumerator(
+            at: root,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )
+        while let file = enumerator?.nextObject() as? URL {
+            guard file.pathExtension == "json" else { continue }
+            let stored = (try? Data(contentsOf: file))
+                .flatMap { try? decoder.decode(ReadmeTranslation.self, from: $0) }
+            guard stored?.formatVersion != ReadmeTranslation.currentFormatVersion else { continue }
+            try? fileManager.removeItem(at: file)
+            try? fileManager.removeItem(
+                at: file.deletingPathExtension().appendingPathExtension("html")
+            )
+        }
+        cleanEmptyDirectories()
+    }
 
     private func maybeTriggerLRUSweep() throws {
         guard upsertCountSinceLastSweep >= upsertCountSweepThreshold else { return }
@@ -413,12 +402,6 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
         return try ownerDirectory(owner: owner).appendingPathComponent(repo, isDirectory: true)
     }
 
-    private func htmlFile(owner: String, repo: String, targetLanguage: String) throws -> URL {
-        try assertSafePathComponent(targetLanguage)
-        return try projectDirectory(owner: owner, repo: repo)
-            .appendingPathComponent("\(targetLanguage).html")
-    }
-
     private func metadataFile(owner: String, repo: String, targetLanguage: String) throws -> URL {
         try assertSafePathComponent(targetLanguage)
         return try projectDirectory(owner: owner, repo: repo)
@@ -431,34 +414,5 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
         if value.isEmpty || value.contains("/") || value == "." || value == ".." {
             throw DiskReadmeTranslationCacheError.invalidPathComponent(value)
         }
-    }
-}
-
-// MARK: - 磁盘 JSON metadata schema
-
-/// `<lang>.json` 文件实际编解码用的结构。
-///
-/// **不直接用 `ReadmeTranslation`**：那个类型代表"上层业务模型"，含 `translatedHtml`
-/// 字段（HTML 体积大）。disk 把 HTML 与 metadata 拆两文件，metadata 单独这个 struct
-/// 体积小，扫盘只 decode metadata 即可（不必载入 HTML 进内存）。
-private struct StoredMetadata: Codable {
-    let repoId: Int64?
-    let owner: String
-    let repo: String
-    let targetLanguage: String
-    let model: String
-    let sourceHash: String
-    let size: Int
-    let createdAt: String
-
-    enum CodingKeys: String, CodingKey {
-        case repoId = "repo_id"
-        case owner
-        case repo
-        case targetLanguage = "target_language"
-        case model
-        case sourceHash = "source_hash"
-        case size
-        case createdAt = "created_at"
     }
 }

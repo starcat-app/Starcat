@@ -37658,13 +37658,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No AI provider is bound to the summary task. Open Settings → AI to fix it."
+            "value" : "No AI provider is bound to the README translation task. Open Settings → AI to fix it."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "尚未给摘要任务绑定 AI 服务，请到 设置 → AI 配置。"
+            "value" : "尚未给 README 翻译任务绑定 AI 服务，请到 设置 → AI 配置。"
           }
         }
       }
@@ -37675,13 +37675,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The model returned a malformed translation. The original README is kept; try again or switch model."
+            "value" : "The model returned segment data that could not be aligned safely. Completed translations are kept; try again or switch model."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "模型返回的译文破坏了 HTML 结构，已保留原文，请重试或切换模型。"
+            "value" : "模型返回的分段结果无法安全对齐，已保留完成的译文，请重试或切换模型。"
           }
         }
       }
@@ -37810,13 +37810,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Translate the README with AI (cached locally)"
+            "value" : "Translate by segment with AI and show a bilingual README (cached locally)"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "用 AI 翻译 README，结果会缓存到本地"
+            "value" : "用 AI 分段翻译并显示双语 README，结果会缓存到本地"
           }
         }
       }

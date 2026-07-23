@@ -480,11 +480,10 @@ struct AIModelParameters: Codable, Equatable, Sendable {
 
     /// HOM-68：README 翻译默认参数。
     /// - temperature 0.1：翻译需要稳定输出，不要"创造性发挥"；比摘要的 0.2 再低一档。
-    /// - maxCompletionTokens 128K：README 译文体积可能比原文大 20-50%（中→英尤其明显），
-    ///   翻译截断会破坏 HTML 结构（assertStructureNotBroken 直接拦截，用户会看到失败），
-    ///   所以默认就给到 long-context 模型的上限段，避免按需手调。
-    /// - timeoutSeconds 600：长 README 流式翻译可能超过 5 分钟，特别是本地 LM Studio / Ollama。
-    /// - streamEnabled true：与摘要一致，给用户进度反馈，避免长时间无响应。
+    /// - maxCompletionTokens 仍保留 128K 设置默认，避免覆盖已有用户参数；分段调用时 Service
+    ///   会按单批体积夹到 8K，防止 Provider 为小批次预留超大输出。
+    /// - timeoutSeconds 600：本地 LM Studio / Ollama 单批仍可能较慢，保留宽松网络超时。
+    /// - streamEnabled 保留设置值；分段 JSON 没有可安全消费的中间态，Service 固定非流式。
     static let translationDefault = AIModelParameters(
         temperature: 0.1,
         topP: 0.9,
@@ -910,36 +909,11 @@ enum AIDefaultPrompts {
         """
     )
 
-    /// HOM-68 follow-up（2026-06-05 22:30；2026-06-14 v2 优化）：README 翻译默认 Prompt。
+    /// 2026-07-23 前已发布的“整份 HTML 翻译”默认 Prompt。
     ///
-    /// 之前这套 prompt 写死在 `ReadmeTranslationService.systemPrompt(targetLanguage:)` /
-    /// `userPrompt(...)` 静态函数里，导致用户无法在设置页调整。HOM-68 把它抽到这里，
-    /// 统一通过 `AIModelTaskConfiguration.prompt` 走，运行时 Service 负责把
-    /// `{targetLanguage}` 替换为 `ReadmeTranslationLanguage.promptName`、
-    /// `{readmeHTML}` 替换为源 README HTML 片段。
-    ///
-    /// 设计上保留"结构保真"的强约束（9 条编号 STRICT RULES + `assertStructureNotBroken`
-    /// + `stripFenceWrapping` 后处理）—— 即便用户改坏了 prompt，service 的结构校验
-    /// 仍会拦截大幅破坏结构的输出并保留原 README，不会污染缓存。
-    ///
-    /// **占位符约定**（仅 translation 任务局部命名空间）：
-    /// - `{targetLanguage}` —— 必须出现在 system 或 user prompt 至少一处（否则模型不知道
-    ///   要翻译成哪种语言）；service 不强校验，但运行时如果两处都缺，等于让模型自己猜。
-    /// - `{readmeHTML}` —— 只能出现在 user prompt（system prompt 出现也会被替换，但语义错误）。
-    ///
-    /// **2026-06-14 v2 关键变更**（dong4j 决策）：
-    /// 1. `{context}` → `{readmeHTML}`：业务化命名，与 Tags / Embedding 重构对齐，同时与
-    ///    user prompt 中的 `<README_FRAGMENT>` 标签呼应；pre-launch 直接换名，不做兼容。
-    /// 2. STRICT RULES 由 8 条 bullet 改为 9 条编号：长 prompt 中编号比 bullet 遵守度更高。
-    /// 3. 新增 RULE 4（HTML 实体 `&amp;`/`&lt;`/`&#x1F4A1;` + HTML 注释 `<!-- ... -->` 保真）：
-    ///    踩过的坑——模型偶尔把 `&amp;` 直接渲染成 `&` 输出，破坏 HTML 合法性。
-    /// 4. 扩展 RULE 5：除 `<code>`/`<pre>` 再加 `<kbd>`/`<samp>`，覆盖 README 里键盘快捷键
-    ///    和命令示例输出标签。
-    /// 5. 强化 RULE 6（proper noun）：举 6 个具体例子 + "regardless of `{targetLanguage}`"，
-    ///    把抽象规则变具象，对 Qwen / GLM 等小模型遵守度提升明显。
-    /// 6. 新增 EXAMPLE 段：1 条 EN→zh-Hans 综合示例，覆盖"`<a>` 链接保留 / proper noun
-    ///    不译 / `<code>` 不译 / `——` 中文标点本地化"4 个易错点。
-    static let translation = AIPromptConfiguration(
+    /// 仅供 `AppSettings` 精确识别旧默认值并迁移。不能修改，否则会把真正的用户自定义
+    /// Prompt 与旧内置 Prompt 混淆。
+    static let legacyTranslationHTMLV1 = AIPromptConfiguration(
         systemPrompt: """
         You are Starcat's README translation engine.
         Translate the provided GitHub README HTML fragment into {targetLanguage}.
@@ -966,6 +940,32 @@ enum AIDefaultPrompts {
         <README_FRAGMENT>
         {readmeHTML}
         </README_FRAGMENT>
+        """
+    )
+
+    /// README 分段翻译默认 Prompt。
+    ///
+    /// `{readmeSegments}` 是 `{"segments":[{"id":"...","text":"..."}]}`。模型只返回
+    /// `id + translation`，不接触 HTML，因此双语分段和未来全文模式都可以安全复用结果。
+    static let translation = AIPromptConfiguration(
+        systemPrompt: """
+        You are Starcat's README segment translation engine.
+        Translate every provided segment into {targetLanguage}.
+
+        Return strict JSON only with this exact schema:
+        {"translations":[{"id":"segment-id","translation":"translated text"}]}
+
+        Rules:
+        1. Return exactly one item for every input id. Preserve each id byte-for-byte and keep the input order.
+        2. Do not add prose, markdown fences, reasoning, extra keys, or missing items.
+        3. Translate only natural-language prose. Preserve project, library, framework, company, API, branch, version, command, file-path, environment-variable, URL, and code identifiers.
+        4. Preserve emoji, punctuation-bearing identifiers, inline backtick content, and placeholders verbatim.
+        5. Do not merge or split segments. The translation field must be a non-empty plain-text string.
+        """,
+        userPromptTemplate: """
+        Translate all README segments below into {targetLanguage}.
+
+        {readmeSegments}
         """
     )
 

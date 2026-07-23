@@ -308,6 +308,9 @@ struct ReadmeStateView: View {
 
     /// Toast 消息绑定（翻译错误 → 底部浮动提示）。
     @State private var translationToast: String?
+    /// 当前已渲染文档的 DOM 段落。用 document key 守门，避免切 repo 的一帧窗口误用旧段落。
+    @State private var translationSegmentsDocumentKey: String?
+    @State private var translationSourceSegments: [ReadmeSourceSegment] = []
 
     let state: ReadmeViewModel.LoadState
     let contentScope: ReadmeContentScope
@@ -532,11 +535,11 @@ struct ReadmeStateView: View {
 
         case .loaded(let html, let cachedAt):
             VStack(spacing: 0) {
-                // HOM-68：当翻译已就绪且用户选择展示译文时，喂给 WebView 的就是
-                // `translatedHtml`。源 `html` 仍由翻译 VM 之外的逻辑保留——切回
-                // 原文不需要重新拉网络，只是 displayMode 切回 .showingOriginal。
-                let renderedHtml = translationControl?.activeHtml(originalHtml: html) ?? html
+                // 分段翻译不再替换整份 HTML。WebView 始终持有原文，译文通过 DOM 增量
+                // 注入到对应原文块下方，因此切换原文/双语不会重载页面或丢滚动位置。
+                let renderedHtml = html
                 let windowTitle = readmeWindowTitle
+                let documentKey = ReadmeTranslationService.hash(html)
                 ReadmeWebView(
                     htmlFragment: renderedHtml,
                     baseURL: baseURL,
@@ -551,13 +554,24 @@ struct ReadmeStateView: View {
                     },
                     onExportMarkdown: { [dependencies] in
                         exportReadmeMarkdown(dependencies: dependencies)
+                    },
+                    translationRenderState: translationControl?.translationVM.renderState ?? .hidden,
+                    onTranslationSegmentsChange: { segments in
+                        translationSegmentsDocumentKey = documentKey
+                        translationSourceSegments = segments
                     }
                 )
                 .id(readmeWebViewIdentity)
                 // 与 ActivityReleaseDetailContent 对齐：body slot 必须吃满 Scaffold 剩余
                 // 高度，否则 WKWebView 在 VStack 里按零 intrinsic 高度布局 → 闪一下后空白。
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                cacheFooter(cachedAt: cachedAt, sourceHtml: html)
+                cacheFooter(
+                    cachedAt: cachedAt,
+                    sourceHtml: html,
+                    sourceSegments: translationSegmentsDocumentKey == documentKey
+                        ? translationSourceSegments
+                        : []
+                )
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -627,7 +641,11 @@ struct ReadmeStateView: View {
     ///
     /// HOM-68：右下角追加翻译入口（仅 Manage 详情页传入 translationControl 时显示）。
     /// 把 `sourceHtml` 透给翻译按钮——按钮调 LLM 时需要把当前源 HTML 作为输入。
-    private func cacheFooter(cachedAt: Date, sourceHtml: String) -> some View {
+    private func cacheFooter(
+        cachedAt: Date,
+        sourceHtml: String,
+        sourceSegments: [ReadmeSourceSegment]
+    ) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "clock")
                 .font(.caption2)
@@ -637,7 +655,8 @@ struct ReadmeStateView: View {
             if let control = translationControl {
                 ReadmeTranslationFooterButton(
                     control: control,
-                    sourceHtml: sourceHtml
+                    sourceHtml: sourceHtml,
+                    sourceSegments: sourceSegments
                 )
                 Divider().frame(height: 14)
             }
@@ -670,18 +689,6 @@ struct ReadmeTranslationControl {
     let repo: Repo
     let translationVM: ReadmeTranslationViewModel
     let settings: AppSettings
-
-    /// 当前 WebView 应渲染的 HTML：用户选择展示译文时返回译文，否则 nil（外层使用原文）。
-    ///
-    /// 这里访问的 `translationVM.displayMode` 是 `@MainActor` 隔离的 `@Observable` 状态，
-    /// 因此整个 control 必须标 `@MainActor`，否则 SwiftUI 在重新渲染时会从非隔离上下文调用，
-    /// Swift 6 编译期就会报错。控件本身只在 View body 中读取，所以这条约束不会增加运行成本。
-    func activeHtml(originalHtml: String) -> String? {
-        if case .showingTranslation(let html, _, _) = translationVM.displayMode {
-            return html
-        }
-        return nil
-    }
 }
 
 /// README cacheFooter 区域的翻译入口按钮。
@@ -697,6 +704,7 @@ struct ReadmeTranslationFooterButton: View {
 
     let control: ReadmeTranslationControl
     let sourceHtml: String
+    let sourceSegments: [ReadmeSourceSegment]
 
     /// 翻译中时按钮 hover 状态——hover 显示 stop 图标 + tooltip 切"停止翻译"。
     ///
@@ -717,7 +725,7 @@ struct ReadmeTranslationFooterButton: View {
 
     /// 判断当前是否展示译文，用于按钮文字 / icon 切换。
     private var isShowingTranslation: Bool {
-        if case .showingTranslation = translationVM.displayMode { return true }
+        if case .showingBilingual = translationVM.displayMode { return true }
         return false
     }
 
@@ -733,6 +741,7 @@ struct ReadmeTranslationFooterButton: View {
                     translationVM.toggleTranslation(
                         repo: control.repo,
                         sourceHtml: sourceHtml,
+                        sourceSegments: sourceSegments,
                         targetLanguage: settings.readmeTranslationLanguage
                     )
                 }
@@ -749,7 +758,10 @@ struct ReadmeTranslationFooterButton: View {
             // 翻译中要让点击能落地触发 cancel，所以 disabled 条件改成：
             //   - 翻译中：永远可点（点击 = 取消）；
             //   - 非翻译中 + sourceHtml 为空：disabled（无内容可翻译 / 切换）。
-            .disabled(!translationVM.isTranslating && sourceHtml.isEmpty)
+            .disabled(
+                !translationVM.isTranslating
+                    && (sourceHtml.isEmpty || sourceSegments.isEmpty)
+            )
             .help(buttonTooltip)
             .onHover { hovering in
                 // 只在翻译中跟踪 hover 切 icon；非翻译态不需要这个状态，确保切回
@@ -842,12 +854,17 @@ struct ReadmeTranslationFooterButton: View {
                 translationVM.regenerate(
                     repo: control.repo,
                     sourceHtml: sourceHtml,
+                    sourceSegments: sourceSegments,
                     targetLanguage: settings.readmeTranslationLanguage
                 )
             } label: {
                 Label("readme.translate.menu.regenerate", systemImage: "arrow.clockwise")
             }
-            .disabled(translationVM.isTranslating || sourceHtml.isEmpty)
+            .disabled(
+                translationVM.isTranslating
+                    || sourceHtml.isEmpty
+                    || sourceSegments.isEmpty
+            )
         } label: {
             Image(systemName: "chevron.down")
                 .font(.caption2)

@@ -106,6 +106,19 @@ struct OpenAIClient: AIClientProtocol {
                 error: CancellationError()
             )
             throw CancellationError()
+        } catch let error where Self.isCancellation(error) || Task.isCancelled {
+            // OpenAI-compatible SDK 可能把 URLSession 的取消包装成 NSError / URLError，
+            // 而不是原生 CancellationError。若继续走通用错误映射，UI 会把用户主动停止
+            // 错报成“AI 返回了意外响应”。统一归一为 CancellationError，让上层静默收口。
+            await recordChatUsage(
+                startedAt: startedAt,
+                model: resolvedModel,
+                context: request.usageContext,
+                usage: capturedUsage,
+                status: .cancelled,
+                error: CancellationError()
+            )
+            throw CancellationError()
         } catch let error as AIClientError {
             await recordChatUsage(
                 startedAt: startedAt,
@@ -284,6 +297,19 @@ struct OpenAIClient: AIClientProtocol {
     }
 
     // MARK: - Chat 错误映射
+
+    /// 判断 SDK / URLSession 包装后的错误是否仍然表达“请求被取消”。
+    ///
+    /// 不能只写 `error is CancellationError`：URLSession 常用
+    /// `NSURLErrorDomain / NSURLErrorCancelled (-999)`，跨 SDK 桥接后具体 Swift 类型
+    /// 还可能退化成 NSError。
+    static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+
+        let nsError = error as NSError
+        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
+    }
 
     /// 把 MacPaw SDK / URLSession 层错误收成 `AIClientError`，供 UI 与批量整理面板展示。
     ///

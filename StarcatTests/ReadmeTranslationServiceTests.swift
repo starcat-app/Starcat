@@ -4,13 +4,14 @@
 //
 //  覆盖 ReadmeTranslationService 中可不依赖 AI 客户端的纯逻辑：
 //  - SHA256 哈希稳定性 + 与 isCacheFresh 联动；
-//  - stripFenceWrapping 正常剥离 / 内嵌代码块不误伤；
-//  - assertStructureNotBroken 阈值行为；
-//  - systemPrompt / userPrompt 包含目标语言 promptName 与硬约束关键字。
+//  - stripFenceWrapping 正常剥离；
+//  - 首批优先和后续字符预算切分；
+//  - 分段 JSON Prompt 占位符与旧默认 Prompt 迁移；
+//  - Provider 外围文本提取、严格 id 校验与单批重试。
 //
 //  设计取舍：
-//  - 不 mock AI client：完整 translate 路径需要 OpenAIClient + AppSettings + Keychain 全套联动，
-//    投入产出比低；改用「拆出来测纯函数 + 拆 cachedTranslation 走真 repository」组合覆盖。
+//  - 完整 translate 路径仍不连接真实 Provider；仅用队列 stub 覆盖单批重试，缓存联动继续
+//    使用真实 DiskReadmeTranslationCache，避免测试依赖 API Key 或网络。
 //
 
 import Foundation
@@ -63,69 +64,137 @@ struct ReadmeTranslationServiceStaticTests {
         #expect(ReadmeTranslationService.stripFenceWrapping(raw) == raw)
     }
 
-    // MARK: - assertStructureNotBroken
+    // MARK: - 分段响应解析与重试
 
-    @Test("结构校验：tag 数量持平 → 通过")
-    func structurePass() throws {
-        let src = "<h1>A</h1><p>B</p>"
-        let translated = "<h1>甲</h1><p>乙</p>"
-        try ReadmeTranslationService.assertStructureNotBroken(source: src, translated: translated)
+    @Test("decodeBatchResponse：从 think + fence 外围文本中提取严格 JSON")
+    func extractsJSONFromReasoningAndFence() throws {
+        let source = [
+            ReadmeSourceSegment(id: "segment-1", text: "Hello"),
+            ReadmeSourceSegment(id: "segment-2", text: "Use `npm install`")
+        ]
+        let response = #"""
+        <think>This outline contains {not-json} and must not be returned.</think>
+        ```json
+        {"translations":[
+          {"id":"segment-1","translation":"你好"},
+          {"id":"segment-2","translation":"使用 `npm install`"}
+        ]}
+        ```
+        """#
+
+        let decoded = try #require(
+            ReadmeTranslationService.decodeBatchResponse(response, source: source)
+        )
+        #expect(decoded.count == 2)
+        #expect(decoded[0].sourceHash == source[0].sourceHash)
+        #expect(decoded[0].translatedText == "你好")
+        #expect(decoded[1].translatedText == "使用 `npm install`")
     }
 
-    @Test("结构校验：tag 减少 >30% → 抛 structureBroken")
-    func structureFailsOnMajorReduction() {
-        let src = "<h1>A</h1><p>B</p><p>C</p><p>D</p>" // 4 个 '<'
-        let translated = "纯文本无标签" // 0 个 '<' → 100% 损失
-        #expect(throws: ReadmeTranslationError.structureBroken) {
-            try ReadmeTranslationService.assertStructureNotBroken(source: src, translated: translated)
+    @Test("decodeBatchResponse：缺失、重复或未知 id 时拒绝结果")
+    func rejectsUnsafeSegmentAlignment() {
+        let source = [
+            ReadmeSourceSegment(id: "segment-1", text: "One"),
+            ReadmeSourceSegment(id: "segment-2", text: "Two")
+        ]
+        let missing = #"{"translations":[{"id":"segment-1","translation":"一"}]}"#
+        let duplicate = #"{"translations":[{"id":"segment-1","translation":"一"},{"id":"segment-1","translation":"二"}]}"#
+        let unknown = #"{"translations":[{"id":"segment-1","translation":"一"},{"id":"segment-x","translation":"二"}]}"#
+
+        #expect(ReadmeTranslationService.decodeBatchResponse(missing, source: source) == nil)
+        #expect(ReadmeTranslationService.decodeBatchResponse(duplicate, source: source) == nil)
+        #expect(ReadmeTranslationService.decodeBatchResponse(unknown, source: source) == nil)
+    }
+
+    @Test("performBatch：首次结构异常时只重试当前批次一次")
+    func retriesMalformedBatchOnce() async throws {
+        let source = [ReadmeSourceSegment(id: "segment-1", text: "Hello")]
+        let queue = TranslationResponseQueue(contents: [
+            "I translated it, but forgot JSON.",
+            #"{"translations":[{"id":"segment-1","translation":"你好"}]}"#
+        ])
+        let client = TranslationAIClientStub(queue: queue)
+
+        let result = try await ReadmeTranslationService.performBatch(
+            client: client,
+            request: Self.makeRequest(),
+            source: source
+        )
+        let callCount = await queue.callCount
+
+        #expect(callCount == 2)
+        #expect(result.map(\.translatedText) == ["你好"])
+    }
+
+    @Test("performBatch：连续两次结构异常后返回 structureBroken")
+    func stopsAfterSingleRetry() async {
+        let source = [ReadmeSourceSegment(id: "segment-1", text: "Hello")]
+        let queue = TranslationResponseQueue(contents: ["invalid-1", "invalid-2"])
+        let client = TranslationAIClientStub(queue: queue)
+
+        await #expect(throws: ReadmeTranslationError.structureBroken) {
+            try await ReadmeTranslationService.performBatch(
+                client: client,
+                request: Self.makeRequest(),
+                source: source
+            )
         }
+        let callCount = await queue.callCount
+        #expect(callCount == 2)
     }
 
-    @Test("结构校验：源无 tag（纯文本 README）→ 跳过校验")
-    func structureSkippedForPlainText() throws {
-        let src = "纯文本 README，无任何 HTML 标签"
-        let translated = "Plain text README"
-        try ReadmeTranslationService.assertStructureNotBroken(source: src, translated: translated)
+    private static func makeRequest() -> AIChatRequest {
+        AIChatRequest(
+            systemPrompt: "Return JSON.",
+            userPrompt: #"{"segments":[]}"#,
+            model: "test-model",
+            parameters: .translationDefault,
+            responseFormat: .jsonObject
+        )
     }
 
-    // MARK: - Prompt 模板渲染（HOM-68 follow-up v2）
+    // MARK: - Prompt 模板渲染
 
-    @Test("renderTemplate：替换 {targetLanguage} 与 {readmeHTML} 占位符")
+    @Test("renderTemplate：替换 {targetLanguage} 与 {readmeSegments} 占位符")
     func renderTemplateSubstitutesPlaceholders() {
         let rendered = ReadmeTranslationService.renderTemplate(
-            "Translate into {targetLanguage}: {readmeHTML}",
+            "Translate into {targetLanguage}: {readmeSegments}",
             targetLanguage: .japanese,
-            sourceHtml: "<p>hi</p>"
+            sourceSegmentsJSON: #"{"segments":[]}"#
         )
-        #expect(rendered == "Translate into Japanese: <p>hi</p>")
+        #expect(rendered == #"Translate into Japanese: {"segments":[]}"#)
     }
 
-    @Test("renderTemplate：同一占位符出现多次都被替换")
-    func renderTemplateReplacesAllOccurrences() {
+    @Test("renderTemplate：旧 {readmeHTML} 自定义占位符仍注入分段 JSON")
+    func renderTemplateSupportsLegacyCustomPlaceholder() {
         let rendered = ReadmeTranslationService.renderTemplate(
-            "lang={targetLanguage}; again={targetLanguage}; body={readmeHTML}{readmeHTML}",
+            "lang={targetLanguage}; body={readmeHTML}",
             targetLanguage: .english,
-            sourceHtml: "X"
+            sourceSegmentsJSON: "JSON"
         )
-        #expect(rendered == "lang=English; again=English; body=XX")
+        #expect(rendered == "lang=English; body=JSON")
     }
 
-    @Test("AIDefaultPrompts.translation：system 与 user 模板都包含必要占位符与硬约束")
+    @Test("AIDefaultPrompts.translation：要求严格 JSON 与逐 id 返回")
     func defaultTranslationPromptShape() {
         let prompt = AIDefaultPrompts.translation
-        // system 含语言占位 + 9 编号 STRICT RULES + EXAMPLE 段（2026-06-14 v2）
         #expect(prompt.systemPrompt.contains(ReadmeTranslationService.targetLanguagePlaceholder))
-        #expect(prompt.systemPrompt.contains("STRICT RULES"))
-        #expect(prompt.systemPrompt.contains("HTML"))
-        // 验证 v2 几个关键新增 / 强化点：HTML 实体 / 注释保真、proper noun 具象例子、EXAMPLE 段
-        #expect(prompt.systemPrompt.contains("HTML entities"))
-        #expect(prompt.systemPrompt.contains("HTML comments"))
-        #expect(prompt.systemPrompt.contains("React"))
-        #expect(prompt.systemPrompt.contains("EXAMPLE"))
-        // user 含 readmeHTML + 包裹标签
-        #expect(prompt.userPromptTemplate.contains(ReadmeTranslationService.readmeHTMLPlaceholder))
-        #expect(prompt.userPromptTemplate.contains("<README_FRAGMENT>"))
-        #expect(prompt.userPromptTemplate.contains("</README_FRAGMENT>"))
+        #expect(prompt.systemPrompt.contains("strict JSON"))
+        #expect(prompt.systemPrompt.contains(#""translations""#))
+        #expect(prompt.systemPrompt.contains("Preserve each id"))
+        #expect(prompt.userPromptTemplate.contains(ReadmeTranslationService.readmeSegmentsPlaceholder))
+    }
+
+    @Test("makeBatches：首批最多 5 段，后续最多 10 段且不漏段")
+    func batchesPrioritizeSmallFirstBatch() {
+        let segments = (0..<23).map {
+            ReadmeSourceSegment(id: "s-\($0)", text: "segment \($0)")
+        }
+        let batches = ReadmeTranslationService.makeBatches(segments)
+
+        #expect(batches.first?.count == 5)
+        #expect(batches.dropFirst().allSatisfy { $0.count <= 10 })
+        #expect(batches.flatMap { $0 }.map(\.id) == segments.map(\.id))
     }
 
     // MARK: - effectivePromptConfiguration 回退兜底
@@ -134,7 +203,7 @@ struct ReadmeTranslationServiceStaticTests {
     func effectivePromptKeepsCustom() {
         let custom = AIPromptConfiguration(
             systemPrompt: "Custom system into {targetLanguage}",
-            userPromptTemplate: "Custom user: {readmeHTML}"
+            userPromptTemplate: "Custom user: {readmeSegments}"
         )
         let effective = ReadmeTranslationService.effectivePromptConfiguration(custom)
         #expect(effective.systemPrompt == custom.systemPrompt)
@@ -143,7 +212,7 @@ struct ReadmeTranslationServiceStaticTests {
 
     @Test("effectivePromptConfiguration：用户误清空 system / user 任一时也回退")
     func effectivePromptFallsBackForEmptyEither() {
-        let emptySystem = AIPromptConfiguration(systemPrompt: "   ", userPromptTemplate: "Custom user {readmeHTML}")
+        let emptySystem = AIPromptConfiguration(systemPrompt: "   ", userPromptTemplate: "Custom user {readmeSegments}")
         let emptyUser = AIPromptConfiguration(systemPrompt: "Custom system", userPromptTemplate: " ")
 
         #expect(
@@ -155,6 +224,64 @@ struct ReadmeTranslationServiceStaticTests {
                 == AIDefaultPrompts.translation.userPromptTemplate
         )
     }
+
+    @Test("effectivePromptConfiguration：旧整页 HTML 默认 Prompt 自动升级")
+    func effectivePromptMigratesLegacyDefault() {
+        #expect(
+            ReadmeTranslationService.effectivePromptConfiguration(
+                AIDefaultPrompts.legacyTranslationHTMLV1
+            ) == AIDefaultPrompts.translation
+        )
+    }
+}
+
+/// 按顺序提供模型正文，让重试测试不依赖真实 Provider 或时间。
+private actor TranslationResponseQueue {
+    private var contents: [String]
+    private(set) var callCount = 0
+
+    init(contents: [String]) {
+        self.contents = contents
+    }
+
+    func next() throws -> AIChatResponse {
+        guard !contents.isEmpty else { throw AIClientError.emptyResponse }
+        callCount += 1
+        return AIChatResponse(
+            content: contents.removeFirst(),
+            model: "test-model",
+            finishReason: "stop"
+        )
+    }
+}
+
+/// 仅实现 `performBatch` 会调用的非流式 chat，其余能力若被误调即明确失败。
+private struct TranslationAIClientStub: AIClientProtocol {
+    let queue: TranslationResponseQueue
+
+    func chat(request: AIChatRequest) async throws -> AIChatResponse {
+        try await queue.next()
+    }
+
+    func chatStream(request: AIChatRequest) -> AsyncThrowingStream<AIChatStreamEvent, Error> {
+        AsyncThrowingStream { $0.finish(throwing: AIClientError.emptyResponse) }
+    }
+
+    func chat(systemPrompt: String, userPrompt: String, model: String?) async throws -> String {
+        throw AIClientError.emptyResponse
+    }
+
+    func embedding(input: String, model: String?) async throws -> [Float] {
+        throw AIClientError.emptyResponse
+    }
+
+    func embeddings(inputs: [String], model: String?) async throws -> [[Float]] {
+        throw AIClientError.emptyResponse
+    }
+
+    func listModels() async throws -> [AIModelDescriptor] { [] }
+
+    func testConnection() async throws {}
 }
 
 // MARK: - 与真实 Repository 联动：isCacheFresh / cachedTranslation
@@ -196,7 +323,13 @@ struct ReadmeTranslationServiceCacheTests {
                 targetLanguage: "zh-Hans",
                 model: "test-model",
                 sourceHash: ReadmeTranslationService.hash(source),
-                translatedHtml: "<h1>标题</h1><p>正文</p>",
+                segments: [
+                    ReadmeTranslatedSegment(
+                        sourceHash: ReadmeSourceSegment(id: "s1", text: "Title").sourceHash,
+                        translatedText: "标题"
+                    )
+                ],
+                isComplete: true,
                 size: 16,
                 createdAt: "2026-06-05T10:00:00Z"
             ),
@@ -226,7 +359,10 @@ struct ReadmeTranslationServiceCacheTests {
                 targetLanguage: "ja",
                 model: "test-model",
                 sourceHash: "fixed",
-                translatedHtml: "<p>こんにちは</p>",
+                segments: [
+                    ReadmeTranslatedSegment(sourceHash: "hash", translatedText: "こんにちは")
+                ],
+                isComplete: true,
                 size: 10,
                 createdAt: "2026-06-05T10:00:00Z"
             ),
@@ -245,8 +381,37 @@ struct ReadmeTranslationServiceCacheTests {
             targetLanguage: .simplifiedChinese
         )
 
-        #expect(jaHit?.translatedHtml == "<p>こんにちは</p>")
+        #expect(jaHit?.segments.first?.translatedText == "こんにちは")
         #expect(zhMiss == nil)
+    }
+
+    @Test("renderedTranslations：按段落 hash 对齐到当前 DOM id，段落重排仍可复用")
+    func renderedTranslationsUseCurrentDOMIDs() async throws {
+        let (service, _, _, root) = try await makeStack()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let first = ReadmeSourceSegment(id: "current-2", text: "Second paragraph")
+        let second = ReadmeSourceSegment(id: "current-1", text: "First paragraph")
+        let cached = ReadmeTranslation(
+            repoId: 99,
+            targetLanguage: "zh-Hans",
+            model: "test-model",
+            sourceHash: "old-document",
+            segments: [
+                ReadmeTranslatedSegment(sourceHash: second.sourceHash, translatedText: "第一段"),
+                ReadmeTranslatedSegment(sourceHash: first.sourceHash, translatedText: "第二段")
+            ],
+            isComplete: true,
+            size: 18,
+            createdAt: "2026-06-05T10:00:00Z"
+        )
+
+        let rendered = service.renderedTranslations(
+            from: cached,
+            matching: [first, second]
+        )
+
+        #expect(rendered.map(\.id) == ["current-2", "current-1"])
+        #expect(rendered.map(\.translatedText) == ["第二段", "第一段"])
     }
 }
 
@@ -307,6 +472,25 @@ struct AppSettingsTranslationTaskTests {
         #expect(reloaded.aiTranslationTask.providerID == "test-profile-id")
         #expect(reloaded.aiTranslationTask.modelID == "gpt-4o-translation")
         #expect(reloaded.aiTranslationTask.parameters.temperature == 0.05)
+    }
+
+    @Test("旧整页 HTML 默认 Prompt 只迁移 Prompt，保留 Provider 与 Model")
+    func legacyDefaultTranslationPromptMigratesSafely() {
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let first = AppSettings(defaults: defaults)
+
+        var legacy = first.aiTranslationTask
+        legacy.providerID = "kept-provider"
+        legacy.modelID = "kept-model"
+        legacy.prompt = AIDefaultPrompts.legacyTranslationHTMLV1
+        first.aiTranslationTask = legacy
+
+        let reloaded = AppSettings(defaults: defaults)
+        #expect(reloaded.aiTranslationTask.providerID == "kept-provider")
+        #expect(reloaded.aiTranslationTask.modelID == "kept-model")
+        #expect(reloaded.aiTranslationTask.prompt == AIDefaultPrompts.translation)
     }
 
     @Test("AIModelTask.translation 暴露 chat capability + 非空 displayName")

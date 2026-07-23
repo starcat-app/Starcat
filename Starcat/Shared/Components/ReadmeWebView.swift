@@ -90,6 +90,12 @@ struct ReadmeWebView: View {
     /// nil 时浮动工具栏不显示该按钮。
     var onExportMarkdown: (() -> Void)? = nil
 
+    /// 当前双语分段渲染状态。默认隐藏，普通 README 调用方无需感知翻译能力。
+    var translationRenderState: ReadmeTranslationRenderState = .hidden
+
+    /// WebView 完成 DOM 分段后回传可翻译文本。只在本机内存流转，用户点击翻译后才发给 AI。
+    var onTranslationSegmentsChange: ([ReadmeSourceSegment]) -> Void = { _ in }
+
     @Environment(AppSettings.self) private var settings
     @State private var scrollToTopRequestID = 0
     @State private var isFontToolbarExpanded = false
@@ -100,7 +106,9 @@ struct ReadmeWebView: View {
             baseURL: baseURL,
             onScrollReportChange: handleScrollReport,
             readmeFontSizeAdjustment: settings.readmeFontSizeAdjustment,
-            scrollToTopRequestID: scrollToTopRequestID
+            scrollToTopRequestID: scrollToTopRequestID,
+            translationRenderState: translationRenderState,
+            onTranslationSegmentsChange: onTranslationSegmentsChange
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // 工具条必须作为 overlay 贴边悬浮，不能参与 WebView 正文布局。
@@ -200,6 +208,8 @@ private struct ReadmeWebContentView: NSViewRepresentable {
     var onScrollReportChange: (RepoDetailScrollReport) -> Void
     let readmeFontSizeAdjustment: Int
     let scrollToTopRequestID: Int
+    let translationRenderState: ReadmeTranslationRenderState
+    var onTranslationSegmentsChange: ([ReadmeSourceSegment]) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -228,12 +238,16 @@ private struct ReadmeWebContentView: NSViewRepresentable {
 
         context.coordinator.webView = webView
         context.coordinator.onScrollReportChange = onScrollReportChange
+        context.coordinator.onTranslationSegmentsChange = onTranslationSegmentsChange
+        context.coordinator.updateTranslationRenderState(translationRenderState)
         loadIfNeeded(into: webView, context: context)
         return webView
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         context.coordinator.onScrollReportChange = onScrollReportChange
+        context.coordinator.onTranslationSegmentsChange = onTranslationSegmentsChange
+        context.coordinator.updateTranslationRenderState(translationRenderState)
         loadIfNeeded(into: webView, context: context)
         scrollToTopIfNeeded(in: webView, context: context)
     }
@@ -277,6 +291,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         if context.coordinator.lastLoadedKey != contentKey {
             context.coordinator.lastLoadedKey = contentKey
             context.coordinator.lastAppliedFontSizeAdjustment = readmeFontSizeAdjustment
+            context.coordinator.prepareForDocumentReload()
 
             // HOM-201 P1-2（2026-06-14）：`htmlFragment` 已是 `ReadmeAPI` rewrite 后的
             // 内容(img src 已是 raw.githubusercontent.com 绝对 URL),这里直接 wrap document,
@@ -320,7 +335,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         interfaceScale: InterfaceScale = .standard,
         readmeFontSizeAdjustment: Int = 0
     ) -> String {
-        let css = ReadmeCSS.full + "\n" + ReadmeCSS.readingVariables(
+        let css = ReadmeCSS.full + "\n" + ReadmeTranslationDOM.css + "\n" + ReadmeCSS.readingVariables(
             bodyFontSize: readmeBodyFontSize(
                 for: interfaceScale,
                 adjustment: readmeFontSizeAdjustment
@@ -362,7 +377,10 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         var lastLoadedKey: ReadmeKey?
         var lastScrollToTopRequestID = 0
         var onScrollReportChange: (RepoDetailScrollReport) -> Void = { _ in }
+        var onTranslationSegmentsChange: ([ReadmeSourceSegment]) -> Void = { _ in }
         private weak var userContentController: WKUserContentController?
+        private var pendingTranslationRenderState: ReadmeTranslationRenderState = .hidden
+        private var lastAppliedTranslationRevision: Int?
 
         /// 上次已应用的 README 字号调整量。
         ///
@@ -383,9 +401,11 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         /// 事件拿 `window.scrollY` 更接近真实阅读位置，也不会依赖私有 view class。
         ///
         /// 安全边界：
-        /// - user script 只读滚动度量与图片 URL，不读取正文文本，也不把 README 内容回传 Swift。
+        /// - user script 只读取候选段落的可见文本并回传当前进程；未点击翻译前不出本机；
+        /// - 只扫描 h1...h6 / p / li / blockquote / td / th / summary / dt / dd，
+        ///   明确排除 pre / code / script / style / svg 等非自然语言节点；
         /// - HTML 文档里加了 CSP `script-src 'none'`，页面自带 `<script>` / inline handler 不执行。
-        /// - message handler 只接收 Number，其余 body 直接忽略。
+        /// - message handler 对滚动 payload 和段落数组分别做类型、长度校验。
         func makeUserContentController() -> WKUserContentController {
             let controller = WKUserContentController()
             let script = WKUserScript(
@@ -395,6 +415,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             )
             controller.addUserScript(script)
             controller.add(self, name: ReadmeWebViewConstants.scrollMessageName)
+            controller.add(self, name: ReadmeWebViewConstants.translationSegmentsMessageName)
             userContentController = controller
             return controller
         }
@@ -404,7 +425,52 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         /// 主线程调用 `dismantleNSView`，这里集中做 WebKit handler 清理，避免循环持有。
         func removeScriptMessageHandler() {
             userContentController?.removeScriptMessageHandler(forName: ReadmeWebViewConstants.scrollMessageName)
+            userContentController?.removeScriptMessageHandler(
+                forName: ReadmeWebViewConstants.translationSegmentsMessageName
+            )
             userContentController = nil
+        }
+
+        /// 内容或主题重载后，旧 DOM 已消失；导航完成时必须把当前翻译状态重新注入。
+        func prepareForDocumentReload() {
+            lastAppliedTranslationRevision = nil
+        }
+
+        /// 保存最新 SwiftUI 状态，并在当前文档已可用时做无重载 DOM 更新。
+        func updateTranslationRenderState(_ state: ReadmeTranslationRenderState) {
+            pendingTranslationRenderState = state
+            applyTranslationRenderStateIfNeeded()
+        }
+
+        private func applyTranslationRenderStateIfNeeded() {
+            guard let webView,
+                  lastAppliedTranslationRevision != pendingTranslationRenderState.revision
+            else { return }
+
+            let state = pendingTranslationRenderState
+            let payload: [[String: String]] = state.translations.map {
+                ["id": $0.id, "translation": $0.translatedText]
+            }
+            lastAppliedTranslationRevision = state.revision
+            Task { @MainActor in
+                do {
+                    _ = try await webView.callAsyncJavaScript(
+                        """
+                        if (typeof window.starcatApplyReadmeTranslations === 'function') {
+                            window.starcatApplyReadmeTranslations(isVisible, translations);
+                        }
+                        """,
+                        arguments: [
+                            "isVisible": state.isVisible,
+                            "translations": payload
+                        ],
+                        in: nil,
+                        contentWorld: .page
+                    )
+                } catch {
+                    AppLog.ui.debug("Readme translation DOM update deferred: \(error.localizedDescription, privacy: .public)")
+                }
+            }
         }
 
         private static let readmeEnhancementScript = """
@@ -514,6 +580,97 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                 }
             }
 
+            function normalizedSegmentText(element) {
+                var clone = element.cloneNode(true);
+
+                // 父块和子块分别翻译，先从父块副本移除后代候选，避免同一句重复发送。
+                var nestedBlocks = clone.querySelectorAll(
+                    'h1, h2, h3, h4, h5, h6, p, li, blockquote, td, th, summary, dt, dd'
+                );
+                for (var nestedIndex = 0; nestedIndex < nestedBlocks.length; nestedIndex += 1) {
+                    nestedBlocks[nestedIndex].remove();
+                }
+
+                var excluded = clone.querySelectorAll('pre, script, style, svg, noscript');
+                for (var excludedIndex = 0; excludedIndex < excluded.length; excludedIndex += 1) {
+                    excluded[excludedIndex].remove();
+                }
+
+                // 双语译文是纯文本；用反引号标记内联代码，提醒模型按字面量保留。
+                var literals = clone.querySelectorAll('code, kbd, samp');
+                for (var literalIndex = 0; literalIndex < literals.length; literalIndex += 1) {
+                    var literal = literals[literalIndex];
+                    literal.replaceWith(document.createTextNode('`' + (literal.textContent || '') + '`'));
+                }
+
+                return (clone.textContent || '').replace(/\\s+/g, ' ').trim();
+            }
+
+            function extractTranslationSegments() {
+                var article = document.querySelector('.markdown-body article') ||
+                    document.querySelector('.markdown-body');
+                if (!article) { return; }
+
+                var candidates = article.querySelectorAll(
+                    'h1, h2, h3, h4, h5, h6, p, li, blockquote, td, th, summary, dt, dd'
+                );
+                var segments = [];
+                window.starcatReadmeSegmentElements = {};
+                for (var index = 0; index < candidates.length; index += 1) {
+                    var element = candidates[index];
+                    if (element.closest('pre, code, kbd, samp, script, style, svg, noscript')) {
+                        continue;
+                    }
+                    var text = normalizedSegmentText(element);
+                    if (text.length < 2 || /^https?:\\/\\/\\S+$/.test(text)) {
+                        continue;
+                    }
+                    var id = 'starcat-readme-segment-' + segments.length;
+                    element.dataset.starcatTranslationSource = 'true';
+                    element.dataset.starcatTranslationId = id;
+                    window.starcatReadmeSegmentElements[id] = element;
+                    segments.push({ id: id, text: text });
+                }
+                window.webkit.messageHandlers.\(ReadmeWebViewConstants.translationSegmentsMessageName)
+                    .postMessage(segments);
+            }
+
+            window.starcatApplyReadmeTranslations = function(isVisible, translations) {
+                var expected = new Set();
+                for (var index = 0; index < translations.length; index += 1) {
+                    var item = translations[index];
+                    expected.add(item.id);
+                    var source = window.starcatReadmeSegmentElements
+                        ? window.starcatReadmeSegmentElements[item.id]
+                        : null;
+                    if (!source) { continue; }
+
+                    var translated = source.querySelector(':scope > .starcat-readme-translation');
+                    if (!translated) {
+                        translated = document.createElement('span');
+                        translated.className = 'starcat-readme-translation';
+                        translated.setAttribute('aria-label', 'Translation');
+                        source.appendChild(translated);
+                    }
+                    translated.textContent = item.translation;
+                    translated.hidden = !isVisible;
+                }
+
+                var existing = document.querySelectorAll('.starcat-readme-translation');
+                for (var existingIndex = 0; existingIndex < existing.length; existingIndex += 1) {
+                    var node = existing[existingIndex];
+                    var parentID = node.parentElement
+                        ? (node.parentElement.dataset.starcatTranslationId || '')
+                        : '';
+                    if (!expected.has(parentID)) {
+                        node.remove();
+                    } else {
+                        node.hidden = !isVisible;
+                    }
+                }
+                schedule();
+            };
+
             function schedule() {
                 if (ticking) { return; }
                 ticking = true;
@@ -534,14 +691,34 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             });
             window.addEventListener('load', report);
             enhanceImages();
+            extractTranslationSegments();
             setTimeout(report, 0);
         })();
         """
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard message.name == ReadmeWebViewConstants.scrollMessageName else { return }
-            if let payload = message.body as? [String: Any],
-               let yValue = payload["y"] as? NSNumber {
+            if message.name == ReadmeWebViewConstants.translationSegmentsMessageName {
+                guard let payload = message.body as? [[String: Any]] else { return }
+                let segments = payload.prefix(2_000).compactMap { item -> ReadmeSourceSegment? in
+                    guard let id = item["id"] as? String,
+                          let text = item["text"] as? String,
+                          id.hasPrefix("starcat-readme-segment-"),
+                          !text.isEmpty,
+                          text.count <= 20_000
+                    else { return nil }
+                    return ReadmeSourceSegment(id: id, text: text)
+                }
+                Task { @MainActor in
+                    self.onTranslationSegmentsChange(segments)
+                }
+                return
+            }
+
+            guard message.name == ReadmeWebViewConstants.scrollMessageName,
+                  let payload = message.body as? [String: Any],
+                  let yValue = payload["y"] as? NSNumber
+            else { return }
+            do {
                 let scrollHeight = (payload["scrollHeight"] as? NSNumber).map { CGFloat(truncating: $0) }
                 let clientHeight = (payload["clientHeight"] as? NSNumber).map { CGFloat(truncating: $0) }
                 let overflow: CGFloat?
@@ -559,6 +736,12 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                     self.onScrollReportChange(report)
                 }
             }
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            // `updateNSView` 可能先于 document-end script 完成；导航结束后再补一次当前状态。
+            lastAppliedTranslationRevision = nil
+            applyTranslationRenderStateIfNeeded()
         }
 
         func webView(
@@ -628,6 +811,30 @@ private struct ReadmeWebContentView: NSViewRepresentable {
 
 private enum ReadmeWebViewConstants {
     static let scrollMessageName = "readmeScroll"
+    static let translationSegmentsMessageName = "readmeTranslationSegments"
+}
+
+/// 双语译文只作为原文块的次级说明，不改变原 README 的字号层级和链接结构。
+private enum ReadmeTranslationDOM {
+    static let css = """
+    .starcat-readme-translation {
+        display: block;
+        margin: 0.42em 0 0.18em;
+        padding: 0.28em 0 0.28em 0.72em;
+        border-left: 2px solid color-mix(in srgb, var(--color-accent-fg) 45%, transparent);
+        color: var(--fgColor-muted, #656d76);
+        font-size: 0.92em;
+        font-weight: 400;
+        line-height: 1.58;
+        white-space: pre-wrap;
+    }
+    .dark .starcat-readme-translation {
+        color: var(--fgColor-muted, #8b949e);
+    }
+    .starcat-readme-translation[hidden] {
+        display: none;
+    }
+    """
 }
 
 private struct ReadmeFloatingToolbar: View {
