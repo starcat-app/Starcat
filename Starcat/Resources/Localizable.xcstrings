@@ -37702,6 +37702,22 @@
         }
       }
     },
+    "readme.translate.menu.mode" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translation Mode"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻译方式"
+          }
+        }
+      }
+    },
     "readme.translate.menu.regenerate" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -37732,6 +37748,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "翻译选项"
+          }
+        }
+      }
+    },
+    "readme.translate.mode.full" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Full Translation"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全文翻译"
+          }
+        }
+      }
+    },
+    "readme.translate.mode.segmented" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Segmented Translation"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分段翻译"
           }
         }
       }
@@ -37810,13 +37858,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Translate by segment with AI and show a bilingual README (cached locally)"
+            "value" : "Translate the README with AI using the selected mode (cached locally)"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "用 AI 分段翻译并显示双语 README，结果会缓存到本地"
+            "value" : "按所选方式用 AI 翻译 README，结果会缓存到本地"
           }
         }
       }
@@ -45916,6 +45964,38 @@
         }
       }
     },
+    "settings.ai.prompt.placeholder.readmeSegments" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "JSON batch of visible README blocks used for bilingual segmented translation."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用于双语分段翻译的 README 可见文本块 JSON 批次。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholder.readmeTextNodes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "JSON batch of visible README text nodes used for translated-only full mode."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用于仅显示译文的全文模式的 README 可见文本节点 JSON 批次。"
+          }
+        }
+      }
+    },
     "settings.ai.prompt.placeholder.repoTags" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -46024,13 +46104,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Note: {targetLanguage} must appear in System or User prompt; {readmeHTML} only belongs in the User prompt."
+            "value" : "Note: {targetLanguage} must appear in either prompt; the source-data placeholder for the selected mode belongs in the User Prompt."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "说明：{targetLanguage} 必须在 System / User 任一处出现；{readmeHTML} 写在 System 中没有意义。"
+            "value" : "说明：{targetLanguage} 必须出现在任一 Prompt 中；当前模式的源数据占位符应放在 User Prompt。"
           }
         }
       }
@@ -46170,6 +46250,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "任务"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.translation.mode.pickerLabel" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translation prompt type"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻译提示词类型"
           }
         }
       }

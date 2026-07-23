@@ -2,20 +2,20 @@
 //  ReadmeTranslationService.swift
 //  Starcat
 //
-//  README 分段翻译服务。
+//  README 翻译服务。
 //
 //  模块职责：
 //  - 接收 WebView 已提取的可见文本段落，不再把整份 HTML 交给模型；
-//  - 先翻译一个小批次尽快首屏回填，再以最多 2 路并发完成后续批次；
+//  - 先翻译一个小批次尽快首屏回填，再以最多 4 路并发完成后续批次；
 //  - 每完成一批立即写入磁盘，因此用户取消后下次可以从未完成段落继续；
-//  - 以“源段落指纹 → 译文”作为共享产物，当前双语模式和未来全文模式复用同一缓存。
+//  - 以“源文本指纹 → 译文”保存产物，并按翻译方式隔离缓存。
 //
 //  关键约束：
 //  - AI 只处理纯文本和稳定 id，不拥有 HTML；标签、链接、图片与代码结构不会被模型改坏；
-//  - 并发上限固定为 2，避免大量短请求同时触发 Provider rate limit；
+//  - 并发上限固定为 4，并采用完成一个再补一个的有界调度，避免长 README 瞬间创建几十个请求；
 //  - 结果必须是严格 JSON，且 id 集合与输入完全一致，否则整批丢弃，不注入错误位置；
 //  - Service 为 `@MainActor`，但真正的网络等待在 Sendable AI client 的异步方法中，
-//    最多两个 child task 可以并行等待，不会阻塞主线程。
+//    最多四个 child task 可以并行等待，不会阻塞主线程。
 //
 
 import CryptoKit
@@ -51,10 +51,14 @@ struct ReadmeTranslationRequest: Sendable {
     /// WebView 从可见 DOM 中提取的自然语言段落。
     var sourceSegments: [ReadmeSourceSegment]
     var targetLanguage: ReadmeTranslationLanguage
+    var mode: ReadmeTranslationMode
 }
 
 @MainActor
 final class ReadmeTranslationService {
+
+    /// README 后续批次的固定并发上限。首批仍单独串行完成，以保证最快首屏反馈。
+    nonisolated static let maxConcurrentBatchCount = 4
 
     typealias BatchProgressHandler = @MainActor (
         _ rendered: [ReadmeRenderedTranslation],
@@ -84,12 +88,14 @@ final class ReadmeTranslationService {
     func cachedTranslation(
         owner: String,
         repo: String,
-        targetLanguage: ReadmeTranslationLanguage
+        targetLanguage: ReadmeTranslationLanguage,
+        mode: ReadmeTranslationMode = .segmented
     ) async throws -> ReadmeTranslation? {
         try await translationRepository.find(
             owner: owner,
             repo: repo,
-            targetLanguage: targetLanguage.rawValue
+            targetLanguage: targetLanguage.rawValue,
+            mode: mode
         )
     }
 
@@ -140,7 +146,13 @@ final class ReadmeTranslationService {
         let task = settings.aiTranslationTask
         let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel)
         let parameters = settings.effectiveParameters(for: task)
-        let prompt = Self.effectivePromptConfiguration(task.prompt)
+        let configuredPrompt = request.mode == .segmented
+            ? task.prompt
+            : settings.aiFullTranslationPrompt
+        let prompt = Self.effectivePromptConfiguration(
+            configuredPrompt,
+            mode: request.mode
+        )
         let documentHash = Self.hash(trimmedSource)
 
         // 同一段落可能在 README 中重复出现；按 hash 去重请求，渲染时再映射回每个 DOM id。
@@ -176,7 +188,8 @@ final class ReadmeTranslationService {
             try await translationRepository.upsert(
                 record,
                 owner: request.repo.owner,
-                repo: request.repo.name
+                repo: request.repo.name,
+                mode: request.mode
             )
             return record
         }
@@ -186,6 +199,7 @@ final class ReadmeTranslationService {
         let firstRequest = try Self.makeAIRequest(
             batch: firstBatch,
             targetLanguage: request.targetLanguage,
+            mode: request.mode,
             prompt: prompt,
             model: model,
             parameters: parameters
@@ -217,15 +231,16 @@ final class ReadmeTranslationService {
                 try Self.makeAIRequest(
                     batch: $0,
                     targetLanguage: request.targetLanguage,
+                    mode: request.mode,
                     prompt: prompt,
                     model: model,
                     parameters: parameters
                 )
             }
 
-            // 固定 2 路并发：一个任务完成后才补下一个，避免长 README 一次性创建几十个请求。
+            // 固定 4 路并发：一个任务完成后才补下一个，避免长 README 一次性创建几十个请求。
             try await withThrowingTaskGroup(of: [ReadmeTranslatedSegment].self) { group in
-                let initialCount = min(2, remainingBatches.count)
+                let initialCount = min(Self.maxConcurrentBatchCount, remainingBatches.count)
                 for index in 0..<initialCount {
                     let batch = remainingBatches[index]
                     let aiRequest = aiRequests[index]
@@ -282,7 +297,8 @@ final class ReadmeTranslationService {
         try await translationRepository.upsert(
             record,
             owner: request.repo.owner,
-            repo: request.repo.name
+            repo: request.repo.name,
+            mode: request.mode
         )
         onBatch?(
             renderedTranslations(from: record, matching: sourceSegments),
@@ -383,8 +399,7 @@ final class ReadmeTranslationService {
             baseURL: profile.baseURL,
             chatModel: model,
             embeddingModel: settings.aiEmbeddingTask.resolvedModelName,
-            timeoutInterval: settings.effectiveParameters(for: task).timeoutSeconds,
-            usageContext: AIUsageContext(feature: .readmeTranslation, phase: "translation")
+            timeoutInterval: settings.effectiveParameters(for: task).timeoutSeconds
         ))
         return (client, model)
     }
@@ -397,6 +412,7 @@ final class ReadmeTranslationService {
     private nonisolated static func makeAIRequest(
         batch: [ReadmeSourceSegment],
         targetLanguage: ReadmeTranslationLanguage,
+        mode: ReadmeTranslationMode,
         prompt: AIPromptConfiguration,
         model: String,
         parameters: AIModelParameters
@@ -426,7 +442,11 @@ final class ReadmeTranslationService {
             history: [],
             model: model,
             parameters: batchParameters,
-            responseFormat: .jsonObject
+            responseFormat: .jsonObject,
+            usageContext: AIUsageContext(
+                feature: .readmeTranslation,
+                phase: mode.usagePhase
+            )
         )
     }
 
@@ -558,6 +578,7 @@ final class ReadmeTranslationService {
 
     nonisolated static let targetLanguagePlaceholder = "{targetLanguage}"
     nonisolated static let readmeSegmentsPlaceholder = "{readmeSegments}"
+    nonisolated static let readmeTextNodesPlaceholder = "{readmeTextNodes}"
     /// 自定义旧 Prompt 的数据安全兼容：仍替换旧占位符，但注入内容已经是段落 JSON。
     nonisolated static let legacyReadmeHTMLPlaceholder = "{readmeHTML}"
 
@@ -569,16 +590,25 @@ final class ReadmeTranslationService {
         template
             .replacingOccurrences(of: targetLanguagePlaceholder, with: targetLanguage.promptName)
             .replacingOccurrences(of: readmeSegmentsPlaceholder, with: sourceSegmentsJSON)
+            .replacingOccurrences(of: readmeTextNodesPlaceholder, with: sourceSegmentsJSON)
             .replacingOccurrences(of: legacyReadmeHTMLPlaceholder, with: sourceSegmentsJSON)
     }
 
     nonisolated static func effectivePromptConfiguration(
-        _ prompt: AIPromptConfiguration
+        _ prompt: AIPromptConfiguration,
+        mode: ReadmeTranslationMode = .segmented
     ) -> AIPromptConfiguration {
         let trimmedSystem = prompt.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedUser = prompt.userPromptTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedSystem.isEmpty || trimmedUser.isEmpty || prompt == AIDefaultPrompts.legacyTranslationHTMLV1 {
-            return AIDefaultPrompts.translation
+        if trimmedSystem.isEmpty || trimmedUser.isEmpty {
+            return mode == .segmented
+                ? AIDefaultPrompts.translation
+                : AIDefaultPrompts.fullTranslation
+        }
+        if prompt == AIDefaultPrompts.legacyTranslationHTMLV1 {
+            return mode == .segmented
+                ? AIDefaultPrompts.translation
+                : AIDefaultPrompts.fullTranslation
         }
         return prompt
     }

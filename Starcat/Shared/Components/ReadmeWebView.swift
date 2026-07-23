@@ -90,11 +90,12 @@ struct ReadmeWebView: View {
     /// nil 时浮动工具栏不显示该按钮。
     var onExportMarkdown: (() -> Void)? = nil
 
-    /// 当前双语分段渲染状态。默认隐藏，普通 README 调用方无需感知翻译能力。
+    /// 当前翻译渲染状态。默认隐藏，普通 README 调用方无需感知翻译能力。
     var translationRenderState: ReadmeTranslationRenderState = .hidden
 
-    /// WebView 完成 DOM 分段后回传可翻译文本。只在本机内存流转，用户点击翻译后才发给 AI。
-    var onTranslationSegmentsChange: ([ReadmeSourceSegment]) -> Void = { _ in }
+    /// WebView 完成 DOM 提取后回传两种模式的纯文本。只在本机内存流转，
+    /// 用户点击翻译后才会把当前模式对应的数据发给 AI。
+    var onTranslationSourceChange: (ReadmeTranslationSourceSnapshot) -> Void = { _ in }
 
     @Environment(AppSettings.self) private var settings
     @State private var scrollToTopRequestID = 0
@@ -108,7 +109,7 @@ struct ReadmeWebView: View {
             readmeFontSizeAdjustment: settings.readmeFontSizeAdjustment,
             scrollToTopRequestID: scrollToTopRequestID,
             translationRenderState: translationRenderState,
-            onTranslationSegmentsChange: onTranslationSegmentsChange
+            onTranslationSourceChange: onTranslationSourceChange
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // 工具条必须作为 overlay 贴边悬浮，不能参与 WebView 正文布局。
@@ -209,7 +210,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
     let readmeFontSizeAdjustment: Int
     let scrollToTopRequestID: Int
     let translationRenderState: ReadmeTranslationRenderState
-    var onTranslationSegmentsChange: ([ReadmeSourceSegment]) -> Void
+    var onTranslationSourceChange: (ReadmeTranslationSourceSnapshot) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -238,7 +239,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
 
         context.coordinator.webView = webView
         context.coordinator.onScrollReportChange = onScrollReportChange
-        context.coordinator.onTranslationSegmentsChange = onTranslationSegmentsChange
+        context.coordinator.onTranslationSourceChange = onTranslationSourceChange
         context.coordinator.updateTranslationRenderState(translationRenderState)
         loadIfNeeded(into: webView, context: context)
         return webView
@@ -246,7 +247,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         context.coordinator.onScrollReportChange = onScrollReportChange
-        context.coordinator.onTranslationSegmentsChange = onTranslationSegmentsChange
+        context.coordinator.onTranslationSourceChange = onTranslationSourceChange
         context.coordinator.updateTranslationRenderState(translationRenderState)
         loadIfNeeded(into: webView, context: context)
         scrollToTopIfNeeded(in: webView, context: context)
@@ -377,7 +378,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         var lastLoadedKey: ReadmeKey?
         var lastScrollToTopRequestID = 0
         var onScrollReportChange: (RepoDetailScrollReport) -> Void = { _ in }
-        var onTranslationSegmentsChange: ([ReadmeSourceSegment]) -> Void = { _ in }
+        var onTranslationSourceChange: (ReadmeTranslationSourceSnapshot) -> Void = { _ in }
         private weak var userContentController: WKUserContentController?
         private var pendingTranslationRenderState: ReadmeTranslationRenderState = .hidden
         private var lastAppliedTranslationRevision: Int?
@@ -415,7 +416,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             )
             controller.addUserScript(script)
             controller.add(self, name: ReadmeWebViewConstants.scrollMessageName)
-            controller.add(self, name: ReadmeWebViewConstants.translationSegmentsMessageName)
+            controller.add(self, name: ReadmeWebViewConstants.translationSourceMessageName)
             userContentController = controller
             return controller
         }
@@ -426,7 +427,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         func removeScriptMessageHandler() {
             userContentController?.removeScriptMessageHandler(forName: ReadmeWebViewConstants.scrollMessageName)
             userContentController?.removeScriptMessageHandler(
-                forName: ReadmeWebViewConstants.translationSegmentsMessageName
+                forName: ReadmeWebViewConstants.translationSourceMessageName
             )
             userContentController = nil
         }
@@ -457,11 +458,12 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                     _ = try await webView.callAsyncJavaScript(
                         """
                         if (typeof window.starcatApplyReadmeTranslations === 'function') {
-                            window.starcatApplyReadmeTranslations(isVisible, translations);
+                            window.starcatApplyReadmeTranslations(mode, isVisible, translations);
                         }
                         """,
                         arguments: [
                             "isVisible": state.isVisible,
+                            "mode": state.mode.rawValue,
                             "translations": payload
                         ],
                         in: nil,
@@ -606,7 +608,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                 return (clone.textContent || '').replace(/\\s+/g, ' ').trim();
             }
 
-            function extractTranslationSegments() {
+            function extractTranslationSource() {
                 var article = document.querySelector('.markdown-body article') ||
                     document.querySelector('.markdown-body');
                 if (!article) { return; }
@@ -631,11 +633,95 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                     window.starcatReadmeSegmentElements[id] = element;
                     segments.push({ id: id, text: text });
                 }
-                window.webkit.messageHandlers.\(ReadmeWebViewConstants.translationSegmentsMessageName)
-                    .postMessage(segments);
+
+                // 全文模式按 Text node 替换译文，而不是覆盖 element.innerHTML。
+                // 这样 inline link、图片、属性和代码节点始终由原 DOM 持有；切回原文时
+                // 只需恢复 nodeValue，不需要重载整份 README。
+                var fullTextNodes = [];
+                window.starcatReadmeFullTextNodes = {};
+                var walker = document.createTreeWalker(
+                    article,
+                    NodeFilter.SHOW_TEXT,
+                    {
+                        acceptNode: function(node) {
+                            var parent = node.parentElement;
+                            if (!parent || parent.closest(
+                                'pre, code, kbd, samp, script, style, svg, noscript, .starcat-readme-translation'
+                            )) {
+                                return NodeFilter.FILTER_REJECT;
+                            }
+                            var text = (node.nodeValue || '').trim();
+                            if (text.length < 2 || /^https?:\\/\\/\\S+$/.test(text)) {
+                                return NodeFilter.FILTER_REJECT;
+                            }
+                            return NodeFilter.FILTER_ACCEPT;
+                        }
+                    }
+                );
+                var textNode = walker.nextNode();
+                while (textNode) {
+                    var fullID = 'starcat-readme-text-' + fullTextNodes.length;
+                    var original = textNode.nodeValue || '';
+                    window.starcatReadmeFullTextNodes[fullID] = {
+                        node: textNode,
+                        original: original
+                    };
+                    fullTextNodes.push({ id: fullID, text: original.trim() });
+                    textNode = walker.nextNode();
+                }
+
+                window.webkit.messageHandlers.\(ReadmeWebViewConstants.translationSourceMessageName)
+                    .postMessage({
+                        segmented: segments,
+                        full: fullTextNodes
+                    });
             }
 
-            window.starcatApplyReadmeTranslations = function(isVisible, translations) {
+            function restoreFullTranslationTextNodes() {
+                var nodes = window.starcatReadmeFullTextNodes || {};
+                Object.keys(nodes).forEach(function(id) {
+                    var entry = nodes[id];
+                    if (entry && entry.node) {
+                        entry.node.nodeValue = entry.original;
+                    }
+                });
+            }
+
+            function hideSegmentedTranslations() {
+                var existing = document.querySelectorAll('.starcat-readme-translation');
+                for (var index = 0; index < existing.length; index += 1) {
+                    existing[index].hidden = true;
+                }
+            }
+
+            window.starcatApplyReadmeTranslations = function(mode, isVisible, translations) {
+                // 每次先回到原始 Text node，再应用当前模式，避免全文/分段切换时残留旧 DOM。
+                restoreFullTranslationTextNodes();
+                if (!isVisible) {
+                    hideSegmentedTranslations();
+                    schedule();
+                    return;
+                }
+
+                if (mode === 'full') {
+                    hideSegmentedTranslations();
+                    var fullNodes = window.starcatReadmeFullTextNodes || {};
+                    for (var fullIndex = 0; fullIndex < translations.length; fullIndex += 1) {
+                        var fullItem = translations[fullIndex];
+                        var entry = fullNodes[fullItem.id];
+                        if (!entry || !entry.node) { continue; }
+
+                        // AI 只翻译 trim 后的正文；原节点首尾空白必须保留，否则 inline
+                        // element 之间会粘连（例如 "with <a>React</a> and"）。
+                        var original = entry.original || '';
+                        var leading = (original.match(/^\\s*/) || [''])[0];
+                        var trailing = (original.match(/\\s*$/) || [''])[0];
+                        entry.node.nodeValue = leading + fullItem.translation.trim() + trailing;
+                    }
+                    schedule();
+                    return;
+                }
+
                 var expected = new Set();
                 for (var index = 0; index < translations.length; index += 1) {
                     var item = translations[index];
@@ -691,25 +777,46 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             });
             window.addEventListener('load', report);
             enhanceImages();
-            extractTranslationSegments();
+            extractTranslationSource();
             setTimeout(report, 0);
         })();
         """
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            if message.name == ReadmeWebViewConstants.translationSegmentsMessageName {
-                guard let payload = message.body as? [[String: Any]] else { return }
-                let segments = payload.prefix(2_000).compactMap { item -> ReadmeSourceSegment? in
+            if message.name == ReadmeWebViewConstants.translationSourceMessageName {
+                guard let payload = message.body as? [String: Any] else { return }
+
+                func decodeSegments(
+                    key: String,
+                    idPrefix: String,
+                    limit: Int
+                ) -> [ReadmeSourceSegment] {
+                    guard let items = payload[key] as? [[String: Any]] else { return [] }
+                    return items.prefix(limit).compactMap { item -> ReadmeSourceSegment? in
                     guard let id = item["id"] as? String,
                           let text = item["text"] as? String,
-                          id.hasPrefix("starcat-readme-segment-"),
+                          id.hasPrefix(idPrefix),
                           !text.isEmpty,
                           text.count <= 20_000
                     else { return nil }
                     return ReadmeSourceSegment(id: id, text: text)
                 }
+                }
+
+                let snapshot = ReadmeTranslationSourceSnapshot(
+                    segmented: decodeSegments(
+                        key: "segmented",
+                        idPrefix: "starcat-readme-segment-",
+                        limit: 2_000
+                    ),
+                    full: decodeSegments(
+                        key: "full",
+                        idPrefix: "starcat-readme-text-",
+                        limit: 8_000
+                    )
+                )
                 Task { @MainActor in
-                    self.onTranslationSegmentsChange(segments)
+                    self.onTranslationSourceChange(snapshot)
                 }
                 return
             }
@@ -811,7 +918,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
 
 private enum ReadmeWebViewConstants {
     static let scrollMessageName = "readmeScroll"
-    static let translationSegmentsMessageName = "readmeTranslationSegments"
+    static let translationSourceMessageName = "readmeTranslationSource"
 }
 
 /// 双语译文只作为原文块的次级说明，不改变原 README 的字号层级和链接结构。

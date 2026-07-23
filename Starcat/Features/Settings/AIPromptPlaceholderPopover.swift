@@ -28,7 +28,10 @@ struct AIPromptPlaceholderCatalog {
     let footnoteKey: LocalizedStringKey?
 
     /// 按当前 Prompt 任务 tab 给出说明条目。
-    static func catalog(for task: AIModelTask) -> AIPromptPlaceholderCatalog {
+    static func catalog(
+        for task: AIModelTask,
+        translationMode: ReadmeTranslationMode = .segmented
+    ) -> AIPromptPlaceholderCatalog {
         switch task {
         case .summary:
             return AIPromptPlaceholderCatalog(
@@ -83,7 +86,17 @@ struct AIPromptPlaceholderCatalog {
             return AIPromptPlaceholderCatalog(
                 items: [
                     .init(token: "{targetLanguage}", systemImage: "globe", meaningKey: "settings.ai.prompt.placeholder.targetLanguage"),
-                    .init(token: "{readmeHTML}", systemImage: "doc.richtext", meaningKey: "settings.ai.prompt.placeholder.readmeHTML"),
+                    translationMode == .segmented
+                        ? .init(
+                            token: "{readmeSegments}",
+                            systemImage: "text.alignleft",
+                            meaningKey: "settings.ai.prompt.placeholder.readmeSegments"
+                        )
+                        : .init(
+                            token: "{readmeTextNodes}",
+                            systemImage: "text.page",
+                            meaningKey: "settings.ai.prompt.placeholder.readmeTextNodes"
+                        ),
                 ],
                 footnoteKey: "settings.ai.prompt.placeholders.footnote.translation"
             )

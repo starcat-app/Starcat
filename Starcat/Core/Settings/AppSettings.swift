@@ -827,6 +827,14 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.aiTranslationTask, value: aiTranslationTask) }
     }
 
+    /// README 全文翻译 Prompt。
+    ///
+    /// Provider、Model 与参数仍统一读取 `aiTranslationTask`；这里只单独保存全文模式
+    /// 的 system/user Prompt，避免为了两个模板复制整套任务配置。
+    var aiFullTranslationPrompt: AIPromptConfiguration {
+        didSet { persistJSON(key: Keys.aiFullTranslationPrompt, value: aiFullTranslationPrompt) }
+    }
+
     /// 对话任务模型配置（2026-06-14 v4 引入）。
     ///
     /// 之前对话路径直接复用 `aiSummaryTask` 的 model + 参数，system prompt 在
@@ -992,6 +1000,11 @@ final class AppSettings {
     /// 本地翻译缓存（按 `(repo_id, language)` 查表）。
     var readmeTranslationLanguage: ReadmeTranslationLanguage {
         didSet { persist(key: Keys.readmeTranslationLanguage, value: readmeTranslationLanguage.rawValue) }
+    }
+
+    /// README 翻译方式。默认分段翻译；用户可在详情页翻译下拉菜单切换。
+    var readmeTranslationMode: ReadmeTranslationMode {
+        didSet { persist(key: Keys.readmeTranslationMode, value: readmeTranslationMode.rawValue) }
     }
 
     /// Undo Star 历史保留天数（2026-07-05）。-1 = 永久不删。
@@ -1583,6 +1596,11 @@ final class AppSettings {
             persistedTranslationTask,
             defaults: defaults
         )
+        self.aiFullTranslationPrompt = Self.decodeJSON(
+            AIPromptConfiguration.self,
+            key: Keys.aiFullTranslationPrompt,
+            defaults: defaults
+        ) ?? AIDefaultPrompts.fullTranslation
         // 2026-06-14 v4：对话任务首次升级时与摘要使用同一 provider+model + summaryDefault
         // 参数（chat 跟摘要场景接近，参数没必要再分一套）。老用户没有 aiChatTask key →
         // decode 失败 fallback 到默认值，行为跟之前"复用 aiSummaryTask"基本等价（model 一致），
@@ -1662,6 +1680,10 @@ final class AppSettings {
         self.readmeTranslationLanguage = translationLangRaw
             .flatMap(ReadmeTranslationLanguage.init(rawValue:))
             ?? .defaultForCurrentLocale()
+        let translationModeRaw = defaults.string(forKey: Keys.readmeTranslationMode)
+        self.readmeTranslationMode = translationModeRaw
+            .flatMap(ReadmeTranslationMode.init(rawValue:))
+            ?? .segmented
 
         let retentionDays = defaults.integer(forKey: Keys.undoStarRetentionDays)
         self.undoStarRetentionDays = retentionDays == 0 ? 7 : retentionDays  // 首次默认 7 天
@@ -1881,6 +1903,7 @@ final class AppSettings {
         aiTagsTask = Self.makeDefaultTask(task: .tags, profileID: defaultProfile.id, modelName: chatModel)
         aiEmbeddingTask = Self.makeDefaultTask(task: .embedding, profileID: defaultProfile.id, modelName: embeddingModel)
         aiTranslationTask = Self.makeDefaultTask(task: .translation, profileID: defaultProfile.id, modelName: chatModel)
+        aiFullTranslationPrompt = AIDefaultPrompts.fullTranslation
         aiChatTask = Self.makeDefaultTask(task: .chat, profileID: defaultProfile.id, modelName: chatModel)
         ragBackendConfiguration = RAGBackendConfiguration()
         ragPromptSettings = .default
@@ -1904,6 +1927,7 @@ final class AppSettings {
         aiRepoContextMaximumArchiveMB = Self.defaultAIRepoContextMaximumArchiveMB
         snakeStyle = SnakeStyle.default
         readmeTranslationLanguage = .defaultForCurrentLocale()
+        readmeTranslationMode = .segmented
         disableAnimations = false
         hideDockIcon = false
         aiChatRequiresCommandReturn = false
@@ -2264,6 +2288,7 @@ final class AppSettings {
         static let aiTagsTask = "settings.ai.task.tags.v2"
         static let aiEmbeddingTask = "settings.ai.task.embedding.v2"
         static let aiTranslationTask = "settings.ai.task.translation.v2"  // HOM-68 follow-up
+        static let aiFullTranslationPrompt = "settings.ai.prompt.translation.full.v1"
         static let aiChatTask = "settings.ai.task.chat.v1"  // 2026-06-14 v4 占位符化（chat 提到 task 平级）
         static let ragBackendConfiguration = "settings.ai.rag.backends.v1"
         static let ragPromptSettings = "settings.rag.prompts.v1"
@@ -2282,6 +2307,7 @@ final class AppSettings {
         static let externalSearchProviderSettings = "settings.externalSearch.providerSettings.v1"
         static let snakeStyle = "settings.contribution.snakeStyle"  // HOM-SNAKE-MODES
         static let readmeTranslationLanguage = "settings.readme.translation.language"  // HOM-68
+        static let readmeTranslationMode = "settings.readme.translation.mode.v1"
         static let undoStarRetentionDays = "settings.undoStar.retentionDays"  // 2026-07-05
         static let isProUser = "settings.pro.isProUser"  // HOM-151
         static let disableAnimations = "settings.general.disableAnimations.v1"  // 2026-06-15
@@ -2361,6 +2387,7 @@ final class AppSettings {
             aiTagsTask,
             aiEmbeddingTask,
             aiTranslationTask,
+            aiFullTranslationPrompt,
             aiChatTask,
             ragBackendConfiguration,
             ragPromptSettings,
@@ -2379,6 +2406,7 @@ final class AppSettings {
             externalSearchProviderSettings,
             snakeStyle,
             readmeTranslationLanguage,
+            readmeTranslationMode,
             isProUser,
             disableAnimations,
             hideDockIcon,

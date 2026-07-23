@@ -64,6 +64,8 @@ struct AISettingsTab: View {
     @State private var isTestingProfileID: String?
     @State private var keyError: String?
     @State private var promptTask: AIModelTask = .summary
+    /// 翻译 Prompt 的二级 Tab。只切换 Prompt，不复制 Provider / Model / 参数配置。
+    @State private var translationPromptMode: ReadmeTranslationMode = .segmented
     /// Prompt 区「可用占位符」popover；切换任务时关闭，避免旧任务说明残留。
     @State private var isPromptPlaceholderPopoverPresented = false
 
@@ -338,7 +340,7 @@ struct AISettingsTab: View {
     /// set 时支持外部把它置 false（点 macOS 系统返回 / 点空白处关 dialog），
     /// 同步清掉 `pendingDeleteProfileID` 避免下次再弹时残留旧目标。
     private var deleteConfirmationBinding: Binding<Bool> {
-        Binding(
+        return Binding(
             get: { pendingDeleteProfileID != nil },
             set: { isPresented in
                 if !isPresented {
@@ -1120,7 +1122,7 @@ struct AISettingsTab: View {
     /// 通用 binding helper：把 `AutoTidySettings` 的某个 keyPath 绑成可写 Binding。
     /// 写入时整段 settings 重新赋值，触发 `AppSettings.autoTidySettings.didSet` 持久化。
     private func autoTidyBinding<T>(_ keyPath: WritableKeyPath<AutoTidySettings, T>) -> Binding<T> {
-        Binding(
+        return Binding(
             get: { self.settings.autoTidySettings[keyPath: keyPath] },
             set: { newValue in
                 var s = self.settings.autoTidySettings
@@ -1190,6 +1192,23 @@ struct AISettingsTab: View {
                     }
                     .padding(.vertical, 10)
 
+                    if promptTask == .translation {
+                        Divider()
+
+                        // 翻译任务包含两套独立 Prompt。二级 Tab 必须放在 Prompt 区，
+                        // 紧跟一级任务 Tab，避免误落到“模型配置”后在当前面板不可见。
+                        EqualWidthSegmentedControl(
+                            items: ReadmeTranslationMode.allCases,
+                            selection: $translationPromptMode,
+                            title: { LocalizedStringKey($0.displayNameKey) }
+                        )
+                        .accessibilityLabel("settings.ai.prompt.translation.mode.pickerLabel")
+                        // 二级 Tab 只有两个短选项，限制宽度并居中，避免随面板横向拉伸成两个大色块。
+                        .frame(maxWidth: 320)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 10)
+                    }
+
                     Divider()
 
                     VStack(alignment: .leading, spacing: 6) {
@@ -1249,6 +1268,9 @@ struct AISettingsTab: View {
                 .onChange(of: promptTask) { _, _ in
                     isPromptPlaceholderPopoverPresented = false
                 }
+                .onChange(of: translationPromptMode) { _, _ in
+                    isPromptPlaceholderPopoverPresented = false
+                }
             } label: {
                 disclosureLabel("settings.ai.prompt.title", systemImage: "text.quote", isExpanded: $isPromptExpanded)
             }
@@ -1275,7 +1297,10 @@ struct AISettingsTab: View {
         .focusEffectDisabled()
         .help("settings.ai.prompt.placeholders.openHelp")
         .popover(isPresented: $isPromptPlaceholderPopoverPresented, arrowEdge: .top) {
-            AIPromptPlaceholderPopover(catalog: AIPromptPlaceholderCatalog.catalog(for: promptTask))
+            AIPromptPlaceholderPopover(catalog: AIPromptPlaceholderCatalog.catalog(
+                for: promptTask,
+                translationMode: translationPromptMode
+            ))
                 .appLocaleEnvironment()
         }
     }
@@ -2405,6 +2430,11 @@ struct AISettingsTab: View {
     }
 
     private func restoreDefaultPrompt(_ task: AIModelTask) {
+        if task == .translation, translationPromptMode == .full {
+            settings.aiFullTranslationPrompt = AIDefaultPrompts.fullTranslation
+            return
+        }
+
         updateTask(task) { config in
             switch task {
             case .summary:
@@ -2416,8 +2446,7 @@ struct AISettingsTab: View {
             case .chat:
                 config.prompt = AIDefaultPrompts.chat
             case .translation:
-                // README 翻译的 Prompt 由 ReadmeTranslationService 按目标语言动态渲染
-                // `{targetLanguage}` / `{readmeHTML}`，但模板本身仍暴露在 Prompt 编辑区。
+                // 分段与全文使用独立 Prompt；全文分支已在函数开头单独写回。
                 config.prompt = AIDefaultPrompts.translation
             }
         }
@@ -2642,14 +2671,34 @@ struct AISettingsTab: View {
     }
 
     private func promptSystemBinding(_ task: AIModelTask) -> Binding<String> {
-        Binding(
+        if task == .translation, translationPromptMode == .full {
+            return Binding(
+                get: { settings.aiFullTranslationPrompt.systemPrompt },
+                set: { value in
+                    var prompt = settings.aiFullTranslationPrompt
+                    prompt.systemPrompt = value
+                    settings.aiFullTranslationPrompt = prompt
+                }
+            )
+        }
+        return Binding(
             get: { taskConfig(task).prompt.systemPrompt },
             set: { value in updateTask(task) { $0.prompt.systemPrompt = value } }
         )
     }
 
     private func promptUserBinding(_ task: AIModelTask) -> Binding<String> {
-        Binding(
+        if task == .translation, translationPromptMode == .full {
+            return Binding(
+                get: { settings.aiFullTranslationPrompt.userPromptTemplate },
+                set: { value in
+                    var prompt = settings.aiFullTranslationPrompt
+                    prompt.userPromptTemplate = value
+                    settings.aiFullTranslationPrompt = prompt
+                }
+            )
+        }
+        return Binding(
             get: { taskConfig(task).prompt.userPromptTemplate },
             set: { value in updateTask(task) { $0.prompt.userPromptTemplate = value } }
         )

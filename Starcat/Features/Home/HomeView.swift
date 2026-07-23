@@ -609,6 +609,10 @@ struct HomeView: View {
         .onChange(of: settings.readmeTranslationLanguage) { _, newLanguage in
             handleReadmeTranslationLanguageChange(newLanguage)
         }
+        // 翻译方式切换后恢复原文，并重新检查该模式自己的缓存。
+        .onChange(of: settings.readmeTranslationMode) { _, newMode in
+            handleReadmeTranslationModeChange(newMode)
+        }
         )
     }
 
@@ -1296,14 +1300,16 @@ struct HomeView: View {
             translationVM.prepare(
                 repo: repo,
                 sourceHtml: nil,
-                targetLanguage: settings.readmeTranslationLanguage
+                targetLanguage: settings.readmeTranslationLanguage,
+                mode: settings.readmeTranslationMode
             )
         } else {
             readmeVM.reset()
             translationVM.prepare(
                 repo: nil,
                 sourceHtml: nil,
-                targetLanguage: settings.readmeTranslationLanguage
+                targetLanguage: settings.readmeTranslationLanguage,
+                mode: settings.readmeTranslationMode
             )
         }
     }
@@ -1328,7 +1334,8 @@ struct HomeView: View {
         translationVM.prepare(
             repo: nil,
             sourceHtml: nil,
-            targetLanguage: settings.readmeTranslationLanguage
+            targetLanguage: settings.readmeTranslationLanguage,
+            mode: settings.readmeTranslationMode
         )
     }
 
@@ -1338,7 +1345,8 @@ struct HomeView: View {
             translationVM.prepare(
                 repo: repo,
                 sourceHtml: html,
-                targetLanguage: settings.readmeTranslationLanguage
+                targetLanguage: settings.readmeTranslationLanguage,
+                mode: settings.readmeTranslationMode
             )
         }
     }
@@ -1352,7 +1360,22 @@ struct HomeView: View {
         translationVM.changeLanguage(
             to: newLanguage,
             repo: repo,
-            sourceHtml: html
+            sourceHtml: html,
+            mode: settings.readmeTranslationMode
+        )
+    }
+
+    private func handleReadmeTranslationModeChange(_ newMode: ReadmeTranslationMode) {
+        guard let repo = viewModel.selectedRepo else { return }
+        let html: String? = {
+            if case .loaded(let value, _) = readmeVM.state { return value }
+            return nil
+        }()
+        translationVM.changeMode(
+            to: newMode,
+            repo: repo,
+            sourceHtml: html,
+            targetLanguage: settings.readmeTranslationLanguage
         )
     }
 

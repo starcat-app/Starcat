@@ -2,11 +2,11 @@
 //  ReadmeTranslation.swift
 //  Starcat
 //
-//  README 分段翻译数据模型。
+//  README 翻译数据模型。
 //
 //  模块职责：
-//  - 表达 WebView 从已渲染 README 中提取的可翻译段落；
-//  - 表达 AI 返回的“源段落指纹 → 译文”缓存，供双语分段和未来全文模式共同复用；
+//  - 表达 WebView 从已渲染 README 中提取的分段块与全文文本节点；
+//  - 表达 AI 返回的“源文本指纹 → 译文”缓存；
 //  - 表达 SwiftUI 传给 WKWebView 的增量渲染状态。
 //
 //  关键约束：
@@ -17,6 +17,41 @@
 
 import CryptoKit
 import Foundation
+
+/// README 翻译方式。
+///
+/// 两种方式都只把纯文本分批发送给 AI；区别仅在 DOM 呈现：
+/// - `segmented`：保留原文，并在段落下方追加译文；
+/// - `full`：把可见文本节点替换为译文，原 HTML 结构与非文本属性保持不变。
+enum ReadmeTranslationMode: String, CaseIterable, Identifiable, Codable, Sendable {
+    case segmented
+    case full
+
+    var id: String { rawValue }
+
+    var displayNameKey: String {
+        switch self {
+        case .segmented: return "readme.translate.mode.segmented"
+        case .full:      return "readme.translate.mode.full"
+        }
+    }
+
+    /// 分段模式沿用历史 `<language>.json`，让已生成缓存继续命中；
+    /// 全文模式增加后缀，避免不同粒度的源文本指纹互相覆盖。
+    var cacheFileSuffix: String {
+        switch self {
+        case .segmented: return ""
+        case .full:      return ".full"
+        }
+    }
+
+    var usagePhase: String {
+        switch self {
+        case .segmented: return "segmented_translation"
+        case .full:      return "full_translation"
+        }
+    }
+}
 
 /// WebView 从当前 README DOM 中提取的一段可见自然语言。
 struct ReadmeSourceSegment: Codable, Equatable, Identifiable, Sendable {
@@ -36,6 +71,24 @@ struct ReadmeSourceSegment: Codable, Equatable, Identifiable, Sendable {
     private static func hash(_ text: String) -> String {
         let digest = SHA256.hash(data: Data(text.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+/// 同一份 README 为两种翻译方式准备的纯文本输入。
+///
+/// 分段模式按块提取，适合原文/译文对照；全文模式按 Text node 提取，替换时不会破坏
+/// inline link、图片、代码块与 HTML attribute。两组输入都只在用户点击翻译后发给 AI。
+struct ReadmeTranslationSourceSnapshot: Equatable, Sendable {
+    var segmented: [ReadmeSourceSegment]
+    var full: [ReadmeSourceSegment]
+
+    static let empty = ReadmeTranslationSourceSnapshot(segmented: [], full: [])
+
+    func segments(for mode: ReadmeTranslationMode) -> [ReadmeSourceSegment] {
+        switch mode {
+        case .segmented: return segmented
+        case .full:      return full
+        }
     }
 }
 
@@ -63,11 +116,13 @@ struct ReadmeRenderedTranslation: Equatable, Sendable {
 /// `revision` 只用于让 Representable 判断内容是否变化；它不落盘，也不参与业务缓存。
 struct ReadmeTranslationRenderState: Equatable, Sendable {
     var isVisible: Bool
+    var mode: ReadmeTranslationMode
     var translations: [ReadmeRenderedTranslation]
     var revision: Int
 
     static let hidden = ReadmeTranslationRenderState(
         isVisible: false,
+        mode: .segmented,
         translations: [],
         revision: 0
     )

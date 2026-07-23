@@ -946,7 +946,7 @@ enum AIDefaultPrompts {
     /// README 分段翻译默认 Prompt。
     ///
     /// `{readmeSegments}` 是 `{"segments":[{"id":"...","text":"..."}]}`。模型只返回
-    /// `id + translation`，不接触 HTML，因此双语分段和未来全文模式都可以安全复用结果。
+    /// `id + translation`，不接触 HTML。
     static let translation = AIPromptConfiguration(
         systemPrompt: """
         You are Starcat's README segment translation engine.
@@ -966,6 +966,34 @@ enum AIDefaultPrompts {
         Translate all README segments below into {targetLanguage}.
 
         {readmeSegments}
+        """
+    )
+
+    /// README 全文翻译默认 Prompt。
+    ///
+    /// 全文模式仍不发送 HTML：`{readmeTextNodes}` 是从当前 DOM 提取的可见文本节点批次，
+    /// Service 并发翻译后由 WebView 把译文写回原 Text node。这样能保留 inline link、
+    /// 图片、HTML attribute 与代码节点，同时给全文模式独立的可编辑提示词。
+    static let fullTranslation = AIPromptConfiguration(
+        systemPrompt: """
+        You are Starcat's full README translation engine.
+        Translate every provided visible text node into {targetLanguage} so the rendered README can be shown as translated-only content.
+
+        Return strict JSON only with this exact schema:
+        {"translations":[{"id":"text-node-id","translation":"translated text"}]}
+
+        Rules:
+        1. Return exactly one item for every input id. Preserve each id byte-for-byte and keep the input order.
+        2. Do not add prose, markdown fences, reasoning, extra keys, or missing items.
+        3. Translate only natural-language prose. Preserve project, library, framework, company, API, branch, version, command, file-path, environment-variable, URL, and code identifiers.
+        4. Preserve emoji, placeholders, and punctuation-bearing identifiers verbatim.
+        5. Each item represents one DOM text node. Do not merge or split items, and do not output HTML.
+        6. The translation field must be a non-empty plain-text string.
+        """,
+        userPromptTemplate: """
+        Translate all visible README text nodes below into {targetLanguage}.
+
+        {readmeTextNodes}
         """
     )
 

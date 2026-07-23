@@ -2,17 +2,17 @@
 //  ReadmeTranslationViewModel.swift
 //  Starcat
 //
-//  README 分段翻译 UI 状态机。
+//  README 翻译 UI 状态机。
 //
 //  模块职责：
-//  - 控制“原文 / 原文下显示译文”的双语展示；
+//  - 控制“原文 / 分段双语 / 全文译文”的展示；
 //  - 把 WebView 提取的源段落交给 Service，并在每批完成后增量更新 DOM 渲染状态；
 //  - 维护进度、取消、缓存过期和错误提示。
 //
 //  关键约束：
 //  - SwiftUI 是翻译状态的单一来源；WKWebView 只执行段落提取和 DOM 注入；
 //  - 取消不会清掉已完成段落，Service 已逐批落盘，下次点击从缺失段落继续；
-//  - repo 或语言切换后，旧异步回调必须通过 repoId + language 守门，不能串到新页面。
+//  - repo、语言或翻译方式切换后，旧异步回调必须通过三者守门，不能串到新页面。
 //
 
 import Foundation
@@ -23,7 +23,11 @@ final class ReadmeTranslationViewModel {
 
     enum DisplayMode: Equatable {
         case showingOriginal
-        case showingBilingual(language: ReadmeTranslationLanguage, createdAt: Date)
+        case showingTranslation(
+            mode: ReadmeTranslationMode,
+            language: ReadmeTranslationLanguage,
+            createdAt: Date
+        )
     }
 
     enum TranslationErrorKind {
@@ -44,6 +48,7 @@ final class ReadmeTranslationViewModel {
 
     private var currentRepoId: Int64?
     private var currentLanguage: ReadmeTranslationLanguage?
+    private var currentMode: ReadmeTranslationMode?
     private var currentTask: Task<Void, Never>?
     private var renderRevision = 0
     private let service: ReadmeTranslationService
@@ -57,7 +62,8 @@ final class ReadmeTranslationViewModel {
     func prepare(
         repo: Repo?,
         sourceHtml: String?,
-        targetLanguage: ReadmeTranslationLanguage
+        targetLanguage: ReadmeTranslationLanguage,
+        mode: ReadmeTranslationMode
     ) {
         currentTask?.cancel()
         currentTask = nil
@@ -73,24 +79,29 @@ final class ReadmeTranslationViewModel {
         guard let repo else {
             currentRepoId = nil
             currentLanguage = nil
+            currentMode = nil
             return
         }
         currentRepoId = repo.id
         currentLanguage = targetLanguage
+        currentMode = mode
 
         let requestedRepoId = repo.id
         let requestedLanguage = targetLanguage
+        let requestedMode = mode
         currentTask = Task { [weak self] in
             guard let self else { return }
             do {
                 let cached = try await self.service.cachedTranslation(
                     owner: repo.owner,
                     repo: repo.name,
-                    targetLanguage: requestedLanguage
+                    targetLanguage: requestedLanguage,
+                    mode: requestedMode
                 )
                 guard !Task.isCancelled,
                       self.currentRepoId == requestedRepoId,
-                      self.currentLanguage == requestedLanguage
+                      self.currentLanguage == requestedLanguage,
+                      self.currentMode == requestedMode
                 else { return }
 
                 if let cached, let sourceHtml, !sourceHtml.isEmpty {
@@ -110,9 +121,29 @@ final class ReadmeTranslationViewModel {
     func changeLanguage(
         to language: ReadmeTranslationLanguage,
         repo: Repo?,
-        sourceHtml: String?
+        sourceHtml: String?,
+        mode: ReadmeTranslationMode
     ) {
-        prepare(repo: repo, sourceHtml: sourceHtml, targetLanguage: language)
+        prepare(
+            repo: repo,
+            sourceHtml: sourceHtml,
+            targetLanguage: language,
+            mode: mode
+        )
+    }
+
+    func changeMode(
+        to mode: ReadmeTranslationMode,
+        repo: Repo?,
+        sourceHtml: String?,
+        targetLanguage: ReadmeTranslationLanguage
+    ) {
+        prepare(
+            repo: repo,
+            sourceHtml: sourceHtml,
+            targetLanguage: targetLanguage,
+            mode: mode
+        )
     }
 
     // MARK: - 用户操作
@@ -121,11 +152,16 @@ final class ReadmeTranslationViewModel {
         repo: Repo,
         sourceHtml: String,
         sourceSegments: [ReadmeSourceSegment],
-        targetLanguage: ReadmeTranslationLanguage
+        targetLanguage: ReadmeTranslationLanguage,
+        mode: ReadmeTranslationMode
     ) {
-        if case .showingBilingual = displayMode {
+        if case .showingTranslation = displayMode {
             displayMode = .showingOriginal
-            publishRenderState(isVisible: false, translations: renderState.translations)
+            publishRenderState(
+                isVisible: false,
+                mode: mode,
+                translations: renderState.translations
+            )
             return
         }
 
@@ -134,6 +170,7 @@ final class ReadmeTranslationViewModel {
             sourceHtml: sourceHtml,
             sourceSegments: sourceSegments,
             targetLanguage: targetLanguage,
+            mode: mode,
             force: false
         )
     }
@@ -142,13 +179,15 @@ final class ReadmeTranslationViewModel {
         repo: Repo,
         sourceHtml: String,
         sourceSegments: [ReadmeSourceSegment],
-        targetLanguage: ReadmeTranslationLanguage
+        targetLanguage: ReadmeTranslationLanguage,
+        mode: ReadmeTranslationMode
     ) {
         startTranslation(
             repo: repo,
             sourceHtml: sourceHtml,
             sourceSegments: sourceSegments,
             targetLanguage: targetLanguage,
+            mode: mode,
             force: true
         )
     }
@@ -179,11 +218,13 @@ final class ReadmeTranslationViewModel {
         sourceHtml: String,
         sourceSegments: [ReadmeSourceSegment],
         targetLanguage: ReadmeTranslationLanguage,
+        mode: ReadmeTranslationMode,
         force: Bool
     ) {
         currentTask?.cancel()
         currentRepoId = repo.id
         currentLanguage = targetLanguage
+        currentMode = mode
         errorMessage = nil
         translationErrorKind = .none
         isTranslating = true
@@ -196,6 +237,7 @@ final class ReadmeTranslationViewModel {
                 sourceHtml: sourceHtml,
                 sourceSegments: sourceSegments,
                 targetLanguage: targetLanguage,
+                mode: mode,
                 force: force
             )
         }
@@ -206,16 +248,19 @@ final class ReadmeTranslationViewModel {
         sourceHtml: String,
         sourceSegments: [ReadmeSourceSegment],
         targetLanguage: ReadmeTranslationLanguage,
+        mode: ReadmeTranslationMode,
         force: Bool
     ) async {
         let requestedRepoId = repo.id
         let requestedLanguage = targetLanguage
+        let requestedMode = mode
 
         do {
             let cached = force ? nil : try await service.cachedTranslation(
                 owner: repo.owner,
                 repo: repo.name,
-                targetLanguage: targetLanguage
+                targetLanguage: targetLanguage,
+                mode: mode
             )
 
             if let cached {
@@ -226,6 +271,7 @@ final class ReadmeTranslationViewModel {
                 if !rendered.isEmpty {
                     applyTranslations(
                         rendered,
+                        mode: mode,
                         language: targetLanguage,
                         createdAt: cachedCreatedAt(cached)
                     )
@@ -246,18 +292,21 @@ final class ReadmeTranslationViewModel {
                     repo: repo,
                     sourceHtml: sourceHtml,
                     sourceSegments: sourceSegments,
-                    targetLanguage: targetLanguage
+                    targetLanguage: targetLanguage,
+                    mode: mode
                 ),
                 cached: cached,
                 onBatch: { [weak self] rendered, completed, total in
                     guard let self,
                           self.currentRepoId == requestedRepoId,
-                          self.currentLanguage == requestedLanguage
+                          self.currentLanguage == requestedLanguage,
+                          self.currentMode == requestedMode
                     else { return }
                     self.completedSegmentCount = completed
                     self.totalSegmentCount = total
                     self.applyTranslations(
                         rendered,
+                        mode: mode,
                         language: targetLanguage,
                         createdAt: Date()
                     )
@@ -265,12 +314,14 @@ final class ReadmeTranslationViewModel {
             )
 
             guard currentRepoId == requestedRepoId,
-                  currentLanguage == requestedLanguage
+                  currentLanguage == requestedLanguage,
+                  currentMode == requestedMode
             else { return }
 
             let rendered = service.renderedTranslations(from: record, matching: sourceSegments)
             applyTranslations(
                 rendered,
+                mode: mode,
                 language: targetLanguage,
                 createdAt: cachedCreatedAt(record)
             )
@@ -282,7 +333,8 @@ final class ReadmeTranslationViewModel {
             // 主动取消不是错误；状态已经由 cancelTranslation 立即复位。
         } catch {
             guard currentRepoId == requestedRepoId,
-                  currentLanguage == requestedLanguage
+                  currentLanguage == requestedLanguage,
+                  currentMode == requestedMode
             else { return }
             isTranslating = false
             currentTask = nil
@@ -304,22 +356,25 @@ final class ReadmeTranslationViewModel {
 
     private func applyTranslations(
         _ translations: [ReadmeRenderedTranslation],
+        mode: ReadmeTranslationMode,
         language: ReadmeTranslationLanguage,
         createdAt: Date
     ) {
         guard !translations.isEmpty else { return }
-        displayMode = .showingBilingual(language: language, createdAt: createdAt)
-        publishRenderState(isVisible: true, translations: translations)
+        displayMode = .showingTranslation(mode: mode, language: language, createdAt: createdAt)
+        publishRenderState(isVisible: true, mode: mode, translations: translations)
         errorMessage = nil
     }
 
     private func publishRenderState(
         isVisible: Bool,
+        mode: ReadmeTranslationMode,
         translations: [ReadmeRenderedTranslation]
     ) {
         renderRevision &+= 1
         renderState = ReadmeTranslationRenderState(
             isVisible: isVisible,
+            mode: mode,
             translations: translations,
             revision: renderRevision
         )

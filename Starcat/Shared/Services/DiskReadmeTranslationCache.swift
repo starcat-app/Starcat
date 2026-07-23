@@ -5,7 +5,7 @@
 //  README AI 翻译磁盘缓存（HOM-68 v2 / 2026-06-15 砍 DB 走纯磁盘）。
 //
 //  模块职责：
-//  - 把分段翻译产物落盘到 `~/Library/Application Support/com.starcat.app/translations-cache/<owner>/<repo>/<lang>.json`；
+//  - 把翻译产物落盘到 `~/Library/Application Support/com.starcat.app/translations-cache/<owner>/<repo>/<lang>[.full].json`；
 //  - 提供 find / upsert / delete / deleteAll(repo) / deleteEverything（4+1）接口给
 //    `ReadmeTranslationService` 走业务；
 //  - 暴露 `totalBytes` / `itemCount` / `latestCreatedAt` 三个 `@Observable` 派生量
@@ -80,7 +80,7 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
     /// 全部分段翻译 JSON 总字节数。
     private(set) var totalBytes: Int64 = 0
 
-    /// 缓存条目数（按 `(owner, repo, lang)` 元组计）。
+    /// 缓存条目数（按 `(owner, repo, lang, mode)` 元组计）。
     private(set) var itemCount: Int = 0
 
     /// 最近一次创建时间（取所有条目 metadata.createdAt 的最大值）。nil 表示空缓存。
@@ -118,12 +118,22 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
 
     // MARK: - ReadmeTranslationRepositoryProtocol
 
-    /// 查 `<owner>/<repo>/<targetLanguage>.json`；命中时同时 `touch` mtime。
+    /// 查 `<owner>/<repo>/<targetLanguage>[.full].json`；命中时同时 `touch` mtime。
     ///
     /// **为什么不存 lastAccessedAt 字段**：那样每次命中都要重写 ~300B JSON，IO 浪费；
     /// 用文件 mtime 表达"最近访问"是 POSIX 标准做法，0 解析成本。
-    func find(owner: String, repo: String, targetLanguage: String) async throws -> ReadmeTranslation? {
-        let metadataURL = try metadataFile(owner: owner, repo: repo, targetLanguage: targetLanguage)
+    func find(
+        owner: String,
+        repo: String,
+        targetLanguage: String,
+        mode: ReadmeTranslationMode = .segmented
+    ) async throws -> ReadmeTranslation? {
+        let metadataURL = try metadataFile(
+            owner: owner,
+            repo: repo,
+            targetLanguage: targetLanguage,
+            mode: mode
+        )
         guard fileManager.fileExists(atPath: metadataURL.path) else { return nil }
 
         let data: Data
@@ -158,15 +168,21 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
     }
 
     /// 原子写入单个 v2 JSON，并删除同名旧 `.html` 残留。
-    func upsert(_ translation: ReadmeTranslation, owner: String, repo: String) async throws {
+    func upsert(
+        _ translation: ReadmeTranslation,
+        owner: String,
+        repo: String,
+        mode: ReadmeTranslationMode = .segmented
+    ) async throws {
         let dir = try projectDirectory(owner: owner, repo: repo)
         try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
 
-        let metadataURL = dir.appendingPathComponent("\(translation.targetLanguage).json")
+        let cacheName = translation.targetLanguage + mode.cacheFileSuffix
+        let metadataURL = dir.appendingPathComponent("\(cacheName).json")
         let metadataData = try encoder.encode(translation)
         try metadataData.write(to: metadataURL, options: .atomic)
         try? fileManager.removeItem(
-            at: dir.appendingPathComponent("\(translation.targetLanguage).html")
+            at: dir.appendingPathComponent("\(cacheName).html")
         )
 
         upsertCountSinceLastSweep += 1
@@ -175,8 +191,18 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
     }
 
     /// 删某仓库的某个语言版本（用户主动"丢弃译文"入口；当前 UI 暂不接，但留接口）。
-    func delete(owner: String, repo: String, targetLanguage: String) async throws {
-        let metadataURL = try metadataFile(owner: owner, repo: repo, targetLanguage: targetLanguage)
+    func delete(
+        owner: String,
+        repo: String,
+        targetLanguage: String,
+        mode: ReadmeTranslationMode = .segmented
+    ) async throws {
+        let metadataURL = try metadataFile(
+            owner: owner,
+            repo: repo,
+            targetLanguage: targetLanguage,
+            mode: mode
+        )
         try? fileManager.removeItem(at: metadataURL)
         try? fileManager.removeItem(at: metadataURL.deletingPathExtension().appendingPathExtension("html"))
         try? removeEmptyProjectDirectory(owner: owner, repo: repo)
@@ -402,10 +428,16 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
         return try ownerDirectory(owner: owner).appendingPathComponent(repo, isDirectory: true)
     }
 
-    private func metadataFile(owner: String, repo: String, targetLanguage: String) throws -> URL {
+    private func metadataFile(
+        owner: String,
+        repo: String,
+        targetLanguage: String,
+        mode: ReadmeTranslationMode
+    ) throws -> URL {
         try assertSafePathComponent(targetLanguage)
+        let cacheName = targetLanguage + mode.cacheFileSuffix
         return try projectDirectory(owner: owner, repo: repo)
-            .appendingPathComponent("\(targetLanguage).json")
+            .appendingPathComponent("\(cacheName).json")
     }
 
     /// 防御 path traversal：禁止 `.` / `..` / `/` 出现在 path component 中。

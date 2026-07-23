@@ -175,6 +175,16 @@ struct ReadmeTranslationServiceStaticTests {
         #expect(rendered == "lang=English; body=JSON")
     }
 
+    @Test("renderTemplate：全文 Prompt 的 {readmeTextNodes} 注入纯文本节点 JSON")
+    func renderTemplateSupportsFullTextNodesPlaceholder() {
+        let rendered = ReadmeTranslationService.renderTemplate(
+            "lang={targetLanguage}; nodes={readmeTextNodes}",
+            targetLanguage: .simplifiedChinese,
+            sourceSegmentsJSON: "JSON"
+        )
+        #expect(rendered == "lang=Simplified Chinese; nodes=JSON")
+    }
+
     @Test("AIDefaultPrompts.translation：要求严格 JSON 与逐 id 返回")
     func defaultTranslationPromptShape() {
         let prompt = AIDefaultPrompts.translation
@@ -183,6 +193,16 @@ struct ReadmeTranslationServiceStaticTests {
         #expect(prompt.systemPrompt.contains(#""translations""#))
         #expect(prompt.systemPrompt.contains("Preserve each id"))
         #expect(prompt.userPromptTemplate.contains(ReadmeTranslationService.readmeSegmentsPlaceholder))
+    }
+
+    @Test("AIDefaultPrompts.fullTranslation：不接收 HTML，并要求逐文本节点返回")
+    func defaultFullTranslationPromptShape() {
+        let prompt = AIDefaultPrompts.fullTranslation
+        #expect(prompt.systemPrompt.contains(ReadmeTranslationService.targetLanguagePlaceholder))
+        #expect(prompt.systemPrompt.contains("strict JSON"))
+        #expect(prompt.systemPrompt.contains("text node"))
+        #expect(prompt.systemPrompt.contains("do not output HTML"))
+        #expect(prompt.userPromptTemplate.contains(ReadmeTranslationService.readmeTextNodesPlaceholder))
     }
 
     @Test("makeBatches：首批最多 5 段，后续最多 10 段且不漏段")
@@ -195,6 +215,11 @@ struct ReadmeTranslationServiceStaticTests {
         #expect(batches.first?.count == 5)
         #expect(batches.dropFirst().allSatisfy { $0.count <= 10 })
         #expect(batches.flatMap { $0 }.map(\.id) == segments.map(\.id))
+    }
+
+    @Test("后续批次并发上限固定为 4")
+    func concurrentBatchLimitIsFour() {
+        #expect(ReadmeTranslationService.maxConcurrentBatchCount == 4)
     }
 
     // MARK: - effectivePromptConfiguration 回退兜底
@@ -231,6 +256,17 @@ struct ReadmeTranslationServiceStaticTests {
             ReadmeTranslationService.effectivePromptConfiguration(
                 AIDefaultPrompts.legacyTranslationHTMLV1
             ) == AIDefaultPrompts.translation
+        )
+    }
+
+    @Test("effectivePromptConfiguration：全文 Prompt 清空时回退全文默认值")
+    func effectiveFullPromptFallsBackToFullDefault() {
+        let empty = AIPromptConfiguration(systemPrompt: "", userPromptTemplate: "")
+        #expect(
+            ReadmeTranslationService.effectivePromptConfiguration(
+                empty,
+                mode: .full
+            ) == AIDefaultPrompts.fullTranslation
         )
     }
 }
@@ -472,6 +508,41 @@ struct AppSettingsTranslationTaskTests {
         #expect(reloaded.aiTranslationTask.providerID == "test-profile-id")
         #expect(reloaded.aiTranslationTask.modelID == "gpt-4o-translation")
         #expect(reloaded.aiTranslationTask.parameters.temperature == 0.05)
+    }
+
+    @Test("全文 Prompt 独立持久化，不改动分段 Prompt 与任务模型")
+    func fullTranslationPromptIsPersistedIndependently() {
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let first = AppSettings(defaults: defaults)
+        let segmentedPrompt = first.aiTranslationTask.prompt
+        let providerID = first.aiTranslationTask.providerID
+        let custom = AIPromptConfiguration(
+            systemPrompt: "Full system {targetLanguage}",
+            userPromptTemplate: "Full nodes {readmeTextNodes}"
+        )
+
+        first.aiFullTranslationPrompt = custom
+
+        let reloaded = AppSettings(defaults: defaults)
+        #expect(reloaded.aiFullTranslationPrompt == custom)
+        #expect(reloaded.aiTranslationTask.prompt == segmentedPrompt)
+        #expect(reloaded.aiTranslationTask.providerID == providerID)
+    }
+
+    @Test("README 翻译方式默认分段并可独立持久化")
+    func translationModeDefaultsAndPersists() {
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let first = AppSettings(defaults: defaults)
+        #expect(first.readmeTranslationMode == .segmented)
+
+        first.readmeTranslationMode = .full
+
+        let reloaded = AppSettings(defaults: defaults)
+        #expect(reloaded.readmeTranslationMode == .full)
     }
 
     @Test("旧整页 HTML 默认 Prompt 只迁移 Prompt，保留 Provider 与 Model")

@@ -5,8 +5,8 @@
 //  覆盖 DiskReadmeTranslationCache CRUD + LRU + 损坏兜底（HOM-68 v2 / 2026-06-15）。
 //
 //  关注点：
-//  - `(owner, repo, target_language)` 元组等价 PK：同 (owner, repo) 不同语言可并存；
-//    同 (owner, repo) 同语言 upsert 覆盖；
+//  - `(owner, repo, target_language, mode)` 元组等价 PK：不同语言/模式可并存；
+//    同 (owner, repo) 同语言同模式 upsert 覆盖；
 //  - delete(owner:repo:targetLanguage:) 只删指定语言记录，其他语言保留；
 //  - deleteAll(owner:repo:) 清空该 (owner, repo) 所有语言译文；
 //  - deleteEverything() 一次性清空整个磁盘缓存；
@@ -146,6 +146,41 @@ struct ReadmeTranslationRepositoryTests {
         let ja = try await cache.find(owner: "octo", repo: "demo", targetLanguage: "ja")
         #expect(zh?.segments.first?.translatedText == "你好")
         #expect(ja?.segments.first?.translatedText == "こんにちは")
+        #expect(cache.itemCount == 2)
+    }
+
+    @Test("同仓库同语言的分段与全文缓存互相隔离")
+    func translationModesCoexist() async throws {
+        let (cache, root) = try makeIsolatedCache()
+        defer { cleanup(root) }
+        try await cache.upsert(
+            makeTranslation(lang: "zh-Hans", text: "分段译文"),
+            owner: "octo",
+            repo: "demo",
+            mode: .segmented
+        )
+        try await cache.upsert(
+            makeTranslation(lang: "zh-Hans", text: "全文译文"),
+            owner: "octo",
+            repo: "demo",
+            mode: .full
+        )
+
+        let segmented = try await cache.find(
+            owner: "octo",
+            repo: "demo",
+            targetLanguage: "zh-Hans",
+            mode: .segmented
+        )
+        let full = try await cache.find(
+            owner: "octo",
+            repo: "demo",
+            targetLanguage: "zh-Hans",
+            mode: .full
+        )
+
+        #expect(segmented?.segments.first?.translatedText == "分段译文")
+        #expect(full?.segments.first?.translatedText == "全文译文")
         #expect(cache.itemCount == 2)
     }
 
