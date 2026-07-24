@@ -14,6 +14,8 @@ Release notes for the Mac App Store edition of Starcat.
 
 ### Improvements
 
+- Improved the add-tag interface.
+- Improved navigation across Starred and Explore with clearer three-level hierarchy and filter context.
 - Improved README translation speed with a smaller first batch, incremental results, up to four concurrent AI requests, per-segment caching, and resume support for untranslated segments.
 - Improved personal notes with README-based AI generation and refinement, visible progress, Markdown editing and preview, draft copying, and clearer save status.
 - Improved AI sharing by reusing existing AI summaries, with support for cancelling creation and generating a new AI share link.
