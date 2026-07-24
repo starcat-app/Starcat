@@ -987,7 +987,7 @@ final class AppSettings {
     }
 
     /// 贡献草坪贪吃蛇玩法（HOM-SNAKE-MODES 2026-06-05）。
-    /// 默认 `.greedy`（snk 同款），让"草坪 + 蛇"的卖点立刻直观可感。
+    /// 默认 `.off`；用户主动选择其他玩法后继续持久化其选择。
     /// 修改时 `ContributionGraphView` 会通过 `.onChange` 重建 animator。
     var snakeStyle: SnakeStyle {
         didSet { persist(key: Keys.snakeStyle, value: snakeStyle.rawValue) }

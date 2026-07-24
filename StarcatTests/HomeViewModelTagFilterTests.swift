@@ -93,4 +93,75 @@ struct HomeViewModelTagFilterTests {
         #expect(SidebarItem(persistedRawValue: all.persistedRawValue) == all)
         #expect(SidebarItem(persistedRawValue: library.persistedRawValue) == library)
     }
+
+    @Test("星标三级导航按 Sidebar 分组映射")
+    func manageNavigationMapsSidebarGroups() {
+        let allStars = ManageNavigationPresentation.make(
+            selection: .allStars,
+            selectionTitle: String.l10n("sidebar.allRepos"),
+            selectedTagTitles: [],
+            searchTitle: nil
+        )
+        #expect(allStars.secondLevelTitle == String.l10n("sidebar.allRepos"))
+        #expect(allStars.thirdLevelTitle == String.l10n("general.all"))
+        #expect(!allStars.isFilteredScope)
+
+        let untagged = ManageNavigationPresentation.make(
+            selection: .untagged,
+            selectionTitle: String.l10n("sidebar.untagged"),
+            selectedTagTitles: [],
+            searchTitle: nil
+        )
+        #expect(untagged.secondLevelTitle == String.l10n("sidebar.untagged"))
+        #expect(untagged.thirdLevelTitle == String.l10n("general.all"))
+        #expect(untagged.isFilteredScope)
+
+        let library = ManageNavigationPresentation.make(
+            selection: .library,
+            selectionTitle: String.l10n("sidebar.library"),
+            selectedTagTitles: [],
+            searchTitle: nil
+        )
+        #expect(library.secondLevelTitle == String.l10n("sidebar.library"))
+        #expect(library.thirdLevelTitle == String.l10n("general.all"))
+        #expect(library.isFilteredScope)
+
+        let collections = ManageNavigationPresentation.make(
+            selection: .smartCollectionsHome,
+            selectionTitle: String.l10n("smartCollections.title"),
+            selectedTagTitles: [],
+            searchTitle: nil
+        )
+        #expect(collections.secondLevelTitle == String.l10n("smartCollections.title"))
+        #expect(collections.thirdLevelTitle == String.l10n("smartCollections.all"))
+        #expect(!collections.isFilteredScope)
+    }
+
+    @Test("语言与多标签属于全部仓库的第三级细分条件")
+    func manageNavigationKeepsLanguageAndTags() {
+        let presentation = ManageNavigationPresentation.make(
+            selection: .language("Swift"),
+            selectionTitle: "Swift",
+            selectedTagTitles: ["AI", "Tools"],
+            searchTitle: nil
+        )
+
+        #expect(presentation.secondLevelTitle == String.l10n("sidebar.allRepos"))
+        #expect(presentation.thirdLevelTitle == "Swift · AI · Tools")
+        #expect(presentation.isFilteredScope)
+    }
+
+    @Test("单语言导航显示为星标下全部仓库的第三级")
+    func manageNavigationKeepsAllStarsAsLanguageBase() {
+        let presentation = ManageNavigationPresentation.make(
+            selection: .language("Java"),
+            selectionTitle: "Java",
+            selectedTagTitles: [],
+            searchTitle: nil
+        )
+
+        #expect(presentation.secondLevelTitle == String.l10n("sidebar.allRepos"))
+        #expect(presentation.thirdLevelTitle == "Java")
+        #expect(presentation.isFilteredScope)
+    }
 }

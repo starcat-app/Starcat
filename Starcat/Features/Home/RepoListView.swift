@@ -91,9 +91,17 @@ final class RepoListAISummaryAvailability {
 private struct RepoListNavigationSubtitleModifier: ViewModifier {
     let selectedPage: SidebarRootPage
     let selectedExploreMode: ExploreMode
+    let selectedTrendingLanguage: TrendingLanguage
+    let selectedDiscoveryLanguage: String?
+    let selectedDiscoveryTopic: String?
+    let selectedDiscoveryPlatform: String?
+    let selectedWeeklyLanguage: String?
     let selectedActivityCategory: ActivityCategory
     let manageSubtitle: String
     let metrics: RepoListNavigationMetrics
+    let exploreCatalogStore: ExploreCatalogStore
+    let trendingLanguageStore: TrendingLanguageStore
+    let weeklyLanguageStore: WeeklyLanguageStore
     let weeklySelectionService: WeeklySelectionService
     let activityCategoryCountService: ActivityCategoryCountService
 
@@ -106,10 +114,7 @@ private struct RepoListNavigationSubtitleModifier: ViewModifier {
         case .manage:
             return manageSubtitle
         case .trending:
-            let count = selectedExploreMode == .weekly
-                ? (weeklySelectionService.total ?? 0)
-                : metrics.trendingRepoCount
-            return repoCountSubtitle(count)
+            return exploreRepoCountSubtitle
         case .activity:
             let count = selectedActivityCategory == .undoStar
                 ? (activityCategoryCountService.count(for: .undoStar) ?? 0)
@@ -129,6 +134,75 @@ private struct RepoListNavigationSubtitleModifier: ViewModifier {
             format: String.l10n("list.repoCountFormat"),
             count
         )
+    }
+
+    private var exploreRepoCountSubtitle: String {
+        let presentation = ExploreNavigationPresentation.make(
+            mode: selectedExploreMode,
+            trendingLanguage: selectedTrendingLanguage,
+            discoveryLanguage: selectedDiscoveryLanguage,
+            discoveryTopic: selectedDiscoveryTopic,
+            discoveryPlatform: selectedDiscoveryPlatform,
+            weeklyLanguage: selectedWeeklyLanguage,
+            topics: exploreCatalogStore.displayTopics,
+            platforms: exploreCatalogStore.displayPlatforms
+        )
+        let counts = exploreRepoCounts
+
+        guard presentation.isFiltered, let total = counts.total else {
+            return repoCountSubtitle(counts.current)
+        }
+        return String(
+            format: String.l10n("list.filteredRepoCountFormat"),
+            counts.current,
+            total
+        )
+    }
+
+    /// 分子优先读取与侧栏同源的聚合计数；发现页同时选中 topic + platform 时，
+    /// 后端 summary 没有交叉维度，只能使用列表 ViewModel 已发布的真实交集数量。
+    private var exploreRepoCounts: (current: Int, total: Int?) {
+        switch selectedExploreMode {
+        case .discover:
+            let total = exploreCatalogStore.total(for: .discover)
+            let current: Int
+            if selectedDiscoveryTopic != nil, selectedDiscoveryPlatform != nil {
+                current = metrics.trendingRepoCount
+            } else if let selectedDiscoveryTopic {
+                current = exploreCatalogStore.topicCount(for: selectedDiscoveryTopic)
+                    ?? metrics.trendingRepoCount
+            } else if let selectedDiscoveryPlatform {
+                current = exploreCatalogStore.platformCount(for: selectedDiscoveryPlatform)
+                    ?? metrics.trendingRepoCount
+            } else {
+                current = total ?? metrics.trendingRepoCount
+            }
+            return (current, total)
+        case .popular, .newReleases:
+            let total = exploreCatalogStore.total(for: selectedExploreMode)
+            let current = exploreCatalogStore.languageCount(
+                for: selectedDiscoveryLanguage,
+                mode: selectedExploreMode
+            ) ?? metrics.trendingRepoCount
+            return (current, total)
+        case .trending:
+            let aggregates = trendingLanguageStore.displayList
+            let aggregateTotal = aggregates.reduce(0) { $0 + $1.count }
+            let total = aggregateTotal > 0 ? aggregateTotal : nil
+            let current = selectedTrendingLanguage.rawValue.isEmpty
+                ? (total ?? metrics.trendingRepoCount)
+                : (aggregates.first { $0.key == selectedTrendingLanguage.rawValue }?.count
+                    ?? metrics.trendingRepoCount)
+            return (current, total)
+        case .weekly:
+            let aggregates = weeklyLanguageStore.displayList
+            let aggregateTotal = aggregates.reduce(0) { $0 + $1.count }
+            let total = weeklySelectionService.total ?? (aggregateTotal > 0 ? aggregateTotal : nil)
+            let current = selectedWeeklyLanguage.flatMap { selectedLanguage in
+                aggregates.first { $0.key == selectedLanguage }?.count
+            } ?? total ?? 0
+            return (current, total)
+        }
     }
 }
 
@@ -474,9 +548,17 @@ struct RepoListView: View {
             .modifier(RepoListNavigationSubtitleModifier(
                 selectedPage: selectedPage,
                 selectedExploreMode: selectedExploreMode,
+                selectedTrendingLanguage: selectedTrendingLanguage,
+                selectedDiscoveryLanguage: selectedDiscoveryLanguage,
+                selectedDiscoveryTopic: selectedDiscoveryTopic,
+                selectedDiscoveryPlatform: selectedDiscoveryPlatform,
+                selectedWeeklyLanguage: selectedWeeklyLanguage,
                 selectedActivityCategory: selectedActivityCategory,
                 manageSubtitle: manageSubtitle,
                 metrics: navigationMetrics,
+                exploreCatalogStore: dependencies.exploreCatalogStore,
+                trendingLanguageStore: dependencies.trendingLanguageStore,
+                weeklyLanguageStore: dependencies.weeklyLanguageStore,
                 weeklySelectionService: dependencies.weeklySelectionService,
                 activityCategoryCountService: dependencies.activityCategoryCountService
             ))
@@ -2042,7 +2124,15 @@ struct RepoListView: View {
         }
         // **R-07.2 修订**：DB 分页模式下 filteredSorted 只镜像已加载前缀，标题数量
         // 必须读 ViewModel 的真实查询总数，避免 1800+ 仓库首屏只显示 20。
-        return repoCountSubtitle(viewModel.visibleRepoTotalCount)
+        let currentCount = viewModel.visibleRepoTotalCount
+        if manageNavigationPresentation.isFilteredScope || viewModel.hasActiveFilter {
+            return String(
+                format: String.l10n("list.filteredRepoCountFormat"),
+                currentCount,
+                viewModel.totalCount
+            )
+        }
+        return repoCountSubtitle(currentCount)
     }
 
     private func repoCountSubtitle(_ count: Int) -> String {
@@ -2059,26 +2149,68 @@ struct RepoListView: View {
 
     // MARK: - 标题派生
 
-    private var navigationTitle: String {
+    private var navigationTitle: Text {
         if selectedPage == .trending {
-            let leaf = selectedExploreMode == .trending
-                ? "\(selectedExploreMode.localizedTitle) · \(selectedTrendingLanguage.localizedDisplayName)"
-                : selectedExploreMode.localizedTitle
-            return breadcrumbTitle(
-                root: String.l10n("nav.trending"),
-                leaf: leaf
-            )
+            return exploreNavigationTitle
         }
         if selectedPage == .activity {
-            return breadcrumbTitle(
+            return Text(verbatim: breadcrumbTitle(
                 root: String.l10n("activity.title"),
                 leaf: selectedActivityCategory.localizedTitle
-            )
+            ))
         }
-        let leaf = viewModel.isSearching
+        return manageNavigationTitle
+    }
+
+    private var manageNavigationTitle: Text {
+        let presentation = manageNavigationPresentation
+        let prefix = [
+            String.l10n("nav.manage"),
+            presentation.secondLevelTitle
+        ].joined(separator: Self.navigationBreadcrumbSeparator)
+        let thirdLevelTitle = truncatedBreadcrumbSegment(presentation.thirdLevelTitle)
+
+        // 第三级代表当前分类或筛选上下文，accent 仅用于定位当前层级，不改系统标题栏材质。
+        return Text(verbatim: "\(prefix)\(Self.navigationBreadcrumbSeparator)")
+            + Text(verbatim: thirdLevelTitle).foregroundColor(.accentColor)
+    }
+
+    private var manageNavigationPresentation: ManageNavigationPresentation {
+        let selectedTagTitles = viewModel.tags
+            .filter { viewModel.selectedTagIds.contains($0.id) }
+            .map(\.name)
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        let searchTitle = viewModel.isSearching
             ? String(format: String.l10n("search.searching"), truncatedSearchQueryForTitle)
-            : localizedTitle(for: viewModel.selection)
-        return breadcrumbTitle(root: String.l10n("nav.manage"), leaf: leaf)
+            : nil
+        return ManageNavigationPresentation.make(
+            selection: viewModel.selection,
+            selectionTitle: localizedTitle(for: viewModel.selection),
+            selectedTagTitles: selectedTagTitles,
+            searchTitle: searchTitle
+        )
+    }
+
+    private var exploreNavigationTitle: Text {
+        let presentation = ExploreNavigationPresentation.make(
+            mode: selectedExploreMode,
+            trendingLanguage: selectedTrendingLanguage,
+            discoveryLanguage: selectedDiscoveryLanguage,
+            discoveryTopic: selectedDiscoveryTopic,
+            discoveryPlatform: selectedDiscoveryPlatform,
+            weeklyLanguage: selectedWeeklyLanguage,
+            topics: dependencies.exploreCatalogStore.displayTopics,
+            platforms: dependencies.exploreCatalogStore.displayPlatforms
+        )
+        let prefix = [
+            String.l10n("nav.trending"),
+            selectedExploreMode.localizedTitle
+        ].joined(separator: Self.navigationBreadcrumbSeparator)
+        let thirdLevelTitle = truncatedBreadcrumbSegment(presentation.thirdLevelTitle)
+
+        // 三级分类是当前 Explore 筛选上下文，accent 仅用于定位当前层级，不改变系统标题栏结构。
+        return Text(verbatim: "\(prefix)\(Self.navigationBreadcrumbSeparator)")
+            + Text(verbatim: thirdLevelTitle).foregroundColor(.accentColor)
     }
 
     /// macOS 原生 navigation title 不能套自定义 breadcrumb view，这里用稳定的纯文本面包屑。

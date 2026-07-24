@@ -164,6 +164,105 @@ enum SidebarItem: Hashable, Identifiable {
     }
 }
 
+/// 星标模块中栏标题的三级导航语义。
+///
+/// 标题结构固定为「星标 › 基础仓库范围 › 当前细分条件」。
+///
+/// 语言、标签只是“全部仓库”上的细分条件，不能把 Sidebar 的“语言 / 标签”分组名误当成
+/// 第二级。这里仅负责展示语义，不参与列表查询或筛选状态写入。
+struct ManageNavigationPresentation: Equatable {
+    let secondLevelTitle: String
+    let thirdLevelTitle: String
+    let isFilteredScope: Bool
+
+    static func make(
+        selection: SidebarItem,
+        selectionTitle: String,
+        selectedTagTitles: [String],
+        searchTitle: String?
+    ) -> ManageNavigationPresentation {
+        var secondLevelTitle: String
+        var thirdLevelTitle = String.l10n("general.all")
+        var isFilteredScope: Bool
+
+        switch selection {
+        case .trending:
+            secondLevelTitle = String.l10n("sidebar.allRepos")
+            isFilteredScope = false
+        case .allStars:
+            secondLevelTitle = selectionTitle
+            isFilteredScope = false
+        case .untagged:
+            secondLevelTitle = selectionTitle
+            isFilteredScope = true
+        case .library:
+            secondLevelTitle = selectionTitle
+            isFilteredScope = true
+        case .allLanguages:
+            secondLevelTitle = String.l10n("sidebar.allRepos")
+            thirdLevelTitle = selectionTitle
+            isFilteredScope = false
+        case .language:
+            secondLevelTitle = String.l10n("sidebar.allRepos")
+            thirdLevelTitle = selectionTitle
+            isFilteredScope = true
+        case .tag:
+            secondLevelTitle = String.l10n("sidebar.allRepos")
+            thirdLevelTitle = selectionTitle
+            isFilteredScope = true
+        case .smartCollectionsHome:
+            secondLevelTitle = String.l10n("smartCollections.title")
+            thirdLevelTitle = String.l10n("smartCollections.all")
+            isFilteredScope = false
+        case .smartCollection, .userSmartCollection:
+            secondLevelTitle = String.l10n("smartCollections.title")
+            thirdLevelTitle = selectionTitle
+            isFilteredScope = true
+        case .githubStarListUngrouped, .githubStarList:
+            secondLevelTitle = String.l10n("sidebar.githubStarLists")
+            thirdLevelTitle = selectionTitle
+            isFilteredScope = true
+        }
+
+        let normalizedTagTitles = selectedTagTitles
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        if !normalizedTagTitles.isEmpty {
+            switch selection {
+            case .allStars, .allLanguages:
+                // 标签墙仍然属于“全部仓库”的细分条件，不能提升成第二级范围。
+                secondLevelTitle = String.l10n("sidebar.allRepos")
+                thirdLevelTitle = normalizedTagTitles.joined(separator: " · ")
+            case .language:
+                // 语言与标签是 AND 关系，标题必须同时保留两者，不能只显示最后一次操作。
+                thirdLevelTitle = ([selectionTitle] + normalizedTagTitles).joined(separator: " · ")
+            default:
+                thirdLevelTitle = ([thirdLevelTitle] + normalizedTagTitles)
+                    .reduce(into: [String]()) { titles, title in
+                        if !titles.contains(title) { titles.append(title) }
+                    }
+                    .joined(separator: " · ")
+            }
+            isFilteredScope = true
+        }
+
+        if let searchTitle = searchTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !searchTitle.isEmpty {
+            // 搜索是当前分类上的附加条件，保留分类上下文可避免用户忘记搜索范围。
+            thirdLevelTitle = thirdLevelTitle == String.l10n("general.all")
+                ? searchTitle
+                : "\(thirdLevelTitle) · \(searchTitle)"
+            isFilteredScope = true
+        }
+
+        return ManageNavigationPresentation(
+            secondLevelTitle: secondLevelTitle,
+            thirdLevelTitle: thirdLevelTitle,
+            isFilteredScope: isFilteredScope
+        )
+    }
+}
+
 // MARK: - Smart Collections 导航语义
 
 extension SidebarItem {

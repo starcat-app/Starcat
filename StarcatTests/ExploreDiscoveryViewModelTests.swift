@@ -30,6 +30,89 @@ struct ExploreDiscoveryViewModelTests {
         #expect(ExploreMode.allCases.contains(.weekly))
     }
 
+    @Test("探索导航统一展示三级筛选")
+    func exploreNavigationShowsThirdLevelSelection() {
+        let topics = [DiscoveryTopicDTO(code: "ai", label: "AI")]
+        let platforms = [DiscoveryPlatformDTO(code: "macos", label: "macOS", systemName: nil)]
+
+        let newReleases = ExploreNavigationPresentation.make(
+            mode: .newReleases,
+            trendingLanguage: .all,
+            discoveryLanguage: "Swift",
+            discoveryTopic: nil,
+            discoveryPlatform: nil,
+            weeklyLanguage: nil,
+            topics: topics,
+            platforms: platforms
+        )
+        #expect(newReleases.thirdLevelTitle == "Swift")
+        #expect(newReleases.isFiltered)
+
+        let trending = ExploreNavigationPresentation.make(
+            mode: .trending,
+            trendingLanguage: .rust,
+            discoveryLanguage: nil,
+            discoveryTopic: nil,
+            discoveryPlatform: nil,
+            weeklyLanguage: nil,
+            topics: topics,
+            platforms: platforms
+        )
+        #expect(trending.thirdLevelTitle == "Rust")
+        #expect(trending.isFiltered)
+
+        let discover = ExploreNavigationPresentation.make(
+            mode: .discover,
+            trendingLanguage: .all,
+            discoveryLanguage: nil,
+            discoveryTopic: "ai",
+            discoveryPlatform: "macos",
+            weeklyLanguage: nil,
+            topics: topics,
+            platforms: platforms
+        )
+        #expect(discover.thirdLevelTitle == "\(String.l10n("explore.topic.ai")) · macOS")
+        #expect(discover.isFiltered)
+
+        let popular = ExploreNavigationPresentation.make(
+            mode: .popular,
+            trendingLanguage: .all,
+            discoveryLanguage: nil,
+            discoveryTopic: nil,
+            discoveryPlatform: nil,
+            weeklyLanguage: nil,
+            topics: topics,
+            platforms: platforms
+        )
+        #expect(popular.thirdLevelTitle == String.l10n("trending.allLanguages"))
+        #expect(!popular.isFiltered)
+
+        let weekly = ExploreNavigationPresentation.make(
+            mode: .weekly,
+            trendingLanguage: .all,
+            discoveryLanguage: nil,
+            discoveryTopic: nil,
+            discoveryPlatform: nil,
+            weeklyLanguage: "Go",
+            topics: topics,
+            platforms: platforms
+        )
+        #expect(weekly.thirdLevelTitle == "Go")
+        #expect(weekly.isFiltered)
+    }
+
+    @Test("探索筛选数量显示当前结果和分类总数")
+    func exploreFilteredRepoCountFormat() {
+        let subtitle = String(
+            format: String.l10n("list.filteredRepoCountFormat"),
+            4,
+            265
+        )
+
+        // 测试进程会跟随当前 AppLocale；这里只校验语言无关的“筛选数 / 总数”结构。
+        #expect(subtitle.contains("4 / 265"))
+    }
+
     @Test("热门列表基于 bulk 本地过滤语言和排序")
     func popularReloadFiltersAndSortsLocalBulk() async throws {
         let repository = FakeDiscoveryRepository()

@@ -93,6 +93,7 @@ struct AppSettingsTests {
         settings.setExternalSearchSettings(anySearchSettings, for: .anySearch)
         settings.notificationsEnabled = false
         settings.hideDockIcon = true
+        settings.snakeStyle = .greedy
         settings.keyboardShortcutsEnabled = false
         settings.refreshCurrentContentShortcutEnabled = false
         settings.refreshCurrentContentShortcut = .init(
@@ -128,6 +129,7 @@ struct AppSettingsTests {
         #expect(settings.externalSearchSettings(for: .anySearch).isEnabled == false)
         #expect(settings.notificationsEnabled == true)
         #expect(settings.hideDockIcon == false)
+        #expect(settings.snakeStyle == .off)
         #expect(settings.keyboardShortcutsEnabled == true)
         #expect(settings.refreshCurrentContentShortcutEnabled == true)
         #expect(settings.refreshCurrentContentShortcut == StarcatShortcutCatalog.refreshCurrentContentDefault)
@@ -152,6 +154,18 @@ struct AppSettingsTests {
 
         let restored = AppSettings(defaults: defaults)
         #expect(restored.hideDockIcon == true)
+    }
+
+    @Test("贡献草坪动画: 新安装默认关闭并保留用户主动选择")
+    func snakeStyleDefaultsToOffAndPersistsUserChoice() {
+        let defaults = makeIsolatedDefaults()
+        let settings = AppSettings(defaults: defaults)
+        #expect(settings.snakeStyle == .off)
+
+        settings.snakeStyle = .greedy
+
+        let restored = AppSettings(defaults: defaults)
+        #expect(restored.snakeStyle == .greedy)
     }
 
     // MARK: - W4-4 D1：排序偏好

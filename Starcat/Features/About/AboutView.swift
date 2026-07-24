@@ -968,6 +968,12 @@ private struct AboutDependency: Identifiable {
             url: URL(string: "https://github.com/braedonsaunders/codeflow")
         ),
         AboutDependency(
+            name: "Mermaid",
+            license: "MIT",
+            copyright: "Copyright (c) 2014 - 2022 Knut Sveidqvist",
+            url: URL(string: "https://github.com/mermaid-js/mermaid")
+        ),
+        AboutDependency(
             name: "CodebaseMemory",
             license: "MIT",
             copyright: "Copyright (c) 2025 DeusData",

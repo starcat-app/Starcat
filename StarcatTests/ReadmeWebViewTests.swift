@@ -41,6 +41,81 @@ struct ReadmeWebViewTests {
         #expect(html.contains("body.readme-js-ready .markdown-body img:not(.readme-image-loaded)"))
     }
 
+    @Test("README Mermaid 保留 GitHub enrichment 数据并提供本地渲染样式")
+    func assembleDocument_preservesMermaidEnrichmentAndKeepsPageScriptBlocked() {
+        let fragment = """
+        <section class="js-render-needs-enrichment" data-type="mermaid">
+          <div class="js-render-enrichment-target"
+               data-json="{&quot;data&quot;:&quot;sequenceDiagram\\nA-&amp;gt;&amp;gt;B: hello&quot;}"
+               data-plain="sequenceDiagram&#10;A-&gt;&gt;B: hello">
+            <div class="render-plaintext-hidden"><pre lang="mermaid">sequenceDiagram
+        A->>B: hello</pre></div>
+          </div>
+          <span class="js-render-enrichment-loader"><span class="sr-only">Loading</span></span>
+        </section>
+        """
+        let html = ReadmeWebView.assembleDocument(fragment: fragment, isDark: true)
+
+        // 图表源码只作为 app-owned Mermaid 的输入；README 自带脚本仍然不能执行。
+        #expect(html.contains("script-src 'none'"))
+        #expect(html.contains(#"data-type="mermaid""#))
+        #expect(html.contains(#"data-plain="sequenceDiagram&#10;A-&gt;&gt;B: hello""#))
+        #expect(html.contains(#"A-&amp;gt;&amp;gt;B: hello"#))
+        #expect(html.contains(".starcat-mermaid-rendered iframe"))
+        #expect(html.contains(#"data-starcat-mermaid-state="failed""#))
+    }
+
+    @Test("README Mermaid 优先读取 data-plain 并清理失败的临时 iframe")
+    func mermaidBridge_prefersPlainSourceAndCleansFailureArtifacts() throws {
+        let script = ReadmeWebView.readmeEnhancementScript
+        let sourceStart = try #require(script.range(of: "function mermaidSource(section) {"))
+        let sourceEnd = try #require(
+            script.range(
+                of: "function cleanupMermaidRenderArtifacts",
+                range: sourceStart.upperBound..<script.endIndex
+            )
+        )
+        let sourceFunction = script[sourceStart.lowerBound..<sourceEnd.lowerBound]
+        let plainAccess = try #require(sourceFunction.range(of: "getAttribute('data-plain')"))
+        let jsonAccess = try #require(sourceFunction.range(of: "getAttribute('data-json')"))
+
+        // GitHub data-json 会把 `->>` 双重转义；正确的 data-plain 必须先命中。
+        #expect(plainAccess.lowerBound < jsonAccess.lowerBound)
+        #expect(sourceFunction.contains(".replace(/&gt;/gi, '>')"))
+        #expect(script.contains("var temporaryIDs = [renderID, 'i' + renderID, 'd' + renderID]"))
+        #expect(script.contains("cleanupMermaidRenderArtifacts(renderID);"))
+    }
+
+    @Test("README Mermaid sandbox iframe 按 SVG 宽高比响应详情栏宽度")
+    func mermaidBridge_makesSandboxIframeResponsive() {
+        let script = ReadmeWebView.readmeEnhancementScript
+
+        // Mermaid 11 会在 iframe 写入 SVG 原始像素高度。注入脚本必须读取 viewBox，
+        // 用 CSS 宽高比替换固定高度，窗口或详情栏变宽变窄时由 WebKit 自动重排。
+        #expect(script.contains("function mermaidSandboxIntrinsicSize(iframe)"))
+        #expect(script.contains("new DOMParser().parseFromString(markup, 'text/html')"))
+        #expect(script.contains("iframe.style.maxWidth = size.width + 'px';"))
+        #expect(script.contains("iframe.style.height = 'auto';"))
+        #expect(script.contains("iframe.style.aspectRatio = size.width + ' / ' + size.height;"))
+        #expect(script.contains("makeMermaidSandboxResponsive(rendered);"))
+        #expect(script.contains("securityLevel: 'sandbox'"))
+    }
+
+    @Test("README 使用固定版本的本地 Mermaid 运行时")
+    func bundledMermaidRuntime_matchesDeclaredVersion() throws {
+        let runtimeURL = try #require(
+            Bundle.main.url(
+                forResource: ReadmeWebView.mermaidRuntimeResourceName,
+                withExtension: "js"
+            )
+        )
+        let source = try String(contentsOf: runtimeURL, encoding: .utf8)
+
+        #expect(ReadmeWebView.mermaidRendererVersion == "11.16.0")
+        #expect(source.contains(#""11.16.0""#))
+        #expect(source.contains(#"globalThis["mermaid"]"#))
+    }
+
     @Test("README 正文字号接入界面倍率")
     func assembleDocument_injectsReadableFontSizeFromInterfaceScale() {
         let standardHTML = ReadmeWebView.assembleDocument(

@@ -19497,6 +19497,22 @@
         }
       }
     },
+    "list.filteredRepoCountFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d / %d repos"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d / %d 个仓库"
+          }
+        }
+      }
+    },
     "list.refreshingFormat" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -37396,6 +37412,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "加载 README…"
+          }
+        }
+      }
+    },
+    "readme.mermaid.renderFailed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not render this Mermaid diagram. Raw source is shown below."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法渲染此 Mermaid 图表，已在下方显示原始内容。"
           }
         }
       }
@@ -61059,6 +61091,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未分类"
+          }
+        }
+      }
+    },
+    "smartCollections.all" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Collections"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全部集合"
           }
         }
       }

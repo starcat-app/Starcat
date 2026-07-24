@@ -9,9 +9,12 @@ Release notes for the Mac App Store edition of Starcat.
 - Added repository pinning in Manage, with Pin and Unpin actions, most-recently-pinned ordering within each category, and a card-corner indicator.
 - Added repository share links that open Starcat and locate the shared repository.
 - Added customizable app shortcuts for search, refreshing the current content, opening the Knowledge RAG workspace, and opening AI for the current repository, with global and per-shortcut enable controls.
+- Added local Mermaid diagram rendering to repository README pages, with responsive sizing in narrow detail panes and readable source fallback when rendering fails.
+- Added segmented and full README translation modes: segmented translation is the default for paragraph-by-paragraph bilingual reading, while full translation replaces visible text without rewriting the README structure.
 
 ### Improvements
 
+- Improved README translation speed with a smaller first batch, incremental results, up to four concurrent AI requests, per-segment caching, and resume support for untranslated segments.
 - Improved personal notes with README-based AI generation and refinement, visible progress, Markdown editing and preview, draft copying, and clearer save status.
 - Improved AI sharing by reusing existing AI summaries, with support for cancelling creation and generating a new AI share link.
 - Improved the RAG workspace UI.
