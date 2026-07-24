@@ -1993,87 +1993,98 @@ struct SidebarView: View {
         }
     }
 
-    /// Languages 专属行——
-    /// 每个语言显示对应的彩色圆形图标（与 GitHub 语言点风格一致）+ 语言名 + 计数
+    /// Languages 专属筛选行。
+    ///
+    /// 语言是当前基础仓库范围上的附加条件，不能再通过 `.tag(.language(...))`
+    /// 写入 `List(selection:)`，否则会把“未分类 / 知识库”等主导航选择覆盖掉。
     @ViewBuilder
     private func languageRow(_ stat: LanguageStat) -> some View {
-        let item = SidebarItem.language(stat.languageOrNil)
-        Label {
-            // Sidebar count bugfix v4：与 row() 同款保护——trailing 容器整体 fixed width 锁死。
-            // 详细根因见 `trailingFixedWidth` 常量上方的大注释。
-            HStack {
-                // 短名：避免 "Jupyter Notebook" 这种长名在侧边栏窄行被 tail truncate
-                // 成 "Jupyter Note…"。stat.displayName 已对 isEmpty 兜底（"Unknown" 等），
-                // 未命中映射时原样返回，安全。详见 LanguageDisplayName。
-                Text(verbatim: LanguageDisplayName.shortened(for: stat.displayName))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Spacer(minLength: 4)
-                HStack(spacing: 4) {
-                    Spacer(minLength: 0)
-                    Text(stat.count.formatted())
-                        .font(interfaceScale.font(.captionSmall))
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
+        let language = stat.languageOrNil
+        let isSelected = isManageLanguageFilterSelected(language)
+
+        Button {
+            viewModel.toggleLanguageFilterFromUser(language)
+        } label: {
+            Label {
+                // Sidebar count bugfix v4：trailing 容器整体 fixed width 锁死，
+                // 避免选中筛选后计数位数变化导致标题横向跳动。
+                HStack {
+                    Text(verbatim: LanguageDisplayName.shortened(for: stat.displayName))
                         .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 4)
+                    HStack(spacing: 4) {
+                        Spacer(minLength: 0)
+                        Text(stat.count.formatted())
+                            .font(interfaceScale.font(.captionSmall))
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                    }
+                    .frame(width: Self.trailingFixedWidth, alignment: .trailing)
                 }
-                .frame(width: Self.trailingFixedWidth, alignment: .trailing)
-            }
-        } icon: {
-            // 使用语言对应的彩色圆形图标。
-            // 选中可读性由 LanguageIconView 白底托盘处理（Devicon 不走 SF 反白）。
-            if let lang = stat.languageOrNil, !lang.isEmpty {
-                LanguageIconView(language: lang, size: 14)
-            } else {
-                UncategorizedLanguageIcon(size: 14)
-            }
-        }
-        .tag(item)
-        // HOM-46 优化：hover 时预取相邻分类
-        .onHover { isHovering in
-            if isHovering {
-                for candidate in item.prefetchCandidates {
-                    viewModel.prefetch(selection: candidate)
+            } icon: {
+                if let language, !language.isEmpty {
+                    LanguageIconView(language: language, size: 14)
+                } else {
+                    UncategorizedLanguageIcon(size: 14)
                 }
             }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        // 基础范围继续使用系统 List selection；语言只用轻量 accent 背景表达独立筛选态。
+        .listRowBackground(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
     }
 
-    /// Manage 的 Languages 分组总入口。
-    ///
-    /// 约束：`.language(nil)` 已表示 GitHub 无主语言，不能复用来表达"全部语言"；
-    /// 因此这里使用独立的 `.allLanguages`，查询语义等同 `.allStars`，但 UI 上留在
-    /// Languages 分组里，并且像 Trending 一样在分组折叠后仍然常驻。
+    /// “全部语言”只清空语言条件，不改变当前基础仓库范围。
     private var allLanguagesRow: some View {
-        let item = SidebarItem.allLanguages
-        return Label {
-            HStack(spacing: 4) {
-                Text("trending.allLanguages")
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-
-                Spacer(minLength: 4)
-
+        Button {
+            viewModel.clearLanguageFiltersFromUser()
+        } label: {
+            Label {
                 HStack(spacing: 4) {
-                    Spacer(minLength: 0)
-                    Text(viewModel.totalCount.formatted())
-                        .font(interfaceScale.font(.captionSmall))
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
+                    Text("trending.allLanguages")
                         .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    Spacer(minLength: 4)
+
+                    HStack(spacing: 4) {
+                        Spacer(minLength: 0)
+                        Text(viewModel.totalCount.formatted())
+                            .font(interfaceScale.font(.captionSmall))
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                    }
+                    .frame(width: Self.trailingFixedWidth, alignment: .trailing)
                 }
-                .frame(width: Self.trailingFixedWidth, alignment: .trailing)
+            } icon: {
+                AllLanguagesIcon(size: 14)
             }
-        } icon: {
-            AllLanguagesIcon(size: 14)
+            .contentShape(Rectangle())
         }
-        .tag(item)
-        .onHover { isHovering in
-            if isHovering {
-                for candidate in item.prefetchCandidates {
-                    viewModel.prefetch(selection: candidate)
-                }
-            }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+    }
+
+    /// Sidebar 的语言高亮读取真实有效筛选，确保 Toolbar 修改后这里同步反馈。
+    private func isManageLanguageFilterSelected(_ language: String?) -> Bool {
+        let filters = viewModel.effectiveGlobalFilterState
+        guard let language, !language.isEmpty else {
+            return filters.repoLanguageFilter == .uncategorized
+        }
+
+        let matchesSingleLanguage: Bool
+        if case .language(let selectedLanguage) = filters.repoLanguageFilter {
+            matchesSingleLanguage = selectedLanguage.caseInsensitiveCompare(language) == .orderedSame
+        } else {
+            matchesSingleLanguage = false
+        }
+        return matchesSingleLanguage || filters.globalFilterLanguages.contains {
+            $0.caseInsensitiveCompare(language) == .orderedSame
         }
     }
 }

@@ -168,8 +168,8 @@ enum SidebarItem: Hashable, Identifiable {
 ///
 /// 标题结构固定为「星标 › 基础仓库范围 › 当前细分条件」。
 ///
-/// 语言、标签只是“全部仓库”上的细分条件，不能把 Sidebar 的“语言 / 标签”分组名误当成
-/// 第二级。这里仅负责展示语义，不参与列表查询或筛选状态写入。
+/// 语言是独立于基础范围的筛选条件，因此“全部仓库 / 未分类 / 知识库”都必须保留在
+/// 第二级；本类型只把查询状态投影成标题，不参与筛选状态写入。
 struct ManageNavigationPresentation: Equatable {
     let secondLevelTitle: String
     let thirdLevelTitle: String
@@ -178,6 +178,7 @@ struct ManageNavigationPresentation: Equatable {
     static func make(
         selection: SidebarItem,
         selectionTitle: String,
+        selectedLanguageTitles: [String],
         selectedTagTitles: [String],
         searchTitle: String?
     ) -> ManageNavigationPresentation {
@@ -224,25 +225,31 @@ struct ManageNavigationPresentation: Equatable {
             isFilteredScope = true
         }
 
+        let normalizedLanguageTitles = selectedLanguageTitles
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
         let normalizedTagTitles = selectedTagTitles
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        if !normalizedTagTitles.isEmpty {
-            switch selection {
-            case .allStars, .allLanguages:
-                // 标签墙仍然属于“全部仓库”的细分条件，不能提升成第二级范围。
-                secondLevelTitle = String.l10n("sidebar.allRepos")
-                thirdLevelTitle = normalizedTagTitles.joined(separator: " · ")
-            case .language:
-                // 语言与标签是 AND 关系，标题必须同时保留两者，不能只显示最后一次操作。
-                thirdLevelTitle = ([selectionTitle] + normalizedTagTitles).joined(separator: " · ")
-            default:
-                thirdLevelTitle = ([thirdLevelTitle] + normalizedTagTitles)
-                    .reduce(into: [String]()) { titles, title in
-                        if !titles.contains(title) { titles.append(title) }
-                    }
-                    .joined(separator: " · ")
+        // 智能集合自身已经占据第三级导航；语言 / 标签属于全局列表筛选，
+        // 不能再拼到集合名后面伪造出第四级。筛选状态仍保留，由 Toolbar 单独反馈。
+        let activeFilterTitles: [String]
+        switch selection {
+        case .smartCollectionsHome, .smartCollection, .userSmartCollection:
+            activeFilterTitles = []
+        default:
+            activeFilterTitles = normalizedLanguageTitles + normalizedTagTitles
+        }
+        if !activeFilterTitles.isEmpty {
+            var detailTitles = thirdLevelTitle == String.l10n("general.all")
+                ? []
+                : [thirdLevelTitle]
+            for title in activeFilterTitles where !detailTitles.contains(where: {
+                $0.caseInsensitiveCompare(title) == .orderedSame
+            }) {
+                detailTitles.append(title)
             }
+            thirdLevelTitle = detailTitles.joined(separator: " · ")
             isFilteredScope = true
         }
 

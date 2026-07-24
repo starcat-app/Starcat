@@ -2154,10 +2154,10 @@ struct RepoListView: View {
             return exploreNavigationTitle
         }
         if selectedPage == .activity {
-            return Text(verbatim: breadcrumbTitle(
-                root: String.l10n("activity.title"),
-                leaf: selectedActivityCategory.localizedTitle
-            ))
+            return highlightedNavigationTitle(
+                prefix: String.l10n("activity.title"),
+                thirdLevelTitle: selectedActivityCategory.localizedTitle
+            )
         }
         return manageNavigationTitle
     }
@@ -2168,14 +2168,31 @@ struct RepoListView: View {
             String.l10n("nav.manage"),
             presentation.secondLevelTitle
         ].joined(separator: Self.navigationBreadcrumbSeparator)
-        let thirdLevelTitle = truncatedBreadcrumbSegment(presentation.thirdLevelTitle)
-
-        // 第三级代表当前分类或筛选上下文，accent 仅用于定位当前层级，不改系统标题栏材质。
-        return Text(verbatim: "\(prefix)\(Self.navigationBreadcrumbSeparator)")
-            + Text(verbatim: thirdLevelTitle).foregroundColor(.accentColor)
+        return highlightedNavigationTitle(
+            prefix: prefix,
+            thirdLevelTitle: presentation.thirdLevelTitle
+        )
     }
 
     private var manageNavigationPresentation: ManageNavigationPresentation {
+        let filters = viewModel.effectiveGlobalFilterState
+        var selectedLanguageTitles: [String] = []
+        switch filters.repoLanguageFilter {
+        case .all:
+            break
+        case .uncategorized:
+            selectedLanguageTitles.append(String.l10n("trending.language.uncategorized"))
+        case .language(let language):
+            selectedLanguageTitles.append(LanguageDisplayName.shortened(for: language))
+        }
+        for language in filters.globalFilterLanguages {
+            let title = LanguageDisplayName.shortened(for: language)
+            if !selectedLanguageTitles.contains(where: {
+                $0.caseInsensitiveCompare(title) == .orderedSame
+            }) {
+                selectedLanguageTitles.append(title)
+            }
+        }
         let selectedTagTitles = viewModel.tags
             .filter { viewModel.selectedTagIds.contains($0.id) }
             .map(\.name)
@@ -2186,6 +2203,7 @@ struct RepoListView: View {
         return ManageNavigationPresentation.make(
             selection: viewModel.selection,
             selectionTitle: localizedTitle(for: viewModel.selection),
+            selectedLanguageTitles: selectedLanguageTitles,
             selectedTagTitles: selectedTagTitles,
             searchTitle: searchTitle
         )
@@ -2206,18 +2224,25 @@ struct RepoListView: View {
             String.l10n("nav.trending"),
             selectedExploreMode.localizedTitle
         ].joined(separator: Self.navigationBreadcrumbSeparator)
-        let thirdLevelTitle = truncatedBreadcrumbSegment(presentation.thirdLevelTitle)
-
-        // 三级分类是当前 Explore 筛选上下文，accent 仅用于定位当前层级，不改变系统标题栏结构。
-        return Text(verbatim: "\(prefix)\(Self.navigationBreadcrumbSeparator)")
-            + Text(verbatim: thirdLevelTitle).foregroundColor(.accentColor)
+        return highlightedNavigationTitle(
+            prefix: prefix,
+            thirdLevelTitle: presentation.thirdLevelTitle
+        )
     }
 
-    /// macOS 原生 navigation title 不能套自定义 breadcrumb view，这里用稳定的纯文本面包屑。
-    private func breadcrumbTitle(root: String, leaf: String) -> String {
-        let normalizedLeaf = leaf.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedLeaf.isEmpty, normalizedLeaf != root else { return root }
-        return "\(root)\(Self.navigationBreadcrumbSeparator)\(truncatedBreadcrumbSegment(normalizedLeaf))"
+    /// 在唯一的原生 navigation title 内生成带第三级强调色的文本。
+    private func highlightedNavigationTitle(
+        prefix: String,
+        thirdLevelTitle: String
+    ) -> Text {
+        let thirdLevelTitle = truncatedBreadcrumbSegment(thirdLevelTitle)
+        var title = AttributedString("\(prefix)\(Self.navigationBreadcrumbSeparator)")
+        var highlightedThirdLevel = AttributedString(thirdLevelTitle)
+        highlightedThirdLevel.foregroundColor = .accentColor
+        title.append(highlightedThirdLevel)
+
+        // 不再增加 toolbar item；标题栏始终只有系统原生这一份导航。
+        return Text(title)
     }
 
     /// 同搜索标题一样先在字符串层截断，避免长标签 / 智能集合名撑开系统标题栏。
@@ -2405,7 +2430,12 @@ struct RepoListView: View {
     private func globalLanguageBinding(for language: String) -> Binding<Bool> {
         Binding(
             get: {
-                viewModel.effectiveGlobalFilterState.globalFilterLanguages.contains {
+                let filters = viewModel.effectiveGlobalFilterState
+                if case .language(let selectedLanguage) = filters.repoLanguageFilter,
+                   selectedLanguage.caseInsensitiveCompare(language) == .orderedSame {
+                    return true
+                }
+                return filters.globalFilterLanguages.contains {
                     $0.caseInsensitiveCompare(language) == .orderedSame
                 }
             },
@@ -2421,7 +2451,7 @@ struct RepoListView: View {
                         $0.caseInsensitiveCompare(language) != .orderedSame
                     }
                 }
-                viewModel.setGlobalFilterFromUser(\.globalFilterLanguages, to: updated)
+                viewModel.setCategorizedLanguageFiltersFromUser(updated)
             }
         )
     }
@@ -2505,9 +2535,10 @@ struct RepoListView: View {
                 }
             }
 
-            if !viewModel.effectiveGlobalFilterState.globalFilterLanguages.isEmpty {
+            if viewModel.effectiveGlobalFilterState.repoLanguageFilter != .all
+                || !viewModel.effectiveGlobalFilterState.globalFilterLanguages.isEmpty {
                 Button {
-                    viewModel.setGlobalFilterFromUser(\.globalFilterLanguages, to: [])
+                    viewModel.clearLanguageFiltersFromUser()
                 } label: {
                     Label("list.filter.language.clearSelection", systemImage: "xmark.circle")
                 }
@@ -2590,7 +2621,7 @@ struct RepoListView: View {
             let remaining = viewModel.effectiveGlobalFilterState.globalFilterLanguages.filter {
                 $0.caseInsensitiveCompare(language) != .orderedSame
             }
-            viewModel.setGlobalFilterFromUser(\.globalFilterLanguages, to: remaining)
+            viewModel.setCategorizedLanguageFiltersFromUser(remaining)
         } else {
             settings.interestedLanguages = AppSettings.normalizedLanguageList(
                 settings.interestedLanguages + [language]
@@ -2598,7 +2629,7 @@ struct RepoListView: View {
             let updated = AppSettings.normalizedLanguageList(
                 viewModel.effectiveGlobalFilterState.globalFilterLanguages + [language]
             )
-            viewModel.setGlobalFilterFromUser(\.globalFilterLanguages, to: updated)
+            viewModel.setCategorizedLanguageFiltersFromUser(updated)
         }
     }
 

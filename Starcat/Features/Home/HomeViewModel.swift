@@ -946,6 +946,75 @@ final class HomeViewModel {
         applyPersistentGlobalFilterState(filters)
     }
 
+    /// Sidebar 与 Toolbar 共用同一份“已选语言”状态。
+    ///
+    /// 分类语言使用 `globalFilterLanguages` 支持多选；无主语言仍由
+    /// `repoLanguageFilter.uncategorized` 表达，因为 SQLite 中它对应 `NULL`，
+    /// 不能伪装成普通字符串塞进 `IN (...)`。
+    func toggleLanguageFilterFromUser(_ language: String?) {
+        var filters = persistentGlobalFilterState
+        let normalizedLanguage = language?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let normalizedLanguage, !normalizedLanguage.isEmpty {
+            let matchesSingleLanguage: Bool
+            if case .language(let selectedLanguage) = filters.repoLanguageFilter {
+                matchesSingleLanguage = selectedLanguage.caseInsensitiveCompare(normalizedLanguage) == .orderedSame
+            } else {
+                matchesSingleLanguage = false
+            }
+            let matchesMultiLanguage = filters.globalFilterLanguages.contains {
+                $0.caseInsensitiveCompare(normalizedLanguage) == .orderedSame
+            }
+            filters.repoLanguageFilter = .all
+            let nextLanguages = matchesSingleLanguage || matchesMultiLanguage
+                ? filters.globalFilterLanguages.filter {
+                    $0.caseInsensitiveCompare(normalizedLanguage) != .orderedSame
+                }
+                : filters.globalFilterLanguages + [normalizedLanguage]
+            filters.globalFilterLanguages = AppSettings.normalizedLanguageList(nextLanguages)
+        } else {
+            let wasUncategorized = filters.repoLanguageFilter == .uncategorized
+            filters.repoLanguageFilter = wasUncategorized ? .all : .uncategorized
+            filters.globalFilterLanguages = []
+        }
+
+        applyPersistentGlobalFilterState(filters)
+    }
+
+    /// 旧版 `.language(...)` 导航恢复时，把它一次性归一化为“全部仓库 + 语言筛选”。
+    func selectSingleLanguageFilterFromUser(_ language: String?) {
+        var filters = persistentGlobalFilterState
+        let normalizedLanguage = language?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let normalizedLanguage, !normalizedLanguage.isEmpty {
+            filters.repoLanguageFilter = .all
+            filters.globalFilterLanguages = [normalizedLanguage]
+        } else {
+            filters.repoLanguageFilter = .uncategorized
+            filters.globalFilterLanguages = []
+        }
+
+        applyPersistentGlobalFilterState(filters)
+    }
+
+    /// Toolbar 多选语言接管时清掉旧的单语言/无主语言条件，避免两套语言条件做 AND 后误变空集。
+    func setCategorizedLanguageFiltersFromUser(_ languages: [String]) {
+        var filters = persistentGlobalFilterState
+        filters.repoLanguageFilter = .all
+        filters.globalFilterLanguages = AppSettings.normalizedLanguageList(languages)
+        applyPersistentGlobalFilterState(filters)
+    }
+
+    /// “全部语言”只重置语言维度，不影响 Star、知识库状态等其它全局筛选。
+    func clearLanguageFiltersFromUser() {
+        var filters = persistentGlobalFilterState
+        filters.repoLanguageFilter = .all
+        filters.globalFilterLanguages = []
+        applyPersistentGlobalFilterState(filters)
+    }
+
     /// 重置所有全局筛选条件到默认值。
     ///
     /// 全局筛选工具栏「重置」按钮走这里。设置侧也同步清对应偏好。

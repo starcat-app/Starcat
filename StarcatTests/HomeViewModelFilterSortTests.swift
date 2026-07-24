@@ -350,6 +350,80 @@ struct HomeViewModelFilterSortTests {
         #expect(Set(vm.items.map(\.id)) == [1, 2])
     }
 
+    @Test("语言筛选叠加全部仓库、未分类和知识库，不替换基础范围")
+    func languageFilterStacksWithPrimaryManageScopes() async throws {
+        let (vm, db, noteRepo) = try makeSUT()
+        let tagRepo = GRDBTagRepository(database: db)
+        let repoTagRepo = GRDBRepoTagRepository(database: db)
+
+        try await insertRepo(
+            db,
+            id: 1,
+            fullName: "o/java-untagged",
+            stars: 10,
+            starredAt: "2026-05-01T00:00:00Z",
+            language: "Java"
+        )
+        try await insertRepo(
+            db,
+            id: 2,
+            fullName: "o/java-tagged",
+            stars: 20,
+            starredAt: "2026-05-02T00:00:00Z",
+            language: "Java"
+        )
+        try await insertRepo(
+            db,
+            id: 3,
+            fullName: "o/swift-untagged",
+            stars: 30,
+            starredAt: "2026-05-03T00:00:00Z",
+            language: "Swift"
+        )
+        try await insertRepo(
+            db,
+            id: 4,
+            fullName: "o/java-library-only",
+            stars: 40,
+            starredAt: "2026-05-04T00:00:00Z",
+            language: "Java",
+            isStarred: false
+        )
+        try await insertRepo(
+            db,
+            id: 5,
+            fullName: "o/swift-library-only",
+            stars: 50,
+            starredAt: "2026-05-05T00:00:00Z",
+            language: "Swift",
+            isStarred: false
+        )
+        try await tagRepo.create(.fixture(id: "tagged"))
+        try await repoTagRepo.addTag(repoId: 2, tagId: "tagged")
+        try await noteRepo.updateLibraryState(repoId: 4, state: .inLibrary)
+        try await noteRepo.updateLibraryState(repoId: 5, state: .inLibrary)
+
+        vm.selection = .allStars
+        vm.setCategorizedLanguageFiltersFromUser(["Java"])
+        await vm.awaitPendingListReloadForTesting()
+        #expect(Set(vm.items.map(\.id)) == [1, 2])
+        #expect(vm.selection == .allStars)
+
+        vm.selection = .untagged
+        await vm.awaitPendingListReloadForTesting()
+        #expect(vm.items.map(\.id) == [1])
+        #expect(vm.effectiveGlobalFilterState.globalFilterLanguages == ["Java"])
+
+        vm.selection = .library
+        await vm.awaitPendingListReloadForTesting()
+        #expect(vm.items.map(\.id) == [4])
+        #expect(vm.effectiveGlobalFilterState.globalFilterLanguages == ["Java"])
+
+        vm.clearLanguageFiltersFromUser()
+        await vm.awaitPendingListReloadForTesting()
+        #expect(Set(vm.items.map(\.id)) == [4, 5])
+    }
+
     @Test("D2: 过滤掉当前选中行 → selectedRepoID 自动清空")
     func filterClearsSelectionWhenItemHidden() async throws {
         let (vm, db, _) = try makeSUT()

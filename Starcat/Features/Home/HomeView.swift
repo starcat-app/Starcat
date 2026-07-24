@@ -1411,6 +1411,22 @@ struct HomeView: View {
 
     private func handleManageSelectionChange(_ newSelection: SidebarItem) {
         guard selectedSidebarPage == .manage, !newSelection.isTrending else { return }
+
+        // 旧版本把 Languages 行建模成独立 Sidebar selection。恢复旧偏好或消费旧深链时，
+        // 立即归一化为“全部仓库 + 语言筛选”，避免再次覆盖真实基础范围。
+        switch newSelection {
+        case .language(let language):
+            viewModel.selection = .allStars
+            viewModel.selectSingleLanguageFilterFromUser(language)
+            return
+        case .allLanguages:
+            viewModel.selection = .allStars
+            viewModel.clearLanguageFiltersFromUser()
+            return
+        default:
+            break
+        }
+
         // 用户在 Sidebar 里切到另一个分类后，跨窗口注入的筛选立即失效。
         viewModel.clearTemporaryGlobalFiltersIfNeeded(for: newSelection)
         savedManageSelection = newSelection

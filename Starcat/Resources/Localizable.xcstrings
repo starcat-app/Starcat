@@ -56034,13 +56034,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "True Snake (Food Chase)"
+            "value" : "True Snake"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "真·贪吃蛇（追食物）"
+            "value" : "真·贪吃蛇"
           }
         }
       }
@@ -56068,13 +56068,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hilbert Curve (Maze)"
+            "value" : "Hilbert Curve"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hilbert 曲线（迷宫）"
+            "value" : "Hilbert 曲线"
           }
         }
       }
@@ -56085,7 +56085,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Multi-mode (Rotating)"
+            "value" : "Multi-mode"
           }
         },
         "zh-Hans" : {
@@ -56102,13 +56102,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dual Snake (Race)"
+            "value" : "Dual Snake"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "双蛇并发（左右开吃）"
+            "value" : "双蛇并发"
           }
         }
       }
@@ -56169,13 +56169,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Zigzag (Classic)"
+            "value" : "Zigzag"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "回字横扫（经典）"
+            "value" : "回字横扫"
           }
         }
       }

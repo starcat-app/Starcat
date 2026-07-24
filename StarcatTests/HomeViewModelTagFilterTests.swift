@@ -99,6 +99,7 @@ struct HomeViewModelTagFilterTests {
         let allStars = ManageNavigationPresentation.make(
             selection: .allStars,
             selectionTitle: String.l10n("sidebar.allRepos"),
+            selectedLanguageTitles: [],
             selectedTagTitles: [],
             searchTitle: nil
         )
@@ -109,6 +110,7 @@ struct HomeViewModelTagFilterTests {
         let untagged = ManageNavigationPresentation.make(
             selection: .untagged,
             selectionTitle: String.l10n("sidebar.untagged"),
+            selectedLanguageTitles: [],
             selectedTagTitles: [],
             searchTitle: nil
         )
@@ -119,6 +121,7 @@ struct HomeViewModelTagFilterTests {
         let library = ManageNavigationPresentation.make(
             selection: .library,
             selectionTitle: String.l10n("sidebar.library"),
+            selectedLanguageTitles: [],
             selectedTagTitles: [],
             searchTitle: nil
         )
@@ -129,6 +132,7 @@ struct HomeViewModelTagFilterTests {
         let collections = ManageNavigationPresentation.make(
             selection: .smartCollectionsHome,
             selectionTitle: String.l10n("smartCollections.title"),
+            selectedLanguageTitles: [],
             selectedTagTitles: [],
             searchTitle: nil
         )
@@ -137,11 +141,12 @@ struct HomeViewModelTagFilterTests {
         #expect(!collections.isFilteredScope)
     }
 
-    @Test("语言与多标签属于全部仓库的第三级细分条件")
+    @Test("语言与多标签属于当前基础仓库范围的第三级细分条件")
     func manageNavigationKeepsLanguageAndTags() {
         let presentation = ManageNavigationPresentation.make(
-            selection: .language("Swift"),
-            selectionTitle: "Swift",
+            selection: .allStars,
+            selectionTitle: String.l10n("sidebar.allRepos"),
+            selectedLanguageTitles: ["Swift"],
             selectedTagTitles: ["AI", "Tools"],
             searchTitle: nil
         )
@@ -151,17 +156,64 @@ struct HomeViewModelTagFilterTests {
         #expect(presentation.isFilteredScope)
     }
 
-    @Test("单语言导航显示为星标下全部仓库的第三级")
-    func manageNavigationKeepsAllStarsAsLanguageBase() {
-        let presentation = ManageNavigationPresentation.make(
-            selection: .language("Java"),
-            selectionTitle: "Java",
-            selectedTagTitles: [],
-            searchTitle: nil
-        )
+    @Test("语言筛选不会覆盖全部仓库、未分类和知识库基础范围")
+    func manageNavigationKeepsBaseScopeWhenLanguageSelected() {
+        let cases: [(SidebarItem, String)] = [
+            (.allStars, String.l10n("sidebar.allRepos")),
+            (.untagged, String.l10n("sidebar.untagged")),
+            (.library, String.l10n("sidebar.library"))
+        ]
 
-        #expect(presentation.secondLevelTitle == String.l10n("sidebar.allRepos"))
-        #expect(presentation.thirdLevelTitle == "Java")
-        #expect(presentation.isFilteredScope)
+        for (selection, title) in cases {
+            let presentation = ManageNavigationPresentation.make(
+                selection: selection,
+                selectionTitle: title,
+                selectedLanguageTitles: ["Java"],
+                selectedTagTitles: [],
+                searchTitle: nil
+            )
+
+            #expect(presentation.secondLevelTitle == title)
+            #expect(presentation.thirdLevelTitle == "Java")
+            #expect(presentation.isFilteredScope)
+        }
+    }
+
+    @Test("智能集合固定三级导航，不追加全局语言或标签")
+    func smartCollectionNavigationIgnoresGlobalFilterTitles() {
+        let cases: [(selection: SidebarItem, title: String, expectedThirdLevel: String, isFiltered: Bool)] = [
+            (
+                .smartCollectionsHome,
+                String.l10n("smartCollections.title"),
+                String.l10n("smartCollections.all"),
+                false
+            ),
+            (
+                .smartCollection(.library),
+                "Knowledge Base",
+                "Knowledge Base",
+                true
+            ),
+            (
+                .userSmartCollection("custom"),
+                "My Collection",
+                "My Collection",
+                true
+            )
+        ]
+
+        for item in cases {
+            let presentation = ManageNavigationPresentation.make(
+                selection: item.selection,
+                selectionTitle: item.title,
+                selectedLanguageTitles: ["Uncategorized"],
+                selectedTagTitles: ["AI"],
+                searchTitle: nil
+            )
+
+            #expect(presentation.secondLevelTitle == String.l10n("smartCollections.title"))
+            #expect(presentation.thirdLevelTitle == item.expectedThirdLevel)
+            #expect(presentation.isFilteredScope == item.isFiltered)
+        }
     }
 }
