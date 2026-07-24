@@ -198,13 +198,9 @@ private struct ReleaseNotesVersionTitle: View {
                 .foregroundStyle(.primary)
 
             if let badgeText {
-                // 实心 New badge：比浅底描边更易成为「当前版」锚点。
+                // 最新版标记用 emoji，不加胶囊底色，避免把彩字洗成单色。
                 Text(LocalizedStringKey(badgeText))
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.accentColor, in: Capsule())
+                    .font(.body)
             }
 
             Spacer(minLength: 0)

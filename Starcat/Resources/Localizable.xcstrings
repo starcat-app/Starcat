@@ -14333,7 +14333,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "What's New"
+            "value" : "更新说明"
           }
         }
       }
@@ -37958,13 +37958,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "New"
+            "value" : "🎉 🎉 🎉"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "New"
+            "value" : "🎉 🎉 🎉"
           }
         }
       }
@@ -37981,7 +37981,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Latest improvements, fixes, and product updates."
+            "value" : "最新的改进、修复与产品更新。"
           }
         }
       }
@@ -37998,7 +37998,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "What's New in Starcat"
+            "value" : "Starcat 更新说明"
           }
         }
       }
@@ -38015,7 +38015,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "What's New"
+            "value" : "更新说明"
           }
         }
       }
@@ -46314,7 +46314,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Prompt"
+            "value" : "提示词"
           }
         }
       }
