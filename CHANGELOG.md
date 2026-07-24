@@ -4,27 +4,29 @@ Release notes for the Mac App Store edition of Starcat.
 
 ## 1.2.0-待发布
 
+Starcat 1.2.0 focuses on stability, usability, and visual polish—adding pinning, share links, shortcuts, and README capabilities, while refining navigation, tags, notes, translation, and knowledge-base flows.
+
 ### New
 
-- Added repository pinning in Manage, with Pin and Unpin actions, most-recently-pinned ordering within each category, and a card-corner indicator.
-- Added repository share links that open Starcat and locate the shared repository.
-- Added customizable app shortcuts for search, refreshing the current content, opening the Knowledge RAG workspace, and opening AI for the current repository, with global and per-shortcut enable controls.
-- Added local Mermaid diagram rendering to repository README pages, with responsive sizing in narrow detail panes and readable source fallback when rendering fails.
-- Added segmented and full README translation modes: segmented translation is the default for paragraph-by-paragraph bilingual reading, while full translation replaces visible text without rewriting the README structure.
+- Repository pinning in Manage: Pin / Unpin, most-recently-pinned ordering, and a card-corner indicator.
+- Repository share links: Open Starcat and locate the shared repository.
+- Customizable app shortcuts: Search, refresh, open Knowledge RAG workspace and current-repo AI, with global and per-shortcut switches.
+- README Mermaid diagrams: Local rendering with responsive sizing in narrow detail panes, and source fallback when rendering fails.
+- README segmented and full translation: Segmented bilingual reading by default; full mode replaces visible text while keeping README structure.
 
 ### Improvements
 
-- Improved the add-tag popover with clearer colored-icon rows and selection, plus a solid window-matched background.
-- Improved the Pro sidebar username gradient for light and dark themes, with smoother first-letter color and better light-mode contrast.
-- Improved navigation across Starred and Explore with clearer three-level hierarchy and filter context.
-- Improved README translation speed with a smaller first batch, incremental results, up to four concurrent AI requests, per-segment caching, and resume support for untranslated segments.
-- Improved personal notes with README-based AI generation and refinement, visible progress, Markdown editing and preview, draft copying, and clearer save status.
-- Improved AI sharing by reusing existing AI summaries, with support for cancelling creation and generating a new AI share link.
-- Improved knowledge-base chunk management: shard counts match language/stars sizing on repo cards; edit and detail views show last-updated time and approximate token counts.
+- Add-tag popover: Clearer colored-icon rows and selection, with a solid window-matched background.
+- Pro sidebar username gradient: Better light/dark adaptation, smoother first-letter color, and stronger light-mode contrast.
+- Starred and Explore navigation: Clearer three-level hierarchy and filter context.
+- README translation speed: Smaller first batch, incremental results, up to four concurrent requests, per-segment caching, and resume for unfinished segments.
+- Personal notes: README-based AI generate/refine, visible progress, Markdown edit/preview, draft copy, and clearer save status.
+- AI sharing: Reuse existing AI summaries; cancel creation and regenerate share links.
+- Knowledge-base chunk management: Shard counts match language/stars sizing on cards; edit and detail views show last-updated time and approximate token counts.
 
 ### Fixes
 
-- Fixed the Knowledge Base entry occasionally not responding, failing to restore a minimized window, or opening the empty-library setup before index status finished loading.
+- Knowledge Base entry: Fixes occasional no-response, minimized-window restore failure, and opening empty-library setup before index status finishes loading.
 
 ## 1.1.0
 

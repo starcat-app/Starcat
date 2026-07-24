@@ -140,9 +140,8 @@ Commits:
   - feat(starcat): 重构新手引导流程并扩展详情页与分享步骤
 
 → ONE bullet:
-  EN: Added onboarding flow with back navigation, debug-mode controls, share guidance,
-      and extended detail-page and sharing steps
-  ZH: 新增新手引导流程，支持返回导航、调试模式开关、分享指引，并扩展详情页与分享步骤
+  EN: Onboarding flow: Back navigation, debug-mode controls, share guidance, and extended detail-page and sharing steps.
+  ZH: 新手引导流程：支持返回导航、调试模式开关、分享指引，并扩展详情页与分享步骤。
 
 Contrast — too technical and verbose (DON'T do this):
   ❌ EN: Implemented retreatStep method with spring animation for decrementing current step
@@ -156,15 +155,26 @@ Contrast — too technical and verbose (DON'T do this):
 
 ### Bullet writing rules
 
-- **One sentence per bullet**: Keep it short and clear — one sentence that captures the essence
-  of the change group. Don't enumerate every sub-detail.
-- **Not technical**: Avoid implementation jargon, API names, file paths, or architectural terms.
-  Write like an app store "What's New" — for normal users, not developers.
-- **User-facing language**: Describe what the user sees or can do, not what changed in code.
-- **Past tense in English**: "Added X", "Improved Y", "Fixed Z".
-- **Chinese follows the same structure**: Same conciseness, same grouping, one sentence.
-- **Every non-excluded commit must be accounted for**: After grouping, verify that every
-  commit that passed the Step 3a filter appears in at least one bullet.
+写法以主规范为准：[`docs/5-规范/Changelog-更新规范.md`](../../../docs/5-规范/Changelog-更新规范.md) 第 4 节（App 更新说明友好）。摘要：
+
+- **短标题 + 冒号 + 说明**：中文用全角 `：`；英文用半角 `: `（冒号后必须有空格）。不要靠第一个逗号拆标题；新条目不要用 em dash。
+- **不要**以 `Added` / `Improved` / `Fixed` 或「新增 / 优化 / 修复」开头——分区标题已表达类别。
+- **One idea per bullet**：短、可扫读；不写实现细节、文件路径、测试过程。
+- **User-facing language**：写用户能感知的结果，像 App Store What's New。
+- **Every non-excluded commit must be accounted for**：分组后确认 Step 3a 通过的 commit 都落在某条里。
+
+→ 推荐形态：
+
+```
+EN: Repository pinning in Manage: Pin / Unpin, most-recently-pinned ordering, and a card-corner indicator.
+ZH: Manage 仓库置顶：支持 Pin / Unpin，按最近置顶优先排列，卡片左上角显示置顶标识。
+```
+
+Contrast — too technical and verbose (DON'T do this):
+  ❌ EN: Implemented retreatStep method with spring animation for decrementing current step
+         index, added DebugFlags.gettingStartedGuide persistence via Debug menu...
+  ❌ ZH: 实现 retreatStep 方法配合弹簧动画递减当前步骤索引...
+
 
 ---
 
@@ -180,16 +190,16 @@ and before the first existing `## <version>` section.
 
 ### New
 
-- Added feature description covering multiple related changes in one sentence.
-- Added another feature group.
+- Short title: User-facing detail covering related changes.
+- Another short title: Another detail.
 
-### Improved
+### Improvements
 
-- Improved existing capability with specific enhancements.
+- Short title: What got better for the user.
 
-### Fixed
+### Fixes
 
-- Fixed bug description.
+- Short title: What was broken and now works.
 ```
 
 ### Chinese format
@@ -199,22 +209,25 @@ and before the first existing `## <version>` section.
 
 ### 新增
 
-- 新增功能描述，一句话涵盖多个相关变更。
+- 短标题：用户能懂的说明，可涵盖一组相关变更。
 
-### 改进
+### 优化
 
-- 改进现有能力的具体增强。
+- 短标题：体验或性能上的改进。
 
 ### 修复
 
-- 修复问题描述。
+- 短标题：已修好的问题。
 ```
+
+分区标题必须用上表词（`New` / `Improvements` / `Fixes` 与 `新增` / `优化` / `修复`），不要写成 `Improved`、`Changed`、`改进`、`Bug Fixes`。完整约束见主规范第 4 节。
 
 ### Rules
 - Categories with no entries → omit the section entirely
 - Blank line between sections and between bullets
 - Bullets start with `- ` (dash + space)
-- The version link reference goes at the bottom of the file
+- Bullets use `短标题：说明`（中文全角冒号）或 `Short title: detail`（英文冒号+空格）；不要句首分类动词、不要用 em dash
+- The version link reference goes at the bottom of the file（starcat-pro 渠道若在用）
 
 ---
 
