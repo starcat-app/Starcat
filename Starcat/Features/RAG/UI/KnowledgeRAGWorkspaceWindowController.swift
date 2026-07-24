@@ -257,9 +257,15 @@ final class KnowledgeRAGBrowserWindowController: NSWindowController, NSWindowDel
             if isNewWindow {
                 controller.center(window, over: presentingWindow)
             }
+            // makeKeyAndOrderFront 不会恢复 Dock 中的最小化窗口。复用 shared controller 时
+            // 必须先解除最小化，再强制前置，保证每次点击都能看到同一个知识库窗口。
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
+            }
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
         }
-        controller.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     /// 首次打开时锚定 RAG 工作台，避免浏览器落在上一次应用启动时保存的无关位置。
@@ -2601,6 +2607,7 @@ private struct RAGRetrievalHitInspection: Identifiable {
 private struct KnowledgeRAGChunkEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.locale) private var locale
     let source: RAGChunkSource?
     let sourceSystemImageName: String
     let sourceTintColor: Color
@@ -2610,6 +2617,10 @@ private struct KnowledgeRAGChunkEditor: View {
     let repoContextExportIdentity: (owner: String, repo: String)?
     let isExcluded: Bool?
     let retrievalMetadata: (repositoryName: String, ownerAvatarURL: String?, kind: String, score: Double, vectorSimilarity: Double?)?
+    /// 与列表同源：落库的大概 token 数，编辑中不随正文草稿重算。
+    let tokenCount: Int
+    /// 分片 `updated_at` / RepoContext `lastAccessedAt ?? generatedAt`；解析失败则不展示。
+    let updatedAt: Date?
     let onSave: ((String, String, String) async -> String?)?
     /// 只读命中详情右上角：切到同款编辑 sheet（左侧列表点进的那个）。
     let onEdit: (() -> Void)?
@@ -2629,6 +2640,8 @@ private struct KnowledgeRAGChunkEditor: View {
         repoContextExportIdentity = nil
         isExcluded = chunk.isExcluded
         retrievalMetadata = nil
+        tokenCount = chunk.chunk.tokenCount
+        updatedAt = ISO8601DateFormatter.shared.date(from: chunk.chunk.updatedAt)
         self.onSave = onSave
         onEdit = nil
         _title = State(initialValue: chunk.chunk.title)
@@ -2646,6 +2659,9 @@ private struct KnowledgeRAGChunkEditor: View {
         repoContextExportIdentity = (repoContext.metadata.owner, repoContext.metadata.repo)
         isExcluded = nil
         retrievalMetadata = nil
+        // 与列表行同源：用 PackStats.actualTokens；时间取最近访问（手工编辑会刷新），否则生成时间。
+        tokenCount = repoContext.metadata.stats.actualTokens
+        updatedAt = repoContext.metadata.lastAccessedAt ?? repoContext.metadata.generatedAt
         self.onSave = { _, _, content in await onSave(content) }
         onEdit = nil
         _title = State(initialValue: String.l10n("rag.browser.repoContext.title"))
@@ -2669,6 +2685,8 @@ private struct KnowledgeRAGChunkEditor: View {
             hit.hit.score,
             hit.hit.vectorSimilarity
         )
+        tokenCount = hit.hit.chunk.tokenCount
+        updatedAt = ISO8601DateFormatter.shared.date(from: hit.hit.chunk.updatedAt)
         onSave = nil
         self.onEdit = onEdit
         _title = State(initialValue: hit.hit.chunk.title)
@@ -2796,16 +2814,17 @@ private struct KnowledgeRAGChunkEditor: View {
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
             }
-            if let onSave {
-                HStack(alignment: .center, spacing: 12) {
+            // 编辑与只读详情共用左下角：可用态（仅编辑）+ 最后更新 + 列表同款 token。
+            HStack(alignment: .center, spacing: 12) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     if let isExcluded {
-                        // 与列表共用可用/不可用图标色；不可用时附保存后恢复提示。
-                        RAGChunkAvailabilityBadge(isExcluded: isExcluded, showsRestoreHint: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
-                        Spacer()
+                        RAGChunkAvailabilityBadge(isExcluded: isExcluded, showsRestoreHint: onSave != nil)
                     }
+                    chunkEditorFooterMeta
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
+                if let onSave {
                     Button("common.cancel") { dismiss() }
                     Button("rag.browser.chunk.save") {
                         Task {
@@ -2829,6 +2848,34 @@ private struct KnowledgeRAGChunkEditor: View {
             height: interfaceScale.scaled(540),
             alignment: .topLeading
         )
+    }
+
+    /// 左下角元信息：最后更新时间 + 列表同款「约 N tokens」。
+    /// token 用落库值，不随编辑草稿重算，避免未保存时数字抖动。
+    private var chunkEditorFooterMeta: some View {
+        HStack(spacing: 6) {
+            if let updatedAt {
+                Text(
+                    String(
+                        format: String.l10n("search.detail.time.updated.format"),
+                        RelativeTimeText.pastEvent(updatedAt, locale: locale)
+                    )
+                )
+                .help(Text(updatedAt, format: .dateTime.year().month().day().hour().minute()))
+                Text(verbatim: "·")
+                    .accessibilityHidden(true)
+            }
+            Text(
+                verbatim: String(
+                    format: String.l10n("rag.browser.chunks.tokenCountFormat"),
+                    tokenCount
+                )
+            )
+            .font(.caption.monospaced())
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
     }
 
     /// 导出当前 `@State content`，因此用户尚未点击保存的修改也会进入下载文件；此操作

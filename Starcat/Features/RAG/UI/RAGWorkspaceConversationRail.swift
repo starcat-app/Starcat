@@ -222,15 +222,19 @@ struct RAGWorkspaceConversationRail: View {
                         .lineLimit(2)
                 }
             }
+            // padding、背景和命中形状必须属于 Button label；如果放在 Button 外层，
+            // 留白区域虽然会显示 hover 和手型指针，却不会触发按钮 action。
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            // 默认保留知识库入口的灰底，hover 仅切换背景色，避免破坏侧栏布局稳定性。
+            .background(
+                isKnowledgeBaseHovered
+                    ? Color.accentColor.opacity(0.08)
+                    : Color(nsColor: .textBackgroundColor).opacity(0.58),
+                in: RoundedRectangle(cornerRadius: 8)
+            )
         }
-        .padding(10)
-        // 默认保留知识库入口的灰底，hover 仅切换背景色，避免破坏侧栏布局稳定性。
-        .background(
-            isKnowledgeBaseHovered
-                ? Color.accentColor.opacity(0.08)
-                : Color(nsColor: .textBackgroundColor).opacity(0.58),
-            in: RoundedRectangle(cornerRadius: 8)
-        )
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .pointerStyle(.link)

@@ -37,6 +37,18 @@ struct KnowledgeRAGCoreTests {
         #expect(projection.staleChunks == 2)
     }
 
+    @Test("索引覆盖率加载前不把占位空态误判为真实空库")
+    func knowledgeBaseEmptyStateWaitsForCoverage() {
+        #expect(!KnowledgeRAGWorkspaceViewModel.resolveKnowledgeBaseEmptyState(
+            indexStatus: .empty,
+            hasLoadedIndexCoverage: false
+        ))
+        #expect(KnowledgeRAGWorkspaceViewModel.resolveKnowledgeBaseEmptyState(
+            indexStatus: .empty,
+            hasLoadedIndexCoverage: true
+        ))
+    }
+
     @Test("单 source 重建只读取对应数据")
     func sourceAwareReadPlan() {
         let readme = RAGSourceReadPlan(sources: [.readme])

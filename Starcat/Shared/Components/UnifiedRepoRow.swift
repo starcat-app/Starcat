@@ -478,10 +478,13 @@ private struct RepoCardInlineMetadataBadge: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: metadata.systemImage)
-                .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                .font(interfaceScale.font(.captionSmall, weight: .medium))
             if !iconOnly {
+                // 与同行 Language / Stars / Forks 统一：captionSmall + 常规字重。
+                // 旧实现用 .code + semibold，分片「5/5」会明显偏大偏粗（同 trendingChange 旧坑）。
                 Text(verbatim: metadata.text)
-                    .font(interfaceScale.font(.code, weight: .semibold))
+                    .font(interfaceScale.font(.captionSmall))
+                    .monospacedDigit()
                     .lineLimit(1)
                     .truncationMode(.tail)
             }

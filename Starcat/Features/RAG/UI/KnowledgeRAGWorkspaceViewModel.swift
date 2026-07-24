@@ -545,6 +545,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     private var mentionQueryTask: Task<Void, Never>?
     /// 只共享纯值读模型；工作台自己的问题抽屉、重建任务和进度状态仍留在本 ViewModel。
     var indexStatus = RAGIndexStatusProjection.empty
+    /// `.empty` 也是初始占位值，不能在 coverage 首次读取完成前把“未知”误判为真实空库。
+    private(set) var hasLoadedIndexCoverage = false
     /// Inspector 常显的本地知识库事实。回答流会用实际注入 Prompt 的快照覆盖它，避免面板与
     /// 当前轮模型看到的数据不一致；工作台初次打开时则主动读取一次，使用户无需先提问也能核验。
     var knowledgeBaseMetadataSnapshot: KnowledgeBaseMetadataSnapshot?
@@ -553,7 +555,18 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     /// 知识库尚无任何仓库时，问答没有可检索边界。
     var isKnowledgeBaseEmpty: Bool {
-        indexStatus.isKnowledgeBaseEmpty
+        Self.resolveKnowledgeBaseEmptyState(
+            indexStatus: indexStatus,
+            hasLoadedIndexCoverage: hasLoadedIndexCoverage
+        )
+    }
+
+    /// coverage 加载前的 `.empty` 只是占位值；入口路由必须把“未知”和“真实空库”分开。
+    nonisolated static func resolveKnowledgeBaseEmptyState(
+        indexStatus: RAGIndexStatusProjection,
+        hasLoadedIndexCoverage: Bool
+    ) -> Bool {
+        hasLoadedIndexCoverage && indexStatus.isKnowledgeBaseEmpty
     }
     var indexIssueChunks: [RAGIndexIssueKind: [RAGChunk]] = [:]
     var indexIssueHasMore: Set<RAGIndexIssueKind> = []
@@ -3984,6 +3997,7 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     private func refreshIndexCoverage() async throws {
         indexStatus = try await dependencies.knowledgeRAGIndexBuilder.coverage()
+        hasLoadedIndexCoverage = true
 
         // 索引通知到达时，已经展开的问题抽屉必须刷新第一页，不能直接清空缓存：
         // 展开状态归 Inspector 所有，ViewModel 清空后不会触发再次加载，最终会把
