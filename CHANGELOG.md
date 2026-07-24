@@ -14,12 +14,17 @@ Release notes for the Mac App Store edition of Starcat.
 
 ### Improvements
 
-- Improved the add-tag interface.
+- Improved the add-tag popover with clearer colored-icon rows and selection, plus a solid window-matched background.
+- Improved the Pro sidebar username gradient for light and dark themes, with smoother first-letter color and better light-mode contrast.
 - Improved navigation across Starred and Explore with clearer three-level hierarchy and filter context.
 - Improved README translation speed with a smaller first batch, incremental results, up to four concurrent AI requests, per-segment caching, and resume support for untranslated segments.
 - Improved personal notes with README-based AI generation and refinement, visible progress, Markdown editing and preview, draft copying, and clearer save status.
 - Improved AI sharing by reusing existing AI summaries, with support for cancelling creation and generating a new AI share link.
-- Improved the RAG workspace UI.
+- Improved knowledge-base chunk management: shard counts match language/stars sizing on repo cards; edit and detail views show last-updated time and approximate token counts.
+
+### Fixes
+
+- Fixed the Knowledge Base entry occasionally not responding, failing to restore a minimized window, or opening the empty-library setup before index status finished loading.
 
 ## 1.1.0
 
