@@ -38876,7 +38876,21 @@
       }
     },
     "repo.card.alreadyStarred" : {
-
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Already Starred"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已 Star"
+          }
+        }
+      }
     },
     "repo.card.inLibrary" : {
       "extractionState" : "manual",
@@ -40596,7 +40610,21 @@
       }
     },
     "repo.star" : {
-
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Star"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Star"
+          }
+        }
+      }
     },
     "repo.star.failed" : {
       "extractionState" : "stale",
@@ -45501,7 +45529,21 @@
       }
     },
     "settings.ai.modelParams.resetHelp.activeFormat %@" : {
-
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reset %@ parameters"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重置 %@ 参数"
+          }
+        }
+      }
     },
     "settings.ai.modelParams.resetHelp.empty" : {
       "extractionState" : "manual",
@@ -46233,7 +46275,21 @@
       }
     },
     "settings.ai.prompt.restoreHelpFormat %@" : {
-
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore default %@ Prompt"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢复默认 %@ Prompt"
+          }
+        }
+      }
     },
     "settings.ai.prompt.system" : {
       "extractionState" : "manual",

@@ -98,8 +98,11 @@ enum AppLocale: String, CaseIterable, Identifiable, Sendable {
         let lang = locale.language.languageCode?.identifier ?? "en"
         switch lang {
         case "zh":
+            // `zh-Hant` 只有 script、未必带 TW/HK/MO region。只判断 region 会把
+            // Starcat 的繁中目标语言错误映射成 Simplified Chinese。
+            let script = locale.language.script?.identifier
             let region = locale.language.region?.identifier
-            return (region == "TW" || region == "HK" || region == "MO")
+            return (script == "Hant" || region == "TW" || region == "HK" || region == "MO")
                 ? "Traditional Chinese"
                 : "Simplified Chinese"
         case "ja": return "Japanese"
@@ -108,7 +111,18 @@ enum AppLocale: String, CaseIterable, Identifiable, Sendable {
         case "de": return "German"
         case "es": return "Spanish"
         case "ru": return "Russian"
-        case "pt": return "Portuguese"
+        case "pt":
+            return locale.language.region?.identifier == "BR"
+                ? "Brazilian Portuguese"
+                : "Portuguese"
+        case "it": return "Italian"
+        case "nl": return "Dutch"
+        case "pl": return "Polish"
+        case "uk": return "Ukrainian"
+        case "tr": return "Turkish"
+        case "vi": return "Vietnamese"
+        case "id": return "Indonesian"
+        case "ar": return "Arabic"
         default:   return "English"
         }
     }
