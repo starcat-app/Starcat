@@ -2,10 +2,11 @@
 """安全同步 Starcat String Catalog 与公开 `.xcloc` 语言包。
 
 运行时单一来源是 `Starcat/Resources/Localizable.xcstrings`，公开协作仓库按语言
-保存一个 `.xcloc`。脚本刻意区分“在途翻译”和“已审核翻译”：
+保存一个 `.xcloc`。脚本刻意区分“在途翻译”和“已批准翻译”：
 
 - export 会保留旧包里的在途 target；源文案变化时降级为待复核。
 - import 默认只接受 `translated`、`final`、`signed-off`。
+- import 仅在实际写入前备份原始 Catalog，并输出可恢复路径。
 - import-all 先验证全部包，再一次性写回，任一包失败都不会留下半成品。
 - audit/report 读取公开仓库 manifest，给本地和 CI 提供一致的质量视图。
 
@@ -22,13 +23,15 @@
 
 - 所有说明使用中文；命令、locale、key、路径保持技术字面量。
 - 公开仓库只维护每语言一个 `.xcloc`，不把它当作 App 运行时来源。
-- 未审核 target 不得伪装成 `translated`，也不得据此开放正式语言选择器。
+- 未批准 target 不得伪装成 `translated`，也不得据此开放正式语言选择器。
+- export 改变已批准 package 内容时，必须使 `translationApproval` 失效。
 """
 
 from __future__ import annotations
 
 import argparse
 import collections
+import hashlib
 import json
 import os
 import re
@@ -36,12 +39,14 @@ import shutil
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, NamedTuple
 
 
 PROJECT_NAME = "Starcat"
 CATALOG_RELATIVE_PATH = Path("Starcat/Resources/Localizable.xcstrings")
+CATALOG_BACKUP_RELATIVE_PATH = Path("supports/backups/localization")
 PACKAGE_DIR_NAME = "Translation Packages"
 MANIFEST_NAME = "locales.json"
 NONTRANSLATABLE_NAME = "nontranslatable-keys.json"
@@ -84,6 +89,7 @@ class ImportResult(NamedTuple):
 
     changed: int
     skipped: int
+    backup_path: Path | None
 
 
 class LocaleReport(NamedTuple):
@@ -107,6 +113,12 @@ def repo_root() -> Path:
 
 def default_catalog_path() -> Path:
     return repo_root() / CATALOG_RELATIVE_PATH
+
+
+def default_catalog_backup_dir() -> Path:
+    """备份放在主仓库已有的忽略目录，避免进入 App 资源或 Git diff。"""
+
+    return repo_root() / CATALOG_BACKUP_RELATIVE_PATH
 
 
 def default_localization_repo() -> Path:
@@ -169,6 +181,52 @@ def save_catalog(path: Path, catalog: dict[str, Any]) -> None:
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             handle.write(serialize_catalog(catalog))
+        os.replace(temporary_path, path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def backup_catalog(path: Path, backup_dir: Path) -> Path:
+    """原子保存导入前的 Catalog 原始字节，并返回可人工恢复的备份路径。"""
+
+    original = path.read_bytes()
+    digest = hashlib.sha256(original).hexdigest()[:12]
+    timestamp = (
+        datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .strftime("%Y%m%dT%H%M%SZ")
+    )
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_path = backup_dir / f"{path.name}.{timestamp}.{digest}.bak"
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{backup_path.name}.",
+        suffix=".tmp",
+        dir=backup_dir,
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(original)
+        os.replace(temporary_path, backup_path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+    return backup_path
+
+
+def save_json(path: Path, payload: dict[str, Any]) -> None:
+    """原子写普通 JSON；manifest 不使用 String Catalog 的特殊冒号风格。"""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=path.parent,
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
         os.replace(temporary_path, path)
     finally:
         temporary_path.unlink(missing_ok=True)
@@ -439,9 +497,23 @@ def export_one_package(
     catalog: dict[str, Any],
     package_root: Path,
     locale: str,
-) -> None:
+) -> bool:
+    """导出一个包，并返回 source/target/state 是否发生语义变化。"""
+
     target = package_root / f"{locale}.xcloc"
     existing_units = read_xliff_units(target, locale) if target.exists() else {}
+    existing_snapshot_path = (
+        target
+        / "Source Contents"
+        / PROJECT_NAME
+        / "Localizable"
+        / "Localizable.xcstrings"
+    )
+    existing_snapshot = (
+        existing_snapshot_path.read_bytes()
+        if existing_snapshot_path.is_file()
+        else None
+    )
     temporary = Path(tempfile.mkdtemp(prefix=f".{locale}.xcloc.", dir=package_root))
     try:
         localized_contents = temporary / "Localized Contents"
@@ -464,7 +536,12 @@ def export_one_package(
             raise LocalizationError(f"生成包 locale 不一致：{locale}")
         if set(generated_units) != set(catalog["strings"]):
             raise LocalizationError(f"生成包 key 集合不一致：{locale}")
+        content_changed = (
+            existing_snapshot != catalog_path.read_bytes()
+            or existing_units != generated_units
+        )
         replace_package_atomically(temporary, target)
+        return content_changed
     finally:
         if temporary.exists():
             shutil.rmtree(temporary)
@@ -489,8 +566,24 @@ def export_packages(args: argparse.Namespace) -> int:
 
     package_root = localization_repo / PACKAGE_DIR_NAME
     package_root.mkdir(parents=True, exist_ok=True)
+    items_by_locale = {
+        item["id"]: item
+        for item in manifest_locale_items(manifest)
+    }
     for locale in locales:
-        export_one_package(catalog_path, catalog, package_root, locale)
+        content_changed = export_one_package(
+            catalog_path,
+            catalog,
+            package_root,
+            locale,
+        )
+        item = items_by_locale[locale]
+        if content_changed and "translationApproval" in item:
+            del item["translationApproval"]
+            # 每个 package 导出后立即使其批准失效，避免后续 locale 失败时留下
+            # “内容已改变但批准记录仍有效”的危险状态。
+            save_json(localization_repo / MANIFEST_NAME, manifest)
+            print(f"invalidated translationApproval: {locale}")
         print(f"exported {display_path(package_root / f'{locale}.xcloc')}")
     return 0
 
@@ -551,8 +644,9 @@ def import_package_paths(
     package_paths: list[Path],
     *,
     allow_unreviewed: bool = False,
+    backup_dir: Path | None = None,
 ) -> ImportResult:
-    """预检全部包后一次性写回；预检失败时 Catalog 保持字节级不变。"""
+    """预检全部包，备份原文件后一次性写回；失败时 Catalog 保持不变。"""
 
     catalog = load_catalog(catalog_path)
     validated = [
@@ -584,9 +678,18 @@ def import_package_paths(
             unit["value"] = incoming.target
             changed += 1
 
+    backup_path = None
     if changed:
+        backup_path = backup_catalog(
+            catalog_path,
+            (backup_dir or default_catalog_backup_dir()).resolve(),
+        )
         save_catalog(catalog_path, catalog)
-    return ImportResult(changed=changed, skipped=skipped)
+    return ImportResult(
+        changed=changed,
+        skipped=skipped,
+        backup_path=backup_path,
+    )
 
 
 def import_packages(args: argparse.Namespace) -> int:
@@ -596,7 +699,10 @@ def import_packages(args: argparse.Namespace) -> int:
         catalog_path,
         package_paths,
         allow_unreviewed=args.allow_unreviewed,
+        backup_dir=default_catalog_backup_dir(),
     )
+    if result.backup_path is not None:
+        print(f"backup: {display_path(result.backup_path)}")
     print(
         f"updated {result.changed} localization values; "
         f"skipped {result.skipped} unreviewed/empty values in {display_path(catalog_path)}"

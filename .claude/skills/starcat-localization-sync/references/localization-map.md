@@ -25,6 +25,7 @@
 | 不翻译 key 白名单 | `supports/starcat-localization/nontranslatable-keys.json` |
 | 公开仓库独立校验器 | `supports/starcat-localization/scripts/validate_packages.py` |
 | AI 初稿脚本 | `supports/starcat-localization/scripts/translate_draft.py` |
+| AI 初稿批准脚本 | `supports/starcat-localization/scripts/promote_drafts.py` |
 | 导入导出脚本 | `supports/scripts/starcat-localization.py` |
 | `.xcstrings` 修补脚本 | `scripts/xcstrings_patch.py` |
 | i18n 规范 | `docs/5-规范/国际化-规范.md` 和 `docs/5-规范/i18n-军规.md` |
@@ -130,6 +131,7 @@ python3 supports/starcat-localization/scripts/promote_drafts.py --all
 python3 supports/starcat-localization/scripts/promote_drafts.py \
   --all \
   --approval-method maintainer-ai-accepted \
+  --approved-by dong4j \
   --apply
 ```
 
@@ -206,6 +208,12 @@ python3 supports/scripts/starcat-localization.py import-all
 
 默认只导入 `translated`、`final`、`signed-off` 状态。`import-all` 会先完整
 验证所有包，再一次性写回；任一包失败都不会留下部分导入结果。
+
+只有实际存在变更时，导入脚本才会在写入前把原始 Catalog 按字节备份到
+`supports/backups/localization/`，文件名包含 UTC 时间和原文件 SHA-256 前缀。
+该目录已被 Git 忽略，命令会输出真实备份路径，脚本不会自动删除历史备份。
+需要恢复时，先停止后续导入，再把对应 `.bak` 原样复制回
+`Starcat/Resources/Localizable.xcstrings` 并运行 `jq empty` 与 `audit`。
 
 `--allow-unreviewed` 只允许临时 UI 调试；它保持 review 状态，不得据此提升
 `releaseStatus`。
@@ -294,6 +302,7 @@ python3 scripts/xcstrings_patch.py set-batch \
 | 问题 | 处理 |
 |---|---|
 | `.xcstrings` JSON 无效 | 停止，先恢复或修正 JSON，再继续 |
+| Catalog 导入结果需回退 | 从命令输出的 `supports/backups/localization/*.bak` 恢复，再运行 `jq empty` 与 `audit` |
 | `xcstrings_patch.py` 报 `MISSING key` | 不要静默新增；确认 key 命名后再决定是否新增 |
 | `.xcloc` 缺少 XLIFF | 检查包结构：`Localized Contents/<locale>.xliff` |
 | `released locale ... missing/review` | 不要降低门禁；补齐并审核翻译，或保持 `draft` |

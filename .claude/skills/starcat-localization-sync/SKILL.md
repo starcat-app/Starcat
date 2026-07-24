@@ -51,7 +51,7 @@ Arabic RTL 验收。
 | 定向重译 | `translate_draft.py --key <key> --apply` |
 | 恢复技术字面量 | `translate_draft.py --repair-protected-literals --apply` |
 | 人工审核后导入 | `starcat-localization.py import` / `import-all` |
-| 维护者接受 AI 初稿 | 走下文“维护者 AI 放行”流程 |
+| 维护者接受 AI 初稿 | `python3 supports/starcat-localization/scripts/promote_drafts.py` |
 | 正式开放语言 | 先导入，再扩展 `AppLocale`，最后提升 `releaseStatus` |
 | 修补已有 `.xcstrings` | `scripts/xcstrings_patch.py show/set/set-batch` |
 
@@ -89,7 +89,7 @@ Arabic RTL 验收。
 `--all` 必须从 `locales.json` 动态选择满足条件的 `draft` locale，不得把 16 种语言
 硬编码进脚本，也不得包含已经 `released` 的 `en` / `zh-Hans`。
 
-当前仓库若没有 `supports/starcat-localization/scripts/promote_drafts.py`：
+若未来检出缺少 `supports/starcat-localization/scripts/promote_drafts.py`：
 
 - 不要用临时脚本、正则或 XML 全局替换伪造批量批准。
 - 先提出并实现该脚本、回归测试、validator 规则和文档同步。

@@ -8,12 +8,15 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import importlib.util
+import io
 import json
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from unittest import mock
 
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "starcat-localization.py"
@@ -30,6 +33,7 @@ class StarcatLocalizationTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.root = Path(self.temp_dir.name)
         self.catalog_path = self.root / "Localizable.xcstrings"
+        self.backup_dir = self.root / "backups" / "localization"
         self.repo_path = self.root / "starcat-localization"
         self.repo_path.mkdir()
         self.write_manifest(["en", "zh-Hans", "ja", "pt-BR", "zh-Hant"])
@@ -138,6 +142,24 @@ class StarcatLocalizationTests(unittest.TestCase):
             return
         self.fail(f"missing XLIFF unit: {key}")
 
+    def set_translation_approval(self, locale: str) -> None:
+        manifest = localization.load_json(self.repo_path / "locales.json")
+        item = next(
+            item
+            for item in manifest["locales"]
+            if item["id"] == locale
+        )
+        item["translationApproval"] = {
+            "method": "maintainer-ai-accepted",
+            "humanReviewed": False,
+            "approvedBy": "dong4j",
+            "approvedAt": "2026-07-24T12:00:00Z",
+            "unitCount": 2,
+            "sourceDigest": "sha256:source",
+            "translationDigest": "sha256:translation",
+        }
+        localization.save_json(self.repo_path / "locales.json", manifest)
+
     def test_partial_export_does_not_delete_other_packages(self) -> None:
         self.export("ja", "pt-BR")
         marker = self.package_path("pt-BR") / "keep.txt"
@@ -176,6 +198,33 @@ class StarcatLocalizationTests(unittest.TestCase):
         self.assertEqual(units["greeting"].state, "needs-review-translation")
         self.assertEqual(units["greeting"].source, "Welcome %@")
 
+    def test_export_invalidates_approval_only_when_package_changes(self) -> None:
+        self.export("ja")
+        self.set_translation_approval("ja")
+
+        self.export("ja")
+        unchanged = localization.load_manifest(self.repo_path)
+        ja = next(item for item in unchanged["locales"] if item["id"] == "ja")
+        self.assertIn("translationApproval", ja)
+
+        self.write_catalog(
+            {
+                "greeting": {
+                    "en": ("translated", "Welcome %@"),
+                    "zh-Hans": ("translated", "欢迎 %@"),
+                },
+                "plain": {
+                    "en": ("translated", "Plain text"),
+                    "zh-Hans": ("translated", "普通文本"),
+                },
+            }
+        )
+        self.export("ja")
+
+        changed = localization.load_manifest(self.repo_path)
+        ja = next(item for item in changed["locales"] if item["id"] == "ja")
+        self.assertNotIn("translationApproval", ja)
+
     def test_import_skips_unreviewed_target(self) -> None:
         self.export("ja")
         self.set_xliff_unit(
@@ -188,11 +237,102 @@ class StarcatLocalizationTests(unittest.TestCase):
         result = localization.import_package_paths(
             self.catalog_path,
             [self.package_path("ja")],
+            backup_dir=self.backup_dir,
         )
 
         self.assertEqual(result.changed, 0)
+        self.assertIsNone(result.backup_path)
+        self.assertFalse(self.backup_dir.exists())
         catalog = localization.load_catalog(self.catalog_path)
         self.assertNotIn("ja", catalog["strings"]["greeting"].get("localizations", {}))
+
+    def test_import_backs_up_original_catalog_before_writing(self) -> None:
+        self.export("ja")
+        self.set_xliff_unit(
+            "ja",
+            "greeting",
+            target="こんにちは %@",
+            state="translated",
+        )
+        original = self.catalog_path.read_bytes()
+
+        result = localization.import_package_paths(
+            self.catalog_path,
+            [self.package_path("ja")],
+            backup_dir=self.backup_dir,
+        )
+
+        self.assertEqual(result.changed, 1)
+        self.assertIsNotNone(result.backup_path)
+        assert result.backup_path is not None
+        self.assertEqual(
+            result.backup_path.parent,
+            self.backup_dir.resolve(),
+        )
+        self.assertEqual(result.backup_path.read_bytes(), original)
+        self.assertRegex(
+            result.backup_path.name,
+            r"^Localizable\.xcstrings\.\d{8}T\d{6}Z\.[0-9a-f]{12}\.bak$",
+        )
+
+    def test_repeated_noop_import_does_not_create_another_backup(self) -> None:
+        self.export("ja")
+        self.set_xliff_unit(
+            "ja",
+            "greeting",
+            target="こんにちは %@",
+            state="translated",
+        )
+        first = localization.import_package_paths(
+            self.catalog_path,
+            [self.package_path("ja")],
+            backup_dir=self.backup_dir,
+        )
+        initial_backups = sorted(self.backup_dir.glob("*.bak"))
+
+        second = localization.import_package_paths(
+            self.catalog_path,
+            [self.package_path("ja")],
+            backup_dir=self.backup_dir,
+        )
+
+        self.assertIsNotNone(first.backup_path)
+        self.assertEqual(second.changed, 0)
+        self.assertIsNone(second.backup_path)
+        self.assertEqual(
+            sorted(self.backup_dir.glob("*.bak")),
+            initial_backups,
+        )
+
+    def test_import_command_prints_backup_path(self) -> None:
+        self.export("ja")
+        self.set_xliff_unit(
+            "ja",
+            "greeting",
+            target="こんにちは %@",
+            state="translated",
+        )
+        output = io.StringIO()
+
+        with mock.patch.object(
+            localization,
+            "default_catalog_backup_dir",
+            return_value=self.backup_dir,
+        ):
+            with contextlib.redirect_stdout(output):
+                exit_code = localization.import_packages(
+                    argparse.Namespace(
+                        catalog=str(self.catalog_path),
+                        package=[str(self.package_path("ja"))],
+                        allow_unreviewed=False,
+                    )
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn(
+            f"backup: {self.backup_dir.resolve()}/Localizable.xcstrings.",
+            output.getvalue(),
+        )
 
     def test_import_rejects_unknown_key_without_writing(self) -> None:
         self.export("ja")
@@ -211,9 +351,11 @@ class StarcatLocalizationTests(unittest.TestCase):
             localization.import_package_paths(
                 self.catalog_path,
                 [self.package_path("ja")],
+                backup_dir=self.backup_dir,
             )
 
         self.assertEqual(self.catalog_path.read_text(encoding="utf-8"), original)
+        self.assertFalse(self.backup_dir.exists())
 
     def test_import_rejects_placeholder_mismatch(self) -> None:
         self.export("ja")
@@ -250,9 +392,38 @@ class StarcatLocalizationTests(unittest.TestCase):
             localization.import_package_paths(
                 self.catalog_path,
                 [self.package_path("ja"), self.package_path("pt-BR")],
+                backup_dir=self.backup_dir,
             )
 
         self.assertEqual(self.catalog_path.read_text(encoding="utf-8"), original)
+        self.assertFalse(self.backup_dir.exists())
+
+    def test_catalog_write_failure_keeps_original_and_backup(self) -> None:
+        self.export("ja")
+        self.set_xliff_unit(
+            "ja",
+            "greeting",
+            target="こんにちは %@",
+            state="translated",
+        )
+        original = self.catalog_path.read_bytes()
+
+        with mock.patch.object(
+            localization,
+            "save_catalog",
+            side_effect=OSError("simulated write failure"),
+        ):
+            with self.assertRaisesRegex(OSError, "simulated write failure"):
+                localization.import_package_paths(
+                    self.catalog_path,
+                    [self.package_path("ja")],
+                    backup_dir=self.backup_dir,
+                )
+
+        self.assertEqual(self.catalog_path.read_bytes(), original)
+        backups = list(self.backup_dir.glob("*.bak"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_bytes(), original)
 
     def test_catalog_writer_preserves_xcode_colon_style(self) -> None:
         catalog = localization.load_catalog(self.catalog_path)
