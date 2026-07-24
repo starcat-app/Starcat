@@ -521,12 +521,13 @@ enum ChangelogParser {
         text = stripMarkdownEmphasis(text)
         text = stripLeadingCategoryVerb(text)
 
-        if let split = split(text, separator: " — ") { return polish(split) }
-        if let split = split(text, separator: " – ") { return polish(split) }
+        // 新规范优先冒号；仍兼容历史 em / en dash。
         if let split = split(text, separator: "：") { return polish(split) }
         if let split = split(text, separator: ": "), split.left.count <= 36 {
             return polish(split)
         }
+        if let split = split(text, separator: " — ") { return polish(split) }
+        if let split = split(text, separator: " – ") { return polish(split) }
 
         // 中文：首个顿号/逗号前较短时作标题。
         if let index = text.firstIndex(of: "，") {

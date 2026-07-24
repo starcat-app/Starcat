@@ -56,7 +56,17 @@ final class ReleaseNotesChangelogParserTests: XCTestCase {
         XCTAssertEqual(previous.sections.first?.kind, .added)
     }
 
-    func testSplitItemPrefersEmDashAndStripsCategoryVerb() {
+    func testSplitItemPrefersColonAndStripsCategoryVerb() {
+        let zh = ChangelogParser.splitItem("新增 Manage 仓库置顶：支持 Pin / Unpin")
+        XCTAssertEqual(zh.title, "Manage 仓库置顶")
+        XCTAssertEqual(zh.detail, "支持 Pin / Unpin")
+
+        let en = ChangelogParser.splitItem("Added repository pinning: with Pin and Unpin")
+        XCTAssertEqual(en.title, "repository pinning")
+        XCTAssertEqual(en.detail, "with Pin and Unpin")
+    }
+
+    func testSplitItemStillAcceptsEmDash() {
         let split = ChangelogParser.splitItem("Added repository pinning — with Pin and Unpin")
         XCTAssertEqual(split.title, "repository pinning")
         XCTAssertEqual(split.detail, "with Pin and Unpin")
