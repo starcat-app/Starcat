@@ -529,6 +529,12 @@ struct HomeView: View {
         .task {
             await bootstrapHome()
         }
+        // 冷启动恢复登录时，缓存 profile 可能先让 HomeView 查询匿名库，随后才完成
+        // `_anonymous` → 用户库切换。数据库 revision 是切库完成后的确定边沿；在这里
+        // 失效 Repo Pin 快照并重载，避免匿名库的空结果屏蔽用户库中的持久化 Pin。
+        .task(id: dependencies.databaseScopeRevision) {
+            await handleDatabaseScopeChange(dependencies.databaseScopeRevision)
+        }
         // 知识库入库/移出事件必须挂在 HomeView：空库时空态没有 List，原先挂在
         // RepoListView.List 上会导致 Sidebar「知识库」计数与列表都不能实时刷新。
         .task {
@@ -1278,6 +1284,23 @@ struct HomeView: View {
             await viewModel.reloadItems(forceRefresh: true, reason: .firstPage)
             applyManageDetailSelectionPolicy()
         }
+    }
+
+    /// 在数据库真正完成切换后刷新所有依赖 Repo Pin 快照的 Manage 表现。
+    ///
+    /// revision 0 是 AppDependencies 初始化时的匿名库，不主动重载；后续 revision
+    /// 同时覆盖冷启动恢复、首次登录、换号和登出。即使此刻登录态尚未发布，也要先失效
+    /// Pin 快照，让紧随其后的认证入口从新数据库读取。
+    private func handleDatabaseScopeChange(_ revision: UInt64) async {
+        guard revision > 0 else { return }
+        viewModel.invalidateRepoPinsForDatabaseChange()
+
+        guard authSession.state.isAuthenticated,
+              selectedSidebarPage == .manage
+        else { return }
+
+        await viewModel.reloadItems(forceRefresh: true, reason: .externalMutation)
+        applyManageDetailSelectionPolicy()
     }
 
     private func handleSelectedRepoIDChange(_ newID: Int64?) {

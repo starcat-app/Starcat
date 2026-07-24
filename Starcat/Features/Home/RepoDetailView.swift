@@ -885,15 +885,20 @@ struct ReadmeTranslationFooterButton: View {
                     || selectedSourceSegments.isEmpty
             )
         } label: {
+            // 与 UnifiedSortMenu 的下拉指示器对齐。
+            // 注意：只改 `.caption` / `.caption2` 对 chevron.down 光学差几乎看不出；
+            // 用显式 12pt semibold，和排序菜单旁箭头同级可见。
             Image(systemName: "chevron.down")
-                .font(.caption2)
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .frame(width: 14, height: 14)
+                .frame(width: 16, height: 16)
                 .contentShape(Rectangle())
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .frame(width: 16)
+        // Menu 默认会把 label 提亮成 primary；强制 secondary，避免比左侧气泡更亮、更抢眼。
+        .tint(.secondary)
+        .frame(width: 18)
         .focusEffectDisabled()
         .help("readme.translate.menu.tooltip")
     }

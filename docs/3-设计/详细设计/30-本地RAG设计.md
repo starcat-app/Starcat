@@ -414,7 +414,8 @@ Markdown heading
 
 用户 notes:
 
-- 独立成 source = `notes` 的 chunk。
+- 一条非空私人笔记固定生成一个 `source = notes`、`chunk_key = notes:0` 的 chunk。
+- Notes 不套用 README / Summary 的 target、min、max、overlap 切分规则，完整正文不拆分、不截断。
 - 权重高于 README。
 - 为空则不生成。
 

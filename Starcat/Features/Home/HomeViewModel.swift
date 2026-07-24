@@ -712,6 +712,16 @@ final class HomeViewModel {
         pinnedRepoTimestamps[repoId] != nil
     }
 
+    /// 数据库切换后丢弃旧库的 Repo Pin 快照。
+    ///
+    /// 冷启动恢复登录时，AuthSession 可能先用缓存用户资料展示 HomeView，再把数据库从
+    /// `_anonymous` 切到真实用户目录。若不在 `databaseScopeRevision` 变化时失效这份快照，
+    /// 首次匿名库查询会把 `hasLoadedRepoPins` 永久置为 true，后续就不会读取用户库。
+    func invalidateRepoPinsForDatabaseChange() {
+        pinnedRepoTimestamps = [:]
+        hasLoadedRepoPins = false
+    }
+
     /// 更新 Repo Pin，并立即刷新当前 Manage 列表的顺序。
     ///
     /// 搜索期间只更新菜单状态，不改变当前搜索结果顺序；退出搜索后的常规列表会使用新顺序。
@@ -1286,8 +1296,7 @@ final class HomeViewModel {
         repoTagsMap = [:]
         wikiAvailabilityMap = [:]
         semanticHitMap = [:]
-        pinnedRepoTimestamps = [:]
-        hasLoadedRepoPins = false
+        invalidateRepoPinsForDatabaseChange()
         temporaryGlobalFilterSession = nil
         selectedTagIds = []
         repoLanguageFilter = .all

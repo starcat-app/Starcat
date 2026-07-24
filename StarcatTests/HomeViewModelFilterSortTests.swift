@@ -129,6 +129,32 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.items.map(\.id) == [1, 2])
     }
 
+    @Test("Repo Pin: 匿名库切到用户库后重新加载持久状态")
+    func repoPinReloadsAfterDatabaseScopeChange() async throws {
+        let (vm, db, _) = try makeSUT()
+
+        // 先模拟冷启动阶段读取匿名库：此时 Pin 表为空，但 ViewModel 会记住“已加载”。
+        await vm.reloadItems()
+        #expect(!vm.isRepoPinned(1))
+
+        // AuthSession 恢复成功后，DatabaseManager 会把同一组 Repository 切到用户库。
+        try await db.reopen(userId: 42)
+        try await insertRepo(db, id: 1, fullName: "o/older", stars: 1, starredAt: "2026-05-01T00:00:00Z")
+        try await insertRepo(db, id: 2, fullName: "o/newer", stars: 1, starredAt: "2026-05-30T00:00:00Z")
+        try await db.writer.write { db in
+            try db.execute(
+                sql: "INSERT INTO repo_pins (repo_id, pinned_at) VALUES (?, ?)",
+                arguments: [Int64(1), 100.0]
+            )
+        }
+
+        vm.invalidateRepoPinsForDatabaseChange()
+        await vm.reloadItems(forceRefresh: true)
+
+        #expect(vm.isRepoPinned(1))
+        #expect(vm.items.map(\.id) == [1, 2])
+    }
+
     @Test("Repo Pin: Smart Collection 内存路径也立即按置顶排序")
     func repoPinReordersSmartCollection() async throws {
         let (vm, db, noteRepo) = try makeSUT()

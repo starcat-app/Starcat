@@ -49,7 +49,7 @@
 - [x] 默认参数为 target 700、min 180、max 1100、overlap 80、hard max 1600 tokens。
 - [x] 代码块不在中间硬切；超长代码块保留首尾并标记 truncated。
 - [x] 大表格按行拆分并保留表头。
-- [x] notes、已有 AI summary、repo metadata 分别生成独立 source chunks。
+- [x] notes、已有 AI summary、repo metadata 分别生成独立 source chunks；一条非空私人笔记固定映射为一个完整的 `notes:0` chunk，不使用通用切分规则。
 - [x] metadata 包含 fullName、description、topics、language、stars/forks/watchers/issues、license、
   archived/fork/starred、status、tags 和 libraryUpdatedAt；数值字段 bucket 化。
 - [x] 不为了建索引临时触发 AI summary。
