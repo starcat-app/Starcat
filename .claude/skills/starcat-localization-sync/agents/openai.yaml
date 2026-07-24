@@ -1,4 +1,4 @@
 interface:
   display_name: "Starcat 本地化同步"
-  short_description: "Starcat 本地化语言包与 xcstrings 同步指南"
-  default_prompt: "使用 $starcat-localization-sync 处理 Starcat 本地化导出、导入或 xcstrings 修补。"
+  short_description: "同步 Starcat 语言包、AI 翻译批准与发布门禁"
+  default_prompt: "使用 $starcat-localization-sync 审计并执行 Starcat 本地化同步、AI 翻译批准或正式发布流程。"
