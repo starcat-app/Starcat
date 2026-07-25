@@ -259,7 +259,6 @@ struct RepoNotesSection: View {
                     HStack(spacing: 8) {
                         Label("repo.privateNotes", systemImage: hasNoteContent ? "note.text" : "note.text.badge.plus")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
                         if let edited = viewModel?.note?.editedAt {
                             Text(String(format: String.l10n("repo.lastEditedFormat"), formattedEditedAt(edited)))
                                 .font(.caption2)
@@ -268,9 +267,12 @@ struct RepoNotesSection: View {
                         SaveIndicator(state: saveState, hasUnsaved: hasUnsavedChanges)
                         Spacer()
                     }
-                    .padding(.trailing, 120)
+                    .padding(.leading, 6)
+                    .padding(.vertical, 4)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
+                    .inlineActionHover()
+                    .padding(.trailing, 120)
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()

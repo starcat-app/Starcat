@@ -28,11 +28,14 @@ struct RepoNoteAIGenerationHeaderControl: View {
         Button(action: onGenerate) {
             Label(generateTitleKey, systemImage: "sparkles")
                 .font(.caption)
-                .foregroundStyle(.secondary)
                 .labelStyle(.titleAndIcon)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
+        .inlineActionHover()
         .help(Text(generateHelpKey))
         .accessibilityHint(Text(generateHelpKey))
     }

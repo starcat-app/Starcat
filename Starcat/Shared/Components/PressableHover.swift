@@ -2,8 +2,9 @@
 //  PressableHover.swift
 //  Starcat
 //
-//  共享 hover 透明度反馈 modifier，给所有"可点击纯视觉元素"
-//  （hero logo / Stat 按钮 / 贡献者头像 / 图标按钮等）提供一致的鼠标悬停反馈。
+//  共享 hover 反馈 modifier：
+//  - `pressableHover` 给 hero logo / Stat / 头像等纯视觉元素提供 opacity + scale 反馈。
+//  - `inlineActionHover` 给详情页文字操作与整行操作提供底色、文字层级和手型光标反馈。
 //
 //  设计动机：
 //  - 2026-06-02 dong4j 反馈：两个详情页（Manage / Trending）的可点击元素
@@ -71,6 +72,38 @@ struct PressableOpacityHover: ViewModifier {
     }
 }
 
+/// 给详情页中的行内文字操作和整行操作提供一致、克制的可点击反馈。
+///
+/// 与 `pressableHover` 的区别：
+/// - 图片、头像适合用缩放表达可点击；
+/// - caption 文字和整行标题若缩放会产生视觉跳动，因此这里只改变语义色和圆角底色。
+///
+/// `.pointerStyle(.link)` 明确鼠标命中的是操作入口；键盘 focus ring 仍由调用方按项目规范
+/// 使用 `.focusEffectDisabled()` 管理，避免这个 modifier 隐式改变 Button 的焦点策略。
+private struct InlineActionHover: ViewModifier {
+    let cornerRadius: CGFloat
+    let backgroundOpacity: Double
+
+    @State private var isHovered = false
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .foregroundStyle(isHovered ? Color.primary : Color.secondary)
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(isHovered ? Color.secondary.opacity(backgroundOpacity) : Color.clear)
+            )
+            .pointerStyle(.link)
+            .onHover { isHovered = $0 }
+            .onDisappear { isHovered = false }
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: 0.15),
+                value: isHovered
+            )
+    }
+}
+
 extension View {
     /// 给可点击的纯视觉元素（图标 / 头像 / 文字按钮）加 hover 透明度反馈。
     ///
@@ -101,6 +134,20 @@ extension View {
             hoveredOpacity: opacity,
             hoveredScale: scale,
             duration: duration
+        ))
+    }
+
+    /// 给 caption 文字按钮或整行 Button 增加 hover 底色与手型光标。
+    ///
+    /// 调用方先设置合适的 padding 和 contentShape，本 modifier 只负责视觉和 pointer 反馈，
+    /// 从而让紧凑文字入口与整行入口能共享语义，但保留各自的命中区域。
+    func inlineActionHover(
+        cornerRadius: CGFloat = 6,
+        backgroundOpacity: Double = 0.10
+    ) -> some View {
+        modifier(InlineActionHover(
+            cornerRadius: cornerRadius,
+            backgroundOpacity: backgroundOpacity
         ))
     }
 }

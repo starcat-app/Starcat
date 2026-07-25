@@ -102,9 +102,13 @@ struct RepoTagsSection: View {
         } label: {
             Label("tagPicker.addOrModify", systemImage: "plus.circle")
                 .font(.caption)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
         .focusEffectDisabled()
+        .inlineActionHover()
         .popover(isPresented: $showPicker, arrowEdge: .top) {
             Group {
                 if let vm = viewModel {
