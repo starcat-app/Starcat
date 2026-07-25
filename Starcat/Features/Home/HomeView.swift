@@ -50,6 +50,12 @@ struct HomeView: View {
 
     @Environment(AuthSession.self) private var authSession
     @Environment(SyncManager.self) private var syncManager
+    /// 保存应用当前的书写方向，供三栏内部内容继续渲染 Arabic RTL。
+    ///
+    /// 主窗口的 `NavigationSplitView` 外壳会固定为 LTR，避免 macOS 在 RTL 下镜像
+    /// 三栏后错误分配中栏宽度；各栏必须重新注入这里捕获的方向，不能连 Arabic
+    /// 文本和控件一起强制成 LTR。
+    @Environment(\.layoutDirection) private var appContentLayoutDirection
     @Environment(AppSettings.self) private var settings
     /// 2026-06-15:搜索浮层弹出/收起的 .snappy 动画在关动画时跳过。
     /// 与系统「减少动态效果」OR 合并(`AnimationOverrideModifier`)。
@@ -279,16 +285,26 @@ struct HomeView: View {
         // HomeView 的 modifier 链已经很长，新增后台任务监听后 Swift 6 容易在
         // 巨型泛型链上 type-check 超时。分段 AnyView 只用于切断编译期泛型推断，
         // 不改变三栏内容与状态流。
-        AnyView(NavigationSplitView(columnVisibility: $columnVisibility) {
-            sidebarColumn
-        } content: {
-            contentColumn
-        } detail: {
-            detailColumn
-        }
-        .environment(viewModel)
-        .environment(readmeVM)
-        .environment(translationVM))
+        AnyView(
+            NavigationSplitView(columnVisibility: $columnVisibility) {
+                sidebarColumn
+                    .environment(\.layoutDirection, appContentLayoutDirection)
+            } content: {
+                contentColumn
+                    .environment(\.layoutDirection, appContentLayoutDirection)
+            } detail: {
+                detailColumn
+                    .environment(\.layoutDirection, appContentLayoutDirection)
+            }
+            // macOS 15 的 NavigationSplitView 在 RTL 下会镜像三栏，但仍按 LTR 规则
+            // 协商 content 列宽：中栏宿主可能拿到超过 max width 的空间，而 RepoListView
+            // 仍被限制在 520pt，最终在列表旁留下整块空白。三栏是稳定的桌面工作区，
+            // 因此只固定结构外壳为 LTR；栏内 Arabic 内容已在上方恢复 RTL。
+            .environment(\.layoutDirection, .leftToRight)
+            .environment(viewModel)
+            .environment(readmeVM)
+            .environment(translationVM)
+        )
     }
 
     private var navigationWithOverlays: AnyView {
