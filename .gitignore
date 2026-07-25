@@ -246,3 +246,7 @@ sparkle-private-key
 # AI
 .playwright-cli/
 apple-skills/
+
+
+# 工具
+.cube/

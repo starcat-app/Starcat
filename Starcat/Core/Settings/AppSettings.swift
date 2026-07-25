@@ -516,26 +516,38 @@ enum SmartSearchMode: String, CaseIterable, Identifiable {
 ///   后续做"按 App 当前 locale 自动选默认目标"或写日志时可以直接传给 Locale；
 /// - **默认值不再写死 `.simplifiedChinese`**（HOM-198 fix，2026-06-14）：
 ///   首次启动 / UserDefaults 未持久化时，由 `defaultForCurrentLocale()`
-///   按 App 当前 i18n locale 推断；中日韩 locale → 对应语言，其余一律落到英文。
+///   按 App 当前 i18n locale 推断；18 种已支持 locale → 对应语言，其余落到英文。
 ///   选择英文作为兜底（而不是简体中文）：原默认值对所有非中文用户硬塞中文，
-///   issue 的核心抱怨就是这条；英文是 README 原文最普遍的语言，也是绝大多数
-///   非中日韩用户的工作语言，作为 fallback 比中文合理。老用户 UserDefaults
+///   issue 的核心抱怨就是这条；英文是 README 原文最普遍的语言，作为未知语言
+///   fallback 比中文合理。老用户 UserDefaults
 ///   里已有值的不被覆盖，迁移零风险。
-/// - 第一版只列 5 个主流语言；后续按用户反馈追加。
-/// - `displayName` 走本地化（菜单显示的是「简体中文 / English / 日本語」之类用户母语标签）；
+/// - 目标语言与 App 当前正式开放的 18 种显示语言保持同一组 BCP-47 identifier；
+/// - `displayName` 使用“旗帜 + 母语名称”，不跟随当前界面语言翻译；
 /// - `promptName` 是发给 LLM 的目标语言名称，固定走英文（`Simplified Chinese`），
 ///   避免不同 provider 对中文 prompt 关键词的解析差异，提示词中明确语言能更稳定。
 ///
 /// **与 App UI 本地化语言（`Localizable.xcstrings`）解耦**：
-/// App UI 当前只支持 zh-Hans + en，但翻译目标语言列了 5 种——日韩用户完全可能
-/// 用英文界面但把 README 翻成日韩文。这两个概念不应该拉齐，扩展支持语言时
-/// 各自迭代各自的列表。
+/// 两者当前都开放 18 种语言，但仍是独立类型：README 翻译语言参与 Prompt、缓存 key
+/// 和用户偏好；AppLocale 负责界面 Catalog 与布局方向，不能把两者合并成同一枚举。
 enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sendable {
     case simplifiedChinese = "zh-Hans"
     case traditionalChinese = "zh-Hant"
     case english = "en"
     case japanese = "ja"
     case korean = "ko"
+    case german = "de"
+    case french = "fr"
+    case spanish = "es"
+    case brazilianPortuguese = "pt-BR"
+    case italian = "it"
+    case russian = "ru"
+    case dutch = "nl"
+    case polish = "pl"
+    case ukrainian = "uk"
+    case turkish = "tr"
+    case vietnamese = "vi"
+    case indonesian = "id"
+    case arabic = "ar"
 
     var id: String { rawValue }
 
@@ -549,6 +561,19 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
         case .english:            return "🇺🇸 English"
         case .japanese:           return "🇯🇵 日本語"
         case .korean:             return "🇰🇷 한국어"
+        case .german:             return "🇩🇪 Deutsch"
+        case .french:             return "🇫🇷 Français"
+        case .spanish:            return "🇪🇸 Español"
+        case .brazilianPortuguese: return "🇧🇷 Português (Brasil)"
+        case .italian:            return "🇮🇹 Italiano"
+        case .russian:            return "🇷🇺 Русский"
+        case .dutch:              return "🇳🇱 Nederlands"
+        case .polish:             return "🇵🇱 Polski"
+        case .ukrainian:          return "🇺🇦 Українська"
+        case .turkish:            return "🇹🇷 Türkçe"
+        case .vietnamese:         return "🇻🇳 Tiếng Việt"
+        case .indonesian:         return "🇮🇩 Bahasa Indonesia"
+        case .arabic:             return "🇸🇦 العربية"
         }
     }
 
@@ -560,6 +585,19 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
         case .english:            return "English"
         case .japanese:           return "Japanese"
         case .korean:             return "Korean"
+        case .german:             return "German"
+        case .french:             return "French"
+        case .spanish:            return "Spanish"
+        case .brazilianPortuguese: return "Brazilian Portuguese"
+        case .italian:            return "Italian"
+        case .russian:            return "Russian"
+        case .dutch:              return "Dutch"
+        case .polish:             return "Polish"
+        case .ukrainian:          return "Ukrainian"
+        case .turkish:            return "Turkish"
+        case .vietnamese:         return "Vietnamese"
+        case .indonesian:         return "Indonesian"
+        case .arabic:             return "Arabic"
         }
     }
 
@@ -580,8 +618,14 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
     ///
     /// 只在"用户从未选过"时被消费（见 `AppSettings.init`），用户主动改过
     /// 之后这个函数就不再影响默认行为。
-    static func defaultForCurrentLocale() -> ReadmeTranslationLanguage {
-        let identifier = Bundle.main.preferredLocalizations.first
+    static func defaultForCurrentLocale(
+        appLocaleOverride: String? = UserDefaults.standard.string(forKey: "AppLocaleOverride")
+    ) -> ReadmeTranslationLanguage {
+        // 用户显式选择的 App 显示语言优先于进程启动时确定的 Bundle localization。
+        // `.system` 不是 BCP-47 identifier，仍需回到 Bundle / Locale 推断。
+        let explicitIdentifier = appLocaleOverride.flatMap { $0 == "system" ? nil : $0 }
+        let identifier = explicitIdentifier
+            ?? Bundle.main.preferredLocalizations.first
             ?? Locale.current.identifier
         return defaultLanguage(forLocaleIdentifier: identifier)
     }
@@ -594,9 +638,8 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
     /// 映射规则：
     /// - `zh-Hant` / `zh-TW` / `zh-HK` / `zh-MO` → `.traditionalChinese`；
     /// - 其余 `zh*`（含 `zh-Hans` / `zh-CN` / `zh-SG` / 裸 `zh`）→ `.simplifiedChinese`；
-    /// - `ja*` → `.japanese`；
-    /// - `ko*` → `.korean`；
-    /// - 其余（含 `en*` / `fr*` / `de*` / `es*` …）→ `.english`。
+    /// - 其余 16 种目标语言按 language code 映射，其中 `pt*` 固定使用巴西葡萄牙语；
+    /// - 未支持或无效 identifier → `.english`。
     ///
     /// 用 `Locale.Language` 而不是字符串 `hasPrefix` 比对：标准 API 会正确处理
     /// `zh_CN`（旧 POSIX 格式）/ `zh-Hans-CN`（带脚本和区域）/ 大小写差异等边角情形。
@@ -617,6 +660,32 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
             return .japanese
         case "ko":
             return .korean
+        case "de":
+            return .german
+        case "fr":
+            return .french
+        case "es":
+            return .spanish
+        case "pt":
+            return .brazilianPortuguese
+        case "it":
+            return .italian
+        case "ru":
+            return .russian
+        case "nl":
+            return .dutch
+        case "pl":
+            return .polish
+        case "uk":
+            return .ukrainian
+        case "tr":
+            return .turkish
+        case "vi":
+            return .vietnamese
+        case "id":
+            return .indonesian
+        case "ar":
+            return .arabic
         default:
             return .english
         }
@@ -995,7 +1064,7 @@ final class AppSettings {
 
     /// README 翻译目标语言（HOM-68；HOM-198 调整默认值来源）。
     /// 默认值由 `ReadmeTranslationLanguage.defaultForCurrentLocale()` 按 App 当前
-    /// i18n locale 推断（中日韩 → 对应语言，其余 → 英文），不再写死中文；用户可在
+    /// i18n locale 推断（18 种已支持语言 → 对应语言，其余 → 英文），不再写死中文；用户可在
     /// 详情页翻译按钮的下拉菜单里切换，选择后即时落盘，下次进入详情页直接命中
     /// 本地翻译缓存（按 `(repo_id, language)` 查表）。
     var readmeTranslationLanguage: ReadmeTranslationLanguage {
@@ -1674,12 +1743,14 @@ final class AppSettings {
 
         // HOM-68 / HOM-198：README 翻译目标语言。
         // 老用户已有持久化值 → 保留；首次启动 → 按 App 当前 locale 推断
-        // （`defaultForCurrentLocale()`，中日韩 → 对应语言，其余 → 英文）。
+        // （`defaultForCurrentLocale()`，18 种已支持语言 → 对应语言，其余 → 英文）。
         // 不再写死 `.simplifiedChinese`，避免对所有非中文用户硬塞中文。
         let translationLangRaw = defaults.string(forKey: Keys.readmeTranslationLanguage)
         self.readmeTranslationLanguage = translationLangRaw
             .flatMap(ReadmeTranslationLanguage.init(rawValue:))
-            ?? .defaultForCurrentLocale()
+            ?? .defaultForCurrentLocale(
+                appLocaleOverride: defaults.string(forKey: "AppLocaleOverride")
+            )
         let translationModeRaw = defaults.string(forKey: Keys.readmeTranslationMode)
         self.readmeTranslationMode = translationModeRaw
             .flatMap(ReadmeTranslationMode.init(rawValue:))

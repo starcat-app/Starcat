@@ -288,9 +288,9 @@ struct SettingsView: View {
             //    + `.id(...)` 配合下整棵 view 树立刻重建，不需要重启 App。
             // 2. 默认 `system`：跟随系统设置，`Locale.autoupdatingCurrent` 让
             //    macOS Language & Region 改变时 Starcat 自动同步。
-            // 3. 选项标签 `English` / `简体中文` 故意用其原生写法（不走 i18n
-            //    查表），与 macOS Language & Region 列出语言时的惯例一致——
-            //    哪怕用户误切到看不懂的语言，也能从原生写法找回入口。
+            // 3. 18 种语言均显示“国旗 + 母语名称”，故意不跟随当前 UI locale
+            //    翻译，与 macOS Language & Region 列出语言时的惯例一致——哪怕
+            //    用户误切到看不懂的语言，也能从国旗和母语写法找回入口。
             // 4. 已知局限（与 DEBUG 菜单 picker 一致，写在 `LocaleStore.swift`
             //    顶部注释里）：`.environment(\.locale, _)` 只覆盖 SwiftUI 视图层
             //    `Text("key")` 等查表行为；macOS 顶部菜单栏 NSMenu 与部分

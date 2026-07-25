@@ -36,6 +36,17 @@ enum ReadmeTranslationMode: String, CaseIterable, Identifiable, Codable, Sendabl
         }
     }
 
+    /// 翻译方式菜单使用的 SF Symbol。
+    ///
+    /// 分段模式会在原文后追加译文，因此用 `text.append`；全文模式作用于整篇
+    /// README，因此用 `doc.text`。图标只增强模式辨识，不参与缓存与翻译协议。
+    var systemImage: String {
+        switch self {
+        case .segmented: return "text.append"
+        case .full:      return "doc.text"
+        }
+    }
+
     /// 分段模式沿用历史 `<language>.json`，让已生成缓存继续命中；
     /// 全文模式增加后缀，避免不同粒度的源文本指纹互相覆盖。
     var cacheFileSuffix: String {

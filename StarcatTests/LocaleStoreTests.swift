@@ -9,11 +9,58 @@
 //
 
 import Foundation
+import SwiftUI
 import Testing
 @testable import Starcat
 
 @Suite("LocaleStore")
 struct LocaleStoreTests {
+
+    @Test("App 设置开放全部 18 种目标 locale")
+    func appLocaleContainsAllReleasedLocales() {
+        let expectedIdentifiers: Set<String> = [
+            "en",
+            "zh-Hans",
+            "zh-Hant",
+            "ja",
+            "ko",
+            "de",
+            "fr",
+            "es",
+            "pt-BR",
+            "it",
+            "ru",
+            "nl",
+            "pl",
+            "uk",
+            "tr",
+            "vi",
+            "id",
+            "ar",
+        ]
+        let actualIdentifiers = Set(
+            AppLocale.allCases
+                .filter { $0 != .system }
+                .map(\.rawValue)
+        )
+
+        #expect(actualIdentifiers == expectedIdentifiers)
+    }
+
+    @Test("每个显式 App locale 使用自身 BCP-47 identifier")
+    func appLocaleUsesExpectedEffectiveLocale() {
+        for appLocale in AppLocale.allCases where appLocale != .system {
+            #expect(appLocale.effectiveLocale.identifier == appLocale.rawValue)
+        }
+    }
+
+    @Test("Arabic 使用 RTL，其他显式语言使用 LTR")
+    func appLocaleUsesExpectedLayoutDirection() {
+        for appLocale in AppLocale.allCases where appLocale != .system {
+            let expected: LayoutDirection = appLocale == .arabic ? .rightToLeft : .leftToRight
+            #expect(appLocale.effectiveLayoutDirection == expected)
+        }
+    }
 
     @Test("18 种目标 locale 映射到明确的 AI 输出语言", arguments: [
         ("en", "English"),

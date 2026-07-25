@@ -267,6 +267,7 @@ struct StarcatApp: App {
         LaunchSplashContainer {
             ContentView()
                 .environment(\.locale, localeStore.selection.effectiveLocale)
+                .environment(\.layoutDirection, localeStore.selection.effectiveLayoutDirection)
                 .environment(\.starcatInterfaceScale, dependencies.settings.interfaceScale)
                 .id(localeStore.selection.rawValue)
         }
@@ -284,6 +285,7 @@ struct StarcatApp: App {
     private var settingsRoot: some View {
         SettingsView()
             .environment(\.locale, localeStore.selection.effectiveLocale)
+            .environment(\.layoutDirection, localeStore.selection.effectiveLayoutDirection)
             .environment(\.starcatInterfaceScale, dependencies?.settings.interfaceScale ?? .standard)
             .id(localeStore.selection.rawValue)
     }

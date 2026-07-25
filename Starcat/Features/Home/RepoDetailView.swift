@@ -845,7 +845,11 @@ struct ReadmeTranslationFooterButton: View {
                 set: { settings.readmeTranslationMode = $0 }
             )) {
                 ForEach(ReadmeTranslationMode.allCases) { mode in
-                    Text(LocalizedStringKey(mode.displayNameKey)).tag(mode)
+                    Label(
+                        LocalizedStringKey(mode.displayNameKey),
+                        systemImage: mode.systemImage
+                    )
+                    .tag(mode)
                 }
             } label: {
                 Text("readme.translate.menu.mode")

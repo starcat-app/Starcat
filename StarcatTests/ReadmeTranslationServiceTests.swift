@@ -579,18 +579,42 @@ struct ReadmeTranslationLanguageTests {
 
     @Test("rawValue 为 BCP-47 风格 tag")
     func rawValuesAreBcp47() {
-        #expect(ReadmeTranslationLanguage.simplifiedChinese.rawValue == "zh-Hans")
-        #expect(ReadmeTranslationLanguage.traditionalChinese.rawValue == "zh-Hant")
-        #expect(ReadmeTranslationLanguage.english.rawValue == "en")
-        #expect(ReadmeTranslationLanguage.japanese.rawValue == "ja")
-        #expect(ReadmeTranslationLanguage.korean.rawValue == "ko")
+        let expectedIdentifiers: Set<String> = [
+            "en", "zh-Hans", "zh-Hant", "ja", "ko", "de", "fr", "es", "pt-BR",
+            "it", "ru", "nl", "pl", "uk", "tr", "vi", "id", "ar",
+        ]
+        let actualIdentifiers = Set(ReadmeTranslationLanguage.allCases.map(\.rawValue))
+
+        #expect(actualIdentifiers == expectedIdentifiers)
+        #expect(
+            actualIdentifiers == Set(
+                AppLocale.allCases
+                    .filter { $0 != .system }
+                    .map(\.rawValue)
+            )
+        )
     }
 
-    @Test("promptName 非空且不包含 raw tag（用于 LLM 自然语言提示）")
+    @Test("展示名包含国旗且 promptName 非空")
     func promptNamesAreReadable() {
         for lang in ReadmeTranslationLanguage.allCases {
             #expect(!lang.promptName.isEmpty)
             #expect(!lang.displayName.isEmpty)
+            let leadingScalars = lang.displayName.unicodeScalars.prefix(2)
+            #expect(
+                leadingScalars.count == 2
+                    && leadingScalars.allSatisfy { (0x1F1E6...0x1F1FF).contains($0.value) }
+            )
         }
+    }
+}
+
+@Suite("ReadmeTranslationMode")
+struct ReadmeTranslationModeTests {
+
+    @Test("翻译方式菜单图标与呈现语义一致")
+    func systemImagesMatchPresentationMode() {
+        #expect(ReadmeTranslationMode.segmented.systemImage == "text.append")
+        #expect(ReadmeTranslationMode.full.systemImage == "doc.text")
     }
 }

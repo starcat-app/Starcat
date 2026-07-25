@@ -612,26 +612,51 @@ enum ReleaseNotesLoader {
         return fallbackMarkdown
     }
 
-    /// `LocaleStore` 的 `.system` 跟随系统；中文缺失时回退英文，避免资源漏拷导致空白。
+    /// Release Notes 目前只有简体中文和英文资源。除简体中文外统一回退英文，
+    /// 避免把简体中文正文展示给繁体中文用户，也避免为不存在的资源返回空白。
     private static func preferredResourceNames(for appLocale: AppLocale) -> [String] {
         switch appLocale {
         case .simplifiedChinese:
             return ["CHANGELOG-ZH", "CHANGELOG"]
-        case .english:
+        case .english,
+             .traditionalChinese,
+             .japanese,
+             .korean,
+             .german,
+             .french,
+             .spanish,
+             .brazilianPortuguese,
+             .italian,
+             .russian,
+             .dutch,
+             .polish,
+             .ukrainian,
+             .turkish,
+             .vietnamese,
+             .indonesian,
+             .arabic:
             return ["CHANGELOG"]
         case .system:
-            if systemPrefersChinese {
+            if systemPrefersSimplifiedChinese {
                 return ["CHANGELOG-ZH", "CHANGELOG"]
             }
             return ["CHANGELOG"]
         }
     }
 
-    private static var systemPrefersChinese: Bool {
+    /// 只让简体中文系统偏好命中 `CHANGELOG-ZH`。`zh-Hant` 尚无对应 Changelog
+    /// 资源，必须回退英文，不能因为 languageCode 同为 `zh` 而错误展示简体正文。
+    private static var systemPrefersSimplifiedChinese: Bool {
         let identifier = Bundle.main.preferredLocalizations.first
             ?? Locale.preferredLanguages.first
             ?? Locale.current.identifier
-        return Locale.Language(identifier: identifier).languageCode?.identifier == "zh"
+        let language = Locale.Language(identifier: identifier)
+        guard language.languageCode?.identifier == "zh" else {
+            return false
+        }
+        let script = language.script?.identifier
+        let region = language.region?.identifier
+        return script != "Hant" && region != "TW" && region != "HK" && region != "MO"
     }
 
     private static func loadMarkdown(resourceName: String) -> String? {
