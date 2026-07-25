@@ -4,10 +4,11 @@ Release notes for the Mac App Store edition of Starcat.
 
 ## 1.2.0-待发布
 
-Starcat 1.2.0 focuses on stability, usability, and visual polish—adding pinning, share links, shortcuts, and README capabilities, while refining navigation, tags, notes, translation, and knowledge-base flows.
+Starcat 1.2.0 focuses on stability, usability, and visual polish—adding an 18-language interface, pinning, share links, shortcuts, and README capabilities, while refining navigation, tags, notes, translation, and knowledge-base flows.
 
 ### New
 
+- 18-language interface: Use Starcat in English, Simplified Chinese, Traditional Chinese, Japanese, Korean, German, French, Spanish, Brazilian Portuguese, Italian, Russian, Dutch, Polish, Ukrainian, Turkish, Vietnamese, Indonesian, or Arabic.
 - Repository pinning in Manage: Pin / Unpin, most-recently-pinned ordering, and a card-corner indicator.
 - Repository share links: Open Starcat and locate the shared repository.
 - Customizable app shortcuts: Search, refresh, open Knowledge RAG workspace and current-repo AI, with global and per-shortcut switches.

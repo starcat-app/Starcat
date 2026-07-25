@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import copy
 import hashlib
 import json
 import os
@@ -433,7 +434,6 @@ def build_xliff(
     existing_units: dict[str, TranslationUnit] | None = None,
 ) -> ET.ElementTree:
     source_language = catalog.get("sourceLanguage", "en")
-    ET.register_namespace("", XLIFF_NAMESPACE)
     root = ET.Element(f"{{{XLIFF_NAMESPACE}}}xliff", {"version": "1.2"})
     file_node = ET.SubElement(
         root,
@@ -448,7 +448,15 @@ def build_xliff(
     body = ET.SubElement(file_node, f"{{{XLIFF_NAMESPACE}}}body")
     existing_units = existing_units or {}
 
-    for key in sorted(catalog["strings"]):
+    # 已有包的 unit 顺序来自贡献者当前基线。保留这个顺序可以让删除旧 key 时只产生
+    # 删除 diff；新 key 统一按 Catalog 排序追加，避免每次 export 重排整份 XLIFF。
+    existing_order = [
+        key
+        for key in existing_units
+        if key in catalog["strings"]
+    ]
+    new_keys = sorted(set(catalog["strings"]) - set(existing_units))
+    for key in existing_order + new_keys:
         entry = catalog["strings"][key]
         unit_data = merged_unit(
             key=key,
@@ -473,6 +481,66 @@ def build_xliff(
     return ET.ElementTree(root)
 
 
+def existing_xliff_namespace_prefix(path: Path) -> str:
+    """读取旧 XLIFF 的 namespace 表示法，避免纯前缀变化重写整份 XML。"""
+
+    if not path.is_file():
+        return ""
+    opening = path.read_bytes()[:512]
+    if b'<xliff xmlns="' in opening:
+        return ""
+    match = re.search(br"<([A-Za-z_][\w.-]*):xliff\s", opening)
+    return match.group(1).decode("ascii") if match else ""
+
+
+def write_xliff(tree: ET.ElementTree, path: Path, namespace_prefix: str) -> None:
+    """按旧包的 default / prefixed namespace 风格写回 XLIFF。"""
+
+    if not namespace_prefix:
+        ET.register_namespace("", XLIFF_NAMESPACE)
+        tree.write(path, encoding="utf-8", xml_declaration=True)
+        return
+
+    # ElementTree 禁止显式注册 `ns0` 这类保留前缀，因此先用安全前缀写出，再只替换
+    # XML tag/namespace 声明。target 文本不会参与替换。
+    temporary_prefix = "xlf"
+    ET.register_namespace(temporary_prefix, XLIFF_NAMESPACE)
+    tree.write(path, encoding="utf-8", xml_declaration=True)
+    payload = path.read_bytes()
+    payload = payload.replace(
+        f"xmlns:{temporary_prefix}=".encode(),
+        f"xmlns:{namespace_prefix}=".encode(),
+    )
+    payload = payload.replace(
+        f"{temporary_prefix}:".encode(),
+        f"{namespace_prefix}:".encode(),
+    )
+    path.write_bytes(payload)
+
+
+def build_source_snapshot(catalog: dict[str, Any]) -> bytes:
+    """生成公开 `.xcloc` 共用的轻量 source snapshot。
+
+    运行时 Catalog 导入 18 种语言后会包含全部 target。如果把它原样复制到每个
+    `.xcloc`，同一套译文会重复 18 份并制造百万行 diff。公开包只需要 Starcat 的
+    双语 source 基线；各目标语言继续由对应 XLIFF 独立承载。
+    """
+
+    source_locale = catalog.get("sourceLanguage", "en")
+    snapshot_locales = {source_locale, "zh-Hans"}
+    snapshot = copy.deepcopy(catalog)
+    for entry in snapshot["strings"].values():
+        localizations = entry.get("localizations")
+        if not isinstance(localizations, dict):
+            continue
+        entry["localizations"] = {
+            locale: value
+            for locale, value in localizations.items()
+            if locale in snapshot_locales
+        }
+    return serialize_catalog(snapshot).encode("utf-8")
+
+
 def replace_package_atomically(temporary: Path, target: Path) -> None:
     """目录替换时保留可回滚 backup，避免中断后丢失贡献者语言包。"""
 
@@ -493,8 +561,8 @@ def replace_package_atomically(temporary: Path, target: Path) -> None:
 
 
 def export_one_package(
-    catalog_path: Path,
     catalog: dict[str, Any],
+    source_snapshot: bytes,
     package_root: Path,
     locale: str,
 ) -> bool:
@@ -502,6 +570,8 @@ def export_one_package(
 
     target = package_root / f"{locale}.xcloc"
     existing_units = read_xliff_units(target, locale) if target.exists() else {}
+    existing_xliff_path = target / "Localized Contents" / f"{locale}.xliff"
+    namespace_prefix = existing_xliff_namespace_prefix(existing_xliff_path)
     existing_snapshot_path = (
         target
         / "Source Contents"
@@ -520,11 +590,11 @@ def export_one_package(
         source_contents = temporary / "Source Contents" / PROJECT_NAME / "Localizable"
         localized_contents.mkdir(parents=True)
         source_contents.mkdir(parents=True)
-        shutil.copy2(catalog_path, source_contents / "Localizable.xcstrings")
-        build_xliff(catalog, locale, existing_units).write(
+        (source_contents / "Localizable.xcstrings").write_bytes(source_snapshot)
+        write_xliff(
+            build_xliff(catalog, locale, existing_units),
             localized_contents / f"{locale}.xliff",
-            encoding="utf-8",
-            xml_declaration=True,
+            namespace_prefix,
         )
         write_contents_json(temporary, catalog["sourceLanguage"], locale)
 
@@ -537,7 +607,7 @@ def export_one_package(
         if set(generated_units) != set(catalog["strings"]):
             raise LocalizationError(f"生成包 key 集合不一致：{locale}")
         content_changed = (
-            existing_snapshot != catalog_path.read_bytes()
+            existing_snapshot != source_snapshot
             or existing_units != generated_units
         )
         replace_package_atomically(temporary, target)
@@ -566,14 +636,15 @@ def export_packages(args: argparse.Namespace) -> int:
 
     package_root = localization_repo / PACKAGE_DIR_NAME
     package_root.mkdir(parents=True, exist_ok=True)
+    source_snapshot = build_source_snapshot(catalog)
     items_by_locale = {
         item["id"]: item
         for item in manifest_locale_items(manifest)
     }
     for locale in locales:
         content_changed = export_one_package(
-            catalog_path,
             catalog,
+            source_snapshot,
             package_root,
             locale,
         )

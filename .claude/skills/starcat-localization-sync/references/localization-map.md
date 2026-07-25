@@ -86,6 +86,12 @@ supports/scripts/starcat-localization.py \
 导出只原子替换本次指定的语言包，不会删除其他语言包。旧 target 会被保留；
 source 文案变化时，已有 target 会降级为 `needs-review-translation`。
 
+运行时 Catalog 即使已经导入 18 种语言，`.xcloc` 的
+`Source Contents/Starcat/Localizable/Localizable.xcstrings` 也只保留
+`en` / `zh-Hans` 双语 source 基线；目标语言译文只存放在各自 XLIFF 中，禁止把
+同一套 18 语言 target 重复复制进 18 个 source snapshot。重新导出已有包时保留
+现有 XLIFF unit 顺序，删除旧 key 只产生删除 diff，新 key 按 Catalog 顺序追加。
+
 ## AI 初稿
 
 ```bash

@@ -198,6 +198,77 @@ class StarcatLocalizationTests(unittest.TestCase):
         self.assertEqual(units["greeting"].state, "needs-review-translation")
         self.assertEqual(units["greeting"].source, "Welcome %@")
 
+    def test_export_source_snapshot_excludes_target_locales(self) -> None:
+        self.write_catalog(
+            {
+                "greeting": {
+                    "en": ("translated", "Hello %@"),
+                    "zh-Hans": ("translated", "你好 %@"),
+                    "ja": ("translated", "こんにちは %@"),
+                },
+            }
+        )
+
+        self.export("ja")
+
+        snapshot_path = (
+            self.package_path("ja")
+            / "Source Contents"
+            / localization.PROJECT_NAME
+            / "Localizable"
+            / "Localizable.xcstrings"
+        )
+        snapshot = localization.load_catalog(snapshot_path)
+        self.assertEqual(
+            set(snapshot["strings"]["greeting"]["localizations"]),
+            {"en", "zh-Hans"},
+        )
+        units = localization.read_xliff_units(self.package_path("ja"), "ja")
+        self.assertEqual(units["greeting"].target, "こんにちは %@")
+
+    def test_export_preserves_existing_order_and_appends_new_keys(self) -> None:
+        self.export("ja")
+        tree = ET.parse(self.xliff_path("ja"))
+        namespace = {"x": localization.XLIFF_NAMESPACE}
+        body = tree.find(".//x:body", namespace)
+        assert body is not None
+        units = list(body)
+        body[:] = list(reversed(units))
+        tree.write(self.xliff_path("ja"), encoding="utf-8", xml_declaration=True)
+        self.write_catalog(
+            {
+                "plain": {
+                    "en": ("translated", "Plain text"),
+                    "zh-Hans": ("translated", "普通文本"),
+                },
+                "alpha": {
+                    "en": ("translated", "Alpha"),
+                    "zh-Hans": ("translated", "阿尔法"),
+                },
+            }
+        )
+
+        self.export("ja")
+
+        exported = ET.parse(self.xliff_path("ja"))
+        exported_ids = [
+            node.attrib["id"]
+            for node in exported.findall(".//x:trans-unit", namespace)
+        ]
+        self.assertEqual(exported_ids, ["plain", "alpha"])
+
+    def test_export_keeps_existing_xliff_namespace_prefix(self) -> None:
+        self.export("ja")
+        tree = ET.parse(self.xliff_path("ja"))
+        localization.write_xliff(tree, self.xliff_path("ja"), "ns0")
+
+        self.export("ja")
+
+        self.assertIn(
+            b'<ns0:xliff xmlns:ns0="urn:oasis:names:tc:xliff:document:1.2"',
+            self.xliff_path("ja").read_bytes(),
+        )
+
     def test_export_invalidates_approval_only_when_package_changes(self) -> None:
         self.export("ja")
         self.set_translation_approval("ja")
