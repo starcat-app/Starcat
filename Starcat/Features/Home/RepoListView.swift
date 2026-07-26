@@ -568,6 +568,19 @@ struct RepoListView: View {
                 currentBatchActionBar
             }
             .toolbar {
+                // 智能集合详情的返回入口属于当前导航上下文，固定放在全局状态左侧，
+                // 避免混入页面筛选操作后随不同 toolbar spec 改变位置。
+                if viewModel.selection.isSmartCollectionDetailContext, viewModel.selectedRepo != nil {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            viewModel.selectedRepoID = nil
+                        } label: {
+                            ToolbarIcon("chevron.left.circle")
+                                .accessibilityLabel(Text("smartCollections.panel.backToCollection"))
+                        }
+                        .help("smartCollections.panel.backToCollection")
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     AppStatusToolbarButton(
                         lastSyncedAt: lastSyncedAt,
@@ -995,17 +1008,6 @@ struct RepoListView: View {
 
         let leading = AnyView(
             Group {
-                // 智能集合：从右栏 repo 详情退回集合浏览面板，放在中栏 toolbar 不占右栏纵向空间。
-                if viewModel.selection.isSmartCollectionDetailContext, viewModel.selectedRepo != nil {
-                    Button {
-                        viewModel.selectedRepoID = nil
-                    } label: {
-                        ToolbarIcon("chevron.left.circle")
-                            .accessibilityLabel(Text("smartCollections.panel.backToCollection"))
-                    }
-                    .help("smartCollections.panel.backToCollection")
-                }
-
                 Button {
                     openSmartCollectionEditor()
                 } label: {
