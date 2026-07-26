@@ -1,11 +1,13 @@
 ---
 name: starcat-release
-description: Starcat macOS App 专用发版流程。用于用户要发布或排查 Starcat 发版、Direct 分发、DMG 打包、Sparkle appcast 生成或上传、starcat.ink 官网与 changelog 部署、notarization、公版 tag 处理，或询问 scripts/release-direct.sh、scripts/release.sh、package-direct.sh、build-dmg.sh 应该如何选择和运行的场景。
+description: Starcat macOS App 专用双渠道发版流程。用于用户要发布或排查 App Store archive、Direct 分发、DMG 打包、Sparkle appcast 生成或上传、starcat.ink 官网与 changelog 部署、notarization、公版 tag 处理，或询问 scripts/package-appstore.sh、scripts/release-direct.sh、scripts/package-direct.sh、legacy release-store.sh 应该如何选择和运行的场景。
 ---
 
 # Starcat 发版
 
-使用这个 skill 选择并执行正确的 Starcat 发版路径。Starcat 当前有两个含义不同的发版入口；不要把通用 macOS 发版流程当成本仓库的权威流程。
+使用这个 skill 选择并执行正确的 Starcat 双渠道发版路径。正式入口是 App Store
+archive 与 Direct 公开发布两条；不要把 legacy 内测 DMG 流程或通用 macOS 发版流程
+当成本仓库的权威正式流程。
 
 ## 硬性规则
 
@@ -22,12 +24,15 @@ description: Starcat macOS App 专用发版流程。用于用户要发布或排�
 
 | 用户意图 | 使用入口 | 原因 |
 |---|---|---|
+| App Store 发布准备、archive、Validate、上传 App Store Connect | `scripts/package-appstore.sh` / `make package-appstore` | 构建并校验 `Starcat` archive；上传继续由 Xcode Organizer / Transporter 完成 |
 | Direct 公开发布、Sparkle 更新、starcat.ink 部署、上传 DMG/appcast | `scripts/release-direct.sh <X.Y.Z>` | Direct 渠道完整编排入口 |
-| 本地/基础/内测发版、tag + 内测 DMG + 可选 push tag | `scripts/release.sh vX.Y.Z` | 基础发版入口，底层调用 `build-dmg.sh` |
 | 只在本地构建 Direct 包 | `scripts/package-direct.sh <X.Y.Z>` | 构建 `StarcatDirect` DMG，可选 notarization/appcast |
-| 只在本地构建内测 DMG | `scripts/build-dmg.sh <X.Y.Z>` | 构建 ad-hoc/内部 DMG，输出到 `build/dmg/` |
+| 历史 ad-hoc 内测 tag + DMG 流程 | `scripts/release-store.sh vX.Y.Z` | legacy 入口；默认禁用，必须显式设置 `STARCAT_ALLOW_LEGACY_RELEASE=1` |
 
-如果用户只说“发版”但没有说明渠道，先问是 Direct 公开发布还是基础/内测 DMG 发布。如果用户提到 `starcat.ink`、Sparkle、appcast、notarization、上传或公开用户，可以推断为 Direct，但仍需先给方案并确认再执行。
+如果用户只说“发版”但没有说明渠道，先确认是 App Store、Direct，还是双渠道。
+如果用户提到 `starcat.ink`、Sparkle、appcast、notarization 或上传 DMG，可以推断为
+Direct；提到 App Store Connect、Organizer、TestFlight 或审核则走 App Store。
+两条路径都仍需先给方案并确认再执行。
 
 ## 标准工作流
 
@@ -41,8 +46,30 @@ description: Starcat macOS App 专用发版流程。用于用户要发布或排�
 4. 除非用户当前轮已经明确授权执行，否则先等确认。
 5. 真实发布前优先 dry-run：
    - Direct：`STARCAT_RELEASE_DRY_RUN=1 ./scripts/release-direct.sh <X.Y.Z>`
-   - 基础发版：`./scripts/release.sh v<X.Y.Z> --dry-run`
+   - App Store 没有发布 dry-run；先完成只读门禁，获授权后运行
+     `make package-appstore`，该命令只生成 archive、不上传
 6. 执行已确认的命令后，验证产物和 URL，并报告精确路径。
+
+## App Store 发布
+
+App Store archive 使用 `scripts/package-appstore.sh`，日常入口：
+
+```bash
+make package-appstore
+make open-appstore-archive
+```
+
+`make package-appstore` 只生成并验证 archive，不上传。后续由 Xcode Organizer 执行
+Validate App 与 Distribute App；不能把“archive 已生成”报告为“App Store 已发布”。
+
+验证至少包括：
+
+- archive 存在：`dist/appstore/Starcat-AppStore.xcarchive`；
+- Bundle ID 为 `com.starcat.app.store`；
+- `STARCAT_DISTRIBUTION=appstore`；
+- 包含 App Sandbox entitlement；
+- 不包含 `Sparkle.framework`；
+- `codebase.bin`、主 App 与 dSYM UUID 检查通过。
 
 ## Direct 公开发布
 
@@ -84,16 +111,18 @@ STARCAT_RELEASE_SKIP_SITE=1 \
 ./scripts/release-direct.sh 1.1.0
 ```
 
-## 基础/内测发版
+## Legacy 内测发版
 
-仅当用户需要基础 tag + DMG + push 流程时使用 `scripts/release.sh vX.Y.Z`。它的关键安全属性是“先本地 tag，再构建 DMG，最后 push tag”，因此构建失败不会污染远端 tag。
+`scripts/release-store.sh` 是历史 ad-hoc tag + DMG + push 流程，当前默认禁用，不是
+App Store 或 Direct 的正式发布入口。只有用户明确要求复现旧内测流程时才可使用：
 
 ```bash
-./scripts/release.sh v1.1.0 --dry-run
-./scripts/release.sh v1.1.0
+STARCAT_ALLOW_LEGACY_RELEASE=1 ./scripts/release-store.sh v1.1.0 --dry-run
+STARCAT_ALLOW_LEGACY_RELEASE=1 ./scripts/release-store.sh v1.1.0
 ```
 
 本地试跑用 `--skip-push`。只有用户明确要 tag-only 行为时才使用 `--skip-dmg`。
+不要为了绕过正式双渠道门禁而启用 legacy 入口。
 
 ## 验证标准
 
@@ -108,7 +137,7 @@ Direct 发布后验证：
   - `https://starcat.ink/downloads/Starcat-<version>-arm64.dmg`
   - `https://starcat.ink/changelog.html`
 
-基础发版后验证：
+legacy 内测发版后验证：
 
 - DMG 存在：`build/dmg/Starcat-<version>-arm64.dmg`；
 - SHA 文件存在于 DMG 同目录；

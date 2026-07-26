@@ -1,4 +1,4 @@
 interface:
   display_name: "Starcat 发版"
-  short_description: "Starcat Direct 发布与发版完整操作指南"
+  short_description: "Starcat App Store 与 Direct 双渠道发版指南"
   default_prompt: "使用 $starcat-release 准备或排查一次 Starcat 发版。"
