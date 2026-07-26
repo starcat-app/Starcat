@@ -526,42 +526,144 @@ private struct StarcatAppCommands: Commands {
 /// 2026-06-16 dong4j 删除了「语言切换」子菜单（语言切换正式入口已在「设置 →
 /// 通用 → 语言」落地）。该菜单本身保留作为后续调试入口的容器；菜单标题故意
 /// 使用非产品化文案，避免 DEBUG-only 能力看起来像正式用户功能。
-	struct DebugMenuCommands: Commands {
-        @AppStorage(DebugFlags.debugProOverrideKey) private var debugProOverride = false
-        @AppStorage(DebugFlags.agentToolbarEntryKey) private var agentToolbarEntry = false
+/// DEBUG 菜单使用的当前窗口外框调整器。
+///
+/// 只写 `NSWindow.frame`，不触碰 `NavigationSplitView` 的 Sidebar、中栏宽度或
+/// 分隔位置；窗口原有最小尺寸仍然生效，避免截图工具把三栏布局压坏。
+@MainActor
+private enum DebugWindowResizer {
+    /// Retina @2x 下输出 Apple 接受的 2880×1800 截图。
+    static let appleScreenshotWindowSize = NSSize(width: 1440, height: 900)
 
-		var body: some Commands {
-				CommandMenu("Who's Your Daddy") {
-					Button("Replay First-Run Onboarding") {
-						FirstRunOnboardingPreferences.requestManualReplay()
-					}
-                    .disabled(!FirstRunOnboardingPreferences.canReplayManually)
+    /// Screen Studio 使用 16:9 工作窗口，并在导出阶段输出 1920×1080 视频。
+    static let appleVideoWindowSize = NSSize(width: 1920, height: 1080)
 
-                    Toggle(
-                        "Activate Pro",
-                        isOn: Binding(
-                            get: { debugProOverride },
-                            set: { newValue in
-                                debugProOverride = newValue
-                                DebugFlags.setDebugProOverride(newValue)
-                            }
-                        )
+    static func resizeFrontmostWindow(to size: NSSize) {
+        guard let window = frontmostResizableWindow(),
+              canApply(size, to: window)
+        else {
+            return
+        }
+
+        let currentFrame = window.frame
+        let visibleFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
+        var targetOrigin = NSPoint(
+            x: currentFrame.minX,
+            y: currentFrame.maxY - size.height
+        )
+
+        if let visibleFrame {
+            // 保持左上角位置；扩大后越界时只把窗口移回当前显示器可用区域。
+            targetOrigin.x = min(
+                max(targetOrigin.x, visibleFrame.minX),
+                visibleFrame.maxX - size.width
+            )
+            targetOrigin.y = min(
+                max(targetOrigin.y, visibleFrame.minY),
+                visibleFrame.maxY - size.height
+            )
+        }
+
+        window.setFrame(
+            NSRect(origin: targetOrigin, size: size),
+            display: true,
+            animate: false
+        )
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    /// 顶部菜单展开时 key window 仍是用户正在操作的窗口，因此优先使用它；
+    /// mainWindow 与 orderedWindows 只负责窗口焦点异常时兜底。
+    private static func frontmostResizableWindow() -> NSWindow? {
+        if let keyWindow = NSApp.keyWindow, isEligible(keyWindow) {
+            return keyWindow
+        }
+        if let mainWindow = NSApp.mainWindow, isEligible(mainWindow) {
+            return mainWindow
+        }
+        return NSApp.orderedWindows.first(where: isEligible)
+    }
+
+    private static func isEligible(_ window: NSWindow) -> Bool {
+        window.isVisible
+            && window.sheetParent == nil
+            && window.styleMask.contains(.resizable)
+    }
+
+    private static func canApply(_ size: NSSize, to window: NSWindow) -> Bool {
+        let contentMinimumFrameSize = window.frameRect(
+            forContentRect: NSRect(origin: .zero, size: window.contentMinSize)
+        ).size
+        let minimumFrameSize = NSSize(
+            width: max(window.minSize.width, contentMinimumFrameSize.width),
+            height: max(window.minSize.height, contentMinimumFrameSize.height)
+        )
+        guard size.width >= minimumFrameSize.width,
+              size.height >= minimumFrameSize.height
+        else {
+            return false
+        }
+
+        guard let visibleFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame else {
+            return true
+        }
+        return size.width <= visibleFrame.width && size.height <= visibleFrame.height
+    }
+}
+
+struct DebugMenuCommands: Commands {
+    @AppStorage(DebugFlags.debugProOverrideKey) private var debugProOverride = false
+    @AppStorage(DebugFlags.agentToolbarEntryKey) private var agentToolbarEntry = false
+
+    var body: some Commands {
+        CommandMenu("Who's Your Daddy") {
+            Button("Replay First-Run Onboarding") {
+                FirstRunOnboardingPreferences.requestManualReplay()
+            }
+            .disabled(!FirstRunOnboardingPreferences.canReplayManually)
+
+            Toggle(
+                "Activate Pro",
+                isOn: Binding(
+                    get: { debugProOverride },
+                    set: { newValue in
+                        debugProOverride = newValue
+                        DebugFlags.setDebugProOverride(newValue)
+                    }
+                )
+            )
+
+            Divider()
+
+            Toggle(
+                "Show Agent Toolbar Entry",
+                isOn: Binding(
+                    get: { agentToolbarEntry },
+                    set: { newValue in
+                        agentToolbarEntry = newValue
+                        DebugFlags.setAgentToolbarEntry(newValue)
+                    }
+                )
+            )
+
+            Divider()
+
+            Menu("Window Size") {
+                Button("Screenshot · 2880 × 1800 px · Apple 16:10") {
+                    DebugWindowResizer.resizeFrontmostWindow(
+                        to: DebugWindowResizer.appleScreenshotWindowSize
                     )
+                }
 
-				Divider()
+                Divider()
 
-                    Toggle(
-                        "Show Agent Toolbar Entry",
-                        isOn: Binding(
-                            get: { agentToolbarEntry },
-                            set: { newValue in
-                                agentToolbarEntry = newValue
-                                DebugFlags.setAgentToolbarEntry(newValue)
-                            }
-                        )
+                Button("Video · 1920 × 1080 px · Apple 16:9") {
+                    DebugWindowResizer.resizeFrontmostWindow(
+                        to: DebugWindowResizer.appleVideoWindowSize
                     )
-
                 }
             }
         }
+    }
+}
 #endif
