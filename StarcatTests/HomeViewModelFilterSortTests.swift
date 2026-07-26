@@ -436,12 +436,17 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.selection == .allStars)
 
         vm.selection = .untagged
+        // 生产 UI 由 `.task(id: selection)` 在分类变化后触发查询；单测直接写 selection
+        // 不会经过 View。先排空知识库排序等 selection 派生动作，再显式模拟这次重载，
+        // 避免派生任务与测试重载争抢同一个 generation。
         await vm.awaitPendingListReloadForTesting()
+        await vm.reloadItems(forceRefresh: true)
         #expect(vm.items.map(\.id) == [1])
         #expect(vm.effectiveGlobalFilterState.globalFilterLanguages == ["Java"])
 
         vm.selection = .library
         await vm.awaitPendingListReloadForTesting()
+        await vm.reloadItems(forceRefresh: true)
         #expect(vm.items.map(\.id) == [4])
         #expect(vm.effectiveGlobalFilterState.globalFilterLanguages == ["Java"])
 

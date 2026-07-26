@@ -292,6 +292,14 @@ private struct OverviewPage: View {
                     AboutFeatureCard(title: "about.overview.feature.searchFind.title", detail: "about.overview.feature.searchFind.detail", systemImage: "magnifyingglass")
                     AboutFeatureCard(title: "about.overview.feature.aiReserved.title", detail: "about.overview.feature.aiReserved.detail", systemImage: "brain")
                 }
+
+                if DistributionChannel.current.isAppStore {
+                    // 备案号是 App Store 渠道的固定法定标识，不随应用语言翻译；Direct 版不展示。
+                    Text(verbatim: "渝ICP备2026015773号-2A")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
             }
         }
     }
@@ -448,6 +456,7 @@ private struct AboutFeatureCard: View {
             Label(title, systemImage: systemImage)
                 .font(.headline)
                 .foregroundStyle(.primary)
+                .lineLimit(1)
                 .labelStyle(.titleAndIcon)
                 .symbolRenderingMode(.hierarchical)
                 .tint(.accentColor)
@@ -461,7 +470,8 @@ private struct AboutFeatureCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 104, maxHeight: 104, alignment: .topLeading)
+        // 90pt 足够容纳单行标题与两行说明，同时为 App Store 备案号腾出固定窗口内的空间。
+        .frame(maxWidth: .infinity, minHeight: 90, maxHeight: 90, alignment: .topLeading)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
