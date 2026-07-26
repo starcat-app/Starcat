@@ -630,7 +630,7 @@ struct FirstRunOnboardingView: View {
     /// 「浏览 / 登录 / 跳过」统一走欢迎收束动画，再移除 overlay 露出主窗口。
     private func beginWelcomeExit(completion: FirstRunOnboardingCompletion) {
         isExitInProgress = true
-        // 点击瞬间即播，贯穿后续收起 → 欢迎 → 淡出整段动画（约 3.2s 音效 + 视觉 ~5s）
+        // 点击时先登记播放，服务内部延迟 1s；4.8s 音效从欢迎画面延续到主窗口揭示。
         OnboardingWelcomeSound.playWelcomeIfAvailable()
 
         if reduceMotion {
@@ -1004,31 +1004,27 @@ private struct OnboardingScreenshotPreview: View {
                     .clipped()
             } else {
                 fallbackPreview
-                    .padding(22)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(.regularMaterial)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(
+        .background {
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .fill(
                     LinearGradient(
                         colors: [
-                            step.tint.opacity(0.55),
-                            Color.primary.opacity(0.08)
+                            step.tint.opacity(0.30),
+                            step.tint.opacity(0.08),
+                            step.tint.opacity(0.22)
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
+                    )
                 )
+                .padding(10)
+                .blur(radius: 32)
+                .offset(y: 12)
+                .allowsHitTesting(false)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .shadow(color: .black.opacity(0.18), radius: 24, x: 0, y: 18)
-        .shadow(color: step.tint.opacity(0.18), radius: 34, x: 0, y: 16)
     }
 
     @ViewBuilder
@@ -1238,12 +1234,8 @@ private struct OnboardingScreenshotPreview: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.primary.opacity(0.055))
+                .fill(.regularMaterial)
         )
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
-        }
     }
 
     private func previewChrome(title: String) -> some View {
@@ -1378,10 +1370,13 @@ private struct OnboardingScreenshotPreview: View {
                 .foregroundStyle(index == selectedIndex ? step.tint : .secondary)
                 .padding(.horizontal, 10)
                 .frame(height: 30)
-                .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(index == selectedIndex ? step.tint.opacity(0.16) : Color.primary.opacity(0.05))
-                )
+                .background {
+                    previewCardBackground(
+                        cornerRadius: 9,
+                        tint: index == selectedIndex ? step.tint : nil,
+                        tintOpacity: 0.14
+                    )
+                }
             }
         }
     }
@@ -1423,10 +1418,13 @@ private struct OnboardingScreenshotPreview: View {
             Spacer(minLength: 0)
         }
         .padding(11)
-        .background(
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .fill(selected ? accent.opacity(0.13) : Color.primary.opacity(0.05))
-        )
+        .background {
+            previewCardBackground(
+                cornerRadius: 13,
+                tint: selected ? accent : nil,
+                tintOpacity: 0.14
+            )
+        }
         .overlay {
             RoundedRectangle(cornerRadius: 13, style: .continuous)
                 .stroke(selected ? accent.opacity(0.34) : Color.white.opacity(0.06), lineWidth: 1)
@@ -1464,10 +1462,13 @@ private struct OnboardingScreenshotPreview: View {
         .foregroundStyle(active ? step.tint : .secondary)
         .frame(maxWidth: .infinity)
         .frame(height: 62)
-        .background(
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .fill(active ? step.tint.opacity(0.14) : Color.primary.opacity(0.05))
-        )
+        .background {
+            previewCardBackground(
+                cornerRadius: 13,
+                tint: active ? step.tint : nil,
+                tintOpacity: 0.14
+            )
+        }
     }
 
     private func metricGrid(_ metrics: [(String, String)]) -> some View {
@@ -1483,7 +1484,9 @@ private struct OnboardingScreenshotPreview: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 46)
-                .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background {
+                    previewCardBackground(cornerRadius: 10)
+                }
             }
         }
     }
@@ -1529,7 +1532,9 @@ private struct OnboardingScreenshotPreview: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 34)
-        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background {
+            previewCardBackground(cornerRadius: 10)
+        }
     }
 
     private func agentStepRow(index: Int, title: String, icon: String, active: Bool, tint: Color) -> some View {
@@ -1549,10 +1554,13 @@ private struct OnboardingScreenshotPreview: View {
             Spacer()
         }
         .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .fill(active ? tint.opacity(0.13) : Color.primary.opacity(0.05))
-        )
+        .background {
+            previewCardBackground(
+                cornerRadius: 13,
+                tint: active ? tint : nil,
+                tintOpacity: 0.14
+            )
+        }
         .overlay {
             RoundedRectangle(cornerRadius: 13, style: .continuous)
                 .stroke(active ? tint.opacity(0.34) : Color.white.opacity(0.05), lineWidth: 1)
@@ -1571,7 +1579,9 @@ private struct OnboardingScreenshotPreview: View {
             Spacer()
         }
         .padding(10)
-        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background {
+            previewCardBackground(cornerRadius: 10)
+        }
     }
 
     private func questionBubble(_ text: String) -> some View {
@@ -1595,7 +1605,9 @@ private struct OnboardingScreenshotPreview: View {
             Spacer()
         }
         .padding(10)
-        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background {
+            previewCardBackground(cornerRadius: 10)
+        }
     }
 
     private func citationBadge(_ index: Int, tint: Color) -> some View {
@@ -1611,13 +1623,31 @@ private struct OnboardingScreenshotPreview: View {
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(.secondary)
             .frame(width: 24, height: 24)
-            .background(Color.primary.opacity(0.045), in: Circle())
+            .background(Color.primary.opacity(0.08), in: Circle())
     }
 
     private func previewLine(width: CGFloat, height: CGFloat, opacity: Double) -> some View {
         RoundedRectangle(cornerRadius: height / 2, style: .continuous)
             .fill(Color.primary.opacity(opacity))
             .frame(width: width, height: height)
+    }
+
+    /// 卡片先铺适度中灰层，再叠加状态色，在背景氛围与卡片层级之间保持平衡。
+    @ViewBuilder
+    private func previewCardBackground(
+        cornerRadius: CGFloat,
+        tint: Color? = nil,
+        tintOpacity: Double = 0
+    ) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+        shape
+            .fill(Color.primary.opacity(0.08))
+            .overlay {
+                if let tint {
+                    shape.fill(tint.opacity(tintOpacity))
+                }
+            }
     }
 
     private func nodeOffset(_ index: Int) -> CGSize {
@@ -1637,7 +1667,7 @@ private extension View {
     func softPanel(accent: Color) -> some View {
         background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.primary.opacity(0.055))
+                .fill(Color.primary.opacity(0.08))
         )
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
