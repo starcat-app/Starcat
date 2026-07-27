@@ -127513,6 +127513,111 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "OpenSSF 與儲存庫安全防護狀態" } }
       }
     },
+    "insights.repo.section.stars" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Star Trend" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Star 趋势" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Star 趨勢" } }
+      }
+    },
+    "insights.repo.section.stars.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Estimated history and precise local observations" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "长期估算历史与本机精确观察" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "長期估算歷史與本機精確觀察" } }
+      }
+    },
+    "insights.repo.star.coverage" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Coverage from" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "覆盖自" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "涵蓋自" } }
+      }
+    },
+    "insights.repo.star.current" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Current Stars" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前 Stars" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "目前 Stars" } }
+      }
+    },
+    "insights.repo.star.growth30Days" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "30-day growth" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "30 天增长" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "30 天成長" } }
+      }
+    },
+    "insights.repo.star.growthOneYear" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "1-year growth" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "1 年增长" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "1 年成長" } }
+      }
+    },
+    "insights.repo.star.mockNotice" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Demo data, not fetched from GitHub" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "演示数据，未从 GitHub 拉取" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "展示資料，未從 GitHub 擷取" } }
+      }
+    },
+    "insights.repo.star.range.all" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "All" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "全部" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "全部" } }
+      }
+    },
+    "insights.repo.star.range.label" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Star history range" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Star 历史范围" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Star 歷史範圍" } }
+      }
+    },
+    "insights.repo.star.range.oneYear" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "1 year" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "1 年" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "1 年" } }
+      }
+    },
+    "insights.repo.star.range.threeMonths" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "3 mo" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "3 月" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "3 月" } }
+      }
+    },
+    "insights.repo.star.refresh" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Refresh Star history" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "刷新 Star 历史" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "重新整理 Star 歷史" } }
+      }
+    },
+    "insights.repo.star.source.estimated" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Estimated · GH Archive" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "估算 · GH Archive" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "估算 · GH Archive" } }
+      }
+    },
+    "insights.repo.star.source.local" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Precise local snapshots" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本机精确快照" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "本機精確快照" } }
+      }
+    },
+    "insights.repo.star.updated" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Updated" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "更新于" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "更新於" } }
+      }
+    },
     "insights.repo.section.timeline" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Recent Activity" } },

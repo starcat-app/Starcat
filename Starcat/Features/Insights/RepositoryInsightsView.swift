@@ -10,10 +10,31 @@ import Charts
 import SwiftUI
 
 struct RepositoryInsightsView: View {
+    /// Star 趋势范围独立于活动统计范围；默认一年与设计文档口径一致。
+    private enum StarRange: String, CaseIterable, Identifiable {
+        case threeMonths
+        case oneYear
+        case all
+
+        var id: String { rawValue }
+
+        var titleKey: LocalizedStringKey {
+            switch self {
+            case .threeMonths: return "insights.repo.star.range.threeMonths"
+            case .oneYear:     return "insights.repo.star.range.oneYear"
+            case .all:         return "insights.repo.star.range.all"
+            }
+        }
+    }
+
     let repo: Repo
     let onScrollReport: (RepoDetailScrollReport) -> Void
 
     private let snapshot: RepositoryInsightsSnapshot
+
+    @State private var starRange: StarRange = .oneYear
+    @State private var selectedStarDate: Date?
+    @State private var isRefreshingStars = false
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
@@ -27,6 +48,7 @@ struct RepositoryInsightsView: View {
         ScrollView {
             LazyVStack(spacing: 14) {
                 activitySection
+                starHistorySection
                 commitSection
                 contributorSection
                 healthSection
@@ -94,6 +116,231 @@ struct RepositoryInsightsView: View {
         .padding(10)
         .frame(maxWidth: .infinity, minHeight: 86, alignment: .leading)
         .background(Color(nsColor: .textBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 7))
+    }
+
+    private var starHistorySection: some View {
+        InsightsSectionContainer(
+            title: "insights.repo.section.stars",
+            subtitle: "insights.repo.section.stars.subtitle",
+            systemImage: "star.fill"
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 18) {
+                    starMetric(
+                        value: snapshot.currentStars.formatted(),
+                        label: "insights.repo.star.current"
+                    )
+                    starMetric(
+                        value: signed(snapshot.starGrowth30Days),
+                        label: "insights.repo.star.growth30Days"
+                    )
+                    starMetric(
+                        value: signed(snapshot.starGrowthOneYear),
+                        label: "insights.repo.star.growthOneYear"
+                    )
+
+                    Spacer(minLength: 8)
+
+                    SyncIconButton(
+                        isRefreshing: isRefreshingStars,
+                        disabled: isRefreshingStars,
+                        tooltip: String.l10n("insights.repo.star.refresh")
+                    ) {
+                        refreshMockStarHistory()
+                    }
+
+                    Picker("insights.repo.star.range.label", selection: $starRange) {
+                        ForEach(StarRange.allCases) { range in
+                            Text(range.titleKey).tag(range)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 176)
+                }
+
+                HStack(spacing: 8) {
+                    starSourceChip(
+                        title: "insights.repo.star.source.estimated",
+                        systemImage: "waveform.path.ecg",
+                        dashed: true
+                    )
+                    starSourceChip(
+                        title: "insights.repo.star.source.local",
+                        systemImage: "internaldrive.fill",
+                        dashed: false
+                    )
+                    MockDataBadge()
+                }
+
+                Chart {
+                    ForEach(displayedStarPoints) { point in
+                        AreaMark(
+                            x: .value("Date", point.date),
+                            y: .value("Stars", point.count)
+                        )
+                        .foregroundStyle(Color.blue.opacity(0.08))
+                        .interpolationMethod(.catmullRom)
+                    }
+
+                    ForEach(estimatedStarPoints) { point in
+                        LineMark(
+                            x: .value("Date", point.date),
+                            y: .value("Stars", point.count),
+                            series: .value("Source", "Estimated")
+                        )
+                        .foregroundStyle(Color.blue.opacity(0.72))
+                        .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, dash: [5, 4]))
+                        .interpolationMethod(.catmullRom)
+                    }
+
+                    ForEach(localStarPoints) { point in
+                        LineMark(
+                            x: .value("Date", point.date),
+                            y: .value("Stars", point.count),
+                            series: .value("Source", "Local")
+                        )
+                        .foregroundStyle(Color.blue)
+                        .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                        .interpolationMethod(.catmullRom)
+                    }
+
+                    if let selectedStarPoint {
+                        RuleMark(x: .value("Selected", selectedStarPoint.date))
+                            .foregroundStyle(Color.secondary.opacity(0.55))
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                            .annotation(position: .top, alignment: .leading) {
+                                starSelectionAnnotation(selectedStarPoint)
+                            }
+                    }
+                }
+                .chartXAxis {
+                    AxisMarks(values: .automatic(desiredCount: 5)) { value in
+                        AxisValueLabel(format: .dateTime.year().month(.abbreviated))
+                            .font(interfaceScale.font(.captionSmall))
+                        AxisGridLine().foregroundStyle(Color.secondary.opacity(0.08))
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks(position: .leading) { value in
+                        AxisValueLabel()
+                            .font(interfaceScale.font(.captionSmall))
+                        AxisGridLine().foregroundStyle(Color.secondary.opacity(0.12))
+                    }
+                }
+                .chartXSelection(value: $selectedStarDate)
+                .frame(minHeight: 200, idealHeight: 230, maxHeight: 250)
+                .accessibilityLabel(Text("insights.repo.section.stars"))
+                .accessibilityValue(
+                    Text(
+                        "\(snapshot.currentStars.formatted()) · \(signed(snapshot.starGrowthOneYear))"
+                    )
+                )
+
+                HStack(spacing: 5) {
+                    Text("insights.repo.star.coverage")
+                    if let first = displayedStarPoints.first?.date {
+                        Text(first, format: .dateTime.year().month().day())
+                    }
+                    Text("·")
+                    Text("insights.repo.star.updated")
+                    Text(snapshot.generatedAt, format: .dateTime.hour().minute())
+                    Text("·")
+                    Text("insights.repo.star.mockNotice")
+                }
+                .font(interfaceScale.font(.captionSmall))
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func starMetric(value: String, label: LocalizedStringKey) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(verbatim: value)
+                .font(interfaceScale.font(size: 20, weight: .semibold))
+                .monospacedDigit()
+            Text(label)
+                .font(interfaceScale.font(.captionSmall))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func starSourceChip(
+        title: LocalizedStringKey,
+        systemImage: String,
+        dashed: Bool
+    ) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: systemImage)
+            Text(title)
+            Rectangle()
+                .fill(Color.blue.opacity(dashed ? 0.65 : 1))
+                .frame(width: 18, height: dashed ? 1 : 2)
+        }
+        .font(interfaceScale.font(.captionSmall, weight: .medium))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color(nsColor: .textBackgroundColor).opacity(0.55), in: Capsule())
+    }
+
+    private func starSelectionAnnotation(_ point: StarHistoryPoint) -> some View {
+        HStack(spacing: 5) {
+            Text(point.date, format: .dateTime.year().month().day())
+            Text("·")
+            Text(point.count.formatted())
+                .monospacedDigit()
+        }
+        .font(interfaceScale.font(.captionSmall, weight: .medium))
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))
+    }
+
+    private var displayedStarPoints: [StarHistoryPoint] {
+        let cutoff: Date?
+        switch starRange {
+        case .threeMonths:
+            cutoff = snapshot.generatedAt.addingTimeInterval(-92 * 86_400)
+        case .oneYear:
+            cutoff = snapshot.generatedAt.addingTimeInterval(-366 * 86_400)
+        case .all:
+            cutoff = nil
+        }
+        guard let cutoff else { return snapshot.starHistory }
+        return snapshot.starHistory.filter { $0.date >= cutoff }
+    }
+
+    /// Mock 将最后三个月视为本机精确观察点；折线在边界保留一个重叠点，
+    /// 让两种来源视觉连续，同时用线型明确区分精度。
+    private var estimatedStarPoints: [StarHistoryPoint] {
+        guard displayedStarPoints.count > 3 else { return displayedStarPoints.prefix(1).map { $0 } }
+        return Array(displayedStarPoints.dropLast(2))
+    }
+
+    private var localStarPoints: [StarHistoryPoint] {
+        Array(displayedStarPoints.suffix(3))
+    }
+
+    private var selectedStarPoint: StarHistoryPoint? {
+        guard let selectedStarDate else { return nil }
+        return displayedStarPoints.min {
+            abs($0.date.timeIntervalSince(selectedStarDate)) < abs($1.date.timeIntervalSince(selectedStarDate))
+        }
+    }
+
+    private func signed(_ value: Int) -> String {
+        value >= 0 ? "+\(value.formatted())" : value.formatted()
+    }
+
+    /// 前端验收期刷新只提供可见反馈，不改变确定性 Mock，也不触发网络请求。
+    private func refreshMockStarHistory() {
+        guard !isRefreshingStars else { return }
+        isRefreshingStars = true
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(650))
+            isRefreshingStars = false
+        }
     }
 
     private var commitSection: some View {

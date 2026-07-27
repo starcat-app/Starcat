@@ -141,10 +141,14 @@ enum InsightsMockData {
     }
 
     private static func makeStarHistory(baseline: Int, current: Int, seed: Int) -> [StarHistoryPoint] {
-        let weights = [0.00, 0.05, 0.11, 0.18, 0.26, 0.35, 0.43, 0.54, 0.64, 0.73, 0.82, 0.91, 1.00]
-        let start = generatedAt.addingTimeInterval(-360 * 86_400)
-        return weights.enumerated().map { index, weight in
-            let organicVariation = index == weights.count - 1 ? 0 : ((index + seed) % 3) * 19
+        // 三年窗口让“3 个月 / 1 年 / 全部”在 Mock 阶段也能体现不同观察尺度；
+        // 最后一个点强制校准当前 Star，其他点只加小幅确定性扰动以保持截图稳定。
+        let pointCount = 37
+        let start = generatedAt.addingTimeInterval(-Double(pointCount - 1) * 30 * 86_400)
+        return (0..<pointCount).map { index in
+            let progress = Double(index) / Double(pointCount - 1)
+            let weight = pow(progress, 1.12)
+            let organicVariation = index == pointCount - 1 ? 0 : ((index + seed) % 3) * 11
             let count = min(current, baseline + Int(Double(current - baseline) * weight) + organicVariation)
             return StarHistoryPoint(
                 date: start.addingTimeInterval(Double(index) * 30 * 86_400),

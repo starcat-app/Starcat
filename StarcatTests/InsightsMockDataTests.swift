@@ -37,7 +37,7 @@ struct InsightsMockDataTests {
         let repo = Repo.makeMinimal(owner: "starcat-app", name: "starcat")
         let snapshot = InsightsMockData.repositoryInsights(for: repo)
 
-        #expect(snapshot.starHistory.count == 13)
+        #expect(snapshot.starHistory.count == 37)
         #expect(snapshot.starHistory.map(\.date) == snapshot.starHistory.map(\.date).sorted())
         #expect(snapshot.starHistory.last?.count == snapshot.currentStars)
         #expect(zip(snapshot.starHistory, snapshot.starHistory.dropFirst()).allSatisfy { $0.count <= $1.count })
