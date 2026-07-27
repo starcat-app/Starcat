@@ -80,6 +80,7 @@ struct ManageDetailContent: View {
     @Environment(HomeViewModel.self) private var viewModel
     @State private var contentMode: ContentMode = .readme
     @State private var repositoryInsightsViewModel: RepositoryInsightsViewModel?
+    @State private var starHistoryViewModel: StarHistoryViewModel?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -122,10 +123,11 @@ struct ManageDetailContent: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Group {
-                    if let repositoryInsightsViewModel {
+                    if let repositoryInsightsViewModel, let starHistoryViewModel {
                         RepositoryInsightsView(
                             repo: repo,
                             viewModel: repositoryInsightsViewModel,
+                            starHistoryViewModel: starHistoryViewModel,
                             onScrollReport: onScrollReport
                         )
                     } else {
@@ -137,11 +139,17 @@ struct ManageDetailContent: View {
                 .task(id: repo.id) {
                     let insightsViewModel = repositoryInsightsViewModel
                         ?? makeRepositoryInsightsViewModel()
+                    let historyViewModel = starHistoryViewModel
+                        ?? makeStarHistoryViewModel()
                     repositoryInsightsViewModel = insightsViewModel
-                    await insightsViewModel.load(
+                    starHistoryViewModel = historyViewModel
+
+                    async let insightsLoad: Void = insightsViewModel.load(
                         repo: repo,
                         isAuthenticated: authSession.state.isAuthenticated
                     )
+                    async let historyLoad: Void = historyViewModel.load(repo: repo)
+                    _ = await (insightsLoad, historyLoad)
                 }
             }
         }
@@ -149,6 +157,7 @@ struct ManageDetailContent: View {
         .onChange(of: contentMode) { _, newMode in
             guard newMode == .insights else {
                 repositoryInsightsViewModel?.cancelRemoteLoading()
+                starHistoryViewModel?.cancel()
                 return
             }
             // README 可能在切换前已把 Hero 折叠；洞察页首帧先恢复顶部 Metadata，
@@ -176,5 +185,9 @@ struct ManageDetailContent: View {
                 cache: dependencies.repositoryInsightsCache
             )
         )
+    }
+
+    private func makeStarHistoryViewModel() -> StarHistoryViewModel {
+        StarHistoryViewModel(repository: dependencies.repoStarHistoryRepository)
     }
 }

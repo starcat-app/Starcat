@@ -127681,6 +127681,13 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "涵蓋自" } }
       }
     },
+    "insights.repo.star.chart.summaryFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "From %@ to %@, latest %lld Stars, one-year change %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "从 %@ 到 %@，最新 %lld Stars，一年变化 %@" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "從 %@ 到 %@，最新 %lld Stars，一年變化 %@" } }
+      }
+    },
     "insights.repo.star.current" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Current Stars" } },
@@ -127756,6 +127763,41 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Precise local snapshots" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本机精确快照" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "本機精確快照" } }
+      }
+    },
+    "insights.repo.star.source.snapshot" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Starcat precise snapshots" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Starcat 精确快照" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Starcat 精確快照" } }
+      }
+    },
+    "insights.repo.star.state.building" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The long-term history is being built. Starcat will retry up to three times." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "长期历史正在构建，Starcat 最多自动重试三次。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "長期歷史正在建立，Starcat 最多自動重試三次。" } }
+      }
+    },
+    "insights.repo.star.state.private" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Private repository: only precise snapshots recorded on this Mac are shown." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "私有仓库仅显示本机记录的精确快照，仓库信息不会发送到 Discovery 服务。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "私人儲存庫僅顯示本機記錄的精確快照，儲存庫資訊不會傳送到 Discovery 服務。" } }
+      }
+    },
+    "insights.repo.star.state.stale" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The remote history could not be refreshed. Showing the last local cache." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "远端历史刷新失败，当前显示上次本地缓存。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "遠端歷史重新整理失敗，目前顯示上次本機快取。" } }
+      }
+    },
+    "insights.repo.star.state.unavailable" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No Star history is available yet. Refresh after repository metadata has been cached." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂无 Star 历史。仓库元数据完成缓存后可再次刷新。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "暫無 Star 歷史。儲存庫中繼資料完成快取後可再次重新整理。" } }
       }
     },
     "insights.repo.star.updated" : {
