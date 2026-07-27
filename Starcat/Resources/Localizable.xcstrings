@@ -127464,6 +127464,27 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "%lld 次提交" } }
       }
     },
+    "insights.repo.contributor.refresh" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Refresh contributors" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "刷新贡献者" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "重新整理貢獻者" } }
+      }
+    },
+    "insights.repo.community.healthFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Community health %lld%%" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "社区健康度 %lld%%" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "社群健康度 %lld%%" } }
+      }
+    },
+    "insights.repo.community.refresh" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Refresh community profile" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "刷新社区规范" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "重新整理社群規範" } }
+      }
+    },
     "insights.repo.health.maintenance" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Maintenance" } },

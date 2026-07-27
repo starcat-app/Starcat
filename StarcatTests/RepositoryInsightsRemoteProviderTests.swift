@@ -103,6 +103,49 @@ struct RepositoryInsightsRemoteProviderTests {
         #expect(!cached.isStale)
         #expect(request.url?.path == "/repos/octo/commits/stats/commit_activity")
     }
+
+    @Test("贡献者与社区规范映射为展示模型并独立缓存")
+    func contributorsAndCommunityPersistIndependently() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 23, owner: "octo", name: "community")
+        let httpClient = ContributorsCommunityHTTPClient()
+        let now = Date(timeIntervalSince1970: 2_000)
+        let provider = DefaultRepositoryRemoteInsightsProvider(
+            metricsClient: DefaultGitHubRepositoryMetricsClient(
+                httpClient: httpClient,
+                token: "token",
+                baseURL: URL(string: "https://api.example.test")!
+            ),
+            cache: GRDBRepositoryInsightsCache(database: database),
+            now: { now }
+        )
+        let repository = RepoIdentity(ghRepoID: 23, owner: "octo", name: "community")
+
+        let contributors = try await provider.refreshContributors(repository: repository)
+        let community = try await provider.refreshCommunityProfile(repository: repository)
+        let cachedContributors = try #require(
+            try await provider.cachedContributors(repoID: 23)
+        )
+        let cachedCommunity = try #require(
+            try await provider.cachedCommunityProfile(repoID: 23)
+        )
+        let paths = await httpClient.paths()
+
+        #expect(contributors.contributors.map(\.login) == ["alice", "bob"])
+        #expect(contributors.contributors.map(\.commits) == [42, 17])
+        #expect(contributors.contributors.first?.avatarURL?.absoluteString == "https://avatars.test/alice")
+        #expect(community.healthPercentage == 75)
+        #expect(community.hasReadme)
+        #expect(community.hasCodeOfConduct)
+        #expect(!community.hasContributing)
+        #expect(community.hasLicense)
+        #expect(cachedContributors.value == contributors)
+        #expect(cachedCommunity.value == community)
+        #expect(paths == [
+            "/repos/octo/community/contributors",
+            "/repos/octo/community/community/profile"
+        ])
+    }
 }
 
 private actor ActivityMetricsHTTPClient: RAGHTTPClientProtocol {
@@ -156,5 +199,51 @@ private actor CommitActivityHTTPClient: RAGHTTPClientProtocol {
 
     func request() -> URLRequest? {
         recordedRequest
+    }
+}
+
+private actor ContributorsCommunityHTTPClient: RAGHTTPClientProtocol {
+    private var recordedPaths: [String] = []
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let path = request.url!.path
+        recordedPaths.append(path)
+        let body: String
+        switch path {
+        case "/repos/octo/community/contributors":
+            body = """
+            [
+              {"login":"alice","contributions":42,"avatar_url":"https://avatars.test/alice"},
+              {"login":"bob","contributions":17,"avatar_url":null}
+            ]
+            """
+        case "/repos/octo/community/community/profile":
+            body = """
+            {
+              "health_percentage":75,
+              "files":{
+                "readme":{},
+                "code_of_conduct":{},
+                "contributing":null,
+                "license":{}
+              }
+            }
+            """
+        default:
+            body = "{}"
+        }
+        return (
+            Data(body.utf8),
+            HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: nil
+            )!
+        )
+    }
+
+    func paths() -> [String] {
+        recordedPaths
     }
 }

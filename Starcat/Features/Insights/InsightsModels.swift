@@ -307,12 +307,27 @@ struct StarHistoryPoint: Identifiable, Equatable, Sendable {
     var id: Date { date }
 }
 
-/// 贡献者摘要。Mock 阶段使用首字母头像，避免引入远端图片依赖。
-struct RepositoryContributor: Identifiable, Equatable, Sendable {
+/// 贡献者摘要。头像 URL 允许为空，网络失败时 UI 回退到稳定的首字母占位。
+struct RepositoryContributor: Codable, Identifiable, Equatable, Sendable {
     let id: String
     let login: String
     let commits: Int
     let colorName: String
+    let avatarURL: URL?
+
+    init(
+        id: String,
+        login: String,
+        commits: Int,
+        colorName: String,
+        avatarURL: URL? = nil
+    ) {
+        self.id = id
+        self.login = login
+        self.commits = commits
+        self.colorName = colorName
+        self.avatarURL = avatarURL
+    }
 }
 
 /// Starcat 当前四维健康度。

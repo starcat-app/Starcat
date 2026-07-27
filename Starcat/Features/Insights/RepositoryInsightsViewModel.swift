@@ -130,6 +130,8 @@ final class RepositoryInsightsViewModel {
     private var generation: UInt64 = 0
     private var activityGeneration: UInt64 = 0
     private var commitGeneration: UInt64 = 0
+    private var contributorGeneration: UInt64 = 0
+    private var communityGeneration: UInt64 = 0
 
     private(set) var activeRepoID: Int64?
     private(set) var releaseState: RepositoryInsightsSectionState<RepositoryReleaseInsight> = .idle
@@ -142,6 +144,12 @@ final class RepositoryInsightsViewModel {
     private(set) var commitActivityState:
         RepositoryRemoteInsightsSectionState<RepositoryCommitActivity> = .idle
     private(set) var isRefreshingCommitActivity = false
+    private(set) var contributorsState:
+        RepositoryRemoteInsightsSectionState<RepositoryContributorsInsight> = .idle
+    private(set) var isRefreshingContributors = false
+    private(set) var remoteCommunityState:
+        RepositoryRemoteInsightsSectionState<RepositoryCommunityInsight> = .idle
+    private(set) var isRefreshingCommunity = false
 
     init(
         provider: any RepositoryLocalInsightsProviding,
@@ -198,7 +206,17 @@ final class RepositoryInsightsViewModel {
             isAuthenticated: isAuthenticated,
             forceRefresh: false
         )
-        _ = await (activityLoad, commitLoad)
+        async let contributorLoad: Void = loadContributors(
+            repo: repo,
+            isAuthenticated: isAuthenticated,
+            forceRefresh: false
+        )
+        async let communityLoad: Void = loadCommunityProfile(
+            repo: repo,
+            isAuthenticated: isAuthenticated,
+            forceRefresh: false
+        )
+        _ = await (activityLoad, commitLoad, contributorLoad, communityLoad)
     }
 
     func selectActivityRange(
@@ -221,12 +239,26 @@ final class RepositoryInsightsViewModel {
         await loadCommitActivity(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
     }
 
+    func refreshContributors(repo: Repo, isAuthenticated: Bool) async {
+        guard !isRefreshingContributors else { return }
+        await loadContributors(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
+    }
+
+    func refreshCommunityProfile(repo: Repo, isAuthenticated: Bool) async {
+        guard !isRefreshingCommunity else { return }
+        await loadCommunityProfile(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
+    }
+
     /// README 模式不保活远端刷新。generation 让已经返回的旧结果无法再写 UI。
     func cancelRemoteLoading() {
         activityGeneration &+= 1
         commitGeneration &+= 1
+        contributorGeneration &+= 1
+        communityGeneration &+= 1
         isRefreshingActivity = false
         isRefreshingCommitActivity = false
+        isRefreshingContributors = false
+        isRefreshingCommunity = false
     }
 
     private func loadActivity(
@@ -392,6 +424,135 @@ final class RepositoryInsightsViewModel {
 
     private func ownsCommitResult(generation: UInt64, repoID: Int64) -> Bool {
         commitGeneration == generation && activeRepoID == repoID
+    }
+
+    private func loadContributors(
+        repo: Repo,
+        isAuthenticated: Bool,
+        forceRefresh: Bool
+    ) async {
+        contributorGeneration &+= 1
+        let requestedGeneration = contributorGeneration
+        contributorsState = .loading(cached: nil)
+
+        guard isAuthenticated, let remoteProvider else {
+            contributorsState = .unavailable(cached: nil)
+            return
+        }
+
+        let cached: RepositoryCachedContributorsInsight?
+        do {
+            cached = try await remoteProvider.cachedContributors(repoID: repo.id)
+        } catch {
+            guard ownsContributorResult(generation: requestedGeneration, repoID: repo.id) else { return }
+            contributorsState = .failed(cached: nil)
+            return
+        }
+        guard ownsContributorResult(generation: requestedGeneration, repoID: repo.id) else { return }
+
+        if let cached {
+            contributorsState = cached.isStale ? .stale(cached.value) : .content(cached.value)
+            if !cached.isStale, !forceRefresh {
+                return
+            }
+        }
+
+        isRefreshingContributors = true
+        defer {
+            if requestedGeneration == contributorGeneration {
+                isRefreshingContributors = false
+            }
+        }
+        do {
+            let fresh = try await remoteProvider.refreshContributors(
+                repository: repoIdentity(for: repo)
+            )
+            guard ownsContributorResult(generation: requestedGeneration, repoID: repo.id) else { return }
+            contributorsState = .content(fresh)
+        } catch let error as GitHubRepositoryMetricsError {
+            guard ownsContributorResult(generation: requestedGeneration, repoID: repo.id) else { return }
+            switch error {
+            case .unauthorized, .forbidden, .unavailable:
+                contributorsState = .unavailable(cached: cached?.value)
+            default:
+                contributorsState = .failed(cached: cached?.value)
+            }
+        } catch {
+            guard ownsContributorResult(generation: requestedGeneration, repoID: repo.id) else { return }
+            contributorsState = .failed(cached: cached?.value)
+        }
+    }
+
+    private func loadCommunityProfile(
+        repo: Repo,
+        isAuthenticated: Bool,
+        forceRefresh: Bool
+    ) async {
+        communityGeneration &+= 1
+        let requestedGeneration = communityGeneration
+        remoteCommunityState = .loading(cached: nil)
+
+        guard let remoteProvider else {
+            remoteCommunityState = .unavailable(cached: nil)
+            return
+        }
+
+        let cached: RepositoryCachedCommunityInsight?
+        do {
+            cached = try await remoteProvider.cachedCommunityProfile(repoID: repo.id)
+        } catch {
+            guard ownsCommunityResult(generation: requestedGeneration, repoID: repo.id) else { return }
+            remoteCommunityState = .failed(cached: nil)
+            return
+        }
+        guard ownsCommunityResult(generation: requestedGeneration, repoID: repo.id) else { return }
+
+        if let cached {
+            remoteCommunityState = cached.isStale ? .stale(cached.value) : .content(cached.value)
+            if !isAuthenticated || (!cached.isStale && !forceRefresh) {
+                return
+            }
+        } else if !isAuthenticated {
+            remoteCommunityState = .unavailable(cached: nil)
+            return
+        }
+
+        isRefreshingCommunity = true
+        defer {
+            if requestedGeneration == communityGeneration {
+                isRefreshingCommunity = false
+            }
+        }
+        do {
+            let fresh = try await remoteProvider.refreshCommunityProfile(
+                repository: repoIdentity(for: repo)
+            )
+            guard ownsCommunityResult(generation: requestedGeneration, repoID: repo.id) else { return }
+            remoteCommunityState = .content(fresh)
+        } catch let error as GitHubRepositoryMetricsError {
+            guard ownsCommunityResult(generation: requestedGeneration, repoID: repo.id) else { return }
+            switch error {
+            case .unauthorized, .forbidden, .unavailable:
+                remoteCommunityState = .unavailable(cached: cached?.value)
+            default:
+                remoteCommunityState = .failed(cached: cached?.value)
+            }
+        } catch {
+            guard ownsCommunityResult(generation: requestedGeneration, repoID: repo.id) else { return }
+            remoteCommunityState = .failed(cached: cached?.value)
+        }
+    }
+
+    private func ownsContributorResult(generation: UInt64, repoID: Int64) -> Bool {
+        contributorGeneration == generation && activeRepoID == repoID
+    }
+
+    private func ownsCommunityResult(generation: UInt64, repoID: Int64) -> Bool {
+        communityGeneration == generation && activeRepoID == repoID
+    }
+
+    private func repoIdentity(for repo: Repo) -> RepoIdentity {
+        RepoIdentity(ghRepoID: repo.id, owner: repo.owner, name: repo.name)
     }
 
     private func apply(_ event: LoadEvent) {

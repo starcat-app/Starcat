@@ -82,6 +82,38 @@ struct RepositoryInsightsViewModelTests {
         #expect(counts.createdPullRequests == RepositoryActivityRange.year.dayCount)
     }
 
+    @Test("未登录时社区缓存仍可显示且贡献者保持独立提示")
+    func signedOutCommunityCacheRemainsVisible() async {
+        let community = RepositoryCommunityInsight(
+            healthPercentage: 80,
+            hasReadme: true,
+            hasCodeOfConduct: false,
+            hasContributing: true,
+            hasLicense: true
+        )
+        let remoteProvider = StubRepositoryRemoteInsightsProvider(
+            cachedHandler: { _, _ in nil },
+            refreshHandler: { _, _ in throw StubError.failed },
+            cachedCommunityHandler: { _ in
+                RepositoryCachedCommunityInsight(
+                    value: community,
+                    fetchedAt: Date(timeIntervalSince1970: 1_000),
+                    isStale: true
+                )
+            }
+        )
+        let viewModel = RepositoryInsightsViewModel(
+            provider: emptyLocalProvider(),
+            remoteProvider: remoteProvider
+        )
+
+        await viewModel.load(repo: fixtureRepo(id: 13), isAuthenticated: false)
+
+        #expect(viewModel.remoteCommunityState == .stale(community))
+        #expect(viewModel.contributorsState == .unavailable(cached: nil))
+        #expect(viewModel.activityState == .unavailable(cached: nil))
+    }
+
     @Test("默认数据源映射已有 Release、Health、OpenSSF 与 Community 缓存")
     func defaultProviderMapsExistingLocalData() async throws {
         let database = try InMemoryDatabaseManager()
@@ -298,6 +330,22 @@ private struct StubRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsPro
     ) async throws -> RepositoryCommitActivity = { _ in
         throw StubError.failed
     }
+    var cachedContributorsHandler: @Sendable (
+        Int64
+    ) async throws -> RepositoryCachedContributorsInsight? = { _ in nil }
+    var refreshContributorsHandler: @Sendable (
+        RepoIdentity
+    ) async throws -> RepositoryContributorsInsight = { _ in
+        throw StubError.failed
+    }
+    var cachedCommunityHandler: @Sendable (
+        Int64
+    ) async throws -> RepositoryCachedCommunityInsight? = { _ in nil }
+    var refreshCommunityHandler: @Sendable (
+        RepoIdentity
+    ) async throws -> RepositoryCommunityInsight = { _ in
+        throw StubError.failed
+    }
 
     func cachedActivity(
         repoID: Int64,
@@ -319,5 +367,21 @@ private struct StubRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsPro
 
     func refreshCommitActivity(repository: RepoIdentity) async throws -> RepositoryCommitActivity {
         try await refreshCommitHandler(repository)
+    }
+
+    func cachedContributors(repoID: Int64) async throws -> RepositoryCachedContributorsInsight? {
+        try await cachedContributorsHandler(repoID)
+    }
+
+    func refreshContributors(repository: RepoIdentity) async throws -> RepositoryContributorsInsight {
+        try await refreshContributorsHandler(repository)
+    }
+
+    func cachedCommunityProfile(repoID: Int64) async throws -> RepositoryCachedCommunityInsight? {
+        try await cachedCommunityHandler(repoID)
+    }
+
+    func refreshCommunityProfile(repository: RepoIdentity) async throws -> RepositoryCommunityInsight {
+        try await refreshCommunityHandler(repository)
     }
 }

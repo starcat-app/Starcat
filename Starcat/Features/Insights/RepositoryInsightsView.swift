@@ -773,13 +773,63 @@ struct RepositoryInsightsView: View {
             subtitle: "insights.repo.section.contributors.subtitle",
             systemImage: "person.3.fill"
         ) {
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 142), spacing: 12)],
-                alignment: .leading,
-                spacing: 12
-            ) {
-                ForEach(snapshot.contributors) { contributor in
-                    contributorItem(contributor)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Spacer()
+                    SyncIconButton(
+                        isRefreshing: viewModel.isRefreshingContributors,
+                        disabled: viewModel.isRefreshingContributors,
+                        tooltip: String.l10n("insights.repo.contributor.refresh")
+                    ) {
+                        Task {
+                            await viewModel.refreshContributors(
+                                repo: repo,
+                                isAuthenticated: authSession.state.isAuthenticated
+                            )
+                        }
+                    }
+                }
+
+                if let insight = displayedContributors {
+                    if insight.contributors.isEmpty {
+                        sectionMessage("insights.repo.state.noData", systemImage: "person.3.sequence")
+                    } else {
+                        LazyVGrid(
+                            columns: [GridItem(.adaptive(minimum: 142), spacing: 12)],
+                            alignment: .leading,
+                            spacing: 12
+                        ) {
+                            ForEach(insight.contributors) { contributor in
+                                contributorItem(contributor)
+                            }
+                        }
+                    }
+                    if let message = contributorsStatusMessage {
+                        Label(message.key, systemImage: message.systemImage)
+                            .font(interfaceScale.font(.captionSmall))
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    switch viewModel.contributorsState {
+                    case .idle, .loading:
+                        sectionProgress
+                    case .unavailable:
+                        sectionMessage(
+                            authSession.state.isAuthenticated
+                                ? "insights.repo.state.noData"
+                                : "insights.repo.state.loginRequired",
+                            systemImage: "person.crop.circle.badge.exclamationmark"
+                        )
+                    case .generating:
+                        sectionMessage(
+                            "insights.repo.state.generating",
+                            systemImage: "clock.arrow.circlepath"
+                        )
+                    case .failed:
+                        sectionMessage("error.loadFailed", systemImage: "exclamationmark.triangle")
+                    case .content, .stale:
+                        EmptyView()
+                    }
                 }
             }
         }
@@ -787,11 +837,17 @@ struct RepositoryInsightsView: View {
 
     private func contributorItem(_ contributor: RepositoryContributor) -> some View {
         HStack(spacing: 8) {
-            Text(String(contributor.login.prefix(1)).uppercased())
-                .font(interfaceScale.font(.caption, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: 28, height: 28)
-                .background(InsightsColor.resolve(contributor.colorName), in: Circle())
+            AsyncImage(url: contributor.avatarURL) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                Text(String(contributor.login.prefix(1)).uppercased())
+                    .font(interfaceScale.font(.caption, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(InsightsColor.resolve(contributor.colorName))
+            }
+            .frame(width: 28, height: 28)
+            .clipShape(Circle())
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: contributor.login)
@@ -809,6 +865,40 @@ struct RepositoryInsightsView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var displayedContributors: RepositoryContributorsInsight? {
+        switch viewModel.contributorsState {
+        case .content(let value), .stale(let value):
+            return value
+        case .loading(let cached),
+             .generating(let cached),
+             .unavailable(let cached),
+             .failed(let cached):
+            return cached
+        case .idle:
+            return nil
+        }
+    }
+
+    private var contributorsStatusMessage: (key: LocalizedStringKey, systemImage: String)? {
+        switch viewModel.contributorsState {
+        case .stale:
+            return ("insights.repo.state.stale", "clock.badge.exclamationmark")
+        case .unavailable:
+            return (
+                authSession.state.isAuthenticated
+                    ? "insights.repo.state.noData"
+                    : "insights.repo.state.loginRequired",
+                "person.crop.circle.badge.exclamationmark"
+            )
+        case .failed:
+            return ("insights.repo.state.refreshFailed", "exclamationmark.triangle")
+        case .generating:
+            return ("insights.repo.state.generating", "clock.arrow.circlepath")
+        case .idle, .loading, .content:
+            return nil
+        }
     }
 
     private var healthSection: some View {
@@ -882,34 +972,122 @@ struct RepositoryInsightsView: View {
             subtitle: "insights.repo.section.community.subtitle",
             systemImage: "person.2.fill"
         ) {
-            switch viewModel.communityState {
-            case .content(let community):
-                VStack(spacing: 0) {
-                    localSignalRow(
-                        title: "insights.repo.signal.readme",
-                        isAvailable: community.hasReadme,
-                        systemImage: "doc.text.fill"
-                    )
-                    Divider().padding(.leading, 28)
-                    localSignalRow(
-                        title: "insights.repo.signal.conduct",
-                        isAvailable: community.hasCodeOfConduct,
-                        systemImage: "person.2.fill"
-                    )
-                    Divider().padding(.leading, 28)
-                    localSignalRow(
-                        title: "insights.repo.signal.contributing",
-                        isAvailable: community.hasContributing,
-                        systemImage: "hand.raised.fill"
-                    )
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    if let community = displayedCommunity {
+                        Text(
+                            String(
+                                format: String.l10n("insights.repo.community.healthFormat"),
+                                community.healthPercentage
+                            )
+                        )
+                        .font(interfaceScale.font(.caption, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                    }
+                    Spacer()
+                    SyncIconButton(
+                        isRefreshing: viewModel.isRefreshingCommunity,
+                        disabled: viewModel.isRefreshingCommunity,
+                        tooltip: String.l10n("insights.repo.community.refresh")
+                    ) {
+                        Task {
+                            await viewModel.refreshCommunityProfile(
+                                repo: repo,
+                                isAuthenticated: authSession.state.isAuthenticated
+                            )
+                        }
+                    }
                 }
-            case .loading, .idle:
-                sectionProgress
-            case .empty, .unavailable:
-                sectionMessage("insights.repo.state.noData", systemImage: "person.2.slash")
-            case .failed:
-                sectionMessage("error.loadFailed", systemImage: "exclamationmark.triangle")
+
+                if let community = displayedCommunity {
+                    VStack(spacing: 0) {
+                        localSignalRow(
+                            title: "insights.repo.signal.readme",
+                            isAvailable: community.hasReadme,
+                            systemImage: "doc.text.fill"
+                        )
+                        Divider().padding(.leading, 28)
+                        localSignalRow(
+                            title: "insights.repo.signal.conduct",
+                            isAvailable: community.hasCodeOfConduct,
+                            systemImage: "person.2.fill"
+                        )
+                        Divider().padding(.leading, 28)
+                        localSignalRow(
+                            title: "insights.repo.signal.contributing",
+                            isAvailable: community.hasContributing,
+                            systemImage: "hand.raised.fill"
+                        )
+                        Divider().padding(.leading, 28)
+                        localSignalRow(
+                            title: "insights.repo.signal.license",
+                            isAvailable: community.hasLicense,
+                            systemImage: "checkmark.seal.fill"
+                        )
+                    }
+                    if let message = communityStatusMessage {
+                        Label(message.key, systemImage: message.systemImage)
+                            .font(interfaceScale.font(.captionSmall))
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    switch viewModel.remoteCommunityState {
+                    case .idle, .loading:
+                        sectionProgress
+                    case .unavailable:
+                        sectionMessage(
+                            authSession.state.isAuthenticated
+                                ? "insights.repo.state.noData"
+                                : "insights.repo.state.loginRequired",
+                            systemImage: "person.2.slash"
+                        )
+                    case .generating:
+                        sectionMessage(
+                            "insights.repo.state.generating",
+                            systemImage: "clock.arrow.circlepath"
+                        )
+                    case .failed:
+                        sectionMessage("error.loadFailed", systemImage: "exclamationmark.triangle")
+                    case .content, .stale:
+                        EmptyView()
+                    }
+                }
             }
+        }
+    }
+
+    private var displayedCommunity: RepositoryCommunityInsight? {
+        switch viewModel.remoteCommunityState {
+        case .content(let value), .stale(let value):
+            return value
+        case .loading(let cached),
+             .generating(let cached),
+             .unavailable(let cached),
+             .failed(let cached):
+            return cached
+        case .idle:
+            return nil
+        }
+    }
+
+    private var communityStatusMessage: (key: LocalizedStringKey, systemImage: String)? {
+        switch viewModel.remoteCommunityState {
+        case .stale:
+            return ("insights.repo.state.stale", "clock.badge.exclamationmark")
+        case .unavailable:
+            return (
+                authSession.state.isAuthenticated
+                    ? "insights.repo.state.noData"
+                    : "insights.repo.state.loginRequired",
+                "person.crop.circle.badge.exclamationmark"
+            )
+        case .failed:
+            return ("insights.repo.state.refreshFailed", "exclamationmark.triangle")
+        case .generating:
+            return ("insights.repo.state.generating", "clock.arrow.circlepath")
+        case .idle, .loading, .content:
+            return nil
         }
     }
 

@@ -82,6 +82,23 @@ struct RepositoryCachedCommitActivity: Equatable, Sendable {
     let isStale: Bool
 }
 
+struct RepositoryContributorsInsight: Codable, Equatable, Sendable {
+    let contributors: [RepositoryContributor]
+    let generatedAt: Date
+}
+
+struct RepositoryCachedContributorsInsight: Equatable, Sendable {
+    let value: RepositoryContributorsInsight
+    let fetchedAt: Date
+    let isStale: Bool
+}
+
+struct RepositoryCachedCommunityInsight: Equatable, Sendable {
+    let value: RepositoryCommunityInsight
+    let fetchedAt: Date
+    let isStale: Bool
+}
+
 protocol RepositoryRemoteInsightsProviding: Sendable {
     func cachedActivity(
         repoID: Int64,
@@ -96,6 +113,14 @@ protocol RepositoryRemoteInsightsProviding: Sendable {
     func cachedCommitActivity(repoID: Int64) async throws -> RepositoryCachedCommitActivity?
 
     func refreshCommitActivity(repository: RepoIdentity) async throws -> RepositoryCommitActivity
+
+    func cachedContributors(repoID: Int64) async throws -> RepositoryCachedContributorsInsight?
+
+    func refreshContributors(repository: RepoIdentity) async throws -> RepositoryContributorsInsight
+
+    func cachedCommunityProfile(repoID: Int64) async throws -> RepositoryCachedCommunityInsight?
+
+    func refreshCommunityProfile(repository: RepoIdentity) async throws -> RepositoryCommunityInsight
 }
 
 struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProviding, Sendable {
@@ -195,6 +220,98 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
             value,
             repoId: repoID,
             dataset: .commitActivity,
+            range: .all,
+            fetchedAt: fetchedAt,
+            responseETag: response.etag,
+            defaultBranchSHA: nil
+        )
+        return value
+    }
+
+    func cachedContributors(repoID: Int64) async throws -> RepositoryCachedContributorsInsight? {
+        guard let cached = try await cache.load(
+            repoId: repoID,
+            dataset: .contributors,
+            range: .all,
+            as: RepositoryContributorsInsight.self
+        ) else {
+            return nil
+        }
+        return RepositoryCachedContributorsInsight(
+            value: cached.value,
+            fetchedAt: cached.fetchedAt,
+            isStale: cached.isStale(at: now())
+        )
+    }
+
+    func refreshContributors(repository: RepoIdentity) async throws -> RepositoryContributorsInsight {
+        let fetchedAt = now()
+        let response = try await metricsClient.loadContributors(repository: repository, limit: 12)
+        guard let repoID = repository.ghRepoID else {
+            throw GitHubRepositoryMetricsError.invalidResponse
+        }
+        let colors = ["purple", "blue", "pink", "green", "orange"]
+        let value = RepositoryContributorsInsight(
+            contributors: response.value.map { metric in
+                let colorIndex = metric.login.unicodeScalars.reduce(0) {
+                    ($0 + Int($1.value)) % colors.count
+                }
+                return RepositoryContributor(
+                    id: metric.login,
+                    login: metric.login,
+                    commits: metric.contributions,
+                    colorName: colors[colorIndex],
+                    avatarURL: metric.avatarURL.flatMap(URL.init(string:))
+                )
+            },
+            generatedAt: fetchedAt
+        )
+        try await cache.store(
+            value,
+            repoId: repoID,
+            dataset: .contributors,
+            range: .all,
+            fetchedAt: fetchedAt,
+            responseETag: response.etag,
+            defaultBranchSHA: nil
+        )
+        return value
+    }
+
+    func cachedCommunityProfile(repoID: Int64) async throws -> RepositoryCachedCommunityInsight? {
+        guard let cached = try await cache.load(
+            repoId: repoID,
+            dataset: .communityProfile,
+            range: .all,
+            as: RepositoryCommunityInsight.self
+        ) else {
+            return nil
+        }
+        return RepositoryCachedCommunityInsight(
+            value: cached.value,
+            fetchedAt: cached.fetchedAt,
+            isStale: cached.isStale(at: now())
+        )
+    }
+
+    func refreshCommunityProfile(repository: RepoIdentity) async throws -> RepositoryCommunityInsight {
+        let fetchedAt = now()
+        let response = try await metricsClient.loadCommunityProfile(repository: repository)
+        guard let repoID = repository.ghRepoID else {
+            throw GitHubRepositoryMetricsError.invalidResponse
+        }
+        let profile = response.value
+        let value = RepositoryCommunityInsight(
+            healthPercentage: profile.healthPercentage,
+            hasReadme: profile.hasReadme,
+            hasCodeOfConduct: profile.hasCodeOfConduct,
+            hasContributing: profile.hasContributing,
+            hasLicense: profile.hasLicense
+        )
+        try await cache.store(
+            value,
+            repoId: repoID,
+            dataset: .communityProfile,
             range: .all,
             fetchedAt: fetchedAt,
             responseETag: response.etag,
