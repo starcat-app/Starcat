@@ -51,14 +51,14 @@
 - [x] “我的洞察”支持“全部收藏 / 知识库”两个明确范围，禁止不同卡片静默混用统计口径。
 - [x] “仓库洞察”属于 Manage 仓库详情，在现有 `RepoDetailScaffold` body 中提供 `README / 洞察` 切换。
 - [x] Star 历史只作为仓库洞察中的“Star 趋势”区块，不新增 Hero action、独立 Sheet 或第四种详情模式。
-- [ ] Star 趋势使用 `3 月 / 1 年 / 全部`独立范围；PR / Issue / Commit 使用 `1 周 / 1 月 / 3 月 / 1 年`活动范围。
+- [x] Star 趋势使用 `3 月 / 1 年 / 全部`独立范围；PR / Issue / Commit 使用 `1 周 / 1 月 / 3 月 / 1 年`活动范围。
 - [x] Star 长期历史明确区分“估算 · GH Archive”和“Starcat 精确快照”，不得用“精确历史”误导。
-- [ ] 私有仓库不把 repo 信息发送到 `starcat-discovery-api`，只显示本机精确快照。
+- [x] 私有仓库不把 repo 信息发送到 `starcat-discovery-api`，只显示本机精确快照。
 - [x] Traffic / Views / Clones / Referrers 不进入首版通用仓库洞察。
 - [x] 我的洞察使用实时 SQLite 聚合，不新增 summary 表或定时任务。
 - [x] 仓库洞察远端缓存与 Star 历史点共用一次追加迁移，但保持两张职责单一的表。
 - [x] 不修改已发布的 `v1-initial`；当前基线为 `v15` 时追加 `v16-repository-insights`。
-- [ ] 不新增第三个后端服务；Star 长期历史扩展现有 `starcat-discovery-api`。
+- [x] 不新增第三个后端服务；Star 长期历史扩展现有 `starcat-discovery-api`。
 
 ---
 
@@ -319,18 +319,19 @@
 
 ### 9.2 API、Repository 与状态
 
-- [ ] 新增 `StarHistoryAPI`，处理 DTO、ETag、`202`、错误映射和私有仓库拦截。
-- [ ] 新增 `RepoStarHistoryRepository`，cache-first 合并远端估算、Discovery 快照和本机快照。
-- [ ] 同日精确点优先于估算点；当前 metadata 更新时补今天快照。
-- [ ] 远端失败返回 stale cache；私有仓库绝不调用 API。
-- [ ] 新增 `StarHistoryViewModel`，支持独立范围、generation、取消、有界轮询和增长派生。
-- [ ] `202` 最多自动轮询三次，之后停止并提供手动刷新。
+- [x] 新增 `StarHistoryAPI`，处理 DTO、ETag、`202`、错误映射和私有仓库拦截。
+- [x] 新增 `RepoStarHistoryRepository`，cache-first 合并远端估算、Discovery 快照和本机快照。
+- [x] 同日精确点优先于估算点；当前 metadata 更新时补今天快照。
+- [x] 远端失败返回 stale cache；私有仓库绝不调用 API。
+- [x] 新增 `StarHistoryViewModel`，支持独立范围、generation、取消、有界轮询和增长派生。
+- [x] `202` 最多自动轮询三次，之后停止并提供手动刷新。
 
 计划提交：
 
-- [ ] `feat(star-history): 接入仓库星标历史服务` — 实际 commit：`待回填`
-- [ ] `feat(star-history): 合并估算与精确星标快照` — 实际 commit：`待回填`
-- [ ] `test(star-history): 覆盖历史合并与请求取消` — 实际 commit：`待回填`
+- [x] `feat(star-history): 接入仓库星标历史服务` — 实际 commit：`ae49f4fd`
+- [x] `feat(star-history): 合并估算与精确星标快照` — 实际 commit：`761e689b`
+- [x] `feat(star-history): 管理历史范围与有界轮询` — 实际 commit：`49c6537c`
+- [x] `test(star-history): 覆盖历史合并与请求取消` — 实际 commit：`41f50b6e`
 
 ### 9.3 Star 趋势区块
 
