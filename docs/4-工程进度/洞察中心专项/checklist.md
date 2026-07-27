@@ -473,8 +473,8 @@
 - [x] 审查 View / ViewModel / Repository / Client 职责和依赖注入。
 - [x] 审查 repo / range generation、取消、旧响应、SWR、Rate Limit 和 `202` 轮询。
 - [x] 审查 RAG 共享 Client 行为未回归、Star 历史与活动状态互不污染。
-- [ ] 逐项修复发现并独立提交。
-- [ ] 回填报告 findings 闭环和 commit 证据。
+- [x] 逐项修复发现并独立提交。
+- [x] 回填报告 findings 闭环和 commit 证据。
 
 ### 13.4 第四轮：UI、交互、国际化与辅助功能
 
