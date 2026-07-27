@@ -306,16 +306,16 @@
 
 ### 9.1 本机精确快照
 
-- [ ] 新增 `StarHistorySource`、`StarHistoryPrecision`、`StarHistoryPoint` 和 GRDB Record。
-- [ ] 在 Stars 全量同步、手动同步和单仓库 metadata 成功落库后按 UTC 日期幂等记录快照。
-- [ ] 只消费已经成功取得的 metadata，不能为了写快照额外请求 GitHub。
-- [ ] 远端刷新只替换 `gh_archive / discovery_snapshot`，不得删除 `local_snapshot`。
-- [ ] repo 删除时历史点级联清理；不进入 CloudKit 和用户数据导入导出。
+- [x] 新增 `StarHistorySource`、`StarHistoryPrecision`、`StarHistoryPoint` 和 GRDB Record。
+- [x] 在 Stars 全量同步、手动同步和单仓库 metadata 成功落库后按 UTC 日期幂等记录快照。
+- [x] 只消费已经成功取得的 metadata，不能为了写快照额外请求 GitHub。
+- [x] 远端刷新只替换 `gh_archive / discovery_snapshot`，不得删除 `local_snapshot`。
+- [x] repo 删除时历史点级联清理；不进入 CloudKit 和用户数据导入导出。
 
 计划提交：
 
-- [ ] `feat(star-history): 记录仓库每日星标快照` — 实际 commit：`待回填`
-- [ ] `test(star-history): 覆盖本机星标快照幂等性` — 实际 commit：`待回填`
+- [x] `feat(star-history): 记录仓库每日星标快照` — 实际 commit：`2a74c56a`
+- [x] `test(star-history): 覆盖本机星标快照幂等性` — 实际 commit：`bdebea47`
 
 ### 9.2 API、Repository 与状态
 
