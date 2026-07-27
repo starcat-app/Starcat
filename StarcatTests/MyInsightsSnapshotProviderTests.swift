@@ -56,10 +56,9 @@ struct MyInsightsSnapshotProviderTests {
         )
         let provider = GRDBMyInsightsSnapshotProvider(
             database: database,
-            embeddingModel: "embed-v1",
             now: { now }
         )
-        let snapshot = try await provider.load(scope: .starred)
+        let snapshot = try await provider.load(scope: .starred, embeddingModel: "embed-v1")
 
         #expect(metric("projects", in: snapshot) == 3)
         #expect(metric("new", in: snapshot) == 2)
@@ -108,17 +107,20 @@ struct MyInsightsSnapshotProviderTests {
                 """)
         }
 
-        let provider = GRDBMyInsightsSnapshotProvider(
-            database: database,
-            embeddingModel: "embed-v1"
-        )
-        let snapshot = try await provider.load(scope: .knowledge)
+        let provider = GRDBMyInsightsSnapshotProvider(database: database)
+        let snapshot = try await provider.load(scope: .knowledge, embeddingModel: "embed-v1")
 
         #expect(metric("projects", in: snapshot) == 3)
         #expect(action(.missingReadme, in: snapshot) == 2)
         #expect(action(.missingIndexableContent, in: snapshot) == 1)
         #expect(action(.indexIssues, in: snapshot) == 1)
         #expect(!snapshot.actionItems.contains(where: { $0.id == .allActions }))
+
+        let changedModel = try await provider.load(
+            scope: .knowledge,
+            embeddingModel: "embed-v2"
+        )
+        #expect(action(.indexIssues, in: changedModel) == 2)
     }
 
     @Test("revision 变化、主动刷新和 60 秒上限都会失效缓存")
@@ -131,27 +133,29 @@ struct MyInsightsSnapshotProviderTests {
         let clock = TestInsightsClock(initialDate)
         let provider = GRDBMyInsightsSnapshotProvider(
             database: database,
-            embeddingModel: "embed-v1",
             now: { clock.now() }
         )
 
-        let first = try await provider.load(scope: .starred)
+        let first = try await provider.load(scope: .starred, embeddingModel: "embed-v1")
         clock.advance(by: 30)
-        let cached = try await provider.load(scope: .starred)
+        let cached = try await provider.load(scope: .starred, embeddingModel: "embed-v1")
         #expect(cached.generatedAt == first.generatedAt)
 
         try await database.insertRepoFixture(id: 22)
-        let revised = try await provider.load(scope: .starred)
+        let revised = try await provider.load(scope: .starred, embeddingModel: "embed-v1")
         #expect(metric("projects", in: revised) == 2)
         #expect(revised.generatedAt > first.generatedAt)
 
         clock.advance(by: 10)
         await provider.invalidate()
-        let manuallyRefreshed = try await provider.load(scope: .starred)
+        let manuallyRefreshed = try await provider.load(
+            scope: .starred,
+            embeddingModel: "embed-v1"
+        )
         #expect(manuallyRefreshed.generatedAt > revised.generatedAt)
 
         clock.advance(by: 61)
-        let expired = try await provider.load(scope: .starred)
+        let expired = try await provider.load(scope: .starred, embeddingModel: "embed-v1")
         #expect(expired.generatedAt > manuallyRefreshed.generatedAt)
     }
 
@@ -175,9 +179,8 @@ struct MyInsightsSnapshotProviderTests {
         }
 
         let snapshot = try await GRDBMyInsightsSnapshotProvider(
-            database: database,
-            embeddingModel: "embed-v1"
-        ).load(scope: .starred)
+            database: database
+        ).load(scope: .starred, embeddingModel: "embed-v1")
 
         #expect(snapshot.languageItems.count == 9)
         #expect(distribution("other", in: snapshot.languageItems) == 2)

@@ -201,6 +201,8 @@ struct HomeView: View {
     @State private var selectedInsightsTopic: InsightsTopic = .overview
     @State private var selectedInsightsScope: InsightsScope = .starred
     @State private var selectedInsightsSelection: InsightsSelection = .overviewSummary
+    /// 中栏和详情栏共用同一个快照状态，避免相同范围重复查询或短暂显示不同数字。
+    @State private var myInsightsViewModel: MyInsightsViewModel
 
     /// W4 A2：TagManagementViewModel 实例，sheet 关掉再开时复用，
     /// 避免每次 sheet 都 new 导致选择/加载态被打断。
@@ -230,6 +232,7 @@ struct HomeView: View {
         smartCollectionRepository: (any SmartCollectionRepositoryProtocol)? = nil,
         searchHistoryRepository: any SearchHistoryRepositoryProtocol,
         semanticSearchService: SemanticSearchService? = nil,
+        myInsightsSnapshotProvider: any MyInsightsSnapshotProviding,
         trendingRepository: any TrendingRepositoryProtocol,
         githubAPIClient: any GitHubAPIClientProtocol,
         readmeTranslationService: ReadmeTranslationService,
@@ -273,6 +276,9 @@ struct HomeView: View {
             },
             entitlementGate: entitlementGate,
             telemetryManager: telemetryManager
+        ))
+        _myInsightsViewModel = State(initialValue: MyInsightsViewModel(
+            provider: myInsightsSnapshotProvider
         ))
         _tagMgmtVM = State(initialValue: TagManagementViewModel(
             tagRepository: tagRepository,
@@ -1220,7 +1226,7 @@ struct HomeView: View {
             InsightsListView(
                 topic: $selectedInsightsTopic,
                 selection: $selectedInsightsSelection,
-                snapshot: InsightsMockData.myInsights(scope: selectedInsightsScope)
+                snapshot: myInsightsViewModel.snapshot
             )
             .navigationSplitViewColumnWidth(min: 420, ideal: 420, max: 520)
         } else {
@@ -1277,7 +1283,7 @@ struct HomeView: View {
                 topic: $selectedInsightsTopic,
                 scope: $selectedInsightsScope,
                 selection: $selectedInsightsSelection,
-                snapshot: InsightsMockData.myInsights(scope: selectedInsightsScope)
+                viewModel: myInsightsViewModel
             )
         } else if selectedSidebarPage == .activity, selectedActivityCategory == .undoStar {
             RepoDetailView(selectedTrendingRepo: nil)

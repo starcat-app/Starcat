@@ -14,12 +14,16 @@ struct MyInsightsView: View {
     @Binding var topic: InsightsTopic
     @Binding var scope: InsightsScope
     @Binding var selection: InsightsSelection
-    let snapshot: MyInsightsSnapshot
-
-    @State private var isRefreshing = false
+    let viewModel: MyInsightsViewModel
 
     @Environment(\.locale) private var locale
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(AppDependencies.self) private var dependencies
+    @Environment(AppSettings.self) private var settings
+
+    private var snapshot: MyInsightsSnapshot {
+        viewModel.snapshot
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -27,14 +31,41 @@ struct MyInsightsView: View {
             Divider()
 
             ScrollView {
-                LazyVStack(spacing: 14) {
-                    selectedContent
+                if viewModel.hasInitialError {
+                    ContentUnavailableView {
+                        Label("error.loadFailed", systemImage: "exclamationmark.triangle")
+                    } actions: {
+                        Button("action.retry") {
+                            refresh()
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 320)
+                } else if viewModel.isInitialLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(maxWidth: .infinity, minHeight: 320)
+                } else {
+                    LazyVStack(spacing: 14) {
+                        if viewModel.showsStaleWarning {
+                            Label("error.loadFailed", systemImage: "exclamationmark.triangle.fill")
+                                .font(interfaceScale.font(.caption))
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        selectedContent
+                    }
+                    .padding(18)
                 }
-                .padding(18)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color(nsColor: .windowBackgroundColor))
+        .task(id: loadIdentity) {
+            await viewModel.load(
+                scope: scope,
+                embeddingModel: settings.aiEmbeddingModel
+            )
+        }
     }
 
     /// 中栏选择和 Detail 内容保持一一对应。原型阶段曾让所有选择都显示同一张总览，
@@ -94,16 +125,15 @@ struct MyInsightsView: View {
     private var header: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
-                    Text("insights.my.title")
-                        .font(interfaceScale.font(.workspaceTitle))
-                    MockDataBadge()
-                }
+                Text("insights.my.title")
+                    .font(interfaceScale.font(.workspaceTitle))
 
                 HStack(spacing: 5) {
                     Text(selection.titleKey)
-                    Text("·")
-                    Text(snapshot.generatedAt, format: .dateTime.month().day().hour().minute())
+                    if viewModel.hasContent {
+                        Text("·")
+                        Text(snapshot.generatedAt, format: .dateTime.month().day().hour().minute())
+                    }
                 }
                 .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
@@ -119,14 +149,12 @@ struct MyInsightsView: View {
             .pickerStyle(.segmented)
             .frame(width: 190)
 
-            // 前端阶段只重放同一份确定性 Mock；保留真实刷新控件和最短反馈时长，
-            // 便于提前验收交互，但不伪装成数据库或网络刷新。
             SyncIconButton(
-                isRefreshing: isRefreshing,
-                disabled: isRefreshing,
+                isRefreshing: viewModel.isRefreshing,
+                disabled: viewModel.isInitialLoading || viewModel.isRefreshing,
                 tooltip: String.l10n("insights.refresh")
             ) {
-                refreshMockPreview()
+                refresh()
             }
         }
         .padding(.horizontal, 20)
@@ -447,12 +475,20 @@ struct MyInsightsView: View {
         value.formatted(.percent.precision(.fractionLength(0)).locale(locale))
     }
 
-    private func refreshMockPreview() {
-        guard !isRefreshing else { return }
-        isRefreshing = true
+    private var loadIdentity: String {
+        [
+            scope.rawValue,
+            String(dependencies.databaseScopeRevision),
+            settings.aiEmbeddingModel
+        ].joined(separator: ":")
+    }
+
+    private func refresh() {
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(650))
-            isRefreshing = false
+            await viewModel.refresh(
+                scope: scope,
+                embeddingModel: settings.aiEmbeddingModel
+            )
         }
     }
 }

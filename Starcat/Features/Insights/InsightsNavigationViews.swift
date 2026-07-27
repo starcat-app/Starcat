@@ -64,8 +64,6 @@ struct InsightsListView: View {
             }
 
             Spacer(minLength: 12)
-
-            MockDataBadge()
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)

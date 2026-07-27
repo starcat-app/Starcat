@@ -17,7 +17,7 @@ import GRDB
 
 /// “我的洞察”快照数据源。刷新入口先调用 `invalidate()`，再重新 `load(scope:)`。
 protocol MyInsightsSnapshotProviding: Sendable {
-    func load(scope: InsightsScope) async throws -> MyInsightsSnapshot
+    func load(scope: InsightsScope, embeddingModel: String) async throws -> MyInsightsSnapshot
     func invalidate() async
 }
 
@@ -30,6 +30,7 @@ actor MyInsightsSnapshotCache {
 
     struct Revision: Equatable, Sendable {
         let userID: Int64?
+        let embeddingModel: String
         let metadataRevision: Int64
         let healthCount: Int
         let latestHealthAt: String?
@@ -83,27 +84,28 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
     ]
 
     private let database: any DatabaseManaging
-    private let embeddingModel: String
     private let cache: MyInsightsSnapshotCache
     private let now: @Sendable () -> Date
 
     init(
         database: any DatabaseManaging,
-        embeddingModel: String,
         cache: MyInsightsSnapshotCache = MyInsightsSnapshotCache(),
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.database = database
-        self.embeddingModel = embeddingModel
         self.cache = cache
         self.now = now
     }
 
-    func load(scope: InsightsScope) async throws -> MyInsightsSnapshot {
+    func load(scope: InsightsScope, embeddingModel: String) async throws -> MyInsightsSnapshot {
         let generatedAt = now()
-        let revision = try await fetchRevision()
+        let revision = try await fetchRevision(embeddingModel: embeddingModel)
         return try await cache.value(scope: scope, revision: revision, now: generatedAt) {
-            try await loadUncached(scope: scope, generatedAt: generatedAt)
+            try await loadUncached(
+                scope: scope,
+                embeddingModel: embeddingModel,
+                generatedAt: generatedAt
+            )
         }
     }
 
@@ -112,7 +114,9 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
     }
 
     /// 读取轻量 revision。旧测试草稿库缺少派生表时按空表处理，不能让洞察入口崩溃。
-    private func fetchRevision() async throws -> MyInsightsSnapshotCache.Revision {
+    private func fetchRevision(
+        embeddingModel: String
+    ) async throws -> MyInsightsSnapshotCache.Revision {
         let userID = database.currentUserId
         return try await database.writer.read { db in
             let metadataRevision: Int64
@@ -137,6 +141,7 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
             )
             return MyInsightsSnapshotCache.Revision(
                 userID: userID,
+                embeddingModel: embeddingModel,
                 metadataRevision: metadataRevision,
                 healthCount: health.count,
                 latestHealthAt: health.latest,
@@ -147,8 +152,11 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
     }
 
     /// 真正的快照读取只进入一次 `writer.read`，该闭包内所有 SELECT 共享同一 SQLite 视图。
-    private func loadUncached(scope: InsightsScope, generatedAt: Date) async throws -> MyInsightsSnapshot {
-        let embeddingModel = embeddingModel
+    private func loadUncached(
+        scope: InsightsScope,
+        embeddingModel: String,
+        generatedAt: Date
+    ) async throws -> MyInsightsSnapshot {
         return try await database.writer.read { db in
             try Self.makeSnapshot(
                 db: db,

@@ -53,6 +53,7 @@ struct ContentView: View {
             smartCollectionRepository: dependencies.smartCollectionRepository,
             searchHistoryRepository: dependencies.searchHistoryRepository,
             semanticSearchService: dependencies.semanticSearchService,
+            myInsightsSnapshotProvider: dependencies.myInsightsSnapshotProvider,
             trendingRepository: dependencies.trendingRepository,
             githubAPIClient: dependencies.apiClient,
             readmeTranslationService: dependencies.readmeTranslationService,
