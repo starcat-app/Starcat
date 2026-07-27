@@ -132,13 +132,13 @@ struct DatabaseMigrationsV1Tests {
             try db.execute(sql: """
                 INSERT INTO repo_star_history_points (
                     repo_id, observed_on, stars_count, source, precision, fetched_at
-                ) VALUES (99, '2026-07-27', 10, 'local_snapshot', 'exact', '2026-07-27')
+                ) VALUES (99, '2026-07-27', 10, 'local_snapshot', 'snapshot', '2026-07-27')
                 """)
             #expect(throws: (any Error).self) {
                 try db.execute(sql: """
                     INSERT INTO repo_star_history_points (
                         repo_id, observed_on, stars_count, source, precision, fetched_at
-                    ) VALUES (99, '2026-07-26', -1, 'local_snapshot', 'exact', '2026-07-27')
+                    ) VALUES (99, '2026-07-26', -1, 'local_snapshot', 'snapshot', '2026-07-27')
                     """)
             }
             try db.execute(sql: "DELETE FROM repos WHERE id = 99")
