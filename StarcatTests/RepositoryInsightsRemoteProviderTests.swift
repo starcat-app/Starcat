@@ -146,6 +146,35 @@ struct RepositoryInsightsRemoteProviderTests {
             "/repos/octo/community/community/profile"
         ])
     }
+
+    @Test("最近活动合并 PR 与 Issue 并按真实时间倒序缓存")
+    func recentActivityMergesAndSortsEvents() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 24, owner: "octo", name: "timeline")
+        let httpClient = RecentActivityHTTPClient()
+        let provider = DefaultRepositoryRemoteInsightsProvider(
+            metricsClient: DefaultGitHubRepositoryMetricsClient(
+                httpClient: httpClient,
+                token: "token",
+                baseURL: URL(string: "https://api.example.test")!
+            ),
+            cache: GRDBRepositoryInsightsCache(database: database),
+            now: { Date(timeIntervalSince1970: 3_000) }
+        )
+
+        let refreshed = try await provider.refreshRecentActivity(
+            repository: RepoIdentity(ghRepoID: 24, owner: "octo", name: "timeline")
+        )
+        let cached = try #require(try await provider.cachedRecentActivity(repoID: 24))
+        let queries = await httpClient.queries()
+
+        #expect(refreshed.events.map(\.id) == ["issue-7", "pullRequest-42"])
+        #expect(refreshed.events.map(\.title) == ["Fix crash", "Improve cache"])
+        #expect(cached.value == refreshed)
+        #expect(queries.count == 2)
+        #expect(queries.contains { $0.contains("is:pr") })
+        #expect(queries.contains { $0.contains("is:issue") })
+    }
 }
 
 private actor ActivityMetricsHTTPClient: RAGHTTPClientProtocol {
@@ -245,5 +274,64 @@ private actor ContributorsCommunityHTTPClient: RAGHTTPClientProtocol {
 
     func paths() -> [String] {
         recordedPaths
+    }
+}
+
+private actor RecentActivityHTTPClient: RAGHTTPClientProtocol {
+    private var recordedQueries: [String] = []
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let query = URLComponents(
+            url: request.url!,
+            resolvingAgainstBaseURL: false
+        )?.queryItems?.first(where: { $0.name == "q" })?.value ?? ""
+        recordedQueries.append(query)
+        let item: String
+        if query.contains("is:pr") {
+            item = """
+            {
+              "number":42,
+              "title":"Improve cache",
+              "state":"closed",
+              "html_url":"https://github.com/octo/timeline/pull/42",
+              "labels":[],
+              "comments":2,
+              "created_at":"2026-07-20T00:00:00Z",
+              "closed_at":"2026-07-25T00:00:00Z",
+              "updated_at":"2026-07-25T00:00:00Z",
+              "repository_url":"https://api.github.com/repos/octo/timeline",
+              "pull_request":{}
+            }
+            """
+        } else {
+            item = """
+            {
+              "number":7,
+              "title":"Fix crash",
+              "state":"closed",
+              "html_url":"https://github.com/octo/timeline/issues/7",
+              "labels":[],
+              "comments":1,
+              "created_at":"2026-07-24T00:00:00Z",
+              "closed_at":"2026-07-26T00:00:00Z",
+              "updated_at":"2026-07-26T00:00:00Z",
+              "repository_url":"https://api.github.com/repos/octo/timeline"
+            }
+            """
+        }
+        let body = "{\"total_count\":1,\"items\":[\(item)]}"
+        return (
+            Data(body.utf8),
+            HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: nil
+            )!
+        )
+    }
+
+    func queries() -> [String] {
+        recordedQueries
     }
 }

@@ -99,6 +99,31 @@ struct RepositoryCachedCommunityInsight: Equatable, Sendable {
     let isStale: Bool
 }
 
+enum RepositoryRecentActivityKind: String, Codable, Equatable, Sendable {
+    case pullRequest
+    case issue
+}
+
+struct RepositoryRecentActivityEvent: Codable, Equatable, Identifiable, Sendable {
+    let id: String
+    let kind: RepositoryRecentActivityKind
+    let number: Int
+    let title: String
+    let occurredAt: Date
+    let htmlURL: URL?
+}
+
+struct RepositoryRecentActivity: Codable, Equatable, Sendable {
+    let events: [RepositoryRecentActivityEvent]
+    let generatedAt: Date
+}
+
+struct RepositoryCachedRecentActivity: Equatable, Sendable {
+    let value: RepositoryRecentActivity
+    let fetchedAt: Date
+    let isStale: Bool
+}
+
 protocol RepositoryRemoteInsightsProviding: Sendable {
     func cachedActivity(
         repoID: Int64,
@@ -121,6 +146,10 @@ protocol RepositoryRemoteInsightsProviding: Sendable {
     func cachedCommunityProfile(repoID: Int64) async throws -> RepositoryCachedCommunityInsight?
 
     func refreshCommunityProfile(repository: RepoIdentity) async throws -> RepositoryCommunityInsight
+
+    func cachedRecentActivity(repoID: Int64) async throws -> RepositoryCachedRecentActivity?
+
+    func refreshRecentActivity(repository: RepoIdentity) async throws -> RepositoryRecentActivity
 }
 
 struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProviding, Sendable {
@@ -318,6 +347,93 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
             defaultBranchSHA: nil
         )
         return value
+    }
+
+    func cachedRecentActivity(repoID: Int64) async throws -> RepositoryCachedRecentActivity? {
+        guard let cached = try await cache.load(
+            repoId: repoID,
+            dataset: .recentActivity,
+            range: .all,
+            as: RepositoryRecentActivity.self
+        ) else {
+            return nil
+        }
+        return RepositoryCachedRecentActivity(
+            value: cached.value,
+            fetchedAt: cached.fetchedAt,
+            isStale: cached.isStale(at: now())
+        )
+    }
+
+    func refreshRecentActivity(repository: RepoIdentity) async throws -> RepositoryRecentActivity {
+        let fetchedAt = now()
+        let base = "repo:\(repository.owner)/\(repository.name)"
+        let pullRequests = try await metricsClient.searchIssues(
+            repository: repository,
+            query: "\(base) is:pr",
+            sort: "updated",
+            order: "desc",
+            perPage: 5
+        )
+        let issues = try await metricsClient.searchIssues(
+            repository: repository,
+            query: "\(base) is:issue",
+            sort: "updated",
+            order: "desc",
+            perPage: 5
+        )
+        guard let repoID = repository.ghRepoID else {
+            throw GitHubRepositoryMetricsError.invalidResponse
+        }
+
+        let events = (
+            makeRecentEvents(
+                pullRequests.value.items,
+                kind: .pullRequest,
+                repository: repository
+            )
+            + makeRecentEvents(
+                issues.value.items,
+                kind: .issue,
+                repository: repository
+            )
+        )
+        .sorted { $0.occurredAt > $1.occurredAt }
+        .prefix(8)
+        let value = RepositoryRecentActivity(events: Array(events), generatedAt: fetchedAt)
+        try await cache.store(
+            value,
+            repoId: repoID,
+            dataset: .recentActivity,
+            range: .all,
+            fetchedAt: fetchedAt,
+            responseETag: nil,
+            defaultBranchSHA: nil
+        )
+        return value
+    }
+
+    private func makeRecentEvents(
+        _ items: [GitHubRepositoryIssueItem],
+        kind: RepositoryRecentActivityKind,
+        repository: RepoIdentity
+    ) -> [RepositoryRecentActivityEvent] {
+        items.compactMap { item in
+            guard item.belongs(to: repository),
+                  let occurredAt = ISO8601DateFormatter.githubDate(
+                      from: item.closedAt ?? item.updatedAt
+                  ) else {
+                return nil
+            }
+            return RepositoryRecentActivityEvent(
+                id: "\(kind.rawValue)-\(item.number)",
+                kind: kind,
+                number: item.number,
+                title: item.title,
+                occurredAt: occurredAt,
+                htmlURL: URL(string: item.htmlURL)
+            )
+        }
     }
 }
 

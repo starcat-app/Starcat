@@ -10,6 +10,15 @@ import Charts
 import SwiftUI
 
 struct RepositoryInsightsView: View {
+    private struct TimelineDisplayItem: Identifiable {
+        let id: String
+        let title: String
+        let detail: String
+        let occurredAt: Date
+        let systemImage: String
+        let tintName: String
+    }
+
     /// Star 趋势范围独立于活动统计范围；默认一年与设计文档口径一致。
     private enum StarRange: String, CaseIterable, Identifiable {
         case threeMonths
@@ -1197,34 +1206,177 @@ struct RepositoryInsightsView: View {
             subtitle: "insights.repo.section.timeline.subtitle",
             systemImage: "clock.arrow.circlepath"
         ) {
-            VStack(spacing: 0) {
-                ForEach(Array(snapshot.timelineItems.enumerated()), id: \.element.id) { index, item in
-                    if index > 0 {
-                        Divider().padding(.leading, 34)
-                    }
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: item.systemImage)
-                            .foregroundStyle(InsightsColor.resolve(item.tintName))
-                            .frame(width: 20)
-                            .padding(.top, 2)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(verbatim: item.title)
-                                .font(interfaceScale.font(.caption, weight: .medium))
-                            Text(verbatim: item.detail)
-                                .font(interfaceScale.font(.captionSmall))
-                                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Spacer()
+                    SyncIconButton(
+                        isRefreshing: viewModel.isRefreshingRecentActivity,
+                        disabled: viewModel.isRefreshingRecentActivity,
+                        tooltip: String.l10n("insights.repo.timeline.refresh")
+                    ) {
+                        Task {
+                            await viewModel.refreshRecentActivity(
+                                repo: repo,
+                                isAuthenticated: authSession.state.isAuthenticated
+                            )
                         }
+                    }
+                }
 
-                        Spacer(minLength: 12)
+                if timelineDisplayItems.isEmpty {
+                    switch viewModel.recentActivityState {
+                    case .idle, .loading:
+                        sectionProgress
+                    case .unavailable:
+                        sectionMessage(
+                            authSession.state.isAuthenticated
+                                ? "insights.repo.state.noData"
+                                : "insights.repo.state.loginRequired",
+                            systemImage: "clock.badge.exclamationmark"
+                        )
+                    case .generating:
+                        sectionMessage(
+                            "insights.repo.state.generating",
+                            systemImage: "clock.arrow.circlepath"
+                        )
+                    case .failed:
+                        sectionMessage("error.loadFailed", systemImage: "exclamationmark.triangle")
+                    case .content, .stale:
+                        sectionMessage("insights.repo.state.noData", systemImage: "clock")
+                    }
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(timelineDisplayItems.enumerated()), id: \.element.id) { index, item in
+                            if index > 0 {
+                                Divider().padding(.leading, 34)
+                            }
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: item.systemImage)
+                                    .foregroundStyle(InsightsColor.resolve(item.tintName))
+                                    .frame(width: 20)
+                                    .padding(.top, 2)
 
-                        Text(LocalizedStringKey(item.relativeTimeKey))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(verbatim: item.title)
+                                        .font(interfaceScale.font(.caption, weight: .medium))
+                                        .lineLimit(2)
+                                    Text(verbatim: item.detail)
+                                        .font(interfaceScale.font(.captionSmall))
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer(minLength: 12)
+
+                                Text(item.occurredAt, style: .relative)
+                                    .font(interfaceScale.font(.captionSmall))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 8)
+                        }
+                    }
+                    if let message = timelineStatusMessage {
+                        Label(message.key, systemImage: message.systemImage)
                             .font(interfaceScale.font(.captionSmall))
                             .foregroundStyle(.secondary)
                     }
-                    .padding(.vertical, 8)
                 }
             }
+        }
+    }
+
+    private var displayedRecentActivity: RepositoryRecentActivity? {
+        switch viewModel.recentActivityState {
+        case .content(let value), .stale(let value):
+            return value
+        case .loading(let cached),
+             .generating(let cached),
+             .unavailable(let cached),
+             .failed(let cached):
+            return cached
+        case .idle:
+            return nil
+        }
+    }
+
+    /// 远端 PR / Issue 与本地 Release、commit activity 使用真实时间统一排序。
+    private var timelineDisplayItems: [TimelineDisplayItem] {
+        var items = displayedRecentActivity?.events.map { event in
+            TimelineDisplayItem(
+                id: event.id,
+                title: event.title,
+                detail: String(
+                    format: String.l10n(
+                        event.kind == .pullRequest
+                            ? "insights.repo.timeline.pullRequestFormat"
+                            : "insights.repo.timeline.issueFormat"
+                    ),
+                    event.number
+                ),
+                occurredAt: event.occurredAt,
+                systemImage: event.kind == .pullRequest
+                    ? "arrow.triangle.pull"
+                    : "record.circle",
+                tintName: event.kind == .pullRequest ? "purple" : "orange"
+            )
+        } ?? []
+
+        if case .content(let release) = viewModel.releaseState,
+           let publishedAt = release.publishedAt {
+            items.append(
+                TimelineDisplayItem(
+                    id: "release-\(release.tagName)",
+                    title: String(
+                        format: String.l10n("insights.repo.timeline.releaseFormat"),
+                        release.tagName
+                    ),
+                    detail: release.name ?? String.l10n("insights.repo.local.release"),
+                    occurredAt: publishedAt,
+                    systemImage: "tag.fill",
+                    tintName: "blue"
+                )
+            )
+        }
+
+        if let commitActivity = displayedCommitActivity,
+           let latestPoint = commitActivity.points.last {
+            let total = commitActivity.points(in: viewModel.activityRange).reduce(0) {
+                $0 + $1.commits
+            }
+            items.append(
+                TimelineDisplayItem(
+                    id: "commit-\(Int(latestPoint.weekStart.timeIntervalSince1970))",
+                    title: String.l10n("insights.repo.timeline.commitActivity"),
+                    detail: String(
+                        format: String.l10n("insights.repo.commit.totalFormat"),
+                        total
+                    ),
+                    occurredAt: latestPoint.weekStart,
+                    systemImage: "point.topleft.down.to.point.bottomright.curvepath",
+                    tintName: "green"
+                )
+            )
+        }
+
+        return Array(items.sorted { $0.occurredAt > $1.occurredAt }.prefix(8))
+    }
+
+    private var timelineStatusMessage: (key: LocalizedStringKey, systemImage: String)? {
+        switch viewModel.recentActivityState {
+        case .stale:
+            return ("insights.repo.state.stale", "clock.badge.exclamationmark")
+        case .unavailable:
+            return (
+                authSession.state.isAuthenticated
+                    ? "insights.repo.state.noData"
+                    : "insights.repo.state.loginRequired",
+                "person.crop.circle.badge.exclamationmark"
+            )
+        case .failed:
+            return ("insights.repo.state.refreshFailed", "exclamationmark.triangle")
+        case .generating:
+            return ("insights.repo.state.generating", "clock.arrow.circlepath")
+        case .idle, .loading, .content:
+            return nil
         }
     }
 }

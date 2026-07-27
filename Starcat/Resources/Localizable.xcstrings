@@ -127779,6 +127779,41 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "依時間聚合的重要儲存庫事件" } }
       }
     },
+    "insights.repo.timeline.commitActivity" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Main branch commit activity" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "主分支提交活动" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "主分支提交活動" } }
+      }
+    },
+    "insights.repo.timeline.issueFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Issue #%lld" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Issue #%lld" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Issue #%lld" } }
+      }
+    },
+    "insights.repo.timeline.pullRequestFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Pull Request #%lld" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Pull Request #%lld" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Pull Request #%lld" } }
+      }
+    },
+    "insights.repo.timeline.refresh" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Refresh recent activity" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "刷新最近动态" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "重新整理最近動態" } }
+      }
+    },
+    "insights.repo.timeline.releaseFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Release %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "发布 %@" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "發布 %@" } }
+      }
+    },
     "insights.repo.signal.advisories" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Security advisories" } },

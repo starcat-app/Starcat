@@ -132,6 +132,7 @@ final class RepositoryInsightsViewModel {
     private var commitGeneration: UInt64 = 0
     private var contributorGeneration: UInt64 = 0
     private var communityGeneration: UInt64 = 0
+    private var timelineGeneration: UInt64 = 0
 
     private(set) var activeRepoID: Int64?
     private(set) var releaseState: RepositoryInsightsSectionState<RepositoryReleaseInsight> = .idle
@@ -150,6 +151,9 @@ final class RepositoryInsightsViewModel {
     private(set) var remoteCommunityState:
         RepositoryRemoteInsightsSectionState<RepositoryCommunityInsight> = .idle
     private(set) var isRefreshingCommunity = false
+    private(set) var recentActivityState:
+        RepositoryRemoteInsightsSectionState<RepositoryRecentActivity> = .idle
+    private(set) var isRefreshingRecentActivity = false
 
     init(
         provider: any RepositoryLocalInsightsProviding,
@@ -216,7 +220,12 @@ final class RepositoryInsightsViewModel {
             isAuthenticated: isAuthenticated,
             forceRefresh: false
         )
-        _ = await (activityLoad, commitLoad, contributorLoad, communityLoad)
+        async let timelineLoad: Void = loadRecentActivity(
+            repo: repo,
+            isAuthenticated: isAuthenticated,
+            forceRefresh: false
+        )
+        _ = await (activityLoad, commitLoad, contributorLoad, communityLoad, timelineLoad)
     }
 
     func selectActivityRange(
@@ -249,16 +258,23 @@ final class RepositoryInsightsViewModel {
         await loadCommunityProfile(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
     }
 
+    func refreshRecentActivity(repo: Repo, isAuthenticated: Bool) async {
+        guard !isRefreshingRecentActivity else { return }
+        await loadRecentActivity(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
+    }
+
     /// README 模式不保活远端刷新。generation 让已经返回的旧结果无法再写 UI。
     func cancelRemoteLoading() {
         activityGeneration &+= 1
         commitGeneration &+= 1
         contributorGeneration &+= 1
         communityGeneration &+= 1
+        timelineGeneration &+= 1
         isRefreshingActivity = false
         isRefreshingCommitActivity = false
         isRefreshingContributors = false
         isRefreshingCommunity = false
+        isRefreshingRecentActivity = false
     }
 
     private func loadActivity(
@@ -553,6 +569,67 @@ final class RepositoryInsightsViewModel {
 
     private func repoIdentity(for repo: Repo) -> RepoIdentity {
         RepoIdentity(ghRepoID: repo.id, owner: repo.owner, name: repo.name)
+    }
+
+    private func loadRecentActivity(
+        repo: Repo,
+        isAuthenticated: Bool,
+        forceRefresh: Bool
+    ) async {
+        timelineGeneration &+= 1
+        let requestedGeneration = timelineGeneration
+        recentActivityState = .loading(cached: nil)
+
+        guard isAuthenticated, let remoteProvider else {
+            recentActivityState = .unavailable(cached: nil)
+            return
+        }
+
+        let cached: RepositoryCachedRecentActivity?
+        do {
+            cached = try await remoteProvider.cachedRecentActivity(repoID: repo.id)
+        } catch {
+            guard ownsTimelineResult(generation: requestedGeneration, repoID: repo.id) else { return }
+            recentActivityState = .failed(cached: nil)
+            return
+        }
+        guard ownsTimelineResult(generation: requestedGeneration, repoID: repo.id) else { return }
+
+        if let cached {
+            recentActivityState = cached.isStale ? .stale(cached.value) : .content(cached.value)
+            if !cached.isStale, !forceRefresh {
+                return
+            }
+        }
+
+        isRefreshingRecentActivity = true
+        defer {
+            if requestedGeneration == timelineGeneration {
+                isRefreshingRecentActivity = false
+            }
+        }
+        do {
+            let fresh = try await remoteProvider.refreshRecentActivity(
+                repository: repoIdentity(for: repo)
+            )
+            guard ownsTimelineResult(generation: requestedGeneration, repoID: repo.id) else { return }
+            recentActivityState = .content(fresh)
+        } catch let error as GitHubRepositoryMetricsError {
+            guard ownsTimelineResult(generation: requestedGeneration, repoID: repo.id) else { return }
+            switch error {
+            case .unauthorized, .forbidden, .unavailable:
+                recentActivityState = .unavailable(cached: cached?.value)
+            default:
+                recentActivityState = .failed(cached: cached?.value)
+            }
+        } catch {
+            guard ownsTimelineResult(generation: requestedGeneration, repoID: repo.id) else { return }
+            recentActivityState = .failed(cached: cached?.value)
+        }
+    }
+
+    private func ownsTimelineResult(generation: UInt64, repoID: Int64) -> Bool {
+        timelineGeneration == generation && activeRepoID == repoID
     }
 
     private func apply(_ event: LoadEvent) {

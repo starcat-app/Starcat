@@ -346,6 +346,14 @@ private struct StubRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsPro
     ) async throws -> RepositoryCommunityInsight = { _ in
         throw StubError.failed
     }
+    var cachedRecentActivityHandler: @Sendable (
+        Int64
+    ) async throws -> RepositoryCachedRecentActivity? = { _ in nil }
+    var refreshRecentActivityHandler: @Sendable (
+        RepoIdentity
+    ) async throws -> RepositoryRecentActivity = { _ in
+        throw StubError.failed
+    }
 
     func cachedActivity(
         repoID: Int64,
@@ -383,5 +391,13 @@ private struct StubRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsPro
 
     func refreshCommunityProfile(repository: RepoIdentity) async throws -> RepositoryCommunityInsight {
         try await refreshCommunityHandler(repository)
+    }
+
+    func cachedRecentActivity(repoID: Int64) async throws -> RepositoryCachedRecentActivity? {
+        try await cachedRecentActivityHandler(repoID)
+    }
+
+    func refreshRecentActivity(repository: RepoIdentity) async throws -> RepositoryRecentActivity {
+        try await refreshRecentActivityHandler(repository)
     }
 }
