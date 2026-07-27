@@ -818,9 +818,15 @@ private struct FirstRunOnboardingStepPanel: View {
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 44) {
+            HStack(alignment: .top, spacing: 44) {
                 narrativeColumn(alignment: .leading, textAlignment: .leading, chipAlignment: .leading)
-                    .frame(width: narrativeWidth, alignment: .leading)
+                    // 六页文案高度不同；固定与右侧预览相同的高度并顶部对齐，
+                    // 避免 HStack 默认居中导致 hero 图标在切页时上下漂移。
+                    .frame(
+                        width: narrativeWidth,
+                        height: horizontalPreviewHeight,
+                        alignment: .topLeading
+                    )
 
                 screenshotPreview
                     .frame(width: horizontalPreviewWidth, height: horizontalPreviewHeight)
@@ -933,10 +939,12 @@ private struct FirstRunOnboardingStepPanel: View {
                 Image(systemName: step.systemImage)
                     .font(.system(size: 42, weight: .semibold))
                     .foregroundStyle(step.tint)
+                    .frame(width: 56, height: 56, alignment: .center)
             } else {
                 Image(systemName: step.systemImage)
                     .font(.system(size: 42, weight: .semibold))
                     .foregroundStyle(step.tint)
+                    .frame(width: 56, height: 56, alignment: .center)
                     .symbolEffect(.bounce, value: revealPhase)
             }
         }
