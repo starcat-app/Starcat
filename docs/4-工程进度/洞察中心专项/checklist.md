@@ -478,10 +478,10 @@
 
 ### 13.4 第四轮：UI、交互、国际化与辅助功能
 
-- [ ] 新增 `审查报告-04-UI交互国际化与辅助功能.md`，提交后再修复。
-- [ ] 对照 DESIGN.md、UI 强制规范和真实运行截图。
-- [ ] 审查三栏密度、最小窗口、README 切换、Star Chart、明暗主题、RTL 和长文案。
-- [ ] 审查 plain button、Focus Ring、刷新、语义色、Reduce Motion 和 VoiceOver。
+- [x] 新增 `审查报告-04-UI交互国际化与辅助功能.md`，提交后再修复。
+- [x] 对照 DESIGN.md、UI 强制规范和现有截图；Mock 截图仅作为框架与密度基线，真实运行矩阵保持人工待验收。
+- [x] 审查三栏密度、最小窗口、README 切换、Star Chart、明暗主题、RTL 和长文案。
+- [x] 审查 plain button、Focus Ring、刷新、语义色、Reduce Motion 和 VoiceOver。
 - [ ] 逐项修复发现并独立提交。
 - [ ] 回填报告 findings 闭环和 commit 证据。
 
