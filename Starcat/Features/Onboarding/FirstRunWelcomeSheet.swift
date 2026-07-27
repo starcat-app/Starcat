@@ -987,9 +987,11 @@ private struct FirstRunOnboardingStepPanel: View {
 /// - `OnboardingUnderstand`
 /// - `OnboardingSearch`
 /// - `OnboardingLibrary`
+/// - `OnboardingRAG`
+/// - `OnboardingAgent`
 ///
 /// 这里故意用运行时 `NSImage(named:)` 检测资源是否存在，而不是直接 `Image("...")`：
-/// 截图由 dong4j 后续补充，当前版本必须在资源缺失时仍能编译并显示完整的现代化预览。
+/// 正式资源缺失时仍保留 Swift fallback，避免资产目录异常导致首次引导出现空白。
 private struct OnboardingScreenshotPreview: View {
 
     let step: FirstRunOnboardingStep
@@ -1002,6 +1004,8 @@ private struct OnboardingScreenshotPreview: View {
                     .scaledToFill()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
+                    // 正式截图必须由承载层统一裁圆角，避免位图的矩形画布边界露出。
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             } else {
                 fallbackPreview
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
