@@ -55,7 +55,7 @@
 - [x] Star 长期历史明确区分“估算 · GH Archive”和“Starcat 精确快照”，不得用“精确历史”误导。
 - [ ] 私有仓库不把 repo 信息发送到 `starcat-discovery-api`，只显示本机精确快照。
 - [x] Traffic / Views / Clones / Referrers 不进入首版通用仓库洞察。
-- [ ] 我的洞察使用实时 SQLite 聚合，不新增 summary 表或定时任务。
+- [x] 我的洞察使用实时 SQLite 聚合，不新增 summary 表或定时任务。
 - [ ] 仓库洞察远端缓存与 Star 历史点共用一次追加迁移，但保持两张职责单一的表。
 - [ ] 不修改已发布的 `v1-initial`；当前基线为 `v15` 时追加 `v16-repository-insights`。
 - [ ] 不新增第三个后端服务；Star 长期历史扩展现有 `starcat-discovery-api`。
@@ -95,24 +95,24 @@
 ### 3.1 领域模型与一致快照
 
 - [x] 新增 `InsightsScope`、分布项、操作项、覆盖摘要和 `MyInsightsSnapshot` 领域模型。
-- [ ] 新增 `MyInsightsSnapshotProviding`，在一次一致数据库读取中返回当前范围完整快照。
-- [ ] 提取或复用 `KnowledgeBaseMetadataSnapshot` 已验证的 SQL 口径，避免 UI 与 RAG Prompt 各写一套统计。
-- [ ] 明确收藏范围 `is_starred = 1` 与知识库范围 `library_state = in_library`。
-- [ ] 状态聚合使用 `LEFT JOIN repo_notes`，缺失 note 行必须计入 `unread`。
-- [ ] “已整理”按标签、笔记、AI 笔记和状态派生，不持久化新字段。
-- [ ] 语言分布保留“未知”，前 8 名以外合并为“其他”。
+- [x] 新增 `MyInsightsSnapshotProviding`，在一次一致数据库读取中返回当前范围完整快照。
+- [x] 提取或复用 `KnowledgeBaseMetadataSnapshot` 已验证的 SQL 口径，避免 UI 与 RAG Prompt 各写一套统计。
+- [x] 明确收藏范围 `is_starred = 1` 与知识库范围 `library_state = in_library`。
+- [x] 状态聚合使用 `LEFT JOIN repo_notes`，缺失 note 行必须计入 `unread`。
+- [x] “已整理”按标签、笔记、AI 笔记和状态派生，不持久化新字段。
+- [x] 语言分布保留“未知”，前 8 名以外合并为“其他”。
 - [x] Health 与 OpenSSF 覆盖范围必须在标题和模型中显式表达。
-- [ ] Snapshot 支持数据库 revision + 最多 60 秒内存缓存；滚动 30 天数据不得无限复用。
+- [x] Snapshot 支持数据库 revision + 最多 60 秒内存缓存；滚动 30 天数据不得无限复用。
 
 计划提交：
 
-- [ ] `feat(insights): 建立我的洞察统计快照` — 实际 commit：`待回填`
-- [ ] `test(insights): 覆盖洞察范围与状态统计口径` — 实际 commit：`待回填`
+- [x] `feat(insights): 建立我的洞察统计快照` — 实际 commit：`d45789be`
+- [x] `test(insights): 覆盖洞察范围与状态统计口径` — 实际 commit：`d45789be`（测试与对应实现同提交）
 - [x] `feat(insights): 建立洞察前端 Mock 数据契约` — 实际 commit：`c501ab6b`
 
 ### 3.2 “需要处理”聚合
 
-- [ ] 聚合未打标签、未读、无 README、无可索引内容、索引失败 / 过期和 Health 待计算。
+- [x] 聚合未打标签、未读、无 README、无可索引内容、索引失败 / 过期和 Health 待计算。
 - [ ] 全部收藏范围隐藏知识库专属 RAG 噪音，并提供切换知识库提示。
 - [x] 每个 action item 保存稳定筛选语义和可访问描述，不在 View 中临时拼规则。
 - [ ] 覆盖零值、数据缺失、索引模型变化和 active scope 非收藏仓库。
