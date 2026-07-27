@@ -1049,9 +1049,10 @@ struct RepositoryInsightsView: View {
             } placeholder: {
                 Text(String(contributor.login.prefix(1)).uppercased())
                     .font(interfaceScale.font(.caption, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(InsightsColor.resolve(contributor.colorName))
+                    // 低透明度强调色让 `.primary` 在明暗主题和增强对比度下都保持系统语义。
+                    .background(InsightsColor.resolve(contributor.colorName).opacity(0.2))
             }
             .frame(width: 28, height: 28)
             .clipShape(Circle())
