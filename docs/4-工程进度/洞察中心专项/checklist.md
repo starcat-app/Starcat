@@ -56,8 +56,8 @@
 - [ ] 私有仓库不把 repo 信息发送到 `starcat-discovery-api`，只显示本机精确快照。
 - [x] Traffic / Views / Clones / Referrers 不进入首版通用仓库洞察。
 - [x] 我的洞察使用实时 SQLite 聚合，不新增 summary 表或定时任务。
-- [ ] 仓库洞察远端缓存与 Star 历史点共用一次追加迁移，但保持两张职责单一的表。
-- [ ] 不修改已发布的 `v1-initial`；当前基线为 `v15` 时追加 `v16-repository-insights`。
+- [x] 仓库洞察远端缓存与 Star 历史点共用一次追加迁移，但保持两张职责单一的表。
+- [x] 不修改已发布的 `v1-initial`；当前基线为 `v15` 时追加 `v16-repository-insights`。
 - [ ] 不新增第三个后端服务；Star 长期历史扩展现有 `starcat-discovery-api`。
 
 ---
@@ -163,17 +163,17 @@
 
 ### 5.1 迁移
 
-- [ ] 在实施当日重新确认最新 migration 仍为 `v15`；若已变化，使用真实下一顺序版本并同步两份方案。
-- [ ] 追加 `v16-repository-insights`，禁止修改任何已发布 migration。
-- [ ] 新增 `repo_insights_snapshots`，主键覆盖 `repo_id + dataset + range_key`。
-- [ ] 新增 `repo_star_history_points`，主键覆盖 `repo_id + observed_on + source`。
-- [ ] 两表通过 repo 外键级联清理，不进入 CloudKit 和用户 JSON 导入导出。
-- [ ] 增加 v15 → v16 升级测试、空库迁移测试、重复迁移测试和既有用户数据不变验证。
+- [x] 在实施当日重新确认最新 migration 仍为 `v15`；若已变化，使用真实下一顺序版本并同步两份方案。
+- [x] 追加 `v16-repository-insights`，禁止修改任何已发布 migration。
+- [x] 新增 `repo_insights_snapshots`，主键覆盖 `repo_id + dataset + range_key`。
+- [x] 新增 `repo_star_history_points`，主键覆盖 `repo_id + observed_on + source`。
+- [x] 两表通过 repo 外键级联清理，不进入 CloudKit 和用户 JSON 导入导出。
+- [x] 增加 v15 → v16 升级测试、空库迁移测试、重复迁移测试和既有用户数据不变验证。
 
 计划提交：
 
-- [ ] `feat(insights): 新增仓库洞察统一缓存迁移` — 实际 commit：`待回填`
-- [ ] `test(insights): 覆盖洞察缓存数据库升级` — 实际 commit：`待回填`
+- [x] `feat(insights): 新增仓库洞察统一缓存迁移` — 实际 commit：`fe18ac0f`
+- [x] `test(insights): 覆盖洞察缓存数据库升级` — 实际 commit：`fe18ac0f`（测试与对应实现同提交）
 
 ### 5.2 通用仓库洞察缓存
 
