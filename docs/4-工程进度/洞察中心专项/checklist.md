@@ -339,14 +339,16 @@
 - [x] 展示当前 Stars、30 天增长、1 年增长、覆盖起点、更新时间和精度说明。
 - [x] 使用 `3 月 / 1 年 / 全部`独立范围，不被活动 range 修改。
 - [x] 估算段与快照段使用同一主色、不同线型或透明度。
-- [ ] hover / RuleMark 不是唯一读数入口，VoiceOver 可读日期、数量、增量、来源和精度。
-- [ ] 覆盖首次加载、有缓存刷新、building、离线、远端失败、单快照、私有仓库和无数据。
+- [x] hover / RuleMark 不是唯一读数入口，VoiceOver 可读日期、数量、增量、来源和精度。
+- [x] 覆盖首次加载、有缓存刷新、building、离线、远端失败、单快照、私有仓库和无数据。
 - [x] Star 趋势位于活动 KPI 后、Commit activity 前，不打开 Sheet。
 
 计划提交：
 
 - [x] `feat(star-history): 展示仓库 Star 趋势` — 实际 commit：`25db02da`
-- [ ] `test(star-history): 覆盖 Star 趋势状态与范围` — 实际 commit：`待回填`
+- [x] `feat(star-history): 接入仓库趋势真实数据` — 实际 commit：`a93e09ab`
+- [x] `refactor(insights): 移除仓库洞察演示数据` — 实际 commit：`37c2336e`
+- [x] `test(star-history): 覆盖 Star 趋势状态与范围` — 实际 commit：`44c06bc5`
 
 ---
 
@@ -380,8 +382,8 @@
 - [ ] v15 → v16 migration、缓存 TTL、损坏 payload 和 repo 级联清理。
 - [ ] GitHub Metrics DTO、Search qualifier、`202 / 403 / 429 / 404 / 422`。
 - [ ] RepositoryInsightsViewModel 的 repo / range generation 和取消。
-- [ ] 本机 Star 快照、远端替换、同日精确优先、负增长和范围降采样。
-- [ ] 私有仓库不访问历史 API、building 有界轮询、stale fallback。
+- [x] 本机 Star 快照、远端替换、同日精确优先、负增长和范围降采样。
+- [x] 私有仓库不访问历史 API、building 有界轮询、stale fallback。
 - [ ] 主详情与独立详情窗口复用一致。
 
 ### 11.2 `starcat-discovery-api` 自动化
