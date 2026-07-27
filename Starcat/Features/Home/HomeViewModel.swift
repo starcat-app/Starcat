@@ -1778,25 +1778,7 @@ final class HomeViewModel {
     }
 
     private func currentRepoListFiltersForDatabasePaging() -> RepoListFilters {
-        let filters = effectiveGlobalFilterState
-        return RepoListFilters(
-            hideArchived: filters.hideArchived,
-            hideForks: filters.hideForks,
-            status: filters.statusFilter,
-            star: filters.starFilter,
-            library: filters.libraryFilter,
-            language: filters.repoLanguageFilter,
-            selectedLanguages: Set(filters.globalFilterLanguages),
-            wikiAvailability: filters.wikiAvailabilityFilter,
-            healthAvailability: filters.healthAvailabilityFilter,
-            openSSFAvailability: filters.openSSFAvailabilityFilter,
-            tagAvailability: filters.tagAvailabilityFilter,
-            readmeAvailability: filters.readmeAvailabilityFilter,
-            indexableSourceAvailability: filters.indexableSourceAvailabilityFilter,
-            ragIndexState: filters.ragIndexStateFilter,
-            insightsRisk: filters.insightsRiskFilter,
-            selectedTagIDs: selectedTagIds
-        )
+        effectiveGlobalFilterState.repoListFilters(selectedTagIDs: selectedTagIds)
     }
 
     private func makeDatabaseSnapshotKey() -> DatabaseSnapshotKey? {

@@ -751,28 +751,34 @@ struct RepoRepositoryTests {
                 """)
         }
 
-        var tagMissing = RepoListFilters.empty
-        tagMissing.tagAvailability = .missing
+        func routeFilters(_ action: InsightsSelection) throws -> RepoListFilters {
+            let route = try #require(
+                InsightsDrillDownRouter.route(
+                    scope: .knowledge,
+                    target: .action(action),
+                    embeddingModel: "embed-v1"
+                )
+            )
+            #expect(route.selection == .library)
+            return route.filters.repoListFilters(selectedTagIDs: [])
+        }
+
+        let tagMissing = try routeFilters(.untagged)
         #expect(try await repo.fetchListCount(scope: .library, filters: tagMissing) == 1)
 
-        var readmeMissing = RepoListFilters.empty
-        readmeMissing.readmeAvailability = .missing
+        let readmeMissing = try routeFilters(.missingReadme)
         #expect(try await repo.fetchListCount(scope: .library, filters: readmeMissing) == 1)
 
-        var indexableMissing = RepoListFilters.empty
-        indexableMissing.indexableSourceAvailability = .missing
+        let indexableMissing = try routeFilters(.missingIndexableContent)
         #expect(try await repo.fetchListCount(scope: .library, filters: indexableMissing) == 0)
 
-        var indexIssues = RepoListFilters.empty
-        indexIssues.ragIndexState = .issues(embeddingModel: "embed-v1")
+        let indexIssues = try routeFilters(.indexIssues)
         #expect(try await repo.fetchListCount(scope: .library, filters: indexIssues) == 1)
 
-        var maintenanceRisk = RepoListFilters.empty
-        maintenanceRisk.insightsRisk = .maintenance
+        let maintenanceRisk = try routeFilters(.maintenanceRisk)
         #expect(try await repo.fetchListCount(scope: .library, filters: maintenanceRisk) == 1)
 
-        var securityRisk = RepoListFilters.empty
-        securityRisk.insightsRisk = .security
+        let securityRisk = try routeFilters(.securityRisk)
         #expect(try await repo.fetchListCount(scope: .library, filters: securityRisk) == 1)
 
         var combined = tagMissing

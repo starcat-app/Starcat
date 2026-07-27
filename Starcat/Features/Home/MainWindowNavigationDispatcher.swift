@@ -55,6 +55,31 @@ struct GlobalRepoFilterState: Equatable {
             || ragIndexStateFilter != .unknown
             || insightsRiskFilter != .unknown
     }
+
+    /// 转换为 Manage 数据库分页实际消费的筛选条件。
+    ///
+    /// 洞察下钻和 Toolbar 都必须经过同一转换入口，否则新增筛选字段时很容易只更新
+    /// 路由或列表的一侧，最终造成卡片数字与落地列表数量不一致。
+    func repoListFilters(selectedTagIDs: Set<String>) -> RepoListFilters {
+        RepoListFilters(
+            hideArchived: hideArchived,
+            hideForks: hideForks,
+            status: statusFilter,
+            star: starFilter,
+            library: libraryFilter,
+            language: repoLanguageFilter,
+            selectedLanguages: Set(globalFilterLanguages),
+            wikiAvailability: wikiAvailabilityFilter,
+            healthAvailability: healthAvailabilityFilter,
+            openSSFAvailability: openSSFAvailabilityFilter,
+            tagAvailability: tagAvailabilityFilter,
+            readmeAvailability: readmeAvailabilityFilter,
+            indexableSourceAvailability: indexableSourceAvailabilityFilter,
+            ragIndexState: ragIndexStateFilter,
+            insightsRisk: insightsRiskFilter,
+            selectedTagIDs: selectedTagIDs
+        )
+    }
 }
 
 /// 主窗口级一次性路由总线。
