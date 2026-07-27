@@ -165,6 +165,15 @@ final class RepositoryInsightsViewModel {
 
     /// 本地 Provider 单测继续使用此入口；生产页面使用 `load(repo:isAuthenticated:)`。
     func load(repoId: Int64) async {
+        _ = await loadLocalSections(repoId: repoId)
+    }
+
+    /// 返回本次本地加载的 generation，让生产入口在跨入远端阶段前再次确认所有权。
+    ///
+    /// SwiftUI task cancellation 只是协作式信号：数据库或测试 Provider 可能忽略取消并迟到
+    /// 返回。因此不能只靠 Task cancellation，否则旧仓库会继续启动远端区块并使新 generation
+    /// 失效。
+    private func loadLocalSections(repoId: Int64) async -> UInt64 {
         generation &+= 1
         let requestedGeneration = generation
         activeRepoID = repoId
@@ -196,10 +205,17 @@ final class RepositoryInsightsViewModel {
                 apply(event)
             }
         }
+        return requestedGeneration
     }
 
     func load(repo: Repo, isAuthenticated: Bool) async {
-        await load(repoId: repo.id)
+        let localGeneration = await loadLocalSections(repoId: repo.id)
+        guard !Task.isCancelled,
+              generation == localGeneration,
+              activeRepoID == repo.id
+        else {
+            return
+        }
         async let activityLoad: Void = loadActivity(
             repo: repo,
             isAuthenticated: isAuthenticated,

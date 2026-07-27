@@ -268,6 +268,60 @@ struct RepositoryInsightsViewModelTests {
         ))
     }
 
+    @Test("已取消的旧仓库本地阶段不得再启动远端加载")
+    func cancelledLocalStageCannotInterruptCurrentRemoteState() async {
+        let gate = RepositoryInsightsLocalLoadGate()
+        let recorder = RepositoryInsightsRemoteCallRecorder()
+        let localProvider = StubRepositoryLocalInsightsProvider(
+            release: { repoID in
+                if repoID == 1 {
+                    // continuation 故意不响应 Task cancellation，复现真实 Provider 迟到返回。
+                    await gate.block()
+                }
+                return nil
+            },
+            health: { _ in nil },
+            openSSF: { _ in nil },
+            community: { _ in nil }
+        )
+        let remoteProvider = StubRepositoryRemoteInsightsProvider(
+            cachedHandler: { repoID, _ in
+                await recorder.record(repoID)
+                return nil
+            },
+            refreshHandler: { repository, _ in
+                RepositoryActivityCounts(
+                    createdPullRequests: Int(repository.ghRepoID ?? -1),
+                    mergedPullRequests: 0,
+                    createdIssues: 0,
+                    closedIssues: 0,
+                    generatedAt: Date()
+                )
+            }
+        )
+        let viewModel = RepositoryInsightsViewModel(
+            provider: localProvider,
+            remoteProvider: remoteProvider
+        )
+
+        let oldLoad = Task {
+            await viewModel.load(repo: fixtureRepo(id: 1), isAuthenticated: true)
+        }
+        await gate.waitUntilBlocked()
+        oldLoad.cancel()
+        await viewModel.load(repo: fixtureRepo(id: 2), isAuthenticated: true)
+        await gate.release()
+        await oldLoad.value
+
+        #expect(await recorder.repoIDs() == [2])
+        guard case .content(let counts) = viewModel.activityState else {
+            Issue.record("Expected current repository activity content")
+            return
+        }
+        #expect(counts.createdPullRequests == 2)
+        #expect(viewModel.activeRepoID == 2)
+    }
+
     private func emptyLocalProvider() -> StubRepositoryLocalInsightsProvider {
         StubRepositoryLocalInsightsProvider(
             release: { _ in nil },
@@ -288,6 +342,53 @@ struct RepositoryInsightsViewModelTests {
 
 private enum StubError: Error {
     case failed
+}
+
+/// 精确冻结旧仓库本地 Provider，且故意不合作响应 Task cancellation。
+private actor RepositoryInsightsLocalLoadGate {
+    private var isBlocked = false
+    private var isReleased = false
+    private var blockedWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiter: CheckedContinuation<Void, Never>?
+
+    func block() async {
+        isBlocked = true
+        blockedWaiters.forEach { $0.resume() }
+        blockedWaiters.removeAll()
+        await withCheckedContinuation { continuation in
+            if isReleased {
+                continuation.resume()
+            } else {
+                releaseWaiter = continuation
+            }
+        }
+    }
+
+    func waitUntilBlocked() async {
+        guard !isBlocked else { return }
+        await withCheckedContinuation { continuation in
+            blockedWaiters.append(continuation)
+        }
+    }
+
+    func release() {
+        isReleased = true
+        releaseWaiter?.resume()
+        releaseWaiter = nil
+    }
+}
+
+/// actor 记录远端调用顺序，避免测试闭包跨任务写数组产生数据竞争。
+private actor RepositoryInsightsRemoteCallRecorder {
+    private var values: [Int64] = []
+
+    func record(_ repoID: Int64) {
+        values.append(repoID)
+    }
+
+    func repoIDs() -> [Int64] {
+        values
+    }
 }
 
 private struct StubRepositoryLocalInsightsProvider: RepositoryLocalInsightsProviding {
