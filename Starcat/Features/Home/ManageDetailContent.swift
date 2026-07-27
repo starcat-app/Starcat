@@ -63,6 +63,15 @@ enum ManageDetailContentMode: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    var titleKey: LocalizedStringKey {
+        switch self {
+        case .readme:
+            "insights.repo.mode.readme"
+        case .insights:
+            "insights.repo.mode.insights"
+        }
+    }
+
     /// 切换模式时需要执行的资源管理动作。
     ///
     /// README 模式必须取消洞察请求；洞察模式需要先重置 Hero 滚动位置。
@@ -105,15 +114,16 @@ struct ManageDetailContent: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Picker("insights.repo.mode.label", selection: $contentMode) {
-                    Text("insights.repo.mode.readme").tag(ManageDetailContentMode.readme)
-                    Text("insights.repo.mode.insights").tag(ManageDetailContentMode.insights)
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: 210)
-
                 Spacer(minLength: 12)
+
+                // 复用 Starcat 自绘胶囊控件，避免 macOS 原生 segmented Picker
+                // 在详情页中显得厚重；右对齐后也不会抢占 README 阅读区的视觉焦点。
+                PillSegmentedControl(
+                    items: ManageDetailContentMode.allCases,
+                    selection: $contentMode,
+                    title: \.titleKey
+                )
+                .accessibilityLabel(Text("insights.repo.mode.label"))
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
