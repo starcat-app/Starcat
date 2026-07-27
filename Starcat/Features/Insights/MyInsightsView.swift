@@ -84,7 +84,8 @@ struct MyInsightsView: View {
 
     private var metricGrid: some View {
         LazyVGrid(
-            columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4),
+            // Detail 变窄时自动从四列回退到两列或单列，不反向抬高主窗口最小宽度。
+            columns: [GridItem(.adaptive(minimum: 158), spacing: 10)],
             spacing: 10
         ) {
             ForEach(snapshot.metrics) { metric in

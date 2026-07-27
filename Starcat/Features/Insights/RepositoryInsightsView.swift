@@ -76,7 +76,7 @@ struct RepositoryInsightsView: View {
             systemImage: "waveform.path.ecg"
         ) {
             LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4),
+                columns: [GridItem(.adaptive(minimum: 128), spacing: 10)],
                 spacing: 10
             ) {
                 ForEach(snapshot.activityMetrics) { metric in
@@ -125,52 +125,33 @@ struct RepositoryInsightsView: View {
             systemImage: "star.fill"
         ) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 18) {
-                    starMetric(
-                        value: snapshot.currentStars.formatted(),
-                        label: "insights.repo.star.current"
-                    )
-                    starMetric(
-                        value: signed(snapshot.starGrowth30Days),
-                        label: "insights.repo.star.growth30Days"
-                    )
-                    starMetric(
-                        value: signed(snapshot.starGrowthOneYear),
-                        label: "insights.repo.star.growthOneYear"
-                    )
-
-                    Spacer(minLength: 8)
-
-                    SyncIconButton(
-                        isRefreshing: isRefreshingStars,
-                        disabled: isRefreshingStars,
-                        tooltip: String.l10n("insights.repo.star.refresh")
-                    ) {
-                        refreshMockStarHistory()
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 18) {
+                        starMetrics
+                        Spacer(minLength: 8)
+                        starControls
                     }
-
-                    Picker("insights.repo.star.range.label", selection: $starRange) {
-                        ForEach(StarRange.allCases) { range in
-                            Text(range.titleKey).tag(range)
-                        }
+                    VStack(alignment: .leading, spacing: 10) {
+                        starMetrics
+                        starControls
                     }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                    .frame(width: 176)
                 }
 
-                HStack(spacing: 8) {
-                    starSourceChip(
-                        title: "insights.repo.star.source.estimated",
-                        systemImage: "waveform.path.ecg",
-                        dashed: true
-                    )
-                    starSourceChip(
-                        title: "insights.repo.star.source.local",
-                        systemImage: "internaldrive.fill",
-                        dashed: false
-                    )
-                    MockDataBadge()
+                ViewThatFits(in: .horizontal) {
+                    starSources
+                    VStack(alignment: .leading, spacing: 6) {
+                        starSourceChip(
+                            title: "insights.repo.star.source.estimated",
+                            systemImage: "waveform.path.ecg",
+                            dashed: true
+                        )
+                        starSourceChip(
+                            title: "insights.repo.star.source.local",
+                            systemImage: "internaldrive.fill",
+                            dashed: false
+                        )
+                        MockDataBadge()
+                    }
                 }
 
                 Chart {
@@ -262,6 +243,60 @@ struct RepositoryInsightsView: View {
             Text(label)
                 .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    private var starMetrics: some View {
+        HStack(alignment: .top, spacing: 18) {
+            starMetric(
+                value: snapshot.currentStars.formatted(),
+                label: "insights.repo.star.current"
+            )
+            starMetric(
+                value: signed(snapshot.starGrowth30Days),
+                label: "insights.repo.star.growth30Days"
+            )
+            starMetric(
+                value: signed(snapshot.starGrowthOneYear),
+                label: "insights.repo.star.growthOneYear"
+            )
+        }
+    }
+
+    private var starControls: some View {
+        HStack(spacing: 8) {
+            SyncIconButton(
+                isRefreshing: isRefreshingStars,
+                disabled: isRefreshingStars,
+                tooltip: String.l10n("insights.repo.star.refresh")
+            ) {
+                refreshMockStarHistory()
+            }
+
+            Picker("insights.repo.star.range.label", selection: $starRange) {
+                ForEach(StarRange.allCases) { range in
+                    Text(range.titleKey).tag(range)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .frame(width: 176)
+        }
+    }
+
+    private var starSources: some View {
+        HStack(spacing: 8) {
+            starSourceChip(
+                title: "insights.repo.star.source.estimated",
+                systemImage: "waveform.path.ecg",
+                dashed: true
+            )
+            starSourceChip(
+                title: "insights.repo.star.source.local",
+                systemImage: "internaldrive.fill",
+                dashed: false
+            )
+            MockDataBadge()
         }
     }
 
@@ -382,13 +417,12 @@ struct RepositoryInsightsView: View {
             subtitle: "insights.repo.section.contributors.subtitle",
             systemImage: "person.3.fill"
         ) {
-            HStack(spacing: 0) {
-                ForEach(Array(snapshot.contributors.enumerated()), id: \.element.id) { index, contributor in
-                    if index > 0 {
-                        Divider()
-                            .frame(height: 42)
-                            .padding(.horizontal, 12)
-                    }
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 142), spacing: 12)],
+                alignment: .leading,
+                spacing: 12
+            ) {
+                ForEach(snapshot.contributors) { contributor in
                     contributorItem(contributor)
                 }
             }
@@ -427,7 +461,11 @@ struct RepositoryInsightsView: View {
             subtitle: "insights.repo.section.health.subtitle",
             systemImage: "heart.text.square.fill"
         ) {
-            HStack(spacing: 18) {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 142), spacing: 18)],
+                alignment: .leading,
+                spacing: 14
+            ) {
                 ForEach(snapshot.healthDimensions) { dimension in
                     healthItem(dimension)
                 }
@@ -459,20 +497,34 @@ struct RepositoryInsightsView: View {
     }
 
     private var signalsSection: some View {
-        HStack(alignment: .top, spacing: 14) {
-            signalGroup(
-                title: "insights.repo.section.community",
-                subtitle: "insights.repo.section.community.subtitle",
-                systemImage: "person.2.fill",
-                signals: snapshot.communitySignals
-            )
-            signalGroup(
-                title: "insights.repo.section.security",
-                subtitle: "insights.repo.section.security.subtitle",
-                systemImage: "lock.shield.fill",
-                signals: snapshot.securitySignals
-            )
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 14) {
+                communitySignalGroup.frame(minWidth: 248)
+                securitySignalGroup.frame(minWidth: 248)
+            }
+            VStack(spacing: 14) {
+                communitySignalGroup
+                securitySignalGroup
+            }
         }
+    }
+
+    private var communitySignalGroup: some View {
+        signalGroup(
+            title: "insights.repo.section.community",
+            subtitle: "insights.repo.section.community.subtitle",
+            systemImage: "person.2.fill",
+            signals: snapshot.communitySignals
+        )
+    }
+
+    private var securitySignalGroup: some View {
+        signalGroup(
+            title: "insights.repo.section.security",
+            subtitle: "insights.repo.section.security.subtitle",
+            systemImage: "lock.shield.fill",
+            signals: snapshot.securitySignals
+        )
     }
 
     private func signalGroup(
