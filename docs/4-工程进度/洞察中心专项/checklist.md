@@ -378,23 +378,27 @@
 
 ### 11.1 Starcat 定向测试
 
-- [ ] Snapshot 范围、缺失 note = unread、已整理、语言与 coverage。
-- [ ] 待处理项、下钻筛选和临时状态恢复。
-- [ ] v15 → v16 migration、缓存 TTL、损坏 payload 和 repo 级联清理。
-- [ ] GitHub Metrics DTO、Search qualifier、`202 / 403 / 429 / 404 / 422`。
-- [ ] RepositoryInsightsViewModel 的 repo / range generation 和取消。
+- [x] Snapshot 范围、缺失 note = unread、已整理、语言与 coverage。
+- [x] 待处理项、下钻筛选和临时状态恢复。
+- [x] v15 → v16 migration、缓存 TTL、损坏 payload 和 repo 级联清理。
+- [x] GitHub Metrics DTO、Search qualifier、`202 / 403 / 429 / 404 / 422`。
+- [x] RepositoryInsightsViewModel 的 repo / range generation 和取消。
 - [x] 本机 Star 快照、远端替换、同日精确优先、负增长和范围降采样。
 - [x] 私有仓库不访问历史 API、building 有界轮询、stale fallback。
 - [x] 主详情与独立详情窗口复用一致。
 
+> 验证证据：2026-07-27 运行 11 个洞察 / Star History 定向 Suite，共 68 项测试通过；随后 `RepoRepositoryTests` 32 项通过，新增“洞察路由 → Manage 查询条件 → 列表计数”集成回归。
+
 ### 11.2 `starcat-discovery-api` 自动化
 
-- [ ] 运行 `make check`，覆盖 fmt、vet、race test 和 coverage。
-- [ ] 运行 `go build ./...` 或等价构建。
-- [ ] 覆盖 WatchEvent 日累计、零事件、归一化、舍入单调、降采样和末点。
-- [ ] 覆盖缓存 hit / stale / failed / building、并发任务去重和服务重启恢复。
-- [ ] 覆盖公开性校验、repo ID mismatch、私有拒绝、预算超限和 provider 失败。
-- [ ] 覆盖 `200 / 202 / 304 / 400 / 401 / 404 / 409 / 422 / 429 / 503` contract fixture。
+- [x] 运行 `make check`，覆盖 fmt、vet、race test 和 coverage。
+- [x] 运行 `go build ./...` 或等价构建。
+- [x] 覆盖 WatchEvent 日累计、零事件、归一化、舍入单调、降采样和末点。
+- [x] 覆盖缓存 hit / stale / failed / building、并发任务去重和服务重启恢复。
+- [x] 覆盖公开性校验、repo ID mismatch、私有拒绝、预算超限和 provider 失败。
+- [x] 覆盖 `200 / 202 / 304 / 400 / 401 / 404 / 409 / 422 / 429 / 503` contract fixture。
+
+> 验证证据：2026-07-27 在独立仓库运行 `make check && go build ./...` 通过；`make check` 包含 `gofmt`、`go vet`、`go test -race -coverprofile=coverage.out ./...`。
 
 ### 11.3 Starcat 全量验证
 
@@ -419,7 +423,7 @@
 
 计划提交：
 
-- [ ] `test(insights): 补齐洞察中心集成回归` — 实际 commit：`待回填`
+- [x] `test(insights): 补齐洞察中心集成回归` — 实际 commit：`30a89d46`
 - [x] `docs(insights): 新增洞察中心验收步骤` — 实际 commit：`64e49e69`
 
 ---
