@@ -26,6 +26,13 @@ struct StarHistoryRequest: Equatable, Sendable {
     let name: String
     let isPrivate: Bool
 
+    init(repoID: Int64, owner: String, name: String, isPrivate: Bool) {
+        self.repoID = repoID
+        self.owner = owner
+        self.name = name
+        self.isPrivate = isPrivate
+    }
+
     init(repo: Repo) {
         repoID = repo.id
         owner = repo.owner

@@ -114,6 +114,115 @@ struct RepoStarHistoryRepositoryTests {
         #expect(try await repository.points(repoId: 4).isEmpty)
     }
 
+    @Test("同日精确快照应覆盖 GH Archive 估算")
+    func exactSnapshotWinsSameDayEstimate() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 5, owner: "octo", name: "priority")
+        let now = try #require(ISO8601DateFormatter.shared.date(from: "2026-07-27T12:00:00.000Z"))
+        let api = StubStarHistoryAPI(results: [
+            .success(.ready(
+                series: StarHistoryRemoteSeries(
+                    repoID: 5,
+                    fullName: "octo/priority",
+                    currentStars: 120,
+                    range: .oneYear,
+                    coverageStart: StarHistoryDateCodec.date(from: "2026-07-26"),
+                    generatedAt: now,
+                    points: [
+                        point("2026-07-26", 100, .ghArchive, .estimated, now),
+                        point("2026-07-27", 118, .ghArchive, .estimated, now)
+                    ]
+                ),
+                etag: "\"priority-v1\""
+            ))
+        ])
+        let repository = GRDBRepoStarHistoryRepository(
+            database: database,
+            api: api,
+            now: { now }
+        )
+        let repo = fixtureRepo(
+            id: 5,
+            name: "priority",
+            stars: 120
+        )
+
+        let snapshot = try await repository.refresh(
+            repo: repo,
+            range: .oneYear,
+            forceRefresh: true
+        )
+
+        #expect(snapshot.remoteState == .fresh)
+        #expect(snapshot.points.count == 2)
+        #expect(snapshot.points.last?.count == 120)
+        #expect(snapshot.points.last?.source == .localSnapshot)
+        #expect(snapshot.points.last?.precision == .snapshot)
+    }
+
+    @Test("私有仓库只返回本机快照且不调用 API")
+    func privateRepositoryNeverCallsAPI() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 6, owner: "octo", name: "private")
+        let now = try #require(ISO8601DateFormatter.shared.date(from: "2026-07-27T12:00:00.000Z"))
+        let api = StubStarHistoryAPI(results: [])
+        let repository = GRDBRepoStarHistoryRepository(
+            database: database,
+            api: api,
+            now: { now }
+        )
+        var repo = fixtureRepo(id: 6, name: "private", stars: 8)
+        repo.isPrivate = true
+
+        let snapshot = try await repository.refresh(
+            repo: repo,
+            range: .oneYear,
+            forceRefresh: true
+        )
+
+        #expect(snapshot.remoteState == .privateOnly)
+        #expect(snapshot.points.count == 1)
+        #expect(snapshot.points.first?.source == .localSnapshot)
+        #expect(await api.requests().isEmpty)
+    }
+
+    @Test("远端失败应保留陈旧缓存并复用 ETag")
+    func remoteFailurePreservesStaleCacheAndETag() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 7, owner: "octo", name: "stale")
+        let now = try #require(ISO8601DateFormatter.shared.date(from: "2026-07-27T12:00:00.000Z"))
+        let api = StubStarHistoryAPI(results: [
+            .success(.ready(
+                series: StarHistoryRemoteSeries(
+                    repoID: 7,
+                    fullName: "octo/stale",
+                    currentStars: 20,
+                    range: .oneYear,
+                    coverageStart: StarHistoryDateCodec.date(from: "2026-07-26"),
+                    generatedAt: now,
+                    points: [point("2026-07-26", 10, .ghArchive, .estimated, now)]
+                ),
+                etag: "\"stale-v1\""
+            )),
+            .failure(.providerUnavailable)
+        ])
+        let repository = GRDBRepoStarHistoryRepository(
+            database: database,
+            api: api,
+            now: { now }
+        )
+        let repo = fixtureRepo(id: 7, name: "stale", stars: 20)
+
+        _ = try await repository.refresh(repo: repo, range: .oneYear, forceRefresh: true)
+        let stale = try await repository.refresh(repo: repo, range: .oneYear, forceRefresh: true)
+        let requests = await api.requests()
+
+        #expect(stale.remoteState == .stale(.providerUnavailable))
+        #expect(stale.points.map(\.count) == [10, 20])
+        #expect(requests.count == 2)
+        #expect(requests.last?.ifNoneMatch == "\"stale-v1\"")
+    }
+
     private func point(
         _ day: String,
         _ count: Int,
@@ -176,5 +285,46 @@ struct RepoStarHistoryRepositoryTests {
             score: nil
         )
         return StarredRepoDTO(starredAt: "2026-07-27T11:00:00Z", repo: repo)
+    }
+
+    private func fixtureRepo(id: Int64, name: String, stars: Int) -> Repo {
+        var repo = Repo.makeMinimal(owner: "octo", name: name)
+        repo.id = id
+        repo.starsCount = stars
+        repo.cachedAt = "2026-07-27T00:00:00Z"
+        return repo
+    }
+}
+
+private actor StubStarHistoryAPI: StarHistoryAPIProtocol {
+    struct RecordedRequest: Sendable {
+        let request: StarHistoryRequest
+        let range: StarHistoryRange
+        let ifNoneMatch: String?
+    }
+
+    private var queuedResults: [Result<StarHistoryAPIResult, StarHistoryAPIError>]
+    private var recordedRequests: [RecordedRequest] = []
+
+    init(results: [Result<StarHistoryAPIResult, StarHistoryAPIError>]) {
+        queuedResults = results
+    }
+
+    func fetch(
+        request: StarHistoryRequest,
+        range: StarHistoryRange,
+        ifNoneMatch: String?
+    ) async throws -> StarHistoryAPIResult {
+        recordedRequests.append(
+            RecordedRequest(request: request, range: range, ifNoneMatch: ifNoneMatch)
+        )
+        guard !queuedResults.isEmpty else {
+            throw StarHistoryAPIError.providerUnavailable
+        }
+        return try queuedResults.removeFirst().get()
+    }
+
+    func requests() -> [RecordedRequest] {
+        recordedRequests
     }
 }
