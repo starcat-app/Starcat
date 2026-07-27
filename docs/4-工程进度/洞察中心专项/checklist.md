@@ -77,7 +77,7 @@
 ### 2.2 M0：GH Archive 可行性 Spike
 
 - [ ] 明确 BigQuery 凭据来源、只读权限、预算和 `maximumBytesBilled`；未经授权不产生付费查询。
-- [ ] 选择小、中、大各 2 个公开仓库，以稳定 GitHub repo ID 查询 `WatchEvent`。
+- [x] 选择小、中、大各 2 个公开仓库，以稳定 GitHub repo ID 查询 `WatchEvent`。样本与 repo ID 已记录到 [`M0-星标历史数据可行性.md`](M0-星标历史数据可行性.md)；真实查询待授权。
 - [ ] 验证 GH Archive 当前表名、字段类型、覆盖起点、查询耗时、扫描字节和缺口。
 - [ ] 对比累计 `WatchEvent`、当前 `stargazers_count` 与归一化曲线。
 - [ ] 验证 `totalEvents == 0`、仓库改名 / 转移、归档仓库和超大仓库边界。
