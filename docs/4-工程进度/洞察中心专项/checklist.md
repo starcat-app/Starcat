@@ -1,6 +1,6 @@
 # 洞察中心与仓库星标历史专项 Checklist
 
-> 状态：进行中（前端 Mock UI 已完成，真实数据 Provider / 数据库 / API 尚未实施）
+> 状态：进行中（我的洞察与仓库洞察本地数据闭环已完成，GitHub Metrics / Discovery Star 历史待实施）
 >
 > 创建：2026-07-27
 >
@@ -195,7 +195,7 @@
 
 - [x] 将 `ManageDetailContent` 扩展为 Manage 专用内容容器，保持 `RepoDetailScaffold` 头部和 Metadata 职责不变。
 - [x] 在 Manage body 顶部增加 `README / 洞察`分段控件。
-- [ ] 主窗口与独立详情窗口复用同一内容容器和 scene-scoped selection。
+- [x] 主窗口与独立详情窗口复用同一内容容器和 scene-scoped selection。
 - [x] 切换到洞察时不保活不可见 README `WKWebView`，避免双重重型视图。
 - [x] 切换模式不丢仓库选择，不破坏 Hero 折叠、README 滚动和详情窗口依赖注入。
 
@@ -206,15 +206,16 @@
 
 ### 6.2 本地区块
 
-- [ ] 新增 `RepositoryInsightsView` 和 `RepositoryInsightsViewModel`。
-- [ ] 先显示本地 Release、四维 Health、OpenSSF、License 和 Community 已缓存信息。
-- [ ] 各区块独立 loading / empty / unavailable / failed，单一区块失败不切整页错误态。
-- [ ] 快速切换 repo 时以 `repo.id + generation` 丢弃旧结果。
-- [ ] Detail 宽度变化时一列 / 两列自适应，不设置固定 Detail 最小宽度。
+- [x] 新增 `RepositoryInsightsView` 和 `RepositoryInsightsViewModel`。
+- [x] 先显示本地 Release、四维 Health、OpenSSF、License 和 Community 已缓存信息。
+- [x] 各区块独立 loading / empty / unavailable / failed，单一区块失败不切整页错误态。
+- [x] 快速切换 repo 时以 `repo.id + generation` 丢弃旧结果。
+- [x] Detail 宽度变化时一列 / 两列自适应，不设置固定 Detail 最小宽度。
 
 计划提交：
 
-- [ ] `feat(insights): 展示仓库洞察本地指标` — 实际 commit：`待回填`
+- [x] `feat(insights): 建立仓库洞察本地状态机` — 实际 commit：`1185c726`
+- [x] `feat(insights): 展示仓库洞察本地指标` — 实际 commit：`ee857124`
 - [x] `feat(insights): 展示仓库活动与健康指标（Mock）` — 实际 commit：`06423e83`
 
 ---
