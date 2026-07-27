@@ -248,7 +248,7 @@
 计划提交：
 
 - [x] `feat(insights): 加载仓库协作活动指标` — 实际 commit：`cbbf8df8`
-- [ ] `feat(insights): 展示贡献者与社区规范` — 实际 commit：`待回填`
+- [x] `feat(insights): 展示贡献者与社区规范` — 实际 commit：`cbcc82c9`
 - [ ] `feat(insights): 增加仓库最近活动时间线` — 实际 commit：`待回填`
 
 ---
