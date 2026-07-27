@@ -696,6 +696,71 @@ struct RepoRepositoryTests {
         ) == 0)
     }
 
+    @Test("DB Paging: 洞察结构化筛选与 RAG 快照口径一致")
+    func listCountHonorsInsightsDrillDownFilters() async throws {
+        let (repo, database) = try makeRepo()
+        let noteRepository = GRDBRepoNoteRepository(database: database)
+        try await seedDataset(repo)
+        try await noteRepository.updateLibraryState(repoId: 1, state: .inLibrary)
+        try await noteRepository.updateLibraryState(repoId: 4, state: .inLibrary)
+
+        let tag = Tag.fixture(id: "organized", name: "Organized")
+        try await GRDBTagRepository(database: database).create(tag)
+        try await GRDBRepoTagRepository(database: database).addTag(repoId: 1, tagId: tag.id)
+
+        try await database.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO rag_chunks (
+                    repo_id, source, source_id, parent_type, parent_key, parent_title, chunk_key,
+                    chunk_index, section_path, title, content, content_hash, token_count, is_truncated,
+                    embedding_model, embedding_status, created_at, updated_at
+                ) VALUES
+                    (1, 'readme', '', 'readme', 'readme', 'README', 'readme:0',
+                     0, '', 'README', 'ready', 'ready-hash', 1, 0,
+                     'embed-v1', 'ready', datetime('now'), datetime('now')),
+                    (4, 'metadata', '', 'metadata', 'metadata', 'Metadata', 'metadata:0',
+                     0, '', 'Metadata', 'stale', 'stale-hash', 1, 0,
+                     'old-model', 'stale', datetime('now'), datetime('now'))
+                """)
+        }
+
+        var tagMissing = RepoListFilters.empty
+        tagMissing.tagAvailability = .missing
+        #expect(try await repo.fetchListCount(scope: .library, filters: tagMissing) == 1)
+
+        var readmeMissing = RepoListFilters.empty
+        readmeMissing.readmeAvailability = .missing
+        #expect(try await repo.fetchListCount(scope: .library, filters: readmeMissing) == 1)
+
+        var indexableMissing = RepoListFilters.empty
+        indexableMissing.indexableSourceAvailability = .missing
+        #expect(try await repo.fetchListCount(scope: .library, filters: indexableMissing) == 0)
+
+        var indexIssues = RepoListFilters.empty
+        indexIssues.ragIndexState = .issues(embeddingModel: "embed-v1")
+        #expect(try await repo.fetchListCount(scope: .library, filters: indexIssues) == 1)
+
+        try await database.writer.write { db in
+            let fetchedChunkID = try Int64.fetchOne(
+                db,
+                sql: "SELECT id FROM rag_chunks WHERE repo_id = 4"
+            )
+            let chunkID = try #require(fetchedChunkID)
+            try db.execute(
+                sql: """
+                    INSERT INTO rag_chunk_overrides (
+                        chunk_id, original_title, original_section_path, original_content,
+                        is_excluded, updated_at
+                    ) VALUES (?, 'Metadata', '', 'stale', 1, datetime('now'))
+                    """,
+                arguments: [chunkID]
+            )
+        }
+
+        #expect(try await repo.fetchListCount(scope: .library, filters: indexableMissing) == 1)
+        #expect(try await repo.fetchListCount(scope: .library, filters: indexIssues) == 0)
+    }
+
     @Test("DB Paging: GitHub Star List scope 只返回指定分组 repo")
     func githubStarListScopeReturnsGroupedRepos() async throws {
         let (repo, db) = try makeRepo()

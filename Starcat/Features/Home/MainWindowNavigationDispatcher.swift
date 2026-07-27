@@ -23,6 +23,10 @@ struct GlobalRepoFilterState: Equatable {
     var wikiAvailabilityFilter: RepoSignalAvailabilityFilter
     var healthAvailabilityFilter: RepoSignalAvailabilityFilter
     var openSSFAvailabilityFilter: RepoSignalAvailabilityFilter
+    var tagAvailabilityFilter: RepoSignalAvailabilityFilter
+    var readmeAvailabilityFilter: RepoSignalAvailabilityFilter
+    var indexableSourceAvailabilityFilter: RepoSignalAvailabilityFilter
+    var ragIndexStateFilter: RepoRAGIndexStateFilter
 
     static let neutral = GlobalRepoFilterState(
         hideArchived: false,
@@ -34,8 +38,20 @@ struct GlobalRepoFilterState: Equatable {
         globalFilterLanguages: [],
         wikiAvailabilityFilter: .unknown,
         healthAvailabilityFilter: .unknown,
-        openSSFAvailabilityFilter: .unknown
+        openSSFAvailabilityFilter: .unknown,
+        tagAvailabilityFilter: .unknown,
+        readmeAvailabilityFilter: .unknown,
+        indexableSourceAvailabilityFilter: .unknown,
+        ragIndexStateFilter: .unknown
     )
+
+    /// 这些字段只用于洞察的临时结构化下钻，不进入用户持久 Toolbar 偏好。
+    var hasInsightsDrillDownFilters: Bool {
+        tagAvailabilityFilter != .unknown
+            || readmeAvailabilityFilter != .unknown
+            || indexableSourceAvailabilityFilter != .unknown
+            || ragIndexStateFilter != .unknown
+    }
 }
 
 /// 主窗口级一次性路由总线。

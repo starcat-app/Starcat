@@ -102,6 +102,7 @@ final class HomeViewModel {
             }
 
             if effectiveGlobalFilterState.wikiAvailabilityFilter == .unknown,
+               !effectiveGlobalFilterState.hasInsightsDrillDownFilters,
                let cached = listCache[selection], !cached.isExpired {
                 if isGitHubStarListSwitchLoading { isGitHubStarListSwitchLoading = false }
                 self.rawItems = cached.rawItems
@@ -365,6 +366,10 @@ final class HomeViewModel {
         let selectedLanguages: Set<String>
         let healthAvailability: String
         let openSSFAvailability: String
+        let tagAvailability: String
+        let readmeAvailability: String
+        let indexableSourceAvailability: String
+        let ragIndexState: String
         let selectedTagIDs: Set<String>
         let sort: String
     }
@@ -389,7 +394,8 @@ final class HomeViewModel {
     /// 派生：给定 selection 是否有可用（未过期）缓存。
     var hasCachedItems: Bool {
         guard !isSearching else { return false }
-        guard effectiveGlobalFilterState.wikiAvailabilityFilter == .unknown else { return false }
+        guard effectiveGlobalFilterState.wikiAvailabilityFilter == .unknown,
+              !effectiveGlobalFilterState.hasInsightsDrillDownFilters else { return false }
         if let cached = listCache[selection], !cached.isExpired {
             return true
         }
@@ -889,7 +895,11 @@ final class HomeViewModel {
             globalFilterLanguages: globalFilterLanguages,
             wikiAvailabilityFilter: wikiAvailabilityFilter,
             healthAvailabilityFilter: healthAvailabilityFilter,
-            openSSFAvailabilityFilter: openSSFAvailabilityFilter
+            openSSFAvailabilityFilter: openSSFAvailabilityFilter,
+            tagAvailabilityFilter: .unknown,
+            readmeAvailabilityFilter: .unknown,
+            indexableSourceAvailabilityFilter: .unknown,
+            ragIndexStateFilter: .unknown
         )
     }
 
@@ -911,6 +921,10 @@ final class HomeViewModel {
             || filters.wikiAvailabilityFilter != .unknown
             || filters.healthAvailabilityFilter != .unknown
             || filters.openSSFAvailabilityFilter != .unknown
+            || filters.tagAvailabilityFilter != .unknown
+            || filters.readmeAvailabilityFilter != .unknown
+            || filters.indexableSourceAvailabilityFilter != .unknown
+            || filters.ragIndexStateFilter != .unknown
     }
 
     /// 跨窗口钻取只替换“当前有效筛选”，不写持久字段；重复点击同一数字也用 requestID 更新会话身份。
@@ -1770,6 +1784,10 @@ final class HomeViewModel {
             wikiAvailability: filters.wikiAvailabilityFilter,
             healthAvailability: filters.healthAvailabilityFilter,
             openSSFAvailability: filters.openSSFAvailabilityFilter,
+            tagAvailability: filters.tagAvailabilityFilter,
+            readmeAvailability: filters.readmeAvailabilityFilter,
+            indexableSourceAvailability: filters.indexableSourceAvailabilityFilter,
+            ragIndexState: filters.ragIndexStateFilter,
             selectedTagIDs: selectedTagIds
         )
     }
@@ -1788,6 +1806,10 @@ final class HomeViewModel {
             selectedLanguages: filters.selectedLanguages,
             healthAvailability: filters.healthAvailability.rawValue,
             openSSFAvailability: filters.openSSFAvailability.rawValue,
+            tagAvailability: filters.tagAvailability.rawValue,
+            readmeAvailability: filters.readmeAvailability.rawValue,
+            indexableSourceAvailability: filters.indexableSourceAvailability.rawValue,
+            ragIndexState: filters.ragIndexState.cacheKey,
             selectedTagIDs: filters.selectedTagIDs,
             sort: sortOption.rawValue
         )
@@ -2156,7 +2178,8 @@ final class HomeViewModel {
         }()
         let shouldUseListCache = !isSearching &&
             !isUserSmartCollectionSelection &&
-            effectiveGlobalFilterState.wikiAvailabilityFilter == .unknown
+            effectiveGlobalFilterState.wikiAvailabilityFilter == .unknown &&
+            !effectiveGlobalFilterState.hasInsightsDrillDownFilters
         let cached = shouldUseListCache ? listCache[selection] : nil
         let hasStaleCache = cached != nil
 

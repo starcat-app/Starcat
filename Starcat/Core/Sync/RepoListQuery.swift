@@ -136,6 +136,22 @@ enum RepoSignalAvailabilityFilter: String, CaseIterable, Codable, Sendable {
     case missing
 }
 
+/// RAG 索引状态筛选。模型名属于状态判断的一部分：ready chunk 若来自旧模型，
+/// 仍需进入“索引失败 / 过期”下钻，而不能被当成当前模型可用。
+enum RepoRAGIndexStateFilter: Equatable, Sendable {
+    case unknown
+    case issues(embeddingModel: String)
+
+    var cacheKey: String {
+        switch self {
+        case .unknown:
+            return "unknown"
+        case .issues(let embeddingModel):
+            return "issues:\(embeddingModel)"
+        }
+    }
+}
+
 /// Manage 列表的可下推过滤条件。
 ///
 /// `selectedTagIDs` 语义与 HomeViewModel 保持一致：命中任意一个标签即可保留（OR）。
@@ -151,6 +167,10 @@ struct RepoListFilters: Equatable, Sendable {
     var wikiAvailability: RepoSignalAvailabilityFilter
     var healthAvailability: RepoSignalAvailabilityFilter
     var openSSFAvailability: RepoSignalAvailabilityFilter
+    var tagAvailability: RepoSignalAvailabilityFilter
+    var readmeAvailability: RepoSignalAvailabilityFilter
+    var indexableSourceAvailability: RepoSignalAvailabilityFilter
+    var ragIndexState: RepoRAGIndexStateFilter
     var selectedTagIDs: Set<String>
 
     init(
@@ -164,6 +184,10 @@ struct RepoListFilters: Equatable, Sendable {
         wikiAvailability: RepoSignalAvailabilityFilter = .unknown,
         healthAvailability: RepoSignalAvailabilityFilter = .unknown,
         openSSFAvailability: RepoSignalAvailabilityFilter = .unknown,
+        tagAvailability: RepoSignalAvailabilityFilter = .unknown,
+        readmeAvailability: RepoSignalAvailabilityFilter = .unknown,
+        indexableSourceAvailability: RepoSignalAvailabilityFilter = .unknown,
+        ragIndexState: RepoRAGIndexStateFilter = .unknown,
         selectedTagIDs: Set<String>
     ) {
         self.hideArchived = hideArchived
@@ -176,6 +200,10 @@ struct RepoListFilters: Equatable, Sendable {
         self.wikiAvailability = wikiAvailability
         self.healthAvailability = healthAvailability
         self.openSSFAvailability = openSSFAvailability
+        self.tagAvailability = tagAvailability
+        self.readmeAvailability = readmeAvailability
+        self.indexableSourceAvailability = indexableSourceAvailability
+        self.ragIndexState = ragIndexState
         self.selectedTagIDs = selectedTagIDs
     }
 
@@ -190,6 +218,10 @@ struct RepoListFilters: Equatable, Sendable {
         wikiAvailability: .unknown,
         healthAvailability: .unknown,
         openSSFAvailability: .unknown,
+        tagAvailability: .unknown,
+        readmeAvailability: .unknown,
+        indexableSourceAvailability: .unknown,
+        ragIndexState: .unknown,
         selectedTagIDs: []
     )
 }

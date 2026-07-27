@@ -776,6 +776,95 @@ struct GRDBRepoRepository {
                 )
                 """)
         }
+        switch filters.tagAvailability {
+        case .unknown:
+            break
+        case .available:
+            whereClauses.append("""
+                EXISTS (
+                    SELECT 1 FROM repo_tags rt_insights
+                    WHERE rt_insights.repo_id = r.id
+                )
+                """)
+        case .missing:
+            whereClauses.append("""
+                NOT EXISTS (
+                    SELECT 1 FROM repo_tags rt_insights
+                    WHERE rt_insights.repo_id = r.id
+                )
+                """)
+        }
+        switch filters.readmeAvailability {
+        case .unknown:
+            break
+        case .available:
+            whereClauses.append("""
+                EXISTS (
+                    SELECT 1 FROM rag_chunks c_readme
+                    WHERE c_readme.repo_id = r.id AND c_readme.source = 'readme'
+                )
+                """)
+        case .missing:
+            whereClauses.append("""
+                NOT EXISTS (
+                    SELECT 1 FROM rag_chunks c_readme
+                    WHERE c_readme.repo_id = r.id AND c_readme.source = 'readme'
+                )
+                """)
+        }
+        switch filters.indexableSourceAvailability {
+        case .unknown:
+            break
+        case .available:
+            whereClauses.append("""
+                EXISTS (
+                    SELECT 1 FROM rag_chunks c_indexable
+                    WHERE c_indexable.repo_id = r.id
+                      AND NOT EXISTS (
+                          SELECT 1 FROM rag_chunk_overrides o_indexable
+                          WHERE o_indexable.chunk_id = c_indexable.id
+                            AND o_indexable.is_excluded = 1
+                      )
+                )
+                """)
+        case .missing:
+            whereClauses.append("""
+                NOT EXISTS (
+                    SELECT 1 FROM rag_chunks c_indexable
+                    WHERE c_indexable.repo_id = r.id
+                      AND NOT EXISTS (
+                          SELECT 1 FROM rag_chunk_overrides o_indexable
+                          WHERE o_indexable.chunk_id = c_indexable.id
+                            AND o_indexable.is_excluded = 1
+                      )
+                )
+                """)
+        }
+        switch filters.ragIndexState {
+        case .unknown:
+            break
+        case .issues(let embeddingModel):
+            whereClauses.append("""
+                EXISTS (
+                    SELECT 1 FROM rag_chunks c_rag
+                    WHERE c_rag.repo_id = r.id
+                      AND NOT EXISTS (
+                          SELECT 1 FROM rag_chunk_overrides o_rag
+                          WHERE o_rag.chunk_id = c_rag.id
+                            AND o_rag.is_excluded = 1
+                      )
+                      AND (
+                          c_rag.embedding_status IN ('failed', 'stale')
+                          OR (
+                              c_rag.embedding_status = 'ready'
+                              AND c_rag.embedding_model IS NOT NULL
+                              AND c_rag.embedding_model != ?
+                          )
+                      )
+                )
+                """)
+            args.append(embeddingModel)
+        }
         if !filters.selectedTagIDs.isEmpty {
             let tagIDs = Array(filters.selectedTagIDs).sorted()
             let placeholders = Array(repeating: "?", count: tagIDs.count).joined(separator: ", ")
