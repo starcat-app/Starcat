@@ -42,7 +42,7 @@ enum SidebarRootPage: String, CaseIterable, Identifiable {
         case .manage:   return "star.circle"
         case .trending: return "safari"
         case .activity: return "bell.circle"
-        case .insights: return "chart.xyaxis.line"
+        case .insights: return "gauge.with.dots.needle.bottom.0percent"
         }
     }
 }
