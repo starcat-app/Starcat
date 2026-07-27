@@ -127324,6 +127324,41 @@
         }
       }
     },
+    "insights.repo.mode.insights" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Insights" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "洞察" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "洞察" } }
+      }
+    },
+    "insights.repo.mode.label" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repository content" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库内容" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "儲存庫內容" } }
+      }
+    },
+    "insights.repo.mode.readme" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "README" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "README" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "README" } }
+      }
+    },
+    "insights.repo.preview.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Activity, Star history, health, and community signals will appear here." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "活动、Star 历史、健康度与社区信号将在这里呈现。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "活動、Star 歷史、健康度與社群訊號將在這裡呈現。" } }
+      }
+    },
+    "insights.repo.preview.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repository Insights" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库洞察" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "儲存庫洞察" } }
+      }
+    },
     "insights.action.healthPending.detail" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories without a current health snapshot" } },

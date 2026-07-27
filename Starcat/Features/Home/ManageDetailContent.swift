@@ -56,6 +56,15 @@ import SwiftUI
 /// Manage 场景详情页的 body 内容（README + 翻译入口）。
 struct ManageDetailContent: View {
 
+    /// Manage 详情仅保留 README 与洞察两种 body 模式；切换通过条件分支真正卸载
+    /// WKWebView，避免不可见 README 继续占用 WebContent 进程和滚动状态。
+    private enum ContentMode: String, CaseIterable, Identifiable {
+        case readme
+        case insights
+
+        var id: String { rawValue }
+    }
+
     let repo: Repo
 
     /// 由 Scaffold 注入：把 scroll offset 上报回去用于驱动顶部面板折叠。
@@ -68,36 +77,70 @@ struct ManageDetailContent: View {
     /// v2.1（2026-06-11）：onRetry 闭包同时刷 README + 整个 repo 视图数据(缓存 repo +
     /// tags + notes + release 计数等)。详见文件头 v2.1 修订段。
     @Environment(HomeViewModel.self) private var viewModel
+    @State private var contentMode: ContentMode = .readme
 
     var body: some View {
-        // v1.5 修订（2026-06-10）：RepoLocalSections 已迁回 Scaffold metadataPanel,
-        // 本 ContentView body 仅剩 ReadmeStateView,无需再包 VStack。
-        ReadmeStateView(
-            state: readmeVM.state,
-            contentScope: .manage(repoId: repo.id),
-            // 统一构造带末尾 `/` 的目录 URL，避免 WebKit 把 HEAD 当文件名后丢掉分支段。
-            baseURL: URL(string: repo.htmlUrl).map(ReadmeWebView.repositoryContentBaseURL),
-            onScrollReportChange: onScrollReport,
-            translationControl: ReadmeTranslationControl(
-                repo: repo,
-                translationVM: translationVM,
-                settings: settings
-            )
-        ) {
-            // v2.1（2026-06-11）：Manage 场景下「刷新」=「刷 README + 重拉 repo 视图数据」。
-            // - `readmeVM.reload(repo:isLoggedIn:)` 是同步入口,内部 fire-and-forget Task,
-            //   立即返回不阻塞 UI;
-            // - `viewModel.reloadItems(forceRefresh: true)` 重拉 starred_repos / tags /
-            //   notes / release 计数等视图数据,需要 await,放进独立 Task 与 README 加载
-            //   并行进行;
-            // - 两者并行触发,UI 由各自 @Observable 状态机驱动,互不阻塞。
-            readmeVM.reload(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
-            Task { await viewModel.reloadItems(forceRefresh: true) }
-        } onLogin: {
-            // 2026-06-29：只弹登录 sheet，不强制走 Device Flow
-            // （让用户在 sheet 内可选 Device Flow / PAT，详见 AuthSession.requestLoginSheet 注释）
-            authSession.requestLoginSheet()
+        VStack(spacing: 0) {
+            HStack {
+                Picker("insights.repo.mode.label", selection: $contentMode) {
+                    Text("insights.repo.mode.readme").tag(ContentMode.readme)
+                    Text("insights.repo.mode.insights").tag(ContentMode.insights)
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: 210)
+
+                Spacer(minLength: 12)
+
+                if contentMode == .insights {
+                    MockDataBadge()
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+
+            Divider()
+
+            if contentMode == .readme {
+                // v1.5 修订（2026-06-10）：RepoLocalSections 已迁回 Scaffold metadataPanel，
+                // README 继续直接上报滚动，让 hero 折叠行为保持不变。
+                ReadmeStateView(
+                    state: readmeVM.state,
+                    contentScope: .manage(repoId: repo.id),
+                    // 统一构造带末尾 `/` 的目录 URL，避免 WebKit 把 HEAD 当文件名后丢掉分支段。
+                    baseURL: URL(string: repo.htmlUrl).map(ReadmeWebView.repositoryContentBaseURL),
+                    onScrollReportChange: onScrollReport,
+                    translationControl: ReadmeTranslationControl(
+                        repo: repo,
+                        translationVM: translationVM,
+                        settings: settings
+                    )
+                ) {
+                    refreshReadmeAndRepo()
+                } onLogin: {
+                    // 2026-06-29：只弹登录 sheet，不强制走 Device Flow。
+                    authSession.requestLoginSheet()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                RepositoryInsightsPreview(
+                    repo: repo,
+                    onScrollReport: onScrollReport
+                )
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: contentMode) { _, newMode in
+            guard newMode == .insights else { return }
+            // README 可能在切换前已把 Hero 折叠；洞察页首帧先恢复顶部 Metadata，
+            // 后续再由自己的 ScrollView 持续上报 offset。
+            onScrollReport(RepoDetailScrollReport(offsetY: 0, scrollOverflow: 0))
+        }
+    }
+
+    /// v2.1 既有语义保持不变：Manage 的 README 刷新同时重读当前 repo 视图数据。
+    private func refreshReadmeAndRepo() {
+        readmeVM.reload(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
+        Task { await viewModel.reloadItems(forceRefresh: true) }
     }
 }
