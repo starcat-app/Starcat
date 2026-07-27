@@ -202,7 +202,7 @@
 计划提交：
 
 - [x] `feat(insights): 增加仓库详情洞察模式` — 实际 commit：`0cf1000a`
-- [ ] `test(insights): 覆盖仓库详情模式切换` — 实际 commit：`待回填`
+- [x] `test(insights): 覆盖仓库详情模式切换` — 实际 commit：`ef5fd780`
 
 ### 6.2 本地区块
 
@@ -384,7 +384,7 @@
 - [ ] RepositoryInsightsViewModel 的 repo / range generation 和取消。
 - [x] 本机 Star 快照、远端替换、同日精确优先、负增长和范围降采样。
 - [x] 私有仓库不访问历史 API、building 有界轮询、stale fallback。
-- [ ] 主详情与独立详情窗口复用一致。
+- [x] 主详情与独立详情窗口复用一致。
 
 ### 11.2 `starcat-discovery-api` 自动化
 
