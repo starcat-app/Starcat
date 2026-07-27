@@ -187,6 +187,41 @@ struct MyInsightsSnapshotProviderTests {
         #expect(snapshot.languageItems.reduce(0) { $0 + $1.count } == 10)
     }
 
+    @Test("空库与缺失派生数据返回稳定零值")
+    func emptyDatabaseReturnsStableZeroValues() async throws {
+        let database = try InMemoryDatabaseManager()
+        let snapshot = try await GRDBMyInsightsSnapshotProvider(
+            database: database
+        ).load(scope: .starred, embeddingModel: "embed-v1")
+
+        #expect(metric("projects", in: snapshot) == 0)
+        #expect(snapshot.statusItems.allSatisfy { $0.count == 0 && $0.fraction == 0 })
+        #expect(snapshot.actionItems.allSatisfy { $0.count == 0 })
+        #expect(snapshot.healthCoverage == InsightsCoverage(completed: 0, total: 0))
+        #expect(snapshot.openSSFCoverage == InsightsCoverage(completed: 0, total: 0))
+    }
+
+    @Test("非收藏但已入库仓库只进入知识库范围")
+    func knowledgeScopeIncludesNonStarredLibraryRepo() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 50)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(
+            repoId: 50,
+            state: .inLibrary
+        )
+        try await database.writer.write { db in
+            try db.execute(sql: "UPDATE repos SET is_starred = 0 WHERE id = 50")
+        }
+        let provider = GRDBMyInsightsSnapshotProvider(database: database)
+
+        let starred = try await provider.load(scope: .starred, embeddingModel: "embed-v1")
+        let knowledge = try await provider.load(scope: .knowledge, embeddingModel: "embed-v1")
+
+        #expect(metric("projects", in: starred) == 0)
+        #expect(metric("projects", in: knowledge) == 1)
+        #expect(action(.missingReadme, in: knowledge) == 1)
+    }
+
     private func metric(_ id: String, in snapshot: MyInsightsSnapshot) -> Int? {
         snapshot.metrics.first(where: { $0.id == id })?.value
     }

@@ -127935,9 +127935,9 @@
     },
     "insights.section.actions.starredSubtitle" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Start with the largest actionable groups" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "优先处理数量较多的收藏分组" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "優先處理數量較多的收藏分組" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Starred scope hides RAG-only issues; switch to Knowledge Base to inspect indexing" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "收藏范围隐藏 RAG 专属问题；切换到知识库可检查索引状态" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "收藏範圍隱藏 RAG 專屬問題；切換到知識庫可檢查索引狀態" } }
       }
     },
     "insights.section.coverage" : {
