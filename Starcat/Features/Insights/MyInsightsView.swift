@@ -302,7 +302,8 @@ struct MyInsightsView: View {
             Chart(items) { item in
                 BarMark(
                     x: .value("Count", item.count),
-                    y: .value("Category", String.l10n(item.title))
+                    y: .value("Category", String.l10n(item.title)),
+                    height: .fixed(6)
                 )
                 .foregroundStyle(InsightsColor.resolve(item.colorName))
                 .cornerRadius(3)
