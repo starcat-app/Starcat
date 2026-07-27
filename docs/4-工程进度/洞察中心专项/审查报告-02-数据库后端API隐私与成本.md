@@ -2,7 +2,7 @@
 
 > 审查时间：2026-07-27
 >
-> 审查状态：已完成专项检查，存在 1 个待修复 finding
+> 审查状态：已闭环，无未关闭 P0 / P1 / P2
 >
 > 审查基线：Starcat `20f00d0d`；`starcat-discovery-api` `0a107d2`
 
@@ -15,7 +15,7 @@
 
 ## 2. 结论
 
-v16 迁移、客户端隐私边界、Discovery 公开性复核、API 状态和单次 BigQuery 扫描上限均符合方案。发现 1 个 P1 成本护栏问题：每日预算只保存在 Service 进程内存，服务重启会归零，因此配置名所承诺的“每日预算”不是跨重启硬上限。
+v16 迁移、客户端隐私边界、Discovery 公开性复核、API 状态和单次 BigQuery 扫描上限均符合方案。审查发现的 1 个 P1 成本护栏问题已修复：每日预算改为 SQLite 按 UTC 日期持久化并通过原子 SQL 预留，进程重启和并发 worker 均不能绕过当日上限。
 
 M0 仍未取得真实 BigQuery 查询授权，`STAR_HISTORY_ENABLED` 必须继续保持默认 `false`；本报告不把 Fake / dry-run 测试写成 M0 GO。
 
@@ -24,7 +24,7 @@ M0 仍未取得真实 BigQuery 查询授权，`STAR_HISTORY_ENABLED` 必须继�
 ### R02-F01：Star History 每日扫描预算可被服务重启重置
 
 - 等级：P1
-- 状态：待修复
+- 状态：已修复
 - 证据：
   - `internal/starhistory/service.go` 使用 `budgetDay / budgetUsed` 内存字段和 `reserveDailyBudget(...)`。
   - `NewService(...)` 每次启动都把预算使用量恢复为 0。
@@ -36,8 +36,14 @@ M0 仍未取得真实 BigQuery 查询授权，`STAR_HISTORY_ENABLED` 必须继�
   3. Service 依赖持久化 Store 方法，删除进程内计数。
   4. 增加并发预留、跨 Service 重建、跨日重置和超限测试。
   5. 运行 `make check && go build ./...`。
-- 修复 commit：待回填
-- 验证结果：待回填
+- 修复 commit：`starcat-discovery-api` `c207491`（`fix(star-history): 持久化每日查询预算`）
+- 验证结果：
+  - `go test -race ./internal/store ./internal/starhistory` 通过。
+  - `make check` 通过，包含格式、vet、全量测试和覆盖率。
+  - `go build ./...` 通过。
+  - `git diff --check` 通过。
+
+修复后的 `star_history_daily_budgets` 以 UTC 日期为主键，单条 UPSERT 只在累计预留量不超过配置上限时成功。Store 测试覆盖十路并发、SQLite 关闭重开、UTC 日期和跨日新额度；Service 测试覆盖重建服务后继续拒绝当日超额查询。
 
 ## 4. 无问题项
 
@@ -55,4 +61,4 @@ M0 仍未取得真实 BigQuery 查询授权，`STAR_HISTORY_ENABLED` 必须继�
 
 ## 5. 下一步
 
-本报告提交后，按 R02-F01 在 `starcat-discovery-api` 独立修复、验证并提交；随后回填本报告并继续第三轮架构与失败路径审查。
+R02-F01 已闭环，可以继续第三轮代码架构、并发、缓存与失败路径审查。M0 仍须单独取得真实 BigQuery 查询和成本授权，不能因为本轮自动化通过而视为 GO。

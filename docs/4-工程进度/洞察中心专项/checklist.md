@@ -460,12 +460,12 @@
 
 ### 13.2 第二轮：数据库、后端、API、隐私与成本
 
-- [ ] 新增 `审查报告-02-数据库后端API隐私与成本.md`，提交后再修复。
-- [ ] 审查 v16 append-only migration、外键、TTL、事务、损坏缓存和既有用户升级。
-- [ ] 审查 GH Archive provider、归一化、降采样、预算、worker、缓存和 API contract。
-- [ ] 审查私有仓库、日志、token、CloudKit、JSON 导入导出和部署配置边界。
-- [ ] 逐项修复发现并独立提交。
-- [ ] 回填报告 findings 闭环和 commit 证据。
+- [x] 新增 `审查报告-02-数据库后端API隐私与成本.md`，提交后再修复。
+- [x] 审查 v16 append-only migration、外键、TTL、事务、损坏缓存和既有用户升级。
+- [x] 审查 GH Archive provider、归一化、降采样、预算、worker、缓存和 API contract。
+- [x] 审查私有仓库、日志、token、CloudKit、JSON 导入导出和部署配置边界。
+- [x] 逐项修复发现并独立提交。
+- [x] 回填报告 findings 闭环和 commit 证据。
 
 ### 13.3 第三轮：代码架构、并发、缓存与失败路径
 
