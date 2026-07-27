@@ -74,10 +74,12 @@ struct ManageDetailContent: View {
     @Environment(ReadmeTranslationViewModel.self) private var translationVM
     @Environment(AppSettings.self) private var settings
     @Environment(AuthSession.self) private var authSession
+    @Environment(AppDependencies.self) private var dependencies
     /// v2.1（2026-06-11）：onRetry 闭包同时刷 README + 整个 repo 视图数据(缓存 repo +
     /// tags + notes + release 计数等)。详见文件头 v2.1 修订段。
     @Environment(HomeViewModel.self) private var viewModel
     @State private var contentMode: ContentMode = .readme
+    @State private var repositoryInsightsViewModel: RepositoryInsightsViewModel?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -91,10 +93,6 @@ struct ManageDetailContent: View {
                 .frame(width: 210)
 
                 Spacer(minLength: 12)
-
-                if contentMode == .insights {
-                    MockDataBadge()
-                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -123,10 +121,25 @@ struct ManageDetailContent: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                RepositoryInsightsView(
-                    repo: repo,
-                    onScrollReport: onScrollReport
-                )
+                Group {
+                    if let repositoryInsightsViewModel {
+                        RepositoryInsightsView(
+                            repo: repo,
+                            viewModel: repositoryInsightsViewModel,
+                            onScrollReport: onScrollReport
+                        )
+                    } else {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+                .task(id: repo.id) {
+                    let insightsViewModel = repositoryInsightsViewModel
+                        ?? makeRepositoryInsightsViewModel()
+                    repositoryInsightsViewModel = insightsViewModel
+                    await insightsViewModel.load(repoId: repo.id)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -142,5 +155,16 @@ struct ManageDetailContent: View {
     private func refreshReadmeAndRepo() {
         readmeVM.reload(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
         Task { await viewModel.reloadItems(forceRefresh: true) }
+    }
+
+    private func makeRepositoryInsightsViewModel() -> RepositoryInsightsViewModel {
+        RepositoryInsightsViewModel(
+            provider: DefaultRepositoryLocalInsightsProvider(
+                releaseRepository: dependencies.releaseRepository,
+                healthRepository: dependencies.repoHealthRepository,
+                openSSFRepository: dependencies.openSSFScoreRepository,
+                insightsCache: dependencies.repositoryInsightsCache
+            )
+        )
     }
 }

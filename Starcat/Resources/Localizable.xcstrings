@@ -127422,6 +127422,34 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "安全性" } }
       }
     },
+    "insights.repo.local.health" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Health Score" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "健康评分" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "健康評分" } }
+      }
+    },
+    "insights.repo.local.license" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "License" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "开源许可证" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "開源授權條款" } }
+      }
+    },
+    "insights.repo.local.openssf" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "OpenSSF" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "OpenSSF" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "OpenSSF" } }
+      }
+    },
+    "insights.repo.local.release" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Latest Release" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "最新 Release" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "最新 Release" } }
+      }
+    },
     "insights.repo.period.thirtyDays" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Last 30 days" } },
@@ -127497,6 +127525,20 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Four dimensions from Starcat health scoring" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Starcat 健康度模型的四项维度" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Starcat 健康度模型的四項維度" } }
+      }
+    },
+    "insights.repo.section.local" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Local Insights" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本地洞察" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "本機洞察" } }
+      }
+    },
+    "insights.repo.section.local.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Release, license, health, and security data already stored by Starcat" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Starcat 已有的发布、许可证、健康度与安全数据" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Starcat 已有的發布、授權條款、健康度與安全資料" } }
       }
     },
     "insights.repo.section.security" : {
@@ -127735,6 +127777,13 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "README" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "README" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "README" } }
+      }
+    },
+    "insights.repo.state.noData" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No data" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂无数据" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "暫無資料" } }
       }
     },
     "insights.time.thisWeek" : {

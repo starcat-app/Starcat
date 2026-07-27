@@ -28,6 +28,7 @@ struct RepositoryInsightsView: View {
     }
 
     let repo: Repo
+    let viewModel: RepositoryInsightsViewModel
     let onScrollReport: (RepoDetailScrollReport) -> Void
 
     private let snapshot: RepositoryInsightsSnapshot
@@ -38,8 +39,13 @@ struct RepositoryInsightsView: View {
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
-    init(repo: Repo, onScrollReport: @escaping (RepoDetailScrollReport) -> Void) {
+    init(
+        repo: Repo,
+        viewModel: RepositoryInsightsViewModel,
+        onScrollReport: @escaping (RepoDetailScrollReport) -> Void
+    ) {
         self.repo = repo
+        self.viewModel = viewModel
         self.onScrollReport = onScrollReport
         snapshot = InsightsMockData.repositoryInsights(for: repo)
     }
@@ -47,12 +53,13 @@ struct RepositoryInsightsView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 14) {
+                localOverviewSection
                 activitySection
                 starHistorySection
                 commitSection
                 contributorSection
                 healthSection
-                signalsSection
+                localSignalsSection
                 timelineSection
             }
             .padding(18)
@@ -67,6 +74,106 @@ struct RepositoryInsightsView: View {
             onScrollReport(report)
         }
         .accessibilityLabel(Text("insights.repo.mode.insights"))
+    }
+
+    private var localOverviewSection: some View {
+        InsightsSectionContainer(
+            title: "insights.repo.section.local",
+            subtitle: "insights.repo.section.local.subtitle",
+            systemImage: "internaldrive.fill"
+        ) {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 132), spacing: 10)],
+                spacing: 10
+            ) {
+                localFact(
+                    title: "insights.repo.local.release",
+                    systemImage: "tag.fill",
+                    value: releaseValue
+                )
+                localFact(
+                    title: "insights.repo.local.license",
+                    systemImage: "checkmark.seal.fill",
+                    value: repo.license ?? String.l10n("insights.repo.state.noData")
+                )
+                localFact(
+                    title: "insights.repo.local.health",
+                    systemImage: "heart.text.square.fill",
+                    value: healthValue
+                )
+                localFact(
+                    title: "insights.repo.local.openssf",
+                    systemImage: "shield.checkered",
+                    value: openSSFValue
+                )
+            }
+        }
+    }
+
+    private func localFact(
+        title: LocalizedStringKey,
+        systemImage: String,
+        value: String?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Label(title, systemImage: systemImage)
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            if let value {
+                Text(verbatim: value)
+                    .font(interfaceScale.font(.bodyEmphasis))
+                    .lineLimit(1)
+            } else {
+                ProgressView()
+                    .controlSize(.mini)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, minHeight: 70, alignment: .leading)
+        .background(
+            Color(nsColor: .textBackgroundColor).opacity(0.55),
+            in: RoundedRectangle(cornerRadius: 7)
+        )
+    }
+
+    private var releaseValue: String? {
+        switch viewModel.releaseState {
+        case .loading, .idle:
+            return nil
+        case .content(let release):
+            return release.tagName
+        case .empty, .unavailable:
+            return String.l10n("insights.repo.state.noData")
+        case .failed:
+            return String.l10n("error.loadFailed")
+        }
+    }
+
+    private var healthValue: String? {
+        switch viewModel.healthState {
+        case .loading, .idle:
+            return nil
+        case .content(let health):
+            return "\(health.overallScore) · \(health.grade)"
+        case .empty, .unavailable:
+            return String.l10n("insights.repo.state.noData")
+        case .failed:
+            return String.l10n("error.loadFailed")
+        }
+    }
+
+    private var openSSFValue: String? {
+        switch viewModel.openSSFState {
+        case .loading, .idle:
+            return nil
+        case .content(let openSSF):
+            return String(format: "%.1f / 10", openSSF.score)
+        case .empty, .unavailable:
+            return String.l10n("insights.repo.state.noData")
+        case .failed:
+            return String.l10n("error.loadFailed")
+        }
     }
 
     private var activitySection: some View {
@@ -461,13 +568,24 @@ struct RepositoryInsightsView: View {
             subtitle: "insights.repo.section.health.subtitle",
             systemImage: "heart.text.square.fill"
         ) {
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 142), spacing: 18)],
-                alignment: .leading,
-                spacing: 14
-            ) {
-                ForEach(snapshot.healthDimensions) { dimension in
-                    healthItem(dimension)
+            Group {
+                switch viewModel.healthState {
+                case .content(let health):
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 142), spacing: 18)],
+                        alignment: .leading,
+                        spacing: 14
+                    ) {
+                        ForEach(healthDimensions(from: health)) { dimension in
+                            healthItem(dimension)
+                        }
+                    }
+                case .loading, .idle:
+                    sectionProgress
+                case .empty, .unavailable:
+                    sectionMessage("insights.repo.state.noData", systemImage: "heart.slash")
+                case .failed:
+                    sectionMessage("error.loadFailed", systemImage: "exclamationmark.triangle")
                 }
             }
         }
@@ -496,7 +614,7 @@ struct RepositoryInsightsView: View {
         .frame(maxWidth: .infinity)
     }
 
-    private var signalsSection: some View {
+    private var localSignalsSection: some View {
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .top, spacing: 14) {
                 communitySignalGroup.frame(minWidth: 248)
@@ -510,54 +628,140 @@ struct RepositoryInsightsView: View {
     }
 
     private var communitySignalGroup: some View {
-        signalGroup(
+        InsightsSectionContainer(
             title: "insights.repo.section.community",
             subtitle: "insights.repo.section.community.subtitle",
-            systemImage: "person.2.fill",
-            signals: snapshot.communitySignals
-        )
-    }
-
-    private var securitySignalGroup: some View {
-        signalGroup(
-            title: "insights.repo.section.security",
-            subtitle: "insights.repo.section.security.subtitle",
-            systemImage: "lock.shield.fill",
-            signals: snapshot.securitySignals
-        )
-    }
-
-    private func signalGroup(
-        title: LocalizedStringKey,
-        subtitle: LocalizedStringKey,
-        systemImage: String,
-        signals: [RepositorySignal]
-    ) -> some View {
-        InsightsSectionContainer(title: title, subtitle: subtitle, systemImage: systemImage) {
-            VStack(spacing: 0) {
-                ForEach(Array(signals.enumerated()), id: \.element.id) { index, signal in
-                    if index > 0 {
-                        Divider().padding(.leading, 28)
-                    }
-                    signalRow(signal)
+            systemImage: "person.2.fill"
+        ) {
+            switch viewModel.communityState {
+            case .content(let community):
+                VStack(spacing: 0) {
+                    localSignalRow(
+                        title: "insights.repo.signal.readme",
+                        isAvailable: community.hasReadme,
+                        systemImage: "doc.text.fill"
+                    )
+                    Divider().padding(.leading, 28)
+                    localSignalRow(
+                        title: "insights.repo.signal.conduct",
+                        isAvailable: community.hasCodeOfConduct,
+                        systemImage: "person.2.fill"
+                    )
+                    Divider().padding(.leading, 28)
+                    localSignalRow(
+                        title: "insights.repo.signal.contributing",
+                        isAvailable: community.hasContributing,
+                        systemImage: "hand.raised.fill"
+                    )
                 }
+            case .loading, .idle:
+                sectionProgress
+            case .empty, .unavailable:
+                sectionMessage("insights.repo.state.noData", systemImage: "person.2.slash")
+            case .failed:
+                sectionMessage("error.loadFailed", systemImage: "exclamationmark.triangle")
             }
         }
     }
 
-    private func signalRow(_ signal: RepositorySignal) -> some View {
+    private var securitySignalGroup: some View {
+        InsightsSectionContainer(
+            title: "insights.repo.section.security",
+            subtitle: "insights.repo.section.security.subtitle",
+            systemImage: "lock.shield.fill"
+        ) {
+            switch viewModel.openSSFState {
+            case .content(let openSSF):
+                HStack(spacing: 8) {
+                    Image(systemName: "shield.checkered")
+                        .frame(width: 18)
+                        .foregroundStyle(.secondary)
+                    Text("insights.repo.signal.openssf")
+                        .font(interfaceScale.font(.caption))
+                    Spacer(minLength: 8)
+                    Text(verbatim: String(format: "%.1f / 10", openSSF.score))
+                        .font(interfaceScale.font(.captionSmall, weight: .medium))
+                        .foregroundStyle(openSSF.score >= 5 ? .green : .orange)
+                        .monospacedDigit()
+                }
+                .padding(.vertical, 7)
+            case .loading, .idle:
+                sectionProgress
+            case .empty, .unavailable:
+                sectionMessage("insights.repo.state.noData", systemImage: "shield.slash")
+            case .failed:
+                sectionMessage("error.loadFailed", systemImage: "exclamationmark.triangle")
+            }
+        }
+    }
+
+    private func localSignalRow(
+        title: LocalizedStringKey,
+        isAvailable: Bool,
+        systemImage: String
+    ) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: signal.systemImage)
+            Image(systemName: systemImage)
                 .frame(width: 18)
                 .foregroundStyle(.secondary)
-            Text(LocalizedStringKey(signal.titleKey))
+            Text(title)
                 .font(interfaceScale.font(.caption))
             Spacer(minLength: 8)
-            Text(LocalizedStringKey(signal.detailKey))
+            Text(LocalizedStringKey(
+                isAvailable ? "insights.repo.signal.available" : "insights.repo.signal.missing"
+            ))
                 .font(interfaceScale.font(.captionSmall, weight: .medium))
-                .foregroundStyle(signalColor(signal.state))
+                .foregroundStyle(isAvailable ? .green : .orange)
         }
         .padding(.vertical, 7)
+    }
+
+    private var sectionProgress: some View {
+        ProgressView()
+            .controlSize(.small)
+            .frame(maxWidth: .infinity, minHeight: 44)
+    }
+
+    private func sectionMessage(_ key: LocalizedStringKey, systemImage: String) -> some View {
+        Label(key, systemImage: systemImage)
+            .font(interfaceScale.font(.caption))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: 44)
+    }
+
+    private func healthDimensions(
+        from health: RepositoryHealthInsight
+    ) -> [RepositoryHealthDimensionItem] {
+        [
+            RepositoryHealthDimensionItem(
+                id: "maintenance",
+                titleKey: "insights.repo.health.maintenance",
+                score: health.maintenanceScore,
+                systemImage: "wrench.and.screwdriver.fill",
+                tintName: "green"
+            ),
+            RepositoryHealthDimensionItem(
+                id: "popularity",
+                titleKey: "insights.repo.health.popularity",
+                score: health.popularityScore,
+                systemImage: "chart.line.uptrend.xyaxis",
+                tintName: "blue"
+            ),
+            RepositoryHealthDimensionItem(
+                id: "quality",
+                titleKey: "insights.repo.health.quality",
+                score: health.qualityScore,
+                systemImage: "checkmark.seal.fill",
+                tintName: "purple"
+            ),
+            RepositoryHealthDimensionItem(
+                id: "security",
+                titleKey: "insights.repo.health.security",
+                score: health.securityScore,
+                systemImage: "lock.shield.fill",
+                tintName: "orange"
+            )
+        ]
     }
 
     private var timelineSection: some View {
@@ -594,14 +798,6 @@ struct RepositoryInsightsView: View {
                     .padding(.vertical, 8)
                 }
             }
-        }
-    }
-
-    private func signalColor(_ state: RepositorySignal.State) -> Color {
-        switch state {
-        case .positive: return .green
-        case .warning:  return .orange
-        case .missing:  return .red
         }
     }
 }
