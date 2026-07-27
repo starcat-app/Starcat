@@ -469,10 +469,10 @@
 
 ### 13.3 第三轮：代码架构、并发、缓存与失败路径
 
-- [ ] 新增 `审查报告-03-代码架构并发缓存与失败路径.md`，提交后再修复。
-- [ ] 审查 View / ViewModel / Repository / Client 职责和依赖注入。
-- [ ] 审查 repo / range generation、取消、旧响应、SWR、Rate Limit 和 `202` 轮询。
-- [ ] 审查 RAG 共享 Client 行为未回归、Star 历史与活动状态互不污染。
+- [x] 新增 `审查报告-03-代码架构并发缓存与失败路径.md`，提交后再修复。
+- [x] 审查 View / ViewModel / Repository / Client 职责和依赖注入。
+- [x] 审查 repo / range generation、取消、旧响应、SWR、Rate Limit 和 `202` 轮询。
+- [x] 审查 RAG 共享 Client 行为未回归、Star 历史与活动状态互不污染。
 - [ ] 逐项修复发现并独立提交。
 - [ ] 回填报告 findings 闭环和 commit 证据。
 
