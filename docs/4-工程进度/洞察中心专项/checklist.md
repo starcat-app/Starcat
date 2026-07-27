@@ -257,15 +257,15 @@
 
 ### 8.1 后端存储与模型
 
-- [ ] 新增独立 `repo_star_history_cache`，不把任意用户仓库写入 Discovery catalog。
-- [ ] 状态只允许 `building / ready / failed`，保存 repo ID、full name、当前 Stars、覆盖起点、points、生成时间、过期时间和错误摘要。
-- [ ] 同 repo 构建任务去重，服务重启后过期 building 可重新入队。
-- [ ] 保留现有 `repo_daily_snapshots` 和生产 `RecordDailySnapshot` 调用，补防回退测试。
+- [x] 新增独立 `repo_star_history_cache`，不把任意用户仓库写入 Discovery catalog。
+- [x] 状态只允许 `building / ready / failed`，保存 repo ID、full name、当前 Stars、覆盖起点、points、生成时间、过期时间和错误摘要。
+- [x] 同 repo 构建任务去重，服务重启后过期 building 可重新入队。
+- [x] 保留现有 `repo_daily_snapshots` 和生产 `RecordDailySnapshot` 调用，补防回退测试。
 
 计划提交（`starcat-discovery-api`）：
 
-- [ ] `feat(star-history): 新增仓库星标历史缓存` — 实际 commit：`待回填`
-- [ ] `test(star-history): 保护每日快照生产链路` — 实际 commit：`待回填`
+- [x] `feat(star-history): 新增仓库星标历史缓存` — 实际 commit：`3f7341c`（`starcat-discovery-api`）
+- [x] `test(star-history): 保护每日快照生产链路` — 实际 commit：`cc8d307`（`starcat-discovery-api`）
 
 ### 8.2 Provider、归一化和降采样
 
