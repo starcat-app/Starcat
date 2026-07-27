@@ -482,8 +482,8 @@
 - [x] 对照 DESIGN.md、UI 强制规范和现有截图；Mock 截图仅作为框架与密度基线，真实运行矩阵保持人工待验收。
 - [x] 审查三栏密度、最小窗口、README 切换、Star Chart、明暗主题、RTL 和长文案。
 - [x] 审查 plain button、Focus Ring、刷新、语义色、Reduce Motion 和 VoiceOver。
-- [ ] 逐项修复发现并独立提交。
-- [ ] 回填报告 findings 闭环和 commit 证据。
+- [x] 逐项修复发现并独立提交：R04-F01 `aaf79826`，R04-F02 `73876947`。
+- [x] 回填报告 findings 闭环和 commit 证据。
 
 ### 13.5 第五轮：测试、构建、文档、工程进度与提交历史
 
