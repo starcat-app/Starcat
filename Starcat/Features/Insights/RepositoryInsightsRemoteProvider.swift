@@ -1,0 +1,198 @@
+//
+//  RepositoryInsightsRemoteProvider.swift
+//  Starcat
+//
+//  仓库洞察远端指标的领域模型与 cache-first Provider。
+//
+//  本文件负责把类型化 GitHub Metrics 响应转换为可持久化洞察数据，并统一写入
+//  RepositoryInsightsCache；ViewModel 负责先展示缓存、再决定是否刷新网络。
+//
+
+import Foundation
+
+/// 协作活动范围与 Star 历史范围彼此独立。
+enum RepositoryActivityRange: String, CaseIterable, Codable, Identifiable, Sendable {
+    case week
+    case month
+    case quarter
+    case year
+
+    var id: String { rawValue }
+
+    var dayCount: Int {
+        switch self {
+        case .week: return 7
+        case .month: return 30
+        case .quarter: return 90
+        case .year: return 365
+        }
+    }
+
+    var cacheRange: RepositoryInsightsRangeKey {
+        switch self {
+        case .week: return .week
+        case .month: return .month
+        case .quarter: return .quarter
+        case .year: return .year
+        }
+    }
+
+    var titleKey: String {
+        "insights.repo.activity.range.\(rawValue)"
+    }
+}
+
+/// 一个活动范围内四个协作 KPI 的真实计数。
+struct RepositoryActivityCounts: Codable, Equatable, Sendable {
+    let createdPullRequests: Int
+    let mergedPullRequests: Int
+    let createdIssues: Int
+    let closedIssues: Int
+    let generatedAt: Date
+}
+
+/// ViewModel 读取缓存时需要同时知道是否过期，过期值仍先显示。
+struct RepositoryCachedActivityCounts: Equatable, Sendable {
+    let value: RepositoryActivityCounts
+    let fetchedAt: Date
+    let isStale: Bool
+}
+
+protocol RepositoryRemoteInsightsProviding: Sendable {
+    func cachedActivity(
+        repoID: Int64,
+        range: RepositoryActivityRange
+    ) async throws -> RepositoryCachedActivityCounts?
+
+    func refreshActivity(
+        repository: RepoIdentity,
+        range: RepositoryActivityRange
+    ) async throws -> RepositoryActivityCounts
+}
+
+struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProviding, Sendable {
+    let metricsClient: any GitHubRepositoryMetricsClient
+    let cache: any RepositoryInsightsCaching
+    let now: @Sendable () -> Date
+
+    init(
+        metricsClient: any GitHubRepositoryMetricsClient,
+        cache: any RepositoryInsightsCaching,
+        now: @escaping @Sendable () -> Date = Date.init
+    ) {
+        self.metricsClient = metricsClient
+        self.cache = cache
+        self.now = now
+    }
+
+    func cachedActivity(
+        repoID: Int64,
+        range: RepositoryActivityRange
+    ) async throws -> RepositoryCachedActivityCounts? {
+        guard let cached = try await cache.load(
+            repoId: repoID,
+            dataset: .activityCounts,
+            range: range.cacheRange,
+            as: RepositoryActivityCounts.self
+        ) else {
+            return nil
+        }
+        return RepositoryCachedActivityCounts(
+            value: cached.value,
+            fetchedAt: cached.fetchedAt,
+            isStale: cached.isStale(at: now())
+        )
+    }
+
+    func refreshActivity(
+        repository: RepoIdentity,
+        range: RepositoryActivityRange
+    ) async throws -> RepositoryActivityCounts {
+        let fetchedAt = now()
+        let value = try await metricsClient.loadActivityCounts(
+            repository: repository,
+            range: range,
+            now: fetchedAt
+        )
+        guard let repoID = repository.ghRepoID else {
+            // Manage 详情只会传持久化 Repo；无 ID 代表调用方越过了产品边界，不能写错缓存键。
+            throw GitHubRepositoryMetricsError.invalidResponse
+        }
+        try await cache.store(
+            value,
+            repoId: repoID,
+            dataset: .activityCounts,
+            range: range.cacheRange,
+            fetchedAt: fetchedAt,
+            responseETag: nil,
+            defaultBranchSHA: nil
+        )
+        return value
+    }
+}
+
+extension GitHubRepositoryMetricsClient {
+    /// Search Issues 的 `total_count` 已是目标 KPI；每个口径只取一条明细，减少响应体。
+    func loadActivityCounts(
+        repository: RepoIdentity,
+        range: RepositoryActivityRange,
+        now: Date
+    ) async throws -> RepositoryActivityCounts {
+        let dateRange = RepositoryActivityDateRange(range: range, now: now)
+        let base = "repo:\(repository.owner)/\(repository.name)"
+
+        let createdPullRequests = try await searchIssues(
+            repository: repository,
+            query: "\(base) is:pr created:\(dateRange.queryValue)",
+            sort: "created",
+            order: "desc",
+            perPage: 1
+        ).value.totalCount
+        let mergedPullRequests = try await searchIssues(
+            repository: repository,
+            query: "\(base) is:pr merged:\(dateRange.queryValue)",
+            sort: "updated",
+            order: "desc",
+            perPage: 1
+        ).value.totalCount
+        let createdIssues = try await searchIssues(
+            repository: repository,
+            query: "\(base) is:issue created:\(dateRange.queryValue)",
+            sort: "created",
+            order: "desc",
+            perPage: 1
+        ).value.totalCount
+        let closedIssues = try await searchIssues(
+            repository: repository,
+            query: "\(base) is:issue closed:\(dateRange.queryValue)",
+            sort: "updated",
+            order: "desc",
+            perPage: 1
+        ).value.totalCount
+
+        return RepositoryActivityCounts(
+            createdPullRequests: createdPullRequests,
+            mergedPullRequests: mergedPullRequests,
+            createdIssues: createdIssues,
+            closedIssues: closedIssues,
+            generatedAt: now
+        )
+    }
+}
+
+/// GitHub Search 使用日期而非秒级时间；固定 UTC 避免本地时区跨日导致同一刷新口径漂移。
+private struct RepositoryActivityDateRange {
+    let queryValue: String
+
+    init(range: RepositoryActivityRange, now: Date) {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let start = calendar.date(byAdding: .day, value: -range.dayCount, to: now) ?? now
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        queryValue = "\(formatter.string(from: start))..\(formatter.string(from: now))"
+    }
+}

@@ -17,6 +17,17 @@ enum RepositoryInsightsSectionState<Value: Equatable & Sendable>: Equatable, Sen
     case failed
 }
 
+/// 远端区块需要在失败时保留旧缓存，因此与纯本地区块使用不同状态模型。
+enum RepositoryRemoteInsightsSectionState<Value: Equatable & Sendable>: Equatable, Sendable {
+    case idle
+    case loading(cached: Value?)
+    case content(Value)
+    case stale(Value)
+    case generating(cached: Value?)
+    case unavailable(cached: Value?)
+    case failed(cached: Value?)
+}
+
 struct RepositoryReleaseInsight: Equatable, Sendable {
     let tagName: String
     let name: String?
@@ -115,18 +126,28 @@ final class RepositoryInsightsViewModel {
     }
 
     private let provider: any RepositoryLocalInsightsProviding
+    private let remoteProvider: (any RepositoryRemoteInsightsProviding)?
     private var generation: UInt64 = 0
+    private var remoteGeneration: UInt64 = 0
 
     private(set) var activeRepoID: Int64?
     private(set) var releaseState: RepositoryInsightsSectionState<RepositoryReleaseInsight> = .idle
     private(set) var healthState: RepositoryInsightsSectionState<RepositoryHealthInsight> = .idle
     private(set) var openSSFState: RepositoryInsightsSectionState<RepositoryOpenSSFInsight> = .idle
     private(set) var communityState: RepositoryInsightsSectionState<RepositoryCommunityInsight> = .idle
+    private(set) var activityRange: RepositoryActivityRange = .month
+    private(set) var activityState: RepositoryRemoteInsightsSectionState<RepositoryActivityCounts> = .idle
+    private(set) var isRefreshingActivity = false
 
-    init(provider: any RepositoryLocalInsightsProviding) {
+    init(
+        provider: any RepositoryLocalInsightsProviding,
+        remoteProvider: (any RepositoryRemoteInsightsProviding)? = nil
+    ) {
         self.provider = provider
+        self.remoteProvider = remoteProvider
     }
 
+    /// 本地 Provider 单测继续使用此入口；生产页面使用 `load(repo:isAuthenticated:)`。
     func load(repoId: Int64) async {
         generation &+= 1
         let requestedGeneration = generation
@@ -159,6 +180,130 @@ final class RepositoryInsightsViewModel {
                 apply(event)
             }
         }
+    }
+
+    func load(repo: Repo, isAuthenticated: Bool) async {
+        await load(repoId: repo.id)
+        await loadActivity(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: false)
+    }
+
+    func selectActivityRange(
+        _ range: RepositoryActivityRange,
+        repo: Repo,
+        isAuthenticated: Bool
+    ) async {
+        guard activityRange != range else { return }
+        activityRange = range
+        await loadActivity(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: false)
+    }
+
+    func refreshActivity(repo: Repo, isAuthenticated: Bool) async {
+        guard !isRefreshingActivity else { return }
+        await loadActivity(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
+    }
+
+    /// README 模式不保活远端刷新。generation 让已经返回的旧结果无法再写 UI。
+    func cancelRemoteLoading() {
+        remoteGeneration &+= 1
+        isRefreshingActivity = false
+    }
+
+    private func loadActivity(
+        repo: Repo,
+        isAuthenticated: Bool,
+        forceRefresh: Bool
+    ) async {
+        remoteGeneration &+= 1
+        let requestedGeneration = remoteGeneration
+        let selectedRange = activityRange
+        activityState = .loading(cached: nil)
+
+        guard isAuthenticated, let remoteProvider else {
+            activityState = .unavailable(cached: nil)
+            return
+        }
+
+        let cached: RepositoryCachedActivityCounts?
+        do {
+            cached = try await remoteProvider.cachedActivity(
+                repoID: repo.id,
+                range: selectedRange
+            )
+        } catch {
+            guard ownsRemoteResult(
+                generation: requestedGeneration,
+                repoID: repo.id,
+                range: selectedRange
+            ) else { return }
+            activityState = .failed(cached: nil)
+            return
+        }
+        guard ownsRemoteResult(
+            generation: requestedGeneration,
+            repoID: repo.id,
+            range: selectedRange
+        ) else { return }
+
+        if let cached {
+            activityState = cached.isStale ? .stale(cached.value) : .content(cached.value)
+            if !cached.isStale, !forceRefresh {
+                return
+            }
+        }
+
+        isRefreshingActivity = true
+        defer {
+            if requestedGeneration == remoteGeneration {
+                isRefreshingActivity = false
+            }
+        }
+        do {
+            let fresh = try await remoteProvider.refreshActivity(
+                repository: RepoIdentity(
+                    ghRepoID: repo.id,
+                    owner: repo.owner,
+                    name: repo.name
+                ),
+                range: selectedRange
+            )
+            guard ownsRemoteResult(
+                generation: requestedGeneration,
+                repoID: repo.id,
+                range: selectedRange
+            ) else { return }
+            activityState = .content(fresh)
+        } catch let error as GitHubRepositoryMetricsError {
+            guard ownsRemoteResult(
+                generation: requestedGeneration,
+                repoID: repo.id,
+                range: selectedRange
+            ) else { return }
+            switch error {
+            case .generating:
+                activityState = .generating(cached: cached?.value)
+            case .unauthorized, .forbidden, .unavailable:
+                activityState = .unavailable(cached: cached?.value)
+            default:
+                activityState = .failed(cached: cached?.value)
+            }
+        } catch {
+            guard ownsRemoteResult(
+                generation: requestedGeneration,
+                repoID: repo.id,
+                range: selectedRange
+            ) else { return }
+            activityState = .failed(cached: cached?.value)
+        }
+    }
+
+    private func ownsRemoteResult(
+        generation: UInt64,
+        repoID: Int64,
+        range: RepositoryActivityRange
+    ) -> Bool {
+        remoteGeneration == generation
+            && activeRepoID == repoID
+            && activityRange == range
     }
 
     private func apply(_ event: LoadEvent) {

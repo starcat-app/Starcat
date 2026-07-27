@@ -13,6 +13,75 @@ import Testing
 @Suite("Repository insights view model")
 struct RepositoryInsightsViewModelTests {
 
+    @Test("活动刷新失败保留 stale 缓存")
+    func staleActivitySurvivesRefreshFailure() async {
+        let cached = RepositoryActivityCounts(
+            createdPullRequests: 4,
+            mergedPullRequests: 3,
+            createdIssues: 2,
+            closedIssues: 1,
+            generatedAt: Date(timeIntervalSince1970: 1_000)
+        )
+        let remoteProvider = StubRepositoryRemoteInsightsProvider(
+            cachedHandler: { _, _ in
+                RepositoryCachedActivityCounts(
+                    value: cached,
+                    fetchedAt: cached.generatedAt,
+                    isStale: true
+                )
+            },
+            refreshHandler: { _, _ in throw StubError.failed }
+        )
+        let viewModel = RepositoryInsightsViewModel(
+            provider: emptyLocalProvider(),
+            remoteProvider: remoteProvider
+        )
+
+        await viewModel.load(repo: fixtureRepo(id: 11), isAuthenticated: true)
+
+        #expect(viewModel.activityState == .failed(cached: cached))
+        #expect(!viewModel.isRefreshingActivity)
+    }
+
+    @Test("较慢的旧活动范围不能覆盖新范围")
+    func staleActivityRangeIsDiscarded() async {
+        let remoteProvider = StubRepositoryRemoteInsightsProvider(
+            cachedHandler: { _, _ in nil },
+            refreshHandler: { _, range in
+                if range == .week {
+                    try await Task.sleep(for: .milliseconds(120))
+                }
+                return RepositoryActivityCounts(
+                    createdPullRequests: range.dayCount,
+                    mergedPullRequests: 0,
+                    createdIssues: 0,
+                    closedIssues: 0,
+                    generatedAt: Date()
+                )
+            }
+        )
+        let viewModel = RepositoryInsightsViewModel(
+            provider: emptyLocalProvider(),
+            remoteProvider: remoteProvider
+        )
+        let repo = fixtureRepo(id: 12)
+        await viewModel.load(repo: repo, isAuthenticated: false)
+
+        let oldLoad = Task {
+            await viewModel.selectActivityRange(.week, repo: repo, isAuthenticated: true)
+        }
+        try? await Task.sleep(for: .milliseconds(20))
+        await viewModel.selectActivityRange(.year, repo: repo, isAuthenticated: true)
+        await oldLoad.value
+
+        #expect(viewModel.activityRange == .year)
+        guard case .content(let counts) = viewModel.activityState else {
+            Issue.record("Expected current range content")
+            return
+        }
+        #expect(counts.createdPullRequests == RepositoryActivityRange.year.dayCount)
+    }
+
     @Test("默认数据源映射已有 Release、Health、OpenSSF 与 Community 缓存")
     func defaultProviderMapsExistingLocalData() async throws {
         let database = try InMemoryDatabaseManager()
@@ -166,6 +235,23 @@ struct RepositoryInsightsViewModelTests {
             RepositoryReleaseInsight(tagName: "new", name: nil, publishedAt: nil)
         ))
     }
+
+    private func emptyLocalProvider() -> StubRepositoryLocalInsightsProvider {
+        StubRepositoryLocalInsightsProvider(
+            release: { _ in nil },
+            health: { _ in nil },
+            openSSF: { _ in nil },
+            community: { _ in nil }
+        )
+    }
+
+    private func fixtureRepo(id: Int64) -> Repo {
+        var repo = Repo.makeMinimal(owner: "octo", name: "demo-\(id)")
+        repo.id = id
+        repo.isStarred = true
+        repo.cachedAt = "2026-07-27T00:00:00Z"
+        return repo
+    }
 }
 
 private enum StubError: Error {
@@ -192,5 +278,30 @@ private struct StubRepositoryLocalInsightsProvider: RepositoryLocalInsightsProvi
 
     func cachedCommunity(repoId: Int64) async throws -> RepositoryCommunityInsight? {
         try await community(repoId)
+    }
+}
+
+private struct StubRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProviding {
+    let cachedHandler: @Sendable (
+        Int64,
+        RepositoryActivityRange
+    ) async throws -> RepositoryCachedActivityCounts?
+    let refreshHandler: @Sendable (
+        RepoIdentity,
+        RepositoryActivityRange
+    ) async throws -> RepositoryActivityCounts
+
+    func cachedActivity(
+        repoID: Int64,
+        range: RepositoryActivityRange
+    ) async throws -> RepositoryCachedActivityCounts? {
+        try await cachedHandler(repoID, range)
+    }
+
+    func refreshActivity(
+        repository: RepoIdentity,
+        range: RepositoryActivityRange
+    ) async throws -> RepositoryActivityCounts {
+        try await refreshHandler(repository, range)
     }
 }

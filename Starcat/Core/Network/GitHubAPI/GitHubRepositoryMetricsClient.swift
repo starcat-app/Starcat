@@ -363,7 +363,7 @@ struct GitHubRepositoryMetricsEndpointBuilder: Sendable {
 /// 生产实现。actor 的串行执行是有意的限流策略，不应改回一次并发加载全部区块。
 actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
     private let httpClient: any RAGHTTPClientProtocol
-    private let token: String?
+    private let tokenProvider: any GitHubTokenProviding
     private let endpoints: GitHubRepositoryMetricsEndpointBuilder
     private let now: @Sendable () -> Date
     private let requestGate = GitHubMetricsRequestGate()
@@ -375,7 +375,20 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.httpClient = httpClient
-        self.token = token?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.tokenProvider = FixedGitHubTokenProvider(token: token)
+        self.endpoints = GitHubRepositoryMetricsEndpointBuilder(baseURL: baseURL)
+        self.now = now
+    }
+
+    /// 洞察使用动态 Token Provider，登录 / 登出后不需要重建 AppDependencies。
+    init(
+        httpClient: any RAGHTTPClientProtocol = URLSessionRAGHTTPClient(),
+        tokenProvider: any GitHubTokenProviding,
+        baseURL: URL = URL(string: "https://api.github.com")!,
+        now: @escaping @Sendable () -> Date = Date.init
+    ) {
+        self.httpClient = httpClient
+        self.tokenProvider = tokenProvider
         self.endpoints = GitHubRepositoryMetricsEndpointBuilder(baseURL: baseURL)
         self.now = now
     }
@@ -496,7 +509,9 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         request.setValue("Starcat", forHTTPHeaderField: "User-Agent")
-        if let token, !token.isEmpty {
+        let currentToken = await tokenProvider.currentToken()
+        if let token = currentToken?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         if let ifNoneMatch, !ifNoneMatch.isEmpty {
@@ -588,6 +603,14 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
 
 private struct GitHubMetricsErrorResponse: Decodable {
     let message: String
+}
+
+private struct FixedGitHubTokenProvider: GitHubTokenProviding {
+    let token: String?
+
+    func currentToken() async -> String? {
+        token
+    }
 }
 
 /// actor 可重入，因此用 continuation gate 保证“正在 await 的网络请求”也占有串行槽位。

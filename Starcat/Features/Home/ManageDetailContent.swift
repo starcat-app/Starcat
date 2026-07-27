@@ -138,13 +138,19 @@ struct ManageDetailContent: View {
                     let insightsViewModel = repositoryInsightsViewModel
                         ?? makeRepositoryInsightsViewModel()
                     repositoryInsightsViewModel = insightsViewModel
-                    await insightsViewModel.load(repoId: repo.id)
+                    await insightsViewModel.load(
+                        repo: repo,
+                        isAuthenticated: authSession.state.isAuthenticated
+                    )
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onChange(of: contentMode) { _, newMode in
-            guard newMode == .insights else { return }
+            guard newMode == .insights else {
+                repositoryInsightsViewModel?.cancelRemoteLoading()
+                return
+            }
             // README 可能在切换前已把 Hero 折叠；洞察页首帧先恢复顶部 Metadata，
             // 后续再由自己的 ScrollView 持续上报 offset。
             onScrollReport(RepoDetailScrollReport(offsetY: 0, scrollOverflow: 0))
@@ -164,6 +170,10 @@ struct ManageDetailContent: View {
                 healthRepository: dependencies.repoHealthRepository,
                 openSSFRepository: dependencies.openSSFScoreRepository,
                 insightsCache: dependencies.repositoryInsightsCache
+            ),
+            remoteProvider: DefaultRepositoryRemoteInsightsProvider(
+                metricsClient: dependencies.repositoryMetricsClient,
+                cache: dependencies.repositoryInsightsCache
             )
         )
     }

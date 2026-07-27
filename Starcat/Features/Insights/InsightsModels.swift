@@ -286,7 +286,8 @@ struct RepositoryActivityMetric: Identifiable, Equatable, Sendable {
     let id: String
     let titleKey: String
     let value: Int
-    let delta: Int
+    /// 只有存在同口径上一周期数据时才显示环比；首版 GitHub Search 实时计数不伪造变化率。
+    let delta: Int?
     let systemImage: String
     let tintName: String
 }

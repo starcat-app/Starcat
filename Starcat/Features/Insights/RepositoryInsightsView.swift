@@ -38,6 +38,7 @@ struct RepositoryInsightsView: View {
     @State private var isRefreshingStars = false
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(AuthSession.self) private var authSession
 
     init(
         repo: Repo,
@@ -182,15 +183,162 @@ struct RepositoryInsightsView: View {
             subtitle: "insights.repo.section.activity.subtitle",
             systemImage: "waveform.path.ecg"
         ) {
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 128), spacing: 10)],
-                spacing: 10
-            ) {
-                ForEach(snapshot.activityMetrics) { metric in
-                    activityMetric(metric)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Picker("insights.repo.activity.range.label", selection: activityRangeBinding) {
+                        ForEach(RepositoryActivityRange.allCases) { range in
+                            Text(LocalizedStringKey(range.titleKey)).tag(range)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 280)
+
+                    Spacer(minLength: 8)
+
+                    SyncIconButton(
+                        isRefreshing: viewModel.isRefreshingActivity,
+                        disabled: viewModel.isRefreshingActivity,
+                        tooltip: String.l10n("insights.repo.activity.refresh")
+                    ) {
+                        Task {
+                            await viewModel.refreshActivity(
+                                repo: repo,
+                                isAuthenticated: authSession.state.isAuthenticated
+                            )
+                        }
+                    }
+                }
+
+                if let counts = displayedActivityCounts {
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 128), spacing: 10)],
+                        spacing: 10
+                    ) {
+                        ForEach(activityMetrics(from: counts)) { metric in
+                            activityMetric(metric)
+                        }
+                    }
+                    if let message = activityStatusMessage {
+                        Label(message.key, systemImage: message.systemImage)
+                            .font(interfaceScale.font(.captionSmall))
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    switch viewModel.activityState {
+                    case .idle, .loading:
+                        sectionProgress
+                    case .generating:
+                        sectionMessage(
+                            "insights.repo.state.generating",
+                            systemImage: "clock.arrow.circlepath"
+                        )
+                    case .unavailable:
+                        sectionMessage(
+                            authSession.state.isAuthenticated
+                                ? "insights.repo.state.noData"
+                                : "insights.repo.state.loginRequired",
+                            systemImage: "person.crop.circle.badge.exclamationmark"
+                        )
+                    case .failed:
+                        sectionMessage(
+                            "error.loadFailed",
+                            systemImage: "exclamationmark.triangle"
+                        )
+                    case .content, .stale:
+                        EmptyView()
+                    }
                 }
             }
         }
+    }
+
+    private var activityRangeBinding: Binding<RepositoryActivityRange> {
+        Binding(
+            get: { viewModel.activityRange },
+            set: { range in
+                Task {
+                    await viewModel.selectActivityRange(
+                        range,
+                        repo: repo,
+                        isAuthenticated: authSession.state.isAuthenticated
+                    )
+                }
+            }
+        )
+    }
+
+    private var displayedActivityCounts: RepositoryActivityCounts? {
+        switch viewModel.activityState {
+        case .content(let value), .stale(let value):
+            return value
+        case .loading(let cached),
+             .generating(let cached),
+             .unavailable(let cached),
+             .failed(let cached):
+            return cached
+        case .idle:
+            return nil
+        }
+    }
+
+    private var activityStatusMessage: (key: LocalizedStringKey, systemImage: String)? {
+        switch viewModel.activityState {
+        case .stale:
+            return ("insights.repo.state.stale", "clock.badge.exclamationmark")
+        case .generating:
+            return ("insights.repo.state.generating", "clock.arrow.circlepath")
+        case .unavailable:
+            return (
+                authSession.state.isAuthenticated
+                    ? "insights.repo.state.noData"
+                    : "insights.repo.state.loginRequired",
+                "person.crop.circle.badge.exclamationmark"
+            )
+        case .failed:
+            return ("insights.repo.state.refreshFailed", "exclamationmark.triangle")
+        case .idle, .loading, .content:
+            return nil
+        }
+    }
+
+    private func activityMetrics(
+        from counts: RepositoryActivityCounts
+    ) -> [RepositoryActivityMetric] {
+        [
+            RepositoryActivityMetric(
+                id: "createdPullRequests",
+                titleKey: "insights.repo.activity.createdPullRequests",
+                value: counts.createdPullRequests,
+                delta: nil,
+                systemImage: "arrow.triangle.pull",
+                tintName: "purple"
+            ),
+            RepositoryActivityMetric(
+                id: "mergedPullRequests",
+                titleKey: "insights.repo.activity.mergedPullRequests",
+                value: counts.mergedPullRequests,
+                delta: nil,
+                systemImage: "arrow.triangle.merge",
+                tintName: "green"
+            ),
+            RepositoryActivityMetric(
+                id: "createdIssues",
+                titleKey: "insights.repo.activity.createdIssues",
+                value: counts.createdIssues,
+                delta: nil,
+                systemImage: "record.circle",
+                tintName: "orange"
+            ),
+            RepositoryActivityMetric(
+                id: "closedIssues",
+                titleKey: "insights.repo.activity.closedIssues",
+                value: counts.closedIssues,
+                delta: nil,
+                systemImage: "checkmark.circle",
+                tintName: "blue"
+            )
+        ]
     }
 
     private func activityMetric(_ metric: RepositoryActivityMetric) -> some View {
@@ -210,13 +358,15 @@ struct RepositoryInsightsView: View {
                 Text(metric.value.formatted())
                     .font(interfaceScale.font(size: 22, weight: .semibold))
                     .monospacedDigit()
-                Text(verbatim: metric.delta >= 0 ? "+\(metric.delta)%" : "\(metric.delta)%")
-                    .font(interfaceScale.font(.captionSmall, weight: .medium))
-                    .foregroundStyle(metric.delta >= 0 ? .green : .red)
-                    .monospacedDigit()
+                if let delta = metric.delta {
+                    Text(verbatim: delta >= 0 ? "+\(delta)%" : "\(delta)%")
+                        .font(interfaceScale.font(.captionSmall, weight: .medium))
+                        .foregroundStyle(delta >= 0 ? .green : .red)
+                        .monospacedDigit()
+                }
             }
 
-            Text("insights.repo.period.thirtyDays")
+            Text(LocalizedStringKey(viewModel.activityRange.titleKey))
                 .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
         }

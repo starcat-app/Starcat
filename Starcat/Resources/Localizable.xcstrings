@@ -127366,11 +127366,39 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "提交" } }
       }
     },
+    "insights.repo.activity.closedIssues" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Closed Issues" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已关闭 Issue" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "已關閉 Issue" } }
+      }
+    },
+    "insights.repo.activity.createdIssues" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "New Issues" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "新建 Issue" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "新建 Issue" } }
+      }
+    },
+    "insights.repo.activity.createdPullRequests" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "New Pull Requests" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "新建 Pull Request" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "新建 Pull Request" } }
+      }
+    },
     "insights.repo.activity.issues" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Issues" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Issue" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Issue" } }
+      }
+    },
+    "insights.repo.activity.mergedPullRequests" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Merged Pull Requests" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已合并 Pull Request" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "已合併 Pull Request" } }
       }
     },
     "insights.repo.activity.pullRequests" : {
@@ -127385,6 +127413,48 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Releases" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "发布" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "發布" } }
+      }
+    },
+    "insights.repo.activity.range.label" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Activity range" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "活动范围" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "活動範圍" } }
+      }
+    },
+    "insights.repo.activity.range.month" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "1 mo" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "1 月" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "1 月" } }
+      }
+    },
+    "insights.repo.activity.range.quarter" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "3 mo" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "3 月" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "3 月" } }
+      }
+    },
+    "insights.repo.activity.range.week" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "1 wk" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "1 周" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "1 週" } }
+      }
+    },
+    "insights.repo.activity.range.year" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "1 yr" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "1 年" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "1 年" } }
+      }
+    },
+    "insights.repo.activity.refresh" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Refresh repository activity" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "刷新仓库活动" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "重新整理儲存庫活動" } }
       }
     },
     "insights.repo.contributor.commitsFormat" : {
@@ -127466,9 +127536,9 @@
     },
     "insights.repo.section.activity.subtitle" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Core repository activity over the last 30 days" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "近 30 天的核心仓库活动与环比变化" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "近 30 天的核心儲存庫活動與環比變化" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Pull request and issue activity in the selected range" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "所选范围内的 Pull Request 与 Issue 活动" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "所選範圍內的 Pull Request 與 Issue 活動" } }
       }
     },
     "insights.repo.section.commits" : {
@@ -127784,6 +127854,34 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "No data" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂无数据" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "暫無資料" } }
+      }
+    },
+    "insights.repo.state.generating" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "GitHub is preparing statistics" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "GitHub 正在准备统计数据" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "GitHub 正在準備統計資料" } }
+      }
+    },
+    "insights.repo.state.loginRequired" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sign in to load GitHub activity" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "登录后加载 GitHub 活动" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "登入後載入 GitHub 活動" } }
+      }
+    },
+    "insights.repo.state.refreshFailed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Refresh failed; showing cached data" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "刷新失败，继续显示缓存数据" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "重新整理失敗，繼續顯示快取資料" } }
+      }
+    },
+    "insights.repo.state.stale" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Showing cached data while refreshing" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在刷新，暂时显示缓存数据" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "正在重新整理，暫時顯示快取資料" } }
       }
     },
     "insights.time.thisWeek" : {
