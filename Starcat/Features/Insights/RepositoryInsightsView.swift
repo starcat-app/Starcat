@@ -896,6 +896,9 @@ struct RepositoryInsightsView: View {
                                 AxisGridLine().foregroundStyle(Color.secondary.opacity(0.12))
                             }
                         }
+                        // 日期轴默认把首个柱子的中心放在绘图区边缘；保留两端空间，
+                        // 避免柱体贴住 Y 轴，同时让末端柱体不会被卡片边界裁切。
+                        .chartXScale(range: .plotDimension(startPadding: 12, endPadding: 12))
                         .frame(height: 176)
                         .accessibilityLabel(Text("insights.repo.section.commits"))
                         .accessibilityValue(
