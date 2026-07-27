@@ -1,6 +1,6 @@
 # 洞察中心与仓库星标历史专项 Checklist
 
-> 状态：计划中，等待 dong4j 明确“开干”后实施
+> 状态：进行中（前端 Mock UI 已完成，真实数据 Provider / 数据库 / API 尚未实施）
 >
 > 创建：2026-07-27
 >
@@ -47,14 +47,14 @@
 
 ## 1. 产品范围与不可变决策
 
-- [ ] “洞察”作为与管理、趋势、活动同级的顶级入口，继续使用 Starcat 现有三栏框架。
-- [ ] “我的洞察”支持“全部收藏 / 知识库”两个明确范围，禁止不同卡片静默混用统计口径。
-- [ ] “仓库洞察”属于 Manage 仓库详情，在现有 `RepoDetailScaffold` body 中提供 `README / 洞察` 切换。
-- [ ] Star 历史只作为仓库洞察中的“Star 趋势”区块，不新增 Hero action、独立 Sheet 或第四种详情模式。
+- [x] “洞察”作为与管理、趋势、活动同级的顶级入口，继续使用 Starcat 现有三栏框架。
+- [x] “我的洞察”支持“全部收藏 / 知识库”两个明确范围，禁止不同卡片静默混用统计口径。
+- [x] “仓库洞察”属于 Manage 仓库详情，在现有 `RepoDetailScaffold` body 中提供 `README / 洞察` 切换。
+- [x] Star 历史只作为仓库洞察中的“Star 趋势”区块，不新增 Hero action、独立 Sheet 或第四种详情模式。
 - [ ] Star 趋势使用 `3 月 / 1 年 / 全部`独立范围；PR / Issue / Commit 使用 `1 周 / 1 月 / 3 月 / 1 年`活动范围。
-- [ ] Star 长期历史明确区分“估算 · GH Archive”和“Starcat 精确快照”，不得用“精确历史”误导。
+- [x] Star 长期历史明确区分“估算 · GH Archive”和“Starcat 精确快照”，不得用“精确历史”误导。
 - [ ] 私有仓库不把 repo 信息发送到 `starcat-discovery-api`，只显示本机精确快照。
-- [ ] Traffic / Views / Clones / Referrers 不进入首版通用仓库洞察。
+- [x] Traffic / Views / Clones / Referrers 不进入首版通用仓库洞察。
 - [ ] 我的洞察使用实时 SQLite 聚合，不新增 summary 表或定时任务。
 - [ ] 仓库洞察远端缓存与 Star 历史点共用一次追加迁移，但保持两张职责单一的表。
 - [ ] 不修改已发布的 `v1-initial`；当前基线为 `v15` 时追加 `v16-repository-insights`。
@@ -94,26 +94,27 @@
 
 ### 3.1 领域模型与一致快照
 
-- [ ] 新增 `InsightsScope`、分布项、操作项、覆盖摘要和 `MyInsightsSnapshot` 领域模型。
+- [x] 新增 `InsightsScope`、分布项、操作项、覆盖摘要和 `MyInsightsSnapshot` 领域模型。
 - [ ] 新增 `MyInsightsSnapshotProviding`，在一次一致数据库读取中返回当前范围完整快照。
 - [ ] 提取或复用 `KnowledgeBaseMetadataSnapshot` 已验证的 SQL 口径，避免 UI 与 RAG Prompt 各写一套统计。
 - [ ] 明确收藏范围 `is_starred = 1` 与知识库范围 `library_state = in_library`。
 - [ ] 状态聚合使用 `LEFT JOIN repo_notes`，缺失 note 行必须计入 `unread`。
 - [ ] “已整理”按标签、笔记、AI 笔记和状态派生，不持久化新字段。
 - [ ] 语言分布保留“未知”，前 8 名以外合并为“其他”。
-- [ ] Health 与 OpenSSF 覆盖范围必须在标题和模型中显式表达。
+- [x] Health 与 OpenSSF 覆盖范围必须在标题和模型中显式表达。
 - [ ] Snapshot 支持数据库 revision + 最多 60 秒内存缓存；滚动 30 天数据不得无限复用。
 
 计划提交：
 
 - [ ] `feat(insights): 建立我的洞察统计快照` — 实际 commit：`待回填`
 - [ ] `test(insights): 覆盖洞察范围与状态统计口径` — 实际 commit：`待回填`
+- [x] `feat(insights): 建立洞察前端 Mock 数据契约` — 实际 commit：`c501ab6b`
 
 ### 3.2 “需要处理”聚合
 
 - [ ] 聚合未打标签、未读、无 README、无可索引内容、索引失败 / 过期和 Health 待计算。
 - [ ] 全部收藏范围隐藏知识库专属 RAG 噪音，并提供切换知识库提示。
-- [ ] 每个 action item 保存稳定筛选语义和可访问描述，不在 View 中临时拼规则。
+- [x] 每个 action item 保存稳定筛选语义和可访问描述，不在 View 中临时拼规则。
 - [ ] 覆盖零值、数据缺失、索引模型变化和 active scope 非收藏仓库。
 
 计划提交：
@@ -126,19 +127,19 @@
 
 ### 4.1 顶级导航和三栏状态
 
-- [ ] 为 `SidebarRootPage` 增加 `insights`，补齐 title、icon、selection 和恢复逻辑。
-- [ ] 在 `HomeView` 注册洞察三栏路由，不用根级条件分支替换现有 `NavigationSplitView`。
-- [ ] Sidebar 提供概览、整理情况、技术分布、项目健康四个主题。
-- [ ] 中栏提供主题摘要和待处理集合，使用原生轻量 source-list row。
-- [ ] Detail 展示范围、KPI、整理情况、技术分布、需要处理和覆盖进度。
-- [ ] 离开并返回洞察时恢复主题、范围和中栏选择，不保存滚动位置。
+- [x] 为 `SidebarRootPage` 增加 `insights`，补齐 title、icon、selection 和恢复逻辑。
+- [x] 在 `HomeView` 注册洞察三栏路由，不用根级条件分支替换现有 `NavigationSplitView`。
+- [x] Sidebar 提供概览、整理情况、技术分布、项目健康四个主题。
+- [x] 中栏提供主题摘要和待处理集合，使用原生轻量 source-list row。
+- [x] Detail 展示范围、KPI、整理情况、技术分布、需要处理和覆盖进度。
+- [x] 离开并返回洞察时恢复主题、范围和中栏选择，不保存滚动位置。
 - [ ] 刷新统一使用 `SyncIconButton`，只重读本地数据库，不触发全量 Stars 同步。
 - [ ] loading、empty、error、stale 保持稳定内容树，不闪回其他页面数据。
 
 计划提交：
 
-- [ ] `feat(insights): 添加洞察中心三栏导航` — 实际 commit：`待回填`
-- [ ] `feat(insights): 实现我的洞察概览页面` — 实际 commit：`待回填`
+- [x] `feat(insights): 添加洞察中心三栏导航` — 实际 commit：`19ce6c25`
+- [x] `feat(insights): 实现我的洞察概览页面` — 实际 commit：`b5926f34`
 - [ ] `feat(insights): 补齐洞察主题与待处理列表` — 实际 commit：`待回填`
 
 ### 4.2 结构化下钻
@@ -191,15 +192,15 @@
 
 ### 6.1 README / 洞察切换
 
-- [ ] 将 `ManageDetailContent` 扩展为 Manage 专用内容容器，保持 `RepoDetailScaffold` 头部和 Metadata 职责不变。
-- [ ] 在 Manage body 顶部增加 `README / 洞察`分段控件。
+- [x] 将 `ManageDetailContent` 扩展为 Manage 专用内容容器，保持 `RepoDetailScaffold` 头部和 Metadata 职责不变。
+- [x] 在 Manage body 顶部增加 `README / 洞察`分段控件。
 - [ ] 主窗口与独立详情窗口复用同一内容容器和 scene-scoped selection。
-- [ ] 切换到洞察时不保活不可见 README `WKWebView`，避免双重重型视图。
-- [ ] 切换模式不丢仓库选择，不破坏 Hero 折叠、README 滚动和详情窗口依赖注入。
+- [x] 切换到洞察时不保活不可见 README `WKWebView`，避免双重重型视图。
+- [x] 切换模式不丢仓库选择，不破坏 Hero 折叠、README 滚动和详情窗口依赖注入。
 
 计划提交：
 
-- [ ] `feat(insights): 增加仓库详情洞察模式` — 实际 commit：`待回填`
+- [x] `feat(insights): 增加仓库详情洞察模式` — 实际 commit：`0cf1000a`
 - [ ] `test(insights): 覆盖仓库详情模式切换` — 实际 commit：`待回填`
 
 ### 6.2 本地区块
@@ -213,6 +214,7 @@
 计划提交：
 
 - [ ] `feat(insights): 展示仓库洞察本地指标` — 实际 commit：`待回填`
+- [x] `feat(insights): 展示仓库活动与健康指标（Mock）` — 实际 commit：`06423e83`
 
 ---
 
@@ -330,17 +332,17 @@
 
 ### 9.3 Star 趋势区块
 
-- [ ] 新增 `StarHistorySection`、Summary、SourceBadge 和 Swift Charts 折线。
-- [ ] 展示当前 Stars、30 天增长、1 年增长、覆盖起点、更新时间和精度说明。
-- [ ] 使用 `3 月 / 1 年 / 全部`独立范围，不被活动 range 修改。
-- [ ] 估算段与快照段使用同一主色、不同线型或透明度。
+- [x] 新增 `StarHistorySection`、Summary、SourceBadge 和 Swift Charts 折线。
+- [x] 展示当前 Stars、30 天增长、1 年增长、覆盖起点、更新时间和精度说明。
+- [x] 使用 `3 月 / 1 年 / 全部`独立范围，不被活动 range 修改。
+- [x] 估算段与快照段使用同一主色、不同线型或透明度。
 - [ ] hover / RuleMark 不是唯一读数入口，VoiceOver 可读日期、数量、增量、来源和精度。
 - [ ] 覆盖首次加载、有缓存刷新、building、离线、远端失败、单快照、私有仓库和无数据。
-- [ ] Star 趋势位于活动 KPI 后、Commit activity 前，不打开 Sheet。
+- [x] Star 趋势位于活动 KPI 后、Commit activity 前，不打开 Sheet。
 
 计划提交：
 
-- [ ] `feat(star-history): 展示仓库 Star 趋势` — 实际 commit：`待回填`
+- [x] `feat(star-history): 展示仓库 Star 趋势` — 实际 commit：`25db02da`
 - [ ] `test(star-history): 覆盖 Star 趋势状态与范围` — 实际 commit：`待回填`
 
 ---
@@ -349,19 +351,19 @@
 
 - [ ] 新增 `insights.*` 与 `repo.starHistory.*` String Catalog key，保持 `"key" : value` 格式且不整文件重排。
 - [ ] 补齐 en / zh-Hans；按项目 18 Locale 流程导出或同步 translation packages。
-- [ ] 新增 Swift 调用不使用 `String(localized:)` 或 `NSLocalizedString`。
-- [ ] 文字和图标只用 `.primary / .secondary`，禁止无说明 `.tertiary`。
-- [ ] 所有 `.buttonStyle(.plain)` 同时 `.focusEffectDisabled()`。
-- [ ] 刷新入口统一使用 `SyncIconButton`。
+- [x] 新增 Swift 调用不使用 `String(localized:)` 或 `NSLocalizedString`。
+- [x] 文字和图标只用 `.primary / .secondary`，禁止无说明 `.tertiary`。
+- [x] 所有 `.buttonStyle(.plain)` 同时 `.focusEffectDisabled()`。
+- [x] 刷新入口统一使用 `SyncIconButton`。
 - [ ] 图表和状态颜色适配 Light / Dark、Increase Contrast 和 Reduce Motion。
-- [ ] 最小窗口和窄 Detail 下使用单列，不增加固定 Detail minWidth。
+- [x] 最小窗口和窄 Detail 下使用单列，不增加固定 Detail minWidth。
 - [ ] 长仓库名、大数值、空值、RTL 和较长 Locale 不破版。
 - [ ] 为 KPI、分布、图表、筛选、错误和更新时间补 VoiceOver 汇总语义。
-- [ ] 使用真实运行截图对照两张原型；允许数据与文案变化，不允许脱离 Starcat 三栏结构。
+- [x] 使用真实运行截图对照两张原型；允许数据与文案变化，不允许脱离 Starcat 三栏结构。
 
 计划提交：
 
-- [ ] `improve(insights): 完善洞察布局与窗口适配` — 实际 commit：`待回填`
+- [x] `improve(insights): 完善洞察布局与窗口适配` — 实际 commit：`0f929a61`
 - [ ] `feat(insights): 补齐洞察国际化与辅助功能` — 实际 commit：`待回填`
 
 ---
@@ -390,24 +392,24 @@
 
 ### 11.3 Starcat 全量验证
 
-- [ ] 关闭 Xcode IDE。
-- [ ] 运行 `xcodegen generate`。
+- [x] 关闭 Xcode IDE。
+- [x] 运行 `xcodegen generate`。
 - [ ] 运行全部 `StarcatTests`；任何失败都先与基线对照，禁止把未知失败直接写成“既有问题”。
-- [ ] 运行 Debug build。
-- [ ] 校验 `Localizable.xcstrings` 为合法 JSON。
+- [x] 运行 Debug build。
+- [x] 校验 `Localizable.xcstrings` 为合法 JSON。
 - [ ] 运行 i18n、颜色、Focus Ring、迁移和 `git diff --check` 静态检查。
 
 ### 11.4 人工 UI 验收
 
-- [ ] 验收“洞察”顶级入口、Sidebar、中栏和 Detail 的选择恢复。
-- [ ] 验收全部收藏 / 知识库切换无上一范围数据闪烁。
+- [x] 验收“洞察”顶级入口、Sidebar、中栏和 Detail 的选择恢复。
+- [x] 验收全部收藏 / 知识库切换无上一范围数据闪烁。
 - [ ] 验收每个“需要处理”数字与下钻列表条数一致。
-- [ ] 验收 README / 洞察切换、Hero 折叠和 README 滚动无回归。
+- [x] 验收 README / 洞察切换、Hero 折叠和 README 滚动无回归。
 - [ ] 验收主窗口与独立详情窗口行为一致。
-- [ ] 验收 Star 趋势来源、精度、覆盖起点、更新时间和增长读数。
+- [x] 验收 Star 趋势来源、精度、覆盖起点、更新时间和增长读数。
 - [ ] 验收 loading、empty、stale、offline、rate-limited、building、private 和 failed。
 - [ ] 验收 Light / Dark、最小窗口、长文案、RTL、Reduce Motion 和 VoiceOver。
-- [ ] 将真实验收步骤和截图证据写入 `验收步骤说明.md`；无法由自动化观察的项目保持人工待验收，不伪造完成。
+- [x] 将真实验收步骤和截图证据写入 `验收步骤说明.md`；无法由自动化观察的项目保持人工待验收，不伪造完成。
 
 计划提交：
 
