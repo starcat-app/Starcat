@@ -224,17 +224,17 @@
 
 ### 7.1 Client 抽取
 
-- [ ] 从 RAG Remote Context 中提取共享认证、API version、URL、Rate Limit 和状态码处理。
-- [ ] 新增 `GitHubRepositoryMetricsClient`，返回类型化 DTO / 领域模型，不返回面向 LLM 的文本。
-- [ ] RAG Remote Context 改为类型化 Client 的消费者，行为和审计契约保持不变。
-- [ ] 支持 Search Issues、commit activity、contributors 和 community profile。
-- [ ] `202`、`403`、`429`、`404`、`422`、`Retry-After` 和 rate reset 映射为稳定错误。
-- [ ] 远端请求串行或低并发执行，避免触发 secondary rate limit。
+- [x] 从 RAG Remote Context 中提取共享认证、API version、URL、Rate Limit 和状态码处理。
+- [x] 新增 `GitHubRepositoryMetricsClient`，返回类型化 DTO / 领域模型，不返回面向 LLM 的文本。
+- [x] RAG Remote Context 改为类型化 Client 的消费者，行为和审计契约保持不变。
+- [x] 支持 Search Issues、commit activity、contributors 和 community profile。
+- [x] `202`、`403`、`429`、`404`、`422`、`Retry-After` 和 rate reset 映射为稳定错误。
+- [x] 远端请求串行或低并发执行，避免触发 secondary rate limit。
 
 计划提交：
 
-- [ ] `refactor(insights): 提取类型化 GitHub 仓库指标客户端` — 实际 commit：`待回填`
-- [ ] `test(insights): 覆盖 GitHub 指标错误与限流` — 实际 commit：`待回填`
+- [x] `refactor(insights): 提取类型化 GitHub 仓库指标客户端` — 实际 commit：`1fcef65e`
+- [x] `test(insights): 覆盖 GitHub 指标错误与限流` — 实际 commit：`1fcef65e`（测试与对应实现同提交）
 
 ### 7.2 活动与社区数据
 
