@@ -239,7 +239,7 @@
 ### 7.2 活动与社区数据
 
 - [x] 实现新建 / 合并 PR、新建 / 关闭 Issue 的时间范围查询。
-- [ ] 实现最近 52 周 Commit activity，并在客户端按范围裁剪。
+- [x] 实现最近 52 周 Commit activity，并在客户端按范围裁剪。
 - [ ] 实现 contributors、community profile 和最近活动时间线。
 - [x] Activity range 使用 `1 周 / 1 月 / 3 月 / 1 年`，不会改变 Star 趋势范围。
 - [ ] 有缓存时先显示；刷新按钮防重复点击；离线和限流保留旧数据。
