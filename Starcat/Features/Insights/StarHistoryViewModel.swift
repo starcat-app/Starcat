@@ -60,6 +60,13 @@ final class StarHistoryViewModel {
         snapshot?.points.last?.count
     }
 
+    var latestChange: Int? {
+        guard let points = snapshot?.points, points.count >= 2 else {
+            return nil
+        }
+        return points[points.count - 1].count - points[points.count - 2].count
+    }
+
     var growth30Days: Int? {
         growth(sinceDays: 30, toleranceDays: 10)
     }

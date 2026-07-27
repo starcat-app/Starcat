@@ -392,6 +392,7 @@ struct RepositoryInsightsView: View {
                     starSources
 
                     starChart
+                    starReadingRow
 
                     HStack(spacing: 5) {
                         Text("insights.repo.star.coverage")
@@ -539,6 +540,19 @@ struct RepositoryInsightsView: View {
         return displayedStarPoints.min {
             abs($0.date.timeIntervalSince(selectedStarDate)) < abs($1.date.timeIntervalSince(selectedStarDate))
         }
+    }
+
+    private var readableStarPoint: StarHistoryPoint? {
+        selectedStarPoint ?? displayedStarPoints.last
+    }
+
+    private func change(for point: StarHistoryPoint) -> Int? {
+        guard let index = displayedStarPoints.firstIndex(where: { $0.id == point.id }),
+              index > displayedStarPoints.startIndex
+        else {
+            return nil
+        }
+        return point.count - displayedStarPoints[displayedStarPoints.index(before: index)].count
     }
 
     private func signed(_ value: Int?) -> String {
@@ -703,9 +717,58 @@ struct RepositoryInsightsView: View {
             format: String.l10n("insights.repo.star.chart.summaryFormat"),
             first.date.formatted(date: .abbreviated, time: .omitted),
             latest.date.formatted(date: .abbreviated, time: .omitted),
-            latest.count,
+            latest.count.formatted(),
             signed(starHistoryViewModel.growthOneYear)
         )
+    }
+
+    @ViewBuilder
+    private var starReadingRow: some View {
+        if let point = readableStarPoint {
+            let value = String(
+                format: String.l10n("insights.repo.star.reading.valueFormat"),
+                point.date.formatted(date: .abbreviated, time: .omitted),
+                point.count.formatted(),
+                change(for: point).map(signed)
+                    ?? String.l10n("insights.repo.star.change.baseline"),
+                starSourceName(point.source),
+                starPrecisionName(point.precision)
+            )
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "scope")
+                    .foregroundStyle(.secondary)
+                Text("insights.repo.star.reading.label")
+                    .font(interfaceScale.font(.caption, weight: .medium))
+                Text(verbatim: value)
+                    .font(interfaceScale.font(.caption))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text("insights.repo.star.reading.label"))
+            .accessibilityValue(Text(verbatim: value))
+        }
+    }
+
+    private func starSourceName(_ source: StarHistorySource) -> String {
+        switch source {
+        case .ghArchive:
+            return String.l10n("insights.repo.star.source.name.ghArchive")
+        case .discoverySnapshot:
+            return String.l10n("insights.repo.star.source.name.discovery")
+        case .localSnapshot:
+            return String.l10n("insights.repo.star.source.name.local")
+        }
+    }
+
+    private func starPrecisionName(_ precision: StarHistoryPrecision) -> String {
+        switch precision {
+        case .estimated:
+            return String.l10n("insights.repo.star.precision.estimated")
+        case .snapshot:
+            return String.l10n("insights.repo.star.precision.snapshot")
+        }
     }
 
     private var commitSection: some View {

@@ -127683,9 +127683,16 @@
     },
     "insights.repo.star.chart.summaryFormat" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "From %@ to %@, latest %lld Stars, one-year change %@" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "从 %@ 到 %@，最新 %lld Stars，一年变化 %@" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "從 %@ 到 %@，最新 %lld Stars，一年變化 %@" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "From %@ to %@, latest %@ Stars, one-year change %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "从 %@ 到 %@，最新 %@ Stars，一年变化 %@" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "從 %@ 到 %@，最新 %@ Stars，一年變化 %@" } }
+      }
+    },
+    "insights.repo.star.change.baseline" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "baseline" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "基准点" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "基準點" } }
       }
     },
     "insights.repo.star.current" : {
@@ -127707,6 +127714,20 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "1-year growth" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "1 年增长" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "1 年成長" } }
+      }
+    },
+    "insights.repo.star.precision.estimated" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "estimated" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "估算" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "估算" } }
+      }
+    },
+    "insights.repo.star.precision.snapshot" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "precise snapshot" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "精确快照" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "精確快照" } }
       }
     },
     "insights.repo.star.range.all" : {
@@ -127737,6 +127758,20 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "3 月" } }
       }
     },
+    "insights.repo.star.reading.label" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Selected reading" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前读数" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "目前讀數" } }
+      }
+    },
+    "insights.repo.star.reading.valueFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@, %@ Stars, change %@, %@, %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@，%@ Stars，变化 %@，%@，%@" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "%@，%@ Stars，變化 %@，%@，%@" } }
+      }
+    },
     "insights.repo.star.refresh" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Refresh Star history" } },
@@ -127749,6 +127784,27 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Estimated · GH Archive" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "估算 · GH Archive" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "估算 · GH Archive" } }
+      }
+    },
+    "insights.repo.star.source.name.discovery" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Starcat Discovery" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Starcat Discovery" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Starcat Discovery" } }
+      }
+    },
+    "insights.repo.star.source.name.ghArchive" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "GH Archive" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "GH Archive" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "GH Archive" } }
+      }
+    },
+    "insights.repo.star.source.name.local" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "this Mac" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本机" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "本機" } }
       }
     },
     "insights.repo.star.source.snapshot" : {

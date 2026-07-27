@@ -56,6 +56,7 @@ struct StarHistoryViewModelTests {
         await viewModel.load(repo: Self.fixtureRepo(id: 2))
 
         #expect(viewModel.currentStars == 100)
+        #expect(viewModel.latestChange == -15)
         #expect(viewModel.growth30Days == -15)
         #expect(viewModel.growthOneYear == -30)
         #expect(viewModel.phase == StarHistoryViewPhase.content)
@@ -109,6 +110,73 @@ struct StarHistoryViewModelTests {
         #expect(await repository.requestedRanges() == [.oneYear, .all])
     }
 
+    @Test("私有、陈旧、不可用与失败状态应稳定映射")
+    func remoteStatesMapToStablePhases() async {
+        let repo = Self.fixtureRepo(id: 4)
+        let cases: [(StarHistoryRemoteState, StarHistoryViewPhase)] = [
+            (.privateOnly, .privateOnly),
+            (.stale(.providerUnavailable), .stale(.providerUnavailable)),
+            (.unavailable, .unavailable),
+            (.building(retryAfter: 0), .building)
+        ]
+
+        for (state, expectedPhase) in cases {
+            let repository = StubStarHistoryRepository(
+                cachedHandler: { _, range in
+                    Self.snapshot(range: range, state: .cached)
+                },
+                refreshHandler: { _, range, _ in
+                    Self.snapshot(range: range, state: state)
+                }
+            )
+            let viewModel = StarHistoryViewModel(
+                repository: repository,
+                sleep: { _ in throw CancellationError() }
+            )
+
+            await viewModel.load(repo: repo)
+
+            #expect(viewModel.phase == expectedPhase)
+        }
+
+        let failedRepository = StubStarHistoryRepository(
+            cachedHandler: { _, _ in throw StarHistoryViewModelTestError.failed },
+            refreshHandler: { _, range, _ in
+                Self.snapshot(range: range, state: .fresh)
+            }
+        )
+        let failedViewModel = StarHistoryViewModel(repository: failedRepository)
+        await failedViewModel.load(repo: repo)
+        #expect(failedViewModel.phase == .failed)
+    }
+
+    @Test("单快照可显示当前值但不伪造增长")
+    func singleSnapshotDoesNotInventGrowth() async {
+        let point = Self.point(
+            "2026-07-27",
+            88,
+            source: .localSnapshot,
+            precision: .snapshot
+        )
+        let repository = StubStarHistoryRepository(
+            cachedHandler: { _, range in
+                Self.snapshot(range: range, points: [point], state: .privateOnly)
+            },
+            refreshHandler: { _, range, _ in
+                Self.snapshot(range: range, points: [point], state: .privateOnly)
+            }
+        )
+        let viewModel = StarHistoryViewModel(repository: repository)
+
+        await viewModel.load(repo: Self.fixtureRepo(id: 5))
+
+        #expect(viewModel.currentStars == 88)
+        #expect(viewModel.latestChange == nil)
+        #expect(viewModel.growth30Days == nil)
+        #expect(viewModel.growthOneYear == nil)
+        #expect(viewModel.phase == .privateOnly)
+    }
+
     private nonisolated static func snapshot(
         range: StarHistoryRange,
         points: [StarHistoryPoint] = [],
@@ -159,6 +227,10 @@ struct StarHistoryViewModelTests {
             fetchedAt: date
         )
     }
+}
+
+private enum StarHistoryViewModelTestError: Error {
+    case failed
 }
 
 private actor StubStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
