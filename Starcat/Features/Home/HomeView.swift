@@ -1275,7 +1275,7 @@ struct HomeView: View {
         if selectedSidebarPage == .insights {
             MyInsightsView(
                 scope: $selectedInsightsScope,
-                selection: selectedInsightsSelection,
+                selection: $selectedInsightsSelection,
                 snapshot: InsightsMockData.myInsights(scope: selectedInsightsScope)
             )
         } else if selectedSidebarPage == .activity, selectedActivityCategory == .undoStar {

@@ -109,55 +109,6 @@ struct InsightsListView: View {
     }
 }
 
-/// 我的洞察详情入口。完整统计区块在后续小提交中继续扩展，此处先建立稳定三栏宿主。
-struct MyInsightsView: View {
-
-    @Binding var scope: InsightsScope
-    let selection: InsightsSelection
-    let snapshot: MyInsightsSnapshot
-
-    @Environment(\.starcatInterfaceScale) private var interfaceScale
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("insights.my.title")
-                        .font(interfaceScale.font(.workspaceTitle))
-                    Text(selection.titleKey)
-                        .font(interfaceScale.font(.caption))
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: 16)
-
-                Picker("insights.scope.label", selection: $scope) {
-                    Text("insights.scope.starred").tag(InsightsScope.starred)
-                    Text("insights.scope.knowledge").tag(InsightsScope.knowledge)
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: 190)
-
-                MockDataBadge()
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 14)
-
-            Divider()
-
-            ContentUnavailableView {
-                Label("insights.preview.title", systemImage: "chart.xyaxis.line")
-            } description: {
-                Text("insights.preview.subtitle")
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color(nsColor: .windowBackgroundColor))
-    }
-}
-
 /// 演示数据必须在界面上可见，避免用户把原型数值误认为真实账户统计。
 struct MockDataBadge: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale

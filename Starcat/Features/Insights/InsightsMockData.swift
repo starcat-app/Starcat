@@ -26,9 +26,9 @@ enum InsightsMockData {
                     metric("organized", "insights.metric.organized", 867, "insights.metric.organized.detail", "checkmark.seal.fill", "purple")
                 ],
                 statusItems: [
-                    distribution("unread", "未读", 612, 0.477, "orange"),
-                    distribution("read", "已读", 578, 0.450, "blue"),
-                    distribution("using", "正在使用", 94, 0.073, "green")
+                    distribution("unread", "insights.status.unread", 612, 0.477, "orange"),
+                    distribution("read", "insights.status.read", 578, 0.450, "blue"),
+                    distribution("using", "insights.status.using", 94, 0.073, "green")
                 ],
                 languageItems: [
                     distribution("swift", "Swift", 296, 0.230, "orange"),
@@ -58,9 +58,9 @@ enum InsightsMockData {
                     metric("organized", "insights.metric.organized", 298, "insights.metric.organized.detail", "checkmark.seal.fill", "purple")
                 ],
                 statusItems: [
-                    distribution("unread", "未读", 82, 0.252, "orange"),
-                    distribution("read", "已读", 176, 0.540, "blue"),
-                    distribution("using", "正在使用", 68, 0.208, "green")
+                    distribution("unread", "insights.status.unread", 82, 0.252, "orange"),
+                    distribution("read", "insights.status.read", 176, 0.540, "blue"),
+                    distribution("using", "insights.status.using", 68, 0.208, "green")
                 ],
                 languageItems: [
                     distribution("swift", "Swift", 104, 0.319, "orange"),

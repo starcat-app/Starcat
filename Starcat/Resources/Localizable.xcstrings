@@ -127324,6 +127324,216 @@
         }
       }
     },
+    "insights.action.healthPending.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories without a current health snapshot" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "尚无有效健康度快照的仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "尚無有效健康度快照的儲存庫" } }
+      }
+    },
+    "insights.action.indexIssues.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Missing, failed, or stale knowledge indexes" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "缺失、失败或已过期的知识索引" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "缺失、失敗或已過期的知識索引" } }
+      }
+    },
+    "insights.action.untagged.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories that have not been categorized" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "尚未归类的仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "尚未歸類的儲存庫" } }
+      }
+    },
+    "insights.action.unread.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories that have not been reviewed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "尚未阅读和评估的仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "尚未閱讀和評估的儲存庫" } }
+      }
+    },
+    "insights.coverage.countFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%1$lld of %2$lld repositories covered" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已覆盖 %1$lld / %2$lld 个仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "已涵蓋 %1$lld / %2$lld 個儲存庫" } }
+      }
+    },
+    "insights.coverage.health" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Starcat Health" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Starcat 健康度" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Starcat 健康度" } }
+      }
+    },
+    "insights.coverage.openssf" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "OpenSSF Scorecard" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "OpenSSF 评分" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "OpenSSF 評分" } }
+      }
+    },
+    "insights.metric.knowledgeProjects.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved to your private knowledge base" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已加入私有知识库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "已加入私人知識庫" } }
+      }
+    },
+    "insights.metric.knowledgeRecent.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Added to knowledge in the last 30 days" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "近 30 天加入知识库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "近 30 天加入知識庫" } }
+      }
+    },
+    "insights.metric.organized" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Organized" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已整理" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "已整理" } }
+      }
+    },
+    "insights.metric.organized.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tagged, noted, read, or in use" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已有标签、笔记或阅读状态" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "已有標籤、筆記或閱讀狀態" } }
+      }
+    },
+    "insights.metric.projects" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Projects" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "项目数" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "專案數" } }
+      }
+    },
+    "insights.metric.projects.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "All repositories currently starred" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前全部 GitHub 收藏" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "目前全部 GitHub 收藏" } }
+      }
+    },
+    "insights.metric.recent" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "New in 30 Days" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "近 30 天新增" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "近 30 天新增" } }
+      }
+    },
+    "insights.metric.recent.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories starred recently" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "最近收藏的仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "最近收藏的儲存庫" } }
+      }
+    },
+    "insights.metric.using" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "In Use" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在使用" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "正在使用" } }
+      }
+    },
+    "insights.metric.using.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Marked as actively using" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "标记为正在使用" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "標記為正在使用" } }
+      }
+    },
+    "insights.refresh" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Refresh insights" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "刷新洞察" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "重新整理洞察" } }
+      }
+    },
+    "insights.section.actions" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Needs Attention" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "需要处理" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "需要處理" } }
+      }
+    },
+    "insights.section.actions.knowledgeSubtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Organization, indexing, and health gaps" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "整理、索引与健康度缺口" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "整理、索引與健康度缺口" } }
+      }
+    },
+    "insights.section.actions.starredSubtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Start with the largest actionable groups" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "优先处理数量较多的收藏分组" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "優先處理數量較多的收藏分組" } }
+      }
+    },
+    "insights.section.coverage" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Project Health Coverage" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "项目健康度覆盖" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "專案健康度涵蓋" } }
+      }
+    },
+    "insights.section.coverage.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Health and OpenSSF are measured independently" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Starcat Health 与 OpenSSF 分别统计" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Starcat Health 與 OpenSSF 分別統計" } }
+      }
+    },
+    "insights.section.languages" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Technology Distribution" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "技术分布" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "技術分佈" } }
+      }
+    },
+    "insights.section.languages.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Top primary languages in the current scope" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前范围内的主要编程语言" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "目前範圍內的主要程式語言" } }
+      }
+    },
+    "insights.section.organization" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Organization Status" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "整理情况" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "整理情況" } }
+      }
+    },
+    "insights.section.organization.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unread, read, and actively used repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未读、已读与正在使用的仓库分布" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "未讀、已讀與正在使用的儲存庫分佈" } }
+      }
+    },
+    "insights.status.read" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Read" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已读" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "已讀" } }
+      }
+    },
+    "insights.status.unread" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unread" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未读" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "未讀" } }
+      }
+    },
+    "insights.status.using" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "In Use" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在使用" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "正在使用" } }
+      }
+    },
     "insights.action.healthPending" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Health pending" } },
