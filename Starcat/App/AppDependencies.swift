@@ -135,6 +135,8 @@ final class AppDependencies {
     let myInsightsSnapshotProvider: any MyInsightsSnapshotProviding
     /// 仓库洞察远端数据集的 SQLite SWR 缓存。
     let repositoryInsightsCache: any RepositoryInsightsCaching
+    /// 仓库 Star 历史的本地优先合并仓库；公开远端与本机精确点在此统一。
+    let repoStarHistoryRepository: any RepoStarHistoryRepositoryProtocol
     /// 仓库洞察与 RAG 共用协议的类型化 GitHub Metrics 客户端。
     /// 动态读取 Keychain token，登录态变化时无需重建依赖树。
     let repositoryMetricsClient: any GitHubRepositoryMetricsClient
@@ -1061,6 +1063,10 @@ final class AppDependencies {
         self.starHistoryAPI = StarHistoryAPI(
             baseURL: AppEndpoints.Discovery.baseURL,
             apiKey: StarcatAPIKeyResolver.resolve(for: .discovery)
+        )
+        self.repoStarHistoryRepository = GRDBRepoStarHistoryRepository(
+            database: db,
+            api: starHistoryAPI
         )
         let discoveryRepo = DiscoveryRepository(api: discoveryAPIInstance, database: db)
         self.discoveryRepository = discoveryRepo

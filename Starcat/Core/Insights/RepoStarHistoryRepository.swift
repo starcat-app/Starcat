@@ -57,6 +57,11 @@ struct StarHistoryPoint: Codable, Equatable, Identifiable, Sendable {
 protocol RepoStarHistoryRepositoryProtocol: Sendable {
     func points(repoId: Int64) async throws -> [StarHistoryPoint]
 
+    func cached(
+        repo: Repo,
+        range: StarHistoryRange
+    ) async throws -> StarHistorySnapshot
+
     func recordLocalSnapshot(
         repoId: Int64,
         starsCount: Int,
@@ -68,6 +73,12 @@ protocol RepoStarHistoryRepositoryProtocol: Sendable {
         repoId: Int64,
         points: [StarHistoryPoint]
     ) async throws
+
+    func refresh(
+        repo: Repo,
+        range: StarHistoryRange,
+        forceRefresh: Bool
+    ) async throws -> StarHistorySnapshot
 }
 
 enum RepoStarHistoryRepositoryError: LocalizedError {
@@ -87,11 +98,44 @@ enum RepoStarHistoryRepositoryError: LocalizedError {
     }
 }
 
-struct GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol, Sendable {
-    private let database: any DatabaseManaging
+enum StarHistoryRemoteState: Equatable, Sendable {
+    case cached
+    case fresh
+    case notModified
+    case building(retryAfter: TimeInterval)
+    case privateOnly
+    case stale(StarHistoryAPIError)
+    case unavailable
+}
 
-    init(database: any DatabaseManaging) {
+struct StarHistorySnapshot: Equatable, Sendable {
+    let range: StarHistoryRange
+    let points: [StarHistoryPoint]
+    let remoteState: StarHistoryRemoteState
+    let coverageStart: Date?
+    let updatedAt: Date?
+}
+
+actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
+    private struct RemoteCacheKey: Hashable {
+        let repoID: Int64
+        let range: StarHistoryRange
+    }
+
+    private let database: any DatabaseManaging
+    private let api: (any StarHistoryAPIProtocol)?
+    private let now: @Sendable () -> Date
+    private var etags: [RemoteCacheKey: String] = [:]
+    private var fullyLoadedRepoIDs: Set<Int64> = []
+
+    init(
+        database: any DatabaseManaging,
+        api: (any StarHistoryAPIProtocol)? = nil,
+        now: @escaping @Sendable () -> Date = Date.init
+    ) {
         self.database = database
+        self.api = api
+        self.now = now
     }
 
     func points(repoId: Int64) async throws -> [StarHistoryPoint] {
@@ -102,6 +146,19 @@ struct GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol, Sendabl
                 .fetchAll(db)
                 .map(Self.point(from:))
         }
+    }
+
+    func cached(
+        repo: Repo,
+        range: StarHistoryRange
+    ) async throws -> StarHistorySnapshot {
+        try await recordCurrentMetadataSnapshotIfPossible(repo)
+        let cachedPoints = try await points(repoId: repo.id)
+        return snapshot(
+            range: range,
+            rawPoints: cachedPoints,
+            remoteState: repo.isPrivate ? .privateOnly : .cached
+        )
     }
 
     func recordLocalSnapshot(
@@ -150,6 +207,81 @@ struct GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol, Sendabl
             for point in points {
                 try Self.record(repoId: repoId, point: point).save(db)
             }
+        }
+    }
+
+    func refresh(
+        repo: Repo,
+        range: StarHistoryRange,
+        forceRefresh: Bool
+    ) async throws -> StarHistorySnapshot {
+        try await recordCurrentMetadataSnapshotIfPossible(repo)
+        let cachedPoints = try await points(repoId: repo.id)
+
+        // 私有仓库必须在调用 API 之前返回。API 自身还有第二道防线，防止未来调用方绕过 Repository。
+        guard !repo.isPrivate else {
+            return snapshot(range: range, rawPoints: cachedPoints, remoteState: .privateOnly)
+        }
+        guard repo.id > 0, repo.cachedAt != nil, let api else {
+            return snapshot(range: range, rawPoints: cachedPoints, remoteState: .unavailable)
+        }
+        if !forceRefresh, hasCoverage(for: range, in: cachedPoints, repoID: repo.id) {
+            return snapshot(range: range, rawPoints: cachedPoints, remoteState: .cached)
+        }
+
+        let cacheKey = RemoteCacheKey(repoID: repo.id, range: range)
+        do {
+            let result = try await api.fetch(
+                request: StarHistoryRequest(repo: repo),
+                range: range,
+                ifNoneMatch: etags[cacheKey]
+            )
+            switch result {
+            case .ready(let series, let etag):
+                guard series.repoID == repo.id,
+                      series.fullName.caseInsensitiveCompare(repo.fullName) == .orderedSame,
+                      series.range == range
+                else {
+                    return snapshot(
+                        range: range,
+                        rawPoints: cachedPoints,
+                        remoteState: .stale(.repositoryIDMismatch)
+                    )
+                }
+                try await replaceRemotePoints(repoId: repo.id, points: series.points)
+                if let etag {
+                    etags[cacheKey] = etag
+                }
+                if range == .all {
+                    fullyLoadedRepoIDs.insert(repo.id)
+                }
+                let refreshedPoints = try await points(repoId: repo.id)
+                return snapshot(range: range, rawPoints: refreshedPoints, remoteState: .fresh)
+
+            case .notModified(let etag):
+                if let etag {
+                    etags[cacheKey] = etag
+                }
+                return snapshot(range: range, rawPoints: cachedPoints, remoteState: .notModified)
+
+            case .building(let retryAfter):
+                return snapshot(
+                    range: range,
+                    rawPoints: cachedPoints,
+                    remoteState: .building(retryAfter: retryAfter)
+                )
+            }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as StarHistoryAPIError {
+            // 远端错误不清空上次成功缓存；ViewModel 可以用 stale 状态显示非阻塞提示。
+            return snapshot(range: range, rawPoints: cachedPoints, remoteState: .stale(error))
+        } catch {
+            return snapshot(
+                range: range,
+                rawPoints: cachedPoints,
+                remoteState: .stale(.transport(error.localizedDescription))
+            )
         }
     }
 
@@ -205,6 +337,96 @@ struct GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol, Sendabl
             precision: precision,
             fetchedAt: fetchedAt
         )
+    }
+
+    private func recordCurrentMetadataSnapshotIfPossible(_ repo: Repo) async throws {
+        guard repo.id > 0, repo.cachedAt != nil, repo.starsCount >= 0 else { return }
+        let observedAt = now()
+        try await recordLocalSnapshot(
+            repoId: repo.id,
+            starsCount: repo.starsCount,
+            observedAt: observedAt,
+            fetchedAt: observedAt
+        )
+    }
+
+    private func snapshot(
+        range: StarHistoryRange,
+        rawPoints: [StarHistoryPoint],
+        remoteState: StarHistoryRemoteState
+    ) -> StarHistorySnapshot {
+        let merged = Self.mergeByObservedDay(rawPoints)
+        let filtered = Self.points(merged, in: range, now: now())
+        return StarHistorySnapshot(
+            range: range,
+            points: filtered,
+            remoteState: remoteState,
+            coverageStart: merged.first?.date,
+            updatedAt: merged.compactMap(\.fetchedAt).max()
+        )
+    }
+
+    /// 同一天只向上层暴露一个读数：本机快照 > Discovery 快照 > GH Archive 估算。
+    ///
+    /// 两个同优先级点则保留 fetchedAt 更新者，保证重复同步不会让旧值覆盖新值。
+    private static func mergeByObservedDay(_ points: [StarHistoryPoint]) -> [StarHistoryPoint] {
+        var bestByDay: [String: StarHistoryPoint] = [:]
+        for point in points {
+            let day = StarHistoryDateCodec.dayString(from: point.date)
+            guard let existing = bestByDay[day] else {
+                bestByDay[day] = point
+                continue
+            }
+            let pointPriority = priority(of: point)
+            let existingPriority = priority(of: existing)
+            if pointPriority > existingPriority
+                || (pointPriority == existingPriority
+                    && (point.fetchedAt ?? .distantPast) > (existing.fetchedAt ?? .distantPast)) {
+                bestByDay[day] = point
+            }
+        }
+        return bestByDay.values.sorted { $0.date < $1.date }
+    }
+
+    private static func priority(of point: StarHistoryPoint) -> Int {
+        switch point.source {
+        case .localSnapshot: return 3
+        case .discoverySnapshot: return 2
+        case .ghArchive: return point.precision == .snapshot ? 2 : 1
+        }
+    }
+
+    private static func points(
+        _ points: [StarHistoryPoint],
+        in range: StarHistoryRange,
+        now: Date
+    ) -> [StarHistoryPoint] {
+        let cutoff: Date?
+        switch range {
+        case .threeMonths:
+            cutoff = now.addingTimeInterval(-92 * 86_400)
+        case .oneYear:
+            cutoff = now.addingTimeInterval(-366 * 86_400)
+        case .all:
+            cutoff = nil
+        }
+        guard let cutoff else { return points }
+        return points.filter { $0.date >= cutoff }
+    }
+
+    private func hasCoverage(
+        for range: StarHistoryRange,
+        in points: [StarHistoryPoint],
+        repoID: Int64
+    ) -> Bool {
+        if range == .all {
+            return fullyLoadedRepoIDs.contains(repoID)
+        }
+        let remoteDates = points.lazy.filter { $0.source.isRemote }.map(\.date)
+        guard let earliest = remoteDates.min() else { return false }
+        let requiredDays: TimeInterval = range == .threeMonths ? 92 : 366
+        // 服务端 1y 使用 ISO 周降采样，允许首点相对范围边界晚一周。
+        return earliest <= now().addingTimeInterval(-(requiredDays - 7) * 86_400)
     }
 }
 
