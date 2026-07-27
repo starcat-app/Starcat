@@ -227,6 +227,7 @@ enum AppEndpoints {
             static let ping = "/api/v1/ping"
             /// `GET /healthz` —— 状态栏服务可用性巡检端点。
             static let healthz = "/healthz"
+
         }
 
         @MainActor
@@ -267,6 +268,11 @@ enum AppEndpoints {
             static let ping = "/api/v1/ping"
             /// `GET /healthz` —— 状态栏服务可用性巡检端点。
             static let healthz = "/healthz"
+
+            /// 公开仓库星标历史；稳定 repo ID 和范围由 query 参数提供。
+            static func starHistory(owner: String, repo: String) -> String {
+                "/api/v1/repos/\(owner)/\(repo)/star-history"
+            }
         }
 
         @MainActor
