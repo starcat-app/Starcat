@@ -2,7 +2,7 @@
 
 > 审查时间：2026-07-27
 >
-> 审查状态：已完成首轮检查，存在 1 个待修复 finding
+> 审查状态：已闭环，0 个未关闭 P0 / P1 / P2
 >
 > 审查基线：Starcat `addeaa0b`；`starcat-discovery-api` `0a107d2`
 
@@ -24,7 +24,7 @@ M0 真实 BigQuery 验证、部署和完整人工 UI 矩阵属于已声明的外
 ### R01-F01：真实数据接入后仍保留前端 Mock 生产代码与契约测试
 
 - 等级：P2
-- 状态：待修复
+- 状态：已关闭
 - 证据：
   - `Starcat/Features/Insights/InsightsMockData.swift` 仍编入生产 target，但已经没有运行时调用方。
   - `Starcat/Features/Insights/InsightsNavigationViews.swift` 仍定义未使用的 `MockDataBadge`。
@@ -36,8 +36,13 @@ M0 真实 BigQuery 验证、部署和完整人工 UI 矩阵属于已声明的外
   1. 删除生产 Mock 文件、未使用 Badge 与对应废弃测试。
   2. 更新模型注释、验收步骤和需求追踪矩阵，只保留历史截图作为视觉基线。
   3. 运行 `xcodegen generate`、洞察定向测试、Debug build 和 `git diff --check`。
-- 修复 commit：待回填
-- 验证结果：待回填
+- 修复 commit：`08feb748`（Starcat）、`09cc560`（`starcat-localization`）
+- 验证结果：
+  - `xcodegen generate` 通过。
+  - `InsightsModelsTests`、`MyInsightsSnapshotProviderTests`、`MyInsightsViewModelTests` 共 11 项通过。
+  - `jq empty Starcat/Resources/Localizable.xcstrings` 与 `git diff --check` 通过。
+  - 本地化仓库重新导出 18 个 `.xcloc`，`python3 -m unittest discover -s tests -v` 共 25 项通过。
+  - 生产代码、String Catalog 和测试 target 已无 `InsightsMockData`、`MockDataBadge` 或演示占位 key。
 
 ## 4. 无问题项
 
@@ -50,4 +55,4 @@ M0 真实 BigQuery 验证、部署和完整人工 UI 矩阵属于已声明的外
 
 ## 5. 下一步
 
-本报告提交后，按 R01-F01 单独修复并提交；验证通过后再回填本报告的 commit、命令与关闭结论。
+R01-F01 已按报告要求闭环。本轮没有未关闭 P0 / P1 / P2，可以进入数据库、后端、API、隐私与成本专项审查。
