@@ -387,7 +387,7 @@
 - [x] 私有仓库不访问历史 API、building 有界轮询、stale fallback。
 - [x] 主详情与独立详情窗口复用一致。
 
-> 验证证据：2026-07-27 运行 11 个洞察 / Star History 定向 Suite，共 68 项测试通过；随后 `RepoRepositoryTests` 32 项通过，新增“洞察路由 → Manage 查询条件 → 列表计数”集成回归。
+> 验证证据：2026-07-27 运行 12 个洞察 / Star History 定向 Suite，共 72 项测试通过；随后 `RepoRepositoryTests` 32 项通过，包含“洞察路由 → Manage 查询条件 → 列表计数”集成回归。
 
 ### 11.2 `starcat-discovery-api` 自动化
 
@@ -409,7 +409,7 @@
 - [x] 校验 `Localizable.xcstrings` 为合法 JSON。
 - [x] 运行 i18n、颜色、Focus Ring、迁移和 `git diff --check` 静态检查。
 
-> 验证证据：2026-07-27 全量运行 `1802 tests in 209 suites`，0 失败、1 个测试框架已知 issue，`xcodebuild` 返回 `TEST SUCCEEDED`；静态检查命令均通过。已知 issue 和编译 warning 进入专项审查，不以成功结果掩盖。
+> 验证证据：2026-07-27 最终矩阵全量运行 `1800 tests in 209 suites`，0 失败、1 个测试框架已知 issue，`xcodebuild` 返回 `TEST SUCCEEDED`；静态检查命令均通过。已知 issue 和编译 warning 进入专项审查，不以成功结果掩盖。
 
 ### 11.4 人工 UI 验收
 
