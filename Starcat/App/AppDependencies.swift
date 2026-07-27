@@ -133,6 +133,8 @@ final class AppDependencies {
     let knowledgeBaseMetadataSnapshotCache = KnowledgeBaseMetadataSnapshotCache()
     /// 洞察中栏与详情栏共用的实时 SQLite 快照 Provider。
     let myInsightsSnapshotProvider: any MyInsightsSnapshotProviding
+    /// 仓库洞察远端数据集的 SQLite SWR 缓存。
+    let repositoryInsightsCache: any RepositoryInsightsCaching
     /// 知识库 RAG 本地会话历史。
     let ragConversationStore: any RAGConversationStoring
     /// RAG Composer 未发送草稿的 App 级内存缓存。
@@ -695,6 +697,7 @@ final class AppDependencies {
         }
         self.database = db
         self.myInsightsSnapshotProvider = GRDBMyInsightsSnapshotProvider(database: db)
+        self.repositoryInsightsCache = GRDBRepositoryInsightsCache(database: db)
         // AI adapter 通过同一个可切换 DatabaseManaging 门面旁路记录用量；配置动作必须
         // 发生在任何 Service 创建 OpenAIClient 之前，避免启动早期请求漏记。
         AIUsageRecorder.shared.configure(database: db)
