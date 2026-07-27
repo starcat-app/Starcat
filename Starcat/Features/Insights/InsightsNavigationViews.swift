@@ -109,22 +109,8 @@ struct InsightsListView: View {
     }
 }
 
-/// 演示数据必须在界面上可见，避免用户把原型数值误认为真实账户统计。
-struct MockDataBadge: View {
-    @Environment(\.starcatInterfaceScale) private var interfaceScale
-
-    var body: some View {
-        Label("insights.mock.badge", systemImage: "testtube.2")
-            .font(interfaceScale.font(.captionSmall, weight: .medium))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color.secondary.opacity(0.10), in: Capsule())
-    }
-}
-
-/// Mock 模型只保存语义色名称，SwiftUI 颜色解析集中在 UI 层，后续跨 actor 数据模型
-/// 不需要依赖 `Color`（它不是 Sendable 的业务值）。
+/// 领域模型只保存语义色名称，SwiftUI 颜色解析集中在 UI 层，避免跨 actor 模型
+/// 依赖不属于业务值的 `Color`。
 enum InsightsColor {
     static func resolve(_ name: String) -> Color {
         switch name {

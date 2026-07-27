@@ -128458,32 +128458,11 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "需要處理" } }
       }
     },
-    "insights.mock.badge" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Demo data" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "演示数据" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "展示資料" } }
-      }
-    },
     "insights.my.title" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "My Insights" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "我的洞察" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "我的洞察" } }
-      }
-    },
-    "insights.preview.subtitle" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "The overview cards and charts will appear here." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "概览指标与统计图表将在这里呈现。" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "概覽指標與統計圖表將在這裡呈現。" } }
-      }
-    },
-    "insights.preview.title" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Insights workspace ready" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "洞察工作区已就绪" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "洞察工作區已就緒" } }
       }
     },
     "insights.scope.knowledge" : {

@@ -2,8 +2,8 @@
 //  InsightsModels.swift
 //  Starcat
 //
-//  洞察中心前端展示模型。首阶段由 Mock provider 供数，后续真实 SQLite / GitHub
-//  provider 继续产出同一组快照，避免数据接入时重写 SwiftUI 页面。
+//  洞察中心领域与展示模型。SQLite / GitHub Provider 产出同一组类型化快照，
+//  让范围、统计与下钻语义在数据层和 SwiftUI 页面之间保持一致。
 //
 
 import Foundation
