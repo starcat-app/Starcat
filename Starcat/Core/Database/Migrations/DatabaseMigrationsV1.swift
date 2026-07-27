@@ -36,7 +36,7 @@
 //    `v8-rag-suggested-actions` / `v9-rag-metadata-keyword-only` /
 //    `v10-rag-conversation-pinned-at` / `v11-rag-embedding-claim` /
 //    `v12-rag-metadata-revision` / `v13-weekly-multi-source` /
-//    `v14-ai-usage-events` / `v15-repo-pins`
+//    `v14-ai-usage-events` / `v15-repo-pins` / `v16-repository-insights`
 //
 
 import Foundation
@@ -68,6 +68,50 @@ enum DatabaseMigrations {
         registerV13(into: &migrator)
         registerV14(into: &migrator)
         registerV15(into: &migrator)
+        registerV16(into: &migrator)
+    }
+
+    // MARK: - v16-repository-insights：仓库洞察与 Star 历史缓存（2026-07-27）
+
+    /// 两张表都属于可重建缓存，但生命周期不同：远端指标按 dataset/range 整体覆盖，
+    /// Star 历史按日期和来源长期累积。保持独立表可避免刷新远端估算时误删本地精确点。
+    private static func registerV16(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v16-repository-insights") { db in
+            try db.create(table: "repo_insights_snapshots") { table in
+                table.column("repo_id", .integer).notNull()
+                    .references("repos", column: "id", onDelete: .cascade)
+                table.column("dataset", .text).notNull()
+                table.column("range_key", .text).notNull()
+                table.column("payload_json", .blob).notNull()
+                table.column("default_branch_sha", .text)
+                table.column("fetched_at", .text).notNull()
+                table.column("stale_after", .text).notNull()
+                table.column("response_etag", .text)
+                table.primaryKey(["repo_id", "dataset", "range_key"])
+            }
+            try db.create(
+                index: "idx_repo_insights_snapshots_stale",
+                on: "repo_insights_snapshots",
+                columns: ["stale_after"]
+            )
+
+            try db.create(table: "repo_star_history_points") { table in
+                table.column("repo_id", .integer).notNull()
+                    .references("repos", column: "id", onDelete: .cascade)
+                table.column("observed_on", .text).notNull()
+                table.column("stars_count", .integer).notNull()
+                    .check { $0 >= 0 }
+                table.column("source", .text).notNull()
+                table.column("precision", .text).notNull()
+                table.column("fetched_at", .text).notNull()
+                table.primaryKey(["repo_id", "observed_on", "source"])
+            }
+            try db.create(
+                index: "idx_repo_star_history_points_lookup",
+                on: "repo_star_history_points",
+                columns: ["repo_id", "observed_on"]
+            )
+        }
     }
 
     // MARK: - v15-repo-pins：Manage 仓库置顶（2026-07-22）
