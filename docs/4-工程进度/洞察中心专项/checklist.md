@@ -269,18 +269,18 @@
 
 ### 8.2 Provider、归一化和降采样
 
-- [ ] 新增可测试替换的历史事件 Provider 协议。
-- [ ] 实现 BigQuery / GH Archive provider，使用参数化 repo ID、日期和最大扫描预算。
-- [ ] 实现日累计、当前 Stars 归一化、`totalEvents == 0` 和末点校准。
-- [ ] 估算段保持单调，精确快照段允许真实下降。
-- [ ] 实现 `3m` 日、`1y` 周、`all` 月降采样，首末点与来源不丢失。
-- [ ] 每个序列最多 500 点，输出 coverageStart、generatedAt、source 和 precision。
+- [x] 新增可测试替换的历史事件 Provider 协议。
+- [x] 实现 BigQuery / GH Archive provider，使用参数化 repo ID、日期和最大扫描预算。
+- [x] 实现日累计、当前 Stars 归一化、`totalEvents == 0` 和末点校准。
+- [x] 估算段保持单调，精确快照段允许真实下降。
+- [x] 实现 `3m` 日、`1y` 周、`all` 月降采样，首末点与来源不丢失。
+- [x] 每个序列最多 500 点，输出 coverageStart、generatedAt、source 和 precision。
 
 计划提交（`starcat-discovery-api`）：
 
-- [ ] `feat(star-history): 实现 GH Archive 历史提供器` — 实际 commit：`待回填`
-- [ ] `feat(star-history): 实现星标历史归一化` — 实际 commit：`待回填`
-- [ ] `feat(star-history): 增加星标历史范围降采样` — 实际 commit：`待回填`
+- [x] `feat(star-history): 实现 GH Archive 历史提供器` — 实际 commit：`40415fe`、`3228cdc`（`starcat-discovery-api`；真实查询仍受 M0 授权门禁）
+- [x] `feat(star-history): 实现星标历史归一化` — 实际 commit：`43ca9d4`、`b433f37`（`starcat-discovery-api`）
+- [x] `feat(star-history): 增加星标历史范围降采样` — 实际 commit：`69f6b3d`（`starcat-discovery-api`）
 
 ### 8.3 异步构建与 API
 
