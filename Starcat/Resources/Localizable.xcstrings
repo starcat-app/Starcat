@@ -127324,6 +127324,161 @@
         }
       }
     },
+    "insights.action.healthPending" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Health pending" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "健康度待计算" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "健康度待計算" } }
+      }
+    },
+    "insights.action.indexIssues" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Index issues" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "索引异常" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "索引異常" } }
+      }
+    },
+    "insights.action.untagged" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Untagged" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未打标签" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "未加標籤" } }
+      }
+    },
+    "insights.action.unread" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unread" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未读" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "未讀" } }
+      }
+    },
+    "insights.list.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Summary and items that need attention" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "摘要与需要处理的项目" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "摘要與需要處理的項目" } }
+      }
+    },
+    "insights.mock.badge" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Demo data" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "演示数据" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "展示資料" } }
+      }
+    },
+    "insights.my.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "My Insights" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "我的洞察" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "我的洞察" } }
+      }
+    },
+    "insights.preview.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The overview cards and charts will appear here." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "概览指标与统计图表将在这里呈现。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "概覽指標與統計圖表將在這裡呈現。" } }
+      }
+    },
+    "insights.preview.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Insights workspace ready" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "洞察工作区已就绪" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "洞察工作區已就緒" } }
+      }
+    },
+    "insights.scope.knowledge" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Knowledge" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "知識庫" } }
+      }
+    },
+    "insights.scope.label" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Scope" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "范围" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "範圍" } }
+      }
+    },
+    "insights.scope.starred" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "All Starred" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "全部收藏" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "全部收藏" } }
+      }
+    },
+    "insights.selection.summary" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Overview" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "概览" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "概覽" } }
+      }
+    },
+    "insights.sidebar.section" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Insights" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "洞察" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "洞察" } }
+      }
+    },
+    "insights.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Insights Center" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "洞察中心" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "洞察中心" } }
+      }
+    },
+    "insights.topic.health" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Project Health" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "项目健康" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "專案健康" } }
+      }
+    },
+    "insights.topic.organization" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Organization" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "整理情况" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "整理情況" } }
+      }
+    },
+    "insights.topic.overview" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Overview" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "概览" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "概覽" } }
+      }
+    },
+    "insights.topic.technology" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Technology" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "技术分布" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "技術分佈" } }
+      }
+    },
+    "nav.insights" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Insights"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "洞察"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "洞察"
+          }
+        }
+      }
+    },
     "nav.manage" : {
       "extractionState" : "stale",
       "localizations" : {

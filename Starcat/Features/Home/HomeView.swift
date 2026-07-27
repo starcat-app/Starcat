@@ -197,6 +197,11 @@ struct HomeView: View {
     /// Activity 中栏当前选中的活动项，用于右侧详情页按类型分发。
     @State private var selectedActivityItem: ActivityItem?
 
+    /// 洞察中心保留二级主题、范围和中栏选择，跨顶级页面切换时不丢失浏览上下文。
+    @State private var selectedInsightsTopic: InsightsTopic = .overview
+    @State private var selectedInsightsScope: InsightsScope = .starred
+    @State private var selectedInsightsSelection: InsightsSelection = .summary
+
     /// W4 A2：TagManagementViewModel 实例，sheet 关掉再开时复用，
     /// 避免每次 sheet 都 new 导致选择/加载态被打断。
     @State private var tagMgmtVM: TagManagementViewModel
@@ -1188,6 +1193,7 @@ struct HomeView: View {
             selectedDiscoveryPlatform: $selectedDiscoveryPlatform,
             selectedWeeklyLanguage: $selectedWeeklyLanguage,
             selectedActivityCategory: $selectedActivityCategory,
+            selectedInsightsTopic: $selectedInsightsTopic,
             showTagManagement: $showTagManagement,
             showReleaseTimeline: $showReleaseTimeline,
             onSelectRootPage: selectSidebarRootPage,
@@ -1208,55 +1214,71 @@ struct HomeView: View {
         .navigationSplitViewColumnWidth(min: 240, ideal: 260, max: 320)
     }
 
+    @ViewBuilder
     private var contentColumn: some View {
-        RepoListView(
-            trendingRepository: trendingRepository,
-            githubAPIClient: githubAPIClient,
-            selectedPage: selectedSidebarPage,
-            selectedExploreMode: $selectedExploreMode,
-            selectedTrendingLanguage: $selectedTrendingLanguage,
-            selectedTrendingRepoID: $selectedTrendingRepoID,
-            selectedTrendingRepo: $selectedTrendingRepo,
-            selectedDiscoveryLanguage: $selectedDiscoveryLanguage,
-            selectedDiscoveryTopic: $selectedDiscoveryTopic,
-            selectedDiscoveryPlatform: $selectedDiscoveryPlatform,
-            selectedDiscoveryRepoID: $selectedDiscoveryRepoID,
-            selectedDiscoveryRepo: $selectedDiscoveryRepo,
-            selectedWeeklyLanguage: $selectedWeeklyLanguage,
-            selectedActivityCategory: $selectedActivityCategory,
-            selectedActivityItem: $selectedActivityItem,
-            undoStarAutoSelectRequestID: undoStarAutoSelectRequestID,
-            showsAgentToolbarEntry: showsAgentToolbarEntry,
-            onStartBatchAI: {
-                // HOM-52：点击 banner"开始整理" → 弹 Options sheet。
-                // 复用上一次 batchAIOptions，让"再开一次"沿用最近偏好。
-                showBatchAIOptions = true
-            },
-            onShowBatchAIPanel: {
-                showBatchAIPanel = true
-            },
-            onOpenSearchCenter: {
-                presentSearchCenterForGettingStarted()
-            },
-            onOpenAgentWorkspace: {
-                openAgentWorkspaceForGettingStarted()
-            },
-            onOpenKnowledgeRAGWorkspace: {
-                openKnowledgeRAGWorkspaceForGettingStarted()
-            },
-            onOpenCompanionRepo: { repo in
-                openCompanionRepository(repo)
-            },
-            onGenerateCompanionSummary: { repo in
-                openCompanionRepository(repo, generateSummary: true)
-            }
-        )
-        .navigationSplitViewColumnWidth(min: 420, ideal: 420, max: 520)
+        if selectedSidebarPage == .insights {
+            InsightsListView(
+                topic: $selectedInsightsTopic,
+                selection: $selectedInsightsSelection,
+                snapshot: InsightsMockData.myInsights(scope: selectedInsightsScope)
+            )
+            .navigationSplitViewColumnWidth(min: 420, ideal: 420, max: 520)
+        } else {
+            RepoListView(
+                trendingRepository: trendingRepository,
+                githubAPIClient: githubAPIClient,
+                selectedPage: selectedSidebarPage,
+                selectedExploreMode: $selectedExploreMode,
+                selectedTrendingLanguage: $selectedTrendingLanguage,
+                selectedTrendingRepoID: $selectedTrendingRepoID,
+                selectedTrendingRepo: $selectedTrendingRepo,
+                selectedDiscoveryLanguage: $selectedDiscoveryLanguage,
+                selectedDiscoveryTopic: $selectedDiscoveryTopic,
+                selectedDiscoveryPlatform: $selectedDiscoveryPlatform,
+                selectedDiscoveryRepoID: $selectedDiscoveryRepoID,
+                selectedDiscoveryRepo: $selectedDiscoveryRepo,
+                selectedWeeklyLanguage: $selectedWeeklyLanguage,
+                selectedActivityCategory: $selectedActivityCategory,
+                selectedActivityItem: $selectedActivityItem,
+                undoStarAutoSelectRequestID: undoStarAutoSelectRequestID,
+                showsAgentToolbarEntry: showsAgentToolbarEntry,
+                onStartBatchAI: {
+                    // HOM-52：点击 banner"开始整理" → 弹 Options sheet。
+                    // 复用上一次 batchAIOptions，让"再开一次"沿用最近偏好。
+                    showBatchAIOptions = true
+                },
+                onShowBatchAIPanel: {
+                    showBatchAIPanel = true
+                },
+                onOpenSearchCenter: {
+                    presentSearchCenterForGettingStarted()
+                },
+                onOpenAgentWorkspace: {
+                    openAgentWorkspaceForGettingStarted()
+                },
+                onOpenKnowledgeRAGWorkspace: {
+                    openKnowledgeRAGWorkspaceForGettingStarted()
+                },
+                onOpenCompanionRepo: { repo in
+                    openCompanionRepository(repo)
+                },
+                onGenerateCompanionSummary: { repo in
+                    openCompanionRepository(repo, generateSummary: true)
+                }
+            )
+            .navigationSplitViewColumnWidth(min: 420, ideal: 420, max: 520)
+        }
     }
 
     @ViewBuilder
     private var detailColumn: some View {
-        if selectedSidebarPage == .activity, selectedActivityCategory == .undoStar {
+        if selectedSidebarPage == .insights {
+            MyInsightsView(
+                scope: $selectedInsightsScope,
+                selection: selectedInsightsSelection,
+                snapshot: InsightsMockData.myInsights(scope: selectedInsightsScope)
+            )
+        } else if selectedSidebarPage == .activity, selectedActivityCategory == .undoStar {
             RepoDetailView(selectedTrendingRepo: nil)
         } else if selectedSidebarPage == .activity {
             ActivityDetailView(item: selectedActivityItem)
@@ -1493,6 +1515,8 @@ struct HomeView: View {
             savedTrendingLanguage = selectedTrendingLanguage
         case .activity:
             savedActivityCategory = selectedActivityCategory
+        case .insights:
+            break
         }
 
         // 清除所有 repo 选中状态，避免详情页显示残留
@@ -1520,6 +1544,8 @@ struct HomeView: View {
             restoreExploreLanguagePreference(for: selectedExploreMode)
         case .activity:
             selectedActivityCategory = savedActivityCategory
+        case .insights:
+            break
         }
     }
 
@@ -1532,6 +1558,9 @@ struct HomeView: View {
             dependencies.telemetryManager.track(.exploreOpened)
         case .activity:
             dependencies.telemetryManager.track(.activityOpened)
+        case .insights:
+            // Mock 前端阶段不提前发正式遥测事件，避免把内部预览访问混入产品数据。
+            break
         }
     }
 

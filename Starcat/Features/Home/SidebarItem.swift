@@ -22,6 +22,7 @@ enum SidebarRootPage: String, CaseIterable, Identifiable {
     case manage
     case trending
     case activity
+    case insights
 
     var id: String { rawValue }
 
@@ -32,6 +33,7 @@ enum SidebarRootPage: String, CaseIterable, Identifiable {
         case .manage:   return "nav.manage"
         case .trending: return "nav.trending"
         case .activity: return "nav.activity"
+        case .insights: return "nav.insights"
         }
     }
 
@@ -40,6 +42,7 @@ enum SidebarRootPage: String, CaseIterable, Identifiable {
         case .manage:   return "star.circle"
         case .trending: return "safari"
         case .activity: return "bell.circle"
+        case .insights: return "chart.xyaxis.line"
         }
     }
 }

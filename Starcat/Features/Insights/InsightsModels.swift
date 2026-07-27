@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import SwiftUI
 
 /// “我的洞察”统计范围。每个快照只能属于一个明确范围，避免卡片静默混用口径。
 enum InsightsScope: String, CaseIterable, Identifiable, Sendable {
@@ -24,6 +25,24 @@ enum InsightsTopic: String, CaseIterable, Identifiable, Sendable {
     case health
 
     var id: String { rawValue }
+
+    var titleKey: LocalizedStringKey {
+        switch self {
+        case .overview:     return "insights.topic.overview"
+        case .organization: return "insights.topic.organization"
+        case .technology:   return "insights.topic.technology"
+        case .health:       return "insights.topic.health"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .overview:     return "rectangle.3.group.fill"
+        case .organization: return "tray.full.fill"
+        case .technology:   return "chevron.left.forwardslash.chevron.right"
+        case .health:       return "heart.text.square.fill"
+        }
+    }
 }
 
 /// 中栏当前选择的摘要或待处理集合。
@@ -35,6 +54,16 @@ enum InsightsSelection: String, CaseIterable, Identifiable, Sendable {
     case healthPending
 
     var id: String { rawValue }
+
+    var titleKey: LocalizedStringKey {
+        switch self {
+        case .summary:       return "insights.selection.summary"
+        case .untagged:      return "insights.action.untagged"
+        case .unread:        return "insights.action.unread"
+        case .indexIssues:   return "insights.action.indexIssues"
+        case .healthPending: return "insights.action.healthPending"
+        }
+    }
 }
 
 /// 单个 KPI。数值保持原始 Int，格式化交给 View 结合当前 Locale 完成。

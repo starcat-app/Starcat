@@ -126,6 +126,9 @@ private struct RepoListNavigationSubtitleModifier: ViewModifier {
                 format: String.l10n("activity.itemCountFormat"),
                 count
             )
+        case .insights:
+            // HomeView 在洞察页直接替换整列，本分支仅用于 enum 穷尽性兜底。
+            return ""
         }
     }
 
@@ -668,6 +671,9 @@ struct RepoListView: View {
         case .activity:
             if manage.isActive { manage.exit() }
             if explore.isActive { explore.exit() }
+        case .insights:
+            if manage.isActive { manage.exit() }
+            if explore.isActive { explore.exit() }
         }
     }
 
@@ -731,6 +737,8 @@ struct RepoListView: View {
             } else {
                 EmptyView()
             }
+        case .insights:
+            EmptyView()
         }
     }
 
@@ -751,6 +759,7 @@ struct RepoListView: View {
             }
             return makeDiscoveryToolbarSpec()
         case .activity:  return makeActivityToolbarSpec()
+        case .insights:  return .empty
         }
     }
 

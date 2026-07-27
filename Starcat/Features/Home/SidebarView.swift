@@ -92,6 +92,8 @@ struct SidebarView: View {
     @Binding var selectedDiscoveryPlatform: String?
     @Binding var selectedWeeklyLanguage: String?
     @Binding var selectedActivityCategory: ActivityCategory
+    /// 洞察中心二级主题。只负责左栏选择，不在 Sidebar 内持有统计数据。
+    @Binding var selectedInsightsTopic: InsightsTopic
     @Binding var showTagManagement: Bool
     /// HOM-47：触发 Release 时间线 sheet。
     @Binding var showReleaseTimeline: Bool
@@ -775,6 +777,22 @@ struct SidebarView: View {
                 activitySidebarContent
             }
             .listStyle(.sidebar)
+        case .insights:
+            List(selection: $selectedInsightsTopic) {
+                insightsSidebarContent
+            }
+            .listStyle(.sidebar)
+        }
+    }
+
+    /// 洞察主题继续使用系统 Sidebar selection，不手绘选中背景。
+    @ViewBuilder
+    private var insightsSidebarContent: some View {
+        Section("insights.sidebar.section") {
+            ForEach(InsightsTopic.allCases) { topic in
+                Label(topic.titleKey, systemImage: topic.systemImage)
+                    .tag(topic)
+            }
         }
     }
 
@@ -1094,9 +1112,10 @@ struct SidebarView: View {
 
     private func rootNavigationButton(_ page: SidebarRootPage) -> some View {
         let isSelected = selectedPage == page
-        // HOM-73 / HOM-163：Manage 和 Activity 需要登录才能访问；Trending 有公开/本地空态，始终可打开。
+        // HOM-73 / HOM-163：Manage、Activity 与 Insights 都读取用户本地数据，需要登录；
+        // Trending 有公开/本地空态，始终可打开。
         let needsLogin = !authSession.state.isAuthenticated
-            && (page == .manage || page == .activity)
+            && (page == .manage || page == .activity || page == .insights)
 
         return Button {
             rootNavigationBounceTokens[page, default: 0] += 1
