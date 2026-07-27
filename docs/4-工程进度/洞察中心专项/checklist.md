@@ -21,7 +21,7 @@
 ### 0.1 硬性流程
 
 - [ ] 开工前记录 Starcat 与 `starcat-discovery-api` 的 branch、HEAD、worktree 和 dirty 状态，保留所有无关改动。
-- [ ] 开工前只读检查 `docs/功能实现总览.md`、`DESIGN.md`、相关 UI / i18n 规范及两份详细设计。
+- [x] 开工前只读检查 `docs/功能实现总览.md`、`DESIGN.md`、相关 UI / i18n 规范及两份详细设计。
 - [ ] 每个小功能必须同时完成“代码 + 必要测试 + 必要文档”，验证通过后立即提交，禁止积攒多个独立功能后一次提交。
 - [ ] 每个 commit 必须符合 `<type>(<scope>): <中文摘要>`，scope 使用 `insights`、`star-history` 或 `discovery` 等稳定产品域。
 - [ ] 每次提交前运行与切片风险相匹配的定向测试和 `git diff --check`。
@@ -414,7 +414,7 @@
 计划提交：
 
 - [ ] `test(insights): 补齐洞察中心集成回归` — 实际 commit：`待回填`
-- [ ] `docs(insights): 新增洞察中心验收步骤` — 实际 commit：`待回填`
+- [x] `docs(insights): 新增洞察中心验收步骤` — 实际 commit：`64e49e69`
 
 ---
 
@@ -425,7 +425,7 @@
 - [ ] 修正实施中发现的所有过时现状，不保留已废弃的类名、表名、入口或测试数字。
 - [ ] 更新详细设计 README 索引描述。
 - [ ] 同步 `starcat-discovery-api` README / README-ZH / API / 配置文档。
-- [ ] 新增专项 `验收步骤说明.md`。
+- [x] 新增专项 `验收步骤说明.md`。
 - [ ] 只读核对 `docs/功能实现总览.md`；未获单独授权时，在审查报告中给出拟同步 checkbox、`> 实现：`、仪表盘和变更日志内容，不直接修改。
 - [ ] 核对 Changelog 授权状态；未获授权时不修改，在结果报告中明确是否建议写入当前待发布版本。
 - [ ] Checklist 每个已完成项必须有代码、测试、文档、commit 或审查报告证据，禁止仅凭“看起来完成”勾选。
