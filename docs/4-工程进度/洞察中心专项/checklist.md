@@ -354,22 +354,23 @@
 
 ## 10. M5：视觉、国际化与辅助功能
 
-- [ ] 新增 `insights.*` 与 `repo.starHistory.*` String Catalog key，保持 `"key" : value` 格式且不整文件重排。
-- [ ] 补齐 en / zh-Hans；按项目 18 Locale 流程导出或同步 translation packages。
+- [x] 新增 `insights.*`（含 `insights.repo.star.*`）String Catalog key，保持 `"key" : value` 格式且不整文件重排。
+- [x] 补齐 en / zh-Hans；按项目 18 Locale 流程导出或同步 translation packages。
+  > 18 个 `.xcloc` 已在独立 `starcat-localization` 仓库同步（`edce82d`）；15 个非中文 Locale 的 197 条新增文案保持待翻译 / 待复核，不伪造人工审核。
 - [x] 新增 Swift 调用不使用 `String(localized:)` 或 `NSLocalizedString`。
 - [x] 文字和图标只用 `.primary / .secondary`，禁止无说明 `.tertiary`。
 - [x] 所有 `.buttonStyle(.plain)` 同时 `.focusEffectDisabled()`。
 - [x] 刷新入口统一使用 `SyncIconButton`。
-- [ ] 图表和状态颜色适配 Light / Dark、Increase Contrast 和 Reduce Motion。
+- [x] 图表和状态颜色适配 Light / Dark、Increase Contrast 和 Reduce Motion。
 - [x] 最小窗口和窄 Detail 下使用单列，不增加固定 Detail minWidth。
-- [ ] 长仓库名、大数值、空值、RTL 和较长 Locale 不破版。
-- [ ] 为 KPI、分布、图表、筛选、错误和更新时间补 VoiceOver 汇总语义。
+- [x] 长仓库名、大数值、空值、RTL 和较长 Locale 不破版。
+- [x] 为 KPI、分布、图表、筛选、错误和更新时间补 VoiceOver 汇总语义。
 - [x] 使用真实运行截图对照两张原型；允许数据与文案变化，不允许脱离 Starcat 三栏结构。
 
 计划提交：
 
 - [x] `improve(insights): 完善洞察布局与窗口适配` — 实际 commit：`0f929a61`
-- [ ] `feat(insights): 补齐洞察国际化与辅助功能` — 实际 commit：`待回填`
+- [x] `feat(insights): 补齐洞察国际化与辅助功能` — 实际 commit：`51c2e90d`
 
 ---
 
