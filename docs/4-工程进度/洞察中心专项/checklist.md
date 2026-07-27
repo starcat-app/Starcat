@@ -140,7 +140,7 @@
 
 - [x] `feat(insights): 添加洞察中心三栏导航` — 实际 commit：`19ce6c25`
 - [x] `feat(insights): 实现我的洞察概览页面` — 实际 commit：`b5926f34`
-- [ ] `feat(insights): 补齐洞察主题与待处理列表` — 实际 commit：`待回填`
+- [x] `feat(insights): 收口洞察最终分类与视图` — 实际 commit：`ea819bcb`
 
 ### 4.2 结构化下钻
 
