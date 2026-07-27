@@ -284,21 +284,21 @@
 
 ### 8.3 异步构建与 API
 
-- [ ] 首次 miss 写 building 并进入有界 worker queue，HTTP 立即返回 `202 + Retry-After`。
-- [ ] worker 并发、超时、每日预算和 negative cache 可配置。
-- [ ] 新增 `GET /api/v1/repos/{owner}/{repo}/star-history`。
-- [ ] 必填 `repo_id`，后端校验 owner/name 与 ID，二次确认公开仓库。
-- [ ] 支持 `3m / 1y / all`、ETag、`If-None-Match`、Cache-Control 和统一 envelope。
-- [ ] 固定 `400 / 401 / 404 / 409 / 422 / 429 / 503` 错误语义。
-- [ ] 日志不记录用户 token、Star 列表或访问顺序。
-- [ ] 更新 README / README-ZH、API 文档和环境变量说明。
+- [x] 首次 miss 写 building 并进入有界 worker queue，HTTP 立即返回 `202 + Retry-After`。
+- [x] worker 并发、超时、每日预算和 negative cache 可配置。
+- [x] 新增 `GET /api/v1/repos/{owner}/{repo}/star-history`。
+- [x] 必填 `repo_id`，后端校验 owner/name 与 ID，二次确认公开仓库。
+- [x] 支持 `3m / 1y / all`、ETag、`If-None-Match`、Cache-Control 和统一 envelope。
+- [x] 固定 `400 / 401 / 404 / 409 / 422 / 429 / 503` 错误语义。
+- [x] 日志不记录用户 token、Star 列表或访问顺序。
+- [x] 更新 README / README-ZH、API 文档和环境变量说明。
 
 计划提交（`starcat-discovery-api`）：
 
-- [ ] `feat(star-history): 实现星标历史异步构建` — 实际 commit：`待回填`
-- [ ] `feat(star-history): 提供仓库星标历史接口` — 实际 commit：`待回填`
-- [ ] `test(star-history): 覆盖星标历史缓存与异常路径` — 实际 commit：`待回填`
-- [ ] `docs(star-history): 补充星标历史接口说明` — 实际 commit：`待回填`
+- [x] `feat(star-history): 实现星标历史异步构建` — 实际 commit：`23025f1`（`starcat-discovery-api`）
+- [x] `feat(star-history): 提供仓库星标历史接口` — 实际 commit：`792cf07`（`starcat-discovery-api`）
+- [x] `test(star-history): 覆盖星标历史缓存与异常路径` — 实际 commit：`ff2dd7e`（`starcat-discovery-api`）
+- [x] `docs(star-history): 补充星标历史接口说明` — 实际 commit：`0a107d2`（`starcat-discovery-api`）
 
 ---
 
