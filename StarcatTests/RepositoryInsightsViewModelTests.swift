@@ -43,6 +43,190 @@ struct RepositoryInsightsViewModelTests {
         #expect(!viewModel.isRefreshingActivity)
     }
 
+    @Test("手动刷新期间所有远端区块保持现有内容")
+    func manualRefreshKeepsVisibleContentUntilFreshValuesArrive() async {
+        let generatedAt = Date(timeIntervalSince1970: 2_000)
+        let activity = RepositoryActivityCounts(
+            createdPullRequests: 4,
+            mergedPullRequests: 3,
+            createdIssues: 2,
+            closedIssues: 1,
+            generatedAt: generatedAt
+        )
+        let refreshedActivity = RepositoryActivityCounts(
+            createdPullRequests: 5,
+            mergedPullRequests: 4,
+            createdIssues: 3,
+            closedIssues: 2,
+            generatedAt: generatedAt.addingTimeInterval(60)
+        )
+        let commitActivity = RepositoryCommitActivity(
+            points: [RepositoryCommitActivityPoint(weekStart: generatedAt, commits: 6)],
+            generatedAt: generatedAt
+        )
+        let refreshedCommitActivity = RepositoryCommitActivity(
+            points: [RepositoryCommitActivityPoint(weekStart: generatedAt, commits: 7)],
+            generatedAt: generatedAt.addingTimeInterval(60)
+        )
+        let contributors = RepositoryContributorsInsight(
+            contributors: [
+                RepositoryContributor(
+                    id: "octo",
+                    login: "octo",
+                    commits: 8,
+                    colorName: "blue"
+                )
+            ],
+            generatedAt: generatedAt
+        )
+        let refreshedContributors = RepositoryContributorsInsight(
+            contributors: [
+                RepositoryContributor(
+                    id: "octo",
+                    login: "octo",
+                    commits: 9,
+                    colorName: "blue"
+                )
+            ],
+            generatedAt: generatedAt.addingTimeInterval(60)
+        )
+        let community = RepositoryCommunityInsight(
+            healthPercentage: 80,
+            hasReadme: true,
+            hasCodeOfConduct: false,
+            hasContributing: true,
+            hasLicense: true
+        )
+        let refreshedCommunity = RepositoryCommunityInsight(
+            healthPercentage: 90,
+            hasReadme: true,
+            hasCodeOfConduct: true,
+            hasContributing: true,
+            hasLicense: true
+        )
+        let recentActivity = RepositoryRecentActivity(
+            events: [
+                RepositoryRecentActivityEvent(
+                    id: "issue-1",
+                    kind: .issue,
+                    number: 1,
+                    title: "Old",
+                    occurredAt: generatedAt,
+                    htmlURL: nil
+                )
+            ],
+            generatedAt: generatedAt
+        )
+        let refreshedRecentActivity = RepositoryRecentActivity(
+            events: [
+                RepositoryRecentActivityEvent(
+                    id: "issue-2",
+                    kind: .issue,
+                    number: 2,
+                    title: "New",
+                    occurredAt: generatedAt.addingTimeInterval(60),
+                    htmlURL: nil
+                )
+            ],
+            generatedAt: generatedAt.addingTimeInterval(60)
+        )
+        let refreshGate = RepositoryInsightsRefreshGate(expectedCount: 5)
+        let remoteProvider = StubRepositoryRemoteInsightsProvider(
+            cachedHandler: { _, _ in
+                RepositoryCachedActivityCounts(
+                    value: activity,
+                    fetchedAt: generatedAt,
+                    isStale: false
+                )
+            },
+            refreshHandler: { _, _ in
+                await refreshGate.block()
+                return refreshedActivity
+            },
+            cachedCommitHandler: { _ in
+                RepositoryCachedCommitActivity(
+                    value: commitActivity,
+                    fetchedAt: generatedAt,
+                    isStale: false
+                )
+            },
+            refreshCommitHandler: { _ in
+                await refreshGate.block()
+                return refreshedCommitActivity
+            },
+            cachedContributorsHandler: { _ in
+                RepositoryCachedContributorsInsight(
+                    value: contributors,
+                    fetchedAt: generatedAt,
+                    isStale: false
+                )
+            },
+            refreshContributorsHandler: { _ in
+                await refreshGate.block()
+                return refreshedContributors
+            },
+            cachedCommunityHandler: { _ in
+                RepositoryCachedCommunityInsight(
+                    value: community,
+                    fetchedAt: generatedAt,
+                    isStale: false
+                )
+            },
+            refreshCommunityHandler: { _ in
+                await refreshGate.block()
+                return refreshedCommunity
+            },
+            cachedRecentActivityHandler: { _ in
+                RepositoryCachedRecentActivity(
+                    value: recentActivity,
+                    fetchedAt: generatedAt,
+                    isStale: false
+                )
+            },
+            refreshRecentActivityHandler: { _ in
+                await refreshGate.block()
+                return refreshedRecentActivity
+            }
+        )
+        let viewModel = RepositoryInsightsViewModel(
+            provider: emptyLocalProvider(),
+            remoteProvider: remoteProvider
+        )
+        let repo = fixtureRepo(id: 14)
+        await viewModel.load(repo: repo, isAuthenticated: true)
+
+        let refreshTasks = [
+            Task { await viewModel.refreshActivity(repo: repo, isAuthenticated: true) },
+            Task { await viewModel.refreshCommitActivity(repo: repo, isAuthenticated: true) },
+            Task { await viewModel.refreshContributors(repo: repo, isAuthenticated: true) },
+            Task { await viewModel.refreshCommunityProfile(repo: repo, isAuthenticated: true) },
+            Task { await viewModel.refreshRecentActivity(repo: repo, isAuthenticated: true) }
+        ]
+        await refreshGate.waitUntilAllBlocked()
+
+        #expect(viewModel.isRefreshingActivity)
+        #expect(viewModel.isRefreshingCommitActivity)
+        #expect(viewModel.isRefreshingContributors)
+        #expect(viewModel.isRefreshingCommunity)
+        #expect(viewModel.isRefreshingRecentActivity)
+        #expect(viewModel.activityState == .content(activity))
+        #expect(viewModel.commitActivityState == .content(commitActivity))
+        #expect(viewModel.contributorsState == .content(contributors))
+        #expect(viewModel.remoteCommunityState == .content(community))
+        #expect(viewModel.recentActivityState == .content(recentActivity))
+
+        await refreshGate.release()
+        for task in refreshTasks {
+            await task.value
+        }
+
+        #expect(viewModel.activityState == .content(refreshedActivity))
+        #expect(viewModel.commitActivityState == .content(refreshedCommitActivity))
+        #expect(viewModel.contributorsState == .content(refreshedContributors))
+        #expect(viewModel.remoteCommunityState == .content(refreshedCommunity))
+        #expect(viewModel.recentActivityState == .content(refreshedRecentActivity))
+    }
+
     @Test("较慢的旧活动范围不能覆盖新范围")
     func staleActivityRangeIsDiscarded() async {
         let remoteProvider = StubRepositoryRemoteInsightsProvider(
@@ -388,6 +572,47 @@ private actor RepositoryInsightsRemoteCallRecorder {
 
     func repoIDs() -> [Int64] {
         values
+    }
+}
+
+/// 同时冻结五个手动刷新请求，确保断言读取的是网络返回前的稳定 UI 状态。
+private actor RepositoryInsightsRefreshGate {
+    private let expectedCount: Int
+    private var blockedCount = 0
+    private var isReleased = false
+    private var allBlockedWaiter: CheckedContinuation<Void, Never>?
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    init(expectedCount: Int) {
+        self.expectedCount = expectedCount
+    }
+
+    func block() async {
+        blockedCount += 1
+        if blockedCount == expectedCount {
+            allBlockedWaiter?.resume()
+            allBlockedWaiter = nil
+        }
+        await withCheckedContinuation { continuation in
+            if isReleased {
+                continuation.resume()
+            } else {
+                releaseWaiters.append(continuation)
+            }
+        }
+    }
+
+    func waitUntilAllBlocked() async {
+        guard blockedCount < expectedCount else { return }
+        await withCheckedContinuation { continuation in
+            allBlockedWaiter = continuation
+        }
+    }
+
+    func release() {
+        isReleased = true
+        releaseWaiters.forEach { $0.resume() }
+        releaseWaiters.removeAll()
     }
 }
 

@@ -26,6 +26,21 @@ enum RepositoryRemoteInsightsSectionState<Value: Equatable & Sendable>: Equatabl
     case generating(cached: Value?)
     case unavailable(cached: Value?)
     case failed(cached: Value?)
+
+    /// 手动刷新只改变刷新按钮，不先清空正在展示的内容；失败时也用该值兜底。
+    var visibleValue: Value? {
+        switch self {
+        case .idle:
+            return nil
+        case .content(let value), .stale(let value):
+            return value
+        case .loading(let cached),
+             .generating(let cached),
+             .unavailable(let cached),
+             .failed(let cached):
+            return cached
+        }
+    }
 }
 
 struct RepositoryReleaseInsight: Equatable, Sendable {
@@ -301,10 +316,21 @@ final class RepositoryInsightsViewModel {
         activityGeneration &+= 1
         let requestedGeneration = activityGeneration
         let selectedRange = activityRange
-        activityState = .loading(cached: nil)
+        let retainedValue = forceRefresh ? activityState.visibleValue : nil
+        if !forceRefresh {
+            activityState = .loading(cached: nil)
+        }
+        if forceRefresh {
+            isRefreshingActivity = true
+        }
+        defer {
+            if requestedGeneration == activityGeneration {
+                isRefreshingActivity = false
+            }
+        }
 
         guard isAuthenticated, let remoteProvider else {
-            activityState = .unavailable(cached: nil)
+            activityState = .unavailable(cached: retainedValue)
             return
         }
 
@@ -320,7 +346,7 @@ final class RepositoryInsightsViewModel {
                 repoID: repo.id,
                 range: selectedRange
             ) else { return }
-            activityState = .failed(cached: nil)
+            activityState = .failed(cached: retainedValue)
             return
         }
         guard ownsRemoteResult(
@@ -330,18 +356,16 @@ final class RepositoryInsightsViewModel {
         ) else { return }
 
         if let cached {
-            activityState = cached.isStale ? .stale(cached.value) : .content(cached.value)
+            if !forceRefresh {
+                activityState = cached.isStale ? .stale(cached.value) : .content(cached.value)
+            }
             if !cached.isStale, !forceRefresh {
                 return
             }
         }
 
         isRefreshingActivity = true
-        defer {
-            if requestedGeneration == activityGeneration {
-                isRefreshingActivity = false
-            }
-        }
+        let fallbackValue = retainedValue ?? cached?.value
         do {
             let fresh = try await remoteProvider.refreshActivity(
                 repository: RepoIdentity(
@@ -365,11 +389,11 @@ final class RepositoryInsightsViewModel {
             ) else { return }
             switch error {
             case .generating:
-                activityState = .generating(cached: cached?.value)
+                activityState = .generating(cached: fallbackValue)
             case .unauthorized, .forbidden, .unavailable:
-                activityState = .unavailable(cached: cached?.value)
+                activityState = .unavailable(cached: fallbackValue)
             default:
-                activityState = .failed(cached: cached?.value)
+                activityState = .failed(cached: fallbackValue)
             }
         } catch {
             guard ownsRemoteResult(
@@ -377,7 +401,7 @@ final class RepositoryInsightsViewModel {
                 repoID: repo.id,
                 range: selectedRange
             ) else { return }
-            activityState = .failed(cached: cached?.value)
+            activityState = .failed(cached: fallbackValue)
         }
     }
 
@@ -398,10 +422,21 @@ final class RepositoryInsightsViewModel {
     ) async {
         commitGeneration &+= 1
         let requestedGeneration = commitGeneration
-        commitActivityState = .loading(cached: nil)
+        let retainedValue = forceRefresh ? commitActivityState.visibleValue : nil
+        if !forceRefresh {
+            commitActivityState = .loading(cached: nil)
+        }
+        if forceRefresh {
+            isRefreshingCommitActivity = true
+        }
+        defer {
+            if requestedGeneration == commitGeneration {
+                isRefreshingCommitActivity = false
+            }
+        }
 
         guard isAuthenticated, let remoteProvider else {
-            commitActivityState = .unavailable(cached: nil)
+            commitActivityState = .unavailable(cached: retainedValue)
             return
         }
 
@@ -410,24 +445,22 @@ final class RepositoryInsightsViewModel {
             cached = try await remoteProvider.cachedCommitActivity(repoID: repo.id)
         } catch {
             guard ownsCommitResult(generation: requestedGeneration, repoID: repo.id) else { return }
-            commitActivityState = .failed(cached: nil)
+            commitActivityState = .failed(cached: retainedValue)
             return
         }
         guard ownsCommitResult(generation: requestedGeneration, repoID: repo.id) else { return }
 
         if let cached {
-            commitActivityState = cached.isStale ? .stale(cached.value) : .content(cached.value)
+            if !forceRefresh {
+                commitActivityState = cached.isStale ? .stale(cached.value) : .content(cached.value)
+            }
             if !cached.isStale, !forceRefresh {
                 return
             }
         }
 
         isRefreshingCommitActivity = true
-        defer {
-            if requestedGeneration == commitGeneration {
-                isRefreshingCommitActivity = false
-            }
-        }
+        let fallbackValue = retainedValue ?? cached?.value
         do {
             let fresh = try await remoteProvider.refreshCommitActivity(
                 repository: RepoIdentity(
@@ -442,15 +475,15 @@ final class RepositoryInsightsViewModel {
             guard ownsCommitResult(generation: requestedGeneration, repoID: repo.id) else { return }
             switch error {
             case .generating:
-                commitActivityState = .generating(cached: cached?.value)
+                commitActivityState = .generating(cached: fallbackValue)
             case .unauthorized, .forbidden, .unavailable:
-                commitActivityState = .unavailable(cached: cached?.value)
+                commitActivityState = .unavailable(cached: fallbackValue)
             default:
-                commitActivityState = .failed(cached: cached?.value)
+                commitActivityState = .failed(cached: fallbackValue)
             }
         } catch {
             guard ownsCommitResult(generation: requestedGeneration, repoID: repo.id) else { return }
-            commitActivityState = .failed(cached: cached?.value)
+            commitActivityState = .failed(cached: fallbackValue)
         }
     }
 
@@ -465,10 +498,21 @@ final class RepositoryInsightsViewModel {
     ) async {
         contributorGeneration &+= 1
         let requestedGeneration = contributorGeneration
-        contributorsState = .loading(cached: nil)
+        let retainedValue = forceRefresh ? contributorsState.visibleValue : nil
+        if !forceRefresh {
+            contributorsState = .loading(cached: nil)
+        }
+        if forceRefresh {
+            isRefreshingContributors = true
+        }
+        defer {
+            if requestedGeneration == contributorGeneration {
+                isRefreshingContributors = false
+            }
+        }
 
         guard isAuthenticated, let remoteProvider else {
-            contributorsState = .unavailable(cached: nil)
+            contributorsState = .unavailable(cached: retainedValue)
             return
         }
 
@@ -477,24 +521,22 @@ final class RepositoryInsightsViewModel {
             cached = try await remoteProvider.cachedContributors(repoID: repo.id)
         } catch {
             guard ownsContributorResult(generation: requestedGeneration, repoID: repo.id) else { return }
-            contributorsState = .failed(cached: nil)
+            contributorsState = .failed(cached: retainedValue)
             return
         }
         guard ownsContributorResult(generation: requestedGeneration, repoID: repo.id) else { return }
 
         if let cached {
-            contributorsState = cached.isStale ? .stale(cached.value) : .content(cached.value)
+            if !forceRefresh {
+                contributorsState = cached.isStale ? .stale(cached.value) : .content(cached.value)
+            }
             if !cached.isStale, !forceRefresh {
                 return
             }
         }
 
         isRefreshingContributors = true
-        defer {
-            if requestedGeneration == contributorGeneration {
-                isRefreshingContributors = false
-            }
-        }
+        let fallbackValue = retainedValue ?? cached?.value
         do {
             let fresh = try await remoteProvider.refreshContributors(
                 repository: repoIdentity(for: repo)
@@ -505,13 +547,13 @@ final class RepositoryInsightsViewModel {
             guard ownsContributorResult(generation: requestedGeneration, repoID: repo.id) else { return }
             switch error {
             case .unauthorized, .forbidden, .unavailable:
-                contributorsState = .unavailable(cached: cached?.value)
+                contributorsState = .unavailable(cached: fallbackValue)
             default:
-                contributorsState = .failed(cached: cached?.value)
+                contributorsState = .failed(cached: fallbackValue)
             }
         } catch {
             guard ownsContributorResult(generation: requestedGeneration, repoID: repo.id) else { return }
-            contributorsState = .failed(cached: cached?.value)
+            contributorsState = .failed(cached: fallbackValue)
         }
     }
 
@@ -522,10 +564,21 @@ final class RepositoryInsightsViewModel {
     ) async {
         communityGeneration &+= 1
         let requestedGeneration = communityGeneration
-        remoteCommunityState = .loading(cached: nil)
+        let retainedValue = forceRefresh ? remoteCommunityState.visibleValue : nil
+        if !forceRefresh {
+            remoteCommunityState = .loading(cached: nil)
+        }
+        if forceRefresh {
+            isRefreshingCommunity = true
+        }
+        defer {
+            if requestedGeneration == communityGeneration {
+                isRefreshingCommunity = false
+            }
+        }
 
         guard let remoteProvider else {
-            remoteCommunityState = .unavailable(cached: nil)
+            remoteCommunityState = .unavailable(cached: retainedValue)
             return
         }
 
@@ -534,27 +587,25 @@ final class RepositoryInsightsViewModel {
             cached = try await remoteProvider.cachedCommunityProfile(repoID: repo.id)
         } catch {
             guard ownsCommunityResult(generation: requestedGeneration, repoID: repo.id) else { return }
-            remoteCommunityState = .failed(cached: nil)
+            remoteCommunityState = .failed(cached: retainedValue)
             return
         }
         guard ownsCommunityResult(generation: requestedGeneration, repoID: repo.id) else { return }
 
         if let cached {
-            remoteCommunityState = cached.isStale ? .stale(cached.value) : .content(cached.value)
+            if !forceRefresh {
+                remoteCommunityState = cached.isStale ? .stale(cached.value) : .content(cached.value)
+            }
             if !isAuthenticated || (!cached.isStale && !forceRefresh) {
                 return
             }
         } else if !isAuthenticated {
-            remoteCommunityState = .unavailable(cached: nil)
+            remoteCommunityState = .unavailable(cached: retainedValue)
             return
         }
 
         isRefreshingCommunity = true
-        defer {
-            if requestedGeneration == communityGeneration {
-                isRefreshingCommunity = false
-            }
-        }
+        let fallbackValue = retainedValue ?? cached?.value
         do {
             let fresh = try await remoteProvider.refreshCommunityProfile(
                 repository: repoIdentity(for: repo)
@@ -565,13 +616,13 @@ final class RepositoryInsightsViewModel {
             guard ownsCommunityResult(generation: requestedGeneration, repoID: repo.id) else { return }
             switch error {
             case .unauthorized, .forbidden, .unavailable:
-                remoteCommunityState = .unavailable(cached: cached?.value)
+                remoteCommunityState = .unavailable(cached: fallbackValue)
             default:
-                remoteCommunityState = .failed(cached: cached?.value)
+                remoteCommunityState = .failed(cached: fallbackValue)
             }
         } catch {
             guard ownsCommunityResult(generation: requestedGeneration, repoID: repo.id) else { return }
-            remoteCommunityState = .failed(cached: cached?.value)
+            remoteCommunityState = .failed(cached: fallbackValue)
         }
     }
 
@@ -594,10 +645,21 @@ final class RepositoryInsightsViewModel {
     ) async {
         timelineGeneration &+= 1
         let requestedGeneration = timelineGeneration
-        recentActivityState = .loading(cached: nil)
+        let retainedValue = forceRefresh ? recentActivityState.visibleValue : nil
+        if !forceRefresh {
+            recentActivityState = .loading(cached: nil)
+        }
+        if forceRefresh {
+            isRefreshingRecentActivity = true
+        }
+        defer {
+            if requestedGeneration == timelineGeneration {
+                isRefreshingRecentActivity = false
+            }
+        }
 
         guard isAuthenticated, let remoteProvider else {
-            recentActivityState = .unavailable(cached: nil)
+            recentActivityState = .unavailable(cached: retainedValue)
             return
         }
 
@@ -606,24 +668,22 @@ final class RepositoryInsightsViewModel {
             cached = try await remoteProvider.cachedRecentActivity(repoID: repo.id)
         } catch {
             guard ownsTimelineResult(generation: requestedGeneration, repoID: repo.id) else { return }
-            recentActivityState = .failed(cached: nil)
+            recentActivityState = .failed(cached: retainedValue)
             return
         }
         guard ownsTimelineResult(generation: requestedGeneration, repoID: repo.id) else { return }
 
         if let cached {
-            recentActivityState = cached.isStale ? .stale(cached.value) : .content(cached.value)
+            if !forceRefresh {
+                recentActivityState = cached.isStale ? .stale(cached.value) : .content(cached.value)
+            }
             if !cached.isStale, !forceRefresh {
                 return
             }
         }
 
         isRefreshingRecentActivity = true
-        defer {
-            if requestedGeneration == timelineGeneration {
-                isRefreshingRecentActivity = false
-            }
-        }
+        let fallbackValue = retainedValue ?? cached?.value
         do {
             let fresh = try await remoteProvider.refreshRecentActivity(
                 repository: repoIdentity(for: repo)
@@ -634,13 +694,13 @@ final class RepositoryInsightsViewModel {
             guard ownsTimelineResult(generation: requestedGeneration, repoID: repo.id) else { return }
             switch error {
             case .unauthorized, .forbidden, .unavailable:
-                recentActivityState = .unavailable(cached: cached?.value)
+                recentActivityState = .unavailable(cached: fallbackValue)
             default:
-                recentActivityState = .failed(cached: cached?.value)
+                recentActivityState = .failed(cached: fallbackValue)
             }
         } catch {
             guard ownsTimelineResult(generation: requestedGeneration, repoID: repo.id) else { return }
-            recentActivityState = .failed(cached: cached?.value)
+            recentActivityState = .failed(cached: fallbackValue)
         }
     }
 
