@@ -74,6 +74,13 @@ struct GRDBRepoRepository {
             for dto in dtos {
                 var repo = Self.repoFromDTO(dto.repo, starredAt: dto.starredAt, cachedAt: cachedAtISO)
                 try repo.save(db)
+                try GRDBRepoStarHistoryRepository.saveLocalSnapshot(
+                    repoId: dto.repo.id,
+                    starsCount: dto.repo.stargazersCount,
+                    observedAt: syncedAt,
+                    fetchedAt: syncedAt,
+                    db: db
+                )
 
                 var starred = StarredRepo(
                     repoId: dto.repo.id,
@@ -179,6 +186,13 @@ struct GRDBRepoRepository {
         return try await database.writer.write { db in
             var repo = Self.repoFromDTO(repoDTO, starredAt: resolvedStarredAt, cachedAt: cachedAtISO, isStarred: true)
             try repo.save(db)
+            try GRDBRepoStarHistoryRepository.saveLocalSnapshot(
+                repoId: repoDTO.id,
+                starsCount: repoDTO.stargazersCount,
+                observedAt: syncedAt,
+                fetchedAt: syncedAt,
+                db: db
+            )
 
             var starred = StarredRepo(
                 repoId: repoDTO.id,
@@ -210,6 +224,13 @@ struct GRDBRepoRepository {
                 repo.starredAt = existing.starredAt
             }
             try repo.save(db)
+            try GRDBRepoStarHistoryRepository.saveLocalSnapshot(
+                repoId: repo.id,
+                starsCount: repo.starsCount,
+                observedAt: syncedAt,
+                fetchedAt: syncedAt,
+                db: db
+            )
             return repo
         }
     }
@@ -226,6 +247,13 @@ struct GRDBRepoRepository {
             saved.starredAt = existing?.isStarred == true ? existing?.starredAt : nil
             saved.cachedAt = cachedAtISO
             try saved.save(db)
+            try GRDBRepoStarHistoryRepository.saveLocalSnapshot(
+                repoId: saved.id,
+                starsCount: saved.starsCount,
+                observedAt: syncedAt,
+                fetchedAt: syncedAt,
+                db: db
+            )
             return saved
         }
     }

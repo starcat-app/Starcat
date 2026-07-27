@@ -299,14 +299,6 @@ struct RepositoryCommitPoint: Identifiable, Equatable, Sendable {
     let commits: Int
 }
 
-/// Star 历史折线中的单点。
-struct StarHistoryPoint: Identifiable, Equatable, Sendable {
-    let date: Date
-    let count: Int
-
-    var id: Date { date }
-}
-
 /// 贡献者摘要。头像 URL 允许为空，网络失败时 UI 回退到稳定的首字母占位。
 struct RepositoryContributor: Codable, Identifiable, Equatable, Sendable {
     let id: String
