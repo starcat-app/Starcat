@@ -641,30 +641,129 @@ struct RepositoryInsightsView: View {
             subtitle: "insights.repo.section.commits.subtitle",
             systemImage: "chart.bar.fill"
         ) {
-            Chart(snapshot.commitPoints) { point in
-                BarMark(
-                    x: .value("Week", point.weekLabel),
-                    y: .value("Commits", point.commits)
-                )
-                .foregroundStyle(Color.green)
-                .cornerRadius(2)
-            }
-            .chartXAxis {
-                AxisMarks(values: .stride(by: 2)) {
-                    AxisValueLabel()
-                        .font(interfaceScale.font(.captionSmall))
-                    AxisTick()
-                    AxisGridLine().foregroundStyle(Color.secondary.opacity(0.08))
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Text(LocalizedStringKey(viewModel.activityRange.titleKey))
+                        .font(interfaceScale.font(.caption, weight: .medium))
+                        .foregroundStyle(.secondary)
+
+                    Spacer(minLength: 8)
+
+                    SyncIconButton(
+                        isRefreshing: viewModel.isRefreshingCommitActivity,
+                        disabled: viewModel.isRefreshingCommitActivity,
+                        tooltip: String.l10n("insights.repo.commit.refresh")
+                    ) {
+                        Task {
+                            await viewModel.refreshCommitActivity(
+                                repo: repo,
+                                isAuthenticated: authSession.state.isAuthenticated
+                            )
+                        }
+                    }
+                }
+
+                if let activity = displayedCommitActivity {
+                    let points = activity.points(in: viewModel.activityRange)
+                    if points.isEmpty {
+                        sectionMessage("insights.repo.state.noData", systemImage: "chart.bar.xaxis")
+                    } else {
+                        Chart(points) { point in
+                            BarMark(
+                                x: .value("Week", point.weekStart),
+                                y: .value("Commits", point.commits)
+                            )
+                            .foregroundStyle(Color.green)
+                            .cornerRadius(2)
+                        }
+                        .chartXAxis {
+                            AxisMarks(values: .automatic(desiredCount: 6)) { value in
+                                AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                                    .font(interfaceScale.font(.captionSmall))
+                                AxisGridLine().foregroundStyle(Color.secondary.opacity(0.08))
+                            }
+                        }
+                        .chartYAxis {
+                            AxisMarks(position: .leading) {
+                                AxisValueLabel()
+                                    .font(interfaceScale.font(.captionSmall))
+                                AxisGridLine().foregroundStyle(Color.secondary.opacity(0.12))
+                            }
+                        }
+                        .frame(height: 176)
+                        .accessibilityLabel(Text("insights.repo.section.commits"))
+                        .accessibilityValue(
+                            Text(
+                                String(
+                                    format: String.l10n("insights.repo.commit.totalFormat"),
+                                    points.reduce(0) { $0 + $1.commits }
+                                )
+                            )
+                        )
+                    }
+
+                    if let message = commitStatusMessage {
+                        Label(message.key, systemImage: message.systemImage)
+                            .font(interfaceScale.font(.captionSmall))
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    switch viewModel.commitActivityState {
+                    case .idle, .loading:
+                        sectionProgress
+                    case .generating:
+                        sectionMessage(
+                            "insights.repo.state.generating",
+                            systemImage: "clock.arrow.circlepath"
+                        )
+                    case .unavailable:
+                        sectionMessage(
+                            authSession.state.isAuthenticated
+                                ? "insights.repo.state.noData"
+                                : "insights.repo.state.loginRequired",
+                            systemImage: "person.crop.circle.badge.exclamationmark"
+                        )
+                    case .failed:
+                        sectionMessage("error.loadFailed", systemImage: "exclamationmark.triangle")
+                    case .content, .stale:
+                        EmptyView()
+                    }
                 }
             }
-            .chartYAxis {
-                AxisMarks(position: .leading) {
-                    AxisValueLabel()
-                        .font(interfaceScale.font(.captionSmall))
-                    AxisGridLine().foregroundStyle(Color.secondary.opacity(0.12))
-                }
-            }
-            .frame(height: 176)
+        }
+    }
+
+    private var displayedCommitActivity: RepositoryCommitActivity? {
+        switch viewModel.commitActivityState {
+        case .content(let value), .stale(let value):
+            return value
+        case .loading(let cached),
+             .generating(let cached),
+             .unavailable(let cached),
+             .failed(let cached):
+            return cached
+        case .idle:
+            return nil
+        }
+    }
+
+    private var commitStatusMessage: (key: LocalizedStringKey, systemImage: String)? {
+        switch viewModel.commitActivityState {
+        case .stale:
+            return ("insights.repo.state.stale", "clock.badge.exclamationmark")
+        case .generating:
+            return ("insights.repo.state.generating", "clock.arrow.circlepath")
+        case .unavailable:
+            return (
+                authSession.state.isAuthenticated
+                    ? "insights.repo.state.noData"
+                    : "insights.repo.state.loginRequired",
+                "person.crop.circle.badge.exclamationmark"
+            )
+        case .failed:
+            return ("insights.repo.state.refreshFailed", "exclamationmark.triangle")
+        case .idle, .loading, .content:
+            return nil
         }
     }
 

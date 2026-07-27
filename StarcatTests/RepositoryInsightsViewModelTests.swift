@@ -290,6 +290,14 @@ private struct StubRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsPro
         RepoIdentity,
         RepositoryActivityRange
     ) async throws -> RepositoryActivityCounts
+    var cachedCommitHandler: @Sendable (
+        Int64
+    ) async throws -> RepositoryCachedCommitActivity? = { _ in nil }
+    var refreshCommitHandler: @Sendable (
+        RepoIdentity
+    ) async throws -> RepositoryCommitActivity = { _ in
+        throw StubError.failed
+    }
 
     func cachedActivity(
         repoID: Int64,
@@ -303,5 +311,13 @@ private struct StubRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsPro
         range: RepositoryActivityRange
     ) async throws -> RepositoryActivityCounts {
         try await refreshHandler(repository, range)
+    }
+
+    func cachedCommitActivity(repoID: Int64) async throws -> RepositoryCachedCommitActivity? {
+        try await cachedCommitHandler(repoID)
+    }
+
+    func refreshCommitActivity(repository: RepoIdentity) async throws -> RepositoryCommitActivity {
+        try await refreshCommitHandler(repository)
     }
 }

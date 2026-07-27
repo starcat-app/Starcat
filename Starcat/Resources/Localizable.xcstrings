@@ -127520,6 +127520,20 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "最新 Release" } }
       }
     },
+    "insights.repo.commit.refresh" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Refresh commit activity" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "刷新提交活动" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "重新整理提交活動" } }
+      }
+    },
+    "insights.repo.commit.totalFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld commits in the selected range" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "所选范围共 %lld 次提交" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "所選範圍共 %lld 次提交" } }
+      }
+    },
     "insights.repo.period.thirtyDays" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Last 30 days" } },
@@ -127550,9 +127564,9 @@
     },
     "insights.repo.section.commits.subtitle" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Weekly commits during the last 12 weeks" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "过去 12 周的每周提交量" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "過去 12 週的每週提交量" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Weekly commits in the selected activity range" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "所选活动范围内的每周提交量" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "所選活動範圍內的每週提交量" } }
       }
     },
     "insights.repo.section.community" : {

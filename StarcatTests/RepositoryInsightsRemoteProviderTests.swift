@@ -60,6 +60,49 @@ struct RepositoryInsightsRemoteProviderTests {
         #expect(queries.contains { $0.contains("is:issue created:") })
         #expect(queries.contains { $0.contains("is:issue closed:") })
     }
+
+    @Test("Commit activity 保存 52 周原始结果并由客户端按活动范围裁剪")
+    func commitActivityPersistsAndFiltersOnClient() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 22, owner: "octo", name: "commits")
+        let now = try #require(
+            ISO8601DateFormatter().date(from: "2026-07-27T12:00:00Z")
+        )
+        let oldWeek = Int(now.addingTimeInterval(-40 * 86_400).timeIntervalSince1970)
+        let recentWeek = Int(now.addingTimeInterval(-5 * 86_400).timeIntervalSince1970)
+        let httpClient = CommitActivityHTTPClient(
+            body: """
+            [
+              {"week":\(oldWeek),"total":12,"days":[1,2,3,2,2,1,1]},
+              {"week":\(recentWeek),"total":7,"days":[1,1,1,1,1,1,1]}
+            ]
+            """
+        )
+        let client = DefaultGitHubRepositoryMetricsClient(
+            httpClient: httpClient,
+            token: "token",
+            baseURL: URL(string: "https://api.example.test")!
+        )
+        let provider = DefaultRepositoryRemoteInsightsProvider(
+            metricsClient: client,
+            cache: GRDBRepositoryInsightsCache(database: database),
+            now: { now }
+        )
+
+        let refreshed = try await provider.refreshCommitActivity(
+            repository: RepoIdentity(ghRepoID: 22, owner: "octo", name: "commits")
+        )
+        let cached = try #require(try await provider.cachedCommitActivity(repoID: 22))
+        let request = try #require(await httpClient.request())
+
+        #expect(refreshed.points.count == 2)
+        #expect(refreshed.points(in: .week).map(\.commits) == [7])
+        #expect(refreshed.points(in: .month).map(\.commits) == [7])
+        #expect(refreshed.points(in: .quarter).map(\.commits) == [12, 7])
+        #expect(cached.value == refreshed)
+        #expect(!cached.isStale)
+        #expect(request.url?.path == "/repos/octo/commits/stats/commit_activity")
+    }
 }
 
 private actor ActivityMetricsHTTPClient: RAGHTTPClientProtocol {
@@ -87,5 +130,31 @@ private actor ActivityMetricsHTTPClient: RAGHTTPClientProtocol {
 
     func requests() -> [URLRequest] {
         recordedRequests
+    }
+}
+
+private actor CommitActivityHTTPClient: RAGHTTPClientProtocol {
+    private let body: String
+    private var recordedRequest: URLRequest?
+
+    init(body: String) {
+        self.body = body
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        recordedRequest = request
+        return (
+            Data(body.utf8),
+            HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["ETag": "\"commit-v1\""]
+            )!
+        )
+    }
+
+    func request() -> URLRequest? {
+        recordedRequest
     }
 }

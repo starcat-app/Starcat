@@ -128,7 +128,8 @@ final class RepositoryInsightsViewModel {
     private let provider: any RepositoryLocalInsightsProviding
     private let remoteProvider: (any RepositoryRemoteInsightsProviding)?
     private var generation: UInt64 = 0
-    private var remoteGeneration: UInt64 = 0
+    private var activityGeneration: UInt64 = 0
+    private var commitGeneration: UInt64 = 0
 
     private(set) var activeRepoID: Int64?
     private(set) var releaseState: RepositoryInsightsSectionState<RepositoryReleaseInsight> = .idle
@@ -138,6 +139,9 @@ final class RepositoryInsightsViewModel {
     private(set) var activityRange: RepositoryActivityRange = .month
     private(set) var activityState: RepositoryRemoteInsightsSectionState<RepositoryActivityCounts> = .idle
     private(set) var isRefreshingActivity = false
+    private(set) var commitActivityState:
+        RepositoryRemoteInsightsSectionState<RepositoryCommitActivity> = .idle
+    private(set) var isRefreshingCommitActivity = false
 
     init(
         provider: any RepositoryLocalInsightsProviding,
@@ -184,7 +188,17 @@ final class RepositoryInsightsViewModel {
 
     func load(repo: Repo, isAuthenticated: Bool) async {
         await load(repoId: repo.id)
-        await loadActivity(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: false)
+        async let activityLoad: Void = loadActivity(
+            repo: repo,
+            isAuthenticated: isAuthenticated,
+            forceRefresh: false
+        )
+        async let commitLoad: Void = loadCommitActivity(
+            repo: repo,
+            isAuthenticated: isAuthenticated,
+            forceRefresh: false
+        )
+        _ = await (activityLoad, commitLoad)
     }
 
     func selectActivityRange(
@@ -202,10 +216,17 @@ final class RepositoryInsightsViewModel {
         await loadActivity(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
     }
 
+    func refreshCommitActivity(repo: Repo, isAuthenticated: Bool) async {
+        guard !isRefreshingCommitActivity else { return }
+        await loadCommitActivity(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
+    }
+
     /// README 模式不保活远端刷新。generation 让已经返回的旧结果无法再写 UI。
     func cancelRemoteLoading() {
-        remoteGeneration &+= 1
+        activityGeneration &+= 1
+        commitGeneration &+= 1
         isRefreshingActivity = false
+        isRefreshingCommitActivity = false
     }
 
     private func loadActivity(
@@ -213,8 +234,8 @@ final class RepositoryInsightsViewModel {
         isAuthenticated: Bool,
         forceRefresh: Bool
     ) async {
-        remoteGeneration &+= 1
-        let requestedGeneration = remoteGeneration
+        activityGeneration &+= 1
+        let requestedGeneration = activityGeneration
         let selectedRange = activityRange
         activityState = .loading(cached: nil)
 
@@ -253,7 +274,7 @@ final class RepositoryInsightsViewModel {
 
         isRefreshingActivity = true
         defer {
-            if requestedGeneration == remoteGeneration {
+            if requestedGeneration == activityGeneration {
                 isRefreshingActivity = false
             }
         }
@@ -301,9 +322,76 @@ final class RepositoryInsightsViewModel {
         repoID: Int64,
         range: RepositoryActivityRange
     ) -> Bool {
-        remoteGeneration == generation
+        activityGeneration == generation
             && activeRepoID == repoID
             && activityRange == range
+    }
+
+    private func loadCommitActivity(
+        repo: Repo,
+        isAuthenticated: Bool,
+        forceRefresh: Bool
+    ) async {
+        commitGeneration &+= 1
+        let requestedGeneration = commitGeneration
+        commitActivityState = .loading(cached: nil)
+
+        guard isAuthenticated, let remoteProvider else {
+            commitActivityState = .unavailable(cached: nil)
+            return
+        }
+
+        let cached: RepositoryCachedCommitActivity?
+        do {
+            cached = try await remoteProvider.cachedCommitActivity(repoID: repo.id)
+        } catch {
+            guard ownsCommitResult(generation: requestedGeneration, repoID: repo.id) else { return }
+            commitActivityState = .failed(cached: nil)
+            return
+        }
+        guard ownsCommitResult(generation: requestedGeneration, repoID: repo.id) else { return }
+
+        if let cached {
+            commitActivityState = cached.isStale ? .stale(cached.value) : .content(cached.value)
+            if !cached.isStale, !forceRefresh {
+                return
+            }
+        }
+
+        isRefreshingCommitActivity = true
+        defer {
+            if requestedGeneration == commitGeneration {
+                isRefreshingCommitActivity = false
+            }
+        }
+        do {
+            let fresh = try await remoteProvider.refreshCommitActivity(
+                repository: RepoIdentity(
+                    ghRepoID: repo.id,
+                    owner: repo.owner,
+                    name: repo.name
+                )
+            )
+            guard ownsCommitResult(generation: requestedGeneration, repoID: repo.id) else { return }
+            commitActivityState = .content(fresh)
+        } catch let error as GitHubRepositoryMetricsError {
+            guard ownsCommitResult(generation: requestedGeneration, repoID: repo.id) else { return }
+            switch error {
+            case .generating:
+                commitActivityState = .generating(cached: cached?.value)
+            case .unauthorized, .forbidden, .unavailable:
+                commitActivityState = .unavailable(cached: cached?.value)
+            default:
+                commitActivityState = .failed(cached: cached?.value)
+            }
+        } catch {
+            guard ownsCommitResult(generation: requestedGeneration, repoID: repo.id) else { return }
+            commitActivityState = .failed(cached: cached?.value)
+        }
+    }
+
+    private func ownsCommitResult(generation: UInt64, repoID: Int64) -> Bool {
+        commitGeneration == generation && activeRepoID == repoID
     }
 
     private func apply(_ event: LoadEvent) {

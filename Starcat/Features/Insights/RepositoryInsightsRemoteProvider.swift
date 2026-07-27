@@ -58,6 +58,30 @@ struct RepositoryCachedActivityCounts: Equatable, Sendable {
     let isStale: Bool
 }
 
+/// GitHub 固定返回最近 52 周；保留绝对日期后，客户端可跟随 Activity range 裁剪。
+struct RepositoryCommitActivityPoint: Codable, Equatable, Identifiable, Sendable {
+    let weekStart: Date
+    let commits: Int
+
+    var id: Date { weekStart }
+}
+
+struct RepositoryCommitActivity: Codable, Equatable, Sendable {
+    let points: [RepositoryCommitActivityPoint]
+    let generatedAt: Date
+
+    func points(in range: RepositoryActivityRange) -> [RepositoryCommitActivityPoint] {
+        let cutoff = generatedAt.addingTimeInterval(-Double(range.dayCount) * 86_400)
+        return points.filter { $0.weekStart >= cutoff }
+    }
+}
+
+struct RepositoryCachedCommitActivity: Equatable, Sendable {
+    let value: RepositoryCommitActivity
+    let fetchedAt: Date
+    let isStale: Bool
+}
+
 protocol RepositoryRemoteInsightsProviding: Sendable {
     func cachedActivity(
         repoID: Int64,
@@ -68,6 +92,10 @@ protocol RepositoryRemoteInsightsProviding: Sendable {
         repository: RepoIdentity,
         range: RepositoryActivityRange
     ) async throws -> RepositoryActivityCounts
+
+    func cachedCommitActivity(repoID: Int64) async throws -> RepositoryCachedCommitActivity?
+
+    func refreshCommitActivity(repository: RepoIdentity) async throws -> RepositoryCommitActivity
 }
 
 struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProviding, Sendable {
@@ -125,6 +153,51 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
             range: range.cacheRange,
             fetchedAt: fetchedAt,
             responseETag: nil,
+            defaultBranchSHA: nil
+        )
+        return value
+    }
+
+    func cachedCommitActivity(repoID: Int64) async throws -> RepositoryCachedCommitActivity? {
+        guard let cached = try await cache.load(
+            repoId: repoID,
+            dataset: .commitActivity,
+            range: .all,
+            as: RepositoryCommitActivity.self
+        ) else {
+            return nil
+        }
+        return RepositoryCachedCommitActivity(
+            value: cached.value,
+            fetchedAt: cached.fetchedAt,
+            isStale: cached.isStale(at: now())
+        )
+    }
+
+    func refreshCommitActivity(repository: RepoIdentity) async throws -> RepositoryCommitActivity {
+        let fetchedAt = now()
+        let response = try await metricsClient.loadCommitActivity(repository: repository)
+        guard let repoID = repository.ghRepoID else {
+            throw GitHubRepositoryMetricsError.invalidResponse
+        }
+        let value = RepositoryCommitActivity(
+            points: response.value
+                .map {
+                    RepositoryCommitActivityPoint(
+                        weekStart: Date(timeIntervalSince1970: TimeInterval($0.week)),
+                        commits: $0.total
+                    )
+                }
+                .sorted { $0.weekStart < $1.weekStart },
+            generatedAt: fetchedAt
+        )
+        try await cache.store(
+            value,
+            repoId: repoID,
+            dataset: .commitActivity,
+            range: .all,
+            fetchedAt: fetchedAt,
+            responseETag: response.etag,
             defaultBranchSHA: nil
         )
         return value
