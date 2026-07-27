@@ -177,15 +177,15 @@
 
 ### 5.2 通用仓库洞察缓存
 
-- [ ] 新增 `RepositoryInsightsCache` 和 GRDB Record / Repository。
-- [ ] 支持 dataset、range、payload、ETag、fetchedAt、staleAfter 和 default branch SHA。
-- [ ] 实现 15 分钟活动缓存和 24 小时统计 / contributors / community 缓存。
-- [ ] 支持 stale-while-refresh：有旧缓存时刷新失败不清空旧值。
-- [ ] repo 删除后缓存级联清理；损坏 payload 只丢弃对应 dataset。
+- [x] 新增 `RepositoryInsightsCache` 和 GRDB Record / Repository。
+- [x] 支持 dataset、range、payload、ETag、fetchedAt、staleAfter 和 default branch SHA。
+- [x] 实现 15 分钟活动缓存和 24 小时统计 / contributors / community 缓存。
+- [x] 支持 stale-while-refresh：陈旧记录仍返回并标记 stale，由上层刷新失败时继续保留。
+- [x] repo 删除后缓存级联清理；损坏 payload 只丢弃对应 dataset。
 
 计划提交：
 
-- [ ] `feat(insights): 实现仓库洞察本地缓存` — 实际 commit：`待回填`
+- [x] `feat(insights): 实现仓库洞察本地缓存` — 实际 commit：`2caa0222`
 
 ---
 
