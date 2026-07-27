@@ -113,13 +113,13 @@
 ### 3.2 “需要处理”聚合
 
 - [x] 聚合未打标签、未读、无 README、无可索引内容、索引失败 / 过期和 Health 待计算。
-- [ ] 全部收藏范围隐藏知识库专属 RAG 噪音，并提供切换知识库提示。
+- [x] 全部收藏范围隐藏知识库专属 RAG 噪音，并提供切换知识库提示。
 - [x] 每个 action item 保存稳定筛选语义和可访问描述，不在 View 中临时拼规则。
-- [ ] 覆盖零值、数据缺失、索引模型变化和 active scope 非收藏仓库。
+- [x] 覆盖零值、数据缺失、索引模型变化和 active scope 非收藏仓库。
 
 计划提交：
 
-- [ ] `feat(insights): 增加洞察待处理统计` — 实际 commit：`待回填`
+- [x] `feat(insights): 增加洞察待处理统计` — 实际 commit：`d45789be`、`c6537ff1`
 
 ---
 
@@ -133,14 +133,15 @@
 - [x] 中栏提供主题摘要和待处理集合，使用原生轻量 source-list row。
 - [x] Detail 展示范围、KPI、整理情况、技术分布、需要处理和覆盖进度。
 - [x] 离开并返回洞察时恢复主题、范围和中栏选择，不保存滚动位置。
-- [ ] 刷新统一使用 `SyncIconButton`，只重读本地数据库，不触发全量 Stars 同步。
-- [ ] loading、empty、error、stale 保持稳定内容树，不闪回其他页面数据。
+- [x] 刷新统一使用 `SyncIconButton`，只重读本地数据库，不触发全量 Stars 同步。
+- [x] loading、empty、error、stale 保持稳定内容树，不闪回其他页面数据。
 
 计划提交：
 
 - [x] `feat(insights): 添加洞察中心三栏导航` — 实际 commit：`19ce6c25`
 - [x] `feat(insights): 实现我的洞察概览页面` — 实际 commit：`b5926f34`
 - [x] `feat(insights): 收口洞察最终分类与视图` — 实际 commit：`ea819bcb`
+- [x] `feat(insights): 接入我的洞察真实数据` — 实际 commit：`4891803a`
 
 ### 4.2 结构化下钻
 
