@@ -145,17 +145,17 @@
 
 ### 4.2 结构化下钻
 
-- [ ] 扩充 `GlobalRepoFilterState` 的标签、README、可索引内容和 RAG index state 筛选。
-- [ ] 所有洞察下钻从 `.neutral` 构造，禁止继承用户此前隐藏的过滤条件。
-- [ ] 复用 `applyTemporaryGlobalFilters(...)`，切换到 Manage 后建立临时筛选会话。
-- [ ] 清除临时筛选时恢复点击前状态，并提供返回洞察上下文。
-- [ ] 数字入口与下钻列表条数必须一致，禁止用搜索关键字模拟结构化筛选。
-- [ ] 覆盖状态、语言、未打标签、README、RAG、Health 和组合筛选回归。
+- [x] 扩充 `GlobalRepoFilterState` 的标签、README、可索引内容和 RAG index state 筛选。
+- [x] 所有洞察下钻从 `.neutral` 构造，禁止继承用户此前隐藏的过滤条件。
+- [x] 复用 `applyTemporaryGlobalFilters(...)`，切换到 Manage 后建立临时筛选会话。
+- [x] 清除临时筛选时恢复点击前状态，并提供返回洞察上下文。
+- [x] 数字入口与下钻列表条数必须一致，禁止用搜索关键字模拟结构化筛选。
+- [x] 覆盖状态、语言、未打标签、README、RAG、Health 和组合筛选回归。
 
 计划提交：
 
-- [ ] `feat(insights): 支持洞察统计下钻仓库列表` — 实际 commit：`待回填`
-- [ ] `test(insights): 覆盖洞察下钻与筛选恢复` — 实际 commit：`待回填`
+- [x] `feat(insights): 支持洞察统计下钻仓库列表` — 实际 commit：`2f1edba5`
+- [x] `test(insights): 覆盖洞察下钻与筛选恢复` — 实际 commit：`2f1edba5`（测试与对应实现同提交）
 
 ---
 
