@@ -404,10 +404,12 @@
 
 - [x] 关闭 Xcode IDE。
 - [x] 运行 `xcodegen generate`。
-- [ ] 运行全部 `StarcatTests`；任何失败都先与基线对照，禁止把未知失败直接写成“既有问题”。
+- [x] 运行全部 `StarcatTests`；任何失败都先与基线对照，禁止把未知失败直接写成“既有问题”。
 - [x] 运行 Debug build。
 - [x] 校验 `Localizable.xcstrings` 为合法 JSON。
-- [ ] 运行 i18n、颜色、Focus Ring、迁移和 `git diff --check` 静态检查。
+- [x] 运行 i18n、颜色、Focus Ring、迁移和 `git diff --check` 静态检查。
+
+> 验证证据：2026-07-27 全量运行 `1802 tests in 209 suites`，0 失败、1 个测试框架已知 issue，`xcodebuild` 返回 `TEST SUCCEEDED`；静态检查命令均通过。已知 issue 和编译 warning 进入专项审查，不以成功结果掩盖。
 
 ### 11.4 人工 UI 验收
 
