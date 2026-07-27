@@ -200,7 +200,7 @@ struct HomeView: View {
     /// 洞察中心保留二级主题、范围和中栏选择，跨顶级页面切换时不丢失浏览上下文。
     @State private var selectedInsightsTopic: InsightsTopic = .overview
     @State private var selectedInsightsScope: InsightsScope = .starred
-    @State private var selectedInsightsSelection: InsightsSelection = .summary
+    @State private var selectedInsightsSelection: InsightsSelection = .overviewSummary
 
     /// W4 A2：TagManagementViewModel 实例，sheet 关掉再开时复用，
     /// 避免每次 sheet 都 new 导致选择/加载态被打断。
@@ -1274,6 +1274,7 @@ struct HomeView: View {
     private var detailColumn: some View {
         if selectedSidebarPage == .insights {
             MyInsightsView(
+                topic: $selectedInsightsTopic,
                 scope: $selectedInsightsScope,
                 selection: $selectedInsightsSelection,
                 snapshot: InsightsMockData.myInsights(scope: selectedInsightsScope)

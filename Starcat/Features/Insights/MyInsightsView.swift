@@ -11,6 +11,7 @@ import SwiftUI
 
 struct MyInsightsView: View {
 
+    @Binding var topic: InsightsTopic
     @Binding var scope: InsightsScope
     @Binding var selection: InsightsSelection
     let snapshot: MyInsightsSnapshot
@@ -27,17 +28,67 @@ struct MyInsightsView: View {
 
             ScrollView {
                 LazyVStack(spacing: 14) {
-                    metricGrid
-                    organizationSection
-                    languageSection
-                    actionSection
-                    coverageSection
+                    selectedContent
                 }
                 .padding(18)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    /// 中栏选择和 Detail 内容保持一一对应。原型阶段曾让所有选择都显示同一张总览，
+    /// 用户无法判断分类是否真实生效；最终 UI 在这里按业务语义拆开内容。
+    @ViewBuilder
+    private var selectedContent: some View {
+        switch selection {
+        case .overviewSummary:
+            metricGrid
+            organizationSection
+            languageSection
+            actionSection(snapshot.actionItems)
+            coverageSection
+
+        case .allActions:
+            actionSection(snapshot.actionItems)
+
+        case .organizationSummary:
+            organizationSection
+            actionSection(organizationActions)
+
+        case .untagged,
+             .unread,
+             .missingReadme,
+             .missingIndexableContent,
+             .indexIssues:
+            actionFocusSection
+            organizationSection
+
+        case .technologySummary:
+            languageSection
+            topicSection
+            licenseSection
+
+        case .languages:
+            languageSection
+
+        case .topics:
+            topicSection
+
+        case .licenses:
+            licenseSection
+
+        case .healthSummary:
+            coverageSection
+            actionSection(healthActions)
+
+        case .healthPending,
+             .openSSFPending,
+             .maintenanceRisk,
+             .securityRisk:
+            actionFocusSection
+            coverageSection
+        }
     }
 
     private var header: some View {
@@ -148,15 +199,47 @@ struct MyInsightsView: View {
     }
 
     private var languageSection: some View {
-        InsightsSectionContainer(
+        distributionSection(
             title: "insights.section.languages",
             subtitle: "insights.section.languages.subtitle",
-            systemImage: "chevron.left.forwardslash.chevron.right"
+            systemImage: "chevron.left.forwardslash.chevron.right",
+            items: snapshot.languageItems
+        )
+    }
+
+    private var topicSection: some View {
+        distributionSection(
+            title: "insights.section.topics",
+            subtitle: "insights.section.topics.subtitle",
+            systemImage: "square.grid.2x2.fill",
+            items: snapshot.topicItems
+        )
+    }
+
+    private var licenseSection: some View {
+        distributionSection(
+            title: "insights.section.licenses",
+            subtitle: "insights.section.licenses.subtitle",
+            systemImage: "checkmark.seal.fill",
+            items: snapshot.licenseItems
+        )
+    }
+
+    private func distributionSection(
+        title: LocalizedStringKey,
+        subtitle: LocalizedStringKey,
+        systemImage: String,
+        items: [InsightsDistributionItem]
+    ) -> some View {
+        InsightsSectionContainer(
+            title: title,
+            subtitle: subtitle,
+            systemImage: systemImage
         ) {
-            Chart(snapshot.languageItems) { item in
+            Chart(items) { item in
                 BarMark(
                     x: .value("Count", item.count),
-                    y: .value("Language", item.title)
+                    y: .value("Category", String.l10n(item.title))
                 )
                 .foregroundStyle(InsightsColor.resolve(item.colorName))
                 .cornerRadius(3)
@@ -182,7 +265,7 @@ struct MyInsightsView: View {
         }
     }
 
-    private var actionSection: some View {
+    private func actionSection(_ items: [InsightsActionItem]) -> some View {
         InsightsSectionContainer(
             title: "insights.section.actions",
             subtitle: scope == .knowledge
@@ -191,11 +274,45 @@ struct MyInsightsView: View {
             systemImage: "checklist"
         ) {
             VStack(spacing: 0) {
-                ForEach(Array(snapshot.actionItems.enumerated()), id: \.element.id) { index, item in
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     if index > 0 {
                         Divider().padding(.leading, 34)
                     }
                     actionRow(item)
+                }
+            }
+        }
+    }
+
+    private var actionFocusSection: some View {
+        Group {
+            if let item = selectedAction {
+                InsightsSectionContainer(
+                    title: LocalizedStringKey(item.titleKey),
+                    subtitle: LocalizedStringKey(item.detailKey),
+                    systemImage: item.systemImage
+                ) {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(item.count.formatted())
+                            .font(interfaceScale.font(size: 32, weight: .semibold))
+                            .monospacedDigit()
+
+                        Text("insights.action.repositoryCount")
+                            .font(interfaceScale.font(.body))
+                            .foregroundStyle(.secondary)
+
+                        Spacer(minLength: 12)
+
+                        Label("insights.action.priority", systemImage: "arrow.up.right")
+                            .font(interfaceScale.font(.caption, weight: .medium))
+                            .foregroundStyle(InsightsColor.resolve(item.tintName))
+                    }
+
+                    Divider()
+
+                    Text("insights.action.detailHint")
+                        .font(interfaceScale.font(.body))
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -241,6 +358,7 @@ struct MyInsightsView: View {
 
     private func actionRow(_ item: InsightsActionItem) -> some View {
         Button {
+            topic = item.id.topic
             selection = item.id
         } label: {
             HStack(spacing: 10) {
@@ -273,6 +391,20 @@ struct MyInsightsView: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .listRowSelectionTint(isSelected: selection == item.id)
+    }
+
+    private var organizationActions: [InsightsActionItem] {
+        let allowed = Set(InsightsTopic.organization.attentionSelections(for: scope))
+        return snapshot.actionItems.filter { allowed.contains($0.id) }
+    }
+
+    private var healthActions: [InsightsActionItem] {
+        let allowed = Set(InsightsTopic.health.attentionSelections(for: scope))
+        return snapshot.actionItems.filter { allowed.contains($0.id) }
+    }
+
+    private var selectedAction: InsightsActionItem? {
+        snapshot.actionItems.first(where: { $0.id == selection })
     }
 
     private func coverageItem(

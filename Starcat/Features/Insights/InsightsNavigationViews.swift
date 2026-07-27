@@ -23,10 +23,17 @@ struct InsightsListView: View {
             Divider()
 
             List(selection: $selection) {
-                Section {
-                    row(.summary, count: nil)
-                    ForEach(visibleActions) { item in
-                        row(item.id, count: item.count)
+                Section("insights.list.section.analysis") {
+                    ForEach(topic.contentSelections) { item in
+                        row(item, count: nil)
+                    }
+                }
+
+                if !attentionSelections.isEmpty {
+                    Section("insights.list.section.attention") {
+                        ForEach(attentionSelections) { item in
+                            row(item, count: count(for: item))
+                        }
                     }
                 }
             }
@@ -35,10 +42,13 @@ struct InsightsListView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle(Text("insights.title"))
         .onChange(of: topic) { _, _ in
-            let allowed = Set([InsightsSelection.summary] + visibleActions.map(\.id))
-            if !allowed.contains(selection) {
-                selection = .summary
-            }
+            restoreValidSelection()
+        }
+        .onChange(of: snapshot.scope) { _, _ in
+            restoreValidSelection()
+        }
+        .onAppear {
+            restoreValidSelection()
         }
     }
 
@@ -47,9 +57,10 @@ struct InsightsListView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(topic.titleKey)
                     .font(interfaceScale.font(.panelTitle))
-                Text("insights.list.subtitle")
+                Text(topic.subtitleKey)
                     .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
+                    .lineLimit(2)
             }
 
             Spacer(minLength: 12)
@@ -63,8 +74,8 @@ struct InsightsListView: View {
     @ViewBuilder
     private func row(_ item: InsightsSelection, count: Int?) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: systemImage(for: item))
-                .foregroundStyle(tint(for: item))
+            Image(systemName: item.systemImage)
+                .foregroundStyle(InsightsColor.resolve(item.tintName))
                 .frame(width: 18)
 
             Text(item.titleKey)
@@ -83,29 +94,20 @@ struct InsightsListView: View {
         .tag(item)
     }
 
-    private var visibleActions: [InsightsActionItem] {
-        switch topic {
-        case .overview:
-            return snapshot.actionItems
-        case .organization:
-            return snapshot.actionItems.filter { $0.id == .untagged || $0.id == .unread }
-        case .technology:
-            return snapshot.actionItems.filter { $0.id == .indexIssues }
-        case .health:
-            return snapshot.actionItems.filter { $0.id == .healthPending }
+    private var attentionSelections: [InsightsSelection] {
+        topic.attentionSelections(for: snapshot.scope)
+    }
+
+    private func count(for selection: InsightsSelection) -> Int? {
+        guard selection != .allActions else { return nil }
+        return snapshot.actionItems.first(where: { $0.id == selection })?.count
+    }
+
+    private func restoreValidSelection() {
+        let allowed = Set(topic.selections(for: snapshot.scope))
+        if !allowed.contains(selection) {
+            selection = topic.primarySelection
         }
-    }
-
-    private func systemImage(for selection: InsightsSelection) -> String {
-        if selection == .summary { return topic.systemImage }
-        return snapshot.actionItems.first(where: { $0.id == selection })?.systemImage ?? "circle"
-    }
-
-    private func tint(for selection: InsightsSelection) -> Color {
-        if selection == .summary { return .accentColor }
-        return InsightsColor.resolve(
-            snapshot.actionItems.first(where: { $0.id == selection })?.tintName ?? "secondary"
-        )
     }
 }
 

@@ -127765,6 +127765,41 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "尚無有效健康度快照的儲存庫" } }
       }
     },
+    "insights.action.maintenanceRisk.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories showing signs of reduced maintenance activity" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "维护活跃度下降或长期未更新的仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "維護活躍度下降或長期未更新的儲存庫" } }
+      }
+    },
+    "insights.action.missingIndexableContent.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Knowledge repositories without content available for indexing" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识库中没有可用于索引内容的仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "知識庫中沒有可用於索引內容的儲存庫" } }
+      }
+    },
+    "insights.action.missingReadme.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Knowledge repositories without a README snapshot" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识库中缺少 README 快照的仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "知識庫中缺少 README 快照的儲存庫" } }
+      }
+    },
+    "insights.action.openSSFPending.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories not yet covered by OpenSSF Scorecard" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "尚未获得 OpenSSF Scorecard 数据的仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "尚未取得 OpenSSF Scorecard 資料的儲存庫" } }
+      }
+    },
+    "insights.action.securityRisk.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories with security signals that need review" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "存在需要复核安全信号的仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "存在需要複核安全訊號的儲存庫" } }
+      }
+    },
     "insights.action.indexIssues.detail" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Missing, failed, or stale knowledge indexes" } },
@@ -127933,6 +127968,20 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "目前範圍內的主要程式語言" } }
       }
     },
+    "insights.section.licenses" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "License Distribution" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "许可证分布" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "授權條款分佈" } }
+      }
+    },
+    "insights.section.licenses.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open-source licenses detected in the current scope" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前范围内识别到的开源许可证" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "目前範圍內識別到的開源授權條款" } }
+      }
+    },
     "insights.section.organization" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Organization Status" } },
@@ -127945,6 +127994,20 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Unread, read, and actively used repositories" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未读、已读与正在使用的仓库分布" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "未讀、已讀與正在使用的儲存庫分佈" } }
+      }
+    },
+    "insights.section.topics" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Technology Topics" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "技术主题" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "技術主題" } }
+      }
+    },
+    "insights.section.topics.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Primary domains represented by your repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "收藏仓库覆盖的主要技术方向" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "收藏儲存庫涵蓋的主要技術方向" } }
       }
     },
     "insights.status.read" : {
@@ -127968,6 +128031,13 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "正在使用" } }
       }
     },
+    "insights.action.detailHint" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This collection groups repositories by the current scope and issue type for focused organization." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "此集合按当前范围和问题类型汇总，便于集中整理对应仓库。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "此集合按目前範圍和問題類型彙總，便於集中整理對應儲存庫。" } }
+      }
+    },
     "insights.action.healthPending" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Health pending" } },
@@ -127980,6 +128050,55 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Index issues" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "索引异常" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "索引異常" } }
+      }
+    },
+    "insights.action.maintenanceRisk" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Maintenance risk" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "维护风险" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "維護風險" } }
+      }
+    },
+    "insights.action.missingIndexableContent" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No indexable content" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无可索引内容" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "無可索引內容" } }
+      }
+    },
+    "insights.action.missingReadme" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "README missing" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无 README" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "無 README" } }
+      }
+    },
+    "insights.action.openSSFPending" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "OpenSSF pending" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "OpenSSF 待覆盖" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "OpenSSF 待涵蓋" } }
+      }
+    },
+    "insights.action.priority" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Needs attention" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "需要处理" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "需要處理" } }
+      }
+    },
+    "insights.action.repositoryCount" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "个仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "個儲存庫" } }
+      }
+    },
+    "insights.action.securityRisk" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Security risk" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "安全风险" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "安全風險" } }
       }
     },
     "insights.action.untagged" : {
@@ -127996,11 +128115,18 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "未讀" } }
       }
     },
-    "insights.list.subtitle" : {
+    "insights.list.section.analysis" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Summary and items that need attention" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "摘要与需要处理的项目" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "摘要與需要處理的項目" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Analysis" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分析视图" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "分析檢視" } }
+      }
+    },
+    "insights.list.section.attention" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Needs Attention" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "需要处理" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "需要處理" } }
       }
     },
     "insights.mock.badge" : {
@@ -128052,11 +128178,60 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "全部收藏" } }
       }
     },
-    "insights.selection.summary" : {
+    "insights.selection.allActions" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Overview" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "概览" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "概覽" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "All Action Items" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "全部待处理" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "全部待處理" } }
+      }
+    },
+    "insights.selection.healthSummary" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Health Overview" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "健康概览" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "健康概覽" } }
+      }
+    },
+    "insights.selection.languages" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Languages" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "编程语言" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "程式語言" } }
+      }
+    },
+    "insights.selection.licenses" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Licenses" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "许可证" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "授權條款" } }
+      }
+    },
+    "insights.selection.organizationSummary" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Organization Overview" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "整理概览" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "整理概覽" } }
+      }
+    },
+    "insights.selection.overviewSummary" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Data Overview" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "数据总览" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "資料總覽" } }
+      }
+    },
+    "insights.selection.technologySummary" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Distribution Overview" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分布概览" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "分佈概覽" } }
+      }
+    },
+    "insights.selection.topics" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Technology Topics" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "技术主题" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "技術主題" } }
       }
     },
     "insights.sidebar.section" : {
@@ -128099,6 +128274,97 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Technology" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "技术分布" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "技術分佈" } }
+      }
+    },
+    "insights.topic.health.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Coverage, maintenance, and security signals" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "覆盖率、维护状态与安全信号" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "涵蓋率、維護狀態與安全訊號" } }
+      }
+    },
+    "insights.topic.organization.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reading, tags, and knowledge completeness" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "阅读状态、标签与知识完整性" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "閱讀狀態、標籤與知識完整性" } }
+      }
+    },
+    "insights.topic.overview.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Key metrics and prioritized action items" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "核心指标与优先处理事项" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "核心指標與優先處理事項" } }
+      }
+    },
+    "insights.topic.technology.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Languages, topics, and license composition" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "编程语言、技术主题与许可证构成" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "程式語言、技術主題與授權條款構成" } }
+      }
+    },
+    "insights.technology.license.other" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Other licenses" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "其他许可证" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "其他授權條款" } }
+      }
+    },
+    "insights.technology.license.unknown" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unknown" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未识别" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "未識別" } }
+      }
+    },
+    "insights.technology.other" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Other" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "其他" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "其他" } }
+      }
+    },
+    "insights.technology.topic.ai" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "AI & Machine Learning" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 与机器学习" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "AI 與機器學習" } }
+      }
+    },
+    "insights.technology.topic.apple" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Apple Platforms" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Apple 平台" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Apple 平台" } }
+      }
+    },
+    "insights.technology.topic.data" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Data Engineering" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "数据工程" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "資料工程" } }
+      }
+    },
+    "insights.technology.topic.developerTools" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Developer Tools" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "开发者工具" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "開發者工具" } }
+      }
+    },
+    "insights.technology.topic.other" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Other Topics" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "其他主题" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "其他主題" } }
+      }
+    },
+    "insights.technology.topic.web" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Web Development" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Web 开发" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Web 開發" } }
       }
     },
     "nav.insights" : {
