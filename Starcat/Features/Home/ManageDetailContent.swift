@@ -123,7 +123,7 @@ struct ManageDetailContent: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                RepositoryInsightsPreview(
+                RepositoryInsightsView(
                     repo: repo,
                     onScrollReport: onScrollReport
                 )

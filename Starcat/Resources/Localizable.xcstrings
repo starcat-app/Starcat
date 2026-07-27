@@ -127359,6 +127359,300 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "儲存庫洞察" } }
       }
     },
+    "insights.repo.activity.commits" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Commits" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "提交" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "提交" } }
+      }
+    },
+    "insights.repo.activity.issues" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Issues" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Issue" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Issue" } }
+      }
+    },
+    "insights.repo.activity.pullRequests" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Pull Requests" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Pull Request" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Pull Request" } }
+      }
+    },
+    "insights.repo.activity.releases" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Releases" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "发布" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "發布" } }
+      }
+    },
+    "insights.repo.contributor.commitsFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld commits" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%lld 次提交" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "%lld 次提交" } }
+      }
+    },
+    "insights.repo.health.maintenance" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Maintenance" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "维护度" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "維護度" } }
+      }
+    },
+    "insights.repo.health.popularity" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Popularity" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "流行度" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "流行度" } }
+      }
+    },
+    "insights.repo.health.quality" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Quality" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "质量" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "品質" } }
+      }
+    },
+    "insights.repo.health.security" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Security" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "安全性" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "安全性" } }
+      }
+    },
+    "insights.repo.period.thirtyDays" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Last 30 days" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "近 30 天" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "近 30 天" } }
+      }
+    },
+    "insights.repo.section.activity" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Activity Overview" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "活动概览" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "活動概覽" } }
+      }
+    },
+    "insights.repo.section.activity.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Core repository activity over the last 30 days" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "近 30 天的核心仓库活动与环比变化" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "近 30 天的核心儲存庫活動與環比變化" } }
+      }
+    },
+    "insights.repo.section.commits" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Commit Activity" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "提交活动" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "提交活動" } }
+      }
+    },
+    "insights.repo.section.commits.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Weekly commits during the last 12 weeks" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "过去 12 周的每周提交量" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "過去 12 週的每週提交量" } }
+      }
+    },
+    "insights.repo.section.community" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Community" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "社区信号" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "社群訊號" } }
+      }
+    },
+    "insights.repo.section.community.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Documentation and contribution readiness" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "文档与贡献协作准备情况" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "文件與貢獻協作準備情況" } }
+      }
+    },
+    "insights.repo.section.contributors" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Top Contributors" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "主要贡献者" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "主要貢獻者" } }
+      }
+    },
+    "insights.repo.section.contributors.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Contribution ranking for the current period" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前统计周期的贡献排行" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "目前統計週期的貢獻排行" } }
+      }
+    },
+    "insights.repo.section.health" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repository Health" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库健康度" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "儲存庫健康度" } }
+      }
+    },
+    "insights.repo.section.health.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Four dimensions from Starcat health scoring" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Starcat 健康度模型的四项维度" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Starcat 健康度模型的四項維度" } }
+      }
+    },
+    "insights.repo.section.security" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Security" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "安全信号" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "安全訊號" } }
+      }
+    },
+    "insights.repo.section.security.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "OpenSSF and repository protection status" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "OpenSSF 与仓库安全防护状态" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "OpenSSF 與儲存庫安全防護狀態" } }
+      }
+    },
+    "insights.repo.section.timeline" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Recent Activity" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "最近动态" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "最近動態" } }
+      }
+    },
+    "insights.repo.section.timeline.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Important repository events in chronological order" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "按时间聚合的重要仓库事件" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "依時間聚合的重要儲存庫事件" } }
+      }
+    },
+    "insights.repo.signal.advisories" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Security advisories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "安全公告" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "安全公告" } }
+      }
+    },
+    "insights.repo.signal.available" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Available" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已提供" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "已提供" } }
+      }
+    },
+    "insights.repo.signal.branchProtection" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Branch protection" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分支保护" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "分支保護" } }
+      }
+    },
+    "insights.repo.signal.conduct" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Code of conduct" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "行为准则" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "行為準則" } }
+      }
+    },
+    "insights.repo.signal.contributing" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Contribution guide" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "贡献指南" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "貢獻指南" } }
+      }
+    },
+    "insights.repo.signal.dependabot" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Dependabot" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Dependabot" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Dependabot" } }
+      }
+    },
+    "insights.repo.signal.enabled" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Enabled" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已启用" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "已啟用" } }
+      }
+    },
+    "insights.repo.signal.license" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "License" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "开源许可证" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "開源授權條款" } }
+      }
+    },
+    "insights.repo.signal.missing" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Missing" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "缺失" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "缺失" } }
+      }
+    },
+    "insights.repo.signal.mit" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "MIT" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "MIT" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "MIT" } }
+      }
+    },
+    "insights.repo.signal.none" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "None" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "無" } }
+      }
+    },
+    "insights.repo.signal.openssf" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "OpenSSF Scorecard" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "OpenSSF Scorecard" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "OpenSSF Scorecard" } }
+      }
+    },
+    "insights.repo.signal.openssfScore" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "8.7 / 10" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "8.7 / 10" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "8.7 / 10" } }
+      }
+    },
+    "insights.repo.signal.partial" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Partial" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "部分启用" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "部分啟用" } }
+      }
+    },
+    "insights.repo.signal.readme" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "README" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "README" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "README" } }
+      }
+    },
+    "insights.time.thisWeek" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This week" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本周" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "本週" } }
+      }
+    },
+    "insights.time.today" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Today" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "今天" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "今天" } }
+      }
+    },
+    "insights.time.twoDays" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "2 days ago" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "2 天前" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "2 天前" } }
+      }
+    },
     "insights.action.healthPending.detail" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories without a current health snapshot" } },
