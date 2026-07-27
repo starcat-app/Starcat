@@ -19,29 +19,61 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DERIVED_DATA="$PROJECT_ROOT/build/DerivedData-NoSandbox"
 APP_PATH="$DERIVED_DATA/Build/Products/Debug/Starcat.app"
 APP_EXECUTABLE="$APP_PATH/Contents/MacOS/Starcat"
+DIRECT_BUNDLE_ID="com.starcat.app.direct"
 
 # 正式 Apple Developer Team ID。后续如果换账号，可用环境变量覆盖：
 #   STARCAT_DEVELOPMENT_TEAM=XXXXXXXXXX ./scripts/run-debug-direct.sh
 DEVELOPMENT_TEAM_ID="${STARCAT_DEVELOPMENT_TEAM:-8WCUMGCWMB}"
 
+# App Store 与 Direct 的可执行文件都叫 Starcat，不能用进程名判断渠道。
+# NSRunningApplication 读取 LaunchServices 登记的 bundle id，既能覆盖 Debug、
+# /Applications 等不同路径下的 Direct 实例，也不会误伤 App Store 版本。
+running_direct_pids() {
+  /usr/bin/osascript -l JavaScript -e "
+ObjC.import('AppKit');
+$.NSRunningApplication
+  .runningApplicationsWithBundleIdentifier('$DIRECT_BUNDLE_ID')
+  .js
+  .map(function(app) { return Number(app.processIdentifier); })
+  .join('\n');
+"
+}
+
 cd "$PROJECT_ROOT"
 
-echo "==> 关闭已运行的 Starcat（如有）..."
-pkill -x Starcat 2>/dev/null || true
+echo "==> 关闭已运行的 StarcatDirect（如有）..."
+if ! DIRECT_PIDS="$(running_direct_pids)"; then
+  echo "ERROR: 无法按 bundle id 查询 Direct 进程，拒绝回退为按进程名关闭。"
+  exit 1
+fi
+if [ -n "$DIRECT_PIDS" ]; then
+  while IFS= read -r pid; do
+    if [ -n "$pid" ]; then
+      kill "$pid" 2>/dev/null || true
+    fi
+  done <<<"$DIRECT_PIDS"
+fi
 
-# `pkill` 只发送终止信号，数据库收尾等异步清理可能明显超过固定 0.3 秒。
+# `kill` 只向 Direct PID 发送终止信号，数据库收尾等异步清理可能明显超过固定 0.3 秒。
 # 如果旧实例仍在退出，普通 `open` 会把启动请求误判为“激活已有实例”，随后旧实例
 # 退出，最终表现为构建成功但没有应用进程。这里等待真实退出，超时则保留现场并报错，
 # 不升级成 SIGKILL，避免强杀时损坏用户数据。
 for _ in {1..100}; do
-  if ! pgrep -x Starcat >/dev/null 2>&1; then
+  if ! DIRECT_PIDS="$(running_direct_pids)"; then
+    echo "ERROR: 无法按 bundle id 查询 Direct 进程，拒绝继续启动。"
+    exit 1
+  fi
+  if [ -z "$DIRECT_PIDS" ]; then
     break
   fi
   sleep 0.1
 done
-if pgrep -x Starcat >/dev/null 2>&1; then
-  echo "ERROR: 等待旧 Starcat 退出超时，拒绝启动新实例。"
-  pgrep -fl -x Starcat || true
+if [ -n "$DIRECT_PIDS" ]; then
+  echo "ERROR: 等待旧 StarcatDirect 退出超时，拒绝启动新实例。"
+  echo "       Direct PID:"
+  while IFS= read -r pid; do
+    printf '       %s\n' "$pid"
+  done <<<"$DIRECT_PIDS"
   exit 1
 fi
 

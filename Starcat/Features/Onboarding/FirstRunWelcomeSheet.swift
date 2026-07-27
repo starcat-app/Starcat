@@ -133,8 +133,6 @@ private struct FirstRunOnboardingStep: Identifiable {
     let screenshotFallback: OnboardingScreenshotFallback
     /// 每步 hero 区强调色（与 About / splash 金色体系一致，逐步微调色相）。
     let tint: Color
-    /// 需要品牌收束感的步骤用 App Icon 替代 SF Symbol。
-    let usesAppIcon: Bool
 }
 
 /// 首次引导截图未就位时的抽象预览类型。
@@ -207,8 +205,7 @@ struct FirstRunOnboardingView: View {
             ],
             screenshotAssetName: "OnboardingDiscover",
             screenshotFallback: .discover,
-            tint: Color(red: 1.0, green: 0.74, blue: 0.28),
-            usesAppIcon: false
+            tint: Color(red: 1.0, green: 0.74, blue: 0.28)
         ),
         FirstRunOnboardingStep(
             id: 1,
@@ -222,8 +219,7 @@ struct FirstRunOnboardingView: View {
             ],
             screenshotAssetName: "OnboardingUnderstand",
             screenshotFallback: .intelligence,
-            tint: Color(red: 0.98, green: 0.55, blue: 0.38),
-            usesAppIcon: false
+            tint: Color(red: 0.98, green: 0.55, blue: 0.38)
         ),
         FirstRunOnboardingStep(
             id: 2,
@@ -237,8 +233,7 @@ struct FirstRunOnboardingView: View {
             ],
             screenshotAssetName: "OnboardingSearch",
             screenshotFallback: .search,
-            tint: Color(red: 0.45, green: 0.78, blue: 1.0),
-            usesAppIcon: false
+            tint: Color(red: 0.45, green: 0.78, blue: 1.0)
         ),
         FirstRunOnboardingStep(
             id: 3,
@@ -252,8 +247,7 @@ struct FirstRunOnboardingView: View {
             ],
             screenshotAssetName: "OnboardingLibrary",
             screenshotFallback: .library,
-            tint: Color(red: 0.62, green: 0.88, blue: 0.55),
-            usesAppIcon: true
+            tint: Color(red: 0.62, green: 0.88, blue: 0.55)
         ),
         FirstRunOnboardingStep(
             id: 4,
@@ -267,8 +261,7 @@ struct FirstRunOnboardingView: View {
             ],
             screenshotAssetName: "OnboardingRAG",
             screenshotFallback: .rag,
-            tint: Color(red: 0.36, green: 0.78, blue: 0.76),
-            usesAppIcon: false
+            tint: Color(red: 0.36, green: 0.78, blue: 0.76)
         ),
         FirstRunOnboardingStep(
             id: 5,
@@ -282,8 +275,7 @@ struct FirstRunOnboardingView: View {
             ],
             screenshotAssetName: "OnboardingAgent",
             screenshotFallback: .agent,
-            tint: Color(red: 0.55, green: 0.58, blue: 1.0),
-            usesAppIcon: false
+            tint: Color(red: 0.55, green: 0.58, blue: 1.0)
         )
     ]
 
@@ -937,15 +929,7 @@ private struct FirstRunOnboardingStepPanel: View {
                         .stroke(step.tint.opacity(0.24), lineWidth: 1.5)
                 }
 
-            if step.usesAppIcon {
-                Image(nsImage: NSApp.applicationIconImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 68, height: 64)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .shadow(color: .black.opacity(0.14), radius: 16, x: 0, y: 10)
-                    .shadow(color: step.tint.opacity(0.35), radius: 24, x: 0, y: 6)
-            } else if reduceMotion {
+            if reduceMotion {
                 Image(systemName: step.systemImage)
                     .font(.system(size: 42, weight: .semibold))
                     .foregroundStyle(step.tint)
@@ -1012,22 +996,30 @@ private struct OnboardingScreenshotPreview: View {
             }
         }
         .background {
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            step.tint.opacity(0.30),
-                            step.tint.opacity(0.08),
-                            step.tint.opacity(0.22)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+            ZStack {
+                // 外层负责四周均匀扩散；使用填充后模糊，避免形成可见描边。
+                RoundedRectangle(cornerRadius: 34, style: .continuous)
+                    .fill(step.tint.opacity(0.16))
+                    .padding(-18)
+                    .blur(radius: 52)
+
+                // 内层保留截图与主题色的连接，让光晕切页时随 step.tint 一起过渡。
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                step.tint.opacity(0.30),
+                                step.tint.opacity(0.10),
+                                step.tint.opacity(0.24)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                     )
-                )
-                .padding(10)
-                .blur(radius: 32)
-                .offset(y: 12)
-                .allowsHitTesting(false)
+                    .padding(2)
+                    .blur(radius: 28)
+            }
+            .allowsHitTesting(false)
         }
     }
 
