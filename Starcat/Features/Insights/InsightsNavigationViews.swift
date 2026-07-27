@@ -15,6 +15,7 @@ struct InsightsListView: View {
     @Binding var selection: InsightsSelection
     let snapshot: MyInsightsSnapshot
 
+    @Environment(\.locale) private var locale
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
@@ -82,7 +83,7 @@ struct InsightsListView: View {
             Spacer(minLength: 8)
 
             if let count {
-                Text(count.formatted())
+                Text(count.formatted(.number.locale(locale)))
                     .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()

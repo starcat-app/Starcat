@@ -307,7 +307,7 @@ struct MyInsightsView: View {
                 .foregroundStyle(InsightsColor.resolve(item.colorName))
                 .cornerRadius(3)
                 .annotation(position: .trailing, alignment: .leading) {
-                    Text(item.count.formatted())
+                    Text(item.count.formatted(.number.locale(locale)))
                         .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
@@ -342,7 +342,7 @@ struct MyInsightsView: View {
                                 Text(LocalizedStringKey(item.title))
                                     .lineLimit(1)
                                 Spacer(minLength: 6)
-                                Text(item.count.formatted())
+                                Text(item.count.formatted(.number.locale(locale)))
                                     .monospacedDigit()
                                 Image(systemName: "arrow.up.right")
                                     .font(interfaceScale.font(.captionSmall))
@@ -389,7 +389,7 @@ struct MyInsightsView: View {
                     systemImage: item.systemImage
                 ) {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text(item.count.formatted())
+                        Text(item.count.formatted(.number.locale(locale)))
                             .font(interfaceScale.font(size: 32, weight: .semibold))
                             .monospacedDigit()
 
@@ -453,7 +453,7 @@ struct MyInsightsView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(LocalizedStringKey(item.title))
                     .font(interfaceScale.font(.caption))
-                Text("\(item.count.formatted()) · \(percent(item.fraction))")
+                Text("\(item.count.formatted(.number.locale(locale))) · \(percent(item.fraction))")
                     .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
@@ -483,7 +483,7 @@ struct MyInsightsView: View {
 
                 Spacer(minLength: 12)
 
-                Text(item.count.formatted())
+                Text(item.count.formatted(.number.locale(locale)))
                     .font(interfaceScale.font(.bodyEmphasis))
                     .monospacedDigit()
 
@@ -565,6 +565,7 @@ struct MyInsightsView: View {
             Text(
                 String(
                     format: String.l10n("insights.coverage.countFormat"),
+                    locale: locale,
                     coverage.completed,
                     coverage.total
                 )
@@ -580,6 +581,7 @@ struct MyInsightsView: View {
             Text(
                 String(
                     format: String.l10n("insights.coverage.countFormat"),
+                    locale: locale,
                     coverage.completed,
                     coverage.total
                 )

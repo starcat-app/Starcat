@@ -162,7 +162,7 @@ struct RepositoryInsightsView: View {
         case .loading, .idle:
             return nil
         case .content(let openSSF):
-            return String(format: "%.1f / 10", openSSF.score)
+            return String(format: "%.1f / 10", locale: locale, openSSF.score)
         case .empty, .unavailable:
             return String.l10n("insights.repo.state.noData")
         case .failed:
@@ -360,7 +360,7 @@ struct RepositoryInsightsView: View {
             .font(interfaceScale.font(.caption))
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(metric.value.formatted())
+                Text(metric.value.formatted(.number.locale(locale)))
                     .font(interfaceScale.font(size: 22, weight: .semibold))
                     .monospacedDigit()
                 if let delta = metric.delta {
@@ -465,7 +465,7 @@ struct RepositoryInsightsView: View {
             spacing: 10
         ) {
             starMetric(
-                value: starHistoryViewModel.currentStars?.formatted()
+                value: starHistoryViewModel.currentStars?.formatted(.number.locale(locale))
                     ?? String.l10n("insights.repo.state.noData"),
                 label: "insights.repo.star.current"
             )
@@ -560,9 +560,9 @@ struct RepositoryInsightsView: View {
 
     private func starSelectionAnnotation(_ point: StarHistoryPoint) -> some View {
         HStack(spacing: 5) {
-            Text(point.date, format: .dateTime.year().month().day())
+            Text(verbatim: fullDate(point.date))
             Text("·")
-            Text(point.count.formatted())
+            Text(point.count.formatted(.number.locale(locale)))
                 .monospacedDigit()
         }
         .font(interfaceScale.font(.captionSmall, weight: .medium))
@@ -607,7 +607,27 @@ struct RepositoryInsightsView: View {
         guard let value else {
             return String.l10n("insights.repo.state.noData")
         }
-        return value >= 0 ? "+\(value.formatted())" : value.formatted()
+        let formatted = value.formatted(.number.locale(locale))
+        return value >= 0 ? "+\(formatted)" : formatted
+    }
+
+    /// 图表读数必须显式使用应用内 Locale；否则用户切换 Starcat 语言后，
+    /// 日期仍可能跟随 macOS 系统 Locale，形成同屏混排。
+    private func fullDate(_ date: Date) -> String {
+        date.formatted(
+            Date.FormatStyle()
+                .year()
+                .month()
+                .day()
+                .locale(locale)
+        )
+    }
+
+    private func shortDate(_ date: Date) -> String {
+        date.formatted(
+            Date.FormatStyle(date: .abbreviated, time: .omitted)
+                .locale(locale)
+        )
     }
 
     private var starRangeBinding: Binding<StarHistoryRange> {
@@ -763,9 +783,10 @@ struct RepositoryInsightsView: View {
         }
         return String(
             format: String.l10n("insights.repo.star.chart.summaryFormat"),
-            first.date.formatted(date: .abbreviated, time: .omitted),
-            latest.date.formatted(date: .abbreviated, time: .omitted),
-            latest.count.formatted(),
+            locale: locale,
+            shortDate(first.date),
+            shortDate(latest.date),
+            latest.count.formatted(.number.locale(locale)),
             signed(starHistoryViewModel.growthOneYear)
         )
     }
@@ -775,8 +796,9 @@ struct RepositoryInsightsView: View {
         if let point = readableStarPoint {
             let value = String(
                 format: String.l10n("insights.repo.star.reading.valueFormat"),
-                point.date.formatted(date: .abbreviated, time: .omitted),
-                point.count.formatted(),
+                locale: locale,
+                shortDate(point.date),
+                point.count.formatted(.number.locale(locale)),
                 change(for: point).map(signed)
                     ?? String.l10n("insights.repo.star.change.baseline"),
                 starSourceName(point.source),
@@ -880,6 +902,7 @@ struct RepositoryInsightsView: View {
                             Text(
                                 String(
                                     format: String.l10n("insights.repo.commit.totalFormat"),
+                                    locale: locale,
                                     points.reduce(0) { $0 + $1.commits }
                                 )
                             )
@@ -1040,6 +1063,7 @@ struct RepositoryInsightsView: View {
                 Text(
                     String(
                         format: String.l10n("insights.repo.contributor.commitsFormat"),
+                        locale: locale,
                         contributor.commits
                     )
                 )
@@ -1167,6 +1191,7 @@ struct RepositoryInsightsView: View {
                         Text(
                             String(
                                 format: String.l10n("insights.repo.community.healthFormat"),
+                                locale: locale,
                                 community.healthPercentage
                             )
                         )
@@ -1295,7 +1320,7 @@ struct RepositoryInsightsView: View {
                     Text("insights.repo.signal.openssf")
                         .font(interfaceScale.font(.caption))
                     Spacer(minLength: 8)
-                    Text(verbatim: String(format: "%.1f / 10", openSSF.score))
+                    Text(verbatim: String(format: "%.1f / 10", locale: locale, openSSF.score))
                         .font(interfaceScale.font(.captionSmall, weight: .medium))
                         .foregroundStyle(openSSF.score >= 5 ? .green : .orange)
                         .monospacedDigit()
@@ -1490,6 +1515,7 @@ struct RepositoryInsightsView: View {
                             ? "insights.repo.timeline.pullRequestFormat"
                             : "insights.repo.timeline.issueFormat"
                     ),
+                    locale: locale,
                     event.number
                 ),
                 occurredAt: event.occurredAt,
@@ -1528,6 +1554,7 @@ struct RepositoryInsightsView: View {
                     title: String.l10n("insights.repo.timeline.commitActivity"),
                     detail: String(
                         format: String.l10n("insights.repo.commit.totalFormat"),
+                        locale: locale,
                         total
                     ),
                     occurredAt: latestPoint.weekStart,
