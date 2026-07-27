@@ -444,7 +444,7 @@
 
 计划提交：
 
-- [x] `docs(insights): 回填洞察中心实现文档` — 实际 commit：`本次提交`
+- [x] `docs(insights): 回填洞察中心实现文档` — 实际 commit：`013a7580`
 
 ---
 
