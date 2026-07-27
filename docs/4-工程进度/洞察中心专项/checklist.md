@@ -20,7 +20,7 @@
 
 ### 0.1 硬性流程
 
-- [ ] 开工前记录 Starcat 与 `starcat-discovery-api` 的 branch、HEAD、worktree 和 dirty 状态，保留所有无关改动。
+- [x] 开工前记录 Starcat 与 `starcat-discovery-api` 的 branch、HEAD、worktree 和 dirty 状态，保留所有无关改动。证据：[`需求追踪矩阵.md`](需求追踪矩阵.md) §1。
 - [x] 开工前只读检查 `docs/功能实现总览.md`、`DESIGN.md`、相关 UI / i18n 规范及两份详细设计。
 - [ ] 每个小功能必须同时完成“代码 + 必要测试 + 必要文档”，验证通过后立即提交，禁止积攒多个独立功能后一次提交。
 - [ ] 每个 commit 必须符合 `<type>(<scope>): <中文摘要>`，scope 使用 `insights`、`star-history` 或 `discovery` 等稳定产品域。
@@ -70,9 +70,9 @@
 - [x] 已新增洞察中心详细设计并合并仓库星标历史。
 - [x] 已新增仓库星标历史整体落地方案。
 - [x] 已确认 `starcat-discovery-api` 的生产 ingest 链路已经调用 `RecordDailySnapshot`，后续只需保留并补回归，禁止重复实现。
-- [ ] 开工时重新核对 `SidebarRootPage`、`HomeViewModel.refreshSidebar()`、`GlobalRepoFilterState`、`ManageDetailContent`、`RepoDetailScaffold` 和当前最新 migration。
-- [ ] 开工时重新核对 `starcat-discovery-api` 的 store、ingest、router、scheduler、鉴权、缓存和 migration 机制。
-- [ ] 对两份方案逐条建立“需求 → 代码位置 → 测试 → commit → 验收证据”追踪矩阵。
+- [x] 开工时重新核对 `SidebarRootPage`、`HomeViewModel.refreshSidebar()`、`GlobalRepoFilterState`、`ManageDetailContent`、`RepoDetailScaffold` 和当前最新 migration。证据：[`需求追踪矩阵.md`](需求追踪矩阵.md) §1。
+- [x] 开工时重新核对 `starcat-discovery-api` 的 store、ingest、router、scheduler、鉴权、缓存和 migration 机制。证据：[`需求追踪矩阵.md`](需求追踪矩阵.md) §1。
+- [x] 对两份方案逐条建立“需求 → 代码位置 → 测试 → commit → 验收证据”追踪矩阵。证据：[`需求追踪矩阵.md`](需求追踪矩阵.md) §3。
 
 ### 2.2 M0：GH Archive 可行性 Spike
 
