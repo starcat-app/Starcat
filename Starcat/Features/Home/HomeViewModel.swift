@@ -370,6 +370,7 @@ final class HomeViewModel {
         let readmeAvailability: String
         let indexableSourceAvailability: String
         let ragIndexState: String
+        let insightsRisk: String
         let selectedTagIDs: Set<String>
         let sort: String
     }
@@ -879,6 +880,7 @@ final class HomeViewModel {
         let requestID: UUID
         let anchorSelection: SidebarItem
         let filters: GlobalRepoFilterState
+        let returnPage: SidebarRootPage?
     }
 
     private(set) var temporaryGlobalFilterSession: TemporaryGlobalFilterSession?
@@ -899,7 +901,8 @@ final class HomeViewModel {
             tagAvailabilityFilter: .unknown,
             readmeAvailabilityFilter: .unknown,
             indexableSourceAvailabilityFilter: .unknown,
-            ragIndexStateFilter: .unknown
+            ragIndexStateFilter: .unknown,
+            insightsRiskFilter: .unknown
         )
     }
 
@@ -925,19 +928,22 @@ final class HomeViewModel {
             || filters.readmeAvailabilityFilter != .unknown
             || filters.indexableSourceAvailabilityFilter != .unknown
             || filters.ragIndexStateFilter != .unknown
+            || filters.insightsRiskFilter != .unknown
     }
 
     /// 跨窗口钻取只替换“当前有效筛选”，不写持久字段；重复点击同一数字也用 requestID 更新会话身份。
     func applyTemporaryGlobalFilters(
         _ filters: GlobalRepoFilterState,
         requestID: UUID,
-        anchorSelection: SidebarItem
+        anchorSelection: SidebarItem,
+        returnPage: SidebarRootPage? = nil
     ) {
         let previous = effectiveGlobalFilterState
         temporaryGlobalFilterSession = TemporaryGlobalFilterSession(
             requestID: requestID,
             anchorSelection: anchorSelection,
-            filters: filters
+            filters: filters,
+            returnPage: returnPage
         )
         if effectiveGlobalFilterState != previous {
             reloadOrApplyCurrentManageView()
@@ -1788,6 +1794,7 @@ final class HomeViewModel {
             readmeAvailability: filters.readmeAvailabilityFilter,
             indexableSourceAvailability: filters.indexableSourceAvailabilityFilter,
             ragIndexState: filters.ragIndexStateFilter,
+            insightsRisk: filters.insightsRiskFilter,
             selectedTagIDs: selectedTagIds
         )
     }
@@ -1810,6 +1817,7 @@ final class HomeViewModel {
             readmeAvailability: filters.readmeAvailability.rawValue,
             indexableSourceAvailability: filters.indexableSourceAvailability.rawValue,
             ragIndexState: filters.ragIndexState.cacheKey,
+            insightsRisk: filters.insightsRisk.rawValue,
             selectedTagIDs: filters.selectedTagIDs,
             sort: sortOption.rawValue
         )

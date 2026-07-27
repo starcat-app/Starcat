@@ -27,6 +27,7 @@ struct GlobalRepoFilterState: Equatable {
     var readmeAvailabilityFilter: RepoSignalAvailabilityFilter
     var indexableSourceAvailabilityFilter: RepoSignalAvailabilityFilter
     var ragIndexStateFilter: RepoRAGIndexStateFilter
+    var insightsRiskFilter: RepoInsightsRiskFilter
 
     static let neutral = GlobalRepoFilterState(
         hideArchived: false,
@@ -42,7 +43,8 @@ struct GlobalRepoFilterState: Equatable {
         tagAvailabilityFilter: .unknown,
         readmeAvailabilityFilter: .unknown,
         indexableSourceAvailabilityFilter: .unknown,
-        ragIndexStateFilter: .unknown
+        ragIndexStateFilter: .unknown,
+        insightsRiskFilter: .unknown
     )
 
     /// 这些字段只用于洞察的临时结构化下钻，不进入用户持久 Toolbar 偏好。
@@ -51,6 +53,7 @@ struct GlobalRepoFilterState: Equatable {
             || readmeAvailabilityFilter != .unknown
             || indexableSourceAvailabilityFilter != .unknown
             || ragIndexStateFilter != .unknown
+            || insightsRiskFilter != .unknown
     }
 }
 
@@ -72,6 +75,7 @@ final class MainWindowNavigationDispatcher {
         let id = UUID()
         let destination: Destination
         let temporaryFilters: GlobalRepoFilterState?
+        let returnPage: SidebarRootPage?
     }
 
     var pendingRequest: Request?
@@ -79,11 +83,13 @@ final class MainWindowNavigationDispatcher {
     /// 发布一次主窗口跳转。`temporaryFilters == nil` 表示只导航，不覆盖用户筛选。
     func navigate(
         to destination: Destination,
-        temporaryFilters: GlobalRepoFilterState? = nil
+        temporaryFilters: GlobalRepoFilterState? = nil,
+        returnPage: SidebarRootPage? = nil
     ) {
         pendingRequest = Request(
             destination: destination,
-            temporaryFilters: temporaryFilters
+            temporaryFilters: temporaryFilters,
+            returnPage: returnPage
         )
         AppDelegate.activateMainWindowIfPossible()
     }

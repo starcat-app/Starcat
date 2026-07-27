@@ -1270,6 +1270,9 @@ struct HomeView: View {
                 },
                 onGenerateCompanionSummary: { repo in
                     openCompanionRepository(repo, generateSummary: true)
+                },
+                onReturnToInsights: {
+                    selectSidebarRootPage(.insights)
                 }
             )
             .navigationSplitViewColumnWidth(min: 420, ideal: 420, max: 520)
@@ -1618,7 +1621,8 @@ struct HomeView: View {
                 viewModel.applyTemporaryGlobalFilters(
                     filters,
                     requestID: request.id,
-                    anchorSelection: selection
+                    anchorSelection: selection,
+                    returnPage: request.returnPage
                 )
             } else {
                 viewModel.clearTemporaryGlobalFilters()

@@ -241,6 +241,7 @@ struct RepoListView: View {
     @Environment(SyncManager.self) private var syncManager
     /// `RelativeDateTimeFormatter` 须显式注入 locale（对齐 ActivityView）。
     @Environment(\.locale) private var locale
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     /// HOM-54：TrendingRepository，用于渲染 Trending 页面。
     var trendingRepository: (any TrendingRepositoryProtocol)?
@@ -283,6 +284,8 @@ struct RepoListView: View {
     var onOpenCompanionRepo: ((Repo) -> Void)?
     /// Browser Plugin 的生成摘要动作需要先定位 repo，再打开 AI 窗口并启动生成。
     var onGenerateCompanionSummary: ((Repo) -> Void)?
+    /// 洞察数字下钻后的返回入口；临时筛选本身仍由 HomeViewModel 统一管理。
+    var onReturnToInsights: (() -> Void)?
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
@@ -1403,6 +1406,10 @@ struct RepoListView: View {
             // 下方开始，保持与 Trending / Activity 中栏一致。
             manageListTopInset
 
+            if viewModel.temporaryGlobalFilterSession?.returnPage == .insights {
+                insightsDrillDownBanner
+            }
+
             Group {
                 if viewModel.selection.isSmartCollectionsSurface {
                     SmartCollectionsOverviewView()
@@ -1436,6 +1443,36 @@ struct RepoListView: View {
             isEnabled: !isManageRefreshInProgress
         ) {
             refreshManageList()
+        }
+    }
+
+    /// 洞察下钻是一次临时筛选会话。横幅同时提供“回到来源”和“留在 Manage 并清除”
+    /// 两种结束方式，且两者都只恢复用户原有持久筛选，不重置 Toolbar 偏好。
+    private var insightsDrillDownBanner: some View {
+        HStack(spacing: 10) {
+            Label("insights.drilldown.banner", systemImage: "gauge.with.dots.needle.bottom.0percent")
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
+
+            Spacer(minLength: 8)
+
+            Button("insights.drilldown.clear") {
+                viewModel.clearTemporaryGlobalFilters()
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
+
+            Button("insights.drilldown.return") {
+                onReturnToInsights?()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.accentColor.opacity(0.08))
+        .overlay(alignment: .bottom) {
+            Divider()
         }
     }
 

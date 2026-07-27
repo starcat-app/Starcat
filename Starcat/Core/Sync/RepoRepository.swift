@@ -865,6 +865,29 @@ struct GRDBRepoRepository {
                 """)
             args.append(embeddingModel)
         }
+        switch filters.insightsRisk {
+        case .unknown:
+            break
+        case .maintenance:
+            whereClauses.append("""
+                EXISTS (
+                    SELECT 1 FROM repo_health_snapshots h_risk
+                    WHERE h_risk.repo_id = r.id
+                      AND h_risk.fetch_status != 'failed'
+                      AND h_risk.maintenance_score < 50
+                )
+                """)
+        case .security:
+            whereClauses.append("""
+                EXISTS (
+                    SELECT 1 FROM open_ssf_scores ossf_risk
+                    WHERE ossf_risk.repo_id = r.id
+                      AND ossf_risk.fetch_status = 'success'
+                      AND ossf_risk.aggregate_score IS NOT NULL
+                      AND ossf_risk.aggregate_score < 5
+                )
+                """)
+        }
         if !filters.selectedTagIDs.isEmpty {
             let tagIDs = Array(filters.selectedTagIDs).sorted()
             let placeholders = Array(repeating: "?", count: tagIDs.count).joined(separator: ", ")

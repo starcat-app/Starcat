@@ -207,7 +207,8 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
                         h.repo_id IS NOT NULL AND h.fetch_status != 'failed'
                     THEN 1 ELSE 0 END), 0) AS health_completed_count,
                     COALESCE(SUM(CASE WHEN
-                        os.repo_id IS NOT NULL
+                        os.fetch_status = 'success'
+                        AND os.aggregate_score IS NOT NULL
                     THEN 1 ELSE 0 END), 0) AS openssf_completed_count,
                     COALESCE(SUM(CASE WHEN
                         h.repo_id IS NOT NULL

@@ -707,6 +707,33 @@ struct RepoRepositoryTests {
         let tag = Tag.fixture(id: "organized", name: "Organized")
         try await GRDBTagRepository(database: database).create(tag)
         try await GRDBRepoTagRepository(database: database).addTag(repoId: 1, tagId: tag.id)
+        try await GRDBRepoHealthRepository(database: database).upsert(
+            RepoHealthSnapshot(
+                repoId: 4,
+                overallScore: 45,
+                grade: "D",
+                maintenanceScore: 40,
+                popularityScore: 50,
+                qualityScore: 50,
+                securityScore: 50,
+                payloadJSON: "{}",
+                computedAt: "2026-07-27T00:00:00Z",
+                staleAfter: "2026-07-28T00:00:00Z",
+                fetchStatus: .success,
+                lastError: nil
+            )
+        )
+        try await GRDBOpenSSFScoreRepository(database: database).upsert(
+            OpenSSFScoreRecord(
+                repoId: 4,
+                fetchStatus: .success,
+                aggregateScore: 4,
+                checksJSON: nil,
+                scoreDate: "2026-07-27",
+                fetchedAt: "2026-07-27T00:00:00Z",
+                lastError: nil
+            )
+        )
 
         try await database.writer.write { db in
             try db.execute(sql: """
@@ -739,6 +766,18 @@ struct RepoRepositoryTests {
         var indexIssues = RepoListFilters.empty
         indexIssues.ragIndexState = .issues(embeddingModel: "embed-v1")
         #expect(try await repo.fetchListCount(scope: .library, filters: indexIssues) == 1)
+
+        var maintenanceRisk = RepoListFilters.empty
+        maintenanceRisk.insightsRisk = .maintenance
+        #expect(try await repo.fetchListCount(scope: .library, filters: maintenanceRisk) == 1)
+
+        var securityRisk = RepoListFilters.empty
+        securityRisk.insightsRisk = .security
+        #expect(try await repo.fetchListCount(scope: .library, filters: securityRisk) == 1)
+
+        var combined = tagMissing
+        combined.status = .unread
+        #expect(try await repo.fetchListCount(scope: .library, filters: combined) == 1)
 
         try await database.writer.write { db in
             let fetchedChunkID = try Int64.fetchOne(

@@ -152,6 +152,13 @@ enum RepoRAGIndexStateFilter: Equatable, Sendable {
     }
 }
 
+/// 洞察中的风险集合使用与统计快照相同的固定阈值，确保数字下钻后列表数量一致。
+enum RepoInsightsRiskFilter: String, Equatable, Sendable {
+    case unknown
+    case maintenance
+    case security
+}
+
 /// Manage 列表的可下推过滤条件。
 ///
 /// `selectedTagIDs` 语义与 HomeViewModel 保持一致：命中任意一个标签即可保留（OR）。
@@ -171,6 +178,7 @@ struct RepoListFilters: Equatable, Sendable {
     var readmeAvailability: RepoSignalAvailabilityFilter
     var indexableSourceAvailability: RepoSignalAvailabilityFilter
     var ragIndexState: RepoRAGIndexStateFilter
+    var insightsRisk: RepoInsightsRiskFilter
     var selectedTagIDs: Set<String>
 
     init(
@@ -188,6 +196,7 @@ struct RepoListFilters: Equatable, Sendable {
         readmeAvailability: RepoSignalAvailabilityFilter = .unknown,
         indexableSourceAvailability: RepoSignalAvailabilityFilter = .unknown,
         ragIndexState: RepoRAGIndexStateFilter = .unknown,
+        insightsRisk: RepoInsightsRiskFilter = .unknown,
         selectedTagIDs: Set<String>
     ) {
         self.hideArchived = hideArchived
@@ -204,6 +213,7 @@ struct RepoListFilters: Equatable, Sendable {
         self.readmeAvailability = readmeAvailability
         self.indexableSourceAvailability = indexableSourceAvailability
         self.ragIndexState = ragIndexState
+        self.insightsRisk = insightsRisk
         self.selectedTagIDs = selectedTagIDs
     }
 
@@ -222,6 +232,7 @@ struct RepoListFilters: Equatable, Sendable {
         readmeAvailability: .unknown,
         indexableSourceAvailability: .unknown,
         ragIndexState: .unknown,
+        insightsRisk: .unknown,
         selectedTagIDs: []
     )
 }

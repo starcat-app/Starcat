@@ -128115,6 +128115,34 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "未讀" } }
       }
     },
+    "insights.drilldown.banner" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Temporary filter from Insights" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "来自洞察的临时筛选" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "來自洞察的暫時篩選" } }
+      }
+    },
+    "insights.drilldown.clear" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear Filter" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清除筛选" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "清除篩選" } }
+      }
+    },
+    "insights.drilldown.return" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Back to Insights" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "返回洞察" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "返回洞察" } }
+      }
+    },
+    "insights.drilldown.viewAll" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "View All" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查看全部" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "檢視全部" } }
+      }
+    },
     "insights.list.section.analysis" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Analysis" } },

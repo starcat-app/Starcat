@@ -275,12 +275,14 @@ struct HomeViewModelFilterSortTests {
         vm.applyTemporaryGlobalFilters(
             temporary,
             requestID: UUID(),
-            anchorSelection: .library
+            anchorSelection: .library,
+            returnPage: .insights
         )
 
         #expect(vm.persistentGlobalFilterState.hideArchived)
         #expect(!vm.effectiveGlobalFilterState.hideArchived)
         #expect(vm.effectiveGlobalFilterState.statusFilter == .unread)
+        #expect(vm.temporaryGlobalFilterSession?.returnPage == .insights)
 
         vm.clearTemporaryGlobalFiltersIfNeeded(for: .library)
         #expect(vm.temporaryGlobalFilterSession != nil)

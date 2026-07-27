@@ -219,7 +219,15 @@ struct MyInsightsView: View {
 
                 HStack(spacing: 18) {
                     ForEach(snapshot.statusItems) { item in
-                        distributionLegend(item)
+                        Button {
+                            guard let status = status(for: item.id) else { return }
+                            openDrillDown(.status(status))
+                        } label: {
+                            distributionLegend(item)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
                     }
                 }
             }
@@ -231,7 +239,11 @@ struct MyInsightsView: View {
             title: "insights.section.languages",
             subtitle: "insights.section.languages.subtitle",
             systemImage: "chevron.left.forwardslash.chevron.right",
-            items: snapshot.languageItems
+            items: snapshot.languageItems,
+            onDrillDown: { item in
+                guard item.id != "other" else { return }
+                openDrillDown(.language(item.id == "__unknown__" ? nil : item.title))
+            }
         )
     }
 
@@ -257,7 +269,8 @@ struct MyInsightsView: View {
         title: LocalizedStringKey,
         subtitle: LocalizedStringKey,
         systemImage: String,
-        items: [InsightsDistributionItem]
+        items: [InsightsDistributionItem],
+        onDrillDown: ((InsightsDistributionItem) -> Void)? = nil
     ) -> some View {
         InsightsSectionContainer(
             title: title,
@@ -290,6 +303,36 @@ struct MyInsightsView: View {
                 }
             }
             .frame(height: 176)
+
+            if let onDrillDown {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], spacing: 6) {
+                    ForEach(items) { item in
+                        Button {
+                            onDrillDown(item)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(InsightsColor.resolve(item.colorName))
+                                    .frame(width: 7, height: 7)
+                                Text(LocalizedStringKey(item.title))
+                                    .lineLimit(1)
+                                Spacer(minLength: 6)
+                                Text(item.count.formatted())
+                                    .monospacedDigit()
+                                Image(systemName: "arrow.up.right")
+                                    .font(interfaceScale.font(.captionSmall))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .font(interfaceScale.font(.caption))
+                            .padding(.vertical, 4)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                        .disabled(item.id == "other")
+                    }
+                }
+            }
         }
     }
 
@@ -331,9 +374,16 @@ struct MyInsightsView: View {
 
                         Spacer(minLength: 12)
 
-                        Label("insights.action.priority", systemImage: "arrow.up.right")
-                            .font(interfaceScale.font(.caption, weight: .medium))
-                            .foregroundStyle(InsightsColor.resolve(item.tintName))
+                        if canDrillDown(.action(item.id)) {
+                            Button {
+                                openDrillDown(.action(item.id))
+                            } label: {
+                                Label("insights.drilldown.viewAll", systemImage: "arrow.up.right")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .tint(InsightsColor.resolve(item.tintName))
+                        }
                     }
 
                     Divider()
@@ -433,6 +483,37 @@ struct MyInsightsView: View {
 
     private var selectedAction: InsightsActionItem? {
         snapshot.actionItems.first(where: { $0.id == selection })
+    }
+
+    private func status(for id: String) -> RepoStatus? {
+        switch id {
+        case "unread": return .unread
+        case "read": return .read
+        case "using": return .using
+        default: return nil
+        }
+    }
+
+    private func canDrillDown(_ target: InsightsDrillDownTarget) -> Bool {
+        InsightsDrillDownRouter.route(
+            scope: scope,
+            target: target,
+            embeddingModel: settings.aiEmbeddingModel
+        ) != nil
+    }
+
+    /// 只发布类型化路由；Manage 负责安装临时筛选并展示返回洞察上下文。
+    private func openDrillDown(_ target: InsightsDrillDownTarget) {
+        guard let route = InsightsDrillDownRouter.route(
+            scope: scope,
+            target: target,
+            embeddingModel: settings.aiEmbeddingModel
+        ) else { return }
+        dependencies.mainWindowNavigationDispatcher.navigate(
+            to: .manage(route.selection),
+            temporaryFilters: route.filters,
+            returnPage: .insights
+        )
     }
 
     private func coverageItem(
