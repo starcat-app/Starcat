@@ -53,17 +53,37 @@
 
 import SwiftUI
 
+/// Manage 详情正文的两种互斥模式。
+///
+/// 把模式与切换副作用留在视图外部，主详情和独立详情复用同一个
+/// `ManageDetailContent` 时会自然共享同一套规则，测试也不必依赖 SwiftUI 私有状态。
+enum ManageDetailContentMode: String, CaseIterable, Identifiable {
+    case readme
+    case insights
+
+    var id: String { rawValue }
+
+    /// 切换模式时需要执行的资源管理动作。
+    ///
+    /// README 模式必须取消洞察请求；洞察模式需要先重置 Hero 滚动位置。
+    var transitionEffect: ManageDetailContentTransitionEffect {
+        switch self {
+        case .readme:
+            .cancelInsights
+        case .insights:
+            .resetScroll
+        }
+    }
+}
+
+/// 模式切换带来的最小副作用契约，避免 README 与洞察在后台同时占用资源。
+enum ManageDetailContentTransitionEffect: Equatable {
+    case cancelInsights
+    case resetScroll
+}
+
 /// Manage 场景详情页的 body 内容（README + 翻译入口）。
 struct ManageDetailContent: View {
-
-    /// Manage 详情仅保留 README 与洞察两种 body 模式；切换通过条件分支真正卸载
-    /// WKWebView，避免不可见 README 继续占用 WebContent 进程和滚动状态。
-    private enum ContentMode: String, CaseIterable, Identifiable {
-        case readme
-        case insights
-
-        var id: String { rawValue }
-    }
 
     let repo: Repo
 
@@ -78,7 +98,7 @@ struct ManageDetailContent: View {
     /// v2.1（2026-06-11）：onRetry 闭包同时刷 README + 整个 repo 视图数据(缓存 repo +
     /// tags + notes + release 计数等)。详见文件头 v2.1 修订段。
     @Environment(HomeViewModel.self) private var viewModel
-    @State private var contentMode: ContentMode = .readme
+    @State private var contentMode: ManageDetailContentMode = .readme
     @State private var repositoryInsightsViewModel: RepositoryInsightsViewModel?
     @State private var starHistoryViewModel: StarHistoryViewModel?
 
@@ -86,8 +106,8 @@ struct ManageDetailContent: View {
         VStack(spacing: 0) {
             HStack {
                 Picker("insights.repo.mode.label", selection: $contentMode) {
-                    Text("insights.repo.mode.readme").tag(ContentMode.readme)
-                    Text("insights.repo.mode.insights").tag(ContentMode.insights)
+                    Text("insights.repo.mode.readme").tag(ManageDetailContentMode.readme)
+                    Text("insights.repo.mode.insights").tag(ManageDetailContentMode.insights)
                 }
                 .labelsHidden()
                 .pickerStyle(.segmented)
@@ -155,14 +175,15 @@ struct ManageDetailContent: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onChange(of: contentMode) { _, newMode in
-            guard newMode == .insights else {
+            switch newMode.transitionEffect {
+            case .cancelInsights:
                 repositoryInsightsViewModel?.cancelRemoteLoading()
                 starHistoryViewModel?.cancel()
-                return
+            case .resetScroll:
+                // README 可能在切换前已把 Hero 折叠；洞察页首帧先恢复顶部 Metadata，
+                // 后续再由自己的 ScrollView 持续上报 offset。
+                onScrollReport(RepoDetailScrollReport(offsetY: 0, scrollOverflow: 0))
             }
-            // README 可能在切换前已把 Hero 折叠；洞察页首帧先恢复顶部 Metadata，
-            // 后续再由自己的 ScrollView 持续上报 offset。
-            onScrollReport(RepoDetailScrollReport(offsetY: 0, scrollOverflow: 0))
         }
     }
 
