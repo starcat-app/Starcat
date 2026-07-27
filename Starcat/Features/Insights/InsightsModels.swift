@@ -355,21 +355,3 @@ struct RepositoryTimelineItem: Identifiable, Equatable, Sendable {
     let systemImage: String
     let tintName: String
 }
-
-/// 单仓库洞察完整快照。只保存展示所需标量，不持有 `Repo`，便于后续跨 actor 传递。
-struct RepositoryInsightsSnapshot: Equatable, Sendable {
-    let repoID: Int64
-    let fullName: String
-    let generatedAt: Date
-    let currentStars: Int
-    let starGrowth30Days: Int
-    let starGrowthOneYear: Int
-    let starHistory: [StarHistoryPoint]
-    let activityMetrics: [RepositoryActivityMetric]
-    let commitPoints: [RepositoryCommitPoint]
-    let contributors: [RepositoryContributor]
-    let healthDimensions: [RepositoryHealthDimensionItem]
-    let communitySignals: [RepositorySignal]
-    let securitySignals: [RepositorySignal]
-    let timelineItems: [RepositoryTimelineItem]
-}

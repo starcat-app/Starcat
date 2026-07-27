@@ -127709,13 +127709,6 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "1 年成長" } }
       }
     },
-    "insights.repo.star.mockNotice" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Demo data, not fetched from GitHub" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "演示数据，未从 GitHub 拉取" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "展示資料，未從 GitHub 擷取" } }
-      }
-    },
     "insights.repo.star.range.all" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "All" } },
@@ -127756,13 +127749,6 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Estimated · GH Archive" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "估算 · GH Archive" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "估算 · GH Archive" } }
-      }
-    },
-    "insights.repo.star.source.local" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Precise local snapshots" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本机精确快照" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "本機精確快照" } }
       }
     },
     "insights.repo.star.source.snapshot" : {
