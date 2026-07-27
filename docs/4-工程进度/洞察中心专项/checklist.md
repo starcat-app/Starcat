@@ -240,16 +240,16 @@
 
 - [x] 实现新建 / 合并 PR、新建 / 关闭 Issue 的时间范围查询。
 - [x] 实现最近 52 周 Commit activity，并在客户端按范围裁剪。
-- [ ] 实现 contributors、community profile 和最近活动时间线。
+- [x] 实现 contributors、community profile 和最近活动时间线。
 - [x] Activity range 使用 `1 周 / 1 月 / 3 月 / 1 年`，不会改变 Star 趋势范围。
-- [ ] 有缓存时先显示；刷新按钮防重复点击；离线和限流保留旧数据。
+- [x] 有缓存时先显示；刷新按钮防重复点击；离线和限流保留旧数据。
 - [x] 无登录时仍显示本地 Health / OpenSSF，远端区块提供可理解提示。
 
 计划提交：
 
 - [x] `feat(insights): 加载仓库协作活动指标` — 实际 commit：`cbbf8df8`
 - [x] `feat(insights): 展示贡献者与社区规范` — 实际 commit：`cbcc82c9`
-- [ ] `feat(insights): 增加仓库最近活动时间线` — 实际 commit：`待回填`
+- [x] `feat(insights): 增加仓库最近活动时间线` — 实际 commit：`84059a1c`
 
 ---
 
