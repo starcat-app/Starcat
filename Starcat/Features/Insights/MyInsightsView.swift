@@ -123,31 +123,47 @@ struct MyInsightsView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("insights.my.title")
-                    .font(interfaceScale.font(.workspaceTitle))
-
-                HStack(spacing: 5) {
-                    Text(selection.titleKey)
-                    if viewModel.hasContent {
-                        Text("·")
-                        Text(snapshot.generatedAt, format: .dateTime.month().day().hour().minute())
-                    }
-                }
-                .font(interfaceScale.font(.caption))
-                .foregroundStyle(.secondary)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                headerTitle
+                Spacer(minLength: 16)
+                headerControls
             }
+            VStack(alignment: .leading, spacing: 10) {
+                headerTitle
+                headerControls
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 13)
+    }
 
-            Spacer(minLength: 16)
+    private var headerTitle: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("insights.my.title")
+                .font(interfaceScale.font(.workspaceTitle))
 
+            HStack(spacing: 5) {
+                Text(selection.titleKey)
+                if viewModel.hasContent {
+                    Text("·")
+                    Text(snapshot.generatedAt, format: .dateTime.month().day().hour().minute())
+                }
+            }
+            .font(interfaceScale.font(.caption))
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private var headerControls: some View {
+        HStack(spacing: 12) {
             Picker("insights.scope.label", selection: $scope) {
                 Text("insights.scope.starred").tag(InsightsScope.starred)
                 Text("insights.scope.knowledge").tag(InsightsScope.knowledge)
             }
             .labelsHidden()
             .pickerStyle(.segmented)
-            .frame(width: 190)
+            .frame(maxWidth: 190)
 
             SyncIconButton(
                 isRefreshing: viewModel.isRefreshing,
@@ -157,8 +173,6 @@ struct MyInsightsView: View {
                 refresh()
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 13)
     }
 
     private var metricGrid: some View {
@@ -194,6 +208,9 @@ struct MyInsightsView: View {
                     RoundedRectangle(cornerRadius: 9)
                         .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
                 }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(LocalizedStringKey(metric.titleKey)))
+                .accessibilityValue(Text(verbatim: metricAccessibilityValue(metric)))
             }
         }
     }
@@ -215,9 +232,14 @@ struct MyInsightsView: View {
                     }
                 }
                 .frame(height: 10)
+                .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Text("insights.section.organization"))
+                .accessibilityValue(Text(verbatim: distributionAccessibilityValue(snapshot.statusItems)))
 
-                HStack(spacing: 18) {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 132), spacing: 12)],
+                    spacing: 8
+                ) {
                     ForEach(snapshot.statusItems) { item in
                         Button {
                             guard let status = status(for: item.id) else { return }
@@ -303,6 +325,9 @@ struct MyInsightsView: View {
                 }
             }
             .frame(height: 176)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(title))
+            .accessibilityValue(Text(verbatim: distributionAccessibilityValue(items)))
 
             if let onDrillDown {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], spacing: 6) {
@@ -402,7 +427,10 @@ struct MyInsightsView: View {
             subtitle: "insights.section.coverage.subtitle",
             systemImage: "heart.text.square.fill"
         ) {
-            HStack(spacing: 24) {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 180), spacing: 24)],
+                spacing: 14
+            ) {
                 coverageItem(
                     title: "insights.coverage.health",
                     coverage: snapshot.healthCoverage,
@@ -546,6 +574,28 @@ struct MyInsightsView: View {
             .monospacedDigit()
         }
         .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(title))
+        .accessibilityValue(
+            Text(
+                String(
+                    format: String.l10n("insights.coverage.countFormat"),
+                    coverage.completed,
+                    coverage.total
+                )
+            )
+        )
+    }
+
+    private func metricAccessibilityValue(_ metric: InsightsMetric) -> String {
+        "\(compact(metric.value)), \(String.l10n(metric.detailKey))"
+    }
+
+    private func distributionAccessibilityValue(_ items: [InsightsDistributionItem]) -> String {
+        items.map { item in
+            "\(String.l10n(item.title)) \(item.count.formatted(.number.locale(locale)))"
+        }
+        .joined(separator: ", ")
     }
 
     private func compact(_ value: Int) -> String {

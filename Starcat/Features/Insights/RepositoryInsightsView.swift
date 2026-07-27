@@ -28,6 +28,7 @@ struct RepositoryInsightsView: View {
 
     @State private var selectedStarDate: Date?
 
+    @Environment(\.locale) private var locale
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(AuthSession.self) private var authSession
 
@@ -176,29 +177,15 @@ struct RepositoryInsightsView: View {
             systemImage: "waveform.path.ecg"
         ) {
             VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
-                    Picker("insights.repo.activity.range.label", selection: activityRangeBinding) {
-                        ForEach(RepositoryActivityRange.allCases) { range in
-                            Text(LocalizedStringKey(range.titleKey)).tag(range)
-                        }
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        activityRangePicker
+                        Spacer(minLength: 8)
+                        activityRefreshButton
                     }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                    .frame(maxWidth: 280)
-
-                    Spacer(minLength: 8)
-
-                    SyncIconButton(
-                        isRefreshing: viewModel.isRefreshingActivity,
-                        disabled: viewModel.isRefreshingActivity,
-                        tooltip: String.l10n("insights.repo.activity.refresh")
-                    ) {
-                        Task {
-                            await viewModel.refreshActivity(
-                                repo: repo,
-                                isAuthenticated: authSession.state.isAuthenticated
-                            )
-                        }
+                    VStack(alignment: .leading, spacing: 8) {
+                        activityRangePicker
+                        activityRefreshButton
                     }
                 }
 
@@ -241,6 +228,32 @@ struct RepositoryInsightsView: View {
                         EmptyView()
                     }
                 }
+            }
+        }
+    }
+
+    private var activityRangePicker: some View {
+        Picker("insights.repo.activity.range.label", selection: activityRangeBinding) {
+            ForEach(RepositoryActivityRange.allCases) { range in
+                Text(LocalizedStringKey(range.titleKey)).tag(range)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.segmented)
+        .frame(maxWidth: 280)
+    }
+
+    private var activityRefreshButton: some View {
+        SyncIconButton(
+            isRefreshing: viewModel.isRefreshingActivity,
+            disabled: viewModel.isRefreshingActivity,
+            tooltip: String.l10n("insights.repo.activity.refresh")
+        ) {
+            Task {
+                await viewModel.refreshActivity(
+                    repo: repo,
+                    isAuthenticated: authSession.state.isAuthenticated
+                )
             }
         }
     }
@@ -365,6 +378,21 @@ struct RepositoryInsightsView: View {
         .padding(10)
         .frame(maxWidth: .infinity, minHeight: 86, alignment: .leading)
         .background(Color(nsColor: .textBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 7))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(LocalizedStringKey(metric.titleKey)))
+        .accessibilityValue(Text(verbatim: activityMetricAccessibilityValue(metric)))
+    }
+
+    private func activityMetricAccessibilityValue(_ metric: RepositoryActivityMetric) -> String {
+        let value = metric.value.formatted(.number.locale(locale))
+        let delta = metric.delta.map { $0 >= 0 ? "+\($0)%" : "\($0)%" }
+        return [
+            value,
+            delta,
+            String.l10n(viewModel.activityRange.titleKey)
+        ]
+        .compactMap { $0 }
+        .joined(separator: ", ")
     }
 
     private var starHistorySection: some View {
@@ -425,10 +453,17 @@ struct RepositoryInsightsView: View {
                 .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(label))
+        .accessibilityValue(Text(verbatim: value))
     }
 
     private var starMetrics: some View {
-        HStack(alignment: .top, spacing: 18) {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 104), alignment: .leading)],
+            alignment: .leading,
+            spacing: 10
+        ) {
             starMetric(
                 value: starHistoryViewModel.currentStars?.formatted()
                     ?? String.l10n("insights.repo.state.noData"),
@@ -446,26 +481,39 @@ struct RepositoryInsightsView: View {
     }
 
     private var starControls: some View {
-        HStack(spacing: 8) {
-            SyncIconButton(
-                isRefreshing: starHistoryViewModel.isRefreshing,
-                disabled: starHistoryViewModel.isRefreshing,
-                tooltip: String.l10n("insights.repo.star.refresh")
-            ) {
-                Task {
-                    await starHistoryViewModel.refresh(repo: repo)
-                }
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                starRefreshButton
+                starRangePicker
             }
-
-            Picker("insights.repo.star.range.label", selection: starRangeBinding) {
-                ForEach(StarHistoryRange.allCases) { range in
-                    Text(starRangeTitle(range)).tag(range)
-                }
+            VStack(alignment: .leading, spacing: 8) {
+                starRangePicker
+                starRefreshButton
             }
-            .labelsHidden()
-            .pickerStyle(.segmented)
-            .frame(width: 176)
         }
+    }
+
+    private var starRefreshButton: some View {
+        SyncIconButton(
+            isRefreshing: starHistoryViewModel.isRefreshing,
+            disabled: starHistoryViewModel.isRefreshing,
+            tooltip: String.l10n("insights.repo.star.refresh")
+        ) {
+            Task {
+                await starHistoryViewModel.refresh(repo: repo)
+            }
+        }
+    }
+
+    private var starRangePicker: some View {
+        Picker("insights.repo.star.range.label", selection: starRangeBinding) {
+            ForEach(StarHistoryRange.allCases) { range in
+                Text(starRangeTitle(range)).tag(range)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.segmented)
+        .frame(maxWidth: 176)
     }
 
     private var starSources: some View {
@@ -1087,6 +1135,11 @@ struct RepositoryInsightsView: View {
                 .tint(tint)
         }
         .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(LocalizedStringKey(dimension.titleKey)))
+        .accessibilityValue(
+            Text(verbatim: dimension.score.formatted(.number.locale(locale)))
+        )
     }
 
     private var localSignalsSection: some View {
