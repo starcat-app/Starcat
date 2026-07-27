@@ -79,6 +79,8 @@
 - [ ] 明确 BigQuery 凭据来源、只读权限、预算和 `maximumBytesBilled`；未经授权不产生付费查询。
 - [x] 选择小、中、大各 2 个公开仓库，以稳定 GitHub repo ID 查询 `WatchEvent`。样本与 repo ID 已记录到 [`M0-星标历史数据可行性.md`](M0-星标历史数据可行性.md)；真实查询待授权。
 - [ ] 验证 GH Archive 当前表名、字段类型、覆盖起点、查询耗时、扫描字节和缺口。
+- [ ] 验证六个样本均从服务端 GitHub `created_at` 开始 dry run，记录裁剪前后扫描字节差异。
+- [ ] 按约 2000 个收藏仓库评估逐仓查询与批量扫描成本；若逐仓方案不可接受，M0 不得 GO，必须先调整构建策略。
 - [ ] 对比累计 `WatchEvent`、当前 `stargazers_count` 与归一化曲线。
 - [ ] 验证 `totalEvents == 0`、仓库改名 / 转移、归档仓库和超大仓库边界。
 - [ ] 输出 M0 GO / NO-GO 结论和成本上限，写入新增审查报告或专项决策文档。
@@ -271,6 +273,7 @@
 
 - [x] 新增可测试替换的历史事件 Provider 协议。
 - [x] 实现 BigQuery / GH Archive provider，使用参数化 repo ID、日期和最大扫描预算。
+- [x] 使用服务端 GitHub `created_at` 作为查询日期下界，旧仓库才回退到 GH Archive 覆盖起点，禁止扫描仓库创建前的日表。
 - [x] 实现日累计、当前 Stars 归一化、`totalEvents == 0` 和末点校准。
 - [x] 估算段保持单调，精确快照段允许真实下降。
 - [x] 实现 `3m` 日、`1y` 周、`all` 月降采样，首末点与来源不丢失。
@@ -279,6 +282,8 @@
 计划提交（`starcat-discovery-api`）：
 
 - [x] `feat(star-history): 实现 GH Archive 历史提供器` — 实际 commit：`40415fe`、`3228cdc`（`starcat-discovery-api`；真实查询仍受 M0 授权门禁）
+- [x] `fix(star-history): 按仓库创建日期裁剪历史扫描` — 实际 commit：`a3c9005`（`starcat-discovery-api`）
+- [x] `docs(star-history): 说明创建日期扫描边界` — 实际 commit：`1e233f4`（`starcat-discovery-api`）
 - [x] `feat(star-history): 实现星标历史归一化` — 实际 commit：`43ca9d4`、`b433f37`（`starcat-discovery-api`）
 - [x] `feat(star-history): 增加星标历史范围降采样` — 实际 commit：`69f6b3d`（`starcat-discovery-api`）
 
