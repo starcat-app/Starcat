@@ -1902,6 +1902,7 @@ struct SidebarView: View {
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
                     .help(Text("project.access.manage"))
+                    .accessibilityLabel(Text("project.access.manage"))
 
                     SyncIconButton(
                         isRefreshing: isProjectSyncing,
