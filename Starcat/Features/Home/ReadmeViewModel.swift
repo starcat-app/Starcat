@@ -105,6 +105,8 @@ final class ReadmeViewModel {
     private(set) var activeTrendingKey: String?
 
     private let api: ReadmeAPI
+    /// Private / Internal 仓库专用 API。未注入时 Private 请求不得回退主 OAuth。
+    private let privateAPI: ReadmeAPI?
 
     /// 当前加载中的 repoId，用于"切换 repo 时丢弃旧响应"（与 `activeRepoId` 同步写入）。
     private var currentRepoId: Int64?
@@ -145,11 +147,13 @@ final class ReadmeViewModel {
 
     init(
         api: ReadmeAPI,
+        privateAPI: ReadmeAPI? = nil,
         availability: ReadmeAvailability,
         onHTMLLoaded: ((Repo) -> Void)? = nil,
         telemetryManager: TelemetryManager? = nil
     ) {
         self.api = api
+        self.privateAPI = privateAPI
         self.availability = availability
         self.onHTMLLoaded = onHTMLLoaded
         self.telemetryManager = telemetryManager
@@ -398,6 +402,9 @@ final class ReadmeViewModel {
 
         currentTask = Task { [weak self] in
             guard let self else { return }
+            // Private 仓库绝不回退主 OAuth API。GitHub App 未连接时 provider 返回 nil，
+            // 请求会失败并保留旧本地缓存，不会把仓库名发送到公共 Trending/Discovery。
+            let selectedAPI = repo.isPrivate ? self.privateAPI : self.api
             
             self.isRefreshing = true
             defer { self.isRefreshing = false }
@@ -410,10 +417,10 @@ final class ReadmeViewModel {
             // ——用户在 trending 详情读过 README + star + 切到 manage 详情时零网络复用。
             let cached: Readme?
             do {
-                cached = try await self.api.cachedReadme(for: repo)
+                cached = try await selectedAPI?.cachedReadme(for: repo)
             } catch {
                 cached = nil
-                AppLog.network.warning("README cachedReadme 失败 repo=\(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                AppLog.network.warning("README cachedReadme 失败 repoId=\(repo.id): \(error.localizedDescription, privacy: .public)")
             }
 
             guard !Task.isCancelled, self.currentRepoId == requestedId else { return }
@@ -431,7 +438,9 @@ final class ReadmeViewModel {
                 // .notModified，必须在这里 hook 才能让"看详情页 = 自动丰富 markdown"成立。
                 // 后续若 cache 过期再进网络分支，会再触发一次；refreshMarkdownIfNeeded 内部
                 // 对 content 非空短路 .notModified，重复触发 cheap（仅一次本地 DB 查询）。
-                self.onHTMLLoaded?(repo)
+                if !repo.isPrivate {
+                    self.onHTMLLoaded?(repo)
+                }
                 hasUsableCache = true
             } else {
                 // 无可用缓存：保持 .loading（之前在入口已设置；同 repo 且无 cache 的极端 case 也补一下）
@@ -463,7 +472,13 @@ final class ReadmeViewModel {
             if !needsRefresh { return }
 
             // 第三阶段：后台 refresh（不抛错，所有错误都包到 .failed）
-            let result = await self.api.refreshReadme(for: repo)
+            guard let selectedAPI else {
+                if !hasUsableCache {
+                    self.state = .error(message: String.l10n("project.access.state.disconnected.detail"))
+                }
+                return
+            }
+            let result = await selectedAPI.refreshReadme(for: repo)
             guard !Task.isCancelled, self.currentRepoId == requestedId else { return }
 
             switch result {
@@ -477,7 +492,9 @@ final class ReadmeViewModel {
                     self.postReadmeLoaded(repoId: requestedId)
                     // 2026-06-13 dong4j 补救 B：异步补 raw markdown + 视情况触发向量重建。
                     // fire-and-forget 由回调实现方自己管 Task；这里只负责告知"HTML 到位"。
-                    self.onHTMLLoaded?(repo)
+                    if !repo.isPrivate {
+                        self.onHTMLLoaded?(repo)
+                    }
                 } else {
                     // GitHub 返回 200 但 body 为空（极少见）→ 视作 empty
                     self.state = .empty
@@ -497,7 +514,9 @@ final class ReadmeViewModel {
                     // 可能为空（用户从未跑过 SemanticIndexBuilder / 之前是新 user），
                     // 给它一次懒补 markdown 的机会；refreshMarkdownIfNeeded 内部 content
                     // 非空时短路 .notModified，不会无谓打 GitHub。
-                    self.onHTMLLoaded?(repo)
+                    if !repo.isPrivate {
+                        self.onHTMLLoaded?(repo)
+                    }
                 }
                 // html 为空的 304 理论上不该发生（refreshReadme 会走 unconditional 兜底），
                 // 防御性不动 state。
@@ -515,9 +534,9 @@ final class ReadmeViewModel {
 
                 if hasUsableCache {
                     // SWR 兜底：有缓存就静默，不打扰用户。debug 日志方便排查
-                    AppLog.network.debug("README 后台刷新失败但本地有缓存，保持已显示 repo=\(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                    AppLog.network.debug("README 后台刷新失败但本地有缓存，保持已显示 repoId=\(repo.id): \(error.localizedDescription, privacy: .public)")
                 } else {
-                    AppLog.network.error("README 加载失败 repo=\(repo.fullName, privacy: .public) force=\(forceRefresh, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                    AppLog.network.error("README 加载失败 repoId=\(repo.id) force=\(forceRefresh, privacy: .public): \(error.localizedDescription, privacy: .public)")
                     self.state = .error(message: error.localizedDescription)
                 }
             }

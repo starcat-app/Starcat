@@ -234,6 +234,7 @@ struct RepoDetailWindowContent: View {
         self.homeViewModel = homeViewModel
         _readmeVM = State(initialValue: ReadmeViewModel(
             api: dependencies.readmeAPI,
+            privateAPI: dependencies.projectReadmeAPI,
             availability: dependencies.readmeAvailability
         ))
         _translationVM = State(initialValue: ReadmeTranslationViewModel(

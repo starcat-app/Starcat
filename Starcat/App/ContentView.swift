@@ -40,6 +40,7 @@ struct ContentView: View {
         HomeView(
             repository: dependencies.repoRepository,
             readmeAPI: dependencies.readmeAPI,
+            projectReadmeAPI: dependencies.projectReadmeAPI,
             readmeAvailability: dependencies.readmeAvailability,
             readmeOnHTMLLoaded: dependencies.makeReadmeOnHTMLLoadedHandler(),
             tagRepository: dependencies.tagRepository,

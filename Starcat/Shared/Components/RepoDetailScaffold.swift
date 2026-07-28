@@ -376,6 +376,10 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             reloadWikiLinksIfReset(notification, for: repo)
         }
         .task(id: repo.id) {
+            guard ProjectPrivacyPolicy.allowsDiscoveryLookup(for: repo) else {
+                recommendationVM.clear()
+                return
+            }
             await recommendationVM.loadInitial(
                 repoID: repo.id,
                 service: dependencies.recommendationContextService
@@ -1001,6 +1005,10 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     @MainActor
     private func loadWikiLinks(for repo: Repo) async {
         wikiLinks = []
+        guard ProjectPrivacyPolicy.allowsPublicService(for: repo) else {
+            wikiRepoKey = nil
+            return
+        }
         let key = wikiLookupKey(for: repo)
         wikiRepoKey = key
         let links = dependencies.wikiContextService.cacheFirstLinks(

@@ -112,7 +112,7 @@ struct RepoDetailView: View {
                     // **v2.0 修订**:tooltip 与 toggle 行为对齐——已 star 显示「取消 star」,
                     // 未 star 显示「star」。从 `Repo.isStarred` 直接派生(同 trailingActions)。
                     starHelpKey: repo.isStarred ? "repo.unstar" : "repo.star",
-                    showsRepoHealthEntry: true,
+                    showsRepoHealthEntry: ProjectPrivacyPolicy.allowsPublicService(for: repo),
                     onStarTapped: {
                         // §3.2.3 状态机：throws 让 StarStatChipButton 抖动 + 短暂红色（不弹 alert）
                         try await handleStarTapped(repo: repo)
@@ -213,8 +213,11 @@ struct RepoDetailView: View {
         // v2.0（2026-06-16, dong4j）：OpenSSF 入口迁移到 hero `full_name` 同行，
         // 不再放在 trailing actions 数组里。
         var actions: [RepoDetailAction] = []
-        if authSession.state.isAuthenticated {
+        if authSession.state.isAuthenticated,
+           ProjectPrivacyPolicy.allowsPublicShare(for: repo) {
             actions.append(.share)
+        }
+        if authSession.state.isAuthenticated {
             actions.append(.ai)
         }
         return actions

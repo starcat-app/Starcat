@@ -219,6 +219,7 @@ struct HomeView: View {
     init(
         repository: any RepoRepositoryProtocol,
         readmeAPI: ReadmeAPI,
+        projectReadmeAPI: ReadmeAPI,
         readmeAvailability: ReadmeAvailability,
         readmeOnHTMLLoaded: @escaping @MainActor (Repo) -> Void,
         tagRepository: any TagRepositoryProtocol,
@@ -259,6 +260,7 @@ struct HomeView: View {
         // 的 active 详情不会触发 markdown backfill / 向量重建——见 26-向量搜索改进.md §6）。
         _readmeVM = State(initialValue: ReadmeViewModel(
             api: readmeAPI,
+            privateAPI: projectReadmeAPI,
             availability: readmeAvailability,
             onHTMLLoaded: readmeOnHTMLLoaded,
             telemetryManager: telemetryManager
@@ -1677,6 +1679,10 @@ struct HomeView: View {
         do {
             if let repositoryID = target.repositoryID,
                let localRepo = try await dependencies.repoRepository.findById(repositoryID) {
+                guard ProjectPrivacyPolicy.allowsUniversalLink(for: localRepo) else {
+                    repositoryDeepLinkErrorMessage = String.l10n("repo.share.open.error.unavailable")
+                    return
+                }
                 openCompanionRepository(localRepo)
                 return
             }
@@ -1684,6 +1690,10 @@ struct HomeView: View {
                 owner: target.owner,
                 name: target.name
             ) {
+                guard ProjectPrivacyPolicy.allowsUniversalLink(for: localRepo) else {
+                    repositoryDeepLinkErrorMessage = String.l10n("repo.share.open.error.unavailable")
+                    return
+                }
                 openCompanionRepository(localRepo)
                 return
             }

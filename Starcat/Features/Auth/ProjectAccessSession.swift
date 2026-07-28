@@ -265,3 +265,15 @@ struct ProjectSyncTokenProvider: GitHubTokenProviding {
     let token: String
     func currentToken() async -> String? { token }
 }
+
+/// Private README 等按请求读取的 GitHub App token provider。
+///
+/// 与 `ProjectSyncTokenProvider` 的区别：项目全量同步要求整轮固定 token；详情 README
+/// 请求应在每次发出前检查过期并刷新凭据，因此这里动态调用独立授权 session。
+struct ProjectAccessTokenProvider: GitHubTokenProviding {
+    let session: ProjectAccessSession
+
+    func currentToken() async -> String? {
+        try? await session.validAccessToken()
+    }
+}

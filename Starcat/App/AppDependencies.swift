@@ -80,6 +80,8 @@ final class AppDependencies {
     let readmeRepository: ReadmeRepository
     /// Week 4 引入：README HTML 抓取 + 缓存协调。
     let readmeAPI: ReadmeAPI
+    /// Private / Internal README 专用 API；网络 token 来自独立 GitHub App 授权。
+    let projectReadmeAPI: ReadmeAPI
     /// HOM-201 P0-2（2026-06-14）：README "已知不存在" 共享会话状态。
     ///
     /// 由所有 `ReadmeViewModel`（manage 全局 VM + active/weekly 各 Shell 局部 VM）
@@ -832,6 +834,15 @@ final class AppDependencies {
         self.readmeMetrics = metrics
         self.readmeAPI = ReadmeAPI(
             client: api,
+            repository: readmeRepo,
+            trendingRepository: trendingReadmeRepo,
+            inflightTracker: inflightTracker,
+            metrics: metrics
+        )
+        self.projectReadmeAPI = ReadmeAPI(
+            client: GitHubAPIClient(
+                tokenProvider: ProjectAccessTokenProvider(session: projectAccessSession)
+            ),
             repository: readmeRepo,
             trendingRepository: trendingReadmeRepo,
             inflightTracker: inflightTracker,
