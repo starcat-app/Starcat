@@ -171,7 +171,7 @@ struct UserProjectSyncCoordinatorTests {
         #expect(orgState.syncStatus == .succeeded)
     }
 
-    @Test("第二页失败保留旧关系并记录稳定错误码")
+    @Test("单条链失败保留旧关系并返回部分同步摘要")
     func midPaginationFailurePreservesOldRelations() async throws {
         let database = try InMemoryDatabaseManager()
         let repository = GRDBUserProjectRepository(database: database)
@@ -208,12 +208,10 @@ struct UserProjectSyncCoordinatorTests {
         }
         let coordinator = UserProjectSyncCoordinator(api: api, repository: repository)
 
-        await #expect(throws: NetworkError.self) {
-            try await coordinator.sync(
-                userID: 7,
-                authorizationSource: .githubApp
-            )
-        }
+        let summary = try await coordinator.sync(
+            userID: 7,
+            authorizationSource: .githubApp
+        )
 
         let projects = try await repository.fetchPage(
             userID: 7,
@@ -232,6 +230,31 @@ struct UserProjectSyncCoordinatorTests {
         #expect(state.syncStatus == .failed)
         #expect(state.errorCode == "transport")
         #expect(state.lastSuccessAt != nil)
+        #expect(summary.isPartial)
+        #expect(summary.failedAffiliations == [.organizationMember: "transport"])
+        #expect(!summary.isOrganizationApprovalPending)
+    }
+
+    @Test("owner 成功且组织链 403 时标记组织审批待处理")
+    func organizationForbiddenBecomesApprovalPending() async throws {
+        let database = try InMemoryDatabaseManager()
+        let repository = GRDBUserProjectRepository(database: database)
+        let api = MockAPI { affiliation, _, _, _, _ in
+            if affiliation == .owner {
+                return response([makeRemote(id: 120, owner: "tester", name: "owner")])
+            }
+            throw NetworkError.clientError(statusCode: 403, message: nil)
+        }
+        let coordinator = UserProjectSyncCoordinator(api: api, repository: repository)
+
+        let summary = try await coordinator.sync(
+            userID: 7,
+            authorizationSource: .githubApp
+        )
+
+        #expect(summary.receivedCount == 1)
+        #expect(summary.failedAffiliations == [.organizationMember: "client_403"])
+        #expect(summary.isOrganizationApprovalPending)
     }
 
     @Test("304 沿用旧代际并更新成功状态")

@@ -16,6 +16,30 @@ import Foundation
 struct UserProjectSyncSummary: Equatable, Sendable {
     let receivedCount: Int
     let unchangedAffiliations: Set<ProjectAffiliation>
+    /// 一条 affiliation 成功、另一条失败时仍返回成功摘要，让 UI 展示已提交数据与部分授权。
+    /// 这里只保留稳定错误码，不携带 GitHub response body，避免 Private 元数据进入状态层。
+    let failedAffiliations: [ProjectAffiliation: String]
+
+    init(
+        receivedCount: Int,
+        unchangedAffiliations: Set<ProjectAffiliation>,
+        failedAffiliations: [ProjectAffiliation: String] = [:]
+    ) {
+        self.receivedCount = receivedCount
+        self.unchangedAffiliations = unchangedAffiliations
+        self.failedAffiliations = failedAffiliations
+    }
+
+    var isPartial: Bool {
+        !failedAffiliations.isEmpty
+    }
+
+    /// GitHub App 对组织资源需要组织管理员批准时，organization_member 常返回 403；
+    /// 只有 owner 链成功时才把它解释为“待审批”，避免把全局 403 误报为组织审批。
+    var isOrganizationApprovalPending: Bool {
+        failedAffiliations[.organizationMember] == "client_403"
+            && failedAffiliations[.owner] == nil
+    }
 }
 
 actor UserProjectSyncCoordinator {
@@ -110,24 +134,31 @@ actor UserProjectSyncCoordinator {
 
         var receivedCount = 0
         var unchanged: Set<ProjectAffiliation> = []
+        var successfulAffiliationCount = 0
+        var failedAffiliations: [ProjectAffiliation: String] = [:]
         var firstError: Error?
         for (affiliation, result) in zip(ProjectAffiliation.allCases, results) {
             switch result {
             case .success(let value):
+                successfulAffiliationCount += 1
                 receivedCount += value.receivedCount
                 if value.unchanged {
                     unchanged.insert(affiliation)
                 }
             case .failure(let error):
+                failedAffiliations[affiliation] = Self.errorCode(error)
                 firstError = firstError ?? error
             }
         }
-        if let firstError {
+        // 两条链都失败时没有任何新鲜数据可发布，继续走失败状态；只失败一条时成功链已经
+        // 原子提交，返回部分摘要才能让界面保留可用项目并解释权限缺口。
+        if successfulAffiliationCount == 0, let firstError {
             throw firstError
         }
         return UserProjectSyncSummary(
             receivedCount: receivedCount,
-            unchangedAffiliations: unchanged
+            unchangedAffiliations: unchanged,
+            failedAffiliations: failedAffiliations
         )
     }
 

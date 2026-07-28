@@ -49,9 +49,14 @@ final class UserProjectSyncService {
     private let performSync: SyncOperation
     private let now: @Sendable () -> Date
 
+    private struct SyncResult: Sendable {
+        let summary: UserProjectSyncSummary
+        let authorizationSource: ProjectAuthorizationSource
+    }
+
     private var scheduler: NSBackgroundActivityScheduler?
     private var backgroundUserID: Int64?
-    private var inFlightTask: Task<UserProjectSyncSummary, Error>?
+    private var inFlightTask: Task<SyncResult, Error>?
 
     private(set) var state: UserProjectSyncServiceState = .idle
     private(set) var isBackgroundRefreshEnabled = false
@@ -182,19 +187,35 @@ final class UserProjectSyncService {
     @discardableResult
     func refresh(userID: Int64, force: Bool = false) async throws -> UserProjectSyncSummary {
         if let inFlightTask {
-            return try await inFlightTask.value
+            return try await inFlightTask.value.summary
         }
 
         state = .syncing
         let task = Task { @MainActor in
             let credential = try await resolveCredential()
-            return try await performSync(userID, credential, force)
+            return SyncResult(
+                summary: try await performSync(userID, credential, force),
+                authorizationSource: credential.authorizationSource
+            )
         }
         inFlightTask = task
 
         do {
-            let summary = try await task.value
+            let result = try await task.value
             inFlightTask = nil
+            if result.authorizationSource == .githubApp {
+                let summary = result.summary
+                if summary.isOrganizationApprovalPending {
+                    projectAccessSession.markOrganizationApprovalPending()
+                } else if summary.isPartial {
+                    projectAccessSession.markPartialAuthorization()
+                } else {
+                    // 一次完整成功应清掉上轮 partial / approval pending 状态，并从独立
+                    // Keychain 恢复真实到期时间；不触碰 Starcat 主 OAuth 会话。
+                    projectAccessSession.restore()
+                }
+            }
+            let summary = result.summary
             state = .completed(at: now(), receivedCount: summary.receivedCount)
             return summary
         } catch {

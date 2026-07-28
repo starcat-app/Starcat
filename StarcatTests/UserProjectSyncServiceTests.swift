@@ -67,6 +67,92 @@ struct UserProjectSyncServiceTests {
         #expect(service.state == UserProjectSyncServiceState.failed(.rateLimited))
     }
 
+    @Test("GitHub App 部分同步映射独立授权状态")
+    func mapsGitHubAppPartialState() async throws {
+        let keychain = InMemoryKeychain()
+        try keychain.storeProjectAccessCredential(
+            String(
+                data: try JSONEncoder().encode(
+                    ProjectAccessCredential(
+                        accessToken: "project-token",
+                        accessExpiresAt: nil,
+                        refreshToken: nil,
+                        refreshExpiresAt: nil
+                    )
+                ),
+                encoding: .utf8
+            )!
+        )
+        let accessSession = ProjectAccessSession(
+            oauthService: ProjectAccessOAuthServiceStub(),
+            keychain: keychain,
+            isConfigured: true
+        )
+        let service = UserProjectSyncService(
+            projectAccessSession: accessSession,
+            resolveCredential: {
+                ResolvedProjectCredential(
+                    accessToken: "project-token",
+                    authorizationSource: .githubApp
+                )
+            },
+            performSync: { _, _, _ in
+                UserProjectSyncSummary(
+                    receivedCount: 2,
+                    unchangedAffiliations: [],
+                    failedAffiliations: [.owner: "transport"]
+                )
+            }
+        )
+
+        _ = try await service.refresh(userID: 10)
+
+        #expect(accessSession.state == .partialAuthorization)
+    }
+
+    @Test("GitHub App 组织链 403 映射待审批状态")
+    func mapsOrganizationApprovalPendingState() async throws {
+        let keychain = InMemoryKeychain()
+        try keychain.storeProjectAccessCredential(
+            String(
+                data: try JSONEncoder().encode(
+                    ProjectAccessCredential(
+                        accessToken: "project-token",
+                        accessExpiresAt: nil,
+                        refreshToken: nil,
+                        refreshExpiresAt: nil
+                    )
+                ),
+                encoding: .utf8
+            )!
+        )
+        let accessSession = ProjectAccessSession(
+            oauthService: ProjectAccessOAuthServiceStub(),
+            keychain: keychain,
+            isConfigured: true
+        )
+        let service = UserProjectSyncService(
+            projectAccessSession: accessSession,
+            resolveCredential: {
+                ResolvedProjectCredential(
+                    accessToken: "project-token",
+                    authorizationSource: .githubApp
+                )
+            },
+            performSync: { _, _, _ in
+                UserProjectSyncSummary(
+                    receivedCount: 1,
+                    unchangedAffiliations: [],
+                    failedAffiliations: [.organizationMember: "client_403"]
+                )
+            }
+        )
+
+        _ = try await service.refresh(userID: 11)
+
+        #expect(accessSession.state == .organizationApprovalPending)
+    }
+
     @Test("后台刷新启动和停止保持幂等")
     func backgroundLifecycleIsIdempotent() {
         let accessSession = ProjectAccessSession(
