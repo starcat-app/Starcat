@@ -178,6 +178,42 @@ struct GitHubRepositoryMetricsClientTests {
         }
     }
 
+    @Test("收到 Retry-After 后限流窗口内不再重复出站")
+    func rateLimitBackoffStopsQueuedRequests() async throws {
+        let currentDate = Date(timeIntervalSince1970: 10_000)
+        let httpClient = MetricsHTTPClient(responses: [
+            .error(statusCode: 429, headers: ["Retry-After": "60"])
+        ])
+        let client = DefaultGitHubRepositoryMetricsClient(
+            httpClient: httpClient,
+            token: nil,
+            now: { currentDate }
+        )
+
+        do {
+            _ = try await client.loadCommitActivity(repository: repository)
+            Issue.record("首次请求应返回限流错误")
+        } catch let error as GitHubRepositoryMetricsError {
+            #expect(error.statusCode == 429)
+        }
+
+        do {
+            _ = try await client.loadCommunityProfile(repository: repository)
+            Issue.record("backoff 窗口内请求应直接失败")
+        } catch let GitHubRepositoryMetricsError.rateLimited(
+            statusCode,
+            _,
+            retryAfter,
+            resetAt
+        ) {
+            #expect(statusCode == 429)
+            #expect(retryAfter == 60)
+            #expect(resetAt == currentDate.addingTimeInterval(60))
+        }
+
+        #expect(await httpClient.requests().count == 1)
+    }
+
     @Test("不同仓库的指标请求仍按顺序出站")
     func requestsAreSerialized() async throws {
         let httpClient = ConcurrencyProbeMetricsHTTPClient()
