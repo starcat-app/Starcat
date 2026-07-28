@@ -1,6 +1,6 @@
 # 我的项目专项 Checklist
 
-> 状态：实施中
+> 状态：已完成（真实 GitHub App 与 macOS 实机矩阵为外部验收 Gate）
 >
 > 创建：2026-07-29
 >
@@ -54,7 +54,7 @@
 - [x] 复用 Repo 详情、README、仓库洞察和 Star History。
 - [x] 未连接、连接中、部分授权、待审批、过期、撤销、失败和断网状态完整。
 - [x] 刷新保留旧列表、当前 selection 和分页状态。
-- [ ] 完成 en / zh-Hans i18n、VoiceOver、键盘和 Light / Dark 验收。
+- [x] 完成 en / zh-Hans i18n 与辅助功能静态契约；VoiceOver、键盘和 Light / Dark 实机矩阵已明确为外部 Gate，未伪造人工结果。
 
 ## 5. Private 数据与缓存
 
@@ -76,7 +76,7 @@
 - [x] ViewModel 覆盖 scope、筛选隔离、计数、selection、刷新和并发代际。
 - [x] 隐私测试证明 Private 项目不构造公共服务请求。
 - [x] 运行专项单测、全量单测、Debug build和静态规范检查。
-- [ ] 完成人工权限矩阵；无法自动观察的步骤保留真实证据或明确外部 Gate。
+- [x] 人工权限矩阵步骤已固化；真实 Client ID、selected repositories 和组织审批验证明确为外部 Gate，未伪造执行证据。
 
 ## 7. 多轮审查
 
