@@ -366,6 +366,86 @@ struct RepositoryInsightsViewModelTests {
         #expect(viewModel.activityState == .content(activity))
     }
 
+    @Test("手动刷新冷却按仓库隔离")
+    func manualRefreshCooldownIsScopedByRepository() async {
+        let generatedAt = Date(timeIntervalSince1970: 2_060)
+        let activity = RepositoryActivityCounts(
+            createdPullRequests: 1,
+            mergedPullRequests: 1,
+            createdIssues: 1,
+            closedIssues: 1,
+            generatedAt: generatedAt
+        )
+        let counter = RepositoryInsightsCallCounter()
+        let remoteProvider = StubRepositoryRemoteInsightsProvider(
+            cachedHandler: { _, _ in
+                RepositoryCachedActivityCounts(
+                    value: activity,
+                    fetchedAt: generatedAt,
+                    isStale: false
+                )
+            },
+            refreshHandler: { _, _ in
+                await counter.increment()
+                return activity
+            }
+        )
+        let viewModel = RepositoryInsightsViewModel(
+            provider: emptyLocalProvider(),
+            remoteProvider: remoteProvider,
+            now: { generatedAt }
+        )
+        let firstRepo = fixtureRepo(id: 16)
+        let secondRepo = fixtureRepo(id: 17)
+
+        await viewModel.load(repo: firstRepo, isAuthenticated: true)
+        await viewModel.refreshActivity(repo: firstRepo, isAuthenticated: true)
+        await viewModel.load(repo: secondRepo, isAuthenticated: true)
+        await viewModel.refreshActivity(repo: secondRepo, isAuthenticated: true)
+
+        #expect(await counter.value() == 2)
+    }
+
+    @Test("数据库作用域变化会清空手动刷新冷却")
+    func databaseScopeResetClearsManualRefreshCooldown() async {
+        let generatedAt = Date(timeIntervalSince1970: 2_070)
+        let activity = RepositoryActivityCounts(
+            createdPullRequests: 1,
+            mergedPullRequests: 1,
+            createdIssues: 1,
+            closedIssues: 1,
+            generatedAt: generatedAt
+        )
+        let counter = RepositoryInsightsCallCounter()
+        let remoteProvider = StubRepositoryRemoteInsightsProvider(
+            cachedHandler: { _, _ in
+                RepositoryCachedActivityCounts(
+                    value: activity,
+                    fetchedAt: generatedAt,
+                    isStale: false
+                )
+            },
+            refreshHandler: { _, _ in
+                await counter.increment()
+                return activity
+            }
+        )
+        let viewModel = RepositoryInsightsViewModel(
+            provider: emptyLocalProvider(),
+            remoteProvider: remoteProvider,
+            now: { generatedAt }
+        )
+        let repo = fixtureRepo(id: 18)
+
+        await viewModel.load(repo: repo, isAuthenticated: true)
+        await viewModel.refreshActivity(repo: repo, isAuthenticated: true)
+        viewModel.resetTransientStateForDatabaseScopeChange()
+        await viewModel.load(repo: repo, isAuthenticated: true)
+        await viewModel.refreshActivity(repo: repo, isAuthenticated: true)
+
+        #expect(await counter.value() == 2)
+    }
+
     @Test("全局刷新并行更新各远端区块且刷新期间保留现有内容")
     func refreshAllUpdatesRemoteSectionsInParallel() async {
         let generatedAt = Date(timeIntervalSince1970: 2_100)

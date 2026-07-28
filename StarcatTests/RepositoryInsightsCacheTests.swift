@@ -257,6 +257,54 @@ struct RepositoryInsightsCacheTests {
         #expect(switchedAccountValue == nil)
     }
 
+    @Test("主动清理瞬时状态后重新从 SQLite 解码")
+    func clearingTransientStateEvictsDecodedValues() async throws {
+        let database = try InMemoryDatabaseManager()
+        let cache = GRDBRepositoryInsightsCache(database: database)
+        try await database.insertRepoFixture(id: 8, owner: "octo", name: "clear")
+        let now = Date(timeIntervalSince1970: 11_000)
+        try await cache.store(
+            Payload(count: 8),
+            repoId: 8,
+            dataset: .contributors,
+            range: .all,
+            fetchedAt: now,
+            responseETag: nil,
+            defaultBranchSHA: nil
+        )
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                    UPDATE repo_insights_snapshots
+                    SET payload_json = ?
+                    WHERE repo_id = 8 AND dataset = 'contributors'
+                    """,
+                arguments: [try JSONEncoder().encode(Payload(count: 80))]
+            )
+        }
+
+        let beforeClear = try #require(
+            try await cache.load(
+                repoId: 8,
+                dataset: .contributors,
+                range: .all,
+                as: Payload.self
+            )
+        )
+        await cache.clearTransientState()
+        let afterClear = try #require(
+            try await cache.load(
+                repoId: 8,
+                dataset: .contributors,
+                range: .all,
+                as: Payload.self
+            )
+        )
+
+        #expect(beforeClear.value.count == 8)
+        #expect(afterClear.value.count == 80)
+    }
+
     @Test("损坏 payload 只删除对应数据集")
     func corruptPayloadIsIsolated() async throws {
         let database = try InMemoryDatabaseManager()

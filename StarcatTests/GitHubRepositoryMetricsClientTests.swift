@@ -328,6 +328,52 @@ struct GitHubRepositoryMetricsClientTests {
         #expect(requests[1].value(forHTTPHeaderField: "Authorization") == "Bearer new-token")
     }
 
+    @Test("主动清理瞬时状态后同一认证可重新出站")
+    func clearingTransientStateResetsRateLimitBackoff() async throws {
+        let httpClient = MetricsHTTPClient(responses: [
+            .error(statusCode: 429, headers: ["Retry-After": "60"]),
+            .json("[]")
+        ])
+        let client = DefaultGitHubRepositoryMetricsClient(
+            httpClient: httpClient,
+            token: "test-token"
+        )
+
+        await expectFailure {
+            _ = try await client.loadCommitActivity(repository: repository)
+        }
+        await client.clearTransientState()
+        let response = try await client.loadCommitActivity(repository: repository)
+
+        #expect(response.value.isEmpty)
+        #expect(await httpClient.requests().count == 2)
+    }
+
+    @Test("主动清理瞬时状态会取消并等待普通洞察请求")
+    func clearingTransientStateCancelsInflightRequest() async throws {
+        let httpClient = CancellableMetricsHTTPClient()
+        let client = DefaultGitHubRepositoryMetricsClient(
+            httpClient: httpClient,
+            token: "test-token"
+        )
+        let loadTask = Task {
+            try await client.loadCommitActivity(repository: repository)
+        }
+
+        await httpClient.waitUntilStarted()
+        await client.clearTransientState()
+
+        do {
+            _ = try await loadTask.value
+            Issue.record("切换作用域应取消旧账号请求")
+        } catch is CancellationError {
+            // clearTransientState 必须等该取消到达终态后才返回。
+        } catch {
+            Issue.record("期望 CancellationError，实际: \(error)")
+        }
+        #expect(await httpClient.requestCount() == 1)
+    }
+
     @Test("不同仓库的指标请求仍按顺序出站")
     func requestsAreSerialized() async throws {
         let httpClient = ConcurrencyProbeMetricsHTTPClient()
@@ -480,6 +526,41 @@ private final class MetricsTestClock: @unchecked Sendable {
         lock.lock()
         value = value.addingTimeInterval(interval)
         lock.unlock()
+    }
+}
+
+/// 通过长挂起请求验证 clearTransientState 会取消并等待共享 Task，不使用真实网络。
+private actor CancellableMetricsHTTPClient: RAGHTTPClientProtocol {
+    private var started = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var totalRequests = 0
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        totalRequests += 1
+        started = true
+        startWaiters.forEach { $0.resume() }
+        startWaiters.removeAll()
+        try await Task.sleep(for: .seconds(60))
+        return (
+            Data("[]".utf8),
+            HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: nil
+            )!
+        )
+    }
+
+    func waitUntilStarted() async {
+        guard !started else { return }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
+    }
+
+    func requestCount() -> Int {
+        totalRequests
     }
 }
 
