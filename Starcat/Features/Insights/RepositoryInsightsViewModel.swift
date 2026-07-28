@@ -412,13 +412,18 @@ final class RepositoryInsightsViewModel {
         case all
     }
 
+    private struct ManualRefreshKey: Hashable {
+        let repoID: Int64
+        let target: ManualRefreshTarget
+    }
+
     /// 与洞察 UI 规范一致：同一个刷新入口完成后 10 秒内不重复触发网络。
     private static let manualRefreshCooldown: TimeInterval = 10
 
     private let provider: any RepositoryLocalInsightsProviding
     private let remoteProvider: (any RepositoryRemoteInsightsProviding)?
     private let now: @Sendable () -> Date
-    private var lastManualRefreshAt: [ManualRefreshTarget: Date] = [:]
+    private var lastManualRefreshAt: [ManualRefreshKey: Date] = [:]
     private var generation: UInt64 = 0
     private var activityGeneration: UInt64 = 0
     private var commitGeneration: UInt64 = 0
@@ -568,34 +573,46 @@ final class RepositoryInsightsViewModel {
     }
 
     func refreshActivity(repo: Repo, isAuthenticated: Bool) async {
-        guard !isRefreshingActivity, reserveManualRefresh(.activity) else { return }
+        guard !isRefreshingActivity,
+              reserveManualRefresh(.activity, repoID: repo.id)
+        else { return }
         await loadActivity(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
     }
 
     func refreshCommitActivity(repo: Repo, isAuthenticated: Bool) async {
-        guard !isRefreshingCommitActivity, reserveManualRefresh(.commitActivity) else { return }
+        guard !isRefreshingCommitActivity,
+              reserveManualRefresh(.commitActivity, repoID: repo.id)
+        else { return }
         await loadCommitActivity(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
     }
 
     func refreshContributors(repo: Repo, isAuthenticated: Bool) async {
-        guard !isRefreshingContributors, reserveManualRefresh(.contributors) else { return }
+        guard !isRefreshingContributors,
+              reserveManualRefresh(.contributors, repoID: repo.id)
+        else { return }
         await loadContributors(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
     }
 
     func refreshCommunityProfile(repo: Repo, isAuthenticated: Bool) async {
-        guard !isRefreshingCommunity, reserveManualRefresh(.community) else { return }
+        guard !isRefreshingCommunity,
+              reserveManualRefresh(.community, repoID: repo.id)
+        else { return }
         await loadCommunityProfile(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
     }
 
     func refreshRecentActivity(repo: Repo, isAuthenticated: Bool) async {
-        guard !isRefreshingRecentActivity, reserveManualRefresh(.recentActivity) else { return }
+        guard !isRefreshingRecentActivity,
+              reserveManualRefresh(.recentActivity, repoID: repo.id)
+        else { return }
         await loadRecentActivity(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
     }
 
     /// 底栏全局入口：并行强制刷新各远端区块；不碰分区 Sync，也不清空已上屏内容。
     /// 本地 Release / Health / OpenSSF 仍读库缓存，本页无对应出站刷新通道。
     func refreshAll(repo: Repo, isAuthenticated: Bool) async {
-        guard !isRefreshingAll, reserveManualRefresh(.all) else { return }
+        guard !isRefreshingAll,
+              reserveManualRefresh(.all, repoID: repo.id)
+        else { return }
         isRefreshingAll = true
         defer { isRefreshingAll = false }
 
@@ -641,14 +658,27 @@ final class RepositoryInsightsViewModel {
 
     /// 点击时即占用 cooldown，而不是等成功后才记录。这样快速失败或极快缓存响应也不会
     /// 被连续点击放大；当前刷新中的重复点击仍由各区块 isRefreshing 标记优先拦截。
-    private func reserveManualRefresh(_ target: ManualRefreshTarget) -> Bool {
+    private func reserveManualRefresh(
+        _ target: ManualRefreshTarget,
+        repoID: Int64
+    ) -> Bool {
         let currentDate = now()
-        if let lastRefresh = lastManualRefreshAt[target],
+        let key = ManualRefreshKey(repoID: repoID, target: target)
+        if let lastRefresh = lastManualRefreshAt[key],
            currentDate.timeIntervalSince(lastRefresh) < Self.manualRefreshCooldown {
             return false
         }
-        lastManualRefreshAt[target] = currentDate
+        lastManualRefreshAt[key] = currentDate
         return true
+    }
+
+    /// DatabaseManager 已切换到另一个用户目录时，页面实例可能仍被 SwiftUI 保留。
+    /// 清掉 repo 级冷却并让所有旧 generation 失效，随后由新的 task 重新加载当前仓库。
+    func resetTransientStateForDatabaseScopeChange() {
+        generation &+= 1
+        cancelRemoteLoading()
+        lastManualRefreshAt.removeAll(keepingCapacity: true)
+        activeRepoID = nil
     }
 
     /// README 模式不保活远端刷新。generation 让已经返回的旧结果无法再写 UI。

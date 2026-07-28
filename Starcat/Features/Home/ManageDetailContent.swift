@@ -91,6 +91,12 @@ enum ManageDetailContentTransitionEffect: Equatable {
     case resetScroll
 }
 
+/// 仓库和数据库作用域共同决定洞察任务身份；账号切换不能沿用旧 ViewModel 冷却。
+private struct RepositoryInsightsLoadIdentity: Hashable {
+    let repoID: Int64
+    let databaseScopeRevision: UInt64
+}
+
 /// Manage 场景详情页的 body 内容（README + 翻译入口）。
 struct ManageDetailContent: View {
 
@@ -111,6 +117,7 @@ struct ManageDetailContent: View {
     @State private var contentMode: ManageDetailContentMode = .readme
     @State private var repositoryInsightsViewModel: RepositoryInsightsViewModel?
     @State private var starHistoryViewModel: StarHistoryViewModel?
+    @State private var loadedInsightsDatabaseScopeRevision: UInt64?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -203,7 +210,20 @@ struct ManageDetailContent: View {
                     .accessibilityHidden(true)
             }
         }
-        .task(id: repo.id) {
+        .task(
+            id: RepositoryInsightsLoadIdentity(
+                repoID: repo.id,
+                databaseScopeRevision: dependencies.databaseScopeRevision
+            )
+        ) {
+            let currentDatabaseScopeRevision = dependencies.databaseScopeRevision
+            if let loadedInsightsDatabaseScopeRevision,
+               loadedInsightsDatabaseScopeRevision != currentDatabaseScopeRevision {
+                repositoryInsightsViewModel?.resetTransientStateForDatabaseScopeChange()
+                starHistoryViewModel?.cancel()
+            }
+            loadedInsightsDatabaseScopeRevision = currentDatabaseScopeRevision
+
             let insightsViewModel = repositoryInsightsViewModel
                 ?? makeRepositoryInsightsViewModel()
             let historyViewModel = starHistoryViewModel
