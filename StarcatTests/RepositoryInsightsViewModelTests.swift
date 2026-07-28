@@ -815,16 +815,48 @@ struct RepositoryInsightsViewModelTests {
             healthRepository: healthRepository,
             openSSFRepository: openSSFRepository,
             insightsCache: cache,
+            database: database,
             now: {
                 ISO8601DateFormatter.shared.date(from: "2026-07-28T00:00:00Z")!
             }
         )
 
-        let release = try #require(try await provider.latestRelease(repoId: 7))
-        let cadence = try #require(try await provider.releaseCadence(repoId: 7))
-        let health = try #require(try await provider.health(repoId: 7))
-        let openSSF = try #require(try await provider.openSSF(repoId: 7))
-        let cachedCommunity = try #require(try await provider.cachedCommunity(repoId: 7))
+        let snapshot = await provider.snapshot(repoId: 7)
+        let release: RepositoryReleaseInsight
+        let cadence: RepositoryReleaseCadenceInsight
+        let health: RepositoryHealthInsight
+        let openSSF: RepositoryOpenSSFInsight
+        let cachedCommunity: RepositoryCommunityInsight
+        if case .value(let value?) = snapshot.release {
+            release = value
+        } else {
+            Issue.record("缺少 Release 快照")
+            return
+        }
+        if case .value(let value?) = snapshot.releaseCadence {
+            cadence = value
+        } else {
+            Issue.record("缺少发布节奏快照")
+            return
+        }
+        if case .value(let value?) = snapshot.health {
+            health = value
+        } else {
+            Issue.record("缺少健康度快照")
+            return
+        }
+        if case .value(let value?) = snapshot.openSSF {
+            openSSF = value
+        } else {
+            Issue.record("缺少 OpenSSF 快照")
+            return
+        }
+        if case .value(let value?) = snapshot.community {
+            cachedCommunity = value
+        } else {
+            Issue.record("缺少 Community 快照")
+            return
+        }
 
         #expect(release.tagName == "v2.1.0")
         #expect(release.name == "Stable")
@@ -838,6 +870,65 @@ struct RepositoryInsightsViewModelTests {
         #expect(health.maintenanceScore == 90)
         #expect(openSSF == RepositoryOpenSSFInsight(score: 8.7, scoreDate: "2026-07-27"))
         #expect(cachedCommunity == community)
+    }
+
+    @Test("单事务本地快照中 Community 损坏不影响其它区块")
+    func localSnapshotIsolatesCorruptCommunityPayload() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 8, owner: "octo", name: "isolated")
+        let releaseRepository = GRDBReleaseRepository(database: database)
+        try await releaseRepository.upsertMany(
+            [
+                ReleaseRecord(
+                    id: 801,
+                    repoId: 8,
+                    tagName: "v1.0.0",
+                    name: "Stable",
+                    bodyMarkdown: nil,
+                    htmlUrl: "https://github.com/octo/isolated/releases/tag/v1.0.0",
+                    isPrerelease: false,
+                    isDraft: false,
+                    publishedAt: "2026-07-20T00:00:00Z",
+                    createdAtRemote: "2026-07-20T00:00:00Z",
+                    assetsJson: nil,
+                    isRead: false,
+                    fetchedAt: "2026-07-27T00:00:00Z"
+                )
+            ],
+            isReadDefault: false
+        )
+        try await database.writer.write { db in
+            try RepositoryInsightsSnapshotRecord(
+                repoId: 8,
+                dataset: RepositoryInsightsDataset.communityProfile.rawValue,
+                rangeKey: RepositoryInsightsRangeKey.all.rawValue,
+                payloadJSON: Data("not-json".utf8),
+                defaultBranchSHA: nil,
+                fetchedAt: "2026-07-27T00:00:00Z",
+                staleAfter: "2026-07-28T00:00:00Z",
+                responseETag: nil
+            ).insert(db)
+        }
+        let provider = DefaultRepositoryLocalInsightsProvider(
+            releaseRepository: releaseRepository,
+            healthRepository: GRDBRepoHealthRepository(database: database),
+            openSSFRepository: GRDBOpenSSFScoreRepository(database: database),
+            insightsCache: GRDBRepositoryInsightsCache(database: database),
+            database: database
+        )
+
+        let snapshot = await provider.snapshot(repoId: 8)
+
+        if case .value(let release?) = snapshot.release {
+            #expect(release.tagName == "v1.0.0")
+        } else {
+            Issue.record("Community 损坏不应影响 Release")
+        }
+        if case .failed = snapshot.community {
+            // 预期：只隔离损坏的 Community 区块。
+        } else {
+            Issue.record("损坏 Community 应标记为失败")
+        }
     }
 
     @Test("本地区块独立加载且单一区块失败不影响其他结果")
