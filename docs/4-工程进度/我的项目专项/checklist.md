@@ -35,7 +35,7 @@
 ## 3. 授权与同步
 
 - [ ] 新增独立 `ProjectAccessSession`，不复用 OAuth 登录状态。
-- [ ] GitHub App token 使用独立 Keychain account。
+- [x] GitHub App token 使用独立 Keychain account。
 - [ ] 实现 GitHub App Device Flow、token 刷新/过期/撤销状态。
 - [ ] 实现按用途选择 OAuth / GitHub App token 的凭据路由。
 - [x] 实现 owner / organization_member 两条 `/user/repos` 分页链。

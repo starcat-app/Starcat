@@ -91,6 +91,9 @@ private final class PairingKeychainStub: KeychainManaging, @unchecked Sendable {
     func storeGithubToken(_ token: String) throws { values["github"] = token }
     func loadGithubToken() throws -> String? { values["github"] }
     func deleteGithubToken() throws { values.removeValue(forKey: "github") }
+    func storeProjectAccessCredential(_ credentialJSON: String) throws { values["github-app"] = credentialJSON }
+    func loadProjectAccessCredential() throws -> String? { values["github-app"] }
+    func deleteProjectAccessCredential() throws { values.removeValue(forKey: "github-app") }
     func storeAIKey(_ key: String) throws { values["ai"] = key }
     func loadAIKey() throws -> String? { values["ai"] }
     func deleteAIKey() throws { values.removeValue(forKey: "ai") }
