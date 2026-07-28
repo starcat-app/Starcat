@@ -128,6 +128,19 @@ struct RepositoryCachedCommitActivity: Equatable, Sendable {
     let value: RepositoryCommitActivity
     let fetchedAt: Date
     let isStale: Bool
+    let responseETag: String?
+
+    init(
+        value: RepositoryCommitActivity,
+        fetchedAt: Date,
+        isStale: Bool,
+        responseETag: String? = nil
+    ) {
+        self.value = value
+        self.fetchedAt = fetchedAt
+        self.isStale = isStale
+        self.responseETag = responseETag
+    }
 }
 
 struct RepositoryContributorsInsight: Codable, Equatable, Sendable {
@@ -159,12 +172,38 @@ struct RepositoryCachedContributorsInsight: Equatable, Sendable {
     let value: RepositoryContributorsInsight
     let fetchedAt: Date
     let isStale: Bool
+    let responseETag: String?
+
+    init(
+        value: RepositoryContributorsInsight,
+        fetchedAt: Date,
+        isStale: Bool,
+        responseETag: String? = nil
+    ) {
+        self.value = value
+        self.fetchedAt = fetchedAt
+        self.isStale = isStale
+        self.responseETag = responseETag
+    }
 }
 
 struct RepositoryCachedCommunityInsight: Equatable, Sendable {
     let value: RepositoryCommunityInsight
     let fetchedAt: Date
     let isStale: Bool
+    let responseETag: String?
+
+    init(
+        value: RepositoryCommunityInsight,
+        fetchedAt: Date,
+        isStale: Bool,
+        responseETag: String? = nil
+    ) {
+        self.value = value
+        self.fetchedAt = fetchedAt
+        self.isStale = isStale
+        self.responseETag = responseETag
+    }
 }
 
 /// GitHub 已发布的仓库安全公告。这里只展示公开公告，不把“接口无权限”误判为零风险。
@@ -198,6 +237,19 @@ struct RepositoryCachedSecurityAdvisoriesInsight: Equatable, Sendable {
     let value: RepositorySecurityAdvisoriesInsight
     let fetchedAt: Date
     let isStale: Bool
+    let responseETag: String?
+
+    init(
+        value: RepositorySecurityAdvisoriesInsight,
+        fetchedAt: Date,
+        isStale: Bool,
+        responseETag: String? = nil
+    ) {
+        self.value = value
+        self.fetchedAt = fetchedAt
+        self.isStale = isStale
+        self.responseETag = responseETag
+    }
 }
 
 enum RepositoryRecentActivityKind: String, Codable, Equatable, Sendable {
@@ -240,13 +292,28 @@ protocol RepositoryRemoteInsightsProviding: Sendable {
 
     func refreshCommitActivity(repository: RepoIdentity) async throws -> RepositoryCommitActivity
 
+    func refreshCommitActivity(
+        repository: RepoIdentity,
+        ifNoneMatch: String?
+    ) async throws -> RepositoryCommitActivity
+
     func cachedContributors(repoID: Int64) async throws -> RepositoryCachedContributorsInsight?
 
     func refreshContributors(repository: RepoIdentity) async throws -> RepositoryContributorsInsight
 
+    func refreshContributors(
+        repository: RepoIdentity,
+        ifNoneMatch: String?
+    ) async throws -> RepositoryContributorsInsight
+
     func cachedCommunityProfile(repoID: Int64) async throws -> RepositoryCachedCommunityInsight?
 
     func refreshCommunityProfile(repository: RepoIdentity) async throws -> RepositoryCommunityInsight
+
+    func refreshCommunityProfile(
+        repository: RepoIdentity,
+        ifNoneMatch: String?
+    ) async throws -> RepositoryCommunityInsight
 
     func cachedSecurityAdvisories(repoID: Int64) async throws
         -> RepositoryCachedSecurityAdvisoriesInsight?
@@ -254,9 +321,44 @@ protocol RepositoryRemoteInsightsProviding: Sendable {
     func refreshSecurityAdvisories(repository: RepoIdentity) async throws
         -> RepositorySecurityAdvisoriesInsight
 
+    func refreshSecurityAdvisories(
+        repository: RepoIdentity,
+        ifNoneMatch: String?
+    ) async throws -> RepositorySecurityAdvisoriesInsight
+
     func cachedRecentActivity(repoID: Int64) async throws -> RepositoryCachedRecentActivity?
 
     func refreshRecentActivity(repository: RepoIdentity) async throws -> RepositoryRecentActivity
+}
+
+extension RepositoryRemoteInsightsProviding {
+    func refreshCommitActivity(
+        repository: RepoIdentity,
+        ifNoneMatch: String?
+    ) async throws -> RepositoryCommitActivity {
+        try await refreshCommitActivity(repository: repository)
+    }
+
+    func refreshContributors(
+        repository: RepoIdentity,
+        ifNoneMatch: String?
+    ) async throws -> RepositoryContributorsInsight {
+        try await refreshContributors(repository: repository)
+    }
+
+    func refreshCommunityProfile(
+        repository: RepoIdentity,
+        ifNoneMatch: String?
+    ) async throws -> RepositoryCommunityInsight {
+        try await refreshCommunityProfile(repository: repository)
+    }
+
+    func refreshSecurityAdvisories(
+        repository: RepoIdentity,
+        ifNoneMatch: String?
+    ) async throws -> RepositorySecurityAdvisoriesInsight {
+        try await refreshSecurityAdvisories(repository: repository)
+    }
 }
 
 struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProviding, Sendable {
@@ -331,37 +433,58 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
         return RepositoryCachedCommitActivity(
             value: cached.value,
             fetchedAt: cached.fetchedAt,
-            isStale: cached.isStale(at: now())
+            isStale: cached.isStale(at: now()),
+            responseETag: cached.responseETag
         )
     }
 
     func refreshCommitActivity(repository: RepoIdentity) async throws -> RepositoryCommitActivity {
+        try await refreshCommitActivity(repository: repository, ifNoneMatch: nil)
+    }
+
+    func refreshCommitActivity(
+        repository: RepoIdentity,
+        ifNoneMatch: String?
+    ) async throws -> RepositoryCommitActivity {
         let fetchedAt = now()
-        let response = try await metricsClient.loadCommitActivity(repository: repository)
         guard let repoID = repository.ghRepoID else {
             throw GitHubRepositoryMetricsError.invalidResponse
         }
-        let value = RepositoryCommitActivity(
-            points: response.value
-                .map {
-                    RepositoryCommitActivityPoint(
-                        weekStart: Date(timeIntervalSince1970: TimeInterval($0.week)),
-                        commits: $0.total
-                    )
-                }
-                .sorted { $0.weekStart < $1.weekStart },
-            generatedAt: fetchedAt
-        )
-        try await cache.store(
-            value,
-            repoId: repoID,
-            dataset: .commitActivity,
-            range: .all,
-            fetchedAt: fetchedAt,
-            responseETag: response.etag,
-            defaultBranchSHA: nil
-        )
-        return value
+        do {
+            let response = try await metricsClient.loadCommitActivity(
+                repository: repository,
+                ifNoneMatch: ifNoneMatch
+            )
+            let value = RepositoryCommitActivity(
+                points: response.value
+                    .map {
+                        RepositoryCommitActivityPoint(
+                            weekStart: Date(timeIntervalSince1970: TimeInterval($0.week)),
+                            commits: $0.total
+                        )
+                    }
+                    .sorted { $0.weekStart < $1.weekStart },
+                generatedAt: fetchedAt
+            )
+            try await cache.store(
+                value,
+                repoId: repoID,
+                dataset: .commitActivity,
+                range: .all,
+                fetchedAt: fetchedAt,
+                responseETag: response.etag,
+                defaultBranchSHA: nil
+            )
+            return value
+        } catch GitHubRepositoryMetricsError.notModified(let responseETag) {
+            return try await revalidatedCachedValue(
+                repoID: repoID,
+                dataset: .commitActivity,
+                fetchedAt: fetchedAt,
+                responseETag: responseETag ?? ifNoneMatch,
+                as: RepositoryCommitActivity.self
+            )
+        }
     }
 
     func cachedContributors(repoID: Int64) async throws -> RepositoryCachedContributorsInsight? {
@@ -376,43 +499,65 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
         return RepositoryCachedContributorsInsight(
             value: cached.value,
             fetchedAt: cached.fetchedAt,
-            isStale: cached.isStale(at: now())
+            isStale: cached.isStale(at: now()),
+            responseETag: cached.responseETag
         )
     }
 
     func refreshContributors(repository: RepoIdentity) async throws -> RepositoryContributorsInsight {
+        try await refreshContributors(repository: repository, ifNoneMatch: nil)
+    }
+
+    func refreshContributors(
+        repository: RepoIdentity,
+        ifNoneMatch: String?
+    ) async throws -> RepositoryContributorsInsight {
         let fetchedAt = now()
-        let response = try await metricsClient.loadContributors(repository: repository, limit: 12)
         guard let repoID = repository.ghRepoID else {
             throw GitHubRepositoryMetricsError.invalidResponse
         }
-        let colors = ["purple", "blue", "pink", "green", "orange"]
-        let value = RepositoryContributorsInsight(
-            contributors: response.value.map { metric in
-                let colorIndex = metric.login.unicodeScalars.reduce(0) {
-                    ($0 + Int($1.value)) % colors.count
-                }
-                return RepositoryContributor(
-                    id: metric.login,
-                    login: metric.login,
-                    commits: metric.contributions,
-                    colorName: colors[colorIndex],
-                    avatarURL: metric.avatarURL.flatMap(URL.init(string:)),
-                    profileHTMLURL: metric.htmlURL.flatMap(URL.init(string:))
-                )
-            },
-            generatedAt: fetchedAt
-        )
-        try await cache.store(
-            value,
-            repoId: repoID,
-            dataset: .contributors,
-            range: .all,
-            fetchedAt: fetchedAt,
-            responseETag: response.etag,
-            defaultBranchSHA: nil
-        )
-        return value
+        do {
+            let response = try await metricsClient.loadContributors(
+                repository: repository,
+                limit: 12,
+                ifNoneMatch: ifNoneMatch
+            )
+            let colors = ["purple", "blue", "pink", "green", "orange"]
+            let value = RepositoryContributorsInsight(
+                contributors: response.value.map { metric in
+                    let colorIndex = metric.login.unicodeScalars.reduce(0) {
+                        ($0 + Int($1.value)) % colors.count
+                    }
+                    return RepositoryContributor(
+                        id: metric.login,
+                        login: metric.login,
+                        commits: metric.contributions,
+                        colorName: colors[colorIndex],
+                        avatarURL: metric.avatarURL.flatMap(URL.init(string:)),
+                        profileHTMLURL: metric.htmlURL.flatMap(URL.init(string:))
+                    )
+                },
+                generatedAt: fetchedAt
+            )
+            try await cache.store(
+                value,
+                repoId: repoID,
+                dataset: .contributors,
+                range: .all,
+                fetchedAt: fetchedAt,
+                responseETag: response.etag,
+                defaultBranchSHA: nil
+            )
+            return value
+        } catch GitHubRepositoryMetricsError.notModified(let responseETag) {
+            return try await revalidatedCachedValue(
+                repoID: repoID,
+                dataset: .contributors,
+                fetchedAt: fetchedAt,
+                responseETag: responseETag ?? ifNoneMatch,
+                as: RepositoryContributorsInsight.self
+            )
+        }
     }
 
     func cachedCommunityProfile(repoID: Int64) async throws -> RepositoryCachedCommunityInsight? {
@@ -427,42 +572,63 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
         return RepositoryCachedCommunityInsight(
             value: cached.value,
             fetchedAt: cached.fetchedAt,
-            isStale: cached.isStale(at: now())
+            isStale: cached.isStale(at: now()),
+            responseETag: cached.responseETag
         )
     }
 
     func refreshCommunityProfile(repository: RepoIdentity) async throws -> RepositoryCommunityInsight {
+        try await refreshCommunityProfile(repository: repository, ifNoneMatch: nil)
+    }
+
+    func refreshCommunityProfile(
+        repository: RepoIdentity,
+        ifNoneMatch: String?
+    ) async throws -> RepositoryCommunityInsight {
         let fetchedAt = now()
-        let response = try await metricsClient.loadCommunityProfile(repository: repository)
         guard let repoID = repository.ghRepoID else {
             throw GitHubRepositoryMetricsError.invalidResponse
         }
-        let profile = response.value
-        let value = RepositoryCommunityInsight(
-            healthPercentage: profile.healthPercentage,
-            hasReadme: profile.hasReadme,
-            hasCodeOfConduct: profile.hasCodeOfConduct,
-            hasContributing: profile.hasContributing,
-            hasIssueTemplate: profile.hasIssueTemplate,
-            hasLicense: profile.hasLicense,
-            hasPullRequestTemplate: profile.hasPullRequestTemplate,
-            readmeHTMLURL: profile.readmeHTMLURL,
-            codeOfConductHTMLURL: profile.codeOfConductHTMLURL,
-            contributingHTMLURL: profile.contributingHTMLURL,
-            issueTemplateHTMLURL: profile.issueTemplateHTMLURL,
-            licenseHTMLURL: profile.licenseHTMLURL,
-            pullRequestTemplateHTMLURL: profile.pullRequestTemplateHTMLURL
-        )
-        try await cache.store(
-            value,
-            repoId: repoID,
-            dataset: .communityProfile,
-            range: .all,
-            fetchedAt: fetchedAt,
-            responseETag: response.etag,
-            defaultBranchSHA: nil
-        )
-        return value
+        do {
+            let response = try await metricsClient.loadCommunityProfile(
+                repository: repository,
+                ifNoneMatch: ifNoneMatch
+            )
+            let profile = response.value
+            let value = RepositoryCommunityInsight(
+                healthPercentage: profile.healthPercentage,
+                hasReadme: profile.hasReadme,
+                hasCodeOfConduct: profile.hasCodeOfConduct,
+                hasContributing: profile.hasContributing,
+                hasIssueTemplate: profile.hasIssueTemplate,
+                hasLicense: profile.hasLicense,
+                hasPullRequestTemplate: profile.hasPullRequestTemplate,
+                readmeHTMLURL: profile.readmeHTMLURL,
+                codeOfConductHTMLURL: profile.codeOfConductHTMLURL,
+                contributingHTMLURL: profile.contributingHTMLURL,
+                issueTemplateHTMLURL: profile.issueTemplateHTMLURL,
+                licenseHTMLURL: profile.licenseHTMLURL,
+                pullRequestTemplateHTMLURL: profile.pullRequestTemplateHTMLURL
+            )
+            try await cache.store(
+                value,
+                repoId: repoID,
+                dataset: .communityProfile,
+                range: .all,
+                fetchedAt: fetchedAt,
+                responseETag: response.etag,
+                defaultBranchSHA: nil
+            )
+            return value
+        } catch GitHubRepositoryMetricsError.notModified(let responseETag) {
+            return try await revalidatedCachedValue(
+                repoID: repoID,
+                dataset: .communityProfile,
+                fetchedAt: fetchedAt,
+                responseETag: responseETag ?? ifNoneMatch,
+                as: RepositoryCommunityInsight.self
+            )
+        }
     }
 
     func cachedSecurityAdvisories(repoID: Int64) async throws
@@ -478,50 +644,68 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
         return RepositoryCachedSecurityAdvisoriesInsight(
             value: cached.value,
             fetchedAt: cached.fetchedAt,
-            isStale: cached.isStale(at: now())
+            isStale: cached.isStale(at: now()),
+            responseETag: cached.responseETag
         )
     }
 
     func refreshSecurityAdvisories(repository: RepoIdentity) async throws
         -> RepositorySecurityAdvisoriesInsight {
+        try await refreshSecurityAdvisories(repository: repository, ifNoneMatch: nil)
+    }
+
+    func refreshSecurityAdvisories(
+        repository: RepoIdentity,
+        ifNoneMatch: String?
+    ) async throws -> RepositorySecurityAdvisoriesInsight {
         let fetchedAt = now()
-        // 单页上限取 100，既覆盖绝大多数仓库，又避免为一个概览指标引入分页风暴。
-        let response = try await metricsClient.loadSecurityAdvisories(
-            repository: repository,
-            limit: 100,
-            observer: nil
-        )
         guard let repoID = repository.ghRepoID else {
             throw GitHubRepositoryMetricsError.invalidResponse
         }
-        let advisories = response.value.compactMap { metric -> RepositorySecurityAdvisory? in
-            guard let publishedAt = ISO8601DateFormatter.githubDate(from: metric.publishedAt) else {
-                return nil
+        do {
+            // 单页上限取 100，既覆盖绝大多数仓库，又避免为一个概览指标引入分页风暴。
+            let response = try await metricsClient.loadSecurityAdvisories(
+                repository: repository,
+                limit: 100,
+                ifNoneMatch: ifNoneMatch
+            )
+            let advisories = response.value.compactMap { metric -> RepositorySecurityAdvisory? in
+                guard let publishedAt = ISO8601DateFormatter.githubDate(from: metric.publishedAt) else {
+                    return nil
+                }
+                return RepositorySecurityAdvisory(
+                    id: metric.ghsaID,
+                    cveID: metric.cveID,
+                    summary: metric.summary,
+                    severity: metric.severity.lowercased(),
+                    htmlURL: metric.htmlURL.flatMap(URL.init(string:)),
+                    publishedAt: publishedAt
+                )
             }
-            return RepositorySecurityAdvisory(
-                id: metric.ghsaID,
-                cveID: metric.cveID,
-                summary: metric.summary,
-                severity: metric.severity.lowercased(),
-                htmlURL: metric.htmlURL.flatMap(URL.init(string:)),
-                publishedAt: publishedAt
+            .sorted { $0.publishedAt > $1.publishedAt }
+            let value = RepositorySecurityAdvisoriesInsight(
+                advisories: advisories,
+                generatedAt: fetchedAt
+            )
+            try await cache.store(
+                value,
+                repoId: repoID,
+                dataset: .securityAdvisories,
+                range: .all,
+                fetchedAt: fetchedAt,
+                responseETag: response.etag,
+                defaultBranchSHA: nil
+            )
+            return value
+        } catch GitHubRepositoryMetricsError.notModified(let responseETag) {
+            return try await revalidatedCachedValue(
+                repoID: repoID,
+                dataset: .securityAdvisories,
+                fetchedAt: fetchedAt,
+                responseETag: responseETag ?? ifNoneMatch,
+                as: RepositorySecurityAdvisoriesInsight.self
             )
         }
-        .sorted { $0.publishedAt > $1.publishedAt }
-        let value = RepositorySecurityAdvisoriesInsight(
-            advisories: advisories,
-            generatedAt: fetchedAt
-        )
-        try await cache.store(
-            value,
-            repoId: repoID,
-            dataset: .securityAdvisories,
-            range: .all,
-            fetchedAt: fetchedAt,
-            responseETag: response.etag,
-            defaultBranchSHA: nil
-        )
-        return value
     }
 
     func cachedRecentActivity(repoID: Int64) async throws -> RepositoryCachedRecentActivity? {
@@ -609,6 +793,33 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
                 htmlURL: URL(string: item.htmlURL)
             )
         }
+    }
+
+    /// 304 只证明远端内容未变化。先续期同一缓存行，再重新读取 payload；
+    /// 若缓存被并发清理或已损坏，则不能把“无本地内容”伪装成成功。
+    private func revalidatedCachedValue<Value: Decodable & Sendable>(
+        repoID: Int64,
+        dataset: RepositoryInsightsDataset,
+        fetchedAt: Date,
+        responseETag: String?,
+        as type: Value.Type
+    ) async throws -> Value {
+        try await cache.touch(
+            repoId: repoID,
+            dataset: dataset,
+            range: .all,
+            fetchedAt: fetchedAt,
+            responseETag: responseETag
+        )
+        guard let cached = try await cache.load(
+            repoId: repoID,
+            dataset: dataset,
+            range: .all,
+            as: type
+        ) else {
+            throw GitHubRepositoryMetricsError.invalidResponse
+        }
+        return cached.value
     }
 }
 

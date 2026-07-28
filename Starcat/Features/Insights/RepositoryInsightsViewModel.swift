@@ -645,7 +645,8 @@ final class RepositoryInsightsViewModel {
                     ghRepoID: repo.id,
                     owner: repo.owner,
                     name: repo.name
-                )
+                ),
+                ifNoneMatch: cached?.responseETag
             )
             guard ownsCommitResult(generation: requestedGeneration, repoID: repo.id) else { return }
             commitActivityState = .content(fresh)
@@ -717,7 +718,8 @@ final class RepositoryInsightsViewModel {
         let fallbackValue = retainedValue ?? cached?.value
         do {
             let fresh = try await remoteProvider.refreshContributors(
-                repository: repoIdentity(for: repo)
+                repository: repoIdentity(for: repo),
+                ifNoneMatch: cached?.responseETag
             )
             guard ownsContributorResult(generation: requestedGeneration, repoID: repo.id) else { return }
             contributorsState = .content(fresh)
@@ -786,7 +788,8 @@ final class RepositoryInsightsViewModel {
         let fallbackValue = retainedValue ?? cached?.value
         do {
             let fresh = try await remoteProvider.refreshCommunityProfile(
-                repository: repoIdentity(for: repo)
+                repository: repoIdentity(for: repo),
+                ifNoneMatch: cached?.responseETag
             )
             guard ownsCommunityResult(generation: requestedGeneration, repoID: repo.id) else { return }
             remoteCommunityState = .content(fresh)
@@ -853,7 +856,8 @@ final class RepositoryInsightsViewModel {
         let fallbackValue = retainedValue ?? cached?.value
         do {
             let fresh = try await remoteProvider.refreshSecurityAdvisories(
-                repository: repoIdentity(for: repo)
+                repository: repoIdentity(for: repo),
+                ifNoneMatch: cached?.responseETag
             )
             guard ownsSecurityResult(generation: requestedGeneration, repoID: repo.id) else { return }
             securityAdvisoriesState = .content(fresh)

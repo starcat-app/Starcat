@@ -66,6 +66,15 @@ protocol RepositoryInsightsCaching: Sendable {
         defaultBranchSHA: String?
     ) async throws
 
+    /// 远端返回 304 时只续期已有 payload，避免重复编码和写入相同的大块 JSON。
+    func touch(
+        repoId: Int64,
+        dataset: RepositoryInsightsDataset,
+        range: RepositoryInsightsRangeKey,
+        fetchedAt: Date,
+        responseETag: String?
+    ) async throws
+
     func remove(
         repoId: Int64,
         dataset: RepositoryInsightsDataset,
@@ -141,6 +150,36 @@ struct GRDBRepositoryInsightsCache: RepositoryInsightsCaching, Sendable {
         )
         try await database.writer.write { db in
             try record.save(db)
+        }
+    }
+
+    func touch(
+        repoId: Int64,
+        dataset: RepositoryInsightsDataset,
+        range: RepositoryInsightsRangeKey,
+        fetchedAt: Date,
+        responseETag: String?
+    ) async throws {
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                    UPDATE repo_insights_snapshots
+                    SET fetched_at = ?,
+                        stale_after = ?,
+                        response_etag = COALESCE(?, response_etag)
+                    WHERE repo_id = ? AND dataset = ? AND range_key = ?
+                    """,
+                arguments: [
+                    ISO8601DateFormatter.shared.string(from: fetchedAt),
+                    ISO8601DateFormatter.shared.string(
+                        from: fetchedAt.addingTimeInterval(dataset.timeToLive)
+                    ),
+                    responseETag,
+                    repoId,
+                    dataset.rawValue,
+                    range.rawValue
+                ]
+            )
         }
     }
 

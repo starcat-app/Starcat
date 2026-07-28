@@ -279,17 +279,20 @@ protocol GitHubRepositoryMetricsClient: Sendable {
 
     func loadCommitActivity(
         repository: RepoIdentity,
+        ifNoneMatch: String?,
         observer: GitHubMetricsRequestObserver?
     ) async throws -> GitHubMetricsResponse<[GitHubWeeklyCommitActivity]>
 
     func loadContributors(
         repository: RepoIdentity,
         limit: Int,
+        ifNoneMatch: String?,
         observer: GitHubMetricsRequestObserver?
     ) async throws -> GitHubMetricsResponse<[GitHubRepositoryContributorMetric]>
 
     func loadCommunityProfile(
         repository: RepoIdentity,
+        ifNoneMatch: String?,
         observer: GitHubMetricsRequestObserver?
     ) async throws -> GitHubMetricsResponse<GitHubRepositoryCommunityProfile>
 
@@ -302,6 +305,7 @@ protocol GitHubRepositoryMetricsClient: Sendable {
     func loadSecurityAdvisories(
         repository: RepoIdentity,
         limit: Int,
+        ifNoneMatch: String?,
         observer: GitHubMetricsRequestObserver?
     ) async throws -> GitHubMetricsResponse<[GitHubRepositorySecurityAdvisoryMetric]>
 }
@@ -325,22 +329,99 @@ extension GitHubRepositoryMetricsClient {
     }
 
     func loadCommitActivity(
-        repository: RepoIdentity
+        repository: RepoIdentity,
+        ifNoneMatch: String? = nil
     ) async throws -> GitHubMetricsResponse<[GitHubWeeklyCommitActivity]> {
-        try await loadCommitActivity(repository: repository, observer: nil)
+        try await loadCommitActivity(
+            repository: repository,
+            ifNoneMatch: ifNoneMatch,
+            observer: nil
+        )
+    }
+
+    func loadCommitActivity(
+        repository: RepoIdentity,
+        observer: GitHubMetricsRequestObserver?
+    ) async throws -> GitHubMetricsResponse<[GitHubWeeklyCommitActivity]> {
+        try await loadCommitActivity(
+            repository: repository,
+            ifNoneMatch: nil,
+            observer: observer
+        )
     }
 
     func loadContributors(
         repository: RepoIdentity,
-        limit: Int
+        limit: Int,
+        ifNoneMatch: String? = nil
     ) async throws -> GitHubMetricsResponse<[GitHubRepositoryContributorMetric]> {
-        try await loadContributors(repository: repository, limit: limit, observer: nil)
+        try await loadContributors(
+            repository: repository,
+            limit: limit,
+            ifNoneMatch: ifNoneMatch,
+            observer: nil
+        )
+    }
+
+    func loadContributors(
+        repository: RepoIdentity,
+        limit: Int,
+        observer: GitHubMetricsRequestObserver?
+    ) async throws -> GitHubMetricsResponse<[GitHubRepositoryContributorMetric]> {
+        try await loadContributors(
+            repository: repository,
+            limit: limit,
+            ifNoneMatch: nil,
+            observer: observer
+        )
     }
 
     func loadCommunityProfile(
-        repository: RepoIdentity
+        repository: RepoIdentity,
+        ifNoneMatch: String? = nil
     ) async throws -> GitHubMetricsResponse<GitHubRepositoryCommunityProfile> {
-        try await loadCommunityProfile(repository: repository, observer: nil)
+        try await loadCommunityProfile(
+            repository: repository,
+            ifNoneMatch: ifNoneMatch,
+            observer: nil
+        )
+    }
+
+    func loadCommunityProfile(
+        repository: RepoIdentity,
+        observer: GitHubMetricsRequestObserver?
+    ) async throws -> GitHubMetricsResponse<GitHubRepositoryCommunityProfile> {
+        try await loadCommunityProfile(
+            repository: repository,
+            ifNoneMatch: nil,
+            observer: observer
+        )
+    }
+
+    func loadSecurityAdvisories(
+        repository: RepoIdentity,
+        limit: Int,
+        ifNoneMatch: String? = nil
+    ) async throws -> GitHubMetricsResponse<[GitHubRepositorySecurityAdvisoryMetric]> {
+        try await loadSecurityAdvisories(
+            repository: repository,
+            limit: limit,
+            ifNoneMatch: ifNoneMatch,
+            observer: nil
+        )
+    }
+
+    func loadSecurityAdvisories(
+        repository: RepoIdentity,
+        limit: Int,
+        observer: GitHubMetricsRequestObserver?
+    ) async throws -> GitHubMetricsResponse<[GitHubRepositorySecurityAdvisoryMetric]> {
+        try await loadSecurityAdvisories(
+            repository: repository,
+            limit: limit,
+            ifNoneMatch: nil,
+            observer: observer
+        )
     }
 }
 
@@ -437,10 +518,12 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
 
     func loadCommitActivity(
         repository: RepoIdentity,
+        ifNoneMatch: String?,
         observer: GitHubMetricsRequestObserver?
     ) async throws -> GitHubMetricsResponse<[GitHubWeeklyCommitActivity]> {
         try await get(
             endpoints.repository(repository, suffix: "stats/commit_activity"),
+            ifNoneMatch: ifNoneMatch,
             observer: observer
         )
     }
@@ -448,6 +531,7 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
     func loadContributors(
         repository: RepoIdentity,
         limit: Int,
+        ifNoneMatch: String?,
         observer: GitHubMetricsRequestObserver?
     ) async throws -> GitHubMetricsResponse<[GitHubRepositoryContributorMetric]> {
         try await get(
@@ -456,16 +540,19 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
                 suffix: "contributors",
                 queryItems: [URLQueryItem(name: "per_page", value: String(max(1, min(limit, 100))))]
             ),
+            ifNoneMatch: ifNoneMatch,
             observer: observer
         )
     }
 
     func loadCommunityProfile(
         repository: RepoIdentity,
+        ifNoneMatch: String?,
         observer: GitHubMetricsRequestObserver?
     ) async throws -> GitHubMetricsResponse<GitHubRepositoryCommunityProfile> {
         try await get(
             endpoints.repository(repository, suffix: "community/profile"),
+            ifNoneMatch: ifNoneMatch,
             observer: observer
         )
     }
@@ -488,6 +575,7 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
     func loadSecurityAdvisories(
         repository: RepoIdentity,
         limit: Int,
+        ifNoneMatch: String?,
         observer: GitHubMetricsRequestObserver?
     ) async throws -> GitHubMetricsResponse<[GitHubRepositorySecurityAdvisoryMetric]> {
         try await get(
@@ -496,6 +584,7 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
                 suffix: "security-advisories",
                 queryItems: [URLQueryItem(name: "per_page", value: String(max(1, min(limit, 100))))]
             ),
+            ifNoneMatch: ifNoneMatch,
             observer: observer
         )
     }
