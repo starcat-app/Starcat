@@ -67,7 +67,7 @@ final class MyInsightsViewModel {
     ///
     /// 已有可展示快照时（含切换「全部收藏 / 知识库」）：保留旧内容、走 `.refreshing`，
     /// 由右上角 SyncIconButton 转圈表达加载；成功后再原地替换，避免内容区
-    /// ProgressView 把布局高度抽空造成抖动。仅真正首次进入才用 `.loading`。
+    /// 被临时加载视图抽空造成抖动。仅真正首次进入才用 `.loading`。
     func load(
         scope: InsightsScope,
         embeddingModel: String,
@@ -121,7 +121,7 @@ final class MyInsightsViewModel {
         )
     }
 
-    /// 真正首次进入、尚无任何快照时的占位；此时 UI 才显示内容区 ProgressView。
+    /// 真正首次进入、尚无任何快照时的空快照；UI 使用透明稳定高度占位。
     private static func emptySnapshot(scope: InsightsScope) -> MyInsightsSnapshot {
         MyInsightsSnapshot(
             scope: scope,

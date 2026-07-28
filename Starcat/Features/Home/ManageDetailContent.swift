@@ -196,9 +196,11 @@ struct ManageDetailContent: View {
                     onScrollReport: onScrollReport
                 )
             } else {
-                ProgressView()
-                    .controlSize(.small)
+                // ViewModel 在同一个 task 的下一阶段立即注入。这里保持内容区域稳定即可，
+                // 不显示中央进度环，避免首次进入洞察时出现一次突兀的加载闪烁。
+                Color.clear
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityHidden(true)
             }
         }
         .task(id: repo.id) {
