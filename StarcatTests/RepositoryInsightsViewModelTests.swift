@@ -663,6 +663,21 @@ struct RepositoryInsightsViewModelTests {
                     assetsJson: nil,
                     isRead: false,
                     fetchedAt: "2026-07-27T00:00:00Z"
+                ),
+                ReleaseRecord(
+                    id: 69,
+                    repoId: 7,
+                    tagName: "v2.0.0",
+                    name: "Previous",
+                    bodyMarkdown: nil,
+                    htmlUrl: "https://github.com/octo/demo-7/releases/tag/v2.0.0",
+                    isPrerelease: false,
+                    isDraft: false,
+                    publishedAt: "2026-06-20T00:00:00Z",
+                    createdAtRemote: "2026-06-20T00:00:00Z",
+                    assetsJson: nil,
+                    isRead: false,
+                    fetchedAt: "2026-07-27T00:00:00Z"
                 )
             ],
             isReadDefault: false
@@ -721,16 +736,26 @@ struct RepositoryInsightsViewModelTests {
             releaseRepository: releaseRepository,
             healthRepository: healthRepository,
             openSSFRepository: openSSFRepository,
-            insightsCache: cache
+            insightsCache: cache,
+            now: {
+                ISO8601DateFormatter.shared.date(from: "2026-07-28T00:00:00Z")!
+            }
         )
 
         let release = try #require(try await provider.latestRelease(repoId: 7))
+        let cadence = try #require(try await provider.releaseCadence(repoId: 7))
         let health = try #require(try await provider.health(repoId: 7))
         let openSSF = try #require(try await provider.openSSF(repoId: 7))
         let cachedCommunity = try #require(try await provider.cachedCommunity(repoId: 7))
 
         #expect(release.tagName == "v2.1.0")
         #expect(release.name == "Stable")
+        #expect(cadence.releasesLastYear == 2)
+        #expect(cadence.averageIntervalDays == 30)
+        #expect(
+            cadence.latestPublishedAt
+                == ISO8601DateFormatter.shared.date(from: "2026-07-20T00:00:00Z")
+        )
         #expect(health.overallScore == 88)
         #expect(health.maintenanceScore == 90)
         #expect(openSSF == RepositoryOpenSSFInsight(score: 8.7, scoreDate: "2026-07-27"))
