@@ -1192,7 +1192,8 @@ struct RepoListView: View {
         switch viewModel.selection {
         case .allStars, .allLanguages, .untagged, .language, .tag:
             return true
-        case .library, .trending, .smartCollectionsHome, .smartCollection, .githubStarList, .githubStarListUngrouped:
+        case .myProjects, .library, .trending, .smartCollectionsHome, .smartCollection,
+             .githubStarList, .githubStarListUngrouped:
             return false
         case .userSmartCollection:
             return false
@@ -2325,6 +2326,8 @@ struct RepoListView: View {
             return String.l10n("nav.trending")
         case .allStars:
             return String.l10n("sidebar.allRepos")
+        case .myProjects:
+            return String.l10n("sidebar.myProjects")
         case .allLanguages:
             return String.l10n("trending.allLanguages")
         case .untagged:
@@ -2370,6 +2373,7 @@ struct RepoListView: View {
         switch viewModel.selection {
         case .trending:  return "chart.line.uptrend.xyaxis"
         case .allStars:  return "star"
+        case .myProjects: return "folder"
         case .allLanguages: return "globe"
         case .untagged:  return "tag.slash"
         case .library:   return "heart.fill"
@@ -2388,6 +2392,7 @@ struct RepoListView: View {
         switch viewModel.selection {
         case .trending:        return "empty.trendingUnavailable"
         case .allStars:        return "empty.noStars"
+        case .myProjects:      return "empty.noResults"
         case .allLanguages:    return "empty.noStars"
         case .untagged:        return "empty.allTagged"
         case .library:         return "empty.library.title"
@@ -2406,6 +2411,7 @@ struct RepoListView: View {
         switch viewModel.selection {
         case .trending:        return "empty.trendingComingSoon"
         case .allStars:        return "empty.syncPrompt"
+        case .myProjects:      return "empty.syncPrompt"
         case .allLanguages:    return "empty.syncPrompt"
         case .untagged:        return "empty.untaggedHint"
         case .library:         return "empty.library.subtitle"

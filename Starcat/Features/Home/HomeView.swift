@@ -2088,6 +2088,7 @@ struct HomeView: View {
         if isAccountSwitch {
             viewModel.resetAllStateForUserSwitch()
         }
+        viewModel.setActiveUserID(user.id)
         restoreListPreferences(login: user.login)
 
         let wasAlreadyOnManage = selectedSidebarPage == .manage
@@ -2214,7 +2215,8 @@ struct HomeView: View {
         case .trending:
             // .trending 不是合法的 Manage 分类（属于 Trending 页），恢复时应回落 allStars
             return false
-        case .allStars, .untagged, .library, .allLanguages, .smartCollectionsHome, .smartCollection:
+        case .allStars, .myProjects, .untagged, .library, .allLanguages,
+             .smartCollectionsHome, .smartCollection:
             return true
         case .userSmartCollection(let id):
             return viewModel.userSmartCollections.contains { $0.id == id }

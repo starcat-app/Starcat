@@ -462,6 +462,12 @@ final class HomeViewModel {
     /// 全部 stars 数（Sidebar "全部 Stars" 行计数）。D-04：`private(set)` 收敛。
     private(set) var totalCount: Int = 0
 
+    /// 当前登录用户可访问的个人 / 组织项目数量。
+    private(set) var myProjectsCount: Int = 0
+
+    /// “我的项目”查询必须显式携带当前 GitHub 用户 ID，不能只依赖当前数据库路径。
+    private(set) var activeUserID: Int64?
+
     /// 未打标签数（Sidebar "未分类" 行计数）。D-04：`private(set)` 收敛。
     private(set) var untaggedCount: Int = 0
 
@@ -1136,6 +1142,7 @@ final class HomeViewModel {
         var safeSelectionKind: String {
             switch selection {
             case .allStars: return "all-stars"
+            case .myProjects: return "my-projects"
             case .allLanguages: return "all-languages"
             case .untagged: return "untagged"
             case .library: return "library"
@@ -1256,6 +1263,14 @@ final class HomeViewModel {
 
     // MARK: - 公开 action
 
+    /// 绑定当前登录用户，供项目关系查询和 Sidebar 计数使用。
+    ///
+    /// HomeView 会在任何 refresh / reload 之前调用；登出和换账号则由
+    /// `resetAllStateForUserSwitch()` 清空，避免旧账号关系进入新账号查询。
+    func setActiveUserID(_ userID: Int64) {
+        activeUserID = userID
+    }
+
     /// D-30 配套（2026-06-13）：账号切换时清空所有与登录身份强绑定的 in-memory 状态。
     ///
     /// **为什么需要这个方法**：
@@ -1330,6 +1345,8 @@ final class HomeViewModel {
         itemsRevision &+= 1
 
         totalCount = 0
+        myProjectsCount = 0
+        activeUserID = nil
         untaggedCount = 0
         libraryCount = 0
         languageStats = []
@@ -1416,6 +1433,7 @@ final class HomeViewModel {
         let previousUngroupedCount = githubStarListUngroupedCount
         do {
             async let total = repository.starredCount()
+            async let myProjects = fetchMyProjectsCount()
             async let untagged = repository.fetchUntagged().count
             async let library = repository.fetchListCount(scope: .library, filters: .empty)
             async let langs = repository.languageStats()
@@ -1432,6 +1450,7 @@ final class HomeViewModel {
             async let tagAssignmentsResult = repoTagRepository.fetchAllTagAssignments()
 
             self.totalCount = try await total
+            self.myProjectsCount = try await myProjects
             self.untaggedCount = try await untagged
             self.libraryCount = try await library
             self.languageStats = try await langs
@@ -1679,7 +1698,8 @@ final class HomeViewModel {
         case .userSmartCollection:
             guard let activeScope = activeUserSmartCollectionRule?.scope else { return nil }
             scope = activeScope
-        case .library, .trending, .smartCollectionsHome, .smartCollection, .githubStarList, .githubStarListUngrouped:
+        case .myProjects, .library, .trending, .smartCollectionsHome, .smartCollection,
+             .githubStarList, .githubStarListUngrouped:
             return nil
         }
 
@@ -1758,6 +1778,9 @@ final class HomeViewModel {
         switch selection {
         case .allStars, .allLanguages:
             return .allStars
+        case .myProjects:
+            guard let activeUserID else { return nil }
+            return .myProjects(userID: activeUserID)
         case .untagged:
             return .untagged
         case .library:
@@ -1775,6 +1798,27 @@ final class HomeViewModel {
         case .trending, .smartCollectionsHome, .smartCollection, .userSmartCollection:
             return nil
         }
+    }
+
+    /// 未完成登录态绑定时项目计数必须为 0，不能猜测或复用上一个账号。
+    private func fetchMyProjectsCount() async throws -> Int {
+        guard let activeUserID else { return 0 }
+        return try await repository.fetchListCount(
+            scope: .myProjects(userID: activeUserID),
+            filters: .empty
+        )
+    }
+
+    /// 仅供无法下推 SQLite 的兼容路径和 hover 预取使用；正常列表仍按页读取。
+    private func fetchAllMyProjects() async throws -> [Repo] {
+        guard let activeUserID else { return [] }
+        return try await repository.fetchListPage(
+            scope: .myProjects(userID: activeUserID),
+            filters: .empty,
+            sort: .starredAtDesc,
+            limit: Int.max,
+            offset: 0
+        )
     }
 
     private func currentRepoListFiltersForDatabasePaging() -> RepoListFilters {
@@ -2018,9 +2062,10 @@ final class HomeViewModel {
         // 用户后续可显式切到 .language(...) 形成 AND 组合。
         if !next.isEmpty {
             switch selection {
-            case .untagged, .library, .tag, .smartCollectionsHome, .smartCollection, .userSmartCollection, .githubStarList, .githubStarListUngrouped:
+            case .untagged, .library, .tag, .smartCollectionsHome, .smartCollection,
+                 .userSmartCollection, .githubStarList, .githubStarListUngrouped:
                 selection = .allStars
-            case .allStars, .allLanguages, .language, .trending:
+            case .allStars, .myProjects, .allLanguages, .language, .trending:
                 break
             }
         }
@@ -2273,6 +2318,8 @@ final class HomeViewModel {
                             repos = [] // Placeholder for W7 Trending
                         case .allStars, .allLanguages:
                             repos = try await self.repository.fetchAllStarred()
+                        case .myProjects:
+                            repos = try await self.fetchAllMyProjects()
                         case .untagged:
                             repos = try await self.repository.fetchUntagged()
                         case .library:
@@ -2755,6 +2802,8 @@ final class HomeViewModel {
                         return nil
                     case .allStars, .allLanguages:
                         return try await self.repository.fetchAllStarred()
+                    case .myProjects:
+                        return try await self.fetchAllMyProjects()
                     case .untagged:
                         return try await self.repository.fetchUntagged()
                     case .library:
@@ -3379,7 +3428,9 @@ extension SidebarItem {
         case .trending:
             return [.allStars, .untagged]
         case .allStars:
-            return [.untagged, .library, .smartCollectionsHome]
+            return [.myProjects, .untagged, .library]
+        case .myProjects:
+            return [.allStars, .untagged, .library]
         case .allLanguages:
             return [.allStars, .untagged, .library]
         case .untagged:
