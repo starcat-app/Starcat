@@ -50,6 +50,9 @@ struct RepositoryInsightsRemoteProviderTests {
         #expect(refreshed.mergedPullRequests == 5)
         #expect(refreshed.createdIssues == 13)
         #expect(refreshed.closedIssues == 7)
+        #expect(refreshed.pullRequestThroughput == 5.0 / 8.0)
+        #expect(refreshed.issueThroughput == 7.0 / 13.0)
+        #expect(refreshed.netIssueChange == 6)
         #expect(cached.value == refreshed)
         #expect(!cached.isStale)
         #expect(queries.count == 4)
@@ -59,6 +62,21 @@ struct RepositoryInsightsRemoteProviderTests {
         #expect(queries.contains { $0.contains("is:pr merged:") })
         #expect(queries.contains { $0.contains("is:issue created:") })
         #expect(queries.contains { $0.contains("is:issue closed:") })
+    }
+
+    @Test("活动吞吐比在没有新建项时保持未知而不是伪造零值")
+    func activityThroughputKeepsZeroDenominatorUnknown() {
+        let counts = RepositoryActivityCounts(
+            createdPullRequests: 0,
+            mergedPullRequests: 3,
+            createdIssues: 0,
+            closedIssues: 4,
+            generatedAt: .distantPast
+        )
+
+        #expect(counts.pullRequestThroughput == nil)
+        #expect(counts.issueThroughput == nil)
+        #expect(counts.netIssueChange == -4)
     }
 
     @Test("Commit activity 保存 52 周原始结果并由客户端按活动范围裁剪")

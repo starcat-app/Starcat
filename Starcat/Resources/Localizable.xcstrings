@@ -127394,11 +127394,32 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Issue" } }
       }
     },
+    "insights.repo.activity.issueThroughput" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Closed / New Issues" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Issue 关闭 / 新建" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Issue 關閉 / 新建" } }
+      }
+    },
     "insights.repo.activity.mergedPullRequests" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Merged Pull Requests" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已合并 Pull Request" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "已合併 Pull Request" } }
+      }
+    },
+    "insights.repo.activity.netIssueChange" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Net New Issues" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Issue 净新增" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Issue 淨新增" } }
+      }
+    },
+    "insights.repo.activity.prThroughput" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Merged / New PRs" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "PR 合并 / 新建" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "PR 合併 / 新建" } }
       }
     },
     "insights.repo.activity.pullRequests" : {

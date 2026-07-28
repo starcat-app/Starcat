@@ -301,9 +301,32 @@ struct RepositoryInsightsView: View {
     private var activityBody: some View {
         if let counts = displayedActivityCounts {
             // 有缓存就只展示指标；刷新态由 SyncIconButton 表达，不再塞状态文案行。
-            HStack(alignment: .top, spacing: 10) {
-                ForEach(activityMetrics(from: counts)) { metric in
-                    activityMetric(metric)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 10) {
+                    ForEach(activityMetrics(from: counts)) { metric in
+                        activityMetric(metric)
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    activityDerivedMetric(
+                        title: "insights.repo.activity.prThroughput",
+                        value: activityRatio(counts.pullRequestThroughput),
+                        systemImage: "arrow.triangle.merge",
+                        tintName: "green"
+                    )
+                    activityDerivedMetric(
+                        title: "insights.repo.activity.issueThroughput",
+                        value: activityRatio(counts.issueThroughput),
+                        systemImage: "checkmark.circle",
+                        tintName: "blue"
+                    )
+                    activityDerivedMetric(
+                        title: "insights.repo.activity.netIssueChange",
+                        value: signedActivityChange(counts.netIssueChange),
+                        systemImage: "arrow.up.arrow.down",
+                        tintName: counts.netIssueChange > 0 ? "orange" : "green"
+                    )
                 }
             }
         } else {
@@ -473,6 +496,58 @@ struct RepositoryInsightsView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(LocalizedStringKey(metric.titleKey)))
         .accessibilityValue(Text(verbatim: activityMetricAccessibilityValue(metric)))
+    }
+
+    private func activityDerivedMetric(
+        title: LocalizedStringKey,
+        value: String,
+        systemImage: String,
+        tintName: String
+    ) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: systemImage)
+                .foregroundStyle(InsightsColor.resolve(tintName))
+
+            Text(title)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            Spacer(minLength: 6)
+
+            Text(verbatim: value)
+                .fontWeight(.semibold)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .font(interfaceScale.font(.caption))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+        .background(
+            Color(nsColor: .textBackgroundColor).opacity(0.55),
+            in: RoundedRectangle(cornerRadius: 7)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(title))
+        .accessibilityValue(Text(verbatim: value))
+    }
+
+    private func activityRatio(_ ratio: Double?) -> String {
+        guard let ratio else {
+            return String.l10n("insights.repo.state.noData")
+        }
+        return ratio.formatted(
+            .percent.precision(.fractionLength(ratio < 1 ? 0 : 1)).locale(locale)
+        )
+    }
+
+    private func signedActivityChange(_ value: Int) -> String {
+        let formatted = abs(value).formatted(.number.locale(locale))
+        if value > 0 { return "+\(formatted)" }
+        if value < 0 { return "−\(formatted)" }
+        return "0"
     }
 
     private func activityMetricAccessibilityValue(_ metric: RepositoryActivityMetric) -> String {

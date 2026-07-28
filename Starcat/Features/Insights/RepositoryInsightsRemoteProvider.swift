@@ -49,6 +49,23 @@ struct RepositoryActivityCounts: Codable, Equatable, Sendable {
     let createdIssues: Int
     let closedIssues: Int
     let generatedAt: Date
+
+    /// 同一时间范围内“已合并 / 新建”的吞吐比。合并项可能创建于范围之前，因此允许超过 100%。
+    var pullRequestThroughput: Double? {
+        guard createdPullRequests > 0 else { return nil }
+        return Double(mergedPullRequests) / Double(createdPullRequests)
+    }
+
+    /// 同一时间范围内“已关闭 / 新建”的吞吐比，不把它误称为同批 Issue 的解决率。
+    var issueThroughput: Double? {
+        guard createdIssues > 0 else { return nil }
+        return Double(closedIssues) / Double(createdIssues)
+    }
+
+    /// 正数表示本周期新建多于关闭，负数表示存量 Issue 正在净消化。
+    var netIssueChange: Int {
+        createdIssues - closedIssues
+    }
 }
 
 /// ViewModel 读取缓存时需要同时知道是否过期，过期值仍先显示。
