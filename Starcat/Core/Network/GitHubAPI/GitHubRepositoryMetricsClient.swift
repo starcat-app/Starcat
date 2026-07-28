@@ -391,6 +391,7 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
     private let endpoints: GitHubRepositoryMetricsEndpointBuilder
     private let now: @Sendable () -> Date
     private let requestGate = GitHubMetricsRequestGate()
+    private let inflightTracker = GitHubMetricsInflightTracker()
 
     init(
         httpClient: any RAGHTTPClientProtocol = URLSessionRAGHTTPClient(),
@@ -505,6 +506,45 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
         ifNoneMatch: String? = nil,
         observer: GitHubMetricsRequestObserver?
     ) async throws -> GitHubMetricsResponse<Value> {
+        try Task.checkCancellation()
+        let currentToken = await tokenProvider.currentToken()?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // RAG observer 需要一一对应的 request / response / failure Trace，不能与普通洞察
+        // 请求合并；普通洞察没有 observer，完全相同的 URL、validator、认证身份可以安全
+        // 共享同一 Task。Token 只作为内存 Key，不记录日志或写入磁盘。
+        if observer == nil {
+            let key = GitHubMetricsInflightKey(
+                url: url,
+                ifNoneMatch: ifNoneMatch,
+                authorizationIdentity: currentToken
+            )
+            return try await inflightTracker.value(for: key) { [self] in
+                try await executeSerializedGet(
+                    url,
+                    ifNoneMatch: ifNoneMatch,
+                    token: currentToken,
+                    observer: nil
+                )
+            }
+        }
+
+        return try await executeSerializedGet(
+            url,
+            ifNoneMatch: ifNoneMatch,
+            token: currentToken,
+            observer: observer
+        )
+    }
+
+    /// gate 必须包住真正的网络 await。in-flight 合并发生在 gate 之前，否则重复调用会
+    /// 先排入串行队列，等首个请求完成后仍继续发出第二个请求，达不到节省配额的目的。
+    private func executeSerializedGet<Value: Decodable & Sendable>(
+        _ url: URL,
+        ifNoneMatch: String?,
+        token: String?,
+        observer: GitHubMetricsRequestObserver?
+    ) async throws -> GitHubMetricsResponse<Value> {
         // Swift actor 在 await 期间可重入，单靠 actor 不能保证 URLSession 请求真正串行。
         // 显式 gate 覆盖整个网络 await，避免多个区块同时击中 secondary rate limit。
         await requestGate.acquire()
@@ -513,6 +553,7 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
             let result: GitHubMetricsResponse<Value> = try await performGet(
                 url,
                 ifNoneMatch: ifNoneMatch,
+                token: token,
                 observer: observer
             )
             await requestGate.release()
@@ -526,6 +567,7 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
     private func performGet<Value: Decodable & Sendable>(
         _ url: URL,
         ifNoneMatch: String?,
+        token: String?,
         observer: GitHubMetricsRequestObserver?
     ) async throws -> GitHubMetricsResponse<Value> {
         var request = URLRequest(url: url)
@@ -533,9 +575,7 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         request.setValue("Starcat", forHTTPHeaderField: "User-Agent")
-        let currentToken = await tokenProvider.currentToken()
-        if let token = currentToken?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !token.isEmpty {
+        if let token, !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         if let ifNoneMatch, !ifNoneMatch.isEmpty {
@@ -634,6 +674,66 @@ private struct FixedGitHubTokenProvider: GitHubTokenProviding {
 
     func currentToken() async -> String? {
         token
+    }
+}
+
+/// 普通洞察请求的进程内去重 Key。
+///
+/// 认证身份必须进入 Key：登录切换发生在网络 await 期间时，新账户不能等待旧 Token 发起
+/// 的请求。Token 仅存在于内存字典且从不输出；退出登录后旧 Task 完成即自动释放。
+private struct GitHubMetricsInflightKey: Hashable, Sendable {
+    let url: URL
+    let ifNoneMatch: String?
+    let authorizationIdentity: String?
+}
+
+/// `Any` 只用于同一 Key 的泛型响应暂存。Key 已同时固定 URL 和请求契约，同一 URL 在
+/// Metrics Client 中只会解码为一种 DTO；取值时仍做动态类型校验，未来端点复用 URL 时
+/// 不会发生强制转换崩溃。
+private struct GitHubMetricsInflightValue: @unchecked Sendable {
+    let value: Any
+}
+
+/// 合并完全相同的普通 Metrics GET。实现沿用 README in-flight tracker 的成功经验：
+/// 首个调用创建 Task，后续调用 await 同一个 Task；Task 在成功或失败终态先清理字典，
+/// 避免完成态条目长期占用内存或遮蔽下一次手动刷新。
+private actor GitHubMetricsInflightTracker {
+    private var inflight: [
+        GitHubMetricsInflightKey: Task<GitHubMetricsInflightValue, Error>
+    ] = [:]
+
+    func value<Value: Sendable>(
+        for key: GitHubMetricsInflightKey,
+        operation: @escaping @Sendable () async throws -> Value
+    ) async throws -> Value {
+        if let existing = inflight[key] {
+            let boxed = try await existing.value
+            guard let value = boxed.value as? Value else {
+                throw GitHubRepositoryMetricsError.invalidResponse
+            }
+            return value
+        }
+
+        let task = Task<GitHubMetricsInflightValue, Error> { [weak self] in
+            do {
+                let value = try await operation()
+                await self?.clear(key)
+                return GitHubMetricsInflightValue(value: value)
+            } catch {
+                await self?.clear(key)
+                throw error
+            }
+        }
+        inflight[key] = task
+        let boxed = try await task.value
+        guard let value = boxed.value as? Value else {
+            throw GitHubRepositoryMetricsError.invalidResponse
+        }
+        return value
+    }
+
+    private func clear(_ key: GitHubMetricsInflightKey) {
+        inflight[key] = nil
     }
 }
 
