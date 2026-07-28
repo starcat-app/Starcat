@@ -162,6 +162,99 @@ struct RepositoryInsightsCacheTests {
         #expect(cached.responseETag == "\"commit-v1\"")
     }
 
+    @Test("解码热缓存按 LRU 容量淘汰")
+    func decodedHotCacheEvictsLeastRecentlyUsedEntry() async throws {
+        let database = try InMemoryDatabaseManager()
+        let cache = GRDBRepositoryInsightsCache(database: database, hotCacheCapacity: 1)
+        try await database.insertRepoFixture(id: 5, owner: "octo", name: "first")
+        try await database.insertRepoFixture(id: 6, owner: "octo", name: "second")
+        let now = Date(timeIntervalSince1970: 9_000)
+
+        try await cache.store(
+            Payload(count: 1),
+            repoId: 5,
+            dataset: .contributors,
+            range: .all,
+            fetchedAt: now,
+            responseETag: nil,
+            defaultBranchSHA: nil
+        )
+        try await cache.store(
+            Payload(count: 2),
+            repoId: 6,
+            dataset: .contributors,
+            range: .all,
+            fetchedAt: now,
+            responseETag: nil,
+            defaultBranchSHA: nil
+        )
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                    UPDATE repo_insights_snapshots
+                    SET payload_json = ?
+                    WHERE repo_id = 5 AND dataset = 'contributors'
+                    """,
+                arguments: [try JSONEncoder().encode(Payload(count: 99))]
+            )
+            try db.execute(
+                sql: """
+                    UPDATE repo_insights_snapshots
+                    SET payload_json = ?
+                    WHERE repo_id = 6 AND dataset = 'contributors'
+                    """,
+                arguments: [try JSONEncoder().encode(Payload(count: 88))]
+            )
+        }
+
+        let hot = try #require(
+            try await cache.load(
+                repoId: 6,
+                dataset: .contributors,
+                range: .all,
+                as: Payload.self
+            )
+        )
+        let evicted = try #require(
+            try await cache.load(
+                repoId: 5,
+                dataset: .contributors,
+                range: .all,
+                as: Payload.self
+            )
+        )
+
+        #expect(hot.value.count == 2)
+        #expect(evicted.value.count == 99)
+    }
+
+    @Test("切换数据库后解码热缓存按账号与 writer 实例隔离")
+    func decodedHotCacheIsIsolatedAcrossDatabases() async throws {
+        let database = try InMemoryDatabaseManager(userId: 101)
+        let cache = GRDBRepositoryInsightsCache(database: database)
+        try await database.insertRepoFixture(id: 7, owner: "octo", name: "account")
+        let now = Date(timeIntervalSince1970: 10_000)
+        try await cache.store(
+            Payload(count: 7),
+            repoId: 7,
+            dataset: .communityProfile,
+            range: .all,
+            fetchedAt: now,
+            responseETag: nil,
+            defaultBranchSHA: nil
+        )
+
+        try await database.reopen(userId: 202)
+        let switchedAccountValue = try await cache.load(
+            repoId: 7,
+            dataset: .communityProfile,
+            range: .all,
+            as: Payload.self
+        )
+
+        #expect(switchedAccountValue == nil)
+    }
+
     @Test("损坏 payload 只删除对应数据集")
     func corruptPayloadIsIsolated() async throws {
         let database = try InMemoryDatabaseManager()
