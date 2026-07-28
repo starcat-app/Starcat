@@ -145,6 +145,25 @@ struct GitHubRepositoryIssueSearch: Decodable, Equatable, Sendable {
     }
 }
 
+/// GraphQL 合并活动请求返回的最近事件。`occurredAt` 已在客户端按
+/// closedAt > updatedAt 的优先级收口，上层不再理解 GraphQL union。
+struct GitHubRepositoryActivityEventMetric: Equatable, Sendable {
+    let number: Int
+    let title: String
+    let htmlURL: String
+    let occurredAt: String
+}
+
+/// 单次 GraphQL 请求同时承载活动 KPI 与最近动态，替代六次 Search REST 请求。
+struct GitHubRepositoryActivityBundleMetric: Equatable, Sendable {
+    let createdPullRequests: Int
+    let mergedPullRequests: Int
+    let createdIssues: Int
+    let closedIssues: Int
+    let recentPullRequests: [GitHubRepositoryActivityEventMetric]
+    let recentIssues: [GitHubRepositoryActivityEventMetric]
+}
+
 /// GitHub 最近 52 周 Commit Activity 的一周数据。
 struct GitHubWeeklyCommitActivity: Decodable, Equatable, Sendable {
     let week: Int
@@ -268,6 +287,11 @@ struct GitHubRepositorySecurityAdvisoryMetric: Decodable, Equatable, Sendable {
 
 /// 类型化端点协议。observer 只服务 RAG Debug Trace，普通洞察调用传 nil。
 protocol GitHubRepositoryMetricsClient: Sendable {
+    func loadActivityBundle(
+        repository: RepoIdentity,
+        dateRange: String
+    ) async throws -> GitHubRepositoryActivityBundleMetric
+
     func searchIssues(
         repository: RepoIdentity,
         query: String,
@@ -486,6 +510,30 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
         self.now = now
     }
 
+    func loadActivityBundle(
+        repository: RepoIdentity,
+        dateRange: String
+    ) async throws -> GitHubRepositoryActivityBundleMetric {
+        try Task.checkCancellation()
+        let currentToken = await tokenProvider.currentToken()?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let url = endpoints.baseURL.appendingPathComponent("graphql")
+        let key = GitHubMetricsInflightKey(
+            url: url,
+            ifNoneMatch: nil,
+            authorizationIdentity: currentToken,
+            requestIdentity: "activity-bundle:\(repository.owner)/\(repository.name):\(dateRange)"
+        )
+        return try await inflightTracker.value(for: key) { [self] in
+            try await executeSerializedActivityBundle(
+                url: url,
+                repository: repository,
+                dateRange: dateRange,
+                token: currentToken
+            )
+        }
+    }
+
     /// 洞察使用动态 Token Provider，登录 / 登出后不需要重建 AppDependencies。
     init(
         httpClient: any RAGHTTPClientProtocol = URLSessionRAGHTTPClient(),
@@ -606,7 +654,8 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
             let key = GitHubMetricsInflightKey(
                 url: url,
                 ifNoneMatch: ifNoneMatch,
-                authorizationIdentity: currentToken
+                authorizationIdentity: currentToken,
+                requestIdentity: "GET"
             )
             return try await inflightTracker.value(for: key) { [self] in
                 try await executeSerializedGet(
@@ -652,6 +701,130 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
             throw error
         }
     }
+
+    /// GraphQL 与 REST 共用同一串行 gate，避免页面首次加载时两类请求同时出站。
+    private func executeSerializedActivityBundle(
+        url: URL,
+        repository: RepoIdentity,
+        dateRange: String,
+        token: String?
+    ) async throws -> GitHubRepositoryActivityBundleMetric {
+        await requestGate.acquire()
+        do {
+            try Task.checkCancellation()
+            let result = try await performActivityBundle(
+                url: url,
+                repository: repository,
+                dateRange: dateRange,
+                token: token
+            )
+            await requestGate.release()
+            return result
+        } catch {
+            await requestGate.release()
+            throw error
+        }
+    }
+
+    private func performActivityBundle(
+        url: URL,
+        repository: RepoIdentity,
+        dateRange: String,
+        token: String?
+    ) async throws -> GitHubRepositoryActivityBundleMetric {
+        let base = "repo:\(repository.owner)/\(repository.name)"
+        let body = GitHubMetricsGraphQLRequest(
+            query: Self.activityBundleQuery,
+            variables: [
+                "createdPullRequests": "\(base) is:pr created:\(dateRange)",
+                "mergedPullRequests": "\(base) is:pr merged:\(dateRange)",
+                "createdIssues": "\(base) is:issue created:\(dateRange)",
+                "closedIssues": "\(base) is:issue closed:\(dateRange)",
+                "recentPullRequests": "\(base) is:pr",
+                "recentIssues": "\(base) is:issue"
+            ]
+        )
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 8
+        request.httpBody = try JSONEncoder().encode(body)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+        request.setValue("Starcat", forHTTPHeaderField: "User-Agent")
+        if let token, !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        let (data, response) = try await httpClient.data(for: request)
+        let metadata = responseMetadata(response)
+        guard response.statusCode == 200 else {
+            throw mapError(data: data, response: response, metadata: metadata)
+        }
+        guard let envelope = try? JSONDecoder().decode(
+            GitHubMetricsGraphQLEnvelope<GitHubActivityBundleGraphQLData>.self,
+            from: data
+        ) else {
+            throw GitHubRepositoryMetricsError.invalidResponse
+        }
+        if let errors = envelope.errors, !errors.isEmpty {
+            throw GitHubRepositoryMetricsError.http(
+                statusCode: 400,
+                message: errors.map(\.message).joined(separator: "; ")
+            )
+        }
+        guard let payload = envelope.data else {
+            throw GitHubRepositoryMetricsError.invalidResponse
+        }
+        return payload.metric
+    }
+
+    /// 六个 alias 共用一次 GraphQL POST；`issueCount` 给 KPI，nodes 只取最近 5 条。
+    private static let activityBundleQuery = """
+        query RepositoryActivityBundle(
+          $createdPullRequests: String!,
+          $mergedPullRequests: String!,
+          $createdIssues: String!,
+          $closedIssues: String!,
+          $recentPullRequests: String!,
+          $recentIssues: String!
+        ) {
+          createdPullRequests: search(query: $createdPullRequests, type: ISSUE, first: 1) {
+            issueCount
+          }
+          mergedPullRequests: search(query: $mergedPullRequests, type: ISSUE, first: 1) {
+            issueCount
+          }
+          createdIssues: search(query: $createdIssues, type: ISSUE, first: 1) {
+            issueCount
+          }
+          closedIssues: search(query: $closedIssues, type: ISSUE, first: 1) {
+            issueCount
+          }
+          recentPullRequests: search(query: $recentPullRequests, type: ISSUE, first: 5) {
+            nodes {
+              ... on PullRequest {
+                number
+                title
+                url
+                closedAt
+                updatedAt
+              }
+            }
+          }
+          recentIssues: search(query: $recentIssues, type: ISSUE, first: 5) {
+            nodes {
+              ... on Issue {
+                number
+                title
+                url
+                closedAt
+                updatedAt
+              }
+            }
+          }
+        }
+        """
 
     private func performGet<Value: Decodable & Sendable>(
         _ url: URL,
@@ -758,6 +931,73 @@ private struct GitHubMetricsErrorResponse: Decodable {
     let message: String
 }
 
+private struct GitHubMetricsGraphQLRequest: Encodable {
+    let query: String
+    let variables: [String: String]
+}
+
+private struct GitHubMetricsGraphQLError: Decodable {
+    let message: String
+}
+
+private struct GitHubMetricsGraphQLEnvelope<Payload: Decodable>: Decodable {
+    let data: Payload?
+    let errors: [GitHubMetricsGraphQLError]?
+}
+
+private struct GitHubActivityBundleGraphQLData: Decodable {
+    private struct EventNode: Decodable {
+        let number: Int?
+        let title: String?
+        let url: String?
+        let closedAt: String?
+        let updatedAt: String?
+
+        var metric: GitHubRepositoryActivityEventMetric? {
+            guard let number,
+                  let title,
+                  let url,
+                  let occurredAt = closedAt ?? updatedAt
+            else {
+                return nil
+            }
+            return GitHubRepositoryActivityEventMetric(
+                number: number,
+                title: title,
+                htmlURL: url,
+                occurredAt: occurredAt
+            )
+        }
+    }
+
+    private struct SearchConnection: Decodable {
+        let issueCount: Int
+        let nodes: [EventNode?]?
+
+        var events: [GitHubRepositoryActivityEventMetric] {
+            nodes?.compactMap { $0?.metric } ?? []
+        }
+    }
+
+    private let createdPullRequests: SearchConnection
+    private let mergedPullRequests: SearchConnection
+    private let createdIssues: SearchConnection
+    private let closedIssues: SearchConnection
+    private let recentPullRequests: SearchConnection
+    private let recentIssues: SearchConnection
+
+    var metric: GitHubRepositoryActivityBundleMetric {
+        GitHubRepositoryActivityBundleMetric(
+            createdPullRequests: createdPullRequests.issueCount,
+            mergedPullRequests: mergedPullRequests.issueCount,
+            createdIssues: createdIssues.issueCount,
+            closedIssues: closedIssues.issueCount,
+            recentPullRequests: recentPullRequests.events,
+            recentIssues: recentIssues.events
+        )
+    }
+}
+
 private struct FixedGitHubTokenProvider: GitHubTokenProviding {
     let token: String?
 
@@ -774,6 +1014,7 @@ private struct GitHubMetricsInflightKey: Hashable, Sendable {
     let url: URL
     let ifNoneMatch: String?
     let authorizationIdentity: String?
+    let requestIdentity: String
 }
 
 /// `Any` 只用于同一 Key 的泛型响应暂存。Key 已同时固定 URL 和请求契约，同一 URL 在
