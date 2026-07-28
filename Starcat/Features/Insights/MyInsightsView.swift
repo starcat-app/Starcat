@@ -41,9 +41,11 @@ struct MyInsightsView: View {
                     }
                     .frame(maxWidth: .infinity, minHeight: 320)
                 } else if viewModel.isInitialLoading {
-                    ProgressView()
-                        .controlSize(.small)
+                    // 首次加载也保持内容区尺寸稳定；刷新状态只由右上角同步按钮表达，
+                    // 避免居中转圈让整个洞察页面看起来像被清空。
+                    Color.clear
                         .frame(maxWidth: .infinity, minHeight: 320)
+                        .accessibilityHidden(true)
                 } else {
                     LazyVStack(spacing: 14) {
                         if viewModel.showsStaleWarning {
