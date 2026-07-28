@@ -75,6 +75,9 @@ struct MyInsightsSnapshotProviderTests {
         #expect(action(.securityRisk, in: snapshot) == 1)
         #expect(snapshot.healthCoverage == InsightsCoverage(completed: 1, total: 3))
         #expect(snapshot.openSSFCoverage == InsightsCoverage(completed: 1, total: 3))
+        #expect(distribution("library", in: snapshot.knowledgeCoverageItems) == 0)
+        #expect(distribution("notes", in: snapshot.knowledgeCoverageItems) == 0)
+        #expect(distribution("tags", in: snapshot.knowledgeCoverageItems) == 1)
         let unknownLanguage = snapshot.languageItems.first {
             $0.title == "insights.technology.license.unknown"
         }
@@ -115,6 +118,9 @@ struct MyInsightsSnapshotProviderTests {
         #expect(action(.missingIndexableContent, in: snapshot) == 1)
         #expect(action(.indexIssues, in: snapshot) == 1)
         #expect(!snapshot.actionItems.contains(where: { $0.id == .allActions }))
+        #expect(distribution("readme", in: snapshot.knowledgeCoverageItems) == 1)
+        #expect(distribution("indexable", in: snapshot.knowledgeCoverageItems) == 2)
+        #expect(distribution("embeddingReady", in: snapshot.knowledgeCoverageItems) == 1)
 
         let changedModel = try await provider.load(
             scope: .knowledge,
@@ -207,6 +213,7 @@ struct MyInsightsSnapshotProviderTests {
         #expect(snapshot.priorityRepositories.isEmpty)
         #expect(snapshot.rhythmPoints.count == 12)
         #expect(snapshot.rhythmPoints.allSatisfy { $0.count == 0 })
+        #expect(snapshot.knowledgeCoverageItems.allSatisfy { $0.count == 0 })
     }
 
     @Test("资产清理独立计数并按 Star 数筛选高价值待整理仓库")

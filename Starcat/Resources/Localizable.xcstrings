@@ -128192,6 +128192,48 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "OpenSSF 評分" } }
       }
     },
+    "insights.knowledgeCoverage.embeddingReady" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Vector Index Ready" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "向量索引就绪" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "向量索引就緒" } }
+      }
+    },
+    "insights.knowledgeCoverage.indexable" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Indexable Content" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "可索引内容" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "可索引內容" } }
+      }
+    },
+    "insights.knowledgeCoverage.library" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved to Knowledge Base" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已加入知识库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "已加入知識庫" } }
+      }
+    },
+    "insights.knowledgeCoverage.notes" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "With Notes" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已有笔记" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "已有筆記" } }
+      }
+    },
+    "insights.knowledgeCoverage.readme" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "README Snapshot" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "README 快照" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "README 快照" } }
+      }
+    },
+    "insights.knowledgeCoverage.tags" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "With Tags" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已有标签" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "已有標籤" } }
+      }
+    },
     "insights.metric.knowledgeProjects.detail" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved to your private knowledge base" } },
@@ -128337,6 +128379,34 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Knowledge Base Growth" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识入库节奏" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "知識入庫節奏" } }
+      }
+    },
+    "insights.section.knowledgeDepositCoverage" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Knowledge Capture Coverage" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识沉淀覆盖" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "知識沉澱涵蓋" } }
+      }
+    },
+    "insights.section.knowledgeDepositCoverage.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "How much of your starred collection has been organized into reusable knowledge" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "收藏仓库转化为可复用知识的覆盖情况" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "收藏儲存庫轉化為可重用知識的涵蓋情況" } }
+      }
+    },
+    "insights.section.knowledgeIndexCoverage" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Knowledge Index Coverage" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识索引覆盖" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "知識索引涵蓋" } }
+      }
+    },
+    "insights.section.knowledgeIndexCoverage.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "README, indexable content, and current-model vector readiness" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "README、可索引内容与当前模型向量就绪情况" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "README、可索引內容與目前模型向量就緒情況" } }
       }
     },
     "insights.section.licenses" : {

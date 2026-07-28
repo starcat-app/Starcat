@@ -313,6 +313,7 @@ struct MyInsightsSnapshot: Equatable, Sendable {
     let assetSummary: InsightsAssetSummary
     let priorityRepositories: [InsightsRepositoryHighlight]
     let rhythmPoints: [InsightsRhythmPoint]
+    let knowledgeCoverageItems: [InsightsDistributionItem]
 }
 
 /// 仓库洞察活动统计。

@@ -206,6 +206,13 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
                     COALESCE(SUM(CASE WHEN
                         n.repo_id IS NULL OR n.status = 'unread'
                     THEN 1 ELSE 0 END), 0) AS unread_count,
+                    COALESCE(SUM(CASE WHEN n.library_state = 'in_library' THEN 1 ELSE 0 END), 0)
+                        AS library_count,
+                    COALESCE(SUM(CASE WHEN NULLIF(TRIM(n.content), '') IS NOT NULL THEN 1 ELSE 0 END), 0)
+                        AS noted_count,
+                    COALESCE(SUM(CASE WHEN EXISTS (
+                        SELECT 1 FROM repo_tags rt WHERE rt.repo_id = r.id
+                    ) THEN 1 ELSE 0 END), 0) AS tagged_count,
                     COALESCE(SUM(CASE WHEN
                         r.pushed_at IS NOT NULL
                         AND datetime(r.pushed_at) < datetime(?)
@@ -347,18 +354,22 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
             )
         }
 
+        let knowledgeRAG = scope == .knowledge
+            ? try knowledgeRAGCounts(db, embeddingModel: embeddingModel)
+            : nil
         var actionItems = [
             action(.untagged, count: overview["untagged_count"]),
             action(.unread, count: overview["unread_count"])
         ]
-        if scope == .knowledge {
-            let ragActions = try knowledgeRAGActionCounts(
-                db,
-                embeddingModel: embeddingModel
+        if let knowledgeRAG {
+            actionItems.append(action(.missingReadme, count: knowledgeRAG.missingReadme))
+            actionItems.append(
+                action(
+                    .missingIndexableContent,
+                    count: knowledgeRAG.missingIndexableContent
+                )
             )
-            actionItems.append(action(.missingReadme, count: ragActions.missingReadme))
-            actionItems.append(action(.missingIndexableContent, count: ragActions.missingIndexableContent))
-            actionItems.append(action(.indexIssues, count: ragActions.indexIssues))
+            actionItems.append(action(.indexIssues, count: knowledgeRAG.indexIssues))
         }
         actionItems.append(contentsOf: [
             action(.healthPending, count: max(0, totalCount - healthCompleted)),
@@ -420,7 +431,12 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
                 unavailableCount: overview["unavailable_count"]
             ),
             priorityRepositories: priorityRepositories,
-            rhythmPoints: rhythmPoints
+            rhythmPoints: rhythmPoints,
+            knowledgeCoverageItems: knowledgeCoverageItems(
+                overview: overview,
+                knowledgeRAG: knowledgeRAG,
+                total: totalCount
+            )
         )
     }
 
@@ -479,10 +495,17 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
     }
 
     /// 知识库 RAG 动作项复用 `KnowledgeBaseMetadataSnapshot` 的来源 / override 语义。
-    private static func knowledgeRAGActionCounts(
+    private static func knowledgeRAGCounts(
         _ db: Database,
         embeddingModel: String
-    ) throws -> (missingReadme: Int, missingIndexableContent: Int, indexIssues: Int) {
+    ) throws -> (
+        missingReadme: Int,
+        missingIndexableContent: Int,
+        indexIssues: Int,
+        readme: Int,
+        indexable: Int,
+        embeddingReady: Int
+    ) {
         let row = try Row.fetchOne(
             db,
             sql: """
@@ -514,17 +537,105 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
                                   AND c.embedding_model != ?
                               )
                           )
-                    ) THEN 1 ELSE 0 END), 0) AS index_issue_count
+                    ) THEN 1 ELSE 0 END), 0) AS index_issue_count,
+                    COALESCE(SUM(CASE WHEN EXISTS (
+                        SELECT 1 FROM rag_chunks c
+                        WHERE c.repo_id = n.repo_id AND c.source = 'readme'
+                    ) THEN 1 ELSE 0 END), 0) AS readme_count,
+                    COALESCE(SUM(CASE WHEN EXISTS (
+                        SELECT 1 FROM rag_chunks c
+                        WHERE c.repo_id = n.repo_id
+                          AND NOT EXISTS (
+                              SELECT 1 FROM rag_chunk_overrides o
+                              WHERE o.chunk_id = c.id AND o.is_excluded = 1
+                          )
+                    ) THEN 1 ELSE 0 END), 0) AS indexable_count,
+                    COALESCE(SUM(CASE WHEN EXISTS (
+                        SELECT 1 FROM rag_chunks c
+                        WHERE c.repo_id = n.repo_id
+                          AND c.embedding_status = 'ready'
+                          AND c.embedding_model = ?
+                          AND NOT EXISTS (
+                              SELECT 1 FROM rag_chunk_overrides o
+                              WHERE o.chunk_id = c.id AND o.is_excluded = 1
+                          )
+                    ) THEN 1 ELSE 0 END), 0) AS embedding_ready_count
                 FROM repo_notes n
                 WHERE n.library_state = 'in_library'
                 """,
-            arguments: [embeddingModel]
+            arguments: [embeddingModel, embeddingModel]
         )!
         return (
             missingReadme: row["missing_readme_count"],
             missingIndexableContent: row["missing_indexable_count"],
-            indexIssues: row["index_issue_count"]
+            indexIssues: row["index_issue_count"],
+            readme: row["readme_count"],
+            indexable: row["indexable_count"],
+            embeddingReady: row["embedding_ready_count"]
         )
+    }
+
+    private static func knowledgeCoverageItems(
+        overview: Row,
+        knowledgeRAG: (
+            missingReadme: Int,
+            missingIndexableContent: Int,
+            indexIssues: Int,
+            readme: Int,
+            indexable: Int,
+            embeddingReady: Int
+        )?,
+        total: Int
+    ) -> [InsightsDistributionItem] {
+        if let knowledgeRAG {
+            return [
+                distribution(
+                    "readme",
+                    "insights.knowledgeCoverage.readme",
+                    knowledgeRAG.readme,
+                    total,
+                    "blue"
+                ),
+                distribution(
+                    "indexable",
+                    "insights.knowledgeCoverage.indexable",
+                    knowledgeRAG.indexable,
+                    total,
+                    "purple"
+                ),
+                distribution(
+                    "embeddingReady",
+                    "insights.knowledgeCoverage.embeddingReady",
+                    knowledgeRAG.embeddingReady,
+                    total,
+                    "green"
+                )
+            ]
+        }
+
+        return [
+            distribution(
+                "library",
+                "insights.knowledgeCoverage.library",
+                overview["library_count"],
+                total,
+                "blue"
+            ),
+            distribution(
+                "notes",
+                "insights.knowledgeCoverage.notes",
+                overview["noted_count"],
+                total,
+                "purple"
+            ),
+            distribution(
+                "tags",
+                "insights.knowledgeCoverage.tags",
+                overview["tagged_count"],
+                total,
+                "green"
+            )
+        ]
     }
 
     private static func namedCounts(_ db: Database, sql: String) throws -> [NamedCount] {

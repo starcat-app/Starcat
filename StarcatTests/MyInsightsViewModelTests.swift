@@ -120,7 +120,8 @@ struct MyInsightsViewModelTests {
                 unavailableCount: 0
             ),
             priorityRepositories: [],
-            rhythmPoints: []
+            rhythmPoints: [],
+            knowledgeCoverageItems: []
         )
     }
 }

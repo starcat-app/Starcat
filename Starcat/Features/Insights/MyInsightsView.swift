@@ -99,6 +99,7 @@ struct MyInsightsView: View {
             metricGrid
             rhythmSection
             organizationSection
+            knowledgeCoverageSection
             priorityRepositoriesSection
             assetCleanupSection
             languageSection
@@ -111,6 +112,7 @@ struct MyInsightsView: View {
         case .organizationSummary:
             organizationSection
             rhythmSection
+            knowledgeCoverageSection
             priorityRepositoriesSection
             assetCleanupSection
             actionSection(organizationActions)
@@ -392,6 +394,38 @@ struct MyInsightsView: View {
                 openDrillDown(.language(item.id == "__unknown__" ? nil : item.title))
             }
         )
+    }
+
+    private var knowledgeCoverageSection: some View {
+        InsightsSectionContainer(
+            title: scope == .starred
+                ? "insights.section.knowledgeDepositCoverage"
+                : "insights.section.knowledgeIndexCoverage",
+            subtitle: scope == .starred
+                ? "insights.section.knowledgeDepositCoverage.subtitle"
+                : "insights.section.knowledgeIndexCoverage.subtitle",
+            systemImage: "books.vertical.fill"
+        ) {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 170), spacing: 24)],
+                spacing: 14
+            ) {
+                ForEach(snapshot.knowledgeCoverageItems) { item in
+                    coverageItem(
+                        title: LocalizedStringKey(item.title),
+                        coverage: InsightsCoverage(
+                            completed: item.count,
+                            total: insightsProjectCount
+                        ),
+                        tint: InsightsColor.resolve(item.colorName)
+                    )
+                }
+            }
+        }
+    }
+
+    private var insightsProjectCount: Int {
+        snapshot.metrics.first(where: { $0.id == "projects" })?.value ?? 0
     }
 
     /// 高 Star 且仍未读或未打标签的仓库优先展示，帮助用户从大批收藏里先处理高价值资产。

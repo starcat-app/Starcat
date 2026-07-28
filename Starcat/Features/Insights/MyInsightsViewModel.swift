@@ -140,7 +140,8 @@ final class MyInsightsViewModel {
                 unavailableCount: 0
             ),
             priorityRepositories: [],
-            rhythmPoints: []
+            rhythmPoints: [],
+            knowledgeCoverageItems: []
         )
     }
 }
