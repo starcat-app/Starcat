@@ -54,7 +54,7 @@ struct UserProjectsAPITests {
               "html_url": "https://github.com/Acme/private-tool",
               "clone_url": "https://github.com/Acme/private-tool.git",
               "ssh_url": "git@github.com:Acme/private-tool.git",
-              "private": true,
+              "private": false,
               "visibility": "internal",
               "fork": false,
               "archived": false,
@@ -113,6 +113,7 @@ struct UserProjectsAPITests {
         #expect(project.repo.id == 88)
         #expect(project.ownerType == .organization)
         #expect(project.visibility == .internal)
+        #expect(!project.repo.isPrivate)
         #expect(project.permission == .maintain)
         #expect(project.remoteProject(affiliation: .organizationMember).affiliation == .organizationMember)
     }

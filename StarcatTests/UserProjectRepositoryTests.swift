@@ -144,6 +144,30 @@ struct UserProjectRepositoryTests {
         }
     }
 
+    @Test("Internal visibility 强制投影为 Repo 私密标记")
+    func internalVisibilityMarksRepoPrivate() async throws {
+        let (projects, repos, _) = try makeSUT()
+        let internalProject = remote(
+            id: 12,
+            owner: "Acme",
+            name: "internal-tool",
+            affiliation: .organizationMember,
+            visibility: .internal
+        )
+        #expect(!internalProject.repo.isPrivate)
+
+        try await projects.upsertPage(
+            [internalProject],
+            userID: 7,
+            authorizationSource: .githubApp,
+            generation: "internal-generation",
+            seenAt: Date(timeIntervalSince1970: 200)
+        )
+
+        let saved = try #require(try await repos.findById(12))
+        #expect(saved.isPrivate)
+    }
+
     @Test("失败 generation 保留旧关系，成功后才清理")
     func generationCleanupOnlyAfterSuccess() async throws {
         let (projects, _, _) = try makeSUT()

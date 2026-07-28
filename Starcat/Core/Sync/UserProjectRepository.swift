@@ -127,6 +127,10 @@ struct GRDBUserProjectRepository: UserProjectRepositoryProtocol, Sendable {
                     cachedAt: seenAtISO,
                     isStarred: false
                 )
+                // GitHub Enterprise 的 Internal 是独立 visibility；不能依赖通用 DTO 的
+                // `private` 布尔值。所有非 Public 项目都投影为 Repo 私密标记，让 README、
+                // 分享、Discovery、External Search 与公共服务门禁使用同一可靠信号。
+                repo.isPrivate = remote.visibility != .public
                 // 项目同步只刷新 GitHub 元数据；Star 是另一条用户关系，必须以本地真值为准。
                 repo.isStarred = existingRepo?.isStarred == true
                 repo.starredAt = existingRepo?.isStarred == true ? existingRepo?.starredAt : nil
