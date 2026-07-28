@@ -647,6 +647,13 @@ struct GRDBRepoRepository {
         var args: [any DatabaseValueConvertible] = []
 
         switch scope {
+        case .myProjects(let userID):
+            joins.append(
+                "JOIN user_projects up_scope ON up_scope.repo_id = r.id AND up_scope.user_id = ?"
+            )
+            args.append(userID)
+            // 保证没有额外筛选时 WHERE 仍有合法谓词；项目成员关系已经由 JOIN 收窄。
+            whereClauses.append("1 = 1")
         case .allStars:
             whereClauses.append("r.is_starred = 1")
         case .library:

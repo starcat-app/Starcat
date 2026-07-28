@@ -16,6 +16,11 @@ import SwiftUI
 ///
 /// 只放 Core 层可理解的语义，避免 Repository 反向依赖 `SidebarItem` 这种 UI 导航枚举。
 enum RepoListScope: Equatable, Sendable {
+    /// 当前 GitHub 用户可访问的个人 / 组织项目。
+    ///
+    /// `userID` 必须参与查询：虽然 Starcat 会按账号切换数据库，异步同步仍可能跨越切库边界，
+    /// 关系表保留用户约束可以避免旧账号的项目短暂出现在新账号列表中。
+    case myProjects(userID: Int64)
     case allStars
     case library
     case untagged

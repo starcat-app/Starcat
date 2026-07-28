@@ -845,6 +845,86 @@ struct RepoRepositoryTests {
         #expect(try await repo.fetchListCount(scope: .githubStarList("list-1"), filters: .empty) == 2)
     }
 
+    @Test("DB Paging: 我的项目包含未 Star 项目并复用现有组合筛选")
+    func myProjectsScopeComposesExistingFilters() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 1, owner: "me", name: "personal")
+        try await db.insertRepoFixture(id: 2, owner: "acme", name: "private-tool")
+        try await db.insertRepoFixture(id: 3, owner: "other", name: "other-user")
+        try await db.insertRepoFixture(id: 4, owner: "me", name: "starred-only")
+
+        try await db.writer.write { db in
+            // id=1 模拟“是项目但未 Star”；id=4 模拟“已 Star 但不是项目”。
+            try db.execute(sql: "UPDATE repos SET is_starred = 0, starred_at = NULL WHERE id = 1")
+            try db.execute(sql: "UPDATE repos SET language = 'Go' WHERE id = 2")
+            try db.execute(
+                sql: """
+                    INSERT INTO user_projects (
+                        user_id, repo_id, affiliation, owner_login, owner_type, visibility,
+                        permission, authorization_source, installation_id, generation,
+                        last_seen_at, created_at, updated_at
+                    ) VALUES
+                        (7, 1, 'owner', 'me', 'user', 'public',
+                         'admin', 'oauth', NULL, 'g1',
+                         '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z'),
+                        (7, 2, 'organization_member', 'acme', 'organization', 'private',
+                         'maintain', 'github_app', NULL, 'g1',
+                         '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z'),
+                        (8, 3, 'owner', 'other', 'user', 'public',
+                         'admin', 'oauth', NULL, 'g1',
+                         '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z')
+                    """
+            )
+            try db.execute(
+                sql: """
+                    INSERT INTO repo_notes (repo_id, content, status, library_state, is_ai_generated)
+                    VALUES (1, 'project note', 'using', 'in_library', 0)
+                    """
+            )
+            try db.execute(
+                sql: """
+                    INSERT INTO tags (id, name, created_at, updated_at)
+                    VALUES ('project-tag', '项目', '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z')
+                    """
+            )
+            try db.execute(
+                sql: """
+                    INSERT INTO repo_tags (repo_id, tag_id, created_at)
+                    VALUES (1, 'project-tag', '2026-07-29T00:00:00Z')
+                    """
+            )
+        }
+
+        let allProjects = try await repo.fetchListPage(
+            scope: .myProjects(userID: 7),
+            filters: .empty,
+            sort: .nameAsc,
+            limit: 20,
+            offset: 0
+        )
+        #expect(allProjects.map(\.id) == [2, 1])
+        #expect(try await repo.fetchListCount(scope: .myProjects(userID: 7), filters: .empty) == 2)
+
+        var unstarredInLibrary = RepoListFilters.empty
+        unstarredInLibrary.star = .unstarred
+        unstarredInLibrary.library = .inLibrary
+        unstarredInLibrary.language = .language("Swift")
+        unstarredInLibrary.status = .using
+        unstarredInLibrary.selectedTagIDs = ["project-tag"]
+        let filtered = try await repo.fetchListPage(
+            scope: .myProjects(userID: 7),
+            filters: unstarredInLibrary,
+            sort: .nameAsc,
+            limit: 20,
+            offset: 0
+        )
+        #expect(filtered.map(\.id) == [1])
+
+        // 相同 scope 仍按 user_id 隔离；普通 Star 列表也不能被项目关系扩张。
+        #expect(try await repo.fetchListCount(scope: .myProjects(userID: 8), filters: .empty) == 1)
+        #expect(try await repo.fetchListCount(scope: .allStars, filters: .empty) == 3)
+    }
+
     @Test("DB Paging: Health 排序按分数倒序且无分数排最后")
     func listPageSortsByHealthScoreDescending() async throws {
         let (repo, db) = try makeRepo()
