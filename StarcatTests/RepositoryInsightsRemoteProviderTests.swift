@@ -127,6 +127,56 @@ struct RepositoryInsightsRemoteProviderTests {
         #expect(cachedRecent.value == recentValue)
     }
 
+    @Test("完整冷加载正常路径最多五次请求并写入六类缓存")
+    func fullColdLoadUsesFiveRequestBudget() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 28, owner: "octo", name: "budget")
+        let httpClient = FullLoadMetricsHTTPClient()
+        let now = try #require(
+            ISO8601DateFormatter().date(from: "2026-07-27T12:00:00Z")
+        )
+        let provider = DefaultRepositoryRemoteInsightsProvider(
+            metricsClient: DefaultGitHubRepositoryMetricsClient(
+                httpClient: httpClient,
+                token: "token",
+                baseURL: URL(string: "https://api.example.test")!
+            ),
+            cache: GRDBRepositoryInsightsCache(database: database),
+            now: { now }
+        )
+        let repository = RepoIdentity(ghRepoID: 28, owner: "octo", name: "budget")
+
+        async let activity = provider.refreshActivity(repository: repository, range: .month)
+        async let commit = provider.refreshCommitActivity(repository: repository)
+        async let contributors = provider.refreshContributors(repository: repository)
+        async let community = provider.refreshCommunityProfile(repository: repository)
+        async let security = provider.refreshSecurityAdvisories(repository: repository)
+        async let recent = provider.refreshRecentActivity(
+            repository: repository,
+            activityRange: .month
+        )
+        _ = try await (activity, commit, contributors, community, security, recent)
+
+        let requests = await httpClient.requests()
+        let paths = requests.compactMap(\.url?.path)
+        #expect(requests.count == 5)
+        #expect(paths.filter { $0 == "/graphql" }.count == 1)
+        #expect(Set(paths) == [
+            "/graphql",
+            "/repos/octo/budget/stats/commit_activity",
+            "/repos/octo/budget/contributors",
+            "/repos/octo/budget/community/profile",
+            "/repos/octo/budget/security-advisories"
+        ])
+        #expect(try await provider.cachedActivity(repoID: 28, range: .month) != nil)
+        #expect(try await provider.cachedCommitActivity(repoID: 28) != nil)
+        #expect(try await provider.cachedContributors(repoID: 28) != nil)
+        #expect(try await provider.cachedCommunityProfile(repoID: 28) != nil)
+        #expect(try await provider.cachedSecurityAdvisories(repoID: 28) != nil)
+        #expect(try await provider.cachedRecentActivity(repoID: 28) != nil)
+        #expect(await httpClient.requests().count == 5)
+    }
+
     @Test("Commit activity 保存 52 周原始结果并由客户端按活动范围裁剪")
     func commitActivityPersistsAndFiltersOnClient() async throws {
         let database = try InMemoryDatabaseManager()
@@ -553,6 +603,65 @@ private actor ActivityBundleHTTPClient: RAGHTTPClientProtocol {
                 statusCode: 200,
                 httpVersion: "HTTP/1.1",
                 headerFields: nil
+            )!
+        )
+    }
+
+    func requests() -> [URLRequest] {
+        recordedRequests
+    }
+}
+
+/// 仓库洞察完整冷加载的请求预算桩；按真实路径返回最小合法响应。
+private actor FullLoadMetricsHTTPClient: RAGHTTPClientProtocol {
+    private var recordedRequests: [URLRequest] = []
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        recordedRequests.append(request)
+        let body: String
+        switch request.url?.path {
+        case "/graphql":
+            // 留出窗口让 Activity 与 Recent 同时进入 Metrics in-flight tracker。
+            try await Task.sleep(for: .milliseconds(30))
+            body = """
+            {
+              "data":{
+                "createdPullRequests":{"issueCount":8},
+                "mergedPullRequests":{"issueCount":5},
+                "createdIssues":{"issueCount":13},
+                "closedIssues":{"issueCount":7},
+                "recentPullRequests":{"issueCount":0,"nodes":[]},
+                "recentIssues":{"issueCount":0,"nodes":[]}
+              }
+            }
+            """
+        case "/repos/octo/budget/stats/commit_activity",
+             "/repos/octo/budget/contributors",
+             "/repos/octo/budget/security-advisories":
+            body = "[]"
+        case "/repos/octo/budget/community/profile":
+            body = """
+            {
+              "health_percentage":75,
+              "files":{
+                "code_of_conduct":null,
+                "code_of_conduct_file":null,
+                "contributing":null,
+                "license":null,
+                "readme":null
+              }
+            }
+            """
+        default:
+            throw URLError(.badURL)
+        }
+        return (
+            Data(body.utf8),
+            HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["ETag": "\"budget-v1\""]
             )!
         )
     }
