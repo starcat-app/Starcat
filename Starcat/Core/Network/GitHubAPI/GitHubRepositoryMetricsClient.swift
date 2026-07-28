@@ -802,6 +802,7 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
             issueCount
           }
           recentPullRequests: search(query: $recentPullRequests, type: ISSUE, first: 5) {
+            issueCount
             nodes {
               ... on PullRequest {
                 number
@@ -813,6 +814,7 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
             }
           }
           recentIssues: search(query: $recentIssues, type: ISSUE, first: 5) {
+            issueCount
             nodes {
               ... on Issue {
                 number

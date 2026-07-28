@@ -79,6 +79,54 @@ struct RepositoryInsightsRemoteProviderTests {
         #expect(counts.netIssueChange == -4)
     }
 
+    @Test("活动概览与最近动态并发加载只发出一次 GraphQL 请求")
+    func activityAndRecentActivityShareGraphQLBundle() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 27, owner: "octo", name: "bundle")
+        let httpClient = ActivityBundleHTTPClient()
+        let now = try #require(
+            ISO8601DateFormatter().date(from: "2026-07-27T12:00:00Z")
+        )
+        let provider = DefaultRepositoryRemoteInsightsProvider(
+            metricsClient: DefaultGitHubRepositoryMetricsClient(
+                httpClient: httpClient,
+                token: "token",
+                baseURL: URL(string: "https://api.example.test")!
+            ),
+            cache: GRDBRepositoryInsightsCache(database: database),
+            now: { now }
+        )
+        let repository = RepoIdentity(ghRepoID: 27, owner: "octo", name: "bundle")
+
+        async let activity = provider.refreshActivity(
+            repository: repository,
+            range: .month
+        )
+        async let recent = provider.refreshRecentActivity(
+            repository: repository,
+            activityRange: .month
+        )
+        let (activityValue, recentValue) = try await (activity, recent)
+        let requests = await httpClient.requests()
+        let cachedActivity = try #require(
+            try await provider.cachedActivity(repoID: 27, range: .month)
+        )
+        let cachedRecent = try #require(
+            try await provider.cachedRecentActivity(repoID: 27)
+        )
+
+        #expect(requests.count == 1)
+        #expect(requests[0].httpMethod == "POST")
+        #expect(requests[0].url?.path == "/graphql")
+        #expect(activityValue.createdPullRequests == 8)
+        #expect(activityValue.mergedPullRequests == 5)
+        #expect(activityValue.createdIssues == 13)
+        #expect(activityValue.closedIssues == 7)
+        #expect(recentValue.events.map(\.id) == ["issue-7", "pullRequest-42"])
+        #expect(cachedActivity.value == activityValue)
+        #expect(cachedRecent.value == recentValue)
+    }
+
     @Test("Commit activity 保存 52 周原始结果并由客户端按活动范围裁剪")
     func commitActivityPersistsAndFiltersOnClient() async throws {
         let database = try InMemoryDatabaseManager()
@@ -382,11 +430,75 @@ private actor ActivityMetricsHTTPClient: RAGHTTPClientProtocol {
     }
 
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        if request.url?.path == "/graphql" {
+            return (
+                Data(#"{"message":"GraphQL unavailable"}"#.utf8),
+                HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 500,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: nil
+                )!
+            )
+        }
         recordedRequests.append(request)
         let total = totals.removeFirst()
         let data = Data("{\"total_count\":\(total),\"items\":[]}".utf8)
         return (
             data,
+            HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: nil
+            )!
+        )
+    }
+
+    func requests() -> [URLRequest] {
+        recordedRequests
+    }
+}
+
+private actor ActivityBundleHTTPClient: RAGHTTPClientProtocol {
+    private var recordedRequests: [URLRequest] = []
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        recordedRequests.append(request)
+        // 留出足够时间让第二个 Provider 调用进入 Metrics Client，共享同一 in-flight Task。
+        try await Task.sleep(for: .milliseconds(30))
+        let body = """
+        {
+          "data":{
+            "createdPullRequests":{"issueCount":8},
+            "mergedPullRequests":{"issueCount":5},
+            "createdIssues":{"issueCount":13},
+            "closedIssues":{"issueCount":7},
+            "recentPullRequests":{
+              "issueCount":1,
+              "nodes":[{
+                "number":42,
+                "title":"Improve cache",
+                "url":"https://github.com/octo/bundle/pull/42",
+                "closedAt":"2026-07-25T00:00:00Z",
+                "updatedAt":"2026-07-25T00:00:00Z"
+              }]
+            },
+            "recentIssues":{
+              "issueCount":1,
+              "nodes":[{
+                "number":7,
+                "title":"Fix crash",
+                "url":"https://github.com/octo/bundle/issues/7",
+                "closedAt":"2026-07-26T00:00:00Z",
+                "updatedAt":"2026-07-26T00:00:00Z"
+              }]
+            }
+          }
+        }
+        """
+        return (
+            Data(body.utf8),
             HTTPURLResponse(
                 url: request.url!,
                 statusCode: 200,
@@ -548,6 +660,17 @@ private actor RecentActivityHTTPClient: RAGHTTPClientProtocol {
     private var recordedQueries: [String] = []
 
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        if request.url?.path == "/graphql" {
+            return (
+                Data(#"{"message":"GraphQL unavailable"}"#.utf8),
+                HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 500,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: nil
+                )!
+            )
+        }
         let query = URLComponents(
             url: request.url!,
             resolvingAgainstBaseURL: false
