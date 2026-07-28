@@ -15,7 +15,7 @@
 - [x] 固化整体落地方案和专项验收口径。
 - [ ] Sidebar 新增固定一级分类“我的项目”。
 - [x] 项目关系与 Star、知识库、Smart Collection 相互独立。
-- [ ] 首版范围限定为个人拥有仓库和组织成员仓库，不包含外部个人协作者仓库。
+- [x] 首版范围限定为个人拥有仓库和组织成员仓库，不包含外部个人协作者仓库。
 - [ ] Public 项目可由现有 OAuth 提供 fallback。
 - [ ] Private / Internal 使用可选 GitHub App 只读授权。
 - [ ] 不把现有 OAuth 扩大为 `repo` scope。
@@ -38,10 +38,10 @@
 - [ ] GitHub App token 使用独立 Keychain account。
 - [ ] 实现 GitHub App Device Flow、token 刷新/过期/撤销状态。
 - [ ] 实现按用途选择 OAuth / GitHub App token 的凭据路由。
-- [ ] 实现 owner / organization_member 两条 `/user/repos` 分页链。
-- [ ] 实现 OAuth `visibility=public` fallback 和 GitHub App `visibility=all`。
-- [ ] 实现分页、Link Header、分 affiliation ETag、Rate Limit 和失败保旧值。
-- [ ] 实现后台有界同步和并发去重。
+- [x] 实现 owner / organization_member 两条 `/user/repos` 分页链。
+- [x] 实现 OAuth `visibility=public` fallback 和 GitHub App `visibility=all`。
+- [x] 实现分页、Link Header、分 affiliation ETag、Rate Limit 和失败保旧值。
+- [x] 实现后台有界同步和并发去重。
 - [ ] 实现首次连接、授权返回、启动刷新、后台刷新和手动刷新触发。
 
 ## 4. 查询与 UI
@@ -71,7 +71,7 @@
 
 - [x] v16 → v17 升级保留全部用户数据。
 - [x] Repository 覆盖关系交叉、筛选、分页、generation 和删除语义。
-- [ ] API 覆盖 DTO、Link Header、304、401、403、Rate Limit 和中途失败。
+- [x] API 覆盖 DTO、Link Header、304、401、403、Rate Limit 和中途失败。
 - [ ] 授权覆盖 Device Flow、独立 session、token 过期/撤销和 OAuth 不受影响。
 - [ ] ViewModel 覆盖 scope、筛选隔离、计数、selection、刷新和并发代际。
 - [ ] 隐私测试证明 Private 项目不构造公共服务请求。

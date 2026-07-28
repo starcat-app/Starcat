@@ -28,6 +28,18 @@ struct GitHubUserProjectDTO: Decodable, @unchecked Sendable {
     let visibility: ProjectVisibility
     let permission: ProjectPermission
 
+    init(
+        repo: GitHubRepoDTO,
+        ownerType: ProjectOwnerType,
+        visibility: ProjectVisibility,
+        permission: ProjectPermission
+    ) {
+        self.repo = repo
+        self.ownerType = ownerType
+        self.visibility = visibility
+        self.permission = permission
+    }
+
     private enum CodingKeys: String, CodingKey {
         case owner
         case visibility

@@ -15,6 +15,14 @@ import Foundation
 import GRDB
 
 protocol UserProjectRepositoryProtocol: Sendable {
+    func beginGeneration(
+        userID: Int64,
+        affiliation: ProjectAffiliation,
+        authorizationSource: ProjectAuthorizationSource,
+        generation: String,
+        startedAt: Date
+    ) async throws
+
     func upsertPage(
         _ projects: [RemoteUserProject],
         userID: Int64,
@@ -62,6 +70,39 @@ struct GRDBUserProjectRepository: UserProjectRepositoryProtocol, Sendable {
 
     init(database: any DatabaseManaging) {
         self.database = database
+    }
+
+    func beginGeneration(
+        userID: Int64,
+        affiliation: ProjectAffiliation,
+        authorizationSource: ProjectAuthorizationSource,
+        generation: String,
+        startedAt: Date
+    ) async throws {
+        let startedAtISO = ISO8601DateFormatter.shared.string(from: startedAt)
+        try await database.writer.write { db in
+            let previous = try ProjectSyncState.fetchOne(
+                db,
+                sql: """
+                    SELECT * FROM project_sync_state
+                    WHERE user_id = ? AND credential_kind = ? AND affiliation = ?
+                    """,
+                arguments: [userID, authorizationSource.rawValue, affiliation.rawValue]
+            )
+            var state = ProjectSyncState(
+                userId: userID,
+                credentialKind: authorizationSource,
+                affiliation: affiliation,
+                etag: previous?.etag,
+                generation: generation,
+                lastAttemptAt: startedAtISO,
+                lastSuccessAt: previous?.lastSuccessAt,
+                syncStatus: .syncing,
+                errorCode: nil,
+                updatedAt: startedAtISO
+            )
+            try state.save(db)
+        }
     }
 
     func upsertPage(
