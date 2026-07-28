@@ -1405,12 +1405,21 @@ final class AppDependencies {
     func switchUserDatabase(to userId: Int64?) async throws {
         let previousUserId = database.currentUserId
         if previousUserId != userId {
-            // 先阻断并等待旧账号普通洞察请求，再切 writer。仅依赖 Key 隔离还不够：
-            // 网络响应可能在 reopen 后返回，进而把旧账号数据写进新数据库。
-            await repositoryMetricsClient.clearTransientState()
+            // 屏障从清理前一直保持到 reopen 结束；新请求会等待并在 end 后重新读取 Token。
+            await repositoryMetricsClient.beginDatabaseScopeChange()
             await repositoryInsightsCache.clearTransientState()
         }
-        try await database.reopen(userId: userId)
+        do {
+            try await database.reopen(userId: userId)
+        } catch {
+            if previousUserId != userId {
+                await repositoryMetricsClient.endDatabaseScopeChange()
+            }
+            throw error
+        }
+        if previousUserId != userId {
+            await repositoryMetricsClient.endDatabaseScopeChange()
+        }
         guard database.currentUserId != previousUserId else { return }
         databaseScopeRevision &+= 1
     }

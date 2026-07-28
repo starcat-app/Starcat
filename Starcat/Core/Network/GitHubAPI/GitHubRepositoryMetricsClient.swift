@@ -290,6 +290,10 @@ protocol GitHubRepositoryMetricsClient: Sendable {
     /// 切换认证 / 数据库作用域前取消普通洞察请求，并清空只属于旧账号的退避状态。
     func clearTransientState() async
 
+    /// begin / end 覆盖整个 DatabaseManager.reopen 窗口，避免清理后又插入新请求。
+    func beginDatabaseScopeChange() async
+    func endDatabaseScopeChange() async
+
     func loadActivityBundle(
         repository: RepoIdentity,
         dateRange: String
@@ -339,6 +343,10 @@ protocol GitHubRepositoryMetricsClient: Sendable {
 
 extension GitHubRepositoryMetricsClient {
     func clearTransientState() async {}
+    func beginDatabaseScopeChange() async {
+        await clearTransientState()
+    }
+    func endDatabaseScopeChange() async {}
 
     func searchIssues(
         repository: RepoIdentity,
@@ -502,6 +510,7 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
     private let now: @Sendable () -> Date
     private let requestGate = GitHubMetricsRequestGate()
     private let inflightTracker = GitHubMetricsInflightTracker()
+    private let databaseScopeBarrier = GitHubMetricsDatabaseScopeBarrier()
     private var rateLimitBackoffUntil: [GitHubMetricsAuthorizationIdentity: Date] = [:]
     private var endpointFailureStates: [
         GitHubMetricsFailureKey: GitHubMetricsFailureState
@@ -523,23 +532,25 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
         repository: RepoIdentity,
         dateRange: String
     ) async throws -> GitHubRepositoryActivityBundleMetric {
-        try Task.checkCancellation()
-        let currentToken = await tokenProvider.currentToken()?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let url = endpoints.baseURL.appendingPathComponent("graphql")
-        let key = GitHubMetricsInflightKey(
-            url: url,
-            ifNoneMatch: nil,
-            authorizationIdentity: currentToken,
-            requestIdentity: "activity-bundle:\(repository.owner)/\(repository.name):\(dateRange)"
-        )
-        return try await inflightTracker.value(for: key) { [self] in
-            try await executeSerializedActivityBundle(
+        try await withDatabaseScope { [self] in
+            try Task.checkCancellation()
+            let currentToken = await tokenProvider.currentToken()?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let url = endpoints.baseURL.appendingPathComponent("graphql")
+            let key = GitHubMetricsInflightKey(
                 url: url,
-                repository: repository,
-                dateRange: dateRange,
-                token: currentToken
+                ifNoneMatch: nil,
+                authorizationIdentity: currentToken,
+                requestIdentity: "activity-bundle:\(repository.owner)/\(repository.name):\(dateRange)"
             )
+            return try await inflightTracker.value(for: key) { [self] in
+                try await executeSerializedActivityBundle(
+                    url: url,
+                    repository: repository,
+                    dateRange: dateRange,
+                    token: currentToken
+                )
+            }
         }
     }
 
@@ -557,11 +568,36 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
     }
 
     func clearTransientState() async {
-        // 必须等待普通洞察请求真正结束后再允许 DatabaseManager.reopen；
-        // 否则旧账号响应可能在新 writer 生效后才写入 SQLite。
+        await beginDatabaseScopeChange()
+        await endDatabaseScopeChange()
+    }
+
+    func beginDatabaseScopeChange() async {
+        // 先关闭入口，后续调用会在读取 Token 前等待；再取消已存在的普通洞察 Task。
+        // observer 请求不强制取消，但必须自然结束后才能允许数据库 reopen。
+        await databaseScopeBarrier.beginChange()
         await inflightTracker.cancelAllAndWait()
+        await databaseScopeBarrier.waitUntilDrained()
         rateLimitBackoffUntil.removeAll(keepingCapacity: true)
         endpointFailureStates.removeAll(keepingCapacity: true)
+    }
+
+    func endDatabaseScopeChange() async {
+        await databaseScopeBarrier.endChange()
+    }
+
+    private func withDatabaseScope<Value: Sendable>(
+        _ operation: () async throws -> Value
+    ) async throws -> Value {
+        await databaseScopeBarrier.enter()
+        do {
+            let value = try await operation()
+            await databaseScopeBarrier.leave()
+            return value
+        } catch {
+            await databaseScopeBarrier.leave()
+            throw error
+        }
     }
 
     func searchIssues(
@@ -660,36 +696,38 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
         ifNoneMatch: String? = nil,
         observer: GitHubMetricsRequestObserver?
     ) async throws -> GitHubMetricsResponse<Value> {
-        try Task.checkCancellation()
-        let currentToken = await tokenProvider.currentToken()?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        try await withDatabaseScope { [self] in
+            try Task.checkCancellation()
+            let currentToken = await tokenProvider.currentToken()?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // RAG observer 需要一一对应的 request / response / failure Trace，不能与普通洞察
-        // 请求合并；普通洞察没有 observer，完全相同的 URL、validator、认证身份可以安全
-        // 共享同一 Task。Token 只作为内存 Key，不记录日志或写入磁盘。
-        if observer == nil {
-            let key = GitHubMetricsInflightKey(
-                url: url,
-                ifNoneMatch: ifNoneMatch,
-                authorizationIdentity: currentToken,
-                requestIdentity: "GET"
-            )
-            return try await inflightTracker.value(for: key) { [self] in
-                try await executeSerializedGet(
-                    url,
+            // RAG observer 需要一一对应的 request / response / failure Trace，不能与普通洞察
+            // 请求合并；普通洞察没有 observer，完全相同的 URL、validator、认证身份可以安全
+            // 共享同一 Task。Token 只作为内存 Key，不记录日志或写入磁盘。
+            if observer == nil {
+                let key = GitHubMetricsInflightKey(
+                    url: url,
                     ifNoneMatch: ifNoneMatch,
-                    token: currentToken,
-                    observer: nil
+                    authorizationIdentity: currentToken,
+                    requestIdentity: "GET"
                 )
+                return try await inflightTracker.value(for: key) { [self] in
+                    try await executeSerializedGet(
+                        url,
+                        ifNoneMatch: ifNoneMatch,
+                        token: currentToken,
+                        observer: nil
+                    )
+                }
             }
-        }
 
-        return try await executeSerializedGet(
-            url,
-            ifNoneMatch: ifNoneMatch,
-            token: currentToken,
-            observer: observer
-        )
+            return try await executeSerializedGet(
+                url,
+                ifNoneMatch: ifNoneMatch,
+                token: currentToken,
+                observer: observer
+            )
+        }
     }
 
     /// gate 必须包住真正的网络 await。in-flight 合并发生在 gate 之前，否则重复调用会
@@ -1270,6 +1308,49 @@ private actor GitHubMetricsInflightTracker {
         for task in tasks {
             _ = try? await task.value
         }
+    }
+}
+
+/// 数据库作用域读写屏障：请求持有 read lease；切库先关闭入口、取消请求并等待 drain。
+private actor GitHubMetricsDatabaseScopeBarrier {
+    private var isChanging = false
+    private var activeRequests = 0
+    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+    private var drainWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func enter() async {
+        while isChanging {
+            await withCheckedContinuation { continuation in
+                entryWaiters.append(continuation)
+            }
+        }
+        activeRequests += 1
+    }
+
+    func leave() {
+        activeRequests = max(0, activeRequests - 1)
+        guard activeRequests == 0 else { return }
+        let waiters = drainWaiters
+        drainWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+    }
+
+    func beginChange() {
+        isChanging = true
+    }
+
+    func waitUntilDrained() async {
+        guard activeRequests > 0 else { return }
+        await withCheckedContinuation { continuation in
+            drainWaiters.append(continuation)
+        }
+    }
+
+    func endChange() {
+        isChanging = false
+        let waiters = entryWaiters
+        entryWaiters.removeAll()
+        waiters.forEach { $0.resume() }
     }
 }
 
