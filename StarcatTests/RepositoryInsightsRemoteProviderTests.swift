@@ -388,7 +388,7 @@ struct RepositoryInsightsRemoteProviderTests {
         #expect(refreshed.latestPublishedAt == refreshed.advisories.first?.publishedAt)
         #expect(cached.value == refreshed)
         #expect(!cached.isStale)
-        #expect(RepositoryInsightsDataset.securityAdvisories.timeToLive == 24 * 60 * 60)
+        #expect(RepositoryInsightsDataset.securityAdvisories.timeToLive == 6 * 60 * 60)
     }
 
     @Test("最近活动合并 PR 与 Issue 并按真实时间倒序缓存")

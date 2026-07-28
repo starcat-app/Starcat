@@ -65,6 +65,8 @@ struct RepositoryInsightsCacheTests {
             )
         )
         #expect(contributors.staleAfter.timeIntervalSince(contributors.fetchedAt) == 24 * 60 * 60)
+        #expect(RepositoryInsightsDataset.communityProfile.timeToLive == 3 * 24 * 60 * 60)
+        #expect(RepositoryInsightsDataset.securityAdvisories.timeToLive == 6 * 60 * 60)
     }
 
     @Test("相同主键覆盖写且不同 range 互不影响")
