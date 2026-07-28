@@ -127718,9 +127718,9 @@
     },
     "insights.repo.releaseCadence.averageInterval" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Average interval" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "平均间隔" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "平均間隔" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Avg. of last 12" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "近 12 次平均" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "近 12 次平均" } }
       }
     },
     "insights.repo.releaseCadence.daysFormat" : {
