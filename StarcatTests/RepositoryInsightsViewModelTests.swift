@@ -143,7 +143,7 @@ struct RepositoryInsightsViewModelTests {
         #expect(viewModel.securityAdvisoriesState.visibleValue == cached)
     }
 
-    @Test("手动刷新期间所有远端区块保持现有内容")
+    @Test("五个独立刷新入口在刷新期间保持现有内容")
     func manualRefreshKeepsVisibleContentUntilFreshValuesArrive() async {
         let generatedAt = Date(timeIntervalSince1970: 2_000)
         let activity = RepositoryActivityCounts(
@@ -378,6 +378,32 @@ struct RepositoryInsightsViewModelTests {
             hasContributing: true,
             hasLicense: true
         )
+        let securityAdvisories = RepositorySecurityAdvisoriesInsight(
+            advisories: [
+                RepositorySecurityAdvisory(
+                    id: "GHSA-old",
+                    cveID: nil,
+                    summary: "Old advisory",
+                    severity: "low",
+                    htmlURL: nil,
+                    publishedAt: generatedAt
+                )
+            ],
+            generatedAt: generatedAt
+        )
+        let refreshedSecurityAdvisories = RepositorySecurityAdvisoriesInsight(
+            advisories: [
+                RepositorySecurityAdvisory(
+                    id: "GHSA-new",
+                    cveID: "CVE-2026-2",
+                    summary: "New advisory",
+                    severity: "high",
+                    htmlURL: nil,
+                    publishedAt: generatedAt.addingTimeInterval(30)
+                )
+            ],
+            generatedAt: generatedAt.addingTimeInterval(30)
+        )
         let recentActivity = RepositoryRecentActivity(
             events: [
                 RepositoryRecentActivityEvent(
@@ -404,7 +430,7 @@ struct RepositoryInsightsViewModelTests {
             ],
             generatedAt: generatedAt.addingTimeInterval(30)
         )
-        let refreshGate = RepositoryInsightsRefreshGate(expectedCount: 5)
+        let refreshGate = RepositoryInsightsRefreshGate(expectedCount: 6)
         let remoteProvider = StubRepositoryRemoteInsightsProvider(
             cachedHandler: { _, _ in
                 RepositoryCachedActivityCounts(
@@ -450,6 +476,17 @@ struct RepositoryInsightsViewModelTests {
                 await refreshGate.block()
                 return refreshedCommunity
             },
+            cachedSecurityAdvisoriesHandler: { _ in
+                RepositoryCachedSecurityAdvisoriesInsight(
+                    value: securityAdvisories,
+                    fetchedAt: generatedAt,
+                    isStale: false
+                )
+            },
+            refreshSecurityAdvisoriesHandler: { _ in
+                await refreshGate.block()
+                return refreshedSecurityAdvisories
+            },
             cachedRecentActivityHandler: { _ in
                 RepositoryCachedRecentActivity(
                     value: recentActivity,
@@ -481,6 +518,7 @@ struct RepositoryInsightsViewModelTests {
         #expect(viewModel.commitActivityState == .content(commitActivity))
         #expect(viewModel.contributorsState == .content(contributors))
         #expect(viewModel.remoteCommunityState == .content(community))
+        #expect(viewModel.securityAdvisoriesState == .content(securityAdvisories))
         #expect(viewModel.recentActivityState == .content(recentActivity))
 
         await refreshGate.release()
@@ -491,6 +529,7 @@ struct RepositoryInsightsViewModelTests {
         #expect(viewModel.commitActivityState == .content(refreshedCommitActivity))
         #expect(viewModel.contributorsState == .content(refreshedContributors))
         #expect(viewModel.remoteCommunityState == .content(refreshedCommunity))
+        #expect(viewModel.securityAdvisoriesState == .content(refreshedSecurityAdvisories))
         #expect(viewModel.recentActivityState == .content(refreshedRecentActivity))
     }
 
@@ -944,7 +983,7 @@ private actor RepositoryInsightsRemoteCallRecorder {
     }
 }
 
-/// 同时冻结五个手动刷新请求，确保断言读取的是网络返回前的稳定 UI 状态。
+/// 冻结本次测试声明的全部刷新请求，确保断言读取的是网络返回前的稳定 UI 状态。
 private actor RepositoryInsightsRefreshGate {
     private let expectedCount: Int
     private var blockedCount = 0
