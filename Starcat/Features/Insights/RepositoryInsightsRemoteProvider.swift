@@ -510,13 +510,21 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
             )
             return value
         } catch GitHubRepositoryMetricsError.notModified(let responseETag) {
-            return try await revalidatedCachedValue(
-                repoID: repoID,
-                dataset: .commitActivity,
-                fetchedAt: fetchedAt,
-                responseETag: responseETag ?? ifNoneMatch,
-                as: RepositoryCommitActivity.self
-            )
+            do {
+                return try await revalidatedCachedValue(
+                    repoID: repoID,
+                    dataset: .commitActivity,
+                    fetchedAt: fetchedAt,
+                    responseETag: responseETag ?? ifNoneMatch,
+                    as: RepositoryCommitActivity.self
+                )
+            } catch GitHubRepositoryMetricsError.invalidResponse where ifNoneMatch != nil {
+                // 请求在飞行期间缓存可能被清理；最多无条件重拉一次，避免 304 对应空 payload。
+                return try await refreshCommitActivity(
+                    repository: repository,
+                    ifNoneMatch: nil
+                )
+            }
         }
     }
 
@@ -583,13 +591,20 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
             )
             return value
         } catch GitHubRepositoryMetricsError.notModified(let responseETag) {
-            return try await revalidatedCachedValue(
-                repoID: repoID,
-                dataset: .contributors,
-                fetchedAt: fetchedAt,
-                responseETag: responseETag ?? ifNoneMatch,
-                as: RepositoryContributorsInsight.self
-            )
+            do {
+                return try await revalidatedCachedValue(
+                    repoID: repoID,
+                    dataset: .contributors,
+                    fetchedAt: fetchedAt,
+                    responseETag: responseETag ?? ifNoneMatch,
+                    as: RepositoryContributorsInsight.self
+                )
+            } catch GitHubRepositoryMetricsError.invalidResponse where ifNoneMatch != nil {
+                return try await refreshContributors(
+                    repository: repository,
+                    ifNoneMatch: nil
+                )
+            }
         }
     }
 
@@ -654,13 +669,20 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
             )
             return value
         } catch GitHubRepositoryMetricsError.notModified(let responseETag) {
-            return try await revalidatedCachedValue(
-                repoID: repoID,
-                dataset: .communityProfile,
-                fetchedAt: fetchedAt,
-                responseETag: responseETag ?? ifNoneMatch,
-                as: RepositoryCommunityInsight.self
-            )
+            do {
+                return try await revalidatedCachedValue(
+                    repoID: repoID,
+                    dataset: .communityProfile,
+                    fetchedAt: fetchedAt,
+                    responseETag: responseETag ?? ifNoneMatch,
+                    as: RepositoryCommunityInsight.self
+                )
+            } catch GitHubRepositoryMetricsError.invalidResponse where ifNoneMatch != nil {
+                return try await refreshCommunityProfile(
+                    repository: repository,
+                    ifNoneMatch: nil
+                )
+            }
         }
     }
 
@@ -731,13 +753,20 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
             )
             return value
         } catch GitHubRepositoryMetricsError.notModified(let responseETag) {
-            return try await revalidatedCachedValue(
-                repoID: repoID,
-                dataset: .securityAdvisories,
-                fetchedAt: fetchedAt,
-                responseETag: responseETag ?? ifNoneMatch,
-                as: RepositorySecurityAdvisoriesInsight.self
-            )
+            do {
+                return try await revalidatedCachedValue(
+                    repoID: repoID,
+                    dataset: .securityAdvisories,
+                    fetchedAt: fetchedAt,
+                    responseETag: responseETag ?? ifNoneMatch,
+                    as: RepositorySecurityAdvisoriesInsight.self
+                )
+            } catch GitHubRepositoryMetricsError.invalidResponse where ifNoneMatch != nil {
+                return try await refreshSecurityAdvisories(
+                    repository: repository,
+                    ifNoneMatch: nil
+                )
+            }
         }
     }
 
