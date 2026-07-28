@@ -128332,6 +128332,13 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "目前範圍內的主要程式語言" } }
       }
     },
+    "insights.section.knowledgeRhythm" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Knowledge Base Growth" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识入库节奏" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "知識入庫節奏" } }
+      }
+    },
     "insights.section.licenses" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "License Distribution" } },
@@ -128372,6 +128379,20 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Popular repositories that are unread or untagged" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "按 Star 数优先展示未读或未打标签的仓库" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "按 Star 數優先顯示未讀或未加標籤的儲存庫" } }
+      }
+    },
+    "insights.section.rhythm.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Weekly additions over the last 12 weeks" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "近 12 周每周新增数量" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "近 12 週每週新增數量" } }
+      }
+    },
+    "insights.section.starredRhythm" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Starred Repository Growth" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "收藏节奏" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "收藏節奏" } }
       }
     },
     "insights.section.topics" : {

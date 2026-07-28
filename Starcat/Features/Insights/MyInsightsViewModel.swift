@@ -139,7 +139,8 @@ final class MyInsightsViewModel {
                 archivedCount: 0,
                 unavailableCount: 0
             ),
-            priorityRepositories: []
+            priorityRepositories: [],
+            rhythmPoints: []
         )
     }
 }

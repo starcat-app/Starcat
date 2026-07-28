@@ -290,6 +290,14 @@ struct InsightsRepositoryHighlight: Identifiable, Equatable, Sendable {
     let isUntagged: Bool
 }
 
+/// 按自然周聚合的收藏或入库数量，固定补齐 12 周零值以保持图表时间轴稳定。
+struct InsightsRhythmPoint: Identifiable, Equatable, Sendable {
+    var id: Date { weekStart }
+
+    let weekStart: Date
+    let count: Int
+}
+
 /// “我的洞察”一次一致快照。
 struct MyInsightsSnapshot: Equatable, Sendable {
     let scope: InsightsScope
@@ -304,6 +312,7 @@ struct MyInsightsSnapshot: Equatable, Sendable {
     let openSSFCoverage: InsightsCoverage
     let assetSummary: InsightsAssetSummary
     let priorityRepositories: [InsightsRepositoryHighlight]
+    let rhythmPoints: [InsightsRhythmPoint]
 }
 
 /// 仓库洞察活动统计。

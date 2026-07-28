@@ -6,6 +6,7 @@
 //  使用扁平 section 与显式分布条行，不引入 Web Dashboard 式巨型卡片和嵌套卡片。
 //
 
+import Charts
 import SwiftUI
 
 struct MyInsightsView: View {
@@ -96,6 +97,7 @@ struct MyInsightsView: View {
         switch selection {
         case .overviewSummary:
             metricGrid
+            rhythmSection
             organizationSection
             priorityRepositoriesSection
             assetCleanupSection
@@ -108,6 +110,7 @@ struct MyInsightsView: View {
 
         case .organizationSummary:
             organizationSection
+            rhythmSection
             priorityRepositoriesSection
             assetCleanupSection
             actionSection(organizationActions)
@@ -290,6 +293,92 @@ struct MyInsightsView: View {
                 }
             }
         }
+    }
+
+    private var rhythmSection: some View {
+        InsightsSectionContainer(
+            title: scope == .starred
+                ? "insights.section.starredRhythm"
+                : "insights.section.knowledgeRhythm",
+            subtitle: "insights.section.rhythm.subtitle",
+            systemImage: "chart.bar.fill"
+        ) {
+            Chart {
+                ForEach(Array(snapshot.rhythmPoints.enumerated()), id: \.element.id) { index, point in
+                    BarMark(
+                        x: .value("Week", rhythmCategory(index)),
+                        y: .value("Count", point.count),
+                        width: .ratio(0.64)
+                    )
+                    .foregroundStyle(Color.blue)
+                    .cornerRadius(4)
+                }
+            }
+            .chartXAxis {
+                AxisMarks(values: rhythmAxisCategories) { value in
+                    AxisValueLabel(centered: true) {
+                        if let category = value.as(String.self),
+                           let index = rhythmIndex(from: category),
+                           snapshot.rhythmPoints.indices.contains(index) {
+                            Text(
+                                snapshot.rhythmPoints[index].weekStart,
+                                format: Date.FormatStyle()
+                                    .month(.abbreviated)
+                                    .day()
+                                    .locale(locale)
+                            )
+                            .font(interfaceScale.font(.captionSmall))
+                        }
+                    }
+                }
+            }
+            .chartYAxis {
+                AxisMarks(position: .leading) {
+                    AxisValueLabel()
+                        .font(interfaceScale.font(.captionSmall))
+                    AxisGridLine()
+                        .foregroundStyle(Color.secondary.opacity(0.12))
+                }
+            }
+            .chartXScale(domain: snapshot.rhythmPoints.indices.map(rhythmCategory))
+            .chartYScale(domain: 0...rhythmYAxisUpperBound)
+            .frame(height: 164)
+            // 与仓库洞察的范围切换一致：数据更新只做短淡入与柱值插值，不推动布局。
+            .transition(.opacity)
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: 0.35),
+                value: snapshot.rhythmPoints
+            )
+            .accessibilityLabel(
+                Text(
+                    scope == .starred
+                        ? "insights.section.starredRhythm"
+                        : "insights.section.knowledgeRhythm"
+                )
+            )
+        }
+    }
+
+    private var rhythmAxisCategories: [String] {
+        guard !snapshot.rhythmPoints.isEmpty else { return [] }
+        let last = snapshot.rhythmPoints.index(before: snapshot.rhythmPoints.endIndex)
+        return Array(Set([0, 3, 6, 9, last]))
+            .filter(snapshot.rhythmPoints.indices.contains)
+            .sorted()
+            .map(rhythmCategory)
+    }
+
+    private var rhythmYAxisUpperBound: Double {
+        let maximum = max(snapshot.rhythmPoints.map(\.count).max() ?? 0, 1)
+        return max(1, ceil(Double(maximum) * 1.15))
+    }
+
+    private func rhythmCategory(_ index: Int) -> String {
+        "week-\(index)"
+    }
+
+    private func rhythmIndex(from category: String) -> Int? {
+        Int(category.replacingOccurrences(of: "week-", with: ""))
     }
 
     private var languageSection: some View {

@@ -205,6 +205,8 @@ struct MyInsightsSnapshotProviderTests {
             unavailableCount: 0
         ))
         #expect(snapshot.priorityRepositories.isEmpty)
+        #expect(snapshot.rhythmPoints.count == 12)
+        #expect(snapshot.rhythmPoints.allSatisfy { $0.count == 0 })
     }
 
     @Test("资产清理独立计数并按 Star 数筛选高价值待整理仓库")
@@ -267,6 +269,28 @@ struct MyInsightsSnapshotProviderTests {
         #expect(snapshot.priorityRepositories[1].isUntagged)
         #expect(snapshot.priorityRepositories[2].isUnread)
         #expect(!snapshot.priorityRepositories[2].isUntagged)
+    }
+
+    @Test("近十二周收藏节奏补齐空周并按周一聚合")
+    func starredRhythmFillsEmptyWeeksAndGroupsByMonday() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 70, starredAt: "2026-07-27T08:00:00Z")
+        try await database.insertRepoFixture(id: 71, starredAt: "2026-07-23T08:00:00Z")
+        try await database.insertRepoFixture(id: 72, starredAt: "2026-07-20T08:00:00Z")
+        try await database.insertRepoFixture(id: 73, starredAt: "2026-01-01T08:00:00Z")
+
+        let now = try #require(
+            ISO8601DateFormatter().date(from: "2026-07-27T12:00:00Z")
+        )
+        let snapshot = try await GRDBMyInsightsSnapshotProvider(
+            database: database,
+            now: { now }
+        ).load(scope: .starred, embeddingModel: "embed-v1")
+
+        #expect(snapshot.rhythmPoints.count == 12)
+        #expect(snapshot.rhythmPoints.dropLast(2).allSatisfy { $0.count == 0 })
+        #expect(snapshot.rhythmPoints.suffix(2).map(\.count) == [2, 1])
+        #expect(snapshot.rhythmPoints.reduce(0) { $0 + $1.count } == 3)
     }
 
     @Test("非收藏但已入库仓库只进入知识库范围")

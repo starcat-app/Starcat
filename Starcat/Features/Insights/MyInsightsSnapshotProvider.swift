@@ -306,6 +306,12 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
                 ORDER BY count DESC, name COLLATE NOCASE ASC
                 """
         )
+        let rhythmPoints = try weeklyRhythm(
+            db,
+            scopePredicate: scopePredicate,
+            dateColumn: recentColumn,
+            generatedAt: generatedAt
+        )
         let priorityRepositories = try Row.fetchAll(
             db,
             sql: """
@@ -413,8 +419,63 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
                 archivedCount: overview["archived_count"],
                 unavailableCount: overview["unavailable_count"]
             ),
-            priorityRepositories: priorityRepositories
+            priorityRepositories: priorityRepositories,
+            rhythmPoints: rhythmPoints
         )
+    }
+
+    /// SQLite 先按周一聚合，Swift 再补齐没有事件的周；这样柱形图不会因空周缩短或移位。
+    private static func weeklyRhythm(
+        _ db: Database,
+        scopePredicate: String,
+        dateColumn: String,
+        generatedAt: Date
+    ) throws -> [InsightsRhythmPoint] {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        guard let currentWeek = calendar.dateInterval(of: .weekOfYear, for: generatedAt)?.start,
+              let firstWeek = calendar.date(byAdding: .weekOfYear, value: -11, to: currentWeek)
+        else {
+            return []
+        }
+
+        let rows = try Row.fetchAll(
+            db,
+            sql: """
+                SELECT
+                    date(
+                        \(dateColumn),
+                        printf(
+                            '-%d days',
+                            (CAST(strftime('%w', \(dateColumn)) AS INTEGER) + 6) % 7
+                        )
+                    ) AS week_start,
+                    COUNT(*) AS count
+                FROM repos r
+                LEFT JOIN repo_notes n ON n.repo_id = r.id
+                WHERE \(scopePredicate)
+                  AND \(dateColumn) IS NOT NULL
+                  AND datetime(\(dateColumn)) >= datetime(?)
+                GROUP BY week_start
+                ORDER BY week_start ASC
+                """,
+            arguments: [ISO8601DateFormatter.shared.string(from: firstWeek)]
+        )
+        let counts = Dictionary(uniqueKeysWithValues: rows.map {
+            ($0["week_start"] as String, $0["count"] as Int)
+        })
+
+        return (0..<12).compactMap { offset in
+            guard let week = calendar.date(
+                byAdding: .weekOfYear,
+                value: offset,
+                to: firstWeek
+            ) else {
+                return nil
+            }
+            let key = String(ISO8601DateFormatter.shared.string(from: week).prefix(10))
+            return InsightsRhythmPoint(weekStart: week, count: counts[key] ?? 0)
+        }
     }
 
     /// 知识库 RAG 动作项复用 `KnowledgeBaseMetadataSnapshot` 的来源 / override 语义。
