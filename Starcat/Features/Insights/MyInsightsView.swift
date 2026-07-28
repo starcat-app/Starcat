@@ -678,10 +678,11 @@ struct MyInsightsView: View {
 
 /// 洞察页面的唯一分组表面：薄描边 + 系统 control background，避免区块各自发展成
 /// 多层嵌套卡片。仓库洞察继续复用它以保持两种洞察的密度一致。
-struct InsightsSectionContainer<Content: View>: View {
+struct InsightsSectionContainer<Content: View, HeaderTrailing: View>: View {
     let title: LocalizedStringKey
     let subtitle: LocalizedStringKey
     let systemImage: String
+    let headerTrailing: HeaderTrailing
     let content: Content
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -690,28 +691,33 @@ struct InsightsSectionContainer<Content: View>: View {
         title: LocalizedStringKey,
         subtitle: LocalizedStringKey,
         systemImage: String,
+        @ViewBuilder headerTrailing: () -> HeaderTrailing,
         @ViewBuilder content: () -> Content
     ) {
         self.title = title
         self.subtitle = subtitle
         self.systemImage = systemImage
+        self.headerTrailing = headerTrailing()
         self.content = content()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
-            // 小图标贴标题行：HStack 默认 center 会相对「标题+副标题」整块居中。
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: systemImage)
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 1)
-                VStack(alignment: .leading, spacing: 1) {
+            // 图标只与标题同行居中对齐；副标题缩进到标题文字下方，避免相对「标题+副标题」整块居中。
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(alignment: .center, spacing: 8) {
+                    Image(systemName: systemImage)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 14, alignment: .center)
                     Text(title)
                         .font(interfaceScale.font(.bodyEmphasis))
-                    Text(subtitle)
-                        .font(interfaceScale.font(.captionSmall))
-                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    headerTrailing
                 }
+                Text(subtitle)
+                    .font(interfaceScale.font(.captionSmall))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 22)
             }
 
             content
@@ -723,6 +729,23 @@ struct InsightsSectionContainer<Content: View>: View {
             RoundedRectangle(cornerRadius: 9)
                 .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
         }
+    }
+}
+
+extension InsightsSectionContainer where HeaderTrailing == EmptyView {
+    init(
+        title: LocalizedStringKey,
+        subtitle: LocalizedStringKey,
+        systemImage: String,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.init(
+            title: title,
+            subtitle: subtitle,
+            systemImage: systemImage,
+            headerTrailing: { EmptyView() },
+            content: content
+        )
     }
 }
 

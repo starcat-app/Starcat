@@ -47,6 +47,8 @@ struct RepositoryReleaseInsight: Equatable, Sendable {
     let tagName: String
     let name: String?
     let publishedAt: Date?
+    /// GitHub release 页；本地 `releases.html_url` 已有，时间线可直接跳转。
+    let htmlURL: URL?
 }
 
 struct RepositoryHealthInsight: Equatable, Sendable {
@@ -91,7 +93,8 @@ struct DefaultRepositoryLocalInsightsProvider: RepositoryLocalInsightsProviding,
         return RepositoryReleaseInsight(
             tagName: record.tagName,
             name: record.name,
-            publishedAt: record.publishedAt.flatMap(ISO8601DateFormatter.shared.date(from:))
+            publishedAt: record.publishedAt.flatMap(ISO8601DateFormatter.shared.date(from:)),
+            htmlURL: URL(string: record.htmlUrl)
         )
     }
 

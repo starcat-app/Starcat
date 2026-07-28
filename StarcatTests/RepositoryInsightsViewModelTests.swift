@@ -451,7 +451,7 @@ struct RepositoryInsightsViewModelTests {
     @Test("本地区块独立加载且单一区块失败不影响其他结果")
     func sectionsLoadIndependently() async {
         let provider = StubRepositoryLocalInsightsProvider(
-            release: { _ in RepositoryReleaseInsight(tagName: "v1.0", name: nil, publishedAt: nil) },
+            release: { _ in RepositoryReleaseInsight(tagName: "v1.0", name: nil, publishedAt: nil, htmlURL: nil) },
             health: { _ in RepositoryHealthInsight(
                 overallScore: 80,
                 grade: "B",
@@ -469,7 +469,7 @@ struct RepositoryInsightsViewModelTests {
         await viewModel.load(repoId: 1)
 
         #expect(viewModel.releaseState == .content(
-            RepositoryReleaseInsight(tagName: "v1.0", name: nil, publishedAt: nil)
+            RepositoryReleaseInsight(tagName: "v1.0", name: nil, publishedAt: nil, htmlURL: nil)
         ))
         #expect(viewModel.healthState != .failed)
         #expect(viewModel.openSSFState == .failed)
@@ -486,7 +486,8 @@ struct RepositoryInsightsViewModelTests {
                 return RepositoryReleaseInsight(
                     tagName: repoId == 1 ? "old" : "new",
                     name: nil,
-                    publishedAt: nil
+                    publishedAt: nil,
+                    htmlURL: nil
                 )
             },
             health: { _ in nil },
@@ -502,7 +503,7 @@ struct RepositoryInsightsViewModelTests {
 
         #expect(viewModel.activeRepoID == 2)
         #expect(viewModel.releaseState == .content(
-            RepositoryReleaseInsight(tagName: "new", name: nil, publishedAt: nil)
+            RepositoryReleaseInsight(tagName: "new", name: nil, publishedAt: nil, htmlURL: nil)
         ))
     }
 
