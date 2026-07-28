@@ -64,6 +64,10 @@ final class MyInsightsViewModel {
 
     /// 加载指定范围。调用方用 scope、数据库 revision 和 Embedding model 组成 task id，
     /// 因此任一输入变化都会进入这里；generation 防止旧查询晚到后覆盖新范围。
+    ///
+    /// 已有可展示快照时（含切换「全部收藏 / 知识库」）：保留旧内容、走 `.refreshing`，
+    /// 由右上角 SyncIconButton 转圈表达加载；成功后再原地替换，避免内容区
+    /// ProgressView 把布局高度抽空造成抖动。仅真正首次进入才用 `.loading`。
     func load(
         scope: InsightsScope,
         embeddingModel: String,
@@ -71,13 +75,10 @@ final class MyInsightsViewModel {
     ) async {
         generation &+= 1
         let requestGeneration = generation
-        let keepsCurrentSnapshot = hasLoadedSnapshot && snapshot.scope == scope
+        let hadContent = hasLoadedSnapshot
+        let previousScope = snapshot.scope
 
-        if !keepsCurrentSnapshot {
-            hasLoadedSnapshot = false
-            snapshot = Self.emptySnapshot(scope: scope)
-        }
-        state = keepsCurrentSnapshot ? .refreshing : .loading
+        state = hadContent ? .refreshing : .loading
 
         if forceRefresh {
             await provider.invalidate()
@@ -97,7 +98,17 @@ final class MyInsightsViewModel {
             return
         } catch {
             guard requestGeneration == generation else { return }
-            state = keepsCurrentSnapshot ? .stale : .failed
+            if hadContent && previousScope == scope {
+                // 同范围刷新失败：保留旧快照，标 stale。
+                state = .stale
+            } else if hadContent {
+                // 切换范围失败：不能继续展示旧范围数字（口径已与 Picker 不一致）。
+                hasLoadedSnapshot = false
+                snapshot = Self.emptySnapshot(scope: scope)
+                state = .failed
+            } else {
+                state = .failed
+            }
         }
     }
 
@@ -110,8 +121,7 @@ final class MyInsightsViewModel {
         )
     }
 
-    /// 首次查询前提供结构完整但无数值的占位快照；UI 会显示 ProgressView，
-    /// 不会把这些零值伪装成真实统计。
+    /// 真正首次进入、尚无任何快照时的占位；此时 UI 才显示内容区 ProgressView。
     private static func emptySnapshot(scope: InsightsScope) -> MyInsightsSnapshot {
         MyInsightsSnapshot(
             scope: scope,
