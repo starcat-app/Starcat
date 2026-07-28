@@ -1195,7 +1195,12 @@ struct RepositoryInsightsView: View {
                     systemImage: commitEmptyStateSystemImage
                 )
             } else {
-                commitChart(points: points)
+                VStack(alignment: .leading, spacing: 10) {
+                    if let pulse = activity.maintenancePulse {
+                        maintenancePulseRow(pulse)
+                    }
+                    commitChart(points: points)
+                }
             }
         } else {
             switch viewModel.commitActivityState {
@@ -1224,6 +1229,71 @@ struct RepositoryInsightsView: View {
                 EmptyView()
             }
         }
+    }
+
+    private func maintenancePulseRow(_ pulse: RepositoryMaintenancePulse) -> some View {
+        HStack(spacing: 8) {
+            commitPulseMetric(
+                title: "insights.repo.commit.pulse.recent",
+                value: pulse.recentCommits.formatted(.number.locale(locale)),
+                systemImage: "bolt.fill"
+            )
+            commitPulseMetric(
+                title: "insights.repo.commit.pulse.comparison",
+                value: signedPercentage(pulse.comparisonPercentage),
+                systemImage: "chart.line.uptrend.xyaxis"
+            )
+            commitPulseMetric(
+                title: "insights.repo.commit.pulse.activeWeeks",
+                value: String(
+                    format: String.l10n("insights.repo.commit.pulse.activeWeeksFormat"),
+                    locale: locale,
+                    pulse.activeWeeks
+                ),
+                systemImage: "calendar.badge.checkmark"
+            )
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func commitPulseMetric(
+        title: LocalizedStringKey,
+        value: String,
+        systemImage: String
+    ) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: systemImage)
+                .foregroundStyle(Color.accentColor)
+            Text(title)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Spacer(minLength: 6)
+            Text(verbatim: value)
+                .fontWeight(.semibold)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .font(interfaceScale.font(.caption))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+        .background(
+            Color(nsColor: .textBackgroundColor).opacity(0.55),
+            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(title))
+        .accessibilityValue(Text(verbatim: value))
+    }
+
+    private func signedPercentage(_ value: Int?) -> String {
+        guard let value else {
+            return String.l10n("insights.repo.state.noData")
+        }
+        if value > 0 { return "+\(value)%" }
+        return "\(value)%"
     }
 
     private func commitChart(points: [RepositoryCommitActivityPoint]) -> some View {

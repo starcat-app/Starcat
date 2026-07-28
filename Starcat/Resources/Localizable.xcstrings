@@ -127576,6 +127576,34 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "重新整理提交活動" } }
       }
     },
+    "insights.repo.commit.pulse.activeWeeks" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Active weeks" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "活跃周" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "活躍週" } }
+      }
+    },
+    "insights.repo.commit.pulse.activeWeeksFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld / 4" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%lld / 4" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "%lld / 4" } }
+      }
+    },
+    "insights.repo.commit.pulse.comparison" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "vs previous 4 weeks" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "较前 4 周" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "較前 4 週" } }
+      }
+    },
+    "insights.repo.commit.pulse.recent" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Last 4 weeks" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "近 4 周提交" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "近 4 週提交" } }
+      }
+    },
     "insights.repo.commit.totalFormat" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld commits in the selected range" } },

@@ -91,6 +91,37 @@ struct RepositoryCommitActivity: Codable, Equatable, Sendable {
         let cutoff = generatedAt.addingTimeInterval(-Double(range.dayCount) * 86_400)
         return points.filter { $0.weekStart >= cutoff }
     }
+
+    /// 最近 4 周与此前 4 周形成固定可比窗口，不受图表范围切换影响。
+    var maintenancePulse: RepositoryMaintenancePulse? {
+        let ordered = points.sorted { $0.weekStart < $1.weekStart }
+        guard ordered.count >= 8 else { return nil }
+        let recent = ordered.suffix(4)
+        let previous = ordered.dropLast(4).suffix(4)
+        let recentCommits = recent.reduce(0) { $0 + $1.commits }
+        let previousCommits = previous.reduce(0) { $0 + $1.commits }
+        let comparisonPercentage: Int? = previousCommits > 0
+            ? Int(
+                (
+                    Double(recentCommits - previousCommits)
+                        / Double(previousCommits)
+                        * 100
+                ).rounded()
+            )
+            : nil
+        return RepositoryMaintenancePulse(
+            recentCommits: recentCommits,
+            comparisonPercentage: comparisonPercentage,
+            activeWeeks: recent.count { $0.commits > 0 }
+        )
+    }
+}
+
+/// 提交活动的短周期维护信号；只做客户端派生，不增加 GitHub 请求。
+struct RepositoryMaintenancePulse: Equatable, Sendable {
+    let recentCommits: Int
+    let comparisonPercentage: Int?
+    let activeWeeks: Int
 }
 
 struct RepositoryCachedCommitActivity: Equatable, Sendable {

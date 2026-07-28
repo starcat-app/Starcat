@@ -122,6 +122,49 @@ struct RepositoryInsightsRemoteProviderTests {
         #expect(request.url?.path == "/repos/octo/commits/stats/commit_activity")
     }
 
+    @Test("维护脉搏比较最近四周与此前四周")
+    func maintenancePulseUsesAdjacentFourWeekWindows() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let commits = [1, 0, 2, 1, 3, 0, 5, 2]
+        let activity = RepositoryCommitActivity(
+            points: commits.enumerated().map { index, count in
+                RepositoryCommitActivityPoint(
+                    weekStart: start.addingTimeInterval(Double(index) * 7 * 86_400),
+                    commits: count
+                )
+            },
+            generatedAt: start.addingTimeInterval(8 * 7 * 86_400)
+        )
+        let pulse = activity.maintenancePulse
+
+        #expect(pulse?.recentCommits == 10)
+        #expect(pulse?.comparisonPercentage == 150)
+        #expect(pulse?.activeWeeks == 3)
+    }
+
+    @Test("维护脉搏在历史不足或上一窗口为零时不伪造比较值")
+    func maintenancePulseKeepsUnavailableComparisonUnknown() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let short = RepositoryCommitActivity(
+            points: [
+                RepositoryCommitActivityPoint(weekStart: start, commits: 1)
+            ],
+            generatedAt: start
+        )
+        let zeroBaseline = RepositoryCommitActivity(
+            points: (0..<8).map { index in
+                RepositoryCommitActivityPoint(
+                    weekStart: start.addingTimeInterval(Double(index) * 7 * 86_400),
+                    commits: index >= 4 ? 1 : 0
+                )
+            },
+            generatedAt: start.addingTimeInterval(8 * 7 * 86_400)
+        )
+
+        #expect(short.maintenancePulse == nil)
+        #expect(zeroBaseline.maintenancePulse?.comparisonPercentage == nil)
+    }
+
     @Test("贡献者与社区规范映射为展示模型并独立缓存")
     func contributorsAndCommunityPersistIndependently() async throws {
         let database = try InMemoryDatabaseManager()
