@@ -33,6 +33,8 @@
 	<false/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
+	<key>LSMultipleInstancesProhibited</key>
+	<true/>
 	<key>STARCAT_APTABASE_APP_KEY</key>
 	<string>$(STARCAT_APTABASE_APP_KEY)</string>
 	<key>STARCAT_DISTRIBUTION</key>

@@ -15,6 +15,13 @@ enum InsightsScope: String, CaseIterable, Identifiable, Sendable {
     case knowledge
 
     var id: String { rawValue }
+
+    var titleKey: LocalizedStringKey {
+        switch self {
+        case .starred: return "insights.scope.starred"
+        case .knowledge: return "insights.scope.knowledge"
+        }
+    }
 }
 
 /// 洞察中心左栏二级主题。

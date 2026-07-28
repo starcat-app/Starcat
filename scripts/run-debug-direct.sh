@@ -39,11 +39,23 @@ $.NSRunningApplication
 "
 }
 
+# 裸可执行文件启动的异常实例不一定能被 NSRunningApplication 稳定枚举。把
+# bundle id 与本次构建产物的完整 executable path 合并，避免旧进程漏清理后
+# 与新实例争用 AppKit state restoration。
+running_target_pids() {
+  local bundle_pids executable_pids
+  bundle_pids="$(running_direct_pids)" || return 1
+  executable_pids="$(pgrep -f -x "$APP_EXECUTABLE" || true)"
+  printf '%s\n%s\n' "$bundle_pids" "$executable_pids" \
+    | awk 'NF' \
+    | sort -u
+}
+
 cd "$PROJECT_ROOT"
 
 echo "==> 关闭已运行的 StarcatDirect（如有）..."
-if ! DIRECT_PIDS="$(running_direct_pids)"; then
-  echo "ERROR: 无法按 bundle id 查询 Direct 进程，拒绝回退为按进程名关闭。"
+if ! DIRECT_PIDS="$(running_target_pids)"; then
+  echo "ERROR: 无法查询 Direct bundle id / executable 进程，拒绝继续。"
   exit 1
 fi
 if [ -n "$DIRECT_PIDS" ]; then
@@ -59,8 +71,8 @@ fi
 # 退出，最终表现为构建成功但没有应用进程。这里等待真实退出，超时则保留现场并报错，
 # 不升级成 SIGKILL，避免强杀时损坏用户数据。
 for _ in {1..100}; do
-  if ! DIRECT_PIDS="$(running_direct_pids)"; then
-    echo "ERROR: 无法按 bundle id 查询 Direct 进程，拒绝继续启动。"
+  if ! DIRECT_PIDS="$(running_target_pids)"; then
+    echo "ERROR: 无法查询 Direct bundle id / executable 进程，拒绝继续启动。"
     exit 1
   fi
   if [ -z "$DIRECT_PIDS" ]; then
@@ -126,13 +138,16 @@ echo "    app support: ~/Library/Application Support/com.starcat.app"
 echo "    app: $APP_PATH"
 
 echo "==> 启动 StarcatDirect..."
-open "$APP_PATH"
-LAUNCH_METHOD="LaunchServices"
+if ! open "$APP_PATH"; then
+  echo "ERROR: LaunchServices 拒绝启动 StarcatDirect。"
+  echo "       app: $APP_PATH"
+  exit 1
+fi
 
 # `open` 成功只代表 LaunchServices 接收了请求，不代表目标进程已真正建立。按完整
 # executable path 校验，避免误把另一个渠道或另一个 DerivedData 下的 Starcat 算作成功。
-# 这里不能使用 `open -n`：它会要求 LaunchServices 强制创建新实例，与 Starcat 的
-# 单实例身份冲突，进程可能停在 xpcproxy 阶段并被系统回收。
+# 这里不能使用 `open -n`：Direct Debug 已显式保持单实例，强制创建新实例会破坏
+# AppKit window restoration 的唯一所有者约束。
 DIRECT_PID=""
 for _ in {1..100}; do
   DIRECT_PID="$(pgrep -f -x "$APP_EXECUTABLE" | head -n 1 || true)"
@@ -143,27 +158,10 @@ for _ in {1..100}; do
 done
 
 if [ -z "$DIRECT_PID" ]; then
-  # 某些 macOS LaunchServices 状态异常时，`open` 会创建 xpcproxy 后立即回收，
-  # 系统日志表现为 `Failed sending SIGCONT ... errno=3`。构建产物本身仍可正常执行，
-  # 因此只在主路径失败后使用 detached executable 兜底；nohup 避免 Make 退出时向
-  # App 转发 SIGHUP，stdout/stderr 则显式丢弃，防止后台进程长期占用终端管道。
-  echo "WARN: LaunchServices 未建立 StarcatDirect 进程，尝试直接启动构建产物..."
-  /usr/bin/nohup "$APP_EXECUTABLE" >/dev/null 2>&1 &
-  LAUNCH_METHOD="direct executable fallback"
-
-  for _ in {1..100}; do
-    DIRECT_PID="$(pgrep -f -x "$APP_EXECUTABLE" | head -n 1 || true)"
-    if [ -n "$DIRECT_PID" ]; then
-      break
-    fi
-    sleep 0.1
-  done
-
-  if [ -z "$DIRECT_PID" ]; then
-    echo "ERROR: LaunchServices 与直接启动均未建立 StarcatDirect 进程。"
-    echo "       executable: $APP_EXECUTABLE"
-    exit 1
-  fi
+  echo "ERROR: LaunchServices 未建立目标 StarcatDirect 进程。"
+  echo "       executable: $APP_EXECUTABLE"
+  echo "       为避免出现 Dock 有运行点但没有窗口，不再回退为直接执行 GUI binary。"
+  exit 1
 fi
 
 # 冷启动刚建立进程并不等于启动完成。此前 `open -n` 产生的异常进程会在约 1 秒后
@@ -176,5 +174,22 @@ for _ in {1..20}; do
   sleep 0.1
 done
 
-echo "==> StarcatDirect 已稳定启动（PID: ${DIRECT_PID}，方式: ${LAUNCH_METHOD}）"
+if ! DIRECT_PIDS="$(running_target_pids)"; then
+  echo "ERROR: 无法执行启动后的 Direct 单实例校验。"
+  exit 1
+fi
+DIRECT_PID_COUNT="$(printf '%s\n' "$DIRECT_PIDS" | awk 'NF { count += 1 } END { print count + 0 }')"
+if [ "$DIRECT_PID_COUNT" -ne 1 ] || [ "$DIRECT_PIDS" != "$DIRECT_PID" ]; then
+  echo "ERROR: StarcatDirect 启动后不是唯一目标实例，拒绝报告成功。"
+  echo "       expected PID: $DIRECT_PID"
+  echo "       detected PID:"
+  while IFS= read -r pid; do
+    if [ -n "$pid" ]; then
+      printf '       %s\n' "$pid"
+    fi
+  done <<<"$DIRECT_PIDS"
+  exit 1
+fi
+
+echo "==> StarcatDirect 已稳定启动（PID: ${DIRECT_PID}，方式: LaunchServices，单实例）"
 exit 0

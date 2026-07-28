@@ -131,6 +131,10 @@ struct StarcatApp: App {
                     handleIncomingURL(url)
                 }
         }
+        // macOS 15 的 AppKit state restoration 可能存在持久化记录，却没有真正恢复
+        // 任何窗口。显式使用 `.presented`，保证这种情况下仍创建主窗口，避免只剩
+        // Dock 运行点而没有可见界面。
+        .defaultLaunchBehavior(.presented)
         .commands {
             // 替换系统默认的"关于 Starcat"菜单项，打开自定义 SwiftUI 关于窗口。
             CommandGroup(replacing: .appInfo) {
@@ -382,6 +386,7 @@ private struct MainWindowOpenFallbackRegistrar: ViewModifier {
                 AppDelegate.openMainWindowFallback = {
                     openWindow(id: "main")
                 }
+                AppLog.general.info("Main window scene appeared; reopen fallback registered")
             }
     }
 }

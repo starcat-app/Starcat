@@ -136,6 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 主窗口被关闭后，SwiftUI WindowGroup 对应的 NSWindow 已经从
             // NSApp.windows 移除；这时必须回到 SwiftUI 的 openWindow(id:)
             // 创建窗口，不能只激活 AppKit 进程。
+            AppLog.general.info("Main window missing; invoking SwiftUI openWindow fallback")
             openMainWindowFallback?()
             return
         }

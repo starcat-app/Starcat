@@ -205,14 +205,15 @@ targets:
         INFOPLIST_KEY_CFBundleURLTypes: ""
       configs:
         Debug:
-          INFOPLIST_KEY_LSMultipleInstancesProhibited: NO
           STARCAT_LICENSE_API_ENVIRONMENT: test
         Release:
-          INFOPLIST_KEY_LSMultipleInstancesProhibited: YES
           STARCAT_LICENSE_API_ENVIRONMENT: live
     info:
       path: Starcat/Generated/Info.direct.generated.plist
       properties:
+        # Direct Debug 不承载 StarcatTests test host；Debug/Release 都保持单实例，
+        # 避免多个进程争用同一份 AppKit window restoration 状态。
+        LSMultipleInstancesProhibited: true
         STARCAT_OAUTH_CLIENT_SECRET: $(STARCAT_OAUTH_CLIENT_SECRET)
         CFBundleURLTypes:
           - CFBundleURLName: com.starcat.app.direct

@@ -15,9 +15,11 @@
 //  - 每个 segment 是 `.buttonStyle(.plain)` + `.focusEffectDisabled()`（项目铁律）。
 //  - `title` 闭包返回 `LocalizedStringKey`，调用方 `Text(title(item))` 直出 i18n key。
 //
-//  使用范围（截至 2026-06-18）：
+//  使用范围（截至 2026-07-28）：
 //  - `TrendingView.periodPicker`（尺寸对齐 Activity / Weekly 顶栏 filter bar 行高）
 //  - `RepoAIWindowContentView.panelToggleBar`（AI 摘要 / AI 对话切换）
+//  - `ManageDetailContent`（README / 洞察）
+//  - `MyInsightsView`（全部收藏 / 知识库）
 //
 
 import SwiftUI

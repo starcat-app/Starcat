@@ -17,6 +17,7 @@ struct MyInsightsView: View {
 
     @Environment(\.locale) private var locale
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AppSettings.self) private var settings
 
@@ -40,22 +41,36 @@ struct MyInsightsView: View {
                     }
                     .frame(maxWidth: .infinity, minHeight: 320)
                 } else if viewModel.isInitialLoading {
-                    // 首次加载也保持内容区尺寸稳定；刷新状态只由右上角同步按钮表达，
-                    // 避免居中转圈让整个洞察页面看起来像被清空。
+                    // 首次加载保留内容区高度；反馈交给右上角 SyncIconButton，
+                    // 避免居中转圈或顶栏进度条抢戏。
                     Color.clear
                         .frame(maxWidth: .infinity, minHeight: 320)
                         .accessibilityHidden(true)
                 } else {
-                    LazyVStack(spacing: 14) {
-                        if viewModel.showsStaleWarning {
-                            Label("error.loadFailed", systemImage: "exclamationmark.triangle.fill")
-                                .font(interfaceScale.font(.caption))
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                    // 与 RepoDetail / Activity 同款：ZStack + .id + detailContentTransition，
+                    // 中栏切换「健康概览 / 安全风险」等时详情轻轻落下，避免瞬切。
+                    ZStack(alignment: .topLeading) {
+                        LazyVStack(spacing: 14) {
+                            if viewModel.showsStaleWarning {
+                                Label("error.loadFailed", systemImage: "exclamationmark.triangle.fill")
+                                    .font(interfaceScale.font(.caption))
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            selectedContent
                         }
-                        selectedContent
+                        .padding(18)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        // 刷新中略降透明度，新快照落地时不那么「硬切」。
+                        .opacity(viewModel.isRefreshing ? 0.72 : 1)
+                        .animation(.easeInOut(duration: 0.2), value: viewModel.isRefreshing)
+                        .id(selection)
+                        .detailContentTransition()
                     }
-                    .padding(18)
+                    .animation(
+                        reduceMotion ? nil : .easeOut(duration: 0.4),
+                        value: selection
+                    )
                 }
             }
         }
@@ -67,6 +82,11 @@ struct MyInsightsView: View {
                 embeddingModel: settings.aiEmbeddingModel
             )
         }
+    }
+
+    /// 首次进入与范围切换/手动刷新共用右上角 SyncIconButton 转圈反馈。
+    private var isLoadingFeedbackVisible: Bool {
+        viewModel.isInitialLoading || viewModel.isRefreshing
     }
 
     /// 中栏选择和 Detail 内容保持一一对应。原型阶段曾让所有选择都显示同一张总览，
@@ -125,7 +145,8 @@ struct MyInsightsView: View {
 
     private var header: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) {
+            // 右侧控件贴标题行顶对齐；默认 center 会相对「标题+副标题」居中，头上留一大块空。
+            HStack(alignment: .top, spacing: 12) {
                 headerTitle
                 Spacer(minLength: 16)
                 headerControls
@@ -136,13 +157,17 @@ struct MyInsightsView: View {
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 13)
+        .padding(.vertical, InsightsColumnChrome.headerVerticalPadding)
+        // 与中栏共用固定高度；内容顶对齐，空白留在分割线上方而不是控件头顶。
+        .frame(height: InsightsColumnChrome.headerHeight, alignment: .topLeading)
     }
 
     private var headerTitle: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 2) {
             Text("insights.my.title")
-                .font(interfaceScale.font(.workspaceTitle))
+                // 与中栏主题标题同级，避免 workspaceTitle(20) vs panelTitle(17) 把分割线顶歪。
+                .font(interfaceScale.font(.panelTitle))
+                .lineLimit(1)
 
             HStack(spacing: 5) {
                 Text(selection.titleKey)
@@ -153,27 +178,32 @@ struct MyInsightsView: View {
             }
             .font(interfaceScale.font(.caption))
             .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .contentTransition(reduceMotion ? .identity : .opacity)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: selection)
         }
     }
 
     private var headerControls: some View {
         HStack(spacing: 12) {
-            Picker("insights.scope.label", selection: $scope) {
-                Text("insights.scope.starred").tag(InsightsScope.starred)
-                Text("insights.scope.knowledge").tag(InsightsScope.knowledge)
-            }
-            .labelsHidden()
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 190)
+            // 与 README / 洞察模式切换同款胶囊控件，避免系统 segmented 灰底蓝块。
+            PillSegmentedControl(
+                items: Array(InsightsScope.allCases),
+                selection: $scope,
+                title: \.titleKey
+            )
+            .accessibilityLabel(Text("insights.scope.label"))
 
             SyncIconButton(
-                isRefreshing: viewModel.isRefreshing,
-                disabled: viewModel.isInitialLoading || viewModel.isRefreshing,
+                isRefreshing: isLoadingFeedbackVisible,
+                disabled: isLoadingFeedbackVisible,
                 tooltip: String.l10n("insights.refresh")
             ) {
                 refresh()
             }
         }
+        // 分段控件比 panelTitle 略高，轻微下移与标题文字视觉对齐。
+        .padding(.top, 1)
     }
 
     private var metricGrid: some View {
@@ -305,10 +335,11 @@ struct MyInsightsView: View {
             systemImage: systemImage
         ) {
             VStack(alignment: .leading, spacing: 12) {
-                ForEach(items) { item in
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     distributionBarRow(
                         item,
                         maxCount: maxCount,
+                        rowIndex: index,
                         showsDrillDownChevron: onDrillDown != nil && item.id != "other",
                         action: onDrillDown.map { callback in
                             { callback(item) }
@@ -322,11 +353,12 @@ struct MyInsightsView: View {
         }
     }
 
-    /// 单行分布条：标签与数值在上、色条在下，避免 Charts 分类轴把多行挤进同一绘图带。
+    /// 单行分布条：标签与数值在上、色条在下；色条每次出现从 0 长到目标宽度。
     @ViewBuilder
     private func distributionBarRow(
         _ item: InsightsDistributionItem,
         maxCount: Int,
+        rowIndex: Int,
         showsDrillDownChevron: Bool,
         action: (() -> Void)?
     ) -> some View {
@@ -354,16 +386,11 @@ struct MyInsightsView: View {
                 }
             }
 
-            GeometryReader { proxy in
-                let width = max(
-                    proxy.size.width * CGFloat(item.count) / CGFloat(maxCount),
-                    item.count > 0 ? 4 : 0
-                )
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(InsightsColor.resolve(item.colorName))
-                    .frame(width: width, height: 6)
-            }
-            .frame(height: 6)
+            InsightsDistributionBarFill(
+                fraction: CGFloat(item.count) / CGFloat(maxCount),
+                color: InsightsColor.resolve(item.colorName),
+                animationDelay: Double(rowIndex) * 0.045
+            )
         }
         .contentShape(Rectangle())
 
@@ -694,6 +721,54 @@ struct InsightsSectionContainer<Content: View>: View {
         .overlay {
             RoundedRectangle(cornerRadius: 9)
                 .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
+        }
+    }
+}
+
+/// 分布色条从 0 增长到目标占比；分类切换 / 数据更新时重新播放，像进度条填满。
+private struct InsightsDistributionBarFill: View {
+    let fraction: CGFloat
+    let color: Color
+    var animationDelay: Double = 0
+
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+    @State private var progress: CGFloat = 0
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = max(
+                proxy.size.width * min(max(progress, 0), 1),
+                progress > 0 ? 4 : 0
+            )
+            RoundedRectangle(cornerRadius: 3)
+                .fill(color)
+                .frame(width: width, height: 6, alignment: .leading)
+        }
+        .frame(height: 6)
+        .onAppear {
+            playFillAnimation()
+        }
+        .onChange(of: fraction) { _, _ in
+            playFillAnimation()
+        }
+    }
+
+    private func playFillAnimation() {
+        let target = min(max(fraction, 0), 1)
+        if reduceMotion {
+            progress = target
+            return
+        }
+        // 先无动画归零，下一帧再播放填充，避免与归零写在同一帧里被合成掉。
+        var reset = Transaction()
+        reset.disablesAnimations = true
+        withTransaction(reset) {
+            progress = 0
+        }
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.55).delay(animationDelay)) {
+                progress = target
+            }
         }
     }
 }

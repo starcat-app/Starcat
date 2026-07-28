@@ -1222,13 +1222,25 @@ struct HomeView: View {
 
     @ViewBuilder
     private var contentColumn: some View {
+        // 顶级页面切换（探索 → 洞察等）也走 detailContentTransition；否则 Insights 会瞬切出现。
+        ZStack(alignment: .topLeading) {
+            contentColumnBody
+                .id(selectedSidebarPage)
+                .detailContentTransition()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: selectedSidebarPage)
+        .navigationSplitViewColumnWidth(min: 420, ideal: 420, max: 520)
+    }
+
+    @ViewBuilder
+    private var contentColumnBody: some View {
         if selectedSidebarPage == .insights {
             InsightsListView(
                 topic: $selectedInsightsTopic,
                 selection: $selectedInsightsSelection,
                 snapshot: myInsightsViewModel.snapshot
             )
-            .navigationSplitViewColumnWidth(min: 420, ideal: 420, max: 520)
         } else {
             RepoListView(
                 trendingRepository: trendingRepository,
@@ -1275,12 +1287,22 @@ struct HomeView: View {
                     selectSidebarRootPage(.insights)
                 }
             )
-            .navigationSplitViewColumnWidth(min: 420, ideal: 420, max: 520)
         }
     }
 
     @ViewBuilder
     private var detailColumn: some View {
+        ZStack(alignment: .topLeading) {
+            detailColumnBody
+                .id(selectedSidebarPage)
+                .detailContentTransition()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: selectedSidebarPage)
+    }
+
+    @ViewBuilder
+    private var detailColumnBody: some View {
         if selectedSidebarPage == .insights {
             MyInsightsView(
                 topic: $selectedInsightsTopic,

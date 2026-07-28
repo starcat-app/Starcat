@@ -8,6 +8,13 @@
 
 import SwiftUI
 
+/// 中栏与详情栏顶栏尺寸契约：两边分割线必须落在同一水平线。
+enum InsightsColumnChrome {
+    /// 容纳「标题 + 一行副标题」与详情栏右侧分段控件的单行布局。
+    static let headerHeight: CGFloat = 68
+    static let headerVerticalPadding: CGFloat = 12
+}
+
 /// 洞察中心中栏：当前主题的摘要和可下钻问题集合。
 struct InsightsListView: View {
 
@@ -17,28 +24,38 @@ struct InsightsListView: View {
 
     @Environment(\.locale) private var locale
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     var body: some View {
+        // header + Divider 固定在动画区外，避免主题切换时分割线跟着内容漂移、
+        // 与右侧「我的洞察」顶栏对不齐。
         VStack(spacing: 0) {
             header
             Divider()
 
-            List(selection: $selection) {
-                Section("insights.list.section.analysis") {
-                    ForEach(topic.contentSelections) { item in
-                        row(item, count: nil)
+            ZStack(alignment: .topLeading) {
+                List(selection: $selection) {
+                    Section("insights.list.section.analysis") {
+                        ForEach(topic.contentSelections) { item in
+                            row(item, count: nil)
+                        }
                     }
-                }
 
-                if !attentionSelections.isEmpty {
-                    Section("insights.list.section.attention") {
-                        ForEach(attentionSelections) { item in
-                            row(item, count: count(for: item))
+                    if !attentionSelections.isEmpty {
+                        Section("insights.list.section.attention") {
+                            ForEach(attentionSelections) { item in
+                                row(item, count: count(for: item))
+                            }
                         }
                     }
                 }
+                .listStyle(.inset)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .id(topic)
+                .detailContentTransition()
             }
-            .listStyle(.inset)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: topic)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle(Text("insights.title"))
@@ -58,16 +75,21 @@ struct InsightsListView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(topic.titleKey)
                     .font(interfaceScale.font(.panelTitle))
+                    .lineLimit(1)
                 Text(topic.subtitleKey)
                     .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    // 与详情栏一样只占一行，避免副标题换行把分割线顶歪。
+                    .lineLimit(1)
             }
+            .contentTransition(reduceMotion ? .identity : .opacity)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: topic)
 
             Spacer(minLength: 12)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, InsightsColumnChrome.headerVerticalPadding)
+        .frame(height: InsightsColumnChrome.headerHeight, alignment: .topLeading)
     }
 
     @ViewBuilder
