@@ -107,6 +107,16 @@
 import SwiftUI
 import AppKit
 
+/// 合并同一布局周期内的滚动报告。
+///
+/// 这是一个刻意不接入 Observation 的引用对象：属性变化只负责调度，不应成为新的
+/// SwiftUI 刷新来源。实例由 `@State` 保持稳定身份，详情 View 重算时不会丢失待处理报告。
+@MainActor
+private final class RepoDetailScrollReportScheduler {
+    var pendingReport: RepoDetailScrollReport?
+    var isScheduled = false
+}
+
 extension Notification.Name {
     /// 中栏 toolbar 把属于当前仓库的瞬时反馈交给右侧详情页统一呈现。
     static let repoDetailToastRequested = Notification.Name("StarcatRepoDetailToastRequested")
@@ -192,6 +202,10 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
 
     /// README / Release 时间线在 Hero 展开时的可滚动余量（由 body slot 上报）。
     @State private var readmeScrollOverflow: CGFloat?
+
+    /// 滚动回调可能在一次布局周期内密集到达；调度器只保留最新报告，并且本身不参与
+    /// SwiftUI Observation，避免为了合并回调再次触发 View 更新。
+    @State private var scrollReportScheduler = RepoDetailScrollReportScheduler()
 
     /// Wiki 探测结果只影响 hero action 区，不参与 window toolbar，避免异步返回时触发
     /// toolbar 重排跳动。
@@ -453,16 +467,59 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// progress 回落 → Hero 再展开，形成「半折叠 ↔ 展开」振荡（HelloGitHub 等短 README
     /// 边界场景）。
     private func updateScrollReport(_ report: RepoDetailScrollReport) {
+        guard shouldApplyScrollReport(report) else { return }
+
+        // 同一 run loop 里只安排一次 @State 写入，期间到达的新报告覆盖旧报告。
+        // 这既保留 WebView 需要的“离开 layout 栈后更新”约束，也避免高速滚动或 Charts
+        // 重排时堆积大量 MainActor Task。
+        scrollReportScheduler.pendingReport = report
+        guard !scrollReportScheduler.isScheduled else { return }
+        scrollReportScheduler.isScheduled = true
+
         // WKScriptMessageHandler / updateNSView 可能在 SwiftUI layout 栈内回调；
         // 推迟到下一 run loop 写 @State，避免重入打断 WebView 首帧 loadHTMLString。
         Task { @MainActor in
-            applyScrollReport(report)
+            let latestReport = scrollReportScheduler.pendingReport
+            scrollReportScheduler.pendingReport = nil
+            scrollReportScheduler.isScheduled = false
+            if let latestReport {
+                applyScrollReport(latestReport)
+            }
         }
     }
 
+    /// 在创建 MainActor Task 前先判断报告是否真的会改变状态。
+    ///
+    /// `readmeScrollOverflow` 原先每次报告都会赋值，即使只是 Charts 产生的亚像素抖动；
+    /// 这会重新布局整个详情页，并立即生成下一份滚动报告。
+    private func shouldApplyScrollReport(_ report: RepoDetailScrollReport) -> Bool {
+        let nextOverflow = Self.resolvedScrollOverflow(
+            current: readmeScrollOverflow,
+            reported: report.scrollOverflow
+        )
+        let overflowChanged = nextOverflow != readmeScrollOverflow
+        let effectivePanelHeight = effectiveMetadataPanelHeight(naturalHeight: metadataPanelHeight)
+        let stableScrollOverflow = Self.expandedScrollOverflow(
+            currentOverflow: nextOverflow,
+            panelHeight: effectivePanelHeight,
+            collapseProgress: metadataPanelCollapseProgress
+        )
+        let canCollapse = Self.canCollapseHero(
+            scrollOverflow: stableScrollOverflow,
+            panelHeight: effectivePanelHeight
+        )
+        let rawProgress = Self.metadataCollapseProgress(for: report.offsetY)
+        let nextProgress = canCollapse ? rawProgress : 0
+        return overflowChanged || abs(nextProgress - metadataPanelCollapseProgress) > 0.01
+    }
+
     private func applyScrollReport(_ report: RepoDetailScrollReport) {
-        if let overflow = report.scrollOverflow {
-            readmeScrollOverflow = overflow
+        let nextOverflow = Self.resolvedScrollOverflow(
+            current: readmeScrollOverflow,
+            reported: report.scrollOverflow
+        )
+        if nextOverflow != readmeScrollOverflow {
+            readmeScrollOverflow = nextOverflow
         }
 
         // Hero 内部滚动时，折叠门槛应以“屏幕上真正占用的高度”计算，
@@ -532,6 +589,20 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         guard let currentOverflow, panelHeight > 0 else { return currentOverflow }
         let normalizedProgress = min(max(collapseProgress, 0), 1)
         return currentOverflow + panelHeight * normalizedProgress
+    }
+
+    /// 合并新的滚动余量，忽略不会影响视觉的亚像素变化。
+    ///
+    /// `nil` 表示本轮尚未测到，不应清掉先前的有效值；否则 README loading 或视图切换
+    /// 会让 Hero 折叠资格短暂丢失并产生跳动。
+    static func resolvedScrollOverflow(
+        current: CGFloat?,
+        reported: CGFloat?,
+        tolerance: CGFloat = RepoDetailScrollReport.geometryTolerance
+    ) -> CGFloat? {
+        guard let reported else { return current }
+        guard let current else { return reported }
+        return abs(reported - current) > max(tolerance, 0) ? reported : current
     }
 
     /// Hero 是否具备稳定折叠资格：余量未知或面板未测高时保守禁止；余量须 ≥ 面板高度。

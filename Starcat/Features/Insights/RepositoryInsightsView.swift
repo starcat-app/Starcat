@@ -46,7 +46,10 @@ struct RepositoryInsightsView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(spacing: 14) {
+            // 洞察页只有固定的八个区块，其中多个区块包含 Charts。
+            // 使用 LazyVStack 会让图表参与可见区域的反复尺寸估算，滚动度量回写后容易形成
+            // AttributeGraph 布局反馈；这里改为一次性确定高度的 VStack，开销可控且布局稳定。
+            VStack(spacing: 14) {
                 localOverviewSection
                 activitySection
                 starHistorySection
@@ -64,7 +67,8 @@ struct RepositoryInsightsView: View {
                 offsetY: max(0, geometry.contentOffset.y),
                 scrollOverflow: max(0, geometry.contentSize.height - geometry.containerSize.height)
             )
-        } action: { _, report in
+        } action: { previous, report in
+            guard report.differsMeaningfully(from: previous) else { return }
             onScrollReport(report)
         }
         .accessibilityLabel(Text("insights.repo.mode.insights"))

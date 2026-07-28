@@ -12,6 +12,50 @@ import XCTest
 @MainActor
 final class RepoDetailScaffoldTests: XCTestCase {
 
+    // MARK: - scroll report stabilization
+
+    func testScrollReport_ignoresSubpixelGeometryJitter() {
+        let previous = RepoDetailScrollReport(offsetY: 120, scrollOverflow: 640)
+        let jittered = RepoDetailScrollReport(offsetY: 120.4, scrollOverflow: 639.6)
+
+        XCTAssertFalse(jittered.differsMeaningfully(from: previous))
+    }
+
+    func testScrollReport_acceptsMeaningfulGeometryChange() {
+        let previous = RepoDetailScrollReport(offsetY: 120, scrollOverflow: 640)
+        let moved = RepoDetailScrollReport(offsetY: 121, scrollOverflow: 640)
+        let resized = RepoDetailScrollReport(offsetY: 120, scrollOverflow: 641)
+
+        XCTAssertTrue(moved.differsMeaningfully(from: previous))
+        XCTAssertTrue(resized.differsMeaningfully(from: previous))
+    }
+
+    func testResolvedScrollOverflow_keepsStableValueForSubpixelJitter() {
+        let resolved = RepoDetailScaffold<EmptyView, EmptyView>.resolvedScrollOverflow(
+            current: 640,
+            reported: 640.4
+        )
+
+        XCTAssertEqual(resolved, 640)
+    }
+
+    func testResolvedScrollOverflow_acceptsMeaningfulChangeAndKeepsMeasurementAcrossNil() {
+        XCTAssertEqual(
+            RepoDetailScaffold<EmptyView, EmptyView>.resolvedScrollOverflow(
+                current: 640,
+                reported: 641
+            ),
+            641
+        )
+        XCTAssertEqual(
+            RepoDetailScaffold<EmptyView, EmptyView>.resolvedScrollOverflow(
+                current: 640,
+                reported: nil
+            ),
+            640
+        )
+    }
+
     // MARK: - metadataCollapseProgress
 
     func testMetadataCollapseProgress_staysZeroBeforeStartThreshold() {
