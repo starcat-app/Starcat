@@ -84,22 +84,40 @@ final class StarHistoryViewModel {
     }
 
     func load(repo: Repo) async {
+        await load(repo: repo, preserveVisibleSnapshot: false)
+    }
+
+    /// 范围切换与仓库切换的保留策略不同：
+    /// - 同仓库切范围时保留当前曲线，目标范围返回后再整体替换；
+    /// - 切仓库时立即清空，禁止短暂显示上一个仓库的 Star 数据。
+    private func load(repo: Repo, preserveVisibleSnapshot: Bool) async {
         generation &+= 1
         let requestedGeneration = generation
         activeRepoID = repo.id
+        if !preserveVisibleSnapshot {
+            snapshot = nil
+        }
         phase = .loading
-        isRefreshing = false
+        isRefreshing = preserveVisibleSnapshot
+        defer {
+            if owns(requestedGeneration, repoID: repo.id) {
+                isRefreshing = false
+            }
+        }
 
         do {
             let cached = try await repository.cached(repo: repo, range: range)
             guard owns(requestedGeneration, repoID: repo.id) else { return }
-            snapshot = cached
-            apply(cached.remoteState)
+            // 目标范围没有缓存时继续展示原曲线；空缓存不是一份值得覆盖 UI 的新数据。
+            if !preserveVisibleSnapshot || !cached.points.isEmpty || snapshot == nil {
+                snapshot = cached
+                apply(cached.remoteState)
+            }
         } catch is CancellationError {
             return
         } catch {
             guard owns(requestedGeneration, repoID: repo.id) else { return }
-            phase = .failed
+            phase = snapshot == nil ? .failed : .stale(.transport(error.localizedDescription))
             return
         }
 
@@ -113,7 +131,7 @@ final class StarHistoryViewModel {
     func selectRange(_ newRange: StarHistoryRange, repo: Repo) async {
         guard range != newRange else { return }
         range = newRange
-        await load(repo: repo)
+        await load(repo: repo, preserveVisibleSnapshot: true)
     }
 
     func refresh(repo: Repo) async {

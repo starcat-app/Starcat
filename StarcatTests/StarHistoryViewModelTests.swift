@@ -110,6 +110,48 @@ struct StarHistoryViewModelTests {
         #expect(await repository.requestedRanges() == [.oneYear, .all])
     }
 
+    @Test("切换 Star 范围期间保留现有曲线")
+    func selectingRangeKeepsVisibleSnapshotUntilTargetRangeArrives() async {
+        let loadGate = StarHistoryLoadGate()
+        let currentPoint = Self.point("2026-07-27", 10)
+        let targetPoint = Self.point("2026-07-27", 20)
+        let repository = StubStarHistoryRepository(
+            cachedHandler: { _, range in
+                if range == .all {
+                    await loadGate.block()
+                    return Self.snapshot(range: range, points: [], state: .cached)
+                }
+                return Self.snapshot(range: range, points: [currentPoint], state: .cached)
+            },
+            refreshHandler: { _, range, _ in
+                Self.snapshot(
+                    range: range,
+                    points: [range == .all ? targetPoint : currentPoint],
+                    state: .fresh
+                )
+            }
+        )
+        let viewModel = StarHistoryViewModel(repository: repository)
+        let repo = Self.fixtureRepo(id: 6)
+        await viewModel.load(repo: repo)
+
+        let rangeTask = Task {
+            await viewModel.selectRange(.all, repo: repo)
+        }
+        await loadGate.waitUntilBlocked()
+
+        #expect(viewModel.range == .all)
+        #expect(viewModel.currentStars == 10)
+        #expect(viewModel.isRefreshing)
+
+        await loadGate.release()
+        await rangeTask.value
+
+        #expect(viewModel.currentStars == 20)
+        #expect(viewModel.phase == .content)
+        #expect(!viewModel.isRefreshing)
+    }
+
     @Test("私有、陈旧、不可用与失败状态应稳定映射")
     func remoteStatesMapToStablePhases() async {
         let repo = Self.fixtureRepo(id: 4)
@@ -231,6 +273,36 @@ struct StarHistoryViewModelTests {
 
 private enum StarHistoryViewModelTestError: Error {
     case failed
+}
+
+private actor StarHistoryLoadGate {
+    private var blockedWaiter: CheckedContinuation<Void, Never>?
+    private var releaseWaiter: CheckedContinuation<Void, Never>?
+    private var isBlocked = false
+    private var isReleased = false
+
+    func block() async {
+        isBlocked = true
+        blockedWaiter?.resume()
+        blockedWaiter = nil
+        guard !isReleased else { return }
+        await withCheckedContinuation { continuation in
+            releaseWaiter = continuation
+        }
+    }
+
+    func waitUntilBlocked() async {
+        guard !isBlocked else { return }
+        await withCheckedContinuation { continuation in
+            blockedWaiter = continuation
+        }
+    }
+
+    func release() {
+        isReleased = true
+        releaseWaiter?.resume()
+        releaseWaiter = nil
+    }
 }
 
 private actor StubStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
