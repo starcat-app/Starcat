@@ -327,6 +327,45 @@ struct RepositoryInsightsViewModelTests {
         #expect(viewModel.recentActivityState == .content(refreshedRecentActivity))
     }
 
+    @Test("同一入口十秒内连续手动刷新只调用一次远端 Provider")
+    func repeatedManualRefreshUsesCooldown() async {
+        let generatedAt = Date(timeIntervalSince1970: 2_050)
+        let activity = RepositoryActivityCounts(
+            createdPullRequests: 1,
+            mergedPullRequests: 1,
+            createdIssues: 1,
+            closedIssues: 1,
+            generatedAt: generatedAt
+        )
+        let counter = RepositoryInsightsCallCounter()
+        let remoteProvider = StubRepositoryRemoteInsightsProvider(
+            cachedHandler: { _, _ in
+                RepositoryCachedActivityCounts(
+                    value: activity,
+                    fetchedAt: generatedAt,
+                    isStale: false
+                )
+            },
+            refreshHandler: { _, _ in
+                await counter.increment()
+                return activity
+            }
+        )
+        let viewModel = RepositoryInsightsViewModel(
+            provider: emptyLocalProvider(),
+            remoteProvider: remoteProvider,
+            now: { generatedAt }
+        )
+        let repo = fixtureRepo(id: 15)
+        await viewModel.load(repo: repo, isAuthenticated: true)
+
+        await viewModel.refreshActivity(repo: repo, isAuthenticated: true)
+        await viewModel.refreshActivity(repo: repo, isAuthenticated: true)
+
+        #expect(await counter.value() == 1)
+        #expect(viewModel.activityState == .content(activity))
+    }
+
     @Test("全局刷新并行更新各远端区块且刷新期间保留现有内容")
     func refreshAllUpdatesRemoteSectionsInParallel() async {
         let generatedAt = Date(timeIntervalSince1970: 2_100)
@@ -1156,5 +1195,17 @@ private struct StubRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsPro
 
     func refreshRecentActivity(repository: RepoIdentity) async throws -> RepositoryRecentActivity {
         try await refreshRecentActivityHandler(repository)
+    }
+}
+
+private actor RepositoryInsightsCallCounter {
+    private var count = 0
+
+    func increment() {
+        count += 1
+    }
+
+    func value() -> Int {
+        count
     }
 }
