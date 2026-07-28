@@ -34,6 +34,10 @@ struct RepositoryInsightsView: View {
     @State private var selectedCommitWeekIndex: Int?
     /// 时间线悬停行，用于光标聚焦高亮。
     @State private var hoveredTimelineItemID: String?
+    /// Community / Security 信号行悬停，交互与时间线一致。
+    @State private var hoveredLocalSignalID: String?
+    /// 贡献者卡片悬停。
+    @State private var hoveredContributorID: String?
     /// 时间线默认只展示最近几条，避免整页被事件列表撑满。
     @State private var isTimelineExpanded = false
     /// 贡献者默认截断；点击 +N /「查看全部」再展开。
@@ -60,43 +64,85 @@ struct RepositoryInsightsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            // 洞察页区块含 Charts；LazyVStack 会反复估算高度并与滚动回写形成反馈。
-            // 改为 VStack，并用「概览 / 深潜」两段节奏降低同权卡片疲劳。
-            VStack(alignment: .leading, spacing: 16) {
-                // 上半：一眼能扫完的本地事实 + 活动 KPI
-                localOverviewSection
-                activitySection
+        VStack(spacing: 0) {
+            ScrollView {
+                // 洞察页区块含 Charts；LazyVStack 会反复估算高度并与滚动回写形成反馈。
+                // 改为 VStack，并用「概览 / 深潜」两段节奏降低同权卡片疲劳。
+                VStack(alignment: .leading, spacing: 16) {
+                    // 上半：一眼能扫完的本地事实 + 活动 KPI
+                    localOverviewSection
+                    activitySection
 
-                Divider()
-                    .opacity(0.35)
-                    .padding(.vertical, 2)
+                    Divider()
+                        .opacity(0.35)
+                        .padding(.vertical, 2)
 
-                // 下半：需要盯图的深潜区块；刷新入口只保留在 Star / Commit（活动区另有 Sync）
-                starHistorySection
-                commitSection
-                contributorSection
-                healthSection
-                localSignalsSection
-                timelineSection
+                    // 下半：需要盯图的深潜区块；分区 Sync 保留，底栏另有全局刷新。
+                    starHistorySection
+                    commitSection
+                    contributorSection
+                    healthSection
+                    localSignalsSection
+                    timelineSection
+                }
+                // 外层 Scaffold 在 Hero 折叠后会扩大正文视口；内容栈必须坚持使用卡片的
+                // 固有高度，否则 VStack 会接受扩大的纵向 proposal，在最后一张卡片后留下
+                // 一段可滚动但不可见的空白。这里只固定纵向，横向仍随详情栏宽度铺满。
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(18)
             }
-            // 外层 Scaffold 在 Hero 折叠后会扩大正文视口；内容栈必须坚持使用卡片的
-            // 固有高度，否则 VStack 会接受扩大的纵向 proposal，在最后一张卡片后留下
-            // 一段可滚动但不可见的空白。这里只固定纵向，横向仍随详情栏宽度铺满。
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(18)
-        }
-        .detailScrollViewStyle()
-        .onScrollGeometryChange(for: RepoDetailScrollReport.self) { geometry in
-            RepoDetailScrollReport(
-                offsetY: max(0, geometry.contentOffset.y),
-                scrollOverflow: max(0, geometry.contentSize.height - geometry.containerSize.height)
-            )
-        } action: { previous, report in
-            guard report.differsMeaningfully(from: previous) else { return }
-            onScrollReport(report)
+            .detailScrollViewStyle()
+            .onScrollGeometryChange(for: RepoDetailScrollReport.self) { geometry in
+                RepoDetailScrollReport(
+                    offsetY: max(0, geometry.contentOffset.y),
+                    scrollOverflow: max(0, geometry.contentSize.height - geometry.containerSize.height)
+                )
+            } action: { previous, report in
+                guard report.differsMeaningfully(from: previous) else { return }
+                onScrollReport(report)
+            }
+
+            // 对齐 README cacheFooter：底栏只挂全局 Sync；左侧不放「缓存于」。
+            insightsGlobalFooter
         }
         .accessibilityLabel(Text("insights.repo.mode.insights"))
+    }
+
+    /// README 底栏同款 `.bar`；右侧全局刷新，分区 Sync 全部保留。
+    private var insightsGlobalFooter: some View {
+        HStack(spacing: 12) {
+            Spacer(minLength: 0)
+            SyncIconButton(
+                isRefreshing: isGlobalRefreshing,
+                disabled: isGlobalRefreshing,
+                font: .caption2,
+                frameSize: 18,
+                tooltip: String.l10n("insights.repo.refreshAll"),
+                action: {
+                    Task {
+                        await refreshAllInsights()
+                    }
+                }
+            )
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 6)
+        .foregroundStyle(.secondary)
+        .background(.bar)
+    }
+
+    private var isGlobalRefreshing: Bool {
+        viewModel.isRefreshingAll || starHistoryViewModel.isRefreshing
+    }
+
+    private func refreshAllInsights() async {
+        let authenticated = authSession.state.isAuthenticated
+        async let insightsLoad: Void = viewModel.refreshAll(
+            repo: repo,
+            isAuthenticated: authenticated
+        )
+        async let starLoad: Void = starHistoryViewModel.refresh(repo: repo)
+        _ = await (insightsLoad, starLoad)
     }
 
     private var localOverviewSection: some View {
@@ -105,28 +151,30 @@ struct RepositoryInsightsView: View {
             subtitle: "insights.repo.section.local.subtitle",
             systemImage: "internaldrive.fill"
         ) {
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 132), spacing: 10)],
-                spacing: 10
-            ) {
+            // 与活动概览同款：四卡一行、标题行彩色图标、数值居中加大。
+            HStack(alignment: .top, spacing: 10) {
                 localFact(
                     title: "insights.repo.local.release",
                     systemImage: "tag.fill",
+                    tintName: "blue",
                     value: releaseValue
                 )
                 localFact(
                     title: "insights.repo.local.license",
                     systemImage: "checkmark.seal.fill",
+                    tintName: "green",
                     value: repo.license ?? String.l10n("insights.repo.state.noData")
                 )
                 localFact(
                     title: "insights.repo.local.health",
                     systemImage: "heart.text.square.fill",
+                    tintName: "orange",
                     value: healthValue
                 )
                 localFact(
                     title: "insights.repo.local.openssf",
                     systemImage: "shield.checkered",
+                    tintName: "purple",
                     value: openSSFValue
                 )
             }
@@ -136,38 +184,42 @@ struct RepositoryInsightsView: View {
     private func localFact(
         title: LocalizedStringKey,
         systemImage: String,
+        tintName: String,
         value: String?
     ) -> some View {
-        // 图标与标题（第一行）对齐；数值在标题下方，不参与图标垂直居中。
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: systemImage)
-                .font(interfaceScale.font(.captionSmall))
-                .foregroundStyle(.secondary)
-                .frame(width: 16, height: 14, alignment: .center)
-            VStack(alignment: .leading, spacing: 2) {
+        let tint = InsightsColor.resolve(tintName)
+        let displayValue = value ?? "—"
+        let isPlaceholder = value == nil
+            || value == String.l10n("insights.repo.state.noData")
+            || value == String.l10n("error.loadFailed")
+
+        return VStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .foregroundStyle(tint)
                 Text(title)
-                    .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                if let value {
-                    Text(verbatim: value)
-                        .font(interfaceScale.font(.caption, weight: .semibold))
-                        .lineLimit(1)
-                } else {
-                    Text(verbatim: "—")
-                        .font(interfaceScale.font(.caption, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
+                    .minimumScaleFactor(0.85)
             }
-            Spacer(minLength: 0)
+            .font(interfaceScale.font(.caption))
+
+            Text(verbatim: displayValue)
+                .font(interfaceScale.font(size: 22, weight: .semibold))
+                .foregroundStyle(isPlaceholder ? .secondary : .primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .monospacedDigit()
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 72)
+        .padding(10)
         .background(
-            Color(nsColor: .textBackgroundColor).opacity(0.45),
-            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+            Color(nsColor: .textBackgroundColor).opacity(0.55),
+            in: RoundedRectangle(cornerRadius: 7)
         )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(title))
+        .accessibilityValue(Text(verbatim: displayValue))
     }
 
     private var releaseValue: String? {
@@ -216,14 +268,12 @@ struct RepositoryInsightsView: View {
             systemImage: "waveform.path.ecg"
         ) {
             VStack(alignment: .leading, spacing: 10) {
+                // 标题与四卡之间单独一行：时间切换靠右，绝不挤进指标行或掉到卡片底。
                 HStack(spacing: 8) {
-                    // 活动范围只在这里控制一次；提交图跟随同一 binding，避免双控件。
-                    activityRangePicker
-                    Spacer(minLength: 8)
-                    activityRefreshButton
+                    Spacer(minLength: 0)
+                    activityControls
                 }
 
-                // 时间范围切换时指标区轻轻落下，避免数字硬切。
                 ZStack(alignment: .topLeading) {
                     activityBody
                         .id(viewModel.activityRange)
@@ -238,22 +288,22 @@ struct RepositoryInsightsView: View {
         }
     }
 
+    private var activityControls: some View {
+                // 活动范围只在这里控制；提交图有独立 range，避免双控件抢同一状态。
+                HStack(spacing: 8) {
+                    // 活动范围只在这里控制一次；提交图有独立 binding。
+                    activityRangePicker
+                    activityRefreshButton
+                }
+    }
+
     @ViewBuilder
     private var activityBody: some View {
         if let counts = displayedActivityCounts {
-            // 必须包进 VStack：ViewBuilder 并列子视图作为 Section content 时会叠绘。
-            VStack(alignment: .leading, spacing: 8) {
-                if let message = activityStatusMessage {
-                    sectionStatusLine(message.key, systemImage: message.systemImage)
-                }
-
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 128), spacing: 10)],
-                    spacing: 10
-                ) {
-                    ForEach(activityMetrics(from: counts)) { metric in
-                        activityMetric(metric)
-                    }
+            // 有缓存就只展示指标；刷新态由 SyncIconButton 表达，不再塞状态文案行。
+            HStack(alignment: .top, spacing: 10) {
+                ForEach(activityMetrics(from: counts)) { metric in
+                    activityMetric(metric)
                 }
             }
         } else {
@@ -312,7 +362,6 @@ struct RepositoryInsightsView: View {
         Binding(
             get: { viewModel.activityRange },
             set: { range in
-                selectedCommitWeekIndex = nil
                 Task {
                     await viewModel.selectActivityRange(
                         range,
@@ -320,6 +369,16 @@ struct RepositoryInsightsView: View {
                         isAuthenticated: authSession.state.isAuthenticated
                     )
                 }
+            }
+        )
+    }
+
+    private var commitActivityRangeBinding: Binding<RepositoryActivityRange> {
+        Binding(
+            get: { viewModel.commitActivityRange },
+            set: { range in
+                selectedCommitWeekIndex = nil
+                viewModel.selectCommitActivityRange(range)
             }
         )
     }
@@ -334,26 +393,6 @@ struct RepositoryInsightsView: View {
              .failed(let cached):
             return cached
         case .idle:
-            return nil
-        }
-    }
-
-    private var activityStatusMessage: (key: LocalizedStringKey, systemImage: String)? {
-        switch viewModel.activityState {
-        case .stale:
-            return ("insights.repo.state.stale", "clock.badge.exclamationmark")
-        case .generating:
-            return ("insights.repo.state.generating", "clock.arrow.circlepath")
-        case .unavailable:
-            return (
-                authSession.state.isAuthenticated
-                    ? "insights.repo.state.noData"
-                    : "insights.repo.state.loginRequired",
-                "person.crop.circle.badge.exclamationmark"
-            )
-        case .failed:
-            return ("insights.repo.state.refreshFailed", "exclamationmark.triangle")
-        case .idle, .loading, .content:
             return nil
         }
     }
@@ -399,7 +438,7 @@ struct RepositoryInsightsView: View {
 
     private func activityMetric(_ metric: RepositoryActivityMetric) -> some View {
         let tint = InsightsColor.resolve(metric.tintName)
-        // 范围已在上方 pill 选择，卡内不再重复「1年」；标题与数字居中对齐。
+        // 布局/字号/底色与 localFact 保持同一套，避免两块「看起来像两套组件」。
         return VStack(spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: metric.systemImage)
@@ -415,6 +454,8 @@ struct RepositoryInsightsView: View {
                 Text(metric.value.formatted(.number.locale(locale)))
                     .font(interfaceScale.font(size: 22, weight: .semibold))
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                 if let delta = metric.delta {
                     Text(verbatim: delta >= 0 ? "+\(delta)%" : "\(delta)%")
                         .font(interfaceScale.font(.captionSmall, weight: .medium))
@@ -425,7 +466,10 @@ struct RepositoryInsightsView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 72)
         .padding(10)
-        .background(Color(nsColor: .textBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 7))
+        .background(
+            Color(nsColor: .textBackgroundColor).opacity(0.55),
+            in: RoundedRectangle(cornerRadius: 7)
+        )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(LocalizedStringKey(metric.titleKey)))
         .accessibilityValue(Text(verbatim: activityMetricAccessibilityValue(metric)))
@@ -464,16 +508,16 @@ struct RepositoryInsightsView: View {
                 }
 
                 if !displayedStarPoints.isEmpty {
-                    // 图表单独做范围过渡；脚注放在下方文档流，不叠 Y 轴刻度。
+                    // 图表单独做范围过渡；只用淡入淡出，不用上下位移（会顶布局抖页面）。
                     VStack(alignment: .leading, spacing: 10) {
                         ZStack(alignment: .topLeading) {
                             starChart
                                 .id(starHistoryViewModel.range)
-                                .detailContentTransition()
+                                .transition(.opacity)
                                 .frame(maxWidth: .infinity, alignment: .topLeading)
                         }
                         .animation(
-                            reduceMotion ? nil : .easeOut(duration: 0.35),
+                            reduceMotion ? nil : .easeOut(duration: 0.2),
                             value: starHistoryViewModel.range
                         )
 
@@ -966,45 +1010,42 @@ struct RepositoryInsightsView: View {
             systemImage: "chart.bar.fill"
         ) {
             VStack(alignment: .leading, spacing: 10) {
-                // 范围只在活动区切换一次；这里只展示当前范围文案，避免双控件互相抢焦点。
+                // 与活动概览同款控件；范围独立，不再跟 activityRange 联动。
                 HStack(spacing: 8) {
-                    Label {
-                        Text(LocalizedStringKey(viewModel.activityRange.titleKey))
-                    } icon: {
-                        Image(systemName: "calendar")
-                    }
-                    .font(interfaceScale.font(.caption))
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel(Text("insights.repo.activity.range.label"))
-                    .accessibilityValue(
-                        Text(LocalizedStringKey(viewModel.activityRange.titleKey))
-                    )
+                    Spacer(minLength: 0)
+                    HStack(spacing: 8) {
+                        PillSegmentedControl(
+                            items: Array(RepositoryActivityRange.allCases),
+                            selection: commitActivityRangeBinding,
+                            title: { LocalizedStringKey($0.titleKey) },
+                            size: .compact
+                        )
+                        .accessibilityLabel(Text("insights.repo.activity.range.label"))
 
-                    Spacer(minLength: 8)
-
-                    SyncIconButton(
-                        isRefreshing: viewModel.isRefreshingCommitActivity,
-                        disabled: viewModel.isRefreshingCommitActivity,
-                        tooltip: String.l10n("insights.repo.commit.refresh")
-                    ) {
-                        Task {
-                            await viewModel.refreshCommitActivity(
-                                repo: repo,
-                                isAuthenticated: authSession.state.isAuthenticated
-                            )
+                        SyncIconButton(
+                            isRefreshing: viewModel.isRefreshingCommitActivity,
+                            disabled: viewModel.isRefreshingCommitActivity,
+                            tooltip: String.l10n("insights.repo.commit.refresh")
+                        ) {
+                            Task {
+                                await viewModel.refreshCommitActivity(
+                                    repo: repo,
+                                    isAuthenticated: authSession.state.isAuthenticated
+                                )
+                            }
                         }
                     }
                 }
 
                 ZStack(alignment: .topLeading) {
                     commitBody
-                        .id(viewModel.activityRange)
-                        .detailContentTransition()
+                        .id(viewModel.commitActivityRange)
+                        .transition(.opacity)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .animation(
-                    reduceMotion ? nil : .easeOut(duration: 0.35),
-                    value: viewModel.activityRange
+                    reduceMotion ? nil : .easeOut(duration: 0.2),
+                    value: viewModel.commitActivityRange
                 )
             }
         }
@@ -1013,20 +1054,14 @@ struct RepositoryInsightsView: View {
     @ViewBuilder
     private var commitBody: some View {
         if let activity = displayedCommitActivity {
-            let points = activity.points(in: viewModel.activityRange)
+            let points = activity.points(in: viewModel.commitActivityRange)
             if points.isEmpty {
                 chartEmptyState(
                     commitEmptyStateKey,
                     systemImage: commitEmptyStateSystemImage
                 )
             } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    commitChart(points: points)
-
-                    if let message = commitStatusMessage {
-                        sectionStatusLine(message.key, systemImage: message.systemImage)
-                    }
-                }
+                commitChart(points: points)
             }
         } else {
             switch viewModel.commitActivityState {
@@ -1058,15 +1093,16 @@ struct RepositoryInsightsView: View {
     }
 
     private func commitChart(points: [RepositoryCommitActivityPoint]) -> some View {
-        let labelIndices = commitAxisLabelIndices(count: points.count)
+        let categories = points.indices.map(commitWeekCategory)
+        let labelCategories = commitAxisLabelCategories(count: points.count)
         // 锁死 Y 域：悬停浮层不进 Chart marks，坐标轴不会因标注重算而抖。
         let yUpper = commitYAxisUpperBound(for: points)
         return Chart {
             ForEach(Array(points.enumerated()), id: \.element.id) { index, point in
                 let isHighlighted = selectedCommitWeekIndex == index
-                // 用周序号做分类轴：光标落在哪根柱的槽位就高亮哪根，避免连续日期「最近邻」吸错柱。
+                // 必须用分类轴（String）：连续 Int 域下 BarMark 默认带宽≈0，柱会「消失」。
                 BarMark(
-                    x: .value("Week", index),
+                    x: .value("Week", commitWeekCategory(index)),
                     y: .value("Commits", point.commits),
                     width: .ratio(0.72)
                 )
@@ -1075,9 +1111,11 @@ struct RepositoryInsightsView: View {
             }
         }
         .chartXAxis {
-            AxisMarks(values: labelIndices) { value in
+            AxisMarks(values: labelCategories) { value in
                 AxisValueLabel(centered: true) {
-                    if let index = value.as(Int.self), points.indices.contains(index) {
+                    if let category = value.as(String.self),
+                       let index = commitWeekIndex(fromCategory: category),
+                       points.indices.contains(index) {
                         Text(
                             points[index].weekStart,
                             format: Date.FormatStyle()
@@ -1097,7 +1135,7 @@ struct RepositoryInsightsView: View {
                 AxisGridLine().foregroundStyle(Color.secondary.opacity(0.12))
             }
         }
-        .chartXScale(domain: 0...(max(points.count - 1, 0)))
+        .chartXScale(domain: categories)
         .chartYScale(domain: 0...yUpper)
         // 详情浮在绘图区上方；命中用 hover 坐标反查分类，离开清空，避免粘滞选中。
         .chartOverlay { proxy in
@@ -1109,28 +1147,44 @@ struct RepositoryInsightsView: View {
                     .onContinuousHover { phase in
                         switch phase {
                         case .active(let location):
-                            guard let plot, plot.contains(location),
-                                  let raw: Double = proxy.value(atX: location.x)
-                            else {
-                                selectedCommitWeekIndex = nil
+                            // location 在 overlay GeometryReader 坐标系；value(atX:) /
+                            // position(forX:) 用的是 plot 原点相对坐标，必须先减掉 Y 轴占位。
+                            guard let plot, plot.contains(location) else {
+                                clearCommitHoverSelection()
                                 return
                             }
-                            // 连续序号轴上取最近整数槽位，与每根柱一一对应。
-                            let index = Int(raw.rounded())
-                            guard points.indices.contains(index) else {
-                                selectedCommitWeekIndex = nil
+                            let xInPlot = location.x - plot.origin.x
+                            guard let index = commitWeekIndex(
+                                nearestToX: xInPlot,
+                                proxy: proxy,
+                                pointCount: points.count
+                            ) else {
+                                clearCommitHoverSelection()
                                 return
                             }
-                            selectedCommitWeekIndex = index
+                            // 柱间切换：无动画瞬切，避免 snappy / ease 拖出「延迟感」。
+                            // 从无选中 → 首次命中：只给浮层一次极短淡入。
+                            guard selectedCommitWeekIndex != index else { return }
+                            if selectedCommitWeekIndex == nil, !reduceMotion {
+                                withAnimation(.easeOut(duration: 0.08)) {
+                                    selectedCommitWeekIndex = index
+                                }
+                            } else {
+                                var transaction = Transaction()
+                                transaction.disablesAnimations = true
+                                withTransaction(transaction) {
+                                    selectedCommitWeekIndex = index
+                                }
+                            }
                         case .ended:
-                            selectedCommitWeekIndex = nil
+                            clearCommitHoverSelection()
                         }
                     }
 
                 if let index = selectedCommitWeekIndex,
                    points.indices.contains(index),
                    let plot,
-                   let xInPlot = proxy.position(forX: index) {
+                   let xInPlot = proxy.position(forX: commitWeekCategory(index)) {
                     let point = points[index]
                     let tooltipWidth: CGFloat = 168
                     let rawX = plot.origin.x + xInPlot
@@ -1140,6 +1194,8 @@ struct RepositoryInsightsView: View {
                     )
                     commitHoverTooltip(point)
                         .position(x: clampedX, y: plot.minY + 16)
+                        // 柱间移动不插值位移（那会又慢又生硬）；仅首次出现淡入。
+                        .transition(.opacity)
                         .allowsHitTesting(false)
                 }
             }
@@ -1156,7 +1212,40 @@ struct RepositoryInsightsView: View {
         )
     }
 
+    /// 分类轴稳定 key；避免用 Date 连续轴导致选中吸错柱。
+    private func commitWeekCategory(_ index: Int) -> String {
+        String(format: "%03d", index)
+    }
+
+    private func commitWeekIndex(fromCategory category: String) -> Int? {
+        Int(category)
+    }
+
+    /// 在 plot 相对 X 上按柱中心找最近周。分类轴离散，比 `value(atX:)` 更贴光标。
+    private func commitWeekIndex(
+        nearestToX xInPlot: CGFloat,
+        proxy: ChartProxy,
+        pointCount: Int
+    ) -> Int? {
+        guard pointCount > 0 else { return nil }
+        var bestIndex: Int?
+        var bestDistance = CGFloat.infinity
+        for index in 0..<pointCount {
+            guard let barX = proxy.position(forX: commitWeekCategory(index)) else { continue }
+            let distance = abs(barX - xInPlot)
+            if distance < bestDistance {
+                bestDistance = distance
+                bestIndex = index
+            }
+        }
+        return bestIndex
+    }
+
     /// 点少时每柱一个刻度；点多时抽稀，避免 X 轴挤成一团。
+    private func commitAxisLabelCategories(count: Int) -> [String] {
+        commitAxisLabelIndices(count: count).map(commitWeekCategory)
+    }
+
     private func commitAxisLabelIndices(count: Int) -> [Int] {
         guard count > 0 else { return [] }
         if count <= 8 {
@@ -1177,21 +1266,10 @@ struct RepositoryInsightsView: View {
         return Double(maxCommits) * 1.18
     }
 
-    /// 无选中时全部同色；有选中时当前柱加亮，其余略淡，方便对上浮层日期。
+    /// 悬停只「加亮当前柱」，不压暗其它柱——Charts 对 gradient 插值差，压暗会像硬切。
     private func commitBarFill(isHighlighted: Bool) -> LinearGradient {
-        let hasSelection = selectedCommitWeekIndex != nil
-        let topOpacity: Double
-        let bottomOpacity: Double
-        if !hasSelection {
-            topOpacity = 0.95
-            bottomOpacity = 0.55
-        } else if isHighlighted {
-            topOpacity = 1.0
-            bottomOpacity = 0.78
-        } else {
-            topOpacity = 0.32
-            bottomOpacity = 0.18
-        }
+        let topOpacity: Double = isHighlighted ? 1.0 : 0.88
+        let bottomOpacity: Double = isHighlighted ? 0.82 : 0.52
         return LinearGradient(
             colors: [
                 Color.accentColor.opacity(topOpacity),
@@ -1202,11 +1280,23 @@ struct RepositoryInsightsView: View {
         )
     }
 
+    /// 离开绘图区时清选中；短淡出浮层，柱色仍瞬切。
+    private func clearCommitHoverSelection() {
+        guard selectedCommitWeekIndex != nil else { return }
+        if reduceMotion {
+            selectedCommitWeekIndex = nil
+        } else {
+            withAnimation(.easeOut(duration: 0.06)) {
+                selectedCommitWeekIndex = nil
+            }
+        }
+    }
+
     private var selectedCommitPoint: RepositoryCommitActivityPoint? {
         guard let selectedCommitWeekIndex,
               let activity = displayedCommitActivity
         else { return nil }
-        let points = activity.points(in: viewModel.activityRange)
+        let points = activity.points(in: viewModel.commitActivityRange)
         guard points.indices.contains(selectedCommitWeekIndex) else { return nil }
         return points[selectedCommitWeekIndex]
     }
@@ -1279,26 +1369,6 @@ struct RepositoryInsightsView: View {
         }
     }
 
-    private var commitStatusMessage: (key: LocalizedStringKey, systemImage: String)? {
-        switch viewModel.commitActivityState {
-        case .stale:
-            return ("insights.repo.state.stale", "clock.badge.exclamationmark")
-        case .generating:
-            return ("insights.repo.state.generating", "clock.arrow.circlepath")
-        case .unavailable:
-            return (
-                authSession.state.isAuthenticated
-                    ? "insights.repo.state.noData"
-                    : "insights.repo.state.loginRequired",
-                "person.crop.circle.badge.exclamationmark"
-            )
-        case .failed:
-            return ("insights.repo.state.refreshFailed", "exclamationmark.triangle")
-        case .idle, .loading, .content:
-            return nil
-        }
-    }
-
     private var contributorSection: some View {
         InsightsSectionContainer(
             title: "insights.repo.section.contributors",
@@ -1366,9 +1436,6 @@ struct RepositoryInsightsView: View {
                             .focusEffectDisabled()
                         }
                     }
-                    if let message = contributorsStatusMessage {
-                        sectionStatusLine(message.key, systemImage: message.systemImage)
-                    }
                 } else {
                     switch viewModel.contributorsState {
                     case .idle, .loading:
@@ -1399,7 +1466,9 @@ struct RepositoryInsightsView: View {
     }
 
     private func contributorItem(_ contributor: RepositoryContributor) -> some View {
-        HStack(spacing: 8) {
+        let destinationURL = contributorProfileURL(contributor)
+        let isHovered = hoveredContributorID == contributor.id
+        let content = HStack(spacing: 8) {
             AsyncImage(url: contributor.avatarURL) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
@@ -1414,9 +1483,15 @@ struct RepositoryInsightsView: View {
             .clipShape(Circle())
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: contributor.login)
-                    .font(interfaceScale.font(.caption, weight: .medium))
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(verbatim: contributor.login)
+                        .font(interfaceScale.font(.caption, weight: .medium))
+                        .lineLimit(1)
+                    Image(systemName: "arrow.up.right.square")
+                        .font(interfaceScale.font(.captionSmall))
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                }
                 Text(
                     String(
                         format: String.l10n("insights.repo.contributor.commitsFormat"),
@@ -1429,7 +1504,41 @@ struct RepositoryInsightsView: View {
                 .monospacedDigit()
             }
         }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.primary.opacity(isHovered ? 0.08 : 0))
+        )
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            if hovering {
+                hoveredContributorID = contributor.id
+            } else if hoveredContributorID == contributor.id {
+                hoveredContributorID = nil
+            }
+        }
+
+        return Button {
+            NSWorkspace.shared.open(destinationURL)
+        } label: {
+            content
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(Text(verbatim: destinationURL.absoluteString))
+        .accessibilityAddTraits(.isLink)
+    }
+
+    /// 优先 API `html_url`；旧缓存缺失时用 github.com/{login}。
+    private func contributorProfileURL(_ contributor: RepositoryContributor) -> URL {
+        if let profileHTMLURL = contributor.profileHTMLURL {
+            return profileHTMLURL
+        }
+        let encoded = contributor.login.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+            ?? contributor.login
+        return URL(string: "https://github.com/\(encoded)")!
     }
 
     private var displayedContributors: RepositoryContributorsInsight? {
@@ -1442,26 +1551,6 @@ struct RepositoryInsightsView: View {
              .failed(let cached):
             return cached
         case .idle:
-            return nil
-        }
-    }
-
-    private var contributorsStatusMessage: (key: LocalizedStringKey, systemImage: String)? {
-        switch viewModel.contributorsState {
-        case .stale:
-            return ("insights.repo.state.stale", "clock.badge.exclamationmark")
-        case .unavailable:
-            return (
-                authSession.state.isAuthenticated
-                    ? "insights.repo.state.noData"
-                    : "insights.repo.state.loginRequired",
-                "person.crop.circle.badge.exclamationmark"
-            )
-        case .failed:
-            return ("insights.repo.state.refreshFailed", "exclamationmark.triangle")
-        case .generating:
-            return ("insights.repo.state.generating", "clock.arrow.circlepath")
-        case .idle, .loading, .content:
             return nil
         }
     }
@@ -1584,31 +1673,52 @@ struct RepositoryInsightsView: View {
 
                     VStack(spacing: 0) {
                         localSignalRow(
+                            id: "community.readme",
                             title: "insights.repo.signal.readme",
                             isAvailable: community.hasReadme,
-                            systemImage: "doc.text.fill"
+                            systemImage: "doc.text.fill",
+                            destinationURL: communitySignalURL(
+                                isAvailable: community.hasReadme,
+                                stored: community.readmeHTMLURL,
+                                fallbackSuffix: "#readme"
+                            )
                         )
                         Divider().padding(.leading, 28)
                         localSignalRow(
+                            id: "community.conduct",
                             title: "insights.repo.signal.conduct",
                             isAvailable: community.hasCodeOfConduct,
-                            systemImage: "person.2.fill"
+                            systemImage: "person.2.fill",
+                            destinationURL: communitySignalURL(
+                                isAvailable: community.hasCodeOfConduct,
+                                stored: community.codeOfConductHTMLURL,
+                                fallbackSuffix: "/community"
+                            )
                         )
                         Divider().padding(.leading, 28)
                         localSignalRow(
+                            id: "community.contributing",
                             title: "insights.repo.signal.contributing",
                             isAvailable: community.hasContributing,
-                            systemImage: "hand.raised.fill"
+                            systemImage: "hand.raised.fill",
+                            destinationURL: communitySignalURL(
+                                isAvailable: community.hasContributing,
+                                stored: community.contributingHTMLURL,
+                                fallbackSuffix: "/community"
+                            )
                         )
                         Divider().padding(.leading, 28)
                         localSignalRow(
+                            id: "community.license",
                             title: "insights.repo.signal.license",
                             isAvailable: community.hasLicense,
-                            systemImage: "checkmark.seal.fill"
+                            systemImage: "checkmark.seal.fill",
+                            destinationURL: communitySignalURL(
+                                isAvailable: community.hasLicense,
+                                stored: community.licenseHTMLURL,
+                                fallbackSuffix: "/community"
+                            )
                         )
-                    }
-                    if let message = communityStatusMessage {
-                        sectionStatusLine(message.key, systemImage: message.systemImage)
                     }
                 } else {
                     switch viewModel.remoteCommunityState {
@@ -1653,26 +1763,6 @@ struct RepositoryInsightsView: View {
         }
     }
 
-    private var communityStatusMessage: (key: LocalizedStringKey, systemImage: String)? {
-        switch viewModel.remoteCommunityState {
-        case .stale:
-            return ("insights.repo.state.stale", "clock.badge.exclamationmark")
-        case .unavailable:
-            return (
-                authSession.state.isAuthenticated
-                    ? "insights.repo.state.noData"
-                    : "insights.repo.state.loginRequired",
-                "person.crop.circle.badge.exclamationmark"
-            )
-        case .failed:
-            return ("insights.repo.state.refreshFailed", "exclamationmark.triangle")
-        case .generating:
-            return ("insights.repo.state.generating", "clock.arrow.circlepath")
-        case .idle, .loading, .content:
-            return nil
-        }
-    }
-
     private var securitySignalGroup: some View {
         InsightsSectionContainer(
             title: "insights.repo.section.security",
@@ -1681,19 +1771,14 @@ struct RepositoryInsightsView: View {
         ) {
             switch viewModel.openSSFState {
             case .content(let openSSF):
-                HStack(spacing: 8) {
-                    Image(systemName: "shield.checkered")
-                        .frame(width: 18)
-                        .foregroundStyle(.secondary)
-                    Text("insights.repo.signal.openssf")
-                        .font(interfaceScale.font(.caption))
-                    Spacer(minLength: 8)
-                    Text(verbatim: String(format: "%.1f / 10", locale: locale, openSSF.score))
-                        .font(interfaceScale.font(.captionSmall, weight: .medium))
-                        .foregroundStyle(openSSF.score >= 5 ? .green : .orange)
-                        .monospacedDigit()
-                }
-                .padding(.vertical, 7)
+                localSignalRow(
+                    id: "security.openssf",
+                    title: "insights.repo.signal.openssf",
+                    statusText: String(format: "%.1f / 10", locale: locale, openSSF.score),
+                    statusColor: openSSF.score >= 5 ? .green : .orange,
+                    systemImage: "shield.checkered",
+                    destinationURL: openSSFScorecardURL
+                )
             case .loading, .idle:
                 sectionLoadingPlaceholder
             case .empty, .unavailable:
@@ -1710,25 +1795,103 @@ struct RepositoryInsightsView: View {
         }
     }
 
+    /// Available 才可跳；优先 API `html_url`，旧缓存缺失时用仓库页约定路径。
+    private func communitySignalURL(
+        isAvailable: Bool,
+        stored: URL?,
+        fallbackSuffix: String
+    ) -> URL? {
+        guard isAvailable else { return nil }
+        if let stored { return stored }
+        let base = repo.htmlUrl.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return URL(string: base + fallbackSuffix)
+    }
+
+    /// 与详情页 OpenSSF sheet 同源 scorecard.dev 查看器。
+    private var openSSFScorecardURL: URL? {
+        URL(string: "https://scorecard.dev/viewer/?uri=github.com/\(repo.owner)/\(repo.name)")
+    }
+
     private func localSignalRow(
+        id: String,
         title: LocalizedStringKey,
         isAvailable: Bool,
-        systemImage: String
+        systemImage: String,
+        destinationURL: URL?
     ) -> some View {
-        HStack(spacing: 8) {
+        localSignalRow(
+            id: id,
+            title: title,
+            statusText: String.l10n(
+                isAvailable ? "insights.repo.signal.available" : "insights.repo.signal.missing"
+            ),
+            statusColor: isAvailable ? .green : .orange,
+            systemImage: systemImage,
+            destinationURL: destinationURL
+        )
+    }
+
+    @ViewBuilder
+    private func localSignalRow(
+        id: String,
+        title: LocalizedStringKey,
+        statusText: String,
+        statusColor: Color,
+        systemImage: String,
+        destinationURL: URL?
+    ) -> some View {
+        let isTappable = destinationURL != nil
+        let isHovered = hoveredLocalSignalID == id
+        let content = HStack(spacing: 8) {
             Image(systemName: systemImage)
                 .frame(width: 18)
                 .foregroundStyle(.secondary)
-            Text(title)
-                .font(interfaceScale.font(.caption))
+            HStack(spacing: 5) {
+                Text(title)
+                    .font(interfaceScale.font(.caption))
+                if isTappable {
+                    Image(systemName: "arrow.up.right.square")
+                        .font(interfaceScale.font(.captionSmall))
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                }
+            }
             Spacer(minLength: 8)
-            Text(LocalizedStringKey(
-                isAvailable ? "insights.repo.signal.available" : "insights.repo.signal.missing"
-            ))
+            Text(verbatim: statusText)
                 .font(interfaceScale.font(.captionSmall, weight: .medium))
-                .foregroundStyle(isAvailable ? .green : .orange)
+                .foregroundStyle(statusColor)
+                .monospacedDigit()
         }
+        .padding(.horizontal, 8)
         .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.primary.opacity(isHovered && isTappable ? 0.08 : 0))
+        )
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            guard isTappable else { return }
+            if hovering {
+                hoveredLocalSignalID = id
+            } else if hoveredLocalSignalID == id {
+                hoveredLocalSignalID = nil
+            }
+        }
+
+        if let destinationURL {
+            Button {
+                NSWorkspace.shared.open(destinationURL)
+            } label: {
+                content
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(Text(verbatim: destinationURL.absoluteString))
+            .accessibilityAddTraits(.isLink)
+        } else {
+            content
+        }
     }
 
     /// 两个统计图共用的绘图高度，空态占位也按这个高度，避免切换范围时卡片跳高跳低。
@@ -1789,27 +1952,7 @@ struct RepositoryInsightsView: View {
         )
     }
 
-    /// 区块内刷新/缓存状态行：独占一行，避免和指标/列表叠绘。
-    private func sectionStatusLine(
-        _ key: LocalizedStringKey,
-        systemImage: String
-    ) -> some View {
-        Label(key, systemImage: systemImage)
-            .font(interfaceScale.font(.captionSmall))
-            .foregroundStyle(.secondary)
-            .lineLimit(2)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityAddTraits(.updatesFrequently)
-    }
-
-    private func sectionMessage(_ key: LocalizedStringKey, systemImage: String) -> some View {
-        Label(key, systemImage: systemImage)
-            .font(interfaceScale.font(.caption))
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, minHeight: 44)
-    }
-
+    /// 区块内真正无内容时的空态；有缓存时不再叠「正在刷新/显示缓存」文案。
     private func healthDimensions(
         from health: RepositoryHealthInsight
     ) -> [RepositoryHealthDimensionItem] {
@@ -1910,10 +2053,6 @@ struct RepositoryInsightsView: View {
                         .buttonStyle(.plain)
                         .focusEffectDisabled()
                     }
-
-                    if let message = timelineStatusMessage {
-                        sectionStatusLine(message.key, systemImage: message.systemImage)
-                    }
                 }
             }
         }
@@ -1977,7 +2116,7 @@ struct RepositoryInsightsView: View {
 
         if let commitActivity = displayedCommitActivity,
            let latestPoint = commitActivity.points.last {
-            let total = commitActivity.points(in: viewModel.activityRange).reduce(0) {
+            let total = commitActivity.points(in: viewModel.commitActivityRange).reduce(0) {
                 $0 + $1.commits
             }
             items.append(
@@ -2086,25 +2225,5 @@ struct RepositoryInsightsView: View {
         let base = repo.htmlUrl.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let encodedTag = tagName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? tagName
         return URL(string: "\(base)/releases/tag/\(encodedTag)")
-    }
-
-    private var timelineStatusMessage: (key: LocalizedStringKey, systemImage: String)? {
-        switch viewModel.recentActivityState {
-        case .stale:
-            return ("insights.repo.state.stale", "clock.badge.exclamationmark")
-        case .unavailable:
-            return (
-                authSession.state.isAuthenticated
-                    ? "insights.repo.state.noData"
-                    : "insights.repo.state.loginRequired",
-                "person.crop.circle.badge.exclamationmark"
-            )
-        case .failed:
-            return ("insights.repo.state.refreshFailed", "exclamationmark.triangle")
-        case .generating:
-            return ("insights.repo.state.generating", "clock.arrow.circlepath")
-        case .idle, .loading, .content:
-            return nil
-        }
     }
 }

@@ -179,7 +179,15 @@ struct GitHubRepositoryContributorMetric: Decodable, Equatable, Sendable {
 
 /// Community Profile 中 Starcat 首版需要展示的文档可用性。
 struct GitHubRepositoryCommunityProfile: Decodable, Equatable, Sendable {
-    private struct CommunityFile: Decodable, Equatable, Sendable {}
+    /// Community / license 文件节点；只取浏览器可打开的 `html_url`。
+    private struct CommunityFile: Decodable, Equatable, Sendable {
+        let htmlURL: URL?
+
+        enum CodingKeys: String, CodingKey {
+            case htmlURL = "html_url"
+        }
+    }
+
     private struct Files: Decodable, Equatable, Sendable {
         let codeOfConduct: CommunityFile?
         let codeOfConductFile: CommunityFile?
@@ -201,6 +209,14 @@ struct GitHubRepositoryCommunityProfile: Decodable, Equatable, Sendable {
     var hasCodeOfConduct: Bool { files.codeOfConduct != nil || files.codeOfConductFile != nil }
     var hasContributing: Bool { files.contributing != nil }
     var hasLicense: Bool { files.license != nil }
+
+    var readmeHTMLURL: URL? { files.readme?.htmlURL }
+    /// 优先仓库内 CODE_OF_CONDUCT 文件；其次官方 CoC 页（html_url 可能为 null）。
+    var codeOfConductHTMLURL: URL? {
+        files.codeOfConductFile?.htmlURL ?? files.codeOfConduct?.htmlURL
+    }
+    var contributingHTMLURL: URL? { files.contributing?.htmlURL }
+    var licenseHTMLURL: URL? { files.license?.htmlURL }
 
     enum CodingKeys: String, CodingKey {
         case healthPercentage = "health_percentage"

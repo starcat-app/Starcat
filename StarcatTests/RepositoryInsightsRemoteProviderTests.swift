@@ -134,11 +134,27 @@ struct RepositoryInsightsRemoteProviderTests {
         #expect(contributors.contributors.map(\.login) == ["alice", "bob"])
         #expect(contributors.contributors.map(\.commits) == [42, 17])
         #expect(contributors.contributors.first?.avatarURL?.absoluteString == "https://avatars.test/alice")
+        #expect(
+            contributors.contributors.map { $0.profileHTMLURL?.absoluteString } == [
+                "https://github.com/alice",
+                "https://github.com/bob"
+            ]
+        )
         #expect(community.healthPercentage == 75)
         #expect(community.hasReadme)
         #expect(community.hasCodeOfConduct)
         #expect(!community.hasContributing)
         #expect(community.hasLicense)
+        #expect(community.readmeHTMLURL?.absoluteString == "https://github.com/octo/community#readme")
+        #expect(
+            community.codeOfConductHTMLURL?.absoluteString
+                == "https://github.com/octo/community/blob/main/CODE_OF_CONDUCT.md"
+        )
+        #expect(community.contributingHTMLURL == nil)
+        #expect(
+            community.licenseHTMLURL?.absoluteString
+                == "https://github.com/octo/community/blob/main/LICENSE"
+        )
         #expect(cachedContributors.value == contributors)
         #expect(cachedCommunity.value == community)
         #expect(paths == [
@@ -242,8 +258,8 @@ private actor ContributorsCommunityHTTPClient: RAGHTTPClientProtocol {
         case "/repos/octo/community/contributors":
             body = """
             [
-              {"login":"alice","contributions":42,"avatar_url":"https://avatars.test/alice"},
-              {"login":"bob","contributions":17,"avatar_url":null}
+              {"login":"alice","contributions":42,"avatar_url":"https://avatars.test/alice","html_url":"https://github.com/alice"},
+              {"login":"bob","contributions":17,"avatar_url":null,"html_url":"https://github.com/bob"}
             ]
             """
         case "/repos/octo/community/community/profile":
@@ -251,10 +267,11 @@ private actor ContributorsCommunityHTTPClient: RAGHTTPClientProtocol {
             {
               "health_percentage":75,
               "files":{
-                "readme":{},
-                "code_of_conduct":{},
+                "readme":{"html_url":"https://github.com/octo/community#readme"},
+                "code_of_conduct":{"html_url":"https://www.contributor-covenant.org/version/2/1/code_of_conduct/"},
+                "code_of_conduct_file":{"html_url":"https://github.com/octo/community/blob/main/CODE_OF_CONDUCT.md"},
                 "contributing":null,
-                "license":{}
+                "license":{"html_url":"https://github.com/octo/community/blob/main/LICENSE"}
               }
             }
             """

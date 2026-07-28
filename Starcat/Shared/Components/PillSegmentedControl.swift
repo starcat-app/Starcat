@@ -21,6 +21,7 @@
 //  - `ManageDetailContent`（compact：README / 洞察）
 //  - `MyInsightsView`（compact：全部收藏 / 知识库）
 //  - `RepositoryInsightsView`（compact：Star / 提交活动范围）
+//  - `RepoNoteAIGenerationHeaderControl` 复用 compact 尺寸常量做单按钮胶囊
 //
 
 import SwiftUI

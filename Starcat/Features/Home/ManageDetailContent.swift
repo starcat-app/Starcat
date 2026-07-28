@@ -119,6 +119,7 @@ struct ManageDetailContent: View {
 
                 // 复用 Starcat 自绘胶囊控件，避免 macOS 原生 segmented Picker
                 // 在详情页中显得厚重；右对齐后也不会抢占 README 阅读区的视觉焦点。
+                // horizontal 24 与 RepoLocalSections / Hero 一致，让「AI 生成」与「洞察」右缘齐平。
                 PillSegmentedControl(
                     items: ManageDetailContentMode.allCases,
                     selection: $contentMode,
@@ -127,7 +128,7 @@ struct ManageDetailContent: View {
                 )
                 .accessibilityLabel(Text("insights.repo.mode.label"))
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 24)
             .padding(.vertical, 8)
 
             Divider()

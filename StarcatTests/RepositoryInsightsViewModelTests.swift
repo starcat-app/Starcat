@@ -227,6 +227,195 @@ struct RepositoryInsightsViewModelTests {
         #expect(viewModel.recentActivityState == .content(refreshedRecentActivity))
     }
 
+    @Test("全局刷新并行更新各远端区块且刷新期间保留现有内容")
+    func refreshAllUpdatesRemoteSectionsInParallel() async {
+        let generatedAt = Date(timeIntervalSince1970: 2_100)
+        let activity = RepositoryActivityCounts(
+            createdPullRequests: 1,
+            mergedPullRequests: 1,
+            createdIssues: 1,
+            closedIssues: 1,
+            generatedAt: generatedAt
+        )
+        let refreshedActivity = RepositoryActivityCounts(
+            createdPullRequests: 2,
+            mergedPullRequests: 2,
+            createdIssues: 2,
+            closedIssues: 2,
+            generatedAt: generatedAt.addingTimeInterval(30)
+        )
+        let commitActivity = RepositoryCommitActivity(
+            points: [RepositoryCommitActivityPoint(weekStart: generatedAt, commits: 3)],
+            generatedAt: generatedAt
+        )
+        let refreshedCommitActivity = RepositoryCommitActivity(
+            points: [RepositoryCommitActivityPoint(weekStart: generatedAt, commits: 4)],
+            generatedAt: generatedAt.addingTimeInterval(30)
+        )
+        let contributors = RepositoryContributorsInsight(
+            contributors: [
+                RepositoryContributor(id: "a", login: "a", commits: 1, colorName: "blue")
+            ],
+            generatedAt: generatedAt
+        )
+        let refreshedContributors = RepositoryContributorsInsight(
+            contributors: [
+                RepositoryContributor(id: "a", login: "a", commits: 2, colorName: "blue")
+            ],
+            generatedAt: generatedAt.addingTimeInterval(30)
+        )
+        let community = RepositoryCommunityInsight(
+            healthPercentage: 50,
+            hasReadme: true,
+            hasCodeOfConduct: false,
+            hasContributing: false,
+            hasLicense: true
+        )
+        let refreshedCommunity = RepositoryCommunityInsight(
+            healthPercentage: 70,
+            hasReadme: true,
+            hasCodeOfConduct: true,
+            hasContributing: true,
+            hasLicense: true
+        )
+        let recentActivity = RepositoryRecentActivity(
+            events: [
+                RepositoryRecentActivityEvent(
+                    id: "issue-old",
+                    kind: .issue,
+                    number: 1,
+                    title: "Old",
+                    occurredAt: generatedAt,
+                    htmlURL: nil
+                )
+            ],
+            generatedAt: generatedAt
+        )
+        let refreshedRecentActivity = RepositoryRecentActivity(
+            events: [
+                RepositoryRecentActivityEvent(
+                    id: "issue-new",
+                    kind: .issue,
+                    number: 2,
+                    title: "New",
+                    occurredAt: generatedAt.addingTimeInterval(30),
+                    htmlURL: nil
+                )
+            ],
+            generatedAt: generatedAt.addingTimeInterval(30)
+        )
+        let refreshGate = RepositoryInsightsRefreshGate(expectedCount: 5)
+        let remoteProvider = StubRepositoryRemoteInsightsProvider(
+            cachedHandler: { _, _ in
+                RepositoryCachedActivityCounts(
+                    value: activity,
+                    fetchedAt: generatedAt,
+                    isStale: false
+                )
+            },
+            refreshHandler: { _, _ in
+                await refreshGate.block()
+                return refreshedActivity
+            },
+            cachedCommitHandler: { _ in
+                RepositoryCachedCommitActivity(
+                    value: commitActivity,
+                    fetchedAt: generatedAt,
+                    isStale: false
+                )
+            },
+            refreshCommitHandler: { _ in
+                await refreshGate.block()
+                return refreshedCommitActivity
+            },
+            cachedContributorsHandler: { _ in
+                RepositoryCachedContributorsInsight(
+                    value: contributors,
+                    fetchedAt: generatedAt,
+                    isStale: false
+                )
+            },
+            refreshContributorsHandler: { _ in
+                await refreshGate.block()
+                return refreshedContributors
+            },
+            cachedCommunityHandler: { _ in
+                RepositoryCachedCommunityInsight(
+                    value: community,
+                    fetchedAt: generatedAt,
+                    isStale: false
+                )
+            },
+            refreshCommunityHandler: { _ in
+                await refreshGate.block()
+                return refreshedCommunity
+            },
+            cachedRecentActivityHandler: { _ in
+                RepositoryCachedRecentActivity(
+                    value: recentActivity,
+                    fetchedAt: generatedAt,
+                    isStale: false
+                )
+            },
+            refreshRecentActivityHandler: { _ in
+                await refreshGate.block()
+                return refreshedRecentActivity
+            }
+        )
+        let viewModel = RepositoryInsightsViewModel(
+            provider: emptyLocalProvider(),
+            remoteProvider: remoteProvider
+        )
+        let repo = fixtureRepo(id: 42)
+
+        await viewModel.load(repo: repo, isAuthenticated: true)
+        #expect(viewModel.activityState == .content(activity))
+
+        let refreshTask = Task {
+            await viewModel.refreshAll(repo: repo, isAuthenticated: true)
+        }
+        await refreshGate.waitUntilAllBlocked()
+
+        #expect(viewModel.isRefreshingAll)
+        #expect(viewModel.activityState == .content(activity))
+        #expect(viewModel.commitActivityState == .content(commitActivity))
+        #expect(viewModel.contributorsState == .content(contributors))
+        #expect(viewModel.remoteCommunityState == .content(community))
+        #expect(viewModel.recentActivityState == .content(recentActivity))
+
+        await refreshGate.release()
+        await refreshTask.value
+
+        #expect(!viewModel.isRefreshingAll)
+        #expect(viewModel.activityState == .content(refreshedActivity))
+        #expect(viewModel.commitActivityState == .content(refreshedCommitActivity))
+        #expect(viewModel.contributorsState == .content(refreshedContributors))
+        #expect(viewModel.remoteCommunityState == .content(refreshedCommunity))
+        #expect(viewModel.recentActivityState == .content(refreshedRecentActivity))
+    }
+
+    @Test("提交活动范围与活动概览范围彼此独立")
+    func commitActivityRangeIsIndependentFromActivityRange() async {
+        let viewModel = RepositoryInsightsViewModel(
+            provider: emptyLocalProvider(),
+            remoteProvider: nil
+        )
+        #expect(viewModel.activityRange == .month)
+        #expect(viewModel.commitActivityRange == .month)
+
+        viewModel.selectCommitActivityRange(.year)
+        #expect(viewModel.commitActivityRange == .year)
+        #expect(viewModel.activityRange == .month)
+
+        await viewModel.selectActivityRange(
+            .week,
+            repo: fixtureRepo(id: 99),
+            isAuthenticated: false
+        )
+        #expect(viewModel.activityRange == .week)
+        #expect(viewModel.commitActivityRange == .year)
+    }
+
     @Test("切换活动范围期间保留现有内容")
     func activityRangeChangeKeepsVisibleContentUntilTargetRangeArrives() async {
         let generatedAt = Date(timeIntervalSince1970: 3_000)

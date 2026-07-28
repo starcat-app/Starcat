@@ -9,10 +9,19 @@ import MarkdownUI
 import SwiftUI
 
 /// 折叠标题行右侧只保留生成入口。过程信息统一放在输入框下方，避免同一状态重复展示。
+///
+/// 视觉对齐 `PillSegmentedControl` compact 选中项（README / Insights）：外框胶囊 +
+/// 内嵌选中 pill；悬停时加深内底并加 accent 描边，作为「光标聚焦」反馈（禁用系统蓝框）。
 struct RepoNoteAIGenerationHeaderControl: View {
     let viewModel: RepoNoteAIGenerationViewModel
     let hasExistingNote: Bool
     let onGenerate: () -> Void
+
+    /// 与详情页 README / Insights 切换器同密度，避免同屏两套胶囊尺寸。
+    private static let pillSize: PillSegmentedControlSize = .compact
+
+    @State private var isHovered = false
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @ViewBuilder
     var body: some View {
@@ -27,15 +36,38 @@ struct RepoNoteAIGenerationHeaderControl: View {
     private var generateButton: some View {
         Button(action: onGenerate) {
             Label(generateTitleKey, systemImage: "sparkles")
-                .font(.caption)
+                .font(.system(size: Self.pillSize.fontSize, weight: .medium))
                 .labelStyle(.titleAndIcon)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .contentShape(Rectangle())
+                .foregroundStyle(.primary)
+                .padding(.horizontal, Self.pillSize.horizontalPadding)
+                .padding(.vertical, Self.pillSize.verticalPadding)
+                // 常驻「选中 Insights」同款内嵌 pill，不再依赖 hover 才出现底色。
+                .background(
+                    Color.primary.opacity(isHovered ? 0.16 : 0.10),
+                    in: Capsule(style: .continuous)
+                )
+                .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .inlineActionHover()
+        .padding(Self.pillSize.chromePadding)
+        .background(Color.secondary.opacity(0.08), in: Capsule(style: .continuous))
+        .overlay {
+            Capsule(style: .continuous)
+                .strokeBorder(
+                    isHovered
+                        ? Color.accentColor.opacity(0.55)
+                        : Color.secondary.opacity(0.15),
+                    lineWidth: isHovered ? 1 : 0.5
+                )
+        }
+        .pointerStyle(.link)
+        .onHover { hovering in
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) {
+                isHovered = hovering
+            }
+        }
+        .onDisappear { isHovered = false }
         .help(Text(generateHelpKey))
         .accessibilityHint(Text(generateHelpKey))
     }

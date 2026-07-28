@@ -58,7 +58,7 @@ struct RepositoryCachedActivityCounts: Equatable, Sendable {
     let isStale: Bool
 }
 
-/// GitHub 固定返回最近 52 周；保留绝对日期后，客户端可跟随 Activity range 裁剪。
+/// GitHub 固定返回最近 52 周；保留绝对日期后，客户端按提交区独立 range 裁剪。
 struct RepositoryCommitActivityPoint: Codable, Equatable, Identifiable, Sendable {
     let weekStart: Date
     let commits: Int
@@ -290,7 +290,8 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
                     login: metric.login,
                     commits: metric.contributions,
                     colorName: colors[colorIndex],
-                    avatarURL: metric.avatarURL.flatMap(URL.init(string:))
+                    avatarURL: metric.avatarURL.flatMap(URL.init(string:)),
+                    profileHTMLURL: metric.htmlURL.flatMap(URL.init(string:))
                 )
             },
             generatedAt: fetchedAt
@@ -335,7 +336,11 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
             hasReadme: profile.hasReadme,
             hasCodeOfConduct: profile.hasCodeOfConduct,
             hasContributing: profile.hasContributing,
-            hasLicense: profile.hasLicense
+            hasLicense: profile.hasLicense,
+            readmeHTMLURL: profile.readmeHTMLURL,
+            codeOfConductHTMLURL: profile.codeOfConductHTMLURL,
+            contributingHTMLURL: profile.contributingHTMLURL,
+            licenseHTMLURL: profile.licenseHTMLURL
         )
         try await cache.store(
             value,

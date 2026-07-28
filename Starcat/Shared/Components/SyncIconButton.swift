@@ -24,7 +24,8 @@
 //  - 用 `@State rotation: Double` + `.rotationEffect(.degrees(rotation))` 是 SidebarSyncButton
 //    已经在生产环境验证稳定的方式，本组件直接照搬
 //  - 静止时（isRefreshing=false）`rotation` 停在 0，**不会**有任何残留动画
-//  - isRefreshing 从 true → false 时用 `.easeOut(0.2)` 平滑回正，避免突然跳变
+//  - isRefreshing 从 true → false 时用 `.linear(duration: 0)` 替换 repeatForever 并归零
+//    （禁用动画赋 0 会留下 forever 幽灵一直转；easeOut 回拧又像上下抖）
 //  - 默认 hover 反馈用 `.pressableHover()`（与项目其他可点击元素一致）
 //
 //  使用范围（截至 2026-06-02）：
@@ -54,7 +55,8 @@ import SwiftUI
 /// 行为：
 /// - 静止时（`isRefreshing == false`）：图标静止不转
 /// - 刷新中（`isRefreshing == true`）：图标持续旋转（线性，1 秒/圈）
-/// - 状态切换：`true → false` 时用 0.2s easeOut 平滑回正到 0°，避免突然跳变
+/// - 状态切换：`true → false` 时用 `linear(duration: 0)` 替换掉 `repeatForever` 并归零
+///   （禁止 `disablesAnimations` 赋 0——会留下 forever 幽灵一直转；也禁止 easeOut 回拧）
 /// - **最短可见时长**（R-04 2026-06-11）：即便 `isRefreshing` 闪一下立即变 false（典型：
 ///   本地后端 5ms 返回），按钮仍至少持续旋转 `minVisibleDuration`（默认 600ms），
 ///   保证用户看到「按了 + 在做事」的视觉反馈。详见 `enforcedRefreshing` 状态机。
@@ -235,12 +237,17 @@ struct SyncIconButton: View {
                 }
             }
         } else {
-            // 停止旋转：0.2s easeOut 平滑回 0°
-            // reduceMotion 用户：瞬切回 0
+            // 停转必须用「非 forever 的 withAnimation」替换掉 repeatForever。
+            // 若只用 disablesAnimations 赋 0，SwiftUI 会留下 forever 幽灵动画 → 图标永远转。
+            // duration 0 的 linear：立刻归零，也不会像 easeOut 半圈回拧那样上下抖。
             if reduceMotion {
-                rotation = 0
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    rotation = 0
+                }
             } else {
-                withAnimation(.easeOut(duration: 0.2)) {
+                withAnimation(.linear(duration: 0)) {
                     rotation = 0
                 }
             }

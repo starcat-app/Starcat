@@ -127457,6 +127457,13 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "重新整理儲存庫活動" } }
       }
     },
+    "insights.repo.refreshAll" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Refresh all insights" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "刷新全部洞察" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "重新整理全部洞察" } }
+      }
+    },
     "insights.repo.contributor.commitsFormat" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld commits" } },

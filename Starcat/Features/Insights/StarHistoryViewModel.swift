@@ -98,6 +98,7 @@ final class StarHistoryViewModel {
             snapshot = nil
         }
         phase = .loading
+        // 切范围也驱动 Sync 转圈，与手动刷新、其它 SyncIconButton 统一。
         isRefreshing = preserveVisibleSnapshot
         defer {
             if owns(requestedGeneration, repoID: repo.id) {

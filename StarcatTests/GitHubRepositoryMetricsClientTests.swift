@@ -80,7 +80,7 @@ struct GitHubRepositoryMetricsClientTests {
             .json(#"[{"week":1785100000,"total":9,"days":[1,1,1,1,1,2,2]}]"#),
             .json(#"[{"login":"octocat","contributions":42,"avatar_url":"https://example.test/a.png","html_url":"https://github.com/octocat"}]"#),
             .json(
-                #"{"health_percentage":75,"files":{"code_of_conduct":null,"code_of_conduct_file":{},"contributing":{},"license":{},"readme":{}}}"#
+                #"{"health_percentage":75,"files":{"code_of_conduct":null,"code_of_conduct_file":{"html_url":"https://github.com/octo/demo/blob/main/CODE_OF_CONDUCT.md"},"contributing":{"html_url":"https://github.com/octo/demo/blob/main/CONTRIBUTING.md"},"license":{"html_url":"https://github.com/octo/demo/blob/main/LICENSE"},"readme":{"html_url":"https://github.com/octo/demo#readme"}}}"#
             )
         ])
         let client = DefaultGitHubRepositoryMetricsClient(
@@ -102,6 +102,19 @@ struct GitHubRepositoryMetricsClientTests {
         #expect(community.value.hasCodeOfConduct)
         #expect(community.value.hasContributing)
         #expect(community.value.hasLicense)
+        #expect(community.value.readmeHTMLURL?.absoluteString == "https://github.com/octo/demo#readme")
+        #expect(
+            community.value.codeOfConductHTMLURL?.absoluteString
+                == "https://github.com/octo/demo/blob/main/CODE_OF_CONDUCT.md"
+        )
+        #expect(
+            community.value.contributingHTMLURL?.absoluteString
+                == "https://github.com/octo/demo/blob/main/CONTRIBUTING.md"
+        )
+        #expect(
+            community.value.licenseHTMLURL?.absoluteString
+                == "https://github.com/octo/demo/blob/main/LICENSE"
+        )
         #expect(paths == [
             "/repos/octo/demo/stats/commit_activity",
             "/repos/octo/demo/contributors",

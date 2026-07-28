@@ -307,25 +307,29 @@ struct RepositoryCommitPoint: Identifiable, Equatable, Sendable {
 }
 
 /// 贡献者摘要。头像 URL 允许为空，网络失败时 UI 回退到稳定的首字母占位。
+/// `profileHTMLURL` 可选：旧缓存无字段时 UI 用 `https://github.com/{login}` 兜底。
 struct RepositoryContributor: Codable, Identifiable, Equatable, Sendable {
     let id: String
     let login: String
     let commits: Int
     let colorName: String
     let avatarURL: URL?
+    let profileHTMLURL: URL?
 
     init(
         id: String,
         login: String,
         commits: Int,
         colorName: String,
-        avatarURL: URL? = nil
+        avatarURL: URL? = nil,
+        profileHTMLURL: URL? = nil
     ) {
         self.id = id
         self.login = login
         self.commits = commits
         self.colorName = colorName
         self.avatarURL = avatarURL
+        self.profileHTMLURL = profileHTMLURL
     }
 }
 

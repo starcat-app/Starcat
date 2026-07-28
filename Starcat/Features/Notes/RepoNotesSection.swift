@@ -272,7 +272,8 @@ struct RepoNotesSection: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                     .inlineActionHover()
-                    .padding(.trailing, 120)
+                    // 右侧留给「Generate with AI」胶囊（含外框 padding），避免标题与按钮重叠。
+                    .padding(.trailing, 148)
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()

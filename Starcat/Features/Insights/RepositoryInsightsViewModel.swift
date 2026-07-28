@@ -67,12 +67,39 @@ struct RepositoryOpenSSFInsight: Equatable, Sendable {
 }
 
 /// GitHub Community Profile 的可缓存展示值。后续类型化 GitHub Client 直接产出本模型。
+/// `*HTMLURL` 为可选：旧缓存无字段时为 nil，UI 用仓库页约定路径兜底。
 struct RepositoryCommunityInsight: Codable, Equatable, Sendable {
     let healthPercentage: Int
     let hasReadme: Bool
     let hasCodeOfConduct: Bool
     let hasContributing: Bool
     let hasLicense: Bool
+    let readmeHTMLURL: URL?
+    let codeOfConductHTMLURL: URL?
+    let contributingHTMLURL: URL?
+    let licenseHTMLURL: URL?
+
+    init(
+        healthPercentage: Int,
+        hasReadme: Bool,
+        hasCodeOfConduct: Bool,
+        hasContributing: Bool,
+        hasLicense: Bool,
+        readmeHTMLURL: URL? = nil,
+        codeOfConductHTMLURL: URL? = nil,
+        contributingHTMLURL: URL? = nil,
+        licenseHTMLURL: URL? = nil
+    ) {
+        self.healthPercentage = healthPercentage
+        self.hasReadme = hasReadme
+        self.hasCodeOfConduct = hasCodeOfConduct
+        self.hasContributing = hasContributing
+        self.hasLicense = hasLicense
+        self.readmeHTMLURL = readmeHTMLURL
+        self.codeOfConductHTMLURL = codeOfConductHTMLURL
+        self.contributingHTMLURL = contributingHTMLURL
+        self.licenseHTMLURL = licenseHTMLURL
+    }
 }
 
 protocol RepositoryLocalInsightsProviding: Sendable {
@@ -158,6 +185,8 @@ final class RepositoryInsightsViewModel {
     private(set) var openSSFState: RepositoryInsightsSectionState<RepositoryOpenSSFInsight> = .idle
     private(set) var communityState: RepositoryInsightsSectionState<RepositoryCommunityInsight> = .idle
     private(set) var activityRange: RepositoryActivityRange = .month
+    /// 提交柱图范围，与活动概览 KPI 的 `activityRange` 彼此独立。
+    private(set) var commitActivityRange: RepositoryActivityRange = .month
     private(set) var activityState: RepositoryRemoteInsightsSectionState<RepositoryActivityCounts> = .idle
     private(set) var isRefreshingActivity = false
     private(set) var commitActivityState:
@@ -172,6 +201,8 @@ final class RepositoryInsightsViewModel {
     private(set) var recentActivityState:
         RepositoryRemoteInsightsSectionState<RepositoryRecentActivity> = .idle
     private(set) var isRefreshingRecentActivity = false
+    /// 底栏全局刷新；与分区 Sync 独立，分区入口继续保留。
+    private(set) var isRefreshingAll = false
 
     init(
         provider: any RepositoryLocalInsightsProviding,
@@ -277,6 +308,12 @@ final class RepositoryInsightsViewModel {
         )
     }
 
+    /// 提交图只做客户端裁剪（GitHub 一次给 52 周），不跟活动概览联动刷新。
+    func selectCommitActivityRange(_ range: RepositoryActivityRange) {
+        guard commitActivityRange != range else { return }
+        commitActivityRange = range
+    }
+
     func refreshActivity(repo: Repo, isAuthenticated: Bool) async {
         guard !isRefreshingActivity else { return }
         await loadActivity(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
@@ -302,6 +339,47 @@ final class RepositoryInsightsViewModel {
         await loadRecentActivity(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
     }
 
+    /// 底栏全局入口：并行强制刷新各远端区块；不碰分区 Sync，也不清空已上屏内容。
+    /// 本地 Release / Health / OpenSSF 仍读库缓存，本页无对应出站刷新通道。
+    func refreshAll(repo: Repo, isAuthenticated: Bool) async {
+        guard !isRefreshingAll else { return }
+        isRefreshingAll = true
+        defer { isRefreshingAll = false }
+
+        async let activityLoad: Void = loadActivity(
+            repo: repo,
+            isAuthenticated: isAuthenticated,
+            forceRefresh: true
+        )
+        async let commitLoad: Void = loadCommitActivity(
+            repo: repo,
+            isAuthenticated: isAuthenticated,
+            forceRefresh: true
+        )
+        async let contributorLoad: Void = loadContributors(
+            repo: repo,
+            isAuthenticated: isAuthenticated,
+            forceRefresh: true
+        )
+        async let communityLoad: Void = loadCommunityProfile(
+            repo: repo,
+            isAuthenticated: isAuthenticated,
+            forceRefresh: true
+        )
+        async let timelineLoad: Void = loadRecentActivity(
+            repo: repo,
+            isAuthenticated: isAuthenticated,
+            forceRefresh: true
+        )
+        _ = await (
+            activityLoad,
+            commitLoad,
+            contributorLoad,
+            communityLoad,
+            timelineLoad
+        )
+    }
+
     /// README 模式不保活远端刷新。generation 让已经返回的旧结果无法再写 UI。
     func cancelRemoteLoading() {
         activityGeneration &+= 1
@@ -314,6 +392,7 @@ final class RepositoryInsightsViewModel {
         isRefreshingContributors = false
         isRefreshingCommunity = false
         isRefreshingRecentActivity = false
+        isRefreshingAll = false
     }
 
     private func loadActivity(
