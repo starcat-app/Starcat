@@ -32,3 +32,27 @@ enum ProjectPrivacyPolicy {
         allowsPublicService(for: repo)
     }
 }
+
+/// “我的项目”新增的设备本地数据种类。
+///
+/// 这里是未来 CloudKit adapter 与导出器接入前必须检查的 deny-by-default 清单；
+/// 当前没有 CloudKit 生产 adapter，也没有“我的项目”导出 scope，但仍用可执行策略冻结边界，
+/// 避免后续按数据库表或 `Repo` 全字段自动收集时意外带出 Private 数据。
+enum UserProjectLocalDataKind: CaseIterable, Hashable, Sendable {
+    case relationship
+    case syncState
+    case privateRemoteCache
+    case githubAppCredential
+}
+
+enum UserProjectDataBoundary {
+    static func allowsCloudKit(_ kind: UserProjectLocalDataKind) -> Bool {
+        _ = kind
+        return false
+    }
+
+    static func allowsDefaultExport(_ kind: UserProjectLocalDataKind) -> Bool {
+        _ = kind
+        return false
+    }
+}

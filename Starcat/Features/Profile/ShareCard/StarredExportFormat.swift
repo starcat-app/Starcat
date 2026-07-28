@@ -14,7 +14,7 @@ import Foundation
 ///
 /// Starred 与知识库是两个产品语义，导出文件名和保存面板文案必须显式区分，避免把
 /// Starcat 私有知识库伪装成 GitHub Starred。
-enum RepositoryExportScope {
+enum RepositoryExportScope: String, CaseIterable {
     case starred
     case library
 }

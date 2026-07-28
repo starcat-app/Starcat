@@ -32,6 +32,22 @@ struct ProjectPrivacyPolicyTests {
         #expect(ProjectPrivacyPolicy.allowsExternalSearchContext(for: repo))
     }
 
+    @Test("项目关系、状态、私有缓存和凭据保持设备本地")
+    func projectLocalDataIsExcludedFromCloudKitAndDefaultExport() {
+        for kind in UserProjectLocalDataKind.allCases {
+            #expect(!UserProjectDataBoundary.allowsCloudKit(kind))
+            #expect(!UserProjectDataBoundary.allowsDefaultExport(kind))
+        }
+    }
+
+    @Test("默认仓库导出没有我的项目 scope")
+    func defaultRepositoryExportScopesExcludeMyProjects() {
+        #expect(
+            Set(RepositoryExportScope.allCases.map(\.rawValue))
+                == Set(["starred", "library"])
+        )
+    }
+
     private func makeRepo(isPrivate: Bool) -> Repo {
         Repo(
             id: 42,
