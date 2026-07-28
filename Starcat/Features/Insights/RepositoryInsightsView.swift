@@ -691,23 +691,82 @@ struct RepositoryInsightsView: View {
         .accessibilityValue(Text(verbatim: value))
     }
 
-    private var starMetrics: some View {
-        // 三个指标固定一行：自适应网格会把「1 年增长」挤到下一行。
-        HStack(alignment: .top, spacing: 8) {
-            starMetric(
-                value: starHistoryViewModel.currentStars?.formatted(.number.locale(locale))
-                    ?? String.l10n("insights.repo.state.noData"),
-                label: "insights.repo.star.current"
-            )
-            starMetric(
-                value: signed(starHistoryViewModel.growth30Days),
-                label: "insights.repo.star.growth30Days"
-            )
-            starMetric(
-                value: signed(starHistoryViewModel.growthOneYear),
-                label: "insights.repo.star.growthOneYear"
-            )
+    private func starVelocityMetric(
+        value: String,
+        label: LocalizedStringKey,
+        systemImage: String
+    ) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: systemImage)
+                .foregroundStyle(Color.blue)
+            Text(label)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Spacer(minLength: 6)
+            Text(verbatim: value)
+                .fontWeight(.semibold)
+                .monospacedDigit()
+                .lineLimit(1)
         }
+        .font(interfaceScale.font(.caption))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+        .background(
+            Color(nsColor: .textBackgroundColor).opacity(0.55),
+            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(label))
+        .accessibilityValue(Text(verbatim: value))
+    }
+
+    private var starMetrics: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // 三个总量指标固定一行：自适应网格会把「1 年增长」挤到下一行。
+            HStack(alignment: .top, spacing: 8) {
+                starMetric(
+                    value: starHistoryViewModel.currentStars?.formatted(.number.locale(locale))
+                        ?? String.l10n("insights.repo.state.noData"),
+                    label: "insights.repo.star.current"
+                )
+                starMetric(
+                    value: signed(starHistoryViewModel.growth30Days),
+                    label: "insights.repo.star.growth30Days"
+                )
+                starMetric(
+                    value: signed(starHistoryViewModel.growthOneYear),
+                    label: "insights.repo.star.growthOneYear"
+                )
+            }
+
+            HStack(spacing: 8) {
+                starVelocityMetric(
+                    value: signedRate(starHistoryViewModel.averageDailyGrowth30Days),
+                    label: "insights.repo.star.velocity30Days",
+                    systemImage: "calendar.day.timeline.leading"
+                )
+                starVelocityMetric(
+                    value: signedRate(starHistoryViewModel.averageMonthlyGrowthOneYear),
+                    label: "insights.repo.star.velocityOneYear",
+                    systemImage: "calendar"
+                )
+            }
+        }
+    }
+
+    private func signedRate(_ value: Double?) -> String {
+        guard let value else {
+            return String.l10n("insights.repo.state.noData")
+        }
+        let fractionDigits = abs(value) < 1 ? 2 : 1
+        let formatted = abs(value).formatted(
+            .number.precision(.fractionLength(fractionDigits)).locale(locale)
+        )
+        if value > 0 { return "+\(formatted)" }
+        if value < 0 { return "−\(formatted)" }
+        return formatted
     }
 
     private var starControls: some View {

@@ -59,6 +59,8 @@ struct StarHistoryViewModelTests {
         #expect(viewModel.latestChange == -15)
         #expect(viewModel.growth30Days == -15)
         #expect(viewModel.growthOneYear == -30)
+        #expect(viewModel.averageDailyGrowth30Days == -0.5)
+        #expect(viewModel.averageMonthlyGrowthOneYear == -2.5)
         #expect(viewModel.phase == StarHistoryViewPhase.content)
     }
 
@@ -216,6 +218,8 @@ struct StarHistoryViewModelTests {
         #expect(viewModel.latestChange == nil)
         #expect(viewModel.growth30Days == nil)
         #expect(viewModel.growthOneYear == nil)
+        #expect(viewModel.averageDailyGrowth30Days == nil)
+        #expect(viewModel.averageMonthlyGrowthOneYear == nil)
         #expect(viewModel.phase == .privateOnly)
     }
 

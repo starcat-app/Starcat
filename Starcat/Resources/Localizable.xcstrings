@@ -127744,6 +127744,20 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "1 年成長" } }
       }
     },
+    "insights.repo.star.velocity30Days" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "30-day daily average" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "近 30 天日均" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "近 30 天日均" } }
+      }
+    },
+    "insights.repo.star.velocityOneYear" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "1-year monthly average" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "近 1 年月均" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "近 1 年月均" } }
+      }
+    },
     "insights.repo.star.precision.estimated" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "estimated" } },
