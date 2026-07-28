@@ -127,8 +127,9 @@ struct RepositoryInsightsView: View {
                     .font(interfaceScale.font(.bodyEmphasis))
                     .lineLimit(1)
             } else {
-                ProgressView()
-                    .controlSize(.mini)
+                Text(verbatim: "—")
+                    .font(interfaceScale.font(.bodyEmphasis))
+                    .foregroundStyle(.secondary)
             }
         }
         .padding(10)
@@ -214,7 +215,7 @@ struct RepositoryInsightsView: View {
                 } else {
                     switch viewModel.activityState {
                     case .idle, .loading:
-                        sectionProgress
+                        sectionLoadingPlaceholder
                     case .generating:
                         sectionMessage(
                             "insights.repo.state.generating",
@@ -662,9 +663,9 @@ struct RepositoryInsightsView: View {
     private var starPhaseMessage: some View {
         switch starHistoryViewModel.phase {
         case .idle where displayedStarPoints.isEmpty:
-            sectionProgress
+            sectionLoadingPlaceholder
         case .loading where displayedStarPoints.isEmpty:
-            sectionProgress
+            sectionLoadingPlaceholder
         case .building:
             starStatusMessage(
                 "insights.repo.star.state.building",
@@ -928,7 +929,7 @@ struct RepositoryInsightsView: View {
                 } else {
                     switch viewModel.commitActivityState {
                     case .idle, .loading:
-                        sectionProgress
+                        sectionLoadingPlaceholder
                     case .generating:
                         sectionMessage(
                             "insights.repo.state.generating",
@@ -1030,7 +1031,7 @@ struct RepositoryInsightsView: View {
                 } else {
                     switch viewModel.contributorsState {
                     case .idle, .loading:
-                        sectionProgress
+                        sectionLoadingPlaceholder
                     case .unavailable:
                         sectionMessage(
                             authSession.state.isAuthenticated
@@ -1140,7 +1141,7 @@ struct RepositoryInsightsView: View {
                         }
                     }
                 case .loading, .idle:
-                    sectionProgress
+                    sectionLoadingPlaceholder
                 case .empty, .unavailable:
                     sectionMessage("insights.repo.state.noData", systemImage: "heart.slash")
                 case .failed:
@@ -1260,7 +1261,7 @@ struct RepositoryInsightsView: View {
                 } else {
                     switch viewModel.remoteCommunityState {
                     case .idle, .loading:
-                        sectionProgress
+                        sectionLoadingPlaceholder
                     case .unavailable:
                         sectionMessage(
                             authSession.state.isAuthenticated
@@ -1339,7 +1340,7 @@ struct RepositoryInsightsView: View {
                 }
                 .padding(.vertical, 7)
             case .loading, .idle:
-                sectionProgress
+                sectionLoadingPlaceholder
             case .empty, .unavailable:
                 sectionMessage("insights.repo.state.noData", systemImage: "shield.slash")
             case .failed:
@@ -1369,10 +1370,12 @@ struct RepositoryInsightsView: View {
         .padding(.vertical, 7)
     }
 
-    private var sectionProgress: some View {
-        ProgressView()
-            .controlSize(.small)
+    /// 首次加载只保留区块的稳定占位高度，加载反馈统一由标题栏的 SyncIconButton 承担。
+    /// 禁止在内容中央放不确定进度环，否则刷新会清空内容并造成明显的页面跳动。
+    private var sectionLoadingPlaceholder: some View {
+        Color.clear
             .frame(maxWidth: .infinity, minHeight: 44)
+            .accessibilityHidden(true)
     }
 
     private func sectionMessage(_ key: LocalizedStringKey, systemImage: String) -> some View {
@@ -1443,7 +1446,7 @@ struct RepositoryInsightsView: View {
                 if timelineDisplayItems.isEmpty {
                     switch viewModel.recentActivityState {
                     case .idle, .loading:
-                        sectionProgress
+                        sectionLoadingPlaceholder
                     case .unavailable:
                         sectionMessage(
                             authSession.state.isAuthenticated
