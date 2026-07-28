@@ -339,8 +339,16 @@ struct UserProjectRepositoryTests {
             generation: "oauth",
             seenAt: Date()
         )
+        // GitHub App 全量同步会把同一 Public Repo 的权威来源更新为 github_app。
         try await projects.upsertPage(
-            [remote(id: 62, name: "private-project")],
+            [remote(id: 61, name: "public-fallback")],
+            userID: 7,
+            authorizationSource: .githubApp,
+            generation: "app-public",
+            seenAt: Date()
+        )
+        try await projects.upsertPage(
+            [remote(id: 62, name: "private-project", visibility: .private)],
             userID: 7,
             authorizationSource: .githubApp,
             generation: "app",
@@ -360,5 +368,6 @@ struct UserProjectRepositoryTests {
         )
         #expect(remaining.map(\.repo.id) == [61])
         #expect(remaining.first?.project.authorizationSource == .oauth)
+        #expect(remaining.first?.project.visibility == .public)
     }
 }

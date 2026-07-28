@@ -318,10 +318,44 @@ struct GRDBUserProjectRepository: UserProjectRepositoryProtocol, Sendable {
         try await database.writer.write { db in
             // 授权撤销只移除项目关系和该功能同步状态；Repo、Star、Notes、Tags、Pin 等保留。
             if let authorizationSource {
-                try db.execute(
-                    sql: "DELETE FROM user_projects WHERE user_id = ? AND authorization_source = ?",
-                    arguments: [userID, authorizationSource.rawValue]
-                )
+                if authorizationSource == .githubApp {
+                    // 同一 Repo 关系只保留当前权威来源。GitHub App 同步会覆盖此前 OAuth
+                    // Public 行；撤销时先把 Public 行降级回 OAuth，确保随后 OAuth 刷新即使
+                    // 断网或限流，旧列表仍可用。Private / Internal 才是真正失去访问能力。
+                    try db.execute(
+                        sql: """
+                            UPDATE user_projects
+                            SET authorization_source = ?, updated_at = last_seen_at
+                            WHERE user_id = ?
+                              AND authorization_source = ?
+                              AND visibility = ?
+                            """,
+                        arguments: [
+                            ProjectAuthorizationSource.oauth.rawValue,
+                            userID,
+                            ProjectAuthorizationSource.githubApp.rawValue,
+                            ProjectVisibility.public.rawValue
+                        ]
+                    )
+                    try db.execute(
+                        sql: """
+                            DELETE FROM user_projects
+                            WHERE user_id = ?
+                              AND authorization_source = ?
+                              AND visibility <> ?
+                            """,
+                        arguments: [
+                            userID,
+                            ProjectAuthorizationSource.githubApp.rawValue,
+                            ProjectVisibility.public.rawValue
+                        ]
+                    )
+                } else {
+                    try db.execute(
+                        sql: "DELETE FROM user_projects WHERE user_id = ? AND authorization_source = ?",
+                        arguments: [userID, authorizationSource.rawValue]
+                    )
+                }
                 try db.execute(
                     sql: "DELETE FROM project_sync_state WHERE user_id = ? AND credential_kind = ?",
                     arguments: [userID, authorizationSource.rawValue]
