@@ -41,6 +41,12 @@ final class AppDependencies {
     let oauthService: any GithubOAuthServiceProtocol
     let authSession: AuthSession
     let syncManager: SyncManager
+    /// “我的项目”独立 GitHub App 授权状态，不复用主 OAuth 登录状态。
+    let projectAccessSession: ProjectAccessSession
+    /// 当前用户项目关系与同步代际仓储。
+    let userProjectRepository: any UserProjectRepositoryProtocol
+    /// 启动、后台和手动刷新共用的项目同步服务。
+    let userProjectSyncService: UserProjectSyncService
     /// Week 3 引入：HomeView 在初始化时需要复用这个 repository 构建 ViewModel。
     /// D-01：注入类型从 struct 改为协议，便于测试替换为 Mock。
     let repoRepository: any RepoRepositoryProtocol
@@ -775,6 +781,15 @@ final class AppDependencies {
             repository: repo,
             notificationService: notificationService,
             telemetryManager: telemetry
+        )
+        let projectAccessSession = ProjectAccessSession()
+        self.projectAccessSession = projectAccessSession
+        let userProjectRepository = GRDBUserProjectRepository(database: db)
+        self.userProjectRepository = userProjectRepository
+        self.userProjectSyncService = UserProjectSyncService(
+            repository: userProjectRepository,
+            projectAccessSession: projectAccessSession,
+            credentialRouter: ProjectCredentialRouter(projectAccessSession: projectAccessSession)
         )
         let directLicenseManager = DirectLicenseManager()
         self.directLicenseManager = directLicenseManager
