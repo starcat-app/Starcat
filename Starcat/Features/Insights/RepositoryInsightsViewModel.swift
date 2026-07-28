@@ -214,6 +214,18 @@ struct DefaultRepositoryLocalInsightsProvider: RepositoryLocalInsightsProviding,
 @MainActor
 @Observable
 final class RepositoryInsightsViewModel {
+    private enum ManualRefreshTarget: Hashable {
+        case activity
+        case commitActivity
+        case contributors
+        case community
+        case recentActivity
+        case all
+    }
+
+    /// 与洞察 UI 规范一致：同一个刷新入口完成后 10 秒内不重复触发网络。
+    private static let manualRefreshCooldown: TimeInterval = 10
+
     private enum LoadEvent: Sendable {
         case release(RepositoryReleaseInsight?)
         case releaseFailed
@@ -229,6 +241,8 @@ final class RepositoryInsightsViewModel {
 
     private let provider: any RepositoryLocalInsightsProviding
     private let remoteProvider: (any RepositoryRemoteInsightsProviding)?
+    private let now: @Sendable () -> Date
+    private var lastManualRefreshAt: [ManualRefreshTarget: Date] = [:]
     private var generation: UInt64 = 0
     private var activityGeneration: UInt64 = 0
     private var commitGeneration: UInt64 = 0
@@ -268,10 +282,12 @@ final class RepositoryInsightsViewModel {
 
     init(
         provider: any RepositoryLocalInsightsProviding,
-        remoteProvider: (any RepositoryRemoteInsightsProviding)? = nil
+        remoteProvider: (any RepositoryRemoteInsightsProviding)? = nil,
+        now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.provider = provider
         self.remoteProvider = remoteProvider
+        self.now = now
     }
 
     /// 本地 Provider 单测继续使用此入口；生产页面使用 `load(repo:isAuthenticated:)`。
@@ -394,34 +410,34 @@ final class RepositoryInsightsViewModel {
     }
 
     func refreshActivity(repo: Repo, isAuthenticated: Bool) async {
-        guard !isRefreshingActivity else { return }
+        guard !isRefreshingActivity, reserveManualRefresh(.activity) else { return }
         await loadActivity(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
     }
 
     func refreshCommitActivity(repo: Repo, isAuthenticated: Bool) async {
-        guard !isRefreshingCommitActivity else { return }
+        guard !isRefreshingCommitActivity, reserveManualRefresh(.commitActivity) else { return }
         await loadCommitActivity(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
     }
 
     func refreshContributors(repo: Repo, isAuthenticated: Bool) async {
-        guard !isRefreshingContributors else { return }
+        guard !isRefreshingContributors, reserveManualRefresh(.contributors) else { return }
         await loadContributors(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
     }
 
     func refreshCommunityProfile(repo: Repo, isAuthenticated: Bool) async {
-        guard !isRefreshingCommunity else { return }
+        guard !isRefreshingCommunity, reserveManualRefresh(.community) else { return }
         await loadCommunityProfile(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
     }
 
     func refreshRecentActivity(repo: Repo, isAuthenticated: Bool) async {
-        guard !isRefreshingRecentActivity else { return }
+        guard !isRefreshingRecentActivity, reserveManualRefresh(.recentActivity) else { return }
         await loadRecentActivity(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
     }
 
     /// 底栏全局入口：并行强制刷新各远端区块；不碰分区 Sync，也不清空已上屏内容。
     /// 本地 Release / Health / OpenSSF 仍读库缓存，本页无对应出站刷新通道。
     func refreshAll(repo: Repo, isAuthenticated: Bool) async {
-        guard !isRefreshingAll else { return }
+        guard !isRefreshingAll, reserveManualRefresh(.all) else { return }
         isRefreshingAll = true
         defer { isRefreshingAll = false }
 
@@ -463,6 +479,18 @@ final class RepositoryInsightsViewModel {
             securityLoad,
             timelineLoad
         )
+    }
+
+    /// 点击时即占用 cooldown，而不是等成功后才记录。这样快速失败或极快缓存响应也不会
+    /// 被连续点击放大；当前刷新中的重复点击仍由各区块 isRefreshing 标记优先拦截。
+    private func reserveManualRefresh(_ target: ManualRefreshTarget) -> Bool {
+        let currentDate = now()
+        if let lastRefresh = lastManualRefreshAt[target],
+           currentDate.timeIntervalSince(lastRefresh) < Self.manualRefreshCooldown {
+            return false
+        }
+        lastManualRefreshAt[target] = currentDate
+        return true
     }
 
     /// README 模式不保活远端刷新。generation 让已经返回的旧结果无法再写 UI。
