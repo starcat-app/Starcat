@@ -259,10 +259,15 @@ struct ProjectAccessSheet: View {
     }
 
     private func disconnect() {
-        do {
-            try accessSession.disconnect()
-        } catch {
-            return
+        guard let userID = authSession.state.user?.id else { return }
+        Task { @MainActor in
+            do {
+                try await syncService.disconnectProjectAccess(userID: userID)
+                _ = try? await syncService.refresh(userID: userID, force: true)
+                await onProjectsChanged()
+            } catch {
+                // 状态保持在当前授权态，用户可重试；错误不带仓库或 token 信息。
+            }
         }
     }
 

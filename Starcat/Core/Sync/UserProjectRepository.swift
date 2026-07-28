@@ -62,7 +62,10 @@ protocol UserProjectRepositoryProtocol: Sendable {
         affiliation: ProjectAffiliation,
         authorizationSource: ProjectAuthorizationSource
     ) async throws -> ProjectSyncState?
-    func deleteRelations(userID: Int64) async throws
+    func deleteRelations(
+        userID: Int64,
+        authorizationSource: ProjectAuthorizationSource?
+    ) async throws
 }
 
 struct GRDBUserProjectRepository: UserProjectRepositoryProtocol, Sendable {
@@ -304,11 +307,25 @@ struct GRDBUserProjectRepository: UserProjectRepositoryProtocol, Sendable {
         }
     }
 
-    func deleteRelations(userID: Int64) async throws {
+    func deleteRelations(
+        userID: Int64,
+        authorizationSource: ProjectAuthorizationSource? = nil
+    ) async throws {
         try await database.writer.write { db in
             // 授权撤销只移除项目关系和该功能同步状态；Repo、Star、Notes、Tags、Pin 等保留。
-            try db.execute(sql: "DELETE FROM user_projects WHERE user_id = ?", arguments: [userID])
-            try db.execute(sql: "DELETE FROM project_sync_state WHERE user_id = ?", arguments: [userID])
+            if let authorizationSource {
+                try db.execute(
+                    sql: "DELETE FROM user_projects WHERE user_id = ? AND authorization_source = ?",
+                    arguments: [userID, authorizationSource.rawValue]
+                )
+                try db.execute(
+                    sql: "DELETE FROM project_sync_state WHERE user_id = ? AND credential_kind = ?",
+                    arguments: [userID, authorizationSource.rawValue]
+                )
+            } else {
+                try db.execute(sql: "DELETE FROM user_projects WHERE user_id = ?", arguments: [userID])
+                try db.execute(sql: "DELETE FROM project_sync_state WHERE user_id = ?", arguments: [userID])
+            }
         }
     }
 

@@ -304,4 +304,37 @@ struct UserProjectRepositoryTests {
             #expect(note == "keep")
         }
     }
+
+    @Test("断开 GitHub App 只删除该凭据来源的关系")
+    func deletingGitHubAppRelationsPreservesOAuthFallback() async throws {
+        let (projects, _, _) = try makeSUT()
+        try await projects.upsertPage(
+            [remote(id: 61, name: "public-fallback")],
+            userID: 7,
+            authorizationSource: .oauth,
+            generation: "oauth",
+            seenAt: Date()
+        )
+        try await projects.upsertPage(
+            [remote(id: 62, name: "private-project")],
+            userID: 7,
+            authorizationSource: .githubApp,
+            generation: "app",
+            seenAt: Date()
+        )
+
+        try await projects.deleteRelations(
+            userID: 7,
+            authorizationSource: .githubApp
+        )
+
+        let remaining = try await projects.fetchPage(
+            userID: 7,
+            filter: .init(),
+            limit: 10,
+            offset: 0
+        )
+        #expect(remaining.map(\.repo.id) == [61])
+        #expect(remaining.first?.authorizationSource == .oauth)
+    }
 }

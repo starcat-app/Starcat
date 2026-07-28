@@ -44,6 +44,7 @@ final class UserProjectSyncService {
     ) async throws -> UserProjectSyncSummary
 
     private let projectAccessSession: ProjectAccessSession
+    private let repository: (any UserProjectRepositoryProtocol)?
     private let resolveCredential: CredentialResolver
     private let performSync: SyncOperation
     private let now: @Sendable () -> Date
@@ -62,6 +63,7 @@ final class UserProjectSyncService {
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.projectAccessSession = projectAccessSession
+        self.repository = repository
         self.resolveCredential = {
             try await credentialRouter.resolve()
         }
@@ -80,11 +82,22 @@ final class UserProjectSyncService {
                 api: client,
                 repository: repository
             )
-            return try await coordinator.sync(
-                userID: userID,
-                authorizationSource: credential.authorizationSource,
-                force: force
-            )
+            do {
+                return try await coordinator.sync(
+                    userID: userID,
+                    authorizationSource: credential.authorizationSource,
+                    force: force
+                )
+            } catch NetworkError.unauthorized where credential.authorizationSource == .githubApp {
+                await MainActor.run {
+                    projectAccessSession?.markRevoked()
+                }
+                try? await repository.deleteRelations(
+                    userID: userID,
+                    authorizationSource: .githubApp
+                )
+                throw NetworkError.unauthorized
+            }
         }
         self.now = now
     }
@@ -97,6 +110,7 @@ final class UserProjectSyncService {
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.projectAccessSession = projectAccessSession
+        self.repository = nil
         self.resolveCredential = resolveCredential
         self.performSync = performSync
         self.now = now
@@ -151,6 +165,17 @@ final class UserProjectSyncService {
         if case .syncing = state {
             state = .idle
         }
+    }
+
+    /// 用户主动断开 GitHub App：删除独立凭据与 GitHub App 来源关系，保留 OAuth Public
+    /// 关系、Repo 记录和全部用户内容。调用方随后可刷新一次 OAuth fallback。
+    func disconnectProjectAccess(userID: Int64) async throws {
+        try projectAccessSession.disconnect()
+        try await repository?.deleteRelations(
+            userID: userID,
+            authorizationSource: .githubApp
+        )
+        state = .idle
     }
 
     /// 所有触发入口共享同一个 in-flight Task，避免启动刷新与手动刷新叠加生成两代数据。
