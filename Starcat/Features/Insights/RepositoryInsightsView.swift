@@ -30,6 +30,7 @@ struct RepositoryInsightsView: View {
 
     @Environment(\.locale) private var locale
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(AuthSession.self) private var authSession
 
     init(
@@ -198,58 +199,72 @@ struct RepositoryInsightsView: View {
                     }
                 }
 
-                if let counts = displayedActivityCounts {
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 128), spacing: 10)],
-                        spacing: 10
-                    ) {
-                        ForEach(activityMetrics(from: counts)) { metric in
-                            activityMetric(metric)
-                        }
-                    }
-                    if let message = activityStatusMessage {
-                        Label(message.key, systemImage: message.systemImage)
-                            .font(interfaceScale.font(.captionSmall))
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    switch viewModel.activityState {
-                    case .idle, .loading:
-                        sectionLoadingPlaceholder
-                    case .generating:
-                        sectionMessage(
-                            "insights.repo.state.generating",
-                            systemImage: "clock.arrow.circlepath"
-                        )
-                    case .unavailable:
-                        sectionMessage(
-                            authSession.state.isAuthenticated
-                                ? "insights.repo.state.noData"
-                                : "insights.repo.state.loginRequired",
-                            systemImage: "person.crop.circle.badge.exclamationmark"
-                        )
-                    case .failed:
-                        sectionMessage(
-                            "error.loadFailed",
-                            systemImage: "exclamationmark.triangle"
-                        )
-                    case .content, .stale:
-                        EmptyView()
-                    }
+                // 时间范围切换时指标区轻轻落下，避免数字硬切。
+                ZStack(alignment: .topLeading) {
+                    activityBody
+                        .id(viewModel.activityRange)
+                        .detailContentTransition()
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
+                .animation(
+                    reduceMotion ? nil : .easeOut(duration: 0.35),
+                    value: viewModel.activityRange
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var activityBody: some View {
+        if let counts = displayedActivityCounts {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 128), spacing: 10)],
+                spacing: 10
+            ) {
+                ForEach(activityMetrics(from: counts)) { metric in
+                    activityMetric(metric)
+                }
+            }
+            if let message = activityStatusMessage {
+                Label(message.key, systemImage: message.systemImage)
+                    .font(interfaceScale.font(.captionSmall))
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            switch viewModel.activityState {
+            case .idle, .loading:
+                sectionLoadingPlaceholder
+            case .generating:
+                sectionMessage(
+                    "insights.repo.state.generating",
+                    systemImage: "clock.arrow.circlepath"
+                )
+            case .unavailable:
+                sectionMessage(
+                    authSession.state.isAuthenticated
+                        ? "insights.repo.state.noData"
+                        : "insights.repo.state.loginRequired",
+                    systemImage: "person.crop.circle.badge.exclamationmark"
+                )
+            case .failed:
+                sectionMessage(
+                    "error.loadFailed",
+                    systemImage: "exclamationmark.triangle"
+                )
+            case .content, .stale:
+                EmptyView()
             }
         }
     }
 
     private var activityRangePicker: some View {
-        Picker("insights.repo.activity.range.label", selection: activityRangeBinding) {
-            ForEach(RepositoryActivityRange.allCases) { range in
-                Text(LocalizedStringKey(range.titleKey)).tag(range)
-            }
-        }
-        .labelsHidden()
-        .pickerStyle(.segmented)
-        .frame(maxWidth: 280)
+        PillSegmentedControl(
+            items: Array(RepositoryActivityRange.allCases),
+            selection: activityRangeBinding,
+            title: { LocalizedStringKey($0.titleKey) },
+            size: .compact
+        )
+        .accessibilityLabel(Text("insights.repo.activity.range.label"))
     }
 
     private var activityRefreshButton: some View {
@@ -426,42 +441,81 @@ struct RepositoryInsightsView: View {
                 starPhaseMessage
 
                 if !displayedStarPoints.isEmpty {
-                    starSources
-
-                    starChart
-                    starReadingRow
-
-                    HStack(spacing: 5) {
-                        Text("insights.repo.star.coverage")
-                        if let coverageStart = starHistoryViewModel.coverageStart {
-                            Text(coverageStart, format: .dateTime.year().month().day())
-                        } else {
-                            Text("insights.repo.state.noData")
+                    // 范围切换时图表区轻轻落下；控件与指标行保持不动，减少整卡闪动。
+                    ZStack(alignment: .topLeading) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            starSources
+                            starChart
+                            starReadingRow
+                            starCoverageFooter
                         }
-                        Text("·")
-                        Text("insights.repo.star.updated")
-                        if let updatedAt = starHistoryViewModel.updatedAt {
-                            Text(updatedAt, format: .dateTime.year().month().day().hour().minute())
-                        } else {
-                            Text("insights.repo.state.noData")
-                        }
+                        .id(starHistoryViewModel.range)
+                        .detailContentTransition()
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
-                    .font(interfaceScale.font(.captionSmall))
-                    .foregroundStyle(.secondary)
+                    .animation(
+                        reduceMotion ? nil : .easeOut(duration: 0.35),
+                        value: starHistoryViewModel.range
+                    )
+                } else if !isStarHistoryWaitingForFirstPaint {
+                    chartEmptyState(
+                        "insights.repo.star.state.unavailable",
+                        systemImage: "star.slash"
+                    )
                 }
             }
         }
     }
 
+    /// 首次拉取尚未落点时，不额外画空态，避免和标题栏刷新转圈叠两套反馈。
+    private var isStarHistoryWaitingForFirstPaint: Bool {
+        switch starHistoryViewModel.phase {
+        case .idle, .loading, .building:
+            return displayedStarPoints.isEmpty
+        default:
+            return false
+        }
+    }
+
+    private var starCoverageFooter: some View {
+        HStack(spacing: 5) {
+            Text("insights.repo.star.coverage")
+            if let coverageStart = starHistoryViewModel.coverageStart {
+                Text(coverageStart, format: .dateTime.year().month().day())
+            } else {
+                Text("insights.repo.state.noData")
+            }
+            Text("·")
+            Text("insights.repo.star.updated")
+            if let updatedAt = starHistoryViewModel.updatedAt {
+                Text(updatedAt, format: .dateTime.year().month().day().hour().minute())
+            } else {
+                Text("insights.repo.state.noData")
+            }
+        }
+        .font(interfaceScale.font(.captionSmall))
+        .foregroundStyle(.secondary)
+    }
+
     private func starMetric(value: String, label: LocalizedStringKey) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(verbatim: value)
-                .font(interfaceScale.font(size: 20, weight: .semibold))
-                .monospacedDigit()
+        VStack(alignment: .leading, spacing: 3) {
             Text(label)
                 .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Text(verbatim: value)
+                .font(interfaceScale.font(size: 20, weight: .semibold))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
+        .background(
+            Color(nsColor: .textBackgroundColor).opacity(0.55),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(label))
         .accessibilityValue(Text(verbatim: value))
@@ -469,9 +523,9 @@ struct RepositoryInsightsView: View {
 
     private var starMetrics: some View {
         LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 104), alignment: .leading)],
+            columns: [GridItem(.adaptive(minimum: 112), spacing: 8)],
             alignment: .leading,
-            spacing: 10
+            spacing: 8
         ) {
             starMetric(
                 value: starHistoryViewModel.currentStars?.formatted(.number.locale(locale))
@@ -490,15 +544,16 @@ struct RepositoryInsightsView: View {
     }
 
     private var starControls: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
-                starRefreshButton
-                starRangePicker
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                starRangePicker
-                starRefreshButton
-            }
+        HStack(spacing: 8) {
+            PillSegmentedControl(
+                items: Array(StarHistoryRange.allCases),
+                selection: starRangeBinding,
+                title: starRangeTitle,
+                size: .compact
+            )
+            .accessibilityLabel(Text("insights.repo.star.range.label"))
+
+            starRefreshButton
         }
     }
 
@@ -512,17 +567,6 @@ struct RepositoryInsightsView: View {
                 await starHistoryViewModel.refresh(repo: repo)
             }
         }
-    }
-
-    private var starRangePicker: some View {
-        Picker("insights.repo.star.range.label", selection: starRangeBinding) {
-            ForEach(StarHistoryRange.allCases) { range in
-                Text(starRangeTitle(range)).tag(range)
-            }
-        }
-        .labelsHidden()
-        .pickerStyle(.segmented)
-        .frame(maxWidth: 176)
     }
 
     private var starSources: some View {
@@ -778,7 +822,12 @@ struct RepositoryInsightsView: View {
             }
         }
         .chartXSelection(value: $selectedStarDate)
-        .frame(minHeight: 200, idealHeight: 230, maxHeight: 250)
+        .frame(height: Self.chartPlotHeight)
+        .padding(10)
+        .background(
+            Color(nsColor: .textBackgroundColor).opacity(0.35),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("insights.repo.section.stars"))
         .accessibilityValue(Text(starChartAccessibilityValue))
@@ -816,14 +865,19 @@ struct RepositoryInsightsView: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Image(systemName: "scope")
                     .foregroundStyle(.secondary)
-                Text("insights.repo.star.reading.label")
-                    .font(interfaceScale.font(.caption, weight: .medium))
                 Text(verbatim: value)
                     .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                Color(nsColor: .textBackgroundColor).opacity(0.45),
+                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+            )
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text("insights.repo.star.reading.label"))
             .accessibilityValue(Text(verbatim: value))
@@ -858,9 +912,13 @@ struct RepositoryInsightsView: View {
         ) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
-                    Text(LocalizedStringKey(viewModel.activityRange.titleKey))
-                        .font(interfaceScale.font(.caption, weight: .medium))
-                        .foregroundStyle(.secondary)
+                    PillSegmentedControl(
+                        items: Array(RepositoryActivityRange.allCases),
+                        selection: activityRangeBinding,
+                        title: { LocalizedStringKey($0.titleKey) },
+                        size: .compact
+                    )
+                    .accessibilityLabel(Text("insights.repo.activity.range.label"))
 
                     Spacer(minLength: 8)
 
@@ -878,77 +936,136 @@ struct RepositoryInsightsView: View {
                     }
                 }
 
-                if let activity = displayedCommitActivity {
-                    let points = activity.points(in: viewModel.activityRange)
-                    if points.isEmpty {
-                        sectionMessage("insights.repo.state.noData", systemImage: "chart.bar.xaxis")
-                    } else {
-                        Chart(points) { point in
-                            BarMark(
-                                x: .value("Week", point.weekStart),
-                                y: .value("Commits", point.commits)
-                            )
-                            .foregroundStyle(Color.green)
-                            .cornerRadius(2)
+                ZStack(alignment: .topLeading) {
+                    commitBody
+                        .id(viewModel.activityRange)
+                        .detailContentTransition()
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                .animation(
+                    reduceMotion ? nil : .easeOut(duration: 0.35),
+                    value: viewModel.activityRange
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var commitBody: some View {
+        if let activity = displayedCommitActivity {
+            let points = activity.points(in: viewModel.activityRange)
+            if points.isEmpty {
+                chartEmptyState(
+                    commitEmptyStateKey,
+                    systemImage: commitEmptyStateSystemImage
+                )
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    Chart(points) { point in
+                        BarMark(
+                            x: .value("Week", point.weekStart),
+                            y: .value("Commits", point.commits)
+                        )
+                        .foregroundStyle(Color.accentColor.opacity(0.85))
+                        .cornerRadius(3)
+                    }
+                    .chartXAxis {
+                        AxisMarks(values: .automatic(desiredCount: 6)) { _ in
+                            AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                                .font(interfaceScale.font(.captionSmall))
+                            AxisGridLine().foregroundStyle(Color.secondary.opacity(0.08))
                         }
-                        .chartXAxis {
-                            AxisMarks(values: .automatic(desiredCount: 6)) { value in
-                                AxisValueLabel(format: .dateTime.month(.abbreviated).day())
-                                    .font(interfaceScale.font(.captionSmall))
-                                AxisGridLine().foregroundStyle(Color.secondary.opacity(0.08))
-                            }
+                    }
+                    .chartYAxis {
+                        AxisMarks(position: .leading) {
+                            AxisValueLabel()
+                                .font(interfaceScale.font(.captionSmall))
+                            AxisGridLine().foregroundStyle(Color.secondary.opacity(0.12))
                         }
-                        .chartYAxis {
-                            AxisMarks(position: .leading) {
-                                AxisValueLabel()
-                                    .font(interfaceScale.font(.captionSmall))
-                                AxisGridLine().foregroundStyle(Color.secondary.opacity(0.12))
-                            }
-                        }
-                        // 日期轴默认把首个柱子的中心放在绘图区边缘；保留两端空间，
-                        // 避免柱体贴住 Y 轴，同时让末端柱体不会被卡片边界裁切。
-                        .chartXScale(range: .plotDimension(startPadding: 12, endPadding: 12))
-                        .frame(height: 176)
-                        .accessibilityLabel(Text("insights.repo.section.commits"))
-                        .accessibilityValue(
-                            Text(
-                                String(
-                                    format: String.l10n("insights.repo.commit.totalFormat"),
-                                    locale: locale,
-                                    points.reduce(0) { $0 + $1.commits }
-                                )
+                    }
+                    // 日期轴默认把首个柱子的中心放在绘图区边缘；保留两端空间，
+                    // 避免柱体贴住 Y 轴，同时让末端柱体不会被卡片边界裁切。
+                    .chartXScale(range: .plotDimension(startPadding: 12, endPadding: 12))
+                    .frame(height: Self.chartPlotHeight)
+                    .padding(10)
+                    .background(
+                        Color(nsColor: .textBackgroundColor).opacity(0.35),
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    )
+                    .accessibilityLabel(Text("insights.repo.section.commits"))
+                    .accessibilityValue(
+                        Text(
+                            String(
+                                format: String.l10n("insights.repo.commit.totalFormat"),
+                                locale: locale,
+                                points.reduce(0) { $0 + $1.commits }
                             )
                         )
-                    }
+                    )
 
                     if let message = commitStatusMessage {
                         Label(message.key, systemImage: message.systemImage)
                             .font(interfaceScale.font(.captionSmall))
                             .foregroundStyle(.secondary)
                     }
-                } else {
-                    switch viewModel.commitActivityState {
-                    case .idle, .loading:
-                        sectionLoadingPlaceholder
-                    case .generating:
-                        sectionMessage(
-                            "insights.repo.state.generating",
-                            systemImage: "clock.arrow.circlepath"
-                        )
-                    case .unavailable:
-                        sectionMessage(
-                            authSession.state.isAuthenticated
-                                ? "insights.repo.state.noData"
-                                : "insights.repo.state.loginRequired",
-                            systemImage: "person.crop.circle.badge.exclamationmark"
-                        )
-                    case .failed:
-                        sectionMessage("error.loadFailed", systemImage: "exclamationmark.triangle")
-                    case .content, .stale:
-                        EmptyView()
-                    }
                 }
             }
+        } else {
+            switch viewModel.commitActivityState {
+            case .idle, .loading:
+                chartEmptyState(
+                    "insights.repo.state.generating",
+                    systemImage: "clock.arrow.circlepath"
+                )
+            case .generating:
+                chartEmptyState(
+                    "insights.repo.state.generating",
+                    systemImage: "clock.arrow.circlepath"
+                )
+            case .unavailable:
+                chartEmptyState(
+                    authSession.state.isAuthenticated
+                        ? "insights.repo.state.noData"
+                        : "insights.repo.state.loginRequired",
+                    systemImage: authSession.state.isAuthenticated
+                        ? "chart.bar.xaxis"
+                        : "person.crop.circle.badge.exclamationmark"
+                )
+            case .failed:
+                chartEmptyState("error.loadFailed", systemImage: "exclamationmark.triangle")
+            case .content, .stale:
+                EmptyView()
+            }
+        }
+    }
+
+    private var commitEmptyStateKey: LocalizedStringKey {
+        switch viewModel.commitActivityState {
+        case .generating:
+            return "insights.repo.state.generating"
+        case .failed:
+            return "error.loadFailed"
+        case .unavailable:
+            return authSession.state.isAuthenticated
+                ? "insights.repo.state.noData"
+                : "insights.repo.state.loginRequired"
+        default:
+            return "insights.repo.state.noData"
+        }
+    }
+
+    private var commitEmptyStateSystemImage: String {
+        switch viewModel.commitActivityState {
+        case .generating:
+            return "clock.arrow.circlepath"
+        case .failed:
+            return "exclamationmark.triangle"
+        case .unavailable:
+            return authSession.state.isAuthenticated
+                ? "chart.bar.xaxis"
+                : "person.crop.circle.badge.exclamationmark"
+        default:
+            return "chart.bar.xaxis"
         }
     }
 
@@ -1370,12 +1487,38 @@ struct RepositoryInsightsView: View {
         .padding(.vertical, 7)
     }
 
+    /// 两个统计图共用的绘图高度，空态占位也按这个高度，避免切换范围时卡片跳高跳低。
+    private static let chartPlotHeight: CGFloat = 196
+
     /// 首次加载只保留区块的稳定占位高度，加载反馈统一由标题栏的 SyncIconButton 承担。
     /// 禁止在内容中央放不确定进度环，否则刷新会清空内容并造成明显的页面跳动。
     private var sectionLoadingPlaceholder: some View {
         Color.clear
             .frame(maxWidth: .infinity, minHeight: 44)
             .accessibilityHidden(true)
+    }
+
+    /// Star / Commit 空态：固定绘图高度 + 轻底，避免只剩一行文案或残留坐标轴标签。
+    private func chartEmptyState(
+        _ key: LocalizedStringKey,
+        systemImage: String
+    ) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .font(interfaceScale.font(size: 18, weight: .medium))
+                .foregroundStyle(.secondary)
+                .symbolRenderingMode(.hierarchical)
+            Text(key)
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, minHeight: Self.chartPlotHeight)
+        .padding(.horizontal, 16)
+        .background(
+            Color(nsColor: .textBackgroundColor).opacity(0.35),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
     }
 
     private func sectionMessage(_ key: LocalizedStringKey, systemImage: String) -> some View {

@@ -190,7 +190,8 @@ struct MyInsightsView: View {
             PillSegmentedControl(
                 items: Array(InsightsScope.allCases),
                 selection: $scope,
-                title: \.titleKey
+                title: \.titleKey,
+                size: .compact
             )
             .accessibilityLabel(Text("insights.scope.label"))
 

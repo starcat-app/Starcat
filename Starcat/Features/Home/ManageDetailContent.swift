@@ -107,6 +107,7 @@ struct ManageDetailContent: View {
     /// v2.1（2026-06-11）：onRetry 闭包同时刷 README + 整个 repo 视图数据(缓存 repo +
     /// tags + notes + release 计数等)。详见文件头 v2.1 修订段。
     @Environment(HomeViewModel.self) private var viewModel
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var contentMode: ManageDetailContentMode = .readme
     @State private var repositoryInsightsViewModel: RepositoryInsightsViewModel?
     @State private var starHistoryViewModel: StarHistoryViewModel?
@@ -121,67 +122,25 @@ struct ManageDetailContent: View {
                 PillSegmentedControl(
                     items: ManageDetailContentMode.allCases,
                     selection: $contentMode,
-                    title: \.titleKey
+                    title: \.titleKey,
+                    size: .compact
                 )
                 .accessibilityLabel(Text("insights.repo.mode.label"))
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.vertical, 8)
 
             Divider()
 
-            if contentMode == .readme {
-                // v1.5 修订（2026-06-10）：RepoLocalSections 已迁回 Scaffold metadataPanel，
-                // README 继续直接上报滚动，让 hero 折叠行为保持不变。
-                ReadmeStateView(
-                    state: readmeVM.state,
-                    contentScope: .manage(repoId: repo.id),
-                    // 统一构造带末尾 `/` 的目录 URL，避免 WebKit 把 HEAD 当文件名后丢掉分支段。
-                    baseURL: URL(string: repo.htmlUrl).map(ReadmeWebView.repositoryContentBaseURL),
-                    onScrollReportChange: onScrollReport,
-                    translationControl: ReadmeTranslationControl(
-                        repo: repo,
-                        translationVM: translationVM,
-                        settings: settings
-                    )
-                ) {
-                    refreshReadmeAndRepo()
-                } onLogin: {
-                    // 2026-06-29：只弹登录 sheet，不强制走 Device Flow。
-                    authSession.requestLoginSheet()
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                Group {
-                    if let repositoryInsightsViewModel, let starHistoryViewModel {
-                        RepositoryInsightsView(
-                            repo: repo,
-                            viewModel: repositoryInsightsViewModel,
-                            starHistoryViewModel: starHistoryViewModel,
-                            onScrollReport: onScrollReport
-                        )
-                    } else {
-                        ProgressView()
-                            .controlSize(.small)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                }
-                .task(id: repo.id) {
-                    let insightsViewModel = repositoryInsightsViewModel
-                        ?? makeRepositoryInsightsViewModel()
-                    let historyViewModel = starHistoryViewModel
-                        ?? makeStarHistoryViewModel()
-                    repositoryInsightsViewModel = insightsViewModel
-                    starHistoryViewModel = historyViewModel
-
-                    async let insightsLoad: Void = insightsViewModel.load(
-                        repo: repo,
-                        isAuthenticated: authSession.state.isAuthenticated
-                    )
-                    async let historyLoad: Void = historyViewModel.load(repo: repo)
-                    _ = await (insightsLoad, historyLoad)
-                }
+            // README ↔ 洞察与我的洞察同款「轻轻落下」；顶栏胶囊固定，不参与内容重建。
+            ZStack(alignment: .topLeading) {
+                modeBody
+                    .id(contentMode)
+                    .detailContentTransition()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: contentMode)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onChange(of: contentMode) { _, newMode in
@@ -194,6 +153,67 @@ struct ManageDetailContent: View {
                 // 后续再由自己的 ScrollView 持续上报 offset。
                 onScrollReport(RepoDetailScrollReport(offsetY: 0, scrollOverflow: 0))
             }
+        }
+    }
+
+    @ViewBuilder
+    private var modeBody: some View {
+        if contentMode == .readme {
+            // v1.5 修订（2026-06-10）：RepoLocalSections 已迁回 Scaffold metadataPanel，
+            // README 继续直接上报滚动，让 hero 折叠行为保持不变。
+            ReadmeStateView(
+                state: readmeVM.state,
+                contentScope: .manage(repoId: repo.id),
+                // 统一构造带末尾 `/` 的目录 URL，避免 WebKit 把 HEAD 当文件名后丢掉分支段。
+                baseURL: URL(string: repo.htmlUrl).map(ReadmeWebView.repositoryContentBaseURL),
+                onScrollReportChange: onScrollReport,
+                translationControl: ReadmeTranslationControl(
+                    repo: repo,
+                    translationVM: translationVM,
+                    settings: settings
+                )
+            ) {
+                refreshReadmeAndRepo()
+            } onLogin: {
+                // 2026-06-29：只弹登录 sheet，不强制走 Device Flow。
+                authSession.requestLoginSheet()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            insightsBody
+        }
+    }
+
+    @ViewBuilder
+    private var insightsBody: some View {
+        Group {
+            if let repositoryInsightsViewModel, let starHistoryViewModel {
+                RepositoryInsightsView(
+                    repo: repo,
+                    viewModel: repositoryInsightsViewModel,
+                    starHistoryViewModel: starHistoryViewModel,
+                    onScrollReport: onScrollReport
+                )
+            } else {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .task(id: repo.id) {
+            let insightsViewModel = repositoryInsightsViewModel
+                ?? makeRepositoryInsightsViewModel()
+            let historyViewModel = starHistoryViewModel
+                ?? makeStarHistoryViewModel()
+            repositoryInsightsViewModel = insightsViewModel
+            starHistoryViewModel = historyViewModel
+
+            async let insightsLoad: Void = insightsViewModel.load(
+                repo: repo,
+                isAuthenticated: authSession.state.isAuthenticated
+            )
+            async let historyLoad: Void = historyViewModel.load(repo: repo)
+            _ = await (insightsLoad, historyLoad)
         }
     }
 
