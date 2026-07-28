@@ -214,6 +214,120 @@ struct GitHubRepositoryMetricsClientTests {
         #expect(await httpClient.requests().count == 1)
     }
 
+    @Test("404 不可用结果在负缓存窗口内不重复出站")
+    func unavailableEndpointUsesNegativeCache() async throws {
+        let httpClient = MetricsHTTPClient(responses: [
+            .error(statusCode: 404)
+        ])
+        let client = DefaultGitHubRepositoryMetricsClient(
+            httpClient: httpClient,
+            token: "test-token"
+        )
+
+        for _ in 0..<2 {
+            do {
+                _ = try await client.loadCommitActivity(repository: repository)
+                Issue.record("404 应保持 unavailable 失败")
+            } catch let GitHubRepositoryMetricsError.unavailable(statusCode, message) {
+                #expect(statusCode == 404)
+                #expect(message == "stub error")
+            } catch {
+                Issue.record("期望 unavailable，实际: \(error)")
+            }
+        }
+
+        #expect(await httpClient.requests().count == 1)
+    }
+
+    @Test("401 不写入 endpoint 失败缓存")
+    func unauthorizedResponseIsRetried() async throws {
+        let httpClient = MetricsHTTPClient(responses: [
+            .error(statusCode: 401),
+            .json("[]")
+        ])
+        let client = DefaultGitHubRepositoryMetricsClient(
+            httpClient: httpClient,
+            token: "expired-token"
+        )
+
+        do {
+            _ = try await client.loadCommitActivity(repository: repository)
+            Issue.record("首次请求应返回 unauthorized")
+        } catch GitHubRepositoryMetricsError.unauthorized {
+            // 401 可能由 Token 更新立即恢复，不能复用普通 endpoint 退避。
+        } catch {
+            Issue.record("期望 unauthorized，实际: \(error)")
+        }
+
+        let response = try await client.loadCommitActivity(repository: repository)
+
+        #expect(response.value.isEmpty)
+        #expect(await httpClient.requests().count == 2)
+    }
+
+    @Test("普通失败按 2 秒和 4 秒逐级退避，成功后恢复")
+    func transientFailuresUseBoundedExponentialBackoff() async throws {
+        let clock = MetricsTestClock(Date(timeIntervalSince1970: 20_000))
+        let httpClient = MetricsHTTPClient(responses: [
+            .error(statusCode: 500),
+            .error(statusCode: 500),
+            .json("[]")
+        ])
+        let client = DefaultGitHubRepositoryMetricsClient(
+            httpClient: httpClient,
+            token: nil,
+            now: { clock.now() }
+        )
+
+        await expectFailure {
+            _ = try await client.loadCommitActivity(repository: repository)
+        }
+        await expectFailure {
+            _ = try await client.loadCommitActivity(repository: repository)
+        }
+        #expect(await httpClient.requests().count == 1)
+
+        clock.advance(by: 2)
+        await expectFailure {
+            _ = try await client.loadCommitActivity(repository: repository)
+        }
+        await expectFailure {
+            _ = try await client.loadCommitActivity(repository: repository)
+        }
+        #expect(await httpClient.requests().count == 2)
+
+        clock.advance(by: 4)
+        let response = try await client.loadCommitActivity(repository: repository)
+
+        #expect(response.value.isEmpty)
+        #expect(await httpClient.requests().count == 3)
+    }
+
+    @Test("Token 切换后不继承旧账号限流窗口")
+    func rateLimitBackoffIsScopedByAuthorization() async throws {
+        let tokenProvider = MutableMetricsTokenProvider(token: "old-token")
+        let httpClient = MetricsHTTPClient(responses: [
+            .error(statusCode: 429, headers: ["Retry-After": "60"]),
+            .json("[]")
+        ])
+        let client = DefaultGitHubRepositoryMetricsClient(
+            httpClient: httpClient,
+            tokenProvider: tokenProvider
+        )
+
+        await expectFailure {
+            _ = try await client.loadCommitActivity(repository: repository)
+        }
+        await tokenProvider.update(token: "new-token")
+        let response = try await client.loadCommitActivity(repository: repository)
+        let requests = await httpClient.requests()
+
+        #expect(response.value.isEmpty)
+        #expect(requests.count == 2)
+        #expect(requests[0].value(forHTTPHeaderField: "Authorization") == "Bearer old-token")
+        #expect(requests[1].value(forHTTPHeaderField: "Authorization") == "Bearer new-token")
+    }
+
     @Test("不同仓库的指标请求仍按顺序出站")
     func requestsAreSerialized() async throws {
         let httpClient = ConcurrencyProbeMetricsHTTPClient()
@@ -268,6 +382,17 @@ struct GitHubRepositoryMetricsClientTests {
         #expect(await httpClient.maximumConcurrentRequests() == 1)
         #expect(await httpClient.requestCount() == 2)
     }
+
+    private func expectFailure(
+        _ operation: () async throws -> Void
+    ) async {
+        do {
+            try await operation()
+            Issue.record("期望请求失败但成功返回")
+        } catch {
+            // 测试只关心是否出站和退避节奏，具体 HTTP 映射由 statusCodesMapToStableErrors 覆盖。
+        }
+    }
 }
 
 private struct MetricsHTTPResponse: Sendable {
@@ -301,6 +426,9 @@ private actor MetricsHTTPClient: RAGHTTPClientProtocol {
 
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         recordedRequests.append(request)
+        guard !queuedResponses.isEmpty else {
+            throw URLError(.badServerResponse)
+        }
         let response = queuedResponses.removeFirst()
         let httpResponse = HTTPURLResponse(
             url: request.url!,
@@ -313,6 +441,45 @@ private actor MetricsHTTPClient: RAGHTTPClientProtocol {
 
     func requests() -> [URLRequest] {
         recordedRequests
+    }
+}
+
+/// 测试专用动态 Token Provider，用于验证账号边界不会复用限流状态。
+private actor MutableMetricsTokenProvider: GitHubTokenProviding {
+    private var token: String?
+
+    init(token: String?) {
+        self.token = token
+    }
+
+    func currentToken() -> String? {
+        token
+    }
+
+    func update(token: String?) {
+        self.token = token
+    }
+}
+
+/// 测试专用可变时钟；NSLock 只保护同步 Date，避免引入真实等待。
+private final class MetricsTestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Date
+
+    init(_ value: Date) {
+        self.value = value
+    }
+
+    func now() -> Date {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    func advance(by interval: TimeInterval) {
+        lock.lock()
+        value = value.addingTimeInterval(interval)
+        lock.unlock()
     }
 }
 
