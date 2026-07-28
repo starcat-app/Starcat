@@ -3,10 +3,9 @@
 //  Starcat
 //
 //  “我的洞察”详情页。页面保持 macOS 原生高密度分组：KPI 是紧凑指标块，统计内容
-//  使用扁平 section 与 Charts，不引入 Web Dashboard 式巨型卡片和嵌套卡片。
+//  使用扁平 section 与显式分布条行，不引入 Web Dashboard 式巨型卡片和嵌套卡片。
 //
 
-import Charts
 import SwiftUI
 
 struct MyInsightsView: View {
@@ -296,74 +295,86 @@ struct MyInsightsView: View {
         items: [InsightsDistributionItem],
         onDrillDown: ((InsightsDistributionItem) -> Void)? = nil
     ) -> some View {
-        InsightsSectionContainer(
+        // 不用 Swift Charts：分类轴 + AxisLabel offset 在 LazyVStack 里会把行高压扁，
+        // 标签与柱体重叠。这里用显式 VStack 行高，宽度按本组最大值归一化。
+        let maxCount = max(items.map(\.count).max() ?? 1, 1)
+
+        return InsightsSectionContainer(
             title: title,
             subtitle: subtitle,
             systemImage: systemImage
         ) {
-            Chart(items) { item in
-                BarMark(
-                    x: .value("Count", item.count),
-                    y: .value("Category", String.l10n(item.title)),
-                    height: .fixed(6)
-                )
-                .foregroundStyle(InsightsColor.resolve(item.colorName))
-                .cornerRadius(3)
-                .annotation(position: .trailing, alignment: .leading) {
-                    Text(item.count.formatted(.number.locale(locale)))
-                        .font(interfaceScale.font(.captionSmall))
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
-            }
-            .chartXAxis(.hidden)
-            .chartYAxis {
-                AxisMarks(position: .leading) { value in
-                    AxisValueLabel {
-                        if let language = value.as(String.self) {
-                            Text(LocalizedStringKey(language))
-                                .font(interfaceScale.font(.caption))
-                                // 标签上移并配合动态行高，为下方柱体留出明确间距。
-                                .offset(y: -10)
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(items) { item in
+                    distributionBarRow(
+                        item,
+                        maxCount: maxCount,
+                        showsDrillDownChevron: onDrillDown != nil && item.id != "other",
+                        action: onDrillDown.map { callback in
+                            { callback(item) }
                         }
-                    }
+                    )
                 }
             }
-            // 项目较多时不能继续压缩固定高度，否则标签与柱体会互相覆盖。
-            .frame(height: max(176, CGFloat(items.count) * 28))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(title))
             .accessibilityValue(Text(verbatim: distributionAccessibilityValue(items)))
+        }
+    }
 
-            if let onDrillDown {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], spacing: 6) {
-                    ForEach(items) { item in
-                        Button {
-                            onDrillDown(item)
-                        } label: {
-                            HStack(spacing: 6) {
-                                Circle()
-                                    .fill(InsightsColor.resolve(item.colorName))
-                                    .frame(width: 7, height: 7)
-                                Text(LocalizedStringKey(item.title))
-                                    .lineLimit(1)
-                                Spacer(minLength: 6)
-                                Text(item.count.formatted(.number.locale(locale)))
-                                    .monospacedDigit()
-                                Image(systemName: "arrow.up.right")
-                                    .font(interfaceScale.font(.captionSmall))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .font(interfaceScale.font(.caption))
-                            .padding(.vertical, 4)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .focusEffectDisabled()
-                        .disabled(item.id == "other")
-                    }
+    /// 单行分布条：标签与数值在上、色条在下，避免 Charts 分类轴把多行挤进同一绘图带。
+    @ViewBuilder
+    private func distributionBarRow(
+        _ item: InsightsDistributionItem,
+        maxCount: Int,
+        showsDrillDownChevron: Bool,
+        action: (() -> Void)?
+    ) -> some View {
+        let row = VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(InsightsColor.resolve(item.colorName))
+                    .frame(width: 7, height: 7)
+
+                Text(LocalizedStringKey(item.title))
+                    .font(interfaceScale.font(.caption))
+                    .lineLimit(1)
+
+                Spacer(minLength: 8)
+
+                Text(item.count.formatted(.number.locale(locale)))
+                    .font(interfaceScale.font(.captionSmall))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+
+                if showsDrillDownChevron {
+                    Image(systemName: "arrow.up.right")
+                        .font(interfaceScale.font(.captionSmall))
+                        .foregroundStyle(.secondary)
                 }
             }
+
+            GeometryReader { proxy in
+                let width = max(
+                    proxy.size.width * CGFloat(item.count) / CGFloat(maxCount),
+                    item.count > 0 ? 4 : 0
+                )
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(InsightsColor.resolve(item.colorName))
+                    .frame(width: width, height: 6)
+            }
+            .frame(height: 6)
+        }
+        .contentShape(Rectangle())
+
+        if let action, item.id != "other" {
+            Button(action: action) {
+                row
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+        } else {
+            row
         }
     }
 
@@ -452,10 +463,12 @@ struct MyInsightsView: View {
     }
 
     private func distributionLegend(_ item: InsightsDistributionItem) -> some View {
-        HStack(spacing: 6) {
+        // 色点贴标题行；默认 center 会落在标题与占比两行中间。
+        HStack(alignment: .top, spacing: 6) {
             Circle()
                 .fill(InsightsColor.resolve(item.colorName))
                 .frame(width: 8, height: 8)
+                .padding(.top, 3)
             VStack(alignment: .leading, spacing: 1) {
                 Text(LocalizedStringKey(item.title))
                     .font(interfaceScale.font(.caption))
@@ -473,10 +486,12 @@ struct MyInsightsView: View {
             topic = item.id.topic
             selection = item.id
         } label: {
-            HStack(spacing: 10) {
+            // 行图标与数量贴标题行，避免相对标题+说明整体居中。
+            HStack(alignment: .top, spacing: 10) {
                 Image(systemName: item.systemImage)
                     .foregroundStyle(InsightsColor.resolve(item.tintName))
                     .frame(width: 22)
+                    .padding(.top, 1)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(LocalizedStringKey(item.titleKey))
@@ -496,6 +511,7 @@ struct MyInsightsView: View {
                 Image(systemName: "chevron.right")
                     .font(interfaceScale.font(.captionSmall, weight: .semibold))
                     .foregroundStyle(.secondary)
+                    .padding(.top, 3)
             }
             .padding(.vertical, 9)
             .contentShape(Rectangle())
@@ -656,9 +672,11 @@ struct InsightsSectionContainer<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
-            HStack(spacing: 8) {
+            // 小图标贴标题行：HStack 默认 center 会相对「标题+副标题」整块居中。
+            HStack(alignment: .top, spacing: 8) {
                 Image(systemName: systemImage)
                     .foregroundStyle(.secondary)
+                    .padding(.top, 1)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
                         .font(interfaceScale.font(.bodyEmphasis))
