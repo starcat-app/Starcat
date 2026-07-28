@@ -73,9 +73,9 @@
 - [x] Repository 覆盖关系交叉、筛选、分页、generation 和删除语义。
 - [x] API 覆盖 DTO、Link Header、304、401、403、Rate Limit 和中途失败。
 - [x] 授权覆盖 Device Flow、独立 session、token 过期/撤销和 OAuth 不受影响。
-- [ ] ViewModel 覆盖 scope、筛选隔离、计数、selection、刷新和并发代际。
+- [x] ViewModel 覆盖 scope、筛选隔离、计数、selection、刷新和并发代际。
 - [x] 隐私测试证明 Private 项目不构造公共服务请求。
-- [ ] 运行专项单测、全量单测、Debug build和静态规范检查。
+- [x] 运行专项单测、全量单测、Debug build和静态规范检查。
 - [ ] 完成人工权限矩阵；无法自动观察的步骤保留真实证据或明确外部 Gate。
 
 ## 7. 多轮审查
@@ -83,7 +83,7 @@
 - [x] 第一轮：需求、方案、代码和 checklist 完整性审查；先写报告再修复。
 - [x] 第二轮：数据库、授权、同步、隐私和失败语义审查；先写报告再修复。
 - [x] 第三轮：UI、详情复用、i18n、VoiceOver 和交互审查；先写报告再修复。
-- [ ] 第四轮：单元测试、全量测试、Debug build和性能审查；先写报告再修复。
+- [x] 第四轮：单元测试、全量测试、Debug build和性能审查；先写报告再修复。
 - [ ] 第五轮：文档、工程进度、checklist 和 commit 历史一致性审查；先写报告再修复。
 - [ ] 所有问题关闭后新增最终复审报告。
 - [ ] 多轮复审无新增问题后新增结果报告。
