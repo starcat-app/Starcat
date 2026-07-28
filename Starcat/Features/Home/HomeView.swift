@@ -1341,6 +1341,7 @@ struct HomeView: View {
             dependencies.releasePoller.stop()
             dependencies.openSSFScorePoller.stop()
             dependencies.repoHealthPoller.stop()
+            dependencies.userProjectSyncService.stopBackgroundRefresh()
             stopReadmePrefetch()
             dependencies.initialWarmupCoordinator.cancel()
             dependencies.semanticIndexBuilder.cancel()
@@ -2098,6 +2099,13 @@ struct HomeView: View {
         }
         viewModel.selection = savedManageSelection
 
+        if !TestEnvironment.isRunning {
+            // 项目授权独立于主 OAuth 登录：先恢复 GitHub App 凭据，再启动 4h 系统后台刷新。
+            // 即使未配置或未连接 GitHub App，后续刷新仍会由凭据路由安全回退到 OAuth Public。
+            dependencies.userProjectSyncService.restoreAccess()
+            dependencies.userProjectSyncService.startBackgroundRefresh(userID: user.id)
+        }
+
         Task { @MainActor in
             await syncGitHubStarListsAndRefreshSidebar(login: user.login)
 
@@ -2114,6 +2122,19 @@ struct HomeView: View {
                 syncManager.performFullSync(userID: user.id)
             } else {
                 syncManager.performFullSyncIfStale(userID: user.id)
+            }
+        }
+
+        // 项目同步不阻塞 Stars 首屏。完成后只刷新项目计数；用户当前正在浏览“我的项目”
+        // 时才重查中栏，并沿用 HomeViewModel 的 resetPage=false 刷新语义保留 selection/分页。
+        if !TestEnvironment.isRunning {
+            Task { @MainActor in
+                _ = try? await dependencies.userProjectSyncService.refresh(userID: user.id)
+                await viewModel.refreshSidebar()
+                if viewModel.selection == .myProjects {
+                    await viewModel.reloadItems(forceRefresh: true, reason: .sync)
+                    applyManageDetailSelectionPolicy()
+                }
             }
         }
     }
