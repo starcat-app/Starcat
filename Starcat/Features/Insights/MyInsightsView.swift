@@ -321,11 +321,14 @@ struct MyInsightsView: View {
                         if let language = value.as(String.self) {
                             Text(LocalizedStringKey(language))
                                 .font(interfaceScale.font(.caption))
+                                // 标签上移并配合动态行高，为下方柱体留出明确间距。
+                                .offset(y: -10)
                         }
                     }
                 }
             }
-            .frame(height: 176)
+            // 项目较多时不能继续压缩固定高度，否则标签与柱体会互相覆盖。
+            .frame(height: max(176, CGFloat(items.count) * 28))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(title))
             .accessibilityValue(Text(verbatim: distributionAccessibilityValue(items)))
