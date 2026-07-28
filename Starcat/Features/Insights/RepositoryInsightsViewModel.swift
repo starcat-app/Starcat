@@ -376,7 +376,9 @@ struct DefaultRepositoryLocalInsightsProvider: RepositoryLocalInsightsProviding,
         RepositoryReleaseInsight(
             tagName: record.tagName,
             name: record.name,
-            publishedAt: record.publishedAt.flatMap(ISO8601DateFormatter.shared.date(from:)),
+            // GitHub/SQLite 历史同时存在带与不带毫秒的 ISO8601；`.shared` 工厂固定
+            // fractional 格式，不能用它解析无毫秒值，否则发布节奏会被误判为空。
+            publishedAt: ISO8601DateFormatter.githubDate(from: record.publishedAt),
             htmlURL: URL(string: record.htmlUrl)
         )
     }

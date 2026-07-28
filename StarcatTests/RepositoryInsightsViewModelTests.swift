@@ -14,8 +14,8 @@ import Testing
 struct RepositoryInsightsViewModelTests {
 
     @Test("发布节奏按本地 Release 时间计算近一年数量与平均间隔")
-    func releaseCadenceDerivesFromLocalReleaseHistory() {
-        let now = ISO8601DateFormatter.shared.date(from: "2026-07-28T00:00:00Z")!
+    func releaseCadenceDerivesFromLocalReleaseHistory() throws {
+        let now = try #require(isoDate("2026-07-28T00:00:00Z"))
         let releases = [
             RepositoryReleaseInsight(
                 tagName: "v3",
@@ -962,15 +962,15 @@ struct RepositoryInsightsViewModelTests {
             defaultBranchSHA: nil
         )
 
+        let referenceNow = try #require(isoDate("2026-07-28T00:00:00Z"))
+        let expectedLatestPublishedAt = try #require(isoDate("2026-07-20T00:00:00Z"))
         let provider = DefaultRepositoryLocalInsightsProvider(
             releaseRepository: releaseRepository,
             healthRepository: healthRepository,
             openSSFRepository: openSSFRepository,
             insightsCache: cache,
             database: database,
-            now: {
-                ISO8601DateFormatter.shared.date(from: "2026-07-28T00:00:00Z")!
-            }
+            now: { referenceNow }
         )
 
         let snapshot = await provider.snapshot(repoId: 7)
@@ -1016,7 +1016,7 @@ struct RepositoryInsightsViewModelTests {
         #expect(cadence.averageIntervalDays == 30)
         #expect(
             cadence.latestPublishedAt
-                == ISO8601DateFormatter.shared.date(from: "2026-07-20T00:00:00Z")
+                == expectedLatestPublishedAt
         )
         #expect(health.overallScore == 88)
         #expect(health.maintenanceScore == 90)
@@ -1203,6 +1203,13 @@ struct RepositoryInsightsViewModelTests {
             openSSF: { _ in nil },
             community: { _ in nil }
         )
+    }
+
+    /// Fixture 固定使用无毫秒 ISO8601，不依赖生产 `.shared` 的 fractional 格式选项。
+    private func isoDate(_ value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
     }
 
     private func fixtureRepo(id: Int64) -> Repo {
