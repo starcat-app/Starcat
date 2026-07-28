@@ -497,6 +497,7 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
     private let now: @Sendable () -> Date
     private let requestGate = GitHubMetricsRequestGate()
     private let inflightTracker = GitHubMetricsInflightTracker()
+    private var rateLimitBackoffUntil: Date?
 
     init(
         httpClient: any RAGHTTPClientProtocol = URLSessionRAGHTTPClient(),
@@ -688,6 +689,7 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
         await requestGate.acquire()
         do {
             try Task.checkCancellation()
+            try enforceRateLimitBackoff()
             let result: GitHubMetricsResponse<Value> = try await performGet(
                 url,
                 ifNoneMatch: ifNoneMatch,
@@ -697,6 +699,7 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
             await requestGate.release()
             return result
         } catch {
+            recordRateLimitBackoff(from: error)
             await requestGate.release()
             throw error
         }
@@ -712,6 +715,7 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
         await requestGate.acquire()
         do {
             try Task.checkCancellation()
+            try enforceRateLimitBackoff()
             let result = try await performActivityBundle(
                 url: url,
                 repository: repository,
@@ -721,6 +725,7 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
             await requestGate.release()
             return result
         } catch {
+            recordRateLimitBackoff(from: error)
             await requestGate.release()
             throw error
         }
@@ -926,6 +931,42 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
         default:
             return .http(statusCode: response.statusCode, message: message)
         }
+    }
+
+    /// 限流窗口内直接阻止后续排队请求继续出站。上层已有 stale-while-refresh，
+    /// 因此快速返回稳定错误比在网络 gate 内长时间 sleep 更符合页面生命周期。
+    private func enforceRateLimitBackoff() throws {
+        guard let blockedUntil = rateLimitBackoffUntil else { return }
+        let currentDate = now()
+        guard currentDate < blockedUntil else {
+            rateLimitBackoffUntil = nil
+            return
+        }
+        throw GitHubRepositoryMetricsError.rateLimited(
+            statusCode: 429,
+            message: "GitHub rate limit backoff is active",
+            retryAfter: blockedUntil.timeIntervalSince(currentDate),
+            resetAt: blockedUntil
+        )
+    }
+
+    /// GitHub 可能通过 Retry-After 或 X-RateLimit-Reset 表达恢复时间；取较晚值，
+    /// 避免时钟误差导致提前重试。只有真实限流语义才会建立全客户端 backoff。
+    private func recordRateLimitBackoff(from error: Error) {
+        guard let metricsError = error as? GitHubRepositoryMetricsError else { return }
+        let deadline: Date?
+        switch metricsError {
+        case .rateLimited(_, _, let retryAfter, let resetAt):
+            let currentDate = now()
+            let retryDeadline = retryAfter.map { currentDate.addingTimeInterval($0) }
+            deadline = [retryDeadline, resetAt].compactMap { $0 }.max()
+        case .forbidden(_, let resetAt):
+            deadline = resetAt
+        default:
+            deadline = nil
+        }
+        guard let deadline else { return }
+        rateLimitBackoffUntil = max(rateLimitBackoffUntil ?? .distantPast, deadline)
     }
 }
 
