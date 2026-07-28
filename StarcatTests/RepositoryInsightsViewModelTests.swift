@@ -104,6 +104,45 @@ struct RepositoryInsightsViewModelTests {
         #expect(!viewModel.isRefreshingActivity)
     }
 
+    @Test("安全公告刷新失败保留 stale 缓存而不是伪造成零条")
+    func staleSecurityAdvisoriesSurviveRefreshFailure() async {
+        let generatedAt = Date(timeIntervalSince1970: 2_000)
+        let cached = RepositorySecurityAdvisoriesInsight(
+            advisories: [
+                RepositorySecurityAdvisory(
+                    id: "GHSA-cached",
+                    cveID: nil,
+                    summary: "Cached advisory",
+                    severity: "high",
+                    htmlURL: nil,
+                    publishedAt: generatedAt
+                )
+            ],
+            generatedAt: generatedAt
+        )
+        let remoteProvider = StubRepositoryRemoteInsightsProvider(
+            cachedHandler: { _, _ in nil },
+            refreshHandler: { _, _ in throw StubError.failed },
+            cachedSecurityAdvisoriesHandler: { _ in
+                RepositoryCachedSecurityAdvisoriesInsight(
+                    value: cached,
+                    fetchedAt: generatedAt,
+                    isStale: true
+                )
+            },
+            refreshSecurityAdvisoriesHandler: { _ in throw StubError.failed }
+        )
+        let viewModel = RepositoryInsightsViewModel(
+            provider: emptyLocalProvider(),
+            remoteProvider: remoteProvider
+        )
+
+        await viewModel.load(repo: fixtureRepo(id: 26), isAuthenticated: true)
+
+        #expect(viewModel.securityAdvisoriesState == .failed(cached: cached))
+        #expect(viewModel.securityAdvisoriesState.visibleValue == cached)
+    }
+
     @Test("手动刷新期间所有远端区块保持现有内容")
     func manualRefreshKeepsVisibleContentUntilFreshValuesArrive() async {
         let generatedAt = Date(timeIntervalSince1970: 2_000)

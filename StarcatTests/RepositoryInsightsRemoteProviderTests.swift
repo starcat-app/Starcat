@@ -260,6 +260,50 @@ struct RepositoryInsightsRemoteProviderTests {
         #expect(insight.concentration == nil)
     }
 
+    @Test("安全公告映射真实响应并写入独立缓存")
+    func securityAdvisoriesMapAndPersistIndependently() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 25, owner: "octo", name: "secure")
+        let httpClient = SecurityAdvisoriesHTTPClient()
+        let now = try #require(
+            ISO8601DateFormatter().date(from: "2026-07-28T12:00:00Z")
+        )
+        let provider = DefaultRepositoryRemoteInsightsProvider(
+            metricsClient: DefaultGitHubRepositoryMetricsClient(
+                httpClient: httpClient,
+                token: "token",
+                baseURL: URL(string: "https://api.example.test")!
+            ),
+            cache: GRDBRepositoryInsightsCache(database: database),
+            now: { now }
+        )
+
+        let refreshed = try await provider.refreshSecurityAdvisories(
+            repository: RepoIdentity(ghRepoID: 25, owner: "octo", name: "secure")
+        )
+        let cached = try #require(try await provider.cachedSecurityAdvisories(repoID: 25))
+        let request = try #require(await httpClient.request())
+        let perPage = URLComponents(
+            url: try #require(request.url),
+            resolvingAgainstBaseURL: false
+        )?.queryItems?.first(where: { $0.name == "per_page" })?.value
+
+        #expect(request.url?.path == "/repos/octo/secure/security-advisories")
+        #expect(perPage == "100")
+        #expect(refreshed.advisories.map(\.id) == ["GHSA-latest", "GHSA-older"])
+        #expect(refreshed.advisories.map(\.severity) == ["low", "critical"])
+        #expect(refreshed.advisories.last?.cveID == "CVE-2026-1")
+        #expect(
+            refreshed.advisories.first?.htmlURL?.absoluteString
+                == "https://github.com/octo/secure/security/advisories/GHSA-latest"
+        )
+        #expect(refreshed.highOrCriticalCount == 1)
+        #expect(refreshed.latestPublishedAt == refreshed.advisories.first?.publishedAt)
+        #expect(cached.value == refreshed)
+        #expect(!cached.isStale)
+        #expect(RepositoryInsightsDataset.securityAdvisories.timeToLive == 24 * 60 * 60)
+    }
+
     @Test("最近活动合并 PR 与 Issue 并按真实时间倒序缓存")
     func recentActivityMergesAndSortsEvents() async throws {
         let database = try InMemoryDatabaseManager()
@@ -390,6 +434,47 @@ private actor ContributorsCommunityHTTPClient: RAGHTTPClientProtocol {
 
     func paths() -> [String] {
         recordedPaths
+    }
+}
+
+private actor SecurityAdvisoriesHTTPClient: RAGHTTPClientProtocol {
+    private var recordedRequest: URLRequest?
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        recordedRequest = request
+        let body = """
+        [
+          {
+            "ghsa_id":"GHSA-older",
+            "cve_id":"CVE-2026-1",
+            "summary":"Critical issue",
+            "severity":"CRITICAL",
+            "html_url":"https://github.com/octo/secure/security/advisories/GHSA-older",
+            "published_at":"2026-07-20T00:00:00Z"
+          },
+          {
+            "ghsa_id":"GHSA-latest",
+            "cve_id":null,
+            "summary":"Low issue",
+            "severity":"low",
+            "html_url":"https://github.com/octo/secure/security/advisories/GHSA-latest",
+            "published_at":"2026-07-25T00:00:00Z"
+          }
+        ]
+        """
+        return (
+            Data(body.utf8),
+            HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["ETag": "\"security-v1\""]
+            )!
+        )
+    }
+
+    func request() -> URLRequest? {
+        recordedRequest
     }
 }
 
