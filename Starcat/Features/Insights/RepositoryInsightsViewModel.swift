@@ -266,7 +266,12 @@ final class RepositoryInsightsViewModel {
     ) async {
         guard activityRange != range else { return }
         activityRange = range
-        await loadActivity(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: false)
+        await loadActivity(
+            repo: repo,
+            isAuthenticated: isAuthenticated,
+            forceRefresh: false,
+            preserveVisibleContent: true
+        )
     }
 
     func refreshActivity(repo: Repo, isAuthenticated: Bool) async {
@@ -311,13 +316,18 @@ final class RepositoryInsightsViewModel {
     private func loadActivity(
         repo: Repo,
         isAuthenticated: Bool,
-        forceRefresh: Bool
+        forceRefresh: Bool,
+        preserveVisibleContent: Bool = false
     ) async {
         activityGeneration &+= 1
         let requestedGeneration = activityGeneration
         let selectedRange = activityRange
-        let retainedValue = forceRefresh ? activityState.visibleValue : nil
-        if !forceRefresh {
+        // 时间范围切换与手动刷新都必须保留现有指标，直到目标范围的数据真正到达。
+        // 仓库切换仍走默认 false，避免短暂显示上一个仓库的数据。
+        let retainedValue = (forceRefresh || preserveVisibleContent)
+            ? activityState.visibleValue
+            : nil
+        if !forceRefresh, !preserveVisibleContent {
             activityState = .loading(cached: nil)
         }
         if forceRefresh {

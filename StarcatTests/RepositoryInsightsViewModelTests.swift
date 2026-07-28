@@ -227,6 +227,60 @@ struct RepositoryInsightsViewModelTests {
         #expect(viewModel.recentActivityState == .content(refreshedRecentActivity))
     }
 
+    @Test("切换活动范围期间保留现有内容")
+    func activityRangeChangeKeepsVisibleContentUntilTargetRangeArrives() async {
+        let generatedAt = Date(timeIntervalSince1970: 3_000)
+        let currentActivity = RepositoryActivityCounts(
+            createdPullRequests: 4,
+            mergedPullRequests: 3,
+            createdIssues: 2,
+            closedIssues: 1,
+            generatedAt: generatedAt
+        )
+        let targetActivity = RepositoryActivityCounts(
+            createdPullRequests: 12,
+            mergedPullRequests: 10,
+            createdIssues: 8,
+            closedIssues: 6,
+            generatedAt: generatedAt.addingTimeInterval(60)
+        )
+        let refreshGate = RepositoryInsightsRefreshGate(expectedCount: 1)
+        let remoteProvider = StubRepositoryRemoteInsightsProvider(
+            cachedHandler: { _, range in
+                guard range == .month else { return nil }
+                return RepositoryCachedActivityCounts(
+                    value: currentActivity,
+                    fetchedAt: generatedAt,
+                    isStale: false
+                )
+            },
+            refreshHandler: { _, _ in
+                await refreshGate.block()
+                return targetActivity
+            }
+        )
+        let viewModel = RepositoryInsightsViewModel(
+            provider: emptyLocalProvider(),
+            remoteProvider: remoteProvider
+        )
+        let repo = fixtureRepo(id: 15)
+        await viewModel.load(repo: repo, isAuthenticated: true)
+
+        let rangeTask = Task {
+            await viewModel.selectActivityRange(.year, repo: repo, isAuthenticated: true)
+        }
+        await refreshGate.waitUntilAllBlocked()
+
+        #expect(viewModel.activityRange == .year)
+        #expect(viewModel.isRefreshingActivity)
+        #expect(viewModel.activityState == .content(currentActivity))
+
+        await refreshGate.release()
+        await rangeTask.value
+
+        #expect(viewModel.activityState == .content(targetActivity))
+    }
+
     @Test("较慢的旧活动范围不能覆盖新范围")
     func staleActivityRangeIsDiscarded() async {
         let remoteProvider = StubRepositoryRemoteInsightsProvider(
