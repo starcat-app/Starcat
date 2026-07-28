@@ -21,6 +21,8 @@ struct ProjectAccessSheet: View {
     @Environment(AppDependencies.self) private var dependencies
 
     @State private var connectionTask: Task<Void, Never>?
+    @State private var isClearingPrivateCache = false
+    @State private var privateCacheClearMessage: LocalizedStringKey?
 
     private var accessSession: ProjectAccessSession {
         dependencies.projectAccessSession
@@ -71,6 +73,27 @@ struct ProjectAccessSheet: View {
             }
 
             actionArea
+            Divider()
+            privateCacheArea
+        }
+    }
+
+    private var privateCacheArea: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("project.access.privateCache.title")
+                    .font(.callout.weight(.medium))
+                Text(privateCacheClearMessage ?? "project.access.privateCache.detail")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Button("project.access.privateCache.clear", role: .destructive) {
+                clearPrivateCache()
+            }
+            .disabled(isClearingPrivateCache)
         }
     }
 
@@ -276,6 +299,20 @@ struct ProjectAccessSheet: View {
         Task { @MainActor in
             _ = try? await syncService.refresh(userID: userID, force: force)
             await onProjectsChanged()
+        }
+    }
+
+    private func clearPrivateCache() {
+        isClearingPrivateCache = true
+        privateCacheClearMessage = nil
+        Task { @MainActor in
+            defer { isClearingPrivateCache = false }
+            do {
+                _ = try await dependencies.readmeRepository.deletePrivateRemoteCaches()
+                privateCacheClearMessage = "project.access.privateCache.cleared"
+            } catch {
+                privateCacheClearMessage = "project.access.privateCache.failed"
+            }
         }
     }
 }

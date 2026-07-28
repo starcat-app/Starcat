@@ -389195,6 +389195,46 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "在預設瀏覽器中開啟 GitHub，以批准唯讀專案權限。" } }
       }
     },
+    "project.access.privateCache.clear" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清理" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "清理" } }
+      }
+    },
+    "project.access.privateCache.cleared" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Private README cache cleared." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Private README 缓存已清理。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Private README 快取已清理。" } }
+      }
+    },
+    "project.access.privateCache.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Removes downloaded Private README content only. Projects and user data are preserved." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仅移除已下载的 Private README，项目和用户数据会保留。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "僅移除已下載的 Private README，專案和使用者資料會保留。" } }
+      }
+    },
+    "project.access.privateCache.failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not clear the Private README cache." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法清理 Private README 缓存。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "無法清理 Private README 快取。" } }
+      }
+    },
+    "project.access.privateCache.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Local Private cache" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本地 Private 缓存" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "本機 Private 快取" } }
+      }
+    },
     "project.access.refresh" : {
       "extractionState" : "manual",
       "localizations" : {
