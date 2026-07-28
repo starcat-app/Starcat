@@ -143,6 +143,78 @@ struct RepositoryInsightsViewModelTests {
         #expect(viewModel.securityAdvisoriesState.visibleValue == cached)
     }
 
+    @Test("私有项目首次加载和手动刷新都不会进入远端洞察")
+    func privateRepositoryNeverLoadsRemoteInsights() async {
+        let counter = RepositoryInsightsCallCounter()
+        let remoteProvider = StubRepositoryRemoteInsightsProvider(
+            cachedHandler: { _, _ in
+                await counter.increment()
+                return nil
+            },
+            refreshHandler: { _, _ in
+                await counter.increment()
+                throw StubError.failed
+            },
+            cachedCommitHandler: { _ in
+                await counter.increment()
+                return nil
+            },
+            refreshCommitHandler: { _ in
+                await counter.increment()
+                throw StubError.failed
+            },
+            cachedContributorsHandler: { _ in
+                await counter.increment()
+                return nil
+            },
+            refreshContributorsHandler: { _ in
+                await counter.increment()
+                throw StubError.failed
+            },
+            cachedCommunityHandler: { _ in
+                await counter.increment()
+                return nil
+            },
+            refreshCommunityHandler: { _ in
+                await counter.increment()
+                throw StubError.failed
+            },
+            cachedSecurityAdvisoriesHandler: { _ in
+                await counter.increment()
+                return nil
+            },
+            refreshSecurityAdvisoriesHandler: { _ in
+                await counter.increment()
+                throw StubError.failed
+            },
+            cachedRecentActivityHandler: { _ in
+                await counter.increment()
+                return nil
+            },
+            refreshRecentActivityHandler: { _ in
+                await counter.increment()
+                throw StubError.failed
+            }
+        )
+        let viewModel = RepositoryInsightsViewModel(
+            provider: emptyLocalProvider(),
+            remoteProvider: remoteProvider
+        )
+        var privateRepo = fixtureRepo(id: 27)
+        privateRepo.isPrivate = true
+
+        await viewModel.load(repo: privateRepo, isAuthenticated: true)
+        await viewModel.refreshAll(repo: privateRepo, isAuthenticated: true)
+
+        #expect(await counter.value() == 0)
+        #expect(viewModel.activityState == .unavailable(cached: nil))
+        #expect(viewModel.commitActivityState == .unavailable(cached: nil))
+        #expect(viewModel.contributorsState == .unavailable(cached: nil))
+        #expect(viewModel.remoteCommunityState == .unavailable(cached: nil))
+        #expect(viewModel.securityAdvisoriesState == .unavailable(cached: nil))
+        #expect(viewModel.recentActivityState == .unavailable(cached: nil))
+    }
+
     @Test("五个独立刷新入口在刷新期间保持现有内容")
     func manualRefreshKeepsVisibleContentUntilFreshValuesArrive() async {
         let generatedAt = Date(timeIntervalSince1970: 2_000)

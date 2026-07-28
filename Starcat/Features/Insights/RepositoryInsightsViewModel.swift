@@ -723,7 +723,8 @@ final class RepositoryInsightsViewModel {
             }
         }
 
-        guard isAuthenticated, let remoteProvider else {
+        guard !repo.isPrivate, isAuthenticated, let remoteProvider else {
+            // 私有项目只展示本地数据库洞察，避免 owner/name 进入公共 OAuth 的远端指标链路。
             activityState = .unavailable(cached: retainedValue)
             return
         }
@@ -829,7 +830,8 @@ final class RepositoryInsightsViewModel {
             }
         }
 
-        guard isAuthenticated, let remoteProvider else {
+        guard !repo.isPrivate, isAuthenticated, let remoteProvider else {
+            // 与首次加载使用同一门禁，手动刷新也不能绕过私有项目的本地-only 约束。
             commitActivityState = .unavailable(cached: retainedValue)
             return
         }
@@ -906,7 +908,8 @@ final class RepositoryInsightsViewModel {
             }
         }
 
-        guard isAuthenticated, let remoteProvider else {
+        guard !repo.isPrivate, isAuthenticated, let remoteProvider else {
+            // Contributors 会把仓库身份发往 GitHub Metrics；私有项目明确禁止该出站路径。
             contributorsState = .unavailable(cached: retainedValue)
             return
         }
@@ -973,7 +976,8 @@ final class RepositoryInsightsViewModel {
             }
         }
 
-        guard let remoteProvider else {
+        guard !repo.isPrivate, let remoteProvider else {
+            // Community 缓存同样来自远端链路，私有项目不能读取或刷新这类共享指标缓存。
             remoteCommunityState = .unavailable(cached: retainedValue)
             return
         }
@@ -1045,7 +1049,8 @@ final class RepositoryInsightsViewModel {
             securityAdvisoriesState = .loading(cached: nil)
         }
 
-        guard isAuthenticated, let remoteProvider else {
+        guard !repo.isPrivate, isAuthenticated, let remoteProvider else {
+            // 私有项目的安全公告暂不进入公共指标客户端，只保留本地已同步区块。
             securityAdvisoriesState = .unavailable(cached: retainedValue)
             return
         }
@@ -1119,7 +1124,8 @@ final class RepositoryInsightsViewModel {
             }
         }
 
-        guard isAuthenticated, let remoteProvider else {
+        guard !repo.isPrivate, isAuthenticated, let remoteProvider else {
+            // 时间线包含仓库身份与活动详情，私有项目统一停留在本地数据边界内。
             recentActivityState = .unavailable(cached: retainedValue)
             return
         }
