@@ -122,6 +122,45 @@ struct RepositoryInsightsRemoteProviderTests {
         #expect(request.url?.path == "/repos/octo/commits/stats/commit_activity")
     }
 
+    @Test("过期提交活动使用 ETag 条件请求并在 304 后复用缓存")
+    func commitActivityRevalidatesCachedPayload() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 26, owner: "octo", name: "conditional")
+        let now = Date(timeIntervalSince1970: 4_000)
+        let httpClient = ConditionalCommitActivityHTTPClient()
+        let provider = DefaultRepositoryRemoteInsightsProvider(
+            metricsClient: DefaultGitHubRepositoryMetricsClient(
+                httpClient: httpClient,
+                token: "token",
+                baseURL: URL(string: "https://api.example.test")!
+            ),
+            cache: GRDBRepositoryInsightsCache(database: database),
+            now: { now }
+        )
+        let repository = RepoIdentity(
+            ghRepoID: 26,
+            owner: "octo",
+            name: "conditional"
+        )
+
+        let initial = try await provider.refreshCommitActivity(repository: repository)
+        let cached = try #require(try await provider.cachedCommitActivity(repoID: 26))
+        let revalidated = try await provider.refreshCommitActivity(
+            repository: repository,
+            ifNoneMatch: cached.responseETag
+        )
+        let requests = await httpClient.requests()
+
+        #expect(initial == revalidated)
+        #expect(cached.responseETag == "\"commit-v1\"")
+        #expect(requests.count == 2)
+        #expect(requests[0].value(forHTTPHeaderField: "If-None-Match") == nil)
+        #expect(
+            requests[1].value(forHTTPHeaderField: "If-None-Match")
+                == "\"commit-v1\""
+        )
+    }
+
     @Test("维护脉搏比较最近四周与此前四周")
     func maintenancePulseUsesAdjacentFourWeekWindows() {
         let start = Date(timeIntervalSince1970: 1_000)
@@ -385,6 +424,33 @@ private actor CommitActivityHTTPClient: RAGHTTPClientProtocol {
 
     func request() -> URLRequest? {
         recordedRequest
+    }
+}
+
+/// 首次请求返回完整 payload，后续带 validator 的请求返回 304，
+/// 用于覆盖 provider 的条件请求与缓存续期闭环。
+private actor ConditionalCommitActivityHTTPClient: RAGHTTPClientProtocol {
+    private var recordedRequests: [URLRequest] = []
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        recordedRequests.append(request)
+        let isConditional = request.value(forHTTPHeaderField: "If-None-Match") != nil
+        let body = isConditional
+            ? Data()
+            : Data(#"[{"week":1785100000,"total":9,"days":[1,1,1,1,1,2,2]}]"#.utf8)
+        return (
+            body,
+            HTTPURLResponse(
+                url: request.url!,
+                statusCode: isConditional ? 304 : 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["ETag": "\"commit-v1\""]
+            )!
+        )
+    }
+
+    func requests() -> [URLRequest] {
+        recordedRequests
     }
 }
 

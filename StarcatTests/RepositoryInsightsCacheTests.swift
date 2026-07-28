@@ -123,6 +123,45 @@ struct RepositoryInsightsCacheTests {
         #expect(month.value.count == 2)
     }
 
+    @Test("304 续期只更新时间并保留 payload 与既有 ETag")
+    func touchPreservesPayloadAndValidator() async throws {
+        let database = try InMemoryDatabaseManager()
+        let cache = GRDBRepositoryInsightsCache(database: database)
+        try await database.insertRepoFixture(id: 4, owner: "octo", name: "touch")
+        let originalDate = Date(timeIntervalSince1970: 4_000)
+        let revalidatedDate = Date(timeIntervalSince1970: 8_000)
+
+        try await cache.store(
+            Payload(count: 12),
+            repoId: 4,
+            dataset: .commitActivity,
+            range: .all,
+            fetchedAt: originalDate,
+            responseETag: "\"commit-v1\"",
+            defaultBranchSHA: nil
+        )
+        try await cache.touch(
+            repoId: 4,
+            dataset: .commitActivity,
+            range: .all,
+            fetchedAt: revalidatedDate,
+            responseETag: nil
+        )
+        let cached = try #require(
+            try await cache.load(
+                repoId: 4,
+                dataset: .commitActivity,
+                range: .all,
+                as: Payload.self
+            )
+        )
+
+        #expect(cached.value == Payload(count: 12))
+        #expect(cached.fetchedAt == revalidatedDate)
+        #expect(cached.staleAfter == revalidatedDate.addingTimeInterval(24 * 60 * 60))
+        #expect(cached.responseETag == "\"commit-v1\"")
+    }
+
     @Test("损坏 payload 只删除对应数据集")
     func corruptPayloadIsIsolated() async throws {
         let database = try InMemoryDatabaseManager()
