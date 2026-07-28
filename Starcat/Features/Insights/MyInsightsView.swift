@@ -97,6 +97,8 @@ struct MyInsightsView: View {
         case .overviewSummary:
             metricGrid
             organizationSection
+            priorityRepositoriesSection
+            assetCleanupSection
             languageSection
             actionSection(snapshot.actionItems)
             coverageSection
@@ -106,6 +108,8 @@ struct MyInsightsView: View {
 
         case .organizationSummary:
             organizationSection
+            priorityRepositoriesSection
+            assetCleanupSection
             actionSection(organizationActions)
 
         case .untagged,
@@ -299,6 +303,150 @@ struct MyInsightsView: View {
                 openDrillDown(.language(item.id == "__unknown__" ? nil : item.title))
             }
         )
+    }
+
+    /// 高 Star 且仍未读或未打标签的仓库优先展示，帮助用户从大批收藏里先处理高价值资产。
+    @ViewBuilder
+    private var priorityRepositoriesSection: some View {
+        if !snapshot.priorityRepositories.isEmpty {
+            InsightsSectionContainer(
+                title: "insights.section.priorityRepositories",
+                subtitle: "insights.section.priorityRepositories.subtitle",
+                systemImage: "sparkles"
+            ) {
+                VStack(spacing: 0) {
+                    ForEach(Array(snapshot.priorityRepositories.enumerated()), id: \.element.id) {
+                        index,
+                        repository in
+                        if index > 0 {
+                            Divider().padding(.leading, 30)
+                        }
+                        priorityRepositoryRow(repository)
+                    }
+                }
+            }
+        }
+    }
+
+    private var assetCleanupSection: some View {
+        InsightsSectionContainer(
+            title: "insights.section.assetCleanup",
+            subtitle: "insights.section.assetCleanup.subtitle",
+            systemImage: "archivebox.fill"
+        ) {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 156), spacing: 16)],
+                spacing: 12
+            ) {
+                assetCleanupItem(
+                    title: "insights.asset.dormant",
+                    detail: "insights.asset.dormant.detail",
+                    count: snapshot.assetSummary.dormantCount,
+                    systemImage: "clock.badge.exclamationmark",
+                    tint: .orange
+                )
+                assetCleanupItem(
+                    title: "insights.asset.archived",
+                    detail: "insights.asset.archived.detail",
+                    count: snapshot.assetSummary.archivedCount,
+                    systemImage: "archivebox.fill",
+                    tint: .purple
+                )
+                assetCleanupItem(
+                    title: "insights.asset.unavailable",
+                    detail: "insights.asset.unavailable.detail",
+                    count: snapshot.assetSummary.unavailableCount,
+                    systemImage: "exclamationmark.icloud.fill",
+                    tint: .red
+                )
+            }
+        }
+    }
+
+    private func priorityRepositoryRow(_ repository: InsightsRepositoryHighlight) -> some View {
+        Button {
+            openRepository(repository)
+        } label: {
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: "star.fill")
+                    .foregroundStyle(.yellow)
+                    .frame(width: 20)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(repository.fullName)
+                        .font(interfaceScale.font(.bodyEmphasis))
+                        .lineLimit(1)
+
+                    HStack(spacing: 6) {
+                        if repository.isUnread {
+                            repositoryStatePill("insights.action.unread", tint: .blue)
+                        }
+                        if repository.isUntagged {
+                            repositoryStatePill("insights.action.untagged", tint: .orange)
+                        }
+                    }
+                }
+
+                Spacer(minLength: 12)
+
+                Label(
+                    repository.starsCount.formatted(.number.notation(.compactName).locale(locale)),
+                    systemImage: "star.fill"
+                )
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+
+                Image(systemName: "chevron.right")
+                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 9)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+    }
+
+    private func repositoryStatePill(_ title: LocalizedStringKey, tint: Color) -> some View {
+        Text(title)
+            .font(interfaceScale.font(.captionSmall, weight: .medium))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(tint.opacity(0.12), in: Capsule())
+    }
+
+    private func assetCleanupItem(
+        title: LocalizedStringKey,
+        detail: LocalizedStringKey,
+        count: Int,
+        systemImage: String,
+        tint: Color
+    ) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: systemImage)
+                .foregroundStyle(tint)
+                .frame(width: 20)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(title)
+                        .font(interfaceScale.font(.caption))
+                    Spacer(minLength: 6)
+                    Text(count.formatted(.number.locale(locale)))
+                        .font(interfaceScale.font(.bodyEmphasis))
+                        .monospacedDigit()
+                }
+                Text(detail)
+                    .font(interfaceScale.font(.captionSmall))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 
     private var topicSection: some View {
@@ -590,6 +738,17 @@ struct MyInsightsView: View {
         dependencies.mainWindowNavigationDispatcher.navigate(
             to: .manage(route.selection),
             temporaryFilters: route.filters,
+            returnPage: .insights
+        )
+    }
+
+    private func openRepository(_ repository: InsightsRepositoryHighlight) {
+        guard let link = RepositoryDeepLink(
+            fullName: repository.fullName,
+            repositoryID: repository.id
+        ) else { return }
+        dependencies.mainWindowNavigationDispatcher.navigate(
+            to: .repository(link),
             returnPage: .insights
         )
     }

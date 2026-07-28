@@ -180,6 +180,9 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
         let recentCutoff = ISO8601DateFormatter.shared.string(
             from: generatedAt.addingTimeInterval(-30 * 24 * 60 * 60)
         )
+        let dormantCutoff = ISO8601DateFormatter.shared.string(
+            from: generatedAt.addingTimeInterval(-365 * 24 * 60 * 60)
+        )
 
         let overview = try Row.fetchOne(
             db,
@@ -204,6 +207,14 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
                         n.repo_id IS NULL OR n.status = 'unread'
                     THEN 1 ELSE 0 END), 0) AS unread_count,
                     COALESCE(SUM(CASE WHEN
+                        r.pushed_at IS NOT NULL
+                        AND datetime(r.pushed_at) < datetime(?)
+                    THEN 1 ELSE 0 END), 0) AS dormant_count,
+                    COALESCE(SUM(CASE WHEN r.is_archived = 1 THEN 1 ELSE 0 END), 0)
+                        AS archived_count,
+                    COALESCE(SUM(CASE WHEN r.access_state = 'unavailable' THEN 1 ELSE 0 END), 0)
+                        AS unavailable_count,
+                    COALESCE(SUM(CASE WHEN
                         h.repo_id IS NOT NULL AND h.fetch_status != 'failed'
                     THEN 1 ELSE 0 END), 0) AS health_completed_count,
                     COALESCE(SUM(CASE WHEN
@@ -226,7 +237,7 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
                 LEFT JOIN open_ssf_scores os ON os.repo_id = r.id
                 WHERE \(scopePredicate)
                 """,
-            arguments: [recentCutoff]
+            arguments: [recentCutoff, dormantCutoff]
         )!
 
         let totalCount: Int = overview["total_count"]
@@ -295,6 +306,40 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
                 ORDER BY count DESC, name COLLATE NOCASE ASC
                 """
         )
+        let priorityRepositories = try Row.fetchAll(
+            db,
+            sql: """
+                SELECT
+                    r.id,
+                    r.full_name,
+                    r.stars_count,
+                    CASE WHEN n.repo_id IS NULL OR n.status = 'unread' THEN 1 ELSE 0 END
+                        AS is_unread,
+                    CASE WHEN NOT EXISTS (
+                        SELECT 1 FROM repo_tags rt WHERE rt.repo_id = r.id
+                    ) THEN 1 ELSE 0 END AS is_untagged
+                FROM repos r
+                LEFT JOIN repo_notes n ON n.repo_id = r.id
+                WHERE \(scopePredicate)
+                  AND (
+                    n.repo_id IS NULL
+                    OR n.status = 'unread'
+                    OR NOT EXISTS (SELECT 1 FROM repo_tags rt WHERE rt.repo_id = r.id)
+                  )
+                ORDER BY r.stars_count DESC,
+                         COALESCE(\(recentColumn), r.cached_at) DESC,
+                         r.id DESC
+                LIMIT 5
+                """
+        ).map { row in
+            InsightsRepositoryHighlight(
+                id: row["id"],
+                fullName: row["full_name"],
+                starsCount: row["stars_count"],
+                isUnread: row["is_unread"],
+                isUntagged: row["is_untagged"]
+            )
+        }
 
         var actionItems = [
             action(.untagged, count: overview["untagged_count"]),
@@ -362,7 +407,13 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
             ),
             actionItems: actionItems,
             healthCoverage: InsightsCoverage(completed: healthCompleted, total: totalCount),
-            openSSFCoverage: InsightsCoverage(completed: openSSFCompleted, total: totalCount)
+            openSSFCoverage: InsightsCoverage(completed: openSSFCompleted, total: totalCount),
+            assetSummary: InsightsAssetSummary(
+                dormantCount: overview["dormant_count"],
+                archivedCount: overview["archived_count"],
+                unavailableCount: overview["unavailable_count"]
+            ),
+            priorityRepositories: priorityRepositories
         )
     }
 

@@ -128129,6 +128129,48 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "尚未閱讀和評估的儲存庫" } }
       }
     },
+    "insights.asset.archived" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Archived" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已归档" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "已封存" } }
+      }
+    },
+    "insights.asset.archived.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Read-only upstream repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上游已转为只读" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "上游已轉為唯讀" } }
+      }
+    },
+    "insights.asset.dormant" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Dormant" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "长期未维护" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "長期未維護" } }
+      }
+    },
+    "insights.asset.dormant.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No push in over one year" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "超过一年没有推送" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "超過一年沒有推送" } }
+      }
+    },
+    "insights.asset.unavailable" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unavailable" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法访问" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "無法存取" } }
+      }
+    },
+    "insights.asset.unavailable.detail" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Deleted, private, or inaccessible" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已删除、转私有或无权限" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "已刪除、轉私人或無權限" } }
+      }
+    },
     "insights.coverage.countFormat" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "%1$lld of %2$lld repositories covered" } },
@@ -128248,6 +128290,20 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "收藏範圍隱藏 RAG 專屬問題；切換到知識庫可檢查索引狀態" } }
       }
     },
+    "insights.section.assetCleanup" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Library Cleanup" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "资产清理" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "資產清理" } }
+      }
+    },
+    "insights.section.assetCleanup.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Signals worth reviewing in the current scope; categories may overlap" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前范围内值得复核的资产信号，分类可能重叠" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "目前範圍內值得複核的資產訊號，分類可能重疊" } }
+      }
+    },
     "insights.section.coverage" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Project Health Coverage" } },
@@ -128302,6 +128358,20 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Unread, read, and actively used repositories" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未读、已读与正在使用的仓库分布" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "未讀、已讀與正在使用的儲存庫分佈" } }
+      }
+    },
+    "insights.section.priorityRepositories" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "High-value Repositories to Organize" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "高价值待整理" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "高價值待整理" } }
+      }
+    },
+    "insights.section.priorityRepositories.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Popular repositories that are unread or untagged" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "按 Star 数优先展示未读或未打标签的仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "按 Star 數優先顯示未讀或未加標籤的儲存庫" } }
       }
     },
     "insights.section.topics" : {

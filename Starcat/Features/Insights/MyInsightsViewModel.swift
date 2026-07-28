@@ -133,7 +133,13 @@ final class MyInsightsViewModel {
             licenseItems: [],
             actionItems: [],
             healthCoverage: InsightsCoverage(completed: 0, total: 0),
-            openSSFCoverage: InsightsCoverage(completed: 0, total: 0)
+            openSSFCoverage: InsightsCoverage(completed: 0, total: 0),
+            assetSummary: InsightsAssetSummary(
+                dormantCount: 0,
+                archivedCount: 0,
+                unavailableCount: 0
+            ),
+            priorityRepositories: []
         )
     }
 }

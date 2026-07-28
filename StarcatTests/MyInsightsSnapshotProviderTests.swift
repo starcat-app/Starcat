@@ -199,6 +199,74 @@ struct MyInsightsSnapshotProviderTests {
         #expect(snapshot.actionItems.allSatisfy { $0.count == 0 })
         #expect(snapshot.healthCoverage == InsightsCoverage(completed: 0, total: 0))
         #expect(snapshot.openSSFCoverage == InsightsCoverage(completed: 0, total: 0))
+        #expect(snapshot.assetSummary == InsightsAssetSummary(
+            dormantCount: 0,
+            archivedCount: 0,
+            unavailableCount: 0
+        ))
+        #expect(snapshot.priorityRepositories.isEmpty)
+    }
+
+    @Test("资产清理独立计数并按 Star 数筛选高价值待整理仓库")
+    func assetCleanupAndPriorityRepositoriesUseTruthfulSignals() async throws {
+        let database = try InMemoryDatabaseManager()
+        for id in 60...63 {
+            try await database.insertRepoFixture(id: Int64(id))
+        }
+
+        let notes = GRDBRepoNoteRepository(database: database)
+        try await notes.updateStatus(repoId: 61, status: .read)
+        try await notes.updateStatus(repoId: 62, status: .read)
+
+        let tag = Tag.fixture(id: "organized", name: "Organized")
+        try await GRDBTagRepository(database: database).create(tag)
+        try await database.writer.write { db in
+            for repoID in [62, 63] {
+                var assignment = RepoTag(
+                    repoId: Int64(repoID),
+                    tagId: tag.id,
+                    createdAt: "2026-07-27T00:00:00Z"
+                )
+                try assignment.insert(db)
+            }
+            try db.execute(sql: """
+                UPDATE repos
+                SET stars_count = CASE id
+                        WHEN 60 THEN 1000
+                        WHEN 61 THEN 900
+                        WHEN 62 THEN 800
+                        ELSE 700
+                    END,
+                    pushed_at = CASE
+                        WHEN id = 60 THEN '2024-01-01T00:00:00Z'
+                        ELSE '2026-07-01T00:00:00Z'
+                    END,
+                    is_archived = CASE WHEN id = 60 THEN 1 ELSE 0 END,
+                    access_state = CASE WHEN id = 61 THEN 'unavailable' ELSE 'accessible' END
+                WHERE id BETWEEN 60 AND 63
+                """)
+        }
+
+        let now = try #require(
+            ISO8601DateFormatter().date(from: "2026-07-27T00:00:00Z")
+        )
+        let snapshot = try await GRDBMyInsightsSnapshotProvider(
+            database: database,
+            now: { now }
+        ).load(scope: .starred, embeddingModel: "embed-v1")
+
+        #expect(snapshot.assetSummary == InsightsAssetSummary(
+            dormantCount: 1,
+            archivedCount: 1,
+            unavailableCount: 1
+        ))
+        #expect(snapshot.priorityRepositories.map(\.id) == [60, 61, 63])
+        #expect(snapshot.priorityRepositories[0].isUnread)
+        #expect(snapshot.priorityRepositories[0].isUntagged)
+        #expect(!snapshot.priorityRepositories[1].isUnread)
+        #expect(snapshot.priorityRepositories[1].isUntagged)
+        #expect(snapshot.priorityRepositories[2].isUnread)
+        #expect(!snapshot.priorityRepositories[2].isUntagged)
     }
 
     @Test("非收藏但已入库仓库只进入知识库范围")

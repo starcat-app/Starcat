@@ -113,7 +113,13 @@ struct MyInsightsViewModelTests {
             licenseItems: [],
             actionItems: [],
             healthCoverage: InsightsCoverage(completed: 0, total: projects),
-            openSSFCoverage: InsightsCoverage(completed: 0, total: projects)
+            openSSFCoverage: InsightsCoverage(completed: 0, total: projects),
+            assetSummary: InsightsAssetSummary(
+                dormantCount: 0,
+                archivedCount: 0,
+                unavailableCount: 0
+            ),
+            priorityRepositories: []
         )
     }
 }

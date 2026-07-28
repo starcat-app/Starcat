@@ -274,6 +274,22 @@ struct InsightsCoverage: Equatable, Sendable {
     }
 }
 
+/// 当前范围内需要清理的资产信号。三类信号允许重叠，不能相加当作唯一仓库数。
+struct InsightsAssetSummary: Equatable, Sendable {
+    let dormantCount: Int
+    let archivedCount: Int
+    let unavailableCount: Int
+}
+
+/// 按 GitHub Star 数筛出的高价值待整理仓库，点击后直接进入对应仓库详情。
+struct InsightsRepositoryHighlight: Identifiable, Equatable, Sendable {
+    let id: Int64
+    let fullName: String
+    let starsCount: Int
+    let isUnread: Bool
+    let isUntagged: Bool
+}
+
 /// “我的洞察”一次一致快照。
 struct MyInsightsSnapshot: Equatable, Sendable {
     let scope: InsightsScope
@@ -286,6 +302,8 @@ struct MyInsightsSnapshot: Equatable, Sendable {
     let actionItems: [InsightsActionItem]
     let healthCoverage: InsightsCoverage
     let openSSFCoverage: InsightsCoverage
+    let assetSummary: InsightsAssetSummary
+    let priorityRepositories: [InsightsRepositoryHighlight]
 }
 
 /// 仓库洞察活动统计。
