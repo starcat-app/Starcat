@@ -740,8 +740,8 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
                 "mergedPullRequests": "\(base) is:pr merged:\(dateRange)",
                 "createdIssues": "\(base) is:issue created:\(dateRange)",
                 "closedIssues": "\(base) is:issue closed:\(dateRange)",
-                "recentPullRequests": "\(base) is:pr",
-                "recentIssues": "\(base) is:issue"
+                "recentPullRequests": "\(base) is:pr sort:updated-desc",
+                "recentIssues": "\(base) is:issue sort:updated-desc"
             ]
         )
         var request = URLRequest(url: url)

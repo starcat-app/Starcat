@@ -329,6 +329,11 @@ protocol RepositoryRemoteInsightsProviding: Sendable {
     func cachedRecentActivity(repoID: Int64) async throws -> RepositoryCachedRecentActivity?
 
     func refreshRecentActivity(repository: RepoIdentity) async throws -> RepositoryRecentActivity
+
+    func refreshRecentActivity(
+        repository: RepoIdentity,
+        activityRange: RepositoryActivityRange
+    ) async throws -> RepositoryRecentActivity
 }
 
 extension RepositoryRemoteInsightsProviding {
@@ -358,6 +363,13 @@ extension RepositoryRemoteInsightsProviding {
         ifNoneMatch: String?
     ) async throws -> RepositorySecurityAdvisoriesInsight {
         try await refreshSecurityAdvisories(repository: repository)
+    }
+
+    func refreshRecentActivity(
+        repository: RepoIdentity,
+        activityRange: RepositoryActivityRange
+    ) async throws -> RepositoryRecentActivity {
+        try await refreshRecentActivity(repository: repository)
     }
 }
 
@@ -400,11 +412,32 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
         range: RepositoryActivityRange
     ) async throws -> RepositoryActivityCounts {
         let fetchedAt = now()
-        let value = try await metricsClient.loadActivityCounts(
-            repository: repository,
-            range: range,
-            now: fetchedAt
-        )
+        let value: RepositoryActivityCounts
+        do {
+            let bundle = try await metricsClient.loadActivityBundle(
+                repository: repository,
+                dateRange: RepositoryActivityDateRange(
+                    range: range,
+                    now: fetchedAt
+                ).queryValue
+            )
+            value = RepositoryActivityCounts(
+                createdPullRequests: bundle.createdPullRequests,
+                mergedPullRequests: bundle.mergedPullRequests,
+                createdIssues: bundle.createdIssues,
+                closedIssues: bundle.closedIssues,
+                generatedAt: fetchedAt
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            // GraphQL schema、权限或代理兼容性异常时保留原 REST 口径，避免优化影响可用性。
+            value = try await metricsClient.loadActivityCounts(
+                repository: repository,
+                range: range,
+                now: fetchedAt
+            )
+        }
         guard let repoID = repository.ghRepoID else {
             // Manage 详情只会传持久化 Repo；无 ID 代表调用方越过了产品边界，不能写错缓存键。
             throw GitHubRepositoryMetricsError.invalidResponse
@@ -725,7 +758,56 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
     }
 
     func refreshRecentActivity(repository: RepoIdentity) async throws -> RepositoryRecentActivity {
+        try await refreshRecentActivity(repository: repository, activityRange: .month)
+    }
+
+    func refreshRecentActivity(
+        repository: RepoIdentity,
+        activityRange: RepositoryActivityRange
+    ) async throws -> RepositoryRecentActivity {
         let fetchedAt = now()
+        guard let repoID = repository.ghRepoID else {
+            throw GitHubRepositoryMetricsError.invalidResponse
+        }
+
+        let events: [RepositoryRecentActivityEvent]
+        do {
+            let bundle = try await metricsClient.loadActivityBundle(
+                repository: repository,
+                dateRange: RepositoryActivityDateRange(
+                    range: activityRange,
+                    now: fetchedAt
+                ).queryValue
+            )
+            events = Array(
+                (
+                    makeRecentEvents(bundle.recentPullRequests, kind: .pullRequest)
+                    + makeRecentEvents(bundle.recentIssues, kind: .issue)
+                )
+                .sorted { $0.occurredAt > $1.occurredAt }
+                .prefix(8)
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            events = try await loadRecentEventsViaREST(repository: repository)
+        }
+        let value = RepositoryRecentActivity(events: Array(events), generatedAt: fetchedAt)
+        try await cache.store(
+            value,
+            repoId: repoID,
+            dataset: .recentActivity,
+            range: .all,
+            fetchedAt: fetchedAt,
+            responseETag: nil,
+            defaultBranchSHA: nil
+        )
+        return value
+    }
+
+    private func loadRecentEventsViaREST(
+        repository: RepoIdentity
+    ) async throws -> [RepositoryRecentActivityEvent] {
         let base = "repo:\(repository.owner)/\(repository.name)"
         let pullRequests = try await metricsClient.searchIssues(
             repository: repository,
@@ -741,35 +823,41 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
             order: "desc",
             perPage: 5
         )
-        guard let repoID = repository.ghRepoID else {
-            throw GitHubRepositoryMetricsError.invalidResponse
-        }
+        return Array(
+            (
+                makeRecentEvents(
+                    pullRequests.value.items,
+                    kind: .pullRequest,
+                    repository: repository
+                )
+                + makeRecentEvents(
+                    issues.value.items,
+                    kind: .issue,
+                    repository: repository
+                )
+            )
+            .sorted { $0.occurredAt > $1.occurredAt }
+            .prefix(8)
+        )
+    }
 
-        let events = (
-            makeRecentEvents(
-                pullRequests.value.items,
-                kind: .pullRequest,
-                repository: repository
+    private func makeRecentEvents(
+        _ metrics: [GitHubRepositoryActivityEventMetric],
+        kind: RepositoryRecentActivityKind
+    ) -> [RepositoryRecentActivityEvent] {
+        metrics.compactMap { metric in
+            guard let occurredAt = ISO8601DateFormatter.githubDate(from: metric.occurredAt) else {
+                return nil
+            }
+            return RepositoryRecentActivityEvent(
+                id: "\(kind.rawValue)-\(metric.number)",
+                kind: kind,
+                number: metric.number,
+                title: metric.title,
+                occurredAt: occurredAt,
+                htmlURL: URL(string: metric.htmlURL)
             )
-            + makeRecentEvents(
-                issues.value.items,
-                kind: .issue,
-                repository: repository
-            )
-        )
-        .sorted { $0.occurredAt > $1.occurredAt }
-        .prefix(8)
-        let value = RepositoryRecentActivity(events: Array(events), generatedAt: fetchedAt)
-        try await cache.store(
-            value,
-            repoId: repoID,
-            dataset: .recentActivity,
-            range: .all,
-            fetchedAt: fetchedAt,
-            responseETag: nil,
-            defaultBranchSHA: nil
-        )
-        return value
+        }
     }
 
     private func makeRecentEvents(

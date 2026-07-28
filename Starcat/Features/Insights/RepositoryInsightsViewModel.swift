@@ -931,7 +931,8 @@ final class RepositoryInsightsViewModel {
         let fallbackValue = retainedValue ?? cached?.value
         do {
             let fresh = try await remoteProvider.refreshRecentActivity(
-                repository: repoIdentity(for: repo)
+                repository: repoIdentity(for: repo),
+                activityRange: activityRange
             )
             guard ownsTimelineResult(generation: requestedGeneration, repoID: repo.id) else { return }
             recentActivityState = .content(fresh)
