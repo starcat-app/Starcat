@@ -51,6 +51,34 @@ struct RepositoryReleaseInsight: Equatable, Sendable {
     let htmlURL: URL?
 }
 
+/// 从本地 Release 历史派生的发布节奏，避免洞察页重复请求相同 GitHub 数据。
+struct RepositoryReleaseCadenceInsight: Equatable, Sendable {
+    let releasesLastYear: Int
+    let averageIntervalDays: Int?
+    let latestPublishedAt: Date
+
+    static func make(
+        releases: [RepositoryReleaseInsight],
+        now: Date
+    ) -> RepositoryReleaseCadenceInsight? {
+        let dates = releases.compactMap(\.publishedAt).sorted(by: >)
+        guard let latest = dates.first else { return nil }
+        let oneYearAgo = now.addingTimeInterval(-365 * 86_400)
+        let releasesLastYear = dates.count { $0 >= oneYearAgo && $0 <= now }
+        let intervals = zip(dates, dates.dropFirst()).map { newer, older in
+            max(0, newer.timeIntervalSince(older) / 86_400)
+        }
+        let averageIntervalDays = intervals.isEmpty
+            ? nil
+            : Int((intervals.reduce(0, +) / Double(intervals.count)).rounded())
+        return RepositoryReleaseCadenceInsight(
+            releasesLastYear: releasesLastYear,
+            averageIntervalDays: averageIntervalDays,
+            latestPublishedAt: latest
+        )
+    }
+}
+
 struct RepositoryHealthInsight: Equatable, Sendable {
     let overallScore: Int
     let grade: String
@@ -116,6 +144,7 @@ struct RepositoryCommunityInsight: Codable, Equatable, Sendable {
 
 protocol RepositoryLocalInsightsProviding: Sendable {
     func latestRelease(repoId: Int64) async throws -> RepositoryReleaseInsight?
+    func releaseCadence(repoId: Int64) async throws -> RepositoryReleaseCadenceInsight?
     func health(repoId: Int64) async throws -> RepositoryHealthInsight?
     func openSSF(repoId: Int64) async throws -> RepositoryOpenSSFInsight?
     func cachedCommunity(repoId: Int64) async throws -> RepositoryCommunityInsight?
@@ -126,6 +155,7 @@ struct DefaultRepositoryLocalInsightsProvider: RepositoryLocalInsightsProviding,
     let healthRepository: any RepoHealthRepositoryProtocol
     let openSSFRepository: any OpenSSFScoreRepositoryProtocol
     let insightsCache: any RepositoryInsightsCaching
+    var now: @Sendable () -> Date = Date.init
 
     func latestRelease(repoId: Int64) async throws -> RepositoryReleaseInsight? {
         guard let record = try await releaseRepository.latest(forRepo: repoId) else { return nil }
@@ -135,6 +165,18 @@ struct DefaultRepositoryLocalInsightsProvider: RepositoryLocalInsightsProviding,
             publishedAt: record.publishedAt.flatMap(ISO8601DateFormatter.shared.date(from:)),
             htmlURL: URL(string: record.htmlUrl)
         )
+    }
+
+    func releaseCadence(repoId: Int64) async throws -> RepositoryReleaseCadenceInsight? {
+        let releases = try await releaseRepository.fetch(forRepo: repoId, limit: 12).map { record in
+            RepositoryReleaseInsight(
+                tagName: record.tagName,
+                name: record.name,
+                publishedAt: record.publishedAt.flatMap(ISO8601DateFormatter.shared.date(from:)),
+                htmlURL: URL(string: record.htmlUrl)
+            )
+        }
+        return RepositoryReleaseCadenceInsight.make(releases: releases, now: now())
     }
 
     func health(repoId: Int64) async throws -> RepositoryHealthInsight? {
@@ -174,6 +216,8 @@ final class RepositoryInsightsViewModel {
     private enum LoadEvent: Sendable {
         case release(RepositoryReleaseInsight?)
         case releaseFailed
+        case releaseCadence(RepositoryReleaseCadenceInsight?)
+        case releaseCadenceFailed
         case health(RepositoryHealthInsight?)
         case healthFailed
         case openSSF(RepositoryOpenSSFInsight?)
@@ -193,6 +237,8 @@ final class RepositoryInsightsViewModel {
 
     private(set) var activeRepoID: Int64?
     private(set) var releaseState: RepositoryInsightsSectionState<RepositoryReleaseInsight> = .idle
+    private(set) var releaseCadenceState:
+        RepositoryInsightsSectionState<RepositoryReleaseCadenceInsight> = .idle
     private(set) var healthState: RepositoryInsightsSectionState<RepositoryHealthInsight> = .idle
     private(set) var openSSFState: RepositoryInsightsSectionState<RepositoryOpenSSFInsight> = .idle
     private(set) var communityState: RepositoryInsightsSectionState<RepositoryCommunityInsight> = .idle
@@ -239,6 +285,7 @@ final class RepositoryInsightsViewModel {
         let requestedGeneration = generation
         activeRepoID = repoId
         releaseState = .loading
+        releaseCadenceState = .loading
         healthState = .loading
         openSSFState = .loading
         communityState = .loading
@@ -247,6 +294,10 @@ final class RepositoryInsightsViewModel {
             group.addTask { [provider] in
                 do { return .release(try await provider.latestRelease(repoId: repoId)) }
                 catch { return .releaseFailed }
+            }
+            group.addTask { [provider] in
+                do { return .releaseCadence(try await provider.releaseCadence(repoId: repoId)) }
+                catch { return .releaseCadenceFailed }
             }
             group.addTask { [provider] in
                 do { return .health(try await provider.health(repoId: repoId)) }
@@ -818,6 +869,10 @@ final class RepositoryInsightsViewModel {
             releaseState = value.map(RepositoryInsightsSectionState.content) ?? .empty
         case .releaseFailed:
             releaseState = .failed
+        case .releaseCadence(let value):
+            releaseCadenceState = value.map(RepositoryInsightsSectionState.content) ?? .empty
+        case .releaseCadenceFailed:
+            releaseCadenceState = .failed
         case .health(let value):
             healthState = value.map(RepositoryInsightsSectionState.content) ?? .empty
         case .healthFailed:

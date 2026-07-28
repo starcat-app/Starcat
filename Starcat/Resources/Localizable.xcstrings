@@ -127702,6 +127702,48 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "儲存庫健康度" } }
       }
     },
+    "insights.repo.section.releaseCadence" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Release Cadence" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "发布节奏" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "發佈節奏" } }
+      }
+    },
+    "insights.repo.section.releaseCadence.subtitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Release frequency derived from local history" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "基于本地 Release 历史的发布频率" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "基於本機 Release 歷史的發佈頻率" } }
+      }
+    },
+    "insights.repo.releaseCadence.averageInterval" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Average interval" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "平均间隔" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "平均間隔" } }
+      }
+    },
+    "insights.repo.releaseCadence.daysFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld days" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%lld 天" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "%lld 天" } }
+      }
+    },
+    "insights.repo.releaseCadence.lastYear" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Releases in 1 year" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "近 1 年发布" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "近 1 年發佈" } }
+      }
+    },
+    "insights.repo.releaseCadence.latest" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Latest release" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "最近发布" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "最近發佈" } }
+      }
+    },
     "insights.repo.section.health.subtitle" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Four dimensions from Starcat health scoring" } },

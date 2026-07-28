@@ -81,6 +81,7 @@ struct RepositoryInsightsView: View {
                     starHistorySection
                     commitSection
                     contributorSection
+                    releaseCadenceSection
                     healthSection
                     localSignalsSection
                     timelineSection
@@ -1853,6 +1854,85 @@ struct RepositoryInsightsView: View {
                 }
             }
         }
+    }
+
+    private var releaseCadenceSection: some View {
+        InsightsSectionContainer(
+            title: "insights.repo.section.releaseCadence",
+            subtitle: "insights.repo.section.releaseCadence.subtitle",
+            systemImage: "tag.fill"
+        ) {
+            switch viewModel.releaseCadenceState {
+            case .content(let cadence):
+                HStack(spacing: 8) {
+                    releaseCadenceMetric(
+                        title: "insights.repo.releaseCadence.lastYear",
+                        value: cadence.releasesLastYear.formatted(.number.locale(locale)),
+                        systemImage: "calendar"
+                    )
+                    releaseCadenceMetric(
+                        title: "insights.repo.releaseCadence.averageInterval",
+                        value: cadence.averageIntervalDays.map {
+                            String(
+                                format: String.l10n("insights.repo.releaseCadence.daysFormat"),
+                                locale: locale,
+                                $0
+                            )
+                        } ?? String.l10n("insights.repo.state.noData"),
+                        systemImage: "arrow.left.and.right"
+                    )
+                    releaseCadenceMetric(
+                        title: "insights.repo.releaseCadence.latest",
+                        value: shortDate(cadence.latestPublishedAt),
+                        systemImage: "clock"
+                    )
+                }
+            case .loading, .idle:
+                sectionLoadingPlaceholder
+            case .empty, .unavailable:
+                compactEmptyState(
+                    "insights.repo.state.noData",
+                    systemImage: "tag.slash"
+                )
+            case .failed:
+                compactEmptyState(
+                    "error.loadFailed",
+                    systemImage: "exclamationmark.triangle"
+                )
+            }
+        }
+    }
+
+    private func releaseCadenceMetric(
+        title: LocalizedStringKey,
+        value: String,
+        systemImage: String
+    ) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: systemImage)
+                .foregroundStyle(Color.blue)
+            Text(title)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Spacer(minLength: 6)
+            Text(verbatim: value)
+                .fontWeight(.semibold)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .font(interfaceScale.font(.caption))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+        .background(
+            Color(nsColor: .textBackgroundColor).opacity(0.55),
+            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(title))
+        .accessibilityValue(Text(verbatim: value))
     }
 
     private func healthItem(_ dimension: RepositoryHealthDimensionItem) -> some View {

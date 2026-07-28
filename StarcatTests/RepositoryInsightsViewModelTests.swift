@@ -13,6 +13,37 @@ import Testing
 @Suite("Repository insights view model")
 struct RepositoryInsightsViewModelTests {
 
+    @Test("发布节奏按本地 Release 时间计算近一年数量与平均间隔")
+    func releaseCadenceDerivesFromLocalReleaseHistory() {
+        let now = ISO8601DateFormatter.shared.date(from: "2026-07-28T00:00:00Z")!
+        let releases = [
+            RepositoryReleaseInsight(
+                tagName: "v3",
+                name: nil,
+                publishedAt: now.addingTimeInterval(-10 * 86_400),
+                htmlURL: nil
+            ),
+            RepositoryReleaseInsight(
+                tagName: "v2",
+                name: nil,
+                publishedAt: now.addingTimeInterval(-40 * 86_400),
+                htmlURL: nil
+            ),
+            RepositoryReleaseInsight(
+                tagName: "v1",
+                name: nil,
+                publishedAt: now.addingTimeInterval(-400 * 86_400),
+                htmlURL: nil
+            )
+        ]
+        let cadence = RepositoryReleaseCadenceInsight.make(releases: releases, now: now)
+
+        #expect(cadence?.releasesLastYear == 2)
+        #expect(cadence?.averageIntervalDays == 195)
+        #expect(cadence?.latestPublishedAt == releases[0].publishedAt)
+        #expect(RepositoryReleaseCadenceInsight.make(releases: [], now: now) == nil)
+    }
+
     @Test("活动刷新失败保留 stale 缓存")
     func staleActivitySurvivesRefreshFailure() async {
         let cached = RepositoryActivityCounts(
@@ -862,12 +893,17 @@ private actor RepositoryInsightsRefreshGate {
 
 private struct StubRepositoryLocalInsightsProvider: RepositoryLocalInsightsProviding {
     let release: @Sendable (Int64) async throws -> RepositoryReleaseInsight?
+    var cadence: @Sendable (Int64) async throws -> RepositoryReleaseCadenceInsight? = { _ in nil }
     let health: @Sendable (Int64) async throws -> RepositoryHealthInsight?
     let openSSF: @Sendable (Int64) async throws -> RepositoryOpenSSFInsight?
     let community: @Sendable (Int64) async throws -> RepositoryCommunityInsight?
 
     func latestRelease(repoId: Int64) async throws -> RepositoryReleaseInsight? {
         try await release(repoId)
+    }
+
+    func releaseCadence(repoId: Int64) async throws -> RepositoryReleaseCadenceInsight? {
+        try await cadence(repoId)
     }
 
     func health(repoId: Int64) async throws -> RepositoryHealthInsight? {
