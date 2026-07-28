@@ -194,6 +194,9 @@ struct RepositoryInsightsRemoteProviderTests {
 
         #expect(contributors.contributors.map(\.login) == ["alice", "bob"])
         #expect(contributors.contributors.map(\.commits) == [42, 17])
+        #expect(abs((contributors.concentration?.topContributorShare ?? 0) - 42.0 / 59.0) < 0.000_001)
+        #expect(contributors.concentration?.topThreeShare == 1)
+        #expect(contributors.concentration?.sampledContributors == 2)
         #expect(contributors.contributors.first?.avatarURL?.absoluteString == "https://avatars.test/alice")
         #expect(
             contributors.contributors.map { $0.profileHTMLURL?.absoluteString } == [
@@ -222,6 +225,29 @@ struct RepositoryInsightsRemoteProviderTests {
             "/repos/octo/community/contributors",
             "/repos/octo/community/community/profile"
         ])
+    }
+
+    @Test("贡献者集中度忽略负数并在没有有效提交时保持未知")
+    func contributorConcentrationRequiresPositiveContributionTotal() {
+        let insight = RepositoryContributorsInsight(
+            contributors: [
+                RepositoryContributor(
+                    id: "alice",
+                    login: "alice",
+                    commits: 0,
+                    colorName: "purple"
+                ),
+                RepositoryContributor(
+                    id: "bob",
+                    login: "bob",
+                    commits: -1,
+                    colorName: "blue"
+                )
+            ],
+            generatedAt: .distantPast
+        )
+
+        #expect(insight.concentration == nil)
     }
 
     @Test("最近活动合并 PR 与 Issue 并按真实时间倒序缓存")

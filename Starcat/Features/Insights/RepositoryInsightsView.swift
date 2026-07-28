@@ -1588,6 +1588,10 @@ struct RepositoryInsightsView: View {
                             systemImage: "person.3.sequence"
                         )
                     } else {
+                        if let concentration = insight.concentration {
+                            contributorConcentrationRow(concentration)
+                        }
+
                         let visible = isContributorsExpanded
                             ? insight.contributors
                             : Array(insight.contributors.prefix(Self.visibleContributorLimit))
@@ -1667,6 +1671,63 @@ struct RepositoryInsightsView: View {
                 }
             }
         }
+    }
+
+    private func contributorConcentrationRow(
+        _ concentration: RepositoryContributorConcentration
+    ) -> some View {
+        HStack(spacing: 8) {
+            contributorConcentrationMetric(
+                title: "insights.repo.contributor.topOneShare",
+                value: contributorShare(concentration.topContributorShare),
+                systemImage: "person.fill"
+            )
+            contributorConcentrationMetric(
+                title: "insights.repo.contributor.topThreeShare",
+                value: contributorShare(concentration.topThreeShare),
+                systemImage: "person.3.fill"
+            )
+            contributorConcentrationMetric(
+                title: "insights.repo.contributor.sampleSize",
+                value: concentration.sampledContributors.formatted(.number.locale(locale)),
+                systemImage: "number"
+            )
+        }
+    }
+
+    private func contributorConcentrationMetric(
+        title: LocalizedStringKey,
+        value: String,
+        systemImage: String
+    ) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: systemImage)
+                .foregroundStyle(Color.purple)
+            Text(title)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Spacer(minLength: 6)
+            Text(verbatim: value)
+                .fontWeight(.semibold)
+                .monospacedDigit()
+                .lineLimit(1)
+        }
+        .font(interfaceScale.font(.caption))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+        .background(
+            Color(nsColor: .textBackgroundColor).opacity(0.55),
+            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(title))
+        .accessibilityValue(Text(verbatim: value))
+    }
+
+    private func contributorShare(_ value: Double) -> String {
+        value.formatted(.percent.precision(.fractionLength(0)).locale(locale))
     }
 
     private func contributorItem(_ contributor: RepositoryContributor) -> some View {

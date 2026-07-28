@@ -127499,6 +127499,27 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "重新整理貢獻者" } }
       }
     },
+    "insights.repo.contributor.sampleSize" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sample size" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "样本人数" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "樣本人數" } }
+      }
+    },
+    "insights.repo.contributor.topOneShare" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Top 1 share" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Top 1 占比" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Top 1 佔比" } }
+      }
+    },
+    "insights.repo.contributor.topThreeShare" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Top 3 share" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Top 3 占比" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Top 3 佔比" } }
+      }
+    },
     "insights.repo.community.healthFormat" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Community health %lld%%" } },
@@ -127669,9 +127690,9 @@
     },
     "insights.repo.section.contributors.subtitle" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Contribution ranking for the current period" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前统计周期的贡献排行" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "目前統計週期的貢獻排行" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Top 12 contributors and contribution concentration" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "前 12 位贡献者与提交集中度" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "前 12 位貢獻者與提交集中度" } }
       }
     },
     "insights.repo.section.health" : {

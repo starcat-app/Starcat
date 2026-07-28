@@ -133,6 +133,26 @@ struct RepositoryCachedCommitActivity: Equatable, Sendable {
 struct RepositoryContributorsInsight: Codable, Equatable, Sendable {
     let contributors: [RepositoryContributor]
     let generatedAt: Date
+
+    /// GitHub Contributors 接口当前只取前 12 位，因此占比明确限定在该样本内。
+    var concentration: RepositoryContributorConcentration? {
+        let ordered = contributors.sorted { $0.commits > $1.commits }
+        let totalCommits = ordered.reduce(0) { $0 + max($1.commits, 0) }
+        guard totalCommits > 0, let first = ordered.first else { return nil }
+        let topThreeCommits = ordered.prefix(3).reduce(0) { $0 + max($1.commits, 0) }
+        return RepositoryContributorConcentration(
+            topContributorShare: Double(max(first.commits, 0)) / Double(totalCommits),
+            topThreeShare: Double(topThreeCommits) / Double(totalCommits),
+            sampledContributors: ordered.count
+        )
+    }
+}
+
+/// 前 12 位贡献者样本内的提交集中度，不将其误称为仓库全量贡献者占比。
+struct RepositoryContributorConcentration: Equatable, Sendable {
+    let topContributorShare: Double
+    let topThreeShare: Double
+    let sampledContributors: Int
 }
 
 struct RepositoryCachedContributorsInsight: Equatable, Sendable {
