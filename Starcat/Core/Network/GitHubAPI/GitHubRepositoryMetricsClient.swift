@@ -497,7 +497,10 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
     private let now: @Sendable () -> Date
     private let requestGate = GitHubMetricsRequestGate()
     private let inflightTracker = GitHubMetricsInflightTracker()
-    private var rateLimitBackoffUntil: Date?
+    private var rateLimitBackoffUntil: [GitHubMetricsAuthorizationIdentity: Date] = [:]
+    private var endpointFailureStates: [
+        GitHubMetricsFailureKey: GitHubMetricsFailureState
+    ] = [:]
 
     init(
         httpClient: any RAGHTTPClientProtocol = URLSessionRAGHTTPClient(),
@@ -687,19 +690,34 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
         // Swift actor 在 await 期间可重入，单靠 actor 不能保证 URLSession 请求真正串行。
         // 显式 gate 覆盖整个网络 await，避免多个区块同时击中 secondary rate limit。
         await requestGate.acquire()
+        let authorizationIdentity = GitHubMetricsAuthorizationIdentity(token: token)
+        let failureKey = observer == nil
+            ? GitHubMetricsFailureKey(
+                url: url,
+                authorizationIdentity: authorizationIdentity,
+                requestIdentity: "GET"
+            )
+            : nil
+        var didStartNetwork = false
         do {
             try Task.checkCancellation()
-            try enforceRateLimitBackoff()
+            try enforceRateLimitBackoff(for: authorizationIdentity)
+            try enforceEndpointFailureBackoff(for: failureKey)
+            didStartNetwork = true
             let result: GitHubMetricsResponse<Value> = try await performGet(
                 url,
                 ifNoneMatch: ifNoneMatch,
                 token: token,
                 observer: observer
             )
+            clearEndpointFailure(for: failureKey)
             await requestGate.release()
             return result
         } catch {
-            recordRateLimitBackoff(from: error)
+            if didStartNetwork {
+                recordRateLimitBackoff(from: error, authorizationIdentity: authorizationIdentity)
+                recordEndpointFailure(from: error, for: failureKey)
+            }
             await requestGate.release()
             throw error
         }
@@ -713,19 +731,32 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
         token: String?
     ) async throws -> GitHubRepositoryActivityBundleMetric {
         await requestGate.acquire()
+        let authorizationIdentity = GitHubMetricsAuthorizationIdentity(token: token)
+        let failureKey = GitHubMetricsFailureKey(
+            url: url,
+            authorizationIdentity: authorizationIdentity,
+            requestIdentity: "activity-bundle:\(repository.owner)/\(repository.name):\(dateRange)"
+        )
+        var didStartNetwork = false
         do {
             try Task.checkCancellation()
-            try enforceRateLimitBackoff()
+            try enforceRateLimitBackoff(for: authorizationIdentity)
+            try enforceEndpointFailureBackoff(for: failureKey)
+            didStartNetwork = true
             let result = try await performActivityBundle(
                 url: url,
                 repository: repository,
                 dateRange: dateRange,
                 token: token
             )
+            clearEndpointFailure(for: failureKey)
             await requestGate.release()
             return result
         } catch {
-            recordRateLimitBackoff(from: error)
+            if didStartNetwork {
+                recordRateLimitBackoff(from: error, authorizationIdentity: authorizationIdentity)
+                recordEndpointFailure(from: error, for: failureKey)
+            }
             await requestGate.release()
             throw error
         }
@@ -935,11 +966,13 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
 
     /// 限流窗口内直接阻止后续排队请求继续出站。上层已有 stale-while-refresh，
     /// 因此快速返回稳定错误比在网络 gate 内长时间 sleep 更符合页面生命周期。
-    private func enforceRateLimitBackoff() throws {
-        guard let blockedUntil = rateLimitBackoffUntil else { return }
+    private func enforceRateLimitBackoff(
+        for authorizationIdentity: GitHubMetricsAuthorizationIdentity
+    ) throws {
+        guard let blockedUntil = rateLimitBackoffUntil[authorizationIdentity] else { return }
         let currentDate = now()
         guard currentDate < blockedUntil else {
-            rateLimitBackoffUntil = nil
+            rateLimitBackoffUntil[authorizationIdentity] = nil
             return
         }
         throw GitHubRepositoryMetricsError.rateLimited(
@@ -952,7 +985,10 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
 
     /// GitHub 可能通过 Retry-After 或 X-RateLimit-Reset 表达恢复时间；取较晚值，
     /// 避免时钟误差导致提前重试。只有真实限流语义才会建立全客户端 backoff。
-    private func recordRateLimitBackoff(from error: Error) {
+    private func recordRateLimitBackoff(
+        from error: Error,
+        authorizationIdentity: GitHubMetricsAuthorizationIdentity
+    ) {
         guard let metricsError = error as? GitHubRepositoryMetricsError else { return }
         let deadline: Date?
         switch metricsError {
@@ -966,12 +1002,114 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
             deadline = nil
         }
         guard let deadline else { return }
-        rateLimitBackoffUntil = max(rateLimitBackoffUntil ?? .distantPast, deadline)
+        rateLimitBackoffUntil[authorizationIdentity] = max(
+            rateLimitBackoffUntil[authorizationIdentity] ?? .distantPast,
+            deadline
+        )
+    }
+
+    /// endpoint 级失败缓存只服务普通洞察；RAG observer 请求仍保持一一对应的真实出站。
+    private func enforceEndpointFailureBackoff(
+        for key: GitHubMetricsFailureKey?
+    ) throws {
+        guard let key, let state = endpointFailureStates[key] else { return }
+        let currentDate = now()
+        // 到期后保留 failureCount，下一次真实尝试若仍失败才能继续指数增长；
+        // 一旦成功会由 clearEndpointFailure 精确清掉。
+        guard currentDate < state.blockedUntil else { return }
+        if let cachedError = state.cachedError {
+            throw cachedError
+        }
+        throw GitHubRepositoryMetricsError.http(
+            statusCode: 503,
+            message: "Repository metrics retry backoff is active"
+        )
+    }
+
+    private func recordEndpointFailure(
+        from error: Error,
+        for key: GitHubMetricsFailureKey?
+    ) {
+        guard let key, !(error is CancellationError) else { return }
+        let previousCount = endpointFailureStates[key]?.failureCount ?? 0
+        let failureCount = min(previousCount + 1, 5)
+        let currentDate = now()
+        let state: GitHubMetricsFailureState?
+
+        switch error as? GitHubRepositoryMetricsError {
+        case .unavailable:
+            state = GitHubMetricsFailureState(
+                failureCount: failureCount,
+                blockedUntil: currentDate.addingTimeInterval(24 * 60 * 60),
+                cachedError: error as? GitHubRepositoryMetricsError
+            )
+        case .forbidden:
+            state = GitHubMetricsFailureState(
+                failureCount: failureCount,
+                blockedUntil: currentDate.addingTimeInterval(5 * 60),
+                cachedError: error as? GitHubRepositoryMetricsError
+            )
+        case .generating(let retryAfter):
+            state = GitHubMetricsFailureState(
+                failureCount: failureCount,
+                blockedUntil: currentDate.addingTimeInterval(retryAfter ?? 2),
+                cachedError: error as? GitHubRepositoryMetricsError
+            )
+        case .unauthorized, .rateLimited, .notModified:
+            state = nil
+        case .http, .invalidResponse, .none:
+            let delay = min(pow(2, Double(failureCount)), 30)
+            state = GitHubMetricsFailureState(
+                failureCount: failureCount,
+                blockedUntil: currentDate.addingTimeInterval(delay),
+                cachedError: nil
+            )
+        }
+
+        if let state {
+            endpointFailureStates[key] = state
+            trimEndpointFailureStatesIfNeeded()
+        } else {
+            endpointFailureStates[key] = nil
+        }
+    }
+
+    private func clearEndpointFailure(for key: GitHubMetricsFailureKey?) {
+        guard let key else { return }
+        endpointFailureStates[key] = nil
+    }
+
+    private func trimEndpointFailureStatesIfNeeded() {
+        let maximumEntries = 128
+        guard endpointFailureStates.count > maximumEntries else { return }
+        let overflow = endpointFailureStates.count - maximumEntries
+        for key in endpointFailureStates
+            .sorted(by: { $0.value.blockedUntil < $1.value.blockedUntil })
+            .prefix(overflow)
+            .map(\.key) {
+            endpointFailureStates[key] = nil
+        }
     }
 }
 
 private struct GitHubMetricsErrorResponse: Decodable {
     let message: String
+}
+
+private struct GitHubMetricsAuthorizationIdentity: Hashable, Sendable {
+    let token: String?
+}
+
+private struct GitHubMetricsFailureKey: Hashable, Sendable {
+    let url: URL
+    let authorizationIdentity: GitHubMetricsAuthorizationIdentity
+    let requestIdentity: String
+}
+
+private struct GitHubMetricsFailureState: Sendable {
+    let failureCount: Int
+    let blockedUntil: Date
+    let cachedError: GitHubRepositoryMetricsError?
 }
 
 private struct GitHubMetricsGraphQLRequest: Encodable {
