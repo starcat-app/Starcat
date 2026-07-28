@@ -27,6 +27,7 @@ struct DatabaseMigrationsV1Tests {
             "repo_notes", "readmes", "saved_searches", "smart_collections",
             "sync_state", "tag_stats_cache", "open_ssf_scores",
             "repo_pins", "repo_insights_snapshots", "repo_star_history_points",
+            "user_projects", "project_sync_state",
             "rag_chunks", "rag_chunks_fts", "rag_conversation_groups",
             "rag_conversations", "rag_messages", "rag_message_citations",
             "rag_message_remote_contexts", "rag_metadata_revision"
@@ -36,6 +37,136 @@ struct DatabaseMigrationsV1Tests {
                 let exists = try db.tableExists(table)
                 #expect(exists, "Table \(table) should exist")
             }
+        }
+    }
+
+    @Test("我的项目 v17 应建立关系表、同步状态表和查询索引")
+    func myProjectsMigrationCreatesTables() throws {
+        let writer = try makeDB()
+        try writer.read { db in
+            var migrator = DatabaseMigrator()
+            DatabaseMigrations.registerAll(into: &migrator)
+            let applied = try migrator.appliedMigrations(db)
+            #expect(applied.contains("v17-my-projects"))
+
+            #expect(
+                try db.columns(in: "user_projects").map(\.name) == [
+                    "user_id", "repo_id", "affiliation", "owner_login", "owner_type",
+                    "visibility", "permission", "authorization_source", "installation_id",
+                    "generation", "last_seen_at", "created_at", "updated_at"
+                ]
+            )
+            #expect(
+                try db.columns(in: "project_sync_state").map(\.name) == [
+                    "user_id", "credential_kind", "affiliation", "etag", "generation",
+                    "last_attempt_at", "last_success_at", "sync_status", "error_code", "updated_at"
+                ]
+            )
+
+            let indexes = try String.fetchAll(
+                db,
+                sql: """
+                    SELECT name FROM sqlite_master
+                    WHERE type = 'index'
+                      AND tbl_name IN ('user_projects', 'project_sync_state')
+                    """
+            )
+            #expect(indexes.contains("idx_user_projects_user_affiliation"))
+            #expect(indexes.contains("idx_user_projects_user_owner"))
+            #expect(indexes.contains("idx_user_projects_user_visibility"))
+            #expect(indexes.contains("idx_user_projects_user_permission"))
+            #expect(indexes.contains("idx_user_projects_user_generation"))
+            #expect(indexes.contains("idx_project_sync_state_status"))
+        }
+    }
+
+    @Test("v16 升级 v17 应保留 Repo、笔记、Star 历史和置顶")
+    func myProjectsMigrationPreservesExistingData() throws {
+        let queue = try DatabaseQueue()
+        var migrator = DatabaseMigrator()
+        DatabaseMigrations.registerAll(into: &migrator)
+        try migrator.migrate(queue, upTo: "v16-repository-insights")
+
+        try queue.write { db in
+            try db.execute(sql: """
+                INSERT INTO repos (
+                    id, owner, name, full_name, html_url, stars_count, is_starred
+                ) VALUES (
+                    188, 'octo', 'kept-project', 'octo/kept-project',
+                    'https://github.com/octo/kept-project', 456, 1
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO repo_notes (repo_id, content, status, library_state, is_ai_generated)
+                VALUES (188, 'keep this note', 'using', 'in_library', 0)
+                """)
+            try db.execute(sql: """
+                INSERT INTO repo_pins (repo_id, pinned_at)
+                VALUES (188, 1000)
+                """)
+            try db.execute(sql: """
+                INSERT INTO repo_star_history_points (
+                    repo_id, observed_on, stars_count, source, precision, fetched_at
+                ) VALUES (
+                    188, '2026-07-29', 456, 'local_snapshot', 'snapshot', '2026-07-29T00:00:00Z'
+                )
+                """)
+        }
+
+        try migrator.migrate(queue)
+
+        try queue.read { db in
+            let isStarred = try Bool.fetchOne(db, sql: "SELECT is_starred FROM repos WHERE id = 188")
+            let note = try String.fetchOne(db, sql: "SELECT content FROM repo_notes WHERE repo_id = 188")
+            let pinCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM repo_pins WHERE repo_id = 188")
+            let starsCount = try Int.fetchOne(
+                db,
+                sql: "SELECT stars_count FROM repo_star_history_points WHERE repo_id = 188"
+            )
+            let hasUserProjects = try db.tableExists("user_projects")
+            let hasProjectSyncState = try db.tableExists("project_sync_state")
+
+            #expect(isStarred == true)
+            #expect(note == "keep this note")
+            #expect(pinCount == 1)
+            #expect(starsCount == 456)
+            #expect(hasUserProjects)
+            #expect(hasProjectSyncState)
+        }
+    }
+
+    @Test("删除 Repo 只应级联项目关系，不删除同步状态")
+    func myProjectsRelationCascadesWithRepo() throws {
+        let writer = try makeDB()
+        try writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO repos (id, owner, name, full_name, html_url)
+                VALUES (289, 'octo', 'project', 'octo/project', 'https://github.com/octo/project')
+                """)
+            try db.execute(sql: """
+                INSERT INTO user_projects (
+                    user_id, repo_id, affiliation, owner_login, owner_type, visibility,
+                    permission, authorization_source, generation, last_seen_at, created_at, updated_at
+                ) VALUES (
+                    7, 289, 'owner', 'octo', 'user', 'private',
+                    'admin', 'github_app', 'g1',
+                    '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z'
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO project_sync_state (
+                    user_id, credential_kind, affiliation, sync_status, updated_at
+                ) VALUES (
+                    7, 'github_app', 'owner', 'idle', '2026-07-29T00:00:00Z'
+                )
+                """)
+
+            try db.execute(sql: "DELETE FROM repos WHERE id = 289")
+
+            let projectCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM user_projects")
+            let syncStateCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM project_sync_state")
+            #expect(projectCount == 0)
+            #expect(syncStateCount == 1)
         }
     }
 
