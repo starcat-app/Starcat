@@ -15,13 +15,14 @@ enum RepositoryInsightsDataset: String, CaseIterable, Sendable {
     case commitActivity
     case contributors
     case communityProfile
+    case securityAdvisories
 
     /// TTL 是产品数据口径的一部分，不能由每个调用方自由决定。
     var timeToLive: TimeInterval {
         switch self {
         case .activityCounts, .recentActivity:
             return 15 * 60
-        case .commitActivity, .contributors, .communityProfile:
+        case .commitActivity, .contributors, .communityProfile, .securityAdvisories:
             return 24 * 60 * 60
         }
     }

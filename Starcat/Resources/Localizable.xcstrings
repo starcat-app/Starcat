@@ -128094,6 +128094,20 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Issue 範本" } }
       }
     },
+    "insights.repo.signal.highRiskAdvisories" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "High-risk advisories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "高风险公告" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "高風險公告" } }
+      }
+    },
+    "insights.repo.signal.latestAdvisory" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Latest advisory" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "最近公告" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "最近公告" } }
+      }
+    },
     "insights.repo.signal.missing" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Missing" } },
@@ -128141,6 +128155,13 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "README" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "README" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "README" } }
+      }
+    },
+    "insights.repo.signal.securityAdvisories" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Recent advisories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "近期安全公告" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "近期安全公告" } }
       }
     },
     "insights.repo.signal.pullRequestTemplate" : {

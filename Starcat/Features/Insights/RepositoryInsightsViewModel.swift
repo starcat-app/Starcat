@@ -233,6 +233,7 @@ final class RepositoryInsightsViewModel {
     private var commitGeneration: UInt64 = 0
     private var contributorGeneration: UInt64 = 0
     private var communityGeneration: UInt64 = 0
+    private var securityGeneration: UInt64 = 0
     private var timelineGeneration: UInt64 = 0
 
     private(set) var activeRepoID: Int64?
@@ -256,6 +257,8 @@ final class RepositoryInsightsViewModel {
     private(set) var remoteCommunityState:
         RepositoryRemoteInsightsSectionState<RepositoryCommunityInsight> = .idle
     private(set) var isRefreshingCommunity = false
+    private(set) var securityAdvisoriesState:
+        RepositoryRemoteInsightsSectionState<RepositorySecurityAdvisoriesInsight> = .idle
     private(set) var recentActivityState:
         RepositoryRemoteInsightsSectionState<RepositoryRecentActivity> = .idle
     private(set) var isRefreshingRecentActivity = false
@@ -348,12 +351,24 @@ final class RepositoryInsightsViewModel {
             isAuthenticated: isAuthenticated,
             forceRefresh: false
         )
+        async let securityLoad: Void = loadSecurityAdvisories(
+            repo: repo,
+            isAuthenticated: isAuthenticated,
+            forceRefresh: false
+        )
         async let timelineLoad: Void = loadRecentActivity(
             repo: repo,
             isAuthenticated: isAuthenticated,
             forceRefresh: false
         )
-        _ = await (activityLoad, commitLoad, contributorLoad, communityLoad, timelineLoad)
+        _ = await (
+            activityLoad,
+            commitLoad,
+            contributorLoad,
+            communityLoad,
+            securityLoad,
+            timelineLoad
+        )
     }
 
     func selectActivityRange(
@@ -429,6 +444,11 @@ final class RepositoryInsightsViewModel {
             isAuthenticated: isAuthenticated,
             forceRefresh: true
         )
+        async let securityLoad: Void = loadSecurityAdvisories(
+            repo: repo,
+            isAuthenticated: isAuthenticated,
+            forceRefresh: true
+        )
         async let timelineLoad: Void = loadRecentActivity(
             repo: repo,
             isAuthenticated: isAuthenticated,
@@ -439,6 +459,7 @@ final class RepositoryInsightsViewModel {
             commitLoad,
             contributorLoad,
             communityLoad,
+            securityLoad,
             timelineLoad
         )
     }
@@ -449,6 +470,7 @@ final class RepositoryInsightsViewModel {
         commitGeneration &+= 1
         contributorGeneration &+= 1
         communityGeneration &+= 1
+        securityGeneration &+= 1
         timelineGeneration &+= 1
         isRefreshingActivity = false
         isRefreshingCommitActivity = false
@@ -787,6 +809,69 @@ final class RepositoryInsightsViewModel {
 
     private func ownsCommunityResult(generation: UInt64, repoID: Int64) -> Bool {
         communityGeneration == generation && activeRepoID == repoID
+    }
+
+    /// 安全公告只跟随页面首次加载和底栏全局刷新，不再增加一个分区刷新按钮。
+    /// force refresh 期间保留旧值，GitHub 权限不足时也不会把旧值清空成“零公告”。
+    private func loadSecurityAdvisories(
+        repo: Repo,
+        isAuthenticated: Bool,
+        forceRefresh: Bool
+    ) async {
+        securityGeneration &+= 1
+        let requestedGeneration = securityGeneration
+        let retainedValue = forceRefresh ? securityAdvisoriesState.visibleValue : nil
+        if !forceRefresh {
+            securityAdvisoriesState = .loading(cached: nil)
+        }
+
+        guard isAuthenticated, let remoteProvider else {
+            securityAdvisoriesState = .unavailable(cached: retainedValue)
+            return
+        }
+
+        let cached: RepositoryCachedSecurityAdvisoriesInsight?
+        do {
+            cached = try await remoteProvider.cachedSecurityAdvisories(repoID: repo.id)
+        } catch {
+            guard ownsSecurityResult(generation: requestedGeneration, repoID: repo.id) else { return }
+            securityAdvisoriesState = .failed(cached: retainedValue)
+            return
+        }
+        guard ownsSecurityResult(generation: requestedGeneration, repoID: repo.id) else { return }
+
+        if let cached {
+            if !forceRefresh {
+                securityAdvisoriesState = cached.isStale ? .stale(cached.value) : .content(cached.value)
+            }
+            if !cached.isStale, !forceRefresh {
+                return
+            }
+        }
+
+        let fallbackValue = retainedValue ?? cached?.value
+        do {
+            let fresh = try await remoteProvider.refreshSecurityAdvisories(
+                repository: repoIdentity(for: repo)
+            )
+            guard ownsSecurityResult(generation: requestedGeneration, repoID: repo.id) else { return }
+            securityAdvisoriesState = .content(fresh)
+        } catch let error as GitHubRepositoryMetricsError {
+            guard ownsSecurityResult(generation: requestedGeneration, repoID: repo.id) else { return }
+            switch error {
+            case .unauthorized, .forbidden, .unavailable:
+                securityAdvisoriesState = .unavailable(cached: fallbackValue)
+            default:
+                securityAdvisoriesState = .failed(cached: fallbackValue)
+            }
+        } catch {
+            guard ownsSecurityResult(generation: requestedGeneration, repoID: repo.id) else { return }
+            securityAdvisoriesState = .failed(cached: fallbackValue)
+        }
+    }
+
+    private func ownsSecurityResult(generation: UInt64, repoID: Int64) -> Bool {
+        securityGeneration == generation && activeRepoID == repoID
     }
 
     private func repoIdentity(for repo: Repo) -> RepoIdentity {

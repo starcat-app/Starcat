@@ -44,6 +44,36 @@ struct RepositoryInsightsViewModelTests {
         #expect(RepositoryReleaseCadenceInsight.make(releases: [], now: now) == nil)
     }
 
+    @Test("安全公告派生高风险数量与最近发布日期")
+    func securityAdvisoriesDeriveRiskSummary() {
+        let older = Date(timeIntervalSince1970: 1_000)
+        let latest = Date(timeIntervalSince1970: 2_000)
+        let insight = RepositorySecurityAdvisoriesInsight(
+            advisories: [
+                RepositorySecurityAdvisory(
+                    id: "GHSA-low",
+                    cveID: nil,
+                    summary: "Low",
+                    severity: "low",
+                    htmlURL: nil,
+                    publishedAt: older
+                ),
+                RepositorySecurityAdvisory(
+                    id: "GHSA-critical",
+                    cveID: "CVE-2026-1",
+                    summary: "Critical",
+                    severity: "critical",
+                    htmlURL: URL(string: "https://github.com/advisories/GHSA-critical"),
+                    publishedAt: latest
+                )
+            ],
+            generatedAt: latest
+        )
+
+        #expect(insight.highOrCriticalCount == 1)
+        #expect(insight.latestPublishedAt == latest)
+    }
+
     @Test("活动刷新失败保留 stale 缓存")
     func staleActivitySurvivesRefreshFailure() async {
         let cached = RepositoryActivityCounts(
@@ -952,6 +982,14 @@ private struct StubRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsPro
     ) async throws -> RepositoryCommunityInsight = { _ in
         throw StubError.failed
     }
+    var cachedSecurityAdvisoriesHandler: @Sendable (
+        Int64
+    ) async throws -> RepositoryCachedSecurityAdvisoriesInsight? = { _ in nil }
+    var refreshSecurityAdvisoriesHandler: @Sendable (
+        RepoIdentity
+    ) async throws -> RepositorySecurityAdvisoriesInsight = { _ in
+        throw StubError.failed
+    }
     var cachedRecentActivityHandler: @Sendable (
         Int64
     ) async throws -> RepositoryCachedRecentActivity? = { _ in nil }
@@ -997,6 +1035,16 @@ private struct StubRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsPro
 
     func refreshCommunityProfile(repository: RepoIdentity) async throws -> RepositoryCommunityInsight {
         try await refreshCommunityHandler(repository)
+    }
+
+    func cachedSecurityAdvisories(repoID: Int64) async throws
+        -> RepositoryCachedSecurityAdvisoriesInsight? {
+        try await cachedSecurityAdvisoriesHandler(repoID)
+    }
+
+    func refreshSecurityAdvisories(repository: RepoIdentity) async throws
+        -> RepositorySecurityAdvisoriesInsight {
+        try await refreshSecurityAdvisoriesHandler(repository)
     }
 
     func cachedRecentActivity(repoID: Int64) async throws -> RepositoryCachedRecentActivity? {

@@ -167,6 +167,39 @@ struct RepositoryCachedCommunityInsight: Equatable, Sendable {
     let isStale: Bool
 }
 
+/// GitHub 已发布的仓库安全公告。这里只展示公开公告，不把“接口无权限”误判为零风险。
+struct RepositorySecurityAdvisory: Codable, Equatable, Identifiable, Sendable {
+    let id: String
+    let cveID: String?
+    let summary: String
+    let severity: String
+    let htmlURL: URL?
+    let publishedAt: Date
+}
+
+/// 安全公告的缓存快照；派生统计只基于本次成功获取的公告列表。
+struct RepositorySecurityAdvisoriesInsight: Codable, Equatable, Sendable {
+    let advisories: [RepositorySecurityAdvisory]
+    let generatedAt: Date
+
+    var highOrCriticalCount: Int {
+        advisories.count {
+            let severity = $0.severity.lowercased()
+            return severity == "high" || severity == "critical"
+        }
+    }
+
+    var latestPublishedAt: Date? {
+        advisories.map(\.publishedAt).max()
+    }
+}
+
+struct RepositoryCachedSecurityAdvisoriesInsight: Equatable, Sendable {
+    let value: RepositorySecurityAdvisoriesInsight
+    let fetchedAt: Date
+    let isStale: Bool
+}
+
 enum RepositoryRecentActivityKind: String, Codable, Equatable, Sendable {
     case pullRequest
     case issue
@@ -214,6 +247,12 @@ protocol RepositoryRemoteInsightsProviding: Sendable {
     func cachedCommunityProfile(repoID: Int64) async throws -> RepositoryCachedCommunityInsight?
 
     func refreshCommunityProfile(repository: RepoIdentity) async throws -> RepositoryCommunityInsight
+
+    func cachedSecurityAdvisories(repoID: Int64) async throws
+        -> RepositoryCachedSecurityAdvisoriesInsight?
+
+    func refreshSecurityAdvisories(repository: RepoIdentity) async throws
+        -> RepositorySecurityAdvisoriesInsight
 
     func cachedRecentActivity(repoID: Int64) async throws -> RepositoryCachedRecentActivity?
 
@@ -418,6 +457,65 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
             value,
             repoId: repoID,
             dataset: .communityProfile,
+            range: .all,
+            fetchedAt: fetchedAt,
+            responseETag: response.etag,
+            defaultBranchSHA: nil
+        )
+        return value
+    }
+
+    func cachedSecurityAdvisories(repoID: Int64) async throws
+        -> RepositoryCachedSecurityAdvisoriesInsight? {
+        guard let cached = try await cache.load(
+            repoId: repoID,
+            dataset: .securityAdvisories,
+            range: .all,
+            as: RepositorySecurityAdvisoriesInsight.self
+        ) else {
+            return nil
+        }
+        return RepositoryCachedSecurityAdvisoriesInsight(
+            value: cached.value,
+            fetchedAt: cached.fetchedAt,
+            isStale: cached.isStale(at: now())
+        )
+    }
+
+    func refreshSecurityAdvisories(repository: RepoIdentity) async throws
+        -> RepositorySecurityAdvisoriesInsight {
+        let fetchedAt = now()
+        // 单页上限取 100，既覆盖绝大多数仓库，又避免为一个概览指标引入分页风暴。
+        let response = try await metricsClient.loadSecurityAdvisories(
+            repository: repository,
+            limit: 100,
+            observer: nil
+        )
+        guard let repoID = repository.ghRepoID else {
+            throw GitHubRepositoryMetricsError.invalidResponse
+        }
+        let advisories = response.value.compactMap { metric -> RepositorySecurityAdvisory? in
+            guard let publishedAt = ISO8601DateFormatter.githubDate(from: metric.publishedAt) else {
+                return nil
+            }
+            return RepositorySecurityAdvisory(
+                id: metric.ghsaID,
+                cveID: metric.cveID,
+                summary: metric.summary,
+                severity: metric.severity.lowercased(),
+                htmlURL: metric.htmlURL.flatMap(URL.init(string:)),
+                publishedAt: publishedAt
+            )
+        }
+        .sorted { $0.publishedAt > $1.publishedAt }
+        let value = RepositorySecurityAdvisoriesInsight(
+            advisories: advisories,
+            generatedAt: fetchedAt
+        )
+        try await cache.store(
+            value,
+            repoId: repoID,
+            dataset: .securityAdvisories,
             range: .all,
             fetchedAt: fetchedAt,
             responseETag: response.etag,

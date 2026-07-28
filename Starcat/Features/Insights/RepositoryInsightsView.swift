@@ -2138,30 +2138,108 @@ struct RepositoryInsightsView: View {
             subtitle: "insights.repo.section.security.subtitle",
             systemImage: "lock.shield.fill"
         ) {
-            switch viewModel.openSSFState {
-            case .content(let openSSF):
+            VStack(spacing: 0) {
+                openSSFSignalContent
+                Divider().padding(.leading, 28)
+                securityAdvisoriesContent
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var openSSFSignalContent: some View {
+        switch viewModel.openSSFState {
+        case .content(let openSSF):
+            localSignalRow(
+                id: "security.openssf",
+                title: "insights.repo.signal.openssf",
+                statusText: String(format: "%.1f / 10", locale: locale, openSSF.score),
+                statusColor: openSSF.score >= 5 ? .green : .orange,
+                systemImage: "shield.checkered",
+                destinationURL: openSSFScorecardURL
+            )
+        case .loading, .idle:
+            sectionLoadingPlaceholder
+        case .empty, .unavailable:
+            compactEmptyState(
+                "insights.repo.state.noData",
+                systemImage: "shield.slash"
+            )
+        case .failed:
+            compactEmptyState(
+                "error.loadFailed",
+                systemImage: "exclamationmark.triangle"
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var securityAdvisoriesContent: some View {
+        if let insight = displayedSecurityAdvisories {
+            VStack(spacing: 0) {
                 localSignalRow(
-                    id: "security.openssf",
-                    title: "insights.repo.signal.openssf",
-                    statusText: String(format: "%.1f / 10", locale: locale, openSSF.score),
-                    statusColor: openSSF.score >= 5 ? .green : .orange,
-                    systemImage: "shield.checkered",
-                    destinationURL: openSSFScorecardURL
+                    id: "security.advisories",
+                    title: "insights.repo.signal.securityAdvisories",
+                    statusText: insight.advisories.count.formatted(.number.locale(locale)),
+                    statusColor: insight.advisories.isEmpty ? .green : .orange,
+                    systemImage: "exclamationmark.shield.fill",
+                    destinationURL: repositorySecurityAdvisoriesURL
                 )
-            case .loading, .idle:
+                Divider().padding(.leading, 28)
+                localSignalRow(
+                    id: "security.highRiskAdvisories",
+                    title: "insights.repo.signal.highRiskAdvisories",
+                    statusText: insight.highOrCriticalCount.formatted(.number.locale(locale)),
+                    statusColor: insight.highOrCriticalCount == 0 ? .green : .orange,
+                    systemImage: "exclamationmark.triangle.fill",
+                    destinationURL: nil
+                )
+                if let latestPublishedAt = insight.latestPublishedAt {
+                    Divider().padding(.leading, 28)
+                    localSignalRow(
+                        id: "security.latestAdvisory",
+                        title: "insights.repo.signal.latestAdvisory",
+                        statusText: shortDate(latestPublishedAt),
+                        statusColor: .orange,
+                        systemImage: "calendar",
+                        destinationURL: insight.advisories.first?.htmlURL
+                    )
+                }
+            }
+        } else {
+            switch viewModel.securityAdvisoriesState {
+            case .idle, .loading:
                 sectionLoadingPlaceholder
-            case .empty, .unavailable:
+            case .unavailable:
                 compactEmptyState(
-                    "insights.repo.state.noData",
-                    systemImage: "shield.slash"
+                    authSession.state.isAuthenticated
+                        ? "insights.repo.state.noData"
+                        : "insights.repo.state.loginRequired",
+                    systemImage: "lock.slash"
+                )
+            case .generating:
+                compactEmptyState(
+                    "insights.repo.state.generating",
+                    systemImage: "clock.arrow.circlepath"
                 )
             case .failed:
                 compactEmptyState(
                     "error.loadFailed",
                     systemImage: "exclamationmark.triangle"
                 )
+            case .content, .stale:
+                EmptyView()
             }
         }
+    }
+
+    private var displayedSecurityAdvisories: RepositorySecurityAdvisoriesInsight? {
+        viewModel.securityAdvisoriesState.visibleValue
+    }
+
+    private var repositorySecurityAdvisoriesURL: URL? {
+        let base = repo.htmlUrl.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return URL(string: base + "/security/advisories")
     }
 
     /// Available 才可跳；优先 API `html_url`，旧缓存缺失时用仓库页约定路径。
