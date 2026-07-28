@@ -178,8 +178,25 @@ struct GitHubRepositoryMetricsClientTests {
         }
     }
 
-    @Test("actor 保证多个仓库指标请求不会并发出站")
+    @Test("不同仓库的指标请求仍按顺序出站")
     func requestsAreSerialized() async throws {
+        let httpClient = ConcurrencyProbeMetricsHTTPClient()
+        let client = DefaultGitHubRepositoryMetricsClient(
+            httpClient: httpClient,
+            token: nil
+        )
+        let anotherRepository = RepoIdentity(ghRepoID: 8, owner: "octo", name: "another")
+
+        async let first = client.loadCommitActivity(repository: repository)
+        async let second = client.loadCommitActivity(repository: anotherRepository)
+        _ = try await (first, second)
+
+        #expect(await httpClient.maximumConcurrentRequests() == 1)
+        #expect(await httpClient.requestCount() == 2)
+    }
+
+    @Test("完全相同的普通指标请求只出站一次")
+    func identicalRequestsShareInflightTask() async throws {
         let httpClient = ConcurrencyProbeMetricsHTTPClient()
         let client = DefaultGitHubRepositoryMetricsClient(
             httpClient: httpClient,
@@ -190,7 +207,30 @@ struct GitHubRepositoryMetricsClientTests {
         async let second = client.loadCommitActivity(repository: repository)
         _ = try await (first, second)
 
+        #expect(await httpClient.requestCount() == 1)
+    }
+
+    @Test("带 observer 的 RAG 指标请求保持一一对应的出站审计")
+    func observedRequestsAreNotMerged() async throws {
+        let httpClient = ConcurrencyProbeMetricsHTTPClient()
+        let client = DefaultGitHubRepositoryMetricsClient(
+            httpClient: httpClient,
+            token: nil
+        )
+        let observer: GitHubMetricsRequestObserver = { _ in }
+
+        async let first = client.loadCommitActivity(
+            repository: repository,
+            observer: observer
+        )
+        async let second = client.loadCommitActivity(
+            repository: repository,
+            observer: observer
+        )
+        _ = try await (first, second)
+
         #expect(await httpClient.maximumConcurrentRequests() == 1)
+        #expect(await httpClient.requestCount() == 2)
     }
 }
 
@@ -243,8 +283,10 @@ private actor MetricsHTTPClient: RAGHTTPClientProtocol {
 private actor ConcurrencyProbeMetricsHTTPClient: RAGHTTPClientProtocol {
     private var activeRequests = 0
     private var maximumRequests = 0
+    private var totalRequests = 0
 
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        totalRequests += 1
         activeRequests += 1
         maximumRequests = max(maximumRequests, activeRequests)
         try await Task.sleep(for: .milliseconds(40))
@@ -262,5 +304,9 @@ private actor ConcurrencyProbeMetricsHTTPClient: RAGHTTPClientProtocol {
 
     func maximumConcurrentRequests() -> Int {
         maximumRequests
+    }
+
+    func requestCount() -> Int {
+        totalRequests
     }
 }
