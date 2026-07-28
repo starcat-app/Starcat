@@ -939,11 +939,41 @@ struct RepoRepositoryTests {
         #expect(options.organizationLogins == ["acme"])
         #expect(options.visibilities == [.private, .public])
         #expect(Set(options.permissions) == [.admin, .maintain])
+        let relations = try await repo.fetchProjectRelations(userID: 7, repoIDs: [1, 2, 3])
+        #expect(relations.keys.sorted() == [1, 2])
+        #expect(relations[2]?.visibility == .private)
 
         // 相同 scope 仍按 user_id 隔离；普通 Star 列表也不能被项目关系扩张。
         #expect(try await repo.fetchListCount(scope: .myProjects(userID: 8), filters: .empty) == 1)
         #expect(try await repo.fetchListCount(scope: .allStars, filters: organizationFilter) == 3)
         #expect(try await repo.fetchListCount(scope: .allStars, filters: .empty) == 3)
+    }
+
+    @Test("项目卡片 30 天增长批量读取本机历史且历史不足不伪造零")
+    func projectGrowthUsesMergedLocalHistory() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 71)
+        try await db.insertRepoFixture(id: 72)
+        try await db.writer.write { database in
+            try database.execute(
+                sql: """
+                    INSERT INTO repo_star_history_points (
+                        repo_id, observed_on, stars_count, source, precision, fetched_at
+                    ) VALUES
+                        (71, '2026-06-20', 10, 'local_snapshot', 'snapshot', '2026-06-20T12:00:00Z'),
+                        (71, '2026-07-10', 999, 'gh_archive', 'estimated', '2026-07-10T11:00:00Z'),
+                        (71, '2026-07-10', 15, 'local_snapshot', 'snapshot', '2026-07-10T12:00:00Z'),
+                        (71, '2026-07-29', 25, 'local_snapshot', 'snapshot', '2026-07-29T12:00:00Z'),
+                        (72, '2026-07-29', 5, 'local_snapshot', 'snapshot', '2026-07-29T12:00:00Z')
+                    """
+            )
+        }
+        let now = try #require(StarHistoryDateCodec.date(from: "2026-07-29"))
+
+        let growth = try await repo.fetchLocalStarGrowth30Days(repoIDs: [71, 72], now: now)
+
+        #expect(growth[71] == 15)
+        #expect(growth[72] == nil)
     }
 
     @Test("DB Paging: Health 排序按分数倒序且无分数排最后")

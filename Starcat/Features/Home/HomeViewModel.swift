@@ -543,6 +543,10 @@ final class HomeViewModel {
     /// 文件 IO / JSON decode 由 `WikiAvailabilitySnapshotLoader` 在主线程外完成。
     private var wikiAvailabilityMap: [Int64: Bool] = [:]
 
+    /// 当前项目页已加载行的关系与本机历史派生值；列表分页时按可见页批量查询。
+    private var projectRelations: [Int64: UserProject] = [:]
+    private var projectStarGrowth30Days: [Int64: Int] = [:]
+
     /// Health 排序 / 筛选用的本地快照缓存，只在用户启用相关控制时读取。
     /// 普通列表仍走既有路径，避免每次切分类都额外查 repo_health_snapshots。
     private var healthSortSnapshots: [Int64: RepoHealthSnapshot] = [:]
@@ -1391,6 +1395,8 @@ final class HomeViewModel {
         libraryStateMap = [:]
         repoTagsMap = [:]
         wikiAvailabilityMap = [:]
+        projectRelations = [:]
+        projectStarGrowth30Days = [:]
         semanticHitMap = [:]
         invalidateRepoPinsForDatabaseChange()
         temporaryGlobalFilterSession = nil
@@ -2698,7 +2704,13 @@ final class HomeViewModel {
                     self.isDatabasePageAppendInFlight = false
                 }
             }
-            let result: Result<([Repo], [Int64: RepoStatus], [Int64: LibraryState]), Error>
+            let result: Result<(
+                [Repo],
+                [Int64: RepoStatus],
+                [Int64: LibraryState],
+                [Int64: UserProject],
+                [Int64: Int]
+            ), Error>
             let countResult: Result<Int, Error>
             do {
                 if let beforeDatabasePageFetchForTesting = self.beforeDatabasePageFetchForTesting {
@@ -2731,9 +2743,35 @@ final class HomeViewModel {
                 let visibleStatusIDs = pageRows.map(\.id)
                 async let statusMapTask = self.repoNoteRepository.fetchStatusMap(repoIds: visibleStatusIDs)
                 async let libraryStateMapTask = self.repoNoteRepository.fetchLibraryStateMap(repoIds: visibleStatusIDs)
+                let projectUserID: Int64? = {
+                    if case .myProjects(let userID) = scope { return userID }
+                    return nil
+                }()
+                async let projectRelationsTask: [Int64: UserProject] = {
+                    guard let projectUserID else { return [:] }
+                    return try await self.repository.fetchProjectRelations(
+                        userID: projectUserID,
+                        repoIDs: visibleStatusIDs
+                    )
+                }()
+                async let projectGrowthTask: [Int64: Int] = {
+                    guard projectUserID != nil else { return [:] }
+                    return try await self.repository.fetchLocalStarGrowth30Days(
+                        repoIDs: visibleStatusIDs,
+                        now: Date()
+                    )
+                }()
                 let pageStatusMap = (try? await statusMapTask) ?? [:]
                 let pageLibraryStateMap = (try? await libraryStateMapTask) ?? [:]
-                result = .success((rowsWithSentinel, pageStatusMap, pageLibraryStateMap))
+                let pageProjectRelations = (try? await projectRelationsTask) ?? [:]
+                let pageProjectGrowth = (try? await projectGrowthTask) ?? [:]
+                result = .success((
+                    rowsWithSentinel,
+                    pageStatusMap,
+                    pageLibraryStateMap,
+                    pageProjectRelations,
+                    pageProjectGrowth
+                ))
                 countResult = .success((try? await countTask) ?? self.visibleRepoTotalCount)
             } catch {
                 result = .failure(error)
@@ -2750,7 +2788,13 @@ final class HomeViewModel {
             }
 
             switch result {
-            case .success(let (rowsWithSentinel, pageStatusMap, pageLibraryStateMap)):
+            case .success(let (
+                rowsWithSentinel,
+                pageStatusMap,
+                pageLibraryStateMap,
+                pageProjectRelations,
+                pageProjectGrowth
+            )):
                 let pageRows = Array(rowsWithSentinel.prefix(requestedLimit))
                 let nextHasMore = rowsWithSentinel.count > requestedLimit
                 let queryTotalCount = (try? countResult.get()) ?? self.visibleRepoTotalCount
@@ -2770,6 +2814,8 @@ final class HomeViewModel {
                         self.currentPage = max(1, Int(ceil(Double(self.items.count) / Double(Self.pageSize))))
                         self.statusMap.merge(pageStatusMap) { _, new in new }
                         self.libraryStateMap.merge(pageLibraryStateMap) { _, new in new }
+                        self.projectRelations.merge(pageProjectRelations) { _, new in new }
+                        self.projectStarGrowth30Days.merge(pageProjectGrowth) { _, new in new }
                     } else {
                         let visibleRows = pageRows
                         let idsIdentical = visibleRows.count == self.items.count &&
@@ -2786,6 +2832,8 @@ final class HomeViewModel {
                         }
                         self.statusMap = pageStatusMap
                         self.libraryStateMap = pageLibraryStateMap
+                        self.projectRelations = pageProjectRelations
+                        self.projectStarGrowth30Days = pageProjectGrowth
                         if let snapshotKey {
                             self.storeDatabaseSnapshot(
                                 items: visibleRows,
@@ -2829,6 +2877,16 @@ final class HomeViewModel {
 
     func semanticHit(for repoID: Int64) -> SemanticSearchHit? {
         semanticHitMap[repoID]
+    }
+
+    func projectRelation(for repoID: Int64) -> UserProject? {
+        guard selection == .myProjects else { return nil }
+        return projectRelations[repoID]
+    }
+
+    func localStarGrowth30Days(for repoID: Int64) -> Int? {
+        guard selection == .myProjects else { return nil }
+        return projectStarGrowth30Days[repoID]
     }
 
     /// 手动刷新 active repo 的语义索引。

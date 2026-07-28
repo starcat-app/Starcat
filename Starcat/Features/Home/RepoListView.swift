@@ -2858,8 +2858,12 @@ private struct ManageRepoRowContent: View {
     @Environment(AppDependencies.self) private var dependencies
 
     var body: some View {
+        let project = viewModel.projectRelation(for: repo.id)
+        let growth = viewModel.localStarGrowth30Days(for: repo.id)
         UnifiedRepoRow(
             card: repo.asCardData(
+                inlineMetadata: project.map(projectMetadata),
+                footerMetadata: growth.map(growthMetadata),
                 readStatus: viewModel.readStatus(for: repo.id),
                 isInLibrary: viewModel.libraryState(for: repo.id) == .inLibrary,
                 openSSFScore: dependencies.openSSFScoreStore.badge(for: repo.id),
@@ -2868,7 +2872,31 @@ private struct ManageRepoRowContent: View {
             isSelected: isSelected,
             isPinned: viewModel.isRepoPinned(repo.id),
             semanticHit: viewModel.semanticHit(for: repo.id),
+            showStarredCheckmark: viewModel.selection == .myProjects,
             hasAISummary: aiSummaryAvailability.contains(repo.id)
+        )
+    }
+
+    /// 在 fullName 同行压成一个稳定徽章，避免为项目场景复制整张 Repo 卡片。
+    private func projectMetadata(_ project: UserProject) -> RepoCardInlineMetadata {
+        let affiliation = project.ownerType == .organization
+            ? project.ownerLogin
+            : String.l10n("list.filter.project.personal")
+        let visibility = String.l10n("list.filter.project.visibility.\(project.visibility.rawValue)")
+        let permission = String.l10n("list.filter.project.permission.\(project.permission.rawValue)")
+        return RepoCardInlineMetadata(
+            systemImage: project.ownerType == .organization ? "building.2.fill" : "person.fill",
+            text: [affiliation, visibility, permission].joined(separator: " · ")
+        )
+    }
+
+    /// 30 天增长只来自本机已有历史；历史不足时 ViewModel 返回 nil，卡片不伪造 0。
+    private func growthMetadata(_ growth: Int) -> RepoCardInlineMetadata {
+        let value = growth > 0 ? "+\(growth.formattedShort)" : growth.formattedShort
+        return RepoCardInlineMetadata(
+            systemImage: growth >= 0 ? "chart.line.uptrend.xyaxis" : "chart.line.downtrend.xyaxis",
+            text: String(format: String.l10n("project.card.growth30d"), value),
+            tint: growth > 0 ? .green : .secondary
         )
     }
 }

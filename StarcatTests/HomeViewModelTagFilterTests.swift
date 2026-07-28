@@ -78,6 +78,15 @@ struct HomeViewModelTagFilterTests {
                          '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z')
                     """
             )
+            try database.execute(
+                sql: """
+                    INSERT INTO repo_star_history_points (
+                        repo_id, observed_on, stars_count, source, precision, fetched_at
+                    ) VALUES
+                        (101, '2026-06-20', 10, 'local_snapshot', 'snapshot', '2026-06-20T00:00:00Z'),
+                        (101, '2026-07-28', 15, 'local_snapshot', 'snapshot', '2026-07-28T00:00:00Z')
+                    """
+            )
         }
 
         vm.setActiveUserID(7)
@@ -89,6 +98,8 @@ struct HomeViewModelTagFilterTests {
         #expect(Set(vm.items.map(\.id)) == [101, 103])
         #expect(vm.items.first { $0.id == 101 }?.isStarred == false)
         #expect(vm.projectFilterOptions.organizationLogins == ["acme"])
+        #expect(vm.projectRelation(for: 101)?.visibility == .private)
+        #expect(vm.localStarGrowth30Days(for: 101) == 5)
 
         vm.projectAffiliationFilter = .organizationMember
         await vm.awaitPendingListReloadForTesting()

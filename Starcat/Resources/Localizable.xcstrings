@@ -142862,6 +142862,14 @@
         }
       }
     },
+    "project.card.growth30d" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@ / 30d" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "30 天 %@" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "30 天 %@" } }
+      }
+    },
     "rag.browser.chunk.contentLabel" : {
       "localizations" : {
         "en" : {

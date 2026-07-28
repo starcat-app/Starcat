@@ -1096,6 +1096,91 @@ struct GRDBRepoRepository {
         }
     }
 
+    func fetchProjectRelations(
+        userID: Int64,
+        repoIDs: [Int64]
+    ) async throws -> [Int64: UserProject] {
+        guard !repoIDs.isEmpty else { return [:] }
+        let uniqueIDs = Array(Set(repoIDs)).sorted()
+        let placeholders = Array(repeating: "?", count: uniqueIDs.count).joined(separator: ", ")
+        return try await database.writer.read { db in
+            var arguments: [any DatabaseValueConvertible] = [userID]
+            arguments.append(contentsOf: uniqueIDs.map { $0 as any DatabaseValueConvertible })
+            let rows = try UserProject.fetchAll(
+                db,
+                sql: """
+                    SELECT *
+                    FROM user_projects
+                    WHERE user_id = ? AND repo_id IN (\(placeholders))
+                    """,
+                arguments: StatementArguments(arguments)
+            )
+            return Dictionary(uniqueKeysWithValues: rows.map { ($0.repoId, $0) })
+        }
+    }
+
+    func fetchLocalStarGrowth30Days(
+        repoIDs: [Int64],
+        now: Date
+    ) async throws -> [Int64: Int] {
+        guard !repoIDs.isEmpty else { return [:] }
+        let uniqueIDs = Array(Set(repoIDs)).sorted()
+        let placeholders = Array(repeating: "?", count: uniqueIDs.count).joined(separator: ", ")
+        let today = StarHistoryDateCodec.dayString(from: now)
+        let cutoff = StarHistoryDateCodec.dayString(from: now.addingTimeInterval(-30 * 86_400))
+
+        return try await database.writer.read { db in
+            var arguments = uniqueIDs.map { $0 as any DatabaseValueConvertible }
+            arguments.append(today)
+            let records = try RepoStarHistoryPointRecord.fetchAll(
+                db,
+                sql: """
+                    SELECT *
+                    FROM repo_star_history_points
+                    WHERE repo_id IN (\(placeholders)) AND observed_on <= ?
+                    ORDER BY repo_id ASC, observed_on ASC, fetched_at ASC
+                    """,
+                arguments: StatementArguments(arguments)
+            )
+            let grouped = Dictionary(grouping: records, by: \.repoId)
+            var growth: [Int64: Int] = [:]
+            for (repoID, repoRecords) in grouped {
+                var bestByDay: [String: RepoStarHistoryPointRecord] = [:]
+                for record in repoRecords {
+                    guard let existing = bestByDay[record.observedOn] else {
+                        bestByDay[record.observedOn] = record
+                        continue
+                    }
+                    let priority = Self.starHistoryPriority(record)
+                    let existingPriority = Self.starHistoryPriority(existing)
+                    if priority > existingPriority
+                        || (priority == existingPriority && record.fetchedAt > existing.fetchedAt) {
+                        bestByDay[record.observedOn] = record
+                    }
+                }
+                let points = bestByDay.values.sorted { $0.observedOn < $1.observedOn }
+                guard let latest = points.last else { continue }
+                let baseline = points.last { $0.observedOn <= cutoff }
+                    ?? points.first { $0.observedOn > cutoff }
+                guard let baseline, baseline.observedOn != latest.observedOn else { continue }
+                growth[repoID] = latest.starsCount - baseline.starsCount
+            }
+            return growth
+        }
+    }
+
+    /// 与详情 Star History 的“本机 > Discovery > GH Archive”日内优先级保持一致。
+    private static func starHistoryPriority(_ record: RepoStarHistoryPointRecord) -> Int {
+        switch StarHistorySource(rawValue: record.source) {
+        case .localSnapshot: return 3
+        case .discoverySnapshot: return 2
+        case .ghArchive:
+            return record.precision == StarHistoryPrecision.snapshot.rawValue ? 2 : 1
+        case .none:
+            return 0
+        }
+    }
+
     // MARK: - 同步状态
 
     /// 更新 sync_state 表中当前用户的统计。
