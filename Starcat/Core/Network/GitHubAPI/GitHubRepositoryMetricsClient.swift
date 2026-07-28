@@ -192,12 +192,16 @@ struct GitHubRepositoryCommunityProfile: Decodable, Equatable, Sendable {
         let codeOfConduct: CommunityFile?
         let codeOfConductFile: CommunityFile?
         let contributing: CommunityFile?
+        let issueTemplate: CommunityFile?
         let license: CommunityFile?
+        let pullRequestTemplate: CommunityFile?
         let readme: CommunityFile?
 
         enum CodingKeys: String, CodingKey {
             case codeOfConduct = "code_of_conduct"
             case codeOfConductFile = "code_of_conduct_file"
+            case issueTemplate = "issue_template"
+            case pullRequestTemplate = "pull_request_template"
             case contributing, license, readme
         }
     }
@@ -208,7 +212,9 @@ struct GitHubRepositoryCommunityProfile: Decodable, Equatable, Sendable {
     var hasReadme: Bool { files.readme != nil }
     var hasCodeOfConduct: Bool { files.codeOfConduct != nil || files.codeOfConductFile != nil }
     var hasContributing: Bool { files.contributing != nil }
+    var hasIssueTemplate: Bool { files.issueTemplate != nil }
     var hasLicense: Bool { files.license != nil }
+    var hasPullRequestTemplate: Bool { files.pullRequestTemplate != nil }
 
     var readmeHTMLURL: URL? { files.readme?.htmlURL }
     /// 优先仓库内 CODE_OF_CONDUCT 文件；其次官方 CoC 页（html_url 可能为 null）。
@@ -216,7 +222,9 @@ struct GitHubRepositoryCommunityProfile: Decodable, Equatable, Sendable {
         files.codeOfConductFile?.htmlURL ?? files.codeOfConduct?.htmlURL
     }
     var contributingHTMLURL: URL? { files.contributing?.htmlURL }
+    var issueTemplateHTMLURL: URL? { files.issueTemplate?.htmlURL }
     var licenseHTMLURL: URL? { files.license?.htmlURL }
+    var pullRequestTemplateHTMLURL: URL? { files.pullRequestTemplate?.htmlURL }
 
     enum CodingKeys: String, CodingKey {
         case healthPercentage = "health_percentage"

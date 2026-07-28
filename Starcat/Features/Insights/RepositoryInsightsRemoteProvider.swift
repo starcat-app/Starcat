@@ -404,11 +404,15 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
             hasReadme: profile.hasReadme,
             hasCodeOfConduct: profile.hasCodeOfConduct,
             hasContributing: profile.hasContributing,
+            hasIssueTemplate: profile.hasIssueTemplate,
             hasLicense: profile.hasLicense,
+            hasPullRequestTemplate: profile.hasPullRequestTemplate,
             readmeHTMLURL: profile.readmeHTMLURL,
             codeOfConductHTMLURL: profile.codeOfConductHTMLURL,
             contributingHTMLURL: profile.contributingHTMLURL,
-            licenseHTMLURL: profile.licenseHTMLURL
+            issueTemplateHTMLURL: profile.issueTemplateHTMLURL,
+            licenseHTMLURL: profile.licenseHTMLURL,
+            pullRequestTemplateHTMLURL: profile.pullRequestTemplateHTMLURL
         )
         try await cache.store(
             value,

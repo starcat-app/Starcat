@@ -128045,6 +128045,13 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "開源授權條款" } }
       }
     },
+    "insights.repo.signal.issueTemplate" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Issue template" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Issue 模板" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Issue 範本" } }
+      }
+    },
     "insights.repo.signal.missing" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Missing" } },
@@ -128092,6 +128099,13 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "README" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "README" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "README" } }
+      }
+    },
+    "insights.repo.signal.pullRequestTemplate" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Pull request template" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Pull Request 模板" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Pull Request 範本" } }
       }
     },
     "insights.repo.state.noData" : {

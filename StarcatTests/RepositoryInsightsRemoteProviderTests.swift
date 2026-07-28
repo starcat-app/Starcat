@@ -208,7 +208,9 @@ struct RepositoryInsightsRemoteProviderTests {
         #expect(community.hasReadme)
         #expect(community.hasCodeOfConduct)
         #expect(!community.hasContributing)
+        #expect(community.hasIssueTemplate)
         #expect(community.hasLicense)
+        #expect(community.hasPullRequestTemplate)
         #expect(community.readmeHTMLURL?.absoluteString == "https://github.com/octo/community#readme")
         #expect(
             community.codeOfConductHTMLURL?.absoluteString
@@ -216,8 +218,16 @@ struct RepositoryInsightsRemoteProviderTests {
         )
         #expect(community.contributingHTMLURL == nil)
         #expect(
+            community.issueTemplateHTMLURL?.absoluteString
+                == "https://github.com/octo/community/tree/main/.github/ISSUE_TEMPLATE"
+        )
+        #expect(
             community.licenseHTMLURL?.absoluteString
                 == "https://github.com/octo/community/blob/main/LICENSE"
+        )
+        #expect(
+            community.pullRequestTemplateHTMLURL?.absoluteString
+                == "https://github.com/octo/community/blob/main/.github/PULL_REQUEST_TEMPLATE.md"
         )
         #expect(cachedContributors.value == contributors)
         #expect(cachedCommunity.value == community)
@@ -358,6 +368,8 @@ private actor ContributorsCommunityHTTPClient: RAGHTTPClientProtocol {
                 "code_of_conduct":{"html_url":"https://www.contributor-covenant.org/version/2/1/code_of_conduct/"},
                 "code_of_conduct_file":{"html_url":"https://github.com/octo/community/blob/main/CODE_OF_CONDUCT.md"},
                 "contributing":null,
+                "issue_template":{"html_url":"https://github.com/octo/community/tree/main/.github/ISSUE_TEMPLATE"},
+                "pull_request_template":{"html_url":"https://github.com/octo/community/blob/main/.github/PULL_REQUEST_TEMPLATE.md"},
                 "license":{"html_url":"https://github.com/octo/community/blob/main/LICENSE"}
               }
             }

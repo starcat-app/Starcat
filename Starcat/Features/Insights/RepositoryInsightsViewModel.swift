@@ -73,32 +73,44 @@ struct RepositoryCommunityInsight: Codable, Equatable, Sendable {
     let hasReadme: Bool
     let hasCodeOfConduct: Bool
     let hasContributing: Bool
+    let hasIssueTemplate: Bool
     let hasLicense: Bool
+    let hasPullRequestTemplate: Bool
     let readmeHTMLURL: URL?
     let codeOfConductHTMLURL: URL?
     let contributingHTMLURL: URL?
+    let issueTemplateHTMLURL: URL?
     let licenseHTMLURL: URL?
+    let pullRequestTemplateHTMLURL: URL?
 
     init(
         healthPercentage: Int,
         hasReadme: Bool,
         hasCodeOfConduct: Bool,
         hasContributing: Bool,
+        hasIssueTemplate: Bool = false,
         hasLicense: Bool,
+        hasPullRequestTemplate: Bool = false,
         readmeHTMLURL: URL? = nil,
         codeOfConductHTMLURL: URL? = nil,
         contributingHTMLURL: URL? = nil,
-        licenseHTMLURL: URL? = nil
+        issueTemplateHTMLURL: URL? = nil,
+        licenseHTMLURL: URL? = nil,
+        pullRequestTemplateHTMLURL: URL? = nil
     ) {
         self.healthPercentage = healthPercentage
         self.hasReadme = hasReadme
         self.hasCodeOfConduct = hasCodeOfConduct
         self.hasContributing = hasContributing
+        self.hasIssueTemplate = hasIssueTemplate
         self.hasLicense = hasLicense
+        self.hasPullRequestTemplate = hasPullRequestTemplate
         self.readmeHTMLURL = readmeHTMLURL
         self.codeOfConductHTMLURL = codeOfConductHTMLURL
         self.contributingHTMLURL = contributingHTMLURL
+        self.issueTemplateHTMLURL = issueTemplateHTMLURL
         self.licenseHTMLURL = licenseHTMLURL
+        self.pullRequestTemplateHTMLURL = pullRequestTemplateHTMLURL
     }
 }
 

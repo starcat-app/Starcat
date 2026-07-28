@@ -1974,6 +1974,30 @@ struct RepositoryInsightsView: View {
                         )
                         Divider().padding(.leading, 28)
                         localSignalRow(
+                            id: "community.issueTemplate",
+                            title: "insights.repo.signal.issueTemplate",
+                            isAvailable: community.hasIssueTemplate,
+                            systemImage: "exclamationmark.bubble.fill",
+                            destinationURL: communitySignalURL(
+                                isAvailable: community.hasIssueTemplate,
+                                stored: community.issueTemplateHTMLURL,
+                                fallbackSuffix: "/issues/new/choose"
+                            )
+                        )
+                        Divider().padding(.leading, 28)
+                        localSignalRow(
+                            id: "community.pullRequestTemplate",
+                            title: "insights.repo.signal.pullRequestTemplate",
+                            isAvailable: community.hasPullRequestTemplate,
+                            systemImage: "arrow.triangle.pull",
+                            destinationURL: communitySignalURL(
+                                isAvailable: community.hasPullRequestTemplate,
+                                stored: community.pullRequestTemplateHTMLURL,
+                                fallbackSuffix: "/compare"
+                            )
+                        )
+                        Divider().padding(.leading, 28)
+                        localSignalRow(
                             id: "community.license",
                             title: "insights.repo.signal.license",
                             isAvailable: community.hasLicense,
