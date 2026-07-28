@@ -374,6 +374,31 @@ struct GitHubRepositoryMetricsClientTests {
         #expect(await httpClient.requestCount() == 1)
     }
 
+    @Test("切库屏障期间请求不出站且结束后读取新 Token")
+    func databaseScopeBarrierDefersNewRequests() async throws {
+        let tokenProvider = MutableMetricsTokenProvider(token: "old-token")
+        let httpClient = MetricsHTTPClient(responses: [.json("[]")])
+        let client = DefaultGitHubRepositoryMetricsClient(
+            httpClient: httpClient,
+            tokenProvider: tokenProvider
+        )
+
+        await client.beginDatabaseScopeChange()
+        let loadTask = Task {
+            try await client.loadCommitActivity(repository: repository)
+        }
+        // 给请求进入 barrier 的机会；屏障未 end 前不允许读取 Token 或访问 HTTP Client。
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(await httpClient.requests().isEmpty)
+
+        await tokenProvider.update(token: "new-token")
+        await client.endDatabaseScopeChange()
+        _ = try await loadTask.value
+
+        let request = try #require(await httpClient.requests().first)
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer new-token")
+    }
+
     @Test("不同仓库的指标请求仍按顺序出站")
     func requestsAreSerialized() async throws {
         let httpClient = ConcurrencyProbeMetricsHTTPClient()
