@@ -287,6 +287,9 @@ struct GitHubRepositorySecurityAdvisoryMetric: Decodable, Equatable, Sendable {
 
 /// 类型化端点协议。observer 只服务 RAG Debug Trace，普通洞察调用传 nil。
 protocol GitHubRepositoryMetricsClient: Sendable {
+    /// 切换认证 / 数据库作用域前取消普通洞察请求，并清空只属于旧账号的退避状态。
+    func clearTransientState() async
+
     func loadActivityBundle(
         repository: RepoIdentity,
         dateRange: String
@@ -335,6 +338,8 @@ protocol GitHubRepositoryMetricsClient: Sendable {
 }
 
 extension GitHubRepositoryMetricsClient {
+    func clearTransientState() async {}
+
     func searchIssues(
         repository: RepoIdentity,
         query: String,
@@ -549,6 +554,14 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
         self.tokenProvider = tokenProvider
         self.endpoints = GitHubRepositoryMetricsEndpointBuilder(baseURL: baseURL)
         self.now = now
+    }
+
+    func clearTransientState() async {
+        // 必须等待普通洞察请求真正结束后再允许 DatabaseManager.reopen；
+        // 否则旧账号响应可能在新 writer 生效后才写入 SQLite。
+        await inflightTracker.cancelAllAndWait()
+        rateLimitBackoffUntil.removeAll(keepingCapacity: true)
+        endpointFailureStates.removeAll(keepingCapacity: true)
     }
 
     func searchIssues(
@@ -793,6 +806,7 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
         }
 
         let (data, response) = try await httpClient.data(for: request)
+        try Task.checkCancellation()
         let metadata = responseMetadata(response)
         guard response.statusCode == 200 else {
             throw mapError(data: data, response: response, metadata: metadata)
@@ -885,6 +899,7 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
         observer?(.request(url))
         do {
             let (data, response) = try await httpClient.data(for: request)
+            try Task.checkCancellation()
             observer?(.response(url, statusCode: response.statusCode))
             let metadata = responseMetadata(response)
             guard response.statusCode == 200 else {
@@ -1245,6 +1260,16 @@ private actor GitHubMetricsInflightTracker {
 
     private func clear(_ key: GitHubMetricsInflightKey) {
         inflight[key] = nil
+    }
+
+    /// 切账号时先取消、再等待所有共享任务完成，确保调用方不会把旧响应写进新数据库。
+    func cancelAllAndWait() async {
+        let tasks = Array(inflight.values)
+        inflight.removeAll(keepingCapacity: true)
+        tasks.forEach { $0.cancel() }
+        for task in tasks {
+            _ = try? await task.value
+        }
     }
 }
 

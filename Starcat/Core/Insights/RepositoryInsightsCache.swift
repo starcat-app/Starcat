@@ -84,6 +84,13 @@ protocol RepositoryInsightsCaching: Sendable {
         dataset: RepositoryInsightsDataset,
         range: RepositoryInsightsRangeKey
     ) async throws
+
+    /// 切换用户数据库前清空只存在于当前进程的已解码对象，禁止旧账号值继续占用内存。
+    func clearTransientState() async
+}
+
+extension RepositoryInsightsCaching {
+    func clearTransientState() async {}
 }
 
 struct GRDBRepositoryInsightsCache: RepositoryInsightsCaching, Sendable {
@@ -230,6 +237,10 @@ struct GRDBRepositoryInsightsCache: RepositoryInsightsCaching, Sendable {
         range: RepositoryInsightsRangeKey
     ) async throws {
         try await deleteRecord(repoId: repoId, dataset: dataset, range: range)
+    }
+
+    func clearTransientState() async {
+        await hotCache.removeAll()
     }
 
     private func deleteRecord(
@@ -387,6 +398,11 @@ private actor RepositoryInsightsHotCache {
         for key in matchingKeys {
             removeKey(key)
         }
+    }
+
+    func removeAll() {
+        entries.removeAll(keepingCapacity: true)
+        recency.removeAll(keepingCapacity: true)
     }
 
     private func markRecentlyUsed(_ key: RepositoryInsightsHotCacheKey) {
