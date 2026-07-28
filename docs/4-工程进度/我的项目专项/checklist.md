@@ -13,11 +13,11 @@
 ## 1. 产品与权限边界
 
 - [x] 固化整体落地方案和专项验收口径。
-- [ ] Sidebar 新增固定一级分类“我的项目”。
+- [x] Sidebar 新增固定一级分类“我的项目”。
 - [x] 项目关系与 Star、知识库、Smart Collection 相互独立。
 - [x] 首版范围限定为个人拥有仓库和组织成员仓库，不包含外部个人协作者仓库。
 - [x] Public 项目可由现有 OAuth 提供 fallback。
-- [ ] Private / Internal 使用可选 GitHub App 只读授权。
+- [x] Private / Internal 使用可选 GitHub App 只读授权（真实 Client ID 与组织审批为外部 Gate）。
 - [x] 不把现有 OAuth 扩大为 `repo` scope。
 - [x] 不在客户端保存 GitHub App private key 或 client secret。
 
@@ -42,30 +42,30 @@
 - [x] 实现 OAuth `visibility=public` fallback 和 GitHub App `visibility=all`。
 - [x] 实现分页、Link Header、分 affiliation ETag、Rate Limit 和失败保旧值。
 - [x] 实现后台有界同步和并发去重。
-- [ ] 实现首次连接、授权返回、启动刷新、后台刷新和手动刷新触发。
+- [x] 实现首次连接、授权返回、启动刷新、后台刷新和手动刷新触发。
 
 ## 4. 查询与 UI
 
-- [ ] 新增 `.myProjects` Repo scope，禁止隐式要求 `is_starred = 1`。
-- [ ] Sidebar 显示真实项目计数。
-- [ ] 增加个人 / 组织 / 具体组织 / 可见性 / 权限筛选。
-- [ ] 项目筛选与搜索、语言、Tags、状态、Star、知识库筛选正确叠加。
-- [ ] 复用 Repo 行并展示项目归属、可见性、权限和本地 30 天增长。
-- [ ] 复用 Repo 详情、README、仓库洞察和 Star History。
-- [ ] 未连接、连接中、部分授权、待审批、过期、撤销、失败和断网状态完整。
-- [ ] 刷新保留旧列表、当前 selection 和分页状态。
+- [x] 新增 `.myProjects` Repo scope，禁止隐式要求 `is_starred = 1`。
+- [x] Sidebar 显示真实项目计数。
+- [x] 增加个人 / 组织 / 具体组织 / 可见性 / 权限筛选。
+- [x] 项目筛选与搜索、语言、Tags、状态、Star、知识库筛选正确叠加。
+- [x] 复用 Repo 行并展示项目归属、可见性、权限和本地 30 天增长。
+- [x] 复用 Repo 详情、README、仓库洞察和 Star History。
+- [x] 未连接、连接中、部分授权、待审批、过期、撤销、失败和断网状态完整。
+- [x] 刷新保留旧列表、当前 selection 和分页状态。
 - [ ] 完成 en / zh-Hans i18n、VoiceOver、键盘和 Light / Dark 验收。
 
 ## 5. Private 数据与缓存
 
-- [ ] Private / Internal 不调用 Discovery。
-- [ ] Private / Internal 不进入 External Search、公开分享或 Universal Link。
-- [ ] 项目关系、同步状态和 Private 缓存不进入 CloudKit。
-- [ ] 默认 JSON 导出不包含项目关系、GitHub App token 或 Private 缓存。
-- [ ] 日志和错误落库不包含 Private owner/name、README 或响应 body。
-- [ ] Private README 使用 GitHub App token 和当前用户本地缓存。
-- [ ] 授权撤销后停止刷新并移除关系，但保留用户数据。
-- [ ] 提供本地 Private 远端缓存清理入口。
+- [x] Private / Internal 不调用 Discovery。
+- [x] Private / Internal 不进入 External Search、公开分享或 Universal Link。
+- [x] 项目关系、同步状态和 Private 缓存不进入 CloudKit。
+- [x] 默认 JSON 导出不包含项目关系、GitHub App token 或 Private 缓存。
+- [x] 日志和错误落库不包含 Private owner/name、README 或响应 body。
+- [x] Private README 使用 GitHub App token 和当前用户本地缓存。
+- [x] 授权撤销后停止刷新并移除关系，但保留用户数据。
+- [x] 提供本地 Private 远端缓存清理入口。
 
 ## 6. 测试与验收
 
@@ -74,13 +74,13 @@
 - [x] API 覆盖 DTO、Link Header、304、401、403、Rate Limit 和中途失败。
 - [x] 授权覆盖 Device Flow、独立 session、token 过期/撤销和 OAuth 不受影响。
 - [ ] ViewModel 覆盖 scope、筛选隔离、计数、selection、刷新和并发代际。
-- [ ] 隐私测试证明 Private 项目不构造公共服务请求。
+- [x] 隐私测试证明 Private 项目不构造公共服务请求。
 - [ ] 运行专项单测、全量单测、Debug build和静态规范检查。
 - [ ] 完成人工权限矩阵；无法自动观察的步骤保留真实证据或明确外部 Gate。
 
 ## 7. 多轮审查
 
-- [ ] 第一轮：需求、方案、代码和 checklist 完整性审查；先写报告再修复。
+- [x] 第一轮：需求、方案、代码和 checklist 完整性审查；先写报告再修复。
 - [ ] 第二轮：数据库、授权、同步、隐私和失败语义审查；先写报告再修复。
 - [ ] 第三轮：UI、详情复用、i18n、VoiceOver 和交互审查；先写报告再修复。
 - [ ] 第四轮：单元测试、全量测试、Debug build和性能审查；先写报告再修复。
