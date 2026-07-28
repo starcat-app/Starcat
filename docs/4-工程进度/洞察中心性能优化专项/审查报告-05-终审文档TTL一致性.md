@@ -25,8 +25,11 @@
 
 同一文档内部口径冲突，后续开发者可能按旧表回退实现。
 
+同表还把 `recentActivity.range_key` 写成四个时间范围；当前实现只缓存一份最近事件列表，固定使用 `all`。活动范围仅决定与 Activity 共用 GraphQL 时的查询窗口，不生成四份 Recent 缓存。
+
 ## 3. 修复要求
 
 1. 把既有缓存表的 Community TTL 同步为 3 天。
 2. 同表补充 Security 6 小时，避免只在性能回填章节出现。
-3. 修复后重新开始连续两轮 Clean 复审计数。
+3. 把 Recent Activity 的缓存 `range_key` 修正为 `all`。
+4. 修复后重新开始连续两轮 Clean 复审计数。
