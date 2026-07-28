@@ -209,6 +209,55 @@ struct RepositoryInsightsRemoteProviderTests {
         )
     }
 
+    @Test("304 返回前缓存丢失会无条件重拉一次")
+    func missingPayloadAfterNotModifiedTriggersUnconditionalRetry() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 28, owner: "octo", name: "retry")
+        let cache = GRDBRepositoryInsightsCache(database: database)
+        let now = Date(timeIntervalSince1970: 5_000)
+        try await cache.store(
+            RepositoryCommitActivity(
+                points: [RepositoryCommitActivityPoint(weekStart: now, commits: 1)],
+                generatedAt: now
+            ),
+            repoId: 28,
+            dataset: .commitActivity,
+            range: .all,
+            fetchedAt: now,
+            responseETag: "\"commit-v1\"",
+            defaultBranchSHA: nil
+        )
+        let httpClient = MissingPayloadConditionalHTTPClient {
+            try await cache.remove(
+                repoId: 28,
+                dataset: .commitActivity,
+                range: .all
+            )
+        }
+        let provider = DefaultRepositoryRemoteInsightsProvider(
+            metricsClient: DefaultGitHubRepositoryMetricsClient(
+                httpClient: httpClient,
+                token: "token",
+                baseURL: URL(string: "https://api.example.test")!
+            ),
+            cache: cache,
+            now: { now }
+        )
+
+        let refreshed = try await provider.refreshCommitActivity(
+            repository: RepoIdentity(ghRepoID: 28, owner: "octo", name: "retry"),
+            ifNoneMatch: "\"commit-v1\""
+        )
+        let requests = await httpClient.requests()
+        let cached = try #require(try await provider.cachedCommitActivity(repoID: 28))
+
+        #expect(requests.count == 2)
+        #expect(requests[0].value(forHTTPHeaderField: "If-None-Match") == "\"commit-v1\"")
+        #expect(requests[1].value(forHTTPHeaderField: "If-None-Match") == nil)
+        #expect(refreshed.points.map(\.commits) == [11])
+        #expect(cached.value == refreshed)
+    }
+
     @Test("维护脉搏比较最近四周与此前四周")
     func maintenancePulseUsesAdjacentFourWeekWindows() {
         let start = Date(timeIntervalSince1970: 1_000)
@@ -557,6 +606,38 @@ private actor ConditionalCommitActivityHTTPClient: RAGHTTPClientProtocol {
                 statusCode: isConditional ? 304 : 200,
                 httpVersion: "HTTP/1.1",
                 headerFields: ["ETag": "\"commit-v1\""]
+            )!
+        )
+    }
+
+    func requests() -> [URLRequest] {
+        recordedRequests
+    }
+}
+
+private actor MissingPayloadConditionalHTTPClient: RAGHTTPClientProtocol {
+    private let onConditional: @Sendable () async throws -> Void
+    private var recordedRequests: [URLRequest] = []
+
+    init(onConditional: @escaping @Sendable () async throws -> Void) {
+        self.onConditional = onConditional
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        recordedRequests.append(request)
+        let isConditional = request.value(forHTTPHeaderField: "If-None-Match") != nil
+        if isConditional {
+            try await onConditional()
+        }
+        return (
+            isConditional
+                ? Data()
+                : Data(#"[{"week":1785100000,"total":11,"days":[1,1,1,2,2,2,2]}]"#.utf8),
+            HTTPURLResponse(
+                url: request.url!,
+                statusCode: isConditional ? 304 : 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["ETag": "\"commit-v2\""]
             )!
         )
     }
