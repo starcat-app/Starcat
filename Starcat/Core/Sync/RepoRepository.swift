@@ -654,6 +654,23 @@ struct GRDBRepoRepository {
             args.append(userID)
             // 保证没有额外筛选时 WHERE 仍有合法谓词；项目成员关系已经由 JOIN 收窄。
             whereClauses.append("1 = 1")
+            Self.appendProjectFilters(filters.project, whereClauses: &whereClauses, args: &args)
+            let trimmedSearch = filters.projectSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedSearch.isEmpty {
+                let escaped = trimmedSearch
+                    .replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "%", with: "\\%")
+                    .replacingOccurrences(of: "_", with: "\\_")
+                let pattern = "%\(escaped)%"
+                whereClauses.append("""
+                    (
+                        LOWER(r.full_name) LIKE LOWER(?) ESCAPE '\\'
+                        OR LOWER(COALESCE(r.description, '')) LIKE LOWER(?) ESCAPE '\\'
+                        OR LOWER(COALESCE(r.language, '')) LIKE LOWER(?) ESCAPE '\\'
+                    )
+                    """)
+                args.append(contentsOf: [pattern, pattern, pattern])
+            }
         case .allStars:
             whereClauses.append("r.is_starred = 1")
         case .library:
@@ -1005,6 +1022,78 @@ struct GRDBRepoRepository {
             args.append(offset)
         }
         return (sql, StatementArguments(args))
+    }
+
+    /// 项目专属过滤只允许在 `.myProjects` JOIN 已存在时调用。
+    private static func appendProjectFilters(
+        _ filters: UserProjectFilter,
+        whereClauses: inout [String],
+        args: inout [any DatabaseValueConvertible]
+    ) {
+        func appendSet<Value: RawRepresentable>(
+            _ values: Set<Value>,
+            column: String
+        ) where Value.RawValue == String {
+            guard !values.isEmpty else { return }
+            let rawValues = values.map(\.rawValue).sorted()
+            let placeholders = Array(repeating: "?", count: rawValues.count).joined(separator: ", ")
+            whereClauses.append("\(column) IN (\(placeholders))")
+            args.append(contentsOf: rawValues)
+        }
+
+        appendSet(filters.affiliations, column: "up_scope.affiliation")
+        appendSet(filters.visibilities, column: "up_scope.visibility")
+        appendSet(filters.permissions, column: "up_scope.permission")
+        appendSet(filters.authorizationSources, column: "up_scope.authorization_source")
+
+        if !filters.organizationLogins.isEmpty {
+            let organizations = filters.organizationLogins.sorted {
+                $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+            }
+            let placeholders = Array(repeating: "?", count: organizations.count).joined(separator: ", ")
+            whereClauses.append("up_scope.owner_login COLLATE NOCASE IN (\(placeholders))")
+            args.append(contentsOf: organizations)
+        }
+    }
+
+    func fetchProjectFilterOptions(userID: Int64) async throws -> ProjectFilterOptions {
+        try await database.writer.read { db in
+            let organizationLogins = try String.fetchAll(
+                db,
+                sql: """
+                    SELECT DISTINCT owner_login
+                    FROM user_projects
+                    WHERE user_id = ? AND owner_type = 'organization'
+                    ORDER BY owner_login COLLATE NOCASE ASC
+                    """,
+                arguments: [userID]
+            )
+            let visibilityValues = try String.fetchAll(
+                db,
+                sql: """
+                    SELECT DISTINCT visibility
+                    FROM user_projects
+                    WHERE user_id = ?
+                    ORDER BY visibility ASC
+                    """,
+                arguments: [userID]
+            )
+            let permissionValues = try String.fetchAll(
+                db,
+                sql: """
+                    SELECT DISTINCT permission
+                    FROM user_projects
+                    WHERE user_id = ?
+                    ORDER BY permission ASC
+                    """,
+                arguments: [userID]
+            )
+            return ProjectFilterOptions(
+                organizationLogins: organizationLogins,
+                visibilities: visibilityValues.compactMap(ProjectVisibility.init(rawValue:)),
+                permissions: permissionValues.compactMap(ProjectPermission.init(rawValue:))
+            )
+        }
     }
 
     // MARK: - 同步状态

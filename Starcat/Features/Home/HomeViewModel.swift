@@ -372,6 +372,10 @@ final class HomeViewModel {
         let ragIndexState: String
         let insightsRisk: String
         let selectedTagIDs: Set<String>
+        let projectAffiliation: String?
+        let projectOrganization: String?
+        let projectVisibility: String?
+        let projectPermission: String?
         let sort: String
     }
 
@@ -464,6 +468,9 @@ final class HomeViewModel {
 
     /// 当前登录用户可访问的个人 / 组织项目数量。
     private(set) var myProjectsCount: Int = 0
+
+    /// 项目筛选菜单使用的可选值，不包含 Repo 内容。
+    private(set) var projectFilterOptions: ProjectFilterOptions = .empty
 
     /// “我的项目”查询必须显式携带当前 GitHub 用户 ID，不能只依赖当前数据库路径。
     private(set) var activeUserID: Int64?
@@ -627,6 +634,40 @@ final class HomeViewModel {
         didSet {
             guard oldValue != repoLanguageFilter else { return }
             guard !isHydratingManageFilters, !isApplyingGlobalFilterState else { return }
+            reloadOrApplyCurrentManageView()
+        }
+    }
+
+    /// “我的项目”专属维度。离开该 scope 后保留会话内选择，但查询层完全忽略，
+    /// 所以不会污染 Stars、知识库或 Smart Collections。
+    var projectAffiliationFilter: ProjectAffiliation? {
+        didSet {
+            guard oldValue != projectAffiliationFilter, !isHydratingManageFilters else { return }
+            guard selection == .myProjects else { return }
+            reloadOrApplyCurrentManageView()
+        }
+    }
+
+    var projectOrganizationFilter: String? {
+        didSet {
+            guard oldValue != projectOrganizationFilter, !isHydratingManageFilters else { return }
+            guard selection == .myProjects else { return }
+            reloadOrApplyCurrentManageView()
+        }
+    }
+
+    var projectVisibilityFilter: ProjectVisibility? {
+        didSet {
+            guard oldValue != projectVisibilityFilter, !isHydratingManageFilters else { return }
+            guard selection == .myProjects else { return }
+            reloadOrApplyCurrentManageView()
+        }
+    }
+
+    var projectPermissionFilter: ProjectPermission? {
+        didSet {
+            guard oldValue != projectPermissionFilter, !isHydratingManageFilters else { return }
+            guard selection == .myProjects else { return }
             reloadOrApplyCurrentManageView()
         }
     }
@@ -920,7 +961,8 @@ final class HomeViewModel {
     /// 派生：当前是否有任何过滤器生效（toolbar 显示徽标用）。
     var hasActiveFilter: Bool {
         let filters = effectiveGlobalFilterState
-        return filters.hideArchived
+        return hasActiveProjectFilter
+            || filters.hideArchived
             || filters.hideForks
             || filters.statusFilter != nil
             || filters.starFilter != .all
@@ -935,6 +977,14 @@ final class HomeViewModel {
             || filters.indexableSourceAvailabilityFilter != .unknown
             || filters.ragIndexStateFilter != .unknown
             || filters.insightsRiskFilter != .unknown
+    }
+
+    var hasActiveProjectFilter: Bool {
+        guard selection == .myProjects else { return false }
+        return projectAffiliationFilter != nil
+            || projectOrganizationFilter != nil
+            || projectVisibilityFilter != nil
+            || projectPermissionFilter != nil
     }
 
     /// 跨窗口钻取只替换“当前有效筛选”，不写持久字段；重复点击同一数字也用 requestID 更新会话身份。
@@ -1055,7 +1105,18 @@ final class HomeViewModel {
     ///
     /// 全局筛选工具栏「重置」按钮走这里。设置侧也同步清对应偏好。
     func resetAllFilters() {
+        let hadProjectFilter = hasActiveProjectFilter
+        let hadGlobalFilter = effectiveGlobalFilterState != .neutral
+        isHydratingManageFilters = true
+        projectAffiliationFilter = nil
+        projectOrganizationFilter = nil
+        projectVisibilityFilter = nil
+        projectPermissionFilter = nil
+        isHydratingManageFilters = false
         applyPersistentGlobalFilterState(.neutral)
+        if hadProjectFilter && !hadGlobalFilter {
+            reloadOrApplyCurrentManageView()
+        }
     }
 
     /// 批量写入真实筛选时只触发一次重查，避免十个 didSet 依次启动十份分页任务。
@@ -1346,7 +1407,14 @@ final class HomeViewModel {
 
         totalCount = 0
         myProjectsCount = 0
+        projectFilterOptions = .empty
         activeUserID = nil
+        isHydratingManageFilters = true
+        projectAffiliationFilter = nil
+        projectOrganizationFilter = nil
+        projectVisibilityFilter = nil
+        projectPermissionFilter = nil
+        isHydratingManageFilters = false
         untaggedCount = 0
         libraryCount = 0
         languageStats = []
@@ -1434,6 +1502,7 @@ final class HomeViewModel {
         do {
             async let total = repository.starredCount()
             async let myProjects = fetchMyProjectsCount()
+            async let projectOptions = fetchProjectFilterOptions()
             async let untagged = repository.fetchUntagged().count
             async let library = repository.fetchListCount(scope: .library, filters: .empty)
             async let langs = repository.languageStats()
@@ -1451,6 +1520,7 @@ final class HomeViewModel {
 
             self.totalCount = try await total
             self.myProjectsCount = try await myProjects
+            self.projectFilterOptions = try await projectOptions
             self.untaggedCount = try await untagged
             self.libraryCount = try await library
             self.languageStats = try await langs
@@ -1809,12 +1879,17 @@ final class HomeViewModel {
         )
     }
 
+    private func fetchProjectFilterOptions() async throws -> ProjectFilterOptions {
+        guard let activeUserID else { return .empty }
+        return try await repository.fetchProjectFilterOptions(userID: activeUserID)
+    }
+
     /// 仅供无法下推 SQLite 的兼容路径和 hover 预取使用；正常列表仍按页读取。
     private func fetchAllMyProjects() async throws -> [Repo] {
         guard let activeUserID else { return [] }
         return try await repository.fetchListPage(
             scope: .myProjects(userID: activeUserID),
-            filters: .empty,
+            filters: currentRepoListFiltersForDatabasePaging(),
             sort: .starredAtDesc,
             limit: Int.max,
             offset: 0
@@ -1822,7 +1897,23 @@ final class HomeViewModel {
     }
 
     private func currentRepoListFiltersForDatabasePaging() -> RepoListFilters {
-        effectiveGlobalFilterState.repoListFilters(selectedTagIDs: selectedTagIds)
+        var filters = effectiveGlobalFilterState.repoListFilters(selectedTagIDs: selectedTagIds)
+        if selection == .myProjects {
+            if let projectAffiliationFilter {
+                filters.project.affiliations = [projectAffiliationFilter]
+            }
+            if let projectOrganizationFilter {
+                filters.project.organizationLogins = [projectOrganizationFilter]
+            }
+            if let projectVisibilityFilter {
+                filters.project.visibilities = [projectVisibilityFilter]
+            }
+            if let projectPermissionFilter {
+                filters.project.permissions = [projectPermissionFilter]
+            }
+            filters.projectSearchText = searchQuery
+        }
+        return filters
     }
 
     private func makeDatabaseSnapshotKey() -> DatabaseSnapshotKey? {
@@ -1845,6 +1936,10 @@ final class HomeViewModel {
             ragIndexState: filters.ragIndexState.cacheKey,
             insightsRisk: filters.insightsRisk.rawValue,
             selectedTagIDs: filters.selectedTagIDs,
+            projectAffiliation: filters.project.affiliations.first?.rawValue,
+            projectOrganization: filters.project.organizationLogins.first,
+            projectVisibility: filters.project.visibilities.first?.rawValue,
+            projectPermission: filters.project.permissions.first?.rawValue,
             sort: sortOption.rawValue
         )
     }
@@ -2177,7 +2272,9 @@ final class HomeViewModel {
         let databaseScope = PerformanceTracer.shared.trace(.manageRoute) {
             currentRepoListScopeForDatabasePaging()
         }
-        if let scope = databaseScope, !isSearching {
+        // 项目关键字搜索必须留在 `.myProjects` 数据库 scope 内，不能落到全局 Stars FTS。
+        // 其它分类继续沿用现有 FTS / 语义搜索路径。
+        if let scope = databaseScope, (!isSearching || selection == .myProjects) {
             let reason: DatabasePageReloadReason = (forceRefresh && isDatabasePagingActive)
                 ? .refreshPreservingPage
                 : .reset

@@ -123916,6 +123916,134 @@
         }
       }
     },
+    "list.filter.project.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Project" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "项目" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "專案" } }
+      }
+    },
+    "list.filter.project.affiliation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Ownership" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "归属" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "歸屬" } }
+      }
+    },
+    "list.filter.project.personal" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Personal" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "个人" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "個人" } }
+      }
+    },
+    "list.filter.project.organization" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Organization" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "组织" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "組織" } }
+      }
+    },
+    "list.filter.project.organizationName" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Organization" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "具体组织" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "特定組織" } }
+      }
+    },
+    "list.filter.project.visibility" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Visibility" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "可见性" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "可見性" } }
+      }
+    },
+    "list.filter.project.visibility.public" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Public" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "公开" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "公開" } }
+      }
+    },
+    "list.filter.project.visibility.private" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Private" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "私有" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "私有" } }
+      }
+    },
+    "list.filter.project.visibility.internal" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Internal" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "内部" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "內部" } }
+      }
+    },
+    "list.filter.project.permission" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Permission" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "权限" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "權限" } }
+      }
+    },
+    "list.filter.project.permission.admin" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Admin" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "管理员" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "管理員" } }
+      }
+    },
+    "list.filter.project.permission.maintain" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Maintain" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "维护" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "維護" } }
+      }
+    },
+    "list.filter.project.permission.push" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Write" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "写入" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "寫入" } }
+      }
+    },
+    "list.filter.project.permission.triage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Triage" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分流" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "分流" } }
+      }
+    },
+    "list.filter.project.permission.pull" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Read" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "只读" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "唯讀" } }
+      }
+    },
+    "list.filter.project.permission.unknown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unknown" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未知" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "未知" } }
+      }
+    },
     "list.filter.starStatus" : {
       "extractionState" : "manual",
       "localizations" : {

@@ -1105,7 +1105,15 @@ struct RepoListView: View {
 
     @MainActor
     private func globalFilterMenu() -> some View {
-        let filterItems: [FilterMenuItem] = [
+        var filterItems: [FilterMenuItem] = []
+        if viewModel.selection == .myProjects {
+            filterItems.append(.content(
+                id: "project",
+                view: AnyView(projectFilterSection())
+            ))
+            filterItems.append(.divider(id: "after-project"))
+        }
+        filterItems.append(contentsOf: [
             .content(id: "starStatus", view: AnyView(
                 starFilterSection(selection: globalFilterBinding(\.starFilter))
             )),
@@ -1152,7 +1160,7 @@ struct RepoListView: View {
                 icon: "tuningfork",
                 isOn: globalFilterBinding(\.hideForks)
             )
-        ]
+        ])
 
         return UnifiedFilterMenu(
             items: filterItems,
@@ -1182,6 +1190,69 @@ struct RepoListView: View {
         }
         .onChange(of: viewModel.openSSFAvailabilityFilter) { _, newValue in
             settings.openSSFAvailabilityFilter = newValue
+        }
+    }
+
+    /// 项目关系维度只在“我的项目”出现，绑定 HomeViewModel 的会话内筛选状态。
+    @ViewBuilder
+    private func projectFilterSection() -> some View {
+        @Bindable var vm = viewModel
+
+        VStack(alignment: .leading, spacing: 8) {
+            Label("list.filter.project.title", systemImage: "folder")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Picker("list.filter.project.affiliation", selection: $vm.projectAffiliationFilter) {
+                Text("general.all").tag(nil as ProjectAffiliation?)
+                Text("list.filter.project.personal").tag(ProjectAffiliation.owner as ProjectAffiliation?)
+                Text("list.filter.project.organization").tag(
+                    ProjectAffiliation.organizationMember as ProjectAffiliation?
+                )
+            }
+
+            if !viewModel.projectFilterOptions.organizationLogins.isEmpty {
+                Picker("list.filter.project.organizationName", selection: $vm.projectOrganizationFilter) {
+                    Text("general.all").tag(nil as String?)
+                    ForEach(viewModel.projectFilterOptions.organizationLogins, id: \.self) { login in
+                        Text(verbatim: login).tag(login as String?)
+                    }
+                }
+            }
+
+            Picker("list.filter.project.visibility", selection: $vm.projectVisibilityFilter) {
+                Text("general.all").tag(nil as ProjectVisibility?)
+                ForEach(viewModel.projectFilterOptions.visibilities, id: \.self) { visibility in
+                    Text(projectVisibilityLabel(visibility)).tag(visibility as ProjectVisibility?)
+                }
+            }
+
+            Picker("list.filter.project.permission", selection: $vm.projectPermissionFilter) {
+                Text("general.all").tag(nil as ProjectPermission?)
+                ForEach(viewModel.projectFilterOptions.permissions, id: \.self) { permission in
+                    Text(projectPermissionLabel(permission)).tag(permission as ProjectPermission?)
+                }
+            }
+        }
+        .pickerStyle(.menu)
+    }
+
+    private func projectVisibilityLabel(_ visibility: ProjectVisibility) -> LocalizedStringKey {
+        switch visibility {
+        case .public: return "list.filter.project.visibility.public"
+        case .private: return "list.filter.project.visibility.private"
+        case .internal: return "list.filter.project.visibility.internal"
+        }
+    }
+
+    private func projectPermissionLabel(_ permission: ProjectPermission) -> LocalizedStringKey {
+        switch permission {
+        case .admin: return "list.filter.project.permission.admin"
+        case .maintain: return "list.filter.project.permission.maintain"
+        case .push: return "list.filter.project.permission.push"
+        case .triage: return "list.filter.project.permission.triage"
+        case .pull: return "list.filter.project.permission.pull"
+        case .unknown: return "list.filter.project.permission.unknown"
         }
     }
 

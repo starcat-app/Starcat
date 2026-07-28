@@ -920,8 +920,29 @@ struct RepoRepositoryTests {
         )
         #expect(filtered.map(\.id) == [1])
 
+        var organizationFilter = RepoListFilters.empty
+        organizationFilter.project.affiliations = [.organizationMember]
+        organizationFilter.project.organizationLogins = ["ACME"]
+        organizationFilter.project.visibilities = [.private]
+        organizationFilter.project.permissions = [.maintain]
+        organizationFilter.projectSearchText = "tool"
+        let organizationProjects = try await repo.fetchListPage(
+            scope: .myProjects(userID: 7),
+            filters: organizationFilter,
+            sort: .nameAsc,
+            limit: 20,
+            offset: 0
+        )
+        #expect(organizationProjects.map(\.id) == [2])
+
+        let options = try await repo.fetchProjectFilterOptions(userID: 7)
+        #expect(options.organizationLogins == ["acme"])
+        #expect(options.visibilities == [.private, .public])
+        #expect(Set(options.permissions) == [.admin, .maintain])
+
         // 相同 scope 仍按 user_id 隔离；普通 Star 列表也不能被项目关系扩张。
         #expect(try await repo.fetchListCount(scope: .myProjects(userID: 8), filters: .empty) == 1)
+        #expect(try await repo.fetchListCount(scope: .allStars, filters: organizationFilter) == 3)
         #expect(try await repo.fetchListCount(scope: .allStars, filters: .empty) == 3)
     }
 

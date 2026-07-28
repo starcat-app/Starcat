@@ -185,6 +185,10 @@ struct RepoListFilters: Equatable, Sendable {
     var ragIndexState: RepoRAGIndexStateFilter
     var insightsRisk: RepoInsightsRiskFilter
     var selectedTagIDs: Set<String>
+    /// 仅 `.myProjects` scope 消费；其它 scope 必须忽略，防止项目筛选污染 Stars。
+    var project: UserProjectFilter
+    /// 项目列表的数据库关键字搜索；普通 Manage 搜索仍走既有 FTS / 语义链路。
+    var projectSearchText: String
 
     init(
         hideArchived: Bool,
@@ -202,7 +206,9 @@ struct RepoListFilters: Equatable, Sendable {
         indexableSourceAvailability: RepoSignalAvailabilityFilter = .unknown,
         ragIndexState: RepoRAGIndexStateFilter = .unknown,
         insightsRisk: RepoInsightsRiskFilter = .unknown,
-        selectedTagIDs: Set<String>
+        selectedTagIDs: Set<String>,
+        project: UserProjectFilter = .init(),
+        projectSearchText: String = ""
     ) {
         self.hideArchived = hideArchived
         self.hideForks = hideForks
@@ -220,6 +226,8 @@ struct RepoListFilters: Equatable, Sendable {
         self.ragIndexState = ragIndexState
         self.insightsRisk = insightsRisk
         self.selectedTagIDs = selectedTagIDs
+        self.project = project
+        self.projectSearchText = projectSearchText
     }
 
     static let empty = RepoListFilters(
@@ -238,6 +246,21 @@ struct RepoListFilters: Equatable, Sendable {
         indexableSourceAvailability: .unknown,
         ragIndexState: .unknown,
         insightsRisk: .unknown,
-        selectedTagIDs: []
+        selectedTagIDs: [],
+        project: .init(),
+        projectSearchText: ""
+    )
+}
+
+/// 项目筛选菜单所需的数据库枚举值；不包含 Repo 内容或私有仓库名称。
+struct ProjectFilterOptions: Equatable, Sendable {
+    var organizationLogins: [String]
+    var visibilities: [ProjectVisibility]
+    var permissions: [ProjectPermission]
+
+    static let empty = ProjectFilterOptions(
+        organizationLogins: [],
+        visibilities: [],
+        permissions: []
     )
 }

@@ -55,6 +55,7 @@ struct HomeViewModelTagFilterTests {
         let (vm, _, _, db) = try makeAll()
         try await db.insertRepoFixture(id: 101, owner: "me", name: "private-project")
         try await db.insertRepoFixture(id: 102, owner: "other", name: "other-project")
+        try await db.insertRepoFixture(id: 103, owner: "acme", name: "org-tool")
         try await db.writer.write { database in
             try database.execute(
                 sql: "UPDATE repos SET is_starred = 0, starred_at = NULL WHERE id = 101"
@@ -71,6 +72,9 @@ struct HomeViewModelTagFilterTests {
                          '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z'),
                         (8, 102, 'owner', 'other', 'user', 'public',
                          'admin', 'oauth', NULL, 'g1',
+                         '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z'),
+                        (7, 103, 'organization_member', 'acme', 'organization', 'public',
+                         'maintain', 'oauth', NULL, 'g1',
                          '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z')
                     """
             )
@@ -81,9 +85,19 @@ struct HomeViewModelTagFilterTests {
         vm.selection = .myProjects
         await vm.reloadItems()
 
-        #expect(vm.myProjectsCount == 1)
+        #expect(vm.myProjectsCount == 2)
+        #expect(Set(vm.items.map(\.id)) == [101, 103])
+        #expect(vm.items.first { $0.id == 101 }?.isStarred == false)
+        #expect(vm.projectFilterOptions.organizationLogins == ["acme"])
+
+        vm.projectAffiliationFilter = .organizationMember
+        await vm.awaitPendingListReloadForTesting()
+        #expect(vm.items.map(\.id) == [103])
+
+        vm.resetAllFilters()
+        vm.submitSearch("private")
+        await vm.reloadItems()
         #expect(vm.items.map(\.id) == [101])
-        #expect(vm.items.first?.isStarred == false)
 
         vm.resetAllStateForUserSwitch()
         #expect(vm.activeUserID == nil)
