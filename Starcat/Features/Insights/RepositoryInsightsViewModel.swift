@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import GRDB
 
 enum RepositoryInsightsSectionState<Value: Equatable & Sendable>: Equatable, Sendable {
     case idle
@@ -143,7 +144,21 @@ struct RepositoryCommunityInsight: Codable, Equatable, Sendable {
     }
 }
 
+enum RepositoryLocalInsightResult<Value: Sendable>: Sendable {
+    case value(Value?)
+    case failed
+}
+
+struct RepositoryLocalInsightsSnapshot: Sendable {
+    let release: RepositoryLocalInsightResult<RepositoryReleaseInsight>
+    let releaseCadence: RepositoryLocalInsightResult<RepositoryReleaseCadenceInsight>
+    let health: RepositoryLocalInsightResult<RepositoryHealthInsight>
+    let openSSF: RepositoryLocalInsightResult<RepositoryOpenSSFInsight>
+    let community: RepositoryLocalInsightResult<RepositoryCommunityInsight>
+}
+
 protocol RepositoryLocalInsightsProviding: Sendable {
+    func snapshot(repoId: Int64) async -> RepositoryLocalInsightsSnapshot
     func latestRelease(repoId: Int64) async throws -> RepositoryReleaseInsight?
     func releaseCadence(repoId: Int64) async throws -> RepositoryReleaseCadenceInsight?
     func health(repoId: Int64) async throws -> RepositoryHealthInsight?
@@ -151,16 +166,214 @@ protocol RepositoryLocalInsightsProviding: Sendable {
     func cachedCommunity(repoId: Int64) async throws -> RepositoryCommunityInsight?
 }
 
+extension RepositoryLocalInsightsProviding {
+    /// 测试桩与第三方实现保持原有五方法契约；生产 GRDB Provider 会覆盖为单事务读取。
+    func snapshot(repoId: Int64) async -> RepositoryLocalInsightsSnapshot {
+        async let release = captureRepositoryLocalInsight {
+            try await latestRelease(repoId: repoId)
+        }
+        async let cadence = captureRepositoryLocalInsight {
+            try await releaseCadence(repoId: repoId)
+        }
+        async let healthResult = captureRepositoryLocalInsight {
+            try await health(repoId: repoId)
+        }
+        async let openSSFResult = captureRepositoryLocalInsight {
+            try await openSSF(repoId: repoId)
+        }
+        async let community = captureRepositoryLocalInsight {
+            try await cachedCommunity(repoId: repoId)
+        }
+        return await RepositoryLocalInsightsSnapshot(
+            release: release,
+            releaseCadence: cadence,
+            health: healthResult,
+            openSSF: openSSFResult,
+            community: community
+        )
+    }
+}
+
+private func captureRepositoryLocalInsight<Value: Sendable>(
+    _ operation: @escaping @Sendable () async throws -> Value?
+) async -> RepositoryLocalInsightResult<Value> {
+    do {
+        return .value(try await operation())
+    } catch {
+        return .failed
+    }
+}
+
 struct DefaultRepositoryLocalInsightsProvider: RepositoryLocalInsightsProviding, Sendable {
     let releaseRepository: any ReleaseRepositoryProtocol
     let healthRepository: any RepoHealthRepositoryProtocol
     let openSSFRepository: any OpenSSFScoreRepositoryProtocol
     let insightsCache: any RepositoryInsightsCaching
-    var now: @Sendable () -> Date = Date.init
+    let database: (any DatabaseManaging)?
+    let now: @Sendable () -> Date
+
+    init(
+        releaseRepository: any ReleaseRepositoryProtocol,
+        healthRepository: any RepoHealthRepositoryProtocol,
+        openSSFRepository: any OpenSSFScoreRepositoryProtocol,
+        insightsCache: any RepositoryInsightsCaching,
+        database: (any DatabaseManaging)? = nil,
+        now: @escaping @Sendable () -> Date = Date.init
+    ) {
+        self.releaseRepository = releaseRepository
+        self.healthRepository = healthRepository
+        self.openSSFRepository = openSSFRepository
+        self.insightsCache = insightsCache
+        self.database = database
+        self.now = now
+    }
+
+    func snapshot(repoId: Int64) async -> RepositoryLocalInsightsSnapshot {
+        guard let database else {
+            return await fallbackSnapshot(repoId: repoId)
+        }
+        let snapshotDate = now()
+        do {
+            return try await database.writer.read { db in
+            var releaseResult: RepositoryLocalInsightResult<RepositoryReleaseInsight> = .failed
+            var cadenceResult:
+                RepositoryLocalInsightResult<RepositoryReleaseCadenceInsight> = .failed
+            do {
+                let records = try ReleaseRecord.fetchAll(
+                    db,
+                    sql: """
+                        SELECT * FROM releases
+                        WHERE repo_id = ?
+                        ORDER BY COALESCE(published_at, created_at_remote, fetched_at) DESC
+                        LIMIT 12
+                        """,
+                    arguments: [repoId]
+                )
+                let releases = records.map(Self.releaseInsight)
+                releaseResult = .value(releases.first)
+                cadenceResult = .value(
+                    RepositoryReleaseCadenceInsight.make(
+                        releases: releases,
+                        now: snapshotDate
+                    )
+                )
+            } catch {
+                // 单表损坏只让对应区块失败，不能拖垮同事务内的其它本地洞察。
+            }
+
+            let healthResult: RepositoryLocalInsightResult<RepositoryHealthInsight>
+            do {
+                healthResult = .value(
+                    try RepoHealthSnapshot.fetchOne(db, key: repoId)
+                        .flatMap(Self.healthInsight)
+                )
+            } catch {
+                healthResult = .failed
+            }
+
+            let openSSFResult: RepositoryLocalInsightResult<RepositoryOpenSSFInsight>
+            do {
+                openSSFResult = .value(
+                    try OpenSSFScoreRecord.fetchOne(db, key: repoId)
+                        .flatMap(Self.openSSFInsight)
+                )
+            } catch {
+                openSSFResult = .failed
+            }
+
+            let communityResult: RepositoryLocalInsightResult<RepositoryCommunityInsight>
+            do {
+                let record = try RepositoryInsightsSnapshotRecord
+                    .filter(Column("repo_id") == repoId)
+                    .filter(Column("dataset") == RepositoryInsightsDataset.communityProfile.rawValue)
+                    .filter(Column("range_key") == RepositoryInsightsRangeKey.all.rawValue)
+                    .fetchOne(db)
+                communityResult = .value(
+                    try record.map {
+                        try JSONDecoder().decode(
+                            RepositoryCommunityInsight.self,
+                            from: $0.payloadJSON
+                        )
+                    }
+                )
+            } catch {
+                communityResult = .failed
+            }
+
+                return RepositoryLocalInsightsSnapshot(
+                    release: releaseResult,
+                    releaseCadence: cadenceResult,
+                    health: healthResult,
+                    openSSF: openSSFResult,
+                    community: communityResult
+                )
+            }
+        } catch {
+            return RepositoryLocalInsightsSnapshot(
+                release: .failed,
+                releaseCadence: .failed,
+                health: .failed,
+                openSSF: .failed,
+                community: .failed
+            )
+        }
+    }
 
     func latestRelease(repoId: Int64) async throws -> RepositoryReleaseInsight? {
         guard let record = try await releaseRepository.latest(forRepo: repoId) else { return nil }
-        return RepositoryReleaseInsight(
+        return Self.releaseInsight(record)
+    }
+
+    func releaseCadence(repoId: Int64) async throws -> RepositoryReleaseCadenceInsight? {
+        let releases = try await releaseRepository.fetch(forRepo: repoId, limit: 12)
+            .map(Self.releaseInsight)
+        return RepositoryReleaseCadenceInsight.make(releases: releases, now: now())
+    }
+
+    func health(repoId: Int64) async throws -> RepositoryHealthInsight? {
+        try await healthRepository.snapshot(for: repoId).flatMap(Self.healthInsight)
+    }
+
+    func openSSF(repoId: Int64) async throws -> RepositoryOpenSSFInsight? {
+        try await openSSFRepository.record(for: repoId).flatMap(Self.openSSFInsight)
+    }
+
+    func cachedCommunity(repoId: Int64) async throws -> RepositoryCommunityInsight? {
+        try await insightsCache.load(
+            repoId: repoId,
+            dataset: .communityProfile,
+            range: .all,
+            as: RepositoryCommunityInsight.self
+        )?.value
+    }
+
+    private func fallbackSnapshot(repoId: Int64) async -> RepositoryLocalInsightsSnapshot {
+        async let release = captureRepositoryLocalInsight {
+            try await latestRelease(repoId: repoId)
+        }
+        async let cadence = captureRepositoryLocalInsight {
+            try await releaseCadence(repoId: repoId)
+        }
+        async let healthResult = captureRepositoryLocalInsight {
+            try await health(repoId: repoId)
+        }
+        async let openSSFResult = captureRepositoryLocalInsight {
+            try await openSSF(repoId: repoId)
+        }
+        async let community = captureRepositoryLocalInsight {
+            try await cachedCommunity(repoId: repoId)
+        }
+        return await RepositoryLocalInsightsSnapshot(
+            release: release,
+            releaseCadence: cadence,
+            health: healthResult,
+            openSSF: openSSFResult,
+            community: community
+        )
+    }
+
+    private static func releaseInsight(_ record: ReleaseRecord) -> RepositoryReleaseInsight {
+        RepositoryReleaseInsight(
             tagName: record.tagName,
             name: record.name,
             publishedAt: record.publishedAt.flatMap(ISO8601DateFormatter.shared.date(from:)),
@@ -168,21 +381,8 @@ struct DefaultRepositoryLocalInsightsProvider: RepositoryLocalInsightsProviding,
         )
     }
 
-    func releaseCadence(repoId: Int64) async throws -> RepositoryReleaseCadenceInsight? {
-        let releases = try await releaseRepository.fetch(forRepo: repoId, limit: 12).map { record in
-            RepositoryReleaseInsight(
-                tagName: record.tagName,
-                name: record.name,
-                publishedAt: record.publishedAt.flatMap(ISO8601DateFormatter.shared.date(from:)),
-                htmlURL: URL(string: record.htmlUrl)
-            )
-        }
-        return RepositoryReleaseCadenceInsight.make(releases: releases, now: now())
-    }
-
-    func health(repoId: Int64) async throws -> RepositoryHealthInsight? {
-        guard let snapshot = try await healthRepository.snapshot(for: repoId),
-              snapshot.fetchStatus != .failed else { return nil }
+    private static func healthInsight(_ snapshot: RepoHealthSnapshot) -> RepositoryHealthInsight? {
+        guard snapshot.fetchStatus != .failed else { return nil }
         return RepositoryHealthInsight(
             overallScore: Int(snapshot.overallScore.rounded()),
             grade: snapshot.grade,
@@ -194,20 +394,9 @@ struct DefaultRepositoryLocalInsightsProvider: RepositoryLocalInsightsProviding,
         )
     }
 
-    func openSSF(repoId: Int64) async throws -> RepositoryOpenSSFInsight? {
-        guard let record = try await openSSFRepository.record(for: repoId),
-              record.fetchStatus == .success,
-              let score = record.aggregateScore else { return nil }
+    private static func openSSFInsight(_ record: OpenSSFScoreRecord) -> RepositoryOpenSSFInsight? {
+        guard record.fetchStatus == .success, let score = record.aggregateScore else { return nil }
         return RepositoryOpenSSFInsight(score: score, scoreDate: record.scoreDate)
-    }
-
-    func cachedCommunity(repoId: Int64) async throws -> RepositoryCommunityInsight? {
-        try await insightsCache.load(
-            repoId: repoId,
-            dataset: .communityProfile,
-            range: .all,
-            as: RepositoryCommunityInsight.self
-        )?.value
     }
 }
 
@@ -225,19 +414,6 @@ final class RepositoryInsightsViewModel {
 
     /// 与洞察 UI 规范一致：同一个刷新入口完成后 10 秒内不重复触发网络。
     private static let manualRefreshCooldown: TimeInterval = 10
-
-    private enum LoadEvent: Sendable {
-        case release(RepositoryReleaseInsight?)
-        case releaseFailed
-        case releaseCadence(RepositoryReleaseCadenceInsight?)
-        case releaseCadenceFailed
-        case health(RepositoryHealthInsight?)
-        case healthFailed
-        case openSSF(RepositoryOpenSSFInsight?)
-        case openSSFFailed
-        case community(RepositoryCommunityInsight?)
-        case communityFailed
-    }
 
     private let provider: any RepositoryLocalInsightsProviding
     private let remoteProvider: (any RepositoryRemoteInsightsProviding)?
@@ -310,33 +486,15 @@ final class RepositoryInsightsViewModel {
         openSSFState = .loading
         communityState = .loading
 
-        await withTaskGroup(of: LoadEvent.self) { group in
-            group.addTask { [provider] in
-                do { return .release(try await provider.latestRelease(repoId: repoId)) }
-                catch { return .releaseFailed }
-            }
-            group.addTask { [provider] in
-                do { return .releaseCadence(try await provider.releaseCadence(repoId: repoId)) }
-                catch { return .releaseCadenceFailed }
-            }
-            group.addTask { [provider] in
-                do { return .health(try await provider.health(repoId: repoId)) }
-                catch { return .healthFailed }
-            }
-            group.addTask { [provider] in
-                do { return .openSSF(try await provider.openSSF(repoId: repoId)) }
-                catch { return .openSSFFailed }
-            }
-            group.addTask { [provider] in
-                do { return .community(try await provider.cachedCommunity(repoId: repoId)) }
-                catch { return .communityFailed }
-            }
-
-            for await event in group {
-                guard generation == requestedGeneration, activeRepoID == repoId else { continue }
-                apply(event)
-            }
+        let snapshot = await provider.snapshot(repoId: repoId)
+        guard generation == requestedGeneration, activeRepoID == repoId else {
+            return requestedGeneration
         }
+        releaseState = sectionState(from: snapshot.release)
+        releaseCadenceState = sectionState(from: snapshot.releaseCadence)
+        healthState = sectionState(from: snapshot.health)
+        openSSFState = sectionState(from: snapshot.openSSF)
+        communityState = sectionState(from: snapshot.community)
         return requestedGeneration
     }
 
@@ -982,28 +1140,14 @@ final class RepositoryInsightsViewModel {
         timelineGeneration == generation && activeRepoID == repoID
     }
 
-    private func apply(_ event: LoadEvent) {
-        switch event {
-        case .release(let value):
-            releaseState = value.map(RepositoryInsightsSectionState.content) ?? .empty
-        case .releaseFailed:
-            releaseState = .failed
-        case .releaseCadence(let value):
-            releaseCadenceState = value.map(RepositoryInsightsSectionState.content) ?? .empty
-        case .releaseCadenceFailed:
-            releaseCadenceState = .failed
-        case .health(let value):
-            healthState = value.map(RepositoryInsightsSectionState.content) ?? .empty
-        case .healthFailed:
-            healthState = .failed
-        case .openSSF(let value):
-            openSSFState = value.map(RepositoryInsightsSectionState.content) ?? .empty
-        case .openSSFFailed:
-            openSSFState = .failed
-        case .community(let value):
-            communityState = value.map(RepositoryInsightsSectionState.content) ?? .empty
-        case .communityFailed:
-            communityState = .failed
+    private func sectionState<Value: Equatable & Sendable>(
+        from result: RepositoryLocalInsightResult<Value>
+    ) -> RepositoryInsightsSectionState<Value> {
+        switch result {
+        case .value(let value):
+            return value.map(RepositoryInsightsSectionState.content) ?? .empty
+        case .failed:
+            return .failed
         }
     }
 }

@@ -232,7 +232,8 @@ struct ManageDetailContent: View {
                 releaseRepository: dependencies.releaseRepository,
                 healthRepository: dependencies.repoHealthRepository,
                 openSSFRepository: dependencies.openSSFScoreRepository,
-                insightsCache: dependencies.repositoryInsightsCache
+                insightsCache: dependencies.repositoryInsightsCache,
+                database: dependencies.database
             ),
             remoteProvider: DefaultRepositoryRemoteInsightsProvider(
                 metricsClient: dependencies.repositoryMetricsClient,
