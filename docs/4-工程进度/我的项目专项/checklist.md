@@ -18,8 +18,8 @@
 - [x] 首版范围限定为个人拥有仓库和组织成员仓库，不包含外部个人协作者仓库。
 - [ ] Public 项目可由现有 OAuth 提供 fallback。
 - [ ] Private / Internal 使用可选 GitHub App 只读授权。
-- [ ] 不把现有 OAuth 扩大为 `repo` scope。
-- [ ] 不在客户端保存 GitHub App private key 或 client secret。
+- [x] 不把现有 OAuth 扩大为 `repo` scope。
+- [x] 不在客户端保存 GitHub App private key 或 client secret。
 
 ## 2. 数据库与 Repository
 

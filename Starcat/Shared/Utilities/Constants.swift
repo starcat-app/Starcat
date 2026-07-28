@@ -70,6 +70,15 @@ enum AppConstants {
     /// OAuth scope，已最小化（见 docs/2-产品/需求讨论/正式方案/GitHub OAuth 设计.md）。
     static let githubOAuthScopes = ["read:user", "public_repo", "user"]
 
+    /// “我的项目”可选 GitHub App 的公开 Client ID。
+    ///
+    /// GitHub App 注册属于外部发布 Gate，仓库默认留空仍可编译，并自动退化为 OAuth
+    /// public fallback。这里只读取公开 Client ID；private key / client secret 永不进入客户端。
+    static var githubAppClientID: String {
+        let value = Bundle.main.infoDictionary?["STARCAT_GITHUB_APP_CLIENT_ID"] as? String
+        return value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
     // MARK: - 网络
 
     // 注：2026-06-08 起 `githubAPIBaseURL` 迁到 `AppEndpoints.GitHubREST.baseURL`，
