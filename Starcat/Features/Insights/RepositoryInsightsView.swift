@@ -59,6 +59,10 @@ struct RepositoryInsightsView: View {
                 localSignalsSection
                 timelineSection
             }
+            // 外层 Scaffold 在 Hero 折叠后会扩大正文视口；内容栈必须坚持使用卡片的
+            // 固有高度，否则 VStack 会接受扩大的纵向 proposal，在最后一张卡片后留下
+            // 一段可滚动但不可见的空白。这里只固定纵向，横向仍随详情栏宽度铺满。
+            .fixedSize(horizontal: false, vertical: true)
             .padding(18)
         }
         .detailScrollViewStyle()
