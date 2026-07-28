@@ -335,6 +335,6 @@ struct UserProjectRepositoryTests {
             offset: 0
         )
         #expect(remaining.map(\.repo.id) == [61])
-        #expect(remaining.first?.authorizationSource == .oauth)
+        #expect(remaining.first?.project.authorizationSource == .oauth)
     }
 }
