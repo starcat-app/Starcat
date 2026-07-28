@@ -14,7 +14,7 @@
 
 - [x] 固化整体落地方案和专项验收口径。
 - [ ] Sidebar 新增固定一级分类“我的项目”。
-- [ ] 项目关系与 Star、知识库、Smart Collection 相互独立。
+- [x] 项目关系与 Star、知识库、Smart Collection 相互独立。
 - [ ] 首版范围限定为个人拥有仓库和组织成员仓库，不包含外部个人协作者仓库。
 - [ ] Public 项目可由现有 OAuth 提供 fallback。
 - [ ] Private / Internal 使用可选 GitHub App 只读授权。
@@ -26,11 +26,11 @@
 - [x] 追加 `v17-my-projects`，不修改已发布 migration。
 - [x] 新增 `user_projects` 表、约束和查询索引。
 - [x] 新增 `project_sync_state` 表、约束和查询索引。
-- [ ] 新增 Project Record、领域模型和 GRDB Repository。
-- [ ] Project upsert 保留 Star、Tag、Note、Status、LibraryState、Pin 和洞察数据。
-- [ ] generation 全量成功后对账；分页失败保留旧关系。
-- [ ] 项目关系删除不删除 Repo 或用户内容。
-- [ ] 成功同步后幂等写入当天本机 Star snapshot。
+- [x] 新增 Project Record、领域模型和 GRDB Repository。
+- [x] Project upsert 保留 Star、Tag、Note、Status、LibraryState、Pin 和洞察数据。
+- [x] generation 全量成功后对账；分页失败保留旧关系。
+- [x] 项目关系删除不删除 Repo 或用户内容。
+- [x] 成功同步后幂等写入当天本机 Star snapshot。
 
 ## 3. 授权与同步
 
@@ -70,7 +70,7 @@
 ## 6. 测试与验收
 
 - [x] v16 → v17 升级保留全部用户数据。
-- [ ] Repository 覆盖关系交叉、筛选、分页、generation 和删除语义。
+- [x] Repository 覆盖关系交叉、筛选、分页、generation 和删除语义。
 - [ ] API 覆盖 DTO、Link Header、304、401、403、Rate Limit 和中途失败。
 - [ ] 授权覆盖 Device Flow、独立 session、token 过期/撤销和 OAuth 不受影响。
 - [ ] ViewModel 覆盖 scope、筛选隔离、计数、selection、刷新和并发代际。
