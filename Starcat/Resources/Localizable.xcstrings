@@ -389390,14 +389390,6 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "連接 GitHub App" } }
       }
     },
-    "project.access.connection.detail" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Install the GitHub App, choose all or selected repositories, and authorize read-only access in one GitHub flow." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "一次完成 GitHub App 安装、全部或指定仓库选择及只读授权。" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "一次完成 GitHub App 安裝、全部或指定儲存庫選擇及唯讀授權。" } }
-      }
-    },
     "project.access.copyCode" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -389452,6 +389444,70 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Opens GitHub in your default browser to approve read-only project access." } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "在默认浏览器中打开 GitHub，以批准只读项目权限。" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "在預設瀏覽器中開啟 GitHub，以批准唯讀專案權限。" } }
+      }
+    },
+    "project.access.permissions.contents.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Used to display README and other authorized content." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "用于展示 README 等已授权仓库内容。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "用於顯示 README 等已授權儲存庫內容。" } }
+      }
+    },
+    "project.access.permissions.contents.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Read repository contents" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "读取仓库内容" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "讀取儲存庫內容" } }
+      }
+    },
+    "project.access.permissions.metadata.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Names, visibility, Stars, and other repository information." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "名称、可见性、Star 等仓库信息。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "名稱、可見性、Star 等儲存庫資訊。" } }
+      }
+    },
+    "project.access.permissions.metadata.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Read repository metadata" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "读取仓库 Metadata" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "讀取儲存庫 Metadata" } }
+      }
+    },
+    "project.access.permissions.noWrite" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No permission to write, delete, or administer repositories." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "不会获得写入、删除或管理仓库的权限。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "不會取得寫入、刪除或管理儲存庫的權限。" } }
+      }
+    },
+    "project.access.permissions.selection.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Grant access to all repositories or only selected repositories." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "可以授权全部仓库，也可以只选择指定仓库。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "可以授權全部儲存庫，也可以只選擇指定儲存庫。" } }
+      }
+    },
+    "project.access.permissions.selection.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "You choose the repository scope" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "授权范围由你决定" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "授權範圍由你決定" } }
+      }
+    },
+    "project.access.permissions.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "GitHub will request the following" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "接下来 GitHub 会请求" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "接下來 GitHub 會請求" } }
       }
     },
     "project.access.privateCache.clear" : {
@@ -389561,17 +389617,17 @@
     "project.access.state.connected.detail" : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Public, Private, and approved organization projects can be synchronized." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "可以同步 Public、Private 和已获组织批准的项目。" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "可以同步 Public、Private 和已獲組織批准的專案。" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Authorized Public, Private, and Internal projects can now be synchronized." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "现在可以同步已授权的 Public、Private 和 Internal 项目。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "現在可以同步已授權的 Public、Private 和 Internal 專案。" } }
       }
     },
     "project.access.state.connected.title" : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Full project access connected" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "完整项目权限已连接" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "完整專案權限已連接" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "GitHub App connected" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "GitHub App 已连接" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "GitHub App 已連接" } }
       }
     },
     "project.access.state.connecting.detail" : {
@@ -389593,17 +389649,17 @@
     "project.access.state.disconnected.detail" : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Public projects remain available through your existing Starcat login." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仍可通过当前 Starcat 登录查看 Public 项目。" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "仍可透過目前 Starcat 登入查看 Public 專案。" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Only Public projects are currently synchronized through your Starcat login." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前仅通过 Starcat 登录同步 Public 项目。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "目前僅透過 Starcat 登入同步 Public 專案。" } }
       }
     },
     "project.access.state.disconnected.title" : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Public projects only" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仅 Public 项目" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "僅 Public 專案" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Connect GitHub App" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "连接 GitHub App" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "連接 GitHub App" } }
       }
     },
     "project.access.state.expired.detail" : {

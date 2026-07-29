@@ -322,6 +322,25 @@ struct ProjectAccessSessionTests {
         #expect(session.state == .partialAuthorization)
     }
 
+    @Test("项目授权状态使用明确的图标与语义色")
+    func projectAccessStatePresentationIsConsistent() {
+        #expect(ProjectAccessState.disconnected.statusSymbolName == "lock.shield")
+        #expect(ProjectAccessState.disconnected.statusTone == .neutral)
+
+        #expect(
+            ProjectAccessState.connected(expiresAt: nil).statusSymbolName
+                == "checkmark.circle.fill"
+        )
+        #expect(ProjectAccessState.connected(expiresAt: nil).statusTone == .success)
+
+        #expect(ProjectAccessState.connecting.statusTone == .active)
+        #expect(ProjectAccessState.awaitingAuthorization.statusTone == .active)
+        #expect(ProjectAccessState.partialAuthorization.statusTone == .warning)
+        #expect(ProjectAccessState.organizationApprovalPending.statusTone == .warning)
+        #expect(ProjectAccessState.revoked.statusTone == .failure)
+        #expect(ProjectAccessState.failed(.network).statusTone == .failure)
+    }
+
     @Test("安装校验断网时保留凭据并进入可重试状态")
     @MainActor
     func installationCheckFailureKeepsCredential() async throws {

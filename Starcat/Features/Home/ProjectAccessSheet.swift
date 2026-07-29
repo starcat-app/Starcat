@@ -63,10 +63,7 @@ struct ProjectAccessSheet: View {
             statusCard
 
             if accessSession.state == .disconnected {
-                Text("project.access.connection.detail")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                permissionSummary
             }
 
             actionArea
@@ -96,9 +93,9 @@ struct ProjectAccessSheet: View {
 
     private var statusCard: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: statusIcon)
+            Image(systemName: accessSession.state.statusSymbolName)
                 .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(statusColor)
+                .foregroundStyle(accessSession.state.statusTone.foregroundColor)
                 .frame(width: 28, height: 28)
                 .accessibilityHidden(true)
 
@@ -113,7 +110,63 @@ struct ProjectAccessSheet: View {
             Spacer(minLength: 0)
         }
         .padding(16)
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .background(
+            accessSession.state.statusTone.backgroundColor,
+            in: RoundedRectangle(cornerRadius: 12)
+        )
+        .accessibilityElement(children: .combine)
+    }
+
+    /// 连接前直接说明 GitHub 将展示的授权项，避免用户离开 Starcat 后才知道权限范围。
+    private var permissionSummary: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("project.access.permissions.title")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            permissionRow(
+                icon: "info.circle",
+                title: "project.access.permissions.metadata.title",
+                detail: "project.access.permissions.metadata.detail"
+            )
+            permissionRow(
+                icon: "doc.text.magnifyingglass",
+                title: "project.access.permissions.contents.title",
+                detail: "project.access.permissions.contents.detail"
+            )
+            permissionRow(
+                icon: "checklist",
+                title: "project.access.permissions.selection.title",
+                detail: "project.access.permissions.selection.detail"
+            )
+
+            Label("project.access.permissions.noWrite", systemImage: "hand.raised.fill")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func permissionRow(
+        icon: String,
+        title: LocalizedStringKey,
+        detail: LocalizedStringKey
+    ) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 20, height: 20)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.callout.weight(.medium))
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
         .accessibilityElement(children: .combine)
     }
 
@@ -200,31 +253,6 @@ struct ProjectAccessSheet: View {
     private var isSyncing: Bool {
         if case .syncing = syncService.state { return true }
         return false
-    }
-
-    private var statusIcon: String {
-        switch accessSession.state {
-        case .connected: "checkmark.shield.fill"
-        case .connecting, .awaitingAuthorization: "hourglass"
-        case .installationRequired, .installationCheckFailed,
-             .partialAuthorization,
-             .organizationApprovalPending: "exclamationmark.shield.fill"
-        case .expired, .revoked, .failed: "exclamationmark.triangle.fill"
-        case .unavailable: "gear.badge.xmark"
-        case .disconnected: "lock.open"
-        }
-    }
-
-    private var statusColor: Color {
-        switch accessSession.state {
-        case .connected: .green
-        case .connecting, .awaitingAuthorization: .accentColor
-        case .installationRequired, .installationCheckFailed,
-             .partialAuthorization,
-             .organizationApprovalPending: .orange
-        case .expired, .revoked, .failed: .red
-        case .unavailable, .disconnected: .secondary
-        }
     }
 
     private var statusTitleKey: LocalizedStringKey {
@@ -335,5 +363,63 @@ private extension ProjectAccessState {
     var isInstallationCheckFailure: Bool {
         if case .installationCheckFailed = self { return true }
         return false
+    }
+}
+
+/// 项目授权状态的视觉语义。颜色只表达状态，不参与普通内容装饰。
+enum ProjectAccessStatusTone: Equatable {
+    case neutral
+    case active
+    case success
+    case warning
+    case failure
+
+    var foregroundColor: Color {
+        switch self {
+        case .neutral: .secondary
+        case .active: .accentColor
+        case .success: .green
+        case .warning: .orange
+        case .failure: .red
+        }
+    }
+
+    var backgroundColor: Color {
+        switch self {
+        case .success: .green.opacity(0.10)
+        case .warning: .orange.opacity(0.08)
+        case .failure: .red.opacity(0.08)
+        case .neutral, .active: .secondary.opacity(0.08)
+        }
+    }
+}
+
+extension ProjectAccessState {
+    /// 集中维护状态图标，避免 Sheet 的标题、颜色和图标在新增状态时出现不一致。
+    var statusSymbolName: String {
+        switch self {
+        case .connected: "checkmark.circle.fill"
+        case .connecting: "arrow.triangle.2.circlepath"
+        case .awaitingAuthorization: "hourglass"
+        case .installationRequired: "square.and.arrow.down"
+        case .installationCheckFailed: "exclamationmark.arrow.triangle.2.circlepath"
+        case .partialAuthorization: "checkmark.shield.fill"
+        case .organizationApprovalPending: "clock.fill"
+        case .expired, .revoked, .failed: "exclamationmark.triangle.fill"
+        case .unavailable: "gear.badge.xmark"
+        case .disconnected: "lock.shield"
+        }
+    }
+
+    var statusTone: ProjectAccessStatusTone {
+        switch self {
+        case .connected: .success
+        case .connecting, .awaitingAuthorization: .active
+        case .installationRequired, .installationCheckFailed,
+             .partialAuthorization, .organizationApprovalPending:
+            .warning
+        case .expired, .revoked, .failed: .failure
+        case .unavailable, .disconnected: .neutral
+        }
     }
 }
