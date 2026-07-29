@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import OSLog
 import WidgetKit
 
 enum StarcatWidgetContent: Equatable, Sendable {
@@ -38,6 +39,11 @@ struct StarcatWidgetEntry: TimelineEntry, Equatable, Sendable {
 }
 
 enum StarcatWidgetSnapshotLoader {
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.starcat.widgets",
+        category: "WidgetSnapshot"
+    )
+
     static func load(now: Date = Date()) -> StarcatWidgetEntry {
         do {
             let groupIdentifier = try WidgetSharedConfiguration.appGroupIdentifier()
@@ -58,10 +64,26 @@ enum StarcatWidgetSnapshotLoader {
             }
             return StarcatWidgetEntry(date: now, content: content)
         } catch WidgetSnapshotStoreError.snapshotMissing {
+            logger.debug("Widget snapshot is not available yet")
             return StarcatWidgetEntry(date: now, content: .preparing)
-        } catch WidgetSnapshotStoreError.unsupportedSchemaVersion {
+        } catch WidgetSnapshotStoreError.unsupportedSchemaVersion(let version) {
+            logger.error("Widget snapshot schema is unsupported: \(version, privacy: .public)")
             return StarcatWidgetEntry(date: now, content: .upgradeRequired)
+        } catch WidgetSnapshotStoreError.corruptedSnapshot {
+            logger.error("Widget snapshot is corrupted")
+            return StarcatWidgetEntry(date: now, content: .unavailable)
+        } catch WidgetSharedConfigurationError.missingAppGroupIdentifier {
+            logger.error("Widget App Group configuration is missing")
+            return StarcatWidgetEntry(date: now, content: .unavailable)
+        } catch WidgetSharedConfigurationError.invalidAppGroupIdentifier {
+            logger.error("Widget App Group configuration is invalid")
+            return StarcatWidgetEntry(date: now, content: .unavailable)
+        } catch WidgetSharedConfigurationError.containerUnavailable {
+            logger.error("Widget App Group container is unavailable")
+            return StarcatWidgetEntry(date: now, content: .unavailable)
         } catch {
+            // 不记录 URL、容器路径或 JSON 内容，日志只表达稳定的失败分类。
+            logger.error("Widget snapshot load failed with an unexpected error")
             return StarcatWidgetEntry(date: now, content: .unavailable)
         }
     }
