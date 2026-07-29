@@ -23,6 +23,9 @@ import MarkdownUI
 
 struct ReleaseTimelineView: View {
 
+    /// Deep Link 的一次性定位目标；找不到时保留完整时间线作为安全降级。
+    let targetReleaseID: Int64?
+
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.dismiss) private var dismiss
     /// 2026-06-15:toast 出/收的 0.18s 滑入与「关闭应用内动画」联动跳过。
@@ -36,6 +39,10 @@ struct ReleaseTimelineView: View {
 
     /// 资产过滤关键字（空 = 不过滤）。
     @State private var assetFilter: String = ""
+
+    init(targetReleaseID: Int64? = nil) {
+        self.targetReleaseID = targetReleaseID
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -60,6 +67,11 @@ struct ReleaseTimelineView: View {
                 )
             }
             await viewModel?.reload()
+            scrollToDeepLinkedReleaseIfAvailable()
+        }
+        .onChange(of: targetReleaseID) { _, _ in
+            // App 已打开时间线时再次收到 URL，不依赖 Sheet 重建也能更新定位。
+            scrollToDeepLinkedReleaseIfAvailable()
         }
         .overlay(alignment: .bottom) {
             if let toast = copyToast {
@@ -205,6 +217,16 @@ struct ReleaseTimelineView: View {
     }
 
     // MARK: - Helpers
+
+    /// Widget 只导出最新六条未读 Release，正常情况下均位于时间线第一页。
+    /// 若记录已被清理或未来排序规则变化导致未命中，则保持时间线顶部，不打开
+    /// Deep Link 中未受信任的外部 URL。
+    private func scrollToDeepLinkedReleaseIfAvailable() {
+        guard let targetReleaseID,
+              viewModel?.entries.contains(where: { $0.id == targetReleaseID }) == true
+        else { return }
+        scrollAnchorReleaseID = targetReleaseID
+    }
 
     private func copyToPasteboard(_ url: String) {
         NSPasteboard.general.clearContents()

@@ -139,6 +139,113 @@ struct RepositoryDeepLink: Equatable, Hashable, Sendable {
     }
 }
 
+/// 一个已经过格式校验的仓库 Release 定位目标。
+///
+/// Release 链接只用于 Starcat 内部导航，不把 GitHub Release URL 当作执行入口：
+/// Widget 快照因此只携带受控的 owner / repo / 数字 ID，App 收到 URL 后仍通过
+/// 本地 Release 时间线展示数据，找不到指定 Release 时也只降级到该时间线。
+struct RepositoryReleaseDeepLink: Equatable, Hashable, Sendable {
+    let repository: RepositoryDeepLink
+    let repositoryID: Int64
+    let releaseID: Int64
+
+    var owner: String { repository.owner }
+    var name: String { repository.name }
+
+    /// Release 深层链接必须同时携带正数 repository ID 与 release ID。
+    init?(
+        owner: String,
+        name: String,
+        repositoryID: Int64,
+        releaseID: Int64
+    ) {
+        guard releaseID > 0,
+              let repository = RepositoryDeepLink(
+                  owner: owner,
+                  name: name,
+                  repositoryID: repositoryID
+              ) else {
+            return nil
+        }
+        self.repository = repository
+        self.repositoryID = repositoryID
+        self.releaseID = releaseID
+    }
+
+    /// 解析受信任的 Universal Link 与 App 内 custom scheme。
+    ///
+    /// 查询参数采用严格单值规则，避免重复参数由不同解析方取首值或末值后产生歧义。
+    init?(url: URL) {
+        guard let scheme = url.scheme?.lowercased(),
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else { return nil }
+
+        let path = components.percentEncodedPath
+            .split(separator: "/", omittingEmptySubsequences: true)
+            .compactMap { String($0).removingPercentEncoding }
+
+        let owner: String
+        let name: String
+        switch scheme {
+        case "https":
+            guard url.host?.lowercased() == RepositoryDeepLink.publicHost,
+                  path.count == 4,
+                  path[0] == "r",
+                  path[3] == "releases"
+            else { return nil }
+            owner = path[1]
+            name = path[2]
+        case "starcat":
+            guard url.host?.lowercased() == "repo",
+                  path.count == 3,
+                  path[2] == "releases"
+            else { return nil }
+            owner = path[0]
+            name = path[1]
+        default:
+            return nil
+        }
+
+        let queryItems = components.queryItems ?? []
+        guard Self.singleValue(named: "v", in: queryItems) == "1",
+              let rawRepositoryID = Self.singleValue(named: "rid", in: queryItems),
+              let repositoryID = Int64(rawRepositoryID),
+              let rawReleaseID = Self.singleValue(named: "release_id", in: queryItems),
+              let releaseID = Int64(rawReleaseID)
+        else { return nil }
+
+        self.init(
+            owner: owner,
+            name: name,
+            repositoryID: repositoryID,
+            releaseID: releaseID
+        )
+    }
+
+    /// Widget 与其它本机集成使用的唯一 Release URL 形态。
+    var appURL: URL {
+        var components = URLComponents()
+        components.scheme = "starcat"
+        components.host = "repo"
+        components.path = "/\(owner)/\(name)/releases"
+        components.queryItems = [
+            URLQueryItem(name: "v", value: "1"),
+            URLQueryItem(name: "rid", value: String(repositoryID)),
+            URLQueryItem(name: "release_id", value: String(releaseID))
+        ]
+        return components.url!
+    }
+
+    private static func singleValue(
+        named name: String,
+        in items: [URLQueryItem]
+    ) -> String? {
+        let matches = items.filter { $0.name == name }
+        guard matches.count == 1 else { return nil }
+        return matches[0].value
+    }
+}
+
 private extension UInt8 {
     /// GitHub owner / repo 名称只接受 ASCII 字母与数字；CharacterSet.alphanumerics
     /// 还会接受 Unicode 字母，不能用于协议边界校验。

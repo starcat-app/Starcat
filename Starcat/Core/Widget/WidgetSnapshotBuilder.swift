@@ -277,11 +277,11 @@ struct WidgetSnapshotBuilder: Sendable {
         let repositoryID: Int64 = row["release_repo_id"]
         let owner: String = row["release_owner"]
         let repositoryName: String = row["release_repo_name"]
-        guard releaseID > 0,
-              let deepLink = RepositoryDeepLink(
+        guard let deepLink = RepositoryReleaseDeepLink(
                 owner: owner,
                 name: repositoryName,
-                repositoryID: repositoryID
+                repositoryID: repositoryID,
+                releaseID: releaseID
               ) else {
             return nil
         }
