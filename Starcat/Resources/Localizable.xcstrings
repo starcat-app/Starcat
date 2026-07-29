@@ -171944,6 +171944,54 @@
         }
       }
     },
+    "rag.workspace.debug.stage.repositoryInsightsLoad" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repository insights load"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仓库洞察读取"
+          }
+        }
+      }
+    },
+    "rag.workspace.debug.stage.repositoryInsightsProjection" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repository insights projection"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仓库洞察投影"
+          }
+        }
+      }
+    },
+    "rag.workspace.debug.stage.repositoryInsightsRequest" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repository insights request"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仓库洞察请求"
+          }
+        }
+      }
+    },
     "rag.workspace.debug.stage.repoContextRequest" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -181816,6 +181864,102 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تم إنشاء XML كود المشروع (%lld رمزًا)"
+          }
+        }
+      }
+    },
+    "rag.workspace.execution.repositoryInsights.completedFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Used insights from %lld repositories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已使用 %lld 个仓库的洞察"
+          }
+        }
+      }
+    },
+    "rag.workspace.execution.repositoryInsights.preparedFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prepared %1$lld of %2$lld repository insight artifacts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已准备 %1$lld / %2$lld 个仓库洞察产物"
+          }
+        }
+      }
+    },
+    "rag.workspace.execution.repositoryInsights.projecting" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fitting repository insights to the context window"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在按上下文窗口投影仓库洞察"
+          }
+        }
+      }
+    },
+    "rag.workspace.execution.repositoryInsights.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repository insights"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仓库洞察"
+          }
+        }
+      }
+    },
+    "rag.workspace.execution.repositoryInsights.tokensFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sent %1$lld repository insight documents (%2$lld tokens)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已发送 %1$lld 份仓库洞察（%2$lld tokens）"
+          }
+        }
+      }
+    },
+    "rag.workspace.execution.repositoryInsights.unavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No usable repository insights"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无可用仓库洞察"
           }
         }
       }

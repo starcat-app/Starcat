@@ -3057,6 +3057,145 @@ struct KnowledgeRAGCoreTests {
         )
     }
 
+    @Test("仓库洞察 XML 可作为唯一证据通过门禁")
+    func repositoryInsightsCanBeTheOnlyGenerationEvidence() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 21)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 21, state: .inLibrary)
+        let spy = SpyRAGAIClient(chatResponse: "洞察结论 [S1]")
+        let provider = FixedRepositoryInsightsRAGProvider(mode: .success)
+        let service = makeRepositoryInsightsService(
+            database: database,
+            spy: spy,
+            provider: provider
+        )
+        var emittedDocuments: [RAGRepositoryInsightsDocument] = []
+        var completedSnapshots: [RAGRepositoryInsightsSnapshot] = []
+        var debugStages: [RAGDebugEvent.Stage] = []
+
+        for try await event in service.ask(request: RAGServiceRequest(
+            rawQuestion: "这个仓库的健康情况如何？",
+            composerContext: .init(explicitRepoIDs: [21]),
+            conversationID: nil,
+            isDebugEnabled: true
+        )) {
+            if case .repositoryInsights(let documents) = event {
+                emittedDocuments = documents
+            }
+            if case .execution(.repositoryInsightsCompleted(let snapshots)) = event {
+                completedSnapshots = snapshots
+            }
+            if case .debug(let debug) = event {
+                debugStages.append(debug.stage)
+            }
+        }
+
+        #expect(spy.callCount == 1)
+        #expect(spy.lastChatRequest?.userPrompt.contains("<repository_insights") == true)
+        #expect(emittedDocuments.count == 1)
+        #expect(completedSnapshots.first?.outcome == .success)
+        #expect(completedSnapshots.first?.sentTokens ?? 0 > 0)
+        #expect(await provider.requestedModes() == [.cacheOnly])
+        #expect(debugStages.contains(.repositoryInsightsRequest))
+        #expect(debugStages.contains(.repositoryInsightsLoad))
+        #expect(debugStages.contains(.repositoryInsightsProjection))
+    }
+
+    @Test("仓库洞察 Artifact 不可用且无其它证据时不得调用 Generator")
+    func unavailableRepositoryInsightsCannotBypassEvidenceGate() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 21)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 21, state: .inLibrary)
+        let spy = SpyRAGAIClient(chatResponse: "不应生成")
+        let provider = FixedRepositoryInsightsRAGProvider(mode: .unavailable)
+        let service = makeRepositoryInsightsService(
+            database: database,
+            spy: spy,
+            provider: provider
+        )
+        var terminal: RAGTerminalResponse?
+        var completedSnapshots: [RAGRepositoryInsightsSnapshot] = []
+
+        for try await event in service.ask(request: RAGServiceRequest(
+            rawQuestion: "这个仓库的健康情况如何？",
+            composerContext: .init(explicitRepoIDs: [21]),
+            conversationID: nil
+        )) {
+            if case .terminal(let response) = event { terminal = response }
+            if case .execution(.repositoryInsightsCompleted(let snapshots)) = event {
+                completedSnapshots = snapshots
+            }
+        }
+
+        #expect(spy.callCount == 0)
+        #expect(terminal != nil)
+        #expect(completedSnapshots.first?.outcome == .unavailable)
+        #expect(await provider.requestedModes() == [.cacheOnly])
+    }
+
+    @Test("仓库洞察降级不阻断其它真实证据回答")
+    func degradedRepositoryInsightsKeepsOtherEvidence() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 21)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 21, state: .inLibrary)
+        let spy = SpyRAGAIClient(chatResponse: "附件仍可回答")
+        let provider = FixedRepositoryInsightsRAGProvider(mode: .unavailable)
+        let service = makeRepositoryInsightsService(
+            database: database,
+            spy: spy,
+            provider: provider,
+            attachmentContexts: [
+                RAGAttachmentContext(
+                    attachmentID: UUID(),
+                    filename: "fallback.md",
+                    content: "附件事实"
+                ),
+            ]
+        )
+        var answer: String?
+
+        for try await event in service.ask(request: RAGServiceRequest(
+            rawQuestion: "结合附件回答",
+            composerContext: .init(explicitRepoIDs: [21]),
+            conversationID: nil
+        )) {
+            if case .completed(let value, _, _, _) = event { answer = value }
+        }
+
+        #expect(answer == "附件仍可回答")
+        #expect(spy.callCount == 1)
+        #expect(spy.lastChatRequest?.userPrompt.contains("附件事实") == true)
+        #expect(spy.lastChatRequest?.userPrompt.contains("<repository_insights") == false)
+    }
+
+    private func makeRepositoryInsightsService(
+        database: InMemoryDatabaseManager,
+        spy: SpyRAGAIClient,
+        provider: FixedRepositoryInsightsRAGProvider,
+        attachmentContexts: [RAGAttachmentContext] = []
+    ) -> KnowledgeRAGService {
+        let chunks = GRDBRAGChunkRepository(database: database)
+        return KnowledgeRAGService(
+            planner: FixedRAGPlanner(plan: RAGQueryPlan(
+                mode: .semanticOnly,
+                semanticQuery: "仓库健康"
+            )),
+            candidateRepository: GRDBRAGRepoCandidateRepository(database: database),
+            retriever: KnowledgeRAGRetriever(
+                chunkRepository: chunks,
+                keywordProvider: SQLiteRAGKeywordSearchProvider(repository: chunks),
+                vectorProvider: SQLiteRAGVectorSearchProvider(repository: chunks),
+                embeddingClient: spy,
+                embeddingModel: "embed"
+            ),
+            attachmentProcessor: FixedAttachmentProcessor(contexts: attachmentContexts),
+            repositoryInsightsProvider: provider,
+            generatorClient: spy,
+            generatorModel: "chat",
+            generatorParameters: .summaryDefault
+        )
+    }
+
     @Test("Planner 漏报时执行层仍用显式仓库的 GitHub 实时证据回答")
     func remoteOnlyEvidenceCanGenerateAnswer() async throws {
         let database = try InMemoryDatabaseManager()
@@ -5816,6 +5955,62 @@ private struct FixedAttachmentProcessor: RAGAttachmentProcessing {
 
     func process(_ attachments: [RAGComposerAttachment]) async throws -> [RAGAttachmentContext] {
         contexts
+    }
+}
+
+/// Service 测试用洞察 Provider：只记录调用模式，并按仓库即时构造小型合法 XML。
+/// 这样测试能证明 RAG 始终传入 `.cacheOnly`，而不依赖用户真实缓存或 GitHub 网络。
+private actor FixedRepositoryInsightsRAGProvider: RepositoryInsightsRAGContextProviding {
+    enum Mode: Sendable, Equatable {
+        case success
+        case unavailable
+    }
+
+    private let mode: Mode
+    private var modes: [RepositoryInsightsContextPreparationMode] = []
+
+    init(mode: Mode) {
+        self.mode = mode
+    }
+
+    func prepareArtifact(
+        for repo: Repo,
+        mode: RepositoryInsightsContextPreparationMode
+    ) async -> RepositoryInsightsContextArtifact? {
+        modes.append(mode)
+        guard self.mode == .success else { return nil }
+        let generatedAt = Date(timeIntervalSince1970: 1_775_000_000)
+        let sourceHash = "source-\(repo.id)"
+        let xmlHash = "xml-\(repo.id)"
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <repository_insights repository_id="\(repo.id)" repository="\(repo.fullName)" source_hash="\(sourceHash)">
+          <metadata stars="100" forks="8" />
+          <health grade="A" overall_score="92" />
+        </repository_insights>
+        """
+        return RepositoryInsightsContextArtifact(
+            document: RepositoryInsightsDocument(
+                repositoryID: repo.id,
+                repositoryFullName: repo.fullName,
+                generatedAt: generatedAt,
+                sourceHash: sourceHash,
+                xml: xml
+            ),
+            metadata: RepositoryInsightsContextMetadata(
+                schemaVersion: RepositoryInsightsContextMetadata.schemaVersion,
+                repositoryID: repo.id,
+                repositoryFullName: repo.fullName,
+                accountStorageKey: "rag-test",
+                generatedAt: generatedAt,
+                sourceHash: sourceHash,
+                xmlHash: xmlHash
+            )
+        )
+    }
+
+    func requestedModes() -> [RepositoryInsightsContextPreparationMode] {
+        modes
     }
 }
 

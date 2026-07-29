@@ -406,6 +406,7 @@ enum RAGExecutionStepKind: String, Codable, CaseIterable, Sendable {
     case planning
     case planningReasoning
     case retrieval
+    case repositoryInsights
     case repoContext
     case remoteContext
     case answerReasoning
@@ -436,6 +437,8 @@ struct RAGExecutionStep: Identifiable, Codable, Equatable, Sendable {
     var contextUsageSnapshot: RAGContextUsageSnapshot?
     /// RepoContext 只保存 commit/hash/token 等审计元数据，绝不保存 XML 正文。
     var repoContextSnapshot: RAGRepoContextSnapshot?
+    /// 仓库洞察与 RepoContext 一样只持久化审计字段；XML 正文由 Artifact 缓存按需校验回放。
+    var repositoryInsightsSnapshots: [RAGRepositoryInsightsSnapshot]?
 
     var id: RAGExecutionStepKind { kind }
 
@@ -450,7 +453,8 @@ struct RAGExecutionStep: Identifiable, Codable, Equatable, Sendable {
         queryPlan: RAGQueryPlan? = nil,
         retrievalSnapshot: RAGRetrievalSnapshot? = nil,
         contextUsageSnapshot: RAGContextUsageSnapshot? = nil,
-        repoContextSnapshot: RAGRepoContextSnapshot? = nil
+        repoContextSnapshot: RAGRepoContextSnapshot? = nil,
+        repositoryInsightsSnapshots: [RAGRepositoryInsightsSnapshot]? = nil
     ) {
         self.kind = kind
         self.state = state
@@ -463,6 +467,7 @@ struct RAGExecutionStep: Identifiable, Codable, Equatable, Sendable {
         self.retrievalSnapshot = retrievalSnapshot
         self.contextUsageSnapshot = contextUsageSnapshot
         self.repoContextSnapshot = repoContextSnapshot
+        self.repositoryInsightsSnapshots = repositoryInsightsSnapshots
     }
 
     /// 运行中以当前时刻持续计时，完成后固定为真实结束时刻，供用户核验步骤耗时。

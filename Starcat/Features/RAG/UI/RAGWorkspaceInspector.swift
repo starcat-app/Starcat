@@ -3232,6 +3232,9 @@ struct RAGWorkspaceInspector: View {
         case .structuredAnalytics: return "rag.workspace.debug.stage.structuredAnalytics"
         case .rerank: return "rag.workspace.debug.stage.rerank"
         case .retrieval: return "rag.workspace.debug.stage.retrieval"
+        case .repositoryInsightsRequest: return "rag.workspace.debug.stage.repositoryInsightsRequest"
+        case .repositoryInsightsLoad: return "rag.workspace.debug.stage.repositoryInsightsLoad"
+        case .repositoryInsightsProjection: return "rag.workspace.debug.stage.repositoryInsightsProjection"
         case .repoContextRequest: return "rag.workspace.debug.stage.repoContextRequest"
         case .repoContextResponse: return "rag.workspace.debug.stage.repoContextResponse"
         case .repoContextProjection: return "rag.workspace.debug.stage.repoContextProjection"
@@ -3267,6 +3270,12 @@ struct RAGWorkspaceInspector: View {
             return "arrow.up.arrow.down.circle"
         case .retrieval:
             return "magnifyingglass"
+        case .repositoryInsightsRequest:
+            return "gauge.with.dots.needle.bottom.0percent"
+        case .repositoryInsightsLoad:
+            return "doc.text.magnifyingglass"
+        case .repositoryInsightsProjection:
+            return "arrow.down.right.and.arrow.up.left"
         case .repoContextRequest:
             return "shippingbox"
         case .repoContextResponse:

@@ -340,6 +340,8 @@ struct RAGConversationRuntimeState {
     var queryPlan: RAGQueryPlan?
     var retrieval: RAGRetrievalResult?
     var contextUsage: RAGContextUsage?
+    /// 当前轮实际进入 Prompt 的洞察 XML；与 RepoContext 一样只保存在运行态内存。
+    var repositoryInsightsDocuments: [RAGRepositoryInsightsDocument] = []
     /// XML 只属于当前运行态，不进入 SQLite；历史会话通过 execution snapshot 校验磁盘缓存后重建。
     var repoContextDocument: RAGRepoContextDocument?
     var remoteBlocks: [RAGRemoteContextBlock] = []
@@ -454,6 +456,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     var editingUserDraft = ""
     var queryPlan: RAGQueryPlan?
     var retrieval: RAGRetrievalResult?
+    /// 当前轮最终进入 Prompt 的洞察 XML 投影；历史会话稍后通过审计 hash 按需回放。
+    private(set) var repositoryInsightsDocuments: [RAGRepositoryInsightsDocument] = []
     /// 当前轮实际进入 Prompt 的 XML 投影；只保存在内存，供引用详情作为独立证据展示。
     private(set) var repoContextDocument: RAGRepoContextDocument?
     /// 当前轮默认可见的执行轨迹；完成后随 assistant message 持久化，Debug payload 不进入这里。
@@ -1097,6 +1101,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         queryPlan = runtime.queryPlan
         retrieval = runtime.retrieval
         lastContextUsage = runtime.contextUsage
+        repositoryInsightsDocuments = runtime.repositoryInsightsDocuments
         repoContextDocument = runtime.repoContextDocument
         remoteBlocks = runtime.remoteBlocks
         executionSteps = runtime.executionSteps
@@ -2671,6 +2676,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             runtime.queryPlan = nil
             runtime.retrieval = nil
             runtime.contextUsage = nil
+            runtime.repositoryInsightsDocuments = []
             runtime.repoContextDocument = nil
             runtime.remoteBlocks = []
         }
@@ -2682,6 +2688,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             queryPlan = nil
             retrieval = nil
             lastContextUsage = nil
+            repositoryInsightsDocuments = []
             repoContextDocument = nil
             executionSteps = []
             remoteBlocks = []
@@ -2866,6 +2873,13 @@ final class KnowledgeRAGWorkspaceViewModel {
                     syncExecutionSteps(turnExecutionSteps, for: conversationID)
                     if selectedConversationID == conversationID {
                         retrieval = result
+                    }
+                case .repositoryInsights(let documents):
+                    updateRuntimeState(for: conversationID) {
+                        $0.repositoryInsightsDocuments = documents
+                    }
+                    if selectedConversationID == conversationID {
+                        repositoryInsightsDocuments = documents
                     }
                 case .repoContext(let document):
                     updateRuntimeState(for: conversationID) { $0.repoContextDocument = document }
@@ -3679,6 +3693,46 @@ final class KnowledgeRAGWorkspaceViewModel {
                 completeExecutionStep(&step)
             }
 
+        case .repositoryInsightsPrepared(let snapshots):
+            updateExecutionStep(in: &executionSteps, kind: .repositoryInsights) { step in
+                step.repositoryInsightsSnapshots = snapshots
+                step.details = [String(
+                    format: String.l10n("rag.workspace.execution.repositoryInsights.preparedFormat"),
+                    snapshots.filter { $0.outcome == .success }.count,
+                    snapshots.count
+                )]
+            }
+
+        case .repositoryInsightsProjectionStarted:
+            updateExecutionStep(in: &executionSteps, kind: .repositoryInsights) { step in
+                let detail = String.l10n("rag.workspace.execution.repositoryInsights.projecting")
+                if step.details.last != detail {
+                    step.details.append(detail)
+                }
+            }
+
+        case .repositoryInsightsCompleted(let snapshots):
+            updateExecutionStep(in: &executionSteps, kind: .repositoryInsights) { step in
+                let sentCount = snapshots.filter { $0.outcome == .success && $0.sentTokens > 0 }.count
+                let sentTokens = snapshots.reduce(0) { $0 + $1.sentTokens }
+                step.repositoryInsightsSnapshots = snapshots
+                step.details.append(String(
+                    format: String.l10n("rag.workspace.execution.repositoryInsights.tokensFormat"),
+                    sentCount,
+                    sentTokens
+                ))
+                step.summary = sentCount > 0
+                    ? String(
+                        format: String.l10n("rag.workspace.execution.repositoryInsights.completedFormat"),
+                        sentCount
+                    )
+                    : String.l10n("rag.workspace.execution.repositoryInsights.unavailable")
+                completeExecutionStep(&step)
+                if sentCount == 0 {
+                    step.state = .skipped
+                }
+            }
+
         case .repoContextProgress(let progress):
             updateExecutionStep(in: &executionSteps, kind: .repoContext) { step in
                 let key = switch progress {
@@ -4031,6 +4085,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         editingUserDraft = ""
         queryPlan = nil
         retrieval = nil
+        repositoryInsightsDocuments = []
         repoContextDocument = nil
         lastContextUsage = nil
         remoteBlocks = []

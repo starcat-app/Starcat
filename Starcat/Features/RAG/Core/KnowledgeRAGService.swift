@@ -14,6 +14,8 @@ enum KnowledgeRAGServiceEvent: Sendable {
     case execution(RAGExecutionEvent)
     case plan(RAGQueryPlan)
     case retrieval(RAGRetrievalResult)
+    /// 只在当前运行态传递最终进入 Prompt 的洞察 XML；会话持久化仅保存 execution snapshot。
+    case repositoryInsights([RAGRepositoryInsightsDocument])
     /// 只在本轮内存传递实际进入 Prompt 的 XML；execution trace 仅保存 snapshot。
     case repoContext(RAGRepoContextDocument)
     case remoteContextConfirmation([RAGResolvedRemoteWorkItem])
@@ -39,6 +41,10 @@ enum RAGExecutionEvent: Sendable {
     case reasoningCompleted(RAGExecutionStepKind)
     case retrieval(RAGRetrievalProgress)
     case retrievalCompleted(RAGRetrievalResult)
+    /// cache-only 加载完成，但尚未根据本轮 Context Window 投影。
+    case repositoryInsightsPrepared([RAGRepositoryInsightsSnapshot])
+    case repositoryInsightsProjectionStarted
+    case repositoryInsightsCompleted([RAGRepositoryInsightsSnapshot])
     case repoContextProgress(RepoAIContextProgress)
     /// Provider 已准备合法 XML，但尚未按本轮模型总窗口计算最终发送投影。
     case repoContextPrepared(RAGRepoContextSnapshot)
@@ -68,6 +74,9 @@ struct RAGDebugEvent: Codable, Identifiable, Sendable {
         case structuredAnalytics = "structured_analytics"
         case rerank
         case retrieval
+        case repositoryInsightsRequest = "repository_insights_request"
+        case repositoryInsightsLoad = "repository_insights_load"
+        case repositoryInsightsProjection = "repository_insights_projection"
         case repoContextRequest = "repo_context_request"
         case repoContextResponse = "repo_context_response"
         case repoContextProjection = "repo_context_projection"
@@ -394,6 +403,11 @@ struct RAGRepoContextPhaseOutput: Sendable {
     let snapshot: RAGRepoContextSnapshot?
 }
 
+struct RAGRepositoryInsightsPhaseOutput: Sendable {
+    let documents: [RAGRepositoryInsightsDocument]
+    let snapshots: [RAGRepositoryInsightsSnapshot]
+}
+
 struct RAGRetrievalPhaseOutput: Sendable {
     let attachmentContexts: [RAGAttachmentContext]
     let analyticsResult: KnowledgeBaseAnalyticsResult?
@@ -418,6 +432,8 @@ struct KnowledgeRAGService: Sendable {
     private let remoteContextProvider: any KnowledgeRAGRemoteContextProviding
     private let webSearchProvider: any RAGWebSearchProviding
     private let attachmentProcessor: any RAGAttachmentProcessing
+    private let repositoryInsightsProvider: (any RepositoryInsightsRAGContextProviding)?
+    private let repositoryInsightsTokenBudget: Int
     private let repoContextProvider: (any RepoAIContextProviding)?
     private let repoContextTokenBudget: Int
     private let generatorClient: any AIClientProtocol
@@ -440,6 +456,8 @@ struct KnowledgeRAGService: Sendable {
         remoteContextProvider: any KnowledgeRAGRemoteContextProviding = EmptyKnowledgeRAGRemoteContextProvider(),
         webSearchProvider: any RAGWebSearchProviding = EmptyRAGWebSearchProvider(),
         attachmentProcessor: any RAGAttachmentProcessing = RAGAttachmentProcessor(),
+        repositoryInsightsProvider: (any RepositoryInsightsRAGContextProviding)? = nil,
+        repositoryInsightsTokenBudget: Int = 8_000,
         repoContextProvider: (any RepoAIContextProviding)? = nil,
         repoContextTokenBudget: Int = 8_000,
         generatorClient: any AIClientProtocol,
@@ -458,6 +476,8 @@ struct KnowledgeRAGService: Sendable {
         self.remoteContextProvider = remoteContextProvider
         self.webSearchProvider = webSearchProvider
         self.attachmentProcessor = attachmentProcessor
+        self.repositoryInsightsProvider = repositoryInsightsProvider
+        self.repositoryInsightsTokenBudget = min(max(repositoryInsightsTokenBudget, 1_024), 64 * 1_024)
         self.repoContextProvider = repoContextProvider
         self.repoContextTokenBudget = min(max(repoContextTokenBudget, 1_024), 64 * 1_024)
         self.generatorClient = generatorClient
@@ -517,6 +537,13 @@ struct KnowledgeRAGService: Sendable {
                     let hasScopedQuery = retrievalOutput.hasScopedQuery
                     let localMissingReasonKey = retrievalOutput.localMissingReasonKey
 
+                    let repositoryInsightsOutput = try await runRepositoryInsightsPhase(
+                        request: request,
+                        candidates: candidates,
+                        retrieval: retrieval,
+                        sink: sink
+                    )
+
                     let repoContextOutput = try await runRepoContextPhase(
                         request: request,
                         plan: plan,
@@ -542,6 +569,8 @@ struct KnowledgeRAGService: Sendable {
                         retrieval: retrieval,
                         metadataSnapshot: metadataSnapshot,
                         analyticsResult: analyticsResult,
+                        repositoryInsightsDocuments: repositoryInsightsOutput.documents,
+                        repositoryInsightsSnapshots: repositoryInsightsOutput.snapshots,
                         repoContextDocument: repoContextOutput.document,
                         remoteBlocks: remoteBlocks,
                         attachmentContexts: attachmentContexts,
@@ -722,6 +751,55 @@ struct KnowledgeRAGService: Sendable {
             return nil
         }
         return RAGPlanningPhaseOutput(plan: plan, metadataSnapshot: metadataSnapshot)
+    }
+
+    /// 洞察上下文位于本地检索之后：显式范围按用户选中的仓库读取，普通检索只读取
+    /// 最终保留 bundle，且 Coordinator 固定使用 cache-only，不能为一次 RAG 问答额外联网。
+    func runRepositoryInsightsPhase(
+        request: RAGServiceRequest,
+        candidates: [RAGRepoCandidate],
+        retrieval: RAGRetrievalResult,
+        sink: RAGServiceEventSink
+    ) async throws -> RAGRepositoryInsightsPhaseOutput {
+        guard let provider = repositoryInsightsProvider else {
+            return RAGRepositoryInsightsPhaseOutput(documents: [], snapshots: [])
+        }
+        let repositories = RAGRepositoryInsightsTargetResolver.resolve(
+            composerContext: request.composerContext,
+            candidates: candidates,
+            retrieval: retrieval
+        )
+        guard !repositories.isEmpty else {
+            return RAGRepositoryInsightsPhaseOutput(documents: [], snapshots: [])
+        }
+
+        sink.yield(.execution(.started(.repositoryInsights)))
+        sink.debug(.repositoryInsightsRequest, """
+        mode: cache_only
+        targetCount: \(repositories.count)
+        repositoryIDs: \(repositories.map(\.id))
+        repositories: \(repositories.map(\.fullName))
+        configuredTokenBudget: \(repositoryInsightsTokenBudget)
+        """)
+        let result = await RAGRepositoryInsightsContextLoader(
+            provider: provider,
+            configuredTokenBudget: repositoryInsightsTokenBudget
+        ).load(repositories: repositories)
+        try Task.checkCancellation()
+        sink.yield(.execution(.repositoryInsightsPrepared(result.snapshots)))
+        sink.debug(.repositoryInsightsLoad, """
+        requestedCount: \(repositories.count)
+        loadedCount: \(result.documents.count)
+        unavailableCount: \(result.snapshots.filter { $0.outcome != .success }.count)
+        snapshots:
+        \(result.snapshots.map {
+            "\($0.repoFullName) outcome=\($0.outcome.rawValue) sourceHash=\($0.sourceHash ?? "<none>") xmlHash=\($0.xmlHash ?? "<none>") originalTokens=\($0.originalTokens)"
+        }.joined(separator: "\n"))
+        """)
+        return RAGRepositoryInsightsPhaseOutput(
+            documents: result.documents,
+            snapshots: result.snapshots
+        )
     }
 
     /// RepoContext 位于本地检索之后、联网之前。这样时间线顺序稳定，且代码上下文失败时
@@ -1142,6 +1220,8 @@ struct KnowledgeRAGService: Sendable {
         retrieval initialRetrieval: RAGRetrievalResult,
         metadataSnapshot: KnowledgeBaseMetadataSnapshot?,
         analyticsResult: KnowledgeBaseAnalyticsResult?,
+        repositoryInsightsDocuments: [RAGRepositoryInsightsDocument],
+        repositoryInsightsSnapshots: [RAGRepositoryInsightsSnapshot],
         repoContextDocument: RAGRepoContextDocument?,
         remoteBlocks: [RAGRemoteContextBlock],
         attachmentContexts: [RAGAttachmentContext],
@@ -1157,6 +1237,7 @@ struct KnowledgeRAGService: Sendable {
         let hasStructuredEvidence = plan.mode == .structuredOnly && !retrieval.candidates.isEmpty
         let hasAnalyticsEvidence = analyticsResult != nil
         let hasLocalEvidence = !retrieval.bundles.isEmpty
+        let hasRepositoryInsightsCandidate = !repositoryInsightsDocuments.isEmpty
         let hasRepoContextEvidence = repoContextDocument?.snapshot.outcome == .success
             && repoContextDocument?.xml.isEmpty == false
         let hasRemoteEvidence = remoteBlocks.contains {
@@ -1166,6 +1247,12 @@ struct KnowledgeRAGService: Sendable {
             $0.supportsFactualAnswer && (!$0.content.isEmpty || $0.imageData != nil)
         }
         if plan.requiresLiveEvidence, !hasRemoteEvidence {
+            completeRepositoryInsights(
+                loadedSnapshots: repositoryInsightsSnapshots,
+                projectedDocuments: [],
+                missingProjectionReason: "live_evidence_gate_rejected",
+                sink: sink
+            )
             let answerKey = remoteBlocks.contains(where: { $0.outcome == .failed })
                 ? "rag.workspace.guidance.remoteFailedReply"
                 : "rag.workspace.guidance.remoteEmptyReply"
@@ -1177,9 +1264,16 @@ struct KnowledgeRAGService: Sendable {
             sink.yield(.state(.noRelevantChunks))
             return nil
         }
-        guard hasAnalyticsEvidence || hasStructuredEvidence || hasLocalEvidence || hasRepoContextEvidence
+        guard hasAnalyticsEvidence || hasStructuredEvidence || hasLocalEvidence
+                || hasRepositoryInsightsCandidate || hasRepoContextEvidence
                 || hasRemoteEvidence || hasAttachmentEvidence
         else {
+            completeRepositoryInsights(
+                loadedSnapshots: repositoryInsightsSnapshots,
+                projectedDocuments: [],
+                missingProjectionReason: "no_usable_artifact",
+                sink: sink
+            )
             let answerKey: String
             let terminalState: RAGAnswerState
             if localMissingReasonKey == "rag.workspace.execution.noIndex" {
@@ -1213,12 +1307,16 @@ struct KnowledgeRAGService: Sendable {
         if repoContextDocument != nil {
             sink.yield(.execution(.repoContextProjectionStarted))
         }
+        if !repositoryInsightsDocuments.isEmpty {
+            sink.yield(.execution(.repositoryInsightsProjectionStarted))
+        }
         let prompt = promptBuilder.build(
             question: request.rawQuestion,
             plan: plan,
             retrieval: retrieval,
             metadataSnapshot: metadataSnapshot,
             analyticsResult: analyticsResult,
+            repositoryInsightsDocuments: repositoryInsightsDocuments,
             repoContextDocument: repoContextDocument,
             remoteBlocks: remoteBlocks,
             attachmentContexts: attachmentContexts,
@@ -1243,11 +1341,22 @@ struct KnowledgeRAGService: Sendable {
             """)
             sink.yield(.execution(.repoContextCompleted(degraded)))
         }
+        completeRepositoryInsights(
+            loadedSnapshots: repositoryInsightsSnapshots,
+            projectedDocuments: prompt.repositoryInsightsDocuments,
+            missingProjectionReason: "total_context_projection_unavailable",
+            sink: sink
+        )
+        if !prompt.repositoryInsightsDocuments.isEmpty {
+            sink.yield(.repositoryInsights(prompt.repositoryInsightsDocuments))
+        }
         // RepoContext 是唯一证据时必须回到无证据门禁，不能把没有 XML 的 Prompt
         // 交给 Generator 自由回答。
         let hasNonRepoEvidence = hasAnalyticsEvidence || hasStructuredEvidence || hasLocalEvidence
             || hasRemoteEvidence || hasAttachmentEvidence
-        guard hasNonRepoEvidence || prompt.repoContextDocument != nil else {
+        guard hasNonRepoEvidence || !prompt.repositoryInsightsDocuments.isEmpty
+                || prompt.repoContextDocument != nil
+        else {
             sink.yield(.terminal(RAGQueryGuidance.noEvidenceResponse(
                 plan: plan,
                 composerContext: request.composerContext,
@@ -1280,12 +1389,50 @@ struct KnowledgeRAGService: Sendable {
             + (hasStructuredEvidence ? retrieval.candidates.count : 0)
             + remoteBlocks.filter { $0.outcome == .success && $0.resultCount > 0 }.count
             + attachmentContexts.filter(\.supportsFactualAnswer).count
+            + prompt.repositoryInsightsDocuments.count
             + (prompt.repoContextDocument == nil ? 0 : 1)
         return RAGPromptPhaseOutput(
             prompt: prompt,
             retrieval: retrieval,
             evidenceCount: evidenceCount
         )
+    }
+
+    /// 将 Builder 的最终投影结果回写到审计快照。Debug 与会话历史只记录 hash/token，
+    /// 不复制 XML 正文；成功加载但未进入 Prompt 的 Artifact 必须明确标记为 degraded。
+    private func completeRepositoryInsights(
+        loadedSnapshots: [RAGRepositoryInsightsSnapshot],
+        projectedDocuments: [RAGRepositoryInsightsDocument],
+        missingProjectionReason: String,
+        sink: RAGServiceEventSink
+    ) {
+        guard !loadedSnapshots.isEmpty else { return }
+        let projectedByRepoID = Dictionary(
+            uniqueKeysWithValues: projectedDocuments.map { ($0.snapshot.repoID, $0.snapshot) }
+        )
+        let completedSnapshots = loadedSnapshots.map { loaded in
+            if let projected = projectedByRepoID[loaded.repoID] {
+                return projected
+            }
+            guard loaded.outcome == .success else { return loaded }
+            var degraded = loaded
+            degraded.sentTokens = 0
+            degraded.outcome = .degraded
+            degraded.wasProjected = false
+            degraded.projectionReason = nil
+            degraded.degradationReason = missingProjectionReason
+            degraded.citationMarker = nil
+            return degraded
+        }
+        sink.debug(.repositoryInsightsProjection, """
+        completedCount: \(completedSnapshots.count)
+        sentCount: \(completedSnapshots.filter { $0.outcome == .success && $0.sentTokens > 0 }.count)
+        snapshots:
+        \(completedSnapshots.map {
+            "\($0.repoFullName) outcome=\($0.outcome.rawValue) originalTokens=\($0.originalTokens) sentTokens=\($0.sentTokens) projected=\($0.wasProjected) reason=\($0.projectionReason ?? $0.degradationReason ?? "<none>") citation=\($0.citationMarker ?? "<none>")"
+        }.joined(separator: "\n"))
+        """)
+        sink.yield(.execution(.repositoryInsightsCompleted(completedSnapshots)))
     }
 
     /// Generation 阶段只消费已经完成预算裁剪的 Prompt，不再读取 Planner、Repository 或

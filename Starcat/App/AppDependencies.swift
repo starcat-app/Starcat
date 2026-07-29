@@ -611,6 +611,7 @@ final class AppDependencies {
                 selection: settings.externalContextProviderSelection,
                 aggregateEnabled: settings.aggregateExternalContextSearchEnabled && settings.isProUser
             ),
+            repositoryInsightsProvider: repositoryInsightsContextCoordinator,
             repoContextProvider: repoAIContextProvider,
             repoContextTokenBudget: settings.aiRepoContextTokenBudget,
             generatorClient: chatClient,

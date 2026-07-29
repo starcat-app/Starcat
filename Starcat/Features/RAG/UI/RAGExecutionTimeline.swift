@@ -370,6 +370,7 @@ struct RAGExecutionTimeline: View {
         case .planning: return "rag.workspace.execution.planning.title"
         case .planningReasoning: return "rag.workspace.execution.reasoning.planning.title"
         case .retrieval: return "rag.workspace.execution.retrieval.title"
+        case .repositoryInsights: return "rag.workspace.execution.repositoryInsights.title"
         case .repoContext: return "rag.workspace.execution.repoContext.title"
         case .remoteContext: return "rag.workspace.execution.remote.title"
         case .answerReasoning: return "rag.workspace.execution.reasoning.answer.title"
