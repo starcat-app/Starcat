@@ -12,5 +12,6 @@ import WidgetKit
 struct StarcatWidgetBundle: WidgetBundle {
     var body: some Widget {
         StarcatFocusWidget()
+        StarcatRediscoveryWidget()
     }
 }

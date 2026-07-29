@@ -85,7 +85,7 @@ enum StarcatWidgetSnapshotLoader {
               ) else {
             return fallback
         }
-        return min(fallback, nextStart)
+        return nextStart
     }
 }
 
