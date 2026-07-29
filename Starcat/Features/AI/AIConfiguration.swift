@@ -355,8 +355,8 @@ extension AppSettings {
 /// 2026-06-14 v4 追加 `.chat`：对话路径之前直接复用 `aiSummaryTask` 的 model + 参数，
 /// system prompt 在 `RepoAIInsightService.assembleChatSystemPrompt` 里硬编码拼接，
 /// 用户没法编辑、Settings 看不见。本次让 chat 也走标准 task 配置 + 占位符模板路径
-/// （6 占位符：`{outputLanguage}` / `{metadata}` / `{readme}` / `{codeContext}` /
-/// `{summary}` / `{externalContext}`），跟其他 4 个任务一致。userPromptTemplate
+/// （当前再含 `{runtimeContext}` / `{starcatResources}` / `{insightsContext}` /
+/// `{previousSessionCarryOver}`），跟其他 4 个任务一致。userPromptTemplate
 /// 留空（跟 embedding 镜像）—— 用户消息直接走 `AIChatRequest.history` + `userMessage`，
 /// 不需要模板包装。
 enum AIModelTask: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -612,13 +612,14 @@ enum AIDefaultPrompts {
     /// - `{metadata}`：repo 元数据（fullName / description / language / topics / stars / license 等）；
     /// - `{readme}`：清洗 + 截断后的 README 纯文本；
     /// - `{codeContext}`：RepoContextPacker 生成的代码 XML（无则空字符串）；
+    /// - `{insightsContext}`：与仓库洞察页面共用缓存的活动、维护、社区、安全和 Star 聚合事实；
     /// - `{externalContext}`：ExternalSearchContextProvider 生成的外部检索 markdown
     ///   （无则空字符串）。
     ///
     /// **2026-06-14 v4.x 重构**（dong4j 拍板）：
     /// 1. 砍掉旧 v3 的硬编码 `Use Simplified Chinese`，统一走 `{outputLanguage}` i18n 派发；
-    /// 2. 把单一黑盒 `{context}` 拆成 4 个透明占位符（metadata / readme / codeContext /
-    ///    externalContext），用户在 Settings 看得见、也能删；
+    /// 2. 把单一黑盒 `{context}` 拆成透明占位符（metadata / readme / codeContext /
+    ///    insightsContext / externalContext），用户在 Settings 看得见、也能删；
     /// 3. 把"6 个固定 ## 章节强制必填"改成"7 个推荐章节 + 有信息则写、无信息则省"，
     ///    避免模型在无信息时硬编内容；唯一硬约束是「Overview」必须有内容（UI 端从摘要
     ///    开头提取项目预览，没内容会破坏卡片渲染）；
@@ -644,7 +645,7 @@ enum AIDefaultPrompts {
         - Output language: {outputLanguage} (use this language for the body; technical English proper nouns are excluded — see the next constraint).
 
         # Factual Constraints
-        - Do NOT fabricate facts beyond what is provided in the metadata, README, or code context.
+        - Do NOT fabricate facts beyond what is provided in the metadata, README, code context, repository insights, or external references.
         - Skip content that cannot be confirmed from the input materials. Do NOT write "unconfirmed" placeholders, and do NOT fabricate content just to fill out sections.
         - Preserve technical English proper nouns as-is (library names, command names, framework names, API names, version strings, commit hashes, etc.) — do not force-translate them.
         """,
@@ -694,9 +695,27 @@ enum AIDefaultPrompts {
         ## Code Context
         {codeContext}
 
+        ## Repository Insights
+        {insightsContext}
+
         ## External References
         {externalContext}
         """
+    )
+
+    /// 1.3.0 洞察上下文接入前的 Summary 默认 Prompt。
+    ///
+    /// 由新默认值精确反推旧值，只用于 AppSettings 判断“仍是旧默认”时安全升级；
+    /// 用户自定义 Prompt 不会命中，也不会被覆盖。
+    static let legacySummaryWithoutInsights = AIPromptConfiguration(
+        systemPrompt: summary.systemPrompt.replacingOccurrences(
+            of: "metadata, README, code context, repository insights, or external references",
+            with: "metadata, README, or code context"
+        ),
+        userPromptTemplate: summary.userPromptTemplate.replacingOccurrences(
+            of: "\n\n## Repository Insights\n{insightsContext}",
+            with: ""
+        )
     )
 
     /// Tags 任务私有占位符（dong4j 2026-06-14 拍板，i18n 策略 C：全英文指令 + Locale 仅控输出语言）：
@@ -1021,6 +1040,7 @@ enum AIDefaultPrompts {
     ///   与 Summary / Tags 任务共用同一份元数据块；
     /// - `{readme}`：清洗 + 截断后的 README 纯文本；
     /// - `{codeContext}`：RepoContextPacker 生成的代码 XML（关闭或拉取失败时为空字符串）；
+    /// - `{insightsContext}`：与仓库洞察页面共用缓存的结构化聚合事实；
     /// - `{summary}`：**repo 级**缓存命中的 AI 摘要 markdown（未生成过摘要时为空字符串）；
     /// - `{externalContext}`：External Search 生成的外部网页检索 markdown（关闭或拉取失败时为空字符串）；
     /// - `{previousSessionCarryOver}`：**session 级**承接摘要（仅当本 session 由「上下文溢出
@@ -1041,7 +1061,7 @@ enum AIDefaultPrompts {
     /// 1. 砍掉旧硬编码 `Reply in Simplified Chinese only`，统一走 `{outputLanguage}` i18n 派发；
     /// 2. 砍掉旧硬编码兜底中文 `"未从 README 或仓库元数据中确认"`，改成
     ///    `say so explicitly in {outputLanguage}` 让 LLM 自然翻译；
-    /// 3. 把单一黑盒 sourceText 拆成 5 个透明 section 占位符（跟 Summary v4 对齐），用户在
+    /// 3. 把单一黑盒 sourceText 拆成透明 section 占位符（跟 Summary v4 对齐），用户在
     ///    Settings 看得见、也能删；
     /// 4. 加强 LLM 输出约束：禁 `<think>` / `<thinking>` / `<reasoning>` 推理痕迹 XML、
     ///    禁外层 ``` 围栏整篇包裹、内部代码必须 fenced + 标语言、显式禁开场白 / 收场套话；
@@ -1068,7 +1088,7 @@ enum AIDefaultPrompts {
         - Output language: {outputLanguage} (use this language for the reply; technical English proper nouns are excluded — see the next constraint).
 
         # Factual Constraints
-        - Stay grounded in the provided repository context (metadata + README + optional code structure + optional AI summary + optional external references).
+        - Stay grounded in the provided repository context (metadata + README + optional code structure + optional repository insights + optional AI summary + optional external references).
         - Do NOT fabricate APIs, commands, file paths, links, or version numbers that are not present in the context.
         - If a question cannot be answered from the available context, say so explicitly in {outputLanguage} — do not guess. Tell the user the answer cannot be confirmed from the available materials.
         - Preserve technical English proper nouns as-is (library names, command names, framework names, API names, version strings, commit hashes, etc.) — do not force-translate them.
@@ -1099,6 +1119,9 @@ enum AIDefaultPrompts {
         ## Code Structure
         {codeContext}
 
+        ## Repository Insights
+        {insightsContext}
+
         ## AI Summary
         {summary}
 
@@ -1111,6 +1134,20 @@ enum AIDefaultPrompts {
         {previousSessionCarryOver}
         """,
         userPromptTemplate: ""
+    )
+
+    /// 1.3.0 洞察上下文接入前的 Chat 默认 Prompt；仅供默认值精确迁移。
+    static let legacyChatWithoutInsights = AIPromptConfiguration(
+        systemPrompt: chat.systemPrompt
+            .replacingOccurrences(
+                of: " + optional repository insights",
+                with: ""
+            )
+            .replacingOccurrences(
+                of: "\n\n## Repository Insights\n{insightsContext}",
+                with: ""
+            ),
+        userPromptTemplate: chat.userPromptTemplate
     )
 }
 

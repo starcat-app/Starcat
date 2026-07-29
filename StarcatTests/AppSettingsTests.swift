@@ -615,6 +615,7 @@ struct AppSettingsTests {
         #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("{metadata}"))
         #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("{readme}"))
         #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("{codeContext}"))
+        #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("{insightsContext}"))
         #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("{externalContext}"))
         #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("{outputLanguage}"))
         #expect(s.aiSummaryTask.prompt.systemPrompt.contains("{outputLanguage}"))
@@ -627,6 +628,7 @@ struct AppSettingsTests {
         #expect(s.aiChatTask.prompt.systemPrompt.contains("{metadata}"))
         #expect(s.aiChatTask.prompt.systemPrompt.contains("{readme}"))
         #expect(s.aiChatTask.prompt.systemPrompt.contains("{codeContext}"))
+        #expect(s.aiChatTask.prompt.systemPrompt.contains("{insightsContext}"))
         #expect(s.aiChatTask.prompt.systemPrompt.contains("{summary}"))
         #expect(s.aiChatTask.prompt.systemPrompt.contains("{externalContext}"))
         #expect(s.aiChatTask.prompt.userPromptTemplate.isEmpty)
@@ -688,6 +690,46 @@ struct AppSettingsTests {
         let reloaded = AppSettings(defaults: defaults).aiTagsTask
         #expect(reloaded.prompt == customTask.prompt)
         #expect(reloaded.prompt != AIDefaultPrompts.tags)
+    }
+
+    @Test("AI 洞察上下文: 摘要与对话旧默认 Prompt 安全升级")
+    func legacyDefaultInsightsPromptsMigrate() {
+        let defaults = makeIsolatedDefaults()
+        let seeded = AppSettings(defaults: defaults)
+
+        var summary = seeded.aiSummaryTask
+        summary.prompt = AIDefaultPrompts.legacySummaryWithoutInsights
+        summary.modelID = "custom-summary-model"
+        seeded.aiSummaryTask = summary
+
+        var chat = seeded.aiChatTask
+        chat.prompt = AIDefaultPrompts.legacyChatWithoutInsights
+        chat.modelID = "custom-chat-model"
+        seeded.aiChatTask = chat
+
+        let migrated = AppSettings(defaults: defaults)
+        #expect(migrated.aiSummaryTask.prompt == AIDefaultPrompts.summary)
+        #expect(migrated.aiSummaryTask.modelID == "custom-summary-model")
+        #expect(migrated.aiChatTask.prompt == AIDefaultPrompts.chat)
+        #expect(migrated.aiChatTask.modelID == "custom-chat-model")
+    }
+
+    @Test("AI 洞察上下文: 用户自定义摘要与对话 Prompt 不被覆盖")
+    func customInsightsPromptsArePreserved() {
+        let defaults = makeIsolatedDefaults()
+        let seeded = AppSettings(defaults: defaults)
+
+        var summary = seeded.aiSummaryTask
+        summary.prompt.systemPrompt += "\nCustom summary rule"
+        seeded.aiSummaryTask = summary
+
+        var chat = seeded.aiChatTask
+        chat.prompt.systemPrompt += "\nCustom chat rule"
+        seeded.aiChatTask = chat
+
+        let reloaded = AppSettings(defaults: defaults)
+        #expect(reloaded.aiSummaryTask.prompt == summary.prompt)
+        #expect(reloaded.aiChatTask.prompt == chat.prompt)
     }
 
     @Test("AI 代码上下文: ZIP 上限默认 50MB，可持久化且读取时钳制")

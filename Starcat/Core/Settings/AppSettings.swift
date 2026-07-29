@@ -1638,7 +1638,15 @@ final class AppSettings {
             profileID: defaultProfile.id,
             modelName: resolvedAIEmbeddingModel
         )
-        self.aiSummaryTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiSummaryTask, defaults: defaults) ?? defaultSummaryTask
+        let persistedSummaryTask = Self.decodeJSON(
+            AIModelTaskConfiguration.self,
+            key: Keys.aiSummaryTask,
+            defaults: defaults
+        ) ?? defaultSummaryTask
+        self.aiSummaryTask = Self.migrateLegacyDefaultSummaryPromptIfNeeded(
+            persistedSummaryTask,
+            defaults: defaults
+        )
         let persistedTagsTask = Self.decodeJSON(
             AIModelTaskConfiguration.self,
             key: Keys.aiTagsTask,
@@ -1679,7 +1687,15 @@ final class AppSettings {
             profileID: defaultProfile.id,
             modelName: resolvedAIChatModel
         )
-        self.aiChatTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiChatTask, defaults: defaults) ?? defaultChatTask
+        let persistedChatTask = Self.decodeJSON(
+            AIModelTaskConfiguration.self,
+            key: Keys.aiChatTask,
+            defaults: defaults
+        ) ?? defaultChatTask
+        self.aiChatTask = Self.migrateLegacyDefaultChatPromptIfNeeded(
+            persistedChatTask,
+            defaults: defaults
+        )
         self.ragBackendConfiguration = Self.decodeJSON(
             RAGBackendConfiguration.self,
             key: Keys.ragBackendConfiguration,
@@ -2221,6 +2237,52 @@ final class AppSettings {
         migrated.prompt = AIDefaultPrompts.tags
         if let data = try? JSONEncoder().encode(migrated) {
             defaults.set(String(decoding: data, as: UTF8.self), forKey: Keys.aiTagsTask)
+        }
+        return migrated
+    }
+
+    /// 只为仍使用旧默认值的摘要任务补上 `{insightsContext}`，保留自定义 Prompt。
+    private static func migrateLegacyDefaultSummaryPromptIfNeeded(
+        _ task: AIModelTaskConfiguration,
+        defaults: UserDefaults
+    ) -> AIModelTaskConfiguration {
+        migrateLegacyDefaultPrompt(
+            task,
+            legacy: AIDefaultPrompts.legacySummaryWithoutInsights,
+            current: AIDefaultPrompts.summary,
+            key: Keys.aiSummaryTask,
+            defaults: defaults
+        )
+    }
+
+    /// 只为仍使用旧默认值的仓库对话任务补上 `{insightsContext}`，保留自定义 Prompt。
+    private static func migrateLegacyDefaultChatPromptIfNeeded(
+        _ task: AIModelTaskConfiguration,
+        defaults: UserDefaults
+    ) -> AIModelTaskConfiguration {
+        migrateLegacyDefaultPrompt(
+            task,
+            legacy: AIDefaultPrompts.legacyChatWithoutInsights,
+            current: AIDefaultPrompts.chat,
+            key: Keys.aiChatTask,
+            defaults: defaults
+        )
+    }
+
+    /// 默认 Prompt 的窄迁移：完整相等才替换 prompt，其余 Provider / Model / 参数原样保留。
+    private static func migrateLegacyDefaultPrompt(
+        _ task: AIModelTaskConfiguration,
+        legacy: AIPromptConfiguration,
+        current: AIPromptConfiguration,
+        key: String,
+        defaults: UserDefaults
+    ) -> AIModelTaskConfiguration {
+        guard task.prompt == legacy else { return task }
+
+        var migrated = task
+        migrated.prompt = current
+        if let data = try? JSONEncoder().encode(migrated) {
+            defaults.set(String(decoding: data, as: UTF8.self), forKey: key)
         }
         return migrated
     }

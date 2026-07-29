@@ -720,12 +720,13 @@ final class AppDependencies {
             tokenProvider: KeychainTokenProvider()
         )
         self.repositoryMetricsClient = repositoryMetricsClient
-        self.repositoryRemoteInsightsProvider = SharedRepositoryRemoteInsightsProvider(
+        let repositoryRemoteInsightsProvider = SharedRepositoryRemoteInsightsProvider(
             base: DefaultRepositoryRemoteInsightsProvider(
                 metricsClient: repositoryMetricsClient,
                 cache: repositoryInsightsCache
             )
         )
+        self.repositoryRemoteInsightsProvider = repositoryRemoteInsightsProvider
         // AI adapter 通过同一个可切换 DatabaseManaging 门面旁路记录用量；配置动作必须
         // 发生在任何 Service 创建 OpenAIClient 之前，避免启动早期请求漏记。
         AIUsageRecorder.shared.configure(database: db)
@@ -1112,17 +1113,19 @@ final class AppDependencies {
             apiKey: StarcatAPIKeyResolver.resolve(for: .discovery)
         )
         self.discoveryAPI = discoveryAPIInstance
-        self.starHistoryAPI = StarHistoryAPI(
+        let starHistoryAPIInstance = StarHistoryAPI(
             baseURL: AppEndpoints.Discovery.baseURL,
             apiKey: StarcatAPIKeyResolver.resolve(for: .discovery)
         )
-        self.repoStarHistoryRepository = GRDBRepoStarHistoryRepository(
+        self.starHistoryAPI = starHistoryAPIInstance
+        let repoStarHistoryRepository = GRDBRepoStarHistoryRepository(
             database: db,
-            api: starHistoryAPI,
+            api: starHistoryAPIInstance,
             projectRepository: userProjectRepository,
             oauthStargazersAPI: api,
             githubAppStargazersAPI: projectAPIClient
         )
+        self.repoStarHistoryRepository = repoStarHistoryRepository
         let discoveryRepo = DiscoveryRepository(api: discoveryAPIInstance, database: db)
         self.discoveryRepository = discoveryRepo
         self.exploreCatalogStore = ExploreCatalogStore(repository: discoveryRepo)
@@ -1227,6 +1230,19 @@ final class AppDependencies {
         // 装配必须晚于 Release / OpenSSF 仓库。
         let healthRepo = metadataHealthRepo
         self.repoHealthRepository = healthRepo
+        aiInsight.setRepositoryInsightsContextProvider(
+            DefaultRepositoryInsightsAIContextProvider(
+                localProvider: DefaultRepositoryLocalInsightsProvider(
+                    releaseRepository: releaseRecordRepo,
+                    healthRepository: healthRepo,
+                    openSSFRepository: openSSFRepo,
+                    insightsCache: repositoryInsightsCache,
+                    database: db
+                ),
+                remoteProvider: repositoryRemoteInsightsProvider,
+                starHistoryRepository: repoStarHistoryRepository
+            )
+        )
         let healthService = RepoHealthService(
             repository: healthRepo,
             releaseRepository: releaseRecordRepo,

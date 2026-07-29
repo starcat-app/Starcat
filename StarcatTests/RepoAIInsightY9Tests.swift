@@ -157,7 +157,7 @@ struct RepoAIInsightY9Tests {
 
     // MARK: - assembleChatSystemPrompt（v4 占位符渲染版本）
 
-    /// v4 重构后 assembleChatSystemPrompt 是纯模板渲染：6 占位符无脑替换，没有内部
+    /// v4 重构后 assembleChatSystemPrompt 是纯模板渲染：占位符直接替换，没有内部
     /// 条件判断逻辑（旧版的 allowExternal / blank summary 检测都移到了 caller
     /// `buildChatSystemPrompt` 那一层 + nil-coalesce + 私仓门控）。
     /// 这些测试用 `AIDefaultPrompts.chat.systemPrompt` 当 template，验证占位符替换 +
@@ -173,6 +173,7 @@ struct RepoAIInsightY9Tests {
             metadata: "Repository: foo/bar\nDescription: hi",
             readme: "# Hello",
             codeContext: "",
+            insightsContext: "",
             summary: "",
             externalContext: "",
             previousSessionCarryOver: ""
@@ -184,10 +185,11 @@ struct RepoAIInsightY9Tests {
         #expect(result.contains("# Factual Constraints"))
         #expect(result.contains("# Reply Style"))
 
-        // 5 个 input section 标题都在（即便对应占位符为空）
+        // input section 标题都在（即便对应占位符为空）
         #expect(result.contains("## Metadata"))
         #expect(result.contains("## README"))
         #expect(result.contains("## Code Structure"))
+        #expect(result.contains("## Repository Insights"))
         #expect(result.contains("## AI Summary"))
         #expect(result.contains("## External References"))
 
@@ -210,6 +212,7 @@ struct RepoAIInsightY9Tests {
             metadata: "Repository: foo/bar",
             readme: "README body",
             codeContext: "",
+            insightsContext: "",
             summary: "## 一句话\nThis is a test summary.",
             externalContext: "",
             previousSessionCarryOver: ""
@@ -237,6 +240,7 @@ struct RepoAIInsightY9Tests {
             metadata: "Repository: foo/bar",
             readme: "",
             codeContext: "",
+            insightsContext: "",
             summary: "",
             externalContext: externalMd,
             previousSessionCarryOver: ""
@@ -263,6 +267,7 @@ struct RepoAIInsightY9Tests {
             metadata: "Repository: foo/bar",
             readme: "body",
             codeContext: "",
+            insightsContext: "",
             summary: "",
             externalContext: "",
             previousSessionCarryOver: ""
@@ -274,7 +279,7 @@ struct RepoAIInsightY9Tests {
         #expect(!result.contains("<external_context"))
     }
 
-    @Test("全要素拼接：5 个 input section 顺序为 metadata → readme → codeContext → summary → externalContext")
+    @Test("全要素拼接：洞察位于代码上下文与摘要之间")
     func assembleFullStack() {
         let result = RepoAIInsightService.assembleChatSystemPrompt(
             template: AIDefaultPrompts.chat.systemPrompt,
@@ -284,6 +289,7 @@ struct RepoAIInsightY9Tests {
             metadata: "M-DATA",
             readme: "R-DATA",
             codeContext: "C-DATA",
+            insightsContext: "I-DATA",
             summary: "S-DATA",
             externalContext: "E-DATA",
             previousSessionCarryOver: ""
@@ -292,21 +298,29 @@ struct RepoAIInsightY9Tests {
         let metaIdx = result.range(of: "M-DATA")?.lowerBound
         let readmeIdx = result.range(of: "R-DATA")?.lowerBound
         let codeIdx = result.range(of: "C-DATA")?.lowerBound
+        let insightsIdx = result.range(of: "I-DATA")?.lowerBound
         let summaryIdx = result.range(of: "S-DATA")?.lowerBound
         let externalIdx = result.range(of: "E-DATA")?.lowerBound
 
-        // 5 个 section 内容都必须出现
+        // 6 个 section 内容都必须出现
         #expect(metaIdx != nil)
         #expect(readmeIdx != nil)
         #expect(codeIdx != nil)
+        #expect(insightsIdx != nil)
         #expect(summaryIdx != nil)
         #expect(externalIdx != nil)
 
-        // 顺序断言：metadata < readme < codeContext < summary < externalContext
-        if let m = metaIdx, let r = readmeIdx, let c = codeIdx, let s = summaryIdx, let e = externalIdx {
+        // 顺序断言：metadata < readme < codeContext < insights < summary < externalContext
+        if let m = metaIdx,
+           let r = readmeIdx,
+           let c = codeIdx,
+           let i = insightsIdx,
+           let s = summaryIdx,
+           let e = externalIdx {
             #expect(m < r)
             #expect(r < c)
-            #expect(c < s)
+            #expect(c < i)
+            #expect(i < s)
             #expect(s < e)
         }
     }
@@ -326,6 +340,7 @@ struct RepoAIInsightY9Tests {
             metadata: "Repository: foo/bar",
             readme: "README body",
             codeContext: "",
+            insightsContext: "",
             summary: "",
             externalContext: "",
             previousSessionCarryOver: carry
@@ -360,6 +375,7 @@ struct RepoAIInsightY9Tests {
             metadata: "Repository: foo/bar",
             readme: "body",
             codeContext: "",
+            insightsContext: "",
             summary: "",
             externalContext: "",
             previousSessionCarryOver: ""
@@ -388,6 +404,7 @@ struct RepoAIInsightY9Tests {
             metadata: "M-DATA",
             readme: "",
             codeContext: "",
+            insightsContext: "",
             summary: "",
             externalContext: "",
             previousSessionCarryOver: ""

@@ -140,7 +140,8 @@ final class RepoAIInsightService {
     }
 
     /// makeSource 产物：Summary / Tags 任务都用占位符渲染（`{metadata}` / `{readme}` /
-    /// `{codeContext}` / `{externalContext}` / `{repoTags}` / `{libraryTags}`，详见
+    /// `{codeContext}` / `{insightsContext}` / `{externalContext}` / `{repoTags}` /
+    /// `{libraryTags}`，详见
     /// `AIDefaultPrompts.summary` 与 `AIDefaultPrompts.tags` 注释）。
     ///
     /// `text` 字段保留是为了让 `Self.hash(text)` 作为缓存 key 输入——
@@ -170,6 +171,12 @@ final class RepoAIInsightService {
         /// 标签推荐不需要外部检索结果做风格参考。
         let externalContext: String
 
+        /// Summary / Chat `{insightsContext}` 的渲染源。
+        ///
+        /// 仓库洞察通过共享 Provider 准备并写入与页面相同的缓存。它不参与 `hash`：
+        /// 活动计数等短周期指标不能频繁击穿已有摘要缓存；用户主动重新生成时仍会读取最新快照。
+        let insightsContext: String
+
         /// Y2：从 RepoContextPacker 拿到的元信息（命中缓存或新生成都填充）。
         /// 透传到 makeInsight 写入 RepoAIInsight.contextMetadata，供 UI footer 显示。
         var contextMeta: RepoAIInsightContextMeta?
@@ -185,6 +192,7 @@ final class RepoAIInsightService {
             readme: String,
             codeContext: String,
             externalContext: String = "",
+            insightsContext: String = "",
             contextMeta: RepoAIInsightContextMeta? = nil,
             contextDegradationReason: ContextDegradationReason? = nil
         ) {
@@ -194,6 +202,7 @@ final class RepoAIInsightService {
             self.readme = readme
             self.codeContext = codeContext
             self.externalContext = externalContext
+            self.insightsContext = insightsContext
             self.contextMeta = contextMeta
             self.contextDegradationReason = contextDegradationReason
         }
@@ -205,6 +214,8 @@ final class RepoAIInsightService {
     private let keychain: any KeychainManaging
     private let externalContextProvider: ExternalSearchContextProvider
     private let entitlementGate: EntitlementGate?
+    private var repositoryInsightsContextProvider:
+        (any RepositoryInsightsAIContextProviding)?
 
     /// 单仓 AI 摘要是否应在本次生成中准备代码上下文。
     ///
@@ -253,6 +264,8 @@ final class RepoAIInsightService {
         settings: AppSettings,
         keychain: any KeychainManaging = KeychainManager.shared,
         repoAIContextProvider: RepoAIContextProvider? = nil,
+        repositoryInsightsContextProvider:
+            (any RepositoryInsightsAIContextProviding)? = nil,
         entitlementGate: EntitlementGate? = nil,
         onSummaryGenerated: (@MainActor (Repo) -> Void)? = nil
     ) {
@@ -262,6 +275,7 @@ final class RepoAIInsightService {
         self.keychain = keychain
         self.externalContextProvider = ExternalSearchContextProvider(settings: settings)
         self.repoAIContextProvider = repoAIContextProvider
+        self.repositoryInsightsContextProvider = repositoryInsightsContextProvider
         self.entitlementGate = entitlementGate
         self.onSummaryGenerated = onSummaryGenerated
     }
@@ -270,6 +284,16 @@ final class RepoAIInsightService {
     /// 让 `SemanticSearchService` 先构造完，再回头给 `aiInsight` 挂上 "weak semantic" 闭包。
     func setOnSummaryGenerated(_ handler: (@MainActor (Repo) -> Void)?) {
         self.onSummaryGenerated = handler
+    }
+
+    /// AppDependencies 在本地洞察仓储完成装配后注入共享上下文 Provider。
+    ///
+    /// 使用后置注入是为了避免为 AI 提前构造第二套 Release / Health / OpenSSF / Star History
+    /// Repository；最终注入的对象与仓库洞察页面消费完全相同的数据源。
+    func setRepositoryInsightsContextProvider(
+        _ provider: (any RepositoryInsightsAIContextProviding)?
+    ) {
+        repositoryInsightsContextProvider = provider
     }
 
     /// 当前对话流式所用的模型名。
@@ -359,7 +383,8 @@ final class RepoAIInsightService {
         let source = try await makeSource(
             for: repo,
             codeContextRequest: codeContextRequest,
-            onContextProgress: onContextProgress
+            onContextProgress: onContextProgress,
+            includeInsights: includeSummary
         )
         // 分享任务允许用户取消。部分 provider 可能在最后一个 checkpoint 后正常返回，
         // 这里必须重新检查外层 Task，避免继续进入外部搜索或 LLM 请求。
@@ -423,6 +448,7 @@ final class RepoAIInsightService {
                 readme: source.readme,
                 codeContext: source.codeContext,
                 externalContext: context.markdown,
+                insightsContext: source.insightsContext,
                 contextMeta: source.contextMeta,
                 contextDegradationReason: source.contextDegradationReason
             )
@@ -737,6 +763,7 @@ final class RepoAIInsightService {
             metadata: source.metadata,
             readme: source.readme,
             codeContext: source.codeContext,
+            insightsContext: source.insightsContext,
             summary: cached?.summaryMarkdown ?? "",
             externalContext: externalContext,
             previousSessionCarryOver: carriedOverSummary ?? ""
@@ -749,14 +776,14 @@ final class RepoAIInsightService {
     /// Tags 任务的渲染路径完全一致。占位符在 `template` 里找不到时保留字面量
     /// （让 LLM 看到 `{xxx}` 便于排错），找到则替换为对应字段。
     ///
-    /// **空 section 处理**（跟 Summary v4 同款）：`codeContext` / `summary` / `externalContext`
-    /// 任意一个为空字符串都直接渲染成空 section header（如 `## AI Summary` 后面什么都没有），
-    /// LLM 自然忽略，不在这里做"删除整段 section"的复杂字符串处理——pre-launch 阶段
-    /// 简单稳定优先，token 浪费 < 5/section 可以接受。
+    /// **空 section 处理**（跟 Summary v4 同款）：`codeContext` / `insightsContext` /
+    /// `summary` / `externalContext` 任意一个为空字符串都直接渲染成空 section header
+    ///（如 `## AI Summary` 后面什么都没有），LLM 自然忽略，不在这里做“删除整段 section”
+    /// 的复杂字符串处理。
     ///
     /// **签名变更说明**：v3 旧签名是 `(sourceText, cachedSummaryMarkdown, cachedExternalMarkdown,
     /// allowExternal)`，把 metadata + readme + codeContext 黑盒拼成 `sourceText` 喂进去。
-    /// v4 改成"6 个一等参数"，跟模板的 6 占位符一一对应，让单测能精确断言每个占位符的渲染结果。
+    /// 后续新增的一等参数继续与模板占位符一一对应，让单测精确断言每段上下文的渲染结果。
     /// 2026-06-15 v4.x 追加 `runtimeContext` 参数，对应模板新增的 `{runtimeContext}` 占位符。
     ///
     /// `nonisolated`：本函数纯字符串拼接、无 actor 副作用，单测从 sync 上下文可直接调用。
@@ -768,6 +795,7 @@ final class RepoAIInsightService {
         metadata: String,
         readme: String,
         codeContext: String,
+        insightsContext: String,
         summary: String,
         externalContext: String,
         previousSessionCarryOver: String
@@ -791,6 +819,7 @@ final class RepoAIInsightService {
                 "metadata": metadata,
                 "readme": readme,
                 "codeContext": codeContext,
+                "insightsContext": insightsContext,
                 "summary": summary,
                 "externalContext": externalContext,
                 "previousSessionCarryOver": previousSessionCarryOver
@@ -819,9 +848,10 @@ final class RepoAIInsightService {
         let params = settings.effectiveParameters(for: task)
         // Summary 任务占位符（v4，2026-06-14）：
         // - system: `{outputLanguage}`
-        // - user:   `{outputLanguage}` / `{metadata}` / `{readme}` / `{codeContext}` / `{externalContext}`
+        // - user:   `{outputLanguage}` / `{metadata}` / `{readme}` / `{codeContext}` /
+        //           `{insightsContext}` / `{externalContext}`
         // 详见 `AIDefaultPrompts.summary` 注释。删某个占位符 → 不渲染对应内容；
-        // dict 里 build 完整 5 key 即可，prompt 模板里没用到的 key 不会有副作用。
+        // dict 里构造完整 key 即可，prompt 模板里没用到的 key 不会有副作用。
         let outputLanguage = Self.outputLanguageDescriptor()
         let request = AIChatRequest(
             systemPrompt: task.prompt.renderedSystemPrompt(placeholders: [
@@ -832,6 +862,7 @@ final class RepoAIInsightService {
                 "metadata": source.metadata,
                 "readme": source.readme,
                 "codeContext": source.codeContext,
+                "insightsContext": source.insightsContext,
                 "externalContext": source.externalContext
             ]),
             model: model,
@@ -1147,7 +1178,8 @@ final class RepoAIInsightService {
     private func makeSource(
         for repo: Repo,
         codeContextRequest: RepoAICodeContextRequest? = nil,
-        onContextProgress: RepoAIContextProgressCallback? = nil
+        onContextProgress: RepoAIContextProgressCallback? = nil,
+        includeInsights: Bool = true
     ) async throws -> Source {
         let markdown = try await readmeRepository.findContent(repoId: repo.id)
         let readme: Readme? = (markdown == nil)
@@ -1283,12 +1315,22 @@ final class RepoAIInsightService {
             }
         }
 
+        // 洞察上下文与 README / Code Context 共用 Source 生命周期，但不进入 source hash。
+        // Tags-only 任务明确跳过，避免批量标签整理无意义地预热所有仓库洞察。
+        let insightsContext: String
+        if includeInsights, let repositoryInsightsContextProvider {
+            insightsContext = await repositoryInsightsContextProvider.context(for: repo).content
+        } else {
+            insightsContext = ""
+        }
+
         return Source(
             text: llmText,
             hash: Self.hash(hashText),
             metadata: metadataBlock,
             readme: readmeText,
             codeContext: codeContextXml,
+            insightsContext: insightsContext,
             contextMeta: contextMeta,
             contextDegradationReason: degradationReason
         )
