@@ -1840,21 +1840,24 @@ struct RepositoryInsightsView: View {
                         }
 
                         if insight.contributors.count > Self.visibleContributorLimit {
-                            Button {
-                                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
-                                    isContributorsExpanded.toggle()
+                            HStack {
+                                Spacer(minLength: 0)
+                                Button {
+                                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
+                                        isContributorsExpanded.toggle()
+                                    }
+                                } label: {
+                                    Text(
+                                        isContributorsExpanded
+                                            ? "rag.workspace.citations.collapse"
+                                            : "insights.drilldown.viewAll"
+                                    )
+                                    .font(interfaceScale.font(.caption, weight: .medium))
+                                    .foregroundStyle(.secondary)
                                 }
-                            } label: {
-                                Text(
-                                    isContributorsExpanded
-                                        ? "rag.workspace.citations.collapse"
-                                        : "insights.drilldown.viewAll"
-                                )
-                                .font(interfaceScale.font(.caption, weight: .medium))
-                                .foregroundStyle(.secondary)
+                                .buttonStyle(.plain)
+                                .focusEffectDisabled()
                             }
-                            .buttonStyle(.plain)
-                            .focusEffectDisabled()
                         }
                     }
                 } else {
@@ -2719,21 +2722,24 @@ struct RepositoryInsightsView: View {
                     }
 
                     if timelineAllItems.count > Self.collapsedTimelineLimit {
-                        Button {
-                            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
-                                isTimelineExpanded.toggle()
+                        HStack {
+                            Spacer(minLength: 0)
+                            Button {
+                                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
+                                    isTimelineExpanded.toggle()
+                                }
+                            } label: {
+                                Text(
+                                    isTimelineExpanded
+                                        ? "rag.workspace.citations.collapse"
+                                        : "insights.drilldown.viewAll"
+                                )
+                                .font(interfaceScale.font(.caption, weight: .medium))
+                                .foregroundStyle(.secondary)
                             }
-                        } label: {
-                            Text(
-                                isTimelineExpanded
-                                    ? "rag.workspace.citations.collapse"
-                                    : "insights.drilldown.viewAll"
-                            )
-                            .font(interfaceScale.font(.caption, weight: .medium))
-                            .foregroundStyle(.secondary)
+                            .buttonStyle(.plain)
+                            .focusEffectDisabled()
                         }
-                        .buttonStyle(.plain)
-                        .focusEffectDisabled()
                     }
                 }
             }
