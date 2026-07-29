@@ -336,6 +336,51 @@ struct StarHistoryChartSeriesBuilderTests {
     }
 }
 
+@Suite("Star History Restriction Notice Policy")
+struct StarHistoryRestrictionNoticePolicyTests {
+
+    @Test("GitHub Stargazers 精确来源不显示访问限制说明")
+    func githubStargazersHidesNotice() {
+        let points = [point(source: .githubStargazers, precision: .reconstructed)]
+
+        #expect(!StarHistoryRestrictionNoticePolicy.shouldShow(points: points, phase: .content))
+    }
+
+    @Test("公共估算数据应显示访问限制说明")
+    func estimatedHistoryShowsNotice() {
+        let points = [point(source: .discoverySnapshot, precision: .estimated)]
+
+        #expect(StarHistoryRestrictionNoticePolicy.shouldShow(points: points, phase: .content))
+    }
+
+    @Test("仅有本机快照时应显示访问限制说明")
+    func localSnapshotShowsNotice() {
+        let points = [point(source: .localSnapshot, precision: .snapshot)]
+
+        #expect(StarHistoryRestrictionNoticePolicy.shouldShow(points: points, phase: .privateOnly))
+    }
+
+    @Test("加载或失败状态不应抢占主反馈")
+    func transientStatesHideNotice() {
+        #expect(!StarHistoryRestrictionNoticePolicy.shouldShow(points: [], phase: .loading))
+        #expect(!StarHistoryRestrictionNoticePolicy.shouldShow(points: [], phase: .failed))
+    }
+
+    private func point(
+        source: StarHistorySource,
+        precision: StarHistoryPrecision
+    ) -> StarHistoryPoint {
+        let date = Date(timeIntervalSince1970: 0)
+        return StarHistoryPoint(
+            date: date,
+            count: 1,
+            source: source,
+            precision: precision,
+            fetchedAt: date
+        )
+    }
+}
+
 private enum StarHistoryViewModelTestError: Error {
     case failed
 }

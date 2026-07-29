@@ -128075,6 +128075,20 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "重新整理 Star 歷史" } }
       }
     },
+    "insights.repo.star.restriction.learnMore" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "View GitHub announcement" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查看 GitHub 公告" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "查看 GitHub 公告" } }
+      }
+    },
+    "insights.repo.star.restriction.message" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "GitHub limits the Stargazers list to repository admins and collaborators. Other repositories use available estimates or snapshots saved on this Mac." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "GitHub 仅允许仓库管理员和协作者读取 Stargazers 列表；其他仓库使用可用的估算数据或本机快照。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "GitHub 僅允許儲存庫管理員和協作者讀取 Stargazers 清單；其他儲存庫使用可用的估算資料或本機快照。" } }
+      }
+    },
     "insights.repo.star.source.estimated" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Estimated · GH Archive" } },

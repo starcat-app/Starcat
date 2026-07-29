@@ -41,6 +41,24 @@ enum StarHistoryChartSeriesBuilder {
     }
 }
 
+enum StarHistoryRestrictionNoticePolicy {
+    /// 已拿到 GitHub Stargazers 数据时不再提示访问限制；加载与失败状态也不抢占主反馈。
+    static func shouldShow(
+        points: [StarHistoryPoint],
+        phase: StarHistoryViewPhase
+    ) -> Bool {
+        guard !points.contains(where: { $0.source == .githubStargazers }) else {
+            return false
+        }
+        switch phase {
+        case .content, .stale, .privateOnly, .unavailable:
+            return true
+        case .idle, .loading, .building, .failed:
+            return false
+        }
+    }
+}
+
 struct RepositoryInsightsView: View {
     private struct TimelineDisplayItem: Identifiable {
         let id: String
@@ -79,6 +97,10 @@ struct RepositoryInsightsView: View {
 
     private static let visibleContributorLimit = 6
     private static let collapsedTimelineLimit = 5
+    /// GitHub 公告解释了 Stargazers 列表的权限收紧，比通用 API 参数页更直接。
+    private static let githubStargazersRestrictionURL = URL(
+        string: "https://github.blog/changelog/2026-06-30-upcoming-access-restrictions-to-public-api-endpoints-and-ui-views/"
+    )!
 
     init(
         repo: Repo,
@@ -641,6 +663,13 @@ struct RepositoryInsightsView: View {
                         systemImage: "star.slash"
                     )
                 }
+
+                if StarHistoryRestrictionNoticePolicy.shouldShow(
+                    points: displayedStarPoints,
+                    phase: starHistoryViewModel.phase
+                ) {
+                    starHistoryRestrictionNotice
+                }
             }
         }
     }
@@ -701,6 +730,25 @@ struct RepositoryInsightsView: View {
             }
             starCoverageFooter
         }
+        .padding(.horizontal, 2)
+    }
+
+    /// 仅解释为什么当前不是 GitHub 精确来源，不把 Discovery 估算误写成本机数据。
+    private var starHistoryRestrictionNotice: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "info.circle")
+                .accessibilityHidden(true)
+            Text("insights.repo.star.restriction.message")
+                .fixedSize(horizontal: false, vertical: true)
+            Link(
+                "insights.repo.star.restriction.learnMore",
+                destination: Self.githubStargazersRestrictionURL
+            )
+            .underline()
+            .lineLimit(1)
+        }
+        .font(interfaceScale.font(.captionSmall))
+        .foregroundStyle(.secondary)
         .padding(.horizontal, 2)
     }
 
