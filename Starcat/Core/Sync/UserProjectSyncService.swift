@@ -239,7 +239,7 @@ final class UserProjectSyncService {
 
     /// GitHub App 同步前复查安装范围，避免安装被删除后继续把旧凭据当作完整授权。
     ///
-    /// `/user/installations` 返回未安装时，独立 Device Flow 凭据会保留，方便用户重新安装后
+    /// `/user/installations` 返回未安装时，独立 GitHub App Web Flow 凭据会保留，方便用户重新安装后
     /// 直接复查；GitHub App 来源关系立即移除，并在同一次刷新中重新解析为 OAuth Public
     /// fallback。复查过程若轮换了 access token，也必须重新解析凭据，不能继续使用旧 token。
     private func prepareCredentialForSync(

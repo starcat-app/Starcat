@@ -5,7 +5,7 @@
 //  GitHub App user access token 的安装范围验证端点。
 //
 //  关键约束：
-//  - Device Flow 只证明用户授权了 App，不证明 App 已安装到个人账号或组织；
+//  - Web Flow callback 只证明用户授权了 App，不证明所有个人或组织安装均已批准；
 //  - 必须通过 /user/installations 验证当前 App 至少存在一个可访问安装，才能启用
 //    Private / Internal 项目同步；
 //  - 响应只用于判断安装是否存在及仓库选择范围，不持久化账号、组织或安装 ID。

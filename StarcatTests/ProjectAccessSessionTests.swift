@@ -12,11 +12,11 @@ import Testing
 @Suite("ProjectAccessSession")
 struct ProjectAccessSessionTests {
     private final class MockOAuth: ProjectAccessOAuthServiceProtocol, @unchecked Sendable {
-        var beginResult = OAuthDeviceCodeInfo(
-            userCode: "ABCD-EFGH",
-            verificationURI: URL(string: "https://github.com/login/device")!,
-            expiresIn: 900,
-            pollInterval: 5
+        var beginResult = ProjectAccessAuthorizationInfo(
+            installationURL: URL(
+                string: "https://github.com/apps/starcat-for-github/installations/new?state=test"
+            )!,
+            expiresAt: Date(timeIntervalSince1970: 10_900)
         )
         var credential: ProjectAccessCredential
         var refreshed: ProjectAccessCredential
@@ -27,8 +27,10 @@ struct ProjectAccessSessionTests {
             self.refreshed = refreshed ?? credential
         }
 
-        func beginDeviceFlow() async throws -> OAuthDeviceCodeInfo { beginResult }
-        func awaitCredential() async throws -> ProjectAccessCredential { credential }
+        func beginAuthorization() async throws -> ProjectAccessAuthorizationInfo { beginResult }
+        func exchangeCallback(_ callbackURL: URL) async throws -> ProjectAccessCredential {
+            credential
+        }
         func refreshCredential(using refreshToken: String) async throws -> ProjectAccessCredential {
             refreshInputs.append(refreshToken)
             return refreshed
@@ -37,6 +39,9 @@ struct ProjectAccessSessionTests {
     }
 
     private let now = Date(timeIntervalSince1970: 10_000)
+    private let callbackURL = URL(
+        string: "starcat://github-app/callback?code=code&state=test"
+    )!
 
     private func credential(
         token: String,
@@ -60,7 +65,7 @@ struct ProjectAccessSessionTests {
         try keychain.storeProjectAccessCredential(String(decoding: data, as: UTF8.self))
     }
 
-    @Test("Device Flow 连接只写项目凭据，不覆盖 OAuth token")
+    @Test("GitHub App Web Flow 只写项目凭据，不覆盖 OAuth token")
     @MainActor
     func connectionIsIndependentFromMainOAuth() async throws {
         let keychain = InMemoryKeychain()
@@ -77,15 +82,16 @@ struct ProjectAccessSessionTests {
         )
 
         let info = try await session.beginConnection()
-        #expect(session.state == .awaitingAuthorization(info))
-        try await session.completeConnection()
+        #expect(info.installationURL.host == "github.com")
+        #expect(session.state == .awaitingAuthorization)
+        try await session.completeConnection(callbackURL: callbackURL)
 
         #expect(session.state == .connected(expiresAt: issued.accessExpiresAt))
         #expect(try keychain.loadGithubToken() == "oauth-main")
         #expect(try keychain.loadProjectAccessCredential() != nil)
     }
 
-    @Test("Device Flow 成功但未安装 App 时保留凭据并回退 Public 项目")
+    @Test("Web Flow 成功但未安装 App 时保留凭据并回退 Public 项目")
     @MainActor
     func missingInstallationPreservesCredentialAndFallsBack() async throws {
         let keychain = InMemoryKeychain()
@@ -101,7 +107,7 @@ struct ProjectAccessSessionTests {
         )
 
         _ = try await session.beginConnection()
-        try await session.completeConnection()
+        try await session.completeConnection(callbackURL: callbackURL)
 
         #expect(session.state == .installationRequired)
         #expect(try keychain.loadProjectAccessCredential() != nil)
@@ -178,7 +184,7 @@ struct ProjectAccessSessionTests {
 
         _ = try await session.beginConnection()
         await #expect(throws: NetworkError.self) {
-            try await session.completeConnection()
+            try await session.completeConnection(callbackURL: callbackURL)
         }
 
         #expect(session.state == .installationCheckFailed(.network))

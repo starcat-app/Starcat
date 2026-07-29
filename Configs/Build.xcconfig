@@ -59,13 +59,18 @@ STARCAT_OAUTH_CLIENT_SECRET =
 
 // MARK: - “我的项目”GitHub App
 
-// GitHub App Client ID 是公开标识，不是 secret。App 必须启用 Device Flow；
-// private key / client secret 永不进入客户端。
+// GitHub App Client ID 是公开标识，不是 secret。
 STARCAT_GITHUB_APP_CLIENT_ID = Iv23liEKp4zzsEk5mJw8
 
 // GitHub App 页面 URL 中的公开 slug（非 secret），用于构造用户安装入口。
 // 实际安装页：https:/$()/github.com/apps/starcat-for-github/installations/new
 STARCAT_GITHUB_APP_SLUG = starcat-for-github
+
+// GitHub App Client Secret。安装期间 OAuth 回调使用 Authorization Code Flow，
+// token 交换与后续 refresh 都必须携带。默认空 = 只保留 OAuth Public fallback。
+// macOS 原生应用属于 public client，无法真正隐藏该值；授权请求必须使用随机 state，
+// 且绝不能把权限更大的 GitHub App private key 注入客户端。
+STARCAT_GITHUB_APP_CLIENT_SECRET =
 
 // MARK: - 分发渠道
 

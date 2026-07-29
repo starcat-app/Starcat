@@ -114,9 +114,10 @@ targets:
         # （PKCE 保护 code 安全但不替代 client authentication）。本字段通过 xcconfig 注入，
         # 不提交到 git。缺失时 Web Flow 退化为不可用提示。
         STARCAT_OAUTH_CLIENT_SECRET: $(STARCAT_OAUTH_CLIENT_SECRET)
-        # “我的项目”GitHub App 的公开 Client ID。默认空时仅启用 OAuth public fallback。
-        # 客户端禁止注入 GitHub App private key 或 client secret。
+        # “我的项目”GitHub App Web Flow 配置。Client Secret 会随原生应用分发，
+        # 只用于 user access token 的 code 交换与刷新；private key 仍严禁进入客户端。
         STARCAT_GITHUB_APP_CLIENT_ID: $(STARCAT_GITHUB_APP_CLIENT_ID)
+        STARCAT_GITHUB_APP_CLIENT_SECRET: $(STARCAT_GITHUB_APP_CLIENT_SECRET)
         # GitHub App 页面 URL 中的公开 slug，用于构造安装入口。
         # Client ID 与 slug 缺一时均保持 OAuth public fallback。
         STARCAT_GITHUB_APP_SLUG: $(STARCAT_GITHUB_APP_SLUG)
@@ -221,8 +222,9 @@ targets:
         # 避免多个进程争用同一份 AppKit window restoration 状态。
         LSMultipleInstancesProhibited: true
         STARCAT_OAUTH_CLIENT_SECRET: $(STARCAT_OAUTH_CLIENT_SECRET)
-        # GitHub App 公共配置必须同时进入 Direct 包；仅定义 xcconfig 变量不会自动写入 Info.plist。
+        # GitHub App 配置必须同时进入 Direct 包；仅定义 xcconfig 变量不会自动写入 Info.plist。
         STARCAT_GITHUB_APP_CLIENT_ID: $(STARCAT_GITHUB_APP_CLIENT_ID)
+        STARCAT_GITHUB_APP_CLIENT_SECRET: $(STARCAT_GITHUB_APP_CLIENT_SECRET)
         STARCAT_GITHUB_APP_SLUG: $(STARCAT_GITHUB_APP_SLUG)
         CFBundleURLTypes:
           - CFBundleURLName: com.starcat.app.direct

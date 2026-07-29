@@ -26,10 +26,11 @@ enum ProjectAccessState: Equatable, Sendable {
     case unavailable
     case disconnected
     case connecting
-    case awaitingAuthorization(OAuthDeviceCodeInfo)
-    /// Device Flow 已成功，但当前 App 尚无可访问安装；凭据保留以支持安装后直接复查。
+    /// GitHub App 安装页已打开，等待 `starcat://github-app/callback`。
+    case awaitingAuthorization
+    /// Web Flow 已成功，但当前 App 尚无可访问安装；凭据保留以支持安装后直接复查。
     case installationRequired
-    /// 已有 Device Flow 凭据，但安装状态暂时无法验证；与首次授权失败分开呈现。
+    /// 已有 GitHub App Web Flow 凭据，但安装状态暂时无法验证；与首次授权失败分开呈现。
     case installationCheckFailed(ProjectAccessFailureCode)
     case connected(expiresAt: Date?)
     case partialAuthorization
@@ -107,16 +108,17 @@ final class ProjectAccessSession {
         }
     }
 
+    /// 启动“安装 GitHub App + 用户授权”的单次浏览器流程。
     @discardableResult
-    func beginConnection() async throws -> OAuthDeviceCodeInfo {
+    func beginConnection() async throws -> ProjectAccessAuthorizationInfo {
         guard isConfigured else {
             state = .unavailable
             throw ProjectAccessSessionError.unavailable
         }
         state = .connecting
         do {
-            let info = try await oauthService.beginDeviceFlow()
-            state = .awaitingAuthorization(info)
+            let info = try await oauthService.beginAuthorization()
+            state = .awaitingAuthorization
             return info
         } catch {
             state = .failed(Self.failureCode(error))
@@ -124,34 +126,36 @@ final class ProjectAccessSession {
         }
     }
 
-    func completeConnection() async throws {
+    /// 消费 GitHub App callback，保存独立凭据并立即验证安装范围。
+    @discardableResult
+    func completeConnection(callbackURL: URL) async throws -> GitHubAppInstallationAccess {
         guard isConfigured else {
             state = .unavailable
             throw ProjectAccessSessionError.unavailable
         }
         let credential: ProjectAccessCredential
         do {
-            credential = try await oauthService.awaitCredential()
+            credential = try await oauthService.exchangeCallback(callbackURL)
             try saveCredential(credential)
         } catch {
             state = .failed(Self.failureCode(error))
             throw error
         }
         do {
-            try await updateInstallationState(using: credential)
+            return try await updateInstallationState(using: credential)
         } catch NetworkError.unauthorized {
             markRevoked()
             throw NetworkError.unauthorized
         } catch {
-            // 凭据已经安全保存，安装校验失败不应让用户重复 Device Flow。
+            // 凭据已经安全保存，安装校验失败不应让用户重复授权。
             state = .installationCheckFailed(Self.failureCode(error))
             throw error
         }
     }
 
-    /// 安装 GitHub App 或组织批准后重新检查，无需重复 Device Flow。
+    /// 组织批准或仓库范围变化后重新检查，无需重复 GitHub App OAuth。
     ///
-    /// Device Flow 凭据会在 `.installationRequired` 状态保留，因此用户完成安装后可以直接
+    /// Web Flow 凭据会在 `.installationRequired` 状态保留，因此用户完成安装后可以直接
     /// 点击“重新检查”。返回值同时携带全部仓库或指定仓库范围。
     @discardableResult
     func refreshInstallationState() async throws -> GitHubAppInstallationAccess {
@@ -234,7 +238,7 @@ final class ProjectAccessSession {
         state = .organizationApprovalPending
     }
 
-    /// 校验安装并发布状态。没有安装是可恢复状态，不删除已经取得的 Device Flow 凭据；
+    /// 校验安装并发布状态。没有安装是可恢复状态，不删除已经取得的 Web Flow 凭据；
     /// selected repositories 必须保持独立状态，不能伪装成完整授权。
     @discardableResult
     private func updateInstallationState(
@@ -337,7 +341,9 @@ final class ProjectAccessSession {
         case .configurationMissing: .configuration
         case .network: .network
         case .userDeclined: .authorizationDenied
-        case .flowNotStarted, .codeExpired, .badRefreshToken, .invalidResponse: .invalidResponse
+        case .flowNotStarted, .codeExpired, .badRefreshToken,
+             .invalidCallback, .stateMismatch, .invalidResponse:
+            .invalidResponse
         case .httpStatus: .network
         }
     }
@@ -363,7 +369,7 @@ final class ProjectCredentialRouter {
     }
 
     func resolve() async throws -> ResolvedProjectCredential {
-        // Device Flow 成功但 App 尚未安装时，user token 不具备项目访问范围；继续用它会把
+        // Web Flow 成功但 App 尚未安装时，user token 不具备项目访问范围；继续用它会把
         // “未安装”误报为同步失败，因此明确回退主 OAuth 的 Public 项目。
         let installationMissing = projectAccessSession.state == .installationRequired
         if !installationMissing,

@@ -2,7 +2,7 @@
 //  ProjectAccessOAuthServiceTests.swift
 //  StarcatTests
 //
-//  验证 GitHub App Device Flow、轮询状态和无 client_secret 刷新契约。
+//  验证 GitHub App 安装期间 OAuth 回调、state 防伪和凭据刷新契约。
 //
 
 import Foundation
@@ -12,6 +12,7 @@ import Testing
 @Suite("ProjectAccessOAuthService", .serialized)
 struct ProjectAccessOAuthServiceTests {
     private let oauthURL = URL(string: "https://github.test.invalid")!
+    private let callbackURL = URL(string: "starcat://github-app/callback")!
     private let fixedNow = Date(timeIntervalSince1970: 1_000)
 
     private func response(_ request: URLRequest, status: Int = 200) -> HTTPURLResponse {
@@ -23,111 +24,160 @@ struct ProjectAccessOAuthServiceTests {
         )!
     }
 
-    @Test("缺少 GitHub App Client ID 时拒绝发起授权")
+    private func service(
+        clientID: String = "Iv1.client",
+        clientSecret: String = "secret",
+        session: URLSession = .shared
+    ) -> ProjectAccessOAuthService {
+        ProjectAccessOAuthService(
+            clientID: clientID,
+            clientSecret: clientSecret,
+            appSlug: "starcat-for-github",
+            callbackURL: callbackURL,
+            session: session,
+            oauthBaseURL: oauthURL,
+            now: { fixedNow },
+            stateGenerator: { "fixed-state" }
+        )
+    }
+
+    @Test("缺少 GitHub App Client Secret 时拒绝发起授权")
     func missingConfiguration() async {
-        let service = ProjectAccessOAuthService(clientID: "")
+        let service = service(clientSecret: "")
+
         await #expect(throws: ProjectAccessOAuthError.configurationMissing) {
-            try await service.beginDeviceFlow()
+            try await service.beginAuthorization()
         }
     }
 
-    @Test("Device Flow 解析 user code 并轮询得到可刷新凭据")
-    func deviceFlowReturnsCredential() async throws {
+    @Test("安装入口携带一次性 state")
+    func installationURLCarriesState() async throws {
+        let info = try await service().beginAuthorization()
+        let components = try #require(
+            URLComponents(url: info.installationURL, resolvingAgainstBaseURL: false)
+        )
+
+        #expect(info.installationURL.path == "/apps/starcat-for-github/installations/new")
+        #expect(components.queryItems == [URLQueryItem(name: "state", value: "fixed-state")])
+        #expect(info.expiresAt == fixedNow.addingTimeInterval(900))
+    }
+
+    @Test("合法回调用 code 和 Client Secret 换取可刷新凭据")
+    func callbackReturnsCredential() async throws {
         URLProtocolStub.reset()
-        let counter = LockedCounter()
         let bodies = RequestBodyRecorder()
         URLProtocolStub.requestHandler = { request in
             bodies.record(request)
-            let call = counter.increment()
-            if call == 1 {
-                let body = Data(
+            return (
+                response(request),
+                Data(
                     """
                     {
-                      "device_code":"device-secret",
-                      "user_code":"ABCD-EFGH",
-                      "verification_uri":"https://github.test.invalid/login/device",
-                      "expires_in":900,
-                      "interval":5
+                      "access_token":"ghu_access",
+                      "expires_in":28800,
+                      "refresh_token":"ghr_refresh",
+                      "refresh_token_expires_in":15897600
                     }
                     """.utf8
                 )
-                return (response(request), body)
-            }
-            let body = Data(
-                """
-                {
-                  "access_token":"ghu_access",
-                  "expires_in":28800,
-                  "refresh_token":"ghr_refresh",
-                  "refresh_token_expires_in":15897600,
-                  "token_type":"bearer",
-                  "scope":""
-                }
-                """.utf8
             )
-            return (response(request), body)
         }
-        let service = ProjectAccessOAuthService(
-            clientID: "Iv1.public-client-id",
-            session: URLProtocolStub.ephemeralSession(),
-            oauthBaseURL: oauthURL,
-            now: { fixedNow },
-            sleep: { _ in }
+        let service = service(session: URLProtocolStub.ephemeralSession())
+        _ = try await service.beginAuthorization()
+
+        let credential = try await service.exchangeCallback(
+            URL(string: "starcat://github-app/callback?code=one-time-code&state=fixed-state")!
         )
 
-        let info = try await service.beginDeviceFlow()
-        let credential = try await service.awaitCredential()
-
-        #expect(info.userCode == "ABCD-EFGH")
-        #expect(info.pollInterval == 5)
         #expect(credential.accessToken == "ghu_access")
         #expect(credential.refreshToken == "ghr_refresh")
         #expect(credential.accessExpiresAt == fixedNow.addingTimeInterval(28_800))
         #expect(credential.refreshExpiresAt == fixedNow.addingTimeInterval(15_897_600))
 
-        let firstBody = try #require(bodies.values.first)
-        let firstJSON = try #require(
-            JSONSerialization.jsonObject(with: firstBody) as? [String: String]
-        )
-        #expect(firstJSON == ["client_id": "Iv1.public-client-id"])
+        let body = try #require(bodies.values.first)
+        let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: String])
+        #expect(json["client_id"] == "Iv1.client")
+        #expect(json["client_secret"] == "secret")
+        #expect(json["code"] == "one-time-code")
+        #expect(json["redirect_uri"] == callbackURL.absoluteString)
+        #expect(json["device_code"] == nil)
     }
 
-    @Test("authorization_pending 后继续轮询")
-    func pendingContinuesPolling() async throws {
+    @Test("伪造 state 被拒绝且不发 token 请求")
+    func stateMismatchIsRejected() async throws {
         URLProtocolStub.reset()
         let counter = LockedCounter()
         URLProtocolStub.requestHandler = { request in
-            let call = counter.increment()
-            if call == 1 {
-                return (
-                    response(request),
-                    Data(
-                        #"{"device_code":"d","user_code":"U","verification_uri":"https://github.test.invalid/device","expires_in":900,"interval":1}"#.utf8
-                    )
-                )
-            }
-            if call == 2 {
-                return (response(request), Data(#"{"error":"authorization_pending"}"#.utf8))
-            }
-            return (response(request), Data(#"{"access_token":"ghu_ok"}"#.utf8))
+            _ = counter.increment()
+            return (response(request), Data(#"{"access_token":"unexpected"}"#.utf8))
         }
-        let service = ProjectAccessOAuthService(
-            clientID: "client",
-            session: URLProtocolStub.ephemeralSession(),
-            oauthBaseURL: oauthURL,
-            now: { fixedNow },
-            sleep: { _ in }
-        )
+        let service = service(session: URLProtocolStub.ephemeralSession())
+        _ = try await service.beginAuthorization()
 
-        _ = try await service.beginDeviceFlow()
-        let credential = try await service.awaitCredential()
-
-        #expect(credential.accessToken == "ghu_ok")
-        #expect(counter.value == 3)
+        await #expect(throws: ProjectAccessOAuthError.stateMismatch) {
+            try await service.exchangeCallback(
+                URL(string: "starcat://github-app/callback?code=stolen&state=wrong")!
+            )
+        }
+        #expect(counter.value == 0)
     }
 
-    @Test("刷新请求不携带 client secret 并轮换 refresh token")
-    func refreshWithoutClientSecret() async throws {
+    @Test("错误 callback host 不会进入 token 交换")
+    func wrongCallbackRouteIsRejected() async throws {
+        let service = service()
+        _ = try await service.beginAuthorization()
+
+        await #expect(throws: ProjectAccessOAuthError.invalidCallback) {
+            try await service.exchangeCallback(
+                URL(string: "starcat://callback?code=login-code&state=fixed-state")!
+            )
+        }
+    }
+
+    @Test("用户拒绝授权映射为稳定状态")
+    func accessDeniedIsMapped() async throws {
+        let service = service()
+        _ = try await service.beginAuthorization()
+
+        await #expect(throws: ProjectAccessOAuthError.userDeclined) {
+            try await service.exchangeCallback(
+                URL(string: "starcat://github-app/callback?error=access_denied&state=fixed-state")!
+            )
+        }
+    }
+
+    @Test("伪造拒绝回调不会清空合法授权上下文")
+    func forgedDenialDoesNotResetFlow() async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            (
+                response(request),
+                Data(#"{"access_token":"ghu_after_forged_denial"}"#.utf8)
+            )
+        }
+        let service = service(session: URLProtocolStub.ephemeralSession())
+        _ = try await service.beginAuthorization()
+
+        await #expect(throws: ProjectAccessOAuthError.stateMismatch) {
+            try await service.exchangeCallback(
+                URL(
+                    string:
+                        "starcat://github-app/callback?error=access_denied&state=forged-state"
+                )!
+            )
+        }
+        let credential = try await service.exchangeCallback(
+            URL(
+                string:
+                    "starcat://github-app/callback?code=legitimate-code&state=fixed-state"
+            )!
+        )
+
+        #expect(credential.accessToken == "ghu_after_forged_denial")
+    }
+
+    @Test("刷新请求携带 Client Secret 并轮换 refresh token")
+    func refreshUsesClientSecret() async throws {
         URLProtocolStub.reset()
         let bodies = RequestBodyRecorder()
         URLProtocolStub.requestHandler = { request in
@@ -139,13 +189,7 @@ struct ProjectAccessOAuthServiceTests {
                 )
             )
         }
-        let service = ProjectAccessOAuthService(
-            clientID: "client",
-            session: URLProtocolStub.ephemeralSession(),
-            oauthBaseURL: oauthURL,
-            now: { fixedNow },
-            sleep: { _ in }
-        )
+        let service = service(session: URLProtocolStub.ephemeralSession())
 
         let credential = try await service.refreshCredential(using: "ghr_old")
 
@@ -153,10 +197,10 @@ struct ProjectAccessOAuthServiceTests {
         #expect(credential.refreshToken == "ghr_new")
         let body = try #require(bodies.values.first)
         let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: String])
-        #expect(json["client_id"] == "client")
+        #expect(json["client_id"] == "Iv1.client")
+        #expect(json["client_secret"] == "secret")
         #expect(json["grant_type"] == "refresh_token")
         #expect(json["refresh_token"] == "ghr_old")
-        #expect(json["client_secret"] == nil)
     }
 
     @Test("bad_refresh_token 映射为重新授权状态")
@@ -165,11 +209,7 @@ struct ProjectAccessOAuthServiceTests {
         URLProtocolStub.requestHandler = { request in
             (response(request), Data(#"{"error":"bad_refresh_token"}"#.utf8))
         }
-        let service = ProjectAccessOAuthService(
-            clientID: "client",
-            session: URLProtocolStub.ephemeralSession(),
-            oauthBaseURL: oauthURL
-        )
+        let service = service(session: URLProtocolStub.ephemeralSession())
 
         await #expect(throws: ProjectAccessOAuthError.badRefreshToken) {
             try await service.refreshCredential(using: "expired")
@@ -193,8 +233,8 @@ private final class LockedCounter: @unchecked Sendable {
     }
 }
 
-/// URLSession 可能把 `httpBody` 内部化为 `httpBodyStream`；在 URLProtocol handler
-/// 收到请求时读取，避免测试把 Foundation 的存储细节误判为业务没有发送 JSON。
+/// URLSession 可能把 `httpBody` 内部化为 `httpBodyStream`；测试在 handler 内读取，
+/// 避免把 Foundation 的存储细节误判为业务没有发送 JSON。
 private final class RequestBodyRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var storage: [Data] = []

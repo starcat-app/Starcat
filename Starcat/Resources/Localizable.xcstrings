@@ -389382,6 +389382,14 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "連接 GitHub App" } }
       }
     },
+    "project.access.connection.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Install the GitHub App, choose all or selected repositories, and authorize read-only access in one GitHub flow." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "一次完成 GitHub App 安装、全部或指定仓库选择及只读授权。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "一次完成 GitHub App 安裝、全部或指定儲存庫選擇及唯讀授權。" } }
+      }
+    },
     "project.access.copyCode" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -389529,9 +389537,9 @@
     "project.access.state.awaiting.detail" : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Approve the read-only request in GitHub. This window will update automatically." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请在 GitHub 中批准只读请求，本窗口会自动更新。" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "請在 GitHub 中批准唯讀請求，本視窗會自動更新。" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Complete installation and read-only authorization in GitHub. Starcat will update automatically after the callback." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请在 GitHub 中完成安装和只读授权，回到 Starcat 后会自动更新。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "請在 GitHub 中完成安裝和唯讀授權，回到 Starcat 後會自動更新。" } }
       }
     },
     "project.access.state.awaiting.title" : {
@@ -389561,9 +389569,9 @@
     "project.access.state.connecting.detail" : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Requesting a secure device code from GitHub." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在向 GitHub 请求安全设备代码。" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "正在向 GitHub 請求安全裝置代碼。" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Preparing the GitHub App installation and authorization page." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在准备 GitHub App 安装与授权页面。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "正在準備 GitHub App 安裝與授權頁面。" } }
       }
     },
     "project.access.state.connecting.title" : {
@@ -389689,9 +389697,9 @@
     "project.access.state.unavailable.detail" : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "This build has no complete GitHub App Client ID and slug configuration. Public projects still use the existing OAuth login." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前构建未完整配置 GitHub App Client ID 和 slug，Public 项目仍使用现有 OAuth 登录。" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "目前建置未完整設定 GitHub App Client ID 和 slug，Public 專案仍使用現有 OAuth 登入。" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This build has no complete GitHub App Client ID, Client Secret, and slug configuration. Public projects still use the existing OAuth login." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前构建未完整配置 GitHub App Client ID、Client Secret 和 slug，Public 项目仍使用现有 OAuth 登录。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "目前建置未完整設定 GitHub App Client ID、Client Secret 和 slug，Public 專案仍使用現有 OAuth 登入。" } }
       }
     },
     "project.access.state.unavailable.title" : {
@@ -389705,9 +389713,9 @@
     "project.access.step.authorize.detail" : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Authorize Starcat with Device Flow, then the installation will be verified automatically." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "通过 Device Flow 授权 Starcat，完成后会自动验证安装状态。" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "透過 Device Flow 授權 Starcat，完成後會自動驗證安裝狀態。" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Authorize read-only access during installation, then Starcat verifies the installation automatically." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "安装期间完成只读授权，随后 Starcat 会自动验证安装状态。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "安裝期間完成唯讀授權，隨後 Starcat 會自動驗證安裝狀態。" } }
       }
     },
     "project.access.step.authorize.title" : {

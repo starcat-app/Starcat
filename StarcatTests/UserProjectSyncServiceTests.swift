@@ -299,11 +299,12 @@ private actor SyncCredentialRecorder {
 }
 
 private actor ProjectAccessOAuthServiceStub: ProjectAccessOAuthServiceProtocol {
-    func beginDeviceFlow() async throws -> OAuthDeviceCodeInfo {
+    func beginAuthorization() async throws -> ProjectAccessAuthorizationInfo {
         throw ProjectAccessOAuthError.configurationMissing
     }
 
-    func awaitCredential() async throws -> ProjectAccessCredential {
+    func exchangeCallback(_ callbackURL: URL) async throws -> ProjectAccessCredential {
+        _ = callbackURL
         throw ProjectAccessOAuthError.flowNotStarted
     }
 

@@ -33,4 +33,23 @@ struct GitHubAppConfigurationTests {
     func invalidSlugIsRejected(_ slug: String) {
         #expect(AppConstants.makeGitHubAppInstallationURL(slug: slug) == nil)
     }
+
+    @Test("项目权限 callback 与主登录 callback 精确隔离")
+    func projectAccessCallbackRouteIsExact() {
+        #expect(
+            AppConstants.isGitHubAppCallback(
+                URL(string: "starcat://github-app/callback?code=project&state=one")!
+            )
+        )
+        #expect(
+            !AppConstants.isGitHubAppCallback(
+                URL(string: "starcat://callback?code=login&state=two")!
+            )
+        )
+        #expect(
+            !AppConstants.isGitHubAppCallback(
+                URL(string: "starcat://github-app/other?code=project&state=one")!
+            )
+        )
+    }
 }

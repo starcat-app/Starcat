@@ -6,7 +6,7 @@
 //
 //  关键约束：
 //  - GitHub App 是可选增强；未连接时明确说明仍会用现有 OAuth 展示 Public 项目；
-//  - Device Flow code 必须使用共享 CopyFeedbackButton，复制成功展示统一绿色反馈；
+//  - 安装与用户授权在同一次 GitHub 浏览器流程完成，不再要求第二次 Device Flow；
 //  - 断开只删除独立 GitHub App 凭据，不影响主登录和已经保存的用户内容。
 //
 
@@ -20,7 +20,7 @@ struct ProjectAccessSheet: View {
     @Environment(AuthSession.self) private var authSession
     @Environment(AppDependencies.self) private var dependencies
 
-    @State private var connectionTask: Task<Void, Never>?
+    @State private var authorizationTask: Task<Void, Never>?
     @State private var isCheckingInstallation = false
     @State private var isClearingPrivateCache = false
     @State private var privateCacheClearMessage: LocalizedStringKey?
@@ -41,10 +41,11 @@ struct ProjectAccessSheet: View {
                 .padding(24)
         }
         .frame(width: 520)
-        .onDisappear {
-            if case .awaitingAuthorization = accessSession.state {
-                connectionTask?.cancel()
-                Task { await accessSession.cancelConnection() }
+        .onReceive(
+            NotificationCenter.default.publisher(for: .starcatProjectAccessDidSync)
+        ) { _ in
+            Task {
+                await onProjectsChanged()
             }
         }
     }
@@ -70,76 +71,15 @@ struct ProjectAccessSheet: View {
             statusCard
 
             if accessSession.state == .disconnected {
-                setupSteps
-            }
-
-            if case .awaitingAuthorization(let info) = accessSession.state {
-                deviceCodeCard(info)
-            }
-
-            actionArea
-            Divider()
-            privateCacheArea
-        }
-    }
-
-    /// GitHub App 安装和用户授权是 GitHub 明确定义的两个步骤，必须同时展示，
-    /// 避免用户把“已在 Device Flow 登录”误认为“已授权仓库范围”。
-    private var setupSteps: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            accessStep(
-                number: 1,
-                titleKey: "project.access.step.install.title",
-                detailKey: "project.access.step.install.detail"
-            ) {
-                Button("project.access.install") {
-                    openInstallation()
-                }
-                .buttonStyle(.bordered)
-                .disabled(AppConstants.githubAppInstallationURL == nil)
-            }
-
-            Divider()
-
-            accessStep(
-                number: 2,
-                titleKey: "project.access.step.authorize.title",
-                detailKey: "project.access.step.authorize.detail"
-            ) {
-                Button("project.access.authorize") {
-                    connect()
-                }
-                .buttonStyle(.borderedProminent)
-            }
-        }
-        .padding(.horizontal, 4)
-    }
-
-    private func accessStep<Action: View>(
-        number: Int,
-        titleKey: LocalizedStringKey,
-        detailKey: LocalizedStringKey,
-        @ViewBuilder action: () -> Action
-    ) -> some View {
-        HStack(alignment: .center, spacing: 12) {
-            Text(verbatim: String(number))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 24, height: 24)
-                .background(Color.secondary.opacity(0.12), in: Circle())
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(titleKey)
-                    .font(.callout.weight(.medium))
-                Text(detailKey)
+                Text("project.access.connection.detail")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Spacer(minLength: 12)
-            action()
+            actionArea
+            Divider()
+            privateCacheArea
         }
     }
 
@@ -185,42 +125,6 @@ struct ProjectAccessSheet: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func deviceCodeCard(_ info: OAuthDeviceCodeInfo) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("project.access.deviceCode")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            HStack(spacing: 10) {
-                Text(verbatim: info.userCode)
-                    .font(.system(.title3, design: .monospaced, weight: .bold))
-                    .textSelection(.enabled)
-
-                Spacer()
-
-                CopyFeedbackButton(
-                    providesContent: { info.userCode },
-                    tooltip: "project.access.copyCode"
-                ) { didCopy in
-                    Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
-                        .foregroundStyle(didCopy ? Color.green : Color.primary)
-                        .frame(width: 24, height: 24)
-                }
-            }
-
-            Button("project.access.openGitHub") {
-                NSWorkspace.shared.open(info.verificationURI)
-            }
-            .buttonStyle(.bordered)
-            .accessibilityHint(Text("project.access.openGitHub.hint"))
-        }
-        .padding(16)
-        .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(Color.secondary.opacity(0.2))
-        }
-    }
-
     @ViewBuilder
     private var actionArea: some View {
         HStack {
@@ -241,12 +145,15 @@ struct ProjectAccessSheet: View {
                 }
                 .buttonStyle(.bordered)
             case .disconnected:
-                EmptyView()
-            case .installationRequired:
-                Button("project.access.install") {
-                    openInstallation()
+                Button("project.access.connect") {
+                    connect()
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderedProminent)
+            case .installationRequired:
+                Button("project.access.connect") {
+                    connect()
+                }
+                .buttonStyle(.borderedProminent)
                 SyncIconButton(
                     isRefreshing: isCheckingInstallation,
                     disabled: isCheckingInstallation,
@@ -365,14 +272,12 @@ struct ProjectAccessSheet: View {
     }
 
     private func connect() {
-        connectionTask?.cancel()
-        connectionTask = Task { @MainActor in
+        authorizationTask?.cancel()
+        authorizationTask = Task { @MainActor in
             do {
                 let info = try await accessSession.beginConnection()
-                NSWorkspace.shared.open(info.verificationURI)
-                try await accessSession.completeConnection()
-                if case .connected = accessSession.state {
-                    refreshProjects(force: true)
+                if !NSWorkspace.shared.open(info.installationURL) {
+                    await accessSession.cancelConnection()
                 }
             } catch is CancellationError {
                 // 用户主动取消时不覆盖 cancelConnection 已发布的 disconnected 状态。
@@ -380,11 +285,6 @@ struct ProjectAccessSheet: View {
                 // ProjectAccessSession 已映射并发布稳定错误状态，UI 无需再保存原始错误。
             }
         }
-    }
-
-    private func openInstallation() {
-        guard let url = AppConstants.githubAppInstallationURL else { return }
-        NSWorkspace.shared.open(url)
     }
 
     private func openInstallationSettings() {
@@ -408,8 +308,8 @@ struct ProjectAccessSheet: View {
     }
 
     private func cancelConnection() {
-        connectionTask?.cancel()
-        connectionTask = nil
+        authorizationTask?.cancel()
+        authorizationTask = nil
         Task { await accessSession.cancelConnection() }
     }
 
