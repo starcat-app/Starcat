@@ -10,7 +10,8 @@
 # 支撑项目统一放在 supports/ 目录下:
 #   - 6 个 Go API 服务(starcat-*-api)
 #   - starcat-pro / starcat-license-api / starcat-localization
-#   - starcat-skill / starcat-cli / starcat-alfred-workflow / homebrew-starcat-cli
+#   - starcat-skill / starcat-cli / starcat-alfred-workflow / starcat-utools-plugin
+#   - homebrew-starcat-cli
 #   - homebrew-starcat
 #   - .github / starcat-docs / starcat-site
 #   - extensions/ 下 2 个浏览器插件
@@ -68,6 +69,7 @@ if $SHOW_HELP; then
   echo "  starcat-skill       Starcat AI Agent Skill"
   echo "  starcat-cli         跨平台 Starcat CLI"
   echo "  starcat-alfred-workflow  Alfred 仓库搜索 Workflow"
+  echo "  starcat-utools-plugin  uTools 仓库搜索插件"
   echo "  homebrew-starcat-cli  Starcat CLI Homebrew Formula tap"
   echo "  .github             组织主页与共享社区健康文件"
   echo "  starcat-docs        Starcat 官方文档"
@@ -97,6 +99,7 @@ PROJECTS=(
   "starcat-skill|https://github.com/starcat-app/starcat-skill.git|Starcat AI Agent Skill"
   "starcat-cli|https://github.com/starcat-app/starcat-cli.git|跨平台 Starcat CLI"
   "starcat-alfred-workflow|https://github.com/starcat-app/starcat-alfred-workflow.git|Alfred 仓库搜索 Workflow"
+  "starcat-utools-plugin|https://github.com/starcat-app/starcat-utools-plugin.git|uTools 仓库搜索插件"
   "homebrew-starcat-cli|https://github.com/starcat-app/homebrew-starcat-cli.git|Starcat CLI Homebrew Formula tap"
   "extensions/starcat-chrome-plugin|https://github.com/starcat-app/starcat-chrome-plugin.git|Chrome 浏览器插件"
   "extensions/starcat-safari-plugin|https://github.com/starcat-app/starcat-safari-plugin.git|Safari 浏览器插件"

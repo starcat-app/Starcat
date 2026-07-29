@@ -95,6 +95,14 @@ PROJECTS = [
         "Official Alfred Workflow for searching Starcat local repositories and GitHub.",
     ),
     Project(
+        Path("supports/starcat-utools-plugin"),
+        "Starcat uTools Plugin",
+        "launcher",
+        "Starcat uTools 插件",
+        "这是在 uTools 中搜索 Starcat 本地仓库与 GitHub 的官方插件。",
+        "Official uTools plugin for searching Starcat local repositories and GitHub.",
+    ),
+    Project(
         Path("supports/starcat-skill"),
         "Starcat Skill",
         "skill",

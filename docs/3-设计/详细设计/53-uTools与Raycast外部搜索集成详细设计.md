@@ -1,6 +1,6 @@
 # uTools 与 Raycast 外部搜索集成详细设计
 
-> 状态：Alfred 公共代码基线已收口，uTools 与 Raycast 待实施
+> 状态：uTools 0.1.0 开发版与公共 contract fixtures 已实现，uTools 真机接入验收和 Raycast 待实施
 >
 > 日期：2026-07-29
 >
@@ -114,7 +114,7 @@ Launcher Adapter
 |----|------|------------|
 | R-01 | 已修复 | 构建脚本先切换到 `repo_dir`，再使用相对 package；已从 `/tmp` 调用成功并生成 `arm64` / `x86_64` universal binary。 |
 | R-02 | 已修复 | MCP 错误新增 `schema_version` / `code` / `message` 结构，CLI 使用 typed error 分类，不再解析英文全文；CLI tests 与 `go vet` 通过。 |
-| R-03 | 部分修复 | `starcat-app/starcat-alfred-workflow` 公开仓库与 `main` 已建立，设置页在可安装 Release 就绪前保持禁用；首个 Release、A-01~A-15 和干净 Mac 验收仍未完成。 |
+| R-03 | 部分修复 | `starcat-app/starcat-alfred-workflow` 已公开，v1.0.1 Release 与构建 Action 可用；A-01~A-15 和干净 Mac 人工验收仍未完成。 |
 | R-04 | 已修复 | 头像缓存增加 cleanup state 与跨进程 lock，清理每 24 小时最多执行一次；覆盖 23 小时不重复、25 小时重新执行测试。 |
 | R-05 | 已修复 | MCP 与 CLI 对 `limit` 统一采用 `1...50` 严格校验，越界返回 `INVALID_ARGUMENTS`，不再静默裁剪。 |
 | R-06 | 已修复 | Alfred 只允许无凭据、无自定义端口的版本化 `starcat://repo/...`，或无 query 的 `https://github.com/{owner}/{repo}`；非法路径已有测试。 |
@@ -127,12 +127,15 @@ Launcher Adapter
 - `starcat-cli` Go tests 与 `go vet`。
 - `starcat-alfred-workflow` Go tests、`go vet`、`plutil -lint`。
 - Alfred universal helper 的 `arm64` / `x86_64` 架构检查。
+- `starcat-cli/contracts/global-search` 的 v1 schema、成功 / 空结果 / 错误 fixtures 与 Go contract tests。
+- `starcat-utools-plugin` 在 Node 16.20.2 和当前 Node 上完成 26 项测试、结构校验与真实 CLI 搜索 smoke test。
 
 仍未证明：
 
 - Alfred Workflow 的真实导入、快速输入、头像二次刷新和 Deep Link 行为。
 - Developer ID / Gatekeeper 下的 helper 可执行性。
-- uTools `list` 模式是否稳定展示远程 HTTPS avatar。
+- uTools 开发者工具真实接入后，`list` 模式是否稳定展示远程 HTTPS avatar。
+- uTools 列表选择后真实打开 Starcat / GitHub，以及 Intel Mac 和 UPXS 安装卸载行为。
 - Raycast 中连续输入时对子进程的真实取消行为。
 - 三个 Launcher 对同一 fixture 的字段和错误映射完全一致。
 
@@ -579,6 +582,32 @@ window.exports = {
 - 市场运行平台只选 macOS。
 - 发布前核对 semver、隐私说明、CLI / Pro 前置条件。
 
+### 6.11 2026-07-29 实施记录
+
+已建立独立仓库工作树 `supports/starcat-utools-plugin`，开发版本为 `0.1.0`。实现边界如下：
+
+- `plugin.json` 使用无 `main` 的 `window.exports` list 模式，feature 仅开放 `darwin`。
+- `preload.js` 只编排 enter / search / select，不持久化查询和结果。
+- CLI 定位支持 `STARCAT_CLI_PATH`、`PATH`、Homebrew 与 `~/.local/bin`；查询词只作为 `execFile` argv，`shell: false`。
+- 200ms debounce、AbortSignal、8 秒 timeout、request ID 共同阻止旧结果回写。
+- stdout 限制 2 MiB，stderr 限制 64 KiB；界面只展示稳定错误映射，不透传原始 stderr。
+- `schema_version = 1` 严格校验必需字段，同时允许 v1 内新增字段。
+- 只打开版本化 `starcat://repo/{owner}/{name}` 或规范 GitHub 仓库 URL；头像只接受 GitHub 公共 HTTPS host。
+- `README.md` / `README-ZH.md`、MIT、隐私说明、贡献 / 安全 / 支持文档、CI 和 Dependabot 已补齐。
+
+自动化证据：
+
+1. 当前 Node：26 / 26 tests 通过，插件结构校验通过。
+2. Node 16.20.2：全部 test files 通过，覆盖 uTools 当前 preload 运行时兼容边界。
+3. 真实 CLI：`schema_version = 1`，Local / GitHub providers 均成功；列表来源、Deep Link scheme 和头像 allowlist 映射通过。
+4. 本机旧 CLI v1.0.0：未分类搜索失败会在错误路径执行版本诊断，并稳定映射为 `UPGRADE_REQUIRED`。
+5. `starcat-cli/contracts/global-search` fixtures 与插件测试资源一致。
+
+人工边界：
+
+- 本机已安装 uTools 7.8.0 arm64，但系统未授予当前自动化进程 Accessibility，无法可靠操作开发者工具文件选择器。
+- 因此 U-01、U-03~U-06、U-10~U-12 仍保持未验收；本次未生成 UPXS，也未提交应用市场。
+
 ---
 
 ## 7. Raycast 集成设计
@@ -903,30 +932,30 @@ supports/starcat-raycast-extension/
 1. [x] 修复 R-01 构建 cwd。
 2. [x] 修复 R-02 结构化错误 code。
 3. [x] R-05 采用 `limit = 1...50` 严格报错语义。
-4. [ ] 添加跨适配器 contract fixtures。
+4. [x] 添加跨适配器 contract fixtures。
 5. [ ] 完成 Alfred A-01~A-15。
-6. [ ] 建立可安装的 Alfred release。
+6. [x] 建立可安装的 Alfred release。
 
 验收：公共 CLI 契约不再依赖英文错误文案。
 
 ### Phase 1：uTools spike
 
-1. 创建独立仓库。
-2. 验证 `window.exports` list async 搜索。
-3. 验证远程 avatar。
-4. 验证 `shellOpenExternal` 打开 `starcat://`。
-5. 记录 spike 结论，再进入完整实现。
+1. [x] 创建独立仓库工作树。
+2. [x] 用自动化验证 `window.exports` list async 搜索编排。
+3. [ ] 在 uTools 真机列表验证远程 avatar 渲染。
+4. [ ] 在 uTools 真机验证 `shellOpenExternal` 打开 `starcat://`。
+5. [x] 记录自动化证据和人工验收边界。
 
 验收：在真机上用最小插件完成一条本地结果和一条 GitHub 结果。
 
 ### Phase 2：uTools 完整实现
 
-1. CLI adapter。
-2. contract / error / URL policy。
-3. list mapping。
-4. cancellation。
-5. tests / README。
-6. U-01~U-12。
+1. [x] CLI adapter。
+2. [x] contract / error / URL policy。
+3. [x] list mapping。
+4. [x] cancellation。
+5. [x] tests / README。
+6. [ ] U-01~U-12。
 
 验收：生成可人工安装的 UPXS，但不自动发布。
 
@@ -958,21 +987,21 @@ supports/starcat-raycast-extension/
 
 - [x] R-01、R-02、R-04、R-05、R-06 已修复并有自动化证据。
 - [ ] R-03 完成公开 Release 与干净 Mac 人工验收。
-- [ ] `starcat-cli/contracts/global-search` 成为 v1 fixture 真源。
+- [x] `starcat-cli/contracts/global-search` 成为 v1 fixture 真源。
 - [x] MCP / CLI 错误分类不依赖英文全文。
 - [ ] 三端 adapter 对同一 fixture 输出一致的 title、来源和打开行为。
 - [ ] 三端都不读取数据库、Keychain 或 GitHub Token。
 
 uTools：
 
-- [ ] 使用 `window.exports` list 模式。
-- [ ] feature 只开放 `darwin`。
-- [ ] 查询只走 argv。
-- [ ] timeout、取消和旧结果保护生效。
+- [x] 使用 `window.exports` list 模式。
+- [x] feature 只开放 `darwin`。
+- [x] 查询只走 argv。
+- [x] timeout、取消和旧结果保护生效。
 - [ ] 本地 / GitHub 打开正确。
 - [ ] 图标 spike 结论有自动化或人工证据。
 - [ ] U-01~U-12 有验收记录。
-- [ ] README / README-ZH 同步。
+- [x] README / README-ZH 同步。
 
 Raycast：
 
@@ -990,7 +1019,7 @@ Raycast：
 
 - [ ] 三个 Launcher 仓库边界独立。
 - [ ] Starcat 设置页只指向真实可安装地址。
-- [ ] 未执行未经授权的 package / publish / upload。
+- [x] 未执行未经授权的 package / publish / upload。
 
 ---
 
