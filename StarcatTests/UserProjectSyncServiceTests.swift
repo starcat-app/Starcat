@@ -275,6 +275,59 @@ struct UserProjectSyncServiceTests {
         #expect(!service.isBackgroundRefreshEnabled)
         #expect(service.state == UserProjectSyncServiceState.idle)
     }
+
+    @Test("远端撤销成功但关系清理失败时仅重试本地阶段")
+    func disconnectRetriesLocalCleanupWithoutRevokingAgain() async throws {
+        let keychain = InMemoryKeychain()
+        let credential = ProjectAccessCredential(
+            accessToken: "project-token",
+            accessExpiresAt: nil,
+            refreshToken: nil,
+            refreshExpiresAt: nil
+        )
+        let data = try JSONEncoder().encode(credential)
+        try keychain.storeProjectAccessCredential(String(decoding: data, as: UTF8.self))
+
+        let oauth = DisconnectOAuthRecorder()
+        let progress = MockDisconnectProgress()
+        let accessSession = ProjectAccessSession(
+            oauthService: oauth,
+            keychain: keychain,
+            disconnectProgress: progress,
+            isConfigured: true
+        )
+        let relations = DisconnectRelationsRecorder()
+        let service = UserProjectSyncService(
+            projectAccessSession: accessSession,
+            resolveCredential: {
+                ResolvedProjectCredential(
+                    accessToken: "oauth",
+                    authorizationSource: .oauth
+                )
+            },
+            performSync: { _, _, _ in
+                UserProjectSyncSummary(receivedCount: 0, unchangedAffiliations: [])
+            },
+            deleteRelations: { userID, source in
+                try relations.delete(userID: userID, source: source)
+            }
+        )
+
+        await #expect(throws: DisconnectTestError.relationCleanup) {
+            try await service.disconnectProjectAccess(userID: 42)
+        }
+        #expect(await oauth.revokeCallCount == 1)
+        #expect(try keychain.loadProjectAccessCredential() != nil)
+        #expect(accessSession.state == .disconnectionFailed(.storage))
+
+        relations.shouldFail = false
+        try await service.disconnectProjectAccess(userID: 42)
+
+        #expect(await oauth.revokeCallCount == 1)
+        #expect(try keychain.loadProjectAccessCredential() == nil)
+        #expect(accessSession.state == .disconnected)
+        #expect(relations.calls == 2)
+    }
 }
 
 private actor SyncInvocationCounter {
@@ -318,6 +371,69 @@ private actor ProjectAccessOAuthServiceStub: ProjectAccessOAuthServiceProtocol {
 
     func revokeAuthorization(accessToken: String) async throws {
         _ = accessToken
+    }
+
+    func reset() async {}
+}
+
+private enum DisconnectTestError: Error {
+    case relationCleanup
+}
+
+@MainActor
+private final class MockDisconnectProgress: ProjectAccessDisconnectProgressStoring {
+    private var revokedUsers: Set<Int64> = []
+
+    func isGrantRevoked(for userID: Int64) -> Bool {
+        revokedUsers.contains(userID)
+    }
+
+    func markGrantRevoked(for userID: Int64) {
+        revokedUsers.insert(userID)
+    }
+
+    func clearGrantRevoked(for userID: Int64) {
+        revokedUsers.remove(userID)
+    }
+}
+
+@MainActor
+private final class DisconnectRelationsRecorder {
+    var shouldFail = true
+    private(set) var calls = 0
+
+    func delete(userID: Int64, source: ProjectAuthorizationSource) throws {
+        _ = (userID, source)
+        calls += 1
+        if shouldFail {
+            throw DisconnectTestError.relationCleanup
+        }
+    }
+}
+
+private actor DisconnectOAuthRecorder: ProjectAccessOAuthServiceProtocol {
+    private(set) var revokeCallCount = 0
+
+    func beginAuthorization(
+        mode: ProjectAccessAuthorizationMode
+    ) async throws -> ProjectAccessAuthorizationInfo {
+        _ = mode
+        throw ProjectAccessOAuthError.configurationMissing
+    }
+
+    func exchangeCallback(_ callbackURL: URL) async throws -> ProjectAccessCredential {
+        _ = callbackURL
+        throw ProjectAccessOAuthError.flowNotStarted
+    }
+
+    func refreshCredential(using refreshToken: String) async throws -> ProjectAccessCredential {
+        _ = refreshToken
+        throw ProjectAccessOAuthError.badRefreshToken
+    }
+
+    func revokeAuthorization(accessToken: String) async throws {
+        _ = accessToken
+        revokeCallCount += 1
     }
 
     func reset() async {}

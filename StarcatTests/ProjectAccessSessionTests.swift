@@ -546,7 +546,7 @@ struct ProjectAccessSessionTests {
         #expect(appRoute.authorizationSource == .githubApp)
         #expect(appRoute.accessToken == "github-app")
 
-        try await session.disconnect()
+        try await session.disconnect(userID: 7)
         let oauthRoute = try await router.resolve()
         #expect(oauthRoute.authorizationSource == .oauth)
         #expect(oauthRoute.accessToken == "oauth-main")
@@ -566,7 +566,7 @@ struct ProjectAccessSessionTests {
             now: { self.now }
         )
 
-        try await session.disconnect()
+        try await session.disconnect(userID: 7)
 
         #expect(oauth.revokedTokens == ["github-app"])
         #expect(try keychain.loadProjectAccessCredential() == nil)
@@ -589,7 +589,7 @@ struct ProjectAccessSessionTests {
         )
 
         await #expect(throws: ProjectAccessOAuthError.network) {
-            try await session.disconnect()
+            try await session.disconnect(userID: 7)
         }
 
         #expect(try keychain.loadProjectAccessCredential() != nil)

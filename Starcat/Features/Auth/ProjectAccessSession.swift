@@ -65,6 +65,52 @@ protocol ProjectAccessConnectionHistoryStoring: AnyObject {
     func markAuthorizationCompleted()
 }
 
+@MainActor
+protocol ProjectAccessDisconnectProgressStoring: AnyObject {
+    func isGrantRevoked(for userID: Int64) -> Bool
+    func markGrantRevoked(for userID: Int64)
+    func clearGrantRevoked(for userID: Int64)
+}
+
+/// 保存“远端 grant 已撤销、等待本地清理”的非敏感恢复点。
+///
+/// GitHub 撤销和本地数据库 / Keychain 无法组成同一个事务。远端成功后先落这个标记，
+/// 即使数据库清理失败或 App 重启，下一次重试也不会依赖已经失效的 token 再次撤销。
+@MainActor
+final class UserDefaultsProjectAccessDisconnectProgress:
+    ProjectAccessDisconnectProgressStoring
+{
+    private let defaults: UserDefaults
+    private let keyPrefix: String
+
+    init(
+        defaults: UserDefaults = .standard,
+        keyPrefix: String = "projectAccess.grantRevokedPendingCleanup.v1"
+    ) {
+        self.defaults = defaults
+        self.keyPrefix = keyPrefix
+    }
+
+    func isGrantRevoked(for userID: Int64) -> Bool {
+        guard !TestEnvironment.isRunning else { return false }
+        return defaults.bool(forKey: key(for: userID))
+    }
+
+    func markGrantRevoked(for userID: Int64) {
+        guard !TestEnvironment.isRunning else { return }
+        defaults.set(true, forKey: key(for: userID))
+    }
+
+    func clearGrantRevoked(for userID: Int64) {
+        guard !TestEnvironment.isRunning else { return }
+        defaults.removeObject(forKey: key(for: userID))
+    }
+
+    private func key(for userID: Int64) -> String {
+        "\(keyPrefix).\(userID)"
+    }
+}
+
 /// 只保存“曾完成 GitHub App 授权”这一非敏感路由标记，token 仍只进入 Keychain。
 ///
 /// 测试 host 禁止写入真实用户偏好，避免单测改变下一次人工授权应走的入口。
@@ -108,6 +154,7 @@ final class ProjectAccessSession {
     private let keychain: any KeychainManaging
     private let webAuthenticationSession: any WebAuthenticationSessionProviding
     private let connectionHistory: any ProjectAccessConnectionHistoryStoring
+    private let disconnectProgress: any ProjectAccessDisconnectProgressStoring
     private let isConfigured: Bool
     private let appSlug: String
     private let installationCheck: InstallationCheck
@@ -124,6 +171,8 @@ final class ProjectAccessSession {
             SystemWebAuthenticationSession(),
         connectionHistory: any ProjectAccessConnectionHistoryStoring =
             UserDefaultsProjectAccessConnectionHistory(),
+        disconnectProgress: any ProjectAccessDisconnectProgressStoring =
+            UserDefaultsProjectAccessDisconnectProgress(),
         isConfigured: Bool = AppConstants.isGitHubAppConfigured,
         appSlug: String = AppConstants.githubAppSlug,
         installationCheck: @escaping InstallationCheck = { accessToken, appSlug in
@@ -138,6 +187,7 @@ final class ProjectAccessSession {
         self.keychain = keychain
         self.webAuthenticationSession = webAuthenticationSession
         self.connectionHistory = connectionHistory
+        self.disconnectProgress = disconnectProgress
         self.isConfigured = isConfigured
         self.appSlug = appSlug.trimmingCharacters(in: .whitespacesAndNewlines)
         self.installationCheck = installationCheck
@@ -298,11 +348,20 @@ final class ProjectAccessSession {
         state = isConfigured ? .disconnected : .unavailable
     }
 
-    /// 撤销 GitHub 侧完整 user grant 后再清理本机凭据。
+    /// 执行完整断开；不涉及项目关系的调用方可使用这个便捷入口。
+    func disconnect(userID: Int64) async throws {
+        try await prepareDisconnect(userID: userID)
+        try finishDisconnect(userID: userID)
+    }
+
+    /// 撤销 GitHub 侧完整 user grant，并持久化“等待本地清理”的恢复点。
     ///
-    /// 顺序不能反转：grant API 需要当前 `ghu_` token 标识用户；若先删 Keychain，
-    /// 网络失败后将失去自动重试撤销的唯一凭据，并错误显示为已完全断开。
-    func disconnect() async throws {
+    /// UserProjectSyncService 会在此后删除项目关系，再调用 `finishDisconnect` 清理 Keychain。
+    /// 如果中间步骤失败，下一次调用会命中恢复点并跳过重复的远端撤销。
+    func prepareDisconnect(userID: Int64) async throws {
+        if disconnectProgress.isGrantRevoked(for: userID) {
+            return
+        }
         guard let credential = try loadCredential() else {
             state = isConfigured ? .disconnected : .unavailable
             return
@@ -317,13 +376,24 @@ final class ProjectAccessSession {
             state = .disconnectionFailed(Self.failureCode(error))
             throw error
         }
+        disconnectProgress.markGrantRevoked(for: userID)
+    }
+
+    /// 仅在项目关系已经清理后删除本机凭据并结束断开恢复点。
+    func finishDisconnect(userID: Int64) throws {
         do {
             try keychain.deleteProjectAccessCredential()
+            disconnectProgress.clearGrantRevoked(for: userID)
             state = isConfigured ? .disconnected : .unavailable
         } catch {
             state = .disconnectionFailed(.storage)
             throw ProjectAccessSessionError.storage
         }
+    }
+
+    /// 数据库关系清理失败时保持可重试状态，不能发布为已断开。
+    func markDisconnectCleanupFailed() {
+        state = .disconnectionFailed(.storage)
     }
 
     /// 返回可用 GitHub App user token；access token 临近过期时先原子轮换整份凭据。

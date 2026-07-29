@@ -42,11 +42,16 @@ final class UserProjectSyncService {
         _ credential: ResolvedProjectCredential,
         _ force: Bool
     ) async throws -> UserProjectSyncSummary
+    typealias DeleteRelationsOperation = @MainActor (
+        _ userID: Int64,
+        _ authorizationSource: ProjectAuthorizationSource
+    ) async throws -> Void
 
     private let projectAccessSession: ProjectAccessSession
     private let repository: (any UserProjectRepositoryProtocol)?
     private let resolveCredential: CredentialResolver
     private let performSync: SyncOperation
+    private let deleteRelations: DeleteRelationsOperation
     private let now: @Sendable () -> Date
 
     private struct SyncResult: Sendable {
@@ -77,6 +82,12 @@ final class UserProjectSyncService {
         self.repository = repository
         self.resolveCredential = {
             try await credentialRouter.resolve()
+        }
+        self.deleteRelations = { userID, authorizationSource in
+            try await repository.deleteRelations(
+                userID: userID,
+                authorizationSource: authorizationSource
+            )
         }
         self.performSync = { [weak projectAccessSession] userID, credential, force in
             let client = GitHubAPIClient(
@@ -118,12 +129,14 @@ final class UserProjectSyncService {
         projectAccessSession: ProjectAccessSession,
         resolveCredential: @escaping CredentialResolver,
         performSync: @escaping SyncOperation,
+        deleteRelations: @escaping DeleteRelationsOperation = { _, _ in },
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.projectAccessSession = projectAccessSession
         self.repository = nil
         self.resolveCredential = resolveCredential
         self.performSync = performSync
+        self.deleteRelations = deleteRelations
         self.now = now
     }
 
@@ -178,16 +191,20 @@ final class UserProjectSyncService {
         }
     }
 
-    /// 用户主动断开 GitHub App：先撤销 GitHub 侧完整 user grant，再删除独立凭据与
-    /// GitHub App 来源关系；保留 OAuth Public 关系、Repo 记录和全部用户内容。
-    /// 远端撤销失败会提前抛错，因此本机关系不会出现“已断开”的假状态。
+    /// 用户主动断开 GitHub App：远端撤销、项目关系清理和 Keychain 删除分阶段完成。
+    ///
+    /// 远端成功后由 ProjectAccessSession 保存恢复点；数据库或 Keychain 失败时保留
+    /// `disconnectionFailed`，用户重试只继续本地清理，不会重复依赖已失效的 token。
     func disconnectProjectAccess(userID: Int64) async throws {
-        try await projectAccessSession.disconnect()
-        try await repository?.deleteRelations(
-            userID: userID,
-            authorizationSource: .githubApp
-        )
-        state = .idle
+        try await projectAccessSession.prepareDisconnect(userID: userID)
+        do {
+            try await deleteRelations(userID, .githubApp)
+            try projectAccessSession.finishDisconnect(userID: userID)
+            state = .idle
+        } catch {
+            projectAccessSession.markDisconnectCleanupFailed()
+            throw error
+        }
     }
 
     /// 所有触发入口共享同一个 in-flight Task，避免启动刷新与手动刷新叠加生成两代数据。
