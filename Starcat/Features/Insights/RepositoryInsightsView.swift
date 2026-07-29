@@ -60,9 +60,17 @@ enum StarHistoryRestrictionNoticePolicy {
 }
 
 enum StarHistoryDisplayPolicy {
-    /// 图例解释的是线型精度；只有出现两种以上精度时才需要常驻展示。
-    static func shouldShowLegend(points: [StarHistoryPoint]) -> Bool {
-        Set(points.map(\.precision.rawValue)).count > 1
+    /// Starcat 本机快照是所有仓库的共同基线，因此即使暂时没有数据也要常驻在首位。
+    /// 其余图例只按当前实际出现的精度追加，避免暗示尚未获取到的远端历史。
+    static func legendPrecisions(points: [StarHistoryPoint]) -> [StarHistoryPrecision] {
+        var precisions: [StarHistoryPrecision] = [.snapshot]
+        if points.contains(where: { $0.precision == .reconstructed }) {
+            precisions.append(.reconstructed)
+        }
+        if points.contains(where: { $0.precision == .estimated }) {
+            precisions.append(.estimated)
+        }
+        return precisions
     }
 
     /// 图表选中日期后返回最近点，供图内 RuleMark 和浮层使用。
@@ -731,31 +739,24 @@ struct RepositoryInsightsView: View {
         ).format(coverageStart..<coverageEnd)
     }
 
-    /// 图例与稳定元数据固定同排；悬停只更新图内浮层，不再改变 footer 高度。
-    private var starLegendAndMetadataRow: some View {
-        HStack(spacing: 8) {
-            if StarHistoryDisplayPolicy.shouldShowLegend(points: displayedStarPoints) {
-                starSources
-            }
-            Spacer(minLength: 12)
-            starCoverageSummary
-                .lineLimit(1)
-        }
-        .font(interfaceScale.font(.captionSmall))
-        .foregroundStyle(.secondary)
-    }
-
-    /// GitHub 限制短链接仅在需要时占第二行；精确 Stargazers 场景始终只有一行 footer。
+    /// footer 始终只有一行：图例靠左，覆盖信息与限制链接靠右。
+    /// 悬停只更新图内浮层，不能改变这里的高度或触发上下抖动。
     private var starFooter: some View {
         let showsRestriction = StarHistoryRestrictionNoticePolicy.shouldShow(
             points: displayedStarPoints,
             phase: starHistoryViewModel.phase
         )
-        return VStack(alignment: .leading, spacing: 4) {
-            starLegendAndMetadataRow
-            if showsRestriction {
-                starHistoryRestrictionLink
+        return HStack(spacing: 8) {
+            starSources
+            Spacer(minLength: 12)
+            HStack(spacing: 5) {
+                starCoverageSummary
+                if showsRestriction {
+                    Text("·")
+                    starHistoryRestrictionLink
+                }
             }
+            .lineLimit(1)
         }
         .font(interfaceScale.font(.captionSmall))
         .foregroundStyle(.secondary)
@@ -907,28 +908,32 @@ struct RepositoryInsightsView: View {
     }
 
     private var starSources: some View {
-        // HStack + 单行文案：避免 LazyVGrid 把 chip 压窄后「precise snapshots」折行。
-        HStack(spacing: 6) {
-            if displayedStarPoints.contains(where: { $0.precision == .estimated }) {
-                starSourceChip(
-                    title: "insights.repo.star.source.estimated",
-                    systemImage: "waveform.path.ecg",
-                    dashed: true
-                )
-            }
-            if displayedStarPoints.contains(where: { $0.precision == .reconstructed }) {
-                starSourceChip(
-                    title: "insights.repo.star.source.name.githubStargazers",
-                    systemImage: "person.2.fill",
-                    dashed: true
-                )
-            }
-            if displayedStarPoints.contains(where: { $0.precision == .snapshot }) {
-                starSourceChip(
-                    title: "insights.repo.star.source.snapshot",
-                    systemImage: "internaldrive.fill",
-                    dashed: false
-                )
+        // 顺序是产品语义：本机精确快照是共同基线，项目仓库再追加 GitHub 重建历史。
+        HStack(spacing: 8) {
+            ForEach(
+                StarHistoryDisplayPolicy.legendPrecisions(points: displayedStarPoints),
+                id: \.rawValue
+            ) { precision in
+                switch precision {
+                case .snapshot:
+                    starSourceChip(
+                        title: "insights.repo.star.source.snapshot",
+                        systemImage: "internaldrive.fill",
+                        dashed: false
+                    )
+                case .reconstructed:
+                    starSourceChip(
+                        title: "insights.repo.star.source.name.githubStargazers",
+                        systemImage: "person.2.fill",
+                        dashed: true
+                    )
+                case .estimated:
+                    starSourceChip(
+                        title: "insights.repo.star.source.estimated",
+                        systemImage: "waveform.path.ecg",
+                        dashed: true
+                    )
+                }
             }
         }
     }

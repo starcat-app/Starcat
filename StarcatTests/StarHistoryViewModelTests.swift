@@ -384,24 +384,41 @@ struct StarHistoryRestrictionNoticePolicyTests {
 @Suite("Star History Display Policy")
 struct StarHistoryDisplayPolicyTests {
 
-    @Test("单一精度不显示图例")
-    func singlePrecisionHidesLegend() {
+    @Test("空数据仍显示 Starcat 精确快照图例")
+    func emptyPointsKeepSnapshotLegend() {
+        #expect(
+            StarHistoryDisplayPolicy.legendPrecisions(points: []).map(\.rawValue)
+                == [StarHistoryPrecision.snapshot.rawValue]
+        )
+    }
+
+    @Test("普通仓库只显示 Starcat 精确快照图例")
+    func localSnapshotUsesSnapshotLegend() {
         let points = [
             point("2026-07-28", source: .localSnapshot, precision: .snapshot),
             point("2026-07-29", source: .localSnapshot, precision: .snapshot)
         ]
 
-        #expect(!StarHistoryDisplayPolicy.shouldShowLegend(points: points))
+        #expect(
+            StarHistoryDisplayPolicy.legendPrecisions(points: points).map(\.rawValue)
+                == [StarHistoryPrecision.snapshot.rawValue]
+        )
     }
 
-    @Test("多种精度显示图例")
-    func multiplePrecisionsShowLegend() {
+    @Test("我的项目先显示 Starcat 精确快照再显示 GitHub 图例")
+    func projectLegendKeepsSnapshotFirst() {
         let points = [
             point("2023-10-22", source: .githubStargazers, precision: .reconstructed),
             point("2026-07-29", source: .localSnapshot, precision: .snapshot)
         ]
 
-        #expect(StarHistoryDisplayPolicy.shouldShowLegend(points: points))
+        #expect(
+            StarHistoryDisplayPolicy.legendPrecisions(points: points).map(\.rawValue)
+                == [
+                    StarHistoryPrecision.snapshot.rawValue,
+                    StarHistoryPrecision.reconstructed.rawValue
+                ]
+        )
     }
 
     @Test("未选中图表日期时不产生选中点")
