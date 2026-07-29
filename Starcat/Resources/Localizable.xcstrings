@@ -123948,6 +123948,14 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "組織" } }
       }
     },
+    "list.filter.project.collaborator" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Collaborator" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "协作" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "協作" } }
+      }
+    },
     "list.filter.project.organizationName" : {
       "extractionState" : "manual",
       "localizations" : {

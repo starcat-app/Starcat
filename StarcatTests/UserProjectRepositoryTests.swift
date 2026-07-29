@@ -75,7 +75,7 @@ struct UserProjectRepositoryTests {
                 score: nil
             ),
             affiliation: affiliation,
-            ownerType: affiliation == .owner ? .user : .organization,
+            ownerType: affiliation == .organizationMember ? .organization : .user,
             visibility: visibility,
             permission: permission,
             installationId: nil
@@ -268,6 +268,28 @@ struct UserProjectRepositoryTests {
 
         #expect(result.map(\.repo.id) == [32])
         #expect(result.first?.project.ownerLogin == "Acme")
+    }
+
+    @Test("项目筛选可单独展示外部协作仓库")
+    func collaboratorFilter() async throws {
+        let (projects, _, _) = try makeSUT()
+        try await projects.upsertPage(
+            [
+                remote(id: 34, owner: "external", name: "shared-tool", affiliation: .collaborator),
+                remote(id: 35, owner: "tester", name: "owned-tool")
+            ],
+            userID: 7,
+            authorizationSource: .oauth,
+            generation: "g1",
+            seenAt: Date()
+        )
+
+        var filter = UserProjectFilter()
+        filter.affiliations = [.collaborator]
+        let result = try await projects.fetchPage(userID: 7, filter: filter, limit: 20, offset: 0)
+
+        #expect(result.map(\.repo.id) == [34])
+        #expect(result.first?.project.ownerLogin == "external")
     }
 
     @Test("项目列表分页使用稳定顺序且返回真实总数")

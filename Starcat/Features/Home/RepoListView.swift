@@ -1209,6 +1209,9 @@ struct RepoListView: View {
                 Text("list.filter.project.organization").tag(
                     ProjectAffiliation.organizationMember as ProjectAffiliation?
                 )
+                Text("list.filter.project.collaborator").tag(
+                    ProjectAffiliation.collaborator as ProjectAffiliation?
+                )
             }
 
             if !viewModel.projectFilterOptions.organizationLogins.isEmpty {
@@ -2879,13 +2882,26 @@ private struct ManageRepoRowContent: View {
 
     /// 在 fullName 同行压成一个稳定徽章，避免为项目场景复制整张 Repo 卡片。
     private func projectMetadata(_ project: UserProject) -> RepoCardInlineMetadata {
-        let affiliation = project.ownerType == .organization
-            ? project.ownerLogin
-            : String.l10n("list.filter.project.personal")
+        let affiliation: String
+        let systemImage: String
+        switch project.affiliation {
+        case .owner:
+            affiliation = String.l10n("list.filter.project.personal")
+            systemImage = "person.fill"
+        case .organizationMember:
+            affiliation = project.ownerLogin
+            systemImage = "building.2.fill"
+        case .collaborator:
+            affiliation = [
+                String.l10n("list.filter.project.collaborator"),
+                project.ownerLogin
+            ].joined(separator: " · ")
+            systemImage = "person.2.fill"
+        }
         let visibility = String.l10n("list.filter.project.visibility.\(project.visibility.rawValue)")
         let permission = String.l10n("list.filter.project.permission.\(project.permission.rawValue)")
         return RepoCardInlineMetadata(
-            systemImage: project.ownerType == .organization ? "building.2.fill" : "person.fill",
+            systemImage: systemImage,
             text: [affiliation, visibility, permission].joined(separator: " · ")
         )
     }
