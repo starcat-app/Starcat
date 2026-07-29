@@ -701,17 +701,36 @@ struct RepositoryInsightsView: View {
             VStack(alignment: .leading, spacing: 12) {
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .top, spacing: 18) {
-                        starMetrics
+                        if isStarHistoryWaitingForFirstPaint {
+                            InsightsSectionSkeleton(kind: .metricTiles(count: 3, minHeight: 58))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        } else {
+                            starMetrics
+                        }
                         Spacer(minLength: 8)
                         starControls
                     }
                     VStack(alignment: .leading, spacing: 10) {
-                        starMetrics
+                        if isStarHistoryWaitingForFirstPaint {
+                            InsightsSectionSkeleton(kind: .metricTiles(count: 3, minHeight: 58))
+                        } else {
+                            starMetrics
+                        }
                         starControls
                     }
                 }
 
-                if !displayedStarPoints.isEmpty {
+                if isStarHistoryWaitingForFirstPaint {
+                    VStack(alignment: .leading, spacing: 10) {
+                        InsightsSectionSkeleton(kind: .derivedPills(count: 2))
+                        InsightsSectionSkeleton(
+                            kind: .chart(height: Self.chartPlotHeight),
+                            statusCaptionKey: isStarHistoryBuilding
+                                ? "insights.repo.state.generating"
+                                : nil
+                        )
+                    }
+                } else if !displayedStarPoints.isEmpty {
                     // 图表单独做范围过渡；只用淡入淡出，不用上下位移（会顶布局抖页面）。
                     VStack(alignment: .leading, spacing: 10) {
                         ZStack(alignment: .topLeading) {
@@ -727,7 +746,7 @@ struct RepositoryInsightsView: View {
 
                         starFooter
                     }
-                } else if !isStarHistoryWaitingForFirstPaint {
+                } else {
                     chartEmptyState(
                         "insights.repo.star.state.unavailable",
                         systemImage: "star.slash"
@@ -746,7 +765,7 @@ struct RepositoryInsightsView: View {
         }
     }
 
-    /// 首次拉取尚未落点时，不额外画空态，避免和标题栏刷新转圈叠两套反馈。
+    /// 首次拉取尚未落点时，用骨架占位；不再留空白或叠空态。
     private var isStarHistoryWaitingForFirstPaint: Bool {
         switch starHistoryViewModel.phase {
         case .idle, .loading, .building:
@@ -754,6 +773,14 @@ struct RepositoryInsightsView: View {
         default:
             return false
         }
+    }
+
+    /// GitHub Star History 仍在异步构建（202 / building）。
+    private var isStarHistoryBuilding: Bool {
+        if case .building = starHistoryViewModel.phase {
+            return displayedStarPoints.isEmpty
+        }
+        return false
     }
 
     /// 日期范围已经包含最后观测日期，更新时间只保留时分，避免同一天日期重复两次。
@@ -1864,7 +1891,7 @@ struct RepositoryInsightsView: View {
                 } else {
                     switch viewModel.contributorsState {
                     case .idle, .loading:
-                        sectionLoadingPlaceholder
+                        InsightsSectionSkeleton(kind: .contributorBlock())
                     case .unavailable:
                         compactEmptyState(
                             authSession.state.isAuthenticated
@@ -1873,9 +1900,9 @@ struct RepositoryInsightsView: View {
                             systemImage: "person.crop.circle.badge.exclamationmark"
                         )
                     case .generating:
-                        compactEmptyState(
-                            "insights.repo.state.generating",
-                            systemImage: "clock.arrow.circlepath"
+                        InsightsSectionSkeleton(
+                            kind: .contributorBlock(),
+                            statusCaptionKey: "insights.repo.state.generating"
                         )
                     case .failed:
                         compactEmptyState(
@@ -2058,7 +2085,7 @@ struct RepositoryInsightsView: View {
                         }
                     }
                 case .loading, .idle:
-                    sectionLoadingPlaceholder
+                    InsightsSectionSkeleton(kind: .healthGrid())
                 case .empty, .unavailable:
                     compactEmptyState(
                         "insights.repo.state.noData",
@@ -2108,7 +2135,7 @@ struct RepositoryInsightsView: View {
                     )
                 }
             case .loading, .idle:
-                sectionLoadingPlaceholder
+                InsightsSectionSkeleton(kind: .derivedPills(count: 3))
             case .empty:
                 compactEmptyState(
                     "insights.repo.releaseCadence.empty",
@@ -2327,7 +2354,7 @@ struct RepositoryInsightsView: View {
                 } else {
                     switch viewModel.remoteCommunityState {
                     case .idle, .loading:
-                        sectionLoadingPlaceholder
+                        InsightsSectionSkeleton(kind: .signalRows(count: 6))
                     case .unavailable:
                         compactEmptyState(
                             authSession.state.isAuthenticated
@@ -2336,9 +2363,9 @@ struct RepositoryInsightsView: View {
                             systemImage: "person.2.slash"
                         )
                     case .generating:
-                        compactEmptyState(
-                            "insights.repo.state.generating",
-                            systemImage: "clock.arrow.circlepath"
+                        InsightsSectionSkeleton(
+                            kind: .signalRows(count: 6),
+                            statusCaptionKey: "insights.repo.state.generating"
                         )
                     case .failed:
                         compactEmptyState(
@@ -2396,7 +2423,7 @@ struct RepositoryInsightsView: View {
                 destinationURL: openSSFScorecardURL
             )
         case .loading, .idle:
-            sectionLoadingPlaceholder
+            InsightsSectionSkeleton(kind: .signalRows(count: 1))
         case .empty, .unavailable:
             compactEmptyState(
                 "insights.repo.state.noData",
@@ -2446,7 +2473,7 @@ struct RepositoryInsightsView: View {
         } else {
             switch viewModel.securityAdvisoriesState {
             case .idle, .loading:
-                sectionLoadingPlaceholder
+                InsightsSectionSkeleton(kind: .signalRows(count: 2))
             case .unavailable:
                 compactEmptyState(
                     authSession.state.isAuthenticated
@@ -2455,9 +2482,9 @@ struct RepositoryInsightsView: View {
                     systemImage: "lock.slash"
                 )
             case .generating:
-                compactEmptyState(
-                    "insights.repo.state.generating",
-                    systemImage: "clock.arrow.circlepath"
+                InsightsSectionSkeleton(
+                    kind: .signalRows(count: 2),
+                    statusCaptionKey: "insights.repo.state.generating"
                 )
             case .failed:
                 compactEmptyState(
@@ -2581,14 +2608,6 @@ struct RepositoryInsightsView: View {
     /// 两个统计图共用的绘图高度，空态占位也按这个高度，避免切换范围时卡片跳高跳低。
     private static let chartPlotHeight: CGFloat = 196
 
-    /// 首次加载只保留区块的稳定占位高度，加载反馈统一由标题栏的 SyncIconButton 承担。
-    /// 禁止在内容中央放不确定进度环，否则刷新会清空内容并造成明显的页面跳动。
-    private var sectionLoadingPlaceholder: some View {
-        Color.clear
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .accessibilityHidden(true)
-    }
-
     /// Star / Commit 空态：固定绘图高度 + 轻底，避免只剩一行文案或残留坐标轴标签。
     private func chartEmptyState(
         _ key: LocalizedStringKey,
@@ -2685,7 +2704,7 @@ struct RepositoryInsightsView: View {
                 if timelineAllItems.isEmpty {
                     switch viewModel.recentActivityState {
                     case .idle, .loading:
-                        sectionLoadingPlaceholder
+                        InsightsSectionSkeleton(kind: .signalRows(count: 5))
                     case .unavailable:
                         compactEmptyState(
                             authSession.state.isAuthenticated
@@ -2694,9 +2713,9 @@ struct RepositoryInsightsView: View {
                             systemImage: "clock.badge.exclamationmark"
                         )
                     case .generating:
-                        compactEmptyState(
-                            "insights.repo.state.generating",
-                            systemImage: "clock.arrow.circlepath"
+                        InsightsSectionSkeleton(
+                            kind: .signalRows(count: 5),
+                            statusCaptionKey: "insights.repo.state.generating"
                         )
                     case .failed:
                         compactEmptyState(
