@@ -839,10 +839,13 @@ final class AppDependencies {
             inflightTracker: inflightTracker,
             metrics: metrics
         )
+        // GitHub App 安装令牌同时服务项目 README 与受限 Stargazers 接口，二者必须
+        // 共享同一个动态 token provider，避免 README 可读但 Star 历史误用 OAuth。
+        let projectAPIClient = GitHubAPIClient(
+            tokenProvider: ProjectAccessTokenProvider(session: projectAccessSession)
+        )
         self.projectReadmeAPI = ReadmeAPI(
-            client: GitHubAPIClient(
-                tokenProvider: ProjectAccessTokenProvider(session: projectAccessSession)
-            ),
+            client: projectAPIClient,
             repository: readmeRepo,
             trendingRepository: trendingReadmeRepo,
             inflightTracker: inflightTracker,
@@ -1105,7 +1108,10 @@ final class AppDependencies {
         )
         self.repoStarHistoryRepository = GRDBRepoStarHistoryRepository(
             database: db,
-            api: starHistoryAPI
+            api: starHistoryAPI,
+            projectRepository: userProjectRepository,
+            oauthStargazersAPI: api,
+            githubAppStargazersAPI: projectAPIClient
         )
         let discoveryRepo = DiscoveryRepository(api: discoveryAPIInstance, database: db)
         self.discoveryRepository = discoveryRepo

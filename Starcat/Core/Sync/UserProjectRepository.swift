@@ -57,6 +57,7 @@ protocol UserProjectRepositoryProtocol: Sendable {
     ) async throws -> [UserProjectListItem]
 
     func count(userID: Int64, filter: UserProjectFilter) async throws -> Int
+    func fetchProject(repoID: Int64) async throws -> UserProject?
     func fetchSyncState(
         userID: Int64,
         affiliation: ProjectAffiliation,
@@ -166,6 +167,24 @@ struct GRDBUserProjectRepository: UserProjectRepositoryProtocol, Sendable {
                     db: db
                 )
             }
+        }
+    }
+
+    func fetchProject(repoID: Int64) async throws -> UserProject? {
+        try await database.writer.read { db in
+            // DatabaseManager 已按当前 GitHub 用户隔离物理数据库；排序仅用于防御
+            // 异常重复关系，始终选择最近一次同步确认的授权来源。
+            try UserProject.fetchOne(
+                db,
+                sql: """
+                    SELECT *
+                    FROM user_projects
+                    WHERE repo_id = ?
+                    ORDER BY updated_at DESC
+                    LIMIT 1
+                    """,
+                arguments: [repoID]
+            )
         }
     }
 

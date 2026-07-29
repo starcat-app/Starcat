@@ -128012,6 +128012,13 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "估算" } }
       }
     },
+    "insights.repo.star.precision.reconstructed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "reconstructed from current Stargazers" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "按当前 Stargazers 重建" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "依目前 Stargazers 重建" } }
+      }
+    },
     "insights.repo.star.precision.snapshot" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "precise snapshot" } },
@@ -128075,6 +128082,13 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "估算 · GH Archive" } }
       }
     },
+    "insights.repo.star.source.githubStargazers" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reconstructed from current GitHub Stargazers; users who unstarred are not included." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "按 GitHub 当前 Stargazers 重建；不包含已取消 Star 的用户。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "依 GitHub 目前 Stargazers 重建；不包含已取消 Star 的使用者。" } }
+      }
+    },
     "insights.repo.star.source.name.discovery" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Starcat Discovery" } },
@@ -128087,6 +128101,13 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "GH Archive" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "GH Archive" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "GH Archive" } }
+      }
+    },
+    "insights.repo.star.source.name.githubStargazers" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "GitHub current Stargazers" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "GitHub 当前 Stargazers" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "GitHub 目前 Stargazers" } }
       }
     },
     "insights.repo.star.source.name.local" : {

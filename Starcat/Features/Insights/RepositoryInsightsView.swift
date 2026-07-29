@@ -965,8 +965,11 @@ struct RepositoryInsightsView: View {
         case .unavailable where displayedStarPoints.isEmpty:
             return ("star.slash", "insights.repo.star.state.unavailable")
         default:
-            // 正常有点：有估算历史视为远端可用，否则本机快照。
+            // 正常有点：项目重建历史优先展示专属来源，其次公共估算，最后本机快照。
             guard !displayedStarPoints.isEmpty else { return nil }
+            if displayedStarPoints.contains(where: { $0.source == .githubStargazers }) {
+                return ("person.2.fill", "insights.repo.star.source.githubStargazers")
+            }
             if displayedStarPoints.contains(where: { $0.precision == .estimated }) {
                 return ("icloud", "insights.repo.star.source.estimated")
             }
@@ -1132,6 +1135,8 @@ struct RepositoryInsightsView: View {
             return String.l10n("insights.repo.star.source.name.ghArchive")
         case .discoverySnapshot:
             return String.l10n("insights.repo.star.source.name.discovery")
+        case .githubStargazers:
+            return String.l10n("insights.repo.star.source.name.githubStargazers")
         case .localSnapshot:
             return String.l10n("insights.repo.star.source.name.local")
         }
@@ -1141,6 +1146,8 @@ struct RepositoryInsightsView: View {
         switch precision {
         case .estimated:
             return String.l10n("insights.repo.star.precision.estimated")
+        case .reconstructed:
+            return String.l10n("insights.repo.star.precision.reconstructed")
         case .snapshot:
             return String.l10n("insights.repo.star.precision.snapshot")
         }

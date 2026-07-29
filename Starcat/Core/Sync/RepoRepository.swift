@@ -1169,10 +1169,11 @@ struct GRDBRepoRepository {
         }
     }
 
-    /// 与详情 Star History 的“本机 > Discovery > GH Archive”日内优先级保持一致。
+    /// 与详情 Star History 的“本机 > GitHub 重建 > Discovery > GH Archive”保持一致。
     private static func starHistoryPriority(_ record: RepoStarHistoryPointRecord) -> Int {
         switch StarHistorySource(rawValue: record.source) {
-        case .localSnapshot: return 3
+        case .localSnapshot: return 4
+        case .githubStargazers: return 3
         case .discoverySnapshot: return 2
         case .ghArchive:
             return record.precision == StarHistoryPrecision.snapshot.rawValue ? 2 : 1

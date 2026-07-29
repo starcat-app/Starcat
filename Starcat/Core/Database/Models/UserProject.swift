@@ -85,6 +85,16 @@ struct UserProject: Codable, FetchableRecord, MutablePersistableRecord, Equatabl
     }
 }
 
+extension UserProject {
+    /// GitHub 只向仓库管理员或协作者开放 Stargazers 时间列表。
+    ///
+    /// owner 关系本身足以证明仓库归属；其余项目必须有明确权限，避免把仅由
+    /// 组织枚举得到但不可访问的项目误送到受限接口。
+    var canReadStargazers: Bool {
+        affiliation == .owner || permission != .unknown
+    }
+}
+
 /// 一条 affiliation 同步链的持久状态。
 struct ProjectSyncState: Codable, FetchableRecord, MutablePersistableRecord, Equatable, Sendable {
     static let databaseTableName = "project_sync_state"

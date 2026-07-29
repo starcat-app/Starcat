@@ -6,7 +6,7 @@
 //
 //  关键约束：
 //  - local_snapshot 是 Starcat 从 GitHub metadata 顺带取得的精确值，不触发额外请求。
-//  - 远端刷新只能替换 gh_archive / discovery_snapshot，绝不能删除 local_snapshot。
+//  - 远端刷新只能替换远端来源，绝不能删除 local_snapshot。
 //  - observed_on 使用 UTC 日期，避免跨时区用户在同一自然日写出两个本机点。
 //
 
@@ -16,6 +16,7 @@ import GRDB
 enum StarHistorySource: String, Codable, CaseIterable, Sendable {
     case ghArchive = "gh_archive"
     case discoverySnapshot = "discovery_snapshot"
+    case githubStargazers = "github_stargazers"
     case localSnapshot = "local_snapshot"
 
     var isRemote: Bool {
@@ -25,6 +26,8 @@ enum StarHistorySource: String, Codable, CaseIterable, Sendable {
 
 enum StarHistoryPrecision: String, Codable, CaseIterable, Sendable {
     case estimated
+    /// 由当前仍在 Star 的用户及其 starred_at 重建，不包含已取消 Star 的历史峰值。
+    case reconstructed
     case snapshot
 }
 
@@ -84,6 +87,8 @@ protocol RepoStarHistoryRepositoryProtocol: Sendable {
 enum RepoStarHistoryRepositoryError: LocalizedError {
     case negativeStars
     case invalidRemotePoint
+    case invalidGitHubPagination
+    case invalidGitHubStargazerTimestamp
     case corruptRecord
 
     var errorDescription: String? {
@@ -92,6 +97,10 @@ enum RepoStarHistoryRepositoryError: LocalizedError {
             return "stars_count must not be negative"
         case .invalidRemotePoint:
             return "remote replacement accepts only non-negative remote points"
+        case .invalidGitHubPagination:
+            return "GitHub Stargazers pagination did not advance"
+        case .invalidGitHubStargazerTimestamp:
+            return "GitHub Stargazers response contains an invalid starred_at"
         case .corruptRecord:
             return "invalid repo star history record"
         }
@@ -124,17 +133,27 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
 
     private let database: any DatabaseManaging
     private let api: (any StarHistoryAPIProtocol)?
+    private let projectRepository: (any UserProjectRepositoryProtocol)?
+    private let oauthStargazersAPI: (any GitHubStargazersAPIProtocol)?
+    private let githubAppStargazersAPI: (any GitHubStargazersAPIProtocol)?
     private let now: @Sendable () -> Date
     private var etags: [RemoteCacheKey: String] = [:]
     private var fullyLoadedRepoIDs: Set<Int64> = []
+    private var loadedGitHubStargazerRepoIDs: Set<Int64> = []
 
     init(
         database: any DatabaseManaging,
         api: (any StarHistoryAPIProtocol)? = nil,
+        projectRepository: (any UserProjectRepositoryProtocol)? = nil,
+        oauthStargazersAPI: (any GitHubStargazersAPIProtocol)? = nil,
+        githubAppStargazersAPI: (any GitHubStargazersAPIProtocol)? = nil,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.database = database
         self.api = api
+        self.projectRepository = projectRepository
+        self.oauthStargazersAPI = oauthStargazersAPI
+        self.githubAppStargazersAPI = githubAppStargazersAPI
         self.now = now
     }
 
@@ -154,10 +173,11 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
     ) async throws -> StarHistorySnapshot {
         try await recordCurrentMetadataSnapshotIfPossible(repo)
         let cachedPoints = try await points(repoId: repo.id)
+        let hasGitHubHistory = cachedPoints.contains { $0.source == .githubStargazers }
         return snapshot(
             range: range,
             rawPoints: cachedPoints,
-            remoteState: repo.isPrivate ? .privateOnly : .cached
+            remoteState: repo.isPrivate && !hasGitHubHistory ? .privateOnly : .cached
         )
     }
 
@@ -196,12 +216,13 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
             try db.execute(
                 sql: """
                     DELETE FROM repo_star_history_points
-                    WHERE repo_id = ? AND source IN (?, ?)
+                    WHERE repo_id = ? AND source IN (?, ?, ?)
                     """,
                 arguments: [
                     repoId,
                     StarHistorySource.ghArchive.rawValue,
-                    StarHistorySource.discoverySnapshot.rawValue
+                    StarHistorySource.discoverySnapshot.rawValue,
+                    StarHistorySource.githubStargazers.rawValue
                 ]
             )
             for point in points {
@@ -218,7 +239,49 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
         try await recordCurrentMetadataSnapshotIfPossible(repo)
         let cachedPoints = try await points(repoId: repo.id)
 
-        // 私有仓库必须在调用 API 之前返回。API 自身还有第二道防线，防止未来调用方绕过 Repository。
+        if let project = try await projectRepository?.fetchProject(repoID: repo.id) {
+            guard project.canReadStargazers,
+                  let stargazersAPI = stargazersAPI(for: project)
+            else {
+                let state: StarHistoryRemoteState = repo.isPrivate ? .privateOnly : .unavailable
+                return snapshot(range: range, rawPoints: cachedPoints, remoteState: state)
+            }
+
+            if !forceRefresh, loadedGitHubStargazerRepoIDs.contains(repo.id) {
+                return snapshot(range: range, rawPoints: cachedPoints, remoteState: .cached)
+            }
+
+            do {
+                let githubPoints = try await fetchGitHubStargazerPoints(
+                    repo: repo,
+                    api: stargazersAPI
+                )
+                try await replaceRemotePoints(repoId: repo.id, points: githubPoints)
+                loadedGitHubStargazerRepoIDs.insert(repo.id)
+                let refreshedPoints = try await points(repoId: repo.id)
+                return snapshot(range: range, rawPoints: refreshedPoints, remoteState: .fresh)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                // 项目已经匹配到专属 GitHub 数据源后不再降级到公共 Discovery，
+                // 防止私有项目外泄，也避免同一项目在两种统计口径间来回切换。
+                if repo.isPrivate,
+                   !cachedPoints.contains(where: { $0.source == .githubStargazers }) {
+                    return snapshot(
+                        range: range,
+                        rawPoints: cachedPoints,
+                        remoteState: .privateOnly
+                    )
+                }
+                return snapshot(
+                    range: range,
+                    rawPoints: cachedPoints,
+                    remoteState: .stale(.transport(error.localizedDescription))
+                )
+            }
+        }
+
+        // 没有“我的项目”关系的私有仓库绝不调用公共 Discovery。
         guard !repo.isPrivate else {
             return snapshot(range: range, rawPoints: cachedPoints, remoteState: .privateOnly)
         }
@@ -281,6 +344,72 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
                 range: range,
                 rawPoints: cachedPoints,
                 remoteState: .stale(.transport(error.localizedDescription))
+            )
+        }
+    }
+
+    private func stargazersAPI(
+        for project: UserProject
+    ) -> (any GitHubStargazersAPIProtocol)? {
+        switch project.authorizationSource {
+        case .oauth:
+            return oauthStargazersAPI
+        case .githubApp:
+            return githubAppStargazersAPI
+        }
+    }
+
+    /// 拉取全部当前 Stargazers，并仅在内存中按 UTC 日期聚合成累计曲线。
+    ///
+    /// GitHub 返回的是“当前仍在 Star 的用户”的 `starred_at`，因此结果是重建曲线，
+    /// 无法恢复已取消 Star 的用户和历史峰值；Stargazer 身份不会进入持久化模型。
+    private func fetchGitHubStargazerPoints(
+        repo: Repo,
+        api: any GitHubStargazersAPIProtocol
+    ) async throws -> [StarHistoryPoint] {
+        var page = 1
+        var visitedPages: Set<Int> = []
+        var starredDates: [Date] = []
+        let fetchedAt = now()
+
+        while visitedPages.insert(page).inserted {
+            try Task.checkCancellation()
+            let response = try await api.stargazers(
+                owner: repo.owner,
+                repo: repo.name,
+                page: page,
+                perPage: 100
+            )
+            for item in response.value {
+                guard let starredAt = ISO8601DateFormatter.githubDate(from: item.starredAt) else {
+                    throw RepoStarHistoryRepositoryError.invalidGitHubStargazerTimestamp
+                }
+                starredDates.append(starredAt)
+            }
+
+            guard let nextPage = response.linkHeader.nextPage else { break }
+            guard nextPage > page else {
+                throw RepoStarHistoryRepositoryError.invalidGitHubPagination
+            }
+            page = nextPage
+        }
+
+        let countsByDay = Dictionary(
+            grouping: starredDates,
+            by: StarHistoryDateCodec.dayString(from:)
+        ).mapValues(\.count)
+        var cumulativeCount = 0
+        return try countsByDay.keys.sorted().map { day in
+            guard let date = StarHistoryDateCodec.date(from: day) else {
+                throw RepoStarHistoryRepositoryError.invalidGitHubStargazerTimestamp
+            }
+            cumulativeCount += countsByDay[day, default: 0]
+            return StarHistoryPoint(
+                date: date,
+                count: cumulativeCount,
+                source: .githubStargazers,
+                precision: .reconstructed,
+                fetchedAt: fetchedAt
             )
         }
     }
@@ -366,7 +495,7 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
         )
     }
 
-    /// 同一天只向上层暴露一个读数：本机快照 > Discovery 快照 > GH Archive 估算。
+    /// 同一天只向上层暴露一个读数：本机快照 > GitHub 重建 > Discovery > GH Archive。
     ///
     /// 两个同优先级点则保留 fetchedAt 更新者，保证重复同步不会让旧值覆盖新值。
     private static func mergeByObservedDay(_ points: [StarHistoryPoint]) -> [StarHistoryPoint] {
@@ -390,7 +519,8 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
 
     private static func priority(of point: StarHistoryPoint) -> Int {
         switch point.source {
-        case .localSnapshot: return 3
+        case .localSnapshot: return 4
+        case .githubStargazers: return 3
         case .discoverySnapshot: return 2
         case .ghArchive: return point.precision == .snapshot ? 2 : 1
         }
