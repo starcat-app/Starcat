@@ -51,11 +51,50 @@ struct RepoContextStorageTests {
         }
     }
 
-    @Test("RepoContext 固定插入 metadata 后且缺 metadata 时置顶")
-    func ordersRepoContextAfterMetadata() {
-        #expect(KnowledgeRAGBrowserManagedItem.repoContextInsertionIndex(in: [.metadata, .readme]) == 1)
-        #expect(KnowledgeRAGBrowserManagedItem.repoContextInsertionIndex(in: [.readme, .metadata, .notes]) == 2)
-        #expect(KnowledgeRAGBrowserManagedItem.repoContextInsertionIndex(in: [.readme, .notes]) == 0)
+    @Test("特殊 XML 固定插入 metadata 后且缺 metadata 时置顶")
+    func ordersSpecialContextsAfterMetadata() throws {
+        #expect(KnowledgeRAGBrowserManagedItem.specialContextInsertionIndex(in: [.metadata, .readme]) == 1)
+        #expect(KnowledgeRAGBrowserManagedItem.specialContextInsertionIndex(in: [.readme, .metadata, .notes]) == 2)
+        #expect(KnowledgeRAGBrowserManagedItem.specialContextInsertionIndex(in: [.readme, .notes]) == 0)
+
+        let fixture = try makeFixture()
+        defer { fixture.cleanup() }
+        let repoContext = try #require(
+            try fixture.storage.loadDocument(owner: fixture.owner, repo: fixture.repo)
+        )
+        let insightsDocument = RepositoryInsightsDocument(
+            repositoryID: 42,
+            repositoryFullName: "microsoft/vscode",
+            generatedAt: Date(timeIntervalSince1970: 1_753_660_800),
+            sourceHash: "source-hash",
+            xml: "<repository_insights repository_id=\"42\" />"
+        )
+        let insights = RepositoryInsightsContextArtifact(
+            document: insightsDocument,
+            metadata: RepositoryInsightsContextMetadata(
+                schemaVersion: RepositoryInsightsContextMetadata.schemaVersion,
+                repositoryID: insightsDocument.repositoryID,
+                repositoryFullName: insightsDocument.repositoryFullName,
+                accountStorageKey: "user-1",
+                generatedAt: insightsDocument.generatedAt,
+                sourceHash: insightsDocument.sourceHash,
+                xmlHash: "xml-hash"
+            )
+        )
+
+        let items = KnowledgeRAGBrowserManagedItem.merge(
+            chunks: [],
+            repositoryInsights: insights,
+            repoContext: repoContext
+        )
+
+        #expect(items.count == 2)
+        if case .repositoryInsights = items[0] {} else {
+            Issue.record("缺 Metadata 时洞察 XML 应位于第一个特殊项")
+        }
+        if case .repoContext = items[1] {} else {
+            Issue.record("RepoContext XML 应位于洞察 XML 之后")
+        }
     }
 
     @Test("XML 下载文件名稳定且写入当前草稿")
@@ -97,8 +136,28 @@ struct RepoContextStorageTests {
             try fixture.storage.loadDocument(owner: fixture.owner, repo: fixture.repo)
         )
 
-        #expect(KnowledgeRAGBrowserManagedItem.repoContextAvailability(repoContext: nil) == "0 / 1")
-        #expect(KnowledgeRAGBrowserManagedItem.repoContextAvailability(repoContext: document) == "1 / 1")
+        #expect(KnowledgeRAGBrowserManagedItem.singletonAvailability(false) == "0 / 1")
+        #expect(KnowledgeRAGBrowserManagedItem.singletonAvailability(document.xml.isEmpty == false) == "1 / 1")
+    }
+
+    @Test("洞察 XML 下载使用安全文件名并原子写入原文")
+    func exportsRepositoryInsightsXML() throws {
+        #expect(
+            RepositoryInsightsXMLExport.defaultFilename(repositoryFullName: "microsoft/vscode")
+                == "microsoft-vscode-insights.xml"
+        )
+        #expect(
+            RepositoryInsightsXMLExport.defaultFilename(repositoryFullName: "owner/name:repo")
+                == "owner-name-repo-insights.xml"
+        )
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("starcat-insights-export-\(UUID().uuidString).xml")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let xml = "<repository_insights repository_id=\"42\" />"
+
+        try RepositoryInsightsXMLExport.write(xml, to: url)
+
+        #expect(try String(contentsOf: url, encoding: .utf8) == xml)
     }
 
     @Test("合法编辑原子更新 XML 与 metadata，但不增加生成次数")

@@ -40,9 +40,14 @@ struct RepositoryInsightsContextMetadata: Codable, Equatable, Sendable {
     let xmlHash: String
 }
 
-struct RepositoryInsightsContextArtifact: Equatable, Sendable {
+struct RepositoryInsightsContextArtifact: Equatable, Identifiable, Sendable {
     let document: RepositoryInsightsDocument
     let metadata: RepositoryInsightsContextMetadata
+
+    /// 同一仓库的新版本 XML 需要触发 SwiftUI sheet 内容更新，因此 identity 同时包含双 hash。
+    var id: String {
+        "\(document.repositoryID):\(metadata.sourceHash):\(metadata.xmlHash)"
+    }
 }
 
 enum RepositoryInsightsContextWriteOutcome: Equatable, Sendable {
