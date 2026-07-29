@@ -636,14 +636,17 @@ final class RepositoryInsightsViewModel {
 
     /// 底栏全局入口：并行强制刷新各远端区块；不碰分区 Sync，也不清空已上屏内容。
     /// Release 节奏仅在本地历史缺失时刷新 GitHub 回退；Health / OpenSSF 仍只读本地缓存。
-    func refreshAll(repo: Repo, isAuthenticated: Bool) async {
-        guard !isRefreshingAll else { return }
+    ///
+    /// - Returns: `true` 表示已开刷且 **`isRefreshingAll` 仍为 true**——Caller 拉完 Star 后必须
+    ///   调用 `finishGlobalRefresh()`；`false` 表示冷却/进行中（仅确认脉冲，无需 finish）。
+    @discardableResult
+    func refreshAll(repo: Repo, isAuthenticated: Bool) async -> Bool {
+        guard !isRefreshingAll else { return false }
         guard reserveManualRefresh(.all, repoID: repo.id) else {
             await acknowledgeBlockedManualRefresh { isRefreshingAll = $0 }
-            return
+            return false
         }
         isRefreshingAll = true
-        defer { isRefreshingAll = false }
 
         async let activityLoad: Void = loadActivity(
             repo: repo,
@@ -689,6 +692,12 @@ final class RepositoryInsightsViewModel {
             securityLoad,
             timelineLoad
         )
+        return true
+    }
+
+    /// 与 `refreshAll` 配对：Star 等 Caller 侧工作结束后放下全局刷新旗标。
+    func finishGlobalRefresh() {
+        isRefreshingAll = false
     }
 
     /// 点击时即占用 cooldown，而不是等成功后才记录。这样快速失败或极快缓存响应也不会

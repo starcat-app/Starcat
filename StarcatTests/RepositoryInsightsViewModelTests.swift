@@ -888,6 +888,8 @@ struct RepositoryInsightsViewModelTests {
         await refreshGate.release()
         await refreshTask.value
 
+        #expect(viewModel.isRefreshingAll)
+        viewModel.finishGlobalRefresh()
         #expect(!viewModel.isRefreshingAll)
         #expect(viewModel.activityState == .content(refreshedActivity))
         #expect(viewModel.commitActivityState == .content(refreshedCommitActivity))

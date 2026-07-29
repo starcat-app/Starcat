@@ -110,12 +110,16 @@ struct RepositoryInsightsView: View {
     }
 
     /// README 底栏同款 `.bar`；右侧全局刷新，分区 Sync 全部保留。
+    ///
+    /// 刷新归属：
+    /// - 点全局 → `isRefreshingAll`，各面板 Sync 通过 `|| isRefreshingAll` 一起转；
+    /// - 点某面板 → 只拉高该面板旗标，**不**带动全局（全局只看 `isRefreshingAll`）。
     private var insightsGlobalFooter: some View {
         HStack(spacing: 12) {
             Spacer(minLength: 0)
             SyncIconButton(
-                isRefreshing: isGlobalRefreshing,
-                disabled: isGlobalRefreshing,
+                isRefreshing: viewModel.isRefreshingAll,
+                disabled: viewModel.isRefreshingAll,
                 font: .caption2,
                 frameSize: 18,
                 tooltip: String.l10n("insights.repo.refreshAll"),
@@ -132,18 +136,17 @@ struct RepositoryInsightsView: View {
         .background(.bar)
     }
 
-    private var isGlobalRefreshing: Bool {
-        viewModel.isRefreshingAll || starHistoryViewModel.isRefreshing
-    }
-
     private func refreshAllInsights() async {
         let authenticated = authSession.state.isAuthenticated
-        async let insightsLoad: Void = viewModel.refreshAll(
+        // Star 与其它区块共用「全局」冷却；未真正开刷时只靠 isRefreshingAll 脉冲带动各面板确认转圈。
+        let started = await viewModel.refreshAll(
             repo: repo,
             isAuthenticated: authenticated
         )
-        async let starLoad: Void = starHistoryViewModel.refresh(repo: repo)
-        _ = await (insightsLoad, starLoad)
+        guard started else { return }
+        // 远端区块已返回后仍保持 isRefreshingAll，直到 Star 也结束，避免全局图标先停、Star 还在转。
+        defer { viewModel.finishGlobalRefresh() }
+        await starHistoryViewModel.refresh(repo: repo)
     }
 
     private var localOverviewSection: some View {
@@ -373,8 +376,8 @@ struct RepositoryInsightsView: View {
 
     private var activityRefreshButton: some View {
         SyncIconButton(
-            isRefreshing: viewModel.isRefreshingActivity,
-            disabled: viewModel.isRefreshingActivity,
+            isRefreshing: viewModel.isRefreshingActivity || viewModel.isRefreshingAll,
+            disabled: viewModel.isRefreshingActivity || viewModel.isRefreshingAll,
             tooltip: String.l10n("insights.repo.activity.refresh")
         ) {
             Task {
@@ -790,8 +793,9 @@ struct RepositoryInsightsView: View {
 
     private var starRefreshButton: some View {
         SyncIconButton(
-            isRefreshing: starHistoryViewModel.isRefreshing,
-            disabled: starHistoryViewModel.isRefreshing,
+            // 全局刷新时跟着转；单独刷 Star 不得带动底栏全局图标。
+            isRefreshing: starHistoryViewModel.isRefreshing || viewModel.isRefreshingAll,
+            disabled: starHistoryViewModel.isRefreshing || viewModel.isRefreshingAll,
             tooltip: String.l10n("insights.repo.star.refresh")
         ) {
             Task {
@@ -1189,8 +1193,8 @@ struct RepositoryInsightsView: View {
             .accessibilityLabel(Text("insights.repo.activity.range.label"))
 
             SyncIconButton(
-                isRefreshing: viewModel.isRefreshingCommitActivity,
-                disabled: viewModel.isRefreshingCommitActivity,
+                isRefreshing: viewModel.isRefreshingCommitActivity || viewModel.isRefreshingAll,
+                disabled: viewModel.isRefreshingCommitActivity || viewModel.isRefreshingAll,
                 tooltip: String.l10n("insights.repo.commit.refresh")
             ) {
                 Task {
