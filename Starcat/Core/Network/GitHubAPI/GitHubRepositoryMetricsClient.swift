@@ -165,6 +165,8 @@ struct GitHubRepositoryActivityBundleMetric: Equatable, Sendable {
 }
 
 /// GitHub 最近 52 周 Commit Activity 的一周数据。
+/// GitHub `/stats/commit_activity` 单周条目。
+/// `days` 为周日→周六共 7 天的提交数；`week` 为该周周日 00:00 UTC 的 Unix 秒。
 struct GitHubWeeklyCommitActivity: Decodable, Equatable, Sendable {
     let week: Int
     let total: Int

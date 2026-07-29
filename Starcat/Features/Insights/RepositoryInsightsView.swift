@@ -1141,7 +1141,11 @@ struct RepositoryInsightsView: View {
     private var commitSection: some View {
         InsightsSectionContainer(
             title: "insights.repo.section.commits",
-            subtitle: "insights.repo.section.commits.subtitle",
+            subtitle: LocalizedStringKey(
+                viewModel.commitActivityRange.usesDailyCommitBars
+                    ? "insights.repo.section.commits.subtitle.daily"
+                    : "insights.repo.section.commits.subtitle"
+            ),
             systemImage: "chart.bar.fill"
         ) {
             VStack(alignment: .leading, spacing: 10) {

@@ -212,12 +212,60 @@ struct RepositoryInsightsRemoteProviderTests {
         let request = try #require(await httpClient.request())
 
         #expect(refreshed.points.count == 2)
-        #expect(refreshed.points(in: .week).map(\.commits) == [7])
-        #expect(refreshed.points(in: .month).map(\.commits) == [7])
+        // 「1 周 / 1 月」展开 days；更长范围仍周柱。
+        #expect(refreshed.points(in: .week).map(\.commits) == [1, 1, 1, 1, 1, 1, 1])
+        #expect(refreshed.points(in: .week).count == 7)
+        #expect(refreshed.points(in: .month).map(\.commits) == [1, 1, 1, 1, 1, 1, 1])
         #expect(refreshed.points(in: .quarter).map(\.commits) == [12, 7])
         #expect(cached.value == refreshed)
+        #expect(refreshed.points.last?.days == [1, 1, 1, 1, 1, 1, 1])
         #expect(!cached.isStale)
         #expect(request.url?.path == "/repos/octo/commits/stats/commit_activity")
+    }
+
+    @Test("1 周 / 1 月展开 days；缺 days 或更长范围保持周柱")
+    func shortRangesExpandDaysOrFallBackToWeeklyBars() {
+        let weekStart = Date(timeIntervalSince1970: 1_700_000_000)
+        let previousWeek = weekStart.addingTimeInterval(-7 * 86_400)
+        let generatedAt = weekStart.addingTimeInterval(6 * 86_400)
+        let withDays = RepositoryCommitActivity(
+            points: [
+                RepositoryCommitActivityPoint(
+                    weekStart: previousWeek,
+                    commits: 10,
+                    days: [2, 2, 2, 1, 1, 1, 1]
+                ),
+                RepositoryCommitActivityPoint(
+                    weekStart: weekStart,
+                    commits: 28,
+                    days: [1, 2, 3, 4, 5, 6, 7]
+                )
+            ],
+            generatedAt: generatedAt
+        )
+        let legacy = RepositoryCommitActivity(
+            points: [
+                RepositoryCommitActivityPoint(weekStart: weekStart, commits: 9)
+            ],
+            generatedAt: generatedAt
+        )
+
+        #expect(withDays.points(in: .week).map(\.commits) == [1, 2, 3, 4, 5, 6, 7])
+        #expect(
+            withDays.points(in: .week).map(\.weekStart)
+                == (0..<7).map { weekStart.addingTimeInterval(TimeInterval($0) * 86_400) }
+        )
+        #expect(
+            withDays.points(in: .month).map(\.commits)
+                == [2, 2, 2, 1, 1, 1, 1, 1, 2, 3, 4, 5, 6, 7]
+        )
+        #expect(withDays.points(in: .quarter).map(\.commits) == [10, 28])
+        #expect(withDays.points(in: .year).map(\.commits) == [10, 28])
+        #expect(legacy.points(in: .week).map(\.commits) == [9])
+        #expect(legacy.points(in: .month).map(\.commits) == [9])
+        #expect(RepositoryActivityRange.week.usesDailyCommitBars)
+        #expect(RepositoryActivityRange.month.usesDailyCommitBars)
+        #expect(!RepositoryActivityRange.quarter.usesDailyCommitBars)
     }
 
     @Test("过期提交活动使用 ETag 条件请求并在 304 后复用缓存")

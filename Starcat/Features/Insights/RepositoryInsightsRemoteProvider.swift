@@ -40,6 +40,14 @@ enum RepositoryActivityRange: String, CaseIterable, Codable, Identifiable, Senda
     var titleKey: String {
         "insights.repo.activity.range.\(rawValue)"
     }
+
+    /// 提交活动图是否按日拆柱（依赖每周 `days`）；更长窗口仍用周柱以免过密。
+    var usesDailyCommitBars: Bool {
+        switch self {
+        case .week, .month: return true
+        case .quarter, .year: return false
+        }
+    }
 }
 
 /// 一个活动范围内四个协作 KPI 的真实计数。
@@ -76,11 +84,46 @@ struct RepositoryCachedActivityCounts: Equatable, Sendable {
 }
 
 /// GitHub 固定返回最近 52 周；保留绝对日期后，客户端按提交区独立 range 裁剪。
+///
+/// `weekStart` 在周粒度是周日起点；1 周 / 1 月展开日柱时，同一字段表示该日 0 点
+///（沿用字段名以兼容已缓存 JSON，避免双写新旧 key）。
 struct RepositoryCommitActivityPoint: Codable, Equatable, Identifiable, Sendable {
     let weekStart: Date
     let commits: Int
+    /// GitHub `days`：周日→周六共 7 项；旧缓存或日粒度派生点为空。
+    let days: [Int]
 
     var id: Date { weekStart }
+
+    init(weekStart: Date, commits: Int, days: [Int] = []) {
+        self.weekStart = weekStart
+        self.commits = commits
+        self.days = days
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case weekStart, commits, days
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        weekStart = try container.decode(Date.self, forKey: .weekStart)
+        commits = try container.decode(Int.self, forKey: .commits)
+        // 旧缓存没有 days；缺省为空，1 周视图会退回单周柱而不是崩。
+        days = try container.decodeIfPresent([Int].self, forKey: .days) ?? []
+    }
+
+    /// 把本周 `days` 展开为 7 个日点；长度不是 7 时返回 nil，由调用方退回周柱。
+    func expandedDailyPoints() -> [RepositoryCommitActivityPoint]? {
+        guard days.count == 7 else { return nil }
+        return days.enumerated().map { dayIndex, count in
+            RepositoryCommitActivityPoint(
+                weekStart: weekStart.addingTimeInterval(TimeInterval(dayIndex) * 86_400),
+                commits: count,
+                days: []
+            )
+        }
+    }
 }
 
 struct RepositoryCommitActivity: Codable, Equatable, Sendable {
@@ -89,7 +132,36 @@ struct RepositoryCommitActivity: Codable, Equatable, Sendable {
 
     func points(in range: RepositoryActivityRange) -> [RepositoryCommitActivityPoint] {
         let cutoff = generatedAt.addingTimeInterval(-Double(range.dayCount) * 86_400)
-        return points.filter { $0.weekStart >= cutoff }
+        let weekly = points
+            .filter { $0.weekStart >= cutoff }
+            .sorted { $0.weekStart < $1.weekStart }
+
+        // 1 周 / 1 月：用每周自带的 days 拆日柱；3 月 / 1 年日柱过密，保持周柱。
+        // 任一周围缺 days（旧缓存）则整段退回周柱，避免日/周混画。
+        switch range {
+        case .week:
+            guard let latest = weekly.last else { return [] }
+            return latest.expandedDailyPoints() ?? [latest]
+        case .month:
+            return Self.expandedDailyPoints(from: weekly, cutoff: cutoff) ?? weekly
+        case .quarter, .year:
+            return weekly
+        }
+    }
+
+    /// 把范围内各周的 `days` 串成日点，并按 cutoff 裁掉窗口外的日子。
+    private static func expandedDailyPoints(
+        from weekly: [RepositoryCommitActivityPoint],
+        cutoff: Date
+    ) -> [RepositoryCommitActivityPoint]? {
+        guard !weekly.isEmpty else { return [] }
+        var daily: [RepositoryCommitActivityPoint] = []
+        daily.reserveCapacity(weekly.count * 7)
+        for week in weekly {
+            guard let expanded = week.expandedDailyPoints() else { return nil }
+            daily.append(contentsOf: expanded)
+        }
+        return daily.filter { $0.weekStart >= cutoff }
     }
 
     /// 最近 4 周与此前 4 周形成固定可比窗口，不受图表范围切换影响。
@@ -493,7 +565,9 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
                     .map {
                         RepositoryCommitActivityPoint(
                             weekStart: Date(timeIntervalSince1970: TimeInterval($0.week)),
-                            commits: $0.total
+                            commits: $0.total,
+                            // 保留周日→周六明细，供「1 周」范围展开日柱；其它范围仍用 total。
+                            days: $0.days
                         )
                     }
                     .sorted { $0.weekStart < $1.weekStart },

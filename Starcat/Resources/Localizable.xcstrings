@@ -127667,6 +127667,13 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "所選活動範圍內的每週提交量" } }
       }
     },
+    "insights.repo.section.commits.subtitle.daily" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Daily commits in the selected activity range" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "所选活动范围内的每日提交量" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "所選活動範圍內的每日提交量" } }
+      }
+    },
     "insights.repo.section.community" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Community" } },
