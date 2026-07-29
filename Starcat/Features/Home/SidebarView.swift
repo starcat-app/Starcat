@@ -811,8 +811,8 @@ struct SidebarView: View {
     private var manageSidebarContent: some View {
         if authSession.state.isAuthenticated {
             Section("sidebar.mainNavigation") {
-                row(.allStars, count: viewModel.totalCount)
                 myProjectsRow
+                row(.allStars, count: viewModel.totalCount)
                 row(.untagged, count: viewModel.untaggedCount)
                 row(.library, count: viewModel.libraryCount)
                 row(.smartCollectionsHome, count: SmartCollectionKind.allCases.count + viewModel.userSmartCollections.count)
