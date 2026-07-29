@@ -43,9 +43,18 @@ struct RepositoryInsightsContextPreparationResult: Sendable {
     let artifact: RepositoryInsightsContextArtifact?
 }
 
+/// RAG 只依赖 cache-only Artifact 准备能力，避免为测试或其它消费者暴露页面 / AI 的完整协议。
+protocol RepositoryInsightsRAGContextProviding: Sendable {
+    func prepareArtifact(
+        for repo: Repo,
+        mode: RepositoryInsightsContextPreparationMode
+    ) async -> RepositoryInsightsContextArtifact?
+}
+
 protocol RepositoryInsightsContextCoordinating:
     RepositoryInsightsAIContextProviding,
     RepositoryInsightsDocumentProviding,
+    RepositoryInsightsRAGContextProviding,
     Sendable
 {
     func prepareArtifact(
