@@ -10,7 +10,7 @@
 >
 > Worktree：`/Users/dong4j/.codex/worktrees/my-projects/Starcat`
 >
-> 后续修订：已合并至主项目 `dev`，第 6 至第 10 轮在 `dev` 完成
+> 后续修订：已合并至主项目 `dev`，第 6 至第 11 轮在 `dev` 完成
 
 ## 1. 产品与权限边界
 
@@ -56,6 +56,7 @@
 - [x] 复用 Repo 详情、README、仓库洞察和 Star History。
   - 完成：owner / collaborator 按项目关系使用 OAuth 或 GitHub App 直连 GitHub Stargazers，并以“当前 Stargazers 重建”口径展示。
 - [x] 非 GitHub Stargazers 来源显示访问限制说明和官方公告链接，并区分公共估算与本机快照。
+- [x] Star History footer 收敛为紧凑元数据：单来源隐藏图例、默认隐藏读数、限制说明改为短链接并保留 help / VoiceOver。
 - [x] 未连接、连接中、部分授权、待审批、过期、撤销、失败和断网状态完整。
 - [x] 刷新保留旧列表、当前 selection 和分页状态。
 - [x] 完成 en / zh-Hans i18n 与辅助功能静态契约；VoiceOver、键盘和 Light / Dark 实机矩阵已明确为外部 Gate，未伪造人工结果。
@@ -96,6 +97,7 @@
 - [x] 第八轮：Star History 不同来源折线连续性回归，补齐重建历史到本机快照的桥接段。
 - [x] 第九轮：Sidebar 导航顺序与 Stargazers 访问限制说明的代码、测试、文档和进度一致性审查。
 - [x] 第十轮：代码、单元测试、Debug build、官方依据、文档、checklist 和提交历史最终一致性复审。
+- [x] 第十一轮：Star History footer 信息密度、响应式布局、i18n、辅助功能和自动化证据审查。
 - [x] 所有问题关闭后新增最终复审报告。
 - [x] 多轮复审无新增问题后新增结果报告。
 
