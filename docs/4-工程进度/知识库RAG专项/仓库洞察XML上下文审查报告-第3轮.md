@@ -2,7 +2,7 @@
 
 > 日期：2026-07-30  
 > 范围：测试、正式文档、专项进度、数据库兼容与提交边界  
-> 结论：发现 2 个 P2 收口项，完成后再做清洁复审
+> 结论：发现的 2 个 P2 收口项已完成，可以进入清洁复审
 
 ## 1. 一致性结论
 
@@ -33,7 +33,10 @@
 
 ## 4. 修复与复验
 
-- [ ] 当前 HEAD 全量 `StarcatTests` 通过。
-- [ ] 当前 HEAD 两个 Debug target build 通过。
-- [ ] 更新洞察设计与 RAG 专项进度最终自动化状态。
-- [ ] 复查 Checklist 与工作区边界。
+- [x] 当前 HEAD 全量 `StarcatTests` 通过。
+- [x] 当前 HEAD `Starcat` 与 `StarcatDirect` Debug build 通过。
+- [x] 洞察设计已同步 M6 自动化完成状态。
+- [x] RAG 专项进度已同步三轮审查和当前 HEAD 门禁状态。
+- [x] Checklist 与工作区边界复查通过。
+
+文档修复提交：`c452f17 docs(insights): 同步洞察 XML 最终自动化状态`、`3547dda docs(rag): 同步洞察 XML 第三轮工程进度`。
