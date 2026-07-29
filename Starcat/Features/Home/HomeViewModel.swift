@@ -1610,6 +1610,14 @@ final class HomeViewModel {
         }
     }
 
+    /// 项目授权 / 同步会写入 Private / Internal 关系；淘汰「我的项目」分页快照，
+    /// 避免授权前的公开列表在 5 分钟 TTL 内继续挡住新私有仓库。
+    func invalidateDatabaseSnapshotsForMyProjectsChange() {
+        removeDatabaseSnapshots { key in
+            key.selection == .myProjects
+        }
+    }
+
     func userSmartCollection(id: String) -> UserSmartCollection? {
         userSmartCollections.first { $0.id == id }
     }

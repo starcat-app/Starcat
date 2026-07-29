@@ -123988,6 +123988,14 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "私有" } }
       }
     },
+    "list.filter.project.onlyPrivate" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Private repositories only" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "只看私有仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "只看私有儲存庫" } }
+      }
+    },
     "list.filter.project.visibility.internal" : {
       "extractionState" : "manual",
       "localizations" : {

@@ -227,6 +227,8 @@ struct SidebarView: View {
         }
         .sheet(isPresented: $showProjectAccessSheet) {
             ProjectAccessSheet {
+                // 授权 / 同步后关系表可能新增 Private 仓库：先清快照，再按需重查中栏。
+                viewModel.invalidateDatabaseSnapshotsForMyProjectsChange()
                 await viewModel.refreshSidebar()
                 if viewModel.selection == .myProjects {
                     await viewModel.reloadItems(forceRefresh: true, reason: .sync)
@@ -1901,7 +1903,8 @@ struct SidebarView: View {
                 } label: {
                     Image(systemName: projectAccessSystemImage)
                         .font(interfaceScale.font(.captionSmall))
-                        .foregroundStyle(.secondary)
+                        // 授权成功用绿色勾表达「已可用」；其它状态沿用 statusTone（灰 / 橙 / 红）。
+                        .foregroundStyle(projectAccessIconColor)
                         .frame(width: 18, height: 18)
                         .contentShape(Rectangle())
                 }
@@ -1942,6 +1945,10 @@ struct SidebarView: View {
 
     private var projectAccessSystemImage: String {
         dependencies.projectAccessSession.state.statusSymbolName
+    }
+
+    private var projectAccessIconColor: Color {
+        dependencies.projectAccessSession.state.statusTone.foregroundColor
     }
 
     /// HOM-47：Release 时间线入口行。

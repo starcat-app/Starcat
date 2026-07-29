@@ -2140,6 +2140,7 @@ struct HomeView: View {
         if !TestEnvironment.isRunning {
             Task { @MainActor in
                 _ = try? await dependencies.userProjectSyncService.refresh(userID: user.id)
+                viewModel.invalidateDatabaseSnapshotsForMyProjectsChange()
                 await viewModel.refreshSidebar()
                 if viewModel.selection == .myProjects {
                     await viewModel.reloadItems(forceRefresh: true, reason: .sync)

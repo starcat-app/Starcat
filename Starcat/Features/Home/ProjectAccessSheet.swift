@@ -57,7 +57,13 @@ struct ProjectAccessSheet: View {
     }
 
     private var header: some View {
-        HStack {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "lock.shield.fill")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 28, height: 28)
+                .accessibilityHidden(true)
+
             VStack(alignment: .leading, spacing: 3) {
                 Text("project.access.title")
                     .font(.headline)
@@ -65,7 +71,7 @@ struct ProjectAccessSheet: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Spacer()
+            Spacer(minLength: 0)
             SheetCloseButton(action: { dismiss() })
         }
         .padding(20)
@@ -154,9 +160,14 @@ struct ProjectAccessSheet: View {
                 detail: "project.access.permissions.selection.detail"
             )
 
+            // 只读边界是授权前最关键的安全承诺，用 warning 语义与普通说明行拉开层级。
             Label("project.access.permissions.noWrite", systemImage: "hand.raised.fill")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.orange)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
         }
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -360,8 +371,14 @@ struct ProjectAccessSheet: View {
             case .connected where shouldDisconnect:
                 disconnect()
             case .connected(let access) where access.isInstalled:
+                // 安装已就绪：立刻同步项目关系，把 Private / Internal 刷进中栏。
                 refreshProjects(force: true)
-            case .connected, .cancelled, .failed:
+            case .connected:
+                // OAuth 已成功但尚未安装 App：仍通知外层清快照 / 更新计数，避免停留在授权前列表。
+                Task { @MainActor in
+                    await onProjectsChanged()
+                }
+            case .cancelled, .failed:
                 break
             }
         }

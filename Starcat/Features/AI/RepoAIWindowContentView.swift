@@ -1327,7 +1327,7 @@ struct RepoAIWindowContentView: View {
     /// 摘要 / 对话之间的 segmented 切换条。
     ///
     /// 设计要点：
-    /// - 复用 `PillSegmentedControl`（与 Trending 顶栏「今日 / 本周 / 本月」同款）：
+    /// - 复用 `PillSegmentedControl` compact（与详情 README / 洞察切换同密度）：
     ///   胶囊外框 + 内嵌选中 pill，替代系统 `Picker(.segmented)` 的灰底蓝块风格；
     /// - 首次进入聊天先异步准备数据，期间保留摘要内容并在右侧显示进度；
     /// - 面板结构无动画替换，下一帧仅让目标面板做 0.12s 单向淡入，旧、新文字
@@ -1338,7 +1338,9 @@ struct RepoAIWindowContentView: View {
             PillSegmentedControl(
                 items: Array(AIPanelMode.allCases),
                 selection: panelModeBinding,
-                title: \.displayName
+                title: \.displayName,
+                // 底部切换条与详情内嵌胶囊同密度（11pt），避免 13pt regular 抢视觉焦点。
+                size: .compact
             )
             .disabled(isPreparingChat)
             .help("ai.assistant.toggle.help")

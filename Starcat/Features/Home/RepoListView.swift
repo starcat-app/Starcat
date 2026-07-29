@@ -965,7 +965,16 @@ struct RepoListView: View {
     @MainActor
     private func makeManageToolbarSpec() -> PageToolbarSpec {
         let effectiveFilters = viewModel.effectiveGlobalFilterState
-        let filterItems: [FilterMenuItem] = [
+        var filterItems: [FilterMenuItem] = []
+        // 「我的项目」专属维度（含可见性 / 私有）只在该 scope 出现，避免污染 Stars 筛选。
+        if viewModel.selection == .myProjects {
+            filterItems.append(.content(
+                id: "project",
+                view: AnyView(projectFilterSection())
+            ))
+            filterItems.append(.divider(id: "after-project"))
+        }
+        filterItems.append(contentsOf: [
             .content(id: "starStatus", view: AnyView(
                 starFilterSection(selection: globalFilterBinding(\.starFilter))
             )),
@@ -1016,7 +1025,15 @@ struct RepoListView: View {
                 icon: "tuningfork",
                 isOn: globalFilterBinding(\.hideForks)
             )
-        ]
+        ])
+        if viewModel.selection == .myProjects {
+            filterItems.append(.toggle(
+                id: "onlyPrivateProjects",
+                label: "list.filter.project.onlyPrivate",
+                icon: "lock.fill",
+                isOn: onlyPrivateProjectsBinding
+            ))
+        }
 
         let leading = AnyView(
             Group {
@@ -1161,6 +1178,14 @@ struct RepoListView: View {
                 isOn: globalFilterBinding(\.hideForks)
             )
         ])
+        if viewModel.selection == .myProjects {
+            filterItems.append(.toggle(
+                id: "onlyPrivateProjects",
+                label: "list.filter.project.onlyPrivate",
+                icon: "lock.fill",
+                isOn: onlyPrivateProjectsBinding
+            ))
+        }
 
         return UnifiedFilterMenu(
             items: filterItems,
@@ -1225,7 +1250,9 @@ struct RepoListView: View {
 
             Picker("list.filter.project.visibility", selection: $vm.projectVisibilityFilter) {
                 Text("general.all").tag(nil as ProjectVisibility?)
-                ForEach(viewModel.projectFilterOptions.visibilities, id: \.self) { visibility in
+                // 始终提供 Public / Private / Internal，不依赖当前库内已出现的可见性枚举；
+                // 否则授权前只有公开项目时，用户无法预先选「只看私有」。
+                ForEach(ProjectVisibility.allCases, id: \.self) { visibility in
                     Text(projectVisibilityLabel(visibility)).tag(visibility as ProjectVisibility?)
                 }
             }
@@ -2552,6 +2579,16 @@ struct RepoListView: View {
         Binding(
             get: { viewModel.effectiveGlobalFilterState[keyPath: keyPath] },
             set: { viewModel.setGlobalFilterFromUser(keyPath, to: $0) }
+        )
+    }
+
+    /// 「只看私有仓库」快捷开关，与可见性 Picker 共用 `projectVisibilityFilter`。
+    private var onlyPrivateProjectsBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.projectVisibilityFilter == .private },
+            set: { isOn in
+                viewModel.projectVisibilityFilter = isOn ? .private : nil
+            }
         )
     }
 

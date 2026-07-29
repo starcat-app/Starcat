@@ -17,7 +17,7 @@
 //
 //  使用范围（截至 2026-07-28）：
 //  - `TrendingView.periodPicker`（regular，对齐 Activity / Weekly 顶栏行高）
-//  - `RepoAIWindowContentView.panelToggleBar`（regular）
+//  - `RepoAIWindowContentView.panelToggleBar`（compact）
 //  - `ManageDetailContent`（compact：README / 洞察）
 //  - `MyInsightsView`（compact：全部收藏 / 知识库）
 //  - `RepositoryInsightsView`（compact：Star / 提交活动范围）
