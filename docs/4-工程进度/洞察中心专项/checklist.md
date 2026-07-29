@@ -562,6 +562,17 @@
 - [x] R15-F01 以 `9c5ef47` 同步需求矩阵 DOC / REVIEW / RESULT 状态，并在结果报告回填真实提交证据。
 - [x] R15 修复后以 R16 `0e15d0d`、R17 `87c5997` 重新完成两轮连续 clean，并回填最终审查提交。
 
+### 13.9 发布节奏远端回退修复
+
+- [x] `72a4da91` 增加 GitHub 最近 12 次 Release 数据源、ETag 与独立 6 小时缓存。
+- [x] 确认无 Release 的空结果同样缓存，避免重复进入仓库时持续请求 GitHub。
+- [x] `84ea42a1` 保持本地 Release 历史优先，本地缺失时才执行远端回退。
+- [x] 修复无毫秒 GitHub 时间解析，避免本地已有 Release 但发布时间全部丢失。
+- [x] 区分“暂无已发布 Release”“需要登录 GitHub”“Release 历史加载失败”三种状态。
+- [x] 全局刷新保持当前发布节奏内容，数据返回后原位更新，不增加中央加载图标。
+- [x] `RepositoryInsightsRemoteProviderTests` 23 项、`RepositoryInsightsViewModelTests` 21 项通过。
+- [x] 新增 `审查报告-18-发布节奏远端回退复核.md`，同步设计、矩阵与结果报告口径。
+
 每轮固定提交：
 
 - [x] 新增报告提交：R01 `f5fb0c43`、R02 `41fd7298`、R03 `c91ffd12`、R04 `0402b4a9`、R05 `856111cd`、R06 `6ceb6a9b`、R07 `c5b9ff1a`、R08 `06325c52`、R09 `1c30291`、R10 `cd3c27d`。
