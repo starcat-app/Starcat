@@ -221,6 +221,9 @@ targets:
         # 避免多个进程争用同一份 AppKit window restoration 状态。
         LSMultipleInstancesProhibited: true
         STARCAT_OAUTH_CLIENT_SECRET: $(STARCAT_OAUTH_CLIENT_SECRET)
+        # GitHub App 公共配置必须同时进入 Direct 包；仅定义 xcconfig 变量不会自动写入 Info.plist。
+        STARCAT_GITHUB_APP_CLIENT_ID: $(STARCAT_GITHUB_APP_CLIENT_ID)
+        STARCAT_GITHUB_APP_SLUG: $(STARCAT_GITHUB_APP_SLUG)
         CFBundleURLTypes:
           - CFBundleURLName: com.starcat.app.direct
             CFBundleURLSchemes:
