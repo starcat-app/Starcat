@@ -80,23 +80,23 @@
 
 ## 5. RAG Models、Service 与 Prompt
 
-- [ ] 新增 Repository Insights RAG Document / Snapshot / Outcome。
-- [ ] 新增 `RAGCitationSource.repositoryInsights`。
-- [ ] 新增 `RAGHitKind.repositoryInsights`。
-- [ ] 新增 `RAGContextUsageSegmentKind.repositoryInsights`。
+- [x] 新增 Repository Insights RAG Document / Snapshot / Outcome。
+- [x] 新增 `RAGCitationSource.repositoryInsights`。
+- [x] 新增 `RAGHitKind.repositoryInsights`。
+- [x] 新增 `RAGContextUsageSegmentKind.repositoryInsights`。
 - [ ] 新增可解释的执行步骤与 Debug stages。
-- [ ] 不扩展 `RAGChunkSource`，不修改 v7 RAG schema。
-- [ ] 显式仓库范围读取洞察 XML。
-- [ ] 普通检索只读取最终保留 bundle 的洞察 XML。
-- [ ] 多仓库读取有界并发，不扫描全知识库。
-- [ ] RAG 缺 Artifact 时只允许 cache-only 本地生成，不额外联网。
-- [ ] Builder 增加独立 `{repositoryInsightsSection}`。
-- [ ] 洞察 XML 使用独立预算且服从总 Context Window。
-- [ ] 实现洞察 XML 感知投影或整份移除，始终保持合法 XML。
-- [ ] 洞察 XML 生成独立 citation，`chunkID = nil`。
+- [x] 不扩展 `RAGChunkSource`，不修改 v7 RAG schema。
+- [x] 显式仓库范围读取洞察 XML。
+- [x] 普通检索只读取最终保留 bundle 的洞察 XML。
+- [x] 多仓库读取有界并发，不扫描全知识库。
+- [x] RAG 缺 Artifact 时只允许 cache-only 本地生成，不额外联网。
+- [x] Builder 增加独立 `{repositoryInsightsSection}`。
+- [x] 洞察 XML 使用独立预算且服从总 Context Window。
+- [x] 实现洞察 XML 感知投影或整份移除，始终保持合法 XML。
+- [x] 洞察 XML 生成独立 citation，`chunkID = nil`。
 - [ ] 洞察 XML 可作为真实仓库级证据通过证据门禁。
 - [ ] 其它证据存在时洞察降级不阻断回答。
-- [ ] Prompt 默认值迁移保留用户自定义模板。
+- [x] Prompt 默认值迁移保留用户自定义模板。
 - [ ] 补齐 Service、目标选择、预算、投影、citation、门禁和 Prompt 迁移测试。
 
 ## 6. RAG 全部可见面
