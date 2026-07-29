@@ -59,6 +59,25 @@ enum StarHistoryRestrictionNoticePolicy {
     }
 }
 
+enum StarHistoryFooterPolicy {
+    /// 图例解释的是线型精度；只有出现两种以上精度时才需要常驻展示。
+    static func shouldShowLegend(points: [StarHistoryPoint]) -> Bool {
+        Set(points.map(\.precision.rawValue)).count > 1
+    }
+
+    /// 默认不返回读数，避免与顶部 Current Stars 重复；选中图表日期后才返回最近点。
+    static func selectedPoint(
+        in points: [StarHistoryPoint],
+        selectedDate: Date?
+    ) -> StarHistoryPoint? {
+        guard let selectedDate else { return nil }
+        return points.min {
+            abs($0.date.timeIntervalSince(selectedDate))
+                < abs($1.date.timeIntervalSince(selectedDate))
+        }
+    }
+}
+
 struct RepositoryInsightsView: View {
     private struct TimelineDisplayItem: Identifiable {
         let id: String
@@ -664,11 +683,13 @@ struct RepositoryInsightsView: View {
                     )
                 }
 
-                if StarHistoryRestrictionNoticePolicy.shouldShow(
+                if displayedStarPoints.isEmpty,
+                   StarHistoryRestrictionNoticePolicy.shouldShow(
                     points: displayedStarPoints,
                     phase: starHistoryViewModel.phase
-                ) {
-                    starHistoryRestrictionNotice
+                   ) {
+                    starHistoryRestrictionLink
+                        .padding(.horizontal, 2)
                 }
             }
         }
@@ -684,31 +705,64 @@ struct RepositoryInsightsView: View {
         }
     }
 
-    private var starCoverageFooter: some View {
+    /// 日期范围已经包含最后观测日期，更新时间只保留时分，避免同一天日期重复两次。
+    private var starCoverageSummary: some View {
         HStack(spacing: 5) {
-            Text("insights.repo.star.coverage")
-            if let coverageStart = starHistoryViewModel.coverageStart {
-                Text(coverageStart, format: .dateTime.year().month().day())
-            } else {
-                Text("insights.repo.state.noData")
-            }
+            Text(verbatim: starCoverageRangeText)
             Text("·")
             Text("insights.repo.star.updated")
             if let updatedAt = starHistoryViewModel.updatedAt {
-                Text(updatedAt, format: .dateTime.year().month().day().hour().minute())
+                Text(updatedAt, format: .dateTime.hour().minute())
             } else {
                 Text("insights.repo.state.noData")
+            }
+        }
+    }
+
+    private var starCoverageRangeText: String {
+        guard let coverageStart = starHistoryViewModel.coverageStart else {
+            return String.l10n("insights.repo.state.noData")
+        }
+        let coverageEnd = max(coverageStart, displayedStarPoints.last?.date ?? coverageStart)
+        return Date.IntervalFormatStyle(
+            date: .abbreviated,
+            time: .omitted,
+            locale: locale
+        ).format(coverageStart..<coverageEnd)
+    }
+
+    /// 常态只保留一行元数据；窄窗口自动回落为两行，避免压缩短链接。
+    private var starMetadataFooter: some View {
+        let showsRestriction = StarHistoryRestrictionNoticePolicy.shouldShow(
+            points: displayedStarPoints,
+            phase: starHistoryViewModel.phase
+        )
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: 5) {
+                starCoverageSummary
+                if showsRestriction {
+                    Text("·")
+                    starHistoryRestrictionLink
+                }
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                starCoverageSummary
+                if showsRestriction {
+                    starHistoryRestrictionLink
+                }
             }
         }
         .font(interfaceScale.font(.captionSmall))
         .foregroundStyle(.secondary)
     }
 
-    /// 图例、读数、覆盖区间合成一条脚注，避免图表下叠三层说明块。
+    /// 单来源隐藏图例，默认隐藏读数；只在多来源或图表选中时增加对应信息。
     private var starFooter: some View {
         VStack(alignment: .leading, spacing: 6) {
-            starSources
-            if let point = readableStarPoint {
+            if StarHistoryFooterPolicy.shouldShowLegend(points: displayedStarPoints) {
+                starSources
+            }
+            if let point = selectedStarPoint {
                 let value = String(
                     format: String.l10n("insights.repo.star.reading.valueFormat"),
                     locale: locale,
@@ -728,28 +782,24 @@ struct RepositoryInsightsView: View {
                     .accessibilityLabel(Text("insights.repo.star.reading.label"))
                     .accessibilityValue(Text(verbatim: value))
             }
-            starCoverageFooter
+            starMetadataFooter
         }
         .padding(.horizontal, 2)
     }
 
-    /// 仅解释为什么当前不是 GitHub 精确来源，不把 Discovery 估算误写成本机数据。
-    private var starHistoryRestrictionNotice: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: "info.circle")
-                .accessibilityHidden(true)
-            Text("insights.repo.star.restriction.message")
-                .fixedSize(horizontal: false, vertical: true)
-            Link(
-                "insights.repo.star.restriction.learnMore",
-                destination: Self.githubStargazersRestrictionURL
-            )
-            .underline()
-            .lineLimit(1)
+    /// 页面只显示问题式短链接；完整限制说明保留在 help 与 VoiceOver hint。
+    private var starHistoryRestrictionLink: some View {
+        Link(destination: Self.githubStargazersRestrictionURL) {
+            HStack(spacing: 4) {
+                Image(systemName: "info.circle")
+                    .accessibilityHidden(true)
+                Text("insights.repo.star.restriction.learnMore")
+                    .underline()
+            }
         }
-        .font(interfaceScale.font(.captionSmall))
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 2)
+        .lineLimit(1)
+        .help(Text("insights.repo.star.restriction.message"))
+        .accessibilityHint(Text("insights.repo.star.restriction.message"))
     }
 
     private func starMetric(value: String, label: LocalizedStringKey) -> some View {
@@ -964,14 +1014,10 @@ struct RepositoryInsightsView: View {
     }
 
     private var selectedStarPoint: StarHistoryPoint? {
-        guard let selectedStarDate else { return nil }
-        return displayedStarPoints.min {
-            abs($0.date.timeIntervalSince(selectedStarDate)) < abs($1.date.timeIntervalSince(selectedStarDate))
-        }
-    }
-
-    private var readableStarPoint: StarHistoryPoint? {
-        selectedStarPoint ?? displayedStarPoints.last
+        StarHistoryFooterPolicy.selectedPoint(
+            in: displayedStarPoints,
+            selectedDate: selectedStarDate
+        )
     }
 
     private func change(for point: StarHistoryPoint) -> Int? {

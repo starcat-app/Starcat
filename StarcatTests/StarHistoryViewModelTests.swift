@@ -381,6 +381,67 @@ struct StarHistoryRestrictionNoticePolicyTests {
     }
 }
 
+@Suite("Star History Footer Policy")
+struct StarHistoryFooterPolicyTests {
+
+    @Test("单一精度不显示图例")
+    func singlePrecisionHidesLegend() {
+        let points = [
+            point("2026-07-28", source: .localSnapshot, precision: .snapshot),
+            point("2026-07-29", source: .localSnapshot, precision: .snapshot)
+        ]
+
+        #expect(!StarHistoryFooterPolicy.shouldShowLegend(points: points))
+    }
+
+    @Test("多种精度显示图例")
+    func multiplePrecisionsShowLegend() {
+        let points = [
+            point("2023-10-22", source: .githubStargazers, precision: .reconstructed),
+            point("2026-07-29", source: .localSnapshot, precision: .snapshot)
+        ]
+
+        #expect(StarHistoryFooterPolicy.shouldShowLegend(points: points))
+    }
+
+    @Test("未选中图表日期时不显示默认读数")
+    func noSelectionHidesReading() {
+        let points = [point("2026-07-29", source: .localSnapshot, precision: .snapshot)]
+
+        #expect(StarHistoryFooterPolicy.selectedPoint(in: points, selectedDate: nil) == nil)
+    }
+
+    @Test("选中图表日期时返回最近读数")
+    func selectionReturnsNearestReading() throws {
+        let first = point("2026-07-27", source: .localSnapshot, precision: .snapshot)
+        let latest = point("2026-07-29", source: .localSnapshot, precision: .snapshot)
+        let selectedDay = try #require(StarHistoryDateCodec.date(from: "2026-07-28"))
+        let selectedDate = selectedDay.addingTimeInterval(18 * 60 * 60)
+
+        #expect(
+            StarHistoryFooterPolicy.selectedPoint(
+                in: [first, latest],
+                selectedDate: selectedDate
+            ) == latest
+        )
+    }
+
+    private func point(
+        _ day: String,
+        source: StarHistorySource,
+        precision: StarHistoryPrecision
+    ) -> StarHistoryPoint {
+        let date = StarHistoryDateCodec.date(from: day)!
+        return StarHistoryPoint(
+            date: date,
+            count: 1,
+            source: source,
+            precision: precision,
+            fetchedAt: date
+        )
+    }
+}
+
 private enum StarHistoryViewModelTestError: Error {
     case failed
 }

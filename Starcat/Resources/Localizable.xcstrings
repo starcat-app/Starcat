@@ -127949,13 +127949,6 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "長期估算歷史與本機精確觀察" } }
       }
     },
-    "insights.repo.star.coverage" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Coverage from" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "覆盖自" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "涵蓋自" } }
-      }
-    },
     "insights.repo.star.chart.summaryFormat" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "From %@ to %@, latest %@ Stars, one-year change %@" } },
@@ -128077,9 +128070,9 @@
     },
     "insights.repo.star.restriction.learnMore" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "View GitHub announcement" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查看 GitHub 公告" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "查看 GitHub 公告" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Why no exact GitHub history?" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "为何没有 GitHub 精确历史？" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "為何沒有 GitHub 精確歷史？" } }
       }
     },
     "insights.repo.star.restriction.message" : {
