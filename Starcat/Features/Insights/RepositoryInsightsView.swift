@@ -269,9 +269,14 @@ struct RepositoryInsightsView: View {
             systemImage: "waveform.path.ecg"
         ) {
             VStack(alignment: .leading, spacing: 10) {
-                // 标题与四卡之间单独一行：时间切换靠右，绝不挤进指标行或掉到卡片底。
-                HStack(spacing: 8) {
-                    Spacer(minLength: 0)
+                // 派生三指标与时间切换同一行：左指标、右控件，避免底部再占一行。
+                HStack(alignment: .center, spacing: 8) {
+                    if let counts = displayedActivityCounts {
+                        activityDerivedMetricsRow(counts)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        Spacer(minLength: 0)
+                    }
                     activityControls
                 }
 
@@ -290,44 +295,20 @@ struct RepositoryInsightsView: View {
     }
 
     private var activityControls: some View {
-                // 活动范围只在这里控制；提交图有独立 range，避免双控件抢同一状态。
-                HStack(spacing: 8) {
-                    // 活动范围只在这里控制一次；提交图有独立 binding。
-                    activityRangePicker
-                    activityRefreshButton
-                }
+        // 活动范围只在这里控制；提交图有独立 range，避免双控件抢同一状态。
+        HStack(spacing: 8) {
+            activityRangePicker
+            activityRefreshButton
+        }
     }
 
     @ViewBuilder
     private var activityBody: some View {
         if let counts = displayedActivityCounts {
-            // 有缓存就只展示指标；刷新态由 SyncIconButton 表达，不再塞状态文案行。
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .top, spacing: 10) {
-                    ForEach(activityMetrics(from: counts)) { metric in
-                        activityMetric(metric)
-                    }
-                }
-
-                HStack(spacing: 8) {
-                    activityDerivedMetric(
-                        title: "insights.repo.activity.prThroughput",
-                        value: activityRatio(counts.pullRequestThroughput),
-                        systemImage: "arrow.triangle.merge",
-                        tintName: "green"
-                    )
-                    activityDerivedMetric(
-                        title: "insights.repo.activity.issueThroughput",
-                        value: activityRatio(counts.issueThroughput),
-                        systemImage: "checkmark.circle",
-                        tintName: "blue"
-                    )
-                    activityDerivedMetric(
-                        title: "insights.repo.activity.netIssueChange",
-                        value: signedActivityChange(counts.netIssueChange),
-                        systemImage: "arrow.up.arrow.down",
-                        tintName: counts.netIssueChange > 0 ? "orange" : "green"
-                    )
+            // 有缓存就只展示四卡；刷新态由 SyncIconButton 表达，派生指标已上移到控件行。
+            HStack(alignment: .top, spacing: 10) {
+                ForEach(activityMetrics(from: counts)) { metric in
+                    activityMetric(metric)
                 }
             }
         } else {
@@ -354,6 +335,29 @@ struct RepositoryInsightsView: View {
             case .content, .stale:
                 EmptyView()
             }
+        }
+    }
+
+    private func activityDerivedMetricsRow(_ counts: RepositoryActivityCounts) -> some View {
+        HStack(spacing: 8) {
+            activityDerivedMetric(
+                title: "insights.repo.activity.prThroughput",
+                value: activityRatio(counts.pullRequestThroughput),
+                systemImage: "arrow.triangle.merge",
+                tintName: "green"
+            )
+            activityDerivedMetric(
+                title: "insights.repo.activity.issueThroughput",
+                value: activityRatio(counts.issueThroughput),
+                systemImage: "checkmark.circle",
+                tintName: "blue"
+            )
+            activityDerivedMetric(
+                title: "insights.repo.activity.netIssueChange",
+                value: signedActivityChange(counts.netIssueChange),
+                systemImage: "arrow.up.arrow.down",
+                tintName: counts.netIssueChange > 0 ? "orange" : "green"
+            )
         }
     }
 
@@ -1149,31 +1153,15 @@ struct RepositoryInsightsView: View {
             systemImage: "chart.bar.fill"
         ) {
             VStack(alignment: .leading, spacing: 10) {
-                // 与活动概览同款控件；范围独立，不再跟 activityRange 联动。
-                HStack(spacing: 8) {
-                    Spacer(minLength: 0)
-                    HStack(spacing: 8) {
-                        PillSegmentedControl(
-                            items: Array(RepositoryActivityRange.allCases),
-                            selection: commitActivityRangeBinding,
-                            title: { LocalizedStringKey($0.titleKey) },
-                            size: .compact
-                        )
-                        .accessibilityLabel(Text("insights.repo.activity.range.label"))
-
-                        SyncIconButton(
-                            isRefreshing: viewModel.isRefreshingCommitActivity,
-                            disabled: viewModel.isRefreshingCommitActivity,
-                            tooltip: String.l10n("insights.repo.commit.refresh")
-                        ) {
-                            Task {
-                                await viewModel.refreshCommitActivity(
-                                    repo: repo,
-                                    isAuthenticated: authSession.state.isAuthenticated
-                                )
-                            }
-                        }
+                // 与活动概览同款：左脉搏三指标、右独立 range + 刷新。
+                HStack(alignment: .center, spacing: 8) {
+                    if let pulse = displayedCommitActivity?.maintenancePulse {
+                        maintenancePulseRow(pulse)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        Spacer(minLength: 0)
                     }
+                    commitControls
                 }
 
                 ZStack(alignment: .topLeading) {
@@ -1190,6 +1178,31 @@ struct RepositoryInsightsView: View {
         }
     }
 
+    private var commitControls: some View {
+        HStack(spacing: 8) {
+            PillSegmentedControl(
+                items: Array(RepositoryActivityRange.allCases),
+                selection: commitActivityRangeBinding,
+                title: { LocalizedStringKey($0.titleKey) },
+                size: .compact
+            )
+            .accessibilityLabel(Text("insights.repo.activity.range.label"))
+
+            SyncIconButton(
+                isRefreshing: viewModel.isRefreshingCommitActivity,
+                disabled: viewModel.isRefreshingCommitActivity,
+                tooltip: String.l10n("insights.repo.commit.refresh")
+            ) {
+                Task {
+                    await viewModel.refreshCommitActivity(
+                        repo: repo,
+                        isAuthenticated: authSession.state.isAuthenticated
+                    )
+                }
+            }
+        }
+    }
+
     @ViewBuilder
     private var commitBody: some View {
         if let activity = displayedCommitActivity {
@@ -1200,12 +1213,7 @@ struct RepositoryInsightsView: View {
                     systemImage: commitEmptyStateSystemImage
                 )
             } else {
-                VStack(alignment: .leading, spacing: 10) {
-                    if let pulse = activity.maintenancePulse {
-                        maintenancePulseRow(pulse)
-                    }
-                    commitChart(points: points)
-                }
+                commitChart(points: points)
             }
         } else {
             switch viewModel.commitActivityState {

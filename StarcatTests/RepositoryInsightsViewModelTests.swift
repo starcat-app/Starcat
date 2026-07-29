@@ -470,6 +470,52 @@ struct RepositoryInsightsViewModelTests {
         #expect(viewModel.activityState == .content(activity))
     }
 
+    @Test("冷却未到时仍短暂拉高刷新旗标，驱动 Sync 确认转圈且不二次拉网")
+    func cooldownRejectedRefreshStillPulsesRefreshingFlag() async {
+        let generatedAt = Date(timeIntervalSince1970: 2_055)
+        let activity = RepositoryActivityCounts(
+            createdPullRequests: 1,
+            mergedPullRequests: 1,
+            createdIssues: 1,
+            closedIssues: 1,
+            generatedAt: generatedAt
+        )
+        let counter = RepositoryInsightsCallCounter()
+        let remoteProvider = StubRepositoryRemoteInsightsProvider(
+            cachedHandler: { _, _ in
+                RepositoryCachedActivityCounts(
+                    value: activity,
+                    fetchedAt: generatedAt,
+                    isStale: false
+                )
+            },
+            refreshHandler: { _, _ in
+                await counter.increment()
+                return activity
+            }
+        )
+        let viewModel = RepositoryInsightsViewModel(
+            provider: emptyLocalProvider(),
+            remoteProvider: remoteProvider,
+            now: { generatedAt }
+        )
+        let repo = fixtureRepo(id: 16)
+        await viewModel.load(repo: repo, isAuthenticated: true)
+        await viewModel.refreshActivity(repo: repo, isAuthenticated: true)
+        #expect(!viewModel.isRefreshingActivity)
+
+        async let blockedRefresh: Void = viewModel.refreshActivity(
+            repo: repo,
+            isAuthenticated: true
+        )
+        try? await Task.sleep(for: .milliseconds(10))
+        #expect(viewModel.isRefreshingActivity)
+        await blockedRefresh
+
+        #expect(!viewModel.isRefreshingActivity)
+        #expect(await counter.value() == 1)
+    }
+
     @Test("手动刷新冷却按仓库隔离")
     func manualRefreshCooldownIsScopedByRepository() async {
         let generatedAt = Date(timeIntervalSince1970: 2_060)

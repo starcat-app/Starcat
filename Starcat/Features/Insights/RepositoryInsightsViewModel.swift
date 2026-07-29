@@ -590,46 +590,58 @@ final class RepositoryInsightsViewModel {
     }
 
     func refreshActivity(repo: Repo, isAuthenticated: Bool) async {
-        guard !isRefreshingActivity,
-              reserveManualRefresh(.activity, repoID: repo.id)
-        else { return }
+        guard !isRefreshingActivity else { return }
+        guard reserveManualRefresh(.activity, repoID: repo.id) else {
+            await acknowledgeBlockedManualRefresh { isRefreshingActivity = $0 }
+            return
+        }
         await loadActivity(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
     }
 
     func refreshCommitActivity(repo: Repo, isAuthenticated: Bool) async {
-        guard !isRefreshingCommitActivity,
-              reserveManualRefresh(.commitActivity, repoID: repo.id)
-        else { return }
+        guard !isRefreshingCommitActivity else { return }
+        guard reserveManualRefresh(.commitActivity, repoID: repo.id) else {
+            await acknowledgeBlockedManualRefresh { isRefreshingCommitActivity = $0 }
+            return
+        }
         await loadCommitActivity(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
     }
 
     func refreshContributors(repo: Repo, isAuthenticated: Bool) async {
-        guard !isRefreshingContributors,
-              reserveManualRefresh(.contributors, repoID: repo.id)
-        else { return }
+        guard !isRefreshingContributors else { return }
+        guard reserveManualRefresh(.contributors, repoID: repo.id) else {
+            await acknowledgeBlockedManualRefresh { isRefreshingContributors = $0 }
+            return
+        }
         await loadContributors(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
     }
 
     func refreshCommunityProfile(repo: Repo, isAuthenticated: Bool) async {
-        guard !isRefreshingCommunity,
-              reserveManualRefresh(.community, repoID: repo.id)
-        else { return }
+        guard !isRefreshingCommunity else { return }
+        guard reserveManualRefresh(.community, repoID: repo.id) else {
+            await acknowledgeBlockedManualRefresh { isRefreshingCommunity = $0 }
+            return
+        }
         await loadCommunityProfile(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
     }
 
     func refreshRecentActivity(repo: Repo, isAuthenticated: Bool) async {
-        guard !isRefreshingRecentActivity,
-              reserveManualRefresh(.recentActivity, repoID: repo.id)
-        else { return }
+        guard !isRefreshingRecentActivity else { return }
+        guard reserveManualRefresh(.recentActivity, repoID: repo.id) else {
+            await acknowledgeBlockedManualRefresh { isRefreshingRecentActivity = $0 }
+            return
+        }
         await loadRecentActivity(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
     }
 
     /// 底栏全局入口：并行强制刷新各远端区块；不碰分区 Sync，也不清空已上屏内容。
     /// Release 节奏仅在本地历史缺失时刷新 GitHub 回退；Health / OpenSSF 仍只读本地缓存。
     func refreshAll(repo: Repo, isAuthenticated: Bool) async {
-        guard !isRefreshingAll,
-              reserveManualRefresh(.all, repoID: repo.id)
-        else { return }
+        guard !isRefreshingAll else { return }
+        guard reserveManualRefresh(.all, repoID: repo.id) else {
+            await acknowledgeBlockedManualRefresh { isRefreshingAll = $0 }
+            return
+        }
         isRefreshingAll = true
         defer { isRefreshingAll = false }
 
@@ -693,6 +705,17 @@ final class RepositoryInsightsViewModel {
         }
         lastManualRefreshAt[key] = currentDate
         return true
+    }
+
+    /// 冷却等门控拒绝真实拉网时，仍短暂拉高刷新旗标。
+    /// SyncIconButton 看到 true→false 后会靠 `minVisibleDuration`（默认 1s）转完确认一圈。
+    private func acknowledgeBlockedManualRefresh(
+        _ update: @MainActor (Bool) -> Void
+    ) async {
+        update(true)
+        // 给 SwiftUI 一帧观察 true；随后立刻 false，由按钮内部最短可见时长兜底。
+        try? await Task.sleep(for: .milliseconds(50))
+        update(false)
     }
 
     /// DatabaseManager 已切换到另一个用户目录时，页面实例可能仍被 SwiftUI 保留。

@@ -42,11 +42,11 @@
 //  - 根因：本地后端响应极快（1-6ms），加上 JSON 解码 + UI 更新整个 reload() 全程
 //    20-50ms，`isLoading=true` 状态在屏幕上停留不到 2 帧（< 33ms），人眼根本看不到旋转
 //  - 反观 SidebarSyncButton 转得明显是因为 GitHub 全量同步要几秒到几十秒
-//  - 修复（本次）：加 `minVisibleDuration` 参数（默认 600ms）+ 内部 `enforcedRefreshing`
-//    状态机。一旦 isRefreshing 触发 true，无论数据多快返回都至少持续旋转 minVisibleDuration，
-//    给用户明确「我点了 + 它在做事」的反馈。属于行业常规做法（iOS UIRefreshControl 同款）。
-//  - 所有现有调用方零改动直接受益（默认值），需要立即停止旋转的特殊场景可显式传 0。
+//  - 修复：加 `minVisibleDuration` 参数 + 内部 `enforcedRefreshing` 状态机。一旦
+//    isRefreshing 触发 true，无论数据多快返回都至少持续旋转 minVisibleDuration。
 //
+//  2026-07-29：默认改为 1s（完整一圈，与 `docs/5-规范/UI-刷新图标-规范.md` 对齐）；
+//  冷却未到等门控拒绝路径由 Caller 短暂拉高 isRefreshing，本组件同样兜底满一圈。
 
 import SwiftUI
 
@@ -57,9 +57,10 @@ import SwiftUI
 /// - 刷新中（`isRefreshing == true`）：图标持续旋转（线性，1 秒/圈）
 /// - 状态切换：`true → false` 时用 `linear(duration: 0)` 替换掉 `repeatForever` 并归零
 ///   （禁止 `disablesAnimations` 赋 0——会留下 forever 幽灵一直转；也禁止 easeOut 回拧）
-/// - **最短可见时长**（R-04 2026-06-11）：即便 `isRefreshing` 闪一下立即变 false（典型：
-///   本地后端 5ms 返回），按钮仍至少持续旋转 `minVisibleDuration`（默认 600ms），
-///   保证用户看到「按了 + 在做事」的视觉反馈。详见 `enforcedRefreshing` 状态机。
+/// - **最短可见时长**：即便 `isRefreshing` 闪一下立即变 false（典型：
+///   本地后端 5ms 返回，或冷却门控拒绝后的确认脉冲），按钮仍至少持续旋转
+///   `minVisibleDuration`（默认 1s = 完整一圈），保证用户看到「按了 + 有反馈」。
+///   详见 `enforcedRefreshing` 状态机与 `docs/5-规范/UI-刷新图标-规范.md`。
 ///
 /// 自动尊重 `accessibilityReduceMotion`：
 /// - reduceMotion 开启时旋转改为"瞬切到 360°"再瞬切回 0，仍提供视觉反馈但无连续动画
@@ -76,7 +77,7 @@ struct SyncIconButton: View {
 
     /// 是否正在刷新中。true → 图标旋转；false → 图标静止。
     ///
-    /// **注意**（R-04 2026-06-11）：实际旋转时长 = max(外部 isRefreshing 持续时间, `minVisibleDuration`)。
+    /// **注意**：实际旋转时长 = max(外部 isRefreshing 持续时间, `minVisibleDuration`)。
     /// 即便 caller 只让 isRefreshing=true 持续 5ms，按钮也会强制旋转至少 minVisibleDuration。
     let isRefreshing: Bool
 
@@ -93,14 +94,11 @@ struct SyncIconButton: View {
     /// 视觉割裂，统一收口到 18×18 + .caption。
     let frameSize: CGFloat
 
-    /// **最短可见旋转时长**（R-04 2026-06-11 dong4j 反馈）。
+    /// **最短可见旋转时长**。
     ///
-    /// 即使 `isRefreshing` 极快变 false（本地后端 5ms 返回这种），按钮也保证至少持续旋转
-    /// 这么久。给用户「我点了 + 它在做事」的明确反馈，避免"按了好像没反应"的错觉。
-    ///
-    /// 默认 600ms（视觉上恰好能感受到旋转节奏，又不显得故意拖时间）。
-    /// 如果调用方明确不需要（已自己保证最短可见性），可传 0 关闭本机制。
-    /// 行业常规做法（iOS UIRefreshControl / 各种 PullToRefresh 都有类似约定）。
+    /// 即使 `isRefreshing` 极快变 false（本地后端 5ms 返回，或冷却拒绝后的确认脉冲），
+    /// 按钮也保证至少持续旋转这么久。默认 **1s**（与组件 1 秒/圈动画对齐，完整一圈）。
+    /// 调用方明确不需要时可传 0 关闭；须在调用处注释原因。
     let minVisibleDuration: TimeInterval
 
     /// hover tooltip 文本。直接传 `String`（已本地化），便于 caller 处理状态相关文案。
@@ -131,7 +129,7 @@ struct SyncIconButton: View {
         disabled: Bool = false,
         font: Font = Self.defaultFont,
         frameSize: CGFloat = Self.defaultFrameSize,
-        minVisibleDuration: TimeInterval = 0.6,
+        minVisibleDuration: TimeInterval = 1.0,
         tooltip: String,
         action: @escaping () -> Void
     ) {
@@ -298,9 +296,8 @@ struct SyncIconButton: View {
 
         Divider()
 
-        // R-04 最短可见时长验证（dong4j 2026-06-11 反馈本地 5ms 返回看不到旋转）：
-        // 点击下面三个按钮模拟「isRefreshing 极快闪烁」场景，验证 minVisibleDuration 生效。
-        Text("R-04：模拟「闪烁 5ms / 50ms / 默认 600ms 兜底」效果")
+        // 最短可见时长验证：点击下面按钮模拟「isRefreshing 极快闪烁」，默认应转满约 1s。
+        Text("模拟「闪烁 5ms / 50ms / 默认 1s 兜底」效果")
             .font(.caption)
             .foregroundStyle(.secondary)
         FlashRefreshDemoRow()
@@ -313,7 +310,7 @@ struct SyncIconButton: View {
 private struct FlashRefreshDemoRow: View {
     @State private var flashing5ms: Bool = false
     @State private var flashing50ms: Bool = false
-    @State private var flashing600msOff: Bool = false
+    @State private var flashingOff: Bool = false
 
     var body: some View {
         HStack(spacing: 30) {
@@ -339,14 +336,14 @@ private struct FlashRefreshDemoRow: View {
             }
             VStack(spacing: 6) {
                 SyncIconButton(
-                    isRefreshing: flashing600msOff,
+                    isRefreshing: flashingOff,
                     minVisibleDuration: 0,
                     tooltip: "关闭最短可见（透传）"
                 ) {
-                    flashing600msOff = true
+                    flashingOff = true
                     Task { @MainActor in
                         try? await Task.sleep(nanoseconds: 5_000_000)
-                        flashing600msOff = false
+                        flashingOff = false
                     }
                 }
                 Text("min=0 透传").font(.caption2).foregroundStyle(.secondary)
