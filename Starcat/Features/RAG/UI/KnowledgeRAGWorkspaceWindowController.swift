@@ -438,7 +438,7 @@ enum RepoContextGenerationState: Equatable, Sendable {
 
 /// 生成结果只有同时属于当前请求和当前仓库才可回写。抽成纯值对象后，无需暴露整个
 /// 浏览器 ViewModel 就能锁定取消后迟到、切仓后迟到两类竞态。
-struct RepoContextGenerationIdentity: Equatable, Sendable {
+struct SpecialContextGenerationIdentity: Equatable, Sendable {
     let id: UUID
     let repoID: Int64
 
@@ -469,12 +469,12 @@ private final class KnowledgeRAGBrowserViewModel {
     /// RepoContext 是文件系统产物，不进入 `rag_chunks`；浏览器只在展示层把它合并为特殊项。
     var repoContextDocument: RepoContextDocument?
     var isGeneratingRepositoryInsights = false
-    private var repositoryInsightsGenerationIdentity: RepoContextGenerationIdentity?
+    private var repositoryInsightsGenerationIdentity: SpecialContextGenerationIdentity?
     private var repositoryInsightsGenerationTask: Task<Void, Never>?
     var repoContextGenerationState: RepoContextGenerationState = .idle
     var isRepoContextSettingsPromptPresented = false
     /// UUID 同时防护 repo 切换与“取消后旧 task 迟到回写”两类竞态。
-    private var repoContextGenerationIdentity: RepoContextGenerationIdentity?
+    private var repoContextGenerationIdentity: SpecialContextGenerationIdentity?
     private var repoContextGenerationTask: Task<Void, Never>?
     private var repoContextGenerationRepo: Repo?
     var hasMoreChunks = false
@@ -617,7 +617,7 @@ private final class KnowledgeRAGBrowserViewModel {
     /// 洞察 XML 的主动生成不显示全页 loading；旧 Artifact 保持可见，成功后一次替换。
     func generateRepositoryInsights() {
         guard !isGeneratingRepositoryInsights, let repo = selectedCandidate?.repo else { return }
-        let identity = RepoContextGenerationIdentity(id: UUID(), repoID: repo.id)
+        let identity = SpecialContextGenerationIdentity(id: UUID(), repoID: repo.id)
         repositoryInsightsGenerationIdentity = identity
         isGeneratingRepositoryInsights = true
         let coordinator = dependencies.repositoryInsightsContextCoordinator
@@ -656,7 +656,7 @@ private final class KnowledgeRAGBrowserViewModel {
             return
         }
 
-        let generationIdentity = RepoContextGenerationIdentity(id: UUID(), repoID: repo.id)
+        let generationIdentity = SpecialContextGenerationIdentity(id: UUID(), repoID: repo.id)
         repoContextGenerationIdentity = generationIdentity
         repoContextGenerationRepo = repo
         repoContextGenerationState = .preparing(.resolving)

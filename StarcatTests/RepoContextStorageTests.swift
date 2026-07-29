@@ -24,12 +24,13 @@ struct RepoContextStorageTests {
         #expect(!RepoContextGenerationState.cancelled.isActive)
     }
 
-    @Test("RepoContext 生成结果必须同时匹配请求与仓库身份")
-    func rejectsStaleRepoContextGenerationIdentity() {
+    @Test("特殊 XML 生成结果必须同时匹配请求与仓库身份")
+    func rejectsStaleSpecialContextGenerationIdentity() {
         let currentID = UUID()
-        let identity = RepoContextGenerationIdentity(id: currentID, repoID: 42)
+        let identity = SpecialContextGenerationIdentity(id: currentID, repoID: 42)
 
         #expect(identity.accepts(currentID: currentID, selectedRepoID: 42))
+        // 洞察 XML 与 RepoContext 共用这一所有权门禁：取消、切仓或新请求都会拒绝旧结果。
         #expect(!identity.accepts(currentID: UUID(), selectedRepoID: 42))
         #expect(!identity.accepts(currentID: currentID, selectedRepoID: 84))
         #expect(!identity.accepts(currentID: nil, selectedRepoID: 42))
