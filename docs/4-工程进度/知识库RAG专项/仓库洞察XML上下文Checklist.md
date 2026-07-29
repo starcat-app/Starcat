@@ -124,10 +124,10 @@
 - [x] plain Button 补 `.focusEffectDisabled()`。
 - [x] sheet 使用 `SheetCloseButton` 并挂 `.appLocaleEnvironment()`。
 - [x] 刷新入口复用 `SyncIconButton` 或既有稳定行内状态。
-- [ ] 更新 `docs/3-设计/详细设计/30-本地RAG设计.md`。
-- [ ] 更新 `docs/3-设计/详细设计/49-洞察中心详细设计.md`。
-- [ ] 更新知识库 RAG 专项进度文档或新增专项进度说明。
-- [ ] 不修改 `docs/功能实现总览.md`，只在结果报告提供待确认草案。
+- [x] 更新 `docs/3-设计/详细设计/30-本地RAG设计.md`。
+- [x] 更新 `docs/3-设计/详细设计/49-洞察中心详细设计.md`。
+- [x] 更新知识库 RAG 专项进度文档或新增专项进度说明。
+- [x] 不修改 `docs/功能实现总览.md`，只在结果报告提供待确认草案。
 
 ## 8. 自动化与工程门禁
 
