@@ -30,21 +30,29 @@
 
 ## 1. 阶段 0：双渠道工程与签名门禁
 
-- [ ] `project.yml` 新增 `StarcatWidgets` target
-- [ ] `project.yml` 新增 `StarcatDirectWidgets` target
-- [ ] Store 主应用只嵌入 Store Widget Extension
-- [ ] Direct 主应用只嵌入 Direct Widget Extension
-- [ ] 两个 Extension 复用同一份业务源码
-- [ ] Store Host / Extension 配置同一 Store App Group
-- [ ] Direct Host / Extension 配置同一 Direct App Group
-- [ ] 两个 Widget Info.plist 均声明 `com.apple.widgetkit-extension`
-- [ ] `xcodegen generate` 成功
-- [ ] `Starcat` Debug 构建成功
-- [ ] `StarcatDirect` Debug 构建成功
-- [ ] Store `.app` 只包含 Store `.appex`
-- [ ] Direct `.app` 只包含 Direct `.appex`
+- [x] `project.yml` 新增 `StarcatWidgets` target
+- [x] `project.yml` 新增 `StarcatDirectWidgets` target
+- [x] Store 主应用只嵌入 Store Widget Extension
+- [x] Direct 主应用只嵌入 Direct Widget Extension
+- [x] 两个 Extension 复用同一份业务源码
+- [x] Store Host / Extension 配置同一 Store App Group
+- [x] Direct Host / Extension 配置同一 Direct App Group
+- [x] 两个 Widget Info.plist 均声明 `com.apple.widgetkit-extension`
+- [x] `xcodegen generate` 成功
+- [x] `Starcat` Debug 构建成功
+  - 证据：`CODE_SIGNING_ALLOWED=NO` 构建通过，签名门禁单列保留
+- [x] `StarcatDirect` Debug 构建成功
+  - 证据：`CODE_SIGNING_ALLOWED=NO` 构建通过，签名门禁单列保留
+- [x] Store `.app` 只包含 Store `.appex`
+  - 证据：仅 `StarcatWidgets.appex`，bundle id 为 `com.starcat.app.store.widgets`
+- [x] Direct `.app` 只包含 Direct `.appex`
+  - 证据：仅 `StarcatDirectWidgets.appex`，bundle id 为 `com.starcat.app.direct.widgets`
 - [ ] `codesign` 验证 Store Host / Extension App Group 一致
 - [ ] `codesign` 验证 Direct Host / Extension App Group 一致
+
+> 当前签名阻断：本机 Xcode Team `8WCUMGCWMB` 账号凭据失效，且新 Widget bundle
+> 尚无 provisioning profile。`xcodebuild -allowProvisioningUpdates` 已得到
+> `No Accounts` / `No profiles for 'com.starcat.app.store.widgets'`，待 Xcode 重新登录后复测。
 
 ---
 
@@ -219,5 +227,7 @@
 |--------|------|------|------|
 | `afd99a2` | 文档 | 迁入两篇初步方案 | `git diff --check` |
 | `b0cfaa4` | 文档 | 新增详细落地方案 | `git diff --check` |
+| `45f21c5` | 文档 | 新增专项 checklist | `git diff --check` |
+| `113b2e5` | 工程 | 新增双渠道 Widget target、App Group 和占位组件 | `xcodegen` + 双渠道 unsigned build + `.appex` 检查 |
 
 后续每次提交后立即追加本表；审查时以 `git log --reverse dev..HEAD` 反向核对。
