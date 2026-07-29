@@ -924,9 +924,15 @@ private final class KnowledgeRAGBrowserViewModel {
         guard let repo = selectedCandidate?.repo else { return }
         Task { [weak self] in
             guard let self else { return }
-            await dependencies.repositoryInsightsContextCoordinator.deleteArtifact(for: repo)
-            guard selectedRepoID == repo.id else { return }
-            repositoryInsightsArtifact = nil
+            do {
+                try await dependencies.repositoryInsightsContextCoordinator.deleteArtifact(for: repo)
+                guard selectedRepoID == repo.id else { return }
+                repositoryInsightsArtifact = nil
+            } catch {
+                // 删除失败时继续展示旧 Artifact，避免文件仍会被 RAG 使用而 UI 却假装已删除。
+                guard selectedRepoID == repo.id else { return }
+                errorMessage = String.l10n("rag.browser.repositoryInsights.delete.failed")
+            }
         }
     }
 

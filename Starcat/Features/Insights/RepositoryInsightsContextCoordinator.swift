@@ -63,7 +63,7 @@ protocol RepositoryInsightsContextCoordinating:
     ) async -> RepositoryInsightsContextArtifact?
 
     func loadArtifact(for repo: Repo) async -> RepositoryInsightsContextArtifact?
-    func deleteArtifact(for repo: Repo) async
+    func deleteArtifact(for repo: Repo) async throws
 }
 
 actor RepositoryInsightsContextCoordinator: RepositoryInsightsContextCoordinating {
@@ -125,9 +125,10 @@ actor RepositoryInsightsContextCoordinator: RepositoryInsightsContextCoordinatin
         )
     }
 
-    func deleteArtifact(for repo: Repo) async {
+    func deleteArtifact(for repo: Repo) async throws {
         let scope = await scopeProvider()
-        try? await storage.delete(
+        // 删除是用户的数据控制操作，不能吞掉失败后让 UI 误以为 Artifact 已移除。
+        try await storage.delete(
             repositoryID: repo.id,
             repositoryFullName: repo.fullName,
             scope: scope

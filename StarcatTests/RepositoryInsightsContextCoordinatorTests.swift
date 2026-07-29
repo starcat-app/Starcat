@@ -101,6 +101,31 @@ struct RepositoryInsightsContextCoordinatorTests {
         #expect(await fixture.provider.refreshCount() == 1)
     }
 
+    @Test("Artifact 删除失败必须传播给知识库 UI")
+    func deletionFailureIsPropagated() async {
+        let provider = CoordinatorDocumentProvider(delay: 0)
+        let storage = FailingDeletionContextStorage()
+        let scopeBox = await MainActor.run {
+            CoordinatorScopeBox(
+                scope: RepositoryInsightsContextScope(userID: 7, databaseRevision: 1)
+            )
+        }
+        let coordinator = RepositoryInsightsContextCoordinator(
+            documentProvider: provider,
+            storage: storage,
+            scopeProvider: { scopeBox.scope }
+        )
+
+        do {
+            try await coordinator.deleteArtifact(for: makeRepo(id: 206))
+            Issue.record("删除失败不应被 Coordinator 吞掉")
+        } catch CoordinatorDeletionTestError.expected {
+            // 预期：ViewModel 收到错误后保留旧 Artifact，并展示失败反馈。
+        } catch {
+            Issue.record("收到非预期错误：\(error)")
+        }
+    }
+
     private func makeFixture(
         delay: UInt64 = 0
     ) async throws -> (
@@ -186,6 +211,37 @@ private actor CoordinatorDocumentProvider: RepositoryInsightsDocumentProviding {
             ),
             generatedAt: generatedAt
         )
+    }
+}
+
+private enum CoordinatorDeletionTestError: Error {
+    case expected
+}
+
+/// 只用于锁定删除错误传播契约，其余方法不会在本测试触发。
+private actor FailingDeletionContextStorage: RepositoryInsightsContextStoring {
+    func load(
+        repositoryID: Int64,
+        repositoryFullName: String,
+        scope: RepositoryInsightsContextScope
+    ) async throws -> RepositoryInsightsContextArtifact? {
+        nil
+    }
+
+    func store(
+        _ document: RepositoryInsightsDocument,
+        scope: RepositoryInsightsContextScope,
+        force: Bool
+    ) async throws -> RepositoryInsightsContextWriteOutcome {
+        .suppressed
+    }
+
+    func delete(
+        repositoryID: Int64,
+        repositoryFullName: String,
+        scope: RepositoryInsightsContextScope
+    ) async throws {
+        throw CoordinatorDeletionTestError.expected
     }
 }
 

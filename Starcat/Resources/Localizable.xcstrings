@@ -145506,6 +145506,23 @@
         }
       }
     },
+    "rag.browser.repositoryInsights.delete.failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not delete the insights XML. The existing artifact is still available."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法删除洞察 XML，现有产物仍然保留。"
+          }
+        }
+      }
+    },
     "rag.browser.repositoryInsights.delete.message" : {
       "extractionState" : "manual",
       "localizations" : {
