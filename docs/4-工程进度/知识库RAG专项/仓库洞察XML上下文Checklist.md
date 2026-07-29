@@ -132,11 +132,11 @@
 ## 8. 自动化与工程门禁
 
 - [x] 新增 / 删除 Swift 文件后执行 `xcodegen generate`。
-- [ ] 洞察 Context / Storage 定向测试通过。
-- [ ] Repository Insights 全部相关测试通过。
-- [ ] Repo AI / AppSettings Prompt 测试通过。
+- [x] 洞察 Context / Storage 定向测试通过。
+- [x] Repository Insights 全部相关测试通过。
+- [x] Repo AI / AppSettings Prompt 测试通过。
 - [x] RepoContext Storage 回归测试通过。
-- [ ] Knowledge RAG Core 与 Browser 相关测试通过。
+- [x] Knowledge RAG Core 与 Browser 相关测试通过。
 - [ ] 全量 `StarcatTests` 通过，或明确记录非本需求阻塞证据。
 - [ ] `Starcat` Debug build 通过。
 - [ ] `StarcatDirect` Debug build 通过。
