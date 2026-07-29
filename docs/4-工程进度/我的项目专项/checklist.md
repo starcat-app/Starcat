@@ -17,7 +17,7 @@
 - [x] 固化整体落地方案和专项验收口径。
 - [x] Sidebar 新增固定一级分类“我的项目”，并置于“全部仓库”之前。
 - [x] 项目关系与 Star、知识库、Smart Collection 相互独立。
-- [x] 首版范围限定为个人拥有仓库和组织成员仓库，不包含外部个人协作者仓库。
+- [x] 范围覆盖个人拥有仓库、组织成员仓库和外部协作者仓库，且不从 Star 关系反推协作权限。
 - [x] Public 项目可由现有 OAuth 提供 fallback。
 - [x] Private / Internal 使用可选 GitHub App 只读授权（组织审批实机矩阵为外部 Gate）。
 - [x] 不把现有 OAuth 扩大为 `repo` scope。
@@ -40,7 +40,7 @@
 - [x] GitHub App token 使用独立 Keychain account。
 - [x] 实现 GitHub App 安装期间 Web Flow callback、token 刷新/过期/撤销状态。
 - [x] 实现按用途选择 OAuth / GitHub App token 的凭据路由。
-- [x] 实现 owner / organization_member 两条 `/user/repos` 分页链。
+- [x] 实现 collaborator / owner / organization_member 三条 `/user/repos` 分页链，并固定 `owner > organization_member > collaborator`。
 - [x] 实现 OAuth `visibility=public` fallback 和 GitHub App `visibility=all`。
 - [x] 实现分页、Link Header、分 affiliation ETag、Rate Limit 和失败保旧值。
 - [x] 实现后台有界同步和并发去重。
@@ -50,11 +50,11 @@
 
 - [x] 新增 `.myProjects` Repo scope，禁止隐式要求 `is_starred = 1`。
 - [x] Sidebar 显示真实项目计数。
-- [x] 增加个人 / 组织 / 具体组织 / 可见性 / 权限筛选。
+- [x] 增加个人 / 组织 / 协作 / 具体组织 / 可见性 / 权限筛选。
 - [x] 项目筛选与搜索、语言、Tags、状态、Star、知识库筛选正确叠加。
 - [x] 复用 Repo 行并展示项目归属、可见性、权限和本地 30 天增长。
 - [x] 复用 Repo 详情、README、仓库洞察和 Star History。
-  - 完成：owner / collaborator 按项目关系使用 OAuth 或 GitHub App 直连 GitHub Stargazers，并以“当前 Stargazers 重建”口径展示。
+  - 完成：owner / organization_member / collaborator 按项目关系使用 OAuth 或 GitHub App 直连 GitHub Stargazers，并以“当前 Stargazers 重建”口径展示。
 - [x] 非 GitHub Stargazers 来源显示访问限制说明和官方公告链接，并区分公共估算与本机快照。
 - [x] Star History footer 使用稳定布局：不展示动态读数，图例靠左，日期范围与更新时间同排靠右；限制说明按需占第二行并保留 help / VoiceOver。
 - [x] 未连接、连接中、部分授权、待审批、过期、撤销、失败和断网状态完整。
@@ -77,8 +77,8 @@
 
 - [x] v16 → v17 升级保留全部用户数据。
 - [x] Repository 覆盖关系交叉、筛选、分页、generation 和删除语义。
-- [x] API 覆盖 DTO、Link Header、304、401、403、Rate Limit 和中途失败。
-- [x] Stargazers 覆盖 `star+json` 请求头、分页、OAuth / GitHub App 路由、按日累计和 Private 零 Discovery。
+- [x] API 覆盖三类 affiliation、DTO、Link Header、304、401、403、Rate Limit 和中途失败。
+- [x] Stargazers 覆盖 `star+json` 请求头、分页、OAuth / GitHub App 路由、收藏且协作、按日累计和 Private 零 Discovery。
 - [x] 授权覆盖随机 state、callback 路由、独立 session、token 过期/撤销，并回归验证主 OAuth Device Flow 不受影响。
 - [x] ViewModel 覆盖 scope、筛选隔离、计数、selection、刷新和并发代际。
 - [x] 隐私测试证明 Private 项目不构造公共服务请求。
