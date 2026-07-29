@@ -83,6 +83,12 @@ struct StarcatRediscoveryWidgetView: View {
             HStack {
                 StarcatWidgetAvatar(fileName: repository.avatarFileName, size: 42)
                 Spacer()
+                if entry.isStale {
+                    Image(systemName: "clock.badge.exclamationmark")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel(Text("widget.common.stale"))
+                }
                 Image(systemName: "sparkles")
                     .font(.caption)
                     .foregroundStyle(.secondary)

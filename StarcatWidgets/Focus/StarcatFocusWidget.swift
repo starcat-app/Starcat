@@ -169,6 +169,12 @@ struct StarcatFocusWidgetView: View {
             HStack {
                 StarcatWidgetAvatar(fileName: repository.avatarFileName, size: 38)
                 Spacer()
+                if entry.base.isStale {
+                    Image(systemName: "clock.badge.exclamationmark")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel(Text("widget.common.stale"))
+                }
                 StarcatFocusSourceLabel(source: repository.focusSource)
             }
             Spacer(minLength: 0)
