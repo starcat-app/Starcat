@@ -128056,16 +128056,16 @@
     },
     "insights.repo.star.source.name.githubStargazers" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "GitHub current Stargazers" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "GitHub 当前 Stargazers" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "GitHub 目前 Stargazers" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "GitHub Stargazers" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "GitHub Stargazers" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "GitHub Stargazers" } }
       }
     },
     "insights.repo.star.source.snapshot" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Starcat precise snapshots" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Starcat 精确快照" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Starcat 精確快照" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Local snapshots" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本地快照" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "本機快照" } }
       }
     },
     "insights.repo.star.state.building" : {
