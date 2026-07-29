@@ -18,6 +18,7 @@ enum ProjectAccessFailureCode: String, Equatable, Sendable {
     case network
     case storage
     case authorizationDenied = "authorization_denied"
+    case reauthorizationRequired = "reauthorization_required"
     case invalidResponse = "invalid_response"
     case unknown
 }
@@ -218,17 +219,19 @@ final class ProjectAccessSession {
 
     /// 首次连接走安装联动；已有连接历史时直接重新授权，避免已有安装不触发 callback。
     @discardableResult
-    func beginConnection() async throws -> ProjectAccessAuthorizationInfo {
+    func beginConnection(
+        modeOverride: ProjectAccessAuthorizationMode? = nil
+    ) async throws -> ProjectAccessAuthorizationInfo {
         guard isConfigured else {
             state = .unavailable
             throw ProjectAccessSessionError.unavailable
         }
         state = .connecting
         do {
-            let mode: ProjectAccessAuthorizationMode =
-                connectionHistory.hasCompletedAuthorization
+            let mode: ProjectAccessAuthorizationMode = modeOverride
+                ?? (connectionHistory.hasCompletedAuthorization
                     ? .reauthorization
-                    : .installation
+                    : .installation)
             let info = try await oauthService.beginAuthorization(mode: mode)
             state = .awaitingAuthorization
             return info
@@ -245,6 +248,7 @@ final class ProjectAccessSession {
     /// 系统认证会话直接截获 `starcat://github-app/callback`，因此 App Store 与 Direct
     /// 同时安装时也不会依赖 Launch Services 猜测应唤醒哪个版本。
     func startConnection(
+        modeOverride: ProjectAccessAuthorizationMode? = nil,
         completion: @escaping @MainActor @Sendable (ProjectAccessConnectionResult) -> Void
     ) {
         authorizationTask?.cancel()
@@ -256,7 +260,7 @@ final class ProjectAccessSession {
         authorizationTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                let info = try await beginConnection()
+                let info = try await beginConnection(modeOverride: modeOverride)
                 try Task.checkCancellation()
                 do {
                     try webAuthenticationSession.start(
@@ -367,7 +371,7 @@ final class ProjectAccessSession {
             return
         }
         connectionHistory.markAuthorizationCompleted()
-        let usableCredential = try await refreshedCredentialIfNeeded(credential)
+        let usableCredential = try await credentialForDisconnect(credential)
         do {
             try await oauthService.revokeAuthorization(
                 accessToken: usableCredential.accessToken
@@ -461,6 +465,37 @@ final class ProjectAccessSession {
             .partialAuthorization
         }
         return access
+    }
+
+    /// 为“撤销整个 grant”准备有效 token，但绝不能像普通同步刷新那样删除旧凭据。
+    ///
+    /// 删除 grant 的 GitHub API 要求有效 access token。refresh 已失效时必须保留当前凭据，
+    /// 让 UI 先完成一次显式重新授权，再使用新 token 继续原来的断开操作。
+    private func credentialForDisconnect(
+        _ credential: ProjectAccessCredential
+    ) async throws -> ProjectAccessCredential {
+        guard let accessExpiry = credential.accessExpiresAt,
+              accessExpiry <= now().addingTimeInterval(60)
+        else {
+            return credential
+        }
+        guard let refreshToken = credential.refreshToken,
+              !isRefreshExpired(credential)
+        else {
+            state = .disconnectionFailed(.reauthorizationRequired)
+            throw ProjectAccessSessionError.expired
+        }
+        do {
+            let refreshed = try await oauthService.refreshCredential(using: refreshToken)
+            try saveCredential(refreshed)
+            return refreshed
+        } catch ProjectAccessOAuthError.badRefreshToken {
+            state = .disconnectionFailed(.reauthorizationRequired)
+            throw ProjectAccessSessionError.expired
+        } catch {
+            state = .disconnectionFailed(Self.failureCode(error))
+            throw error
+        }
     }
 
     /// 复查安装前只处理 token 轮换，不提前把界面改成 connected。

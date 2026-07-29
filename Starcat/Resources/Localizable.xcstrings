@@ -389414,6 +389414,14 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "中斷連接" } }
       }
     },
+    "project.access.disconnect.reauthorize" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reauthorize and disconnect" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重新授权并断开" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "重新授權並中斷" } }
+      }
+    },
     "project.access.disconnect.confirm.action" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -389684,6 +389692,22 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Connect GitHub App" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "连接 GitHub App" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "連接 GitHub App" } }
+      }
+    },
+    "project.access.state.disconnectReauthorizationRequired.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The saved token has expired. Reauthorize once and Starcat will immediately finish revoking the GitHub grant." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已保存的 token 过期。重新授权一次后，Starcat 会立即完成 GitHub grant 撤销。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "已儲存的 token 已過期。重新授權一次後，Starcat 會立即完成 GitHub grant 撤銷。" } }
+      }
+    },
+    "project.access.state.disconnectReauthorizationRequired.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reauthorization required to disconnect" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "需要重新授权后断开" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "需要重新授權後中斷" } }
       }
     },
     "project.access.state.disconnectionFailed.detail" : {

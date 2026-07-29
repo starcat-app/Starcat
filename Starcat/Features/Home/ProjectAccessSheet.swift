@@ -23,6 +23,7 @@ struct ProjectAccessSheet: View {
     @State private var isCheckingInstallation = false
     @State private var isClearingPrivateCache = false
     @State private var isDisconnecting = false
+    @State private var disconnectAfterAuthorization = false
     @State private var showsDisconnectConfirmation = false
     @State private var privateCacheClearMessage: LocalizedStringKey?
 
@@ -186,7 +187,7 @@ struct ProjectAccessSheet: View {
     @ViewBuilder
     private var actionArea: some View {
         HStack {
-            if isConnectedLike {
+            if canDisconnectImmediately {
                 Button("project.access.disconnect", role: .destructive) {
                     showsDisconnectConfirmation = true
                 }
@@ -241,11 +242,17 @@ struct ProjectAccessSheet: View {
                         }
                     }
                 )
-            case .disconnectionFailed:
+            case .disconnectionFailed(let failureCode):
                 Button("project.access.manage") {
                     openInstallationSettings()
                 }
                 .buttonStyle(.bordered)
+                if failureCode == .reauthorizationRequired {
+                    Button("project.access.disconnect.reauthorize") {
+                        reauthorizeAndDisconnect()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
             case .expired, .revoked, .failed:
                 Button("project.access.manage") {
                     openInstallationSettings()
@@ -270,6 +277,13 @@ struct ProjectAccessSheet: View {
         }
     }
 
+    private var canDisconnectImmediately: Bool {
+        if case .disconnectionFailed(.reauthorizationRequired) = accessSession.state {
+            return false
+        }
+        return isConnectedLike
+    }
+
     private var isSyncing: Bool {
         if case .syncing = syncService.state { return true }
         return false
@@ -288,6 +302,8 @@ struct ProjectAccessSheet: View {
         case .organizationApprovalPending: "project.access.state.pending.title"
         case .expired: "project.access.state.expired.title"
         case .revoked: "project.access.state.revoked.title"
+        case .disconnectionFailed(.reauthorizationRequired):
+            "project.access.state.disconnectReauthorizationRequired.title"
         case .disconnectionFailed: "project.access.state.disconnectionFailed.title"
         case .failed(.network): "project.access.state.offline.title"
         case .failed: "project.access.state.failed.title"
@@ -307,18 +323,36 @@ struct ProjectAccessSheet: View {
         case .organizationApprovalPending: "project.access.state.pending.detail"
         case .expired: "project.access.state.expired.detail"
         case .revoked: "project.access.state.revoked.detail"
+        case .disconnectionFailed(.reauthorizationRequired):
+            "project.access.state.disconnectReauthorizationRequired.detail"
         case .disconnectionFailed: "project.access.state.disconnectionFailed.detail"
         case .failed(.network): "project.access.state.offline.detail"
         case .failed: "project.access.state.failed.detail"
         }
     }
 
-    private func connect() {
-        accessSession.startConnection { result in
-            if case .connected(let access) = result, access.isInstalled {
+    private func connect(
+        modeOverride: ProjectAccessAuthorizationMode? = nil,
+        disconnectAfterAuthorization: Bool = false
+    ) {
+        self.disconnectAfterAuthorization = disconnectAfterAuthorization
+        accessSession.startConnection(modeOverride: modeOverride) { result in
+            let shouldDisconnect = self.disconnectAfterAuthorization
+            self.disconnectAfterAuthorization = false
+            switch result {
+            case .connected where shouldDisconnect:
+                disconnect()
+            case .connected(let access) where access.isInstalled:
                 refreshProjects(force: true)
+            case .connected, .cancelled, .failed:
+                break
             }
         }
+    }
+
+    /// 当前 token 已无法刷新时先取得新 user token，callback 成功后继续原断开操作。
+    private func reauthorizeAndDisconnect() {
+        connect(modeOverride: .reauthorization, disconnectAfterAuthorization: true)
     }
 
     private func openInstallationSettings() {

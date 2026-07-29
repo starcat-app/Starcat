@@ -20,6 +20,7 @@ struct ProjectAccessSessionTests {
         )
         var credential: ProjectAccessCredential
         var refreshed: ProjectAccessCredential
+        var refreshError: ProjectAccessOAuthError?
         var revokeError: ProjectAccessOAuthError?
         private(set) var refreshInputs: [String] = []
         private(set) var revokedTokens: [String] = []
@@ -42,6 +43,7 @@ struct ProjectAccessSessionTests {
         }
         func refreshCredential(using refreshToken: String) async throws -> ProjectAccessCredential {
             refreshInputs.append(refreshToken)
+            if let refreshError { throw refreshError }
             return refreshed
         }
         func revokeAuthorization(accessToken: String) async throws {
@@ -233,6 +235,24 @@ struct ProjectAccessSessionTests {
 
         #expect(oauth.beginModes == [.reauthorization])
         #expect(webAuthenticationSession.authorizationURL?.path == "/login/oauth/authorize")
+    }
+
+    @Test("断开重试可以强制进入重新授权")
+    @MainActor
+    func disconnectRetryOverridesInstallationMode() async throws {
+        let issued = credential(token: "project", accessOffset: 3_600)
+        let oauth = MockOAuth(credential: issued)
+        let session = ProjectAccessSession(
+            oauthService: oauth,
+            keychain: InMemoryKeychain(),
+            connectionHistory: MockConnectionHistory(hasCompletedAuthorization: false),
+            isConfigured: true,
+            now: { self.now }
+        )
+
+        _ = try await session.beginConnection(modeOverride: .reauthorization)
+
+        #expect(oauth.beginModes == [.reauthorization])
     }
 
     @Test("关闭项目授权系统窗口按正常取消处理")
@@ -594,6 +614,58 @@ struct ProjectAccessSessionTests {
 
         #expect(try keychain.loadProjectAccessCredential() != nil)
         #expect(session.state == .disconnectionFailed(.network))
+    }
+
+    @Test("断开时 refresh token 已过期会保留凭据等待重新授权")
+    @MainActor
+    func disconnectWithExpiredRefreshPreservesCredential() async throws {
+        let keychain = InMemoryKeychain()
+        let appCredential = credential(
+            token: "expired-access",
+            accessOffset: -1,
+            refreshToken: nil,
+            refreshOffset: nil
+        )
+        try storedCredential(keychain, appCredential)
+        let oauth = MockOAuth(credential: appCredential)
+        let session = ProjectAccessSession(
+            oauthService: oauth,
+            keychain: keychain,
+            isConfigured: true,
+            now: { self.now }
+        )
+
+        await #expect(throws: ProjectAccessSessionError.expired) {
+            try await session.disconnect(userID: 7)
+        }
+
+        #expect(try keychain.loadProjectAccessCredential() != nil)
+        #expect(oauth.revokedTokens.isEmpty)
+        #expect(session.state == .disconnectionFailed(.reauthorizationRequired))
+    }
+
+    @Test("断开时 refresh token 被拒绝不会提前删除凭据")
+    @MainActor
+    func disconnectWithRejectedRefreshPreservesCredential() async throws {
+        let keychain = InMemoryKeychain()
+        let appCredential = credential(token: "expired-access", accessOffset: -1)
+        try storedCredential(keychain, appCredential)
+        let oauth = MockOAuth(credential: appCredential)
+        oauth.refreshError = .badRefreshToken
+        let session = ProjectAccessSession(
+            oauthService: oauth,
+            keychain: keychain,
+            isConfigured: true,
+            now: { self.now }
+        )
+
+        await #expect(throws: ProjectAccessSessionError.expired) {
+            try await session.disconnect(userID: 7)
+        }
+
+        #expect(try keychain.loadProjectAccessCredential() != nil)
+        #expect(oauth.revokedTokens.isEmpty)
+        #expect(session.state == .disconnectionFailed(.reauthorizationRequired))
     }
 
     @Test("部分授权与组织待审批为独立可见状态")
