@@ -51,14 +51,16 @@
 - [x] 增加个人 / 组织 / 具体组织 / 可见性 / 权限筛选。
 - [x] 项目筛选与搜索、语言、Tags、状态、Star、知识库筛选正确叠加。
 - [x] 复用 Repo 行并展示项目归属、可见性、权限和本地 30 天增长。
-- [x] 复用 Repo 详情、README、仓库洞察和 Star History。
+- [~] 复用 Repo 详情、README、仓库洞察和 Star History。
+  - ⚠️ 进行中：补齐 owner / collaborator 使用 OAuth 或 GitHub App 凭据直连 GitHub Stargazers 的历史重建路径。
 - [x] 未连接、连接中、部分授权、待审批、过期、撤销、失败和断网状态完整。
 - [x] 刷新保留旧列表、当前 selection 和分页状态。
 - [x] 完成 en / zh-Hans i18n 与辅助功能静态契约；VoiceOver、键盘和 Light / Dark 实机矩阵已明确为外部 Gate，未伪造人工结果。
 
 ## 5. Private 数据与缓存
 
-- [x] Private / Internal 不调用 Discovery。
+- [~] Private / Internal 不调用 Discovery。
+  - ⚠️ 进行中：保留公共服务硬拦截，并允许使用已授权 GitHub App 直连 GitHub 后仅在本机聚合历史。
 - [x] Private / Internal 不进入 External Search、公开分享或 Universal Link。
 - [x] 项目关系、同步状态和 Private 缓存不进入 CloudKit。
 - [x] 默认 JSON 导出不包含项目关系、GitHub App token 或 Private 缓存。
