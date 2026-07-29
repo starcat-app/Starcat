@@ -7,6 +7,9 @@
 //
 //  复用 SkeletonPalette + shimmer；真无数据 / 失败仍走原有 empty / error，不用骨架。
 //
+//  高度约束：禁止纵向 Spacer / LazyVGrid 吃满 ScrollView proposal——否则首帧
+//  contentSize 虚高，加重 Hero 折叠后的底部可滚留白。
+//
 
 import SwiftUI
 
@@ -65,6 +68,7 @@ struct InsightsSectionSkeleton: View {
                         .accessibilityAddTraits(.updatesFrequently)
                 }
             }
+            .fixedSize(horizontal: false, vertical: true)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(statusCaptionKey ?? "insights.repo.state.generating"))
         }
@@ -95,6 +99,7 @@ struct InsightsSectionSkeleton: View {
         phase: Double,
         palette: SkeletonPalette
     ) -> some View {
+        // 不用纵向 Spacer：固定高度，防止吃满 ScrollView proposal。
         HStack(alignment: .top, spacing: 10) {
             ForEach(0..<count, id: \.self) { index in
                 VStack(alignment: .leading, spacing: 10) {
@@ -114,10 +119,9 @@ struct InsightsSectionSkeleton: View {
                         phaseOffset: Double(index) * 0.06 + 0.04,
                         palette: palette
                     )
-                    Spacer(minLength: 0)
                 }
                 .padding(10)
-                .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: minHeight, maxHeight: minHeight, alignment: .topLeading)
                 .background(
                     palette.base.opacity(0.35),
                     in: RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -150,7 +154,7 @@ struct InsightsSectionSkeleton: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 16)
-        .frame(maxWidth: .infinity, minHeight: height, alignment: .bottom)
+        .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .bottom)
         .background(
             Color(nsColor: .textBackgroundColor).opacity(0.35),
             in: RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -174,47 +178,65 @@ struct InsightsSectionSkeleton: View {
         phase: Double,
         palette: SkeletonPalette
     ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        // 固定 2×2，不用 LazyVGrid（首帧高度常靠估算）。
+        let columns = 2
+        let rows = Int(ceil(Double(personCount) / Double(columns)))
+        return VStack(alignment: .leading, spacing: 10) {
             derivedPills(count: 3, phase: phase, palette: palette)
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 142), spacing: 10)],
-                alignment: .leading,
-                spacing: 10
-            ) {
-                ForEach(0..<personCount, id: \.self) { index in
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(palette.base)
-                            .frame(width: 28, height: 28)
-                            .skeletonShimmer(
-                                phase: (phase + Double(index) * 0.07).truncatingRemainder(dividingBy: 1),
-                                palette: palette
-                            )
-                        VStack(alignment: .leading, spacing: 4) {
-                            SkeletonBlock(
-                                width: 72,
-                                height: 11,
-                                cornerRadius: 3,
-                                phase: phase,
-                                phaseOffset: Double(index) * 0.07,
-                                palette: palette
-                            )
-                            SkeletonBlock(
-                                width: 56,
-                                height: 9,
-                                cornerRadius: 3,
-                                phase: phase,
-                                phaseOffset: Double(index) * 0.07 + 0.03,
-                                palette: palette
-                            )
+            VStack(spacing: 10) {
+                ForEach(0..<rows, id: \.self) { row in
+                    HStack(spacing: 10) {
+                        ForEach(0..<columns, id: \.self) { column in
+                            let index = row * columns + column
+                            if index < personCount {
+                                personCard(index: index, phase: phase, palette: palette)
+                            } else {
+                                Color.clear.frame(maxWidth: .infinity, minHeight: 38)
+                            }
                         }
-                        Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 5)
                 }
             }
         }
+    }
+
+    private func personCard(
+        index: Int,
+        phase: Double,
+        palette: SkeletonPalette
+    ) -> some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(palette.base)
+                .frame(width: 28, height: 28)
+                .skeletonShimmer(
+                    phase: (phase + Double(index) * 0.07).truncatingRemainder(dividingBy: 1),
+                    palette: palette
+                )
+            VStack(alignment: .leading, spacing: 4) {
+                SkeletonBlock(
+                    width: 72,
+                    height: 11,
+                    cornerRadius: 3,
+                    phase: phase,
+                    phaseOffset: Double(index) * 0.07,
+                    palette: palette
+                )
+                SkeletonBlock(
+                    width: 56,
+                    height: 9,
+                    cornerRadius: 3,
+                    phase: phase,
+                    phaseOffset: Double(index) * 0.07 + 0.03,
+                    palette: palette
+                )
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func healthGrid(
@@ -222,60 +244,76 @@ struct InsightsSectionSkeleton: View {
         phase: Double,
         palette: SkeletonPalette
     ) -> some View {
-        LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 148), spacing: 10)],
-            alignment: .leading,
-            spacing: 8
-        ) {
-            ForEach(0..<count, id: \.self) { index in
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        SkeletonBlock(
-                            width: 14,
-                            height: 12,
-                            cornerRadius: 3,
-                            phase: phase,
-                            phaseOffset: Double(index) * 0.05,
-                            palette: palette
-                        )
-                        SkeletonBlock(
-                            width: 64,
-                            height: 11,
-                            cornerRadius: 3,
-                            phase: phase,
-                            phaseOffset: Double(index) * 0.05 + 0.02,
-                            palette: palette
-                        )
-                        Spacer(minLength: 4)
-                        SkeletonBlock(
-                            width: 22,
-                            height: 11,
-                            cornerRadius: 3,
-                            phase: phase,
-                            phaseOffset: Double(index) * 0.05 + 0.04,
-                            palette: palette
-                        )
+        let columns = 2
+        let rows = Int(ceil(Double(count) / Double(columns)))
+        return VStack(spacing: 8) {
+            ForEach(0..<rows, id: \.self) { row in
+                HStack(spacing: 10) {
+                    ForEach(0..<columns, id: \.self) { column in
+                        let index = row * columns + column
+                        if index < count {
+                            healthTile(index: index, phase: phase, palette: palette)
+                        } else {
+                            Color.clear.frame(maxWidth: .infinity, minHeight: 40)
+                        }
                     }
-                    SkeletonBlock(
-                        height: 3,
-                        cornerRadius: 2,
-                        phase: phase,
-                        phaseOffset: Double(index) * 0.05 + 0.06,
-                        palette: palette
-                    )
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    palette.base.opacity(0.35),
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                )
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
                 }
             }
+        }
+    }
+
+    private func healthTile(
+        index: Int,
+        phase: Double,
+        palette: SkeletonPalette
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                SkeletonBlock(
+                    width: 14,
+                    height: 12,
+                    cornerRadius: 3,
+                    phase: phase,
+                    phaseOffset: Double(index) * 0.05,
+                    palette: palette
+                )
+                SkeletonBlock(
+                    width: 64,
+                    height: 11,
+                    cornerRadius: 3,
+                    phase: phase,
+                    phaseOffset: Double(index) * 0.05 + 0.02,
+                    palette: palette
+                )
+                Spacer(minLength: 4)
+                SkeletonBlock(
+                    width: 22,
+                    height: 11,
+                    cornerRadius: 3,
+                    phase: phase,
+                    phaseOffset: Double(index) * 0.05 + 0.04,
+                    palette: palette
+                )
+            }
+            SkeletonBlock(
+                height: 3,
+                cornerRadius: 2,
+                phase: phase,
+                phaseOffset: Double(index) * 0.05 + 0.06,
+                palette: palette
+            )
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(
+            palette.base.opacity(0.35),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
         }
     }
 
@@ -317,6 +355,7 @@ struct InsightsSectionSkeleton: View {
                     )
                 }
                 .padding(.vertical, 9)
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

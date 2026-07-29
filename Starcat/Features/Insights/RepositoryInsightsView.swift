@@ -119,6 +119,9 @@ struct RepositoryInsightsView: View {
     @State private var isTimelineExpanded = false
     /// 贡献者默认截断；更多走底部「查看全部」，不在网格里再塞 +N。
     @State private var isContributorsExpanded = false
+    /// ScrollView 内容固有高度。Hero 折叠后视口变高时，用它锁死 contentSize，
+    /// 避免 VStack 吃满纵向 proposal 在末卡后留下可滚留白。
+    @State private var insightsContentHeight: CGFloat = 0
 
     @Environment(\.locale) private var locale
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -128,6 +131,8 @@ struct RepositoryInsightsView: View {
     /// 折叠态只展示前 4 人；样本人数已在集中度行给出总量。
     private static let visibleContributorLimit = 4
     private static let collapsedTimelineLimit = 5
+    /// 与 RepoDetailScrollReport 同口径，忽略亚像素测高抖动。
+    private static let contentHeightTolerance: CGFloat = 0.5
     /// GitHub 公告解释了 Stargazers 列表的权限收紧，比通用 API 参数页更直接。
     private static let githubStargazersRestrictionURL = URL(
         string: "https://github.blog/changelog/2026-06-30-upcoming-access-restrictions-to-public-api-endpoints-and-ui-views/"
@@ -173,10 +178,30 @@ struct RepositoryInsightsView: View {
                         timelineSection
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .top)
                 // 外层 Scaffold 在 Hero 折叠后会扩大正文视口；内容栈必须坚持使用卡片的
                 // 固有高度，否则 VStack 会接受扩大的纵向 proposal，在最后一张卡片后留下
-                // 一段可滚动但不可见的空白。这里只固定纵向，横向仍随详情栏宽度铺满。
+                // 一段可滚动但不可见的空白。fixedSize 测固有高，再 frame 锁死，
+                // 比单靠 fixedSize 更能扛住折叠瞬间的 proposal 拉伸。
                 .fixedSize(horizontal: false, vertical: true)
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: InsightsContentHeightKey.self,
+                            value: proxy.size.height
+                        )
+                    }
+                }
+                .onPreferenceChange(InsightsContentHeightKey.self) { height in
+                    guard height > 0,
+                          abs(height - insightsContentHeight) > Self.contentHeightTolerance
+                    else { return }
+                    insightsContentHeight = height
+                }
+                .frame(
+                    height: insightsContentHeight > 0 ? insightsContentHeight : nil,
+                    alignment: .top
+                )
                 .padding(18)
             }
             .detailScrollViewStyle()
@@ -192,6 +217,12 @@ struct RepositoryInsightsView: View {
 
             // 对齐 README cacheFooter：底栏只挂全局 Sync；左侧不放「缓存于」。
             insightsGlobalFooter
+        }
+        // 与 Release 详情一致：body 吃满 Scaffold 剩余空间，滚动发生在内容区自身。
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: repo.id) { _, _ in
+            // 切仓库时清掉旧高度，避免短暂锁在上一仓的 contentSize。
+            insightsContentHeight = 0
         }
         .accessibilityLabel(Text("insights.repo.mode.insights"))
     }
@@ -2933,5 +2964,14 @@ struct RepositoryInsightsView: View {
         let base = repo.htmlUrl.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let encodedTag = tagName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? tagName
         return URL(string: "\(base)/releases/tag/\(encodedTag)")
+    }
+}
+
+/// 仓库洞察 ScrollView 内容固有高度；仅用于锁定 contentSize，不参与业务状态。
+private struct InsightsContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
