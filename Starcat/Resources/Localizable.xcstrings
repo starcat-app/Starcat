@@ -389478,6 +389478,14 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "本機 Private 快取" } }
       }
     },
+    "project.access.reauthorize" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reauthorize" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重新授权" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "重新授權" } }
+      }
+    },
     "project.access.refresh" : {
       "extractionState" : "manual",
       "localizations" : {

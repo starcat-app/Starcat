@@ -280,7 +280,7 @@ struct ProjectAccessSheet: View {
                     openInstallationSettings()
                 }
                 .buttonStyle(.bordered)
-                Button("project.access.connect") {
+                Button("project.access.reauthorize") {
                     connect()
                 }
                 .buttonStyle(.borderedProminent)
