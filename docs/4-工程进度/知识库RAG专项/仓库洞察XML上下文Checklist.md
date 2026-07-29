@@ -84,7 +84,7 @@
 - [x] 新增 `RAGCitationSource.repositoryInsights`。
 - [x] 新增 `RAGHitKind.repositoryInsights`。
 - [x] 新增 `RAGContextUsageSegmentKind.repositoryInsights`。
-- [ ] 新增可解释的执行步骤与 Debug stages。
+- [x] 新增可解释的执行步骤与 Debug stages。
 - [x] 不扩展 `RAGChunkSource`，不修改 v7 RAG schema。
 - [x] 显式仓库范围读取洞察 XML。
 - [x] 普通检索只读取最终保留 bundle 的洞察 XML。
@@ -94,10 +94,10 @@
 - [x] 洞察 XML 使用独立预算且服从总 Context Window。
 - [x] 实现洞察 XML 感知投影或整份移除，始终保持合法 XML。
 - [x] 洞察 XML 生成独立 citation，`chunkID = nil`。
-- [ ] 洞察 XML 可作为真实仓库级证据通过证据门禁。
-- [ ] 其它证据存在时洞察降级不阻断回答。
+- [x] 洞察 XML 可作为真实仓库级证据通过证据门禁。
+- [x] 其它证据存在时洞察降级不阻断回答。
 - [x] Prompt 默认值迁移保留用户自定义模板。
-- [ ] 补齐 Service、目标选择、预算、投影、citation、门禁和 Prompt 迁移测试。
+- [x] 补齐 Service、目标选择、预算、投影、citation、门禁和 Prompt 迁移测试。
 
 ## 6. RAG 全部可见面
 
@@ -107,13 +107,13 @@
 - [ ] Evidence Inspector 展示洞察审计字段和 XML 预览。
 - [ ] 支持 XML 全文、复制和 citation 定位。
 - [ ] 洞察 citation 不显示普通“分片已删除”。
-- [ ] Debug Trace 增加 request / load / projection 摘要。
-- [ ] 专用 Debug stage 不重复保存 XML 正文。
+- [x] Debug Trace 增加 request / load / projection 摘要。
+- [x] 专用 Debug stage 不重复保存 XML 正文。
 - [ ] 最终 Prompt Debug 明确可能包含洞察 XML 的隐私边界。
 - [ ] 会话只保存洞察审计 snapshot 和 citation。
 - [ ] 历史只在 repo + sourceHash + xmlHash 匹配时回放 XML。
 - [ ] 删除 / 更新后历史显示不可回放，不冒用新 XML。
-- [ ] RAG Prompt 设置展示 `{repositoryInsightsSection}` 说明。
+- [x] RAG Prompt 设置展示 `{repositoryInsightsSection}` 说明。
 - [ ] 补齐 Plan、Timeline、Context、Evidence、Debug 和历史 round-trip 测试。
 
 ## 7. i18n、设计与正式文档
