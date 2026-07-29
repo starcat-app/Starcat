@@ -44,7 +44,13 @@ struct StarcatReleaseWatchProvider: TimelineProvider {
         completion(
             Timeline(
                 entries: [entry],
-                policy: .after(StarcatWidgetSnapshotLoader.nextStandardRefresh(after: entry.date))
+                policy: .after(
+                    StarcatWidgetSnapshotLoader.nextRefresh(
+                        after: entry.date,
+                        isReady: entry.snapshot != nil,
+                        kind: .standard
+                    )
+                )
             )
         )
     }

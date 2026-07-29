@@ -45,7 +45,11 @@ struct StarcatRediscoveryProvider: TimelineProvider {
             Timeline(
                 entries: [entry],
                 policy: .after(
-                    StarcatWidgetSnapshotLoader.nextRediscoveryRefresh(after: entry.date)
+                    StarcatWidgetSnapshotLoader.nextRefresh(
+                        after: entry.date,
+                        isReady: entry.snapshot != nil,
+                        kind: .rediscovery
+                    )
                 )
             )
         )

@@ -66,26 +66,18 @@ enum StarcatWidgetSnapshotLoader {
         }
     }
 
-    static func nextStandardRefresh(after date: Date) -> Date {
-        date.addingTimeInterval(30 * 60)
-    }
-
-    /// 今日重逢需要在本地次日 00:05 后选择新仓库。
-    static func nextRediscoveryRefresh(
+    static func nextRefresh(
         after date: Date,
+        isReady: Bool,
+        kind: WidgetTimelineKind,
         calendar: Calendar = .current
     ) -> Date {
-        let fallback = nextStandardRefresh(after: date)
-        guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: date),
-              let nextStart = calendar.date(
-                bySettingHour: 0,
-                minute: 5,
-                second: 0,
-                of: tomorrow
-              ) else {
-            return fallback
-        }
-        return nextStart
+        WidgetTimelineRefreshPolicy.nextRefresh(
+            after: date,
+            isReady: isReady,
+            kind: kind,
+            calendar: calendar
+        )
     }
 }
 

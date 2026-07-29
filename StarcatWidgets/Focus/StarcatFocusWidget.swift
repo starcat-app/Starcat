@@ -106,7 +106,13 @@ struct StarcatFocusProvider: AppIntentTimelineProvider {
         let entry = makeEntry(base: base, configuration: configuration)
         return Timeline(
             entries: [entry],
-            policy: .after(StarcatWidgetSnapshotLoader.nextStandardRefresh(after: entry.date))
+            policy: .after(
+                StarcatWidgetSnapshotLoader.nextRefresh(
+                    after: entry.date,
+                    isReady: entry.base.snapshot != nil,
+                    kind: .standard
+                )
+            )
         )
     }
 
