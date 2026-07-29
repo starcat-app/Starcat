@@ -28,12 +28,15 @@ protocol RepositoryInsightsAIContextProviding: Sendable {
     func context(for repo: Repo) async -> RepositoryInsightsAIContext
 }
 
-struct DefaultRepositoryInsightsAIContextProvider: RepositoryInsightsAIContextProviding, Sendable {
-    private struct Prepared<Value: Sendable>: Sendable {
-        let value: Value
-        let fetchedAt: Date
-        let isStale: Bool
-    }
+protocol RepositoryInsightsDocumentProviding: Sendable {
+    func document(for repo: Repo) async -> RepositoryInsightsDocument
+}
+
+struct DefaultRepositoryInsightsAIContextProvider:
+    RepositoryInsightsAIContextProviding,
+    RepositoryInsightsDocumentProviding,
+    Sendable
+{
 
     private let localProvider: any RepositoryLocalInsightsProviding
     private let remoteProvider: any RepositoryRemoteInsightsProviding
@@ -53,6 +56,17 @@ struct DefaultRepositoryInsightsAIContextProvider: RepositoryInsightsAIContextPr
     }
 
     func context(for repo: Repo) async -> RepositoryInsightsAIContext {
+        let document = await document(for: repo)
+        return RepositoryInsightsAIContext(content: document.xml)
+    }
+
+    func document(for repo: Repo) async -> RepositoryInsightsDocument {
+        let snapshot = await snapshot(for: repo)
+        return RepositoryInsightsXMLRenderer.render(snapshot: snapshot, generatedAt: now())
+    }
+
+    /// 只负责准备结构化事实；XML、文件存储与 Prompt 注入由后续边界分别处理。
+    private func snapshot(for repo: Repo) async -> RepositoryInsightsSnapshot {
         let local = await localProvider.snapshot(repoId: repo.id)
 
         // StarHistoryRepository 自己负责“我的项目”权限路由与公共 Discovery 回退；
@@ -60,7 +74,7 @@ struct DefaultRepositoryInsightsAIContextProvider: RepositoryInsightsAIContextPr
         async let starHistory = prepareStarHistory(for: repo)
 
         guard !repo.isPrivate else {
-            return await Self.render(
+            return await Self.snapshot(
                 repo: repo,
                 local: local,
                 releaseCadence: nil,
@@ -82,14 +96,14 @@ struct DefaultRepositoryInsightsAIContextProvider: RepositoryInsightsAIContextPr
         async let recentActivity = prepareRecentActivity(for: repo)
 
         let localCadence = Self.localValue(local.releaseCadence)
-        let releaseCadence: Prepared<RepositoryReleaseCadenceInsight>?
+        let releaseCadence: RepositoryInsightsPreparedValue<RepositoryReleaseCadenceInsight>?
         if localCadence == nil {
             releaseCadence = await prepareReleaseCadence(for: repo)
         } else {
             releaseCadence = nil
         }
 
-        return await Self.render(
+        return await Self.snapshot(
             repo: repo,
             local: local,
             releaseCadence: releaseCadence,
@@ -105,7 +119,7 @@ struct DefaultRepositoryInsightsAIContextProvider: RepositoryInsightsAIContextPr
 
     private func prepareActivity(
         for repo: Repo
-    ) async -> Prepared<RepositoryActivityCounts>? {
+    ) async -> RepositoryInsightsPreparedValue<RepositoryActivityCounts>? {
         let identity = Self.identity(for: repo)
         return await prepare(
             cached: {
@@ -125,7 +139,7 @@ struct DefaultRepositoryInsightsAIContextProvider: RepositoryInsightsAIContextPr
 
     private func prepareCommitActivity(
         for repo: Repo
-    ) async -> Prepared<RepositoryCommitActivity>? {
+    ) async -> RepositoryInsightsPreparedValue<RepositoryCommitActivity>? {
         let identity = Self.identity(for: repo)
         return await prepare(
             cached: {
@@ -145,7 +159,7 @@ struct DefaultRepositoryInsightsAIContextProvider: RepositoryInsightsAIContextPr
 
     private func prepareContributors(
         for repo: Repo
-    ) async -> Prepared<RepositoryContributorsInsight>? {
+    ) async -> RepositoryInsightsPreparedValue<RepositoryContributorsInsight>? {
         let identity = Self.identity(for: repo)
         return await prepare(
             cached: {
@@ -165,7 +179,7 @@ struct DefaultRepositoryInsightsAIContextProvider: RepositoryInsightsAIContextPr
 
     private func prepareCommunity(
         for repo: Repo
-    ) async -> Prepared<RepositoryCommunityInsight>? {
+    ) async -> RepositoryInsightsPreparedValue<RepositoryCommunityInsight>? {
         let identity = Self.identity(for: repo)
         return await prepare(
             cached: {
@@ -185,7 +199,7 @@ struct DefaultRepositoryInsightsAIContextProvider: RepositoryInsightsAIContextPr
 
     private func prepareSecurity(
         for repo: Repo
-    ) async -> Prepared<RepositorySecurityAdvisoriesInsight>? {
+    ) async -> RepositoryInsightsPreparedValue<RepositorySecurityAdvisoriesInsight>? {
         let identity = Self.identity(for: repo)
         return await prepare(
             cached: {
@@ -205,7 +219,7 @@ struct DefaultRepositoryInsightsAIContextProvider: RepositoryInsightsAIContextPr
 
     private func prepareRecentActivity(
         for repo: Repo
-    ) async -> Prepared<RepositoryRecentActivity>? {
+    ) async -> RepositoryInsightsPreparedValue<RepositoryRecentActivity>? {
         let identity = Self.identity(for: repo)
         return await prepare(
             cached: {
@@ -225,20 +239,24 @@ struct DefaultRepositoryInsightsAIContextProvider: RepositoryInsightsAIContextPr
 
     private func prepareReleaseCadence(
         for repo: Repo
-    ) async -> Prepared<RepositoryReleaseCadenceInsight>? {
+    ) async -> RepositoryInsightsPreparedValue<RepositoryReleaseCadenceInsight>? {
         let identity = Self.identity(for: repo)
         let cached: RepositoryCachedReleaseCadenceInsight?
         do {
             cached = try await remoteProvider.cachedReleaseCadence(repoID: repo.id)
         } catch {
             return try? await remoteProvider.refreshReleaseCadence(repository: identity).map {
-                Prepared(value: $0, fetchedAt: now(), isStale: false)
+                RepositoryInsightsPreparedValue(value: $0, fetchedAt: now(), isStale: false)
             }
         }
 
         if let cached, !cached.isStale {
             return cached.value.map {
-                Prepared(value: $0, fetchedAt: cached.fetchedAt, isStale: false)
+                RepositoryInsightsPreparedValue(
+                    value: $0,
+                    fetchedAt: cached.fetchedAt,
+                    isStale: false
+                )
             }
         }
 
@@ -247,11 +265,15 @@ struct DefaultRepositoryInsightsAIContextProvider: RepositoryInsightsAIContextPr
                 repository: identity,
                 ifNoneMatch: cached?.responseETag
             ).map {
-                Prepared(value: $0, fetchedAt: now(), isStale: false)
+                RepositoryInsightsPreparedValue(value: $0, fetchedAt: now(), isStale: false)
             }
         } catch {
             return cached?.value.map {
-                Prepared(value: $0, fetchedAt: cached?.fetchedAt ?? now(), isStale: true)
+                RepositoryInsightsPreparedValue(
+                    value: $0,
+                    fetchedAt: cached?.fetchedAt,
+                    isStale: true
+                )
             }
         }
     }
@@ -275,7 +297,7 @@ struct DefaultRepositoryInsightsAIContextProvider: RepositoryInsightsAIContextPr
         cachedFetchedAt: KeyPath<Cached, Date>,
         cachedIsStale: KeyPath<Cached, Bool>,
         refresh: @escaping @Sendable (Cached?) async throws -> Value
-    ) async -> Prepared<Value>? {
+    ) async -> RepositoryInsightsPreparedValue<Value>? {
         let cachedResult: Cached?
         do {
             cachedResult = try await cached()
@@ -284,7 +306,7 @@ struct DefaultRepositoryInsightsAIContextProvider: RepositoryInsightsAIContextPr
         }
 
         if let cachedResult, !cachedResult[keyPath: cachedIsStale] {
-            return Prepared(
+            return RepositoryInsightsPreparedValue(
                 value: cachedResult[keyPath: cachedValue],
                 fetchedAt: cachedResult[keyPath: cachedFetchedAt],
                 isStale: false
@@ -292,14 +314,14 @@ struct DefaultRepositoryInsightsAIContextProvider: RepositoryInsightsAIContextPr
         }
 
         do {
-            return Prepared(
+            return RepositoryInsightsPreparedValue(
                 value: try await refresh(cachedResult),
                 fetchedAt: now(),
                 isStale: false
             )
         } catch {
             guard let cachedResult else { return nil }
-            return Prepared(
+            return RepositoryInsightsPreparedValue(
                 value: cachedResult[keyPath: cachedValue],
                 fetchedAt: cachedResult[keyPath: cachedFetchedAt],
                 isStale: true
@@ -307,16 +329,72 @@ struct DefaultRepositoryInsightsAIContextProvider: RepositoryInsightsAIContextPr
         }
     }
 
-    private static func render(
+    private static func snapshot(
         repo: Repo,
         local: RepositoryLocalInsightsSnapshot,
-        releaseCadence remoteReleaseCadence: Prepared<RepositoryReleaseCadenceInsight>?,
-        activity: Prepared<RepositoryActivityCounts>?,
-        commitActivity: Prepared<RepositoryCommitActivity>?,
-        contributors: Prepared<RepositoryContributorsInsight>?,
-        community remoteCommunity: Prepared<RepositoryCommunityInsight>?,
-        security: Prepared<RepositorySecurityAdvisoriesInsight>?,
-        recentActivity: Prepared<RepositoryRecentActivity>?,
+        releaseCadence remoteReleaseCadence:
+            RepositoryInsightsPreparedValue<RepositoryReleaseCadenceInsight>?,
+        activity: RepositoryInsightsPreparedValue<RepositoryActivityCounts>?,
+        commitActivity: RepositoryInsightsPreparedValue<RepositoryCommitActivity>?,
+        contributors: RepositoryInsightsPreparedValue<RepositoryContributorsInsight>?,
+        community remoteCommunity: RepositoryInsightsPreparedValue<RepositoryCommunityInsight>?,
+        security: RepositoryInsightsPreparedValue<RepositorySecurityAdvisoriesInsight>?,
+        recentActivity: RepositoryInsightsPreparedValue<RepositoryRecentActivity>?,
+        starHistory: StarHistorySnapshot?
+    ) -> RepositoryInsightsSnapshot {
+        let localCadence = localValue(local.releaseCadence)
+        let releaseCadence = localCadence.map {
+            RepositoryInsightsPreparedValue(value: $0, fetchedAt: nil, isStale: false)
+        } ?? remoteReleaseCadence
+        let localCommunity = localValue(local.community)
+        let community = remoteCommunity ?? localCommunity.map {
+            RepositoryInsightsPreparedValue(value: $0, fetchedAt: nil, isStale: false)
+        }
+        return RepositoryInsightsSnapshot(
+            repo: repo,
+            release: localValue(local.release),
+            releaseCadence: releaseCadence,
+            health: localValue(local.health),
+            openSSF: localValue(local.openSSF),
+            community: community,
+            activity: activity,
+            commitActivity: commitActivity,
+            contributors: contributors,
+            security: security,
+            recentActivity: recentActivity,
+            starHistory: starHistory,
+            localFailureCount: [
+                isFailure(local.release),
+                isFailure(local.releaseCadence),
+                isFailure(local.health),
+                isFailure(local.openSSF),
+                isFailure(local.community)
+            ].count(where: { $0 })
+        )
+    }
+
+    private static func isFailure<Value>(
+        _ result: RepositoryLocalInsightResult<Value>
+    ) -> Bool {
+        if case .failed = result { return true }
+        return false
+    }
+
+    /*
+     Legacy renderer kept temporarily in this commit so the data-preparation refactor remains
+     reviewable. The next storage commit removes it after the new XML document is covered by tests.
+     */
+    private static func legacyRender(
+        repo: Repo,
+        local: RepositoryLocalInsightsSnapshot,
+        releaseCadence remoteReleaseCadence:
+            RepositoryInsightsPreparedValue<RepositoryReleaseCadenceInsight>?,
+        activity: RepositoryInsightsPreparedValue<RepositoryActivityCounts>?,
+        commitActivity: RepositoryInsightsPreparedValue<RepositoryCommitActivity>?,
+        contributors: RepositoryInsightsPreparedValue<RepositoryContributorsInsight>?,
+        community remoteCommunity: RepositoryInsightsPreparedValue<RepositoryCommunityInsight>?,
+        security: RepositoryInsightsPreparedValue<RepositorySecurityAdvisoriesInsight>?,
+        recentActivity: RepositoryInsightsPreparedValue<RepositoryRecentActivity>?,
         starHistory: StarHistorySnapshot?
     ) -> RepositoryInsightsAIContext {
         var sections: [String] = []
@@ -385,7 +463,7 @@ struct DefaultRepositoryInsightsAIContextProvider: RepositoryInsightsAIContextPr
                         "issue_template": String(community.hasIssueTemplate),
                         "license": String(community.hasLicense),
                         "pull_request_template": String(community.hasPullRequestTemplate),
-                        "fetched_at": remoteCommunity.map { dateString($0.fetchedAt) },
+                        "fetched_at": remoteCommunity?.fetchedAt.map(dateString),
                         "stale": remoteCommunity.map { String($0.isStale) }
                     ]
                 )
@@ -403,7 +481,7 @@ struct DefaultRepositoryInsightsAIContextProvider: RepositoryInsightsAIContextPr
                         "created_issues": String(activity.value.createdIssues),
                         "closed_issues": String(activity.value.closedIssues),
                         "net_issue_change": String(activity.value.netIssueChange),
-                        "fetched_at": dateString(activity.fetchedAt),
+                        "fetched_at": activity.fetchedAt.map(dateString),
                         "stale": String(activity.isStale)
                     ]
                 )
@@ -420,7 +498,7 @@ struct DefaultRepositoryInsightsAIContextProvider: RepositoryInsightsAIContextPr
                         "recent_4_weeks_commits": pulse.map { String($0.recentCommits) },
                         "recent_4_weeks_active_weeks": pulse.map { String($0.activeWeeks) },
                         "previous_period_change_percent": pulse?.comparisonPercentage.map(String.init),
-                        "fetched_at": dateString(commitActivity.fetchedAt),
+                        "fetched_at": commitActivity.fetchedAt.map(dateString),
                         "stale": String(commitActivity.isStale)
                     ]
                 )
@@ -440,7 +518,7 @@ struct DefaultRepositoryInsightsAIContextProvider: RepositoryInsightsAIContextPr
                         "top_three_share": concentration.map {
                             percentage($0.topThreeShare)
                         },
-                        "fetched_at": dateString(contributors.fetchedAt),
+                        "fetched_at": contributors.fetchedAt.map(dateString),
                         "stale": String(contributors.isStale)
                     ]
                 )
@@ -455,7 +533,7 @@ struct DefaultRepositoryInsightsAIContextProvider: RepositoryInsightsAIContextPr
                         "published_count": String(security.value.advisories.count),
                         "high_or_critical_count": String(security.value.highOrCriticalCount),
                         "latest_published_at": security.value.latestPublishedAt.map(dateString),
-                        "fetched_at": dateString(security.fetchedAt),
+                        "fetched_at": security.fetchedAt.map(dateString),
                         "stale": String(security.isStale)
                     ]
                 )
@@ -475,7 +553,7 @@ struct DefaultRepositoryInsightsAIContextProvider: RepositoryInsightsAIContextPr
                         "latest_event_at": recentActivity.value.events.map(\.occurredAt)
                             .max()
                             .map(dateString),
-                        "fetched_at": dateString(recentActivity.fetchedAt),
+                        "fetched_at": recentActivity.fetchedAt.map(dateString),
                         "stale": String(recentActivity.isStale)
                     ]
                 )
