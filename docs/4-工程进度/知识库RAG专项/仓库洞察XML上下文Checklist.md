@@ -14,18 +14,18 @@
 
 ## 1. 洞察结构化快照与 XML
 
-- [ ] 从 Prompt Provider 中拆出可复用的结构化洞察快照模型。
-- [ ] 保持页面、AI 与 Artifact 共用现有 Remote Provider、SQLite 和 Star History Repository。
+- [x] 从 Prompt Provider 中拆出可复用的结构化洞察快照模型。
+- [x] 保持页面、AI 与 Artifact 共用现有 Remote Provider、SQLite 和 Star History Repository。
 - [ ] 定义 `RepositoryInsightsDocument` 与 metadata。
-- [ ] 实现合法的 `<repository_insights>` 纯 XML Renderer。
-- [ ] XML 包含 repo identity、schema、生成时间、source hash 与数据新鲜度。
-- [ ] XML 包含 Release、发布节奏、健康度、OpenSSF、社区与安全聚合。
-- [ ] XML 包含 PR / Issue 活动统计与提交趋势。
-- [ ] XML 包含贡献者集中度及受控 Top Contributors。
-- [ ] XML 包含 Star 增长聚合与降采样趋势点。
-- [ ] 外部值全部 XML escape，不包含 Issue / PR 标题和安全公告正文。
+- [x] 实现合法的 `<repository_insights>` 纯 XML Renderer。
+- [x] XML 包含 repo identity、schema、生成时间、source hash 与数据新鲜度。
+- [x] XML 包含 Release、发布节奏、健康度、OpenSSF、社区与安全聚合。
+- [x] XML 包含 PR / Issue 活动统计与提交趋势。
+- [x] XML 包含贡献者集中度及受控 Top Contributors。
+- [x] XML 包含 Star 增长聚合与降采样趋势点。
+- [x] 外部值全部 XML escape，不包含 Issue / PR 标题和安全公告正文。
 - [ ] XML hash、source hash 和趋势降采样结果稳定可复现。
-- [ ] 为结构化快照、Renderer、escape、hash 和 schema 补齐单元测试。
+- [x] 为结构化快照、Renderer、escape、hash 和 schema 补齐单元测试。
 
 ## 2. Artifact Storage 与生命周期
 
