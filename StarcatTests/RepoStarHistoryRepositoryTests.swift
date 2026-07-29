@@ -240,6 +240,61 @@ struct RepoStarHistoryRepositoryTests {
         #expect(await discoveryAPI.requests().isEmpty)
     }
 
+    @Test("已收藏的外部协作仓库应使用 OAuth Stargazers 且不得调用 Discovery")
+    func starredCollaboratorUsesOAuthStargazersHistory() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 10, owner: "external", name: "shared")
+        try await insertProject(
+            database: database,
+            repoID: 10,
+            affiliation: .collaborator,
+            // collaborator 关系本身证明可访问；即使权限矩阵缺失也应尝试受限接口。
+            permission: .unknown,
+            authorizationSource: .oauth
+        )
+        let now = try #require(
+            ISO8601DateFormatter.shared.date(from: "2026-07-27T12:00:00.000Z")
+        )
+        let discoveryAPI = StubStarHistoryAPI(results: [])
+        let oauthAPI = StubGitHubStargazersAPI(pages: [
+            1: .init(
+                starredAt: [
+                    "2026-06-01T01:00:00Z",
+                    "2026-07-01T01:00:00Z"
+                ],
+                nextPage: nil
+            )
+        ])
+        let githubAppAPI = StubGitHubStargazersAPI(pages: [:])
+        let repository = GRDBRepoStarHistoryRepository(
+            database: database,
+            api: discoveryAPI,
+            projectRepository: GRDBUserProjectRepository(database: database),
+            oauthStargazersAPI: oauthAPI,
+            githubAppStargazersAPI: githubAppAPI,
+            now: { now }
+        )
+        var repo = fixtureRepo(id: 10, name: "shared", stars: 2)
+        repo.owner = "external"
+        repo.fullName = "external/shared"
+        repo.isStarred = true
+        repo.starredAt = "2026-07-20T00:00:00Z"
+
+        let snapshot = try await repository.refresh(
+            repo: repo,
+            range: .oneYear,
+            forceRefresh: true
+        )
+        let githubPoints = snapshot.points.filter { $0.source == .githubStargazers }
+
+        #expect(snapshot.remoteState == .fresh)
+        #expect(githubPoints.map(\.count) == [1, 2])
+        #expect(githubPoints.allSatisfy { $0.precision == .reconstructed })
+        #expect(await oauthAPI.requestedPages() == [1])
+        #expect(await githubAppAPI.requestedPages().isEmpty)
+        #expect(await discoveryAPI.requests().isEmpty)
+    }
+
     @Test("私有组织项目应使用 GitHub App 且不得调用公共 Discovery")
     func privateOrganizationProjectUsesGitHubApp() async throws {
         let database = try InMemoryDatabaseManager()
@@ -407,13 +462,21 @@ struct RepoStarHistoryRepositoryTests {
         authorizationSource: ProjectAuthorizationSource
     ) async throws {
         try await database.writer.write { db in
+            let relationship = switch affiliation {
+            case .owner:
+                (ownerLogin: "octo", ownerType: ProjectOwnerType.user, visibility: ProjectVisibility.public)
+            case .organizationMember:
+                (ownerLogin: "acme", ownerType: ProjectOwnerType.organization, visibility: ProjectVisibility.private)
+            case .collaborator:
+                (ownerLogin: "external", ownerType: ProjectOwnerType.user, visibility: ProjectVisibility.public)
+            }
             var project = UserProject(
                 userId: 100,
                 repoId: repoID,
                 affiliation: affiliation,
-                ownerLogin: affiliation == .owner ? "octo" : "acme",
-                ownerType: affiliation == .owner ? .user : .organization,
-                visibility: affiliation == .owner ? .public : .private,
+                ownerLogin: relationship.ownerLogin,
+                ownerType: relationship.ownerType,
+                visibility: relationship.visibility,
                 permission: permission,
                 authorizationSource: authorizationSource,
                 installationId: authorizationSource == .githubApp ? 42 : nil,
