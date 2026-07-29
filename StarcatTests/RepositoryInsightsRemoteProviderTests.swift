@@ -191,6 +191,59 @@ struct RepositoryInsightsRemoteProviderTests {
         #expect(await httpClient.requests().count == 5)
     }
 
+    @Test("AI 首次准备洞察后页面可复用相同缓存")
+    func aiContextWarmsRepositoryInsightsCache() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 29, owner: "octo", name: "budget")
+        let httpClient = FullLoadMetricsHTTPClient()
+        let now = try #require(
+            ISO8601DateFormatter().date(from: "2026-07-27T12:00:00Z")
+        )
+        let sharedProvider = SharedRepositoryRemoteInsightsProvider(
+            base: DefaultRepositoryRemoteInsightsProvider(
+                metricsClient: DefaultGitHubRepositoryMetricsClient(
+                    httpClient: httpClient,
+                    token: "token",
+                    baseURL: URL(string: "https://api.example.test")!
+                ),
+                cache: GRDBRepositoryInsightsCache(database: database),
+                now: { now }
+            )
+        )
+        let contextProvider = DefaultRepositoryInsightsAIContextProvider(
+            localProvider: AIContextLocalInsightsProvider(now: now),
+            remoteProvider: sharedProvider,
+            starHistoryRepository: AIContextStarHistoryRepository(now: now),
+            now: { now }
+        )
+        var repo = Repo.makeMinimal(owner: "octo", name: "budget")
+        repo.id = 29
+        repo.isStarred = true
+        repo.cachedAt = "2026-07-27T00:00:00Z"
+
+        let first = await contextProvider.context(for: repo)
+        let firstRequestCount = await httpClient.requests().count
+        let second = await contextProvider.context(for: repo)
+
+        #expect(first == second)
+        #expect(first.content.contains("<activity "))
+        #expect(first.content.contains("<commit_activity "))
+        #expect(first.content.contains("<contributors "))
+        #expect(first.content.contains("<community "))
+        #expect(first.content.contains("<security_advisories "))
+        #expect(first.content.contains("<star_history "))
+        #expect(firstRequestCount == 5)
+        #expect(await httpClient.requests().count == firstRequestCount)
+
+        // 洞察页面稍后读取时命中同一份缓存，不需要重新生成。
+        #expect(try await sharedProvider.cachedActivity(repoID: 29, range: .month) != nil)
+        #expect(try await sharedProvider.cachedCommitActivity(repoID: 29) != nil)
+        #expect(try await sharedProvider.cachedContributors(repoID: 29) != nil)
+        #expect(try await sharedProvider.cachedCommunityProfile(repoID: 29) != nil)
+        #expect(try await sharedProvider.cachedSecurityAdvisories(repoID: 29) != nil)
+        #expect(try await sharedProvider.cachedRecentActivity(repoID: 29) != nil)
+    }
+
     @Test("Commit activity 保存 52 周原始结果并由客户端按活动范围裁剪")
     func commitActivityPersistsAndFiltersOnClient() async throws {
         let database = try InMemoryDatabaseManager()
@@ -757,6 +810,93 @@ private actor ActivityOnlyRemoteInsightsProvider: RepositoryRemoteInsightsProvid
 
 private enum TestRemoteProviderError: Error {
     case unused
+}
+
+private struct AIContextLocalInsightsProvider: RepositoryLocalInsightsProviding {
+    let now: Date
+
+    func latestRelease(repoId: Int64) async throws -> RepositoryReleaseInsight? {
+        RepositoryReleaseInsight(
+            tagName: "v1.0.0",
+            name: nil,
+            publishedAt: now,
+            htmlURL: nil
+        )
+    }
+
+    func releaseCadence(repoId: Int64) async throws -> RepositoryReleaseCadenceInsight? {
+        RepositoryReleaseCadenceInsight(
+            releasesLastYear: 4,
+            averageIntervalDays: 90,
+            latestPublishedAt: now
+        )
+    }
+
+    func health(repoId: Int64) async throws -> RepositoryHealthInsight? {
+        nil
+    }
+
+    func openSSF(repoId: Int64) async throws -> RepositoryOpenSSFInsight? {
+        nil
+    }
+
+    func cachedCommunity(repoId: Int64) async throws -> RepositoryCommunityInsight? {
+        nil
+    }
+}
+
+private actor AIContextStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
+    private let snapshot: StarHistorySnapshot
+
+    init(now: Date) {
+        snapshot = StarHistorySnapshot(
+            range: .oneYear,
+            points: [
+                StarHistoryPoint(
+                    date: now.addingTimeInterval(-365 * 86_400),
+                    count: 100,
+                    source: .githubStargazers,
+                    precision: .reconstructed,
+                    fetchedAt: now
+                ),
+                StarHistoryPoint(
+                    date: now,
+                    count: 140,
+                    source: .localSnapshot,
+                    precision: .snapshot,
+                    fetchedAt: now
+                )
+            ],
+            remoteState: .cached,
+            coverageStart: now.addingTimeInterval(-365 * 86_400),
+            updatedAt: now
+        )
+    }
+
+    func points(repoId: Int64) async throws -> [StarHistoryPoint] {
+        snapshot.points
+    }
+
+    func cached(repo: Repo, range: StarHistoryRange) async throws -> StarHistorySnapshot {
+        snapshot
+    }
+
+    func recordLocalSnapshot(
+        repoId: Int64,
+        starsCount: Int,
+        observedAt: Date,
+        fetchedAt: Date
+    ) async throws {}
+
+    func replaceRemotePoints(repoId: Int64, points: [StarHistoryPoint]) async throws {}
+
+    func refresh(
+        repo: Repo,
+        range: StarHistoryRange,
+        forceRefresh: Bool
+    ) async throws -> StarHistorySnapshot {
+        snapshot
+    }
 }
 
 private actor ActivityMetricsHTTPClient: RAGHTTPClientProtocol {
