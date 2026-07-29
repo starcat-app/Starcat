@@ -2,6 +2,12 @@
 
 Release notes for the Mac App Store edition of Starcat.
 
+## 1.3.0-待发布
+
+### New
+
+- My Projects: Browse personal and organization repositories—including authorized public, private, and internal projects—with existing filters, details, and Star trends.
+
 ## 1.2.0
 
 Starcat 1.2.0 focuses on stability, usability, and visual polish—adding an 18-language interface, pinning, share links, shortcuts, and README capabilities, while refining navigation, tags, notes, translation, and knowledge-base flows.
