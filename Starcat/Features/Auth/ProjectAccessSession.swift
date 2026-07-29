@@ -27,6 +27,8 @@ enum ProjectAccessState: Equatable, Sendable {
     case disconnected
     case connecting
     case awaitingAuthorization(OAuthDeviceCodeInfo)
+    /// Device Flow 已成功，但当前 App 尚无可访问安装；凭据保留以支持安装后直接复查。
+    case installationRequired
     case connected(expiresAt: Date?)
     case partialAuthorization
     case organizationApprovalPending
@@ -45,11 +47,18 @@ enum ProjectAccessSessionError: Error, Equatable {
 @MainActor
 @Observable
 final class ProjectAccessSession {
+    typealias InstallationCheck = @Sendable (
+        _ accessToken: String,
+        _ appSlug: String
+    ) async throws -> Bool
+
     private(set) var state: ProjectAccessState
 
     private let oauthService: any ProjectAccessOAuthServiceProtocol
     private let keychain: any KeychainManaging
     private let isConfigured: Bool
+    private let appSlug: String
+    private let installationCheck: InstallationCheck
     private let now: @Sendable () -> Date
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -57,12 +66,21 @@ final class ProjectAccessSession {
     init(
         oauthService: any ProjectAccessOAuthServiceProtocol = ProjectAccessOAuthService(),
         keychain: any KeychainManaging = KeychainManager.shared,
-        isConfigured: Bool = !AppConstants.githubAppClientID.isEmpty,
+        isConfigured: Bool = AppConstants.isGitHubAppConfigured,
+        appSlug: String = AppConstants.githubAppSlug,
+        installationCheck: @escaping InstallationCheck = { accessToken, appSlug in
+            let client = GitHubAPIClient(
+                tokenProvider: ProjectSyncTokenProvider(token: accessToken)
+            )
+            return try await client.hasAccessibleGitHubAppInstallation(appSlug: appSlug)
+        },
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.oauthService = oauthService
         self.keychain = keychain
         self.isConfigured = isConfigured
+        self.appSlug = appSlug.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.installationCheck = installationCheck
         self.now = now
         state = isConfigured ? .disconnected : .unavailable
     }
@@ -112,7 +130,30 @@ final class ProjectAccessSession {
         do {
             let credential = try await oauthService.awaitCredential()
             try saveCredential(credential)
-            state = .connected(expiresAt: credential.accessExpiresAt)
+            try await updateInstallationState(using: credential)
+        } catch {
+            state = .failed(Self.failureCode(error))
+            throw error
+        }
+    }
+
+    /// 安装 GitHub App 或组织批准后重新检查，无需重复 Device Flow。
+    ///
+    /// Device Flow 凭据会在 `.installationRequired` 状态保留，因此用户完成安装后可以直接
+    /// 点击“重新检查”。返回 true 代表已具备至少一个可访问安装。
+    @discardableResult
+    func refreshInstallationState() async throws -> Bool {
+        guard isConfigured else {
+            state = .unavailable
+            throw ProjectAccessSessionError.unavailable
+        }
+        guard let credential = try loadCredential() else {
+            state = .disconnected
+            throw ProjectAccessSessionError.missingCredential
+        }
+        let usableCredential = try await refreshedCredentialIfNeeded(credential)
+        do {
+            return try await updateInstallationState(using: usableCredential)
         } catch {
             state = .failed(Self.failureCode(error))
             throw error
@@ -149,7 +190,7 @@ final class ProjectAccessSession {
             do {
                 let refreshed = try await oauthService.refreshCredential(using: refreshToken)
                 try saveCredential(refreshed)
-                state = .connected(expiresAt: refreshed.accessExpiresAt)
+                publishCredentialState(expiresAt: refreshed.accessExpiresAt)
                 return refreshed.accessToken
             } catch ProjectAccessOAuthError.badRefreshToken {
                 try? keychain.deleteProjectAccessCredential()
@@ -160,7 +201,7 @@ final class ProjectAccessSession {
                 throw error
             }
         }
-        state = .connected(expiresAt: credential.accessExpiresAt)
+        publishCredentialState(expiresAt: credential.accessExpiresAt)
         return credential.accessToken
     }
 
@@ -176,6 +217,54 @@ final class ProjectAccessSession {
 
     func markOrganizationApprovalPending() {
         state = .organizationApprovalPending
+    }
+
+    /// 校验安装并发布状态。没有安装是可恢复状态，不删除已经取得的 Device Flow 凭据。
+    @discardableResult
+    private func updateInstallationState(
+        using credential: ProjectAccessCredential
+    ) async throws -> Bool {
+        let installed = try await installationCheck(credential.accessToken, appSlug)
+        state = installed
+            ? .connected(expiresAt: credential.accessExpiresAt)
+            : .installationRequired
+        return installed
+    }
+
+    /// 复查安装前只处理 token 轮换，不提前把界面改成 connected。
+    private func refreshedCredentialIfNeeded(
+        _ credential: ProjectAccessCredential
+    ) async throws -> ProjectAccessCredential {
+        guard let accessExpiry = credential.accessExpiresAt,
+              accessExpiry <= now().addingTimeInterval(60)
+        else {
+            return credential
+        }
+        guard let refreshToken = credential.refreshToken,
+              !isRefreshExpired(credential)
+        else {
+            state = .expired
+            throw ProjectAccessSessionError.expired
+        }
+        do {
+            let refreshed = try await oauthService.refreshCredential(using: refreshToken)
+            try saveCredential(refreshed)
+            return refreshed
+        } catch ProjectAccessOAuthError.badRefreshToken {
+            try? keychain.deleteProjectAccessCredential()
+            state = .expired
+            throw ProjectAccessSessionError.expired
+        }
+    }
+
+    /// 刷新 token 不应抹掉“未安装 / 部分授权 / 待组织审批”等更具体的产品状态。
+    private func publishCredentialState(expiresAt: Date?) {
+        switch state {
+        case .installationRequired, .partialAuthorization, .organizationApprovalPending:
+            break
+        default:
+            state = .connected(expiresAt: expiresAt)
+        }
     }
 
     private func loadCredential() throws -> ProjectAccessCredential? {
@@ -211,6 +300,14 @@ final class ProjectAccessSession {
     }
 
     private static func failureCode(_ error: Error) -> ProjectAccessFailureCode {
+        if let network = error as? NetworkError {
+            return switch network {
+            case .transport, .serverError, .rateLimited:
+                .network
+            default:
+                .invalidResponse
+            }
+        }
         guard let oauth = error as? ProjectAccessOAuthError else {
             return error is ProjectAccessSessionError ? .storage : .unknown
         }
@@ -244,7 +341,11 @@ final class ProjectCredentialRouter {
     }
 
     func resolve() async throws -> ResolvedProjectCredential {
-        if let projectToken = try? await projectAccessSession.validAccessToken() {
+        // Device Flow 成功但 App 尚未安装时，user token 不具备项目访问范围；继续用它会把
+        // “未安装”误报为同步失败，因此明确回退主 OAuth 的 Public 项目。
+        let installationMissing = projectAccessSession.state == .installationRequired
+        if !installationMissing,
+           let projectToken = try? await projectAccessSession.validAccessToken() {
             return ResolvedProjectCredential(
                 accessToken: projectToken,
                 authorizationSource: .githubApp

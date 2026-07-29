@@ -328,6 +328,8 @@ enum AppEndpoints {
             /// `GET /user/repos` —— 当前授权用户拥有 / 协作的仓库列表。
             /// 分享卡只用 `affiliation=owner` 统计用户自己的公开开发语言。
             static let currentUserRepos = "/user/repos"
+            /// `GET /user/installations` —— 当前 GitHub App user token 可访问的安装列表。
+            static let currentUserInstallations = "/user/installations"
             /// `GET /user/starred` —— 当前用户的 starred 列表。
             static let userStarred = "/user/starred"
             /// `PUT/DELETE /user/starred/{owner}/{repo}` —— star / unstar 单仓库。

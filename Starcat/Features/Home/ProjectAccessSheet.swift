@@ -182,7 +182,8 @@ struct ProjectAccessSheet: View {
                     tooltip: String.l10n("project.access.refresh"),
                     action: { refreshProjects(force: true) }
                 )
-            case .disconnected, .partialAuthorization, .organizationApprovalPending,
+            case .disconnected, .installationRequired, .partialAuthorization,
+                 .organizationApprovalPending,
                  .expired, .revoked, .failed:
                 Button("project.access.connect") {
                     connect()
@@ -194,7 +195,8 @@ struct ProjectAccessSheet: View {
 
     private var isConnectedLike: Bool {
         switch accessSession.state {
-        case .connected, .partialAuthorization, .organizationApprovalPending:
+        case .installationRequired, .connected, .partialAuthorization,
+             .organizationApprovalPending:
             true
         default:
             false
@@ -210,7 +212,8 @@ struct ProjectAccessSheet: View {
         switch accessSession.state {
         case .connected: "checkmark.shield.fill"
         case .connecting, .awaitingAuthorization: "hourglass"
-        case .partialAuthorization, .organizationApprovalPending: "exclamationmark.shield.fill"
+        case .installationRequired, .partialAuthorization,
+             .organizationApprovalPending: "exclamationmark.shield.fill"
         case .expired, .revoked, .failed: "exclamationmark.triangle.fill"
         case .unavailable: "gear.badge.xmark"
         case .disconnected: "lock.open"
@@ -221,7 +224,8 @@ struct ProjectAccessSheet: View {
         switch accessSession.state {
         case .connected: .green
         case .connecting, .awaitingAuthorization: .accentColor
-        case .partialAuthorization, .organizationApprovalPending: .orange
+        case .installationRequired, .partialAuthorization,
+             .organizationApprovalPending: .orange
         case .expired, .revoked, .failed: .red
         case .unavailable, .disconnected: .secondary
         }
@@ -233,6 +237,7 @@ struct ProjectAccessSheet: View {
         case .disconnected: "project.access.state.disconnected.title"
         case .connecting: "project.access.state.connecting.title"
         case .awaitingAuthorization: "project.access.state.awaiting.title"
+        case .installationRequired: "project.access.state.partial.title"
         case .connected: "project.access.state.connected.title"
         case .partialAuthorization: "project.access.state.partial.title"
         case .organizationApprovalPending: "project.access.state.pending.title"
@@ -249,6 +254,7 @@ struct ProjectAccessSheet: View {
         case .disconnected: "project.access.state.disconnected.detail"
         case .connecting: "project.access.state.connecting.detail"
         case .awaitingAuthorization: "project.access.state.awaiting.detail"
+        case .installationRequired: "project.access.state.partial.detail"
         case .connected: "project.access.state.connected.detail"
         case .partialAuthorization: "project.access.state.partial.detail"
         case .organizationApprovalPending: "project.access.state.pending.detail"

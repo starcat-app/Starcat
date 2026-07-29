@@ -71,6 +71,8 @@ struct ProjectAccessSessionTests {
             oauthService: oauth,
             keychain: keychain,
             isConfigured: true,
+            appSlug: "starcat-project-access",
+            installationCheck: { _, _ in true },
             now: { self.now }
         )
 
@@ -81,6 +83,58 @@ struct ProjectAccessSessionTests {
         #expect(session.state == .connected(expiresAt: issued.accessExpiresAt))
         #expect(try keychain.loadGithubToken() == "oauth-main")
         #expect(try keychain.loadProjectAccessCredential() != nil)
+    }
+
+    @Test("Device Flow 成功但未安装 App 时保留凭据并回退 Public 项目")
+    @MainActor
+    func missingInstallationPreservesCredentialAndFallsBack() async throws {
+        let keychain = InMemoryKeychain()
+        try keychain.storeGithubToken("oauth-main")
+        let issued = credential(token: "ghu-project", accessOffset: 3_600)
+        let session = ProjectAccessSession(
+            oauthService: MockOAuth(credential: issued),
+            keychain: keychain,
+            isConfigured: true,
+            appSlug: "starcat-project-access",
+            installationCheck: { _, _ in false },
+            now: { self.now }
+        )
+
+        _ = try await session.beginConnection()
+        try await session.completeConnection()
+
+        #expect(session.state == .installationRequired)
+        #expect(try keychain.loadProjectAccessCredential() != nil)
+
+        let route = try await ProjectCredentialRouter(
+            projectAccessSession: session,
+            keychain: keychain
+        ).resolve()
+        #expect(route.authorizationSource == .oauth)
+        #expect(route.accessToken == "oauth-main")
+    }
+
+    @Test("完成安装后可复查并直接进入已连接状态")
+    @MainActor
+    func installationCanBeRecheckedWithoutDeviceFlow() async throws {
+        let keychain = InMemoryKeychain()
+        let issued = credential(token: "ghu-project", accessOffset: 3_600)
+        try storedCredential(keychain, issued)
+        let session = ProjectAccessSession(
+            oauthService: MockOAuth(credential: issued),
+            keychain: keychain,
+            isConfigured: true,
+            appSlug: "starcat-project-access",
+            installationCheck: { token, slug in
+                token == "ghu-project" && slug == "starcat-project-access"
+            },
+            now: { self.now }
+        )
+
+        let installed = try await session.refreshInstallationState()
+
+        #expect(installed)
+        #expect(session.state == .connected(expiresAt: issued.accessExpiresAt))
     }
 
     @Test("access token 过期前自动轮换整份凭据")

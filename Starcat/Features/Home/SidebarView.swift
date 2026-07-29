@@ -1944,7 +1944,8 @@ struct SidebarView: View {
         switch dependencies.projectAccessSession.state {
         case .connected: "checkmark.shield.fill"
         case .connecting, .awaitingAuthorization: "hourglass"
-        case .partialAuthorization, .organizationApprovalPending: "exclamationmark.shield.fill"
+        case .installationRequired, .partialAuthorization,
+             .organizationApprovalPending: "exclamationmark.shield.fill"
         case .expired, .revoked, .failed: "exclamationmark.triangle.fill"
         case .unavailable: "gear.badge.xmark"
         case .disconnected: "lock.open"
