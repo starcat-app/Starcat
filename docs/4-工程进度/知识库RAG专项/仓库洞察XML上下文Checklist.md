@@ -137,15 +137,15 @@
 - [x] Repo AI / AppSettings Prompt 测试通过。
 - [x] RepoContext Storage 回归测试通过。
 - [x] Knowledge RAG Core 与 Browser 相关测试通过。
-- [ ] 全量 `StarcatTests` 通过，或明确记录非本需求阻塞证据。
-- [ ] `Starcat` Debug build 通过。
-- [ ] `StarcatDirect` Debug build 通过。
-- [ ] `jq empty Localizable.xcstrings` 通过。
-- [ ] String Catalog 格式与 en / zh-Hans 完整性通过。
-- [ ] 禁用 i18n API 扫描通过。
-- [ ] `git diff --check` 通过。
-- [ ] 本专项文件无未提交残留。
-- [ ] 并行工作文件未被误提交或回退。
+- [x] 全量 `StarcatTests` 通过，或明确记录非本需求阻塞证据。
+- [x] `Starcat` Debug build 通过。
+- [x] `StarcatDirect` Debug build 通过。
+- [x] `jq empty Localizable.xcstrings` 通过。
+- [x] String Catalog 格式与 en / zh-Hans 完整性通过。
+- [x] 禁用 i18n API 扫描通过。
+- [x] `git diff --check` 通过。
+- [x] 本专项文件无未提交残留。
+- [x] 并行工作文件未被误提交或回退。
 
 ## 9. 第一轮审查：架构、数据、性能
 
