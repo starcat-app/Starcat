@@ -35,7 +35,7 @@
 - [x] 读取时验证 XML schema/root、repo identity 和 metadata。
 - [x] source hash 未变化时零重复写盘。
 - [x] 写入失败保留上一份有效 XML。
-- [ ] 实现查看、导出和完整 Artifact 删除。
+- [x] 实现查看、导出和完整 Artifact 删除。
 - [x] 删除不影响任何真实洞察 SQLite / Star History 数据。
 - [x] 实现 deleted source hash 抑制，避免删除后立即重建。
 - [x] 新 source hash 允许后台自动恢复。
@@ -62,20 +62,20 @@
 
 ## 4. 知识库特殊分片管理
 
-- [ ] 抽取两个特殊上下文真正共用的联合展示能力，Storage 保持独立。
-- [ ] 同时加载 Metadata、Insights XML、RepoContext XML 与普通分片。
-- [ ] 固定顺序为 Metadata → Insights XML → RepoContext XML → 普通分片。
-- [ ] 缺 Metadata 时特殊项置顶且 Insights 位于 RepoContext 之前。
-- [ ] 单独显示 Insights `0 / 1` 和 RepoContext `0 / 1`。
-- [ ] Insights XML 不计入普通分片数量、分页、embedding 与覆盖率。
-- [ ] 洞察 XML 行复用现有分片密度和视觉语言。
-- [ ] 点击打开只读 XML sheet，不提供编辑 / 保存。
-- [ ] 支持复制与 XML 下载。
-- [ ] 支持删除确认，删除只影响 Artifact。
-- [ ] 支持主动生成 / 重新生成。
-- [ ] 自动生成期间保留旧内容，不使用跳动式全页加载态。
-- [ ] 切仓、移出知识库、筛选切仓和关窗取消主动任务。
-- [ ] generation UUID + repo id + database scope 拒绝迟到结果。
+- [x] 抽取两个特殊上下文真正共用的联合展示能力，Storage 保持独立。
+- [x] 同时加载 Metadata、Insights XML、RepoContext XML 与普通分片。
+- [x] 固定顺序为 Metadata → Insights XML → RepoContext XML → 普通分片。
+- [x] 缺 Metadata 时特殊项置顶且 Insights 位于 RepoContext 之前。
+- [x] 单独显示 Insights `0 / 1` 和 RepoContext `0 / 1`。
+- [x] Insights XML 不计入普通分片数量、分页、embedding 与覆盖率。
+- [x] 洞察 XML 行复用现有分片密度和视觉语言。
+- [x] 点击打开只读 XML sheet，不提供编辑 / 保存。
+- [x] 支持复制与 XML 下载。
+- [x] 支持删除确认，删除只影响 Artifact。
+- [x] 支持主动生成 / 重新生成。
+- [x] 自动生成期间保留旧内容，不使用跳动式全页加载态。
+- [x] 切仓、移出知识库、筛选切仓和关窗取消主动任务。
+- [x] generation UUID + repo id + database scope 拒绝迟到结果。
 - [ ] 补齐顺序、统计、只读、删除、生成、取消和迟到结果测试。
 
 ## 5. RAG Models、Service 与 Prompt
