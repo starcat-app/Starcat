@@ -494,6 +494,99 @@ struct RepositoryInsightsRemoteProviderTests {
         #expect(insight.concentration == nil)
     }
 
+    @Test("发布节奏读取 GitHub 最近 12 次 Release 并写入独立缓存")
+    func releaseCadenceMapsAndPersistsIndependently() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 26, owner: "octo", name: "cadence")
+        let httpClient = ReleaseCadenceHTTPClient(
+            body: """
+            [
+              {
+                "tag_name":"v3",
+                "name":"Version 3",
+                "body":null,
+                "html_url":"https://github.com/octo/cadence/releases/tag/v3",
+                "published_at":"2026-07-20T00:00:00Z"
+              },
+              {
+                "tag_name":"v2",
+                "name":null,
+                "body":null,
+                "html_url":"https://github.com/octo/cadence/releases/tag/v2",
+                "published_at":"2026-06-20T00:00:00Z"
+              },
+              {
+                "tag_name":"v1",
+                "name":null,
+                "body":null,
+                "html_url":"https://github.com/octo/cadence/releases/tag/v1",
+                "published_at":"2026-05-21T00:00:00Z"
+              }
+            ]
+            """
+        )
+        let now = try #require(
+            ISO8601DateFormatter().date(from: "2026-07-28T12:00:00Z")
+        )
+        let provider = DefaultRepositoryRemoteInsightsProvider(
+            metricsClient: DefaultGitHubRepositoryMetricsClient(
+                httpClient: httpClient,
+                token: "token",
+                baseURL: URL(string: "https://api.example.test")!
+            ),
+            cache: GRDBRepositoryInsightsCache(database: database),
+            now: { now }
+        )
+
+        let refreshed = try #require(
+            try await provider.refreshReleaseCadence(
+                repository: RepoIdentity(ghRepoID: 26, owner: "octo", name: "cadence")
+            )
+        )
+        let cached = try #require(try await provider.cachedReleaseCadence(repoID: 26))
+        let request = try #require(await httpClient.request())
+        let perPage = URLComponents(
+            url: try #require(request.url),
+            resolvingAgainstBaseURL: false
+        )?.queryItems?.first(where: { $0.name == "per_page" })?.value
+
+        #expect(request.url?.path == "/repos/octo/cadence/releases")
+        #expect(perPage == "12")
+        #expect(refreshed.releasesLastYear == 3)
+        #expect(refreshed.averageIntervalDays == 30)
+        #expect(
+            refreshed.latestPublishedAt
+                == ISO8601DateFormatter.githubDate(from: "2026-07-20T00:00:00Z")
+        )
+        #expect(cached.value == refreshed)
+        #expect(cached.responseETag == "\"release-v1\"")
+        #expect(!cached.isStale)
+    }
+
+    @Test("仓库确认没有 Release 时缓存空结果避免重复请求")
+    func releaseCadencePersistsConfirmedEmptyResult() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 27, owner: "octo", name: "no-release")
+        let provider = DefaultRepositoryRemoteInsightsProvider(
+            metricsClient: DefaultGitHubRepositoryMetricsClient(
+                httpClient: ReleaseCadenceHTTPClient(body: "[]"),
+                token: "token",
+                baseURL: URL(string: "https://api.example.test")!
+            ),
+            cache: GRDBRepositoryInsightsCache(database: database),
+            now: { Date(timeIntervalSince1970: 4_000) }
+        )
+
+        let refreshed = try await provider.refreshReleaseCadence(
+            repository: RepoIdentity(ghRepoID: 27, owner: "octo", name: "no-release")
+        )
+        let cached = try #require(try await provider.cachedReleaseCadence(repoID: 27))
+
+        #expect(refreshed == nil)
+        #expect(cached.value == nil)
+        #expect(!cached.isStale)
+    }
+
     @Test("安全公告映射真实响应并写入独立缓存")
     func securityAdvisoriesMapAndPersistIndependently() async throws {
         let database = try InMemoryDatabaseManager()
@@ -885,6 +978,32 @@ private actor SecurityAdvisoriesHTTPClient: RAGHTTPClientProtocol {
                 statusCode: 200,
                 httpVersion: "HTTP/1.1",
                 headerFields: ["ETag": "\"security-v1\""]
+            )!
+        )
+    }
+
+    func request() -> URLRequest? {
+        recordedRequest
+    }
+}
+
+private actor ReleaseCadenceHTTPClient: RAGHTTPClientProtocol {
+    private let body: String
+    private var recordedRequest: URLRequest?
+
+    init(body: String) {
+        self.body = body
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        recordedRequest = request
+        return (
+            Data(body.utf8),
+            HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["ETag": "\"release-v1\""]
             )!
         )
     }

@@ -349,6 +349,14 @@ struct RepositoryCachedRecentActivity: Equatable, Sendable {
     let isStale: Bool
 }
 
+/// Release 节奏允许缓存“确认无 Release”的 nil，避免每次进入仓库都重复请求 GitHub。
+struct RepositoryCachedReleaseCadenceInsight: Equatable, Sendable {
+    let value: RepositoryReleaseCadenceInsight?
+    let fetchedAt: Date
+    let isStale: Bool
+    let responseETag: String?
+}
+
 protocol RepositoryRemoteInsightsProviding: Sendable {
     func cachedActivity(
         repoID: Int64,
@@ -386,6 +394,17 @@ protocol RepositoryRemoteInsightsProviding: Sendable {
         repository: RepoIdentity,
         ifNoneMatch: String?
     ) async throws -> RepositoryCommunityInsight
+
+    func cachedReleaseCadence(repoID: Int64) async throws
+        -> RepositoryCachedReleaseCadenceInsight?
+
+    func refreshReleaseCadence(repository: RepoIdentity) async throws
+        -> RepositoryReleaseCadenceInsight?
+
+    func refreshReleaseCadence(
+        repository: RepoIdentity,
+        ifNoneMatch: String?
+    ) async throws -> RepositoryReleaseCadenceInsight?
 
     func cachedSecurityAdvisories(repoID: Int64) async throws
         -> RepositoryCachedSecurityAdvisoriesInsight?
@@ -428,6 +447,26 @@ extension RepositoryRemoteInsightsProviding {
         ifNoneMatch: String?
     ) async throws -> RepositoryCommunityInsight {
         try await refreshCommunityProfile(repository: repository)
+    }
+
+    func cachedReleaseCadence(repoID: Int64) async throws
+        -> RepositoryCachedReleaseCadenceInsight? {
+        nil
+    }
+
+    func refreshReleaseCadence(repository: RepoIdentity) async throws
+        -> RepositoryReleaseCadenceInsight? {
+        throw GitHubRepositoryMetricsError.unavailable(
+            statusCode: 503,
+            message: "Release cadence provider unavailable"
+        )
+    }
+
+    func refreshReleaseCadence(
+        repository: RepoIdentity,
+        ifNoneMatch: String?
+    ) async throws -> RepositoryReleaseCadenceInsight? {
+        try await refreshReleaseCadence(repository: repository)
     }
 
     func refreshSecurityAdvisories(
@@ -753,6 +792,82 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
                 )
             } catch GitHubRepositoryMetricsError.invalidResponse where ifNoneMatch != nil {
                 return try await refreshCommunityProfile(
+                    repository: repository,
+                    ifNoneMatch: nil
+                )
+            }
+        }
+    }
+
+    func cachedReleaseCadence(repoID: Int64) async throws
+        -> RepositoryCachedReleaseCadenceInsight? {
+        let cached: RepositoryInsightsCachedValue<RepositoryReleaseCadenceInsight?>?
+        cached = try await cache.load(
+            repoId: repoID,
+            dataset: .releaseCadence,
+            range: .all,
+            as: RepositoryReleaseCadenceInsight?.self
+        )
+        guard let cached else { return nil }
+        return RepositoryCachedReleaseCadenceInsight(
+            value: cached.value,
+            fetchedAt: cached.fetchedAt,
+            isStale: cached.isStale(at: now()),
+            responseETag: cached.responseETag
+        )
+    }
+
+    func refreshReleaseCadence(repository: RepoIdentity) async throws
+        -> RepositoryReleaseCadenceInsight? {
+        try await refreshReleaseCadence(repository: repository, ifNoneMatch: nil)
+    }
+
+    func refreshReleaseCadence(
+        repository: RepoIdentity,
+        ifNoneMatch: String?
+    ) async throws -> RepositoryReleaseCadenceInsight? {
+        let fetchedAt = now()
+        guard let repoID = repository.ghRepoID else {
+            throw GitHubRepositoryMetricsError.invalidResponse
+        }
+        do {
+            // 节奏只消费最近 12 次发布日期；不写 release 订阅表，避免未订阅仓库进入活动时间线。
+            let response = try await metricsClient.loadReleases(
+                repository: repository,
+                limit: 12,
+                ifNoneMatch: ifNoneMatch
+            )
+            let releases = response.value.map { metric in
+                RepositoryReleaseInsight(
+                    tagName: metric.tagName,
+                    name: metric.name,
+                    publishedAt: metric.publishedAt.flatMap(ISO8601DateFormatter.githubDate(from:)),
+                    htmlURL: URL(string: metric.htmlURL)
+                )
+            }
+            let value = RepositoryReleaseCadenceInsight.make(releases: releases, now: fetchedAt)
+            try await cache.store(
+                value,
+                repoId: repoID,
+                dataset: .releaseCadence,
+                range: .all,
+                fetchedAt: fetchedAt,
+                responseETag: response.etag,
+                defaultBranchSHA: nil
+            )
+            return value
+        } catch GitHubRepositoryMetricsError.notModified(let responseETag) {
+            do {
+                return try await revalidatedCachedValue(
+                    repoID: repoID,
+                    dataset: .releaseCadence,
+                    fetchedAt: fetchedAt,
+                    responseETag: responseETag ?? ifNoneMatch,
+                    as: RepositoryReleaseCadenceInsight?.self
+                )
+            } catch GitHubRepositoryMetricsError.invalidResponse where ifNoneMatch != nil {
+                // 304 到达前缓存可能被清理；无 payload 时只允许无条件补拉一次。
+                return try await refreshReleaseCadence(
                     repository: repository,
                     ifNoneMatch: nil
                 )

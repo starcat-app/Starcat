@@ -15,6 +15,7 @@ enum RepositoryInsightsDataset: String, CaseIterable, Sendable {
     case commitActivity
     case contributors
     case communityProfile
+    case releaseCadence
     case securityAdvisories
 
     /// TTL 是产品数据口径的一部分，不能由每个调用方自由决定。
@@ -26,7 +27,7 @@ enum RepositoryInsightsDataset: String, CaseIterable, Sendable {
             return 24 * 60 * 60
         case .communityProfile:
             return 3 * 24 * 60 * 60
-        case .securityAdvisories:
+        case .releaseCadence, .securityAdvisories:
             return 6 * 60 * 60
         }
     }

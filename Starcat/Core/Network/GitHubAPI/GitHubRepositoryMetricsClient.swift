@@ -332,6 +332,7 @@ protocol GitHubRepositoryMetricsClient: Sendable {
     func loadReleases(
         repository: RepoIdentity,
         limit: Int,
+        ifNoneMatch: String?,
         observer: GitHubMetricsRequestObserver?
     ) async throws -> GitHubMetricsResponse<[GitHubRepositoryReleaseMetric]>
 
@@ -432,6 +433,32 @@ extension GitHubRepositoryMetricsClient {
     ) async throws -> GitHubMetricsResponse<GitHubRepositoryCommunityProfile> {
         try await loadCommunityProfile(
             repository: repository,
+            ifNoneMatch: nil,
+            observer: observer
+        )
+    }
+
+    func loadReleases(
+        repository: RepoIdentity,
+        limit: Int,
+        ifNoneMatch: String? = nil
+    ) async throws -> GitHubMetricsResponse<[GitHubRepositoryReleaseMetric]> {
+        try await loadReleases(
+            repository: repository,
+            limit: limit,
+            ifNoneMatch: ifNoneMatch,
+            observer: nil
+        )
+    }
+
+    func loadReleases(
+        repository: RepoIdentity,
+        limit: Int,
+        observer: GitHubMetricsRequestObserver?
+    ) async throws -> GitHubMetricsResponse<[GitHubRepositoryReleaseMetric]> {
+        try await loadReleases(
+            repository: repository,
+            limit: limit,
             ifNoneMatch: nil,
             observer: observer
         )
@@ -663,6 +690,7 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
     func loadReleases(
         repository: RepoIdentity,
         limit: Int,
+        ifNoneMatch: String?,
         observer: GitHubMetricsRequestObserver?
     ) async throws -> GitHubMetricsResponse<[GitHubRepositoryReleaseMetric]> {
         try await get(
@@ -671,6 +699,7 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
                 suffix: "releases",
                 queryItems: [URLQueryItem(name: "per_page", value: String(max(1, min(limit, 100))))]
             ),
+            ifNoneMatch: ifNoneMatch,
             observer: observer
         )
     }

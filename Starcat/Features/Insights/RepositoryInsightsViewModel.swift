@@ -52,8 +52,10 @@ struct RepositoryReleaseInsight: Equatable, Sendable {
     let htmlURL: URL?
 }
 
-/// 从本地 Release 历史派生的发布节奏，避免洞察页重复请求相同 GitHub 数据。
-struct RepositoryReleaseCadenceInsight: Equatable, Sendable {
+/// 从 Release 历史派生的发布节奏。
+///
+/// 本地订阅历史优先；本地没有记录时，远端 Provider 会把相同模型写入仓库洞察缓存。
+struct RepositoryReleaseCadenceInsight: Codable, Equatable, Sendable {
     let releasesLastYear: Int
     /// 最近最多 12 条有效发布日期之间的平均间隔，不代表仓库全历史。
     let averageIntervalDays: Int?
