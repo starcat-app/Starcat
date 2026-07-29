@@ -29,6 +29,8 @@ enum ProjectAccessState: Equatable, Sendable {
     case awaitingAuthorization(OAuthDeviceCodeInfo)
     /// Device Flow 已成功，但当前 App 尚无可访问安装；凭据保留以支持安装后直接复查。
     case installationRequired
+    /// 已有 Device Flow 凭据，但安装状态暂时无法验证；与首次授权失败分开呈现。
+    case installationCheckFailed(ProjectAccessFailureCode)
     case connected(expiresAt: Date?)
     case partialAuthorization
     case organizationApprovalPending
@@ -127,12 +129,19 @@ final class ProjectAccessSession {
             state = .unavailable
             throw ProjectAccessSessionError.unavailable
         }
+        let credential: ProjectAccessCredential
         do {
-            let credential = try await oauthService.awaitCredential()
+            credential = try await oauthService.awaitCredential()
             try saveCredential(credential)
-            try await updateInstallationState(using: credential)
         } catch {
             state = .failed(Self.failureCode(error))
+            throw error
+        }
+        do {
+            try await updateInstallationState(using: credential)
+        } catch {
+            // 凭据已经安全保存，安装校验失败不应让用户重复 Device Flow。
+            state = .installationCheckFailed(Self.failureCode(error))
             throw error
         }
     }
@@ -155,7 +164,7 @@ final class ProjectAccessSession {
         do {
             return try await updateInstallationState(using: usableCredential)
         } catch {
-            state = .failed(Self.failureCode(error))
+            state = .installationCheckFailed(Self.failureCode(error))
             throw error
         }
     }
@@ -260,7 +269,8 @@ final class ProjectAccessSession {
     /// 刷新 token 不应抹掉“未安装 / 部分授权 / 待组织审批”等更具体的产品状态。
     private func publishCredentialState(expiresAt: Date?) {
         switch state {
-        case .installationRequired, .partialAuthorization, .organizationApprovalPending:
+        case .installationRequired, .installationCheckFailed,
+             .partialAuthorization, .organizationApprovalPending:
             break
         default:
             state = .connected(expiresAt: expiresAt)

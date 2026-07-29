@@ -137,6 +137,31 @@ struct ProjectAccessSessionTests {
         #expect(session.state == .connected(expiresAt: issued.accessExpiresAt))
     }
 
+    @Test("安装校验断网时保留凭据并进入可重试状态")
+    @MainActor
+    func installationCheckFailureKeepsCredential() async throws {
+        let keychain = InMemoryKeychain()
+        let issued = credential(token: "ghu-project", accessOffset: 3_600)
+        let session = ProjectAccessSession(
+            oauthService: MockOAuth(credential: issued),
+            keychain: keychain,
+            isConfigured: true,
+            appSlug: "starcat-project-access",
+            installationCheck: { _, _ in
+                throw NetworkError.transport(underlying: URLError(.notConnectedToInternet))
+            },
+            now: { self.now }
+        )
+
+        _ = try await session.beginConnection()
+        await #expect(throws: NetworkError.self) {
+            try await session.completeConnection()
+        }
+
+        #expect(session.state == .installationCheckFailed(.network))
+        #expect(try keychain.loadProjectAccessCredential() != nil)
+    }
+
     @Test("access token 过期前自动轮换整份凭据")
     @MainActor
     func refreshesExpiringCredential() async throws {

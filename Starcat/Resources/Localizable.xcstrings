@@ -389350,12 +389350,28 @@
         }
       }
     },
+    "project.access.authorize" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Continue authorization" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "继续授权" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "繼續授權" } }
+      }
+    },
     "project.access.cancel" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "取消" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "取消" } }
+      }
+    },
+    "project.access.checkInstallation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Check GitHub App installation" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "检查 GitHub App 安装状态" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "檢查 GitHub App 安裝狀態" } }
       }
     },
     "project.access.connect" : {
@@ -389388,6 +389404,14 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Disconnect" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "断开连接" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "中斷連接" } }
+      }
+    },
+    "project.access.install" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Install GitHub App" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "安装 GitHub App" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "安裝 GitHub App" } }
       }
     },
     "project.access.manage" : {
@@ -389460,6 +389484,38 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Refresh projects" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "刷新项目" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "重新整理專案" } }
+      }
+    },
+    "project.access.state.installationCheckFailed.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The credential is saved, but GitHub could not confirm the installation. Check your network and retry." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "授权凭据已保存，但 GitHub 暂时无法确认安装状态。请检查网络后重试。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "授權憑據已儲存，但 GitHub 暫時無法確認安裝狀態。請檢查網路後重試。" } }
+      }
+    },
+    "project.access.state.installationCheckFailed.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Installation check failed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "安装状态检查失败" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "安裝狀態檢查失敗" } }
+      }
+    },
+    "project.access.state.installationRequired.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Install the GitHub App on a personal account or organization, then check again. Organization access may require administrator approval." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请将 GitHub App 安装到个人账号或组织后重新检查；组织权限可能需要管理员批准。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "請將 GitHub App 安裝到個人帳號或組織後重新檢查；組織權限可能需要管理員批准。" } }
+      }
+    },
+    "project.access.state.installationRequired.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "GitHub App installation required" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "需要安装 GitHub App" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "需要安裝 GitHub App" } }
       }
     },
     "project.access.state.awaiting.detail" : {
@@ -389625,9 +389681,9 @@
     "project.access.state.unavailable.detail" : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "This build has no GitHub App Client ID. Public projects still use the existing OAuth login." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前构建未配置 GitHub App Client ID，Public 项目仍使用现有 OAuth 登录。" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "目前建置未設定 GitHub App Client ID，Public 專案仍使用現有 OAuth 登入。" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This build has no complete GitHub App Client ID and slug configuration. Public projects still use the existing OAuth login." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前构建未完整配置 GitHub App Client ID 和 slug，Public 项目仍使用现有 OAuth 登录。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "目前建置未完整設定 GitHub App Client ID 和 slug，Public 專案仍使用現有 OAuth 登入。" } }
       }
     },
     "project.access.state.unavailable.title" : {
@@ -389636,6 +389692,38 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Private access is not configured" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未配置 Private 权限" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "未設定 Private 權限" } }
+      }
+    },
+    "project.access.step.authorize.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Authorize Starcat with Device Flow, then the installation will be verified automatically." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "通过 Device Flow 授权 Starcat，完成后会自动验证安装状态。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "透過 Device Flow 授權 Starcat，完成後會自動驗證安裝狀態。" } }
+      }
+    },
+    "project.access.step.authorize.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Authorize Starcat" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "授权 Starcat" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "授權 Starcat" } }
+      }
+    },
+    "project.access.step.install.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Choose a personal account or organization, then grant all or selected repositories." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "选择个人账号或组织，并授权全部仓库或指定仓库。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "選擇個人帳號或組織，並授權全部儲存庫或指定儲存庫。" } }
+      }
+    },
+    "project.access.step.install.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Install and select repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "安装并选择仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "安裝並選擇儲存庫" } }
       }
     },
     "project.access.subtitle" : {

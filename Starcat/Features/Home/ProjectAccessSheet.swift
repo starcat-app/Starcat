@@ -21,6 +21,7 @@ struct ProjectAccessSheet: View {
     @Environment(AppDependencies.self) private var dependencies
 
     @State private var connectionTask: Task<Void, Never>?
+    @State private var isCheckingInstallation = false
     @State private var isClearingPrivateCache = false
     @State private var privateCacheClearMessage: LocalizedStringKey?
 
@@ -39,7 +40,7 @@ struct ProjectAccessSheet: View {
             content
                 .padding(24)
         }
-        .frame(width: 480)
+        .frame(width: 520)
         .onDisappear {
             if case .awaitingAuthorization = accessSession.state {
                 connectionTask?.cancel()
@@ -68,6 +69,10 @@ struct ProjectAccessSheet: View {
         VStack(alignment: .leading, spacing: 18) {
             statusCard
 
+            if accessSession.state == .disconnected {
+                setupSteps
+            }
+
             if case .awaitingAuthorization(let info) = accessSession.state {
                 deviceCodeCard(info)
             }
@@ -75,6 +80,66 @@ struct ProjectAccessSheet: View {
             actionArea
             Divider()
             privateCacheArea
+        }
+    }
+
+    /// GitHub App 安装和用户授权是 GitHub 明确定义的两个步骤，必须同时展示，
+    /// 避免用户把“已在 Device Flow 登录”误认为“已授权仓库范围”。
+    private var setupSteps: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            accessStep(
+                number: 1,
+                titleKey: "project.access.step.install.title",
+                detailKey: "project.access.step.install.detail"
+            ) {
+                Button("project.access.install") {
+                    openInstallation()
+                }
+                .buttonStyle(.bordered)
+                .disabled(AppConstants.githubAppInstallationURL == nil)
+            }
+
+            Divider()
+
+            accessStep(
+                number: 2,
+                titleKey: "project.access.step.authorize.title",
+                detailKey: "project.access.step.authorize.detail"
+            ) {
+                Button("project.access.authorize") {
+                    connect()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private func accessStep<Action: View>(
+        number: Int,
+        titleKey: LocalizedStringKey,
+        detailKey: LocalizedStringKey,
+        @ViewBuilder action: () -> Action
+    ) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Text(verbatim: String(number))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
+                .background(Color.secondary.opacity(0.12), in: Circle())
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(titleKey)
+                    .font(.callout.weight(.medium))
+                Text(detailKey)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 12)
+            action()
         }
     }
 
@@ -175,16 +240,46 @@ struct ProjectAccessSheet: View {
                     cancelConnection()
                 }
                 .buttonStyle(.bordered)
-            case .connected:
+            case .disconnected:
+                EmptyView()
+            case .installationRequired:
+                Button("project.access.install") {
+                    openInstallation()
+                }
+                .buttonStyle(.bordered)
                 SyncIconButton(
-                    isRefreshing: isSyncing,
-                    disabled: isSyncing || authSession.state.user == nil,
-                    tooltip: String.l10n("project.access.refresh"),
-                    action: { refreshProjects(force: true) }
+                    isRefreshing: isCheckingInstallation,
+                    disabled: isCheckingInstallation,
+                    tooltip: String.l10n("project.access.checkInstallation"),
+                    action: { recheckInstallation() }
                 )
-            case .disconnected, .installationRequired, .partialAuthorization,
-                 .organizationApprovalPending,
-                 .expired, .revoked, .failed:
+            case .installationCheckFailed, .connected, .partialAuthorization,
+                 .organizationApprovalPending:
+                Button("project.access.manage") {
+                    openInstallationSettings()
+                }
+                .buttonStyle(.bordered)
+                SyncIconButton(
+                    isRefreshing: isCheckingInstallation || isSyncing,
+                    disabled: isCheckingInstallation || isSyncing || authSession.state.user == nil,
+                    tooltip: String.l10n(
+                        accessSession.state.isInstallationCheckFailure
+                            ? "project.access.checkInstallation"
+                            : "project.access.refresh"
+                    ),
+                    action: {
+                        if accessSession.state.isInstallationCheckFailure {
+                            recheckInstallation()
+                        } else {
+                            refreshProjects(force: true)
+                        }
+                    }
+                )
+            case .expired, .revoked, .failed:
+                Button("project.access.manage") {
+                    openInstallationSettings()
+                }
+                .buttonStyle(.bordered)
                 Button("project.access.connect") {
                     connect()
                 }
@@ -195,8 +290,8 @@ struct ProjectAccessSheet: View {
 
     private var isConnectedLike: Bool {
         switch accessSession.state {
-        case .installationRequired, .connected, .partialAuthorization,
-             .organizationApprovalPending:
+        case .installationRequired, .installationCheckFailed, .connected,
+             .partialAuthorization, .organizationApprovalPending:
             true
         default:
             false
@@ -212,7 +307,8 @@ struct ProjectAccessSheet: View {
         switch accessSession.state {
         case .connected: "checkmark.shield.fill"
         case .connecting, .awaitingAuthorization: "hourglass"
-        case .installationRequired, .partialAuthorization,
+        case .installationRequired, .installationCheckFailed,
+             .partialAuthorization,
              .organizationApprovalPending: "exclamationmark.shield.fill"
         case .expired, .revoked, .failed: "exclamationmark.triangle.fill"
         case .unavailable: "gear.badge.xmark"
@@ -224,7 +320,8 @@ struct ProjectAccessSheet: View {
         switch accessSession.state {
         case .connected: .green
         case .connecting, .awaitingAuthorization: .accentColor
-        case .installationRequired, .partialAuthorization,
+        case .installationRequired, .installationCheckFailed,
+             .partialAuthorization,
              .organizationApprovalPending: .orange
         case .expired, .revoked, .failed: .red
         case .unavailable, .disconnected: .secondary
@@ -237,7 +334,8 @@ struct ProjectAccessSheet: View {
         case .disconnected: "project.access.state.disconnected.title"
         case .connecting: "project.access.state.connecting.title"
         case .awaitingAuthorization: "project.access.state.awaiting.title"
-        case .installationRequired: "project.access.state.partial.title"
+        case .installationRequired: "project.access.state.installationRequired.title"
+        case .installationCheckFailed: "project.access.state.installationCheckFailed.title"
         case .connected: "project.access.state.connected.title"
         case .partialAuthorization: "project.access.state.partial.title"
         case .organizationApprovalPending: "project.access.state.pending.title"
@@ -254,7 +352,8 @@ struct ProjectAccessSheet: View {
         case .disconnected: "project.access.state.disconnected.detail"
         case .connecting: "project.access.state.connecting.detail"
         case .awaitingAuthorization: "project.access.state.awaiting.detail"
-        case .installationRequired: "project.access.state.partial.detail"
+        case .installationRequired: "project.access.state.installationRequired.detail"
+        case .installationCheckFailed: "project.access.state.installationCheckFailed.detail"
         case .connected: "project.access.state.connected.detail"
         case .partialAuthorization: "project.access.state.partial.detail"
         case .organizationApprovalPending: "project.access.state.pending.detail"
@@ -272,11 +371,38 @@ struct ProjectAccessSheet: View {
                 let info = try await accessSession.beginConnection()
                 NSWorkspace.shared.open(info.verificationURI)
                 try await accessSession.completeConnection()
-                refreshProjects(force: true)
+                if case .connected = accessSession.state {
+                    refreshProjects(force: true)
+                }
             } catch is CancellationError {
                 // 用户主动取消时不覆盖 cancelConnection 已发布的 disconnected 状态。
             } catch {
                 // ProjectAccessSession 已映射并发布稳定错误状态，UI 无需再保存原始错误。
+            }
+        }
+    }
+
+    private func openInstallation() {
+        guard let url = AppConstants.githubAppInstallationURL else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    private func openInstallationSettings() {
+        NSWorkspace.shared.open(AppConstants.githubAppSettingsURL)
+    }
+
+    private func recheckInstallation() {
+        guard !isCheckingInstallation else { return }
+        isCheckingInstallation = true
+        Task { @MainActor in
+            defer { isCheckingInstallation = false }
+            do {
+                let installed = try await accessSession.refreshInstallationState()
+                if installed {
+                    refreshProjects(force: true)
+                }
+            } catch {
+                // 状态机已区分“未安装”和“校验失败”，不向 UI 泄漏响应正文。
             }
         }
     }
@@ -320,5 +446,12 @@ struct ProjectAccessSheet: View {
                 privateCacheClearMessage = "project.access.privateCache.failed"
             }
         }
+    }
+}
+
+private extension ProjectAccessState {
+    var isInstallationCheckFailure: Bool {
+        if case .installationCheckFailed = self { return true }
+        return false
     }
 }
