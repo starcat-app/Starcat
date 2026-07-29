@@ -16,7 +16,7 @@
 
 - [x] 从 Prompt Provider 中拆出可复用的结构化洞察快照模型。
 - [x] 保持页面、AI 与 Artifact 共用现有 Remote Provider、SQLite 和 Star History Repository。
-- [ ] 定义 `RepositoryInsightsDocument` 与 metadata。
+- [x] 定义 `RepositoryInsightsDocument` 与 metadata。
 - [x] 实现合法的 `<repository_insights>` 纯 XML Renderer。
 - [x] XML 包含 repo identity、schema、生成时间、source hash 与数据新鲜度。
 - [x] XML 包含 Release、发布节奏、健康度、OpenSSF、社区与安全聚合。
@@ -24,22 +24,22 @@
 - [x] XML 包含贡献者集中度及受控 Top Contributors。
 - [x] XML 包含 Star 增长聚合与降采样趋势点。
 - [x] 外部值全部 XML escape，不包含 Issue / PR 标题和安全公告正文。
-- [ ] XML hash、source hash 和趋势降采样结果稳定可复现。
+- [x] XML hash、source hash 和趋势降采样结果稳定可复现。
 - [x] 为结构化快照、Renderer、escape、hash 和 schema 补齐单元测试。
 
 ## 2. Artifact Storage 与生命周期
 
-- [ ] 实现独立 `RepositoryInsightsContextStorage`。
-- [ ] 使用 App Support 独立根目录，不污染 RepoContext 自选目录。
-- [ ] 原子写入 `insights.xml` 与 metadata。
-- [ ] 读取时验证 XML schema/root、repo identity 和 metadata。
-- [ ] source hash 未变化时零重复写盘。
-- [ ] 写入失败保留上一份有效 XML。
+- [x] 实现独立 `RepositoryInsightsContextStorage`。
+- [x] 使用 App Support 独立根目录，不污染 RepoContext 自选目录。
+- [x] 原子写入 `insights.xml` 与 metadata。
+- [x] 读取时验证 XML schema/root、repo identity 和 metadata。
+- [x] source hash 未变化时零重复写盘。
+- [x] 写入失败保留上一份有效 XML。
 - [ ] 实现查看、导出和完整 Artifact 删除。
-- [ ] 删除不影响任何真实洞察 SQLite / Star History 数据。
-- [ ] 实现 deleted source hash 抑制，避免删除后立即重建。
-- [ ] 新 source hash 允许后台自动恢复。
-- [ ] 主动重新生成可忽略删除抑制。
+- [x] 删除不影响任何真实洞察 SQLite / Star History 数据。
+- [x] 实现 deleted source hash 抑制，避免删除后立即重建。
+- [x] 新 source hash 允许后台自动恢复。
+- [x] 主动重新生成可忽略删除抑制。
 - [ ] 实现 repo-scoped Artifact single-flight。
 - [ ] 账号 / database scope 变化拒绝旧结果写入。
 - [ ] 补齐 Storage、删除抑制、原子性、single-flight 和账号边界测试。
