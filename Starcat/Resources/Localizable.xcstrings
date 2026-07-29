@@ -127956,13 +127956,6 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "從 %@ 到 %@，最新 %@ Stars，一年變化 %@" } }
       }
     },
-    "insights.repo.star.change.baseline" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "baseline" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "基准点" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "基準點" } }
-      }
-    },
     "insights.repo.star.current" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Current Stars" } },
@@ -127998,27 +127991,6 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "近 1 年月均" } }
       }
     },
-    "insights.repo.star.precision.estimated" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "estimated" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "估算" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "估算" } }
-      }
-    },
-    "insights.repo.star.precision.reconstructed" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "reconstructed from current Stargazers" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "按当前 Stargazers 重建" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "依目前 Stargazers 重建" } }
-      }
-    },
-    "insights.repo.star.precision.snapshot" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "precise snapshot" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "精确快照" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "精確快照" } }
-      }
-    },
     "insights.repo.star.range.all" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "All" } },
@@ -128045,20 +128017,6 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "3 mo" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "3 月" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "3 月" } }
-      }
-    },
-    "insights.repo.star.reading.label" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Selected reading" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前读数" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "目前讀數" } }
-      }
-    },
-    "insights.repo.star.reading.valueFormat" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@, %@ Stars, change %@, %@, %@" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@，%@ Stars，变化 %@，%@，%@" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "%@，%@ Stars，變化 %@，%@，%@" } }
       }
     },
     "insights.repo.star.refresh" : {
@@ -128096,32 +128054,11 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "依 GitHub 目前 Stargazers 重建；不包含已取消 Star 的使用者。" } }
       }
     },
-    "insights.repo.star.source.name.discovery" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Starcat Discovery" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Starcat Discovery" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Starcat Discovery" } }
-      }
-    },
-    "insights.repo.star.source.name.ghArchive" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "GH Archive" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "GH Archive" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "GH Archive" } }
-      }
-    },
     "insights.repo.star.source.name.githubStargazers" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "GitHub current Stargazers" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "GitHub 当前 Stargazers" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "GitHub 目前 Stargazers" } }
-      }
-    },
-    "insights.repo.star.source.name.local" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "this Mac" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本机" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "本機" } }
       }
     },
     "insights.repo.star.source.snapshot" : {

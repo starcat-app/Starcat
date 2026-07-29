@@ -59,13 +59,13 @@ enum StarHistoryRestrictionNoticePolicy {
     }
 }
 
-enum StarHistoryFooterPolicy {
+enum StarHistoryDisplayPolicy {
     /// 图例解释的是线型精度；只有出现两种以上精度时才需要常驻展示。
     static func shouldShowLegend(points: [StarHistoryPoint]) -> Bool {
         Set(points.map(\.precision.rawValue)).count > 1
     }
 
-    /// 默认不返回读数，避免与顶部 Current Stars 重复；选中图表日期后才返回最近点。
+    /// 图表选中日期后返回最近点，供图内 RuleMark 和浮层使用。
     static func selectedPoint(
         in points: [StarHistoryPoint],
         selectedDate: Date?
@@ -731,59 +731,34 @@ struct RepositoryInsightsView: View {
         ).format(coverageStart..<coverageEnd)
     }
 
-    /// 常态只保留一行元数据；窄窗口自动回落为两行，避免压缩短链接。
-    private var starMetadataFooter: some View {
-        let showsRestriction = StarHistoryRestrictionNoticePolicy.shouldShow(
-            points: displayedStarPoints,
-            phase: starHistoryViewModel.phase
-        )
-        return ViewThatFits(in: .horizontal) {
-            HStack(spacing: 5) {
-                starCoverageSummary
-                if showsRestriction {
-                    Text("·")
-                    starHistoryRestrictionLink
-                }
+    /// 图例与稳定元数据固定同排；悬停只更新图内浮层，不再改变 footer 高度。
+    private var starLegendAndMetadataRow: some View {
+        HStack(spacing: 8) {
+            if StarHistoryDisplayPolicy.shouldShowLegend(points: displayedStarPoints) {
+                starSources
             }
-            VStack(alignment: .leading, spacing: 4) {
-                starCoverageSummary
-                if showsRestriction {
-                    starHistoryRestrictionLink
-                }
-            }
+            Spacer(minLength: 12)
+            starCoverageSummary
+                .lineLimit(1)
         }
         .font(interfaceScale.font(.captionSmall))
         .foregroundStyle(.secondary)
     }
 
-    /// 单来源隐藏图例，默认隐藏读数；只在多来源或图表选中时增加对应信息。
+    /// GitHub 限制短链接仅在需要时占第二行；精确 Stargazers 场景始终只有一行 footer。
     private var starFooter: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if StarHistoryFooterPolicy.shouldShowLegend(points: displayedStarPoints) {
-                starSources
+        let showsRestriction = StarHistoryRestrictionNoticePolicy.shouldShow(
+            points: displayedStarPoints,
+            phase: starHistoryViewModel.phase
+        )
+        return VStack(alignment: .leading, spacing: 4) {
+            starLegendAndMetadataRow
+            if showsRestriction {
+                starHistoryRestrictionLink
             }
-            if let point = selectedStarPoint {
-                let value = String(
-                    format: String.l10n("insights.repo.star.reading.valueFormat"),
-                    locale: locale,
-                    shortDate(point.date),
-                    point.count.formatted(.number.locale(locale)),
-                    change(for: point).map(signed)
-                        ?? String.l10n("insights.repo.star.change.baseline"),
-                    starSourceName(point.source),
-                    starPrecisionName(point.precision)
-                )
-                Text(verbatim: value)
-                    .font(interfaceScale.font(.captionSmall))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(Text("insights.repo.star.reading.label"))
-                    .accessibilityValue(Text(verbatim: value))
-            }
-            starMetadataFooter
         }
+        .font(interfaceScale.font(.captionSmall))
+        .foregroundStyle(.secondary)
         .padding(.horizontal, 2)
     }
 
@@ -955,7 +930,6 @@ struct RepositoryInsightsView: View {
                     dashed: false
                 )
             }
-            Spacer(minLength: 0)
         }
     }
 
@@ -1014,19 +988,10 @@ struct RepositoryInsightsView: View {
     }
 
     private var selectedStarPoint: StarHistoryPoint? {
-        StarHistoryFooterPolicy.selectedPoint(
+        StarHistoryDisplayPolicy.selectedPoint(
             in: displayedStarPoints,
             selectedDate: selectedStarDate
         )
-    }
-
-    private func change(for point: StarHistoryPoint) -> Int? {
-        guard let index = displayedStarPoints.firstIndex(where: { $0.id == point.id }),
-              index > displayedStarPoints.startIndex
-        else {
-            return nil
-        }
-        return point.count - displayedStarPoints[displayedStarPoints.index(before: index)].count
     }
 
     private func signed(_ value: Int?) -> String {
@@ -1323,30 +1288,6 @@ struct RepositoryInsightsView: View {
             latest.count.formatted(.number.locale(locale)),
             signed(starHistoryViewModel.growthOneYear)
         )
-    }
-
-    private func starSourceName(_ source: StarHistorySource) -> String {
-        switch source {
-        case .ghArchive:
-            return String.l10n("insights.repo.star.source.name.ghArchive")
-        case .discoverySnapshot:
-            return String.l10n("insights.repo.star.source.name.discovery")
-        case .githubStargazers:
-            return String.l10n("insights.repo.star.source.name.githubStargazers")
-        case .localSnapshot:
-            return String.l10n("insights.repo.star.source.name.local")
-        }
-    }
-
-    private func starPrecisionName(_ precision: StarHistoryPrecision) -> String {
-        switch precision {
-        case .estimated:
-            return String.l10n("insights.repo.star.precision.estimated")
-        case .reconstructed:
-            return String.l10n("insights.repo.star.precision.reconstructed")
-        case .snapshot:
-            return String.l10n("insights.repo.star.precision.snapshot")
-        }
     }
 
     private var commitSection: some View {

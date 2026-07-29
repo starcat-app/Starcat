@@ -381,8 +381,8 @@ struct StarHistoryRestrictionNoticePolicyTests {
     }
 }
 
-@Suite("Star History Footer Policy")
-struct StarHistoryFooterPolicyTests {
+@Suite("Star History Display Policy")
+struct StarHistoryDisplayPolicyTests {
 
     @Test("单一精度不显示图例")
     func singlePrecisionHidesLegend() {
@@ -391,7 +391,7 @@ struct StarHistoryFooterPolicyTests {
             point("2026-07-29", source: .localSnapshot, precision: .snapshot)
         ]
 
-        #expect(!StarHistoryFooterPolicy.shouldShowLegend(points: points))
+        #expect(!StarHistoryDisplayPolicy.shouldShowLegend(points: points))
     }
 
     @Test("多种精度显示图例")
@@ -401,25 +401,25 @@ struct StarHistoryFooterPolicyTests {
             point("2026-07-29", source: .localSnapshot, precision: .snapshot)
         ]
 
-        #expect(StarHistoryFooterPolicy.shouldShowLegend(points: points))
+        #expect(StarHistoryDisplayPolicy.shouldShowLegend(points: points))
     }
 
-    @Test("未选中图表日期时不显示默认读数")
-    func noSelectionHidesReading() {
+    @Test("未选中图表日期时不产生选中点")
+    func noSelectionReturnsNoPoint() {
         let points = [point("2026-07-29", source: .localSnapshot, precision: .snapshot)]
 
-        #expect(StarHistoryFooterPolicy.selectedPoint(in: points, selectedDate: nil) == nil)
+        #expect(StarHistoryDisplayPolicy.selectedPoint(in: points, selectedDate: nil) == nil)
     }
 
-    @Test("选中图表日期时返回最近读数")
-    func selectionReturnsNearestReading() throws {
+    @Test("选中图表日期时返回最近图表点")
+    func selectionReturnsNearestPoint() throws {
         let first = point("2026-07-27", source: .localSnapshot, precision: .snapshot)
         let latest = point("2026-07-29", source: .localSnapshot, precision: .snapshot)
         let selectedDay = try #require(StarHistoryDateCodec.date(from: "2026-07-28"))
         let selectedDate = selectedDay.addingTimeInterval(18 * 60 * 60)
 
         #expect(
-            StarHistoryFooterPolicy.selectedPoint(
+            StarHistoryDisplayPolicy.selectedPoint(
                 in: [first, latest],
                 selectedDate: selectedDate
             ) == latest
