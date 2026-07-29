@@ -63,6 +63,57 @@ struct WidgetSnapshotStoreTests {
         }
     }
 
+    @Test("磁盘异常 JSON 即使在 signedOut 中夹带旧数据也会在解码时清空")
+    func stripsInjectedBusinessDataWhileDecoding() throws {
+        try withTemporaryDirectory { directory in
+            let rawJSON = """
+            {
+              "schemaVersion": 1,
+              "generatedAt": "2026-07-30T08:00:00Z",
+              "accountState": "signedOut",
+              "focusRepositories": [{
+                "id": 1,
+                "owner": "old-user",
+                "name": "private-context",
+                "description": "must disappear",
+                "language": "Swift",
+                "starsCount": 1,
+                "tags": ["old"],
+                "status": "using",
+                "focusSource": "using",
+                "avatarFileName": "old.png",
+                "openURL": "starcat://repo/old-user/private-context?v=1&rid=1"
+              }],
+              "rediscoveryRepository": null,
+              "unreadReleaseCount": 1,
+              "unreadReleases": [{
+                "id": 2,
+                "repositoryID": 1,
+                "owner": "old-user",
+                "repositoryName": "private-context",
+                "tagName": "v1",
+                "displayName": null,
+                "publishedAt": null,
+                "isPrerelease": false,
+                "avatarFileName": "old.png",
+                "openURL": "starcat://repo/old-user/private-context/releases?v=1&rid=1&release_id=2"
+              }]
+            }
+            """
+            try Data(rawJSON.utf8).write(
+                to: WidgetSharedConfiguration.snapshotURL(containerURL: directory)
+            )
+
+            let loaded = try WidgetSnapshotStore(containerURL: directory).load()
+
+            #expect(loaded.accountState == .signedOut)
+            #expect(loaded.focusRepositories.isEmpty)
+            #expect(loaded.rediscoveryRepository == nil)
+            #expect(loaded.unreadReleaseCount == 0)
+            #expect(loaded.unreadReleases.isEmpty)
+        }
+    }
+
     @Test("缺失、损坏和更高 schema 返回稳定错误")
     func rejectsMissingCorruptedAndFutureSnapshots() throws {
         try withTemporaryDirectory { directory in
