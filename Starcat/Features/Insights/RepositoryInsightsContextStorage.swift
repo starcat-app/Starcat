@@ -15,6 +15,13 @@ import Foundation
 
 struct RepositoryInsightsContextScope: Codable, Equatable, Hashable, Sendable {
     let userID: Int64?
+    /// 进程内数据库每次真实切换后递增；只用于拒绝迟到写回，不参与磁盘目录命名。
+    let databaseRevision: UInt64
+
+    init(userID: Int64?, databaseRevision: UInt64 = 0) {
+        self.userID = userID
+        self.databaseRevision = databaseRevision
+    }
 
     var storageKey: String {
         userID.map { "user-\($0)" } ?? "anonymous"
