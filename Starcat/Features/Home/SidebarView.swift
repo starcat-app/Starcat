@@ -1878,8 +1878,8 @@ struct SidebarView: View {
         }
     }
 
-    /// “我的项目”复用系统 Sidebar selection，但在固定 trailing 容器内增加授权和同步入口。
-    /// 两个 icon-only 操作都有独立命中区，不改变整行 `.tag(.myProjects)` 的键盘导航语义。
+    /// “我的项目”复用系统 Sidebar selection，授权入口紧跟标题，右侧固定区域只保留计数。
+    /// 刷新统一由中栏承担，避免同一个列表在 Sidebar 出现重复操作。
     private var myProjectsRow: some View {
         Label {
             HStack(spacing: 4) {
@@ -1887,30 +1887,23 @@ struct SidebarView: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
 
+                Button {
+                    showProjectAccessSheet = true
+                } label: {
+                    Image(systemName: projectAccessSystemImage)
+                        .font(interfaceScale.font(.captionSmall))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help(Text("project.access.manage"))
+                .accessibilityLabel(Text("project.access.manage"))
+
                 Spacer(minLength: 4)
 
                 HStack(spacing: 4) {
-                    Button {
-                        showProjectAccessSheet = true
-                    } label: {
-                        Image(systemName: projectAccessSystemImage)
-                            .font(interfaceScale.font(.captionSmall))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 18, height: 18)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
-                    .help(Text("project.access.manage"))
-                    .accessibilityLabel(Text("project.access.manage"))
-
-                    SyncIconButton(
-                        isRefreshing: isProjectSyncing,
-                        disabled: isProjectSyncing || authSession.state.user == nil,
-                        tooltip: String.l10n("project.access.refresh"),
-                        action: { refreshProjects() }
-                    )
-
                     Spacer(minLength: 0)
 
                     Text(viewModel.myProjectsCount.formatted())
@@ -1938,11 +1931,6 @@ struct SidebarView: View {
         }
     }
 
-    private var isProjectSyncing: Bool {
-        if case .syncing = dependencies.userProjectSyncService.state { return true }
-        return false
-    }
-
     private var projectAccessSystemImage: String {
         switch dependencies.projectAccessSession.state {
         case .connected: "checkmark.shield.fill"
@@ -1951,17 +1939,6 @@ struct SidebarView: View {
         case .expired, .revoked, .failed: "exclamationmark.triangle.fill"
         case .unavailable: "gear.badge.xmark"
         case .disconnected: "lock.open"
-        }
-    }
-
-    private func refreshProjects() {
-        guard let userID = authSession.state.user?.id else { return }
-        Task { @MainActor in
-            _ = try? await dependencies.userProjectSyncService.refresh(userID: userID, force: true)
-            await viewModel.refreshSidebar()
-            if viewModel.selection == .myProjects {
-                await viewModel.reloadItems(forceRefresh: true, reason: .sync)
-            }
         }
     }
 

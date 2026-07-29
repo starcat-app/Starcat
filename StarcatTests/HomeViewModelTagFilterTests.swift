@@ -157,7 +157,7 @@ struct HomeViewModelTagFilterTests {
         #expect(library.id == "section.library")
         #expect(library.systemImage == "heart.fill")
         #expect(projects.id == "section.myProjects")
-        #expect(projects.systemImage == "folder.fill")
+        #expect(projects.systemImage == "shippingbox.fill")
         #expect(SidebarItem(persistedRawValue: all.persistedRawValue) == all)
         #expect(SidebarItem(persistedRawValue: library.persistedRawValue) == library)
         #expect(SidebarItem(persistedRawValue: projects.persistedRawValue) == projects)

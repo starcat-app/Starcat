@@ -144,7 +144,7 @@ enum SidebarItem: Hashable, Identifiable {
         switch self {
         case .trending:                return "safari"
         case .allStars:                return "star.fill"
-        case .myProjects:              return "folder.fill"
+        case .myProjects:              return "shippingbox.fill"
         case .untagged:                return "tag.slash"
         case .library:                 return "heart.fill"
         case .allLanguages:            return "globe"
