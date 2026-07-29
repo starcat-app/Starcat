@@ -217,7 +217,8 @@ actor ProjectAccessOAuthService: ProjectAccessOAuthServiceProtocol {
     /// 撤销当前 GitHub 用户授予本 GitHub App 的完整 OAuth grant。
     ///
     /// GitHub 会同步作废该用户在其它 Starcat 渠道或设备上的 user / refresh token；
-    /// 这是产品确认的“断开连接”语义。404 表示 grant 已不存在，按幂等成功处理。
+    /// 这是产品确认的“断开连接”语义。官方契约只把 204 定义为成功；其它状态不能证明
+    /// 整个 grant 已撤销，必须保留本地凭据供重新授权或重试。
     func revokeAuthorization(accessToken: String) async throws {
         guard !clientID.isEmpty,
               !clientSecret.isEmpty,
@@ -247,12 +248,10 @@ actor ProjectAccessOAuthService: ProjectAccessOAuthServiceProtocol {
             guard let http = response as? HTTPURLResponse else {
                 throw ProjectAccessOAuthError.invalidResponse
             }
-            switch http.statusCode {
-            case 204, 404:
-                return
-            default:
+            guard http.statusCode == 204 else {
                 throw ProjectAccessOAuthError.httpStatus(http.statusCode)
             }
+            return
         } catch let error as ProjectAccessOAuthError {
             throw error
         } catch {

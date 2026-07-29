@@ -259,15 +259,17 @@ struct ProjectAccessOAuthServiceTests {
         #expect(json["access_token"] == "ghu_current")
     }
 
-    @Test("远端 grant 已不存在时断开保持幂等")
-    func missingGrantIsSuccessful() async throws {
+    @Test("404 不能作为整个 grant 已撤销的成功证据")
+    func missingGrantIsNotSuccessful() async {
         URLProtocolStub.reset()
         URLProtocolStub.requestHandler = { request in
             (response(request, status: 404), Data())
         }
         let service = service(session: URLProtocolStub.ephemeralSession())
 
-        try await service.revokeAuthorization(accessToken: "ghu_already_revoked")
+        await #expect(throws: ProjectAccessOAuthError.httpStatus(404)) {
+            try await service.revokeAuthorization(accessToken: "ghu_invalid")
+        }
     }
 }
 

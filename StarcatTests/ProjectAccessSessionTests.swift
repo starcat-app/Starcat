@@ -616,6 +616,29 @@ struct ProjectAccessSessionTests {
         #expect(session.state == .disconnectionFailed(.network))
     }
 
+    @Test("grant 撤销返回 404 时保留凭据且不报告成功")
+    @MainActor
+    func disconnect404PreservesCredential() async throws {
+        let keychain = InMemoryKeychain()
+        let appCredential = credential(token: "github-app", accessOffset: 3_600)
+        try storedCredential(keychain, appCredential)
+        let oauth = MockOAuth(credential: appCredential)
+        oauth.revokeError = .httpStatus(404)
+        let session = ProjectAccessSession(
+            oauthService: oauth,
+            keychain: keychain,
+            isConfigured: true,
+            now: { self.now }
+        )
+
+        await #expect(throws: ProjectAccessOAuthError.httpStatus(404)) {
+            try await session.disconnect(userID: 7)
+        }
+
+        #expect(try keychain.loadProjectAccessCredential() != nil)
+        #expect(session.state == .disconnectionFailed(.invalidResponse))
+    }
+
     @Test("断开时 refresh token 已过期会保留凭据等待重新授权")
     @MainActor
     func disconnectWithExpiredRefreshPreservesCredential() async throws {

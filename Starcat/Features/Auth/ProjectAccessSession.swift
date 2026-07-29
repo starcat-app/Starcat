@@ -618,7 +618,8 @@ final class ProjectAccessSession {
         case .flowNotStarted, .codeExpired, .badRefreshToken,
              .invalidCallback, .stateMismatch, .invalidResponse:
             .invalidResponse
-        case .httpStatus: .network
+        case .httpStatus(let status):
+            (500...599).contains(status) ? .network : .invalidResponse
         }
     }
 }
