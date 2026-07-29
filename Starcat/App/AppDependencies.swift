@@ -150,6 +150,10 @@ final class AppDependencies {
     let repositoryMetricsClient: any GitHubRepositoryMetricsClient
     /// 洞察页面与 AI 共用的远端 Provider；统一缓存之外还合并相同数据集的并发刷新。
     let repositoryRemoteInsightsProvider: any RepositoryRemoteInsightsProviding
+    /// 页面、AI 与 RAG 共用的洞察 XML 生命周期；生成、存储、删除抑制只保留这一份。
+    let repositoryInsightsContextCoordinator: RepositoryInsightsContextCoordinator
+    /// 切库完成点同步更新，Coordinator 用它拒绝旧账号的迟到 Artifact 写回。
+    private let repositoryInsightsContextScopeState: RepositoryInsightsContextScopeState
     /// 知识库 RAG 本地会话历史。
     let ragConversationStore: any RAGConversationStoring
     /// RAG Composer 未发送草稿的 App 级内存缓存。
@@ -713,6 +717,10 @@ final class AppDependencies {
             throw error
         }
         self.database = db
+        let repositoryInsightsContextScopeState = RepositoryInsightsContextScopeState(
+            scope: RepositoryInsightsContextScope(userID: db.currentUserId)
+        )
+        self.repositoryInsightsContextScopeState = repositoryInsightsContextScopeState
         self.myInsightsSnapshotProvider = GRDBMyInsightsSnapshotProvider(database: db)
         let repositoryInsightsCache = GRDBRepositoryInsightsCache(database: db)
         self.repositoryInsightsCache = repositoryInsightsCache
@@ -1230,19 +1238,24 @@ final class AppDependencies {
         // 装配必须晚于 Release / OpenSSF 仓库。
         let healthRepo = metadataHealthRepo
         self.repoHealthRepository = healthRepo
-        aiInsight.setRepositoryInsightsContextProvider(
-            DefaultRepositoryInsightsAIContextProvider(
-                localProvider: DefaultRepositoryLocalInsightsProvider(
-                    releaseRepository: releaseRecordRepo,
-                    healthRepository: healthRepo,
-                    openSSFRepository: openSSFRepo,
-                    insightsCache: repositoryInsightsCache,
-                    database: db
-                ),
-                remoteProvider: repositoryRemoteInsightsProvider,
-                starHistoryRepository: repoStarHistoryRepository
-            )
+        let repositoryInsightsDocumentProvider = DefaultRepositoryInsightsAIContextProvider(
+            localProvider: DefaultRepositoryLocalInsightsProvider(
+                releaseRepository: releaseRecordRepo,
+                healthRepository: healthRepo,
+                openSSFRepository: openSSFRepo,
+                insightsCache: repositoryInsightsCache,
+                database: db
+            ),
+            remoteProvider: repositoryRemoteInsightsProvider,
+            starHistoryRepository: repoStarHistoryRepository
         )
+        let repositoryInsightsContextCoordinator = RepositoryInsightsContextCoordinator(
+            documentProvider: repositoryInsightsDocumentProvider,
+            storage: RepositoryInsightsContextStorage(),
+            scopeProvider: { repositoryInsightsContextScopeState.scope }
+        )
+        self.repositoryInsightsContextCoordinator = repositoryInsightsContextCoordinator
+        aiInsight.setRepositoryInsightsContextProvider(repositoryInsightsContextCoordinator)
         let healthService = RepoHealthService(
             repository: healthRepo,
             releaseRepository: releaseRecordRepo,
@@ -1493,6 +1506,10 @@ final class AppDependencies {
         }
         guard database.currentUserId != previousUserId else { return }
         databaseScopeRevision &+= 1
+        repositoryInsightsContextScopeState.update(
+            userID: database.currentUserId,
+            databaseRevision: databaseScopeRevision
+        )
     }
 
     // MARK: - 本机恢复出厂

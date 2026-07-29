@@ -12,6 +12,26 @@
 
 import Foundation
 
+/// AppDependencies 持有的轻量 scope 真相源。
+///
+/// Coordinator 的生成 Task 可能跨越账号切换；独立对象避免初始化期间捕获未完成的
+/// AppDependencies，同时让切库完成点可以原子更新 userID + revision。
+@MainActor
+final class RepositoryInsightsContextScopeState {
+    private(set) var scope: RepositoryInsightsContextScope
+
+    init(scope: RepositoryInsightsContextScope) {
+        self.scope = scope
+    }
+
+    func update(userID: Int64?, databaseRevision: UInt64) {
+        scope = RepositoryInsightsContextScope(
+            userID: userID,
+            databaseRevision: databaseRevision
+        )
+    }
+}
+
 enum RepositoryInsightsContextPreparationMode: Hashable, Sendable {
     case refreshIfNeeded
     case cacheOnly
