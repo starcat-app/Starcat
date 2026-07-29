@@ -47,20 +47,38 @@ struct ProjectAccessOAuthServiceTests {
         let service = service(clientSecret: "")
 
         await #expect(throws: ProjectAccessOAuthError.configurationMissing) {
-            try await service.beginAuthorization()
+            try await service.beginAuthorization(mode: .installation)
         }
     }
 
     @Test("安装入口携带一次性 state")
     func installationURLCarriesState() async throws {
-        let info = try await service().beginAuthorization()
+        let info = try await service().beginAuthorization(mode: .installation)
         let components = try #require(
-            URLComponents(url: info.installationURL, resolvingAgainstBaseURL: false)
+            URLComponents(url: info.authorizationURL, resolvingAgainstBaseURL: false)
         )
 
-        #expect(info.installationURL.path == "/apps/starcat-for-github/installations/new")
+        #expect(info.authorizationURL.path == "/apps/starcat-for-github/installations/new")
         #expect(components.queryItems == [URLQueryItem(name: "state", value: "fixed-state")])
         #expect(info.expiresAt == fixedNow.addingTimeInterval(900))
+    }
+
+    @Test("重新连接使用明确的 GitHub App OAuth 地址")
+    func reauthorizationURLCarriesCallbackAndState() async throws {
+        let info = try await service().beginAuthorization(mode: .reauthorization)
+        let components = try #require(
+            URLComponents(url: info.authorizationURL, resolvingAgainstBaseURL: false)
+        )
+        let parameters = Dictionary(
+            uniqueKeysWithValues: (components.queryItems ?? []).map {
+                ($0.name, $0.value ?? "")
+            }
+        )
+
+        #expect(info.authorizationURL.path == "/login/oauth/authorize")
+        #expect(parameters["client_id"] == "Iv1.client")
+        #expect(parameters["redirect_uri"] == callbackURL.absoluteString)
+        #expect(parameters["state"] == "fixed-state")
     }
 
     @Test("合法回调用 code 和 Client Secret 换取可刷新凭据")
@@ -84,7 +102,7 @@ struct ProjectAccessOAuthServiceTests {
             )
         }
         let service = service(session: URLProtocolStub.ephemeralSession())
-        _ = try await service.beginAuthorization()
+        _ = try await service.beginAuthorization(mode: .installation)
 
         let credential = try await service.exchangeCallback(
             URL(string: "starcat://github-app/callback?code=one-time-code&state=fixed-state")!
@@ -113,7 +131,7 @@ struct ProjectAccessOAuthServiceTests {
             return (response(request), Data(#"{"access_token":"unexpected"}"#.utf8))
         }
         let service = service(session: URLProtocolStub.ephemeralSession())
-        _ = try await service.beginAuthorization()
+        _ = try await service.beginAuthorization(mode: .installation)
 
         await #expect(throws: ProjectAccessOAuthError.stateMismatch) {
             try await service.exchangeCallback(
@@ -126,7 +144,7 @@ struct ProjectAccessOAuthServiceTests {
     @Test("错误 callback host 不会进入 token 交换")
     func wrongCallbackRouteIsRejected() async throws {
         let service = service()
-        _ = try await service.beginAuthorization()
+        _ = try await service.beginAuthorization(mode: .installation)
 
         await #expect(throws: ProjectAccessOAuthError.invalidCallback) {
             try await service.exchangeCallback(
@@ -138,7 +156,7 @@ struct ProjectAccessOAuthServiceTests {
     @Test("用户拒绝授权映射为稳定状态")
     func accessDeniedIsMapped() async throws {
         let service = service()
-        _ = try await service.beginAuthorization()
+        _ = try await service.beginAuthorization(mode: .installation)
 
         await #expect(throws: ProjectAccessOAuthError.userDeclined) {
             try await service.exchangeCallback(
@@ -157,7 +175,7 @@ struct ProjectAccessOAuthServiceTests {
             )
         }
         let service = service(session: URLProtocolStub.ephemeralSession())
-        _ = try await service.beginAuthorization()
+        _ = try await service.beginAuthorization(mode: .installation)
 
         await #expect(throws: ProjectAccessOAuthError.stateMismatch) {
             try await service.exchangeCallback(

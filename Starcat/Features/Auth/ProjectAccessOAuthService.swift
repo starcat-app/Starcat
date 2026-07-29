@@ -23,8 +23,15 @@ struct ProjectAccessCredential: Codable, Equatable, Sendable {
 }
 
 struct ProjectAccessAuthorizationInfo: Equatable, Sendable {
-    let installationURL: URL
+    let authorizationURL: URL
     let expiresAt: Date
+}
+
+enum ProjectAccessAuthorizationMode: Equatable, Sendable {
+    /// 首次连接由 GitHub 安装页在安装完成后继续 OAuth。
+    case installation
+    /// GitHub App 已安装时直接发起 Web OAuth，避免等待不会出现的安装回调。
+    case reauthorization
 }
 
 enum ProjectAccessOAuthError: Error, Equatable {
@@ -41,7 +48,9 @@ enum ProjectAccessOAuthError: Error, Equatable {
 }
 
 protocol ProjectAccessOAuthServiceProtocol: Sendable {
-    func beginAuthorization() async throws -> ProjectAccessAuthorizationInfo
+    func beginAuthorization(
+        mode: ProjectAccessAuthorizationMode
+    ) async throws -> ProjectAccessAuthorizationInfo
     func exchangeCallback(_ callbackURL: URL) async throws -> ProjectAccessCredential
     func refreshCredential(using refreshToken: String) async throws -> ProjectAccessCredential
     func revokeAuthorization(accessToken: String) async throws
@@ -92,7 +101,9 @@ actor ProjectAccessOAuthService: ProjectAccessOAuthServiceProtocol {
     /// 自动安装授权由 GitHub 发起 `/login/oauth/authorize`，客户端不能在该中转请求里
     /// 追加 PKCE challenge，因此这里用强随机 state 防止伪造回调，并在 token 交换时
     /// 同时提交 Client Secret。该限制只属于 GitHub App 安装联动，不影响主登录 PKCE。
-    func beginAuthorization() throws -> ProjectAccessAuthorizationInfo {
+    func beginAuthorization(
+        mode: ProjectAccessAuthorizationMode
+    ) throws -> ProjectAccessAuthorizationInfo {
         guard !clientID.isEmpty,
               !clientSecret.isEmpty,
               !appSlug.isEmpty
@@ -101,20 +112,36 @@ actor ProjectAccessOAuthService: ProjectAccessOAuthServiceProtocol {
         }
 
         let state = try stateGenerator()
-        guard !state.isEmpty,
-              let installationURL = AppConstants.makeGitHubAppInstallationURL(
+        guard !state.isEmpty else {
+            throw ProjectAccessOAuthError.configurationMissing
+        }
+        let authorizationURL: URL
+        switch mode {
+        case .installation:
+            guard let installationURL = AppConstants.makeGitHubAppInstallationURL(
                 slug: appSlug,
                 state: state
-              )
-        else {
-            throw ProjectAccessOAuthError.configurationMissing
+            ) else {
+                throw ProjectAccessOAuthError.configurationMissing
+            }
+            authorizationURL = installationURL
+        case .reauthorization:
+            let authorizeURL = AppEndpoints.appendPath(
+                "/login/oauth/authorize",
+                to: oauthBaseURL
+            )
+            authorizationURL = authorizeURL.appending(queryItems: [
+                URLQueryItem(name: "client_id", value: clientID),
+                URLQueryItem(name: "redirect_uri", value: callbackURL.absoluteString),
+                URLQueryItem(name: "state", value: state)
+            ])
         }
 
         let expiresAt = now().addingTimeInterval(15 * 60)
         storedState = state
         self.expiresAt = expiresAt
         return ProjectAccessAuthorizationInfo(
-            installationURL: installationURL,
+            authorizationURL: authorizationURL,
             expiresAt: expiresAt
         )
     }

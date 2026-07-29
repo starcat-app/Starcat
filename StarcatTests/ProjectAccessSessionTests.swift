@@ -13,7 +13,7 @@ import Testing
 struct ProjectAccessSessionTests {
     private final class MockOAuth: ProjectAccessOAuthServiceProtocol, @unchecked Sendable {
         var beginResult = ProjectAccessAuthorizationInfo(
-            installationURL: URL(
+            authorizationURL: URL(
                 string: "https://github.com/apps/starcat-for-github/installations/new?state=test"
             )!,
             expiresAt: Date(timeIntervalSince1970: 10_900)
@@ -23,6 +23,7 @@ struct ProjectAccessSessionTests {
         var revokeError: ProjectAccessOAuthError?
         private(set) var refreshInputs: [String] = []
         private(set) var revokedTokens: [String] = []
+        private(set) var beginModes: [ProjectAccessAuthorizationMode] = []
         private(set) var resetCallCount = 0
 
         init(credential: ProjectAccessCredential, refreshed: ProjectAccessCredential? = nil) {
@@ -30,7 +31,12 @@ struct ProjectAccessSessionTests {
             self.refreshed = refreshed ?? credential
         }
 
-        func beginAuthorization() async throws -> ProjectAccessAuthorizationInfo { beginResult }
+        func beginAuthorization(
+            mode: ProjectAccessAuthorizationMode
+        ) async throws -> ProjectAccessAuthorizationInfo {
+            beginModes.append(mode)
+            return beginResult
+        }
         func exchangeCallback(_ callbackURL: URL) async throws -> ProjectAccessCredential {
             credential
         }
@@ -92,6 +98,19 @@ struct ProjectAccessSessionTests {
         var value: ProjectAccessConnectionResult?
     }
 
+    @MainActor
+    private final class MockConnectionHistory: ProjectAccessConnectionHistoryStoring {
+        var hasCompletedAuthorization: Bool
+
+        init(hasCompletedAuthorization: Bool) {
+            self.hasCompletedAuthorization = hasCompletedAuthorization
+        }
+
+        func markAuthorizationCompleted() {
+            hasCompletedAuthorization = true
+        }
+    }
+
     private let now = Date(timeIntervalSince1970: 10_000)
     private let callbackURL = URL(
         string: "starcat://github-app/callback?code=code&state=test"
@@ -136,7 +155,8 @@ struct ProjectAccessSessionTests {
         )
 
         let info = try await session.beginConnection()
-        #expect(info.installationURL.host == "github.com")
+        #expect(info.authorizationURL.host == "github.com")
+        #expect(oauth.beginModes == [.installation])
         #expect(session.state == .awaitingAuthorization)
         try await session.completeConnection(callbackURL: callbackURL)
 
@@ -152,10 +172,12 @@ struct ProjectAccessSessionTests {
         let issued = credential(token: "ghu-project", accessOffset: 3_600)
         let webAuthenticationSession = MockProjectWebAuthenticationSession()
         let recorder = ConnectionResultRecorder()
+        let connectionHistory = MockConnectionHistory(hasCompletedAuthorization: false)
         let session = ProjectAccessSession(
             oauthService: MockOAuth(credential: issued),
             keychain: keychain,
             webAuthenticationSession: webAuthenticationSession,
+            connectionHistory: connectionHistory,
             isConfigured: true,
             appSlug: "starcat-project-access",
             installationCheck: { _, _ in .allRepositories },
@@ -181,6 +203,36 @@ struct ProjectAccessSessionTests {
         #expect(session.state == .connected(expiresAt: issued.accessExpiresAt))
         let storedCredential = try? keychain.loadProjectAccessCredential()
         #expect(storedCredential != nil)
+        #expect(connectionHistory.hasCompletedAuthorization)
+    }
+
+    @Test("曾连接过的 GitHub App 直接进入重新授权而非安装页")
+    @MainActor
+    func reconnectUsesExplicitOAuthAuthorization() async {
+        let issued = credential(token: "ghu-project", accessOffset: 3_600)
+        let oauth = MockOAuth(credential: issued)
+        oauth.beginResult = ProjectAccessAuthorizationInfo(
+            authorizationURL: URL(
+                string:
+                    "https://github.com/login/oauth/authorize?client_id=client&state=test"
+            )!,
+            expiresAt: now.addingTimeInterval(900)
+        )
+        let webAuthenticationSession = MockProjectWebAuthenticationSession()
+        let session = ProjectAccessSession(
+            oauthService: oauth,
+            keychain: InMemoryKeychain(),
+            webAuthenticationSession: webAuthenticationSession,
+            connectionHistory: MockConnectionHistory(hasCompletedAuthorization: true),
+            isConfigured: true,
+            now: { self.now }
+        )
+
+        session.startConnection { _ in }
+        await Self.waitUntil { webAuthenticationSession.authorizationURL != nil }
+
+        #expect(oauth.beginModes == [.reauthorization])
+        #expect(webAuthenticationSession.authorizationURL?.path == "/login/oauth/authorize")
     }
 
     @Test("关闭项目授权系统窗口按正常取消处理")

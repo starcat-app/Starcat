@@ -195,8 +195,8 @@ struct ProjectAccessSheet: View {
                 }
                 .buttonStyle(.borderedProminent)
             case .installationRequired:
-                Button("project.access.connect") {
-                    connect()
+                Button("project.access.install") {
+                    openInstallationPage()
                 }
                 .buttonStyle(.borderedProminent)
                 SyncIconButton(
@@ -301,6 +301,12 @@ struct ProjectAccessSheet: View {
 
     private func openInstallationSettings() {
         NSWorkspace.shared.open(AppConstants.githubAppSettingsURL)
+    }
+
+    /// 已有 user grant 时重新安装不会产生新的 OAuth callback；安装后由用户主动复查。
+    private func openInstallationPage() {
+        guard let url = AppConstants.githubAppInstallationURL else { return }
+        NSWorkspace.shared.open(url)
     }
 
     private func recheckInstallation() {

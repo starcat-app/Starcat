@@ -58,6 +58,41 @@ enum ProjectAccessConnectionResult: Equatable, Sendable {
 }
 
 @MainActor
+protocol ProjectAccessConnectionHistoryStoring: AnyObject {
+    var hasCompletedAuthorization: Bool { get }
+    func markAuthorizationCompleted()
+}
+
+/// 只保存“曾完成 GitHub App 授权”这一非敏感路由标记，token 仍只进入 Keychain。
+///
+/// 测试 host 禁止写入真实用户偏好，避免单测改变下一次人工授权应走的入口。
+@MainActor
+final class UserDefaultsProjectAccessConnectionHistory:
+    ProjectAccessConnectionHistoryStoring
+{
+    private let defaults: UserDefaults
+    private let key: String
+
+    init(
+        defaults: UserDefaults = .standard,
+        key: String = "projectAccess.hasCompletedAuthorization.v1"
+    ) {
+        self.defaults = defaults
+        self.key = key
+    }
+
+    var hasCompletedAuthorization: Bool {
+        guard !TestEnvironment.isRunning else { return false }
+        return defaults.bool(forKey: key)
+    }
+
+    func markAuthorizationCompleted() {
+        guard !TestEnvironment.isRunning else { return }
+        defaults.set(true, forKey: key)
+    }
+}
+
+@MainActor
 @Observable
 final class ProjectAccessSession {
     typealias InstallationCheck = @Sendable (
@@ -70,6 +105,7 @@ final class ProjectAccessSession {
     private let oauthService: any ProjectAccessOAuthServiceProtocol
     private let keychain: any KeychainManaging
     private let webAuthenticationSession: any WebAuthenticationSessionProviding
+    private let connectionHistory: any ProjectAccessConnectionHistoryStoring
     private let isConfigured: Bool
     private let appSlug: String
     private let installationCheck: InstallationCheck
@@ -84,6 +120,8 @@ final class ProjectAccessSession {
         keychain: any KeychainManaging = KeychainManager.shared,
         webAuthenticationSession: any WebAuthenticationSessionProviding =
             SystemWebAuthenticationSession(),
+        connectionHistory: any ProjectAccessConnectionHistoryStoring =
+            UserDefaultsProjectAccessConnectionHistory(),
         isConfigured: Bool = AppConstants.isGitHubAppConfigured,
         appSlug: String = AppConstants.githubAppSlug,
         installationCheck: @escaping InstallationCheck = { accessToken, appSlug in
@@ -97,6 +135,7 @@ final class ProjectAccessSession {
         self.oauthService = oauthService
         self.keychain = keychain
         self.webAuthenticationSession = webAuthenticationSession
+        self.connectionHistory = connectionHistory
         self.isConfigured = isConfigured
         self.appSlug = appSlug.trimmingCharacters(in: .whitespacesAndNewlines)
         self.installationCheck = installationCheck
@@ -114,6 +153,7 @@ final class ProjectAccessSession {
                 state = .disconnected
                 return
             }
+            connectionHistory.markAuthorizationCompleted()
             if isRefreshExpired(credential) {
                 state = .expired
             } else {
@@ -124,7 +164,7 @@ final class ProjectAccessSession {
         }
     }
 
-    /// 启动“安装 GitHub App + 用户授权”的单次浏览器流程。
+    /// 首次连接走安装联动；已有连接历史时直接重新授权，避免已有安装不触发 callback。
     @discardableResult
     func beginConnection() async throws -> ProjectAccessAuthorizationInfo {
         guard isConfigured else {
@@ -133,7 +173,11 @@ final class ProjectAccessSession {
         }
         state = .connecting
         do {
-            let info = try await oauthService.beginAuthorization()
+            let mode: ProjectAccessAuthorizationMode =
+                connectionHistory.hasCompletedAuthorization
+                    ? .reauthorization
+                    : .installation
+            let info = try await oauthService.beginAuthorization(mode: mode)
             state = .awaitingAuthorization
             return info
         } catch {
@@ -164,7 +208,7 @@ final class ProjectAccessSession {
                 try Task.checkCancellation()
                 do {
                     try webAuthenticationSession.start(
-                        authorizationURL: info.installationURL,
+                        authorizationURL: info.authorizationURL,
                         callbackURLScheme: AppConstants.oauthCallbackScheme
                     ) { [weak self] result in
                         self?.handleWebAuthenticationResult(result, completion: completion)
@@ -198,6 +242,7 @@ final class ProjectAccessSession {
         do {
             credential = try await oauthService.exchangeCallback(callbackURL)
             try saveCredential(credential)
+            connectionHistory.markAuthorizationCompleted()
         } catch {
             state = .failed(Self.failureCode(error))
             throw error
@@ -260,6 +305,7 @@ final class ProjectAccessSession {
             state = isConfigured ? .disconnected : .unavailable
             return
         }
+        connectionHistory.markAuthorizationCompleted()
         let usableCredential = try await refreshedCredentialIfNeeded(credential)
         do {
             try await oauthService.revokeAuthorization(

@@ -299,7 +299,10 @@ private actor SyncCredentialRecorder {
 }
 
 private actor ProjectAccessOAuthServiceStub: ProjectAccessOAuthServiceProtocol {
-    func beginAuthorization() async throws -> ProjectAccessAuthorizationInfo {
+    func beginAuthorization(
+        mode: ProjectAccessAuthorizationMode
+    ) async throws -> ProjectAccessAuthorizationInfo {
+        _ = mode
         throw ProjectAccessOAuthError.configurationMissing
     }
 
