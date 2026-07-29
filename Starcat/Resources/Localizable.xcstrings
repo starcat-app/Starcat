@@ -123919,9 +123919,9 @@
     "list.filter.project.title" : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Project" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "项目" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "專案" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "My Projects" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "我的项目" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "我的專案" } }
       }
     },
     "list.filter.project.affiliation" : {

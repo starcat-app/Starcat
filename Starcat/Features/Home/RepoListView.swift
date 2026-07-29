@@ -1219,52 +1219,98 @@ struct RepoListView: View {
     }
 
     /// 项目关系维度只在“我的项目”出现，绑定 HomeViewModel 的会话内筛选状态。
+    ///
+    /// 布局取舍：不用默认 `.menu` Picker 的「标签+按钮贴在一起」单行（中文标签长短不一会
+    /// 导致下拉错落），改成左标签 / 右对齐菜单的表单行，和设置页数值行同一视觉节奏。
     @ViewBuilder
     private func projectFilterSection() -> some View {
         @Bindable var vm = viewModel
 
         VStack(alignment: .leading, spacing: 8) {
-            Label("list.filter.project.title", systemImage: "folder")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            filterSectionHeader(
+                title: "sidebar.myProjects",
+                icon: SidebarItem.myProjects.systemImage
+            )
 
-            Picker("list.filter.project.affiliation", selection: $vm.projectAffiliationFilter) {
-                Text("general.all").tag(nil as ProjectAffiliation?)
-                Text("list.filter.project.personal").tag(ProjectAffiliation.owner as ProjectAffiliation?)
-                Text("list.filter.project.organization").tag(
-                    ProjectAffiliation.organizationMember as ProjectAffiliation?
-                )
-                Text("list.filter.project.collaborator").tag(
-                    ProjectAffiliation.collaborator as ProjectAffiliation?
-                )
+            projectFilterMenuRow(title: "list.filter.project.affiliation") {
+                Picker(selection: $vm.projectAffiliationFilter) {
+                    Text("general.all").tag(nil as ProjectAffiliation?)
+                    Text("list.filter.project.personal").tag(ProjectAffiliation.owner as ProjectAffiliation?)
+                    Text("list.filter.project.organization").tag(
+                        ProjectAffiliation.organizationMember as ProjectAffiliation?
+                    )
+                    Text("list.filter.project.collaborator").tag(
+                        ProjectAffiliation.collaborator as ProjectAffiliation?
+                    )
+                } label: {
+                    EmptyView()
+                }
             }
 
             if !viewModel.projectFilterOptions.organizationLogins.isEmpty {
-                Picker("list.filter.project.organizationName", selection: $vm.projectOrganizationFilter) {
-                    Text("general.all").tag(nil as String?)
-                    ForEach(viewModel.projectFilterOptions.organizationLogins, id: \.self) { login in
-                        Text(verbatim: login).tag(login as String?)
+                projectFilterMenuRow(title: "list.filter.project.organizationName") {
+                    Picker(selection: $vm.projectOrganizationFilter) {
+                        Text("general.all").tag(nil as String?)
+                        ForEach(viewModel.projectFilterOptions.organizationLogins, id: \.self) { login in
+                            Text(verbatim: login).tag(login as String?)
+                        }
+                    } label: {
+                        EmptyView()
                     }
                 }
             }
 
-            Picker("list.filter.project.visibility", selection: $vm.projectVisibilityFilter) {
-                Text("general.all").tag(nil as ProjectVisibility?)
-                // 始终提供 Public / Private / Internal，不依赖当前库内已出现的可见性枚举；
-                // 否则授权前只有公开项目时，用户无法预先选「只看私有」。
-                ForEach(ProjectVisibility.allCases, id: \.self) { visibility in
-                    Text(projectVisibilityLabel(visibility)).tag(visibility as ProjectVisibility?)
+            projectFilterMenuRow(title: "list.filter.project.visibility") {
+                Picker(selection: $vm.projectVisibilityFilter) {
+                    Text("general.all").tag(nil as ProjectVisibility?)
+                    // 始终提供 Public / Private / Internal，不依赖当前库内已出现的可见性枚举；
+                    // 否则授权前只有公开项目时，用户无法预先选「只看私有」。
+                    ForEach(ProjectVisibility.allCases, id: \.self) { visibility in
+                        Text(projectVisibilityLabel(visibility)).tag(visibility as ProjectVisibility?)
+                    }
+                } label: {
+                    EmptyView()
                 }
             }
 
-            Picker("list.filter.project.permission", selection: $vm.projectPermissionFilter) {
-                Text("general.all").tag(nil as ProjectPermission?)
-                ForEach(viewModel.projectFilterOptions.permissions, id: \.self) { permission in
-                    Text(projectPermissionLabel(permission)).tag(permission as ProjectPermission?)
+            projectFilterMenuRow(title: "list.filter.project.permission") {
+                Picker(selection: $vm.projectPermissionFilter) {
+                    Text("general.all").tag(nil as ProjectPermission?)
+                    ForEach(viewModel.projectFilterOptions.permissions, id: \.self) { permission in
+                        Text(projectPermissionLabel(permission)).tag(permission as ProjectPermission?)
+                    }
+                } label: {
+                    EmptyView()
                 }
             }
         }
-        .pickerStyle(.menu)
+    }
+
+    /// 左标签、右菜单：标签列与菜单列都固定宽度，选中长组织名时也不把某一行撑宽。
+    ///
+    /// 宽度按筛选浮层 260pt 内容区估算：标签「具体组织」≈72，剩余给菜单约 148。
+    private static let projectFilterLabelWidth: CGFloat = 72
+    private static let projectFilterMenuWidth: CGFloat = 148
+
+    @ViewBuilder
+    private func projectFilterMenuRow<Content: View>(
+        title: LocalizedStringKey,
+        @ViewBuilder picker: () -> Content
+    ) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Text(title)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(width: Self.projectFilterLabelWidth, alignment: .leading)
+
+            picker()
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(width: Self.projectFilterMenuWidth, alignment: .trailing)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 
     private func projectVisibilityLabel(_ visibility: ProjectVisibility) -> LocalizedStringKey {
