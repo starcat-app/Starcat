@@ -739,24 +739,24 @@ struct RepositoryInsightsView: View {
         ).format(coverageStart..<coverageEnd)
     }
 
-    /// footer 始终只有一行：图例靠左，覆盖信息与限制链接靠右。
-    /// 悬停只更新图内浮层，不能改变这里的高度或触发上下抖动。
+    /// 第一行固定图例靠左、覆盖信息靠右；限制链接保留第二行并独立右对齐。
+    /// 每一行内容都不换行，悬停也只更新图内浮层。
     private var starFooter: some View {
         let showsRestriction = StarHistoryRestrictionNoticePolicy.shouldShow(
             points: displayedStarPoints,
             phase: starHistoryViewModel.phase
         )
-        return HStack(spacing: 8) {
-            starSources
-            Spacer(minLength: 12)
-            HStack(spacing: 5) {
+        return VStack(alignment: .trailing, spacing: 4) {
+            HStack(spacing: 8) {
+                starSources
+                Spacer(minLength: 12)
                 starCoverageSummary
-                if showsRestriction {
-                    Text("·")
-                    starHistoryRestrictionLink
-                }
+                    .lineLimit(1)
             }
-            .lineLimit(1)
+            if showsRestriction {
+                starHistoryRestrictionLink
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
         }
         .font(interfaceScale.font(.captionSmall))
         .foregroundStyle(.secondary)
