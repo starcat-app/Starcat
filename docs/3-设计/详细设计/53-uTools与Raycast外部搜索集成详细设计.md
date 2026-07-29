@@ -1,6 +1,6 @@
 # uTools 与 Raycast 外部搜索集成详细设计
 
-> 状态：uTools 0.1.0 开发版与公共 contract fixtures 已实现，uTools 真机接入验收和 Raycast 待实施
+> 状态：uTools 与 Raycast 适配器、公共 contract fixtures 和自动化验证已实现；两端真机完整验收与商店发布待完成
 >
 > 日期：2026-07-29
 >
@@ -129,6 +129,7 @@ Launcher Adapter
 - Alfred universal helper 的 `arm64` / `x86_64` 架构检查。
 - `starcat-cli/contracts/global-search` 的 v1 schema、成功 / 空结果 / 错误 fixtures 与 Go contract tests。
 - `starcat-utools-plugin` 在 Node 16.20.2 和当前 Node 上完成 26 项测试、结构校验与真实 CLI 搜索 smoke test。
+- `starcat-raycast-extension` 完成 41 项 Vitest（含真实 CLI smoke）、TypeScript、Raycast lint 与 build；Raycast dev mode 已成功加载，root search 等可见交互仍待人工验收。
 
 仍未证明：
 
@@ -664,19 +665,19 @@ supports/starcat-raycast-extension/    # 独立 Git 仓库
 
 ```json
 {
-  "name": "starcat",
-  "title": "Starcat",
-  "description": "Search Starcat and GitHub repositories",
+  "name": "starcat-repository-search",
+  "title": "Starcat Repository Search",
+  "description": "Search Starcat local repositories and GitHub from Raycast.",
   "icon": "icon.png",
-  "author": "<raycast-store-handle>",
+  "author": "dong4j",
   "platforms": ["macOS"],
   "categories": ["Developer Tools", "Productivity"],
   "license": "MIT",
   "commands": [
     {
       "name": "search-repositories",
-      "title": "Search Repositories",
-      "description": "Search Starcat local and GitHub repositories",
+      "title": "Search Starcat Repositories",
+      "description": "Search Starcat local repositories and GitHub.",
       "mode": "view"
     }
   ],
@@ -688,37 +689,26 @@ supports/starcat-raycast-extension/    # 独立 Git 仓库
       "type": "textfield",
       "required": false,
       "placeholder": "/opt/homebrew/bin/starcat"
-    },
-    {
-      "name": "source",
-      "title": "Search Source",
-      "description": "Choose the repository source",
-      "type": "dropdown",
-      "required": true,
-      "default": "all",
-      "data": [
-        {"title": "All", "value": "all"},
-        {"title": "Local", "value": "local"},
-        {"title": "GitHub", "value": "github"}
-      ]
     }
   ]
 }
 ```
 
-`author` 必须在实施时填写真实 Raycast Store handle，不能提交占位符。
+`author` 使用已确认的 Raycast Store handle `dong4j`。来源选择放在命令搜索框右侧
+`List.Dropdown`，而不是持久化 preference，便于一次搜索会话内快速切换。
 
 ### 7.4 UI 骨架
 
 ```tsx
 export default function SearchRepositories() {
   const [query, setQuery] = useState("");
+  const [source, setSource] = useState<SearchSource>("all");
   const abortable = useRef<AbortController>();
   const preferences = getPreferenceValues<Preferences>();
 
   const { data, error, isLoading } = usePromise(
     searchRepositories,
-    [query, preferences.source, preferences.starcatCliPath],
+    [query, source, preferences.starcatCliPath],
     {
       abortable,
       execute: query.trim().length > 0
@@ -732,6 +722,7 @@ export default function SearchRepositories() {
       onSearchTextChange={setQuery}
       throttle
       searchBarPlaceholder="Search Starcat and GitHub repositories"
+      searchBarAccessory={<List.Dropdown>{/* all / local / github */}</List.Dropdown>}
     >
       {/* empty / error / warning / repository items */}
     </List>
@@ -866,6 +857,38 @@ npm run build
 
 禁止在一般开发任务中自动执行 `npm run publish`。
 
+Raycast Extension 不在 manifest 中声明业务版本号，Store 只维护一个隐式的最新版本；
+Git tag 仅作为本仓库里程碑，不控制 Store 更新。
+
+### 7.11 2026-07-30 实现结果
+
+已建立并推送独立公开仓库
+[`starcat-app/starcat-raycast-extension`](https://github.com/starcat-app/starcat-raycast-extension)，
+本地工作树为 `supports/starcat-raycast-extension`，实现边界如下：
+
+- TypeScript / React `List`、`usePromise`、`filtering={false}` 和 source dropdown。
+- `execFile` argv 调用、8 秒 timeout、AbortSignal 取消、stdout / stderr 上限。
+- schema v1 decoder、稳定错误映射、CLI 1.0.x upgrade fallback。
+- GitHub avatar HTTPS allowlist、512×512 本地 fallback、Starcat / GitHub 打开 URL allowlist。
+- 本地结果默认在 Starcat 打开，GitHub-only 结果默认在浏览器打开。
+- 双语 README、Privacy、Security、Release、Third-party、贡献规范与 macOS CI。
+
+自动化证据：
+
+1. Vitest：6 个 test files、41 项测试通过，其中一项通过本机已配对的真实 CLI 完成搜索。
+2. `tsc --noEmit` 通过。
+3. `ray lint` 通过 manifest、512×512 icons、ESLint 与 Prettier。
+4. `ray build -e dist` 成功编译 `src/search-repositories.tsx`。
+5. decoder 已兼容真实 Go JSON 对 nil nullable 字段的省略表示，并统一归一化为 `null`。
+6. 不受信任的打开 URL 会被过滤并显示隐藏数量，provider count 为负数时拒绝整个响应。
+7. macOS GitHub Actions 使用 Node 22.22.2 与 Node 24 action runtime，首轮 `main` CI 已通过。
+
+仍需人工或环境验收：
+
+- RY-01~RY-12 中的 Raycast root search、真实头像渲染、Deep Link / 浏览器打开、
+  快速输入可见行为、主题和 Intel Mac。
+- Raycast Store 截图、review 与合并；本轮不执行 `npm run publish`。
+
 ---
 
 ## 8. 三个平台差异矩阵
@@ -961,12 +984,12 @@ supports/starcat-raycast-extension/
 
 ### Phase 3：Raycast 完整实现
 
-1. 创建 Extension。
-2. CLI adapter。
-3. `List`、preferences、actions。
-4. cancellation。
-5. tests / README / changelog。
-6. RY-01~RY-12。
+1. [x] 创建 Extension。
+2. [x] CLI adapter。
+3. [x] `List`、preferences、actions。
+4. [x] cancellation。
+5. [x] tests / README / changelog。
+6. [ ] RY-01~RY-12。
 
 验收：`npm run build` 通过并可在 Raycast dev mode 使用，但不自动 publish。
 
@@ -1005,15 +1028,15 @@ uTools：
 
 Raycast：
 
-- [ ] `platforms = ["macOS"]`。
-- [ ] 使用 `List` + `usePromise`。
-- [ ] `filtering={false}`，不改变 Starcat 排序。
+- [x] `platforms = ["macOS"]`。
+- [x] 使用 `List` + `usePromise`。
+- [x] `filtering={false}`，不改变 Starcat 排序。
 - [ ] HTTPS avatar + fallback 生效。
-- [ ] timeout、取消和旧结果保护生效。
+- [x] timeout、取消和旧结果保护有自动化证据。
 - [ ] 本地 / GitHub actions 正确。
-- [ ] `npm run lint` 与 `npm run build` 通过。
+- [x] `npm run lint` 与 `npm run build` 通过。
 - [ ] RY-01~RY-12 有验收记录。
-- [ ] README / README-ZH / CHANGELOG 同步。
+- [x] README / README-ZH / CHANGELOG 同步。
 
 发布：
 

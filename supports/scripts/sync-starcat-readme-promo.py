@@ -103,6 +103,14 @@ PROJECTS = [
         "Official uTools plugin for searching Starcat local repositories and GitHub.",
     ),
     Project(
+        Path("supports/starcat-raycast-extension"),
+        "Starcat Raycast Extension",
+        "launcher",
+        "Starcat Raycast 扩展",
+        "这是在 Raycast 中搜索 Starcat 本地仓库与 GitHub 的官方扩展。",
+        "Official Raycast extension for searching Starcat local repositories and GitHub.",
+    ),
+    Project(
         Path("supports/starcat-skill"),
         "Starcat Skill",
         "skill",

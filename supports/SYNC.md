@@ -41,7 +41,7 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 
 ---
 
-## GitHub 独立仓库（20 个）
+## GitHub 独立仓库（21 个）
 
 以下目录各自是**独立的 git 仓库**，有自己的 GitHub remote、CI/CD 和版本号：
 
@@ -64,16 +64,17 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 | 15 | `starcat-cli/` | `starcat-app/starcat-cli` |
 | 16 | `starcat-alfred-workflow/` | `starcat-app/starcat-alfred-workflow` |
 | 17 | `starcat-utools-plugin/` | `starcat-app/starcat-utools-plugin` |
-| 18 | `homebrew-starcat-cli/` | `starcat-app/homebrew-starcat-cli` |
-| 19 | `extensions/starcat-chrome-plugin/` | `starcat-app/starcat-chrome-plugin` |
-| 20 | `extensions/starcat-safari-plugin/` | `starcat-app/starcat-safari-plugin` |
+| 18 | `starcat-raycast-extension/` | `starcat-app/starcat-raycast-extension` |
+| 19 | `homebrew-starcat-cli/` | `starcat-app/homebrew-starcat-cli` |
+| 20 | `extensions/starcat-chrome-plugin/` | `starcat-app/starcat-chrome-plugin` |
+| 21 | `extensions/starcat-safari-plugin/` | `starcat-app/starcat-safari-plugin` |
 
 ### 一键拉取所有独立仓库
 
 ```bash
 cd supports
 
-# 首次 clone 全部 20 个项目
+# 首次 clone 全部 21 个项目
 ./clone-all.sh
 
 # 后续更新全部
@@ -164,6 +165,7 @@ make sync-fly-secrets
 
 | 日期 | 决策 | 原因 |
 |------|------|------|
+| 2026-07-30 | GitHub 独立仓库从 20 个扩展到 21 个 | 新增 `starcat-raycast-extension`，独立维护 Raycast 搜索适配、测试与开源治理 |
 | 2026-07-29 | GitHub 独立仓库从 19 个扩展到 20 个 | 新增 `starcat-utools-plugin`，独立维护 uTools 搜索适配、测试与开源治理 |
 | 2026-07-29 | GitHub 独立仓库从 18 个扩展到 19 个 | 新增 `starcat-alfred-workflow`，独立维护 Alfred 构建、发布与开源治理 |
 | 2026-07-22 | GitHub 独立仓库从 15 个扩展到 18 个 | 补齐组织配置、官方文档与独立官网仓库 |
