@@ -5,6 +5,9 @@
 //  “我的洞察”详情页。页面保持 macOS 原生高密度分组：KPI 是紧凑指标块，统计内容
 //  使用扁平 section 与显式分布条行，不引入 Web Dashboard 式巨型卡片和嵌套卡片。
 //
+//  层级约定（仅本页）：window 灰底 → KPI 浅色 tint 块 → emphasized section 面板；
+//  section 标题图标按主题着色。仓库洞察继续走 InsightsSectionContainer 默认 standard。
+//
 
 import Charts
 import SwiftUI
@@ -96,39 +99,61 @@ struct MyInsightsView: View {
     private var selectedContent: some View {
         switch selection {
         case .overviewSummary:
-            metricGrid
-            rhythmSection
-            organizationSection
-            knowledgeCoverageSection
-            priorityRepositoriesSection
-            assetCleanupSection
-            languageSection
-            actionSection(snapshot.actionItems)
-            coverageSection
+            // 组间拉开、组内收紧：先认「总览 / 节奏整理 / 沉淀清理 / 技术行动」再读内容。
+            VStack(spacing: 24) {
+                metricGrid
+
+                VStack(spacing: 12) {
+                    rhythmSection
+                    organizationSection
+                }
+
+                VStack(spacing: 12) {
+                    knowledgeCoverageSection
+                    priorityRepositoriesSection
+                    assetCleanupSection
+                }
+
+                VStack(spacing: 12) {
+                    languageSection
+                    actionSection(snapshot.actionItems)
+                    coverageSection
+                }
+            }
 
         case .allActions:
             actionSection(snapshot.actionItems)
 
         case .organizationSummary:
-            organizationSection
-            rhythmSection
-            knowledgeCoverageSection
-            priorityRepositoriesSection
-            assetCleanupSection
-            actionSection(organizationActions)
+            VStack(spacing: 24) {
+                VStack(spacing: 12) {
+                    organizationSection
+                    rhythmSection
+                }
+                VStack(spacing: 12) {
+                    knowledgeCoverageSection
+                    priorityRepositoriesSection
+                    assetCleanupSection
+                }
+                actionSection(organizationActions)
+            }
 
         case .untagged,
              .unread,
              .missingReadme,
              .missingIndexableContent,
              .indexIssues:
-            actionFocusSection
-            organizationSection
+            VStack(spacing: 12) {
+                actionFocusSection
+                organizationSection
+            }
 
         case .technologySummary:
-            languageSection
-            topicSection
-            licenseSection
+            VStack(spacing: 12) {
+                languageSection
+                topicSection
+                licenseSection
+            }
 
         case .languages:
             languageSection
@@ -140,15 +165,19 @@ struct MyInsightsView: View {
             licenseSection
 
         case .healthSummary:
-            coverageSection
-            actionSection(healthActions)
+            VStack(spacing: 12) {
+                coverageSection
+                actionSection(healthActions)
+            }
 
         case .healthPending,
              .openSSFPending,
              .maintenanceRisk,
              .securityRisk:
-            actionFocusSection
-            coverageSection
+            VStack(spacing: 12) {
+                actionFocusSection
+                coverageSection
+            }
         }
     }
 
@@ -223,6 +252,7 @@ struct MyInsightsView: View {
             spacing: 10
         ) {
             ForEach(snapshot.metrics) { metric in
+                let tint = InsightsColor.resolve(metric.tintName)
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text(LocalizedStringKey(metric.titleKey))
@@ -230,7 +260,7 @@ struct MyInsightsView: View {
                             .foregroundStyle(.secondary)
                         Spacer(minLength: 6)
                         Image(systemName: metric.systemImage)
-                            .foregroundStyle(InsightsColor.resolve(metric.tintName))
+                            .foregroundStyle(tint)
                     }
 
                     Text(compact(metric.value))
@@ -244,10 +274,14 @@ struct MyInsightsView: View {
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, minHeight: 108, alignment: .leading)
-                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 9))
+                // KPI 用极浅语义 tint，比中性 section 面板更抢眼，仍避免实心色块。
+                .background(
+                    tint.opacity(0.08),
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                )
                 .overlay {
-                    RoundedRectangle(cornerRadius: 9)
-                        .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(tint.opacity(0.22), lineWidth: 1)
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Text(LocalizedStringKey(metric.titleKey)))
@@ -260,7 +294,9 @@ struct MyInsightsView: View {
         InsightsSectionContainer(
             title: "insights.section.organization",
             subtitle: "insights.section.organization.subtitle",
-            systemImage: "tray.full.fill"
+            systemImage: "tray.full.fill",
+            iconColor: .orange,
+            chrome: .emphasized
         ) {
             VStack(spacing: 12) {
                 GeometryReader { proxy in
@@ -303,7 +339,9 @@ struct MyInsightsView: View {
                 ? "insights.section.starredRhythm"
                 : "insights.section.knowledgeRhythm",
             subtitle: "insights.section.rhythm.subtitle",
-            systemImage: "chart.bar.fill"
+            systemImage: "chart.bar.fill",
+            iconColor: .blue,
+            chrome: .emphasized
         ) {
             Chart {
                 ForEach(Array(snapshot.rhythmPoints.enumerated()), id: \.element.id) { index, point in
@@ -388,6 +426,7 @@ struct MyInsightsView: View {
             title: "insights.section.languages",
             subtitle: "insights.section.languages.subtitle",
             systemImage: "chevron.left.forwardslash.chevron.right",
+            iconColor: .purple,
             items: snapshot.languageItems,
             onDrillDown: { item in
                 guard item.id != "other" else { return }
@@ -404,7 +443,9 @@ struct MyInsightsView: View {
             subtitle: scope == .starred
                 ? "insights.section.knowledgeDepositCoverage.subtitle"
                 : "insights.section.knowledgeIndexCoverage.subtitle",
-            systemImage: "books.vertical.fill"
+            systemImage: "books.vertical.fill",
+            iconColor: .indigo,
+            chrome: .emphasized
         ) {
             LazyVGrid(
                 columns: [GridItem(.adaptive(minimum: 170), spacing: 24)],
@@ -435,7 +476,9 @@ struct MyInsightsView: View {
             InsightsSectionContainer(
                 title: "insights.section.priorityRepositories",
                 subtitle: "insights.section.priorityRepositories.subtitle",
-                systemImage: "sparkles"
+                systemImage: "sparkles",
+                iconColor: .yellow,
+                chrome: .emphasized
             ) {
                 VStack(spacing: 0) {
                     ForEach(Array(snapshot.priorityRepositories.enumerated()), id: \.element.id) {
@@ -455,7 +498,9 @@ struct MyInsightsView: View {
         InsightsSectionContainer(
             title: "insights.section.assetCleanup",
             subtitle: "insights.section.assetCleanup.subtitle",
-            systemImage: "archivebox.fill"
+            systemImage: "archivebox.fill",
+            iconColor: .cyan,
+            chrome: .emphasized
         ) {
             LazyVGrid(
                 columns: [GridItem(.adaptive(minimum: 156), spacing: 16)],
@@ -577,6 +622,7 @@ struct MyInsightsView: View {
             title: "insights.section.topics",
             subtitle: "insights.section.topics.subtitle",
             systemImage: "square.grid.2x2.fill",
+            iconColor: .purple,
             items: snapshot.topicItems
         )
     }
@@ -586,6 +632,7 @@ struct MyInsightsView: View {
             title: "insights.section.licenses",
             subtitle: "insights.section.licenses.subtitle",
             systemImage: "checkmark.seal.fill",
+            iconColor: .yellow,
             items: snapshot.licenseItems
         )
     }
@@ -594,6 +641,7 @@ struct MyInsightsView: View {
         title: LocalizedStringKey,
         subtitle: LocalizedStringKey,
         systemImage: String,
+        iconColor: Color,
         items: [InsightsDistributionItem],
         onDrillDown: ((InsightsDistributionItem) -> Void)? = nil
     ) -> some View {
@@ -604,7 +652,9 @@ struct MyInsightsView: View {
         return InsightsSectionContainer(
             title: title,
             subtitle: subtitle,
-            systemImage: systemImage
+            systemImage: systemImage,
+            iconColor: iconColor,
+            chrome: .emphasized
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
@@ -683,7 +733,9 @@ struct MyInsightsView: View {
             subtitle: scope == .knowledge
                 ? "insights.section.actions.knowledgeSubtitle"
                 : "insights.section.actions.starredSubtitle",
-            systemImage: "checklist"
+            systemImage: "checklist",
+            iconColor: .purple,
+            chrome: .emphasized
         ) {
             VStack(spacing: 0) {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
@@ -702,7 +754,9 @@ struct MyInsightsView: View {
                 InsightsSectionContainer(
                     title: LocalizedStringKey(item.titleKey),
                     subtitle: LocalizedStringKey(item.detailKey),
-                    systemImage: item.systemImage
+                    systemImage: item.systemImage,
+                    iconColor: InsightsColor.resolve(item.tintName),
+                    chrome: .emphasized
                 ) {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         Text(item.count.formatted(.number.locale(locale)))
@@ -741,7 +795,9 @@ struct MyInsightsView: View {
         InsightsSectionContainer(
             title: "insights.section.coverage",
             subtitle: "insights.section.coverage.subtitle",
-            systemImage: "heart.text.square.fill"
+            systemImage: "heart.text.square.fill",
+            iconColor: .pink,
+            chrome: .emphasized
         ) {
             LazyVGrid(
                 columns: [GridItem(.adaptive(minimum: 180), spacing: 24)],
@@ -958,12 +1014,45 @@ struct MyInsightsView: View {
     }
 }
 
-/// 洞察页面的唯一分组表面：薄描边 + 系统 control background，避免区块各自发展成
-/// 多层嵌套卡片。仓库洞察继续复用它以保持两种洞察的密度一致。
+/// Section 表面强度。默认 `standard` 给仓库洞察；`emphasized` 只给「我的洞察」，
+/// 用更清晰的面板底 + 稍重描边，避免浅色下 window / control 背景糊成一片。
+enum InsightsSectionChrome: Sendable {
+    case standard
+    case emphasized
+
+    var cornerRadius: CGFloat {
+        switch self {
+        case .standard: return 9
+        case .emphasized: return 10
+        }
+    }
+
+    var fill: Color {
+        switch self {
+        case .standard:
+            return Color(nsColor: .controlBackgroundColor)
+        case .emphasized:
+            // textBackground 在浅色窗口灰底上更接近「白面板」，深色仍是可读表面。
+            return Color(nsColor: .textBackgroundColor)
+        }
+    }
+
+    var strokeOpacity: Double {
+        switch self {
+        case .standard: return 0.14
+        case .emphasized: return 0.22
+        }
+    }
+}
+
+/// 洞察页面的唯一分组表面：薄描边 + 系统背景，避免区块各自发展成多层嵌套卡片。
+/// 仓库洞察继续走默认 `standard`；我的洞察传 `emphasized` + 彩色图标提升扫描层级。
 struct InsightsSectionContainer<Content: View, HeaderTrailing: View>: View {
     let title: LocalizedStringKey
     let subtitle: LocalizedStringKey
     let systemImage: String
+    let iconColor: Color
+    let chrome: InsightsSectionChrome
     let headerTrailing: HeaderTrailing
     let content: Content
 
@@ -973,12 +1062,16 @@ struct InsightsSectionContainer<Content: View, HeaderTrailing: View>: View {
         title: LocalizedStringKey,
         subtitle: LocalizedStringKey,
         systemImage: String,
+        iconColor: Color = .secondary,
+        chrome: InsightsSectionChrome = .standard,
         @ViewBuilder headerTrailing: () -> HeaderTrailing,
         @ViewBuilder content: () -> Content
     ) {
         self.title = title
         self.subtitle = subtitle
         self.systemImage = systemImage
+        self.iconColor = iconColor
+        self.chrome = chrome
         self.headerTrailing = headerTrailing()
         self.content = content()
     }
@@ -989,7 +1082,7 @@ struct InsightsSectionContainer<Content: View, HeaderTrailing: View>: View {
             VStack(alignment: .leading, spacing: 1) {
                 HStack(alignment: .center, spacing: 8) {
                     Image(systemName: systemImage)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(iconColor)
                         .frame(width: 14, alignment: .center)
                     Text(title)
                         .font(interfaceScale.font(.bodyEmphasis))
@@ -1006,10 +1099,13 @@ struct InsightsSectionContainer<Content: View, HeaderTrailing: View>: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 9))
+        .background(
+            chrome.fill,
+            in: RoundedRectangle(cornerRadius: chrome.cornerRadius, style: .continuous)
+        )
         .overlay {
-            RoundedRectangle(cornerRadius: 9)
-                .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
+            RoundedRectangle(cornerRadius: chrome.cornerRadius, style: .continuous)
+                .stroke(Color.secondary.opacity(chrome.strokeOpacity), lineWidth: 1)
         }
     }
 }
@@ -1019,12 +1115,16 @@ extension InsightsSectionContainer where HeaderTrailing == EmptyView {
         title: LocalizedStringKey,
         subtitle: LocalizedStringKey,
         systemImage: String,
+        iconColor: Color = .secondary,
+        chrome: InsightsSectionChrome = .standard,
         @ViewBuilder content: () -> Content
     ) {
         self.init(
             title: title,
             subtitle: subtitle,
             systemImage: systemImage,
+            iconColor: iconColor,
+            chrome: chrome,
             headerTrailing: { EmptyView() },
             content: content
         )

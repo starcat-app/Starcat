@@ -7,6 +7,9 @@
 //  Star 趋势使用独立 ViewModel 与范围，避免活动指标的 range、刷新和失败状态污染
 //  长期历史；其余区块继续消费各自的本地或远端状态机。
 //
+//  层级约定（对齐我的洞察）：window 灰底 → KPI / 事实块浅色 tint → emphasized section
+//  面板 + 彩色标题图标；概览带与深潜带用组间间距区分，不引入嵌套大卡片。
+//
 
 import AppKit
 import Charts
@@ -145,24 +148,32 @@ struct RepositoryInsightsView: View {
         VStack(spacing: 0) {
             ScrollView {
                 // 洞察页区块含 Charts；LazyVStack 会反复估算高度并与滚动回写形成反馈。
-                // 改为 VStack，并用「概览 / 深潜」两段节奏降低同权卡片疲劳。
-                VStack(alignment: .leading, spacing: 16) {
+                // 改为 VStack，并用「概览 / 趋势 / 健康信号」三段节奏降低同权卡片疲劳。
+                VStack(alignment: .leading, spacing: 24) {
                     // 上半：一眼能扫完的本地事实 + 活动 KPI
-                    localOverviewSection
-                    activitySection
+                    VStack(alignment: .leading, spacing: 12) {
+                        localOverviewSection
+                        activitySection
+                    }
 
                     Divider()
                         .opacity(0.35)
                         .padding(.vertical, 2)
 
-                    // 下半：需要盯图的深潜区块；分区 Sync 保留，底栏另有全局刷新。
-                    starHistorySection
-                    commitSection
-                    contributorSection
-                    releaseCadenceSection
-                    healthSection
-                    localSignalsSection
-                    timelineSection
+                    // 中段：需要盯图的趋势深潜
+                    VStack(alignment: .leading, spacing: 12) {
+                        starHistorySection
+                        commitSection
+                        contributorSection
+                    }
+
+                    // 下半：节奏 / 健康 / 社区安全 / 时间线
+                    VStack(alignment: .leading, spacing: 12) {
+                        releaseCadenceSection
+                        healthSection
+                        localSignalsSection
+                        timelineSection
+                    }
                 }
                 // 外层 Scaffold 在 Hero 折叠后会扩大正文视口；内容栈必须坚持使用卡片的
                 // 固有高度，否则 VStack 会接受扩大的纵向 proposal，在最后一张卡片后留下
@@ -231,7 +242,9 @@ struct RepositoryInsightsView: View {
         InsightsSectionContainer(
             title: "insights.repo.section.local",
             subtitle: "insights.repo.section.local.subtitle",
-            systemImage: "internaldrive.fill"
+            systemImage: "internaldrive.fill",
+            iconColor: .cyan,
+            chrome: .emphasized
         ) {
             // 与活动概览同款：四卡一行、标题行彩色图标、数值居中加大。
             HStack(alignment: .top, spacing: 10) {
@@ -295,10 +308,15 @@ struct RepositoryInsightsView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 72)
         .padding(10)
+        // 与我的洞察 KPI 同款：极浅语义 tint，避免中性灰块在 emphasized 面板里糊成一片。
         .background(
-            Color(nsColor: .textBackgroundColor).opacity(0.55),
-            in: RoundedRectangle(cornerRadius: 7)
+            tint.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(tint.opacity(0.22), lineWidth: 1)
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(title))
         .accessibilityValue(Text(verbatim: displayValue))
@@ -347,7 +365,9 @@ struct RepositoryInsightsView: View {
         InsightsSectionContainer(
             title: "insights.repo.section.activity",
             subtitle: "insights.repo.section.activity.subtitle",
-            systemImage: "waveform.path.ecg"
+            systemImage: "waveform.path.ecg",
+            iconColor: .orange,
+            chrome: .emphasized
         ) {
             VStack(alignment: .leading, spacing: 10) {
                 // 派生三指标与时间切换同一行：左指标、右控件，避免底部再占一行。
@@ -576,9 +596,13 @@ struct RepositoryInsightsView: View {
         .frame(maxWidth: .infinity, minHeight: 72)
         .padding(10)
         .background(
-            Color(nsColor: .textBackgroundColor).opacity(0.55),
-            in: RoundedRectangle(cornerRadius: 7)
+            tint.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(tint.opacity(0.22), lineWidth: 1)
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(LocalizedStringKey(metric.titleKey)))
         .accessibilityValue(Text(verbatim: activityMetricAccessibilityValue(metric)))
@@ -590,9 +614,10 @@ struct RepositoryInsightsView: View {
         systemImage: String,
         tintName: String
     ) -> some View {
-        HStack(spacing: 7) {
+        let tint = InsightsColor.resolve(tintName)
+        return HStack(spacing: 7) {
             Image(systemName: systemImage)
-                .foregroundStyle(InsightsColor.resolve(tintName))
+                .foregroundStyle(tint)
 
             Text(title)
                 .foregroundStyle(.secondary)
@@ -612,9 +637,13 @@ struct RepositoryInsightsView: View {
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity)
         .background(
-            Color(nsColor: .textBackgroundColor).opacity(0.55),
-            in: RoundedRectangle(cornerRadius: 7)
+            tint.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(tint.opacity(0.18), lineWidth: 1)
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(title))
         .accessibilityValue(Text(verbatim: value))
@@ -653,6 +682,8 @@ struct RepositoryInsightsView: View {
             title: "insights.repo.section.stars",
             subtitle: "insights.repo.section.stars.subtitle",
             systemImage: "star.fill",
+            iconColor: .yellow,
+            chrome: .emphasized,
             headerTrailing: { starDataSourceBadge }
         ) {
             VStack(alignment: .leading, spacing: 12) {
@@ -794,9 +825,13 @@ struct RepositoryInsightsView: View {
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
         .background(
-            Color(nsColor: .textBackgroundColor).opacity(0.55),
+            Color.yellow.opacity(0.08),
             in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.yellow.opacity(0.22), lineWidth: 1)
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(label))
         .accessibilityValue(Text(verbatim: value))
@@ -825,9 +860,13 @@ struct RepositoryInsightsView: View {
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity)
         .background(
-            Color(nsColor: .textBackgroundColor).opacity(0.55),
-            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+            Color.blue.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.blue.opacity(0.18), lineWidth: 1)
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(label))
         .accessibilityValue(Text(verbatim: value))
@@ -1303,7 +1342,9 @@ struct RepositoryInsightsView: View {
                     ? "insights.repo.section.commits.subtitle.daily"
                     : "insights.repo.section.commits.subtitle"
             ),
-            systemImage: "chart.bar.fill"
+            systemImage: "chart.bar.fill",
+            iconColor: .blue,
+            chrome: .emphasized
         ) {
             VStack(alignment: .leading, spacing: 10) {
                 // 与活动概览同款：左脉搏三指标、右独立 range + 刷新。
@@ -1429,7 +1470,7 @@ struct RepositoryInsightsView: View {
     ) -> some View {
         HStack(spacing: 7) {
             Image(systemName: systemImage)
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Color.blue)
             Text(title)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -1446,9 +1487,13 @@ struct RepositoryInsightsView: View {
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity)
         .background(
-            Color(nsColor: .textBackgroundColor).opacity(0.55),
-            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+            Color.blue.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.blue.opacity(0.18), lineWidth: 1)
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(title))
         .accessibilityValue(Text(verbatim: value))
@@ -1743,7 +1788,9 @@ struct RepositoryInsightsView: View {
         InsightsSectionContainer(
             title: "insights.repo.section.contributors",
             subtitle: "insights.repo.section.contributors.subtitle",
-            systemImage: "person.3.fill"
+            systemImage: "person.3.fill",
+            iconColor: .purple,
+            chrome: .emphasized
         ) {
             // 刷新入口收敛到活动 / Star / Commit；本块只读展示，避免一屏多个 Sync。
             VStack(alignment: .leading, spacing: 10) {
@@ -1990,7 +2037,9 @@ struct RepositoryInsightsView: View {
         InsightsSectionContainer(
             title: "insights.repo.section.health",
             subtitle: "insights.repo.section.health.subtitle",
-            systemImage: "heart.text.square.fill"
+            systemImage: "heart.text.square.fill",
+            iconColor: .pink,
+            chrome: .emphasized
         ) {
             Group {
                 switch viewModel.healthState {
@@ -2025,7 +2074,9 @@ struct RepositoryInsightsView: View {
         InsightsSectionContainer(
             title: "insights.repo.section.releaseCadence",
             subtitle: "insights.repo.section.releaseCadence.subtitle",
-            systemImage: "tag.fill"
+            systemImage: "tag.fill",
+            iconColor: .blue,
+            chrome: .emphasized
         ) {
             switch viewModel.releaseCadenceState {
             case .content(let cadence):
@@ -2097,9 +2148,13 @@ struct RepositoryInsightsView: View {
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity)
         .background(
-            Color(nsColor: .textBackgroundColor).opacity(0.55),
-            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+            Color.blue.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.blue.opacity(0.18), lineWidth: 1)
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(title))
         .accessibilityValue(Text(verbatim: value))
@@ -2144,9 +2199,13 @@ struct RepositoryInsightsView: View {
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            Color(nsColor: .textBackgroundColor).opacity(0.4),
-            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+            tint.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(tint.opacity(0.18), lineWidth: 1)
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(LocalizedStringKey(dimension.titleKey)))
         .accessibilityValue(
@@ -2156,11 +2215,11 @@ struct RepositoryInsightsView: View {
 
     private var localSignalsSection: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
                 communitySignalGroup.frame(minWidth: 248)
                 securitySignalGroup.frame(minWidth: 248)
             }
-            VStack(spacing: 14) {
+            VStack(spacing: 12) {
                 communitySignalGroup
                 securitySignalGroup
             }
@@ -2171,7 +2230,9 @@ struct RepositoryInsightsView: View {
         InsightsSectionContainer(
             title: "insights.repo.section.community",
             subtitle: "insights.repo.section.community.subtitle",
-            systemImage: "person.2.fill"
+            systemImage: "person.2.fill",
+            iconColor: .indigo,
+            chrome: .emphasized
         ) {
             VStack(alignment: .leading, spacing: 8) {
                 if let community = displayedCommunity {
@@ -2306,7 +2367,9 @@ struct RepositoryInsightsView: View {
         InsightsSectionContainer(
             title: "insights.repo.section.security",
             subtitle: "insights.repo.section.security.subtitle",
-            systemImage: "lock.shield.fill"
+            systemImage: "lock.shield.fill",
+            iconColor: .red,
+            chrome: .emphasized
         ) {
             VStack(spacing: 0) {
                 openSSFSignalContent
@@ -2609,7 +2672,9 @@ struct RepositoryInsightsView: View {
         InsightsSectionContainer(
             title: "insights.repo.section.timeline",
             subtitle: "insights.repo.section.timeline.subtitle",
-            systemImage: "clock.arrow.circlepath"
+            systemImage: "clock.arrow.circlepath",
+            iconColor: .cyan,
+            chrome: .emphasized
         ) {
             // 时间线默认折叠；刷新交给整页 / 上游区块，避免再挂一颗 Sync。
             VStack(alignment: .leading, spacing: 8) {
