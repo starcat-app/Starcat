@@ -404,3 +404,17 @@
 - [x] 定向测试覆盖 TTL 路由、私有门禁、并发去重、切库取消、Metadata 输出/读取、Prompt 与禁删/URL 解析。
 - [x] 完成五轮专项审查、全量测试、双 target build、Checklist 与结果报告。
 - [ ] 人工验证 Metadata Wiki 链接点击、编辑后禁删状态及真实后台补齐视觉更新。
+
+## 19. 仓库洞察 XML 上下文
+
+> 状态: 核心实现与定向测试已完成；全量门禁、多轮专项审查和结果报告执行中。详细范围见 `仓库洞察XML上下文实施方案.md` 与 `仓库洞察XML上下文Checklist.md`。
+
+- [x] 页面、仓库 AI 摘要 / 对话和知识库 RAG 共用 `RepositoryInsightsDocument`，不重复生成聚合统计或重复写 XML。
+- [x] 独立 Storage 提供合法 XML、稳定 source/xml hash、原子写入、single-flight、账号边界和删除抑制。
+- [x] 洞察页与仓库 AI 可正常准备缺失数据；RAG 只允许 cache-only 本地准备，不为问答新增网络请求。
+- [x] 知识库详情按 Metadata → Insights XML → RepoContext XML → 普通分片管理；洞察 XML 只读且可复制、下载、删除和重新生成。
+- [x] 洞察 XML 不新增 `RAGChunkSource`，不写 `rag_chunks`、embedding 或 CloudKit，并单独显示 `0 / 1`。
+- [x] RAG 使用独立 Prompt section、预算、XML 感知投影、citation、证据门禁和可解释执行状态。
+- [x] Plan、Timeline、Context、Evidence、Debug 与历史回放均提供洞察专用审计；会话不保存 XML 正文。
+- [ ] 完成至少三轮专项审查、全量测试、双 target build、Checklist 回填与结果报告。
+- [ ] 人工验证知识库特殊项的查看、复制、下载、删除、重新生成，以及真实 Provider 下的 Prompt 与历史回放；该项只记录，不以自动化代替。
