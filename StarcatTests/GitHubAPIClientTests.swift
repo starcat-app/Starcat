@@ -10,6 +10,7 @@
 //  - `performNoBody`（DELETE / PUT 路径，D-03 引入）：200 / 404
 //  - `performBytes`（README 字节路径）：200 + headers / 304 notModified / 404
 //  - 业务端点封装：starredRepos 解析 Link 头 / 注入 Accept + Authorization
+//  - 管理员 / 协作者端点：stargazers 解析 starred_at、分页和隐私最小 DTO
 //
 //  测试基础设施：
 //  - `URLProtocolStub`（同目录新建）：拦截 URLSession 请求并返回测试响应
@@ -560,5 +561,55 @@ struct GitHubAPIClientTests {
         let queryItems = Dictionary(uniqueKeysWithValues: (comps.queryItems ?? []).map { ($0.name, $0.value) })
         #expect(queryItems["page"] == "1")
         #expect(queryItems["per_page"] == "100")
+    }
+
+    @Test("stargazers: 解析 starred_at、分页并使用专用 Accept")
+    func stargazersDecodeTimestampAndPagination() async throws {
+        let client = makeClient()
+        let json = """
+        [
+          {
+            "starred_at": "2026-07-01T08:30:00Z",
+            "user": {
+              "login": "private-user-name",
+              "id": 42
+            }
+          }
+        ]
+        """.data(using: .utf8)!
+
+        URLProtocolStub.requestHandler = { request in
+            let response = httpResponse(200, request.url!, [
+                "Link": "<https://api.test.invalid/repos/alice/foo/stargazers?page=2&per_page=100>; rel=\"next\""
+            ])
+            return (response, json)
+        }
+
+        let result = try await client.stargazers(
+            owner: "alice",
+            repo: "foo",
+            page: 1,
+            perPage: 100
+        )
+
+        #expect(result.value == [
+            GitHubStargazerDTO(starredAt: "2026-07-01T08:30:00Z")
+        ])
+        #expect(result.linkHeader.nextPage == 2)
+
+        let request = try #require(URLProtocolStub.receivedRequests.first)
+        #expect(request.url?.path == "/repos/alice/foo/stargazers")
+        #expect(request.value(forHTTPHeaderField: "Accept") == "application/vnd.github.star+json")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-token")
+
+        let requestURL = try #require(request.url)
+        let components = try #require(
+            URLComponents(url: requestURL, resolvingAgainstBaseURL: false)
+        )
+        let query = Dictionary(
+            uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value) }
+        )
+        #expect(query["page"] == "1")
+        #expect(query["per_page"] == "100")
     }
 }

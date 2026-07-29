@@ -343,6 +343,12 @@ enum AppEndpoints {
             static func repo(owner: String, repo: String) -> String {
                 "/repos/\(owner)/\(repo)"
             }
+            /// `GET /repos/{owner}/{repo}/stargazers` —— 当前 Stargazers 及其 Star 时间。
+            /// 2026-07 起 GitHub 将列表访问限制为仓库管理员和协作者；普通第三方仓库
+            /// 不能把这个端点当成公共历史来源。
+            static func repoStargazers(owner: String, repo: String) -> String {
+                "/repos/\(owner)/\(repo)/stargazers"
+            }
             /// `GET /repos/{owner}/{repo}/languages` —— 单仓库语言字节分布。
             static func repoLanguages(owner: String, repo: String) -> String {
                 "/repos/\(owner)/\(repo)/languages"
