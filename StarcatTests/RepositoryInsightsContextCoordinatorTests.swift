@@ -88,6 +88,29 @@ struct RepositoryInsightsContextCoordinatorTests {
         #expect(oldScopeArtifact == nil)
     }
 
+    @Test("主动取消后迟到 Provider 结果不得写入 Artifact")
+    func cancellationRejectsLateWrite() async throws {
+        let fixture = try await makeFixture(delay: 120_000_000)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let repo = makeRepo(id: 207)
+
+        let task = Task {
+            await fixture.coordinator.prepareArtifact(for: repo, mode: .forceRegenerate)
+        }
+        try await Task.sleep(nanoseconds: 20_000_000)
+        await fixture.coordinator.cancelPreparation(for: repo, mode: .forceRegenerate)
+
+        let result = await task.value
+        let stored = try await fixture.storage.load(
+            repositoryID: repo.id,
+            repositoryFullName: repo.fullName,
+            scope: RepositoryInsightsContextScope(userID: 7, databaseRevision: 1)
+        )
+
+        #expect(result == nil)
+        #expect(stored == nil)
+    }
+
     @Test("AI context 与持久化 Artifact 使用完全相同 XML")
     func aiContextSharesPersistedDocument() async throws {
         let fixture = try await makeFixture()

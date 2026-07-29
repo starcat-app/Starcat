@@ -471,6 +471,8 @@ private final class KnowledgeRAGBrowserViewModel {
     var isGeneratingRepositoryInsights = false
     private var repositoryInsightsGenerationIdentity: SpecialContextGenerationIdentity?
     private var repositoryInsightsGenerationTask: Task<Void, Never>?
+    /// 取消时必须保留原 repo，不能依赖此刻可能已切换的 `selectedCandidate`。
+    private var repositoryInsightsGenerationRepo: Repo?
     var repoContextGenerationState: RepoContextGenerationState = .idle
     var isRepoContextSettingsPromptPresented = false
     /// UUID 同时防护 repo 切换与“取消后旧 task 迟到回写”两类竞态。
@@ -619,6 +621,7 @@ private final class KnowledgeRAGBrowserViewModel {
         guard !isGeneratingRepositoryInsights, let repo = selectedCandidate?.repo else { return }
         let identity = SpecialContextGenerationIdentity(id: UUID(), repoID: repo.id)
         repositoryInsightsGenerationIdentity = identity
+        repositoryInsightsGenerationRepo = repo
         isGeneratingRepositoryInsights = true
         let coordinator = dependencies.repositoryInsightsContextCoordinator
         repositoryInsightsGenerationTask = Task { [weak self] in
@@ -636,15 +639,24 @@ private final class KnowledgeRAGBrowserViewModel {
             }
             repositoryInsightsGenerationIdentity = nil
             repositoryInsightsGenerationTask = nil
+            repositoryInsightsGenerationRepo = nil
             isGeneratingRepositoryInsights = false
         }
     }
 
     func cancelRepositoryInsightsGeneration() {
+        let repo = repositoryInsightsGenerationRepo
         repositoryInsightsGenerationTask?.cancel()
         repositoryInsightsGenerationTask = nil
         repositoryInsightsGenerationIdentity = nil
+        repositoryInsightsGenerationRepo = nil
         isGeneratingRepositoryInsights = false
+        if let repo {
+            let coordinator = dependencies.repositoryInsightsContextCoordinator
+            Task {
+                await coordinator.cancelPreparation(for: repo, mode: .forceRegenerate)
+            }
+        }
     }
 
     /// 用户主动生成或重新生成 RepoContext。下载、缓存和打包都复用统一 provider，

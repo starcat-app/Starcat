@@ -64,6 +64,10 @@ protocol RepositoryInsightsContextCoordinating:
 
     func loadArtifact(for repo: Repo) async -> RepositoryInsightsContextArtifact?
     func deleteArtifact(for repo: Repo) async throws
+    func cancelPreparation(
+        for repo: Repo,
+        mode: RepositoryInsightsContextPreparationMode
+    ) async
 }
 
 actor RepositoryInsightsContextCoordinator: RepositoryInsightsContextCoordinating {
@@ -135,6 +139,20 @@ actor RepositoryInsightsContextCoordinator: RepositoryInsightsContextCoordinatin
         )
     }
 
+    /// 只取消指定 repo + scope + mode 的准备任务。
+    ///
+    /// 知识库主动生成使用 `.forceRegenerate`，因此停止它不会误伤页面 / AI 的
+    /// `.refreshIfNeeded`，也不会中断 RAG 的 `.cacheOnly`。
+    func cancelPreparation(
+        for repo: Repo,
+        mode: RepositoryInsightsContextPreparationMode
+    ) async {
+        let scope = await scopeProvider()
+        let key = TaskKey(repositoryID: repo.id, scope: scope, mode: mode)
+        let task = inFlight.removeValue(forKey: key)?.task
+        task?.cancel()
+    }
+
     private func prepare(
         for repo: Repo,
         mode: RepositoryInsightsContextPreparationMode
@@ -170,6 +188,13 @@ actor RepositoryInsightsContextCoordinator: RepositoryInsightsContextCoordinatin
                 document = await documentProvider.document(for: repo)
             }
 
+            // Provider 未必会立即响应取消；即使它迟到返回，也绝不能继续写入 Artifact。
+            guard !Task.isCancelled else {
+                return RepositoryInsightsContextPreparationResult(
+                    document: document,
+                    artifact: nil
+                )
+            }
             // Provider 可能跨越多次网络请求；写盘前必须重新读取数据库 scope。
             guard await scopeProvider() == initialScope else {
                 return RepositoryInsightsContextPreparationResult(
