@@ -40,7 +40,7 @@
 - [x] GitHub App token 使用独立 Keychain account。
 - [x] 实现 GitHub App 安装期间 Web Flow callback、token 刷新/过期/撤销状态。
 - [x] 实现按用途选择 OAuth / GitHub App token 的凭据路由。
-- [x] 实现 collaborator / owner / organization_member 三条 `/user/repos` 分页链，并固定 `owner > organization_member > collaborator`。
+- [x] 实现 collaborator / owner / organization_member 三条 `/user/repos` 分页链，并固定 `owner / organization_member > collaborator`。
 - [x] 实现 OAuth `visibility=public` fallback 和 GitHub App `visibility=all`。
 - [x] 实现分页、Link Header、分 affiliation ETag、Rate Limit 和失败保旧值。
 - [x] 实现后台有界同步和并发去重。

@@ -119,7 +119,7 @@ actor UserProjectSyncCoordinator {
         }
         // `user_projects` 对同一用户和 Repo 只保存一条关系。先同步低优先级的
         // collaborator，再让 owner / organization_member 覆盖它，可稳定表达
-        // owner > organization_member > collaborator，并避免数据库增加重复关系。
+        // owner / organization_member > collaborator，并避免数据库增加重复关系。
         let collaborator = await syncAffiliationResult(
             .collaborator,
             userID: userID,

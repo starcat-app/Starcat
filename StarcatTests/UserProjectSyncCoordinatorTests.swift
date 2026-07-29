@@ -277,6 +277,33 @@ struct UserProjectSyncCoordinatorTests {
         #expect(summary.isOrganizationApprovalPending)
     }
 
+    @Test("组织成员关系应覆盖同一仓库的 collaborator 关系")
+    func organizationRelationshipOverridesCollaborator() async throws {
+        let database = try InMemoryDatabaseManager()
+        let repository = GRDBUserProjectRepository(database: database)
+        let api = MockAPI { affiliation, _, _, _, _ in
+            switch affiliation {
+            case .collaborator:
+                return response([makeRemote(id: 130, owner: "Acme", name: "shared")])
+            case .organizationMember:
+                return response([makeRemote(id: 130, owner: "Acme", name: "shared")])
+            case .owner:
+                return response([])
+            }
+        }
+        let coordinator = UserProjectSyncCoordinator(api: api, repository: repository)
+
+        let summary = try await coordinator.sync(
+            userID: 7,
+            authorizationSource: .oauth
+        )
+        let project = try #require(try await repository.fetchProject(repoID: 130))
+
+        #expect(summary.receivedCount == 2)
+        #expect(try await repository.count(userID: 7, filter: .init()) == 1)
+        #expect(project.affiliation == .organizationMember)
+    }
+
     @Test("304 沿用旧代际并更新成功状态")
     func notModifiedKeepsGeneration() async throws {
         let database = try InMemoryDatabaseManager()
