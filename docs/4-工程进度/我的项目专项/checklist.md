@@ -10,7 +10,7 @@
 >
 > Worktree：`/Users/dong4j/.codex/worktrees/my-projects/Starcat`
 >
-> 后续修订：已合并至主项目 `dev`，第 6 至第 9 轮在 `dev` 完成
+> 后续修订：已合并至主项目 `dev`，第 6 至第 10 轮在 `dev` 完成
 
 ## 1. 产品与权限边界
 
@@ -95,6 +95,7 @@
 - [x] 第七轮：Star History 代码、测试、文档和工程进度最终一致性复审。
 - [x] 第八轮：Star History 不同来源折线连续性回归，补齐重建历史到本机快照的桥接段。
 - [x] 第九轮：Sidebar 导航顺序与 Stargazers 访问限制说明的代码、测试、文档和进度一致性审查。
+- [x] 第十轮：代码、单元测试、Debug build、官方依据、文档、checklist 和提交历史最终一致性复审。
 - [x] 所有问题关闭后新增最终复审报告。
 - [x] 多轮复审无新增问题后新增结果报告。
 
