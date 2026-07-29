@@ -167,6 +167,7 @@ struct WidgetSnapshotStoreTests {
             starsCount: 42,
             tags: ["Widget"],
             status: "using",
+            focusSource: .using,
             avatarFileName: nil,
             openURL: URL(string: "starcat://repo/owner/repo-\(id)?v=1&rid=\(id)")!
         )

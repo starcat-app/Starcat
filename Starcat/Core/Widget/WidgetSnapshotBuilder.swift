@@ -78,7 +78,9 @@ struct WidgetSnapshotBuilder: Sendable {
                 try Row.fetchOne(
                     db,
                     sql: """
-                    SELECT r.*, rn.status AS widget_status
+                    SELECT r.*,
+                           rn.status AS widget_status,
+                           NULL AS widget_pinned_at
                     FROM repos r
                     LEFT JOIN repo_notes rn ON rn.repo_id = r.id
                     WHERE r.id = ?
@@ -258,6 +260,14 @@ struct WidgetSnapshotBuilder: Sendable {
             return nil
         }
         let rawStatus: String? = row["widget_status"]
+        let pinnedAt: Double? = row["widget_pinned_at"]
+        let focusSource: WidgetFocusSource? = if pinnedAt != nil {
+            .pinned
+        } else if rawStatus.map(RepoStatus.parse) == .using {
+            .using
+        } else {
+            nil
+        }
         return WidgetRepository(
             id: repo.id,
             owner: repo.owner,
@@ -267,6 +277,7 @@ struct WidgetSnapshotBuilder: Sendable {
             starsCount: max(0, repo.starsCount),
             tags: Array(tags.prefix(3)),
             status: rawStatus.map { RepoStatus.parse($0).rawValue },
+            focusSource: focusSource,
             avatarFileName: nil,
             openURL: deepLink.appURL
         )

@@ -445707,6 +445707,24 @@
         }
       }
     },
+    "widget.focus.pinned" : {
+      "comment" : "Widget Focus source label for a pinned repository.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pinned"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已置顶"
+          }
+        }
+      }
+    },
     "widget.focus.title" : {
       "extractionState" : "manual",
       "localizations" : {

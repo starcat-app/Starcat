@@ -163,9 +163,7 @@ struct StarcatFocusWidgetView: View {
             HStack {
                 StarcatWidgetAvatar(fileName: repository.avatarFileName, size: 38)
                 Spacer()
-                Image(systemName: "pin.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                StarcatFocusSourceLabel(source: repository.focusSource)
             }
             Spacer(minLength: 0)
             Text(verbatim: repository.owner)
@@ -242,20 +240,16 @@ private struct StarcatFocusRepositoryRow: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                } else {
-                    HStack(spacing: 6) {
-                        if let language = repository.language {
-                            Text(verbatim: language)
-                                .lineLimit(1)
-                        }
-                        if repository.status == "using" {
-                            Text("widget.focus.using")
-                                .lineLimit(1)
-                        }
-                    }
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
                 }
+                HStack(spacing: 6) {
+                    if let language = repository.language {
+                        Text(verbatim: language)
+                            .lineLimit(1)
+                    }
+                    StarcatFocusSourceLabel(source: repository.focusSource)
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)
             Image(systemName: "chevron.right")
@@ -266,5 +260,24 @@ private struct StarcatFocusRepositoryRow: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text(verbatim: "\(repository.owner)/\(repository.name)"))
+    }
+
+}
+
+private struct StarcatFocusSourceLabel: View {
+    let source: WidgetFocusSource?
+
+    @ViewBuilder
+    var body: some View {
+        switch source {
+        case .pinned:
+            Label("widget.focus.pinned", systemImage: "pin.fill")
+                .lineLimit(1)
+        case .using:
+            Label("widget.focus.using", systemImage: "hammer.fill")
+                .lineLimit(1)
+        case nil:
+            EmptyView()
+        }
     }
 }

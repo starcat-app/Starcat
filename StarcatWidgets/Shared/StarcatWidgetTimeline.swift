@@ -101,6 +101,7 @@ private extension WidgetSnapshot {
             starsCount: 68_000,
             tags: ["Swift", "Language"],
             status: "using",
+            focusSource: .pinned,
             avatarFileName: nil,
             openURL: URL(string: "starcat://repo/apple/swift?v=1&rid=1")!
         )

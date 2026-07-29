@@ -244,6 +244,7 @@ struct WidgetAvatarCache: Sendable {
             starsCount: repository.starsCount,
             tags: repository.tags,
             status: repository.status,
+            focusSource: repository.focusSource,
             avatarFileName: avatarFileName,
             openURL: repository.openURL
         )

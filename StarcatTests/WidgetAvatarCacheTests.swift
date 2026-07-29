@@ -116,6 +116,7 @@ struct WidgetAvatarCacheTests {
             starsCount: 1,
             tags: [],
             status: "using",
+            focusSource: .using,
             avatarFileName: nil,
             openURL: URL(string: "starcat://repo/\(owner)/swift?v=1&rid=1")!
         )

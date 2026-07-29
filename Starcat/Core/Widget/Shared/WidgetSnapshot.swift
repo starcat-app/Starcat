@@ -19,6 +19,15 @@ enum WidgetAccountState: String, Codable, Equatable, Sendable {
     case unavailable
 }
 
+/// 仓库进入 Focus 投影的真实来源。
+///
+/// 只保存产品语义，不保存 `pinned_at` 等排序细节；Widget 需要据此向用户解释
+/// “为什么看到这条仓库”，避免把 using 仓库统一画成置顶。
+enum WidgetFocusSource: String, Codable, Equatable, Sendable {
+    case pinned
+    case using
+}
+
 /// Widget 所需的最小仓库投影。
 ///
 /// 不包含私有笔记、凭据、RAG 内容或数据库路径。`avatarFileName` 只能是 App Group
@@ -32,6 +41,7 @@ struct WidgetRepository: Codable, Equatable, Identifiable, Sendable {
     let starsCount: Int
     let tags: [String]
     let status: String?
+    let focusSource: WidgetFocusSource?
     let avatarFileName: String?
     let openURL: URL
 }

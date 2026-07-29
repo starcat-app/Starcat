@@ -69,6 +69,9 @@ struct WidgetSnapshotBuilderTests {
         let snapshot = try await WidgetSnapshotBuilder(database: database).build()
 
         #expect(snapshot.focusRepositories.map(\.id) == [2, 1, 3, 4, 5, 6])
+        #expect(snapshot.focusRepositories.map(\.focusSource) == [
+            .pinned, .pinned, .using, .using, .using, .using
+        ])
         #expect(snapshot.focusRepositories.count == 6)
         #expect(snapshot.focusRepositories.allSatisfy { $0.openURL.scheme == "starcat" })
     }
