@@ -65,6 +65,16 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
     let unreadReleaseCount: Int
     let unreadReleases: [WidgetRelease]
 
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case generatedAt
+        case accountState
+        case focusRepositories
+        case rediscoveryRepository
+        case unreadReleaseCount
+        case unreadReleases
+    }
+
     /// 构造快照时集中执行账户隔离不变量。
     ///
     /// 即使调用方错误地给 `.signedOut` / `.preparing` 传入旧业务数据，这里也会
@@ -98,5 +108,28 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
     /// 登出、切库和故障路径统一使用本工厂，避免各调用方手写空数组。
     static func empty(state: WidgetAccountState, generatedAt: Date = Date()) -> WidgetSnapshot {
         WidgetSnapshot(generatedAt: generatedAt, accountState: state)
+    }
+
+    /// 解码同样走账户隔离初始化器，不能只在主应用创建模型时清空数据。
+    ///
+    /// Widget 读取的是跨进程文件；即使磁盘文件来自旧版本或被异常中断，非 ready
+    /// 状态也不能携带可展示业务数据。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            schemaVersion: try container.decode(Int.self, forKey: .schemaVersion),
+            generatedAt: try container.decode(Date.self, forKey: .generatedAt),
+            accountState: try container.decode(WidgetAccountState.self, forKey: .accountState),
+            focusRepositories: try container.decode(
+                [WidgetRepository].self,
+                forKey: .focusRepositories
+            ),
+            rediscoveryRepository: try container.decodeIfPresent(
+                WidgetRepository.self,
+                forKey: .rediscoveryRepository
+            ),
+            unreadReleaseCount: try container.decode(Int.self, forKey: .unreadReleaseCount),
+            unreadReleases: try container.decode([WidgetRelease].self, forKey: .unreadReleases)
+        )
     }
 }
