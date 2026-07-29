@@ -117,6 +117,9 @@ targets:
         # “我的项目”GitHub App 的公开 Client ID。默认空时仅启用 OAuth public fallback。
         # 客户端禁止注入 GitHub App private key 或 client secret。
         STARCAT_GITHUB_APP_CLIENT_ID: $(STARCAT_GITHUB_APP_CLIENT_ID)
+        # GitHub App 页面 URL 中的公开 slug，用于构造安装入口。
+        # Client ID 与 slug 缺一时均保持 OAuth public fallback。
+        STARCAT_GITHUB_APP_SLUG: $(STARCAT_GITHUB_APP_SLUG)
         CFBundleURLTypes:
           - CFBundleURLName: com.starcat.app.store
             CFBundleURLSchemes:

@@ -79,6 +79,45 @@ enum AppConstants {
         return value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
+    /// “我的项目”GitHub App 的公开 slug，用于构造安装页。
+    ///
+    /// GitHub App 的安装与用户授权是两个独立步骤：slug 只负责把用户送到正确的安装页，
+    /// Device Flow 仍使用上面的 Client ID。两个值缺一时都不能宣称完整授权可用。
+    static var githubAppSlug: String {
+        let value = Bundle.main.infoDictionary?["STARCAT_GITHUB_APP_SLUG"] as? String
+        return value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    /// 当前构建是否具备完整 GitHub App 公共配置。
+    static var isGitHubAppConfigured: Bool {
+        !githubAppClientID.isEmpty && githubAppInstallationURL != nil
+    }
+
+    /// 当前 GitHub App 的安装入口。非法或空 slug 返回 nil，禁止拼出可疑外链。
+    static var githubAppInstallationURL: URL? {
+        makeGitHubAppInstallationURL(slug: githubAppSlug)
+    }
+
+    /// 用户管理已安装 GitHub App 与仓库范围的 GitHub 固定入口。
+    static let githubAppSettingsURL = URL(string: "https://github.com/settings/installations")!
+
+    /// 由公开 slug 构造安装 URL。
+    ///
+    /// GitHub App slug 只允许 ASCII 字母、数字和连字符。这里显式收窄字符集，
+    /// 避免配置错误把 `/`、查询参数或其它 URL 片段带入外部跳转。
+    static func makeGitHubAppInstallationURL(slug: String) -> URL? {
+        let normalized = slug.trimmingCharacters(in: .whitespacesAndNewlines)
+        let allowed = CharacterSet(
+            charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-"
+        )
+        guard !normalized.isEmpty,
+              normalized.unicodeScalars.allSatisfy(allowed.contains)
+        else {
+            return nil
+        }
+        return URL(string: "https://github.com/apps/\(normalized)/installations/new")
+    }
+
     // MARK: - 网络
 
     // 注：2026-06-08 起 `githubAPIBaseURL` 迁到 `AppEndpoints.GitHubREST.baseURL`，

@@ -63,6 +63,10 @@ STARCAT_OAUTH_CLIENT_SECRET =
 // 后填写；默认空时 App 只同步 OAuth 可见的 public 项目。
 STARCAT_GITHUB_APP_CLIENT_ID =
 
+// GitHub App 页面 URL 中的公开 slug（非 secret），用于构造用户安装入口。
+// 与 Client ID 必须同时配置；例如 App URL 结尾为 /starcat-project-access 时填同名 slug。
+STARCAT_GITHUB_APP_SLUG =
+
 // MARK: - 分发渠道
 
 // 默认按 App Store 渠道构建。Direct target / 打包脚本会覆盖为 `direct`。
