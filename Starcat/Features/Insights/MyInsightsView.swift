@@ -625,7 +625,7 @@ struct MyInsightsView: View {
         }
     }
 
-    /// 单行分布条：标签与数值在上、色条在下；色条每次出现从 0 长到目标宽度。
+    /// 单行分布条使用独立行高避免标签和柱体重叠；色条每次出现时从 0 长到目标宽度。
     @ViewBuilder
     private func distributionBarRow(
         _ item: InsightsDistributionItem,
