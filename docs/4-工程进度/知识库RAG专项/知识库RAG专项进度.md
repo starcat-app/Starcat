@@ -407,7 +407,7 @@
 
 ## 19. 仓库洞察 XML 上下文
 
-> 状态: 核心实现与定向测试已完成；全量门禁、多轮专项审查和结果报告执行中。详细范围见 `仓库洞察XML上下文实施方案.md` 与 `仓库洞察XML上下文Checklist.md`。
+> 状态: 核心实现、定向测试、当前 HEAD 全量测试、双 Debug target build 与三轮专项审查已完成；清洁复审和结果报告执行中。详细范围见 `仓库洞察XML上下文实施方案.md` 与 `仓库洞察XML上下文Checklist.md`。
 
 - [x] 页面、仓库 AI 摘要 / 对话和知识库 RAG 共用 `RepositoryInsightsDocument`，不重复生成聚合统计或重复写 XML。
 - [x] 独立 Storage 提供合法 XML、稳定 source/xml hash、原子写入、single-flight、账号边界和删除抑制。
