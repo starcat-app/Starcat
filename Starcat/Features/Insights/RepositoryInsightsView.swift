@@ -373,6 +373,9 @@ struct RepositoryInsightsView: View {
                     if let counts = displayedActivityCounts {
                         activityDerivedMetricsRow(counts)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                    } else if isActivityAwaitingFirstContent {
+                        InsightsSectionSkeleton(kind: .derivedPills())
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
                         Spacer(minLength: 0)
                     }
@@ -413,11 +416,12 @@ struct RepositoryInsightsView: View {
         } else {
             switch viewModel.activityState {
             case .idle, .loading:
-                sectionLoadingPlaceholder
+                InsightsSectionSkeleton(kind: .metricTiles())
             case .generating:
-                compactEmptyState(
-                    "insights.repo.state.generating",
-                    systemImage: "clock.arrow.circlepath"
+                // GitHub 仍在准备：保持骨架轮廓，弱文案不抢戏。
+                InsightsSectionSkeleton(
+                    kind: .metricTiles(),
+                    statusCaptionKey: "insights.repo.state.generating"
                 )
             case .unavailable:
                 compactEmptyState(
@@ -434,6 +438,16 @@ struct RepositoryInsightsView: View {
             case .content, .stale:
                 EmptyView()
             }
+        }
+    }
+
+    /// 活动区尚无缓存内容，且仍在首次拉取 / GitHub 准备中。
+    private var isActivityAwaitingFirstContent: Bool {
+        switch viewModel.activityState {
+        case .idle, .loading, .generating:
+            return true
+        case .content, .stale, .unavailable, .failed:
+            return false
         }
     }
 
@@ -1350,6 +1364,9 @@ struct RepositoryInsightsView: View {
                     if let pulse = displayedCommitActivity?.maintenancePulse {
                         maintenancePulseRow(pulse)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                    } else if isCommitAwaitingFirstContent {
+                        InsightsSectionSkeleton(kind: .derivedPills())
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
                         Spacer(minLength: 0)
                     }
@@ -1410,14 +1427,11 @@ struct RepositoryInsightsView: View {
         } else {
             switch viewModel.commitActivityState {
             case .idle, .loading:
-                chartEmptyState(
-                    "insights.repo.state.generating",
-                    systemImage: "clock.arrow.circlepath"
-                )
+                InsightsSectionSkeleton(kind: .chart(height: Self.chartPlotHeight))
             case .generating:
-                chartEmptyState(
-                    "insights.repo.state.generating",
-                    systemImage: "clock.arrow.circlepath"
+                InsightsSectionSkeleton(
+                    kind: .chart(height: Self.chartPlotHeight),
+                    statusCaptionKey: "insights.repo.state.generating"
                 )
             case .unavailable:
                 chartEmptyState(
@@ -1433,6 +1447,16 @@ struct RepositoryInsightsView: View {
             case .content, .stale:
                 EmptyView()
             }
+        }
+    }
+
+    /// 提交图尚无缓存，且仍在首次拉取 / GitHub 准备中。
+    private var isCommitAwaitingFirstContent: Bool {
+        switch viewModel.commitActivityState {
+        case .idle, .loading, .generating:
+            return true
+        case .content, .stale, .unavailable, .failed:
+            return false
         }
     }
 

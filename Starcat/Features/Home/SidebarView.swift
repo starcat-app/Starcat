@@ -1984,7 +1984,9 @@ struct SidebarView: View {
                     .frame(width: Self.trailingFixedWidth, alignment: .trailing)
                 }
             } icon: {
+                // 与探索「新发布」同语义色；对齐主导航其它行的彩色图标。
                 Image(systemName: "shippingbox.fill")
+                    .foregroundStyle(SidebarSemanticIconStyle(semanticColor: .cyan))
             }
             .contentShape(Rectangle())
         }
