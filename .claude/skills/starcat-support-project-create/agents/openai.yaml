@@ -1,0 +1,4 @@
+interface:
+  display_name: "Starcat 支撑项目创建"
+  short_description: "创建带完整开源治理、双语 README 和生态登记的 Starcat 支撑项目"
+  default_prompt: "使用 $starcat-support-project-create 创建并登记一个新的 Starcat 支撑项目。"

@@ -60,7 +60,9 @@ processing 仍由 Xcode Organizer / Transporter 完成。
 9. 验证本地 DMG/SHA/appcast-current 文件；
 10. 使用 `rsync` 上传 DMG/SHA；
 11. 合并并上传 `supports/starcat-site/direct/appcast.xml`；
-12. 使用 `curl -fsSI` 校验线上 appcast、DMG 和 changelog URL。
+12. 使用 `curl -fsSI` 校验线上 appcast、DMG 和 changelog URL；
+13. 用正式 DMG 的 SHA256 更新 `supports/homebrew-starcat/Casks/starcat.rb`；
+14. 单独提交并推送 Homebrew tap，等待 `Audit Cask` Action 成功。
 
 重要环境变量：
 
@@ -76,6 +78,27 @@ processing 仍由 Xcode Organizer / Transporter 完成。
 | `STARCAT_RELEASE_SKIP_NGINX=1` | 跳过 nginx 部署 |
 | `STARCAT_RELEASE_SKIP_SITE=1` | 跳过 changelog 和静态官网部署 |
 | `STARCAT_RELEASE_DRY_RUN=1` | 打印副作用命令，并跳过状态写入、部署、构建、上传和线上校验 |
+
+## Homebrew Cask 发布契约
+
+`supports/homebrew-starcat` 是独立 Git 仓库。Direct 正式发布的最后阶段必须使
+`Casks/starcat.rb` 与线上 DMG 保持一致：
+
+```ruby
+version "<X.Y.Z>"
+sha256 "<Starcat-X.Y.Z-arm64.dmg 的真实 SHA256>"
+```
+
+更新前同时核对：
+
+- `dist/direct/downloads/Starcat-<version>-arm64.dmg.sha256`；
+- 对完整 DMG 实际运行 `shasum -a 256` 的结果；
+- `https://starcat.ink/appcast.xml` 的 `sparkle:shortVersionString` 和 enclosure URL。
+
+更新后运行 `brew style Casks/starcat.rb`、`ruby -c Casks/starcat.rb` 和
+`git diff --check`。推送 tap 的 `main` 后等待 `Audit Cask`，并从
+`origin/main:Casks/starcat.rb` 复核最终版本和 SHA256。本地 Homebrew 安装目录
+可能仍缓存旧 tap，不能替代远端 `main` 验证。
 
 ## Legacy 内测发版契约
 
@@ -134,6 +157,8 @@ Direct 正式发布，也不要用它绕过双渠道签名、公证、上传和�
 | notarization 失败 | 检查 notarytool 输出和 Apple 凭证；除非用户明确选择，否则不要上传未 notarize 的公开 DMG |
 | appcast 合并后缺少新 DMG/版本 | 停止；检查 `appcast-current.xml`、`supports/starcat-site/direct/appcast.xml` 和 `merge-appcast.py` |
 | 线上 URL 校验失败 | 停止；检查上传路径、nginx/site 部署、DNS/TLS 和远程文件权限 |
+| Homebrew Cask 仍是旧版本 | 从正式 DMG/SHA 文件更新 tap；不要只依赖 appcast 的 livecheck |
+| `Audit Cask` 失败 | 停止；修复 Formula/Cask 语法、URL 或 SHA256，不能把 Direct 发布报告为完整成功 |
 
 ## 已知漂移
 

@@ -128,6 +128,24 @@ go run ./cmd/server
 # → http://localhost:5002
 ```
 
+### 新增独立支撑项目
+
+使用根目录 Skill：
+
+```text
+.claude/skills/starcat-support-project-create
+```
+
+创建流程会补齐开源治理文件和 `README.md` / `README-ZH.md`，并强制同步：
+
+- `clone-all.sh`
+- `scripts/sync-starcat-readme-promo.py`
+- 本文档与 `SYNC.md`
+- 按项目类型需要的 CI、Release/Audit 和运维入口
+
+新项目始终保持独立 Git 仓库，不能加入 Starcat 主仓库。创建组织仓库、推送和设置
+secrets 需要单独确认。
+
 ---
 
 ## 📁 本目录文件归属

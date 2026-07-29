@@ -81,6 +81,20 @@ cd supports
 
 > `starcat-license-api` 是**私有**仓库，需要 `gh auth login` 或配置 SSH key。
 
+### 新增独立仓库登记
+
+新增项目使用根目录 `.claude/skills/starcat-support-project-create`，并把以下更新视为
+同一个创建事务：
+
+1. 在 `clone-all.sh` 的帮助文本和 `PROJECTS` 数组登记仓库；
+2. 在 `scripts/sync-starcat-readme-promo.py` 登记双语摘要并生成两份 README
+   的 Starcat 推广区块；
+3. 更新本文档的独立仓库数量、清单和决策记录；
+4. 更新 `README.md` 的项目总数、分类表和 GitHub URL；
+5. 验证根 `.gitignore` 仍忽略新项目工作树，禁止用 `git add -f` 加入主仓库。
+
+API 或新的项目类型还要同步 `AGENTS.md`、`CLAUDE.md` 和对应运维/发布文档。
+
 ---
 
 ## 跨机器同步（git 不管的文件）

@@ -80,6 +80,8 @@ go vet ./...           # 必须 vet 干净
 ✅ 改 `go.mod` 必须跑 `go mod tidy` 同步 `go.sum`
 ✅ 新增 / 删除 API 服务后必须同步 `supports/start-all.sh`、`supports/Makefile`、`supports/scripts/` 运维脚本和跨服务文档
 ✅ 有 SQLite / Fly volume 的新增服务必须接入 backup / restore / wipe 脚本；无持久化存储的服务必须在文档中说明排除原因
+✅ 新增任意独立支撑项目必须补齐中英文 README、开源治理文件和适合技术栈的 CI
+✅ 新项目必须登记到 `clone-all.sh`、`sync-starcat-readme-promo.py`、`README.md` 与 `SYNC.md`
 ✅ PR 必须填写 `.github/PULL_REQUEST_TEMPLATE.md`
 ✅ Bug 报告必须用 `.github/ISSUE_TEMPLATE/bug_report.yml`
 

@@ -130,25 +130,30 @@ cd ../starcat-recommend-api && go mod tidy && go build ./... && go vet ./...
 cd ../starcat-discovery-api && go mod tidy && go build ./... && go vet ./...
 ```
 
-### 添加新的子项目
+### 添加新的独立支撑项目
 
-新增项目时,必须沿用现有的工程规范(详见 [`CLAUDE.md`](./CLAUDE.md)):
+新增 API、CLI、Launcher、浏览器扩展、Homebrew、文档或网站项目时，优先使用根目录
+`.claude/skills/starcat-support-project-create`。每个新项目都必须：
 
-1. 创建目录 `starcat-xxx-api/`
-2. **必带文件**(参考 sharing / weekly):
-   - `go.mod`(`module github.com/starcat-app/starcat-xxx-api`、`go 1.25.0`)
-   - `Dockerfile`(多阶段构建,参考 sharing 或 weekly)
-   - `fly.toml`
-   - `.gitignore`(参考 sharing 的 76 行版本)
-   - `.dockerignore`
-   - `.gitattributes`
-   - `README.md`、`CHANGELOG.md`、`CONTRIBUTING.md`
-   - `.github/`(8 个标准文件:`FUNDING.yml`、`dependabot.yml`、`workflows/{go,fly-deploy,release}.yml`、`PULL_REQUEST_TEMPLATE.md`、`ISSUE_TEMPLATE/{bug_report,feature_request}.yml`)
-   - `release.yml` 2026-06-08 起统一加入(产出多平台二进制 + 发 GitHub Release)
-3. 同步更新本 `AGENTS.md` 的目录表、项目对照表、配置说明和文件索引
-4. 同步更新本 `CLAUDE.md` 的关键约束、项目清单和部署说明
-5. 同步更新 `supports/start-all.sh`、`supports/Makefile` 和 `supports/scripts/` 下的运维脚本；有 SQLite / Fly volume 的服务还必须补齐 backup / restore / wipe 入口
-6. 同步更新 `supports/README.md`、`supports/docs/fly-io-环境变量.md` 等跨服务运维文档
+1. 位于 `supports/` 或 `supports/extensions/`，拥有独立 `.git`、remote、分支、CI/CD
+   和版本边界，禁止加入 Starcat 主仓库。
+2. 补齐 `README.md`、`README-ZH.md`、`LICENSE`、`CODE_OF_CONDUCT.md`、
+   `CONTRIBUTING.md`、`SECURITY.md`、`SUPPORT.md`、`CHANGELOG.md`、Issue/PR
+   模板和适合技术栈的 CI。
+3. 在 `supports/scripts/sync-starcat-readme-promo.py` 登记并生成中英文 Starcat
+   推广区块。
+4. 同步 `supports/clone-all.sh`、`supports/README.md` 和 `supports/SYNC.md`；
+   类型或运维拓扑变化时再同步本 `AGENTS.md` 与 `CLAUDE.md`。
+5. 创建 GitHub 组织仓库、设置 visibility、推送和配置 secrets 前单独确认外部副作用。
+
+新增 Go API 还必须沿用现有服务规范：
+
+- `go.mod` 使用 `github.com/starcat-app/starcat-xxx-api` 和统一 Go directive；
+- 补齐多阶段 `Dockerfile`、`fly.toml`、`.dockerignore`、`.gitattributes`、
+  `.env.example` 和 Go/Fly/Release workflows；
+- 同步 `supports/start-all.sh`、`supports/Makefile` 和 `supports/scripts/` 运维入口；
+- 有 SQLite / Fly volume 时补齐 backup / restore / wipe；无持久化存储时记录原因；
+- 同步 `supports/docs/fly-io-环境变量.md` 等跨服务文档和客户端真实调用契约。
 
 ---
 

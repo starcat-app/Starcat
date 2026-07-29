@@ -2,6 +2,7 @@
 
 > 盘点日期：2026-07-07
 > 范围：Starcat 仓库自有脚本，排除 `build/`、`dist/`、`.build/`、`node_modules/` 等构建产物和第三方依赖。
+> 2026-07-29 更新：补齐正式版 Homebrew Cask 闭环，新增 CLI 联动发版与支撑项目创建 Skill。
 
 ## Skill 编写语言规范
 
@@ -104,6 +105,53 @@
 - 共享 deploy 流程包含 PR -> merge -> main pull -> tag -> GitHub Actions -> Fly deploy。
 - 关键约束是 tag 必须指向 main 的 merge commit，不能指向 dev tip；不能在 main/master 上运行脚本。
 
+## P1：starcat-cli-release
+
+优先级：高。
+
+覆盖文件：
+
+- `supports/starcat-cli/.github/workflows/{ci,release}.yml`
+- `supports/starcat-cli/scripts/{build-all,render-homebrew-formula}.sh`
+- `supports/starcat-cli/CHANGELOG.md`
+- `supports/starcat-cli/RELEASING.md`
+- `supports/homebrew-starcat-cli/Formula/starcat.rb`
+- `supports/homebrew-starcat-cli/.github/workflows/audit.yml`
+
+建议触发场景：
+
+- 用户说“发布 Starcat CLI”“给 CLI 升级版本”“验证 CLI Release”。
+- 用户排查 CLI Release 成功但 Homebrew Formula 未更新或 Audit 失败。
+
+沉淀价值：
+
+- CLI 稳定版横跨两个独立仓库，完整状态是 Release、Formula 自动提交与 Audit Formula
+  同时成功。
+- checksums、attestations、五平台归档和版本注入需要按实际下载产物验证。
+
+## P1：starcat-support-project-create
+
+优先级：高。
+
+覆盖文件：
+
+- 支撑项目开源治理文件和双语 README；
+- `supports/clone-all.sh`；
+- `supports/scripts/sync-starcat-readme-promo.py`；
+- `supports/{README,SYNC,AGENTS,CLAUDE}.md`；
+- 按类型选择的 CI、Release、Dependabot、Fly.io 或商店发布文件。
+
+建议触发场景：
+
+- 用户说“在 supports 下创建新项目”“创建组织仓库并补齐开源文件”。
+- 用户要求新项目加入 clone-all、README 营销同步和 supports 项目清单。
+
+沉淀价值：
+
+- 新项目不是单一目录创建，而是独立 Git 边界、开源治理、双语营销和中央登记的一致性
+  事务。
+- 使用拒绝覆盖的脚手架生成通用基线，项目类型差异继续由 Agent 按真实技术栈处理。
+
 ## P2：starcat-localization-sync
 
 优先级：中。
@@ -163,14 +211,15 @@
 
 ## 推荐落地顺序
 
-1. 先创建 `starcat-release`，解决最高风险的 Direct 发布与基础发版入口选择问题。
-2. 再创建 `starcat-supports-ops`，覆盖 Fly secrets、备份、恢复、本地多服务启动。
-3. 然后创建 `starcat-backend-release`，单独沉淀 supports 子项目的 PR/tag/Fly 发布流。
-4. 最后根据实际触发频率决定是否拆出 `starcat-localization-sync` 和 `starcat-public-site-and-promo`。
+1. `starcat-release` 负责 App Store / Direct 正式版发布和 Homebrew Cask 闭环。
+2. `starcat-cli-release` 负责 CLI Release 与 Homebrew Formula 闭环。
+3. `starcat-support-project-create` 负责新支撑项目开源基线与中央登记。
+4. `starcat-supports-ops` / `starcat-backend-release` 继续负责已有 API 的运维和发布。
+5. `starcat-localization-sync` / `starcat-public-site-and-promo` 负责内容型跨仓库流程。
 
-## 创建 starcat-release 前的待确认问题
+## starcat-release 已确认规则
 
-- `scripts/release-direct.sh` 是否应成为未来 Starcat Direct 公开发布的唯一主入口？
-- `scripts/release.sh` 是否仅保留为“基础/内测 DMG + tag”的入口？
-- `docs/6-发版与上架/SOP-发版流程.md` 是否需要同步更新，把 Direct 公开发布路径提到 `release-direct.sh`？
-- `Makefile` 是否需要新增 `release-direct` / `release-direct-dry-run` target，避免用户只看到 `make release`？
+- Direct 公开发布使用 `scripts/release-direct.sh <X.Y.Z>`。
+- App Store archive 使用 `scripts/package-appstore.sh` / `make package-appstore`。
+- legacy `release-store.sh` 默认禁用，不作为正式版入口。
+- Direct 完成标准包含 `homebrew-starcat` Cask 同步和 `Audit Cask` 成功。

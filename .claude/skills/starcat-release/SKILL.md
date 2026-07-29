@@ -15,7 +15,7 @@ archive 与 Direct 公开发布两条；不要把 legacy 内测 DMG 流程或通
 - 除非用户在当前对话中明确说“开干 / 执行 / 发布 / GO / 动手”，否则不要运行真实发布、部署、上传、`git tag`、`git push`、`rsync`、`ssh`、notarization 或 appcast 写入命令。
 - 排查时先使用只读命令：`git status`、`git tag`、`git ls-remote`、`--help`、读取文件，以及脚本 dry-run 模式。
 - 不要为了发版手动修改 `project.yml` 里的版本号字段。Starcat 的版本来自 git tag 和构建脚本。
-- 修改发版代码时不要写“兼容旧版本 / 数据迁移 / 保留旧路径”逻辑；本项目未上线，`AGENTS.md` 明确禁止兼容路径。
+- Starcat 已发布正式版；修改发版代码时保留线上用户、已发布 tag 和历史产物，不覆盖或复用既有版本。代码层废弃路径仍应一次性收口，不堆叠永久双轨。
 - 保留无关未提交文件。工作区不干净时，先判断这些改动是否与发版任务相关，再提出下一步。
 
 ## 入口选择
@@ -25,7 +25,7 @@ archive 与 Direct 公开发布两条；不要把 legacy 内测 DMG 流程或通
 | 用户意图 | 使用入口 | 原因 |
 |---|---|---|
 | App Store 发布准备、archive、Validate、上传 App Store Connect | `scripts/package-appstore.sh` / `make package-appstore` | 构建并校验 `Starcat` archive；上传继续由 Xcode Organizer / Transporter 完成 |
-| Direct 公开发布、Sparkle 更新、starcat.ink 部署、上传 DMG/appcast | `scripts/release-direct.sh <X.Y.Z>` | Direct 渠道完整编排入口 |
+| Direct 公开发布、Sparkle 更新、starcat.ink 部署、上传 DMG/appcast | `scripts/release-direct.sh <X.Y.Z>` | Direct 渠道完整编排入口；发布后还要同步 Homebrew Cask |
 | 只在本地构建 Direct 包 | `scripts/package-direct.sh <X.Y.Z>` | 构建 `StarcatDirect` DMG，可选 notarization/appcast |
 | 历史 ad-hoc 内测 tag + DMG 流程 | `scripts/release-store.sh vX.Y.Z` | legacy 入口；默认禁用，必须显式设置 `STARCAT_ALLOW_LEGACY_RELEASE=1` |
 
@@ -87,19 +87,19 @@ Direct 分发使用 `scripts/release-direct.sh <X.Y.Z>`。它会执行：
 正式公开发布命令：
 
 ```bash
-STARCAT_NOTARIZE=1 ./scripts/release-direct.sh 1.1.0
+STARCAT_NOTARIZE=1 ./scripts/release-direct.sh X.Y.Z
 ```
 
 演练命令：
 
 ```bash
-STARCAT_RELEASE_DRY_RUN=1 ./scripts/release-direct.sh 1.1.0
+STARCAT_RELEASE_DRY_RUN=1 ./scripts/release-direct.sh X.Y.Z
 ```
 
 tag 已存在时重跑：
 
 ```bash
-STARCAT_RELEASE_SKIP_TAG=1 ./scripts/release-direct.sh 1.1.0
+STARCAT_RELEASE_SKIP_TAG=1 ./scripts/release-direct.sh X.Y.Z
 ```
 
 只重跑 Direct 更新文件发布：
@@ -108,8 +108,33 @@ STARCAT_RELEASE_SKIP_TAG=1 ./scripts/release-direct.sh 1.1.0
 STARCAT_RELEASE_SKIP_TAG=1 \
 STARCAT_RELEASE_SKIP_NGINX=1 \
 STARCAT_RELEASE_SKIP_SITE=1 \
-./scripts/release-direct.sh 1.1.0
+./scripts/release-direct.sh X.Y.Z
 ```
+
+### 同步 Homebrew Cask
+
+Direct 正式发布成功后，继续处理独立仓库
+`supports/homebrew-starcat/Casks/starcat.rb`：
+
+1. 从 `dist/direct/downloads/Starcat-<version>-arm64.dmg.sha256` 读取 SHA256，
+   并对正式 DMG 实际计算一次 SHA256；两者必须一致。
+2. 更新 Cask 的 `version` 和 `sha256`，URL 继续使用版本化
+   `Starcat-#{version}-arm64.dmg`。
+3. 在 `supports/homebrew-starcat` 独立仓库运行：
+
+```bash
+brew style Casks/starcat.rb
+ruby -c Casks/starcat.rb
+git diff --check
+```
+
+4. 正式发版授权包含 Homebrew 更新时，单独提交并推送该仓库的 `main`，等待
+   `Audit Cask` Action 成功。
+5. 从 `origin/main` 复核 Cask，而不是读取可能停留在 `dev` 的本地工作树。
+
+Release、DMG、appcast 成功但 Cask 未更新或 `Audit Cask` 失败时，Direct 正式发布
+仍视为未完成。不要覆盖旧 tag 或替换旧 Release 资产，应修复后发布新的 patch
+版本，或在相同 App 版本仅修复 tap 时单独提交 Cask。
 
 ## Legacy 内测发版
 
@@ -117,8 +142,8 @@ STARCAT_RELEASE_SKIP_SITE=1 \
 App Store 或 Direct 的正式发布入口。只有用户明确要求复现旧内测流程时才可使用：
 
 ```bash
-STARCAT_ALLOW_LEGACY_RELEASE=1 ./scripts/release-store.sh v1.1.0 --dry-run
-STARCAT_ALLOW_LEGACY_RELEASE=1 ./scripts/release-store.sh v1.1.0
+STARCAT_ALLOW_LEGACY_RELEASE=1 ./scripts/release-store.sh vX.Y.Z --dry-run
+STARCAT_ALLOW_LEGACY_RELEASE=1 ./scripts/release-store.sh vX.Y.Z
 ```
 
 本地试跑用 `--skip-push`。只有用户明确要 tag-only 行为时才使用 `--skip-dmg`。
@@ -136,6 +161,8 @@ Direct 发布后验证：
   - `https://starcat.ink/appcast.xml`
   - `https://starcat.ink/downloads/Starcat-<version>-arm64.dmg`
   - `https://starcat.ink/changelog.html`
+- `supports/homebrew-starcat` 的 `origin/main` 已声明相同版本和 DMG SHA256；
+- `homebrew-starcat` 的 `Audit Cask` Action 成功。
 
 legacy 内测发版后验证：
 

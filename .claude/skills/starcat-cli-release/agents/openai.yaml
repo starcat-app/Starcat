@@ -1,0 +1,4 @@
+interface:
+  display_name: "Starcat CLI 发版"
+  short_description: "Starcat CLI 与 Homebrew Formula 联动发版"
+  default_prompt: "使用 $starcat-cli-release 准备、执行或排查一次 Starcat CLI 发版。"
