@@ -453,7 +453,14 @@ xcodegen generate
 关闭 Xcode 后执行：
 
 ```bash
-xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
+# 本地尚未取得 Widget App Group provisioning profile 时，测试动作使用 ad-hoc
+# 签名并仅对测试构建清空 entitlement；正式 target 配置和分发产物不受影响。
+xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' \
+  CODE_SIGN_ENTITLEMENTS='' CODE_SIGN_IDENTITY='-' DEVELOPMENT_TEAM='' test
+
+# 开发者后台和本机 profile 就绪后，再用正式 entitlement 复测。
+# xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
+
 xcodebuild -scheme Starcat -configuration Debug -destination 'platform=macOS,arch=arm64' build
 xcodebuild -scheme StarcatDirect -configuration Debug -destination 'platform=macOS,arch=arm64' build
 ```

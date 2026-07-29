@@ -23,7 +23,7 @@
   - 证据：commit `b0cfaa4`
 - [x] 建立本专项 checklist
   - 证据：本文件对应提交
-- [ ] 确认未修改 `docs/功能实现总览.md`
+- [x] 确认未修改 `docs/功能实现总览.md`
   - 证据：最终 `git diff dev...HEAD -- docs/功能实现总览.md` 无输出
 
 ---
@@ -58,138 +58,157 @@
 
 ## 2. 共享快照契约
 
-- [ ] 新增 `WidgetSnapshot` v1 顶层模型
-- [ ] 新增 `WidgetAccountState`
-- [ ] 新增最小化 `WidgetRepository`
-- [ ] 新增最小化 `WidgetRelease`
-- [ ] 模型遵循 `Codable`、`Equatable`、`Sendable`
-- [ ] 快照不包含 Token、Keychain key、Local API Key
-- [ ] 快照不包含笔记、RAG chunk、对话
-- [ ] 快照默认排除 Private repository
-- [ ] description、tags、列表条数都有上限
-- [ ] 更高 schema version 可恢复降级
+- [x] 新增 `WidgetSnapshot` v1 顶层模型
+- [x] 新增 `WidgetAccountState`
+- [x] 新增最小化 `WidgetRepository`
+- [x] 新增最小化 `WidgetRelease`
+- [x] 模型遵循 `Codable`、`Equatable`、`Sendable`
+- [x] 快照不包含 Token、Keychain key、Local API Key
+- [x] 快照不包含笔记、RAG chunk、对话
+- [x] 快照默认排除 Private repository
+- [x] description、tags、列表条数都有上限
+- [x] 更高 schema version 可恢复降级
+
+> 证据：`ffb242c1`、`02878bce`、`WidgetSnapshotStoreTests`、
+> `WidgetSnapshotBuilderTests`。
 
 ---
 
 ## 3. 快照存储与用户隔离
 
-- [ ] 渠道配置从 Info.plist 读取，不猜测容器
-- [ ] App Group 容器缺失时返回明确错误
-- [ ] 快照使用临时文件 + 原子替换
-- [ ] 损坏快照不会使 Extension 崩溃
-- [ ] 文件不存在显示 preparing
-- [ ] 登出先写 signedOut 空快照
-- [ ] 用户切换先写 preparing 空快照
-- [ ] 新用户数据库就绪后才发布 ready 快照
-- [ ] 发布后调用 `WidgetCenter.reloadAllTimelines()`
-- [ ] 测试环境不会触发真实系统容器或刷新副作用
+- [x] 渠道配置从 Info.plist 读取，不猜测容器
+- [x] App Group 容器缺失时返回明确错误
+- [x] 快照使用临时文件 + 原子替换
+- [x] 损坏快照不会使 Extension 崩溃
+- [x] 文件不存在显示 preparing
+- [x] 登出先写 signedOut 空快照
+- [x] 用户切换先写 preparing 空快照
+- [x] 新用户数据库就绪后才发布 ready 快照
+- [x] 发布后调用 `WidgetCenter.reloadAllTimelines()`
+- [x] 测试环境不会触发真实系统容器或刷新副作用
+
+> 证据：`2fae33b5`、`b30bbb68`、`7a97c345`、`WidgetSnapshotStoreTests`。
 
 ---
 
 ## 4. 业务投影与刷新
 
-- [ ] Focus 候选按指定 / 置顶 / using 优先
-- [ ] Focus 按 repo ID 去重并限制 6 条
-- [ ] 今日重逢过滤 archived、Private、近 30 天、置顶和 using
-- [ ] 今日重逢同一账号同一天选择稳定
-- [ ] 今日重逢空候选可恢复
-- [ ] Release Watch 只取已订阅且未读 Release
-- [ ] Release Watch 排除 Private repository
-- [ ] Release Watch 未读总数与列表过滤口径一致
-- [ ] 快照刷新覆盖启动恢复、Stars 同步、置顶、状态、标签、Release
-- [ ] 高频刷新信号被合并，避免重复全量构建
+- [x] Focus 候选按指定 / 置顶 / using 优先
+- [x] Focus 按 repo ID 去重并限制 6 条
+- [x] 今日重逢过滤 archived、Private、近 30 天、置顶和 using
+- [x] 今日重逢同一账号同一天选择稳定
+- [x] 今日重逢空候选可恢复
+- [x] Release Watch 只取已订阅且未读 Release
+- [x] Release Watch 排除 Private repository
+- [x] Release Watch 未读总数与列表过滤口径一致
+- [x] 快照刷新覆盖启动恢复、Stars 同步、置顶、状态、标签、Release
+- [x] 高频刷新信号被合并，避免重复全量构建
+
+> 证据：`02878bce`、`b30bbb68`、`09e739ff`、`WidgetSnapshotBuilderTests`。
 
 ---
 
 ## 5. 头像缓存
 
-- [ ] Widget Extension 不发起网络请求
-- [ ] 主应用只接受 GitHub HTTPS owner avatar
-- [ ] 下载设置超时和 2 MB 响应上限
-- [ ] 图片解码校验通过后才写入缓存
-- [ ] 头像缓存使用临时文件 + 原子替换
-- [ ] 快照只保存头像相对路径
-- [ ] 缓存失败使用内置 fallback
-- [ ] 退出登录清理共享头像
-- [ ] 清理未引用头像并限制缓存总量
+- [x] Widget Extension 不发起网络请求
+- [x] 主应用只接受 GitHub HTTPS owner avatar
+- [x] 下载设置超时和 2 MB 响应上限
+- [x] 图片解码校验通过后才写入缓存
+- [x] 头像缓存使用临时文件 + 原子替换
+- [x] 快照只保存头像相对路径
+- [x] 缓存失败使用内置 fallback
+- [x] 退出登录清理共享头像
+- [x] 清理未引用头像并限制缓存总量
+
+> 证据：`b1bc4bc1`、`20e55708`。
 
 ---
 
 ## 6. Starcat Focus
 
-- [ ] 提供 Small / Medium / Large
-- [ ] Small 展示一个仓库
-- [ ] Medium 最多展示三个仓库
-- [ ] Large 最多展示六个仓库
-- [ ] 支持自动选择与指定仓库配置
-- [ ] 每行展示 owner avatar、仓库名与来源状态
-- [ ] 空态可点击打开 Starcat
-- [ ] 每个仓库可点击打开对应详情
+- [x] 提供 Small / Medium / Large
+- [x] Small 展示一个仓库
+- [x] Medium 最多展示三个仓库
+- [x] Large 最多展示六个仓库
+- [x] 支持自动选择与指定仓库配置
+- [x] 每行展示 owner avatar、仓库名与来源状态
+- [x] 空态可点击打开 Starcat
+- [x] 每个仓库可点击打开对应详情
+
+> 证据：`1548a5dd`，Store / Direct unsigned build 均通过。
 
 ---
 
 ## 7. 今日重逢
 
-- [ ] 提供 Small / Medium
-- [ ] Small 展示头像、名称、语言
-- [ ] Medium 增加描述、Star 数和标签
-- [ ] 当天 Timeline 刷新不更换候选
-- [ ] 次日 00:05 后请求新 Timeline
-- [ ] 空态可点击打开 Starcat
-- [ ] 仓库可点击打开对应详情
+- [x] 提供 Small / Medium
+- [x] Small 展示头像、名称、语言
+- [x] Medium 增加描述、Star 数和标签
+- [x] 当天 Timeline 刷新不更换候选
+- [x] 次日 00:05 后请求新 Timeline
+- [x] 空态可点击打开 Starcat
+- [x] 仓库可点击打开对应详情
+
+> 证据：`6ae7de3d`、`WidgetSnapshotBuilderTests`。
 
 ---
 
 ## 8. Release Watch
 
-- [ ] 提供 Medium / Large
-- [ ] Medium 最多展示三条
-- [ ] Large 最多展示六条
-- [ ] 展示未读总数、tag、仓库、时间和 prerelease
-- [ ] 无未读 Release 时显示明确空态
-- [ ] Release 行可点击打开仓库 Release 区域
-- [ ] Release ID 不存在时降级到仓库 Release 区域
+- [x] 提供 Medium / Large
+- [x] Medium 最多展示三条
+- [x] Large 最多展示六条
+- [x] 展示未读总数、tag、仓库、时间和 prerelease
+- [x] 无未读 Release 时显示明确空态
+- [x] Release 行可点击打开仓库 Release 区域
+- [x] Release ID 不存在时降级到仓库 Release 区域
+
+> 证据：`82edec6b`、`7a7be021`、`09e739ff`。
 
 ---
 
 ## 9. Deep Link、安全与 UI 规范
 
-- [ ] 仓库点击复用 `RepositoryDeepLink`
-- [ ] 新增 Release Deep Link 编码与解析
-- [ ] 拒绝非 Starcat / 非受信任 Universal Link
-- [ ] 拒绝无效 repo ID / release ID
-- [ ] 冷启动导航保留 pending request
-- [ ] 所有 Widget 使用 `containerBackground(for: .widget)`
-- [ ] 文本和图标只使用 `.primary` / `.secondary`
-- [ ] 固定文案进入 `Localizable.xcstrings`
-- [ ] 所有交互元素有 VoiceOver label
+- [x] 仓库点击复用 `RepositoryDeepLink`
+- [x] 新增 Release Deep Link 编码与解析
+- [x] 拒绝非 Starcat / 非受信任 Universal Link
+- [x] 拒绝无效 repo ID / release ID
+- [x] 冷启动导航保留 pending request
+- [x] 所有 Widget 使用 `containerBackground(for: .widget)`
+- [x] 文本和图标只使用 `.primary` / `.secondary`
+- [x] 固定文案进入 `Localizable.xcstrings`
+- [x] 所有交互元素有 VoiceOver label
 - [ ] 深色、浅色模式信息可读
+
+> 证据：`7a7be021`、`f23c2b24`；深浅色最终项保留给已签名安装后的人工验收。
 
 ---
 
 ## 10. 自动化测试
 
-- [ ] snapshot v1 encode / decode
-- [ ] 更高 schema、损坏和缺失文件降级
-- [ ] 原子写入及临时文件清理
-- [ ] signedOut / preparing 不携带业务数据
-- [ ] Private repository 过滤
-- [ ] Focus 优先级、去重和上限
-- [ ] 今日重逢过滤、稳定性和空候选
-- [ ] Release 订阅、未读、隐私过滤和排序
-- [ ] Deep Link 正常与非法输入
-- [ ] Store / Direct 渠道配置
-- [ ] Widget 相关定向测试通过
-- [ ] Starcat 全量测试通过
+- [x] snapshot v1 encode / decode
+- [x] 更高 schema、损坏和缺失文件降级
+- [x] 原子写入及临时文件清理
+- [x] signedOut / preparing 不携带业务数据
+- [x] Private repository 过滤
+- [x] Focus 优先级、去重和上限
+- [x] 今日重逢过滤、稳定性和空候选
+- [x] Release 订阅、未读、隐私过滤和排序
+- [x] Deep Link 正常与非法输入
+- [x] Store / Direct 渠道配置
+- [x] Widget 相关定向测试通过
+  - 证据：19 tests，0 failures，0 skipped
+- [x] Starcat 全量测试通过
+  - 证据：2051 tests，0 failures，8 skipped，1 expected failure
 
 ---
 
 ## 11. 构建、签名与真机验收
 
-- [ ] `git diff --check` 通过
-- [ ] `xcodegen generate` 后工程无未预期漂移
-- [ ] Store Debug build 通过
-- [ ] Direct Debug build 通过
+- [x] `git diff --check` 通过
+- [x] `xcodegen generate` 后工程无未预期漂移
+- [x] Store Debug build 通过
+- [x] Direct Debug build 通过
 - [ ] Store Host / Extension 签名与 App Group 检查通过
 - [ ] Direct Host / Extension 签名与 App Group 检查通过
 - [ ] Widget Gallery 出现三个组件
@@ -229,5 +248,21 @@
 | `b0cfaa4` | 文档 | 新增详细落地方案 | `git diff --check` |
 | `45f21c5` | 文档 | 新增专项 checklist | `git diff --check` |
 | `113b2e5` | 工程 | 新增双渠道 Widget target、App Group 和占位组件 | `xcodegen` + 双渠道 unsigned build + `.appex` 检查 |
+| `7926a9f` | 文档 | 回填双渠道工程门禁进度 | `git diff --check` |
+| `ffb242c` | 功能 | 添加版本化共享快照模型 | 双渠道 unsigned build |
+| `2fae33b` | 功能 | 实现原子快照存储 | 双渠道 unsigned build |
+| `02878bc` | 功能 | 实现小组件快照构建 | 双渠道 unsigned build |
+| `b30bbb6` | 功能 | 接入小组件快照刷新协调器 | 双渠道 unsigned build |
+| `b1bc4bc` | 功能 | 添加共享头像缓存 | 双渠道 unsigned build |
+| `7a97c34` | 功能 | 添加小组件时间线加载基础设施 | 双渠道 unsigned build |
+| `1548a5d` | 功能 | 实现 Starcat Focus 小组件 | 双渠道 unsigned build |
+| `6ae7de3` | 功能 | 实现今日重逢小组件 | 双渠道 unsigned build |
+| `82edec6` | 功能 | 实现 Release Watch 小组件 | 双渠道 unsigned build |
+| `7a7be02` | 功能 | 完善 Release 深层链接 | 双渠道 unsigned build |
+| `b2ee74f` | 测试 | 覆盖共享快照与渠道配置 | 定向测试通过 |
+| `09e739f` | 修复 | 兼容 Release 时间格式 | 数据库投影测试通过 |
+| `dd427cb` | 测试 | 覆盖数据库投影选择规则 | 定向测试通过 |
+| `f23c2b2` | 测试 | 覆盖 Release 深层链接边界 | 定向测试通过 |
+| `20e5570` | 测试 | 覆盖头像缓存安全边界 | 定向测试通过 |
 
-后续每次提交后立即追加本表；审查时以 `git log --reverse dev..HEAD` 反向核对。
+审查时继续以 `git log --reverse dev..HEAD` 反向核对；本表在每轮审查后补齐新增提交。
