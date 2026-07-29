@@ -2,7 +2,7 @@
 
 > 日期：2026-07-30  
 > 范围：功能完整性、RAG 全链路、知识库 UI 与可解释性  
-> 结论：发现 1 个 P1，修复前不能结束专项
+> 结论：发现的 1 个 P1 已修复并通过定向复验
 
 ## 1. 审查结论
 
@@ -31,8 +31,10 @@ RAG 的 Planner 后目标选择、cache-only 加载、独立 Prompt section、XM
 
 ## 4. 修复与复验
 
-- [ ] 增加 `.forceRegenerate` 定向取消入口。
-- [ ] Provider 返回后、写盘前拒绝已取消任务。
-- [ ] 切仓 / 移库 / 关窗调用内部取消。
-- [ ] 补迟到 Provider 结果不写盘测试。
-- [ ] 重跑 Coordinator、Browser 管理与 Knowledge RAG Core 测试。
+- [x] 增加 repo + scope + mode 定向取消入口，仅取消 `.forceRegenerate`。
+- [x] Provider 返回后、写盘前拒绝已取消任务。
+- [x] 切仓 / 移库 / 关窗通过既有生命周期调用内部取消。
+- [x] 新增迟到 Provider 结果不写盘测试。
+- [x] Coordinator、RepoContext Storage 与 Knowledge RAG Core 定向测试通过。
+
+修复提交：`f48aa80 fix(rag): 真正取消洞察 XML 主动生成`。

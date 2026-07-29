@@ -160,14 +160,14 @@
 
 ## 10. 第二轮审查：功能、RAG 全链路、UI
 
-- [ ] 新增并提交第二轮审查报告。
-- [ ] 审查 Knowledge Browser 所有展示、统计和操作。
-- [ ] 审查 Planner / Service / Prompt / 门禁 / Citation 全链路。
-- [ ] 审查 Plan / Timeline / Context / Evidence / Debug / 历史全部可见面。
-- [ ] 审查 i18n、主题、focus、sheet、复制、删除和稳定加载状态。
-- [ ] 审查 AI 摘要 / 对话与 RAG 是否消费同一 XML。
-- [ ] 修复第二轮全部 P0 / P1 / P2 问题并分别提交。
-- [ ] 回填第二轮报告修复结果。
+- [x] 新增并提交第二轮审查报告。
+- [x] 审查 Knowledge Browser 所有展示、统计和操作。
+- [x] 审查 Planner / Service / Prompt / 门禁 / Citation 全链路。
+- [x] 审查 Plan / Timeline / Context / Evidence / Debug / 历史全部可见面。
+- [x] 审查 i18n、主题、focus、sheet、复制、删除和稳定加载状态。
+- [x] 审查 AI 摘要 / 对话与 RAG 是否消费同一 XML。
+- [x] 修复第二轮全部 P0 / P1 / P2 问题并分别提交。
+- [x] 回填第二轮报告修复结果。
 
 ## 11. 第三轮审查：测试、文档、进度一致性
 
