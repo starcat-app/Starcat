@@ -21,6 +21,7 @@ struct ProjectAccessSessionTests {
         var credential: ProjectAccessCredential
         var refreshed: ProjectAccessCredential
         private(set) var refreshInputs: [String] = []
+        private(set) var resetCallCount = 0
 
         init(credential: ProjectAccessCredential, refreshed: ProjectAccessCredential? = nil) {
             self.credential = credential
@@ -35,7 +36,54 @@ struct ProjectAccessSessionTests {
             refreshInputs.append(refreshToken)
             return refreshed
         }
-        func reset() async {}
+        func reset() async {
+            resetCallCount += 1
+        }
+    }
+
+    /// 项目权限测试使用独立替身，验证安装页和 callback 都经过发起进程的系统认证会话。
+    @MainActor
+    private final class MockProjectWebAuthenticationSession:
+        WebAuthenticationSessionProviding
+    {
+        private(set) var authorizationURL: URL?
+        private(set) var callbackURLScheme: String?
+        private(set) var cancelCallCount = 0
+        var startError: WebAuthenticationSessionError?
+        private var completion: (@MainActor @Sendable (
+            Result<URL, WebAuthenticationSessionError>
+        ) -> Void)?
+
+        func start(
+            authorizationURL: URL,
+            callbackURLScheme: String,
+            completion: @escaping @MainActor @Sendable (
+                Result<URL, WebAuthenticationSessionError>
+            ) -> Void
+        ) throws {
+            if let startError {
+                throw startError
+            }
+            self.authorizationURL = authorizationURL
+            self.callbackURLScheme = callbackURLScheme
+            self.completion = completion
+        }
+
+        func cancel() {
+            cancelCallCount += 1
+            completion = nil
+        }
+
+        func complete(with result: Result<URL, WebAuthenticationSessionError>) {
+            let completion = completion
+            self.completion = nil
+            completion?(result)
+        }
+    }
+
+    @MainActor
+    private final class ConnectionResultRecorder {
+        var value: ProjectAccessConnectionResult?
     }
 
     private let now = Date(timeIntervalSince1970: 10_000)
@@ -89,6 +137,114 @@ struct ProjectAccessSessionTests {
         #expect(session.state == .connected(expiresAt: issued.accessExpiresAt))
         #expect(try keychain.loadGithubToken() == "oauth-main")
         #expect(try keychain.loadProjectAccessCredential() != nil)
+    }
+
+    @Test("安装授权由发起进程的 ASWebAuthenticationSession 完成")
+    @MainActor
+    func connectionUsesProcessBoundWebAuthenticationSession() async {
+        let keychain = InMemoryKeychain()
+        let issued = credential(token: "ghu-project", accessOffset: 3_600)
+        let webAuthenticationSession = MockProjectWebAuthenticationSession()
+        let recorder = ConnectionResultRecorder()
+        let session = ProjectAccessSession(
+            oauthService: MockOAuth(credential: issued),
+            keychain: keychain,
+            webAuthenticationSession: webAuthenticationSession,
+            isConfigured: true,
+            appSlug: "starcat-project-access",
+            installationCheck: { _, _ in .allRepositories },
+            now: { self.now }
+        )
+
+        session.startConnection { recorder.value = $0 }
+        await Self.waitUntil { webAuthenticationSession.authorizationURL != nil }
+
+        #expect(
+            webAuthenticationSession.authorizationURL?.path
+                == "/apps/starcat-for-github/installations/new"
+        )
+        #expect(
+            webAuthenticationSession.callbackURLScheme == AppConstants.oauthCallbackScheme
+        )
+        #expect(session.state == .awaitingAuthorization)
+
+        webAuthenticationSession.complete(with: .success(callbackURL))
+        await Self.waitUntil { recorder.value != nil }
+
+        #expect(recorder.value == .connected(.allRepositories))
+        #expect(session.state == .connected(expiresAt: issued.accessExpiresAt))
+        let storedCredential = try? keychain.loadProjectAccessCredential()
+        #expect(storedCredential != nil)
+    }
+
+    @Test("关闭项目授权系统窗口按正常取消处理")
+    @MainActor
+    func systemAuthenticationCancellationResetsConnection() async {
+        let issued = credential(token: "ghu-project", accessOffset: 3_600)
+        let oauth = MockOAuth(credential: issued)
+        let webAuthenticationSession = MockProjectWebAuthenticationSession()
+        let recorder = ConnectionResultRecorder()
+        let session = ProjectAccessSession(
+            oauthService: oauth,
+            keychain: InMemoryKeychain(),
+            webAuthenticationSession: webAuthenticationSession,
+            isConfigured: true,
+            now: { self.now }
+        )
+
+        session.startConnection { recorder.value = $0 }
+        await Self.waitUntil { webAuthenticationSession.authorizationURL != nil }
+        webAuthenticationSession.complete(with: .failure(.cancelled))
+        await Self.waitUntil { recorder.value != nil }
+
+        #expect(recorder.value == .cancelled)
+        #expect(session.state == .disconnected)
+        #expect(oauth.resetCallCount == 1)
+    }
+
+    @Test("项目权限取消只关闭自己的系统认证会话")
+    @MainActor
+    func explicitCancellationStopsProjectWebSession() async {
+        let issued = credential(token: "ghu-project", accessOffset: 3_600)
+        let webAuthenticationSession = MockProjectWebAuthenticationSession()
+        let session = ProjectAccessSession(
+            oauthService: MockOAuth(credential: issued),
+            keychain: InMemoryKeychain(),
+            webAuthenticationSession: webAuthenticationSession,
+            isConfigured: true,
+            now: { self.now }
+        )
+
+        session.startConnection { _ in }
+        await Self.waitUntil { webAuthenticationSession.authorizationURL != nil }
+        await session.cancelConnection()
+
+        #expect(webAuthenticationSession.cancelCallCount == 1)
+        #expect(session.state == .disconnected)
+    }
+
+    @Test("系统认证窗口启动失败会清理待授权状态")
+    @MainActor
+    func systemAuthenticationStartFailureResetsOAuthState() async {
+        let issued = credential(token: "ghu-project", accessOffset: 3_600)
+        let oauth = MockOAuth(credential: issued)
+        let webAuthenticationSession = MockProjectWebAuthenticationSession()
+        webAuthenticationSession.startError = .failed(message: "presentation unavailable")
+        let recorder = ConnectionResultRecorder()
+        let session = ProjectAccessSession(
+            oauthService: oauth,
+            keychain: InMemoryKeychain(),
+            webAuthenticationSession: webAuthenticationSession,
+            isConfigured: true,
+            now: { self.now }
+        )
+
+        session.startConnection { recorder.value = $0 }
+        await Self.waitUntil { recorder.value != nil }
+
+        #expect(recorder.value == .failed)
+        #expect(session.state == .failed(.unknown))
+        #expect(oauth.resetCallCount == 1)
     }
 
     @Test("Web Flow 成功但未安装 App 时保留凭据并回退 Public 项目")
@@ -333,5 +489,13 @@ struct ProjectAccessSessionTests {
         #expect(session.state == .partialAuthorization)
         session.markOrganizationApprovalPending()
         #expect(session.state == .organizationApprovalPending)
+    }
+
+    @MainActor
+    private static func waitUntil(_ predicate: () -> Bool) async {
+        for _ in 0..<100 {
+            if predicate() { return }
+            await Task.yield()
+        }
     }
 }

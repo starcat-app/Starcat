@@ -19,8 +19,6 @@ import TipKit
 extension Notification.Name {
     /// 三处系统入口共用的列表偏好重置意图；实际重置由 HomeView 在当前账号上下文执行。
     static let starcatResetListPreferencesRequested = Notification.Name("starcat.resetListPreferencesRequested")
-    /// GitHub App callback 完成首轮项目同步后，通知已打开的项目权限 Sheet 刷新列表。
-    static let starcatProjectAccessDidSync = Notification.Name("starcat.projectAccessDidSync")
 }
 
 @main
@@ -116,36 +114,15 @@ struct StarcatApp: App {
             return
         }
         if AppConstants.isGitHubAppCallback(url) {
-            Task { await handleProjectAccessCallback(url, dependencies: dependencies) }
+            // 正常 callback 由发起授权的 ASWebAuthenticationSession 直接截获。
+            // 外部 URL handler 收到它，说明当前进程没有对应会话；拒绝处理一次性 code，
+            // 避免 App Store 与 Direct 同时安装时由错误版本消费授权结果。
+            AppLog.auth.warning(
+                "Ignoring GitHub App callback outside the initiating authentication session"
+            )
             return
         }
         Task { await dependencies.authSession.handleWebFlowCallback(url: url) }
-    }
-
-    /// GitHub App callback 只完成独立项目授权，不读取或改写主 OAuth 登录凭据。
-    ///
-    /// 授权成功后立即验证 installation 并执行首轮同步；无论同步是否成功都通知当前
-    /// Sheet 重载状态。错误日志只记录稳定错误类型，绝不包含 callback code 或 token。
-    private func handleProjectAccessCallback(
-        _ url: URL,
-        dependencies: AppDependencies
-    ) async {
-        do {
-            let access = try await dependencies.projectAccessSession.completeConnection(
-                callbackURL: url
-            )
-            if access.isInstalled, let userID = dependencies.authSession.state.user?.id {
-                _ = try? await dependencies.userProjectSyncService.refresh(
-                    userID: userID,
-                    force: true
-                )
-            }
-            NotificationCenter.default.post(name: .starcatProjectAccessDidSync, object: nil)
-        } catch {
-            AppLog.auth.error(
-                "GitHub App callback failed: \(String(describing: type(of: error)), privacy: .public)"
-            )
-        }
     }
 
     var body: some Scene {

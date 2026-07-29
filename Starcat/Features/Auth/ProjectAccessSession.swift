@@ -47,6 +47,16 @@ enum ProjectAccessSessionError: Error, Equatable {
     case storage
 }
 
+/// GitHub App 系统认证窗口结束后的有限结果。
+///
+/// UI 只需要区分“可同步”“用户取消”和“失败”，具体错误已经由状态机映射为稳定状态，
+/// 不应把 OAuth 响应正文继续传到视图层。
+enum ProjectAccessConnectionResult: Equatable, Sendable {
+    case connected(GitHubAppInstallationAccess)
+    case cancelled
+    case failed
+}
+
 @MainActor
 @Observable
 final class ProjectAccessSession {
@@ -59,16 +69,21 @@ final class ProjectAccessSession {
 
     private let oauthService: any ProjectAccessOAuthServiceProtocol
     private let keychain: any KeychainManaging
+    private let webAuthenticationSession: any WebAuthenticationSessionProviding
     private let isConfigured: Bool
     private let appSlug: String
     private let installationCheck: InstallationCheck
     private let now: @Sendable () -> Date
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private var authorizationTask: Task<Void, Never>?
+    private var isWebAuthenticationActive = false
 
     init(
         oauthService: any ProjectAccessOAuthServiceProtocol = ProjectAccessOAuthService(),
         keychain: any KeychainManaging = KeychainManager.shared,
+        webAuthenticationSession: any WebAuthenticationSessionProviding =
+            SystemWebAuthenticationSession(),
         isConfigured: Bool = AppConstants.isGitHubAppConfigured,
         appSlug: String = AppConstants.githubAppSlug,
         installationCheck: @escaping InstallationCheck = { accessToken, appSlug in
@@ -81,6 +96,7 @@ final class ProjectAccessSession {
     ) {
         self.oauthService = oauthService
         self.keychain = keychain
+        self.webAuthenticationSession = webAuthenticationSession
         self.isConfigured = isConfigured
         self.appSlug = appSlug.trimmingCharacters(in: .whitespacesAndNewlines)
         self.installationCheck = installationCheck
@@ -123,6 +139,51 @@ final class ProjectAccessSession {
         } catch {
             state = .failed(Self.failureCode(error))
             throw error
+        }
+    }
+
+    /// 在当前 Starcat 进程内启动 GitHub App 安装与用户授权。
+    ///
+    /// 与主登录复用同一种 `ASWebAuthenticationSession` 适配层，但必须持有独立实例：
+    /// 用户可能在主登录之外单独管理项目权限，两条 OAuth 状态机和取消操作不能互相影响。
+    /// 系统认证会话直接截获 `starcat://github-app/callback`，因此 App Store 与 Direct
+    /// 同时安装时也不会依赖 Launch Services 猜测应唤醒哪个版本。
+    func startConnection(
+        completion: @escaping @MainActor @Sendable (ProjectAccessConnectionResult) -> Void
+    ) {
+        authorizationTask?.cancel()
+        if isWebAuthenticationActive {
+            webAuthenticationSession.cancel()
+            isWebAuthenticationActive = false
+        }
+
+        authorizationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let info = try await beginConnection()
+                try Task.checkCancellation()
+                do {
+                    try webAuthenticationSession.start(
+                        authorizationURL: info.installationURL,
+                        callbackURLScheme: AppConstants.oauthCallbackScheme
+                    ) { [weak self] result in
+                        self?.handleWebAuthenticationResult(result, completion: completion)
+                    }
+                } catch {
+                    // OAuth state 已经进入 awaiting；系统窗口若无法启动，必须同步清理，
+                    // 否则后续重试会携带一份用户从未看到过的旧 state。
+                    await oauthService.reset()
+                    state = .failed(.unknown)
+                    throw error
+                }
+                isWebAuthenticationActive = true
+                authorizationTask = nil
+            } catch is CancellationError {
+                // cancelConnection 负责重置 OAuth state 和可见状态。
+            } catch {
+                authorizationTask = nil
+                completion(.failed)
+            }
         }
     }
 
@@ -180,6 +241,12 @@ final class ProjectAccessSession {
     }
 
     func cancelConnection() async {
+        authorizationTask?.cancel()
+        authorizationTask = nil
+        if isWebAuthenticationActive {
+            webAuthenticationSession.cancel()
+            isWebAuthenticationActive = false
+        }
         await oauthService.reset()
         state = isConfigured ? .disconnected : .unavailable
     }
@@ -314,6 +381,37 @@ final class ProjectAccessSession {
             try keychain.storeProjectAccessCredential(json)
         } catch {
             throw ProjectAccessSessionError.storage
+        }
+    }
+
+    /// 将系统认证结果收口到项目权限状态机；回调始终位于 MainActor。
+    private func handleWebAuthenticationResult(
+        _ result: Result<URL, WebAuthenticationSessionError>,
+        completion: @escaping @MainActor @Sendable (ProjectAccessConnectionResult) -> Void
+    ) {
+        authorizationTask = nil
+        isWebAuthenticationActive = false
+        switch result {
+        case .success(let callbackURL):
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    let access = try await completeConnection(callbackURL: callbackURL)
+                    completion(.connected(access))
+                } catch {
+                    completion(.failed)
+                }
+            }
+        case .failure(.cancelled):
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await cancelConnection()
+                completion(.cancelled)
+            }
+        case .failure:
+            state = .failed(.unknown)
+            Task { await oauthService.reset() }
+            completion(.failed)
         }
     }
 

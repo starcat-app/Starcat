@@ -20,7 +20,6 @@ struct ProjectAccessSheet: View {
     @Environment(AuthSession.self) private var authSession
     @Environment(AppDependencies.self) private var dependencies
 
-    @State private var authorizationTask: Task<Void, Never>?
     @State private var isCheckingInstallation = false
     @State private var isClearingPrivateCache = false
     @State private var privateCacheClearMessage: LocalizedStringKey?
@@ -41,13 +40,6 @@ struct ProjectAccessSheet: View {
                 .padding(24)
         }
         .frame(width: 520)
-        .onReceive(
-            NotificationCenter.default.publisher(for: .starcatProjectAccessDidSync)
-        ) { _ in
-            Task {
-                await onProjectsChanged()
-            }
-        }
     }
 
     private var header: some View {
@@ -272,17 +264,9 @@ struct ProjectAccessSheet: View {
     }
 
     private func connect() {
-        authorizationTask?.cancel()
-        authorizationTask = Task { @MainActor in
-            do {
-                let info = try await accessSession.beginConnection()
-                if !NSWorkspace.shared.open(info.installationURL) {
-                    await accessSession.cancelConnection()
-                }
-            } catch is CancellationError {
-                // 用户主动取消时不覆盖 cancelConnection 已发布的 disconnected 状态。
-            } catch {
-                // ProjectAccessSession 已映射并发布稳定错误状态，UI 无需再保存原始错误。
+        accessSession.startConnection { result in
+            if case .connected(let access) = result, access.isInstalled {
+                refreshProjects(force: true)
             }
         }
     }
@@ -308,8 +292,6 @@ struct ProjectAccessSheet: View {
     }
 
     private func cancelConnection() {
-        authorizationTask?.cancel()
-        authorizationTask = nil
         Task { await accessSession.cancelConnection() }
     }
 
