@@ -20,6 +20,12 @@
     <key>com.apple.security.network.server</key>
     <true/>
 
+    <!-- Widget Extension 只通过此共享容器读取主应用生成的只读快照。 -->
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.com.starcat.app.store.widgets</string>
+    </array>
+
     <!-- 用户主动选择文件读写：JSON 导入导出场景 -->
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>

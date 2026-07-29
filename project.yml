@@ -138,6 +138,9 @@ targets:
         STARCAT_APTABASE_APP_KEY: $(STARCAT_APTABASE_APP_KEY)
         # 显式构建渠道。App Store build 默认 appstore；Direct build 后续覆盖为 direct。
         STARCAT_DISTRIBUTION: $(STARCAT_DISTRIBUTION)
+        # Widget Extension 与 Store Host 必须读取同一 App Group；通过 Info.plist
+        # 注入，避免运行时根据 bundle id 猜测并误连 Direct 渠道容器。
+        STARCAT_WIDGET_APP_GROUP: group.com.starcat.app.store.widgets
         LSApplicationCategoryType: public.app-category.developer-tools
         # Starcat 只使用系统 TLS/Keychain/StoreKit 等标准加密能力，不包含非豁免加密。
         ITSAppUsesNonExemptEncryption: false
@@ -152,6 +155,7 @@ targets:
       - package: MCPSwiftSDK
         product: MCP
       - package: Aptabase
+      - target: StarcatWidgets
     # 在所有 build phase 跑完之后、codesign 之前执行：
     # 用 git 元数据改写产物 Info.plist 的 CFBundleVersion / CFBundleShortVersionString。
     # 详见 scripts/bump-version.sh 文件头注释。
@@ -243,6 +247,8 @@ targets:
         STARCAT_LICENSE_API_LIVE_KEY: $(STARCAT_LICENSE_API_LIVE_KEY)
         STARCAT_APTABASE_APP_KEY: $(STARCAT_APTABASE_APP_KEY)
         STARCAT_DISTRIBUTION: $(STARCAT_DISTRIBUTION)
+        # Direct 渠道使用独立 App Group，防止两个版本同时安装时互相读取快照。
+        STARCAT_WIDGET_APP_GROUP: group.com.starcat.app.direct.widgets
         LSApplicationCategoryType: public.app-category.developer-tools
         # Direct 包同样只使用系统 TLS/Keychain 等标准加密能力，保持双渠道合规声明一致。
         ITSAppUsesNonExemptEncryption: false
@@ -262,6 +268,7 @@ targets:
         product: MCP
       - package: Aptabase
       - package: Sparkle
+      - target: StarcatDirectWidgets
     postBuildScripts:
       - name: "Copy Changelog Resource"
         script: |
@@ -291,6 +298,46 @@ targets:
         runOnlyWhenInstalling: false
         showEnvVarsInLog: false
         basedOnDependencyAnalysis: false
+
+  # App Store 与 Direct 使用两个独立 Extension target，但复用同一份 Swift 源码。
+  # 独立 bundle id / App Group 是两个渠道同时安装时不串宿主、不串数据的签名边界。
+  StarcatWidgets:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: StarcatWidgets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.store.widgets
+        CODE_SIGN_ENTITLEMENTS: Starcat/Resources/Widget/StarcatWidgets.entitlements
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Starcat Widgets
+    info:
+      path: Starcat/Generated/WidgetInfo.generated.plist
+      properties:
+        STARCAT_WIDGET_APP_GROUP: group.com.starcat.app.store.widgets
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
+  StarcatDirectWidgets:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: StarcatWidgets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.direct.widgets
+        CODE_SIGN_ENTITLEMENTS: Starcat/Resources/Widget/StarcatDirectWidgets.entitlements
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Starcat Widgets
+    info:
+      path: Starcat/Generated/WidgetInfo.direct.generated.plist
+      properties:
+        STARCAT_WIDGET_APP_GROUP: group.com.starcat.app.direct.widgets
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
 schemes:
   Starcat:
