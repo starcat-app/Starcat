@@ -69,8 +69,10 @@ final class WidgetRefreshCoordinator {
     func publishReady() async {
         guard !TestEnvironment.isRunning else { return }
         do {
+            let context = try makePublishingContext()
             let snapshot = try await builder.build()
-            try makeStore().save(snapshot)
+            let enrichedSnapshot = await context.avatarCache.enrich(snapshot)
+            try context.store.save(enrichedSnapshot)
             reloadTimelines()
         } catch {
             AppLog.general.error(
@@ -86,7 +88,11 @@ final class WidgetRefreshCoordinator {
         guard !TestEnvironment.isRunning else { return }
         pendingRefreshTask?.cancel()
         do {
-            try makeStore().save(.empty(state: state))
+            let context = try makePublishingContext()
+            try context.store.save(.empty(state: state))
+            if state == .signedOut {
+                context.avatarCache.clear()
+            }
             reloadTimelines()
         } catch {
             AppLog.general.error(
@@ -95,12 +101,18 @@ final class WidgetRefreshCoordinator {
         }
     }
 
-    private func makeStore() throws -> WidgetSnapshotStore {
+    private func makePublishingContext() throws -> (
+        store: WidgetSnapshotStore,
+        avatarCache: WidgetAvatarCache
+    ) {
         let groupIdentifier = try WidgetSharedConfiguration.appGroupIdentifier()
         let containerURL = try WidgetSharedConfiguration.containerURL(
             groupIdentifier: groupIdentifier
         )
-        return WidgetSnapshotStore(containerURL: containerURL)
+        return (
+            WidgetSnapshotStore(containerURL: containerURL),
+            WidgetAvatarCache(containerURL: containerURL)
+        )
     }
 
     private func reloadTimelines() {
