@@ -40,14 +40,14 @@
 - [x] 实现 deleted source hash 抑制，避免删除后立即重建。
 - [x] 新 source hash 允许后台自动恢复。
 - [x] 主动重新生成可忽略删除抑制。
-- [ ] 实现 repo-scoped Artifact single-flight。
-- [ ] 账号 / database scope 变化拒绝旧结果写入。
-- [ ] 补齐 Storage、删除抑制、原子性、single-flight 和账号边界测试。
+- [x] 实现 repo-scoped Artifact single-flight。
+- [x] 账号 / database scope 变化拒绝旧结果写入。
+- [x] 补齐 Storage、删除抑制、原子性、single-flight 和账号边界测试。
 
 ## 3. 页面与仓库 AI 共用
 
-- [ ] 实现 `RepositoryInsightsContextCoordinator` 正常准备入口。
-- [ ] 实现 RAG 使用的 cache-only 准备 / 读取入口。
+- [x] 实现 `RepositoryInsightsContextCoordinator` 正常准备入口。
+- [x] 实现 RAG 使用的 cache-only 准备 / 读取入口。
 - [ ] 仓库洞察默认数据完成后后台生成 XML。
 - [ ] 仓库洞察手动刷新成功后按新 source hash 更新 XML。
 - [ ] 页面切仓 / 账号切换时拒绝迟到 Artifact 回写。
