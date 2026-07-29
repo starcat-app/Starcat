@@ -12,6 +12,20 @@ import Testing
 @Suite("Repository insights remote provider")
 struct RepositoryInsightsRemoteProviderTests {
 
+    @Test("共享 Provider 合并相同仓库与范围的并发刷新")
+    func sharedProviderCoalescesConcurrentRefreshes() async throws {
+        let base = ActivityOnlyRemoteInsightsProvider()
+        let provider = SharedRepositoryRemoteInsightsProvider(base: base)
+        let repository = RepoIdentity(ghRepoID: 20, owner: "octo", name: "shared")
+
+        async let first = provider.refreshActivity(repository: repository, range: .month)
+        async let second = provider.refreshActivity(repository: repository, range: .month)
+        let values = try await [first, second]
+
+        #expect(values[0] == values[1])
+        #expect(await base.refreshCount() == 1)
+    }
+
     @Test("活动 KPI 使用选中范围查询并写入对应缓存")
     func activityCountsUseRangeAndPersistCache() async throws {
         let database = try InMemoryDatabaseManager()
@@ -659,6 +673,90 @@ struct RepositoryInsightsRemoteProviderTests {
         #expect(queries.contains { $0.contains("is:pr") })
         #expect(queries.contains { $0.contains("is:issue") })
     }
+}
+
+/// 只实现 single-flight 测试所需的活动刷新，其余入口若被误用应立即失败。
+private actor ActivityOnlyRemoteInsightsProvider: RepositoryRemoteInsightsProviding {
+    private var activityRefreshCount = 0
+
+    func refreshCount() -> Int {
+        activityRefreshCount
+    }
+
+    func cachedActivity(
+        repoID: Int64,
+        range: RepositoryActivityRange
+    ) async throws -> RepositoryCachedActivityCounts? {
+        nil
+    }
+
+    func refreshActivity(
+        repository: RepoIdentity,
+        range: RepositoryActivityRange
+    ) async throws -> RepositoryActivityCounts {
+        activityRefreshCount += 1
+        // 保证第二个调用在第一个完成前进入共享 Provider。
+        try await Task.sleep(for: .milliseconds(30))
+        return RepositoryActivityCounts(
+            createdPullRequests: 2,
+            mergedPullRequests: 1,
+            createdIssues: 3,
+            closedIssues: 2,
+            generatedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+    }
+
+    func cachedCommitActivity(repoID: Int64) async throws -> RepositoryCachedCommitActivity? {
+        throw TestRemoteProviderError.unused
+    }
+
+    func refreshCommitActivity(repository: RepoIdentity) async throws -> RepositoryCommitActivity {
+        throw TestRemoteProviderError.unused
+    }
+
+    func cachedContributors(repoID: Int64) async throws -> RepositoryCachedContributorsInsight? {
+        throw TestRemoteProviderError.unused
+    }
+
+    func refreshContributors(
+        repository: RepoIdentity
+    ) async throws -> RepositoryContributorsInsight {
+        throw TestRemoteProviderError.unused
+    }
+
+    func cachedCommunityProfile(repoID: Int64) async throws -> RepositoryCachedCommunityInsight? {
+        throw TestRemoteProviderError.unused
+    }
+
+    func refreshCommunityProfile(
+        repository: RepoIdentity
+    ) async throws -> RepositoryCommunityInsight {
+        throw TestRemoteProviderError.unused
+    }
+
+    func cachedSecurityAdvisories(
+        repoID: Int64
+    ) async throws -> RepositoryCachedSecurityAdvisoriesInsight? {
+        throw TestRemoteProviderError.unused
+    }
+
+    func refreshSecurityAdvisories(
+        repository: RepoIdentity
+    ) async throws -> RepositorySecurityAdvisoriesInsight {
+        throw TestRemoteProviderError.unused
+    }
+
+    func cachedRecentActivity(repoID: Int64) async throws -> RepositoryCachedRecentActivity? {
+        throw TestRemoteProviderError.unused
+    }
+
+    func refreshRecentActivity(repository: RepoIdentity) async throws -> RepositoryRecentActivity {
+        throw TestRemoteProviderError.unused
+    }
+}
+
+private enum TestRemoteProviderError: Error {
+    case unused
 }
 
 private actor ActivityMetricsHTTPClient: RAGHTTPClientProtocol {

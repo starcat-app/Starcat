@@ -484,6 +484,228 @@ extension RepositoryRemoteInsightsProviding {
     }
 }
 
+/// 仓库洞察远端 Provider 的进程级共享包装。
+///
+/// 洞察页面、AI 摘要与 AI 对话都可能在同一时刻请求相同仓库的数据。底层缓存已经按
+/// `repo + dataset + range` 持久化，但“先读缓存、发现缺失、同时刷新”仍可能让多个
+/// 消费者重复发起网络请求。这里为每类数据维护独立 single-flight，同一请求只执行一次，
+/// 所有等待者共享结果；结果仍由底层 Provider 写入统一 SQLite 缓存。
+///
+/// single-flight Task 不绑定任一页面生命周期：某个消费者取消等待时，不应取消其它消费者
+/// 仍在使用的共享请求，也应允许请求完成后继续温热缓存。
+struct SharedRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProviding, Sendable {
+    private struct RepositoryKey: Hashable, Sendable {
+        let repoID: Int64?
+        let owner: String
+        let name: String
+
+        init(_ repository: RepoIdentity) {
+            repoID = repository.ghRepoID
+            owner = repository.owner
+            name = repository.name
+        }
+    }
+
+    private struct ActivityKey: Hashable, Sendable {
+        let repository: RepositoryKey
+        let range: RepositoryActivityRange
+    }
+
+    private let base: any RepositoryRemoteInsightsProviding
+    private let activityFlights = RepositoryInsightsSingleFlight<ActivityKey, RepositoryActivityCounts>()
+    private let commitFlights = RepositoryInsightsSingleFlight<RepositoryKey, RepositoryCommitActivity>()
+    private let contributorFlights =
+        RepositoryInsightsSingleFlight<RepositoryKey, RepositoryContributorsInsight>()
+    private let communityFlights =
+        RepositoryInsightsSingleFlight<RepositoryKey, RepositoryCommunityInsight>()
+    private let releaseFlights =
+        RepositoryInsightsSingleFlight<RepositoryKey, RepositoryReleaseCadenceInsight?>()
+    private let securityFlights =
+        RepositoryInsightsSingleFlight<RepositoryKey, RepositorySecurityAdvisoriesInsight>()
+    private let recentActivityFlights =
+        RepositoryInsightsSingleFlight<ActivityKey, RepositoryRecentActivity>()
+
+    init(base: any RepositoryRemoteInsightsProviding) {
+        self.base = base
+    }
+
+    func cachedActivity(
+        repoID: Int64,
+        range: RepositoryActivityRange
+    ) async throws -> RepositoryCachedActivityCounts? {
+        try await base.cachedActivity(repoID: repoID, range: range)
+    }
+
+    func refreshActivity(
+        repository: RepoIdentity,
+        range: RepositoryActivityRange
+    ) async throws -> RepositoryActivityCounts {
+        let key = ActivityKey(repository: RepositoryKey(repository), range: range)
+        return try await activityFlights.value(for: key) {
+            try await base.refreshActivity(repository: repository, range: range)
+        }
+    }
+
+    func cachedCommitActivity(repoID: Int64) async throws -> RepositoryCachedCommitActivity? {
+        try await base.cachedCommitActivity(repoID: repoID)
+    }
+
+    func refreshCommitActivity(repository: RepoIdentity) async throws -> RepositoryCommitActivity {
+        try await refreshCommitActivity(repository: repository, ifNoneMatch: nil)
+    }
+
+    func refreshCommitActivity(
+        repository: RepoIdentity,
+        ifNoneMatch: String?
+    ) async throws -> RepositoryCommitActivity {
+        try await commitFlights.value(for: RepositoryKey(repository)) {
+            try await base.refreshCommitActivity(
+                repository: repository,
+                ifNoneMatch: ifNoneMatch
+            )
+        }
+    }
+
+    func cachedContributors(repoID: Int64) async throws -> RepositoryCachedContributorsInsight? {
+        try await base.cachedContributors(repoID: repoID)
+    }
+
+    func refreshContributors(
+        repository: RepoIdentity
+    ) async throws -> RepositoryContributorsInsight {
+        try await refreshContributors(repository: repository, ifNoneMatch: nil)
+    }
+
+    func refreshContributors(
+        repository: RepoIdentity,
+        ifNoneMatch: String?
+    ) async throws -> RepositoryContributorsInsight {
+        try await contributorFlights.value(for: RepositoryKey(repository)) {
+            try await base.refreshContributors(
+                repository: repository,
+                ifNoneMatch: ifNoneMatch
+            )
+        }
+    }
+
+    func cachedCommunityProfile(repoID: Int64) async throws -> RepositoryCachedCommunityInsight? {
+        try await base.cachedCommunityProfile(repoID: repoID)
+    }
+
+    func refreshCommunityProfile(
+        repository: RepoIdentity
+    ) async throws -> RepositoryCommunityInsight {
+        try await refreshCommunityProfile(repository: repository, ifNoneMatch: nil)
+    }
+
+    func refreshCommunityProfile(
+        repository: RepoIdentity,
+        ifNoneMatch: String?
+    ) async throws -> RepositoryCommunityInsight {
+        try await communityFlights.value(for: RepositoryKey(repository)) {
+            try await base.refreshCommunityProfile(
+                repository: repository,
+                ifNoneMatch: ifNoneMatch
+            )
+        }
+    }
+
+    func cachedReleaseCadence(
+        repoID: Int64
+    ) async throws -> RepositoryCachedReleaseCadenceInsight? {
+        try await base.cachedReleaseCadence(repoID: repoID)
+    }
+
+    func refreshReleaseCadence(
+        repository: RepoIdentity
+    ) async throws -> RepositoryReleaseCadenceInsight? {
+        try await refreshReleaseCadence(repository: repository, ifNoneMatch: nil)
+    }
+
+    func refreshReleaseCadence(
+        repository: RepoIdentity,
+        ifNoneMatch: String?
+    ) async throws -> RepositoryReleaseCadenceInsight? {
+        try await releaseFlights.value(for: RepositoryKey(repository)) {
+            try await base.refreshReleaseCadence(
+                repository: repository,
+                ifNoneMatch: ifNoneMatch
+            )
+        }
+    }
+
+    func cachedSecurityAdvisories(
+        repoID: Int64
+    ) async throws -> RepositoryCachedSecurityAdvisoriesInsight? {
+        try await base.cachedSecurityAdvisories(repoID: repoID)
+    }
+
+    func refreshSecurityAdvisories(
+        repository: RepoIdentity
+    ) async throws -> RepositorySecurityAdvisoriesInsight {
+        try await refreshSecurityAdvisories(repository: repository, ifNoneMatch: nil)
+    }
+
+    func refreshSecurityAdvisories(
+        repository: RepoIdentity,
+        ifNoneMatch: String?
+    ) async throws -> RepositorySecurityAdvisoriesInsight {
+        try await securityFlights.value(for: RepositoryKey(repository)) {
+            try await base.refreshSecurityAdvisories(
+                repository: repository,
+                ifNoneMatch: ifNoneMatch
+            )
+        }
+    }
+
+    func cachedRecentActivity(repoID: Int64) async throws -> RepositoryCachedRecentActivity? {
+        try await base.cachedRecentActivity(repoID: repoID)
+    }
+
+    func refreshRecentActivity(repository: RepoIdentity) async throws -> RepositoryRecentActivity {
+        try await refreshRecentActivity(repository: repository, activityRange: .month)
+    }
+
+    func refreshRecentActivity(
+        repository: RepoIdentity,
+        activityRange: RepositoryActivityRange
+    ) async throws -> RepositoryRecentActivity {
+        let key = ActivityKey(repository: RepositoryKey(repository), range: activityRange)
+        return try await recentActivityFlights.value(for: key) {
+            try await base.refreshRecentActivity(
+                repository: repository,
+                activityRange: activityRange
+            )
+        }
+    }
+}
+
+/// 单个数据集的有界并发合并器。
+///
+/// `Task` 在 actor 内登记后再等待，因此 actor 重入期间的后续调用会命中同一个任务。
+/// 任务完成即移除，不承担结果缓存职责；长期缓存仍由 `RepositoryInsightsCaching` 负责。
+private actor RepositoryInsightsSingleFlight<Key: Hashable & Sendable, Value: Sendable> {
+    private var tasks: [Key: Task<Value, Error>] = [:]
+
+    func value(
+        for key: Key,
+        operation: @escaping @Sendable () async throws -> Value
+    ) async throws -> Value {
+        if let task = tasks[key] {
+            return try await task.value
+        }
+
+        let task = Task {
+            try await operation()
+        }
+        tasks[key] = task
+        defer {
+            tasks[key] = nil
+        }
+        return try await task.value
+    }
+}
+
 struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProviding, Sendable {
     let metricsClient: any GitHubRepositoryMetricsClient
     let cache: any RepositoryInsightsCaching
