@@ -89,6 +89,8 @@ struct RAGWorkspaceInspector: View {
     @State private var isRepoContextXMLPopoverPresented = false
     /// 大型 XML 创建 popover 内容会有短暂延迟；打开完成前锁住入口，避免双击被系统解释为随即关闭。
     @State private var isRepoContextXMLPopoverOpening = false
+    @State private var isRepositoryInsightsXMLPopoverPresented = false
+    @State private var isRepositoryInsightsXMLPopoverOpening = false
     @State private var retrievalDetailTarget: RAGRetrievalDetailTarget?
     /// 元数据体积大、引用 tab 优先看证据；默认折叠，需要时再展开。
     @State private var isKnowledgeMetadataExpanded = false
@@ -205,6 +207,8 @@ struct RAGWorkspaceInspector: View {
             isCitationChunkPopoverPresented = false
             isRepoContextXMLPopoverPresented = false
             isRepoContextXMLPopoverOpening = false
+            isRepositoryInsightsXMLPopoverPresented = false
+            isRepositoryInsightsXMLPopoverOpening = false
         }
         #if DEBUG
         .onChange(of: viewModel.selectedConversationID) { _, _ in
@@ -1226,6 +1230,8 @@ struct RAGWorkspaceInspector: View {
             citationField("rag.workspace.inspector.location", value: citation.sectionTitle)
             if citation.source == .repoContext {
                 repoContextCitationDetail(citation)
+            } else if citation.source == .repositoryInsights {
+                repositoryInsightsCitationDetail(citation)
             } else {
                 citationField("rag.workspace.inspector.matchType", value: citation.hitKind.rawValue)
                 retrievalScoreValue(citation)
@@ -1388,6 +1394,116 @@ struct RAGWorkspaceInspector: View {
         }
     }
 
+    /// 仓库洞察是可删除的特殊 Artifact，不是 `rag_chunks` 行；历史正文必须先通过
+    /// repo/source/xml hash 校验，因此缺失时展示“不可回放”而不是“分片已删除”。
+    @ViewBuilder
+    private func repositoryInsightsCitationDetail(_ citation: RAGCitation) -> some View {
+        if let snapshot = viewModel.repositoryInsightsSnapshot(for: citation) {
+            citationField(
+                "rag.workspace.repositoryInsights.status",
+                value: localizedRepositoryInsightsOutcome(snapshot.outcome)
+            )
+            if let generatedAt = snapshot.generatedAt {
+                citationField(
+                    "rag.workspace.repositoryInsights.generatedAt",
+                    value: localizedTimestamp(generatedAt)
+                )
+            }
+            citationField(
+                "rag.workspace.repositoryInsights.sourceHash",
+                value: shortHash(snapshot.sourceHash)
+            )
+            citationField(
+                "rag.workspace.repositoryInsights.xmlHash",
+                value: shortHash(snapshot.xmlHash)
+            )
+            citationField(
+                "rag.workspace.repositoryInsights.tokens",
+                value: localizedInteger(snapshot.sentTokens)
+            )
+            citationField(
+                "rag.workspace.repositoryInsights.projection",
+                value: snapshot.wasProjected
+                    ? String.l10n("rag.workspace.repositoryInsights.projection.projected")
+                    : String.l10n("rag.workspace.repositoryInsights.projection.original")
+            )
+            if let reason = snapshot.projectionReason ?? snapshot.degradationReason,
+               !reason.isEmpty {
+                citationField("rag.workspace.repositoryInsights.reason", value: reason)
+            }
+        }
+
+        if let document = viewModel.repositoryInsightsDocument(for: citation) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Label(
+                        "rag.workspace.repositoryInsights.xml",
+                        systemImage: "chevron.left.forwardslash.chevron.right"
+                    )
+                    .font(ragFont(.caption, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    Spacer(minLength: 4)
+                    CopyFeedbackButton(
+                        providesContent: { document.xml },
+                        tooltip: "rag.workspace.repositoryInsights.copy"
+                    ) { didCopy in
+                        Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                            .font(iconFont(size: 10, weight: .medium))
+                            .foregroundStyle(didCopy ? Color.green : Color.secondary)
+                    }
+                }
+                Button {
+                    guard !isRepositoryInsightsXMLPopoverOpening,
+                          !isRepositoryInsightsXMLPopoverPresented else { return }
+                    isRepositoryInsightsXMLPopoverOpening = true
+                    isRepositoryInsightsXMLPopoverPresented = true
+                } label: {
+                    Text(document.xml)
+                        .font(ragFont(.caption2, design: .monospaced))
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(5)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .disabled(
+                    isRepositoryInsightsXMLPopoverOpening
+                        || isRepositoryInsightsXMLPopoverPresented
+                )
+                .help("rag.workspace.repositoryInsights.xml.expand")
+                .padding(8)
+                .background(
+                    Color(nsColor: .textBackgroundColor).opacity(0.72),
+                    in: RoundedRectangle(cornerRadius: 6)
+                )
+                .popover(isPresented: $isRepositoryInsightsXMLPopoverPresented, arrowEdge: .leading) {
+                    RAGRepositoryInsightsXMLPopoverContent(
+                        citation: citation,
+                        document: document
+                    )
+                    .onAppear {
+                        isRepositoryInsightsXMLPopoverOpening = false
+                    }
+                }
+                .onChange(of: isRepositoryInsightsXMLPopoverPresented) { _, isPresented in
+                    if !isPresented {
+                        isRepositoryInsightsXMLPopoverOpening = false
+                    }
+                }
+            }
+        } else {
+            Label(
+                "rag.workspace.repositoryInsights.historyUnavailable",
+                systemImage: "clock.badge.exclamationmark"
+            )
+            .font(ragFont(.caption))
+            .foregroundStyle(.secondary)
+        }
+    }
+
     /// 最多 5 行预览；点击用 popover 看全文，避免点选文本时「字突然变多」。
     private func citationChunkPreview(_ citation: RAGCitation, chunk: RAGChunk) -> some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -1517,6 +1633,53 @@ struct RAGWorkspaceInspector: View {
                                 "rag.workspace.inspector.plan.analytics",
                                 value: localizedAnalytics(analytics)
                             )
+                        }
+                    }
+
+                    let repositoryInsightsSnapshots = viewModel.displayedRepositoryInsightsSnapshots
+                    if !repositoryInsightsSnapshots.isEmpty {
+                        // 洞察目标由显式仓库或最终保留 bundle 决定，只有执行后才能得到真实结果；
+                        // 因此这里展示实际完成的审计快照，而不是根据计划猜测目标。
+                        planSection(
+                            "rag.workspace.inspector.plan.repositoryInsights",
+                            systemImage: "gauge.with.dots.needle.bottom.0percent",
+                            tint: .orange
+                        ) {
+                            ForEach(repositoryInsightsSnapshots) { snapshot in
+                                VStack(alignment: .leading, spacing: 5) {
+                                    planMetricRow(
+                                        "rag.workspace.repositoryInsights.repository",
+                                        value: snapshot.repoFullName
+                                    )
+                                    planMetricRow(
+                                        "rag.workspace.repositoryInsights.status",
+                                        value: localizedRepositoryInsightsOutcome(snapshot.outcome)
+                                    )
+                                    if let generatedAt = snapshot.generatedAt {
+                                        planMetricRow(
+                                            "rag.workspace.repositoryInsights.generatedAt",
+                                            value: localizedTimestamp(generatedAt)
+                                        )
+                                    }
+                                    planMetricRow(
+                                        "rag.workspace.repositoryInsights.sourceHash",
+                                        value: shortHash(snapshot.sourceHash)
+                                    )
+                                    planMetricRow(
+                                        "rag.workspace.repositoryInsights.xmlHash",
+                                        value: shortHash(snapshot.xmlHash)
+                                    )
+                                    planMetricRow(
+                                        "rag.workspace.repositoryInsights.tokens",
+                                        value: localizedInteger(snapshot.sentTokens)
+                                    )
+                                }
+                                .padding(8)
+                                .background(
+                                    Color(nsColor: .textBackgroundColor).opacity(0.55),
+                                    in: RoundedRectangle(cornerRadius: 7)
+                                )
+                            }
                         }
                     }
 
@@ -1804,6 +1967,19 @@ struct RAGWorkspaceInspector: View {
         case .featureDisabled: return String.l10n("rag.workspace.execution.repoContext.disabled")
         case .degraded: return String.l10n("rag.workspace.execution.repoContext.degraded")
         }
+    }
+
+    private func localizedRepositoryInsightsOutcome(_ outcome: RAGRepositoryInsightsOutcome) -> String {
+        switch outcome {
+        case .success: return String.l10n("rag.workspace.repositoryInsights.status.success")
+        case .unavailable: return String.l10n("rag.workspace.repositoryInsights.status.unavailable")
+        case .degraded: return String.l10n("rag.workspace.repositoryInsights.status.degraded")
+        }
+    }
+
+    private func shortHash(_ value: String?) -> String {
+        guard let value, !value.isEmpty else { return "—" }
+        return String(value.prefix(12))
     }
 
     func planChip(_ value: String) -> some View {

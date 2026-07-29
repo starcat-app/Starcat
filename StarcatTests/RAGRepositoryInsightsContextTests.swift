@@ -219,6 +219,81 @@ struct RAGRepositoryInsightsContextTests {
         #expect(result.citationsByMarker.isEmpty)
     }
 
+    @Test("历史回放仅接受仓库与双 hash 完全匹配的 Artifact")
+    func restoresHistoryOnlyForExactArtifactIdentity() throws {
+        let repository = repo(id: 44, name: "history")
+        let source = artifact(for: repository)
+        let snapshot = RAGRepositoryInsightsSnapshot(
+            repoID: repository.id,
+            repoFullName: repository.fullName,
+            sourceHash: source.metadata.sourceHash,
+            xmlHash: source.metadata.xmlHash,
+            generatedAt: source.document.generatedAt,
+            configuredTokenBudget: 1_024,
+            originalTokens: TokenEstimator.estimate(text: source.document.xml),
+            sentTokens: 1_024,
+            outcome: .success,
+            wasProjected: false,
+            projectionReason: nil,
+            degradationReason: nil,
+            citationMarker: "S1",
+            preparedAt: source.document.generatedAt
+        )
+
+        let restored = try #require(
+            RAGRepositoryInsightsHistoryRestorer.restore(
+                snapshot: snapshot,
+                artifact: source
+            )
+        )
+
+        #expect(restored.xml == source.document.xml)
+        #expect(restored.snapshot.repoID == repository.id)
+        #expect(restored.snapshot.sourceHash == source.metadata.sourceHash)
+        #expect(restored.snapshot.xmlHash == source.metadata.xmlHash)
+    }
+
+    @Test("洞察更新或身份不匹配后历史 XML 不可回放")
+    func rejectsUpdatedOrMismatchedHistoryArtifact() {
+        let repository = repo(id: 45, name: "stale-history")
+        let source = artifact(for: repository)
+        let snapshot = RAGRepositoryInsightsSnapshot(
+            repoID: repository.id,
+            repoFullName: repository.fullName,
+            sourceHash: source.metadata.sourceHash,
+            xmlHash: source.metadata.xmlHash,
+            generatedAt: source.document.generatedAt,
+            configuredTokenBudget: 1_024,
+            originalTokens: TokenEstimator.estimate(text: source.document.xml),
+            sentTokens: 1_024,
+            outcome: .success,
+            wasProjected: false,
+            projectionReason: nil,
+            degradationReason: nil,
+            citationMarker: "S1",
+            preparedAt: source.document.generatedAt
+        )
+        var staleSourceSnapshot = snapshot
+        staleSourceSnapshot.sourceHash = "old-source"
+        var staleXMLSnapshot = snapshot
+        staleXMLSnapshot.xmlHash = "old-xml"
+        var renamedSnapshot = snapshot
+        renamedSnapshot.repoFullName = "octo/renamed"
+
+        #expect(RAGRepositoryInsightsHistoryRestorer.restore(
+            snapshot: staleSourceSnapshot,
+            artifact: source
+        ) == nil)
+        #expect(RAGRepositoryInsightsHistoryRestorer.restore(
+            snapshot: staleXMLSnapshot,
+            artifact: source
+        ) == nil)
+        #expect(RAGRepositoryInsightsHistoryRestorer.restore(
+            snapshot: renamedSnapshot,
+            artifact: source
+        ) == nil)
+    }
+
     private func repo(id: Int64, name: String) -> Repo {
         var value = Repo.makeMinimal(owner: "octo", name: name)
         value.id = id

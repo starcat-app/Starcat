@@ -165665,13 +165665,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Debug traces are stored locally. The final Prompt stage may contain the complete project-code XML; clearing this conversation's traces deletes that local debug copy."
+            "value" : "Debug traces are stored locally. The final Prompt stage may contain complete repository-insights and project-code XML; clearing this conversation's traces deletes that local debug copy."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "调试记录保存在本地；最终 Prompt 阶段可能包含完整项目代码 XML。清空当前会话调试记录会删除这份本地调试副本。"
+            "value" : "调试记录保存在本地；最终 Prompt 阶段可能包含完整仓库洞察与项目代码 XML。清空当前会话调试记录会删除这份本地调试副本。"
           }
         },
         "zh-Hant" : {
@@ -212065,6 +212065,22 @@
         }
       }
     },
+    "rag.workspace.inspector.plan.repositoryInsights" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repository insights"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仓库洞察"
+          }
+        }
+      }
+    },
     "rag.workspace.inspector.plan.repoContext" : {
       "localizations" : {
         "en" : {
@@ -231414,6 +231430,278 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تخطي"
+          }
+        }
+      }
+    },
+    "rag.workspace.repositoryInsights.copy" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy repository insights XML"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制仓库洞察 XML"
+          }
+        }
+      }
+    },
+    "rag.workspace.repositoryInsights.generatedAt" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generated"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生成时间"
+          }
+        }
+      }
+    },
+    "rag.workspace.repositoryInsights.historyUnavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The XML used for this answer is no longer available because the artifact was deleted or updated."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本次回答使用的 XML 已删除或更新，无法回放原始正文。"
+          }
+        }
+      }
+    },
+    "rag.workspace.repositoryInsights.projection" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Window fit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "窗口适配"
+          }
+        }
+      }
+    },
+    "rag.workspace.repositoryInsights.projection.original" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Full XML"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完整 XML"
+          }
+        }
+      }
+    },
+    "rag.workspace.repositoryInsights.projection.projected" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Structurally reduced"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已按结构精简"
+          }
+        }
+      }
+    },
+    "rag.workspace.repositoryInsights.reason" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reason"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原因"
+          }
+        }
+      }
+    },
+    "rag.workspace.repositoryInsights.repository" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repository"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仓库"
+          }
+        }
+      }
+    },
+    "rag.workspace.repositoryInsights.sourceHash" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Source hash"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数据哈希"
+          }
+        }
+      }
+    },
+    "rag.workspace.repositoryInsights.status" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Status"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "状态"
+          }
+        }
+      }
+    },
+    "rag.workspace.repositoryInsights.status.degraded" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Degraded"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已降级"
+          }
+        }
+      }
+    },
+    "rag.workspace.repositoryInsights.status.success" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Available"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可用"
+          }
+        }
+      }
+    },
+    "rag.workspace.repositoryInsights.status.unavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unavailable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不可用"
+          }
+        }
+      }
+    },
+    "rag.workspace.repositoryInsights.tokens" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tokens sent"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发送 Token"
+          }
+        }
+      }
+    },
+    "rag.workspace.repositoryInsights.xml" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repository insights XML"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仓库洞察 XML"
+          }
+        }
+      }
+    },
+    "rag.workspace.repositoryInsights.xml.expand" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View full repository insights XML"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看完整仓库洞察 XML"
+          }
+        }
+      }
+    },
+    "rag.workspace.repositoryInsights.xmlHash" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "XML hash"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "XML 哈希"
           }
         }
       }

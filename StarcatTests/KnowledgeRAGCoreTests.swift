@@ -4618,6 +4618,22 @@ struct KnowledgeRAGCoreTests {
             citationMarker: "S1",
             preparedAt: Date(timeIntervalSince1970: 200)
         )
+        let repositoryInsightsSnapshot = RAGRepositoryInsightsSnapshot(
+            repoID: 21,
+            repoFullName: "octo/demo-21",
+            sourceHash: "insights-source",
+            xmlHash: "insights-xml",
+            generatedAt: Date(timeIntervalSince1970: 180),
+            configuredTokenBudget: 2_000,
+            originalTokens: 1_400,
+            sentTokens: 1_200,
+            outcome: .success,
+            wasProjected: true,
+            projectionReason: "total_context_window",
+            degradationReason: nil,
+            citationMarker: "S2",
+            preparedAt: Date(timeIntervalSince1970: 200)
+        )
         let trace = [
             RAGExecutionStep(
                 kind: .planning,
@@ -4626,6 +4642,13 @@ struct KnowledgeRAGCoreTests {
                 summary: "已规划检索",
                 queryPlan: plan,
                 contextUsageSnapshot: contextSnapshot
+            ),
+            RAGExecutionStep(
+                kind: .repositoryInsights,
+                state: .completed,
+                details: ["已准备仓库洞察上下文。"],
+                summary: "已注入仓库洞察",
+                repositoryInsightsSnapshots: [repositoryInsightsSnapshot]
             ),
             RAGExecutionStep(
                 kind: .repoContext,
@@ -4682,13 +4705,27 @@ struct KnowledgeRAGCoreTests {
             vectorSimilarity: nil,
             sourceURL: URL(string: "https://github.com/octo/demo-21/tree/0123456789abcdef0123456789abcdef01234567")
         )
+        let repositoryInsightsCitation = RAGCitation(
+            id: UUID(),
+            marker: "S2",
+            chunkID: nil,
+            repoID: 21,
+            repoFullName: "octo/demo-21",
+            repoLanguage: "Swift",
+            source: .repositoryInsights,
+            sectionTitle: "Repository Insights",
+            score: 1,
+            hitKind: .repositoryInsights,
+            vectorSimilarity: nil,
+            sourceURL: URL(string: "https://github.com/octo/demo-21")
+        )
 
         try await store.appendTurn(
             conversationID: conversation.id,
             question: "帮我比较两个项目",
             answer: "比较结果",
             model: "test-model",
-            citations: [repoContextCitation],
+            citations: [repoContextCitation, repositoryInsightsCitation],
             executionTrace: trace,
             processingDuration: 12.4
         )
@@ -4716,11 +4753,31 @@ struct KnowledgeRAGCoreTests {
             detail.messages.last?.executionTrace.first(where: { $0.kind == .repoContext })?.repoContextSnapshot
         )
         #expect(restoredRepoContext == repoContextSnapshot)
-        let restoredRepoContextCitation = try #require(detail.messages.last?.citations.first)
+        let restoredInsights = try #require(
+            detail.messages.last?.executionTrace
+                .first(where: { $0.kind == .repositoryInsights })?
+                .repositoryInsightsSnapshots?
+                .first
+        )
+        #expect(restoredInsights == repositoryInsightsSnapshot)
+        let persistedTraceJSON = String(
+            decoding: try JSONEncoder().encode(detail.messages.last?.executionTrace),
+            as: UTF8.self
+        )
+        #expect(!persistedTraceJSON.contains("<repository_insights"))
+        let restoredRepoContextCitation = try #require(
+            detail.messages.last?.citations.first(where: { $0.source == .repoContext })
+        )
         #expect(restoredRepoContextCitation.source == .repoContext)
         #expect(restoredRepoContextCitation.chunkID == nil)
         #expect(restoredRepoContextCitation.hitKind == .repoContext)
         #expect(restoredRepoContextCitation.marker == "S1")
+        let restoredInsightsCitation = try #require(
+            detail.messages.last?.citations.first(where: { $0.source == .repositoryInsights })
+        )
+        #expect(restoredInsightsCitation.chunkID == nil)
+        #expect(restoredInsightsCitation.hitKind == .repositoryInsights)
+        #expect(restoredInsightsCitation.marker == "S2")
     }
 
     @Test("旧执行轨迹缺少计划快照字段时仍可解码")
@@ -4739,6 +4796,7 @@ struct KnowledgeRAGCoreTests {
         #expect(step.retrievalSnapshot == nil)
         #expect(step.contextUsageSnapshot == nil)
         #expect(step.repoContextSnapshot == nil)
+        #expect(step.repositoryInsightsSnapshots == nil)
     }
 
     @Test("旧候选仓库轨迹缺少语言与 Star 字段时仍可解码")

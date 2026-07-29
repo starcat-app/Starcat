@@ -7,8 +7,8 @@
 
 import SwiftUI
 
-/// XML 比普通命中分片更依赖横向阅读，因此保留较宽画布，同时沿用证据 popover 的三段式高度。
-private enum RAGRepoContextXMLPopoverMetrics {
+/// 两类特殊 XML 都比普通命中分片更依赖横向阅读，因此共享较宽画布与三段式高度。
+enum RAGXMLPopoverMetrics {
     static let width: CGFloat = 680
     static let height: CGFloat = 520
 }
@@ -22,7 +22,10 @@ struct RAGRepoContextXMLPopoverContent: View {
 
     var body: some View {
         RAGPopoverSkeletonHandoff(contentID: citation.id) {
-            RAGRepoContextXMLLoadingPopoverContent(citation: citation)
+            RAGXMLLoadingPopoverContent(
+                citation: citation,
+                titleKey: "rag.workspace.repoContext.xml"
+            )
         } content: {
             resolvedContent
         }
@@ -55,8 +58,8 @@ struct RAGRepoContextXMLPopoverContent: View {
         }
         .padding(14)
         .frame(
-            width: interfaceScale.scaled(RAGRepoContextXMLPopoverMetrics.width),
-            height: interfaceScale.scaled(RAGRepoContextXMLPopoverMetrics.height),
+            width: interfaceScale.scaled(RAGXMLPopoverMetrics.width),
+            height: interfaceScale.scaled(RAGXMLPopoverMetrics.height),
             alignment: .topLeading
         )
         .appLocaleEnvironment()
@@ -96,20 +99,21 @@ struct RAGRepoContextXMLPopoverContent: View {
     }
 }
 
-/// Repo Context XML 与普通分片共用同一交接节奏；画布更宽，因此增加骨架行数，
+/// 特殊 XML 与普通分片共用同一交接节奏；画布更宽，因此增加骨架行数，
 /// 让加载态在 680pt popover 中仍能表达真实正文密度而不是一块空白。
-private struct RAGRepoContextXMLLoadingPopoverContent: View {
+struct RAGXMLLoadingPopoverContent: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.colorScheme) private var colorScheme
 
     let citation: RAGCitation
+    let titleKey: LocalizedStringKey
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             RAGCitationChunkSourceHeader(citation: citation)
             Divider()
 
-            Text("rag.workspace.repoContext.xml")
+            Text(titleKey)
                 .font(ragFont(.caption, scale: interfaceScale, weight: .semibold))
                 .foregroundStyle(.secondary)
 
@@ -149,8 +153,8 @@ private struct RAGRepoContextXMLLoadingPopoverContent: View {
         }
         .padding(14)
         .frame(
-            width: interfaceScale.scaled(RAGRepoContextXMLPopoverMetrics.width),
-            height: interfaceScale.scaled(RAGRepoContextXMLPopoverMetrics.height),
+            width: interfaceScale.scaled(RAGXMLPopoverMetrics.width),
+            height: interfaceScale.scaled(RAGXMLPopoverMetrics.height),
             alignment: .topLeading
         )
         .appLocaleEnvironment()

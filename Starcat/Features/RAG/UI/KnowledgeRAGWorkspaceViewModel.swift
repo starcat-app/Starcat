@@ -420,6 +420,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     @ObservationIgnored private var linkDetectionTask: Task<Void, Never>?
     /// 历史 XML 读取必须跟随会话选择取消；commit/hash 不匹配时保持 nil，绝不展示后来版本。
     @ObservationIgnored private var repoContextHistoryLoadTask: Task<Void, Never>?
+    /// 洞察历史同样只在 hash 全匹配时恢复；删除或更新 Artifact 后保持空正文。
+    @ObservationIgnored private var repositoryInsightsHistoryLoadTask: Task<Void, Never>?
 
     var conversations: [RAGConversationSummary] = []
     var conversationGroups: [RAGConversationGroup] = []
@@ -732,6 +734,34 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
         return latestHistoricalExecutionTrace?.reversed()
             .first(where: { $0.repoContextSnapshot != nil })?.repoContextSnapshot
+    }
+
+    /// 当前轮优先使用最终投影文档；历史轮只读取持久化的审计快照。
+    var displayedRepositoryInsightsSnapshots: [RAGRepositoryInsightsSnapshot] {
+        if queryPlan != nil || messages.last?.role == .user {
+            if !repositoryInsightsDocuments.isEmpty {
+                return repositoryInsightsDocuments.map(\.snapshot)
+            }
+            return executionSteps.reversed()
+                .first(where: { $0.repositoryInsightsSnapshots != nil })?
+                .repositoryInsightsSnapshots ?? []
+        }
+        return latestHistoricalExecutionTrace?.reversed()
+            .first(where: { $0.repositoryInsightsSnapshots != nil })?
+            .repositoryInsightsSnapshots ?? []
+    }
+
+    func repositoryInsightsDocument(for citation: RAGCitation) -> RAGRepositoryInsightsDocument? {
+        repositoryInsightsDocuments.first {
+            $0.snapshot.repoID == citation.repoID
+                && $0.snapshot.repoFullName == citation.repoFullName
+        }
+    }
+
+    func repositoryInsightsSnapshot(for citation: RAGCitation) -> RAGRepositoryInsightsSnapshot? {
+        displayedRepositoryInsightsSnapshots.first {
+            $0.repoID == citation.repoID && $0.repoFullName == citation.repoFullName
+        }
     }
 
     /// 计划快照与最近一轮问答绑定；原始问题从用户消息恢复，无需在 execution trace 再复制。
@@ -1073,6 +1103,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         resetTurnState()
         restoreComposerDraft(for: detail.summary.id)
         restoreActiveAnswerPresentation(for: detail.summary.id)
+        scheduleHistoricalRepositoryInsightsLoad(for: detail.summary.id)
         scheduleHistoricalRepoContextLoad(for: detail.summary.id)
         isConversationLoading = false
     }
@@ -1106,6 +1137,50 @@ final class KnowledgeRAGWorkspaceViewModel {
         remoteBlocks = runtime.remoteBlocks
         executionSteps = runtime.executionSteps
         restoreRemoteContextState(for: conversationID)
+    }
+
+    /// 历史消息只持久化洞察 hash/token 快照。这里逐仓库读取可删除的 Artifact，并通过
+    /// repo/source/xml 三重身份校验恢复当时投影；更新或删除后保持只展示审计字段。
+    private func scheduleHistoricalRepositoryInsightsLoad(for conversationID: UUID) {
+        repositoryInsightsHistoryLoadTask?.cancel()
+        guard conversationRuntimeStates[conversationID]?.repositoryInsightsDocuments.isEmpty ?? true else {
+            return
+        }
+        let snapshots = displayedRepositoryInsightsSnapshots.filter {
+            $0.outcome == .success && $0.sentTokens > 0
+        }
+        guard !snapshots.isEmpty else { return }
+
+        repositoryInsightsHistoryLoadTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await Task.yield()
+            guard !Task.isCancelled, selectedConversationID == conversationID else { return }
+            var restoredDocuments: [RAGRepositoryInsightsDocument] = []
+            for snapshot in snapshots {
+                guard !Task.isCancelled, selectedConversationID == conversationID else { return }
+                let nameParts = snapshot.repoFullName
+                    .split(separator: "/", maxSplits: 1)
+                    .map(String.init)
+                guard nameParts.count == 2 else { continue }
+                var repo = Repo.makeMinimal(owner: nameParts[0], name: nameParts[1])
+                repo.id = snapshot.repoID
+                guard let artifact = await dependencies.repositoryInsightsContextCoordinator
+                    .loadArtifact(for: repo),
+                      let restored = RAGRepositoryInsightsHistoryRestorer.restore(
+                          snapshot: snapshot,
+                          artifact: artifact
+                      )
+                else {
+                    continue
+                }
+                restoredDocuments.append(restored)
+            }
+            guard !Task.isCancelled, selectedConversationID == conversationID else { return }
+            updateRuntimeState(for: conversationID) {
+                $0.repositoryInsightsDocuments = restoredDocuments
+            }
+            repositoryInsightsDocuments = restoredDocuments
+        }
     }
 
     /// 历史消息只持久化 RepoContext 的 commit/hash/token 快照。这里从共享缓存读取 XML，

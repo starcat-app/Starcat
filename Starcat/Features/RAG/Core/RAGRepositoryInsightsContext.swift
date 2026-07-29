@@ -49,6 +49,38 @@ struct RAGRepositoryInsightsLoadResult: Equatable, Sendable {
     var snapshots: [RAGRepositoryInsightsSnapshot]
 }
 
+/// 历史回答只保留审计快照；回放时必须证明磁盘 Artifact 仍是当轮使用的同一份内容。
+/// 任一身份或 hash 不匹配都返回 nil，绝不把后来更新的洞察冒充旧回答证据。
+enum RAGRepositoryInsightsHistoryRestorer {
+    static func restore(
+        snapshot: RAGRepositoryInsightsSnapshot,
+        artifact: RepositoryInsightsContextArtifact
+    ) -> RAGRepositoryInsightsDocument? {
+        guard snapshot.outcome == .success,
+              snapshot.sentTokens > 0,
+              artifact.metadata.repositoryID == snapshot.repoID,
+              artifact.metadata.repositoryFullName == snapshot.repoFullName,
+              artifact.metadata.sourceHash == snapshot.sourceHash,
+              artifact.metadata.xmlHash == snapshot.xmlHash,
+              let projection = try? RAGRepositoryInsightsXMLProjector().project(
+                  artifact.document.xml,
+                  tokenBudget: snapshot.sentTokens
+              )
+        else {
+            return nil
+        }
+        var restoredSnapshot = snapshot
+        restoredSnapshot.originalTokens = projection.originalTokens
+        restoredSnapshot.sentTokens = projection.projectedTokens
+        restoredSnapshot.wasProjected = projection.wasProjected
+        restoredSnapshot.projectionReason = projection.reason
+        return RAGRepositoryInsightsDocument(
+            snapshot: restoredSnapshot,
+            xml: projection.xml
+        )
+    }
+}
+
 /// 把仓库洞察目标严格收口到本轮真实范围。显式仓库保持用户选择顺序；普通查询保持
 /// Retriever bundle 排序，这样加载与 Prompt 中的仓库顺序都可预测。
 enum RAGRepositoryInsightsTargetResolver {
