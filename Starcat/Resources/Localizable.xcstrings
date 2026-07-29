@@ -293214,6 +293214,23 @@
         }
       }
     },
+    "settings.ai.prompt.placeholder.insightsContext" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shared Repository Insights snapshot (activity, contributors, health, release cadence, and Star history; empty when unavailable)."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共享的仓库洞察快照（活动、贡献者、健康度、发布节奏与 Star 历史；不可用时为空）。"
+          }
+        }
+      }
+    },
     "settings.ai.prompt.placeholder.language" : {
       "extractionState" : "manual",
       "localizations" : {

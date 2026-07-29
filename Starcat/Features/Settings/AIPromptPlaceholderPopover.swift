@@ -40,6 +40,7 @@ struct AIPromptPlaceholderCatalog {
                     .init(token: "{metadata}", systemImage: "list.bullet.rectangle", meaningKey: "settings.ai.prompt.placeholder.metadata"),
                     .init(token: "{readme}", systemImage: "doc.text", meaningKey: "settings.ai.prompt.placeholder.readme"),
                     .init(token: "{codeContext}", systemImage: "chevron.left.forwardslash.chevron.right", meaningKey: "settings.ai.prompt.placeholder.codeContext"),
+                    .init(token: "{insightsContext}", systemImage: "gauge.with.dots.needle.bottom.0percent", meaningKey: "settings.ai.prompt.placeholder.insightsContext"),
                     .init(token: "{externalContext}", systemImage: "network", meaningKey: "settings.ai.prompt.placeholder.externalContext"),
                 ],
                 footnoteKey: nil
@@ -63,6 +64,7 @@ struct AIPromptPlaceholderCatalog {
                     .init(token: "{metadata}", systemImage: "list.bullet.rectangle", meaningKey: "settings.ai.prompt.placeholder.metadata"),
                     .init(token: "{readme}", systemImage: "doc.text", meaningKey: "settings.ai.prompt.placeholder.readme"),
                     .init(token: "{codeContext}", systemImage: "chevron.left.forwardslash.chevron.right", meaningKey: "settings.ai.prompt.placeholder.codeContext"),
+                    .init(token: "{insightsContext}", systemImage: "gauge.with.dots.needle.bottom.0percent", meaningKey: "settings.ai.prompt.placeholder.insightsContext"),
                     .init(token: "{summary}", systemImage: "text.alignleft", meaningKey: "settings.ai.prompt.placeholder.summary"),
                     .init(token: "{externalContext}", systemImage: "network", meaningKey: "settings.ai.prompt.placeholder.externalContext"),
                 ],
