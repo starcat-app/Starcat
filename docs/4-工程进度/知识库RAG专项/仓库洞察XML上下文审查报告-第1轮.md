@@ -2,7 +2,7 @@
 
 > 日期：2026-07-30  
 > 范围：架构、数据一致性、权限边界、并发与性能  
-> 结论：发现 1 个 P1，修复前不能结束专项
+> 结论：发现的 1 个 P1 已修复并通过定向复验
 
 ## 1. 审查结论
 
@@ -30,7 +30,9 @@ source hash 不包含生成时间；XML hash 覆盖完整 UTF-8 正文。Storage
 
 ## 4. 修复与复验
 
-- [ ] 删除契约返回成功 / 失败。
-- [ ] 删除失败保留 UI Artifact 并显示错误。
-- [ ] 补齐成功与失败测试。
-- [ ] 重跑 Context / Storage、RepoContext Storage、Knowledge RAG Core 定向测试。
+- [x] 删除契约改为 `async throws`，Storage 错误不再被吞掉。
+- [x] 删除失败保留 UI Artifact，并显示 en / zh-Hans 错误反馈。
+- [x] 新增 Coordinator 删除失败传播测试。
+- [x] Coordinator、RepoContext Storage、Knowledge RAG Core 定向测试通过。
+
+修复提交：`9d1a584 fix(rag): 保留删除失败的洞察 XML 产物`。
