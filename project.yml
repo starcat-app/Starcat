@@ -306,6 +306,8 @@ targets:
     platform: macOS
     sources:
       - path: StarcatWidgets
+      # 仅复用纯 Foundation 快照契约；Extension 不编译 GRDB、网络或业务层。
+      - path: Starcat/Core/Widget/Shared
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.store.widgets
@@ -325,6 +327,7 @@ targets:
     platform: macOS
     sources:
       - path: StarcatWidgets
+      - path: Starcat/Core/Widget/Shared
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.direct.widgets
