@@ -114,7 +114,7 @@ Launcher Adapter
 |----|------|------------|
 | R-01 | 已修复 | 构建脚本先切换到 `repo_dir`，再使用相对 package；已从 `/tmp` 调用成功并生成 `arm64` / `x86_64` universal binary。 |
 | R-02 | 已修复 | MCP 错误新增 `schema_version` / `code` / `message` 结构，CLI 使用 typed error 分类，不再解析英文全文；CLI tests 与 `go vet` 通过。 |
-| R-03 | 部分修复 | 设置页在 Workflow 可公开安装前禁用安装按钮，不再跳转 404；公开仓库、首个 Release、A-01~A-15 和干净 Mac 验收仍保持未完成。 |
+| R-03 | 部分修复 | `starcat-app/starcat-alfred-workflow` 公开仓库与 `main` 已建立，设置页在可安装 Release 就绪前保持禁用；首个 Release、A-01~A-15 和干净 Mac 验收仍未完成。 |
 | R-04 | 已修复 | 头像缓存增加 cleanup state 与跨进程 lock，清理每 24 小时最多执行一次；覆盖 23 小时不重复、25 小时重新执行测试。 |
 | R-05 | 已修复 | MCP 与 CLI 对 `limit` 统一采用 `1...50` 严格校验，越界返回 `INVALID_ARGUMENTS`，不再静默裁剪。 |
 | R-06 | 已修复 | Alfred 只允许无凭据、无自定义端口的版本化 `starcat://repo/...`，或无 query 的 `https://github.com/{owner}/{repo}`；非法路径已有测试。 |

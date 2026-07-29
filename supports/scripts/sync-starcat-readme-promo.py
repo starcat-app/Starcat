@@ -87,6 +87,14 @@ PROJECTS = [
         "Cross-platform Starcat CLI and MCP bridge for AI agents.",
     ),
     Project(
+        Path("supports/starcat-alfred-workflow"),
+        "Starcat Alfred Workflow",
+        "launcher",
+        "Starcat Alfred Workflow",
+        "这是在 Alfred 中搜索 Starcat 本地仓库与 GitHub 的官方 Workflow。",
+        "Official Alfred Workflow for searching Starcat local repositories and GitHub.",
+    ),
+    Project(
         Path("supports/starcat-skill"),
         "Starcat Skill",
         "skill",
