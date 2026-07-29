@@ -43,7 +43,7 @@ final class RepoRecommendationViewModel {
     /// 4. 错误：保留旧 cache 值（如果 1 有），errorMessage 给 UI 显示。
     func loadInitial(repoID: Int64, service: RecommendationContextService) async {
         guard repoID > 0 else {
-            reset()
+            clear()
             return
         }
         guard loadedRepoID != repoID else { return }
@@ -133,7 +133,9 @@ final class RepoRecommendationViewModel {
     // 路径，路由逻辑迁到 `RepoDetailScaffold`（那里有 dependencies / homeViewModel
     // 上下文），ViewModel 只负责数据 load / loadMore / reset。`open` 方法已删除（铁律 #1）。
 
-    private func reset() {
+    /// 清掉上一个仓库的推荐快照。Private 项目命中隐私门禁时由详情页主动调用，
+    /// 防止视图复用期间短暂显示上一个 Public 仓库的推荐结果。
+    func clear() {
         loadedRepoID = nil
         nextOffset = nil
         currentSnapshot = nil

@@ -151,6 +151,7 @@ struct ActivityDetailScaffoldShell: View {
         // 仓库在 active 详情页加载 README 后不触发 markdown backfill / 向量重建。
         let model = ReadmeViewModel(
             api: dependencies.readmeAPI,
+            privateAPI: dependencies.projectReadmeAPI,
             availability: dependencies.readmeAvailability,
             onHTMLLoaded: dependencies.makeReadmeOnHTMLLoadedHandler()
         )

@@ -75,7 +75,7 @@ struct MyInsightsSnapshotProviderTests {
         #expect(action(.securityRisk, in: snapshot) == 1)
         #expect(snapshot.healthCoverage == InsightsCoverage(completed: 1, total: 3))
         #expect(snapshot.openSSFCoverage == InsightsCoverage(completed: 1, total: 3))
-        #expect(distribution("library", in: snapshot.knowledgeCoverageItems) == 0)
+        #expect(distribution("library", in: snapshot.knowledgeCoverageItems) == 1)
         #expect(distribution("notes", in: snapshot.knowledgeCoverageItems) == 0)
         #expect(distribution("tags", in: snapshot.knowledgeCoverageItems) == 1)
         let unknownLanguage = snapshot.languageItems.first {

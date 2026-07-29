@@ -152,6 +152,15 @@ protocol RepoRepositoryProtocol: Sendable {
         sort: RepoSortOption
     ) async throws -> [SelectionSnapshot]
 
+    /// 当前用户项目关系中可供筛选菜单使用的组织、可见性和权限枚举。
+    func fetchProjectFilterOptions(userID: Int64) async throws -> ProjectFilterOptions
+
+    /// 当前项目页已展示 Repo 的关系元数据，供卡片一次批量装配。
+    func fetchProjectRelations(userID: Int64, repoIDs: [Int64]) async throws -> [Int64: UserProject]
+
+    /// 从本机 Star History 缓存批量计算 30 天增长；历史不足时不返回该 repo。
+    func fetchLocalStarGrowth30Days(repoIDs: [Int64], now: Date) async throws -> [Int64: Int]
+
     // MARK: - Manage Repo Pin
 
     /// 返回全局置顶仓库及其置顶时间。HomeViewModel 只缓存这份轻量映射，供右键菜单状态
@@ -210,6 +219,21 @@ protocol RepoRepositoryProtocol: Sendable {
         userID: Int64,
         syncedAt: Date
     ) async throws -> Repo
+}
+
+extension RepoRepositoryProtocol {
+    /// 兼容只关心普通 Repo 查询的测试替身；生产 GRDB 实现会返回真实项目维度。
+    func fetchProjectFilterOptions(userID: Int64) async throws -> ProjectFilterOptions {
+        .empty
+    }
+
+    func fetchProjectRelations(userID: Int64, repoIDs: [Int64]) async throws -> [Int64: UserProject] {
+        [:]
+    }
+
+    func fetchLocalStarGrowth30Days(repoIDs: [Int64], now: Date) async throws -> [Int64: Int] {
+        [:]
+    }
 }
 
 // MARK: - Conformance

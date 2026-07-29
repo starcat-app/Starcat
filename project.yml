@@ -114,6 +114,9 @@ targets:
         # （PKCE 保护 code 安全但不替代 client authentication）。本字段通过 xcconfig 注入，
         # 不提交到 git。缺失时 Web Flow 退化为不可用提示。
         STARCAT_OAUTH_CLIENT_SECRET: $(STARCAT_OAUTH_CLIENT_SECRET)
+        # “我的项目”GitHub App 的公开 Client ID。默认空时仅启用 OAuth public fallback。
+        # 客户端禁止注入 GitHub App private key 或 client secret。
+        STARCAT_GITHUB_APP_CLIENT_ID: $(STARCAT_GITHUB_APP_CLIENT_ID)
         CFBundleURLTypes:
           - CFBundleURLName: com.starcat.app.store
             CFBundleURLSchemes:

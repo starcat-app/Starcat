@@ -41,6 +41,12 @@ final class AppDependencies {
     let oauthService: any GithubOAuthServiceProtocol
     let authSession: AuthSession
     let syncManager: SyncManager
+    /// “我的项目”独立 GitHub App 授权状态，不复用主 OAuth 登录状态。
+    let projectAccessSession: ProjectAccessSession
+    /// 当前用户项目关系与同步代际仓储。
+    let userProjectRepository: any UserProjectRepositoryProtocol
+    /// 启动、后台和手动刷新共用的项目同步服务。
+    let userProjectSyncService: UserProjectSyncService
     /// Week 3 引入：HomeView 在初始化时需要复用这个 repository 构建 ViewModel。
     /// D-01：注入类型从 struct 改为协议，便于测试替换为 Mock。
     let repoRepository: any RepoRepositoryProtocol
@@ -74,6 +80,8 @@ final class AppDependencies {
     let readmeRepository: ReadmeRepository
     /// Week 4 引入：README HTML 抓取 + 缓存协调。
     let readmeAPI: ReadmeAPI
+    /// Private / Internal README 专用 API；网络 token 来自独立 GitHub App 授权。
+    let projectReadmeAPI: ReadmeAPI
     /// HOM-201 P0-2（2026-06-14）：README "已知不存在" 共享会话状态。
     ///
     /// 由所有 `ReadmeViewModel`（manage 全局 VM + active/weekly 各 Shell 局部 VM）
@@ -776,6 +784,15 @@ final class AppDependencies {
             notificationService: notificationService,
             telemetryManager: telemetry
         )
+        let projectAccessSession = ProjectAccessSession()
+        self.projectAccessSession = projectAccessSession
+        let userProjectRepository = GRDBUserProjectRepository(database: db)
+        self.userProjectRepository = userProjectRepository
+        self.userProjectSyncService = UserProjectSyncService(
+            repository: userProjectRepository,
+            projectAccessSession: projectAccessSession,
+            credentialRouter: ProjectCredentialRouter(projectAccessSession: projectAccessSession)
+        )
         let directLicenseManager = DirectLicenseManager()
         self.directLicenseManager = directLicenseManager
         let subscriptions = SubscriptionManager(
@@ -817,6 +834,15 @@ final class AppDependencies {
         self.readmeMetrics = metrics
         self.readmeAPI = ReadmeAPI(
             client: api,
+            repository: readmeRepo,
+            trendingRepository: trendingReadmeRepo,
+            inflightTracker: inflightTracker,
+            metrics: metrics
+        )
+        self.projectReadmeAPI = ReadmeAPI(
+            client: GitHubAPIClient(
+                tokenProvider: ProjectAccessTokenProvider(session: projectAccessSession)
+            ),
             repository: readmeRepo,
             trendingRepository: trendingReadmeRepo,
             inflightTracker: inflightTracker,

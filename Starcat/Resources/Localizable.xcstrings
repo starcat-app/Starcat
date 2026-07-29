@@ -123916,6 +123916,134 @@
         }
       }
     },
+    "list.filter.project.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Project" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "项目" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "專案" } }
+      }
+    },
+    "list.filter.project.affiliation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Ownership" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "归属" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "歸屬" } }
+      }
+    },
+    "list.filter.project.personal" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Personal" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "个人" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "個人" } }
+      }
+    },
+    "list.filter.project.organization" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Organization" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "组织" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "組織" } }
+      }
+    },
+    "list.filter.project.organizationName" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Organization" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "具体组织" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "特定組織" } }
+      }
+    },
+    "list.filter.project.visibility" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Visibility" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "可见性" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "可見性" } }
+      }
+    },
+    "list.filter.project.visibility.public" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Public" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "公开" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "公開" } }
+      }
+    },
+    "list.filter.project.visibility.private" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Private" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "私有" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "私有" } }
+      }
+    },
+    "list.filter.project.visibility.internal" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Internal" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "内部" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "內部" } }
+      }
+    },
+    "list.filter.project.permission" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Permission" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "权限" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "權限" } }
+      }
+    },
+    "list.filter.project.permission.admin" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Admin" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "管理员" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "管理員" } }
+      }
+    },
+    "list.filter.project.permission.maintain" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Maintain" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "维护" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "維護" } }
+      }
+    },
+    "list.filter.project.permission.push" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Write" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "写入" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "寫入" } }
+      }
+    },
+    "list.filter.project.permission.triage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Triage" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分流" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "分流" } }
+      }
+    },
+    "list.filter.project.permission.pull" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Read" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "只读" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "唯讀" } }
+      }
+    },
+    "list.filter.project.permission.unknown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unknown" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未知" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "未知" } }
+      }
+    },
     "list.filter.starStatus" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -142760,6 +142888,14 @@
             "value" : "Qdrant"
           }
         }
+      }
+    },
+    "project.card.growth30d" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%@ / 30d" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "30 天 %@" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "30 天 %@" } }
       }
     },
     "rag.browser.chunk.contentLabel" : {
@@ -389019,6 +389155,423 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "اللغات"
+          }
+        }
+      }
+    },
+    "project.access.cancel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "取消" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "取消" } }
+      }
+    },
+    "project.access.connect" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Connect GitHub App" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "连接 GitHub App" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "連接 GitHub App" } }
+      }
+    },
+    "project.access.copyCode" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Copy device code" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "复制设备代码" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "複製裝置代碼" } }
+      }
+    },
+    "project.access.deviceCode" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Device code" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "设备代码" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "裝置代碼" } }
+      }
+    },
+    "project.access.disconnect" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Disconnect" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "断开连接" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "中斷連接" } }
+      }
+    },
+    "project.access.manage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Manage project access" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "管理项目授权" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "管理專案授權" } }
+      }
+    },
+    "project.access.openGitHub" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open GitHub authorization" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "打开 GitHub 授权页" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "開啟 GitHub 授權頁" } }
+      }
+    },
+    "project.access.openGitHub.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Opens GitHub in your default browser to approve read-only project access." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "在默认浏览器中打开 GitHub，以批准只读项目权限。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "在預設瀏覽器中開啟 GitHub，以批准唯讀專案權限。" } }
+      }
+    },
+    "project.access.privateCache.clear" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清理" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "清理" } }
+      }
+    },
+    "project.access.privateCache.cleared" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Private README cache cleared." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Private README 缓存已清理。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Private README 快取已清理。" } }
+      }
+    },
+    "project.access.privateCache.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Removes downloaded Private README content only. Projects and user data are preserved." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仅移除已下载的 Private README，项目和用户数据会保留。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "僅移除已下載的 Private README，專案和使用者資料會保留。" } }
+      }
+    },
+    "project.access.privateCache.failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not clear the Private README cache." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法清理 Private README 缓存。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "無法清理 Private README 快取。" } }
+      }
+    },
+    "project.access.privateCache.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Local Private cache" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本地 Private 缓存" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "本機 Private 快取" } }
+      }
+    },
+    "project.access.refresh" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Refresh projects" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "刷新项目" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "重新整理專案" } }
+      }
+    },
+    "project.access.state.awaiting.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Approve the read-only request in GitHub. This window will update automatically." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请在 GitHub 中批准只读请求，本窗口会自动更新。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "請在 GitHub 中批准唯讀請求，本視窗會自動更新。" } }
+      }
+    },
+    "project.access.state.awaiting.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Waiting for authorization" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "等待授权" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "等待授權" } }
+      }
+    },
+    "project.access.state.connected.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Public, Private, and approved organization projects can be synchronized." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "可以同步 Public、Private 和已获组织批准的项目。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "可以同步 Public、Private 和已獲組織批准的專案。" } }
+      }
+    },
+    "project.access.state.connected.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Full project access connected" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "完整项目权限已连接" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "完整專案權限已連接" } }
+      }
+    },
+    "project.access.state.connecting.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Requesting a secure device code from GitHub." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在向 GitHub 请求安全设备代码。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "正在向 GitHub 請求安全裝置代碼。" } }
+      }
+    },
+    "project.access.state.connecting.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Connecting" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在连接" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "正在連接" } }
+      }
+    },
+    "project.access.state.disconnected.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Public projects remain available through your existing Starcat login." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仍可通过当前 Starcat 登录查看 Public 项目。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "仍可透過目前 Starcat 登入查看 Public 專案。" } }
+      }
+    },
+    "project.access.state.disconnected.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Public projects only" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仅 Public 项目" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "僅 Public 專案" } }
+      }
+    },
+    "project.access.state.expired.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reconnect to resume Private and Internal project refreshes." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重新连接后才能继续刷新 Private 和 Internal 项目。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "重新連接後才能繼續重新整理 Private 和 Internal 專案。" } }
+      }
+    },
+    "project.access.state.expired.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Authorization expired" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "授权已过期" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "授權已過期" } }
+      }
+    },
+    "project.access.state.failed.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The request failed without exposing repository or token details. Try again." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请求失败，未暴露仓库或 token 详情，请重试。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "請求失敗，未暴露儲存庫或 token 詳情，請重試。" } }
+      }
+    },
+    "project.access.state.failed.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Authorization failed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "授权失败" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "授權失敗" } }
+      }
+    },
+    "project.access.state.offline.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Existing local projects are preserved. Reconnect to the network and retry." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "现有本地项目已保留，请恢复网络后重试。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "現有本機專案已保留，請恢復網路後重試。" } }
+      }
+    },
+    "project.access.state.offline.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Offline" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "网络不可用" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "網路不可用" } }
+      }
+    },
+    "project.access.state.partial.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Some organizations have not granted access. Available projects remain usable." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "部分组织尚未授权，已有项目仍可继续使用。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "部分組織尚未授權，已有專案仍可繼續使用。" } }
+      }
+    },
+    "project.access.state.partial.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Partial authorization" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "部分授权" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "部分授權" } }
+      }
+    },
+    "project.access.state.pending.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "An organization administrator must approve the GitHub App request." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "需要组织管理员批准 GitHub App 请求。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "需要組織管理員批准 GitHub App 請求。" } }
+      }
+    },
+    "project.access.state.pending.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Organization approval pending" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "等待组织审批" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "等待組織審批" } }
+      }
+    },
+    "project.access.state.revoked.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "GitHub revoked this project credential. Your Starcat login and local user data are unchanged." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "GitHub 已撤销项目凭据，Starcat 登录和本地用户数据不受影响。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "GitHub 已撤銷專案憑據，Starcat 登入和本機使用者資料不受影響。" } }
+      }
+    },
+    "project.access.state.revoked.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Authorization revoked" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "授权已撤销" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "授權已撤銷" } }
+      }
+    },
+    "project.access.state.unavailable.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This build has no GitHub App Client ID. Public projects still use the existing OAuth login." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前构建未配置 GitHub App Client ID，Public 项目仍使用现有 OAuth 登录。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "目前建置未設定 GitHub App Client ID，Public 專案仍使用現有 OAuth 登入。" } }
+      }
+    },
+    "project.access.state.unavailable.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Private access is not configured" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未配置 Private 权限" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "未設定 Private 權限" } }
+      }
+    },
+    "project.access.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Optional read-only access for Private and Internal repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "用于 Private 和 Internal 仓库的可选只读权限" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "用於 Private 和 Internal 儲存庫的可選唯讀權限" } }
+      }
+    },
+    "project.access.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Project Access" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "项目权限" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "專案權限" } }
+      }
+    },
+    "sidebar.myProjects" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "My Projects"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "我的项目"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "我的專案"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイプロジェクト"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "내 프로젝트"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meine Projekte"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mes projets"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mis proyectos"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meus projetos"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I miei progetti"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Мои проекты"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mijn projecten"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Moje projekty"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Мої проєкти"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Projelerim"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dự án của tôi"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Proyek Saya"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مشاريعي"
           }
         }
       }

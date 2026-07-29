@@ -125,6 +125,8 @@ struct SidebarView: View {
     @State private var hoveredSummaryTaskID: RepoAISummaryBackgroundTask.ID?
     /// GitHub Stars List 创建 / 编辑 Sheet。
     @State private var gitHubStarListEditorItem: GitHubStarListEditorItem?
+    /// “我的项目”独立授权和同步状态 Sheet。
+    @State private var showProjectAccessSheet = false
     /// 探索页当前由系统 `List(selection:)` 高亮的行。
     ///
     /// 探索页可能同时保留“当前模式”和“当前筛选项”两类业务状态；系统 sidebar 选中条
@@ -221,6 +223,15 @@ struct SidebarView: View {
                     await viewModel.reloadItems(forceRefresh: true)
                 }
             )
+            .appLocaleEnvironment()
+        }
+        .sheet(isPresented: $showProjectAccessSheet) {
+            ProjectAccessSheet {
+                await viewModel.refreshSidebar()
+                if viewModel.selection == .myProjects {
+                    await viewModel.reloadItems(forceRefresh: true, reason: .sync)
+                }
+            }
             .appLocaleEnvironment()
         }
         .onChange(of: hasAnyBackgroundTask) { _, hasTask in
@@ -801,6 +812,7 @@ struct SidebarView: View {
         if authSession.state.isAuthenticated {
             Section("sidebar.mainNavigation") {
                 row(.allStars, count: viewModel.totalCount)
+                myProjectsRow
                 row(.untagged, count: viewModel.untaggedCount)
                 row(.library, count: viewModel.libraryCount)
                 row(.smartCollectionsHome, count: SmartCollectionKind.allCases.count + viewModel.userSmartCollections.count)
@@ -1862,6 +1874,93 @@ struct SidebarView: View {
                 for candidate in item.prefetchCandidates {
                     viewModel.prefetch(selection: candidate)
                 }
+            }
+        }
+    }
+
+    /// “我的项目”复用系统 Sidebar selection，但在固定 trailing 容器内增加授权和同步入口。
+    /// 两个 icon-only 操作都有独立命中区，不改变整行 `.tag(.myProjects)` 的键盘导航语义。
+    private var myProjectsRow: some View {
+        Label {
+            HStack(spacing: 4) {
+                Text(SidebarItem.myProjects.displayName)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Spacer(minLength: 4)
+
+                HStack(spacing: 4) {
+                    Button {
+                        showProjectAccessSheet = true
+                    } label: {
+                        Image(systemName: projectAccessSystemImage)
+                            .font(interfaceScale.font(.captionSmall))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 18, height: 18)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .help(Text("project.access.manage"))
+                    .accessibilityLabel(Text("project.access.manage"))
+
+                    SyncIconButton(
+                        isRefreshing: isProjectSyncing,
+                        disabled: isProjectSyncing || authSession.state.user == nil,
+                        tooltip: String.l10n("project.access.refresh"),
+                        action: { refreshProjects() }
+                    )
+
+                    Spacer(minLength: 0)
+
+                    Text(viewModel.myProjectsCount.formatted())
+                        .font(interfaceScale.font(.captionSmall))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                }
+                .frame(width: Self.trailingFixedWidth, alignment: .trailing)
+            }
+        } icon: {
+            Image(systemName: SidebarItem.myProjects.systemImage)
+                .foregroundStyle(
+                    SidebarSemanticIconStyle(
+                        semanticColor: SidebarItem.myProjects.semanticIconColor ?? .secondary
+                    )
+                )
+        }
+        .tag(SidebarItem.myProjects)
+        .onHover { isHovering in
+            guard isHovering else { return }
+            for candidate in SidebarItem.myProjects.prefetchCandidates {
+                viewModel.prefetch(selection: candidate)
+            }
+        }
+    }
+
+    private var isProjectSyncing: Bool {
+        if case .syncing = dependencies.userProjectSyncService.state { return true }
+        return false
+    }
+
+    private var projectAccessSystemImage: String {
+        switch dependencies.projectAccessSession.state {
+        case .connected: "checkmark.shield.fill"
+        case .connecting, .awaitingAuthorization: "hourglass"
+        case .partialAuthorization, .organizationApprovalPending: "exclamationmark.shield.fill"
+        case .expired, .revoked, .failed: "exclamationmark.triangle.fill"
+        case .unavailable: "gear.badge.xmark"
+        case .disconnected: "lock.open"
+        }
+    }
+
+    private func refreshProjects() {
+        guard let userID = authSession.state.user?.id else { return }
+        Task { @MainActor in
+            _ = try? await dependencies.userProjectSyncService.refresh(userID: userID, force: true)
+            await viewModel.refreshSidebar()
+            if viewModel.selection == .myProjects {
+                await viewModel.reloadItems(forceRefresh: true, reason: .sync)
             }
         }
     }

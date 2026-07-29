@@ -647,6 +647,30 @@ struct GRDBRepoRepository {
         var args: [any DatabaseValueConvertible] = []
 
         switch scope {
+        case .myProjects(let userID):
+            joins.append(
+                "JOIN user_projects up_scope ON up_scope.repo_id = r.id AND up_scope.user_id = ?"
+            )
+            args.append(userID)
+            // 保证没有额外筛选时 WHERE 仍有合法谓词；项目成员关系已经由 JOIN 收窄。
+            whereClauses.append("1 = 1")
+            Self.appendProjectFilters(filters.project, whereClauses: &whereClauses, args: &args)
+            let trimmedSearch = filters.projectSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedSearch.isEmpty {
+                let escaped = trimmedSearch
+                    .replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "%", with: "\\%")
+                    .replacingOccurrences(of: "_", with: "\\_")
+                let pattern = "%\(escaped)%"
+                whereClauses.append("""
+                    (
+                        LOWER(r.full_name) LIKE LOWER(?) ESCAPE '\\'
+                        OR LOWER(COALESCE(r.description, '')) LIKE LOWER(?) ESCAPE '\\'
+                        OR LOWER(COALESCE(r.language, '')) LIKE LOWER(?) ESCAPE '\\'
+                    )
+                    """)
+                args.append(contentsOf: [pattern, pattern, pattern])
+            }
         case .allStars:
             whereClauses.append("r.is_starred = 1")
         case .library:
@@ -998,6 +1022,163 @@ struct GRDBRepoRepository {
             args.append(offset)
         }
         return (sql, StatementArguments(args))
+    }
+
+    /// 项目专属过滤只允许在 `.myProjects` JOIN 已存在时调用。
+    private static func appendProjectFilters(
+        _ filters: UserProjectFilter,
+        whereClauses: inout [String],
+        args: inout [any DatabaseValueConvertible]
+    ) {
+        func appendSet<Value: RawRepresentable>(
+            _ values: Set<Value>,
+            column: String
+        ) where Value.RawValue == String {
+            guard !values.isEmpty else { return }
+            let rawValues = values.map(\.rawValue).sorted()
+            let placeholders = Array(repeating: "?", count: rawValues.count).joined(separator: ", ")
+            whereClauses.append("\(column) IN (\(placeholders))")
+            args.append(contentsOf: rawValues)
+        }
+
+        appendSet(filters.affiliations, column: "up_scope.affiliation")
+        appendSet(filters.visibilities, column: "up_scope.visibility")
+        appendSet(filters.permissions, column: "up_scope.permission")
+        appendSet(filters.authorizationSources, column: "up_scope.authorization_source")
+
+        if !filters.organizationLogins.isEmpty {
+            let organizations = filters.organizationLogins.sorted {
+                $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+            }
+            let placeholders = Array(repeating: "?", count: organizations.count).joined(separator: ", ")
+            whereClauses.append("up_scope.owner_login COLLATE NOCASE IN (\(placeholders))")
+            args.append(contentsOf: organizations)
+        }
+    }
+
+    func fetchProjectFilterOptions(userID: Int64) async throws -> ProjectFilterOptions {
+        try await database.writer.read { db in
+            let organizationLogins = try String.fetchAll(
+                db,
+                sql: """
+                    SELECT DISTINCT owner_login
+                    FROM user_projects
+                    WHERE user_id = ? AND owner_type = 'organization'
+                    ORDER BY owner_login COLLATE NOCASE ASC
+                    """,
+                arguments: [userID]
+            )
+            let visibilityValues = try String.fetchAll(
+                db,
+                sql: """
+                    SELECT DISTINCT visibility
+                    FROM user_projects
+                    WHERE user_id = ?
+                    ORDER BY visibility ASC
+                    """,
+                arguments: [userID]
+            )
+            let permissionValues = try String.fetchAll(
+                db,
+                sql: """
+                    SELECT DISTINCT permission
+                    FROM user_projects
+                    WHERE user_id = ?
+                    ORDER BY permission ASC
+                    """,
+                arguments: [userID]
+            )
+            return ProjectFilterOptions(
+                organizationLogins: organizationLogins,
+                visibilities: visibilityValues.compactMap(ProjectVisibility.init(rawValue:)),
+                permissions: permissionValues.compactMap(ProjectPermission.init(rawValue:))
+            )
+        }
+    }
+
+    func fetchProjectRelations(
+        userID: Int64,
+        repoIDs: [Int64]
+    ) async throws -> [Int64: UserProject] {
+        guard !repoIDs.isEmpty else { return [:] }
+        let uniqueIDs = Array(Set(repoIDs)).sorted()
+        let placeholders = Array(repeating: "?", count: uniqueIDs.count).joined(separator: ", ")
+        return try await database.writer.read { db in
+            var arguments: [any DatabaseValueConvertible] = [userID]
+            arguments.append(contentsOf: uniqueIDs.map { $0 as any DatabaseValueConvertible })
+            let rows = try UserProject.fetchAll(
+                db,
+                sql: """
+                    SELECT *
+                    FROM user_projects
+                    WHERE user_id = ? AND repo_id IN (\(placeholders))
+                    """,
+                arguments: StatementArguments(arguments)
+            )
+            return Dictionary(uniqueKeysWithValues: rows.map { ($0.repoId, $0) })
+        }
+    }
+
+    func fetchLocalStarGrowth30Days(
+        repoIDs: [Int64],
+        now: Date
+    ) async throws -> [Int64: Int] {
+        guard !repoIDs.isEmpty else { return [:] }
+        let uniqueIDs = Array(Set(repoIDs)).sorted()
+        let placeholders = Array(repeating: "?", count: uniqueIDs.count).joined(separator: ", ")
+        let today = StarHistoryDateCodec.dayString(from: now)
+        let cutoff = StarHistoryDateCodec.dayString(from: now.addingTimeInterval(-30 * 86_400))
+
+        return try await database.writer.read { db in
+            var arguments = uniqueIDs.map { $0 as any DatabaseValueConvertible }
+            arguments.append(today)
+            let records = try RepoStarHistoryPointRecord.fetchAll(
+                db,
+                sql: """
+                    SELECT *
+                    FROM repo_star_history_points
+                    WHERE repo_id IN (\(placeholders)) AND observed_on <= ?
+                    ORDER BY repo_id ASC, observed_on ASC, fetched_at ASC
+                    """,
+                arguments: StatementArguments(arguments)
+            )
+            let grouped = Dictionary(grouping: records, by: \.repoId)
+            var growth: [Int64: Int] = [:]
+            for (repoID, repoRecords) in grouped {
+                var bestByDay: [String: RepoStarHistoryPointRecord] = [:]
+                for record in repoRecords {
+                    guard let existing = bestByDay[record.observedOn] else {
+                        bestByDay[record.observedOn] = record
+                        continue
+                    }
+                    let priority = Self.starHistoryPriority(record)
+                    let existingPriority = Self.starHistoryPriority(existing)
+                    if priority > existingPriority
+                        || (priority == existingPriority && record.fetchedAt > existing.fetchedAt) {
+                        bestByDay[record.observedOn] = record
+                    }
+                }
+                let points = bestByDay.values.sorted { $0.observedOn < $1.observedOn }
+                guard let latest = points.last else { continue }
+                let baseline = points.last { $0.observedOn <= cutoff }
+                    ?? points.first { $0.observedOn > cutoff }
+                guard let baseline, baseline.observedOn != latest.observedOn else { continue }
+                growth[repoID] = latest.starsCount - baseline.starsCount
+            }
+            return growth
+        }
+    }
+
+    /// 与详情 Star History 的“本机 > Discovery > GH Archive”日内优先级保持一致。
+    private static func starHistoryPriority(_ record: RepoStarHistoryPointRecord) -> Int {
+        switch StarHistorySource(rawValue: record.source) {
+        case .localSnapshot: return 3
+        case .discoverySnapshot: return 2
+        case .ghArchive:
+            return record.precision == StarHistoryPrecision.snapshot.rawValue ? 2 : 1
+        case .none:
+            return 0
+        }
     }
 
     // MARK: - 同步状态

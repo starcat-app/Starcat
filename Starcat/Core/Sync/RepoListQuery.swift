@@ -16,6 +16,11 @@ import SwiftUI
 ///
 /// 只放 Core 层可理解的语义，避免 Repository 反向依赖 `SidebarItem` 这种 UI 导航枚举。
 enum RepoListScope: Equatable, Sendable {
+    /// 当前 GitHub 用户可访问的个人 / 组织项目。
+    ///
+    /// `userID` 必须参与查询：虽然 Starcat 会按账号切换数据库，异步同步仍可能跨越切库边界，
+    /// 关系表保留用户约束可以避免旧账号的项目短暂出现在新账号列表中。
+    case myProjects(userID: Int64)
     case allStars
     case library
     case untagged
@@ -180,6 +185,10 @@ struct RepoListFilters: Equatable, Sendable {
     var ragIndexState: RepoRAGIndexStateFilter
     var insightsRisk: RepoInsightsRiskFilter
     var selectedTagIDs: Set<String>
+    /// 仅 `.myProjects` scope 消费；其它 scope 必须忽略，防止项目筛选污染 Stars。
+    var project: UserProjectFilter
+    /// 项目列表的数据库关键字搜索；普通 Manage 搜索仍走既有 FTS / 语义链路。
+    var projectSearchText: String
 
     init(
         hideArchived: Bool,
@@ -197,7 +206,9 @@ struct RepoListFilters: Equatable, Sendable {
         indexableSourceAvailability: RepoSignalAvailabilityFilter = .unknown,
         ragIndexState: RepoRAGIndexStateFilter = .unknown,
         insightsRisk: RepoInsightsRiskFilter = .unknown,
-        selectedTagIDs: Set<String>
+        selectedTagIDs: Set<String>,
+        project: UserProjectFilter = .init(),
+        projectSearchText: String = ""
     ) {
         self.hideArchived = hideArchived
         self.hideForks = hideForks
@@ -215,6 +226,8 @@ struct RepoListFilters: Equatable, Sendable {
         self.ragIndexState = ragIndexState
         self.insightsRisk = insightsRisk
         self.selectedTagIDs = selectedTagIDs
+        self.project = project
+        self.projectSearchText = projectSearchText
     }
 
     static let empty = RepoListFilters(
@@ -233,6 +246,21 @@ struct RepoListFilters: Equatable, Sendable {
         indexableSourceAvailability: .unknown,
         ragIndexState: .unknown,
         insightsRisk: .unknown,
-        selectedTagIDs: []
+        selectedTagIDs: [],
+        project: .init(),
+        projectSearchText: ""
+    )
+}
+
+/// 项目筛选菜单所需的数据库枚举值；不包含 Repo 内容或私有仓库名称。
+struct ProjectFilterOptions: Equatable, Sendable {
+    var organizationLogins: [String]
+    var visibilities: [ProjectVisibility]
+    var permissions: [ProjectPermission]
+
+    static let empty = ProjectFilterOptions(
+        organizationLogins: [],
+        visibilities: [],
+        permissions: []
     )
 }

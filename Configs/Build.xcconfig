@@ -57,6 +57,12 @@ STARCAT_APTABASE_APP_KEY =
 // Device Flow 和 PAT 不需要这个值。默认空 = Web Flow 退化为错误提示。
 STARCAT_OAUTH_CLIENT_SECRET =
 
+// MARK: - “我的项目”GitHub App
+
+// GitHub App Client ID 是公开标识，不是 secret。完成 GitHub App 注册并启用 Device Flow
+// 后填写；默认空时 App 只同步 OAuth 可见的 public 项目。
+STARCAT_GITHUB_APP_CLIENT_ID =
+
 // MARK: - 分发渠道
 
 // 默认按 App Store 渠道构建。Direct target / 打包脚本会覆盖为 `direct`。

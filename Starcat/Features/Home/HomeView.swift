@@ -219,6 +219,7 @@ struct HomeView: View {
     init(
         repository: any RepoRepositoryProtocol,
         readmeAPI: ReadmeAPI,
+        projectReadmeAPI: ReadmeAPI,
         readmeAvailability: ReadmeAvailability,
         readmeOnHTMLLoaded: @escaping @MainActor (Repo) -> Void,
         tagRepository: any TagRepositoryProtocol,
@@ -259,6 +260,7 @@ struct HomeView: View {
         // 的 active 详情不会触发 markdown backfill / 向量重建——见 26-向量搜索改进.md §6）。
         _readmeVM = State(initialValue: ReadmeViewModel(
             api: readmeAPI,
+            privateAPI: projectReadmeAPI,
             availability: readmeAvailability,
             onHTMLLoaded: readmeOnHTMLLoaded,
             telemetryManager: telemetryManager
@@ -1341,6 +1343,7 @@ struct HomeView: View {
             dependencies.releasePoller.stop()
             dependencies.openSSFScorePoller.stop()
             dependencies.repoHealthPoller.stop()
+            dependencies.userProjectSyncService.stopBackgroundRefresh()
             stopReadmePrefetch()
             dependencies.initialWarmupCoordinator.cancel()
             dependencies.semanticIndexBuilder.cancel()
@@ -1676,6 +1679,10 @@ struct HomeView: View {
         do {
             if let repositoryID = target.repositoryID,
                let localRepo = try await dependencies.repoRepository.findById(repositoryID) {
+                guard ProjectPrivacyPolicy.allowsUniversalLink(for: localRepo) else {
+                    repositoryDeepLinkErrorMessage = String.l10n("repo.share.open.error.unavailable")
+                    return
+                }
                 openCompanionRepository(localRepo)
                 return
             }
@@ -1683,6 +1690,10 @@ struct HomeView: View {
                 owner: target.owner,
                 name: target.name
             ) {
+                guard ProjectPrivacyPolicy.allowsUniversalLink(for: localRepo) else {
+                    repositoryDeepLinkErrorMessage = String.l10n("repo.share.open.error.unavailable")
+                    return
+                }
                 openCompanionRepository(localRepo)
                 return
             }
@@ -2088,6 +2099,7 @@ struct HomeView: View {
         if isAccountSwitch {
             viewModel.resetAllStateForUserSwitch()
         }
+        viewModel.setActiveUserID(user.id)
         restoreListPreferences(login: user.login)
 
         let wasAlreadyOnManage = selectedSidebarPage == .manage
@@ -2096,6 +2108,13 @@ struct HomeView: View {
             dependencies.telemetryManager.track(.manageOpened)
         }
         viewModel.selection = savedManageSelection
+
+        if !TestEnvironment.isRunning {
+            // 项目授权独立于主 OAuth 登录：先恢复 GitHub App 凭据，再启动 4h 系统后台刷新。
+            // 即使未配置或未连接 GitHub App，后续刷新仍会由凭据路由安全回退到 OAuth Public。
+            dependencies.userProjectSyncService.restoreAccess()
+            dependencies.userProjectSyncService.startBackgroundRefresh(userID: user.id)
+        }
 
         Task { @MainActor in
             await syncGitHubStarListsAndRefreshSidebar(login: user.login)
@@ -2113,6 +2132,19 @@ struct HomeView: View {
                 syncManager.performFullSync(userID: user.id)
             } else {
                 syncManager.performFullSyncIfStale(userID: user.id)
+            }
+        }
+
+        // 项目同步不阻塞 Stars 首屏。完成后只刷新项目计数；用户当前正在浏览“我的项目”
+        // 时才重查中栏，并沿用 HomeViewModel 的 resetPage=false 刷新语义保留 selection/分页。
+        if !TestEnvironment.isRunning {
+            Task { @MainActor in
+                _ = try? await dependencies.userProjectSyncService.refresh(userID: user.id)
+                await viewModel.refreshSidebar()
+                if viewModel.selection == .myProjects {
+                    await viewModel.reloadItems(forceRefresh: true, reason: .sync)
+                    applyManageDetailSelectionPolicy()
+                }
             }
         }
     }
@@ -2214,7 +2246,8 @@ struct HomeView: View {
         case .trending:
             // .trending 不是合法的 Manage 分类（属于 Trending 页），恢复时应回落 allStars
             return false
-        case .allStars, .untagged, .library, .allLanguages, .smartCollectionsHome, .smartCollection:
+        case .allStars, .myProjects, .untagged, .library, .allLanguages,
+             .smartCollectionsHome, .smartCollection:
             return true
         case .userSmartCollection(let id):
             return viewModel.userSmartCollections.contains { $0.id == id }

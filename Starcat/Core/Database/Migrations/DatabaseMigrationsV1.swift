@@ -69,6 +69,84 @@ enum DatabaseMigrations {
         registerV14(into: &migrator)
         registerV15(into: &migrator)
         registerV16(into: &migrator)
+        registerV17(into: &migrator)
+    }
+
+    // MARK: - v17-my-projects：当前用户的个人 / 组织项目关系（2026-07-29）
+
+    /// “我的项目”是用户与 Repo 的独立关系，不能塞进 `repos` 缓存表：
+    ///
+    /// - 同一个 Repo 可以同时是 Star、Project 和 Library，远端元数据刷新不能覆盖这些关系；
+    /// - Starcat 为每个 GitHub 用户使用独立数据库，但仍保留 `user_id`，避免异步切库边界出错时
+    ///   把旧账号结果误写进新账号视图；
+    /// - 项目同步按 credential + affiliation 分页，只有完整 generation 成功后才能清理旧关系，
+    ///   所以同步状态必须独立持久化，不能复用只服务 Stars 的 `sync_state`。
+    ///
+    /// 表中刻意不保存 token、响应 body 或 Private repo full name 形式的错误文本。
+    private static func registerV17(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v17-my-projects") { db in
+            try db.create(table: "user_projects") { table in
+                table.column("user_id", .integer).notNull()
+                table.column("repo_id", .integer).notNull()
+                    .references("repos", column: "id", onDelete: .cascade)
+                table.column("affiliation", .text).notNull()
+                table.column("owner_login", .text).notNull()
+                table.column("owner_type", .text).notNull()
+                table.column("visibility", .text).notNull()
+                table.column("permission", .text).notNull()
+                table.column("authorization_source", .text).notNull()
+                table.column("installation_id", .integer)
+                table.column("generation", .text).notNull()
+                table.column("last_seen_at", .text).notNull()
+                table.column("created_at", .text).notNull()
+                table.column("updated_at", .text).notNull()
+                table.primaryKey(["user_id", "repo_id"])
+            }
+            try db.create(
+                index: "idx_user_projects_user_affiliation",
+                on: "user_projects",
+                columns: ["user_id", "affiliation"]
+            )
+            try db.create(
+                index: "idx_user_projects_user_owner",
+                on: "user_projects",
+                columns: ["user_id", "owner_login"]
+            )
+            try db.create(
+                index: "idx_user_projects_user_visibility",
+                on: "user_projects",
+                columns: ["user_id", "visibility"]
+            )
+            try db.create(
+                index: "idx_user_projects_user_permission",
+                on: "user_projects",
+                columns: ["user_id", "permission"]
+            )
+            try db.create(
+                index: "idx_user_projects_user_generation",
+                on: "user_projects",
+                columns: ["user_id", "generation"]
+            )
+
+            try db.create(table: "project_sync_state") { table in
+                table.column("user_id", .integer).notNull()
+                table.column("credential_kind", .text).notNull()
+                table.column("affiliation", .text).notNull()
+                table.column("etag", .text)
+                table.column("generation", .text)
+                table.column("last_attempt_at", .text)
+                table.column("last_success_at", .text)
+                table.column("sync_status", .text).notNull().defaults(to: "idle")
+                table.column("error_code", .text)
+                table.column("updated_at", .text).notNull()
+                table.primaryKey(["user_id", "credential_kind", "affiliation"])
+            }
+            try db.create(
+                index: "idx_project_sync_state_status",
+                on: "project_sync_state",
+                columns: ["user_id", "sync_status"]
+            )
+        }
     }
 
     // MARK: - v16-repository-insights：仓库洞察与 Star 历史缓存（2026-07-27）

@@ -372,6 +372,10 @@ final class HomeViewModel {
         let ragIndexState: String
         let insightsRisk: String
         let selectedTagIDs: Set<String>
+        let projectAffiliation: String?
+        let projectOrganization: String?
+        let projectVisibility: String?
+        let projectPermission: String?
         let sort: String
     }
 
@@ -462,6 +466,15 @@ final class HomeViewModel {
     /// 全部 stars 数（Sidebar "全部 Stars" 行计数）。D-04：`private(set)` 收敛。
     private(set) var totalCount: Int = 0
 
+    /// 当前登录用户可访问的个人 / 组织项目数量。
+    private(set) var myProjectsCount: Int = 0
+
+    /// 项目筛选菜单使用的可选值，不包含 Repo 内容。
+    private(set) var projectFilterOptions: ProjectFilterOptions = .empty
+
+    /// “我的项目”查询必须显式携带当前 GitHub 用户 ID，不能只依赖当前数据库路径。
+    private(set) var activeUserID: Int64?
+
     /// 未打标签数（Sidebar "未分类" 行计数）。D-04：`private(set)` 收敛。
     private(set) var untaggedCount: Int = 0
 
@@ -529,6 +542,10 @@ final class HomeViewModel {
     /// Wiki availability 的批量只读快照。缺失 key 明确表示“尚未探测”，不能当成 missing。
     /// 文件 IO / JSON decode 由 `WikiAvailabilitySnapshotLoader` 在主线程外完成。
     private var wikiAvailabilityMap: [Int64: Bool] = [:]
+
+    /// 当前项目页已加载行的关系与本机历史派生值；列表分页时按可见页批量查询。
+    private var projectRelations: [Int64: UserProject] = [:]
+    private var projectStarGrowth30Days: [Int64: Int] = [:]
 
     /// Health 排序 / 筛选用的本地快照缓存，只在用户启用相关控制时读取。
     /// 普通列表仍走既有路径，避免每次切分类都额外查 repo_health_snapshots。
@@ -621,6 +638,40 @@ final class HomeViewModel {
         didSet {
             guard oldValue != repoLanguageFilter else { return }
             guard !isHydratingManageFilters, !isApplyingGlobalFilterState else { return }
+            reloadOrApplyCurrentManageView()
+        }
+    }
+
+    /// “我的项目”专属维度。离开该 scope 后保留会话内选择，但查询层完全忽略，
+    /// 所以不会污染 Stars、知识库或 Smart Collections。
+    var projectAffiliationFilter: ProjectAffiliation? {
+        didSet {
+            guard oldValue != projectAffiliationFilter, !isHydratingManageFilters else { return }
+            guard selection == .myProjects else { return }
+            reloadOrApplyCurrentManageView()
+        }
+    }
+
+    var projectOrganizationFilter: String? {
+        didSet {
+            guard oldValue != projectOrganizationFilter, !isHydratingManageFilters else { return }
+            guard selection == .myProjects else { return }
+            reloadOrApplyCurrentManageView()
+        }
+    }
+
+    var projectVisibilityFilter: ProjectVisibility? {
+        didSet {
+            guard oldValue != projectVisibilityFilter, !isHydratingManageFilters else { return }
+            guard selection == .myProjects else { return }
+            reloadOrApplyCurrentManageView()
+        }
+    }
+
+    var projectPermissionFilter: ProjectPermission? {
+        didSet {
+            guard oldValue != projectPermissionFilter, !isHydratingManageFilters else { return }
+            guard selection == .myProjects else { return }
             reloadOrApplyCurrentManageView()
         }
     }
@@ -914,7 +965,8 @@ final class HomeViewModel {
     /// 派生：当前是否有任何过滤器生效（toolbar 显示徽标用）。
     var hasActiveFilter: Bool {
         let filters = effectiveGlobalFilterState
-        return filters.hideArchived
+        return hasActiveProjectFilter
+            || filters.hideArchived
             || filters.hideForks
             || filters.statusFilter != nil
             || filters.starFilter != .all
@@ -929,6 +981,14 @@ final class HomeViewModel {
             || filters.indexableSourceAvailabilityFilter != .unknown
             || filters.ragIndexStateFilter != .unknown
             || filters.insightsRiskFilter != .unknown
+    }
+
+    var hasActiveProjectFilter: Bool {
+        guard selection == .myProjects else { return false }
+        return projectAffiliationFilter != nil
+            || projectOrganizationFilter != nil
+            || projectVisibilityFilter != nil
+            || projectPermissionFilter != nil
     }
 
     /// 跨窗口钻取只替换“当前有效筛选”，不写持久字段；重复点击同一数字也用 requestID 更新会话身份。
@@ -1049,7 +1109,18 @@ final class HomeViewModel {
     ///
     /// 全局筛选工具栏「重置」按钮走这里。设置侧也同步清对应偏好。
     func resetAllFilters() {
+        let hadProjectFilter = hasActiveProjectFilter
+        let hadGlobalFilter = effectiveGlobalFilterState != .neutral
+        isHydratingManageFilters = true
+        projectAffiliationFilter = nil
+        projectOrganizationFilter = nil
+        projectVisibilityFilter = nil
+        projectPermissionFilter = nil
+        isHydratingManageFilters = false
         applyPersistentGlobalFilterState(.neutral)
+        if hadProjectFilter && !hadGlobalFilter {
+            reloadOrApplyCurrentManageView()
+        }
     }
 
     /// 批量写入真实筛选时只触发一次重查，避免十个 didSet 依次启动十份分页任务。
@@ -1136,6 +1207,7 @@ final class HomeViewModel {
         var safeSelectionKind: String {
             switch selection {
             case .allStars: return "all-stars"
+            case .myProjects: return "my-projects"
             case .allLanguages: return "all-languages"
             case .untagged: return "untagged"
             case .library: return "library"
@@ -1256,6 +1328,14 @@ final class HomeViewModel {
 
     // MARK: - 公开 action
 
+    /// 绑定当前登录用户，供项目关系查询和 Sidebar 计数使用。
+    ///
+    /// HomeView 会在任何 refresh / reload 之前调用；登出和换账号则由
+    /// `resetAllStateForUserSwitch()` 清空，避免旧账号关系进入新账号查询。
+    func setActiveUserID(_ userID: Int64) {
+        activeUserID = userID
+    }
+
     /// D-30 配套（2026-06-13）：账号切换时清空所有与登录身份强绑定的 in-memory 状态。
     ///
     /// **为什么需要这个方法**：
@@ -1315,6 +1395,8 @@ final class HomeViewModel {
         libraryStateMap = [:]
         repoTagsMap = [:]
         wikiAvailabilityMap = [:]
+        projectRelations = [:]
+        projectStarGrowth30Days = [:]
         semanticHitMap = [:]
         invalidateRepoPinsForDatabaseChange()
         temporaryGlobalFilterSession = nil
@@ -1330,6 +1412,15 @@ final class HomeViewModel {
         itemsRevision &+= 1
 
         totalCount = 0
+        myProjectsCount = 0
+        projectFilterOptions = .empty
+        activeUserID = nil
+        isHydratingManageFilters = true
+        projectAffiliationFilter = nil
+        projectOrganizationFilter = nil
+        projectVisibilityFilter = nil
+        projectPermissionFilter = nil
+        isHydratingManageFilters = false
         untaggedCount = 0
         libraryCount = 0
         languageStats = []
@@ -1416,6 +1507,8 @@ final class HomeViewModel {
         let previousUngroupedCount = githubStarListUngroupedCount
         do {
             async let total = repository.starredCount()
+            async let myProjects = fetchMyProjectsCount()
+            async let projectOptions = fetchProjectFilterOptions()
             async let untagged = repository.fetchUntagged().count
             async let library = repository.fetchListCount(scope: .library, filters: .empty)
             async let langs = repository.languageStats()
@@ -1432,6 +1525,8 @@ final class HomeViewModel {
             async let tagAssignmentsResult = repoTagRepository.fetchAllTagAssignments()
 
             self.totalCount = try await total
+            self.myProjectsCount = try await myProjects
+            self.projectFilterOptions = try await projectOptions
             self.untaggedCount = try await untagged
             self.libraryCount = try await library
             self.languageStats = try await langs
@@ -1679,7 +1774,8 @@ final class HomeViewModel {
         case .userSmartCollection:
             guard let activeScope = activeUserSmartCollectionRule?.scope else { return nil }
             scope = activeScope
-        case .library, .trending, .smartCollectionsHome, .smartCollection, .githubStarList, .githubStarListUngrouped:
+        case .myProjects, .library, .trending, .smartCollectionsHome, .smartCollection,
+             .githubStarList, .githubStarListUngrouped:
             return nil
         }
 
@@ -1758,6 +1854,9 @@ final class HomeViewModel {
         switch selection {
         case .allStars, .allLanguages:
             return .allStars
+        case .myProjects:
+            guard let activeUserID else { return nil }
+            return .myProjects(userID: activeUserID)
         case .untagged:
             return .untagged
         case .library:
@@ -1777,8 +1876,50 @@ final class HomeViewModel {
         }
     }
 
+    /// 未完成登录态绑定时项目计数必须为 0，不能猜测或复用上一个账号。
+    private func fetchMyProjectsCount() async throws -> Int {
+        guard let activeUserID else { return 0 }
+        return try await repository.fetchListCount(
+            scope: .myProjects(userID: activeUserID),
+            filters: .empty
+        )
+    }
+
+    private func fetchProjectFilterOptions() async throws -> ProjectFilterOptions {
+        guard let activeUserID else { return .empty }
+        return try await repository.fetchProjectFilterOptions(userID: activeUserID)
+    }
+
+    /// 仅供无法下推 SQLite 的兼容路径和 hover 预取使用；正常列表仍按页读取。
+    private func fetchAllMyProjects() async throws -> [Repo] {
+        guard let activeUserID else { return [] }
+        return try await repository.fetchListPage(
+            scope: .myProjects(userID: activeUserID),
+            filters: currentRepoListFiltersForDatabasePaging(),
+            sort: .starredAtDesc,
+            limit: Int.max,
+            offset: 0
+        )
+    }
+
     private func currentRepoListFiltersForDatabasePaging() -> RepoListFilters {
-        effectiveGlobalFilterState.repoListFilters(selectedTagIDs: selectedTagIds)
+        var filters = effectiveGlobalFilterState.repoListFilters(selectedTagIDs: selectedTagIds)
+        if selection == .myProjects {
+            if let projectAffiliationFilter {
+                filters.project.affiliations = [projectAffiliationFilter]
+            }
+            if let projectOrganizationFilter {
+                filters.project.organizationLogins = [projectOrganizationFilter]
+            }
+            if let projectVisibilityFilter {
+                filters.project.visibilities = [projectVisibilityFilter]
+            }
+            if let projectPermissionFilter {
+                filters.project.permissions = [projectPermissionFilter]
+            }
+            filters.projectSearchText = searchQuery
+        }
+        return filters
     }
 
     private func makeDatabaseSnapshotKey() -> DatabaseSnapshotKey? {
@@ -1801,6 +1942,10 @@ final class HomeViewModel {
             ragIndexState: filters.ragIndexState.cacheKey,
             insightsRisk: filters.insightsRisk.rawValue,
             selectedTagIDs: filters.selectedTagIDs,
+            projectAffiliation: filters.project.affiliations.first?.rawValue,
+            projectOrganization: filters.project.organizationLogins.first,
+            projectVisibility: filters.project.visibilities.first?.rawValue,
+            projectPermission: filters.project.permissions.first?.rawValue,
             sort: sortOption.rawValue
         )
     }
@@ -2018,9 +2163,10 @@ final class HomeViewModel {
         // 用户后续可显式切到 .language(...) 形成 AND 组合。
         if !next.isEmpty {
             switch selection {
-            case .untagged, .library, .tag, .smartCollectionsHome, .smartCollection, .userSmartCollection, .githubStarList, .githubStarListUngrouped:
+            case .untagged, .library, .tag, .smartCollectionsHome, .smartCollection,
+                 .userSmartCollection, .githubStarList, .githubStarListUngrouped:
                 selection = .allStars
-            case .allStars, .allLanguages, .language, .trending:
+            case .allStars, .myProjects, .allLanguages, .language, .trending:
                 break
             }
         }
@@ -2132,7 +2278,9 @@ final class HomeViewModel {
         let databaseScope = PerformanceTracer.shared.trace(.manageRoute) {
             currentRepoListScopeForDatabasePaging()
         }
-        if let scope = databaseScope, !isSearching {
+        // 项目关键字搜索必须留在 `.myProjects` 数据库 scope 内，不能落到全局 Stars FTS。
+        // 其它分类继续沿用现有 FTS / 语义搜索路径。
+        if let scope = databaseScope, (!isSearching || selection == .myProjects) {
             let reason: DatabasePageReloadReason = (forceRefresh && isDatabasePagingActive)
                 ? .refreshPreservingPage
                 : .reset
@@ -2273,6 +2421,8 @@ final class HomeViewModel {
                             repos = [] // Placeholder for W7 Trending
                         case .allStars, .allLanguages:
                             repos = try await self.repository.fetchAllStarred()
+                        case .myProjects:
+                            repos = try await self.fetchAllMyProjects()
                         case .untagged:
                             repos = try await self.repository.fetchUntagged()
                         case .library:
@@ -2554,7 +2704,13 @@ final class HomeViewModel {
                     self.isDatabasePageAppendInFlight = false
                 }
             }
-            let result: Result<([Repo], [Int64: RepoStatus], [Int64: LibraryState]), Error>
+            let result: Result<(
+                [Repo],
+                [Int64: RepoStatus],
+                [Int64: LibraryState],
+                [Int64: UserProject],
+                [Int64: Int]
+            ), Error>
             let countResult: Result<Int, Error>
             do {
                 if let beforeDatabasePageFetchForTesting = self.beforeDatabasePageFetchForTesting {
@@ -2587,9 +2743,35 @@ final class HomeViewModel {
                 let visibleStatusIDs = pageRows.map(\.id)
                 async let statusMapTask = self.repoNoteRepository.fetchStatusMap(repoIds: visibleStatusIDs)
                 async let libraryStateMapTask = self.repoNoteRepository.fetchLibraryStateMap(repoIds: visibleStatusIDs)
+                let projectUserID: Int64? = {
+                    if case .myProjects(let userID) = scope { return userID }
+                    return nil
+                }()
+                async let projectRelationsTask: [Int64: UserProject] = {
+                    guard let projectUserID else { return [:] }
+                    return try await self.repository.fetchProjectRelations(
+                        userID: projectUserID,
+                        repoIDs: visibleStatusIDs
+                    )
+                }()
+                async let projectGrowthTask: [Int64: Int] = {
+                    guard projectUserID != nil else { return [:] }
+                    return try await self.repository.fetchLocalStarGrowth30Days(
+                        repoIDs: visibleStatusIDs,
+                        now: Date()
+                    )
+                }()
                 let pageStatusMap = (try? await statusMapTask) ?? [:]
                 let pageLibraryStateMap = (try? await libraryStateMapTask) ?? [:]
-                result = .success((rowsWithSentinel, pageStatusMap, pageLibraryStateMap))
+                let pageProjectRelations = (try? await projectRelationsTask) ?? [:]
+                let pageProjectGrowth = (try? await projectGrowthTask) ?? [:]
+                result = .success((
+                    rowsWithSentinel,
+                    pageStatusMap,
+                    pageLibraryStateMap,
+                    pageProjectRelations,
+                    pageProjectGrowth
+                ))
                 countResult = .success((try? await countTask) ?? self.visibleRepoTotalCount)
             } catch {
                 result = .failure(error)
@@ -2606,7 +2788,13 @@ final class HomeViewModel {
             }
 
             switch result {
-            case .success(let (rowsWithSentinel, pageStatusMap, pageLibraryStateMap)):
+            case .success(let (
+                rowsWithSentinel,
+                pageStatusMap,
+                pageLibraryStateMap,
+                pageProjectRelations,
+                pageProjectGrowth
+            )):
                 let pageRows = Array(rowsWithSentinel.prefix(requestedLimit))
                 let nextHasMore = rowsWithSentinel.count > requestedLimit
                 let queryTotalCount = (try? countResult.get()) ?? self.visibleRepoTotalCount
@@ -2626,6 +2814,8 @@ final class HomeViewModel {
                         self.currentPage = max(1, Int(ceil(Double(self.items.count) / Double(Self.pageSize))))
                         self.statusMap.merge(pageStatusMap) { _, new in new }
                         self.libraryStateMap.merge(pageLibraryStateMap) { _, new in new }
+                        self.projectRelations.merge(pageProjectRelations) { _, new in new }
+                        self.projectStarGrowth30Days.merge(pageProjectGrowth) { _, new in new }
                     } else {
                         let visibleRows = pageRows
                         let idsIdentical = visibleRows.count == self.items.count &&
@@ -2642,6 +2832,8 @@ final class HomeViewModel {
                         }
                         self.statusMap = pageStatusMap
                         self.libraryStateMap = pageLibraryStateMap
+                        self.projectRelations = pageProjectRelations
+                        self.projectStarGrowth30Days = pageProjectGrowth
                         if let snapshotKey {
                             self.storeDatabaseSnapshot(
                                 items: visibleRows,
@@ -2685,6 +2877,16 @@ final class HomeViewModel {
 
     func semanticHit(for repoID: Int64) -> SemanticSearchHit? {
         semanticHitMap[repoID]
+    }
+
+    func projectRelation(for repoID: Int64) -> UserProject? {
+        guard selection == .myProjects else { return nil }
+        return projectRelations[repoID]
+    }
+
+    func localStarGrowth30Days(for repoID: Int64) -> Int? {
+        guard selection == .myProjects else { return nil }
+        return projectStarGrowth30Days[repoID]
     }
 
     /// 手动刷新 active repo 的语义索引。
@@ -2755,6 +2957,8 @@ final class HomeViewModel {
                         return nil
                     case .allStars, .allLanguages:
                         return try await self.repository.fetchAllStarred()
+                    case .myProjects:
+                        return try await self.fetchAllMyProjects()
                     case .untagged:
                         return try await self.repository.fetchUntagged()
                     case .library:
@@ -3379,7 +3583,9 @@ extension SidebarItem {
         case .trending:
             return [.allStars, .untagged]
         case .allStars:
-            return [.untagged, .library, .smartCollectionsHome]
+            return [.myProjects, .untagged, .library]
+        case .myProjects:
+            return [.allStars, .untagged, .library]
         case .allLanguages:
             return [.allStars, .untagged, .library]
         case .untagged:

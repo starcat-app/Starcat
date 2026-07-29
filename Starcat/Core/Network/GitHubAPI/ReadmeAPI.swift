@@ -154,7 +154,9 @@ struct ReadmeAPI {
             return repaired
         }
 
-        guard !repo.fullName.isEmpty else { return nil }
+        // Private / Internal README 只允许使用当前用户库内的 repo_id 缓存。
+        // 不得按 full_name 落入公共 Trending 缓存，否则会跨越项目隐私边界。
+        guard !repo.isPrivate, !repo.fullName.isEmpty else { return nil }
 
         // 兜底查询失败不致命：manage 表也没命中，返回 nil 让上层走 refresh 路径
         let trendingHit: TrendingReadme?
@@ -268,7 +270,7 @@ struct ReadmeAPI {
             guard let cached = existing else {
                 // 极端 case：本地缓存被清掉但服务端仍 304 → 兜底无条件重拉
                 // 不在此处 record,refreshUnconditional 自己处理
-                AppLog.network.warning("README 304 但本地缓存丢失，无条件重拉 \(repo.fullName, privacy: .public)")
+                AppLog.network.warning("README 304 但本地缓存丢失，无条件重拉 repoId=\(repo.id)")
                 return await refreshUnconditional(repo: repo, requestTimeout: requestTimeout)
             }
             let now = Date()

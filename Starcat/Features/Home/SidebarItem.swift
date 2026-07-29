@@ -59,6 +59,8 @@ enum SidebarRootPage: String, CaseIterable, Identifiable {
 enum SidebarItem: Hashable, Identifiable {
     case trending
     case allStars
+    /// 当前用户拥有或通过组织成员身份可访问的 GitHub 仓库。
+    case myProjects
     case untagged
     /// Starcat 私有知识库基础分类。它和 Smart Collections 的系统集合共享查询语义，
     /// 但放在 Sidebar 主导航里，作为“全部仓库 / 未分类”同级的快速入口。
@@ -81,6 +83,7 @@ enum SidebarItem: Hashable, Identifiable {
         switch self {
         case .trending:                return "section.trending"
         case .allStars:                return "section.all"
+        case .myProjects:              return "section.myProjects"
         case .untagged:                return "section.untagged"
         case .library:                 return "section.library"
         case .allLanguages:            return "language.all"
@@ -99,6 +102,7 @@ enum SidebarItem: Hashable, Identifiable {
         switch self {
         case .trending:                return "nav.trending"
         case .allStars:                return "sidebar.allRepos"
+        case .myProjects:              return "sidebar.myProjects"
         case .untagged:                return "sidebar.untagged"
         case .library:                 return "sidebar.library"
         case .allLanguages:            return "trending.allLanguages"
@@ -121,6 +125,7 @@ enum SidebarItem: Hashable, Identifiable {
         switch self {
         case .trending:                return "nav.trending"
         case .allStars:                return "sidebar.allRepos"
+        case .myProjects:              return "sidebar.myProjects"
         case .untagged:                return "sidebar.untagged"
         case .library:                 return "sidebar.library"
         case .allLanguages:            return "trending.allLanguages"
@@ -139,6 +144,7 @@ enum SidebarItem: Hashable, Identifiable {
         switch self {
         case .trending:                return "safari"
         case .allStars:                return "star.fill"
+        case .myProjects:              return "folder.fill"
         case .untagged:                return "tag.slash"
         case .library:                 return "heart.fill"
         case .allLanguages:            return "globe"
@@ -157,6 +163,7 @@ enum SidebarItem: Hashable, Identifiable {
     var semanticIconColor: Color? {
         switch self {
         case .allStars:             return .yellow
+        case .myProjects:           return .blue
         case .untagged:             return .orange
         case .library:              return .pink
         case .smartCollectionsHome,
@@ -196,6 +203,9 @@ struct ManageNavigationPresentation: Equatable {
         case .allStars:
             secondLevelTitle = selectionTitle
             isFilteredScope = false
+        case .myProjects:
+            secondLevelTitle = selectionTitle
+            isFilteredScope = true
         case .untagged:
             secondLevelTitle = selectionTitle
             isFilteredScope = true
@@ -321,6 +331,7 @@ extension SidebarItem {
     var persistedRawValue: String {
         switch self {
         case .trending, .allStars: return "allStars"
+        case .myProjects:          return "myProjects"
         case .untagged:            return "untagged"
         case .library:             return "library"
         case .allLanguages:        return "allLanguages"
@@ -339,7 +350,9 @@ extension SidebarItem {
     /// 任何无法识别的旧值 / 空串 都回落到 `.allStars`，对应需求里
     /// "获取不到之前的分类 → 默认选中 allStars"。
     init(persistedRawValue raw: String) {
-        if raw == "untagged" {
+        if raw == "myProjects" {
+            self = .myProjects
+        } else if raw == "untagged" {
             self = .untagged
         } else if raw == "library" {
             self = .library

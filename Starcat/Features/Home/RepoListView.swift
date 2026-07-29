@@ -1105,7 +1105,15 @@ struct RepoListView: View {
 
     @MainActor
     private func globalFilterMenu() -> some View {
-        let filterItems: [FilterMenuItem] = [
+        var filterItems: [FilterMenuItem] = []
+        if viewModel.selection == .myProjects {
+            filterItems.append(.content(
+                id: "project",
+                view: AnyView(projectFilterSection())
+            ))
+            filterItems.append(.divider(id: "after-project"))
+        }
+        filterItems.append(contentsOf: [
             .content(id: "starStatus", view: AnyView(
                 starFilterSection(selection: globalFilterBinding(\.starFilter))
             )),
@@ -1152,7 +1160,7 @@ struct RepoListView: View {
                 icon: "tuningfork",
                 isOn: globalFilterBinding(\.hideForks)
             )
-        ]
+        ])
 
         return UnifiedFilterMenu(
             items: filterItems,
@@ -1185,6 +1193,69 @@ struct RepoListView: View {
         }
     }
 
+    /// 项目关系维度只在“我的项目”出现，绑定 HomeViewModel 的会话内筛选状态。
+    @ViewBuilder
+    private func projectFilterSection() -> some View {
+        @Bindable var vm = viewModel
+
+        VStack(alignment: .leading, spacing: 8) {
+            Label("list.filter.project.title", systemImage: "folder")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Picker("list.filter.project.affiliation", selection: $vm.projectAffiliationFilter) {
+                Text("general.all").tag(nil as ProjectAffiliation?)
+                Text("list.filter.project.personal").tag(ProjectAffiliation.owner as ProjectAffiliation?)
+                Text("list.filter.project.organization").tag(
+                    ProjectAffiliation.organizationMember as ProjectAffiliation?
+                )
+            }
+
+            if !viewModel.projectFilterOptions.organizationLogins.isEmpty {
+                Picker("list.filter.project.organizationName", selection: $vm.projectOrganizationFilter) {
+                    Text("general.all").tag(nil as String?)
+                    ForEach(viewModel.projectFilterOptions.organizationLogins, id: \.self) { login in
+                        Text(verbatim: login).tag(login as String?)
+                    }
+                }
+            }
+
+            Picker("list.filter.project.visibility", selection: $vm.projectVisibilityFilter) {
+                Text("general.all").tag(nil as ProjectVisibility?)
+                ForEach(viewModel.projectFilterOptions.visibilities, id: \.self) { visibility in
+                    Text(projectVisibilityLabel(visibility)).tag(visibility as ProjectVisibility?)
+                }
+            }
+
+            Picker("list.filter.project.permission", selection: $vm.projectPermissionFilter) {
+                Text("general.all").tag(nil as ProjectPermission?)
+                ForEach(viewModel.projectFilterOptions.permissions, id: \.self) { permission in
+                    Text(projectPermissionLabel(permission)).tag(permission as ProjectPermission?)
+                }
+            }
+        }
+        .pickerStyle(.menu)
+    }
+
+    private func projectVisibilityLabel(_ visibility: ProjectVisibility) -> LocalizedStringKey {
+        switch visibility {
+        case .public: return "list.filter.project.visibility.public"
+        case .private: return "list.filter.project.visibility.private"
+        case .internal: return "list.filter.project.visibility.internal"
+        }
+    }
+
+    private func projectPermissionLabel(_ permission: ProjectPermission) -> LocalizedStringKey {
+        switch permission {
+        case .admin: return "list.filter.project.permission.admin"
+        case .maintain: return "list.filter.project.permission.maintain"
+        case .push: return "list.filter.project.permission.push"
+        case .triage: return "list.filter.project.permission.triage"
+        case .pull: return "list.filter.project.permission.pull"
+        case .unknown: return "list.filter.project.permission.unknown"
+        }
+    }
+
     private var canOpenSmartCollectionEditor: Bool {
         if case .userSmartCollection(let id) = viewModel.selection {
             return viewModel.userSmartCollection(id: id) != nil
@@ -1192,7 +1263,8 @@ struct RepoListView: View {
         switch viewModel.selection {
         case .allStars, .allLanguages, .untagged, .language, .tag:
             return true
-        case .library, .trending, .smartCollectionsHome, .smartCollection, .githubStarList, .githubStarListUngrouped:
+        case .myProjects, .library, .trending, .smartCollectionsHome, .smartCollection,
+             .githubStarList, .githubStarListUngrouped:
             return false
         case .userSmartCollection:
             return false
@@ -2325,6 +2397,8 @@ struct RepoListView: View {
             return String.l10n("nav.trending")
         case .allStars:
             return String.l10n("sidebar.allRepos")
+        case .myProjects:
+            return String.l10n("sidebar.myProjects")
         case .allLanguages:
             return String.l10n("trending.allLanguages")
         case .untagged:
@@ -2370,6 +2444,7 @@ struct RepoListView: View {
         switch viewModel.selection {
         case .trending:  return "chart.line.uptrend.xyaxis"
         case .allStars:  return "star"
+        case .myProjects: return "folder"
         case .allLanguages: return "globe"
         case .untagged:  return "tag.slash"
         case .library:   return "heart.fill"
@@ -2388,6 +2463,7 @@ struct RepoListView: View {
         switch viewModel.selection {
         case .trending:        return "empty.trendingUnavailable"
         case .allStars:        return "empty.noStars"
+        case .myProjects:      return "empty.noResults"
         case .allLanguages:    return "empty.noStars"
         case .untagged:        return "empty.allTagged"
         case .library:         return "empty.library.title"
@@ -2406,6 +2482,7 @@ struct RepoListView: View {
         switch viewModel.selection {
         case .trending:        return "empty.trendingComingSoon"
         case .allStars:        return "empty.syncPrompt"
+        case .myProjects:      return "empty.syncPrompt"
         case .allLanguages:    return "empty.syncPrompt"
         case .untagged:        return "empty.untaggedHint"
         case .library:         return "empty.library.subtitle"
@@ -2781,8 +2858,12 @@ private struct ManageRepoRowContent: View {
     @Environment(AppDependencies.self) private var dependencies
 
     var body: some View {
+        let project = viewModel.projectRelation(for: repo.id)
+        let growth = viewModel.localStarGrowth30Days(for: repo.id)
         UnifiedRepoRow(
             card: repo.asCardData(
+                inlineMetadata: project.map(projectMetadata),
+                footerMetadata: growth.map(growthMetadata),
                 readStatus: viewModel.readStatus(for: repo.id),
                 isInLibrary: viewModel.libraryState(for: repo.id) == .inLibrary,
                 openSSFScore: dependencies.openSSFScoreStore.badge(for: repo.id),
@@ -2791,7 +2872,31 @@ private struct ManageRepoRowContent: View {
             isSelected: isSelected,
             isPinned: viewModel.isRepoPinned(repo.id),
             semanticHit: viewModel.semanticHit(for: repo.id),
+            showStarredCheckmark: viewModel.selection == .myProjects,
             hasAISummary: aiSummaryAvailability.contains(repo.id)
+        )
+    }
+
+    /// 在 fullName 同行压成一个稳定徽章，避免为项目场景复制整张 Repo 卡片。
+    private func projectMetadata(_ project: UserProject) -> RepoCardInlineMetadata {
+        let affiliation = project.ownerType == .organization
+            ? project.ownerLogin
+            : String.l10n("list.filter.project.personal")
+        let visibility = String.l10n("list.filter.project.visibility.\(project.visibility.rawValue)")
+        let permission = String.l10n("list.filter.project.permission.\(project.permission.rawValue)")
+        return RepoCardInlineMetadata(
+            systemImage: project.ownerType == .organization ? "building.2.fill" : "person.fill",
+            text: [affiliation, visibility, permission].joined(separator: " · ")
+        )
+    }
+
+    /// 30 天增长只来自本机已有历史；历史不足时 ViewModel 返回 nil，卡片不伪造 0。
+    private func growthMetadata(_ growth: Int) -> RepoCardInlineMetadata {
+        let value = growth > 0 ? "+\(growth.formattedShort)" : growth.formattedShort
+        return RepoCardInlineMetadata(
+            systemImage: growth >= 0 ? "chart.line.uptrend.xyaxis" : "chart.line.downtrend.xyaxis",
+            text: String(format: String.l10n("project.card.growth30d"), value),
+            tint: growth > 0 ? .green : .secondary
         )
     }
 }

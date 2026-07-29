@@ -49,6 +49,9 @@ protocol KeychainManaging: Sendable {
     func storeGithubToken(_ token: String) throws
     func loadGithubToken() throws -> String?
     func deleteGithubToken() throws
+    func storeProjectAccessCredential(_ credentialJSON: String) throws
+    func loadProjectAccessCredential() throws -> String?
+    func deleteProjectAccessCredential() throws
 
     func storeAIKey(_ key: String) throws
     func loadAIKey() throws -> String?
@@ -84,6 +87,9 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
 
     private enum Account {
         static let githubToken = "github_access_token"
+        /// GitHub App user token 与现有 OAuth token 必须物理分 account 保存，
+        /// 避免项目授权撤销或刷新失败触发现有登录自动登出。
+        static let projectAccessCredential = "github_app_user_credential"
         static let aiKey = "ai_api_key"
         static let selfCheck = "self_check_canary"
         static func aiKey(providerID: String) -> String {
@@ -217,6 +223,20 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
     func deleteGithubToken() throws {
         try setValue(nil, forAccount: Account.githubToken)
         AppLog.keychain.info("deleteGithubToken: local file removed")
+    }
+
+    func storeProjectAccessCredential(_ credentialJSON: String) throws {
+        try setValue(credentialJSON, forAccount: Account.projectAccessCredential)
+        AppLog.keychain.info("Project access credential stored securely")
+    }
+
+    func loadProjectAccessCredential() throws -> String? {
+        value(forAccount: Account.projectAccessCredential)
+    }
+
+    func deleteProjectAccessCredential() throws {
+        try setValue(nil, forAccount: Account.projectAccessCredential)
+        AppLog.keychain.info("Project access credential removed")
     }
 
     func storeAIKey(_ key: String) throws {
