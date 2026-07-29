@@ -148,6 +148,8 @@ final class AppDependencies {
     /// 仓库洞察与 RAG 共用协议的类型化 GitHub Metrics 客户端。
     /// 动态读取 Keychain token，登录态变化时无需重建依赖树。
     let repositoryMetricsClient: any GitHubRepositoryMetricsClient
+    /// 洞察页面与 AI 共用的远端 Provider；统一缓存之外还合并相同数据集的并发刷新。
+    let repositoryRemoteInsightsProvider: any RepositoryRemoteInsightsProviding
     /// 知识库 RAG 本地会话历史。
     let ragConversationStore: any RAGConversationStoring
     /// RAG Composer 未发送草稿的 App 级内存缓存。
@@ -712,9 +714,17 @@ final class AppDependencies {
         }
         self.database = db
         self.myInsightsSnapshotProvider = GRDBMyInsightsSnapshotProvider(database: db)
-        self.repositoryInsightsCache = GRDBRepositoryInsightsCache(database: db)
-        self.repositoryMetricsClient = DefaultGitHubRepositoryMetricsClient(
+        let repositoryInsightsCache = GRDBRepositoryInsightsCache(database: db)
+        self.repositoryInsightsCache = repositoryInsightsCache
+        let repositoryMetricsClient = DefaultGitHubRepositoryMetricsClient(
             tokenProvider: KeychainTokenProvider()
+        )
+        self.repositoryMetricsClient = repositoryMetricsClient
+        self.repositoryRemoteInsightsProvider = SharedRepositoryRemoteInsightsProvider(
+            base: DefaultRepositoryRemoteInsightsProvider(
+                metricsClient: repositoryMetricsClient,
+                cache: repositoryInsightsCache
+            )
         )
         // AI adapter 通过同一个可切换 DatabaseManaging 门面旁路记录用量；配置动作必须
         // 发生在任何 Service 创建 OpenAIClient 之前，避免启动早期请求漏记。

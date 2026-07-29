@@ -255,10 +255,8 @@ struct ManageDetailContent: View {
                 insightsCache: dependencies.repositoryInsightsCache,
                 database: dependencies.database
             ),
-            remoteProvider: DefaultRepositoryRemoteInsightsProvider(
-                metricsClient: dependencies.repositoryMetricsClient,
-                cache: dependencies.repositoryInsightsCache
-            )
+            // AI 摘要 / 对话也消费这一进程级 Provider；缓存与正在刷新的请求都只保留一份。
+            remoteProvider: dependencies.repositoryRemoteInsightsProvider
         )
     }
 
