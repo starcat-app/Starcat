@@ -48,17 +48,17 @@
 
 - [x] 实现 `RepositoryInsightsContextCoordinator` 正常准备入口。
 - [x] 实现 RAG 使用的 cache-only 准备 / 读取入口。
-- [ ] 仓库洞察默认数据完成后后台生成 XML。
-- [ ] 仓库洞察手动刷新成功后按新 source hash 更新 XML。
-- [ ] 页面切仓 / 账号切换时拒绝迟到 Artifact 回写。
-- [ ] AI 摘要使用同一 `RepositoryInsightsDocument.xml`。
-- [ ] AI 对话使用同一 `RepositoryInsightsDocument.xml`。
-- [ ] AI 先触发时同时预热洞察缓存并写入 XML。
-- [ ] 页面后打开时复用 AI 已生成的数据和 Artifact。
-- [ ] Tags-only 路径继续跳过洞察预热。
-- [ ] 洞察 XML 不进入 AI 摘要 source hash。
-- [ ] 自定义 Prompt 删除 `{insightsContext}` 时继续视为用户主动关闭注入。
-- [ ] 补齐页面 / AI / 并发 / 零重复网络与零重复写盘测试。
+- [x] 仓库洞察默认数据完成后后台生成 XML。
+- [x] 仓库洞察手动刷新成功后按新 source hash 更新 XML。
+- [x] 页面切仓 / 账号切换时拒绝迟到 Artifact 回写。
+- [x] AI 摘要使用同一 `RepositoryInsightsDocument.xml`。
+- [x] AI 对话使用同一 `RepositoryInsightsDocument.xml`。
+- [x] AI 先触发时同时预热洞察缓存并写入 XML。
+- [x] 页面后打开时复用 AI 已生成的数据和 Artifact。
+- [x] Tags-only 路径继续跳过洞察预热。
+- [x] 洞察 XML 不进入 AI 摘要 source hash。
+- [x] 自定义 Prompt 删除 `{insightsContext}` 时继续视为用户主动关闭注入。
+- [x] 补齐页面 / AI / 并发 / 零重复网络与零重复写盘测试。
 
 ## 4. 知识库特殊分片管理
 
