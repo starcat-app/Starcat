@@ -110,6 +110,7 @@ struct StarcatReleaseWatchWidgetView: View {
                     StarcatReleaseWatchRow(release: release)
                 }
                 .buttonStyle(.plain)
+                .focusEffectDisabled()
                 if index < min(limit, snapshot.unreadReleases.count) - 1 {
                     Divider().opacity(0.35)
                 }

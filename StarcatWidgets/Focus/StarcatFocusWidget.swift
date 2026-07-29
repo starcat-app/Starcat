@@ -227,6 +227,7 @@ struct StarcatFocusWidgetView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .focusEffectDisabled()
                 if index < min(limit, entry.repositories.count) - 1 {
                     Divider().opacity(0.35)
                 }
