@@ -41,6 +41,8 @@ final class AppDependencies {
     let oauthService: any GithubOAuthServiceProtocol
     let authSession: AuthSession
     let syncManager: SyncManager
+    /// 主应用唯一的 Widget 快照发布器；负责账户隔离、去抖与 WidgetCenter 刷新。
+    let widgetRefreshCoordinator: WidgetRefreshCoordinator
     /// “我的项目”独立 GitHub App 授权状态，不复用主 OAuth 登录状态。
     let projectAccessSession: ProjectAccessSession
     /// 当前用户项目关系与同步代际仓储。
@@ -717,6 +719,7 @@ final class AppDependencies {
             throw error
         }
         self.database = db
+        self.widgetRefreshCoordinator = WidgetRefreshCoordinator(database: db)
         let repositoryInsightsContextScopeState = RepositoryInsightsContextScopeState(
             scope: RepositoryInsightsContextScope(userID: db.currentUserId)
         )
@@ -1385,12 +1388,13 @@ final class AppDependencies {
 
         // SyncManager 全量 / 增量同步成功完成 → bootstrapper.reload() 同步 registry 到 DB
         // 注：weak 不需要，bootstrapper 与 syncManager 都由 self 强持（生命周期一致）
-        self.syncManager.onSyncCompleted = { [bootstrapper, starListSyncService = self.githubStarListSyncService, session, ragIndexBuilder = self.knowledgeRAGIndexBuilder] in
+        self.syncManager.onSyncCompleted = { [bootstrapper, starListSyncService = self.githubStarListSyncService, session, ragIndexBuilder = self.knowledgeRAGIndexBuilder, widgetRefreshCoordinator = self.widgetRefreshCoordinator] in
             await bootstrapper.reload()
             if let login = session.state.user?.login {
                 await starListSyncService.sync(login: login)
             }
             await ragIndexBuilder.refreshMetadataForKnowledgeRepos()
+            await widgetRefreshCoordinator.publishReady()
         }
 
         // AuthSession 登出 / 失效 → bootstrapper.clearOnSignOut() 清空 registry
@@ -1409,6 +1413,10 @@ final class AppDependencies {
         // 还能看到自己的数据，不会进入"无 DB 可用"的死状态。
         session.onUserSessionChanged = { [weak self] userId in
             guard let self else { return }
+            // 先清空共享快照再切数据库，避免 Widget 在切换窗口继续展示旧账号内容。
+            self.widgetRefreshCoordinator.publishEmpty(
+                state: userId == nil ? .signedOut : .preparing
+            )
             self.ragComposerDraftStore.removeAll()
             // 摘要 session 是进程内、按当前用户数据库构建的状态。先取消并清空，
             // 避免旧用户尚未完成的生成在切库后继续写入或显示给新用户。
@@ -1417,8 +1425,10 @@ final class AppDependencies {
             await self.wikiKnowledgeBackfillCoordinator.suspendForUserDatabaseChange()
             await self.knowledgeRAGIndexBuilder.suspendForUserDatabaseChange()
             await self.knowledgeBaseMetadataSnapshotCache.removeAll()
+            var didSwitchDatabase = false
             do {
                 try await self.switchUserDatabase(to: userId)
+                didSwitchDatabase = true
             } catch {
                 AppLog.database.error(
                     "switchUserDatabase failed for userId=\(userId.map(String.init) ?? "anonymous", privacy: .public): \(error.localizedDescription, privacy: .public)"
@@ -1432,6 +1442,7 @@ final class AppDependencies {
                     underlying: DiagnosticEvent.summarize(error),
                     context: ["targetUser": userId.map(String.init) ?? "anonymous"]
                 )
+                self.widgetRefreshCoordinator.publishEmpty(state: .unavailable)
             }
             self.knowledgeRAGIndexBuilder.resumeAfterUserDatabaseChange()
             self.wikiKnowledgeBackfillCoordinator.resumeAfterUserDatabaseChange()
@@ -1450,10 +1461,14 @@ final class AppDependencies {
             // 走 reload 会从 anonymous DB 读到空集，等价 `clearOnSignOut()`，不冲突。
             // 失败容忍：reload 内部已 try/catch + 日志，不会向外抛错破坏 closure 语义。
             await self.starredRegistryBootstrapper.reload()
+            if didSwitchDatabase, userId != nil {
+                await self.widgetRefreshCoordinator.publishReady()
+            }
         }
 
         // 启动期 reload：异步 Task，不阻塞 init。测试 host 跳过避免触发 DB 启动期成本。
         if !TestEnvironment.isRunning {
+            self.widgetRefreshCoordinator.startObserving()
             Task { [bootstrapper] in
                 await bootstrapper.reload()
             }
