@@ -2,11 +2,15 @@
 
 Release notes for the Mac App Store edition of Starcat.
 
-## 1.3.0-待发布
+## 1.3.0
+
+Starcat 1.3.0 adds library-wide and repository-level insights, helping you spot organization priorities across your saved projects and understand the activity, growth, and health of each repository.
 
 ### New
 
 - My Projects: Browse personal and organization repositories—including authorized public, private, and internal projects—with existing filters, details, and Star trends.
+- My Insights: Review organization progress, technology distribution, project status, and items needing attention across all saved repositories or your Knowledge Base, then drill down to the matching repository list.
+- Repository Insights: View Star growth, collaboration activity, commit trends, contributors, release cadence, project health, community standards, and security signals directly in repository details.
 
 ## 1.2.0
 
