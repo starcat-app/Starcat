@@ -389414,6 +389414,30 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "中斷連接" } }
       }
     },
+    "project.access.disconnect.confirm.action" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Revoke and disconnect" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "撤销并断开" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "撤銷並中斷" } }
+      }
+    },
+    "project.access.disconnect.confirm.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This revokes your authorization of Starcat for GitHub and invalidates project access in other Starcat installations. The GitHub App remains installed on personal and organization accounts." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这会撤销当前 GitHub 用户对 Starcat for GitHub 的授权，并使其他 Starcat 安装中的项目权限失效。个人和组织中的 GitHub App 仍会保留。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "這會撤銷目前 GitHub 使用者對 Starcat for GitHub 的授權，並使其他 Starcat 安裝中的專案權限失效。個人和組織中的 GitHub App 仍會保留。" } }
+      }
+    },
+    "project.access.disconnect.confirm.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Revoke GitHub App authorization?" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "撤销 GitHub App 授权？" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "撤銷 GitHub App 授權？" } }
+      }
+    },
     "project.access.install" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -389660,6 +389684,22 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Connect GitHub App" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "连接 GitHub App" } },
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "連接 GitHub App" } }
+      }
+    },
+    "project.access.state.disconnectionFailed.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Local credentials are preserved. Check your network and retry, or manage the authorization on GitHub." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本机凭据仍已保留。请检查网络后重试，或前往 GitHub 管理授权。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "本機憑據仍已保留。請檢查網路後重試，或前往 GitHub 管理授權。" } }
+      }
+    },
+    "project.access.state.disconnectionFailed.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not revoke GitHub authorization" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法撤销 GitHub 授权" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "無法撤銷 GitHub 授權" } }
       }
     },
     "project.access.state.expired.detail" : {

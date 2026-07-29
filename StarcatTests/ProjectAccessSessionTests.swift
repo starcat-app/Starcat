@@ -396,6 +396,7 @@ struct ProjectAccessSessionTests {
         #expect(ProjectAccessState.partialAuthorization.statusTone == .warning)
         #expect(ProjectAccessState.organizationApprovalPending.statusTone == .warning)
         #expect(ProjectAccessState.revoked.statusTone == .failure)
+        #expect(ProjectAccessState.disconnectionFailed(.network).statusTone == .failure)
         #expect(ProjectAccessState.failed(.network).statusTone == .failure)
     }
 
@@ -592,7 +593,7 @@ struct ProjectAccessSessionTests {
         }
 
         #expect(try keychain.loadProjectAccessCredential() != nil)
-        #expect(session.state == .failed(.network))
+        #expect(session.state == .disconnectionFailed(.network))
     }
 
     @Test("部分授权与组织待审批为独立可见状态")

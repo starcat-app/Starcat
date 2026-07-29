@@ -22,6 +22,8 @@ struct ProjectAccessSheet: View {
 
     @State private var isCheckingInstallation = false
     @State private var isClearingPrivateCache = false
+    @State private var isDisconnecting = false
+    @State private var showsDisconnectConfirmation = false
     @State private var privateCacheClearMessage: LocalizedStringKey?
 
     private var accessSession: ProjectAccessSession {
@@ -40,6 +42,17 @@ struct ProjectAccessSheet: View {
                 .padding(24)
         }
         .frame(width: 520)
+        .alert(
+            "project.access.disconnect.confirm.title",
+            isPresented: $showsDisconnectConfirmation
+        ) {
+            Button("common.cancel", role: .cancel) {}
+            Button("project.access.disconnect.confirm.action", role: .destructive) {
+                disconnect()
+            }
+        } message: {
+            Text("project.access.disconnect.confirm.detail")
+        }
     }
 
     private var header: some View {
@@ -175,8 +188,9 @@ struct ProjectAccessSheet: View {
         HStack {
             if isConnectedLike {
                 Button("project.access.disconnect", role: .destructive) {
-                    disconnect()
+                    showsDisconnectConfirmation = true
                 }
+                .disabled(isDisconnecting)
             }
 
             Spacer()
@@ -227,6 +241,11 @@ struct ProjectAccessSheet: View {
                         }
                     }
                 )
+            case .disconnectionFailed:
+                Button("project.access.manage") {
+                    openInstallationSettings()
+                }
+                .buttonStyle(.bordered)
             case .expired, .revoked, .failed:
                 Button("project.access.manage") {
                     openInstallationSettings()
@@ -243,7 +262,8 @@ struct ProjectAccessSheet: View {
     private var isConnectedLike: Bool {
         switch accessSession.state {
         case .installationRequired, .installationCheckFailed, .connected,
-             .partialAuthorization, .organizationApprovalPending:
+             .partialAuthorization, .organizationApprovalPending,
+             .disconnectionFailed:
             true
         default:
             false
@@ -268,6 +288,7 @@ struct ProjectAccessSheet: View {
         case .organizationApprovalPending: "project.access.state.pending.title"
         case .expired: "project.access.state.expired.title"
         case .revoked: "project.access.state.revoked.title"
+        case .disconnectionFailed: "project.access.state.disconnectionFailed.title"
         case .failed(.network): "project.access.state.offline.title"
         case .failed: "project.access.state.failed.title"
         }
@@ -286,6 +307,7 @@ struct ProjectAccessSheet: View {
         case .organizationApprovalPending: "project.access.state.pending.detail"
         case .expired: "project.access.state.expired.detail"
         case .revoked: "project.access.state.revoked.detail"
+        case .disconnectionFailed: "project.access.state.disconnectionFailed.detail"
         case .failed(.network): "project.access.state.offline.detail"
         case .failed: "project.access.state.failed.detail"
         }
@@ -331,13 +353,16 @@ struct ProjectAccessSheet: View {
 
     private func disconnect() {
         guard let userID = authSession.state.user?.id else { return }
+        guard !isDisconnecting else { return }
+        isDisconnecting = true
         Task { @MainActor in
+            defer { isDisconnecting = false }
             do {
                 try await syncService.disconnectProjectAccess(userID: userID)
                 _ = try? await syncService.refresh(userID: userID, force: true)
                 await onProjectsChanged()
             } catch {
-                // 状态保持在当前授权态，用户可重试；错误不带仓库或 token 信息。
+                // Session 已发布稳定失败状态且保留 token；UI 不展示 GitHub 响应正文。
             }
         }
     }
@@ -411,7 +436,8 @@ extension ProjectAccessState {
         case .installationCheckFailed: "exclamationmark.arrow.triangle.2.circlepath"
         case .partialAuthorization: "checkmark.shield.fill"
         case .organizationApprovalPending: "clock.fill"
-        case .expired, .revoked, .failed: "exclamationmark.triangle.fill"
+        case .expired, .revoked, .disconnectionFailed, .failed:
+            "exclamationmark.triangle.fill"
         case .unavailable: "gear.badge.xmark"
         case .disconnected: "lock.shield"
         }
@@ -424,7 +450,7 @@ extension ProjectAccessState {
         case .installationRequired, .installationCheckFailed,
              .partialAuthorization, .organizationApprovalPending:
             .warning
-        case .expired, .revoked, .failed: .failure
+        case .expired, .revoked, .disconnectionFailed, .failed: .failure
         case .unavailable, .disconnected: .neutral
         }
     }

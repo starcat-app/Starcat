@@ -178,8 +178,9 @@ final class UserProjectSyncService {
         }
     }
 
-    /// 用户主动断开 GitHub App：删除独立凭据与 GitHub App 来源关系，保留 OAuth Public
-    /// 关系、Repo 记录和全部用户内容。调用方随后可刷新一次 OAuth fallback。
+    /// 用户主动断开 GitHub App：先撤销 GitHub 侧完整 user grant，再删除独立凭据与
+    /// GitHub App 来源关系；保留 OAuth Public 关系、Repo 记录和全部用户内容。
+    /// 远端撤销失败会提前抛错，因此本机关系不会出现“已断开”的假状态。
     func disconnectProjectAccess(userID: Int64) async throws {
         try await projectAccessSession.disconnect()
         try await repository?.deleteRelations(

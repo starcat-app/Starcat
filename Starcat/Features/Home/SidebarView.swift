@@ -1941,16 +1941,7 @@ struct SidebarView: View {
     }
 
     private var projectAccessSystemImage: String {
-        switch dependencies.projectAccessSession.state {
-        case .connected: "checkmark.shield.fill"
-        case .connecting, .awaitingAuthorization: "hourglass"
-        case .installationRequired, .installationCheckFailed,
-             .partialAuthorization,
-             .organizationApprovalPending: "exclamationmark.shield.fill"
-        case .expired, .revoked, .failed: "exclamationmark.triangle.fill"
-        case .unavailable: "gear.badge.xmark"
-        case .disconnected: "lock.open"
-        }
+        dependencies.projectAccessSession.state.statusSymbolName
     }
 
     /// HOM-47：Release 时间线入口行。

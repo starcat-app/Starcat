@@ -37,6 +37,8 @@ enum ProjectAccessState: Equatable, Sendable {
     case organizationApprovalPending
     case expired
     case revoked
+    /// 远端 grant 撤销失败；本机凭据仍保留，用户可安全重试断开。
+    case disconnectionFailed(ProjectAccessFailureCode)
     case failed(ProjectAccessFailureCode)
 }
 
@@ -312,14 +314,14 @@ final class ProjectAccessSession {
                 accessToken: usableCredential.accessToken
             )
         } catch {
-            state = .failed(Self.failureCode(error))
+            state = .disconnectionFailed(Self.failureCode(error))
             throw error
         }
         do {
             try keychain.deleteProjectAccessCredential()
             state = isConfigured ? .disconnected : .unavailable
         } catch {
-            state = .failed(.storage)
+            state = .disconnectionFailed(.storage)
             throw ProjectAccessSessionError.storage
         }
     }
@@ -421,7 +423,8 @@ final class ProjectAccessSession {
     private func publishCredentialState(expiresAt: Date?) {
         switch state {
         case .installationRequired, .installationCheckFailed,
-             .partialAuthorization, .organizationApprovalPending:
+             .partialAuthorization, .organizationApprovalPending,
+             .disconnectionFailed:
             break
         default:
             state = .connected(expiresAt: expiresAt)
