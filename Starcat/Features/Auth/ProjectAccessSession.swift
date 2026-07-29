@@ -139,6 +139,9 @@ final class ProjectAccessSession {
         }
         do {
             try await updateInstallationState(using: credential)
+        } catch NetworkError.unauthorized {
+            markRevoked()
+            throw NetworkError.unauthorized
         } catch {
             // 凭据已经安全保存，安装校验失败不应让用户重复 Device Flow。
             state = .installationCheckFailed(Self.failureCode(error))
@@ -163,6 +166,9 @@ final class ProjectAccessSession {
         let usableCredential = try await refreshedCredentialIfNeeded(credential)
         do {
             return try await updateInstallationState(using: usableCredential)
+        } catch NetworkError.unauthorized {
+            markRevoked()
+            throw NetworkError.unauthorized
         } catch {
             state = .installationCheckFailed(Self.failureCode(error))
             throw error

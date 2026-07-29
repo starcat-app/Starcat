@@ -185,6 +185,38 @@ struct ProjectAccessSessionTests {
         #expect(try keychain.loadProjectAccessCredential() != nil)
     }
 
+    @Test("安装复查返回 401 时进入撤销状态并保留主 OAuth")
+    @MainActor
+    func unauthorizedInstallationCheckMarksCredentialRevoked() async throws {
+        let keychain = InMemoryKeychain()
+        try keychain.storeGithubToken("oauth-main")
+        let issued = credential(token: "ghu-project", accessOffset: 3_600)
+        try storedCredential(keychain, issued)
+        let session = ProjectAccessSession(
+            oauthService: MockOAuth(credential: issued),
+            keychain: keychain,
+            isConfigured: true,
+            appSlug: "starcat-for-github",
+            installationCheck: { _, _ in
+                throw NetworkError.unauthorized
+            },
+            now: { self.now }
+        )
+
+        do {
+            try await session.refreshInstallationState()
+            Issue.record("预期安装复查抛出 unauthorized")
+        } catch NetworkError.unauthorized {
+            // 401 是本用例要验证的明确撤销信号。
+        } catch {
+            Issue.record("收到非预期错误：\(error)")
+        }
+
+        #expect(session.state == .revoked)
+        #expect(try keychain.loadProjectAccessCredential() == nil)
+        #expect(try keychain.loadGithubToken() == "oauth-main")
+    }
+
     @Test("access token 过期前自动轮换整份凭据")
     @MainActor
     func refreshesExpiringCredential() async throws {

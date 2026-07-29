@@ -52,6 +52,12 @@ final class UserProjectSyncService {
     private struct SyncResult: Sendable {
         let summary: UserProjectSyncSummary
         let authorizationSource: ProjectAuthorizationSource
+        let installationAccess: GitHubAppInstallationAccess?
+    }
+
+    private struct PreparedCredential: Sendable {
+        let credential: ResolvedProjectCredential
+        let installationAccess: GitHubAppInstallationAccess?
     }
 
     private var scheduler: NSBackgroundActivityScheduler?
@@ -192,10 +198,15 @@ final class UserProjectSyncService {
 
         state = .syncing
         let task = Task { @MainActor in
-            let credential = try await resolveCredential()
+            let initialCredential = try await resolveCredential()
+            let prepared = try await prepareCredentialForSync(
+                userID: userID,
+                initialCredential: initialCredential
+            )
             return SyncResult(
-                summary: try await performSync(userID, credential, force),
-                authorizationSource: credential.authorizationSource
+                summary: try await performSync(userID, prepared.credential, force),
+                authorizationSource: prepared.credential.authorizationSource,
+                installationAccess: prepared.installationAccess
             )
         }
         inFlightTask = task
@@ -207,7 +218,8 @@ final class UserProjectSyncService {
                 let summary = result.summary
                 if summary.isOrganizationApprovalPending {
                     projectAccessSession.markOrganizationApprovalPending()
-                } else if summary.isPartial {
+                } else if summary.isPartial
+                    || result.installationAccess == .selectedRepositories {
                     projectAccessSession.markPartialAuthorization()
                 } else {
                     // 一次完整成功应清掉上轮 partial / approval pending 状态，并从独立
@@ -223,6 +235,36 @@ final class UserProjectSyncService {
             state = .failed(Self.failureCode(error))
             throw error
         }
+    }
+
+    /// GitHub App 同步前复查安装范围，避免安装被删除后继续把旧凭据当作完整授权。
+    ///
+    /// `/user/installations` 返回未安装时，独立 Device Flow 凭据会保留，方便用户重新安装后
+    /// 直接复查；GitHub App 来源关系立即移除，并在同一次刷新中重新解析为 OAuth Public
+    /// fallback。复查过程若轮换了 access token，也必须重新解析凭据，不能继续使用旧 token。
+    private func prepareCredentialForSync(
+        userID: Int64,
+        initialCredential: ResolvedProjectCredential
+    ) async throws -> PreparedCredential {
+        guard initialCredential.authorizationSource == .githubApp else {
+            return PreparedCredential(
+                credential: initialCredential,
+                installationAccess: nil
+            )
+        }
+
+        let access = try await projectAccessSession.refreshInstallationState()
+        if access == .notInstalled {
+            try await repository?.deleteRelations(
+                userID: userID,
+                authorizationSource: .githubApp
+            )
+        }
+        let currentCredential = try await resolveCredential()
+        return PreparedCredential(
+            credential: currentCredential,
+            installationAccess: access.isInstalled ? access : nil
+        )
     }
 
     private static func failureCode(_ error: Error) -> UserProjectSyncFailureCode {

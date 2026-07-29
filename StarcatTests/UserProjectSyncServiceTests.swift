@@ -86,7 +86,8 @@ struct UserProjectSyncServiceTests {
         let accessSession = ProjectAccessSession(
             oauthService: ProjectAccessOAuthServiceStub(),
             keychain: keychain,
-            isConfigured: true
+            isConfigured: true,
+            installationCheck: { _, _ in .allRepositories }
         )
         let service = UserProjectSyncService(
             projectAccessSession: accessSession,
@@ -129,7 +130,8 @@ struct UserProjectSyncServiceTests {
         let accessSession = ProjectAccessSession(
             oauthService: ProjectAccessOAuthServiceStub(),
             keychain: keychain,
-            isConfigured: true
+            isConfigured: true,
+            installationCheck: { _, _ in .allRepositories }
         )
         let service = UserProjectSyncService(
             projectAccessSession: accessSession,
@@ -151,6 +153,100 @@ struct UserProjectSyncServiceTests {
         _ = try await service.refresh(userID: 11)
 
         #expect(accessSession.state == .organizationApprovalPending)
+    }
+
+    @Test("GitHub App 安装被删除时同次刷新回退 OAuth Public")
+    func deletedInstallationFallsBackToOAuth() async throws {
+        let keychain = InMemoryKeychain()
+        try keychain.storeGithubToken("oauth-main")
+        try keychain.storeProjectAccessCredential(
+            String(
+                data: try JSONEncoder().encode(
+                    ProjectAccessCredential(
+                        accessToken: "project-token",
+                        accessExpiresAt: nil,
+                        refreshToken: nil,
+                        refreshExpiresAt: nil
+                    )
+                ),
+                encoding: .utf8
+            )!
+        )
+        let accessSession = ProjectAccessSession(
+            oauthService: ProjectAccessOAuthServiceStub(),
+            keychain: keychain,
+            isConfigured: true,
+            appSlug: "starcat-for-github",
+            installationCheck: { _, _ in .notInstalled }
+        )
+        let router = ProjectCredentialRouter(
+            projectAccessSession: accessSession,
+            keychain: keychain
+        )
+        let recorder = SyncCredentialRecorder()
+        let service = UserProjectSyncService(
+            projectAccessSession: accessSession,
+            resolveCredential: {
+                try await router.resolve()
+            },
+            performSync: { _, credential, _ in
+                await recorder.record(credential)
+                return UserProjectSyncSummary(receivedCount: 4, unchangedAffiliations: [])
+            }
+        )
+
+        _ = try await service.refresh(userID: 12)
+
+        #expect(accessSession.state == .installationRequired)
+        #expect(await recorder.credentials == [
+            ResolvedProjectCredential(
+                accessToken: "oauth-main",
+                authorizationSource: .oauth
+            )
+        ])
+        #expect(try keychain.loadProjectAccessCredential() != nil)
+    }
+
+    @Test("指定仓库安装范围在完整同步后仍保持部分授权")
+    func selectedInstallationRemainsPartialAfterSuccessfulSync() async throws {
+        let keychain = InMemoryKeychain()
+        try keychain.storeProjectAccessCredential(
+            String(
+                data: try JSONEncoder().encode(
+                    ProjectAccessCredential(
+                        accessToken: "project-token",
+                        accessExpiresAt: nil,
+                        refreshToken: nil,
+                        refreshExpiresAt: nil
+                    )
+                ),
+                encoding: .utf8
+            )!
+        )
+        let accessSession = ProjectAccessSession(
+            oauthService: ProjectAccessOAuthServiceStub(),
+            keychain: keychain,
+            isConfigured: true,
+            appSlug: "starcat-for-github",
+            installationCheck: { _, _ in .selectedRepositories }
+        )
+        let router = ProjectCredentialRouter(
+            projectAccessSession: accessSession,
+            keychain: keychain
+        )
+        let service = UserProjectSyncService(
+            projectAccessSession: accessSession,
+            resolveCredential: {
+                try await router.resolve()
+            },
+            performSync: { _, _, _ in
+                UserProjectSyncSummary(receivedCount: 2, unchangedAffiliations: [])
+            }
+        )
+
+        _ = try await service.refresh(userID: 13)
+
+        #expect(accessSession.state == .partialAuthorization)
     }
 
     @Test("后台刷新启动和停止保持幂等")
@@ -191,6 +287,14 @@ private actor SyncInvocationCounter {
     ) {
         _ = (userID, source, force)
         count += 1
+    }
+}
+
+private actor SyncCredentialRecorder {
+    private(set) var credentials: [ResolvedProjectCredential] = []
+
+    func record(_ credential: ResolvedProjectCredential) {
+        credentials.append(credential)
     }
 }
 
