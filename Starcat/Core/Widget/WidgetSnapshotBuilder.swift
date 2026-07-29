@@ -28,6 +28,9 @@ enum WidgetSnapshotBuilderError: Error, Equatable, LocalizedError {
 struct WidgetSnapshotBuilder: Sendable {
     private let database: any DatabaseManaging
 
+    /// 发布门禁只读取当前身份，不接触数据库路径或业务数据。
+    var currentUserID: Int64? { database.currentUserId }
+
     init(database: any DatabaseManaging) {
         self.database = database
     }

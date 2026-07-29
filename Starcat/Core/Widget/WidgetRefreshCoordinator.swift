@@ -16,6 +16,7 @@ import WidgetKit
 @MainActor
 final class WidgetRefreshCoordinator {
     private let builder: WidgetSnapshotBuilder
+    private let publicationGate = WidgetSnapshotPublicationGate()
     private var observers: [NSObjectProtocol] = []
     private var pendingRefreshTask: Task<Void, Never>?
 
@@ -68,10 +69,22 @@ final class WidgetRefreshCoordinator {
     /// 立即构建并发布当前用户的 ready 快照。
     func publishReady() async {
         guard !TestEnvironment.isRunning else { return }
+        guard let ticket = publicationGate.beginReady(userID: builder.currentUserID) else {
+            return
+        }
         do {
             let context = try makePublishingContext()
             let snapshot = try await builder.build()
             let enrichedSnapshot = await context.avatarCache.enrich(snapshot)
+            // 账号切换或更新的发布请求可能发生在上面任一 await 期间。保存前最后
+            // 校验 revision + user ID，避免旧账号 ready 覆盖刚写入的 preparing。
+            guard !Task.isCancelled,
+                  publicationGate.permits(
+                      ticket,
+                      currentUserID: builder.currentUserID
+                  ) else {
+                return
+            }
             try context.store.save(enrichedSnapshot)
             reloadTimelines()
         } catch {
@@ -86,6 +99,7 @@ final class WidgetRefreshCoordinator {
     /// 该方法不去抖：旧账号内容必须在切库之前被清掉，不能等待普通刷新窗口。
     func publishEmpty(state: WidgetAccountState) {
         guard !TestEnvironment.isRunning else { return }
+        publicationGate.invalidate()
         pendingRefreshTask?.cancel()
         do {
             let context = try makePublishingContext()
