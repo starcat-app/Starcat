@@ -4,13 +4,16 @@ Release notes for the Mac App Store edition of Starcat.
 
 ## 1.3.0
 
-Starcat 1.3.0 adds library-wide and repository-level insights, helping you spot organization priorities across your saved projects and understand the activity, growth, and health of each repository.
+Starcat 1.3.0 adds My Projects, library-wide and repository-level insights, and external search integrations for Alfred, uTools, and Raycast—helping you manage more repositories and reach them from the tools you already use.
 
 ### New
 
 - My Projects: Browse personal and organization repositories—including authorized public, private, and internal projects—with existing filters, details, and Star trends.
 - My Insights: Review organization progress, technology distribution, project status, and items needing attention across all saved repositories or your Knowledge Base, then drill down to the matching repository list.
 - Repository Insights: View Star growth, collaboration activity, commit trends, contributors, release cadence, project health, community standards, and security signals directly in repository details.
+- Alfred Workflow: Search Starcat local repositories and GitHub directly from Alfred. [View project](https://github.com/starcat-app/starcat-alfred-workflow)
+- uTools Plugin: Search Starcat local repositories and GitHub directly from uTools. [View project](https://github.com/starcat-app/starcat-utools-plugin)
+- Raycast Extension: Search Starcat local repositories and GitHub directly from Raycast. [View project](https://github.com/starcat-app/starcat-raycast-extension)
 
 ## 1.2.0
 

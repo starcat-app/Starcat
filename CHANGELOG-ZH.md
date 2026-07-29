@@ -4,13 +4,16 @@
 
 ## 1.3.0
 
-Starcat 1.3.0 新增全局与单仓库两层洞察，帮助你从收藏全貌快速定位整理重点，并深入判断单个项目的活跃度、增长与健康状况。
+Starcat 1.3.0 新增“我的项目”、全局与单仓库洞察，以及 Alfred、uTools 和 Raycast 外部搜索集成，帮助你管理更多仓库，并从常用效率工具快速找到它们。
 
 ### 新增
 
 - 我的项目：集中查看个人与组织仓库，并在授权范围内浏览公开、私有和 Internal 项目，继续使用现有筛选、详情与 Star 趋势。
 - 我的洞察：从全部收藏或知识库范围查看整理进度、技术分布、项目状态与待处理事项，并可直接下钻到对应仓库列表。
 - 仓库洞察：在仓库详情中集中查看 Star 增长、协作活动、提交趋势、贡献者、发布节奏、项目健康度、社区规范与安全信号。
+- Alfred Workflow：可直接从 Alfred 搜索 Starcat 本地仓库与 GitHub。[查看项目](https://github.com/starcat-app/starcat-alfred-workflow)
+- uTools 插件：可直接从 uTools 搜索 Starcat 本地仓库与 GitHub。[查看项目](https://github.com/starcat-app/starcat-utools-plugin)
+- Raycast Extension：可直接从 Raycast 搜索 Starcat 本地仓库与 GitHub。[查看项目](https://github.com/starcat-app/starcat-raycast-extension)
 
 ## 1.2.0
 
