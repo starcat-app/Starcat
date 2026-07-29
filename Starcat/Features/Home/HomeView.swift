@@ -1670,6 +1670,11 @@ struct HomeView: View {
             columnVisibility = .all
             tagsExpanded = true
 
+        case .releaseTimeline:
+            viewModel.clearTemporaryGlobalFilters()
+            releaseTimelineTargetID = nil
+            showReleaseTimeline = true
+
         case .repository(let repository):
             // 先消费请求再异步查库/拉 GitHub，避免 HomeView 重挂载时重复发网络请求。
             dependencies.mainWindowNavigationDispatcher.pendingRequest = nil

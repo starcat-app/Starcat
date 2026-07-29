@@ -445435,6 +445435,24 @@
         }
       }
     },
+    "widget.common.openStarcat" : {
+      "comment" : "VoiceOver hint for opening the Starcat main window from a Widget.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Starcat"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开 Starcat"
+          }
+        }
+      }
+    },
     "widget.common.preparing.subtitle" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -445908,6 +445926,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "没有未读 Release"
+          }
+        }
+      }
+    },
+    "widget.releaseWatch.openTimeline" : {
+      "comment" : "VoiceOver hint for opening the Release timeline from an empty Widget.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open the Release timeline in Starcat"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Starcat 中打开 Release 时间线"
           }
         }
       }

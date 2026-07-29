@@ -102,6 +102,15 @@ struct StarcatApp: App {
             )
             return
         }
+        if let widgetRoute = WidgetAppDeepLink(url: url) {
+            switch widgetRoute.destination {
+            case .main:
+                AppDelegate.activateMainWindowIfPossible()
+            case .releaseTimeline:
+                dependencies.mainWindowNavigationDispatcher.navigate(to: .releaseTimeline)
+            }
+            return
+        }
         if let release = RepositoryReleaseDeepLink(url: url) {
             dependencies.mainWindowNavigationDispatcher.navigate(to: .repositoryRelease(release))
             return

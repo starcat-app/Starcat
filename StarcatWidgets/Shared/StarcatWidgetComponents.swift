@@ -53,7 +53,8 @@ struct StarcatWidgetEmptyView: View {
     let symbol: String
     let titleKey: LocalizedStringKey
     let subtitleKey: LocalizedStringKey
-    var openURL: URL? = URL(string: "starcat://")
+    var openURL: URL? = WidgetAppDeepLink(destination: .main).url
+    var accessibilityHintKey: LocalizedStringKey = "widget.common.openStarcat"
 
     var body: some View {
         VStack(spacing: 8) {
@@ -74,6 +75,7 @@ struct StarcatWidgetEmptyView: View {
         .padding(12)
         .widgetURL(openURL)
         .accessibilityElement(children: .combine)
+        .accessibilityHint(Text(accessibilityHintKey))
     }
 }
 

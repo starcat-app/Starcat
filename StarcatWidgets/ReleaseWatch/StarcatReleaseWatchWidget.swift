@@ -63,7 +63,9 @@ struct StarcatReleaseWatchWidgetView: View {
             StarcatWidgetEmptyView(
                 symbol: "checkmark.circle",
                 titleKey: "widget.releaseWatch.empty.title",
-                subtitleKey: "widget.releaseWatch.empty.subtitle"
+                subtitleKey: "widget.releaseWatch.empty.subtitle",
+                openURL: WidgetAppDeepLink(destination: .releaseTimeline).url,
+                accessibilityHintKey: "widget.releaseWatch.openTimeline"
             )
         }
     }
