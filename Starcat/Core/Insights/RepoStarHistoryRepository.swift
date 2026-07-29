@@ -140,6 +140,8 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
     private var etags: [RemoteCacheKey: String] = [:]
     private var fullyLoadedRepoIDs: Set<Int64> = []
     private var loadedGitHubStargazerRepoIDs: Set<Int64> = []
+    /// AI 与洞察页可能同时请求同一范围。Task 独立于任一页面取消，完成后统一落库。
+    private var refreshTasks: [RemoteCacheKey: Task<StarHistorySnapshot, Error>] = [:]
 
     init(
         database: any DatabaseManaging,
@@ -232,6 +234,32 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
     }
 
     func refresh(
+        repo: Repo,
+        range: StarHistoryRange,
+        forceRefresh: Bool
+    ) async throws -> StarHistorySnapshot {
+        let key = RemoteCacheKey(repoID: repo.id, range: range)
+        if let task = refreshTasks[key] {
+            return try await task.value
+        }
+
+        // 不把 forceRefresh 放进 key：手动刷新与自动补齐同时发生时都以当前远端结果为准，
+        // 再发第二个请求不会增加信息，只会放大 GitHub / Discovery 压力。
+        let task = Task {
+            try await self.performRefresh(
+                repo: repo,
+                range: range,
+                forceRefresh: forceRefresh
+            )
+        }
+        refreshTasks[key] = task
+        defer {
+            refreshTasks[key] = nil
+        }
+        return try await task.value
+    }
+
+    private func performRefresh(
         repo: Repo,
         range: StarHistoryRange,
         forceRefresh: Bool

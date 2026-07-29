@@ -161,6 +161,51 @@ struct RepoStarHistoryRepositoryTests {
         #expect(snapshot.points.last?.precision == .snapshot)
     }
 
+    @Test("AI 与洞察页并发刷新同一 Star 范围只请求一次")
+    func concurrentConsumersShareStarHistoryRefresh() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 30, owner: "octo", name: "single-flight")
+        let now = try #require(
+            ISO8601DateFormatter.shared.date(from: "2026-07-27T12:00:00.000Z")
+        )
+        let api = StubStarHistoryAPI(
+            results: [
+                .success(.ready(
+                    series: StarHistoryRemoteSeries(
+                        repoID: 30,
+                        fullName: "octo/single-flight",
+                        currentStars: 20,
+                        range: .oneYear,
+                        coverageStart: StarHistoryDateCodec.date(from: "2026-07-01"),
+                        generatedAt: now,
+                        points: [
+                            point("2026-07-01", 10, .ghArchive, .estimated, now)
+                        ]
+                    ),
+                    etag: "\"single-flight-v1\""
+                ))
+            ],
+            delay: .milliseconds(30)
+        )
+        let repository = GRDBRepoStarHistoryRepository(
+            database: database,
+            api: api,
+            now: { now }
+        )
+        let repo = fixtureRepo(id: 30, name: "single-flight", stars: 20)
+
+        async let ai = repository.refresh(repo: repo, range: .oneYear, forceRefresh: false)
+        async let insightsPage = repository.refresh(
+            repo: repo,
+            range: .oneYear,
+            forceRefresh: true
+        )
+        let snapshots = try await [ai, insightsPage]
+
+        #expect(snapshots[0] == snapshots[1])
+        #expect(await api.requests().count == 1)
+    }
+
     @Test("私有仓库只返回本机快照且不调用 API")
     func privateRepositoryNeverCallsAPI() async throws {
         let database = try InMemoryDatabaseManager()
@@ -536,9 +581,14 @@ private actor StubStarHistoryAPI: StarHistoryAPIProtocol {
 
     private var queuedResults: [Result<StarHistoryAPIResult, StarHistoryAPIError>]
     private var recordedRequests: [RecordedRequest] = []
+    private let delay: Duration
 
-    init(results: [Result<StarHistoryAPIResult, StarHistoryAPIError>]) {
+    init(
+        results: [Result<StarHistoryAPIResult, StarHistoryAPIError>],
+        delay: Duration = .zero
+    ) {
         queuedResults = results
+        self.delay = delay
     }
 
     func fetch(
@@ -549,6 +599,9 @@ private actor StubStarHistoryAPI: StarHistoryAPIProtocol {
         recordedRequests.append(
             RecordedRequest(request: request, range: range, ifNoneMatch: ifNoneMatch)
         )
+        if delay > .zero {
+            try await Task.sleep(for: delay)
+        }
         guard !queuedResults.isEmpty else {
             throw StarHistoryAPIError.providerUnavailable
         }
