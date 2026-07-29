@@ -275,6 +275,67 @@ struct StarHistoryViewModelTests {
     }
 }
 
+@Suite("Star History Chart Series")
+struct StarHistoryChartSeriesBuilderTests {
+
+    @Test("重建历史切换到单个本机快照时应生成桥接段")
+    func reconstructedHistoryConnectsToSnapshot() throws {
+        let reconstructed = try point(
+            "2023-10-22",
+            15,
+            source: .githubStargazers,
+            precision: .reconstructed
+        )
+        let snapshot = try point(
+            "2026-07-29",
+            15,
+            source: .localSnapshot,
+            precision: .snapshot
+        )
+
+        let bridges = StarHistoryChartSeriesBuilder.bridges(in: [reconstructed, snapshot])
+
+        #expect(bridges.count == 1)
+        #expect(bridges.first?.start == reconstructed)
+        #expect(bridges.first?.end == snapshot)
+        #expect(bridges.first?.inheritedPrecision == .reconstructed)
+    }
+
+    @Test("同一精度的连续点不得重复生成桥接段")
+    func samePrecisionDoesNotCreateBridge() throws {
+        let first = try point(
+            "2023-10-21",
+            14,
+            source: .githubStargazers,
+            precision: .reconstructed
+        )
+        let second = try point(
+            "2023-10-22",
+            15,
+            source: .githubStargazers,
+            precision: .reconstructed
+        )
+
+        #expect(StarHistoryChartSeriesBuilder.bridges(in: [first, second]).isEmpty)
+    }
+
+    private func point(
+        _ day: String,
+        _ count: Int,
+        source: StarHistorySource,
+        precision: StarHistoryPrecision
+    ) throws -> StarHistoryPoint {
+        let date = try #require(StarHistoryDateCodec.date(from: day))
+        return StarHistoryPoint(
+            date: date,
+            count: count,
+            source: source,
+            precision: precision,
+            fetchedAt: date
+        )
+    }
+}
+
 private enum StarHistoryViewModelTestError: Error {
     case failed
 }

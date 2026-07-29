@@ -12,6 +12,35 @@ import AppKit
 import Charts
 import SwiftUI
 
+/// 不同精度折线之间的显式连接段。
+///
+/// Swift Charts 会把不同 `series` 当成互不相连的折线；当后一组只有一个 snapshot
+/// 点时，它只能画出圆点。桥接段保留前一组的视觉语义，让曲线连续但不伪造数据来源。
+struct StarHistoryChartBridge: Equatable, Identifiable, Sendable {
+    let start: StarHistoryPoint
+    let end: StarHistoryPoint
+    let inheritedPrecision: StarHistoryPrecision
+
+    var id: String {
+        "\(start.id)->\(end.id)"
+    }
+}
+
+enum StarHistoryChartSeriesBuilder {
+    /// 输入点必须按日期升序；只在精度切换处生成相邻两点桥接。
+    static func bridges(in points: [StarHistoryPoint]) -> [StarHistoryChartBridge] {
+        guard points.count >= 2 else { return [] }
+        return zip(points, points.dropFirst()).compactMap { start, end in
+            guard start.precision != end.precision else { return nil }
+            return StarHistoryChartBridge(
+                start: start,
+                end: end,
+                inheritedPrecision: start.precision
+            )
+        }
+    }
+}
+
 struct RepositoryInsightsView: View {
     private struct TimelineDisplayItem: Identifiable {
         let id: String
@@ -882,6 +911,10 @@ struct RepositoryInsightsView: View {
         displayedStarPoints.filter { $0.precision == .snapshot }
     }
 
+    private var starLineBridges: [StarHistoryChartBridge] {
+        StarHistoryChartSeriesBuilder.bridges(in: displayedStarPoints)
+    }
+
     private var selectedStarPoint: StarHistoryPoint? {
         guard let selectedStarDate else { return nil }
         return displayedStarPoints.min {
@@ -1023,6 +1056,10 @@ struct RepositoryInsightsView: View {
                 .interpolationMethod(.catmullRom)
             }
 
+            ForEach(starLineBridges) { bridge in
+                starBridgeMarks(bridge)
+            }
+
             ForEach(preciseStarPoints) { point in
                 LineMark(
                     x: .value("Date", point.date),
@@ -1104,6 +1141,48 @@ struct RepositoryInsightsView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("insights.repo.section.stars"))
         .accessibilityValue(Text(starChartAccessibilityValue))
+    }
+
+    /// 桥接段沿用前一组折线的样式：估算 / 重建继续虚线，精确快照保持实线。
+    ///
+    /// 使用线性插值是为了只表达两个观测点之间的连接，不在长时间空档里制造
+    /// Catmull-Rom 曲线的额外波动。
+    @ChartContentBuilder
+    private func starBridgeMarks(_ bridge: StarHistoryChartBridge) -> some ChartContent {
+        let color: Color = switch bridge.inheritedPrecision {
+        case .estimated:
+            Color.blue.opacity(0.72)
+        case .reconstructed:
+            Color.blue.opacity(0.8)
+        case .snapshot:
+            Color.blue
+        }
+        let strokeStyle: StrokeStyle = switch bridge.inheritedPrecision {
+        case .estimated:
+            StrokeStyle(lineWidth: 2, lineCap: .round, dash: [5, 4])
+        case .reconstructed:
+            StrokeStyle(lineWidth: 2, lineCap: .round, dash: [6, 3])
+        case .snapshot:
+            StrokeStyle(lineWidth: 2.5, lineCap: .round)
+        }
+
+        LineMark(
+            x: .value("Date", bridge.start.date),
+            y: .value("Stars", bridge.start.count),
+            series: .value("Source", bridge.id)
+        )
+        .foregroundStyle(color)
+        .lineStyle(strokeStyle)
+        .interpolationMethod(.linear)
+
+        LineMark(
+            x: .value("Date", bridge.end.date),
+            y: .value("Stars", bridge.end.count),
+            series: .value("Source", bridge.id)
+        )
+        .foregroundStyle(color)
+        .lineStyle(strokeStyle)
+        .interpolationMethod(.linear)
     }
 
     /// 跨度不到两个月时带上「日」，避免横轴刷出一排相同的「2026年7月」。
