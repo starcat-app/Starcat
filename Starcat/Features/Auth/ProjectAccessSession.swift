@@ -62,8 +62,8 @@ enum ProjectAccessConnectionResult: Equatable, Sendable {
 
 @MainActor
 protocol ProjectAccessConnectionHistoryStoring: AnyObject {
-    var hasCompletedAuthorization: Bool { get }
-    func markAuthorizationCompleted()
+    func hasCompletedAuthorization(for userID: Int64) -> Bool
+    func markAuthorizationCompleted(for userID: Int64)
 }
 
 @MainActor
@@ -120,24 +120,43 @@ final class UserDefaultsProjectAccessConnectionHistory:
     ProjectAccessConnectionHistoryStoring
 {
     private let defaults: UserDefaults
-    private let key: String
+    private let keyPrefix: String
+    private let legacyKey: String
+    private let persistenceEnabled: Bool
 
     init(
         defaults: UserDefaults = .standard,
-        key: String = "projectAccess.hasCompletedAuthorization.v1"
+        keyPrefix: String = "projectAccess.hasCompletedAuthorization.v2",
+        legacyKey: String = "projectAccess.hasCompletedAuthorization.v1",
+        persistenceEnabled: Bool = !TestEnvironment.isRunning
     ) {
         self.defaults = defaults
-        self.key = key
+        self.keyPrefix = keyPrefix
+        self.legacyKey = legacyKey
+        self.persistenceEnabled = persistenceEnabled
     }
 
-    var hasCompletedAuthorization: Bool {
-        guard !TestEnvironment.isRunning else { return false }
-        return defaults.bool(forKey: key)
+    func hasCompletedAuthorization(for userID: Int64) -> Bool {
+        guard persistenceEnabled else { return false }
+        let scopedKey = key(for: userID)
+        if defaults.object(forKey: scopedKey) != nil {
+            return defaults.bool(forKey: scopedKey)
+        }
+        // 旧版只有全局布尔值。首次读到时只迁移给当前登录用户并删除旧 Key，
+        // 防止后续切换账号时把另一用户误判为已完成授权。
+        guard defaults.bool(forKey: legacyKey) else { return false }
+        defaults.set(true, forKey: scopedKey)
+        defaults.removeObject(forKey: legacyKey)
+        return true
     }
 
-    func markAuthorizationCompleted() {
-        guard !TestEnvironment.isRunning else { return }
-        defaults.set(true, forKey: key)
+    func markAuthorizationCompleted(for userID: Int64) {
+        guard persistenceEnabled else { return }
+        defaults.set(true, forKey: key(for: userID))
+    }
+
+    private func key(for userID: Int64) -> String {
+        "\(keyPrefix).\(userID)"
     }
 }
 
@@ -196,7 +215,7 @@ final class ProjectAccessSession {
         state = isConfigured ? .disconnected : .unavailable
     }
 
-    func restore() {
+    func restore(userID: Int64) {
         guard isConfigured else {
             state = .unavailable
             return
@@ -206,7 +225,7 @@ final class ProjectAccessSession {
                 state = .disconnected
                 return
             }
-            connectionHistory.markAuthorizationCompleted()
+            connectionHistory.markAuthorizationCompleted(for: userID)
             if isRefreshExpired(credential) {
                 state = .expired
             } else {
@@ -220,6 +239,7 @@ final class ProjectAccessSession {
     /// 首次连接走安装联动；已有连接历史时直接重新授权，避免已有安装不触发 callback。
     @discardableResult
     func beginConnection(
+        userID: Int64,
         modeOverride: ProjectAccessAuthorizationMode? = nil
     ) async throws -> ProjectAccessAuthorizationInfo {
         guard isConfigured else {
@@ -229,7 +249,7 @@ final class ProjectAccessSession {
         state = .connecting
         do {
             let mode: ProjectAccessAuthorizationMode = modeOverride
-                ?? (connectionHistory.hasCompletedAuthorization
+                ?? (connectionHistory.hasCompletedAuthorization(for: userID)
                     ? .reauthorization
                     : .installation)
             let info = try await oauthService.beginAuthorization(mode: mode)
@@ -248,6 +268,7 @@ final class ProjectAccessSession {
     /// 系统认证会话直接截获 `starcat://github-app/callback`，因此 App Store 与 Direct
     /// 同时安装时也不会依赖 Launch Services 猜测应唤醒哪个版本。
     func startConnection(
+        userID: Int64,
         modeOverride: ProjectAccessAuthorizationMode? = nil,
         completion: @escaping @MainActor @Sendable (ProjectAccessConnectionResult) -> Void
     ) {
@@ -260,14 +281,21 @@ final class ProjectAccessSession {
         authorizationTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                let info = try await beginConnection(modeOverride: modeOverride)
+                let info = try await beginConnection(
+                    userID: userID,
+                    modeOverride: modeOverride
+                )
                 try Task.checkCancellation()
                 do {
                     try webAuthenticationSession.start(
                         authorizationURL: info.authorizationURL,
                         callbackURLScheme: AppConstants.oauthCallbackScheme
                     ) { [weak self] result in
-                        self?.handleWebAuthenticationResult(result, completion: completion)
+                        self?.handleWebAuthenticationResult(
+                            result,
+                            userID: userID,
+                            completion: completion
+                        )
                     }
                 } catch {
                     // OAuth state 已经进入 awaiting；系统窗口若无法启动，必须同步清理，
@@ -289,7 +317,10 @@ final class ProjectAccessSession {
 
     /// 消费 GitHub App callback，保存独立凭据并立即验证安装范围。
     @discardableResult
-    func completeConnection(callbackURL: URL) async throws -> GitHubAppInstallationAccess {
+    func completeConnection(
+        callbackURL: URL,
+        userID: Int64
+    ) async throws -> GitHubAppInstallationAccess {
         guard isConfigured else {
             state = .unavailable
             throw ProjectAccessSessionError.unavailable
@@ -298,7 +329,7 @@ final class ProjectAccessSession {
         do {
             credential = try await oauthService.exchangeCallback(callbackURL)
             try saveCredential(credential)
-            connectionHistory.markAuthorizationCompleted()
+            connectionHistory.markAuthorizationCompleted(for: userID)
         } catch {
             state = .failed(Self.failureCode(error))
             throw error
@@ -370,7 +401,7 @@ final class ProjectAccessSession {
             state = isConfigured ? .disconnected : .unavailable
             return
         }
-        connectionHistory.markAuthorizationCompleted()
+        connectionHistory.markAuthorizationCompleted(for: userID)
         let usableCredential = try await credentialForDisconnect(credential)
         do {
             try await oauthService.revokeAuthorization(
@@ -398,6 +429,13 @@ final class ProjectAccessSession {
     /// 数据库关系清理失败时保持可重试状态，不能发布为已断开。
     func markDisconnectCleanupFailed() {
         state = .disconnectionFailed(.storage)
+    }
+
+    /// 没有当前 GitHub 用户的本地授权历史时，UI 应提供显式 OAuth 入口。
+    ///
+    /// 该入口用于 GitHub App 已由另一渠道或手动安装、但当前 Starcat 没有回调历史的场景。
+    func shouldOfferExplicitReauthorization(for userID: Int64) -> Bool {
+        !connectionHistory.hasCompletedAuthorization(for: userID)
     }
 
     /// 返回可用 GitHub App user token；access token 临近过期时先原子轮换整份凭据。
@@ -563,6 +601,7 @@ final class ProjectAccessSession {
     /// 将系统认证结果收口到项目权限状态机；回调始终位于 MainActor。
     private func handleWebAuthenticationResult(
         _ result: Result<URL, WebAuthenticationSessionError>,
+        userID: Int64,
         completion: @escaping @MainActor @Sendable (ProjectAccessConnectionResult) -> Void
     ) {
         authorizationTask = nil
@@ -572,7 +611,10 @@ final class ProjectAccessSession {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 do {
-                    let access = try await completeConnection(callbackURL: callbackURL)
+                    let access = try await completeConnection(
+                        callbackURL: callbackURL,
+                        userID: userID
+                    )
                     completion(.connected(access))
                 } catch {
                     completion(.failed)

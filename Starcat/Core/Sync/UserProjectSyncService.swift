@@ -141,8 +141,8 @@ final class UserProjectSyncService {
     }
 
     /// 恢复独立项目授权。测试 host 不应主动访问 Keychain，调用方负责门控。
-    func restoreAccess() {
-        projectAccessSession.restore()
+    func restoreAccess(userID: Int64) {
+        projectAccessSession.restore(userID: userID)
     }
 
     /// 启动系统后台刷新。重复传入同一用户为 no-op；切换用户时会重建 scheduler。
@@ -242,7 +242,7 @@ final class UserProjectSyncService {
                 } else {
                     // 一次完整成功应清掉上轮 partial / approval pending 状态，并从独立
                     // Keychain 恢复真实到期时间；不触碰 Starcat 主 OAuth 会话。
-                    projectAccessSession.restore()
+                    projectAccessSession.restore(userID: userID)
                 }
             }
             let summary = result.summary

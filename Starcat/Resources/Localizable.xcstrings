@@ -389366,6 +389366,14 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "繼續授權" } }
       }
     },
+    "project.access.alreadyInstalled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Already installed? Authorize" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已安装，继续授权" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "已安裝，繼續授權" } }
+      }
+    },
     "project.access.cancel" : {
       "extractionState" : "manual",
       "localizations" : {

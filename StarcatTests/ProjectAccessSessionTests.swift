@@ -102,14 +102,18 @@ struct ProjectAccessSessionTests {
 
     @MainActor
     private final class MockConnectionHistory: ProjectAccessConnectionHistoryStoring {
-        var hasCompletedAuthorization: Bool
+        private var completedUserIDs: Set<Int64>
 
-        init(hasCompletedAuthorization: Bool) {
-            self.hasCompletedAuthorization = hasCompletedAuthorization
+        init(hasCompletedAuthorization: Bool, userID: Int64 = 7) {
+            completedUserIDs = hasCompletedAuthorization ? [userID] : []
         }
 
-        func markAuthorizationCompleted() {
-            hasCompletedAuthorization = true
+        func hasCompletedAuthorization(for userID: Int64) -> Bool {
+            completedUserIDs.contains(userID)
+        }
+
+        func markAuthorizationCompleted(for userID: Int64) {
+            completedUserIDs.insert(userID)
         }
     }
 
@@ -140,6 +144,33 @@ struct ProjectAccessSessionTests {
         try keychain.storeProjectAccessCredential(String(decoding: data, as: UTF8.self))
     }
 
+    @Test("授权历史按 GitHub 用户隔离并迁移旧全局标记")
+    @MainActor
+    func connectionHistoryIsScopedByUser() {
+        let suiteName = "ProjectAccessSessionTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            Issue.record("无法创建隔离的 UserDefaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let legacyKey = "projectAccess.history.legacy"
+        defaults.set(true, forKey: legacyKey)
+        let history = UserDefaultsProjectAccessConnectionHistory(
+            defaults: defaults,
+            keyPrefix: "projectAccess.history.user",
+            legacyKey: legacyKey,
+            persistenceEnabled: true
+        )
+
+        // 旧版全局标记只迁移给首次读取的当前用户，不能泄漏给后续切换的账号。
+        #expect(history.hasCompletedAuthorization(for: 11))
+        #expect(!history.hasCompletedAuthorization(for: 22))
+
+        history.markAuthorizationCompleted(for: 22)
+        #expect(history.hasCompletedAuthorization(for: 22))
+    }
+
     @Test("GitHub App Web Flow 只写项目凭据，不覆盖 OAuth token")
     @MainActor
     func connectionIsIndependentFromMainOAuth() async throws {
@@ -156,11 +187,11 @@ struct ProjectAccessSessionTests {
             now: { self.now }
         )
 
-        let info = try await session.beginConnection()
+        let info = try await session.beginConnection(userID: 7)
         #expect(info.authorizationURL.host == "github.com")
         #expect(oauth.beginModes == [.installation])
         #expect(session.state == .awaitingAuthorization)
-        try await session.completeConnection(callbackURL: callbackURL)
+        try await session.completeConnection(callbackURL: callbackURL, userID: 7)
 
         #expect(session.state == .connected(expiresAt: issued.accessExpiresAt))
         #expect(try keychain.loadGithubToken() == "oauth-main")
@@ -186,7 +217,7 @@ struct ProjectAccessSessionTests {
             now: { self.now }
         )
 
-        session.startConnection { recorder.value = $0 }
+        session.startConnection(userID: 7) { recorder.value = $0 }
         await Self.waitUntil { webAuthenticationSession.authorizationURL != nil }
 
         #expect(
@@ -205,7 +236,7 @@ struct ProjectAccessSessionTests {
         #expect(session.state == .connected(expiresAt: issued.accessExpiresAt))
         let storedCredential = try? keychain.loadProjectAccessCredential()
         #expect(storedCredential != nil)
-        #expect(connectionHistory.hasCompletedAuthorization)
+        #expect(connectionHistory.hasCompletedAuthorization(for: 7))
     }
 
     @Test("曾连接过的 GitHub App 直接进入重新授权而非安装页")
@@ -230,7 +261,7 @@ struct ProjectAccessSessionTests {
             now: { self.now }
         )
 
-        session.startConnection { _ in }
+        session.startConnection(userID: 7) { _ in }
         await Self.waitUntil { webAuthenticationSession.authorizationURL != nil }
 
         #expect(oauth.beginModes == [.reauthorization])
@@ -250,7 +281,10 @@ struct ProjectAccessSessionTests {
             now: { self.now }
         )
 
-        _ = try await session.beginConnection(modeOverride: .reauthorization)
+        _ = try await session.beginConnection(
+            userID: 7,
+            modeOverride: .reauthorization
+        )
 
         #expect(oauth.beginModes == [.reauthorization])
     }
@@ -270,7 +304,7 @@ struct ProjectAccessSessionTests {
             now: { self.now }
         )
 
-        session.startConnection { recorder.value = $0 }
+        session.startConnection(userID: 7) { recorder.value = $0 }
         await Self.waitUntil { webAuthenticationSession.authorizationURL != nil }
         webAuthenticationSession.complete(with: .failure(.cancelled))
         await Self.waitUntil { recorder.value != nil }
@@ -293,7 +327,7 @@ struct ProjectAccessSessionTests {
             now: { self.now }
         )
 
-        session.startConnection { _ in }
+        session.startConnection(userID: 7) { _ in }
         await Self.waitUntil { webAuthenticationSession.authorizationURL != nil }
         await session.cancelConnection()
 
@@ -317,7 +351,7 @@ struct ProjectAccessSessionTests {
             now: { self.now }
         )
 
-        session.startConnection { recorder.value = $0 }
+        session.startConnection(userID: 7) { recorder.value = $0 }
         await Self.waitUntil { recorder.value != nil }
 
         #expect(recorder.value == .failed)
@@ -340,8 +374,8 @@ struct ProjectAccessSessionTests {
             now: { self.now }
         )
 
-        _ = try await session.beginConnection()
-        try await session.completeConnection(callbackURL: callbackURL)
+        _ = try await session.beginConnection(userID: 7)
+        try await session.completeConnection(callbackURL: callbackURL, userID: 7)
 
         #expect(session.state == .installationRequired)
         #expect(try keychain.loadProjectAccessCredential() != nil)
@@ -436,9 +470,9 @@ struct ProjectAccessSessionTests {
             now: { self.now }
         )
 
-        _ = try await session.beginConnection()
+        _ = try await session.beginConnection(userID: 7)
         await #expect(throws: NetworkError.self) {
-            try await session.completeConnection(callbackURL: callbackURL)
+            try await session.completeConnection(callbackURL: callbackURL, userID: 7)
         }
 
         #expect(session.state == .installationCheckFailed(.network))

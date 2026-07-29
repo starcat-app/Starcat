@@ -205,6 +205,12 @@ struct ProjectAccessSheet: View {
                 }
                 .buttonStyle(.bordered)
             case .disconnected:
+                if shouldOfferExplicitReauthorization {
+                    Button("project.access.alreadyInstalled") {
+                        connect(modeOverride: .reauthorization)
+                    }
+                    .buttonStyle(.bordered)
+                }
                 Button("project.access.connect") {
                     connect()
                 }
@@ -289,6 +295,13 @@ struct ProjectAccessSheet: View {
         return false
     }
 
+    /// GitHub App 可能已由网页或另一渠道安装，但当前用户尚无本机回调记录。
+    /// 此时保留安装入口，同时提供显式 OAuth 授权，避免安装页不再回调造成流程悬停。
+    private var shouldOfferExplicitReauthorization: Bool {
+        guard let userID = authSession.state.user?.id else { return false }
+        return accessSession.shouldOfferExplicitReauthorization(for: userID)
+    }
+
     private var statusTitleKey: LocalizedStringKey {
         switch accessSession.state {
         case .unavailable: "project.access.state.unavailable.title"
@@ -335,8 +348,12 @@ struct ProjectAccessSheet: View {
         modeOverride: ProjectAccessAuthorizationMode? = nil,
         disconnectAfterAuthorization: Bool = false
     ) {
+        guard let userID = authSession.state.user?.id else { return }
         self.disconnectAfterAuthorization = disconnectAfterAuthorization
-        accessSession.startConnection(modeOverride: modeOverride) { result in
+        accessSession.startConnection(
+            userID: userID,
+            modeOverride: modeOverride
+        ) { result in
             let shouldDisconnect = self.disconnectAfterAuthorization
             self.disconnectAfterAuthorization = false
             switch result {

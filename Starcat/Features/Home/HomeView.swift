@@ -2112,7 +2112,7 @@ struct HomeView: View {
         if !TestEnvironment.isRunning {
             // 项目授权独立于主 OAuth 登录：先恢复 GitHub App 凭据，再启动 4h 系统后台刷新。
             // 即使未配置或未连接 GitHub App，后续刷新仍会由凭据路由安全回退到 OAuth Public。
-            dependencies.userProjectSyncService.restoreAccess()
+            dependencies.userProjectSyncService.restoreAccess(userID: user.id)
             dependencies.userProjectSyncService.startBackgroundRefresh(userID: user.id)
         }
 
