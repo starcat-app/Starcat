@@ -407,7 +407,7 @@
 
 ## 19. 仓库洞察 XML 上下文
 
-> 状态: 核心实现、定向测试、当前 HEAD 全量测试、双 Debug target build 与三轮专项审查已完成；清洁复审和结果报告执行中。详细范围见 `仓库洞察XML上下文实施方案.md` 与 `仓库洞察XML上下文Checklist.md`。
+> 状态: 核心实现、定向测试、当前 HEAD 全量测试、双 Debug target build、三轮专项审查、清洁复审与结果报告均已完成；人工 UI 验收未执行且不会伪造。详细范围见 `仓库洞察XML上下文实施方案.md`、`仓库洞察XML上下文Checklist.md` 与 `仓库洞察XML上下文结果报告.md`。
 
 - [x] 页面、仓库 AI 摘要 / 对话和知识库 RAG 共用 `RepositoryInsightsDocument`，不重复生成聚合统计或重复写 XML。
 - [x] 独立 Storage 提供合法 XML、稳定 source/xml hash、原子写入、single-flight、账号边界和删除抑制。
@@ -416,5 +416,5 @@
 - [x] 洞察 XML 不新增 `RAGChunkSource`，不写 `rag_chunks`、embedding 或 CloudKit，并单独显示 `0 / 1`。
 - [x] RAG 使用独立 Prompt section、预算、XML 感知投影、citation、证据门禁和可解释执行状态。
 - [x] Plan、Timeline、Context、Evidence、Debug 与历史回放均提供洞察专用审计；会话不保存 XML 正文。
-- [ ] 完成至少三轮专项审查、全量测试、双 target build、Checklist 回填与结果报告。
+- [x] 完成至少三轮专项审查、全量测试、双 target build、Checklist 回填与结果报告。
 - [ ] 人工验证知识库特殊项的查看、复制、下载、删除、重新生成，以及真实 Provider 下的 Prompt 与历史回放；该项只记录，不以自动化代替。
