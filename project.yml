@@ -308,6 +308,8 @@ targets:
       - path: StarcatWidgets
       # 仅复用纯 Foundation 快照契约；Extension 不编译 GRDB、网络或业务层。
       - path: Starcat/Core/Widget/Shared
+      - path: Starcat/Resources/Localizable.xcstrings
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.store.widgets
@@ -328,6 +330,8 @@ targets:
     sources:
       - path: StarcatWidgets
       - path: Starcat/Core/Widget/Shared
+      - path: Starcat/Resources/Localizable.xcstrings
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.direct.widgets
