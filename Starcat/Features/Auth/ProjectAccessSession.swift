@@ -251,9 +251,31 @@ final class ProjectAccessSession {
         state = isConfigured ? .disconnected : .unavailable
     }
 
-    func disconnect() throws {
-        try keychain.deleteProjectAccessCredential()
-        state = isConfigured ? .disconnected : .unavailable
+    /// 撤销 GitHub 侧完整 user grant 后再清理本机凭据。
+    ///
+    /// 顺序不能反转：grant API 需要当前 `ghu_` token 标识用户；若先删 Keychain，
+    /// 网络失败后将失去自动重试撤销的唯一凭据，并错误显示为已完全断开。
+    func disconnect() async throws {
+        guard let credential = try loadCredential() else {
+            state = isConfigured ? .disconnected : .unavailable
+            return
+        }
+        let usableCredential = try await refreshedCredentialIfNeeded(credential)
+        do {
+            try await oauthService.revokeAuthorization(
+                accessToken: usableCredential.accessToken
+            )
+        } catch {
+            state = .failed(Self.failureCode(error))
+            throw error
+        }
+        do {
+            try keychain.deleteProjectAccessCredential()
+            state = isConfigured ? .disconnected : .unavailable
+        } catch {
+            state = .failed(.storage)
+            throw ProjectAccessSessionError.storage
+        }
     }
 
     /// 返回可用 GitHub App user token；access token 临近过期时先原子轮换整份凭据。

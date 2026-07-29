@@ -313,5 +313,9 @@ private actor ProjectAccessOAuthServiceStub: ProjectAccessOAuthServiceProtocol {
         throw ProjectAccessOAuthError.badRefreshToken
     }
 
+    func revokeAuthorization(accessToken: String) async throws {
+        _ = accessToken
+    }
+
     func reset() async {}
 }

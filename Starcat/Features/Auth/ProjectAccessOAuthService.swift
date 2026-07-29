@@ -44,6 +44,7 @@ protocol ProjectAccessOAuthServiceProtocol: Sendable {
     func beginAuthorization() async throws -> ProjectAccessAuthorizationInfo
     func exchangeCallback(_ callbackURL: URL) async throws -> ProjectAccessCredential
     func refreshCredential(using refreshToken: String) async throws -> ProjectAccessCredential
+    func revokeAuthorization(accessToken: String) async throws
     func reset() async
 }
 
@@ -56,6 +57,7 @@ actor ProjectAccessOAuthService: ProjectAccessOAuthServiceProtocol {
     private let callbackURL: URL
     private let session: URLSession
     private let oauthBaseURL: URL
+    private let apiBaseURL: URL
     private let now: @Sendable () -> Date
     private let stateGenerator: StateGenerator
 
@@ -69,6 +71,7 @@ actor ProjectAccessOAuthService: ProjectAccessOAuthServiceProtocol {
         callbackURL: URL = URL(string: AppConstants.githubAppCallbackURL)!,
         session: URLSession = .shared,
         oauthBaseURL: URL = AppEndpoints.GitHubOAuth.baseURL,
+        apiBaseURL: URL = AppEndpoints.GitHubREST.baseURL,
         now: @escaping @Sendable () -> Date = Date.init,
         stateGenerator: @escaping StateGenerator = ProjectAccessOAuthService.generateState
     ) {
@@ -78,6 +81,7 @@ actor ProjectAccessOAuthService: ProjectAccessOAuthServiceProtocol {
         self.callbackURL = callbackURL
         self.session = session
         self.oauthBaseURL = oauthBaseURL
+        self.apiBaseURL = apiBaseURL
         self.now = now
         self.stateGenerator = stateGenerator
     }
@@ -180,6 +184,52 @@ actor ProjectAccessOAuthService: ProjectAccessOAuthServiceProtocol {
             throw ProjectAccessOAuthError.badRefreshToken
         } catch {
             throw error
+        }
+    }
+
+    /// 撤销当前 GitHub 用户授予本 GitHub App 的完整 OAuth grant。
+    ///
+    /// GitHub 会同步作废该用户在其它 Starcat 渠道或设备上的 user / refresh token；
+    /// 这是产品确认的“断开连接”语义。404 表示 grant 已不存在，按幂等成功处理。
+    func revokeAuthorization(accessToken: String) async throws {
+        guard !clientID.isEmpty,
+              !clientSecret.isEmpty,
+              !accessToken.isEmpty
+        else {
+            throw ProjectAccessOAuthError.configurationMissing
+        }
+
+        let url = AppEndpoints.appendPath(
+            "/applications/\(clientID)/grant",
+            to: apiBaseURL
+        )
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+        request.setValue(AppConstants.httpUserAgent, forHTTPHeaderField: "User-Agent")
+        let basicCredential = Data("\(clientID):\(clientSecret)".utf8).base64EncodedString()
+        request.setValue("Basic \(basicCredential)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONSerialization.data(
+            withJSONObject: ["access_token": accessToken]
+        )
+
+        do {
+            let (_, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw ProjectAccessOAuthError.invalidResponse
+            }
+            switch http.statusCode {
+            case 204, 404:
+                return
+            default:
+                throw ProjectAccessOAuthError.httpStatus(http.statusCode)
+            }
+        } catch let error as ProjectAccessOAuthError {
+            throw error
+        } catch {
+            throw ProjectAccessOAuthError.network
         }
     }
 

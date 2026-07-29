@@ -36,6 +36,7 @@ struct ProjectAccessOAuthServiceTests {
             callbackURL: callbackURL,
             session: session,
             oauthBaseURL: oauthURL,
+            apiBaseURL: oauthURL,
             now: { fixedNow },
             stateGenerator: { "fixed-state" }
         )
@@ -215,6 +216,41 @@ struct ProjectAccessOAuthServiceTests {
             try await service.refreshCredential(using: "expired")
         }
     }
+
+    @Test("断开连接撤销整个 GitHub App grant")
+    func revokeAuthorizationDeletesGrant() async throws {
+        URLProtocolStub.reset()
+        let requests = URLRequestRecorder()
+        let bodies = RequestBodyRecorder()
+        URLProtocolStub.requestHandler = { request in
+            requests.record(request)
+            bodies.record(request)
+            return (response(request, status: 204), Data())
+        }
+        let service = service(session: URLProtocolStub.ephemeralSession())
+
+        try await service.revokeAuthorization(accessToken: "ghu_current")
+
+        let request = try #require(requests.values.first)
+        #expect(request.httpMethod == "DELETE")
+        #expect(request.url?.path == "/applications/Iv1.client/grant")
+        let authorization = try #require(request.value(forHTTPHeaderField: "Authorization"))
+        #expect(authorization == "Basic \(Data("Iv1.client:secret".utf8).base64EncodedString())")
+        let body = try #require(bodies.values.first)
+        let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: String])
+        #expect(json["access_token"] == "ghu_current")
+    }
+
+    @Test("远端 grant 已不存在时断开保持幂等")
+    func missingGrantIsSuccessful() async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            (response(request, status: 404), Data())
+        }
+        let service = service(session: URLProtocolStub.ephemeralSession())
+
+        try await service.revokeAuthorization(accessToken: "ghu_already_revoked")
+    }
 }
 
 private final class LockedCounter: @unchecked Sendable {
@@ -262,5 +298,20 @@ private final class RequestBodyRecorder: @unchecked Sendable {
             result.append(buffer, count: count)
         }
         return result.isEmpty ? nil : result
+    }
+}
+
+private final class URLRequestRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [URLRequest] = []
+
+    func record(_ request: URLRequest) {
+        lock.withLock {
+            storage.append(request)
+        }
+    }
+
+    var values: [URLRequest] {
+        lock.withLock { storage }
     }
 }

@@ -20,7 +20,9 @@ struct ProjectAccessSessionTests {
         )
         var credential: ProjectAccessCredential
         var refreshed: ProjectAccessCredential
+        var revokeError: ProjectAccessOAuthError?
         private(set) var refreshInputs: [String] = []
+        private(set) var revokedTokens: [String] = []
         private(set) var resetCallCount = 0
 
         init(credential: ProjectAccessCredential, refreshed: ProjectAccessCredential? = nil) {
@@ -35,6 +37,10 @@ struct ProjectAccessSessionTests {
         func refreshCredential(using refreshToken: String) async throws -> ProjectAccessCredential {
             refreshInputs.append(refreshToken)
             return refreshed
+        }
+        func revokeAuthorization(accessToken: String) async throws {
+            if let revokeError { throw revokeError }
+            revokedTokens.append(accessToken)
         }
         func reset() async {
             resetCallCount += 1
@@ -487,10 +493,54 @@ struct ProjectAccessSessionTests {
         #expect(appRoute.authorizationSource == .githubApp)
         #expect(appRoute.accessToken == "github-app")
 
-        try session.disconnect()
+        try await session.disconnect()
         let oauthRoute = try await router.resolve()
         #expect(oauthRoute.authorizationSource == .oauth)
         #expect(oauthRoute.accessToken == "oauth-main")
+    }
+
+    @Test("断开连接先撤销远端 grant 再删除本机凭据")
+    @MainActor
+    func disconnectRevokesGrantBeforeLocalCleanup() async throws {
+        let keychain = InMemoryKeychain()
+        let appCredential = credential(token: "github-app", accessOffset: 3_600)
+        try storedCredential(keychain, appCredential)
+        let oauth = MockOAuth(credential: appCredential)
+        let session = ProjectAccessSession(
+            oauthService: oauth,
+            keychain: keychain,
+            isConfigured: true,
+            now: { self.now }
+        )
+
+        try await session.disconnect()
+
+        #expect(oauth.revokedTokens == ["github-app"])
+        #expect(try keychain.loadProjectAccessCredential() == nil)
+        #expect(session.state == .disconnected)
+    }
+
+    @Test("远端 grant 撤销失败时保留本机凭据以便重试")
+    @MainActor
+    func disconnectFailurePreservesCredential() async throws {
+        let keychain = InMemoryKeychain()
+        let appCredential = credential(token: "github-app", accessOffset: 3_600)
+        try storedCredential(keychain, appCredential)
+        let oauth = MockOAuth(credential: appCredential)
+        oauth.revokeError = .network
+        let session = ProjectAccessSession(
+            oauthService: oauth,
+            keychain: keychain,
+            isConfigured: true,
+            now: { self.now }
+        )
+
+        await #expect(throws: ProjectAccessOAuthError.network) {
+            try await session.disconnect()
+        }
+
+        #expect(try keychain.loadProjectAccessCredential() != nil)
+        #expect(session.state == .failed(.network))
     }
 
     @Test("部分授权与组织待审批为独立可见状态")
