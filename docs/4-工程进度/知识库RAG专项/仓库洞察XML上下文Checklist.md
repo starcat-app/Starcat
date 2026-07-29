@@ -76,7 +76,7 @@
 - [x] 自动生成期间保留旧内容，不使用跳动式全页加载态。
 - [x] 切仓、移出知识库、筛选切仓和关窗取消主动任务。
 - [x] generation UUID + repo id + database scope 拒绝迟到结果。
-- [ ] 补齐顺序、统计、只读、删除、生成、取消和迟到结果测试。
+- [x] 补齐顺序、统计、只读、删除、生成、取消和迟到结果测试。
 
 ## 5. RAG Models、Service 与 Prompt
 
@@ -135,7 +135,7 @@
 - [ ] 洞察 Context / Storage 定向测试通过。
 - [ ] Repository Insights 全部相关测试通过。
 - [ ] Repo AI / AppSettings Prompt 测试通过。
-- [ ] RepoContext Storage 回归测试通过。
+- [x] RepoContext Storage 回归测试通过。
 - [ ] Knowledge RAG Core 与 Browser 相关测试通过。
 - [ ] 全量 `StarcatTests` 通过，或明确记录非本需求阻塞证据。
 - [ ] `Starcat` Debug build 通过。
