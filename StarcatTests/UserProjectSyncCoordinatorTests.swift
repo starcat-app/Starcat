@@ -2,7 +2,7 @@
 //  UserProjectSyncCoordinatorTests.swift
 //  StarcatTests
 //
-//  验证 owner / organization_member 分页链、失败保旧值、304 和并发去重。
+//  验证 collaborator / owner / organization_member 分页链、失败保旧值、304 和并发去重。
 //
 
 import Foundation
@@ -115,7 +115,7 @@ struct UserProjectSyncCoordinatorTests {
         )
     }
 
-    @Test("两条 affiliation 链完整分页后分别提交")
+    @Test("三条 affiliation 链完整分页后分别提交")
     func syncsBothAffiliationsAndPages() async throws {
         let database = try InMemoryDatabaseManager()
         let repository = GRDBUserProjectRepository(database: database)
@@ -136,6 +136,11 @@ struct UserProjectSyncCoordinatorTests {
                     [makeRemote(id: 3, owner: "Acme", name: "three")],
                     etag: "\"org\""
                 )
+            case (.collaborator, 1):
+                return response(
+                    [makeRemote(id: 4, owner: "external", name: "four")],
+                    etag: "\"collaborator\""
+                )
             default:
                 Issue.record("意外请求: \(affiliation.rawValue) page=\(page)")
                 return response([])
@@ -148,9 +153,9 @@ struct UserProjectSyncCoordinatorTests {
             authorizationSource: .oauth
         )
 
-        #expect(result.receivedCount == 3)
+        #expect(result.receivedCount == 4)
         #expect(result.unchangedAffiliations.isEmpty)
-        #expect(try await repository.count(userID: 7, filter: .init()) == 3)
+        #expect(try await repository.count(userID: 7, filter: .init()) == 4)
         let ownerState = try #require(
             try await repository.fetchSyncState(
                 userID: 7,
@@ -165,10 +170,19 @@ struct UserProjectSyncCoordinatorTests {
                 authorizationSource: .oauth
             )
         )
+        let collaboratorState = try #require(
+            try await repository.fetchSyncState(
+                userID: 7,
+                affiliation: .collaborator,
+                authorizationSource: .oauth
+            )
+        )
         #expect(ownerState.etag == "\"owner\"")
         #expect(orgState.etag == "\"org\"")
+        #expect(collaboratorState.etag == "\"collaborator\"")
         #expect(ownerState.syncStatus == .succeeded)
         #expect(orgState.syncStatus == .succeeded)
+        #expect(collaboratorState.syncStatus == .succeeded)
     }
 
     @Test("单条链失败保留旧关系并返回部分同步摘要")
@@ -196,6 +210,9 @@ struct UserProjectSyncCoordinatorTests {
 
         let api = MockAPI { affiliation, _, page, _, _ in
             if affiliation == .owner {
+                return response([])
+            }
+            if affiliation == .collaborator {
                 return response([])
             }
             if page == 1 {
@@ -243,6 +260,9 @@ struct UserProjectSyncCoordinatorTests {
             if affiliation == .owner {
                 return response([makeRemote(id: 120, owner: "tester", name: "owner")])
             }
+            if affiliation == .collaborator {
+                return response([])
+            }
             throw NetworkError.clientError(statusCode: 403, message: nil)
         }
         let coordinator = UserProjectSyncCoordinator(api: api, repository: repository)
@@ -262,8 +282,13 @@ struct UserProjectSyncCoordinatorTests {
         let database = try InMemoryDatabaseManager()
         let repository = GRDBUserProjectRepository(database: database)
         for affiliation in ProjectAffiliation.allCases {
+            let repoID: Int64 = switch affiliation {
+            case .owner: 101
+            case .organizationMember: 102
+            case .collaborator: 103
+            }
             try await repository.upsertPage(
-                [makeRemote(id: affiliation == .owner ? 101 : 102, owner: "tester", name: affiliation.rawValue)
+                [makeRemote(id: repoID, owner: "tester", name: affiliation.rawValue)
                     .remoteProject(affiliation: affiliation)],
                 userID: 7,
                 authorizationSource: .oauth,
@@ -291,7 +316,7 @@ struct UserProjectSyncCoordinatorTests {
         )
 
         #expect(result.unchangedAffiliations == Set(ProjectAffiliation.allCases))
-        #expect(try await repository.count(userID: 7, filter: .init()) == 2)
+        #expect(try await repository.count(userID: 7, filter: .init()) == 3)
     }
 
     @Test("相同同步触发共享一个 in-flight Task")
@@ -314,6 +339,6 @@ struct UserProjectSyncCoordinatorTests {
         )
         _ = try await (first, second)
 
-        #expect(api.callCount == 2)
+        #expect(api.callCount == 3)
     }
 }

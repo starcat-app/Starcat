@@ -5,9 +5,8 @@
 //  GET /user/repos 的“我的项目”端点封装。
 //
 //  关键约束：
-//  - owner 与 organization_member 必须分两条分页链请求，才能独立保存 ETag 和失败状态；
+//  - owner、organization_member 与 collaborator 必须分开请求，才能独立保存 ETag 和失败状态；
 //  - OAuth fallback 只允许 visibility=public，GitHub App user token 才允许 visibility=all；
-//  - 不请求 collaborator，首版明确排除“仅作为外部个人协作者”的仓库；
 //  - 分页严格消费 Link Header，不能用“本页不足 100 条”猜测下一页。
 //
 

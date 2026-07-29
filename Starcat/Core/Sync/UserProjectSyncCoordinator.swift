@@ -2,10 +2,11 @@
 //  UserProjectSyncCoordinator.swift
 //  Starcat
 //
-//  “我的项目”两条 affiliation 分页链同步协调器。
+//  “我的项目”三条 affiliation 分页链同步协调器。
 //
 //  并发约束：
-//  - owner 与 organization_member 最多并行两条链，避免一次授权制造无界请求；
+//  - collaborator 先完成，再并行 owner 与 organization_member，最多同时两条链；
+//  - 低优先级 collaborator 先落库，高优先级关系后覆盖，避免同一 Repo 的归属受并发时序影响；
 //  - 相同用户、凭据和刷新模式的并发触发共享同一个 Task；
 //  - 每条链逐页串行，只有完整读取 Link Header 到末页后才做 generation 对账；
 //  - 一条链失败不取消另一条链，成功的 affiliation 仍可提交，失败链保留旧关系。
@@ -16,7 +17,7 @@ import Foundation
 struct UserProjectSyncSummary: Equatable, Sendable {
     let receivedCount: Int
     let unchangedAffiliations: Set<ProjectAffiliation>
-    /// 一条 affiliation 成功、另一条失败时仍返回成功摘要，让 UI 展示已提交数据与部分授权。
+    /// 至少一条 affiliation 成功时仍返回成功摘要，让 UI 展示已提交数据与部分授权。
     /// 这里只保留稳定错误码，不携带 GitHub response body，避免 Private 元数据进入状态层。
     let failedAffiliations: [ProjectAffiliation: String]
 
@@ -116,6 +117,16 @@ actor UserProjectSyncCoordinator {
         case .oauth: .publicOnly
         case .githubApp: .all
         }
+        // `user_projects` 对同一用户和 Repo 只保存一条关系。先同步低优先级的
+        // collaborator，再让 owner / organization_member 覆盖它，可稳定表达
+        // owner > organization_member > collaborator，并避免数据库增加重复关系。
+        let collaborator = await syncAffiliationResult(
+            .collaborator,
+            userID: userID,
+            authorizationSource: authorizationSource,
+            visibility: visibility,
+            force: force
+        )
         async let owner = syncAffiliationResult(
             .owner,
             userID: userID,
@@ -130,14 +141,19 @@ actor UserProjectSyncCoordinator {
             visibility: visibility,
             force: force
         )
-        let results = await [owner, organization]
+        let higherPriorityResults = await [owner, organization]
+        let results: [(ProjectAffiliation, Result<AffiliationResult, Error>)] = [
+            (.collaborator, collaborator),
+            (.owner, higherPriorityResults[0]),
+            (.organizationMember, higherPriorityResults[1])
+        ]
 
         var receivedCount = 0
         var unchanged: Set<ProjectAffiliation> = []
         var successfulAffiliationCount = 0
         var failedAffiliations: [ProjectAffiliation: String] = [:]
         var firstError: Error?
-        for (affiliation, result) in zip(ProjectAffiliation.allCases, results) {
+        for (affiliation, result) in results {
             switch result {
             case .success(let value):
                 successfulAffiliationCount += 1
@@ -150,7 +166,7 @@ actor UserProjectSyncCoordinator {
                 firstError = firstError ?? error
             }
         }
-        // 两条链都失败时没有任何新鲜数据可发布，继续走失败状态；只失败一条时成功链已经
+        // 三条链都失败时没有任何新鲜数据可发布，继续走失败状态；部分失败时成功链已经
         // 原子提交，返回部分摘要才能让界面保留可用项目并解释权限缺口。
         if successfulAffiliationCount == 0, let firstError {
             throw firstError

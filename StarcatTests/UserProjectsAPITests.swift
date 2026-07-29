@@ -118,7 +118,7 @@ struct UserProjectsAPITests {
         #expect(project.remoteProject(affiliation: .organizationMember).affiliation == .organizationMember)
     }
 
-    @Test("OAuth fallback 固定 public 且不包含 collaborator")
+    @Test("OAuth fallback 可按 public 范围请求 collaborator")
     func oauthFallbackQuery() async throws {
         let client = makeClient()
         URLProtocolStub.requestHandler = { request in
@@ -126,7 +126,7 @@ struct UserProjectsAPITests {
         }
 
         _ = try await client.userProjects(
-            affiliation: .owner,
+            affiliation: .collaborator,
             visibility: .publicOnly,
             page: 1,
             perPage: 50,
@@ -135,9 +135,8 @@ struct UserProjectsAPITests {
 
         let request = try #require(URLProtocolStub.receivedRequests.first)
         let query = try #require(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems)
-        #expect(query.first(where: { $0.name == "affiliation" })?.value == "owner")
+        #expect(query.first(where: { $0.name == "affiliation" })?.value == "collaborator")
         #expect(query.first(where: { $0.name == "visibility" })?.value == "public")
-        #expect(request.url?.absoluteString.contains("collaborator") == false)
     }
 
     @Test("304 条件命中保留 ETag")
