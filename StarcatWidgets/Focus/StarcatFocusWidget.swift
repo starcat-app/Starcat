@@ -198,7 +198,8 @@ struct StarcatFocusWidgetView: View {
         }
         .widgetURL(repository.openURL)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text(verbatim: "\(repository.owner)/\(repository.name)"))
+        .accessibilityLabel(repository.focusAccessibilityLabel)
+        .accessibilityHint(Text("widget.common.openRepository"))
     }
 
     private func repositoryList(limit: Int, showsDescription: Bool) -> some View {
@@ -272,7 +273,8 @@ private struct StarcatFocusRepositoryRow: View {
         .padding(.vertical, 5)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text(verbatim: "\(repository.owner)/\(repository.name)"))
+        .accessibilityLabel(repository.focusAccessibilityLabel)
+        .accessibilityHint(Text("widget.common.openRepository"))
     }
 
 }
@@ -291,6 +293,21 @@ private struct StarcatFocusSourceLabel: View {
                 .lineLimit(1)
         case nil:
             EmptyView()
+        }
+    }
+}
+
+private extension WidgetRepository {
+    /// 显式 label 会覆盖 `.combine` 的自动结果，因此在这里把视觉来源一并读出。
+    var focusAccessibilityLabel: Text {
+        let repository = Text(verbatim: "\(owner)/\(name)")
+        switch focusSource {
+        case .pinned:
+            return repository + Text(verbatim: ", ") + Text("widget.focus.pinned")
+        case .using:
+            return repository + Text(verbatim: ", ") + Text("widget.focus.using")
+        case nil:
+            return repository
         }
     }
 }

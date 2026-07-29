@@ -111,6 +111,7 @@ struct StarcatRediscoveryWidgetView: View {
         .widgetURL(repository.openURL)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text(verbatim: "\(repository.owner)/\(repository.name)"))
+        .accessibilityHint(Text("widget.common.openRepository"))
     }
 
     private func mediumContent(repository: WidgetRepository) -> some View {
@@ -165,5 +166,6 @@ struct StarcatRediscoveryWidgetView: View {
         .widgetURL(repository.openURL)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text(verbatim: "\(repository.owner)/\(repository.name)"))
+        .accessibilityHint(Text("widget.common.openRepository"))
     }
 }

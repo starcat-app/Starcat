@@ -445435,6 +445435,24 @@
         }
       }
     },
+    "widget.common.openRepository" : {
+      "comment" : "VoiceOver hint for opening a repository from a Widget.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open the repository in Starcat"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Starcat 中打开仓库"
+          }
+        }
+      }
+    },
     "widget.common.openStarcat" : {
       "comment" : "VoiceOver hint for opening the Starcat main window from a Widget.",
       "extractionState" : "manual",
@@ -445926,6 +445944,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "没有未读 Release"
+          }
+        }
+      }
+    },
+    "widget.releaseWatch.openRelease" : {
+      "comment" : "VoiceOver hint for opening a Release from a Widget.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open the Release timeline in Starcat"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Starcat 中打开对应 Release"
           }
         }
       }

@@ -160,5 +160,6 @@ private struct StarcatReleaseWatchRow: View {
         .accessibilityLabel(
             Text(verbatim: "\(release.owner)/\(release.repositoryName) \(release.tagName)")
         )
+        .accessibilityHint(Text("widget.releaseWatch.openRelease"))
     }
 }
