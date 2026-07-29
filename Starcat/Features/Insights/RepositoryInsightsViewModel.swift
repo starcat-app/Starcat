@@ -425,6 +425,8 @@ final class RepositoryInsightsViewModel {
 
     private let provider: any RepositoryLocalInsightsProviding
     private let remoteProvider: (any RepositoryRemoteInsightsProviding)?
+    /// 页面数据稳定后通知共享 Coordinator 更新 XML；nil 保持既有测试与 Preview 行为。
+    private let contextRefreshHandler: (@MainActor @Sendable (Repo) async -> Void)?
     private let now: @Sendable () -> Date
     private var lastManualRefreshAt: [ManualRefreshKey: Date] = [:]
     private var generation: UInt64 = 0
@@ -470,10 +472,12 @@ final class RepositoryInsightsViewModel {
     init(
         provider: any RepositoryLocalInsightsProviding,
         remoteProvider: (any RepositoryRemoteInsightsProviding)? = nil,
+        contextRefreshHandler: (@MainActor @Sendable (Repo) async -> Void)? = nil,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.provider = provider
         self.remoteProvider = remoteProvider
+        self.contextRefreshHandler = contextRefreshHandler
         self.now = now
     }
 
@@ -566,6 +570,8 @@ final class RepositoryInsightsViewModel {
             securityLoad,
             timelineLoad
         )
+        guard generation == localGeneration, activeRepoID == repo.id else { return }
+        await contextRefreshHandler?(repo)
     }
 
     func selectActivityRange(
@@ -596,6 +602,7 @@ final class RepositoryInsightsViewModel {
             return
         }
         await loadActivity(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
+        await refreshContextIfCurrent(repo)
     }
 
     func refreshCommitActivity(repo: Repo, isAuthenticated: Bool) async {
@@ -605,6 +612,7 @@ final class RepositoryInsightsViewModel {
             return
         }
         await loadCommitActivity(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
+        await refreshContextIfCurrent(repo)
     }
 
     func refreshContributors(repo: Repo, isAuthenticated: Bool) async {
@@ -614,6 +622,7 @@ final class RepositoryInsightsViewModel {
             return
         }
         await loadContributors(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
+        await refreshContextIfCurrent(repo)
     }
 
     func refreshCommunityProfile(repo: Repo, isAuthenticated: Bool) async {
@@ -623,6 +632,7 @@ final class RepositoryInsightsViewModel {
             return
         }
         await loadCommunityProfile(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
+        await refreshContextIfCurrent(repo)
     }
 
     func refreshRecentActivity(repo: Repo, isAuthenticated: Bool) async {
@@ -632,6 +642,12 @@ final class RepositoryInsightsViewModel {
             return
         }
         await loadRecentActivity(repo: repo, isAuthenticated: isAuthenticated, forceRefresh: true)
+        await refreshContextIfCurrent(repo)
+    }
+
+    private func refreshContextIfCurrent(_ repo: Repo) async {
+        guard activeRepoID == repo.id else { return }
+        await contextRefreshHandler?(repo)
     }
 
     /// 底栏全局入口：并行强制刷新各远端区块；不碰分区 Sync，也不清空已上屏内容。

@@ -105,6 +105,8 @@ struct RepositoryInsightsView: View {
     let viewModel: RepositoryInsightsViewModel
     let starHistoryViewModel: StarHistoryViewModel
     let onScrollReport: (RepoDetailScrollReport) -> Void
+    /// Star 历史由独立 ViewModel 刷新，完成后单独通知共享 XML Coordinator。
+    let onStarHistoryChanged: @MainActor @Sendable (Repo) async -> Void
 
     @State private var selectedStarDate: Date?
     /// Commit 柱图悬停选中的周序号（分类轴 index），与柱一一对应。
@@ -142,12 +144,15 @@ struct RepositoryInsightsView: View {
         repo: Repo,
         viewModel: RepositoryInsightsViewModel,
         starHistoryViewModel: StarHistoryViewModel,
-        onScrollReport: @escaping (RepoDetailScrollReport) -> Void
+        onScrollReport: @escaping (RepoDetailScrollReport) -> Void,
+        onStarHistoryChanged:
+            @escaping @MainActor @Sendable (Repo) async -> Void = { _ in }
     ) {
         self.repo = repo
         self.viewModel = viewModel
         self.starHistoryViewModel = starHistoryViewModel
         self.onScrollReport = onScrollReport
+        self.onStarHistoryChanged = onStarHistoryChanged
     }
 
     var body: some View {
@@ -265,6 +270,7 @@ struct RepositoryInsightsView: View {
         // 远端区块已返回后仍保持 isRefreshingAll，直到 Star 也结束，避免全局图标先停、Star 还在转。
         defer { viewModel.finishGlobalRefresh() }
         await starHistoryViewModel.refresh(repo: repo)
+        await onStarHistoryChanged(repo)
     }
 
     private var localOverviewSection: some View {
@@ -1012,6 +1018,7 @@ struct RepositoryInsightsView: View {
         ) {
             Task {
                 await starHistoryViewModel.refresh(repo: repo)
+                await onStarHistoryChanged(repo)
             }
         }
     }

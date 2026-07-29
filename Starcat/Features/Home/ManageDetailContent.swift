@@ -200,7 +200,13 @@ struct ManageDetailContent: View {
                     repo: repo,
                     viewModel: repositoryInsightsViewModel,
                     starHistoryViewModel: starHistoryViewModel,
-                    onScrollReport: onScrollReport
+                    onScrollReport: onScrollReport,
+                    onStarHistoryChanged: { repo in
+                        _ = await dependencies.repositoryInsightsContextCoordinator.prepareArtifact(
+                            for: repo,
+                            mode: .refreshIfNeeded
+                        )
+                    }
                 )
             } else {
                 // ViewModel 在同一个 task 的下一阶段立即注入。这里保持内容区域稳定即可，
@@ -256,7 +262,13 @@ struct ManageDetailContent: View {
                 database: dependencies.database
             ),
             // AI 摘要 / 对话也消费这一进程级 Provider；缓存与正在刷新的请求都只保留一份。
-            remoteProvider: dependencies.repositoryRemoteInsightsProvider
+            remoteProvider: dependencies.repositoryRemoteInsightsProvider,
+            contextRefreshHandler: { repo in
+                _ = await dependencies.repositoryInsightsContextCoordinator.prepareArtifact(
+                    for: repo,
+                    mode: .refreshIfNeeded
+                )
+            }
         )
     }
 

@@ -45,6 +45,31 @@ struct RepositoryInsightsViewModelTests {
         #expect(RepositoryReleaseCadenceInsight.make(releases: [], now: now) == nil)
     }
 
+    @Test("页面加载与单面板刷新完成后更新共享洞察 XML")
+    func loadAndManualRefreshNotifyContextCoordinator() async {
+        let counter = RepositoryInsightsCallCounter()
+        let provider = StubRepositoryLocalInsightsProvider(
+            release: { _ in nil },
+            cadence: { _ in nil },
+            health: { _ in nil },
+            openSSF: { _ in nil },
+            community: { _ in nil }
+        )
+        let viewModel = RepositoryInsightsViewModel(
+            provider: provider,
+            contextRefreshHandler: { _ in
+                await counter.increment()
+            }
+        )
+        var repo = Repo.makeMinimal(owner: "octo", name: "artifact")
+        repo.id = 9_001
+
+        await viewModel.load(repo: repo, isAuthenticated: false)
+        await viewModel.refreshActivity(repo: repo, isAuthenticated: false)
+
+        #expect(await counter.value() == 2)
+    }
+
     @Test("发布节奏优先使用本地历史且不请求远端")
     func releaseCadencePrefersLocalHistory() async {
         let cadence = RepositoryReleaseCadenceInsight(
