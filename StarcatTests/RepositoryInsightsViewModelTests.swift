@@ -15,7 +15,8 @@ struct RepositoryInsightsViewModelTests {
 
     @Test("发布节奏按本地 Release 时间计算近一年数量与平均间隔")
     func releaseCadenceDerivesFromLocalReleaseHistory() {
-        let now = ISO8601DateFormatter.shared.date(from: "2026-07-28T00:00:00Z")!
+        // 固定 Unix 时间，让节奏边界测试不依赖字符串解析实现。
+        let now = Date(timeIntervalSince1970: 1_785_196_800)
         let releases = [
             RepositoryReleaseInsight(
                 tagName: "v3",
@@ -42,6 +43,109 @@ struct RepositoryInsightsViewModelTests {
         #expect(cadence?.averageIntervalDays == 195)
         #expect(cadence?.latestPublishedAt == releases[0].publishedAt)
         #expect(RepositoryReleaseCadenceInsight.make(releases: [], now: now) == nil)
+    }
+
+    @Test("发布节奏优先使用本地历史且不请求远端")
+    func releaseCadencePrefersLocalHistory() async {
+        let cadence = RepositoryReleaseCadenceInsight(
+            releasesLastYear: 3,
+            averageIntervalDays: 14,
+            latestPublishedAt: Date(timeIntervalSince1970: 3_000)
+        )
+        let counter = RepositoryInsightsCallCounter()
+        let localProvider = StubRepositoryLocalInsightsProvider(
+            release: { _ in nil },
+            cadence: { _ in cadence },
+            health: { _ in nil },
+            openSSF: { _ in nil },
+            community: { _ in nil }
+        )
+        let remoteProvider = StubRepositoryRemoteInsightsProvider(
+            cachedHandler: { _, _ in nil },
+            refreshHandler: { _, _ in throw StubError.failed },
+            cachedReleaseCadenceHandler: { _ in
+                await counter.increment()
+                return nil
+            }
+        )
+        let viewModel = RepositoryInsightsViewModel(
+            provider: localProvider,
+            remoteProvider: remoteProvider
+        )
+
+        await viewModel.load(repo: fixtureRepo(id: 2), isAuthenticated: true)
+
+        #expect(viewModel.releaseCadenceState == .content(cadence))
+        #expect(await counter.value() == 0)
+    }
+
+    @Test("本地发布节奏缺失时优先展示新鲜远端缓存")
+    func releaseCadenceUsesFreshRemoteCache() async {
+        let cadence = RepositoryReleaseCadenceInsight(
+            releasesLastYear: 5,
+            averageIntervalDays: 21,
+            latestPublishedAt: Date(timeIntervalSince1970: 4_000)
+        )
+        let refreshCounter = RepositoryInsightsCallCounter()
+        let remoteProvider = StubRepositoryRemoteInsightsProvider(
+            cachedHandler: { _, _ in nil },
+            refreshHandler: { _, _ in throw StubError.failed },
+            cachedReleaseCadenceHandler: { _ in
+                RepositoryCachedReleaseCadenceInsight(
+                    value: cadence,
+                    fetchedAt: Date(timeIntervalSince1970: 4_100),
+                    isStale: false,
+                    responseETag: "\"cadence\""
+                )
+            },
+            refreshReleaseCadenceHandler: { _ in
+                await refreshCounter.increment()
+                return nil
+            }
+        )
+        let viewModel = RepositoryInsightsViewModel(
+            provider: emptyLocalProvider(),
+            remoteProvider: remoteProvider
+        )
+
+        await viewModel.load(repo: fixtureRepo(id: 3), isAuthenticated: true)
+
+        #expect(viewModel.releaseCadenceState == .content(cadence))
+        #expect(await refreshCounter.value() == 0)
+    }
+
+    @Test("发布节奏区分无 Release 未登录与加载失败")
+    func releaseCadenceDistinguishesEmptyUnavailableAndFailed() async {
+        let emptyRemoteProvider = StubRepositoryRemoteInsightsProvider(
+            cachedHandler: { _, _ in nil },
+            refreshHandler: { _, _ in throw StubError.failed },
+            refreshReleaseCadenceHandler: { _ in nil }
+        )
+        let emptyViewModel = RepositoryInsightsViewModel(
+            provider: emptyLocalProvider(),
+            remoteProvider: emptyRemoteProvider
+        )
+        await emptyViewModel.load(repo: fixtureRepo(id: 4), isAuthenticated: true)
+        #expect(emptyViewModel.releaseCadenceState == .empty)
+
+        let unavailableViewModel = RepositoryInsightsViewModel(
+            provider: emptyLocalProvider(),
+            remoteProvider: emptyRemoteProvider
+        )
+        await unavailableViewModel.load(repo: fixtureRepo(id: 5), isAuthenticated: false)
+        #expect(unavailableViewModel.releaseCadenceState == .unavailable)
+
+        let failedRemoteProvider = StubRepositoryRemoteInsightsProvider(
+            cachedHandler: { _, _ in nil },
+            refreshHandler: { _, _ in throw StubError.failed },
+            refreshReleaseCadenceHandler: { _ in throw StubError.failed }
+        )
+        let failedViewModel = RepositoryInsightsViewModel(
+            provider: emptyLocalProvider(),
+            remoteProvider: failedRemoteProvider
+        )
+        await failedViewModel.load(repo: fixtureRepo(id: 6), isAuthenticated: true)
+        #expect(failedViewModel.releaseCadenceState == .failed)
     }
 
     @Test("安全公告派生高风险数量与最近发布日期")
@@ -549,7 +653,17 @@ struct RepositoryInsightsViewModelTests {
             ],
             generatedAt: generatedAt.addingTimeInterval(30)
         )
-        let refreshGate = RepositoryInsightsRefreshGate(expectedCount: 6)
+        let releaseCadence = RepositoryReleaseCadenceInsight(
+            releasesLastYear: 2,
+            averageIntervalDays: 30,
+            latestPublishedAt: generatedAt
+        )
+        let refreshedReleaseCadence = RepositoryReleaseCadenceInsight(
+            releasesLastYear: 3,
+            averageIntervalDays: 20,
+            latestPublishedAt: generatedAt.addingTimeInterval(30)
+        )
+        let refreshGate = RepositoryInsightsRefreshGate(expectedCount: 7)
         let remoteProvider = StubRepositoryRemoteInsightsProvider(
             cachedHandler: { _, _ in
                 RepositoryCachedActivityCounts(
@@ -595,6 +709,18 @@ struct RepositoryInsightsViewModelTests {
                 await refreshGate.block()
                 return refreshedCommunity
             },
+            cachedReleaseCadenceHandler: { _ in
+                RepositoryCachedReleaseCadenceInsight(
+                    value: releaseCadence,
+                    fetchedAt: generatedAt,
+                    isStale: false,
+                    responseETag: "\"release-cadence\""
+                )
+            },
+            refreshReleaseCadenceHandler: { _ in
+                await refreshGate.block()
+                return refreshedReleaseCadence
+            },
             cachedSecurityAdvisoriesHandler: { _ in
                 RepositoryCachedSecurityAdvisoriesInsight(
                     value: securityAdvisories,
@@ -637,6 +763,7 @@ struct RepositoryInsightsViewModelTests {
         #expect(viewModel.commitActivityState == .content(commitActivity))
         #expect(viewModel.contributorsState == .content(contributors))
         #expect(viewModel.remoteCommunityState == .content(community))
+        #expect(viewModel.releaseCadenceState == .content(releaseCadence))
         #expect(viewModel.securityAdvisoriesState == .content(securityAdvisories))
         #expect(viewModel.recentActivityState == .content(recentActivity))
 
@@ -648,6 +775,7 @@ struct RepositoryInsightsViewModelTests {
         #expect(viewModel.commitActivityState == .content(refreshedCommitActivity))
         #expect(viewModel.contributorsState == .content(refreshedContributors))
         #expect(viewModel.remoteCommunityState == .content(refreshedCommunity))
+        #expect(viewModel.releaseCadenceState == .content(refreshedReleaseCadence))
         #expect(viewModel.securityAdvisoriesState == .content(refreshedSecurityAdvisories))
         #expect(viewModel.recentActivityState == .content(refreshedRecentActivity))
     }
@@ -897,7 +1025,8 @@ struct RepositoryInsightsViewModelTests {
             insightsCache: cache,
             database: database,
             now: {
-                ISO8601DateFormatter.shared.date(from: "2026-07-28T00:00:00Z")!
+                // 固定 Unix 时间，让数据源映射测试只验证业务结果。
+                Date(timeIntervalSince1970: 1_785_196_800)
             }
         )
 
@@ -942,10 +1071,7 @@ struct RepositoryInsightsViewModelTests {
         #expect(release.name == "Stable")
         #expect(cadence.releasesLastYear == 2)
         #expect(cadence.averageIntervalDays == 30)
-        #expect(
-            cadence.latestPublishedAt
-                == ISO8601DateFormatter.shared.date(from: "2026-07-20T00:00:00Z")
-        )
+        #expect(cadence.latestPublishedAt == Date(timeIntervalSince1970: 1_784_505_600))
         #expect(health.overallScore == 88)
         #expect(health.maintenanceScore == 90)
         #expect(openSSF == RepositoryOpenSSFInsight(score: 8.7, scoreDate: "2026-07-27"))
@@ -1295,6 +1421,14 @@ private struct StubRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsPro
     ) async throws -> RepositoryCommunityInsight = { _ in
         throw StubError.failed
     }
+    var cachedReleaseCadenceHandler: @Sendable (
+        Int64
+    ) async throws -> RepositoryCachedReleaseCadenceInsight? = { _ in nil }
+    var refreshReleaseCadenceHandler: @Sendable (
+        RepoIdentity
+    ) async throws -> RepositoryReleaseCadenceInsight? = { _ in
+        throw StubError.failed
+    }
     var cachedSecurityAdvisoriesHandler: @Sendable (
         Int64
     ) async throws -> RepositoryCachedSecurityAdvisoriesInsight? = { _ in nil }
@@ -1348,6 +1482,16 @@ private struct StubRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsPro
 
     func refreshCommunityProfile(repository: RepoIdentity) async throws -> RepositoryCommunityInsight {
         try await refreshCommunityHandler(repository)
+    }
+
+    func cachedReleaseCadence(repoID: Int64) async throws
+        -> RepositoryCachedReleaseCadenceInsight? {
+        try await cachedReleaseCadenceHandler(repoID)
+    }
+
+    func refreshReleaseCadence(repository: RepoIdentity) async throws
+        -> RepositoryReleaseCadenceInsight? {
+        try await refreshReleaseCadenceHandler(repository)
     }
 
     func cachedSecurityAdvisories(repoID: Int64) async throws

@@ -1893,14 +1893,19 @@ struct RepositoryInsightsView: View {
                 }
             case .loading, .idle:
                 sectionLoadingPlaceholder
-            case .empty, .unavailable:
+            case .empty:
                 compactEmptyState(
-                    "insights.repo.state.noData",
+                    "insights.repo.releaseCadence.empty",
                     systemImage: "tag.slash"
+                )
+            case .unavailable:
+                compactEmptyState(
+                    "insights.repo.releaseCadence.authenticationRequired",
+                    systemImage: "person.crop.circle.badge.exclamationmark"
                 )
             case .failed:
                 compactEmptyState(
-                    "error.loadFailed",
+                    "insights.repo.releaseCadence.loadFailed",
                     systemImage: "exclamationmark.triangle"
                 )
             }

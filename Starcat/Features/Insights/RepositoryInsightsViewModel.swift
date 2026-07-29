@@ -378,7 +378,8 @@ struct DefaultRepositoryLocalInsightsProvider: RepositoryLocalInsightsProviding,
         RepositoryReleaseInsight(
             tagName: record.tagName,
             name: record.name,
-            publishedAt: record.publishedAt.flatMap(ISO8601DateFormatter.shared.date(from:)),
+            // GitHub 时间可能带或不带毫秒；统一走双格式解析，避免 Release 存在但节奏日期全丢失。
+            publishedAt: ISO8601DateFormatter.githubDate(from: record.publishedAt),
             htmlURL: URL(string: record.htmlUrl)
         )
     }
@@ -427,12 +428,15 @@ final class RepositoryInsightsViewModel {
     private let now: @Sendable () -> Date
     private var lastManualRefreshAt: [ManualRefreshKey: Date] = [:]
     private var generation: UInt64 = 0
+    private var releaseCadenceGeneration: UInt64 = 0
     private var activityGeneration: UInt64 = 0
     private var commitGeneration: UInt64 = 0
     private var contributorGeneration: UInt64 = 0
     private var communityGeneration: UInt64 = 0
     private var securityGeneration: UInt64 = 0
     private var timelineGeneration: UInt64 = 0
+    /// 本地 Release 订阅历史是更完整的数据源；只有它没有内容时才允许 GitHub 回退接管。
+    private var hasLocalReleaseCadence = false
 
     private(set) var activeRepoID: Int64?
     private(set) var releaseState: RepositoryInsightsSectionState<RepositoryReleaseInsight> = .idle
@@ -498,6 +502,11 @@ final class RepositoryInsightsViewModel {
             return requestedGeneration
         }
         releaseState = sectionState(from: snapshot.release)
+        if case .value(let cadence) = snapshot.releaseCadence {
+            hasLocalReleaseCadence = cadence != nil
+        } else {
+            hasLocalReleaseCadence = false
+        }
         releaseCadenceState = sectionState(from: snapshot.releaseCadence)
         healthState = sectionState(from: snapshot.health)
         openSSFState = sectionState(from: snapshot.openSSF)
@@ -514,6 +523,11 @@ final class RepositoryInsightsViewModel {
             return
         }
         async let activityLoad: Void = loadActivity(
+            repo: repo,
+            isAuthenticated: isAuthenticated,
+            forceRefresh: false
+        )
+        async let releaseCadenceLoad: Void = loadReleaseCadenceFallback(
             repo: repo,
             isAuthenticated: isAuthenticated,
             forceRefresh: false
@@ -545,6 +559,7 @@ final class RepositoryInsightsViewModel {
         )
         _ = await (
             activityLoad,
+            releaseCadenceLoad,
             commitLoad,
             contributorLoad,
             communityLoad,
@@ -610,7 +625,7 @@ final class RepositoryInsightsViewModel {
     }
 
     /// 底栏全局入口：并行强制刷新各远端区块；不碰分区 Sync，也不清空已上屏内容。
-    /// 本地 Release / Health / OpenSSF 仍读库缓存，本页无对应出站刷新通道。
+    /// Release 节奏仅在本地历史缺失时刷新 GitHub 回退；Health / OpenSSF 仍只读本地缓存。
     func refreshAll(repo: Repo, isAuthenticated: Bool) async {
         guard !isRefreshingAll,
               reserveManualRefresh(.all, repoID: repo.id)
@@ -619,6 +634,11 @@ final class RepositoryInsightsViewModel {
         defer { isRefreshingAll = false }
 
         async let activityLoad: Void = loadActivity(
+            repo: repo,
+            isAuthenticated: isAuthenticated,
+            forceRefresh: true
+        )
+        async let releaseCadenceLoad: Void = loadReleaseCadenceFallback(
             repo: repo,
             isAuthenticated: isAuthenticated,
             forceRefresh: true
@@ -650,6 +670,7 @@ final class RepositoryInsightsViewModel {
         )
         _ = await (
             activityLoad,
+            releaseCadenceLoad,
             commitLoad,
             contributorLoad,
             communityLoad,
@@ -681,10 +702,12 @@ final class RepositoryInsightsViewModel {
         cancelRemoteLoading()
         lastManualRefreshAt.removeAll(keepingCapacity: true)
         activeRepoID = nil
+        hasLocalReleaseCadence = false
     }
 
     /// README 模式不保活远端刷新。generation 让已经返回的旧结果无法再写 UI。
     func cancelRemoteLoading() {
+        releaseCadenceGeneration &+= 1
         activityGeneration &+= 1
         commitGeneration &+= 1
         contributorGeneration &+= 1
@@ -697,6 +720,102 @@ final class RepositoryInsightsViewModel {
         isRefreshingCommunity = false
         isRefreshingRecentActivity = false
         isRefreshingAll = false
+    }
+
+    /// 本地 Release 订阅历史为空时才使用 GitHub 最近 12 次 Release。
+    ///
+    /// 初次进入先显示稳定占位，缓存命中后立即上屏；手动刷新则始终保留旧内容，直到新值
+    /// 返回。独立 generation 防止快速切换仓库后，旧请求把另一仓库的节奏写回当前页面。
+    private func loadReleaseCadenceFallback(
+        repo: Repo,
+        isAuthenticated: Bool,
+        forceRefresh: Bool
+    ) async {
+        guard !hasLocalReleaseCadence else { return }
+
+        releaseCadenceGeneration &+= 1
+        let requestedGeneration = releaseCadenceGeneration
+        let retainedValue: RepositoryReleaseCadenceInsight?
+        if case .content(let cadence) = releaseCadenceState {
+            retainedValue = cadence
+        } else {
+            retainedValue = nil
+        }
+        if !forceRefresh {
+            releaseCadenceState = .loading
+        }
+
+        guard isAuthenticated, let remoteProvider else {
+            releaseCadenceState = retainedValue.map(RepositoryInsightsSectionState.content)
+                ?? .unavailable
+            return
+        }
+
+        let cached: RepositoryCachedReleaseCadenceInsight?
+        do {
+            cached = try await remoteProvider.cachedReleaseCadence(repoID: repo.id)
+        } catch {
+            guard ownsReleaseCadenceResult(
+                generation: requestedGeneration,
+                repoID: repo.id
+            ) else { return }
+            releaseCadenceState = retainedValue.map(RepositoryInsightsSectionState.content)
+                ?? .failed
+            return
+        }
+        guard ownsReleaseCadenceResult(
+            generation: requestedGeneration,
+            repoID: repo.id
+        ) else { return }
+
+        if let cached {
+            if !forceRefresh {
+                releaseCadenceState = cached.value.map(RepositoryInsightsSectionState.content)
+                    ?? .empty
+            }
+            if !cached.isStale, !forceRefresh {
+                return
+            }
+        }
+
+        let fallbackValue = retainedValue ?? cached?.value
+        do {
+            let fresh = try await remoteProvider.refreshReleaseCadence(
+                repository: repoIdentity(for: repo),
+                ifNoneMatch: cached?.responseETag
+            )
+            guard ownsReleaseCadenceResult(
+                generation: requestedGeneration,
+                repoID: repo.id
+            ) else { return }
+            releaseCadenceState = fresh.map(RepositoryInsightsSectionState.content) ?? .empty
+        } catch let error as GitHubRepositoryMetricsError {
+            guard ownsReleaseCadenceResult(
+                generation: requestedGeneration,
+                repoID: repo.id
+            ) else { return }
+            if let fallbackValue {
+                releaseCadenceState = .content(fallbackValue)
+            } else {
+                switch error {
+                case .unauthorized, .forbidden:
+                    releaseCadenceState = .unavailable
+                default:
+                    releaseCadenceState = cached == nil ? .failed : .empty
+                }
+            }
+        } catch {
+            guard ownsReleaseCadenceResult(
+                generation: requestedGeneration,
+                repoID: repo.id
+            ) else { return }
+            releaseCadenceState = fallbackValue.map(RepositoryInsightsSectionState.content)
+                ?? (cached == nil ? .failed : .empty)
+        }
+    }
+
+    private func ownsReleaseCadenceResult(generation: UInt64, repoID: Int64) -> Bool {
+        releaseCadenceGeneration == generation && activeRepoID == repoID
     }
 
     private func loadActivity(
