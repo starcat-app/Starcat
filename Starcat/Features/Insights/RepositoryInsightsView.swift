@@ -814,6 +814,13 @@ struct RepositoryInsightsView: View {
                     dashed: true
                 )
             }
+            if displayedStarPoints.contains(where: { $0.precision == .reconstructed }) {
+                starSourceChip(
+                    title: "insights.repo.star.source.name.githubStargazers",
+                    systemImage: "person.2.fill",
+                    dashed: true
+                )
+            }
             if displayedStarPoints.contains(where: { $0.precision == .snapshot }) {
                 starSourceChip(
                     title: "insights.repo.star.source.snapshot",
@@ -865,6 +872,10 @@ struct RepositoryInsightsView: View {
 
     private var estimatedStarPoints: [StarHistoryPoint] {
         displayedStarPoints.filter { $0.precision == .estimated }
+    }
+
+    private var reconstructedStarPoints: [StarHistoryPoint] {
+        displayedStarPoints.filter { $0.precision == .reconstructed }
     }
 
     private var preciseStarPoints: [StarHistoryPoint] {
@@ -997,6 +1008,18 @@ struct RepositoryInsightsView: View {
                 )
                 .foregroundStyle(Color.blue.opacity(0.72))
                 .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, dash: [5, 4]))
+                .interpolationMethod(.catmullRom)
+            }
+
+            ForEach(reconstructedStarPoints) { point in
+                LineMark(
+                    x: .value("Date", point.date),
+                    y: .value("Stars", point.count),
+                    series: .value("Source", "GitHub Stargazers")
+                )
+                .foregroundStyle(Color.blue.opacity(0.8))
+                // 虚线提示这是按当前 Stargazers 重建的曲线，不等同完整历史事件流。
+                .lineStyle(StrokeStyle(lineWidth: 2, dash: [6, 3]))
                 .interpolationMethod(.catmullRom)
             }
 
