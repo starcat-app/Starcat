@@ -319632,6 +319632,232 @@
         }
       }
     },
+    "settings.integration.alfred.install" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get Workflow"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "获取 Workflow"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取得 Workflow"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Workflow を入手"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Workflow 받기"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Workflow laden"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Obtenir le workflow"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Obtener Workflow"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Obter Workflow"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ottieni Workflow"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Получить Workflow"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Workflow ophalen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pobierz Workflow"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отримати Workflow"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Workflow'u Al"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tải Workflow"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dapatkan Workflow"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الحصول على Workflow"
+          }
+        }
+      }
+    },
+    "settings.integration.alfred.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search Starcat local repositories and GitHub from Alfred. Local results open in Starcat; other results open on GitHub. Requires Starcat Pro, MCP Service, and Starcat CLI."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Alfred 中搜索 Starcat 本地仓库和 GitHub。本地结果在 Starcat 中打开，其余结果在 GitHub 中打开。需要 Starcat Pro、MCP Service 和 Starcat CLI。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Alfred 中搜尋 Starcat 本機儲存庫和 GitHub。本機結果在 Starcat 中開啟，其餘結果在 GitHub 中開啟。需要 Starcat Pro、MCP Service 和 Starcat CLI。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alfred から Starcat のローカルリポジトリと GitHub を検索します。ローカル結果は Starcat、その他は GitHub で開きます。Starcat Pro、MCP Service、Starcat CLI が必要です。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alfred에서 Starcat 로컬 저장소와 GitHub를 검색합니다. 로컬 결과는 Starcat에서, 나머지는 GitHub에서 엽니다. Starcat Pro, MCP Service 및 Starcat CLI가 필요합니다."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Durchsuchen Sie lokale Starcat-Repositories und GitHub mit Alfred. Lokale Treffer werden in Starcat geöffnet, andere auf GitHub. Erfordert Starcat Pro, MCP Service und Starcat CLI."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recherchez les dépôts locaux Starcat et GitHub depuis Alfred. Les résultats locaux s’ouvrent dans Starcat, les autres sur GitHub. Nécessite Starcat Pro, MCP Service et Starcat CLI."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Busca repositorios locales de Starcat y GitHub desde Alfred. Los resultados locales se abren en Starcat y los demás en GitHub. Requiere Starcat Pro, MCP Service y Starcat CLI."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pesquise repositórios locais do Starcat e o GitHub pelo Alfred. Resultados locais abrem no Starcat; os demais, no GitHub. Requer Starcat Pro, MCP Service e Starcat CLI."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerca repository locali di Starcat e GitHub da Alfred. I risultati locali si aprono in Starcat, gli altri su GitHub. Richiede Starcat Pro, MCP Service e Starcat CLI."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ищите локальные репозитории Starcat и GitHub через Alfred. Локальные результаты открываются в Starcat, остальные — на GitHub. Требуются Starcat Pro, MCP Service и Starcat CLI."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Doorzoek lokale Starcat-repository's en GitHub vanuit Alfred. Lokale resultaten openen in Starcat, andere op GitHub. Vereist Starcat Pro, MCP Service en Starcat CLI."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Przeszukuj lokalne repozytoria Starcat i GitHub z Alfreda. Lokalne wyniki otwierają się w Starcat, pozostałe w GitHub. Wymaga Starcat Pro, MCP Service i Starcat CLI."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Шукайте локальні репозиторії Starcat і GitHub через Alfred. Локальні результати відкриваються у Starcat, інші — на GitHub. Потрібні Starcat Pro, MCP Service і Starcat CLI."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alfred üzerinden Starcat yerel depolarını ve GitHub'ı arayın. Yerel sonuçlar Starcat'te, diğerleri GitHub'da açılır. Starcat Pro, MCP Service ve Starcat CLI gerekir."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tìm kho lưu trữ cục bộ của Starcat và GitHub từ Alfred. Kết quả cục bộ mở trong Starcat, các kết quả khác mở trên GitHub. Yêu cầu Starcat Pro, MCP Service và Starcat CLI."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cari repositori lokal Starcat dan GitHub dari Alfred. Hasil lokal dibuka di Starcat, hasil lain di GitHub. Memerlukan Starcat Pro, MCP Service, dan Starcat CLI."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ابحث في مستودعات Starcat المحلية وGitHub من Alfred. تُفتح النتائج المحلية في Starcat والنتائج الأخرى على GitHub. يتطلب Starcat Pro وMCP Service وStarcat CLI."
+          }
+        }
+      }
+    },
     "settings.integration.browserPlugin.subtitle" : {
       "extractionState" : "manual",
       "localizations" : {

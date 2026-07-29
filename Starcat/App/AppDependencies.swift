@@ -1000,6 +1000,18 @@ final class AppDependencies {
             entitlementGate: self.entitlementGate
         )
 
+        // Alfred 等外部启动器复用与 Search Center 相同的两个 Provider。服务保持长生命周期，
+        // 这样 GitHub Provider 的 5 分钟会话缓存不会因每次 MCP 调用重建而失效。
+        let globalRepositorySearchService = GlobalRepositorySearchService(
+            localProvider: LocalKeywordSearchProvider(
+                repository: repo,
+                noteRepository: self.repoNoteRepository
+            ),
+            githubProvider: GitHubRepositorySearchProvider(
+                client: api,
+                noteRepository: self.repoNoteRepository
+            )
+        )
         let mcpFacade = StarcatMCPFacade(
             repoRepository: repo,
             readmeRepository: readmeRepo,
@@ -1008,6 +1020,7 @@ final class AppDependencies {
             repoNoteRepository: self.repoNoteRepository,
             semanticSearchService: semantic,
             repoAIInsightService: aiInsight,
+            globalRepositorySearchService: globalRepositorySearchService,
             database: db,
             aiUsageRepository: self.aiUsageRepository,
             knowledgeBaseMetadataSnapshotCache: knowledgeBaseMetadataSnapshotCache,

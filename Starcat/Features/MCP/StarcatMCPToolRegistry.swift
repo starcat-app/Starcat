@@ -118,6 +118,24 @@ final class StarcatMCPToolRegistry {
                 annotations: .init(readOnlyHint: true, openWorldHint: false)
             ),
             Tool(
+                name: "starcat.global_search_repos",
+                title: "Search local and GitHub repositories",
+                description: "Search Starcat local repositories and GitHub in one request. Results preserve source labels, prefer local metadata, and include safe open URLs for external launchers.",
+                inputSchema: Self.objectSchema([
+                    "query": Self.stringSchema("Required repository keyword query, 1 to 200 characters."),
+                    "limit": Self.integerSchema(
+                        "Maximum number of deduplicated repositories to return.",
+                        defaultValue: 30,
+                        minimum: 1,
+                        maximum: 50
+                    ),
+                    "sources": Self.stringArraySchema(
+                        "Optional search sources. Supported values: local, github. Defaults to both."
+                    )
+                ], required: ["query"]),
+                annotations: .init(readOnlyHint: true, openWorldHint: true)
+            ),
+            Tool(
                 name: "starcat.semantic_search",
                 title: "Semantic search Starcat repositories",
                 description: "Use Starcat's local embedding index and configured BYOK provider to semantically search repositories.",
@@ -288,6 +306,19 @@ final class StarcatMCPToolRegistry {
                 let value = try await facade.searchRepos(query: query, limit: limit, scope: scope)
                 return try Self.result(value)
 
+            case "starcat.global_search_repos":
+                guard let query = params.arguments?["query"]?.stringValue else {
+                    throw StarcatMCPError.invalidArguments("Missing required argument: query")
+                }
+                let limit = params.arguments?["limit"]?.intValue ?? 30
+                let sources = try Self.globalSearchSources(from: params.arguments)
+                let value = try await facade.globalSearchRepos(
+                    query: query,
+                    limit: limit,
+                    sources: sources
+                )
+                return try Self.result(value)
+
             case "starcat.semantic_search":
                 guard let query = params.arguments?["query"]?.stringValue, !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                     throw StarcatMCPError.invalidArguments("Missing required argument: query")
@@ -412,14 +443,63 @@ final class StarcatMCPToolRegistry {
                 return try Self.result(value)
 
             default:
-                throw StarcatMCPError.invalidArguments("Unknown tool: \(params.name)")
+                throw StarcatMCPError.unsupported("Unknown tool: \(params.name)")
             }
         } catch {
-            return .init(
-                content: [.text(text: error.localizedDescription, annotations: nil, _meta: nil)],
-                isError: true
-            )
+            return Self.errorResult(error)
         }
+    }
+
+    /// 同时返回人类文本与稳定错误 code。
+    ///
+    /// MCP SDK 把 Tool 业务失败放在 `result.isError`，不是 JSON-RPC 顶层 error；
+    /// 因此机器可读 code 必须跟随 `structuredContent` 返回。构造失败时才退化为
+    /// 纯文本结果，避免错误处理自身让整次协议调用失败。
+    private static func errorResult(_ error: Error) -> CallTool.Result {
+        let message = error.localizedDescription
+        let payload = MCPToolErrorDTO(code: toolErrorCode(for: error), message: message)
+        return (try? .init(
+            content: [.text(text: message, annotations: nil, _meta: nil)],
+            structuredContent: payload,
+            isError: true
+        )) ?? .init(
+            content: [.text(text: message, annotations: nil, _meta: nil)],
+            isError: true
+        )
+    }
+
+    private static func toolErrorCode(for error: Error) -> String {
+        if let error = error as? StarcatMCPError {
+            switch error {
+            case .disabled:
+                return "MCP_DISABLED"
+            case .requiresPro:
+                return "REQUIRES_PRO"
+            case .unauthorized:
+                return "UNAUTHORIZED"
+            case .invalidArguments:
+                return "INVALID_ARGUMENTS"
+            case .notFound:
+                return "NOT_FOUND"
+            case .privateNotesDisabled:
+                return "PRIVATE_NOTES_DISABLED"
+            case .unsupported:
+                return "UPGRADE_REQUIRED"
+            }
+        }
+        if let error = error as? GlobalRepositorySearchError {
+            switch error {
+            case .noSources:
+                return "INVALID_ARGUMENTS"
+            case .allProvidersFailed:
+                return "SEARCH_FAILED"
+            }
+        }
+        if let entitlementError = error as? EntitlementGateError,
+           case .requiresPro = entitlementError {
+            return "REQUIRES_PRO"
+        }
+        return "INTERNAL_ERROR"
     }
 
     private static func result<T: Codable>(_ value: T) throws -> CallTool.Result {
@@ -465,6 +545,28 @@ final class StarcatMCPToolRegistry {
             "Repository scope. Defaults to starred.",
             enumValues: SemanticIndexScope.allCases.map(\.rawValue)
         )
+    }
+
+    private static func globalSearchSources(
+        from arguments: [String: Value]?
+    ) throws -> Set<GlobalRepositorySearchSource> {
+        guard let value = arguments?["sources"] else {
+            return Set(GlobalRepositorySearchSource.allCases)
+        }
+        guard let rawSources = value.arrayValue else {
+            throw StarcatMCPError.invalidArguments("sources must be an array of strings")
+        }
+        let strings = rawSources.compactMap(\.stringValue)
+        guard strings.count == rawSources.count, !strings.isEmpty else {
+            throw StarcatMCPError.invalidArguments(
+                "sources must contain at least one of: local, github"
+            )
+        }
+        let parsed = strings.compactMap(GlobalRepositorySearchSource.init(rawValue:))
+        guard parsed.count == strings.count else {
+            throw StarcatMCPError.invalidArguments("sources must only contain: local, github")
+        }
+        return Set(parsed)
     }
 
     private static func aiUsageFilter(from arguments: [String: Value]?) throws -> AIUsageFilter {

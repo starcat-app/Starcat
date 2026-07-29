@@ -21,6 +21,7 @@ final class StarcatMCPFacade {
     private let repoNoteRepository: any RepoNoteRepositoryProtocol
     private let semanticSearchService: SemanticSearchService
     private let repoAIInsightService: RepoAIInsightService
+    private let globalRepositorySearchService: GlobalRepositorySearchService?
     private let database: any DatabaseManaging
     private let aiUsageRepository: any AIUsageRepositoryProtocol
     private let knowledgeBaseMetadataSnapshotCache: KnowledgeBaseMetadataSnapshotCache
@@ -35,6 +36,7 @@ final class StarcatMCPFacade {
         repoNoteRepository: any RepoNoteRepositoryProtocol,
         semanticSearchService: SemanticSearchService,
         repoAIInsightService: RepoAIInsightService,
+        globalRepositorySearchService: GlobalRepositorySearchService? = nil,
         database: any DatabaseManaging,
         aiUsageRepository: any AIUsageRepositoryProtocol,
         knowledgeBaseMetadataSnapshotCache: KnowledgeBaseMetadataSnapshotCache,
@@ -48,6 +50,7 @@ final class StarcatMCPFacade {
         self.repoNoteRepository = repoNoteRepository
         self.semanticSearchService = semanticSearchService
         self.repoAIInsightService = repoAIInsightService
+        self.globalRepositorySearchService = globalRepositorySearchService
         self.database = database
         self.aiUsageRepository = aiUsageRepository
         self.knowledgeBaseMetadataSnapshotCache = knowledgeBaseMetadataSnapshotCache
@@ -61,10 +64,11 @@ final class StarcatMCPFacade {
     /// Skill 依赖“能连接就一定能生成摘要”这一隐式假设。
     func getCapabilities() -> MCPCapabilitiesDTO {
         MCPCapabilitiesDTO(
-            server_version: "0.3.0",
+            server_version: "0.4.0",
             loopback_only: !settings.mcpAllowRemoteConnections,
             private_notes_read: settings.mcpExposePrivateNotes,
             statistics_read: true,
+            global_repository_search: globalRepositorySearchService != nil,
             local_writes: settings.mcpAllowLocalWrites,
             batch_writes: settings.mcpAllowLocalWrites && settings.mcpAllowBatchWrites,
             destructive_writes: settings.mcpAllowLocalWrites && settings.mcpAllowDestructiveWrites,
@@ -128,6 +132,35 @@ final class StarcatMCPFacade {
             limit: sanitizedLimit,
             repos: clipped
         )
+    }
+
+    /// 复用 Search Center 的 Local FTS 与 GitHub Provider，为 CLI/Alfred 输出稳定契约。
+    func globalSearchRepos(
+        query: String,
+        limit: Int,
+        sources: Set<GlobalRepositorySearchSource>
+    ) async throws -> MCPGlobalRepositorySearchResult {
+        guard (1...50).contains(limit) else {
+            throw StarcatMCPError.invalidArguments("limit must be between 1 and 50")
+        }
+        guard let globalRepositorySearchService else {
+            throw StarcatMCPError.unsupported(
+                "Global repository search is unavailable. Upgrade Starcat and try again."
+            )
+        }
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw StarcatMCPError.invalidArguments("query must not be empty")
+        }
+        guard trimmed.count <= 200 else {
+            throw StarcatMCPError.invalidArguments("query must contain no more than 200 characters")
+        }
+        let snapshot = try await globalRepositorySearchService.search(
+            query: trimmed,
+            limit: limit,
+            sources: sources
+        )
+        return MCPGlobalRepositorySearchResult(snapshot: snapshot)
     }
 
     func semanticSearch(query: String, limit: Int, scope: SemanticIndexScope = .starred) async throws -> MCPSemanticSearchResult {
@@ -378,6 +411,7 @@ enum StarcatMCPError: Error, LocalizedError, Equatable {
     case invalidArguments(String)
     case notFound(String)
     case privateNotesDisabled
+    case unsupported(String)
 
     var errorDescription: String? {
         switch self {
@@ -387,7 +421,7 @@ enum StarcatMCPError: Error, LocalizedError, Equatable {
             return "Starcat MCP Service requires Starcat Pro."
         case .unauthorized:
             return "Missing or invalid Starcat Local API Key."
-        case .invalidArguments(let message), .notFound(let message):
+        case .invalidArguments(let message), .notFound(let message), .unsupported(let message):
             return message
         case .privateNotesDisabled:
             return "Private notes are not exposed to MCP. Enable this in Starcat Settings first."

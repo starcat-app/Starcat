@@ -92,6 +92,21 @@ struct RepositoryDeepLink: Equatable, Hashable, Sendable {
         return components.url!
     }
 
+    /// App 内打开使用的私有 scheme。Alfred 等本机外部集成只应从这个已校验模型
+    /// 构造 URL，不能自行拼接 owner/name 后交给系统执行。
+    var appURL: URL {
+        var components = URLComponents()
+        components.scheme = "starcat"
+        components.host = "repo"
+        components.path = "/\(owner)/\(name)"
+        var queryItems = [URLQueryItem(name: "v", value: "1")]
+        if let repositoryID {
+            queryItems.append(URLQueryItem(name: "rid", value: String(repositoryID)))
+        }
+        components.queryItems = queryItems
+        return components.url!
+    }
+
     /// 版本参数存在时只接受当前 v=1，避免错误解释未来协议；没有 rid 的旧链接
     /// 仍然有效，并回退到 owner/name 定位。
     private static func parseQuery(from url: URL) -> (isValid: Bool, repositoryID: Int64?) {

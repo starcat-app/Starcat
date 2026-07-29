@@ -16,6 +16,7 @@ struct RepositoryDeepLinkTests {
     func buildsPublicURL() throws {
         let link = try #require(RepositoryDeepLink(owner: "swiftlang", name: "swift", repositoryID: 44838949))
         #expect(link.publicURL.absoluteString == "https://starcat.ink/r/swiftlang/swift?v=1&rid=44838949")
+        #expect(link.appURL.absoluteString == "starcat://repo/swiftlang/swift?v=1&rid=44838949")
     }
 
     @Test("解析 Universal Link 与内部 custom scheme")

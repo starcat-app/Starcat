@@ -33,7 +33,7 @@ struct StarcatMCPRuntimeTests {
         let list = await runtime.handle(Self.request(id: 2, method: "tools/list"))
         let listJSON = try Self.jsonObject(from: list)
         let tools = try #require((listJSON["result"] as? [String: Any])?["tools"] as? [[String: Any]])
-        #expect(tools.count == 19)
+        #expect(tools.count == 20)
         #expect(tools.contains { $0["name"] as? String == "starcat.get_capabilities" })
         #expect(tools.contains { $0["name"] as? String == "starcat.get_overview_statistics" })
         #expect(tools.contains { $0["name"] as? String == "starcat.get_ai_usage_statistics" })
@@ -42,6 +42,7 @@ struct StarcatMCPRuntimeTests {
         #expect(tools.contains { $0["name"] as? String == "starcat.get_repo_summary" })
         #expect(tools.contains { $0["name"] as? String == "starcat.generate_repo_summary" })
         #expect(tools.contains { $0["name"] as? String == "starcat.search_repos" })
+        #expect(tools.contains { $0["name"] as? String == "starcat.global_search_repos" })
         let searchTool = try #require(tools.first { $0["name"] as? String == "starcat.search_repos" })
         let inputSchema = try #require(searchTool["inputSchema"] as? [String: Any])
         let properties = try #require(inputSchema["properties"] as? [String: Any])
@@ -170,6 +171,32 @@ struct StarcatMCPRuntimeTests {
         let invalidUsageResult = try #require(invalidUsageJSON["result"] as? [String: Any])
         #expect(invalidUsageResult["isError"] as? Bool == true)
 
+        let invalidGlobalSearchCall = await runtime.handle(Self.request(
+            id: 26,
+            method: "tools/call",
+            params: [
+                "name": "starcat.global_search_repos",
+                "arguments": ["query": "swift", "limit": 51]
+            ]
+        ))
+        let invalidGlobalSearchJSON = try Self.jsonObject(from: invalidGlobalSearchCall)
+        let invalidGlobalSearchResult = try #require(invalidGlobalSearchJSON["result"] as? [String: Any])
+        #expect(invalidGlobalSearchResult["isError"] as? Bool == true)
+        let structuredError = try #require(invalidGlobalSearchResult["structuredContent"] as? [String: Any])
+        #expect(structuredError["schema_version"] as? Int == 1)
+        #expect(structuredError["code"] as? String == "INVALID_ARGUMENTS")
+        #expect(structuredError["message"] as? String == "limit must be between 1 and 50")
+
+        let unsupportedToolCall = await runtime.handle(Self.request(
+            id: 27,
+            method: "tools/call",
+            params: ["name": "starcat.future_tool", "arguments": [:]]
+        ))
+        let unsupportedToolJSON = try Self.jsonObject(from: unsupportedToolCall)
+        let unsupportedToolResult = try #require(unsupportedToolJSON["result"] as? [String: Any])
+        let unsupportedError = try #require(unsupportedToolResult["structuredContent"] as? [String: Any])
+        #expect(unsupportedError["code"] as? String == "UPGRADE_REQUIRED")
+
         let knowledgeStatisticsCall = await runtime.handle(Self.request(
             id: 24,
             method: "tools/call",
@@ -208,7 +235,7 @@ struct StarcatMCPRuntimeTests {
         let list = await runtime.handle(Self.request(id: 3, method: "tools/list"))
         let listJSON = try Self.jsonObject(from: list)
         let tools = try #require((listJSON["result"] as? [String: Any])?["tools"] as? [[String: Any]])
-        #expect(tools.count == 19)
+        #expect(tools.count == 20)
     }
 
     @Test("关闭私有笔记读取后知识库统计不返回笔记数量")

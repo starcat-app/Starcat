@@ -52,6 +52,7 @@ struct IntegrationSettingsTab: View {
                     .id(Self.localAPIKeyAnchor)
                 browserPluginSection
                     .id(Self.browserPluginAnchor)
+                alfredSection
                 anySearchSection
                     .id(Self.externalSearchAnchor)
                 Section {
@@ -378,6 +379,48 @@ struct IntegrationSettingsTab: View {
         // 两个插件源码独立开源，设置页跳公开仓库；不指向本机 supports 目录。
         static let chrome = URL(string: "https://github.com/starcat-app/starcat-chrome-plugin")!
         static let safari = URL(string: "https://github.com/starcat-app/starcat-safari-plugin")!
+    }
+
+    private var alfredSection: some View {
+        Section {
+            Text("settings.integration.alfred.subtitle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Label {
+                Text(verbatim: "Starcat Pro · MCP Service · Starcat CLI")
+                    .foregroundStyle(.primary)
+            } icon: {
+                Image(systemName: "checklist")
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 8) {
+                Spacer()
+                Button("settings.mcp.title") {
+                    NotificationCenter.default.post(
+                        name: .starcatJumpToSettingsTab,
+                        object: "mcp"
+                    )
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+
+                // Workflow 公开仓库和首个可安装 Release 尚未就绪。保留入口位置但禁用，
+                // 避免正式版本把用户带到 404；发布完成后再恢复为 Link。
+                Button("settings.integration.alfred.install") {}
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+                    .disabled(true)
+            }
+        } header: {
+            SettingsSectionHeader(
+                verbatim: "Alfred",
+                systemImage: "command",
+                style: .prominent
+            )
+        }
     }
 
     private func browserPluginRepositoryLink(

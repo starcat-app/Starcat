@@ -83,6 +83,139 @@ struct MCPRepoSearchResult: Codable, Sendable {
     let repos: [MCPRepoDTO]
 }
 
+/// 外部启动器使用的全局仓库搜索契约。
+///
+/// 这里刻意把内部的 `localKeyword` / `RepositoryCandidate` 隐藏起来，只暴露
+/// `local` / `github` 两个产品级来源，避免 Swift 实现细节固化进 CLI 协议。
+struct MCPGlobalRepositorySearchResult: Codable, Sendable {
+    struct Item: Codable, Sendable {
+        let repo_id: Int64?
+        let owner: String
+        let name: String
+        let full_name: String
+        let description: String?
+        let language: String?
+        let stars_count: Int
+        let is_private: Bool
+        let is_starred: Bool
+        let primary_source: String
+        let sources: [String]
+        let icon_url: String
+        let open_url: String
+        let html_url: String
+        let updated_at: String?
+
+        init(candidate: RepositoryCandidate) {
+            let repo = candidate.displayRepo
+            let productSources = Self.productSources(candidate.sources)
+            let primarySource = productSources.contains(GlobalRepositorySearchSource.local.rawValue)
+                ? GlobalRepositorySearchSource.local.rawValue
+                : GlobalRepositorySearchSource.github.rawValue
+            let htmlURL = repo?.htmlUrl
+                ?? GitHubURLs.repo(owner: candidate.identity.owner, repo: candidate.identity.name).absoluteString
+
+            repo_id = candidate.identity.ghRepoID
+            owner = candidate.identity.owner
+            name = candidate.identity.name
+            full_name = "\(candidate.identity.owner)/\(candidate.identity.name)"
+            description = repo?.description ?? candidate.card.description
+            language = repo?.language ?? candidate.card.language
+            stars_count = repo?.starsCount ?? candidate.card.starsCount
+            is_private = repo?.isPrivate ?? candidate.card.isPrivate
+            is_starred = candidate.isStarred
+            primary_source = primarySource
+            sources = productSources
+            icon_url = repo?.ownerAvatar ?? Self.fallbackIconURL(owner: candidate.identity.owner)
+            html_url = htmlURL
+            updated_at = repo?.updatedAt
+            open_url = primarySource == GlobalRepositorySearchSource.local.rawValue
+                ? Self.localOpenURL(identity: candidate.identity, fallback: htmlURL)
+                : htmlURL
+        }
+
+        private static func productSources(_ sources: Set<SearchSource>) -> [String] {
+            var result: [String] = []
+            if sources.contains(.localKeyword) || sources.contains(.localSemantic) {
+                result.append(GlobalRepositorySearchSource.local.rawValue)
+            }
+            if sources.contains(.github) {
+                result.append(GlobalRepositorySearchSource.github.rawValue)
+            }
+            return result
+        }
+
+        private static func fallbackIconURL(owner: String) -> String {
+            var components = URLComponents(string: "https://github.com")!
+            components.path = "/\(owner).png"
+            components.queryItems = [URLQueryItem(name: "size", value: "80")]
+            return components.url?.absoluteString ?? "https://github.com/\(owner).png?size=80"
+        }
+
+        /// 只有通过 `RepositoryDeepLink` GitHub 命名约束后才返回私有 scheme；
+        /// 极端脏数据回退 GitHub，禁止向外暴露可执行的任意 URL。
+        private static func localOpenURL(identity: RepoIdentity, fallback: String) -> String {
+            RepositoryDeepLink(
+                owner: identity.owner,
+                name: identity.name,
+                repositoryID: identity.ghRepoID
+            )?.appURL.absoluteString ?? fallback
+        }
+    }
+
+    struct Provider: Codable, Sendable {
+        let status: String
+        let count: Int
+        let message: String?
+
+        init(state: GlobalRepositorySearchProviderState) {
+            status = state.status.rawValue
+            count = state.count
+            message = state.message
+        }
+    }
+
+    struct Providers: Codable, Sendable {
+        let local: Provider?
+        let github: Provider?
+    }
+
+    let schema_version: Int
+    let query: String
+    let returned_count: Int
+    let items: [Item]
+    let providers: Providers
+    let warnings: [String]
+
+    init(snapshot: GlobalRepositorySearchSnapshot) {
+        let items = snapshot.repositories.map(Item.init(candidate:))
+        schema_version = 1
+        query = snapshot.query
+        returned_count = items.count
+        self.items = items
+        providers = Providers(
+            local: snapshot.providers[.local].map(Provider.init(state:)),
+            github: snapshot.providers[.github].map(Provider.init(state:))
+        )
+        warnings = snapshot.warnings
+    }
+}
+
+/// MCP Tool 失败时提供给 CLI / Launcher 的稳定机器可读契约。
+///
+/// `content` 仍保留人类可读文本，`structuredContent` 则承载本对象。外部客户端必须
+/// 依据 `code` 分支，不能解析可能随版本和本地化变化的 `message`。
+struct MCPToolErrorDTO: Codable, Sendable {
+    let schema_version: Int
+    let code: String
+    let message: String
+
+    init(code: String, message: String) {
+        schema_version = 1
+        self.code = code
+        self.message = message
+    }
+}
+
 /// MCP 语义搜索结果。
 struct MCPSemanticSearchResult: Codable, Sendable {
     struct Hit: Codable, Sendable {
@@ -197,6 +330,7 @@ struct MCPCapabilitiesDTO: Codable, Sendable {
     let loopback_only: Bool
     let private_notes_read: Bool
     let statistics_read: Bool
+    let global_repository_search: Bool
     let local_writes: Bool
     let batch_writes: Bool
     let destructive_writes: Bool
