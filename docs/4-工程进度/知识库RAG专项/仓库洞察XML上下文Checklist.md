@@ -101,29 +101,29 @@
 
 ## 6. RAG 全部可见面
 
-- [ ] Plan Inspector 展示洞察目标、状态、时间、hash 和 token。
-- [ ] 执行时间线展示真实 load / project / completed 状态。
-- [ ] Context Tab 展示 Repository Insights 独立 token 分段。
-- [ ] Evidence Inspector 展示洞察审计字段和 XML 预览。
-- [ ] 支持 XML 全文、复制和 citation 定位。
-- [ ] 洞察 citation 不显示普通“分片已删除”。
+- [x] Plan Inspector 展示洞察目标、状态、时间、hash 和 token。
+- [x] 执行时间线展示真实 load / project / completed 状态。
+- [x] Context Tab 展示 Repository Insights 独立 token 分段。
+- [x] Evidence Inspector 展示洞察审计字段和 XML 预览。
+- [x] 支持 XML 全文、复制和 citation 定位。
+- [x] 洞察 citation 不显示普通“分片已删除”。
 - [x] Debug Trace 增加 request / load / projection 摘要。
 - [x] 专用 Debug stage 不重复保存 XML 正文。
-- [ ] 最终 Prompt Debug 明确可能包含洞察 XML 的隐私边界。
-- [ ] 会话只保存洞察审计 snapshot 和 citation。
-- [ ] 历史只在 repo + sourceHash + xmlHash 匹配时回放 XML。
-- [ ] 删除 / 更新后历史显示不可回放，不冒用新 XML。
+- [x] 最终 Prompt Debug 明确可能包含洞察 XML 的隐私边界。
+- [x] 会话只保存洞察审计 snapshot 和 citation。
+- [x] 历史只在 repo + sourceHash + xmlHash 匹配时回放 XML。
+- [x] 删除 / 更新后历史显示不可回放，不冒用新 XML。
 - [x] RAG Prompt 设置展示 `{repositoryInsightsSection}` 说明。
-- [ ] 补齐 Plan、Timeline、Context、Evidence、Debug 和历史 round-trip 测试。
+- [x] 补齐 Plan、Timeline、Context、Evidence、Debug 和历史 round-trip 测试。
 
 ## 7. i18n、设计与正式文档
 
-- [ ] 阅读并遵守 `DESIGN.md`、UI 与 i18n 规范。
-- [ ] 新增文案全部提供 en + zh-Hans。
-- [ ] 普通文本 / 图标只使用 `.primary` / `.secondary`。
-- [ ] plain Button 补 `.focusEffectDisabled()`。
-- [ ] sheet 使用 `SheetCloseButton` 并挂 `.appLocaleEnvironment()`。
-- [ ] 刷新入口复用 `SyncIconButton` 或既有稳定行内状态。
+- [x] 阅读并遵守 `DESIGN.md`、UI 与 i18n 规范。
+- [x] 新增文案全部提供 en + zh-Hans。
+- [x] 普通文本 / 图标只使用 `.primary` / `.secondary`。
+- [x] plain Button 补 `.focusEffectDisabled()`。
+- [x] sheet 使用 `SheetCloseButton` 并挂 `.appLocaleEnvironment()`。
+- [x] 刷新入口复用 `SyncIconButton` 或既有稳定行内状态。
 - [ ] 更新 `docs/3-设计/详细设计/30-本地RAG设计.md`。
 - [ ] 更新 `docs/3-设计/详细设计/49-洞察中心详细设计.md`。
 - [ ] 更新知识库 RAG 专项进度文档或新增专项进度说明。
@@ -131,7 +131,7 @@
 
 ## 8. 自动化与工程门禁
 
-- [ ] 新增 / 删除 Swift 文件后执行 `xcodegen generate`。
+- [x] 新增 / 删除 Swift 文件后执行 `xcodegen generate`。
 - [ ] 洞察 Context / Storage 定向测试通过。
 - [ ] Repository Insights 全部相关测试通过。
 - [ ] Repo AI / AppSettings Prompt 测试通过。
