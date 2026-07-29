@@ -296,7 +296,9 @@ struct WidgetSnapshotBuilder: Sendable {
             repositoryName: repositoryName,
             tagName: String((row["release_tag_name"] as String).prefix(80)),
             displayName: (row["release_name"] as String?).map { String($0.prefix(120)) },
-            publishedAt: publishedRaw.flatMap { ISO8601DateFormatter.shared.date(from: $0) },
+            // GitHub 可能返回带或不带毫秒的 ISO8601；统一复用双格式解析器，
+            // 否则常见的 `...00Z` 会被误判为 nil，Widget 无法显示相对时间。
+            publishedAt: ISO8601DateFormatter.githubDate(from: publishedRaw),
             isPrerelease: row["release_is_prerelease"] as Bool,
             avatarFileName: nil,
             openURL: deepLink.appURL
