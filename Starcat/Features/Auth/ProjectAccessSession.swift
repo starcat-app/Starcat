@@ -52,7 +52,7 @@ final class ProjectAccessSession {
     typealias InstallationCheck = @Sendable (
         _ accessToken: String,
         _ appSlug: String
-    ) async throws -> Bool
+    ) async throws -> GitHubAppInstallationAccess
 
     private(set) var state: ProjectAccessState
 
@@ -74,7 +74,7 @@ final class ProjectAccessSession {
             let client = GitHubAPIClient(
                 tokenProvider: ProjectSyncTokenProvider(token: accessToken)
             )
-            return try await client.hasAccessibleGitHubAppInstallation(appSlug: appSlug)
+            return try await client.githubAppInstallationAccess(appSlug: appSlug)
         },
         now: @escaping @Sendable () -> Date = Date.init
     ) {
@@ -149,9 +149,9 @@ final class ProjectAccessSession {
     /// 安装 GitHub App 或组织批准后重新检查，无需重复 Device Flow。
     ///
     /// Device Flow 凭据会在 `.installationRequired` 状态保留，因此用户完成安装后可以直接
-    /// 点击“重新检查”。返回 true 代表已具备至少一个可访问安装。
+    /// 点击“重新检查”。返回值同时携带全部仓库或指定仓库范围。
     @discardableResult
-    func refreshInstallationState() async throws -> Bool {
+    func refreshInstallationState() async throws -> GitHubAppInstallationAccess {
         guard isConfigured else {
             state = .unavailable
             throw ProjectAccessSessionError.unavailable
@@ -228,16 +228,22 @@ final class ProjectAccessSession {
         state = .organizationApprovalPending
     }
 
-    /// 校验安装并发布状态。没有安装是可恢复状态，不删除已经取得的 Device Flow 凭据。
+    /// 校验安装并发布状态。没有安装是可恢复状态，不删除已经取得的 Device Flow 凭据；
+    /// selected repositories 必须保持独立状态，不能伪装成完整授权。
     @discardableResult
     private func updateInstallationState(
         using credential: ProjectAccessCredential
-    ) async throws -> Bool {
-        let installed = try await installationCheck(credential.accessToken, appSlug)
-        state = installed
-            ? .connected(expiresAt: credential.accessExpiresAt)
-            : .installationRequired
-        return installed
+    ) async throws -> GitHubAppInstallationAccess {
+        let access = try await installationCheck(credential.accessToken, appSlug)
+        state = switch access {
+        case .notInstalled:
+            .installationRequired
+        case .allRepositories:
+            .connected(expiresAt: credential.accessExpiresAt)
+        case .selectedRepositories:
+            .partialAuthorization
+        }
+        return access
     }
 
     /// 复查安装前只处理 token 轮换，不提前把界面改成 connected。

@@ -389633,9 +389633,9 @@
     "project.access.state.partial.detail" : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Some organizations have not granted access. Available projects remain usable." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "部分组织尚未授权，已有项目仍可继续使用。" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "部分組織尚未授權，已有專案仍可繼續使用。" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Only selected repositories are authorized, or some organizations have not granted access. Available projects remain usable." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前仅授权指定仓库，或部分组织尚未批准；已有项目仍可继续使用。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "目前僅授權指定儲存庫，或部分組織尚未批准；已有專案仍可繼續使用。" } }
       }
     },
     "project.access.state.partial.title" : {

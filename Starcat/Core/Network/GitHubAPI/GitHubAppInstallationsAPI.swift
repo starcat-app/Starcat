@@ -8,16 +8,36 @@
 //  - Device Flow 只证明用户授权了 App，不证明 App 已安装到个人账号或组织；
 //  - 必须通过 /user/installations 验证当前 App 至少存在一个可访问安装，才能启用
 //    Private / Internal 项目同步；
-//  - 响应只用于判断安装是否存在，不持久化账号、组织或安装 ID。
+//  - 响应只用于判断安装是否存在及仓库选择范围，不持久化账号、组织或安装 ID。
 //
 
 import Foundation
 
+/// 当前 GitHub App 安装对仓库的授权范围。
+///
+/// 多个账号或组织可以分别安装同一个 App；只要其中任一安装选择了部分仓库，
+/// 整体就必须向用户呈现“部分授权”，避免错误宣称所有项目均可同步。
+enum GitHubAppInstallationAccess: Equatable, Sendable {
+    case notInstalled
+    case allRepositories
+    case selectedRepositories
+
+    var isInstalled: Bool {
+        self != .notInstalled
+    }
+}
+
 /// `/user/installations` 的最小安装记录。
 ///
-/// 这里只保留匹配当前 App 所需的 slug，避免把账号或组织信息带出网络层。
+/// 这里只保留匹配当前 App 和判断授权范围所需字段，避免把账号或组织信息带出网络层。
 private struct GitHubAppInstallationDTO: Decodable, Sendable {
     let appSlug: String
+    let repositorySelection: RepositorySelection
+
+    enum RepositorySelection: String, Decodable, Sendable {
+        case all
+        case selected
+    }
 }
 
 /// GitHub 安装列表响应信封。
@@ -26,15 +46,17 @@ private struct GitHubAppInstallationsPageDTO: Decodable, Sendable {
 }
 
 extension GitHubAPIClient {
-    /// 判断当前 user access token 是否能访问指定 GitHub App 的任一安装。
+    /// 返回当前 user access token 对指定 GitHub App 的安装与仓库选择范围。
     ///
-    /// GitHub App 可能安装在多个个人账号或组织中，且响应支持分页；找到第一个 slug
-    /// 匹配项即可提前返回。没有安装不是网络错误，而是明确的产品状态。
-    func hasAccessibleGitHubAppInstallation(appSlug: String) async throws -> Bool {
+    /// GitHub App 可能安装在多个个人账号或组织中，且响应支持分页。必须遍历全部匹配项：
+    /// 任一安装使用 selected repositories 时，产品整体都应显示部分授权。没有安装不是
+    /// 网络错误，而是明确的产品状态。
+    func githubAppInstallationAccess(appSlug: String) async throws -> GitHubAppInstallationAccess {
         let normalizedSlug = appSlug.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedSlug.isEmpty else { return false }
+        guard !normalizedSlug.isEmpty else { return .notInstalled }
 
         var page = 1
+        var foundMatchingInstallation = false
         while true {
             let response: APIResponse<GitHubAppInstallationsPageDTO> = try await get(
                 path: AppEndpoints.GitHubREST.Paths.currentUserInstallations,
@@ -43,12 +65,16 @@ extension GitHubAPIClient {
                     URLQueryItem(name: "per_page", value: "100")
                 ]
             )
-            if response.value.installations.contains(where: {
-                $0.appSlug.caseInsensitiveCompare(normalizedSlug) == .orderedSame
-            }) {
-                return true
+            for installation in response.value.installations
+            where installation.appSlug.caseInsensitiveCompare(normalizedSlug) == .orderedSame {
+                foundMatchingInstallation = true
+                if installation.repositorySelection == .selected {
+                    return .selectedRepositories
+                }
             }
-            guard let nextPage = response.linkHeader.nextPage else { return false }
+            guard let nextPage = response.linkHeader.nextPage else {
+                return foundMatchingInstallation ? .allRepositories : .notInstalled
+            }
             page = nextPage
         }
     }

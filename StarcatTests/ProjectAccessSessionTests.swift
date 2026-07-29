@@ -72,7 +72,7 @@ struct ProjectAccessSessionTests {
             keychain: keychain,
             isConfigured: true,
             appSlug: "starcat-project-access",
-            installationCheck: { _, _ in true },
+            installationCheck: { _, _ in .allRepositories },
             now: { self.now }
         )
 
@@ -96,7 +96,7 @@ struct ProjectAccessSessionTests {
             keychain: keychain,
             isConfigured: true,
             appSlug: "starcat-project-access",
-            installationCheck: { _, _ in false },
+            installationCheck: { _, _ in .notInstalled },
             now: { self.now }
         )
 
@@ -127,14 +127,37 @@ struct ProjectAccessSessionTests {
             appSlug: "starcat-project-access",
             installationCheck: { token, slug in
                 token == "ghu-project" && slug == "starcat-project-access"
+                    ? .allRepositories
+                    : .notInstalled
             },
             now: { self.now }
         )
 
-        let installed = try await session.refreshInstallationState()
+        let access = try await session.refreshInstallationState()
 
-        #expect(installed)
+        #expect(access == .allRepositories)
         #expect(session.state == .connected(expiresAt: issued.accessExpiresAt))
+    }
+
+    @Test("指定仓库安装范围映射为部分授权")
+    @MainActor
+    func selectedRepositoriesMapToPartialAuthorization() async throws {
+        let keychain = InMemoryKeychain()
+        let issued = credential(token: "ghu-project", accessOffset: 3_600)
+        try storedCredential(keychain, issued)
+        let session = ProjectAccessSession(
+            oauthService: MockOAuth(credential: issued),
+            keychain: keychain,
+            isConfigured: true,
+            appSlug: "starcat-for-github",
+            installationCheck: { _, _ in .selectedRepositories },
+            now: { self.now }
+        )
+
+        let access = try await session.refreshInstallationState()
+
+        #expect(access == .selectedRepositories)
+        #expect(session.state == .partialAuthorization)
     }
 
     @Test("安装校验断网时保留凭据并进入可重试状态")

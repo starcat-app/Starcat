@@ -397,8 +397,8 @@ struct ProjectAccessSheet: View {
         Task { @MainActor in
             defer { isCheckingInstallation = false }
             do {
-                let installed = try await accessSession.refreshInstallationState()
-                if installed {
+                let access = try await accessSession.refreshInstallationState()
+                if access.isInstalled {
                     refreshProjects(force: true)
                 }
             } catch {

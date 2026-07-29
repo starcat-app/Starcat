@@ -19,7 +19,7 @@ struct GitHubAppInstallationsAPITests {
         )
     }
 
-    @Test("匹配安装时携带 user token 并返回 true")
+    @Test("匹配全部仓库安装时携带 user token 并返回完整范围")
     func installedAppIsDetected() async throws {
         URLProtocolStub.reset()
         URLProtocolStub.requestHandler = { request in
@@ -30,7 +30,11 @@ struct GitHubAppInstallationsAPITests {
                 {
                   "total_count": 1,
                   "installations": [
-                    { "id": 42, "app_slug": "starcat-project-access" }
+                    {
+                      "id": 42,
+                      "app_slug": "starcat-project-access",
+                      "repository_selection": "all"
+                    }
                   ]
                 }
                 """.data(using: .utf8)!
@@ -45,14 +49,14 @@ struct GitHubAppInstallationsAPITests {
             )
         }
 
-        let installed = try await makeClient().hasAccessibleGitHubAppInstallation(
+        let access = try await makeClient().githubAppInstallationAccess(
             appSlug: "Starcat-Project-Access"
         )
 
-        #expect(installed)
+        #expect(access == .allRepositories)
     }
 
-    @Test("无匹配安装时返回 false")
+    @Test("无匹配安装时返回未安装")
     func missingAppReturnsFalse() async throws {
         URLProtocolStub.reset()
         URLProtocolStub.requestHandler = { request in
@@ -60,7 +64,11 @@ struct GitHubAppInstallationsAPITests {
                 {
                   "total_count": 1,
                   "installations": [
-                    { "id": 7, "app_slug": "another-app" }
+                    {
+                      "id": 7,
+                      "app_slug": "another-app",
+                      "repository_selection": "all"
+                    }
                   ]
                 }
                 """.data(using: .utf8)!
@@ -75,14 +83,14 @@ struct GitHubAppInstallationsAPITests {
             )
         }
 
-        let installed = try await makeClient().hasAccessibleGitHubAppInstallation(
+        let access = try await makeClient().githubAppInstallationAccess(
             appSlug: "starcat-project-access"
         )
 
-        #expect(!installed)
+        #expect(access == .notInstalled)
     }
 
-    @Test("安装列表分页时继续查找下一页")
+    @Test("安装列表分页时识别指定仓库范围")
     func followsPagination() async throws {
         URLProtocolStub.reset()
         URLProtocolStub.requestHandler = { request in
@@ -95,7 +103,11 @@ struct GitHubAppInstallationsAPITests {
                 {
                   "total_count": 2,
                   "installations": [
-                    { "id": \(found ? 2 : 1), "app_slug": "\(found ? "starcat-project-access" : "another-app")" }
+                    {
+                      "id": \(found ? 2 : 1),
+                      "app_slug": "\(found ? "starcat-project-access" : "another-app")",
+                      "repository_selection": "\(found ? "selected" : "all")"
+                    }
                   ]
                 }
                 """.data(using: .utf8)!
@@ -113,11 +125,50 @@ struct GitHubAppInstallationsAPITests {
             )
         }
 
-        let installed = try await makeClient().hasAccessibleGitHubAppInstallation(
+        let access = try await makeClient().githubAppInstallationAccess(
             appSlug: "starcat-project-access"
         )
 
-        #expect(installed)
+        #expect(access == .selectedRepositories)
         #expect(URLProtocolStub.receivedRequests.count == 2)
+    }
+
+    @Test("任一匹配安装选择指定仓库时整体返回部分范围")
+    func selectedInstallationDominatesAllRepositoriesInstallation() async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            let body = """
+                {
+                  "total_count": 2,
+                  "installations": [
+                    {
+                      "id": 1,
+                      "app_slug": "starcat-for-github",
+                      "repository_selection": "all"
+                    },
+                    {
+                      "id": 2,
+                      "app_slug": "starcat-for-github",
+                      "repository_selection": "selected"
+                    }
+                  ]
+                }
+                """.data(using: .utf8)!
+            return (
+                HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: nil
+                )!,
+                body
+            )
+        }
+
+        let access = try await makeClient().githubAppInstallationAccess(
+            appSlug: "starcat-for-github"
+        )
+
+        #expect(access == .selectedRepositories)
     }
 }
