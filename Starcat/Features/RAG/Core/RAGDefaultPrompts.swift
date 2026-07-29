@@ -50,11 +50,17 @@ struct RAGPromptSettings: Codable, Equatable, Sendable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let decodedGenerator = try container.decode(AIPromptConfiguration.self, forKey: .generator)
-        // RepoContext 尚未上线，不保留缺少新占位符的自定义模板兼容轨。旧模板无法表达
-        // 独立代码上下文边界，直接收口到当前默认协议，避免悄悄把 XML 塞进 evidence。
-        generator = decodedGenerator.userPromptTemplate.contains("{repoContextSection}")
-            ? decodedGenerator
-            : RAGDefaultPrompts.generator
+        // 只把 Starcat 发布过的上一版默认值升级为带洞察区段的新协议。自定义模板即使
+        // 没有 `{repositoryInsightsSection}` 也必须原样保留，缺占位符等同用户主动关闭注入。
+        if decodedGenerator == RAGDefaultPrompts.generatorBeforeRepositoryInsights {
+            generator = RAGDefaultPrompts.generator
+        } else {
+            // RepoContext 上线前的模板仍沿用既有一次性收口；已经包含该占位符的自定义
+            // Generator 不再因为后续新增洞察能力而被覆盖。
+            generator = decodedGenerator.userPromptTemplate.contains("{repoContextSection}")
+                ? decodedGenerator
+                : RAGDefaultPrompts.generator
+        }
         let decodedPlanner = try container.decode(AIPromptConfiguration.self, forKey: .planner)
         // 只迁移 Starcat 自己发布过的旧默认模板；用户哪怕改过一个字符都视为自定义，
         // 必须原样保留。否则老用户会一直缺少 guided_discovery 与新的联网字段。
@@ -76,9 +82,10 @@ enum RAGDefaultPrompts {
 
     /// Generator 占位符：
     /// - system / user：`{outputLanguage}`
-    /// - user：`{questionSection}` `{evidenceSection}` `{repoContextSection}` `{remoteSection}` `{attachmentSection}`
+    /// - user：`{questionSection}` `{evidenceSection}` `{repositoryInsightsSection}`
+    ///   `{repoContextSection}` `{remoteSection}` `{attachmentSection}`
     /// 空远程 / 附件时对应 section 注入空串；各 section 已含标题，由 Builder 先裁剪再填入。
-    static let generator = AIPromptConfiguration(
+    static let generatorBeforeRepositoryInsights = AIPromptConfiguration(
         systemPrompt: """
         You are Starcat's knowledge-base Q&A assistant. Answer only from the local knowledge-base evidence, project code context, explicitly listed temporary network context, and user attachments provided in this turn. Do not invent facts that are not in those materials.
 
@@ -103,6 +110,33 @@ enum RAGDefaultPrompts {
         userPromptTemplate: """
         {questionSection}{evidenceSection}{repoContextSection}{remoteSection}{attachmentSection}
         """
+    )
+
+    /// 2026-07-30 仓库洞察 XML 上下文之后的 Generator 默认值。通过精确替换上一版
+    /// 已发布默认值生成，迁移判断因而不会误伤用户自定义 Prompt。
+    static let generator = AIPromptConfiguration(
+        systemPrompt: generatorBeforeRepositoryInsights.systemPrompt
+            .replacingOccurrences(
+                of: "local knowledge-base evidence, project code context,",
+                with: "local knowledge-base evidence, repository insights XML, project code context,"
+            )
+            .replacingOccurrences(
+                of: "README, notes, summaries, RepoContext XML,",
+                with: "README, notes, summaries, repository insights XML, RepoContext XML,"
+            )
+            .replacingOccurrences(
+                of: "Current-turn metadata, structured analytics, local evidence, project code context,",
+                with: "Current-turn metadata, structured analytics, local evidence, repository insights XML, project code context,"
+            )
+            .replacingOccurrences(
+                of: "When using local evidence or project code context,",
+                with: "When using local evidence, repository insights XML, or project code context,"
+            ),
+        userPromptTemplate: generatorBeforeRepositoryInsights.userPromptTemplate
+            .replacingOccurrences(
+                of: "{evidenceSection}{repoContextSection}",
+                with: "{evidenceSection}{repositoryInsightsSection}{repoContextSection}"
+            )
     )
 
     /// Planner 占位符：

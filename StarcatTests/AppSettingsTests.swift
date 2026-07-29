@@ -635,6 +635,7 @@ struct AppSettingsTests {
         #expect(s.smartSearchMode == .keyword)
         #expect(s.ragPromptSettings.generator.systemPrompt.contains("{outputLanguage}"))
         #expect(s.ragPromptSettings.generator.userPromptTemplate.contains("{questionSection}"))
+        #expect(s.ragPromptSettings.generator.userPromptTemplate.contains("{repositoryInsightsSection}"))
         #expect(s.ragPromptSettings.generator.userPromptTemplate.contains("{repoContextSection}"))
         #expect(s.ragPromptSettings.planner.systemPrompt.contains("{outputLanguage}"))
         #expect(s.ragPromptSettings.planner.userPromptTemplate.contains("{question}"))
@@ -879,6 +880,35 @@ struct AppSettingsTests {
         )
 
         #expect(AppSettings(defaults: customDefaults).ragPromptSettings.planner == customPlanner)
+    }
+
+    @Test("RAG Prompt 只升级上一版 Generator 默认值并保留自定义洞察开关")
+    func ragPromptSettingsUpgradeRepositoryInsightsPlaceholderSafely() {
+        let publishedDefaults = UserDefaults(suiteName: "test-rag-insights-default-\(UUID())")!
+        var published = RAGPromptSettings.default
+        published.generator = RAGDefaultPrompts.generatorBeforeRepositoryInsights
+        publishedDefaults.set(
+            String(data: try! JSONEncoder().encode(published), encoding: .utf8),
+            forKey: "settings.rag.prompts.v1"
+        )
+
+        let upgraded = AppSettings(defaults: publishedDefaults).ragPromptSettings.generator
+        #expect(upgraded == RAGDefaultPrompts.generator)
+        #expect(upgraded.userPromptTemplate.contains("{repositoryInsightsSection}"))
+
+        let customDefaults = UserDefaults(suiteName: "test-rag-insights-custom-\(UUID())")!
+        let customGenerator = AIPromptConfiguration(
+            systemPrompt: "CUSTOM",
+            userPromptTemplate: "{questionSection}{evidenceSection}{repoContextSection}"
+        )
+        var custom = RAGPromptSettings.default
+        custom.generator = customGenerator
+        customDefaults.set(
+            String(data: try! JSONEncoder().encode(custom), encoding: .utf8),
+            forKey: "settings.rag.prompts.v1"
+        )
+
+        #expect(AppSettings(defaults: customDefaults).ragPromptSettings.generator == customGenerator)
     }
 
     @Test("AI: 旧版设置后重新读取应保留")

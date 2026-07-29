@@ -124,6 +124,101 @@ struct RAGRepositoryInsightsContextTests {
         }
     }
 
+    @Test("Prompt 使用独立洞察区段预算与仓库级引用")
+    func promptUsesIndependentInsightsSectionAndCitation() {
+        let repository = repo(id: 42, name: "prompt")
+        let source = artifact(for: repository)
+        let snapshot = RAGRepositoryInsightsSnapshot(
+            repoID: repository.id,
+            repoFullName: repository.fullName,
+            sourceHash: source.metadata.sourceHash,
+            xmlHash: source.metadata.xmlHash,
+            generatedAt: source.document.generatedAt,
+            configuredTokenBudget: 1_024,
+            originalTokens: TokenEstimator.estimate(text: source.document.xml),
+            sentTokens: 0,
+            outcome: .success,
+            wasProjected: false,
+            projectionReason: nil,
+            degradationReason: nil,
+            citationMarker: nil,
+            preparedAt: source.document.generatedAt
+        )
+        let document = RAGRepositoryInsightsDocument(
+            snapshot: snapshot,
+            xml: source.document.xml
+        )
+        let result = KnowledgeRAGPromptBuilder(
+            maxEvidenceTokens: 0,
+            maxRepositoryInsightsTokens: 1_024
+        ).build(
+            question: "How healthy is it?",
+            plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "health"),
+            retrieval: RAGRetrievalResult(candidates: [], bundles: [], childHits: []),
+            repositoryInsightsDocuments: [document],
+            remoteBlocks: [],
+            attachmentContexts: [],
+            contextWindowTokens: 8_192,
+            maximumOutputTokens: 1_024
+        )
+
+        let citation = result.citationsByMarker.values.first
+        #expect(result.userPrompt.contains("Repository insights context:"))
+        #expect(result.userPrompt.contains("<repository_insights"))
+        #expect(result.contextUsage.tokenCount(for: .repositoryInsights) > 0)
+        #expect(result.contextUsage.tokenCount(for: .evidence) == 0)
+        #expect(result.repositoryInsightsDocuments.count == 1)
+        #expect(citation?.source == .repositoryInsights)
+        #expect(citation?.hitKind == .repositoryInsights)
+        #expect(citation?.chunkID == nil)
+    }
+
+    @Test("自定义 Prompt 删除洞察占位符时不投影也不计费")
+    func customPromptCanDisableInsightsInjection() {
+        let repository = repo(id: 43, name: "disabled")
+        let source = artifact(for: repository)
+        let document = RAGRepositoryInsightsDocument(
+            snapshot: RAGRepositoryInsightsSnapshot(
+                repoID: repository.id,
+                repoFullName: repository.fullName,
+                sourceHash: source.metadata.sourceHash,
+                xmlHash: source.metadata.xmlHash,
+                generatedAt: source.document.generatedAt,
+                configuredTokenBudget: 1_024,
+                originalTokens: TokenEstimator.estimate(text: source.document.xml),
+                sentTokens: 0,
+                outcome: .success,
+                wasProjected: false,
+                projectionReason: nil,
+                degradationReason: nil,
+                citationMarker: nil,
+                preparedAt: source.document.generatedAt
+            ),
+            xml: source.document.xml
+        )
+        let builder = KnowledgeRAGPromptBuilder(
+            maxRepositoryInsightsTokens: 1_024,
+            promptConfiguration: AIPromptConfiguration(
+                systemPrompt: "system",
+                userPromptTemplate: "{questionSection}{evidenceSection}{repoContextSection}"
+            )
+        )
+
+        let result = builder.build(
+            question: "question",
+            plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "question"),
+            retrieval: RAGRetrievalResult(candidates: [], bundles: [], childHits: []),
+            repositoryInsightsDocuments: [document],
+            remoteBlocks: [],
+            attachmentContexts: []
+        )
+
+        #expect(!result.userPrompt.contains("<repository_insights"))
+        #expect(result.contextUsage.tokenCount(for: .repositoryInsights) == 0)
+        #expect(result.repositoryInsightsDocuments.isEmpty)
+        #expect(result.citationsByMarker.isEmpty)
+    }
+
     private func repo(id: Int64, name: String) -> Repo {
         var value = Repo.makeMinimal(owner: "octo", name: name)
         value.id = id

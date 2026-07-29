@@ -575,16 +575,18 @@ enum RAGHitKind: String, Codable, Sendable {
     case keyword
     case vector
     case hybrid
+    case repositoryInsights = "repository_insights"
     case repoContext = "repo_context"
 }
 
-/// Citation 的来源集合与数据库分片来源刻意分离。`repoContext` 是仓库级临时证据，
+/// Citation 的来源集合与数据库分片来源刻意分离。两个 XML 都是仓库级临时证据，
 /// 不能加入 `RAGChunkSource.CaseIterable`，否则会污染索引覆盖率与检索设置。
 enum RAGCitationSource: String, Codable, Equatable, Sendable {
     case readme
     case notes
     case summary
     case metadata
+    case repositoryInsights = "repository_insights"
     case repoContext = "repo_context"
 
     init(chunkSource: RAGChunkSource) {

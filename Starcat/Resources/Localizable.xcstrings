@@ -162722,6 +162722,23 @@
         }
       }
     },
+    "rag.workspace.context.repositoryInsights" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repository insights"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仓库洞察"
+          }
+        }
+      }
+    },
     "rag.workspace.context.repoContext" : {
       "localizations" : {
         "en" : {
@@ -214480,6 +214497,23 @@
         }
       }
     },
+    "rag.workspace.inspector.plan.retrieval.detail.hitKind.repositoryInsights" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repository insights"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仓库洞察"
+          }
+        }
+      }
+    },
     "rag.workspace.inspector.plan.retrieval.detail.hitKind.repoContext" : {
       "localizations" : {
         "en" : {
@@ -221532,6 +221566,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "الدرجة = (1.0 / (60 + رتبة الكلمات المفتاحية) + درجة الكلمات المفتاحية × 0.12) × وزن المصدر + تعزيز المستودع المفضل"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.retrievalScore.formula.repositoryInsights" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repository-level structured evidence; it is not ranked as an indexed chunk."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仓库级结构化证据，不参与索引分片排序。"
           }
         }
       }
@@ -228721,6 +228772,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "سياق GitHub البعيد المؤقت لهذا الدور. فارغ عند عدم الاستخدام."
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholder.repositoryInsightsSection" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repository insights XML for explicitly selected or retained repositories. It uses a separate budget, is never vectorized, and is empty when no valid artifact is available."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显式选择或最终保留仓库的洞察 XML；使用独立预算、不做向量化，没有有效产物时为空。"
           }
         }
       }
