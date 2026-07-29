@@ -144,7 +144,9 @@ enum SidebarItem: Hashable, Identifiable {
         switch self {
         case .trending:                return "safari"
         case .allStars:                return "star.fill"
-        case .myProjects:              return "shippingbox.fill"
+        // 与「订阅发布」的 shippingbox.fill 区分：用人物叠层表达「我拥有 / 可访问的项目」。
+        // 不用 folder.badge.gearshape——同行已有项目授权 gear 角标，再叠 gear 会视觉撞车。
+        case .myProjects:              return "person.crop.rectangle.stack.fill"
         case .untagged:                return "tag.slash"
         case .library:                 return "heart.fill"
         case .allLanguages:            return "globe"

@@ -801,8 +801,17 @@ struct SidebarView: View {
     private var insightsSidebarContent: some View {
         Section("insights.sidebar.section") {
             ForEach(InsightsTopic.allCases) { topic in
-                Label(topic.titleKey, systemImage: topic.systemImage)
-                    .tag(topic)
+                Label {
+                    Text(topic.titleKey)
+                        .lineLimit(1)
+                } icon: {
+                    // 与星标 / 探索 / 活动侧栏一致：未选中保留语义色，明亮选中反白。
+                    Image(systemName: topic.systemImage)
+                        .foregroundStyle(
+                            SidebarSemanticIconStyle(semanticColor: topic.semanticIconColor)
+                        )
+                }
+                .tag(topic)
             }
         }
     }

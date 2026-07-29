@@ -51,6 +51,16 @@ enum InsightsTopic: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// 洞察左栏主题图标的轻量语义色，对齐星标 / 探索 / 活动侧栏的彩色分类风格。
+    var semanticIconColor: Color {
+        switch self {
+        case .overview:     return .blue
+        case .organization: return .orange
+        case .technology:   return .purple
+        case .health:       return .pink
+        }
+    }
+
     var subtitleKey: LocalizedStringKey {
         switch self {
         case .overview:     return "insights.topic.overview.subtitle"
