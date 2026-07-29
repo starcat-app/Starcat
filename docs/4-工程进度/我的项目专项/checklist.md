@@ -51,16 +51,16 @@
 - [x] 增加个人 / 组织 / 具体组织 / 可见性 / 权限筛选。
 - [x] 项目筛选与搜索、语言、Tags、状态、Star、知识库筛选正确叠加。
 - [x] 复用 Repo 行并展示项目归属、可见性、权限和本地 30 天增长。
-- [~] 复用 Repo 详情、README、仓库洞察和 Star History。
-  - ⚠️ 进行中：补齐 owner / collaborator 使用 OAuth 或 GitHub App 凭据直连 GitHub Stargazers 的历史重建路径。
+- [x] 复用 Repo 详情、README、仓库洞察和 Star History。
+  - 完成：owner / collaborator 按项目关系使用 OAuth 或 GitHub App 直连 GitHub Stargazers，并以“当前 Stargazers 重建”口径展示。
 - [x] 未连接、连接中、部分授权、待审批、过期、撤销、失败和断网状态完整。
 - [x] 刷新保留旧列表、当前 selection 和分页状态。
 - [x] 完成 en / zh-Hans i18n 与辅助功能静态契约；VoiceOver、键盘和 Light / Dark 实机矩阵已明确为外部 Gate，未伪造人工结果。
 
 ## 5. Private 数据与缓存
 
-- [~] Private / Internal 不调用 Discovery。
-  - ⚠️ 进行中：保留公共服务硬拦截，并允许使用已授权 GitHub App 直连 GitHub 后仅在本机聚合历史。
+- [x] Private / Internal 不调用 Discovery。
+  - 完成：公共服务保持硬拦截；已授权项目仅直连 GitHub，并只保存按日聚合结果，不保存 Stargazer 身份。
 - [x] Private / Internal 不进入 External Search、公开分享或 Universal Link。
 - [x] 项目关系、同步状态和 Private 缓存不进入 CloudKit。
 - [x] 默认 JSON 导出不包含项目关系、GitHub App token 或 Private 缓存。
@@ -74,6 +74,7 @@
 - [x] v16 → v17 升级保留全部用户数据。
 - [x] Repository 覆盖关系交叉、筛选、分页、generation 和删除语义。
 - [x] API 覆盖 DTO、Link Header、304、401、403、Rate Limit 和中途失败。
+- [x] Stargazers 覆盖 `star+json` 请求头、分页、OAuth / GitHub App 路由、按日累计和 Private 零 Discovery。
 - [x] 授权覆盖 Device Flow、独立 session、token 过期/撤销和 OAuth 不受影响。
 - [x] ViewModel 覆盖 scope、筛选隔离、计数、selection、刷新和并发代际。
 - [x] 隐私测试证明 Private 项目不构造公共服务请求。
