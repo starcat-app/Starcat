@@ -117,7 +117,7 @@ struct RepositoryInsightsView: View {
     @State private var hoveredContributorID: String?
     /// 时间线默认只展示最近几条，避免整页被事件列表撑满。
     @State private var isTimelineExpanded = false
-    /// 贡献者默认截断；点击 +N /「查看全部」再展开。
+    /// 贡献者默认截断；更多走底部「查看全部」，不在网格里再塞 +N。
     @State private var isContributorsExpanded = false
 
     @Environment(\.locale) private var locale
@@ -125,7 +125,8 @@ struct RepositoryInsightsView: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(AuthSession.self) private var authSession
 
-    private static let visibleContributorLimit = 6
+    /// 折叠态只展示前 4 人；样本人数已在集中度行给出总量。
+    private static let visibleContributorLimit = 4
     private static let collapsedTimelineLimit = 5
     /// GitHub 公告解释了 Stargazers 列表的权限收紧，比通用 API 参数页更直接。
     private static let githubStargazersRestrictionURL = URL(
@@ -149,16 +150,13 @@ struct RepositoryInsightsView: View {
             ScrollView {
                 // 洞察页区块含 Charts；LazyVStack 会反复估算高度并与滚动回写形成反馈。
                 // 改为 VStack，并用「概览 / 趋势 / 健康信号」三段节奏降低同权卡片疲劳。
+                // 组间只靠 spacing，不再插 Divider——emphasized 卡片本身已有边界。
                 VStack(alignment: .leading, spacing: 24) {
                     // 上半：一眼能扫完的本地事实 + 活动 KPI
                     VStack(alignment: .leading, spacing: 12) {
                         localOverviewSection
                         activitySection
                     }
-
-                    Divider()
-                        .opacity(0.35)
-                        .padding(.vertical, 2)
 
                     // 中段：需要盯图的趋势深潜
                     VStack(alignment: .leading, spacing: 12) {
@@ -1808,10 +1806,6 @@ struct RepositoryInsightsView: View {
                         let visible = isContributorsExpanded
                             ? insight.contributors
                             : Array(insight.contributors.prefix(Self.visibleContributorLimit))
-                        let hiddenCount = max(
-                            0,
-                            insight.contributors.count - Self.visibleContributorLimit
-                        )
                         LazyVGrid(
                             columns: [GridItem(.adaptive(minimum: 142), spacing: 10)],
                             alignment: .leading,
@@ -1819,23 +1813,6 @@ struct RepositoryInsightsView: View {
                         ) {
                             ForEach(visible) { contributor in
                                 contributorItem(contributor)
-                            }
-                            if !isContributorsExpanded, hiddenCount > 0 {
-                                Button {
-                                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
-                                        isContributorsExpanded = true
-                                    }
-                                } label: {
-                                    Text(verbatim: "+\(hiddenCount)")
-                                        .font(interfaceScale.font(.caption, weight: .semibold))
-                                        .foregroundStyle(.secondary)
-                                        .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
-                                        .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                .focusEffectDisabled()
-                                .accessibilityLabel(Text("insights.drilldown.viewAll"))
-                                .accessibilityValue(Text(verbatim: "+\(hiddenCount)"))
                             }
                         }
 
