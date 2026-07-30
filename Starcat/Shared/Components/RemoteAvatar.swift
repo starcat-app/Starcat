@@ -78,10 +78,16 @@ struct RemoteAvatar: View {
     /// 是否描边。
     var showBorder: Bool = true
 
+    /// 可选缓存版本；仅当前登录用户头像传入。
+    ///
+    /// GitHub 替换头像后常保持原 `avatar_url`。把 `/user.updated_at` 拼进 Kingfisher cache key，
+    /// 可以在资料变化时拉取新图片，同时不清空仓库作者头像等其它共享缓存。
+    var cacheVersion: String? = nil
+
     var body: some View {
         Group {
             if let url = GitHubAvatarURL.imageURL(from: urlString, displayDiameter: size) {
-                KFImage(url)
+                KFImage(source: imageSource(for: url))
                     .resizable()
                     .placeholder { placeholder }
                     .fade(duration: 0.15)
@@ -97,6 +103,17 @@ struct RemoteAvatar: View {
                 Circle().stroke(.secondary.opacity(0.18), lineWidth: 0.5)
             }
         }
+    }
+
+    private func imageSource(for url: URL) -> Source {
+        let normalizedVersion = cacheVersion?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cacheKey = if let normalizedVersion, !normalizedVersion.isEmpty {
+            "\(url.absoluteString)#starcat-current-user-avatar=\(normalizedVersion)"
+        } else {
+            // 默认仍使用完整 URL 作为 cache key，保持所有非当前用户头像的既有缓存逻辑。
+            url.absoluteString
+        }
+        return .network(KF.ImageResource(downloadURL: url, cacheKey: cacheKey))
     }
 
     @ViewBuilder
@@ -127,6 +144,8 @@ struct UserAvatar: View {
     let login: String?
     /// GitHub profile status；仅当前登录用户头像使用。
     var status: GitHubUserStatusDTO? = nil
+    /// GitHub 资料版本；仅当前登录用户头像使用，避免稳定 URL 命中旧图片缓存。
+    var avatarCacheVersion: String? = nil
     /// 点击未登录头像时触发，用于打开登录弹窗
     let onLoginTapped: () -> Void
 
@@ -143,7 +162,12 @@ struct UserAvatar: View {
         } label: {
             if isLoggedIn {
                 ZStack(alignment: .bottomTrailing) {
-                    RemoteAvatar(urlString: avatarUrl, size: size, showBorder: !settings.isProUser)
+                    RemoteAvatar(
+                        urlString: avatarUrl,
+                        size: size,
+                        showBorder: !settings.isProUser,
+                        cacheVersion: avatarCacheVersion
+                    )
                         .overlay {
                             if settings.isProUser {
                                 // PRO 头像环复用分享卡片的传播感，但只作为身份装饰；

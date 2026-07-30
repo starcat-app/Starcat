@@ -60,6 +60,11 @@ struct GitHubUserDTO: Codable, Equatable {
     let twitterUsername: String?
     /// GitHub 主页完整 URL（`https://github.com/{login}`）。
     let htmlUrl: String?
+    /// GitHub 个人资料最后更新时间。
+    ///
+    /// 当前登录用户头像用它作为图片缓存版本：GitHub 替换头像后 `avatar_url` 通常保持不变，
+    /// 但资料版本会变化，因此可以只让当前用户头像换 cache key，不清空其它远程图片缓存。
+    let updatedAt: String?
     /// GitHub 个人主页 status（头像右下角的状态 emoji）。
     ///
     /// REST `/user` 不返回该字段；`UserAPI.getCurrentUser()` 会在 REST 身份校验后用 GraphQL
@@ -81,6 +86,7 @@ struct GitHubUserDTO: Codable, Equatable {
         blog: String? = nil,
         twitterUsername: String? = nil,
         htmlUrl: String? = nil,
+        updatedAt: String? = nil,
         status: GitHubUserStatusDTO? = nil
     ) {
         self.id = id
@@ -97,6 +103,7 @@ struct GitHubUserDTO: Codable, Equatable {
         self.blog = blog
         self.twitterUsername = twitterUsername
         self.htmlUrl = htmlUrl
+        self.updatedAt = updatedAt
         self.status = status
     }
 
@@ -125,6 +132,7 @@ struct GitHubUserDTO: Codable, Equatable {
             blog: blog,
             twitterUsername: twitterUsername,
             htmlUrl: htmlUrl,
+            updatedAt: updatedAt,
             status: status
         )
     }

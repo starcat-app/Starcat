@@ -85,4 +85,95 @@ final class ReleaseNotesChangelogParserTests: XCTestCase {
         XCTAssertEqual(body.summary, "Just a free-form note without headings.")
         XCTAssertTrue(body.sections.isEmpty)
     }
+
+    func testExtractMarkdownImagesKeepsHttpsAndStripsSyntax() {
+        let raw = """
+        My Insights: Review organization progress. ![demo](https://cdn.dong4j.site/source/image/demo.webp) trailing
+        """
+        let extracted = ChangelogParser.extractMarkdownImages(from: raw)
+        XCTAssertEqual(extracted.images.count, 1)
+        XCTAssertEqual(extracted.images[0].alt, "demo")
+        XCTAssertEqual(
+            extracted.images[0].url.absoluteString,
+            "https://cdn.dong4j.site/source/image/demo.webp"
+        )
+        XCTAssertFalse(extracted.text.contains("!["))
+        XCTAssertTrue(extracted.text.contains("My Insights: Review organization progress."))
+        XCTAssertTrue(extracted.text.contains("trailing"))
+    }
+
+    func testExtractMarkdownImagesIgnoresNonHTTPSchemes() {
+        let extracted = ChangelogParser.extractMarkdownImages(
+            from: "Note ![local](file:///tmp/a.png) ![rel](./CHANGELOG/demo.png) done"
+        )
+        XCTAssertTrue(extracted.images.isEmpty)
+        XCTAssertEqual(extracted.text, "Note done")
+    }
+
+    func testParseBodyAttachesContinuationImageToBullet() throws {
+        let body = ChangelogParser.parseBody(
+            """
+            ### New
+
+            - My Insights: Review organization progress.
+
+              ![20260730222601_bX3XjxVL](https://cdn.dong4j.site/source/image/20260730222601_bX3XjxVL.webp)
+
+            - Repository Insights: View Star growth.
+            """
+        )
+
+        XCTAssertEqual(body.sections.count, 1)
+        let section = try XCTUnwrap(body.sections.first)
+        XCTAssertEqual(section.items.count, 2)
+
+        let insights = section.items[0]
+        XCTAssertEqual(insights.title, "My Insights")
+        XCTAssertEqual(insights.detail, "Review organization progress.")
+        XCTAssertEqual(insights.images.count, 1)
+        XCTAssertEqual(
+            insights.images[0].url.absoluteString,
+            "https://cdn.dong4j.site/source/image/20260730222601_bX3XjxVL.webp"
+        )
+        XCTAssertFalse(insights.detail?.contains("![") == true)
+
+        XCTAssertTrue(section.items[1].images.isEmpty)
+    }
+
+    func testInlineMarkdownKeepsHttpsLinksClickable() {
+        let raw = "Search from Raycast. [查看项目](https://github.com/starcat-app/starcat-raycast-extension)"
+        let links = ReleaseNotesInlineMarkdown.allowedLinks(in: raw)
+        XCTAssertEqual(links.count, 1)
+        XCTAssertEqual(links[0].text, "查看项目")
+        XCTAssertEqual(
+            links[0].url.absoluteString,
+            "https://github.com/starcat-app/starcat-raycast-extension"
+        )
+    }
+
+    func testInlineMarkdownDropsNonHTTPLinks() {
+        let links = ReleaseNotesInlineMarkdown.allowedLinks(
+            in: "Open [local](file:///tmp/a.md) file"
+        )
+        XCTAssertTrue(links.isEmpty)
+    }
+
+    func testParseBodyKeepsInlineLinkSyntaxInDetail() throws {
+        let body = ChangelogParser.parseBody(
+            """
+            ### New
+
+            - Raycast Extension: Search Starcat local repositories. [View project](https://github.com/starcat-app/starcat-raycast-extension)
+            """
+        )
+        let item = try XCTUnwrap(body.sections.first?.items.first)
+        XCTAssertEqual(item.title, "Raycast Extension")
+        XCTAssertEqual(
+            item.detail,
+            "Search Starcat local repositories. [View project](https://github.com/starcat-app/starcat-raycast-extension)"
+        )
+        let links = ReleaseNotesInlineMarkdown.allowedLinks(in: item.detail ?? "")
+        XCTAssertEqual(links.count, 1)
+        XCTAssertEqual(links[0].text, "View project")
+    }
 }

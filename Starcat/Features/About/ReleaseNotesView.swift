@@ -7,10 +7,14 @@
 //  关键约束：
 //  - 文案单一来源仍是 Keep a Changelog 风格 Markdown，不另维护一份 UI 文案。
 //  - `###` 小节解析成带 SF Symbol 的分区；条目尽量拆成「短标题 + 说明」。
+//  - 条目下的 `![alt](https://...)` 会剥离出远程截图，用 Kingfisher 单独渲染（WebP 由系统 ImageIO 解码）。
+//  - ScrollView 内截图必须带明确宽高比，否则加载成功后可能高度塌成 0。
+//  - 条目正文里的 `[文字](https://...)` 走 AttributedString 内联解析，保留可点击链接。
 //  - 无法结构化时回退 MarkdownUI，避免旧版 / 异常 changelog 空白。
 //
 
 import AppKit
+import Kingfisher
 import MarkdownUI
 import SwiftUI
 
@@ -156,11 +160,11 @@ private struct ReleaseNotesVersionCard: View {
         } else {
             VStack(alignment: .leading, spacing: 16) {
                 if let summary = version.summary, summary.isEmpty == false {
-                    Text(summary)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
+                    ReleaseNotesInlineText(
+                        raw: summary,
+                        font: .callout,
+                        baseColor: .secondary
+                    )
                 }
 
                 ForEach(version.sections) { section in
@@ -254,23 +258,160 @@ private struct ReleaseNotesItemRow: View {
                 .frame(width: 5, height: 5)
                 .padding(.top, 6)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(item.title)
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
+            VStack(alignment: .leading, spacing: 8) {
+                if item.title.isEmpty == false {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ReleaseNotesInlineText(
+                            raw: item.title,
+                            font: .body.weight(.medium),
+                            baseColor: .primary
+                        )
 
-                if let detail = item.detail, detail.isEmpty == false {
-                    Text(detail)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
+                        if let detail = item.detail, detail.isEmpty == false {
+                            ReleaseNotesInlineText(
+                                raw: detail,
+                                font: .callout,
+                                baseColor: .secondary
+                            )
+                        }
+                    }
+                }
+
+                // 结构化条目本身是 Text，图片必须单独渲染；URL 已在解析期剥离。
+                ForEach(item.images) { image in
+                    ReleaseNotesRemoteImage(image: image)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+/// 把 changelog 条目里的内联 Markdown（尤其 `[文字](url)`）渲成可点 `Text`。
+///
+/// 为什么不用整段 MarkdownUI：结构化列表仍要保持「短标题 + 说明」扫读；只对单行正文开内联语法。
+/// 颜色写在 AttributedString 里，避免外层 `.foregroundStyle` 把链接色一并盖掉。
+private struct ReleaseNotesInlineText: View {
+    let raw: String
+    let font: Font
+    let baseColor: Color
+
+    var body: some View {
+        Text(ReleaseNotesInlineMarkdown.attributed(raw, baseColor: baseColor))
+            .font(font)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+            .tint(Color.accentColor)
+    }
+}
+
+/// Changelog 内联 Markdown → AttributedString。
+///
+/// 只启用 inline 语法；链接仅保留 http(s)，避免 `file:` / 自定义 scheme 被点开。
+enum ReleaseNotesInlineMarkdown {
+    static func attributed(_ raw: String, baseColor: Color) -> AttributedString {
+        var options = AttributedString.MarkdownParsingOptions()
+        options.interpretedSyntax = .inlineOnlyPreservingWhitespace
+        options.failurePolicy = .returnPartiallyParsedIfPossible
+
+        var attributed = (try? AttributedString(markdown: raw, options: options))
+            ?? AttributedString(raw)
+
+        // 先铺底色，再给合法链接上 accent，保证 secondary 正文里链接仍可辨认。
+        for run in attributed.runs {
+            let range = run.range
+            if let url = run.link {
+                if isAllowedLink(url) {
+                    attributed[range].foregroundColor = Color.accentColor
+                    attributed[range].underlineStyle = .single
+                } else {
+                    attributed[range].link = nil
+                    attributed[range].foregroundColor = baseColor
+                }
+            } else {
+                attributed[range].foregroundColor = baseColor
+            }
+        }
+        return attributed
+    }
+
+    /// 单测用：抽出保留下来的 http(s) 链接。
+    static func allowedLinks(in raw: String) -> [(text: String, url: URL)] {
+        let attributed = attributed(raw, baseColor: .primary)
+        var result: [(text: String, url: URL)] = []
+        for run in attributed.runs {
+            guard let url = run.link else { continue }
+            let text = String(attributed[run.range].characters)
+            result.append((text, url))
+        }
+        return result
+    }
+
+    private static func isAllowedLink(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased() else { return false }
+        return scheme == "http" || scheme == "https"
+    }
+}
+
+/// Changelog 截图：Kingfisher 加载 CDN 远程图。
+///
+/// ScrollView 里若只靠 `resizable + aspectRatio(.fit)`、不给定宽高比，成功加载后
+/// ideal height 可能变成 0（看起来像「完全没图」）。因此用 onSuccess 写入真实宽高比，
+/// 占位阶段也先占住一块可见区域。
+private struct ReleaseNotesRemoteImage: View {
+    let image: ChangelogImage
+    @State private var loadFailed = false
+    /// width / height；未知时用常见截图比例，避免布局塌缩。
+    @State private var aspectRatio: CGFloat = 16.0 / 10.0
+
+    var body: some View {
+        Group {
+            if loadFailed {
+                placeholder
+            } else {
+                KFImage(image.url)
+                    .placeholder { placeholder }
+                    .onSuccess { result in
+                        let size = result.image.size
+                        guard size.width > 0, size.height > 0 else { return }
+                        aspectRatio = size.width / size.height
+                    }
+                    .onFailure { _ in
+                        loadFailed = true
+                    }
+                    .fade(duration: 0.15)
+                    .resizable()
+                    .aspectRatio(aspectRatio, contentMode: .fit)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.55), lineWidth: 1)
+        }
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var accessibilityLabel: Text {
+        let trimmed = image.alt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return Text("releaseNotes.image.accessibilityLabel")
+        }
+        return Text(verbatim: trimmed)
+    }
+
+    private var placeholder: some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(Color(nsColor: .controlBackgroundColor))
+            .aspectRatio(aspectRatio, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .overlay {
+                // 故意弱化：截图加载中 / 失败时的装饰占位，非可读正文。
+                Image(systemName: "photo")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(.tertiary)
+            }
     }
 }
 
@@ -310,6 +451,17 @@ struct ChangelogItem: Identifiable {
     let id: String
     let title: String
     let detail: String?
+    /// 条目附属截图；来自 `![alt](https://...)`，不进 title/detail 正文。
+    let images: [ChangelogImage]
+}
+
+/// Changelog 中解析出的远程 CDN 图片。
+///
+/// 只接受 `http` / `https`。
+struct ChangelogImage: Identifiable, Equatable {
+    let id: String
+    let alt: String
+    let url: URL
 }
 
 /// changelog `###` 分类语义，用于图标与轻度着色。
@@ -445,12 +597,21 @@ enum ChangelogParser {
 
         func flushSection() {
             guard let currentTitle else { return }
-            let items = currentItems.enumerated().map { index, raw in
-                let split = splitItem(raw)
+            let items = currentItems.enumerated().compactMap { index, raw -> ChangelogItem? in
+                let extracted = extractMarkdownImages(from: raw)
+                let cleaned = extracted.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                // 允许「只有截图、没有正文」的附属行；正文与图片都空则丢弃。
+                if cleaned.isEmpty, extracted.images.isEmpty {
+                    return nil
+                }
+                let split: (title: String, detail: String?) = cleaned.isEmpty
+                    ? ("", nil)
+                    : splitItem(cleaned)
                 return ChangelogItem(
                     id: "\(currentTitle)-\(index)",
                     title: split.title,
-                    detail: split.detail
+                    detail: split.detail,
+                    images: extracted.images
                 )
             }
             // 空分区（只有标题无 bullet）仍保留，避免吞掉用户写的小节标题。
@@ -491,6 +652,65 @@ enum ChangelogParser {
 
         let summary = normalizedMarkdown(from: summaryLines)
         return (summary.isEmpty ? nil : summary, sections)
+    }
+
+    /// 从一条 bullet（含续行）抽出 `![alt](url)`，正文里不再残留图片语法。
+    ///
+    /// 只保留 http(s) CDN URL（含 WebP；由系统 ImageIO / Kingfisher 解码）。
+    /// 相对路径 / 其它 scheme 丢弃，避免误加载。
+    static func extractMarkdownImages(from raw: String) -> (text: String, images: [ChangelogImage]) {
+        guard raw.contains("![") else {
+            return (raw, [])
+        }
+
+        let pattern = #"!\[([^\]]*)\]\(([^)\s]+)\)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return (raw, [])
+        }
+
+        let nsRange = NSRange(raw.startIndex..<raw.endIndex, in: raw)
+        var images: [ChangelogImage] = []
+        var cleaned = raw
+
+        // 从后往前删，避免替换时打乱 Range。
+        let matches = regex.matches(in: raw, range: nsRange).reversed()
+        for (offset, match) in matches.enumerated() {
+            guard match.numberOfRanges >= 3,
+                  let altRange = Range(match.range(at: 1), in: raw),
+                  let urlRange = Range(match.range(at: 2), in: raw),
+                  let fullRange = Range(match.range(at: 0), in: cleaned)
+            else {
+                continue
+            }
+
+            let alt = String(raw[altRange])
+            let urlString = String(raw[urlRange])
+            cleaned.removeSubrange(fullRange)
+
+            guard let url = URL(string: urlString),
+                  let scheme = url.scheme?.lowercased(),
+                  scheme == "http" || scheme == "https"
+            else {
+                continue
+            }
+
+            // reversed 枚举时用稳定 id：按原文出现顺序编号。
+            let appearanceIndex = matches.count - 1 - offset
+            images.insert(
+                ChangelogImage(
+                    id: "\(url.absoluteString)#\(appearanceIndex)",
+                    alt: alt,
+                    url: url
+                ),
+                at: 0
+            )
+        }
+
+        // 去掉图片留下的多余空白，避免 splitItem 吃到空段。
+        let collapsed = cleaned
+            .replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (collapsed, images)
     }
 
     /// 从 `- ` / `* ` / `+ ` 列表行取出正文；支持可选任务列表前缀。

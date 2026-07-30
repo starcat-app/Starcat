@@ -9,13 +9,24 @@ Starcat 1.3.0 adds My Projects, library-wide and repository-level insights, macO
 ### New
 
 - App Store update checks: Automatically detect new versions at launch or when the app becomes active, with manual checks from the Actions menu and menu bar and a shortcut to upgrade in the Mac App Store.
+
 - My Projects: Browse personal, organization, and external collaboration repositories; use GitHub App permissions for authorized public, private, and internal projects, with existing filters, details, and Star trends.
+
 - My Insights: Review organization progress, technology distribution, project status, and items needing attention across all saved repositories or your Knowledge Base, then drill down to the matching repository list.
+  ![20260730222601_bX3XjxVL](https://cdn.dong4j.site/source/image/20260730222601_bX3XjxVL.webp)
+  
 - Repository Insights: View Star growth, collaboration activity, commit trends, contributors, release cadence, project health, community standards, and security signals, with stable content while switching repositories or refreshing.
+
+  ![20260730224524_01AnNgnJ](./CHANGELOG/20260730224524_01AnNgnJ.png)
+
 - Repository Insights Context: Reuse generated insights in AI summaries, repository conversations, and RAG answers through a removable read-only XML context, with distinct status for unavailable data, custom prompts that omit insights, and actual fallback.
+
 - macOS desktop widgets: Starcat Focus, Rediscovery, and Release Watch show frequently used repositories, a daily rediscovery, and unread releases with deep links to the corresponding content.
+
 - Alfred Workflow: Search Starcat local repositories and GitHub directly from Alfred. [View project](https://github.com/starcat-app/starcat-alfred-workflow)
+
 - uTools Plugin: Search Starcat local repositories and GitHub directly from uTools. [View project](https://github.com/starcat-app/starcat-utools-plugin)
+
 - Raycast Extension: Search Starcat local repositories and GitHub directly from Raycast. [View project](https://github.com/starcat-app/starcat-raycast-extension)
 
 ### Improvements

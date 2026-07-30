@@ -125,7 +125,7 @@ struct GitHubAPIClientTests {
         URLProtocolStub.requestHandler = { request in
             switch request.url?.path {
             case "/user":
-                let body = #"{"id":42,"login":"alice","avatar_url":"https://avatars.example/alice.png"}"#.data(using: .utf8)!
+                let body = #"{"id":42,"login":"alice","avatar_url":"https://avatars.example/alice.png","updated_at":"2026-07-30T12:34:56Z"}"#.data(using: .utf8)!
                 return (httpResponse(200, request.url!), body)
             case "/graphql":
                 let body = """
@@ -156,6 +156,7 @@ struct GitHubAPIClientTests {
         #expect(user.status?.displayEmoji == "😘")
         #expect(user.status?.message == "Shipping Starcat")
         #expect(user.activeStatus?.displayEmoji == "😘")
+        #expect(user.updatedAt == "2026-07-30T12:34:56Z")
         #expect(URLProtocolStub.receivedRequests.map { $0.url?.path } == ["/user", "/graphql"])
         let graphQLRequest = try #require(URLProtocolStub.receivedRequests.last)
         #expect(graphQLRequest.httpMethod == "POST")

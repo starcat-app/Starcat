@@ -351,6 +351,7 @@ struct SidebarHeaderView: View {
                 avatarUrl: user.avatarUrl,
                 login: user.login,
                 status: user.activeStatus,
+                avatarCacheVersion: user.updatedAt,
                 onLoginTapped: { showLoginSheet = true }
             )
             .gettingStartedAnchor(.signIn)
