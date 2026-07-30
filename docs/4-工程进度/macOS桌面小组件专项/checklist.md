@@ -203,8 +203,10 @@
   - 证据：`widget.releaseWatch.unreadShort %lld` 显示“%lld 未读 / %lld unread”
 - [x] Release Watch 相对时间使用紧凑单单位表达
   - 证据：`Date.RelativeFormatStyle` 使用 `.numeric` + `.abbreviated`
-- [ ] Widget 文本和图标继续只使用 `.primary` / `.secondary`
-- [ ] Widget 定向测试、Store Debug、Direct Debug 构建通过
+- [x] Widget 文本和图标继续只使用 `.primary` / `.secondary`
+  - 证据：`StarcatWidgets/**/*.swift` 静态检查无 `.tertiary`
+- [x] Widget 定向测试、Store Debug、Direct Debug 构建通过
+  - 证据：收藏趋势增量 25 项定向测试无失败；Store / Direct Widget 构建通过
 - [ ] 优化后所有声明尺寸完成真实桌面复验
 
 ### 9.2 第二轮真实桌面 UI 优化增量
@@ -221,7 +223,8 @@
   - 证据：`StarcatRediscoveryWidgetView.mediumContent`
 - [x] 第二轮修改后固定文案全部通过 String Catalog 校验
   - 证据：`jq empty` 与 `xcstringstool compile --dry-run` 均通过
-- [ ] 第二轮 Widget 定向测试、Store / Direct Widget 构建通过
+- [x] 第二轮 Widget 定向测试、Store / Direct Widget 构建通过
+  - 证据：收藏趋势增量完成后重新执行 25 项定向测试及 Store / Direct Widget 构建
 - [ ] 第二轮优化后 Small / Medium / Large 完成真实桌面复验
 
 ### 9.3 收藏趋势小组件增量
@@ -263,9 +266,9 @@
 - [x] 收藏趋势 Deep Link 正常与非法输入
   - 证据：`WidgetAppDeepLinkTests`
 - [x] Widget 相关定向测试通过
-  - 证据：29 tests，0 failures，0 skipped
+  - 证据：既有基线 29 tests；收藏趋势增量 25 tests，0 failures，0 skipped
 - [x] Starcat 全量测试通过
-  - 证据：2076 tests，2067 passed，0 failures，8 skipped，1 expected failure
+  - 证据：2080 tests，2071 passed，0 failures，8 skipped，1 expected failure
 
 ---
 
@@ -319,6 +322,10 @@
   - 证据：commit `c0c8760`，第一轮 Clean
 - [x] 第六轮最终复审无新增 P0 / P1 / P2
   - 证据：commit `e0ec026`，第二轮连续 Clean
+- [x] 第七轮收藏趋势增量审查报告先落档并提交
+  - 证据：commit `5cf31ce`
+- [x] 第七轮发现的文档与进度 P2 已修复
+  - 证据：详细方案改为四个 Widget；§9.1、§9.2 回填当前测试与构建证据
 - [ ] 所有 checklist 项均有真实证据
 - [ ] 新增并提交最终结果报告
 - [x] 最终分支无未提交改动
@@ -375,6 +382,11 @@
 | `c0c8760` | 审查 | 新增第五轮 Clean 复审报告 | 无新增 P0 / P1 / P2 |
 | `883816a` | 文档 | 回填第五轮 Clean 审查进度 | `git diff --check` |
 | `e0ec026` | 审查 | 新增第六轮最终 Clean 复审报告 | 29 项定向测试 + 2076 项全量测试 |
+| `9066848` | 文档 | 补充收藏趋势小组件方案 | `git diff --check` |
+| `66d8047` | 功能 | 添加收藏趋势快照投影 | 快照兼容与趋势投影测试通过 |
+| `6eb0332` | 功能 | 添加我的洞察小组件路由 | Deep Link 定向测试通过 |
+| `278c7b5` | 功能 | 实现收藏趋势小组件 | Store / Direct Widget 构建通过 |
+| `5cf31ce` | 审查 | 新增第七轮收藏趋势审查报告 | 25 项定向测试 + 2080 项全量测试 |
 
 审查时继续以 `git log --reverse aa135b7e..HEAD -- <Widget 相关路径>` 反向核对；本表在
 每轮审查后补齐新增提交。
