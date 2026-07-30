@@ -85,25 +85,35 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
 
     private let database: any DatabaseManaging
     private let cache: MyInsightsSnapshotCache
+    private let knowledgeMetadataCache: KnowledgeBaseMetadataSnapshotCache
     private let now: @Sendable () -> Date
 
     init(
         database: any DatabaseManaging,
         cache: MyInsightsSnapshotCache = MyInsightsSnapshotCache(),
+        knowledgeMetadataCache: KnowledgeBaseMetadataSnapshotCache = KnowledgeBaseMetadataSnapshotCache(),
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.database = database
         self.cache = cache
+        self.knowledgeMetadataCache = knowledgeMetadataCache
         self.now = now
     }
 
     func load(scope: InsightsScope, embeddingModel: String) async throws -> MyInsightsSnapshot {
+        if scope == .knowledge {
+            let facts = try await KnowledgeBaseMetadataSnapshotProvider(
+                database: database,
+                embeddingModel: embeddingModel,
+                cache: knowledgeMetadataCache,
+                now: now
+            ).fetch()
+            return Self.makeKnowledgeSnapshot(facts)
+        }
         let generatedAt = now()
         let revision = try await fetchRevision(embeddingModel: embeddingModel)
         return try await cache.value(scope: scope, revision: revision, now: generatedAt) {
             try await loadUncached(
-                scope: scope,
-                embeddingModel: embeddingModel,
                 generatedAt: generatedAt
             )
         }
@@ -111,6 +121,7 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
 
     func invalidate() async {
         await cache.removeAll()
+        await knowledgeMetadataCache.removeAll()
     }
 
     /// 读取轻量 revision。旧测试草稿库缺少派生表时按空表处理，不能让洞察入口崩溃。
@@ -153,30 +164,119 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
 
     /// 真正的快照读取只进入一次 `writer.read`，该闭包内所有 SELECT 共享同一 SQLite 视图。
     private func loadUncached(
-        scope: InsightsScope,
-        embeddingModel: String,
         generatedAt: Date
     ) async throws -> MyInsightsSnapshot {
         return try await database.writer.read { db in
-            try Self.makeSnapshot(
+            try Self.makeStarredSnapshot(
                 db: db,
-                scope: scope,
-                embeddingModel: embeddingModel,
                 generatedAt: generatedAt
             )
         }
     }
 
-    private static func makeSnapshot(
+    /// 知识库页只负责把中立事实投影为 UI 模型，不再重复访问数据库计算聚合值。
+    private static func makeKnowledgeSnapshot(
+        _ snapshot: KnowledgeBaseMetadataSnapshot
+    ) -> MyInsightsSnapshot {
+        let total = snapshot.projectCount
+        let statusByName = Dictionary(
+            uniqueKeysWithValues: snapshot.insights.normalizedStatusCounts.map { ($0.name, $0.count) }
+        )
+        let knowledge = snapshot.insights
+        return MyInsightsSnapshot(
+            scope: .knowledge,
+            generatedAt: snapshot.generatedAt,
+            metrics: [
+                metric("projects", value: total, detailKey: "insights.metric.knowledgeProjects.detail"),
+                metric("new", value: snapshot.addedInLast30DaysCount, detailKey: "insights.metric.knowledgeRecent.detail"),
+                metric("using", value: statusByName["using"] ?? 0, detailKey: "insights.metric.using.detail"),
+                metric("organized", value: knowledge.organizedProjectCount, detailKey: "insights.metric.organized.detail")
+            ],
+            statusItems: [
+                distribution("unread", "insights.status.unread", statusByName["unread"] ?? 0, total, "orange"),
+                distribution("read", "insights.status.read", statusByName["read"] ?? 0, total, "blue"),
+                distribution("using", "insights.status.using", statusByName["using"] ?? 0, total, "green")
+            ],
+            languageItems: rankedDistribution(
+                knowledge.languageCounts.map { NamedCount(name: $0.name, count: $0.count) },
+                total: total,
+                unknownTitle: "insights.technology.license.unknown",
+                otherTitle: "insights.technology.other"
+            ),
+            topicItems: rankedDistribution(
+                knowledge.topicCounts.map { NamedCount(name: $0.name, count: $0.count) },
+                total: total,
+                unknownTitle: nil,
+                otherTitle: "insights.technology.topic.other"
+            ),
+            licenseItems: rankedDistribution(
+                knowledge.licenseCounts.map { NamedCount(name: $0.name, count: $0.count) },
+                total: total,
+                unknownTitle: "insights.technology.license.unknown",
+                otherTitle: "insights.technology.license.other"
+            ),
+            actionItems: [
+                action(.untagged, count: snapshot.untaggedProjectCount),
+                action(.unread, count: statusByName["unread"] ?? 0),
+                action(.missingReadme, count: snapshot.withoutReadmeSourceProjectCount),
+                action(.missingIndexableContent, count: snapshot.withoutIndexableSourceProjectCount),
+                action(.indexIssues, count: knowledge.indexIssueProjectCount),
+                action(.healthPending, count: max(0, total - knowledge.healthCompletedProjectCount)),
+                action(.openSSFPending, count: max(0, total - knowledge.openSSFCompletedProjectCount)),
+                action(.maintenanceRisk, count: knowledge.maintenanceRiskProjectCount),
+                action(.securityRisk, count: knowledge.securityRiskProjectCount)
+            ],
+            healthCoverage: .init(completed: knowledge.healthCompletedProjectCount, total: total),
+            openSSFCoverage: .init(completed: knowledge.openSSFCompletedProjectCount, total: total),
+            assetSummary: .init(
+                dormantCount: knowledge.dormantProjectCount,
+                archivedCount: knowledge.archivedProjectCount,
+                unavailableCount: knowledge.unavailableProjectCount
+            ),
+            priorityRepositories: knowledge.priorityRepositories.map {
+                .init(
+                    id: $0.repoID,
+                    fullName: $0.fullName,
+                    starsCount: $0.stars,
+                    isUnread: $0.isUnread,
+                    isUntagged: $0.isUntagged
+                )
+            },
+            rhythmPoints: knowledge.weeklyAdditions.map {
+                .init(weekStart: $0.weekStart, count: $0.count)
+            },
+            knowledgeCoverageItems: [
+                distribution(
+                    "readme",
+                    "insights.knowledgeCoverage.readme",
+                    knowledge.readmeSourceProjectCount,
+                    total,
+                    "blue"
+                ),
+                distribution(
+                    "indexable",
+                    "insights.knowledgeCoverage.indexable",
+                    knowledge.indexableSourceProjectCount,
+                    total,
+                    "purple"
+                ),
+                distribution(
+                    "embeddingReady",
+                    "insights.knowledgeCoverage.embeddingReady",
+                    knowledge.embeddingReadyProjectCount,
+                    total,
+                    "green"
+                )
+            ]
+        )
+    }
+
+    private static func makeStarredSnapshot(
         db: Database,
-        scope: InsightsScope,
-        embeddingModel: String,
         generatedAt: Date
     ) throws -> MyInsightsSnapshot {
-        let scopePredicate = scope == .starred
-            ? "r.is_starred = 1"
-            : "n.library_state = 'in_library'"
-        let recentColumn = scope == .starred ? "r.starred_at" : "n.library_updated_at"
+        let scopePredicate = "r.is_starred = 1"
+        let recentColumn = "r.starred_at"
         let recentCutoff = ISO8601DateFormatter.shared.string(
             from: generatedAt.addingTimeInterval(-30 * 24 * 60 * 60)
         )
@@ -354,23 +454,10 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
             )
         }
 
-        let knowledgeRAG = scope == .knowledge
-            ? try knowledgeRAGCounts(db, embeddingModel: embeddingModel)
-            : nil
         var actionItems = [
             action(.untagged, count: overview["untagged_count"]),
             action(.unread, count: overview["unread_count"])
         ]
-        if let knowledgeRAG {
-            actionItems.append(action(.missingReadme, count: knowledgeRAG.missingReadme))
-            actionItems.append(
-                action(
-                    .missingIndexableContent,
-                    count: knowledgeRAG.missingIndexableContent
-                )
-            )
-            actionItems.append(action(.indexIssues, count: knowledgeRAG.indexIssues))
-        }
         actionItems.append(contentsOf: [
             action(.healthPending, count: max(0, totalCount - healthCompleted)),
             action(.openSSFPending, count: max(0, totalCount - openSSFCompleted)),
@@ -379,22 +466,18 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
         ])
 
         return MyInsightsSnapshot(
-            scope: scope,
+            scope: .starred,
             generatedAt: generatedAt,
             metrics: [
                 metric(
                     "projects",
                     value: totalCount,
-                    detailKey: scope == .starred
-                        ? "insights.metric.projects.detail"
-                        : "insights.metric.knowledgeProjects.detail"
+                    detailKey: "insights.metric.projects.detail"
                 ),
                 metric(
                     "new",
                     value: overview["recent_count"],
-                    detailKey: scope == .starred
-                        ? "insights.metric.recent.detail"
-                        : "insights.metric.knowledgeRecent.detail"
+                    detailKey: "insights.metric.recent.detail"
                 ),
                 metric("using", value: overview["using_count"], detailKey: "insights.metric.using.detail"),
                 metric("organized", value: overview["organized_count"], detailKey: "insights.metric.organized.detail")
@@ -432,11 +515,29 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
             ),
             priorityRepositories: priorityRepositories,
             rhythmPoints: rhythmPoints,
-            knowledgeCoverageItems: knowledgeCoverageItems(
-                overview: overview,
-                knowledgeRAG: knowledgeRAG,
-                total: totalCount
-            )
+            knowledgeCoverageItems: [
+                distribution(
+                    "library",
+                    "insights.knowledgeCoverage.library",
+                    overview["library_count"],
+                    totalCount,
+                    "blue"
+                ),
+                distribution(
+                    "notes",
+                    "insights.knowledgeCoverage.notes",
+                    overview["noted_count"],
+                    totalCount,
+                    "purple"
+                ),
+                distribution(
+                    "tags",
+                    "insights.knowledgeCoverage.tags",
+                    overview["tagged_count"],
+                    totalCount,
+                    "green"
+                )
+            ]
         )
     }
 
@@ -492,150 +593,6 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
             let key = String(ISO8601DateFormatter.shared.string(from: week).prefix(10))
             return InsightsRhythmPoint(weekStart: week, count: counts[key] ?? 0)
         }
-    }
-
-    /// 知识库 RAG 动作项复用 `KnowledgeBaseMetadataSnapshot` 的来源 / override 语义。
-    private static func knowledgeRAGCounts(
-        _ db: Database,
-        embeddingModel: String
-    ) throws -> (
-        missingReadme: Int,
-        missingIndexableContent: Int,
-        indexIssues: Int,
-        readme: Int,
-        indexable: Int,
-        embeddingReady: Int
-    ) {
-        let row = try Row.fetchOne(
-            db,
-            sql: """
-                SELECT
-                    COALESCE(SUM(CASE WHEN NOT EXISTS (
-                        SELECT 1 FROM rag_chunks c
-                        WHERE c.repo_id = n.repo_id AND c.source = 'readme'
-                    ) THEN 1 ELSE 0 END), 0) AS missing_readme_count,
-                    COALESCE(SUM(CASE WHEN NOT EXISTS (
-                        SELECT 1 FROM rag_chunks c
-                        WHERE c.repo_id = n.repo_id
-                          AND NOT EXISTS (
-                              SELECT 1 FROM rag_chunk_overrides o
-                              WHERE o.chunk_id = c.id AND o.is_excluded = 1
-                          )
-                    ) THEN 1 ELSE 0 END), 0) AS missing_indexable_count,
-                    COALESCE(SUM(CASE WHEN EXISTS (
-                        SELECT 1 FROM rag_chunks c
-                        WHERE c.repo_id = n.repo_id
-                          AND NOT EXISTS (
-                              SELECT 1 FROM rag_chunk_overrides o
-                              WHERE o.chunk_id = c.id AND o.is_excluded = 1
-                          )
-                          AND (
-                              c.embedding_status IN ('failed', 'stale')
-                              OR (
-                                  c.embedding_status = 'ready'
-                                  AND c.embedding_model IS NOT NULL
-                                  AND c.embedding_model != ?
-                              )
-                          )
-                    ) THEN 1 ELSE 0 END), 0) AS index_issue_count,
-                    COALESCE(SUM(CASE WHEN EXISTS (
-                        SELECT 1 FROM rag_chunks c
-                        WHERE c.repo_id = n.repo_id AND c.source = 'readme'
-                    ) THEN 1 ELSE 0 END), 0) AS readme_count,
-                    COALESCE(SUM(CASE WHEN EXISTS (
-                        SELECT 1 FROM rag_chunks c
-                        WHERE c.repo_id = n.repo_id
-                          AND NOT EXISTS (
-                              SELECT 1 FROM rag_chunk_overrides o
-                              WHERE o.chunk_id = c.id AND o.is_excluded = 1
-                          )
-                    ) THEN 1 ELSE 0 END), 0) AS indexable_count,
-                    COALESCE(SUM(CASE WHEN EXISTS (
-                        SELECT 1 FROM rag_chunks c
-                        WHERE c.repo_id = n.repo_id
-                          AND c.embedding_status = 'ready'
-                          AND c.embedding_model = ?
-                          AND NOT EXISTS (
-                              SELECT 1 FROM rag_chunk_overrides o
-                              WHERE o.chunk_id = c.id AND o.is_excluded = 1
-                          )
-                    ) THEN 1 ELSE 0 END), 0) AS embedding_ready_count
-                FROM repo_notes n
-                WHERE n.library_state = 'in_library'
-                """,
-            arguments: [embeddingModel, embeddingModel]
-        )!
-        return (
-            missingReadme: row["missing_readme_count"],
-            missingIndexableContent: row["missing_indexable_count"],
-            indexIssues: row["index_issue_count"],
-            readme: row["readme_count"],
-            indexable: row["indexable_count"],
-            embeddingReady: row["embedding_ready_count"]
-        )
-    }
-
-    private static func knowledgeCoverageItems(
-        overview: Row,
-        knowledgeRAG: (
-            missingReadme: Int,
-            missingIndexableContent: Int,
-            indexIssues: Int,
-            readme: Int,
-            indexable: Int,
-            embeddingReady: Int
-        )?,
-        total: Int
-    ) -> [InsightsDistributionItem] {
-        if let knowledgeRAG {
-            return [
-                distribution(
-                    "readme",
-                    "insights.knowledgeCoverage.readme",
-                    knowledgeRAG.readme,
-                    total,
-                    "blue"
-                ),
-                distribution(
-                    "indexable",
-                    "insights.knowledgeCoverage.indexable",
-                    knowledgeRAG.indexable,
-                    total,
-                    "purple"
-                ),
-                distribution(
-                    "embeddingReady",
-                    "insights.knowledgeCoverage.embeddingReady",
-                    knowledgeRAG.embeddingReady,
-                    total,
-                    "green"
-                )
-            ]
-        }
-
-        return [
-            distribution(
-                "library",
-                "insights.knowledgeCoverage.library",
-                overview["library_count"],
-                total,
-                "blue"
-            ),
-            distribution(
-                "notes",
-                "insights.knowledgeCoverage.notes",
-                overview["noted_count"],
-                total,
-                "purple"
-            ),
-            distribution(
-                "tags",
-                "insights.knowledgeCoverage.tags",
-                overview["tagged_count"],
-                total,
-                "green"
-            )
-        ]
     }
 
     private static func namedCounts(_ db: Database, sql: String) throws -> [NamedCount] {

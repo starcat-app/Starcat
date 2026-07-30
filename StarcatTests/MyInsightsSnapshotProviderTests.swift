@@ -110,10 +110,20 @@ struct MyInsightsSnapshotProviderTests {
                 """)
         }
 
-        let provider = GRDBMyInsightsSnapshotProvider(database: database)
+        let sharedCache = KnowledgeBaseMetadataSnapshotCache()
+        let provider = GRDBMyInsightsSnapshotProvider(
+            database: database,
+            knowledgeMetadataCache: sharedCache
+        )
         let snapshot = try await provider.load(scope: .knowledge, embeddingModel: "embed-v1")
+        let ragSnapshot = try await KnowledgeBaseMetadataSnapshotProvider(
+            database: database,
+            embeddingModel: "embed-v1",
+            cache: sharedCache
+        ).fetch()
 
         #expect(metric("projects", in: snapshot) == 3)
+        #expect(snapshot.generatedAt == ragSnapshot.generatedAt)
         #expect(action(.missingReadme, in: snapshot) == 2)
         #expect(action(.missingIndexableContent, in: snapshot) == 1)
         #expect(action(.indexIssues, in: snapshot) == 1)
@@ -121,6 +131,8 @@ struct MyInsightsSnapshotProviderTests {
         #expect(distribution("readme", in: snapshot.knowledgeCoverageItems) == 1)
         #expect(distribution("indexable", in: snapshot.knowledgeCoverageItems) == 2)
         #expect(distribution("embeddingReady", in: snapshot.knowledgeCoverageItems) == 1)
+        #expect(ragSnapshot.insights.indexableSourceProjectCount == 2)
+        #expect(ragSnapshot.insights.embeddingReadyProjectCount == 1)
 
         let changedModel = try await provider.load(
             scope: .knowledge,

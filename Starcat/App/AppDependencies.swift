@@ -725,7 +725,10 @@ final class AppDependencies {
             scope: RepositoryInsightsContextScope(userID: db.currentUserId)
         )
         self.repositoryInsightsContextScopeState = repositoryInsightsContextScopeState
-        self.myInsightsSnapshotProvider = GRDBMyInsightsSnapshotProvider(database: db)
+        self.myInsightsSnapshotProvider = GRDBMyInsightsSnapshotProvider(
+            database: db,
+            knowledgeMetadataCache: knowledgeBaseMetadataSnapshotCache
+        )
         let repositoryInsightsCache = GRDBRepositoryInsightsCache(database: db)
         self.repositoryInsightsCache = repositoryInsightsCache
         let repositoryMetricsClient = DefaultGitHubRepositoryMetricsClient(

@@ -295,6 +295,13 @@ struct KnowledgeRAGCoreTests {
         #expect(snapshot.excludedChunkCount == 1)
         #expect(snapshot.withoutReadmeSourceProjectCount == 1)
         #expect(snapshot.withoutIndexableSourceProjectCount == 1)
+        #expect(snapshot.insights.organizedProjectCount == 3)
+        #expect(snapshot.insights.normalizedStatusCounts.contains(.init(name: "using", count: 1)))
+        #expect(snapshot.insights.readmeSourceProjectCount == 2)
+        #expect(snapshot.insights.indexableSourceProjectCount == 2)
+        #expect(snapshot.insights.embeddingReadyProjectCount == 1)
+        #expect(snapshot.insights.indexIssueProjectCount == 2)
+        #expect(snapshot.insights.weeklyAdditions.count == 12)
         #expect(snapshot.topStarredRepositories.first == .init(repoID: 2, fullName: "octo/demo-2", stars: 120))
         #expect(snapshot.promptContext().contains("octo/demo-2 (120 stars)"))
 
