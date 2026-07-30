@@ -203,7 +203,7 @@
 - [x] Widget 相关定向测试通过
   - 证据：29 tests，0 failures，0 skipped
 - [x] Starcat 全量测试通过
-  - 证据：2061 tests，0 failures，8 skipped，1 expected failure
+  - 证据：2076 tests，2067 passed，0 failures，8 skipped，1 expected failure
 
 ---
 
@@ -255,7 +255,8 @@
   - 证据：commits `3917714`、`61034a2`、`f5a102e`、`60246d0`
 - [x] 第五轮修复后复审无新增 P0 / P1 / P2
   - 证据：commit `c0c8760`，第一轮 Clean
-- [ ] 第六轮最终复审无新增 P0 / P1 / P2
+- [x] 第六轮最终复审无新增 P0 / P1 / P2
+  - 证据：commit `e0ec026`，第二轮连续 Clean
 - [ ] 所有 checklist 项均有真实证据
 - [ ] 新增并提交最终结果报告
 - [x] 最终分支无未提交改动
@@ -310,6 +311,8 @@
 | `176be40` | 审查 | 新增第四轮签名与调试审查报告 | 报告先于文档修复提交 |
 | `1ae18d2` | 文档 | 同步签名结果与独立调试入口 | `xcodegen` + Scheme 列表检查 |
 | `c0c8760` | 审查 | 新增第五轮 Clean 复审报告 | 无新增 P0 / P1 / P2 |
+| `883816a` | 文档 | 回填第五轮 Clean 审查进度 | `git diff --check` |
+| `e0ec026` | 审查 | 新增第六轮最终 Clean 复审报告 | 29 项定向测试 + 2076 项全量测试 |
 
 审查时继续以 `git log --reverse aa135b7e..HEAD -- <Widget 相关路径>` 反向核对；本表在
 每轮审查后补齐新增提交。
