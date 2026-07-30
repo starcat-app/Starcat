@@ -228,10 +228,10 @@
 
 - [x] 详细方案明确公开收藏口径、三种尺寸、隐私边界与验收标准
   - 证据：详细方案 §4.5、§5.4、§7.5、§8.3
-- [ ] `WidgetSnapshot` 升级为向后兼容的 v2，并新增可选趋势投影
-- [ ] 趋势投影连续输出 12 个 ISO 周，空周补零
-- [ ] 趋势投影包含近 30 天、总数和未读 / 已读 / 使用中状态计数
-- [ ] 趋势投影排除 Private 与 inaccessible repository
+- [x] `WidgetSnapshot` 升级为向后兼容的 v2，并新增可选趋势投影
+- [x] 趋势投影连续输出 12 个 ISO 周，空周补零
+- [x] 趋势投影包含近 30 天、总数和未读 / 已读 / 使用中状态计数
+- [x] 趋势投影排除 Private 与 inaccessible repository
 - [ ] Small 显示近 30 天指标与最近 6 周迷你柱形图
 - [ ] Medium 显示 12 周柱形图与本周 / 近 30 天 / 总数
 - [ ] Large 增加 12 周周均与状态分布图
@@ -257,8 +257,8 @@
 - [x] Release 订阅、未读、隐私过滤和排序
 - [x] Deep Link 正常与非法输入
 - [x] Store / Direct 渠道配置
-- [ ] snapshot v2 向后兼容 v1 文件
-- [ ] 收藏趋势聚合、隐私过滤与状态分布
+- [x] snapshot v2 向后兼容 v1 文件
+- [x] 收藏趋势聚合、隐私过滤与状态分布
 - [ ] 收藏趋势 Deep Link 正常与非法输入
 - [x] Widget 相关定向测试通过
   - 证据：29 tests，0 failures，0 skipped

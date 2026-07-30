@@ -14,7 +14,7 @@ import Testing
 @Suite("WidgetSnapshotStore")
 struct WidgetSnapshotStoreTests {
 
-    @Test("ready 快照可以按 v1 契约往返编码")
+    @Test("ready 快照可以按 v2 契约往返编码")
     func roundTripsReadySnapshot() throws {
         try withTemporaryDirectory { directory in
             // 取整秒，避免 JSON ISO8601 编解码的亚秒精度差异干扰契约断言。
@@ -25,7 +25,8 @@ struct WidgetSnapshotStoreTests {
                 focusRepositories: [makeRepository(id: 1)],
                 rediscoveryRepository: makeRepository(id: 2),
                 unreadReleaseCount: 1,
-                unreadReleases: [makeRelease(id: 10, repositoryID: 1)]
+                unreadReleases: [makeRelease(id: 10, repositoryID: 1)],
+                collectionTrend: makeCollectionTrend()
             )
             let store = WidgetSnapshotStore(containerURL: directory)
 
@@ -43,13 +44,15 @@ struct WidgetSnapshotStoreTests {
                 focusRepositories: [makeRepository(id: 1)],
                 rediscoveryRepository: makeRepository(id: 2),
                 unreadReleaseCount: 99,
-                unreadReleases: [makeRelease(id: 10, repositoryID: 1)]
+                unreadReleases: [makeRelease(id: 10, repositoryID: 1)],
+                collectionTrend: makeCollectionTrend()
             )
 
             #expect(snapshot.focusRepositories.isEmpty)
             #expect(snapshot.rediscoveryRepository == nil)
             #expect(snapshot.unreadReleaseCount == 0)
             #expect(snapshot.unreadReleases.isEmpty)
+            #expect(snapshot.collectionTrend == nil)
         }
 
         try withTemporaryDirectory { directory in
@@ -60,6 +63,33 @@ struct WidgetSnapshotStoreTests {
             #expect(loaded.accountState == .signedOut)
             #expect(loaded.focusRepositories.isEmpty)
             #expect(loaded.unreadReleases.isEmpty)
+            #expect(loaded.collectionTrend == nil)
+        }
+    }
+
+    @Test("v2 Extension 可以读取缺少趋势字段的 v1 ready 快照")
+    func loadsLegacyV1ReadySnapshot() throws {
+        try withTemporaryDirectory { directory in
+            let rawJSON = """
+            {
+              "schemaVersion": 1,
+              "generatedAt": "2026-07-30T08:00:00Z",
+              "accountState": "ready",
+              "focusRepositories": [],
+              "rediscoveryRepository": null,
+              "unreadReleaseCount": 0,
+              "unreadReleases": []
+            }
+            """
+            try Data(rawJSON.utf8).write(
+                to: WidgetSharedConfiguration.snapshotURL(containerURL: directory)
+            )
+
+            let loaded = try WidgetSnapshotStore(containerURL: directory).load()
+
+            #expect(loaded.schemaVersion == 1)
+            #expect(loaded.accountState == .ready)
+            #expect(loaded.collectionTrend == nil)
         }
     }
 
@@ -111,6 +141,7 @@ struct WidgetSnapshotStoreTests {
             #expect(loaded.rediscoveryRepository == nil)
             #expect(loaded.unreadReleaseCount == 0)
             #expect(loaded.unreadReleases.isEmpty)
+            #expect(loaded.collectionTrend == nil)
         }
     }
 
@@ -238,6 +269,24 @@ struct WidgetSnapshotStoreTests {
             openURL: URL(
                 string: "starcat://repo/owner/repo-\(repositoryID)/releases?v=1&rid=\(repositoryID)&release_id=\(id)"
             )!
+        )
+    }
+
+    private func makeCollectionTrend() -> WidgetCollectionTrend {
+        WidgetCollectionTrend(
+            totalCount: 3,
+            addedInLast30DaysCount: 2,
+            weeklyPoints: [
+                WidgetCollectionTrendPoint(
+                    weekStart: Date(timeIntervalSince1970: 1_753_660_800),
+                    count: 2
+                )
+            ],
+            statusBreakdown: WidgetCollectionStatusBreakdown(
+                unreadCount: 1,
+                readCount: 1,
+                usingCount: 1
+            )
         )
     }
 }
