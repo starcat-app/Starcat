@@ -213,10 +213,14 @@
   - 证据：`StarcatFocusStatusLabel` 对 `.pinned` 返回 `EmptyView`
 - [x] Focus Header 与空态改用 `scope`，继续保留“使用中”状态
   - 证据：`StarcatFocusWidgetView` 与 `StarcatFocusStatusLabel`
-- [ ] Rediscovery 中文改名“仓库回顾”，英文改名“Repo Recall”
-- [ ] 仓库回顾 Small 删除装饰图标和无效留白，增加描述与 Star 数
-- [ ] 仓库回顾 Medium 展示两行描述、语言、Star 数和最多 3 个标签
-- [ ] 第二轮修改后固定文案全部通过 String Catalog 校验
+- [x] Rediscovery 中文改名“仓库回顾”，英文改名“Repo Recall”
+  - 证据：`widget.rediscovery.displayName`、`widget.rediscovery.title`
+- [x] 仓库回顾 Small 删除装饰图标和无效留白，增加描述与 Star 数
+  - 证据：`StarcatRediscoveryWidgetView.smallContent`
+- [x] 仓库回顾 Medium 展示两行描述、语言、Star 数和最多 3 个标签
+  - 证据：`StarcatRediscoveryWidgetView.mediumContent`
+- [x] 第二轮修改后固定文案全部通过 String Catalog 校验
+  - 证据：`jq empty` 与 `xcstringstool compile --dry-run` 均通过
 - [ ] 第二轮 Widget 定向测试、Store / Direct Widget 构建通过
 - [ ] 第二轮优化后 Small / Medium / Large 完成真实桌面复验
 

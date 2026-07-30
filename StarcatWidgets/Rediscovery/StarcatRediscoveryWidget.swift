@@ -2,7 +2,7 @@
 //  StarcatRediscoveryWidget.swift
 //  StarcatWidgets
 //
-//  每天稳定展示一个长期未关注仓库的“今日重逢”Widget。
+//  每天稳定展示一个长期未关注仓库的“仓库回顾”Widget。
 //
 
 import SwiftUI
@@ -71,7 +71,7 @@ struct StarcatRediscoveryWidgetView: View {
             }
         } else {
             StarcatWidgetEmptyView(
-                symbol: "sparkles",
+                symbol: "clock.arrow.circlepath",
                 titleKey: "widget.rediscovery.empty.title",
                 subtitleKey: "widget.rediscovery.empty.subtitle"
             )
@@ -79,9 +79,13 @@ struct StarcatRediscoveryWidgetView: View {
     }
 
     private func smallContent(repository: WidgetRepository) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack {
-                StarcatWidgetAvatar(fileName: repository.avatarFileName, size: 42)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                StarcatWidgetAvatar(fileName: repository.avatarFileName, size: 38)
+                Text("widget.rediscovery.title")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 Spacer()
                 if entry.isStale {
                     Image(systemName: "clock.badge.exclamationmark")
@@ -89,24 +93,37 @@ struct StarcatRediscoveryWidgetView: View {
                         .foregroundStyle(.secondary)
                         .accessibilityLabel(Text("widget.common.stale"))
                 }
-                Image(systemName: "sparkles")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
-            Spacer(minLength: 0)
-            Text("widget.rediscovery.title")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
             Text(verbatim: "\(repository.owner)/\(repository.name)")
                 .font(.headline)
                 .foregroundStyle(.primary)
                 .lineLimit(2)
-            if let language = repository.language {
-                Text(verbatim: language)
-                    .font(.caption2)
+            if let description = repository.description {
+                Text(verbatim: description)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
+            HStack(spacing: 8) {
+                if let language = repository.language {
+                    Label {
+                        Text(verbatim: language)
+                    } icon: {
+                        Image(systemName: "chevron.left.forwardslash.chevron.right")
+                    }
+                    .lineLimit(1)
+                }
+                Label {
+                    Text(
+                        repository.starsCount,
+                        format: .number.notation(.compactName)
+                    )
+                } icon: {
+                    Image(systemName: "star.fill")
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
         }
         .widgetURL(repository.openURL)
         .accessibilityElement(children: .combine)
@@ -118,15 +135,15 @@ struct StarcatRediscoveryWidgetView: View {
         VStack(alignment: .leading, spacing: 0) {
             StarcatWidgetHeader(
                 "widget.rediscovery.title",
-                systemImage: "sparkles",
+                systemImage: "clock.arrow.circlepath",
                 isStale: entry.isStale
             )
-            .padding(.bottom, 10)
+            .padding(.bottom, 8)
 
             HStack(spacing: 12) {
-                StarcatWidgetAvatar(fileName: repository.avatarFileName, size: 52)
+                StarcatWidgetAvatar(fileName: repository.avatarFileName, size: 58)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(verbatim: "\(repository.owner)/\(repository.name)")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
@@ -150,20 +167,29 @@ struct StarcatRediscoveryWidgetView: View {
                         } icon: {
                             Image(systemName: "star.fill")
                         }
-                        // Medium 宽度有限，只展示最高优先级标签，避免元信息挤压仓库名。
-                        ForEach(repository.tags.prefix(1), id: \.self) { tag in
-                            Text(verbatim: tag)
-                                .lineLimit(1)
-                        }
                     }
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+
+                    if !repository.tags.isEmpty {
+                        HStack(spacing: 6) {
+                            // 快照已按用户排序保存最多 3 个标签。这里保留全部投影，
+                            // 让 Medium 的剩余高度承载真实信息，而不是继续显示空白。
+                            ForEach(repository.tags.prefix(3), id: \.self) { tag in
+                                Text(verbatim: "#\(tag)")
+                                    .lineLimit(1)
+                            }
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    }
                 }
                 Spacer(minLength: 4)
                 Image(systemName: "chevron.right")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
+            .frame(maxHeight: .infinity, alignment: .center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .widgetURL(repository.openURL)

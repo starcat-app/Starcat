@@ -450953,13 +450953,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Rediscover a repository from your Starcat collection each day."
+            "value" : "Review one repository from your Starcat collection each day."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "每天从 Starcat 收藏中重新发现一个仓库。"
+            "value" : "每天回顾一个 Starcat 收藏仓库。"
           }
         }
       }
@@ -450970,13 +450970,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Rediscovery"
+            "value" : "Repo Recall"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "今日重逢"
+            "value" : "仓库回顾"
           }
         }
       }
@@ -451004,13 +451004,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nothing to Rediscover Yet"
+            "value" : "No Repositories to Review Yet"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "暂无适合重逢的仓库"
+            "value" : "暂无可回顾的仓库"
           }
         }
       }
@@ -451021,13 +451021,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Today's Rediscovery"
+            "value" : "Repo Recall"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "今日重逢"
+            "value" : "仓库回顾"
           }
         }
       }
