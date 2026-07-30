@@ -69,6 +69,8 @@ struct HomeView: View {
 
     /// HOM-47：Release 时间线 sheet 显示状态。
     @State private var showReleaseTimeline: Bool = false
+    /// Widget Release Deep Link 的一次性定位目标；普通 Sidebar 入口保持为 nil。
+    @State private var releaseTimelineTargetID: Int64?
 
     /// HomeViewModel 在 HomeView 内部持有；用 @State 让生命周期与该视图绑定。
     /// AppDependencies 不构造它，因为 ViewModel 是 view-scoped，没必要塞进全局容器。
@@ -481,8 +483,14 @@ struct HomeView: View {
         }
         // HOM-47：Release 时间线 sheet（独立窗口承载，不污染三栏布局）
         .sheet(isPresented: $showReleaseTimeline) {
-            ReleaseTimelineView()
+            ReleaseTimelineView(targetReleaseID: releaseTimelineTargetID)
                 .appSheetRootEnvironment(dependencies)
+        }
+        .onChange(of: showReleaseTimeline) { _, isPresented in
+            // Sheet 完成关闭后清除一次性目标，避免用户下次从 Sidebar 打开时仍跳到旧行。
+            if !isPresented {
+                releaseTimelineTargetID = nil
+            }
         }
         // HOM-52：批量 AI 整理"操作选择" sheet
         .sheet(isPresented: $showBatchAIOptions) {
@@ -1662,11 +1670,21 @@ struct HomeView: View {
             columnVisibility = .all
             tagsExpanded = true
 
+        case .releaseTimeline:
+            viewModel.clearTemporaryGlobalFilters()
+            releaseTimelineTargetID = nil
+            showReleaseTimeline = true
+
         case .repository(let repository):
             // 先消费请求再异步查库/拉 GitHub，避免 HomeView 重挂载时重复发网络请求。
             dependencies.mainWindowNavigationDispatcher.pendingRequest = nil
             Task { await openRepositoryDeepLink(repository) }
             return
+
+        case .repositoryRelease(let release):
+            viewModel.clearTemporaryGlobalFilters()
+            releaseTimelineTargetID = release.releaseID
+            showReleaseTimeline = true
         }
 
         dependencies.mainWindowNavigationDispatcher.pendingRequest = nil

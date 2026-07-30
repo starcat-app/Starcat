@@ -6,9 +6,9 @@ SystemCapabilities dictionaries as strings when they are placed in target
 attributes. Xcode does not treat that as a real capability declaration.
 
 This script is intentionally narrow: after `xcodegen generate`, it adds
-In-App Purchase to the App Store target and Associated Domains to both shipping
-targets. The Direct target must not receive In-App Purchase because it uses
-external licensing and payments.
+In-App Purchase to the App Store target, Associated Domains to both shipping
+targets, and App Groups to each host/Widget pair. The Direct target must not
+receive In-App Purchase because it uses external licensing and payments.
 """
 
 from __future__ import annotations
@@ -94,12 +94,20 @@ def main() -> int:
     project_text = PROJECT_FILE.read_text()
     store_target_id = find_native_target_id(project_text, "Starcat")
     direct_target_id = find_native_target_id(project_text, "StarcatDirect")
+    store_widget_target_id = find_native_target_id(project_text, "StarcatWidgets")
+    direct_widget_target_id = find_native_target_id(project_text, "StarcatDirectWidgets")
 
     updated = add_system_capability(project_text, store_target_id, "com.apple.InAppPurchase")
     # Xcode 的 PBXProject 内部仍用 SafariKeychain 标识 Associated Domains；
     # 真正签名能力由 entitlements 的 com.apple.developer.associated-domains 表达。
     updated = add_system_capability(updated, store_target_id, "com.apple.SafariKeychain")
     updated = add_system_capability(updated, direct_target_id, "com.apple.SafariKeychain")
+    # Host 与 Extension 都声明 App Groups，保证 Xcode capability 状态与
+    # 最终签名 entitlements 一致，避免只改 plist 后工程 UI 仍显示缺失。
+    updated = add_system_capability(updated, store_target_id, "com.apple.ApplicationGroups")
+    updated = add_system_capability(updated, direct_target_id, "com.apple.ApplicationGroups")
+    updated = add_system_capability(updated, store_widget_target_id, "com.apple.ApplicationGroups")
+    updated = add_system_capability(updated, direct_widget_target_id, "com.apple.ApplicationGroups")
     assert_direct_target_is_clean(updated, direct_target_id)
 
     if updated != project_text:

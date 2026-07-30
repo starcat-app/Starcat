@@ -92,8 +92,12 @@ final class MainWindowNavigationDispatcher {
     enum Destination: Equatable {
         case manage(SidebarItem)
         case revealTags
+        /// Widget 没有具体 Release ID 的空态入口打开完整 Release 时间线。
+        case releaseTimeline
         /// Universal Link 只携带稳定的 owner / repo，不把网页端数据写入本地库。
         case repository(RepositoryDeepLink)
+        /// Widget Release 行打开现有 Release 时间线，并尽量定位到对应记录。
+        case repositoryRelease(RepositoryReleaseDeepLink)
     }
 
     struct Request: Identifiable, Equatable {

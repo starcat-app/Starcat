@@ -51,4 +51,68 @@ struct RepositoryDeepLinkTests {
         #expect(RepositoryDeepLink(fullName: "owner") == nil)
         #expect(RepositoryDeepLink(fullName: "owner/repo/issues") == nil)
     }
+
+    @Test("生成并解析 Release custom scheme 与受信任 Universal Link")
+    func buildsAndParsesReleaseLinks() throws {
+        let link = try #require(
+            RepositoryReleaseDeepLink(
+                owner: "swiftlang",
+                name: "swift",
+                repositoryID: 44_838_949,
+                releaseID: 250_000_001
+            )
+        )
+        #expect(
+            link.appURL.absoluteString
+                == "starcat://repo/swiftlang/swift/releases?v=1&rid=44838949&release_id=250000001"
+        )
+
+        let custom = try #require(RepositoryReleaseDeepLink(url: link.appURL))
+        let universalURL = try #require(
+            URL(
+                string: "https://starcat.ink/r/swiftlang/swift/releases?v=1&rid=44838949&release_id=250000001"
+            )
+        )
+        let universal = try #require(RepositoryReleaseDeepLink(url: universalURL))
+
+        #expect(custom == link)
+        #expect(universal == link)
+        #expect(RepositoryDeepLink(url: link.appURL) == nil)
+    }
+
+    @Test("Release 链接拒绝缺失、非正数、重复参数和非受信任路径")
+    func rejectsInvalidReleaseLinks() throws {
+        let rawURLs = [
+            "starcat://repo/owner/repo/releases?rid=1&release_id=2",
+            "starcat://repo/owner/repo/releases?v=2&rid=1&release_id=2",
+            "starcat://repo/owner/repo/releases?v=1&rid=0&release_id=2",
+            "starcat://repo/owner/repo/releases?v=1&rid=1&release_id=0",
+            "starcat://repo/owner/repo/releases?v=1&rid=1&release_id=2&release_id=3",
+            "starcat://repo/owner/repo%2Freleases?v=1&rid=1&release_id=2",
+            "https://example.com/r/owner/repo/releases?v=1&rid=1&release_id=2",
+            "https://starcat.ink/r/owner/repo/releases/extra?v=1&rid=1&release_id=2",
+        ]
+
+        for rawURL in rawURLs {
+            let url = try #require(URL(string: rawURL))
+            #expect(RepositoryReleaseDeepLink(url: url) == nil)
+        }
+
+        #expect(
+            RepositoryReleaseDeepLink(
+                owner: "owner",
+                name: "repo",
+                repositoryID: -1,
+                releaseID: 2
+            ) == nil
+        )
+        #expect(
+            RepositoryReleaseDeepLink(
+                owner: "owner",
+                name: "repo",
+                repositoryID: 1,
+                releaseID: -2
+            ) == nil
+        )
+    }
 }

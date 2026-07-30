@@ -631,6 +631,11 @@ struct GRDBRepoRepository {
                 )
             }
         }
+        NotificationCenter.default.post(
+            name: .repoPinDidChange,
+            object: nil,
+            userInfo: ["repoId": repoId]
+        )
     }
 
     private static func makeListQuery(
@@ -1311,6 +1316,11 @@ struct GRDBRepoRepository {
             openIssuesCount: dto.openIssuesCount
         )
     }
+}
+
+extension Notification.Name {
+    /// Widget 与列表投影共用的轻量 Pin 变化信号；只在数据库提交成功后发送。
+    static let repoPinDidChange = Notification.Name("StarcatRepoPinDidChange")
 }
 
 // MARK: - Sendable

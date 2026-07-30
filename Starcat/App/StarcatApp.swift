@@ -90,15 +90,29 @@ struct StarcatApp: App {
 
     /// 处理从 macOS URL handler 进来的 Starcat URL。
     ///
-    /// OAuth、Direct License 支付回跳和仓库 Universal Link 共用本入口。仓库链接
-    /// 必须先于 OAuth 解析并投递到主窗口，否则会被 callback parser 当作无效登录
-    /// 回调吞掉。Dispatcher 会保存未消费请求，所以冷启动完成登录后仍可继续定位。
+    /// OAuth、Direct License 支付回跳和仓库 Deep Link 共用本入口。Release 链接
+    /// 必须先于普通仓库链接和 OAuth 解析：它比仓库链接多一段 `/releases`，并需要
+    /// 保留 release ID 才能在时间线中定位。Dispatcher 会保存未消费请求，所以
+    /// 冷启动完成登录后仍可继续定位。
     private func handleIncomingURL(_ url: URL) {
         guard let dependencies else {
             // OAuth callback 可能携带一次性 code，启动失败日志只记路由，不能输出完整 URL。
             AppLog.auth.warning(
                 "StarcatApp.handleIncomingURL: dependencies not ready, ignoring scheme=\(url.scheme ?? "", privacy: .public) host=\(url.host ?? "", privacy: .public)"
             )
+            return
+        }
+        if let widgetRoute = WidgetAppDeepLink(url: url) {
+            switch widgetRoute.destination {
+            case .main:
+                AppDelegate.activateMainWindowIfPossible()
+            case .releaseTimeline:
+                dependencies.mainWindowNavigationDispatcher.navigate(to: .releaseTimeline)
+            }
+            return
+        }
+        if let release = RepositoryReleaseDeepLink(url: url) {
+            dependencies.mainWindowNavigationDispatcher.navigate(to: .repositoryRelease(release))
             return
         }
         if let repository = RepositoryDeepLink(url: url) {

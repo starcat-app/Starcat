@@ -51,6 +51,7 @@
 | 53 | [uTools 与 Raycast 外部搜索集成详细设计](53-uTools与Raycast外部搜索集成详细设计.md) | 复用 `starcat search` 公共契约，定义 uTools list 插件、Raycast Extension、头像差异、取消机制、独立仓库与发布验收 |
 | 54 | [Starcat 外部应用插件化集成扩展初步方案](54-Starcat外部应用插件化集成扩展初步方案.md) | 在 Alfred、uTools、Raycast 之外，规划 Spotlight、Shortcuts、LaunchBar、VS Code、PopClip、Obsidian、JetBrains 与 MCP Host 的分层接入和实施优先级 |
 | 55 | [Starcat macOS 桌面小组件初步方案](55-macOS桌面小组件初步方案.md) | Focus、今日重逢、Release Watch 等 WidgetKit 组件，以及 App Group 快照、头像、Deep Link、隐私、刷新和 Store / Direct 双渠道边界 |
+| 56 | [macOS 桌面小组件详细落地方案](56-macOS桌面小组件详细落地方案.md) | 双渠道 Widget Extension、App Group 快照、用户隔离、三个首发组件、测试、签名与多轮审查的可执行方案 |
 
 ---
 
@@ -85,6 +86,7 @@
 
 | 日期 | 更新内容 |
 |------|---------|
+| 2026-07-30 | 新增 56 文档：冻结 macOS 桌面小组件工程结构、快照契约、实施提交、测试和审查流程 |
 | 2026-07-30 | 新增 54 / 55 文档：外部应用插件化扩展候选与 macOS WidgetKit 初步落地方案 |
 | 2026-07-30 | 回填 53 文档：Raycast Extension、41 项自动化、构建证据与真机人工验收边界 |
 | 2026-07-29 | 回填 53 文档：uTools 0.1.0 插件、公共 fixtures、Node 16 / 当前 Node 自动化证据与真机人工验收边界 |

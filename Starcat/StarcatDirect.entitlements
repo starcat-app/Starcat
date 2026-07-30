@@ -12,5 +12,11 @@
     <array>
         <string>applinks:starcat.ink</string>
     </array>
+
+    <!-- Direct Widget 使用独立共享容器，避免与 App Store 版同时安装时串数据。 -->
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.com.starcat.app.direct.widgets</string>
+    </array>
 </dict>
 </plist>
