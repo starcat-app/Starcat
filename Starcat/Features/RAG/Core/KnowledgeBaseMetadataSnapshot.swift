@@ -129,11 +129,18 @@ struct KnowledgeBaseMetadataSnapshot: Equatable, Sendable {
 
     /// 保持英文、键值式表达，避免受显示语言或自定义 Prompt 影响而改变数据库事实的含义。
     func promptContext() -> String {
-        let status = rendered(statusCounts)
+        let status = rendered(insights.normalizedStatusCounts)
         let languages = rendered(topLanguages)
         let tags = rendered(topTags)
         let topics = rendered(Array(insights.topicCounts.prefix(8)))
-        let licenses = rendered(Array(insights.licenseCounts.prefix(8)))
+        let licenses = rendered(
+            Array(insights.licenseCounts.prefix(8)).map {
+                KnowledgeBaseMetadataSnapshot.NamedCount(
+                    name: $0.name == "__unknown__" ? "Unknown" : $0.name,
+                    count: $0.count
+                )
+            }
+        )
         let topRepositories = topStarredRepositories.map { "\($0.fullName) (\($0.stars) stars)" }
             .joined(separator: "; ")
         let sourceCoverage = sourceIndexCoverage.map {
@@ -216,11 +223,12 @@ actor KnowledgeBaseMetadataSnapshotCache {
     func value(
         embeddingModel: String,
         revision: Revision,
+        now: Date,
         load: @escaping @Sendable () async throws -> KnowledgeBaseMetadataSnapshot
     ) async throws -> KnowledgeBaseMetadataSnapshot {
         if let entry = entries[embeddingModel],
            entry.revision == revision,
-           Date().timeIntervalSince(entry.snapshot.generatedAt) < Self.maximumAge {
+           now.timeIntervalSince(entry.snapshot.generatedAt) < Self.maximumAge {
             return entry.snapshot
         }
         if let inFlight = inFlightLoads[embeddingModel], inFlight.revision == revision {
@@ -277,11 +285,16 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
     }
 
     func fetch() async throws -> KnowledgeBaseMetadataSnapshot {
+        let generatedAt = now()
         guard let cache, let revision = try await fetchRevision() else {
-            return try await fetchUncached()
+            return try await fetchUncached(generatedAt: generatedAt)
         }
-        return try await cache.value(embeddingModel: embeddingModel, revision: revision) {
-            try await self.fetchUncached()
+        return try await cache.value(
+            embeddingModel: embeddingModel,
+            revision: revision,
+            now: generatedAt
+        ) {
+            try await self.fetchUncached(generatedAt: generatedAt)
         }
     }
 
@@ -315,8 +328,7 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
         }
     }
 
-    private func fetchUncached() async throws -> KnowledgeBaseMetadataSnapshot {
-        let generatedAt = now()
+    private func fetchUncached(generatedAt: Date) async throws -> KnowledgeBaseMetadataSnapshot {
         let recentCutoff = ISO8601DateFormatter.shared.string(
             from: generatedAt.addingTimeInterval(-30 * 24 * 60 * 60)
         )
@@ -345,15 +357,21 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
                     COALESCE(SUM(CASE WHEN NULLIF(TRIM(n.content), '') IS NOT NULL THEN 1 ELSE 0 END), 0) AS private_note_count,
                     COALESCE(SUM(CASE WHEN NULLIF(TRIM(n.content), '') IS NOT NULL AND n.is_ai_generated = 1 THEN 1 ELSE 0 END), 0) AS ai_generated_note_count,
                     COALESCE(SUM(CASE WHEN EXISTS (SELECT 1 FROM ai_summaries s WHERE s.repo_id = r.id) THEN 1 ELSE 0 END), 0) AS ai_summary_count,
-                    COALESCE(SUM(CASE WHEN NULLIF(TRIM(n.content), '') IS NOT NULL AND datetime(n.edited_at) >= datetime('now', '-30 days') THEN 1 ELSE 0 END), 0) AS notes_edited_recently_count,
+                    COALESCE(SUM(CASE WHEN NULLIF(TRIM(n.content), '') IS NOT NULL AND datetime(n.edited_at) >= datetime(?) THEN 1 ELSE 0 END), 0) AS notes_edited_recently_count,
                     COALESCE(SUM(CASE WHEN EXISTS (
                         SELECT 1 FROM ai_summaries s
-                        WHERE s.repo_id = r.id AND datetime(s.generated_at) >= datetime('now', '-30 days')
+                        WHERE s.repo_id = r.id AND datetime(s.generated_at) >= datetime(?)
                     ) THEN 1 ELSE 0 END), 0) AS summaries_generated_recently_count
                 FROM repos r
                 JOIN repo_notes n ON n.repo_id = r.id
                 WHERE n.library_state = 'in_library'
-                """, arguments: [recentCutoff, recentCutoff, dormantCutoff])!
+                """, arguments: [
+                    recentCutoff,
+                    recentCutoff,
+                    dormantCutoff,
+                    recentCutoff,
+                    recentCutoff
+                ])!
             let projectCount: Int = overview["project_count"]
             let taggedProjectCount: Int = overview["tagged_count"]
             let knownLanguageProjectCount: Int = overview["known_language_count"]

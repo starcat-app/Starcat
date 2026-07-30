@@ -111,15 +111,22 @@ struct MyInsightsSnapshotProviderTests {
         }
 
         let sharedCache = KnowledgeBaseMetadataSnapshotCache()
+        let fixedNow = try #require(
+            ISO8601DateFormatter().date(from: "2026-07-27T00:00:00Z")
+        )
+        let clock = TestInsightsClock(fixedNow)
         let provider = GRDBMyInsightsSnapshotProvider(
             database: database,
-            knowledgeMetadataCache: sharedCache
+            knowledgeMetadataCache: sharedCache,
+            now: { clock.now() }
         )
         let snapshot = try await provider.load(scope: .knowledge, embeddingModel: "embed-v1")
+        clock.advance(by: 30)
         let ragSnapshot = try await KnowledgeBaseMetadataSnapshotProvider(
             database: database,
             embeddingModel: "embed-v1",
-            cache: sharedCache
+            cache: sharedCache,
+            now: { clock.now() }
         ).fetch()
 
         #expect(metric("projects", in: snapshot) == 3)
