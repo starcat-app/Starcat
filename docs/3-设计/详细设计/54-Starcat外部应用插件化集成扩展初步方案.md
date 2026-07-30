@@ -497,5 +497,3 @@ GitHub Actions、Release 构建和 supports 同步脚本登记。
 - [Visual Studio Code Extension API](https://code.visualstudio.com/api/)
 - [IntelliJ Platform Plugin SDK](https://plugins.jetbrains.com/docs/intellij/developing-plugins.html)
 - [Obsidian Build a Plugin](https://docs.obsidian.md/Plugins/Getting%20started/Build%20a%20plugin)
-
-

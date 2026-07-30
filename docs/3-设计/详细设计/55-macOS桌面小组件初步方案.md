@@ -777,5 +777,3 @@ Widget 在 Xcode Debug 下的刷新不受正常预算约束，因此必须补一
 - [AppIntentConfiguration](https://developer.apple.com/documentation/widgetkit/appintentconfiguration)
 - [Adding interactivity to widgets](https://developer.apple.com/documentation/widgetkit/adding-interactivity-to-widgets-and-live-activities)
 - [Linking to specific app scenes](https://developer.apple.com/documentation/widgetkit/linking-to-specific-app-scenes-from-your-widget-or-live-activity)
-
-
