@@ -23,6 +23,8 @@ struct RAGPromptBuildResult: Equatable, Sendable {
     var repoContextDocument: RAGRepoContextDocument? = nil
     /// 最终进入 Prompt 的洞察 XML；历史只保存对应 snapshot，不保存这些正文。
     var repositoryInsightsDocuments: [RAGRepositoryInsightsDocument] = []
+    /// 已加载洞察未能进入 Prompt 时的稳定原因；nil 表示没有遗漏。
+    var repositoryInsightsOmissionReason: String? = nil
 }
 
 private struct RAGEvidenceBlockDraft {
@@ -182,8 +184,9 @@ struct KnowledgeRAGPromptBuilder: Sendable {
         let insightsPrefix = "\n\nRepository insights context:\n"
         // 自定义 Prompt 删除占位符表示用户主动关闭洞察注入；此时连投影和 token 记账
         // 都跳过，不能出现“UI 显示占用但真实请求没有正文”的假数据。
-        let insightsSectionLimit = promptConfiguration.userPromptTemplate
+        let isRepositoryInsightsPlaceholderEnabled = promptConfiguration.userPromptTemplate
             .contains("{repositoryInsightsSection}")
+        let insightsSectionLimit = isRepositoryInsightsPlaceholderEnabled
             ? min(maxRepositoryInsightsTokens, budget.remainingInputTokens)
             : 0
         var insightsParts: [String] = []
@@ -251,6 +254,14 @@ struct KnowledgeRAGPromptBuilder: Sendable {
                 kind: .repositoryInsights,
                 preferredLimit: maxRepositoryInsightsTokens
             )
+        let repositoryInsightsOmissionReason: String? = {
+            guard boundedRepositoryInsightsDocuments.count < repositoryInsightsDocuments.count else {
+                return nil
+            }
+            return isRepositoryInsightsPlaceholderEnabled
+                ? RAGRepositoryInsightsReason.totalContextProjectionUnavailable
+                : RAGRepositoryInsightsReason.promptPlaceholderMissing
+        }()
 
         // RepoContext 在 evidence 之前占用自己的 segment。它不受分片 evidence budget、
         // topK 或 child cap 限制，但仍须在模型总输入窗口内生成合法 XML 投影。
@@ -359,7 +370,8 @@ struct KnowledgeRAGPromptBuilder: Sendable {
             )),
             evidenceTokenLimitedChunkIDs: evidenceTokenLimitedChunkIDs,
             repoContextDocument: boundedRepoContextDocument,
-            repositoryInsightsDocuments: boundedRepositoryInsightsDocuments
+            repositoryInsightsDocuments: boundedRepositoryInsightsDocuments,
+            repositoryInsightsOmissionReason: repositoryInsightsOmissionReason
         )
     }
 

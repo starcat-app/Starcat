@@ -168,6 +168,7 @@ struct RAGRepositoryInsightsContextTests {
         #expect(result.contextUsage.tokenCount(for: .repositoryInsights) > 0)
         #expect(result.contextUsage.tokenCount(for: .evidence) == 0)
         #expect(result.repositoryInsightsDocuments.count == 1)
+        #expect(result.repositoryInsightsOmissionReason == nil)
         #expect(citation?.source == .repositoryInsights)
         #expect(citation?.hitKind == .repositoryInsights)
         #expect(citation?.chunkID == nil)
@@ -216,6 +217,10 @@ struct RAGRepositoryInsightsContextTests {
         #expect(!result.userPrompt.contains("<repository_insights"))
         #expect(result.contextUsage.tokenCount(for: .repositoryInsights) == 0)
         #expect(result.repositoryInsightsDocuments.isEmpty)
+        #expect(
+            result.repositoryInsightsOmissionReason
+                == RAGRepositoryInsightsReason.promptPlaceholderMissing
+        )
         #expect(result.citationsByMarker.isEmpty)
     }
 

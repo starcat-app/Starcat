@@ -3101,6 +3101,46 @@ struct KnowledgeRAGCoreTests {
         #expect(debugStages.contains(.repositoryInsightsProjection))
     }
 
+    @Test("Generator Prompt 缺少占位符时记录明确洞察原因")
+    func missingRepositoryInsightsPlaceholderIsAudited() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 21)
+        try await GRDBRepoNoteRepository(database: database)
+            .updateLibraryState(repoId: 21, state: .inLibrary)
+        let spy = SpyRAGAIClient(chatResponse: "不应生成")
+        let provider = FixedRepositoryInsightsRAGProvider(mode: .success)
+        var configuration = RAGDefaultPrompts.generator
+        configuration.userPromptTemplate = configuration.userPromptTemplate.replacingOccurrences(
+            of: "{repositoryInsightsSection}",
+            with: ""
+        )
+        let service = makeRepositoryInsightsService(
+            database: database,
+            spy: spy,
+            provider: provider,
+            promptBuilder: KnowledgeRAGPromptBuilder(promptConfiguration: configuration)
+        )
+        var completedSnapshots: [RAGRepositoryInsightsSnapshot] = []
+
+        for try await event in service.ask(request: RAGServiceRequest(
+            rawQuestion: "这个仓库的健康情况如何？",
+            composerContext: .init(explicitRepoIDs: [21]),
+            conversationID: nil
+        )) {
+            if case .execution(.repositoryInsightsCompleted(let snapshots)) = event {
+                completedSnapshots = snapshots
+            }
+        }
+
+        #expect(spy.callCount == 0)
+        #expect(completedSnapshots.first?.outcome == .degraded)
+        #expect(completedSnapshots.first?.sentTokens == 0)
+        #expect(
+            completedSnapshots.first?.degradationReason
+                == RAGRepositoryInsightsReason.promptPlaceholderMissing
+        )
+    }
+
     @Test("仓库洞察 Artifact 不可用且无其它证据时不得调用 Generator")
     func unavailableRepositoryInsightsCannotBypassEvidenceGate() async throws {
         let database = try InMemoryDatabaseManager()
@@ -3172,7 +3212,8 @@ struct KnowledgeRAGCoreTests {
         database: InMemoryDatabaseManager,
         spy: SpyRAGAIClient,
         provider: FixedRepositoryInsightsRAGProvider,
-        attachmentContexts: [RAGAttachmentContext] = []
+        attachmentContexts: [RAGAttachmentContext] = [],
+        promptBuilder: KnowledgeRAGPromptBuilder = .init()
     ) -> KnowledgeRAGService {
         let chunks = GRDBRAGChunkRepository(database: database)
         return KnowledgeRAGService(
@@ -3192,7 +3233,8 @@ struct KnowledgeRAGCoreTests {
             repositoryInsightsProvider: provider,
             generatorClient: spy,
             generatorModel: "chat",
-            generatorParameters: .summaryDefault
+            generatorParameters: .summaryDefault,
+            promptBuilder: promptBuilder
         )
     }
 

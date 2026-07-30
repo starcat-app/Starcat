@@ -18,6 +18,14 @@ enum RAGRepositoryInsightsOutcome: String, Codable, Equatable, Sendable {
     case degraded
 }
 
+/// 持久化审计使用稳定字面量；UI 再把它们翻译成用户可理解的原因。
+enum RAGRepositoryInsightsReason {
+    static let artifactUnavailable = "artifact_unavailable"
+    static let promptPlaceholderMissing = "prompt_placeholder_missing"
+    static let totalContextProjectionUnavailable = "total_context_projection_unavailable"
+    static let modelContextWindow = "model_context_window"
+}
+
 /// 会话历史只保存审计字段，不复制 `insights.xml` 正文。
 struct RAGRepositoryInsightsSnapshot: Codable, Equatable, Identifiable, Sendable {
     var repoID: Int64
@@ -172,7 +180,7 @@ struct RAGRepositoryInsightsContextLoader: Sendable {
                                     outcome: .unavailable,
                                     wasProjected: false,
                                     projectionReason: nil,
-                                    degradationReason: "artifact_unavailable",
+                                    degradationReason: RAGRepositoryInsightsReason.artifactUnavailable,
                                     citationMarker: nil,
                                     preparedAt: preparedAt
                                 )
@@ -274,7 +282,7 @@ struct RAGRepositoryInsightsXMLProjector {
         projection.addAttribute(
             XMLNode.attribute(
                 withName: "reason",
-                stringValue: "model_context_window"
+                stringValue: RAGRepositoryInsightsReason.modelContextWindow
             ) as! XMLNode
         )
         projection.addAttribute(
@@ -351,7 +359,7 @@ struct RAGRepositoryInsightsXMLProjector {
             wasProjected: true,
             removedDetailCount: removedDetails,
             removedSectionCount: removedSections,
-            reason: "model_context_window"
+            reason: RAGRepositoryInsightsReason.modelContextWindow
         )
     }
 

@@ -3790,6 +3790,9 @@ final class KnowledgeRAGWorkspaceViewModel {
             updateExecutionStep(in: &executionSteps, kind: .repositoryInsights) { step in
                 let sentCount = snapshots.filter { $0.outcome == .success && $0.sentTokens > 0 }.count
                 let sentTokens = snapshots.reduce(0) { $0 + $1.sentTokens }
+                let isPromptPlaceholderMissing = snapshots.contains {
+                    $0.degradationReason == RAGRepositoryInsightsReason.promptPlaceholderMissing
+                }
                 step.repositoryInsightsSnapshots = snapshots
                 step.details.append(String(
                     format: String.l10n("rag.workspace.execution.repositoryInsights.tokensFormat"),
@@ -3801,7 +3804,11 @@ final class KnowledgeRAGWorkspaceViewModel {
                         format: String.l10n("rag.workspace.execution.repositoryInsights.completedFormat"),
                         sentCount
                     )
-                    : String.l10n("rag.workspace.execution.repositoryInsights.unavailable")
+                    : String.l10n(
+                        isPromptPlaceholderMissing
+                            ? "rag.workspace.execution.repositoryInsights.promptNotEnabled"
+                            : "rag.workspace.execution.repositoryInsights.unavailable"
+                    )
                 completeExecutionStep(&step)
                 if sentCount == 0 {
                     step.state = .skipped

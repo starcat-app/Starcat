@@ -1401,7 +1401,7 @@ struct RAGWorkspaceInspector: View {
         if let snapshot = viewModel.repositoryInsightsSnapshot(for: citation) {
             citationField(
                 "rag.workspace.repositoryInsights.status",
-                value: localizedRepositoryInsightsOutcome(snapshot.outcome)
+                value: localizedRepositoryInsightsOutcome(snapshot)
             )
             if let generatedAt = snapshot.generatedAt {
                 citationField(
@@ -1429,7 +1429,10 @@ struct RAGWorkspaceInspector: View {
             )
             if let reason = snapshot.projectionReason ?? snapshot.degradationReason,
                !reason.isEmpty {
-                citationField("rag.workspace.repositoryInsights.reason", value: reason)
+                citationField(
+                    "rag.workspace.repositoryInsights.reason",
+                    value: localizedRepositoryInsightsReason(reason)
+                )
             }
         }
 
@@ -1653,7 +1656,7 @@ struct RAGWorkspaceInspector: View {
                                     )
                                     planMetricRow(
                                         "rag.workspace.repositoryInsights.status",
-                                        value: localizedRepositoryInsightsOutcome(snapshot.outcome)
+                                        value: localizedRepositoryInsightsOutcome(snapshot)
                                     )
                                     if let generatedAt = snapshot.generatedAt {
                                         planMetricRow(
@@ -1969,12 +1972,34 @@ struct RAGWorkspaceInspector: View {
         }
     }
 
-    private func localizedRepositoryInsightsOutcome(_ outcome: RAGRepositoryInsightsOutcome) -> String {
-        switch outcome {
+    private func localizedRepositoryInsightsOutcome(
+        _ snapshot: RAGRepositoryInsightsSnapshot
+    ) -> String {
+        if snapshot.degradationReason == RAGRepositoryInsightsReason.promptPlaceholderMissing {
+            return String.l10n("rag.workspace.repositoryInsights.status.notInjected")
+        }
+        switch snapshot.outcome {
         case .success: return String.l10n("rag.workspace.repositoryInsights.status.success")
         case .unavailable: return String.l10n("rag.workspace.repositoryInsights.status.unavailable")
         case .degraded: return String.l10n("rag.workspace.repositoryInsights.status.degraded")
         }
+    }
+
+    private func localizedRepositoryInsightsReason(_ reason: String) -> String {
+        let key: String
+        switch reason {
+        case RAGRepositoryInsightsReason.promptPlaceholderMissing:
+            key = "rag.workspace.repositoryInsights.reason.promptPlaceholderMissing"
+        case RAGRepositoryInsightsReason.totalContextProjectionUnavailable:
+            key = "rag.workspace.repositoryInsights.reason.contextWindowUnavailable"
+        case RAGRepositoryInsightsReason.artifactUnavailable:
+            key = "rag.workspace.repositoryInsights.reason.artifactUnavailable"
+        case RAGRepositoryInsightsReason.modelContextWindow:
+            key = "rag.workspace.repositoryInsights.reason.modelContextWindow"
+        default:
+            return reason
+        }
+        return String.l10n(key)
     }
 
     private func shortHash(_ value: String?) -> String {

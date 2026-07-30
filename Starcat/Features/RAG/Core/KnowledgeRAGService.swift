@@ -1344,7 +1344,8 @@ struct KnowledgeRAGService: Sendable {
         completeRepositoryInsights(
             loadedSnapshots: repositoryInsightsSnapshots,
             projectedDocuments: prompt.repositoryInsightsDocuments,
-            missingProjectionReason: "total_context_projection_unavailable",
+            missingProjectionReason: prompt.repositoryInsightsOmissionReason
+                ?? RAGRepositoryInsightsReason.totalContextProjectionUnavailable,
             sink: sink
         )
         if !prompt.repositoryInsightsDocuments.isEmpty {

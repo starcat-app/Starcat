@@ -181917,6 +181917,23 @@
         }
       }
     },
+    "rag.workspace.execution.repositoryInsights.promptNotEnabled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The current prompt does not enable repository insights"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前提示词未启用仓库洞察"
+          }
+        }
+      }
+    },
     "rag.workspace.execution.repositoryInsights.projecting" : {
       "localizations" : {
         "en" : {
@@ -231716,6 +231733,74 @@
         }
       }
     },
+    "rag.workspace.repositoryInsights.reason.artifactUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No valid locally cached repository insights XML is available"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本地没有可用的仓库洞察 XML"
+          }
+        }
+      }
+    },
+    "rag.workspace.repositoryInsights.reason.contextWindowUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The current model context window could not fit a valid repository insights projection"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前模型上下文窗口无法容纳合法的仓库洞察投影"
+          }
+        }
+      }
+    },
+    "rag.workspace.repositoryInsights.reason.modelContextWindow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Structurally reduced to fit the current model context window"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已按结构精简以适配当前模型上下文窗口"
+          }
+        }
+      }
+    },
+    "rag.workspace.repositoryInsights.reason.promptPlaceholderMissing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The current Generator prompt does not include {repositoryInsightsSection}"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前 Generator 提示词缺少 {repositoryInsightsSection}"
+          }
+        }
+      }
+    },
     "rag.workspace.repositoryInsights.repository" : {
       "localizations" : {
         "en" : {
@@ -231776,6 +231861,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已降级"
+          }
+        }
+      }
+    },
+    "rag.workspace.repositoryInsights.status.notInjected" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not injected"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未注入"
           }
         }
       }
