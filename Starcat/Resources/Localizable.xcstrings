@@ -226857,6 +226857,40 @@
         }
       }
     },
+    "rag.workspace.prompt.compatibility.duplicatedHint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repeated section placeholders may send the same runtime context to the model more than once. Compare with the default prompt and edit it manually."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重复的 Section 占位符可能让同一份运行时上下文多次发送给模型，请对照默认提示词手动修改。"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.compatibility.duplicatedMessageFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This custom prompt repeats %lld placeholder(s)."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前自定义提示词存在 %lld 个重复占位符。"
+          }
+        }
+      }
+    },
     "rag.workspace.prompt.compatibility.limited" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -226887,23 +226921,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "当前自定义提示词缺少 %lld 个新版占位符，相关上下文不会发送给模型。"
-          }
-        }
-      }
-    },
-    "rag.workspace.prompt.compatibility.repair" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add Missing Items"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "补齐缺失项"
           }
         }
       }

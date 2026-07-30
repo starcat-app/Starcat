@@ -14,7 +14,7 @@ enum RAGPromptCompatibilityState: Equatable, Sendable {
     case defaultValue
     /// 内容已自定义，但当前版本使用的占位符仍然完整。
     case customized
-    /// 至少缺少一个当前版本使用的占位符，部分运行时上下文不会进入模型。
+    /// 存在缺失或重复占位符，运行时上下文可能缺失或被重复发送。
     case limited
 }
 
@@ -23,13 +23,21 @@ struct RAGPromptCompatibility: Equatable, Sendable {
     var state: RAGPromptCompatibilityState
     var missingSystemPlaceholders: [String]
     var missingUserPlaceholders: [String]
+    var duplicatedSystemPlaceholders: [String]
+    var duplicatedUserPlaceholders: [String]
 
     var missingPlaceholders: [String] {
         missingSystemPlaceholders + missingUserPlaceholders
     }
+
+    var duplicatedPlaceholders: [String] {
+        duplicatedSystemPlaceholders + duplicatedUserPlaceholders
+    }
 }
 
-/// RAG Prompt 兼容性诊断与非破坏性修复入口。
+/// RAG Prompt 兼容性诊断入口。
+///
+/// 这里只报告差异，不自动改写用户 Prompt；默认模板由设置页只读展示，用户自行对比修改。
 enum RAGPromptCompatibilityAnalyzer {
     /// 对比当前配置和当前版本默认配置。
     ///
@@ -43,7 +51,9 @@ enum RAGPromptCompatibilityAnalyzer {
             return RAGPromptCompatibility(
                 state: .defaultValue,
                 missingSystemPlaceholders: [],
-                missingUserPlaceholders: []
+                missingUserPlaceholders: [],
+                duplicatedSystemPlaceholders: [],
+                duplicatedUserPlaceholders: []
             )
         }
 
@@ -55,81 +65,29 @@ enum RAGPromptCompatibilityAnalyzer {
             current: current.userPromptTemplate,
             reference: reference.userPromptTemplate
         )
+        let duplicatedSystem = duplicatedPlaceholders(in: current.systemPrompt)
+        let duplicatedUser = duplicatedPlaceholders(in: current.userPromptTemplate)
+        let hasCompatibilityIssue = !missingSystem.isEmpty
+            || !missingUser.isEmpty
+            || !duplicatedSystem.isEmpty
+            || !duplicatedUser.isEmpty
         return RAGPromptCompatibility(
-            state: missingSystem.isEmpty && missingUser.isEmpty ? .customized : .limited,
+            state: hasCompatibilityIssue ? .limited : .customized,
             missingSystemPlaceholders: missingSystem,
-            missingUserPlaceholders: missingUser
+            missingUserPlaceholders: missingUser,
+            duplicatedSystemPlaceholders: duplicatedSystem,
+            duplicatedUserPlaceholders: duplicatedUser
         )
-    }
-
-    /// 在不覆盖用户已有内容的前提下补齐缺失占位符。
-    ///
-    /// 默认模板中的占位符可能嵌在描述语句里，直接复制整段默认文本会破坏用户结构；
-    /// 因此统一追加一个紧凑的 Starcat 运行时变量区。再次执行时不会重复追加。
-    static func repairing(
-        current: AIPromptConfiguration,
-        reference: AIPromptConfiguration
-    ) -> AIPromptConfiguration {
-        // 先清理上一版“占位符: 占位符”的错误补齐产物。否则这些占位符已经被
-        // analyze 视为完整，用户再次点击补齐也无法消除运行时正文重复。
-        var repaired = normalizingLegacyRepairArtifacts(in: current)
-        let diagnostic = analyze(current: repaired, reference: reference)
-        repaired.systemPrompt = appendingSystemPlaceholders(
-            diagnostic.missingSystemPlaceholders,
-            to: repaired.systemPrompt
-        )
-        repaired.userPromptTemplate = appendingUserPlaceholders(
-            diagnostic.missingUserPlaceholders,
-            to: repaired.userPromptTemplate
-        )
-        return repaired
-    }
-
-    /// 清理 2026-07-30 旧补齐逻辑生成的重复占位符块。
-    ///
-    /// 只识别 Starcat 自己追加的固定标题与紧随其后的 `{token}: {token}` 行，
-    /// 不扫描或改写其它用户正文。用户保存过错误格式时，下一次设置解码即可自动修复。
-    static func normalizingLegacyRepairArtifacts(
-        in configuration: AIPromptConfiguration
-    ) -> AIPromptConfiguration {
-        var normalized = configuration
-        normalized.systemPrompt = normalizingLegacyRepairBlock(
-            in: configuration.systemPrompt,
-            legacyHeading: "Starcat runtime variables:",
-            markdownHeading: "# Starcat runtime variables",
-            style: .systemVariable
-        )
-        normalized.userPromptTemplate = normalizingLegacyRepairBlock(
-            in: configuration.userPromptTemplate,
-            legacyHeading: "Starcat runtime context:",
-            markdownHeading: "# Starcat runtime context",
-            style: .userSection
-        )
-        return normalized
     }
 
     /// 按出现顺序提取形如 `{questionSection}` 的运行时占位符并去重。
     static func placeholders(in text: String) -> [String] {
         var result: [String] = []
         var seen: Set<String> = []
-        var searchStart = text.startIndex
-
-        while searchStart < text.endIndex,
-              let opening = text.range(
-                  of: "{",
-                  range: searchStart..<text.endIndex
-              ),
-              let closing = text.range(
-                  of: "}",
-                  range: opening.upperBound..<text.endIndex
-              ) {
-            let tokenRange = opening.lowerBound..<closing.upperBound
-            let token = String(text[tokenRange])
-            let name = text[opening.upperBound..<closing.lowerBound]
-            if isPlaceholderName(name), seen.insert(token).inserted {
+        for token in placeholderOccurrences(in: text) {
+            if seen.insert(token).inserted {
                 result.append(token)
             }
-            searchStart = closing.upperBound
         }
         return result
     }
@@ -142,102 +100,47 @@ enum RAGPromptCompatibilityAnalyzer {
         return placeholders(in: reference).filter { !currentTokens.contains($0) }
     }
 
+    /// 重复的 Section 会让同一份运行时正文进入模型多次；保持首次重复出现的顺序，
+    /// 便于设置页直接展示并由用户自行修改。
+    private static func duplicatedPlaceholders(in text: String) -> [String] {
+        var seen: Set<String> = []
+        var reported: Set<String> = []
+        var result: [String] = []
+        for token in placeholderOccurrences(in: text) {
+            if !seen.insert(token).inserted, reported.insert(token).inserted {
+                result.append(token)
+            }
+        }
+        return result
+    }
+
+    private static func placeholderOccurrences(in text: String) -> [String] {
+        var result: [String] = []
+        var searchStart = text.startIndex
+        while searchStart < text.endIndex,
+              let opening = text.range(
+                  of: "{",
+                  range: searchStart..<text.endIndex
+              ),
+              let closing = text.range(
+                  of: "}",
+                  range: opening.upperBound..<text.endIndex
+              ) {
+            let tokenRange = opening.lowerBound..<closing.upperBound
+            let token = String(text[tokenRange])
+            let name = text[opening.upperBound..<closing.lowerBound]
+            if isPlaceholderName(name) {
+                result.append(token)
+            }
+            searchStart = closing.upperBound
+        }
+        return result
+    }
+
     private static func isPlaceholderName(_ value: Substring) -> Bool {
         guard !value.isEmpty else { return false }
         return value.unicodeScalars.allSatisfy {
             CharacterSet.alphanumerics.contains($0) || $0 == "_" || $0 == "."
         }
-    }
-
-    private static func appendingSystemPlaceholders(
-        _ placeholders: [String],
-        to text: String
-    ) -> String {
-        guard !placeholders.isEmpty else { return text }
-        let lines = placeholders.map {
-            "\(placeholderName($0)): \($0)"
-        }
-        return appendingMarkdownBlock(
-            heading: "# Starcat runtime variables",
-            lines: lines,
-            to: text
-        )
-    }
-
-    private static func appendingUserPlaceholders(
-        _ placeholders: [String],
-        to text: String
-    ) -> String {
-        guard !placeholders.isEmpty else { return text }
-        // 每个 Section 已自带标题和正文；这里只放一次占位符，避免渲染后正文重复。
-        return appendingMarkdownBlock(
-            heading: "# Starcat runtime context",
-            lines: placeholders,
-            to: text
-        )
-    }
-
-    private static func appendingMarkdownBlock(
-        heading: String,
-        lines: [String],
-        to text: String
-    ) -> String {
-        let suffix = ([heading, ""] + lines).joined(separator: "\n")
-        guard !text.isEmpty else { return suffix }
-        let separator = text.hasSuffix("\n") ? "\n" : "\n\n"
-        return text + separator + suffix
-    }
-
-    private enum LegacyRepairLineStyle {
-        case systemVariable
-        case userSection
-    }
-
-    private static func normalizingLegacyRepairBlock(
-        in text: String,
-        legacyHeading: String,
-        markdownHeading: String,
-        style: LegacyRepairLineStyle
-    ) -> String {
-        var lines = text.components(separatedBy: "\n")
-        guard let headingIndex = lines.lastIndex(of: legacyHeading) else { return text }
-
-        var tokenIndex = headingIndex + 1
-        while tokenIndex < lines.count, lines[tokenIndex].isEmpty {
-            tokenIndex += 1
-        }
-
-        var tokens: [String] = []
-        var endIndex = tokenIndex
-        while endIndex < lines.count,
-              let token = duplicatedPlaceholderToken(in: lines[endIndex]) {
-            tokens.append(token)
-            endIndex += 1
-        }
-        guard !tokens.isEmpty else { return text }
-
-        let replacementLines: [String]
-        switch style {
-        case .systemVariable:
-            replacementLines = [markdownHeading, ""] + tokens.map {
-                "\(placeholderName($0)): \($0)"
-            }
-        case .userSection:
-            replacementLines = [markdownHeading, ""] + tokens
-        }
-        lines.replaceSubrange(headingIndex..<endIndex, with: replacementLines)
-        return lines.joined(separator: "\n")
-    }
-
-    private static func duplicatedPlaceholderToken(in line: String) -> String? {
-        let parts = line.components(separatedBy: ": ")
-        guard parts.count == 2, parts[0] == parts[1] else { return nil }
-        let token = parts[0]
-        return placeholders(in: token) == [token] ? token : nil
-    }
-
-    private static func placeholderName(_ token: String) -> String {
-        guard token.first == "{", token.last == "}" else { return token }
-        return String(token.dropFirst().dropLast())
     }
 }

@@ -49,9 +49,7 @@ struct RAGPromptSettings: Codable, Equatable, Sendable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let decodedGenerator = RAGPromptCompatibilityAnalyzer.normalizingLegacyRepairArtifacts(
-            in: try container.decode(AIPromptConfiguration.self, forKey: .generator)
-        )
+        let decodedGenerator = try container.decode(AIPromptConfiguration.self, forKey: .generator)
         // 只把 Starcat 发布过的上一版默认值升级为带洞察区段的新协议。自定义模板即使
         // 没有 `{repositoryInsightsSection}` 也必须原样保留，缺占位符等同用户主动关闭注入。
         if decodedGenerator == RAGDefaultPrompts.generatorBeforeRepositoryInsights
@@ -64,9 +62,7 @@ struct RAGPromptSettings: Codable, Equatable, Sendable {
                 ? decodedGenerator
                 : RAGDefaultPrompts.generator
         }
-        let decodedPlanner = RAGPromptCompatibilityAnalyzer.normalizingLegacyRepairArtifacts(
-            in: try container.decode(AIPromptConfiguration.self, forKey: .planner)
-        )
+        let decodedPlanner = try container.decode(AIPromptConfiguration.self, forKey: .planner)
         // 只迁移 Starcat 自己发布过的旧默认模板；用户哪怕改过一个字符都视为自定义，
         // 必须原样保留。否则老用户会一直缺少 guided_discovery 与新的联网字段。
         planner = decodedPlanner == RAGDefaultPrompts.plannerBeforeGuidedDiscovery
@@ -79,18 +75,13 @@ struct RAGPromptSettings: Codable, Equatable, Sendable {
             AIPromptConfiguration.self,
             forKey: .compressor
         ) {
-            let normalizedCompressor =
-                RAGPromptCompatibilityAnalyzer.normalizingLegacyRepairArtifacts(
-                    in: decodedCompressor
-                )
-            compressor = normalizedCompressor == RAGDefaultPrompts.compressorBeforeReadableUserTemplate
+            compressor = decodedCompressor == RAGDefaultPrompts.compressorBeforeReadableUserTemplate
                 ? RAGDefaultPrompts.compressor
-                : normalizedCompressor
+                : decodedCompressor
         } else {
             compressor = RAGDefaultPrompts.compressor
         }
         title = try container.decodeIfPresent(AIPromptConfiguration.self, forKey: .title)
-            .map(RAGPromptCompatibilityAnalyzer.normalizingLegacyRepairArtifacts(in:))
             ?? RAGDefaultPrompts.title
     }
 }

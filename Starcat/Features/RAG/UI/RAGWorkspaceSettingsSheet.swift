@@ -1184,34 +1184,68 @@ struct RAGWorkspaceSettingsSheet: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// 缺失占位符紧邻 User Prompt 展示，用户无需等到问答降级后再去 Debug 反推原因。
+    /// 缺失或重复占位符紧邻 User Prompt 展示；这里只报告问题并保留恢复默认入口，
+    /// 不再自动改写用户草稿，避免无法可靠推断的 Prompt 结构被程序拼坏。
     private var promptCompatibilityNotice: some View {
         let compatibility = promptCompatibility
         let missing = compatibility.missingPlaceholders
+        let duplicated = compatibility.duplicatedPlaceholders
         return VStack(alignment: .leading, spacing: interfaceScale.scaled(6)) {
-            HStack(alignment: .firstTextBaseline, spacing: interfaceScale.scaled(6)) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(interfaceScale.font(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.orange)
-                    .accessibilityHidden(true)
-                Text(
-                    String(
-                        format: String.l10n("rag.workspace.prompt.compatibility.messageFormat"),
-                        missing.count
+            if !missing.isEmpty {
+                HStack(alignment: .firstTextBaseline, spacing: interfaceScale.scaled(6)) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(interfaceScale.font(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.orange)
+                        .accessibilityHidden(true)
+                    Text(
+                        String(
+                            format: String.l10n("rag.workspace.prompt.compatibility.messageFormat"),
+                            missing.count
+                        )
                     )
-                )
-                .font(ragFont(.caption, scale: interfaceScale, weight: .medium))
-                .foregroundStyle(.primary)
+                    .font(ragFont(.caption, scale: interfaceScale, weight: .medium))
+                    .foregroundStyle(.primary)
+                }
+
+                Text(missing.joined(separator: "  "))
+                    .font(interfaceScale.font(.code))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if missing.contains("{repositoryInsightsSection}") {
+                    Text("rag.workspace.prompt.compatibility.repositoryInsights")
+                        .font(ragFont(.caption, scale: interfaceScale))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
-            Text(missing.joined(separator: "  "))
-                .font(interfaceScale.font(.code))
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+            if !duplicated.isEmpty {
+                HStack(alignment: .firstTextBaseline, spacing: interfaceScale.scaled(6)) {
+                    Image(systemName: "doc.on.doc.fill")
+                        .font(interfaceScale.font(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.orange)
+                        .accessibilityHidden(true)
+                    Text(
+                        String(
+                            format: String.l10n(
+                                "rag.workspace.prompt.compatibility.duplicatedMessageFormat"
+                            ),
+                            duplicated.count
+                        )
+                    )
+                    .font(ragFont(.caption, scale: interfaceScale, weight: .medium))
+                    .foregroundStyle(.primary)
+                }
 
-            if missing.contains("{repositoryInsightsSection}") {
-                Text("rag.workspace.prompt.compatibility.repositoryInsights")
+                Text(duplicated.joined(separator: "  "))
+                    .font(interfaceScale.font(.code))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("rag.workspace.prompt.compatibility.duplicatedHint")
                     .font(ragFont(.caption, scale: interfaceScale))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1219,12 +1253,6 @@ struct RAGWorkspaceSettingsSheet: View {
 
             HStack(spacing: interfaceScale.scaled(8)) {
                 Spacer()
-                Button("rag.workspace.prompt.compatibility.repair") {
-                    repairCurrentTab()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
-
                 Button("rag.workspace.prompt.compatibility.restore") {
                     restoreCurrentTab()
                 }
@@ -1250,19 +1278,6 @@ struct RAGWorkspaceSettingsSheet: View {
         case .defaultValue: return "rag.workspace.prompt.compatibility.default"
         case .customized: return "rag.workspace.prompt.compatibility.customized"
         case .limited: return "rag.workspace.prompt.compatibility.limited"
-        }
-    }
-
-    private func repairCurrentTab() {
-        let repaired = RAGPromptCompatibilityAnalyzer.repairing(
-            current: currentPromptConfiguration,
-            reference: tab.defaultConfiguration
-        )
-        switch tab {
-        case .generator: draft.generator = repaired
-        case .planner: draft.planner = repaired
-        case .compressor: draft.compressor = repaired
-        case .title: draft.title = repaired
         }
     }
 
