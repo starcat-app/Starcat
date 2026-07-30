@@ -69,6 +69,7 @@ struct RAGPromptSettings: Codable, Equatable, Sendable {
             || decodedPlanner == RAGDefaultPrompts.plannerBeforeNetworkSearch
             || decodedPlanner == RAGDefaultPrompts.plannerBeforeKeywordQueries
             || decodedPlanner == RAGDefaultPrompts.plannerBeforeExplicitRepoScopeGuard
+            || decodedPlanner == RAGDefaultPrompts.plannerBeforeInsightsAnalytics
             ? RAGDefaultPrompts.planner
             : decodedPlanner
         if let decodedCompressor = try container.decodeIfPresent(
@@ -249,17 +250,31 @@ enum RAGDefaultPrompts {
         """
     )
 
+    /// 2026-07-30 知识库洞察分析指标扩展之前发布的 Planner 默认值。
+    /// 只识别完整官方旧值，用户自定义 Prompt 不会被自动覆盖。
+    static let plannerBeforeInsightsAnalytics = AIPromptConfiguration(
+        systemPrompt: planner.systemPrompt.replacingOccurrences(
+            of: """
+                      "analytics":null or {"dimension":"repository|language|status|tag|topic|license|null","measure":"count|max_stars|average_stars|max_forks|average_forks|repositories_with_ai_summary|repositories_with_private_notes|repositories_with_ai_generated_notes|repositories_with_recently_edited_private_notes|repositories_with_recently_generated_ai_summaries|excluded_rag_chunks|repositories_without_readme|repositories_without_indexable_source|repositories_organized|repositories_untagged|repositories_unread|repositories_dormant|repositories_archived|repositories_unavailable|repositories_with_health_snapshot|repositories_with_openssf_score|repositories_with_maintenance_risk|repositories_with_security_risk","direction":"asc|desc","limit":10},
+            """,
+            with: """
+                      "analytics":null or {"dimension":"repository|language|status|tag|null","measure":"count|max_stars|average_stars|max_forks|average_forks|repositories_with_ai_summary|repositories_with_private_notes|repositories_with_ai_generated_notes|repositories_with_recently_edited_private_notes|repositories_with_recently_generated_ai_summaries|excluded_rag_chunks|repositories_without_readme|repositories_without_indexable_source","direction":"asc|desc","limit":10},
+            """
+        ),
+        userPromptTemplate: planner.userPromptTemplate
+    )
+
     /// 2026-07-18 显式仓库范围门禁之前发布的 Planner 默认值。
     /// 精确移除新增协议，只用于升级仍在使用官方默认模板的用户；自定义 Prompt 保持不变。
     static let plannerBeforeExplicitRepoScopeGuard = AIPromptConfiguration(
-        systemPrompt: planner.systemPrompt.replacingOccurrences(of: """
+        systemPrompt: plannerBeforeInsightsAnalytics.systemPrompt.replacingOccurrences(of: """
             Explicit repository scope:
             - When explicitRepositories is not empty, factual questions about those selected repositories are inside the knowledge-base boundary even when their content is not repeated in this planning prompt.
             - Repository metadata such as homepage, wiki links, license, language, topics, stars, forks, releases, health, OpenSSF, and timestamps is searchable local evidence. Use semantic_only or filtered_semantic to retrieve it.
             - Never claim that selected-repository content is absent merely because this planning prompt only contains repository identities and aggregate inventory. Retrieval, not the Planner, determines whether evidence exists.
 
             """, with: ""),
-        userPromptTemplate: planner.userPromptTemplate
+        userPromptTemplate: plannerBeforeInsightsAnalytics.userPromptTemplate
     )
 
     /// 2026-07-17 双语关键词协议之前发布的 Planner 默认值。
