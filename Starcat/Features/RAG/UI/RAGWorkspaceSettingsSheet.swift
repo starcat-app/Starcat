@@ -162,6 +162,7 @@ struct RAGWorkspaceSettingsSheet: View {
     @State private var tab: RAGPromptEditorTab = .generator
     @State private var draft: RAGPromptSettings
     @State private var isPlaceholderPopoverPresented = false
+    @State private var isDefaultPromptPopoverPresented = false
     /// Sheet 内草稿；点「保存」才写入 `AppSettings.ragRetrievalSettings`。
     @State private var retrievalPreset: RAGRetrievalPreset
     @State private var minimumVectorSimilarity: Double
@@ -311,6 +312,7 @@ struct RAGWorkspaceSettingsSheet: View {
         // 切到检索页时底栏入口消失，主动关掉以免 popover 残留。
         .onChange(of: section) { _, _ in
             isPlaceholderPopoverPresented = false
+            isDefaultPromptPopoverPresented = false
         }
     }
 
@@ -349,6 +351,7 @@ struct RAGWorkspaceSettingsSheet: View {
         HStack(spacing: interfaceScale.scaled(8)) {
             if section == .prompts {
                 placeholderHelpButton
+                defaultPromptReferenceButton
             }
             Spacer()
             // 恢复默认已放到各页 segmented 右侧的 ResetIconButton，底栏不再重复。
@@ -377,6 +380,7 @@ struct RAGWorkspaceSettingsSheet: View {
     /// 底部入口：点开看 token + 含义，避免一行塞满无说明的占位符列表。
     private var placeholderHelpButton: some View {
         Button {
+            isDefaultPromptPopoverPresented = false
             isPlaceholderPopoverPresented.toggle()
         } label: {
             HStack(spacing: 6) {
@@ -396,6 +400,34 @@ struct RAGWorkspaceSettingsSheet: View {
         .popover(isPresented: $isPlaceholderPopoverPresented, arrowEdge: .top) {
             RAGPromptPlaceholderPopover(
                 items: tab.placeholders,
+                interfaceScale: interfaceScale
+            )
+            .appLocaleEnvironment()
+        }
+    }
+
+    /// 默认 Prompt 永远只读展示；用户可以复制后自行比较，不在这里写回草稿。
+    private var defaultPromptReferenceButton: some View {
+        Button {
+            isPlaceholderPopoverPresented = false
+            isDefaultPromptPopoverPresented.toggle()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "doc.text.magnifyingglass")
+                    .font(interfaceScale.font(size: 11, weight: .semibold))
+                Text("rag.workspace.prompt.default.open")
+                    .font(ragFont(.caption, scale: interfaceScale, weight: .medium))
+            }
+            .foregroundStyle(.secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help("rag.workspace.prompt.default.openHelp")
+        .popover(isPresented: $isDefaultPromptPopoverPresented, arrowEdge: .top) {
+            RAGDefaultPromptPopover(
+                configuration: tab.defaultConfiguration,
+                tabTitle: tab.titleKey,
                 interfaceScale: interfaceScale
             )
             .appLocaleEnvironment()
@@ -463,9 +495,11 @@ struct RAGWorkspaceSettingsSheet: View {
         .onScrollPhaseChange { _, newPhase in
             guard newPhase != .idle else { return }
             isPlaceholderPopoverPresented = false
+            isDefaultPromptPopoverPresented = false
         }
         .onChange(of: tab) { _, _ in
             isPlaceholderPopoverPresented = false
+            isDefaultPromptPopoverPresented = false
         }
     }
 
@@ -1307,6 +1341,102 @@ struct RAGWorkspaceSettingsSheet: View {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .stroke(Color.secondary.opacity(0.35), lineWidth: 0.5)
             )
+    }
+}
+
+/// 当前 Prompt 页的只读默认值；只提供复制，不持有 Binding，也不会间接覆盖用户草稿。
+private struct RAGDefaultPromptPopover: View {
+    let configuration: AIPromptConfiguration
+    let tabTitle: LocalizedStringKey
+    let interfaceScale: InterfaceScale
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: interfaceScale.scaled(12)) {
+            HStack(alignment: .firstTextBaseline, spacing: interfaceScale.scaled(8)) {
+                Image(systemName: "doc.text.magnifyingglass")
+                    .font(interfaceScale.font(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text("rag.workspace.prompt.default.title")
+                    .font(ragFont(.callout, scale: interfaceScale, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: interfaceScale.scaled(8))
+                Text(tabTitle)
+                    .font(ragFont(.caption, scale: interfaceScale, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+
+            Text("rag.workspace.prompt.default.description")
+                .font(ragFont(.caption, scale: interfaceScale))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: interfaceScale.scaled(12)) {
+                    promptBlock(
+                        title: "rag.workspace.prompt.system",
+                        copyTooltip: "rag.workspace.prompt.default.copySystem",
+                        content: configuration.systemPrompt
+                    )
+                    promptBlock(
+                        title: "rag.workspace.prompt.user",
+                        copyTooltip: "rag.workspace.prompt.default.copyUser",
+                        content: configuration.userPromptTemplate
+                    )
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, interfaceScale.scaled(4))
+            }
+            .frame(height: interfaceScale.scaled(400))
+        }
+        .padding(interfaceScale.scaled(16))
+        .frame(width: 500 * interfaceScale.multiplier)
+        .environment(\.starcatInterfaceScale, interfaceScale)
+        .dynamicTypeSize(interfaceScale.dynamicTypeSize)
+    }
+
+    private func promptBlock(
+        title: LocalizedStringKey,
+        copyTooltip: LocalizedStringKey,
+        content: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: interfaceScale.scaled(6)) {
+            HStack(spacing: interfaceScale.scaled(8)) {
+                Text(title)
+                    .font(ragFont(.caption, scale: interfaceScale, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: interfaceScale.scaled(8))
+                CopyFeedbackButton(
+                    providesContent: { content },
+                    tooltip: copyTooltip
+                ) { didCopy in
+                    Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                        .font(interfaceScale.font(size: 15, weight: .medium))
+                        .foregroundStyle(didCopy ? Color.green : Color.secondary)
+                        .frame(
+                            width: interfaceScale.scaled(28),
+                            height: interfaceScale.scaled(28)
+                        )
+                        .contentShape(Rectangle())
+                }
+            }
+
+            Text(content)
+                .font(interfaceScale.font(.code))
+                .foregroundStyle(.primary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(interfaceScale.scaled(10))
+                .background(
+                    Color(nsColor: .textBackgroundColor),
+                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(Color.secondary.opacity(0.35), lineWidth: 0.5)
+                )
+        }
     }
 }
 

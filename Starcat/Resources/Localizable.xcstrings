@@ -226959,6 +226959,108 @@
         }
       }
     },
+    "rag.workspace.prompt.default.copySystem" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy default system prompt"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制默认 System Prompt"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.default.copyUser" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy default user prompt"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制默认 User Prompt"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.default.description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read-only reference for the current tab. Viewing or copying it does not change your prompt."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前页面的只读参考。查看或复制不会修改你的提示词。"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.default.open" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Default Prompt"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "默认提示词"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.default.openHelp" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View the default prompt for comparison"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看默认提示词并进行对比"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.default.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Default Prompt"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "默认提示词"
+          }
+        }
+      }
+    },
     "rag.workspace.prompt.placeholder.deepThinkingEnabled" : {
       "extractionState" : "manual",
       "localizations" : {
