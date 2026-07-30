@@ -24,6 +24,10 @@ Starcat 1.3.0 adds My Projects, library-wide and repository-level insights, macO
 - Custom Prompt Diagnostics: See which context capabilities and placeholders a custom template supports without Starcat automatically rewriting user content.
 - First-run onboarding: Feature screenshots, refined welcome audio timing, clearer card hierarchy, and more stable window sizing.
 
+### Fixes
+
+- RAG evidence citations: Metadata found through keyword search and Knowledge Base statistics now appear as actual cited snippets, so sources remain verifiable in answers and conversation history without vector indexing.
+
 ## 1.2.0
 
 Starcat 1.2.0 focuses on stability, usability, and visual polish—adding an 18-language interface, pinning, share links, shortcuts, and README capabilities, while refining navigation, tags, notes, translation, and knowledge-base flows.
