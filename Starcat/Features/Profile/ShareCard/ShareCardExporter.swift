@@ -23,6 +23,10 @@
 //  3. **复制到剪贴板**（copyToPasteboard，本次不绑按钮，留作 share 路径的内部复用）：
 //     - 把渲染好的 NSImage 写到通用 NSPasteboard（让用户在任何地方 Cmd+V 粘贴）
 //
+//  PNG 编码：
+//  - 统一通过 ImageIO 写入图片，避免保存与剪贴板两条路径的 metadata 漂移
+//  - metadata 只描述 Starcat 产品与生成工具，不包含 GitHub 登录名、设备标识或追踪参数
+//
 //  设计权衡：
 //  - 没用 NSSharingServicePicker（系统分享弹窗）：在 macOS 14+ 上"分享到第三方"
 //    依赖 App Extension 注册，X 没有官方 macOS 分享扩展；Web Intent 是更可靠的兜底。
@@ -32,7 +36,57 @@
 
 import SwiftUI
 import AppKit
+import ImageIO
 import UniformTypeIdentifiers
+
+/// 分享卡 PNG 的产品来源信息。
+///
+/// 字段保持短小且稳定：标准 PNG reader 可以直接读取产品说明，自动化工具则可以从
+/// XMP `starcat:Manifest` 的 JSON 中判断 schema、内容类型与语言。这里故意不携带用户身份或唯一 ID，
+/// 避免一张公开分享图在用户不知情时变成追踪载体。
+struct ShareCardPNGMetadata {
+    static let title = "Starcat GitHub Stars Share Card"
+    static let description = """
+        Created with Starcat — a native, local-first macOS app that turns GitHub Stars into a searchable AI knowledge base.
+        """
+    static let source = "https://starcat.ink"
+    static let xmpNamespace = "https://starcat.ink/ns/share-card/1.0/"
+
+    let software: String
+    let localeIdentifier: String
+
+    /// 使用 App 的真实版本信息构造 `Software`，而不是把当前版本硬编码进导出器。
+    init(appVersion: String?, buildNumber: String?, localeIdentifier: String) {
+        let version = appVersion?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let build = buildNumber?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var components = ["Starcat"]
+        if let version, !version.isEmpty {
+            components.append(version)
+        }
+        if let build, !build.isEmpty {
+            components.append("(Build \(build))")
+        }
+
+        self.software = components.joined(separator: " ")
+        self.localeIdentifier = localeIdentifier
+    }
+
+    /// 生成给 Agent / 脚本读取的稳定 JSON；`sortedKeys` 让同一输入得到确定输出，便于测试与排查。
+    var machineReadableComment: String? {
+        let payload = [
+            "contentType": "github-stars-profile-share-card",
+            "generator": "Starcat",
+            "locale": localeIdentifier,
+            "schema": "starcat.share-card.v1",
+            "website": Self.source
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]) else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
+    }
+}
 
 /// 分享卡导出工具。一组静态方法即可，无状态。
 @MainActor
@@ -164,14 +218,117 @@ enum ShareCardExporter {
 
     // MARK: - 内部工具
 
-    /// NSImage → PNG Data。
-    /// NSImage 内部是 TIFF/CGImage 表示；导出 PNG 需要走 NSBitmapImageRep。
-    /// 失败可能在：① 无 cgImage（极少见）② representation(using:.png) 返回 nil（编码失败）
-    private static func pngData(from image: NSImage) -> Data? {
+    /// NSImage → 带产品 metadata 的 PNG Data。
+    ///
+    /// `NSBitmapImageRep.representation(using:)` 只能满足基础编码；这里改用 ImageIO，
+    /// 把 metadata 和像素一次性写入同一个 PNG。保存、复制和分享到 X 都复用本方法，
+    /// 因而不会出现只有某条出口路径携带来源信息的情况。
+    ///
+    /// `metadata` 参数保持 internal 是为了让单元测试注入固定版本与 locale，避免测试依赖
+    /// 当前构建环境；生产调用方始终使用下面的默认值。
+    static func pngData(
+        from image: NSImage,
+        metadata: ShareCardPNGMetadata? = nil
+    ) -> Data? {
         guard let tiff = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiff) else {
+              let bitmap = NSBitmapImageRep(data: tiff),
+              let cgImage = bitmap.cgImage
+        else {
             return nil
         }
-        return bitmap.representation(using: .png, properties: [:])
+
+        let resolvedMetadata = metadata ?? currentPNGMetadata
+        guard let comment = resolvedMetadata.machineReadableComment,
+              let xmpMetadata = xmpMetadata(
+                  source: ShareCardPNGMetadata.source,
+                  software: resolvedMetadata.software,
+                  comment: comment
+              )
+        else {
+            return nil
+        }
+
+        // ImageIO 的 PNG encoder 会稳定写入 Title / Description / Software，但会静默忽略
+        // PNG Source / Comment；后二者因此写入标准 XMP 与 Starcat 自有 namespace。
+        let pngProperties: [CFString: Any] = [
+            kCGImagePropertyPNGTitle: ShareCardPNGMetadata.title,
+            kCGImagePropertyPNGDescription: ShareCardPNGMetadata.description,
+            kCGImagePropertyPNGSoftware: resolvedMetadata.software
+        ]
+        let imageProperties: [CFString: Any] = [
+            kCGImagePropertyPNGDictionary: pngProperties
+        ]
+
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            output,
+            UTType.png.identifier as CFString,
+            1,
+            nil
+        ) else {
+            return nil
+        }
+
+        CGImageDestinationAddImageAndMetadata(
+            destination,
+            cgImage,
+            xmpMetadata,
+            imageProperties as CFDictionary
+        )
+        guard CGImageDestinationFinalize(destination) else {
+            return nil
+        }
+        return output as Data
+    }
+
+    /// 构造 PNG 内嵌 XMP：`dc:source` 提供官网，`starcat:Manifest` 保存结构化 JSON。
+    ///
+    /// 自有 namespace 只作为稳定标识，不承载用户数据；检测工具无需连接该 URL 即可读取。
+    private static func xmpMetadata(
+        source: String,
+        software: String,
+        comment: String
+    ) -> CGImageMetadata? {
+        let metadata = CGImageMetadataCreateMutable()
+        guard CGImageMetadataRegisterNamespaceForPrefix(
+            metadata,
+            ShareCardPNGMetadata.xmpNamespace as CFString,
+            "starcat" as CFString,
+            nil
+        ),
+        CGImageMetadataSetValueWithPath(
+            metadata,
+            nil,
+            "dc:source" as CFString,
+            source as CFString
+        ),
+        CGImageMetadataSetValueWithPath(
+            metadata,
+            nil,
+            "xmp:CreatorTool" as CFString,
+            software as CFString
+        ),
+        CGImageMetadataSetValueWithPath(
+            metadata,
+            nil,
+            "starcat:Manifest" as CFString,
+            comment as CFString
+        )
+        else {
+            return nil
+        }
+        return metadata
+    }
+
+    /// 卡片跟随 Starcat 当前显示语言；`.system` 时使用系统正在生效的 locale。
+    private static var currentPNGMetadata: ShareCardPNGMetadata {
+        let info = Bundle.main.infoDictionary
+        let localeIdentifier = LocaleStore.shared.selection.effectiveLocale.identifier
+            .replacingOccurrences(of: "_", with: "-")
+        return ShareCardPNGMetadata(
+            appVersion: info?["CFBundleShortVersionString"] as? String,
+            buildNumber: info?["CFBundleVersion"] as? String,
+            localeIdentifier: localeIdentifier
+        )
     }
 }

@@ -259,8 +259,8 @@ struct ShareCardSheet: View {
     /// 版式 + 配色选择器。
     ///
     /// 2026-06-25：主题被拆成 Style × Color 两个维度。左侧选择版式，右侧只显示
-    /// 当前版式支持的颜色。所有按钮都有固定外框和完整 contentShape，优先解决之前
-    /// 小色块 hover/click 命中不稳定的问题。
+    /// 当前版式支持的颜色。视觉缩略图保持紧凑，但真实命中区统一为连续的 28×28pt，
+    /// 避免鼠标落在缩略图边缘或按钮间隙时丢失 hover/click。
     @ViewBuilder
     private var themePicker: some View {
         HStack(spacing: 8) {
@@ -277,7 +277,8 @@ struct ShareCardSheet: View {
     /// 左侧版式选择：无文字 mini layout 预览，靠 tooltip / accessibility 暴露名称。
     @ViewBuilder
     private var stylePicker: some View {
-        HStack(spacing: 4) {
+        // 命中区彼此相接，视觉间距由按钮内部留白承担，不能再留下不可点击的 HStack gap。
+        HStack(spacing: 0) {
             ForEach(ShareCardStyle.allCases) { style in
                 StyleCardButton(
                     style: style,
@@ -292,7 +293,8 @@ struct ShareCardSheet: View {
     /// 右侧配色选择：只显示当前版式支持的颜色。
     @ViewBuilder
     private var colorPicker: some View {
-        HStack(spacing: 4) {
+        // 与版式按钮遵守同一命中规则，避免只修左侧后右侧继续出现点击死区。
+        HStack(spacing: 0) {
             ForEach(selectedStyle.supportedColors) { colorSet in
                 ColorSwatchButton(
                     colorSet: colorSet,
@@ -314,6 +316,7 @@ struct ShareCardSheet: View {
 
     /// 单个版式按钮。按钮外框固定，内部画抽象 wireframe，避免新增图片资源。
     private struct StyleCardButton: View {
+        private static let hitTargetSize: CGFloat = 28
         private static let buttonWidth: CGFloat = 22
         private static let buttonHeight: CGFloat = 18
 
@@ -328,32 +331,40 @@ struct ShareCardSheet: View {
         var body: some View {
             Button(action: action) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(buttonBackgroundColor)
+                    // 不能使用 Color.clear：SwiftUI/AppKit 会把完全透明的 label 边缘从原生
+                    // AXButton / hover tracking rect 中裁掉，代码看似 28pt，运行时仍只有 22×18pt。
+                    // 0.001 肉眼不可见，但会保留完整的原生交互面。
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.001))
 
-                    stylePreview
-                        .padding(2.5)
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(buttonBackgroundColor)
+
+                        stylePreview
+                            .padding(2.5)
+                    }
+                    .frame(width: Self.buttonWidth, height: Self.buttonHeight)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 5)
+                            .stroke(
+                                borderColor,
+                                lineWidth: isSelected ? 1.5 : (isHovered ? 0.8 : 0.5)
+                            )
+                    )
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(selectedBackgroundColor)
+                    )
                 }
-                .frame(width: Self.buttonWidth, height: Self.buttonHeight)
-                .contentShape(Rectangle())
-                .overlay(
-                    RoundedRectangle(cornerRadius: 5)
-                        .stroke(
-                            borderColor,
-                            lineWidth: isSelected ? 1.5 : (isHovered ? 0.8 : 0.5)
-                        )
-                )
-                .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(selectedBackgroundColor)
-                )
+                .frame(width: Self.hitTargetSize, height: Self.hitTargetSize)
+                .contentShape(.interaction, Rectangle())
             }
-            // macOS plain Button 在小图标上偶发只按 label 绘制像素命中。
-            // 外层重复声明同尺寸矩形命中区，保持现有尺寸不变但让 hover/click 走稳定区域。
-            .frame(width: Self.buttonWidth, height: Self.buttonHeight)
-            .contentShape(Rectangle())
             .buttonStyle(.plain)
             .focusEffectDisabled()
+            // frame 必须同时落在 Button 本体；只扩 label 不会扩大 macOS 原生按钮命中框。
+            .frame(width: Self.hitTargetSize, height: Self.hitTargetSize)
+            .contentShape(.interaction, Rectangle())
             .help(Text(style.localizationKey))
             .accessibilityLabel(Text(style.localizationKey))
             .onHover { hovering in
@@ -493,6 +504,7 @@ struct ShareCardSheet: View {
 
     /// 单个配色按钮。固定小尺寸外框，内部用单色表达当前配色的强调色。
     private struct ColorSwatchButton: View {
+        private static let hitTargetSize: CGFloat = 28
         private static let buttonWidth: CGFloat = 19
         private static let buttonHeight: CGFloat = 18
 
@@ -505,26 +517,35 @@ struct ShareCardSheet: View {
 
         var body: some View {
             Button(action: action) {
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(colorSet.pickerSwatch.accent)
-                    .frame(width: Self.buttonWidth, height: Self.buttonHeight)
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
-                    .contentShape(Rectangle())
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 5)
-                            .stroke(
-                                isSelected ? Color.accentColor : Color.primary.opacity(isHovered ? 0.34 : 0.18),
-                                lineWidth: isSelected ? 1.5 : (isHovered ? 0.8 : 0.5)
-                            )
-                    )
-                    .background(
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill(isSelected ? Color.accentColor.opacity(0.10) : Color.clear)
-                    )
-                    .shadow(color: .black.opacity(isHovered ? 0.18 : 0), radius: 4, y: 1)
+                ZStack {
+                    // 与版式按钮一致，保留一个实际绘制但肉眼不可见的 28pt AppKit 命中面。
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.001))
+
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(colorSet.pickerSwatch.accent)
+                        .frame(width: Self.buttonWidth, height: Self.buttonHeight)
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 5)
+                                .stroke(
+                                    isSelected ? Color.accentColor : Color.primary.opacity(isHovered ? 0.34 : 0.18),
+                                    lineWidth: isSelected ? 1.5 : (isHovered ? 0.8 : 0.5)
+                                )
+                        )
+                        .background(
+                            RoundedRectangle(cornerRadius: 5)
+                                .fill(isSelected ? Color.accentColor.opacity(0.10) : Color.clear)
+                        )
+                        .shadow(color: .black.opacity(isHovered ? 0.18 : 0), radius: 4, y: 1)
+                }
+                .frame(width: Self.hitTargetSize, height: Self.hitTargetSize)
+                .contentShape(.interaction, Rectangle())
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
+            .frame(width: Self.hitTargetSize, height: Self.hitTargetSize)
+            .contentShape(.interaction, Rectangle())
             .help(Text(colorSet.localizationKey))
             .accessibilityLabel(Text(colorSet.localizationKey))
             .onHover { hovering in
