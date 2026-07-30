@@ -49,6 +49,8 @@
 | 51 | [我的项目整体落地方案](51-我的项目整体落地方案.md) | 星标模块下的个人 / 组织 / Private 项目分类、GitHub App 只读授权、v17 关系表、同步、详情复用与隐私边界 |
 | 52 | [Alfred 外部搜索集成详细设计](52-Alfred外部搜索集成详细设计.md) | Starcat Pro 外部集成：复用 CLI/MCP 全局搜索、跨来源去重、owner avatar 缓存、Deep Link / GitHub 打开与三仓库实施验收契约 |
 | 53 | [uTools 与 Raycast 外部搜索集成详细设计](53-uTools与Raycast外部搜索集成详细设计.md) | 复用 `starcat search` 公共契约，定义 uTools list 插件、Raycast Extension、头像差异、取消机制、独立仓库与发布验收 |
+| 54 | [Starcat 外部应用插件化集成扩展初步方案](54-Starcat外部应用插件化集成扩展初步方案.md) | 在 Alfred、uTools、Raycast 之外，规划 Spotlight、Shortcuts、LaunchBar、VS Code、PopClip、Obsidian、JetBrains 与 MCP Host 的分层接入和实施优先级 |
+| 55 | [Starcat macOS 桌面小组件初步方案](55-macOS桌面小组件初步方案.md) | Focus、今日重逢、Release Watch 等 WidgetKit 组件，以及 App Group 快照、头像、Deep Link、隐私、刷新和 Store / Direct 双渠道边界 |
 
 ---
 
@@ -83,6 +85,7 @@
 
 | 日期 | 更新内容 |
 |------|---------|
+| 2026-07-30 | 新增 54 / 55 文档：外部应用插件化扩展候选与 macOS WidgetKit 初步落地方案 |
 | 2026-07-30 | 回填 53 文档：Raycast Extension、41 项自动化、构建证据与真机人工验收边界 |
 | 2026-07-29 | 回填 53 文档：uTools 0.1.0 插件、公共 fixtures、Node 16 / 当前 Node 自动化证据与真机人工验收边界 |
 | 2026-07-29 | 新增 53 文档：Alfred 代码审查门槛、共享 Launcher 契约、uTools / Raycast 可直接实施方案与验收清单 |

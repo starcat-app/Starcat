@@ -15,6 +15,7 @@
 > - [`16-Agent底层平台技术方案.md`](16-Agent底层平台技术方案.md):统一 Agent Workspace / Runtime / Tool / Artifact 底层技术方案
 > - [`17-GitHubWeeklyReportAgent技术实现方案.md`](17-GitHubWeeklyReportAgent技术实现方案.md):首个内置 Agent 的工程落地方案
 > - [`18-SwiftAgentSDK调研报告.md`](18-SwiftAgentSDK调研报告.md):开源 Swift Agent SDK 实时调研与 runtime 选型建议
+> - [`20-CLI-Agent作为AI-Provider初步方案.md`](20-CLI-Agent作为AI-Provider初步方案.md):Direct 版通过双向协议接入 Codex、Claude Code、Gemini CLI，以 Agent 工作台为主入口，并由 Starcat 统一承载动态审批与 RAG Tool 边界
 > - [`../AI代理API设计.md`](../AI代理API设计.md):Starcat 现有 AI Proxy 协议
 > - [`../CLAUDE.md`](../CLAUDE.md):项目铁律与 UI 规范
 > - [`../功能清单.md`](../功能清单.md):P0/P1/P2 优先级矩阵
