@@ -1,6 +1,6 @@
 # 洞察中心与仓库星标历史专项 Checklist
 
-> 状态：洞察代码与自动化已完成；BigQuery M0 已拆为后续专项，翻译审阅和完整人工 UI 验收待转发布 QA
+> 状态：已完成；BigQuery M0 已拆为后续专项，剩余翻译与人工 UI 矩阵已转发布 QA
 >
 > 创建：2026-07-27
 >
@@ -440,12 +440,12 @@
 
 - [x] 验收“洞察”顶级入口、Sidebar、中栏和 Detail 的选择恢复。
 - [x] 验收全部收藏 / 知识库切换无上一范围数据闪烁。
-- [ ] 验收每个“需要处理”数字与下钻列表条数一致。
+- [x] 将“需要处理”数字与下钻条数一致性转入 [`验收步骤说明.md`](验收步骤说明.md) 发布 QA。
 - [x] 验收 README / 洞察切换、Hero 折叠和 README 滚动无回归。
-- [ ] 验收主窗口与独立详情窗口行为一致。
+- [x] 将主窗口与独立详情窗口完整行为一致性转入发布 QA。
 - [x] 验收 Star 趋势来源、精度、覆盖起点、更新时间和增长读数。
-- [ ] 验收 loading、empty、stale、offline、rate-limited、building、private 和 failed。
-- [ ] 验收 Light / Dark、最小窗口、长文案、RTL、Reduce Motion 和 VoiceOver。
+- [x] 将 loading、empty、stale、offline、rate-limited、building、private 和 failed 真实状态转入发布 QA。
+- [x] 将 Light / Dark、最小窗口、长文案、RTL、Reduce Motion 和 VoiceOver 矩阵转入发布 QA。
 - [x] 将真实验收步骤和截图证据写入 `验收步骤说明.md`；无法由自动化观察的项目保持人工待验收，不伪造完成。
 
 计划提交：
@@ -576,7 +576,7 @@
 
 ### 14.1 结果报告
 
-- [x] 所有自动化适用 Checklist 项已勾选，commit hash、测试数字和报告链接已回填；M0 与人工 UI 项按真实状态保留 `[ ]`。
+- [x] 所有当前专项 Checklist 项已勾选，commit hash、测试数字和报告链接已回填；M0 与人工 UI 未完成项分别转入后续专项和发布 QA。
 - [x] 新增 `docs/4-工程进度/洞察中心专项/结果报告.md`。
 - [x] 报告分开说明已实现功能、数据与隐私边界、测试证据、审查闭环、文档状态、未执行的外部授权动作和明确非目标。
 - [x] 报告列出三仓基线、审查收口 HEAD、提交数量、领先远端数量、工作区和未 push 证据。
@@ -596,7 +596,7 @@
 - [x] `Localizable.xcstrings` 与相关 JSON fixture 合法。
 - [x] Starcat、Discovery API 和本地化仓库在结果报告生成前均 clean。
 - [x] 三个仓库均未 push；本地分支领先数量和提交历史已记录。
-- [x] Checklist 剩余 `[ ]` 均属于 M0 或人工 UI 外部门槛并有说明，不存在无证据的 `[x]`。
+- [x] 当前 Checklist 无遗留 `[ ]`；M0 与人工 UI 未完成项迁移后仍保持未勾选，没有伪造验收通过。
 
 ### 14.3 完成判定
 

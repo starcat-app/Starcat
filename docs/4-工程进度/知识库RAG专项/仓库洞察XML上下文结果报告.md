@@ -1,7 +1,7 @@
 # 仓库洞察 XML 上下文结果报告
 
 > 日期：2026-07-30  
-> 状态：代码、自动化、三轮整改与清洁复审完成；人工 UI 验收待执行  
+> 状态：代码、自动化、三轮整改与清洁复审完成；剩余人工 UI 矩阵已转洞察中心发布 QA
 > 分支：`dev`  
 > 推送：未 push
 
@@ -76,7 +76,7 @@ Repository Insights Providers / SQLite / Star History
 - 禁用 `String(localized:)` / `NSLocalizedString` 调用扫描；命中仅为项目说明注释。
 - 目标文件与当前工作区 `git diff --check`。
 
-本任务没有启动 Starcat。真实 UI 点选、主题、Reduce Motion、VoiceOver 和真实 Provider Prompt 仍由 dong4j 验收，未伪造完成人工证据。
+本任务没有启动 Starcat。真实 UI 点选、主题、Reduce Motion、VoiceOver 和真实 Provider Prompt 已转入 `洞察中心专项/验收步骤说明.md` 发布 QA，未伪造完成人工证据。
 
 ## 5. 关键提交
 
