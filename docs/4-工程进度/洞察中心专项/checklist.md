@@ -1,6 +1,6 @@
 # 洞察中心与仓库星标历史专项 Checklist
 
-> 状态：本轮洞察数据增强已实现并进入复审；M0 真实 BigQuery 验证、翻译审阅和完整人工 UI 验收待授权 / 待执行
+> 状态：洞察代码与自动化已完成；BigQuery M0 已拆为后续专项，翻译审阅和完整人工 UI 验收待转发布 QA
 >
 > 创建：2026-07-27
 >
@@ -74,21 +74,12 @@
 - [x] 开工时重新核对 `starcat-discovery-api` 的 store、ingest、router、scheduler、鉴权、缓存和 migration 机制。证据：[`需求追踪矩阵.md`](需求追踪矩阵.md) §1。
 - [x] 对两份方案逐条建立“需求 → 代码位置 → 测试 → commit → 验收证据”追踪矩阵。证据：[`需求追踪矩阵.md`](需求追踪矩阵.md) §3。
 
-### 2.2 M0：GH Archive 可行性 Spike
+### 2.2 M0：GH Archive 可行性 Spike（已拆分）
 
-- [ ] 明确 BigQuery 凭据来源、只读权限、预算和 `maximumBytesBilled`；未经授权不产生付费查询。
-- [x] 选择小、中、大各 2 个公开仓库，以稳定 GitHub repo ID 查询 `WatchEvent`。样本与 repo ID 已记录到 [`M0-星标历史数据可行性.md`](M0-星标历史数据可行性.md)；真实查询待授权。
-- [ ] 验证 GH Archive 当前表名、字段类型、覆盖起点、查询耗时、扫描字节和缺口。
-- [ ] 验证六个样本均从服务端 GitHub `created_at` 开始 dry run，记录裁剪前后扫描字节差异。
-- [ ] 按约 2000 个收藏仓库评估逐仓查询与批量扫描成本；若逐仓方案不可接受，M0 不得 GO，必须先调整构建策略。
-- [ ] 对比累计 `WatchEvent`、当前 `stargazers_count` 与归一化曲线。
-- [ ] 验证 `totalEvents == 0`、仓库改名 / 转移、归档仓库和超大仓库边界。
-- [ ] 输出 M0 GO / NO-GO 结论和成本上限，写入新增审查报告或专项决策文档。
-- [ ] M0 GO 时确认继续实现 GH Archive 估算；NO-GO 时同步收缩 49 / 50 号方案为“从 Starcat 开始记录”，禁止上线伪精确曲线。
-
-计划提交：
-
-- [ ] `docs(star-history): 记录星标历史数据可行性结论` — 实际 commit：`待回填`
+- [x] dong4j 于 2026-07-30 确认 BigQuery / GH Archive M0 不再作为本需求关单门槛。
+- [x] 后续凭据、dry run、约 2000 仓库成本、数据质量与 GO / NO-GO 清单统一保留在 [`M0-星标历史数据可行性.md`](M0-星标历史数据可行性.md)。
+- [x] 生产 `starcat-discovery-api` 已部署并保持常驻；未配置 `STAR_HISTORY_ENABLED`，继续使用默认关闭值。
+- [x] 当前需求不承诺普通第三方仓库的 Starcat 使用前历史；本机精确快照和有权限仓库的 GitHub Stargazers 路径不受影响。
 
 ---
 
