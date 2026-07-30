@@ -7,6 +7,9 @@
 > 独立 worktree: `/Users/dong4j/Developer/1.AI/ai-incubator/Starcat-agent-full-delivery`
 > 前置分析: `docs/4-工程进度/AgentCline参考实现专项/Cline-Agent实现分析与Starcat落地方案.md`
 > 当前基线: 模型驱动 Agent loop 已落地并通过专项与全量回归,正在执行交付审查。
+> 后续迭代: 外部 Codex、Claude Code、Gemini CLI 接入不属于本专项已完成范围；开发时以
+> `docs/2-产品/需求讨论/agent/20-CLI-Agent作为AI-Provider初步方案.md` 为准，在当前
+> `LoopAgentRuntime` 旁新增 Direct-only `CLIExternalAgentRuntime`，不得恢复已删除的线性 Runtime。
 
 ## 1. 交付约定
 

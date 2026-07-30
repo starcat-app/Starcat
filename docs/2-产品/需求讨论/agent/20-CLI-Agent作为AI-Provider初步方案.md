@@ -2,7 +2,7 @@
 
 > **文档定位**：讨论 Starcat 如何把 Claude Code、Codex、Gemini CLI 及后续同类 CLI Agent 接入为 AI 执行后端。本文是初步方案，用于固定问题边界、推荐架构、渠道限制和分阶段落地路径，不代表已经立项或开始实现。
 >
-> **状态**：初步方案，已完成第一轮评审修订；Direct-only 与动态人工审批闭环已确认，尚未立项或开始实现。
+> **状态**：初步方案，已确认与 Agent 工作台后续迭代一起实施；Direct-only、动态人工审批闭环及 RAG Tool 边界已确认，尚未开始代码实现。
 >
 > **创建日期**：2026-07-30。
 >
@@ -125,7 +125,7 @@ Starcat 当前通过 OpenAI-compatible HTTP API 对接各类 AI 服务商，主�
 - `RepoAIInsightService.makeClient`
 - `SemanticSearchService.makeClient`
 - `ReadmeTranslationService.makeClient`
-- `AgentTextGeneratorFactory.make`
+- `AgentLoopModelClientFactory.make`
 
 若只在某一个调用点增加 CLI 分支，其他任务仍然不会生效。后续需要统一的 Text Backend Factory，但首期不要求一次性重写全部业务调用。
 
@@ -134,17 +134,36 @@ Starcat 当前通过 OpenAI-compatible HTTP API 对接各类 AI 服务商，主�
 当前已有：
 
 - `AgentRuntime`
-- `DefaultAgentRuntime`
+- `LoopAgentRuntime`
+- `AgentLoopModelClient`
+- `AgentPromptBuilder`
 - `AgentRunEvent`
 - `AgentTool`
 - `AgentToolRegistry`
-- `AgentTraceSpan`
+- `AgentApprovalCoordinator`
 - `AgentArtifact`
-- Agent Run / Step / Tool Output / Trace / Artifact 持久化
+- Agent Run / Message / Approval / Artifact 持久化
 
-现有 Runtime 先按 Starcat 定义的工具顺序执行，再通过 `AgentTextGenerating` 生成最终 Markdown。最终生成仍固定走 `OpenAIClient`。
+现有 `LoopAgentRuntime` 已按 `model -> tool-call -> tool-result -> model` 驱动内置 Agent，
+并通过 `AgentLoopModelClient` 复用 `OpenAIClient`、现有 Provider 配置、Keychain 和模型参数。
+审批、消息回放、artifact 与 Workspace 审计也已经形成统一契约。
 
-这意味着 Starcat 已有很好的 UI、审计和持久化壳层，但还没有“外部 CLI 自己驱动 Agent loop”的 Runtime。
+这意味着后续 CLI 集成不是重做 Agent 工作台，也不是替换 `AgentLoopModelClient`，而是新增
+与 `LoopAgentRuntime` 并列的 `CLIExternalAgentRuntime`：让外部 CLI 自己驱动 Agent loop，
+再把 Provider 事件、动态审批、用量和产物归一到现有 Workspace 契约。
+
+### 3.5 后续开发接入点
+
+`codex/agent-iteration` 已在 2026-07-30 合入当时最新 `dev`，后续 Agent 开发以当前
+`LoopAgentRuntime` 基线继续。CLI 方案的最小接入顺序固定为：
+
+1. 在 `AgentRuntime` 装配层增加 execution backend 路由，保留 `LoopAgentRuntime` 作为 API 路径。
+2. 新增 Direct-only 的 `CLIExternalAgentRuntime`、`CLIProviderAdapter` 与 `CLIProcessHost`。
+3. 把 Provider 原生事件归一为 `AgentRunEvent` / message / artifact，但保留原始事件用于脱敏审计。
+4. 新增 `CLIApprovalBroker`，把 Provider permission request 映射到现有审批 UI，并将决定回写原 request。
+5. 复用现有 Agent Workspace、run repository 和 Inspector，不新增第二套 CLI 专用工作台。
+
+实现时禁止恢复已删除的 `DefaultAgentRuntime` 或 `AgentTextGenerating` 线性路径。
 
 ---
 
@@ -163,7 +182,7 @@ flowchart LR
 
     Embedding --> APIEmbedding["OpenAI-compatible Embedding"]
 
-    Runtime --> StarcatRuntime["DefaultAgentRuntime"]
+    Runtime --> StarcatRuntime["LoopAgentRuntime"]
     Runtime --> CLIRuntime["CLIExternalAgentRuntime"]
 
     CLIRuntime --> Registry["CLIProviderRegistry"]
@@ -175,9 +194,11 @@ flowchart LR
     Runner --> Gemini["Gemini ACP Adapter"]
 
     Runner --> Events["CLIProviderEvent"]
-    Events --> Approval["AgentApprovalCoordinator"]
+    Events --> ApprovalBroker["CLIApprovalBroker"]
+    ApprovalBroker --> Approval["AgentApprovalCoordinator / Repository"]
     Approval --> ApprovalUI["Starcat Approval UI"]
-    ApprovalUI --> Runner
+    ApprovalUI --> ApprovalBroker
+    ApprovalBroker --> Runner
     Events --> StarcatEvents["AgentRunEvent / AIChatStreamEvent"]
 ```
 
@@ -263,8 +284,8 @@ enum CLIProviderID: String, Codable, CaseIterable, Sendable {
 把 CLI 原生 Agent 事件映射为：
 
 - `AgentRunEvent`
-- `AgentTraceSpan`
-- `AgentToolOutput`
+- `AgentMessage`
+- `AgentApprovalRequest`
 - `AgentArtifact`
 
 从而复用现有 Agent Workspace，而不是另做一个 CLI 专用终端页面。
@@ -607,14 +628,17 @@ sequenceDiagram
     CLI-->>Adapter: 继续或终止当前工具
 ```
 
-`AgentApprovalCoordinator` 必须实现为 `actor`：
+`CLIApprovalBroker` 必须实现为 `actor`，并复用现有
+`AgentApprovalCoordinator` / Repository 的 UI 与持久化契约：
 
 - 使用受检 continuation 暂停等待，不能只发 UI 事件后继续运行。
 - 同一个 Run 可以存在多个请求，但 UI 和决定必须按 request ID 精确关联。
 - App 退出、Run 取消、Provider 崩溃、连接断开或审批超时，全部自动解析为 `deny` 或 `cancel`。
 - 已解析请求不能重复恢复 continuation。
 - 请求、决定、作用域、时间和最终执行状态进入脱敏审计。
-- 当前 `DefaultAgentRuntime` 只发出 `.confirmationRequested` 后继续执行，实施时必须把“展示确认”升级为“等待决定后恢复”的真实状态机。
+- 当前 `LoopAgentRuntime` 的内置 Tool approval 已具备持久化暂停/恢复；CLI 实施时还必须
+  补齐 **Provider permission request → Starcat decision → Provider 原生响应** 的往返，
+  不能只复用 `.confirmationRequested` 展示层后就认为外部进程已经被约束。
 
 ### 8.4 操作级规则
 
@@ -866,7 +890,7 @@ UI 继续遵守：
 
 | 场景 | 执行方式 |
 |---|---|
-| Agent Workspace | `CLIExternalAgentRuntime` + `AgentApprovalCoordinator` |
+| Agent Workspace | `CLIExternalAgentRuntime` + `CLIApprovalBroker` + 现有 Agent 审批 / 持久化 |
 | Agent 最终 Markdown | CLI 原生最终输出 |
 | 普通 AI 对话 | 继续 API Provider |
 | 摘要 / 标签 / 笔记 / 翻译 | 继续 API Provider |
@@ -1200,17 +1224,17 @@ UI 展示分两层：
 - 将 Direct-only 作为固定渠道边界。
 - 固化启动权限、动态审批、Provider Sandbox / Policy 三层模型。
 - 明确文件、Shell、联网和敏感路径规则。
-- 明确首期是否只接 Agent Workspace。
+- 固化首期只接 Agent Workspace，普通 AI 任务与 RAG Text Backend 不进入首期。
 - 在 dong4j 明确授权后，再登记 `docs/功能实现总览.md`。
 
-### Phase 1：审批与安全底座
+### Phase 1：CLI 审批与安全底座
 
 交付：
 
-- `AgentApprovalRequest`
-- `AgentApprovalDecision`
-- `AgentApprovalCoordinator`
-- 审批卡片 / Sheet 与 Run 等待态
+- 在现有 `AgentApprovalRequest`、`AgentApprovalDecision`、`AgentApprovalCoordinator`
+  和审批 UI 之上新增 `CLIApprovalBroker`
+- Provider permission request ID 与现有 run / approval ID 的稳定映射
+- Provider 原生 approve / reject 回写与 CLI Run 等待态
 - Run-scoped 权限 grant
 - 路径 canonicalization、敏感路径规则和 Diff 校验
 - 取消、超时、App 退出时的 continuation 收口
@@ -1238,7 +1262,7 @@ UI 展示分两层：
 - Codex App Server Adapter
 - `CLIExternalAgentRuntime`
 - Agent Run Event 映射
-- Tool / Web Search / Trace / Artifact 映射
+- Message / Approval / Web Search / Artifact 映射
 - 命令、文件、网络和额外权限请求回写
 - 取消完整进程组
 - 外部 session ID 持久化
@@ -1433,7 +1457,7 @@ UI 展示分两层：
 | CLI 协议事件随版本变化 | Parser / RPC 失效 | 宽容解码 + fixture + capability probe |
 | 双向审批协议随版本变化 | CLI 卡住或越过 Starcat UI | capability probe + 协议 fixture + 不支持时禁用原生写入 / Shell |
 | Direct 版无 App Sandbox | UI 审批不能形成系统安全边界 | Provider Sandbox / Policy + 路径 allowlist + Tool Broker |
-| 待审批请求未收口 | Run 永久等待或 continuation 泄漏 | `AgentApprovalCoordinator` 单次恢复 + 取消 / 超时兜底 |
+| 待审批请求未收口 | Run 永久等待或 continuation 泄漏 | `CLIApprovalBroker` 单次回写 + 取消 / 超时兜底 |
 | 路径与 symlink 逃逸 | 读取或修改授权目录外文件 | canonicalization 后再做 root 检查 |
 | CLI 启动子进程 | 取消后残留 | 独立进程组 |
 | GUI App 的 PATH 不完整 | 找不到 Homebrew CLI | 标准路径扫描 + 用户选择 |
@@ -1451,13 +1475,13 @@ UI 展示分两层：
 3. Provider 原生 Sandbox / Policy 与 Starcat 审批同时启用。
 4. 文件写入首期逐次展示 Diff 并使用 `allowOnce`，不提供整轮自动写入。
 5. 三类协议共同设计，但先用 Codex App Server 验证统一审批底座，再实现 Claude Agent SDK Bridge 和 Gemini ACP。
+6. 完整 CLI Agent 的首期产品入口只放在 **Agent Workspace**；普通 AI 任务与 RAG Text Backend 留到后续评估。
 
 ### 18.3 待 dong4j 后续确认
 
-1. 首期是否只接 **Agent Workspace**，普通 AI 任务留到后续阶段。
-2. CLI Provider 是否继续复用现有 **Pro 权益门禁**。
-3. “允许联网”是否默认关闭且每轮单独选择。
-4. 是否需要保存并恢复外部 CLI session。
+1. CLI Provider 是否继续复用现有 **Pro 权益门禁**。
+2. “允许联网”是否默认关闭且每轮单独选择。
+3. 是否需要保存并恢复外部 CLI session。
 
 当前推荐答案：
 

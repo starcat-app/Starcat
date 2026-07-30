@@ -15,6 +15,7 @@
 > - [`16-Agent底层平台技术方案.md`](16-Agent底层平台技术方案.md):统一 Agent Workspace / Runtime / Tool / Artifact 底层技术方案
 > - [`17-GitHubWeeklyReportAgent技术实现方案.md`](17-GitHubWeeklyReportAgent技术实现方案.md):首个内置 Agent 的工程落地方案
 > - [`18-SwiftAgentSDK调研报告.md`](18-SwiftAgentSDK调研报告.md):开源 Swift Agent SDK 实时调研与 runtime 选型建议
+> - [`19-Cline-Agent设计学习心得.md`](19-Cline-Agent设计学习心得.md):Prompt、Tool Loop、Approval 与统一工作台边界
 > - [`20-CLI-Agent作为AI-Provider初步方案.md`](20-CLI-Agent作为AI-Provider初步方案.md):Direct 版通过双向协议接入 Codex、Claude Code、Gemini CLI，以 Agent 工作台为主入口，并由 Starcat 统一承载动态审批与 RAG Tool 边界
 > - [`../AI代理API设计.md`](../AI代理API设计.md):Starcat 现有 AI Proxy 协议
 > - [`../CLAUDE.md`](../CLAUDE.md):项目铁律与 UI 规范
@@ -27,6 +28,13 @@
 Starcat 已经是"GitHub Stars 管理 + 本地知识库"工具,2026 年大多数成熟产品都在做"AI Agent 化"。dong4j 提出:**在 Starcat 里做"技术选型 Agent"**(从 GitHub 找开源项目 → 分析 → 输出调研报告),并希望先调研生态 + 提场景建议,再决定是否立项。
 
 本文档把那次讨论沉淀为可追溯的方案档案,作为后续 P1/P2 立项的依据。
+
+> **后续 Agent 开发约束（2026-07-30）**：内置 Agent 继续以
+> [`16-Agent底层平台技术方案.md`](16-Agent底层平台技术方案.md) 的 `LoopAgentRuntime`
+> 为基线；需要接入 Codex、Claude Code、Gemini CLI 等外部执行后端时，不扩展
+> `AIClientProtocol` 冒充普通模型 Provider，而是按
+> [`20-CLI-Agent作为AI-Provider初步方案.md`](20-CLI-Agent作为AI-Provider初步方案.md)
+> 新增 Direct-only 的外部 Runtime，并复用 Agent Workspace 的事件、审批、审计与产物展示。
 
 ---
 

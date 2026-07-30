@@ -9,6 +9,8 @@
 > - [`17-GitHubWeeklyReportAgent技术实现方案.md`](17-GitHubWeeklyReportAgent技术实现方案.md)
 > - [`18-SwiftAgentSDK调研报告.md`](18-SwiftAgentSDK调研报告.md)
 > - [`15-Agent框架讨论记录与补充场景.md`](15-Agent框架讨论记录与补充场景.md)
+> - [`19-Cline-Agent设计学习心得.md`](19-Cline-Agent设计学习心得.md)
+> - [`20-CLI-Agent作为AI-Provider初步方案.md`](20-CLI-Agent作为AI-Provider初步方案.md)
 
 ---
 
@@ -23,6 +25,10 @@
 - `GRDBAgentRunRepository` 持久化 run、message、approval 和 artifact;不再维护独立 step/log 事实表,时间线与 Inspector 从消息链投影。
 - Workspace 使用独立 macOS window,复用项目已有 AI Provider、Keychain、External Search、仓库快照和领域服务,不新增第二套设置。
 - 当前正式产物是单个 Markdown artifact。shell、任意文件编辑、浏览器自动化、subagent、自动写标签/笔记/状态和自动取消 star 均不在交付范围。
+- 后续 Codex、Claude Code、Gemini CLI 接入属于 **Direct-only 外部 Agent Runtime**，与当前
+  `LoopAgentRuntime` 并列，不塞进 `AIClientProtocol` 或 `AgentLoopModelClient`。统一入口仍是
+  Agent Workspace，详细的双向协议、动态审批、进程隔离和 RAG Tool 边界以
+  [`20-CLI-Agent作为AI-Provider初步方案.md`](20-CLI-Agent作为AI-Provider初步方案.md) 为准。
 
 ---
 
@@ -63,8 +69,8 @@ Starcat Agent 平台要解决的不是单个场景的表单生成,而是一套�
 │ Agent Registry + Tool Registry                              │
 │ Built-in Agent 定义 / Tool 定义 / 权限 / Schema / 版本       │
 ├─────────────────────────────────────────────────────────────┤
-│ AI Access Layer                                             │
-│ Text LLM / Tool Calling / Structured Output / Image Provider│
+│ AI Execution Layer                                          │
+│ API Loop Model / Direct-only External CLI Agent Runtime      │
 ├─────────────────────────────────────────────────────────────┤
 │ Starcat Domain Services                                     │
 │ GitHub / Trending / Weekly / RepoContext / Search / Notes   │
@@ -87,6 +93,7 @@ Starcat Agent 平台要解决的不是单个场景的表单生成,而是一套�
 |---|---|
 | `OpenAIClient` 与 `AIClientProtocol` 已支持 tool schema、tool call、流式增量和普通响应 | 直接复用现有模型配置与 OpenAI-compatible Provider |
 | `AgentPromptBuilder`、`LoopAgentRuntime`、`AgentRunRepository` 已落地 | Prompt、loop、审批恢复和消息审计已有统一契约 |
+| CLI Agent 需要工作目录、双向审批、进程取消、Provider session 和原生工具事件 | 后续新增 `CLIExternalAgentRuntime`，不把 CLI 降格成 `OpenAIClient` 的一种配置 |
 | `RepoAIWindowContentView` 是 repo 级 AI 窗口 | 不作为 Agent Workspace 长期底座 |
 | Weekly / Trending / Manage 已有多选上下文 | 适合注入 Agent run context |
 | `BatchAIQueueService` 已有队列、暂停、取消、Pro gate 经验 | 可借鉴,但 Agent run 需要更通用的 step/event 模型 |
@@ -398,6 +405,44 @@ protocol AgentImageClient: Sendable {
 - 图片模型和文本模型通常不是同一个 endpoint
 - 配额单位不同
 - 费用和确认策略不同
+
+### 5.5 外部 CLI Agent Runtime
+
+Codex、Claude Code、Gemini CLI 等工具提供的是完整 Agent 执行环境，不只是 Text LLM。
+后续接入时，运行时关系固定为：
+
+```text
+AgentRuntime
+├── LoopAgentRuntime
+│   └── AgentLoopModelClient
+│       └── OpenAIClient / OpenAI-compatible API
+└── CLIExternalAgentRuntime                    # Direct-only
+    └── CLIProviderAdapter + CLIProcessHost
+        └── Codex / Claude Code / Gemini CLI
+```
+
+两条 Runtime 复用：
+
+- `AgentRunEvent` 与 Workspace timeline / Inspector；
+- run、message、approval、artifact 的持久化与审计；
+- Starcat 领域 Tool 的权限和用户确认原则；
+- 取消、超时、敏感信息脱敏和最终产物展示。
+
+但不能错误复用：
+
+- CLI 原生文件、Shell、联网和浏览器请求必须经 Provider 双向协议暂停，并由新的
+  `CLIApprovalBroker` 映射到 Starcat 审批 UI；现有内置 Tool approval 不能假装已经
+  把决定回写外部进程。
+- CLI 的工作目录、session、capability probe、进程组终止和 Provider sandbox / policy
+  属于 `CLIProcessHost` / Adapter 职责，不进入 `AgentLoopModelClient`。
+- CLI 不提供 Embedding；RAG 索引和检索继续使用现有 API Provider。完整 CLI Agent
+  只能通过 run-scoped `starcat.knowledge.*` Tool 使用 RAG，不能直接读取 SQLite 或
+  替换受控 Evidence Pipeline。
+- 该能力只进入 Direct 构建；App Store 构建不展示、不配置、也不能启动外部 CLI。
+
+具体协议、权限档位、动态审批状态机、Run Capsule、分阶段实施与验收标准统一引用
+[`20-CLI-Agent作为AI-Provider初步方案.md`](20-CLI-Agent作为AI-Provider初步方案.md)，
+本文不再维护第二份 CLI 细节。
 
 ---
 

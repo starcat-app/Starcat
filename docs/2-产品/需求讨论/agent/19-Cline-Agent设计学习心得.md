@@ -218,3 +218,22 @@ Starcat 更适合的模式是：
 4. 把最终结果从 Markdown 字符串升级为 completion tool 的结构化 artifact。
 5. 写入类工具保持 UI 确认触发，不进入自动 Agent loop。
 
+## 十、与外部 CLI Agent 的衔接
+
+上述 Prompt、Tool Loop、Approval 和事件流边界同样适用于 Codex、Claude Code、
+Gemini CLI，但外部 CLI 不能直接塞进内置 `LoopAgentRuntime`：
+
+- 内置 Agent 由 `LoopAgentRuntime` 驱动 Starcat Tool；外部 CLI 由独立的
+  `CLIExternalAgentRuntime` 驱动 Provider 原生 loop。
+- 外部 CLI 发起文件读取、写入、Shell、联网等请求时，Starcat 必须通过双向协议让
+  Provider 真正暂停，用户决定后再回写 approve / reject；只在 UI 里显示一条
+  `confirmationRequested` 事件不构成权限闭环。
+- 两条 Runtime 在统一 `AgentRunEvent`、message timeline、approval、artifact 和审计层
+  汇合，因此 Agent Workspace 是完整 CLI Runtime 的最佳产品入口。
+- RAG 不替换为自由执行的 CLI Agent；推荐依赖方向是 CLI Agent 调用受控的
+  `starcat.knowledge.*` Tool，由 Starcat 保留 scope、citation、Remote Context Consent
+  和 retrieval audit。
+- 外部 CLI 能力仅进入 Direct 版本，App Store 版本不展示也不保留启动路径。
+
+完整实现边界和阶段计划见
+[`20-CLI-Agent作为AI-Provider初步方案.md`](20-CLI-Agent作为AI-Provider初步方案.md)。
