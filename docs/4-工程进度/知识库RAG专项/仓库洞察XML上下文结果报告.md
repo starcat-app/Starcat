@@ -4,6 +4,8 @@
 > 状态：代码、自动化、三轮整改与清洁复审完成；剩余人工 UI 矩阵已转洞察中心发布 QA
 > 分支：`dev`  
 > 推送：未 push
+>
+> 2026-07-30 关单更新：总览已同步，剩余人工矩阵已转发布 QA；最终自动化与当前 HEAD 边界见 [`洞察中心专项/关单报告.md`](../洞察中心专项/关单报告.md)。
 
 ## 1. 交付结果
 
@@ -118,19 +120,19 @@ Repository Insights Providers / SQLite / Star History
 - `docs/3-设计/详细设计/54-Starcat外部应用插件化集成扩展初步方案.md`
 - `docs/3-设计/详细设计/55-macOS桌面小组件初步方案.md`
 
-## 7. `docs/功能实现总览.md` 待确认草案
+## 7. `docs/功能实现总览.md` 同步结果
 
-按照项目铁律，本任务没有修改 `docs/功能实现总览.md`。建议 dong4j 验收后确认写入以下内容：
-
-```markdown
-- [x] **仓库洞察 XML 共用 AI / RAG 上下文** — 页面、仓库 AI 与知识库 RAG 共用只读特殊 XML Artifact — `Starcat/Features/Insights/RepositoryInsightsContext*.swift`、`Starcat/Features/RAG/**` — 2026-07-30
-> 实现：以 RepositoryInsightsDocument 统一结构化快照与 XML，独立 Storage 管理可删除 Artifact；RAG 仅 cache-only 读取并走独立预算、citation 与历史审计，不新增 schema 或向量化，人工 UI 验收待执行。
-```
-
-建议变更日志草案：
+dong4j 已于 2026-07-30 授权同步，并由 `c118d36` 写入以下已完成项：
 
 ```markdown
-- 2026-07-30 03:10: 完成仓库洞察 XML 与仓库 AI、知识库 RAG 共用及特殊分片管理
+- [x] **仓库洞察 XML 共用 AI / RAG 上下文** — 页面、仓库 AI 与知识库 RAG 共用可删除的只读特殊 XML Artifact — `Starcat/Features/Insights/RepositoryInsightsContext*.swift` / `Starcat/Features/RAG` — 2026-07-30
+> 实现：以 `RepositoryInsightsDocument` 统一结构化快照与 XML，独立 Storage 管理 Artifact；RAG 仅 cache-only 读取并走独立预算、citation 与历史审计，不新增 schema 或向量化，真实交互矩阵转发布 QA。
 ```
 
-只有 dong4j 明确回复“可以写总览 / 同步总览”后才能写入。
+同步的变更日志：
+
+```markdown
+- 2026-07-30 11:22: 完成我的洞察、仓库洞察及 AI/RAG 洞察上下文
+```
+
+主进度仪表盘同步为 P2 `48 / 22`、总计 `163 / 133`。
