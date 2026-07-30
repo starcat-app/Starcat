@@ -333,6 +333,14 @@ targets:
         STARCAT_WIDGET_APP_GROUP: group.com.starcat.app.store.widgets
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    # App Store 要求 Extension 与宿主的 CFBundleVersion 一致。复用同一脚本，
+    # 让两者都从当前 git commit count 生成版本，避免只更新宿主造成上传失败。
+    postBuildScripts:
+      - name: "Auto Bump Version (from git)"
+        script: '"${SRCROOT}/scripts/bump-version.sh"'
+        runOnlyWhenInstalling: false
+        showEnvVarsInLog: false
+        basedOnDependencyAnalysis: false
 
   StarcatDirectWidgets:
     type: app-extension
@@ -359,6 +367,12 @@ targets:
         STARCAT_WIDGET_APP_GROUP: group.com.starcat.app.direct.widgets
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    postBuildScripts:
+      - name: "Auto Bump Version (from git)"
+        script: '"${SRCROOT}/scripts/bump-version.sh"'
+        runOnlyWhenInstalling: false
+        showEnvVarsInLog: false
+        basedOnDependencyAnalysis: false
 
 schemes:
   Starcat:
