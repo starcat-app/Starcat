@@ -17,6 +17,8 @@ enum KnowledgeBaseAnalyticsDimension: String, Codable, Equatable, Sendable {
     case language
     case status
     case tag
+    case topic
+    case license
 }
 
 /// 固定指标集合；不开放自由表达式，避免模型把计算逻辑注入到 SQL 结构中。
@@ -35,6 +37,16 @@ enum KnowledgeBaseAnalyticsMeasure: String, Codable, Equatable, Sendable {
     case excludedRAGChunks = "excluded_rag_chunks"
     case repositoriesWithoutREADME = "repositories_without_readme"
     case repositoriesWithoutIndexableSource = "repositories_without_indexable_source"
+    case repositoriesOrganized = "repositories_organized"
+    case repositoriesUntagged = "repositories_untagged"
+    case repositoriesUnread = "repositories_unread"
+    case repositoriesDormant = "repositories_dormant"
+    case repositoriesArchived = "repositories_archived"
+    case repositoriesUnavailable = "repositories_unavailable"
+    case repositoriesWithHealthSnapshot = "repositories_with_health_snapshot"
+    case repositoriesWithOpenSSFScore = "repositories_with_openssf_score"
+    case repositoriesWithMaintenanceRisk = "repositories_with_maintenance_risk"
+    case repositoriesWithSecurityRisk = "repositories_with_security_risk"
 
     var requiresSingleAggregateResult: Bool {
         switch self {
@@ -45,7 +57,17 @@ enum KnowledgeBaseAnalyticsMeasure: String, Codable, Equatable, Sendable {
              .repositoriesWithRecentlyGeneratedAISummaries,
              .excludedRAGChunks,
              .repositoriesWithoutREADME,
-             .repositoriesWithoutIndexableSource:
+             .repositoriesWithoutIndexableSource,
+             .repositoriesOrganized,
+             .repositoriesUntagged,
+             .repositoriesUnread,
+             .repositoriesDormant,
+             .repositoriesArchived,
+             .repositoriesUnavailable,
+             .repositoriesWithHealthSnapshot,
+             .repositoriesWithOpenSSFScore,
+             .repositoriesWithMaintenanceRisk,
+             .repositoriesWithSecurityRisk:
             true
         case .count, .maxStars, .averageStars, .maxForks, .averageForks:
             false
@@ -172,6 +194,18 @@ struct KnowledgeBaseAnalyticsExecutor: KnowledgeBaseAnalyticsExecuting {
             return ("COALESCE(NULLIF(TRIM(n.status), ''), 'unclassified') AS dimension_value", "", "COALESCE(NULLIF(TRIM(n.status), ''), 'unclassified')")
         case .tag:
             return ("t.name AS dimension_value", "JOIN repo_tags rt ON rt.repo_id = r.id JOIN tags t ON t.id = rt.tag_id", "t.id, t.name")
+        case .topic:
+            return (
+                "LOWER(TRIM(topic.value)) AS dimension_value",
+                "JOIN json_each(CASE WHEN json_valid(r.topics) THEN r.topics ELSE '[]' END) topic",
+                "LOWER(TRIM(topic.value))"
+            )
+        case .license:
+            return (
+                "COALESCE(NULLIF(TRIM(r.license), ''), 'Unknown') AS dimension_value",
+                "",
+                "COALESCE(NULLIF(TRIM(r.license), ''), 'Unknown')"
+            )
         case nil:
             return ("NULL AS dimension_value", "", nil)
         }
@@ -200,6 +234,26 @@ struct KnowledgeBaseAnalyticsExecutor: KnowledgeBaseAnalyticsExecuting {
             return "COUNT(DISTINCT CASE WHEN NOT EXISTS (SELECT 1 FROM rag_chunks c WHERE c.repo_id = r.id AND c.source = 'readme') THEN r.id END)"
         case .repositoriesWithoutIndexableSource:
             return "COUNT(DISTINCT CASE WHEN NOT EXISTS (SELECT 1 FROM rag_chunks c WHERE c.repo_id = r.id AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)) THEN r.id END)"
+        case .repositoriesOrganized:
+            return "COUNT(DISTINCT CASE WHEN EXISTS (SELECT 1 FROM repo_tags rt WHERE rt.repo_id = r.id) OR NULLIF(TRIM(n.content), '') IS NOT NULL OR n.status IN ('read', 'using') THEN r.id END)"
+        case .repositoriesUntagged:
+            return "COUNT(DISTINCT CASE WHEN NOT EXISTS (SELECT 1 FROM repo_tags rt WHERE rt.repo_id = r.id) THEN r.id END)"
+        case .repositoriesUnread:
+            return "COUNT(DISTINCT CASE WHEN n.status = 'unread' THEN r.id END)"
+        case .repositoriesDormant:
+            return "COUNT(DISTINCT CASE WHEN r.pushed_at IS NOT NULL AND datetime(r.pushed_at) < datetime('now', '-1 year') THEN r.id END)"
+        case .repositoriesArchived:
+            return "COUNT(DISTINCT CASE WHEN r.is_archived = 1 THEN r.id END)"
+        case .repositoriesUnavailable:
+            return "COUNT(DISTINCT CASE WHEN r.access_state = 'unavailable' THEN r.id END)"
+        case .repositoriesWithHealthSnapshot:
+            return "COUNT(DISTINCT CASE WHEN EXISTS (SELECT 1 FROM repo_health_snapshots h WHERE h.repo_id = r.id AND h.fetch_status != 'failed') THEN r.id END)"
+        case .repositoriesWithOpenSSFScore:
+            return "COUNT(DISTINCT CASE WHEN EXISTS (SELECT 1 FROM open_ssf_scores os WHERE os.repo_id = r.id AND os.fetch_status = 'success' AND os.aggregate_score IS NOT NULL) THEN r.id END)"
+        case .repositoriesWithMaintenanceRisk:
+            return "COUNT(DISTINCT CASE WHEN EXISTS (SELECT 1 FROM repo_health_snapshots h WHERE h.repo_id = r.id AND h.fetch_status != 'failed' AND h.maintenance_score < 50) THEN r.id END)"
+        case .repositoriesWithSecurityRisk:
+            return "COUNT(DISTINCT CASE WHEN EXISTS (SELECT 1 FROM open_ssf_scores os WHERE os.repo_id = r.id AND os.fetch_status = 'success' AND os.aggregate_score IS NOT NULL AND os.aggregate_score < 5) THEN r.id END)"
         }
     }
 

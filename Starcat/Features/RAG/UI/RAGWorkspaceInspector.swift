@@ -2467,6 +2467,8 @@ struct RAGWorkspaceInspector: View {
         case .language: return String.l10n("rag.workspace.inspector.plan.analytics.dimension.language")
         case .status: return String.l10n("rag.workspace.inspector.plan.analytics.dimension.status")
         case .tag: return String.l10n("rag.workspace.inspector.plan.analytics.dimension.tag")
+        case .topic: return String.l10n("rag.workspace.inspector.plan.analytics.dimension.topic")
+        case .license: return String.l10n("rag.workspace.inspector.plan.analytics.dimension.license")
         case nil: return String.l10n("rag.workspace.inspector.plan.analytics.dimension.all")
         }
     }
@@ -2486,6 +2488,16 @@ struct RAGWorkspaceInspector: View {
         case .excludedRAGChunks: return String.l10n("rag.workspace.inspector.plan.analytics.measure.excludedRAGChunks")
         case .repositoriesWithoutREADME: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesWithoutREADME")
         case .repositoriesWithoutIndexableSource: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesWithoutIndexableSource")
+        case .repositoriesOrganized: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesOrganized")
+        case .repositoriesUntagged: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesUntagged")
+        case .repositoriesUnread: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesUnread")
+        case .repositoriesDormant: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesDormant")
+        case .repositoriesArchived: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesArchived")
+        case .repositoriesUnavailable: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesUnavailable")
+        case .repositoriesWithHealthSnapshot: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesWithHealthSnapshot")
+        case .repositoriesWithOpenSSFScore: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesWithOpenSSFScore")
+        case .repositoriesWithMaintenanceRisk: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesWithMaintenanceRisk")
+        case .repositoriesWithSecurityRisk: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesWithSecurityRisk")
         }
     }
 

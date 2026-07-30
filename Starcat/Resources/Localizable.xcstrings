@@ -204291,6 +204291,22 @@
         }
       }
     },
+    "rag.workspace.inspector.plan.analytics.dimension.license" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "License"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "许可证"
+          }
+        }
+      }
+    },
     "rag.workspace.inspector.plan.analytics.dimension.repository" : {
       "localizations" : {
         "ar" : {
@@ -204849,6 +204865,82 @@
             "value" : "降序"
           }
         }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.dimension.topic" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Topic"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "技术主题"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesArchived" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Archived repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已归档仓库" } }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesDormant" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Dormant repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "长期未活跃仓库" } }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesOrganized" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Organized repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已整理仓库" } }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesUnavailable" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unavailable repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "不可访问仓库" } }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesUnread" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unread repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未读仓库" } }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesUntagged" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Untagged repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未打标签仓库" } }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesWithHealthSnapshot" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories with health data" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已有健康度数据的仓库" } }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesWithMaintenanceRisk" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories with maintenance risk" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "存在维护风险的仓库" } }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesWithOpenSSFScore" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories with OpenSSF scores" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已有 OpenSSF 评分的仓库" } }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesWithSecurityRisk" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories with security risk" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "存在安全风险的仓库" } }
       }
     },
     "rag.workspace.inspector.plan.analytics.measure.averageForks" : {

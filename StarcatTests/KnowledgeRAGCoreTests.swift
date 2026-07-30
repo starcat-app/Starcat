@@ -377,6 +377,8 @@ struct KnowledgeRAGCoreTests {
             try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: Int64(id), state: .inLibrary)
         }
         try await database.writer.write { db in
+            try db.execute(sql: "UPDATE repos SET topics = '[\"swift\",\"ai\"]', license = 'MIT', is_archived = 1 WHERE id = 1")
+            try db.execute(sql: "UPDATE repos SET topics = '[\"ai\"]', license = 'Apache-2.0', access_state = 'unavailable' WHERE id = 2")
             try db.execute(sql: "UPDATE repo_notes SET content = 'human note', edited_at = datetime('now') WHERE repo_id = 1")
             try db.execute(sql: "UPDATE repo_notes SET content = 'AI note', is_ai_generated = 1, edited_at = datetime('now', '-90 days') WHERE repo_id = 2")
             try db.execute(sql: "INSERT INTO ai_summaries (repo_id, model, source_hash, summary_json, generated_at) VALUES (1, 'a', 'a', '{}', datetime('now'))")
@@ -431,6 +433,26 @@ struct KnowledgeRAGCoreTests {
             plan: .init(measure: .repositoriesWithoutIndexableSource),
             filters: .init()
         )
+        let organizedResult = try await executor.execute(
+            plan: .init(measure: .repositoriesOrganized),
+            filters: .init()
+        )
+        let archivedResult = try await executor.execute(
+            plan: .init(measure: .repositoriesArchived),
+            filters: .init()
+        )
+        let unavailableResult = try await executor.execute(
+            plan: .init(measure: .repositoriesUnavailable),
+            filters: .init()
+        )
+        let topicResult = try await executor.execute(
+            plan: .init(dimension: .topic, measure: .count),
+            filters: .init()
+        )
+        let licenseResult = try await executor.execute(
+            plan: .init(dimension: .license, measure: .count),
+            filters: .init()
+        )
 
         #expect(summaryResult.rows == [.init(dimensionValue: nil, value: 1)])
         #expect(noteResult.rows == [.init(dimensionValue: nil, value: 2)])
@@ -440,8 +462,19 @@ struct KnowledgeRAGCoreTests {
         #expect(excludedResult.rows == [.init(dimensionValue: nil, value: 1)])
         #expect(withoutREADMEResult.rows == [.init(dimensionValue: nil, value: 2)])
         #expect(withoutSourceResult.rows == [.init(dimensionValue: nil, value: 2)])
+        #expect(organizedResult.rows == [.init(dimensionValue: nil, value: 2)])
+        #expect(archivedResult.rows == [.init(dimensionValue: nil, value: 1)])
+        #expect(unavailableResult.rows == [.init(dimensionValue: nil, value: 1)])
+        #expect(topicResult.rows == [
+            .init(dimensionValue: "ai", value: 2),
+            .init(dimensionValue: "swift", value: 1)
+        ])
+        #expect(licenseResult.rows.contains(.init(dimensionValue: "Unknown", value: 1)))
         #expect(throws: RAGQueryPlannerError.self) {
             try KnowledgeBaseAnalyticsPlan(dimension: .language, measure: .repositoriesWithAISummary).validated()
+        }
+        #expect(throws: RAGQueryPlannerError.self) {
+            try KnowledgeBaseAnalyticsPlan(dimension: .topic, measure: .repositoriesOrganized).validated()
         }
     }
 
