@@ -911,6 +911,49 @@ struct AppSettingsTests {
         #expect(AppSettings(defaults: customDefaults).ragPromptSettings.generator == customGenerator)
     }
 
+    @Test("RAG Prompt 只把已发布单行默认值升级为 Markdown 格式")
+    func ragPromptSettingsUpgradeReadableUserTemplatesSafely() {
+        let publishedDefaults = UserDefaults(suiteName: "test-rag-readable-default-\(UUID())")!
+        let published = RAGPromptSettings(
+            generator: RAGDefaultPrompts.generatorBeforeReadableUserTemplate,
+            planner: RAGDefaultPrompts.planner,
+            compressor: RAGDefaultPrompts.compressorBeforeReadableUserTemplate,
+            title: RAGDefaultPrompts.title
+        )
+        publishedDefaults.set(
+            String(data: try! JSONEncoder().encode(published), encoding: .utf8),
+            forKey: "settings.rag.prompts.v1"
+        )
+
+        let upgraded = AppSettings(defaults: publishedDefaults).ragPromptSettings
+        #expect(upgraded.generator == RAGDefaultPrompts.generator)
+        #expect(upgraded.compressor == RAGDefaultPrompts.compressor)
+
+        let customDefaults = UserDefaults(suiteName: "test-rag-readable-custom-\(UUID())")!
+        let customGenerator = AIPromptConfiguration(
+            systemPrompt: RAGDefaultPrompts.generator.systemPrompt,
+            userPromptTemplate: "CUSTOM\n{questionSection}\n{repoContextSection}"
+        )
+        let customCompressor = AIPromptConfiguration(
+            systemPrompt: RAGDefaultPrompts.compressor.systemPrompt,
+            userPromptTemplate: "CUSTOM\n{existingSummarySection}\n{newMessagesSection}"
+        )
+        let custom = RAGPromptSettings(
+            generator: customGenerator,
+            planner: RAGDefaultPrompts.planner,
+            compressor: customCompressor,
+            title: RAGDefaultPrompts.title
+        )
+        customDefaults.set(
+            String(data: try! JSONEncoder().encode(custom), encoding: .utf8),
+            forKey: "settings.rag.prompts.v1"
+        )
+
+        let preserved = AppSettings(defaults: customDefaults).ragPromptSettings
+        #expect(preserved.generator == customGenerator)
+        #expect(preserved.compressor == customCompressor)
+    }
+
     @Test("AI: 旧版设置后重新读取应保留")
     func aiSettingsPersist() {
         let defaults = makeIsolatedDefaults()

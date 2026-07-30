@@ -10,6 +10,41 @@ import Testing
 
 @Suite("RAG Prompt 兼容性")
 struct RAGPromptCompatibilityTests {
+    @Test("问答和压缩默认用户模板使用可读 Markdown 分区")
+    func defaultUserTemplatesUseReadableMarkdownSections() {
+        #expect(RAGDefaultPrompts.generator.userPromptTemplate == """
+        # Runtime context
+
+        {questionSection}
+
+        {evidenceSection}
+
+        {repositoryInsightsSection}
+
+        {repoContextSection}
+
+        {remoteSection}
+
+        {attachmentSection}
+
+        # Task
+
+        Answer the user question using only the available context above.
+        """)
+        #expect(RAGDefaultPrompts.compressor.userPromptTemplate == """
+        # Conversation context
+
+        {existingSummarySection}
+
+        {newMessagesSection}
+
+        # Task
+
+        Merge the conversation context above into a concise factual digest.
+        Output the updated digest only.
+        """)
+    }
+
     @Test("默认 Prompt 不产生兼容性提示")
     func defaultPromptIsRecognized() {
         let result = RAGPromptCompatibilityAnalyzer.analyze(

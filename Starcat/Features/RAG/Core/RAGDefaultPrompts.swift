@@ -54,7 +54,8 @@ struct RAGPromptSettings: Codable, Equatable, Sendable {
         )
         // 只把 Starcat 发布过的上一版默认值升级为带洞察区段的新协议。自定义模板即使
         // 没有 `{repositoryInsightsSection}` 也必须原样保留，缺占位符等同用户主动关闭注入。
-        if decodedGenerator == RAGDefaultPrompts.generatorBeforeRepositoryInsights {
+        if decodedGenerator == RAGDefaultPrompts.generatorBeforeRepositoryInsights
+            || decodedGenerator == RAGDefaultPrompts.generatorBeforeReadableUserTemplate {
             generator = RAGDefaultPrompts.generator
         } else {
             // RepoContext 上线前的模板仍沿用既有一次性收口；已经包含该占位符的自定义
@@ -74,9 +75,20 @@ struct RAGPromptSettings: Codable, Equatable, Sendable {
             || decodedPlanner == RAGDefaultPrompts.plannerBeforeExplicitRepoScopeGuard
             ? RAGDefaultPrompts.planner
             : decodedPlanner
-        compressor = try container.decodeIfPresent(AIPromptConfiguration.self, forKey: .compressor)
-            .map(RAGPromptCompatibilityAnalyzer.normalizingLegacyRepairArtifacts(in:))
-            ?? RAGDefaultPrompts.compressor
+        if let decodedCompressor = try container.decodeIfPresent(
+            AIPromptConfiguration.self,
+            forKey: .compressor
+        ) {
+            let normalizedCompressor =
+                RAGPromptCompatibilityAnalyzer.normalizingLegacyRepairArtifacts(
+                    in: decodedCompressor
+                )
+            compressor = normalizedCompressor == RAGDefaultPrompts.compressorBeforeReadableUserTemplate
+                ? RAGDefaultPrompts.compressor
+                : normalizedCompressor
+        } else {
+            compressor = RAGDefaultPrompts.compressor
+        }
         title = try container.decodeIfPresent(AIPromptConfiguration.self, forKey: .title)
             .map(RAGPromptCompatibilityAnalyzer.normalizingLegacyRepairArtifacts(in:))
             ?? RAGDefaultPrompts.title
@@ -118,9 +130,9 @@ enum RAGDefaultPrompts {
         """
     )
 
-    /// 2026-07-30 仓库洞察 XML 上下文之后的 Generator 默认值。通过精确替换上一版
-    /// 已发布默认值生成，迁移判断因而不会误伤用户自定义 Prompt。
-    static let generator = AIPromptConfiguration(
+    /// 2026-07-30 仓库洞察 XML 上下文之后、Markdown 用户模板之前发布的默认值。
+    /// 只用于精确迁移；用户改过任意字符都不会命中。
+    static let generatorBeforeReadableUserTemplate = AIPromptConfiguration(
         systemPrompt: generatorBeforeRepositoryInsights.systemPrompt
             .replacingOccurrences(
                 of: "local knowledge-base evidence, project code context,",
@@ -143,6 +155,31 @@ enum RAGDefaultPrompts {
                 of: "{evidenceSection}{repoContextSection}",
                 with: "{evidenceSection}{repositoryInsightsSection}{repoContextSection}"
             )
+    )
+
+    /// 问答用户模板只负责排列完整 Section；各 Section 已由 Builder 写入标题和正文，
+    /// 因此外层不再添加逐项说明，避免空 Section 留下孤立标题或重复语义。
+    static let generator = AIPromptConfiguration(
+        systemPrompt: generatorBeforeReadableUserTemplate.systemPrompt,
+        userPromptTemplate: """
+        # Runtime context
+
+        {questionSection}
+
+        {evidenceSection}
+
+        {repositoryInsightsSection}
+
+        {repoContextSection}
+
+        {remoteSection}
+
+        {attachmentSection}
+
+        # Task
+
+        Answer the user question using only the available context above.
+        """
     )
 
     /// Planner 占位符：
@@ -406,7 +443,7 @@ enum RAGDefaultPrompts {
     /// - system：`{outputLanguage}`
     /// - user：`{existingSummarySection}` `{newMessagesSection}`
     /// section 由代码先拼好标题与角色标签；无已有摘要时 `{existingSummarySection}` 为空串。
-    static let compressor = AIPromptConfiguration(
+    static let compressorBeforeReadableUserTemplate = AIPromptConfiguration(
         systemPrompt: """
         You are Starcat's conversation compressor. Merge the existing summary and new messages into a concise factual digest that can continue the dialogue.
 
@@ -420,6 +457,24 @@ enum RAGDefaultPrompts {
         """,
         userPromptTemplate: """
         {existingSummarySection}{newMessagesSection}
+        """
+    )
+
+    /// 压缩 Section 已由代码写入 Existing summary / New messages 标题；外层 Markdown
+    /// 只区分上下文与任务，既便于设置页阅读，也不会重复包装真实对话正文。
+    static let compressor = AIPromptConfiguration(
+        systemPrompt: compressorBeforeReadableUserTemplate.systemPrompt,
+        userPromptTemplate: """
+        # Conversation context
+
+        {existingSummarySection}
+
+        {newMessagesSection}
+
+        # Task
+
+        Merge the conversation context above into a concise factual digest.
+        Output the updated digest only.
         """
     )
 
