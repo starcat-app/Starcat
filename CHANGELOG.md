@@ -4,14 +4,15 @@ Release notes for the Mac App Store edition of Starcat.
 
 ## 1.3.0
 
-Starcat 1.3.0 adds My Projects, library-wide and repository-level insights, reusable insight context for AI and RAG, and external search integrations for Alfred, uTools, and Raycast—helping you manage more repositories, understand them, and reach them from the tools you already use.
+Starcat 1.3.0 adds My Projects, library-wide and repository-level insights, macOS desktop widgets, reusable insight context for AI and RAG, and external search integrations for Alfred, uTools, and Raycast—helping you manage, understand, and rediscover repositories faster.
 
 ### New
 
-- My Projects: Browse personal and organization repositories—including authorized public, private, and internal projects—with existing filters, details, and Star trends.
+- My Projects: Browse personal, organization, and external collaboration repositories; use GitHub App permissions for authorized public, private, and internal projects, with existing filters, details, and Star trends.
 - My Insights: Review organization progress, technology distribution, project status, and items needing attention across all saved repositories or your Knowledge Base, then drill down to the matching repository list.
-- Repository Insights: View Star growth, collaboration activity, commit trends, contributors, release cadence, project health, community standards, and security signals directly in repository details.
-- Repository Insights Context: Reuse generated insights in AI summaries, repository conversations, and RAG answers, with a removable read-only XML context visible in the Knowledge Base.
+- Repository Insights: View Star growth, collaboration activity, commit trends, contributors, release cadence, project health, community standards, and security signals, with stable content while switching repositories or refreshing.
+- Repository Insights Context: Reuse generated insights in AI summaries, repository conversations, and RAG answers through a removable read-only XML context, with distinct status for unavailable data, custom prompts that omit insights, and actual fallback.
+- macOS desktop widgets: Starcat Focus, Rediscovery, and Release Watch show frequently used repositories, a daily rediscovery, and unread releases with deep links to the corresponding content.
 - Alfred Workflow: Search Starcat local repositories and GitHub directly from Alfred. [View project](https://github.com/starcat-app/starcat-alfred-workflow)
 - uTools Plugin: Search Starcat local repositories and GitHub directly from uTools. [View project](https://github.com/starcat-app/starcat-utools-plugin)
 - Raycast Extension: Search Starcat local repositories and GitHub directly from Raycast. [View project](https://github.com/starcat-app/starcat-raycast-extension)
@@ -20,10 +21,7 @@ Starcat 1.3.0 adds My Projects, library-wide and repository-level insights, reus
 
 - RAG Prompt Settings: Compare and copy read-only default prompts, with clearer Markdown formatting for Q&A and conversation compression templates.
 - Custom Prompt Diagnostics: See which context capabilities and placeholders a custom template supports without Starcat automatically rewriting user content.
-
-### Fixes
-
-- Repository Insights Injection Status: Distinguishes unavailable data, custom prompts that do not inject insights, and actual fallback cases instead of showing a generic degraded state.
+- First-run onboarding: Feature screenshots, refined welcome audio timing, clearer card hierarchy, and more stable window sizing.
 
 ## 1.2.0
 
