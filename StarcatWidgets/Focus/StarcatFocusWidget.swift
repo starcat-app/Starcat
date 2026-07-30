@@ -218,7 +218,9 @@ struct StarcatFocusWidgetView: View {
             }
             .padding(.bottom, 6)
 
-            ForEach(Array(entry.repositories.prefix(limit).enumerated()), id: \.element.id) {
+            // Gallery 占位数据会复用同一个仓库填满列表；使用当前 Timeline 内唯一的
+            // 行位置作为视图身份，避免重复 repo ID 触发 SwiftUI 未定义 diff 行为。
+            ForEach(Array(entry.repositories.prefix(limit).enumerated()), id: \.offset) {
                 index,
                 repository in
                 Link(destination: repository.openURL) {
