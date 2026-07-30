@@ -196186,6 +196186,12 @@
         }
       }
     },
+    "rag.workspace.inspector.metadata.group.insights" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Insights summary" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "洞察摘要" } }
+      }
+    },
     "rag.workspace.inspector.metadata.group.activity" : {
       "localizations" : {
         "ar" : {
@@ -201035,6 +201041,36 @@
             "value" : "索引區塊總數"
           }
         }
+      }
+    },
+    "rag.workspace.inspector.metadata.insights.archivedUnavailable" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Archived · unavailable" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已归档 · 不可访问" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.insights.dormant" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Dormant for over 1 year" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "超过 1 年未活跃" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.insights.organized" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Organized coverage" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "整理覆盖" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.insights.qualityCoverage" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Health · OpenSSF coverage" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "健康度 · OpenSSF 覆盖" } }
+      }
+    },
+    "rag.workspace.inspector.metadata.insights.risks" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Maintenance · security risk" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "维护 · 安全风险" } }
       }
     },
     "rag.workspace.inspector.metadata.languages" : {

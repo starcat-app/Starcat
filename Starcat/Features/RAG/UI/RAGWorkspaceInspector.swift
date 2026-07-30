@@ -660,6 +660,7 @@ struct RAGWorkspaceInspector: View {
                         metadataTagsGroup(snapshot)
                         metadataLanguagesGroup(Array(snapshot.topLanguages.prefix(6)))
                         metadataActivityGroup(snapshot)
+                        metadataInsightsGroup(snapshot)
                         metadataKnowledgeArtifactsGroup(snapshot)
                         metadataContentFreshnessGroup(snapshot)
                         metadataSourceCoverageGroup(snapshot)
@@ -886,6 +887,39 @@ struct RAGWorkspaceInspector: View {
             metadataMetricRow(
                 "rag.workspace.inspector.metadata.pushed30d",
                 value: localizedInteger(snapshot.pushedInLast30DaysCount)
+            )
+        }
+    }
+
+    /// 复用“我的洞察”的同一份聚合事实，只展示可解释的摘要，不在 Inspector 再次访问数据库。
+    @ViewBuilder
+    private func metadataInsightsGroup(_ snapshot: KnowledgeBaseMetadataSnapshot) -> some View {
+        let facts = snapshot.insights
+        metadataGroupCard {
+            metadataGroupHeader(
+                titleKey: "rag.workspace.inspector.metadata.group.insights",
+                systemImage: "gauge.with.dots.needle.bottom.0percent",
+                tint: Color.orange
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.insights.organized",
+                value: metadataCoverageValue(facts.organizedProjectCount, total: snapshot.projectCount)
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.insights.dormant",
+                value: localizedInteger(facts.dormantProjectCount)
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.insights.archivedUnavailable",
+                value: "\(localizedInteger(facts.archivedProjectCount)) · \(localizedInteger(facts.unavailableProjectCount))"
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.insights.qualityCoverage",
+                value: "\(localizedInteger(facts.healthCompletedProjectCount)) · \(localizedInteger(facts.openSSFCompletedProjectCount))"
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.insights.risks",
+                value: "\(localizedInteger(facts.maintenanceRiskProjectCount)) · \(localizedInteger(facts.securityRiskProjectCount))"
             )
         }
     }
