@@ -11,10 +11,12 @@ Starcat 1.3.0 新增“我的项目”、全局与单仓库洞察、macOS 桌面
 - App Store 更新检查：启动或重新激活时自动检测新版本，也可从操作菜单和菜单栏手动检查并前往 Mac App Store 升级。
 - 我的项目：集中查看个人、组织及外部协作仓库；通过 GitHub App 按授权范围浏览公开、私有和 Internal 项目，并继续使用现有筛选、详情与 Star 趋势。
 - 我的洞察：从全部收藏或知识库范围查看整理进度、技术分布、项目状态与待处理事项，并可直接下钻到对应仓库列表。
-  ![20260730222601_bX3XjxVL](https://cdn.dong4j.site/source/image/20260730222601_bX3XjxVL.webp)
+  ![20260730232032_p1AUnCiu](https://cdn.dong4j.site/source/image/20260730232032_p1AUnCiu.webp)
 - 仓库洞察：查看 Star 增长、协作活动、提交趋势、贡献者、发布节奏、项目健康度、社区规范与安全信号；切换仓库和刷新时保持内容稳定。
+  ![20260730224524_01AnNgnJ](https://cdn.dong4j.site/source/image/20260730224524_01AnNgnJ.webp)
 - 仓库洞察上下文：生成后的洞察可复用于 AI 摘要、仓库对话与 RAG 回答，并以可移除的只读 XML 上下文展示，同时准确说明不可用、自定义提示词未注入和回退状态。
 - macOS 桌面小组件：提供 Starcat Focus、今日重逢和 Release Watch，可在桌面查看常用仓库、每日推荐与未读 Release，并点击直达对应内容。
+  ![20260730231856_O82ii1o3](https://cdn.dong4j.site/source/image/20260730231856_O82ii1o3.webp)
 - Alfred Workflow：可直接从 Alfred 搜索 Starcat 本地仓库与 GitHub。[查看项目](https://github.com/starcat-app/starcat-alfred-workflow)
 - uTools 插件：可直接从 uTools 搜索 Starcat 本地仓库与 GitHub。[查看项目](https://github.com/starcat-app/starcat-utools-plugin)
 - Raycast Extension：可直接从 Raycast 搜索 Starcat 本地仓库与 GitHub。[查看项目](https://github.com/starcat-app/starcat-raycast-extension)
