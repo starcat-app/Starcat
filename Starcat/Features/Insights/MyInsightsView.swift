@@ -246,11 +246,8 @@ struct MyInsightsView: View {
     }
 
     private var metricGrid: some View {
-        LazyVGrid(
-            // Detail 变窄时自动从四列回退到两列或单列，不反向抬高主窗口最小宽度。
-            columns: [GridItem(.adaptive(minimum: 158), spacing: 10)],
-            spacing: 10
-        ) {
+        // 固定 4 项 KPI：等分铺满整行。adaptive 网格在宽屏会多开空列，卡片挤左侧且 detail 易折行。
+        HStack(alignment: .top, spacing: 10) {
             ForEach(snapshot.metrics) { metric in
                 let tint = InsightsColor.resolve(metric.tintName)
                 VStack(alignment: .leading, spacing: 8) {
@@ -258,6 +255,8 @@ struct MyInsightsView: View {
                         Text(LocalizedStringKey(metric.titleKey))
                             .font(interfaceScale.font(.caption, weight: .medium))
                             .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
                         Spacer(minLength: 6)
                         Image(systemName: metric.systemImage)
                             .foregroundStyle(tint)
@@ -271,6 +270,7 @@ struct MyInsightsView: View {
                         .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, minHeight: 108, alignment: .leading)
@@ -288,6 +288,7 @@ struct MyInsightsView: View {
                 .accessibilityValue(Text(verbatim: metricAccessibilityValue(metric)))
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var organizationSection: some View {
@@ -447,10 +448,10 @@ struct MyInsightsView: View {
             iconColor: .indigo,
             chrome: .emphasized
         ) {
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 170), spacing: 24)],
-                spacing: 14
-            ) {
+            // 固定 3 项：用等分 HStack 铺满卡片宽度。
+            // adaptive 网格在宽屏会多开空列，导致「Saved to Knowledge Base」等长文案折行，右侧却留白。
+            // HStack 自身也要 maxWidth infinity：容器是 leading 对齐，否则只会 hug 内容挤在左侧。
+            HStack(alignment: .top, spacing: 24) {
                 ForEach(snapshot.knowledgeCoverageItems) { item in
                     coverageItem(
                         title: LocalizedStringKey(item.title),
@@ -460,8 +461,10 @@ struct MyInsightsView: View {
                         ),
                         tint: InsightsColor.resolve(item.colorName)
                     )
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -799,21 +802,24 @@ struct MyInsightsView: View {
             iconColor: .pink,
             chrome: .emphasized
         ) {
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 180), spacing: 24)],
-                spacing: 14
-            ) {
+            // 与知识覆盖一致：固定两项等分铺满，避免 adaptive 宽屏留白、窄列折行。
+            // HStack 自身也要 maxWidth infinity：容器是 leading 对齐，否则只会 hug 内容挤在左侧。
+            HStack(alignment: .top, spacing: 24) {
                 coverageItem(
                     title: "insights.coverage.health",
                     coverage: snapshot.healthCoverage,
                     tint: .green
                 )
+                .frame(maxWidth: .infinity, alignment: .leading)
+
                 coverageItem(
                     title: "insights.coverage.openssf",
                     coverage: snapshot.openSSFCoverage,
                     tint: .blue
                 )
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -938,13 +944,17 @@ struct MyInsightsView: View {
         tint: Color
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
+            // 标题优先占满剩余宽度并尽量单行；百分比 fixedSize，避免把长文案挤成换行。
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(title)
                     .font(interfaceScale.font(.bodyEmphasis))
-                Spacer()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Text(percent(coverage.fraction))
                     .font(interfaceScale.font(.bodyEmphasis))
                     .monospacedDigit()
+                    .fixedSize(horizontal: true, vertical: false)
             }
 
             ProgressView(value: coverage.fraction)
@@ -961,8 +971,10 @@ struct MyInsightsView: View {
             .font(interfaceScale.font(.captionSmall))
             .foregroundStyle(.secondary)
             .monospacedDigit()
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(title))
         .accessibilityValue(

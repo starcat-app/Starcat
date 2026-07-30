@@ -1232,11 +1232,8 @@ struct HomeView: View {
 
     @ViewBuilder
     private var contentColumn: some View {
-        // 顶级页面切换（探索 → 洞察等）也走 detailContentTransition；否则 Insights 会瞬切出现。
         ZStack(alignment: .topLeading) {
             contentColumnBody
-                .id(selectedSidebarPage)
-                .detailContentTransition()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: selectedSidebarPage)
@@ -1253,9 +1250,21 @@ struct HomeView: View {
     /// 避免洞察的高密度布局选择改变主列表的尺寸契约。
     private var contentColumnWidths: (min: CGFloat, ideal: CGFloat, max: CGFloat) {
         if selectedSidebarPage == .insights {
-            return (min: 300, ideal: 320, max: 360)
+            return (min: 260, ideal: 260, max: 260)
         }
         return (min: 420, ideal: 420, max: 520)
+    }
+
+    /// 只用于洞察与其他顶级页面之间的切换。
+    ///
+    /// 中栏跨越洞察边界时会在同一帧改变宽度；旧页面若继续淡出，就会先按新宽度
+    /// 重排并出现卡片裁切。这里让旧页面立即移除，只保留新页面的进入动画。
+    /// 非洞察页面之间仍由 `detailContentTransition()` 负责原有转场。
+    private var insightsBoundaryTransition: AnyTransition {
+        let insertion: AnyTransition = reduceMotion
+            ? .opacity
+            : .opacity.combined(with: .offset(y: 14))
+        return .asymmetric(insertion: insertion, removal: .identity)
     }
 
     @ViewBuilder
@@ -1266,52 +1275,60 @@ struct HomeView: View {
                 selection: $selectedInsightsSelection,
                 snapshot: myInsightsViewModel.snapshot
             )
+            .transition(insightsBoundaryTransition)
         } else {
-            RepoListView(
-                trendingRepository: trendingRepository,
-                githubAPIClient: githubAPIClient,
-                selectedPage: selectedSidebarPage,
-                selectedExploreMode: $selectedExploreMode,
-                selectedTrendingLanguage: $selectedTrendingLanguage,
-                selectedTrendingRepoID: $selectedTrendingRepoID,
-                selectedTrendingRepo: $selectedTrendingRepo,
-                selectedDiscoveryLanguage: $selectedDiscoveryLanguage,
-                selectedDiscoveryTopic: $selectedDiscoveryTopic,
-                selectedDiscoveryPlatform: $selectedDiscoveryPlatform,
-                selectedDiscoveryRepoID: $selectedDiscoveryRepoID,
-                selectedDiscoveryRepo: $selectedDiscoveryRepo,
-                selectedWeeklyLanguage: $selectedWeeklyLanguage,
-                selectedActivityCategory: $selectedActivityCategory,
-                selectedActivityItem: $selectedActivityItem,
-                undoStarAutoSelectRequestID: undoStarAutoSelectRequestID,
-                showsAgentToolbarEntry: showsAgentToolbarEntry,
-                onStartBatchAI: {
-                    // HOM-52：点击 banner"开始整理" → 弹 Options sheet。
-                    // 复用上一次 batchAIOptions，让"再开一次"沿用最近偏好。
-                    showBatchAIOptions = true
-                },
-                onShowBatchAIPanel: {
-                    showBatchAIPanel = true
-                },
-                onOpenSearchCenter: {
-                    presentSearchCenterForGettingStarted()
-                },
-                onOpenAgentWorkspace: {
-                    openAgentWorkspaceForGettingStarted()
-                },
-                onOpenKnowledgeRAGWorkspace: {
-                    openKnowledgeRAGWorkspaceForGettingStarted()
-                },
-                onOpenCompanionRepo: { repo in
-                    openCompanionRepository(repo)
-                },
-                onGenerateCompanionSummary: { repo in
-                    openCompanionRepository(repo, generateSummary: true)
-                },
-                onReturnToInsights: {
-                    selectSidebarRootPage(.insights)
-                }
-            )
+            // 外层只在进入/离开洞察时插入或移除；内层 ID 继续维持其他顶级页面
+            // 之间原有的淡入淡出，不把洞察的即时移除策略扩散出去。
+            ZStack(alignment: .topLeading) {
+                RepoListView(
+                    trendingRepository: trendingRepository,
+                    githubAPIClient: githubAPIClient,
+                    selectedPage: selectedSidebarPage,
+                    selectedExploreMode: $selectedExploreMode,
+                    selectedTrendingLanguage: $selectedTrendingLanguage,
+                    selectedTrendingRepoID: $selectedTrendingRepoID,
+                    selectedTrendingRepo: $selectedTrendingRepo,
+                    selectedDiscoveryLanguage: $selectedDiscoveryLanguage,
+                    selectedDiscoveryTopic: $selectedDiscoveryTopic,
+                    selectedDiscoveryPlatform: $selectedDiscoveryPlatform,
+                    selectedDiscoveryRepoID: $selectedDiscoveryRepoID,
+                    selectedDiscoveryRepo: $selectedDiscoveryRepo,
+                    selectedWeeklyLanguage: $selectedWeeklyLanguage,
+                    selectedActivityCategory: $selectedActivityCategory,
+                    selectedActivityItem: $selectedActivityItem,
+                    undoStarAutoSelectRequestID: undoStarAutoSelectRequestID,
+                    showsAgentToolbarEntry: showsAgentToolbarEntry,
+                    onStartBatchAI: {
+                        // HOM-52：点击 banner"开始整理" → 弹 Options sheet。
+                        // 复用上一次 batchAIOptions，让"再开一次"沿用最近偏好。
+                        showBatchAIOptions = true
+                    },
+                    onShowBatchAIPanel: {
+                        showBatchAIPanel = true
+                    },
+                    onOpenSearchCenter: {
+                        presentSearchCenterForGettingStarted()
+                    },
+                    onOpenAgentWorkspace: {
+                        openAgentWorkspaceForGettingStarted()
+                    },
+                    onOpenKnowledgeRAGWorkspace: {
+                        openKnowledgeRAGWorkspaceForGettingStarted()
+                    },
+                    onOpenCompanionRepo: { repo in
+                        openCompanionRepository(repo)
+                    },
+                    onGenerateCompanionSummary: { repo in
+                        openCompanionRepository(repo, generateSummary: true)
+                    },
+                    onReturnToInsights: {
+                        selectSidebarRootPage(.insights)
+                    }
+                )
+                .id(selectedSidebarPage)
+                .detailContentTransition()
+            }
+            .transition(insightsBoundaryTransition)
         }
     }
 
