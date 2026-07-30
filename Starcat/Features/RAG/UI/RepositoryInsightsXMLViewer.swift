@@ -4,8 +4,8 @@
 //
 //  知识库浏览器中的仓库洞察 XML 只读详情。
 //
-//  与可编辑 RepoContext 的关键差异：洞察 XML 是结构化缓存投影，用户只能复制、导出、
-//  删除或重新生成，不能手改后写回，否则页面 / AI / RAG 会出现三份事实。
+//  布局与 `KnowledgeRAGChunkEditor` 的 RepoContext 详情对齐：标题 / 章节路径 /
+//  分片内容框 + 底栏时间·tokens；洞察 XML 是结构化缓存投影，只读不可手改写回。
 //
 
 import AppKit
@@ -34,11 +34,54 @@ struct RepositoryInsightsXMLViewer: View {
     let artifact: RepositoryInsightsContextArtifact
     @State private var exportErrorMessage: String?
 
+    /// 与列表行同源：按当前 XML 估算，避免再引入未持久化的 token 字段。
+    private var tokenCount: Int {
+        TokenEstimator.estimate(text: artifact.document.xml)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
-            metadata
-            xmlContent
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("rag.browser.chunk.titleLabel").font(.caption).foregroundStyle(.secondary)
+                TextField(
+                    "rag.browser.chunk.title",
+                    text: .constant(String.l10n("rag.browser.repositoryInsights.title"))
+                )
+                .disabled(true)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("rag.browser.chunk.sectionLabel").font(.caption).foregroundStyle(.secondary)
+                TextField(
+                    "rag.browser.chunk.section",
+                    text: .constant(RepositoryInsightsDocument.fileName)
+                )
+                .disabled(true)
+            }
+
+            // 正文区吃掉标题/路径之外的剩余高度，长 XML 才能在固定窗高内滚动。
+            VStack(alignment: .leading, spacing: 4) {
+                Text("rag.browser.chunk.contentLabel").font(.caption).foregroundStyle(.secondary)
+                ScrollView {
+                    Text(verbatim: artifact.document.xml)
+                        .font(.body.monospaced())
+                        .foregroundStyle(.primary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .padding(8)
+                }
+                .scrollIndicators(.visible)
+                .frame(maxWidth: .infinity, minHeight: 250, maxHeight: .infinity, alignment: .topLeading)
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color(nsColor: .separatorColor).opacity(0.55))
+                )
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
             footer
         }
         .padding(18)
@@ -58,15 +101,6 @@ struct RepositoryInsightsXMLViewer: View {
             Text("rag.browser.repositoryInsights.title")
                 .font(.title3.weight(.semibold))
             Spacer()
-            CopyFeedbackButton(
-                providesContent: { artifact.document.xml },
-                tooltip: "rag.browser.repositoryInsights.copy"
-            ) { didCopy in
-                Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
-                    .font(.title3.weight(.medium))
-                    .foregroundStyle(didCopy ? Color.green : Color.secondary)
-                    .contentTransition(.symbolEffect(.replace))
-            }
             Button {
                 export()
             } label: {
@@ -82,73 +116,49 @@ struct RepositoryInsightsXMLViewer: View {
         }
     }
 
-    private var metadata: some View {
-        HStack(spacing: 8) {
-            Text(verbatim: artifact.document.repositoryFullName)
-                .font(.callout.weight(.semibold))
-                .foregroundStyle(.primary)
-            Text(verbatim: "insights.xml")
-                .font(.caption.monospaced())
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(
-                verbatim: String(
-                    format: String.l10n("rag.browser.chunks.tokenCountFormat"),
-                    TokenEstimator.estimate(text: artifact.document.xml)
-                )
-            )
-            .font(.caption.monospaced())
-            .foregroundStyle(.secondary)
-        }
-    }
-
-    private var xmlContent: some View {
-        ScrollView {
-            Text(verbatim: artifact.document.xml)
-                .font(.body.monospaced())
-                .foregroundStyle(.primary)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .padding(10)
-        }
-        .scrollIndicators(.visible)
-        .frame(maxWidth: .infinity, minHeight: 300, maxHeight: .infinity)
-        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color(nsColor: .separatorColor).opacity(0.55))
-        )
-    }
-
+    /// 左下角与 RepoContext / 普通分片同款：可用态 + 更新时间 · tokens。
     private var footer: some View {
-        HStack(spacing: 8) {
-            Label("rag.browser.repositoryInsights.available", systemImage: "checkmark.circle.fill")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.green)
-            Text(verbatim: "·")
+        HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Label("rag.browser.repositoryInsights.available", systemImage: "checkmark.circle.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.green)
+
+                HStack(spacing: 6) {
+                    Text(
+                        String(
+                            format: String.l10n("search.detail.time.updated.format"),
+                            RelativeTimeText.pastEvent(artifact.document.generatedAt, locale: locale)
+                        )
+                    )
+                    .help(
+                        Text(
+                            artifact.document.generatedAt,
+                            format: .dateTime.year().month().day().hour().minute()
+                        )
+                    )
+                    Text(verbatim: "·")
+                        .accessibilityHidden(true)
+                    Text(
+                        verbatim: String(
+                            format: String.l10n("rag.browser.chunks.tokenCountFormat"),
+                            tokenCount
+                        )
+                    )
+                    .font(.caption.monospaced())
+                }
+                .font(.caption)
                 .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            Text(
-                String(
-                    format: String.l10n("search.detail.time.updated.format"),
-                    RelativeTimeText.pastEvent(artifact.document.generatedAt, locale: locale)
-                )
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .help(
-                Text(
-                    artifact.document.generatedAt,
-                    format: .dateTime.year().month().day().hour().minute()
-                )
-            )
-            if let exportErrorMessage {
-                Text(exportErrorMessage)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .textSelection(.enabled)
+                .lineLimit(1)
+
+                if let exportErrorMessage {
+                    Text(exportErrorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .textSelection(.enabled)
+                }
             }
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
