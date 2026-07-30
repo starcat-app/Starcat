@@ -224,6 +224,25 @@
 - [ ] 第二轮 Widget 定向测试、Store / Direct Widget 构建通过
 - [ ] 第二轮优化后 Small / Medium / Large 完成真实桌面复验
 
+### 9.3 收藏趋势小组件增量
+
+- [x] 详细方案明确公开收藏口径、三种尺寸、隐私边界与验收标准
+  - 证据：详细方案 §4.5、§5.4、§7.5、§8.3
+- [ ] `WidgetSnapshot` 升级为向后兼容的 v2，并新增可选趋势投影
+- [ ] 趋势投影连续输出 12 个 ISO 周，空周补零
+- [ ] 趋势投影包含近 30 天、总数和未读 / 已读 / 使用中状态计数
+- [ ] 趋势投影排除 Private 与 inaccessible repository
+- [ ] Small 显示近 30 天指标与最近 6 周迷你柱形图
+- [ ] Medium 显示 12 周柱形图与本周 / 近 30 天 / 总数
+- [ ] Large 增加 12 周周均与状态分布图
+- [ ] Widget 固定文案全部进入 `Localizable.xcstrings`
+- [ ] 点击趋势卡片前台 / 冷启动打开“我的洞察”
+- [ ] Store / Direct Widget Extension 共用同一份实现
+- [ ] 新增 `StarcatWidget-CollectionTrend` 独立调试 Scheme
+- [ ] 趋势投影、快照兼容与 Deep Link 单元测试通过
+- [ ] Store / Direct Widget 构建通过
+- [ ] Small / Medium / Large 完成真实桌面复验
+
 ---
 
 ## 10. 自动化测试
@@ -238,6 +257,9 @@
 - [x] Release 订阅、未读、隐私过滤和排序
 - [x] Deep Link 正常与非法输入
 - [x] Store / Direct 渠道配置
+- [ ] snapshot v2 向后兼容 v1 文件
+- [ ] 收藏趋势聚合、隐私过滤与状态分布
+- [ ] 收藏趋势 Deep Link 正常与非法输入
 - [x] Widget 相关定向测试通过
   - 证据：29 tests，0 failures，0 skipped
 - [x] Starcat 全量测试通过
@@ -257,7 +279,7 @@
 - [x] Direct Host / Extension 签名与 App Group 检查通过
   - 证据：bundle ID 为 `com.starcat.app.direct` / `com.starcat.app.direct.widgets`，
     App Group 为 `group.com.starcat.app.direct.widgets`
-- [ ] Widget Gallery 出现三个组件
+- [ ] Widget Gallery 出现四个组件
 - [ ] 所有声明尺寸均可添加到桌面
 - [ ] 真实数据、头像、空态符合方案
 - [ ] 仓库点击前台 / 冷启动定位正确

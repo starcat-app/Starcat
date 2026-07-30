@@ -23,10 +23,11 @@
 1. `Starcat Focus`：展示用户指定、置顶或正在使用的仓库。
 2. `仓库回顾`：每天稳定回顾一个长期未关注的本地仓库。
 3. `Release Watch`：展示订阅仓库的未读 Release。
-4. App Store 与 Direct 两个主应用 target 分别嵌入匹配的 Widget Extension。
-5. 主应用通过 App Group 发布只读 JSON 快照；Widget 不读取业务数据库、不联网、不读取 Keychain。
-6. 退出登录、切换用户和数据准备失败时，不泄露上一位用户的数据。
-7. 点击仓库或 Release 后由统一 Deep Link 路由回 Starcat 对应页面。
+4. `收藏趋势 / Star Rhythm`：用图表展示最近 12 周公开收藏节奏和仓库状态分布。
+5. App Store 与 Direct 两个主应用 target 分别嵌入匹配的 Widget Extension。
+6. 主应用通过 App Group 发布只读 JSON 快照；Widget 不读取业务数据库、不联网、不读取 Keychain。
+7. 退出登录、切换用户和数据准备失败时，不泄露上一位用户的数据。
+8. 点击仓库、Release 或趋势卡片后由统一 Deep Link 路由回 Starcat 对应页面。
 
 完成标准不是“代码存在”，而是专项 checklist 全部具备自动化或人工证据，三轮及以上审查
 没有未关闭的 P0/P1 问题，最终结果报告与代码、测试、工程配置一致。
@@ -42,6 +43,7 @@
 | Starcat Focus | Small / Medium / Large | 1 / 3 / 6 个仓库 | 打开仓库详情 |
 | 仓库回顾 | Small / Medium | 当日稳定仓库 | 打开仓库详情 |
 | Release Watch | Medium / Large | 3 / 6 条未读 Release | 打开仓库 Release 区域 |
+| 收藏趋势 | Small / Medium / Large | 6 / 12 / 12 周收藏柱形图与统计 | 打开“我的洞察” |
 
 ### 2.2 明确不做
 
@@ -50,6 +52,7 @@
 - 不把 Starcat 数据库迁入 App Group。
 - 不增加数据库 schema 或迁移。
 - 不在首发 Widget 内执行 Star / Unstar、改标签、删笔记、标记 Release 已读等写操作。
+- 不在趋势图中提供悬停、筛选或逐柱点击；整个 Widget 只有一个稳定跳转目标。
 - 不为 Widget 新增一套 Pro 权益。
 - 不把 Private repository、私有笔记、RAG chunk、对话或凭据默认写入快照。
 
@@ -115,7 +118,8 @@ StarcatWidgets/
 │   └── WidgetRepositoryRow.swift
 ├── Focus/
 ├── Rediscovery/
-└── ReleaseWatch/
+├── ReleaseWatch/
+└── CollectionTrend/
 ```
 
 `Starcat/Core/Widget/` 中只有纯 Foundation 模型、选择算法与主应用发布服务。Extension
@@ -233,9 +237,24 @@ enum WidgetAccountState: String, Codable, Sendable {
 
 不写入 release body 和 assets JSON，避免快照膨胀。
 
-### 4.5 向前兼容
+### 4.5 收藏趋势最小投影
 
-- `schemaVersion == 1`：正常解码。
+`WidgetCollectionTrend` 只保存图表实际需要的聚合结果：
+
+- `totalCount`：公开、可访问且仍处于 Star 状态的仓库总数。
+- `addedInLast30DaysCount`：以 `generatedAt` 为上界，向前 30 天内新增的公开收藏数。
+- `weeklyPoints`：连续 12 个 ISO 周，每项只有 `weekStart` 和 `count`，空周补零。
+- `statusBreakdown`：`unread`、`read`、`using` 三类计数；没有 `repo_notes` 的仓库归入
+  `unread`，未知旧状态保守归入 `read`。
+
+该投影不包含 repository ID、owner、name、笔记或标签。它与“我的洞察”的统计口径存在一个
+有意差异：桌面快照继续排除 Private / inaccessible repository，因此 UI 必须用本地化短文案
+标明“公开收藏”，不能让用户误以为它是全部收藏数。
+
+### 4.6 向前兼容
+
+- `schemaVersion == 1`：正常解码，缺失 `collectionTrend` 时按 `nil` 降级。
+- 新写入快照使用 schema v2，并附带可选的 `collectionTrend`。
 - `schemaVersion > currentSchemaVersion`：Extension 显示升级提示，不尝试猜测字段。
 - 文件不存在：显示 preparing。
 - JSON 损坏：记录 Extension 诊断并显示 unavailable；不得崩溃。
@@ -300,6 +319,23 @@ AND repos.is_private = 0
 - 单个 owner 缓存文件复用，失败时使用 Starcat 内置 fallback。
 - 快照只保存相对文件名，Extension 通过当前 App Group 根目录解析，防止跨渠道路径串用。
 - 缓存清理保留当前快照引用和最近使用文件，设置合理总量上限。
+
+### 5.4 收藏趋势
+
+查询范围固定为：
+
+```sql
+r.is_starred = 1
+AND r.is_private = 0
+AND r.access_state = 'accessible'
+```
+
+以 UTC ISO 8601 日历计算 `generatedAt` 所在周的周一，再向前推 11 周。SQLite 按周一聚合
+`starred_at`，Swift 补齐没有收藏事件的周，保证三个尺寸始终收到位置稳定的 12 个点。
+近 30 天与周聚合都以 `generatedAt` 为上界，避免测试数据或异常未来时间污染统计。
+
+本周数量取 `weeklyPoints.last.count`；12 周周均值由 Extension 使用 12 个点计算，不能在
+快照中再保存可推导字段。状态分布沿用“我的洞察”的映射规则，但只作用于上述公开范围。
 
 ---
 
@@ -427,6 +463,23 @@ Deep Link。
   3 个标签；内容在可用高度内垂直居中，不用空白承担层级。
 - 现有快照已经包含上述字段，不为 UI 增密扩展共享快照或数据库读取边界。
 
+### 7.5 收藏趋势 / Star Rhythm
+
+该 Widget 使用 Swift Charts 的 `Chart` + `BarMark`，不同尺寸共享同一份趋势数据，但按
+系统分配空间裁剪信息密度：
+
+- **Small**：显示“近 30 天新增”主指标和最近 6 周迷你柱形图；隐藏坐标轴，保留趋势轮廓。
+- **Medium**：显示连续 12 周柱形图，以及本周、近 30 天和公开收藏总数。
+- **Large**：在 12 周柱形图下增加本周、近 30 天、12 周周均、公开收藏总数，并展示
+  未读 / 已读 / 使用中三段状态分布。
+
+历史柱使用 `.secondary`，当前周使用应用强调色；状态分布仅在表达状态语义时使用
+orange / blue / green。文字和非语义图标继续只用 `.primary` / `.secondary`。整个卡片
+通过 `widgetURL` 打开“我的洞察”，不为单根柱子创建伪交互。
+
+空数据不是错误：已登录但没有公开收藏时仍显示零值图表和引导文案；只有 preparing、
+signedOut、unavailable 才复用共享业务空态。
+
 ---
 
 ## 8. Deep Link
@@ -455,6 +508,18 @@ starcat://repo/{owner}/{name}/releases?v=1&rid={repository-id}&release_id={relea
 - 冷启动时由现有 dispatcher 保存 pending navigation。
 - 找不到指定 Release 时降级打开仓库 Release 区域，不打开外部任意 URL。
 
+### 8.3 收藏趋势
+
+新增受限应用路由：
+
+```text
+starcat://app/insights?v=1
+```
+
+`WidgetAppDeepLink` 继续要求 scheme、host、单段 path 和唯一 `v=1` query 全部匹配。
+主应用收到 `.insights` 后，通过现有 `MainWindowNavigationDispatcher` 激活主窗口并选择
+`SidebarRootPage.insights`；不携带筛选条件，也不覆盖用户保存的 Manage selection。
+
 ---
 
 ## 9. 实施阶段与提交边界
@@ -475,6 +540,10 @@ starcat://repo/{owner}/{name}/releases?v=1&rid={repository-id}&release_id={relea
 12. `feat(widget): 实现 Release Watch 小组件`
 13. `feat(widget): 完善 Release 深层链接`
 14. `test(widget): 补齐桌面小组件单元测试`
+15. `docs(widget): 补充收藏趋势小组件方案`
+16. `feat(widget): 添加收藏趋势快照投影`
+17. `feat(widget): 添加我的洞察小组件路由`
+18. `feat(widget): 实现收藏趋势小组件`
 
 若实现中发现必须拆分或合并，以“一个 commit 可独立说明、验证和回退”为准；审查报告与
 审查修复也分别提交。
@@ -495,7 +564,9 @@ starcat://repo/{owner}/{name}/releases?v=1&rid={repository-id}&release_id={relea
 - Focus 优先级、去重、数量上限。
 - 仓库回顾过滤与同日稳定选择。
 - Release 未读、订阅、隐私过滤和排序。
+- 收藏趋势连续 12 周补零、近 30 天、状态分布和 Private / inaccessible 过滤。
 - Deep Link encode / parse / 非法输入拒绝。
+- 收藏趋势 Deep Link 能前台或冷启动选择“我的洞察”。
 - 渠道配置选择正确 App Group。
 
 ### 10.2 工程与构建
@@ -532,16 +603,17 @@ Extension 同时注入 `REGISTER_APP_GROUPS = YES`，并让两个 Extension targ
 xcconfig；不要只在命令行临时覆盖 Team，否则 Xcode IDE 运行 Widget 时仍会缺少
 Development 签名。
 
-### 10.2.1 独立调试三个 Widget
+### 10.2.1 独立调试四个 Widget
 
-`WidgetBundle` 同时包含三个 kind，直接运行 Extension target 时，WidgetKit 无法判断
-应展示哪一个组件。`project.yml` 因此提供三个共享 Scheme：
+`WidgetBundle` 同时包含四个 kind，直接运行 Extension target 时，WidgetKit 无法判断
+应展示哪一个组件。`project.yml` 因此提供四个共享 Scheme：
 
 | Scheme | `_XCWidgetKind` | 默认尺寸 |
 |--------|-----------------|----------|
 | `StarcatWidget-Focus` | `com.starcat.widget.focus` | `medium` |
 | `StarcatWidget-Rediscovery` | `com.starcat.widget.rediscovery` | `medium` |
 | `StarcatWidget-ReleaseWatch` | `com.starcat.widget.release-watch` | `medium` |
+| `StarcatWidget-CollectionTrend` | `com.starcat.widget.collection-trend` | `medium` |
 
 新增或修改 Scheme 后先生成工程，并用命令行确认配置可用：
 
@@ -562,7 +634,7 @@ Run。Xcode 会打开对应 kind 的 WidgetKit 调试画布；切换组件时只
 
 自动化无法替代以下验收：
 
-1. 在“编辑小组件”图库找到三个 Starcat Widget。
+1. 在“编辑小组件”图库找到四个 Starcat Widget。
 2. 将所有支持尺寸添加到桌面。
 3. 数据、头像、空态、深浅色和 VoiceOver 表现正确。
 4. 点击仓库与 Release 能冷启动或前台定位。
@@ -620,5 +692,7 @@ docs/4-工程进度/macOS桌面小组件专项/结果报告.md
 - [Keeping a widget up to date](https://developer.apple.com/documentation/widgetkit/keeping-a-widget-up-to-date)
 - [Configuring App Groups](https://developer.apple.com/documentation/xcode/configuring-app-groups)
 - [AppIntentConfiguration](https://developer.apple.com/documentation/widgetkit/appintentconfiguration)
+- [Chart](https://developer.apple.com/documentation/charts/chart)
+- [BarMark](https://developer.apple.com/documentation/charts/barmark)
 - [Linking widgets to specific app scenes](https://developer.apple.com/documentation/widgetkit/linking-to-specific-app-scenes-from-your-widget-or-live-activity)
 - [XcodeGen Project Spec](https://github.com/yonaskolb/XcodeGen/blob/master/Docs/ProjectSpec.md)
