@@ -115,55 +115,59 @@ struct StarcatRediscoveryWidgetView: View {
     }
 
     private func mediumContent(repository: WidgetRepository) -> some View {
-        HStack(spacing: 14) {
-            StarcatWidgetAvatar(fileName: repository.avatarFileName, size: 58)
+        VStack(alignment: .leading, spacing: 0) {
+            StarcatWidgetHeader(
+                "widget.rediscovery.title",
+                systemImage: "sparkles",
+                isStale: entry.isStale
+            )
+            .padding(.bottom, 10)
 
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 5) {
-                    Label("widget.rediscovery.title", systemImage: "sparkles")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    if entry.isStale {
-                        Image(systemName: "clock.badge.exclamationmark")
+            HStack(spacing: 12) {
+                StarcatWidgetAvatar(fileName: repository.avatarFileName, size: 52)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(verbatim: "\(repository.owner)/\(repository.name)")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    if let description = repository.description {
+                        Text(verbatim: description)
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .accessibilityLabel(Text("widget.common.stale"))
+                            .lineLimit(2)
                     }
-                }
-                Text(verbatim: "\(repository.owner)/\(repository.name)")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                if let description = repository.description {
-                    Text(verbatim: description)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-                HStack(spacing: 8) {
-                    if let language = repository.language {
+                    HStack(spacing: 8) {
+                        if let language = repository.language {
+                            Label {
+                                Text(verbatim: language)
+                            } icon: {
+                                Image(systemName: "chevron.left.forwardslash.chevron.right")
+                            }
+                        }
                         Label {
-                            Text(verbatim: language)
+                            Text(repository.starsCount, format: .number)
                         } icon: {
-                            Image(systemName: "chevron.left.forwardslash.chevron.right")
+                            Image(systemName: "star.fill")
+                        }
+                        // Medium 宽度有限，只展示最高优先级标签，避免元信息挤压仓库名。
+                        ForEach(repository.tags.prefix(1), id: \.self) { tag in
+                            Text(verbatim: tag)
+                                .lineLimit(1)
                         }
                     }
-                    Label {
-                        Text(repository.starsCount, format: .number)
-                    } icon: {
-                        Image(systemName: "star.fill")
-                    }
-                    ForEach(repository.tags.prefix(2), id: \.self) { tag in
-                        Text(verbatim: tag)
-                            .lineLimit(1)
-                    }
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
                 }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .widgetURL(repository.openURL)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text(verbatim: "\(repository.owner)/\(repository.name)"))
         .accessibilityHint(Text("widget.common.openRepository"))
