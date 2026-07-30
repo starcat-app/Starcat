@@ -1833,7 +1833,7 @@ struct KnowledgeRAGCoreTests {
         #expect(snapshot.vectorFailure == nil)
     }
 
-    @Test("Retriever 为 Metadata 命中仓库附加完整 Metadata 且不生成空 parent")
+    @Test("Retriever 为 Metadata FTS5 命中附加完整正文并生成引用")
     func retrieverAttachesFullMetadataForMetadataHit() async throws {
         let database = try InMemoryDatabaseManager()
         try await database.insertRepoFixture(id: 1)
@@ -1894,7 +1894,16 @@ struct KnowledgeRAGCoreTests {
             attachmentContexts: []
         )
         #expect(prompt.userPrompt.components(separatedBy: "Wiki DeepWiki:").count == 2)
-        #expect(prompt.citationsByMarker.isEmpty)
+        #expect(prompt.userPrompt.contains("[S1] Repository metadata"))
+        let citation = try #require(prompt.citationsByMarker["S1"])
+        #expect(citation.chunkID == metadataChunk.id)
+        #expect(citation.source == .metadata)
+        #expect(citation.hitKind == .keyword)
+        #expect(citation.vectorSimilarity == nil)
+        #expect(KnowledgeRAGPromptBuilder().citationsUsed(
+            in: "The wiki is available at DeepWiki [S1].",
+            prompt: prompt
+        ) == [citation])
     }
 
     @Test("检索设置仅过滤向量阈值，并尊重分片来源开关")

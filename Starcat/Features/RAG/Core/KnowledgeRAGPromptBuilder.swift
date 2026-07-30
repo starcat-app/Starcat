@@ -92,7 +92,37 @@ struct KnowledgeRAGPromptBuilder: Sendable {
         for bundle in bundles {
             // 普通检索 bundle 优先使用仓库完整 Metadata；缺失/被排除时才退回精简头。
             // structured_only 的 bundle 没有加载系统分片，继续使用精简事实，避免全库读取。
-            let repositoryMetadata = bundle.metadataContent ?? metadataLine(bundle.candidate)
+            let rawRepositoryMetadata = bundle.metadataContent ?? metadataLine(bundle.candidate)
+            let metadataHit = bundle.matchedChildren.first { $0.chunk.source == .metadata }
+            let repositoryMetadata: String
+            if let metadataHit {
+                // Metadata 是 keyword-only 分片，不会生成 parent section。它过去虽然进入了
+                // Prompt，却没有 marker，导致模型使用 FTS5 命中回答后 Inspector 仍显示
+                // “暂无引用”。只有真实命中 Metadata 时才编号；普通仓库头不能伪装成引用。
+                let marker = "S\(nextCitation)"
+                let sectionTitle = metadataHit.chunk.parentTitle.isEmpty
+                    ? metadataHit.chunk.title
+                    : metadataHit.chunk.parentTitle
+                citations[marker] = RAGCitation(
+                    id: UUID(),
+                    marker: marker,
+                    chunkID: metadataHit.chunk.id,
+                    repoID: bundle.candidate.repo.id,
+                    repoFullName: bundle.candidate.repo.fullName,
+                    repoLanguage: bundle.candidate.repo.language,
+                    source: .metadata,
+                    sectionTitle: sectionTitle,
+                    score: metadataHit.score,
+                    hitKind: metadataHit.kind,
+                    vectorSimilarity: metadataHit.vectorSimilarity,
+                    scoreBreakdown: metadataHit.scoreBreakdown,
+                    sourceURL: URL(string: bundle.candidate.repo.htmlUrl)
+                )
+                nextCitation += 1
+                repositoryMetadata = "[\(marker)] \(sectionTitle)\n\(rawRepositoryMetadata)"
+            } else {
+                repositoryMetadata = rawRepositoryMetadata
+            }
             var blocks: [RAGEvidenceBlockDraft] = []
             for parent in bundle.sectionParents {
                 let parentHits = bundle.matchedChildren.filter { parent.childChunkIDs.contains($0.chunk.id ?? -1) }
