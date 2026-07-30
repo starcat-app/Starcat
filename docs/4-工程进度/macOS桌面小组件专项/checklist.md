@@ -135,7 +135,7 @@
 - [x] Medium 最多展示三个仓库
 - [x] Large 最多展示六个仓库
 - [x] 支持自动选择与指定仓库配置
-- [x] 每行展示 owner avatar、仓库名与来源状态
+- [x] 每行展示 owner avatar、仓库名，并按需展示“使用中”工作状态
 - [x] 空态可点击打开 Starcat
 - [x] 每个仓库可点击打开对应详情
 
@@ -195,8 +195,8 @@
   - 证据：`StarcatWidgetHeader`；Focus 已接入，另外两个 Widget 在各自增量中接入
 - [x] Focus Medium / Large 使用独立行密度，分别承载 3 / 6 条数据
   - 证据：`StarcatFocusWidgetView.repositoryList` 按 family 选择标准 / 紧凑行
-- [x] Focus 来源状态使用紧凑文案且保留 VoiceOver 语义
-  - 证据：中文“置顶 / 使用中”；`focusAccessibilityLabel` 继续包含来源状态
+- [x] Focus 仅保留“使用中”工作状态及对应 VoiceOver 语义
+  - 证据：`.pinned` 不再产生视觉或可访问性标签；`.using` 继续显示
 - [x] 仓库回顾 Medium 使用 Header + 内容行并减少无效留白
   - 证据：`StarcatRediscoveryWidgetView.mediumContent` 顶部对齐 Header，内容行增加点击指示
 - [x] Release Watch 未读总数改为明确本地化短文案
@@ -209,8 +209,10 @@
 
 ### 9.2 第二轮真实桌面 UI 优化增量
 
-- [ ] Focus 删除所有“置顶”文字、图钉和对应 VoiceOver 来源
-- [ ] Focus Header 与空态改用 `scope`，继续保留“使用中”状态
+- [x] Focus 删除所有“置顶”文字、图钉和对应 VoiceOver 来源
+  - 证据：`StarcatFocusStatusLabel` 对 `.pinned` 返回 `EmptyView`
+- [x] Focus Header 与空态改用 `scope`，继续保留“使用中”状态
+  - 证据：`StarcatFocusWidgetView` 与 `StarcatFocusStatusLabel`
 - [ ] Rediscovery 中文改名“仓库回顾”，英文改名“Repo Recall”
 - [ ] 仓库回顾 Small 删除装饰图标和无效留白，增加描述与 Star 数
 - [ ] 仓库回顾 Medium 展示两行描述、语言、Star 数和最多 3 个标签

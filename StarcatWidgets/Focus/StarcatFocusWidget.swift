@@ -92,7 +92,7 @@ struct StarcatFocusWidgetView: View {
             emptyView
         } else if entry.repositories.isEmpty {
             StarcatWidgetEmptyView(
-                symbol: "pin",
+                symbol: "scope",
                 titleKey: "widget.focus.empty.title",
                 subtitleKey: "widget.focus.empty.subtitle"
             )
@@ -124,7 +124,7 @@ struct StarcatFocusWidgetView: View {
                         .foregroundStyle(.secondary)
                         .accessibilityLabel(Text("widget.common.stale"))
                 }
-                StarcatFocusSourceLabel(source: repository.focusSource)
+                StarcatFocusStatusLabel(source: repository.focusSource)
             }
             Spacer(minLength: 0)
             Text(verbatim: repository.owner)
@@ -159,7 +159,7 @@ struct StarcatFocusWidgetView: View {
         VStack(alignment: .leading, spacing: 0) {
             StarcatWidgetHeader(
                 "widget.focus.title",
-                systemImage: "pin.fill",
+                systemImage: "scope",
                 isStale: entry.base.isStale
             )
             .padding(.bottom, usesCompactRows ? 4 : 6)
@@ -217,7 +217,7 @@ private struct StarcatFocusRepositoryRow: View {
                         Text(verbatim: language)
                             .lineLimit(1)
                     }
-                    StarcatFocusSourceLabel(source: repository.focusSource)
+                    StarcatFocusStatusLabel(source: repository.focusSource)
                 }
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -236,15 +236,18 @@ private struct StarcatFocusRepositoryRow: View {
 
 }
 
-private struct StarcatFocusSourceLabel: View {
+/// Focus 只展示可操作的仓库工作状态，不重复解释仓库为何进入候选列表。
+///
+/// `.pinned` 仍参与主应用快照排序，但不再渲染成文字或图标，避免被误解为
+/// Widget 内的置顶操作；`.using` 是用户主动维护的工作状态，因此继续展示。
+private struct StarcatFocusStatusLabel: View {
     let source: WidgetFocusSource?
 
     @ViewBuilder
     var body: some View {
         switch source {
         case .pinned:
-            Label("widget.focus.pinned", systemImage: "pin.fill")
-                .lineLimit(1)
+            EmptyView()
         case .using:
             Label("widget.focus.using", systemImage: "hammer.fill")
                 .lineLimit(1)
@@ -255,12 +258,12 @@ private struct StarcatFocusSourceLabel: View {
 }
 
 private extension WidgetRepository {
-    /// 显式 label 会覆盖 `.combine` 的自动结果，因此在这里把视觉来源一并读出。
+    /// 显式 label 会覆盖 `.combine` 的自动结果，因此只补充仍然可见的“使用中”状态。
     var focusAccessibilityLabel: Text {
         let repository = Text(verbatim: "\(owner)/\(name)")
         switch focusSource {
         case .pinned:
-            return repository + Text(verbatim: ", ") + Text("widget.focus.pinned")
+            return repository
         case .using:
             return repository + Text(verbatim: ", ") + Text("widget.focus.using")
         case nil:
