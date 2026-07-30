@@ -30,7 +30,6 @@ actor MyInsightsSnapshotCache {
 
     struct Revision: Equatable, Sendable {
         let userID: Int64?
-        let embeddingModel: String
         let metadataRevision: Int64
         let healthCount: Int
         let latestHealthAt: String?
@@ -111,7 +110,7 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
             return Self.makeKnowledgeSnapshot(facts)
         }
         let generatedAt = now()
-        let revision = try await fetchRevision(embeddingModel: embeddingModel)
+        let revision = try await fetchRevision()
         return try await cache.value(scope: scope, revision: revision, now: generatedAt) {
             try await loadUncached(
                 generatedAt: generatedAt
@@ -125,9 +124,7 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
     }
 
     /// 读取轻量 revision。旧测试草稿库缺少派生表时按空表处理，不能让洞察入口崩溃。
-    private func fetchRevision(
-        embeddingModel: String
-    ) async throws -> MyInsightsSnapshotCache.Revision {
+    private func fetchRevision() async throws -> MyInsightsSnapshotCache.Revision {
         let userID = database.currentUserId
         return try await database.writer.read { db in
             let metadataRevision: Int64
@@ -152,7 +149,6 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
             )
             return MyInsightsSnapshotCache.Revision(
                 userID: userID,
-                embeddingModel: embeddingModel,
                 metadataRevision: metadataRevision,
                 healthCount: health.count,
                 latestHealthAt: health.latest,
