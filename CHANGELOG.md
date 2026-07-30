@@ -26,6 +26,7 @@ Starcat 1.3.0 adds My Projects, library-wide and repository-level insights, macO
 
 ### Fixes
 
+- Share card theme controls: Uses full, contiguous click targets for style and color controls, eliminating missed clicks near edges and between buttons.
 - RAG evidence citations: Metadata found through keyword search and Knowledge Base statistics now appear as actual cited snippets, so sources remain verifiable in answers and conversation history without vector indexing.
 
 ## 1.2.0
