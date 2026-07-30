@@ -1,10 +1,10 @@
 # macOS 桌面小组件专项 Checklist
 
-> 状态：实施中
+> 状态：自动化与签名门禁完成，人工桌面验收中
 >
 > 基线：`dev@aa135b7e899b209c6e074d0b4821dc302d40b8cc`
 >
-> 分支：`codex/macos-widget`
+> 开发分支：`codex/macos-widget`；当前状态：已合并到 `dev`
 >
 > 约束：每个小功能单独提交，不 push；所有勾选必须有代码、命令输出、产物检查、截图或
 > 审查报告作为证据。
@@ -47,12 +47,16 @@
   - 证据：仅 `StarcatWidgets.appex`，bundle id 为 `com.starcat.app.store.widgets`
 - [x] Direct `.app` 只包含 Direct `.appex`
   - 证据：仅 `StarcatDirectWidgets.appex`，bundle id 为 `com.starcat.app.direct.widgets`
-- [ ] `codesign` 验证 Store Host / Extension App Group 一致
-- [ ] `codesign` 验证 Direct Host / Extension App Group 一致
+- [x] `codesign` 验证 Store Host / Extension App Group 一致
+  - 证据：Team `8WCUMGCWMB`，两者均为 `group.com.starcat.app.store.widgets`，
+    `codesign --verify --deep --strict` 通过
+- [x] `codesign` 验证 Direct Host / Extension App Group 一致
+  - 证据：Team `8WCUMGCWMB`，两者均为 `group.com.starcat.app.direct.widgets`，
+    `codesign --verify --deep --strict` 通过
 
-> 当前签名阻断：本机 Xcode Team `8WCUMGCWMB` 账号凭据失效，且新 Widget bundle
-> 尚无 provisioning profile。`xcodebuild -allowProvisioningUpdates` 已得到
-> `No Accounts` / `No profiles for 'com.starcat.app.store.widgets'`，待 Xcode 重新登录后复测。
+> 签名阻断已于 2026-07-30 解除：Store / Direct 全新 DerivedData 构建均使用
+> `Apple Development: liwen gong (MZ4R5J393K)`，Host / Extension 的 Team、App Group
+> 和 `CFBundleVersion=2291` 一致。
 
 ---
 
@@ -209,8 +213,12 @@
 - [x] `xcodegen generate` 后工程无未预期漂移
 - [x] Store Debug build 通过
 - [x] Direct Debug build 通过
-- [ ] Store Host / Extension 签名与 App Group 检查通过
-- [ ] Direct Host / Extension 签名与 App Group 检查通过
+- [x] Store Host / Extension 签名与 App Group 检查通过
+  - 证据：bundle ID 为 `com.starcat.app.store` / `com.starcat.app.store.widgets`，
+    App Group 为 `group.com.starcat.app.store.widgets`
+- [x] Direct Host / Extension 签名与 App Group 检查通过
+  - 证据：bundle ID 为 `com.starcat.app.direct` / `com.starcat.app.direct.widgets`，
+    App Group 为 `group.com.starcat.app.direct.widgets`
 - [ ] Widget Gallery 出现三个组件
 - [ ] 所有声明尺寸均可添加到桌面
 - [ ] 真实数据、头像、空态符合方案
@@ -241,6 +249,12 @@
   - 证据：第三轮未发现新问题，无需追加第四轮修复
 - [x] 文档、代码、测试、工程进度和 checklist 一致
   - 证据：第三轮审查报告第 3、4 节
+- [x] 第四轮签名与调试增量审查报告先落档并提交
+  - 证据：commit `176be40`
+- [x] 第四轮签名阻断、调试入口与运行时问题完成修复
+  - 证据：commits `3917714`、`61034a2`、`f5a102e`、`60246d0`
+- [ ] 第五轮修复后复审无新增 P0 / P1 / P2
+- [ ] 第六轮最终复审无新增 P0 / P1 / P2
 - [ ] 所有 checklist 项均有真实证据
 - [ ] 新增并提交最终结果报告
 - [x] 最终分支无未提交改动
@@ -288,5 +302,11 @@
 | `d15a900` | 修复 | 补充快照降级诊断 | 双渠道 unsigned build |
 | `76727db` | 文档 | 回填第二轮审查进度 | `git diff --check` |
 | `4690484` | 审查 | 新增第三轮审查报告 | 29 项定向测试 + 2061 项全量测试 |
+| `3917714` | 工程 | 固化 App Group 自动签名配置 | 双渠道签名构建 + entitlement 检查 |
+| `61034a2` | 修复 | 同步宿主与扩展构建版本 | 双渠道 Host / Extension 均为 `2291` |
+| `f5a102e` | 工程 | 添加三个组件调试 Scheme | `xcodebuild -list` + 三个 Scheme 构建 |
+| `60246d0` | 修复 | 避免 Focus 占位列表重复身份 | Focus Scheme 构建通过 |
+| `176be40` | 审查 | 新增第四轮签名与调试审查报告 | 报告先于文档修复提交 |
 
-审查时继续以 `git log --reverse dev..HEAD` 反向核对；本表在每轮审查后补齐新增提交。
+审查时继续以 `git log --reverse aa135b7e..HEAD -- <Widget 相关路径>` 反向核对；本表在
+每轮审查后补齐新增提交。

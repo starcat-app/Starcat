@@ -453,16 +453,12 @@ xcodegen generate
 关闭 Xcode 后执行：
 
 ```bash
-# 本地尚未取得 Widget App Group provisioning profile 时，测试动作使用 ad-hoc
-# 签名并仅对测试构建清空 entitlement；正式 target 配置和分发产物不受影响。
-xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' \
-  CODE_SIGN_ENTITLEMENTS='' CODE_SIGN_IDENTITY='-' DEVELOPMENT_TEAM='' test
+xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
 
-# 开发者后台和本机 profile 就绪后，再用正式 entitlement 复测。
-# xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
-
-xcodebuild -scheme Starcat -configuration Debug -destination 'platform=macOS,arch=arm64' build
-xcodebuild -scheme StarcatDirect -configuration Debug -destination 'platform=macOS,arch=arm64' build
+xcodebuild -scheme Starcat -configuration Debug -destination 'platform=macOS,arch=arm64' \
+  -allowProvisioningUpdates build
+xcodebuild -scheme StarcatDirect -configuration Debug -destination 'platform=macOS,arch=arm64' \
+  -allowProvisioningUpdates build
 ```
 
 并检查：
@@ -474,6 +470,37 @@ codesign -d --entitlements :- <Host.app>
 codesign -d --entitlements :- <Widget.appex>
 /usr/libexec/PlistBuddy -c Print <Widget.appex>/Contents/Info.plist
 ```
+
+`Configs/Build.xcconfig` 需要配置本机 `DEVELOPMENT_TEAM`。`project.yml` 为 Host 与
+Extension 同时注入 `REGISTER_APP_GROUPS = YES`，并让两个 Extension target 继承该
+xcconfig；不要只在命令行临时覆盖 Team，否则 Xcode IDE 运行 Widget 时仍会缺少
+Development 签名。
+
+### 10.2.1 独立调试三个 Widget
+
+`WidgetBundle` 同时包含三个 kind，直接运行 Extension target 时，WidgetKit 无法判断
+应展示哪一个组件。`project.yml` 因此提供三个共享 Scheme：
+
+| Scheme | `_XCWidgetKind` | 默认尺寸 |
+|--------|-----------------|----------|
+| `StarcatWidget-Focus` | `com.starcat.widget.focus` | `medium` |
+| `StarcatWidget-Rediscovery` | `com.starcat.widget.rediscovery` | `medium` |
+| `StarcatWidget-ReleaseWatch` | `com.starcat.widget.release-watch` | `medium` |
+
+新增或修改 Scheme 后先生成工程，并用命令行确认配置可用：
+
+```bash
+xcodegen generate
+xcodebuild -project Starcat.xcodeproj -list
+xcodebuild -project Starcat.xcodeproj -scheme StarcatWidget-Focus \
+  -configuration Debug -destination 'platform=macOS,arch=arm64' build
+```
+
+人工调试时，在 Xcode 顶部 Scheme 菜单选择其中一个 `StarcatWidget-*` Scheme，再执行
+Run。Xcode 会打开对应 kind 的 WidgetKit 调试画布；切换组件时只需切换 Scheme，不要
+重复修改环境变量。尺寸或渲染阶段需要临时调整时，修改 Scheme 的
+`_XCWidgetFamily`（`small` / `medium` / `large`）或 `_XCWidgetDefaultView`
+（`timeline` / `snapshot` / `placeholder`），正式配置仍以 `project.yml` 为准。
 
 ### 10.3 真机人工验收
 
