@@ -103,6 +103,10 @@ targets:
         INFOPLIST_KEY_CFBundleURLTypes: ""  # 由 entitlements + plist 增量在 info 段定义
       configs:
         Debug:
+          # macOS 可同时登记多个同 Bundle ID 的 .app；WidgetKit 按宿主标识解析
+          # AppIntent 元数据时可能误命中已安装的 App Store 版本或旧 DerivedData。
+          # Debug 使用独立标识，Release 继续继承 base 中的正式标识。
+          PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.store.debug
           # Debug/test 必须允许多实例：xcodebuild test 会另外启动一个 test host，
           # 如果本机已有 Starcat 正在运行，固定单实例会被 LaunchServices 拒绝。
           INFOPLIST_KEY_LSMultipleInstancesProhibited: NO
@@ -220,6 +224,9 @@ targets:
         INFOPLIST_KEY_CFBundleURLTypes: ""
       configs:
         Debug:
+          # 与 Store 渠道保持相同隔离策略，避免 Direct 调试 Extension 解析到
+          # 已安装正式版宿主；Release 仍使用 com.starcat.app.direct。
+          PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.direct.debug
           STARCAT_LICENSE_API_ENVIRONMENT: test
         Release:
           STARCAT_LICENSE_API_ENVIRONMENT: live
@@ -327,6 +334,10 @@ targets:
         APPLICATION_EXTENSION_API_ONLY: YES
         SKIP_INSTALL: YES
         INFOPLIST_KEY_CFBundleDisplayName: Starcat Widgets
+      configs:
+        Debug:
+          # 必须以 Debug 宿主标识为前缀，确保 WidgetKit 将 Extension 绑定到唯一宿主。
+          PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.store.debug.widgets
     info:
       path: Starcat/Generated/WidgetInfo.generated.plist
       properties:
@@ -361,6 +372,9 @@ targets:
         APPLICATION_EXTENSION_API_ONLY: YES
         SKIP_INSTALL: YES
         INFOPLIST_KEY_CFBundleDisplayName: Starcat Widgets
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.direct.debug.widgets
     info:
       path: Starcat/Generated/WidgetInfo.direct.generated.plist
       properties:
