@@ -4,16 +4,26 @@
 
 ## 1.3.0
 
-Starcat 1.3.0 新增“我的项目”、全局与单仓库洞察，以及 Alfred、uTools 和 Raycast 外部搜索集成，帮助你管理更多仓库，并从常用效率工具快速找到它们。
+Starcat 1.3.0 新增“我的项目”、全局与单仓库洞察、可复用于 AI 与 RAG 的洞察上下文，以及 Alfred、uTools 和 Raycast 外部搜索集成，帮助你管理和理解更多仓库，并从常用效率工具快速找到它们。
 
 ### 新增
 
 - 我的项目：集中查看个人与组织仓库，并在授权范围内浏览公开、私有和 Internal 项目，继续使用现有筛选、详情与 Star 趋势。
 - 我的洞察：从全部收藏或知识库范围查看整理进度、技术分布、项目状态与待处理事项，并可直接下钻到对应仓库列表。
 - 仓库洞察：在仓库详情中集中查看 Star 增长、协作活动、提交趋势、贡献者、发布节奏、项目健康度、社区规范与安全信号。
+- 仓库洞察上下文：生成后的洞察可复用于 AI 摘要、仓库对话与 RAG 回答，并以可移除的只读 XML 上下文展示在知识库中。
 - Alfred Workflow：可直接从 Alfred 搜索 Starcat 本地仓库与 GitHub。[查看项目](https://github.com/starcat-app/starcat-alfred-workflow)
 - uTools 插件：可直接从 uTools 搜索 Starcat 本地仓库与 GitHub。[查看项目](https://github.com/starcat-app/starcat-utools-plugin)
 - Raycast Extension：可直接从 Raycast 搜索 Starcat 本地仓库与 GitHub。[查看项目](https://github.com/starcat-app/starcat-raycast-extension)
+
+### 优化
+
+- RAG 提示词设置：支持对照并复制只读默认提示词，问答与对话压缩模板采用更清晰的 Markdown 排版。
+- 自定义提示词诊断：明确显示自定义模板支持的上下文能力与占位符，且不再自动改写用户内容。
+
+### 修复
+
+- 仓库洞察注入状态：准确区分数据不可用、自定义提示词未注入洞察与真实回退场景，不再统一显示为“已降级”。
 
 ## 1.2.0
 
