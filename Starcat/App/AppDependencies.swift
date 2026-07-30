@@ -68,6 +68,8 @@ final class AppDependencies {
     let distributionGate: DistributionGate
     /// Direct 版 Sparkle 自动更新协调器。App Store 构建中保持 no-op。
     let directUpdateController: DirectUpdateController
+    /// App Store 版版本检测协调器。只提示并跳转商店，不下载或安装更新。
+    let appStoreUpdateController: AppStoreUpdateController
     /// 统一 Pro 门控服务。业务层通过它判断是否放行，而不是直接读 `settings.isProUser`。
     let entitlementGate: EntitlementGate
     /// RAG 等独立窗口请求主窗口导航的类型化一次性事件总线。
@@ -848,6 +850,7 @@ final class AppDependencies {
         )
         self.proEntitlementProvider = proEntitlementProvider
         self.directUpdateController = DirectUpdateController()
+        self.appStoreUpdateController = AppStoreUpdateController()
         self.entitlementGate = EntitlementGate(
             entitlementProvider: proEntitlementProvider,
             userIDProvider: { [weak session] in

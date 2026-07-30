@@ -8,6 +8,7 @@ Starcat 1.3.0 adds My Projects, library-wide and repository-level insights, macO
 
 ### New
 
+- App Store update checks: Automatically detect new versions at launch or when the app becomes active, with manual checks from the Actions menu and menu bar and a shortcut to upgrade in the Mac App Store.
 - My Projects: Browse personal, organization, and external collaboration repositories; use GitHub App permissions for authorized public, private, and internal projects, with existing filters, details, and Star trends.
 - My Insights: Review organization progress, technology distribution, project status, and items needing attention across all saved repositories or your Knowledge Base, then drill down to the matching repository list.
 - Repository Insights: View Star growth, collaboration activity, commit trends, contributors, release cadence, project health, community standards, and security signals, with stable content while switching repositories or refreshing.

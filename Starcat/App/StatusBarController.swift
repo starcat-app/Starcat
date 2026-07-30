@@ -118,6 +118,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                 )
                 updateItem.isEnabled = dependencies.directUpdateController.canCheckForUpdates
                 menu.addItem(updateItem)
+            } else if dependencies.appStoreUpdateController.isAppStoreBuild {
+                let updateItem = actionItem(
+                    title: String.l10n("menubar.checkForUpdates"),
+                    action: #selector(checkForUpdates),
+                    imageName: "arrow.down.circle"
+                )
+                updateItem.isEnabled = dependencies.appStoreUpdateController.canCheckForUpdates
+                menu.addItem(updateItem)
             }
         }
 
@@ -268,7 +276,18 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func checkForUpdates() {
-        dependencies?.directUpdateController.checkForUpdates()
+        guard let dependencies else { return }
+        if dependencies.directUpdateController.isDirectBuild {
+            dependencies.directUpdateController.checkForUpdates()
+            return
+        }
+
+        // App Store 版的结果由主窗口 SwiftUI alert 呈现；菜单栏触发时先恢复主窗口，
+        // 避免窗口已关闭导致状态更新后用户看不到任何反馈。
+        AppDelegate.activateMainWindowIfPossible()
+        Task {
+            await dependencies.appStoreUpdateController.checkManually()
+        }
     }
 
     @objc private func resetListPreferences() {

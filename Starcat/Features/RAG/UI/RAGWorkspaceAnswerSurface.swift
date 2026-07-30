@@ -32,6 +32,7 @@ struct RAGWorkspaceAnswerSurface: View {
     @State private var isMessageNearBottom = true
     @State private var isComposerContextExpanded = false
     @State private var isConversationSkeletonHandoffVisible = false
+    @State private var deepThinkingToastMessage: String?
 
     private static let messageNearBottomThreshold: CGFloat = 64
     private static let conversationSkeletonFadeDuration: TimeInterval = 0.16
@@ -77,6 +78,12 @@ struct RAGWorkspaceAnswerSurface: View {
                         .zIndex(1)
                 }
             }
+            .toast(
+                message: $deepThinkingToastMessage,
+                icon: "info.circle.fill",
+                duration: 3.0,
+                iconColor: Color.secondary
+            )
             Divider()
             commandComposer
         }
@@ -754,6 +761,10 @@ struct RAGWorkspaceAnswerSurface: View {
                     // 深度思考严格位于联网之后、发送之前。它只读取唯一显式项目的
                     // RepoContext；附件数量不参与门禁，避免把材料数量误当成项目范围。
                     Button {
+                        guard viewModel.canEnableDeepThinking else {
+                            deepThinkingToastMessage = "rag.workspace.composer.deepThinking.singleRepoRequired"
+                            return
+                        }
                         viewModel.deepThinkingEnabled.toggle()
                     } label: {
                         Image(systemName: "brain.head.profile")
@@ -767,7 +778,10 @@ struct RAGWorkspaceAnswerSurface: View {
                     }
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
-                    .disabled(viewModel.isAnswering || !viewModel.canEnableDeepThinking)
+                    // 范围不满足时只保留置灰视觉，不能使用 `.disabled` 拦截点击，
+                    // 否则首次使用者无法通过 Toast 理解“仅支持单仓库”的约束。
+                    .opacity(viewModel.canEnableDeepThinking ? 1 : 0.45)
+                    .disabled(viewModel.isAnswering)
                     .help(!viewModel.canEnableDeepThinking
                           ? "rag.workspace.composer.deepThinking.singleRepoRequired"
                           : (viewModel.deepThinkingEnabled
