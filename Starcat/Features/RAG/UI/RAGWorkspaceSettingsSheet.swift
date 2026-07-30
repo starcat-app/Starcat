@@ -1411,7 +1411,9 @@ private struct RAGDefaultPromptPopover: View {
                     tooltip: copyTooltip
                 ) { didCopy in
                     Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
-                        .font(interfaceScale.font(size: 15, weight: .medium))
+                        // 默认 Prompt 弹层的标题行比标准设置行更紧凑；glyph 主动降到
+                        // 11pt，仍保留 28pt 命中区，避免图标压过 Section 标题。
+                        .font(interfaceScale.font(size: 11, weight: .medium))
                         .foregroundStyle(didCopy ? Color.green : Color.secondary)
                         .frame(
                             width: interfaceScale.scaled(28),
