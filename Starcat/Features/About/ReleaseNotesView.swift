@@ -7,14 +7,13 @@
 //  关键约束：
 //  - 文案单一来源仍是 Keep a Changelog 风格 Markdown，不另维护一份 UI 文案。
 //  - `###` 小节解析成带 SF Symbol 的分区；条目尽量拆成「短标题 + 说明」。
-//  - 条目下的 `![alt](https://...)` 会剥离出远程截图，用 Kingfisher 单独渲染（WebP 由系统 ImageIO 解码）。
-//  - ScrollView 内截图必须带明确宽高比，否则加载成功后可能高度塌成 0。
+//  - 条目下的 `![alt](https://...)` 会剥离出远程截图，用 URLSession + NSImage 渲染（WebP 由系统 ImageIO 解码）。
+//  - 不用 KFImage：ScrollView 内 onSuccess 写 State 会取消请求并被当成 failure，表现为「完全没图」。
 //  - 条目正文里的 `[文字](https://...)` 走 AttributedString 内联解析，保留可点击链接。
 //  - 无法结构化时回退 MarkdownUI，避免旧版 / 异常 changelog 空白。
 //
 
 import AppKit
-import Kingfisher
 import MarkdownUI
 import SwiftUI
 
@@ -353,44 +352,38 @@ enum ReleaseNotesInlineMarkdown {
     }
 }
 
-/// Changelog 截图：Kingfisher 加载 CDN 远程图。
+/// Changelog 截图：用 URLSession + NSImage 加载 CDN 图。
 ///
-/// ScrollView 里若只靠 `resizable + aspectRatio(.fit)`、不给定宽高比，成功加载后
-/// ideal height 可能变成 0（看起来像「完全没图」）。因此用 onSuccess 写入真实宽高比，
-/// 占位阶段也先占住一块可见区域。
+/// 不用 KFImage：在 ScrollView 里 `onSuccess` 写 `@State` 会重建视图，Kingfisher 把
+/// 取消当成 failure，随后只剩几乎融进卡片背景的占位，看起来像「完全没图」。
+/// WebP 由系统 ImageIO 解码（macOS 11+），`NSImage(data:)` 已验证可用。
 private struct ReleaseNotesRemoteImage: View {
     let image: ChangelogImage
+    @State private var loadedImage: NSImage?
     @State private var loadFailed = false
-    /// width / height；未知时用常见截图比例，避免布局塌缩。
-    @State private var aspectRatio: CGFloat = 16.0 / 10.0
 
     var body: some View {
         Group {
-            if loadFailed {
-                placeholder
-            } else {
-                KFImage(image.url)
-                    .placeholder { placeholder }
-                    .onSuccess { result in
-                        let size = result.image.size
-                        guard size.width > 0, size.height > 0 else { return }
-                        aspectRatio = size.width / size.height
-                    }
-                    .onFailure { _ in
-                        loadFailed = true
-                    }
-                    .fade(duration: 0.15)
+            if let loadedImage {
+                Image(nsImage: loadedImage)
                     .resizable()
-                    .aspectRatio(aspectRatio, contentMode: .fit)
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity)
+            } else if loadFailed {
+                placeholder(systemName: "exclamationmark.triangle")
+            } else {
+                placeholder(systemName: "photo")
+                    .overlay { ProgressView().controlSize(.small) }
             }
         }
         .frame(maxWidth: .infinity)
+        .frame(minHeight: 140)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color(nsColor: .separatorColor).opacity(0.55), lineWidth: 1)
-        }
         .accessibilityLabel(accessibilityLabel)
+        .task(id: image.url.absoluteString) {
+            await loadImage()
+        }
     }
 
     private var accessibilityLabel: Text {
@@ -401,17 +394,41 @@ private struct ReleaseNotesRemoteImage: View {
         return Text(verbatim: trimmed)
     }
 
-    private var placeholder: some View {
+    private func placeholder(systemName: String) -> some View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
             .fill(Color(nsColor: .controlBackgroundColor))
-            .aspectRatio(aspectRatio, contentMode: .fit)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, minHeight: 140)
             .overlay {
                 // 故意弱化：截图加载中 / 失败时的装饰占位，非可读正文。
-                Image(systemName: "photo")
+                Image(systemName: systemName)
                     .font(.system(size: 20, weight: .medium))
                     .foregroundStyle(.tertiary)
             }
+    }
+
+    @MainActor
+    private func loadImage() async {
+        loadFailed = false
+        loadedImage = nil
+        do {
+            let (data, response) = try await URLSession.shared.data(from: image.url)
+            if Task.isCancelled { return }
+            if let http = response as? HTTPURLResponse,
+               (200..<300).contains(http.statusCode) == false {
+                loadFailed = true
+                return
+            }
+            guard let nsImage = NSImage(data: data), nsImage.size.width > 0 else {
+                loadFailed = true
+                return
+            }
+            loadedImage = nsImage
+        } catch is CancellationError {
+            // 视图重建时的正常取消，不当成失败。
+        } catch {
+            if Task.isCancelled { return }
+            loadFailed = true
+        }
     }
 }
 
@@ -656,7 +673,7 @@ enum ChangelogParser {
 
     /// 从一条 bullet（含续行）抽出 `![alt](url)`，正文里不再残留图片语法。
     ///
-    /// 只保留 http(s) CDN URL（含 WebP；由系统 ImageIO / Kingfisher 解码）。
+    /// 只保留 http(s) CDN URL（含 WebP；由系统 ImageIO / NSImage 解码）。
     /// 相对路径 / 其它 scheme 丢弃，避免误加载。
     static func extractMarkdownImages(from raw: String) -> (text: String, images: [ChangelogImage]) {
         guard raw.contains("![") else {
