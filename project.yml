@@ -97,6 +97,9 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.store
         CODE_SIGN_ENTITLEMENTS: Starcat/Starcat.entitlements
+        # macOS 的 group.* App Group 需要 Xcode 自动注册并维护对应签名资源。
+        # 固化在 target 上，保证 Xcode Run 与命令行构建行为一致。
+        REGISTER_APP_GROUPS: YES
         INFOPLIST_KEY_CFBundleURLTypes: ""  # 由 entitlements + plist 增量在 info 段定义
       configs:
         Debug:
@@ -212,6 +215,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.direct
         PRODUCT_NAME: Starcat
         CODE_SIGN_ENTITLEMENTS: Starcat/StarcatDirect.entitlements
+        REGISTER_APP_GROUPS: YES
         STARCAT_DISTRIBUTION: direct
         INFOPLIST_KEY_CFBundleURLTypes: ""
       configs:
@@ -310,10 +314,16 @@ targets:
       - path: Starcat/Core/Widget/Shared
       - path: Starcat/Resources/Localizable.xcstrings
         buildPhase: resources
+    # Extension 必须复用宿主的本地签名 Team；否则宿主可以签名而 Widget
+    # 会在 Xcode Run 阶段因缺少 development certificate 单独失败。
+    configFiles:
+      Debug: Configs/Build.xcconfig
+      Release: Configs/Build.xcconfig
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.store.widgets
         CODE_SIGN_ENTITLEMENTS: Starcat/Resources/Widget/StarcatWidgets.entitlements
+        REGISTER_APP_GROUPS: YES
         APPLICATION_EXTENSION_API_ONLY: YES
         SKIP_INSTALL: YES
         INFOPLIST_KEY_CFBundleDisplayName: Starcat Widgets
@@ -332,10 +342,14 @@ targets:
       - path: Starcat/Core/Widget/Shared
       - path: Starcat/Resources/Localizable.xcstrings
         buildPhase: resources
+    configFiles:
+      Debug: Configs/Build.xcconfig
+      Release: Configs/Build.xcconfig
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.direct.widgets
         CODE_SIGN_ENTITLEMENTS: Starcat/Resources/Widget/StarcatDirectWidgets.entitlements
+        REGISTER_APP_GROUPS: YES
         APPLICATION_EXTENSION_API_ONLY: YES
         SKIP_INSTALL: YES
         INFOPLIST_KEY_CFBundleDisplayName: Starcat Widgets
