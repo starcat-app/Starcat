@@ -451208,6 +451208,24 @@
         }
       }
     },
+    "widget.releaseWatch.unreadShort %lld" : {
+      "comment" : "Compact unread Release count shown in the Widget header.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld unread"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 未读"
+          }
+        }
+      }
+    },
     "wiki.menu.help" : {
       "localizations" : {
         "ar" : {

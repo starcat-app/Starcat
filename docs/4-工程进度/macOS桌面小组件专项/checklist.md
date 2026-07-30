@@ -199,8 +199,10 @@
   - 证据：中文“置顶 / 使用中”；`focusAccessibilityLabel` 继续包含来源状态
 - [x] 今日重逢 Medium 使用 Header + 内容行并减少无效留白
   - 证据：`StarcatRediscoveryWidgetView.mediumContent` 顶部对齐 Header，内容行增加点击指示
-- [ ] Release Watch 未读总数改为明确本地化短文案
-- [ ] Release Watch 相对时间使用紧凑单单位表达
+- [x] Release Watch 未读总数改为明确本地化短文案
+  - 证据：`widget.releaseWatch.unreadShort %lld` 显示“%lld 未读 / %lld unread”
+- [x] Release Watch 相对时间使用紧凑单单位表达
+  - 证据：`Date.RelativeFormatStyle` 使用 `.numeric` + `.abbreviated`
 - [ ] Widget 文本和图标继续只使用 `.primary` / `.secondary`
 - [ ] Widget 定向测试、Store Debug、Direct Debug 构建通过
 - [ ] 优化后所有声明尺寸完成真实桌面复验
