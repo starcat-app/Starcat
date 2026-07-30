@@ -118,6 +118,8 @@ private enum RAGPromptEditorTab: String, CaseIterable, Identifiable {
                 .init(token: "{pastedGitHubLinks}", systemImage: "link", meaningKey: "rag.workspace.prompt.placeholder.pastedGitHubLinks"),
                 .init(token: "{previousUserQuestion}", systemImage: "arrow.uturn.backward", meaningKey: "rag.workspace.prompt.placeholder.previousUserQuestion"),
                 .init(token: "{previousReferencedRepositories}", systemImage: "clock.arrow.circlepath", meaningKey: "rag.workspace.prompt.placeholder.previousReferencedRepositories"),
+                .init(token: "{webSearchEnabled}", systemImage: "network", meaningKey: "rag.workspace.prompt.placeholder.webSearchEnabled"),
+                .init(token: "{deepThinkingEnabled}", systemImage: "brain.head.profile", meaningKey: "rag.workspace.prompt.placeholder.deepThinkingEnabled"),
             ]
         case .compressor:
             return [
@@ -130,6 +132,15 @@ private enum RAGPromptEditorTab: String, CaseIterable, Identifiable {
                 .init(token: "{outputLanguage}", systemImage: "globe", meaningKey: "rag.workspace.prompt.placeholder.outputLanguageTitle"),
                 .init(token: "{firstQuestion}", systemImage: "text.bubble", meaningKey: "rag.workspace.prompt.placeholder.firstQuestion"),
             ]
+        }
+    }
+
+    var defaultConfiguration: AIPromptConfiguration {
+        switch self {
+        case .generator: return RAGDefaultPrompts.generator
+        case .planner: return RAGDefaultPrompts.planner
+        case .compressor: return RAGDefaultPrompts.compressor
+        case .title: return RAGDefaultPrompts.title
         }
     }
 }
@@ -409,6 +420,8 @@ struct RAGWorkspaceSettingsSheet: View {
                         )
                         .accessibilityLabel("rag.workspace.prompt.title")
 
+                        promptCompatibilityBadge
+
                         ResetIconButton(
                             help: Text("rag.workspace.prompt.restoreHelp")
                         ) {
@@ -429,10 +442,15 @@ struct RAGWorkspaceSettingsSheet: View {
                     titleKey: "rag.workspace.prompt.user",
                     systemImage: "text.bubble"
                 ) {
-                    promptEditor(
-                        text: userBinding,
-                        minHeight: interfaceScale.scaled(108)
-                    )
+                    VStack(alignment: .leading, spacing: interfaceScale.scaled(8)) {
+                        promptEditor(
+                            text: userBinding,
+                            minHeight: interfaceScale.scaled(108)
+                        )
+                        if promptCompatibility.state == .limited {
+                            promptCompatibilityNotice
+                        }
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1126,6 +1144,126 @@ struct RAGWorkspaceSettingsSheet: View {
                 }
             }
         )
+    }
+
+    private var currentPromptConfiguration: AIPromptConfiguration {
+        switch tab {
+        case .generator: return draft.generator
+        case .planner: return draft.planner
+        case .compressor: return draft.compressor
+        case .title: return draft.title
+        }
+    }
+
+    private var promptCompatibility: RAGPromptCompatibility {
+        RAGPromptCompatibilityAnalyzer.analyze(
+            current: currentPromptConfiguration,
+            reference: tab.defaultConfiguration
+        )
+    }
+
+    /// 仅表达当前编辑页的真实状态；“已自定义”不是错误，只有缺失占位符才使用警告色。
+    private var promptCompatibilityBadge: some View {
+        let compatibility = promptCompatibility
+        let isLimited = compatibility.state == .limited
+        return HStack(spacing: interfaceScale.scaled(5)) {
+            Image(systemName: isLimited ? "exclamationmark.triangle.fill" : "checkmark.circle")
+                .font(interfaceScale.font(size: 10, weight: .semibold))
+                .accessibilityHidden(true)
+            Text(promptCompatibilityStatusKey(compatibility.state))
+                .font(ragFont(.caption, scale: interfaceScale, weight: .medium))
+                .lineLimit(1)
+        }
+        .foregroundStyle(isLimited ? Color.orange : Color.secondary)
+        .padding(.horizontal, interfaceScale.scaled(8))
+        .frame(minWidth: interfaceScale.scaled(76), minHeight: interfaceScale.scaled(24))
+        .background(
+            (isLimited ? Color.orange : Color.secondary).opacity(isLimited ? 0.12 : 0.08),
+            in: Capsule()
+        )
+        .accessibilityElement(children: .combine)
+    }
+
+    /// 缺失占位符紧邻 User Prompt 展示，用户无需等到问答降级后再去 Debug 反推原因。
+    private var promptCompatibilityNotice: some View {
+        let compatibility = promptCompatibility
+        let missing = compatibility.missingPlaceholders
+        return VStack(alignment: .leading, spacing: interfaceScale.scaled(6)) {
+            HStack(alignment: .firstTextBaseline, spacing: interfaceScale.scaled(6)) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(interfaceScale.font(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.orange)
+                    .accessibilityHidden(true)
+                Text(
+                    String(
+                        format: String.l10n("rag.workspace.prompt.compatibility.messageFormat"),
+                        missing.count
+                    )
+                )
+                .font(ragFont(.caption, scale: interfaceScale, weight: .medium))
+                .foregroundStyle(.primary)
+            }
+
+            Text(missing.joined(separator: "  "))
+                .font(interfaceScale.font(.code))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if missing.contains("{repositoryInsightsSection}") {
+                Text("rag.workspace.prompt.compatibility.repositoryInsights")
+                    .font(ragFont(.caption, scale: interfaceScale))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: interfaceScale.scaled(8)) {
+                Spacer()
+                Button("rag.workspace.prompt.compatibility.repair") {
+                    repairCurrentTab()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+
+                Button("rag.workspace.prompt.compatibility.restore") {
+                    restoreCurrentTab()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+            }
+        }
+        .padding(interfaceScale.scaled(10))
+        .background(
+            Color.orange.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(Color.orange.opacity(0.28), lineWidth: 0.5)
+        )
+    }
+
+    private func promptCompatibilityStatusKey(
+        _ state: RAGPromptCompatibilityState
+    ) -> LocalizedStringKey {
+        switch state {
+        case .defaultValue: return "rag.workspace.prompt.compatibility.default"
+        case .customized: return "rag.workspace.prompt.compatibility.customized"
+        case .limited: return "rag.workspace.prompt.compatibility.limited"
+        }
+    }
+
+    private func repairCurrentTab() {
+        let repaired = RAGPromptCompatibilityAnalyzer.repairing(
+            current: currentPromptConfiguration,
+            reference: tab.defaultConfiguration
+        )
+        switch tab {
+        case .generator: draft.generator = repaired
+        case .planner: draft.planner = repaired
+        case .compressor: draft.compressor = repaired
+        case .title: draft.title = repaired
+        }
     }
 
     private func restoreCurrentTab() {

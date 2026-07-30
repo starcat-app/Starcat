@@ -226806,6 +226806,159 @@
         }
       }
     },
+    "rag.workspace.prompt.compatibility.customized" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Customized"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已自定义"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.compatibility.default" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Default"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "默认"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.compatibility.limited" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limited"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "能力受限"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.compatibility.messageFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This custom prompt is missing %lld current placeholder(s). Related context will not be sent to the model."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前自定义提示词缺少 %lld 个新版占位符，相关上下文不会发送给模型。"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.compatibility.repair" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Missing Items"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "补齐缺失项"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.compatibility.repositoryInsights" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repository insights will still be generated, but they will not be included in RAG prompts."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仓库洞察仍会生成，但不会注入 RAG 提示词。"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.compatibility.restore" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore This Tab"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢复此页默认"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholder.deepThinkingEnabled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Whether deep thinking with RepoContext is enabled for this turn"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本轮是否启用基于 RepoContext 的深度思考"
+          }
+        }
+      }
+    },
+    "rag.workspace.prompt.placeholder.webSearchEnabled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Whether public web search is enabled for this turn"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本轮是否启用公开网络搜索"
+          }
+        }
+      }
+    },
     "rag.workspace.prompt.placeholder.attachmentDescriptors" : {
       "extractionState" : "manual",
       "localizations" : {
