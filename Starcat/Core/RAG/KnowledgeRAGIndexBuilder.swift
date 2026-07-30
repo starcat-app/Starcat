@@ -710,10 +710,10 @@ final class KnowledgeRAGIndexBuilder {
     }
 
     private func embedPendingChunks(recordsRefreshSummary: Bool = false) async throws {
-        let resolvedModel = resolvedEmbeddingModel()
+        let embeddingRuntime = try? makeEmbeddingClient()
         // 文本分片一旦写入 rag_chunks 就已可被 FTS 检索。Embedding 配置缺失或失效时，
         // 将本轮作为关键词索引成功收口，不能把已经可用的本地知识误报成构建失败。
-        guard !resolvedModel.isEmpty, settings.embeddingConfigurationIssue == nil else {
+        guard let (client, model) = embeddingRuntime else {
             let total = try await chunkRepository.countChunksNeedingEmbedding()
             let coverage = try await chunkRepository.coverage(model: "")
             if recordsRefreshSummary {
@@ -733,17 +733,17 @@ final class KnowledgeRAGIndexBuilder {
             return
         }
 
-        // 模型切换不依赖 API key：确认当前配置可用后，再把旧模型向量标 stale。
-        // 缺少配置的关键词模式必须保留旧向量状态，便于用户恢复配置后继续增量处理。
-        try await chunkRepository.markStaleForOtherModels(currentModel: resolvedModel)
+        // 确认当前 Embedding 客户端可用后，再把旧模型向量标 stale。关键词模式必须保留
+        // 旧向量状态，便于用户补齐配置后继续增量处理，不能先把可恢复缓存整体标脏。
+        try await chunkRepository.markStaleForOtherModels(currentModel: model)
         var processed = 0
         // 总数只用 COUNT 查询获取；正文与 embedding 列始终按 batch size 读取，
         // 避免大库在一轮索引开始时就把全部 chunk 驻留内存。
         let total = try await chunkRepository.countChunksNeedingEmbedding()
         // Metadata-only 更新不能要求用户配置 embedding API；它只需刷新本地 FTS / 可选关键词后端。
         guard total > 0 else {
-            try await syncExternalBackends(model: resolvedModel)
-            let coverage = try await chunkRepository.coverage(model: resolvedModel)
+            try await syncExternalBackends(model: model)
+            let coverage = try await chunkRepository.coverage(model: model)
             status = .completed(coverage)
             if recordsRefreshSummary {
                 await markRefreshSummaryCompleted(at: Date())
@@ -751,8 +751,6 @@ final class KnowledgeRAGIndexBuilder {
             NotificationCenter.default.post(name: .knowledgeRAGIndexDidChange, object: nil)
             return
         }
-
-        let (client, model) = try makeEmbeddingClient()
 
         if recordsRefreshSummary {
             let coverage = try await chunkRepository.coverage(model: model)
