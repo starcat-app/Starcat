@@ -20,6 +20,7 @@ struct RAGWorkspaceAnswerSurface: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.ragSettingsNavigation) private var settingsNavigation
     @Environment(AppSettings.self) private var settings
     @Environment(AuthSession.self) private var authSession
 
@@ -659,6 +660,11 @@ struct RAGWorkspaceAnswerSurface: View {
                     .padding(.horizontal, 16)
             }
 
+            if viewModel.embeddingConfigurationIssue != nil {
+                keywordOnlyModeNotice
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+
             if let reason = viewModel.composerBlockingReason {
                 Label(reason, systemImage: "exclamationmark.triangle.fill")
                     .font(ragFont(.caption))
@@ -802,12 +808,51 @@ struct RAGWorkspaceAnswerSurface: View {
             .padding(.horizontal, 16)
         }
         .padding(.vertical, 12)
+        .animation(
+            reduceMotion ? nil : .easeInOut(duration: 0.16),
+            value: viewModel.embeddingConfigurationIssue != nil
+        )
         .onChange(of: composerContextItemCount) { _, itemCount in
             // 清空上下文后恢复默认折叠态；下次重新选择大量仓库时不会继承旧展开状态。
             if itemCount == 0 {
                 isComposerContextExpanded = false
             }
         }
+    }
+
+    /// 未配置可用 Embedding 时只提示当前为关键词模式，不阻塞提问。
+    ///
+    /// 关键词 FTS、元数据、笔记及仓库特殊 XML 上下文仍可正常参与回答；这里保留配置入口，
+    /// 让用户按需开启语义召回，而不是把向量模型误做成 RAG 的硬前置条件。
+    var keywordOnlyModeNotice: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "text.magnifyingglass")
+                .font(iconFont(size: 12, weight: .medium))
+                .foregroundStyle(Color.accentColor)
+
+            Text("rag.browser.status.keywordOnly")
+                .font(ragFont(.caption, weight: .semibold))
+                .foregroundStyle(.primary)
+
+            if let issue = viewModel.embeddingConfigurationIssue {
+                Text(issue.localizedDescription)
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            Button("rag.workspace.index.embeddingModel.configure") {
+                settingsNavigation("ai.embedding")
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .font(ragFont(.caption, weight: .semibold))
+            .foregroundStyle(Color.accentColor)
+            .help("rag.workspace.index.embeddingModel.configure")
+        }
+        .padding(.horizontal, 16)
     }
 
     /// 单行 chip 的可用高度上限。留出少量字体缩放余量，但仍显著小于两行 chip
