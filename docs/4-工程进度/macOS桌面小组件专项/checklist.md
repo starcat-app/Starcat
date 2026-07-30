@@ -245,6 +245,10 @@
 - [x] 新增 `StarcatWidget-CollectionTrend` 独立调试 Scheme
 - [x] 趋势投影、快照兼容与 Deep Link 单元测试通过
 - [x] Store / Direct Widget 构建通过
+- [x] 头像补全后保留 `collectionTrend` 非头像投影
+  - 证据：commit `de47ab1`；`WidgetAvatarCacheTests` 覆盖趋势透传
+- [x] Direct ready 快照真实落盘收藏趋势
+  - 证据：2026-07-30 18:20:26 的 schema v2 快照包含 12 周趋势与状态分布
 - [ ] Small / Medium / Large 完成真实桌面复验
 
 ---
@@ -330,6 +334,8 @@
   - 证据：commit `7f45d54`，收藏趋势增量第一轮 Clean
 - [x] 第九轮最终复审无新增 P0 / P1 / P2
   - 证据：commit `1270578`，收藏趋势增量第二轮连续 Clean
+- [x] 第十轮真实桌面空态根因已修复并完成运行时复审
+  - 证据：commit `4b5d880`；Direct App Group 快照包含 `collectionTrend`
 - [ ] 所有 checklist 项均有真实证据
 - [ ] 新增并提交最终结果报告
 - [x] 最终分支无未提交改动
@@ -395,6 +401,8 @@
 | `7f45d54` | 审查 | 新增第八轮收藏趋势复审报告 | 双渠道重新构建 + 第一轮 Clean |
 | `87963a7` | 文档 | 回填收藏趋势复审进度 | `git diff --check` |
 | `1270578` | 审查 | 新增第九轮收藏趋势复审报告 | 第二轮连续 Clean |
+| `de47ab1` | 修复 | 保留头像补全后的趋势数据 | 25 项 Widget 定向测试 + 双渠道构建 |
+| `4b5d880` | 审查 | 记录收藏趋势运行时修复 | Direct ready 快照真实落盘趋势 |
 
 审查时继续以 `git log --reverse aa135b7e..HEAD -- <Widget 相关路径>` 反向核对；本表在
 每轮审查后补齐新增提交。
