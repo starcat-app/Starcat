@@ -191,9 +191,12 @@
 - [x] 基于 Direct Debug 真实桌面截图记录尺寸适配与信息层级问题
   - 证据：2026-07-30 首次桌面验收截图；Focus Large 顶部 / 末行拥挤、今日重逢留白过大、
     Release Watch 未读计数语义不明确
-- [ ] 新增共享 Widget Header，统一标题、过期状态与右侧摘要
-- [ ] Focus Medium / Large 在 3 / 6 条真实数据下无裁切
-- [ ] Focus 来源状态使用紧凑文案且保留 VoiceOver 语义
+- [x] 新增共享 Widget Header，统一标题、过期状态与右侧摘要
+  - 证据：`StarcatWidgetHeader`；Focus 已接入，另外两个 Widget 在各自增量中接入
+- [x] Focus Medium / Large 使用独立行密度，分别承载 3 / 6 条数据
+  - 证据：`StarcatFocusWidgetView.repositoryList` 按 family 选择标准 / 紧凑行
+- [x] Focus 来源状态使用紧凑文案且保留 VoiceOver 语义
+  - 证据：中文“置顶 / 使用中”；`focusAccessibilityLabel` 继续包含来源状态
 - [ ] 今日重逢 Medium 使用 Header + 内容行并减少无效留白
 - [ ] Release Watch 未读总数改为明确本地化短文案
 - [ ] Release Watch 相对时间使用紧凑单单位表达

@@ -450926,7 +450926,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已置顶"
+            "value" : "置顶"
           }
         }
       }
@@ -450960,7 +450960,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在使用"
+            "value" : "使用中"
           }
         }
       }

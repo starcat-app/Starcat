@@ -8,6 +8,60 @@
 import AppKit
 import SwiftUI
 
+/// 三类 Widget 共用的紧凑 Header。
+///
+/// 标题、过期提示和右侧摘要使用同一套基线，避免每个 Widget 单独拼装后产生字号与
+/// 间距漂移；业务含义仍由调用方通过 `trailing` 提供，不在共享组件中猜测。
+struct StarcatWidgetHeader<Trailing: View>: View {
+    let titleKey: LocalizedStringKey
+    let systemImage: String
+    let isStale: Bool
+    private let trailing: Trailing
+
+    init(
+        _ titleKey: LocalizedStringKey,
+        systemImage: String,
+        isStale: Bool,
+        @ViewBuilder trailing: () -> Trailing
+    ) {
+        self.titleKey = titleKey
+        self.systemImage = systemImage
+        self.isStale = isStale
+        self.trailing = trailing()
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Label(titleKey, systemImage: systemImage)
+                .font(.headline)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            trailing
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            if isStale {
+                Image(systemName: "clock.badge.exclamationmark")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(Text("widget.common.stale"))
+            }
+        }
+    }
+}
+
+extension StarcatWidgetHeader where Trailing == EmptyView {
+    init(
+        _ titleKey: LocalizedStringKey,
+        systemImage: String,
+        isStale: Bool
+    ) {
+        self.init(titleKey, systemImage: systemImage, isStale: isStale) {
+            EmptyView()
+        }
+    }
+}
+
 struct StarcatWidgetAvatar: View {
     let fileName: String?
     var size: CGFloat = 30

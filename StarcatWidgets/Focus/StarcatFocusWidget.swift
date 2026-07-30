@@ -107,9 +107,9 @@ struct StarcatFocusWidgetView: View {
         case .systemSmall:
             smallContent(repository: entry.repositories[0])
         case .systemMedium:
-            repositoryList(limit: 3, showsDescription: false)
+            repositoryList(limit: 3, showsDescription: false, usesCompactRows: false)
         default:
-            repositoryList(limit: 6, showsDescription: true)
+            repositoryList(limit: 6, showsDescription: true, usesCompactRows: true)
         }
     }
 
@@ -151,21 +151,18 @@ struct StarcatFocusWidgetView: View {
         .accessibilityHint(Text("widget.common.openRepository"))
     }
 
-    private func repositoryList(limit: Int, showsDescription: Bool) -> some View {
+    private func repositoryList(
+        limit: Int,
+        showsDescription: Bool,
+        usesCompactRows: Bool
+    ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Label("widget.focus.title", systemImage: "pin.fill")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                Spacer()
-                if entry.base.isStale {
-                    Image(systemName: "clock.badge.exclamationmark")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel(Text("widget.common.stale"))
-                }
-            }
-            .padding(.bottom, 6)
+            StarcatWidgetHeader(
+                "widget.focus.title",
+                systemImage: "pin.fill",
+                isStale: entry.base.isStale
+            )
+            .padding(.bottom, usesCompactRows ? 4 : 6)
 
             // Gallery 占位数据会复用同一个仓库填满列表；使用当前 Timeline 内唯一的
             // 行位置作为视图身份，避免重复 repo ID 触发 SwiftUI 未定义 diff 行为。
@@ -175,7 +172,8 @@ struct StarcatFocusWidgetView: View {
                 Link(destination: repository.openURL) {
                     StarcatFocusRepositoryRow(
                         repository: repository,
-                        showsDescription: showsDescription
+                        showsDescription: showsDescription,
+                        usesCompactLayout: usesCompactRows
                     )
                 }
                 .buttonStyle(.plain)
@@ -191,18 +189,26 @@ struct StarcatFocusWidgetView: View {
 private struct StarcatFocusRepositoryRow: View {
     let repository: WidgetRepository
     let showsDescription: Bool
+    let usesCompactLayout: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
-            StarcatWidgetAvatar(fileName: repository.avatarFileName)
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: usesCompactLayout ? 7 : 8) {
+            StarcatWidgetAvatar(
+                fileName: repository.avatarFileName,
+                size: usesCompactLayout ? 28 : 30
+            )
+            VStack(alignment: .leading, spacing: usesCompactLayout ? 1 : 2) {
                 Text(verbatim: "\(repository.owner)/\(repository.name)")
-                    .font(.subheadline.weight(.semibold))
+                    .font(
+                        usesCompactLayout
+                            ? .caption.weight(.semibold)
+                            : .subheadline.weight(.semibold)
+                    )
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 if showsDescription, let description = repository.description {
                     Text(verbatim: description)
-                        .font(.caption)
+                        .font(usesCompactLayout ? .caption2 : .caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -221,7 +227,7 @@ private struct StarcatFocusRepositoryRow: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, usesCompactLayout ? 2 : 5)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(repository.focusAccessibilityLabel)
