@@ -249,6 +249,7 @@ struct RAGChunkRepositoryTests {
         #expect(chunk.embedding == nil)
         #expect(try await repository.fetchChunksNeedingEmbedding(limit: 10).isEmpty)
         #expect(try await repository.hasReadyChunks(model: "embed-v1", repoIDs: [43]))
+        #expect(!(try await repository.hasReadyVectorChunks(model: "embed-v1", repoIDs: [43])))
 
         let keywordHits = try await repository.keywordSearch(
             query: RAGKeywordQueryBuilder.build(
@@ -423,6 +424,7 @@ struct RAGChunkRepositoryTests {
         )
 
         #expect(try await repository.hasReadyChunks(model: "embed-v1", repoIDs: [14]))
+        #expect(try await repository.hasReadyVectorChunks(model: "embed-v1", repoIDs: [14]))
         #expect(!(try await repository.hasReadyChunks(model: "embed-v2", repoIDs: [14])))
         #expect(!(try await repository.hasReadyChunks(model: "embed-v1", repoIDs: [15])))
     }

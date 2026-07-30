@@ -501,6 +501,14 @@ struct KnowledgeRAGRetriever: Sendable {
             return .init(hits: [])
         }
         do {
+            let repoIDs = publicRepoIDs + privateRepoIDs
+            // 即使配置了 Embedding，只要候选范围没有当前模型向量，就不发起无意义的网络请求。
+            guard try await chunkRepository.hasReadyVectorChunks(
+                model: embeddingModel,
+                repoIDs: repoIDs
+            ) else {
+                return .init(hits: [])
+            }
             let queryVector = try await embeddingClient.embedding(input: query, model: embeddingModel)
             return .init(hits: try await vectorHits(
                 queryVector: queryVector,

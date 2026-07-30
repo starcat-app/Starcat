@@ -3302,9 +3302,7 @@ struct KnowledgeRAGCoreTests {
             retriever: KnowledgeRAGRetriever(
                 chunkRepository: chunks,
                 keywordProvider: SQLiteRAGKeywordSearchProvider(repository: chunks),
-                vectorProvider: SQLiteRAGVectorSearchProvider(repository: chunks),
-                embeddingClient: spy,
-                embeddingModel: "embed"
+                vectorProvider: SQLiteRAGVectorSearchProvider(repository: chunks)
             ),
             attachmentProcessor: FixedAttachmentProcessor(contexts: attachmentContexts),
             repositoryInsightsProvider: provider,
