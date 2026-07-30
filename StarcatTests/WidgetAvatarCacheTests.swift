@@ -29,12 +29,27 @@ struct WidgetAvatarCacheTests {
         #expect(!hostile.contains(".."))
     }
 
-    @Test("缓存命中会为同 owner 的仓库与 Release 复用相对文件名")
+    @Test("缓存命中会复用相对文件名并保留非头像投影")
     func enrichesSnapshotFromExistingCache() async throws {
         try await withTemporaryDirectory { directory in
             let cache = WidgetAvatarCache(containerURL: directory)
             let owner = "swiftlang"
             let fileName = WidgetAvatarCache.fileName(owner: owner)
+            let collectionTrend = WidgetCollectionTrend(
+                totalCount: 12,
+                addedInLast30DaysCount: 3,
+                weeklyPoints: [
+                    WidgetCollectionTrendPoint(
+                        weekStart: Date(timeIntervalSince1970: 0),
+                        count: 3
+                    )
+                ],
+                statusBreakdown: WidgetCollectionStatusBreakdown(
+                    unreadCount: 4,
+                    readCount: 5,
+                    usingCount: 3
+                )
+            )
             let avatarDirectory = WidgetSharedConfiguration.avatarsDirectoryURL(
                 containerURL: directory
             )
@@ -50,12 +65,14 @@ struct WidgetAvatarCacheTests {
                 accountState: .ready,
                 focusRepositories: [makeRepository(owner: owner)],
                 unreadReleaseCount: 1,
-                unreadReleases: [makeRelease(owner: owner)]
+                unreadReleases: [makeRelease(owner: owner)],
+                collectionTrend: collectionTrend
             )
             let enriched = await cache.enrich(snapshot)
 
             #expect(enriched.focusRepositories.first?.avatarFileName == fileName)
             #expect(enriched.unreadReleases.first?.avatarFileName == fileName)
+            #expect(enriched.collectionTrend == collectionTrend)
         }
     }
 
