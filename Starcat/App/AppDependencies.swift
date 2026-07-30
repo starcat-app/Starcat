@@ -509,27 +509,37 @@ final class AppDependencies {
         // 因此必须在装配边界再校验一次，避免未来新增调用方绕过 ViewModel 门禁。
         try entitlementGate.requirePro(.knowledgeRAG)
         let chatSelection = try resolveRAGChatSelection(selectedModelID: selectedModelID)
-        let embeddingSelection = try settings.resolveEmbeddingSelection()
+        // Embedding 是混合召回增强项。配置缺失或失效时仍构建关键词模式 runtime，
+        // 不能让本地 FTS、结构化分析和特殊 XML 上下文一起被阻断。
+        let embeddingSelection = try? settings.resolveEmbeddingSelection()
         let chatClient = try makeRAGClient(
             profile: chatSelection.profile,
             chatModel: chatSelection.modelName,
-            embeddingModel: embeddingSelection.modelName,
+            embeddingModel: embeddingSelection?.modelName ?? chatSelection.modelName,
             timeout: chatSelection.parameters.timeoutSeconds,
             missingAPIKeyError: AIClientError.missingAPIKey,
             usageContext: AIUsageContext(feature: .rag, phase: "shared_chat")
         )
-        let embeddingClient = try makeRAGClient(
-            profile: embeddingSelection.profile,
-            chatModel: chatSelection.modelName,
-            embeddingModel: embeddingSelection.modelName,
-            timeout: embeddingSelection.parameters.timeoutSeconds,
-            missingAPIKeyError: AIEmbeddingError.missingAPIKey,
-            usageContext: AIUsageContext(feature: .rag, phase: "query_embedding")
-        )
+        let embeddingClient: (any AIClientProtocol)?
+        if let embeddingSelection {
+            // Provider / Keychain 异常同样只关闭向量分支；设置页仍负责展示具体配置问题。
+            embeddingClient = try? makeRAGClient(
+                profile: embeddingSelection.profile,
+                chatModel: chatSelection.modelName,
+                embeddingModel: embeddingSelection.modelName,
+                timeout: embeddingSelection.parameters.timeoutSeconds,
+                missingAPIKeyError: AIEmbeddingError.missingAPIKey,
+                usageContext: AIUsageContext(feature: .rag, phase: "query_embedding")
+            )
+        } else {
+            embeddingClient = nil
+        }
         let localKeyword = SQLiteRAGKeywordSearchProvider(repository: ragChunkRepository)
         let localVector = SQLiteRAGVectorSearchProvider(repository: ragChunkRepository)
         let backendConfiguration = settings.ragBackendConfiguration
-        try backendConfiguration.validateSelectedBackendsForRuntime()
+        try backendConfiguration.validateSelectedBackendsForRuntime(
+            requiresVectorBackend: embeddingClient != nil
+        )
         let rerankConfiguration = settings.ragRerankConfiguration.normalized
 
         let keywordProvider: any RAGKeywordSearchProvider
@@ -550,7 +560,8 @@ final class AppDependencies {
         }
 
         let vectorProvider: any RAGVectorSearchProvider
-        if backendConfiguration.vectorBackend == .qdrant,
+        if embeddingClient != nil,
+           backendConfiguration.vectorBackend == .qdrant,
            backendConfiguration.qdrant.validationMessage == nil {
             let external = QdrantRAGProvider(
                 configuration: backendConfiguration.qdrant,
@@ -586,7 +597,7 @@ final class AppDependencies {
             privateRepoKeywordProvider: localKeyword,
             privateRepoVectorProvider: localVector,
             embeddingClient: embeddingClient,
-            embeddingModel: embeddingSelection.modelName,
+            embeddingModel: embeddingSelection?.modelName,
             retrievalSettings: (retrievalSettingsOverride ?? settings.ragRetrievalSettings).normalized(),
             reranker: reranker
         )
@@ -627,7 +638,7 @@ final class AppDependencies {
             ),
             metadataSnapshotProvider: KnowledgeBaseMetadataSnapshotProvider(
                 database: database,
-                embeddingModel: embeddingSelection.modelName,
+                embeddingModel: embeddingSelection?.modelName ?? "",
                 cache: knowledgeBaseMetadataSnapshotCache
             ),
             analyticsExecutor: KnowledgeBaseAnalyticsExecutor(database: database),

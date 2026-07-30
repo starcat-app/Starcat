@@ -80,7 +80,7 @@ enum RAGKeywordQueryBuilder {
 
 protocol RAGKeywordSearchProvider: Sendable {
     var backendName: String { get }
-    func search(query: RAGKeywordSearchQuery, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit]
+    func search(query: RAGKeywordSearchQuery, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit]
 }
 
 protocol RAGVectorSearchProvider: Sendable {
@@ -96,11 +96,10 @@ struct SQLiteRAGKeywordSearchProvider: RAGKeywordSearchProvider {
         self.repository = repository
     }
 
-    func search(query: RAGKeywordSearchQuery, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit] {
+    func search(query: RAGKeywordSearchQuery, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit] {
         guard query.isExecutable else { return [] }
         let hits = try await repository.keywordSearch(
             query: query.sqliteFTS5Expression,
-            model: model,
             repoIDs: repoIDs,
             limit: limit
         )

@@ -162,7 +162,7 @@ struct KnowledgeBaseMetadataSnapshot: Equatable, Sendable {
         - Index availability: \(excludedChunkCount) chunks are excluded; \(withoutReadmeSourceProjectCount) repositories have no README source; \(withoutIndexableSourceProjectCount) have no active indexable source.
         - Repository-level index readiness: \(insights.readmeSourceProjectCount) have README content; \(insights.indexableSourceProjectCount) have an active source; \(insights.embeddingReadyProjectCount) have a current-model vector-ready chunk; \(insights.indexIssueProjectCount) have failed or stale chunks.
         - Star leaders (top \(topStarredRepositories.count)): [\(topRepositories)].
-        - RAG index for model \(indexHealth.embeddingModel): \(indexHealth.totalChunks) active chunks; vector-ready \(indexHealth.readyChunks), keyword-ready \(indexHealth.keywordOnlyChunks), pending \(indexHealth.pendingChunks), failed \(indexHealth.failedChunks), stale \(indexHealth.staleChunks).
+        - RAG index for model \(indexHealth.embeddingModel.isEmpty ? "not configured (keyword-only mode)" : indexHealth.embeddingModel): \(indexHealth.totalChunks) active chunks; vector-ready \(indexHealth.readyChunks), keyword-ready \(indexHealth.keywordOnlyChunks), pending \(indexHealth.pendingChunks), failed \(indexHealth.failedChunks), stale \(indexHealth.staleChunks).
         Use these values as database facts for applicable count, distribution, activity, index-health, and star-ranking questions. Do not fabricate chunk citations for this snapshot. If a requested exact value is not present here, say the snapshot does not contain it.
         """
     }

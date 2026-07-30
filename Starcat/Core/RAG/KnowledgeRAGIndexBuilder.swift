@@ -905,7 +905,7 @@ final class KnowledgeRAGIndexBuilder {
         publicRepoIDs: [Int64]
     ) async throws {
         if configuration.keywordBackend == .meilisearch {
-            let chunks = try await chunkRepository.fetchKeywordSearchableChunks(model: model, repoIDs: publicRepoIDs)
+            let chunks = try await chunkRepository.fetchKeywordSearchableChunks(repoIDs: publicRepoIDs)
             let provider = MeilisearchRAGProvider(
                 configuration: configuration.meilisearch,
                 apiKey: try keychain.loadAIKey(forProvider: RAGBackendConfiguration.meilisearchKeychainID),

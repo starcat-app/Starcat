@@ -17,9 +17,8 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     func fetchChunks(ids: [Int64]) async throws -> [RAGChunk]
     /// 移出知识库后 SQL boundary 已不再返回正文，但外部索引仍需 ID/source 删除旧文档。
     func fetchChunkIdentities(repoId: Int64) async throws -> [RAGDeletedChunkIdentity]
-    func fetchChunks(repoId: Int64, parentKey: String, model: String) async throws -> [RAGChunk]
-    func fetchChunks(parents: [RAGChunkParentKey], model: String) async throws -> [RAGChunk]
-    /// 为最终仓库 bundle 批量读取系统 Metadata。Metadata 是 keyword_only，不得复用只查 ready 向量的 parent API。
+    func fetchChunks(parents: [RAGChunkParentKey]) async throws -> [RAGChunk]
+    /// 为最终仓库 bundle 批量读取系统 Metadata。Metadata 是 keyword_only，不得复用普通 parent API。
     func fetchActiveMetadata(repoIDs: [Int64]) async throws -> [RAGChunk]
     /// 只统计知识库边界内待向量化分片，不读取正文或 embedding BLOB。
     func countChunksNeedingEmbedding() async throws -> Int
@@ -31,10 +30,10 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     func fetchReadyEmbeddings(model: String, repoIDs: [Int64], afterID: Int64?, limit: Int) async throws -> [RAGChunkEmbedding]
     func fetchReadyChunks(ids: [Int64], model: String) async throws -> [RAGChunk]
     func fetchReadyChunks(model: String, repoIDs: [Int64]) async throws -> [RAGChunk]
-    /// 关键词后端可同步当前模型的向量分片与本地 FTS-only Metadata；向量后端只能使用 ready 分片。
-    func fetchKeywordSearchableChunks(model: String, repoIDs: [Int64]) async throws -> [RAGChunk]
+    /// 关键词后端同步所有有效文本分片；Embedding 状态只约束向量后端，不能限制 FTS。
+    func fetchKeywordSearchableChunks(repoIDs: [Int64]) async throws -> [RAGChunk]
     /// `query` 必须是由 RAG 专用构造器生成的安全 FTS5 表达式；Repository 不再二次改写语义。
-    func keywordSearch(query: String, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGKeywordHit]
+    func keywordSearch(query: String, repoIDs: [Int64], limit: Int) async throws -> [RAGKeywordHit]
     func markReady(_ embeddings: [RAGEmbeddingWrite], model: String, claimID: String) async throws
     func markFailed(_ chunks: [RAGEmbeddingIdentity], claimID: String, error: String) async throws
     func markStaleForOtherModels(currentModel: String) async throws
@@ -334,26 +333,12 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
         }
     }
 
-    func fetchChunks(repoId: Int64, parentKey: String, model: String) async throws -> [RAGChunk] {
-        try await database.writer.read { db in
-            try RAGChunk.fetchAll(db, sql: """
-                SELECT c.*
-                FROM rag_chunks c
-                JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
-                WHERE c.repo_id = ? AND c.parent_key = ?
-                  AND c.embedding_status = 'ready' AND c.embedding_model = ?
-                  AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
-                ORDER BY c.chunk_index
-                """, arguments: [repoId, parentKey, model])
-        }
-    }
-
-    func fetchChunks(parents: [RAGChunkParentKey], model: String) async throws -> [RAGChunk] {
+    func fetchChunks(parents: [RAGChunkParentKey]) async throws -> [RAGChunk] {
         guard !parents.isEmpty else { return [] }
         return try await database.writer.read { db in
             // 不能只按 parent_key 批量读取：README 常用的 section key 会在不同 repo 重复。
             // 每个 parent 使用一对绑定参数，保持与单 parent 查询完全相同的范围约束。
-            var arguments: [any DatabaseValueConvertible] = [model]
+            var arguments: [any DatabaseValueConvertible] = []
             let parentConditions = parents.map { parent -> String in
                 arguments.append(parent.repoID)
                 arguments.append(parent.parentKey)
@@ -363,8 +348,7 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                 SELECT c.*
                 FROM rag_chunks c
                 JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
-                WHERE c.embedding_status = 'ready' AND c.embedding_model = ?
-                  AND (\(parentConditions))
+                WHERE (\(parentConditions))
                   AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
                 ORDER BY c.repo_id, c.parent_key, c.chunk_index
                 """, arguments: StatementArguments(arguments))
@@ -560,23 +544,19 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
         return chunks
     }
 
-    func fetchKeywordSearchableChunks(model: String, repoIDs: [Int64]) async throws -> [RAGChunk] {
+    func fetchKeywordSearchableChunks(repoIDs: [Int64]) async throws -> [RAGChunk] {
         guard !repoIDs.isEmpty else { return [] }
         var chunks: [RAGChunk] = []
         for repoIDBatch in Self.idBatches(repoIDs) {
             let batch = try await database.writer.read { db in
                 let placeholders = Array(repeating: "?", count: repoIDBatch.count).joined(separator: ",")
-                var arguments: [any DatabaseValueConvertible] = [model]
+                var arguments: [any DatabaseValueConvertible] = []
                 arguments.append(contentsOf: repoIDBatch)
                 return try RAGChunk.fetchAll(db, sql: """
                     SELECT c.*
                     FROM rag_chunks c
                     JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
-                    WHERE (
-                        (c.embedding_status = 'ready' AND c.embedding_model = ?)
-                        OR c.embedding_status = 'keyword_only'
-                      )
-                      AND c.repo_id IN (\(placeholders))
+                    WHERE c.repo_id IN (\(placeholders))
                       AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
                     ORDER BY c.repo_id, c.source, c.chunk_index
                     """, arguments: StatementArguments(arguments))
@@ -586,12 +566,12 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
         return chunks
     }
 
-    func keywordSearch(query: String, model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGKeywordHit] {
+    func keywordSearch(query: String, repoIDs: [Int64], limit: Int) async throws -> [RAGKeywordHit] {
         let ftsQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !ftsQuery.isEmpty, !repoIDs.isEmpty, limit > 0 else { return [] }
         return try await database.writer.read { db in
             let placeholders = Array(repeating: "?", count: repoIDs.count).joined(separator: ",")
-            var arguments: [any DatabaseValueConvertible] = [ftsQuery, model]
+            var arguments: [any DatabaseValueConvertible] = [ftsQuery]
             arguments.append(contentsOf: repoIDs)
             arguments.append(limit)
             let rows = try Row.fetchAll(db, sql: """
@@ -600,10 +580,6 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                 JOIN rag_chunks c ON c.id = rag_chunks_fts.rowid
                 JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
                 WHERE rag_chunks_fts MATCH ?
-                  AND (
-                    (c.embedding_status = 'ready' AND c.embedding_model = ?)
-                    OR c.embedding_status = 'keyword_only'
-                  )
                   AND c.repo_id IN (\(placeholders))
                   AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
                 ORDER BY keyword_rank ASC

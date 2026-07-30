@@ -159,12 +159,14 @@ struct RAGBackendConfiguration: Codable, Equatable, Sendable {
     var qdrant = RAGQdrantConfiguration()
 
     /// 禁用 SQLite 回退时，外部后端配置错误必须在装配阶段暴露，不能静默改用本地实现。
-    func validateSelectedBackendsForRuntime() throws {
+    func validateSelectedBackendsForRuntime(requiresVectorBackend: Bool = true) throws {
         guard !fallbackToSQLite else { return }
         if keywordBackend == .meilisearch, let message = meilisearch.validationMessage {
             throw RAGExternalBackendError.invalidConfiguration(message)
         }
-        if vectorBackend == .qdrant, let message = qdrant.validationMessage {
+        if requiresVectorBackend,
+           vectorBackend == .qdrant,
+           let message = qdrant.validationMessage {
             throw RAGExternalBackendError.invalidConfiguration(message)
         }
     }

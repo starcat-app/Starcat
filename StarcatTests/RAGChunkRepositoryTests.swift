@@ -192,7 +192,7 @@ struct RAGChunkRepositoryTests {
         #expect(remaining.first?.source == .notes)
     }
 
-    @Test("keyword 检索只返回知识库且 ready 的 chunk")
+    @Test("keyword 检索不依赖向量状态但保持知识库边界")
     func keywordSearchEnforcesKnowledgeBoundary() async throws {
         let (database, repository) = try makeRepository()
         try await database.insertRepoFixture(id: 10)
@@ -204,28 +204,21 @@ struct RAGChunkRepositoryTests {
             source: .readme,
             drafts: [draft(repoId: 10, key: "readme:vector:0", content: "Vector database indexing")]
         )
-        let outside = try await repository.replaceSource(
+        _ = try await repository.replaceSource(
             repoId: 11,
             source: .readme,
             drafts: [draft(repoId: 11, key: "readme:vector:0", content: "Vector database indexing")]
         )
-        let allIDs = inLibrary.pendingChunkIDs + outside.pendingChunkIDs
-        try await markReady(
-            Dictionary(uniqueKeysWithValues: allIDs.map { ($0, [1, 0]) }),
-            model: "embed-v1",
-            repository: repository
-        )
-
         let hits = try await repository.keywordSearch(
             query: RAGKeywordQueryBuilder.build(
                 keywordQueries: ["missing term", "vector"],
                 semanticQuery: ""
             ).sqliteFTS5Expression,
-            model: "embed-v1",
             repoIDs: [10, 11],
             limit: 10
         )
         #expect(hits.map(\.chunk.repoId) == [10])
+        #expect(hits.first?.chunk.id == inLibrary.pendingChunkIDs.first)
     }
 
     @Test("Metadata 只走 FTS，不进入 embedding 队列或向量召回")
@@ -262,7 +255,6 @@ struct RAGChunkRepositoryTests {
                 keywordQueries: ["homepage"],
                 semanticQuery: ""
             ).sqliteFTS5Expression,
-            model: "embed-v1",
             repoIDs: [43],
             limit: 10
         )
@@ -464,7 +456,7 @@ struct RAGChunkRepositoryTests {
         #expect(hits.first?.chunk.content == "Top evidence")
     }
 
-    @Test("批量 parent 读取保持知识库、embedding 与 parent 边界")
+    @Test("批量 parent 读取不依赖向量状态并保持知识库与 parent 边界")
     func batchParentFetchPreservesRetrievalBoundary() async throws {
         let (database, repository) = try makeRepository()
         try await database.insertRepoFixture(id: 12)
@@ -472,29 +464,22 @@ struct RAGChunkRepositoryTests {
         try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 12, state: .inLibrary)
         try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 13, state: .inLibrary)
 
-        let first = try await repository.replaceSource(
+        _ = try await repository.replaceSource(
             repoId: 12,
             source: .readme,
             drafts: [draft(repoId: 12, key: "readme:install:0", content: "Install")]
         )
-        let second = try await repository.replaceSource(
+        _ = try await repository.replaceSource(
             repoId: 13,
             source: .readme,
             drafts: [draft(repoId: 13, key: "readme:install:0", content: "Other install")]
         )
-        try await markReady(
-            [first.pendingChunkIDs[0]: [1, 0], second.pendingChunkIDs[0]: [1, 0]],
-            model: "embed-v1",
-            repository: repository
-        )
-
         let chunks = try await repository.fetchChunks(
             parents: [
                 .init(repoID: 12, parentKey: "readme:test"),
                 .init(repoID: 13, parentKey: "readme:test"),
                 .init(repoID: 12, parentKey: "missing")
-            ],
-            model: "embed-v1"
+            ]
         )
         #expect(chunks.map(\.repoId) == [12, 13])
     }

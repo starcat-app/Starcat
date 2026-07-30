@@ -1038,7 +1038,9 @@ struct KnowledgeRAGService: Sendable {
                 .retrieval,
                 summary: String.l10n("rag.workspace.execution.noEvidence")
             )))
-        } else if try await retriever.hasReadyChunks(repoIDs: candidates.map(\.repo.id)) {
+        } else {
+            // FTS 与向量检索是独立能力。即使没有当前模型的 ready 向量，pending /
+            // failed / stale 文本仍然已经进入本地 FTS，必须允许 Retriever 走关键词降级。
             retrieval = try await retriever.retrieve(
                 semanticQuery: plan.semanticQuery,
                 keywordQueries: plan.keywordQueries,
@@ -1056,21 +1058,6 @@ struct KnowledgeRAGService: Sendable {
             } else {
                 sink.yield(.execution(.retrievalCompleted(retrieval)))
             }
-        } else {
-            retrieval = RAGRetrievalResult(
-                candidates: candidates,
-                bundles: [],
-                childHits: [],
-                diagnostics: retriever.diagnostics(
-                    candidateRepoCount: candidates.count,
-                    outcome: .noReadyChunks
-                )
-            )
-            localMissingReasonKey = "rag.workspace.execution.noIndex"
-            sink.yield(.execution(.terminated(
-                .retrieval,
-                summary: String.l10n("rag.workspace.execution.noIndex")
-            )))
         }
         let evidenceDetails: String = retrieval.bundles.map { bundle in
             let hits = bundle.matchedChildren.map { hit in
@@ -1775,9 +1762,6 @@ struct KnowledgeRAGService: Sendable {
             explicitRepoIDs: [],
             explicitMode: .only
         )
-        guard try await retriever.hasReadyChunks(repoIDs: candidates.map(\.repo.id)) else {
-            return RAGRetrievalResult(candidates: candidates, bundles: [], childHits: [])
-        }
         let result = try await retriever.retrieve(
             semanticQuery: normalized,
             candidates: candidates,
