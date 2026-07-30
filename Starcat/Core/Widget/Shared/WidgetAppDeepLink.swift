@@ -13,6 +13,7 @@ import Foundation
 enum WidgetAppDestination: String, Equatable, Sendable {
     case main = "open"
     case releaseTimeline = "releases"
+    case insights
 }
 
 /// 受控的 Widget → Host App 跳转协议。

@@ -236,7 +236,8 @@
 - [ ] Medium 显示 12 周柱形图与本周 / 近 30 天 / 总数
 - [ ] Large 增加 12 周周均与状态分布图
 - [ ] Widget 固定文案全部进入 `Localizable.xcstrings`
-- [ ] 点击趋势卡片前台 / 冷启动打开“我的洞察”
+- [x] 点击趋势卡片前台 / 冷启动打开“我的洞察”
+  - 证据：`WidgetAppDeepLink.insights` → dispatcher pending request → `SidebarRootPage.insights`
 - [ ] Store / Direct Widget Extension 共用同一份实现
 - [ ] 新增 `StarcatWidget-CollectionTrend` 独立调试 Scheme
 - [ ] 趋势投影、快照兼容与 Deep Link 单元测试通过
@@ -259,7 +260,8 @@
 - [x] Store / Direct 渠道配置
 - [x] snapshot v2 向后兼容 v1 文件
 - [x] 收藏趋势聚合、隐私过滤与状态分布
-- [ ] 收藏趋势 Deep Link 正常与非法输入
+- [x] 收藏趋势 Deep Link 正常与非法输入
+  - 证据：`WidgetAppDeepLinkTests`
 - [x] Widget 相关定向测试通过
   - 证据：29 tests，0 failures，0 skipped
 - [x] Starcat 全量测试通过

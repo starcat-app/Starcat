@@ -108,6 +108,8 @@ struct StarcatApp: App {
                 AppDelegate.activateMainWindowIfPossible()
             case .releaseTimeline:
                 dependencies.mainWindowNavigationDispatcher.navigate(to: .releaseTimeline)
+            case .insights:
+                dependencies.mainWindowNavigationDispatcher.navigate(to: .insights)
             }
             return
         }
