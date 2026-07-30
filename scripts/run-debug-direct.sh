@@ -19,12 +19,20 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DERIVED_DATA="$PROJECT_ROOT/build/DerivedData-NoSandbox"
 APP_PATH="$DERIVED_DATA/Build/Products/Debug/Starcat.app"
 APP_EXECUTABLE="$APP_PATH/Contents/MacOS/Starcat"
+WIDGET_EXTENSION_PATH="$APP_PATH/Contents/PlugIns/StarcatDirectWidgets.appex"
 DIRECT_DEBUG_BUNDLE_ID="com.starcat.app.direct.debug"
 DIRECT_RELEASE_BUNDLE_ID="com.starcat.app.direct"
+DIRECT_DEBUG_WIDGET_BUNDLE_ID="com.starcat.app.direct.debug.widgets"
 
 # 正式 Apple Developer Team ID。后续如果换账号，可用环境变量覆盖：
 #   STARCAT_DEVELOPMENT_TEAM=XXXXXXXXXX ./scripts/run-debug-direct.sh
 DEVELOPMENT_TEAM_ID="${STARCAT_DEVELOPMENT_TEAM:-8WCUMGCWMB}"
+
+BUILD_VERSION="$(git -C "$PROJECT_ROOT" rev-list --count HEAD 2>/dev/null || true)"
+if ! [[ "$BUILD_VERSION" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ERROR: 无法从 git commit count 生成有效的 Direct Debug build version。"
+  exit 1
+fi
 
 # App Store 与 Direct 的可执行文件都叫 Starcat，不能用进程名判断渠道。
 # Direct Debug 为规避 WidgetKit 误绑定正式宿主使用独立 bundle id；启动新调试实例前
@@ -108,10 +116,15 @@ xcodebuild \
   -derivedDataPath "$DERIVED_DATA" \
   DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM_ID" \
   CODE_SIGN_IDENTITY="Apple Development" \
+  CURRENT_PROJECT_VERSION="$BUILD_VERSION" \
   ENABLE_DEBUG_DYLIB=NO \
   build
 
 echo "==> 校验 Direct 构建产物..."
+if [ ! -d "$WIDGET_EXTENSION_PATH" ]; then
+  echo "ERROR: Direct 构建产物缺少 StarcatDirectWidgets.appex，拒绝启动。"
+  exit 1
+fi
 ENTITLEMENTS="$(codesign -d --entitlements :- "$APP_PATH" 2>/dev/null || true)"
 if grep -q "com.apple.security.app-sandbox" <<<"$ENTITLEMENTS"; then
   echo "ERROR: 检测到沙箱 entitlement，非沙箱脚本拒绝启动。"
@@ -122,6 +135,32 @@ ACTUAL_BUNDLE_ID=$(/usr/libexec/PlistBuddy \
   "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)
 if [ "$ACTUAL_BUNDLE_ID" != "$DIRECT_DEBUG_BUNDLE_ID" ]; then
   echo "ERROR: Direct Debug bundle id 应为 $DIRECT_DEBUG_BUNDLE_ID，当前为 ${ACTUAL_BUNDLE_ID:-<missing>}，拒绝启动。"
+  exit 1
+fi
+ACTUAL_WIDGET_BUNDLE_ID=$(/usr/libexec/PlistBuddy \
+  -c "Print :CFBundleIdentifier" \
+  "$WIDGET_EXTENSION_PATH/Contents/Info.plist" 2>/dev/null || true)
+if [ "$ACTUAL_WIDGET_BUNDLE_ID" != "$DIRECT_DEBUG_WIDGET_BUNDLE_ID" ]; then
+  echo "ERROR: Direct Debug Widget bundle id 应为 $DIRECT_DEBUG_WIDGET_BUNDLE_ID，当前为 ${ACTUAL_WIDGET_BUNDLE_ID:-<missing>}，拒绝启动。"
+  exit 1
+fi
+
+# WidgetKit 会按 Extension 自身的 CFBundleVersion 判断是否复用旧时间线和视图归档。
+# 只在宿主 post-build 阶段改版本不够：增量构建可能保留版本仍为 1 的扩展，表现为
+# 二进制已经更新，但桌面仍渲染旧 UI。因此构建参数统一注入版本，并在启动前同时
+# 校验宿主与扩展，任何一边未更新都直接失败，避免继续污染系统缓存。
+ACTUAL_APP_BUILD=$(/usr/libexec/PlistBuddy \
+  -c "Print :CFBundleVersion" \
+  "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)
+ACTUAL_WIDGET_BUILD=$(/usr/libexec/PlistBuddy \
+  -c "Print :CFBundleVersion" \
+  "$WIDGET_EXTENSION_PATH/Contents/Info.plist" 2>/dev/null || true)
+if [ "$ACTUAL_APP_BUILD" != "$BUILD_VERSION" ]; then
+  echo "ERROR: Direct Debug App build version 应为 $BUILD_VERSION，当前为 ${ACTUAL_APP_BUILD:-<missing>}，拒绝启动。"
+  exit 1
+fi
+if [ "$ACTUAL_WIDGET_BUILD" != "$BUILD_VERSION" ]; then
+  echo "ERROR: Direct Debug Widget build version 应为 $BUILD_VERSION，当前为 ${ACTUAL_WIDGET_BUILD:-<missing>}，拒绝启动。"
   exit 1
 fi
 if ! /usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$APP_PATH/Contents/Info.plist" >/dev/null 2>&1; then
@@ -137,10 +176,25 @@ if [ ! -d "$APP_PATH/Contents/Frameworks/Sparkle.framework" ]; then
   echo "ERROR: Direct 构建产物缺少 Sparkle.framework，拒绝启动。"
   exit 1
 fi
+if ! codesign --verify --deep --strict "$APP_PATH"; then
+  echo "ERROR: Direct App 或内嵌 Widget Extension 签名校验失败，拒绝启动。"
+  exit 1
+fi
+
+echo "==> 注册当前 Direct Debug Widget Extension..."
+# 本地 DerivedData 路径会被反复覆盖。显式移除该路径的旧注册后再登记当前产物，
+# 让 pluginkit 解析到刚完成签名的扩展；失败时不启动宿主，避免桌面继续绑定旧副本。
+pluginkit -r "$WIDGET_EXTENSION_PATH" >/dev/null 2>&1 || true
+if ! pluginkit -a "$WIDGET_EXTENSION_PATH"; then
+  echo "ERROR: 无法注册 Direct Debug Widget Extension，拒绝启动。"
+  exit 1
+fi
 
 echo "==> 签名摘要:"
 codesign -dv --verbose=2 "$APP_PATH" 2>&1 | sed -n '1,12p'
 echo "==> 当前模式: direct"
+echo "    build version: $BUILD_VERSION"
+echo "    widget: $WIDGET_EXTENSION_PATH"
 echo "    license api: test"
 echo "    preferences: ~/Library/Preferences/${DIRECT_DEBUG_BUNDLE_ID}.plist"
 echo "    data: ~/Library/Application Support/com.starcat.app"
