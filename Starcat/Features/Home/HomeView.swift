@@ -1240,7 +1240,22 @@ struct HomeView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: selectedSidebarPage)
-        .navigationSplitViewColumnWidth(min: 420, ideal: 420, max: 520)
+        .navigationSplitViewColumnWidth(
+            min: contentColumnWidths.min,
+            ideal: contentColumnWidths.ideal,
+            max: contentColumnWidths.max
+        )
+    }
+
+    /// 洞察中栏只承载少量分类，缩窄后把横向空间优先留给右侧数据面板。
+    ///
+    /// 其他页面仍需要容纳仓库列表、筛选和批量操作，因此继续使用原有范围，
+    /// 避免洞察的高密度布局选择改变主列表的尺寸契约。
+    private var contentColumnWidths: (min: CGFloat, ideal: CGFloat, max: CGFloat) {
+        if selectedSidebarPage == .insights {
+            return (min: 300, ideal: 320, max: 360)
+        }
+        return (min: 420, ideal: 420, max: 520)
     }
 
     @ViewBuilder
