@@ -186,6 +186,21 @@
 
 > 证据：`7a7be021`、`f23c2b24`；深浅色最终项保留给已签名安装后的人工验收。
 
+### 9.1 真实桌面 UI 优化增量
+
+- [x] 基于 Direct Debug 真实桌面截图记录尺寸适配与信息层级问题
+  - 证据：2026-07-30 首次桌面验收截图；Focus Large 顶部 / 末行拥挤、今日重逢留白过大、
+    Release Watch 未读计数语义不明确
+- [ ] 新增共享 Widget Header，统一标题、过期状态与右侧摘要
+- [ ] Focus Medium / Large 在 3 / 6 条真实数据下无裁切
+- [ ] Focus 来源状态使用紧凑文案且保留 VoiceOver 语义
+- [ ] 今日重逢 Medium 使用 Header + 内容行并减少无效留白
+- [ ] Release Watch 未读总数改为明确本地化短文案
+- [ ] Release Watch 相对时间使用紧凑单单位表达
+- [ ] Widget 文本和图标继续只使用 `.primary` / `.secondary`
+- [ ] Widget 定向测试、Store Debug、Direct Debug 构建通过
+- [ ] 优化后所有声明尺寸完成真实桌面复验
+
 ---
 
 ## 10. 自动化测试
