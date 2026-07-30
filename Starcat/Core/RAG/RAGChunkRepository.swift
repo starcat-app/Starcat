@@ -24,8 +24,6 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     func countChunksNeedingEmbedding() async throws -> Int
     func fetchChunksNeedingEmbedding(limit: Int) async throws -> [RAGChunk]
     func claimChunksForEmbedding(_ chunks: [RAGEmbeddingIdentity], claimID: String) async throws -> [RAGChunk]
-    /// 检查当前检索是否至少有一个可用 source；包含当前模型向量和 FTS-only Metadata。
-    func hasReadyChunks(model: String, repoIDs: [Int64]) async throws -> Bool
     /// 只检查当前模型的向量分片；Retriever 用它避免在纯关键词语料上浪费 query embedding 请求。
     func hasReadyVectorChunks(model: String, repoIDs: [Int64]) async throws -> Bool
     /// 只读取向量扫描所需的列；调用方必须按页消费，避免大知识库把正文和全部向量同时留在内存。
@@ -436,32 +434,6 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
             }
             return claimed
         }
-    }
-
-    func hasReadyChunks(model: String, repoIDs: [Int64]) async throws -> Bool {
-        guard !repoIDs.isEmpty else { return false }
-        for repoIDBatch in Self.idBatches(repoIDs) {
-            let found = try await database.writer.read { db in
-                let placeholders = Array(repeating: "?", count: repoIDBatch.count).joined(separator: ",")
-                var arguments: [any DatabaseValueConvertible] = [model]
-                arguments.append(contentsOf: repoIDBatch)
-                return try Bool.fetchOne(db, sql: """
-                    SELECT EXISTS(
-                        SELECT 1
-                        FROM rag_chunks c
-                        JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
-                        WHERE (
-                            (c.embedding_status = 'ready' AND c.embedding_model = ?)
-                            OR c.embedding_status = 'keyword_only'
-                          )
-                          AND c.repo_id IN (\(placeholders))
-                          AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
-                    )
-                    """, arguments: StatementArguments(arguments)) ?? false
-            }
-            if found { return true }
-        }
-        return false
     }
 
     func hasReadyVectorChunks(model: String, repoIDs: [Int64]) async throws -> Bool {

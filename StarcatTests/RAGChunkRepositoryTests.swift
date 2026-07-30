@@ -248,7 +248,6 @@ struct RAGChunkRepositoryTests {
         #expect(chunk.embeddingStatus == .keywordOnly)
         #expect(chunk.embedding == nil)
         #expect(try await repository.fetchChunksNeedingEmbedding(limit: 10).isEmpty)
-        #expect(try await repository.hasReadyChunks(model: "embed-v1", repoIDs: [43]))
         #expect(!(try await repository.hasReadyVectorChunks(model: "embed-v1", repoIDs: [43])))
 
         let keywordHits = try await repository.keywordSearch(
@@ -423,10 +422,9 @@ struct RAGChunkRepositoryTests {
             repository: repository
         )
 
-        #expect(try await repository.hasReadyChunks(model: "embed-v1", repoIDs: [14]))
         #expect(try await repository.hasReadyVectorChunks(model: "embed-v1", repoIDs: [14]))
-        #expect(!(try await repository.hasReadyChunks(model: "embed-v2", repoIDs: [14])))
-        #expect(!(try await repository.hasReadyChunks(model: "embed-v1", repoIDs: [15])))
+        #expect(!(try await repository.hasReadyVectorChunks(model: "embed-v2", repoIDs: [14])))
+        #expect(!(try await repository.hasReadyVectorChunks(model: "embed-v1", repoIDs: [15])))
     }
 
     @Test("SQLite 向量召回先扫描 embedding，再仅回填 Top-K 正文")
