@@ -19,23 +19,30 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DERIVED_DATA="$PROJECT_ROOT/build/DerivedData-NoSandbox"
 APP_PATH="$DERIVED_DATA/Build/Products/Debug/Starcat.app"
 APP_EXECUTABLE="$APP_PATH/Contents/MacOS/Starcat"
-DIRECT_BUNDLE_ID="com.starcat.app.direct"
+DIRECT_DEBUG_BUNDLE_ID="com.starcat.app.direct.debug"
+DIRECT_RELEASE_BUNDLE_ID="com.starcat.app.direct"
 
 # 正式 Apple Developer Team ID。后续如果换账号，可用环境变量覆盖：
 #   STARCAT_DEVELOPMENT_TEAM=XXXXXXXXXX ./scripts/run-debug-direct.sh
 DEVELOPMENT_TEAM_ID="${STARCAT_DEVELOPMENT_TEAM:-8WCUMGCWMB}"
 
 # App Store 与 Direct 的可执行文件都叫 Starcat，不能用进程名判断渠道。
-# NSRunningApplication 读取 LaunchServices 登记的 bundle id，既能覆盖 Debug、
-# /Applications 等不同路径下的 Direct 实例，也不会误伤 App Store 版本。
+# Direct Debug 为规避 WidgetKit 误绑定正式宿主使用独立 bundle id；启动新调试实例前
+# 同时关闭 Debug / Release Direct，避免两个渠道实例争用同一份 Direct 本地数据。
 running_direct_pids() {
   /usr/bin/osascript -l JavaScript -e "
 ObjC.import('AppKit');
-$.NSRunningApplication
-  .runningApplicationsWithBundleIdentifier('$DIRECT_BUNDLE_ID')
-  .js
-  .map(function(app) { return Number(app.processIdentifier); })
-  .join('\n');
+var bundleIdentifiers = ['$DIRECT_DEBUG_BUNDLE_ID', '$DIRECT_RELEASE_BUNDLE_ID'];
+var processIdentifiers = [];
+bundleIdentifiers.forEach(function(bundleIdentifier) {
+  $.NSRunningApplication
+    .runningApplicationsWithBundleIdentifier(bundleIdentifier)
+    .js
+    .forEach(function(app) {
+      processIdentifiers.push(Number(app.processIdentifier));
+    });
+});
+processIdentifiers.join('\n');
 "
 }
 
@@ -110,8 +117,11 @@ if grep -q "com.apple.security.app-sandbox" <<<"$ENTITLEMENTS"; then
   echo "ERROR: 检测到沙箱 entitlement，非沙箱脚本拒绝启动。"
   exit 1
 fi
-if ! /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP_PATH/Contents/Info.plist" | grep -qx "com.starcat.app.direct"; then
-  echo "ERROR: bundle id 不是 com.starcat.app.direct，拒绝启动。"
+ACTUAL_BUNDLE_ID=$(/usr/libexec/PlistBuddy \
+  -c "Print :CFBundleIdentifier" \
+  "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)
+if [ "$ACTUAL_BUNDLE_ID" != "$DIRECT_DEBUG_BUNDLE_ID" ]; then
+  echo "ERROR: Direct Debug bundle id 应为 $DIRECT_DEBUG_BUNDLE_ID，当前为 ${ACTUAL_BUNDLE_ID:-<missing>}，拒绝启动。"
   exit 1
 fi
 if ! /usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$APP_PATH/Contents/Info.plist" >/dev/null 2>&1; then
@@ -132,7 +142,7 @@ echo "==> 签名摘要:"
 codesign -dv --verbose=2 "$APP_PATH" 2>&1 | sed -n '1,12p'
 echo "==> 当前模式: direct"
 echo "    license api: test"
-echo "    preferences: ~/Library/Preferences/com.starcat.app.direct.plist"
+echo "    preferences: ~/Library/Preferences/${DIRECT_DEBUG_BUNDLE_ID}.plist"
 echo "    data: ~/Library/Application Support/com.starcat.app"
 echo "    app support: ~/Library/Application Support/com.starcat.app"
 echo "    app: $APP_PATH"
