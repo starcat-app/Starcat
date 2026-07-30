@@ -21,7 +21,7 @@
 本专项一次性交付可安装、可配置、可点击、可验证的 Starcat macOS Widget：
 
 1. `Starcat Focus`：展示用户指定、置顶或正在使用的仓库。
-2. `今日重逢`：每天稳定推荐一个长期未关注的本地仓库。
+2. `仓库回顾`：每天稳定回顾一个长期未关注的本地仓库。
 3. `Release Watch`：展示订阅仓库的未读 Release。
 4. App Store 与 Direct 两个主应用 target 分别嵌入匹配的 Widget Extension。
 5. 主应用通过 App Group 发布只读 JSON 快照；Widget 不读取业务数据库、不联网、不读取 Keychain。
@@ -40,7 +40,7 @@
 | Widget | 支持尺寸 | 首发内容 | 点击行为 |
 |--------|----------|----------|----------|
 | Starcat Focus | Small / Medium / Large | 1 / 3 / 6 个仓库 | 打开仓库详情 |
-| 今日重逢 | Small / Medium | 当日稳定仓库 | 打开仓库详情 |
+| 仓库回顾 | Small / Medium | 当日稳定仓库 | 打开仓库详情 |
 | Release Watch | Medium / Large | 3 / 6 条未读 Release | 打开仓库 Release 区域 |
 
 ### 2.2 明确不做
@@ -258,7 +258,7 @@ enum WidgetAccountState: String, Codable, Sendable {
 
 输出最多 6 条，按 repo ID 去重，默认过滤 Private repository。
 
-### 5.2 今日重逢
+### 5.2 仓库回顾
 
 候选必须满足：
 
@@ -342,7 +342,7 @@ Repository 内复制快照构建逻辑。
 ### 6.3 Timeline
 
 - 正常快照：下一次系统建议刷新时间为 30 分钟后。
-- 今日重逢：额外计算本地次日 00:05 的刷新点。
+- 仓库回顾：额外计算本地次日 00:05 的刷新点。
 - preparing / signedOut：1 小时后重试，并引导打开主应用。
 - 主应用发布后主动请求 `WidgetCenter`，但不假定系统立即刷新。
 
@@ -368,7 +368,7 @@ Repository 内复制快照构建逻辑。
 | signedOut | 登录 Starcat 后显示收藏 | 打开 Starcat 登录 |
 | unavailable | 暂时无法读取数据 | 打开 Starcat 修复 |
 | empty Focus | 置顶或标记正在使用的仓库 | 打开 Starcat |
-| empty Rediscovery | 暂无适合重逢的仓库 | 打开 Starcat |
+| empty Rediscovery | 暂无可回顾的仓库 | 打开 Starcat |
 | empty Release | 没有未读 Release | 打开 Release 页面 |
 
 ### 7.3 真实桌面 UI 优化增量
@@ -384,7 +384,7 @@ Repository 内复制快照构建逻辑。
 - Large 的描述降为 `.caption2`，头像和垂直间距按尺寸收紧；仓库名仍保持最高行内层级。
 - 来源状态继续进入视觉内容和 VoiceOver，不因压缩布局丢失“置顶 / 使用中”语义。
 
-#### 今日重逢
+#### 仓库回顾
 
 - Medium 从单一居中内容改为“统一 Header + 仓库内容行”，减少无效留白。
 - 仓库内容行保留头像、名称、描述、语言和 Star 数，并增加右侧点击指示。
@@ -403,6 +403,29 @@ Repository 内复制快照构建逻辑。
 - Store / Direct 继续编译同一份 Widget 源码；两个渠道必须分别构建通过。
 - 自动化只能验证布局代码、i18n 和构建门禁；最终深浅色、所有尺寸与 VoiceOver 仍需真实
   桌面截图或人工记录。
+
+### 7.4 第二轮真实桌面 UI 优化
+
+2026-07-30 第二次真实桌面验收确认：Focus 的“置顶”来源标识重复且容易被理解为操作；
+Rediscovery 的“今日重逢”命名偏离工具属性，Small / Medium 也没有充分使用系统分配空间。
+本轮继续只调整 Extension 视图与本地化，不修改候选查询、快照 schema、App Group 或
+Deep Link。
+
+#### Starcat Focus
+
+- 所有 `.pinned` 仓库不再显示“置顶”文字、图钉或对应 VoiceOver 来源；底层候选和排序不变。
+- Header 的 `pin.fill` 改为 `scope`，空态图标同步改为 `scope`。
+- `.using` 继续显示“使用中”，因为它是仓库工作状态，不是重复的候选来源说明。
+
+#### 仓库回顾
+
+- 中文统一命名为“仓库回顾”，英文统一命名为“Repo Recall”；Widget Gallery、标题和空态
+  使用同一术语。
+- Small 删除装饰性 `sparkles` 和制造留白的弹性间隔，展示头像、标题、仓库名、一行描述、
+  语言和紧凑 Star 数。
+- Medium 使用 `clock.arrow.circlepath`，展示更大的头像、两行描述、语言、Star 数和最多
+  3 个标签；内容在可用高度内垂直居中，不用空白承担层级。
+- 现有快照已经包含上述字段，不为 UI 增密扩展共享快照或数据库读取边界。
 
 ---
 
@@ -448,7 +471,7 @@ starcat://repo/{owner}/{name}/releases?v=1&rid={repository-id}&release_id={relea
 8. `feat(widget): 接入小组件快照刷新协调器`
 9. `feat(widget): 添加共享头像缓存`
 10. `feat(widget): 实现 Starcat Focus 小组件`
-11. `feat(widget): 实现今日重逢小组件`
+11. `feat(widget): 实现仓库回顾小组件`
 12. `feat(widget): 实现 Release Watch 小组件`
 13. `feat(widget): 完善 Release 深层链接`
 14. `test(widget): 补齐桌面小组件单元测试`
@@ -470,7 +493,7 @@ starcat://repo/{owner}/{name}/releases?v=1&rid={repository-id}&release_id={relea
 - signedOut / preparing 快照不携带 repository / release。
 - Private repository 永不进入投影。
 - Focus 优先级、去重、数量上限。
-- 今日重逢过滤与同日稳定选择。
+- 仓库回顾过滤与同日稳定选择。
 - Release 未读、订阅、隐私过滤和排序。
 - Deep Link encode / parse / 非法输入拒绝。
 - 渠道配置选择正确 App Group。

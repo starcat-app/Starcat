@@ -99,9 +99,9 @@
 
 - [x] Focus 候选按指定 / 置顶 / using 优先
 - [x] Focus 按 repo ID 去重并限制 6 条
-- [x] 今日重逢过滤 archived、Private、近 30 天、置顶和 using
-- [x] 今日重逢同一账号同一天选择稳定
-- [x] 今日重逢空候选可恢复
+- [x] 仓库回顾过滤 archived、Private、近 30 天、置顶和 using
+- [x] 仓库回顾同一账号同一天选择稳定
+- [x] 仓库回顾空候选可恢复
 - [x] Release Watch 只取已订阅且未读 Release
 - [x] Release Watch 排除 Private repository
 - [x] Release Watch 未读总数与列表过滤口径一致
@@ -143,7 +143,7 @@
 
 ---
 
-## 7. 今日重逢
+## 7. 仓库回顾
 
 - [x] 提供 Small / Medium
 - [x] Small 展示头像、名称、语言
@@ -197,7 +197,7 @@
   - 证据：`StarcatFocusWidgetView.repositoryList` 按 family 选择标准 / 紧凑行
 - [x] Focus 来源状态使用紧凑文案且保留 VoiceOver 语义
   - 证据：中文“置顶 / 使用中”；`focusAccessibilityLabel` 继续包含来源状态
-- [x] 今日重逢 Medium 使用 Header + 内容行并减少无效留白
+- [x] 仓库回顾 Medium 使用 Header + 内容行并减少无效留白
   - 证据：`StarcatRediscoveryWidgetView.mediumContent` 顶部对齐 Header，内容行增加点击指示
 - [x] Release Watch 未读总数改为明确本地化短文案
   - 证据：`widget.releaseWatch.unreadShort %lld` 显示“%lld 未读 / %lld unread”
@@ -206,6 +206,17 @@
 - [ ] Widget 文本和图标继续只使用 `.primary` / `.secondary`
 - [ ] Widget 定向测试、Store Debug、Direct Debug 构建通过
 - [ ] 优化后所有声明尺寸完成真实桌面复验
+
+### 9.2 第二轮真实桌面 UI 优化增量
+
+- [ ] Focus 删除所有“置顶”文字、图钉和对应 VoiceOver 来源
+- [ ] Focus Header 与空态改用 `scope`，继续保留“使用中”状态
+- [ ] Rediscovery 中文改名“仓库回顾”，英文改名“Repo Recall”
+- [ ] 仓库回顾 Small 删除装饰图标和无效留白，增加描述与 Star 数
+- [ ] 仓库回顾 Medium 展示两行描述、语言、Star 数和最多 3 个标签
+- [ ] 第二轮修改后固定文案全部通过 String Catalog 校验
+- [ ] 第二轮 Widget 定向测试、Store / Direct Widget 构建通过
+- [ ] 第二轮优化后 Small / Medium / Large 完成真实桌面复验
 
 ---
 
@@ -217,7 +228,7 @@
 - [x] signedOut / preparing 不携带业务数据
 - [x] Private repository 过滤
 - [x] Focus 优先级、去重和上限
-- [x] 今日重逢过滤、稳定性和空候选
+- [x] 仓库回顾过滤、稳定性和空候选
 - [x] Release 订阅、未读、隐私过滤和排序
 - [x] Deep Link 正常与非法输入
 - [x] Store / Direct 渠道配置
