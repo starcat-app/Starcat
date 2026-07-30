@@ -77,8 +77,69 @@ struct RAGPromptCompatibilityTests {
         #expect(repaired.systemPrompt.hasPrefix("CUSTOM"))
         #expect(repaired.userPromptTemplate.hasPrefix(current.userPromptTemplate))
         #expect(repaired.userPromptTemplate.contains("{repositoryInsightsSection}"))
+        #expect(!repaired.userPromptTemplate.contains(
+            "{repositoryInsightsSection}: {repositoryInsightsSection}"
+        ))
         #expect(repairedAgain == repaired)
         #expect(result.state == .customized)
+    }
+
+    @Test("补齐后的运行时 Section 只渲染一次")
+    func repairedUserSectionsRenderOnlyOnce() {
+        let current = AIPromptConfiguration(
+            systemPrompt: RAGDefaultPrompts.generator.systemPrompt,
+            userPromptTemplate: "{questionSection}"
+        )
+
+        let repaired = RAGPromptCompatibilityAnalyzer.repairing(
+            current: current,
+            reference: RAGDefaultPrompts.generator
+        )
+        let rendered = repaired.renderedUserPrompt(placeholders: [
+            "questionSection": "QUESTION_VALUE",
+            "evidenceSection": "EVIDENCE_VALUE",
+            "repositoryInsightsSection": "INSIGHTS_VALUE",
+            "repoContextSection": "REPO_CONTEXT_VALUE",
+            "remoteSection": "REMOTE_VALUE",
+            "attachmentSection": "ATTACHMENT_VALUE",
+        ])
+
+        #expect(rendered.components(separatedBy: "INSIGHTS_VALUE").count == 2)
+        #expect(rendered.components(separatedBy: "REPO_CONTEXT_VALUE").count == 2)
+        #expect(rendered.contains("# Starcat runtime context"))
+    }
+
+    @Test("已保存的旧重复补齐格式自动规范化")
+    func legacyDuplicatedRepairBlockIsNormalized() {
+        let legacy = AIPromptConfiguration(
+            systemPrompt: """
+            CUSTOM
+
+            Starcat runtime variables:
+            {outputLanguage}: {outputLanguage}
+            """,
+            userPromptTemplate: """
+            CUSTOM USER
+
+            Starcat runtime context:
+            {questionSection}: {questionSection}
+            {repositoryInsightsSection}: {repositoryInsightsSection}
+            """
+        )
+
+        let normalized = RAGPromptCompatibilityAnalyzer.normalizingLegacyRepairArtifacts(
+            in: legacy
+        )
+
+        #expect(normalized.systemPrompt.contains("outputLanguage: {outputLanguage}"))
+        #expect(!normalized.systemPrompt.contains("{outputLanguage}: {outputLanguage}"))
+        #expect(normalized.userPromptTemplate.contains("# Starcat runtime context"))
+        #expect(!normalized.userPromptTemplate.contains("{questionSection}: {questionSection}"))
+        #expect(
+            normalized.userPromptTemplate.components(
+                separatedBy: "{repositoryInsightsSection}"
+            ).count == 2
+        )
     }
 
     @Test("占位符提取保持顺序并忽略普通花括号")
