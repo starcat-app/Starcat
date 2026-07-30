@@ -229,7 +229,8 @@ BASE_URL=http://localhost:5001
 # 逗号分隔多个 key；用 supports/scripts/gen-api-key.sh 生成
 API_KEYS=sk-starcat-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
-# sharing 不调 GitHub API，故不需要 GITHUB_TOKENS
+# 基础仓库预览 `/r/*`、`/og/repo/*` 调 GitHub，生产必须配置 token pool
+GITHUB_TOKENS=ghp_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ```
 
 ### 5.2 `.env`（本地开发，git 忽略）
@@ -239,6 +240,7 @@ PORT=5001
 STORE_FILE=./sharing.db
 BASE_URL=http://localhost:5001
 API_KEYS=sk-starcat-7Y2K9F3P0XJTV5HW1MNCQR8BLZD4G6AE
+GITHUB_TOKENS=ghp_xxxxxxxxxxxxxxxxx,ghp_yyyyyyyyyyyyyyyyy
 ```
 
 ### 5.3 fly.io secrets（生产环境）
@@ -246,6 +248,7 @@ API_KEYS=sk-starcat-7Y2K9F3P0XJTV5HW1MNCQR8BLZD4G6AE
 ```bash
 fly secrets set \
   API_KEYS="sk-starcat-prodKey1,sk-starcat-prodKey2" \
+  GITHUB_TOKENS="ghp_token1,ghp_token2" \
   BASE_URL="https://starcat.ink" \
   STORE_FILE="/data/sharing.db" \
   -a starcat-sharing-api
@@ -261,7 +264,7 @@ fly secrets set \
 
 ```go
 // main.go
-import "github.com/dong4j/starcat-sharing-api/internal/middleware"
+import "github.com/starcat-app/starcat-sharing-api/internal/middleware"
 
 apiKeys := strings.Split(os.Getenv("API_KEYS"), ",")
 authMW := middleware.NewBearerAuth(apiKeys)

@@ -152,6 +152,92 @@ struct AITagSuggestion: Codable, Identifiable, Equatable, Sendable {
     var id: String { name.localizedLowercase }
 }
 
+/// AI 标签名的本地收敛策略。
+///
+/// Prompt 只能提高模型遵守规则的概率，不能充当数据完整性边界；尤其不同 Provider 可能
+/// 继续返回 8 个结果、越界置信度，或把 `Open-Source` 改写成 `open source`。因此生成结果
+/// 在进入 UI / 批量自动应用前必须再经过本地确定性规则：复用已有标准拼写、同义形式去重、
+/// 最多 3 个结果且最多 1 个真正的新标签。
+enum AITagSuggestionPolicy {
+    static let maximumSuggestionCount = 3
+    static let maximumNewTagCount = 1
+
+    /// 只整理不可见的首尾 / 连续空白，不擅自改变用户标签的展示拼写。
+    static func normalizedDisplayName(_ raw: String) -> String {
+        raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+    }
+
+    /// 用于 AI 推荐避重的宽松 identity，不用于数据库全局唯一约束。
+    ///
+    /// 大小写、宽度、音标、空白、`-`、`_` 的差异不应让 AI 新建标签；但保留 `+`、`.`、
+    /// `/` 等技术名称有意义的字符，避免把 `C` / `C++` 或 `Vue` / `Vue.js` 错误合并。
+    static func canonicalKey(_ raw: String) -> String {
+        let normalized = normalizedDisplayName(raw).folding(
+            options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+            locale: Locale(identifier: "en_US_POSIX")
+        )
+        let ignored = CharacterSet.whitespacesAndNewlines.union(
+            CharacterSet(charactersIn: "-_")
+        )
+        return String(normalized.unicodeScalars.filter { !ignored.contains($0) })
+    }
+
+    /// 把模型输出收敛为可展示、可应用的稳定结果。
+    ///
+    /// `vocabulary` 必须按产品优先级排序：当前 repo 标签在前，其余全库标签按使用频率
+    /// 降序在后。多个历史标签落到同一 canonical key 时保留第一个，从而优先沿用当前
+    /// repo 已有拼写，否则选择全库更常用的拼写。
+    static func normalizedSuggestions(
+        _ suggestions: [AITagSuggestion],
+        vocabulary: [String]
+    ) -> [AITagSuggestion] {
+        var existingNameByKey: [String: String] = [:]
+        for rawName in vocabulary {
+            let name = normalizedDisplayName(rawName)
+            let key = canonicalKey(name)
+            guard !name.isEmpty, !key.isEmpty, existingNameByKey[key] == nil else { continue }
+            existingNameByKey[key] = name
+        }
+
+        var existingResults: [AITagSuggestion] = []
+        var newResults: [AITagSuggestion] = []
+        var seenKeys: Set<String> = []
+
+        for suggestion in suggestions {
+            guard suggestion.confidence.isFinite,
+                  (0.0...1.0).contains(suggestion.confidence)
+            else { continue }
+
+            let proposedName = normalizedDisplayName(suggestion.name)
+            let key = canonicalKey(proposedName)
+            guard !proposedName.isEmpty, !key.isEmpty, !seenKeys.contains(key) else { continue }
+
+            let normalizedSuggestion: AITagSuggestion
+            if let existingName = existingNameByKey[key] {
+                normalizedSuggestion = AITagSuggestion(
+                    name: existingName,
+                    confidence: suggestion.confidence,
+                    reason: suggestion.reason.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+                existingResults.append(normalizedSuggestion)
+            } else {
+                guard newResults.count < maximumNewTagCount else { continue }
+                normalizedSuggestion = AITagSuggestion(
+                    name: proposedName,
+                    confidence: suggestion.confidence,
+                    reason: suggestion.reason.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+                newResults.append(normalizedSuggestion)
+            }
+
+            seenKeys.insert(key)
+        }
+        // 即使模型先输出新词，也让可复用的已有标签优先占据 3 个展示槽位。
+        return Array((existingResults + newResults).prefix(maximumSuggestionCount))
+    }
+}
+
 /// AI 标签生成的"已有标签"提示，分两层语义传递给 prompt。
 ///
 /// **为什么不用扁平 `[String]`**：
@@ -162,21 +248,22 @@ struct AITagSuggestion: Codable, Identifiable, Equatable, Sendable {
 /// 这种同义不同名标签让标签库爆炸。
 ///
 /// **设计约束**：
-/// - 两个数组都已**去重 + 排序 + 截断**完成（由 `RepoAIInsightService.makeTagHints`
+/// - 两个数组都已**去重 + 排序 + 字符预算截断**完成（由 `RepoAIInsightService.makeTagHints`
 ///   工厂方法统一生成）；service 层不再做二次处理；
 /// - 排序保证 deterministic：同一份输入 → 同一份 source.hash → AI 摘要缓存稳定命中，
 ///   避免 `Set → Array` 顺序不稳导致缓存频繁失效；
 /// - `repoTags` 与 `libraryTags` 互斥：`libraryTags` 工厂方法构造时已去掉 `repoTags`
 ///   里的元素，避免同一标签在 prompt 里出现两次（占字符 + 信号矛盾）；
-/// - 任一数组为空时 prompt 对应段落不渲染（避免出现 `Existing tags ... :` 后跟空行）。
+/// - 任一数组为空时只把对应占位符渲染为空字符串；label 保留，便于用户在 Settings
+///   理解模板结构与可用变量。
 struct AITagHints: Sendable, Equatable {
 
     /// 当前 repo 已绑定的标签名（强信号，AI 必须优先复用避免同义重复）。
     /// 列表全部传，不截断——单个 repo 标签数量普遍 ≤10，prompt 占用可控。
     var repoTags: [String]
 
-    /// 用户标签库里其它高频标签名（弱信号，作为风格 / 命名习惯参考）。
-    /// 已去掉 `repoTags` 里的元素，并按使用次数倒序截断到约定上限。
+    /// 用户标签库里其它标签名（首选复用词表，而非仅作风格参考）。
+    /// 已去掉 `repoTags` 里的元素，并按使用次数倒序填充到约定字符预算。
     var libraryTags: [String]
 
     static let empty = AITagHints(repoTags: [], libraryTags: [])

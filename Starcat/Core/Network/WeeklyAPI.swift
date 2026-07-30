@@ -5,7 +5,7 @@
 //  Weekly 多来源聚合后端 API 客户端。
 //
 //  数据源：starcat-weekly-api（独立 Go 服务）
-//  契约：见 https://github.com/dong4j/starcat-weekly-api 的 README，与
+//  契约：见 https://github.com/starcat-app/starcat-weekly-api 的 README，与
 //  本文件配套设计。
 //
 //  设计约束：
@@ -212,7 +212,7 @@ actor WeeklyAPI {
     /// - `URLSession` 默认会带 `Accept-Encoding: gzip, deflate, br` 并自动解压（Foundation
     ///   底层 NSURLSessionTask 在 Darwin 上由 CFNetwork 处理），所以我们读到的 `data` 已经
     ///   是解压后的 JSON 字节流；服务端 `Content-Encoding: gzip` 对调用方完全透明。
-    /// - 不做 conditional GET 304：本地缓存层（`WeeklyBulkRepository`）已经用 12h TTL 做
+    /// - 不做 conditional GET 304：本地缓存层（`WeeklyBulkRepository`）已经用 6h TTL 做
     ///   "客户端是否要发请求"的总闸；ETag 304 仅用于"绝对要发 + 但 server 也没变"的极少数
     ///   场景，加 304 处理会让客户端代码量翻倍而收益微小（典型场景是用户在 TTL 内强制刷新，
     ///   此时本来就是为了拿"server 真值"，304 反而需要 fallback 到本地 + 还得维护 ETag）。
@@ -376,7 +376,7 @@ struct WeeklyBulkResult: Equatable, Sendable {
     let items: [WeeklyFeedItem]
     let languages: [TrendingLanguageAggregateDTO]
     /// 服务端响应 `ETag` header（如 `W/"abc123de"`）。当前不做 conditional GET 304，但
-    /// 落盘是为了将来"server 主动 push schedule 变更后客户端能在 12h TTL 内 ad-hoc 提早
+    /// 落盘是为了将来"server 主动 push schedule 变更后客户端能在 6h TTL 内 ad-hoc 提早
     /// 失效"等扩展场景。
     let etag: String?
     /// 服务端 envelope.meta.generated_at（payload 构建时刻，ISO8601）。与 client-side

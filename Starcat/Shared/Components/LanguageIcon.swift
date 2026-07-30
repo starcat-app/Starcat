@@ -1101,7 +1101,8 @@ struct AllLanguagesIcon: View {
     var body: some View {
         Image(systemName: "globe")
             .font(.system(size: size, weight: .medium))
-            .foregroundStyle(.cyan)
+            // 明亮 List 选中蓝底上反白，避免青色 globe 与系统选中条撞色看不清。
+            .foregroundStyle(SidebarSemanticIconStyle(semanticColor: .cyan))
             .frame(width: size, height: size)
             .accessibilityLabel(Text("trending.allLanguages"))
     }
@@ -1118,7 +1119,8 @@ struct UncategorizedLanguageIcon: View {
     var body: some View {
         Image(systemName: "questionmark.circle")
             .font(.system(size: size, weight: .medium))
-            .foregroundStyle(.yellow)
+            // 与 AllLanguagesIcon 同口径：明亮选中反白。
+            .foregroundStyle(SidebarSemanticIconStyle(semanticColor: .yellow))
             .frame(width: size, height: size)
             .accessibilityLabel(Text("trending.language.uncategorized"))
     }
@@ -1136,10 +1138,18 @@ enum UncategorizedLanguageKey {
 struct LanguageIconView: View {
     let language: String
     let size: CGFloat
+    @Environment(\.backgroundProminence) private var backgroundProminence
+    @Environment(\.colorScheme) private var colorScheme
 
     init(language: String, size: CGFloat = 20) {
         self.language = language
         self.size = size
+    }
+
+    /// 明亮主题侧栏选中蓝底：Devicon 不能像 SF Symbol 那样整图反白（会丢品牌辨识），
+    /// 改用白底托盘 / 白描边把彩色 logo 从蓝底上「托」出来。
+    private var needsSelectionPedestal: Bool {
+        backgroundProminence == .increased && colorScheme == .light
     }
 
     @ViewBuilder
@@ -1157,17 +1167,32 @@ struct LanguageIconView: View {
 
         switch result.type {
         case .localSVG(let assetName):
-            Image(assetName)
-                .resizable()
-                .scaledToFill()
-                .frame(width: size, height: size)
-                .clipped()
+            // 选中时：外圈白底固定为 size，logo 略缩小居中，保留彩色且对比蓝底可读。
+            let logoSize = needsSelectionPedestal ? max(size - 3, size * 0.72) : size
+            ZStack {
+                if needsSelectionPedestal {
+                    Circle()
+                        .fill(Color.white)
+                }
+                Image(assetName)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: logoSize, height: logoSize)
+                    .clipped()
+            }
+            .frame(width: size, height: size)
 
         case .badge(let colorHex, _):
-            // Fallback: 只显示彩色圆形，不显示字母
+            // Fallback 色点：本身已是实心圆，加白描边即可与蓝底分离，不必改填充色。
             let color = Color(hex: colorHex) ?? .gray
             Circle()
                 .fill(color)
+                .overlay {
+                    if needsSelectionPedestal {
+                        Circle()
+                            .strokeBorder(Color.white, lineWidth: 1.5)
+                    }
+                }
                 .frame(width: size, height: size)
         }
     }

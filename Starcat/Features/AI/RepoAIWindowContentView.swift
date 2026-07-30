@@ -11,9 +11,8 @@
 //    任一时刻只创建并展示「摘要」**或**「对话」之一，中间 segmented toggle 切换。
 //  - 摘要部分复用既有的 `RepoAIInsightViewModel`（生成 / 缓存 / 标签推荐三段），
 //    对话部分由新的 `RepoAIChatViewModel` 承担。
-//  - W4（2026-06-21）：`emptySummaryState` 新增 prep step chip 行 + 失败降级 banner，
-//    在「生成摘要」按钮上方实时展示「解析分支 → 下载项目代码 → 解压并生成上下文」
-//    进度，让按钮不被前置 IO 阻塞可点。
+//  - 空态只说明项目上下文的启用状态；解析分支、下载 ZIP、生成 XML 只在用户发起
+//    生成 / 重新生成后执行并展示进度。
 //
 //  关键约束（HOM-150 累计 4 轮 dong4j 反馈整合）：
 //  - **单面板互斥**（dong4j 2026-06-04 15:30）：用 `AIPanelMode` 枚举控制当前激活
@@ -37,6 +36,7 @@
 //  + segmented toggle bar，把"滚动控制布局"这条不直觉的交互彻底剥离。
 //
 
+import AppKit
 import SwiftUI
 
 /// AI 助手窗口当前激活的面板（互斥）。
@@ -60,6 +60,38 @@ enum AIPanelMode: String, CaseIterable, Identifiable, Hashable {
         case .summary: return "ai.assistant.toggle.summary"
         case .chat: return "ai.assistant.toggle.chat"
         }
+    }
+}
+
+/// AppKit 独立 AI 窗口拿不到主 Scene 的 `OpenSettingsAction`，由
+/// `RepoAIWindowController.show` 注入；详情页内联浮层不注入，走
+/// `@Environment(\.openSettings)`（与 `AppStatusToolbarButton` 同款）。
+///
+/// 刻意不用 `NSApp.sendAction(showSettingsWindow:)`：在自建 NSPanel / 内联浮层
+/// 里该 selector 经常找不到 responder，表现为「前往设置」点击无反应。
+struct AISettingsNavigationAction {
+    private let handler: (@MainActor (String) -> Void)?
+
+    init(handler: (@MainActor (String) -> Void)? = nil) {
+        self.handler = handler
+    }
+
+    var isInjected: Bool { handler != nil }
+
+    @MainActor
+    func callAsFunction(_ target: String) {
+        handler?(target)
+    }
+}
+
+private struct AISettingsNavigationActionKey: EnvironmentKey {
+    static let defaultValue = AISettingsNavigationAction()
+}
+
+extension EnvironmentValues {
+    var aiSettingsNavigation: AISettingsNavigationAction {
+        get { self[AISettingsNavigationActionKey.self] }
+        set { self[AISettingsNavigationActionKey.self] = newValue }
     }
 }
 
@@ -107,17 +139,20 @@ struct RepoAIWindowContentView: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    /// 主 Scene 内联浮层走这条；独立 AI 窗口走 `aiSettingsNavigation`。
+    @Environment(\.openSettings) private var openSettings
+    @Environment(\.aiSettingsNavigation) private var aiSettingsNavigation
 
     @State private var insightVM: RepoAIInsightViewModel?
     @State private var chatVM: RepoAIChatViewModel?
     @State private var didRunInitialExternalSummaryRequest = false
     @State private var areExternalContextSourcesExpanded = false
-    @State private var hoveredPrepStopStep: PrepStep?
+    @State private var isPreparingContextRowHovered = false
     /// 历史消息的“修改”操作通过一次性请求回填输入组件。正常键入只改输入组件
     /// 内部 `@State`，不会让本窗口根视图跟着每个字符失效。
     @State private var pendingChatDraftReplacement: String?
     @FocusState private var isChatInputFocused: Bool
-    @FocusState private var focusedPrepStopStep: PrepStep?
+    @FocusState private var isPreparingContextStopFocused: Bool
 
     /// AI 窗口打开瞬间冻结的 star 状态（R-01 §3.2.7 Step 8）。
     ///
@@ -220,8 +255,8 @@ struct RepoAIWindowContentView: View {
             // 辅助状态信息，而不是 banner-style 横在头顶。
             //
             // 关键设计：
-            //   - **数据源复用摘要 vm**：`insight.contextMetadata` / `vm.contextDegradationReason`
-            //     在摘要 generate 路径已被填充，chat 路径与摘要共用同一份 makeSource 结果，
+            //   - **数据源复用摘要 vm**：`insight.contextMetadata` 在摘要 generate 路径已被
+            //     填充，chat 路径与摘要共用同一份 makeSource 结果，
             //     不需要在 RepoAIChatViewModel 里再持一份；
             //   - **只在 .chat 面板显示**：摘要面板已有 banner / footer 双重提示，无需重复；
             //   - **3 态不显**（用户主动关总开关 / 摘要还没生成过 / 网络在跑）：不打扰，
@@ -239,6 +274,14 @@ struct RepoAIWindowContentView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.14), lineWidth: 1)
                 .allowsHitTesting(false)
+        }
+        .onAppear {
+            // 内联浮层与独立窗口都走同一内容 View；用引用计数记录可见性，
+            // 只有所有摘要面板都关闭时，运行任务才进入 Sidebar 后台任务区。
+            dependencies.repoAIInsightSessionStore.panelDidAppear(for: repo.id)
+        }
+        .onDisappear {
+            dependencies.repoAIInsightSessionStore.panelDidDisappear(for: repo.id)
         }
         .task(id: repo.id) {
             // R-01 §3.2.7 Step 8：第一次 task 触发时冻结 star 状态。
@@ -287,7 +330,10 @@ struct RepoAIWindowContentView: View {
         await initializeInsightViewModelIfNeeded()
         guard let vm = insightVM, !vm.isGenerating else { return }
         panelMode = .summary
-        await vm.generate(repo: repo, includeTags: starredAtOpen == true)
+        dependencies.repoAIInsightSessionStore.startGeneration(
+            for: repo,
+            includeTags: starredAtOpen == true
+        )
     }
 
     /// 任一时刻只让当前面板进入 SwiftUI 视图树。旧实现把另一面板压到高度 0，
@@ -371,11 +417,9 @@ struct RepoAIWindowContentView: View {
     /// 后再创建可靠得多。
     private func initializeInsightViewModelIfNeeded() async {
         if insightVM == nil {
-            let ivm = RepoAIInsightViewModel(
-                service: dependencies.repoAIInsightService,
-                tagRepository: dependencies.tagRepository,
-                repoTagRepository: dependencies.repoTagRepository
-            )
+            // 摘要 VM 由 App 级 session store 按 repo 复用。浮层收起或切到其它仓库时，
+            // 当前生成 Task 与 streaming 状态仍然存活，切回来直接接上原状态。
+            let ivm = dependencies.repoAIInsightSessionStore.viewModel(for: repo.id)
             // 与旧详情页 AI Tab 行为一致：应用标签后刷新主窗 Sidebar + 列表。
             // 窗口可能独立于主窗存在，但 HomeViewModel 是同一实例，刷新调用安全。
             ivm.onTagsChanged = { [weak homeViewModel] in
@@ -450,14 +494,14 @@ struct RepoAIWindowContentView: View {
                                 // 文案，但该文案承诺的是"读本地缓存"，实际行为却跑 resolveBranch +
                                 // ZIP 下载 + packer（详见 `RepoAIInsightService.cachedInsight` 旧注释）。
                                 // 现改为：打开面板时 load 路径只查 DB + JSON decode（`cachedInsightFast`），
-                                // 耗时 ~10ms 不可见；context prep 改为后台跑，UI 在 `emptySummaryState`
-                                // 里的 chip 行展示真实进度。这里去掉旧的 loadingCache 分支，让首次进
-                                // 入直接落到 `emptySummaryState`（含生成摘要按钮 + prep chip 行）。
+                                // 耗时 ~10ms 不可见；代码上下文只在用户发起生成后准备并展示步骤。
+                                // 首次进入直接落到 `emptySummaryState`，不产生网络或磁盘副作用。
                                 if vm.isGenerating, vm.phase == .preparingContext {
-                                    // Y1：摘要生成首阶段 -- RepoContextPacker 正在打包代码上下文。
-                                    // 此时 streamingSummaryText 还是空字符串（service 还没收到 LLM
-                                    // 的第一个 delta），需要单独 UI 提示用户"在做事，别关窗口"。
-                                    preparingContextPlaceholder()
+                                    preparingContextPlaceholder(vm: vm)
+                                } else if vm.isGenerating,
+                                          vm.phase == .fetchingExternalContext
+                                            || vm.phase == .requestingSummary {
+                                    requestingSummaryPlaceholder(vm: vm)
                                 } else if let draft = vm.streamingSummaryText, !draft.isEmpty {
                                     streamingSummary(draft)
                                 } else if let insight = vm.insight {
@@ -518,15 +562,18 @@ struct RepoAIWindowContentView: View {
                 copyButton(insight: insight)
 
                 // Y6（2026-06-13）：右上角原"重新生成"单按钮改为 ellipsis.circle Menu，
-                // 让"在 Finder 中显示代码上下文"找得到地方挂。
+                // 让"打开代码上下文"找得到地方挂。
                 //
                 // Menu 项：
                 //   1. 重新生成：与历史按钮等价；
-                //   2. 在 Finder 中显示上下文：当 insight.contextMetadata 非 nil 才出现
+                //   2. 打开代码上下文：当 insight.contextMetadata 非 nil 才出现
                 //      （README-only 路径下没意义）；点击调 RepoContextStorage.shared.revealProject。
                 Menu {
                     Button {
-                        Task { await vm.generate(repo: repo, includeTags: starredAtOpen == true) }
+                        dependencies.repoAIInsightSessionStore.startGeneration(
+                            for: repo,
+                            includeTags: starredAtOpen == true
+                        )
                     } label: {
                         Label("ai.assistant.summary.regenerate", systemImage: "arrow.clockwise")
                     }
@@ -593,36 +640,14 @@ struct RepoAIWindowContentView: View {
                 .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
 
-            // W4（2026-06-21）：后台 prep 进度 chip 行（持续展示，不藏）。
-            //
-            // dong4j 2026-06-21 反馈修正：chip 行一旦展示就不该再藏——`.ready` 状态下
-            // chip 显示全部 ✓（"数据已就绪"信号），让用户在点击「生成摘要」前/中都能
-            // 看到 prep 已经完成。视觉流是「chip 行（状态）+ 按钮（操作）」，按钮变
-            // ProgressView 时 chip 仍保留，提示"数据已就绪，等 LLM 回包"。
-            //
-            // 触发条件：仅在「prep 真启动过」时显示——
-            //   - `.idle`：toggle off 或 provider 未注入，本来就没活干，不显示
-            //   - `.preparing(step:)`：prep 中，3 段 chip + 当前段 spinner + 已完成段 ✓
-            //   - `.ready`：prep 完成，3 段全 ✓（持续保留直到用户生成成功 / 切 repo）
-            //   - `.failed(reason)`：prep 失败，chip 全暗 + 下方降级 banner 给出原因
-            //
-            // 关键约束：prep chip 行放在按钮**上方**，与下方按钮形成「上方进度 + 下方
-            // 操作」的自然视线流；按钮本身维持可点（不因为 prep 未完而禁用），让用户
-            // 能"边等边点"，点了之后 generate 会 await prep 完成再发 LLM 请求。
-            if shouldShowPrepChipRow(vm: vm) {
-                prepStepChipRow(vm: vm)
-            }
-
-            // W4：prep 失败时复用现有降级 banner 给出具体原因（ZIP 下载失败 / packer
-            // 错误等），让用户知道"我点了会怎样"。banner 复用 `contextDegradationBanner`
-            // 而非自己造样式，保持与 generate 失败时一致外观。
-            if case let .failed(reason) = vm.prepProgress {
-                contextDegradationBanner(reason)
-            }
+            codeContextAvailabilityRow
 
             Button {
                 // R-01 §3.2.7 Step 8：includeTags 由窗口打开瞬间冻结的 star 状态决定。
-                Task { await vm.generate(repo: repo, includeTags: starredAtOpen == true) }
+                dependencies.repoAIInsightSessionStore.startGeneration(
+                    for: repo,
+                    includeTags: starredAtOpen == true
+                )
             } label: {
                 if vm.isGenerating {
                     ProgressView().controlSize(.small)
@@ -636,19 +661,48 @@ struct RepoAIWindowContentView: View {
         }
     }
 
-    /// W4：prep chip 行是否要展示的判定，集中一处便于 review。
+    /// 面板空态只呈现配置状态，不在这里启动或暗示任何下载任务。
+    @ViewBuilder
+    private var codeContextAvailabilityRow: some View {
+        HStack(spacing: 6) {
+            if settings.aiRepoContextEnabled {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Text("ai.assistant.summary.codeContext.enabled")
+                    .foregroundStyle(.secondary)
+            } else {
+                Image(systemName: "circle")
+                    .foregroundStyle(.secondary)
+                Text("ai.assistant.summary.codeContext.disabled")
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                Button("ai.assistant.summary.codeContext.openSettings") {
+                    openCodeContextSettings()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+        .font(interfaceScale.font(.captionSmall))
+    }
+
+    /// 打开「设置 → AI → 项目上下文」。
     ///
-    /// dong4j 2026-06-21 修正语义：**chip 展示了就不藏**。`.ready` 状态下 chip 显示
-    /// 全部 ✓ 作为"数据已就绪"信号，让用户在点击「生成摘要」前能看到 prep 已完成；
-    /// 点完按钮之后 chip 也保留（按钮变 ProgressView），形成"数据已就绪 + 等 LLM"
-    /// 的双重视觉提示。仅 `.idle`（prep 没启动过，例如 toggle off）才不显示——
-    /// 这种场景下没有「状态」可显示，不应该用空 chip 占位。
-    private func shouldShowPrepChipRow(vm: RepoAIInsightViewModel) -> Bool {
-        switch vm.prepProgress {
-        case .idle:
-            return false
-        case .preparing, .ready, .failed:
-            return true
+    /// - 内联浮层：用主 Scene 的 `OpenSettingsAction`（可靠）。
+    /// - 独立 NSPanel：用 `show` 时注入的 `aiSettingsNavigation`（同样基于 OpenSettingsAction）。
+    /// Settings Scene 首次创建后才有 Tab 监听，因此定位通知延后一轮，与
+    /// `AppStatusToolbarButton` / RAG 工作台同款。
+    private func openCodeContextSettings() {
+        if aiSettingsNavigation.isInjected {
+            aiSettingsNavigation("ai.repoContext")
+            return
+        }
+        openSettings()
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: .starcatJumpToSettingsTab,
+                object: "ai.repoContext"
+            )
         }
     }
 
@@ -683,10 +737,13 @@ struct RepoAIWindowContentView: View {
     }
 
     @ViewBuilder
-    private func prepStepChip(step: PrepStep, vm: RepoAIInsightViewModel) -> some View {
+    private func prepStepChip(
+        step: PrepStep,
+        vm: RepoAIInsightViewModel
+    ) -> some View {
         let state = prepStepState(step: step, vm: vm)
         HStack(spacing: 4) {
-            prepStepIcon(step: step, state: state, vm: vm)
+            prepStepIcon(state: state)
             Text(step.displayKey)
                 .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(prepStepTextColor(state: state))
@@ -695,13 +752,15 @@ struct RepoAIWindowContentView: View {
     }
 
     @ViewBuilder
-    private func prepStepIcon(step: PrepStep, state: PrepStepState, vm: RepoAIInsightViewModel) -> some View {
+    private func prepStepIcon(state: PrepStepState) -> some View {
         switch state {
         case .done:
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
         case .active:
-            prepStopButton(step: step, vm: vm)
+            ProgressView()
+                .controlSize(.mini)
+                .frame(width: 14, height: 14)
         case .pending:
             Image(systemName: "circle")
                 // 故意用 .tertiary：pending 是「视觉降级」态，需要明显比 active 暗一档。
@@ -710,57 +769,18 @@ struct RepoAIWindowContentView: View {
         }
     }
 
-    private func prepStopButton(step: PrepStep, vm: RepoAIInsightViewModel) -> some View {
-        let showsStop = hoveredPrepStopStep == step || focusedPrepStopStep == step
-        return Button {
-            vm.cancelContextPreparation(repo: repo)
-        } label: {
-            Group {
-                if showsStop {
-                    Image(systemName: "stop.circle.fill")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ProgressView()
-                        .controlSize(.mini)
-                }
-            }
-            // 固定命中区和布局尺寸，避免 hover 时 spinner / SF Symbol 宽度差造成文字抖动。
-            .frame(width: 14, height: 14)
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .focused($focusedPrepStopStep, equals: step)
-        .onHover { isHovered in
-            hoveredPrepStopStep = isHovered ? step : nil
-        }
-        .onDisappear {
-            if hoveredPrepStopStep == step { hoveredPrepStopStep = nil }
-            if focusedPrepStopStep == step { focusedPrepStopStep = nil }
-        }
-        .accessibilityLabel(Text("ai.assistant.prep.stop.accessibility"))
-        .help("ai.assistant.prep.stop.accessibility")
-    }
-
     private enum PrepStepState { case done, active, pending }
 
     private func prepStepState(step: PrepStep, vm: RepoAIInsightViewModel) -> PrepStepState {
         switch vm.prepProgress {
-        case .ready:
-            // dong4j 2026-06-21 反馈修正：`.ready` 状态下 chip 持续展示，
-            // 全部 step 显示 done 让用户感知「数据已就绪」。
-            return .done
         case .preparing(let current):
             let order: [PrepStep] = [.resolvingBranch, .downloadingArchive, .packingContext]
             guard let currentIdx = order.firstIndex(of: current),
                   let stepIdx = order.firstIndex(of: step) else { return .pending }
             if stepIdx == currentIdx { return .active }
             return stepIdx < currentIdx ? .done : .pending
-        case .failed:
-            // 失败态：chip 行所有 step 全暗，具体失败原因由 contextDegradationBanner 给出。
-            return .pending
         case .idle:
-            // idle 状态下不显示 chip 行（被 `shouldShowPrepChipRow` 过滤），
-            // 此处返回 pending 是兜底（函数不应该被 idle 状态调用）。
+            // 生成入口会在渲染步骤前先种入 resolving；idle 只作为防御性兜底。
             return .pending
         }
     }
@@ -783,9 +803,7 @@ struct RepoAIWindowContentView: View {
     /// W4：prep chip 行的 VoiceOver 标签，3 段拼成一句完整描述。
     /// 不读出每个 chip 的图标，只朗读「解析分支完成 / 下载项目代码进行中」这种语义。
     ///
-    /// dong4j 2026-06-21 修正：`.ready` 也拼 segment（每段都是 done），让 VoiceOver 用户
-    /// 能听到"代码上下文已就绪"的语义（与视觉 ✓ 三段对齐）。`.idle` 返回空（不该触发，
-    /// 但兜底防 crash）。
+    /// `.idle` 返回空（不该触发，但兜底防 crash）。
     private func prepChipRowAccessibilityLabel(vm: RepoAIInsightViewModel) -> String {
         let order: [PrepStep] = [.resolvingBranch, .downloadingArchive, .packingContext]
         let segments: [String]
@@ -801,17 +819,8 @@ struct RepoAIWindowContentView: View {
                 else { stateLabel = String.l10n("ai.assistant.prep.accessibility.pending") }
                 return "\(step.displayName): \(stateLabel)"
             }
-        case .ready:
-            // chip 持续展示状态，每段都是 done；VoiceOver 与视觉 ✓ 三段对齐。
-            segments = order.map { step in
-                "\(step.displayName): \(String.l10n("ai.assistant.prep.accessibility.done"))"
-            }
-        case .failed:
-            segments = order.map { step in
-                "\(step.displayName): \(String.l10n("ai.assistant.prep.accessibility.failed"))"
-            }
         case .idle:
-            // 不显示 chip 行（被 shouldShowPrepChipRow 过滤），此处兜底返回空。
+            // 生成入口会先切到 preparing；idle 只作为防御性兜底。
             return ""
         }
         return segments.joined(separator: ", ")
@@ -835,18 +844,170 @@ struct RepoAIWindowContentView: View {
     ///   - streaming：用户已经看到 LLM 在吐字了 → caption 提示"摘要正在生成"
     ///   - preparingContext：没有任何文字输出，但后台 packer 正在工作 → caption 提示
     ///     "正在分析仓库代码结构"，避免用户以为 App 卡死
-    private func preparingContextPlaceholder() -> some View {
+    ///
+    /// 跳过入口常显 stop 图标 +「跳过」文案：AI 浮层上纯 hover 换图标不够稳，
+    /// 用户容易以为没有取消能力。整行仍可点。
+    private func preparingContextPlaceholder(vm: RepoAIInsightViewModel) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                ProgressView().controlSize(.small)
-                Text("ai.assistant.summary.preparingContext")
-                    .font(interfaceScale.font(.caption))
-                    .foregroundStyle(.secondary)
+            Button {
+                vm.skipCodeContextForCurrentGeneration(repo: repo)
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "stop.circle.fill")
+                        .font(interfaceScale.font(.iconSmall))
+                        .foregroundStyle(isPreparingContextRowHovered || isPreparingContextStopFocused ? Color.primary : Color.secondary)
+                        .frame(width: 16, height: 16)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("ai.assistant.summary.preparingContext")
+                            .font(interfaceScale.font(.caption))
+                            .foregroundStyle(.primary)
+                        if let step = currentPreparingStep(vm: vm) {
+                            Text(step.displayKey)
+                                .font(interfaceScale.font(.captionSmall))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Spacer(minLength: 8)
+
+                    Text("ai.assistant.prep.skipCurrent")
+                        .font(interfaceScale.font(.captionSmall, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .focused($isPreparingContextStopFocused)
+            .onHover { isPreparingContextRowHovered = $0 }
+            .accessibilityLabel(Text("ai.assistant.prep.skipCurrent.accessibility"))
+            .help("ai.assistant.prep.skipCurrent.accessibility")
+
+            // 摘要点击后的正文加载态也展示三段真实步骤；active step 用 spinner，
+            // 取消入口统一放在上面的文本行，避免同一区域出现两个停止按钮。
+            prepStepChipRow(vm: vm)
+
             Text("ai.assistant.summary.preparingContext.caption")
                 .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
         }
+    }
+
+    /// 生成中准备态的当前步骤；`.ready` / `.failed` / `.idle` 时不额外显示副标题。
+    private func currentPreparingStep(vm: RepoAIInsightViewModel) -> PrepStep? {
+        if case let .preparing(step) = vm.prepProgress {
+            return step
+        }
+        return nil
+    }
+
+    /// 代码上下文已经完成或被主动跳过后，等待外部材料与 LLM 首个 token 的过渡态。
+    ///
+    /// 单独拆出该阶段，避免 XML 已经注入后仍显示可点击的“停止”按钮，造成操作成功但
+    /// 实际无法撤回上下文的假反馈。
+    ///
+    /// 若本次生成冻结了 External Search，额外展示两段 chip：
+    /// `获取外部资料` → `准备摘要请求`，把外搜耗时从笼统文案里拆出来。
+    private func requestingSummaryPlaceholder(vm: RepoAIInsightViewModel) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Group {
+                    if vm.phase == .fetchingExternalContext {
+                        Text("ai.assistant.summary.fetchingExternal")
+                    } else if vm.didSkipCodeContextForCurrentGeneration {
+                        Text("ai.assistant.summary.contextSkipped")
+                    } else {
+                        Text("ai.assistant.summary.requesting")
+                    }
+                }
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
+            }
+
+            if vm.usesExternalContextForCurrentGeneration {
+                requestPrepStepChipRow(vm: vm)
+            }
+
+            Text(
+                vm.phase == .fetchingExternalContext
+                    ? "ai.assistant.summary.fetchingExternal.caption"
+                    : "ai.assistant.summary.requesting.caption"
+            )
+            .font(interfaceScale.font(.captionSmall))
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    /// External Search 开启时，代码上下文之后的两段可见步骤。
+    @ViewBuilder
+    private func requestPrepStepChipRow(vm: RepoAIInsightViewModel) -> some View {
+        let order: [RequestPrepStep] = [.externalSearch, .requestingLLM]
+        HStack(spacing: 6) {
+            ForEach(Array(order.enumerated()), id: \.offset) { index, step in
+                requestPrepStepChip(step: step, vm: vm)
+                if index < order.count - 1 {
+                    Image(systemName: "circle.dotted")
+                        .font(interfaceScale.font(.captionSmall))
+                        // 故意用 .tertiary + 低 opacity：纯装饰连接符，不承载语义信息。
+                        .foregroundStyle(.tertiary)
+                        .opacity(0.4)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(requestPrepChipRowAccessibilityLabel(vm: vm))
+    }
+
+    @ViewBuilder
+    private func requestPrepStepChip(step: RequestPrepStep, vm: RepoAIInsightViewModel) -> some View {
+        let state = requestPrepStepState(step: step, vm: vm)
+        HStack(spacing: 4) {
+            prepStepIcon(state: state)
+            Text(step.displayKey)
+                .font(interfaceScale.font(.captionSmall))
+                .foregroundStyle(prepStepTextColor(state: state))
+        }
+        .opacity(prepStepOpacity(state: state))
+    }
+
+    private func requestPrepStepState(step: RequestPrepStep, vm: RepoAIInsightViewModel) -> PrepStepState {
+        let current: RequestPrepStep
+        switch vm.phase {
+        case .fetchingExternalContext:
+            current = .externalSearch
+        case .requestingSummary, .streamingSummary, .preparingContext, .none:
+            current = .requestingLLM
+        }
+        let order: [RequestPrepStep] = [.externalSearch, .requestingLLM]
+        guard let currentIdx = order.firstIndex(of: current),
+              let stepIdx = order.firstIndex(of: step) else { return .pending }
+        if stepIdx == currentIdx { return .active }
+        return stepIdx < currentIdx ? .done : .pending
+    }
+
+    private func requestPrepChipRowAccessibilityLabel(vm: RepoAIInsightViewModel) -> String {
+        let order: [RequestPrepStep] = [.externalSearch, .requestingLLM]
+        let current: RequestPrepStep = vm.phase == .fetchingExternalContext
+            ? .externalSearch
+            : .requestingLLM
+        guard let currentIdx = order.firstIndex(of: current) else {
+            return String.l10n("ai.assistant.prep.accessibility.running")
+        }
+        let segments = order.enumerated().map { idx, step in
+            let stateLabel: String
+            if idx < currentIdx {
+                stateLabel = String.l10n("ai.assistant.prep.accessibility.done")
+            } else if idx == currentIdx {
+                stateLabel = String.l10n("ai.assistant.prep.accessibility.active")
+            } else {
+                stateLabel = String.l10n("ai.assistant.prep.accessibility.pending")
+            }
+            return "\(step.displayName): \(stateLabel)"
+        }
+        return segments.joined(separator: ", ")
     }
 
     @ViewBuilder
@@ -995,7 +1156,10 @@ struct RepoAIWindowContentView: View {
                 .font(interfaceScale.font(.caption))
             Spacer(minLength: 8)
             Button {
-                Task { await vm.generate(repo: repo, includeTags: starredAtOpen == true) }
+                dependencies.repoAIInsightSessionStore.startGeneration(
+                    for: repo,
+                    includeTags: starredAtOpen == true
+                )
             } label: {
                 Text("ai.assistant.summary.staleSettings.regenerate")
                     .font(interfaceScale.font(.caption, weight: .medium))
@@ -1163,7 +1327,7 @@ struct RepoAIWindowContentView: View {
     /// 摘要 / 对话之间的 segmented 切换条。
     ///
     /// 设计要点：
-    /// - 复用 `PillSegmentedControl`（与 Trending 顶栏「今日 / 本周 / 本月」同款）：
+    /// - 复用 `PillSegmentedControl` compact（与详情 README / 洞察切换同密度）：
     ///   胶囊外框 + 内嵌选中 pill，替代系统 `Picker(.segmented)` 的灰底蓝块风格；
     /// - 首次进入聊天先异步准备数据，期间保留摘要内容并在右侧显示进度；
     /// - 面板结构无动画替换，下一帧仅让目标面板做 0.12s 单向淡入，旧、新文字
@@ -1174,7 +1338,9 @@ struct RepoAIWindowContentView: View {
             PillSegmentedControl(
                 items: Array(AIPanelMode.allCases),
                 selection: panelModeBinding,
-                title: \.displayName
+                title: \.displayName,
+                // 底部切换条与详情内嵌胶囊同密度（11pt），避免 13pt regular 抢视觉焦点。
+                size: .compact
             )
             .disabled(isPreparingChat)
             .help("ai.assistant.toggle.help")
@@ -1936,9 +2102,19 @@ struct RepoAIWindowContentView: View {
         HStack(spacing: 8) {
             Image(systemName: "info.circle.fill")
                 .foregroundStyle(.yellow)
-            Text(LocalizedStringKey(reason.bannerMessageKey))
+            Text(verbatim: reason.bannerMessage(
+                maximumArchiveMB: settings.aiRepoContextMaximumArchiveMB
+            ))
                 .font(interfaceScale.font(.caption))
                 .foregroundStyle(.primary)
+            Spacer(minLength: 8)
+            if reason == .archiveTooLarge {
+                Button("codeGraph.archiveLimit.adjust") {
+                    openCodeContextSettings()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
         }
         .padding(10)
         .background(
@@ -1982,16 +2158,17 @@ struct RepoAIWindowContentView: View {
 
     /// Y9（2026-06-14，决议 E=e3+）：对话输入框上方的"上下文汇总"状态行。
     ///
-    /// 优先级（从高到低，命中即停）：
-    ///   1. **降级 banner**：摘要生成时 RepoContextPacker 报错（`vm.contextDegradationReason`
-    ///      非 nil）→ 黄色 ⚠ + degradation 文案。这是异常路径的强信号，盖过其他显示。
-    ///   2. **3 维汇总**：按当前 settings + cachedInsight 动态拼接「摘要 · 代码 · 外网」
+    /// 展示规则：
+    ///   1. **3 维汇总**：按当前 settings + cachedInsight 动态拼接「摘要 · 代码 · 外网」
     ///      - 摘要：`vm.insight?.summaryMarkdown` 非空（说明用户至少生成过一次）；
     ///      - 代码：`settings.aiRepoContextEnabled == true` 且 contextMetadata 实际有
     ///        （上次确实 pack 成功 / 还在缓存里）；
     ///      - 外网：settings 当前允许 External Context（开关 + 私仓门控）且
     ///        `vm.insight?.externalContextMarkdown` 有缓存。
-    ///   3. **三者都为 false**：完全不显示（README-only 是默认状态，无需占位）。
+    ///   2. **三者都为 false**：完全不显示（README-only 是默认状态，无需占位）。
+    ///
+    /// 代码上下文降级原因只在 AI 摘要面板展示。对话页只回答“当前实际带了哪些上下文”，
+    /// 不重复超限、网络失败等提示，避免同一问题在两个 Tab 反复出现。
     ///
     /// 为什么混用「settings 当前值」+「cachedInsight 实际有否」：
     ///   - settings 反映"用户当前意图"（即将翻译成 system prompt 的开关）；
@@ -2006,30 +2183,8 @@ struct RepoAIWindowContentView: View {
     @ViewBuilder
     private var chatContextStatusRow: some View {
         if let vm = insightVM {
-            if let reason = vm.contextDegradationReason {
-                degradationStatusRow(reason: reason)
-            } else {
-                summarizedStatusRow(vm: vm)
-            }
+            summarizedStatusRow(vm: vm)
         }
-    }
-
-    /// 降级 banner（沿用 Y4 / Y8 风格）。
-    ///
-    /// 顶 2pt 与输入框底部 8pt 合计 10pt 间距；底 6pt 作为窗口底边呼吸距。
-    /// `summarizedStatusRow` 同步。
-    private func degradationStatusRow(reason: ContextDegradationReason) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.yellow)
-            Text(LocalizedStringKey(reason.bannerMessageKey))
-                .font(interfaceScale.font(.captionSmall))
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 2)
-        .padding(.bottom, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// 3 维汇总状态行。
@@ -2100,7 +2255,7 @@ struct RepoAIWindowContentView: View {
                     }
                 }
             }
-            // 顶 2pt + 输入框底 8pt = 10pt；底 6pt 窗口底边呼吸距。详见 degradationStatusRow。
+            // 顶 2pt + 输入框底 8pt = 10pt；底 6pt 作为窗口底边呼吸距。
             .padding(.horizontal, 20)
             .padding(.top, 2)
             .padding(.bottom, 6)
@@ -2267,6 +2422,22 @@ extension PrepStep {
         case .resolvingBranch: return String.l10n("ai.assistant.prep.step.resolvingBranch")
         case .downloadingArchive: return String.l10n("ai.assistant.prep.step.downloadingArchive")
         case .packingContext: return String.l10n("ai.assistant.prep.step.packingContext")
+        }
+    }
+}
+
+extension RequestPrepStep {
+    var displayKey: LocalizedStringKey {
+        switch self {
+        case .externalSearch: return "ai.assistant.prep.step.externalSearch"
+        case .requestingLLM: return "ai.assistant.prep.step.requestingLLM"
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .externalSearch: return String.l10n("ai.assistant.prep.step.externalSearch")
+        case .requestingLLM: return String.l10n("ai.assistant.prep.step.requestingLLM")
         }
     }
 }

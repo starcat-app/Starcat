@@ -232,7 +232,8 @@ UI 仍显示「Version 0.1.0 (Build 201.f09a499)」，build 号和 hash 仍正�
 发布前**最好**做完以下：
 
 - [ ] **`docs/功能实现总览.md`** —— 顶部「最近更新」+「变更日志」追加发版条目（参考已有格式）
-- [ ] **CHANGELOG**（可选）—— 当前还没建，等 1.0 之前可考虑
+- [ ] **Changelog Markdown** —— 确认日常任务已按授权逐条维护；发版时审计主仓库与 `supports/starcat-pro` 的中英文 Changelog 是否同步、是否遗漏，并将目标版本从“待发布”改为正式版本
+- [ ] **Changelog HTML** —— 仅在正式发版时运行 `python3 supports/starcat-site/direct/generate-changelog.py`，更新并核对官网中英文更新日志页
 - [ ] **测试** —— `xcodebuild test` 全绿，至少跑一次冒烟测
 - [ ] **手动验证** —— Xcode IDE Cmd+R 启动一次，关于页显示正确
 - [ ] **打 tag** —— `git tag vX.Y.Z` + `git push --tags`

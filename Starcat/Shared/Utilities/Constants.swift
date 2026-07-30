@@ -70,6 +70,81 @@ enum AppConstants {
     /// OAuth scope，已最小化（见 docs/2-产品/需求讨论/正式方案/GitHub OAuth 设计.md）。
     static let githubOAuthScopes = ["read:user", "public_repo", "user"]
 
+    /// “我的项目”可选 GitHub App 的公开 Client ID。
+    ///
+    /// GitHub App 注册属于外部发布 Gate，仓库默认留空仍可编译，并自动退化为 OAuth
+    /// public fallback。Client ID 是公开标识，不能与下面的 Client Secret 混用。
+    static var githubAppClientID: String {
+        let value = Bundle.main.infoDictionary?["STARCAT_GITHUB_APP_CLIENT_ID"] as? String
+        return value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    /// GitHub App Web Flow 的 Client Secret。
+    ///
+    /// macOS 原生应用属于 OAuth public client，该值随二进制分发，不能视为真正机密；
+    /// 它只用于 user access token 的 code 交换与刷新。权限更大的 GitHub App
+    /// private key 仍然禁止进入客户端。
+    static var githubAppClientSecret: String {
+        let value = Bundle.main.infoDictionary?["STARCAT_GITHUB_APP_CLIENT_SECRET"] as? String
+        return value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    /// “我的项目”GitHub App 的公开 slug，用于构造安装页。
+    ///
+    /// slug 只负责把用户送到正确的安装页；GitHub 会在安装完成后继续 OAuth 授权，
+    /// 并回跳独立的 GitHub App callback。
+    static var githubAppSlug: String {
+        let value = Bundle.main.infoDictionary?["STARCAT_GITHUB_APP_SLUG"] as? String
+        return value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    /// GitHub App 安装期间 OAuth 回调地址，与主 OAuth 登录 callback 分开路由。
+    static let githubAppCallbackURL = "\(oauthCallbackScheme)://github-app/callback"
+
+    /// 精确识别 GitHub App 项目权限 callback，防止主登录 `starcat://callback` 串线。
+    static func isGitHubAppCallback(_ url: URL) -> Bool {
+        url.scheme == oauthCallbackScheme
+            && url.host == "github-app"
+            && url.path == "/callback"
+    }
+
+    /// 当前构建是否具备完整 GitHub App Web Flow 配置。
+    static var isGitHubAppConfigured: Bool {
+        !githubAppClientID.isEmpty
+            && !githubAppClientSecret.isEmpty
+            && githubAppInstallationURL != nil
+    }
+
+    /// 当前 GitHub App 的安装入口。非法或空 slug 返回 nil，禁止拼出可疑外链。
+    static var githubAppInstallationURL: URL? {
+        makeGitHubAppInstallationURL(slug: githubAppSlug)
+    }
+
+    /// 用户管理已安装 GitHub App 与仓库范围的 GitHub 固定入口。
+    static let githubAppSettingsURL = URL(string: "https://github.com/settings/installations")!
+
+    /// 由公开 slug 构造安装 URL。
+    ///
+    /// GitHub App slug 只允许 ASCII 字母、数字和连字符。这里显式收窄字符集，
+    /// 避免配置错误把 `/`、查询参数或其它 URL 片段带入外部跳转。
+    static func makeGitHubAppInstallationURL(slug: String, state: String? = nil) -> URL? {
+        let normalized = slug.trimmingCharacters(in: .whitespacesAndNewlines)
+        let allowed = CharacterSet(
+            charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-"
+        )
+        guard !normalized.isEmpty,
+              normalized.unicodeScalars.allSatisfy(allowed.contains)
+        else {
+            return nil
+        }
+        guard let baseURL = URL(string: "https://github.com/apps/\(normalized)/installations/new")
+        else {
+            return nil
+        }
+        guard let state, !state.isEmpty else { return baseURL }
+        return baseURL.appending(queryItems: [URLQueryItem(name: "state", value: state)])
+    }
+
     // MARK: - 网络
 
     // 注：2026-06-08 起 `githubAPIBaseURL` 迁到 `AppEndpoints.GitHubREST.baseURL`，

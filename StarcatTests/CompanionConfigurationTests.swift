@@ -57,7 +57,7 @@ struct CompanionConfigurationTests {
         #expect(try keychain.loadServiceAPIKey(forService: "local_api") == config.token)
     }
 
-    @Test("端口只接受 5051...5060, enabled 使用 UserDefaults 持久化")
+    @Test("端口接受 1024...65535, enabled 使用 UserDefaults 持久化")
     func persistsPortAndEnabled() throws {
         let keychain = InMemoryKeychain()
         let store = makeLocalAPIKeyStore(keychain: keychain)
@@ -67,14 +67,30 @@ struct CompanionConfigurationTests {
         #expect(config.port == 5051)
         #expect(config.isEnabled == false)
 
-        config.updateBoundPort(5058)
+        #expect(config.updateConfiguredPort(50_508))
         config.isEnabled = true
 
         let restored = CompanionConfiguration(localAPIKeyStore: store, defaults: defaults)
-        #expect(restored.port == 5058)
+        #expect(restored.port == 50_508)
         #expect(restored.isEnabled == true)
 
-        restored.updateBoundPort(6000)
-        #expect(restored.port == 5058)
+        #expect(!restored.updateConfiguredPort(1023))
+        #expect(!restored.updateConfiguredPort(65_536))
+        #expect(restored.port == 50_508)
+    }
+
+    @Test("服务失败不会改写用户配置的端口")
+    func failureDoesNotRewriteConfiguredPort() throws {
+        let keychain = InMemoryKeychain()
+        let store = makeLocalAPIKeyStore(keychain: keychain)
+        let defaults = try makeDefaults()
+        let config = CompanionConfiguration(localAPIKeyStore: store, defaults: defaults)
+
+        #expect(config.updateConfiguredPort(5052))
+        config.updateServerStatus(.failed(.portInUse(5052)))
+
+        let restored = CompanionConfiguration(localAPIKeyStore: store, defaults: defaults)
+        #expect(restored.port == 5052)
+        #expect(config.serverStatus == .failed(.portInUse(5052)))
     }
 }

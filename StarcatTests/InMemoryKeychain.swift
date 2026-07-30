@@ -36,6 +36,20 @@ final class InMemoryKeychain: KeychainManaging, @unchecked Sendable {
         setValue(nil, forKey: "github_access_token")
     }
 
+    // MARK: - GitHub App 项目访问凭据
+
+    func storeProjectAccessCredential(_ credentialJSON: String) throws {
+        setValue(credentialJSON, forKey: "github_app_user_credential")
+    }
+
+    func loadProjectAccessCredential() throws -> String? {
+        value(forKey: "github_app_user_credential")
+    }
+
+    func deleteProjectAccessCredential() throws {
+        setValue(nil, forKey: "github_app_user_credential")
+    }
+
     // MARK: - AI Key（兼容老接口 + provider-keyed 接口）
 
     func storeAIKey(_ key: String) throws {

@@ -41,32 +41,40 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 
 ---
 
-## 独立 git 仓库（13 个）
+## GitHub 独立仓库（21 个）
 
 以下目录各自是**独立的 git 仓库**，有自己的 GitHub remote、CI/CD 和版本号：
 
 | # | 目录 | GitHub |
 |---|------|--------|
-| 1 | `starcat-sharing-api/` | `dong4j/starcat-sharing-api` |
-| 2 | `starcat-trending-api/` | `dong4j/starcat-trending-api` |
-| 3 | `starcat-weekly-api/` | `dong4j/starcat-weekly-api` |
-| 4 | `starcat-wiki-api/` | `dong4j/starcat-wiki-api` |
-| 5 | `starcat-recommend-api/` | `dong4j/starcat-recommend-api` |
-| 6 | `starcat-discovery-api/` | `dong4j/starcat-discovery-api` |
-| 7 | `starcat-pro/` | `dong4j/starcat-pro` |
-| 8 | `starcat-license-api/` | `dong4j/starcat-license-api` 🔒 私有 |
-| 9 | `starcat-localization/` | `dong4j/starcat-localization` |
-| 10 | `homebrew-starcat/` | `dong4j/homebrew-starcat` |
-| 11 | `vscode-makefile-explorer/` | `dong4j/vscode-makefile-explorer` |
-| 12 | `extensions/starcat-chrome-plugin/` | `dong4j/starcat-chrome-plugin` |
-| 13 | `extensions/starcat-safari-plugin/` | `dong4j/starcat-safari-plugin` |
+| 1 | `starcat-sharing-api/` | `starcat-app/starcat-sharing-api` |
+| 2 | `starcat-trending-api/` | `starcat-app/starcat-trending-api` |
+| 3 | `starcat-weekly-api/` | `starcat-app/starcat-weekly-api` |
+| 4 | `starcat-wiki-api/` | `starcat-app/starcat-wiki-api` |
+| 5 | `starcat-recommend-api/` | `starcat-app/starcat-recommend-api` |
+| 6 | `starcat-discovery-api/` | `starcat-app/starcat-discovery-api` |
+| 7 | `starcat-pro/` | `starcat-app/starcat-pro` |
+| 8 | `.github/` | `starcat-app/.github` |
+| 9 | `starcat-docs/` | `starcat-app/starcat-docs` |
+| 10 | `starcat-site/` | `starcat-app/starcat-site` |
+| 11 | `starcat-license-api/` | `starcat-app/starcat-license-api` 🔒 私有 |
+| 12 | `starcat-localization/` | `starcat-app/starcat-localization` |
+| 13 | `homebrew-starcat/` | `starcat-app/homebrew-starcat` |
+| 14 | `starcat-skill/` | `starcat-app/starcat-skill` |
+| 15 | `starcat-cli/` | `starcat-app/starcat-cli` |
+| 16 | `starcat-alfred-workflow/` | `starcat-app/starcat-alfred-workflow` |
+| 17 | `starcat-utools-plugin/` | `starcat-app/starcat-utools-plugin` |
+| 18 | `starcat-raycast-extension/` | `starcat-app/starcat-raycast-extension` |
+| 19 | `homebrew-starcat-cli/` | `starcat-app/homebrew-starcat-cli` |
+| 20 | `extensions/starcat-chrome-plugin/` | `starcat-app/starcat-chrome-plugin` |
+| 21 | `extensions/starcat-safari-plugin/` | `starcat-app/starcat-safari-plugin` |
 
 ### 一键拉取所有独立仓库
 
 ```bash
 cd supports
 
-# 首次 clone 全部 13 个项目
+# 首次 clone 全部 21 个项目
 ./clone-all.sh
 
 # 后续更新全部
@@ -74,6 +82,20 @@ cd supports
 ```
 
 > `starcat-license-api` 是**私有**仓库，需要 `gh auth login` 或配置 SSH key。
+
+### 新增独立仓库登记
+
+新增项目使用根目录 `.claude/skills/starcat-support-project-create`，并把以下更新视为
+同一个创建事务：
+
+1. 在 `clone-all.sh` 的帮助文本和 `PROJECTS` 数组登记仓库；
+2. 在 `scripts/sync-starcat-readme-promo.py` 登记双语摘要并生成两份 README
+   的 Starcat 推广区块；
+3. 更新本文档的独立仓库数量、清单和决策记录；
+4. 更新 `README.md` 的项目总数、分类表和 GitHub URL；
+5. 验证根 `.gitignore` 仍忽略新项目工作树，禁止用 `git add -f` 加入主仓库。
+
+API 或新的项目类型还要同步 `AGENTS.md`、`CLAUDE.md` 和对应运维/发布文档。
 
 ---
 
@@ -123,7 +145,7 @@ supports/starcat-wiki-api/.env
 
 ```bash
 # 1. clone 主仓库
-git clone https://github.com/dong4j/Starcat.git
+git clone https://github.com/starcat-app/Starcat.git
 cd Starcat
 
 # 2. 拉取所有支撑项目
@@ -143,8 +165,13 @@ make sync-fly-secrets
 
 | 日期 | 决策 | 原因 |
 |------|------|------|
+| 2026-07-30 | GitHub 独立仓库从 20 个扩展到 21 个 | 新增 `starcat-raycast-extension`，独立维护 Raycast 搜索适配、测试与开源治理 |
+| 2026-07-29 | GitHub 独立仓库从 19 个扩展到 20 个 | 新增 `starcat-utools-plugin`，独立维护 uTools 搜索适配、测试与开源治理 |
+| 2026-07-29 | GitHub 独立仓库从 18 个扩展到 19 个 | 新增 `starcat-alfred-workflow`，独立维护 Alfred 构建、发布与开源治理 |
+| 2026-07-22 | GitHub 独立仓库从 15 个扩展到 18 个 | 补齐组织配置、官方文档与独立官网仓库 |
+| 2026-07-20 | 独立仓库从 12 个扩展到 15 个 | 新增 `starcat-skill`、`starcat-cli`、`homebrew-starcat-cli` |
 | 2026-07-06 | `supports/` 运维文件转主仓库 git 管理 | 减少 sync-untracked 清单维护负担，git 管理更可靠 |
-| 2026-07-06 | 独立仓库从 6 个扩展到 13 个 | 新增 starcat-pro、starcat-license-api、starcat-localization、homebrew、vscode 插件、浏览器插件 |
+| 2026-07-06 | 独立仓库从 6 个扩展到 12 个 | 新增 starcat-pro、starcat-license-api、starcat-localization、homebrew、浏览器插件 |
 | 2026-07-06 | `starcat-license-api` 初始化为私有仓库 | 包含 Direct 分发授权逻辑，不公开 |
-| 2026-07-06 | 新增 `clone-all.sh` | 一键拉取 13 个支撑项目 |
+| 2026-07-06 | 新增 `clone-all.sh` | 一键拉取当时的 12 个支撑项目 |
 | 2026-06-08 | 初始结构 | 6 个 Go API，端口 5001-5006 |

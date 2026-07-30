@@ -89,10 +89,11 @@
 | 关键词 | 用法点 | 官方搜索词 |
 |---|---|---|
 | `async` / `await` | 所有 IO 方法（`fetchAllStarred` / `readmeHTML` / `getBytes`） | "Swift async await" |
-| `Task { ... }` | `Task { [weak self] in ... }` | "Swift Task initializer" |
-| `Task.cancel()` / `Task.isCancelled` | `HomeViewModel.currentReloadTask?.cancel()`（D-05 race 防护） | "Swift Task cancellation" |
-| `Task.checkCancellation()` | 项目里少用，更多用 `guard !Task.isCancelled` | "Swift Task checkCancellation" |
+| `Task { ... }` | `Task { [weak self] in ... }` / `RepoNoteAIGenerationViewModel.start` 启动一次笔记生成 | "Swift Task initializer" |
+| `Task.cancel()` / `Task.isCancelled` | `HomeViewModel.currentReloadTask?.cancel()` / `RepoNoteAIGenerationViewModel.cancelCurrentTask` | "Swift Task cancellation" |
+| `Task.checkCancellation()` | `RepoAIInsightService.generateText` 每个流式事件与 `RepoNoteAIGenerationViewModel.validate` 双重防迟到回写 | "Swift Task checkCancellation" |
 | `Task<Void, Never>` | `private var currentTask: Task<Void, Never>?` | "Swift Task generic parameters" |
+| `AsyncThrowingStream` / `for try await` | `AIClientProtocol.chatStream` 生产事件，`RepoAIInsightService.generateText` 消费 delta / completed | "Swift AsyncThrowingStream for try await" |
 | `async let` | `HomeViewModel.refreshSidebar` 并行起 3 个查询 | "Swift async let concurrency" |
 | `withTaskGroup` | 项目里未用，未来批量场景会引入 | "Swift TaskGroup" |
 | `@MainActor` | `ReadmeViewModel` / `HomeViewModel` / `AppDependencies` / `Coordinator` | "Swift MainActor" |
@@ -111,7 +112,7 @@
 | 关键词 | 用法点 | 搜索词 |
 |---|---|---|
 | `View` / `body` | 所有 `*View.swift` | "SwiftUI View protocol body" |
-| `@Observable` | `HomeViewModel` / `ReadmeViewModel` / `AppDependencies`（Observation framework，macOS 14+） | "Observation framework Swift 5.9 macros" |
+| `@Observable` | `HomeViewModel` / `ReadmeViewModel` / `RepoNoteAIGenerationViewModel`（七步状态机仅读暴露）/ `AppDependencies` | "Observation framework Swift 5.9 macros" |
 | `@State` | `HomeView` 持有 `ReadmeViewModel` | "SwiftUI State property wrapper" |
 | `@Binding` | `$vm.selectedRepoID` 传给子 View | "SwiftUI Binding two-way" |
 | `@Environment(\.colorScheme)` | `ReadmeWebView` 切深浅色 | "SwiftUI Environment values" |
@@ -127,6 +128,7 @@
 | `NavigationSplitViewVisibility` | `HomeView` 显式持有三栏可见性；启动时重置 `.all`，避免上次窄窗口导致 sidebar 折叠态污染下一次启动 | "SwiftUI NavigationSplitViewVisibility" |
 | `List(selection:)` | 中栏多选 repo 列表；普通单选已改用 plain `Button` 手动写 `selectedRepoID` 以避开系统蓝色选中底色 | "SwiftUI List selection binding macOS" |
 | `Button` + `.buttonStyle(.plain)` | 普通 repo 行点击选择；使用后必须跟 `.focusEffectDisabled()` | "SwiftUI plain button macOS focusEffectDisabled" |
+| `ZStack` 兄弟 Button 组合 | `RepoNotesSection.notesDisclosure` 把“整行折叠”与“AI 生成 / 取消”叠放为兄弟，避免嵌套 Button | "SwiftUI ZStack sibling buttons contentShape" |
 | `Picker` + `.pickerStyle(.segmented)` | `AboutView` 顶部页面切换使用 macOS 原生 segmented control；为保持系统感，只放文本 segment，不在 segment 里塞 SF Symbol | "SwiftUI Picker segmented macOS" |
 | `ScrollViewReader` | `AboutView` 致谢页中部依赖列表自动滚动时，用 `scrollTo` 定位当前依赖；鼠标 hover 列表时暂停滚动；`ScrollFollowTail` 跟随尾部组件用 `proxy.scrollTo(anchor, anchor: .bottom)` 在流式 token 进来时滚到底 | "SwiftUI ScrollViewReader scrollTo" |
 | `.onScrollPhaseChange` (macOS 15+) | `RepoAIWindowContentView` 摘要 / 对话段挂载，给 `ScrollTailController.updatePhase(_:)` 喂相位（`.idle / .tracking / .interacting / .decelerating / .animating`），用于区分"用户手势驱动"与"程序化 scrollTo"，是「跟随尾部」反馈循环防护的核心门控 | "SwiftUI onScrollPhaseChange ScrollPhase macOS 15" |

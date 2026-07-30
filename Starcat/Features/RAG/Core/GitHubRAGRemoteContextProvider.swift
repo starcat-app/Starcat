@@ -50,10 +50,9 @@ struct URLSessionRAGHTTPClient: RAGHTTPClientProtocol {
 }
 
 struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProviding {
-    private let httpClient: any RAGHTTPClientProtocol
-    private let token: String?
+    private let metricsClient: any GitHubRepositoryMetricsClient
+    private let endpoints: GitHubRepositoryMetricsEndpointBuilder
     private let cacheNamespace: String
-    private let baseURL: URL
     private let cache: RAGRemoteContextMemoryCache
 
     init(
@@ -62,11 +61,14 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
         baseURL: URL = URL(string: "https://api.github.com")!,
         cache: RAGRemoteContextMemoryCache = .shared
     ) {
-        self.httpClient = httpClient
         let normalizedToken = token?.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.token = normalizedToken
+        self.metricsClient = DefaultGitHubRepositoryMetricsClient(
+            httpClient: httpClient,
+            token: normalizedToken,
+            baseURL: baseURL
+        )
+        self.endpoints = GitHubRepositoryMetricsEndpointBuilder(baseURL: baseURL)
         self.cacheNamespace = Self.cacheNamespace(for: normalizedToken)
-        self.baseURL = baseURL
         self.cache = cache
     }
 
@@ -222,26 +224,28 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
         pullRequests: Bool,
         onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
     ) async throws -> RemoteFetchResult {
-        var components = URLComponents(url: baseURL.appendingPathComponent("search/issues"), resolvingAgainstBaseURL: false)!
         let kind = pullRequests ? "is:pr" : "is:issue"
         let state = request.state == .all ? "" : " is:\(request.state.rawValue)"
         let keywords = Self.sanitizedIssueKeywords(request.query)
-        components.queryItems = [
-            URLQueryItem(name: "q", value: "repo:\(repo.fullName) \(kind)\(state)\(keywords.isEmpty ? "" : " \(keywords)")"),
-            URLQueryItem(name: "sort", value: request.sort.rawValue),
-            URLQueryItem(name: "order", value: request.order.rawValue),
-            URLQueryItem(name: "per_page", value: String(request.perRepoLimit))
-        ]
-        let response: SearchIssuesResponse = try await get(
-            components.url!,
-            repoFullName: repo.fullName,
-            resource: request.resource,
-            onDebug: onDebug
-        )
+        let searchQuery = "repo:\(repo.fullName) \(kind)\(state)\(keywords.isEmpty ? "" : " \(keywords)")"
+        let response = try await mappedMetricsRequest {
+            try await metricsClient.searchIssues(
+                repository: identity(for: repo),
+                query: searchQuery,
+                sort: request.sort.rawValue,
+                order: request.order.rawValue,
+                perPage: request.perRepoLimit,
+                observer: requestObserver(
+                    repoFullName: repo.fullName,
+                    resource: request.resource,
+                    onDebug: onDebug
+                )
+            )
+        }
         // Planner 生成的 query 不能被当作可信 GitHub Search 语法。即使 query 夹带
         // `OR repo:other/name` 等 qualifier，也只接受当前候选 repo 的返回项。
-        let scopedItems = response.items.filter {
-            $0.belongs(to: repo) && $0.isPullRequest == pullRequests
+        let scopedItems = response.value.items.filter {
+            $0.belongs(to: identity(for: repo)) && $0.isPullRequest == pullRequests
         }
         let lines = scopedItems.prefix(request.perRepoLimit).map { item in
             let labels = item.labels.map(\.name).joined(separator: ", ")
@@ -266,7 +270,7 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
         }
         return RemoteFetchResult(
             content: content,
-            url: components.url,
+            url: response.requestURL,
             count: min(scopedItems.count, request.perRepoLimit),
             previews: previews
         )
@@ -278,9 +282,18 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
         resource: RAGRemoteContextResource,
         onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
     ) async throws -> RemoteFetchResult {
-        let url = repoAPIURL(repo, suffix: "releases", query: [URLQueryItem(name: "per_page", value: String(limit))])
-        let releases: [ReleaseResponse] = try await get(url, repoFullName: repo.fullName, resource: resource, onDebug: onDebug)
-        let lines = releases.prefix(limit).map { release in
+        let response = try await mappedMetricsRequest {
+            try await metricsClient.loadReleases(
+                repository: identity(for: repo),
+                limit: limit,
+                observer: requestObserver(
+                    repoFullName: repo.fullName,
+                    resource: resource,
+                    onDebug: onDebug
+                )
+            )
+        }
+        let lines = response.value.prefix(limit).map { release in
             """
             \(release.name ?? release.tagName) (\(release.tagName)) published=\(release.publishedAt ?? "unknown")
             url=\(release.htmlURL)
@@ -289,8 +302,8 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
         }
         return RemoteFetchResult(
             content: lines.isEmpty ? RAGRemoteContextCopy.noPublicReleases : lines.joined(separator: "\n\n"),
-            url: url,
-            count: min(releases.count, limit)
+            url: response.requestURL,
+            count: min(response.value.count, limit)
         )
     }
 
@@ -300,13 +313,24 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
         resource: RAGRemoteContextResource,
         onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
     ) async throws -> RemoteFetchResult {
-        let url = repoAPIURL(repo, suffix: "contributors", query: [URLQueryItem(name: "per_page", value: String(limit))])
-        let contributors: [ContributorResponse] = try await get(url, repoFullName: repo.fullName, resource: resource, onDebug: onDebug)
-        let lines = contributors.prefix(limit).map { "\($0.login): contributions=\($0.contributions); url=\($0.htmlURL ?? "")" }
+        let response = try await mappedMetricsRequest {
+            try await metricsClient.loadContributors(
+                repository: identity(for: repo),
+                limit: limit,
+                observer: requestObserver(
+                    repoFullName: repo.fullName,
+                    resource: resource,
+                    onDebug: onDebug
+                )
+            )
+        }
+        let lines = response.value.prefix(limit).map {
+            "\($0.login): contributions=\($0.contributions); url=\($0.htmlURL ?? "")"
+        }
         return RemoteFetchResult(
             content: lines.isEmpty ? RAGRemoteContextCopy.noPublicContributors : lines.joined(separator: "\n"),
-            url: url,
-            count: min(contributors.count, limit)
+            url: response.requestURL,
+            count: min(response.value.count, limit)
         )
     }
 
@@ -315,15 +339,17 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
         resource: RAGRemoteContextResource,
         onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
     ) async throws -> RemoteFetchResult {
-        let url = repoAPIURL(repo, suffix: "stats/commit_activity")
-        let weeks: [CommitActivityResponse] = try await get(
-            url,
-            acceptedStatus: [200],
-            repoFullName: repo.fullName,
-            resource: resource,
-            onDebug: onDebug
-        )
-        let recent = weeks.suffix(12)
+        let response = try await mappedMetricsRequest {
+            try await metricsClient.loadCommitActivity(
+                repository: identity(for: repo),
+                observer: requestObserver(
+                    repoFullName: repo.fullName,
+                    resource: resource,
+                    onDebug: onDebug
+                )
+            )
+        }
+        let recent = response.value.suffix(12)
         let total = recent.reduce(0) { $0 + $1.total }
         let activeWeeks = recent.filter { $0.total > 0 }.count
         return RemoteFetchResult(
@@ -332,7 +358,7 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
                 activeWeeks: activeWeeks,
                 weekCount: recent.count
             ),
-            url: url,
+            url: response.requestURL,
             count: recent.count
         )
     }
@@ -343,97 +369,117 @@ struct GitHubRAGRemoteContextProvider: KnowledgeRAGDebuggableRemoteContextProvid
         resource: RAGRemoteContextResource,
         onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
     ) async throws -> RemoteFetchResult {
-        let url = repoAPIURL(repo, suffix: "security-advisories", query: [URLQueryItem(name: "per_page", value: String(limit))])
-        let advisories: [SecurityAdvisoryResponse] = try await get(url, repoFullName: repo.fullName, resource: resource, onDebug: onDebug)
-        let lines = advisories.prefix(limit).map {
+        let response = try await mappedMetricsRequest {
+            try await metricsClient.loadSecurityAdvisories(
+                repository: identity(for: repo),
+                limit: limit,
+                observer: requestObserver(
+                    repoFullName: repo.fullName,
+                    resource: resource,
+                    onDebug: onDebug
+                )
+            )
+        }
+        let lines = response.value.prefix(limit).map {
             "\($0.ghsaID) severity=\($0.severity) cve=\($0.cveID ?? "unknown") published=\($0.publishedAt)\n\($0.summary)\nurl=\($0.htmlURL ?? "")"
         }
         return RemoteFetchResult(
             content: lines.isEmpty ? RAGRemoteContextCopy.noPublicSecurityAdvisories : lines.joined(separator: "\n\n"),
-            url: url,
-            count: min(advisories.count, limit)
+            url: response.requestURL,
+            count: min(response.value.count, limit)
         )
     }
 
     /// 审计 UI 需要展示实际 endpoint，但失败路径不能依赖“请求成功后才返回的 URL”。这里
     /// 与各 fetch 方法复用同一构造规则，只包含公开 URL，不包含任何请求头。
     private func requestURL(for request: RAGRemoteContextRequest, repo: Repo) -> URL? {
+        let repository = identity(for: repo)
         switch request.resource {
         case .githubIssues, .githubPullRequests:
-            var components = URLComponents(url: baseURL.appendingPathComponent("search/issues"), resolvingAgainstBaseURL: false)!
             let kind = request.resource == .githubPullRequests ? "is:pr" : "is:issue"
             let state = request.state == .all ? "" : " is:\(request.state.rawValue)"
             let keywords = Self.sanitizedIssueKeywords(request.query)
-            components.queryItems = [
-                URLQueryItem(name: "q", value: "repo:\(repo.fullName) \(kind)\(state)\(keywords.isEmpty ? "" : " \(keywords)")"),
-                URLQueryItem(name: "sort", value: request.sort.rawValue),
-                URLQueryItem(name: "order", value: request.order.rawValue),
-                URLQueryItem(name: "per_page", value: String(request.perRepoLimit)),
-            ]
-            return components.url
+            return endpoints.searchIssues(
+                query: "repo:\(repo.fullName) \(kind)\(state)\(keywords.isEmpty ? "" : " \(keywords)")",
+                sort: request.sort.rawValue,
+                order: request.order.rawValue,
+                perPage: max(1, min(request.perRepoLimit, 100))
+            )
         case .githubReleases:
-            return repoAPIURL(repo, suffix: "releases", query: [URLQueryItem(name: "per_page", value: String(request.perRepoLimit))])
+            return endpoints.repository(
+                repository,
+                suffix: "releases",
+                queryItems: [URLQueryItem(name: "per_page", value: String(max(1, min(request.perRepoLimit, 100))))]
+            )
         case .githubContributors:
-            return repoAPIURL(repo, suffix: "contributors", query: [URLQueryItem(name: "per_page", value: String(request.perRepoLimit))])
+            return endpoints.repository(
+                repository,
+                suffix: "contributors",
+                queryItems: [URLQueryItem(name: "per_page", value: String(max(1, min(request.perRepoLimit, 100))))]
+            )
         case .githubCommitActivity:
-            return repoAPIURL(repo, suffix: "stats/commit_activity")
+            return endpoints.repository(repository, suffix: "stats/commit_activity")
         case .githubSecurityAdvisories:
-            return repoAPIURL(repo, suffix: "security-advisories", query: [URLQueryItem(name: "per_page", value: String(request.perRepoLimit))])
+            return endpoints.repository(
+                repository,
+                suffix: "security-advisories",
+                queryItems: [URLQueryItem(name: "per_page", value: String(max(1, min(request.perRepoLimit, 100))))]
+            )
         case .externalWeb:
             return nil
         }
     }
 
-    private func repoAPIURL(_ repo: Repo, suffix: String, query: [URLQueryItem] = []) -> URL {
-        let path = "repos/\(repo.owner)/\(repo.name)/\(suffix)"
-        var components = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
-        components.queryItems = query.isEmpty ? nil : query
-        return components.url!
+    private func identity(for repo: Repo) -> RepoIdentity {
+        RepoIdentity(ghRepoID: repo.id, owner: repo.owner, name: repo.name)
     }
 
-    /// 唯一的 GitHub 出站点：只记录 URL、状态和错误，不记录 Authorization 请求头。
-    /// 在 HTTP 客户端真正开始前发 request 事件，故 Debug Trace 能区分网络耗时与缓存命中。
-    private func get<T: Decodable>(
-        _ url: URL,
-        acceptedStatus: Set<Int> = [200],
+    /// 把共享 Client 的请求事件适配回 RAG 审计模型。事件始终不含请求头与 token。
+    private func requestObserver(
         repoFullName: String,
         resource: RAGRemoteContextResource,
         onDebug: @escaping @Sendable (RAGRemoteContextDebugEvent) -> Void
-    ) async throws -> T {
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 8
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
-        request.setValue("Starcat", forHTTPHeaderField: "User-Agent")
-        if let token, !token.isEmpty {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
-        onDebug(RAGRemoteContextDebugEvent(
-            repoFullName: repoFullName,
-            resource: resource,
-            url: url.absoluteString,
-            outcome: .request
-        ))
-        do {
-            let (data, response) = try await httpClient.data(for: request)
-            onDebug(RAGRemoteContextDebugEvent(
-                repoFullName: repoFullName,
-                resource: resource,
-                url: url.absoluteString,
-                outcome: .response(statusCode: response.statusCode)
-            ))
-            guard acceptedStatus.contains(response.statusCode) else {
-                let message = (try? JSONDecoder().decode(GitHubErrorResponse.self, from: data).message) ?? HTTPURLResponse.localizedString(forStatusCode: response.statusCode)
-                throw GitHubRemoteContextError.http(status: response.statusCode, message: message)
+    ) -> GitHubMetricsRequestObserver {
+        { event in
+            switch event {
+            case .request(let url):
+                onDebug(RAGRemoteContextDebugEvent(
+                    repoFullName: repoFullName,
+                    resource: resource,
+                    url: url.absoluteString,
+                    outcome: .request
+                ))
+            case .response(let url, let statusCode):
+                onDebug(RAGRemoteContextDebugEvent(
+                    repoFullName: repoFullName,
+                    resource: resource,
+                    url: url.absoluteString,
+                    outcome: .response(statusCode: statusCode)
+                ))
+            case .failure(let url, let message):
+                onDebug(RAGRemoteContextDebugEvent(
+                    repoFullName: repoFullName,
+                    resource: resource,
+                    url: url.absoluteString,
+                    outcome: .failure(message)
+                ))
             }
-            return try JSONDecoder().decode(T.self, from: data)
-        } catch {
-            onDebug(RAGRemoteContextDebugEvent(
-                repoFullName: repoFullName,
-                resource: resource,
-                url: url.absoluteString,
-                outcome: .failure(error.localizedDescription)
-            ))
+        }
+    }
+
+    /// RAG 对外继续沿用既有本地化 HTTP 错误；洞察则直接消费 Metrics 的稳定错误枚举。
+    private func mappedMetricsRequest<Value>(
+        _ operation: () async throws -> Value
+    ) async throws -> Value {
+        do {
+            return try await operation()
+        } catch let error as GitHubRepositoryMetricsError {
+            if let statusCode = error.statusCode {
+                throw GitHubRemoteContextError.http(
+                    status: statusCode,
+                    message: error.localizedDescription
+                )
+            }
             throw error
         }
     }
@@ -543,93 +589,5 @@ enum GitHubRemoteContextError: Error, LocalizedError {
         case .unsupportedResource:
             return String.l10n("rag.core.remote.error.webSearchUnsupported")
         }
-    }
-}
-
-private struct GitHubErrorResponse: Decodable { var message: String }
-
-private struct SearchIssuesResponse: Decodable {
-    var items: [IssueResponse]
-}
-
-private struct IssueResponse: Decodable {
-    struct Label: Decodable { var name: String }
-    private struct PullRequestMarker: Decodable {}
-    var number: Int
-    var title: String
-    var state: String
-    var htmlURL: String
-    var body: String?
-    var labels: [Label]
-    var comments: Int
-    var updatedAt: String
-    var repositoryURL: String?
-    private var pullRequest: PullRequestMarker?
-
-    var isPullRequest: Bool { pullRequest != nil }
-
-    enum CodingKeys: String, CodingKey {
-        case number, title, state, body, labels, comments
-        case htmlURL = "html_url"
-        case updatedAt = "updated_at"
-        case repositoryURL = "repository_url"
-        case pullRequest = "pull_request"
-    }
-
-    func belongs(to repo: Repo) -> Bool {
-        let expectedAPIPath = "/repos/\(repo.owner)/\(repo.name)".lowercased()
-        if let repositoryURL,
-           URL(string: repositoryURL)?.path.lowercased() == expectedAPIPath {
-            return true
-        }
-        let expectedHTMLPrefix = "/\(repo.owner)/\(repo.name)/".lowercased()
-        return URL(string: htmlURL)?.path.lowercased().hasPrefix(expectedHTMLPrefix) == true
-    }
-}
-
-private struct ReleaseResponse: Decodable {
-    var tagName: String
-    var name: String?
-    var body: String?
-    var htmlURL: String
-    var publishedAt: String?
-
-    enum CodingKeys: String, CodingKey {
-        case name, body
-        case tagName = "tag_name"
-        case htmlURL = "html_url"
-        case publishedAt = "published_at"
-    }
-}
-
-private struct ContributorResponse: Decodable {
-    var login: String
-    var contributions: Int
-    var htmlURL: String?
-
-    enum CodingKeys: String, CodingKey {
-        case login, contributions
-        case htmlURL = "html_url"
-    }
-}
-
-private struct CommitActivityResponse: Decodable {
-    var total: Int
-}
-
-private struct SecurityAdvisoryResponse: Decodable {
-    var ghsaID: String
-    var cveID: String?
-    var summary: String
-    var severity: String
-    var htmlURL: String?
-    var publishedAt: String
-
-    enum CodingKeys: String, CodingKey {
-        case summary, severity
-        case ghsaID = "ghsa_id"
-        case cveID = "cve_id"
-        case htmlURL = "html_url"
-        case publishedAt = "published_at"
     }
 }

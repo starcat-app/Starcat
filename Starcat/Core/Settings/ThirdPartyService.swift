@@ -151,12 +151,12 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
     /// 然后在设置页填入自己的域名。
     var sourceCodeURL: URL {
         switch self {
-        case .trending: return URL(string: "https://github.com/dong4j/starcat-trending-api")!
-        case .weekly:   return URL(string: "https://github.com/dong4j/starcat-weekly-api")!
-        case .sharing:  return URL(string: "https://github.com/dong4j/starcat-sharing-api")!
-        case .wiki:     return URL(string: "https://github.com/dong4j/starcat-wiki-api")!
-        case .recommend: return URL(string: "https://github.com/dong4j/starcat-recommend-api")!
-        case .discovery: return URL(string: "https://github.com/dong4j/starcat-discovery-api")!
+        case .trending: return URL(string: "https://github.com/starcat-app/starcat-trending-api")!
+        case .weekly:   return URL(string: "https://github.com/starcat-app/starcat-weekly-api")!
+        case .sharing:  return URL(string: "https://github.com/starcat-app/starcat-sharing-api")!
+        case .wiki:     return URL(string: "https://github.com/starcat-app/starcat-wiki-api")!
+        case .recommend: return URL(string: "https://github.com/starcat-app/starcat-recommend-api")!
+        case .discovery: return URL(string: "https://github.com/starcat-app/starcat-discovery-api")!
         }
     }
 

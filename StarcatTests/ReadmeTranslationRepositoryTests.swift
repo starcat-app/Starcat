@@ -5,8 +5,8 @@
 //  覆盖 DiskReadmeTranslationCache CRUD + LRU + 损坏兜底（HOM-68 v2 / 2026-06-15）。
 //
 //  关注点：
-//  - `(owner, repo, target_language)` 元组等价 PK：同 (owner, repo) 不同语言可并存；
-//    同 (owner, repo) 同语言 upsert 覆盖；
+//  - `(owner, repo, target_language, mode)` 元组等价 PK：不同语言/模式可并存；
+//    同 (owner, repo) 同语言同模式 upsert 覆盖；
 //  - delete(owner:repo:targetLanguage:) 只删指定语言记录，其他语言保留；
 //  - deleteAll(owner:repo:) 清空该 (owner, repo) 所有语言译文；
 //  - deleteEverything() 一次性清空整个磁盘缓存；
@@ -45,7 +45,7 @@ struct ReadmeTranslationRepositoryTests {
     private func makeTranslation(
         repoId: Int64? = 42,
         lang: String,
-        html: String = "<p>已翻译</p>",
+        text: String = "已翻译",
         hash: String = "deadbeef",
         model: String = "gpt-4o-mini",
         createdAt: String = "2026-06-15T10:00:00Z"
@@ -55,8 +55,11 @@ struct ReadmeTranslationRepositoryTests {
             targetLanguage: lang,
             model: model,
             sourceHash: hash,
-            translatedHtml: html,
-            size: html.utf8.count,
+            segments: [
+                ReadmeTranslatedSegment(sourceHash: "\(hash)-segment", translatedText: text)
+            ],
+            isComplete: true,
+            size: text.utf8.count,
             createdAt: createdAt
         )
     }
@@ -75,14 +78,14 @@ struct ReadmeTranslationRepositoryTests {
     func upsertAndFind() async throws {
         let (cache, root) = try makeIsolatedCache()
         defer { cleanup(root) }
-        let record = makeTranslation(lang: "zh-Hans", html: "<h1>你好</h1>")
+        let record = makeTranslation(lang: "zh-Hans", text: "你好")
         try await cache.upsert(record, owner: "octo", repo: "demo")
 
         let fetched = try await cache.find(owner: "octo", repo: "demo", targetLanguage: "zh-Hans")
-        let expectedHtml = "<h1>你好</h1>"
-        #expect(fetched?.translatedHtml == expectedHtml)
+        let expectedText = "你好"
+        #expect(fetched?.segments.first?.translatedText == expectedText)
         #expect(fetched?.targetLanguage == "zh-Hans")
-        #expect(fetched?.size == expectedHtml.utf8.count)
+        #expect(fetched?.size == expectedText.utf8.count)
         #expect(fetched?.sourceHash == "deadbeef")
         #expect(fetched?.model == "gpt-4o-mini")
         #expect(fetched?.repoId == 42)
@@ -107,18 +110,18 @@ struct ReadmeTranslationRepositoryTests {
         let (cache, root) = try makeIsolatedCache()
         defer { cleanup(root) }
         try await cache.upsert(
-            makeTranslation(lang: "zh-Hans", html: "v1", hash: "h1"),
+            makeTranslation(lang: "zh-Hans", text: "v1", hash: "h1"),
             owner: "octo",
             repo: "demo"
         )
         try await cache.upsert(
-            makeTranslation(lang: "zh-Hans", html: "v2", hash: "h2"),
+            makeTranslation(lang: "zh-Hans", text: "v2", hash: "h2"),
             owner: "octo",
             repo: "demo"
         )
 
         let fetched = try await cache.find(owner: "octo", repo: "demo", targetLanguage: "zh-Hans")
-        #expect(fetched?.translatedHtml == "v2")
+        #expect(fetched?.segments.first?.translatedText == "v2")
         #expect(fetched?.sourceHash == "h2")
         // 仍只有一条
         #expect(cache.itemCount == 1)
@@ -129,20 +132,55 @@ struct ReadmeTranslationRepositoryTests {
         let (cache, root) = try makeIsolatedCache()
         defer { cleanup(root) }
         try await cache.upsert(
-            makeTranslation(lang: "zh-Hans", html: "你好"),
+            makeTranslation(lang: "zh-Hans", text: "你好"),
             owner: "octo",
             repo: "demo"
         )
         try await cache.upsert(
-            makeTranslation(lang: "ja", html: "こんにちは"),
+            makeTranslation(lang: "ja", text: "こんにちは"),
             owner: "octo",
             repo: "demo"
         )
 
         let zh = try await cache.find(owner: "octo", repo: "demo", targetLanguage: "zh-Hans")
         let ja = try await cache.find(owner: "octo", repo: "demo", targetLanguage: "ja")
-        #expect(zh?.translatedHtml == "你好")
-        #expect(ja?.translatedHtml == "こんにちは")
+        #expect(zh?.segments.first?.translatedText == "你好")
+        #expect(ja?.segments.first?.translatedText == "こんにちは")
+        #expect(cache.itemCount == 2)
+    }
+
+    @Test("同仓库同语言的分段与全文缓存互相隔离")
+    func translationModesCoexist() async throws {
+        let (cache, root) = try makeIsolatedCache()
+        defer { cleanup(root) }
+        try await cache.upsert(
+            makeTranslation(lang: "zh-Hans", text: "分段译文"),
+            owner: "octo",
+            repo: "demo",
+            mode: .segmented
+        )
+        try await cache.upsert(
+            makeTranslation(lang: "zh-Hans", text: "全文译文"),
+            owner: "octo",
+            repo: "demo",
+            mode: .full
+        )
+
+        let segmented = try await cache.find(
+            owner: "octo",
+            repo: "demo",
+            targetLanguage: "zh-Hans",
+            mode: .segmented
+        )
+        let full = try await cache.find(
+            owner: "octo",
+            repo: "demo",
+            targetLanguage: "zh-Hans",
+            mode: .full
+        )
+
+        #expect(segmented?.segments.first?.translatedText == "分段译文")
+        #expect(full?.segments.first?.translatedText == "全文译文")
         #expect(cache.itemCount == 2)
     }
 
@@ -151,20 +189,20 @@ struct ReadmeTranslationRepositoryTests {
         let (cache, root) = try makeIsolatedCache()
         defer { cleanup(root) }
         try await cache.upsert(
-            makeTranslation(repoId: 1, lang: "zh-Hans", html: "repoA"),
+            makeTranslation(repoId: 1, lang: "zh-Hans", text: "repoA"),
             owner: "octo",
             repo: "demo"
         )
         try await cache.upsert(
-            makeTranslation(repoId: 2, lang: "zh-Hans", html: "repoB"),
+            makeTranslation(repoId: 2, lang: "zh-Hans", text: "repoB"),
             owner: "octo",
             repo: "another"
         )
 
         let a = try await cache.find(owner: "octo", repo: "demo", targetLanguage: "zh-Hans")
         let b = try await cache.find(owner: "octo", repo: "another", targetLanguage: "zh-Hans")
-        #expect(a?.translatedHtml == "repoA")
-        #expect(b?.translatedHtml == "repoB")
+        #expect(a?.segments.first?.translatedText == "repoA")
+        #expect(b?.segments.first?.translatedText == "repoB")
     }
 
     // MARK: - delete / deleteAll / deleteEverything
@@ -223,7 +261,7 @@ struct ReadmeTranslationRepositoryTests {
         let (cache, root) = try makeIsolatedCache()
         defer { cleanup(root) }
         try await cache.upsert(
-            makeTranslation(lang: "zh-Hans", html: "<p>hi</p>"),
+            makeTranslation(lang: "zh-Hans", text: "hi"),
             owner: "octo",
             repo: "demo"
         )
@@ -241,6 +279,28 @@ struct ReadmeTranslationRepositoryTests {
         // find 命中损坏后应该已经删了这对文件
         let stillExists = FileManager.default.fileExists(atPath: metadataURL.path)
         #expect(stillExists == false)
+    }
+
+    @Test("初始化时一次性删除旧整页 HTML 缓存，不保留双轨文件")
+    func legacyHTMLCacheIsRemovedOnInitialization() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("starcat-translation-legacy-\(UUID().uuidString)", isDirectory: true)
+        defer { cleanup(root) }
+        let directory = root
+            .appendingPathComponent("octo", isDirectory: true)
+            .appendingPathComponent("demo", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let metadata = directory.appendingPathComponent("zh-Hans.json")
+        let html = directory.appendingPathComponent("zh-Hans.html")
+        try Data(#"{"source_hash":"old","translated_html":"legacy"}"#.utf8)
+            .write(to: metadata, options: .atomic)
+        try Data("<p>旧译文</p>".utf8).write(to: html, options: .atomic)
+
+        let cache = DiskReadmeTranslationCache(rootOverride: root)
+
+        #expect(cache.itemCount == 0)
+        #expect(!FileManager.default.fileExists(atPath: metadata.path))
+        #expect(!FileManager.default.fileExists(atPath: html.path))
     }
 
     // MARK: - LRU sweep

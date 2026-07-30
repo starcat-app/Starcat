@@ -54,8 +54,6 @@ struct SearchCenterView: View {
     /// Search Center 行内 ❤️ 操作中的 repo。用 repo id 控制单按钮 loading，避免
     /// 点击一个结果时把整张搜索列表都置灰。
     @State private var libraryOperationRepoID: Int64?
-    @State private var pendingUsingRemovalCandidate: RepositoryCandidate?
-    @State private var isConfirmingUsingLibraryRemoval = false
     @State private var libraryToast: String?
 
     var body: some View {
@@ -177,27 +175,6 @@ struct SearchCenterView: View {
             if !filtersAvailable {
                 isFilterDrawerPresented = false
             }
-        }
-        .alert(
-            "library.removeUsing.confirmTitle",
-            isPresented: $isConfirmingUsingLibraryRemoval
-        ) {
-            Button("library.removeUsing.confirmAction", role: .destructive) {
-                if let candidate = pendingUsingRemovalCandidate {
-                    Task {
-                        await setLibraryState(
-                            .outsideLibrary,
-                            for: candidate,
-                            downgradeUsingStatus: true
-                        )
-                    }
-                }
-            }
-            Button("general.cancel", role: .cancel) {
-                pendingUsingRemovalCandidate = nil
-            }
-        } message: {
-            Text("library.removeUsing.confirmMessage")
         }
         .toast(
             message: $libraryToast,
@@ -524,14 +501,9 @@ struct SearchCenterView: View {
         if viewModel.lastSubmittedQuery.isEmpty {
             historyContent
         } else if viewModel.candidates.isEmpty, viewModel.isSearching {
-            // 注意:ProgressView 这里不能直接传 LocalizedStringKey,
-            // 因为 "search.searching" 的 value 是 "搜索：%@",需要把当前查询代进去。
-            // 直接走 LocalizedStringKey 不会做 printf 格式化,会原样显示 %@。
-            // 与 RepoListView 标题栏的写法保持一致,统一用 String(format:) 注入 query。
-            ProgressView {
-                Text(String(format: String.l10n("search.searching"), viewModel.lastSubmittedQuery))
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // 与主窗口 / 探索列表同款骨架；不再用 ProgressView + 文案，避免 repo 结果区加载态不统一。
+            RepoSkeletonListView(rowCount: 8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if isExternalSearchUnavailableEmpty {
             // 专属空态：.web scope + AnySearch 未启用。
             // 通用 "search.empty.title" 走的 errorMessages 拼接会带 "web:" 前缀
@@ -1315,28 +1287,16 @@ struct SearchCenterView: View {
         let currentState = (try? await dependencies.repoNoteRepository.fetchLibraryState(repoId: repo.id))
             ?? (candidate.card.isInLibrary ? .inLibrary : .outsideLibrary)
         if currentState == .inLibrary {
-            let status = (try? await dependencies.repoNoteRepository.find(repoId: repo.id))
-                .map { RepoStatus.parse($0.status) } ?? homeViewModel.readStatus(for: repo.id)
-            guard status != .using else {
-                viewModel.updateRepositoryLibraryState(
-                    identity: candidate.identity,
-                    state: currentState,
-                    persistedRepo: candidate.localRepo
-                )
-                pendingUsingRemovalCandidate = candidate
-                isConfirmingUsingLibraryRemoval = true
-                return true
-            }
-            return await setLibraryState(.outsideLibrary, for: candidate, downgradeUsingStatus: false)
+            // 搜索入口与详情页保持同一规则：移出只改知识库归属，不降级阅读状态。
+            return await setLibraryState(.outsideLibrary, for: candidate)
         } else {
-            return await setLibraryState(.inLibrary, for: candidate, downgradeUsingStatus: false)
+            return await setLibraryState(.inLibrary, for: candidate)
         }
     }
 
     private func setLibraryState(
         _ targetState: LibraryState,
-        for candidate: RepositoryCandidate,
-        downgradeUsingStatus: Bool
+        for candidate: RepositoryCandidate
     ) async -> Bool? {
         guard dependencies.authSession.state.isAuthenticated else {
             dependencies.authSession.requestLoginSheet()
@@ -1350,7 +1310,6 @@ struct SearchCenterView: View {
         libraryOperationRepoID = repo.id
         defer {
             libraryOperationRepoID = nil
-            pendingUsingRemovalCandidate = nil
         }
 
         do {
@@ -1364,9 +1323,6 @@ struct SearchCenterView: View {
                 persistedRepo = candidate.localRepo
             }
             try await dependencies.repoNoteRepository.updateLibraryState(repoId: repo.id, state: targetState)
-            if downgradeUsingStatus {
-                try await dependencies.repoNoteRepository.updateStatus(repoId: repo.id, status: .read)
-            }
 
             viewModel.updateRepositoryLibraryState(
                 identity: candidate.identity,

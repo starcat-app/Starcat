@@ -8,10 +8,10 @@
 //  - 调用 `WeeklyAPI.fetchBulkRepos` 一次性拉全量 weekly 聚合数据
 //  - 持久化到 `weekly_bulk_repos` / `weekly_bulk_languages` / `weekly_bulk_meta` 三表
 //  - 提供 SWR 模式所需的双方法：纯读缓存（立即上屏）+ 走网络刷新（覆盖缓存）
-//  - 暴露 `lastRefreshedAt` 给 ViewModel 判 12h TTL（与 TrendingRepository 同款语义）
+//  - 暴露 `lastRefreshedAt` 给 ViewModel 判 6h TTL（与 TrendingRepository 同款语义）
 //
 //  设计约束（dong4j R-06.4）：
-//  - **客户端 TTL = 12h**：TTL 判断**放在 ViewModel 层**（`WeeklyContentViewModel.bulkTTL` +
+//  - **客户端 TTL = 6h**：TTL 判断**放在 ViewModel 层**（`WeeklyContentViewModel.bulkTTL` +
 //    `WeeklyCachePolicy`），Repository 协议保持纯净。与 `TrendingRepository` 同款分层。
 //  - **整批替换语义**：bulk endpoint 返回的是"当前全量快照"，本地写入走"先 DELETE 三张表
 //    + 再批量 INSERT"，单 transaction 内完成；不做增量 upsert，因为 server 端语义就是全量。
@@ -63,7 +63,7 @@ protocol WeeklyBulkRepositoryProtocol: Sendable {
     /// 读取最近一次成功 bulk 拉取的客户端时间戳。
     ///
     /// 没缓存时返回 nil；永不抛错（DB 读失败仅记录日志后返回 nil）。
-    /// 用途：ViewModel 判 12h TTL；UI 显示"上次刷新 X 小时前"。
+    /// 用途：ViewModel 判 6h TTL；UI 显示"上次刷新 X 小时前"。
     func lastRefreshedAt() async -> Date?
 
     /// 清空 bulk cache（设置页"清除全部缓存"路径走这里）。

@@ -43,13 +43,14 @@ extension RAGChunkSource {
 }
 
 extension RAGCitationSource {
-    /// RepoContext 是仓库级临时证据，使用独立 brain 图标；其它来源保持与分片一致。
+    /// 两个 XML 是仓库级临时证据，使用独立图标；其它来源保持与分片一致。
     var systemImageName: String {
         switch self {
         case .readme: return "books.vertical.circle"
         case .notes: return "square.and.pencil.circle"
         case .summary: return "character.bubble"
         case .metadata: return "tag.circle"
+        case .repositoryInsights: return "gauge.with.dots.needle.bottom.0percent"
         case .repoContext: return "brain"
         }
     }
@@ -60,6 +61,7 @@ extension RAGCitationSource {
         case .notes: return .orange
         case .summary: return .purple
         case .metadata: return .teal
+        case .repositoryInsights: return .orange
         case .repoContext: return .indigo
         }
     }
@@ -70,6 +72,7 @@ extension RAGCitationSource {
         case .notes: return "rag.browser.source.notes"
         case .summary: return "rag.browser.source.summary"
         case .metadata: return "rag.browser.source.metadata"
+        case .repositoryInsights: return "rag.browser.repositoryInsights.title"
         case .repoContext: return "rag.workspace.repoContext.title"
         }
     }

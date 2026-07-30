@@ -48,6 +48,7 @@ struct RAGWorkspaceInspector: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.ragSettingsNavigation) private var settingsNavigation
 
     @Bindable var viewModel: KnowledgeRAGWorkspaceViewModel
     @State private var inspectorTab: RAGInspectorTab = .evidence
@@ -64,6 +65,8 @@ struct RAGWorkspaceInspector: View {
     @State private var isClearDebugTracesConfirmationPresented = false
     @State private var expandedIndexIssueKind: RAGIndexIssueKind?
     @State private var hoveredIndexIssueKind: RAGIndexIssueKind?
+    /// 待处理 / 失败 / 过期共用同一套列表行 hover，ID 只在当前展开抽屉内生效。
+    @State private var hoveredIndexIssueChunkID: Int64?
     @State private var hoveredIndexBuildStageID: String?
     @State private var isKnowledgeRepositoryRowHovered = false
     @State private var isKnowledgeMetadataRowHovered = false
@@ -86,6 +89,8 @@ struct RAGWorkspaceInspector: View {
     @State private var isRepoContextXMLPopoverPresented = false
     /// 大型 XML 创建 popover 内容会有短暂延迟；打开完成前锁住入口，避免双击被系统解释为随即关闭。
     @State private var isRepoContextXMLPopoverOpening = false
+    @State private var isRepositoryInsightsXMLPopoverPresented = false
+    @State private var isRepositoryInsightsXMLPopoverOpening = false
     @State private var retrievalDetailTarget: RAGRetrievalDetailTarget?
     /// 元数据体积大、引用 tab 优先看证据；默认折叠，需要时再展开。
     @State private var isKnowledgeMetadataExpanded = false
@@ -202,13 +207,15 @@ struct RAGWorkspaceInspector: View {
             isCitationChunkPopoverPresented = false
             isRepoContextXMLPopoverPresented = false
             isRepoContextXMLPopoverOpening = false
+            isRepositoryInsightsXMLPopoverPresented = false
+            isRepositoryInsightsXMLPopoverOpening = false
         }
+        #if DEBUG
         .onChange(of: viewModel.selectedConversationID) { _, _ in
             // 展示快照复制了 Debug payload；切会话时必须连同 generation 一起释放，
             // 否则旧任务回调和旧正文会在窗口级 State 中持续占用内存。
             resetDebugExpansionState()
         }
-        #if DEBUG
         .alert("rag.workspace.debug.clear.confirm.title", isPresented: $isClearDebugTracesConfirmationPresented) {
             Button("common.cancel", role: .cancel) {}
             Button("rag.workspace.debug.clear", role: .destructive) {
@@ -982,7 +989,10 @@ struct RAGWorkspaceInspector: View {
                 value: localizedInteger(health.totalChunks),
                 helpKey: "rag.workspace.header.knowledge"
             ) {
-                viewModel.openKnowledgeBaseEntry(presentingWindow: NSApp.keyWindow)
+                viewModel.openKnowledgeBaseEntry(
+                    presentingWindow: NSApp.keyWindow,
+                    settingsNavigation: settingsNavigation
+                )
             }
             // 与“索引可用性”统一为单行键值数据。状态颜色会让普通统计看起来像告警，
             // 并且胶囊无法解释 total 与 keyword-only 的差额，因此这里保持无色、可对账。
@@ -1220,6 +1230,8 @@ struct RAGWorkspaceInspector: View {
             citationField("rag.workspace.inspector.location", value: citation.sectionTitle)
             if citation.source == .repoContext {
                 repoContextCitationDetail(citation)
+            } else if citation.source == .repositoryInsights {
+                repositoryInsightsCitationDetail(citation)
             } else {
                 citationField("rag.workspace.inspector.matchType", value: citation.hitKind.rawValue)
                 retrievalScoreValue(citation)
@@ -1382,6 +1394,119 @@ struct RAGWorkspaceInspector: View {
         }
     }
 
+    /// 仓库洞察是可删除的特殊 Artifact，不是 `rag_chunks` 行；历史正文必须先通过
+    /// repo/source/xml hash 校验，因此缺失时展示“不可回放”而不是“分片已删除”。
+    @ViewBuilder
+    private func repositoryInsightsCitationDetail(_ citation: RAGCitation) -> some View {
+        if let snapshot = viewModel.repositoryInsightsSnapshot(for: citation) {
+            citationField(
+                "rag.workspace.repositoryInsights.status",
+                value: localizedRepositoryInsightsOutcome(snapshot)
+            )
+            if let generatedAt = snapshot.generatedAt {
+                citationField(
+                    "rag.workspace.repositoryInsights.generatedAt",
+                    value: localizedTimestamp(generatedAt)
+                )
+            }
+            citationField(
+                "rag.workspace.repositoryInsights.sourceHash",
+                value: shortHash(snapshot.sourceHash)
+            )
+            citationField(
+                "rag.workspace.repositoryInsights.xmlHash",
+                value: shortHash(snapshot.xmlHash)
+            )
+            citationField(
+                "rag.workspace.repositoryInsights.tokens",
+                value: localizedInteger(snapshot.sentTokens)
+            )
+            citationField(
+                "rag.workspace.repositoryInsights.projection",
+                value: snapshot.wasProjected
+                    ? String.l10n("rag.workspace.repositoryInsights.projection.projected")
+                    : String.l10n("rag.workspace.repositoryInsights.projection.original")
+            )
+            if let reason = snapshot.projectionReason ?? snapshot.degradationReason,
+               !reason.isEmpty {
+                citationField(
+                    "rag.workspace.repositoryInsights.reason",
+                    value: localizedRepositoryInsightsReason(reason)
+                )
+            }
+        }
+
+        if let document = viewModel.repositoryInsightsDocument(for: citation) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Label(
+                        "rag.workspace.repositoryInsights.xml",
+                        systemImage: "chevron.left.forwardslash.chevron.right"
+                    )
+                    .font(ragFont(.caption, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    Spacer(minLength: 4)
+                    CopyFeedbackButton(
+                        providesContent: { document.xml },
+                        tooltip: "rag.workspace.repositoryInsights.copy"
+                    ) { didCopy in
+                        Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                            .font(iconFont(size: 10, weight: .medium))
+                            .foregroundStyle(didCopy ? Color.green : Color.secondary)
+                    }
+                }
+                Button {
+                    guard !isRepositoryInsightsXMLPopoverOpening,
+                          !isRepositoryInsightsXMLPopoverPresented else { return }
+                    isRepositoryInsightsXMLPopoverOpening = true
+                    isRepositoryInsightsXMLPopoverPresented = true
+                } label: {
+                    Text(document.xml)
+                        .font(ragFont(.caption2, design: .monospaced))
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(5)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .disabled(
+                    isRepositoryInsightsXMLPopoverOpening
+                        || isRepositoryInsightsXMLPopoverPresented
+                )
+                .help("rag.workspace.repositoryInsights.xml.expand")
+                .padding(8)
+                .background(
+                    Color(nsColor: .textBackgroundColor).opacity(0.72),
+                    in: RoundedRectangle(cornerRadius: 6)
+                )
+                .popover(isPresented: $isRepositoryInsightsXMLPopoverPresented, arrowEdge: .leading) {
+                    RAGRepositoryInsightsXMLPopoverContent(
+                        citation: citation,
+                        document: document
+                    )
+                    .onAppear {
+                        isRepositoryInsightsXMLPopoverOpening = false
+                    }
+                }
+                .onChange(of: isRepositoryInsightsXMLPopoverPresented) { _, isPresented in
+                    if !isPresented {
+                        isRepositoryInsightsXMLPopoverOpening = false
+                    }
+                }
+            }
+        } else {
+            Label(
+                "rag.workspace.repositoryInsights.historyUnavailable",
+                systemImage: "clock.badge.exclamationmark"
+            )
+            .font(ragFont(.caption))
+            .foregroundStyle(.secondary)
+        }
+    }
+
     /// 最多 5 行预览；点击用 popover 看全文，避免点选文本时「字突然变多」。
     private func citationChunkPreview(_ citation: RAGCitation, chunk: RAGChunk) -> some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -1511,6 +1636,53 @@ struct RAGWorkspaceInspector: View {
                                 "rag.workspace.inspector.plan.analytics",
                                 value: localizedAnalytics(analytics)
                             )
+                        }
+                    }
+
+                    let repositoryInsightsSnapshots = viewModel.displayedRepositoryInsightsSnapshots
+                    if !repositoryInsightsSnapshots.isEmpty {
+                        // 洞察目标由显式仓库或最终保留 bundle 决定，只有执行后才能得到真实结果；
+                        // 因此这里展示实际完成的审计快照，而不是根据计划猜测目标。
+                        planSection(
+                            "rag.workspace.inspector.plan.repositoryInsights",
+                            systemImage: "gauge.with.dots.needle.bottom.0percent",
+                            tint: .orange
+                        ) {
+                            ForEach(repositoryInsightsSnapshots) { snapshot in
+                                VStack(alignment: .leading, spacing: 5) {
+                                    planMetricRow(
+                                        "rag.workspace.repositoryInsights.repository",
+                                        value: snapshot.repoFullName
+                                    )
+                                    planMetricRow(
+                                        "rag.workspace.repositoryInsights.status",
+                                        value: localizedRepositoryInsightsOutcome(snapshot)
+                                    )
+                                    if let generatedAt = snapshot.generatedAt {
+                                        planMetricRow(
+                                            "rag.workspace.repositoryInsights.generatedAt",
+                                            value: localizedTimestamp(generatedAt)
+                                        )
+                                    }
+                                    planMetricRow(
+                                        "rag.workspace.repositoryInsights.sourceHash",
+                                        value: shortHash(snapshot.sourceHash)
+                                    )
+                                    planMetricRow(
+                                        "rag.workspace.repositoryInsights.xmlHash",
+                                        value: shortHash(snapshot.xmlHash)
+                                    )
+                                    planMetricRow(
+                                        "rag.workspace.repositoryInsights.tokens",
+                                        value: localizedInteger(snapshot.sentTokens)
+                                    )
+                                }
+                                .padding(8)
+                                .background(
+                                    Color(nsColor: .textBackgroundColor).opacity(0.55),
+                                    in: RoundedRectangle(cornerRadius: 7)
+                                )
+                            }
                         }
                     }
 
@@ -1798,6 +1970,41 @@ struct RAGWorkspaceInspector: View {
         case .featureDisabled: return String.l10n("rag.workspace.execution.repoContext.disabled")
         case .degraded: return String.l10n("rag.workspace.execution.repoContext.degraded")
         }
+    }
+
+    private func localizedRepositoryInsightsOutcome(
+        _ snapshot: RAGRepositoryInsightsSnapshot
+    ) -> String {
+        if snapshot.degradationReason == RAGRepositoryInsightsReason.promptPlaceholderMissing {
+            return String.l10n("rag.workspace.repositoryInsights.status.notInjected")
+        }
+        switch snapshot.outcome {
+        case .success: return String.l10n("rag.workspace.repositoryInsights.status.success")
+        case .unavailable: return String.l10n("rag.workspace.repositoryInsights.status.unavailable")
+        case .degraded: return String.l10n("rag.workspace.repositoryInsights.status.degraded")
+        }
+    }
+
+    private func localizedRepositoryInsightsReason(_ reason: String) -> String {
+        let key: String
+        switch reason {
+        case RAGRepositoryInsightsReason.promptPlaceholderMissing:
+            key = "rag.workspace.repositoryInsights.reason.promptPlaceholderMissing"
+        case RAGRepositoryInsightsReason.totalContextProjectionUnavailable:
+            key = "rag.workspace.repositoryInsights.reason.contextWindowUnavailable"
+        case RAGRepositoryInsightsReason.artifactUnavailable:
+            key = "rag.workspace.repositoryInsights.reason.artifactUnavailable"
+        case RAGRepositoryInsightsReason.modelContextWindow:
+            key = "rag.workspace.repositoryInsights.reason.modelContextWindow"
+        default:
+            return reason
+        }
+        return String.l10n(key)
+    }
+
+    private func shortHash(_ value: String?) -> String {
+        guard let value, !value.isEmpty else { return "—" }
+        return String(value.prefix(12))
     }
 
     func planChip(_ value: String) -> some View {
@@ -2143,6 +2350,8 @@ struct RAGWorkspaceInspector: View {
         case .keyword: return "rag.workspace.inspector.plan.retrieval.detail.hitKind.keyword"
         case .vector: return "rag.workspace.inspector.plan.retrieval.detail.hitKind.vector"
         case .hybrid: return "rag.workspace.inspector.plan.retrieval.detail.hitKind.hybrid"
+        case .repositoryInsights:
+            return "rag.workspace.inspector.plan.retrieval.detail.hitKind.repositoryInsights"
         case .repoContext: return "rag.workspace.inspector.plan.retrieval.detail.hitKind.repoContext"
         }
     }
@@ -3224,6 +3433,9 @@ struct RAGWorkspaceInspector: View {
         case .structuredAnalytics: return "rag.workspace.debug.stage.structuredAnalytics"
         case .rerank: return "rag.workspace.debug.stage.rerank"
         case .retrieval: return "rag.workspace.debug.stage.retrieval"
+        case .repositoryInsightsRequest: return "rag.workspace.debug.stage.repositoryInsightsRequest"
+        case .repositoryInsightsLoad: return "rag.workspace.debug.stage.repositoryInsightsLoad"
+        case .repositoryInsightsProjection: return "rag.workspace.debug.stage.repositoryInsightsProjection"
         case .repoContextRequest: return "rag.workspace.debug.stage.repoContextRequest"
         case .repoContextResponse: return "rag.workspace.debug.stage.repoContextResponse"
         case .repoContextProjection: return "rag.workspace.debug.stage.repoContextProjection"
@@ -3259,6 +3471,12 @@ struct RAGWorkspaceInspector: View {
             return "arrow.up.arrow.down.circle"
         case .retrieval:
             return "magnifyingglass"
+        case .repositoryInsightsRequest:
+            return "gauge.with.dots.needle.bottom.0percent"
+        case .repositoryInsightsLoad:
+            return "doc.text.magnifyingglass"
+        case .repositoryInsightsProjection:
+            return "arrow.down.right.and.arrow.up.left"
         case .repoContextRequest:
             return "shippingbox"
         case .repoContextResponse:
@@ -3482,6 +3700,8 @@ struct RAGWorkspaceInspector: View {
             "rag.workspace.inspector.retrievalScore.formula.keyword"
         case .hybrid:
             "rag.workspace.inspector.retrievalScore.formula.hybrid"
+        case .repositoryInsights:
+            "rag.workspace.inspector.retrievalScore.formula.repositoryInsights"
         case .repoContext:
             "rag.workspace.inspector.retrievalScore.formula.repoContext"
         }
@@ -3508,6 +3728,8 @@ struct RAGWorkspaceInspector: View {
             return "\(final) = (\(formattedScoreValue(score.keywordWeight, precision: 2)) / (\(rrfConstant) + \(score.keywordRank ?? 0)) + \(formattedScoreValue(score.keywordScore ?? 0, precision: 3)) × \(formattedScoreValue(score.keywordScoreWeight, precision: 2))) × \(sourceWeight) + \(boost)"
         case .hybrid:
             return "\(final) = (\(formattedScoreValue(score.keywordWeight, precision: 2)) / (\(rrfConstant) + \(score.keywordRank ?? 0)) + \(formattedScoreValue(score.keywordScore ?? 0, precision: 3)) × \(formattedScoreValue(score.keywordScoreWeight, precision: 2)) + \(formattedScoreValue(score.vectorWeight, precision: 2)) / (\(rrfConstant) + \(score.vectorRank ?? 0)) + \(formattedScoreValue(score.vectorSimilarity ?? 0, precision: 3)) × \(formattedScoreValue(score.vectorScoreWeight, precision: 2))) × \(sourceWeight) + \(boost)"
+        case .repositoryInsights:
+            return String.l10n("rag.workspace.inspector.retrievalScore.formula.repositoryInsights")
         case .repoContext:
             return String.l10n("rag.workspace.inspector.retrievalScore.formula.repoContext")
         }
@@ -3596,24 +3818,49 @@ struct RAGWorkspaceInspector: View {
                 .frame(height: 7)
                 .animation(.easeInOut(duration: 0.18), value: readyChunks)
 
-            // 当前向量模型决定 ready/stale 口径：换模型后旧分片会整体判为过期，这里让用户随时可核对。
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("rag.browser.overview.model")
-                    .font(ragFont(.caption))
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 8)
-                Text(viewModel.embeddingModel)
+            embeddingModelConfigurationRow
+        }
+    }
+
+    /// 当前向量模型决定 ready/stale 口径。配置无效时不能留空，也不能继续把无效模型
+    /// 当作当前模型展示；提供直达「AI 设置 → 模型配置 → 向量化」的恢复入口。
+    @ViewBuilder
+    var embeddingModelConfigurationRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("rag.browser.overview.model")
+                .font(ragFont(.caption))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            if let modelName = viewModel.configuredEmbeddingModelName {
+                Text(modelName)
                     .font(ragFont(.caption, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .help(modelName)
+            } else {
+                Button("rag.workspace.index.embeddingModel.configure") {
+                    settingsNavigation("ai.embedding")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
+        }
+
+        if let issue = viewModel.embeddingConfigurationIssue {
+            Text(issue.localizedDescription)
+                .font(ragFont(.caption2))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     var knowledgeRepositoryRow: some View {
         Button {
-            viewModel.showKnowledgeBrowser(presentingWindow: NSApp.keyWindow)
+            viewModel.showKnowledgeBrowser(
+                presentingWindow: NSApp.keyWindow,
+                settingsNavigation: settingsNavigation
+            )
         } label: {
             HStack(spacing: 8) {
                 Text("rag.browser.overview.repositoryCoverage")
@@ -3716,25 +3963,12 @@ struct RAGWorkspaceInspector: View {
                     .font(ragFont(.caption))
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(chunks, id: \.id) { chunk in
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 6) {
-                            Text(viewModel.knowledgeRepositoryName(for: chunk.repoId))
-                                .font(ragFont(.caption, weight: .semibold))
-                            Text(indexIssueSourceTitle(chunk.source))
-                                .font(ragFont(.caption2))
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Text(chunk.sectionPath.isEmpty ? chunk.title : chunk.sectionPath)
-                                .font(ragFont(.caption2))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                        indexIssueReason(kind, chunk: chunk)
-                            .font(ragFont(.caption2))
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 3)
+                ForEach(Array(chunks.enumerated()), id: \.element.id) { indexedChunk in
+                    indexIssueChunkRow(
+                        kind,
+                        chunk: indexedChunk.element,
+                        rowIndex: indexedChunk.offset
+                    )
                 }
             }
             if viewModel.hasMoreIndexIssueChunks(kind) {
@@ -3751,17 +3985,121 @@ struct RAGWorkspaceInspector: View {
         .background(Color(nsColor: .textBackgroundColor).opacity(0.58), in: RoundedRectangle(cornerRadius: 7))
     }
 
+    /// 三类问题分片共享同一列表结构：每一行只承载一个语义字段，避免窄 Inspector
+    /// 把仓库名、来源和章节路径挤在同一行。斑马纹负责连续扫描，hover 只增强当前行。
+    func indexIssueChunkRow(
+        _ kind: RAGIndexIssueKind,
+        chunk: RAGChunk,
+        rowIndex: Int
+    ) -> some View {
+        let isHovered = chunk.id.map { hoveredIndexIssueChunkID == $0 } ?? false
+        let section = chunk.sectionPath.isEmpty ? chunk.title : chunk.sectionPath
+
+        return VStack(alignment: .leading, spacing: 3) {
+            Text(viewModel.knowledgeRepositoryName(for: chunk.repoId))
+                .font(ragFont(.caption, weight: .semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .help(viewModel.knowledgeRepositoryName(for: chunk.repoId))
+
+            (Text("rag.workspace.index.issues.sourcePrefix") + Text(indexIssueSourceTitle(chunk.source)))
+                .font(ragFont(.caption2))
+                .foregroundStyle(.secondary)
+
+            Text(String(
+                format: String.l10n("rag.workspace.index.issues.sectionFormat"),
+                section
+            ))
+            .font(ragFont(.caption2))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .help(section)
+
+            indexIssueReason(kind, chunk: chunk)
+                .font(ragFont(.caption2))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .background(
+            isHovered
+                ? Color.accentColor.opacity(0.08)
+                : (rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045)),
+            in: RoundedRectangle(cornerRadius: 5, style: .continuous)
+        )
+        .onHover { hovering in
+            if hovering {
+                hoveredIndexIssueChunkID = chunk.id
+            } else if hoveredIndexIssueChunkID == chunk.id {
+                hoveredIndexIssueChunkID = nil
+            }
+        }
+        .onDisappear {
+            if hoveredIndexIssueChunkID == chunk.id {
+                hoveredIndexIssueChunkID = nil
+            }
+        }
+    }
+
     @ViewBuilder
     func indexIssueReason(_ kind: RAGIndexIssueKind, chunk: RAGChunk) -> some View {
         switch kind {
         case .pending:
-            Text("rag.workspace.index.issues.pendingReason")
+            Text(String(
+                format: String.l10n("rag.workspace.index.issues.reasonFormat"),
+                pendingIndexIssueReason()
+            ))
         case .failed:
-            Text(chunk.embeddingError?.isEmpty == false ? chunk.embeddingError! : String.l10n("rag.workspace.index.issues.failedReason"))
+            Text(String(
+                format: String.l10n("rag.workspace.index.issues.reasonFormat"),
+                userFacingEmbeddingFailure(chunk.embeddingError)
+            ))
         case .stale:
-            Text("rag.workspace.index.issues.staleReason")
-            Text("\(chunk.embeddingModel ?? "-") → \(viewModel.embeddingModel)")
+            Text(String(
+                format: String.l10n("rag.workspace.index.issues.reasonFormat"),
+                String.l10n("rag.workspace.index.issues.staleReason")
+            ))
+            Text(String(
+                format: String.l10n("rag.workspace.index.issues.previousModelFormat"),
+                chunk.embeddingModel ?? String.l10n("rag.workspace.index.embeddingModel.unavailable")
+            ))
+            Text(String(
+                format: String.l10n("rag.workspace.index.issues.currentModelFormat"),
+                viewModel.configuredEmbeddingModelName
+                    ?? String.l10n("rag.workspace.index.embeddingModel.unavailable")
+            ))
         }
+    }
+
+    /// 一批 embedding 请求失败后 builder 会停止，尚未领取的分片仍是 pending。
+    /// 这时“等待生成向量”会掩盖真正阻塞原因，应明确显示最近一次索引失败。
+    func pendingIndexIssueReason() -> String {
+        if let issue = viewModel.embeddingConfigurationIssue {
+            return issue.localizedDescription
+        }
+        if case .failed(let lastFailure) = viewModel.indexingStatus {
+            return String(
+                format: String.l10n("rag.workspace.index.issues.pendingAfterFailureFormat"),
+                userFacingEmbeddingFailure(lastFailure)
+            )
+        }
+        return String.l10n("rag.workspace.index.issues.pendingReason")
+    }
+
+    /// 旧版本把 Provider 错误体的 SDK 解码失败原样存入 `embedding_error`，看起来像是
+    /// 笔记正文格式损坏。该字段只记录向量化失败，因此在展示层将这类遗留文案迁移成
+    /// 准确的模型响应错误；新的失败会直接保存 `AIEmbeddingError` 的友好描述。
+    func userFacingEmbeddingFailure(_ storedError: String?) -> String {
+        guard let storedError, !storedError.isEmpty else {
+            return String.l10n("rag.workspace.index.issues.failedReason")
+        }
+        let normalized = storedError.lowercased()
+        if normalized.contains("格式不正确") || normalized.contains("correct format") {
+            return AIEmbeddingError.invalidResponse.localizedDescription
+        }
+        return storedError
     }
 
     func indexIssueTitle(_ kind: RAGIndexIssueKind) -> LocalizedStringKey {
@@ -3962,66 +4300,13 @@ private struct RAGInspectorTabBar: View {
     @Binding var selection: RAGInspectorTab
     let font: Font
 
-    @Environment(\.starcatReduceMotion) private var reduceMotion
-
-    private static let horizontalInset: CGFloat = 3
-    private static let dividerWidth: CGFloat = 1
-    private static let controlHeight: CGFloat = 32
-
     var body: some View {
-        GeometryReader { proxy in
-            // 由确定的父宽度一次性分配每段宽度，避免多个 `.infinity` 子项反向参与
-            // HStack 的尺寸协商；后者在 macOS 26 的 SwiftUI 布局引擎中会造成主线程自旋。
-            let dividerCount = max(tabs.count - 1, 0)
-            let contentWidth = max(
-                0,
-                proxy.size.width
-                    - Self.horizontalInset * 2
-                    - CGFloat(dividerCount) * Self.dividerWidth
-            )
-            let tabWidth = tabs.isEmpty ? 0 : contentWidth / CGFloat(tabs.count)
-
-            HStack(spacing: 0) {
-                ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
-                    Button {
-                        selection = tab
-                    } label: {
-                        Text(tab.titleKey)
-                            .font(font)
-                            .lineLimit(1)
-                            .frame(width: tabWidth, height: Self.controlHeight - Self.horizontalInset * 2)
-                            .foregroundStyle(selection == tab ? Color.white : Color.primary)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .fill(selection == tab ? Color.accentColor : Color.clear)
-                            )
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
-                    .accessibilityAddTraits(selection == tab ? .isSelected : [])
-
-                    if index < tabs.count - 1 {
-                        Rectangle()
-                            .fill(showsDivider(before: index + 1) ? Color.primary.opacity(0.18) : .clear)
-                            .frame(width: Self.dividerWidth, height: 14)
-                    }
-                }
-            }
-            .padding(Self.horizontalInset)
-        }
-        .frame(height: Self.controlHeight)
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
+        EqualWidthSegmentedControl(
+            items: tabs,
+            selection: $selection,
+            title: \.titleKey,
+            font: font,
+            controlHeight: 32
         )
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: selection)
-    }
-
-    /// 仅在相邻两个未选中段之间画竖线，与系统 segmented 分隔习惯一致。
-    private func showsDivider(before index: Int) -> Bool {
-        guard index > 0 else { return false }
-        return selection != tabs[index - 1] && selection != tabs[index]
     }
 }

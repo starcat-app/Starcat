@@ -7,31 +7,39 @@
 
 ---
 
-## 📦 项目清单（共 14 个）
+## 📦 项目清单（共 22 个）
 
 ### Go API 服务（7 个）
 
 | 子目录 | GitHub | 端口 | 角色 |
 |--------|--------|:----:|------|
-| [`starcat-sharing-api/`](./starcat-sharing-api/) | [`dong4j/starcat-sharing-api`](https://github.com/dong4j/starcat-sharing-api) | 5001 | AI 分享链接生成 + 公开分享页托管 |
-| [`starcat-trending-api/`](./starcat-trending-api/) | [`dong4j/starcat-trending-api`](https://github.com/dong4j/starcat-trending-api) | 5002 | GitHub Trending 爬虫 → REST API |
-| [`starcat-weekly-api/`](./starcat-weekly-api/) | [`dong4j/starcat-weekly-api`](https://github.com/dong4j/starcat-weekly-api) | 5003 | 周刊项目同步 + zread 趋势候选 |
-| [`starcat-wiki-api/`](./starcat-wiki-api/) | [`dong4j/starcat-wiki-api`](https://github.com/dong4j/starcat-wiki-api) | 5004 | DeepWiki / Zread / CodeWiki 收录探测 |
-| [`starcat-recommend-api/`](./starcat-recommend-api/) | [`dong4j/starcat-recommend-api`](https://github.com/dong4j/starcat-recommend-api) | 5005 | 相似仓库推荐 API |
-| [`starcat-discovery-api/`](./starcat-discovery-api/) | [`dong4j/starcat-discovery-api`](https://github.com/dong4j/starcat-discovery-api) | 5006 | 探索发现、热门、新发布榜单 |
-| [`starcat-license-api/`](./starcat-license-api/) | [`dong4j/starcat-license-api`](https://github.com/dong4j/starcat-license-api) 🔒 | — | Direct 分发授权 API |
+| [`starcat-sharing-api/`](./starcat-sharing-api/) | [`starcat-app/starcat-sharing-api`](https://github.com/starcat-app/starcat-sharing-api) | 5001 | AI 分享链接生成 + 公开分享页托管 |
+| [`starcat-trending-api/`](./starcat-trending-api/) | [`starcat-app/starcat-trending-api`](https://github.com/starcat-app/starcat-trending-api) | 5002 | GitHub Trending 爬虫 → REST API |
+| [`starcat-weekly-api/`](./starcat-weekly-api/) | [`starcat-app/starcat-weekly-api`](https://github.com/starcat-app/starcat-weekly-api) | 5003 | 周刊、Show HN、HelloGitHub 等多来源项目发现流水线 |
+| [`starcat-wiki-api/`](./starcat-wiki-api/) | [`starcat-app/starcat-wiki-api`](https://github.com/starcat-app/starcat-wiki-api) | 5004 | DeepWiki / Zread / CodeWiki 收录探测 |
+| [`starcat-recommend-api/`](./starcat-recommend-api/) | [`starcat-app/starcat-recommend-api`](https://github.com/starcat-app/starcat-recommend-api) | 5005 | 相似仓库推荐 API |
+| [`starcat-discovery-api/`](./starcat-discovery-api/) | [`starcat-app/starcat-discovery-api`](https://github.com/starcat-app/starcat-discovery-api) | 5006 | 探索发现、热门、新发布榜单 |
+| [`starcat-license-api/`](./starcat-license-api/) | [`starcat-app/starcat-license-api`](https://github.com/starcat-app/starcat-license-api) 🔒 | 5010 | Direct 分发授权 API |
 
-### 其他支撑项目（7 个）
+### 其他支撑项目（15 个）
 
 | 子目录 | GitHub | 说明 |
 |--------|--------|------|
-| [`starcat-pro/`](./starcat-pro/) | [`dong4j/starcat-pro`](https://github.com/dong4j/starcat-pro) | Pro 订阅服务端 |
-| [`starcat-localization/`](./starcat-localization/) | [`dong4j/starcat-localization`](https://github.com/dong4j/starcat-localization) | 本地化资源管理 |
-| [`homebrew-starcat/`](./homebrew-starcat/) | [`dong4j/homebrew-starcat`](https://github.com/dong4j/homebrew-starcat) | Homebrew tap（`brew install starcat`） |
-| [`vscode-makefile-explorer/`](./vscode-makefile-explorer/) | [`dong4j/vscode-makefile-explorer`](https://github.com/dong4j/vscode-makefile-explorer) | VS Code 插件 |
+| [`starcat-pro/`](./starcat-pro/) | [`starcat-app/starcat-pro`](https://github.com/starcat-app/starcat-pro) | 公开支持、Issue 与发布说明 |
+| [`.github/`](./.github/) | [`starcat-app/.github`](https://github.com/starcat-app/.github) | 组织主页与共享社区健康文件 |
+| [`starcat-docs/`](./starcat-docs/) | [`starcat-app/starcat-docs`](https://github.com/starcat-app/starcat-docs) | Starcat 官方用户文档 |
+| [`starcat-site/`](./starcat-site/) | [`starcat-app/starcat-site`](https://github.com/starcat-app/starcat-site) | Direct、App Store 官网、博客与公开法律页面源码 |
+| [`starcat-localization/`](./starcat-localization/) | [`starcat-app/starcat-localization`](https://github.com/starcat-app/starcat-localization) | 本地化资源管理 |
+| [`homebrew-starcat/`](./homebrew-starcat/) | [`starcat-app/homebrew-starcat`](https://github.com/starcat-app/homebrew-starcat) | Starcat App Homebrew Cask（`brew install --cask starcat`） |
+| [`starcat-skill/`](./starcat-skill/) | [`starcat-app/starcat-skill`](https://github.com/starcat-app/starcat-skill) | 供 Codex / Claude 等 AI Agent 使用的 Starcat Skill |
+| [`starcat-cli/`](./starcat-cli/) | [`starcat-app/starcat-cli`](https://github.com/starcat-app/starcat-cli) | 跨平台 Starcat CLI 与 MCP 运行时 |
+| [`starcat-alfred-workflow/`](./starcat-alfred-workflow/) | [`starcat-app/starcat-alfred-workflow`](https://github.com/starcat-app/starcat-alfred-workflow) | 在 Alfred 中搜索 Starcat 本地仓库与 GitHub |
+| [`starcat-utools-plugin/`](./starcat-utools-plugin/) | [`starcat-app/starcat-utools-plugin`](https://github.com/starcat-app/starcat-utools-plugin) | 在 uTools 中搜索 Starcat 本地仓库与 GitHub |
+| [`starcat-raycast-extension/`](./starcat-raycast-extension/) | [`starcat-app/starcat-raycast-extension`](https://github.com/starcat-app/starcat-raycast-extension) | 在 Raycast 中搜索 Starcat 本地仓库与 GitHub |
+| [`homebrew-starcat-cli/`](./homebrew-starcat-cli/) | [`starcat-app/homebrew-starcat-cli`](https://github.com/starcat-app/homebrew-starcat-cli) | Starcat CLI Homebrew Formula tap |
 | [`ai-file-wall/`](./ai-file-wall/) | —（本地独立项目） | 多 AI 并行开发时的 Git 变更与文件冲突预警面板 |
-| [`extensions/starcat-chrome-plugin/`](./extensions/starcat-chrome-plugin/) | [`dong4j/starcat-chrome-plugin`](https://github.com/dong4j/starcat-chrome-plugin) | Chrome 浏览器插件 |
-| [`extensions/starcat-safari-plugin/`](./extensions/starcat-safari-plugin/) | [`dong4j/starcat-safari-plugin`](https://github.com/dong4j/starcat-safari-plugin) | Safari 浏览器插件 |
+| [`extensions/starcat-chrome-plugin/`](./extensions/starcat-chrome-plugin/) | [`starcat-app/starcat-chrome-plugin`](https://github.com/starcat-app/starcat-chrome-plugin) | Chrome 浏览器插件 |
+| [`extensions/starcat-safari-plugin/`](./extensions/starcat-safari-plugin/) | [`starcat-app/starcat-safari-plugin`](https://github.com/starcat-app/starcat-safari-plugin) | Safari 浏览器插件 |
 
 > 端口规范：5000 段是 macOS 系统服务保留段，自建后端从 5001 起顺序分配。
 
@@ -80,7 +88,7 @@
 | POST | `/api/share` | 接收 repo 数据 + AI 摘要，返回短链 |
 | GET | `/s/{id}` | 公开分享页（服务端渲染） |
 
-**`starcat-weekly-api`（5003）** — 同步 GitHub Weekly 周刊、Trending 榜单生成周报数据。
+**`starcat-weekly-api`（5003）** — 聚合阮一峰周刊、zread、Show HN、HelloGitHub 与人工情报，生成统一的项目发现数据。
 
 **`starcat-wiki-api`（5004）** — 探测仓库是否有 DeepWiki / Zread / CodeWiki 等第三方文档。
 
@@ -99,7 +107,7 @@
 ```bash
 cd supports
 
-# 首次 clone 全部 13 个项目
+# 首次 clone 全部 21 个 GitHub 独立仓库
 ./clone-all.sh
 
 # 后续批量更新
@@ -121,6 +129,24 @@ cd supports/starcat-trending-api
 go run ./cmd/server
 # → http://localhost:5002
 ```
+
+### 新增独立支撑项目
+
+使用根目录 Skill：
+
+```text
+.claude/skills/starcat-support-project-create
+```
+
+创建流程会补齐开源治理文件和 `README.md` / `README-ZH.md`，并强制同步：
+
+- `clone-all.sh`
+- `scripts/sync-starcat-readme-promo.py`
+- 本文档与 `SYNC.md`
+- 按项目类型需要的 CI、Release/Audit 和运维入口
+
+新项目始终保持独立 Git 仓库，不能加入 Starcat 主仓库。创建组织仓库、推送和设置
+secrets 需要单独确认。
 
 ---
 
@@ -144,7 +170,7 @@ go run ./cmd/server
 
 ### 独立 git 仓库（各自管理）
 
-- 上表 13 个项目目录
+- 上表除 `ai-file-wall` 外的 21 个 GitHub 独立仓库目录
 
 ### 跨机器同步（`sync-untracked.sh`）
 

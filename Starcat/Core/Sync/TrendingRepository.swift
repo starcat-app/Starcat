@@ -10,8 +10,8 @@
 //  - 提供 SWR 模式所需的双方法：纯读缓存（立即上屏）+ 走网络刷新（覆盖缓存）
 //
 //  设计约束（dong4j 2026-06-15 R-06.1 修订）：
-//  - **客户端 TTL = 24h**（决策推翻 2026-06-02 "不设 TTL" 旧策略）：
-//    TTL 判断**放在 ViewModel 层**（`TrendingViewModel.trendingTTL` + `TrendingCachePolicy`），
+//  - **客户端 TTL = daily 1h / weekly 6h / monthly 24h**：
+//    TTL 判断**放在 ViewModel 层**（`TrendingViewModel.ttl(for:)` + `TrendingCachePolicy`），
 //    而非 Repository 内部。理由：ViewModel 已经持有 `lastRefreshedAt` 做新鲜度展示，
 //    复用同一份数据判 TTL 最直接；Repository 协议保持纯净（cachedTrending /
 //    fetchTrending / lastRefreshedAt 三方法语义不动），调用方按需自行决定何时调用 fetch。

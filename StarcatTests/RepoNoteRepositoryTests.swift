@@ -115,6 +115,32 @@ struct RepoNoteRepositoryTests {
         let got = try #require(try await repo.find(repoId: 1))
         #expect(got.content == nil)
         #expect(got.status == "read")
+        #expect(got.isAIGenerated == false)
+    }
+
+    @Test("updateContent: AI 确认保存会设置来源标记")
+    func updateContentMarksAIGenerated() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 1)
+
+        try await repo.updateContent(repoId: 1, content: "AI 草稿", isAIGenerated: true)
+
+        let got = try #require(try await repo.find(repoId: 1))
+        #expect(got.content == "AI 草稿")
+        #expect(got.isAIGenerated == true)
+    }
+
+    @Test("updateContent: 手工修改会清除 AI 来源标记")
+    func manualUpdateContentClearsAIGenerated() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 1)
+        try await repo.updateContent(repoId: 1, content: "AI 草稿", isAIGenerated: true)
+
+        try await repo.updateContent(repoId: 1, content: "用户修改")
+
+        let got = try #require(try await repo.find(repoId: 1))
+        #expect(got.content == "用户修改")
+        #expect(got.isAIGenerated == false)
     }
 
     // MARK: - updateStatus
@@ -161,6 +187,37 @@ struct RepoNoteRepositoryTests {
         #expect(readNote.status == RepoStatus.read.rawValue)
         #expect(readNote.libraryState == LibraryState.inLibrary.rawValue)
         #expect(readNote.libraryUpdatedAt == libraryUpdatedAt)
+    }
+
+    @Test("updateStatus: 重复保存 using 不覆盖用户明确移出，重新进入 using 才再次入库")
+    func updateStatusRepeatedUsingPreservesExplicitLibraryRemoval() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 1)
+
+        try await repo.updateStatus(repoId: 1, status: .using)
+        try await repo.updateLibraryState(repoId: 1, state: .outsideLibrary)
+        let removed = try #require(try await repo.find(repoId: 1))
+        let removedAt = try #require(removed.libraryUpdatedAt)
+        #expect(removed.status == RepoStatus.using.rawValue)
+        #expect(removed.libraryState == LibraryState.outsideLibrary.rawValue)
+
+        // 相同状态的幂等保存不能推翻用户刚做出的移出决定。
+        try await repo.updateStatus(repoId: 1, status: .using)
+        let repeatedUsing = try #require(try await repo.find(repoId: 1))
+        #expect(repeatedUsing.status == RepoStatus.using.rawValue)
+        #expect(repeatedUsing.libraryState == LibraryState.outsideLibrary.rawValue)
+        #expect(repeatedUsing.libraryUpdatedAt == removedAt)
+
+        // 结束使用只改阅读状态；之后再次真正进入 using 时才重新触发自动入库。
+        try await repo.updateStatus(repoId: 1, status: .read)
+        let readOutside = try #require(try await repo.find(repoId: 1))
+        #expect(readOutside.status == RepoStatus.read.rawValue)
+        #expect(readOutside.libraryState == LibraryState.outsideLibrary.rawValue)
+
+        try await repo.updateStatus(repoId: 1, status: .using)
+        let reenteredUsing = try #require(try await repo.find(repoId: 1))
+        #expect(reenteredUsing.status == RepoStatus.using.rawValue)
+        #expect(reenteredUsing.libraryState == LibraryState.inLibrary.rawValue)
     }
 
     @Test("updateStatus: 非 using 状态变更不更新 libraryUpdatedAt")

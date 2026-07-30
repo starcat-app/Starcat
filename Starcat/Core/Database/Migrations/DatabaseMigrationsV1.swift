@@ -35,7 +35,8 @@
 //    `v5-rag-conversation-pin` / `v6-rag-conversation-groups` / `v7-knowledge-rag` /
 //    `v8-rag-suggested-actions` / `v9-rag-metadata-keyword-only` /
 //    `v10-rag-conversation-pinned-at` / `v11-rag-embedding-claim` /
-//    `v12-rag-metadata-revision` / `v13-weekly-multi-source`
+//    `v12-rag-metadata-revision` / `v13-weekly-multi-source` /
+//    `v14-ai-usage-events` / `v15-repo-pins` / `v16-repository-insights`
 //
 
 import Foundation
@@ -65,6 +66,183 @@ enum DatabaseMigrations {
         registerV11(into: &migrator)
         registerV12(into: &migrator)
         registerV13(into: &migrator)
+        registerV14(into: &migrator)
+        registerV15(into: &migrator)
+        registerV16(into: &migrator)
+        registerV17(into: &migrator)
+    }
+
+    // MARK: - v17-my-projects：当前用户的个人 / 组织项目关系（2026-07-29）
+
+    /// “我的项目”是用户与 Repo 的独立关系，不能塞进 `repos` 缓存表：
+    ///
+    /// - 同一个 Repo 可以同时是 Star、Project 和 Library，远端元数据刷新不能覆盖这些关系；
+    /// - Starcat 为每个 GitHub 用户使用独立数据库，但仍保留 `user_id`，避免异步切库边界出错时
+    ///   把旧账号结果误写进新账号视图；
+    /// - 项目同步按 credential + affiliation 分页，只有完整 generation 成功后才能清理旧关系，
+    ///   所以同步状态必须独立持久化，不能复用只服务 Stars 的 `sync_state`。
+    ///
+    /// 表中刻意不保存 token、响应 body 或 Private repo full name 形式的错误文本。
+    private static func registerV17(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v17-my-projects") { db in
+            try db.create(table: "user_projects") { table in
+                table.column("user_id", .integer).notNull()
+                table.column("repo_id", .integer).notNull()
+                    .references("repos", column: "id", onDelete: .cascade)
+                table.column("affiliation", .text).notNull()
+                table.column("owner_login", .text).notNull()
+                table.column("owner_type", .text).notNull()
+                table.column("visibility", .text).notNull()
+                table.column("permission", .text).notNull()
+                table.column("authorization_source", .text).notNull()
+                table.column("installation_id", .integer)
+                table.column("generation", .text).notNull()
+                table.column("last_seen_at", .text).notNull()
+                table.column("created_at", .text).notNull()
+                table.column("updated_at", .text).notNull()
+                table.primaryKey(["user_id", "repo_id"])
+            }
+            try db.create(
+                index: "idx_user_projects_user_affiliation",
+                on: "user_projects",
+                columns: ["user_id", "affiliation"]
+            )
+            try db.create(
+                index: "idx_user_projects_user_owner",
+                on: "user_projects",
+                columns: ["user_id", "owner_login"]
+            )
+            try db.create(
+                index: "idx_user_projects_user_visibility",
+                on: "user_projects",
+                columns: ["user_id", "visibility"]
+            )
+            try db.create(
+                index: "idx_user_projects_user_permission",
+                on: "user_projects",
+                columns: ["user_id", "permission"]
+            )
+            try db.create(
+                index: "idx_user_projects_user_generation",
+                on: "user_projects",
+                columns: ["user_id", "generation"]
+            )
+
+            try db.create(table: "project_sync_state") { table in
+                table.column("user_id", .integer).notNull()
+                table.column("credential_kind", .text).notNull()
+                table.column("affiliation", .text).notNull()
+                table.column("etag", .text)
+                table.column("generation", .text)
+                table.column("last_attempt_at", .text)
+                table.column("last_success_at", .text)
+                table.column("sync_status", .text).notNull().defaults(to: "idle")
+                table.column("error_code", .text)
+                table.column("updated_at", .text).notNull()
+                table.primaryKey(["user_id", "credential_kind", "affiliation"])
+            }
+            try db.create(
+                index: "idx_project_sync_state_status",
+                on: "project_sync_state",
+                columns: ["user_id", "sync_status"]
+            )
+        }
+    }
+
+    // MARK: - v16-repository-insights：仓库洞察与 Star 历史缓存（2026-07-27）
+
+    /// 两张表都属于可重建缓存，但生命周期不同：远端指标按 dataset/range 整体覆盖，
+    /// Star 历史按日期和来源长期累积。保持独立表可避免刷新远端估算时误删本地精确点。
+    private static func registerV16(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v16-repository-insights") { db in
+            try db.create(table: "repo_insights_snapshots") { table in
+                table.column("repo_id", .integer).notNull()
+                    .references("repos", column: "id", onDelete: .cascade)
+                table.column("dataset", .text).notNull()
+                table.column("range_key", .text).notNull()
+                table.column("payload_json", .blob).notNull()
+                table.column("default_branch_sha", .text)
+                table.column("fetched_at", .text).notNull()
+                table.column("stale_after", .text).notNull()
+                table.column("response_etag", .text)
+                table.primaryKey(["repo_id", "dataset", "range_key"])
+            }
+            try db.create(
+                index: "idx_repo_insights_snapshots_stale",
+                on: "repo_insights_snapshots",
+                columns: ["stale_after"]
+            )
+
+            try db.create(table: "repo_star_history_points") { table in
+                table.column("repo_id", .integer).notNull()
+                    .references("repos", column: "id", onDelete: .cascade)
+                table.column("observed_on", .text).notNull()
+                table.column("stars_count", .integer).notNull()
+                    .check { $0 >= 0 }
+                table.column("source", .text).notNull()
+                table.column("precision", .text).notNull()
+                table.column("fetched_at", .text).notNull()
+                table.primaryKey(["repo_id", "observed_on", "source"])
+            }
+            try db.create(
+                index: "idx_repo_star_history_points_lookup",
+                on: "repo_star_history_points",
+                columns: ["repo_id", "observed_on"]
+            )
+        }
+    }
+
+    // MARK: - v15-repo-pins：Manage 仓库置顶（2026-07-22）
+
+    /// Repo Pin 是用户私有的整理状态，不能写进可由 GitHub 重新拉取的 `repos` 缓存表。
+    /// 独立关系表让同步刷新只更新仓库元数据，不会覆盖用户的置顶选择；`repo_id` 主键同时
+    /// 保证一个仓库只有一份全局 Pin 状态。`pinned_at` 用于多个置顶仓库按最近操作排序。
+    private static func registerV15(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v15-repo-pins") { db in
+            try db.create(table: "repo_pins") { table in
+                table.column("repo_id", .integer).primaryKey()
+                    .references("repos", column: "id", onDelete: .cascade)
+                table.column("pinned_at", .double).notNull()
+            }
+            try db.create(index: "idx_repo_pins_pinned_at", on: "repo_pins", columns: ["pinned_at"])
+        }
+    }
+
+    // MARK: - v14-ai-usage-events：AI 请求用量事件（2026-07-19）
+
+    /// 每次 Chat / Embedding HTTP 推理请求对应一行本地事件。
+    ///
+    /// 为什么保存原始事件而不是预聚合日报：功能、模型和 Provider 都是低基数维度，SQLite
+    /// 可以实时聚合；原始事件还能在统计口径调整后重新计算。表刻意不包含 prompt、response、
+    /// API Key、Base URL 和完整错误文本，避免统计功能扩大敏感数据落盘面。
+    private static func registerV14(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v14-ai-usage-events") { db in
+            try db.create(table: "ai_usage_events") { table in
+                table.column("id", .text).primaryKey()
+                table.column("started_at", .double).notNull()
+                table.column("completed_at", .double).notNull()
+                table.column("duration_ms", .integer).notNull()
+                table.column("provider_id", .text).notNull()
+                table.column("provider_kind", .text).notNull()
+                table.column("model", .text).notNull()
+                table.column("feature", .text).notNull()
+                table.column("phase", .text).notNull()
+                table.column("operation", .text).notNull()
+                table.column("input_tokens", .integer)
+                table.column("output_tokens", .integer)
+                table.column("total_tokens", .integer)
+                table.column("cached_input_tokens", .integer)
+                table.column("reasoning_output_tokens", .integer)
+                table.column("item_count", .integer).notNull().defaults(to: 1)
+                table.column("usage_source", .text).notNull()
+                table.column("status", .text).notNull()
+                table.column("error_category", .text)
+                table.column("correlation_id", .text)
+            }
+            try db.create(index: "idx_ai_usage_events_completed", on: "ai_usage_events", columns: ["completed_at"])
+            try db.create(index: "idx_ai_usage_events_feature_completed", on: "ai_usage_events", columns: ["feature", "completed_at"])
+            try db.create(index: "idx_ai_usage_events_model_completed", on: "ai_usage_events", columns: ["model", "completed_at"])
+        }
     }
 
     // MARK: - v12-rag-metadata-revision：元数据快照修订号（2026-07-16）
@@ -959,8 +1137,9 @@ enum DatabaseMigrations {
     ///   不是 PK（PK 仍是榜单维度三元组）。
     /// - **readme_pk_c**：`trending_readmes` 用 `full_name` 作 PK（trending 只有 `owner/repo`，
     ///   没 Int64 id；与 `readmes.repo_id` 保持隔离）。
-    /// - **ttl_c**：列表与 README 都不设 TTL，每次进 Trending 都强制走网络重拉，本地缓存只承担
-    ///   「离线兜底 + 快速首屏 SWR」角色（先把缓存立即上屏，再后台拉网络覆盖）。
+    /// - **ttl_c（历史）**：初版列表与 README 不设 TTL；R-06.1 后列表改为由 ViewModel
+    ///   基于 `cached_at` 执行 daily 1h / weekly 6h / monthly 24h 分桶 TTL，表结构无需变化。
+    ///   README 仍走自身独立缓存策略。
     ///
     /// **PK 设计**：复合 PK `(period, language_filter, rank)` —— 同一榜单（period+language_filter）
     /// 内按 rank 排序定位每行；同一 repo 出现在多个榜单（如 daily Swift 第 3 + weekly Swift 第 5）
@@ -1025,7 +1204,7 @@ enum DatabaseMigrations {
             t.column("pushed_at", .text)
             t.column("created_at", .text)
             t.column("updated_at", .text)
-            t.column("cached_at", .text).notNull()               // 本地缓存于 X 时间前，不参与 TTL
+            t.column("cached_at", .text).notNull()               // ViewModel 按桶取 max 做分周期 TTL
 
             t.primaryKey(["period", "language_filter", "rank"])
         }
@@ -1321,7 +1500,7 @@ enum DatabaseMigrations {
     ///
     /// 单行设计避免"meta 表只有 1 行还做唯一约束"的丑陋写法；PK 固定字符串就够了。
     /// 跨 App 重启读这一行即可知道"上次什么时候拉的 / 拉了多少条 / 后端 ETag 是啥"，
-    /// ViewModel 据此判断 12h TTL。
+    /// ViewModel 据此判断 6h TTL。
     private static func createWeeklyBulkMeta(_ db: Database) throws {
         try db.create(table: "weekly_bulk_meta") { t in
             t.column("id", .text).primaryKey()                // 固定值 "singleton"

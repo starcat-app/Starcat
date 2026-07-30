@@ -23,6 +23,11 @@ struct GlobalRepoFilterState: Equatable {
     var wikiAvailabilityFilter: RepoSignalAvailabilityFilter
     var healthAvailabilityFilter: RepoSignalAvailabilityFilter
     var openSSFAvailabilityFilter: RepoSignalAvailabilityFilter
+    var tagAvailabilityFilter: RepoSignalAvailabilityFilter
+    var readmeAvailabilityFilter: RepoSignalAvailabilityFilter
+    var indexableSourceAvailabilityFilter: RepoSignalAvailabilityFilter
+    var ragIndexStateFilter: RepoRAGIndexStateFilter
+    var insightsRiskFilter: RepoInsightsRiskFilter
 
     static let neutral = GlobalRepoFilterState(
         hideArchived: false,
@@ -34,8 +39,47 @@ struct GlobalRepoFilterState: Equatable {
         globalFilterLanguages: [],
         wikiAvailabilityFilter: .unknown,
         healthAvailabilityFilter: .unknown,
-        openSSFAvailabilityFilter: .unknown
+        openSSFAvailabilityFilter: .unknown,
+        tagAvailabilityFilter: .unknown,
+        readmeAvailabilityFilter: .unknown,
+        indexableSourceAvailabilityFilter: .unknown,
+        ragIndexStateFilter: .unknown,
+        insightsRiskFilter: .unknown
     )
+
+    /// 这些字段只用于洞察的临时结构化下钻，不进入用户持久 Toolbar 偏好。
+    var hasInsightsDrillDownFilters: Bool {
+        tagAvailabilityFilter != .unknown
+            || readmeAvailabilityFilter != .unknown
+            || indexableSourceAvailabilityFilter != .unknown
+            || ragIndexStateFilter != .unknown
+            || insightsRiskFilter != .unknown
+    }
+
+    /// 转换为 Manage 数据库分页实际消费的筛选条件。
+    ///
+    /// 洞察下钻和 Toolbar 都必须经过同一转换入口，否则新增筛选字段时很容易只更新
+    /// 路由或列表的一侧，最终造成卡片数字与落地列表数量不一致。
+    func repoListFilters(selectedTagIDs: Set<String>) -> RepoListFilters {
+        RepoListFilters(
+            hideArchived: hideArchived,
+            hideForks: hideForks,
+            status: statusFilter,
+            star: starFilter,
+            library: libraryFilter,
+            language: repoLanguageFilter,
+            selectedLanguages: Set(globalFilterLanguages),
+            wikiAvailability: wikiAvailabilityFilter,
+            healthAvailability: healthAvailabilityFilter,
+            openSSFAvailability: openSSFAvailabilityFilter,
+            tagAvailability: tagAvailabilityFilter,
+            readmeAvailability: readmeAvailabilityFilter,
+            indexableSourceAvailability: indexableSourceAvailabilityFilter,
+            ragIndexState: ragIndexStateFilter,
+            insightsRisk: insightsRiskFilter,
+            selectedTagIDs: selectedTagIDs
+        )
+    }
 }
 
 /// 主窗口级一次性路由总线。
@@ -48,12 +92,19 @@ final class MainWindowNavigationDispatcher {
     enum Destination: Equatable {
         case manage(SidebarItem)
         case revealTags
+        /// Widget 没有具体 Release ID 的空态入口打开完整 Release 时间线。
+        case releaseTimeline
+        /// Universal Link 只携带稳定的 owner / repo，不把网页端数据写入本地库。
+        case repository(RepositoryDeepLink)
+        /// Widget Release 行打开现有 Release 时间线，并尽量定位到对应记录。
+        case repositoryRelease(RepositoryReleaseDeepLink)
     }
 
     struct Request: Identifiable, Equatable {
         let id = UUID()
         let destination: Destination
         let temporaryFilters: GlobalRepoFilterState?
+        let returnPage: SidebarRootPage?
     }
 
     var pendingRequest: Request?
@@ -61,11 +112,13 @@ final class MainWindowNavigationDispatcher {
     /// 发布一次主窗口跳转。`temporaryFilters == nil` 表示只导航，不覆盖用户筛选。
     func navigate(
         to destination: Destination,
-        temporaryFilters: GlobalRepoFilterState? = nil
+        temporaryFilters: GlobalRepoFilterState? = nil,
+        returnPage: SidebarRootPage? = nil
     ) {
         pendingRequest = Request(
             destination: destination,
-            temporaryFilters: temporaryFilters
+            temporaryFilters: temporaryFilters,
+            returnPage: returnPage
         )
         AppDelegate.activateMainWindowIfPossible()
     }

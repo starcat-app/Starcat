@@ -6,8 +6,10 @@
 //  用 UserDefaults(suiteName:) 隔离测试，不污染共享 .standard。
 //
 
-import Testing
+import AppKit
 import Foundation
+import SwiftUI
+import Testing
 @testable import Starcat
 
 @MainActor
@@ -91,9 +93,16 @@ struct AppSettingsTests {
         settings.setExternalSearchSettings(anySearchSettings, for: .anySearch)
         settings.notificationsEnabled = false
         settings.hideDockIcon = true
+        settings.snakeStyle = .greedy
+        settings.keyboardShortcutsEnabled = false
+        settings.refreshCurrentContentShortcutEnabled = false
+        settings.refreshCurrentContentShortcut = .init(
+            key: "r", command: true, option: true, control: false, shift: false
+        )
         settings.mcpServiceEnabled = true
         settings.mcpServicePort = 7777
         settings.mcpAllowDestructiveWrites = true
+        settings.aiRepoContextMaximumArchiveMB = 90
         settings.setCustomURL("https://example.com", for: .trending)
         settings.setCustomAPIKey("service-key", for: .weekly)
         settings.setExternalSearchAPIKey("anysearch-key", for: .anySearch)
@@ -120,9 +129,14 @@ struct AppSettingsTests {
         #expect(settings.externalSearchSettings(for: .anySearch).isEnabled == false)
         #expect(settings.notificationsEnabled == true)
         #expect(settings.hideDockIcon == false)
+        #expect(settings.snakeStyle == .off)
+        #expect(settings.keyboardShortcutsEnabled == true)
+        #expect(settings.refreshCurrentContentShortcutEnabled == true)
+        #expect(settings.refreshCurrentContentShortcut == StarcatShortcutCatalog.refreshCurrentContentDefault)
         #expect(settings.mcpServiceEnabled == false)
         #expect(settings.mcpServicePort == AppSettings.defaultMCPServicePort)
         #expect(settings.mcpAllowDestructiveWrites == false)
+        #expect(settings.aiRepoContextMaximumArchiveMB == AppSettings.defaultAIRepoContextMaximumArchiveMB)
         #expect(settings.customServiceURL(for: .trending) == nil)
         #expect(settings.customServiceAPIKey(for: .weekly) == nil)
         #expect(settings.externalSearchAPIKey(for: .anySearch) == nil)
@@ -140,6 +154,18 @@ struct AppSettingsTests {
 
         let restored = AppSettings(defaults: defaults)
         #expect(restored.hideDockIcon == true)
+    }
+
+    @Test("贡献草坪动画: 新安装默认关闭并保留用户主动选择")
+    func snakeStyleDefaultsToOffAndPersistsUserChoice() {
+        let defaults = makeIsolatedDefaults()
+        let settings = AppSettings(defaults: defaults)
+        #expect(settings.snakeStyle == .off)
+
+        settings.snakeStyle = .greedy
+
+        let restored = AppSettings(defaults: defaults)
+        #expect(restored.snakeStyle == .greedy)
     }
 
     // MARK: - W4-4 D1：排序偏好
@@ -256,19 +282,34 @@ struct AppSettingsTests {
 
     // MARK: - 快捷键偏好
 
-    @Test("快捷键: 默认 AI 用 Return 发送，全局搜索为 Command+K，常规搜索为 Command+F")
+    @Test("快捷键: AI 发送独立，五项应用命令默认启用并使用预设键位")
     func shortcutDefaults() {
         let settings = AppSettings(defaults: makeIsolatedDefaults())
         #expect(settings.aiChatRequiresCommandReturn == false)
+        #expect(settings.keyboardShortcutsEnabled)
         #expect(settings.globalSearchShortcut == .globalSearchDefault)
+        #expect(settings.globalSearchShortcutEnabled)
         #expect(settings.regularSearchShortcut == .regularSearchDefault)
+        #expect(settings.regularSearchShortcutEnabled)
+        #expect(settings.refreshCurrentContentShortcut == StarcatShortcutCatalog.refreshCurrentContentDefault)
+        #expect(settings.refreshCurrentContentShortcutEnabled)
+        #expect(settings.knowledgeRAGShortcut == StarcatShortcutCatalog.openKnowledgeRAGDefault)
+        #expect(settings.knowledgeRAGShortcutEnabled)
+        #expect(settings.selectedRepoAIShortcut == StarcatShortcutCatalog.openSelectedRepoAIDefault)
+        #expect(settings.selectedRepoAIShortcutEnabled)
     }
 
-    @Test("快捷键: AI 发送方式与全局搜索组合应持久化")
+    @Test("快捷键: 五项键位与两层开关持久化，AI 发送方式不随总开关改变")
     func shortcutSettingsPersist() {
         let defaults = makeIsolatedDefaults()
         let settings = AppSettings(defaults: defaults)
         settings.aiChatRequiresCommandReturn = true
+        settings.keyboardShortcutsEnabled = false
+        settings.globalSearchShortcutEnabled = false
+        settings.regularSearchShortcutEnabled = false
+        settings.refreshCurrentContentShortcutEnabled = false
+        settings.knowledgeRAGShortcutEnabled = false
+        settings.selectedRepoAIShortcutEnabled = false
         settings.globalSearchShortcut = .init(
             key: "p",
             command: true,
@@ -283,11 +324,41 @@ struct AppSettingsTests {
             control: false,
             shift: false
         )
+        settings.refreshCurrentContentShortcut = .init(
+            key: "r",
+            command: true,
+            option: true,
+            control: false,
+            shift: false
+        )
+        settings.knowledgeRAGShortcut = .init(
+            key: "j",
+            command: true,
+            option: false,
+            control: true,
+            shift: false
+        )
+        settings.selectedRepoAIShortcut = .init(
+            key: "a",
+            command: true,
+            option: true,
+            control: false,
+            shift: true
+        )
 
         let restored = AppSettings(defaults: defaults)
         #expect(restored.aiChatRequiresCommandReturn == true)
+        #expect(restored.keyboardShortcutsEnabled == false)
         #expect(restored.globalSearchShortcut.displayText == "⌥⌘P")
+        #expect(restored.globalSearchShortcutEnabled == false)
         #expect(restored.regularSearchShortcut.displayText == "⌘G")
+        #expect(restored.regularSearchShortcutEnabled == false)
+        #expect(restored.refreshCurrentContentShortcut.displayText == "⌥⌘R")
+        #expect(restored.refreshCurrentContentShortcutEnabled == false)
+        #expect(restored.knowledgeRAGShortcut.displayText == "⌃⌘J")
+        #expect(restored.knowledgeRAGShortcutEnabled == false)
+        #expect(restored.selectedRepoAIShortcut.displayText == "⌥⇧⌘A")
+        #expect(restored.selectedRepoAIShortcutEnabled == false)
     }
 
     @Test("快捷键: 损坏或不合法的持久化值回退 Command+K")
@@ -310,22 +381,218 @@ struct AppSettingsTests {
         #expect(settings.globalSearchShortcut == .globalSearchDefault)
     }
 
-    @Test("快捷键: 普通字符无修饰键非法，应用内固定组合不可覆盖")
+    @Test("快捷键: 普通字符无修饰键非法，仅真正固定的应用组合不可覆盖")
     func shortcutValidation() {
         let plainK = KeyboardShortcutConfiguration(
             key: "k", command: false, option: false, control: false, shift: false
         )
-        let commandI = KeyboardShortcutConfiguration(
-            key: "i", command: true, option: false, control: false, shift: false
-        )
         let shiftOnlyK = KeyboardShortcutConfiguration(
             key: "k", command: false, option: false, control: false, shift: true
         )
+        let formerAboutShortcut = KeyboardShortcutConfiguration(
+            key: "i", command: true, option: false, control: false, shift: false
+        )
+        let selectAllShortcut = KeyboardShortcutConfiguration(
+            key: "a", command: true, option: false, control: false, shift: false
+        )
         #expect(plainK.validationError == .missingModifier)
         #expect(shiftOnlyK.validationError == .missingModifier)
-        #expect(commandI.validationError == .reserved)
+        #expect(selectAllShortcut.validationError == .reserved)
+        #expect(StarcatShortcutCatalog.refreshCurrentContentDefault.validationError == nil)
+        #expect(StarcatShortcutCatalog.openKnowledgeRAGDefault.validationError == nil)
+        #expect(StarcatShortcutCatalog.openSelectedRepoAIDefault.validationError == nil)
+        #expect(formerAboutShortcut.validationError == nil)
         #expect(KeyboardShortcutConfiguration.globalSearchDefault.validationError == nil)
         #expect(KeyboardShortcutConfiguration.regularSearchDefault.validationError == nil)
+    }
+
+    @Test("快捷键: 五个可配置动作不能使用相同组合")
+    func configurableShortcutConflict() {
+        let candidate = KeyboardShortcutConfiguration.globalSearchDefault
+
+        #expect(
+            candidate.validationError(conflictingWith: [.globalSearchDefault])
+                == .duplicateConfiguredAction
+        )
+        #expect(candidate.validationError(conflictingWith: [.regularSearchDefault]) == nil)
+    }
+
+    @Test("快捷键: 任意持久化重复配置都会让五项一起回退默认组合")
+    func duplicatedStoredShortcutsFallBackTogether() throws {
+        let defaults = makeIsolatedDefaults()
+        let duplicated = KeyboardShortcutConfiguration(
+            key: "g",
+            command: true,
+            option: true,
+            control: false,
+            shift: false
+        )
+        let encoded = String(decoding: try JSONEncoder().encode(duplicated), as: UTF8.self)
+        defaults.set(encoded, forKey: AppSettings.Keys.globalSearchShortcut)
+        defaults.set(encoded, forKey: AppSettings.Keys.refreshCurrentContentShortcut)
+
+        let settings = AppSettings(defaults: defaults)
+
+        #expect(settings.globalSearchShortcut == .globalSearchDefault)
+        #expect(settings.regularSearchShortcut == .regularSearchDefault)
+        #expect(settings.refreshCurrentContentShortcut == StarcatShortcutCatalog.refreshCurrentContentDefault)
+        #expect(settings.knowledgeRAGShortcut == StarcatShortcutCatalog.openKnowledgeRAGDefault)
+        #expect(settings.selectedRepoAIShortcut == StarcatShortcutCatalog.openSelectedRepoAIDefault)
+    }
+
+    @Test("快捷键路由: 最后操作详情时只刷新详情")
+    func commandRouterPrefersActiveDetail() {
+        let router = StarcatCommandRouter()
+        let listOwner = UUID()
+        let detailOwner = UUID()
+        var calls: [String] = []
+
+        router.registerRefreshAction(
+            StarcatCommandAction(title: "list", isEnabled: true) { calls.append("list") },
+            pane: .list,
+            ownerID: listOwner
+        )
+        router.registerRefreshAction(
+            StarcatCommandAction(title: "detail", isEnabled: true) { calls.append("detail") },
+            pane: .detail,
+            ownerID: detailOwner
+        )
+        router.activate(.detail)
+        router.refreshCurrentContent()
+
+        #expect(calls == ["detail"])
+    }
+
+    @Test("快捷键路由: 详情不可刷新时回退当前列表")
+    func commandRouterFallsBackToList() {
+        let router = StarcatCommandRouter()
+        var calls: [String] = []
+
+        router.registerRefreshAction(
+            StarcatCommandAction(title: "list", isEnabled: true) { calls.append("list") },
+            pane: .list,
+            ownerID: UUID()
+        )
+        router.registerRefreshAction(
+            StarcatCommandAction(title: "detail", isEnabled: false) { calls.append("detail") },
+            pane: .detail,
+            ownerID: UUID()
+        )
+        router.activate(.detail)
+        router.refreshCurrentContent()
+
+        #expect(calls == ["list"])
+    }
+
+    @Test("快捷键路由: 旧详情消失不能清掉新详情动作")
+    func commandRouterIgnoresStaleUnregister() {
+        let router = StarcatCommandRouter()
+        let oldOwner = UUID()
+        let newOwner = UUID()
+        var calls: [String] = []
+
+        router.registerRefreshAction(
+            StarcatCommandAction(title: "old", isEnabled: true) { calls.append("old") },
+            pane: .detail,
+            ownerID: oldOwner
+        )
+        router.registerRefreshAction(
+            StarcatCommandAction(title: "new", isEnabled: true) { calls.append("new") },
+            pane: .detail,
+            ownerID: newOwner
+        )
+        router.unregisterRefreshAction(pane: .detail, ownerID: oldOwner)
+        router.activate(.detail)
+        router.refreshCurrentContent()
+
+        #expect(calls == ["new"])
+    }
+
+    @Test("快捷键路由: 当前仓库 AI 使用最新详情动作")
+    func commandRouterUsesLatestRepositoryAI() {
+        let router = StarcatCommandRouter()
+        var opened = false
+        router.registerRepositoryAIAction(
+            StarcatCommandAction(title: "AI", isEnabled: true) { opened = true },
+            ownerID: UUID()
+        )
+
+        router.openCurrentRepositoryAI()
+
+        #expect(opened)
+    }
+
+    @Test("快捷键路由: key window 的仓库 AI 动作优先于后台窗口")
+    func commandRouterPrefersFocusedRepositoryAI() {
+        let router = StarcatCommandRouter()
+        var calls: [String] = []
+        router.registerRepositoryAIAction(
+            StarcatCommandAction(title: "background", isEnabled: true) {
+                calls.append("background")
+            },
+            ownerID: UUID()
+        )
+
+        let focused = StarcatCommandAction(title: "focused", isEnabled: true) {
+            calls.append("focused")
+        }
+        router.openCurrentRepositoryAI(preferred: focused)
+
+        #expect(calls == ["focused"])
+        #expect(router.isRepositoryAIAvailable(preferred: focused))
+    }
+
+    @Test("快捷键路由: focused 刷新动作优先于最后登记的 fallback")
+    func commandRouterPrefersFocusedRefreshAction() {
+        let router = StarcatCommandRouter()
+        var calls: [String] = []
+        router.registerRefreshAction(
+            StarcatCommandAction(title: "fallback", isEnabled: true) {
+                calls.append("fallback")
+            },
+            pane: .detail,
+            ownerID: UUID()
+        )
+        router.activate(.detail)
+
+        let focused = StarcatCommandAction(title: "focused", isEnabled: true) {
+            calls.append("focused")
+        }
+        router.refreshCurrentContent(preferred: focused)
+
+        #expect(calls == ["focused"])
+        #expect(router.isRefreshAvailable(preferred: focused))
+    }
+
+    @Test("快捷键路由: AppKit 独立窗口注入路由后可安全挂载命令视图")
+    func commandRouterEnvironmentSupportsAppKitHostingRoot() {
+        let router = StarcatCommandRouter()
+        let rootView = Color.clear
+            .starcatRefreshCommand(
+                pane: .detail,
+                identity: "appkit-host-regression",
+                title: "refresh"
+            ) {}
+            .starcatRepositoryAICommand(
+                identity: "appkit-host-regression",
+                isEnabled: true
+            ) {}
+            // 必须位于消费命令路由的 modifier 外层，模拟 appHostEnvironment 的注入顺序。
+            .starcatCommandRouterEnvironment(router)
+
+        let hostingController = NSHostingController(rootView: rootView)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+
+        // 生产崩溃发生在同一赋值：SwiftUI 首次解析 DynamicProperty 时若缺少 router，
+        // 会从 EnvironmentValues.subscript.getter 触发 assertionFailure。
+        window.contentViewController = hostingController
+
+        #expect(window.contentViewController === hostingController)
     }
 
     // MARK: - AI BYOK 设置
@@ -348,6 +615,7 @@ struct AppSettingsTests {
         #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("{metadata}"))
         #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("{readme}"))
         #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("{codeContext}"))
+        #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("{insightsContext}"))
         #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("{externalContext}"))
         #expect(s.aiSummaryTask.prompt.userPromptTemplate.contains("{outputLanguage}"))
         #expect(s.aiSummaryTask.prompt.systemPrompt.contains("{outputLanguage}"))
@@ -360,12 +628,14 @@ struct AppSettingsTests {
         #expect(s.aiChatTask.prompt.systemPrompt.contains("{metadata}"))
         #expect(s.aiChatTask.prompt.systemPrompt.contains("{readme}"))
         #expect(s.aiChatTask.prompt.systemPrompt.contains("{codeContext}"))
+        #expect(s.aiChatTask.prompt.systemPrompt.contains("{insightsContext}"))
         #expect(s.aiChatTask.prompt.systemPrompt.contains("{summary}"))
         #expect(s.aiChatTask.prompt.systemPrompt.contains("{externalContext}"))
         #expect(s.aiChatTask.prompt.userPromptTemplate.isEmpty)
         #expect(s.smartSearchMode == .keyword)
         #expect(s.ragPromptSettings.generator.systemPrompt.contains("{outputLanguage}"))
         #expect(s.ragPromptSettings.generator.userPromptTemplate.contains("{questionSection}"))
+        #expect(s.ragPromptSettings.generator.userPromptTemplate.contains("{repositoryInsightsSection}"))
         #expect(s.ragPromptSettings.generator.userPromptTemplate.contains("{repoContextSection}"))
         #expect(s.ragPromptSettings.planner.systemPrompt.contains("{outputLanguage}"))
         #expect(s.ragPromptSettings.planner.userPromptTemplate.contains("{question}"))
@@ -375,6 +645,114 @@ struct AppSettingsTests {
         #expect(s.ragPromptSettings.title.systemPrompt.contains("{outputLanguage}"))
         #expect(s.ragPromptSettings.title.userPromptTemplate.contains("{firstQuestion}"))
         #expect(s.ragRetrievalSettings == .balanced)
+        #expect(s.aiRepoContextMaximumArchiveMB == AppSettings.defaultAIRepoContextMaximumArchiveMB)
+    }
+
+    @Test("AI: Prompt 可编辑方向与请求协议一致")
+    func aiPromptRoleSupport() {
+        #expect(!AIModelTask.embedding.supportsSystemPrompt)
+        #expect(AIModelTask.embedding.supportsUserPromptTemplate)
+        #expect(AIModelTask.chat.supportsSystemPrompt)
+        #expect(!AIModelTask.chat.supportsUserPromptTemplate)
+
+        for task in [AIModelTask.summary, .tags, .translation] {
+            #expect(task.supportsSystemPrompt)
+            #expect(task.supportsUserPromptTemplate)
+        }
+    }
+
+    @Test("AI Tags: 已发布旧默认 Prompt 自动升级且保留模型配置")
+    func legacyDefaultTagsPromptMigrates() {
+        let defaults = makeIsolatedDefaults()
+        let seeded = AppSettings(defaults: defaults)
+        var legacyTask = seeded.aiTagsTask
+        legacyTask.prompt = AIDefaultPrompts.legacyTagsV1
+        legacyTask.modelID = "custom-tag-model"
+        legacyTask.customModelName = "custom-tag-model"
+        seeded.aiTagsTask = legacyTask
+
+        let migrated = AppSettings(defaults: defaults).aiTagsTask
+        #expect(migrated.prompt == AIDefaultPrompts.tags)
+        #expect(migrated.modelID == "custom-tag-model")
+        #expect(migrated.customModelName == "custom-tag-model")
+
+        // 迁移结果必须写回 UserDefaults，否则每次启动都会重复走迁移。
+        #expect(AppSettings(defaults: defaults).aiTagsTask == migrated)
+    }
+
+    @Test("AI Tags: 用户自定义 Prompt 不被默认升级覆盖")
+    func customTagsPromptIsPreserved() {
+        let defaults = makeIsolatedDefaults()
+        let seeded = AppSettings(defaults: defaults)
+        var customTask = seeded.aiTagsTask
+        customTask.prompt.systemPrompt += "\nUser custom rule"
+        seeded.aiTagsTask = customTask
+
+        let reloaded = AppSettings(defaults: defaults).aiTagsTask
+        #expect(reloaded.prompt == customTask.prompt)
+        #expect(reloaded.prompt != AIDefaultPrompts.tags)
+    }
+
+    @Test("AI 洞察上下文: 摘要与对话旧默认 Prompt 安全升级")
+    func legacyDefaultInsightsPromptsMigrate() {
+        let defaults = makeIsolatedDefaults()
+        let seeded = AppSettings(defaults: defaults)
+
+        var summary = seeded.aiSummaryTask
+        summary.prompt = AIDefaultPrompts.legacySummaryWithoutInsights
+        summary.modelID = "custom-summary-model"
+        seeded.aiSummaryTask = summary
+
+        var chat = seeded.aiChatTask
+        chat.prompt = AIDefaultPrompts.legacyChatWithoutInsights
+        chat.modelID = "custom-chat-model"
+        seeded.aiChatTask = chat
+
+        let migrated = AppSettings(defaults: defaults)
+        #expect(migrated.aiSummaryTask.prompt == AIDefaultPrompts.summary)
+        #expect(migrated.aiSummaryTask.modelID == "custom-summary-model")
+        #expect(migrated.aiChatTask.prompt == AIDefaultPrompts.chat)
+        #expect(migrated.aiChatTask.modelID == "custom-chat-model")
+    }
+
+    @Test("AI 洞察上下文: 用户自定义摘要与对话 Prompt 不被覆盖")
+    func customInsightsPromptsArePreserved() {
+        let defaults = makeIsolatedDefaults()
+        let seeded = AppSettings(defaults: defaults)
+
+        var summary = seeded.aiSummaryTask
+        summary.prompt.systemPrompt += "\nCustom summary rule"
+        seeded.aiSummaryTask = summary
+
+        var chat = seeded.aiChatTask
+        chat.prompt.systemPrompt += "\nCustom chat rule"
+        seeded.aiChatTask = chat
+
+        let reloaded = AppSettings(defaults: defaults)
+        #expect(reloaded.aiSummaryTask.prompt == summary.prompt)
+        #expect(reloaded.aiChatTask.prompt == chat.prompt)
+    }
+
+    @Test("AI 代码上下文: ZIP 上限默认 50MB，可持久化且读取时钳制")
+    func aiRepoContextMaximumArchiveSizePersistsAndClamps() {
+        let defaults = makeIsolatedDefaults()
+        let settings = AppSettings(defaults: defaults)
+        #expect(settings.aiRepoContextMaximumArchiveMB == 50)
+
+        settings.aiRepoContextMaximumArchiveMB = 80
+        #expect(AppSettings(defaults: defaults).aiRepoContextMaximumArchiveMB == 80)
+
+        defaults.set(999, forKey: AppSettings.Keys.aiRepoContextMaximumArchiveMB)
+        #expect(
+            AppSettings(defaults: defaults).aiRepoContextMaximumArchiveMB
+                == AppSettings.aiRepoContextMaximumArchiveMBRange.upperBound
+        )
+
+        defaults.set(1, forKey: AppSettings.Keys.aiRepoContextMaximumArchiveMB)
+        #expect(
+            AppSettings(defaults: defaults).aiRepoContextMaximumArchiveMB
+                == AppSettings.aiRepoContextMaximumArchiveMBRange.lowerBound
+        )
     }
 
     @Test("RAG: Generator/Planner/Compressor/Title 提示词配置应持久化")
@@ -504,6 +882,78 @@ struct AppSettingsTests {
         #expect(AppSettings(defaults: customDefaults).ragPromptSettings.planner == customPlanner)
     }
 
+    @Test("RAG Prompt 只升级上一版 Generator 默认值并保留自定义洞察开关")
+    func ragPromptSettingsUpgradeRepositoryInsightsPlaceholderSafely() {
+        let publishedDefaults = UserDefaults(suiteName: "test-rag-insights-default-\(UUID())")!
+        var published = RAGPromptSettings.default
+        published.generator = RAGDefaultPrompts.generatorBeforeRepositoryInsights
+        publishedDefaults.set(
+            String(data: try! JSONEncoder().encode(published), encoding: .utf8),
+            forKey: "settings.rag.prompts.v1"
+        )
+
+        let upgraded = AppSettings(defaults: publishedDefaults).ragPromptSettings.generator
+        #expect(upgraded == RAGDefaultPrompts.generator)
+        #expect(upgraded.userPromptTemplate.contains("{repositoryInsightsSection}"))
+
+        let customDefaults = UserDefaults(suiteName: "test-rag-insights-custom-\(UUID())")!
+        let customGenerator = AIPromptConfiguration(
+            systemPrompt: "CUSTOM",
+            userPromptTemplate: "{questionSection}{evidenceSection}{repoContextSection}"
+        )
+        var custom = RAGPromptSettings.default
+        custom.generator = customGenerator
+        customDefaults.set(
+            String(data: try! JSONEncoder().encode(custom), encoding: .utf8),
+            forKey: "settings.rag.prompts.v1"
+        )
+
+        #expect(AppSettings(defaults: customDefaults).ragPromptSettings.generator == customGenerator)
+    }
+
+    @Test("RAG Prompt 只把已发布单行默认值升级为 Markdown 格式")
+    func ragPromptSettingsUpgradeReadableUserTemplatesSafely() {
+        let publishedDefaults = UserDefaults(suiteName: "test-rag-readable-default-\(UUID())")!
+        let published = RAGPromptSettings(
+            generator: RAGDefaultPrompts.generatorBeforeReadableUserTemplate,
+            planner: RAGDefaultPrompts.planner,
+            compressor: RAGDefaultPrompts.compressorBeforeReadableUserTemplate,
+            title: RAGDefaultPrompts.title
+        )
+        publishedDefaults.set(
+            String(data: try! JSONEncoder().encode(published), encoding: .utf8),
+            forKey: "settings.rag.prompts.v1"
+        )
+
+        let upgraded = AppSettings(defaults: publishedDefaults).ragPromptSettings
+        #expect(upgraded.generator == RAGDefaultPrompts.generator)
+        #expect(upgraded.compressor == RAGDefaultPrompts.compressor)
+
+        let customDefaults = UserDefaults(suiteName: "test-rag-readable-custom-\(UUID())")!
+        let customGenerator = AIPromptConfiguration(
+            systemPrompt: RAGDefaultPrompts.generator.systemPrompt,
+            userPromptTemplate: "CUSTOM\n{questionSection}\n{repoContextSection}"
+        )
+        let customCompressor = AIPromptConfiguration(
+            systemPrompt: RAGDefaultPrompts.compressor.systemPrompt,
+            userPromptTemplate: "CUSTOM\n{existingSummarySection}\n{newMessagesSection}"
+        )
+        let custom = RAGPromptSettings(
+            generator: customGenerator,
+            planner: RAGDefaultPrompts.planner,
+            compressor: customCompressor,
+            title: RAGDefaultPrompts.title
+        )
+        customDefaults.set(
+            String(data: try! JSONEncoder().encode(custom), encoding: .utf8),
+            forKey: "settings.rag.prompts.v1"
+        )
+
+        let preserved = AppSettings(defaults: customDefaults).ragPromptSettings
+        #expect(preserved.generator == customGenerator)
+        #expect(preserved.compressor == customCompressor)
+    }
+
     @Test("AI: 旧版设置后重新读取应保留")
     func aiSettingsPersist() {
         let defaults = makeIsolatedDefaults()
@@ -630,6 +1080,66 @@ struct AppSettingsTests {
         #expect(!settings.hasConfiguredChatModel)
     }
 
+    @Test("AI: 向量化配置在请求前区分缺失、不可用和模型能力错误")
+    func embeddingSelectionPreflightValidation() throws {
+        let settings = AppSettings(defaults: makeIsolatedDefaults())
+        let profileID = "embedding-provider"
+        let chatModel = "chat-only-model"
+        var profile = AIProviderProfile(
+            id: profileID,
+            provider: .openAICompatible,
+            models: [
+                AIModelDescriptor(providerID: profileID, name: chatModel, capability: .chat)
+            ],
+            lastTestStatus: .success(modelCount: 1)
+        )
+        settings.aiProviderProfiles = [profile]
+
+        var task = settings.aiEmbeddingTask
+        task.providerID = profileID
+        task.useCustomModel = false
+        task.modelID = ""
+        settings.aiEmbeddingTask = task
+        #expect(throws: AIEmbeddingError.missingModel) {
+            _ = try settings.resolveEmbeddingSelection()
+        }
+        #expect(settings.embeddingConfigurationIssue == .missingModel)
+        #expect(settings.configuredEmbeddingModelName == nil)
+
+        task.modelID = chatModel
+        settings.aiEmbeddingTask = task
+        #expect(throws: AIEmbeddingError.incompatibleModel(chatModel)) {
+            _ = try settings.resolveEmbeddingSelection()
+        }
+        #expect(settings.embeddingConfigurationIssue == .incompatibleModel(chatModel))
+        #expect(settings.configuredEmbeddingModelName == nil)
+
+        task.useCustomModel = true
+        task.customModelName = "custom-embedding-model"
+        settings.aiEmbeddingTask = task
+        let customSelection = try settings.resolveEmbeddingSelection()
+        #expect(customSelection.profile.id == profileID)
+        #expect(customSelection.modelName == "custom-embedding-model")
+        #expect(settings.embeddingConfigurationIssue == nil)
+        #expect(settings.configuredEmbeddingModelName == "custom-embedding-model")
+
+        profile.lastTestStatus = .failed("401")
+        settings.aiProviderProfiles = [profile]
+        #expect(throws: AIEmbeddingError.providerUnavailable) {
+            _ = try settings.resolveEmbeddingSelection()
+        }
+        #expect(settings.embeddingConfigurationIssue == .providerUnavailable)
+        #expect(settings.configuredEmbeddingModelName == nil)
+
+        task.providerID = "removed-provider"
+        settings.aiEmbeddingTask = task
+        #expect(throws: AIEmbeddingError.missingProvider) {
+            _ = try settings.resolveEmbeddingSelection()
+        }
+        #expect(settings.embeddingConfigurationIssue == .missingProvider)
+        #expect(settings.configuredEmbeddingModelName == nil)
+    }
+
     @Test("AI: 工作台入口先校验 Pro，再校验对话模型")
     func workspaceEntryAccessOrder() {
         switch AIWorkspaceEntryGate.access(
@@ -651,7 +1161,7 @@ struct AppSettingsTests {
         case .requiresChatModel:
             break
         default:
-            Issue.record("Pro 用户未配置对话模型时应跳转 AI 设置")
+            Issue.record("Pro 用户未配置对话模型时应展示配置引导")
         }
     }
 
@@ -664,6 +1174,22 @@ struct AppSettingsTests {
         // unknown 当 chat 用——大多数 OpenAI-compatible /models 接口返回 owned_by
         // 推不出能力时落到 unknown，UI 还能让用户手改成 chat / embedding。
         #expect(AIModelParameters.defaults(for: .unknown) == AIModelParameters.summaryDefault)
+        // 其余目录标签（rerank / vision / …）暂与 chat 共用默认，仅做分类铺垫。
+        for capability in [AIModelCapability.rerank, .vision, .video, .tts, .asr] {
+            #expect(AIModelParameters.defaults(for: capability) == AIModelParameters.summaryDefault)
+        }
+    }
+
+    @Test("AI: AIModelCapability.inferred 识别常见关键词，默认 chat")
+    func aiCapabilityInferred() {
+        #expect(AIModelCapability.inferred(from: "text-embedding-3-small") == .embedding)
+        #expect(AIModelCapability.inferred(from: "bge-reranker-v2") == .rerank)
+        #expect(AIModelCapability.inferred(from: "gpt-4o-vision") == .vision)
+        #expect(AIModelCapability.inferred(from: "sora-turbo") == .video)
+        #expect(AIModelCapability.inferred(from: "tts-1-hd") == .tts)
+        #expect(AIModelCapability.inferred(from: "whisper-1") == .asr)
+        #expect(AIModelCapability.inferred(from: "deepseek-v4-flash") == .chat)
+        #expect(AIModelCapability.unknown.systemImage == "questionmark.circle")
     }
 
     @Test("AI: effectiveParameters 优先用模型粒度覆盖")
@@ -750,6 +1276,47 @@ struct AppSettingsTests {
         #expect(decoded.parameters == nil)
         #expect(decoded.name == "m")
         #expect(decoded.capability == .chat)
+    }
+
+    @Test("AI: 显式 32K contextWindow 与默认 nil 语义等价，不算已自定义")
+    func parametersEffectivelyEqualTreatsResolvedContextWindow() {
+        var polluted = AIModelParameters.summaryDefault
+        polluted.contextWindowTokens = 32 * 1_024
+        #expect(polluted.isEffectivelyEqual(to: .summaryDefault))
+        #expect(polluted.isEffectivelyDefault(for: .chat))
+        #expect(polluted.isEffectivelyDefault(for: .unknown))
+
+        var changed = polluted
+        changed.temperature = 0.5
+        #expect(!changed.isEffectivelyEqual(to: .summaryDefault))
+        #expect(!changed.isEffectivelyDefault(for: .chat))
+    }
+
+    @Test("AI: descriptor.hasCustomizedParameters 忽略默认值副本污染")
+    func descriptorHasCustomizedParametersIgnoresDefaultClone() {
+        var defaultClone = AIModelParameters.summaryDefault
+        defaultClone.contextWindowTokens = 32 * 1_024
+        let polluted = AIModelDescriptor(
+            providerID: "p",
+            name: "flash",
+            capability: .chat,
+            parameters: defaultClone
+        )
+        #expect(polluted.parameters != nil)
+        #expect(!polluted.hasCustomizedParameters)
+
+        var realOverride = AIModelParameters.summaryDefault
+        realOverride.topK = 80
+        let customized = AIModelDescriptor(
+            providerID: "p",
+            name: "pro",
+            capability: .chat,
+            parameters: realOverride
+        )
+        #expect(customized.hasCustomizedParameters)
+
+        let clean = AIModelDescriptor(providerID: "p", name: "base", capability: .chat)
+        #expect(!clean.hasCustomizedParameters)
     }
 
     @Test("AI: 非法 provider / search mode 回退到默认")
@@ -862,14 +1429,15 @@ struct AutoTidySettingsTests {
         )
     }
 
-    @Test("默认值与 HOM-126 任务描述一致（开关关 + 启动/同步触发 + 50 + 最近 star + 仅标签 + 90%）")
+    @Test("默认值与 HOM-126 任务描述一致（开关关 + 启动/同步触发 + 定期关 + 1h + 50 + 最近 star + 仅标签 + 90%）")
     func defaultMatchesTaskSpec() {
         let s = AppSettings(defaults: makeIsolatedDefaults())
         let t = s.autoTidySettings
         #expect(t.enabled == false, "总开关默认关")
         #expect(t.triggerOnLaunch == true)
         #expect(t.triggerOnSync == true)
-        #expect(t.triggerScheduled == false, "定时默认关，避免新手烧 quota")
+        #expect(t.triggerScheduled == false, "定期默认关，避免新手烧 quota")
+        #expect(t.scheduledIntervalHours == 1, "定期间隔默认 1 小时")
         #expect(t.maxPerRun == 50)
         #expect(t.sortOrder == .recentlyStarred)
         #expect(t.generateSummary == false, "默认只跑标签，摘要烧 token 更多")
@@ -888,6 +1456,7 @@ struct AutoTidySettingsTests {
         var t = s1.autoTidySettings
         t.enabled = true
         t.triggerScheduled = true
+        t.scheduledIntervalHours = 6
         t.maxPerRun = 200
         t.sortOrder = .random
         t.generateSummary = true
@@ -900,6 +1469,7 @@ struct AutoTidySettingsTests {
         let s2 = AppSettings(defaults: defaults)
         #expect(s2.autoTidySettings.enabled == true)
         #expect(s2.autoTidySettings.triggerScheduled == true)
+        #expect(s2.autoTidySettings.scheduledIntervalHours == 6)
         #expect(s2.autoTidySettings.maxPerRun == 200)
         #expect(s2.autoTidySettings.sortOrder == .random)
         #expect(s2.autoTidySettings.generateSummary == true)
@@ -923,6 +1493,37 @@ struct AutoTidySettingsTests {
         #expect(decoded.useConfidenceThreshold == true, "老 build 没写本字段，应该回落到 default = true（保持 v1 行为）")
         #expect(decoded.generateTags == true)
         #expect(decoded.generateSummary == false)
+        #expect(decoded.scheduledIntervalHours == 1, "老 build 无定期间隔字段，回落默认 1 小时")
+    }
+
+    @Test("scheduledIntervalHours: 越界值会被 clamp 到 1...24")
+    func scheduledIntervalHoursClamped() {
+        #expect(AutoTidySettings.clampScheduledIntervalHours(0) == 1)
+        #expect(AutoTidySettings.clampScheduledIntervalHours(25) == 24)
+        #expect(AutoTidySettings.clampScheduledIntervalHours(3) == 3)
+
+        // 直接写字段可能越界；调度器读的秒级派生仍必须安全 clamp。
+        var t = AutoTidySettings.default
+        t.scheduledIntervalHours = 48
+        #expect(t.scheduledIntervalSeconds == TimeInterval(24 * 60 * 60))
+
+        let built = AutoTidySettings(
+            enabled: false,
+            triggerOnLaunch: true,
+            triggerOnSync: true,
+            triggerScheduled: true,
+            scheduledIntervalHours: 99,
+            maxPerRun: 50,
+            sortOrder: .recentlyStarred,
+            generateSummary: false,
+            generateTags: true,
+            useConfidenceThreshold: true,
+            confidenceThreshold: 0.9,
+            lastRunAt: nil,
+            lastRunStats: nil
+        )
+        #expect(built.scheduledIntervalHours == 24)
+        #expect(built.scheduledIntervalSeconds == TimeInterval(24 * 60 * 60))
     }
 
     @Test("makeBatchOptions: 只勾摘要 → actions={summary}, autoApply=false")

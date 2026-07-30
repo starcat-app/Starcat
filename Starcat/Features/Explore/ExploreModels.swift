@@ -13,7 +13,7 @@
 import SwiftUI
 
 /// 探索页二级模块。
-enum ExploreMode: String, CaseIterable, Identifiable, Hashable {
+enum ExploreMode: String, CaseIterable, Identifiable, Hashable, Sendable {
     case discover
     case trending
     case popular
@@ -86,8 +86,80 @@ enum ExploreMode: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
+/// 探索中栏标题的三级导航展示模型。
+///
+/// 这里集中处理各模式不同的三级筛选来源，避免标题与副标题分别猜测当前筛选状态。
+/// 固定 topic code 使用客户端 i18n；后端动态扩展的 topic / platform 则保留服务端 label。
+struct ExploreNavigationPresentation: Equatable {
+    let thirdLevelTitle: String
+    let isFiltered: Bool
+
+    static func make(
+        mode: ExploreMode,
+        trendingLanguage: TrendingLanguage,
+        discoveryLanguage: String?,
+        discoveryTopic: String?,
+        discoveryPlatform: String?,
+        weeklyLanguage: String?,
+        topics: [DiscoveryTopicDTO],
+        platforms: [DiscoveryPlatformDTO]
+    ) -> ExploreNavigationPresentation {
+        switch mode {
+        case .discover:
+            let topicTitle = discoveryTopic.map { code in
+                localizedTopicTitle(
+                    code: code,
+                    fallback: topics.first { $0.code == code }?.label ?? code
+                )
+            }
+            let platformTitle = discoveryPlatform.map { code in
+                platforms.first { $0.code == code }?.label ?? code
+            }
+            let activeTitles = [topicTitle, platformTitle].compactMap { $0 }
+            return ExploreNavigationPresentation(
+                thirdLevelTitle: activeTitles.isEmpty
+                    ? String.l10n("explore.allCategories")
+                    : activeTitles.joined(separator: " · "),
+                isFiltered: !activeTitles.isEmpty
+            )
+        case .trending:
+            return ExploreNavigationPresentation(
+                thirdLevelTitle: trendingLanguage.localizedDisplayName,
+                isFiltered: !trendingLanguage.rawValue.isEmpty
+            )
+        case .popular, .newReleases:
+            let language = TrendingLanguage(discoveryLanguage ?? "")
+            return ExploreNavigationPresentation(
+                thirdLevelTitle: language.localizedDisplayName,
+                isFiltered: !language.rawValue.isEmpty
+            )
+        case .weekly:
+            let language = TrendingLanguage(weeklyLanguage ?? "")
+            return ExploreNavigationPresentation(
+                thirdLevelTitle: language.localizedDisplayName,
+                isFiltered: !language.rawValue.isEmpty
+            )
+        }
+    }
+
+    private static func localizedTopicTitle(code: String, fallback: String) -> String {
+        let key: String?
+        switch code {
+        case "ai": key = "explore.topic.ai"
+        case "privacy": key = "explore.topic.privacy"
+        case "networking": key = "explore.topic.networking"
+        case "media": key = "explore.topic.media"
+        case "social": key = "explore.topic.social"
+        case "reading": key = "explore.topic.reading"
+        case "tools": key = "explore.topic.tools"
+        default: key = nil
+        }
+        return key.map(String.l10n) ?? fallback
+    }
+}
+
 /// 发现 / 热门 / 新发布中栏筛选栏的排序选项。
-enum ExploreSortOption: String, CaseIterable, Identifiable, Hashable {
+enum ExploreSortOption: String, CaseIterable, Identifiable, Hashable, Sendable {
     case recommended
     case popular
     case stars

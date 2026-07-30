@@ -120,6 +120,12 @@ final class ReadmeWindowController: NSWindowController, NSWindowDelegate {
             htmlFragment: htmlFragment,
             baseURL: baseURL
         )
+        // README 独立窗不经过 StarcatApp Scene；显式同步语言、字号和动画设置，
+        // 否则工具栏文案与正文控制会回退到系统 locale / standard scale。
+        .starcatAnimationOverride()
+        .appLocaleEnvironment()
+        .environment(\.starcatInterfaceScale, settings.interfaceScale)
+        .dynamicTypeSize(settings.interfaceScale.dynamicTypeSize)
         .environment(settings)
 
         let hostingController = NSHostingController(rootView: content)

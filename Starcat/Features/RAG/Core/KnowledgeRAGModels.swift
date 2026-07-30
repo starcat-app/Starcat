@@ -406,6 +406,7 @@ enum RAGExecutionStepKind: String, Codable, CaseIterable, Sendable {
     case planning
     case planningReasoning
     case retrieval
+    case repositoryInsights
     case repoContext
     case remoteContext
     case answerReasoning
@@ -436,6 +437,8 @@ struct RAGExecutionStep: Identifiable, Codable, Equatable, Sendable {
     var contextUsageSnapshot: RAGContextUsageSnapshot?
     /// RepoContext 只保存 commit/hash/token 等审计元数据，绝不保存 XML 正文。
     var repoContextSnapshot: RAGRepoContextSnapshot?
+    /// 仓库洞察与 RepoContext 一样只持久化审计字段；XML 正文由 Artifact 缓存按需校验回放。
+    var repositoryInsightsSnapshots: [RAGRepositoryInsightsSnapshot]?
 
     var id: RAGExecutionStepKind { kind }
 
@@ -450,7 +453,8 @@ struct RAGExecutionStep: Identifiable, Codable, Equatable, Sendable {
         queryPlan: RAGQueryPlan? = nil,
         retrievalSnapshot: RAGRetrievalSnapshot? = nil,
         contextUsageSnapshot: RAGContextUsageSnapshot? = nil,
-        repoContextSnapshot: RAGRepoContextSnapshot? = nil
+        repoContextSnapshot: RAGRepoContextSnapshot? = nil,
+        repositoryInsightsSnapshots: [RAGRepositoryInsightsSnapshot]? = nil
     ) {
         self.kind = kind
         self.state = state
@@ -463,6 +467,7 @@ struct RAGExecutionStep: Identifiable, Codable, Equatable, Sendable {
         self.retrievalSnapshot = retrievalSnapshot
         self.contextUsageSnapshot = contextUsageSnapshot
         self.repoContextSnapshot = repoContextSnapshot
+        self.repositoryInsightsSnapshots = repositoryInsightsSnapshots
     }
 
     /// 运行中以当前时刻持续计时，完成后固定为真实结束时刻，供用户核验步骤耗时。
@@ -575,16 +580,18 @@ enum RAGHitKind: String, Codable, Sendable {
     case keyword
     case vector
     case hybrid
+    case repositoryInsights = "repository_insights"
     case repoContext = "repo_context"
 }
 
-/// Citation 的来源集合与数据库分片来源刻意分离。`repoContext` 是仓库级临时证据，
+/// Citation 的来源集合与数据库分片来源刻意分离。两个 XML 都是仓库级临时证据，
 /// 不能加入 `RAGChunkSource.CaseIterable`，否则会污染索引覆盖率与检索设置。
 enum RAGCitationSource: String, Codable, Equatable, Sendable {
     case readme
     case notes
     case summary
     case metadata
+    case repositoryInsights = "repository_insights"
     case repoContext = "repo_context"
 
     init(chunkSource: RAGChunkSource) {

@@ -17,12 +17,31 @@ enum PerformanceSpan: Sendable {
     case appBootstrap
     case manageInitialLoad
     case manageLoadMore
+    case manageRoute
+    case manageCache
+    case manageDatabaseQuery
+    case manageDerive
+    case managePublish
+    case wikiAvailabilityLoad
+    case trendingDerive
+    case trendingPublish
+    case discoveryLocalFilter
+    case activityLocalFilter
+    case systemSmartCollectionBaseline
+    case userSmartCollectionBaseline
     case activityInitialLoad
     case activityLoadMore
-    case searchQuery
+    case keywordSearchBaseline
+    case semanticSearchBaseline
     case readmeLoad
     case aiStreamResponse
     case repoContextPack
+}
+
+/// 可跨 await 保存的 signpost interval token；只允许由 PerformanceTracer 创建和结束。
+struct PerformanceIntervalToken: @unchecked Sendable {
+    fileprivate let name: StaticString
+    fileprivate let state: OSSignpostIntervalState
 }
 
 final class PerformanceTracer: @unchecked Sendable {
@@ -33,53 +52,98 @@ final class PerformanceTracer: @unchecked Sendable {
         logger: Logger(subsystem: AppConstants.bundleIdentifier, category: "performance")
     )
 
+    #if DEBUG
+    private let mainThreadStallMonitor = MainThreadStallMonitor()
+    #endif
+
     private init() {}
+
+    /// DEBUG 下启动低开销主线程探针。单个 probe 完成前不会继续排队，避免主线程卡住时
+    /// 反向制造一批待执行 block；测试 host 不启动，防止污染 testmanagerd 生命周期。
+    func startMainThreadStallMonitoringIfNeeded() {
+        #if DEBUG
+        guard !TestEnvironment.isRunning else { return }
+        mainThreadStallMonitor.start()
+        #endif
+    }
+
+    func begin(_ span: PerformanceSpan) -> PerformanceIntervalToken {
+        let intervalName = name(for: span)
+        return PerformanceIntervalToken(
+            name: intervalName,
+            state: signposter.beginInterval(intervalName)
+        )
+    }
+
+    func end(_ token: PerformanceIntervalToken) {
+        signposter.endInterval(token.name, token.state)
+    }
 
     @discardableResult
     func trace<T>(_ span: PerformanceSpan, operation: () throws -> T) rethrows -> T {
-        switch span {
-        case .appBootstrap:
-            return try trace("app.bootstrap", operation: operation)
-        case .manageInitialLoad:
-            return try trace("manage.initial_load", operation: operation)
-        case .manageLoadMore:
-            return try trace("manage.load_more", operation: operation)
-        case .activityInitialLoad:
-            return try trace("activity.initial_load", operation: operation)
-        case .activityLoadMore:
-            return try trace("activity.load_more", operation: operation)
-        case .searchQuery:
-            return try trace("search.query", operation: operation)
-        case .readmeLoad:
-            return try trace("readme.load", operation: operation)
-        case .aiStreamResponse:
-            return try trace("ai.stream_response", operation: operation)
-        case .repoContextPack:
-            return try trace("repo_context.pack", operation: operation)
-        }
+        try trace(name(for: span), operation: operation)
     }
 
     @discardableResult
     func trace<T>(_ span: PerformanceSpan, operation: () async throws -> T) async rethrows -> T {
+        try await trace(name(for: span), operation: operation)
+    }
+
+    /// 已经创建好的 Task 可直接进入 signpost 区间，不把 actor-isolated closure 发送给
+    /// nonisolated tracer；Swift 6 的严格并发检查下这也是最清晰的所有权边界。
+    func trace<T: Sendable>(_ span: PerformanceSpan, task: Task<T, Never>) async -> T {
+        let intervalName = name(for: span)
+        let state = signposter.beginInterval(intervalName)
+        defer { signposter.endInterval(intervalName, state) }
+        return await task.value
+    }
+
+    private func name(for span: PerformanceSpan) -> StaticString {
         switch span {
         case .appBootstrap:
-            return try await trace("app.bootstrap", operation: operation)
+            return "app.bootstrap"
         case .manageInitialLoad:
-            return try await trace("manage.initial_load", operation: operation)
+            return "manage.initial_load"
         case .manageLoadMore:
-            return try await trace("manage.load_more", operation: operation)
+            return "manage.load_more"
+        case .manageRoute:
+            return "manage.route"
+        case .manageCache:
+            return "manage.cache"
+        case .manageDatabaseQuery:
+            return "manage.database_query"
+        case .manageDerive:
+            return "manage.derive"
+        case .managePublish:
+            return "manage.publish"
+        case .wikiAvailabilityLoad:
+            return "repo_list.wiki_availability"
+        case .trendingDerive:
+            return "trending.derive"
+        case .trendingPublish:
+            return "trending.publish"
+        case .discoveryLocalFilter:
+            return "discovery.local_filter"
+        case .activityLocalFilter:
+            return "activity.local_filter"
+        case .systemSmartCollectionBaseline:
+            return "manage.system_smart_collection"
+        case .userSmartCollectionBaseline:
+            return "manage.user_smart_collection"
         case .activityInitialLoad:
-            return try await trace("activity.initial_load", operation: operation)
+            return "activity.initial_load"
         case .activityLoadMore:
-            return try await trace("activity.load_more", operation: operation)
-        case .searchQuery:
-            return try await trace("search.query", operation: operation)
+            return "activity.load_more"
+        case .keywordSearchBaseline:
+            return "manage.search.keyword"
+        case .semanticSearchBaseline:
+            return "manage.search.semantic"
         case .readmeLoad:
-            return try await trace("readme.load", operation: operation)
+            return "readme.load"
         case .aiStreamResponse:
-            return try await trace("ai.stream_response", operation: operation)
+            return "ai.stream_response"
         case .repoContextPack:
-            return try await trace("repo_context.pack", operation: operation)
+            return "repo_context.pack"
         }
     }
 
@@ -97,3 +161,59 @@ final class PerformanceTracer: @unchecked Sendable {
         return try await operation()
     }
 }
+
+#if DEBUG
+/// DEBUG-only 主线程卡顿探针。
+///
+/// 后台 timer 每 250ms 最多投递一个 main queue block。block 真正执行时计算排队延迟，超过
+/// 50ms 记录 notice，超过 100ms 标记为 hitch。它只提供相关性线索，最终归因仍以 Instruments
+/// 的 Time Profiler / Animation Hitches 为准。
+private final class MainThreadStallMonitor: @unchecked Sendable {
+
+    private let queue = DispatchQueue(label: "com.starcat.debug.main-thread-stall", qos: .utility)
+    private let lock = NSLock()
+    private let logger = Logger(subsystem: AppConstants.bundleIdentifier, category: "performance")
+    private var timer: DispatchSourceTimer?
+    private var probeInFlight = false
+
+    func start() {
+        lock.lock()
+        defer { lock.unlock() }
+        guard timer == nil else { return }
+
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + .milliseconds(250), repeating: .milliseconds(250))
+        timer.setEventHandler { [weak self] in
+            self?.scheduleProbeIfNeeded()
+        }
+        self.timer = timer
+        timer.resume()
+    }
+
+    private func scheduleProbeIfNeeded() {
+        lock.lock()
+        guard !probeInFlight else {
+            lock.unlock()
+            return
+        }
+        probeInFlight = true
+        lock.unlock()
+
+        let sentAt = DispatchTime.now().uptimeNanoseconds
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let elapsedNanos = DispatchTime.now().uptimeNanoseconds - sentAt
+            let elapsedMilliseconds = Double(elapsedNanos) / 1_000_000
+            if elapsedMilliseconds >= 100 {
+                self.logger.notice("[main-stall] hitch duration_ms=\(elapsedMilliseconds, format: .fixed(precision: 1))")
+            } else if elapsedMilliseconds >= 50 {
+                self.logger.notice("[main-stall] delay duration_ms=\(elapsedMilliseconds, format: .fixed(precision: 1))")
+            }
+
+            self.lock.lock()
+            self.probeInFlight = false
+            self.lock.unlock()
+        }
+    }
+}
+#endif

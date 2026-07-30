@@ -49,7 +49,7 @@
 - [x] 默认参数为 target 700、min 180、max 1100、overlap 80、hard max 1600 tokens。
 - [x] 代码块不在中间硬切；超长代码块保留首尾并标记 truncated。
 - [x] 大表格按行拆分并保留表头。
-- [x] notes、已有 AI summary、repo metadata 分别生成独立 source chunks。
+- [x] notes、已有 AI summary、repo metadata 分别生成独立 source chunks；一条非空私人笔记固定映射为一个完整的 `notes:0` chunk，不使用通用切分规则。
 - [x] metadata 包含 fullName、description、topics、language、stars/forks/watchers/issues、license、
   archived/fork/starred、status、tags 和 libraryUpdatedAt；数值字段 bucket 化。
 - [x] 不为了建索引临时触发 AI summary。
@@ -404,3 +404,17 @@
 - [x] 定向测试覆盖 TTL 路由、私有门禁、并发去重、切库取消、Metadata 输出/读取、Prompt 与禁删/URL 解析。
 - [x] 完成五轮专项审查、全量测试、双 target build、Checklist 与结果报告。
 - [ ] 人工验证 Metadata Wiki 链接点击、编辑后禁删状态及真实后台补齐视觉更新。
+
+## 19. 仓库洞察 XML 上下文
+
+> 状态: 核心实现、定向测试、当前 HEAD 全量测试、双 Debug target build、三轮专项审查、清洁复审与结果报告均已完成；人工 UI 验收未执行且不会伪造。详细范围见 `仓库洞察XML上下文实施方案.md`、`仓库洞察XML上下文Checklist.md` 与 `仓库洞察XML上下文结果报告.md`。
+
+- [x] 页面、仓库 AI 摘要 / 对话和知识库 RAG 共用 `RepositoryInsightsDocument`，不重复生成聚合统计或重复写 XML。
+- [x] 独立 Storage 提供合法 XML、稳定 source/xml hash、原子写入、single-flight、账号边界和删除抑制。
+- [x] 洞察页与仓库 AI 可正常准备缺失数据；RAG 只允许 cache-only 本地准备，不为问答新增网络请求。
+- [x] 知识库详情按 Metadata → Insights XML → RepoContext XML → 普通分片管理；洞察 XML 只读且可复制、下载、删除和重新生成。
+- [x] 洞察 XML 不新增 `RAGChunkSource`，不写 `rag_chunks`、embedding 或 CloudKit，并单独显示 `0 / 1`。
+- [x] RAG 使用独立 Prompt section、预算、XML 感知投影、citation、证据门禁和可解释执行状态。
+- [x] Plan、Timeline、Context、Evidence、Debug 与历史回放均提供洞察专用审计；会话不保存 XML 正文。
+- [x] 完成至少三轮专项审查、全量测试、双 target build、Checklist 回填与结果报告。
+- [ ] 人工验证知识库特殊项的查看、复制、下载、删除、重新生成，以及真实 Provider 下的 Prompt 与历史回放；该项只记录，不以自动化代替。

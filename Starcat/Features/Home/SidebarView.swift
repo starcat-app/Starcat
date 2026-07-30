@@ -42,6 +42,12 @@ private enum ExploreSidebarSelection: Hashable {
     case weeklyLanguage(String?)
 }
 
+/// 探索侧栏图标色：未选中用语义色；明亮主题选中时跟系统蓝底反成白色。
+///
+/// 实现已收口到共享 `SidebarSemanticIconStyle`（星标 / 活动等 SF Symbol 行共用）。
+/// 语言 Devicon 不走反白，见 `LanguageIconView` 选中白底托盘。
+typealias ExploreSidebarIconStyle = SidebarSemanticIconStyle
+
 struct SidebarView: View {
 
     @Environment(HomeViewModel.self) private var viewModel
@@ -86,6 +92,8 @@ struct SidebarView: View {
     @Binding var selectedDiscoveryPlatform: String?
     @Binding var selectedWeeklyLanguage: String?
     @Binding var selectedActivityCategory: ActivityCategory
+    /// 洞察中心二级主题。只负责左栏选择，不在 Sidebar 内持有统计数据。
+    @Binding var selectedInsightsTopic: InsightsTopic
     @Binding var showTagManagement: Bool
     /// HOM-47：触发 Release 时间线 sheet。
     @Binding var showReleaseTimeline: Bool
@@ -97,6 +105,8 @@ struct SidebarView: View {
     /// HOM-126 follow-up：Sidebar 自动整理 popover 的「查看队列」入口。
     /// 由 HomeView 承载 sheet 状态，Sidebar 只发起动作，避免左栏持有批量整理面板。
     var onShowBatchAIPanel: (() -> Void)?
+    /// 后台单仓摘要点击后，由 HomeView 负责切换到目标 repo 并展开摘要面板。
+    var onOpenSummaryTask: ((Repo) -> Void)?
 
     /// 当前在 Trending 页面选中的 repo，仅用于透传给 `SidebarHeaderView` 让头像背景的
     /// 语言色在 Trending 页也能联动（2026-06-02 21:38 接入）。Manage 页面应为 nil。
@@ -109,10 +119,14 @@ struct SidebarView: View {
 
     /// HOM-73：控制登录 sheet 的显示。
     @State private var showLoginSheet: Bool = false
-    /// 自动整理 popover 显示状态。点击 footer 或 hover 进入时打开，跑完自动关闭。
-    @State private var showAutoTidyPopover: Bool = false
+    /// 底部状态条 popover：承载自动/手动整理详情，以及面板已关闭的单仓摘要任务列表。
+    @State private var showBackgroundTaskPopover: Bool = false
+    /// popover 内摘要任务行的 hover 高亮；用 id 而不是 index，避免列表刷新时错位。
+    @State private var hoveredSummaryTaskID: RepoAISummaryBackgroundTask.ID?
     /// GitHub Stars List 创建 / 编辑 Sheet。
     @State private var gitHubStarListEditorItem: GitHubStarListEditorItem?
+    /// “我的项目”独立授权和同步状态 Sheet。
+    @State private var showProjectAccessSheet = false
     /// 探索页当前由系统 `List(selection:)` 高亮的行。
     ///
     /// 探索页可能同时保留“当前模式”和“当前筛选项”两类业务状态；系统 sidebar 选中条
@@ -191,10 +205,9 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             sidebarFixedHeader
             sidebarList
-            // HOM-126：自动整理底部轻量指示。仅当调度器正在跑「自动模式」时显示，
-            // 跑完自动消失。视觉权重故意做小（10pt 字 + 浅灰背景 + 单行）—
-            // 自动整理本意是"用户感知不到地完成"，强提示反而违反设计。
-            autoTidyFooter
+            // 后台任务区统一承载自动/手动整理与面板已关闭的单仓摘要。
+            // 手动整理会抢占本轮自动整理，因此两者不会同时出现。
+            backgroundTaskFooter
         }
         .background(.bar)
         .sheet(isPresented: $showLoginSheet) {
@@ -212,83 +225,151 @@ struct SidebarView: View {
             )
             .appLocaleEnvironment()
         }
-        .onChange(of: autoTidyScheduler.isAutoTidyRunning) { _, isRunning in
-            if !isRunning {
-                showAutoTidyPopover = false
+        .sheet(isPresented: $showProjectAccessSheet) {
+            ProjectAccessSheet {
+                // 授权 / 同步后关系表可能新增 Private 仓库：先清快照，再按需重查中栏。
+                viewModel.invalidateDatabaseSnapshotsForMyProjectsChange()
+                await viewModel.refreshSidebar()
+                if viewModel.selection == .myProjects {
+                    await viewModel.reloadItems(forceRefresh: true, reason: .sync)
+                }
+            }
+            .appLocaleEnvironment()
+        }
+        .onChange(of: hasAnyBackgroundTask) { _, hasTask in
+            if !hasTask {
+                showBackgroundTaskPopover = false
             }
         }
     }
 
-    // MARK: - HOM-126：自动整理底部指示
+    // MARK: - 底部后台任务状态条
 
-    /// 自动整理"占位行 + 实时进度"。
+    /// 是否有需要在侧栏底栏展示的后台任务。
     ///
-    /// 设计：
-    /// - 仅在 `autoTidyScheduler.isAutoTidyRunning == true` 时挂入，跑完整体消失。
-    ///   零进度时也立刻消失而非保留"上次跑了 X"残留——那是设置页「运行状态」区的
-    ///   职责，sidebar 只反映"当前是否在跑"。
-    /// - 点击 / hover 展示 popover：进度、成功 / 忽略 / 失败计数、查看队列、打开 AI 设置。
-    ///   Settings Tab 跳转复用 `starcatJumpToSettingsTab`，不新增跨 scene 路由机制。
-    /// - 没有 .padding(.bottom) 是因为 background(.bar) 已经画到底；放在 VStack
-    ///   末尾天然贴底，与 sidebarList 之间有 4pt 视觉间隙（通过 padding(.top, 4) 实现）。
+    /// 手动整理会抢占本轮自动整理，因此 `isManualBatchRunning` 与
+    /// `isAutoTidyRunning` 不会同时为 true；摘要任务可与整理并存。
+    private var isManualBatchRunning: Bool {
+        let service = dependencies.batchAIQueueService
+        return service.isRunning && !service.silent
+    }
+
+    private var summaryBackgroundTasks: [RepoAISummaryBackgroundTask] {
+        dependencies.repoAIInsightSessionStore.backgroundTasks
+    }
+
+    private var hasAnyBackgroundTask: Bool {
+        isManualBatchRunning
+            || autoTidyScheduler.isAutoTidyRunning
+            || !summaryBackgroundTasks.isEmpty
+    }
+
+    /// 底栏只放一条紧凑状态行；详情（整理进度 / 摘要列表）一律进 popover。
+    ///
+    /// 对齐原「AI 自动整理中 N/M」：侧栏不膨胀成任务列表；
+    /// **仅点击**状态行才展开详情（不做 hover 自动弹出），点击摘要行再跳回对应仓库。
     @ViewBuilder
-    private var autoTidyFooter: some View {
-        if autoTidyScheduler.isAutoTidyRunning {
+    private var backgroundTaskFooter: some View {
+        if hasAnyBackgroundTask {
             Button {
-                showAutoTidyPopover.toggle()
+                showBackgroundTaskPopover.toggle()
             } label: {
                 HStack(spacing: 6) {
                     ProgressView()
                         .controlSize(.mini)
-                        // 让 indeterminate spinner 与文字基线对齐（macOS 默认会偏高 1-2pt）
                         .frame(width: 12, height: 12)
-                    // 2026-06-16:走 `String.l10n(_:)` wrapper,绕开 `String(localized:)`
-                    // 不响应 LocaleStore 的问题(实测 `locale:` 参数无效)。
-                    // 详见 `Starcat/Shared/Utilities/L10n.swift` 顶部注释。
-                    Text(String(format: String.l10n("sidebar.autoTidy.runningFormat"),
-                                autoTidyScheduler.autoTidyProgressText))
+                    Text(backgroundTaskStatusText)
                         .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
+                        .monospacedDigit()
                     Spacer(minLength: 0)
                     Image(systemName: "info.circle")
                         .font(interfaceScale.font(.captionSmall, weight: .semibold))
                         .foregroundStyle(.secondary)
                 }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
             .background(Color.secondary.opacity(0.06))
-            .help(Text("sidebar.autoTidy.tooltip"))
-            .onHover { hovering in
-                if hovering {
-                    showAutoTidyPopover = true
-                }
-            }
-            .popover(isPresented: $showAutoTidyPopover, arrowEdge: .bottom) {
-                autoTidyPopover
+            .help(Text(backgroundTaskTooltipKey))
+            .popover(isPresented: $showBackgroundTaskPopover, arrowEdge: .bottom) {
+                backgroundTaskPopover
                     .appLocaleEnvironment()
             }
-            // 2026-06-15:reduceMotion 兜底——transition 降为 .identity 瞬切,
-            // 外层 .animation 同步置 nil,避免 0.2s 包裹。
             .transition(reduceMotion ? .identity : .move(edge: .bottom).combined(with: .opacity))
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: autoTidyScheduler.isAutoTidyRunning)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: hasAnyBackgroundTask)
         }
     }
 
-    private var autoTidyPopover: some View {
+    private var backgroundTaskStatusText: String {
+        let summaryCount = summaryBackgroundTasks.count
+        if isManualBatchRunning {
+            let service = dependencies.batchAIQueueService
+            let tidy = String(
+                format: String.l10n("sidebar.background.manual.runningFormat"),
+                service.finishedCount,
+                service.totalCount
+            )
+            if summaryCount > 0 {
+                return String(
+                    format: String.l10n("sidebar.background.combinedFormat"),
+                    tidy,
+                    summaryCount
+                )
+            }
+            return tidy
+        }
+        if autoTidyScheduler.isAutoTidyRunning {
+            let tidy = String(
+                format: String.l10n("sidebar.autoTidy.runningFormat"),
+                autoTidyScheduler.autoTidyProgressText
+            )
+            if summaryCount > 0 {
+                return String(
+                    format: String.l10n("sidebar.background.combinedFormat"),
+                    tidy,
+                    summaryCount
+                )
+            }
+            return tidy
+        }
+        if summaryCount == 1, let only = summaryBackgroundTasks.first {
+            return String(
+                format: String.l10n("sidebar.background.summary.singleFormat"),
+                only.repo.fullName
+            )
+        }
+        return String(
+            format: String.l10n("sidebar.background.summary.countFormat"),
+            summaryCount
+        )
+    }
+
+    private var backgroundTaskTooltipKey: LocalizedStringKey {
+        if isManualBatchRunning {
+            return "sidebar.background.manual.tooltip"
+        }
+        if autoTidyScheduler.isAutoTidyRunning {
+            return "sidebar.autoTidy.tooltip"
+        }
+        return "sidebar.background.summary.tooltip"
+    }
+
+    private var backgroundTaskPopover: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "sparkles")
                     .foregroundStyle(.purple)
-                Text("sidebar.autoTidy.popover.title")
+                Text(backgroundTaskPopoverTitleKey)
                     .font(interfaceScale.font(.body))
                 Spacer()
                 Button {
-                    showAutoTidyPopover = false
+                    showBackgroundTaskPopover = false
                 } label: {
                     Image(systemName: "xmark")
                         .font(interfaceScale.font(.captionSmall, weight: .semibold))
@@ -297,17 +378,107 @@ struct SidebarView: View {
                 .focusEffectDisabled()
             }
 
+            if isManualBatchRunning {
+                manualBatchPopoverSection
+            } else if autoTidyScheduler.isAutoTidyRunning {
+                autoTidyPopoverSection
+            }
+
+            if !summaryBackgroundTasks.isEmpty {
+                if isManualBatchRunning || autoTidyScheduler.isAutoTidyRunning {
+                    Divider()
+                }
+                summaryTasksPopoverSection
+            }
+        }
+        .padding(14)
+        .frame(width: 290)
+    }
+
+    private var backgroundTaskPopoverTitleKey: LocalizedStringKey {
+        if isManualBatchRunning {
+            "sidebar.background.manual.popover.title"
+        } else if autoTidyScheduler.isAutoTidyRunning {
+            "sidebar.autoTidy.popover.title"
+        } else {
+            "sidebar.background.summary.popover.title"
+        }
+    }
+
+    private var manualBatchPopoverSection: some View {
+        let service = dependencies.batchAIQueueService
+        return VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
+                ProgressView(
+                    value: Double(service.finishedCount),
+                    total: Double(max(service.totalCount, 1))
+                )
+                Text(String(
+                    format: String.l10n("sidebar.autoTidy.popover.progressFormat"),
+                    service.finishedCount,
+                    service.totalCount
+                ))
+                .font(interfaceScale.font(.captionSmall))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            }
+
+            // 与自动整理同一套三卡片口径：已应用 / 已忽略 / 失败。
+            HStack(spacing: 8) {
+                autoTidyCounter(
+                    title: "sidebar.autoTidy.popover.completed",
+                    count: service.completedCount,
+                    color: .green,
+                    backgroundOpacity: 0.12
+                )
+                autoTidyCounter(
+                    title: "sidebar.autoTidy.popover.ignored",
+                    count: service.ignoredCount,
+                    color: .secondary,
+                    backgroundOpacity: 0.08
+                )
+                autoTidyCounter(
+                    title: "sidebar.autoTidy.popover.failed",
+                    count: service.failedCount,
+                    color: .red,
+                    backgroundOpacity: 0.12
+                )
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    showBackgroundTaskPopover = false
+                    onShowBatchAIPanel?()
+                } label: {
+                    Label("sidebar.autoTidy.popover.viewQueue", systemImage: "rectangle.stack")
+                }
+
+                Button {
+                    showBackgroundTaskPopover = false
+                    openAISettings()
+                } label: {
+                    Label("sidebar.autoTidy.popover.openAISettings", systemImage: "gearshape")
+                }
+            }
+            .controlSize(.small)
+        }
+    }
+
+    private var autoTidyPopoverSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 6) {
                 ProgressView(
                     value: Double(autoTidyScheduler.autoTidyFinishedCount),
                     total: Double(max(autoTidyScheduler.autoTidyTotalCount, 1))
                 )
-                Text(String(format: String.l10n("sidebar.autoTidy.popover.progressFormat"),
-                            autoTidyScheduler.autoTidyFinishedCount,
-                            autoTidyScheduler.autoTidyTotalCount))
-                    .font(interfaceScale.font(.captionSmall))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
+                Text(String(
+                    format: String.l10n("sidebar.autoTidy.popover.progressFormat"),
+                    autoTidyScheduler.autoTidyFinishedCount,
+                    autoTidyScheduler.autoTidyTotalCount
+                ))
+                .font(interfaceScale.font(.captionSmall))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
             }
 
             HStack(spacing: 8) {
@@ -333,14 +504,14 @@ struct SidebarView: View {
 
             HStack(spacing: 8) {
                 Button {
-                    showAutoTidyPopover = false
+                    showBackgroundTaskPopover = false
                     onShowBatchAIPanel?()
                 } label: {
                     Label("sidebar.autoTidy.popover.viewQueue", systemImage: "rectangle.stack")
                 }
 
                 Button {
-                    showAutoTidyPopover = false
+                    showBackgroundTaskPopover = false
                     openAISettings()
                 } label: {
                     Label("sidebar.autoTidy.popover.openAISettings", systemImage: "gearshape")
@@ -348,8 +519,115 @@ struct SidebarView: View {
             }
             .controlSize(.small)
         }
-        .padding(14)
-        .frame(width: 290)
+    }
+
+    private var summaryTasksPopoverSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // 与上方「AI 自动整理」标题行对齐：图标 + 文案，避免分组看起来像纯文字标签。
+            HStack(spacing: 6) {
+                Image(systemName: "doc.text")
+                    .foregroundStyle(.purple)
+                Text("sidebar.background.summary.section")
+                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(summaryBackgroundTasks.enumerated()), id: \.element.id) { index, task in
+                        summaryTaskRow(task, rowIndex: index)
+                    }
+                }
+            }
+            .frame(maxHeight: 160)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+    }
+
+    /// 摘要任务行：斑马纹便于扫读多仓并发；hover 用 accent 浅底提示可点。
+    private func summaryTaskRow(
+        _ task: RepoAISummaryBackgroundTask,
+        rowIndex: Int
+    ) -> some View {
+        let isHovered = hoveredSummaryTaskID == task.id
+        return Button {
+            showBackgroundTaskPopover = false
+            onOpenSummaryTask?(task.repo)
+        } label: {
+            HStack(spacing: 8) {
+                summaryTaskIcon(task.state)
+                    .frame(width: 14, height: 14)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(verbatim: task.repo.fullName)
+                        .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(summaryTaskStatusKey(task.state))
+                        .font(interfaceScale.font(.captionSmall))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .background(summaryTaskRowBackground(isHovered: isHovered, rowIndex: rowIndex))
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .onHover { hovering in
+            hoveredSummaryTaskID = hovering ? task.id : nil
+        }
+        .onDisappear {
+            if hoveredSummaryTaskID == task.id {
+                hoveredSummaryTaskID = nil
+            }
+        }
+        .help(Text("sidebar.background.summary.tooltip"))
+    }
+
+    /// 斑马纹用 primary 极低透明；hover 优先于斑马纹，避免明暗主题下交替色被盖没。
+    private func summaryTaskRowBackground(isHovered: Bool, rowIndex: Int) -> Color {
+        if isHovered {
+            return Color.accentColor.opacity(0.10)
+        }
+        return rowIndex.isMultiple(of: 2) ? .clear : Color.primary.opacity(0.045)
+    }
+
+    @ViewBuilder
+    private func summaryTaskIcon(_ state: RepoAISummaryBackgroundTask.State) -> some View {
+        switch state {
+        case .running:
+            ProgressView()
+                .controlSize(.mini)
+        case .completed:
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+        case .failed:
+            Image(systemName: "exclamationmark.circle.fill")
+                .foregroundStyle(.red)
+        }
+    }
+
+    private func summaryTaskStatusKey(
+        _ state: RepoAISummaryBackgroundTask.State
+    ) -> LocalizedStringKey {
+        switch state {
+        case .running:
+            "sidebar.background.summary.running"
+        case .completed:
+            "sidebar.background.summary.completed"
+        case .failed:
+            "sidebar.background.summary.failed"
+        }
     }
 
     private func autoTidyCounter(
@@ -499,11 +777,44 @@ struct SidebarView: View {
                 exploreSidebarContent
             }
             .listStyle(.sidebar)
+            // 分类行自身挂有折叠/展开 transition；切 Explore mode 时不能复用
+            // List(selection:) 的系统选中动画，否则旧筛选 section 退场与新 section
+            // 入场会连续触发整窗 layout。手动点 header 的 disclosureSpring 是另一笔
+            // transaction，不受这里影响。
+            .transaction(value: selectedExploreMode) { transaction in
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
         case .activity:
             List(selection: $selectedActivityCategory) {
                 activitySidebarContent
             }
             .listStyle(.sidebar)
+        case .insights:
+            List(selection: $selectedInsightsTopic) {
+                insightsSidebarContent
+            }
+            .listStyle(.sidebar)
+        }
+    }
+
+    /// 洞察主题继续使用系统 Sidebar selection，不手绘选中背景。
+    @ViewBuilder
+    private var insightsSidebarContent: some View {
+        Section("insights.sidebar.section") {
+            ForEach(InsightsTopic.allCases) { topic in
+                Label {
+                    Text(topic.titleKey)
+                        .lineLimit(1)
+                } icon: {
+                    // 与星标 / 探索 / 活动侧栏一致：未选中保留语义色，明亮选中反白。
+                    Image(systemName: topic.systemImage)
+                        .foregroundStyle(
+                            SidebarSemanticIconStyle(semanticColor: topic.semanticIconColor)
+                        )
+                }
+                .tag(topic)
+            }
         }
     }
 
@@ -511,6 +822,7 @@ struct SidebarView: View {
     private var manageSidebarContent: some View {
         if authSession.state.isAuthenticated {
             Section("sidebar.mainNavigation") {
+                myProjectsRow
                 row(.allStars, count: viewModel.totalCount)
                 row(.untagged, count: viewModel.untaggedCount)
                 row(.library, count: viewModel.libraryCount)
@@ -593,11 +905,16 @@ struct SidebarView: View {
     private func exploreModeRow(_ mode: ExploreMode) -> some View {
         exploreSelectableRow(
             selection: .mode(mode),
-            icon: mode.systemImage,
-            iconColor: mode.sidebarIconColor,
             count: exploreModeCount(mode)
         ) {
-            Text(mode.titleKey)
+            exploreSidebarSystemIcon(mode.systemImage, color: mode.sidebarIconColor)
+        } title: {
+            HStack(spacing: 5) {
+                Text(mode.titleKey)
+                    .lineLimit(1)
+                // 信息按钮紧跟分类名，计数仍由外层 row 固定在最右侧，避免五行对齐被打散。
+                ExploreModeInfoButton(mode: mode)
+            }
         }
     }
 
@@ -733,8 +1050,9 @@ struct SidebarView: View {
             }
         } label: {
             HStack(spacing: 6) {
+                // 不设显式 `.font`：继承 List `.sidebar` 的 section header 字体，
+                // 与星标模块 `Section("sidebar.mainNavigation")` 的「主导航」文本一致。
                 Text("activity.category.section")
-                    .font(interfaceScale.font(.body))
 
                 Spacer(minLength: 8)
 
@@ -766,9 +1084,10 @@ struct SidebarView: View {
             activityCategoryLabel(category)
         } icon: {
             // Activity 分类使用系统语义图标，不复用 LanguageIconView，避免渲染出语言 logo。
+            // 明亮选中态反白：与探索「发现 / 趋势 / …」同一套 SidebarSemanticIconStyle。
             Image(systemName: category.systemImage)
                 .font(interfaceScale.font(size: 14, weight: .semibold))
-                .foregroundStyle(category.iconColor)
+                .foregroundStyle(SidebarSemanticIconStyle(semanticColor: category.iconColor))
                 .frame(width: 16, height: 16)
         }
         .tag(category)
@@ -816,9 +1135,10 @@ struct SidebarView: View {
 
     private func rootNavigationButton(_ page: SidebarRootPage) -> some View {
         let isSelected = selectedPage == page
-        // HOM-73 / HOM-163：Manage 和 Activity 需要登录才能访问；Trending 有公开/本地空态，始终可打开。
+        // HOM-73 / HOM-163：Manage、Activity 与 Insights 都读取用户本地数据，需要登录；
+        // Trending 有公开/本地空态，始终可打开。
         let needsLogin = !authSession.state.isAuthenticated
-            && (page == .manage || page == .activity)
+            && (page == .manage || page == .activity || page == .insights)
 
         return Button {
             rootNavigationBounceTokens[page, default: 0] += 1
@@ -863,6 +1183,9 @@ struct SidebarView: View {
 
     /// HOM-43：Tags header 需要同时有折叠入口和独立的标签管理按钮。
     /// 避免把 `Button` 嵌在另一个 `Button` 里，否则 SwiftUI 事件命中会不稳定。
+    ///
+    /// 整行可点（对齐 `docs/5-规范/UI-折叠展开-规范.md`）：标题与「空白 + 计数 + chevron」
+    /// 各用独立 expand Button 覆盖命中区；`+` / 清除保留各自点击区，不误触发展开。
     private var tagSectionHeader: some View {
         HStack(spacing: 6) {
             Button {
@@ -913,20 +1236,24 @@ struct SidebarView: View {
                 .help(Text("sidebar.clearSelectedTags"))
             }
 
-            Spacer(minLength: 8)
-
-            Text(viewModel.tags.count.formatted())
-                .font(interfaceScale.font(.captionSmall))
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-                .frame(minWidth: 18, alignment: .trailing)
-
+            // 右侧剩余行宽（空白 / 计数 / chevron）整块可点，避免只点得到小 chevron。
             Button {
                 toggleTags()
             } label: {
-                disclosureChevron(isExpanded: tagsExpanded)
-                    .frame(width: 20, height: 20)
-                    .contentShape(Rectangle())
+                HStack(spacing: 6) {
+                    Spacer(minLength: 8)
+
+                    Text(viewModel.tags.count.formatted())
+                        .font(interfaceScale.font(.captionSmall))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .frame(minWidth: 18, alignment: .trailing)
+
+                    disclosureChevron(isExpanded: tagsExpanded)
+                        .frame(width: 20, height: 20)
+                }
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
@@ -937,6 +1264,7 @@ struct SidebarView: View {
     }
 
     /// GitHub Stars List 分组 header：折叠入口 + 独立新增 / 刷新按钮。
+    /// 整行可点策略与 `tagSectionHeader` 一致：标题与右侧剩余行宽各自 expand，操作按钮独立命中。
     private var githubStarListSectionHeader: some View {
         HStack(spacing: 6) {
             Button {
@@ -971,21 +1299,25 @@ struct SidebarView: View {
                 action: { refreshGitHubStarLists() }
             )
 
-            Spacer(minLength: 8)
-
-            // 仓库分组数量包含固定的"未分组"入口，保证 header 数字与展开后的分组行一致。
-            Text((viewModel.githubStarLists.count + 1).formatted())
-                .font(interfaceScale.font(.captionSmall))
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-                .frame(minWidth: 18, alignment: .trailing)
-
+            // 右侧剩余行宽（空白 / 计数 / chevron）整块可点，与 Tags / Languages 手感对齐。
             Button {
                 toggleGitHubStarLists()
             } label: {
-                disclosureChevron(isExpanded: githubStarListsExpanded)
-                    .frame(width: 20, height: 20)
-                    .contentShape(Rectangle())
+                HStack(spacing: 6) {
+                    Spacer(minLength: 8)
+
+                    // 仓库分组数量包含固定的"未分组"入口，保证 header 数字与展开后的分组行一致。
+                    Text((viewModel.githubStarLists.count + 1).formatted())
+                        .font(interfaceScale.font(.captionSmall))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .frame(minWidth: 18, alignment: .trailing)
+
+                    disclosureChevron(isExpanded: githubStarListsExpanded)
+                        .frame(width: 20, height: 20)
+                }
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
@@ -1227,10 +1559,13 @@ struct SidebarView: View {
         let code = topic?.code
         return exploreSelectableRow(
             selection: .topic(code),
-            icon: exploreTopicSystemImage(for: code),
-            iconColor: exploreTopicIconColor(for: code),
             count: dependencies.exploreCatalogStore.topicCount(for: code)
         ) {
+            exploreSidebarSystemIcon(
+                exploreTopicSystemImage(for: code),
+                color: exploreTopicIconColor(for: code)
+            )
+        } title: {
             if let topic {
                 exploreTopicTitle(topic)
             } else {
@@ -1288,68 +1623,84 @@ struct SidebarView: View {
         let code = platform?.code
         return exploreSelectableRow(
             selection: .platform(code),
-            icon: platform?.systemName ?? "square.stack.3d.up",
-            iconColor: .secondary,
             count: dependencies.exploreCatalogStore.platformCount(for: code)
         ) {
+            exploreSidebarSystemIcon(
+                platform?.systemName ?? "square.stack.3d.up",
+                color: .secondary
+            )
+        } title: {
             if let platform {
                 Text(verbatim: platform.label)
+                    .lineLimit(1)
             } else {
                 Text("explore.allPlatforms")
+                    .lineLimit(1)
             }
         }
     }
 
     private func exploreLanguageRow(_ language: DiscoveryLanguageDTO?) -> some View {
         let key = language?.key
+        // 语言 logo 不是 SF Symbol，不能塞进 systemImage 字符串；仍走 Label icon 槽，
+        // 与趋势/周刊语言行、星标主导航同一套 sidebar 图标列对齐。
         return exploreSelectableRow(
             selection: .language(key),
-            icon: nil,
-            iconColor: .secondary,
             count: dependencies.exploreCatalogStore.languageCount(for: key, mode: selectedExploreMode)
         ) {
             if let language {
-                HStack(spacing: 7) {
-                    exploreLanguageIcon(language)
-                    Text(verbatim: exploreLanguageTitle(language))
-                }
+                exploreLanguageIcon(language)
             } else {
-                HStack(spacing: 7) {
-                    AllLanguagesIcon(size: 14)
-                    Text("explore.allLanguages")
-                }
+                AllLanguagesIcon(size: 14)
+            }
+        } title: {
+            if let language {
+                Text(verbatim: exploreLanguageTitle(language))
+                    .lineLimit(1)
+            } else {
+                Text("explore.allLanguages")
+                    .lineLimit(1)
             }
         }
     }
 
-    private func exploreSelectableRow<Title: View>(
+    /// 探索侧栏 SF Symbol：语义色 + 明亮主题选中反白（见 `ExploreSidebarIconStyle`）。
+    @ViewBuilder
+    private func exploreSidebarSystemIcon(_ name: String, color: Color) -> some View {
+        Image(systemName: name)
+            .font(interfaceScale.font(.iconSmall, weight: .semibold))
+            // 必须走 ShapeStyle.resolve(backgroundProminence)，不能手写 binding == selection：
+            // macOS List 蓝底高亮与 selection binding 不同步（按下即高亮、抬起才写 binding；
+            // 切换 mode 时下方 section 重建还会让旧行卡在「选中白」直到数据加载触发重绘）。
+            .foregroundStyle(ExploreSidebarIconStyle(semanticColor: color))
+            .frame(width: 16, height: 16)
+    }
+
+    /// 与星标 / 活动侧栏一致：用 `Label` 走系统 sidebar 图标列，避免手写 HStack 把整行顶到更靠左。
+    private func exploreSelectableRow<Title: View, Icon: View>(
         selection: ExploreSidebarSelection,
-        icon: String?,
-        iconColor: Color,
         count: Int?,
-        @ViewBuilder title: @escaping () -> Title
+        @ViewBuilder icon: () -> Icon,
+        @ViewBuilder title: () -> Title
     ) -> some View {
-        HStack(spacing: 8) {
-            if let icon {
-                Image(systemName: icon)
-                    .font(interfaceScale.font(.iconSmall, weight: .semibold))
-                    .foregroundStyle(iconColor)
-                    .frame(width: 16)
+        Label {
+            HStack(spacing: 4) {
+                title()
+                    .lineLimit(1)
+
+                Spacer(minLength: 4)
+
+                if let count {
+                    Text(count.formatted())
+                        .font(interfaceScale.font(.captionSmall))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                }
             }
-
-            title()
-                .lineLimit(1)
-
-            Spacer(minLength: 4)
-
-            if let count {
-                Text(count.formatted())
-                    .font(interfaceScale.font(.captionSmall))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            }
+        } icon: {
+            icon()
         }
-        .contentShape(Rectangle())
         .tag(selection)
     }
 
@@ -1523,7 +1874,9 @@ struct SidebarView: View {
             }
         } icon: {
             Image(systemName: item.systemImage)
-                .foregroundStyle(item.semanticIconColor ?? .secondary)
+                .foregroundStyle(
+                    SidebarSemanticIconStyle(semanticColor: item.semanticIconColor ?? .secondary)
+                )
         }
         .tag(item)
         // HOM-46 优化：鼠标悬停时预取相邻分类数据，降低点击后的感知延迟
@@ -1534,6 +1887,68 @@ struct SidebarView: View {
                 }
             }
         }
+    }
+
+    /// “我的项目”复用系统 Sidebar selection，授权入口紧跟标题，右侧固定区域只保留计数。
+    /// 刷新统一由中栏承担，避免同一个列表在 Sidebar 出现重复操作。
+    private var myProjectsRow: some View {
+        Label {
+            HStack(spacing: 4) {
+                Text(SidebarItem.myProjects.displayName)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Button {
+                    showProjectAccessSheet = true
+                } label: {
+                    Image(systemName: projectAccessSystemImage)
+                        .font(interfaceScale.font(.captionSmall))
+                        // 授权成功用绿色勾表达「已可用」；其它状态沿用 statusTone（灰 / 橙 / 红）。
+                        .foregroundStyle(projectAccessIconColor)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help(Text("project.access.manage"))
+                .accessibilityLabel(Text("project.access.manage"))
+
+                Spacer(minLength: 4)
+
+                HStack(spacing: 4) {
+                    Spacer(minLength: 0)
+
+                    Text(viewModel.myProjectsCount.formatted())
+                        .font(interfaceScale.font(.captionSmall))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                }
+                .frame(width: Self.trailingFixedWidth, alignment: .trailing)
+            }
+        } icon: {
+            Image(systemName: SidebarItem.myProjects.systemImage)
+                .foregroundStyle(
+                    SidebarSemanticIconStyle(
+                        semanticColor: SidebarItem.myProjects.semanticIconColor ?? .secondary
+                    )
+                )
+        }
+        .tag(SidebarItem.myProjects)
+        .onHover { isHovering in
+            guard isHovering else { return }
+            for candidate in SidebarItem.myProjects.prefetchCandidates {
+                viewModel.prefetch(selection: candidate)
+            }
+        }
+    }
+
+    private var projectAccessSystemImage: String {
+        dependencies.projectAccessSession.state.statusSymbolName
+    }
+
+    private var projectAccessIconColor: Color {
+        dependencies.projectAccessSession.state.statusTone.foregroundColor
     }
 
     /// HOM-47：Release 时间线入口行。
@@ -1567,7 +1982,9 @@ struct SidebarView: View {
                     .frame(width: Self.trailingFixedWidth, alignment: .trailing)
                 }
             } icon: {
+                // 与探索「新发布」同语义色；对齐主导航其它行的彩色图标。
                 Image(systemName: "shippingbox.fill")
+                    .foregroundStyle(SidebarSemanticIconStyle(semanticColor: .cyan))
             }
             .contentShape(Rectangle())
         }
@@ -1618,7 +2035,11 @@ struct SidebarView: View {
             }
         } icon: {
             Circle()
-                .fill(Color(hex: list.colorHex) ?? .accentColor)
+                .fill(
+                    SidebarSemanticIconStyle(
+                        semanticColor: Color(hex: list.colorHex) ?? .accentColor
+                    )
+                )
                 .frame(width: 14, height: 14)
         }
         .tag(item)
@@ -1659,8 +2080,13 @@ struct SidebarView: View {
             }
         } icon: {
             // 优先 user-defined SF Symbol；否则 fallback "tag.fill"
+            // 明亮选中反白，避免彩色 icon 叠在系统蓝底上看不清。
             Image(systemName: tag.icon ?? "tag.fill")
-                .foregroundStyle(Color(hex: tag.color ?? TagColorPalette.defaultHex) ?? .accentColor)
+                .foregroundStyle(
+                    SidebarSemanticIconStyle(
+                        semanticColor: Color(hex: tag.color ?? TagColorPalette.defaultHex) ?? .accentColor
+                    )
+                )
         }
         .tag(item)
         // HOM-46 优化：hover 时预取相邻分类
@@ -1673,86 +2099,98 @@ struct SidebarView: View {
         }
     }
 
-    /// Languages 专属行——
-    /// 每个语言显示对应的彩色圆形图标（与 GitHub 语言点风格一致）+ 语言名 + 计数
+    /// Languages 专属筛选行。
+    ///
+    /// 语言是当前基础仓库范围上的附加条件，不能再通过 `.tag(.language(...))`
+    /// 写入 `List(selection:)`，否则会把“未分类 / 知识库”等主导航选择覆盖掉。
     @ViewBuilder
     private func languageRow(_ stat: LanguageStat) -> some View {
-        let item = SidebarItem.language(stat.languageOrNil)
-        Label {
-            // Sidebar count bugfix v4：与 row() 同款保护——trailing 容器整体 fixed width 锁死。
-            // 详细根因见 `trailingFixedWidth` 常量上方的大注释。
-            HStack {
-                // 短名：避免 "Jupyter Notebook" 这种长名在侧边栏窄行被 tail truncate
-                // 成 "Jupyter Note…"。stat.displayName 已对 isEmpty 兜底（"Unknown" 等），
-                // 未命中映射时原样返回，安全。详见 LanguageDisplayName。
-                Text(verbatim: LanguageDisplayName.shortened(for: stat.displayName))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Spacer(minLength: 4)
-                HStack(spacing: 4) {
-                    Spacer(minLength: 0)
-                    Text(stat.count.formatted())
-                        .font(interfaceScale.font(.captionSmall))
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
+        let language = stat.languageOrNil
+        let isSelected = isManageLanguageFilterSelected(language)
+
+        Button {
+            viewModel.toggleLanguageFilterFromUser(language)
+        } label: {
+            Label {
+                // Sidebar count bugfix v4：trailing 容器整体 fixed width 锁死，
+                // 避免选中筛选后计数位数变化导致标题横向跳动。
+                HStack {
+                    Text(verbatim: LanguageDisplayName.shortened(for: stat.displayName))
                         .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 4)
+                    HStack(spacing: 4) {
+                        Spacer(minLength: 0)
+                        Text(stat.count.formatted())
+                            .font(interfaceScale.font(.captionSmall))
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                    }
+                    .frame(width: Self.trailingFixedWidth, alignment: .trailing)
                 }
-                .frame(width: Self.trailingFixedWidth, alignment: .trailing)
-            }
-        } icon: {
-            // 使用语言对应的彩色圆形图标
-            if let lang = stat.languageOrNil, !lang.isEmpty {
-                LanguageIconView(language: lang, size: 14)
-            } else {
-                UncategorizedLanguageIcon(size: 14)
-            }
-        }
-        .tag(item)
-        // HOM-46 优化：hover 时预取相邻分类
-        .onHover { isHovering in
-            if isHovering {
-                for candidate in item.prefetchCandidates {
-                    viewModel.prefetch(selection: candidate)
+            } icon: {
+                if let language, !language.isEmpty {
+                    LanguageIconView(language: language, size: 14)
+                } else {
+                    UncategorizedLanguageIcon(size: 14)
                 }
             }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        // 基础范围继续使用系统 List selection；语言只用轻量 accent 背景表达独立筛选态。
+        .listRowBackground(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
     }
 
-    /// Manage 的 Languages 分组总入口。
-    ///
-    /// 约束：`.language(nil)` 已表示 GitHub 无主语言，不能复用来表达"全部语言"；
-    /// 因此这里使用独立的 `.allLanguages`，查询语义等同 `.allStars`，但 UI 上留在
-    /// Languages 分组里，并且像 Trending 一样在分组折叠后仍然常驻。
+    /// “全部语言”只清空语言条件，不改变当前基础仓库范围。
     private var allLanguagesRow: some View {
-        let item = SidebarItem.allLanguages
-        return Label {
-            HStack(spacing: 4) {
-                Text("trending.allLanguages")
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-
-                Spacer(minLength: 4)
-
+        Button {
+            viewModel.clearLanguageFiltersFromUser()
+        } label: {
+            Label {
                 HStack(spacing: 4) {
-                    Spacer(minLength: 0)
-                    Text(viewModel.totalCount.formatted())
-                        .font(interfaceScale.font(.captionSmall))
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
+                    Text("trending.allLanguages")
                         .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    Spacer(minLength: 4)
+
+                    HStack(spacing: 4) {
+                        Spacer(minLength: 0)
+                        Text(viewModel.totalCount.formatted())
+                            .font(interfaceScale.font(.captionSmall))
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                    }
+                    .frame(width: Self.trailingFixedWidth, alignment: .trailing)
                 }
-                .frame(width: Self.trailingFixedWidth, alignment: .trailing)
+            } icon: {
+                AllLanguagesIcon(size: 14)
             }
-        } icon: {
-            AllLanguagesIcon(size: 14)
+            .contentShape(Rectangle())
         }
-        .tag(item)
-        .onHover { isHovering in
-            if isHovering {
-                for candidate in item.prefetchCandidates {
-                    viewModel.prefetch(selection: candidate)
-                }
-            }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+    }
+
+    /// Sidebar 的语言高亮读取真实有效筛选，确保 Toolbar 修改后这里同步反馈。
+    private func isManageLanguageFilterSelected(_ language: String?) -> Bool {
+        let filters = viewModel.effectiveGlobalFilterState
+        guard let language, !language.isEmpty else {
+            return filters.repoLanguageFilter == .uncategorized
+        }
+
+        let matchesSingleLanguage: Bool
+        if case .language(let selectedLanguage) = filters.repoLanguageFilter {
+            matchesSingleLanguage = selectedLanguage.caseInsensitiveCompare(language) == .orderedSame
+        } else {
+            matchesSingleLanguage = false
+        }
+        return matchesSingleLanguage || filters.globalFilterLanguages.contains {
+            $0.caseInsensitiveCompare(language) == .orderedSame
         }
     }
 }

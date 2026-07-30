@@ -3,12 +3,13 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
-from submit_import import load_and_validate
+from submit_import import PRODUCTION_BASE_URL, load_and_validate, resolve_runtime_config
 
 
 class SubmitImportTests(unittest.TestCase):
@@ -16,6 +17,11 @@ class SubmitImportTests(unittest.TestCase):
         path = Path(tempfile.mkdtemp()) / "input.json"
         path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         return str(path)
+
+    def write_env(self, content: str) -> Path:
+        path = Path(tempfile.mkdtemp()) / ".env"
+        path.write_text(content, encoding="utf-8")
+        return path
 
     def test_auto_idempotency_key_is_stable_after_normalization(self) -> None:
         first = self.write_payload({"repositories": [{"owner": " Acme ", "repo": "Agent"}]})
@@ -32,6 +38,44 @@ class SubmitImportTests(unittest.TestCase):
             path = self.write_payload({"repositories": [{"owner": "Acme", "repo": "Agent", "source_url": source_url}]})
             with self.assertRaisesRegex(ValueError, "http/https"):
                 load_and_validate(path)
+
+    def test_production_mode_uses_fixed_url_and_weekly_api_env(self) -> None:
+        env_file = self.write_env('ADMIN_API_KEYS="prod-first, prod-second"\n')
+        args = argparse.Namespace(test=False, base_url="")
+
+        base_url, key = resolve_runtime_config(
+            args,
+            environ={"STARCAT_WEEKLY_ADMIN_KEY": "must-not-win"},
+            production_env_file=env_file,
+        )
+
+        self.assertEqual(base_url, PRODUCTION_BASE_URL)
+        self.assertEqual(key, "prod-first")
+
+    def test_production_mode_rejects_base_url_override(self) -> None:
+        args = argparse.Namespace(test=False, base_url="http://127.0.0.1:5003")
+        with self.assertRaisesRegex(ValueError, "仅允许和 --test"):
+            resolve_runtime_config(args, production_env_file=self.write_env("ADMIN_API_KEYS=prod-key\n"))
+
+    def test_test_mode_uses_explicit_test_environment(self) -> None:
+        args = argparse.Namespace(test=True, base_url="")
+
+        base_url, key = resolve_runtime_config(
+            args,
+            environ={
+                "STARCAT_WEEKLY_BASE_URL": "http://127.0.0.1:5003",
+                "STARCAT_WEEKLY_ADMIN_KEY": "test-key",
+            },
+            production_env_file=Path("/must/not/be/read"),
+        )
+
+        self.assertEqual(base_url, "http://127.0.0.1:5003")
+        self.assertEqual(key, "test-key")
+
+    def test_production_mode_requires_admin_key(self) -> None:
+        args = argparse.Namespace(test=False, base_url="")
+        with self.assertRaisesRegex(ValueError, "缺少非空 ADMIN_API_KEYS"):
+            resolve_runtime_config(args, production_env_file=self.write_env("API_KEYS=public-key\n"))
 
 
 if __name__ == "__main__":

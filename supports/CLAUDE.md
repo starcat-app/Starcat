@@ -1,6 +1,6 @@
-# supports/CLAUDE.md — Claude Code 在 supports/ 下的协作规则
+# supports/CLAUDE.md — Claude Code 在 supports/ 配套项目工作区下的协作规则
 
-> 这是 Starcat 项目后端 API 服务目录(supports/)的 Claude Code 协作规则。
+> 这是 Starcat 配套项目工作区（supports/）的 Claude Code 协作规则。
 > 与根 `Starcat/CLAUDE.md` 配合使用,本文档**只覆盖 supports/ 特有的硬性约束**。
 
 ---
@@ -8,12 +8,14 @@
 ## 必读清单(开工前)
 
 1. **根 Starcat/CLAUDE.md** — 全局规则(本目录所有 AI 协作者必须遵守)
-2. **supports/AGENTS.md** — supports/ 整体结构、6 个 API 项目对照表、通用技术栈
+2. **supports/AGENTS.md** — supports/ 整体结构、独立仓库边界、6 个公共 API 与私有 License API 对照表
 3. **被修改项目的 `AGENTS.md`** — 项目特定的开发规范、命令、commit 规范；若项目没有单独 `AGENTS.md`，以本文件和项目 README 为准
 
 ---
 
 ## 关键约束(强制)
+
+`supports/` 下的 `.github`、官网、文档、API、CLI、插件、Homebrew 和本地化目录均可能是独立 Git 仓库。修改前先在目标目录运行 `git status -sb` 并核对 remote；不要把多个独立仓库的改动混成主仓库提交。官网源码、Changelog 生成与部署统一位于 `starcat-site/`。
 
 ### 1. Go 版本一致性(2026-06-08 起)
 
@@ -38,18 +40,18 @@
 各 API 项目的 `module` 指令必须使用完整路径(2026-06-08 已统一):
 
 ```
-github.com/dong4j/starcat-sharing-api
-github.com/dong4j/starcat-trending-api
-github.com/dong4j/starcat-weekly-api
-github.com/dong4j/starcat-wiki-api
-github.com/dong4j/starcat-recommend-api
-github.com/dong4j/starcat-discovery-api
+github.com/starcat-app/starcat-sharing-api
+github.com/starcat-app/starcat-trending-api
+github.com/starcat-app/starcat-weekly-api
+github.com/starcat-app/starcat-wiki-api
+github.com/starcat-app/starcat-recommend-api
+github.com/starcat-app/starcat-discovery-api
 ```
 
 **项目内 import 必须用绝对路径**(用 module path 前缀),不允许相对路径:
 ```go
 // ✅ 正确
-import "github.com/dong4j/starcat-weekly-api/internal/handler"
+import "github.com/starcat-app/starcat-weekly-api/internal/handler"
 
 // ❌ 错误:Go 1.16+ 不支持
 import "./internal/handler"
@@ -78,6 +80,8 @@ go vet ./...           # 必须 vet 干净
 ✅ 改 `go.mod` 必须跑 `go mod tidy` 同步 `go.sum`
 ✅ 新增 / 删除 API 服务后必须同步 `supports/start-all.sh`、`supports/Makefile`、`supports/scripts/` 运维脚本和跨服务文档
 ✅ 有 SQLite / Fly volume 的新增服务必须接入 backup / restore / wipe 脚本；无持久化存储的服务必须在文档中说明排除原因
+✅ 新增任意独立支撑项目必须补齐中英文 README、开源治理文件和适合技术栈的 CI
+✅ 新项目必须登记到 `clone-all.sh`、`sync-starcat-readme-promo.py`、`README.md` 与 `SYNC.md`
 ✅ PR 必须填写 `.github/PULL_REQUEST_TEMPLATE.md`
 ✅ Bug 报告必须用 `.github/ISSUE_TEMPLATE/bug_report.yml`
 

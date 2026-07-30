@@ -11,6 +11,7 @@ import SwiftUI
 
 struct IntegrationSettingsTab: View {
     private static let localAPIKeyAnchor = "settings.integrations.localAPIKey"
+    private static let browserPluginAnchor = "settings.integrations.browserPlugin"
     private static let externalSearchAnchor = "settings.integrations.externalSearch"
 
     @Environment(AppSettings.self) private var settings
@@ -27,9 +28,12 @@ struct IntegrationSettingsTab: View {
     @State private var expandedExternalSearchTechnicalDetails: Set<ExternalSearchProviderID> = []
     @State private var externalSearchAPIKeyTestStates: [ExternalSearchProviderID: ExternalSearchAPIKeyTestState] = [:]
     @State private var pluginConfiguration = CompanionConfiguration.shared
+    /// 编辑期只维护草稿，保存时才写入配置并启动服务，避免输入过程中反复重绑端口。
+    @State private var pluginPortDraft = ""
     @State private var localAPIKeyStore = StarcatLocalAPIKeyStore.shared
     @State private var isLocalAPIKeyRevealed = false
     @State private var isHoveringCopyLocalAPIKey = false
+    @State private var isHoveringCopyPluginEndpoint = false
     @State private var isHoveringRotateLocalAPIKey = false
     @State private var isHoveringChromePlugin = false
     @State private var isHoveringSafariPlugin = false
@@ -47,6 +51,8 @@ struct IntegrationSettingsTab: View {
                 localAPIKeySection
                     .id(Self.localAPIKeyAnchor)
                 browserPluginSection
+                    .id(Self.browserPluginAnchor)
+                alfredSection
                 anySearchSection
                     .id(Self.externalSearchAnchor)
                 Section {
@@ -55,6 +61,10 @@ struct IntegrationSettingsTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+
+                RepositoryArchiveLimitNotice(
+                    maximumArchiveMB: settings.aiRepoContextMaximumArchiveMB
+                )
 
                 HStack(spacing: 8) {
                     Text(storage.outputDirectoryDisplayPath)
@@ -122,10 +132,14 @@ struct IntegrationSettingsTab: View {
             }
                 Section {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Tree-sitter index + browser-based 3D visualization")
+                    Text("settings.integration.codebaseMemory.subtitle")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+
+                RepositoryArchiveLimitNotice(
+                    maximumArchiveMB: settings.aiRepoContextMaximumArchiveMB
+                )
 
                 HStack(spacing: 8) {
                     Text(codebaseMemoryStorage.outputDirectoryDisplayPath)
@@ -197,6 +211,9 @@ struct IntegrationSettingsTab: View {
             .task { codebaseMemoryStorage.reload() }
             .task { loadExternalSearchAPIKeys() }
             .task {
+                if pluginPortDraft.isEmpty {
+                    pluginPortDraft = String(pluginConfiguration.port)
+                }
                 if pluginConfiguration.isEnabled {
                     CompanionServiceBootstrapper.apply(configuration: pluginConfiguration)
                 }
@@ -206,6 +223,8 @@ struct IntegrationSettingsTab: View {
                 switch note.object as? String {
                 case "integrations.localAPIKey":
                     anchor = Self.localAPIKeyAnchor
+                case "integrations.browserPlugin":
+                    anchor = Self.browserPluginAnchor
                 case "integrations.externalSearch":
                     anchor = Self.externalSearchAnchor
                 default:
@@ -311,18 +330,17 @@ struct IntegrationSettingsTab: View {
                 )
             )
 
-            VStack(alignment: .leading, spacing: 8) {
-                pluginInfoRow(
-                    titleKey: "settings.integration.browserPlugin.status",
-                    value: pluginStatusText
-                )
-                pluginInfoRow(
-                    titleKey: "settings.integration.browserPlugin.endpoint",
-                    value: "http://127.0.0.1:\(pluginConfiguration.port)/plugin/v1",
-                    isMonospacedValue: true
-                )
-                localAPIKeyReferenceRow
+            // 拆成 Section 直接子视图，让 Form 自动画行分隔线（别捆在一个 VStack 里）。
+            pluginInfoRow(
+                titleKey: "settings.integration.browserPlugin.status",
+                value: pluginStatusText,
+                valueColor: pluginStatusColor
+            )
+            BrowserPluginPortEditorRow(portDraft: $pluginPortDraft) {
+                savePluginPortAndStart()
             }
+            pluginEndpointRow
+            localAPIKeyReferenceRow
 
             LabeledContent {
                 HStack(spacing: 10) {
@@ -359,8 +377,50 @@ struct IntegrationSettingsTab: View {
 
     private enum BrowserPluginRepositoryLinks {
         // 两个插件源码独立开源，设置页跳公开仓库；不指向本机 supports 目录。
-        static let chrome = URL(string: "https://github.com/dong4j/starcat-chrome-plugin")!
-        static let safari = URL(string: "https://github.com/dong4j/starcat-safari-plugin")!
+        static let chrome = URL(string: "https://github.com/starcat-app/starcat-chrome-plugin")!
+        static let safari = URL(string: "https://github.com/starcat-app/starcat-safari-plugin")!
+    }
+
+    private var alfredSection: some View {
+        Section {
+            Text("settings.integration.alfred.subtitle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Label {
+                Text(verbatim: "Starcat Pro · MCP Service · Starcat CLI")
+                    .foregroundStyle(.primary)
+            } icon: {
+                Image(systemName: "checklist")
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 8) {
+                Spacer()
+                Button("settings.mcp.title") {
+                    NotificationCenter.default.post(
+                        name: .starcatJumpToSettingsTab,
+                        object: "mcp"
+                    )
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+
+                // Workflow 公开仓库和首个可安装 Release 尚未就绪。保留入口位置但禁用，
+                // 避免正式版本把用户带到 404；发布完成后再恢复为 Link。
+                Button("settings.integration.alfred.install") {}
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+                    .disabled(true)
+            }
+        } header: {
+            SettingsSectionHeader(
+                verbatim: "Alfred",
+                systemImage: "command",
+                style: .prominent
+            )
+        }
     }
 
     private func browserPluginRepositoryLink(
@@ -411,15 +471,58 @@ struct IntegrationSettingsTab: View {
             return String.l10n("settings.integration.browserPlugin.status.starting")
         case .running:
             return String.l10n("settings.integration.browserPlugin.status.running")
+        case .failed(let failure):
+            return failure.localizedDescription
+        }
+    }
+
+    private var pluginStatusColor: Color {
+        switch pluginConfiguration.serverStatus {
+        case .running:
+            return .green
         case .failed:
-            return String.l10n("settings.integration.browserPlugin.status.failed")
+            return .red
+        case .stopped, .starting:
+            return .secondary
+        }
+    }
+
+    private var pluginEndpoint: String {
+        "http://127.0.0.1:\(pluginConfiguration.port)"
+    }
+
+    private var pluginEndpointRow: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Text("settings.integration.browserPlugin.endpoint")
+                .font(.body)
+                .foregroundStyle(.primary)
+                .frame(width: 88, alignment: .leading)
+            Text(verbatim: pluginEndpoint)
+                .font(.system(.body, design: .monospaced))
+                .foregroundStyle(.primary)
+                .textSelection(.enabled)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer()
+            CopyFeedbackButton(
+                providesContent: { pluginEndpoint },
+                tooltip: "settings.integration.browserPlugin.copyEndpoint"
+            ) { didCopy in
+                tokenActionIcon(
+                    systemImage: didCopy ? "checkmark.circle.fill" : "doc.on.doc",
+                    foregroundStyle: didCopy ? Color.green : Color.secondary,
+                    isHovering: isHoveringCopyPluginEndpoint
+                )
+            }
+            .onHover { isHoveringCopyPluginEndpoint = $0 }
         }
     }
 
     private func pluginInfoRow(
         titleKey: LocalizedStringKey,
         value: String,
-        isMonospacedValue: Bool = false
+        isMonospacedValue: Bool = false,
+        valueColor: Color = .primary
     ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text(titleKey)
@@ -428,7 +531,7 @@ struct IntegrationSettingsTab: View {
                 .frame(width: 88, alignment: .leading)
             Text(verbatim: value)
                 .font(isMonospacedValue ? .system(.body, design: .monospaced) : .body)
-                .foregroundStyle(.primary)
+                .foregroundStyle(valueColor)
                 .textSelection(.enabled)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -498,8 +601,31 @@ struct IntegrationSettingsTab: View {
 
     private func rotateLocalAPIKey() {
         localAPIKeyStore.rotateAPIKey()
-        if pluginConfiguration.isEnabled {
+        // Companion 每次请求都会读取共享 Key Store，无需为换 Key 重绑同一端口。
+    }
+
+    /// 保存动作同时表达“我希望服务运行”：写入端口、保持 Toggle 开启，并按需重启。
+    private func savePluginPortAndStart() {
+        let value: Int
+        switch BrowserPluginPortEditorRow.validate(pluginPortDraft) {
+        case .empty:
+            value = Int(CompanionConfiguration.defaultPort)
+            pluginPortDraft = String(value)
+        case .ok:
+            value = Int(pluginPortDraft) ?? Int(CompanionConfiguration.defaultPort)
+        case .nonNumericAttempt, .belowMinimum, .aboveMaximum:
+            return
+        }
+
+        let previousPort = pluginConfiguration.port
+        guard pluginConfiguration.updateConfiguredPort(value) else { return }
+        pluginConfiguration.isEnabled = true
+
+        if previousPort == pluginConfiguration.port {
+            // 运行中无需无意义重绑；失败/停止态则由 apply 在原端口重新尝试。
             CompanionServiceBootstrapper.apply(configuration: pluginConfiguration)
+        } else {
+            CompanionServiceBootstrapper.restart(configuration: pluginConfiguration)
         }
     }
 
@@ -589,25 +715,15 @@ struct IntegrationSettingsTab: View {
         }
     }
 
+    /// Provider 直接作为 Section 的 Form 行输出，复用系统行高、分隔线和字号适配。
+    /// 不能再套一层 VStack，否则 Form 只会把整个 Provider 列表识别为单行，内部只能
+    /// 依赖固定高度和手动画 Divider，首尾也会叠加不一致的行内边距。
+    @ViewBuilder
     private var externalSearchProviderList: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(ExternalSearchProviderID.allCases.indices, id: \.self) { index in
-                let provider = ExternalSearchProviderID.allCases[index]
-                externalSearchProviderGroup(provider)
-                if index < ExternalSearchProviderID.allCases.count - 1 {
-                    Divider()
-                }
-            }
-        }
-    }
-
-    private func externalSearchProviderGroup(_ provider: ExternalSearchProviderID) -> some View {
-        let isExpanded = expandedExternalSearchProviders.contains(provider)
-        return VStack(alignment: .leading, spacing: isExpanded ? 12 : 0) {
+        ForEach(ExternalSearchProviderID.allCases) { provider in
             externalSearchProviderHeader(provider)
-                .frame(height: 54)
 
-            if isExpanded {
+            if expandedExternalSearchProviders.contains(provider) {
                 Toggle(isOn: providerEnabledBinding(provider)) {
                     Text("settings.externalSearch.provider.enable")
                 }
@@ -654,25 +770,31 @@ struct IntegrationSettingsTab: View {
                         .focusEffectDisabled()
                         .help(visibleExternalSearchAPIKeys.contains(provider) ? "settings.externalSearch.apiKey.hide" : "settings.externalSearch.apiKey.show")
                         .accessibilityLabel(Text(visibleExternalSearchAPIKeys.contains(provider) ? "settings.externalSearch.apiKey.hide" : "settings.externalSearch.apiKey.show"))
-
-                        Button {
-                            testExternalSearchAPIKey(provider)
-                        } label: {
-                            if externalSearchAPIKeyTestStates[provider] == .testing {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Text("settings.externalSearch.apiKey.test")
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.regular)
-                        .disabled(apiKeyDraft(for: provider).isEmpty || externalSearchAPIKeyTestStates[provider] == .testing)
                     }
-
-                    externalSearchAPIKeyTestFeedback(provider)
                 }
-                .padding(.bottom, 10)
+
+                // 测试是独立操作，按设置页规范右对齐；结果与错误留在同行左侧，
+                // 用户无需在 API Key 输入行和下方反馈之间来回寻找状态。
+                HStack(alignment: .center, spacing: 8) {
+                    externalSearchAPIKeyTestFeedback(provider)
+                    // EmptyView 不参与布局，必须用独立 Spacer 保证无反馈时按钮仍右对齐。
+                    Spacer(minLength: 8)
+
+                    Button {
+                        testExternalSearchAPIKey(provider)
+                    } label: {
+                        if externalSearchAPIKeyTestStates[provider] == .testing {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Text("settings.externalSearch.apiKey.test")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+                    .fixedSize()
+                    .disabled(apiKeyDraft(for: provider).isEmpty || externalSearchAPIKeyTestStates[provider] == .testing)
+                }
             }
         }
     }
@@ -948,6 +1070,125 @@ struct IntegrationSettingsTab: View {
         }
     }
 
+}
+
+// MARK: - Browser Plugin Port Editor
+
+/// 端口输入不静默钳制：保留可见错误并禁用保存，直到用户给出合法值。
+private enum BrowserPluginPortValidation: Equatable {
+    case empty
+    case ok
+    case nonNumericAttempt
+    case belowMinimum
+    case aboveMaximum
+
+    var isCommittable: Bool {
+        switch self {
+        case .empty, .ok: return true
+        case .nonNumericAttempt, .belowMinimum, .aboveMaximum: return false
+        }
+    }
+
+    var errorHintKey: LocalizedStringKey? {
+        switch self {
+        case .empty, .ok: return nil
+        case .nonNumericAttempt: return "settings.integration.browserPlugin.port.error.digitsOnly"
+        case .belowMinimum: return "settings.integration.browserPlugin.port.error.tooLow"
+        case .aboveMaximum: return "settings.integration.browserPlugin.port.error.tooHigh"
+        }
+    }
+}
+
+/// Browser Plugin 端口行沿用 MCP 的桌面设置交互：数字草稿、明确校验、显式保存启动。
+private struct BrowserPluginPortEditorRow: View {
+    @Binding var portDraft: String
+    let onSaveAndStart: () -> Void
+
+    @State private var validation: BrowserPluginPortValidation = .empty
+    @FocusState private var isPortFieldFocused: Bool
+
+    /// 65535 的固定宽度，避免 Form 在中英文切换或窗口缩放时把输入框挤到下一行。
+    private static let fieldWidth: CGFloat = 96
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("settings.integration.browserPlugin.port")
+
+                Spacer()
+
+                TextField("", text: $portDraft, prompt: Text(verbatim: "5051"))
+                    .textFieldStyle(.plain)
+                    .font(.system(.body, design: .monospaced))
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(1)
+                    .frame(width: Self.fieldWidth - 20)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color(nsColor: .textBackgroundColor).opacity(0.6))
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(
+                                isPortFieldFocused
+                                    ? Color.accentColor
+                                    : Color(nsColor: .separatorColor).opacity(0.65),
+                                lineWidth: isPortFieldFocused ? 2 : 1
+                            )
+                    }
+                    .frame(width: Self.fieldWidth)
+                    .focused($isPortFieldFocused)
+                    .accessibilityLabel(Text("settings.integration.browserPlugin.port"))
+                    .onChange(of: portDraft) { _, newValue in
+                        let hadInvalidChars = newValue.contains { !$0.isNumber }
+                        let filtered = String(newValue.filter(\.isNumber).prefix(5))
+                        if filtered != newValue {
+                            portDraft = filtered
+                        }
+                        validation = Self.validate(filtered, hadInvalidChars: hadInvalidChars)
+                    }
+                    .onSubmit {
+                        if validation.isCommittable { onSaveAndStart() }
+                    }
+
+                Button("settings.integration.browserPlugin.port.saveAndStart", action: onSaveAndStart)
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+                    .focusEffectDisabled()
+                    .disabled(!validation.isCommittable)
+            }
+
+            if let errorKey = validation.errorHintKey {
+                Text(errorKey)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("settings.integration.browserPlugin.port.hint")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .onAppear {
+            validation = Self.validate(portDraft)
+        }
+    }
+
+    /// 只过滤非法字符；范围错误保留草稿并交给提示文案解释。
+    static func validate(
+        _ draft: String,
+        hadInvalidChars: Bool = false
+    ) -> BrowserPluginPortValidation {
+        if hadInvalidChars { return .nonNumericAttempt }
+        if draft.isEmpty { return .empty }
+        guard let value = Int(draft) else { return .nonNumericAttempt }
+        if value < CompanionConfiguration.allowedPortRange.lowerBound { return .belowMinimum }
+        if value > CompanionConfiguration.allowedPortRange.upperBound { return .aboveMaximum }
+        return .ok
+    }
 }
 
 private enum ExternalSearchAPIKeyTestState: Equatable {

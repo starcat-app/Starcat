@@ -14,12 +14,9 @@
 
 import SwiftUI
 import AppKit  // W4-5 D1 follow-up：NSApp.appearance 控制主题（preferredColorScheme 在 macOS 有 nil-restore bug）
-import MarkdownUI
 import TipKit
 
 extension Notification.Name {
-    /// 顶部菜单触发全局搜索。HomeView 持有 SearchCenterViewModel，因此命令层只发意图。
-    static let starcatCommandOpenGlobalSearch = Notification.Name("starcat.command.openGlobalSearch")
     /// 三处系统入口共用的列表偏好重置意图；实际重置由 HomeView 在当前账号上下文执行。
     static let starcatResetListPreferencesRequested = Notification.Name("starcat.resetListPreferencesRequested")
 }
@@ -43,6 +40,10 @@ struct StarcatApp: App {
 
     /// 启动期核心依赖失败时给用户展示的友好错误。
     @State private var startupError: UserFacingError?
+
+    /// 主窗口与 Settings Scene 共用的快捷键路由。
+    /// Settings 成为 key window 后仍需操作主窗口最后一个有效仓库，不能依赖 scene-local FocusedValue。
+    @State private var commandRouter = StarcatCommandRouter.shared
 
     // MARK: - 用户语言切换（生产可用）
     //
@@ -89,12 +90,33 @@ struct StarcatApp: App {
 
     /// 处理从 macOS URL handler 进来的 Starcat URL。
     ///
-    /// OAuth 和 Direct License 支付回跳都走同一个 scheme。这里先识别支付成功页的
-    /// `starcat://license/activate?...`，其余 URL 再交给 GitHub OAuth，避免 license
-    /// deep link 被 OAuth callback parser 当作无效登录回调吞掉。
+    /// OAuth、Direct License 支付回跳和仓库 Deep Link 共用本入口。Release 链接
+    /// 必须先于普通仓库链接和 OAuth 解析：它比仓库链接多一段 `/releases`，并需要
+    /// 保留 release ID 才能在时间线中定位。Dispatcher 会保存未消费请求，所以
+    /// 冷启动完成登录后仍可继续定位。
     private func handleIncomingURL(_ url: URL) {
         guard let dependencies else {
-            AppLog.auth.warning("StarcatApp.handleIncomingURL: dependencies not ready, ignoring \(url.absoluteString, privacy: .public)")
+            // OAuth callback 可能携带一次性 code，启动失败日志只记路由，不能输出完整 URL。
+            AppLog.auth.warning(
+                "StarcatApp.handleIncomingURL: dependencies not ready, ignoring scheme=\(url.scheme ?? "", privacy: .public) host=\(url.host ?? "", privacy: .public)"
+            )
+            return
+        }
+        if let widgetRoute = WidgetAppDeepLink(url: url) {
+            switch widgetRoute.destination {
+            case .main:
+                AppDelegate.activateMainWindowIfPossible()
+            case .releaseTimeline:
+                dependencies.mainWindowNavigationDispatcher.navigate(to: .releaseTimeline)
+            }
+            return
+        }
+        if let release = RepositoryReleaseDeepLink(url: url) {
+            dependencies.mainWindowNavigationDispatcher.navigate(to: .repositoryRelease(release))
+            return
+        }
+        if let repository = RepositoryDeepLink(url: url) {
+            dependencies.mainWindowNavigationDispatcher.navigate(to: .repository(repository))
             return
         }
         if url.host == "license", url.path == "/activate" {
@@ -103,6 +125,15 @@ struct StarcatApp: App {
                 return
             }
             Task { await dependencies.directLicenseManager.activateFromPaymentSuccessURL(url) }
+            return
+        }
+        if AppConstants.isGitHubAppCallback(url) {
+            // 正常 callback 由发起授权的 ASWebAuthenticationSession 直接截获。
+            // 外部 URL handler 收到它，说明当前进程没有对应会话；拒绝处理一次性 code，
+            // 避免 App Store 与 Direct 同时安装时由错误版本消费授权结果。
+            AppLog.auth.warning(
+                "Ignoring GitHub App callback outside the initiating authentication session"
+            )
             return
         }
         Task { await dependencies.authSession.handleWebFlowCallback(url: url) }
@@ -126,16 +157,23 @@ struct StarcatApp: App {
                     handleIncomingURL(url)
                 }
         }
+        // macOS 15 的 AppKit state restoration 可能存在持久化记录，却没有真正恢复
+        // 任何窗口。显式使用 `.presented`，保证这种情况下仍创建主窗口，避免只剩
+        // Dock 运行点而没有可见界面。
+        .defaultLaunchBehavior(.presented)
         .commands {
             // 替换系统默认的"关于 Starcat"菜单项，打开自定义 SwiftUI 关于窗口。
             CommandGroup(replacing: .appInfo) {
                 Button("app.about") {
                     AboutPanelController.show()
                 }
-                .keyboardShortcut("I", modifiers: .command)
             }
 
-            StarcatAppCommands(dependencies: dependencies)
+            StarcatAppCommands(
+                dependencies: dependencies,
+                commandRouter: commandRouter,
+                settings: dependencies?.settings ?? AppSettings.shared
+            )
 
             // DEBUG-only 菜单：作为后续调试入口的容器（清缓存 / 强制制造网络
             // 错误 / Dump 数据库等）。语言切换 2026-06-16 移除（已在设置页落地）。
@@ -173,6 +211,7 @@ struct StarcatApp: App {
                 .environment(dependencies.subscriptionManager)
                 .environment(dependencies.directLicenseManager)
                 .environment(dependencies.entitlementGate)
+                .starcatCommandRouterEnvironment(commandRouter)
                 // HOM-PROFILE 2026-06-05：贡献草坪服务，Sidebar 直接消费 @Observable 实例。
                 .environment(dependencies.contributionService)
                 // 2026-06-06 A 方案：用户 profile 缓存服务。Sidebar / ShareCardSheet 会调
@@ -231,6 +270,7 @@ struct StarcatApp: App {
                 .environment(dependencies.subscriptionManager)
                 .environment(dependencies.directLicenseManager)
                 .environment(dependencies.entitlementGate)
+                .starcatCommandRouterEnvironment(commandRouter)
                 // HOM-126：AI 设置「自动整理」分组的「立刻手动触发一次」按钮直接
                 // 调 scheduler.triggerManually()。不依赖 AppDependencies 间接路径，
                 // 让 Settings tab 与 scheduler 解耦但显式可见。
@@ -257,9 +297,11 @@ struct StarcatApp: App {
         LaunchSplashContainer {
             ContentView()
                 .environment(\.locale, localeStore.selection.effectiveLocale)
+                .environment(\.layoutDirection, localeStore.selection.effectiveLayoutDirection)
                 .environment(\.starcatInterfaceScale, dependencies.settings.interfaceScale)
                 .id(localeStore.selection.rawValue)
         }
+        .starcatMCPPairingApprovalPresenter(store: dependencies.mcpDeviceStore)
     }
 
     /// Settings scene 的语言注入与重建逻辑，与 `contentRoot` 完全对称。
@@ -273,6 +315,7 @@ struct StarcatApp: App {
     private var settingsRoot: some View {
         SettingsView()
             .environment(\.locale, localeStore.selection.effectiveLocale)
+            .environment(\.layoutDirection, localeStore.selection.effectiveLayoutDirection)
             .environment(\.starcatInterfaceScale, dependencies?.settings.interfaceScale ?? .standard)
             .id(localeStore.selection.rawValue)
     }
@@ -369,6 +412,7 @@ private struct MainWindowOpenFallbackRegistrar: ViewModifier {
                 AppDelegate.openMainWindowFallback = {
                     openWindow(id: "main")
                 }
+                AppLog.general.info("Main window scene appeared; reopen fallback registered")
             }
     }
 }
@@ -383,23 +427,68 @@ private extension View {
 
 /// Starcat 顶部菜单命令。
 ///
-/// 这些入口全部复用已有业务路径：同步走 `SyncManager`，搜索由 HomeView 持有的
-/// `SearchCenterViewModel` 响应通知，外链 / 诊断导出仍走原 AppKit / 工具类。
+/// 这些入口全部复用已有业务路径：同步走 `SyncManager`，主窗口动作通过 focused
+/// context 路由，外链 / 诊断导出仍走原 AppKit / 工具类。
 /// 这样菜单只是 macOS 可发现性增强，不新增第二套业务状态。
 private struct StarcatAppCommands: Commands {
     let dependencies: AppDependencies?
+    let commandRouter: StarcatCommandRouter
+    let settings: AppSettings
+    @FocusedValue(\.starcatRefreshAction) private var focusedRefreshAction
+    @FocusedValue(\.starcatRepositoryAIAction) private var focusedRepositoryAIAction
 
     var body: some Commands {
         CommandMenu("commands.actions.menu") {
-            Button("commands.actions.syncStars") {
-                syncStars()
+            Button("commands.actions.openGlobalSearch") {
+                commandRouter.openGlobalSearch()
+            }
+            .keyboardShortcut(
+                settings.keyboardShortcutsEnabled && settings.globalSearchShortcutEnabled
+                    ? settings.globalSearchShortcut.swiftUIShortcut
+                    : nil
+            )
+            .disabled(!commandRouter.canOpenGlobalSearch)
+
+            Button("commands.actions.openKnowledgeRAGWorkspace") {
+                commandRouter.openKnowledgeRAGWorkspace()
+            }
+            .keyboardShortcut(
+                settings.keyboardShortcutsEnabled && settings.knowledgeRAGShortcutEnabled
+                    ? settings.knowledgeRAGShortcut.swiftUIShortcut
+                    : nil
+            )
+            .disabled(!commandRouter.canOpenKnowledgeRAGWorkspace)
+
+            Button("commands.actions.openSelectedRepoAI") {
+                commandRouter.openCurrentRepositoryAI(preferred: focusedRepositoryAIAction)
+            }
+            .keyboardShortcut(
+                settings.keyboardShortcutsEnabled && settings.selectedRepoAIShortcutEnabled
+                    ? settings.selectedRepoAIShortcut.swiftUIShortcut
+                    : nil
+            )
+            .disabled(!commandRouter.isRepositoryAIAvailable(preferred: focusedRepositoryAIAction))
+
+            Divider()
+
+            Button("commands.actions.refreshCurrentContent") {
+                commandRouter.refreshCurrentContent(preferred: focusedRefreshAction)
+            }
+            .keyboardShortcut(
+                settings.keyboardShortcutsEnabled && settings.refreshCurrentContentShortcutEnabled
+                    ? settings.refreshCurrentContentShortcut.swiftUIShortcut
+                    : nil
+            )
+            .disabled(!commandRouter.isRefreshAvailable(preferred: focusedRefreshAction))
+
+            Button("ai.usage.open") {
+                if let dependencies {
+                    AIUsageWindowController.show(dependencies: dependencies)
+                }
             }
             .disabled(dependencies == nil)
 
-            Button("commands.actions.openGlobalSearch") {
-                NSApp.activate(ignoringOtherApps: true)
-                NotificationCenter.default.post(name: .starcatCommandOpenGlobalSearch, object: nil)
-            }
+            Divider()
 
             if dependencies?.directUpdateController.isDirectBuild == true {
                 Button("commands.actions.checkForUpdates") {
@@ -435,18 +524,6 @@ private struct StarcatAppCommands: Commands {
     }
 
     @MainActor
-    private func syncStars() {
-        guard let dependencies,
-              let user = dependencies.authSession.state.user
-        else {
-            NSApp.activate(ignoringOtherApps: true)
-            dependencies?.authSession.requestLoginSheet()
-            return
-        }
-        dependencies.syncManager.performFullSync(userID: user.id, force: true)
-    }
-
-    @MainActor
     private func exportDiagnostics() {
         Task {
             _ = await DiagnosticBundleExporter.exportFromPanel(settings: dependencies?.settings ?? AppSettings.shared)
@@ -465,384 +542,6 @@ private struct StarcatAppCommands: Commands {
     }
 }
 
-// MARK: - Release Notes
-
-/// Release Notes 窗口尺寸。
-private enum ReleaseNotesWindowMetrics {
-    static let defaultContentSize = NSSize(width: 620, height: 520)
-    static let minimumContentSize = NSSize(width: 540, height: 420)
-}
-
-/// App 内静态版本说明窗口。
-///
-/// 首版只需要一个可从 Help 菜单打开的说明面板，不接 Sparkle / GitHub Releases
-/// 之类自动更新链路，避免上架前引入额外分发和网络语义。
-private final class ReleaseNotesWindowController: NSWindowController, NSWindowDelegate {
-    private static var shared: ReleaseNotesWindowController?
-
-    @MainActor
-    static func show() {
-        let controller: ReleaseNotesWindowController
-        let shouldCenter: Bool
-
-        if let shared {
-            controller = shared
-            shouldCenter = false
-        } else {
-            controller = ReleaseNotesWindowController()
-            shared = controller
-            shouldCenter = true
-        }
-
-        controller.showWindow(nil)
-        if shouldCenter {
-            controller.window?.center()
-        }
-        controller.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    private init() {
-        let content = ReleaseNotesView()
-            .starcatAnimationOverride()
-            .appLocaleEnvironment()
-            .environment(AppSettings.shared)
-        let hostingController = NSHostingController(rootView: content)
-        let window = NSWindow(contentViewController: hostingController)
-
-        window.title = String.l10n("releaseNotes.window.title")
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-        window.setContentSize(ReleaseNotesWindowMetrics.defaultContentSize)
-        window.contentMinSize = ReleaseNotesWindowMetrics.minimumContentSize
-        window.minSize = ReleaseNotesWindowMetrics.minimumContentSize
-        window.isReleasedWhenClosed = false
-        window.titlebarAppearsTransparent = true
-        window.backgroundColor = .windowBackgroundColor
-
-        super.init(window: window)
-        window.delegate = self
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("ReleaseNotesWindowController does not support storyboard initialization")
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        window?.resignKey()
-    }
-}
-
-/// Release Notes 的 SwiftUI 内容。
-///
-/// 内容来自 App bundle 内的更新日志。`project.yml` 的构建脚本负责在 codesign 前
-/// 同步拷贝英文 `CHANGELOG.md` 与中文 `CHANGELOG-ZH.md`。
-private struct ReleaseNotesView: View {
-    @State private var expandedVersionIDs: Set<String> = []
-    @State private var localeStore = LocaleStore.shared
-
-    var body: some View {
-        let document = ChangelogParser.parse(
-            ReleaseNotesLoader.loadBundledChangelog(for: localeStore.selection)
-        )
-
-        ScrollView {
-            VStack(alignment: .leading, spacing: 26) {
-                ReleaseNotesHero()
-
-                if let latestVersion = document.latestVersion {
-                    ReleaseNotesVersionCard(
-                        version: latestVersion,
-                        isLatest: true,
-                        isExpanded: true,
-                        toggle: nil
-                    )
-                }
-
-                ForEach(document.previousVersions) { version in
-                    ReleaseNotesVersionCard(
-                        version: version,
-                        isLatest: false,
-                        isExpanded: expandedVersionIDs.contains(version.id),
-                        toggle: {
-                            toggleVersion(version.id)
-                        }
-                    )
-                }
-            }
-            .padding(28)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .background(Color(nsColor: .textBackgroundColor).opacity(0.52))
-    }
-
-    private func toggleVersion(_ id: String) {
-        if expandedVersionIDs.contains(id) {
-            expandedVersionIDs.remove(id)
-        } else {
-            expandedVersionIDs.insert(id)
-        }
-    }
-}
-
-private struct ReleaseNotesHero: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("releaseNotes.hero.title")
-                .font(.system(size: 34, weight: .bold, design: .rounded))
-                .foregroundStyle(.primary)
-
-            Text("releaseNotes.hero.subtitle")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.bottom, 6)
-        .overlay(alignment: .bottom) {
-            Divider()
-                .offset(y: 18)
-        }
-    }
-}
-
-private struct ReleaseNotesVersionCard: View {
-    let version: ChangelogVersion
-    let isLatest: Bool
-    let isExpanded: Bool
-    let toggle: (() -> Void)?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if let toggle {
-                Button(action: toggle) {
-                    ReleaseNotesVersionTitle(
-                        title: version.title,
-                        isExpanded: isExpanded,
-                        showsDisclosureIcon: true
-                    )
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-            } else {
-                ReleaseNotesVersionTitle(
-                    title: version.title,
-                    isExpanded: true,
-                    showsDisclosureIcon: false,
-                    badgeText: "releaseNotes.badge.new"
-                )
-            }
-
-            if isExpanded {
-                changelogBody
-            }
-        }
-        .padding(18)
-        .background(cardBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(cardBorder, lineWidth: 1)
-        }
-    }
-
-    private var changelogBody: some View {
-        Markdown(version.bodyMarkdown)
-            .font(.body)
-            .textSelection(.enabled)
-            .padding(.leading, 26)
-    }
-
-    private var cardBackground: Color {
-        if isLatest {
-            return Color.accentColor.opacity(0.07)
-        }
-        return Color(nsColor: .controlBackgroundColor)
-    }
-
-    private var cardBorder: Color {
-        if isLatest {
-            return Color.accentColor.opacity(0.18)
-        }
-        return Color(nsColor: .separatorColor).opacity(0.55)
-    }
-}
-
-private struct ReleaseNotesVersionTitle: View {
-    let title: String
-    let isExpanded: Bool
-    let showsDisclosureIcon: Bool
-    var badgeText: String?
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Text(title)
-                .font(.title.weight(.bold))
-                .foregroundStyle(.primary)
-
-            if let badgeText {
-                Text(LocalizedStringKey(badgeText))
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(Color.accentColor)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.accentColor.opacity(0.12), in: Capsule())
-            }
-
-            Spacer(minLength: 0)
-
-            if showsDisclosureIcon {
-                Image(systemName: isExpanded ? "chevron.up.circle.fill" : "chevron.down.circle.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .animation(.easeInOut(duration: 0.16), value: isExpanded)
-            }
-        }
-        .contentShape(Rectangle())
-        .padding(.vertical, 6)
-    }
-}
-
-private struct ChangelogDocument {
-    let preamble: String?
-    let versions: [ChangelogVersion]
-
-    var latestVersion: ChangelogVersion? {
-        versions.first
-    }
-
-    var previousVersions: ArraySlice<ChangelogVersion> {
-        versions.dropFirst()
-    }
-}
-
-private struct ChangelogVersion: Identifiable {
-    let id: String
-    let title: String
-    let bodyMarkdown: String
-
-    var markdown: String {
-        "## \(title)\n\n\(bodyMarkdown)"
-    }
-}
-
-private enum ChangelogParser {
-    static func parse(_ markdown: String) -> ChangelogDocument {
-        let lines = markdown.components(separatedBy: .newlines)
-        var preambleLines: [String] = []
-        var versions: [ChangelogVersion] = []
-        var currentTitle: String?
-        var currentBodyLines: [String] = []
-
-        for line in lines {
-            if let title = versionTitle(from: line) {
-                appendVersion(title: currentTitle, bodyLines: currentBodyLines, to: &versions)
-                currentTitle = title
-                currentBodyLines = []
-            } else if currentTitle == nil {
-                preambleLines.append(line)
-            } else {
-                currentBodyLines.append(line)
-            }
-        }
-        appendVersion(title: currentTitle, bodyLines: currentBodyLines, to: &versions)
-
-        let preamble = normalizedMarkdown(from: preambleLines)
-        return ChangelogDocument(
-            preamble: preamble.isEmpty ? nil : preamble,
-            versions: versions
-        )
-    }
-
-    /// 只按 Keep a Changelog 的二级标题切版本，避免把三级功能小节误判为版本。
-    private static func versionTitle(from line: String) -> String? {
-        guard line.hasPrefix("## ") else { return nil }
-        let rawTitle = String(line.dropFirst(3)).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard rawTitle.isEmpty == false else { return nil }
-
-        if rawTitle.hasPrefix("["),
-           let closingBracket = rawTitle.firstIndex(of: "]") {
-            let version = rawTitle[rawTitle.index(after: rawTitle.startIndex)..<closingBracket]
-            let suffix = rawTitle[rawTitle.index(after: closingBracket)...]
-            return "\(version)\(suffix)".trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return rawTitle
-    }
-
-    private static func appendVersion(
-        title: String?,
-        bodyLines: [String],
-        to versions: inout [ChangelogVersion]
-    ) {
-        guard let title else { return }
-        versions.append(
-            ChangelogVersion(
-                id: title,
-                title: title,
-                bodyMarkdown: normalizedMarkdown(from: bodyLines)
-            )
-        )
-    }
-
-    private static func normalizedMarkdown(from lines: [String]) -> String {
-        lines
-            .joined(separator: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-}
-
-/// 读取随 App 打包的 CHANGELOG。
-///
-/// 这里保持同步读取：文件体积很小，窗口打开时读一次即可；失败时返回短 Markdown
-/// 兜底，避免 Help 菜单能打开窗口但内容区域空白。
-private enum ReleaseNotesLoader {
-    static func loadBundledChangelog(for appLocale: AppLocale) -> String {
-        for resourceName in preferredResourceNames(for: appLocale) {
-            if let markdown = loadMarkdown(resourceName: resourceName) {
-                return markdown
-            }
-        }
-        return fallbackMarkdown
-    }
-
-    /// `LocaleStore` 的 `.system` 代表跟随系统，因此要按系统语言列表决定中文/英文文件。
-    /// 中文文件缺失时总是回退英文，避免中文 bundle 资源漏拷导致发布说明空白。
-    private static func preferredResourceNames(for appLocale: AppLocale) -> [String] {
-        switch appLocale {
-        case .simplifiedChinese:
-            return ["CHANGELOG-ZH", "CHANGELOG"]
-        case .english:
-            return ["CHANGELOG"]
-        case .system:
-            if systemPrefersChinese {
-                return ["CHANGELOG-ZH", "CHANGELOG"]
-            }
-            return ["CHANGELOG"]
-        }
-    }
-
-    private static var systemPrefersChinese: Bool {
-        let identifier = Bundle.main.preferredLocalizations.first
-            ?? Locale.preferredLanguages.first
-            ?? Locale.current.identifier
-        return Locale.Language(identifier: identifier).languageCode?.identifier == "zh"
-    }
-
-    private static func loadMarkdown(resourceName: String) -> String? {
-        guard let url = Bundle.main.url(forResource: resourceName, withExtension: "md"),
-              let markdown = try? String(contentsOf: url, encoding: .utf8),
-              markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-        else {
-            return nil
-        }
-        return markdown
-    }
-
-    private static let fallbackMarkdown = """
-    # Release Notes
-
-    The bundled changelog is temporarily unavailable.
-    """
-}
-
 // MARK: - DEBUG-only 菜单
 
 #if DEBUG
@@ -858,67 +557,144 @@ private enum ReleaseNotesLoader {
 /// 2026-06-16 dong4j 删除了「语言切换」子菜单（语言切换正式入口已在「设置 →
 /// 通用 → 语言」落地）。该菜单本身保留作为后续调试入口的容器；菜单标题故意
 /// 使用非产品化文案，避免 DEBUG-only 能力看起来像正式用户功能。
-	struct DebugMenuCommands: Commands {
-        @AppStorage(DebugFlags.debugProOverrideKey) private var debugProOverride = false
-        @AppStorage(DebugFlags.gettingStartedGuideKey) private var gettingStartedGuide = false
-        @AppStorage(DebugFlags.agentToolbarEntryKey) private var agentToolbarEntry = false
-        @AppStorage(DebugFlags.knowledgeRAGToolbarEntryKey) private var knowledgeRAGToolbarEntry = false
+/// DEBUG 菜单使用的当前窗口外框调整器。
+///
+/// 只写 `NSWindow.frame`，不触碰 `NavigationSplitView` 的 Sidebar、中栏宽度或
+/// 分隔位置；窗口原有最小尺寸仍然生效，避免截图工具把三栏布局压坏。
+@MainActor
+private enum DebugWindowResizer {
+    /// Retina @2x 下输出 Apple 接受的 2880×1800 截图。
+    static let appleScreenshotWindowSize = NSSize(width: 1440, height: 900)
 
-		var body: some Commands {
-				CommandMenu("Who's Your Daddy") {
-					Button("Replay First-Run Onboarding") {
-						FirstRunOnboardingPreferences.requestManualReplay()
-					}
-                    .disabled(!FirstRunOnboardingPreferences.canReplayManually)
+    /// Screen Studio 使用 16:9 工作窗口，并在导出阶段输出 1920×1080 视频。
+    static let appleVideoWindowSize = NSSize(width: 1920, height: 1080)
 
-                    Toggle(
-                        "Enable Getting Started Guide",
-                        isOn: Binding(
-                            get: { gettingStartedGuide },
-                            set: { newValue in
-                                gettingStartedGuide = newValue
-                                DebugFlags.setGettingStartedGuide(newValue)
-                            }
-                        )
+    static func resizeFrontmostWindow(to size: NSSize) {
+        guard let window = frontmostResizableWindow(),
+              canApply(size, to: window)
+        else {
+            return
+        }
+
+        let currentFrame = window.frame
+        let visibleFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
+        var targetOrigin = NSPoint(
+            x: currentFrame.minX,
+            y: currentFrame.maxY - size.height
+        )
+
+        if let visibleFrame {
+            // 保持左上角位置；扩大后越界时只把窗口移回当前显示器可用区域。
+            targetOrigin.x = min(
+                max(targetOrigin.x, visibleFrame.minX),
+                visibleFrame.maxX - size.width
+            )
+            targetOrigin.y = min(
+                max(targetOrigin.y, visibleFrame.minY),
+                visibleFrame.maxY - size.height
+            )
+        }
+
+        window.setFrame(
+            NSRect(origin: targetOrigin, size: size),
+            display: true,
+            animate: false
+        )
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    /// 顶部菜单展开时 key window 仍是用户正在操作的窗口，因此优先使用它；
+    /// mainWindow 与 orderedWindows 只负责窗口焦点异常时兜底。
+    private static func frontmostResizableWindow() -> NSWindow? {
+        if let keyWindow = NSApp.keyWindow, isEligible(keyWindow) {
+            return keyWindow
+        }
+        if let mainWindow = NSApp.mainWindow, isEligible(mainWindow) {
+            return mainWindow
+        }
+        return NSApp.orderedWindows.first(where: isEligible)
+    }
+
+    private static func isEligible(_ window: NSWindow) -> Bool {
+        window.isVisible
+            && window.sheetParent == nil
+            && window.styleMask.contains(.resizable)
+    }
+
+    private static func canApply(_ size: NSSize, to window: NSWindow) -> Bool {
+        let contentMinimumFrameSize = window.frameRect(
+            forContentRect: NSRect(origin: .zero, size: window.contentMinSize)
+        ).size
+        let minimumFrameSize = NSSize(
+            width: max(window.minSize.width, contentMinimumFrameSize.width),
+            height: max(window.minSize.height, contentMinimumFrameSize.height)
+        )
+        guard size.width >= minimumFrameSize.width,
+              size.height >= minimumFrameSize.height
+        else {
+            return false
+        }
+
+        guard let visibleFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame else {
+            return true
+        }
+        return size.width <= visibleFrame.width && size.height <= visibleFrame.height
+    }
+}
+
+struct DebugMenuCommands: Commands {
+    @AppStorage(DebugFlags.debugProOverrideKey) private var debugProOverride = false
+    @AppStorage(DebugFlags.agentToolbarEntryKey) private var agentToolbarEntry = false
+
+    var body: some Commands {
+        CommandMenu("Who's Your Daddy") {
+            Button("Replay First-Run Onboarding") {
+                FirstRunOnboardingPreferences.requestManualReplay()
+            }
+            .disabled(!FirstRunOnboardingPreferences.canReplayManually)
+
+            Toggle(
+                "Activate Pro",
+                isOn: Binding(
+                    get: { debugProOverride },
+                    set: { newValue in
+                        debugProOverride = newValue
+                        DebugFlags.setDebugProOverride(newValue)
+                    }
+                )
+            )
+
+            Divider()
+
+            Toggle(
+                "Show Agent Toolbar Entry",
+                isOn: Binding(
+                    get: { agentToolbarEntry },
+                    set: { newValue in
+                        agentToolbarEntry = newValue
+                        DebugFlags.setAgentToolbarEntry(newValue)
+                    }
+                )
+            )
+
+            Divider()
+
+            Menu("Window Size") {
+                Button("Screenshot · 2880 × 1800 px · Apple 16:10") {
+                    DebugWindowResizer.resizeFrontmostWindow(
+                        to: DebugWindowResizer.appleScreenshotWindowSize
                     )
+                }
 
-	                Divider()
+                Divider()
 
-                    Toggle(
-                        "Activate Pro",
-                        isOn: Binding(
-                            get: { debugProOverride },
-                            set: { newValue in
-                                debugProOverride = newValue
-                                DebugFlags.setDebugProOverride(newValue)
-                            }
-                        )
-                    )
-
-				Divider()
-
-                    Toggle(
-                        "Show Agent Toolbar Entry",
-                        isOn: Binding(
-                            get: { agentToolbarEntry },
-                            set: { newValue in
-                                agentToolbarEntry = newValue
-                                DebugFlags.setAgentToolbarEntry(newValue)
-                            }
-                        )
-                    )
-
-                    Toggle(
-                        "Show RAG Toolbar Entry",
-                        isOn: Binding(
-                            get: { knowledgeRAGToolbarEntry },
-                            set: { newValue in
-                                knowledgeRAGToolbarEntry = newValue
-                                DebugFlags.setKnowledgeRAGToolbarEntry(newValue)
-                            }
-                        )
+                Button("Video · 1920 × 1080 px · Apple 16:9") {
+                    DebugWindowResizer.resizeFrontmostWindow(
+                        to: DebugWindowResizer.appleVideoWindowSize
                     )
                 }
             }
         }
+    }
+}
 #endif

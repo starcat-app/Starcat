@@ -97,12 +97,22 @@ final class CodebaseMemoryRunner {
             throw CodebaseMemoryError.portExhausted
         }
 
-        let process = try await startUI(
-            binaryURL: binaryURL,
-            port: port,
-            cacheDir: cacheDir,
-            repositoryFullName: repositoryFullName
-        )
+        let process: Process
+        do {
+            process = try await startUI(
+                binaryURL: binaryURL,
+                port: port,
+                cacheDir: cacheDir,
+                repositoryFullName: repositoryFullName
+            )
+        } catch {
+            Self.recordProcessStartFailure(
+                repositoryFullName: repositoryFullName,
+                port: port,
+                error: error
+            )
+            throw error
+        }
         let pageURL = URL(string: "http://127.0.0.1:\(port)/")!
 
         do {
@@ -120,9 +130,30 @@ final class CodebaseMemoryRunner {
             return CodebaseMemoryUIProcess(process: process, pageURL: pageURL)
         } catch {
             AppLog.ui.error("CodebaseMemory startVerifiedUI failed repo=\(repositoryFullName, privacy: .public) port=\(port, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            Self.recordProcessStartFailure(
+                repositoryFullName: repositoryFullName,
+                port: port,
+                error: error
+            )
             stopUI(process)
             throw error
         }
+    }
+
+    private static func recordProcessStartFailure(
+        repositoryFullName: String,
+        port: Int,
+        error: Error
+    ) {
+        DiagnosticLogStore.record(
+            level: .error,
+            visibility: .issue,
+            category: "codebase-memory",
+            operation: "codebaseMemory.startUI",
+            message: "Bundled CodebaseMemory UI process failed to start",
+            underlying: DiagnosticEvent.summarize(error),
+            context: ["repo": repositoryFullName, "port": String(port)]
+        )
     }
 
     /// 判断指定 repo 独立 cache 里是否已有项目 DB。

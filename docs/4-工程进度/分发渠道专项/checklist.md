@@ -16,7 +16,7 @@
   > 实现：明确 Sparkle 只进入 Direct build，App Store build 完全不包含 Sparkle。
 - [x] 分发渠道详细设计落档 — `docs/3-设计/详细设计/41-分发渠道详细设计.md` — 2026-07-04
   > 实现：定义 target/scheme、Info.plist、entitlements、appcast 和打包脚本设计。
-- [x] 初始 appcast 静态文件落档 — `pages/appcast.xml` — 2026-07-04
+- [x] 初始 appcast 静态文件落档 — `supports/starcat-site/direct/appcast.xml` — 2026-07-04
   > 实现：提供可部署的空 Sparkle feed，避免真实 DMG 签名前发布错误更新。
 
 ---
@@ -70,7 +70,7 @@
 - [x] Direct 产物自检 — `scripts/package-direct.sh` — 2026-07-04
   > 实现：脚本检查 `STARCAT_DISTRIBUTION=direct` 且包含 Sparkle framework。
 - [x] Sparkle appcast 生成流程 — `scripts/package-direct.sh` — 2026-07-04
-  > 实现：`STARCAT_GENERATE_APPCAST=1` 时调用 Sparkle `generate_appcast` 更新 `pages/appcast.xml`。
+  > 实现：`STARCAT_GENERATE_APPCAST=1` 时调用 Sparkle `generate_appcast` 更新 `supports/starcat-site/direct/appcast.xml`。
 - [x] DMG notarization / staple 流程 — `scripts/package-direct.sh` — 2026-07-04
   > 实现：`STARCAT_NOTARIZE=1` 时执行 `notarytool submit --wait`、`stapler staple` 与 `spctl` 校验。
 

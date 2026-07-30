@@ -126,8 +126,8 @@ final class LocalizedBundle: Bundle, @unchecked Sendable {
         guard raw != "system" else {
             return super.localizedString(forKey: key, value: value, table: tableName)
         }
-        // raw 现在是 "en" 或 "zh-Hans"(AppLocale rawValue 严格控制为这两个之一,
-        // LocaleStore 的 init 会做 fallback 到 .system 防御异常值)。
+        // raw 现在是 AppLocale 支持的 BCP-47 identifier；LocaleStore 的 init
+        // 会把历史或异常值安全回退到 .system。
         guard let path = Bundle.main.path(forResource: raw, ofType: "lproj"),
               let bundle = Bundle(path: path) else {
             // .lproj 子目录不存在(理论不会发生,Xcode 编译 xcstrings 必生成),

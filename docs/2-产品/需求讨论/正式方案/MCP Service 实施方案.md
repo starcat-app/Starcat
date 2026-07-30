@@ -1,141 +1,111 @@
 # Starcat MCP Service 实施方案
 
-> 创建：2026-06-20  
-> 状态：v1.1 已实现只读 + 本地写入 P0  
-> 目标：让用户的本机 Agent 通过 MCP 使用 Starcat 已缓存的 GitHub Star 知识库能力。
+> 创建：2026-06-20
+>
+> 更新：2026-07-20
+>
+> 状态：v1.3 实现中（跨平台 Go CLI、逐设备配对、可信网络 TLS）
 
-## 1. 路线选择
+## 1. 路线
 
-采用 **Starcat App 内置 localhost HTTP MCP Service**：
+Starcat App 内置 MCP Service 仍是唯一业务入口。外部 Agent 不再直接配置 Streamable HTTP endpoint 和 Local API Key，而是统一安装跨平台 `starcat` CLI：
 
-- Starcat 监听 `127.0.0.1:{port}/mcp`，默认端口 `8765`。
-- MCP 协议层使用官方 `modelcontextprotocol/swift-sdk`。
-- HTTP 监听层用 `Network.framework` 自实现极薄 loopback adapter，接 SDK 的 `StatelessHTTPServerTransport`。
-- v1 不做独立 CLI 直读 SQLite；后续如某些 Agent 只支持 stdio，再加 `starcat-mcp` stdio proxy 转发到 App 内 HTTP service。
+- Agent MCP 配置：`command=<starcat 绝对路径>`、`args=["mcp"]`、`transport=stdio`。
+- CLI 内部桥接到 Starcat MCP Streamable HTTP。
+- 同机默认走 loopback HTTP；远程设备走 pinned HTTPS。
+- Skill 只调用 CLI，不直接实现 HTTP/MCP client。
 
-拒绝 v1 直接让外部进程读数据库，原因：
+## 2. 请求门控
 
-- 会绕过 App 内 `EntitlementGate`、用户设置、后续 audit 与确认机制。
-- SQLite 多账号目录、App 生命周期、订阅状态都由 AppDependencies 管理，外部进程重复装配风险高。
-- Starcat 尚未上线，无需为旧外部协议做兼容路径。
+- MCP Service 仍为 Pro-only。
+- 每个 MCP 请求重新检查服务开关、Pro、Bearer credential 和细分隐私/写权限。
+- Bearer credential 可以是既有 Local API Key，或用户确认后签发的逐设备 token。
+- 私有笔记读取、本地写入、批量写入、替换/删除式写入默认关闭并分层授权。
+- 写入统一支持 `dry_run` 和 JSONL 审计。
 
-## 2. Pro 门控
+## 3. 配对与凭据
 
-MCP Service 是 Pro-only：
+- 设置页生成五分钟、一次性 pairing URI，不复制长期 token。
+- CLI 兑换邀请时，Starcat 显示设备名、平台、架构和 CLI 版本确认 sheet。
+- 每台设备获得独立 token，保存到其操作系统安全存储。
+- Starcat 设置页列出已配对设备并支持单独撤销。
+- `/pairing/exchange` 只负责 invitation 兑换，不提供仓库业务能力。
 
-- 新增 `ProFeature.mcpService`。
-- 设置页开关只保存用户意图，真实启动必须满足 `EntitlementGate.isProUser == true`。
-- 每个 HTTP 请求都会重新检查：开关、Pro、Bearer token。
-- 订阅失效后，即使旧 endpoint/token 仍在，也会返回 403。
+## 4. 网络安全
 
-## 3. 安全边界
+- 默认只监听 `127.0.0.1`。
+- 可信网络开关默认关闭；开启后强制 TLS 1.3 并绑定网络接口。
+- 每台 Mac 生成独立 P-256 TLS identity；CLI pin certificate SHA-256。
+- 明文 HTTP 永远只允许 loopback。
+- 第一阶段只支持可信 LAN 或 Tailscale/WireGuard，不提供公网 relay。
 
-- 只监听 `127.0.0.1`，不开放 LAN host 配置。
-- 需要 `Authorization: Bearer <token>`。
-- token 存在 Starcat 的加密凭据文件，设置页可 rotate。
-- 私有笔记默认不暴露，用户必须在 Settings → MCP 显式开启读取。
-- 写入能力默认关闭，用户必须显式开启 `允许本地写入`。
-- 替换式写入默认关闭，用户必须额外开启 `允许替换/删除式写入`。
-- 不暴露 GitHub token、AI API key、Keychain/凭据文件内容。
+## 5. MCP 工具
 
-## 4. P0 暴露能力
+### 读取与生成
 
-### Tools
+- `starcat.get_capabilities`
+- `starcat.search_repos`
+- `starcat.semantic_search`
+- `starcat.get_repo`
+- `starcat.get_repo_context`
+- `starcat.get_repo_summary`
+- `starcat.generate_repo_summary`
+- `starcat.get_readme`
+- `starcat.list_tags`
+- `starcat.get_repo_note`
 
-- `starcat.search_repos`：本地 FTS/关键词搜索 starred repos。
-- `starcat.semantic_search`：使用 Starcat 语义索引搜索 starred repos。
-- `starcat.get_repo`：按 `repo_id` 或 `owner + name` 获取 repo metadata。
-- `starcat.get_readme`：读取已缓存 README HTML / markdown。
-- `starcat.list_tags`：列出 Starcat 标签。
-- `starcat.get_repo_note`：读取私有笔记和状态，仅在用户显式授权后可用。
-
-### Resources
-
-- `starcat://tags`
-- `starcat://repos/{owner}/{repo}`
-- `starcat://repos/{owner}/{repo}/readme`
-
-## 5. 暂不做
-
-- AI 摘要生成 / AI 标签推荐的 MCP 触发。
-- Stateful HTTP/SSE。
-- 远程网络访问。
-- App Store Server API 订阅校验。
-- GitHub 远端写入（star / unstar）。
-- 真正的批量整理工具（当前已预留批量写入开关，但 P0 tools 仍按单 repo 执行）。
-
-## 6. v1.1 本地写入 P0
-
-### 写入权限
-
-Settings → MCP 新增三层写入开关：
-
-- `允许本地写入`：放行 notes / status / tags 这类本地用户数据写入。
-- `允许批量写入`：为后续批量工具预留；P0 暂未开放真正 batch tool。
-- `允许替换/删除式写入`：放行 `set_repo_tags` 这类会替换旧关联的工具，默认关闭。
-
-私有笔记的读取和写入分开授权：
-
-- `暴露私有笔记` 控制 `starcat.get_repo_note` 读取旧笔记。
-- `允许本地写入` 控制 `starcat.upsert_repo_note` 写入新笔记。
-- 因此外部 Agent 可以“写新整理结果”，但不能因为能写就自动读取用户旧笔记。
-
-### 写入工具
+### 本地写入
 
 - `starcat.upsert_repo_note`
-  - 入参：`repo_id` 或 `owner + name`，`content`，`dry_run`。
-  - 行为：复用 `RepoNoteRepository.updateContent`；空字符串清空 note body，但保留状态行。
-  - 副作用：写入成功后触发单 repo 语义索引刷新。
-
 - `starcat.set_repo_status`
-  - 入参：`repo_id` 或 `owner + name`，`status = unread/read/using`，`dry_run`。
-  - 行为：复用 `RepoNoteRepository.updateStatus`。
-  - 副作用：发送 `.repoStatusDidChange`，让列表状态角标即时刷新；同时触发语义索引刷新。
-
 - `starcat.create_tag`
-  - 入参：`name`，可选 `color` / `icon`，`dry_run`。
-  - 行为：复用注入后的 `GatedTagRepository`，因此不会绕过免费版标签数量限制。
-  - 幂等：同名 tag 已存在时返回现有 tag，`changed = false`。
-
 - `starcat.add_repo_tags`
-  - 入参：`repo_id` 或 `owner + name`，`tags: [String]`，`create_missing`，`dry_run`。
-  - 行为：默认自动创建缺失 tag，再用 `RepoTagRepository.addTag` 幂等关联 repo。
-  - 副作用：触发单 repo 语义索引刷新。
-
 - `starcat.remove_repo_tags`
-  - 入参：`repo_id` 或 `owner + name`，`tags: [String]`，`dry_run`。
-  - 行为：只移除已存在 tag；不存在的 tag name 被忽略。
-  - 副作用：触发单 repo 语义索引刷新。
-
 - `starcat.set_repo_tags`
-  - 入参：`repo_id` 或 `owner + name`，`tags: [String]`，`create_missing`，`dry_run`。
-  - 行为：替换该 repo 的完整标签集合，复用 `RepoTagRepository.setTags`。
-  - 权限：必须同时开启 `允许本地写入` 与 `允许替换/删除式写入`。
-  - 约束：这是 P0 唯一“替换式”工具，不默认开放。
 
-### 审计
+工具实现继续复用 `StarcatMCPFacade`、`StarcatMCPWriteFacade` 和 `StarcatMCPToolRegistry`，CLI 不复制业务逻辑。
 
-写入统一走 `StarcatMCPWriteFacade.perform(...)`：
+## 6. 设置页
 
-- 每次成功 / 失败都会写入 JSONL 审计日志。
-- 路径：`Application Support/com.starcat.app/mcp-audit/writes.jsonl`。
-- 字段包括：tool、permission、dryRun、success、repoId、repoFullName、affectedTags、warnings、error、timestamp。
-- P0 不做 UI 展示；后续 Settings 可读取这个 JSONL 或迁到 SQLite。
+「设置 → MCP 服务」提供：
 
-### 实现文件
+- 服务开关、端口、可信网络、私有笔记与三层写权限。
+- 复制 CLI 安装说明。
+- 复制一次性配对命令。
+- 复制 MCP stdio 配置说明。
+- 复制公开 `starcat-skill` 安装请求。
+- 已配对设备列表与撤销操作。
 
-- `Starcat/Features/MCP/StarcatMCPWriteFacade.swift`
-- `Starcat/Features/MCP/StarcatMCPWriteModels.swift`
-- `Starcat/Features/MCP/StarcatMCPAuditLog.swift`
-- `Starcat/Features/MCP/StarcatMCPToolRegistry.swift`
-- `Starcat/Features/MCP/MCPSettingsView.swift`
-- `Starcat/Core/Settings/AppSettings.swift`
-- `StarcatTests/StarcatMCPWriteFacadeTests.swift`
+复制入口统一使用 `CopyFeedbackButton`。公开安装说明不包含 endpoint、Local API Key 或长期 token。
 
-### 验证
+## 7. 外部项目
 
-- `xcodegen generate`
-- `xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' build`
-- `xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' -only-testing:StarcatTests/StarcatMCPWriteFacadeTests test`
-- `python3 -m json.tool Starcat/Resources/Localizable.xcstrings`
-- i18n 禁用 API 扫描：新增范围无 `String(localized:)` / `NSLocalizedString` 代码命中。
+- `https://github.com/starcat-app/starcat-cli`：Go CLI，开发路径 `supports/starcat-cli`。
+- `https://github.com/starcat-app/starcat-skill`：Agent 工作流，开发路径 `supports/starcat-skill`。
+
+两者都是独立 Git 仓库，由父仓库 `supports/*` ignore，不纳入 Starcat 主项目构建与提交。
+
+## 8. 验证
+
+```bash
+cd supports/starcat-cli
+go test ./...
+go vet ./...
+go build ./cmd/starcat
+
+cd ../..
+xcodegen generate
+xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' \
+  -only-testing:StarcatTests/StarcatMCPRuntimeTests \
+  -only-testing:StarcatTests/MCPAgentSetupPromptTests \
+  -only-testing:StarcatTests/StarcatMCPPairingTests test
+```
+
+同时校验 `Localizable.xcstrings` JSON、禁用 i18n API 扫描、Skill `quick_validate.py` 和 `git diff --check`。
+
+## 9. 暂不做
+
+- 公网 relay 与云端转发。
+- GitHub 远端 star/unstar。
+- Stateful SSE/server push。
+- 独立数据库 CLI、共享数据库路径或第二套 REST 业务 API。

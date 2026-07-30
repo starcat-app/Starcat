@@ -64,7 +64,7 @@ Weekly 继续由 `starcat-weekly-api` 聚合。首期固定来源为 `weekly / z
 
 `.claude/skills/starcat-weekly-import` 只负责文本解析、搜索核验、用户确认和整批提交。脚本默认 dry-run，只有显式 `--confirm` 才提交，不记录 admin key。
 
-`pages/_local-admin` 的 Weekly 卡片展示来源数、队列、最近成功/失败、活动回填进度，并提供 HelloGitHub 同步与有序多项目置顶。页面刷新时优先从 `active_backfill` 恢复未完成历史回填；没有活动回填时才读取 `latest_batch` 展示最近采集动作，不依赖旧页面内存。
+`supports/starcat-site/_local-admin` 的 Weekly 卡片展示来源数、队列、最近成功/失败、活动回填进度，并提供 HelloGitHub 同步与有序多项目置顶。页面刷新时优先从 `active_backfill` 恢复未完成历史回填；没有活动回填时才读取 `latest_batch` 展示最近采集动作，不依赖旧页面内存。
 
 ## 7. 验证基线
 

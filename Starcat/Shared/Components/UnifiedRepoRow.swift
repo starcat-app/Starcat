@@ -108,6 +108,10 @@ struct UnifiedRepoRow: View {
     /// 是否选中（驱动 RepoRowSurface 视觉变化）。
     let isSelected: Bool
 
+    /// 是否在卡片左上角显示 Pin 状态。只有 Manage 场景注入，避免把本地整理状态
+    /// 扩散到 Trending / Weekly / Activity 等共享卡片场景。
+    let isPinned: Bool
+
     /// 语义搜索命中（仅 Manage 场景非 nil；其它场景一律 nil）。
     /// chip 行右侧紧跟 SemanticScoreBadge 显示相似度分数。
     let semanticHit: SemanticSearchHit?
@@ -131,6 +135,10 @@ struct UnifiedRepoRow: View {
     /// 因此会关闭该标记；主窗口等原有场景继续使用默认值。
     let showReadStatusBadge: Bool
 
+    /// 当前仓库是否至少存在一份 AI 摘要。
+    /// 默认关闭，只有星标管理列表显式注入，避免 Trending / Weekly 等共享行误显示本地状态。
+    let hasAISummary: Bool
+
     /// 右侧 overlay 图标需要的内容安全边界。默认 0，只有 Search Center「全部」
     /// Tab 的来源图标会传入，避免长描述延伸到右侧 overlay 下方。
     let trailingReservedWidth: CGFloat
@@ -139,18 +147,22 @@ struct UnifiedRepoRow: View {
     init(
         card: RepoCardViewData,
         isSelected: Bool = false,
+        isPinned: Bool = false,
         semanticHit: SemanticSearchHit? = nil,
         showStarredCheckmark: Bool = false,
         showLibraryBadge: Bool = true,
         showReadStatusBadge: Bool = true,
+        hasAISummary: Bool = false,
         trailingReservedWidth: CGFloat = 0
     ) {
         self.card = card
         self.isSelected = isSelected
+        self.isPinned = isPinned
         self.semanticHit = semanticHit
         self.showStarredCheckmark = showStarredCheckmark
         self.showLibraryBadge = showLibraryBadge
         self.showReadStatusBadge = showReadStatusBadge
+        self.hasAISummary = hasAISummary
         self.trailingReservedWidth = trailingReservedWidth
     }
 
@@ -255,6 +267,18 @@ struct UnifiedRepoRow: View {
                 Spacer(minLength: 0)
             }
         }
+        .overlay(alignment: .topLeading) {
+            if isPinned {
+                // Pin 属于整张卡片的排序状态，必须贴卡片左上角；不能复用头像角标，
+                // 否则会和头像左上角的“已加入知识库”心形混淆。
+                Image(systemName: "pin.fill")
+                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(8)
+                    .accessibilityLabel(Text("repo.card.pinned"))
+                    .help("repo.card.pinned")
+            }
+        }
     }
 
     // MARK: - 派生属性
@@ -274,13 +298,14 @@ struct UnifiedRepoRow: View {
         ZStack(alignment: .bottomTrailing) {
             RemoteAvatar(urlString: RepoAvatarURL.from(owner: card.owner), size: 40)
             if case .activityKind(let category) = card.badge {
+                // 角标只在「全部分类」有辨识价值；尺寸刻意压到头像 ~1/4，避免抢 owner 头像。
                 Image(systemName: category.systemImage)
-                    .font(interfaceScale.font(.captionSmall, weight: .bold))
+                    .font(interfaceScale.font(size: 8, weight: .semibold))
                     .foregroundStyle(.white)
-                    .padding(3)
+                    .padding(2)
                     .background(Circle().fill(category.iconColor))
-                    .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1.5))
-                    .offset(x: 2, y: 2)
+                    .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1))
+                    .offset(x: 1, y: 1)
             }
         }
         .overlay(alignment: .topLeading) {
@@ -311,6 +336,18 @@ struct UnifiedRepoRow: View {
             if includeForks {
                 MetaBadge(systemImage: "tuningfork", text: card.forksCount.formattedShort, tint: .secondary)
             }
+            if hasAISummary {
+                // 与 RAG 仓库选择器复用同一 `sparkles` 语义；只显示图标，完整含义通过
+                // tooltip 与 accessibility label 提供，避免在窄栏挤占 metadata 行。
+                MetaBadge(
+                    systemImage: "sparkles",
+                    text: "",
+                    tint: .accentColor,
+                    iconOnly: true,
+                    accessibilityLabel: "repo.card.aiSummaryAvailable"
+                )
+                .help("repo.card.aiSummaryAvailable")
+            }
             if let metadata = card.footerMetadata {
                 RepoCardInlineMetadataBadge(metadata: metadata, iconOnly: footerIconOnly)
             }
@@ -335,11 +372,14 @@ struct UnifiedRepoRow: View {
     private var sceneBadgeChip: some View {
         switch card.badge {
         case .trendingChange(let change):
+            // 与同行 Language / Stars / Forks 统一：captionSmall + 常规字重。
+            // 旧实现用 .code(12pt) + semibold，视觉上明显偏大偏粗。
             HStack(spacing: 3) {
                 Image(systemName: change >= 0 ? "arrow.up.right" : "arrow.down.right")
-                    .font(interfaceScale.font(.captionSmall, weight: .bold))
+                    .font(interfaceScale.font(.captionSmall))
                 Text("\(change >= 0 ? "+" : "")\(change.formattedShort)")
-                    .font(interfaceScale.font(.code, weight: .semibold))
+                    .font(interfaceScale.font(.captionSmall))
+                    .monospacedDigit()
             }
             .foregroundStyle(change >= 0 ? Color.green : Color.red)
             .padding(.horizontal, 6)
@@ -438,10 +478,13 @@ private struct RepoCardInlineMetadataBadge: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: metadata.systemImage)
-                .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                .font(interfaceScale.font(.captionSmall, weight: .medium))
             if !iconOnly {
+                // 与同行 Language / Stars / Forks 统一：captionSmall + 常规字重。
+                // 旧实现用 .code + semibold，分片「5/5」会明显偏大偏粗（同 trendingChange 旧坑）。
                 Text(verbatim: metadata.text)
-                    .font(interfaceScale.font(.code, weight: .semibold))
+                    .font(interfaceScale.font(.captionSmall))
+                    .monospacedDigit()
                     .lineLimit(1)
                     .truncationMode(.tail)
             }

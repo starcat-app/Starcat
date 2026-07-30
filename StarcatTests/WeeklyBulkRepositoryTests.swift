@@ -457,9 +457,9 @@ struct WeeklyBulkRepositoryTests {
     // MARK: - WeeklyContentViewModel TTL 边界
 
     @MainActor
-    @Test("WeeklyContentViewModel.bulkTTL: 12 小时")
+    @Test("WeeklyContentViewModel.bulkTTL: 6 小时")
     func bulkTTLValue() {
-        #expect(WeeklyContentViewModel.bulkTTL == 12 * 60 * 60)
+        #expect(WeeklyContentViewModel.bulkTTL == 6 * 60 * 60)
     }
 
     @MainActor
@@ -492,6 +492,9 @@ struct WeeklyBulkRepositoryTests {
         await viewModel.loadInitialIfNeeded()
         #expect(viewModel.dataSource == .local)
         #expect(viewModel.total == 3)
+        // 主动刷新会把完整 bulk 放进会话内存，后续 source 切换走后台 prepared pipeline。
+        await viewModel.reload()
+        #expect(viewModel.localDerivationCountForTesting == 1)
 
         viewModel.changeSource(to: .zread)
         await allowWeeklyFilterTaskToFinish()
@@ -503,6 +506,13 @@ struct WeeklyBulkRepositoryTests {
         await allowWeeklyFilterTaskToFinish()
         #expect(viewModel.total == 1)
         #expect(viewModel.items.map(\.fullName) == ["owner/hn"])
+
+        let derivationsAfterAB = viewModel.localDerivationCountForTesting
+        viewModel.changeSource(to: .zread)
+        await allowWeeklyFilterTaskToFinish()
+        #expect(viewModel.items.map(\.fullName) == ["owner/zread"])
+        #expect(viewModel.localDerivationCountForTesting == derivationsAfterAB,
+                "source A-B-A 回切必须直接发布 prepared snapshot")
     }
 
     @MainActor

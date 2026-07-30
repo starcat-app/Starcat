@@ -32,6 +32,18 @@ enum CompanionServiceBootstrapper {
             stop()
             return
         }
+
+        // 设置页重复出现、Local API Key 更新等场景不应重绑同一个端口；正在运行或
+        // 启动中的服务继续复用。失败态再次 apply 时才重新尝试用户指定的原端口。
+        if server != nil {
+            switch configuration.serverStatus {
+            case .running, .starting:
+                return
+            case .stopped, .failed:
+                server?.stop()
+                server = nil
+            }
+        }
         let provider = CompanionContextProvider(
             repoRepository: dependencies.repoRepository,
             noteRepository: dependencies.repoNoteRepository,
@@ -97,6 +109,12 @@ enum CompanionServiceBootstrapper {
         server?.stop()
         server = nextServer
         nextServer.start()
+    }
+
+    /// 用户保存了新端口时显式重启。新服务仍只尝试配置中的单一端口。
+    static func restart(configuration: CompanionConfiguration) {
+        stop()
+        apply(configuration: configuration)
     }
 
     static func stop() {

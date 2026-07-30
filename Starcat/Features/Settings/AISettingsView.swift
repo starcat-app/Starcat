@@ -64,6 +64,10 @@ struct AISettingsTab: View {
     @State private var isTestingProfileID: String?
     @State private var keyError: String?
     @State private var promptTask: AIModelTask = .summary
+    /// 翻译 Prompt 的二级 Tab。只切换 Prompt，不复制 Provider / Model / 参数配置。
+    @State private var translationPromptMode: ReadmeTranslationMode = .segmented
+    /// Prompt 区「可用占位符」popover；切换任务时关闭，避免旧任务说明残留。
+    @State private var isPromptPlaceholderPopoverPresented = false
 
     /// HOM-AIPROVIDERS-DELETE-CONFIRM-2026-06-12 (dong4j 反馈)：
     /// 删除服务商需要二次确认。删除会同步删 profile + Keychain key + 修复
@@ -96,6 +100,7 @@ struct AISettingsTab: View {
     // 选模型"完整路径时不需要手动展开折叠组。
     @SceneStorage("settings.ai.discoveredModels.expanded") private var isDiscoveredModelsExpanded: Bool = false
     @SceneStorage("settings.ai.taskModels.expanded") private var isTaskModelsExpanded: Bool = false
+    private static let taskModelsSettingsAnchor = "settings.ai.taskModels"
     /// 「自动整理」分组的展开偏好。默认折叠——与同 Tab 内其他 DisclosureGroup
     /// （已发现模型 / 模型配置 / Prompt / AI 索引 / AI 代码上下文）的默认折叠风格统一，
     /// 避免设置页一进来一堆分组同时展开造成视觉拥挤；用户主动展开后由 SceneStorage 持久化。
@@ -120,6 +125,7 @@ struct AISettingsTab: View {
     /// 默认收起——与 promptSection / aiIndexSection 一致；避免设置页首次打开就被新 section 撑高。
     /// 用户主动点开后偏好持久化（SceneStorage 跨设置窗口打开周期保留）。
     @SceneStorage("settings.ai.repoContext.expanded") private var isRepoContextExpanded: Bool = false
+    private static let repoContextSettingsAnchor = "settings.ai.repoContext"
 
     /// HOM-68 v3 (2026-06-15)：AI 代码上下文产物管理面板从存储 Tab 搬过来。
     /// `@Observable` 单例直接订阅；视图层调 reveal / delete 等方法时由 storage 内部
@@ -146,6 +152,7 @@ struct AISettingsTab: View {
     }
 
     private var aiConfigurationForm: some View {
+        ScrollViewReader { proxy in
         // HOM-68 follow-up v9 (dong4j 反馈 2026-06-05 23:35)：
         // 删除独立的"模型参数"区。原因：参数与"任务"绑定有歧义——同一模型被
         // 摘要 / 标签 / 翻译复用时，按任务调参数会出现"在'模型参数 → 摘要'调
@@ -155,6 +162,7 @@ struct AISettingsTab: View {
             providerSection
             enabledModelsSection
             taskModelsSection
+                .id(Self.taskModelsSettingsAnchor)
             promptSection
             // HOM-126 follow-up (dong4j 反馈 2026-06-07)：
             // 自动整理分类放到 Prompt 之后——按"配置链路从上到下"顺序排：
@@ -168,6 +176,7 @@ struct AISettingsTab: View {
             // 放在 aiIndexSection 与 privacySection 之间——与「索引」性质相同（消费上游配置的
             // 高级 AI 能力），且紧贴 privacySection 形成「先看功能再看隐私」的阅读节奏。
             aiRepoContextSection
+                .id(Self.repoContextSettingsAnchor)
             privacySection
         }
         .alert(
@@ -182,10 +191,39 @@ struct AISettingsTab: View {
             Text("settings.aiIndex.rebuildAll.confirmMessage")
         }
         .formStyle(.grouped)
+        // Placeholders popover 锚在 Prompt 区按钮上：Form 一滚就关，避免锚点滚走后浮层悬空。
+        .onScrollPhaseChange { _, newPhase in
+            guard newPhase != .idle else { return }
+            isPromptPlaceholderPopoverPresented = false
+        }
         .task {
             ensureSelection()
             loadAPIKeys()
             loadRAGBackendKeys()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .starcatJumpToAIRepoContextSection)) { _ in
+            isRepoContextExpanded = true
+            // Settings 首次创建时 Form 的滚动容器要到下一轮 RunLoop 才完成布局。
+            DispatchQueue.main.async {
+                proxy.scrollTo(Self.repoContextSettingsAnchor, anchor: .top)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .starcatJumpToAIEmbeddingSection)) { _ in
+            // 入口语义是“配置向量模型”：展开模型配置并直接切换到向量化任务，
+            // 避免用户还要在 AI 设置里二次寻找目标。
+            isTaskModelsExpanded = true
+            taskModelTask = .embedding
+            DispatchQueue.main.async {
+                proxy.scrollTo(Self.taskModelsSettingsAnchor, anchor: .top)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .starcatJumpToAIChatModelSection)) { _ in
+            // 从工作台缺少模型提示进入时，直接展开并选中“对话”，避免用户二次寻找。
+            isTaskModelsExpanded = true
+            taskModelTask = .chat
+            DispatchQueue.main.async {
+                proxy.scrollTo(Self.taskModelsSettingsAnchor, anchor: .top)
+            }
         }
         // HOM-AIPROVIDERS-DRAFT-DISCARD-2026-06-06 (dong4j 反馈):
         // SwiftUI macOS Settings scene 关闭窗口后不一定销毁 view 树,
@@ -248,6 +286,7 @@ struct AISettingsTab: View {
         } message: {
             Text(aiContextActionError ?? "")
         }
+        }
     }
 
     private var lockedAISettings: some View {
@@ -301,7 +340,7 @@ struct AISettingsTab: View {
     /// set 时支持外部把它置 false（点 macOS 系统返回 / 点空白处关 dialog），
     /// 同步清掉 `pendingDeleteProfileID` 避免下次再弹时残留旧目标。
     private var deleteConfirmationBinding: Binding<Bool> {
-        Binding(
+        return Binding(
             get: { pendingDeleteProfileID != nil },
             set: { isPresented in
                 if !isPresented {
@@ -510,13 +549,15 @@ struct AISettingsTab: View {
         // 上下内边距与「模型配置」/「Prompt」一致——折叠组展开后视觉对齐。
         Section {
             DisclosureGroup(isExpanded: $isDiscoveredModelsExpanded) {
-                VStack(spacing: 14) {
+                // 折叠标题与列表之间留一点间距；列表内部已有行分隔。
+                Group {
                     if let profile = selectedProfile {
                         if profile.models.isEmpty {
                             Text("settings.ai.discoveredModels.empty")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 8)
                         } else {
                             AIModelListView(
                                 profile: profile,
@@ -527,6 +568,7 @@ struct AISettingsTab: View {
                         }
                     }
                 }
+                .padding(.top, 4)
             } label: {
                 disclosureLabel("settings.ai.discoveredModels.title", systemImage: "list.bullet.rectangle", isExpanded: $isDiscoveredModelsExpanded)
             }
@@ -539,24 +581,29 @@ struct AISettingsTab: View {
         // HOM-68 follow-up v7：tab 样式（segmented Picker + 单行 Provider/模型/自定义），
         // 与"模型参数" / "Prompt" 一致；DisclosureGroup 默认折叠。
         // HOM-68 follow-up v8：标题从"默认设置"改成"模型配置"。
-        // HOM-68 follow-up v10 (dong4j 反馈 2026-06-05 23:55)：tab 与下面的
-        // Provider/模型/自定义 行原本只隔默认 VStack 间距（≈ 4pt），视觉黏连。
-        // 用 VStack(spacing: 14) 显式给开 14pt，与 Prompt 区"任务行 → System
-        // Prompt 标签"的呼吸感对齐，让 tab 切换后"现在配的是哪个任务"边界清晰。
+        // 2026-07-18：对齐通用设置页——DisclosureGroup 内容用横线分割 + 统一行距，
+        // 避免「折叠标题 / tab / 配置行」黏成一块。
         Section {
             DisclosureGroup(isExpanded: $isTaskModelsExpanded) {
-                VStack(spacing: 14) {
-                    Picker("settings.ai.task.pickerLabel", selection: $taskModelTask) {
-                        ForEach(AIModelTask.allCases) { task in
-                            Text(task.displayName).tag(task)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
+                // 等宽铺满：系统 segmented 按文案 intrinsic 定宽，中文短/英文长会两套布局；
+                // EqualWidthSegmentedControl 按父宽均分，中英文同一套整行样式。
+                VStack(alignment: .leading, spacing: 0) {
+                    EqualWidthSegmentedControl(
+                        items: Array(AIModelTask.allCases),
+                        selection: $taskModelTask,
+                        title: { LocalizedStringKey($0.displayNameKey) }
+                    )
+                    .accessibilityLabel("settings.ai.task.pickerLabel")
                     .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+
+                    Divider()
 
                     taskModelRow(taskModelTask)
+                        .frame(maxWidth: .infinity)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 4)
             } label: {
                 disclosureLabel("settings.ai.taskModels.title", systemImage: "slider.horizontal.3", isExpanded: $isTaskModelsExpanded)
             }
@@ -564,34 +611,19 @@ struct AISettingsTab: View {
     }
 
     private func taskModelRow(_ task: AIModelTask) -> some View {
-        // HOM-68 follow-up v3：模型下拉只列**当前选中 provider** 的模型，
-        // 消除跨 provider 同名模型同时勾选的 bug；provider 切换由
-        // `taskProviderBinding` setter 自动把 modelID 重置为新 provider 的第一个
-        // 匹配能力的模型。
-        //
-        // HOM-68 follow-up v8：删行首 `Text(task.displayName)`——外层 segmented
-        // tab 已经在显示当前任务名，再写一次是冗余。
-        //
-        // HOM-68 follow-up v13 (dong4j 反馈 2026-06-06 00:43)：
-        // 1. Provider picker 加 `.labelsHidden()` 去掉行首"Provider"文字。该
-        //    标签冗余——外层 tab 已说明这是哪个任务的配置，第一个 picker 是
-        //    Provider 不言自明。保留"模型"label，作为两个 picker 之间的视觉
-        //    分隔标识（用户明确只点名"Provider"要删，模型不动）；
-        // 2. "自定义" 改 `.fixedSize()` 只占 intrinsic 宽度，并放在 HStack 末尾
-        //    （无 trailing Spacer），自然右对齐——为 Provider / 模型 两个下拉
-        //    腾出最大水平空间，避免长 Provider/模型名被截断成"De..." / "deeps..."。
+        // 2026-07-19：自定义模型改为「左 label + 右 Switch」；开启后下一行出加长输入框。
+        // 关闭开关只改 useCustomModel，不清空 customModelName。
         let currentProviderID = taskConfig(task).providerID
+        let useCustom = taskConfig(task).useCustomModel
         let availableModels = enabledModels(
             providerID: currentProviderID,
             capability: task.requiredCapability
         )
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
-                // HOM-AIPROVIDERS-2026-06-06：任务 → provider picker 同样给每一项
-                // 挂上 provider logo，使用户在切换"摘要走哪个服务"、"翻译走哪个服务"
-                // 时不需要靠 displayName 区分（部分 profile 名是用户自定义的，可能与
-                // 实际底层服务商不一致，logo 比文字更可靠）。
-                Picker("Provider", selection: taskProviderBinding(task)) {
+
+        return VStack(alignment: .leading, spacing: 0) {
+            taskModelTrailingRow(label: "settings.ai.task.providerLabel") {
+                // HOM-AIPROVIDERS-2026-06-06：挂 provider logo，自定义 profile 名时仍能辨认服务商。
+                Picker("settings.ai.task.providerLabel", selection: taskProviderBinding(task)) {
                     ForEach(verifiedProfiles) { profile in
                         Label {
                             Text(profile.displayName)
@@ -603,8 +635,11 @@ struct AISettingsTab: View {
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
-                .frame(maxWidth: .infinity)
+            }
 
+            Divider()
+
+            taskModelTrailingRow(label: "settings.ai.task.modelLabel") {
                 Picker("settings.ai.task.modelLabel", selection: taskModelBinding(task)) {
                     if availableModels.isEmpty {
                         Text("settings.ai.task.noAvailableModel")
@@ -616,19 +651,42 @@ struct AISettingsTab: View {
                     }
                 }
                 .pickerStyle(.menu)
-                .frame(maxWidth: .infinity)
-
-                Toggle("settings.ai.task.customToggle", isOn: taskCustomEnabledBinding(task))
-                    .toggleStyle(.checkbox)
-                    .fixedSize()
+                .labelsHidden()
             }
 
-            if taskConfig(task).useCustomModel {
-                TextField("settings.ai.task.customModelPlaceholder", text: taskCustomModelBinding(task))
-                    .textFieldStyle(.roundedBorder)
-                    .disableAutocorrection(true)
+            Divider()
+
+            // 与「标签分类」同款：用 Toggle 自带的左标题 + 右开关，不要再套
+            // labelsHidden + 手写 HStack——后者在 Form 里会把开关撑得异常大、行高留白。
+            Toggle("settings.ai.task.customModelLabel", isOn: taskCustomEnabledBinding(task))
+                .toggleStyle(.switch)
+                .padding(.vertical, 8)
+
+            if useCustom {
+                Divider()
+                taskModelTrailingRow(label: "settings.ai.task.customModelPlaceholder") {
+                    TextField("", text: taskCustomModelBinding(task))
+                        .textFieldStyle(.roundedBorder)
+                        .disableAutocorrection(true)
+                        .frame(maxWidth: .infinity)
+                }
             }
         }
+    }
+
+    /// 设置行：左侧 label、右侧控件（一左一右）。
+    private func taskModelTrailingRow<Content: View>(
+        label: LocalizedStringKey,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Text(label)
+                .foregroundStyle(.primary)
+            Spacer(minLength: 12)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 8)
     }
 
     // MARK: - Parameters (已迁移到 AIModelListView 的齿轮 popover)
@@ -766,62 +824,124 @@ struct AISettingsTab: View {
 
     @ViewBuilder
     private var autoTidyContent: some View {
-        // 总开关
-        //
-        // HOM-126 follow-up v2 (dong4j 反馈 2026-06-07，截图仍显示开关 thumb 被裁)：
-        // v1 用 `LabeledContent { Toggle().labelsHidden() } label: { VStack { title + description } }`，
-        // 两行 VStack label 把 row 撑高、把横向空间吃宽，macOS Form 仍把 trailing Toggle 挤到
-        // Section 右内边距，`.switch` 的 thumb 圆点贴边被裁。dong4j 提示"往下移动一点"——
-        // 真正的修法是：让 toggle 行只承载单行标题（让 toggle 有充足右侧空间），description
-        // 独立作为下一行普通 Text 显示。这样开关就和「触发时机」下面那几个单行 toggle 一样
-        // 自然右对齐、thumb 完整。
-        Toggle("settings.autoTidy.enabled.title", isOn: autoTidyBinding(\.enabled))
-            .toggleStyle(.switch)
-        Text("settings.autoTidy.enabled.description")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.bottom, 4)
+        // 2026-07-18：DisclosureGroup 内不会自动出现 Form 行分隔线，
+        // 改用 VStack(spacing: 0) + Divider + 统一行 padding，对齐通用设置页节奏。
+        VStack(spacing: 0) {
+            // 总开关：标题行与说明分两行，避免 LabeledContent 把 Toggle thumb 挤出裁切。
+            Toggle("settings.autoTidy.enabled.title", isOn: autoTidyBinding(\.enabled))
+                .toggleStyle(.switch)
+                .padding(.vertical, 8)
 
-        // 子项总开关：用 group `.disabled(!enabled)` 一刀切，省去每个 Toggle 单独写
-        Group {
-            triggerGroup
-            rangeGroup
-            actionsGroup
-            statusGroup
+            Text("settings.autoTidy.enabled.description")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 8)
+
+            Group {
+                triggerGroup
+                rangeGroup
+                actionsGroup
+                statusGroup
+            }
+            .disabled(!settings.autoTidySettings.enabled)
+            .opacity(settings.autoTidySettings.enabled ? 1.0 : 0.5)
         }
-        .disabled(!settings.autoTidySettings.enabled)
-        // disabled 后整体淡化，给用户"这一段被锁住"的视觉信号
-        .opacity(settings.autoTidySettings.enabled ? 1.0 : 0.5)
+        .padding(.top, 4)
     }
 
-    /// HOM-126 follow-up (dong4j 反馈 2026-06-07，截图："间距拥挤、不一致")：
-    /// 共用的子分组标题样式 helper，统一垂直 padding（上 14 / 下 4）让 section header
-    /// 与上下 row 之间有一致呼吸感。原本各 group 用 `Divider() + Text` 的写法让 Divider
-    /// 自己占一行，反而让间距更不一致——SwiftUI Form 内 Divider 高度小、Toggle 行高度
-    /// 大，混在一起视觉节奏跳。删 Divider 改用 `Text` + padding，所有分组间距统一。
+    /// 子分组标题：横线上方的次要标签，上下留白与配置行一致。
     private func autoTidySectionHeader(_ key: LocalizedStringKey) -> some View {
         Text(key)
             .font(.caption.weight(.semibold))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 14)
-            .padding(.bottom, 4)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
     }
 
-    /// 触发时机：启动后延迟 / 同步后增量 / 定时 24h。
+    /// 配置行统一竖向 padding，避免 Toggle / LabeledContent / Picker 行高不一致。
+    private func autoTidyRow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .padding(.vertical, 8)
+    }
+
+    /// 标题 + caption 备注：设置页行 Label 标准结构（见 UI-设置页规范）。
+    private func autoTidyLabel(title: LocalizedStringKey, description: LocalizedStringKey) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+            Text(description)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// 带备注的 Toggle，避免每个开关重复拼 VStack。
+    private func autoTidyToggle(
+        title: LocalizedStringKey,
+        description: LocalizedStringKey,
+        isOn: Binding<Bool>
+    ) -> some View {
+        Toggle(isOn: isOn) {
+            autoTidyLabel(title: title, description: description)
+        }
+    }
+
+    /// 触发时机：启动后一次 / 同步后增量 / 定时（可配间隔）。
     @ViewBuilder
     private var triggerGroup: some View {
+        Divider()
         autoTidySectionHeader("settings.autoTidy.triggers.label")
 
-        Toggle("settings.autoTidy.trigger.onLaunch", isOn: autoTidyBinding(\.triggerOnLaunch))
-        Toggle("settings.autoTidy.trigger.onSync", isOn: autoTidyBinding(\.triggerOnSync))
-        Toggle("settings.autoTidy.trigger.scheduled", isOn: autoTidyBinding(\.triggerScheduled))
+        autoTidyRow {
+            autoTidyToggle(
+                title: "settings.autoTidy.trigger.onLaunch",
+                description: "settings.autoTidy.trigger.onLaunch.description",
+                isOn: autoTidyBinding(\.triggerOnLaunch)
+            )
+        }
+        Divider()
+        autoTidyRow {
+            autoTidyToggle(
+                title: "settings.autoTidy.trigger.onSync",
+                description: "settings.autoTidy.trigger.onSync.description",
+                isOn: autoTidyBinding(\.triggerOnSync)
+            )
+        }
+        Divider()
+        autoTidyRow {
+            Toggle("settings.autoTidy.trigger.scheduled", isOn: autoTidyBinding(\.triggerScheduled))
+        }
+        Divider()
+
+        // 间隔仅在「定时执行」打开时有意义；关掉时淡化 + disable，保留上次填写值。
+        autoTidyRow {
+            LabeledContent {
+                TextField(
+                    "",
+                    value: scheduledIntervalHoursBinding,
+                    format: .number.grouping(.never)
+                )
+                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 80)
+                .help("1 - 24")
+            } label: {
+                autoTidyLabel(
+                    title: "settings.autoTidy.trigger.scheduledInterval",
+                    description: "settings.autoTidy.trigger.scheduledInterval.description"
+                )
+            }
+            .disabled(!settings.autoTidySettings.triggerScheduled)
+            .opacity(settings.autoTidySettings.triggerScheduled ? 1.0 : 0.5)
+        }
     }
 
-    /// 处理范围：最多一次处理多少个 + 排序口径。
+    /// 处理范围：批处理数量 + 处理优先级。
     @ViewBuilder
     private var rangeGroup: some View {
+        Divider()
         autoTidySectionHeader("settings.autoTidy.range.label")
 
         // HOM-126 follow-up (dong4j 反馈 2026-06-07)：Stepper → TextField + 数字校验。
@@ -829,45 +949,73 @@ struct AISettingsTab: View {
         // setter 在 `maxPerRunBinding` 内已 clamp 到 5...500，超范围 / 失焦后 binding 把值约束回区间。
         // 用 `IntegerFormatStyle.number.grouping(.never)` 关掉千位分隔符，避免显示 "1,000"。
         // 输入框右对齐 + 80pt 固定宽度，与其他「数字配置项」视觉对齐。
-        LabeledContent {
-            TextField(
-                "",
-                value: maxPerRunBinding,
-                format: .number.grouping(.never)
-            )
-            .textFieldStyle(.roundedBorder)
-            .multilineTextAlignment(.trailing)
-            .frame(width: 80)
-            .help("5 - 500")
-        } label: {
-            Text("settings.autoTidy.range.maxPerRun")
-        }
-
-        Picker("settings.autoTidy.range.sortOrder", selection: autoTidyBinding(\.sortOrder)) {
-            ForEach(AutoTidySortOrder.allCases) { order in
-                Text(order.displayNameKey).tag(order)
+        autoTidyRow {
+            LabeledContent {
+                TextField(
+                    "",
+                    value: maxPerRunBinding,
+                    format: .number.grouping(.never)
+                )
+                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 80)
+                .help("5 - 500")
+            } label: {
+                autoTidyLabel(
+                    title: "settings.autoTidy.range.maxPerRun",
+                    description: "settings.autoTidy.range.maxPerRun.description"
+                )
             }
         }
-        .pickerStyle(.menu)
+        Divider()
+        autoTidyRow {
+            Picker(selection: autoTidyBinding(\.sortOrder)) {
+                ForEach(AutoTidySortOrder.allCases) { order in
+                    Text(order.displayNameKey).tag(order)
+                }
+            } label: {
+                autoTidyLabel(
+                    title: "settings.autoTidy.range.sortOrder",
+                    description: "settings.autoTidy.range.sortOrder.description"
+                )
+            }
+            .pickerStyle(.menu)
+        }
     }
 
     /// 执行操作：摘要 / 标签 + 置信度阈值。
     @ViewBuilder
     private var actionsGroup: some View {
+        Divider()
         autoTidySectionHeader("settings.autoTidy.actions.label")
 
-        Toggle("settings.autoTidy.actions.generateTags", isOn: autoTidyBinding(\.generateTags))
-        Toggle("settings.autoTidy.actions.generateSummary", isOn: autoTidyBinding(\.generateSummary))
+        autoTidyRow {
+            autoTidyToggle(
+                title: "settings.autoTidy.actions.generateTags",
+                description: "settings.autoTidy.actions.generateTags.description",
+                isOn: autoTidyBinding(\.generateTags)
+            )
+        }
+        Divider()
+        autoTidyRow {
+            autoTidyToggle(
+                title: "settings.autoTidy.actions.generateSummary",
+                description: "settings.autoTidy.actions.generateSummary.description",
+                isOn: autoTidyBinding(\.generateSummary)
+            )
+        }
+        Divider()
 
         // HOM-126 follow-up (dong4j 反馈 2026-06-07，截图：阈值 label 没有独立开关)：
         // 阈值区两层 disable：
         //   - 外层（整组）：`generateTags = false` → 阈值 Toggle 和滑块全 disable（标签都关了阈值无意义）；
         //   - 内层（仅滑块）：`useConfidenceThreshold = false` → 阈值 Toggle 行还能点开，但滑块 disable，
         //     `makeBatchOptions` 把下游阈值降级为 0（不过滤，所有标签都自动应用）。
-        // 用 `Group { ... }` 收住 Toggle + 滑块两个子视图，让外层 `.disabled(!generateTags)` 能同时作用于两者。
         Group {
-            Toggle("settings.autoTidy.threshold.enabled", isOn: autoTidyBinding(\.useConfidenceThreshold))
-
+            autoTidyRow {
+                Toggle("settings.autoTidy.threshold.enabled", isOn: autoTidyBinding(\.useConfidenceThreshold))
+            }
+            Divider()
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("settings.autoTidy.threshold.label")
@@ -883,6 +1031,7 @@ struct AISettingsTab: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
+            .padding(.vertical, 8)
             .disabled(!settings.autoTidySettings.useConfidenceThreshold)
             .opacity(settings.autoTidySettings.useConfidenceThreshold ? 1.0 : 0.5)
         }
@@ -903,16 +1052,15 @@ struct AISettingsTab: View {
     /// 的视觉一致。
     @ViewBuilder
     private var statusGroup: some View {
-        // 状态分组的 header 走右对齐而不是 left（与下面"上次自动跑/按钮"右对齐保持一致），
-        // 所以不复用 autoTidySectionHeader（那个是 left + bottom padding 4）。
+        Divider()
         HStack {
             Spacer()
             Text("settings.autoTidy.status.label")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
         }
-        .padding(.top, 14)
-        .padding(.bottom, 4)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
 
         // 上次运行时间 + 计数（贴右对齐）
         HStack(spacing: 6) {
@@ -923,6 +1071,9 @@ struct AISettingsTab: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+        .padding(.vertical, 8)
+
+        Divider()
 
         // 手动触发按钮 + 当前是否在跑的轻量提示（按钮贴右对齐）
         HStack(spacing: 8) {
@@ -945,6 +1096,7 @@ struct AISettingsTab: View {
             // 已经在跑就 disable，避免重复触发；调度器内部也有 `batchService.isRunning` 检查兜底
             .disabled(autoTidyScheduler.isAutoTidyRunning || !settings.autoTidySettings.hasAnyAction)
         }
+        .padding(.vertical, 8)
     }
 
     /// 「上次自动跑：X 分钟前 · 应用 12 / 忽略 3 / 失败 1」。
@@ -970,7 +1122,7 @@ struct AISettingsTab: View {
     /// 通用 binding helper：把 `AutoTidySettings` 的某个 keyPath 绑成可写 Binding。
     /// 写入时整段 settings 重新赋值，触发 `AppSettings.autoTidySettings.didSet` 持久化。
     private func autoTidyBinding<T>(_ keyPath: WritableKeyPath<AutoTidySettings, T>) -> Binding<T> {
-        Binding(
+        return Binding(
             get: { self.settings.autoTidySettings[keyPath: keyPath] },
             set: { newValue in
                 var s = self.settings.autoTidySettings
@@ -994,6 +1146,18 @@ struct AISettingsTab: View {
         )
     }
 
+    /// 定期间隔（小时）binding：clamp 到 `AutoTidySettings.scheduledIntervalHoursRange`。
+    private var scheduledIntervalHoursBinding: Binding<Int> {
+        Binding(
+            get: { self.settings.autoTidySettings.scheduledIntervalHours },
+            set: { newValue in
+                var s = self.settings.autoTidySettings
+                s.scheduledIntervalHours = AutoTidySettings.clampScheduledIntervalHours(newValue)
+                self.settings.autoTidySettings = s
+            }
+        )
+    }
+
     // MARK: - Prompt
 
     /// HOM-68 follow-up v3 (dong4j 反馈 2026-06-05 22:40)：
@@ -1006,22 +1170,19 @@ struct AISettingsTab: View {
     ///   TextEditor 在 macOS 上内置垂直滚动，超出高度自动出现滚动条，不再让长
     ///   prompt 撑大整个设置面板。
     private var promptSection: some View {
-        // HOM-126 follow-up (dong4j 反馈 2026-06-07，"Prompt/模型配置/已发现模型 面板间距")：
-        // 用 `VStack(spacing: 14)` 显式给开 14pt（与 `taskModelsSection` 同款），
-        // 避免 Form 默认让 Text(header) → TextEditor → Text(header) → TextEditor 之间
-        // 黏连。System/User Prompt 两组之间 14pt 是正合适的呼吸感（更大会显得空）。
+        // 2026-07-18：与模型配置同款——DisclosureGroup 内用横线分割配置块，
+        // tab 行与 System/User Prompt 之间拉开，贴近通用设置页 Form 行分隔节奏。
         Section {
             DisclosureGroup(isExpanded: $isPromptExpanded) {
-                VStack(spacing: 14) {
+                // 与模型配置同款：等宽铺满剩余宽度；重置按钮固定在右侧。
+                VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 12) {
-                        Picker("settings.ai.prompt.task.pickerLabel", selection: $promptTask) {
-                            ForEach([AIModelTask.summary, .tags, .chat, .embedding, .translation]) { task in
-                                Text(task.displayName).tag(task)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .frame(maxWidth: .infinity)
+                        EqualWidthSegmentedControl(
+                            items: [AIModelTask.summary, .tags, .chat, .embedding, .translation],
+                            selection: $promptTask,
+                            title: { LocalizedStringKey($0.displayNameKey) }
+                        )
+                        .accessibilityLabel("settings.ai.prompt.task.pickerLabel")
 
                         // HOM-126 follow-up (dong4j 反馈 2026-06-07)：「恢复默认」按钮去掉文字只保留 icon
                         // （扫一眼就懂 = 旋转箭头），节省横向空间让左侧 segmented picker 不被挤；语义留在 tooltip。
@@ -1029,6 +1190,26 @@ struct AISettingsTab: View {
                             restoreDefaultPrompt(promptTask)
                         }
                     }
+                    .padding(.vertical, 10)
+
+                    if promptTask == .translation {
+                        Divider()
+
+                        // 翻译任务包含两套独立 Prompt。二级 Tab 必须放在 Prompt 区，
+                        // 紧跟一级任务 Tab，避免误落到“模型配置”后在当前面板不可见。
+                        EqualWidthSegmentedControl(
+                            items: ReadmeTranslationMode.allCases,
+                            selection: $translationPromptMode,
+                            title: { LocalizedStringKey($0.displayNameKey) }
+                        )
+                        .accessibilityLabel("settings.ai.prompt.translation.mode.pickerLabel")
+                        // 二级 Tab 只有两个短选项，限制宽度并居中，避免随面板横向拉伸成两个大色块。
+                        .frame(maxWidth: 320)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 10)
+                    }
+
+                    Divider()
 
                     VStack(alignment: .leading, spacing: 6) {
                         Text("settings.ai.prompt.system")
@@ -1037,11 +1218,21 @@ struct AISettingsTab: View {
                         TextEditor(text: promptSystemBinding(promptTask))
                             .font(.system(.caption, design: .monospaced))
                             .frame(height: 180)
+                            .disabled(!promptTask.supportsSystemPrompt)
+                            .opacity(promptTask.supportsSystemPrompt ? 1.0 : 0.5)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 4)
                                     .stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
                             )
+                        if !promptTask.supportsSystemPrompt {
+                            Text("settings.ai.prompt.system.embeddingUnavailable")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
+                    .padding(.vertical, 10)
+
+                    Divider()
 
                     VStack(alignment: .leading, spacing: 6) {
                         Text("settings.ai.prompt.user")
@@ -1050,20 +1241,67 @@ struct AISettingsTab: View {
                         TextEditor(text: promptUserBinding(promptTask))
                             .font(.system(.caption, design: .monospaced))
                             .frame(height: 80)
+                            .disabled(!promptTask.supportsUserPromptTemplate)
+                            .opacity(promptTask.supportsUserPromptTemplate ? 1.0 : 0.5)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 4)
                                     .stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
                             )
+                        if !promptTask.supportsUserPromptTemplate {
+                            Text("settings.ai.prompt.user.chatUnavailable")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
+                    .padding(.vertical, 10)
 
-                    Text(promptPlaceholderHint)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Divider()
+
+                    // 对齐设置页独立操作按钮右对齐规范：长文案收进 popover，底部只留入口。
+                    HStack {
+                        Spacer(minLength: 0)
+                        promptPlaceholderHelpButton
+                    }
+                    .padding(.vertical, 10)
+                }
+                .padding(.top, 4)
+                .onChange(of: promptTask) { _, _ in
+                    isPromptPlaceholderPopoverPresented = false
+                }
+                .onChange(of: translationPromptMode) { _, _ in
+                    isPromptPlaceholderPopoverPresented = false
                 }
             } label: {
                 disclosureLabel("settings.ai.prompt.title", systemImage: "text.quote", isExpanded: $isPromptExpanded)
             }
+        }
+    }
+
+    /// 底部入口：点开看 token + 含义，避免设置页底部一长段 bullet。
+    private var promptPlaceholderHelpButton: some View {
+        Button {
+            isPromptPlaceholderPopoverPresented.toggle()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "curlybraces")
+                    .font(.system(size: 11, weight: .semibold))
+                Text("settings.ai.prompt.placeholders.open")
+                    .font(.caption.weight(.medium))
+                Image(systemName: "info.circle")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundStyle(.secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help("settings.ai.prompt.placeholders.openHelp")
+        .popover(isPresented: $isPromptPlaceholderPopoverPresented, arrowEdge: .top) {
+            AIPromptPlaceholderPopover(catalog: AIPromptPlaceholderCatalog.catalog(
+                for: promptTask,
+                translationMode: translationPromptMode
+            ))
+                .appLocaleEnvironment()
         }
     }
 
@@ -1081,8 +1319,8 @@ struct AISettingsTab: View {
     ///   ├ 高级（折叠）  ── 主体阈值 Slider + 笔记阈值 Slider   ← HOM-197 Stepper→Slider
     ///   ├ ─────────────────────
     ///   ├ 启动自动预拉 [开关]
-    ///   ├ [开始预拉] [暂停]     进度 234 / 1801（失败 0）
-    ///   └ [⚠ 全量重建]
+    ///   ├ 进度 234 / 1801（失败 0）          [开始预拉 / 暂停]   ← 按钮右对齐
+    ///   └ 强制…会消耗配额。                 [⚠ 全量重建]       ← 文案左、按钮右
     /// ```
     ///
     /// 切换预设时通过 `applyAIIndexPreset(_:)` 把 body / notes 具体数字同步过去，避免
@@ -1090,21 +1328,31 @@ struct AISettingsTab: View {
     private var aiIndexSection: some View {
         Section {
             DisclosureGroup(isExpanded: $isAIIndexExpanded) {
-                VStack(alignment: .leading, spacing: 12) {
+                // HOM-197（2026-06-13 dong4j）：截断长度与过滤阈值同属语义搜索流水线旋钮。
+                // 2026-07-18：DisclosureGroup 内显式 Divider + 统一行距，对齐通用设置页。
+                VStack(alignment: .leading, spacing: 0) {
                     truncateLengthRow
-                    // HOM-197（2026-06-13 dong4j）：紧贴截断长度下方插入「搜索结果过滤
-                    // 阈值」。两者都属于"AI 语义搜索流水线"维度的偏好——截断长度控制
-                    // 喂给 embedding 的文本量，阈值控制召回结果的展示门槛，放在一起
-                    // 让用户一眼读出"输入→输出"两端的旋钮。
+                        .padding(.vertical, 8)
+                    Divider()
                     scoreThresholdRow
+                        .padding(.vertical, 8)
+                    Divider()
                     presetRow
+                        .padding(.vertical, 8)
+                    Divider()
                     advancedDisclosure
+                        .padding(.vertical, 8)
                     Divider()
                     Toggle("settings.aiIndex.autoPrefetch", isOn: autoPrefetchBinding)
+                        .padding(.vertical, 8)
+                    Divider()
                     builderControlsRow
+                        .padding(.vertical, 8)
+                    Divider()
                     rebuildAllRow
+                        .padding(.vertical, 8)
                 }
-                .padding(.vertical, 4)
+                .padding(.top, 4)
             } label: {
                 disclosureLabel("settings.aiIndex.section", systemImage: "brain.head.profile", isExpanded: $isAIIndexExpanded)
             }
@@ -1118,24 +1366,35 @@ struct AISettingsTab: View {
     private var ragBackendSection: some View {
         Section {
             DisclosureGroup(isExpanded: $isRAGBackendsExpanded) {
-                VStack(alignment: .leading, spacing: 14) {
+                // 条件字段出现时也要横线分隔，避免 Meilisearch/Qdrant 展开后糊成一团。
+                VStack(alignment: .leading, spacing: 0) {
                     ragIndexControlRow
+                        .padding(.vertical, 8)
                     Divider()
                     Picker("settings.rag.backends.keyword", selection: ragKeywordBackendBinding) {
                         Text("SQLite FTS5").tag(RAGKeywordBackend.sqliteFTS5)
                         Text("Meilisearch").tag(RAGKeywordBackend.meilisearch)
                     }
                     .pickerStyle(.menu)
+                    .padding(.vertical, 8)
 
                     if settings.ragBackendConfiguration.keywordBackend == .meilisearch {
+                        Divider()
                         ragField("settings.rag.backends.endpoint", text: ragMeilisearchEndpointBinding)
+                            .padding(.vertical, 8)
+                        Divider()
                         ragField("settings.rag.backends.index", text: ragMeilisearchIndexBinding)
+                            .padding(.vertical, 8)
+                        Divider()
                         SecureField("settings.rag.backends.apiKey", text: $meilisearchAPIKey)
                             .textFieldStyle(.roundedBorder)
+                            .padding(.vertical, 8)
+                        Divider()
                         ragBackendActionRow(
                             id: "meilisearch",
                             label: "settings.rag.backends.testAndSave"
                         ) { await testMeilisearch() }
+                        .padding(.vertical, 8)
                     }
 
                     Divider()
@@ -1145,29 +1404,44 @@ struct AISettingsTab: View {
                         Text("Qdrant").tag(RAGVectorBackend.qdrant)
                     }
                     .pickerStyle(.menu)
+                    .padding(.vertical, 8)
 
                     if settings.ragBackendConfiguration.vectorBackend == .qdrant {
+                        Divider()
                         ragField("settings.rag.backends.endpoint", text: ragQdrantEndpointBinding)
+                            .padding(.vertical, 8)
+                        Divider()
                         ragField("settings.rag.backends.collection", text: ragQdrantCollectionBinding)
+                            .padding(.vertical, 8)
+                        Divider()
                         ragField("settings.rag.backends.vectorName", text: ragQdrantVectorNameBinding)
+                            .padding(.vertical, 8)
+                        Divider()
                         SecureField("settings.rag.backends.apiKey", text: $qdrantAPIKey)
                             .textFieldStyle(.roundedBorder)
+                            .padding(.vertical, 8)
+                        Divider()
                         ragBackendActionRow(
                             id: "qdrant",
                             label: "settings.rag.backends.testAndSave"
                         ) { await testQdrant() }
+                        .padding(.vertical, 8)
                     }
 
+                    Divider()
                     Toggle("settings.rag.backends.fallback", isOn: ragFallbackBinding)
+                        .padding(.vertical, 8)
 
                     if let ragBackendStatusMessage {
+                        Divider()
                         Text(ragBackendStatusMessage)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .trailing)
+                            .padding(.vertical, 8)
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.top, 4)
             } label: {
                 disclosureLabel("settings.rag.backends.section", systemImage: "magnifyingglass", isExpanded: $isRAGBackendsExpanded)
             }
@@ -1402,13 +1676,11 @@ struct AISettingsTab: View {
                     .font(.callout)
                 Spacer()
             }
-            Picker("", selection: presetBinding) {
-                ForEach(AIIndexPreset.allCases) { preset in
-                    Text(LocalizedStringKey(preset.displayNameKey)).tag(preset)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            EqualWidthSegmentedControl(
+                items: Array(AIIndexPreset.allCases),
+                selection: presetBinding,
+                title: { LocalizedStringKey($0.displayNameKey) }
+            )
         }
     }
 
@@ -1418,24 +1690,29 @@ struct AISettingsTab: View {
     private var advancedDisclosure: some View {
         let isCustom = settings.aiIndexPreset == .custom
         DisclosureGroup(isExpanded: $isAIIndexAdvancedExpanded) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 0) {
                 ratioRow(
                     titleKey: "settings.aiIndex.bodyThreshold",
                     value: bodyRatioBinding,
                     enabled: isCustom
                 )
+                .padding(.vertical, 8)
+                Divider()
                 ratioRow(
                     titleKey: "settings.aiIndex.notesThreshold",
                     value: notesRatioBinding,
                     enabled: isCustom
                 )
+                .padding(.vertical, 8)
                 if !isCustom {
+                    Divider()
                     Text("settings.aiIndex.advanced.lockedHint")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .padding(.vertical, 8)
                 }
             }
-            .padding(.vertical, 4)
+            .padding(.top, 4)
         } label: {
             disclosureLabel("settings.aiIndex.advanced", systemImage: "slider.horizontal.3", isExpanded: $isAIIndexAdvancedExpanded)
         }
@@ -1471,15 +1748,19 @@ struct AISettingsTab: View {
 
     /// 开始 / 暂停 / 进度行。
     ///
+    /// **布局（设置页按钮右对齐规范）**：进度 /「已是最新」徽章在左，操作按钮在右。
+    ///
     /// **2026-06-13 dong4j 反馈"开始预拉闪烁"改造**：
     /// `.alreadyUpToDate(total)` 与 `.completed` 共用按钮分支（都回到"开始预拉"），
-    /// 右侧进度文字位置换成 `alreadyUpToDateBadge`——palette 模式渲染的白勾 + 深森林绿圆
+    /// 左侧进度文字位置换成 `alreadyUpToDateBadge`——palette 模式渲染的白勾 + 深森林绿圆
     /// + 同色系文字"已是最新（共 N 个仓库）"，参考登录页 `GithubAuthView` 的复制成功
     /// 徽章姿势（保持视觉语言一致，新用户一眼就懂）。
     @ViewBuilder
     private var builderControlsRow: some View {
         let builder = dependencies.semanticIndexBuilder
         HStack(spacing: 10) {
+            builderProgressView
+            Spacer()
             switch builder.status {
             case .idle, .completed, .alreadyUpToDate, .failed:
                 Button(String.l10n("settings.aiIndex.prefetch.start")) {
@@ -1494,12 +1775,10 @@ struct AISettingsTab: View {
                     builder.resume()
                 }
             }
-            Spacer()
-            builderProgressView
         }
     }
 
-    /// 右侧进度信息视图。`.alreadyUpToDate` 渲染为绿色 ✓ palette 徽章 + 友好文案，
+    /// 左侧进度信息视图。`.alreadyUpToDate` 渲染为绿色 ✓ palette 徽章 + 友好文案，
     /// 其它状态保持原"caption 灰色文本"行为。
     @ViewBuilder
     private var builderProgressView: some View {
@@ -1559,17 +1838,20 @@ struct AISettingsTab: View {
     }
 
     /// "全量重建"按钮。点击只弹确认 dialog，实际执行在 body 的 `.confirmationDialog`。
+    ///
+    /// **布局（设置页按钮右对齐规范）**：消耗配额提示在左，destructive 按钮在右。
     private var rebuildAllRow: some View {
-        HStack {
+        HStack(spacing: 10) {
+            Text("settings.aiIndex.rebuildAll.hint")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
             Button(role: .destructive) {
                 pendingRebuildAllConfirm = true
             } label: {
                 Label("settings.aiIndex.rebuildAll.button", systemImage: "exclamationmark.triangle.fill")
             }
-            Spacer()
-            Text("settings.aiIndex.rebuildAll.hint")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -1644,29 +1926,34 @@ struct AISettingsTab: View {
     // 设计要点（沿用 promptSection / autoTidySection / aiIndexSection 同款风格）：
     //   - DisclosureGroup 默认折叠（@SceneStorage 持久化）；
     //   - 总开关 Toggle 控制下面控件的 disabled 状态（用户关掉总开关后调下面没意义）；
-    //   - Slider 走 Int↔Double 适配 binding（SwiftUI Slider 强制 BinaryFloatingPoint，不能直接绑 Int）；
-    //   - Stepper 走自定义 Int binding（AISettingsTab 没用 @Bindable var settings = settings）；
+    //   - Token 与 ZIP 上限 Slider 走 Int↔Double 适配；行数使用数字 TextField，遵守禁止 Stepper 规范；
     //   - **不提供「私有仓库」开关**：当前 OAuth scope 是 `read:user` + `public_repo`，
     //     API 永远不会返回 isPrivate=true 的 repo；增加一个永远走不到的开关只会污染设置页；
-    //   - 「管理已生成的上下文 →」按钮**当前先 print 占位**（Y3 仅 UI 阶段，Y5 触点 E 落地存储 Tab 才接通）。
     //
     // 关键约束：
     //   - 本 section 完全是 UI 层；改字段值只写 AppSettings UserDefaults，不触发任何 AI / 网络 / 磁盘 I/O。
-    //   - 用户改 Slider/Stepper 立即落盘（didSet）；下次生成 AI 摘要才生效（X4 接通 RepoAIInsightService）。
-    //   - X4 / Y5 未完成期间，本 section 是「光配置不生效」状态——用户改完看不到效果，但配置是真持久化的。
+    //   - 用户改 Slider/TextField 后立即落盘（didSet），下次生成 AI 摘要时读取一次配置快照。
 
     private var aiRepoContextSection: some View {
         Section {
             DisclosureGroup(isExpanded: $isRepoContextExpanded) {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 0) {
                     repoContextEnableRow
+                        .padding(.vertical, 8)
                     Divider()
                     repoContextTokenBudgetRow
+                        .padding(.vertical, 8)
+                    Divider()
+                    repoContextMaximumArchiveSizeRow
+                        .padding(.vertical, 8)
+                    Divider()
                     repoContextTier1MaxLinesRow
+                        .padding(.vertical, 8)
                     Divider()
                     repoContextManageStorageRow
+                        .padding(.vertical, 8)
                 }
-                .padding(.vertical, 4)
+                .padding(.top, 4)
             } label: {
                 disclosureLabel("ai.context.settings.title", systemImage: "shippingbox.fill", isExpanded: $isRepoContextExpanded)
             }
@@ -1702,6 +1989,32 @@ struct AISettingsTab: View {
                 step: 2000
             )
             .disabled(!settings.aiRepoContextEnabled)
+        }
+    }
+
+    /// 源码 ZIP 大小上限。沿用 Token 预算的标题 + 数值 + Slider 结构，避免同一设置组
+    /// 出现两套数值配置交互；1...500MB 的值会同时传给下载层与 Packer 解压预检。
+    private var repoContextMaximumArchiveSizeRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("ai.context.settings.maximumArchiveSize")
+                    .font(.callout)
+                Spacer()
+                Text("\(settings.aiRepoContextMaximumArchiveMB) MB")
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            Slider(
+                value: maximumArchiveSizeBinding,
+                in: Double(AppSettings.aiRepoContextMaximumArchiveMBRange.lowerBound)...Double(
+                    AppSettings.aiRepoContextMaximumArchiveMBRange.upperBound
+                ),
+                step: 1
+            )
+            Text("ai.context.settings.maximumArchiveSize.description")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -1760,7 +2073,7 @@ struct AISettingsTab: View {
     /// AI 代码上下文产物管理面板。
     @ViewBuilder
     private var repoContextManageStorageRow: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 5) {
                 Label("ai.context.storage.outputDirectory", systemImage: "doc.text.magnifyingglass")
                     .font(.callout.weight(.medium))
@@ -1768,6 +2081,9 @@ struct AISettingsTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .padding(.vertical, 8)
+
+            Divider()
 
             HStack(spacing: 8) {
                 Text(aiContextStorage.outputDirectoryDisplayPath)
@@ -1802,6 +2118,9 @@ struct AISettingsTab: View {
                 .disabled(!aiContextStorage.hasCustomOutputDirectory)
                 .fixedSize()
             }
+            .padding(.vertical, 8)
+
+            Divider()
 
             HStack(spacing: 18) {
                 aiContextStat(titleKey: "ai.context.storage.statRepos",
@@ -1817,18 +2136,23 @@ struct AISettingsTab: View {
                 }
                 Spacer()
             }
+            .padding(.vertical, 8)
 
             // storage 内部抛错（bookmark 失效 / 目录权限丢失等）反映到 lastErrorMessage,
             // 持续显示直到下次 reload 成功。actionError（按钮触发的失败）走顶部 alert,
             // 两者职责分明：actionError = 短暂弹窗，lastErrorMessage = 持续状态。
             if let message = aiContextStorage.lastErrorMessage {
+                Divider()
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundStyle(.red)
+                    .padding(.vertical, 8)
             } else if aiContextStorage.projectCount == 0 {
+                Divider()
                 Text("ai.context.storage.empty")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .padding(.vertical, 8)
             }
         }
         .disabled(!settings.aiRepoContextEnabled)
@@ -1896,6 +2220,21 @@ struct AISettingsTab: View {
         )
     }
 
+    /// 源码 ZIP 上限 Int↔Double 适配。setter 再做一次范围钳制，防止键盘辅助操作或未来
+    /// 调整 Slider 范围时把底层 Packer 无法接受的值写进 UserDefaults。
+    private var maximumArchiveSizeBinding: Binding<Double> {
+        Binding(
+            get: { Double(self.settings.aiRepoContextMaximumArchiveMB) },
+            set: { newValue in
+                let range = AppSettings.aiRepoContextMaximumArchiveMBRange
+                self.settings.aiRepoContextMaximumArchiveMB = min(
+                    max(Int(newValue.rounded()), range.lowerBound),
+                    range.upperBound
+                )
+            }
+        )
+    }
+
     /// 总开关 Bool binding。AISettingsTab 没用 `@Bindable var settings = settings`（与
     /// SettingsView.generalTab 不同），所以子项 Toggle 不能直接 `$settings.xxx`，必须走
     /// 自定义 binding（与 `autoPrefetchBinding` 同款）。
@@ -1914,41 +2253,6 @@ struct AISettingsTab: View {
             get: { self.settings.aiRepoContextTier1MaxLines },
             set: { self.settings.aiRepoContextTier1MaxLines = min(max($0, 40), 200) }
         )
-    }
-
-    /// 当前任务的占位符提示文案（2026-06-14 v4 占位符全栈归一化方案 C：单段 camelCase）。
-    ///
-    /// 各任务占位符**互不共享**——每个任务有自己独立的占位符命名空间：
-    /// - **summary**：5 个占位符（system 用 `{outputLanguage}`；user 用 `{outputLanguage}` /
-    ///   `{metadata}` / `{readme}` / `{codeContext}` / `{externalContext}`）；详见
-    ///   `AIDefaultPrompts.summary` 的注释。
-    /// - **tags**：6 个占位符（system 用 `{outputLanguage}`；user 用 `{metadata}` /
-    ///   `{readme}` / `{codeContext}` / `{repoTags}` / `{libraryTags}`）；详见
-    ///   `AIDefaultPrompts.tags` 的注释。
-    /// - **chat**：6 个占位符（system 用 `{outputLanguage}` / `{metadata}` / `{readme}` /
-    ///   `{codeContext}` / `{summary}` / `{externalContext}`；userPromptTemplate 留空，
-    ///   用户消息直接走 messages 数组）；详见 `AIDefaultPrompts.chat` 的注释。
-    /// - **embedding**：8 个占位符（`{fullName}` / `{description}` / `{language}` / `{topics}` /
-    ///   `{license}` / `{homepage}` / `{body}` / `{notes}`）；详见 `AIDefaultPrompts.embedding`
-    ///   的注释；embedding API 不接受 system prompt，所以 system 一栏空且不会被使用。
-    /// - **translation**：`{targetLanguage}` + `{readmeHTML}`；详见 `AIDefaultPrompts.translation`
-    ///   的注释（2026-06-14 v2 占位符由 `{context}` 重命名为 `{readmeHTML}`）。
-    ///
-    /// **删占位符 = 不注入对应数据**：用户在 prompt 里删掉某个占位符就不会渲染对应内容；
-    /// 改坏了点 Restore Default 还原。
-    private var promptPlaceholderHint: String {
-        switch promptTask {
-        case .summary:
-            return String.l10n("settings.ai.prompt.placeholders.summary")
-        case .tags:
-            return String.l10n("settings.ai.prompt.placeholders.tags")
-        case .translation:
-            return String.l10n("settings.ai.prompt.placeholders.translation")
-        case .embedding:
-            return String.l10n("settings.ai.prompt.placeholders.embedding")
-        case .chat:
-            return String.l10n("settings.ai.prompt.placeholders.chat")
-        }
     }
 
     private var privacySection: some View {
@@ -2126,6 +2430,11 @@ struct AISettingsTab: View {
     }
 
     private func restoreDefaultPrompt(_ task: AIModelTask) {
+        if task == .translation, translationPromptMode == .full {
+            settings.aiFullTranslationPrompt = AIDefaultPrompts.fullTranslation
+            return
+        }
+
         updateTask(task) { config in
             switch task {
             case .summary:
@@ -2137,8 +2446,7 @@ struct AISettingsTab: View {
             case .chat:
                 config.prompt = AIDefaultPrompts.chat
             case .translation:
-                // README 翻译的 Prompt 由 ReadmeTranslationService 按目标语言动态渲染
-                // `{targetLanguage}` / `{readmeHTML}`，但模板本身仍暴露在 Prompt 编辑区。
+                // 分段与全文使用独立 Prompt；全文分支已在函数开头单独写回。
                 config.prompt = AIDefaultPrompts.translation
             }
         }
@@ -2317,7 +2625,8 @@ struct AISettingsTab: View {
             set: { modelName in
                 updateTask(task) { config in
                     config.modelID = modelName
-                    config.customModelName = modelName
+                    // 选列表模型时关掉自定义开关，但保留 customModelName，
+                    // 避免用户关掉/重开开关后发现上次手填内容被冲掉。
                     config.useCustomModel = false
                 }
             }
@@ -2327,7 +2636,15 @@ struct AISettingsTab: View {
     private func taskCustomEnabledBinding(_ task: AIModelTask) -> Binding<Bool> {
         Binding(
             get: { taskConfig(task).useCustomModel },
-            set: { enabled in updateTask(task) { $0.useCustomModel = enabled } }
+            set: { enabled in
+                updateTask(task) { config in
+                    config.useCustomModel = enabled
+                    // 仅「开启且输入为空」时用当前列表模型预填；关闭开关绝不清空文本。
+                    if enabled, config.customModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        config.customModelName = config.modelID
+                    }
+                }
+            }
         )
     }
 
@@ -2354,14 +2671,34 @@ struct AISettingsTab: View {
     }
 
     private func promptSystemBinding(_ task: AIModelTask) -> Binding<String> {
-        Binding(
+        if task == .translation, translationPromptMode == .full {
+            return Binding(
+                get: { settings.aiFullTranslationPrompt.systemPrompt },
+                set: { value in
+                    var prompt = settings.aiFullTranslationPrompt
+                    prompt.systemPrompt = value
+                    settings.aiFullTranslationPrompt = prompt
+                }
+            )
+        }
+        return Binding(
             get: { taskConfig(task).prompt.systemPrompt },
             set: { value in updateTask(task) { $0.prompt.systemPrompt = value } }
         )
     }
 
     private func promptUserBinding(_ task: AIModelTask) -> Binding<String> {
-        Binding(
+        if task == .translation, translationPromptMode == .full {
+            return Binding(
+                get: { settings.aiFullTranslationPrompt.userPromptTemplate },
+                set: { value in
+                    var prompt = settings.aiFullTranslationPrompt
+                    prompt.userPromptTemplate = value
+                    settings.aiFullTranslationPrompt = prompt
+                }
+            )
+        }
+        return Binding(
             get: { taskConfig(task).prompt.userPromptTemplate },
             set: { value in updateTask(task) { $0.prompt.userPromptTemplate = value } }
         )

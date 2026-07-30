@@ -26,6 +26,8 @@ struct DatabaseMigrationsV1Tests {
             "repos", "starred_repos", "tags", "repo_tags",
             "repo_notes", "readmes", "saved_searches", "smart_collections",
             "sync_state", "tag_stats_cache", "open_ssf_scores",
+            "repo_pins", "repo_insights_snapshots", "repo_star_history_points",
+            "user_projects", "project_sync_state",
             "rag_chunks", "rag_chunks_fts", "rag_conversation_groups",
             "rag_conversations", "rag_messages", "rag_message_citations",
             "rag_message_remote_contexts", "rag_metadata_revision"
@@ -35,6 +37,273 @@ struct DatabaseMigrationsV1Tests {
                 let exists = try db.tableExists(table)
                 #expect(exists, "Table \(table) should exist")
             }
+        }
+    }
+
+    @Test("我的项目 v17 应建立关系表、同步状态表和查询索引")
+    func myProjectsMigrationCreatesTables() throws {
+        let writer = try makeDB()
+        try writer.read { db in
+            var migrator = DatabaseMigrator()
+            DatabaseMigrations.registerAll(into: &migrator)
+            let applied = try migrator.appliedMigrations(db)
+            #expect(applied.contains("v17-my-projects"))
+
+            #expect(
+                try db.columns(in: "user_projects").map(\.name) == [
+                    "user_id", "repo_id", "affiliation", "owner_login", "owner_type",
+                    "visibility", "permission", "authorization_source", "installation_id",
+                    "generation", "last_seen_at", "created_at", "updated_at"
+                ]
+            )
+            #expect(
+                try db.columns(in: "project_sync_state").map(\.name) == [
+                    "user_id", "credential_kind", "affiliation", "etag", "generation",
+                    "last_attempt_at", "last_success_at", "sync_status", "error_code", "updated_at"
+                ]
+            )
+
+            let indexes = try String.fetchAll(
+                db,
+                sql: """
+                    SELECT name FROM sqlite_master
+                    WHERE type = 'index'
+                      AND tbl_name IN ('user_projects', 'project_sync_state')
+                    """
+            )
+            #expect(indexes.contains("idx_user_projects_user_affiliation"))
+            #expect(indexes.contains("idx_user_projects_user_owner"))
+            #expect(indexes.contains("idx_user_projects_user_visibility"))
+            #expect(indexes.contains("idx_user_projects_user_permission"))
+            #expect(indexes.contains("idx_user_projects_user_generation"))
+            #expect(indexes.contains("idx_project_sync_state_status"))
+        }
+    }
+
+    @Test("v16 升级 v17 应保留 Repo、笔记、Star 历史和置顶")
+    func myProjectsMigrationPreservesExistingData() throws {
+        let queue = try DatabaseQueue()
+        var migrator = DatabaseMigrator()
+        DatabaseMigrations.registerAll(into: &migrator)
+        try migrator.migrate(queue, upTo: "v16-repository-insights")
+
+        try queue.write { db in
+            try db.execute(sql: """
+                INSERT INTO repos (
+                    id, owner, name, full_name, html_url, stars_count, is_starred
+                ) VALUES (
+                    188, 'octo', 'kept-project', 'octo/kept-project',
+                    'https://github.com/octo/kept-project', 456, 1
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO repo_notes (repo_id, content, status, library_state, is_ai_generated)
+                VALUES (188, 'keep this note', 'using', 'in_library', 0)
+                """)
+            try db.execute(sql: """
+                INSERT INTO repo_pins (repo_id, pinned_at)
+                VALUES (188, 1000)
+                """)
+            try db.execute(sql: """
+                INSERT INTO repo_star_history_points (
+                    repo_id, observed_on, stars_count, source, precision, fetched_at
+                ) VALUES (
+                    188, '2026-07-29', 456, 'local_snapshot', 'snapshot', '2026-07-29T00:00:00Z'
+                )
+                """)
+        }
+
+        try migrator.migrate(queue)
+
+        try queue.read { db in
+            let isStarred = try Bool.fetchOne(db, sql: "SELECT is_starred FROM repos WHERE id = 188")
+            let note = try String.fetchOne(db, sql: "SELECT content FROM repo_notes WHERE repo_id = 188")
+            let pinCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM repo_pins WHERE repo_id = 188")
+            let starsCount = try Int.fetchOne(
+                db,
+                sql: "SELECT stars_count FROM repo_star_history_points WHERE repo_id = 188"
+            )
+            let hasUserProjects = try db.tableExists("user_projects")
+            let hasProjectSyncState = try db.tableExists("project_sync_state")
+
+            #expect(isStarred == true)
+            #expect(note == "keep this note")
+            #expect(pinCount == 1)
+            #expect(starsCount == 456)
+            #expect(hasUserProjects)
+            #expect(hasProjectSyncState)
+        }
+    }
+
+    @Test("删除 Repo 只应级联项目关系，不删除同步状态")
+    func myProjectsRelationCascadesWithRepo() throws {
+        let writer = try makeDB()
+        try writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO repos (id, owner, name, full_name, html_url)
+                VALUES (289, 'octo', 'project', 'octo/project', 'https://github.com/octo/project')
+                """)
+            try db.execute(sql: """
+                INSERT INTO user_projects (
+                    user_id, repo_id, affiliation, owner_login, owner_type, visibility,
+                    permission, authorization_source, generation, last_seen_at, created_at, updated_at
+                ) VALUES (
+                    7, 289, 'owner', 'octo', 'user', 'private',
+                    'admin', 'github_app', 'g1',
+                    '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z'
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO project_sync_state (
+                    user_id, credential_kind, affiliation, sync_status, updated_at
+                ) VALUES (
+                    7, 'github_app', 'owner', 'idle', '2026-07-29T00:00:00Z'
+                )
+                """)
+
+            try db.execute(sql: "DELETE FROM repos WHERE id = 289")
+
+            let projectCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM user_projects")
+            let syncStateCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM project_sync_state")
+            #expect(projectCount == 0)
+            #expect(syncStateCount == 1)
+        }
+    }
+
+    @Test("仓库洞察 v16 应建立两张独立缓存表并支持重复迁移")
+    func repositoryInsightsMigrationCreatesTables() throws {
+        let writer = try makeDB()
+        var migrator = DatabaseMigrator()
+        DatabaseMigrations.registerAll(into: &migrator)
+        try migrator.migrate(writer)
+
+        try writer.read { db in
+            let applied = try migrator.appliedMigrations(db)
+            #expect(applied.contains("v16-repository-insights"))
+
+            #expect(
+                try db.columns(in: "repo_insights_snapshots").map(\.name) == [
+                    "repo_id", "dataset", "range_key", "payload_json",
+                    "default_branch_sha", "fetched_at", "stale_after", "response_etag"
+                ]
+            )
+            #expect(
+                try db.columns(in: "repo_star_history_points").map(\.name) == [
+                    "repo_id", "observed_on", "stars_count", "source", "precision", "fetched_at"
+                ]
+            )
+
+            let indexes = try String.fetchAll(
+                db,
+                sql: """
+                    SELECT name FROM sqlite_master
+                    WHERE type = 'index'
+                      AND tbl_name IN ('repo_insights_snapshots', 'repo_star_history_points')
+                    """
+            )
+            #expect(indexes.contains("idx_repo_insights_snapshots_stale"))
+            #expect(indexes.contains("idx_repo_star_history_points_lookup"))
+        }
+    }
+
+    @Test("v15 升级 v16 不改变既有仓库与用户数据")
+    func repositoryInsightsMigrationPreservesExistingData() throws {
+        let queue = try DatabaseQueue()
+        var migrator = DatabaseMigrator()
+        DatabaseMigrations.registerAll(into: &migrator)
+        try migrator.migrate(queue, upTo: "v15-repo-pins")
+
+        try queue.write { db in
+            try db.execute(sql: """
+                INSERT INTO repos (id, owner, name, full_name, html_url, stars_count, is_starred)
+                VALUES (88, 'octo', 'kept', 'octo/kept', 'https://github.com/octo/kept', 321, 1)
+                """)
+            try db.execute(sql: """
+                INSERT INTO repo_notes (repo_id, content, status, library_state, is_ai_generated)
+                VALUES (88, 'private note', 'using', 'in_library', 0)
+                """)
+        }
+
+        try migrator.migrate(queue)
+
+        try queue.read { db in
+            let fullName = try String.fetchOne(
+                db,
+                sql: "SELECT full_name FROM repos WHERE id = 88"
+            )
+            let note = try String.fetchOne(
+                db,
+                sql: "SELECT content FROM repo_notes WHERE repo_id = 88"
+            )
+            let hasInsights = try db.tableExists("repo_insights_snapshots")
+            let hasStarHistory = try db.tableExists("repo_star_history_points")
+            #expect(fullName == "octo/kept")
+            #expect(note == "private note")
+            #expect(hasInsights)
+            #expect(hasStarHistory)
+        }
+    }
+
+    @Test("删除仓库应级联清理洞察缓存且 Star 数量不可为负")
+    func repositoryInsightsCachesCascadeWithRepo() throws {
+        let writer = try makeDB()
+        try writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO repos (id, owner, name, full_name, html_url)
+                VALUES (99, 'octo', 'cache', 'octo/cache', 'https://github.com/octo/cache')
+                """)
+            try db.execute(
+                sql: """
+                    INSERT INTO repo_insights_snapshots (
+                        repo_id, dataset, range_key, payload_json, fetched_at, stale_after
+                    ) VALUES (?, 'contributors', 'all', ?, '2026-07-27', '2026-07-28')
+                    """,
+                arguments: [99, Data("{}".utf8)]
+            )
+            try db.execute(sql: """
+                INSERT INTO repo_star_history_points (
+                    repo_id, observed_on, stars_count, source, precision, fetched_at
+                ) VALUES (99, '2026-07-27', 10, 'local_snapshot', 'snapshot', '2026-07-27')
+                """)
+            #expect(throws: (any Error).self) {
+                try db.execute(sql: """
+                    INSERT INTO repo_star_history_points (
+                        repo_id, observed_on, stars_count, source, precision, fetched_at
+                    ) VALUES (99, '2026-07-26', -1, 'local_snapshot', 'snapshot', '2026-07-27')
+                    """)
+            }
+            try db.execute(sql: "DELETE FROM repos WHERE id = 99")
+
+            let insightsCount = try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM repo_insights_snapshots"
+            )
+            let historyCount = try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM repo_star_history_points"
+            )
+            #expect(insightsCount == 0)
+            #expect(historyCount == 0)
+        }
+    }
+
+    @Test("Repo Pin v15 应建立独立用户状态表与时间索引")
+    func repoPinMigrationCreatesTable() throws {
+        let db = try makeDB()
+        try db.read { db in
+            var migrator = DatabaseMigrator()
+            DatabaseMigrations.registerAll(into: &migrator)
+            let applied = try migrator.appliedMigrations(db)
+            #expect(applied.contains("v15-repo-pins"))
+
+            let columns = try db.columns(in: "repo_pins").map(\.name)
+            #expect(columns == ["repo_id", "pinned_at"])
+
+            let indexes = try String.fetchAll(
+                db,
+                sql: "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'repo_pins'"
+            )
+            #expect(indexes.contains("idx_repo_pins_pinned_at"))
         }
     }
 

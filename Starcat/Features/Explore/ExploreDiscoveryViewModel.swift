@@ -19,7 +19,11 @@ import Observation
 final class ExploreDiscoveryViewModel {
 
     private static let pageSize = 20
-    private static let bulkTTL: TimeInterval = 30 * 60
+    /// 语言 / Topic / 平台组合使用有界近期工作集，避免查询快照无限增长。
+    private static let preparedSnapshotCapacity = 12
+    /// Discovery 服务端默认每 3 小时刷新一次 bulk；客户端复用同一窗口，
+    /// 避免本地 30 分钟一过就重复请求尚未更新的服务端快照。
+    private static let bulkTTL: TimeInterval = 3 * 60 * 60
 
     private(set) var repos: [DiscoveryRepoDTO] = []
     private(set) var total: Int = 0
@@ -30,13 +34,28 @@ final class ExploreDiscoveryViewModel {
     private(set) var cacheWarning: String?
     private(set) var reposRevision: Int = 0
     private(set) var lastRefreshedAt: Date?
+    private(set) var latestSummary: DiscoverySummaryDTO?
+    /// 当前 `repos` 对应的完整查询身份。
+    ///
+    /// 发现 / 热门 / 新发布共享同一个 ViewModel。分类刚切换而新查询尚未完成时，
+    /// View 通过这个身份隐藏上一分类的结果，避免把旧列表短暂渲染到新分类下。
+    private(set) var publishedQueryIdentity: String?
 
     var sortOption: ExploreSortOption = .recommended
 
     private var bulkAllRepos: [DiscoveryRepoDTO] = []
     private var filteredLocalRepos: [DiscoveryRepoDTO] = []
+    /// 已完成 filter / sort 的查询结果；命中时只发布首屏，不再扫描 bulk。
+    private var preparedSnapshots: [String: PreparedSnapshot] = [:]
+    private var preparedSnapshotLRU: [String] = []
     private var page: Int = 1
     private var inFlightRequestID = UUID()
+    /// 定向测试确认 prepared snapshot 命中没有再次扫描 bulk；不参与 UI 逻辑。
+    private(set) var localDerivationCountForTesting = 0
+
+    private struct PreparedSnapshot {
+        let filteredRepos: [DiscoveryRepoDTO]
+    }
 
     func reload(
         repository: any DiscoveryRepositoryProtocol,
@@ -47,65 +66,144 @@ final class ExploreDiscoveryViewModel {
         sort: ExploreSortOption,
         showsRefreshIndicator: Bool = false
     ) async {
+        let queryIdentity = Self.queryIdentity(
+            mode: mode,
+            language: language,
+            topic: topic,
+            platform: platform,
+            sort: sort
+        )
         let requestID = UUID()
         inFlightRequestID = requestID
         isLoading = !showsRefreshIndicator
         isRefreshing = showsRefreshIndicator
         loadError = nil
         cacheWarning = nil
+        var didPublishPreparedSnapshot = false
 
-        var didShowCachedBulk = false
-        if !showsRefreshIndicator,
-           let cached = await repository.cachedBulk() {
-            guard inFlightRequestID == requestID else { return }
-            apply(
+        // A → B → A 时直接提交已经派生好的快照。TTL 过期只触发后台 SWR，
+        // 不让仍可用的列表重新退回骨架屏。
+        if !showsRefreshIndicator, let prepared = preparedSnapshot(for: queryIdentity) {
+            publishPreparedSnapshot(prepared, bumpRevision: true)
+            publishedQueryIdentity = queryIdentity
+            isLoading = false
+            didPublishPreparedSnapshot = true
+
+            if let lastRefreshedAt, isCacheFresh(at: lastRefreshedAt) {
+                finish(requestID: requestID)
+                return
+            }
+            isRefreshing = true
+        }
+
+        // 发现 / 热门 / 新发布共用同一 bulk。切换分类时先用会话内快照后台派生首屏，
+        // 不再每次重新读取 SQLite；快照过期时仍保留已发布列表并继续后台刷新。
+        if !showsRefreshIndicator, !didPublishPreparedSnapshot, !bulkAllRepos.isEmpty {
+            await applyFiltersLocally(
+                sourceRepos: bulkAllRepos,
+                mode: mode,
+                language: language,
+                topic: topic,
+                platform: platform,
+                sort: sort,
+                bumpRevision: true,
+                requestID: requestID
+            )
+            guard !shouldStop(requestID: requestID) else {
+                finish(requestID: requestID)
+                return
+            }
+            publishedQueryIdentity = queryIdentity
+            isLoading = false
+
+            if let lastRefreshedAt, isCacheFresh(at: lastRefreshedAt) {
+                finish(requestID: requestID)
+                return
+            }
+            isRefreshing = true
+        }
+
+        let cached = showsRefreshIndicator || !bulkAllRepos.isEmpty
+            ? nil
+            : await repository.cachedBulk()
+        guard !shouldStop(requestID: requestID) else {
+            finish(requestID: requestID)
+            return
+        }
+
+        if let cached,
+           isCacheFresh(at: cached.lastFetchedAt),
+           Self.isCachedBulkUsable(cached, for: mode),
+           !(await isSummaryNewerThanBulk(cached, repository: repository)) {
+            guard !shouldStop(requestID: requestID) else {
+                finish(requestID: requestID)
+                return
+            }
+            await apply(
                 snapshot: cached,
                 mode: mode,
                 language: language,
                 topic: topic,
                 platform: platform,
                 sort: sort,
-                bumpRevision: false
+                bumpRevision: true,
+                requestID: requestID
             )
-            didShowCachedBulk = true
-            isLoading = false
-            if isCacheFresh(at: cached.lastFetchedAt),
-               Self.isCachedBulkUsable(cached, for: mode),
-               !(await isSummaryNewerThanBulk(cached, repository: repository)) {
-                isRefreshing = false
+            guard !shouldStop(requestID: requestID) else {
+                finish(requestID: requestID)
                 return
             }
+            publishedQueryIdentity = queryIdentity
+            finish(requestID: requestID)
+            return
         }
 
         do {
             let fetchResult = try await repository.fetchBulk(ignoresCache: showsRefreshIndicator)
-            guard inFlightRequestID == requestID else { return }
-            apply(
+            guard !shouldStop(requestID: requestID) else {
+                finish(requestID: requestID)
+                return
+            }
+            await apply(
                 result: fetchResult.result,
                 mode: mode,
                 language: language,
                 topic: topic,
                 platform: platform,
-                sort: sort
+                sort: sort,
+                requestID: requestID
             )
+            guard !shouldStop(requestID: requestID) else {
+                finish(requestID: requestID)
+                return
+            }
+            publishedQueryIdentity = queryIdentity
             if case .cachedFallback = fetchResult.source {
                 cacheWarning = Self.cacheFallbackWarning(fetchResult.fallbackErrorDescription)
             }
+        } catch is CancellationError {
+            finish(requestID: requestID)
+            return
         } catch {
-            guard inFlightRequestID == requestID else { return }
-            loadError = error.localizedDescription
-            if !didShowCachedBulk {
+            guard !shouldStop(requestID: requestID) else {
+                finish(requestID: requestID)
+                return
+            }
+            if !bulkAllRepos.isEmpty || didPublishPreparedSnapshot {
+                // SWR / 手动刷新失败不能删除最后一次成功快照；列表保持可用，只提示缓存状态。
+                loadError = nil
+                cacheWarning = Self.cacheFallbackWarning(error.localizedDescription)
+            } else {
+                loadError = error.localizedDescription
                 repos = []
                 total = 0
                 nextPage = nil
                 reposRevision += 1
             }
+            publishedQueryIdentity = queryIdentity
         }
 
-        if inFlightRequestID == requestID {
-            isLoading = false
-            isRefreshing = false
-        }
+        finish(requestID: requestID)
     }
 
     func loadMoreIfNeeded(
@@ -117,6 +215,14 @@ final class ExploreDiscoveryViewModel {
         platform: String?,
         sort: ExploreSortOption
     ) async {
+        let queryIdentity = Self.queryIdentity(
+            mode: mode,
+            language: language,
+            topic: topic,
+            platform: platform,
+            sort: sort
+        )
+        guard publishedQueryIdentity == queryIdentity else { return }
         guard let nextPage else { return }
         guard !isLoading, !isRefreshing else { return }
         guard repos.suffix(4).contains(currentRepo) else { return }
@@ -128,6 +234,23 @@ final class ExploreDiscoveryViewModel {
         reposRevision += 1
     }
 
+    /// 生成 View 与 ViewModel 共用的查询身份，防止两边各自拼字符串后产生漂移。
+    static func queryIdentity(
+        mode: ExploreMode,
+        language: String?,
+        topic: String?,
+        platform: String?,
+        sort: ExploreSortOption
+    ) -> String {
+        [
+            mode.id,
+            mode == .discover ? "__language_unused__" : (language ?? "__all__"),
+            mode == .discover ? (topic ?? "__all__") : "__topic_unused__",
+            mode == .discover ? (platform ?? "__all__") : "__platform_unused__",
+            sort.normalized(for: mode).id,
+        ].joined(separator: "|")
+    }
+
     private func apply(
         snapshot: DiscoveryBulkCachedSnapshot,
         mode: ExploreMode,
@@ -135,18 +258,24 @@ final class ExploreDiscoveryViewModel {
         topic: String?,
         platform: String?,
         sort: ExploreSortOption,
-        bumpRevision: Bool
-    ) {
-        bulkAllRepos = snapshot.repos
-        lastRefreshedAt = snapshot.lastFetchedAt
-        applyFiltersLocally(
+        bumpRevision: Bool,
+        requestID: UUID
+    ) async {
+        clearPreparedSnapshots()
+        await applyFiltersLocally(
+            sourceRepos: snapshot.repos,
             mode: mode,
             language: language,
             topic: topic,
             platform: platform,
             sort: sort,
-            bumpRevision: bumpRevision
+            bumpRevision: bumpRevision,
+            requestID: requestID
         )
+        guard !shouldStop(requestID: requestID) else { return }
+        bulkAllRepos = snapshot.repos
+        latestSummary = snapshot.summary
+        lastRefreshedAt = snapshot.lastFetchedAt
     }
 
     private func apply(
@@ -155,29 +284,108 @@ final class ExploreDiscoveryViewModel {
         language: String?,
         topic: String?,
         platform: String?,
-        sort: ExploreSortOption
-    ) {
-        bulkAllRepos = result.repos
-        lastRefreshedAt = Date()
-        applyFiltersLocally(
+        sort: ExploreSortOption,
+        requestID: UUID
+    ) async {
+        clearPreparedSnapshots()
+        await applyFiltersLocally(
+            sourceRepos: result.repos,
             mode: mode,
             language: language,
             topic: topic,
             platform: platform,
             sort: sort,
-            bumpRevision: true
+            bumpRevision: true,
+            requestID: requestID
         )
+        guard !shouldStop(requestID: requestID) else { return }
+        bulkAllRepos = result.repos
+        latestSummary = result.summary
+        lastRefreshedAt = Date()
     }
 
     private func applyFiltersLocally(
+        sourceRepos: [DiscoveryRepoDTO],
         mode: ExploreMode,
         language: String?,
         topic: String?,
         platform: String?,
         sort: ExploreSortOption,
-        bumpRevision: Bool
-    ) {
-        var filtered = bulkAllRepos
+        bumpRevision: Bool,
+        requestID: UUID
+    ) async {
+        // Task.detached 只接收 Sendable 值快照；筛选与排序期间不读取任何 Observable 状态。
+        localDerivationCountForTesting &+= 1
+        let task = Task.detached(priority: .userInitiated) {
+            Self.deriveLocalRepos(
+                sourceRepos: sourceRepos,
+                mode: mode,
+                language: language,
+                topic: topic,
+                platform: platform,
+                sort: sort
+            )
+        }
+        let filtered = await PerformanceTracer.shared.trace(.discoveryLocalFilter, task: task)
+        guard !shouldStop(requestID: requestID) else { return }
+
+        let identity = Self.queryIdentity(
+            mode: mode,
+            language: language,
+            topic: topic,
+            platform: platform,
+            sort: sort
+        )
+        let prepared = PreparedSnapshot(filteredRepos: filtered)
+        storePreparedSnapshot(prepared, for: identity)
+        publishPreparedSnapshot(prepared, bumpRevision: bumpRevision)
+    }
+
+    /// MainActor 只提交已准备好的首屏值；缓存命中和后台派生共用同一发布边界。
+    private func publishPreparedSnapshot(_ snapshot: PreparedSnapshot, bumpRevision: Bool) {
+        filteredLocalRepos = snapshot.filteredRepos
+        total = snapshot.filteredRepos.count
+        page = 1
+        repos = Array(snapshot.filteredRepos.prefix(Self.pageSize))
+        nextPage = snapshot.filteredRepos.count > repos.count ? 2 : nil
+        if bumpRevision {
+            reposRevision += 1
+        }
+    }
+
+    private func preparedSnapshot(for identity: String) -> PreparedSnapshot? {
+        guard let snapshot = preparedSnapshots[identity] else { return nil }
+        preparedSnapshotLRU.removeAll { $0 == identity }
+        preparedSnapshotLRU.append(identity)
+        return snapshot
+    }
+
+    private func storePreparedSnapshot(_ snapshot: PreparedSnapshot, for identity: String) {
+        preparedSnapshots[identity] = snapshot
+        preparedSnapshotLRU.removeAll { $0 == identity }
+        preparedSnapshotLRU.append(identity)
+        while preparedSnapshotLRU.count > Self.preparedSnapshotCapacity {
+            let evicted = preparedSnapshotLRU.removeFirst()
+            preparedSnapshots.removeValue(forKey: evicted)
+        }
+    }
+
+    /// bulk 事实源替换后，旧派生结果不能继续参与查询。
+    private func clearPreparedSnapshots() {
+        preparedSnapshots.removeAll(keepingCapacity: true)
+        preparedSnapshotLRU.removeAll(keepingCapacity: true)
+    }
+
+    /// 在后台线程完成 Discovery bulk 的模式筛选与排序。
+    private nonisolated static func deriveLocalRepos(
+        sourceRepos: [DiscoveryRepoDTO],
+        mode: ExploreMode,
+        language: String?,
+        topic: String?,
+        platform: String?,
+        sort: ExploreSortOption
+    ) -> [DiscoveryRepoDTO] {
+        var filtered = sourceRepos
 
         switch mode {
         case .discover:
@@ -187,18 +395,8 @@ final class ExploreDiscoveryViewModel {
             if let platform = normalizedFilter(platform) {
                 filtered = filtered.filter { $0.platforms.contains(platform) }
             }
-        case .popular:
-            filtered = filtered.filter { $0.categories.contains(Self.categoryCode(for: mode)) }
-            if let language = normalizedFilter(language) {
-                filtered = filtered.filter { repo in
-                    if language == TrendingLanguage.uncategorizedKey {
-                        return (repo.language ?? "").isEmpty
-                    }
-                    return repo.language?.caseInsensitiveCompare(language) == .orderedSame
-                }
-            }
-        case .newReleases:
-            filtered = filtered.filter { $0.categories.contains(Self.categoryCode(for: mode)) }
+        case .popular, .newReleases:
+            filtered = filtered.filter { $0.categories.contains(categoryCode(for: mode)) }
             if let language = normalizedFilter(language) {
                 filtered = filtered.filter { repo in
                     if language == TrendingLanguage.uncategorizedKey {
@@ -211,18 +409,14 @@ final class ExploreDiscoveryViewModel {
             break
         }
 
-        filtered.sort(by: Self.makeLocalSorter(sort.normalized(for: mode), mode: mode))
-        filteredLocalRepos = filtered
-        total = filtered.count
-        page = 1
-        repos = Array(filtered.prefix(Self.pageSize))
-        nextPage = filtered.count > repos.count ? 2 : nil
-        if bumpRevision {
-            reposRevision += 1
-        }
+        filtered.sort(by: makeLocalSorter(sort.normalized(for: mode), mode: mode))
+        return filtered
     }
 
-    private static func makeLocalSorter(_ sort: ExploreSortOption, mode: ExploreMode) -> (DiscoveryRepoDTO, DiscoveryRepoDTO) -> Bool {
+    private nonisolated static func makeLocalSorter(
+        _ sort: ExploreSortOption,
+        mode: ExploreMode
+    ) -> (DiscoveryRepoDTO, DiscoveryRepoDTO) -> Bool {
         switch sort {
         case .recommended:
             return scoreSorter(\.discoveryScore)
@@ -275,7 +469,9 @@ final class ExploreDiscoveryViewModel {
         }
     }
 
-    private static func scoreSorter(_ keyPath: KeyPath<DiscoveryRepoDTO, Double?>) -> (DiscoveryRepoDTO, DiscoveryRepoDTO) -> Bool {
+    private nonisolated static func scoreSorter(
+        _ keyPath: KeyPath<DiscoveryRepoDTO, Double?>
+    ) -> (DiscoveryRepoDTO, DiscoveryRepoDTO) -> Bool {
         { lhs, rhs in
             let lhsScore = lhs[keyPath: keyPath] ?? lhs.score ?? 0
             let rhsScore = rhs[keyPath: keyPath] ?? rhs.score ?? 0
@@ -285,7 +481,7 @@ final class ExploreDiscoveryViewModel {
         }
     }
 
-    private static func categoryRankSorter(
+    private nonisolated static func categoryRankSorter(
         category: String,
         fallback: @escaping (DiscoveryRepoDTO, DiscoveryRepoDTO) -> Bool
     ) -> (DiscoveryRepoDTO, DiscoveryRepoDTO) -> Bool {
@@ -301,7 +497,7 @@ final class ExploreDiscoveryViewModel {
         }
     }
 
-    private static func dateStringSorter(
+    private nonisolated static func dateStringSorter(
         _ value: @escaping (DiscoveryRepoDTO) -> String?,
         ascending: Bool,
         mode: ExploreMode
@@ -318,14 +514,21 @@ final class ExploreDiscoveryViewModel {
         }
     }
 
-    private static func tieBreak(_ lhs: DiscoveryRepoDTO, _ rhs: DiscoveryRepoDTO, mode: ExploreMode) -> Bool {
+    private nonisolated static func tieBreak(
+        _ lhs: DiscoveryRepoDTO,
+        _ rhs: DiscoveryRepoDTO,
+        mode: ExploreMode
+    ) -> Bool {
         let lhsScore = defaultScore(lhs, mode: mode)
         let rhsScore = defaultScore(rhs, mode: mode)
         if lhsScore != rhsScore { return lhsScore > rhsScore }
         return lhs.repoID > rhs.repoID
     }
 
-    private static func defaultScore(_ repo: DiscoveryRepoDTO, mode: ExploreMode) -> Double {
+    private nonisolated static func defaultScore(
+        _ repo: DiscoveryRepoDTO,
+        mode: ExploreMode
+    ) -> Double {
         switch mode {
         case .discover:
             return repo.discoveryScore ?? repo.score ?? 0
@@ -342,6 +545,18 @@ final class ExploreDiscoveryViewModel {
 
     private func isCacheFresh(at lastFetchedAt: Date) -> Bool {
         Date().timeIntervalSince(lastFetchedAt) < Self.bulkTTL
+    }
+
+    private func shouldStop(requestID: UUID) -> Bool {
+        Task.isCancelled || inFlightRequestID != requestID
+    }
+
+    /// 只有仍持有当前 request ID 的 reload 才能收口 loading 状态，避免旧任务
+    /// 被取消后把新任务刚设置的 loading / refreshing 状态提前关掉。
+    private func finish(requestID: UUID) {
+        guard inFlightRequestID == requestID else { return }
+        isLoading = false
+        isRefreshing = false
     }
 
     private func isSummaryNewerThanBulk(
@@ -384,7 +599,7 @@ final class ExploreDiscoveryViewModel {
         }
     }
 
-    private static func categoryCode(for mode: ExploreMode) -> String {
+    private nonisolated static func categoryCode(for mode: ExploreMode) -> String {
         switch mode {
         case .discover:
             return "discover"
@@ -397,7 +612,7 @@ final class ExploreDiscoveryViewModel {
         }
     }
 
-    private func normalizedFilter(_ value: String?) -> String? {
+    private nonisolated static func normalizedFilter(_ value: String?) -> String? {
         guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
               !value.isEmpty else {
             return nil

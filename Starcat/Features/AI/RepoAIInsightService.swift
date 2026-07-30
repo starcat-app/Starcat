@@ -14,15 +14,14 @@
 //  - 不自动触发批量生成；只有用户在详情页点击生成 / 重新生成才调用 chat。
 //  - 不自动写标签；标签推荐只进入 UI 确认流。
 //  - 摘要和标签是两个独立 AI 任务。标签 JSON 失败不应让已生成的摘要文本丢失。
-//  - W4（2026-06-21）：新增 `cachedInsightFast(for:)` 与 `prepareContextForGeneration(for:onStep:)`
-//    两个公开方法，分别给 ViewModel 提供「启动期秒显已缓存摘要」与「后台 prep + 进度回调」
-//    两条快速路径。`cachedInsightFast` 不做 hash 校验，hash 校验推迟到 `generate` 路径。
+//  - `cachedInsightFast(for:)` 只负责启动期秒显已缓存摘要，不做 hash 校验；
+//    代码上下文检查与进度回调统一留在用户发起的 `generate` 路径。
 //
 
 import CryptoKit
 import Foundation
 
-enum RepoAIInsightError: Error, LocalizedError, Equatable {
+enum RepoAIInsightError: Error, LocalizedError, Equatable, Sendable {
     case missingAPIKey
     case missingProvider(String)
     case invalidJSON
@@ -64,11 +63,85 @@ struct RepoAIInsightGeneration: Equatable, Sendable {
     var externalContextDegradationReason: ExternalContextDegradationReason?
 }
 
+/// 单次摘要生成使用的代码上下文控制器。
+///
+/// 为什么不能只切换 ViewModel 的 UI 状态：
+/// `generateInsight` 内部正在通过 `makeSource` 准备代码上下文；如果没有请求级状态，
+/// 用户点击“跳过”后，provider 仍会继续下载 ZIP / 生成 XML。控制器同时承担两件事：
+///   1. 取消当前正在执行的 provider 子任务；
+///   2. 记住“本次跳过”，让尚未开始或取消后继续执行的 `makeSource` 返回
+///      `.featureDisabled`，但不修改全局设置，也不影响下一次生成。
+///
+/// 控制器限定在 MainActor：它只由单仓摘要 ViewModel 与同为 MainActor 的 service 使用，
+/// 避免为一个 UI 请求引入额外锁或跨 actor 状态同步。
+@MainActor
+final class RepoAICodeContextRequest {
+
+    private(set) var isSkipped = false
+    private var activeTask: Task<RepoAIContextOutcome, Error>?
+
+    func resolve(
+        operation: @escaping () async throws -> RepoAIContextOutcome
+    ) async throws -> RepoAIContextOutcome {
+        guard !isSkipped else { return .featureDisabled }
+
+        let task = Task {
+            try await operation()
+        }
+        activeTask = task
+        // 一个 request 只服务一次 `makeSource`，不存在并发 resolve；完成后直接释放句柄。
+        defer { activeTask = nil }
+
+        do {
+            // `Task {}` 句柄用于支持 UI 单独取消，但它不是结构化 child task；显式把
+            // 外层摘要任务的 cancellation 继续传下去，避免窗口关闭后 provider 仍在后台跑。
+            let outcome = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: {
+                task.cancel()
+            }
+            // `skip()` 可能与 provider 正常完成发生竞态。用户意图优先：即使 XML 已在
+            // 最后一个 cancellation checkpoint 后完成，本次摘要仍不注入它。
+            return isSkipped ? .featureDisabled : outcome
+        } catch is CancellationError {
+            guard isSkipped else { throw CancellationError() }
+            return .featureDisabled
+        }
+    }
+
+    /// 只跳过本次请求，不删除已完整落盘的 ZIP / XML。
+    func skip() {
+        isSkipped = true
+        activeTask?.cancel()
+    }
+}
+
+/// 单仓摘要在代码上下文完成后、LLM 流式输出前的 External Search 进度事件。
+///
+/// 仅当设置允许对本仓库收集外部上下文时才会发出；UI 用它把「几秒外搜」从笼统的
+/// 「正在准备摘要请求」里拆出来。
+enum RepoAIExternalContextProgress: Sendable, Equatable {
+    case started
+    case finished
+}
+
 @MainActor
 final class RepoAIInsightService {
 
+    /// 单仓摘要每个真实代码上下文步骤开始前的用户取消缓冲。
+    ///
+    /// 只在 `RepoAICodeContextRequest` 存在时启用；批量 AI、RAG 与其它复用 provider
+    /// 的路径不等待。用 `Task.sleep` 而非不可取消的 Dispatch 延迟，用户点「跳过本次」
+    /// 后 `RepoAICodeContextRequest.skip()` 能立即取消 sleep 并继续摘要。
+    static let codeContextStepStartDelay: Duration = .seconds(3)
+
+    static func waitBeforeCodeContextStep() async throws {
+        try await Task.sleep(for: codeContextStepStartDelay)
+    }
+
     /// makeSource 产物：Summary / Tags 任务都用占位符渲染（`{metadata}` / `{readme}` /
-    /// `{codeContext}` / `{externalContext}` / `{repoTags}` / `{libraryTags}`，详见
+    /// `{codeContext}` / `{insightsContext}` / `{externalContext}` / `{repoTags}` /
+    /// `{libraryTags}`，详见
     /// `AIDefaultPrompts.summary` 与 `AIDefaultPrompts.tags` 注释）。
     ///
     /// `text` 字段保留是为了让 `Self.hash(text)` 作为缓存 key 输入——
@@ -98,6 +171,12 @@ final class RepoAIInsightService {
         /// 标签推荐不需要外部检索结果做风格参考。
         let externalContext: String
 
+        /// Summary / Chat `{insightsContext}` 的渲染源。
+        ///
+        /// 仓库洞察通过共享 Provider 准备并写入与页面相同的缓存。它不参与 `hash`：
+        /// 活动计数等短周期指标不能频繁击穿已有摘要缓存；用户主动重新生成时仍会读取最新快照。
+        let insightsContext: String
+
         /// Y2：从 RepoContextPacker 拿到的元信息（命中缓存或新生成都填充）。
         /// 透传到 makeInsight 写入 RepoAIInsight.contextMetadata，供 UI footer 显示。
         var contextMeta: RepoAIInsightContextMeta?
@@ -113,6 +192,7 @@ final class RepoAIInsightService {
             readme: String,
             codeContext: String,
             externalContext: String = "",
+            insightsContext: String = "",
             contextMeta: RepoAIInsightContextMeta? = nil,
             contextDegradationReason: ContextDegradationReason? = nil
         ) {
@@ -122,6 +202,7 @@ final class RepoAIInsightService {
             self.readme = readme
             self.codeContext = codeContext
             self.externalContext = externalContext
+            self.insightsContext = insightsContext
             self.contextMeta = contextMeta
             self.contextDegradationReason = contextDegradationReason
         }
@@ -133,6 +214,29 @@ final class RepoAIInsightService {
     private let keychain: any KeychainManaging
     private let externalContextProvider: ExternalSearchContextProvider
     private let entitlementGate: EntitlementGate?
+    private var repositoryInsightsContextProvider:
+        (any RepositoryInsightsAIContextProviding)?
+
+    /// 单仓 AI 摘要是否应在本次生成中准备代码上下文。
+    ///
+    /// 只暴露最终有效状态给 ViewModel 决定是否展示三步进度；真正的设置判断与
+    /// provider 调用仍收口在 service/provider 内，RAG 工作台不经过这个属性。
+    var isCodeContextEnabled: Bool {
+        settings.aiRepoContextEnabled && repoAIContextProvider != nil
+    }
+
+    /// 单仓摘要本次是否会进入 External Search 拉取。
+    ///
+    /// 与 `ExternalSearchContextProvider.collect` 的门控一致（总开关 + 私仓白名单）；
+    /// ViewModel 用它在生成开始时冻结「是否展示外部搜索步骤」，避免生成中途改设置
+    /// 导致进度 chip 突然出现 / 消失。
+    func isExternalContextAllowed(for repo: Repo) -> Bool {
+        ExternalSearchContextProvider.allowsExternalContext(
+            repoIsPrivate: repo.isPrivate,
+            enabled: settings.externalContextEnabled,
+            allowPrivate: settings.externalSearchAllowPrivateRepos
+        )
+    }
 
     /// X4（2026-06-13）：注入 RepoContextPacker 的代码上下文。
     ///
@@ -160,6 +264,8 @@ final class RepoAIInsightService {
         settings: AppSettings,
         keychain: any KeychainManaging = KeychainManager.shared,
         repoAIContextProvider: RepoAIContextProvider? = nil,
+        repositoryInsightsContextProvider:
+            (any RepositoryInsightsAIContextProviding)? = nil,
         entitlementGate: EntitlementGate? = nil,
         onSummaryGenerated: (@MainActor (Repo) -> Void)? = nil
     ) {
@@ -169,6 +275,7 @@ final class RepoAIInsightService {
         self.keychain = keychain
         self.externalContextProvider = ExternalSearchContextProvider(settings: settings)
         self.repoAIContextProvider = repoAIContextProvider
+        self.repositoryInsightsContextProvider = repositoryInsightsContextProvider
         self.entitlementGate = entitlementGate
         self.onSummaryGenerated = onSummaryGenerated
     }
@@ -177,6 +284,16 @@ final class RepoAIInsightService {
     /// 让 `SemanticSearchService` 先构造完，再回头给 `aiInsight` 挂上 "weak semantic" 闭包。
     func setOnSummaryGenerated(_ handler: (@MainActor (Repo) -> Void)?) {
         self.onSummaryGenerated = handler
+    }
+
+    /// AppDependencies 在本地洞察仓储完成装配后注入共享上下文 Provider。
+    ///
+    /// 使用后置注入是为了避免为 AI 提前构造第二套 Release / Health / OpenSSF / Star History
+    /// Repository；最终注入的对象与仓库洞察页面消费完全相同的数据源。
+    func setRepositoryInsightsContextProvider(
+        _ provider: (any RepositoryInsightsAIContextProviding)?
+    ) {
+        repositoryInsightsContextProvider = provider
     }
 
     /// 当前对话流式所用的模型名。
@@ -215,38 +332,18 @@ final class RepoAIInsightService {
     /// 与 HOM-199 「缓存稳定化」（剔除 stars/forks 等流量字段）的设计目标一致——只有
     /// 语义级变更才该让缓存失效。
     func cachedInsightFast(for repo: Repo) async throws -> RepoAIInsight? {
-        guard let record = try await summaryRepository.find(repoId: repo.id, model: cacheModelKey()) else {
+        // 当前语言的缓存优先；若用户只切换了显示语言，则回退到该仓库最近一次摘要。
+        // 语言仍保留在 cache key 中，确保重新生成后能恢复“当前语言优先”，同时不影响 RAG 的 latest-wins 语义。
+        if let currentLanguageRecord = try await summaryRepository.find(repoId: repo.id, model: cacheModelKey()) {
+            return try Self.decodeInsight(json: currentLanguageRecord.summaryJson)
+        }
+        guard let latest = try await summaryRepository.fetchLatest(repoId: repo.id) else {
             return nil
         }
-        return try Self.decodeInsight(json: record.summaryJson)
+        return try Self.decodeInsight(json: latest.summaryJson)
     }
 
-    /// W4（2026-06-21）：后台准备代码上下文（不进 `makeSource`，可独立调用）。
-    ///
-    /// 与 `cachedInsight(for:)` / `generateInsight(for:)` 内嵌的 context 准备逻辑一致，
-    /// 但**独立**暴露给 ViewModel 用于「打开面板即启动后台 prep」——UI 此时已经显示
-    /// 「生成摘要」按钮，prep 进度通过 `onStep` 回调驱动 chip 行更新，按钮可点不被阻塞。
-    ///
-    /// 调用方（ViewModel）的处理约定：
-    ///   - 用户在 prep 期间点击「生成摘要」：ViewModel 会先 `await prepTask` 再调
-    ///     `generateInsight`，LLM 永远拿最新 context（避免钱白烧）；
-    ///   - prep 失败（`.degraded`）：按钮仍然可点，generate 走降级路径（README-only）。
-    ///
-    /// - Parameter onStep: 进度回调，3 个边界点对应 prep pipeline 的 resolveBranch /
-    ///   archiveIfNeeded / pack。
-    /// - Returns: 与 `contextOutcome(for:)` 完全一致的 3 态结果。
-    func prepareContextForGeneration(
-        for repo: Repo,
-        onStep: @escaping RepoAIContextProgressCallback
-    ) async throws -> RepoAIContextOutcome {
-        guard let provider = repoAIContextProvider else {
-            // 与「toggle off」语义对齐：provider 没注入 → 全链路跳过，UI 不显示降级提示。
-            return .featureDisabled
-        }
-        return try await provider.contextOutcome(for: repo, onProgress: onStep)
-    }
-
-    /// 用户停止后台代码上下文准备时的窄清理入口。
+    /// 用户跳过本次代码上下文准备时的窄清理入口。
     ///
     /// 这里不删除正式 ZIP / 已生成 context.xml，只清理下载链路的未完成临时文件；
     /// 这样下次生成仍能复用已经完整落盘的缓存，避免把「停止」变成破坏性清缓存。
@@ -274,27 +371,55 @@ final class RepoAIInsightService {
         includeSummary: Bool = true,
         includeTags: Bool = true,
         allowExternalContext: Bool = true,
+        codeContextRequest: RepoAICodeContextRequest? = nil,
+        onContextProgress: RepoAIContextProgressCallback? = nil,
+        onContextResolved: (@MainActor () -> Void)? = nil,
+        onExternalContextProgress: (@MainActor (RepoAIExternalContextProgress) -> Void)? = nil,
         onSummaryDelta: (@MainActor (String) -> Void)? = nil
     ) async throws -> RepoAIInsightGeneration {
         try enforceGenerationEntitlement(includeSummary: includeSummary, includeTags: includeTags)
-        let source = try await makeSource(for: repo)
+        // 必须在 makeSource（ZIP / XML）之前完成配置校验：没配好服务商时不应浪费下载。
+        try ensureGenerationClientsReady(includeSummary: includeSummary, includeTags: includeTags)
+        let source = try await makeSource(
+            for: repo,
+            codeContextRequest: codeContextRequest,
+            onContextProgress: onContextProgress,
+            includeInsights: includeSummary
+        )
+        // 分享任务允许用户取消。部分 provider 可能在最后一个 checkpoint 后正常返回，
+        // 这里必须重新检查外层 Task，避免继续进入外部搜索或 LLM 请求。
+        try Task.checkCancellation()
+        // 代码上下文已经确定后切到请求阶段，避免继续展示可点击的“跳过”入口。
+        onContextResolved?()
         let generatedAt = ISO8601DateFormatter.shared.string(from: Date())
         let resolvedExternalContext: AIExternalContext?
         // Y9.3（2026-06-14 dong4j 反馈）：捕获 anysearch 降级原因，让 UI 给出具体反馈
         // （之前只打 log 静默降级，用户看不到为什么没注入）。
         var externalDegradationReason: ExternalContextDegradationReason?
-        if includeSummary, allowExternalContext {
+        let shouldCollectExternal = includeSummary
+            && allowExternalContext
+            && isExternalContextAllowed(for: repo)
+        if shouldCollectExternal {
+            // 先通知 UI 进入「获取外部资料」，再 await collect；否则几秒外搜会被误标成「准备摘要请求」。
+            onExternalContextProgress?(.started)
             do {
                 resolvedExternalContext = try await externalContextProvider.collect(for: repo)
             } catch {
+                // Cancellation 代表用户明确终止任务，不能按“外部搜索降级”吞掉后继续生成。
+                // URLSession 取消有时表现为 URLError.cancelled，因此同时检查 Task 状态。
+                if error is CancellationError || Task.isCancelled {
+                    throw CancellationError()
+                }
                 // 外部搜索是补充能力，失败不能阻断本地 README 摘要。
                 AppLog.ai.error("External Search context skipped: \(error.localizedDescription, privacy: .public)")
                 resolvedExternalContext = nil
                 externalDegradationReason = ExternalContextDegradationReason.classify(error)
             }
+            onExternalContextProgress?(.finished)
         } else {
             resolvedExternalContext = nil
         }
+        try Task.checkCancellation()
 
         // 2026-06-14 dong4j 反馈重构：Tags 双层 hints 改走占位符渲染路径
         //   ({repoTags} / {libraryTags}，详见 AIDefaultPrompts.tags 注释)，
@@ -323,6 +448,7 @@ final class RepoAIInsightService {
                 readme: source.readme,
                 codeContext: source.codeContext,
                 externalContext: context.markdown,
+                insightsContext: source.insightsContext,
                 contextMeta: source.contextMeta,
                 contextDegradationReason: source.contextDegradationReason
             )
@@ -345,6 +471,9 @@ final class RepoAIInsightService {
             summaryText = ""
             resolvedTagResult = .success([])
         }
+        // Provider 可能在收到 cancellation 后仍返回最后一段结果。用户取消优先：
+        // 不再组装结果、写摘要缓存或触发后续向量索引刷新。
+        try Task.checkCancellation()
         let suggestions = (try? resolvedTagResult.get()) ?? []
         if let context = resolvedExternalContext, !summaryText.isEmpty {
             let links = context.sources.map { "- [\($0.host ?? $0.absoluteString)](\($0.absoluteString))" }
@@ -407,6 +536,7 @@ final class RepoAIInsightService {
         // HOM-52：只跑标签（includeSummary == false）时不写 ai_summaries 缓存——
         // 否则会用空 summaryText 覆盖已有的有效摘要缓存。调用方仍能拿到 suggestions。
         if includeSummary, repo.isStarred {
+            try Task.checkCancellation()
             let jsonData = try JSONEncoder().encode(insight)
             let record = AISummaryRecord(
                 repoId: repo.id,
@@ -521,7 +651,8 @@ final class RepoAIInsightService {
             history: history,
             model: model,
             parameters: settings.effectiveParameters(for: task),
-            responseFormat: .text
+            responseFormat: .text,
+            usageContext: AIUsageContext(feature: .repoChat, phase: "conversation")
         )
 
         var accumulated = ""
@@ -559,6 +690,40 @@ final class RepoAIInsightService {
         if includeTags {
             try entitlementGate.requirePro(.aiTags)
         }
+    }
+
+    /// 生成前校验摘要 / 标签任务是否已有可用的 Provider + API Key。
+    ///
+    /// 只检查本地配置完备性，不发起真实 LLM 请求；失败时抛 `RepoAIInsightError`
+    ///（`.missingProvider` / `.missingAPIKey`），让 UI 在下载 ZIP / 生成 XML 之前提示用户去设置。
+    func ensureGenerationClientsReady(includeSummary: Bool, includeTags: Bool) throws {
+        if includeSummary {
+            _ = try makeClient(
+                task: settings.aiSummaryTask,
+                fallbackModel: settings.aiChatModel,
+                taskName: String.l10n("ai.taskName.summary")
+            )
+        }
+        if includeTags {
+            _ = try makeClient(
+                task: settings.aiTagsTask,
+                fallbackModel: settings.aiChatModel,
+                taskName: String.l10n("ai.taskName.tagRecommendation")
+            )
+        }
+    }
+
+    /// 个人笔记生成的轻量预检。
+    ///
+    /// 只验证 Pro 权益和摘要任务的 Provider / API Key，不发起网络请求。
+    /// UI 必须在 README 下载之前调用，避免未配置 AI 时做无意义的 GitHub IO。
+    func ensureNoteGenerationReady() throws {
+        try enforceGenerationEntitlement(includeSummary: true, includeTags: false)
+        _ = try makeClient(
+            task: settings.aiSummaryTask,
+            fallbackModel: settings.aiChatModel,
+            taskName: String.l10n("ai.taskName.summary")
+        )
     }
 
     /// 2026-06-14 v4 重构：拼装对话路径的 system prompt，走 `aiChatTask.prompt` 模板
@@ -600,6 +765,7 @@ final class RepoAIInsightService {
             metadata: source.metadata,
             readme: source.readme,
             codeContext: source.codeContext,
+            insightsContext: source.insightsContext,
             summary: cached?.summaryMarkdown ?? "",
             externalContext: externalContext,
             previousSessionCarryOver: carriedOverSummary ?? ""
@@ -612,14 +778,14 @@ final class RepoAIInsightService {
     /// Tags 任务的渲染路径完全一致。占位符在 `template` 里找不到时保留字面量
     /// （让 LLM 看到 `{xxx}` 便于排错），找到则替换为对应字段。
     ///
-    /// **空 section 处理**（跟 Summary v4 同款）：`codeContext` / `summary` / `externalContext`
-    /// 任意一个为空字符串都直接渲染成空 section header（如 `## AI Summary` 后面什么都没有），
-    /// LLM 自然忽略，不在这里做"删除整段 section"的复杂字符串处理——pre-launch 阶段
-    /// 简单稳定优先，token 浪费 < 5/section 可以接受。
+    /// **空 section 处理**（跟 Summary v4 同款）：`codeContext` / `insightsContext` /
+    /// `summary` / `externalContext` 任意一个为空字符串都直接渲染成空 section header
+    ///（如 `## AI Summary` 后面什么都没有），LLM 自然忽略，不在这里做“删除整段 section”
+    /// 的复杂字符串处理。
     ///
     /// **签名变更说明**：v3 旧签名是 `(sourceText, cachedSummaryMarkdown, cachedExternalMarkdown,
     /// allowExternal)`，把 metadata + readme + codeContext 黑盒拼成 `sourceText` 喂进去。
-    /// v4 改成"6 个一等参数"，跟模板的 6 占位符一一对应，让单测能精确断言每个占位符的渲染结果。
+    /// 后续新增的一等参数继续与模板占位符一一对应，让单测精确断言每段上下文的渲染结果。
     /// 2026-06-15 v4.x 追加 `runtimeContext` 参数，对应模板新增的 `{runtimeContext}` 占位符。
     ///
     /// `nonisolated`：本函数纯字符串拼接、无 actor 副作用，单测从 sync 上下文可直接调用。
@@ -631,6 +797,7 @@ final class RepoAIInsightService {
         metadata: String,
         readme: String,
         codeContext: String,
+        insightsContext: String,
         summary: String,
         externalContext: String,
         previousSessionCarryOver: String
@@ -654,6 +821,7 @@ final class RepoAIInsightService {
                 "metadata": metadata,
                 "readme": readme,
                 "codeContext": codeContext,
+                "insightsContext": insightsContext,
                 "summary": summary,
                 "externalContext": externalContext,
                 "previousSessionCarryOver": previousSessionCarryOver
@@ -682,9 +850,10 @@ final class RepoAIInsightService {
         let params = settings.effectiveParameters(for: task)
         // Summary 任务占位符（v4，2026-06-14）：
         // - system: `{outputLanguage}`
-        // - user:   `{outputLanguage}` / `{metadata}` / `{readme}` / `{codeContext}` / `{externalContext}`
+        // - user:   `{outputLanguage}` / `{metadata}` / `{readme}` / `{codeContext}` /
+        //           `{insightsContext}` / `{externalContext}`
         // 详见 `AIDefaultPrompts.summary` 注释。删某个占位符 → 不渲染对应内容；
-        // dict 里 build 完整 5 key 即可，prompt 模板里没用到的 key 不会有副作用。
+        // dict 里构造完整 key 即可，prompt 模板里没用到的 key 不会有副作用。
         let outputLanguage = Self.outputLanguageDescriptor()
         let request = AIChatRequest(
             systemPrompt: task.prompt.renderedSystemPrompt(placeholders: [
@@ -695,16 +864,87 @@ final class RepoAIInsightService {
                 "metadata": source.metadata,
                 "readme": source.readme,
                 "codeContext": source.codeContext,
+                "insightsContext": source.insightsContext,
                 "externalContext": source.externalContext
             ]),
             model: model,
             parameters: params,
-            responseFormat: .text
+            responseFormat: .text,
+            usageContext: AIUsageContext(feature: .repoSummary, phase: "generation")
         )
 
-        if params.streamEnabled {
+        return try await Self.generateText(
+            client: client,
+            request: request,
+            streamEnabled: params.streamEnabled,
+            onDelta: onDelta
+        )
+    }
+
+    /// 使用摘要任务配置生成个人笔记草稿，不写入摘要缓存或个人笔记表。
+    func generateNoteDraft(
+        readmeMarkdown: String,
+        existingNote: String,
+        onDelta: @escaping @MainActor (String) -> Void
+    ) async throws -> String {
+        let task = settings.aiSummaryTask
+        let (client, model) = try makeClient(
+            task: task,
+            fallbackModel: settings.aiChatModel,
+            taskName: String.l10n("ai.taskName.summary")
+        )
+        let params = settings.effectiveParameters(for: task)
+        let request = Self.makeRepoNoteRequest(
+            readmeMarkdown: readmeMarkdown,
+            existingNote: existingNote,
+            model: model,
+            parameters: params,
+            outputLanguage: Self.outputLanguageDescriptor()
+        )
+        return try await Self.generateText(
+            client: client,
+            request: request,
+            streamEnabled: params.streamEnabled,
+            onDelta: onDelta
+        )
+    }
+
+    /// 纯请求构造器，便于单测精确验证笔记与 README 的边界。
+    static func makeRepoNoteRequest(
+        readmeMarkdown: String,
+        existingNote: String,
+        model: String,
+        parameters: AIModelParameters,
+        outputLanguage: String
+    ) -> AIChatRequest {
+        AIChatRequest(
+            systemPrompt: AIDefaultPrompts.repoNote.renderedSystemPrompt(placeholders: [
+                "outputLanguage": outputLanguage
+            ]),
+            userPrompt: AIDefaultPrompts.repoNote.renderedUserPrompt(placeholders: [
+                "outputLanguage": outputLanguage,
+                "existingNote": existingNote,
+                "readme": readmeMarkdown
+            ]),
+            model: model,
+            parameters: parameters,
+            responseFormat: .text,
+            usageContext: AIUsageContext(feature: .repoNote, phase: "generation")
+        )
+    }
+
+    /// 摘要与个人笔记共用同一套流式语义，避免两条路径在取消、空响应上漂移。
+    static func generateText(
+        client: any AIClientProtocol,
+        request: AIChatRequest,
+        streamEnabled: Bool,
+        onDelta: (@MainActor (String) -> Void)?
+    ) async throws -> String {
+        if streamEnabled {
             var accumulated = ""
             for try await event in client.chatStream(request: request) {
+                // 部分自定义流实现不会主动因父 Task 取消而结束，逐事件检查才能及时停流。
+                try Task.checkCancellation()
                 switch event {
                 case .delta(let delta):
                     accumulated += delta
@@ -712,14 +952,21 @@ final class RepoAIInsightService {
                 case .reasoningDelta, .reasoningCompleted, .toolCallDelta, .usage:
                     continue
                 case .completed(let response):
-                    return response.content
+                    try Task.checkCancellation()
+                    guard let final = response.content.nilIfBlank ?? accumulated.nilIfBlank else {
+                        throw AIClientError.emptyResponse
+                    }
+                    return final
                 }
             }
+            try Task.checkCancellation()
             guard let final = accumulated.nilIfBlank else { throw AIClientError.emptyResponse }
             return final
         } else {
             let response = try await client.chat(request: request)
-            return response.content
+            try Task.checkCancellation()
+            guard let final = response.content.nilIfBlank else { throw AIClientError.emptyResponse }
+            return final
         }
     }
 
@@ -761,9 +1008,17 @@ final class RepoAIInsightService {
             userPrompt: userPrompt,
             model: model,
             parameters: settings.effectiveParameters(for: task),
-            responseFormat: .jsonObject
+            responseFormat: .jsonObject,
+            usageContext: AIUsageContext(feature: .repoTags, phase: "recommendation")
         ))
-        return try Self.decodeTagSuggestions(json: response.content)
+        try Task.checkCancellation()
+        let decoded = try Self.decodeTagSuggestions(json: response.content)
+        // Prompt 是概率约束，不能直接作为写库边界。repo 标签排在词表前面，确保历史
+        // 同义形式冲突时优先沿用当前仓库已经绑定的标准拼写。
+        return AITagSuggestionPolicy.normalizedSuggestions(
+            decoded,
+            vocabulary: hints.repoTags + hints.libraryTags
+        )
     }
 
     /// `{outputLanguage}` 占位符的 Display Language 派发。
@@ -821,7 +1076,7 @@ final class RepoAIInsightService {
         return "lang:\(outputLanguage)|summary:\(settings.aiSummaryTask.providerID)/\(summaryModel)|tags:\(settings.aiTagsTask.providerID)/\(tagsModel)|external:\(external)"
     }
 
-    /// 为标签生成构造双层 hints：repo 自身已绑定标签（强信号） + 用户标签库其它高频标签（弱信号）。
+    /// 为标签生成构造双层 hints：repo 自身已绑定标签（强信号） + 用户标签库复用词表。
     ///
     /// **必须由两条调用入口共享**——`RepoAIInsightViewModel.generate(...)`（单仓 AI 摘要应用标签）
     /// 与 `BatchAIQueueService.processSingle(...)`（批量 AI 整理）。两边必须走同一份提示构造逻辑，
@@ -832,22 +1087,21 @@ final class RepoAIInsightService {
     /// 1. 拉 `repo` 当前已绑定标签（一般 ≤10 个，全部传入；强信号）。
     /// 2. 拉全库标签 + 全库使用次数 dict，按 (使用次数 DESC, name ASC) 稳定排序。
     /// 3. 从全库标签中**剔除已在 repo 上**的项（避免与 repoTags 重复占字符 / 信号矛盾）。
-    /// 4. 截断到 `libraryLimit`（默认 30，dong4j 2026-06-14 拍板：≤40 个不挤压 README，
-    ///    避免 prompt 偏向风格匹配过强）。
+    /// 4. 按 canonical key 去重后填充到 `libraryCharacterBudget`，避免词表无限挤占上下文。
     ///
     /// **稳定性约束**：
-    /// - 两个 list 都按 `(useCount DESC, name ASC)` 排序——不用 `Set → Array` 顺序不稳的
-    ///   桶序，避免同一份输入产生不同 source.hash 让 AI 摘要缓存失效。
+    /// - repo list 按 name 排序，全库 list 按 `(useCount DESC, name ASC)` 排序；不用
+    ///   `Set → Array` 的不稳定桶序，确保同一份输入生成同一份 Prompt。
     /// - 任一 repository 抛错时降级为空数组（标签生成是辅助优化项，不能因此阻断 AI 摘要主流程）。
     ///
     /// **参数**：
-    /// - `libraryLimit` 默认 30，可由 caller 调整；过大 (>50) 会让 prompt 偏向"风格匹配"信号
-    ///   稀释「优先在 repo 已有里复用」的强信号；过小 (<10) 又失去"参考其它命名颗粒度"的价值。
+    /// - `libraryCharacterBudget` 默认 12K，可由测试 / caller 调整；当前约 900 个短标签可
+    ///   完整进入词表，未来增长时仍保持有界。
     static func makeTagHints(
         for repo: Repo,
         repoTagRepository: any RepoTagRepositoryProtocol,
         tagRepository: any TagRepositoryProtocol,
-        libraryLimit: Int = 30
+        libraryCharacterBudget: Int = 12_000
     ) async -> AITagHints {
         async let repoTagsResult: [Tag] = {
             (try? await repoTagRepository.fetchTags(forRepo: repo.id)) ?? []
@@ -869,22 +1123,46 @@ final class RepoAIInsightService {
             let cleaned = repoTags
                 .map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
-            return Array(Set(cleaned)).sorted()
+                .sorted()
+            var seenKeys: Set<String> = []
+            return cleaned.filter {
+                let key = AITagSuggestionPolicy.canonicalKey($0)
+                return !key.isEmpty && seenKeys.insert(key).inserted
+            }
         }()
 
-        // 全库标签：剔除 repo 已有项 → 按 (useCount DESC, name ASC) 排 → 截断。
-        let repoNameSet = Set(repoNames)
-        let libraryNames: [String] = allTags
+        // 全库标签：剔除 repo 已有项 → 按 (useCount DESC, name ASC) 排 → 按字符预算截断。
+        // 旧版只传 Top 30，模型看不到大量长尾标签，因而不断创造同义新词。标签名本身很短，
+        // 用字符预算比固定数量更贴近 Prompt 体积：当前约 900 个标签仍可完整放入 12K；
+        // 将来词表继续增长时也不会无界挤占 README / code context。
+        let repoNameKeys = Set(repoNames.map(AITagSuggestionPolicy.canonicalKey))
+        let sortedLibraryNames: [String] = allTags
             .map { (name: $0.name.trimmingCharacters(in: .whitespacesAndNewlines), id: $0.id) }
-            .filter { !$0.name.isEmpty && !repoNameSet.contains($0.name) }
+            .filter {
+                !$0.name.isEmpty
+                    && !repoNameKeys.contains(AITagSuggestionPolicy.canonicalKey($0.name))
+            }
             .sorted { lhs, rhs in
                 let lc = counts[lhs.id] ?? 0
                 let rc = counts[rhs.id] ?? 0
                 if lc != rc { return lc > rc }
                 return lhs.name < rhs.name
             }
-            .prefix(max(0, libraryLimit))
             .map(\.name)
+
+        var libraryNames: [String] = []
+        var seenKeys = repoNameKeys
+        var usedCharacters = 0
+        let budget = max(0, libraryCharacterBudget)
+        for name in sortedLibraryNames {
+            let key = AITagSuggestionPolicy.canonicalKey(name)
+            guard !key.isEmpty, seenKeys.insert(key).inserted else { continue }
+            // 与实际 `joined(separator: ", ")` 一致计入分隔符，避免边界附近超预算。
+            let additionalCharacters = name.count + (libraryNames.isEmpty ? 0 : 2)
+            guard usedCharacters + additionalCharacters <= budget else { continue }
+            libraryNames.append(name)
+            usedCharacters += additionalCharacters
+        }
 
         return AITagHints(repoTags: repoNames, libraryTags: libraryNames)
     }
@@ -899,7 +1177,12 @@ final class RepoAIInsightService {
     /// - 优先使用 `readme_contents.content`(raw markdown,HOM-201 P2-2 拆表后独立):
     ///   决策 E3 后台懒补全完成时直接用原文,信息密度比 HTML 剥后高;
     ///   fallback `rendered_html` 保留兼容。
-    private func makeSource(for repo: Repo) async throws -> Source {
+    private func makeSource(
+        for repo: Repo,
+        codeContextRequest: RepoAICodeContextRequest? = nil,
+        onContextProgress: RepoAIContextProgressCallback? = nil,
+        includeInsights: Bool = true
+    ) async throws -> Source {
         let markdown = try await readmeRepository.findContent(repoId: repo.id)
         let readme: Readme? = (markdown == nil)
             ? try await readmeRepository.find(repoId: repo.id)
@@ -986,7 +1269,29 @@ final class RepoAIInsightService {
         var degradationReason: ContextDegradationReason?
         var codeContextXml = ""
         if let provider = repoAIContextProvider {
-            let outcome = try await provider.contextOutcome(for: repo)
+            // 只有单仓摘要会创建 request，因此也只有该路径插入 3 秒可取消缓冲。
+            // provider 在真实步骤 progress 发出后才调用 gate，ZIP 缓存命中时不会调用
+            // 下载 gate；这样既给用户取消窗口，也不为跳过的步骤人为加时。
+            let beforeStep: RepoAIContextStepGate?
+            if codeContextRequest == nil {
+                beforeStep = nil
+            } else {
+                beforeStep = { _ in
+                    try await Self.waitBeforeCodeContextStep()
+                }
+            }
+            let operation = {
+                try await provider.contextOutcome(
+                    for: repo,
+                    onProgress: onContextProgress,
+                    beforeStep: beforeStep
+                )
+            }
+            let outcome = if let codeContextRequest {
+                try await codeContextRequest.resolve(operation: operation)
+            } else {
+                try await operation()
+            }
             switch outcome {
             case .success(let result):
                 // 代码上下文 XML 既给 LLM 用又进 hash：commit SHA 改 = 代码语义改
@@ -1012,12 +1317,22 @@ final class RepoAIInsightService {
             }
         }
 
+        // 洞察上下文与 README / Code Context 共用 Source 生命周期，但不进入 source hash。
+        // Tags-only 任务明确跳过，避免批量标签整理无意义地预热所有仓库洞察。
+        let insightsContext: String
+        if includeInsights, let repositoryInsightsContextProvider {
+            insightsContext = await repositoryInsightsContextProvider.context(for: repo).content
+        } else {
+            insightsContext = ""
+        }
+
         return Source(
             text: llmText,
             hash: Self.hash(hashText),
             metadata: metadataBlock,
             readme: readmeText,
             codeContext: codeContextXml,
+            insightsContext: insightsContext,
             contextMeta: contextMeta,
             contextDegradationReason: degradationReason
         )

@@ -22,6 +22,7 @@ enum SidebarRootPage: String, CaseIterable, Identifiable {
     case manage
     case trending
     case activity
+    case insights
 
     var id: String { rawValue }
 
@@ -32,6 +33,7 @@ enum SidebarRootPage: String, CaseIterable, Identifiable {
         case .manage:   return "nav.manage"
         case .trending: return "nav.trending"
         case .activity: return "nav.activity"
+        case .insights: return "nav.insights"
         }
     }
 
@@ -40,6 +42,7 @@ enum SidebarRootPage: String, CaseIterable, Identifiable {
         case .manage:   return "star.circle"
         case .trending: return "safari"
         case .activity: return "bell.circle"
+        case .insights: return "gauge.with.dots.needle.bottom.0percent"
         }
     }
 }
@@ -56,6 +59,8 @@ enum SidebarRootPage: String, CaseIterable, Identifiable {
 enum SidebarItem: Hashable, Identifiable {
     case trending
     case allStars
+    /// 当前用户拥有或通过组织成员身份可访问的 GitHub 仓库。
+    case myProjects
     case untagged
     /// Starcat 私有知识库基础分类。它和 Smart Collections 的系统集合共享查询语义，
     /// 但放在 Sidebar 主导航里，作为“全部仓库 / 未分类”同级的快速入口。
@@ -78,6 +83,7 @@ enum SidebarItem: Hashable, Identifiable {
         switch self {
         case .trending:                return "section.trending"
         case .allStars:                return "section.all"
+        case .myProjects:              return "section.myProjects"
         case .untagged:                return "section.untagged"
         case .library:                 return "section.library"
         case .allLanguages:            return "language.all"
@@ -96,6 +102,7 @@ enum SidebarItem: Hashable, Identifiable {
         switch self {
         case .trending:                return "nav.trending"
         case .allStars:                return "sidebar.allRepos"
+        case .myProjects:              return "sidebar.myProjects"
         case .untagged:                return "sidebar.untagged"
         case .library:                 return "sidebar.library"
         case .allLanguages:            return "trending.allLanguages"
@@ -118,6 +125,7 @@ enum SidebarItem: Hashable, Identifiable {
         switch self {
         case .trending:                return "nav.trending"
         case .allStars:                return "sidebar.allRepos"
+        case .myProjects:              return "sidebar.myProjects"
         case .untagged:                return "sidebar.untagged"
         case .library:                 return "sidebar.library"
         case .allLanguages:            return "trending.allLanguages"
@@ -136,6 +144,9 @@ enum SidebarItem: Hashable, Identifiable {
         switch self {
         case .trending:                return "safari"
         case .allStars:                return "star.fill"
+        // 与「订阅发布」的 shippingbox.fill 区分：用人物叠层表达「我拥有 / 可访问的项目」。
+        // 不用 folder.badge.gearshape——同行已有项目授权 gear 角标，再叠 gear 会视觉撞车。
+        case .myProjects:              return "person.crop.rectangle.stack.fill"
         case .untagged:                return "tag.slash"
         case .library:                 return "heart.fill"
         case .allLanguages:            return "globe"
@@ -154,6 +165,7 @@ enum SidebarItem: Hashable, Identifiable {
     var semanticIconColor: Color? {
         switch self {
         case .allStars:             return .yellow
+        case .myProjects:           return .blue
         case .untagged:             return .orange
         case .library:              return .pink
         case .smartCollectionsHome,
@@ -161,6 +173,115 @@ enum SidebarItem: Hashable, Identifiable {
              .userSmartCollection:  return .blue
         default:                    return nil
         }
+    }
+}
+
+/// 星标模块中栏标题的三级导航语义。
+///
+/// 标题结构固定为「星标 › 基础仓库范围 › 当前细分条件」。
+///
+/// 语言是独立于基础范围的筛选条件，因此“全部仓库 / 未分类 / 知识库”都必须保留在
+/// 第二级；本类型只把查询状态投影成标题，不参与筛选状态写入。
+struct ManageNavigationPresentation: Equatable {
+    let secondLevelTitle: String
+    let thirdLevelTitle: String
+    let isFilteredScope: Bool
+
+    static func make(
+        selection: SidebarItem,
+        selectionTitle: String,
+        selectedLanguageTitles: [String],
+        selectedTagTitles: [String],
+        searchTitle: String?
+    ) -> ManageNavigationPresentation {
+        var secondLevelTitle: String
+        var thirdLevelTitle = String.l10n("general.all")
+        var isFilteredScope: Bool
+
+        switch selection {
+        case .trending:
+            secondLevelTitle = String.l10n("sidebar.allRepos")
+            isFilteredScope = false
+        case .allStars:
+            secondLevelTitle = selectionTitle
+            isFilteredScope = false
+        case .myProjects:
+            secondLevelTitle = selectionTitle
+            isFilteredScope = true
+        case .untagged:
+            secondLevelTitle = selectionTitle
+            isFilteredScope = true
+        case .library:
+            secondLevelTitle = selectionTitle
+            isFilteredScope = true
+        case .allLanguages:
+            secondLevelTitle = String.l10n("sidebar.allRepos")
+            thirdLevelTitle = selectionTitle
+            isFilteredScope = false
+        case .language:
+            secondLevelTitle = String.l10n("sidebar.allRepos")
+            thirdLevelTitle = selectionTitle
+            isFilteredScope = true
+        case .tag:
+            secondLevelTitle = String.l10n("sidebar.allRepos")
+            thirdLevelTitle = selectionTitle
+            isFilteredScope = true
+        case .smartCollectionsHome:
+            secondLevelTitle = String.l10n("smartCollections.title")
+            thirdLevelTitle = String.l10n("smartCollections.all")
+            isFilteredScope = false
+        case .smartCollection, .userSmartCollection:
+            secondLevelTitle = String.l10n("smartCollections.title")
+            thirdLevelTitle = selectionTitle
+            isFilteredScope = true
+        case .githubStarListUngrouped, .githubStarList:
+            secondLevelTitle = String.l10n("sidebar.githubStarLists")
+            thirdLevelTitle = selectionTitle
+            isFilteredScope = true
+        }
+
+        let normalizedLanguageTitles = selectedLanguageTitles
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let normalizedTagTitles = selectedTagTitles
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        // 智能集合自身已经占据第三级导航；语言 / 标签属于全局列表筛选，
+        // 不能再拼到集合名后面伪造出第四级。筛选状态仍保留，由 Toolbar 单独反馈。
+        let activeFilterTitles: [String]
+        switch selection {
+        case .smartCollectionsHome, .smartCollection, .userSmartCollection:
+            activeFilterTitles = []
+        default:
+            activeFilterTitles = normalizedLanguageTitles + normalizedTagTitles
+        }
+        if !activeFilterTitles.isEmpty {
+            var detailTitles = thirdLevelTitle == String.l10n("general.all")
+                ? []
+                : [thirdLevelTitle]
+            for title in activeFilterTitles where !detailTitles.contains(where: {
+                $0.caseInsensitiveCompare(title) == .orderedSame
+            }) {
+                detailTitles.append(title)
+            }
+            thirdLevelTitle = detailTitles.joined(separator: " · ")
+            isFilteredScope = true
+        }
+
+        if let searchTitle = searchTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !searchTitle.isEmpty {
+            // 搜索是当前分类上的附加条件，保留分类上下文可避免用户忘记搜索范围。
+            thirdLevelTitle = thirdLevelTitle == String.l10n("general.all")
+                ? searchTitle
+                : "\(thirdLevelTitle) · \(searchTitle)"
+            isFilteredScope = true
+        }
+
+        return ManageNavigationPresentation(
+            secondLevelTitle: secondLevelTitle,
+            thirdLevelTitle: thirdLevelTitle,
+            isFilteredScope: isFilteredScope
+        )
     }
 }
 
@@ -212,6 +333,7 @@ extension SidebarItem {
     var persistedRawValue: String {
         switch self {
         case .trending, .allStars: return "allStars"
+        case .myProjects:          return "myProjects"
         case .untagged:            return "untagged"
         case .library:             return "library"
         case .allLanguages:        return "allLanguages"
@@ -230,7 +352,9 @@ extension SidebarItem {
     /// 任何无法识别的旧值 / 空串 都回落到 `.allStars`，对应需求里
     /// "获取不到之前的分类 → 默认选中 allStars"。
     init(persistedRawValue raw: String) {
-        if raw == "untagged" {
+        if raw == "myProjects" {
+            self = .myProjects
+        } else if raw == "untagged" {
             self = .untagged
         } else if raw == "library" {
             self = .library

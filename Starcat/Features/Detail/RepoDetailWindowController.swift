@@ -234,6 +234,7 @@ struct RepoDetailWindowContent: View {
         self.homeViewModel = homeViewModel
         _readmeVM = State(initialValue: ReadmeViewModel(
             api: dependencies.readmeAPI,
+            privateAPI: dependencies.projectReadmeAPI,
             availability: dependencies.readmeAvailability
         ))
         _translationVM = State(initialValue: ReadmeTranslationViewModel(
@@ -285,7 +286,8 @@ struct RepoDetailWindowContent: View {
             translationVM.prepare(
                 repo: repo,
                 sourceHtml: nil,
-                targetLanguage: dependencies.settings.readmeTranslationLanguage
+                targetLanguage: dependencies.settings.readmeTranslationLanguage,
+                mode: dependencies.settings.readmeTranslationMode
             )
         }
     }

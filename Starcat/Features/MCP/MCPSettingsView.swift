@@ -47,6 +47,22 @@ struct MCPSettingsTab: View {
                     mcpService.restartForCurrentSettings()
                 }
 
+                Toggle(isOn: Binding(
+                    get: { settings.mcpAllowRemoteConnections },
+                    set: { enabled in
+                        settings.mcpAllowRemoteConnections = enabled
+                        mcpService.restartForCurrentSettings()
+                    }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings.mcp.remote.title")
+                        Text("settings.mcp.remote.help")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
                 Toggle(isOn: $settings.mcpExposePrivateNotes) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("settings.mcp.privateNotes.title")
@@ -55,6 +71,11 @@ struct MCPSettingsTab: View {
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                }
+
+                LabeledContent("settings.mcp.status") {
+                    Text(statusText(for: mcpService.state))
+                        .foregroundStyle(statusColor(for: mcpService.state))
                 }
             } header: {
                 SettingsSectionHeader(
@@ -105,48 +126,174 @@ struct MCPSettingsTab: View {
             }
 
             Section {
-                LabeledContent("settings.mcp.status") {
-                    Text(statusText(for: mcpService.state))
-                        .foregroundStyle(statusColor(for: mcpService.state))
+                setupActionRow(
+                    title: "settings.mcp.agentSetup.cli.manual.title",
+                    help: "settings.mcp.agentSetup.cli.manual.help"
+                ) {
+                    setupCopyButton(
+                        content: { mcpService.cliInstallCommand },
+                        tooltip: "settings.mcp.agentSetup.cli.manual.copy"
+                    )
                 }
 
-                LabeledContent("settings.mcp.endpoint") {
-                    Text(mcpService.endpointURL)
-                        .font(.system(.body, design: .monospaced))
-                        .textSelection(.enabled)
+                setupActionRow(
+                    title: "settings.mcp.agentSetup.cli.agent.title",
+                    help: "settings.mcp.agentSetup.cli.agent.help"
+                ) {
+                    setupCopyButton(
+                        content: { mcpService.cliAgentInstallPrompt },
+                        tooltip: "settings.mcp.agentSetup.cli.agent.copy"
+                    )
                 }
 
-                HStack {
-                    Spacer()
+                setupActionRow(
+                    title: "settings.mcp.agentSetup.cli.verify.title",
+                    help: "settings.mcp.agentSetup.cli.verify.help"
+                ) {
+                    setupCopyButton(
+                        content: { mcpService.cliVerificationCommand },
+                        tooltip: "settings.mcp.agentSetup.cli.verify.copy"
+                    )
+                }
+            } header: {
+                SettingsSectionHeader(
+                    "settings.mcp.agentSetup.cli.title",
+                    systemImage: "terminal",
+                    style: .prominent
+                )
+            }
 
-                    Button("settings.mcp.localAPIKey.open") {
-                        NotificationCenter.default.post(
-                            name: .starcatJumpToSettingsTab,
-                            object: "integrations.localAPIKey"
-                        )
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.regular)
-                    .focusEffectDisabled()
-
-                    Button("settings.mcp.copyConfig") {
-                        copy(mcpService.clientConfigSnippet)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.regular)
-                    .focusEffectDisabled()
+            Section {
+                setupActionRow(
+                    title: "settings.mcp.agentSetup.pair.manual.title",
+                    help: "settings.mcp.agentSetup.pair.manual.help"
+                ) {
+                    pairingCopyButton(
+                        providesContent: { try mcpService.createPairingCommand() },
+                        tooltip: "settings.mcp.agentSetup.pair.manual.copy",
+                        isEnabled: isRunning(mcpService.state)
+                    )
                 }
 
-                Text("settings.mcp.localAPIKey.help")
+                setupActionRow(
+                    title: "settings.mcp.agentSetup.pair.agent.title",
+                    help: "settings.mcp.agentSetup.pair.agent.help"
+                ) {
+                    pairingCopyButton(
+                        providesContent: { try mcpService.createPairingAgentInstruction() },
+                        tooltip: "settings.mcp.agentSetup.pair.agent.copy",
+                        isEnabled: isRunning(mcpService.state)
+                    )
+                }
+            } header: {
+                SettingsSectionHeader(
+                    "settings.mcp.agentSetup.pair.title",
+                    systemImage: "link.badge.plus",
+                    style: .prominent
+                )
+            } footer: {
+                Text("settings.mcp.agentSetup.security.help")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
+                setupActionRow(
+                    title: "settings.mcp.agentSetup.mcp.claude.title",
+                    help: "settings.mcp.agentSetup.mcp.claude.help"
+                ) {
+                    setupCopyButton(
+                        content: { mcpService.claudeMCPConfiguration },
+                        tooltip: "settings.mcp.agentSetup.mcp.claude.copy"
+                    )
+                }
+
+                setupActionRow(
+                    title: "settings.mcp.agentSetup.mcp.codex.title",
+                    help: "settings.mcp.agentSetup.mcp.codex.help"
+                ) {
+                    setupCopyButton(
+                        content: { mcpService.codexMCPConfiguration },
+                        tooltip: "settings.mcp.agentSetup.mcp.codex.copy"
+                    )
+                }
+
+                setupActionRow(
+                    title: "settings.mcp.agentSetup.mcp.agent.title",
+                    help: "settings.mcp.agentSetup.mcp.agent.help"
+                ) {
+                    setupCopyButton(
+                        content: { mcpService.mcpAgentSetupPrompt },
+                        tooltip: "settings.mcp.agentSetup.mcp.agent.copy"
+                    )
+                }
             } header: {
                 SettingsSectionHeader(
-                    "settings.mcp.section.connection",
-                    systemImage: "link",
+                    "settings.mcp.agentSetup.mcp.title",
+                    systemImage: "server.rack",
                     style: .prominent
                 )
+            } footer: {
+                Text("settings.mcp.agentSetup.mcp.configuration.help")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
+                setupActionRow(
+                    title: "settings.mcp.agentSetup.skill.manual.title",
+                    help: "settings.mcp.agentSetup.skill.manual.help"
+                ) {
+                    setupCopyButton(
+                        content: { mcpService.skillManualInstall },
+                        tooltip: "settings.mcp.agentSetup.skill.manual.copy"
+                    )
+                }
+
+                setupActionRow(
+                    title: "settings.mcp.agentSetup.skill.agent.title",
+                    help: "settings.mcp.agentSetup.skill.agent.help"
+                ) {
+                    setupCopyButton(
+                        content: { mcpService.skillAgentInstallPrompt },
+                        tooltip: "settings.mcp.agentSetup.skill.agent.copy"
+                    )
+                }
+            } header: {
+                SettingsSectionHeader(
+                    "settings.mcp.agentSetup.skill.title",
+                    systemImage: "wand.and.stars",
+                    style: .prominent
+                )
+            }
+
+            if !dependencies.mcpDeviceStore.devices.isEmpty {
+                Section {
+                    ForEach(dependencies.mcpDeviceStore.devices) { device in
+                        HStack(alignment: .center, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(device.name)
+                                Text("\(device.platform) / \(device.architecture) · \(device.cliVersion)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 16)
+                            Button("settings.mcp.devices.revoke", role: .destructive) {
+                                try? dependencies.mcpDeviceStore.revoke(deviceID: device.id)
+                            }
+                            .buttonStyle(.bordered)
+                            .focusEffectDisabled()
+                        }
+                    }
+                } header: {
+                    SettingsSectionHeader(
+                        "settings.mcp.section.devices",
+                        systemImage: "laptopcomputer.and.iphone",
+                        style: .prominent
+                    )
+                }
             }
 
             Section {
@@ -203,9 +350,72 @@ struct MCPSettingsTab: View {
         }
     }
 
-    private func copy(_ value: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
+    private func isRunning(_ state: StarcatMCPService.State) -> Bool {
+        if case .running = state { return true }
+        return false
+    }
+
+    /// 设置页动作保持“说明在左、独立按钮在右”的统一密度；复制状态与剪贴板写入由
+    /// `CopyFeedbackButton` 负责，避免每一行各自维护反馈计时器。
+    private func setupActionRow<Action: View>(
+        title: LocalizedStringKey,
+        help: LocalizedStringKey,
+        @ViewBuilder action: () -> Action
+    ) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text(help)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 16)
+            action()
+        }
+    }
+
+    private func setupCopyButton(
+        content: @escaping () -> String,
+        tooltip: LocalizedStringKey
+    ) -> some View {
+        CopyFeedbackButton(providesContent: content, tooltip: tooltip, style: .bordered) { didCopy in
+            setupCopyLabel(didCopy: didCopy, key: tooltip)
+        }
+        .controlSize(.regular)
+    }
+
+    /// 配对命令每次点击即时生成，不能先缓存到 View state。这样用户手工配对与
+    /// Agent 配对永远拿到相互独立、五分钟有效的一次性 secret。
+    private func pairingCopyButton(
+        providesContent: @escaping () throws -> String,
+        tooltip: LocalizedStringKey,
+        isEnabled: Bool
+    ) -> some View {
+        CopyFeedbackButton(
+            performCopy: {
+                guard let content = try? providesContent() else { return false }
+                NSPasteboard.general.clearContents()
+                return NSPasteboard.general.setString(content, forType: .string)
+            },
+            tooltip: tooltip,
+            style: .bordered
+        ) { didCopy in
+            setupCopyLabel(didCopy: didCopy, key: tooltip)
+        }
+        .controlSize(.regular)
+        .disabled(!isEnabled)
+    }
+
+    @ViewBuilder
+    private func setupCopyLabel(didCopy: Bool, key: LocalizedStringKey) -> some View {
+        if didCopy {
+            Label("common.copy.copied", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(Color.green)
+        } else {
+            Label(key, systemImage: "doc.on.doc")
+                .foregroundStyle(.primary)
+        }
     }
 }
 

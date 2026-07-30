@@ -113,7 +113,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AppLog.auth.warning("AppDelegate: kAEGetURL event missing URL string")
             return
         }
-        AppLog.auth.info("AppDelegate: forwarding URL via NotificationCenter: \(url.absoluteString, privacy: .public)")
+        // OAuth callback query 可能包含一次性 code 与 state；日志只记录路由，
+        // 避免主登录和 GitHub App 项目授权的敏感参数进入本机日志。
+        AppLog.auth.info(
+            "AppDelegate: forwarding URL via NotificationCenter: scheme=\(url.scheme ?? "", privacy: .public) host=\(url.host ?? "", privacy: .public) path=\(url.path, privacy: .public)"
+        )
         // post 到主队列，让 .onReceive 在同一次 run loop 里收到
         NotificationCenter.default.post(name: Self.incomingURLNotification, object: url)
     }
@@ -136,6 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 主窗口被关闭后，SwiftUI WindowGroup 对应的 NSWindow 已经从
             // NSApp.windows 移除；这时必须回到 SwiftUI 的 openWindow(id:)
             // 创建窗口，不能只激活 AppKit 进程。
+            AppLog.general.info("Main window missing; invoking SwiftUI openWindow fallback")
             openMainWindowFallback?()
             return
         }

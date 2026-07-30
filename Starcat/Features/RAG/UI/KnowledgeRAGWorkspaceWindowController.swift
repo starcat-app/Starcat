@@ -45,6 +45,43 @@ private enum KnowledgeRAGWorkspaceWindowMetrics {
     static let autosaveName = "KnowledgeRAGWorkspaceWindow"
 }
 
+/// 知识库浏览器窗口尺寸策略。
+private enum KnowledgeRAGBrowserWindowMetrics {
+    static let defaultContentSize = NSSize(width: 1280, height: 800)
+    static let minimumContentSize = NSSize(width: 980, height: 660)
+    static let autosaveName = "KnowledgeRAGBrowserWindow.v2"
+}
+
+/// 为两个 RAG 独立窗口统一换算并执行内容区下限。
+@MainActor
+private enum KnowledgeRAGWindowSizePolicy {
+    static func enforce(minimumContentSize: NSSize, on window: NSWindow) {
+        // `contentMinSize` 描述 SwiftUI 内容区，`minSize` 描述包含标题栏的外框；
+        // 两者不能直接复用同一个数值，否则恢复窗口或系统重算约束时会出现语义偏差。
+        let minimumFrameSize = window.frameRect(
+            forContentRect: NSRect(origin: .zero, size: minimumContentSize)
+        ).size
+        window.contentMinSize = minimumContentSize
+        window.minSize = minimumFrameSize
+
+        let currentFrame = window.frame
+        guard currentFrame.width < minimumFrameSize.width
+                || currentFrame.height < minimumFrameSize.height else { return }
+
+        // AppKit autosave、Accessibility 和 SwiftUI 布局重算都可能直接写入一个过小 frame；
+        // resize 回调再次执行这里，确保最小尺寸是运行时约束，而不只是初始化提示。
+        let correctedSize = NSSize(
+            width: max(currentFrame.width, minimumFrameSize.width),
+            height: max(currentFrame.height, minimumFrameSize.height)
+        )
+        window.setFrame(
+            NSRect(origin: currentFrame.origin, size: correctedSize),
+            display: true,
+            animate: false
+        )
+    }
+}
+
 /// 复用单个 RAG 工作台窗口;重复点击 toolbar 入口时把已有窗口带到前台。
 final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowDelegate {
 
@@ -86,8 +123,15 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
         }
 
         controller.showWindow(nil)
-        if shouldCenter {
-            controller.window?.center()
+        if let window = controller.window {
+            // `showWindow` 可能恢复历史 frame；前置前再校正一次，避免旧的小窗口闪现。
+            KnowledgeRAGWindowSizePolicy.enforce(
+                minimumContentSize: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize,
+                on: window
+            )
+            if shouldCenter {
+                window.center()
+            }
         }
         controller.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -132,13 +176,15 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
         window.title = String.l10n("rag.workspace.window.title")
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.setContentSize(KnowledgeRAGWorkspaceWindowMetrics.defaultContentSize)
-        window.contentMinSize = KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize
-        window.minSize = KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize
         window.isReleasedWhenClosed = false
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.backgroundColor = .windowBackgroundColor
         window.setFrameAutosaveName(KnowledgeRAGWorkspaceWindowMetrics.autosaveName)
+        KnowledgeRAGWindowSizePolicy.enforce(
+            minimumContentSize: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize,
+            on: window
+        )
 
         let controls = NSTitlebarAccessoryViewController()
         controls.layoutAttribute = .right
@@ -166,6 +212,14 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
         fatalError("KnowledgeRAGWorkspaceWindowController does not support storyboard initialization")
     }
 
+    func windowDidResize(_ notification: Notification) {
+        guard let resizedWindow = notification.object as? NSWindow else { return }
+        KnowledgeRAGWindowSizePolicy.enforce(
+            minimumContentSize: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize,
+            on: resizedWindow
+        )
+    }
+
     func windowWillClose(_ notification: Notification) {
         viewModel.persistCurrentComposerDraft()
         viewModel.cancelAllAnswers()
@@ -184,20 +238,34 @@ final class KnowledgeRAGBrowserWindowController: NSWindowController, NSWindowDel
     static func show(
         dependencies: AppDependencies,
         homeViewModel: HomeViewModel,
+        settingsNavigation: RAGSettingsNavigationAction,
         centeredOver presentingWindow: NSWindow?
     ) {
         let isNewWindow = shared == nil
         let controller = shared ?? KnowledgeRAGBrowserWindowController(
             dependencies: dependencies,
-            homeViewModel: homeViewModel
+            homeViewModel: homeViewModel,
+            settingsNavigation: settingsNavigation
         )
         shared = controller
         controller.showWindow(nil)
-        if isNewWindow, let window = controller.window {
-            controller.center(window, over: presentingWindow)
+        if let window = controller.window {
+            KnowledgeRAGWindowSizePolicy.enforce(
+                minimumContentSize: KnowledgeRAGBrowserWindowMetrics.minimumContentSize,
+                on: window
+            )
+            if isNewWindow {
+                controller.center(window, over: presentingWindow)
+            }
+            // makeKeyAndOrderFront 不会恢复 Dock 中的最小化窗口。复用 shared controller 时
+            // 必须先解除最小化，再强制前置，保证每次点击都能看到同一个知识库窗口。
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
+            }
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
         }
-        controller.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     /// 首次打开时锚定 RAG 工作台，避免浏览器落在上一次应用启动时保存的无关位置。
@@ -219,25 +287,33 @@ final class KnowledgeRAGBrowserWindowController: NSWindowController, NSWindowDel
         window.setFrameOrigin(frame.origin)
     }
 
-    private init(dependencies: AppDependencies, homeViewModel: HomeViewModel) {
+    private init(
+        dependencies: AppDependencies,
+        homeViewModel: HomeViewModel,
+        settingsNavigation: RAGSettingsNavigationAction
+    ) {
         let viewModel = KnowledgeRAGBrowserViewModel(
             dependencies: dependencies,
             homeViewModel: homeViewModel
         )
         self.viewModel = viewModel
         let content = KnowledgeRAGBrowserView(viewModel: viewModel)
-        .appHostEnvironment(dependencies, homeViewModel: homeViewModel)
+            .appHostEnvironment(dependencies, homeViewModel: homeViewModel)
+            // 浏览器也是独立 NSWindow，不能依赖默认 no-op EnvironmentAction。
+            .environment(\.ragSettingsNavigation, settingsNavigation)
         let window = NSWindow(contentViewController: NSHostingController(rootView: content))
         window.title = ""
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         // 400pt 左栏约占窗口三分之一，与知识库宽屏布局截图的栏宽比例一致；
         // 右栏保留约 880pt，分片标题、状态和行内操作不再互相挤压。
-        window.setContentSize(NSSize(width: 1_280, height: 800))
-        window.contentMinSize = NSSize(width: 760, height: 500)
-        window.minSize = window.contentMinSize
+        window.setContentSize(KnowledgeRAGBrowserWindowMetrics.defaultContentSize)
         window.isReleasedWhenClosed = false
         // v2 让旧版 980×660 的已保存 frame 不覆盖新默认值；用户之后的手动尺寸仍会正常记忆。
-        window.setFrameAutosaveName("KnowledgeRAGBrowserWindow.v2")
+        window.setFrameAutosaveName(KnowledgeRAGBrowserWindowMetrics.autosaveName)
+        KnowledgeRAGWindowSizePolicy.enforce(
+            minimumContentSize: KnowledgeRAGBrowserWindowMetrics.minimumContentSize,
+            on: window
+        )
         super.init(window: window)
         window.delegate = self
     }
@@ -245,45 +321,63 @@ final class KnowledgeRAGBrowserWindowController: NSWindowController, NSWindowDel
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("KnowledgeRAGBrowserWindowController does not support storyboard initialization") }
 
+    func windowDidResize(_ notification: Notification) {
+        guard let resizedWindow = notification.object as? NSWindow else { return }
+        KnowledgeRAGWindowSizePolicy.enforce(
+            minimumContentSize: KnowledgeRAGBrowserWindowMetrics.minimumContentSize,
+            on: resizedWindow
+        )
+    }
+
     func windowWillClose(_ notification: Notification) {
         viewModel.cancelRepoContextGeneration()
+        viewModel.cancelRepositoryInsightsGeneration()
         Self.shared = nil
     }
 }
 
-/// 知识库详情的联合展示项。RepoContext 只存在于这个展示模型，绝不伪造成数据库分片。
+/// 知识库详情的联合展示项。两个 XML 只存在于展示模型，绝不伪造成数据库分片。
 enum KnowledgeRAGBrowserManagedItem: Identifiable {
     case chunk(RAGManagedChunk)
+    case repositoryInsights(RepositoryInsightsContextArtifact)
     case repoContext(RepoContextDocument)
 
     var id: String {
         switch self {
         case .chunk(let managed): return "chunk:\(managed.id)"
+        case .repositoryInsights(let artifact):
+            return "repository-insights:\(artifact.document.repositoryID):\(artifact.document.sourceHash)"
         case .repoContext(let document): return "repo-context:\(document.id)"
         }
     }
 
-    /// RepoContext 固定跟在 metadata 后；旧数据缺 metadata 时放在首项，避免制造一个
-    /// 没有语义锚点的“第二项”空位。
+    /// 固定顺序：Metadata → Insights XML → RepoContext XML → 普通分片。
+    /// 旧数据缺 Metadata 时两个特殊项置顶，仍保持 Insights 在 RepoContext 前。
     static func merge(
         chunks: [RAGManagedChunk],
+        repositoryInsights: RepositoryInsightsContextArtifact?,
         repoContext: RepoContextDocument?
     ) -> [KnowledgeRAGBrowserManagedItem] {
         var items = chunks.map(Self.chunk)
-        guard let repoContext else { return items }
-        let insertionIndex = repoContextInsertionIndex(in: chunks.map(\.chunk.source))
-        items.insert(.repoContext(repoContext), at: insertionIndex)
+        var insertionIndex = specialContextInsertionIndex(in: chunks.map(\.chunk.source))
+        if let repositoryInsights {
+            items.insert(.repositoryInsights(repositoryInsights), at: insertionIndex)
+            insertionIndex += 1
+        }
+        if let repoContext {
+            items.insert(.repoContext(repoContext), at: insertionIndex)
+        }
         return items
     }
 
-    static func repoContextInsertionIndex(in sources: [RAGChunkSource]) -> Int {
+    static func specialContextInsertionIndex(in sources: [RAGChunkSource]) -> Int {
         guard let metadataIndex = sources.firstIndex(of: .metadata) else { return 0 }
         return min(metadataIndex + 1, sources.count)
     }
 
-    /// RepoContext 是仓库级单件产物，统计只能看文件快照是否存在，不能借用普通 chunk 数量。
-    static func repoContextAvailability(repoContext: RepoContextDocument?) -> String {
-        repoContext == nil ? "0 / 1" : "1 / 1"
+    /// 特殊 XML 是仓库级单件产物，统计只能看文件快照是否存在，不能借用普通 chunk 数量。
+    static func singletonAvailability(_ isAvailable: Bool) -> String {
+        isAvailable ? "1 / 1" : "0 / 1"
     }
 }
 
@@ -324,7 +418,8 @@ enum RepoContextGenerationState: Equatable, Sendable {
     case idle
     case preparing(RepoContextGenerationStep)
     case succeeded(cacheHit: Bool)
-    case failed(String)
+    /// 保留结构化降级原因，避免 UI 通过本地化后的 message 反推是否应展示恢复操作。
+    case failed(message: String, reason: ContextDegradationReason?)
     case cancelled
 
     var isActive: Bool {
@@ -343,7 +438,7 @@ enum RepoContextGenerationState: Equatable, Sendable {
 
 /// 生成结果只有同时属于当前请求和当前仓库才可回写。抽成纯值对象后，无需暴露整个
 /// 浏览器 ViewModel 就能锁定取消后迟到、切仓后迟到两类竞态。
-struct RepoContextGenerationIdentity: Equatable, Sendable {
+struct SpecialContextGenerationIdentity: Equatable, Sendable {
     let id: UUID
     let repoID: Int64
 
@@ -369,12 +464,19 @@ private final class KnowledgeRAGBrowserViewModel {
     var indexes: [Int64: RAGKnowledgeRepositoryIndex] = [:]
     var selectedRepoID: Int64?
     var chunks: [RAGManagedChunk] = []
+    /// 仓库洞察 XML 与 RepoContext 一样是文件 Artifact，不进入 `rag_chunks`。
+    var repositoryInsightsArtifact: RepositoryInsightsContextArtifact?
     /// RepoContext 是文件系统产物，不进入 `rag_chunks`；浏览器只在展示层把它合并为特殊项。
     var repoContextDocument: RepoContextDocument?
+    var isGeneratingRepositoryInsights = false
+    private var repositoryInsightsGenerationIdentity: SpecialContextGenerationIdentity?
+    private var repositoryInsightsGenerationTask: Task<Void, Never>?
+    /// 取消时必须保留原 repo，不能依赖此刻可能已切换的 `selectedCandidate`。
+    private var repositoryInsightsGenerationRepo: Repo?
     var repoContextGenerationState: RepoContextGenerationState = .idle
     var isRepoContextSettingsPromptPresented = false
     /// UUID 同时防护 repo 切换与“取消后旧 task 迟到回写”两类竞态。
-    private var repoContextGenerationIdentity: RepoContextGenerationIdentity?
+    private var repoContextGenerationIdentity: SpecialContextGenerationIdentity?
     private var repoContextGenerationTask: Task<Void, Never>?
     private var repoContextGenerationRepo: Repo?
     var hasMoreChunks = false
@@ -384,10 +486,8 @@ private final class KnowledgeRAGBrowserViewModel {
     var isLoadingMoreRepositories = false
     var isIndexing = false
     var isLibraryOperationInFlight = false
-    var isConfirmingUsingLibraryRemoval = false
     /// 用户主动移出仓库后保持右栏空态；索引异步刷新不得把选择跳回第一条。
     private var preservesEmptySelection = false
-    private var pendingUsingLibraryRemovalRepoID: Int64?
     /// 浏览器独立于 Composer「+」面板；默认最近加入知识库倒序。
     var repositorySortOption: RepoSortOption = RAGComposerMentionSort.default {
         didSet {
@@ -423,7 +523,13 @@ private final class KnowledgeRAGBrowserViewModel {
     var isTestingRetrieval = false
     /// 仅在服务端成功返回后置位，用于区分“尚未测试”和“测试完成但无命中”。
     var hasCompletedRetrievalTest = false
-    var errorMessage: String?
+    var errorMessage: String? {
+        didSet {
+            if errorMessage == nil { workspaceError = nil }
+        }
+    }
+    /// 保留原始 Error 类型供共享 alert 分类；字符串只用于反馈邮件中的技术细节。
+    var workspaceError: RAGWorkspaceError?
 
     init(dependencies: AppDependencies, homeViewModel: HomeViewModel) {
         self.dependencies = dependencies
@@ -431,11 +537,28 @@ private final class KnowledgeRAGBrowserViewModel {
         self.retrievalTestSettings = dependencies.settings.ragRetrievalSettings.normalized()
     }
 
+    func dismissError() {
+        errorMessage = nil
+        workspaceError = nil
+    }
+
+    /// 向量化、网络与配置错误必须保留具体类型，不能先抹平成 String 再让 UI 猜测。
+    private func presentError(_ error: Error) {
+        errorMessage = error.localizedDescription
+        workspaceError = RAGWorkspaceError(error: error)
+    }
+
     var embeddingModel: String { dependencies.settings.aiEmbeddingTask.resolvedModelName }
+    var configuredEmbeddingModelName: String? { dependencies.settings.configuredEmbeddingModelName }
+    var embeddingConfigurationIssue: AIEmbeddingError? { dependencies.settings.embeddingConfigurationIssue }
     var selectedCandidate: RAGRepoCandidate? { candidates.first(where: { $0.repo.id == selectedRepoID }) }
     var selectedIndex: RAGKnowledgeRepositoryIndex? { selectedRepoID.flatMap { indexes[$0] } }
     var managedItems: [KnowledgeRAGBrowserManagedItem] {
-        KnowledgeRAGBrowserManagedItem.merge(chunks: chunks, repoContext: repoContextDocument)
+        KnowledgeRAGBrowserManagedItem.merge(
+            chunks: chunks,
+            repositoryInsights: repositoryInsightsArtifact,
+            repoContext: repoContextDocument
+        )
     }
     var isGeneratingRepoContext: Bool { repoContextGenerationState.isActive }
 
@@ -483,12 +606,57 @@ private final class KnowledgeRAGBrowserViewModel {
     func selectRepository(_ id: Int64) async {
         guard selectedRepoID != id else { return }
         cancelRepoContextGeneration()
+        cancelRepositoryInsightsGeneration()
         let requestGeneration = repositorySelectionGate.begin()
         preservesEmptySelection = false
         selectedRepoID = id
-        // 先清掉旧仓库 XML，避免磁盘读取完成前短暂展示上一项目的第二行。
+        // 先清掉旧仓库 XML，避免磁盘读取完成前短暂展示上一项目的特殊行。
+        repositoryInsightsArtifact = nil
         repoContextDocument = nil
         await loadChunks(selectionGeneration: requestGeneration)
+    }
+
+    /// 洞察 XML 的主动生成不显示全页 loading；旧 Artifact 保持可见，成功后一次替换。
+    func generateRepositoryInsights() {
+        guard !isGeneratingRepositoryInsights, let repo = selectedCandidate?.repo else { return }
+        let identity = SpecialContextGenerationIdentity(id: UUID(), repoID: repo.id)
+        repositoryInsightsGenerationIdentity = identity
+        repositoryInsightsGenerationRepo = repo
+        isGeneratingRepositoryInsights = true
+        let coordinator = dependencies.repositoryInsightsContextCoordinator
+        repositoryInsightsGenerationTask = Task { [weak self] in
+            guard let self else { return }
+            let artifact = await coordinator.prepareArtifact(for: repo, mode: .forceRegenerate)
+            guard !Task.isCancelled,
+                  identity.accepts(
+                      currentID: repositoryInsightsGenerationIdentity?.id,
+                      selectedRepoID: selectedRepoID
+                  ) else { return }
+            if let artifact {
+                repositoryInsightsArtifact = artifact
+            } else {
+                errorMessage = String.l10n("rag.browser.repositoryInsights.generation.failed")
+            }
+            repositoryInsightsGenerationIdentity = nil
+            repositoryInsightsGenerationTask = nil
+            repositoryInsightsGenerationRepo = nil
+            isGeneratingRepositoryInsights = false
+        }
+    }
+
+    func cancelRepositoryInsightsGeneration() {
+        let repo = repositoryInsightsGenerationRepo
+        repositoryInsightsGenerationTask?.cancel()
+        repositoryInsightsGenerationTask = nil
+        repositoryInsightsGenerationIdentity = nil
+        repositoryInsightsGenerationRepo = nil
+        isGeneratingRepositoryInsights = false
+        if let repo {
+            let coordinator = dependencies.repositoryInsightsContextCoordinator
+            Task {
+                await coordinator.cancelPreparation(for: repo, mode: .forceRegenerate)
+            }
+        }
     }
 
     /// 用户主动生成或重新生成 RepoContext。下载、缓存和打包都复用统一 provider，
@@ -500,7 +668,7 @@ private final class KnowledgeRAGBrowserViewModel {
             return
         }
 
-        let generationIdentity = RepoContextGenerationIdentity(id: UUID(), repoID: repo.id)
+        let generationIdentity = SpecialContextGenerationIdentity(id: UUID(), repoID: repo.id)
         repoContextGenerationIdentity = generationIdentity
         repoContextGenerationRepo = repo
         repoContextGenerationState = .preparing(.resolving)
@@ -531,7 +699,14 @@ private final class KnowledgeRAGBrowserViewModel {
                     repoContextGenerationState = .idle
                     isRepoContextSettingsPromptPresented = true
                 case .degraded(let reason):
-                    repoContextGenerationState = .failed(String.l10n(reason.bannerMessageKey))
+                    // 知识库主动生成与单仓 AI 共用项目上下文 ZIP 阈值；超限时必须把
+                    // 当前配置值直接告诉用户，不能回退到历史固定 100MB 文案。
+                    repoContextGenerationState = .failed(
+                        message: reason.bannerMessage(
+                            maximumArchiveMB: dependencies.settings.aiRepoContextMaximumArchiveMB
+                        ),
+                        reason: reason
+                    )
                 }
                 repoContextGenerationIdentity = nil
                 repoContextGenerationTask = nil
@@ -550,7 +725,10 @@ private final class KnowledgeRAGBrowserViewModel {
                     currentID: repoContextGenerationIdentity?.id,
                     selectedRepoID: selectedRepoID
                 ) else { return }
-                repoContextGenerationState = .failed(error.localizedDescription)
+                repoContextGenerationState = .failed(
+                    message: error.localizedDescription,
+                    reason: nil
+                )
                 repoContextGenerationTask = nil
                 repoContextGenerationRepo = nil
             }
@@ -574,7 +752,7 @@ private final class KnowledgeRAGBrowserViewModel {
         }
     }
 
-    /// 复用主详情页的知识库移出规则；正在使用的仓库需要先由用户确认状态降级。
+    /// 移出知识库只更新知识库归属；阅读状态由用户在状态入口单独管理。
     func requestSelectedRepositoryRemoval() async {
         guard dependencies.authSession.state.isAuthenticated else {
             dependencies.authSession.requestLoginSheet()
@@ -592,32 +770,10 @@ private final class KnowledgeRAGBrowserViewModel {
                 clearRemovedRepository(repoID: repoID)
                 return
             }
-            let status = try await dependencies.repoNoteRepository.find(repoId: repoID)
-                .map { RepoStatus.parse($0.status) } ?? homeViewModel.readStatus(for: repoID)
-            guard status != .using else {
-                pendingUsingLibraryRemovalRepoID = repoID
-                isConfirmingUsingLibraryRemoval = true
-                return
-            }
-            await removeRepositoryFromLibrary(repoID: repoID, downgradeUsingStatus: false)
+            await removeRepositoryFromLibrary(repoID: repoID)
         } catch {
             errorMessage = error.localizedDescription
         }
-    }
-
-    func confirmUsingRepositoryRemoval() async {
-        guard !isLibraryOperationInFlight,
-              let repoID = pendingUsingLibraryRemovalRepoID else { return }
-        pendingUsingLibraryRemovalRepoID = nil
-        isConfirmingUsingLibraryRemoval = false
-        isLibraryOperationInFlight = true
-        defer { isLibraryOperationInFlight = false }
-        await removeRepositoryFromLibrary(repoID: repoID, downgradeUsingStatus: true)
-    }
-
-    func cancelUsingRepositoryRemoval() {
-        pendingUsingLibraryRemovalRepoID = nil
-        isConfirmingUsingLibraryRemoval = false
     }
 
     func loadMoreChunks() async {
@@ -647,7 +803,7 @@ private final class KnowledgeRAGBrowserViewModel {
             do {
                 try await dependencies.knowledgeRAGIndexBuilder.rebuildRepository(repo)
                 await refresh()
-            } catch { errorMessage = error.localizedDescription }
+            } catch { presentError(error) }
             await KnowledgeRAGIndexRefreshPresentation.waitForMinimumDuration(startedAt: startedAt, clock: clock)
             isIndexing = false
         }
@@ -689,7 +845,7 @@ private final class KnowledgeRAGBrowserViewModel {
                 retrievalHits = result.childHits.sorted { $0.score > $1.score }
                 retrievalTestDiagnostics = result.diagnostics
                 hasCompletedRetrievalTest = true
-            } catch { errorMessage = error.localizedDescription }
+            } catch { presentError(error) }
         }
     }
 
@@ -736,7 +892,7 @@ private final class KnowledgeRAGBrowserViewModel {
                     ])
                     await refresh()
                 } catch {
-                    errorMessage = error.localizedDescription
+                    presentError(error)
                 }
             }
             return nil
@@ -770,6 +926,25 @@ private final class KnowledgeRAGBrowserViewModel {
             repoContextDocument = nil
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    /// 只删除洞察 XML Artifact；Coordinator 的 Storage 不持有数据库依赖，因此不会碰
+    /// 页面洞察缓存、Star History 或 AI 已有摘要。
+    func deleteRepositoryInsights() {
+        guard !isGeneratingRepositoryInsights else { return }
+        guard let repo = selectedCandidate?.repo else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await dependencies.repositoryInsightsContextCoordinator.deleteArtifact(for: repo)
+                guard selectedRepoID == repo.id else { return }
+                repositoryInsightsArtifact = nil
+            } catch {
+                // 删除失败时继续展示旧 Artifact，避免文件仍会被 RAG 使用而 UI 却假装已删除。
+                guard selectedRepoID == repo.id else { return }
+                errorMessage = String.l10n("rag.browser.repositoryInsights.delete.failed")
+            }
         }
     }
 
@@ -811,7 +986,7 @@ private final class KnowledgeRAGBrowserViewModel {
                     ])
                     await refresh()
                 } catch {
-                    errorMessage = error.localizedDescription
+                    presentError(error)
                 }
             }
         } catch { errorMessage = error.localizedDescription }
@@ -892,8 +1067,10 @@ private final class KnowledgeRAGBrowserViewModel {
                 } else if !candidates.contains(where: { $0.repo.id == selectedRepoID }) {
                     // 搜索/筛选可让当前仓库从候选集中消失。这也是一次真实切仓，必须
                     // 走与用户点击相同的取消边界，不能让旧下载/打包在后台继续。
+                    cancelRepositoryInsightsGeneration()
                     cancelRepoContextGeneration()
                     selectedRepoID = candidates.first?.repo.id
+                    repositoryInsightsArtifact = nil
                     repoContextDocument = nil
                 }
             }
@@ -907,12 +1084,9 @@ private final class KnowledgeRAGBrowserViewModel {
         }
     }
 
-    private func removeRepositoryFromLibrary(repoID: Int64, downgradeUsingStatus: Bool) async {
+    private func removeRepositoryFromLibrary(repoID: Int64) async {
         do {
             try await dependencies.repoNoteRepository.updateLibraryState(repoId: repoID, state: .outsideLibrary)
-            if downgradeUsingStatus {
-                try await dependencies.repoNoteRepository.updateStatus(repoId: repoID, status: .read)
-            }
 
             // 数据库写入成功后再清空 UI，失败时保留当前详情供用户重试。
             homeViewModel.applyLibraryStateChange(repoId: repoID, state: .outsideLibrary)
@@ -931,12 +1105,14 @@ private final class KnowledgeRAGBrowserViewModel {
             indexes.removeValue(forKey: repoID)
             return
         }
+        cancelRepositoryInsightsGeneration()
         cancelRepoContextGeneration()
         // 让仍在执行的分片读取失效，避免移出后旧请求把右栏内容重新写回来。
         _ = repositorySelectionGate.begin()
         preservesEmptySelection = true
         selectedRepoID = nil
         chunks = []
+        repositoryInsightsArtifact = nil
         repoContextDocument = nil
         hasMoreChunks = false
         candidates.removeAll { $0.repo.id == repoID }
@@ -954,6 +1130,7 @@ private final class KnowledgeRAGBrowserViewModel {
     private func loadChunks(limit: Int, append: Bool, selectionGeneration: Int? = nil) async {
         guard let selectedRepoID else {
             chunks = []
+            repositoryInsightsArtifact = nil
             repoContextDocument = nil
             hasMoreChunks = false
             return
@@ -961,18 +1138,26 @@ private final class KnowledgeRAGBrowserViewModel {
         let requestedRepoID = selectedRepoID
         let requestedOffset = append ? chunks.count : 0
         do {
+            let repo = candidates.first(where: { $0.repo.id == requestedRepoID })?.repo
             let loadedRepoContext: RepoContextDocument? = if append {
                 repoContextDocument
-            } else if let repo = candidates.first(where: { $0.repo.id == requestedRepoID })?.repo {
+            } else if let repo {
                 try dependencies.repoContextStorage.loadDocument(owner: repo.owner, repo: repo.name)
             } else {
                 nil
             }
-            let page = try await dependencies.ragChunkRepository.fetchManagedKnowledgeChunks(
+            // 两个文件 Artifact 与 SQLite 分片彼此独立；并行读取可避免详情首开被串行 IO 拉长，
+            // 同时仍由 selection gate 统一拒绝切仓后的迟到结果。
+            async let loadedRepositoryInsights = loadRepositoryInsightsArtifact(
+                repo: repo,
+                append: append
+            )
+            async let loadedPage = dependencies.ragChunkRepository.fetchManagedKnowledgeChunks(
                 repoId: requestedRepoID,
                 limit: limit,
                 offset: requestedOffset
             )
+            let (repositoryInsights, page) = try await (loadedRepositoryInsights, loadedPage)
             // refresh / load more 与用户点选可以并发；只允许仍属于当前仓库且仍是最新选择的
             // 结果改写列表，避免 A 的分页数据出现在 B 的详情中。
             guard self.selectedRepoID == requestedRepoID,
@@ -981,11 +1166,21 @@ private final class KnowledgeRAGBrowserViewModel {
                 chunks.append(contentsOf: page.chunks)
             } else {
                 chunks = page.chunks
+                repositoryInsightsArtifact = repositoryInsights
                 repoContextDocument = loadedRepoContext
             }
             hasMoreChunks = page.hasMore
         }
         catch { errorMessage = error.localizedDescription }
+    }
+
+    private func loadRepositoryInsightsArtifact(
+        repo: Repo?,
+        append: Bool
+    ) async -> RepositoryInsightsContextArtifact? {
+        if append { return repositoryInsightsArtifact }
+        guard let repo else { return nil }
+        return await dependencies.repositoryInsightsContextCoordinator.loadArtifact(for: repo)
     }
 }
 
@@ -1004,11 +1199,14 @@ private struct KnowledgeRAGBrowserView: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
+    @Environment(\.ragSettingsNavigation) private var settingsNavigation
     @State private var editingChunk: RAGManagedChunk?
     @State private var editingRepoContext: RepoContextDocument?
+    @State private var inspectingRepositoryInsights: RepositoryInsightsContextArtifact?
     @State private var inspectingHit: RAGRetrievalHitInspection?
     @State private var hoveredRetrievalHitID: Int64?
     @State private var hoveredChunkID: Int64?
+    @State private var hoveredRepositoryInsightsID: String?
     @State private var hoveredRepoContextID: String?
     @State private var hoveredRepoContextGenerationStep: RepoContextGenerationStep?
     @FocusState private var focusedRepoContextGenerationStep: RepoContextGenerationStep?
@@ -1020,6 +1218,7 @@ private struct KnowledgeRAGBrowserView: View {
     @State private var isRetrievalTestSettingsExpanded = false
     @State private var knowledgeHeroCollapseProgress: CGFloat = 0
     @State private var permanentlyDeletingChunk: RAGManagedChunk?
+    @State private var isConfirmingRepositoryInsightsDeletion = false
     @State private var isConfirmingRepoContextDeletion = false
     /// 召回测试「恢复已保存」短暂成功态；1.5s 后回到箭头，避免绿勾卡住。
     @State private var didRestoreRetrievalTestSettings = false
@@ -1063,22 +1262,26 @@ private struct KnowledgeRAGBrowserView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task { await viewModel.bootstrap() }
         .task { await viewModel.observeIndexChanges() }
-        .sheet(isPresented: Binding(
-            get: { viewModel.errorMessage != nil },
-            set: { if !$0 { viewModel.errorMessage = nil } }
-        )) {
-            RAGWorkspaceErrorSheet(
-                error: .init(technicalDetail: viewModel.errorMessage ?? ""),
-                onAction: { action in
-                    if action == .openAISettings {
+        .ragWorkspaceErrorAlert(
+            error: Binding(
+                get: {
+                    viewModel.workspaceError
+                        ?? viewModel.errorMessage.map(RAGWorkspaceError.init(technicalDetail:))
+                },
+                set: { if $0 == nil { viewModel.dismissError() } }
+            ),
+            onAction: { presentedError in
+                if presentedError.action == .openAISettings {
+                    if presentedError.kind == .embeddingConfiguration
+                        || presentedError.kind == .embeddingRequest {
+                        settingsNavigation("ai.embedding")
+                    } else {
                         NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
                     }
-                    viewModel.errorMessage = nil
-                },
-                onDismiss: { viewModel.errorMessage = nil }
-            )
-            .appLocaleEnvironment()
-        }
+                }
+                viewModel.dismissError()
+            }
+        )
         .sheet(item: $editingChunk) { chunk in
             KnowledgeRAGChunkEditor(chunk: chunk) { title, sectionPath, content in
                 await viewModel.saveChunk(chunk, title: title, sectionPath: sectionPath, content: content)
@@ -1090,6 +1293,10 @@ private struct KnowledgeRAGBrowserView: View {
                 viewModel.saveRepoContextXML(content)
             }
             .appLocaleEnvironment()
+        }
+        .sheet(item: $inspectingRepositoryInsights) { artifact in
+            RepositoryInsightsXMLViewer(artifact: artifact)
+                .appLocaleEnvironment()
         }
         .sheet(item: $inspectingHit) { hit in
             KnowledgeRAGChunkEditor(hit: hit) {
@@ -1129,6 +1336,17 @@ private struct KnowledgeRAGBrowserView: View {
             Text("rag.browser.repoContext.delete.message")
         }
         .alert(
+            "rag.browser.repositoryInsights.delete.title",
+            isPresented: $isConfirmingRepositoryInsightsDeletion
+        ) {
+            Button("common.cancel", role: .cancel) {}
+            Button("rag.browser.repositoryInsights.delete.action", role: .destructive) {
+                viewModel.deleteRepositoryInsights()
+            }
+        } message: {
+            Text("rag.browser.repositoryInsights.delete.message")
+        }
+        .alert(
             "rag.browser.repoContext.settings.title",
             isPresented: $viewModel.isRepoContextSettingsPromptPresented
         ) {
@@ -1138,19 +1356,6 @@ private struct KnowledgeRAGBrowserView: View {
             }
         } message: {
             Text("rag.browser.repoContext.settings.message")
-        }
-        .alert(
-            "library.removeUsing.confirmTitle",
-            isPresented: $viewModel.isConfirmingUsingLibraryRemoval
-        ) {
-            Button("library.removeUsing.confirmAction", role: .destructive) {
-                Task { await viewModel.confirmUsingRepositoryRemoval() }
-            }
-            Button("general.cancel", role: .cancel) {
-                viewModel.cancelUsingRepositoryRemoval()
-            }
-        } message: {
-            Text("library.removeUsing.confirmMessage")
         }
     }
 
@@ -1384,18 +1589,7 @@ private struct KnowledgeRAGBrowserView: View {
         let isCoverageComplete = knowledgeRepos > 0 && indexedRepos >= knowledgeRepos
 
         return VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("rag.browser.overview.model")
-                    .font(interfaceScale.font(.caption))
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 8)
-                Text(viewModel.embeddingModel)
-                    .font(interfaceScale.font(.caption, design: .monospaced))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(viewModel.embeddingModel)
-            }
+            knowledgeOverviewEmbeddingModelRow
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -1451,6 +1645,39 @@ private struct KnowledgeRAGBrowserView: View {
                     issueColor: viewModel.indexStatus.staleChunks > 0 ? .purple : nil
                 )
             }
+        }
+    }
+
+    /// 索引概览不能用空字符串表示配置异常，否则用户既不知道原因，也找不到恢复入口。
+    /// 这里与 Inspector 共用同一套配置预检结果，并直达向量化任务模型设置。
+    @ViewBuilder
+    private var knowledgeOverviewEmbeddingModelRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("rag.browser.overview.model")
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            if let modelName = viewModel.configuredEmbeddingModelName {
+                Text(modelName)
+                    .font(interfaceScale.font(.caption, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(modelName)
+            } else {
+                Button("rag.workspace.index.embeddingModel.configure") {
+                    settingsNavigation("ai.embedding")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+
+        if let issue = viewModel.embeddingConfigurationIssue {
+            Text(issue.localizedDescription)
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -2020,9 +2247,16 @@ private struct KnowledgeRAGBrowserView: View {
                     stat("rag.workspace.status.failedChunks", value: "\(index.failedChunks)", color: .red)
                     stat("rag.workspace.status.staleChunks", value: "\(index.staleChunks)", color: .purple)
                     stat(
+                        "rag.browser.repositoryInsights.stat",
+                        value: KnowledgeRAGBrowserManagedItem.singletonAvailability(
+                            viewModel.repositoryInsightsArtifact != nil
+                        ),
+                        color: .orange
+                    )
+                    stat(
                         "rag.browser.repoContext.stat",
-                        value: KnowledgeRAGBrowserManagedItem.repoContextAvailability(
-                            repoContext: viewModel.repoContextDocument
+                        value: KnowledgeRAGBrowserManagedItem.singletonAvailability(
+                            viewModel.repoContextDocument != nil
                         ),
                         color: .purple
                     )
@@ -2039,6 +2273,29 @@ private struct KnowledgeRAGBrowserView: View {
                     repositoryIndexStatisticsLabel(index)
                 }
                 repositoryRefreshTime
+                Button {
+                    viewModel.generateRepositoryInsights()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "gauge.with.dots.needle.bottom.0percent")
+                            .foregroundStyle(
+                                viewModel.isGeneratingRepositoryInsights
+                                    ? Color.accentColor
+                                    : Color.secondary
+                            )
+                            .symbolEffect(
+                                .pulse,
+                                isActive: viewModel.isGeneratingRepositoryInsights && !reduceMotion
+                            )
+                        Text(
+                            viewModel.repositoryInsightsArtifact == nil
+                                ? "rag.browser.repositoryInsights.generate"
+                                : "rag.browser.repositoryInsights.regenerate"
+                        )
+                    }
+                }
+                .controlSize(.small)
+                .disabled(viewModel.isGeneratingRepositoryInsights)
                 Button {
                     viewModel.generateRepoContext()
                 } label: {
@@ -2072,6 +2329,8 @@ private struct KnowledgeRAGBrowserView: View {
                         switch item {
                         case .chunk(let chunk):
                             chunkRow(chunk, rowIndex: index)
+                        case .repositoryInsights(let artifact):
+                            repositoryInsightsRow(artifact, rowIndex: index)
                         case .repoContext(let document):
                             repoContextRow(document, rowIndex: index)
                         }
@@ -2110,15 +2369,25 @@ private struct KnowledgeRAGBrowserView: View {
             )
             .font(.caption.weight(.semibold))
             .foregroundStyle(.green)
-        case .failed(let message):
-            Label {
-                Text(verbatim: message)
-            } icon: {
-                Image(systemName: "exclamationmark.triangle.fill")
-            }
-                .font(.caption)
-                .foregroundStyle(.red)
+        case .failed(let message, let reason):
+            HStack(spacing: 8) {
+                Label {
+                    Text(verbatim: message)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                }
                 .textSelection(.enabled)
+                .foregroundStyle(.red)
+                Spacer(minLength: 8)
+                if reason == .archiveTooLarge {
+                    Button("codeGraph.archiveLimit.adjust") {
+                        settingsNavigation("ai.repoContext")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+            .font(.caption)
         }
     }
 
@@ -2295,6 +2564,14 @@ private struct KnowledgeRAGBrowserView: View {
                     .pointerStyle(.link)
                     .foregroundStyle(.red)
                     .help(managed.isExcluded ? "rag.browser.chunk.permanentDelete" : "rag.browser.chunk.disable")
+                } else {
+                    // Metadata 系统分片不可删；同尺寸置灰 trash 仅占位，与下方可删行右对齐。
+                    Image(systemName: "trash")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28, height: 16)
+                        .help("rag.browser.chunk.metadataManaged")
+                        .accessibilityLabel(Text("rag.browser.chunk.metadataManaged"))
                 }
             }
             .frame(minHeight: 18)
@@ -2368,6 +2645,80 @@ private struct KnowledgeRAGBrowserView: View {
         .background(isHovered ? Color.accentColor.opacity(0.10) : zebraStripeBackground(rowIndex: rowIndex))
         .contentShape(Rectangle())
         .onHover { hoveredRepoContextID = $0 ? document.id : nil }
+    }
+
+    /// 洞察 XML 保持与普通分片、RepoContext 相同的行密度，但只允许查看、删除和重建，
+    /// 不提供编辑入口，避免用户改出一份与页面、AI 不一致的“第四份事实”。
+    private func repositoryInsightsRow(
+        _ artifact: RepositoryInsightsContextArtifact,
+        rowIndex: Int
+    ) -> some View {
+        let isHovered = hoveredRepositoryInsightsID == artifact.id
+        return HStack(alignment: .top, spacing: 8) {
+            Button { inspectingRepositoryInsights = artifact } label: {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 7) {
+                        Image(systemName: "gauge.with.dots.needle.bottom.0percent")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.orange)
+                            .accessibilityHidden(true)
+                        Text("rag.browser.repositoryInsights.title")
+                            .font(interfaceScale.font(.body, weight: .semibold))
+                        Text(
+                            verbatim: String(
+                                format: String.l10n("rag.browser.chunks.tokenCountFormat"),
+                                TokenEstimator.estimate(text: artifact.document.xml)
+                            )
+                        )
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        Text(verbatim: RepositoryInsightsDocument.fileName)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    Text(artifact.document.xml)
+                        .font(.body.monospaced())
+                        .lineLimit(3)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .pointerStyle(.link)
+            .disabled(viewModel.isGeneratingRepositoryInsights)
+
+            HStack(alignment: .center, spacing: 8) {
+                Label(
+                    "rag.browser.repositoryInsights.available",
+                    systemImage: "checkmark.circle.fill"
+                )
+                .labelStyle(.titleAndIcon)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.green)
+                .symbolRenderingMode(.hierarchical)
+                Button(role: .destructive) {
+                    isConfirmingRepositoryInsightsDeletion = true
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.subheadline)
+                        .frame(width: 28, height: 16)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .pointerStyle(.link)
+                .foregroundStyle(.red)
+                .disabled(viewModel.isGeneratingRepositoryInsights)
+                .help("rag.browser.repositoryInsights.delete.action")
+            }
+            .frame(minHeight: 18)
+        }
+        .padding(12)
+        .background(isHovered ? Color.accentColor.opacity(0.10) : zebraStripeBackground(rowIndex: rowIndex))
+        .contentShape(Rectangle())
+        .onHover { hoveredRepositoryInsightsID = $0 ? artifact.id : nil }
     }
 
     private func chunkRowBackground(_ managed: RAGManagedChunk, isHovered: Bool, rowIndex: Int) -> Color {
@@ -2488,6 +2839,7 @@ private struct RAGRetrievalHitInspection: Identifiable {
 private struct KnowledgeRAGChunkEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.locale) private var locale
     let source: RAGChunkSource?
     let sourceSystemImageName: String
     let sourceTintColor: Color
@@ -2497,6 +2849,10 @@ private struct KnowledgeRAGChunkEditor: View {
     let repoContextExportIdentity: (owner: String, repo: String)?
     let isExcluded: Bool?
     let retrievalMetadata: (repositoryName: String, ownerAvatarURL: String?, kind: String, score: Double, vectorSimilarity: Double?)?
+    /// 与列表同源：落库的大概 token 数，编辑中不随正文草稿重算。
+    let tokenCount: Int
+    /// 分片 `updated_at` / RepoContext `lastAccessedAt ?? generatedAt`；解析失败则不展示。
+    let updatedAt: Date?
     let onSave: ((String, String, String) async -> String?)?
     /// 只读命中详情右上角：切到同款编辑 sheet（左侧列表点进的那个）。
     let onEdit: (() -> Void)?
@@ -2516,6 +2872,8 @@ private struct KnowledgeRAGChunkEditor: View {
         repoContextExportIdentity = nil
         isExcluded = chunk.isExcluded
         retrievalMetadata = nil
+        tokenCount = chunk.chunk.tokenCount
+        updatedAt = ISO8601DateFormatter.shared.date(from: chunk.chunk.updatedAt)
         self.onSave = onSave
         onEdit = nil
         _title = State(initialValue: chunk.chunk.title)
@@ -2533,6 +2891,9 @@ private struct KnowledgeRAGChunkEditor: View {
         repoContextExportIdentity = (repoContext.metadata.owner, repoContext.metadata.repo)
         isExcluded = nil
         retrievalMetadata = nil
+        // 与列表行同源：用 PackStats.actualTokens；时间取最近访问（手工编辑会刷新），否则生成时间。
+        tokenCount = repoContext.metadata.stats.actualTokens
+        updatedAt = repoContext.metadata.lastAccessedAt ?? repoContext.metadata.generatedAt
         self.onSave = { _, _, content in await onSave(content) }
         onEdit = nil
         _title = State(initialValue: String.l10n("rag.browser.repoContext.title"))
@@ -2556,6 +2917,8 @@ private struct KnowledgeRAGChunkEditor: View {
             hit.hit.score,
             hit.hit.vectorSimilarity
         )
+        tokenCount = hit.hit.chunk.tokenCount
+        updatedAt = ISO8601DateFormatter.shared.date(from: hit.hit.chunk.updatedAt)
         onSave = nil
         self.onEdit = onEdit
         _title = State(initialValue: hit.hit.chunk.title)
@@ -2683,16 +3046,17 @@ private struct KnowledgeRAGChunkEditor: View {
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
             }
-            if let onSave {
-                HStack(alignment: .center, spacing: 12) {
+            // 编辑与只读详情共用左下角：可用态（仅编辑）+ 最后更新 + 列表同款 token。
+            HStack(alignment: .center, spacing: 12) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     if let isExcluded {
-                        // 与列表共用可用/不可用图标色；不可用时附保存后恢复提示。
-                        RAGChunkAvailabilityBadge(isExcluded: isExcluded, showsRestoreHint: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
-                        Spacer()
+                        RAGChunkAvailabilityBadge(isExcluded: isExcluded, showsRestoreHint: onSave != nil)
                     }
+                    chunkEditorFooterMeta
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
+                if let onSave {
                     Button("common.cancel") { dismiss() }
                     Button("rag.browser.chunk.save") {
                         Task {
@@ -2716,6 +3080,34 @@ private struct KnowledgeRAGChunkEditor: View {
             height: interfaceScale.scaled(540),
             alignment: .topLeading
         )
+    }
+
+    /// 左下角元信息：最后更新时间 + 列表同款「约 N tokens」。
+    /// token 用落库值，不随编辑草稿重算，避免未保存时数字抖动。
+    private var chunkEditorFooterMeta: some View {
+        HStack(spacing: 6) {
+            if let updatedAt {
+                Text(
+                    String(
+                        format: String.l10n("search.detail.time.updated.format"),
+                        RelativeTimeText.pastEvent(updatedAt, locale: locale)
+                    )
+                )
+                .help(Text(updatedAt, format: .dateTime.year().month().day().hour().minute()))
+                Text(verbatim: "·")
+                    .accessibilityHidden(true)
+            }
+            Text(
+                verbatim: String(
+                    format: String.l10n("rag.browser.chunks.tokenCountFormat"),
+                    tokenCount
+                )
+            )
+            .font(.caption.monospaced())
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
     }
 
     /// 导出当前 `@State content`，因此用户尚未点击保存的修改也会进入下载文件；此操作

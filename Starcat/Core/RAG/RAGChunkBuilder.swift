@@ -142,18 +142,29 @@ struct RAGChunkBuilder: Sendable {
         guard let content = note?.content?.trimmingCharacters(in: .whitespacesAndNewlines),
               !content.isEmpty
         else { return [] }
-        return singleSourceDrafts(
-            repoId: repoId,
-            source: .notes,
-            sourceId: "",
-            parentType: .notes,
-            parentKey: "notes",
-            // Prompt 实际展示 parentTitle；必须直接声明这是用户在 Starcat 中填写的私人笔记，
-            // 避免模型把含义宽泛的 Notes 误解为仓库公开字段。
-            parentTitle: "Private note (user-authored in Starcat)",
-            title: "Private notes",
-            content: content
-        )
+
+        // 一条私人笔记是用户维护的单一逻辑文档，不套用 README / Summary 的通用分片规则。
+        // 保留完整正文并固定为 notes:0，避免知识库把同一条笔记展示成多条“笔记”。
+        let parentTitle = "Private note (user-authored in Starcat)"
+        return [
+            RAGChunkDraft(
+                repoId: repoId,
+                source: .notes,
+                sourceId: "",
+                parentType: .notes,
+                parentKey: "notes",
+                // Prompt 实际展示 parentTitle；必须直接声明这是用户在 Starcat 中填写的私人笔记，
+                // 避免模型把含义宽泛的 Notes 误解为仓库公开字段。
+                parentTitle: parentTitle,
+                chunkKey: "notes:0",
+                chunkIndex: 0,
+                sectionPath: parentTitle,
+                title: "Private notes",
+                content: content,
+                tokenCount: TokenEstimator.estimate(text: content),
+                isTruncated: false
+            )
+        ]
     }
 
     func buildSummary(repoId: Int64, text: String?, sourceID: String) -> [RAGChunkDraft] {

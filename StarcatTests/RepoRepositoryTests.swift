@@ -696,6 +696,116 @@ struct RepoRepositoryTests {
         ) == 0)
     }
 
+    @Test("DB Paging: 洞察结构化筛选与 RAG 快照口径一致")
+    func listCountHonorsInsightsDrillDownFilters() async throws {
+        let (repo, database) = try makeRepo()
+        let noteRepository = GRDBRepoNoteRepository(database: database)
+        try await seedDataset(repo)
+        try await noteRepository.updateLibraryState(repoId: 1, state: .inLibrary)
+        try await noteRepository.updateLibraryState(repoId: 4, state: .inLibrary)
+
+        let tag = Tag.fixture(id: "organized", name: "Organized")
+        try await GRDBTagRepository(database: database).create(tag)
+        try await GRDBRepoTagRepository(database: database).addTag(repoId: 1, tagId: tag.id)
+        try await GRDBRepoHealthRepository(database: database).upsert(
+            RepoHealthSnapshot(
+                repoId: 4,
+                overallScore: 45,
+                grade: "D",
+                maintenanceScore: 40,
+                popularityScore: 50,
+                qualityScore: 50,
+                securityScore: 50,
+                payloadJSON: "{}",
+                computedAt: "2026-07-27T00:00:00Z",
+                staleAfter: "2026-07-28T00:00:00Z",
+                fetchStatus: .success,
+                lastError: nil
+            )
+        )
+        try await GRDBOpenSSFScoreRepository(database: database).upsert(
+            OpenSSFScoreRecord(
+                repoId: 4,
+                fetchStatus: .success,
+                aggregateScore: 4,
+                checksJSON: nil,
+                scoreDate: "2026-07-27",
+                fetchedAt: "2026-07-27T00:00:00Z",
+                lastError: nil
+            )
+        )
+
+        try await database.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO rag_chunks (
+                    repo_id, source, source_id, parent_type, parent_key, parent_title, chunk_key,
+                    chunk_index, section_path, title, content, content_hash, token_count, is_truncated,
+                    embedding_model, embedding_status, created_at, updated_at
+                ) VALUES
+                    (1, 'readme', '', 'readme', 'readme', 'README', 'readme:0',
+                     0, '', 'README', 'ready', 'ready-hash', 1, 0,
+                     'embed-v1', 'ready', datetime('now'), datetime('now')),
+                    (4, 'metadata', '', 'metadata', 'metadata', 'Metadata', 'metadata:0',
+                     0, '', 'Metadata', 'stale', 'stale-hash', 1, 0,
+                     'old-model', 'stale', datetime('now'), datetime('now'))
+                """)
+        }
+
+        func routeFilters(_ action: InsightsSelection) throws -> RepoListFilters {
+            let route = try #require(
+                InsightsDrillDownRouter.route(
+                    scope: .knowledge,
+                    target: .action(action),
+                    embeddingModel: "embed-v1"
+                )
+            )
+            #expect(route.selection == .library)
+            return route.filters.repoListFilters(selectedTagIDs: [])
+        }
+
+        let tagMissing = try routeFilters(.untagged)
+        #expect(try await repo.fetchListCount(scope: .library, filters: tagMissing) == 1)
+
+        let readmeMissing = try routeFilters(.missingReadme)
+        #expect(try await repo.fetchListCount(scope: .library, filters: readmeMissing) == 1)
+
+        let indexableMissing = try routeFilters(.missingIndexableContent)
+        #expect(try await repo.fetchListCount(scope: .library, filters: indexableMissing) == 0)
+
+        let indexIssues = try routeFilters(.indexIssues)
+        #expect(try await repo.fetchListCount(scope: .library, filters: indexIssues) == 1)
+
+        let maintenanceRisk = try routeFilters(.maintenanceRisk)
+        #expect(try await repo.fetchListCount(scope: .library, filters: maintenanceRisk) == 1)
+
+        let securityRisk = try routeFilters(.securityRisk)
+        #expect(try await repo.fetchListCount(scope: .library, filters: securityRisk) == 1)
+
+        var combined = tagMissing
+        combined.status = .unread
+        #expect(try await repo.fetchListCount(scope: .library, filters: combined) == 1)
+
+        try await database.writer.write { db in
+            let fetchedChunkID = try Int64.fetchOne(
+                db,
+                sql: "SELECT id FROM rag_chunks WHERE repo_id = 4"
+            )
+            let chunkID = try #require(fetchedChunkID)
+            try db.execute(
+                sql: """
+                    INSERT INTO rag_chunk_overrides (
+                        chunk_id, original_title, original_section_path, original_content,
+                        is_excluded, updated_at
+                    ) VALUES (?, 'Metadata', '', 'stale', 1, datetime('now'))
+                    """,
+                arguments: [chunkID]
+            )
+        }
+
+        #expect(try await repo.fetchListCount(scope: .library, filters: indexableMissing) == 1)
+        #expect(try await repo.fetchListCount(scope: .library, filters: indexIssues) == 0)
+    }
+
     @Test("DB Paging: GitHub Star List scope 只返回指定分组 repo")
     func githubStarListScopeReturnsGroupedRepos() async throws {
         let (repo, db) = try makeRepo()
@@ -733,6 +843,137 @@ struct RepoRepositoryTests {
 
         #expect(page.map(\.id) == [1, 3])
         #expect(try await repo.fetchListCount(scope: .githubStarList("list-1"), filters: .empty) == 2)
+    }
+
+    @Test("DB Paging: 我的项目包含未 Star 项目并复用现有组合筛选")
+    func myProjectsScopeComposesExistingFilters() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 1, owner: "me", name: "personal")
+        try await db.insertRepoFixture(id: 2, owner: "acme", name: "private-tool")
+        try await db.insertRepoFixture(id: 3, owner: "other", name: "other-user")
+        try await db.insertRepoFixture(id: 4, owner: "me", name: "starred-only")
+
+        try await db.writer.write { db in
+            // id=1 模拟“是项目但未 Star”；id=4 模拟“已 Star 但不是项目”。
+            try db.execute(sql: "UPDATE repos SET is_starred = 0, starred_at = NULL WHERE id = 1")
+            try db.execute(sql: "UPDATE repos SET language = 'Go' WHERE id = 2")
+            try db.execute(
+                sql: """
+                    INSERT INTO user_projects (
+                        user_id, repo_id, affiliation, owner_login, owner_type, visibility,
+                        permission, authorization_source, installation_id, generation,
+                        last_seen_at, created_at, updated_at
+                    ) VALUES
+                        (7, 1, 'owner', 'me', 'user', 'public',
+                         'admin', 'oauth', NULL, 'g1',
+                         '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z'),
+                        (7, 2, 'organization_member', 'acme', 'organization', 'private',
+                         'maintain', 'github_app', NULL, 'g1',
+                         '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z'),
+                        (8, 3, 'owner', 'other', 'user', 'public',
+                         'admin', 'oauth', NULL, 'g1',
+                         '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z')
+                    """
+            )
+            try db.execute(
+                sql: """
+                    INSERT INTO repo_notes (repo_id, content, status, library_state, is_ai_generated)
+                    VALUES (1, 'project note', 'using', 'in_library', 0)
+                    """
+            )
+            try db.execute(
+                sql: """
+                    INSERT INTO tags (id, name, created_at, updated_at)
+                    VALUES ('project-tag', '项目', '2026-07-29T00:00:00Z', '2026-07-29T00:00:00Z')
+                    """
+            )
+            try db.execute(
+                sql: """
+                    INSERT INTO repo_tags (repo_id, tag_id, created_at)
+                    VALUES (1, 'project-tag', '2026-07-29T00:00:00Z')
+                    """
+            )
+        }
+
+        let allProjects = try await repo.fetchListPage(
+            scope: .myProjects(userID: 7),
+            filters: .empty,
+            sort: .nameAsc,
+            limit: 20,
+            offset: 0
+        )
+        #expect(allProjects.map(\.id) == [2, 1])
+        #expect(try await repo.fetchListCount(scope: .myProjects(userID: 7), filters: .empty) == 2)
+
+        var unstarredInLibrary = RepoListFilters.empty
+        unstarredInLibrary.star = .unstarred
+        unstarredInLibrary.library = .inLibrary
+        unstarredInLibrary.language = .language("Swift")
+        unstarredInLibrary.status = .using
+        unstarredInLibrary.selectedTagIDs = ["project-tag"]
+        let filtered = try await repo.fetchListPage(
+            scope: .myProjects(userID: 7),
+            filters: unstarredInLibrary,
+            sort: .nameAsc,
+            limit: 20,
+            offset: 0
+        )
+        #expect(filtered.map(\.id) == [1])
+
+        var organizationFilter = RepoListFilters.empty
+        organizationFilter.project.affiliations = [.organizationMember]
+        organizationFilter.project.organizationLogins = ["ACME"]
+        organizationFilter.project.visibilities = [.private]
+        organizationFilter.project.permissions = [.maintain]
+        organizationFilter.projectSearchText = "tool"
+        let organizationProjects = try await repo.fetchListPage(
+            scope: .myProjects(userID: 7),
+            filters: organizationFilter,
+            sort: .nameAsc,
+            limit: 20,
+            offset: 0
+        )
+        #expect(organizationProjects.map(\.id) == [2])
+
+        let options = try await repo.fetchProjectFilterOptions(userID: 7)
+        #expect(options.organizationLogins == ["acme"])
+        #expect(options.visibilities == [.private, .public])
+        #expect(Set(options.permissions) == [.admin, .maintain])
+        let relations = try await repo.fetchProjectRelations(userID: 7, repoIDs: [1, 2, 3])
+        #expect(relations.keys.sorted() == [1, 2])
+        #expect(relations[2]?.visibility == .private)
+
+        // 相同 scope 仍按 user_id 隔离；普通 Star 列表也不能被项目关系扩张。
+        #expect(try await repo.fetchListCount(scope: .myProjects(userID: 8), filters: .empty) == 1)
+        #expect(try await repo.fetchListCount(scope: .allStars, filters: organizationFilter) == 3)
+        #expect(try await repo.fetchListCount(scope: .allStars, filters: .empty) == 3)
+    }
+
+    @Test("项目卡片 30 天增长批量读取本机历史且历史不足不伪造零")
+    func projectGrowthUsesMergedLocalHistory() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 71)
+        try await db.insertRepoFixture(id: 72)
+        try await db.writer.write { database in
+            try database.execute(
+                sql: """
+                    INSERT INTO repo_star_history_points (
+                        repo_id, observed_on, stars_count, source, precision, fetched_at
+                    ) VALUES
+                        (71, '2026-06-20', 10, 'local_snapshot', 'snapshot', '2026-06-20T12:00:00Z'),
+                        (71, '2026-07-10', 999, 'gh_archive', 'estimated', '2026-07-10T11:00:00Z'),
+                        (71, '2026-07-10', 15, 'local_snapshot', 'snapshot', '2026-07-10T12:00:00Z'),
+                        (71, '2026-07-29', 25, 'local_snapshot', 'snapshot', '2026-07-29T12:00:00Z'),
+                        (72, '2026-07-29', 5, 'local_snapshot', 'snapshot', '2026-07-29T12:00:00Z')
+                    """
+            )
+        }
+        let now = try #require(StarHistoryDateCodec.date(from: "2026-07-29"))
+
+        let growth = try await repo.fetchLocalStarGrowth30Days(repoIDs: [71, 72], now: now)
+
+        #expect(growth[71] == 15)
+        #expect(growth[72] == nil)
     }
 
     @Test("DB Paging: Health 排序按分数倒序且无分数排最后")
@@ -821,5 +1062,44 @@ struct RepoRepositoryTests {
 
         #expect(page.map(\.id) == [2])
         #expect(try await repo.fetchListCount(scope: .githubStarListUngrouped, filters: .empty) == 1)
+    }
+
+    @Test("Repo Pin: 最近置顶优先，组内保留用户排序，取消后恢复")
+    func repoPinsPrecedeSelectedSortAndUnpinRestores() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 1, owner: "octo", name: "one", starredAt: "2026-06-26T03:00:00Z")
+        try await db.insertRepoFixture(id: 2, owner: "octo", name: "two", starredAt: "2026-06-26T02:00:00Z")
+        try await db.insertRepoFixture(id: 3, owner: "octo", name: "three", starredAt: "2026-06-26T01:00:00Z")
+
+        try await repo.setPinned(repoId: 1, pinnedAt: Date(timeIntervalSince1970: 100))
+        try await repo.setPinned(repoId: 3, pinnedAt: Date(timeIntervalSince1970: 200))
+
+        let pinnedPage = try await repo.fetchListPage(
+            scope: .allStars,
+            filters: .empty,
+            sort: .starredAtDesc,
+            limit: 2,
+            offset: 0
+        )
+        let pinnedIDs = try await repo.fetchListIDs(
+            scope: .allStars,
+            filters: .empty,
+            sort: .starredAtDesc
+        )
+        #expect(pinnedPage.map(\.id) == [3, 1], "置顶仓库必须跨分页边界进入首页，且最近置顶在前")
+        #expect(pinnedIDs == [3, 1, 2])
+        #expect(try await repo.fetchPinnedRepoTimestamps() == [1: 100, 3: 200])
+        #expect(try await repo.fetchListCount(scope: .allStars, filters: .empty) == 3)
+
+        try await repo.setPinned(repoId: 3, pinnedAt: nil)
+        let afterUnpin = try await repo.fetchListPage(
+            scope: .allStars,
+            filters: .empty,
+            sort: .starredAtDesc,
+            limit: 10,
+            offset: 0
+        )
+        #expect(afterUnpin.map(\.id) == [1, 2, 3])
+        #expect(try await repo.fetchPinnedRepoTimestamps() == [1: 100])
     }
 }

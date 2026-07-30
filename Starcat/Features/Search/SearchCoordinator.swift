@@ -171,43 +171,11 @@ final class SearchCoordinator {
         existing: [RepositoryCandidate],
         incoming: [RepositoryCandidate]
     ) -> [RepositoryCandidate] {
-        var merged = existing
-
-        for candidate in incoming {
-            let matchIndex = merged.firstIndex { current in
-                if let lhs = current.identity.ghRepoID, let rhs = candidate.identity.ghRepoID, lhs == rhs {
-                    return true
-                }
-                return current.identity.normalizedFullName == candidate.identity.normalizedFullName
-            }
-
-            guard let matchIndex else {
-                merged.append(candidate)
-                continue
-            }
-
-            var current = merged[matchIndex]
-            current.sources.formUnion(candidate.sources)
-            if current.localRepo == nil, let localRepo = candidate.localRepo {
-                current.localRepo = localRepo
-                current.card = candidate.card
-            }
-            if current.remoteRepo == nil {
-                current.remoteRepo = candidate.remoteRepo
-            }
-            if current.semanticScore == nil {
-                current.semanticScore = candidate.semanticScore
-            }
-            merged[matchIndex] = current
-        }
-        return merged
+        RepositorySearchMerger.merge(existing: existing, incoming: incoming)
     }
 
     private static func isSameRepository(_ lhs: RepoIdentity, _ rhs: RepoIdentity) -> Bool {
-        if let lhsID = lhs.ghRepoID, let rhsID = rhs.ghRepoID, lhsID == rhsID {
-            return true
-        }
-        return lhs.normalizedFullName == rhs.normalizedFullName
+        RepositorySearchMerger.isSameRepository(lhs, rhs)
     }
 
     static func mergeReferences(

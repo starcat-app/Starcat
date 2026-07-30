@@ -1,51 +1,116 @@
 # X / Twitter
 
+> 平台定位：短 thread + 截图；hook → 痛点 → 产品 → RAG → CTA。
+> 账号已有；发帖用免费号 280 字/条即可。配图复用知乎 CDN。
+
+---
+
+## 发帖清单（发前必读）
+
+### Bio（若未改）
+
+```
+Indie maker · Starcat — local-first GitHub Stars knowledge base for macOS
+https://starcat.ink
+```
+
+### 注意
+
+| 点 | 说明 |
+|---|---|
+| 形态 | Thread **5～8 条**；可另发一条 Short Post |
+| 链接 | **放最后一条**；前面靠截图拉停留 |
+| 标签 | 少用；最多 1 个 `#buildinpublic` |
+| 时间 | 工作日上午或傍晚（按粉丝活跃调） |
+| 互动 | 发后 1～2 小时盯回复；相关帖认真回，别 spam 贴链 |
+| PH / HN | PH 当天 CTA 可换 PH 链接；HN 暂缓则挂 starcat.ink |
+| 别做 | 刷量互关、同文连发、纯 Please RT |
+
+### 改稿原则
+
+- 旧稿缺 RAG → 必须写进 thread 中段
+- Stars 用 `1,800+`
+- 配图 2～3 张 CDN；末条必须有 CTA
+- 与 `Product-Hunt.md` Launch Tweet 分开：本文件偏日常 / soft launch
+
+---
+
 ## Thread Draft
 
-1/ I am building Starcat, a native macOS app for developers whose GitHub Stars turned into "I'll look at this later."
+**1/**  
+I built Starcat because my GitHub Stars turned into "I'll look at this later."
 
-It syncs Stars locally and turns them into a searchable, AI-readable repo knowledge base.
+1,800+ starred repos. Native macOS. Local-first knowledge base you can actually ask questions to.
 
-2/ The problem is not bookmarking.
+**2/**  
+The problem isn't bookmarking.
 
-The problem is what happens after 500, 1,000, or 2,000 starred repos:
+After hundreds of stars you can't answer:
 
 - Why did I star this?
-- Which ones are still maintained?
-- What did I use before?
-- Is there a better alternative now?
+- Is it still maintained?
+- What did I use before for X?
+- Which of my saved projects use Core Data?
 
-3/ Starcat v1 focuses on the core workflow:
+**3/**  
+Starcat syncs Stars onto your Mac:
 
-- local Stars sync;
-- README reading and cache;
-- tags, notes, reading status;
-- full-text and semantic search;
-- release tracking;
-- AI summaries, tag suggestions, translation, and repo chat.
+- three-column native UI (SwiftUI, not Electron)
+- local README cache
+- tags / notes / reading status
+- full-text + semantic search
+- releases, Trending/Weekly, similar-repo picks
 
-![Manage view](assets/01-manage-ungrouped.png)
+https://cdn.dong4j.site/source/image/zhihu-01-manage.webp
 
-4/ AI is not the main character.
+**4/**  
+The part I care about most: Knowledge Base RAG (v1.1).
 
-The useful part is context: asking AI about the repo you are reading, generating a short summary before diving into a README, or getting tag suggestions you can confirm manually.
+Ask: "which of my saved SwiftUI projects use Core Data?"
 
-![AI Assistant](assets/04-ai-assistant-window.png)
+Local hybrid retrieval (FTS5 + embeddings, vDSP-accelerated) over repos you add to your library — not all stars. Answers come with citations. RAG is read-only.
 
-5/ The roadmap is three workflows:
+https://cdn.dong4j.site/source/image/zhihu-04-rag-qa.webp
 
-Organize: clean up messy Stars.
-Discover: find alternatives and similar repos.
-Digest: turn saved repos into notes, weekly summaries, and release decisions.
+**5/**  
+AI isn't the main character. Context is.
 
-6/ I am keeping it local-first.
+Summaries, tag suggestions, translation, in-repo chat — suggestions need your confirm before write. BYOK / Ollama. Data stays on your Mac by default.
 
-Your Stars, notes, tags, README cache, and AI results should live on your Mac by default. Starcat should be a repo research workspace, not another hosted dashboard.
+https://cdn.dong4j.site/source/image/zhihu-03-ai-suggest.webp
+
+**6/**  
+Exploring next (not all shipped):
+
+Organize → clean messy stars / merge labels  
+Discover → alternatives & selection reports  
+Digest → weekly digests + "what was that SSR framework I starred last year?"
+
+Also: local MCP + CLI so Claude/Codex can query the same library.
+
+**7/**  
+If your Stars became a graveyard, try Starcat:
+
+https://starcat.ink  
+Code: https://github.com/starcat-app
+
+Feedback welcome — especially on the RAG knowledge-base boundary vs searching all stars.
+
+---
 
 ## Short Post
 
-I built Starcat because my GitHub Stars became unmanageable.
+I built Starcat: a native macOS app that turns GitHub Stars into a local-first knowledge base.
 
-Native macOS app. Local Stars sync. README reader. Tags, notes, search, releases, AI summaries, and similar repo recommendations.
+Sync + organize on your Mac. Ask cross-repo questions with citation-backed RAG. BYOK. Not Electron.
 
-The goal: turn Stars from "I'll look later" into a repo knowledge base.
+https://starcat.ink
+
+---
+
+## PH Launch Day (optional one-liner)
+
+I launched Starcat on Product Hunt — local-first GitHub Stars knowledge base + RAG for macOS.
+
+[PH link]  
+https://starcat.ink

@@ -2,12 +2,14 @@
 //  RepoAIWindowController.swift
 //  Starcat
 //
-//  详情页 AI 助手玻璃态浮动面板的 AppKit 外壳（HOM-150）。
+//  详情页底部 AI 面板的附属独立窗口 AppKit 外壳（HOM-150）。
 //
 //  设计要点：
-//  - **按 repo.id 复用单例**：同一仓库再点 AI 按钮不会开第二个面板，而是把已有面板
-//    带到前台，避免堆积一批"同 repo 不同对话"的浮动窗口，与 macOS 用户的浮窗心智
-//    （Finder 单文件 quicklook、Preview 单文件预览）对齐。
+//  - **不是外部主入口**：快捷键、搜索、详情入口先打开 `RepoAIFloatingOverlay`；
+//    只有用户在底部面板内点击“在独立窗口中打开”才进入本控制器。
+//  - **按 repo.id 复用单例**：同一仓库再次选择“在独立窗口中打开”不会开第二个面板，
+//    而是把已有面板带到前台，避免堆积一批"同 repo 不同对话"的浮动窗口；这与
+//    macOS 用户的浮窗心智（Finder 单文件 quicklook、Preview 单文件预览）对齐。
 //  - **不同 repo 各自独立窗口**：用户可以继续打开其他 repo 做对比；所有面板默认
 //    常驻、保持浮动层级，只有主动点关闭按钮才销毁。
 //  - **窗口关闭后释放控制器**：单例 map 在 `windowWillClose` 里清掉对应条目；
@@ -44,7 +46,7 @@ private enum RepoAIWindowMetrics {
     static let minContentSize = NSSize(width: 480, height: 600)
 }
 
-/// 详情页 AI 助手窗口的控制器。
+/// 详情页底部 AI 面板所派生的附属独立窗口控制器。
 final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
 
     /// repo.id → controller 单例 map。
@@ -70,11 +72,14 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
     ///     刷新。属性以强引用形式传给 SwiftUI environment（`HomeViewModel` 是 class），
     ///     不会循环引用——主窗关闭时 HomeViewModel 自然释放，AI 窗口里的弱引用回调
     ///     会安全失效。
+    ///   - openSettings: 主 Scene 的 Settings 打开动作。AppKit 自建窗口拿不到
+    ///     `@Environment(\.openSettings)`，必须由调用方从主窗透传（与 RAG 工作台同款）。
     @MainActor
     static func show(
         repo: Repo,
         dependencies: AppDependencies,
-        homeViewModel: HomeViewModel
+        homeViewModel: HomeViewModel,
+        openSettings: OpenSettingsAction
     ) {
         if let existing = instances[repo.id] {
             existing.showWindow(nil)
@@ -87,7 +92,8 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
         let controller = RepoAIWindowController(
             repo: repo,
             dependencies: dependencies,
-            homeViewModel: homeViewModel
+            homeViewModel: homeViewModel,
+            openSettings: openSettings
         )
         instances[repo.id] = controller
         controller.showWindow(nil)
@@ -117,7 +123,8 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
     private init(
         repo: Repo,
         dependencies: AppDependencies,
-        homeViewModel: HomeViewModel
+        homeViewModel: HomeViewModel,
+        openSettings: OpenSettingsAction
     ) {
         self.repoId = repo.id
 
@@ -132,6 +139,15 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
         // `@Environment(AppDependencies.self)` / `@Environment(HomeViewModel.self)`。
         // 这里同时挂上 settings，因为部分子视图（未来如果引入主题相关 modifier）
         // 会读 settings；与主窗 `StarcatApp` 给 ContentView 注入的链路对齐。
+        //
+        // Settings 导航必须单独注入：AppKit hosting 树拿不到主 Scene 的
+        // `OpenSettingsAction`，否则「前往设置」点了没反应。
+        let settingsNavigation = AISettingsNavigationAction { target in
+            openSettings()
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .starcatJumpToSettingsTab, object: target)
+            }
+        }
         let content = RepoAIWindowContentView(
             repo: repo,
             onClose: { [weak window] in
@@ -139,6 +155,7 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
             }
         )
             .appHostEnvironment(dependencies, homeViewModel: homeViewModel)
+            .environment(\.aiSettingsNavigation, settingsNavigation)
 
         let hostingController = NSHostingController(rootView: content)
         self.hostedContentController = hostingController

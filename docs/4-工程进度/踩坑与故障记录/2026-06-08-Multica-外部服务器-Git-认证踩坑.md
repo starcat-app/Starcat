@@ -20,7 +20,7 @@ daemon 会按 project resources 自动 `git clone --bare` 对应仓库到本地�
 
 ### 1.2 现象
 
-在某台新装机的外部 mac 上执行 `multica repo checkout https://github.com/dong4j/Starcat`
+在某台新装机的外部 mac 上执行 `multica repo checkout https://github.com/starcat-app/Starcat`
 （Starcat 是私有仓库）返回：
 
 ```
@@ -48,7 +48,7 @@ helper 配置（隐式状态）不同。
 
 ```
 02:41:41.558 ERR repo cache: clone failed
-   url=https://github.com/dong4j/Starcat
+   url=https://github.com/starcat-app/Starcat
    error="git clone --bare: fatal: could not read Username for 'https://github.com':
           terminal prompts disabled: exit status 128"
 ```
@@ -117,7 +117,7 @@ git config --global credential.helper osxkeychain
 #    git 会弹出系统对话框（或终端问）让你输 username + password
 #    username: GitHub 用户名（如 dong4j）
 #    password: 一个具备 repo scope 的 Personal Access Token（不是登录密码！）
-git clone https://github.com/dong4j/Starcat /tmp/_test_clone
+git clone https://github.com/starcat-app/Starcat /tmp/_test_clone
 
 # 3. 验证 token 已存进 Keychain
 security find-internet-password -s github.com
@@ -149,7 +149,7 @@ GitHub → Settings → Developer settings → Personal access tokens → Tokens
 **第一层 —— 模拟 daemon 的非交互 clone**：
 
 ```bash
-GIT_TERMINAL_PROMPT=0 git clone --bare https://github.com/dong4j/Starcat /tmp/_test
+GIT_TERMINAL_PROMPT=0 git clone --bare https://github.com/starcat-app/Starcat /tmp/_test
 echo "EXIT=$?"
 # 预期：成功，EXIT=0
 # 失败：EXIT=128 + "could not read Username" → 回到 4.1 第 2 步重新触发 token 输入
@@ -158,7 +158,7 @@ echo "EXIT=$?"
 **第二层 —— `multica repo checkout` 端到端**：
 
 ```bash
-multica repo checkout https://github.com/dong4j/Starcat
+multica repo checkout https://github.com/starcat-app/Starcat
 # 预期：返回 worktree 路径，无 error
 ```
 

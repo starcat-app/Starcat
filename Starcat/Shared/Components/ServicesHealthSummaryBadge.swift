@@ -71,18 +71,28 @@ struct ServiceHealthOutcomeLabel: View {
     var colorForOutcome: (HealthCheckOutcome) -> Color
 
     var body: some View {
+        let successVersionSuffix = outcome.successVersionSuffix
+
         HStack(spacing: 4) {
             Image(systemName: outcome.systemImage)
                 .foregroundStyle(colorForOutcome(outcome))
-            Text(outcome.titleKey)
-                .foregroundStyle(colorForOutcome(outcome))
-                .font(.caption)
-            if !outcome.subtitle.isEmpty {
-                Text(verbatim: outcome.subtitle)
-                    .foregroundStyle(.secondary)
+            HStack(spacing: successVersionSuffix == nil ? 4 : 0) {
+                Text(outcome.titleKey)
+                    .foregroundStyle(colorForOutcome(outcome))
                     .font(.caption)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                if let successVersionSuffix {
+                    Text(verbatim: successVersionSuffix)
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                } else if !outcome.subtitle.isEmpty {
+                    Text(verbatim: outcome.subtitle)
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
             }
         }
     }

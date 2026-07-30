@@ -21,6 +21,7 @@ extension RAGContextUsageSegmentKind {
         case .recentMessages: return Color(nsColor: .systemOrange)
         case .question: return Color(nsColor: .systemBlue)
         case .evidence: return Color(nsColor: .systemPink)
+        case .repositoryInsights: return Color(nsColor: .systemOrange)
         case .repoContext: return Color(nsColor: .systemIndigo)
         case .remoteContext: return Color(nsColor: .systemPurple)
         case .attachments: return Color(nsColor: .systemYellow)

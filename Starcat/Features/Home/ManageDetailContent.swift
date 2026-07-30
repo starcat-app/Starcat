@@ -53,6 +53,50 @@
 
 import SwiftUI
 
+/// Manage 详情正文的两种互斥模式。
+///
+/// 把模式与切换副作用留在视图外部，主详情和独立详情复用同一个
+/// `ManageDetailContent` 时会自然共享同一套规则，测试也不必依赖 SwiftUI 私有状态。
+enum ManageDetailContentMode: String, CaseIterable, Identifiable {
+    case readme
+    case insights
+
+    var id: String { rawValue }
+
+    var titleKey: LocalizedStringKey {
+        switch self {
+        case .readme:
+            "insights.repo.mode.readme"
+        case .insights:
+            "insights.repo.mode.insights"
+        }
+    }
+
+    /// 切换模式时需要执行的资源管理动作。
+    ///
+    /// README 模式必须取消洞察请求；洞察模式需要先重置 Hero 滚动位置。
+    var transitionEffect: ManageDetailContentTransitionEffect {
+        switch self {
+        case .readme:
+            .cancelInsights
+        case .insights:
+            .resetScroll
+        }
+    }
+}
+
+/// 模式切换带来的最小副作用契约，避免 README 与洞察在后台同时占用资源。
+enum ManageDetailContentTransitionEffect: Equatable {
+    case cancelInsights
+    case resetScroll
+}
+
+/// 仓库和数据库作用域共同决定洞察任务身份；账号切换不能沿用旧 ViewModel 冷却。
+private struct RepositoryInsightsLoadIdentity: Hashable {
+    let repoID: Int64
+    let databaseScopeRevision: UInt64
+}
+
 /// Manage 场景详情页的 body 内容（README + 翻译入口）。
 struct ManageDetailContent: View {
 
@@ -65,43 +109,170 @@ struct ManageDetailContent: View {
     @Environment(ReadmeTranslationViewModel.self) private var translationVM
     @Environment(AppSettings.self) private var settings
     @Environment(AuthSession.self) private var authSession
+    @Environment(AppDependencies.self) private var dependencies
     /// v2.1（2026-06-11）：onRetry 闭包同时刷 README + 整个 repo 视图数据(缓存 repo +
     /// tags + notes + release 计数等)。详见文件头 v2.1 修订段。
     @Environment(HomeViewModel.self) private var viewModel
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+    @State private var contentMode: ManageDetailContentMode = .readme
+    @State private var repositoryInsightsViewModel: RepositoryInsightsViewModel?
+    @State private var starHistoryViewModel: StarHistoryViewModel?
+    @State private var loadedInsightsDatabaseScopeRevision: UInt64?
 
     var body: some View {
-        // v1.5 修订（2026-06-10）：RepoLocalSections 已迁回 Scaffold metadataPanel,
-        // 本 ContentView body 仅剩 ReadmeStateView,无需再包 VStack。
-        ReadmeStateView(
-            state: readmeVM.state,
-            contentScope: .manage(repoId: repo.id),
-            // 统一构造带末尾 `/` 的目录 URL，避免 WebKit 把 HEAD 当文件名后丢掉分支段。
-            baseURL: URL(string: repo.htmlUrl).map(ReadmeWebView.repositoryContentBaseURL),
-            onScrollReportChange: onScrollReport,
-            translationControl: ReadmeTranslationControl(
-                repo: repo,
-                translationVM: translationVM,
-                settings: settings
-            )
-        ) {
-            // v2.1（2026-06-11）：Manage 场景下「刷新」=「刷 README + 重拉 repo 视图数据」。
-            // - `readmeVM.reload(repo:isLoggedIn:)` 是同步入口,内部 fire-and-forget Task,
-            //   立即返回不阻塞 UI;
-            // - `viewModel.reloadItems(forceRefresh: true)` 重拉 starred_repos / tags /
-            //   notes / release 计数等视图数据,需要 await,放进独立 Task 与 README 加载
-            //   并行进行;
-            // - 两者并行触发,UI 由各自 @Observable 状态机驱动,互不阻塞。
-            readmeVM.reload(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
-            Task { await viewModel.reloadItems(forceRefresh: true) }
-        } onLogin: {
-            // 2026-06-29：只弹登录 sheet，不强制走 Device Flow
-            // （让用户在 sheet 内可选 Device Flow / PAT，详见 AuthSession.requestLoginSheet 注释）
-            authSession.requestLoginSheet()
+        VStack(spacing: 0) {
+            HStack {
+                Spacer(minLength: 12)
+
+                // 复用 Starcat 自绘胶囊控件，避免 macOS 原生 segmented Picker
+                // 在详情页中显得厚重；右对齐后也不会抢占 README 阅读区的视觉焦点。
+                // horizontal 24 与 RepoLocalSections / Hero 一致，让「AI 生成」与「洞察」右缘齐平。
+                PillSegmentedControl(
+                    items: ManageDetailContentMode.allCases,
+                    selection: $contentMode,
+                    title: \.titleKey,
+                    size: .compact
+                )
+                .accessibilityLabel(Text("insights.repo.mode.label"))
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 8)
+
+            Divider()
+
+            // README ↔ 洞察与我的洞察同款「轻轻落下」；顶栏胶囊固定，不参与内容重建。
+            ZStack(alignment: .topLeading) {
+                modeBody
+                    .id(contentMode)
+                    .detailContentTransition()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: contentMode)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay(alignment: .bottom) {
-            // AI 对话新增为 README 详情页内入口；旧 Hero AI 按钮仍保留独立窗口逻辑。
-            RepoAIFloatingOverlay(repo: repo)
+        .onChange(of: contentMode) { _, newMode in
+            switch newMode.transitionEffect {
+            case .cancelInsights:
+                repositoryInsightsViewModel?.cancelRemoteLoading()
+                starHistoryViewModel?.cancel()
+            case .resetScroll:
+                // README 可能在切换前已把 Hero 折叠；洞察页首帧先恢复顶部 Metadata，
+                // 后续再由自己的 ScrollView 持续上报 offset。
+                onScrollReport(RepoDetailScrollReport(offsetY: 0, scrollOverflow: 0))
+            }
         }
+    }
+
+    @ViewBuilder
+    private var modeBody: some View {
+        if contentMode == .readme {
+            // v1.5 修订（2026-06-10）：RepoLocalSections 已迁回 Scaffold metadataPanel，
+            // README 继续直接上报滚动，让 hero 折叠行为保持不变。
+            ReadmeStateView(
+                state: readmeVM.state,
+                contentScope: .manage(repoId: repo.id),
+                // 统一构造带末尾 `/` 的目录 URL，避免 WebKit 把 HEAD 当文件名后丢掉分支段。
+                baseURL: URL(string: repo.htmlUrl).map(ReadmeWebView.repositoryContentBaseURL),
+                onScrollReportChange: onScrollReport,
+                translationControl: ReadmeTranslationControl(
+                    repo: repo,
+                    translationVM: translationVM,
+                    settings: settings
+                )
+            ) {
+                refreshReadmeAndRepo()
+            } onLogin: {
+                // 2026-06-29：只弹登录 sheet，不强制走 Device Flow。
+                authSession.requestLoginSheet()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            insightsBody
+        }
+    }
+
+    @ViewBuilder
+    private var insightsBody: some View {
+        Group {
+            if let repositoryInsightsViewModel, let starHistoryViewModel {
+                RepositoryInsightsView(
+                    repo: repo,
+                    viewModel: repositoryInsightsViewModel,
+                    starHistoryViewModel: starHistoryViewModel,
+                    onScrollReport: onScrollReport,
+                    onStarHistoryChanged: { repo in
+                        _ = await dependencies.repositoryInsightsContextCoordinator.prepareArtifact(
+                            for: repo,
+                            mode: .refreshIfNeeded
+                        )
+                    }
+                )
+            } else {
+                // ViewModel 在同一个 task 的下一阶段立即注入。这里保持内容区域稳定即可，
+                // 不显示中央进度环，避免首次进入洞察时出现一次突兀的加载闪烁。
+                Color.clear
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityHidden(true)
+            }
+        }
+        .task(
+            id: RepositoryInsightsLoadIdentity(
+                repoID: repo.id,
+                databaseScopeRevision: dependencies.databaseScopeRevision
+            )
+        ) {
+            let currentDatabaseScopeRevision = dependencies.databaseScopeRevision
+            if let loadedInsightsDatabaseScopeRevision,
+               loadedInsightsDatabaseScopeRevision != currentDatabaseScopeRevision {
+                repositoryInsightsViewModel?.resetTransientStateForDatabaseScopeChange()
+                starHistoryViewModel?.cancel()
+            }
+            loadedInsightsDatabaseScopeRevision = currentDatabaseScopeRevision
+
+            let insightsViewModel = repositoryInsightsViewModel
+                ?? makeRepositoryInsightsViewModel()
+            let historyViewModel = starHistoryViewModel
+                ?? makeStarHistoryViewModel()
+            repositoryInsightsViewModel = insightsViewModel
+            starHistoryViewModel = historyViewModel
+
+            async let insightsLoad: Void = insightsViewModel.load(
+                repo: repo,
+                isAuthenticated: authSession.state.isAuthenticated
+            )
+            async let historyLoad: Void = historyViewModel.load(repo: repo)
+            _ = await (insightsLoad, historyLoad)
+        }
+    }
+
+    /// v2.1 既有语义保持不变：Manage 的 README 刷新同时重读当前 repo 视图数据。
+    private func refreshReadmeAndRepo() {
+        readmeVM.reload(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
+        Task { await viewModel.reloadItems(forceRefresh: true) }
+    }
+
+    private func makeRepositoryInsightsViewModel() -> RepositoryInsightsViewModel {
+        RepositoryInsightsViewModel(
+            provider: DefaultRepositoryLocalInsightsProvider(
+                releaseRepository: dependencies.releaseRepository,
+                healthRepository: dependencies.repoHealthRepository,
+                openSSFRepository: dependencies.openSSFScoreRepository,
+                insightsCache: dependencies.repositoryInsightsCache,
+                database: dependencies.database
+            ),
+            // AI 摘要 / 对话也消费这一进程级 Provider；缓存与正在刷新的请求都只保留一份。
+            remoteProvider: dependencies.repositoryRemoteInsightsProvider,
+            contextRefreshHandler: { repo in
+                _ = await dependencies.repositoryInsightsContextCoordinator.prepareArtifact(
+                    for: repo,
+                    mode: .refreshIfNeeded
+                )
+            }
+        )
+    }
+
+    private func makeStarHistoryViewModel() -> StarHistoryViewModel {
+        StarHistoryViewModel(repository: dependencies.repoStarHistoryRepository)
     }
 }

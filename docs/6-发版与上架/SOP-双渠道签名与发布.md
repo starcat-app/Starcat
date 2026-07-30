@@ -3,6 +3,7 @@
 > 创建：2026-07-08
 > 适用：Starcat App Store 版与 Direct 官网 DMG 版。
 > 目标：同一代码仓库维护两套独立分发产物，签名、支付、更新和审核边界互不污染。
+> 新 Mac 从零准备 Xcode、证书、notary profile 与 Sparkle key：见 `SOP-新Mac开发发布环境搭建.md`。
 
 ## 1. 当前渠道边界
 
@@ -158,7 +159,8 @@ STARCAT_NOTARIZE=1 STARCAT_NOTARY_PROFILE=starcat-notary ./scripts/package-direc
 - Direct 包不包含 sandbox entitlement。
 - Direct 包包含 `Sparkle.framework`。
 - `STARCAT_NOTARIZE=1` 时签名身份必须是 `Developer ID Application`。
-- notarization 通过后执行 `stapler staple`、`stapler validate`、`spctl --assess --type open`。
+- DMG 在提交 notarization 前使用同一 `Developer ID Application` 签名。
+- notarization 通过后执行 `stapler staple`、`stapler validate`、`spctl --assess --type open --context context:primary-signature`，并重新计算最终 SHA256。
 
 临时内部验证可以跳过 notarization：
 
@@ -234,7 +236,8 @@ APP="dist/direct/DerivedData/Build/Products/Release/Starcat.app"
 
 codesign -dvvv --entitlements :- "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
-spctl --assess --type open --verbose "dist/direct/downloads/Starcat-1.0.0-arm64.dmg"
+codesign --verify --verbose=2 "dist/direct/downloads/Starcat-1.0.0-arm64.dmg"
+spctl --assess --type open --context context:primary-signature --verbose "dist/direct/downloads/Starcat-1.0.0-arm64.dmg"
 ```
 
 ### 6.5 Notary 诊断

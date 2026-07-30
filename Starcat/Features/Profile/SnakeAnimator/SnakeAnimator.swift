@@ -186,8 +186,8 @@ enum SnakeStyle: String, CaseIterable, Identifiable, Codable, Sendable {
 
     var id: String { rawValue }
 
-    /// 默认风格。greedy 是 snk 同款，最契合"贡献草坪 + 蛇"组合的语义。
-    static let `default`: SnakeStyle = .greedy
+    /// 默认关闭，避免装饰性动画在用户未主动选择前持续占用注意力。
+    static let `default`: SnakeStyle = .off
 
     /// 本地化键。
     var displayNameKey: String { "settings.snakeStyle.\(rawValue)" }

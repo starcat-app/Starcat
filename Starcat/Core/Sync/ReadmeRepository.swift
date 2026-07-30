@@ -95,6 +95,42 @@ struct ReadmeRepository {
         notificationCenter.post(name: .readmeContentDidChange, object: nil)
     }
 
+    /// 只清理当前用户库内 Private 仓库的远端 README HTML / Markdown 缓存。
+    ///
+    /// Repo、项目关系、Star、Tag、Note 等用户数据均不受影响；清理后再次打开详情会
+    /// 使用 GitHub App token 重拉。先删 child `readme_contents`，再删 `readmes`，
+    /// 不依赖具体 SQLite FK cascade 配置。
+    @discardableResult
+    func deletePrivateRemoteCaches() async throws -> Int {
+        let deletedCount = try await database.writer.write { db -> Int in
+            let count = try Int.fetchOne(
+                db,
+                sql: """
+                    SELECT COUNT(*)
+                    FROM readmes rm
+                    JOIN repos r ON r.id = rm.repo_id
+                    WHERE r.is_private = 1
+                    """
+            ) ?? 0
+            try db.execute(
+                sql: """
+                    DELETE FROM readme_contents
+                    WHERE repo_id IN (SELECT id FROM repos WHERE is_private = 1)
+                    """
+            )
+            try db.execute(
+                sql: """
+                    DELETE FROM readmes
+                    WHERE repo_id IN (SELECT id FROM repos WHERE is_private = 1)
+                    """
+            )
+            return count
+        }
+        guard deletedCount > 0 else { return 0 }
+        notificationCenter.post(name: .readmeContentDidChange, object: nil)
+        return deletedCount
+    }
+
     // MARK: - readme_contents(HOM-201 P2-2)
 
     /// 查询 raw Markdown 文本(独立表 `readme_contents`,P2-2 拆出去后专门承载)。

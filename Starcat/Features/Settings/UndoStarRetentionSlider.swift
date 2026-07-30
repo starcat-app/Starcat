@@ -143,7 +143,9 @@ struct UndoStarRetentionSlider: View {
                 dragValue = daysToPosition(newValue)
             }
 
-            // 立即删除按钮
+            // 立即删除按钮（危险动作：与上方保留天数滑杆用横线分开）
+            Divider()
+                .padding(.top, 8)
             HStack {
                 Spacer()
                 Button(role: .destructive) {
@@ -154,7 +156,7 @@ struct UndoStarRetentionSlider: View {
                 .disabled(dependencies.undoStarCleanupScheduler.isCleaning)
                 .help("settings.undoStar.deleteNow.help")
             }
-            .padding(.top, 12)
+            .padding(.vertical, 8)
         }
         // 缩短确认弹窗
         .alert("settings.undoStar.shortenTitle", isPresented: $showShortenConfirm) {

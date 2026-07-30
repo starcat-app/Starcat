@@ -26,17 +26,16 @@
 //    （缓存未命中走分页 API fallback）。两种模式 UI 完全无感知，只在 ViewModel 内做
 //    分支调度。
 //  - **入场策略**：① 先读 `WeeklyBulkRepository.cachedBulk()`；② 命中 → 立即上屏 +
-//    切到 `.local`；命中且 12h TTL 内 → 不再发请求；命中但 TTL 过期 → 后台触发
+//    切到 `.local`；命中且 6h TTL 内 → 不再发请求；命中但 TTL 过期 → 后台触发
 //    bulkSync 静默刷新（不阻塞 UI）；③ 未命中 → fallback 老分页 `fetchRepos(page=1)`
 //    立刻出图（200ms 级体感），同时后台启动 bulkSync 把 4000 条落盘；下次入场切 `.local`。
 //  - **切 source / sort / lang / 高级筛选**：`.local` 模式纯本地 filter + sort +
 //    客户端分页（瞬时无网络）；`.remote` 模式下高级筛选会先拉 bulk，再本地过滤，
 //    避免对远端分页第一页做不完整过滤导致 total 不准。
 //  - **主动刷新**：toolbar 刷新按钮 / pull-to-refresh 永远调 bulkSync（不论 dataSource），
-//    完成后强制切到 `.local`，让 12h TTL 重新计时。
-//  - **客户端 12h TTL**：判断在 ViewModel 层，Repository 不掺和；与 trending 24h TTL
-//    分层一致。weekly 数据更新慢（周一 00:00 UTC 周更）但聚合源多（zread + discovery
-//    天级），12h 是体感与新鲜度的平衡点。
+//    完成后强制切到 `.local`，让 6h TTL 重新计时。
+//  - **客户端 6h TTL**：判断在 ViewModel 层，Repository 不掺和；与后端 bulk 快照的
+//    6h 新鲜度窗口保持一致，避免客户端跨过一轮服务端刷新后仍继续展示旧快照。
 //
 
 import SwiftUI
@@ -65,6 +64,14 @@ struct WeeklyContentView: View {
     @State private var wikiAvailabilityMap: [Int64: Bool] = [:]
     @State private var isFilterPopoverPresented = false
 
+    init(
+        viewModel: WeeklyContentViewModel? = nil,
+        selectedLanguage: Binding<String?>
+    ) {
+        _viewModel = State(initialValue: viewModel)
+        _selectedLanguage = selectedLanguage
+    }
+
     // R-01 §3.1.4 Step 7.3：refreshAngle / reduceMotion 已无外层用途，统一由 SyncIconButton 内部处理。
     // WeeklyProjectRow 内部仍保留自己的 reduceMotion env 处理 isSelected 动画。
 
@@ -81,8 +88,11 @@ struct WeeklyContentView: View {
             let model = ensureViewModel()
             restoreSortPreferenceIfNeeded(model)
             syncExternalLanguage(to: model)
-            Task { await reloadLibraryStateMap() }
+            async let libraryLoad: Void = reloadLibraryStateMap()
             await model.loadInitialIfNeeded()
+            await libraryLoad
+            guard !Task.isCancelled else { return }
+            await Task.yield()
             applyWeeklyDetailSelectionPolicy(from: model.items)
         }
         .task {
@@ -124,6 +134,14 @@ struct WeeklyContentView: View {
         }
         .task(id: settings.wikiAvailabilityFilter.rawValue) {
             await reloadWikiAvailabilityMap(for: viewModel.items)
+        }
+        .starcatRefreshCommand(
+            pane: .list,
+            identity: "weekly-\(selectedLanguage ?? "")-\(viewModel.selectedSort.rawValue)-\(viewModel.filterSummaryTitle)-\(viewModel.isLoading)",
+            title: String.l10n("commands.actions.refreshCurrentList"),
+            isEnabled: !viewModel.isLoading
+        ) {
+            refreshCurrentWeeklyList(viewModel)
         }
     }
 
@@ -439,8 +457,13 @@ struct WeeklyContentView: View {
             disabled: viewModel.isLoading,
             tooltip: String.l10n("weekly.refresh")
         ) {
-            Task { await viewModel.reload() }
+            refreshCurrentWeeklyList(viewModel)
         }
+    }
+
+    /// Weekly 底层会更新 bulk 快照，但发布到 UI 的始终是当前筛选结果。
+    private func refreshCurrentWeeklyList(_ viewModel: WeeklyContentViewModel) {
+        Task { await viewModel.reload() }
     }
 
     // MARK: - Project List
@@ -499,7 +522,10 @@ struct WeeklyContentView: View {
                         Text("weekly.action.copyURL")
                     }
                 }
-                .listRowReveal(index: index, snapshotID: viewModel.itemsRevision)
+                .listRowReveal(
+                    index: index,
+                    snapshotID: viewModel.itemsRevision
+                )
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
                 .onAppear {
@@ -541,11 +567,13 @@ struct WeeklyContentView: View {
             .hidden()
         }
         .task(id: viewModel.itemsRevision) {
+            // Explore 分类切换时先让周刊首屏提交，再补 Wiki / OpenSSF / Health 信号。
+            await Task.yield()
             let repoIDs = viewModel.items.map(\.ghRepoId)
-            await reloadWikiAvailabilityMap(for: viewModel.items)
-            try? await Task.sleep(nanoseconds: 150_000_000)
-            await dependencies.openSSFScoreStore.loadCachedScores(for: repoIDs)
-            await dependencies.repoHealthStore.loadCachedSnapshots(for: repoIDs)
+            async let wiki: Void = reloadWikiAvailabilityMap(for: viewModel.items)
+            async let openSSF: Void = dependencies.openSSFScoreStore.loadCachedScores(for: repoIDs)
+            async let health: Void = dependencies.repoHealthStore.loadCachedSnapshots(for: repoIDs)
+            _ = await (wiki, openSSF, health)
         }
     }
 
@@ -653,9 +681,7 @@ struct WeeklyContentView: View {
 
     private func matchesWikiFilter(repoId: Int64) -> Bool {
         guard settings.wikiAvailabilityFilter != .unknown else { return true }
-        guard let available = wikiAvailabilityMap[repoId] else {
-            return settings.wikiAvailabilityFilter == .missing
-        }
+        guard let available = wikiAvailabilityMap[repoId] else { return false }
         return matchesAvailability(available, filter: settings.wikiAvailabilityFilter)
     }
 
@@ -672,13 +698,16 @@ struct WeeklyContentView: View {
     }
 
     private func reloadWikiAvailabilityMap(for items: [WeeklyFeedItem]) async {
-        guard settings.wikiAvailabilityFilter != .unknown else { return }
-        var next = wikiAvailabilityMap
-        for item in items where next[item.ghRepoId] == nil {
-            let snapshot = DiskWikiCache.shared.load(owner: item.owner, repo: item.name)
-            next[item.ghRepoId] = !(snapshot?.indexedLinks.isEmpty ?? true)
+        guard settings.wikiAvailabilityFilter != .unknown else {
+            wikiAvailabilityMap = [:]
+            return
         }
-        wikiAvailabilityMap = next
+        let requests = items.map {
+            WikiAvailabilityRequest(id: $0.ghRepoId, owner: $0.owner, repo: $0.name)
+        }
+        let snapshot = await WikiAvailabilitySnapshotLoader.load(requests: requests)
+        guard !Task.isCancelled else { return }
+        wikiAvailabilityMap = snapshot
     }
 
     private func observeLibraryStateChanges() async {
@@ -785,14 +814,15 @@ final class WeeklyContentViewModel {
 
     // MARK: - Constants
 
-    /// 客户端 bulk 缓存 TTL（与 trending 24h 配套，但 weekly 数据更新频率更高所以更短）。
-    /// 与后端 60s TTL 配合形成两级缓存：客户端避免 12h 内重复打 server，server 避免
-    /// 60s 内重复 rebuild。
-    static let bulkTTL: TimeInterval = 12 * 60 * 60
+    /// 客户端 bulk 缓存 TTL，与后端 bulk 快照的 6h TTL 保持一致。
+    /// 两端采用相同新鲜度窗口，避免客户端继续展示已经跨过服务端刷新周期的旧快照。
+    static let bulkTTL: TimeInterval = 6 * 60 * 60
 
     /// `.local` 模式下客户端分页 page size（与后端 default page=20 对齐，让"切到 local
     /// 后滚动"与"remote 模式滚动"视觉体验一致）。
     private static let localPageSize: Int = 20
+    /// 常用 source / language / sort 组合只保留近期工作集，避免会话内无限增长。
+    private static let preparedSnapshotCapacity: Int = 12
 
     // MARK: - State
 
@@ -892,9 +922,18 @@ final class WeeklyContentViewModel {
     private var filteredLocalItems: [WeeklyFeedItem] = []
     /// bulk 缓存的"原始全量"——`filteredLocalItems` 是它的过滤+排序产物。
     private var bulkAllItems: [WeeklyFeedItem] = []
+    /// bulk 事实源每次整体替换都会推进；旧派生结果不能跨 revision 命中。
+    private var bulkSourceRevision: Int = 0
+    private var preparedSnapshots: [WeeklyPreparedSnapshotKey: [WeeklyFeedItem]] = [:]
+    private var preparedSnapshotLRU: [WeeklyPreparedSnapshotKey] = []
+    /// 本地筛选任务使用独立代次，不与网络 generation 混用，避免两种取消语义互相干扰。
+    private var localDerivationGeneration: Int = 0
+    private var localFilterTask: Task<[WeeklyFeedItem], Never>?
+    /// 定向测试确认 A-B-A 命中 prepared snapshot 时不重复进入全量筛选。
+    private(set) var localDerivationCountForTesting: Int = 0
     /// true 表示当前 `.local` 来自 SQLite 分页查询，而不是内存全量切片。
     private var usesPagedCache = false
-    /// 上次 bulk 拉取的客户端时间戳（用于判 12h TTL）。
+    /// 上次 bulk 拉取的客户端时间戳（用于判 6h TTL）。
     private(set) var lastBulkFetchedAt: Date?
 
     // MARK: - Dependencies
@@ -909,6 +948,20 @@ final class WeeklyContentViewModel {
     /// 标记当前 in-flight 请求的代次；切换筛选 / reload 时 bump，
     /// 旧请求即便回来也会因为代次不匹配而被丢弃,避免顺序错乱。
     private var generation: Int = 0
+
+    /// Weekly 本地派生的完整查询身份。recencyDay 防止“最近 N 天”的快照跨日期复用。
+    private struct WeeklyPreparedSnapshotKey: Hashable, Sendable {
+        let source: String
+        let coverage: String
+        let hideArchived: Bool
+        let hideForks: Bool
+        let stars: Int
+        let pushedRecency: Int
+        let recencyDay: Int
+        let language: String
+        let sort: String
+        let sourceRevision: Int
+    }
 
     init(
         api: WeeklyAPI,
@@ -941,7 +994,7 @@ final class WeeklyContentViewModel {
             applyPagedCacheSnapshot(cached, page: 1, appending: false, bumpRevision: false)
             // Step 2: TTL 判断
             if isCacheFresh(at: cached.lastFetchedAt) {
-                return  // 12h 内，零网络上屏
+                return  // 6h 内，零网络上屏
             }
             // 缓存过期 → 后台静默刷新（不阻塞）
             Task { await self.silentBulkSync() }
@@ -983,7 +1036,7 @@ final class WeeklyContentViewModel {
                 generatedAt: result.generatedAt,
                 total: result.total
             )
-            applyLocalSnapshot(snapshot, bumpRevision: true)
+            await applyLocalSnapshot(snapshot, bumpRevision: true)
         } catch {
             guard myGen == generation else { return }
             if usesLocalOnlyFilters {
@@ -1135,7 +1188,12 @@ final class WeeklyContentViewModel {
             if usesPagedCache {
                 Task { await reloadCachedPage(bumpRevision: true) }
             } else {
-                applyFiltersLocally(bumpRevision: true)
+                Task {
+                    await applyFiltersLocally(
+                        bumpRevision: true,
+                        showSkeletonOnMiss: true
+                    )
+                }
             }
         } else {
             Task { await reload() }
@@ -1167,7 +1225,7 @@ final class WeeklyContentViewModel {
                 generatedAt: result.generatedAt,
                 total: result.total
             )
-            applyLocalSnapshot(snapshot, bumpRevision: true)
+            await applyLocalSnapshot(snapshot, bumpRevision: true)
         } catch {
             AppLog.network.warning("Weekly silent bulkSync failed: \(error.localizedDescription, privacy: .public)")
         }
@@ -1214,14 +1272,23 @@ final class WeeklyContentViewModel {
 
     /// 把 bulk 缓存 snapshot 应用到当前状态，切到 `.local` 并应用全部筛选。
     /// `bumpRevision`：reload 路径要刷新入场动画；首次入场不刷（避免列表上来就抖一次）。
-    private func applyLocalSnapshot(_ snapshot: WeeklyBulkCachedSnapshot, bumpRevision: Bool) {
+    private func applyLocalSnapshot(
+        _ snapshot: WeeklyBulkCachedSnapshot,
+        bumpRevision: Bool
+    ) async {
         bulkAllItems = snapshot.items
+        bulkSourceRevision &+= 1
+        clearPreparedSnapshots()
         sourceDescriptors = snapshot.sources
         lastBulkFetchedAt = snapshot.lastFetchedAt
         dataSource = .local
         usesPagedCache = false
         loadError = nil
-        applyFiltersLocally(bumpRevision: bumpRevision)
+        // 手动 / 静默刷新保留当前卡片，等新快照准备好后静默替换；首次进入本来就是空列表。
+        await applyFiltersLocally(
+            bumpRevision: bumpRevision,
+            showSkeletonOnMiss: false
+        )
     }
 
     private func applyPagedCacheSnapshot(
@@ -1277,29 +1344,73 @@ final class WeeklyContentViewModel {
         applyPagedCacheSnapshot(snapshot, page: nextPage, appending: true, bumpRevision: false)
     }
 
-    /// 在 `bulkAllItems` 基础上按当前筛选条件重过滤重排序，切片到 page 1 上屏。
-    private func applyFiltersLocally(bumpRevision: Bool) {
-        var filtered = bulkAllItems.filter { selectedSource.matches($0) }
-        filtered = filtered.filter { selectedCoverage.matches($0) }
-        if hideArchivedRepos {
-            filtered = filtered.filter { !$0.card.isArchived }
+    /// 在 `bulkAllItems` 基础上后台完成全量过滤与排序；MainActor 只发布首屏切片。
+    ///
+    /// 命中 prepared snapshot 时同步发布；miss 时取消上一派生任务，并在 await 后复核
+    /// 完整查询身份与代次，快速切换筛选不会让旧结果覆盖新选择。
+    private func applyFiltersLocally(
+        bumpRevision: Bool,
+        showSkeletonOnMiss: Bool
+    ) async {
+        let key = makePreparedSnapshotKey()
+        if let filtered = preparedSnapshot(for: key) {
+            publishPreparedLocalSnapshot(filtered, bumpRevision: bumpRevision)
+            return
         }
-        if hideForkRepos {
-            filtered = filtered.filter { !$0.card.isFork }
-        }
-        filtered = filtered.filter { selectedStarsFilter.matches($0) }
-        let now = Date()
-        filtered = filtered.filter { selectedPushedRecency.matches($0, now: now) }
-        if !selectedLanguage.isEmpty {
-            filtered = filtered.filter { item in
-                if selectedLanguage == TrendingLanguage.uncategorizedKey {
-                    return (item.language ?? "").isEmpty
-                }
-                return item.language?.caseInsensitiveCompare(selectedLanguage) == .orderedSame
-            }
-        }
-        filtered.sort(by: Self.makeLocalSorter(selectedSort))
 
+        localDerivationGeneration &+= 1
+        let derivationGeneration = localDerivationGeneration
+        localFilterTask?.cancel()
+
+        if showSkeletonOnMiss {
+            isLoading = true
+            items = []
+            total = 0
+            hasMore = false
+        }
+
+        let source = bulkAllItems
+        let sourceFilter = selectedSource
+        let coverageFilter = selectedCoverage
+        let hideArchived = hideArchivedRepos
+        let hideForks = hideForkRepos
+        let starsFilter = selectedStarsFilter
+        let pushedRecency = selectedPushedRecency
+        let language = selectedLanguage
+        let sort = selectedSort
+        let now = Date()
+        localDerivationCountForTesting &+= 1
+        let task = Task.detached(priority: .userInitiated) {
+            Self.deriveLocalItems(
+                source: source,
+                sourceFilter: sourceFilter,
+                coverageFilter: coverageFilter,
+                hideArchived: hideArchived,
+                hideForks: hideForks,
+                starsFilter: starsFilter,
+                pushedRecency: pushedRecency,
+                language: language,
+                sort: sort,
+                now: now
+            )
+        }
+        localFilterTask = task
+        let filtered = await task.value
+
+        guard derivationGeneration == localDerivationGeneration,
+              key == makePreparedSnapshotKey(),
+              !Task.isCancelled else { return }
+        storePreparedSnapshot(filtered, for: key)
+        publishPreparedLocalSnapshot(filtered, bumpRevision: bumpRevision)
+        if showSkeletonOnMiss {
+            isLoading = false
+        }
+    }
+
+    private func publishPreparedLocalSnapshot(
+        _ filtered: [WeeklyFeedItem],
+        bumpRevision: Bool
+    ) {
         filteredLocalItems = filtered
         total = filtered.count
         page = 1
@@ -1314,6 +1425,86 @@ final class WeeklyContentViewModel {
         // filtered.count = 当前筛选后的可见数量（如选中某语言可能只有 800），
         // bulkAllItems.count = 后端 bulk 全量（可能是 3000+）。
         selectionService?.applyTotal(bulkAllItems.count)
+    }
+
+    private func makePreparedSnapshotKey(now: Date = Date()) -> WeeklyPreparedSnapshotKey {
+        let recencyDay = selectedPushedRecency == .all
+            ? 0
+            : Int(now.timeIntervalSince1970 / 86_400)
+        return WeeklyPreparedSnapshotKey(
+            source: selectedSource.rawValue,
+            coverage: selectedCoverage.rawValue,
+            hideArchived: hideArchivedRepos,
+            hideForks: hideForkRepos,
+            stars: selectedStarsFilter.rawValue,
+            pushedRecency: selectedPushedRecency.rawValue,
+            recencyDay: recencyDay,
+            language: selectedLanguage.lowercased(),
+            sort: selectedSort.rawValue,
+            sourceRevision: bulkSourceRevision
+        )
+    }
+
+    private func preparedSnapshot(for key: WeeklyPreparedSnapshotKey) -> [WeeklyFeedItem]? {
+        guard let snapshot = preparedSnapshots[key] else { return nil }
+        preparedSnapshotLRU.removeAll { $0 == key }
+        preparedSnapshotLRU.append(key)
+        return snapshot
+    }
+
+    private func storePreparedSnapshot(
+        _ snapshot: [WeeklyFeedItem],
+        for key: WeeklyPreparedSnapshotKey
+    ) {
+        preparedSnapshots[key] = snapshot
+        preparedSnapshotLRU.removeAll { $0 == key }
+        preparedSnapshotLRU.append(key)
+        while preparedSnapshotLRU.count > Self.preparedSnapshotCapacity {
+            let evicted = preparedSnapshotLRU.removeFirst()
+            preparedSnapshots.removeValue(forKey: evicted)
+        }
+    }
+
+    private func clearPreparedSnapshots() {
+        localDerivationGeneration &+= 1
+        localFilterTask?.cancel()
+        preparedSnapshots.removeAll(keepingCapacity: true)
+        preparedSnapshotLRU.removeAll(keepingCapacity: true)
+    }
+
+    private nonisolated static func deriveLocalItems(
+        source: [WeeklyFeedItem],
+        sourceFilter: WeeklySourceFilter,
+        coverageFilter: WeeklySourceCoverageFilter,
+        hideArchived: Bool,
+        hideForks: Bool,
+        starsFilter: WeeklyStarsFilter,
+        pushedRecency: WeeklyPushedRecencyFilter,
+        language: String,
+        sort: WeeklyFeedSort,
+        now: Date
+    ) -> [WeeklyFeedItem] {
+        var filtered: [WeeklyFeedItem] = []
+        filtered.reserveCapacity(source.count)
+
+        for (index, item) in source.enumerated() {
+            if index.isMultiple(of: 64), Task.isCancelled { return [] }
+            guard sourceFilter.matches(item), coverageFilter.matches(item) else { continue }
+            if hideArchived, item.card.isArchived { continue }
+            if hideForks, item.card.isFork { continue }
+            guard starsFilter.matches(item), pushedRecency.matches(item, now: now) else { continue }
+            if !language.isEmpty {
+                if language == TrendingLanguage.uncategorizedKey {
+                    guard (item.language ?? "").isEmpty else { continue }
+                } else {
+                    guard item.language?.caseInsensitiveCompare(language) == .orderedSame else { continue }
+                }
+            }
+            filtered.append(item)
+        }
+        guard !Task.isCancelled else { return [] }
+        filtered.sort(by: makeLocalSorter(sort))
+        return filtered
     }
 
     private func advanceLocalPage() {
@@ -1341,7 +1532,7 @@ final class WeeklyContentViewModel {
         )
     }
 
-    /// 12h TTL 判断；时间倒着算（lastFetchedAt 之后过了 < 12h 即新鲜）。
+    /// 6h TTL 判断；时间倒着算（lastFetchedAt 之后过了 < 6h 即新鲜）。
     private func isCacheFresh(at lastFetchedAt: Date) -> Bool {
         Date().timeIntervalSince(lastFetchedAt) < Self.bulkTTL
     }
@@ -1349,7 +1540,7 @@ final class WeeklyContentViewModel {
     /// 排序函数：与后端 `WeeklyFeedSort` 对齐（详见后端 `internal/store/sqlite.go`
     /// `QueryRepos` 排序分支）。本地 sort 必须与 server-side 等价，否则用户切到 .local
     /// 后切 sort 的视觉结果会与 .remote 模式不一致。
-    private static func makeLocalSorter(_ sort: WeeklyFeedSort) -> (WeeklyFeedItem, WeeklyFeedItem) -> Bool {
+    private nonisolated static func makeLocalSorter(_ sort: WeeklyFeedSort) -> (WeeklyFeedItem, WeeklyFeedItem) -> Bool {
         switch sort {
         case .defaultOrder:
             return { lhs, rhs in
@@ -1426,7 +1617,7 @@ final class WeeklyContentViewModel {
 
     /// 返回 nil 表示两项都未置顶，应继续执行用户选择的普通排序。
     /// 多个置顶项目严格按服务端 pin_position 排列，不受 Stars / 名称排序影响。
-    private static func comparePins(_ lhs: WeeklyFeedItem, _ rhs: WeeklyFeedItem) -> Bool? {
+    private nonisolated static func comparePins(_ lhs: WeeklyFeedItem, _ rhs: WeeklyFeedItem) -> Bool? {
         if lhs.isPinned != rhs.isPinned { return lhs.isPinned }
         guard lhs.isPinned, rhs.isPinned else { return nil }
         let leftPosition = lhs.pinPosition ?? Int.max

@@ -340,6 +340,8 @@ struct RAGConversationRuntimeState {
     var queryPlan: RAGQueryPlan?
     var retrieval: RAGRetrievalResult?
     var contextUsage: RAGContextUsage?
+    /// 当前轮实际进入 Prompt 的洞察 XML；与 RepoContext 一样只保存在运行态内存。
+    var repositoryInsightsDocuments: [RAGRepositoryInsightsDocument] = []
     /// XML 只属于当前运行态，不进入 SQLite；历史会话通过 execution snapshot 校验磁盘缓存后重建。
     var repoContextDocument: RAGRepoContextDocument?
     var remoteBlocks: [RAGRemoteContextBlock] = []
@@ -418,6 +420,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     @ObservationIgnored private var linkDetectionTask: Task<Void, Never>?
     /// 历史 XML 读取必须跟随会话选择取消；commit/hash 不匹配时保持 nil，绝不展示后来版本。
     @ObservationIgnored private var repoContextHistoryLoadTask: Task<Void, Never>?
+    /// 洞察历史同样只在 hash 全匹配时恢复；删除或更新 Artifact 后保持空正文。
+    @ObservationIgnored private var repositoryInsightsHistoryLoadTask: Task<Void, Never>?
 
     var conversations: [RAGConversationSummary] = []
     var conversationGroups: [RAGConversationGroup] = []
@@ -454,6 +458,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     var editingUserDraft = ""
     var queryPlan: RAGQueryPlan?
     var retrieval: RAGRetrievalResult?
+    /// 当前轮最终进入 Prompt 的洞察 XML 投影；历史会话稍后通过审计 hash 按需回放。
+    private(set) var repositoryInsightsDocuments: [RAGRepositoryInsightsDocument] = []
     /// 当前轮实际进入 Prompt 的 XML 投影；只保存在内存，供引用详情作为独立证据展示。
     private(set) var repoContextDocument: RAGRepoContextDocument?
     /// 当前轮默认可见的执行轨迹；完成后随 assistant message 持久化，Debug payload 不进入这里。
@@ -545,6 +551,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     private var mentionQueryTask: Task<Void, Never>?
     /// 只共享纯值读模型；工作台自己的问题抽屉、重建任务和进度状态仍留在本 ViewModel。
     var indexStatus = RAGIndexStatusProjection.empty
+    /// `.empty` 也是初始占位值，不能在 coverage 首次读取完成前把“未知”误判为真实空库。
+    private(set) var hasLoadedIndexCoverage = false
     /// Inspector 常显的本地知识库事实。回答流会用实际注入 Prompt 的快照覆盖它，避免面板与
     /// 当前轮模型看到的数据不一致；工作台初次打开时则主动读取一次，使用户无需先提问也能核验。
     var knowledgeBaseMetadataSnapshot: KnowledgeBaseMetadataSnapshot?
@@ -553,7 +561,18 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     /// 知识库尚无任何仓库时，问答没有可检索边界。
     var isKnowledgeBaseEmpty: Bool {
-        indexStatus.isKnowledgeBaseEmpty
+        Self.resolveKnowledgeBaseEmptyState(
+            indexStatus: indexStatus,
+            hasLoadedIndexCoverage: hasLoadedIndexCoverage
+        )
+    }
+
+    /// coverage 加载前的 `.empty` 只是占位值；入口路由必须把“未知”和“真实空库”分开。
+    nonisolated static func resolveKnowledgeBaseEmptyState(
+        indexStatus: RAGIndexStatusProjection,
+        hasLoadedIndexCoverage: Bool
+    ) -> Bool {
+        hasLoadedIndexCoverage && indexStatus.isKnowledgeBaseEmpty
     }
     var indexIssueChunks: [RAGIndexIssueKind: [RAGChunk]] = [:]
     var indexIssueHasMore: Set<RAGIndexIssueKind> = []
@@ -564,6 +583,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     /// 手动刷新结果在阶段切换后保持不变，供工作台连续展示 README 与分片进度。
     var indexRefreshSummary: RAGIndexRefreshSummary? { dependencies.knowledgeRAGIndexBuilder.refreshSummary }
     var embeddingModel: String { dependencies.settings.aiEmbeddingTask.resolvedModelName }
+    var configuredEmbeddingModelName: String? { dependencies.settings.configuredEmbeddingModelName }
+    var embeddingConfigurationIssue: AIEmbeddingError? { dependencies.settings.embeddingConfigurationIssue }
     var errorMessage: String? {
         didSet {
             if errorMessage == nil { workspaceError = nil }
@@ -713,6 +734,34 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
         return latestHistoricalExecutionTrace?.reversed()
             .first(where: { $0.repoContextSnapshot != nil })?.repoContextSnapshot
+    }
+
+    /// 当前轮优先使用最终投影文档；历史轮只读取持久化的审计快照。
+    var displayedRepositoryInsightsSnapshots: [RAGRepositoryInsightsSnapshot] {
+        if queryPlan != nil || messages.last?.role == .user {
+            if !repositoryInsightsDocuments.isEmpty {
+                return repositoryInsightsDocuments.map(\.snapshot)
+            }
+            return executionSteps.reversed()
+                .first(where: { $0.repositoryInsightsSnapshots != nil })?
+                .repositoryInsightsSnapshots ?? []
+        }
+        return latestHistoricalExecutionTrace?.reversed()
+            .first(where: { $0.repositoryInsightsSnapshots != nil })?
+            .repositoryInsightsSnapshots ?? []
+    }
+
+    func repositoryInsightsDocument(for citation: RAGCitation) -> RAGRepositoryInsightsDocument? {
+        repositoryInsightsDocuments.first {
+            $0.snapshot.repoID == citation.repoID
+                && $0.snapshot.repoFullName == citation.repoFullName
+        }
+    }
+
+    func repositoryInsightsSnapshot(for citation: RAGCitation) -> RAGRepositoryInsightsSnapshot? {
+        displayedRepositoryInsightsSnapshots.first {
+            $0.repoID == citation.repoID && $0.repoFullName == citation.repoFullName
+        }
     }
 
     /// 计划快照与最近一轮问答绑定；原始问题从用户消息恢复，无需在 execution trace 再复制。
@@ -1054,6 +1103,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         resetTurnState()
         restoreComposerDraft(for: detail.summary.id)
         restoreActiveAnswerPresentation(for: detail.summary.id)
+        scheduleHistoricalRepositoryInsightsLoad(for: detail.summary.id)
         scheduleHistoricalRepoContextLoad(for: detail.summary.id)
         isConversationLoading = false
     }
@@ -1082,10 +1132,55 @@ final class KnowledgeRAGWorkspaceViewModel {
         queryPlan = runtime.queryPlan
         retrieval = runtime.retrieval
         lastContextUsage = runtime.contextUsage
+        repositoryInsightsDocuments = runtime.repositoryInsightsDocuments
         repoContextDocument = runtime.repoContextDocument
         remoteBlocks = runtime.remoteBlocks
         executionSteps = runtime.executionSteps
         restoreRemoteContextState(for: conversationID)
+    }
+
+    /// 历史消息只持久化洞察 hash/token 快照。这里逐仓库读取可删除的 Artifact，并通过
+    /// repo/source/xml 三重身份校验恢复当时投影；更新或删除后保持只展示审计字段。
+    private func scheduleHistoricalRepositoryInsightsLoad(for conversationID: UUID) {
+        repositoryInsightsHistoryLoadTask?.cancel()
+        guard conversationRuntimeStates[conversationID]?.repositoryInsightsDocuments.isEmpty ?? true else {
+            return
+        }
+        let snapshots = displayedRepositoryInsightsSnapshots.filter {
+            $0.outcome == .success && $0.sentTokens > 0
+        }
+        guard !snapshots.isEmpty else { return }
+
+        repositoryInsightsHistoryLoadTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await Task.yield()
+            guard !Task.isCancelled, selectedConversationID == conversationID else { return }
+            var restoredDocuments: [RAGRepositoryInsightsDocument] = []
+            for snapshot in snapshots {
+                guard !Task.isCancelled, selectedConversationID == conversationID else { return }
+                let nameParts = snapshot.repoFullName
+                    .split(separator: "/", maxSplits: 1)
+                    .map(String.init)
+                guard nameParts.count == 2 else { continue }
+                var repo = Repo.makeMinimal(owner: nameParts[0], name: nameParts[1])
+                repo.id = snapshot.repoID
+                guard let artifact = await dependencies.repositoryInsightsContextCoordinator
+                    .loadArtifact(for: repo),
+                      let restored = RAGRepositoryInsightsHistoryRestorer.restore(
+                          snapshot: snapshot,
+                          artifact: artifact
+                      )
+                else {
+                    continue
+                }
+                restoredDocuments.append(restored)
+            }
+            guard !Task.isCancelled, selectedConversationID == conversationID else { return }
+            updateRuntimeState(for: conversationID) {
+                $0.repositoryInsightsDocuments = restoredDocuments
+            }
+            repositoryInsightsDocuments = restoredDocuments
+        }
     }
 
     /// 历史消息只持久化 RepoContext 的 commit/hash/token 快照。这里从共享缓存读取 XML，
@@ -1471,7 +1566,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         workspaceError = nil
     }
 
-    /// 错误 Sheet 的动作只改变当前工作台状态，不做任何隐式网络重试或数据删除。
+    /// 错误 Alert 的动作只改变当前工作台状态，不做任何隐式网络重试或数据删除。
     func resolveWorkspaceErrorAction(_ action: RAGWorkspaceErrorAction) {
         switch action {
         case .retry, .checkNetwork:
@@ -2100,10 +2195,14 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     /// 左侧标题与索引摘要都指向同一真实数据浏览器，避免用户误以为“知识库”只是装饰标签。
-    func showKnowledgeBrowser(presentingWindow: NSWindow?) {
+    func showKnowledgeBrowser(
+        presentingWindow: NSWindow?,
+        settingsNavigation: RAGSettingsNavigationAction
+    ) {
         KnowledgeRAGBrowserWindowController.show(
             dependencies: dependencies,
             homeViewModel: homeViewModel,
+            settingsNavigation: settingsNavigation,
             centeredOver: presentingWindow
         )
     }
@@ -2114,11 +2213,17 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     /// 左栏知识库入口：空库走入库 Sheet，有仓库才打开只读浏览器。
-    func openKnowledgeBaseEntry(presentingWindow: NSWindow?) {
+    func openKnowledgeBaseEntry(
+        presentingWindow: NSWindow?,
+        settingsNavigation: RAGSettingsNavigationAction
+    ) {
         if isKnowledgeBaseEmpty {
             presentAddToLibrary()
         } else {
-            showKnowledgeBrowser(presentingWindow: presentingWindow)
+            showKnowledgeBrowser(
+                presentingWindow: presentingWindow,
+                settingsNavigation: settingsNavigation
+            )
         }
     }
 
@@ -2646,6 +2751,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             runtime.queryPlan = nil
             runtime.retrieval = nil
             runtime.contextUsage = nil
+            runtime.repositoryInsightsDocuments = []
             runtime.repoContextDocument = nil
             runtime.remoteBlocks = []
         }
@@ -2657,6 +2763,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             queryPlan = nil
             retrieval = nil
             lastContextUsage = nil
+            repositoryInsightsDocuments = []
             repoContextDocument = nil
             executionSteps = []
             remoteBlocks = []
@@ -2841,6 +2948,13 @@ final class KnowledgeRAGWorkspaceViewModel {
                     syncExecutionSteps(turnExecutionSteps, for: conversationID)
                     if selectedConversationID == conversationID {
                         retrieval = result
+                    }
+                case .repositoryInsights(let documents):
+                    updateRuntimeState(for: conversationID) {
+                        $0.repositoryInsightsDocuments = documents
+                    }
+                    if selectedConversationID == conversationID {
+                        repositoryInsightsDocuments = documents
                     }
                 case .repoContext(let document):
                     updateRuntimeState(for: conversationID) { $0.repoContextDocument = document }
@@ -3654,6 +3768,53 @@ final class KnowledgeRAGWorkspaceViewModel {
                 completeExecutionStep(&step)
             }
 
+        case .repositoryInsightsPrepared(let snapshots):
+            updateExecutionStep(in: &executionSteps, kind: .repositoryInsights) { step in
+                step.repositoryInsightsSnapshots = snapshots
+                step.details = [String(
+                    format: String.l10n("rag.workspace.execution.repositoryInsights.preparedFormat"),
+                    snapshots.filter { $0.outcome == .success }.count,
+                    snapshots.count
+                )]
+            }
+
+        case .repositoryInsightsProjectionStarted:
+            updateExecutionStep(in: &executionSteps, kind: .repositoryInsights) { step in
+                let detail = String.l10n("rag.workspace.execution.repositoryInsights.projecting")
+                if step.details.last != detail {
+                    step.details.append(detail)
+                }
+            }
+
+        case .repositoryInsightsCompleted(let snapshots):
+            updateExecutionStep(in: &executionSteps, kind: .repositoryInsights) { step in
+                let sentCount = snapshots.filter { $0.outcome == .success && $0.sentTokens > 0 }.count
+                let sentTokens = snapshots.reduce(0) { $0 + $1.sentTokens }
+                let isPromptPlaceholderMissing = snapshots.contains {
+                    $0.degradationReason == RAGRepositoryInsightsReason.promptPlaceholderMissing
+                }
+                step.repositoryInsightsSnapshots = snapshots
+                step.details.append(String(
+                    format: String.l10n("rag.workspace.execution.repositoryInsights.tokensFormat"),
+                    sentCount,
+                    sentTokens
+                ))
+                step.summary = sentCount > 0
+                    ? String(
+                        format: String.l10n("rag.workspace.execution.repositoryInsights.completedFormat"),
+                        sentCount
+                    )
+                    : String.l10n(
+                        isPromptPlaceholderMissing
+                            ? "rag.workspace.execution.repositoryInsights.promptNotEnabled"
+                            : "rag.workspace.execution.repositoryInsights.unavailable"
+                    )
+                completeExecutionStep(&step)
+                if sentCount == 0 {
+                    step.state = .skipped
+                }
+            }
+
         case .repoContextProgress(let progress):
             updateExecutionStep(in: &executionSteps, kind: .repoContext) { step in
                 let key = switch progress {
@@ -3972,8 +4133,15 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     private func refreshIndexCoverage() async throws {
         indexStatus = try await dependencies.knowledgeRAGIndexBuilder.coverage()
-        indexIssueChunks = [:]
-        indexIssueHasMore = []
+        hasLoadedIndexCoverage = true
+
+        // 索引通知到达时，已经展开的问题抽屉必须刷新第一页，不能直接清空缓存：
+        // 展开状态归 Inspector 所有，ViewModel 清空后不会触发再次加载，最终会把
+        // “缓存被清空”误画成“暂无匹配分片”。用已有 key 作为已加载集合，既避免
+        // 未展开类别的额外查询，也让状态变化后的列表与顶部计数保持一致。
+        for kind in Array(indexIssueChunks.keys) {
+            await loadIndexIssueChunks(kind)
+        }
     }
 
     /// 面板初次展示与知识库边界/索引变化后都从固定 SQL 重新读取。失败不能影响问答或索引刷新；
@@ -3999,6 +4167,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         editingUserDraft = ""
         queryPlan = nil
         retrieval = nil
+        repositoryInsightsDocuments = []
         repoContextDocument = nil
         lastContextUsage = nil
         remoteBlocks = []

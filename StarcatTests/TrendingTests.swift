@@ -27,6 +27,8 @@ private actor StubTrendingRepository: TrendingRepositoryProtocol {
     var cached: [TrendingRepo]
     var lastRefreshedAtValue: Date?
     var fetchCallCount: Int = 0
+    var cachedCallCount: Int = 0
+    var lastRefreshedCallCount: Int = 0
 
     /// 用于测试可注入的 fetch 行为（默认返回 self.repos，可重写为抛错或动态返回）。
     var fetchHandler: (@Sendable (_ since: TrendingPeriod, _ language: TrendingLanguage) async throws -> [TrendingRepo])?
@@ -50,7 +52,8 @@ private actor StubTrendingRepository: TrendingRepositoryProtocol {
     }
 
     func cachedTrending(since: TrendingPeriod, language: TrendingLanguage) async -> [TrendingRepo] {
-        cached
+        cachedCallCount += 1
+        return cached
     }
 
     func fetchTrending(since: TrendingPeriod, language: TrendingLanguage) async throws -> [TrendingRepo] {
@@ -62,7 +65,12 @@ private actor StubTrendingRepository: TrendingRepositoryProtocol {
     }
 
     func lastRefreshedAt(since: TrendingPeriod, language: TrendingLanguage) async -> Date? {
-        lastRefreshedAtValue
+        lastRefreshedCallCount += 1
+        return lastRefreshedAtValue
+    }
+
+    func storageReadCounts() -> (cached: Int, refreshedAt: Int) {
+        (cachedCallCount, lastRefreshedCallCount)
     }
 }
 
@@ -265,6 +273,54 @@ struct TrendingTests {
     // star 操作走 `StarActionService.star(owner:repo:)` 单点（跨场景一致），由
     // `StarActionServiceTests` 套件统一覆盖（包含 stub apiClient.star 调用 + Registry add）。
 
+    // MARK: - 骨架屏入场（与发现 / 周刊对齐）
+
+    @MainActor
+    @Test("TrendingViewModel 初始 isLoading=true，首帧就能进 RepoSkeletonListView")
+    func initialStateReadyForSkeleton() {
+        let stub = StubTrendingRepository(repos: [], cached: [])
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        #expect(vm.isLoading)
+        #expect(vm.repos.isEmpty)
+    }
+
+    @MainActor
+    @Test("TrendingViewModel.reload(.respectTTL) 缓存命中后结束 loading")
+    func reloadCacheHitClearsLoading() async {
+        let cachedRepos = [makeTrendingRepo(fullName: "owner/a")]
+        let stub = StubTrendingRepository(
+            repos: cachedRepos,
+            cached: cachedRepos,
+            lastRefreshedAt: Date(timeIntervalSinceNow: -60)
+        )
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+        #expect(vm.isLoading)
+
+        await vm.reload(cachePolicy: .respectTTL)
+
+        #expect(!vm.isLoading)
+        #expect(vm.repos.count == 1)
+    }
+
+    @MainActor
+    @Test("Trending 分类进入播放 row reveal，主动刷新不重复播放")
+    func categoryActivationRevealsRowsButRefreshSkipsReveal() async {
+        let cachedRepos = [makeTrendingRepo(fullName: "owner/a")]
+        let stub = StubTrendingRepository(
+            repos: cachedRepos,
+            cached: cachedRepos,
+            lastRefreshedAt: Date(timeIntervalSinceNow: -60)
+        )
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        await vm.activate(language: .all, sort: .recommended)
+        #expect(!vm.skipListRowReveal)
+
+        await vm.reload(cachePolicy: .forceNetwork)
+        #expect(vm.skipListRowReveal)
+    }
+
     // MARK: - 智能 revision 行为（2026-06-02 新增，配合"消除二次入场动画"改造）
 
     @MainActor
@@ -274,11 +330,11 @@ struct TrendingTests {
             makeTrendingRepo(fullName: "owner/a"),
             makeTrendingRepo(fullName: "owner/b")
         ]
-        // 缓存 1h 前刷过（远低于 24h TTL），.respectTTL 应跳过网络
+        // daily 缓存 30 分钟前刷过（低于 1h TTL），.respectTTL 应跳过网络
         let stub = StubTrendingRepository(
             repos: cachedRepos,
             cached: cachedRepos,
-            lastRefreshedAt: Date(timeIntervalSinceNow: -3_600)
+            lastRefreshedAt: Date(timeIntervalSinceNow: -1_800)
         )
         let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
 
@@ -288,6 +344,107 @@ struct TrendingTests {
         let count = await stub.fetchCallCount
         #expect(count == 0, "cache hit + TTL 内 + .respectTTL should skip network entirely")
         #expect(vm.reposRevision == 1, "cache surface should still bump revision once for first-paint reveal")
+    }
+
+    @MainActor
+    @Test("Trending 返回同一查询桶直接命中内存快照，不重复读取 SQLite")
+    func sameQueryReentryUsesMemorySnapshot() async {
+        let cachedRepos = (0..<45).map {
+            makeTrendingRepo(fullName: "owner/reentry-\($0)")
+        }
+        let stub = StubTrendingRepository(
+            cached: cachedRepos,
+            lastRefreshedAt: Date(timeIntervalSinceNow: -60)
+        )
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        await vm.reload(cachePolicy: .respectTTL)
+        vm.loadMoreIfNeeded(currentIndex: 16, totalAvailable: cachedRepos.count)
+        let firstReads = await stub.storageReadCounts()
+        let firstRevision = vm.reposRevision
+
+        await vm.reload(cachePolicy: .respectTTL)
+
+        let secondReads = await stub.storageReadCounts()
+        #expect(secondReads.cached == firstReads.cached)
+        #expect(secondReads.refreshedAt == firstReads.refreshedAt)
+        #expect(vm.reposRevision == firstRevision)
+        #expect(vm.visibleLimit == 40)
+        #expect(vm.hasPublishedCurrentQuery)
+    }
+
+    @MainActor
+    @Test("Trending 首屏仅开放 20 条，并按滚动阈值逐页增长")
+    func visiblePageGrowsInTwentyItemChunks() async {
+        let cachedRepos = (0..<45).map {
+            makeTrendingRepo(fullName: "owner/repo-\($0)")
+        }
+        let stub = StubTrendingRepository(
+            cached: cachedRepos,
+            lastRefreshedAt: Date(timeIntervalSinceNow: -60)
+        )
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        await vm.reload(cachePolicy: .respectTTL)
+
+        #expect(vm.repos.count == 45)
+        #expect(vm.visibleLimit == 20)
+        vm.loadMoreIfNeeded(currentIndex: 16, totalAvailable: 45)
+        #expect(vm.visibleLimit == 40)
+        vm.loadMoreIfNeeded(currentIndex: 36, totalAvailable: 45)
+        #expect(vm.visibleLimit == 45)
+    }
+
+    @MainActor
+    @Test("Trending 相同查询并发 reload 只保留一个 Repository 请求")
+    func concurrentSameQueryReloadsShareOneRequest() async {
+        let stub = StubTrendingRepository()
+        await stub.setFetchHandler { _, _ in
+            try? await Task.sleep(for: .milliseconds(50))
+            return [makeTrendingRepo(fullName: "owner/once")]
+        }
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        let first = Task { @MainActor in
+            await vm.reload(cachePolicy: .respectTTL)
+        }
+        await Task.yield()
+        let second = Task { @MainActor in
+            await vm.reload(cachePolicy: .respectTTL)
+        }
+        await first.value
+        await second.value
+
+        #expect(await stub.fetchCallCount == 1)
+        #expect(vm.repos.map(\.fullName) == ["owner/once"])
+    }
+
+    @MainActor
+    @Test("Trending 快速切换周期时旧请求结果不能覆盖新查询")
+    func stalePeriodRequestCannotOverwriteLatestQuery() async {
+        let stub = StubTrendingRepository()
+        await stub.setFetchHandler { period, _ in
+            if period == .daily {
+                // 故意吞掉取消并晚返回，验证 ViewModel 的 generation guard。
+                try? await Task.sleep(for: .milliseconds(80))
+                return [makeTrendingRepo(fullName: "owner/daily")]
+            }
+            return [makeTrendingRepo(fullName: "owner/weekly")]
+        }
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        let oldReload = Task { @MainActor in
+            await vm.reload(cachePolicy: .respectTTL)
+        }
+        while await stub.fetchCallCount == 0 {
+            await Task.yield()
+        }
+        await vm.selectPeriod(.weekly)
+        await oldReload.value
+
+        #expect(vm.selectedPeriod == .weekly)
+        #expect(vm.repos.map(\.fullName) == ["owner/weekly"])
+        #expect(vm.hasPublishedCurrentQuery)
     }
 
     @MainActor
@@ -316,11 +473,11 @@ struct TrendingTests {
     @Test("TrendingViewModel.reload(.respectTTL): cache hit + TTL 过期 → 走网络")
     func reloadCacheHitBeyondTTLFetchesNetwork() async throws {
         let cachedRepos = [makeTrendingRepo(fullName: "owner/a")]
-        // 缓存 25 小时前刷过（> 24h TTL），.respectTTL 应回退到网络
+        // daily 缓存超过 1h TTL，.respectTTL 应回退到网络
         let stub = StubTrendingRepository(
             repos: cachedRepos,
             cached: cachedRepos,
-            lastRefreshedAt: Date(timeIntervalSinceNow: -90_000)  // 25 hours ago
+            lastRefreshedAt: Date(timeIntervalSinceNow: -(TrendingViewModel.ttl(for: .daily) + 60))
         )
         let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
 
@@ -334,11 +491,11 @@ struct TrendingTests {
     @Test("TrendingViewModel.reload(.respectTTL): cache hit + 边界刚过 TTL → 走网络")
     func reloadCacheHitJustBeyondTTLFetches() async throws {
         let cachedRepos = [makeTrendingRepo(fullName: "owner/a")]
-        // TTL=86400，刚过 1 秒，应判定过期
+        // daily TTL 刚过 1 秒，应判定过期
         let stub = StubTrendingRepository(
             repos: cachedRepos,
             cached: cachedRepos,
-            lastRefreshedAt: Date(timeIntervalSinceNow: -(TrendingViewModel.trendingTTL + 1))
+            lastRefreshedAt: Date(timeIntervalSinceNow: -(TrendingViewModel.ttl(for: .daily) + 1))
         )
         let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
 
@@ -352,11 +509,11 @@ struct TrendingTests {
     @Test("TrendingViewModel.reload(.respectTTL): cache hit + 边界刚到 TTL 内 → 跳过网络")
     func reloadCacheHitWithinTTLBoundaryNoFetch() async throws {
         let cachedRepos = [makeTrendingRepo(fullName: "owner/a")]
-        // TTL=86400，刚好差 1 秒，仍在 TTL 内
+        // daily TTL 刚好差 1 秒，仍在 TTL 内
         let stub = StubTrendingRepository(
             repos: cachedRepos,
             cached: cachedRepos,
-            lastRefreshedAt: Date(timeIntervalSinceNow: -(TrendingViewModel.trendingTTL - 1))
+            lastRefreshedAt: Date(timeIntervalSinceNow: -(TrendingViewModel.ttl(for: .daily) - 1))
         )
         let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
 
@@ -364,6 +521,14 @@ struct TrendingTests {
 
         let count = await stub.fetchCallCount
         #expect(count == 0, "差 1 秒到 TTL 应继续走缓存")
+    }
+
+    @MainActor
+    @Test("TrendingViewModel.ttl: daily 1h / weekly 6h / monthly 24h")
+    func periodTTLValues() {
+        #expect(TrendingViewModel.ttl(for: .daily) == 1 * 60 * 60)
+        #expect(TrendingViewModel.ttl(for: .weekly) == 6 * 60 * 60)
+        #expect(TrendingViewModel.ttl(for: .monthly) == 24 * 60 * 60)
     }
 
     @MainActor
@@ -465,10 +630,10 @@ struct TrendingTests {
     }
 
     @MainActor
-    @Test("TrendingViewModel: isStale true when last refresh > 20 hours ago")
-    func isStaleAfter20Hours() async throws {
-        // R-06.1: isStale 阈值从 1h 调到 20h（80% TTL 预警）。21h 前应判定 stale
-        let timestamp = Date(timeIntervalSinceNow: -75_600)  // 21 小时前
+    @Test("TrendingViewModel: daily 超过 TTL 80% 时 isStale=true")
+    func isStaleAfterDailyWarningThreshold() async throws {
+        // daily TTL=1h，50 分钟已超过 80% 预警线但尚未过期，因此不会被自动刷新覆盖。
+        let timestamp = Date(timeIntervalSinceNow: -50 * 60)
         let stub = StubTrendingRepository(
             repos: [],
             cached: [makeTrendingRepo(fullName: "owner/a")],
@@ -482,10 +647,9 @@ struct TrendingTests {
     }
 
     @MainActor
-    @Test("TrendingViewModel: isStale false when last refresh < 20 hours ago")
-    func isStaleFalseWhenWithin20Hours() async throws {
-        // R-06.1: 2h 前不再算 stale（旧阈值 1h 时算，新阈值 20h 不算）
-        let timestamp = Date(timeIntervalSinceNow: -7_200)  // 2 小时前
+    @Test("TrendingViewModel: daily 未到 TTL 80% 时 isStale=false")
+    func isStaleFalseBeforeDailyWarningThreshold() async throws {
+        let timestamp = Date(timeIntervalSinceNow: -30 * 60)
         let stub = StubTrendingRepository(
             repos: [],
             cached: [makeTrendingRepo(fullName: "owner/a")],
@@ -495,7 +659,7 @@ struct TrendingTests {
 
         await vm.reload(cachePolicy: .respectTTL)
 
-        #expect(vm.isStale == false, "20h 阈值下，2h 前不算 stale")
+        #expect(vm.isStale == false, "daily 30 分钟未到 80% 预警线")
     }
 
     @MainActor
@@ -524,12 +688,124 @@ struct TrendingTests {
         let repo = StubTrendingRepository(repos: [python, swift])
         let vm = TrendingViewModel(repository: repo, githubAPIClient: MockGitHubAPIClient())
 
-        vm.updateLanguagePreferences(from: [
+        await vm.updateLanguagePreferences(from: [
             LanguageStat(language: "Swift", count: 9),
             LanguageStat(language: "Python", count: 1)
         ])
         await vm.reload()
 
         #expect(vm.recommendedRepos.first?.fullName == "owner/swift-tool")
+    }
+
+    @MainActor
+    @Test("Trending 全局筛选由后台快照派生，并保留 Wiki unknown 语义")
+    func globalFilterIsDerivedByPipeline() async throws {
+        let keep = makeTrendingRepo(fullName: "owner/swift-tool", language: "Swift")
+        let drop = makeTrendingRepo(fullName: "owner/python-tool", language: "Python")
+        let repository = StubTrendingRepository(repos: [keep, drop])
+        let vm = TrendingViewModel(repository: repository, githubAPIClient: MockGitHubAPIClient())
+
+        await vm.reload()
+        await vm.updateGlobalFilter(TrendingListFilter(
+            star: .starred,
+            library: .inLibrary,
+            hideArchived: false,
+            hideForks: false,
+            languages: ["swift"],
+            wikiAvailability: .available,
+            healthAvailability: .available,
+            openSSFAvailability: .available,
+            starredRepoIDs: [keep.ghRepoId],
+            inLibraryRepoIDs: [keep.ghRepoId],
+            wikiKnownRepoIDs: [keep.ghRepoId],
+            wikiAvailableRepoIDs: [keep.ghRepoId],
+            healthAvailableRepoIDs: [keep.ghRepoId],
+            openSSFAvailableRepoIDs: [keep.ghRepoId]
+        ))
+
+        #expect(vm.displayedRepos.map(\.fullName) == [keep.fullName])
+        #expect(vm.filterCandidateRepos.count == 2, "信号补载必须保留未筛选候选")
+
+        await vm.updateGlobalFilter(TrendingListFilter(
+            star: .all,
+            library: .all,
+            hideArchived: false,
+            hideForks: false,
+            languages: [],
+            wikiAvailability: .missing,
+            healthAvailability: .unknown,
+            openSSFAvailability: .unknown,
+            starredRepoIDs: [],
+            inLibraryRepoIDs: [],
+            wikiKnownRepoIDs: [drop.ghRepoId],
+            wikiAvailableRepoIDs: [],
+            healthAvailableRepoIDs: [],
+            openSSFAvailableRepoIDs: []
+        ))
+
+        #expect(vm.displayedRepos.map(\.fullName) == [drop.fullName])
+    }
+
+    @Test("Trending prepared snapshot 命中不重复派生，新事实源只失效对应桶")
+    func preparedSnapshotSkipsRepeatedDerivation() async {
+        let pipeline = TrendingListPipeline()
+        let identity = TrendingQueryIdentity(period: .daily, language: .all)
+        let context = TrendingDerivationContext(
+            sort: .recommended,
+            filter: .all,
+            languagePreferences: ["Swift": 1]
+        )
+        let repos = [
+            makeTrendingRepo(fullName: "owner/a"),
+            makeTrendingRepo(fullName: "owner/b")
+        ]
+
+        _ = await pipeline.prepare(repos: repos, for: identity, context: context)
+        #expect(await pipeline.derivationCountForTesting() == 1)
+
+        let cached = await pipeline.preparedSnapshot(for: identity, context: context)
+        #expect(cached?.repos.map(\.fullName) == ["owner/a", "owner/b"])
+        #expect(await pipeline.derivationCountForTesting() == 1,
+                "同 identity + context 命中必须直接返回 prepared snapshot")
+
+        let sortedContext = TrendingDerivationContext(
+            sort: .nameDesc,
+            filter: .all,
+            languagePreferences: ["Swift": 1]
+        )
+        _ = await pipeline.preparedSnapshot(for: identity, context: sortedContext)
+        #expect(await pipeline.derivationCountForTesting() == 2)
+
+        _ = await pipeline.prepare(
+            repos: [makeTrendingRepo(fullName: "owner/c")],
+            for: identity,
+            context: context
+        )
+        #expect(await pipeline.derivationCountForTesting() == 3,
+                "同桶新事实源必须淘汰旧 prepared snapshot 并重新派生")
+    }
+
+    @Test("Trending prepared snapshot LRU 超过 12 项后淘汰最旧 context")
+    func preparedSnapshotLRUEvictsOldestContext() async {
+        let pipeline = TrendingListPipeline()
+        let identity = TrendingQueryIdentity(period: .daily, language: .all)
+        let repos = [makeTrendingRepo(fullName: "owner/a")]
+        let contexts = (0...12).map { index in
+            TrendingDerivationContext(
+                sort: .recommended,
+                filter: .all,
+                languagePreferences: ["Lang\(index)": Double(index)]
+            )
+        }
+
+        _ = await pipeline.prepare(repos: repos, for: identity, context: contexts[0])
+        for context in contexts.dropFirst() {
+            _ = await pipeline.preparedSnapshot(for: identity, context: context)
+        }
+        let derivationsAfterThirteenContexts = await pipeline.derivationCountForTesting()
+
+        _ = await pipeline.preparedSnapshot(for: identity, context: contexts[0])
+        #expect(await pipeline.derivationCountForTesting() == derivationsAfterThirteenContexts + 1,
+                "容量为 12 时，第 13 个 context 必须淘汰最久未访问项")
     }
 }

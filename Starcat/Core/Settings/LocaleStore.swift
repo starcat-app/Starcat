@@ -39,9 +39,9 @@ import Observation
 
 /// 用户可选的应用显示语言。
 ///
-/// 当前只暴露 App 实际维护翻译的两种语言 + "跟随系统"。新增 ja / ko / fr 等语言时：
-/// ① 在此追加 case；② `Localizable.xcstrings` 补对应翻译；③ 视情况追加
-/// `displayName` 母语写法（与 macOS Language & Region 系统设置惯例一致）。
+/// 暴露 App 实际维护的 18 种语言 + “跟随系统”。语言 identifier 必须与
+/// `supports/starcat-localization/locales.json` 保持一致，避免设置项、Catalog
+/// 和 AI 输出语言三者发生漂移。
 enum AppLocale: String, CaseIterable, Identifiable, Sendable {
     /// 跟随系统设置（不强制 locale，等价于不修改 environment）
     case system
@@ -49,24 +49,71 @@ enum AppLocale: String, CaseIterable, Identifiable, Sendable {
     case english = "en"
     /// 强制简体中文
     case simplifiedChinese = "zh-Hans"
+    /// 强制繁体中文
+    case traditionalChinese = "zh-Hant"
+    /// 强制日语
+    case japanese = "ja"
+    /// 强制韩语
+    case korean = "ko"
+    /// 强制德语
+    case german = "de"
+    /// 强制法语
+    case french = "fr"
+    /// 强制西班牙语
+    case spanish = "es"
+    /// 强制巴西葡萄牙语
+    case brazilianPortuguese = "pt-BR"
+    /// 强制意大利语
+    case italian = "it"
+    /// 强制俄语
+    case russian = "ru"
+    /// 强制荷兰语
+    case dutch = "nl"
+    /// 强制波兰语
+    case polish = "pl"
+    /// 强制乌克兰语
+    case ukrainian = "uk"
+    /// 强制土耳其语
+    case turkish = "tr"
+    /// 强制越南语
+    case vietnamese = "vi"
+    /// 强制印度尼西亚语
+    case indonesian = "id"
+    /// 强制阿拉伯语
+    case arabic = "ar"
 
     var id: String { rawValue }
 
     /// 菜单显示文案。
     ///
-    /// `english` / `simplifiedChinese` 故意用其原生写法（"English" / "简体中文"），
-    /// 与 macOS Language & Region 系统设置列出语言时的惯例一致——这种写法**不**
-    /// 应该跟随当前选中语言切换，否则用户切到一个看不懂的语言后会找不到"切回去"的入口。
+    /// 每种语言故意使用母语写法，与 macOS Language & Region 系统设置列出语言时
+    /// 的惯例一致。这些名字不应跟随当前选中语言切换，否则用户切到一个看不懂的
+    /// 语言后可能找不到“切回去”的入口。
     ///
     /// `system` 用 i18n key 是有意为之：用户切到任何语言都能看到本语言下的"跟随系统"
     /// 字样，与同 Section 下的"语言"标题、说明文字风格一致；它不存在"看不懂找不到入口"
-    /// 风险，因为即便用户误切到日语 / 韩语，"English" / "简体中文" 选项原生显示
-    /// 仍然能让用户切回去。
+    /// 风险，因为语言选项始终保留各自的母语名称。
     var displayName: LocalizedStringKey {
         switch self {
-        case .system:            return "settings.general.language.system"
-        case .english:           return LocalizedStringKey("English")
-        case .simplifiedChinese: return LocalizedStringKey("简体中文")
+        case .system:              return "settings.general.language.system"
+        case .english:             return LocalizedStringKey("🇺🇸 English")
+        case .simplifiedChinese:   return LocalizedStringKey("🇨🇳 简体中文")
+        case .traditionalChinese:  return LocalizedStringKey("🇨🇳 繁體中文")
+        case .japanese:            return LocalizedStringKey("🇯🇵 日本語")
+        case .korean:              return LocalizedStringKey("🇰🇷 한국어")
+        case .german:              return LocalizedStringKey("🇩🇪 Deutsch")
+        case .french:              return LocalizedStringKey("🇫🇷 Français")
+        case .spanish:             return LocalizedStringKey("🇪🇸 Español")
+        case .brazilianPortuguese: return LocalizedStringKey("🇧🇷 Português (Brasil)")
+        case .italian:             return LocalizedStringKey("🇮🇹 Italiano")
+        case .russian:             return LocalizedStringKey("🇷🇺 Русский")
+        case .dutch:               return LocalizedStringKey("🇳🇱 Nederlands")
+        case .polish:              return LocalizedStringKey("🇵🇱 Polski")
+        case .ukrainian:           return LocalizedStringKey("🇺🇦 Українська")
+        case .turkish:             return LocalizedStringKey("🇹🇷 Türkçe")
+        case .vietnamese:          return LocalizedStringKey("🇻🇳 Tiếng Việt")
+        case .indonesian:          return LocalizedStringKey("🇮🇩 Bahasa Indonesia")
+        case .arabic:              return LocalizedStringKey("🇸🇦 العربية")
         }
     }
 
@@ -76,11 +123,23 @@ enum AppLocale: String, CaseIterable, Identifiable, Sendable {
     ///   等价于不写 `.environment(\.locale, _)`，但显式写出便于阅读
     /// - 其余 → 用 BCP-47 identifier 构造 Locale
     var effectiveLocale: Locale {
-        switch self {
-        case .system:            return .autoupdatingCurrent
-        case .english:           return Locale(identifier: "en")
-        case .simplifiedChinese: return Locale(identifier: "zh-Hans")
+        if self == .system {
+            return .autoupdatingCurrent
         }
+        // 非 system case 的 rawValue 全部是 locales.json 中的 BCP-47 identifier，
+        // 保持二者一致可避免 Catalog、设置选项和 AI 输出语言发生漂移。
+        return Locale(identifier: rawValue)
+    }
+
+    /// SwiftUI 子树使用的书写方向。
+    ///
+    /// 仅注入 `\.locale` 不足以保证应用内运行时切换为 Arabic 后整棵视图树立即
+    /// 镜像；显式同步 `\.layoutDirection`，让主窗口、sheet、popover 和 AppKit
+    /// hosting window 走同一条 RTL 路径。`.system` 仍依据系统当前语言判断。
+    var effectiveLayoutDirection: LayoutDirection {
+        effectiveLocale.language.characterDirection == .rightToLeft
+            ? .rightToLeft
+            : .leftToRight
     }
 
     /// 发给 LLM 的输出语言名。
@@ -98,8 +157,11 @@ enum AppLocale: String, CaseIterable, Identifiable, Sendable {
         let lang = locale.language.languageCode?.identifier ?? "en"
         switch lang {
         case "zh":
+            // `zh-Hant` 只有 script、未必带 TW/HK/MO region。只判断 region 会把
+            // Starcat 的繁中目标语言错误映射成 Simplified Chinese。
+            let script = locale.language.script?.identifier
             let region = locale.language.region?.identifier
-            return (region == "TW" || region == "HK" || region == "MO")
+            return (script == "Hant" || region == "TW" || region == "HK" || region == "MO")
                 ? "Traditional Chinese"
                 : "Simplified Chinese"
         case "ja": return "Japanese"
@@ -108,7 +170,18 @@ enum AppLocale: String, CaseIterable, Identifiable, Sendable {
         case "de": return "German"
         case "es": return "Spanish"
         case "ru": return "Russian"
-        case "pt": return "Portuguese"
+        case "pt":
+            return locale.language.region?.identifier == "BR"
+                ? "Brazilian Portuguese"
+                : "Portuguese"
+        case "it": return "Italian"
+        case "nl": return "Dutch"
+        case "pl": return "Polish"
+        case "uk": return "Ukrainian"
+        case "tr": return "Turkish"
+        case "vi": return "Vietnamese"
+        case "id": return "Indonesian"
+        case "ar": return "Arabic"
         default:   return "English"
         }
     }
@@ -150,7 +223,7 @@ final class LocaleStore {
 
 // MARK: - SwiftUI environment helper
 
-/// 把 `LocaleStore.shared` 的当前选择注入子树 `\.locale` environment。
+/// 把 `LocaleStore.shared` 的当前选择注入子树的 locale 与书写方向 environment。
 ///
 /// **为什么需要这道 modifier**：Starcat 有 3 处 SwiftUI 子树**不**在
 /// `StarcatApp.WindowGroup` scene tree 里——AI 助手浮窗（`RepoAIWindowController`）、
@@ -188,17 +261,17 @@ private struct AppLocaleEnvironmentModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .environment(\.locale, localeStore.selection.effectiveLocale)
+            .environment(\.layoutDirection, localeStore.selection.effectiveLayoutDirection)
             .id(localeStore.selection.rawValue)
     }
 }
 
 extension View {
 
-    /// 订阅 `LocaleStore.shared` 并把当前选择注入子树 `\.locale` environment。
+    /// 订阅 `LocaleStore.shared` 并把当前 locale 与书写方向注入子树。
     ///
-    /// 仅用于 AppKit 自建的独立 NSWindow / NSPanel hosting root。普通 SwiftUI
-    /// scene 内的 view（含 sheet / popover）已自动继承 `StarcatApp` 注入的 locale，
-    /// 不需要重复挂这道 modifier。
+    /// 用于 AppKit 自建的独立 NSWindow / NSPanel hosting root，以及 macOS 上不会
+    /// 稳定继承父 scene locale / layoutDirection 的 sheet、popover 根视图。
     func appLocaleEnvironment() -> some View {
         modifier(AppLocaleEnvironmentModifier())
     }

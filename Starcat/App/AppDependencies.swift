@@ -29,11 +29,26 @@ final class AppDependencies {
     // MARK: - 依赖实例（顺序敏感）
 
     let database: any DatabaseManaging
+    /// 当前用户数据库每次真正切换后递增，供依赖数据库内容的 UI 快照硬失效。
+    ///
+    /// 不能直接使用 `AuthSession.state.user.id`：冷启动会先从磁盘 profile 提前恢复登录 UI，
+    /// 此时数据库仍可能指向 `_anonymous`，必须等 `database.reopen` 完成后再刷新账号级缓存。
+    private(set) var databaseScopeRevision: UInt64 = 0
+    /// AI Chat / Embedding 原始用量事件与面板聚合查询的本地仓储。
+    let aiUsageRepository: any AIUsageRepositoryProtocol
     /// D-02：注入类型从 actor 改为协议，便于 Preview / 测试替换为 Mock。
     let apiClient: any GitHubAPIClientProtocol
     let oauthService: any GithubOAuthServiceProtocol
     let authSession: AuthSession
     let syncManager: SyncManager
+    /// 主应用唯一的 Widget 快照发布器；负责账户隔离、去抖与 WidgetCenter 刷新。
+    let widgetRefreshCoordinator: WidgetRefreshCoordinator
+    /// “我的项目”独立 GitHub App 授权状态，不复用主 OAuth 登录状态。
+    let projectAccessSession: ProjectAccessSession
+    /// 当前用户项目关系与同步代际仓储。
+    let userProjectRepository: any UserProjectRepositoryProtocol
+    /// 启动、后台和手动刷新共用的项目同步服务。
+    let userProjectSyncService: UserProjectSyncService
     /// Week 3 引入：HomeView 在初始化时需要复用这个 repository 构建 ViewModel。
     /// D-01：注入类型从 struct 改为协议，便于测试替换为 Mock。
     let repoRepository: any RepoRepositoryProtocol
@@ -61,10 +76,14 @@ final class AppDependencies {
     let companionActionDispatcher: CompanionActionDispatcher
     /// 本机 MCP Service。Pro 用户可开启，让本机 Agent 通过 MCP 读取 Starcat 上下文。
     let mcpService: StarcatMCPService
+    /// 外部 CLI 的一次性邀请、设备确认与逐设备凭据。
+    let mcpDeviceStore: StarcatMCPDeviceStore
     /// Week 4 引入：README 缓存 Repository。
     let readmeRepository: ReadmeRepository
     /// Week 4 引入：README HTML 抓取 + 缓存协调。
     let readmeAPI: ReadmeAPI
+    /// Private / Internal README 专用 API；网络 token 来自独立 GitHub App 授权。
+    let projectReadmeAPI: ReadmeAPI
     /// HOM-201 P0-2（2026-06-14）：README "已知不存在" 共享会话状态。
     ///
     /// 由所有 `ReadmeViewModel`（manage 全局 VM + active/weekly 各 Shell 局部 VM）
@@ -122,6 +141,21 @@ final class AppDependencies {
     let ragCandidateRepository: any RAGRepoCandidateRepositoryProtocol
     /// Planner、Generator 与 Inspector 共用的版本化聚合快照缓存；数据修订号来自当前用户 SQLite。
     let knowledgeBaseMetadataSnapshotCache = KnowledgeBaseMetadataSnapshotCache()
+    /// 洞察中栏与详情栏共用的实时 SQLite 快照 Provider。
+    let myInsightsSnapshotProvider: any MyInsightsSnapshotProviding
+    /// 仓库洞察远端数据集的 SQLite SWR 缓存。
+    let repositoryInsightsCache: any RepositoryInsightsCaching
+    /// 仓库 Star 历史的本地优先合并仓库；公开远端与本机精确点在此统一。
+    let repoStarHistoryRepository: any RepoStarHistoryRepositoryProtocol
+    /// 仓库洞察与 RAG 共用协议的类型化 GitHub Metrics 客户端。
+    /// 动态读取 Keychain token，登录态变化时无需重建依赖树。
+    let repositoryMetricsClient: any GitHubRepositoryMetricsClient
+    /// 洞察页面与 AI 共用的远端 Provider；统一缓存之外还合并相同数据集的并发刷新。
+    let repositoryRemoteInsightsProvider: any RepositoryRemoteInsightsProviding
+    /// 页面、AI 与 RAG 共用的洞察 XML 生命周期；生成、存储、删除抑制只保留这一份。
+    let repositoryInsightsContextCoordinator: RepositoryInsightsContextCoordinator
+    /// 切库完成点同步更新，Coordinator 用它拒绝旧账号的迟到 Artifact 写回。
+    private let repositoryInsightsContextScopeState: RepositoryInsightsContextScopeState
     /// 知识库 RAG 本地会话历史。
     let ragConversationStore: any RAGConversationStoring
     /// RAG Composer 未发送草稿的 App 级内存缓存。
@@ -137,6 +171,8 @@ final class AppDependencies {
     let aiSummaryRepository: any AISummaryRepositoryProtocol
     /// W6 AI：单仓 AI 摘要与标签推荐服务。
     let repoAIInsightService: RepoAIInsightService
+    /// 单仓 AI 摘要的进程内会话表。按 repo 保留生成 Task 与 UI 状态，切换详情不取消。
+    let repoAIInsightSessionStore: RepoAIInsightSessionStore
     /// RepoContextPacker 的共享入口。单仓 AI 与知识库 RAG 必须复用同一缓存、设置和临时目录清理约束。
     let repoAIContextProvider: RepoAIContextProvider
     /// RepoContext 文件系统真源。知识库浏览器只通过该对象读写 XML，不跨 security scope 持有 URL。
@@ -249,6 +285,8 @@ final class AppDependencies {
     /// 探索发现与榜单查询客户端。
     /// 构造期不发网络请求；Explore 入口按用户筛选懒加载发现 / 热门 / 新发布数据。
     let discoveryAPI: DiscoveryAPI
+    /// 公共仓库星标历史客户端；与 Discovery 共用服务地址和 API Key，但保持独立 HTTP 契约。
+    let starHistoryAPI: StarHistoryAPI
 
     /// Wiki 探测结果磁盘 JSON 缓存（2026-06-15）。
     /// 单进程单实例，与设置页 / `WikiContextService` 共用 observable 派生量。
@@ -471,18 +509,22 @@ final class AppDependencies {
         // 因此必须在装配边界再校验一次，避免未来新增调用方绕过 ViewModel 门禁。
         try entitlementGate.requirePro(.knowledgeRAG)
         let chatSelection = try resolveRAGChatSelection(selectedModelID: selectedModelID)
-        let embeddingSelection = try resolveRAGTaskSelection(task: settings.aiEmbeddingTask)
+        let embeddingSelection = try settings.resolveEmbeddingSelection()
         let chatClient = try makeRAGClient(
             profile: chatSelection.profile,
             chatModel: chatSelection.modelName,
             embeddingModel: embeddingSelection.modelName,
-            timeout: chatSelection.parameters.timeoutSeconds
+            timeout: chatSelection.parameters.timeoutSeconds,
+            missingAPIKeyError: AIClientError.missingAPIKey,
+            usageContext: AIUsageContext(feature: .rag, phase: "shared_chat")
         )
         let embeddingClient = try makeRAGClient(
             profile: embeddingSelection.profile,
             chatModel: chatSelection.modelName,
             embeddingModel: embeddingSelection.modelName,
-            timeout: embeddingSelection.parameters.timeoutSeconds
+            timeout: embeddingSelection.parameters.timeoutSeconds,
+            missingAPIKeyError: AIEmbeddingError.missingAPIKey,
+            usageContext: AIUsageContext(feature: .rag, phase: "query_embedding")
         )
         let localKeyword = SQLiteRAGKeywordSearchProvider(repository: ragChunkRepository)
         let localVector = SQLiteRAGVectorSearchProvider(repository: ragChunkRepository)
@@ -571,6 +613,7 @@ final class AppDependencies {
                 selection: settings.externalContextProviderSelection,
                 aggregateEnabled: settings.aggregateExternalContextSearchEnabled && settings.isProUser
             ),
+            repositoryInsightsProvider: repositoryInsightsContextCoordinator,
             repoContextProvider: repoAIContextProvider,
             repoContextTokenBudget: settings.aiRepoContextTokenBudget,
             generatorClient: chatClient,
@@ -632,12 +675,14 @@ final class AppDependencies {
         profile: AIProviderProfile,
         chatModel: String,
         embeddingModel: String,
-        timeout: TimeInterval
+        timeout: TimeInterval,
+        missingAPIKeyError: any Error,
+        usageContext: AIUsageContext
     ) throws -> any AIClientProtocol {
         let apiKey = try KeychainManager.shared.loadAIKey(forProvider: profile.id)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !apiKey.isEmpty || profile.provider.allowsEmptyAPIKey else {
-            throw SemanticSearchError.missingAPIKey
+            throw missingAPIKeyError
         }
         return try OpenAIClient(configuration: AIClientConfiguration(
             providerID: profile.id,
@@ -646,7 +691,8 @@ final class AppDependencies {
             baseURL: profile.baseURL,
             chatModel: chatModel,
             embeddingModel: embeddingModel,
-            timeoutInterval: timeout
+            timeoutInterval: timeout,
+            usageContext: usageContext
         ))
     }
 
@@ -670,16 +716,33 @@ final class AppDependencies {
         do {
             db = try DatabaseManager(userId: nil)
         } catch {
-            DiagnosticLogStore.record(
-                level: .critical,
-                category: "database",
-                operation: "startup.openDatabase",
-                message: "Failed to initialize database",
-                underlying: error.localizedDescription
-            )
+            // 统一交给 StarcatApp 顶层映射并记录一次 critical issue，避免同一启动失败双记。
             throw error
         }
         self.database = db
+        self.widgetRefreshCoordinator = WidgetRefreshCoordinator(database: db)
+        let repositoryInsightsContextScopeState = RepositoryInsightsContextScopeState(
+            scope: RepositoryInsightsContextScope(userID: db.currentUserId)
+        )
+        self.repositoryInsightsContextScopeState = repositoryInsightsContextScopeState
+        self.myInsightsSnapshotProvider = GRDBMyInsightsSnapshotProvider(database: db)
+        let repositoryInsightsCache = GRDBRepositoryInsightsCache(database: db)
+        self.repositoryInsightsCache = repositoryInsightsCache
+        let repositoryMetricsClient = DefaultGitHubRepositoryMetricsClient(
+            tokenProvider: KeychainTokenProvider()
+        )
+        self.repositoryMetricsClient = repositoryMetricsClient
+        let repositoryRemoteInsightsProvider = SharedRepositoryRemoteInsightsProvider(
+            base: DefaultRepositoryRemoteInsightsProvider(
+                metricsClient: repositoryMetricsClient,
+                cache: repositoryInsightsCache
+            )
+        )
+        self.repositoryRemoteInsightsProvider = repositoryRemoteInsightsProvider
+        // AI adapter 通过同一个可切换 DatabaseManaging 门面旁路记录用量；配置动作必须
+        // 发生在任何 Service 创建 OpenAIClient 之前，避免启动早期请求漏记。
+        AIUsageRecorder.shared.configure(database: db)
+        self.aiUsageRepository = GRDBAIUsageRepository(database: db)
 
         let api = GitHubAPIClient()
         self.apiClient = api
@@ -744,6 +807,15 @@ final class AppDependencies {
             notificationService: notificationService,
             telemetryManager: telemetry
         )
+        let projectAccessSession = ProjectAccessSession()
+        self.projectAccessSession = projectAccessSession
+        let userProjectRepository = GRDBUserProjectRepository(database: db)
+        self.userProjectRepository = userProjectRepository
+        self.userProjectSyncService = UserProjectSyncService(
+            repository: userProjectRepository,
+            projectAccessSession: projectAccessSession,
+            credentialRouter: ProjectCredentialRouter(projectAccessSession: projectAccessSession)
+        )
         let directLicenseManager = DirectLicenseManager()
         self.directLicenseManager = directLicenseManager
         let subscriptions = SubscriptionManager(
@@ -785,6 +857,18 @@ final class AppDependencies {
         self.readmeMetrics = metrics
         self.readmeAPI = ReadmeAPI(
             client: api,
+            repository: readmeRepo,
+            trendingRepository: trendingReadmeRepo,
+            inflightTracker: inflightTracker,
+            metrics: metrics
+        )
+        // GitHub App 安装令牌同时服务项目 README 与受限 Stargazers 接口，二者必须
+        // 共享同一个动态 token provider，避免 README 可读但 Star 历史误用 OAuth。
+        let projectAPIClient = GitHubAPIClient(
+            tokenProvider: ProjectAccessTokenProvider(session: projectAccessSession)
+        )
+        self.projectReadmeAPI = ReadmeAPI(
+            client: projectAPIClient,
             repository: readmeRepo,
             trendingRepository: trendingReadmeRepo,
             inflightTracker: inflightTracker,
@@ -856,6 +940,12 @@ final class AppDependencies {
         let githubStarListRepo = GRDBGitHubStarListRepository(database: db)
         self.tagRepository = tagRepo
         self.repoTagRepository = repoTagRepo
+        // Session store 同时依赖 AI service 与标签仓储，因此必须在两组依赖都完成装配后创建。
+        self.repoAIInsightSessionStore = RepoAIInsightSessionStore(
+            service: aiInsight,
+            tagRepository: tagRepo,
+            repoTagRepository: repoTagRepo
+        )
         self.githubStarListRepository = githubStarListRepo
         self.githubStarListSyncService = GitHubStarListSyncService(
             apiClient: api,
@@ -936,6 +1026,18 @@ final class AppDependencies {
             entitlementGate: self.entitlementGate
         )
 
+        // Alfred 等外部启动器复用与 Search Center 相同的两个 Provider。服务保持长生命周期，
+        // 这样 GitHub Provider 的 5 分钟会话缓存不会因每次 MCP 调用重建而失效。
+        let globalRepositorySearchService = GlobalRepositorySearchService(
+            localProvider: LocalKeywordSearchProvider(
+                repository: repo,
+                noteRepository: self.repoNoteRepository
+            ),
+            githubProvider: GitHubRepositorySearchProvider(
+                client: api,
+                noteRepository: self.repoNoteRepository
+            )
+        )
         let mcpFacade = StarcatMCPFacade(
             repoRepository: repo,
             readmeRepository: readmeRepo,
@@ -943,6 +1045,12 @@ final class AppDependencies {
             repoTagRepository: repoTagRepo,
             repoNoteRepository: self.repoNoteRepository,
             semanticSearchService: semantic,
+            repoAIInsightService: aiInsight,
+            globalRepositorySearchService: globalRepositorySearchService,
+            database: db,
+            aiUsageRepository: self.aiUsageRepository,
+            knowledgeBaseMetadataSnapshotCache: knowledgeBaseMetadataSnapshotCache,
+            entitlementGate: self.entitlementGate,
             settings: self.settings
         )
         let mcpWriteFacade = StarcatMCPWriteFacade(
@@ -958,9 +1066,12 @@ final class AppDependencies {
                 }
             }
         )
+        let mcpDeviceStore = StarcatMCPDeviceStore()
+        self.mcpDeviceStore = mcpDeviceStore
         self.mcpService = StarcatMCPService(
             settings: self.settings,
             entitlementGate: self.entitlementGate,
+            deviceStore: mcpDeviceStore,
             facade: mcpFacade,
             writeFacade: mcpWriteFacade,
             notificationService: notificationService
@@ -1014,6 +1125,19 @@ final class AppDependencies {
             apiKey: StarcatAPIKeyResolver.resolve(for: .discovery)
         )
         self.discoveryAPI = discoveryAPIInstance
+        let starHistoryAPIInstance = StarHistoryAPI(
+            baseURL: AppEndpoints.Discovery.baseURL,
+            apiKey: StarcatAPIKeyResolver.resolve(for: .discovery)
+        )
+        self.starHistoryAPI = starHistoryAPIInstance
+        let repoStarHistoryRepository = GRDBRepoStarHistoryRepository(
+            database: db,
+            api: starHistoryAPIInstance,
+            projectRepository: userProjectRepository,
+            oauthStargazersAPI: api,
+            githubAppStargazersAPI: projectAPIClient
+        )
+        self.repoStarHistoryRepository = repoStarHistoryRepository
         let discoveryRepo = DiscoveryRepository(api: discoveryAPIInstance, database: db)
         self.discoveryRepository = discoveryRepo
         self.exploreCatalogStore = ExploreCatalogStore(repository: discoveryRepo)
@@ -1118,6 +1242,24 @@ final class AppDependencies {
         // 装配必须晚于 Release / OpenSSF 仓库。
         let healthRepo = metadataHealthRepo
         self.repoHealthRepository = healthRepo
+        let repositoryInsightsDocumentProvider = DefaultRepositoryInsightsAIContextProvider(
+            localProvider: DefaultRepositoryLocalInsightsProvider(
+                releaseRepository: releaseRecordRepo,
+                healthRepository: healthRepo,
+                openSSFRepository: openSSFRepo,
+                insightsCache: repositoryInsightsCache,
+                database: db
+            ),
+            remoteProvider: repositoryRemoteInsightsProvider,
+            starHistoryRepository: repoStarHistoryRepository
+        )
+        let repositoryInsightsContextCoordinator = RepositoryInsightsContextCoordinator(
+            documentProvider: repositoryInsightsDocumentProvider,
+            storage: RepositoryInsightsContextStorage(),
+            scopeProvider: { repositoryInsightsContextScopeState.scope }
+        )
+        self.repositoryInsightsContextCoordinator = repositoryInsightsContextCoordinator
+        aiInsight.setRepositoryInsightsContextProvider(repositoryInsightsContextCoordinator)
         let healthService = RepoHealthService(
             repository: healthRepo,
             releaseRepository: releaseRecordRepo,
@@ -1247,12 +1389,13 @@ final class AppDependencies {
 
         // SyncManager 全量 / 增量同步成功完成 → bootstrapper.reload() 同步 registry 到 DB
         // 注：weak 不需要，bootstrapper 与 syncManager 都由 self 强持（生命周期一致）
-        self.syncManager.onSyncCompleted = { [bootstrapper, starListSyncService = self.githubStarListSyncService, session, ragIndexBuilder = self.knowledgeRAGIndexBuilder] in
+        self.syncManager.onSyncCompleted = { [bootstrapper, starListSyncService = self.githubStarListSyncService, session, ragIndexBuilder = self.knowledgeRAGIndexBuilder, widgetRefreshCoordinator = self.widgetRefreshCoordinator] in
             await bootstrapper.reload()
             if let login = session.state.user?.login {
                 await starListSyncService.sync(login: login)
             }
             await ragIndexBuilder.refreshMetadataForKnowledgeRepos()
+            await widgetRefreshCoordinator.publishReady()
         }
 
         // AuthSession 登出 / 失效 → bootstrapper.clearOnSignOut() 清空 registry
@@ -1271,17 +1414,36 @@ final class AppDependencies {
         // 还能看到自己的数据，不会进入"无 DB 可用"的死状态。
         session.onUserSessionChanged = { [weak self] userId in
             guard let self else { return }
+            // 先清空共享快照再切数据库，避免 Widget 在切换窗口继续展示旧账号内容。
+            self.widgetRefreshCoordinator.publishEmpty(
+                state: userId == nil ? .signedOut : .preparing
+            )
             self.ragComposerDraftStore.removeAll()
+            // 摘要 session 是进程内、按当前用户数据库构建的状态。先取消并清空，
+            // 避免旧用户尚未完成的生成在切库后继续写入或显示给新用户。
+            await self.repoAIInsightSessionStore.removeAll()
             KnowledgeRAGWorkspaceWindowController.closeForUserDatabaseChange()
             await self.wikiKnowledgeBackfillCoordinator.suspendForUserDatabaseChange()
             await self.knowledgeRAGIndexBuilder.suspendForUserDatabaseChange()
             await self.knowledgeBaseMetadataSnapshotCache.removeAll()
+            var didSwitchDatabase = false
             do {
                 try await self.switchUserDatabase(to: userId)
+                didSwitchDatabase = true
             } catch {
                 AppLog.database.error(
                     "switchUserDatabase failed for userId=\(userId.map(String.init) ?? "anonymous", privacy: .public): \(error.localizedDescription, privacy: .public)"
                 )
+                DiagnosticLogStore.record(
+                    level: .critical,
+                    visibility: .issue,
+                    category: "database",
+                    operation: "database.switchUser",
+                    message: "Failed to switch the active user database",
+                    underlying: DiagnosticEvent.summarize(error),
+                    context: ["targetUser": userId.map(String.init) ?? "anonymous"]
+                )
+                self.widgetRefreshCoordinator.publishEmpty(state: .unavailable)
             }
             self.knowledgeRAGIndexBuilder.resumeAfterUserDatabaseChange()
             self.wikiKnowledgeBackfillCoordinator.resumeAfterUserDatabaseChange()
@@ -1300,10 +1462,14 @@ final class AppDependencies {
             // 走 reload 会从 anonymous DB 读到空集，等价 `clearOnSignOut()`，不冲突。
             // 失败容忍：reload 内部已 try/catch + 日志，不会向外抛错破坏 closure 语义。
             await self.starredRegistryBootstrapper.reload()
+            if didSwitchDatabase, userId != nil {
+                await self.widgetRefreshCoordinator.publishReady()
+            }
         }
 
         // 启动期 reload：异步 Task，不阻塞 init。测试 host 跳过避免触发 DB 启动期成本。
         if !TestEnvironment.isRunning {
+            self.widgetRefreshCoordinator.startObserving()
             Task { [bootstrapper] in
                 await bootstrapper.reload()
             }
@@ -1337,7 +1503,29 @@ final class AppDependencies {
     /// 关键约束：本方法内部 `await database.reopen(userId:)`——后者标 `@MainActor`，
     /// 在 MainActor 队列内串行执行，多次并发调用会顺序排队不并发。
     func switchUserDatabase(to userId: Int64?) async throws {
-        try await database.reopen(userId: userId)
+        let previousUserId = database.currentUserId
+        if previousUserId != userId {
+            // 屏障从清理前一直保持到 reopen 结束；新请求会等待并在 end 后重新读取 Token。
+            await repositoryMetricsClient.beginDatabaseScopeChange()
+            await repositoryInsightsCache.clearTransientState()
+        }
+        do {
+            try await database.reopen(userId: userId)
+        } catch {
+            if previousUserId != userId {
+                await repositoryMetricsClient.endDatabaseScopeChange()
+            }
+            throw error
+        }
+        if previousUserId != userId {
+            await repositoryMetricsClient.endDatabaseScopeChange()
+        }
+        guard database.currentUserId != previousUserId else { return }
+        databaseScopeRevision &+= 1
+        repositoryInsightsContextScopeState.update(
+            userID: database.currentUserId,
+            databaseRevision: databaseScopeRevision
+        )
     }
 
     // MARK: - 本机恢复出厂
@@ -1395,16 +1583,40 @@ final class AppDependencies {
         catch { AppLog.general.warning("Factory reset: Recommendation cache cleanup failed: \(error.localizedDescription, privacy: .public)") }
 
         do { try DiskChatHistoryStore.shared.deleteEverything() }
-        catch { AppLog.general.warning("Factory reset: chat history cleanup failed: \(error.localizedDescription, privacy: .public)") }
+        catch {
+            AppLog.general.warning("Factory reset: chat history cleanup failed: \(error.localizedDescription, privacy: .public)")
+            recordFactoryResetCleanupFailure(component: "chat-history", error: error)
+        }
 
         do { try RepoContextStorage.shared.deleteAllProjects() }
-        catch { AppLog.general.warning("Factory reset: AI context cleanup failed: \(error.localizedDescription, privacy: .public)") }
+        catch {
+            AppLog.general.warning("Factory reset: AI context cleanup failed: \(error.localizedDescription, privacy: .public)")
+            recordFactoryResetCleanupFailure(component: "repo-context", error: error)
+        }
 
         do { try CodeFlowStorage.shared.deleteAllProjects() }
-        catch { AppLog.general.warning("Factory reset: CodeFlow cleanup failed: \(error.localizedDescription, privacy: .public)") }
+        catch {
+            AppLog.general.warning("Factory reset: CodeFlow cleanup failed: \(error.localizedDescription, privacy: .public)")
+            recordFactoryResetCleanupFailure(component: "code-flow", error: error)
+        }
 
         do { try CodebaseMemoryStorage.shared.deleteAllProjects() }
-        catch { AppLog.general.warning("Factory reset: CodebaseMemory cleanup failed: \(error.localizedDescription, privacy: .public)") }
+        catch {
+            AppLog.general.warning("Factory reset: CodebaseMemory cleanup failed: \(error.localizedDescription, privacy: .public)")
+            recordFactoryResetCleanupFailure(component: "codebase-memory", error: error)
+        }
+    }
+
+    private func recordFactoryResetCleanupFailure(component: String, error: Error) {
+        DiagnosticLogStore.record(
+            level: .error,
+            visibility: .issue,
+            category: "factory-reset",
+            operation: "factoryReset.cleanup",
+            message: "Factory reset left generated user data on disk",
+            underlying: DiagnosticEvent.summarize(error),
+            context: ["component": component]
+        )
     }
 
     // MARK: - 第三方服务热更新（2026-06-08 新增）
@@ -1429,7 +1641,9 @@ final class AppDependencies {
         case .sharing:  await shareAPI.updateBaseURL(target)
         case .wiki:     await wikiAPI.updateBaseURL(target)
         case .recommend: await recommendAPI.updateBaseURL(target)
-        case .discovery: await discoveryAPI.updateBaseURL(target)
+        case .discovery:
+            await discoveryAPI.updateBaseURL(target)
+            await starHistoryAPI.updateBaseURL(target)
         }
 
         // 3) trending sidebar 语言列表跟随 baseURL 重拉（指向新地址的实际数据）。
@@ -1479,7 +1693,9 @@ final class AppDependencies {
         case .sharing:  await shareAPI.updateAPIKey(resolved)
         case .wiki:     await wikiAPI.updateAPIKey(resolved)
         case .recommend: await recommendAPI.updateAPIKey(resolved)
-        case .discovery: await discoveryAPI.updateAPIKey(resolved)
+        case .discovery:
+            await discoveryAPI.updateAPIKey(resolved)
+            await starHistoryAPI.updateAPIKey(resolved)
         }
 
         // 4) trending API Key 改了 → 立刻用新 key 重拉一次语言列表。

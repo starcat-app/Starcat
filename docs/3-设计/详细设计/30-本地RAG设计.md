@@ -414,7 +414,8 @@ Markdown heading
 
 用户 notes:
 
-- 独立成 source = `notes` 的 chunk。
+- 一条非空私人笔记固定生成一个 `source = notes`、`chunk_key = notes:0` 的 chunk。
+- Notes 不套用 README / Summary 的 target、min、max、overlap 切分规则，完整正文不拆分、不截断。
 - 权重高于 README。
 - 为空则不生成。
 
@@ -2496,3 +2497,47 @@ Evidence 使用全局两阶段装配：第一阶段只按得分顺序试放所�
 Metadata 是系统维护的仓库上下文分片：允许查看和保存人工 override，但 UI 不显示删除按钮，ViewModel、domain read model 与 Repository 均拒绝下架和永久删除。其它 source 的两阶段删除与恢复行为不变。
 
 知识库右侧 Metadata 行解析固定 `Wiki <Provider>: <URL>` 格式，以独立按钮调用 `NSWorkspace.open`。解析再次校验 provider 与 `http` / `https`，避免人工 override 注入任意 scheme。LLM 回答中的 Wiki Markdown 链接继续复用现有外链打开路径。
+
+## 22. 仓库洞察 XML 特殊上下文
+
+> 2026-07-30 增补。实施方案与审查边界见 `docs/4-工程进度/知识库RAG专项/仓库洞察XML上下文实施方案.md` 和 `仓库洞察XML上下文Checklist.md`。
+
+### 22.1 单一数据真源与 Artifact
+
+仓库洞察页面、仓库 AI 摘要 / 对话和知识库 RAG 不分别计算统计文本，而是共同依赖 `RepositoryInsightsDocument`。文档由既有 Repository Insights Provider、SQLite 缓存和 Star History Repository 形成结构化快照，再稳定渲染为根节点固定为 `<repository_insights>` 的 `insights.xml`。
+
+文档 metadata 至少包含 repo id / full name、schema version、生成时间、`sourceHash` 和 `xmlHash`。`sourceHash` 只反映结构化输入，生成时间不参与该 hash；输入未变化时不重复写盘。所有外部字符串先做 XML escape，正文只保留聚合指标，不包含 Issue / PR 标题、安全公告正文或 Stargazer 身份。
+
+`RepositoryInsightsContextStorage` 使用独立 App Support 根目录和 UTF-8 原子替换，不复用 RepoContext 用户自选目录。读取时同时验证 XML 根节点、repo identity、schema 和 metadata。写入失败保留上一份有效产物。
+
+### 22.2 生成、删除与恢复语义
+
+- 洞察页默认数据完成或手动刷新成功后，由 `RepositoryInsightsContextCoordinator` 在后台同步 Artifact；刷新期间保留当前页面内容。
+- 仓库 AI 先触发时，复用同一协调器正常准备洞察缓存并生成 XML；洞察页后打开时直接复用这些缓存和 Artifact。
+- RAG 问答只调用 cache-only 准备入口。Artifact 缺失时只允许从已有本地缓存生成，禁止为一次问答新增 GitHub 或 Discovery 网络请求。
+- repo、账号或 database scope 变化会推进 generation；旧任务即使迟到也不能写入新范围。相同 repo 的准备使用 single-flight，避免重复渲染和写盘。
+- 知识库中的“删除”只删除 `insights.xml` 及其 metadata，不删除 SQLite 洞察缓存、Star History 或仓库数据。删除后的相同 `sourceHash` 被抑制，直到数据变化；用户主动重新生成可以忽略该抑制。
+
+### 22.3 知识库管理边界
+
+知识库详情中的托管顺序固定为 Metadata → Repository Insights XML → RepoContext XML → 普通分片；缺少 Metadata 时两个特殊 XML 仍置顶，Insights 位于 RepoContext 之前。
+
+洞察 XML 是只读的系统生成 Artifact：允许查看全文、复制、下载、删除和主动重新生成，不提供编辑保存。生成期间继续展示旧有效内容，仅使用行内稳定状态，不切换为全页加载占位。
+
+它不新增 `RAGChunkSource`，不写 `rag_chunks`，不参与普通分片分页、embedding、召回、覆盖率或分片总数。知识库详情单独显示 Repository Insights `0 / 1`，与 RepoContext `0 / 1` 分开统计。该约束同时保证已发布 `v7-knowledge-rag` schema 不变。
+
+### 22.4 Service、Prompt 与预算
+
+`KnowledgeRAGService` 只为显式仓库或最终保留的 `RepoContextBundle` 读取洞察 XML，多仓库读取使用固定上限并发，不扫描整个知识库。洞察使用独立 `{repositoryInsightsSection}`，不合并进 `{evidenceSection}` 或 `{repoContextSection}`。
+
+洞察预算独立于普通 chunk evidence budget 和 RepoContext budget，但仍服从模型总 Context Window 与输出预留。空间不足时按 XML 完整节点进行感知投影；不能生成合法 XML 时整份移除，禁止字符级截断。
+
+成功且非空的洞察 XML 是真实仓库级证据，可在普通分片零命中时独立通过证据门禁。它生成独立 `RAGCitationSource.repositoryInsights` citation，`chunkID = nil`，因此不显示普通“分片已删除”状态。其它真实证据存在时，洞察缺失、投影失败或 cache-only 生成失败只作为可解释降级，不阻断回答。
+
+### 22.5 可解释性、历史与隐私
+
+- Plan 展示目标仓库、状态、生成时间、source/xml hash 和发送 token；Timeline 展示真实加载、投影与完成状态。
+- Context Usage 使用独立 Repository Insights 分段；Evidence 显示审计字段、XML 预览和全文，不把特殊 citation 冒充普通 chunk。
+- Debug Trace 的洞察专用 stage 只保存请求、加载和投影摘要，不重复保存 XML 正文；最终 Prompt stage 可能包含 XML，继续遵守现有 Debug 本地落盘与清理边界。
+- 会话只持久化洞察 audit snapshot 和 citation，不保存 XML 正文。历史回放要求当前 Artifact 同时匹配 repo id、`sourceHash` 和 `xmlHash`，再按当轮 `sentTokens` 重建投影；删除或更新后只显示不可回放。
+- XML 只进入用户选定的 chat Provider，不进入 embedding、CloudKit、External Search query 或普通消息正文。

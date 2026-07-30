@@ -292,6 +292,14 @@ private struct OverviewPage: View {
                     AboutFeatureCard(title: "about.overview.feature.searchFind.title", detail: "about.overview.feature.searchFind.detail", systemImage: "magnifyingglass")
                     AboutFeatureCard(title: "about.overview.feature.aiReserved.title", detail: "about.overview.feature.aiReserved.detail", systemImage: "brain")
                 }
+
+                if DistributionChannel.current.isAppStore {
+                    // 备案号是 App Store 渠道的固定法定标识，不随应用语言翻译；Direct 版不展示。
+                    Text(verbatim: "渝ICP备2026015773号-2A")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
             }
         }
     }
@@ -313,7 +321,8 @@ private struct SupportPage: View {
                     title: "about.support.issues.title",
                     detail: "about.support.issues.detail",
                     systemImage: "exclamationmark.bubble",
-                    url: URL(string: "https://github.com/dong4j/starcat/issues")
+                    // 源码仓库保持私有，用户反馈统一进入公开的支持仓库。
+                    url: URL(string: "https://github.com/starcat-app/starcat-pro/issues")
                 )
                 SupportRow(
                     title: "about.support.website.title",
@@ -447,6 +456,7 @@ private struct AboutFeatureCard: View {
             Label(title, systemImage: systemImage)
                 .font(.headline)
                 .foregroundStyle(.primary)
+                .lineLimit(1)
                 .labelStyle(.titleAndIcon)
                 .symbolRenderingMode(.hierarchical)
                 .tint(.accentColor)
@@ -460,7 +470,8 @@ private struct AboutFeatureCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 104, maxHeight: 104, alignment: .topLeading)
+        // 90pt 足够容纳单行标题与两行说明，同时为 App Store 备案号腾出固定窗口内的空间。
+        .frame(maxWidth: .infinity, minHeight: 90, maxHeight: 90, alignment: .topLeading)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -967,6 +978,12 @@ private struct AboutDependency: Identifiable {
             url: URL(string: "https://github.com/braedonsaunders/codeflow")
         ),
         AboutDependency(
+            name: "Mermaid",
+            license: "MIT",
+            copyright: "Copyright (c) 2014 - 2022 Knut Sveidqvist",
+            url: URL(string: "https://github.com/mermaid-js/mermaid")
+        ),
+        AboutDependency(
             name: "CodebaseMemory",
             license: "MIT",
             copyright: "Copyright (c) 2025 DeusData",
@@ -994,49 +1011,49 @@ private struct AboutDependency: Identifiable {
             name: "starcat-sharing-api",
             license: "MIT",
             copyright: "Copyright (c) 2026 dong4j",
-            url: URL(string: "https://github.com/dong4j/starcat-sharing-api")
+            url: URL(string: "https://github.com/starcat-app/starcat-sharing-api")
         ),
         AboutDependency(
             name: "starcat-trending-api",
             license: "MIT",
             copyright: "Copyright (c) 2023 Edgar Xie",
-            url: URL(string: "https://github.com/dong4j/starcat-trending-api")
+            url: URL(string: "https://github.com/starcat-app/starcat-trending-api")
         ),
         AboutDependency(
             name: "starcat-weekly-api",
             license: "MIT",
             copyright: "Copyright (c) 2026 dong4j",
-            url: URL(string: "https://github.com/dong4j/starcat-weekly-api")
+            url: URL(string: "https://github.com/starcat-app/starcat-weekly-api")
         ),
         AboutDependency(
             name: "starcat-wiki-api",
             license: "MIT",
             copyright: "Copyright (c) 2026 dong4j",
-            url: URL(string: "https://github.com/dong4j/starcat-wiki-api")
+            url: URL(string: "https://github.com/starcat-app/starcat-wiki-api")
         ),
         AboutDependency(
             name: "starcat-recommend-api",
             license: "MIT",
             copyright: "Copyright (c) 2026 dong4j",
-            url: URL(string: "https://github.com/dong4j/starcat-recommend-api")
+            url: URL(string: "https://github.com/starcat-app/starcat-recommend-api")
         ),
         AboutDependency(
             name: "starcat-discovery-api",
             license: "MIT",
             copyright: "Copyright (c) 2026 dong4j",
-            url: URL(string: "https://github.com/dong4j/starcat-discovery-api")
+            url: URL(string: "https://github.com/starcat-app/starcat-discovery-api")
         ),
         AboutDependency(
             name: "starcat-chrome-plugin",
             license: "MIT",
             copyright: "Copyright (c) 2026 dong4j",
-            url: URL(string: "https://github.com/dong4j/starcat-chrome-plugin")
+            url: URL(string: "https://github.com/starcat-app/starcat-chrome-plugin")
         ),
         AboutDependency(
             name: "starcat-safari-plugin",
             license: "MIT",
             copyright: "Copyright (c) 2026 dong4j",
-            url: URL(string: "https://github.com/dong4j/starcat-safari-plugin")
+            url: URL(string: "https://github.com/starcat-app/starcat-safari-plugin")
         ),
 
         // MARK: 第三方品牌标识（非开源代码，但仍登记以保持透明）

@@ -74,6 +74,13 @@ struct GRDBRepoRepository {
             for dto in dtos {
                 var repo = Self.repoFromDTO(dto.repo, starredAt: dto.starredAt, cachedAt: cachedAtISO)
                 try repo.save(db)
+                try GRDBRepoStarHistoryRepository.saveLocalSnapshot(
+                    repoId: dto.repo.id,
+                    starsCount: dto.repo.stargazersCount,
+                    observedAt: syncedAt,
+                    fetchedAt: syncedAt,
+                    db: db
+                )
 
                 var starred = StarredRepo(
                     repoId: dto.repo.id,
@@ -179,6 +186,13 @@ struct GRDBRepoRepository {
         return try await database.writer.write { db in
             var repo = Self.repoFromDTO(repoDTO, starredAt: resolvedStarredAt, cachedAt: cachedAtISO, isStarred: true)
             try repo.save(db)
+            try GRDBRepoStarHistoryRepository.saveLocalSnapshot(
+                repoId: repoDTO.id,
+                starsCount: repoDTO.stargazersCount,
+                observedAt: syncedAt,
+                fetchedAt: syncedAt,
+                db: db
+            )
 
             var starred = StarredRepo(
                 repoId: repoDTO.id,
@@ -210,6 +224,13 @@ struct GRDBRepoRepository {
                 repo.starredAt = existing.starredAt
             }
             try repo.save(db)
+            try GRDBRepoStarHistoryRepository.saveLocalSnapshot(
+                repoId: repo.id,
+                starsCount: repo.starsCount,
+                observedAt: syncedAt,
+                fetchedAt: syncedAt,
+                db: db
+            )
             return repo
         }
     }
@@ -226,6 +247,13 @@ struct GRDBRepoRepository {
             saved.starredAt = existing?.isStarred == true ? existing?.starredAt : nil
             saved.cachedAt = cachedAtISO
             try saved.save(db)
+            try GRDBRepoStarHistoryRepository.saveLocalSnapshot(
+                repoId: saved.id,
+                starsCount: saved.starsCount,
+                observedAt: syncedAt,
+                fetchedAt: syncedAt,
+                db: db
+            )
             return saved
         }
     }
@@ -572,6 +600,44 @@ struct GRDBRepoRepository {
         }
     }
 
+    // MARK: - Manage Repo Pin
+
+    /// 读取全部 Pin 很轻量：表中只保存用户主动置顶的少量 repo，不随 stars 总量线性膨胀。
+    func fetchPinnedRepoTimestamps() async throws -> [Int64: TimeInterval] {
+        try await database.writer.read { db in
+            let rows = try Row.fetchAll(db, sql: "SELECT repo_id, pinned_at FROM repo_pins")
+            return Dictionary(uniqueKeysWithValues: rows.map { row in
+                (row["repo_id"] as Int64, row["pinned_at"] as TimeInterval)
+            })
+        }
+    }
+
+    /// Pin 属于用户整理状态，取消时只删关系行，不触碰 repo 元数据、标签或笔记。
+    func setPinned(repoId: Int64, pinnedAt: Date?) async throws {
+        try await database.writer.write { db in
+            if let pinnedAt {
+                try db.execute(
+                    sql: """
+                    INSERT INTO repo_pins (repo_id, pinned_at)
+                    VALUES (?, ?)
+                    ON CONFLICT(repo_id) DO UPDATE SET pinned_at = excluded.pinned_at
+                    """,
+                    arguments: [repoId, pinnedAt.timeIntervalSince1970]
+                )
+            } else {
+                try db.execute(
+                    sql: "DELETE FROM repo_pins WHERE repo_id = ?",
+                    arguments: [repoId]
+                )
+            }
+        }
+        NotificationCenter.default.post(
+            name: .repoPinDidChange,
+            object: nil,
+            userInfo: ["repoId": repoId]
+        )
+    }
+
     private static func makeListQuery(
         projection: String,
         scope: RepoListScope,
@@ -586,6 +652,30 @@ struct GRDBRepoRepository {
         var args: [any DatabaseValueConvertible] = []
 
         switch scope {
+        case .myProjects(let userID):
+            joins.append(
+                "JOIN user_projects up_scope ON up_scope.repo_id = r.id AND up_scope.user_id = ?"
+            )
+            args.append(userID)
+            // 保证没有额外筛选时 WHERE 仍有合法谓词；项目成员关系已经由 JOIN 收窄。
+            whereClauses.append("1 = 1")
+            Self.appendProjectFilters(filters.project, whereClauses: &whereClauses, args: &args)
+            let trimmedSearch = filters.projectSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedSearch.isEmpty {
+                let escaped = trimmedSearch
+                    .replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "%", with: "\\%")
+                    .replacingOccurrences(of: "_", with: "\\_")
+                let pattern = "%\(escaped)%"
+                whereClauses.append("""
+                    (
+                        LOWER(r.full_name) LIKE LOWER(?) ESCAPE '\\'
+                        OR LOWER(COALESCE(r.description, '')) LIKE LOWER(?) ESCAPE '\\'
+                        OR LOWER(COALESCE(r.language, '')) LIKE LOWER(?) ESCAPE '\\'
+                    )
+                    """)
+                args.append(contentsOf: [pattern, pattern, pattern])
+            }
         case .allStars:
             whereClauses.append("r.is_starred = 1")
         case .library:
@@ -743,6 +833,118 @@ struct GRDBRepoRepository {
                 )
                 """)
         }
+        switch filters.tagAvailability {
+        case .unknown:
+            break
+        case .available:
+            whereClauses.append("""
+                EXISTS (
+                    SELECT 1 FROM repo_tags rt_insights
+                    WHERE rt_insights.repo_id = r.id
+                )
+                """)
+        case .missing:
+            whereClauses.append("""
+                NOT EXISTS (
+                    SELECT 1 FROM repo_tags rt_insights
+                    WHERE rt_insights.repo_id = r.id
+                )
+                """)
+        }
+        switch filters.readmeAvailability {
+        case .unknown:
+            break
+        case .available:
+            whereClauses.append("""
+                EXISTS (
+                    SELECT 1 FROM rag_chunks c_readme
+                    WHERE c_readme.repo_id = r.id AND c_readme.source = 'readme'
+                )
+                """)
+        case .missing:
+            whereClauses.append("""
+                NOT EXISTS (
+                    SELECT 1 FROM rag_chunks c_readme
+                    WHERE c_readme.repo_id = r.id AND c_readme.source = 'readme'
+                )
+                """)
+        }
+        switch filters.indexableSourceAvailability {
+        case .unknown:
+            break
+        case .available:
+            whereClauses.append("""
+                EXISTS (
+                    SELECT 1 FROM rag_chunks c_indexable
+                    WHERE c_indexable.repo_id = r.id
+                      AND NOT EXISTS (
+                          SELECT 1 FROM rag_chunk_overrides o_indexable
+                          WHERE o_indexable.chunk_id = c_indexable.id
+                            AND o_indexable.is_excluded = 1
+                      )
+                )
+                """)
+        case .missing:
+            whereClauses.append("""
+                NOT EXISTS (
+                    SELECT 1 FROM rag_chunks c_indexable
+                    WHERE c_indexable.repo_id = r.id
+                      AND NOT EXISTS (
+                          SELECT 1 FROM rag_chunk_overrides o_indexable
+                          WHERE o_indexable.chunk_id = c_indexable.id
+                            AND o_indexable.is_excluded = 1
+                      )
+                )
+                """)
+        }
+        switch filters.ragIndexState {
+        case .unknown:
+            break
+        case .issues(let embeddingModel):
+            whereClauses.append("""
+                EXISTS (
+                    SELECT 1 FROM rag_chunks c_rag
+                    WHERE c_rag.repo_id = r.id
+                      AND NOT EXISTS (
+                          SELECT 1 FROM rag_chunk_overrides o_rag
+                          WHERE o_rag.chunk_id = c_rag.id
+                            AND o_rag.is_excluded = 1
+                      )
+                      AND (
+                          c_rag.embedding_status IN ('failed', 'stale')
+                          OR (
+                              c_rag.embedding_status = 'ready'
+                              AND c_rag.embedding_model IS NOT NULL
+                              AND c_rag.embedding_model != ?
+                          )
+                      )
+                )
+                """)
+            args.append(embeddingModel)
+        }
+        switch filters.insightsRisk {
+        case .unknown:
+            break
+        case .maintenance:
+            whereClauses.append("""
+                EXISTS (
+                    SELECT 1 FROM repo_health_snapshots h_risk
+                    WHERE h_risk.repo_id = r.id
+                      AND h_risk.fetch_status != 'failed'
+                      AND h_risk.maintenance_score < 50
+                )
+                """)
+        case .security:
+            whereClauses.append("""
+                EXISTS (
+                    SELECT 1 FROM open_ssf_scores ossf_risk
+                    WHERE ossf_risk.repo_id = r.id
+                      AND ossf_risk.fetch_status = 'success'
+                      AND ossf_risk.aggregate_score IS NOT NULL
+                      AND ossf_risk.aggregate_score < 5
+                )
+                """)
+        }
         if !filters.selectedTagIDs.isEmpty {
             let tagIDs = Array(filters.selectedTagIDs).sorted()
             let placeholders = Array(repeating: "?", count: tagIDs.count).joined(separator: ", ")
@@ -763,6 +965,12 @@ struct GRDBRepoRepository {
         } else if sort == .libraryUpdatedAtDesc, scope != .library {
             // 知识库 scope 已 JOIN rn_scope；其它 scope 单独左连，避免未入库仓库丢行。
             joins.append("LEFT JOIN repo_notes rn_library_sort ON rn_library_sort.repo_id = r.id")
+        }
+
+        // Pin 只改变排序，不改变分类成员关系。COUNT 查询不需要这张表，避免无意义 JOIN；
+        // 分页、Cmd+A ID 和多选快照都走 includeOrderBy=true，因此会共享完全一致的顺序。
+        if includeOrderBy {
+            joins.append("LEFT JOIN repo_pins rp_sort ON rp_sort.repo_id = r.id")
         }
 
         let orderBy: String
@@ -807,7 +1015,8 @@ struct GRDBRepoRepository {
             WHERE \(whereClauses.joined(separator: "\nAND "))
             """
         if includeOrderBy {
-            sql += "\nORDER BY \(orderBy)"
+            // 多个 Pin 按最近置顶时间排序；未 Pin 的仓库继续严格遵守用户当前排序选项。
+            sql += "\nORDER BY rp_sort.pinned_at IS NULL ASC, rp_sort.pinned_at DESC, \(orderBy)"
         }
         if let limit {
             sql += "\nLIMIT ?"
@@ -818,6 +1027,164 @@ struct GRDBRepoRepository {
             args.append(offset)
         }
         return (sql, StatementArguments(args))
+    }
+
+    /// 项目专属过滤只允许在 `.myProjects` JOIN 已存在时调用。
+    private static func appendProjectFilters(
+        _ filters: UserProjectFilter,
+        whereClauses: inout [String],
+        args: inout [any DatabaseValueConvertible]
+    ) {
+        func appendSet<Value: RawRepresentable>(
+            _ values: Set<Value>,
+            column: String
+        ) where Value.RawValue == String {
+            guard !values.isEmpty else { return }
+            let rawValues = values.map(\.rawValue).sorted()
+            let placeholders = Array(repeating: "?", count: rawValues.count).joined(separator: ", ")
+            whereClauses.append("\(column) IN (\(placeholders))")
+            args.append(contentsOf: rawValues)
+        }
+
+        appendSet(filters.affiliations, column: "up_scope.affiliation")
+        appendSet(filters.visibilities, column: "up_scope.visibility")
+        appendSet(filters.permissions, column: "up_scope.permission")
+        appendSet(filters.authorizationSources, column: "up_scope.authorization_source")
+
+        if !filters.organizationLogins.isEmpty {
+            let organizations = filters.organizationLogins.sorted {
+                $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+            }
+            let placeholders = Array(repeating: "?", count: organizations.count).joined(separator: ", ")
+            whereClauses.append("up_scope.owner_login COLLATE NOCASE IN (\(placeholders))")
+            args.append(contentsOf: organizations)
+        }
+    }
+
+    func fetchProjectFilterOptions(userID: Int64) async throws -> ProjectFilterOptions {
+        try await database.writer.read { db in
+            let organizationLogins = try String.fetchAll(
+                db,
+                sql: """
+                    SELECT DISTINCT owner_login
+                    FROM user_projects
+                    WHERE user_id = ? AND owner_type = 'organization'
+                    ORDER BY owner_login COLLATE NOCASE ASC
+                    """,
+                arguments: [userID]
+            )
+            let visibilityValues = try String.fetchAll(
+                db,
+                sql: """
+                    SELECT DISTINCT visibility
+                    FROM user_projects
+                    WHERE user_id = ?
+                    ORDER BY visibility ASC
+                    """,
+                arguments: [userID]
+            )
+            let permissionValues = try String.fetchAll(
+                db,
+                sql: """
+                    SELECT DISTINCT permission
+                    FROM user_projects
+                    WHERE user_id = ?
+                    ORDER BY permission ASC
+                    """,
+                arguments: [userID]
+            )
+            return ProjectFilterOptions(
+                organizationLogins: organizationLogins,
+                visibilities: visibilityValues.compactMap(ProjectVisibility.init(rawValue:)),
+                permissions: permissionValues.compactMap(ProjectPermission.init(rawValue:))
+            )
+        }
+    }
+
+    func fetchProjectRelations(
+        userID: Int64,
+        repoIDs: [Int64]
+    ) async throws -> [Int64: UserProject] {
+        guard !repoIDs.isEmpty else { return [:] }
+        let uniqueIDs = Array(Set(repoIDs)).sorted()
+        let placeholders = Array(repeating: "?", count: uniqueIDs.count).joined(separator: ", ")
+        return try await database.writer.read { db in
+            var arguments: [any DatabaseValueConvertible] = [userID]
+            arguments.append(contentsOf: uniqueIDs.map { $0 as any DatabaseValueConvertible })
+            let rows = try UserProject.fetchAll(
+                db,
+                sql: """
+                    SELECT *
+                    FROM user_projects
+                    WHERE user_id = ? AND repo_id IN (\(placeholders))
+                    """,
+                arguments: StatementArguments(arguments)
+            )
+            return Dictionary(uniqueKeysWithValues: rows.map { ($0.repoId, $0) })
+        }
+    }
+
+    func fetchLocalStarGrowth30Days(
+        repoIDs: [Int64],
+        now: Date
+    ) async throws -> [Int64: Int] {
+        guard !repoIDs.isEmpty else { return [:] }
+        let uniqueIDs = Array(Set(repoIDs)).sorted()
+        let placeholders = Array(repeating: "?", count: uniqueIDs.count).joined(separator: ", ")
+        let today = StarHistoryDateCodec.dayString(from: now)
+        let cutoff = StarHistoryDateCodec.dayString(from: now.addingTimeInterval(-30 * 86_400))
+
+        return try await database.writer.read { db in
+            var arguments = uniqueIDs.map { $0 as any DatabaseValueConvertible }
+            arguments.append(today)
+            let records = try RepoStarHistoryPointRecord.fetchAll(
+                db,
+                sql: """
+                    SELECT *
+                    FROM repo_star_history_points
+                    WHERE repo_id IN (\(placeholders)) AND observed_on <= ?
+                    ORDER BY repo_id ASC, observed_on ASC, fetched_at ASC
+                    """,
+                arguments: StatementArguments(arguments)
+            )
+            let grouped = Dictionary(grouping: records, by: \.repoId)
+            var growth: [Int64: Int] = [:]
+            for (repoID, repoRecords) in grouped {
+                var bestByDay: [String: RepoStarHistoryPointRecord] = [:]
+                for record in repoRecords {
+                    guard let existing = bestByDay[record.observedOn] else {
+                        bestByDay[record.observedOn] = record
+                        continue
+                    }
+                    let priority = Self.starHistoryPriority(record)
+                    let existingPriority = Self.starHistoryPriority(existing)
+                    if priority > existingPriority
+                        || (priority == existingPriority && record.fetchedAt > existing.fetchedAt) {
+                        bestByDay[record.observedOn] = record
+                    }
+                }
+                let points = bestByDay.values.sorted { $0.observedOn < $1.observedOn }
+                guard let latest = points.last else { continue }
+                let baseline = points.last { $0.observedOn <= cutoff }
+                    ?? points.first { $0.observedOn > cutoff }
+                guard let baseline, baseline.observedOn != latest.observedOn else { continue }
+                growth[repoID] = latest.starsCount - baseline.starsCount
+            }
+            return growth
+        }
+    }
+
+    /// 与详情 Star History 的“本机 > GitHub 重建 > Discovery > GH Archive”保持一致。
+    private static func starHistoryPriority(_ record: RepoStarHistoryPointRecord) -> Int {
+        switch StarHistorySource(rawValue: record.source) {
+        case .localSnapshot: return 4
+        case .githubStargazers: return 3
+        case .discoverySnapshot: return 2
+        case .ghArchive:
+            return record.precision == StarHistoryPrecision.snapshot.rawValue ? 2 : 1
+        case .none:
+            return 0
+        }
     }
 
     // MARK: - 同步状态
@@ -949,6 +1316,11 @@ struct GRDBRepoRepository {
             openIssuesCount: dto.openIssuesCount
         )
     }
+}
+
+extension Notification.Name {
+    /// Widget 与列表投影共用的轻量 Pin 变化信号；只在数据库提交成功后发送。
+    static let repoPinDidChange = Notification.Name("StarcatRepoPinDidChange")
 }
 
 // MARK: - Sendable

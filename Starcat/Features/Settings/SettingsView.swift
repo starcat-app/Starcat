@@ -36,9 +36,21 @@ import SwiftUI
 //   3. 名字加 `starcat.` 前缀防止与系统 / 三方框架冲突。
 extension Notification.Name {
     /// 跨 Settings Tab 跳转。`object: String` 取值：`"general"` / `"storage"` /
-    /// `"pro"` / `"ai"` / `"services"` / `"integrations"` /
+    /// `"pro"` / `"ai"` / `"ai.chat"` / `"ai.embedding"` / `"ai.repoContext"` / `"services"` / `"integrations"` /
     /// `"integrations.localAPIKey"` / `"integrations.externalSearch"` / `"diagnostics"`。
     static let starcatJumpToSettingsTab: Notification.Name = .init("starcat.settings.jumpToTab")
+    /// SettingsView 切到 AI Tab 并完成一轮布局后，再通知 AISettingsView 展开并定位。
+    static let starcatJumpToAIRepoContextSection: Notification.Name = .init(
+        "starcat.settings.jumpToAIRepoContextSection"
+    )
+    /// 知识库索引入口需要直达「模型配置 → 向量化」，不能只把用户丢在 AI Tab 顶部。
+    static let starcatJumpToAIEmbeddingSection: Notification.Name = .init(
+        "starcat.settings.jumpToAIEmbeddingSection"
+    )
+    /// 工作台入口缺少有效模型时，直达「模型配置 → 对话」。
+    static let starcatJumpToAIChatModelSection: Notification.Name = .init(
+        "starcat.settings.jumpToAIChatModelSection"
+    )
 }
 
 struct SettingsView: View {
@@ -58,6 +70,31 @@ struct SettingsView: View {
     @State private var selectedTab: SettingsTab = .general
     /// 快捷键录制失败时只在 General 页就地提示，不修改已保存配置。
     @State private var shortcutValidationError: KeyboardShortcutConfiguration.ValidationError?
+
+    /// 五个可配置应用命令的设置页标识。
+    /// 这里只负责冲突矩阵和“恢复默认”级联，不参与菜单动作路由。
+    private enum ConfigurableShortcutAction: CaseIterable, Hashable {
+        case globalSearch
+        case regularSearch
+        case refreshCurrentContent
+        case knowledgeRAG
+        case selectedRepoAI
+
+        var defaultShortcut: KeyboardShortcutConfiguration {
+            switch self {
+            case .globalSearch:
+                return .globalSearchDefault
+            case .regularSearch:
+                return .regularSearchDefault
+            case .refreshCurrentContent:
+                return StarcatShortcutCatalog.refreshCurrentContentDefault
+            case .knowledgeRAG:
+                return StarcatShortcutCatalog.openKnowledgeRAGDefault
+            case .selectedRepoAI:
+                return StarcatShortcutCatalog.openSelectedRepoAIDefault
+            }
+        }
+    }
 
     /// Settings 各 Tab 的内容尺寸。
     ///
@@ -139,10 +176,30 @@ struct SettingsView: View {
             switch target {
             case "general":      selectedTab = .general
             case "pro":          selectedTab = .pro
-            case "ai":           selectedTab = .ai
+            case "ai":
+                selectedTab = .ai
+            case "ai.chat":
+                selectedTab = .ai
+                // 第一次打开 Settings 时 AISettingsView 尚未进入视图树，延后一轮再定位。
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .starcatJumpToAIChatModelSection, object: nil)
+                }
+            case "ai.embedding":
+                selectedTab = .ai
+                // 与 RepoContext 跳转相同，延后一轮等待 AISettingsView 安装监听。
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .starcatJumpToAIEmbeddingSection, object: nil)
+                }
+            case "ai.repoContext":
+                selectedTab = .ai
+                // 第一次打开 Settings 时 AISettingsView 尚未进入视图树，不能让它和
+                // SettingsView 同时消费原通知；延后一轮发 section 事件可避免丢失定位。
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .starcatJumpToAIRepoContextSection, object: nil)
+                }
             case "mcp":          selectedTab = .mcp
             case "services":     selectedTab = .services
-            case "integrations", "integrations.localAPIKey", "integrations.externalSearch":
+            case "integrations", "integrations.localAPIKey", "integrations.browserPlugin", "integrations.externalSearch":
                 selectedTab = .integrations
             case "storage":      selectedTab = .storage
             case "diagnostics":  selectedTab = .diagnostics
@@ -231,9 +288,9 @@ struct SettingsView: View {
             //    + `.id(...)` 配合下整棵 view 树立刻重建，不需要重启 App。
             // 2. 默认 `system`：跟随系统设置，`Locale.autoupdatingCurrent` 让
             //    macOS Language & Region 改变时 Starcat 自动同步。
-            // 3. 选项标签 `English` / `简体中文` 故意用其原生写法（不走 i18n
-            //    查表），与 macOS Language & Region 列出语言时的惯例一致——
-            //    哪怕用户误切到看不懂的语言，也能从原生写法找回入口。
+            // 3. 18 种语言均显示“国旗 + 母语名称”，故意不跟随当前 UI locale
+            //    翻译，与 macOS Language & Region 列出语言时的惯例一致——哪怕
+            //    用户误切到看不懂的语言，也能从国旗和母语写法找回入口。
             // 4. 已知局限（与 DEBUG 菜单 picker 一致，写在 `LocaleStore.swift`
             //    顶部注释里）：`.environment(\.locale, _)` 只覆盖 SwiftUI 视图层
             //    `Text("key")` 等查表行为；macOS 顶部菜单栏 NSMenu 与部分
@@ -329,61 +386,77 @@ struct SettingsView: View {
                     }
                 }
 
-                HStack(spacing: 8) {
-                    Text("settings.general.shortcuts.search.title")
-                        .lineLimit(1)
-
-                    Spacer()
-
-                    HStack(spacing: 8) {
-                        ShortcutRecorderView(
-                            shortcut: $settings.globalSearchShortcut,
-                            onValidationError: { shortcutValidationError = $0 },
-                            helpKey: "settings.general.shortcuts.search.help"
-                        )
-                        .onChange(of: settings.globalSearchShortcut) { _, _ in
-                            shortcutValidationError = nil
-                        }
-
-                        ResetIconButton(
-                            help: Text("settings.general.shortcuts.restoreDefault")
-                        ) {
-                            settings.globalSearchShortcut = .globalSearchDefault
-                            shortcutValidationError = nil
-                        }
+                // 应用命令快捷键总开关只控制键盘触发；AI 输入发送方式是独立偏好，
+                // 因此保留在总开关上方且不会被 `.disabled(...)` 连带关闭。
+                Toggle(isOn: $settings.keyboardShortcutsEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings.general.shortcuts.enabled.title")
+                        Text("settings.general.shortcuts.enabled.description")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
-                HStack(spacing: 8) {
-                    Text("settings.general.shortcuts.regularSearch.title")
-                        .lineLimit(1)
+                ConfigurableShortcutSettingRow(
+                    titleKey: "settings.general.shortcuts.search.title",
+                    shortcut: $settings.globalSearchShortcut,
+                    isEnabled: $settings.globalSearchShortcutEnabled,
+                    onValidationError: { shortcutValidationError = $0 },
+                    conflictingShortcuts: conflictingShortcuts(excluding: .globalSearch),
+                    helpKey: "settings.general.shortcuts.search.help",
+                    onShortcutChanged: { shortcutValidationError = nil },
+                    onRestoreDefault: { restoreShortcutDefault(.globalSearch) }
+                )
+                .disabled(!settings.keyboardShortcutsEnabled)
 
-                    Spacer()
+                ConfigurableShortcutSettingRow(
+                    titleKey: "settings.general.shortcuts.regularSearch.title",
+                    shortcut: $settings.regularSearchShortcut,
+                    isEnabled: $settings.regularSearchShortcutEnabled,
+                    onValidationError: { shortcutValidationError = $0 },
+                    conflictingShortcuts: conflictingShortcuts(excluding: .regularSearch),
+                    helpKey: "settings.general.shortcuts.regularSearch.help",
+                    onShortcutChanged: { shortcutValidationError = nil },
+                    onRestoreDefault: { restoreShortcutDefault(.regularSearch) }
+                )
+                .disabled(!settings.keyboardShortcutsEnabled)
 
-                    HStack(spacing: 8) {
-                        ShortcutRecorderView(
-                            shortcut: $settings.regularSearchShortcut,
-                            onValidationError: { shortcutValidationError = $0 },
-                            helpKey: "settings.general.shortcuts.regularSearch.help"
-                        )
-                        .onChange(of: settings.regularSearchShortcut) { _, _ in
-                            shortcutValidationError = nil
-                        }
+                ConfigurableShortcutSettingRow(
+                    titleKey: "settings.general.shortcuts.refreshCurrentContent.title",
+                    shortcut: $settings.refreshCurrentContentShortcut,
+                    isEnabled: $settings.refreshCurrentContentShortcutEnabled,
+                    onValidationError: { shortcutValidationError = $0 },
+                    conflictingShortcuts: conflictingShortcuts(excluding: .refreshCurrentContent),
+                    helpKey: "settings.general.shortcuts.refreshCurrentContent.help",
+                    onShortcutChanged: { shortcutValidationError = nil },
+                    onRestoreDefault: { restoreShortcutDefault(.refreshCurrentContent) }
+                )
+                .disabled(!settings.keyboardShortcutsEnabled)
 
-                        ResetIconButton(
-                            help: Text("settings.general.shortcuts.restoreDefault")
-                        ) {
-                            settings.regularSearchShortcut = .regularSearchDefault
-                            shortcutValidationError = nil
-                        }
-                    }
-                }
+                ConfigurableShortcutSettingRow(
+                    titleKey: "settings.general.shortcuts.knowledgeRAG.title",
+                    shortcut: $settings.knowledgeRAGShortcut,
+                    isEnabled: $settings.knowledgeRAGShortcutEnabled,
+                    onValidationError: { shortcutValidationError = $0 },
+                    conflictingShortcuts: conflictingShortcuts(excluding: .knowledgeRAG),
+                    helpKey: "settings.general.shortcuts.knowledgeRAG.help",
+                    onShortcutChanged: { shortcutValidationError = nil },
+                    onRestoreDefault: { restoreShortcutDefault(.knowledgeRAG) }
+                )
+                .disabled(!settings.keyboardShortcutsEnabled)
 
-                Text("settings.general.shortcuts.search.description")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: false, vertical: true)
+                ConfigurableShortcutSettingRow(
+                    titleKey: "settings.general.shortcuts.selectedRepoAI.title",
+                    shortcut: $settings.selectedRepoAIShortcut,
+                    isEnabled: $settings.selectedRepoAIShortcutEnabled,
+                    onValidationError: { shortcutValidationError = $0 },
+                    conflictingShortcuts: conflictingShortcuts(excluding: .selectedRepoAI),
+                    helpKey: "settings.general.shortcuts.selectedRepoAI.help",
+                    onShortcutChanged: { shortcutValidationError = nil },
+                    onRestoreDefault: { restoreShortcutDefault(.selectedRepoAI) }
+                )
+                .disabled(!settings.keyboardShortcutsEnabled)
 
                 if let shortcutValidationError {
                     Text(shortcutValidationMessageKey(shortcutValidationError))
@@ -391,6 +464,11 @@ struct SettingsView: View {
                         .foregroundStyle(.red)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+
+                Text("settings.general.shortcuts.configuration.description")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             } header: {
                 SettingsSectionHeader(
                     "settings.general.shortcuts",
@@ -574,6 +652,75 @@ struct SettingsView: View {
             return "settings.general.shortcuts.error.missingModifier"
         case .reserved:
             return "settings.general.shortcuts.error.reserved"
+        case .duplicateConfiguredAction:
+            return "settings.general.shortcuts.error.duplicateConfiguredAction"
+        }
+    }
+
+    /// 返回除当前动作外的四个已保存键位。
+    /// 关闭状态仍参与冲突检查，确保重新开启时不会与其它命令竞争同一组合。
+    private func conflictingShortcuts(
+        excluding action: ConfigurableShortcutAction
+    ) -> Set<KeyboardShortcutConfiguration> {
+        Set(ConfigurableShortcutAction.allCases.compactMap { candidate in
+            candidate == action ? nil : shortcut(for: candidate)
+        })
+    }
+
+    /// 恢复默认值时递归释放被其它动作占用的默认组合。
+    ///
+    /// 例如 A 使用 B 的默认键、B 又使用 A 的默认键时，先把整条占用链恢复到各自默认，
+    /// 再落当前动作；`visited` 用于打断这种交换环，最终仍保持五项唯一。
+    private func restoreShortcutDefault(_ action: ConfigurableShortcutAction) {
+        var visited: Set<ConfigurableShortcutAction> = []
+
+        func restore(_ current: ConfigurableShortcutAction) {
+            guard visited.insert(current).inserted else { return }
+            let defaultShortcut = current.defaultShortcut
+            if let occupant = ConfigurableShortcutAction.allCases.first(where: {
+                $0 != current && shortcut(for: $0) == defaultShortcut
+            }) {
+                restore(occupant)
+            }
+            setShortcut(defaultShortcut, for: current)
+        }
+
+        restore(action)
+        shortcutValidationError = nil
+    }
+
+    private func shortcut(
+        for action: ConfigurableShortcutAction
+    ) -> KeyboardShortcutConfiguration {
+        switch action {
+        case .globalSearch:
+            return settings.globalSearchShortcut
+        case .regularSearch:
+            return settings.regularSearchShortcut
+        case .refreshCurrentContent:
+            return settings.refreshCurrentContentShortcut
+        case .knowledgeRAG:
+            return settings.knowledgeRAGShortcut
+        case .selectedRepoAI:
+            return settings.selectedRepoAIShortcut
+        }
+    }
+
+    private func setShortcut(
+        _ shortcut: KeyboardShortcutConfiguration,
+        for action: ConfigurableShortcutAction
+    ) {
+        switch action {
+        case .globalSearch:
+            settings.globalSearchShortcut = shortcut
+        case .regularSearch:
+            settings.regularSearchShortcut = shortcut
+        case .refreshCurrentContent:
+            settings.refreshCurrentContentShortcut = shortcut
+        case .knowledgeRAG:
+            settings.knowledgeRAGShortcut = shortcut
+        case .selectedRepoAI:
+            settings.selectedRepoAIShortcut = shortcut
         }
     }
 }
@@ -1090,7 +1237,7 @@ private struct StorageSettingsTab: View {
     @State private var wikiCache = DiskWikiCache.shared
 
     /// 推荐结果磁盘缓存（2026-06-29，与 wiki 同款形态）：按 repoID 落盘，
-    /// TTL 24h（有 items）/ 1h（空）。详情页 `RecommendationContextService` 读取 + 写盘。
+    /// TTL 7d（有 items）/ 1h（空）。详情页 `RecommendationContextService` 读取 + 写盘。
     @State private var recommendationCache = DiskRecommendationCache.shared
 
     /// HOM-70：AI 对话历史磁盘存储（按 repo 多 session）。

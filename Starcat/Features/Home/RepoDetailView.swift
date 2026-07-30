@@ -112,7 +112,7 @@ struct RepoDetailView: View {
                     // **v2.0 修订**:tooltip 与 toggle 行为对齐——已 star 显示「取消 star」,
                     // 未 star 显示「star」。从 `Repo.isStarred` 直接派生(同 trailingActions)。
                     starHelpKey: repo.isStarred ? "repo.unstar" : "repo.star",
-                    showsRepoHealthEntry: true,
+                    showsRepoHealthEntry: ProjectPrivacyPolicy.allowsPublicService(for: repo),
                     onStarTapped: {
                         // §3.2.3 状态机：throws 让 StarStatChipButton 抖动 + 短暂红色（不弹 alert）
                         try await handleStarTapped(repo: repo)
@@ -213,8 +213,11 @@ struct RepoDetailView: View {
         // v2.0（2026-06-16, dong4j）：OpenSSF 入口迁移到 hero `full_name` 同行，
         // 不再放在 trailing actions 数组里。
         var actions: [RepoDetailAction] = []
-        if authSession.state.isAuthenticated {
+        if authSession.state.isAuthenticated,
+           ProjectPrivacyPolicy.allowsPublicShare(for: repo) {
             actions.append(.share)
+        }
+        if authSession.state.isAuthenticated {
             actions.append(.ai)
         }
         return actions
@@ -308,6 +311,9 @@ struct ReadmeStateView: View {
 
     /// Toast 消息绑定（翻译错误 → 底部浮动提示）。
     @State private var translationToast: String?
+    /// 当前已渲染文档的两种翻译输入。用 document key 守门，避免切 repo 的一帧窗口误用旧数据。
+    @State private var translationSourceDocumentKey: String?
+    @State private var translationSourceSnapshot: ReadmeTranslationSourceSnapshot = .empty
 
     let state: ReadmeViewModel.LoadState
     let contentScope: ReadmeContentScope
@@ -384,6 +390,23 @@ struct ReadmeStateView: View {
             if newValue == nil {
                 translationControl?.translationVM.dismissError()
             }
+        }
+        .starcatRefreshCommand(
+            pane: .detail,
+            identity: "\(refreshCommandIdentity)-\(readmeVM.isRefreshing)",
+            title: String.l10n("commands.actions.refreshCurrentDetail"),
+            isEnabled: !readmeVM.isRefreshing,
+            action: onRetry
+        )
+    }
+
+    /// 注册身份必须随真实 README 对象变化，避免详情切换后 Settings 仍刷新上一仓库。
+    private var refreshCommandIdentity: String {
+        switch contentScope {
+        case .manage(let repoId):
+            return "manage-\(repoId)"
+        case .trending(let owner, let repo):
+            return "public-\(owner.lowercased())/\(repo.lowercased())"
         }
     }
 
@@ -515,11 +538,11 @@ struct ReadmeStateView: View {
 
         case .loaded(let html, let cachedAt):
             VStack(spacing: 0) {
-                // HOM-68：当翻译已就绪且用户选择展示译文时，喂给 WebView 的就是
-                // `translatedHtml`。源 `html` 仍由翻译 VM 之外的逻辑保留——切回
-                // 原文不需要重新拉网络，只是 displayMode 切回 .showingOriginal。
-                let renderedHtml = translationControl?.activeHtml(originalHtml: html) ?? html
+                // 两种翻译方式都不替换整份 HTML。WebView 始终持有原始 DOM：
+                // 分段模式追加译文，全文模式只替换 Text node，切换时无需重载页面。
+                let renderedHtml = html
                 let windowTitle = readmeWindowTitle
+                let documentKey = ReadmeTranslationService.hash(html)
                 ReadmeWebView(
                     htmlFragment: renderedHtml,
                     baseURL: baseURL,
@@ -534,13 +557,24 @@ struct ReadmeStateView: View {
                     },
                     onExportMarkdown: { [dependencies] in
                         exportReadmeMarkdown(dependencies: dependencies)
+                    },
+                    translationRenderState: translationControl?.translationVM.renderState ?? .hidden,
+                    onTranslationSourceChange: { snapshot in
+                        translationSourceDocumentKey = documentKey
+                        translationSourceSnapshot = snapshot
                     }
                 )
                 .id(readmeWebViewIdentity)
                 // 与 ActivityReleaseDetailContent 对齐：body slot 必须吃满 Scaffold 剩余
                 // 高度，否则 WKWebView 在 VStack 里按零 intrinsic 高度布局 → 闪一下后空白。
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                cacheFooter(cachedAt: cachedAt, sourceHtml: html)
+                cacheFooter(
+                    cachedAt: cachedAt,
+                    sourceHtml: html,
+                    sourceSnapshot: translationSourceDocumentKey == documentKey
+                        ? translationSourceSnapshot
+                        : .empty
+                )
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -610,7 +644,11 @@ struct ReadmeStateView: View {
     ///
     /// HOM-68：右下角追加翻译入口（仅 Manage 详情页传入 translationControl 时显示）。
     /// 把 `sourceHtml` 透给翻译按钮——按钮调 LLM 时需要把当前源 HTML 作为输入。
-    private func cacheFooter(cachedAt: Date, sourceHtml: String) -> some View {
+    private func cacheFooter(
+        cachedAt: Date,
+        sourceHtml: String,
+        sourceSnapshot: ReadmeTranslationSourceSnapshot
+    ) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "clock")
                 .font(.caption2)
@@ -620,7 +658,8 @@ struct ReadmeStateView: View {
             if let control = translationControl {
                 ReadmeTranslationFooterButton(
                     control: control,
-                    sourceHtml: sourceHtml
+                    sourceHtml: sourceHtml,
+                    sourceSnapshot: sourceSnapshot
                 )
                 Divider().frame(height: 14)
             }
@@ -653,18 +692,6 @@ struct ReadmeTranslationControl {
     let repo: Repo
     let translationVM: ReadmeTranslationViewModel
     let settings: AppSettings
-
-    /// 当前 WebView 应渲染的 HTML：用户选择展示译文时返回译文，否则 nil（外层使用原文）。
-    ///
-    /// 这里访问的 `translationVM.displayMode` 是 `@MainActor` 隔离的 `@Observable` 状态，
-    /// 因此整个 control 必须标 `@MainActor`，否则 SwiftUI 在重新渲染时会从非隔离上下文调用，
-    /// Swift 6 编译期就会报错。控件本身只在 View body 中读取，所以这条约束不会增加运行成本。
-    func activeHtml(originalHtml: String) -> String? {
-        if case .showingTranslation(let html, _, _) = translationVM.displayMode {
-            return html
-        }
-        return nil
-    }
 }
 
 /// README cacheFooter 区域的翻译入口按钮。
@@ -680,6 +707,7 @@ struct ReadmeTranslationFooterButton: View {
 
     let control: ReadmeTranslationControl
     let sourceHtml: String
+    let sourceSnapshot: ReadmeTranslationSourceSnapshot
 
     /// 翻译中时按钮 hover 状态——hover 显示 stop 图标 + tooltip 切"停止翻译"。
     ///
@@ -697,6 +725,9 @@ struct ReadmeTranslationFooterButton: View {
 
     private var translationVM: ReadmeTranslationViewModel { control.translationVM }
     private var settings: AppSettings { control.settings }
+    private var selectedSourceSegments: [ReadmeSourceSegment] {
+        sourceSnapshot.segments(for: settings.readmeTranslationMode)
+    }
 
     /// 判断当前是否展示译文，用于按钮文字 / icon 切换。
     private var isShowingTranslation: Bool {
@@ -716,7 +747,9 @@ struct ReadmeTranslationFooterButton: View {
                     translationVM.toggleTranslation(
                         repo: control.repo,
                         sourceHtml: sourceHtml,
-                        targetLanguage: settings.readmeTranslationLanguage
+                        sourceSegments: selectedSourceSegments,
+                        targetLanguage: settings.readmeTranslationLanguage,
+                        mode: settings.readmeTranslationMode
                     )
                 }
             } label: {
@@ -732,7 +765,10 @@ struct ReadmeTranslationFooterButton: View {
             // 翻译中要让点击能落地触发 cancel，所以 disabled 条件改成：
             //   - 翻译中：永远可点（点击 = 取消）；
             //   - 非翻译中 + sourceHtml 为空：disabled（无内容可翻译 / 切换）。
-            .disabled(!translationVM.isTranslating && sourceHtml.isEmpty)
+            .disabled(
+                !translationVM.isTranslating
+                    && (sourceHtml.isEmpty || selectedSourceSegments.isEmpty)
+            )
             .help(buttonTooltip)
             .onHover { hovering in
                 // 只在翻译中跟踪 hover 切 icon；非翻译态不需要这个状态，确保切回
@@ -808,6 +844,24 @@ struct ReadmeTranslationFooterButton: View {
     private var languageMenu: some View {
         Menu {
             Picker(selection: Binding(
+                get: { settings.readmeTranslationMode },
+                set: { settings.readmeTranslationMode = $0 }
+            )) {
+                ForEach(ReadmeTranslationMode.allCases) { mode in
+                    Label(
+                        LocalizedStringKey(mode.displayNameKey),
+                        systemImage: mode.systemImage
+                    )
+                    .tag(mode)
+                }
+            } label: {
+                Text("readme.translate.menu.mode")
+            }
+            .pickerStyle(.inline)
+
+            Divider()
+
+            Picker(selection: Binding(
                 get: { settings.readmeTranslationLanguage },
                 set: { settings.readmeTranslationLanguage = $0 }
             )) {
@@ -825,22 +879,33 @@ struct ReadmeTranslationFooterButton: View {
                 translationVM.regenerate(
                     repo: control.repo,
                     sourceHtml: sourceHtml,
-                    targetLanguage: settings.readmeTranslationLanguage
+                    sourceSegments: selectedSourceSegments,
+                    targetLanguage: settings.readmeTranslationLanguage,
+                    mode: settings.readmeTranslationMode
                 )
             } label: {
                 Label("readme.translate.menu.regenerate", systemImage: "arrow.clockwise")
             }
-            .disabled(translationVM.isTranslating || sourceHtml.isEmpty)
+            .disabled(
+                translationVM.isTranslating
+                    || sourceHtml.isEmpty
+                    || selectedSourceSegments.isEmpty
+            )
         } label: {
+            // 与 UnifiedSortMenu 的下拉指示器对齐。
+            // 注意：只改 `.caption` / `.caption2` 对 chevron.down 光学差几乎看不出；
+            // 用显式 12pt semibold，和排序菜单旁箭头同级可见。
             Image(systemName: "chevron.down")
-                .font(.caption2)
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .frame(width: 14, height: 14)
+                .frame(width: 16, height: 16)
                 .contentShape(Rectangle())
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .frame(width: 16)
+        // Menu 默认会把 label 提亮成 primary；强制 secondary，避免比左侧气泡更亮、更抢眼。
+        .tint(.secondary)
+        .frame(width: 18)
         .focusEffectDisabled()
         .help("readme.translate.menu.tooltip")
     }

@@ -44,6 +44,7 @@
 //  - 监听用 `task(id: repo.id)` 包裹的 async for-loop；切换 repo 时 task 自动取消
 //
 
+import MarkdownUI
 import SwiftUI
 
 // MARK: - View
@@ -57,6 +58,9 @@ struct RepoNotesSection: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @State private var viewModel: RepoNotesSectionViewModel?
+
+    /// AI 草稿与正式笔记 buffer 分离；只有用户确认后才通过 `applyAIDraft()` 写库。
+    @State private var aiGenerationViewModel: RepoNoteAIGenerationViewModel?
 
     /// 笔记本地编辑 buffer；与 viewModel.note?.content 分离，避免边输入边重新加载。
     @State private var editingContent: String = ""
@@ -73,12 +77,16 @@ struct RepoNotesSection: View {
     /// 私有笔记默认折叠，避免右侧详情页顶部长期占掉大块高度。
     @State private var isNotesExpanded: Bool = false
 
-    /// 大窗口编辑 sheet 显隐控制（2026-06-13）。
+    /// 当前详情页内联编辑器是否扩展。扩展后仍留在详情上下文中，并提供编辑 / Markdown 预览。
+    @State private var isEditorExpanded: Bool = false
+
+    /// 内联编辑器模式只在扩展态显示；默认预览，让放大入口优先承担阅读长笔记的场景。
+    @State private var inlineEditorMode: InlineEditorMode = .preview
+
+    /// 旧大窗口编辑 sheet 显隐控制（2026-06-13）。
     ///
-    /// inline 输入框右下角的「展开成弹窗」按钮（`arrow.up.left.and.arrow.down.right`）翻转这个值，
-    /// `NoteEditorSheet` 通过 sheet modifier 弹起，提供「编辑 / 预览」Tab 切换。
-    /// 弹窗与 inline 共享同一份 `editingContent` `@State`（通过 `@Binding` 传入），关闭弹窗时
-    /// 由 sheet 主动 await `flushContent()` 落库，避免 800ms 防抖 timer 在关闭瞬间未结算造成丢失。
+    /// 2026-07-22 起入口暂时隐藏，右下角按钮改为原位扩展；保留状态和 `.sheet` 装配，
+    /// 方便 dong4j 后续确认后恢复或删除，当前没有任何可达交互会把它设为 true。
     @State private var showEditorSheet: Bool = false
 
     /// 2026-06-12 向量索引改进：笔记保存后的"向量重建"二级 debounce 任务。
@@ -96,6 +104,8 @@ struct RepoNotesSection: View {
 
     enum SaveState { case idle, saving, saved }
 
+    enum InlineEditorMode: Hashable { case edit, preview }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             statusRow
@@ -109,6 +119,11 @@ struct RepoNotesSection: View {
         .toast(message: $statusToast, icon: "heart.fill")
         .task(id: repo.id) {
             await onRepoChange(to: repo.id)
+        }
+        .onDisappear {
+            // AI 会话由 repo 级内存仓库继续持有，切换详情时不能取消；语义索引防抖仍属于当前 View。
+            refreshIndexTask?.cancel()
+            refreshIndexTask = nil
         }
         // 监听 README 加载完成事件 → 把 unread 升级为 read（仅匹配当前 repo.id）。
         //
@@ -157,7 +172,7 @@ struct RepoNotesSection: View {
             guard !Task.isCancelled, hasUnsavedChanges else { return }
             await flushContent()
         }
-        // 大窗口编辑 sheet（2026-06-13 新增）。
+        // 旧大窗口编辑 sheet 暂时保留但隐藏入口，方便后续确认恢复；当前内联扩展不经过这里。
         //
         // 共享数据：`$editingContent` 双向绑定到 NoteEditorSheet.content，sheet 内输入直接更新 inline buffer
         // → 上方 `.onChange(of: editingContent)` 同样会触发 → `.task(id: editingContent)` 防抖照常运行。
@@ -214,37 +229,69 @@ struct RepoNotesSection: View {
     @ViewBuilder
     private var notesDisclosure: some View {
         DisclosureGroup(isExpanded: $isNotesExpanded) {
-            notesEditor
-                .padding(.top, 4)
-        } label: {
-            Button {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
-                    isNotesExpanded.toggle()
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    Label("repo.privateNotes", systemImage: hasNoteContent ? "note.text" : "note.text.badge.plus")
-                        .font(.caption)
+            VStack(alignment: .leading, spacing: 10) {
+                notesEditor
+                if aiGenerationViewModel?.phase == .idle {
+                    Label("repo.notes.ai.privacyNotice", systemImage: "lock.shield")
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
-                    if let edited = viewModel?.note?.editedAt {
-                        Text(String(format: String.l10n("repo.lastEditedFormat"), formattedEditedAt(edited)))
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    SaveIndicator(state: saveState, hasUnsaved: hasUnsavedChanges)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+                if let aiViewModel = aiGenerationViewModel,
+                   aiViewModel.phase != .idle,
+                   aiViewModel.phase != .completed {
+                    RepoNoteAIGenerationPanel(
+                        viewModel: aiViewModel,
+                        onRetry: startAIGeneration,
+                        onCancel: { aiViewModel.cancel() },
+                        onDiscard: discardAIGeneration,
+                        onApply: { Task { await applyAIDraft() } }
+                    )
+                }
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .help(isNotesExpanded ? Text("repo.notesCollapse") : Text("repo.notesExpand"))
+            .padding(.top, 4)
+        } label: {
+            ZStack(alignment: .trailing) {
+                Button {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                        isNotesExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Label("repo.privateNotes", systemImage: hasNoteContent ? "note.text" : "note.text.badge.plus")
+                            .font(.caption)
+                        if let edited = viewModel?.note?.editedAt {
+                            Text(String(format: String.l10n("repo.lastEditedFormat"), formattedEditedAt(edited)))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        SaveIndicator(state: saveState, hasUnsaved: hasUnsavedChanges)
+                        Spacer()
+                    }
+                    .padding(.leading, 6)
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .inlineActionHover()
+                    // 右侧留给「Generate with AI」胶囊（含外框 padding），避免标题与按钮重叠。
+                    .padding(.trailing, 148)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help(isNotesExpanded ? Text("repo.notesCollapse") : Text("repo.notesExpand"))
+
+                if let aiViewModel = aiGenerationViewModel {
+                    RepoNoteAIGenerationHeaderControl(
+                        viewModel: aiViewModel,
+                        hasExistingNote: hasNoteContent,
+                        onGenerate: startAIGeneration
+                    )
+                }
+            }
         }
         .disclosureGroupStyle(.automatic)
     }
 
-    /// inline 笔记编辑器（2026-06-13 v2 重做：固定 3 行高 + 右下角「展开成弹窗」按钮）。
+    /// 详情页内联笔记编辑器：默认 3 行，点击右下角按钮后原位扩展并提供 Markdown 预览。
     ///
     /// 视觉/交互设计要点（grill 决策表 A1–A3）：
     /// - **固定 3 行高度**：`minHeight = maxHeight = 76pt`。来源精算：
@@ -253,8 +300,8 @@ struct RepoNotesSection: View {
     ///   - 累加 64pt 仅"刚够"3 行（第 3 行光标贴底，v1 错误值）
     ///   - **v2 升到 76pt**：加 12pt buffer（约 0.7 行），保证第 3 行下方仍有视觉余量
     ///   - 不能再加大（如 80+ 会显示第 4 行 1/3 残影）
-    /// - **超过 3 行内部纵向滚动**：TextEditor 在 macOS 包装 NSTextView,原生 vertical scroll 自动出现；
-    ///   长笔记走右下角「展开成弹窗」按钮进入大窗口编辑。
+    /// - **超过 3 行内部纵向滚动**：TextEditor 在 macOS 包装 NSTextView，原生 vertical scroll 自动出现；
+    ///   长笔记可原位扩展到 480pt，用户仍能同时查看仓库详情。
     /// - **右下角 overlay 按钮（v2 关键修正）**：始终可见、半透明，hover 时加深。
     ///   - **重要约束**：NSScroller 绘制层级**在 SwiftUI overlay 之上**（SwiftUI 限制，与 z-index 无关），
     ///     滚动条出现时会**覆盖**按钮 → trailing padding 必须留出 ~14pt 完全避开 NSScroller 宽度 (~12pt)。
@@ -262,28 +309,80 @@ struct RepoNotesSection: View {
     /// - **vertical padding 留呼吸感**：`.padding(.vertical, 6)` 而非旧版 `.padding(8)` —— TextEditor 内部
     ///   NSTextView 自带 textContainerInset 已经吃掉一部分上下空间，外层 6pt 即可，过大会让 inline 看起来臃肿。
     private var notesEditor: some View {
+        VStack(spacing: 0) {
+            if isEditorExpanded {
+                // 仅保留模式栏的固有高度；真正的控件由卡片 overlay 直接锚定到右边框。
+                editorModeControl
+                    .hidden()
+                    .padding(.vertical, 8)
+                Divider()
+            }
+
+            if isEditorExpanded, inlineEditorMode == .preview {
+                inlineMarkdownPreview
+            } else {
+                inlineTextEditor
+            }
+        }
+        .frame(minHeight: isEditorExpanded ? 480 : 76, maxHeight: isEditorExpanded ? 480 : 76)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color(nsColor: .textBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(Color.secondary.opacity(0.2))
+        )
+        .overlay(alignment: .topTrailing) {
+            if isEditorExpanded {
+                // overlay 的尺寸就是笔记卡片尺寸，避免 DisclosureGroup / VStack 的理想宽度影响右对齐。
+                editorModeControl
+                    .padding(.top, 8)
+                    .padding(.trailing, 10)
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            expandButton
+                .padding(.trailing, 22)
+                .padding(.bottom, 6)
+        }
+    }
+
+    /// 放大后的编辑 / 预览模式切换器；两个独立系统按钮保留原有观感，只增加必要间距。
+    private var editorModeControl: some View {
+        HStack(spacing: 6) {
+            editorModeButton("repo.notes.editor.tabEdit", mode: .edit)
+            editorModeButton("repo.notes.editor.tabPreview", mode: .preview)
+        }
+        .controlSize(.small)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    /// 仅用系统 bordered 样式表达模式状态，避免为间距需求引入额外自定义外观。
+    @ViewBuilder
+    private func editorModeButton(_ titleKey: LocalizedStringKey, mode: InlineEditorMode) -> some View {
+        if inlineEditorMode == mode {
+            Button(titleKey) {
+                inlineEditorMode = mode
+            }
+            .buttonStyle(.borderedProminent)
+        } else {
+            Button(titleKey) {
+                inlineEditorMode = mode
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+
+    /// 编辑模式继续绑定原来的 `editingContent`，所以扩展 / 收起不会产生第二份保存状态。
+    private var inlineTextEditor: some View {
         TextEditor(text: $editingContent)
             .font(.system(.body, design: .default))
             .scrollContentBackground(.hidden)
-            .frame(minHeight: 76, maxHeight: 76)
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color(nsColor: .textBackgroundColor))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(Color.secondary.opacity(0.2))
-            )
             .overlay(alignment: .topLeading) {
                 if editingContent.isEmpty {
-                    // v2.2（2026-06-17）光标 ↔ placeholder 对齐修正：
-                    // SwiftUI TextEditor 包装的 NSTextView 在 macOS 15+ 上首行 insertion point 的 Y
-                    // 不再额外叠加 textContainerInset.height（实测与 v2.1 假设的 +5pt 不符），
-                    // 光标实际落在「外层 padding」之后的第一行基线，即 (8+5, 6) = (13, 6)。
-                    // placeholder 必须与 TextEditor 同字体，且只用 leading/top 偏移，避免 vertical
-                    // padding 把文字整体下推导致「光标在上、提示在下」。
                     Text("repo.notesPlaceholder")
                         .font(.system(.body, design: .default))
                         .foregroundStyle(.secondary)
@@ -292,32 +391,44 @@ struct RepoNotesSection: View {
                         .allowsHitTesting(false)
                 }
             }
-            .overlay(alignment: .bottomTrailing) {
-                // v2.1（2026-06-13）按钮 trailing padding 精算（v2 给的 14pt 仍重叠）：
-                // - 外层 padding(.horizontal, 8) → TextEditor 内部右边距 RoundedRectangle 8pt
-                // - NSScroller 宽度 ≈ 12pt（macOS overlay scroller） → NSScroller 占据距右 8-20pt 区域
-                // - 按钮圆形直径 = 5(padding) + 10(icon) + 5(padding) = 20pt
-                // - 旧 trailing=14 → 按钮占据距右 14-34pt → **与 NSScroller 20-14 = 6pt 重合**
-                // - 新 trailing=22 → 按钮占据距右 22-42pt → 完全避开 NSScroller 20pt 边界 + 2pt 余量
-                expandButton
-                    .padding(.trailing, 22)
-                    .padding(.bottom, 6)
-            }
     }
 
-    /// 右下角「展开成大窗口编辑」按钮。
-    ///
-    /// 视觉：半透明 secondary 圆背景 + `arrow.up.left.and.arrow.down.right` 图标。
-    /// 交互：点击 → `showEditorSheet = true` → 触发 sheet 弹起；hover 时背景透明度加深给反馈。
-    /// 不打架细节（v2 更新）：
-    /// - 与 SwiftUI placeholder（topLeading 对齐）不冲突；
-    /// - 与 NSScroller **会冲突**（NSScroller 在 SwiftUI overlay 上方绘制，是 SwiftUI 固有限制），
-    ///   靠外层 `.padding(.trailing, 14)` 让位 ~12pt 完全避开 NSScroller 宽度。
+    /// 扩展态 Markdown 预览。渲染源与编辑器是同一 Binding，不引入保存或同步分支。
+    @ViewBuilder
+    private var inlineMarkdownPreview: some View {
+        let trimmed = editingContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        ScrollView {
+            if trimmed.isEmpty {
+                HStack {
+                    Text("repo.notes.editor.emptyPreview")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(12)
+            } else {
+                Markdown(editingContent)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+            }
+        }
+    }
+
+    /// 右下角按钮只切换当前详情页内的高度，不再创建新的窗口。
     private var expandButton: some View {
         Button {
-            showEditorSheet = true
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                isEditorExpanded.toggle()
+                if !isEditorExpanded {
+                    // 收起态始终显示 TextEditor；预先恢复 preview，保证下次放大默认进入预览。
+                    inlineEditorMode = .preview
+                }
+            }
         } label: {
-            Image(systemName: "arrow.up.left.and.arrow.down.right")
+            Image(systemName: isEditorExpanded
+                  ? "arrow.down.right.and.arrow.up.left"
+                  : "arrow.up.left.and.arrow.down.right")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .padding(5)
@@ -327,7 +438,7 @@ struct RepoNotesSection: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .help(Text("repo.notes.expandEditor"))
+        .help(Text(isEditorExpanded ? "repo.notes.collapseEditor" : "repo.notes.expandEditor"))
     }
 
     // MARK: - 行为
@@ -340,6 +451,13 @@ struct RepoNotesSection: View {
         if let prevId = previousRepoId, prevId != newId, hasUnsavedChanges {
             await viewModel?.saveContent(repoId: prevId, content: editingContent)
         }
+        // 已完成或未启动的临时会话没有跨仓库保留价值；运行中 / 待确认 / 失败态继续留在内存中，
+        // 这样切回原仓库时可以看到同一条流式响应和完整步骤，而不是重新生成。
+        if let prevId = previousRepoId,
+           let previousSession = aiGenerationViewModel,
+           !previousSession.shouldExpandNotesOnReturn {
+            RepoNoteAIGenerationSessionStore.shared.removeSession(for: prevId)
+        }
         // 切换 repo 时，取消上一个 repo 的"向量索引重建" debounce 任务——
         // 否则前一个 repo 的 1.5s timer 还会触发一次 refreshIndexIfChanged(prevRepo)，
         // 浪费 API 配额且语义混乱（当前页面已经在新 repo 上）。
@@ -350,7 +468,11 @@ struct RepoNotesSection: View {
         editingContent = viewModel?.note?.content ?? ""
         hasUnsavedChanges = false
         saveState = .idle
-        isNotesExpanded = false
+        isEditorExpanded = false
+        inlineEditorMode = .preview
+        let session = RepoNoteAIGenerationSessionStore.shared.session(for: newId) ?? makeAIGenerationViewModel()
+        aiGenerationViewModel = session
+        isNotesExpanded = session.shouldExpandNotesOnReturn
     }
 
     /// 主动落库 + 触发语义索引重建。
@@ -367,12 +489,72 @@ struct RepoNotesSection: View {
     private func flushContent() async {
         guard let vm = viewModel, hasUnsavedChanges else { return }
         saveState = .saving
-        await vm.saveContent(repoId: repo.id, content: editingContent)
+        let succeeded = await vm.saveContent(repoId: repo.id, content: editingContent)
+        guard succeeded else {
+            saveState = .idle
+            return
+        }
         hasUnsavedChanges = false
         saveState = .saved
         if vm.errorMessage == nil, !editingContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             NotificationCenter.default.post(name: .gettingStartedDidOrganizeRepo, object: nil)
         }
+        scheduleSemanticIndexRefresh()
+    }
+
+    /// 从当前编辑 buffer 冻结原笔记后启动 AI，不要求用户先等防抖保存。
+    private func startAIGeneration() {
+        guard let aiGenerationViewModel else { return }
+        RepoNoteAIGenerationSessionStore.shared.retain(aiGenerationViewModel, for: repo.id)
+        if !isNotesExpanded {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                isNotesExpanded = true
+            }
+        }
+        aiGenerationViewModel.start(repo: repo, existingNote: editingContent)
+    }
+
+    /// 用户明确放弃后同时移除 repo 会话；这与页面切换不同，后者必须继续保留生成任务。
+    private func discardAIGeneration() {
+        aiGenerationViewModel?.discard()
+        RepoNoteAIGenerationSessionStore.shared.removeSession(for: repo.id)
+    }
+
+    /// 未启动 AI 的仓库只创建轻量 ViewModel，不放入共享会话仓库，避免浏览大量详情时积累空会话。
+    private func makeAIGenerationViewModel() -> RepoNoteAIGenerationViewModel {
+        RepoNoteAIGenerationViewModel(
+            readmeProvider: RepoNoteAIReadmeProvider(
+                repository: dependencies.readmeRepository,
+                readmeAPI: dependencies.readmeAPI
+            ),
+            aiService: dependencies.repoAIInsightService,
+            maxReadmeLength: dependencies.settings.aiReadmeTruncateLength
+        )
+    }
+
+    /// 只有通过快照冲突检查后才写入 AI 草稿，并复用原笔记的索引刷新链路。
+    private func applyAIDraft() async {
+        guard let vm = viewModel,
+              let aiViewModel = aiGenerationViewModel,
+              let draft = aiViewModel.beginApplying(currentNote: editingContent)
+        else { return }
+
+        saveState = .saving
+        let succeeded = await vm.saveContent(
+            repoId: repo.id,
+            content: draft,
+            isAIGenerated: true
+        )
+        aiViewModel.finishApplying(success: succeeded)
+        guard succeeded else {
+            saveState = .idle
+            return
+        }
+
+        editingContent = draft
+        hasUnsavedChanges = false
+        saveState = .saved
+        NotificationCenter.default.post(name: .gettingStartedDidOrganizeRepo, object: nil)
         scheduleSemanticIndexRefresh()
     }
 
@@ -521,13 +703,24 @@ final class RepoNotesSectionViewModel {
 
     /// 单独修改正文（防抖之后调用）。
     /// 空字符串视为"无内容"（content=nil），但保留行（status 仍存在）。
-    func saveContent(repoId: Int64, content: String) async {
+    @discardableResult
+    func saveContent(
+        repoId: Int64,
+        content: String,
+        isAIGenerated: Bool = false
+    ) async -> Bool {
         do {
             let normalized: String? = content.isEmpty ? nil : content
-            try await repoNoteRepository.updateContent(repoId: repoId, content: normalized)
+            try await repoNoteRepository.updateContent(
+                repoId: repoId,
+                content: normalized,
+                isAIGenerated: isAIGenerated
+            )
             await loadFor(repoId: repoId)
+            return true
         } catch {
             errorMessage = "repo.notes.saveContentFailed"
+            return false
         }
     }
 

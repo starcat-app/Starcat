@@ -126,7 +126,48 @@ xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' \
 
 - **核心价值**: 整理、理解、找回、评估
 - **目标用户**: 独立开发者、技术博主、技术媒体
-- **项目状态**: 预开发规划阶段，尚无代码
+- **项目状态**: 已发布正式版，持续开发与维护中
+
+---
+
+## 仓库目录结构
+
+```text
+Starcat/
+├── Starcat/                         # macOS App 源码
+│   ├── App/                         # App 入口与生命周期
+│   ├── Core/                        # 数据库、网络、同步、AI 等核心能力
+│   ├── Features/                    # 按产品功能划分的 SwiftUI 模块
+│   ├── Shared/                      # 共享组件、工具与扩展
+│   ├── Resources/                   # 本地化、Assets、entitlements 等资源
+│   └── Generated/                   # xcodegen 等流程生成的文件
+├── StarcatTests/                    # 单元测试与集成测试
+├── Configs/                         # 构建配置；真实 secrets 不进 Git
+├── docs/                            # 产品、设计、规范、进度与发版文档
+├── scripts/                         # 构建、打包、发布与本地工具脚本
+├── resources/                       # 仓库级素材与辅助资源
+├── screenshots/                     # 商店、文档与验收截图
+├── supports/                        # 配套项目工作区
+│   ├── .github/                     # starcat-app 组织主页与共享社区文件（独立仓库）
+│   ├── starcat-docs/                # 官方用户文档（独立仓库）
+│   ├── starcat-site/                # 官网源码单一来源（独立仓库）
+│   │   ├── direct/                  # starcat.ink Direct 正式站
+│   │   ├── direct-test/             # Direct 测试站
+│   │   ├── appstore/                # Mac App Store 官网
+│   │   └── _local-admin/            # 本地运营控制台
+│   ├── starcat-*-api/               # 各后端 API 独立仓库
+│   ├── starcat-pro/                 # 公开支持与发布说明独立仓库
+│   ├── starcat-cli/                 # CLI / MCP 独立仓库
+│   ├── starcat-skill/               # AI Agent Skill 独立仓库
+│   ├── starcat-localization/        # 本地化资源独立仓库
+│   ├── homebrew-starcat*/           # App / CLI Homebrew taps
+│   ├── extensions/                  # Chrome / Safari 插件独立仓库
+│   └── scripts/                     # 跨 supports 项目运维脚本
+├── project.yml                      # xcodegen 单一配置源
+└── Makefile                         # 常用开发与运维命令入口
+```
+
+`supports/` 下的产品配套目录多数是独立 Git 仓库，不能按主仓库文件处理。首次拉取或补齐这些仓库使用 `supports/clone-all.sh`；官网修改、Changelog 生成和部署统一在 `supports/starcat-site/` 完成。
 
 ---
 
@@ -223,6 +264,8 @@ docs/
 - 技术术语保留英文原文，可配中文解释
 - 代码必须添加必要注释；**较复杂的代码（actor / Concurrency / WKWebView delegate / URLProtocol / FTS5 / 三阶段 SWR 这类）必须写详细的"为什么 + 关键约束 + 已踩过的坑"级注释**，参考 `Starcat/Features/Home/ReadmeViewModel.swift` / `Starcat/Shared/Components/ReadmeWebView.swift` / `StarcatTests/URLProtocolStub.swift` 三份样板
 - **dong4j 是 Swift 初学者**：写新代码或解释已有代码时，遇到关键 Swift / SwiftUI / Concurrency / WebKit / GRDB 概念应主动提示去查 `docs/7-工具与脚本/Swift-学习索引.md` 对应条目
+- 所有 Git commit message 必须遵循 [`docs/5-规范/Git-提交规范.md`](docs/5-规范/Git-提交规范.md)，确保提交可以被脚本稳定转换为更新日志
+- 所有 Changelog 询问时机、授权边界、日常文件范围与发版生成规则，必须遵循 [`docs/5-规范/Changelog-更新规范.md`](docs/5-规范/Changelog-更新规范.md)
 - 详细开发规范见 `docs/` 各文档
 
 ### UI 设计契约：DESIGN.md（强制，2026-07-04 起生效）

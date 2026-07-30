@@ -65,6 +65,10 @@ struct CopyFeedbackButton<Label: View>: View {
     /// 复制入口遵循同一成功反馈语义。
     @ViewBuilder let label: (Bool) -> Label
 
+    /// 剪贴板写入成功后的附加通知。菜单项关闭后自身反馈不可见时，调用方可借此
+    /// 在稳定的页面根节点显示 Toast；默认空实现，避免普通复制按钮额外处理。
+    private let onCopied: () -> Void
+
     @State private var didCopy: Bool = false
 
     /// 复位用的延迟任务句柄。
@@ -83,6 +87,7 @@ struct CopyFeedbackButton<Label: View>: View {
         providesContent: @escaping () -> String,
         tooltip: LocalizedStringKey,
         style: CopyFeedbackButtonStyle = .plain,
+        onCopied: @escaping () -> Void = {},
         @ViewBuilder label: @escaping (Bool) -> Label
     ) {
         self.copyAction = {
@@ -94,6 +99,7 @@ struct CopyFeedbackButton<Label: View>: View {
         }
         self.tooltip = tooltip
         self.style = style
+        self.onCopied = onCopied
         self.label = label
     }
 
@@ -102,11 +108,13 @@ struct CopyFeedbackButton<Label: View>: View {
         performCopy: @escaping () -> Bool,
         tooltip: LocalizedStringKey,
         style: CopyFeedbackButtonStyle = .plain,
+        onCopied: @escaping () -> Void = {},
         @ViewBuilder label: @escaping (Bool) -> Label
     ) {
         self.copyAction = performCopy
         self.tooltip = tooltip
         self.style = style
+        self.onCopied = onCopied
         self.label = label
     }
 
@@ -137,6 +145,8 @@ struct CopyFeedbackButton<Label: View>: View {
     /// 实际执行复制 + 切反馈态 + 排复位。
     private func performCopy() {
         guard copyAction() else { return }
+
+        onCopied()
 
         resetTask?.cancel()
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) {

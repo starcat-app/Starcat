@@ -15,12 +15,59 @@
 //  - 每个 segment 是 `.buttonStyle(.plain)` + `.focusEffectDisabled()`（项目铁律）。
 //  - `title` 闭包返回 `LocalizedStringKey`，调用方 `Text(title(item))` 直出 i18n key。
 //
-//  使用范围（截至 2026-06-18）：
-//  - `TrendingView.periodPicker`（尺寸对齐 Activity / Weekly 顶栏 filter bar 行高）
-//  - `RepoAIWindowContentView.panelToggleBar`（AI 摘要 / AI 对话切换）
+//  使用范围（截至 2026-07-28）：
+//  - `TrendingView.periodPicker`（regular，对齐 Activity / Weekly 顶栏行高）
+//  - `RepoAIWindowContentView.panelToggleBar`（compact）
+//  - `ManageDetailContent`（compact：README / 洞察）
+//  - `MyInsightsView`（compact：全部收藏 / 知识库）
+//  - `RepositoryInsightsView`（compact：Star / 提交活动范围）
+//  - `RepoNoteAIGenerationHeaderControl` 复用 compact 尺寸常量做单按钮胶囊
 //
 
 import SwiftUI
+
+/// 胶囊分段控件的视觉密度。
+enum PillSegmentedControlSize: Sendable {
+    /// 顶栏 / 工具条默认尺寸。
+    case regular
+    /// 详情内嵌、卡片工具条：更小字号与内边距，少占垂直空间。
+    case compact
+
+    var fontSize: CGFloat {
+        switch self {
+        case .regular: return 13
+        case .compact: return 11
+        }
+    }
+
+    var horizontalPadding: CGFloat {
+        switch self {
+        case .regular: return 13
+        case .compact: return 9
+        }
+    }
+
+    var verticalPadding: CGFloat {
+        switch self {
+        case .regular: return 4
+        case .compact: return 2
+        }
+    }
+
+    var chromePadding: CGFloat {
+        switch self {
+        case .regular: return 3
+        case .compact: return 2
+        }
+    }
+
+    var dividerHeight: CGFloat {
+        switch self {
+        case .regular: return 12
+        case .compact: return 10
+        }
+    }
+}
 
 /// 胶囊风格横向分段切换器（单选）。
 ///
@@ -28,11 +75,13 @@ import SwiftUI
 ///   - items: 从左到右的选项顺序（须唯一，用作 `ForEach` identity）。
 ///   - selection: 当前选中项 binding。
 ///   - title: 各选项的本地化标题（`LocalizedStringKey`）。
+///   - size: 视觉密度；详情内嵌默认倾向 `.compact`。
 struct PillSegmentedControl<Item: Hashable>: View {
 
     let items: [Item]
     @Binding var selection: Item
     let title: (Item) -> LocalizedStringKey
+    var size: PillSegmentedControlSize = .regular
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
@@ -46,7 +95,7 @@ struct PillSegmentedControl<Item: Hashable>: View {
                 segmentButton(for: item)
             }
         }
-        .padding(3)
+        .padding(size.chromePadding)
         .background(Color.secondary.opacity(0.08), in: Capsule(style: .continuous))
         .overlay {
             Capsule(style: .continuous)
@@ -62,10 +111,10 @@ struct PillSegmentedControl<Item: Hashable>: View {
             selection = item
         } label: {
             Text(title(item))
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: size.fontSize, weight: .medium))
                 .foregroundStyle(.primary)
-                .padding(.horizontal, 13)
-                .padding(.vertical, 4)
+                .padding(.horizontal, size.horizontalPadding)
+                .padding(.vertical, size.verticalPadding)
                 .background(
                     selection == item
                         ? Color.primary.opacity(0.10)
@@ -90,7 +139,7 @@ struct PillSegmentedControl<Item: Hashable>: View {
     private var segmentDivider: some View {
         Rectangle()
             .fill(Color.secondary.opacity(0.20))
-            .frame(width: 0.5, height: 12)
+            .frame(width: 0.5, height: size.dividerHeight)
     }
 
     private var selectionAnimation: Animation? {

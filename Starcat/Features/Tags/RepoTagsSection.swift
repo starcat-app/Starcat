@@ -7,7 +7,7 @@
 //  组件结构（同文件内三层）：
 //  - `RepoTagsSection` (UI)：展示 chips + "+" 按钮 → popover
 //  - `RepoTagsSectionViewModel` (@MainActor @Observable)：管理 assigned/all
-//  - `TagPickerView` (UI)：popover 内容；可搜索标签 + 多选 + 应用
+//  - `TagPickerView` (UI)：popover 内容；可搜索标签 + 多选 + 内联新建 + 应用
 //
 //  设计取舍：
 //  - 不再拆出 5 个文件，因为这三块强耦合（picker 改完直接 setTags 刷 chips）
@@ -102,9 +102,13 @@ struct RepoTagsSection: View {
         } label: {
             Label("tagPicker.addOrModify", systemImage: "plus.circle")
                 .font(.caption)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
         .focusEffectDisabled()
+        .inlineActionHover()
         .popover(isPresented: $showPicker, arrowEdge: .top) {
             Group {
                 if let vm = viewModel {
@@ -198,8 +202,13 @@ final class RepoTagsSectionViewModel {
 
 /// popover 内容：可搜索标签 + 多选 + 内联新建标签 + 应用 / 取消。
 ///
-/// **2026-07-05 优化**：列表顶部新增「新建标签」入口，点击后内联展开创建表单
-/// （名称 + 颜色 + 图标），创建后自动加入列表并选中，无需离开 popover。
+/// **2026-07-05**：列表内「新建标签」入口，点击后内联展开创建表单。
+/// **2026-07-24 UI 收紧**：
+/// - 行内去掉 checkbox + 色点叠图标；改为侧栏同款「彩色图标 + 名称」，选中用行底 + 右侧勾
+/// - 「新建标签」钉在列表下方固定区，避免混进可选项
+/// - 去掉逐行 Divider，靠行间距与选中底扫描
+/// - popover 底用 `windowBackgroundColor`，对齐 AI 摘要窗的 windowBackground 材质观感，
+///   替换系统默认过透的 popover 玻璃
 ///
 /// 注意：本组件维护"本地 selection"。父级提交时传新的集合，
 /// 父级用 setTags 替换式更新（不需要本组件去逐个 add/remove）。
@@ -214,6 +223,7 @@ struct TagPickerView: View {
 
     @State private var selected: Set<String> = []
     @State private var query: String = ""
+    @State private var hoveredTagId: String?
 
     // 内联新建标签
     @State private var isCreatingTag: Bool = false
@@ -229,73 +239,60 @@ struct TagPickerView: View {
     /// 合并后的完整标签列表（现有 + 本地新建）。
     private var mergedTags: [Tag] { localCreatedTags + allTags }
 
+    /// 行高常量：选中底圆角行，不含「新建」行（新建已钉在列表外）。
+    private static let rowHeight: CGFloat = 30
+
+    /// 当前筛选结果决定列表的自然高度；超过约 8 行后改用滚动，避免 Popover
+    /// 因少量标签保留大块空白，也避免标签较多时持续向下扩张。
+    private var pickerListHeight: CGFloat {
+        let visibleRowCount = max(filteredTags(mergedTags).count, 1)
+        let contentHeight = CGFloat(visibleRowCount) * Self.rowHeight + 8
+        return min(max(contentHeight, 120), 280)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            // Search
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField("tagPicker.placeholder", text: $query)
-                    .textFieldStyle(.plain)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-
-            Divider()
-
-            // 创建表单放在 LazyVStack 外，避免 TextField 输入时复杂表单作为 lazy row
-            // 反复参与高度推导，造成 SwiftUI 布局卡住。
             if isCreatingTag {
+                // 创建态替换搜索、列表和外层操作栏：既避免双层按钮产生歧义，
+                // 也让紧凑表单可以在固定窄宽度内自然决定高度。
                 pickerCreateTagForm
                     .padding(10)
+            } else {
+                searchField
+
                 Divider()
-            }
 
-            // List
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    // ──── 新建标签入口 ────
-                    if !isCreatingTag {
-                        pickerCreateTagButton
-                        Divider()
-                    }
-
-                    // ──── 已有标签列表 ────
-                    let tags = filteredTags(mergedTags)
-                    if tags.isEmpty && !isCreatingTag {
-                        emptyPickerMessage
-                    } else {
-                        ForEach(tags) { tag in
-                            pickerRow(tag: tag)
-                            Divider()
+                // 仅标签列表；「新建」钉在下方，避免与可选项抢视觉。
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        let tags = filteredTags(mergedTags)
+                        if tags.isEmpty {
+                            emptyPickerMessage
+                        } else {
+                            ForEach(tags) { tag in
+                                pickerRow(tag: tag)
+                            }
                         }
                     }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
                 }
-            }
-            .frame(
-                minHeight: isCreatingTag ? 120 : 420,
-                maxHeight: isCreatingTag ? 150 : 420
-            )
+                .frame(height: pickerListHeight)
 
-            Divider()
+                Divider()
 
-            HStack {
-                if !selected.isEmpty {
-                    Text(String(format: String.l10n("tagPicker.selectedCountFormat"), selected.count))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button("general.cancel") { onCancel() }
-                    .keyboardShortcut(.cancelAction)
-                Button("action.apply") { onCommit(selected) }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.return)
+                pickerCreateTagButton
+
+                Divider()
+
+                footerBar
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
         }
-        .frame(width: 430, height: 540)
+        .frame(width: 360)
+        // 对齐 AI 摘要窗：用系统窗口底色替换默认过透的 popover 玻璃。
+        // AI 窗走 NSVisualEffectView(.windowBackground)；SwiftUI popover 用同色实底，
+        // 视觉与主窗 / AI 窗同调，不再透出背后详情页内容。
+        .presentationBackground(Color(nsColor: .windowBackgroundColor))
         .onAppear {
             selected = initiallySelected
         }
@@ -304,6 +301,49 @@ struct TagPickerView: View {
                 ProgressView().controlSize(.small)
             }
         }
+    }
+
+    // MARK: - 搜索
+
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("tagPicker.placeholder", text: $query)
+                .textFieldStyle(.plain)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color(nsColor: .textBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.2))
+        )
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+    }
+
+    // MARK: - 底部操作栏
+
+    private var footerBar: some View {
+        HStack {
+            if !selected.isEmpty {
+                Text(String(format: String.l10n("tagPicker.selectedCountFormat"), selected.count))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("general.cancel") { onCancel() }
+                .keyboardShortcut(.cancelAction)
+            Button("action.apply") { onCommit(selected) }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.return)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
     }
 
     // MARK: - 新建标签入口
@@ -323,7 +363,7 @@ struct TagPickerView: View {
                     .foregroundStyle(Color.accentColor)
                 Spacer()
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .contentShape(Rectangle())
         }
@@ -370,7 +410,8 @@ struct TagPickerView: View {
                 newTagName = ""
                 newTagIcon = SFSymbolPreset.defaultIcon
                 query = ""
-            }
+            },
+            layout: .compact
         )
     }
 
@@ -425,33 +466,52 @@ struct TagPickerView: View {
         return tags.filter { $0.name.lowercased().contains(q) }
     }
 
+    /// 行视觉对齐侧栏 tagRow：彩色 SF Symbol + 名称；选中用浅蓝底 + 右侧勾。
+    /// 去掉左侧 checkbox / 独立色点，避免一行四个信号抢注意力。
     private func pickerRow(tag: Tag) -> some View {
         let isOn = selected.contains(tag.id)
+        let isHovered = hoveredTagId == tag.id
+        let tagColor = Color(hex: tag.color ?? TagColorPalette.defaultHex) ?? .accentColor
+
         return Button {
             if isOn { selected.remove(tag.id) } else { selected.insert(tag.id) }
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: isOn ? "checkmark.square.fill" : "square")
-                    .foregroundStyle(isOn ? Color.accentColor : .secondary)
-                Circle()
-                    .fill(Color(hex: tag.color ?? TagColorPalette.defaultHex) ?? .accentColor)
-                    .frame(width: 8, height: 8)
-                if let icon = tag.icon {
-                    Image(systemName: icon)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 14)
-                }
+                Image(systemName: tag.icon ?? "tag.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(tagColor)
+                    .frame(width: 16, alignment: .center)
                 Text(verbatim: tag.name)
                     .lineLimit(1)
-                Spacer()
+                Spacer(minLength: 4)
+                Image(systemName: "checkmark")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .opacity(isOn ? 1 : 0)
+                    .frame(width: 12)
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 8)
             .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
+            .background(rowBackground(isOn: isOn, isHovered: isHovered))
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
+        .onHover { hovering in
+            hoveredTagId = hovering ? tag.id : (hoveredTagId == tag.id ? nil : hoveredTagId)
+        }
+    }
+
+    /// 选中优先于 hover；浓度对齐 LanguagePickerMenu（0.18 / 0.08）。
+    @ViewBuilder
+    private func rowBackground(isOn: Bool, isHovered: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(
+                isOn
+                    ? Color.accentColor.opacity(0.18)
+                    : (isHovered ? Color.primary.opacity(0.08) : Color.clear)
+            )
     }
 }
 
@@ -462,6 +522,11 @@ struct TagPickerView: View {
 /// 面板只负责 UI 和输入状态：名称、颜色、图标、取消、创建。两处调用方仍保留各自
 /// 的写入逻辑，避免把单仓标签编辑和批量标签编辑的业务路径耦合到一个组件里。
 struct InlineTagCreatePanel: View {
+    enum Layout {
+        case regular
+        case compact
+    }
+
     @Binding var name: String
     @Binding var colorHex: String
     @Binding var icon: String?
@@ -471,6 +536,7 @@ struct InlineTagCreatePanel: View {
     let error: LocalizedStringKey?
     let onCancel: () -> Void
     let onCreate: () async -> Void
+    var layout: Layout = .regular
 
     private var trimmedName: String {
         name.trimmingCharacters(in: .whitespaces)
@@ -481,6 +547,27 @@ struct InlineTagCreatePanel: View {
     }
 
     var body: some View {
+        Group {
+            switch layout {
+            case .regular:
+                regularLayout
+            case .compact:
+                compactLayout
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(Color.secondary.opacity(0.14))
+        )
+    }
+
+    /// 批量标签 Sheet 使用的宽版双栏布局，保持原有信息密度和操作位置。
+    private var regularLayout: some View {
         HStack(alignment: .top, spacing: 14) {
             VStack(alignment: .leading, spacing: 12) {
                 header
@@ -520,19 +607,52 @@ struct InlineTagCreatePanel: View {
                 Text("batch.tagIcon")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                iconGrid
+                iconGrid(columns: 6)
             }
         }
         .frame(height: 216)
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(Color.secondary.opacity(0.14))
-        )
+    }
+
+    /// 单仓标签 Popover 使用的窄版布局。创建态独占 Popover 内容，因此可以把
+    /// 名称、颜色和图标纵向排列，在 360pt 宽度内保持完整点击区域。
+    private var compactLayout: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            nameField
+
+            if isDuplicate {
+                duplicateMessage
+            }
+
+            compactColorGrid
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("batch.tagIcon")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                iconGrid(columns: 8)
+            }
+
+            if let error {
+                Label { Text(error) } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                }
+                .font(.caption)
+                .foregroundStyle(.orange)
+            }
+
+            HStack {
+                Spacer()
+                Button("batch.createTag.confirm") {
+                    Task { await onCreate() }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!canCreate)
+                .keyboardShortcut(.return)
+            }
+        }
     }
 
     private var header: some View {
@@ -602,6 +722,20 @@ struct InlineTagCreatePanel: View {
         }
     }
 
+    /// 窄版用单行色板，12 个 18pt 色点在 360pt Popover 内仍保留充足间距。
+    private var compactColorGrid: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("batch.tagColor")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack(spacing: 7) {
+                ForEach(TagColorPalette.presets, id: \.hex) { preset in
+                    colorButton(name: preset.name, hex: preset.hex)
+                }
+            }
+        }
+    }
+
     private func colorButton(name: String, hex: String) -> some View {
         let isSelected = colorHex == hex
         return Button {
@@ -622,9 +756,8 @@ struct InlineTagCreatePanel: View {
     }
 
     /// 非 Lazy 图标 grid，避免嵌入 ScrollView/LazyVStack 时触发 SwiftUI 高度推导卡顿。
-    private var iconGrid: some View {
+    private func iconGrid(columns: Int) -> some View {
         let icons = SFSymbolPreset.icons
-        let columns = 6
         let rows: [[String]] = stride(from: 0, to: icons.count, by: columns).map { start in
             Array(icons[start..<min(start + columns, icons.count)])
         }

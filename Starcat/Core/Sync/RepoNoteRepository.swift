@@ -206,36 +206,55 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
         )
     }
 
-    /// 仅更新 content；行不存在则创建一行（status="unread"，is_ai_generated=0）。
+    /// 仅更新 content 与 AI 来源标记；行不存在则创建一行（status="unread"）。
     /// content 传 nil 表示清空。editedAt 自动设为 now。
-    func updateContent(repoId: Int64, content: String?) async throws {
+    func updateContent(repoId: Int64, content: String?, isAIGenerated: Bool) async throws {
         let nowISO = ISO8601DateFormatter.shared.string(from: Date())
         try await database.writer.write { db in
-            // 用 UPSERT 语义：先 INSERT（如不存在），ON CONFLICT 时 UPDATE content + edited_at
+            // AI 标记必须与 content 同步更新，否则用户手改 AI 笔记后仍会被误标。
             try db.execute(
                 sql: """
                 INSERT INTO repo_notes (
                     repo_id, content, status, library_state, library_updated_at, is_ai_generated, edited_at
                 )
-                VALUES (?, ?, 'unread', 'outside_library', NULL, 0, ?)
+                VALUES (?, ?, 'unread', 'outside_library', NULL, ?, ?)
                 ON CONFLICT(repo_id) DO UPDATE SET
                     content = excluded.content,
+                    is_ai_generated = excluded.is_ai_generated,
                     edited_at = excluded.edited_at
                 """,
-                arguments: [repoId, content, nowISO]
+                arguments: [repoId, content, isAIGenerated, nowISO]
             )
         }
         postContentDidChange(repoId: repoId, content: content, editedAt: nowISO)
     }
 
     /// 仅更新 status；行不存在则创建一行（content=NULL）。editedAt 自动设为 now。
+    ///
+    /// 只有状态真正从非 `using` 进入 `using` 时才自动入库。这样用户把仍在使用的
+    /// repo 明确移出知识库后，UI / Companion 重复保存同一个 `using` 值不会覆盖用户选择。
+    /// 从 `using` 改成其它状态也只更新阅读状态，不反向修改知识库归属。
     func updateStatus(repoId: Int64, status: RepoStatus) async throws {
         let nowISO = ISO8601DateFormatter.shared.string(from: Date())
         let insertedLibraryState = status == .using
             ? LibraryState.inLibrary.rawValue
             : LibraryState.outsideLibrary.rawValue
         let insertedLibraryUpdatedAt: String? = status == .using ? nowISO : nil
-        try await database.writer.write { db in
+        let didEnterLibrary = try await database.writer.write { db in
+            let previous = try Row.fetchOne(
+                db,
+                sql: "SELECT status, library_state FROM repo_notes WHERE repo_id = ?",
+                arguments: [repoId]
+            )
+            let previousStatus: RepoStatus? = previous.map { row in
+                let raw: String = row["status"]
+                return RepoStatus.parse(raw)
+            }
+            let previousLibraryState: LibraryState = previous.map { row in
+                let raw: String? = row["library_state"]
+                return LibraryState.parse(raw)
+            } ?? .outsideLibrary
+
             try db.execute(
                 sql: """
                 INSERT INTO repo_notes (
@@ -245,11 +264,14 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
                 ON CONFLICT(repo_id) DO UPDATE SET
                     status = excluded.status,
                     library_state = CASE
-                        WHEN excluded.status = 'using' THEN 'in_library'
+                        WHEN excluded.status = 'using' AND repo_notes.status != 'using'
+                            THEN 'in_library'
                         ELSE repo_notes.library_state
                     END,
                     library_updated_at = CASE
-                        WHEN excluded.status = 'using' AND repo_notes.library_state != 'in_library'
+                        WHEN excluded.status = 'using'
+                            AND repo_notes.status != 'using'
+                            AND repo_notes.library_state != 'in_library'
                             THEN excluded.edited_at
                         ELSE repo_notes.library_updated_at
                     END,
@@ -257,8 +279,11 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
                 """,
                 arguments: [repoId, status.rawValue, insertedLibraryState, insertedLibraryUpdatedAt, nowISO]
             )
+            return status == .using
+                && previousStatus != .using
+                && previousLibraryState != .inLibrary
         }
-        if status == .using {
+        if didEnterLibrary {
             postLibraryStateDidChange(repoId: repoId, state: .inLibrary)
         }
     }

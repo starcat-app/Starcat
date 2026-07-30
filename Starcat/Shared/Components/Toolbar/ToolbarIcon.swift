@@ -30,7 +30,6 @@ enum ToolbarIconMetrics {
         switch systemName {
         // compass 笔画细，且在 ExternalLinksMenu 的 ControlGroup 左半格内更显小。
         case "safari": 14.5
-        case "chevron.left.circle", "arrow.left.circle": 14
         default: defaultFontSize
         }
     }

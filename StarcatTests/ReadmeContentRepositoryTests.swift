@@ -174,6 +174,60 @@ struct ReadmeContentRepositoryTests {
         #expect(markdown == "raw md",
                 "readme_contents 直接绑 repos FK,不应被 readmes 删除连带清掉")
     }
+
+    @Test("Private 缓存清理不影响 Public README 或项目数据")
+    func clearPrivateRemoteCachesIsSelective() async throws {
+        let (repository, database, privateRepoID) = try await makeRepoAndDb()
+        let publicRepoID: Int64 = 8
+        try await database.writer.write { db in
+            try db.execute(
+                sql: "UPDATE repos SET is_private = 1 WHERE id = ?",
+                arguments: [privateRepoID]
+            )
+            try db.execute(
+                sql: """
+                    INSERT INTO repos (
+                        id, owner, name, full_name, stars_count, forks_count, watchers_count,
+                        html_url, is_private, is_fork, is_archived, is_starred
+                    ) VALUES (?, 'public', 'repo', 'public/repo', 0, 0, 0,
+                              'https://github.com/public/repo', 0, 0, 0, 0)
+                    """,
+                arguments: [publicRepoID]
+            )
+        }
+        try await repository.upsert(Readme(
+            repoId: privateRepoID,
+            renderedHtml: "<p>private</p>",
+            etag: nil,
+            lastModified: nil,
+            cachedAt: "2026-07-29T00:00:00Z",
+            size: 14
+        ))
+        try await repository.upsertContent(
+            repoId: privateRepoID,
+            content: "private markdown",
+            at: Date()
+        )
+        try await repository.upsert(Readme(
+            repoId: publicRepoID,
+            renderedHtml: "<p>public</p>",
+            etag: nil,
+            lastModified: nil,
+            cachedAt: "2026-07-29T00:00:00Z",
+            size: 13
+        ))
+
+        let deleted = try await repository.deletePrivateRemoteCaches()
+
+        #expect(deleted == 1)
+        #expect(try await repository.find(repoId: privateRepoID) == nil)
+        #expect(try await repository.findContent(repoId: privateRepoID) == nil)
+        #expect(try await repository.find(repoId: publicRepoID)?.renderedHtml == "<p>public</p>")
+        try await database.writer.read { db in
+            let repoCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM repos")
+            #expect(repoCount == 2)
+        }
+    }
 }
 
 /// Notification 回调没有 actor 隔离，测试状态必须显式加锁；直接捕获并修改局部变量在

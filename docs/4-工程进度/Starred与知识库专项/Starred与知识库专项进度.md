@@ -36,6 +36,7 @@
 - [x] `GRDBRepoRepository` 支持未 star repo 入库写入。
 - [x] 单测覆盖 status/content/library state 互不覆盖。
 - [x] 单测覆盖设置 `RepoStatus.using` 时自动设为 `libraryState = .inLibrary`。
+- [x] 单测覆盖重复保存已有 `RepoStatus.using` 不覆盖用户明确移出的 `.outsideLibrary`。
 - [x] 单测覆盖取消 `RepoStatus.using` 时不自动取消入库。
 - [x] 单测覆盖手动加入知识库时默认 `RepoStatus.unread`。
 - [x] 单测覆盖从 `RepoStatus.using` 自动入库时保持 `using`。
@@ -102,10 +103,8 @@
 - [x] 详情页 ❤️ 写入失败时保持原状态,不先变更再回滚。
 - [x] 未 star repo 也能通过 ❤️ 加入知识库。
 - [x] 详情页 ❤️ 清晰展示单仓是否已入库,作为单 repo 级查看入口。
-- [x] 已入库且 `using` 的 repo 点击取消入库时弹二次确认。
-- [x] 二次确认后同时设置 `libraryState = .outsideLibrary` 并把 `RepoStatus.using` 降级为 `read`。
-- [x] 二次确认文案明确说明会从“正在使用”改为“已读”。
-- [x] 非 `using` 的已入库 repo 移出知识库不弹确认。
+- [x] 已入库且 `using` 的 repo 移出知识库时只更新 `libraryState`,保留 `using`。
+- [x] 所有阅读状态的 repo 移出知识库均不弹状态降级确认。
 - [x] 设置 `RepoStatus.using` 自动入库时给轻量 toast,不弹确认。
 - [x] 移出知识库只更新 `libraryState`,不删除 notes/tags/status/Releases 订阅关系/repo metadata。
 - [x] 移出知识库后,若 repo 同时不在 starred 与知识库,release 轮询不再自动刷新它。

@@ -215,10 +215,10 @@ enum RepoDetailAction: Identifiable {
     /// 若未来需要特化（如 Activity-announcement 想跳别处），改用 `.custom` 显式注入。
     case share
 
-    /// AI 窗口按钮（摘要 / 标签 / 对话三段）。
+    /// AI 摘要 / 对话入口的业务可见性信号。
     ///
-    /// Scaffold 内部用 `RepoAIOpenButton(repo:)` 渲染，复用现有 AI 窗口控制器。
-    /// **不带 handler**——同 `.share` 决策，AI 窗口行为对所有 repo 一致。
+    /// 主入口由详情页底部 `RepoAIFloatingOverlay` 承载；附属独立窗口只能从底部
+    /// 面板内部派生。**不带 handler**——同 `.share` 决策，AI 行为对所有 repo 一致。
     case ai
 
     // v2.0（2026-06-16, dong4j 反馈）：原 `.securityScore` 已删除。OpenSSF 入口

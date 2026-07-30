@@ -81,6 +81,7 @@ struct GRDBReleaseSubscriptionRepository: ReleaseSubscriptionRepositoryProtocol 
                 arguments: [repoId, primingReleaseId, primingTagName, nowISO, nowISO]
             )
         }
+        postSubscriptionDidChange(repoId: repoId)
     }
 
     func unsubscribe(repoId: Int64) async throws {
@@ -95,6 +96,7 @@ struct GRDBReleaseSubscriptionRepository: ReleaseSubscriptionRepositoryProtocol 
                 arguments: [nowISO, repoId]
             )
         }
+        postSubscriptionDidChange(repoId: repoId)
     }
 
     func setNotifyEnabled(repoId: Int64, enabled: Bool) async throws {
@@ -109,6 +111,7 @@ struct GRDBReleaseSubscriptionRepository: ReleaseSubscriptionRepositoryProtocol 
                 arguments: [enabled ? 1 : 0, nowISO, repoId]
             )
         }
+        postSubscriptionDidChange(repoId: repoId)
     }
 
     func updatePollCursor(
@@ -132,5 +135,13 @@ struct GRDBReleaseSubscriptionRepository: ReleaseSubscriptionRepositoryProtocol 
                 arguments: [latestReleaseId, latestTagName, polledISO, nowISO, repoId]
             )
         }
+    }
+
+    private func postSubscriptionDidChange(repoId: Int64) {
+        NotificationCenter.default.post(
+            name: .releaseSubscriptionDidChange,
+            object: nil,
+            userInfo: ["repoId": repoId]
+        )
     }
 }

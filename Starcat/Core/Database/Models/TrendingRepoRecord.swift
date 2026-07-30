@@ -97,7 +97,8 @@ struct TrendingRepoRecord: Codable, FetchableRecord, MutablePersistableRecord, E
 
     // MARK: - 缓存维度
 
-    /// ISO8601 字符串。仅用于"缓存于 X 前"展示，不参与 TTL 判断（dong4j 决策 ttl_c：不设 TTL）。
+    /// ISO8601 字符串。Repository 按桶取 `max(cached_at)`，供 ViewModel 执行
+    /// daily 1h / weekly 6h / monthly 24h 的 TTL 判断并展示新鲜度。
     var cachedAt: String
 
     // MARK: - Codable Keys（snake_case 与表列对齐）

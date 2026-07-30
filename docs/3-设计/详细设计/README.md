@@ -33,7 +33,7 @@
 | 28 | [搜索增强最终方案](28-搜索增强最终方案.md) | 保留 Manage 快速过滤，新增 `⌘K` 全局搜索中心，聚合 Local / GitHub / AnySearch Web 并复用现有详情与动作体系 |
 | 29 | [关键词与全文检索设计](29-关键词与全文检索设计.md) | 双引擎落地实现：FTS5（repos_fts unicode61 + notes_fts trigram + BM25 排序）+ 向量语义（A 显示重标定 + B 字面 boost + C FTS hit 加权 + tier 1-4★）+ 示例走查 + 后期优化方向 |
 | 30 | [本地 RAG 设计](30-本地RAG设计.md) | 知识库 RAG 详细设计：默认只使用 `libraryState == .inLibrary` repo，新增 chunk-level RAG 索引、知识库问答工作台、citation chip 与 evidence inspector |
-| 31 | [Trending / Weekly 多级缓存改造](31-Trending-Weekly缓存改造.md) | R-06 完整记录：客户端 SQLite TTL（Trending 24h / Weekly 12h）+ 后端内存缓存（trending 分桶 1h/6h/24h + ETag、weekly 6h + pre-gzip + bulk endpoint）+ Weekly 渐进式 SWR 双轨制（dataSource .local/.remote）、3 个永久陷阱、关键决策一览、4 个项目共 33 个新测试用例验证 |
+| 31 | [Trending / Weekly 多级缓存改造](31-Trending-Weekly缓存改造.md) | R-06 完整记录：客户端 SQLite TTL（Trending 分桶 1h/6h/24h、Weekly 6h）+ 后端同窗口内存缓存（ETag / pre-gzip / bulk endpoint）+ Weekly 渐进式 SWR 双轨制（dataSource .local/.remote） |
 | 32 | [Manage 列表分页与首页边沿上屏](32-Manage列表分页与首页边沿上屏.md) | Manage 列表分页、首页边沿上屏与滚动体验调整 |
 | 33 | [OpenSSF Scorecard 安全评分设计](33-OpenSSF-Scorecard-安全评分设计.md) | 已 star 仓库 OpenSSF Scorecard 缓存、列表 full_name 行徽章、详情页雷达图、后台刷新、i18n 与测试边界 |
 | 34 | [StarcatCLI 与外部 MCP 桥接设计](34-StarcatCLI与外部MCP桥接设计.md) | stdio MCP adapter + CLI 入口,解决 Codex / 老式 client 不兼容 HTTP MCP 的兼容性问题 |
@@ -41,6 +41,17 @@
 | 36 | [CodebaseMemory 集成设计](36-CodebaseMemory集成设计.md) | codebase-memory-mcp 二进制打包进 bundle + 持久解压 + POSIX 端口探测 + Process spawn UI 子进程 + 6 步状态机 + 设置页/Storage Tab 集成 + App Store 沙盒与签名策略 |
 | 37 | [外部搜索服务设计](37-外部搜索服务设计.md) | External Search Provider 抽象、设置页、SearchCenter Provider View、External Context 单 Provider / Pro 聚合与缓存策略 |
 | 42 | [Weekly 多来源采集与置顶](42-Weekly多来源采集与置顶.md) | 固定来源目录、持久化 enrich 队列、HelloGitHub 回填、AI 情报 Skill、动态来源缓存与多项目置顶的落地契约 |
+| 45 | [后端服务版本注入与 Ping 契约](45-后端服务版本注入与Ping契约.md) | 六个 Go 服务统一以 release tag 为真源，经 Docker build arg 与 linker `-X` 注入版本，并由 `/api/v1/ping` 返回 |
+| 46 | [快捷键与应用命令设计](46-快捷键与应用命令设计.md) | Stars 同步、RAG 工作台与当前仓库 AI 的快捷键、上下文命令路由、冲突校验和设置页归属 |
+| 48 | [18 种语言本地化扩展详细设计](48-18种语言本地化扩展详细设计.md) | 18 个 Locale 的仓库边界、xcloc 状态机、导入导出、CI 门禁、运行时接入、RTL 与验收方案 |
+| 49 | [洞察中心详细设计](49-洞察中心详细设计.md) | 已实现：我的洞察、仓库洞察、v16 缓存、结构化下钻、GitHub 活动与 Star 趋势；外部授权门槛单列 |
+| 50 | [仓库星标历史整体落地方案](50-仓库星标历史整体落地方案.md) | 已实现本地快照、Discovery API 与趋势 UI；M0 真实 BigQuery 验证、部署与人工验收待授权 |
+| 51 | [我的项目整体落地方案](51-我的项目整体落地方案.md) | 星标模块下的个人 / 组织 / Private 项目分类、GitHub App 只读授权、v17 关系表、同步、详情复用与隐私边界 |
+| 52 | [Alfred 外部搜索集成详细设计](52-Alfred外部搜索集成详细设计.md) | Starcat Pro 外部集成：复用 CLI/MCP 全局搜索、跨来源去重、owner avatar 缓存、Deep Link / GitHub 打开与三仓库实施验收契约 |
+| 53 | [uTools 与 Raycast 外部搜索集成详细设计](53-uTools与Raycast外部搜索集成详细设计.md) | 复用 `starcat search` 公共契约，定义 uTools list 插件、Raycast Extension、头像差异、取消机制、独立仓库与发布验收 |
+| 54 | [Starcat 外部应用插件化集成扩展初步方案](54-Starcat外部应用插件化集成扩展初步方案.md) | 在 Alfred、uTools、Raycast 之外，规划 Spotlight、Shortcuts、LaunchBar、VS Code、PopClip、Obsidian、JetBrains 与 MCP Host 的分层接入和实施优先级 |
+| 55 | [Starcat macOS 桌面小组件初步方案](55-macOS桌面小组件初步方案.md) | Focus、今日重逢、Release Watch 等 WidgetKit 组件，以及 App Group 快照、头像、Deep Link、隐私、刷新和 Store / Direct 双渠道边界 |
+| 56 | [macOS 桌面小组件详细落地方案](56-macOS桌面小组件详细落地方案.md) | 双渠道 Widget Extension、App Group 快照、用户隔离、三个首发组件、测试、签名与多轮审查的可执行方案 |
 
 ---
 
@@ -75,6 +86,20 @@
 
 | 日期 | 更新内容 |
 |------|---------|
+| 2026-07-30 | 新增 56 文档：冻结 macOS 桌面小组件工程结构、快照契约、实施提交、测试和审查流程 |
+| 2026-07-30 | 新增 54 / 55 文档：外部应用插件化扩展候选与 macOS WidgetKit 初步落地方案 |
+| 2026-07-30 | 回填 53 文档：Raycast Extension、41 项自动化、构建证据与真机人工验收边界 |
+| 2026-07-29 | 回填 53 文档：uTools 0.1.0 插件、公共 fixtures、Node 16 / 当前 Node 自动化证据与真机人工验收边界 |
+| 2026-07-29 | 新增 53 文档：Alfred 代码审查门槛、共享 Launcher 契约、uTools / Raycast 可直接实施方案与验收清单 |
+| 2026-07-29 | 新增 52 文档：Alfred Pro 外部搜索集成、CLI/MCP 契约、头像缓存、来源展示、三仓库实施顺序与验收方案 |
+| 2026-07-29 | 新增 51 文档：我的项目一等分类、GitHub App 双授权、v17 数据关系、同步链路、现有详情与 Star History 复用方案 |
+| 2026-07-27 | 回填 49 / 50 真实实现状态、最终文件与测试边界，明确 M0、部署和人工验收仍受授权门禁 |
+| 2026-07-27 | 合并 49 / 50 文档：仓库星标历史改为仓库洞察内的 Star 趋势区块，共用一次 v16 迁移与验收链路 |
+| 2026-07-27 | 新增 49 文档：我的洞察与仓库洞察的 Starcat 三栏接入、数据口径、远端缓存和分阶段实施方案 |
+| 2026-07-24 | 新增 48 文档：Starcat 18 种语言范围、公开本地化协作、脚本与 CI、App 运行时和 RTL 验收契约 |
+| 2026-07-21 | 新增 45 文档：六个后端服务的版本真源、构建注入、ping 契约、发布流程与分批验收方案 |
+| 2026-07-21 | 新增 46 文档：记录快捷键首轮范围、应用命令路由、键位冲突和设置页归属 |
+| 2026-07-18 | 同步 31 文档当前缓存策略：Trending 客户端改为 1h/6h/24h 分桶，Weekly 客户端与后端统一为 6h |
 | 2026-07-16 | 新增 42 文档：Weekly 多来源采集、异步 Worker、HelloGitHub、AI 情报 Skill、动态来源缓存与置顶实现契约 |
 | 2026-07-03 | 新增 37 文档：External Search Provider 抽象、SearchCenter 单 Provider View、AI External Context 单 Provider / Pro 聚合、Provider 隔离缓存与本机凭据边界 |
 | 2026-07-03 | 重写 30 文档：本地 RAG 从“已 star 仓库问答”调整为“知识库问答”，补齐 chunk-level 索引、独立工作台、引用证据与实施切片 |

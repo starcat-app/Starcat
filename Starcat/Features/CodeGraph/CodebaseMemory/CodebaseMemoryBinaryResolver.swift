@@ -52,6 +52,13 @@ actor CodebaseMemoryBinaryResolver {
     /// - Throws: `CodebaseMemoryError.binaryMissing` 如果 bundle 内缺少二进制
     func resolveExecutable() throws -> URL {
         guard let bundleURL = bundleCodebaseURL else {
+            DiagnosticLogStore.record(
+                level: .critical,
+                visibility: .issue,
+                category: "codebase-memory",
+                operation: "codebaseMemory.resolveBinary",
+                message: "Bundled CodebaseMemory executable is missing"
+            )
             throw CodebaseMemoryError.binaryMissing
         }
 
@@ -62,6 +69,14 @@ actor CodebaseMemoryBinaryResolver {
 
         let permissions = (try? fileManager.attributesOfItem(atPath: bundleURL.path)[.posixPermissions] as? Int) ?? 0
         AppLog.ui.error("CodebaseMemory bundle binary not executable bundle=\(bundleURL.path, privacy: .public) permissions=\(String(permissions, radix: 8), privacy: .public)")
+        DiagnosticLogStore.record(
+            level: .critical,
+            visibility: .issue,
+            category: "codebase-memory",
+            operation: "codebaseMemory.resolveBinary",
+            message: "Bundled CodebaseMemory executable is not executable",
+            context: ["permissions": String(permissions, radix: 8)]
+        )
         throw CodebaseMemoryError.binaryNotExecutable
     }
 }

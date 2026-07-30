@@ -47,11 +47,10 @@ Smart Collections 新增系统集合:
 - GitHub stars 同步进来的 repo 默认为 `.outsideLibrary`。
 - 用户点击 ❤️ 后设为 `.inLibrary`。
 - 用户再次点击已入库 ❤️ 后回到 `.outsideLibrary`。
-- 用户标为 `using` 时,如果尚未入库,同步设为 `.inLibrary`,因为“正在使用”与“不在知识库”语义冲突。
+- 用户的状态真正从非 `using` 变为 `using` 时,如果尚未入库,同步设为 `.inLibrary`;重复保存已有 `using` 不覆盖用户明确设置的 `.outsideLibrary`。
 - 设置 `using` 自动入库时不弹确认,但给轻量 toast,例如“已标记正在使用,并加入知识库”。
-- 用户从 `using` 改回 `read` / `unread` 时,保留 `libraryState = .inLibrary`;取消使用状态不代表取消知识库归属。
-- 用户从知识库移除时,如果 repo 仍是 `using`,需要二次确认;确认后同时设置 `libraryState = .outsideLibrary` 并把 `RepoStatus.using` 降级为 `read`。
-- 二次确认只用于 `using` repo,确认文案需要明确会把状态从“正在使用”改为“已读”;普通已入库 repo 移出时不弹确认。
+- 用户从 `using` 改回 `read` / `unread` 时,保持当前 `libraryState` 不变;取消使用状态不代表加入或移出知识库。
+- 用户从知识库移除时只设置 `libraryState = .outsideLibrary`;即使 repo 仍是 `using` 也不修改阅读状态、不弹状态降级确认。
 - 未 star 外部 repo 点击 ❤️ 后落本地 repo 元数据,`isStarred = false`, `libraryState = .inLibrary`。
 - 未入库 repo 加入知识库后默认 `RepoStatus.unread`;如果是从 `RepoStatus.using` 自动入库,则保持 `using`。
 - 未 star 已入库 repo 允许完整使用本地 notes / tags / status,能力边界从“必须 starred”调整为“已 star 或已入库”。
@@ -181,7 +180,7 @@ Smart Collections 新增系统集合:
 - 加入成功后可显示轻量操作 `同时 Star`,但不强制、不自动。
 - 如果用户点击 `Star`,仍走现有 StarActionService。
 - Search Center 搜索结果需要同时展示入库状态,并允许直接加入/移出知识库。
-- Search Center 直接移出知识库时沿用详情页规则: `using` repo 弹二次确认,非 `using` repo 直接移出。
+- Search Center 直接移出知识库时沿用详情页规则:只更新 `libraryState`,不修改阅读状态。
 - Browser Plugin 中的 ❤️ 与详情页一致: 空心表示未入库,实心表示已入库,点击只更新 Starcat 私有知识库状态。
 - Browser Plugin 操作失败时显示插件内 toast,并回滚 ❤️ 状态。
 

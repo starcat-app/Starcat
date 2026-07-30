@@ -16,6 +16,10 @@ struct ExploreView: View {
 
     var trendingRepository: (any TrendingRepositoryProtocol)?
     var githubAPIClient: (any GitHubAPIClientProtocol)?
+    /// 由 Repo List 窗口会话持有，跨 Manage / Explore / Activity 切换不销毁。
+    let discoveryViewModel: ExploreDiscoveryViewModel
+    @Binding var trendingViewModel: TrendingViewModel?
+    @Binding var weeklyViewModel: WeeklyContentViewModel?
 
     @Binding var selectedMode: ExploreMode
     @Binding var selectedTrendingLanguage: TrendingLanguage
@@ -31,27 +35,23 @@ struct ExploreView: View {
     let onRepoCountChange: (Int) -> Void
 
     @Environment(AppDependencies.self) private var dependencies
-    @State private var discoveryViewModel = ExploreDiscoveryViewModel()
 
     var body: some View {
         Group {
+            // 同一时刻只让一个 List 进入 AppKit 布局树。用 opacity 隐藏的 List 仍会参与
+            // layout / display-list 提交，三个常驻列表会把一次分类切换放大成整窗重排。
+            // ViewModel 继续由 ExploreView 的 @State 持有，因此切换分类不会丢缓存。
             switch selectedMode {
             case .trending:
                 trendingContent
             case .weekly:
-                WeeklyContentView(selectedLanguage: $selectedWeeklyLanguage)
+                weeklyContent
             case .discover, .popular, .newReleases:
-                ExploreDiscoveryListView(
-                    viewModel: discoveryViewModel,
-                    mode: selectedMode,
-                    selectedLanguage: $selectedDiscoveryLanguage,
-                    selectedTopic: $selectedDiscoveryTopic,
-                    selectedPlatform: $selectedDiscoveryPlatform,
-                    selectedRepoID: $selectedDiscoveryRepoID,
-                    selectedRepo: $selectedDiscoveryRepo,
-                    onRepoCountChange: onRepoCountChange
-                )
+                discoveryContent
             }
+        }
+        .task {
+            ensurePersistentChildViewModels()
         }
         .onChange(of: selectedMode) { _, mode in
             switch mode {
@@ -64,14 +64,46 @@ struct ExploreView: View {
                 clearTrendingSelection()
             }
         }
+        // `selectedMode` 来自 Sidebar 的 List(selection:)；系统选中事务可能携带动画。
+        // 若不在 Explore 边界截断，Discovery / Trending / Weekly 根视图替换会继承该
+        // transaction，AppKit 在动画周期内反复 layout 整个中栏。这里只拦分类变化，
+        // Skeleton 的 TimelineView、列表内独立交互动画仍使用各自事务。
+        .transaction(value: selectedMode) { transaction in
+            transaction.animation = nil
+            transaction.disablesAnimations = true
+        }
+    }
+
+    private var discoveryContent: some View {
+        ExploreDiscoveryListView(
+            viewModel: discoveryViewModel,
+            mode: selectedMode,
+            selectedLanguage: $selectedDiscoveryLanguage,
+            selectedTopic: $selectedDiscoveryTopic,
+            selectedPlatform: $selectedDiscoveryPlatform,
+            selectedRepoID: $selectedDiscoveryRepoID,
+            selectedRepo: $selectedDiscoveryRepo,
+            onRepoCountChange: onRepoCountChange
+        )
+    }
+
+    @ViewBuilder
+    private var weeklyContent: some View {
+        if let weeklyViewModel {
+            WeeklyContentView(
+                viewModel: weeklyViewModel,
+                selectedLanguage: $selectedWeeklyLanguage
+            )
+        } else {
+            RepoSkeletonListView(rowCount: 10)
+        }
     }
 
     @ViewBuilder
     private var trendingContent: some View {
-        if let trendingRepository, let githubAPIClient {
+        if let trendingViewModel {
             TrendingView(
-                repository: trendingRepository,
-                githubAPIClient: githubAPIClient,
+                viewModel: trendingViewModel,
                 selectedLanguage: $selectedTrendingLanguage,
                 selectedRepoID: $selectedTrendingRepoID,
                 selectedTrendingRepo: $selectedTrendingRepo,
@@ -82,6 +114,27 @@ struct ExploreView: View {
                 systemImage: "chart.line.uptrend.xyaxis",
                 titleKey: "empty.trendingUnavailable",
                 subtitleKey: "empty.trendingComingSoon"
+            )
+        }
+    }
+
+    /// Explore 子分类用条件分支渲染，但数据模型应由父容器持有；否则每次切回 Trending / Weekly
+    /// 都会重新构造 ViewModel、重新读缓存并启动任务，形成可见的二次等待。
+    private func ensurePersistentChildViewModels() {
+        if trendingViewModel == nil,
+           let trendingRepository,
+           let githubAPIClient {
+            trendingViewModel = TrendingViewModel(
+                repository: trendingRepository,
+                githubAPIClient: githubAPIClient
+            )
+        }
+        if weeklyViewModel == nil {
+            weeklyViewModel = WeeklyContentViewModel(
+                api: dependencies.weeklyAPI,
+                selectionService: dependencies.weeklySelectionService,
+                languageStore: dependencies.weeklyLanguageStore,
+                bulkRepository: dependencies.weeklyBulkRepository
             )
         }
     }
@@ -112,23 +165,29 @@ private struct ExploreDiscoveryListView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(AuthSession.self) private var authSession
     @Environment(\.locale) private var locale
-    @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var libraryStateMap: [Int64: LibraryState] = [:]
+    @State private var wikiAvailabilityMap: [Int64: Bool] = [:]
+    @State private var rowRevealRevision = 0
 
     var body: some View {
         VStack(spacing: 0) {
             filterBar
             Divider()
             content
-                .id(contentStateID)
-                .transition(contentTransition)
-                .animation(contentAnimation, value: contentStateID)
         }
         .task(id: queryIdentity) {
             restoreSortPreferenceIfNeeded()
+            // 恢复偏好可能改变 task identity；先让 SwiftUI 取消旧代际，旧 task 不能继续
+            // 用恢复前 identity 再发一次 reload，避免首次进入出现双发布。
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            let requestedIdentity = queryIdentity
             selectedRepoID = nil
             selectedRepo = nil
-            await reloadLibraryStateMap()
+            async let libraryLoad: Void = reloadLibraryStateMap()
+            if settings.libraryFilter != .all {
+                await libraryLoad
+            }
             viewModel.sortOption = currentSort
             await viewModel.reload(
                 repository: dependencies.discoveryRepository,
@@ -138,19 +197,48 @@ private struct ExploreDiscoveryListView: View {
                 platform: mode == .discover ? selectedPlatform : nil,
                 sort: currentSort
             )
+            guard !Task.isCancelled,
+                  viewModel.publishedQueryIdentity == requestedIdentity
+            else { return }
+            if settings.libraryFilter == .all {
+                await libraryLoad
+            }
+            guard !Task.isCancelled,
+                  viewModel.publishedQueryIdentity == requestedIdentity
+            else { return }
+            publishLatestSummary()
+            await Task.yield()
             applySelectionPolicy()
             reportRepoCount()
         }
         .task {
             await observeLibraryStateChanges()
         }
+        .task(id: settings.wikiAvailabilityFilter.rawValue) {
+            await reloadWikiAvailabilityMap(for: viewModel.repos)
+        }
         .onChange(of: viewModel.reposRevision) { _, _ in
+            guard hasPublishedCurrentQuery else { return }
             applySelectionPolicy()
             reportRepoCount()
+        }
+        .onChange(of: viewModel.publishedQueryIdentity) { _, publishedIdentity in
+            // reposRevision 会在骨架屏仍显示时提前变化；只有当前查询正式发布后才触发行动画。
+            // 分页和同查询刷新不会改变 published identity，因此不会重复播放首屏 reveal。
+            guard publishedIdentity == queryIdentity else { return }
+            rowRevealRevision &+= 1
         }
         .onChange(of: settings.openFirstDetailOnCategoryChange) { _, enabled in
             guard enabled else { return }
             applySelectionPolicy()
+        }
+        .starcatRefreshCommand(
+            pane: .list,
+            identity: "explore-\(queryIdentity)-\(viewModel.isRefreshing)-\(viewModel.isLoading)",
+            title: String.l10n("commands.actions.refreshCurrentList"),
+            isEnabled: !viewModel.isRefreshing && !viewModel.isLoading
+        ) {
+            refreshCurrentDiscoveryList()
         }
     }
 
@@ -179,24 +267,32 @@ private struct ExploreDiscoveryListView: View {
                 disabled: viewModel.isRefreshing || viewModel.isLoading,
                 tooltip: String.l10n("explore.refresh.tooltip")
             ) {
-                Task {
-                    await viewModel.reload(
-                        repository: dependencies.discoveryRepository,
-                        mode: mode,
-                        language: mode == .discover ? nil : selectedLanguage,
-                        topic: mode == .discover ? selectedTopic : nil,
-                        platform: mode == .discover ? selectedPlatform : nil,
-                        sort: currentSort,
-                        showsRefreshIndicator: true
-                    )
-                    applySelectionPolicy()
-                    reportRepoCount()
-                }
+                refreshCurrentDiscoveryList()
             }
         }
         .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
         .padding(.top, ManageListFilterBarMetrics.topPadding)
         .padding(.bottom, ManageListFilterBarMetrics.bottomPadding)
+    }
+
+    /// Toolbar 与 `⌘R` 共用同一刷新路径，只请求当前 Explore 模式及其筛选身份。
+    private func refreshCurrentDiscoveryList() {
+        let requestedIdentity = queryIdentity
+        Task {
+            await viewModel.reload(
+                repository: dependencies.discoveryRepository,
+                mode: mode,
+                language: mode == .discover ? nil : selectedLanguage,
+                topic: mode == .discover ? selectedTopic : nil,
+                platform: mode == .discover ? selectedPlatform : nil,
+                sort: currentSort,
+                showsRefreshIndicator: true
+            )
+            guard viewModel.publishedQueryIdentity == requestedIdentity else { return }
+            publishLatestSummary()
+            applySelectionPolicy()
+            reportRepoCount()
+        }
     }
 
     private var sortBinding: Binding<ExploreSortOption> {
@@ -236,27 +332,31 @@ private struct ExploreDiscoveryListView: View {
         settings.setListPreferenceValue(sort.rawValue, for: sortPreferenceKey, login: currentLogin)
     }
 
-    @ViewBuilder
     private var content: some View {
-        if viewModel.isLoading && viewModel.repos.isEmpty {
-            RepoSkeletonListView(rowCount: 10)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error = viewModel.loadError, viewModel.repos.isEmpty {
-            ExploreEmptyState(
-                systemImage: "exclamationmark.triangle",
-                titleKey: "error.loadFailed",
-                subtitleText: error
-            )
-        } else if viewModel.repos.isEmpty {
-            ExploreEmptyState(
-                systemImage: mode.systemImage,
-                titleKey: "explore.empty.title",
-                subtitleKey: "explore.empty.subtitle"
-            )
-        } else {
+        ZStack {
+            // 列表宿主始终保留；查询切换只在中栏叠加局部状态，不触发整棵 List 重建。
             VStack(spacing: 0) {
                 cacheWarningBanner
                 repoList
+            }
+            .opacity(hasPublishedCurrentQuery && !viewModel.repos.isEmpty ? 1 : 0)
+            .allowsHitTesting(hasPublishedCurrentQuery && !viewModel.repos.isEmpty)
+
+            if !hasPublishedCurrentQuery || (viewModel.isLoading && viewModel.repos.isEmpty) {
+                RepoSkeletonListView(rowCount: 10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = viewModel.loadError, viewModel.repos.isEmpty {
+                ExploreEmptyState(
+                    systemImage: "exclamationmark.triangle",
+                    titleKey: "error.loadFailed",
+                    subtitleText: error
+                )
+            } else if viewModel.repos.isEmpty {
+                ExploreEmptyState(
+                    systemImage: mode.systemImage,
+                    titleKey: "explore.empty.title",
+                    subtitleKey: "explore.empty.subtitle"
+                )
             }
         }
     }
@@ -313,7 +413,11 @@ private struct ExploreDiscoveryListView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
-                .listRowReveal(index: item.index, snapshotID: viewModel.reposRevision)
+                .listRowReveal(
+                    index: item.index,
+                    snapshotID: rowRevealRevision,
+                    replayAfterSnapshotCommit: true
+                )
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
                 .onAppear {
@@ -335,6 +439,7 @@ private struct ExploreDiscoveryListView: View {
         .alternatingRowBackgrounds()
         .scrollContentBackground(.hidden)
         .refreshable {
+            let requestedIdentity = queryIdentity
             await viewModel.reload(
                 repository: dependencies.discoveryRepository,
                 mode: mode,
@@ -344,6 +449,8 @@ private struct ExploreDiscoveryListView: View {
                 sort: currentSort,
                 showsRefreshIndicator: true
             )
+            guard viewModel.publishedQueryIdentity == requestedIdentity else { return }
+            publishLatestSummary()
             applySelectionPolicy()
             reportRepoCount()
         }
@@ -363,9 +470,16 @@ private struct ExploreDiscoveryListView: View {
             .hidden()
         }
         .task(id: viewModel.reposRevision) {
+            // 首屏先提交，再补当前 20 条的辅助信号，避免与 row 构造抢同一帧。
+            await Task.yield()
             let repoIDs = viewModel.repos.map(\.repoID)
-            await dependencies.openSSFScoreStore.loadCachedScores(for: repoIDs)
-            await dependencies.repoHealthStore.loadCachedSnapshots(for: repoIDs)
+            async let openSSF: Void = dependencies.openSSFScoreStore.loadCachedScores(for: repoIDs)
+            async let health: Void = dependencies.repoHealthStore.loadCachedSnapshots(for: repoIDs)
+            async let wiki: Void = reloadWikiAvailabilityMap(for: viewModel.repos)
+            _ = await (openSSF, health, wiki)
+            guard !Task.isCancelled else { return }
+            applySelectionPolicy()
+            reportRepoCount()
         }
     }
 
@@ -430,7 +544,7 @@ private struct ExploreDiscoveryListView: View {
 
     private func repoRowIdentity(for repo: DiscoveryRepoDTO) -> String {
         // 同一个 repo 可能同时出现在发现 / 热门 / 新发布；把 mode 和 release 时间纳入
-        // row identity，避免 SwiftUI List 复用旧卡片导致新发布的发布时间 chip 不刷新。
+        // row 内容 identity，避免 SwiftUI List 复用旧卡片导致新发布的发布时间 chip 不刷新。
         "\(mode.id)-\(repo.repoID)-\(repo.latestReleaseAt ?? "__no_release__")"
     }
 
@@ -444,8 +558,6 @@ private struct ExploreDiscoveryListView: View {
         repos.filter { repo in
             matchesGlobalFilters(
                 repoId: repo.repoID,
-                owner: repo.owner,
-                name: repo.name,
                 language: repo.language,
                 isArchived: repo.isArchived,
                 isFork: repo.isFork
@@ -455,8 +567,6 @@ private struct ExploreDiscoveryListView: View {
 
     private func matchesGlobalFilters(
         repoId: Int64,
-        owner: String,
-        name: String,
         language: String?,
         isArchived: Bool,
         isFork: Bool
@@ -481,7 +591,7 @@ private struct ExploreDiscoveryListView: View {
         case .outsideLibrary:
             guard libraryStateMap[repoId] != .inLibrary else { return false }
         }
-        if !matchesWikiFilter(owner: owner, name: name) { return false }
+        if !matchesWikiFilter(repoId: repoId) { return false }
         if !matchesAvailability(dependencies.repoHealthStore.snapshot(for: repoId) != nil, filter: settings.healthAvailabilityFilter) {
             return false
         }
@@ -491,12 +601,10 @@ private struct ExploreDiscoveryListView: View {
         return true
     }
 
-    private func matchesWikiFilter(owner: String, name: String) -> Bool {
+    private func matchesWikiFilter(repoId: Int64) -> Bool {
         guard settings.wikiAvailabilityFilter != .unknown else { return true }
-        guard let snapshot = DiskWikiCache.shared.load(owner: owner, repo: name) else {
-            return false
-        }
-        return matchesAvailability(!snapshot.indexedLinks.isEmpty, filter: settings.wikiAvailabilityFilter)
+        guard let available = wikiAvailabilityMap[repoId] else { return false }
+        return matchesAvailability(available, filter: settings.wikiAvailabilityFilter)
     }
 
     private func matchesAvailability(_ available: Bool, filter: RepoSignalAvailabilityFilter) -> Bool {
@@ -515,6 +623,19 @@ private struct ExploreDiscoveryListView: View {
         libraryStateMap = (try? await dependencies.repoNoteRepository.fetchAllLibraryStateMap()) ?? [:]
     }
 
+    private func reloadWikiAvailabilityMap(for repos: [DiscoveryRepoDTO]) async {
+        guard settings.wikiAvailabilityFilter != .unknown else {
+            wikiAvailabilityMap = [:]
+            return
+        }
+        let requests = repos.map {
+            WikiAvailabilityRequest(id: $0.repoID, owner: $0.owner, repo: $0.name)
+        }
+        let snapshot = await WikiAvailabilitySnapshotLoader.load(requests: requests)
+        guard !Task.isCancelled else { return }
+        wikiAvailabilityMap = snapshot
+    }
+
     private func observeLibraryStateChanges() async {
         let stream = NotificationCenter.default.notifications(named: .repoLibraryStateDidChange)
         for await note in stream {
@@ -526,34 +647,17 @@ private struct ExploreDiscoveryListView: View {
     }
 
     private var queryIdentity: String {
-        [
-            mode.id,
-            mode == .discover ? "__language_unused__" : (selectedLanguage ?? "__all__"),
-            mode == .discover ? (selectedTopic ?? "__all__") : "__topic_unused__",
-            mode == .discover ? (selectedPlatform ?? "__all__") : "__platform_unused__",
-            currentSort.id
-        ].joined(separator: "|")
-    }
-
-    private var contentStateID: String {
-        if viewModel.isLoading && viewModel.repos.isEmpty {
-            return "explore-loading"
-        }
-        if let error = viewModel.loadError, viewModel.repos.isEmpty {
-            return "explore-error-\(error)"
-        }
-        return "explore-content-\(mode.id)"
-    }
-
-    private var contentAnimation: Animation? {
-        reduceMotion ? nil : .easeOut(duration: 0.22)
-    }
-
-    private var contentTransition: AnyTransition {
-        reduceMotion ? .identity : .asymmetric(
-            insertion: .opacity.combined(with: .offset(y: 8)),
-            removal: .opacity
+        ExploreDiscoveryViewModel.queryIdentity(
+            mode: mode,
+            language: mode == .discover ? nil : selectedLanguage,
+            topic: mode == .discover ? selectedTopic : nil,
+            platform: mode == .discover ? selectedPlatform : nil,
+            sort: currentSort
         )
+    }
+
+    private var hasPublishedCurrentQuery: Bool {
+        viewModel.publishedQueryIdentity == queryIdentity
     }
 
     private var formattedFreshness: String? {
@@ -583,6 +687,12 @@ private struct ExploreDiscoveryListView: View {
 
     private func reportRepoCount() {
         onRepoCountChange(viewModel.total)
+    }
+
+    /// bulk 与 Sidebar 必须发布同一份 summary，避免应用长时间运行后根分类计数停在启动值。
+    private func publishLatestSummary() {
+        guard let summary = viewModel.latestSummary else { return }
+        dependencies.exploreCatalogStore.apply(summary)
     }
 }
 

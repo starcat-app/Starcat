@@ -142,7 +142,8 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning, KnowledgeR
             userPrompt: renderedUserPrompt(question: question, context: composerContext, metadataSnapshot: metadataSnapshot),
             model: model,
             parameters: parameters,
-            responseFormat: .jsonObject
+            responseFormat: .jsonObject,
+            usageContext: AIUsageContext(feature: .rag, phase: "planning")
         )
         let firstContent = try await runLLMRequest(
             request,

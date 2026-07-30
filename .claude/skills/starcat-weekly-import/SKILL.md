@@ -1,6 +1,6 @@
 ---
 name: starcat-weekly-import
-description: 从新闻摘要、项目清单、文章或其他批量文本中识别真实 GitHub 仓库，搜索并核验 owner/repo，向用户展示证据并在明确确认后，通过 starcat-weekly-api 批量写入 Weekly 的受控人工来源。用户提到 AI 情报采集、从文本找 GitHub 地址、批量录入 Starcat Weekly、解析项目清单或补全缺失仓库链接时使用。
+description: 从新闻摘要、项目清单、文章或其他批量文本中联网甄别并识别真实 GitHub 仓库，搜索和核验 owner/repo，向用户展示证据并在明确确认后，通过 starcat-weekly-api 批量写入 Weekly 的受控人工来源。未明确说明测试时，固定使用生产服务 https://starcat-weekly-api.fly.dev，并从 supports/starcat-weekly-api/.env 的 ADMIN_API_KEYS 读取管理员 Key。用户提到 AI 情报采集、从新闻标题找 GitHub 项目、从文本找 GitHub 地址、批量录入 Starcat Weekly、解析项目清单或补全缺失仓库链接时使用。
 ---
 
 # Starcat Weekly 情报采集
@@ -13,8 +13,12 @@ description: 从新闻摘要、项目清单、文章或其他批量文本中识�
 - 写入前调用 `GET /internal/sources?manual_import=true`，只使用响应中 `enabled=true` 且 `manual_import_enabled=true` 的来源。
 - 未指定分类时使用 `ai_intelligence`。如果用户指定的分类不在允许列表中，停止提交并解释原因。
 - 只提交确定为 GitHub 仓库的 `owner/repo`；组织主页、用户主页、GitHub Topics、Issue、Release、文件路径和搜索页都不是仓库。
+- 新闻标题是检索线索，不是仓库名：对于没有显式 GitHub URL 的每一条输入，必须联网定位发布主体和实际项目；不要要求用户自行补链接，也不要按标题字面猜测仓库。
+- 仅提交与新闻主体直接对应的官方仓库。若新闻是闭源产品、云服务、论文、仅在 Hugging Face/Civitai 发布的模型或硬件发布，而没有该主体的官方 GitHub 仓库，记为“未找到”；不得用同名第三方实现、上游项目、配套节点或辅助工具替代。
 - 一个输入批次最多提交 200 个仓库。批内按小写 `owner/repo` 去重，但保留用户原文标题和来源链接。
-- 不在 Skill、命令、输出或仓库文件中保存 Admin Key。仅从环境变量读取。
+- 用户未明确说明“测试”时，一律固定使用生产服务 `https://starcat-weekly-api.fly.dev`，不得接受或推断其他 Base URL。
+- 生产 Admin Key 只从 `supports/starcat-weekly-api/.env` 的 `ADMIN_API_KEYS` 读取；多值时使用第一个非空 Key。不得要求用户导出生产 Key，也不得在 Skill、命令或输出中显示 Key。
+- 只有用户明确说明“测试”时才使用 `--test`，此时才允许通过 `--base-url` / `STARCAT_WEEKLY_BASE_URL` 和 `STARCAT_WEEKLY_ADMIN_KEY` 注入测试配置。
 - POST 只代表持久化入队成功，不代表 GitHub 数据已补全；拿到 `batch_id` 后必须轮询批次终态。
 
 ## 工作流
@@ -29,9 +33,9 @@ description: 从新闻摘要、项目清单、文章或其他批量文本中识�
 
 规范化时移除 `.git`、结尾 `/`、query、fragment，以及仓库后面的 `/issues`、`/releases`、`/tree/...` 等路径，只保留前两个 path segment。
 
-### 2. 搜索缺失地址
+### 2. 联网甄别新闻并搜索缺失地址
 
-对只有产品名或新闻描述的条目逐条搜索。搜索式优先使用：
+把没有显式 GitHub URL 的条目视为新闻线索，逐条联网检索。先确认新闻提及的是开源项目、产品/服务、论文、模型还是硬件，再定位其发布方及实际项目；不要假设新闻标题与仓库名相同。搜索式优先使用：
 
 ```text
 "项目名" GitHub
@@ -48,7 +52,8 @@ description: 从新闻摘要、项目清单、文章或其他批量文本中识�
 1. GitHub 仓库页面真实存在，且 canonical 地址与候选一致；
 2. 仓库 README、描述、官网或发布者与输入文本指向同一项目；
 3. 不是 fork 冒充上游、镜像、占位仓库或同名无关项目；
-4. 新闻描述的是闭源产品、论文或模型但没有官方 GitHub 仓库时，明确记为“未找到”，不要用第三方实现代替。
+4. 仓库与新闻主体直接对应；新闻仅提及模型权重、论文、云服务或产品时，不得以同作者的配套节点、示例、上游或第三方实现替代。
+5. 新闻描述的是闭源产品、论文或模型但没有官方 GitHub 仓库时，明确记为“未找到”，不要用第三方实现代替。
 
 ### 4. 展示并请求确认
 
@@ -62,7 +67,7 @@ description: 从新闻摘要、项目清单、文章或其他批量文本中识�
 
 ```text
 GET /internal/sources?manual_import=true
-Authorization: Bearer $STARCAT_WEEKLY_ADMIN_KEY
+Authorization: Bearer <从 supports/starcat-weekly-api/.env 的 ADMIN_API_KEYS 读取>
 ```
 
 确认目标来源仍允许人工录入。服务端返回为空或不含目标来源时停止。
@@ -73,22 +78,33 @@ Authorization: Bearer $STARCAT_WEEKLY_ADMIN_KEY
 
 ```bash
 python3 .claude/skills/starcat-weekly-import/scripts/submit_import.py \
-  --base-url "$STARCAT_WEEKLY_BASE_URL" \
   --input /tmp/starcat-weekly-import.json
 
 python3 .claude/skills/starcat-weekly-import/scripts/submit_import.py \
-  --base-url "$STARCAT_WEEKLY_BASE_URL" \
   --input /tmp/starcat-weekly-import.json \
   --confirm --poll
 ```
 
-第一条命令默认仅校验并打印 payload，不访问网络。第二条命令从 `STARCAT_WEEKLY_ADMIN_KEY` 读取密钥，检查来源能力、提交并轮询。
+第一条命令默认仅校验并打印 payload，不访问网络。第二条命令固定调用 `https://starcat-weekly-api.fly.dev`，从 `supports/starcat-weekly-api/.env` 读取 `ADMIN_API_KEYS`，检查来源能力、提交并轮询。
+
+只有用户明确要求测试时，才使用测试模式：
+
+```bash
+STARCAT_WEEKLY_BASE_URL="http://127.0.0.1:5003" \
+STARCAT_WEEKLY_ADMIN_KEY="test-key" \
+python3 .claude/skills/starcat-weekly-import/scripts/submit_import.py \
+  --test \
+  --input /tmp/starcat-weekly-import.json \
+  --confirm --poll
+```
+
+不得在非测试任务中添加 `--test`，也不得用测试环境变量覆盖生产地址或生产 Key。
 
 最终报告 `batch_id`、总数、成功数、剔除数和失败原因；`success` 或 `partial_success` 是终态，`failed` 需要原样报告，不要自动换仓库重投。
 
 ## 输出要求
 
 - 区分“文本提取结果”和“实际入库结果”。
-- 对未找到仓库的新闻给出清晰结论，这不是错误。
+- 对未找到仓库的新闻给出清晰结论，并说明其属于产品/服务、论文、模型权重、硬件或证据不足中的哪一种；这不是错误。
 - 提供 GitHub 可点击链接，但不要输出 Admin Key、完整 Authorization header 或服务端秘密配置。
 - 大批量文本按原始顺序编号，方便用户逐项核对。

@@ -12,8 +12,8 @@ Starcat 介绍后逐渐漂移。运行后会：
     supports/scripts/sync-starcat-readme-promo.py
 
 公开图片统一引用 `starcat-pro`，不要复制到各仓库：
-  - https://raw.githubusercontent.com/dong4j/starcat-pro/main/banner.webp
-  - https://raw.githubusercontent.com/dong4j/starcat-pro/main/main.webp
+  - https://raw.githubusercontent.com/starcat-app/starcat-pro/main/banner.webp
+  - https://raw.githubusercontent.com/starcat-app/starcat-pro/main/main.webp
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ from pathlib import Path
 
 START = "<!-- starcat-promo:start -->"
 END = "<!-- starcat-promo:end -->"
-BANNER = "https://raw.githubusercontent.com/dong4j/starcat-pro/main/banner.webp"
-MAIN = "https://raw.githubusercontent.com/dong4j/starcat-pro/main/main.webp"
+BANNER = "https://raw.githubusercontent.com/starcat-app/starcat-pro/main/banner.webp"
+MAIN = "https://raw.githubusercontent.com/starcat-app/starcat-pro/main/main.webp"
 
 
 @dataclass(frozen=True)
@@ -43,7 +43,25 @@ class Project:
 ROOT = Path(__file__).resolve().parents[2]
 
 
+# `.github` 使用专属组织主页，`starcat-pro` 同时承担图片与公开支持内容源；
+# 两者不适合插入会自引用的通用推广区块，因此不进入生成目标。
 PROJECTS = [
+    Project(
+        Path("supports/starcat-docs"),
+        "Starcat Documentation",
+        "docs",
+        "Starcat 官方文档",
+        "这是 Starcat 的官方使用文档，覆盖安装配置、GitHub Stars 管理、AI 功能、RAG 知识库与集成能力。",
+        "Official documentation for Starcat, covering setup, GitHub Stars management, AI features, RAG knowledge base, and integrations.",
+    ),
+    Project(
+        Path("supports/starcat-site"),
+        "Starcat Site",
+        "site",
+        "Starcat 官网",
+        "这是 Starcat 的官方开源网站，包含 Direct 与 Mac App Store 落地页、产品博客、更新记录和公开法律页面。",
+        "Official open-source website for Starcat, including Direct and Mac App Store landing pages, the product blog, release notes, and public legal pages.",
+    ),
     Project(
         Path("supports/homebrew-starcat"),
         "Homebrew Starcat",
@@ -51,6 +69,54 @@ PROJECTS = [
         "Homebrew Starcat",
         "这是 Starcat 的官方 Homebrew tap，也是推荐安装与更新入口。",
         "Official Homebrew tap for installing and updating Starcat.",
+    ),
+    Project(
+        Path("supports/homebrew-starcat-cli"),
+        "Homebrew Starcat CLI",
+        "homebrew-cli",
+        "Homebrew Starcat CLI",
+        "这是 Starcat CLI 与 MCP bridge 的官方 Homebrew tap。",
+        "Official Homebrew tap for the Starcat CLI and MCP bridge.",
+    ),
+    Project(
+        Path("supports/starcat-cli"),
+        "Starcat CLI",
+        "cli",
+        "Starcat CLI",
+        "这是 Starcat 的跨平台命令行客户端，也是面向 AI Agent 的 MCP bridge。",
+        "Cross-platform Starcat CLI and MCP bridge for AI agents.",
+    ),
+    Project(
+        Path("supports/starcat-alfred-workflow"),
+        "Starcat Alfred Workflow",
+        "launcher",
+        "Starcat Alfred Workflow",
+        "这是在 Alfred 中搜索 Starcat 本地仓库与 GitHub 的官方 Workflow。",
+        "Official Alfred Workflow for searching Starcat local repositories and GitHub.",
+    ),
+    Project(
+        Path("supports/starcat-utools-plugin"),
+        "Starcat uTools Plugin",
+        "launcher",
+        "Starcat uTools 插件",
+        "这是在 uTools 中搜索 Starcat 本地仓库与 GitHub 的官方插件。",
+        "Official uTools plugin for searching Starcat local repositories and GitHub.",
+    ),
+    Project(
+        Path("supports/starcat-raycast-extension"),
+        "Starcat Raycast Extension",
+        "launcher",
+        "Starcat Raycast 扩展",
+        "这是在 Raycast 中搜索 Starcat 本地仓库与 GitHub 的官方扩展。",
+        "Official Raycast extension for searching Starcat local repositories and GitHub.",
+    ),
+    Project(
+        Path("supports/starcat-skill"),
+        "Starcat Skill",
+        "skill",
+        "Starcat Skill",
+        "这是供 Codex、Claude Code 等 AI Agent 读取和整理 Starcat 数据的官方 Skill。",
+        "Official skill for AI agents such as Codex and Claude Code to read and organize Starcat data.",
     ),
     Project(
         Path("supports/extensions/starcat-chrome-plugin"),
@@ -79,10 +145,10 @@ PROJECTS = [
     Project(
         Path("supports/starcat-license-api"),
         "starcat-license-api",
-        "api",
+        "private-api",
         "starcat-license-api",
-        "这是 Starcat Direct 分发授权链路的可自部署支撑服务。",
-        "Self-hostable support API for Starcat Direct licensing flows.",
+        "这是 Starcat Direct 分发授权链路的私有后端服务。",
+        "Private backend service for Starcat Direct licensing flows.",
     ),
     Project(
         Path("supports/starcat-recommend-api"),
@@ -153,21 +219,27 @@ def promo(project: Project, lang: str) -> str:
     )
     colon = "：" if is_zh else ":"
     links_title = "相关链接" if is_zh else "Useful links"
-    ecosystem_title = "Starcat 生态项目" if is_zh else "Starcat ecosystem"
+    ecosystem_title = "可自部署支撑 API" if is_zh else "Self-hostable support APIs"
     link_rows = (
-        """- 官网: https://starcat.ink
-- 下载: https://starcat.ink/downloads/Starcat-1.1.0-arm64.dmg
-- 公开支持与发布说明: https://github.com/dong4j/starcat-pro
-- Homebrew tap: https://github.com/dong4j/homebrew-starcat
-- 浏览器插件: [Chrome](https://github.com/dong4j/starcat-chrome-plugin) / [Safari](https://github.com/dong4j/starcat-safari-plugin)
-- 本地化: https://github.com/dong4j/starcat-localization"""
+        """- 官网与下载: https://starcat.ink
+- 公开支持与发布说明: https://github.com/starcat-app/starcat-pro
+- Starcat App Homebrew tap: https://github.com/starcat-app/homebrew-starcat
+- CLI / MCP: [starcat-cli](https://github.com/starcat-app/starcat-cli) / [Homebrew tap](https://github.com/starcat-app/homebrew-starcat-cli)
+- AI Agent Skill: https://github.com/starcat-app/starcat-skill
+- 浏览器插件: [Chrome](https://github.com/starcat-app/starcat-chrome-plugin) / [Safari](https://github.com/starcat-app/starcat-safari-plugin)
+- 官方文档: https://github.com/starcat-app/starcat-docs
+- 官网源码: https://github.com/starcat-app/starcat-site
+- 本地化: https://github.com/starcat-app/starcat-localization"""
         if is_zh
-        else """- Home: https://starcat.ink
-- Download: https://starcat.ink/downloads/Starcat-1.1.0-arm64.dmg
-- Public support and release notes: https://github.com/dong4j/starcat-pro
-- Homebrew tap: https://github.com/dong4j/homebrew-starcat
-- Browser plugins: [Chrome](https://github.com/dong4j/starcat-chrome-plugin) / [Safari](https://github.com/dong4j/starcat-safari-plugin)
-- Localization: https://github.com/dong4j/starcat-localization"""
+        else """- Home and downloads: https://starcat.ink
+- Public support and release notes: https://github.com/starcat-app/starcat-pro
+- Starcat App Homebrew tap: https://github.com/starcat-app/homebrew-starcat
+- CLI / MCP: [starcat-cli](https://github.com/starcat-app/starcat-cli) / [Homebrew tap](https://github.com/starcat-app/homebrew-starcat-cli)
+- AI Agent Skill: https://github.com/starcat-app/starcat-skill
+- Browser plugins: [Chrome](https://github.com/starcat-app/starcat-chrome-plugin) / [Safari](https://github.com/starcat-app/starcat-safari-plugin)
+- Documentation: https://github.com/starcat-app/starcat-docs
+- Website source: https://github.com/starcat-app/starcat-site
+- Localization: https://github.com/starcat-app/starcat-localization"""
     )
     language_link = (
         '<sub><a href="./README.md">English</a></sub>'
@@ -179,6 +251,10 @@ def promo(project: Project, lang: str) -> str:
         if project.kind == "api" and is_zh
         else "\n\n> Starcat provides hosted defaults for normal users. This API is open source so advanced users can inspect it, run it locally, or deploy their own instance."
         if project.kind == "api"
+        else "\n\n> 此仓库包含 Starcat Direct 授权与支付集成的私有服务端实现，不作为可自部署公共 API 分发。"
+        if project.kind == "private-api" and is_zh
+        else "\n\n> This repository contains Starcat's private Direct licensing and payment backend. It is not distributed as a self-hostable public API."
+        if project.kind == "private-api"
         else ""
     )
     return f"""{START}
@@ -188,16 +264,16 @@ def promo(project: Project, lang: str) -> str:
 <p><strong>{summary}</strong></p>
 <p>{app_desc}</p>
 
-<a href="https://github.com/dong4j/homebrew-starcat"><img src="https://img.shields.io/badge/Install%20with-Homebrew-FBBF24?style=for-the-badge&logo=homebrew&logoColor=white" width="220" alt="Install with Homebrew"/></a>
+<a href="https://github.com/starcat-app/homebrew-starcat"><img src="https://img.shields.io/badge/Install%20with-Homebrew-FBBF24?style=for-the-badge&logo=homebrew&logoColor=white" width="220" alt="Install with Homebrew"/></a>
 <br/>
 {language_link}
 </div>
 
 <div align="center">
 <a href="https://starcat.ink"><img src="https://img.shields.io/badge/website-starcat.ink-38BDF8?style=flat&color=blue" alt="website"/></a>
-<a href="https://github.com/dong4j/starcat-pro"><img src="https://img.shields.io/badge/support-starcat--pro-lightgrey.svg?style=flat&color=blue" alt="support"/></a>
-<a href="https://github.com/dong4j/homebrew-starcat"><img src="https://img.shields.io/badge/install-homebrew-lightgrey.svg?style=flat&color=blue" alt="homebrew"/></a>
-<a href="https://github.com/dong4j/starcat-localization"><img src="https://img.shields.io/badge/localization-open-lightgrey.svg?style=flat&color=blue" alt="localization"/></a>
+<a href="https://github.com/starcat-app/starcat-pro"><img src="https://img.shields.io/badge/support-starcat--pro-lightgrey.svg?style=flat&color=blue" alt="support"/></a>
+<a href="https://github.com/starcat-app/homebrew-starcat"><img src="https://img.shields.io/badge/install-homebrew-lightgrey.svg?style=flat&color=blue" alt="homebrew"/></a>
+<a href="https://github.com/starcat-app/starcat-localization"><img src="https://img.shields.io/badge/localization-open-lightgrey.svg?style=flat&color=blue" alt="localization"/></a>
 </div>
 
 <div align="center">
@@ -207,8 +283,8 @@ def promo(project: Project, lang: str) -> str:
 **{install}{colon}**
 
 ```bash
-brew tap dong4j/starcat
-brew trust dong4j/starcat
+brew tap starcat-app/starcat
+brew trust starcat-app/starcat
 brew install --cask starcat
 ```
 
@@ -218,13 +294,12 @@ brew install --cask starcat
 
 **{ecosystem_title}{colon}**
 
-- [starcat-sharing-api](https://github.com/dong4j/starcat-sharing-api)
-- [starcat-trending-api](https://github.com/dong4j/starcat-trending-api)
-- [starcat-weekly-api](https://github.com/dong4j/starcat-weekly-api)
-- [starcat-wiki-api](https://github.com/dong4j/starcat-wiki-api)
-- [starcat-recommend-api](https://github.com/dong4j/starcat-recommend-api)
-- [starcat-discovery-api](https://github.com/dong4j/starcat-discovery-api)
-- [starcat-license-api](https://github.com/dong4j/starcat-license-api){api_note}
+- [starcat-sharing-api](https://github.com/starcat-app/starcat-sharing-api)
+- [starcat-trending-api](https://github.com/starcat-app/starcat-trending-api)
+- [starcat-weekly-api](https://github.com/starcat-app/starcat-weekly-api)
+- [starcat-wiki-api](https://github.com/starcat-app/starcat-wiki-api)
+- [starcat-recommend-api](https://github.com/starcat-app/starcat-recommend-api)
+- [starcat-discovery-api](https://github.com/starcat-app/starcat-discovery-api){api_note}
 {END}"""
 
 

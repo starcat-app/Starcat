@@ -227,6 +227,7 @@ enum AppEndpoints {
             static let ping = "/api/v1/ping"
             /// `GET /healthz` —— 状态栏服务可用性巡检端点。
             static let healthz = "/healthz"
+
         }
 
         @MainActor
@@ -267,6 +268,11 @@ enum AppEndpoints {
             static let ping = "/api/v1/ping"
             /// `GET /healthz` —— 状态栏服务可用性巡检端点。
             static let healthz = "/healthz"
+
+            /// 公开仓库星标历史；稳定 repo ID 和范围由 query 参数提供。
+            static func starHistory(owner: String, repo: String) -> String {
+                "/api/v1/repos/\(owner)/\(repo)/star-history"
+            }
         }
 
         @MainActor
@@ -322,6 +328,8 @@ enum AppEndpoints {
             /// `GET /user/repos` —— 当前授权用户拥有 / 协作的仓库列表。
             /// 分享卡只用 `affiliation=owner` 统计用户自己的公开开发语言。
             static let currentUserRepos = "/user/repos"
+            /// `GET /user/installations` —— 当前 GitHub App user token 可访问的安装列表。
+            static let currentUserInstallations = "/user/installations"
             /// `GET /user/starred` —— 当前用户的 starred 列表。
             static let userStarred = "/user/starred"
             /// `PUT/DELETE /user/starred/{owner}/{repo}` —— star / unstar 单仓库。
@@ -336,6 +344,12 @@ enum AppEndpoints {
             /// 拼装临时 Repo 让 UI 复用 `RepoMetadataHeaderView` 渲染。
             static func repo(owner: String, repo: String) -> String {
                 "/repos/\(owner)/\(repo)"
+            }
+            /// `GET /repos/{owner}/{repo}/stargazers` —— 当前 Stargazers 及其 Star 时间。
+            /// 2026-07 起 GitHub 将列表访问限制为仓库管理员和协作者；普通第三方仓库
+            /// 不能把这个端点当成公共历史来源。
+            static func repoStargazers(owner: String, repo: String) -> String {
+                "/repos/\(owner)/\(repo)/stargazers"
             }
             /// `GET /repos/{owner}/{repo}/languages` —— 单仓库语言字节分布。
             static func repoLanguages(owner: String, repo: String) -> String {

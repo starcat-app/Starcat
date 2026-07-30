@@ -106,6 +106,87 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.items.map(\.id) == [2, 1], "默认 starredAtDesc → 最近 star 在前")
     }
 
+    @Test("Repo Pin: DB 分页加载持久状态，取消后恢复当前排序")
+    func repoPinReordersDatabasePagedList() async throws {
+        let (vm, db, _) = try makeSUT()
+        try await insertRepo(db, id: 1, fullName: "o/older", stars: 1, starredAt: "2026-05-01T00:00:00Z")
+        try await insertRepo(db, id: 2, fullName: "o/newer", stars: 1, starredAt: "2026-05-30T00:00:00Z")
+        try await db.writer.write { db in
+            try db.execute(
+                sql: "INSERT INTO repo_pins (repo_id, pinned_at) VALUES (?, ?)",
+                arguments: [Int64(1), 100.0]
+            )
+        }
+        await vm.reloadItems()
+        #expect(vm.isRepoPinned(1))
+        #expect(vm.items.map(\.id) == [1, 2])
+
+        try await vm.setRepoPinned(repoId: 1, pinned: false)
+        #expect(!vm.isRepoPinned(1))
+        #expect(vm.items.map(\.id) == [2, 1])
+
+        try await vm.setRepoPinned(repoId: 1, pinned: true)
+        #expect(vm.items.map(\.id) == [1, 2])
+    }
+
+    @Test("Repo Pin: 匿名库切到用户库后重新加载持久状态")
+    func repoPinReloadsAfterDatabaseScopeChange() async throws {
+        let (vm, db, _) = try makeSUT()
+
+        // 先模拟冷启动阶段读取匿名库：此时 Pin 表为空，但 ViewModel 会记住“已加载”。
+        await vm.reloadItems()
+        #expect(!vm.isRepoPinned(1))
+
+        // AuthSession 恢复成功后，DatabaseManager 会把同一组 Repository 切到用户库。
+        try await db.reopen(userId: 42)
+        try await insertRepo(db, id: 1, fullName: "o/older", stars: 1, starredAt: "2026-05-01T00:00:00Z")
+        try await insertRepo(db, id: 2, fullName: "o/newer", stars: 1, starredAt: "2026-05-30T00:00:00Z")
+        try await db.writer.write { db in
+            try db.execute(
+                sql: "INSERT INTO repo_pins (repo_id, pinned_at) VALUES (?, ?)",
+                arguments: [Int64(1), 100.0]
+            )
+        }
+
+        vm.invalidateRepoPinsForDatabaseChange()
+        await vm.reloadItems(forceRefresh: true)
+
+        #expect(vm.isRepoPinned(1))
+        #expect(vm.items.map(\.id) == [1, 2])
+    }
+
+    @Test("Repo Pin: Smart Collection 内存路径也立即按置顶排序")
+    func repoPinReordersSmartCollection() async throws {
+        let (vm, db, noteRepo) = try makeSUT()
+        try await insertRepo(db, id: 1, fullName: "o/older", stars: 1, starredAt: "2026-05-01T00:00:00Z")
+        try await insertRepo(db, id: 2, fullName: "o/newer", stars: 1, starredAt: "2026-05-30T00:00:00Z")
+        try await noteRepo.updateStatus(repoId: 1, status: .using)
+        try await noteRepo.updateStatus(repoId: 2, status: .using)
+        vm.selectSidebar(.smartCollection(.using))
+        await vm.reloadItems()
+        #expect(vm.items.map(\.id) == [2, 1])
+
+        try await vm.setRepoPinned(repoId: 1, pinned: true)
+
+        #expect(vm.isRepoPinned(1))
+        #expect(vm.items.map(\.id) == [1, 2])
+    }
+
+    @Test("Repo Pin: 关键词搜索期间不重排搜索结果")
+    func repoPinDoesNotOverrideKeywordSearchOrder() async throws {
+        let (vm, db, _) = try makeSUT()
+        try await insertRepo(db, id: 1, fullName: "o/common-older", stars: 1, starredAt: "2026-05-01T00:00:00Z")
+        try await insertRepo(db, id: 2, fullName: "o/common-newer", stars: 1, starredAt: "2026-05-30T00:00:00Z")
+        await vm.reloadItems()
+        try await vm.setRepoPinned(repoId: 1, pinned: true)
+        #expect(vm.items.map(\.id) == [1, 2])
+
+        vm.submitSearch("common")
+        await vm.reloadItems(forceRefresh: true)
+
+        #expect(vm.items.map(\.id) == [2, 1], "搜索期间应继续使用原有搜索/排序规则，不应用 Pin 分组")
+    }
+
     @Test("D1: sortOption 改成 starsDesc → 通过数据库分页重查当前页")
     func switchSortReorders() async throws {
         let (vm, db, _) = try makeSUT()
@@ -121,7 +202,7 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.itemsRevision == revisionAfterReload + 1, "排序切换应发布新的列表快照版本，避免 SwiftUI 对旧 List 做大规模 move diff")
     }
 
-    @Test("DB Paging: 普通 reload 直接读取当前页,不再依赖全量列表缓存")
+    @Test("DB Paging: 未过期 snapshot 命中时普通 reload 跳过 DB，forceRefresh 才重查")
     func cacheHitSkipsDatabaseUntilForced() async throws {
         let (vm, db, _) = try makeSUT()
         try await insertRepo(db, id: 1, fullName: "o/old", stars: 1, starredAt: "2026-05-01T00:00:00Z")
@@ -130,11 +211,11 @@ struct HomeViewModelFilterSortTests {
 
         try await insertRepo(db, id: 2, fullName: "o/new", stars: 1, starredAt: "2026-05-02T00:00:00Z")
 
-        // 数据库分页模式下普通 reload 只读取当前页，不再依赖旧的全量列表缓存。
+        // 数据库分页首屏 snapshot 是普通 reload / 切回分类的事实源；
+        // 同步完成、标签变更等真实写库路径必须传 forceRefresh: true。
         await vm.reloadItems()
-        #expect(vm.items.map(\.id) == [2, 1])
+        #expect(vm.items.map(\.id) == [1], "未 forceRefresh 时不应绕过未过期 snapshot 重查 DB")
 
-        // forceRefresh 仍应保持同样结果，且不退回旧缓存。
         await vm.reloadItems(forceRefresh: true)
         #expect(vm.items.map(\.id) == [2, 1])
     }
@@ -194,12 +275,14 @@ struct HomeViewModelFilterSortTests {
         vm.applyTemporaryGlobalFilters(
             temporary,
             requestID: UUID(),
-            anchorSelection: .library
+            anchorSelection: .library,
+            returnPage: .insights
         )
 
         #expect(vm.persistentGlobalFilterState.hideArchived)
         #expect(!vm.effectiveGlobalFilterState.hideArchived)
         #expect(vm.effectiveGlobalFilterState.statusFilter == .unread)
+        #expect(vm.temporaryGlobalFilterSession?.returnPage == .insights)
 
         vm.clearTemporaryGlobalFiltersIfNeeded(for: .library)
         #expect(vm.temporaryGlobalFilterSession != nil)
@@ -293,6 +376,85 @@ struct HomeViewModelFilterSortTests {
         vm.starFilter = .all
         await vm.awaitPendingListReloadForTesting()
         #expect(Set(vm.items.map(\.id)) == [1, 2])
+    }
+
+    @Test("语言筛选叠加全部仓库、未分类和知识库，不替换基础范围")
+    func languageFilterStacksWithPrimaryManageScopes() async throws {
+        let (vm, db, noteRepo) = try makeSUT()
+        let tagRepo = GRDBTagRepository(database: db)
+        let repoTagRepo = GRDBRepoTagRepository(database: db)
+
+        try await insertRepo(
+            db,
+            id: 1,
+            fullName: "o/java-untagged",
+            stars: 10,
+            starredAt: "2026-05-01T00:00:00Z",
+            language: "Java"
+        )
+        try await insertRepo(
+            db,
+            id: 2,
+            fullName: "o/java-tagged",
+            stars: 20,
+            starredAt: "2026-05-02T00:00:00Z",
+            language: "Java"
+        )
+        try await insertRepo(
+            db,
+            id: 3,
+            fullName: "o/swift-untagged",
+            stars: 30,
+            starredAt: "2026-05-03T00:00:00Z",
+            language: "Swift"
+        )
+        try await insertRepo(
+            db,
+            id: 4,
+            fullName: "o/java-library-only",
+            stars: 40,
+            starredAt: "2026-05-04T00:00:00Z",
+            language: "Java",
+            isStarred: false
+        )
+        try await insertRepo(
+            db,
+            id: 5,
+            fullName: "o/swift-library-only",
+            stars: 50,
+            starredAt: "2026-05-05T00:00:00Z",
+            language: "Swift",
+            isStarred: false
+        )
+        try await tagRepo.create(.fixture(id: "tagged"))
+        try await repoTagRepo.addTag(repoId: 2, tagId: "tagged")
+        try await noteRepo.updateLibraryState(repoId: 4, state: .inLibrary)
+        try await noteRepo.updateLibraryState(repoId: 5, state: .inLibrary)
+
+        vm.selection = .allStars
+        vm.setCategorizedLanguageFiltersFromUser(["Java"])
+        await vm.awaitPendingListReloadForTesting()
+        #expect(Set(vm.items.map(\.id)) == [1, 2])
+        #expect(vm.selection == .allStars)
+
+        vm.selection = .untagged
+        // 生产 UI 由 `.task(id: selection)` 在分类变化后触发查询；单测直接写 selection
+        // 不会经过 View。先排空知识库排序等 selection 派生动作，再显式模拟这次重载，
+        // 避免派生任务与测试重载争抢同一个 generation。
+        await vm.awaitPendingListReloadForTesting()
+        await vm.reloadItems(forceRefresh: true)
+        #expect(vm.items.map(\.id) == [1])
+        #expect(vm.effectiveGlobalFilterState.globalFilterLanguages == ["Java"])
+
+        vm.selection = .library
+        await vm.awaitPendingListReloadForTesting()
+        await vm.reloadItems(forceRefresh: true)
+        #expect(vm.items.map(\.id) == [4])
+        #expect(vm.effectiveGlobalFilterState.globalFilterLanguages == ["Java"])
+
+        vm.clearLanguageFiltersFromUser()
+        await vm.awaitPendingListReloadForTesting()
+        #expect(Set(vm.items.map(\.id)) == [4, 5])
     }
 
     @Test("D2: 过滤掉当前选中行 → selectedRepoID 自动清空")
@@ -751,8 +913,12 @@ struct HomeViewModelFilterSortTests {
             lists: [
                 makeStarList(id: "list-filled", name: "Filled", position: 0),
                 makeStarList(id: "list-empty", name: "Empty", position: 1),
+                makeStarList(id: "list-cold", name: "Cold", position: 2),
             ],
-            memberships: [GitHubStarListRemoteMembership(listId: "list-filled", repoFullName: "o/one")],
+            memberships: [
+                GitHubStarListRemoteMembership(listId: "list-filled", repoFullName: "o/one"),
+                GitHubStarListRemoteMembership(listId: "list-cold", repoFullName: "o/two"),
+            ],
             syncedAt: Date(timeIntervalSince1970: 0)
         )
 
@@ -778,14 +944,24 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.isGitHubStarListSwitchLoading == false)
         #expect(vm.itemsRevision == revisionAfterFilledList + 1)
 
+        // 切回已访问过的有数据分组：eager DB snapshot 同步恢复列表，
+        // 不再清空再走 switch-loading 占位（那条路径只留给「无 snapshot」首次进入）。
         vm.selectSidebar(.githubStarList("list-filled"))
+        #expect(vm.isGitHubStarListSwitchLoading == false)
+        #expect(vm.items.map(\.id) == [1])
+
+        // 再经空分组切到从未访问过的有数据分组：无 snapshot → switch-loading + 保持空列表。
+        vm.selectSidebar(.githubStarList("list-empty"))
+        #expect(vm.items.isEmpty)
+
+        vm.selectSidebar(.githubStarList("list-cold"))
         #expect(vm.isGitHubStarListSwitchLoading == true)
         #expect(vm.items.isEmpty)
 
         await vm.reloadItems()
 
         #expect(vm.isGitHubStarListSwitchLoading == false)
-        #expect(vm.items.map(\.id) == [1])
+        #expect(vm.items.map(\.id) == [2])
     }
 
     /// 周期性检查条件，最多等待 `timeout` 秒；条件成立立即返回。

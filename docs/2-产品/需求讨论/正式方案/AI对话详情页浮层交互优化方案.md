@@ -1,12 +1,12 @@
 # AI 对话详情页浮层交互优化方案
 
-> 状态: 方案落档, 待实现
-> 日期: 2026-06-29
+> 状态: 已实现（2026-07-22 补充底部面板与附属独立窗口关系）
+> 日期: 2026-06-29（2026-07-22 修订）
 > 范围: Starcat macOS 客户端右侧详情页 AI 对话入口与浮层交互
 
 ## 1. 背景
 
-当前单仓 AI 摘要 / 对话由独立窗口承载。这个交互会把用户从右侧详情页的 README 阅读上下文里拉走, 不符合“正在看当前 repo 时顺手问 AI”的使用心智。
+单仓 AI 摘要 / 对话早期只由独立窗口承载。当前实现已把详情页底部面板作为主入口，避免用户在“正在看当前 repo 时顺手问 AI”时被强制拉离 README 上下文；独立窗口仍作为底部面板的附属展示形态保留。
 
 目标交互参考移动端 Chrome Gemini: 在当前页面内容上方提供一个轻量悬浮输入入口, 用户输入问题时自动带上当前页面 / 当前仓库上下文, AI 回答在页面内流式渲染。
 
@@ -15,19 +15,30 @@
 在右侧详情页 README 区域内提供 AI 对话浮层:
 
 - 默认在状态栏上方显示一条玻璃态悬浮横条。
-- 点击横条后展开为详情页内 AI 面板, 不再打开独立窗口。
+- 点击横条后展开为详情页内 AI 面板，不直接打开独立窗口。
+- 面板内保留“在独立窗口中打开”，供用户主动脱离详情布局持续对话或并排比较。
 - 面板内复用现有 AI 摘要前置检查、摘要生成、标签建议、对话输入、流式回答与 Pro 门控逻辑。
 - 用户切换 repo 时直接清空当前浮层会话, 重新绑定新 repo 上下文。
 - 展开、收起、放大、缩小都必须有流畅过渡动画。
 
 ## 3. 核心决策
 
-1. **AI 入口归属于右侧详情页**: AI 对话不作为单独窗口出现, 而是贴着当前 README / repo 工作。
+1. **AI 主入口归属于右侧详情页**: 快捷键、搜索、详情入口和外部摘要请求都先落到详情页底部面板，贴着当前 README / repo 工作。
 2. **展开态点击外部不自动隐藏**: 点击 README 或详情页空白区域只让输入框失焦, 不销毁会话, 避免流式生成或阅读回答时被误关。
 3. **收起入口明确**: 用户通过关闭按钮或 `Esc` 收起浮层; 收起后保留当前 repo 的临时面板状态, 但切换 repo 会清空。
 4. **提供详情页内放大**: 面板支持“迷你展开态”和“详情页内最大化态”两档, 最大化只占右侧详情页区域, 不跨到中间列表或左侧 sidebar。
 5. **使用自绘玻璃态 overlay, 不用系统 popover 作为主容器**: 系统 popover 更适合短生命周期菜单; 本场景需要稳定承载流式内容、输入焦点、滚动跟随和两档尺寸。实现上做成 popover-like 的 SwiftUI overlay。
 6. **不做自由拖拽 resize**: 第一版只做两档尺寸切换, 避免与 README WebView 滚动、主窗口 resize 和详情页边界产生复杂冲突。
+
+### 3.1 底部面板与独立窗口的关系
+
+| 层级 | 实现 | 职责 | 允许的打开方式 |
+|---|---|---|---|
+| 主承载面板 | `RepoAIFloatingOverlay` | 绑定当前详情 repo，承载收起、展开、详情区最大化与外部入口路由 | 详情底部横条、快捷键、搜索、开始使用、Browser Plugin、后台摘要任务 |
+| 共享内容 | `RepoAIWindowContentView` | 摘要、标签建议、对话、输入框、流式状态与 Pro 门禁 | 由两种容器共同渲染，不单独作为入口 |
+| 附属独立窗口 | `RepoAIWindowController` | 脱离详情布局持续对话、并排比较多个 repo | 只能由底部面板内部“在独立窗口中打开”触发 |
+
+两个容器共享同一个 AI 内容 View 与底层服务契约，但各自维护展示生命周期和临时 UI 状态。外部入口不得直接调用 `RepoAIWindowController.show(...)`；同一详情已挂载时用 `repoAIInlineOpenRequested` 展开，先导航再挂载详情的场景用 `HomeViewModel.pendingInlineAIPresentationRepoID` 防止通知竞态。明确要求“生成摘要”的动作才使用 `repoAIInlineGenerateSummaryRequested`。
 
 ## 4. 交互状态
 
@@ -119,7 +130,7 @@
 
 ## 6. 技术落点
 
-当前可复用基础:
+当前实现基础:
 
 - `Starcat/Features/AI/RepoAIWindowContentView.swift`: 现有摘要 / 对话窗口容器。
 - `Starcat/Features/AI/AIChatInputView.swift`: 多行输入框与发送态。
@@ -127,16 +138,17 @@
 - `Starcat/Core/Subscription/EntitlementGate.swift`: `aiSummary` / `aiTags` / `aiChat` Pro 门控。
 - `Starcat/Features/Home/ReadmeViewModel.swift`: README 加载状态与当前 repo 绑定。
 
-建议拆分:
+实现关系:
 
-1. 从 `RepoAIWindowContentView` 中抽出可复用的 `RepoAIInteractionPanel`。
-2. 新增 `RepoAIFloatingOverlay`, 负责收起态横条、迷你展开态、最大化态和动画。
-3. 在 `RepoDetailScaffold` 或其 README 内容层挂载 overlay, 由当前 `repo` 驱动。
+1. `RepoAIWindowContentView` 作为底部面板与附属独立窗口共享的内容层。
+2. `RepoAIFloatingOverlay` 由 `RepoDetailScaffold` 统一挂在各 repo-backed 详情的 body 底部，负责收起态横条、迷你展开态、最大化态、动画与外部请求消费。
+3. `RepoAIWindowController` 只负责附属独立窗口的 AppKit 生命周期与窗口定位。
 4. 切换 `repo.id` 时重置 overlay 状态和临时 chat session。
 
 ## 7. 验收标准
 
-- 详情页 AI 入口不再打开独立窗口。
+- 详情页横条、快捷键、搜索等 AI 主入口只展开底部面板，不直接打开独立窗口。
+- 底部面板内“在独立窗口中打开”仍可创建或前置对应 repo 的附属独立窗口。
 - 收起态横条位于状态栏上方, 不遮挡 README footer 操作。
 - 展开态可执行摘要前置检查、摘要生成、标签建议和 AI 对话。
 - AI 回答流式渲染, 滚动跟随逻辑可用。
@@ -153,3 +165,4 @@
 - 第一版不做跨 repo 会话恢复。
 - 第一版不做全局 AI 助手入口。
 - 第一版不新增 AI 能力, 只优化现有单仓 AI 摘要 / 对话的承载方式。
+- 不删除附属独立窗口，也不把它恢复为与底部面板并列的外部主入口。

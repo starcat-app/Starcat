@@ -65,6 +65,24 @@ final class GettingStartedProgressStore {
         case unstarRepo
 
         var id: String { rawValue }
+
+        /// 正式版操作指引只包含已经开放且用户能够完成的入口。
+        ///
+        /// Agent 工作台仍是 Debug-only 能力，因此保留历史枚举值与事件兼容性，但不计入
+        /// 当前公开清单；否则 Release 用户会停在一个无法点击、也无法完成的步骤上。
+        static let guideCases: [StepID] = [
+            .signIn,
+            .syncStars,
+            .selectRepo,
+            .openRepoHomepage,
+            .addRepoToLibrary,
+            .organizeRepo,
+            .useSearch,
+            .useAI,
+            .useRAGWorkspace,
+            .shareProfile,
+            .unstarRepo
+        ]
     }
 
     private enum Keys {
@@ -100,11 +118,11 @@ final class GettingStartedProgressStore {
     }
 
     var completedCount: Int {
-        completedSteps.count
+        StepID.guideCases.lazy.filter(completedSteps.contains).count
     }
 
     var totalCount: Int {
-        StepID.allCases.count
+        StepID.guideCases.count
     }
 
     var isComplete: Bool {
@@ -215,14 +233,12 @@ private struct GettingStartedPopoverTipModifier<T: Tip>: ViewModifier {
 
 struct GettingStartedChecklistView: View {
     let store: GettingStartedProgressStore
-    let isEnabled: Bool
     let isSignedIn: Bool
     let hasSyncedStars: Bool
     let hasSelectedRepo: Bool
     let canSelectRepo: Bool
     let canUnstarRepo: Bool
     let canOpenRAGWorkspace: Bool
-    let canOpenAgentWorkspace: Bool
     let targetFrame: CGRect?
 
     let onSignIn: () -> Void
@@ -232,7 +248,6 @@ struct GettingStartedChecklistView: View {
     let onOpenSearch: () -> Void
     let onOpenAI: () -> Void
     let onOpenRAGWorkspace: () -> Void
-    let onOpenAgentWorkspace: () -> Void
     let onOpenRepoHomepage: () -> Void
     let onAddRepoToLibrary: () -> Void
     let onShareProfile: () -> Void
@@ -249,7 +264,7 @@ struct GettingStartedChecklistView: View {
     private let panelExpandedMaxHeight: CGFloat = 620
 
     private var shouldRender: Bool {
-        isEnabled && !firstRunOnboardingActive && !store.isDismissed && !store.isComplete
+        !firstRunOnboardingActive && !store.isDismissed && !store.isComplete
     }
 
     private var progressValue: Double {
@@ -348,16 +363,6 @@ struct GettingStartedChecklistView: View {
                 isAvailable: canOpenRAGWorkspace,
                 anchorID: .ragWorkspace,
                 action: onOpenRAGWorkspace
-            ),
-            GettingStartedStep(
-                id: .useAgentWorkspace,
-                title: "gettingStarted.step.agentWorkspace.title",
-                detail: "gettingStarted.step.agentWorkspace.detail",
-                systemImage: "wand.and.stars",
-                actionTitle: "gettingStarted.step.agentWorkspace.action",
-                isAvailable: canOpenAgentWorkspace,
-                anchorID: .agentWorkspace,
-                action: onOpenAgentWorkspace
             ),
             GettingStartedStep(
                 id: .shareProfile,

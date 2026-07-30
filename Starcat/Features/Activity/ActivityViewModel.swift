@@ -127,8 +127,10 @@ final class ActivityViewModel {
     private(set) var loadError: String?
     private(set) var lastRefreshedAt: Date?
     private(set) var itemsRevision: Int = 0
-    /// P2：切分类时让 `listRowReveal` 走 instant（不 stagger）；排序切换仍为 animated。
-    private(set) var skipListRowReveal = false
+    /// 仅在用户完成一次分类 / 模块导航且目标首屏已提交后推进。
+    ///
+    /// 与 `itemsRevision` 分离，避免刷新、排序或分页为了动画而迫使整批 row 重建。
+    private(set) var rowRevealRevision: Int = 0
     /// 后台 filter / dedupe（尤其 `.all`）进行中；UI 应显示骨架屏而非空态。
     private(set) var isApplyingCategoryFilter = false
     /// 当前分类是否还有未上屏的 filtered 行（滚到底加载更多）。
@@ -160,6 +162,8 @@ final class ActivityViewModel {
 
     /// 当前侧边栏选中的分类（`selectCategory` / `reload` 入口都会更新）。
     private var currentCategory: ActivityCategory = .all
+    /// 分类切换先登记意图，真正提交对应分类快照时才推进 row reveal revision。
+    private var pendingRowRevealCategory: ActivityCategory?
 
     /// 各分类独立记忆的时间排序（默认 `.newestFirst`）。
     private var timeSortByCategory: [ActivityCategory: ActivityTimeSort] = [:]
@@ -322,7 +326,6 @@ final class ActivityViewModel {
     func changeTimeSort(to sort: ActivityTimeSort) {
         guard currentCategory.showsActivityFilterBar else { return }
         guard sort != timeSort(for: currentCategory) else { return }
-        skipListRowReveal = false
         timeSortByCategory[currentCategory] = sort
         filteredItemsCache.removeValue(forKey: currentCategory)
         applyCategoryFilter(currentCategory, bumpRevision: true)
@@ -381,7 +384,8 @@ final class ActivityViewModel {
     /// 侧边栏切分类：只 refilter `allItems`；若该分类专属网络尚未拉过则后台补拉。
     ///
     /// **性能约束（HOM-46 同款）**：切分类走 `applyCategoryFilter(bumpRevision: false)`，
-    /// 不因可见 ID 变化 bump `itemsRevision`，避免 30 行 `listRowReveal` stagger 占满主线程。
+    /// 不因可见 ID 变化 bump `itemsRevision`；分类动画只由首屏提交后的
+    /// `rowRevealRevision` 驱动，避免数据刷新和动画身份互相耦合。
     func selectCategory(_ category: ActivityCategory) {
         currentCategory = category
         markCategorySwitchForListReveal()
@@ -741,7 +745,7 @@ final class ActivityViewModel {
     /// - `selectCategory` 走 `bumpRevision: false` + 默认 `resetPage: true` 时，
     ///   **禁止**因可见 ID 变化而 bump `itemsRevision`——否则 30 行 `listRowReveal`
     ///   同时 stagger，主线程卡顿会连带 sidebar 蛇动画掉帧。
-    /// - 排序切换等仍用 `bumpRevision: true` 保留 reveal。
+    /// - 排序切换等仍可推进普通数据版本，但不会冒充一次分类导航动画。
     ///
     /// **`.all` 专项（2026-06-17）**：去重+全量排序走 `Task.detached`，避免主线程彩虹圈；
     /// 命中 `filteredItemsCache` 时同步上屏。
@@ -806,6 +810,10 @@ final class ActivityViewModel {
         } else if !resetPage && oldIDs != slice.map(\.id) {
             itemsRevision += 1
         }
+        if pendingRowRevealCategory == currentCategory {
+            rowRevealRevision &+= 1
+            pendingRowRevealCategory = nil
+        }
     }
 
     /// 后台预热分类 filter 缓存（不阻塞 UI）。
@@ -838,12 +846,9 @@ final class ActivityViewModel {
         return Array(source[alreadyVisibleCount..<upper])
     }
 
-    /// 切分类后本帧 List 行 instant 显示；下一 run loop 恢复，loadMore 新行仍可 reveal。
+    /// 记录用户导航意图；动画必须等目标分类首屏提交后再触发。
     private func markCategorySwitchForListReveal() {
-        skipListRowReveal = true
-        DispatchQueue.main.async { [weak self] in
-            self?.skipListRowReveal = false
-        }
+        pendingRowRevealCategory = currentCategory
     }
 
     private func publishItems(from source: [ActivityItem], snapshot: AggregateSnapshot? = nil) {
@@ -1431,13 +1436,15 @@ final class ActivityViewModel {
         category: ActivityCategory,
         timeSort: ActivityTimeSort
     ) -> [ActivityItem] {
-        let filtered: [ActivityItem]
-        if category == .all {
-            filtered = deduplicateForAllView(source)
-        } else {
-            filtered = source.filter { $0.category == category }
+        PerformanceTracer.shared.trace(.activityLocalFilter) {
+            let filtered: [ActivityItem]
+            if category == .all {
+                filtered = deduplicateForAllView(source)
+            } else {
+                filtered = source.filter { $0.category == category }
+            }
+            return sortFilteredItems(filtered, timeSort: timeSort)
         }
-        return sortFilteredItems(filtered, timeSort: timeSort)
     }
 
     private func filter(_ source: [ActivityItem], by category: ActivityCategory) -> [ActivityItem] {

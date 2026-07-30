@@ -12,6 +12,50 @@ import XCTest
 @MainActor
 final class RepoDetailScaffoldTests: XCTestCase {
 
+    // MARK: - scroll report stabilization
+
+    func testScrollReport_ignoresSubpixelGeometryJitter() {
+        let previous = RepoDetailScrollReport(offsetY: 120, scrollOverflow: 640)
+        let jittered = RepoDetailScrollReport(offsetY: 120.4, scrollOverflow: 639.6)
+
+        XCTAssertFalse(jittered.differsMeaningfully(from: previous))
+    }
+
+    func testScrollReport_acceptsMeaningfulGeometryChange() {
+        let previous = RepoDetailScrollReport(offsetY: 120, scrollOverflow: 640)
+        let moved = RepoDetailScrollReport(offsetY: 121, scrollOverflow: 640)
+        let resized = RepoDetailScrollReport(offsetY: 120, scrollOverflow: 641)
+
+        XCTAssertTrue(moved.differsMeaningfully(from: previous))
+        XCTAssertTrue(resized.differsMeaningfully(from: previous))
+    }
+
+    func testResolvedScrollOverflow_keepsStableValueForSubpixelJitter() {
+        let resolved = RepoDetailScaffold<EmptyView, EmptyView>.resolvedScrollOverflow(
+            current: 640,
+            reported: 640.4
+        )
+
+        XCTAssertEqual(resolved, 640)
+    }
+
+    func testResolvedScrollOverflow_acceptsMeaningfulChangeAndKeepsMeasurementAcrossNil() {
+        XCTAssertEqual(
+            RepoDetailScaffold<EmptyView, EmptyView>.resolvedScrollOverflow(
+                current: 640,
+                reported: 641
+            ),
+            641
+        )
+        XCTAssertEqual(
+            RepoDetailScaffold<EmptyView, EmptyView>.resolvedScrollOverflow(
+                current: 640,
+                reported: nil
+            ),
+            640
+        )
+    }
+
     // MARK: - metadataCollapseProgress
 
     func testMetadataCollapseProgress_staysZeroBeforeStartThreshold() {
@@ -101,5 +145,78 @@ final class RepoDetailScaffoldTests: XCTestCase {
             300,
             accuracy: 0.001
         )
+    }
+
+    // MARK: - cappedMetadataPanelHeight
+
+    func testCappedMetadataPanelHeight_keepsShortHeroNaturalHeight() throws {
+        let height = try XCTUnwrap(
+            RepoDetailScaffold<EmptyView, EmptyView>.cappedMetadataPanelHeight(
+                naturalHeight: 420,
+                availableHeight: 900,
+                minimumBodyHeight: 160
+            )
+        )
+
+        XCTAssertEqual(height, 420)
+    }
+
+    func testCappedMetadataPanelHeight_reservesBodyViewportForOverflowingHero() throws {
+        let height = try XCTUnwrap(
+            RepoDetailScaffold<EmptyView, EmptyView>.cappedMetadataPanelHeight(
+                naturalHeight: 980,
+                availableHeight: 900,
+                minimumBodyHeight: 160
+            )
+        )
+
+        XCTAssertEqual(height, 740)
+    }
+
+    func testCappedMetadataPanelHeight_keepsMinimumWindowWithinParentViewport() throws {
+        let minimumWindowContentHeight: CGFloat = 763
+        let minimumBodyHeight: CGFloat = 160
+        let heroHeight = try XCTUnwrap(
+            RepoDetailScaffold<EmptyView, EmptyView>.cappedMetadataPanelHeight(
+                naturalHeight: 1_200,
+                availableHeight: minimumWindowContentHeight,
+                minimumBodyHeight: minimumBodyHeight
+            )
+        )
+
+        XCTAssertEqual(heroHeight, 603)
+        XCTAssertEqual(heroHeight + minimumBodyHeight, minimumWindowContentHeight)
+    }
+
+    func testCappedMetadataPanelHeight_waitsForValidMeasurements() {
+        XCTAssertNil(RepoDetailScaffold<EmptyView, EmptyView>.cappedMetadataPanelHeight(
+            naturalHeight: 0,
+            availableHeight: 900,
+            minimumBodyHeight: 160
+        ))
+        XCTAssertNil(RepoDetailScaffold<EmptyView, EmptyView>.cappedMetadataPanelHeight(
+            naturalHeight: 500,
+            availableHeight: 150,
+            minimumBodyHeight: 160
+        ))
+    }
+
+    func testCappedMetadataPanelHeight_allowsCollapseUsingVisibleHeroHeight() throws {
+        let visibleHeight = try XCTUnwrap(
+            RepoDetailScaffold<EmptyView, EmptyView>.cappedMetadataPanelHeight(
+                naturalHeight: 980,
+                availableHeight: 900,
+                minimumBodyHeight: 160
+            )
+        )
+
+        XCTAssertTrue(RepoDetailScaffold<EmptyView, EmptyView>.canCollapseHero(
+            scrollOverflow: 760,
+            panelHeight: visibleHeight
+        ))
+        XCTAssertFalse(RepoDetailScaffold<EmptyView, EmptyView>.canCollapseHero(
+            scrollOverflow: 760,
+            panelHeight: 980
+        ))
     }
 }

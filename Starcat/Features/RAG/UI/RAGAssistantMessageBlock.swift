@@ -260,7 +260,7 @@ struct RAGStreamingAssistantMessageBlock: View {
                 // 这里不能启用 textSelection：macOS 会为每次变化重建 SelectionOverlay，
                 // 长回答可能把 SwiftUI 主线程拖入 AttributeGraph livelock。完成态仍可整条复制。
                 Text(snapshot.liveTail)
-                    .font(interfaceScale.font(RAGConversationTypography.text, weight: .regular))
+                    .font(interfaceScale.font(RAGConversationTypography.answerText, weight: .regular))
             }
 
             if !snapshot.isEmpty, let activityLabel, !activityLabel.isEmpty {

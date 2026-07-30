@@ -158,10 +158,60 @@ struct RAGChunkBuilderTests {
             )
         )
 
+        #expect(chunks.count == 1)
         let chunk = try #require(chunks.first)
         #expect(chunk.source == .notes)
+        #expect(chunk.chunkKey == "notes:0")
+        #expect(chunk.chunkIndex == 0)
         #expect(chunk.parentTitle == "Private note (user-authored in Starcat)")
         #expect(chunk.content == "这个项目可以作为开发个人 IDE 来使用")
+        #expect(!chunk.isTruncated)
+    }
+
+    @Test("超长私人笔记仍完整保留为一个分片")
+    func longPrivateNoteRemainsOneCompleteChunk() throws {
+        let content = Array(
+            repeating: "Starcat 私人笔记需要保留完整上下文，不能按通用 token 规则拆分。",
+            count: 500
+        ).joined(separator: "\n\n")
+        #expect(
+            TokenEstimator.estimate(text: content) >
+                RAGChunkingConfiguration.default.hardMaximumTokens
+        )
+
+        let chunks = RAGChunkBuilder().buildNotes(
+            repoId: 1,
+            note: RepoNote(
+                repoId: 1,
+                content: content,
+                status: RepoStatus.read.rawValue,
+                isAIGenerated: false,
+                editedAt: "2026-07-24T00:00:00Z"
+            )
+        )
+
+        #expect(chunks.count == 1)
+        let chunk = try #require(chunks.first)
+        #expect(chunk.chunkKey == "notes:0")
+        #expect(chunk.content == content)
+        #expect(chunk.tokenCount == TokenEstimator.estimate(text: content))
+        #expect(!chunk.isTruncated)
+    }
+
+    @Test("空白私人笔记不生成分片")
+    func blankPrivateNoteDoesNotCreateChunk() {
+        let chunks = RAGChunkBuilder().buildNotes(
+            repoId: 1,
+            note: RepoNote(
+                repoId: 1,
+                content: " \n\t ",
+                status: RepoStatus.read.rawValue,
+                isAIGenerated: false,
+                editedAt: "2026-07-24T00:00:00Z"
+            )
+        )
+
+        #expect(chunks.isEmpty)
     }
 
     @Test("metadata 按固定顺序追加有效 Wiki 链接")

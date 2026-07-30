@@ -3,7 +3,7 @@
 > 日期：2026-07-15  
 > 状态：已实现，三轮专项审查通过  
 > 单一信任源：本文  
-> 范围：`supports/starcat-weekly-api`、Starcat「探索 → 周刊」、`pages/_local-admin`、repo-local `starcat-weekly-import` skill
+> 范围：`supports/starcat-weekly-api`、Starcat「探索 → 周刊」、`supports/starcat-site/_local-admin`、repo-local `starcat-weekly-import` skill
 
 ## 0. 最终结论
 
@@ -13,7 +13,7 @@
 4. **来源不是任意字符串。** weekly-api 维护固定来源目录；人工录入接口只接受目录中 `manual_import_enabled=true` 的来源。首期仅 `ai_intelligence` 可由 skill 写入，HelloGitHub 只能由 crawler 写入。
 5. **从“三源硬编码”重构成通用来源事件模型。** 现有 `weekly_extras / zread_events / discovery_submissions` 不能继续按每个新渠道加一张表、一组 DTO、一段 UI switch；统一迁移到 `repo_source_events`，列表返回通用 `source_entries`。
 6. **所有 GitHub 补全统一异步化。** Collector 或管理 POST 先把候选项写入持久化队列，事务提交后用内存信号唤醒 Worker；Worker 启动时扫描一次，此后每 15 分钟兜底扫描，负责 GitHub enrich、失败重试、租约恢复和多次失败剔除。
-7. **Weekly 支持多个全局置顶项目。** 置顶只改变符合当前筛选结果内的排序，不绕过来源、语言或仓库状态筛选；管理操作放到 `pages/_local-admin` 的 Weekly 专区，并通过 weekly-api 管理接口原子保存有序列表。
+7. **Weekly 支持多个全局置顶项目。** 置顶只改变符合当前筛选结果内的排序，不绕过来源、语言或仓库状态筛选；管理操作放到 `supports/starcat-site/_local-admin` 的 Weekly 专区，并通过 weekly-api 管理接口原子保存有序列表。
 8. **weekly-api 名称暂不改。** 服务职责升级为「Starcat 编辑型 GitHub 发现源聚合服务」，但重命名会牵涉域名、Fly app、配置和客户端迁移，本期没有收益。
 
 本文替代以下旧方向：
@@ -114,7 +114,7 @@ flowchart LR
     PIN["weekly_pins"] --> BULK
     BULK --> CACHE["Starcat weekly 本地缓存"]
     CACHE --> UI["探索 → 周刊"]
-    ADMIN["pages/_local-admin"] --> API
+    ADMIN["supports/starcat-site/_local-admin"] --> API
     ADMIN --> PIN
 ```
 
@@ -684,7 +684,7 @@ let pinPosition: Int?
 - 文本/图标只使用 `.primary / .secondary`；若使用 `.buttonStyle(.plain)` 必须 `.focusEffectDisabled()`；
 - 列表、详情继续复用 `UnifiedRepoRow / RepoDetailScaffold / WeeklyDetailScaffoldShell / StarredRegistry`。
 
-## 8. `pages/_local-admin` 改造
+## 8. `supports/starcat-site/_local-admin` 改造
 
 ### 8.1 Weekly 专用运营区
 

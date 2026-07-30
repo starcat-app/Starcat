@@ -9,8 +9,9 @@
 //     （已是渲染好的 GFM，含 anchor / code block / table / mermaid / 任务列表等）
 //  2. 包装一层带 GFM 主题 CSS 的完整 HTML（亮/暗自适应 prefers-color-scheme）
 //  3. 禁止页面自带 JavaScript：GitHub HTML 不需要页面脚本，关闭可减小攻击面。
-//     例外：注入一个 app-owned isolated user script，只用于 README 阅读体验增强：
-//     滚动上报、图片加载态、图片点击预览；不执行 README 自带脚本。
+//     例外：注入 app-owned user script，只用于 README 阅读体验增强：
+//     滚动上报、图片加载态、图片点击预览、翻译 DOM 与 Mermaid 检测；不执行 README
+//     自带脚本。Mermaid 运行时也来自 App Bundle，并仅在文档确实包含图表时按需加载。
 //  4. 图片相对路径重写：
 //     - GitHub 的 HTML render 端点对 Markdown `![]()` 会做 camo 代理重写，
 //       但对原生 HTML `<img src="./xx">` 不重写，原样吐回相对路径
@@ -63,6 +64,16 @@ extension Notification.Name {
 
 struct ReadmeWebView: View {
 
+    /// 与 GitHub 线上 Viewscreen 当前使用的版本对齐；测试会校验对应 Bundle 资源存在。
+    static let mermaidRendererVersion = "11.16.0"
+    static let mermaidRuntimeResourceName = "mermaid-\(mermaidRendererVersion).min"
+
+    /// README 文档结束时注入的 app-owned 脚本。保持 internal 仅用于验证真实注入内容，
+    /// 页面自身脚本仍由 CSP 禁止，业务层不应直接执行或拼接该字符串。
+    static var readmeEnhancementScript: String {
+        ReadmeWebContentView.Coordinator.readmeEnhancementScript
+    }
+
     /// GitHub 返回的 HTML 片段（不含 <html>/<head>/<body>）。
     let htmlFragment: String
 
@@ -90,6 +101,13 @@ struct ReadmeWebView: View {
     /// nil 时浮动工具栏不显示该按钮。
     var onExportMarkdown: (() -> Void)? = nil
 
+    /// 当前翻译渲染状态。默认隐藏，普通 README 调用方无需感知翻译能力。
+    var translationRenderState: ReadmeTranslationRenderState = .hidden
+
+    /// WebView 完成 DOM 提取后回传两种模式的纯文本。只在本机内存流转，
+    /// 用户点击翻译后才会把当前模式对应的数据发给 AI。
+    var onTranslationSourceChange: (ReadmeTranslationSourceSnapshot) -> Void = { _ in }
+
     @Environment(AppSettings.self) private var settings
     @State private var scrollToTopRequestID = 0
     @State private var isFontToolbarExpanded = false
@@ -100,7 +118,9 @@ struct ReadmeWebView: View {
             baseURL: baseURL,
             onScrollReportChange: handleScrollReport,
             readmeFontSizeAdjustment: settings.readmeFontSizeAdjustment,
-            scrollToTopRequestID: scrollToTopRequestID
+            scrollToTopRequestID: scrollToTopRequestID,
+            translationRenderState: translationRenderState,
+            onTranslationSourceChange: onTranslationSourceChange
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // 工具条必须作为 overlay 贴边悬浮，不能参与 WebView 正文布局。
@@ -200,6 +220,8 @@ private struct ReadmeWebContentView: NSViewRepresentable {
     var onScrollReportChange: (RepoDetailScrollReport) -> Void
     let readmeFontSizeAdjustment: Int
     let scrollToTopRequestID: Int
+    let translationRenderState: ReadmeTranslationRenderState
+    var onTranslationSourceChange: (ReadmeTranslationSourceSnapshot) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -228,12 +250,16 @@ private struct ReadmeWebContentView: NSViewRepresentable {
 
         context.coordinator.webView = webView
         context.coordinator.onScrollReportChange = onScrollReportChange
+        context.coordinator.onTranslationSourceChange = onTranslationSourceChange
+        context.coordinator.updateTranslationRenderState(translationRenderState)
         loadIfNeeded(into: webView, context: context)
         return webView
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         context.coordinator.onScrollReportChange = onScrollReportChange
+        context.coordinator.onTranslationSourceChange = onTranslationSourceChange
+        context.coordinator.updateTranslationRenderState(translationRenderState)
         loadIfNeeded(into: webView, context: context)
         scrollToTopIfNeeded(in: webView, context: context)
     }
@@ -277,6 +303,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         if context.coordinator.lastLoadedKey != contentKey {
             context.coordinator.lastLoadedKey = contentKey
             context.coordinator.lastAppliedFontSizeAdjustment = readmeFontSizeAdjustment
+            context.coordinator.prepareForDocumentReload()
 
             // HOM-201 P1-2（2026-06-14）：`htmlFragment` 已是 `ReadmeAPI` rewrite 后的
             // 内容(img src 已是 raw.githubusercontent.com 绝对 URL),这里直接 wrap document,
@@ -320,7 +347,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         interfaceScale: InterfaceScale = .standard,
         readmeFontSizeAdjustment: Int = 0
     ) -> String {
-        let css = ReadmeCSS.full + "\n" + ReadmeCSS.readingVariables(
+        let css = ReadmeCSS.full + "\n" + ReadmeMermaidDOM.css + "\n" + ReadmeTranslationDOM.css + "\n" + ReadmeCSS.readingVariables(
             bodyFontSize: readmeBodyFontSize(
                 for: interfaceScale,
                 adjustment: readmeFontSizeAdjustment
@@ -362,7 +389,12 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         var lastLoadedKey: ReadmeKey?
         var lastScrollToTopRequestID = 0
         var onScrollReportChange: (RepoDetailScrollReport) -> Void = { _ in }
+        var onTranslationSourceChange: (ReadmeTranslationSourceSnapshot) -> Void = { _ in }
         private weak var userContentController: WKUserContentController?
+        private var pendingTranslationRenderState: ReadmeTranslationRenderState = .hidden
+        private var lastAppliedTranslationRevision: Int?
+        private var mermaidDocumentRevision = 0
+        private var mermaidRuntimeTask: Task<Void, Never>?
 
         /// 上次已应用的 README 字号调整量。
         ///
@@ -383,18 +415,23 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         /// 事件拿 `window.scrollY` 更接近真实阅读位置，也不会依赖私有 view class。
         ///
         /// 安全边界：
-        /// - user script 只读滚动度量与图片 URL，不读取正文文本，也不把 README 内容回传 Swift。
+        /// - user script 只读取候选段落的可见文本并回传当前进程；未点击翻译前不出本机；
+        /// - 只扫描 h1...h6 / p / li / blockquote / td / th / summary / dt / dd，
+        ///   明确排除 pre / code / script / style / svg 等非自然语言节点；
+        /// - Mermaid handler 只接收 1...100 的图表数量；源码留在 DOM 内并限制单图 50,000 字符；
         /// - HTML 文档里加了 CSP `script-src 'none'`，页面自带 `<script>` / inline handler 不执行。
-        /// - message handler 只接收 Number，其余 body 直接忽略。
+        /// - message handler 对滚动 payload 和段落数组分别做类型、长度校验。
         func makeUserContentController() -> WKUserContentController {
             let controller = WKUserContentController()
             let script = WKUserScript(
-                source: Self.readmeEnhancementScript,
+                source: ReadmeWebView.readmeEnhancementScript,
                 injectionTime: .atDocumentEnd,
                 forMainFrameOnly: true
             )
             controller.addUserScript(script)
             controller.add(self, name: ReadmeWebViewConstants.scrollMessageName)
+            controller.add(self, name: ReadmeWebViewConstants.translationSourceMessageName)
+            controller.add(self, name: ReadmeWebViewConstants.mermaidRequestMessageName)
             userContentController = controller
             return controller
         }
@@ -404,10 +441,169 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         /// 主线程调用 `dismantleNSView`，这里集中做 WebKit handler 清理，避免循环持有。
         func removeScriptMessageHandler() {
             userContentController?.removeScriptMessageHandler(forName: ReadmeWebViewConstants.scrollMessageName)
+            userContentController?.removeScriptMessageHandler(
+                forName: ReadmeWebViewConstants.translationSourceMessageName
+            )
+            userContentController?.removeScriptMessageHandler(
+                forName: ReadmeWebViewConstants.mermaidRequestMessageName
+            )
+            mermaidRuntimeTask?.cancel()
+            mermaidRuntimeTask = nil
             userContentController = nil
         }
 
-        private static let readmeEnhancementScript = """
+        /// 内容或主题重载后，旧 DOM 已消失；导航完成时必须把当前翻译状态重新注入。
+        /// 同时取消旧文档尚未完成的 Mermaid 任务，避免切换仓库后把图表写进新 DOM。
+        func prepareForDocumentReload() {
+            lastAppliedTranslationRevision = nil
+            mermaidDocumentRevision &+= 1
+            mermaidRuntimeTask?.cancel()
+            mermaidRuntimeTask = nil
+        }
+
+        /// 保存最新 SwiftUI 状态，并在当前文档已可用时做无重载 DOM 更新。
+        func updateTranslationRenderState(_ state: ReadmeTranslationRenderState) {
+            pendingTranslationRenderState = state
+            applyTranslationRenderStateIfNeeded()
+        }
+
+        private func applyTranslationRenderStateIfNeeded() {
+            guard let webView,
+                  lastAppliedTranslationRevision != pendingTranslationRenderState.revision
+            else { return }
+
+            let state = pendingTranslationRenderState
+            let payload: [[String: String]] = state.translations.map {
+                ["id": $0.id, "translation": $0.translatedText]
+            }
+            lastAppliedTranslationRevision = state.revision
+            Task { @MainActor in
+                do {
+                    _ = try await webView.callAsyncJavaScript(
+                        """
+                        if (typeof window.starcatApplyReadmeTranslations === 'function') {
+                            window.starcatApplyReadmeTranslations(mode, isVisible, translations);
+                        }
+                        """,
+                        arguments: [
+                            "isVisible": state.isVisible,
+                            "mode": state.mode.rawValue,
+                            "translations": payload
+                        ],
+                        in: nil,
+                        contentWorld: .page
+                    )
+                } catch {
+                    AppLog.ui.debug("Readme translation DOM update deferred: \(error.localizedDescription, privacy: .public)")
+                }
+            }
+        }
+
+        /// 收到文档端的“存在 Mermaid”信号后才读取并执行约 3.4 MB 的本地运行时。
+        ///
+        /// 关键约束：
+        /// - README 自带脚本仍被 CSP 禁止；这里只通过 WebKit 原生 API 执行 App Bundle 内
+        ///   固定版本的 Mermaid，不把任意远端脚本注入页面。
+        /// - Bundle IO 放到后台任务，避免长 README 首帧被同步文件读取阻塞。
+        /// - `mermaidDocumentRevision` 把异步结果绑定到发起请求的文档；用户快速切仓库或
+        ///   切换主题时，旧任务即使晚返回也不能改写新文档。
+        /// - Mermaid 使用 `securityLevel: sandbox`，最终 SVG 位于无脚本权限的 data URL
+        ///   iframe 内，图表文本不能逃逸到 README 主文档。
+        private func loadMermaidRuntimeIfNeeded(sectionCount: Int) {
+            guard (1...ReadmeWebViewConstants.maximumMermaidSectionCount).contains(sectionCount),
+                  mermaidRuntimeTask == nil,
+                  let webView
+            else { return }
+
+            let revision = mermaidDocumentRevision
+            let failureMessage = String.l10n("readme.mermaid.renderFailed")
+            mermaidRuntimeTask = Task { @MainActor [weak self, weak webView] in
+                guard let self, let webView else { return }
+
+                do {
+                    guard let runtimeURL = Bundle.main.url(
+                        forResource: ReadmeWebView.mermaidRuntimeResourceName,
+                        withExtension: "js"
+                    ) else {
+                        throw MermaidRuntimeError.resourceMissing
+                    }
+
+                    let runtimeSource = try await Task.detached(priority: .userInitiated) {
+                        try String(contentsOf: runtimeURL, encoding: .utf8)
+                    }.value
+
+                    try Task.checkCancellation()
+                    guard revision == self.mermaidDocumentRevision else { return }
+
+                    // `evaluateJavaScript` 来自 App 进程，不受页面 `script-src 'none'`
+                    // 影响；这正是保持 README 页面脚本全禁用的同时提供本地图表渲染的边界。
+                    // Bundle 尾表达式会把 `mermaid` 对象赋给 globalThis；额外返回布尔值，
+                    // 避免 WebKit 尝试把包含函数的巨大 JS 对象桥接回 Swift。
+                    _ = try await webView.evaluateJavaScript(runtimeSource + "\n;true;")
+                    try Task.checkCancellation()
+                    guard revision == self.mermaidDocumentRevision else { return }
+
+                    _ = try await webView.callAsyncJavaScript(
+                        """
+                        if (typeof window.starcatRenderMermaidSections !== 'function') {
+                            throw new Error('Starcat Mermaid bridge is unavailable');
+                        }
+                        return await window.starcatRenderMermaidSections(failureMessage);
+                        """,
+                        arguments: ["failureMessage": failureMessage],
+                        in: nil,
+                        contentWorld: .page
+                    )
+                } catch is CancellationError {
+                    // 文档切换时主动取消，不属于用户可见错误。
+                } catch {
+                    guard revision == self.mermaidDocumentRevision else { return }
+                    await self.markMermaidSectionsFailed(
+                        in: webView,
+                        message: failureMessage
+                    )
+                    AppLog.ui.error(
+                        "README Mermaid render failed: \(error.localizedDescription, privacy: .public)"
+                    )
+                }
+
+                if revision == self.mermaidDocumentRevision {
+                    self.mermaidRuntimeTask = nil
+                }
+            }
+        }
+
+        private func markMermaidSectionsFailed(in webView: WKWebView, message: String) async {
+            do {
+                _ = try await webView.callAsyncJavaScript(
+                    """
+                    if (typeof window.starcatFailMermaidSections === 'function') {
+                        window.starcatFailMermaidSections(message);
+                    }
+                    """,
+                    arguments: ["message": message],
+                    in: nil,
+                    contentWorld: .page
+                )
+            } catch {
+                AppLog.ui.debug(
+                    "README Mermaid fallback could not update DOM: \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
+
+        private enum MermaidRuntimeError: LocalizedError {
+            case resourceMissing
+
+            var errorDescription: String? {
+                switch self {
+                case .resourceMissing:
+                    "Bundled Mermaid \(ReadmeWebView.mermaidRendererVersion) resource is missing"
+                }
+            }
+        }
+
+        fileprivate static let readmeEnhancementScript = """
         (function() {
             var lastY = -1;
             var lastOverflow = -1;
@@ -514,6 +710,387 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                 }
             }
 
+            function mermaidSections() {
+                return Array.prototype.slice.call(
+                    document.querySelectorAll('section[data-type="mermaid"]'),
+                    0,
+                    \(ReadmeWebViewConstants.maximumMermaidSectionCount)
+                );
+            }
+
+            function mermaidSource(section) {
+                var target = section.querySelector('.js-render-enrichment-target') || section;
+                // GitHub 的 data-json 为了嵌入 HTML attribute 会把 Mermaid 自身实体再
+                // 转义一层，例如 `->>` 变成 `-&amp;gt;&amp;gt;`。DOM 解开外层后，
+                // JSON.parse 得到的仍是 `-&gt;&gt;`，会被 Mermaid 当作语法错误。
+                // data-plain / raw pre 都是浏览器已正确解码的原文，因此必须优先使用。
+                var plain = target.getAttribute('data-plain');
+                if (typeof plain === 'string' && plain.length > 0) {
+                    return plain;
+                }
+                var raw = target.querySelector('pre[lang="mermaid"], pre');
+                if (raw && raw.textContent) {
+                    return raw.textContent;
+                }
+
+                var json = target.getAttribute('data-json');
+                if (!json) { return ''; }
+                try {
+                    var payload = JSON.parse(json);
+                    if (!payload || typeof payload.data !== 'string') { return ''; }
+                    // 只有 data-plain 与 raw pre 都缺失时才走旧 JSON 回退。这里仅解码
+                    // Mermaid 语法需要的安全字符，不通过 innerHTML 解析不可信 README。
+                    return payload.data
+                        .replace(/&quot;/gi, '"')
+                        .replace(/&#(?:39|x27);/gi, "'")
+                        .replace(/&lt;/gi, '<')
+                        .replace(/&#(?:60|x3c);/gi, '<')
+                        .replace(/&gt;/gi, '>')
+                        .replace(/&#(?:62|x3e);/gi, '>')
+                        .replace(/&amp;/gi, '&');
+                } catch (_) {
+                    return '';
+                }
+            }
+
+            function mermaidSandboxIntrinsicSize(iframe) {
+                var source = iframe.getAttribute('src') || '';
+                var delimiterIndex = source.indexOf(',');
+                if (source.indexOf('data:text/html') !== 0 || delimiterIndex < 0) {
+                    return null;
+                }
+
+                try {
+                    var metadata = source.slice(0, delimiterIndex);
+                    var payload = source.slice(delimiterIndex + 1);
+                    var markup = /;base64/i.test(metadata)
+                        ? window.atob(payload)
+                        : decodeURIComponent(payload);
+                    // Mermaid 11 sandbox 返回 data URL iframe。这里仅在 inert DOM 中读取
+                    // 本地运行时生成的 SVG viewBox，不执行或回填其中的任何 HTML。
+                    var parsed = new DOMParser().parseFromString(markup, 'text/html');
+                    var svg = parsed.querySelector('svg[viewBox]');
+                    if (!svg) { return null; }
+
+                    var values = svg.getAttribute('viewBox').trim().split(/[\\s,]+/);
+                    if (values.length !== 4) { return null; }
+                    var width = Number(values[2]);
+                    var height = Number(values[3]);
+                    if (!Number.isFinite(width) || !Number.isFinite(height) ||
+                        width <= 0 || height <= 0) {
+                        return null;
+                    }
+                    return { width: width, height: height };
+                } catch (_) {
+                    return null;
+                }
+            }
+
+            function makeMermaidSandboxResponsive(rendered) {
+                var iframe = rendered.querySelector(':scope > iframe');
+                if (!iframe) { return; }
+
+                var size = mermaidSandboxIntrinsicSize(iframe);
+                if (!size) { return; }
+
+                // Mermaid 把 SVG 原始高度写成 iframe 固定像素高度；窄详情栏中 SVG 会
+                // 等比缩小，但 iframe 不会，因而在图表下方留下大块空白。用 viewBox
+                // 建立原始宽高比后，WebKit 会随容器宽度自动调整，无需额外 resize 监听。
+                iframe.style.width = '100%';
+                iframe.style.maxWidth = size.width + 'px';
+                iframe.style.height = 'auto';
+                iframe.style.aspectRatio = size.width + ' / ' + size.height;
+                iframe.removeAttribute('height');
+            }
+
+            function cleanupMermaidRenderArtifacts(renderID) {
+                // Mermaid 11 sandbox 模式解析失败时会把临时 iframe `i<renderID>`
+                // 留在 document.body。它虽然不在正文位置，却仍进入可访问性树并显示
+                // “Syntax error in text”；失败回退前必须显式清理。
+                var temporaryIDs = [renderID, 'i' + renderID, 'd' + renderID];
+                for (var index = 0; index < temporaryIDs.length; index += 1) {
+                    var node = document.getElementById(temporaryIDs[index]);
+                    if (node) { node.remove(); }
+                }
+            }
+
+            function setMermaidFailure(section, message) {
+                section.dataset.starcatMermaidState = 'failed';
+                var loader = section.querySelector('.js-render-enrichment-loader');
+                if (loader) { loader.hidden = true; }
+
+                var raw = section.querySelector('.render-plaintext-hidden');
+                if (raw) { raw.hidden = false; }
+
+                var existing = section.querySelector('.starcat-mermaid-error');
+                if (!existing) {
+                    existing = document.createElement('div');
+                    existing.className = 'starcat-mermaid-error';
+                    section.appendChild(existing);
+                }
+                existing.textContent = message;
+            }
+
+            window.starcatFailMermaidSections = function(message) {
+                var sections = mermaidSections();
+                for (var index = 0; index < sections.length; index += 1) {
+                    if (sections[index].dataset.starcatMermaidState !== 'ready') {
+                        setMermaidFailure(sections[index], message);
+                    }
+                }
+                schedule();
+            };
+
+            window.starcatRenderMermaidSections = async function(failureMessage) {
+                var sections = mermaidSections();
+                if (!window.mermaid || typeof window.mermaid.render !== 'function') {
+                    window.starcatFailMermaidSections(failureMessage);
+                    return 0;
+                }
+
+                if (!window.starcatMermaidInitialized) {
+                    window.mermaid.initialize({
+                        startOnLoad: false,
+                        securityLevel: 'sandbox',
+                        theme: document.body.classList.contains('dark') ? 'dark' : 'default',
+                        maxTextSize: \(ReadmeWebViewConstants.maximumMermaidSourceLength)
+                    });
+                    window.starcatMermaidInitialized = true;
+                }
+
+                var renderedCount = 0;
+                for (var index = 0; index < sections.length; index += 1) {
+                    var section = sections[index];
+                    if (section.dataset.starcatMermaidState === 'ready') { continue; }
+
+                    var source = mermaidSource(section).trim();
+                    if (source.length === 0 ||
+                        source.length > \(ReadmeWebViewConstants.maximumMermaidSourceLength)) {
+                        setMermaidFailure(section, failureMessage);
+                        continue;
+                    }
+
+                    section.dataset.starcatMermaidState = 'loading';
+                    var renderID = 'starcat-mermaid-' + Date.now() + '-' + index;
+                    try {
+                        // 逐张 await，避免 Mermaid 的全局临时节点在并发 render 时互相覆盖。
+                        var result = await window.mermaid.render(
+                            renderID,
+                            source
+                        );
+                        var target = section.querySelector('.js-render-enrichment-target') || section;
+                        var existing = target.querySelector(':scope > .starcat-mermaid-rendered');
+                        if (existing) { existing.remove(); }
+
+                        var rendered = document.createElement('div');
+                        rendered.className = 'starcat-mermaid-rendered';
+                        rendered.innerHTML = result.svg;
+                        target.insertBefore(rendered, target.firstChild);
+                        makeMermaidSandboxResponsive(rendered);
+                        if (typeof result.bindFunctions === 'function') {
+                            result.bindFunctions(rendered);
+                        }
+
+                        var raw = target.querySelector('.render-plaintext-hidden');
+                        if (raw) { raw.hidden = true; }
+                        var loader = section.querySelector('.js-render-enrichment-loader');
+                        if (loader) { loader.hidden = true; }
+                        var errorNode = section.querySelector('.starcat-mermaid-error');
+                        if (errorNode) { errorNode.remove(); }
+                        section.dataset.starcatMermaidState = 'ready';
+                        renderedCount += 1;
+                    } catch (_) {
+                        cleanupMermaidRenderArtifacts(renderID);
+                        setMermaidFailure(section, failureMessage);
+                    }
+                }
+                schedule();
+                return renderedCount;
+            };
+
+            function requestMermaidRendering() {
+                var sections = mermaidSections();
+                if (sections.length === 0 || window.starcatMermaidRuntimeRequested) { return; }
+                window.starcatMermaidRuntimeRequested = true;
+                window.webkit.messageHandlers.\(ReadmeWebViewConstants.mermaidRequestMessageName)
+                    .postMessage({ count: sections.length });
+            }
+
+            function normalizedSegmentText(element) {
+                var clone = element.cloneNode(true);
+
+                // 父块和子块分别翻译，先从父块副本移除后代候选，避免同一句重复发送。
+                var nestedBlocks = clone.querySelectorAll(
+                    'h1, h2, h3, h4, h5, h6, p, li, blockquote, td, th, summary, dt, dd'
+                );
+                for (var nestedIndex = 0; nestedIndex < nestedBlocks.length; nestedIndex += 1) {
+                    nestedBlocks[nestedIndex].remove();
+                }
+
+                var excluded = clone.querySelectorAll('pre, script, style, svg, noscript');
+                for (var excludedIndex = 0; excludedIndex < excluded.length; excludedIndex += 1) {
+                    excluded[excludedIndex].remove();
+                }
+
+                // 双语译文是纯文本；用反引号标记内联代码，提醒模型按字面量保留。
+                var literals = clone.querySelectorAll('code, kbd, samp');
+                for (var literalIndex = 0; literalIndex < literals.length; literalIndex += 1) {
+                    var literal = literals[literalIndex];
+                    literal.replaceWith(document.createTextNode('`' + (literal.textContent || '') + '`'));
+                }
+
+                return (clone.textContent || '').replace(/\\s+/g, ' ').trim();
+            }
+
+            function extractTranslationSource() {
+                var article = document.querySelector('.markdown-body article') ||
+                    document.querySelector('.markdown-body');
+                if (!article) { return; }
+
+                var candidates = article.querySelectorAll(
+                    'h1, h2, h3, h4, h5, h6, p, li, blockquote, td, th, summary, dt, dd'
+                );
+                var segments = [];
+                window.starcatReadmeSegmentElements = {};
+                for (var index = 0; index < candidates.length; index += 1) {
+                    var element = candidates[index];
+                    if (element.closest('pre, code, kbd, samp, script, style, svg, noscript')) {
+                        continue;
+                    }
+                    var text = normalizedSegmentText(element);
+                    if (text.length < 2 || /^https?:\\/\\/\\S+$/.test(text)) {
+                        continue;
+                    }
+                    var id = 'starcat-readme-segment-' + segments.length;
+                    element.dataset.starcatTranslationSource = 'true';
+                    element.dataset.starcatTranslationId = id;
+                    window.starcatReadmeSegmentElements[id] = element;
+                    segments.push({ id: id, text: text });
+                }
+
+                // 全文模式按 Text node 替换译文，而不是覆盖 element.innerHTML。
+                // 这样 inline link、图片、属性和代码节点始终由原 DOM 持有；切回原文时
+                // 只需恢复 nodeValue，不需要重载整份 README。
+                var fullTextNodes = [];
+                window.starcatReadmeFullTextNodes = {};
+                var walker = document.createTreeWalker(
+                    article,
+                    NodeFilter.SHOW_TEXT,
+                    {
+                        acceptNode: function(node) {
+                            var parent = node.parentElement;
+                            if (!parent || parent.closest(
+                                'pre, code, kbd, samp, script, style, svg, noscript, .starcat-readme-translation'
+                            )) {
+                                return NodeFilter.FILTER_REJECT;
+                            }
+                            var text = (node.nodeValue || '').trim();
+                            if (text.length < 2 || /^https?:\\/\\/\\S+$/.test(text)) {
+                                return NodeFilter.FILTER_REJECT;
+                            }
+                            return NodeFilter.FILTER_ACCEPT;
+                        }
+                    }
+                );
+                var textNode = walker.nextNode();
+                while (textNode) {
+                    var fullID = 'starcat-readme-text-' + fullTextNodes.length;
+                    var original = textNode.nodeValue || '';
+                    window.starcatReadmeFullTextNodes[fullID] = {
+                        node: textNode,
+                        original: original
+                    };
+                    fullTextNodes.push({ id: fullID, text: original.trim() });
+                    textNode = walker.nextNode();
+                }
+
+                window.webkit.messageHandlers.\(ReadmeWebViewConstants.translationSourceMessageName)
+                    .postMessage({
+                        segmented: segments,
+                        full: fullTextNodes
+                    });
+            }
+
+            function restoreFullTranslationTextNodes() {
+                var nodes = window.starcatReadmeFullTextNodes || {};
+                Object.keys(nodes).forEach(function(id) {
+                    var entry = nodes[id];
+                    if (entry && entry.node) {
+                        entry.node.nodeValue = entry.original;
+                    }
+                });
+            }
+
+            function hideSegmentedTranslations() {
+                var existing = document.querySelectorAll('.starcat-readme-translation');
+                for (var index = 0; index < existing.length; index += 1) {
+                    existing[index].hidden = true;
+                }
+            }
+
+            window.starcatApplyReadmeTranslations = function(mode, isVisible, translations) {
+                // 每次先回到原始 Text node，再应用当前模式，避免全文/分段切换时残留旧 DOM。
+                restoreFullTranslationTextNodes();
+                if (!isVisible) {
+                    hideSegmentedTranslations();
+                    schedule();
+                    return;
+                }
+
+                if (mode === 'full') {
+                    hideSegmentedTranslations();
+                    var fullNodes = window.starcatReadmeFullTextNodes || {};
+                    for (var fullIndex = 0; fullIndex < translations.length; fullIndex += 1) {
+                        var fullItem = translations[fullIndex];
+                        var entry = fullNodes[fullItem.id];
+                        if (!entry || !entry.node) { continue; }
+
+                        // AI 只翻译 trim 后的正文；原节点首尾空白必须保留，否则 inline
+                        // element 之间会粘连（例如 "with <a>React</a> and"）。
+                        var original = entry.original || '';
+                        var leading = (original.match(/^\\s*/) || [''])[0];
+                        var trailing = (original.match(/\\s*$/) || [''])[0];
+                        entry.node.nodeValue = leading + fullItem.translation.trim() + trailing;
+                    }
+                    schedule();
+                    return;
+                }
+
+                var expected = new Set();
+                for (var index = 0; index < translations.length; index += 1) {
+                    var item = translations[index];
+                    expected.add(item.id);
+                    var source = window.starcatReadmeSegmentElements
+                        ? window.starcatReadmeSegmentElements[item.id]
+                        : null;
+                    if (!source) { continue; }
+
+                    var translated = source.querySelector(':scope > .starcat-readme-translation');
+                    if (!translated) {
+                        translated = document.createElement('span');
+                        translated.className = 'starcat-readme-translation';
+                        translated.setAttribute('aria-label', 'Translation');
+                        source.appendChild(translated);
+                    }
+                    translated.textContent = item.translation;
+                    translated.hidden = !isVisible;
+                }
+
+                var existing = document.querySelectorAll('.starcat-readme-translation');
+                for (var existingIndex = 0; existingIndex < existing.length; existingIndex += 1) {
+                    var node = existing[existingIndex];
+                    var parentID = node.parentElement
+                        ? (node.parentElement.dataset.starcatTranslationId || '')
+                        : '';
+                    if (!expected.has(parentID)) {
+                        node.remove();
+                    } else {
+                        node.hidden = !isVisible;
+                    }
+                }
+                schedule();
+            };
+
             function schedule() {
                 if (ticking) { return; }
                 ticking = true;
@@ -534,14 +1111,64 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             });
             window.addEventListener('load', report);
             enhanceImages();
+            extractTranslationSource();
+            requestMermaidRendering();
             setTimeout(report, 0);
         })();
         """
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard message.name == ReadmeWebViewConstants.scrollMessageName else { return }
-            if let payload = message.body as? [String: Any],
-               let yValue = payload["y"] as? NSNumber {
+            if message.name == ReadmeWebViewConstants.mermaidRequestMessageName {
+                guard let payload = message.body as? [String: Any],
+                      let count = payload["count"] as? NSNumber
+                else { return }
+                loadMermaidRuntimeIfNeeded(sectionCount: count.intValue)
+                return
+            }
+
+            if message.name == ReadmeWebViewConstants.translationSourceMessageName {
+                guard let payload = message.body as? [String: Any] else { return }
+
+                func decodeSegments(
+                    key: String,
+                    idPrefix: String,
+                    limit: Int
+                ) -> [ReadmeSourceSegment] {
+                    guard let items = payload[key] as? [[String: Any]] else { return [] }
+                    return items.prefix(limit).compactMap { item -> ReadmeSourceSegment? in
+                    guard let id = item["id"] as? String,
+                          let text = item["text"] as? String,
+                          id.hasPrefix(idPrefix),
+                          !text.isEmpty,
+                          text.count <= 20_000
+                    else { return nil }
+                    return ReadmeSourceSegment(id: id, text: text)
+                }
+                }
+
+                let snapshot = ReadmeTranslationSourceSnapshot(
+                    segmented: decodeSegments(
+                        key: "segmented",
+                        idPrefix: "starcat-readme-segment-",
+                        limit: 2_000
+                    ),
+                    full: decodeSegments(
+                        key: "full",
+                        idPrefix: "starcat-readme-text-",
+                        limit: 8_000
+                    )
+                )
+                Task { @MainActor in
+                    self.onTranslationSourceChange(snapshot)
+                }
+                return
+            }
+
+            guard message.name == ReadmeWebViewConstants.scrollMessageName,
+                  let payload = message.body as? [String: Any],
+                  let yValue = payload["y"] as? NSNumber
+            else { return }
+            do {
                 let scrollHeight = (payload["scrollHeight"] as? NSNumber).map { CGFloat(truncating: $0) }
                 let clientHeight = (payload["clientHeight"] as? NSNumber).map { CGFloat(truncating: $0) }
                 let overflow: CGFloat?
@@ -559,6 +1186,12 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                     self.onScrollReportChange(report)
                 }
             }
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            // `updateNSView` 可能先于 document-end script 完成；导航结束后再补一次当前状态。
+            lastAppliedTranslationRevision = nil
+            applyTranslationRenderStateIfNeeded()
         }
 
         func webView(
@@ -628,6 +1261,105 @@ private struct ReadmeWebContentView: NSViewRepresentable {
 
 private enum ReadmeWebViewConstants {
     static let scrollMessageName = "readmeScroll"
+    static let translationSourceMessageName = "readmeTranslationSource"
+    static let mermaidRequestMessageName = "readmeMermaidRequest"
+    static let maximumMermaidSectionCount = 100
+    static let maximumMermaidSourceLength = 50_000
+}
+
+/// GitHub 的 Mermaid enrichment HTML 默认等待 Viewscreen iframe 回填；Starcat 不加载
+/// GitHub 页面脚本，因此在原位置提供本地加载态、沙箱 iframe 与失败时 raw code 回退样式。
+private enum ReadmeMermaidDOM {
+    static let css = """
+    .markdown-body section[data-type="mermaid"] {
+        min-width: 0;
+        margin: 0 0 16px;
+    }
+    .markdown-body section[data-type="mermaid"] .render-plaintext-hidden {
+        display: none;
+    }
+    .markdown-body section[data-type="mermaid"][data-starcat-mermaid-state="failed"]
+        .render-plaintext-hidden {
+        display: block;
+    }
+    .markdown-body .js-render-enrichment-loader {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 36px;
+        color: var(--muted);
+    }
+    .markdown-body .js-render-enrichment-loader[hidden] {
+        display: none;
+    }
+    .markdown-body .js-render-enrichment-loader .octospinner {
+        width: 20px;
+        height: 20px;
+        color: var(--muted);
+    }
+    .markdown-body .js-render-enrichment-loader .anim-rotate {
+        animation: starcat-mermaid-spin 1s linear infinite;
+    }
+    .markdown-body .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+    .markdown-body .starcat-mermaid-rendered {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
+    }
+    .markdown-body .starcat-mermaid-rendered iframe {
+        display: block;
+        width: 100%;
+        max-width: 100%;
+        border: 0;
+        background: transparent;
+    }
+    .markdown-body .starcat-mermaid-error {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 0.88em;
+    }
+    @keyframes starcat-mermaid-spin {
+        to { transform: rotate(360deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .markdown-body .js-render-enrichment-loader .anim-rotate {
+            animation: none;
+        }
+    }
+    """
+}
+
+/// 双语译文只作为原文块的次级说明，不改变原 README 的字号层级和链接结构。
+private enum ReadmeTranslationDOM {
+    static let css = """
+    .starcat-readme-translation {
+        display: block;
+        margin: 0.42em 0 0.18em;
+        padding: 0.28em 0 0.28em 0.72em;
+        border-left: 2px solid color-mix(in srgb, var(--color-accent-fg) 45%, transparent);
+        color: var(--fgColor-muted, #656d76);
+        font-size: 0.92em;
+        font-weight: 400;
+        line-height: 1.58;
+        white-space: pre-wrap;
+    }
+    .dark .starcat-readme-translation {
+        color: var(--fgColor-muted, #8b949e);
+    }
+    .starcat-readme-translation[hidden] {
+        display: none;
+    }
+    """
 }
 
 private struct ReadmeFloatingToolbar: View {

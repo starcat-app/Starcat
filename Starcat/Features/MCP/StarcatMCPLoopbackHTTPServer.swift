@@ -2,14 +2,14 @@
 //  StarcatMCPLoopbackHTTPServer.swift
 //  Starcat
 //
-//  `StarcatMCPRuntime` 的本机 HTTP 适配器。
+//  `StarcatMCPRuntime` 的 HTTP 适配器。
 //
 //  MCP Swift SDK 的 server transport 是 framework-agnostic：它负责把 HTTPRequest 转成
 //  JSON-RPC，但不负责监听端口。Starcat 是 macOS 原生 App，不需要为了一个 loopback
 //  端口引入 NIO/Vapor，因此这里用 Network.framework 写一层极薄 adapter。
 //
 //  关键约束：
-//  - 只监听 `127.0.0.1`，不开放局域网 host 配置；
+//  - 默认只监听 `127.0.0.1`；可信网络模式必须传入独立 TLS identity 才能绑定所有接口；
 //  - P0 使用 stateless HTTP，一次连接处理一个请求，不支持 SSE/server push；
 //  - 请求体上限 8 MiB，避免 agent 误传大 payload 撑爆 App 内存。
 //
@@ -17,12 +17,15 @@
 import Foundation
 import MCP
 import Network
+import Security
 
 @MainActor
 final class StarcatMCPLoopbackHTTPServer {
     private let port: Int
     private let runtime: StarcatMCPRuntime
+    private let tlsIdentity: SecIdentity?
     private let requestValidator: @MainActor (StarcatHTTPServerRequest) -> StarcatHTTPServerError?
+    private let routeHandler: @MainActor (StarcatHTTPServerRequest) async -> StarcatHTTPServerRouteResponse?
     private let queue = DispatchQueue(label: "com.starcat.mcp.http")
     private var listener: NWListener?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
@@ -30,11 +33,15 @@ final class StarcatMCPLoopbackHTTPServer {
     init(
         port: Int,
         runtime: StarcatMCPRuntime,
-        requestValidator: @escaping @MainActor (StarcatHTTPServerRequest) -> StarcatHTTPServerError?
+        tlsIdentity: SecIdentity? = nil,
+        requestValidator: @escaping @MainActor (StarcatHTTPServerRequest) -> StarcatHTTPServerError?,
+        routeHandler: @escaping @MainActor (StarcatHTTPServerRequest) async -> StarcatHTTPServerRouteResponse? = { _ in nil }
     ) {
         self.port = port
         self.runtime = runtime
+        self.tlsIdentity = tlsIdentity
         self.requestValidator = requestValidator
+        self.routeHandler = routeHandler
     }
 
     func start() throws {
@@ -50,17 +57,43 @@ final class StarcatMCPLoopbackHTTPServer {
         // 修复：显式要求 IPv4 loopback + 端口放 requiredLocalEndpoint，on: .any
         // 规避 commit 579bc46 提到的「requiredLocalEndpoint 与 on: 同时指定同端口
         // 触发 EINVAL」。
-        let parameters = NWParameters.tcp
-        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(IPv4Address.loopback), port: nwPort)
-        let listener = try NWListener(using: parameters, on: .any)
+        let listener: NWListener
+        if let tlsIdentity {
+            let tlsOptions = NWProtocolTLS.Options()
+            guard let networkIdentity = sec_identity_create(tlsIdentity) else {
+                throw StarcatMCPError.invalidArguments("Unable to create MCP TLS identity")
+            }
+            sec_protocol_options_set_local_identity(tlsOptions.securityProtocolOptions, networkIdentity)
+            sec_protocol_options_set_min_tls_protocol_version(tlsOptions.securityProtocolOptions, .TLSv13)
+            let parameters = NWParameters(tls: tlsOptions, tcp: NWProtocolTCP.Options())
+            // 远程模式显式绑定 wildcard；只有配置完成 TLS identity 后才会走到这里。
+            listener = try NWListener(using: parameters, on: nwPort)
+        } else {
+            let parameters = NWParameters.tcp
+            parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(IPv4Address.loopback), port: nwPort)
+            listener = try NWListener(using: parameters, on: .any)
+        }
         listener.newConnectionHandler = { [weak self] connection in
             Task { @MainActor in
                 self?.accept(connection)
             }
         }
+        let diagnosticPort = port
         listener.stateUpdateHandler = { state in
             if case .failed(let error) = state {
                 AppLog.network.error("MCP HTTP listener failed: \(error.localizedDescription, privacy: .public)")
+                if case .posix(.EADDRINUSE) = error {
+                    return
+                }
+                DiagnosticLogStore.record(
+                    level: .error,
+                    visibility: .issue,
+                    category: "mcp",
+                    operation: "mcp.listenerRuntime",
+                    message: "MCP HTTP listener failed after startup",
+                    underlying: DiagnosticEvent.summarize(error),
+                    context: ["port": String(diagnosticPort)]
+                )
             }
         }
         listener.start(queue: queue)
@@ -94,6 +127,12 @@ final class StarcatMCPLoopbackHTTPServer {
     private func handle(_ connection: NWConnection) async {
         do {
             let request = try await readRequest(from: connection)
+            // `/pairing/exchange` 在认证前处理：它只接受五分钟有效的一次性 secret，
+            // 成功后仍需用户在 App 内确认。其它路径继续走原有 Bearer 校验。
+            if let routed = await routeHandler(request) {
+                send(Self.httpData(for: routed), on: connection)
+                return
+            }
             if let error = requestValidator(request) {
                 send(error.httpData, on: connection)
                 return
@@ -179,6 +218,44 @@ final class StarcatMCPLoopbackHTTPServer {
         var out = Data(head.utf8)
         out.append(body)
         return out
+    }
+
+    private static func httpData(for response: StarcatHTTPServerRouteResponse) -> Data {
+        var headers = response.headers
+        headers["Content-Length"] = "\(response.body.count)"
+        headers["Content-Type"] = headers["Content-Type"] ?? "application/json"
+        headers["Connection"] = "close"
+
+        let reason: String
+        switch response.statusCode {
+        case 200: reason = "OK"
+        case 400: reason = "Bad Request"
+        case 403: reason = "Forbidden"
+        case 404: reason = "Not Found"
+        case 409: reason = "Conflict"
+        default: reason = "Error"
+        }
+        var head = "HTTP/1.1 \(response.statusCode) \(reason)\r\n"
+        for (key, value) in headers {
+            head += "\(key): \(value)\r\n"
+        }
+        head += "\r\n"
+        var out = Data(head.utf8)
+        out.append(response.body)
+        return out
+    }
+}
+
+/// MCP 以外的窄路由响应。目前只用于一次性设备配对，不扩展成第二套业务 API。
+struct StarcatHTTPServerRouteResponse: Sendable {
+    let statusCode: Int
+    let headers: [String: String]
+    let body: Data
+
+    init(statusCode: Int, body: Data, headers: [String: String] = [:]) {
+        self.statusCode = statusCode
+        self.body = body
+        self.headers = headers
     }
 }
 

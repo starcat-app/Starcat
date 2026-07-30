@@ -31,12 +31,12 @@ aliyun:/var/www/starcat/
 
 ```
 Step 1. deploy_nginx
-        ── rsync pages/direct/starcat.ink.conf → aliyun:/etc/nginx/conf.d/
+        ── rsync supports/starcat-site/direct/starcat.ink.conf → aliyun:/etc/nginx/conf.d/
         ── ssh aliyun "nginx -t && systemctl reload nginx"
 
 Step 2. deploy_site
         ── python3 generate-changelog.py        (本地生成 changelog HTML)
-        ── rsync pages/direct/* → aliyun:/var/www/starcat/  (全部静态文件)
+        ── rsync supports/starcat-site/direct/* → aliyun:/var/www/starcat/  (全部静态文件)
 
 Step 3. package_direct
         ── 本地 Xcode 构建 StarcatDirect.app
@@ -62,11 +62,11 @@ Step 6. verify_remote_urls
 | 文件 | 职责 | 改造成本 |
 |------|------|---------|
 | `scripts/release-direct.sh` | 发布编排主脚本 | 重构（去 nginx、改上传目标） |
-| `pages/direct/deploy.sh` | 静态页 rsync 部署 | 重写为 wrangler pages deploy |
-| `pages/direct/starcat.ink.conf` | nginx 配置 | **废弃** |
+| `supports/starcat-site/direct/deploy.sh` | 静态页 rsync 部署 | 重写为 wrangler pages deploy |
+| `supports/starcat-site/direct/starcat.ink.conf` | nginx 配置 | **废弃** |
 | `scripts/package-direct.sh` | 本地打包 DMG + appcast | 基本不变 |
 | `scripts/merge-appcast.py` | appcast 增量合并 | 不变（纯本地操作） |
-| `pages/direct/generate-changelog.py` | changelog 生成 | 不变（纯本地操作） |
+| `supports/starcat-site/direct/generate-changelog.py` | changelog 生成 | 不变（纯本地操作） |
 
 ---
 
@@ -77,7 +77,7 @@ starcat.ink (DNS @ Cloudflare)
 │
 ├── /*.html, /*.webp, /*.png, /appcast.xml
 │   ── Cloudflare Pages (starcat-direct)
-│       部署: wrangler pages deploy pages/direct/
+│       部署: wrangler pages deploy supports/starcat-site/direct/
 │
 ├── /downloads/*
 │   ── Cloudflare R2 (bucket: starcat-downloads)
@@ -201,11 +201,11 @@ for f in ./dist/direct/downloads/*.dmg ./dist/direct/downloads/*.sha256; do
 done
 ```
 
-### 3.5 重写 pages/direct/deploy.sh
+### 3.5 重写 supports/starcat-site/direct/deploy.sh
 
 ```bash
 #!/bin/bash
-# pages/direct/deploy.sh — Cloudflare Pages 部署
+# supports/starcat-site/direct/deploy.sh — Cloudflare Pages 部署
 set -e
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 PROJECT="${CF_PAGES_PROJECT:-starcat-direct}"
@@ -256,7 +256,7 @@ echo "✓ https://starcat.ink"
 #   1. 确认 main 分支 + 干净工作区
 #   2. 创建 / 推送 git tag
 #   3. 本地打包 DMG + 生成 appcast-current.xml  (package-direct.sh)
-#   4. 合并 appcast → pages/direct/appcast.xml    (merge-appcast.py)
+#   4. 合并 appcast → supports/starcat-site/direct/appcast.xml    (merge-appcast.py)
 #   5. 上传 DMG + SHA256 → Cloudflare R2
 #   6. 部署静态页 + appcast → Cloudflare Pages
 #   7. curl 校验线上 URL
@@ -284,7 +284,7 @@ Starcat Direct 一键发布 (Cloudflare 版)
   1. 确认 main 分支 + 干净工作区
   2. 创建 / 推送 git tag
   3. package-direct  → 本地打包 DMG + appcast-current.xml
-  4. merge-appcast   → 合并 appcast (本地 pages/direct/appcast.xml)
+  4. merge-appcast   → 合并 appcast (本地 supports/starcat-site/direct/appcast.xml)
   5. upload R2       → 上传 DMG + SHA256 到 Cloudflare R2
   6. deploy Pages    → wrangler pages deploy (含 appcast + 所有 HTML)
   7. curl 校验       → 确认线上 appcast / DMG / changelog 可访问
@@ -309,7 +309,7 @@ VERSION="${1:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PAGES_DIR="${PROJECT_ROOT}/pages/direct"
+PAGES_DIR="${PROJECT_ROOT}/supports/starcat-site/direct"
 DOWNLOADS_DIR="${PROJECT_ROOT}/dist/direct/downloads"
 
 DMG_PATH="${DOWNLOADS_DIR}/Starcat-${VERSION}-arm64.dmg"
@@ -503,7 +503,7 @@ main
 | 变化 | 原因 |
 |------|------|
 | `deploy_nginx` 删除 | Cloudflare 自动 HTTPS，不需要自己管 nginx |
-| 流程重排序（打包→合并→R2上传→Pages部署→校验） | Pages 是整体部署；appcast.xml 必须先合并进 `pages/direct/`，再一次性部署 |
+| 流程重排序（打包→合并→R2上传→Pages部署→校验） | Pages 是整体部署；appcast.xml 必须先合并进 `supports/starcat-site/direct/`，再一次性部署 |
 | `upload_direct_artifacts` 用 `wrangler r2 object put` | 不再 rsync 到 aliyun |
 | `deploy_site` 用 `wrangler pages deploy` | 不再 rsync |
 | 去掉 `ssh` / `rsync` 依赖 | 不再需要 SSH 到 aliyun |
@@ -543,8 +543,8 @@ R2 绑定 `starcat.ink/downloads` 子路径时，Cloudflare Dashboard 需要 Pag
 | 文件 | 改动 | 工作量 |
 |------|------|--------|
 | `scripts/release-direct.sh` | 去 nginx/ssh/rsync，重排流程，R2 上传 | 中 |
-| `pages/direct/deploy.sh` | rsync → wrangler pages deploy | 小 |
-| `pages/direct/starcat.ink.conf` | **删除** | — |
+| `supports/starcat-site/direct/deploy.sh` | rsync → wrangler pages deploy | 小 |
+| `supports/starcat-site/direct/starcat.ink.conf` | **删除** | — |
 
 ### 不动的文件
 
@@ -552,9 +552,9 @@ R2 绑定 `starcat.ink/downloads` 子路径时，Cloudflare Dashboard 需要 Pag
 |------|------|
 | `scripts/package-direct.sh` | 纯本地构建，不改 |
 | `scripts/merge-appcast.py` | 纯本地合并，不改 |
-| `pages/direct/generate-changelog.py` | 纯本地生成，不改 |
-| `pages/direct/*.html` | 纯静态内容，不改 |
-| `pages/direct/appcast.xml` | Sparkle 格式，URL 不变，不改 |
+| `supports/starcat-site/direct/generate-changelog.py` | 纯本地生成，不改 |
+| `supports/starcat-site/direct/*.html` | 纯静态内容，不改 |
+| `supports/starcat-site/direct/appcast.xml` | Sparkle 格式，URL 不变，不改 |
 
 ### 新增文件
 

@@ -83,6 +83,139 @@ struct MCPRepoSearchResult: Codable, Sendable {
     let repos: [MCPRepoDTO]
 }
 
+/// 外部启动器使用的全局仓库搜索契约。
+///
+/// 这里刻意把内部的 `localKeyword` / `RepositoryCandidate` 隐藏起来，只暴露
+/// `local` / `github` 两个产品级来源，避免 Swift 实现细节固化进 CLI 协议。
+struct MCPGlobalRepositorySearchResult: Codable, Sendable {
+    struct Item: Codable, Sendable {
+        let repo_id: Int64?
+        let owner: String
+        let name: String
+        let full_name: String
+        let description: String?
+        let language: String?
+        let stars_count: Int
+        let is_private: Bool
+        let is_starred: Bool
+        let primary_source: String
+        let sources: [String]
+        let icon_url: String
+        let open_url: String
+        let html_url: String
+        let updated_at: String?
+
+        init(candidate: RepositoryCandidate) {
+            let repo = candidate.displayRepo
+            let productSources = Self.productSources(candidate.sources)
+            let primarySource = productSources.contains(GlobalRepositorySearchSource.local.rawValue)
+                ? GlobalRepositorySearchSource.local.rawValue
+                : GlobalRepositorySearchSource.github.rawValue
+            let htmlURL = repo?.htmlUrl
+                ?? GitHubURLs.repo(owner: candidate.identity.owner, repo: candidate.identity.name).absoluteString
+
+            repo_id = candidate.identity.ghRepoID
+            owner = candidate.identity.owner
+            name = candidate.identity.name
+            full_name = "\(candidate.identity.owner)/\(candidate.identity.name)"
+            description = repo?.description ?? candidate.card.description
+            language = repo?.language ?? candidate.card.language
+            stars_count = repo?.starsCount ?? candidate.card.starsCount
+            is_private = repo?.isPrivate ?? candidate.card.isPrivate
+            is_starred = candidate.isStarred
+            primary_source = primarySource
+            sources = productSources
+            icon_url = repo?.ownerAvatar ?? Self.fallbackIconURL(owner: candidate.identity.owner)
+            html_url = htmlURL
+            updated_at = repo?.updatedAt
+            open_url = primarySource == GlobalRepositorySearchSource.local.rawValue
+                ? Self.localOpenURL(identity: candidate.identity, fallback: htmlURL)
+                : htmlURL
+        }
+
+        private static func productSources(_ sources: Set<SearchSource>) -> [String] {
+            var result: [String] = []
+            if sources.contains(.localKeyword) || sources.contains(.localSemantic) {
+                result.append(GlobalRepositorySearchSource.local.rawValue)
+            }
+            if sources.contains(.github) {
+                result.append(GlobalRepositorySearchSource.github.rawValue)
+            }
+            return result
+        }
+
+        private static func fallbackIconURL(owner: String) -> String {
+            var components = URLComponents(string: "https://github.com")!
+            components.path = "/\(owner).png"
+            components.queryItems = [URLQueryItem(name: "size", value: "80")]
+            return components.url?.absoluteString ?? "https://github.com/\(owner).png?size=80"
+        }
+
+        /// 只有通过 `RepositoryDeepLink` GitHub 命名约束后才返回私有 scheme；
+        /// 极端脏数据回退 GitHub，禁止向外暴露可执行的任意 URL。
+        private static func localOpenURL(identity: RepoIdentity, fallback: String) -> String {
+            RepositoryDeepLink(
+                owner: identity.owner,
+                name: identity.name,
+                repositoryID: identity.ghRepoID
+            )?.appURL.absoluteString ?? fallback
+        }
+    }
+
+    struct Provider: Codable, Sendable {
+        let status: String
+        let count: Int
+        let message: String?
+
+        init(state: GlobalRepositorySearchProviderState) {
+            status = state.status.rawValue
+            count = state.count
+            message = state.message
+        }
+    }
+
+    struct Providers: Codable, Sendable {
+        let local: Provider?
+        let github: Provider?
+    }
+
+    let schema_version: Int
+    let query: String
+    let returned_count: Int
+    let items: [Item]
+    let providers: Providers
+    let warnings: [String]
+
+    init(snapshot: GlobalRepositorySearchSnapshot) {
+        let items = snapshot.repositories.map(Item.init(candidate:))
+        schema_version = 1
+        query = snapshot.query
+        returned_count = items.count
+        self.items = items
+        providers = Providers(
+            local: snapshot.providers[.local].map(Provider.init(state:)),
+            github: snapshot.providers[.github].map(Provider.init(state:))
+        )
+        warnings = snapshot.warnings
+    }
+}
+
+/// MCP Tool 失败时提供给 CLI / Launcher 的稳定机器可读契约。
+///
+/// `content` 仍保留人类可读文本，`structuredContent` 则承载本对象。外部客户端必须
+/// 依据 `code` 分支，不能解析可能随版本和本地化变化的 `message`。
+struct MCPToolErrorDTO: Codable, Sendable {
+    let schema_version: Int
+    let code: String
+    let message: String
+
+    init(code: String, message: String) {
+        schema_version = 1
+        self.code = code
+        self.message = message
+    }
+}
+
 /// MCP 语义搜索结果。
 struct MCPSemanticSearchResult: Codable, Sendable {
     struct Hit: Codable, Sendable {
@@ -159,3 +292,276 @@ struct MCPRepoNoteDTO: Codable, Sendable {
     }
 }
 
+/// MCP 对外暴露的缓存 AI 摘要。
+///
+/// 不直接编码完整 `RepoAIInsight`，避免外部 Agent 依赖内部 UI、External Search 或
+/// RepoContext 诊断字段。这里仅保留稳定的正文、模型与生成时间契约。
+struct MCPRepoSummaryDTO: Codable, Sendable {
+    let repo_id: Int64
+    let one_liner: String
+    let summary_markdown: String
+    let model: String
+    let generated_at: String
+
+    init(repoID: Int64, insight: RepoAIInsight) {
+        self.repo_id = repoID
+        self.one_liner = insight.oneLiner
+        self.summary_markdown = insight.summaryMarkdown ?? insight.summary
+        self.model = insight.model
+        self.generated_at = insight.generatedAt
+    }
+}
+
+/// Agent 一次读取单仓上下文的聚合结果。
+///
+/// 私有笔记关闭时返回 `private_notes_exposed = false` 和 `note = nil`，而不是让整个
+/// context 请求失败；这样 Agent 仍能读取 repo、标签和摘要，同时明确知道缺失原因。
+struct MCPRepoContextDTO: Codable, Sendable {
+    let repo: MCPRepoDTO
+    let tags: [MCPTagDTO]
+    let private_notes_exposed: Bool
+    let note: MCPRepoNoteDTO?
+    let summary: MCPRepoSummaryDTO?
+}
+
+/// MCP 当前能力快照。只暴露权限状态，不包含 Local API Key 或其它凭据。
+struct MCPCapabilitiesDTO: Codable, Sendable {
+    let server_version: String
+    let loopback_only: Bool
+    let private_notes_read: Bool
+    let statistics_read: Bool
+    let global_repository_search: Bool
+    let local_writes: Bool
+    let batch_writes: Bool
+    let destructive_writes: Bool
+    let ai_summary_generation: Bool
+}
+
+/// MCP 统计接口使用的稳定名称/数量结构，不把 RAG 内部快照类型直接暴露给外部 Agent。
+struct MCPNamedCountDTO: Codable, Sendable {
+    let name: String
+    let count: Int
+}
+
+/// AI 用量汇总。`calls_with_usage` 单独存在，避免 Provider 未返回 usage 时被误判为零消耗。
+struct MCPAIUsageSummaryDTO: Codable, Sendable {
+    let total_tokens: Int
+    let input_tokens: Int
+    let output_tokens: Int
+    let call_count: Int
+    let successful_call_count: Int
+    let calls_with_usage: Int
+    let embedding_item_count: Int
+    let success_rate: Double
+    let usage_availability_rate: Double
+
+    init(summary: AIUsageSummary) {
+        total_tokens = summary.totalTokens
+        input_tokens = summary.inputTokens
+        output_tokens = summary.outputTokens
+        call_count = summary.callCount
+        successful_call_count = summary.successfulCallCount
+        calls_with_usage = summary.callsWithUsage
+        embedding_item_count = summary.embeddingItemCount
+        success_rate = summary.successRate
+        usage_availability_rate = summary.usageAvailabilityRate
+    }
+}
+
+struct MCPAIUsageDimensionDTO: Codable, Sendable {
+    let key: String
+    let input_tokens: Int
+    let output_tokens: Int
+    let total_tokens: Int
+    let call_count: Int
+
+    init(point: AIUsageDimensionPoint) {
+        key = point.key
+        input_tokens = point.inputTokens
+        output_tokens = point.outputTokens
+        total_tokens = point.totalTokens
+        call_count = point.callCount
+    }
+}
+
+struct MCPAIUsageDailyDTO: Codable, Sendable {
+    let day: String
+    let input_tokens: Int
+    let output_tokens: Int
+    let total_tokens: Int
+    let call_count: Int
+
+    init(point: AIUsageDailyPoint) {
+        day = point.day
+        input_tokens = point.inputTokens
+        output_tokens = point.outputTokens
+        total_tokens = point.totalTokens
+        call_count = point.callCount
+    }
+}
+
+/// Agent 可筛选的 AI 用量统计，不返回原始调用事件、Prompt、回复或错误正文。
+struct MCPAIUsageStatisticsDTO: Codable, Sendable {
+    let generated_at: String
+    let time_range: String
+    let feature: String?
+    let provider_id: String?
+    let model: String?
+    let summary: MCPAIUsageSummaryDTO
+    let daily: [MCPAIUsageDailyDTO]
+    let by_feature: [MCPAIUsageDimensionDTO]
+    let by_provider: [MCPAIUsageDimensionDTO]
+    let by_model: [MCPAIUsageDimensionDTO]
+
+    init(filter: AIUsageFilter, snapshot: AIUsageStatisticsSnapshot, generatedAt: Date = Date()) {
+        generated_at = ISO8601DateFormatter.shared.string(from: generatedAt)
+        time_range = filter.timeRange.rawValue
+        feature = filter.feature?.rawValue
+        provider_id = filter.providerID
+        model = filter.model
+        summary = MCPAIUsageSummaryDTO(summary: snapshot.summary)
+        daily = snapshot.daily.map(MCPAIUsageDailyDTO.init(point:))
+        by_feature = snapshot.byFeature.map(MCPAIUsageDimensionDTO.init(point:))
+        by_provider = snapshot.byProvider.map(MCPAIUsageDimensionDTO.init(point:))
+        by_model = snapshot.byModel.map(MCPAIUsageDimensionDTO.init(point:))
+    }
+}
+
+struct MCPRAGIndexHealthDTO: Codable, Sendable {
+    let total_chunks: Int
+    let ready_chunks: Int
+    let keyword_only_chunks: Int
+    let pending_chunks: Int
+    let failed_chunks: Int
+    let stale_chunks: Int
+    let embedding_model: String
+
+    init(health: KnowledgeBaseMetadataSnapshot.IndexHealth) {
+        total_chunks = health.totalChunks
+        ready_chunks = health.readyChunks
+        keyword_only_chunks = health.keywordOnlyChunks
+        pending_chunks = health.pendingChunks
+        failed_chunks = health.failedChunks
+        stale_chunks = health.staleChunks
+        embedding_model = health.embeddingModel
+    }
+}
+
+struct MCPRAGSourceCoverageDTO: Codable, Sendable {
+    let source: String
+    let repository_count: Int
+    let chunk_count: Int
+    let ready_chunk_count: Int
+    let failed_chunk_count: Int
+    let stale_chunk_count: Int
+
+    init(coverage: KnowledgeBaseMetadataSnapshot.SourceIndexCoverage) {
+        source = coverage.source.rawValue
+        repository_count = coverage.repositoryCount
+        chunk_count = coverage.chunkCount
+        ready_chunk_count = coverage.readyChunkCount
+        failed_chunk_count = coverage.failedChunkCount
+        stale_chunk_count = coverage.staleChunkCount
+    }
+}
+
+struct MCPTopRepositoryStatisticsDTO: Codable, Sendable {
+    let repo_id: Int64
+    let full_name: String
+    let github_stars: Int
+
+    init(repository: KnowledgeBaseMetadataSnapshot.TopRepository) {
+        repo_id = repository.repoID
+        full_name = repository.fullName
+        github_stars = repository.stars
+    }
+}
+
+/// 完整知识库统计。私有笔记相关数量只在用户允许 MCP 读取私有笔记时编码。
+struct MCPKnowledgeBaseStatisticsDTO: Codable, Sendable {
+    let generated_at: String
+    let content_updated_at: String?
+    let project_count: Int
+    let starred_project_count: Int
+    let retained_after_unstar_count: Int
+    let starred_status_counts: [MCPNamedCountDTO]
+    let status_counts: [MCPNamedCountDTO]
+    let starred_tagged_project_count: Int
+    let starred_untagged_project_count: Int
+    let tagged_project_count: Int
+    let untagged_project_count: Int
+    let tag_count: Int
+    let known_language_project_count: Int
+    let unknown_language_project_count: Int
+    let top_languages: [MCPNamedCountDTO]
+    let top_tags: [MCPNamedCountDTO]
+    let added_in_last_30_days_count: Int
+    let pushed_in_last_30_days_count: Int
+    let ai_summary_project_count: Int
+    let private_notes_exposed: Bool
+    let private_note_project_count: Int?
+    let ai_generated_note_project_count: Int?
+    let private_notes_edited_in_last_30_days_project_count: Int?
+    let ai_summaries_generated_in_last_30_days_project_count: Int
+    let source_index_coverage: [MCPRAGSourceCoverageDTO]
+    let excluded_chunk_count: Int
+    let without_readme_source_project_count: Int
+    let without_indexable_source_project_count: Int
+    let top_starred_repositories: [MCPTopRepositoryStatisticsDTO]
+    let index_health: MCPRAGIndexHealthDTO
+
+    init(snapshot: KnowledgeBaseMetadataSnapshot, privateNotesExposed: Bool) {
+        generated_at = ISO8601DateFormatter.shared.string(from: snapshot.generatedAt)
+        content_updated_at = snapshot.contentUpdatedAt.map { ISO8601DateFormatter.shared.string(from: $0) }
+        project_count = snapshot.projectCount
+        starred_project_count = snapshot.starredProjectCount
+        retained_after_unstar_count = snapshot.retainedAfterUnstarCount
+        starred_status_counts = snapshot.starredStatusCounts.map { .init(name: $0.name, count: $0.count) }
+        status_counts = snapshot.statusCounts.map { .init(name: $0.name, count: $0.count) }
+        starred_tagged_project_count = snapshot.starredTaggedProjectCount
+        starred_untagged_project_count = snapshot.starredUntaggedProjectCount
+        tagged_project_count = snapshot.taggedProjectCount
+        untagged_project_count = snapshot.untaggedProjectCount
+        tag_count = snapshot.tagCount
+        known_language_project_count = snapshot.knownLanguageProjectCount
+        unknown_language_project_count = snapshot.unknownLanguageProjectCount
+        top_languages = snapshot.topLanguages.map { .init(name: $0.name, count: $0.count) }
+        top_tags = snapshot.topTags.map { .init(name: $0.name, count: $0.count) }
+        added_in_last_30_days_count = snapshot.addedInLast30DaysCount
+        pushed_in_last_30_days_count = snapshot.pushedInLast30DaysCount
+        ai_summary_project_count = snapshot.aiSummaryProjectCount
+        private_notes_exposed = privateNotesExposed
+        private_note_project_count = privateNotesExposed ? snapshot.privateNoteProjectCount : nil
+        ai_generated_note_project_count = privateNotesExposed ? snapshot.aiGeneratedNoteProjectCount : nil
+        private_notes_edited_in_last_30_days_project_count = privateNotesExposed
+            ? snapshot.privateNotesEditedInLast30DaysProjectCount
+            : nil
+        ai_summaries_generated_in_last_30_days_project_count = snapshot.aiSummariesGeneratedInLast30DaysProjectCount
+        source_index_coverage = snapshot.sourceIndexCoverage.map(MCPRAGSourceCoverageDTO.init(coverage:))
+        excluded_chunk_count = snapshot.excludedChunkCount
+        without_readme_source_project_count = snapshot.withoutReadmeSourceProjectCount
+        without_indexable_source_project_count = snapshot.withoutIndexableSourceProjectCount
+        top_starred_repositories = snapshot.topStarredRepositories.map(MCPTopRepositoryStatisticsDTO.init(repository:))
+        index_health = MCPRAGIndexHealthDTO(health: snapshot.indexHealth)
+    }
+}
+
+/// 常用数字的一次性紧凑快照，减少 Agent 回答概览问题时的多轮工具调用。
+struct MCPOverviewStatisticsDTO: Codable, Sendable {
+    let generated_at: String
+    let starred_repository_count: Int
+    let knowledge_base_project_count: Int
+    let retained_after_unstar_count: Int
+    let tag_count: Int
+    let ai_usage_time_range: String
+    let ai_usage: MCPAIUsageSummaryDTO
+    let rag_index: MCPRAGIndexHealthDTO
+    let excluded_chunk_count: Int
+}
+
+/// 摘要生成工具的稳定返回值。
+struct MCPRepoSummaryGenerationResult: Codable, Sendable {
+    let repo: MCPRepoDTO
+    let summary: MCPRepoSummaryDTO
+    let persisted: Bool
+}

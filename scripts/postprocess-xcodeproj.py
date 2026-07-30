@@ -5,9 +5,10 @@ XcodeGen owns Starcat.xcodeproj, but version 2.45.4 serializes nested
 SystemCapabilities dictionaries as strings when they are placed in target
 attributes. Xcode does not treat that as a real capability declaration.
 
-This script is intentionally narrow: after `xcodegen generate`, it adds the
-In-App Purchase capability to the App Store target only. The Direct target must
-not receive this capability because it uses external licensing and payments.
+This script is intentionally narrow: after `xcodegen generate`, it adds
+In-App Purchase to the App Store target, Associated Domains to both shipping
+targets, and App Groups to each host/Widget pair. The Direct target must not
+receive In-App Purchase because it uses external licensing and payments.
 """
 
 from __future__ import annotations
@@ -32,8 +33,8 @@ def find_native_target_id(project_text: str, target_name: str) -> str:
     return match.group(1)
 
 
-def add_in_app_purchase_capability(project_text: str, target_id: str) -> str:
-    """Add In-App Purchase to the target attributes block if missing."""
+def add_system_capability(project_text: str, target_id: str, capability_name: str) -> str:
+    """Add one capability to the target attributes block if missing."""
     block_pattern = re.compile(
         rf"(\n\t\t\t\t\t{target_id} = \{{\n)(.*?)(\n\t\t\t\t\t\}};)",
         re.DOTALL,
@@ -43,22 +44,34 @@ def add_in_app_purchase_capability(project_text: str, target_id: str) -> str:
         raise RuntimeError(f"Cannot find TargetAttributes block for {target_id}")
 
     prefix, body, suffix = match.groups()
-    if "com.apple.InAppPurchase" in body:
+    if capability_name in body:
         return project_text
 
-    capability = (
-        "\t\t\t\t\t\tSystemCapabilities = {\n"
-        "\t\t\t\t\t\t\tcom.apple.InAppPurchase = {\n"
+    capability_entry = (
+        f"\t\t\t\t\t\t\t{capability_name} = {{\n"
         "\t\t\t\t\t\t\t\tenabled = 1;\n"
         "\t\t\t\t\t\t\t};\n"
-        "\t\t\t\t\t\t};\n"
     )
 
-    provisioning_line = "\t\t\t\t\t\tProvisioningStyle = Automatic;\n"
-    if provisioning_line in body:
-        body = body.replace(provisioning_line, provisioning_line + capability, 1)
+    system_capabilities_line = "\t\t\t\t\t\tSystemCapabilities = {\n"
+    if system_capabilities_line in body:
+        body = body.replace(
+            system_capabilities_line,
+            system_capabilities_line + capability_entry,
+            1,
+        )
     else:
-        body = capability + body
+        capability_block = (
+            system_capabilities_line
+            + capability_entry
+            + "\t\t\t\t\t\t};\n"
+        )
+
+        provisioning_line = "\t\t\t\t\t\tProvisioningStyle = Automatic;\n"
+        if provisioning_line in body:
+            body = body.replace(provisioning_line, provisioning_line + capability_block, 1)
+        else:
+            body = capability_block + body
 
     return project_text[: match.start()] + prefix + body + suffix + project_text[match.end() :]
 
@@ -81,15 +94,27 @@ def main() -> int:
     project_text = PROJECT_FILE.read_text()
     store_target_id = find_native_target_id(project_text, "Starcat")
     direct_target_id = find_native_target_id(project_text, "StarcatDirect")
+    store_widget_target_id = find_native_target_id(project_text, "StarcatWidgets")
+    direct_widget_target_id = find_native_target_id(project_text, "StarcatDirectWidgets")
 
-    updated = add_in_app_purchase_capability(project_text, store_target_id)
+    updated = add_system_capability(project_text, store_target_id, "com.apple.InAppPurchase")
+    # Xcode 的 PBXProject 内部仍用 SafariKeychain 标识 Associated Domains；
+    # 真正签名能力由 entitlements 的 com.apple.developer.associated-domains 表达。
+    updated = add_system_capability(updated, store_target_id, "com.apple.SafariKeychain")
+    updated = add_system_capability(updated, direct_target_id, "com.apple.SafariKeychain")
+    # Host 与 Extension 都声明 App Groups，保证 Xcode capability 状态与
+    # 最终签名 entitlements 一致，避免只改 plist 后工程 UI 仍显示缺失。
+    updated = add_system_capability(updated, store_target_id, "com.apple.ApplicationGroups")
+    updated = add_system_capability(updated, direct_target_id, "com.apple.ApplicationGroups")
+    updated = add_system_capability(updated, store_widget_target_id, "com.apple.ApplicationGroups")
+    updated = add_system_capability(updated, direct_widget_target_id, "com.apple.ApplicationGroups")
     assert_direct_target_is_clean(updated, direct_target_id)
 
     if updated != project_text:
         PROJECT_FILE.write_text(updated)
-        print("[postprocess-xcodeproj] enabled In-App Purchase for Starcat target")
+        print("[postprocess-xcodeproj] synchronized Starcat target capabilities")
     else:
-        print("[postprocess-xcodeproj] In-App Purchase already enabled for Starcat target")
+        print("[postprocess-xcodeproj] target capabilities already synchronized")
 
     return 0
 

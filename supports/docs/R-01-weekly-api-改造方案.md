@@ -197,7 +197,7 @@ type githubRepoResponse struct {
 **初始化** in main.go：
 
 ```go
-import "github.com/dong4j/starcat-weekly-api/internal/tokenpool"
+import "github.com/starcat-app/starcat-weekly-api/internal/tokenpool"
 
 tokens := strings.Split(os.Getenv("GITHUB_TOKENS"), ",")
 // 兼容：如果只配了旧的 GITHUB_TOKEN（单 token），自动迁移
@@ -470,7 +470,7 @@ fly secrets unset GITHUB_TOKEN -a starcat-weekly-api
 
 ```go
 // main.go
-import "github.com/dong4j/starcat-weekly-api/internal/middleware"
+import "github.com/starcat-app/starcat-weekly-api/internal/middleware"
 
 apiKeys := strings.Split(os.Getenv("API_KEYS"), ",")
 authMW := middleware.NewBearerAuth(apiKeys)

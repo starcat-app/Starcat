@@ -5,9 +5,12 @@
 //  README 详情页内的 AI 对话浮层入口。
 //
 //  设计约束：
-//  - 不替换旧的独立 AI 窗口入口；这是详情页里的新增入口，用于验证“贴着 README 问 AI”
-//    的交互是否更自然。
+//  - 这是 AI 摘要 / 对话的主承载面板；快捷键、搜索和详情入口都先展开这里。
+//  - 独立 AI 窗口是本面板的附属展示形态，只能由“在独立窗口中打开”继续进入，
+//    不能与底部面板并列成为外部主入口。
 //  - 浮层只在右侧详情页区域内展开 / 最大化，避免跨列覆盖 repo 列表或 sidebar。
+//  - 展开态宽度按详情区 70% 比例缩放（硬顶 720），高度铺满 README 可用区：hero 折叠 /
+//    主窗口变高时浮层跟着长高，避免顶部留白。最大化态再铺满宽度。
 //  - 点击外部不自动关闭；AI 流式输出时误关会打断阅读，所以关闭必须是显式动作。
 //
 
@@ -20,6 +23,7 @@ struct RepoAIFloatingOverlay: View {
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(HomeViewModel.self) private var homeViewModel
+    @Environment(\.openSettings) private var openSettings
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var presentation: Presentation = .collapsed
     @State private var escapeKeyMonitor: Any?
@@ -43,10 +47,15 @@ struct RepoAIFloatingOverlay: View {
         static let collapsedHitWidth: CGFloat = 112
         static let collapsedHandleHeight: CGFloat = 4
         static let collapsedHandleWidth: CGFloat = 78
-        static let expandedMaxWidth: CGFloat = 500
-        static let expandedHeight: CGFloat = 700
+        /// 展开态相对详情区可用宽的比例；主窗口放大时浮层跟着变宽。
+        static let expandedWidthRatio: CGFloat = 0.70
+        /// 展开态宽度硬顶，避免超宽详情区把对话面板拉得过散。
+        static let expandedMaxWidth: CGFloat = 720
         static let maximizedInset: CGFloat = 16
         static let cornerRadius: CGFloat = 18
+        static let panelMinWidth: CGFloat = 320
+        static let panelMinHeight: CGFloat = 320
+        static let maximizedMinHeight: CGFloat = 360
     }
 
     var body: some View {
@@ -75,6 +84,17 @@ struct RepoAIFloatingOverlay: View {
         .onReceive(NotificationCenter.default.publisher(for: .repoAIInlineGenerateSummaryRequested)) { notification in
             handleExternalSummaryRequest(notification)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .repoAIInlineOpenRequested)) { notification in
+            guard let repoID = notification.userInfo?["repoId"] as? Repo.ID,
+                  repoID == repo.id else { return }
+            presentation = .expanded
+        }
+        .onAppear {
+            consumePendingInlinePresentationIfNeeded()
+        }
+        .onChange(of: homeViewModel.pendingInlineAIPresentationRepoID) { _, _ in
+            consumePendingInlinePresentationIfNeeded()
+        }
         .onExitCommand {
             guard presentation.isPanelVisible else { return }
             presentation = .collapsed
@@ -87,6 +107,17 @@ struct RepoAIFloatingOverlay: View {
         }
         // repo 切换时直接清空临时会话与展示状态，确保新问题只绑定当前 repo。
         .id(repo.id)
+    }
+
+    /// 消费 HomeViewModel 上的「展开 AI 面板」挂起请求。
+    ///
+    /// 侧栏后台任务跳转会先换仓再请求展开；若只靠 Notification，可能在
+    /// `.id(repo.id)` 重建前发出而被旧 overlay 丢掉。pending 状态由目标
+    /// overlay 在挂载后自行认领，避免竞态。
+    private func consumePendingInlinePresentationIfNeeded() {
+        guard homeViewModel.pendingInlineAIPresentationRepoID == repo.id else { return }
+        homeViewModel.pendingInlineAIPresentationRepoID = nil
+        presentation = .expanded
     }
 
     private var collapsedBar: some View {
@@ -132,19 +163,27 @@ struct RepoAIFloatingOverlay: View {
     }
 
     private func panelWidth(in availableSize: CGSize, isMaximized: Bool) -> CGFloat {
-        let usableWidth = max(320, availableSize.width - Metrics.horizontalInset * 2)
+        let usableWidth = max(Metrics.panelMinWidth, availableSize.width - Metrics.horizontalInset * 2)
         if isMaximized {
-            return max(320, usableWidth - Metrics.maximizedInset * 2)
+            return max(Metrics.panelMinWidth, usableWidth - Metrics.maximizedInset * 2)
         }
-        return min(usableWidth, Metrics.expandedMaxWidth)
+        // 展开态随详情区变宽：比例取宽，再夹在 [min, min(usable, hardMax)] 之间。
+        let proportionalWidth = usableWidth * Metrics.expandedWidthRatio
+        return min(usableWidth, Metrics.expandedMaxWidth, max(Metrics.panelMinWidth, proportionalWidth))
     }
 
     private func panelHeight(in availableSize: CGSize, isMaximized: Bool) -> CGFloat {
-        let usableHeight = max(320, availableSize.height - Metrics.panelBottomInset - Metrics.maximizedInset)
+        // Overlay 挂在 README body 上：可用高 = 详情区减去 hero / metadata 后的剩余高度。
+        // hero 随滚动折叠时 GeometryReader 变高，浮层必须跟着铺满，不能再乘比例留顶空白。
+        // 展开 vs 最大化的差异主要在宽度；高度两侧都吃满可用区。
+        let usableHeight = max(
+            Metrics.panelMinHeight,
+            availableSize.height - Metrics.panelBottomInset - Metrics.maximizedInset
+        )
         if isMaximized {
-            return max(360, usableHeight)
+            return max(Metrics.maximizedMinHeight, usableHeight)
         }
-        return min(Metrics.expandedHeight, max(320, usableHeight))
+        return max(Metrics.panelMinHeight, usableHeight)
     }
 
     private var bottomInset: CGFloat {
@@ -160,17 +199,21 @@ struct RepoAIFloatingOverlay: View {
         autoGenerateSummaryOnOpen = false
         presentation = .collapsed
         DispatchQueue.main.async {
+            // 独立窗口只从底部面板内部派生；它与 inline panel 共享内容 View，
+            // 但保留独立窗口生命周期，便于用户脱离详情布局持续对话或并排比较。
             RepoAIWindowController.show(
                 repo: detachedRepo,
                 dependencies: dependencies,
-                homeViewModel: homeViewModel
+                homeViewModel: homeViewModel,
+                openSettings: openSettings
             )
         }
     }
 
     private func handleExternalSummaryRequest(_ notification: Notification) {
         guard let repoID = notification.userInfo?["repoId"] as? Repo.ID, repoID == repo.id else { return }
-        // Browser Plugin 的“生成摘要”必须复用详情页底部横条入口，而不是旧的独立 AI window。
+        // Browser Plugin 的“生成摘要”必须先落到详情页底部面板；附属独立窗口
+        // 只能由用户在面板内主动选择，外部动作不能越级打开。
         // 若面板尚未创建，先记录 auto-generate 意图，展开后由 RepoAIWindowContentView 的 task 消费。
         autoGenerateSummaryOnOpen = true
         if presentation == .collapsed {
@@ -216,9 +259,11 @@ struct RepoAIFloatingOverlay: View {
 extension Notification.Name {
     /// 外部入口请求详情页底部 AI 横条展开并生成指定 repo 的摘要。
     ///
-    /// 这个通知只面向 inline overlay。旧的独立 AI window 仍可被历史入口打开，
-    /// 但 Browser Plugin 的 generate-summary 动作必须落到当前详情页入口。
+    /// 这个通知只面向 inline overlay。附属独立窗口不消费外部生成请求；
+    /// Browser Plugin 的 generate-summary 动作必须先落到当前详情页入口。
     static let repoAIInlineGenerateSummaryRequested = Notification.Name("StarcatRepoAIInlineGenerateSummaryRequested")
+    /// 外部入口只展开对应 repo 的详情页底部面板，不重复发起生成。
+    static let repoAIInlineOpenRequested = Notification.Name("StarcatRepoAIInlineOpenRequested")
 }
 
 private extension View {

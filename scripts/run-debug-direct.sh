@@ -18,16 +18,76 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DERIVED_DATA="$PROJECT_ROOT/build/DerivedData-NoSandbox"
 APP_PATH="$DERIVED_DATA/Build/Products/Debug/Starcat.app"
+APP_EXECUTABLE="$APP_PATH/Contents/MacOS/Starcat"
+DIRECT_BUNDLE_ID="com.starcat.app.direct"
 
 # 正式 Apple Developer Team ID。后续如果换账号，可用环境变量覆盖：
 #   STARCAT_DEVELOPMENT_TEAM=XXXXXXXXXX ./scripts/run-debug-direct.sh
 DEVELOPMENT_TEAM_ID="${STARCAT_DEVELOPMENT_TEAM:-8WCUMGCWMB}"
 
+# App Store 与 Direct 的可执行文件都叫 Starcat，不能用进程名判断渠道。
+# NSRunningApplication 读取 LaunchServices 登记的 bundle id，既能覆盖 Debug、
+# /Applications 等不同路径下的 Direct 实例，也不会误伤 App Store 版本。
+running_direct_pids() {
+  /usr/bin/osascript -l JavaScript -e "
+ObjC.import('AppKit');
+$.NSRunningApplication
+  .runningApplicationsWithBundleIdentifier('$DIRECT_BUNDLE_ID')
+  .js
+  .map(function(app) { return Number(app.processIdentifier); })
+  .join('\n');
+"
+}
+
+# 裸可执行文件启动的异常实例不一定能被 NSRunningApplication 稳定枚举。把
+# bundle id 与本次构建产物的完整 executable path 合并，避免旧进程漏清理后
+# 与新实例争用 AppKit state restoration。
+running_target_pids() {
+  local bundle_pids executable_pids
+  bundle_pids="$(running_direct_pids)" || return 1
+  executable_pids="$(pgrep -f -x "$APP_EXECUTABLE" || true)"
+  printf '%s\n%s\n' "$bundle_pids" "$executable_pids" \
+    | awk 'NF' \
+    | sort -u
+}
+
 cd "$PROJECT_ROOT"
 
-echo "==> 关闭已运行的 Starcat（如有）..."
-pkill -x Starcat 2>/dev/null || true
-sleep 0.3
+echo "==> 关闭已运行的 StarcatDirect（如有）..."
+if ! DIRECT_PIDS="$(running_target_pids)"; then
+  echo "ERROR: 无法查询 Direct bundle id / executable 进程，拒绝继续。"
+  exit 1
+fi
+if [ -n "$DIRECT_PIDS" ]; then
+  while IFS= read -r pid; do
+    if [ -n "$pid" ]; then
+      kill "$pid" 2>/dev/null || true
+    fi
+  done <<<"$DIRECT_PIDS"
+fi
+
+# `kill` 只向 Direct PID 发送终止信号，数据库收尾等异步清理可能明显超过固定 0.3 秒。
+# 如果旧实例仍在退出，普通 `open` 会把启动请求误判为“激活已有实例”，随后旧实例
+# 退出，最终表现为构建成功但没有应用进程。这里等待真实退出，超时则保留现场并报错，
+# 不升级成 SIGKILL，避免强杀时损坏用户数据。
+for _ in {1..100}; do
+  if ! DIRECT_PIDS="$(running_target_pids)"; then
+    echo "ERROR: 无法查询 Direct bundle id / executable 进程，拒绝继续启动。"
+    exit 1
+  fi
+  if [ -z "$DIRECT_PIDS" ]; then
+    break
+  fi
+  sleep 0.1
+done
+if [ -n "$DIRECT_PIDS" ]; then
+  echo "ERROR: 等待旧 StarcatDirect 退出超时，拒绝启动新实例。"
+  echo "       Direct PID:"
+  while IFS= read -r pid; do
+    printf '       %s\n' "$pid"
+  done <<<"$DIRECT_PIDS"
+  exit 1
+fi
 
 echo "==> 生成 Xcode 工程..."
 xcodegen generate
@@ -77,4 +137,59 @@ echo "    data: ~/Library/Application Support/com.starcat.app"
 echo "    app support: ~/Library/Application Support/com.starcat.app"
 echo "    app: $APP_PATH"
 
-open "$APP_PATH"
+echo "==> 启动 StarcatDirect..."
+if ! open "$APP_PATH"; then
+  echo "ERROR: LaunchServices 拒绝启动 StarcatDirect。"
+  echo "       app: $APP_PATH"
+  exit 1
+fi
+
+# `open` 成功只代表 LaunchServices 接收了请求，不代表目标进程已真正建立。按完整
+# executable path 校验，避免误把另一个渠道或另一个 DerivedData 下的 Starcat 算作成功。
+# 这里不能使用 `open -n`：Direct Debug 已显式保持单实例，强制创建新实例会破坏
+# AppKit window restoration 的唯一所有者约束。
+DIRECT_PID=""
+for _ in {1..100}; do
+  DIRECT_PID="$(pgrep -f -x "$APP_EXECUTABLE" | head -n 1 || true)"
+  if [ -n "$DIRECT_PID" ]; then
+    break
+  fi
+  sleep 0.1
+done
+
+if [ -z "$DIRECT_PID" ]; then
+  echo "ERROR: LaunchServices 未建立目标 StarcatDirect 进程。"
+  echo "       executable: $APP_EXECUTABLE"
+  echo "       为避免出现 Dock 有运行点但没有窗口，不再回退为直接执行 GUI binary。"
+  exit 1
+fi
+
+# 冷启动刚建立进程并不等于启动完成。此前 `open -n` 产生的异常进程会在约 1 秒后
+# 被 LaunchServices 回收，因此再观察 2 秒，只有持续存活才向调用方报告成功。
+for _ in {1..20}; do
+  if ! kill -0 "$DIRECT_PID" 2>/dev/null; then
+    echo "ERROR: StarcatDirect 进程在启动后提前退出（PID: ${DIRECT_PID}）。"
+    exit 1
+  fi
+  sleep 0.1
+done
+
+if ! DIRECT_PIDS="$(running_target_pids)"; then
+  echo "ERROR: 无法执行启动后的 Direct 单实例校验。"
+  exit 1
+fi
+DIRECT_PID_COUNT="$(printf '%s\n' "$DIRECT_PIDS" | awk 'NF { count += 1 } END { print count + 0 }')"
+if [ "$DIRECT_PID_COUNT" -ne 1 ] || [ "$DIRECT_PIDS" != "$DIRECT_PID" ]; then
+  echo "ERROR: StarcatDirect 启动后不是唯一目标实例，拒绝报告成功。"
+  echo "       expected PID: $DIRECT_PID"
+  echo "       detected PID:"
+  while IFS= read -r pid; do
+    if [ -n "$pid" ]; then
+      printf '       %s\n' "$pid"
+    fi
+  done <<<"$DIRECT_PIDS"
+  exit 1
+fi
+
+echo "==> StarcatDirect 已稳定启动（PID: ${DIRECT_PID}，方式: LaunchServices，单实例）"
+exit 0

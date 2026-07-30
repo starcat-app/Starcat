@@ -1,15 +1,15 @@
 # Direct 测试与生产环境隔离
 
-> 目标：Direct 落地页、License API、Creem、App 构建长期保持测试 / 生产两套环境。`pages/direct` 永远是正式生产站，`pages/direct-test` 永远是测试站，避免测试购买链路污染 `starcat.ink`。
+> 目标：Direct 落地页、License API、Creem、App 构建长期保持测试 / 生产两套环境。`supports/starcat-site/direct` 永远是正式生产站，`supports/starcat-site/direct-test` 永远是测试站，避免测试购买链路污染 `starcat.ink`。
 
 ## 环境矩阵
 
 | 层级 | 测试环境 | 生产环境 |
 |------|----------|----------|
-| 源码目录 | `pages/direct-test` | `pages/direct` |
+| 源码目录 | `supports/starcat-site/direct-test` | `supports/starcat-site/direct` |
 | 落地页域名 | `https://test.starcat.ink` | `https://starcat.ink` / `https://www.starcat.ink` |
 | 静态目录 | `/var/www/starcat-test` | `/var/www/starcat` |
-| nginx 配置 | `pages/direct-test/starcat-test.ink.conf` | `pages/direct/starcat.ink.conf` |
+| nginx 配置 | `supports/starcat-site/direct-test/starcat-test.ink.conf` | `supports/starcat-site/direct/starcat.ink.conf` |
 | License API | `https://starcat-license-api-staging.fly.dev` | `https://starcat-license-api.fly.dev` |
 | Checkout endpoint | `https://starcat-license-api-staging.fly.dev/v1/direct/checkout` | `https://starcat-license-api.fly.dev/v1/direct/checkout` |
 | Creem | Test Mode | Live Mode |
@@ -20,11 +20,11 @@
 
 - `starcat.ink` 永远代表生产购买链路，不临时切到 Creem Test Mode。
 - `test.starcat.ink` 专用于测试购买、支付回跳、license 激活和 staging webhook 验证。
-- `pages/direct` 不允许出现 `starcat-license-api-staging.fly.dev`、`test.starcat.ink` 或 `runtime-config.js`。
-- `pages/direct-test` 不允许出现生产 checkout endpoint `https://starcat-license-api.fly.dev/v1/direct/checkout`。
-- `pages/direct-test` 只保留测试购买必需文件；隐私政策、用户协议、更新记录、下载链接和 appcast 复用生产站 `https://starcat.ink`。
+- `supports/starcat-site/direct` 不允许出现 `starcat-license-api-staging.fly.dev`、`test.starcat.ink` 或 `runtime-config.js`。
+- `supports/starcat-site/direct-test` 不允许出现生产 checkout endpoint `https://starcat-license-api.fly.dev/v1/direct/checkout`。
+- `supports/starcat-site/direct-test` 只保留测试购买必需文件；隐私政策、用户协议、更新记录、下载链接和 appcast 复用生产站 `https://starcat.ink`。
 - 测试站使用 `noindex, nofollow` 和 `robots.txt Disallow: /`，避免被搜索引擎收录。
-- Direct 正式发布脚本只使用 `pages/direct`；`pages/direct-test` 只用于人工测试部署。
+- Direct 正式发布脚本只使用 `supports/starcat-site/direct`；`supports/starcat-site/direct-test` 只用于人工测试部署。
 
 ## 首次准备
 
@@ -56,7 +56,7 @@ make deploy-pages-test
 等价底层命令：
 
 ```bash
-cd pages/direct-test
+cd supports/starcat-site/direct-test
 ./deploy.sh
 ```
 
@@ -86,7 +86,7 @@ make deploy-pages
 等价底层命令：
 
 ```bash
-cd pages/direct
+cd supports/starcat-site/direct
 ./deploy.sh
 ```
 

@@ -107,6 +107,36 @@
 import SwiftUI
 import AppKit
 
+/// 合并同一布局周期内的滚动报告。
+///
+/// 这是一个刻意不接入 Observation 的引用对象：属性变化只负责调度，不应成为新的
+/// SwiftUI 刷新来源。实例由 `@State` 保持稳定身份，详情 View 重算时不会丢失待处理报告。
+@MainActor
+private final class RepoDetailScrollReportScheduler {
+    var pendingReport: RepoDetailScrollReport?
+    var isScheduled = false
+}
+
+extension Notification.Name {
+    /// 中栏 toolbar 把属于当前仓库的瞬时反馈交给右侧详情页统一呈现。
+    static let repoDetailToastRequested = Notification.Name("StarcatRepoDetailToastRequested")
+}
+
+/// 跨 NavigationSplitView 相邻列传递的详情 Toast 请求。
+///
+/// 请求必须携带 repoID；用户在点击后快速切换仓库时，新的详情页不会误显示旧仓库反馈。
+struct RepoDetailToastRequest {
+    let repoID: Int64
+    let messageKey: String
+
+    static func post(repoID: Int64, messageKey: String) {
+        NotificationCenter.default.post(
+            name: .repoDetailToastRequested,
+            object: RepoDetailToastRequest(repoID: repoID, messageKey: messageKey)
+        )
+    }
+}
+
 /// R-01 详情页通用骨架。
 ///
 /// body slot 接受一个 `(RepoDetailScrollReport) -> Void` 闭包参数 —— body 里的
@@ -162,8 +192,20 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// 顶部面板自然高度（由 CollapsibleRepoMetadataPanel 内部回填）。
     @State private var metadataPanelHeight: CGFloat = 0
 
+    /// 父级详情栏明确提议的可用高度。Hero 超高时用它计算内部滚动视口，
+    /// 避免 480pt 笔记和 AI 步骤面板把下方 README 完全挤出屏幕。
+    ///
+    /// 这里不能再测量 Scaffold 自己布局完成后的高度：AI 面板会抬高子树自然高度，
+    /// 自测结果再反过来放宽 Hero 上限会形成尺寸反馈，最终让 NavigationSplitView
+    /// 三栏一起高于最小窗口并被上下裁切。唯一可信边界是 GeometryReader 收到的父级 proposal。
+    @State private var detailViewportHeight: CGFloat = 0
+
     /// README / Release 时间线在 Hero 展开时的可滚动余量（由 body slot 上报）。
     @State private var readmeScrollOverflow: CGFloat?
+
+    /// 滚动回调可能在一次布局周期内密集到达；调度器只保留最新报告，并且本身不参与
+    /// SwiftUI Observation，避免为了合并回调再次触发 View 更新。
+    @State private var scrollReportScheduler = RepoDetailScrollReportScheduler()
 
     /// Wiki 探测结果只影响 hero action 区，不参与 window toolbar，避免异步返回时触发
     /// toolbar 重排跳动。
@@ -182,8 +224,9 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// 乐观 UI。Scaffold 会被详情浮窗复用，不能只依赖 HomeViewModel 当前列表页缓存。
     @State private var libraryState: LibraryState = .outsideLibrary
     @State private var isLibraryOperationInFlight = false
-    @State private var isConfirmingUsingLibraryRemoval = false
-    @State private var libraryToast: String?
+    /// 详情页共用 Toast。知识库操作与中栏 toolbar 的复制反馈共享同一承载层，
+    /// 避免相邻列各自弹提示导致反馈位置与操作对象不一致。
+    @State private var detailToastMessage: String?
 
     /// Pro 付费墙展示上下文。Wiki / 推荐入口在已登录但非 Pro 时弹出付费墙。
     @State private var proPaywallContext: ProPaywallContext?
@@ -205,17 +248,31 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         .interactiveSpring(response: 0.32, dampingFraction: 0.9, blendDuration: 0.08)
     }
 
-    private var libraryToastIcon: String {
-        libraryToast == "library.action.failed" ? "exclamationmark.triangle.fill" : "heart.fill"
+    private var detailToastIcon: String {
+        switch detailToastMessage {
+        case "library.action.failed":
+            return "exclamationmark.triangle.fill"
+        case "clone.copiedHttps", "clone.copiedGit", "repo.share.link.copied":
+            return "checkmark.circle.fill"
+        default:
+            return "heart.fill"
+        }
     }
 
-    private var libraryToastIconColor: Color? {
-        libraryToast == "library.action.added" ? .red : nil
+    private var detailToastIconColor: Color? {
+        switch detailToastMessage {
+        case "library.action.added":
+            return .red
+        case "clone.copiedHttps", "clone.copiedGit", "repo.share.link.copied":
+            return .green
+        default:
+            return nil
+        }
     }
 
-    /// README 底部 cache footer 占据状态栏位置，知识库成功提示需要上浮一段距离，
+    /// README 底部 cache footer 占据状态栏位置，详情提示需要上浮一段距离，
     /// 避免胶囊压在状态栏视觉层级上。
-    private var libraryToastBottomPadding: CGFloat {
+    private var detailToastBottomPadding: CGFloat {
         30
     }
 
@@ -262,11 +319,39 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     }
 
     var body: some View {
-        // v2.1 修订（2026-06-11）：原 `.overlay(alignment: .bottomTrailing)` 浮动刷新
-        // 按钮已删除（与 cacheFooter 内置按钮视觉重叠造成 bug,详见文件头 v2.1 修订段）。
-        VStack(alignment: .leading, spacing: 0) {
-            metadataPanel
-            body_(updateScrollReport)
+        // GeometryReader 在布局开始时就锁定 NavigationSplitView 给详情栏的真实 proposal。
+        // 子树即使因 AI 步骤、草稿或 480pt 编辑器突然增高，也只能在这个 viewport 内滚动，
+        // 不能把自己的自然高度继续向上传给三栏根容器。
+        GeometryReader { proxy in
+            let viewportSize = proxy.size
+
+            // v2.1 修订（2026-06-11）：原 `.overlay(alignment: .bottomTrailing)` 浮动刷新
+            // 按钮已删除（与 cacheFooter 内置按钮视觉重叠造成 bug,详见文件头 v2.1 修订段）。
+            VStack(alignment: .leading, spacing: 0) {
+                metadataPanelViewport(availableHeight: viewportSize.height)
+                body_(updateScrollReport)
+                    .overlay(alignment: .bottom) {
+                        if isRepositoryAIAvailable {
+                            // 所有 repo-backed 详情共用同一个底部 AI 主入口；独立窗口
+                            // 仍只能从该面板内部的“在独立窗口中打开”派生。
+                            RepoAIFloatingOverlay(repo: repo)
+                        }
+                    }
+            }
+            .frame(
+                width: viewportSize.width,
+                height: viewportSize.height,
+                alignment: .top
+            )
+            // 这是详情栏的最终隔离边界。正常内容通过 Hero / README 自己的滚动容器访问；
+            // clipped 只阻止异常的自然尺寸再次污染 NavigationSplitView 三栏布局。
+            .clipped()
+            .onAppear {
+                updateDetailViewportHeight(viewportSize.height)
+            }
+            .onChange(of: viewportSize.height) { _, newHeight in
+                updateDetailViewportHeight(newHeight)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // 根节点 tint：必须在 `CollapsibleRepoMetadataPanel` 外，否则 `.clipped()` 裁掉
@@ -291,6 +376,10 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             reloadWikiLinksIfReset(notification, for: repo)
         }
         .task(id: repo.id) {
+            guard ProjectPrivacyPolicy.allowsDiscoveryLookup(for: repo) else {
+                recommendationVM.clear()
+                return
+            }
             await recommendationVM.loadInitial(
                 repoID: repo.id,
                 service: dependencies.recommendationContextService
@@ -299,27 +388,26 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         .task(id: repo.id) {
             await loadLibraryState(for: repo)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .repoLibraryStateDidChange)) { notification in
+            // 阅读状态切到“使用中”会在 Repository 层自动入库；详情页必须消费同一通知，
+            // 否则列表与数据库已经更新，Scaffold 自己持有的 ❤️ 状态仍会停留在旧值。
+            guard notification.userInfo?["repoId"] as? Int64 == repo.id,
+                  let rawState = notification.userInfo?["libraryState"] as? String else { return }
+            libraryState = LibraryState.parse(rawState)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .repoDetailToastRequested)) { notification in
+            guard let request = notification.object as? RepoDetailToastRequest,
+                  request.repoID == repo.id else { return }
+            detailToastMessage = request.messageKey
+        }
         .sheet(item: $proPaywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
-        .alert(
-            "library.removeUsing.confirmTitle",
-            isPresented: $isConfirmingUsingLibraryRemoval
-        ) {
-            Button("library.removeUsing.confirmAction", role: .destructive) {
-                Task {
-                    await setLibraryState(.outsideLibrary, downgradeUsingStatus: true)
-                }
-            }
-            Button("general.cancel", role: .cancel) {}
-        } message: {
-            Text("library.removeUsing.confirmMessage")
-        }
         .toast(
-            message: $libraryToast,
-            icon: libraryToastIcon,
-            iconColor: libraryToastIconColor,
-            bottomPadding: libraryToastBottomPadding
+            message: $detailToastMessage,
+            icon: detailToastIcon,
+            iconColor: detailToastIconColor,
+            bottomPadding: detailToastBottomPadding
         )
         .onChange(of: repo.id) { _, _ in
             withAnimation(reduceMotion ? nil : metadataPanelAnimation) {
@@ -327,18 +415,49 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                 readmeScrollOverflow = nil
             }
             showsRecommendations = false
-            libraryToast = nil
+            detailToastMessage = nil
         }
         .onChange(of: metadataPanelHeight) { _, newHeight in
-            guard metadataPanelCollapseProgress > 0 else { return }
-            guard !Self.canCollapseHero(
-                scrollOverflow: readmeScrollOverflow,
-                panelHeight: newHeight
-            ) else { return }
-            withAnimation(reduceMotion ? nil : metadataPanelAnimation) {
-                metadataPanelCollapseProgress = 0
-            }
+            restoreExpandedHeroIfNeeded(naturalPanelHeight: newHeight)
         }
+        .onChange(of: detailViewportHeight) { _, _ in
+            restoreExpandedHeroIfNeeded(naturalPanelHeight: metadataPanelHeight)
+        }
+        .starcatRepositoryAICommand(
+            identity: "\(repo.id)-\(repo.fullName)-\(isRepositoryAIAvailable)",
+            isEnabled: isRepositoryAIAvailable
+        ) {
+            openRepositoryAIFromCommand()
+        }
+    }
+
+    /// 快捷键必须与详情现有 `.ai` action 使用同一门禁；`id == 0` 是公共列表 fallback，
+    /// 不能把它交给按 repo ID 缓存会话的 AI 服务。
+    private var isRepositoryAIAvailable: Bool {
+        guard repo.id != 0 else { return false }
+        return viewData.trailingActions.contains { action in
+            if case .ai = action { return true }
+            return false
+        }
+    }
+
+    /// 展开当前详情页底部 AI 面板，但不自动生成摘要。
+    ///
+    /// Settings 成为 key window 时，命令路由仍保存主窗口最后一个有效详情动作；
+    /// 因此先前置主窗口，再向已经挂载的 inline overlay 发送展开请求。
+    private func openRepositoryAIFromCommand() {
+        guard isRepositoryAIAvailable else { return }
+        AppDelegate.activateMainWindowIfPossible()
+        NotificationCenter.default.post(name: .gettingStartedDidOpenAI, object: nil)
+        dependencies.telemetryManager.track(
+            .aiPanelOpened,
+            properties: [.source: .string("command")]
+        )
+        NotificationCenter.default.post(
+            name: .repoAIInlineOpenRequested,
+            object: nil,
+            userInfo: ["repoId": repo.id]
+        )
     }
 
     // recommendationOverlay 已删除（v1.1 推荐按钮从右下角浮动迁到 hero trailing actions），
@@ -352,31 +471,116 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// progress 回落 → Hero 再展开，形成「半折叠 ↔ 展开」振荡（HelloGitHub 等短 README
     /// 边界场景）。
     private func updateScrollReport(_ report: RepoDetailScrollReport) {
+        guard shouldApplyScrollReport(report) else { return }
+
+        // 同一 run loop 里只安排一次 @State 写入，期间到达的新报告覆盖旧报告。
+        // 这既保留 WebView 需要的“离开 layout 栈后更新”约束，也避免高速滚动或 Charts
+        // 重排时堆积大量 MainActor Task。
+        scrollReportScheduler.pendingReport = report
+        guard !scrollReportScheduler.isScheduled else { return }
+        scrollReportScheduler.isScheduled = true
+
         // WKScriptMessageHandler / updateNSView 可能在 SwiftUI layout 栈内回调；
         // 推迟到下一 run loop 写 @State，避免重入打断 WebView 首帧 loadHTMLString。
         Task { @MainActor in
-            applyScrollReport(report)
+            let latestReport = scrollReportScheduler.pendingReport
+            scrollReportScheduler.pendingReport = nil
+            scrollReportScheduler.isScheduled = false
+            if let latestReport {
+                applyScrollReport(latestReport)
+            }
         }
     }
 
-    private func applyScrollReport(_ report: RepoDetailScrollReport) {
-        if let overflow = report.scrollOverflow {
-            readmeScrollOverflow = overflow
-        }
-
+    /// 在创建 MainActor Task 前先判断报告是否真的会改变状态。
+    ///
+    /// `readmeScrollOverflow` 原先每次报告都会赋值，即使只是 Charts 产生的亚像素抖动；
+    /// 这会重新布局整个详情页，并立即生成下一份滚动报告。
+    private func shouldApplyScrollReport(_ report: RepoDetailScrollReport) -> Bool {
+        let nextOverflow = Self.resolvedScrollOverflow(
+            current: readmeScrollOverflow,
+            reported: report.scrollOverflow
+        )
+        let overflowChanged = nextOverflow != readmeScrollOverflow
+        let effectivePanelHeight = effectiveMetadataPanelHeight(naturalHeight: metadataPanelHeight)
         let stableScrollOverflow = Self.expandedScrollOverflow(
-            currentOverflow: readmeScrollOverflow,
-            panelHeight: metadataPanelHeight,
+            currentOverflow: nextOverflow,
+            panelHeight: effectivePanelHeight,
             collapseProgress: metadataPanelCollapseProgress
         )
         let canCollapse = Self.canCollapseHero(
             scrollOverflow: stableScrollOverflow,
-            panelHeight: metadataPanelHeight
+            panelHeight: effectivePanelHeight
+        )
+        let rawProgress = Self.metadataCollapseProgress(for: report.offsetY)
+        let nextProgress = canCollapse ? rawProgress : 0
+        return overflowChanged || abs(nextProgress - metadataPanelCollapseProgress) > 0.01
+    }
+
+    private func applyScrollReport(_ report: RepoDetailScrollReport) {
+        let nextOverflow = Self.resolvedScrollOverflow(
+            current: readmeScrollOverflow,
+            reported: report.scrollOverflow
+        )
+        if nextOverflow != readmeScrollOverflow {
+            readmeScrollOverflow = nextOverflow
+        }
+
+        // Hero 内部滚动时，折叠门槛应以“屏幕上真正占用的高度”计算，
+        // 而不是用可能超过整个窗口的自然高度；否则长笔记会让 Hero 永远不具备折叠资格。
+        let effectivePanelHeight = effectiveMetadataPanelHeight(naturalHeight: metadataPanelHeight)
+        let stableScrollOverflow = Self.expandedScrollOverflow(
+            currentOverflow: readmeScrollOverflow,
+            panelHeight: effectivePanelHeight,
+            collapseProgress: metadataPanelCollapseProgress
+        )
+        let canCollapse = Self.canCollapseHero(
+            scrollOverflow: stableScrollOverflow,
+            panelHeight: effectivePanelHeight
         )
         let rawProgress = Self.metadataCollapseProgress(for: report.offsetY)
         let progress = canCollapse ? rawProgress : 0
         guard abs(progress - metadataPanelCollapseProgress) > 0.01 else { return }
         metadataPanelCollapseProgress = progress
+    }
+
+    /// 面板内容或窗口高度变化后重新检查折叠资格。
+    ///
+    /// 长笔记会在编辑 / 预览 / AI 步骤切换时改变自然高度；如果正文已经
+    /// 没有足够的滚动余量，必须恢复展开 Hero，避免浮在半折叠状态。
+    private func restoreExpandedHeroIfNeeded(naturalPanelHeight: CGFloat) {
+        guard metadataPanelCollapseProgress > 0 else { return }
+        let effectivePanelHeight = effectiveMetadataPanelHeight(naturalHeight: naturalPanelHeight)
+        let stableScrollOverflow = Self.expandedScrollOverflow(
+            currentOverflow: readmeScrollOverflow,
+            panelHeight: effectivePanelHeight,
+            collapseProgress: metadataPanelCollapseProgress
+        )
+        guard !Self.canCollapseHero(
+            scrollOverflow: stableScrollOverflow,
+            panelHeight: effectivePanelHeight
+        ) else { return }
+        withAnimation(reduceMotion ? nil : metadataPanelAnimation) {
+            metadataPanelCollapseProgress = 0
+        }
+    }
+
+    /// 屏幕上实际可见的 Hero 展开高度；未完成首次测量时回退自然高度。
+    private func effectiveMetadataPanelHeight(naturalHeight: CGFloat) -> CGFloat {
+        Self.cappedMetadataPanelHeight(
+            naturalHeight: naturalHeight,
+            availableHeight: detailViewportHeight,
+            minimumBodyHeight: Self.minimumBodyViewportHeight
+        ) ?? naturalHeight
+    }
+
+    /// 记录父级 viewport 仅供 README 折叠资格计算使用；Hero 实际 frame 在同一布局轮次
+    /// 直接读取 GeometryReader 的 proxy，不等待 @State 回写，因此首帧也不会泄漏自然高度。
+    private func updateDetailViewportHeight(_ newHeight: CGFloat) {
+        guard newHeight > 0,
+              abs(newHeight - detailViewportHeight) > 0.5
+        else { return }
+        detailViewportHeight = newHeight
     }
 
     /// 把 WebView 当前上报的余量折算回 Hero 展开态，避免折叠动作本身改变 `clientHeight`
@@ -391,10 +595,45 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         return currentOverflow + panelHeight * normalizedProgress
     }
 
+    /// 合并新的滚动余量，忽略不会影响视觉的亚像素变化。
+    ///
+    /// `nil` 表示本轮尚未测到，不应清掉先前的有效值；否则 README loading 或视图切换
+    /// 会让 Hero 折叠资格短暂丢失并产生跳动。
+    static func resolvedScrollOverflow(
+        current: CGFloat?,
+        reported: CGFloat?,
+        tolerance: CGFloat = RepoDetailScrollReport.geometryTolerance
+    ) -> CGFloat? {
+        guard let reported else { return current }
+        guard let current else { return reported }
+        return abs(reported - current) > max(tolerance, 0) ? reported : current
+    }
+
     /// Hero 是否具备稳定折叠资格：余量未知或面板未测高时保守禁止；余量须 ≥ 面板高度。
     static func canCollapseHero(scrollOverflow: CGFloat?, panelHeight: CGFloat) -> Bool {
         guard let scrollOverflow, panelHeight > 0 else { return false }
         return scrollOverflow >= panelHeight
+    }
+
+    /// Hero 溢出时为下方 README / Release 正文预留的最小高度。
+    ///
+    /// 这不是正文的固定高度：Hero 不溢出时仍按自然高度布局，其余空间全部给正文。
+    static var minimumBodyViewportHeight: CGFloat { 160 }
+
+    /// 把 Hero 自然高度限制在详情栏可用高度内，同时保留正文的最小视口。
+    ///
+    /// 返回 nil 表示尺寸尚未完成或窗口小于保护阈值，调用方应暂时沿用现有自然布局，
+    /// 不能在首帧把 Hero 压成 0pt。
+    static func cappedMetadataPanelHeight(
+        naturalHeight: CGFloat,
+        availableHeight: CGFloat,
+        minimumBodyHeight: CGFloat
+    ) -> CGFloat? {
+        guard naturalHeight > 0,
+              availableHeight > minimumBodyHeight,
+              minimumBodyHeight >= 0
+        else { return nil }
+        return min(naturalHeight, availableHeight - minimumBodyHeight)
     }
 
     /// 将 scroll offset 映射为顶部元信息面板的折叠进度。
@@ -404,6 +643,33 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         let collapseStart: CGFloat = 8
         let collapseDistance: CGFloat = 64
         return min(max((normalizedOffset - collapseStart) / collapseDistance, 0), 1)
+    }
+
+    /// Hero 内部滚动视口。始终保留同一个 ScrollView 结构，避免长笔记展开后
+    /// 因条件分支重建 `RepoNotesSection`，进而丢失编辑 buffer 或中断 AI 会话。
+    private func metadataPanelViewport(availableHeight: CGFloat) -> some View {
+        ScrollView(.vertical) {
+            metadataPanel
+        }
+        .defaultScrollAnchor(.top)
+        .detailScrollViewStyle()
+        .frame(
+            height: metadataPanelVisibleHeight(availableHeight: availableHeight),
+            alignment: .top
+        )
+        .clipped()
+    }
+
+    /// 折叠期间按同一 progress 缩小外层滚动视口，避免自然高度被 cap 后
+    /// 前半段折叠只改变内容、不改变实际占位的视觉迟滞。
+    private func metadataPanelVisibleHeight(availableHeight: CGFloat) -> CGFloat? {
+        guard let expandedHeight = Self.cappedMetadataPanelHeight(
+            naturalHeight: metadataPanelHeight,
+            availableHeight: availableHeight,
+            minimumBodyHeight: Self.minimumBodyViewportHeight
+        ) else { return nil }
+        let progress = min(max(metadataPanelCollapseProgress, 0), 1)
+        return expandedHeight * (1 - progress)
     }
 
     /// 顶部信息面板（折叠容器 + Hero 元信息 + heroExtension slot + RepoLocalSections）。
@@ -620,7 +886,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         }
         guard !isLibraryOperationInFlight else { return }
         guard repo.id > 0 else {
-            libraryToast = "library.action.failed"
+            detailToastMessage = "library.action.failed"
             return
         }
 
@@ -629,27 +895,21 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
 
         let currentState = (try? await dependencies.repoNoteRepository.fetchLibraryState(repoId: repo.id)) ?? libraryState
         if currentState == .inLibrary {
-            let status = (try? await dependencies.repoNoteRepository.find(repoId: repo.id))
-                .map { RepoStatus.parse($0.status) } ?? homeViewModel.readStatus(for: repo.id)
-            guard status != .using else {
-                libraryState = currentState
-                isConfirmingUsingLibraryRemoval = true
-                return
-            }
-            await setLibraryState(.outsideLibrary, downgradeUsingStatus: false)
+            // 知识库归属与阅读状态相互独立；用户明确移出时保留当前 status。
+            await setLibraryState(.outsideLibrary)
         } else {
             NotificationCenter.default.post(name: .gettingStartedDidAddRepoToLibrary, object: nil)
-            await setLibraryState(.inLibrary, downgradeUsingStatus: false)
+            await setLibraryState(.inLibrary)
         }
     }
 
-    private func setLibraryState(_ targetState: LibraryState, downgradeUsingStatus: Bool) async {
+    private func setLibraryState(_ targetState: LibraryState) async {
         guard dependencies.authSession.state.isAuthenticated else {
             dependencies.authSession.requestLoginSheet()
             return
         }
         guard repo.id > 0 else {
-            libraryToast = "library.action.failed"
+            detailToastMessage = "library.action.failed"
             return
         }
 
@@ -661,20 +921,17 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                 _ = try await dependencies.repoRepository.upsertRepoMetadataForLibrary(repo: repo, syncedAt: Date())
             }
             try await dependencies.repoNoteRepository.updateLibraryState(repoId: repo.id, state: targetState)
-            if downgradeUsingStatus {
-                try await dependencies.repoNoteRepository.updateStatus(repoId: repo.id, status: .read)
-            }
             libraryState = targetState
             homeViewModel.applyLibraryStateChange(repoId: repo.id, state: targetState)
             await homeViewModel.refreshSidebar()
             await homeViewModel.reloadItems(forceRefresh: true)
-            libraryToast = targetState == .inLibrary ? "library.action.added" : "library.action.removed"
+            detailToastMessage = targetState == .inLibrary ? "library.action.added" : "library.action.removed"
             if targetState == .inLibrary {
                 NotificationCenter.default.post(name: .gettingStartedDidAddRepoToLibrary, object: nil)
             }
         } catch {
             AppLog.database.error("Toggle library state failed repo=\(repo.fullName, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
-            libraryToast = "library.action.failed"
+            detailToastMessage = "library.action.failed"
         }
     }
 
@@ -702,8 +959,8 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             EmptyView()
 
         case .ai:
-            // AI 主入口已迁到 README 状态栏横条。旧独立窗口能力保留在
-            // RepoAIOpenButton / RepoAIWindowController 中，当前只隐藏 Hero 按钮入口。
+            // AI 主入口已迁到 README 状态栏横条。独立窗口是底部面板内部
+            // “在独立窗口中打开”的附属展示形态，Hero 不再提供第二个并列入口。
             EmptyView()
 
         case .weeklyIssue(let number, let url):
@@ -748,6 +1005,10 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     @MainActor
     private func loadWikiLinks(for repo: Repo) async {
         wikiLinks = []
+        guard ProjectPrivacyPolicy.allowsPublicService(for: repo) else {
+            wikiRepoKey = nil
+            return
+        }
         let key = wikiLookupKey(for: repo)
         wikiRepoKey = key
         let links = dependencies.wikiContextService.cacheFirstLinks(

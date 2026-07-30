@@ -621,7 +621,7 @@ fly secrets set \
 
 ```go
 // main.go
-import "github.com/dong4j/starcat-trending-api/internal/middleware"
+import "github.com/starcat-app/starcat-trending-api/internal/middleware"
 
 apiKeys := strings.Split(os.Getenv("API_KEYS"), ",")
 authMW := middleware.NewBearerAuth(apiKeys)

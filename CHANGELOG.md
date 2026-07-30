@@ -2,6 +2,86 @@
 
 Release notes for the Mac App Store edition of Starcat.
 
+## 1.3.0
+
+Starcat 1.3.0 adds My Projects, library-wide and repository-level insights, reusable insight context for AI and RAG, and external search integrations for Alfred, uTools, and Raycast—helping you manage more repositories, understand them, and reach them from the tools you already use.
+
+### New
+
+- My Projects: Browse personal and organization repositories—including authorized public, private, and internal projects—with existing filters, details, and Star trends.
+- My Insights: Review organization progress, technology distribution, project status, and items needing attention across all saved repositories or your Knowledge Base, then drill down to the matching repository list.
+- Repository Insights: View Star growth, collaboration activity, commit trends, contributors, release cadence, project health, community standards, and security signals directly in repository details.
+- Repository Insights Context: Reuse generated insights in AI summaries, repository conversations, and RAG answers, with a removable read-only XML context visible in the Knowledge Base.
+- Alfred Workflow: Search Starcat local repositories and GitHub directly from Alfred. [View project](https://github.com/starcat-app/starcat-alfred-workflow)
+- uTools Plugin: Search Starcat local repositories and GitHub directly from uTools. [View project](https://github.com/starcat-app/starcat-utools-plugin)
+- Raycast Extension: Search Starcat local repositories and GitHub directly from Raycast. [View project](https://github.com/starcat-app/starcat-raycast-extension)
+
+### Improvements
+
+- RAG Prompt Settings: Compare and copy read-only default prompts, with clearer Markdown formatting for Q&A and conversation compression templates.
+- Custom Prompt Diagnostics: See which context capabilities and placeholders a custom template supports without Starcat automatically rewriting user content.
+
+### Fixes
+
+- Repository Insights Injection Status: Distinguishes unavailable data, custom prompts that do not inject insights, and actual fallback cases instead of showing a generic degraded state.
+
+## 1.2.0
+
+Starcat 1.2.0 focuses on stability, usability, and visual polish—adding an 18-language interface, pinning, share links, shortcuts, and README capabilities, while refining navigation, tags, notes, translation, and knowledge-base flows.
+
+### New
+
+- 18-language interface: Use Starcat in English, Simplified Chinese, Traditional Chinese, Japanese, Korean, German, French, Spanish, Brazilian Portuguese, Italian, Russian, Dutch, Polish, Ukrainian, Turkish, Vietnamese, Indonesian, or Arabic.
+- Repository pinning in Manage: Pin / Unpin, most-recently-pinned ordering, and a card-corner indicator.
+- Repository share links: Open Starcat and locate the shared repository.
+- Customizable app shortcuts: Search, refresh, open Knowledge RAG workspace and current-repo AI, with global and per-shortcut switches.
+- README Mermaid diagrams: Local rendering with responsive sizing in narrow detail panes, and source fallback when rendering fails.
+- README segmented and full translation: Segmented bilingual reading by default; full mode replaces visible text while keeping README structure.
+
+### Improvements
+
+- Add-tag popover: Clearer colored-icon rows and selection, with a solid window-matched background.
+- Pro sidebar username gradient: Better light/dark adaptation, smoother first-letter color, and stronger light-mode contrast.
+- Starred and Explore navigation: Clearer three-level hierarchy and filter context.
+- README translation speed: Smaller first batch, incremental results, up to four concurrent requests, per-segment caching, and resume for unfinished segments.
+- Personal notes: README-based AI generate/refine, visible progress, Markdown edit/preview, draft copy, and clearer save status.
+- AI sharing: Reuse existing AI summaries; cancel creation and regenerate share links.
+- Knowledge-base chunk management: Shard counts match language/stars sizing on cards; edit and detail views show last-updated time and approximate token counts.
+
+### Fixes
+
+- Knowledge Base entry: Fixes occasional no-response, minimized-window restore failure, and opening empty-library setup before index status finishes loading.
+
+## 1.1.0
+
+Starcat 1.1.0 turns saved repositories into a local-first, explainable RAG knowledge base, with broad performance, reliability, and macOS interface improvements.
+
+### New
+
+- Added a full knowledge-base RAG workspace with multi-repository context, streaming answers, citations, conversation groups, pinning, history, and draft recovery.
+- Added hybrid retrieval across vector and bilingual keyword search, repository metadata, Wiki, RepoContext, optional reranking, live GitHub context, and external search.
+- Added knowledge-base browsing and index management with batch Star imports, README completion, chunk editing and exclusion, targeted rebuilds, and index health checks.
+- Added explainable RAG controls for query plans, execution timelines, retrieval funnels, context budgets, historical replay, retrieval settings, and debug export.
+- Added a local AI usage dashboard for requests, tokens, latency, and failures without storing prompts or response content.
+- Added global Star-status filters and AI-summary indicators for faster repository triage.
+
+### Improvements
+
+- Improved large-library and long-conversation performance with bounded indexing, batched vector work, incremental persistence, limited prefetching, and caching.
+- Improved the RAG workspace with resizable columns, loading skeletons, richer citation panels, code and table copying, stable scrolling, and responsive typography.
+- Improved AI settings and background jobs with clearer model capabilities, safer tag suggestions, actionable diagnostics, progress reporting, and cancel or skip controls.
+- Improved Explore, Trending, and Weekly with shared snapshots, session caches, cancellation-safe switching, source filters, timelines, and stable loading states.
+- Improved native macOS consistency across settings, pickers, segmented controls, sidebar icons, semantic colors, and compact window layouts.
+- Improved browser Companion workflows with configurable local ports, recommendation pagination, Star-state synchronization, and clearer availability feedback.
+
+### Fixes
+
+- Fixed RAG scope isolation across repository or account switches, concurrent tasks, cancellations, and stale callbacks.
+- Fixed retrieval and citation correctness for explicit repository scopes, private notes, bilingual keywords, Wiki content, excluded chunks, false citation markers, and no-evidence refusal.
+- Fixed conversation stability for title generation, pin ordering, draft and history restoration, long-session compression, streaming timers, and scroll-to-bottom behavior.
+- Fixed knowledge-base refresh and indexing issues, including unnecessary reloads, stale vectors overwriting new chunks, inaccurate source updates, and background Wiki refresh failures.
+- Fixed browser-based GitHub sign-in, localized AI and RAG error feedback, and several settings, layout, and accessibility issues.
+
 ## 1.0.0
 
 Initial Starcat release for the Mac App Store.

@@ -1,0 +1,624 @@
+# 洞察中心与仓库星标历史专项 Checklist
+
+> 状态：已完成；BigQuery M0 已拆为后续专项，剩余翻译与人工 UI 矩阵已转发布 QA
+>
+> 创建：2026-07-27
+>
+> 主方案：[`49-洞察中心详细设计.md`](../../3-设计/详细设计/49-洞察中心详细设计.md)
+>
+> 数据专项：[`50-仓库星标历史整体落地方案.md`](../../3-设计/详细设计/50-仓库星标历史整体落地方案.md)
+>
+> 原型：[`我的洞察.png`](../../3-设计/原型/我的洞察.png) / [`仓库洞察.png`](../../3-设计/原型/仓库洞察.png)
+>
+> 涉及仓库：Starcat 主项目 `dev`、`supports/starcat-discovery-api` `dev`
+>
+> 提交约束：每完成一个可独立验收的小功能立即提交；使用中文 commit message；禁止 push
+
+---
+
+## 0. 执行规则
+
+### 0.1 硬性流程
+
+- [x] 开工前记录 Starcat 与 `starcat-discovery-api` 的 branch、HEAD、worktree 和 dirty 状态，保留所有无关改动。证据：[`需求追踪矩阵.md`](需求追踪矩阵.md) §1。
+- [x] 开工前只读检查 `docs/功能实现总览.md`、`DESIGN.md`、相关 UI / i18n 规范及两份详细设计。
+- [x] 每个小功能均完成对应代码、必要测试 / 文档和独立提交；证据见需求追踪矩阵与审查报告。
+- [x] 两仓专项 commit 均符合 `<type>(<scope>): <中文摘要>`，第五轮审计主仓 76 个、Discovery 12 个提交格式无异常。
+- [x] 各切片提交前运行风险匹配的定向测试和 `git diff --check`；最终矩阵见 §11。
+- [x] Starcat 主项目与 `supports/starcat-discovery-api` 分别提交、分别核对历史。
+- [x] 全程未执行 `git push`，未创建 PR，未发布 tag。
+- [x] 未执行测试 / 生产部署、Fly secrets 修改、BigQuery 付费查询或发布脚本。
+- [x] 未修改 `docs/功能实现总览.md`；拟同步内容记录于第五轮审查报告。
+- [x] 未修改四份 Changelog；是否纳入待发布版本留待 dong4j 授权。
+- [x] 新增 / 删除 Swift 文件后已运行 `xcodegen generate`，第五轮再次生成工程且无未提交变化。
+- [x] 全量与定向 `xcodebuild test` 前已关闭 Xcode IDE。
+
+### 0.2 审查与修复顺序
+
+- [x] 审查报告 01～06 均先新增并提交，报告固定记录 finding 编号、证据、等级和修复要求。
+- [x] 审查报告提交后才开始对应修复，Git 历史顺序可核验。
+- [x] R01～R06 的可独立回滚 finding 均按根因分别修复、验证和提交。
+- [x] 审查报告 01～06 均已回填修复 commit、验证命令和关闭结论，并单独提交报告闭环。
+- [x] 复审继续发现问题时新增下一轮报告，未覆盖前一轮证据。
+- [x] 已完成五个专项维度审查和原连续 clean 复审；第九轮成本复核新增 finding 已关闭，第十轮再次 clean。
+- [x] 代码、测试、设计文档、专项 Checklist、审查报告、提交历史和工作区状态已一致，满足新增结果报告条件。
+
+---
+
+## 1. 产品范围与不可变决策
+
+- [x] “洞察”作为与管理、趋势、活动同级的顶级入口，继续使用 Starcat 现有三栏框架。
+- [x] “我的洞察”支持“全部收藏 / 知识库”两个明确范围，禁止不同卡片静默混用统计口径。
+- [x] “仓库洞察”属于 Manage 仓库详情，在现有 `RepoDetailScaffold` body 中提供 `README / 洞察` 切换。
+- [x] Star 历史只作为仓库洞察中的“Star 趋势”区块，不新增 Hero action、独立 Sheet 或第四种详情模式。
+- [x] Star 趋势使用 `3 月 / 1 年 / 全部`独立范围；PR / Issue / Commit 使用 `1 周 / 1 月 / 3 月 / 1 年`活动范围。
+- [x] Star 长期历史明确区分“估算 · GH Archive”和“Starcat 精确快照”，不得用“精确历史”误导。
+- [x] 私有仓库不把 repo 信息发送到 `starcat-discovery-api`，只显示本机精确快照。
+- [x] Traffic / Views / Clones / Referrers 不进入首版通用仓库洞察。
+- [x] 我的洞察使用实时 SQLite 聚合，不新增 summary 表或定时任务。
+- [x] 仓库洞察远端缓存与 Star 历史点共用一次追加迁移，但保持两张职责单一的表。
+- [x] 不修改已发布的 `v1-initial`；当前基线为 `v15` 时追加 `v16-repository-insights`。
+- [x] 不新增第三个后端服务；Star 长期历史扩展现有 `starcat-discovery-api`。
+
+---
+
+## 2. 文档基线与数据可行性门槛
+
+### 2.1 方案和现状基线
+
+- [x] 两张原型已归档到 `docs/3-设计/原型/`。
+- [x] 已新增洞察中心详细设计并合并仓库星标历史。
+- [x] 已新增仓库星标历史整体落地方案。
+- [x] 已确认 `starcat-discovery-api` 的生产 ingest 链路已经调用 `RecordDailySnapshot`，后续只需保留并补回归，禁止重复实现。
+- [x] 开工时重新核对 `SidebarRootPage`、`HomeViewModel.refreshSidebar()`、`GlobalRepoFilterState`、`ManageDetailContent`、`RepoDetailScaffold` 和当前最新 migration。证据：[`需求追踪矩阵.md`](需求追踪矩阵.md) §1。
+- [x] 开工时重新核对 `starcat-discovery-api` 的 store、ingest、router、scheduler、鉴权、缓存和 migration 机制。证据：[`需求追踪矩阵.md`](需求追踪矩阵.md) §1。
+- [x] 对两份方案逐条建立“需求 → 代码位置 → 测试 → commit → 验收证据”追踪矩阵。证据：[`需求追踪矩阵.md`](需求追踪矩阵.md) §3。
+
+### 2.2 M0：GH Archive 可行性 Spike（已拆分）
+
+- [x] dong4j 于 2026-07-30 确认 BigQuery / GH Archive M0 不再作为本需求关单门槛。
+- [x] 后续凭据、dry run、约 2000 仓库成本、数据质量与 GO / NO-GO 清单统一保留在 [`M0-星标历史数据可行性.md`](M0-星标历史数据可行性.md)。
+- [x] 生产 `starcat-discovery-api` 已部署并保持常驻；未配置 `STAR_HISTORY_ENABLED`，继续使用默认关闭值。
+- [x] 当前需求不承诺普通第三方仓库的 Starcat 使用前历史；本机精确快照和有权限仓库的 GitHub Stargazers 路径不受影响。
+
+---
+
+## 3. M1：我的洞察数据闭环
+
+### 3.1 领域模型与一致快照
+
+- [x] 新增 `InsightsScope`、分布项、操作项、覆盖摘要和 `MyInsightsSnapshot` 领域模型。
+- [x] 新增 `MyInsightsSnapshotProviding`，在一次一致数据库读取中返回当前范围完整快照。
+- [x] 提取或复用 `KnowledgeBaseMetadataSnapshot` 已验证的 SQL 口径，避免 UI 与 RAG Prompt 各写一套统计。
+- [x] 明确收藏范围 `is_starred = 1` 与知识库范围 `library_state = in_library`。
+- [x] 状态聚合使用 `LEFT JOIN repo_notes`，缺失 note 行必须计入 `unread`。
+- [x] “已整理”按标签、笔记、AI 笔记和状态派生，不持久化新字段。
+- [x] 语言分布保留“未知”，前 8 名以外合并为“其他”。
+- [x] Health 与 OpenSSF 覆盖范围必须在标题和模型中显式表达。
+- [x] Snapshot 支持数据库 revision + 最多 60 秒内存缓存；滚动 30 天数据不得无限复用。
+
+计划提交：
+
+- [x] `feat(insights): 建立我的洞察统计快照` — 实际 commit：`d45789be`
+- [x] `test(insights): 覆盖洞察范围与状态统计口径` — 实际 commit：`d45789be`（测试与对应实现同提交）
+- [x] `feat(insights): 建立洞察前端 Mock 数据契约` — 实际 commit：`c501ab6b`
+
+### 3.2 “需要处理”聚合
+
+- [x] 聚合未打标签、未读、无 README、无可索引内容、索引失败 / 过期和 Health 待计算。
+- [x] 全部收藏范围隐藏知识库专属 RAG 噪音，并提供切换知识库提示。
+- [x] 每个 action item 保存稳定筛选语义和可访问描述，不在 View 中临时拼规则。
+- [x] 覆盖零值、数据缺失、索引模型变化和 active scope 非收藏仓库。
+
+计划提交：
+
+- [x] `feat(insights): 增加洞察待处理统计` — 实际 commit：`d45789be`、`c6537ff1`
+
+---
+
+## 4. M1～M2：我的洞察三栏 UI 与下钻
+
+### 4.1 顶级导航和三栏状态
+
+- [x] 为 `SidebarRootPage` 增加 `insights`，补齐 title、icon、selection 和恢复逻辑。
+- [x] 在 `HomeView` 注册洞察三栏路由，不用根级条件分支替换现有 `NavigationSplitView`。
+- [x] Sidebar 提供概览、整理情况、技术分布、项目健康四个主题。
+- [x] 中栏提供主题摘要和待处理集合，使用原生轻量 source-list row。
+- [x] Detail 展示范围、KPI、整理情况、技术分布、需要处理和覆盖进度。
+- [x] 离开并返回洞察时恢复主题、范围和中栏选择，不保存滚动位置。
+- [x] 刷新统一使用 `SyncIconButton`，只重读本地数据库，不触发全量 Stars 同步。
+- [x] loading、empty、error、stale 保持稳定内容树，不闪回其他页面数据。
+
+计划提交：
+
+- [x] `feat(insights): 添加洞察中心三栏导航` — 实际 commit：`19ce6c25`
+- [x] `feat(insights): 实现我的洞察概览页面` — 实际 commit：`b5926f34`
+- [x] `feat(insights): 收口洞察最终分类与视图` — 实际 commit：`ea819bcb`
+- [x] `feat(insights): 接入我的洞察真实数据` — 实际 commit：`4891803a`
+
+### 4.2 结构化下钻
+
+- [x] 扩充 `GlobalRepoFilterState` 的标签、README、可索引内容和 RAG index state 筛选。
+- [x] 所有洞察下钻从 `.neutral` 构造，禁止继承用户此前隐藏的过滤条件。
+- [x] 复用 `applyTemporaryGlobalFilters(...)`，切换到 Manage 后建立临时筛选会话。
+- [x] 清除临时筛选时恢复点击前状态，并提供返回洞察上下文。
+- [x] 数字入口与下钻列表条数必须一致，禁止用搜索关键字模拟结构化筛选。
+- [x] 覆盖状态、语言、未打标签、README、RAG、Health 和组合筛选回归。
+
+计划提交：
+
+- [x] `feat(insights): 支持洞察统计下钻仓库列表` — 实际 commit：`2f1edba5`
+- [x] `test(insights): 覆盖洞察下钻与筛选恢复` — 实际 commit：`2f1edba5`（测试与对应实现同提交）
+
+---
+
+## 5. 统一 v16 迁移与本地缓存
+
+### 5.1 迁移
+
+- [x] 在实施当日重新确认最新 migration 仍为 `v15`；若已变化，使用真实下一顺序版本并同步两份方案。
+- [x] 追加 `v16-repository-insights`，禁止修改任何已发布 migration。
+- [x] 新增 `repo_insights_snapshots`，主键覆盖 `repo_id + dataset + range_key`。
+- [x] 新增 `repo_star_history_points`，主键覆盖 `repo_id + observed_on + source`。
+- [x] 两表通过 repo 外键级联清理，不进入 CloudKit 和用户 JSON 导入导出。
+- [x] 增加 v15 → v16 升级测试、空库迁移测试、重复迁移测试和既有用户数据不变验证。
+
+计划提交：
+
+- [x] `feat(insights): 新增仓库洞察统一缓存迁移` — 实际 commit：`fe18ac0f`
+- [x] `test(insights): 覆盖洞察缓存数据库升级` — 实际 commit：`fe18ac0f`（测试与对应实现同提交）
+
+### 5.2 通用仓库洞察缓存
+
+- [x] 新增 `RepositoryInsightsCache` 和 GRDB Record / Repository。
+- [x] 支持 dataset、range、payload、ETag、fetchedAt、staleAfter 和 default branch SHA。
+- [x] 实现 15 分钟活动缓存和 24 小时统计 / contributors / community 缓存。
+- [x] 支持 stale-while-refresh：陈旧记录仍返回并标记 stale，由上层刷新失败时继续保留。
+- [x] repo 删除后缓存级联清理；损坏 payload 只丢弃对应 dataset。
+
+计划提交：
+
+- [x] `feat(insights): 实现仓库洞察本地缓存` — 实际 commit：`2caa0222`
+
+---
+
+## 6. M3：仓库洞察本地闭环
+
+### 6.1 README / 洞察切换
+
+- [x] 将 `ManageDetailContent` 扩展为 Manage 专用内容容器，保持 `RepoDetailScaffold` 头部和 Metadata 职责不变。
+- [x] 在 Manage body 顶部增加 `README / 洞察`分段控件。
+- [x] 主窗口与独立详情窗口复用同一内容容器和 scene-scoped selection。
+- [x] 切换到洞察时不保活不可见 README `WKWebView`，避免双重重型视图。
+- [x] 切换模式不丢仓库选择，不破坏 Hero 折叠、README 滚动和详情窗口依赖注入。
+
+计划提交：
+
+- [x] `feat(insights): 增加仓库详情洞察模式` — 实际 commit：`0cf1000a`
+- [x] `test(insights): 覆盖仓库详情模式切换` — 实际 commit：`ef5fd780`
+
+### 6.2 本地区块
+
+- [x] 新增 `RepositoryInsightsView` 和 `RepositoryInsightsViewModel`。
+- [x] 先显示本地 Release、四维 Health、OpenSSF、License 和 Community 已缓存信息。
+- [x] 各区块独立 loading / empty / unavailable / failed，单一区块失败不切整页错误态。
+- [x] 快速切换 repo 时以 `repo.id + generation` 丢弃旧结果。
+- [x] Detail 宽度变化时一列 / 两列自适应，不设置固定 Detail 最小宽度。
+
+计划提交：
+
+- [x] `feat(insights): 建立仓库洞察本地状态机` — 实际 commit：`1185c726`
+- [x] `feat(insights): 展示仓库洞察本地指标` — 实际 commit：`ee857124`
+- [x] `feat(insights): 展示仓库活动与健康指标（Mock）` — 实际 commit：`06423e83`
+
+---
+
+## 7. M4：类型化 GitHub 仓库指标
+
+### 7.1 Client 抽取
+
+- [x] 从 RAG Remote Context 中提取共享认证、API version、URL、Rate Limit 和状态码处理。
+- [x] 新增 `GitHubRepositoryMetricsClient`，返回类型化 DTO / 领域模型，不返回面向 LLM 的文本。
+- [x] RAG Remote Context 改为类型化 Client 的消费者，行为和审计契约保持不变。
+- [x] 支持 Search Issues、commit activity、contributors 和 community profile。
+- [x] `202`、`403`、`429`、`404`、`422`、`Retry-After` 和 rate reset 映射为稳定错误。
+- [x] 远端请求串行或低并发执行，避免触发 secondary rate limit。
+
+计划提交：
+
+- [x] `refactor(insights): 提取类型化 GitHub 仓库指标客户端` — 实际 commit：`1fcef65e`
+- [x] `test(insights): 覆盖 GitHub 指标错误与限流` — 实际 commit：`1fcef65e`（测试与对应实现同提交）
+
+### 7.2 活动与社区数据
+
+- [x] 实现新建 / 合并 PR、新建 / 关闭 Issue 的时间范围查询。
+- [x] 实现最近 52 周 Commit activity，并在客户端按范围裁剪。
+- [x] 实现 contributors、community profile 和最近活动时间线。
+- [x] Activity range 使用 `1 周 / 1 月 / 3 月 / 1 年`，不会改变 Star 趋势范围。
+- [x] 有缓存时先显示；刷新按钮防重复点击；离线和限流保留旧数据。
+- [x] 无登录时仍显示本地 Health / OpenSSF，远端区块提供可理解提示。
+
+计划提交：
+
+- [x] `feat(insights): 加载仓库协作活动指标` — 实际 commit：`cbbf8df8`
+- [x] `feat(insights): 展示贡献者与社区规范` — 实际 commit：`cbcc82c9`
+- [x] `feat(insights): 增加仓库最近活动时间线` — 实际 commit：`84059a1c`
+
+### 7.3 洞察数据增强
+
+#### 我的洞察
+
+- [x] 增加资产清理计数，保持未读、无标签、无笔记三个信号独立可解释。
+- [x] 增加高价值待整理仓库，限定当前范围内未整理项目并按 Stars 降序取前 5。
+- [x] 增加近十二周收藏 / 入库节奏，连续补齐零值自然周。
+- [x] 增加知识沉淀与索引覆盖，全部收藏与知识库使用各自明确口径。
+
+#### 仓库洞察
+
+- [x] 活动概览增加 PR / Issue 吞吐比与 Issue 净变化，零分母保持未知。
+- [x] Star 趋势增加 30 天日均与一年月均增长速度，允许真实负增长。
+- [x] Commit activity 增加最近四周维护脉搏和此前四周对比。
+- [x] 贡献者增加前 12 位样本内 Top 1 / Top 3 集中度，标题明确样本边界。
+- [x] Community Profile 增加 Issue Template 与 Pull Request Template。
+- [x] 增加本地 Release 发布节奏：近一年发布数、平均间隔、最近发布日期。
+- [x] 增加近期 Security Advisories、High / Critical 数与最近发布日期；无权限不伪造为零。
+- [x] 新增 Security Advisories 使用 24 小时独立缓存，只跟随底栏全局刷新且刷新期间保留旧内容。
+- [x] 所有新增区块复用当前 Insights 卡片、语义色、Reduce Motion 和透明稳定高度加载契约。
+
+实际提交：
+
+- [x] `14938f45`、`ebccaf55`、`ea0a3139` — 我的洞察资产、节奏与知识覆盖。
+- [x] `c64d3b10`、`2c6d7660`、`07d734ae`、`67f07ab7` — 仓库效率、增长、维护与贡献集中度。
+- [x] `14c9f251`、`1b72480`、`e042161` — 社区模板、发布节奏与安全公告。
+- [x] `efc7133` — Security Advisory DTO、缓存和失败保旧值测试。
+- [x] `1c74385` — 默认本地 Provider 发布节奏集成测试。
+
+---
+
+## 8. M4：`starcat-discovery-api` 星标历史
+
+### 8.1 后端存储与模型
+
+- [x] 新增独立 `repo_star_history_cache`，不把任意用户仓库写入 Discovery catalog。
+- [x] 状态只允许 `building / ready / failed`，保存 repo ID、full name、当前 Stars、覆盖起点、points、生成时间、过期时间和错误摘要。
+- [x] 同 repo 构建任务去重，服务重启后过期 building 可重新入队。
+- [x] 保留现有 `repo_daily_snapshots` 和生产 `RecordDailySnapshot` 调用，补防回退测试。
+
+计划提交（`starcat-discovery-api`）：
+
+- [x] `feat(star-history): 新增仓库星标历史缓存` — 实际 commit：`3f7341c`（`starcat-discovery-api`）
+- [x] `test(star-history): 保护每日快照生产链路` — 实际 commit：`cc8d307`（`starcat-discovery-api`）
+
+### 8.2 Provider、归一化和降采样
+
+- [x] 新增可测试替换的历史事件 Provider 协议。
+- [x] 实现 BigQuery / GH Archive provider，使用参数化 repo ID、日期和最大扫描预算。
+- [x] 使用服务端 GitHub `created_at` 作为查询日期下界，旧仓库才回退到 GH Archive 覆盖起点，禁止扫描仓库创建前的日表。
+- [x] 实现日累计、当前 Stars 归一化、`totalEvents == 0` 和末点校准。
+- [x] 估算段保持单调，精确快照段允许真实下降。
+- [x] 实现 `3m` 日、`1y` 周、`all` 月降采样，首末点与来源不丢失。
+- [x] 每个序列最多 500 点，输出 coverageStart、generatedAt、source 和 precision。
+
+计划提交（`starcat-discovery-api`）：
+
+- [x] `feat(star-history): 实现 GH Archive 历史提供器` — 实际 commit：`40415fe`、`3228cdc`（`starcat-discovery-api`；真实查询仍受 M0 授权门禁）
+- [x] `fix(star-history): 按仓库创建日期裁剪历史扫描` — 实际 commit：`a3c9005`（`starcat-discovery-api`）
+- [x] `docs(star-history): 说明创建日期扫描边界` — 实际 commit：`1e233f4`（`starcat-discovery-api`）
+- [x] `feat(star-history): 实现星标历史归一化` — 实际 commit：`43ca9d4`、`b433f37`（`starcat-discovery-api`）
+- [x] `feat(star-history): 增加星标历史范围降采样` — 实际 commit：`69f6b3d`（`starcat-discovery-api`）
+
+### 8.3 异步构建与 API
+
+- [x] 首次 miss 写 building 并进入有界 worker queue，HTTP 立即返回 `202 + Retry-After`。
+- [x] worker 并发、超时、每日预算和 negative cache 可配置。
+- [x] 新增 `GET /api/v1/repos/{owner}/{repo}/star-history`。
+- [x] 必填 `repo_id`，后端校验 owner/name 与 ID，二次确认公开仓库。
+- [x] 支持 `3m / 1y / all`、ETag、`If-None-Match`、Cache-Control 和统一 envelope。
+- [x] 固定 `400 / 401 / 404 / 409 / 422 / 429 / 503` 错误语义。
+- [x] 日志不记录用户 token、Star 列表或访问顺序。
+- [x] 更新 README / README-ZH、API 文档和环境变量说明。
+
+计划提交（`starcat-discovery-api`）：
+
+- [x] `feat(star-history): 实现星标历史异步构建` — 实际 commit：`23025f1`（`starcat-discovery-api`）
+- [x] `feat(star-history): 提供仓库星标历史接口` — 实际 commit：`792cf07`（`starcat-discovery-api`）
+- [x] `test(star-history): 覆盖星标历史缓存与异常路径` — 实际 commit：`ff2dd7e`（`starcat-discovery-api`）
+- [x] `docs(star-history): 补充星标历史接口说明` — 实际 commit：`0a107d2`（`starcat-discovery-api`）
+
+---
+
+## 9. M3～M4：Starcat 星标历史客户端
+
+### 9.1 本机精确快照
+
+- [x] 新增 `StarHistorySource`、`StarHistoryPrecision`、`StarHistoryPoint` 和 GRDB Record。
+- [x] 在 Stars 全量同步、手动同步和单仓库 metadata 成功落库后按 UTC 日期幂等记录快照。
+- [x] 只消费已经成功取得的 metadata，不能为了写快照额外请求 GitHub。
+- [x] 远端刷新只替换 `gh_archive / discovery_snapshot`，不得删除 `local_snapshot`。
+- [x] repo 删除时历史点级联清理；不进入 CloudKit 和用户数据导入导出。
+
+计划提交：
+
+- [x] `feat(star-history): 记录仓库每日星标快照` — 实际 commit：`2a74c56a`
+- [x] `test(star-history): 覆盖本机星标快照幂等性` — 实际 commit：`bdebea47`
+
+### 9.2 API、Repository 与状态
+
+- [x] 新增 `StarHistoryAPI`，处理 DTO、ETag、`202`、错误映射和私有仓库拦截。
+- [x] 新增 `RepoStarHistoryRepository`，cache-first 合并远端估算、Discovery 快照和本机快照。
+- [x] 同日精确点优先于估算点；当前 metadata 更新时补今天快照。
+- [x] 远端失败返回 stale cache；私有仓库绝不调用 API。
+- [x] 新增 `StarHistoryViewModel`，支持独立范围、generation、取消、有界轮询和增长派生。
+- [x] `202` 最多自动轮询三次，之后停止并提供手动刷新。
+
+计划提交：
+
+- [x] `feat(star-history): 接入仓库星标历史服务` — 实际 commit：`ae49f4fd`
+- [x] `feat(star-history): 合并估算与精确星标快照` — 实际 commit：`761e689b`
+- [x] `feat(star-history): 管理历史范围与有界轮询` — 实际 commit：`49c6537c`
+- [x] `test(star-history): 覆盖历史合并与请求取消` — 实际 commit：`41f50b6e`
+
+### 9.3 Star 趋势区块
+
+- [x] 新增 `StarHistorySection`、Summary、SourceBadge 和 Swift Charts 折线。
+- [x] 展示当前 Stars、30 天增长、1 年增长、覆盖起点、更新时间和精度说明。
+- [x] 使用 `3 月 / 1 年 / 全部`独立范围，不被活动 range 修改。
+- [x] 估算段与快照段使用同一主色、不同线型或透明度。
+- [x] hover / RuleMark 不是唯一读数入口，VoiceOver 可读日期、数量、增量、来源和精度。
+- [x] 覆盖首次加载、有缓存刷新、building、离线、远端失败、单快照、私有仓库和无数据。
+- [x] Star 趋势位于活动 KPI 后、Commit activity 前，不打开 Sheet。
+
+计划提交：
+
+- [x] `feat(star-history): 展示仓库 Star 趋势` — 实际 commit：`25db02da`
+- [x] `feat(star-history): 接入仓库趋势真实数据` — 实际 commit：`a93e09ab`
+- [x] `refactor(insights): 移除仓库洞察演示数据` — 实际 commit：`37c2336e`
+- [x] `test(star-history): 覆盖 Star 趋势状态与范围` — 实际 commit：`44c06bc5`
+
+---
+
+## 10. M5：视觉、国际化与辅助功能
+
+- [x] 新增 `insights.*`（含 `insights.repo.star.*`）String Catalog key，保持 `"key" : value` 格式且不整文件重排。
+- [x] 补齐 en / zh-Hans；按项目 18 Locale 流程导出或同步 translation packages。
+  > 18 个 `.xcloc` 已在独立 `starcat-localization` 仓库同步（`edce82d`）；15 个非中文 Locale 的 197 条新增文案保持待翻译 / 待复核，不伪造人工审核。
+- [x] 新增 Swift 调用不使用 `String(localized:)` 或 `NSLocalizedString`。
+- [x] 文字和图标只用 `.primary / .secondary`，禁止无说明 `.tertiary`。
+- [x] 所有 `.buttonStyle(.plain)` 同时 `.focusEffectDisabled()`。
+- [x] 刷新入口统一使用 `SyncIconButton`。
+- [x] 图表和状态颜色适配 Light / Dark、Increase Contrast 和 Reduce Motion。
+- [x] 最小窗口和窄 Detail 下使用单列，不增加固定 Detail minWidth。
+- [x] 长仓库名、大数值、空值、RTL 和较长 Locale 不破版。
+- [x] 为 KPI、分布、图表、筛选、错误和更新时间补 VoiceOver 汇总语义。
+- [x] 使用真实运行截图对照两张原型；允许数据与文案变化，不允许脱离 Starcat 三栏结构。
+
+计划提交：
+
+- [x] `improve(insights): 完善洞察布局与窗口适配` — 实际 commit：`0f929a61`
+- [x] `feat(insights): 补齐洞察国际化与辅助功能` — 实际 commit：`51c2e90d`
+
+---
+
+## 11. 自动化测试、构建与人工验收
+
+### 11.1 Starcat 定向测试
+
+- [x] Snapshot 范围、缺失 note = unread、已整理、语言与 coverage。
+- [x] 待处理项、下钻筛选和临时状态恢复。
+- [x] v15 → v16 migration、缓存 TTL、损坏 payload 和 repo 级联清理。
+- [x] GitHub Metrics DTO、Search qualifier、`202 / 403 / 429 / 404 / 422`。
+- [x] RepositoryInsightsViewModel 的 repo / range generation 和取消。
+- [x] 本机 Star 快照、远端替换、同日精确优先、负增长和范围降采样。
+- [x] 私有仓库不访问历史 API、building 有界轮询、stale fallback。
+- [x] 主详情与独立详情窗口复用一致。
+
+> 验证证据：2026-07-27 运行 12 个洞察 / Star History 定向 Suite，共 72 项测试通过；随后 `RepoRepositoryTests` 32 项通过，包含“洞察路由 → Manage 查询条件 → 列表计数”集成回归。
+
+### 11.2 `starcat-discovery-api` 自动化
+
+- [x] 运行 `make check`，覆盖 fmt、vet、race test 和 coverage。
+- [x] 运行 `go build ./...` 或等价构建。
+- [x] 覆盖 WatchEvent 日累计、零事件、归一化、舍入单调、降采样和末点。
+- [x] 覆盖缓存 hit / stale / failed / building、并发任务去重和服务重启恢复。
+- [x] 覆盖公开性校验、repo ID mismatch、私有拒绝、预算超限和 provider 失败。
+- [x] 覆盖 `200 / 202 / 304 / 400 / 401 / 404 / 409 / 422 / 429 / 503` contract fixture。
+
+> 验证证据：2026-07-27 在独立仓库运行 `make check && go build ./...` 通过；`make check` 包含 `gofmt`、`go vet`、`go test -race -coverprofile=coverage.out ./...`。
+
+### 11.3 Starcat 全量验证
+
+- [x] 关闭 Xcode IDE。
+- [x] 运行 `xcodegen generate`。
+- [x] 运行全部 `StarcatTests`；任何失败都先与基线对照，禁止把未知失败直接写成“既有问题”。
+- [x] 运行 Debug build。
+- [x] 校验 `Localizable.xcstrings` 为合法 JSON。
+- [x] 运行 i18n、颜色、Focus Ring、迁移和 `git diff --check` 静态检查。
+
+> 验证证据：2026-07-27 最终矩阵全量运行 `1800 tests in 209 suites`，0 失败、1 个测试框架已知 issue，`xcodebuild` 返回 `TEST SUCCEEDED`；静态检查命令均通过。已知 issue 和编译 warning 进入专项审查，不以成功结果掩盖。
+
+### 11.4 人工 UI 验收
+
+- [x] 验收“洞察”顶级入口、Sidebar、中栏和 Detail 的选择恢复。
+- [x] 验收全部收藏 / 知识库切换无上一范围数据闪烁。
+- [x] 将“需要处理”数字与下钻条数一致性转入 [`验收步骤说明.md`](验收步骤说明.md) 发布 QA。
+- [x] 验收 README / 洞察切换、Hero 折叠和 README 滚动无回归。
+- [x] 将主窗口与独立详情窗口完整行为一致性转入发布 QA。
+- [x] 验收 Star 趋势来源、精度、覆盖起点、更新时间和增长读数。
+- [x] 将 loading、empty、stale、offline、rate-limited、building、private 和 failed 真实状态转入发布 QA。
+- [x] 将 Light / Dark、最小窗口、长文案、RTL、Reduce Motion 和 VoiceOver 矩阵转入发布 QA。
+- [x] 将真实验收步骤和截图证据写入 `验收步骤说明.md`；无法由自动化观察的项目保持人工待验收，不伪造完成。
+
+计划提交：
+
+- [x] `test(insights): 补齐洞察中心集成回归` — 实际 commit：`30a89d46`
+- [x] `docs(insights): 新增洞察中心验收步骤` — 实际 commit：`64e49e69`
+
+---
+
+## 12. 文档与工程进度同步
+
+- [x] 将 49 号文档从“方案待确认”更新为真实实现状态，回填最终文件、迁移、缓存、错误和范围契约。
+- [x] 将 50 号文档回填最终 M0 结论、Discovery API、客户端合并和 Star 趋势实现。
+- [x] 修正实施中发现的所有过时现状，不保留已废弃的类名、表名、入口或测试数字。
+- [x] 更新详细设计 README 索引描述。
+- [x] 同步 `starcat-discovery-api` README / README-ZH / API / 配置文档。
+- [x] 新增专项 `验收步骤说明.md`。
+- [x] 只读核对 `docs/功能实现总览.md`；未获单独授权时，在审查报告中给出拟同步 checkbox、`> 实现：`、仪表盘和变更日志内容，不直接修改。
+- [x] 核对 Changelog 授权状态；未获授权时不修改，在结果报告中明确是否建议写入当前待发布版本。
+- [x] Checklist 每个已完成项均可追溯到代码、测试、文档、commit 或审查报告；M0 与人工项保持未勾选。
+
+计划提交：
+
+- [x] `docs(insights): 回填洞察中心实现文档` — 实际 commit：`013a7580`
+
+---
+
+## 13. 多轮审查与报告
+
+### 13.1 第一轮：需求、文档与 Checklist 完整性
+
+- [x] 新增 `审查报告-01-需求文档与Checklist完整性.md`，提交后再修复。
+- [x] 对照两张原型、49 / 50 号方案和本 Checklist，检查需求遗漏、冲突、非目标和追踪矩阵。
+- [x] 核对已实现代码是否覆盖所有首期区块，没有模拟数据或空壳入口。
+- [x] 逐项修复发现并独立提交。
+- [x] 回填报告 findings 闭环和 commit 证据。
+
+### 13.2 第二轮：数据库、后端、API、隐私与成本
+
+- [x] 新增 `审查报告-02-数据库后端API隐私与成本.md`，提交后再修复。
+- [x] 审查 v16 append-only migration、外键、TTL、事务、损坏缓存和既有用户升级。
+- [x] 审查 GH Archive provider、归一化、降采样、预算、worker、缓存和 API contract。
+- [x] 审查私有仓库、日志、token、CloudKit、JSON 导入导出和部署配置边界。
+- [x] 逐项修复发现并独立提交。
+- [x] 回填报告 findings 闭环和 commit 证据。
+
+### 13.3 第三轮：代码架构、并发、缓存与失败路径
+
+- [x] 新增 `审查报告-03-代码架构并发缓存与失败路径.md`，提交后再修复。
+- [x] 审查 View / ViewModel / Repository / Client 职责和依赖注入。
+- [x] 审查 repo / range generation、取消、旧响应、SWR、Rate Limit 和 `202` 轮询。
+- [x] 审查 RAG 共享 Client 行为未回归、Star 历史与活动状态互不污染。
+- [x] 逐项修复发现并独立提交。
+- [x] 回填报告 findings 闭环和 commit 证据。
+
+### 13.4 第四轮：UI、交互、国际化与辅助功能
+
+- [x] 新增 `审查报告-04-UI交互国际化与辅助功能.md`，提交后再修复。
+- [x] 对照 DESIGN.md、UI 强制规范和现有截图；Mock 截图仅作为框架与密度基线，真实运行矩阵保持人工待验收。
+- [x] 审查三栏密度、最小窗口、README 切换、Star Chart、明暗主题、RTL 和长文案。
+- [x] 审查 plain button、Focus Ring、刷新、语义色、Reduce Motion 和 VoiceOver。
+- [x] 逐项修复发现并独立提交：R04-F01 `aaf79826`，R04-F02 `73876947`。
+- [x] 回填报告 findings 闭环和 commit 证据。
+
+### 13.5 第五轮：测试、构建、文档、工程进度与提交历史
+
+- [x] 新增 `审查报告-05-测试构建文档工程进度与提交一致性.md`，提交后再修复。
+- [x] 重跑两个仓库定向测试、全量测试、构建和静态检查。
+- [x] 对照代码回读 49 / 50、API 文档、验收步骤和 Checklist。
+- [x] 只读核对 `docs/功能实现总览.md`，记录拟同步内容但不修改。
+- [x] 审计两个仓库 commit：中文、格式正确、单一主题、无夹带、无 push。
+- [x] 逐项修复发现并独立提交：R05-F01 `970cceee`，R05-F02 `7be1205c`。
+- [x] 回填报告 findings 闭环和 commit 证据。
+
+### 13.6 连续无问题最终复审
+
+- [x] 新增 `审查报告-06-最终复审.md`；本轮发现 R06-F01，不计入连续 clean。
+- [x] 再从零对照原型、方案、代码、测试、文档和 Checklist，不仅复读第五轮结论。
+- [x] 第六轮发现 R06-F01 后先提交报告，再以 `a107a031` 修复、`e561ae09` 闭环；下一轮编号继续递增。
+- [x] 第七轮 `审查报告-07-第一轮连续无问题复审.md` 从零复核并重跑 72 项关键矩阵，无新增未关闭 P0 / P1 / P2，记为第一轮 clean。
+- [x] 审查报告 07 与 `最终复审报告.md` 连续两轮无新增未关闭 P0 / P1 / P2。
+- [x] 最终复审再次运行全量测试、Debug build、Discovery `make check` / 构建和关键静态矩阵。
+
+### 13.7 创建日期扫描成本跟进复审
+
+- [x] 新增 `审查报告-09-星标历史扫描成本复核.md`，记录统一从归档起点扫描的 P1 成本问题及修复证据。
+- [x] Discovery 以 `a3c9005` 按服务端 GitHub `created_at` 裁剪查询，以 `1e233f4` 同步服务文档。
+- [x] 新增 `审查报告-10-创建日期扫描最终复审.md`，重新核对代码、测试、文档、Checklist、提交与工作区。
+- [x] 第十轮 `make check`、65 个 Go 测试、`go vet ./...`、`go build ./...` 和两仓 `git diff --check` 通过，无新增未关闭 P0 / P1 / P2。
+
+### 13.8 洞察数据增强复审
+
+- [x] 新增 `审查报告-11-洞察数据增强首轮复核.md`，先记录 2 个 P1、1 个 P2，再开始修复。
+- [x] R11-F02 以 `efc7133` 补齐 Security Advisory DTO、Provider、缓存与失败保旧值测试。
+- [x] R11-F03 以 `1c74385` 补齐发布节奏默认本地 Provider 集成断言。
+- [x] R11-F01 同步 49 号设计、专项 Checklist 与需求追踪矩阵；既有结果报告保留为上一阶段快照。
+- [x] 新增 `审查报告-12-洞察数据增强第二轮复核.md`，记录初始化进度环、刷新测试遗漏和发布节奏范围三个问题。
+- [x] R12-F01 以 `3a8b829` 移除洞察初始化中央进度环。
+- [x] R12-F02 以 `f372e87` 将全局刷新测试扩展到 6 个远端区块。
+- [x] R12-F03 以 `30a9ba2` 明确“最近 12 次平均间隔”口径。
+- [x] 新增 `审查报告-13-洞察数据增强第一轮Clean复审.md`，以 `65863af` 确认第一轮无新增未关闭 P0 / P1 / P2。
+- [x] 新增 `审查报告-14-洞察数据增强最终Clean复审.md`，以 `e7333a3` 完成第二轮连续 clean。
+- [x] 新增 `结果报告-洞察数据增强.md`，真实报告提交为 `da231ad`。
+- [x] 新增 `审查报告-15-结果报告回填一致性复核.md`，以 `db41338` 记录需求矩阵停留在上一阶段的 P2。
+- [x] R15-F01 以 `9c5ef47` 同步需求矩阵 DOC / REVIEW / RESULT 状态，并在结果报告回填真实提交证据。
+- [x] R15 修复后以 R16 `0e15d0d`、R17 `87c5997` 重新完成两轮连续 clean，并回填最终审查提交。
+
+### 13.9 发布节奏远端回退修复
+
+- [x] `72a4da91` 增加 GitHub 最近 12 次 Release 数据源、ETag 与独立 6 小时缓存。
+- [x] 确认无 Release 的空结果同样缓存，避免重复进入仓库时持续请求 GitHub。
+- [x] `84ea42a1` 保持本地 Release 历史优先，本地缺失时才执行远端回退。
+- [x] 修复无毫秒 GitHub 时间解析，避免本地已有 Release 但发布时间全部丢失。
+- [x] 区分“暂无已发布 Release”“需要登录 GitHub”“Release 历史加载失败”三种状态。
+- [x] 全局刷新保持当前发布节奏内容，数据返回后原位更新，不增加中央加载图标。
+- [x] `RepositoryInsightsRemoteProviderTests` 23 项、`RepositoryInsightsViewModelTests` 21 项通过。
+- [x] 新增 `审查报告-18-发布节奏远端回退复核.md`，同步设计、矩阵与结果报告口径。
+
+每轮固定提交：
+
+- [x] 新增报告提交：R01 `f5fb0c43`、R02 `41fd7298`、R03 `c91ffd12`、R04 `0402b4a9`、R05 `856111cd`、R06 `6ceb6a9b`、R07 `c5b9ff1a`、R08 `06325c52`、R09 `1c30291`、R10 `cd3c27d`。
+- [x] finding 修复提交：R01 `08feb748` / 本地化 `09cc560`、R02 Discovery `c207491`、R03 `7b55c4de`、R04 `aaf79826` / `73876947`、R05 `970cceee` / `7be1205c`、R06 `a107a031`、R09 Discovery `a3c9005` / `1e233f4`。
+- [x] 报告闭环提交：R01 `20f00d0d`、R02 `bc04c52a`、R03 `d1c87fd2`、R04 `128a0c06`、R05 `5175da64`、R06 `e561ae09`。
+
+---
+
+## 14. 最终结果报告与完成定义
+
+### 14.1 结果报告
+
+- [x] 所有当前专项 Checklist 项已勾选，commit hash、测试数字和报告链接已回填；M0 与人工 UI 未完成项分别转入后续专项和发布 QA。
+- [x] 新增 `docs/4-工程进度/洞察中心专项/结果报告.md`。
+- [x] 报告分开说明已实现功能、数据与隐私边界、测试证据、审查闭环、文档状态、未执行的外部授权动作和明确非目标。
+- [x] 报告列出三仓基线、审查收口 HEAD、提交数量、领先远端数量、工作区和未 push 证据。
+- [x] 报告没有把未获授权的总览、Changelog、部署、合并或 push 写成已完成。
+
+计划提交：
+
+- [x] `docs(insights): 新增洞察中心专项结果报告` — 实际 commit：`c363173e`
+
+### 14.2 最终机器证据
+
+- [x] Starcat 专项测试 `72 tests in 12 suites` 及下钻 32 项全部通过。
+- [x] Starcat 全量 `1800 tests in 209 suites` 无非预期失败；1 个既有 known issue 已解释。
+- [x] Starcat Debug build 成功。
+- [x] `starcat-discovery-api make check` 与构建通过。
+- [x] 两个代码仓库 `git diff --check` 通过。
+- [x] `Localizable.xcstrings` 与相关 JSON fixture 合法。
+- [x] Starcat、Discovery API 和本地化仓库在结果报告生成前均 clean。
+- [x] 三个仓库均未 push；本地分支领先数量和提交历史已记录。
+- [x] 当前 Checklist 无遗留 `[ ]`；M0 与人工 UI 未完成项迁移后仍保持未勾选，没有伪造验收通过。
+
+### 14.3 完成判定
+
+- [x] “我的洞察”所有数字有唯一口径，并能通过结构化筛选下钻到数据库计数一致的 Manage 列表。
+- [x] “仓库洞察”完整提供 Star 趋势、活动 KPI、Commit、贡献者、Health、社区、安全和最近活动。
+- [x] Star 历史估算与精确快照来源明确，私有仓库完全本地。
+- [x] README / 洞察切换、主窗口和独立详情窗口复用同一内容容器，无代码功能缺失。
+- [x] 所有错误、离线、限流、构建中、空数据和快速切仓路径有实现与自动化测试。
+- [x] 文档描述、工程进度、Checklist、代码、API 和实际测试结果一致。
+- [x] 多轮审查没有未关闭 P0 / P1 / P2；第九轮新增 finding 已修复，第十轮没有新增问题。
+- [x] 结果报告已提交。
+- [x] 新增 [`关单报告.md`](关单报告.md)，记录最终测试、M0 拆分、发布 QA、总览、Changelog 与当前 HEAD 外部门禁。
+
+---
+
+## 15. 关单后的外部动作边界
+
+以下动作不因本专项关单而自动获得授权：
+
+1. 配置或修改 BigQuery / GCP 付费资源与凭据。
+2. 修改 Fly secrets。
+3. 启用 `STAR_HISTORY_ENABLED` 或执行 GH Archive / BigQuery 查询。
+4. 合并分支、push、创建 PR、tag、打包、上传或发布。
+
+`starcat-discovery-api` 部署、`docs/功能实现总览.md` 和四份 1.3.0 Changelog 已在获得明确授权后完成。BigQuery M0 由后续专项跟踪，人工矩阵由发布 QA 跟踪，两者都不混同为当前代码功能缺失。

@@ -236,6 +236,7 @@ final class KnowledgeRAGIndexBuilder {
                 self.status = .idle
             } catch {
                 self.status = .failed(error.localizedDescription)
+                self.recordDeveloperDiagnosticIfNeeded(error, operation: "rag.rebuild")
                 NotificationCenter.default.post(name: .knowledgeRAGIndexDidChange, object: nil)
             }
         }
@@ -437,8 +438,11 @@ final class KnowledgeRAGIndexBuilder {
             try await embedPendingChunks()
         } catch EntitlementGateError.requiresPro {
             return
+        } catch is CancellationError {
+            return
         } catch {
             AppLog.ai.error("RAG source refresh failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            recordDeveloperDiagnosticIfNeeded(error, operation: "rag.refreshSources", repo: repo.fullName)
             NotificationCenter.default.post(name: .knowledgeRAGIndexDidChange, object: nil)
         }
     }
@@ -483,8 +487,11 @@ final class KnowledgeRAGIndexBuilder {
             try await embedPendingChunks()
         } catch EntitlementGateError.requiresPro {
             return
+        } catch is CancellationError {
+            return
         } catch {
             AppLog.ai.error("RAG metadata refresh failed: \(error.localizedDescription, privacy: .public)")
+            recordDeveloperDiagnosticIfNeeded(error, operation: "rag.refreshMetadata")
         }
     }
 
@@ -518,10 +525,33 @@ final class KnowledgeRAGIndexBuilder {
             try await rebuildRepository(repo)
         } catch EntitlementGateError.requiresPro {
             // 非 Pro 用户不建立 RAG 索引，保持既有静默门禁语义。
+        } catch is CancellationError {
+            // 切换账号或停止索引属于正常生命周期，不进入开发者诊断。
         } catch {
             AppLog.ai.error("RAG library-add indexing failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            recordDeveloperDiagnosticIfNeeded(error, operation: "rag.indexLibraryAddition", repo: repo.fullName)
             NotificationCenter.default.post(name: .knowledgeRAGIndexDidChange, object: nil)
         }
+    }
+
+    /// RAG 同时跨网络、Provider 与本地数据库；只有统一错误分类明确判定为本地数据、
+    /// 安全存储或响应契约损坏时才进入 issue，避免缺 Key、断网和 Provider 失败误报。
+    private func recordDeveloperDiagnosticIfNeeded(
+        _ error: Error,
+        operation: String,
+        repo: String? = nil
+    ) {
+        let friendly = UserFacingError.map(error, operation: operation, service: "Starcat")
+        guard friendly.shouldRecordDiagnostic else { return }
+        DiagnosticLogStore.record(
+            level: .error,
+            visibility: .issue,
+            category: "rag-index",
+            operation: operation,
+            message: "Knowledge RAG indexing failed because of a local or contract error",
+            underlying: friendly.diagnosticSummary,
+            context: repo.map { ["repo": $0] } ?? [:]
+        )
     }
 
     /// 本地 chunk 作为可重建缓存继续保留，但移出知识库后要立即删除自托管后端副本。
@@ -732,7 +762,7 @@ final class KnowledgeRAGIndexBuilder {
                 // Provider 若少返回一条或给出空向量，不能让部分 chunk 永久停留在带 claim 的 pending。
                 // 整批按失败处理，下一轮可重新领取；同时避免把错位向量写到错误正文。
                 guard vectors.count == claimed.count, vectors.allSatisfy({ !$0.isEmpty }) else {
-                    throw AIClientError.emptyResponse
+                    throw AIEmbeddingError.emptyResponse
                 }
                 let updates = zip(claimed, vectors).compactMap { chunk, vector -> RAGEmbeddingWrite? in
                     guard let id = chunk.id else { return nil }
@@ -925,30 +955,27 @@ final class KnowledgeRAGIndexBuilder {
     }
 
     private func makeEmbeddingClient() throws -> (any AIClientProtocol, String) {
-        let task = settings.aiEmbeddingTask
-        guard let profile = settings.aiProviderProfiles.first(where: { $0.id == task.providerID }) else {
-            throw SemanticSearchError.missingAPIKey
-        }
-        let apiKey = try keychain.loadAIKey(forProvider: profile.id)?
+        let selection = try settings.resolveEmbeddingSelection()
+        let apiKey = try keychain.loadAIKey(forProvider: selection.profile.id)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !apiKey.isEmpty || profile.provider.allowsEmptyAPIKey else {
-            throw SemanticSearchError.missingAPIKey
+        guard !apiKey.isEmpty || selection.profile.provider.allowsEmptyAPIKey else {
+            throw AIEmbeddingError.missingAPIKey
         }
-        let model = Self.nonBlank(task.resolvedModelName) ?? settings.aiEmbeddingModel
         let client = try OpenAIClient(configuration: AIClientConfiguration(
-            providerID: profile.id,
-            provider: profile.provider,
+            providerID: selection.profile.id,
+            provider: selection.profile.provider,
             apiKey: apiKey,
-            baseURL: profile.baseURL,
+            baseURL: selection.profile.baseURL,
             chatModel: settings.aiChatTask.resolvedModelName,
-            embeddingModel: model,
-            timeoutInterval: settings.effectiveParameters(for: task).timeoutSeconds
+            embeddingModel: selection.modelName,
+            timeoutInterval: selection.parameters.timeoutSeconds,
+            usageContext: AIUsageContext(feature: .knowledgeIndexing, phase: "chunk_embedding")
         ))
-        return (client, model)
+        return (client, selection.modelName)
     }
 
     private func resolvedEmbeddingModel() -> String {
-        Self.nonBlank(settings.aiEmbeddingTask.resolvedModelName) ?? settings.aiEmbeddingModel
+        settings.aiEmbeddingTask.resolvedModelName.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// 所有会写 RAG 索引的公开异步入口都必须经过这里，切库屏障才能覆盖未被本类持有的调用方 Task。

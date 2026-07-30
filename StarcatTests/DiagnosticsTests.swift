@@ -29,6 +29,22 @@ struct DiagnosticsTests {
         #expect(event.underlying?.contains("ghp_secret") == false)
     }
 
+    @Test("诊断事件会脱敏裸密钥与用户绝对路径")
+    func diagnosticEventRedactsRawSecretsAndPaths() {
+        let event = DiagnosticEvent(
+            level: .error,
+            category: "storage",
+            operation: "test",
+            message: "Invalid API key sk-proj-abcdefghijklmnop",
+            underlying: "failed at /Users/dong4j/Library/Application Support/Starcat/data.sqlite"
+        )
+
+        #expect(!event.message.contains("sk-proj-"))
+        #expect(event.message.contains("<redacted>"))
+        #expect(!event.underlying!.contains("/Users/dong4j"))
+        #expect(event.underlying!.contains("/Users/<redacted>"))
+    }
+
     @Test("网络错误映射为用户友好文案并保留诊断状态码")
     func userFacingErrorMapsNetworkError() {
         let error = UserFacingError.map(
@@ -42,6 +58,66 @@ struct DiagnosticsTests {
         #expect(error.message.contains("GitHub"))
         #expect(error.statusCode == 503)
         #expect(error.diagnosticSummary.contains("503"))
+        #expect(!error.shouldRecordDiagnostic)
+    }
+
+    @Test("单仓摘要未配置 Provider 时直接展示配置文案")
+    func userFacingErrorMapsMissingProvider() {
+        let error = UserFacingError.map(
+            RepoAIInsightError.missingProvider("摘要"),
+            operation: String.l10n("diagnostics.operation.generateAIInsight"),
+            service: "AI"
+        )
+
+        #expect(error.title == String.l10n("error.user.aiConfiguration.title"))
+        #expect(error.message == RepoAIInsightError.missingProvider("摘要").localizedDescription)
+        #expect(!error.message.contains("在访问 AI 时失败"))
+        #expect(!error.shouldRecordDiagnostic)
+    }
+
+    @Test("单仓摘要缺少 API Key 时直接展示配置文案")
+    func userFacingErrorMapsMissingAPIKey() {
+        let error = UserFacingError.map(
+            RepoAIInsightError.missingAPIKey,
+            operation: String.l10n("diagnostics.operation.generateAIInsight"),
+            service: "AI"
+        )
+
+        #expect(error.title == String.l10n("error.user.aiConfiguration.title"))
+        #expect(error.message == String.l10n("ai.insight.error.missingAPIKey"))
+        #expect(!error.shouldRecordDiagnostic)
+    }
+
+    @Test("本地数据库错误会进入开发者诊断")
+    func userFacingDatabaseErrorRequiresDiagnostic() {
+        let error = UserFacingError.map(
+            DatabaseError.applicationSupportNotFound,
+            operation: "loading local data",
+            service: "Starcat"
+        )
+
+        #expect(error.shouldRecordDiagnostic)
+    }
+
+    @Test("未分类的外部 SDK 错误不会直接污染开发者诊断")
+    func unknownExternalErrorDoesNotRequireDiagnostic() {
+        let error = UserFacingError.map(
+            NSError(domain: "ThirdPartySDK", code: 400),
+            operation: "generating summary",
+            service: "AI"
+        )
+
+        #expect(!error.shouldRecordDiagnostic)
+    }
+
+    @Test("旧版诊断事件缺少 visibility 时只作为导出上下文")
+    func legacyDiagnosticEventDefaultsToContext() throws {
+        let data = Data("""
+        {"timestamp":"2027-01-15T08:00:00Z","level":"error","category":"ai","operation":"legacy","message":"failed","context":{}}
+        """.utf8)
+
+        let event = try JSONDecoder().decode(DiagnosticEvent.self, from: data)
+        #expect(event.visibility == .context)
     }
 
     @Test("诊断日志写入 JSONL")
@@ -113,6 +189,37 @@ struct DiagnosticsTests {
         #expect(lines.count == 3)
     }
 
+    @Test("底层系统描述变化不会绕过重复事件抑制")
+    func diagnosticLogStoreIgnoresUnderlyingWhenDeduplicating() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("starcat-diagnostics-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let store = DiagnosticLogStore(directoryURL: root)
+        let base = Date(timeIntervalSince1970: 1_800_000_000)
+        await store.record(DiagnosticEvent(
+            timestamp: base,
+            level: .error,
+            visibility: .issue,
+            category: "ai",
+            operation: "same",
+            message: "same failure",
+            underlying: "response pointer 0x1"
+        ))
+        await store.record(DiagnosticEvent(
+            timestamp: base.addingTimeInterval(1),
+            level: .error,
+            visibility: .issue,
+            category: "ai",
+            operation: "same",
+            message: "same failure",
+            underlying: "response pointer 0x2"
+        ))
+
+        let lines = await diagnosticLogLines(in: store)
+        #expect(lines.count == 1)
+    }
+
     @Test("确认诊断问题后状态摘要只统计新问题")
     func diagnosticLogStoreAcknowledgesOldIssues() async throws {
         let root = FileManager.default.temporaryDirectory
@@ -124,6 +231,7 @@ struct DiagnosticsTests {
         await store.record(DiagnosticEvent(
             timestamp: base,
             level: .warning,
+            visibility: .issue,
             category: "activity",
             operation: "old",
             message: "old warning"
@@ -140,6 +248,7 @@ struct DiagnosticsTests {
         await store.record(DiagnosticEvent(
             timestamp: base.addingTimeInterval(2),
             level: .warning,
+            visibility: .issue,
             category: "activity",
             operation: "new",
             message: "new warning"
@@ -148,6 +257,29 @@ struct DiagnosticsTests {
         let afterNewIssue = await store.issueSummary(since: base.addingTimeInterval(-1))
         #expect(afterNewIssue.issueCount == 1)
         #expect(afterNewIssue.latestIssue?.operation == "new")
+    }
+
+    @Test("上下文事件写入导出日志但不计入问题摘要")
+    func diagnosticContextEventDoesNotBecomeIssue() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("starcat-diagnostics-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let store = DiagnosticLogStore(directoryURL: root)
+        let now = Date()
+        await store.record(DiagnosticEvent(
+            timestamp: now,
+            level: .error,
+            visibility: .context,
+            category: "network",
+            operation: "recoverable",
+            message: "temporary failure"
+        ))
+
+        let text = await store.readAllText()
+        let summary = await store.issueSummary(since: now.addingTimeInterval(-1))
+        #expect(text.contains("\"operation\":\"recoverable\""))
+        #expect(summary.issueCount == 0)
     }
 
     private func securityAdvisoryEvent(

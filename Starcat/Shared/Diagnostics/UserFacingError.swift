@@ -11,6 +11,7 @@
 //
 
 import Foundation
+import GRDB
 import SwiftUI
 
 /// 用户可读错误。
@@ -24,12 +25,22 @@ struct UserFacingError: Equatable, Sendable {
     var diagnosticSummary: String
     var statusCode: Int?
     var errorCode: String?
+    /// 只有用户无法自行恢复、需要开发者定位的故障才允许写入诊断问题。
+    var shouldRecordDiagnostic: Bool
 
     static func map(
         _ error: Error,
         operation: String,
         service: String? = nil
     ) -> UserFacingError {
+        if error is CancellationError || error is EntitlementGateError {
+            return make(
+                kind: .recoverable,
+                operation: operation,
+                service: service,
+                diagnostic: error.localizedDescription
+            )
+        }
         if let network = error as? NetworkError {
             return mapNetwork(network, operation: operation, service: service)
         }
@@ -48,6 +59,9 @@ struct UserFacingError: Equatable, Sendable {
         if let ai = error as? AIClientError {
             return mapAI(ai, operation: operation, service: service)
         }
+        if let insight = error as? RepoAIInsightError {
+            return mapRepoAIInsight(insight, operation: operation, service: service)
+        }
         if let translation = error as? ReadmeTranslationError {
             return mapReadmeTranslation(translation, operation: operation, service: service)
         }
@@ -57,6 +71,15 @@ struct UserFacingError: Equatable, Sendable {
                 operation: operation,
                 service: service,
                 diagnostic: database.localizedDescription
+            )
+        }
+        if error is GRDB.DatabaseError {
+            let nsError = error as NSError
+            return make(
+                kind: .localData,
+                operation: operation,
+                service: service,
+                diagnostic: "GRDB database error domain=\(nsError.domain) code=\(nsError.code)"
             )
         }
         if let keychain = error as? KeychainError {
@@ -80,8 +103,10 @@ struct UserFacingError: Equatable, Sendable {
     }
 
     func record(level: DiagnosticEvent.Level = .error, category: String, operation: String, service: String? = nil) {
+        guard shouldRecordDiagnostic else { return }
         DiagnosticLogStore.record(
             level: level,
+            visibility: .issue,
             category: category,
             operation: operation,
             message: message,
@@ -103,6 +128,7 @@ struct UserFacingError: Equatable, Sendable {
         case secureStorage
         case aiConfiguration
         case aiProvider
+        case recoverable
         case unknown
     }
 
@@ -141,7 +167,7 @@ struct UserFacingError: Equatable, Sendable {
             }
             return make(kind: .networkUnavailable, operation: operation, service: service, diagnostic: error.localizedDescription)
         case .cancelled:
-            return make(kind: .unknown, operation: operation, service: service, diagnostic: error.localizedDescription)
+            return make(kind: .recoverable, operation: operation, service: service, diagnostic: error.localizedDescription)
         }
     }
 
@@ -193,9 +219,85 @@ struct UserFacingError: Equatable, Sendable {
     ) -> UserFacingError {
         switch error {
         case .missingAPIKey, .invalidBaseURL:
-            return make(kind: .aiConfiguration, operation: operation, service: service, diagnostic: error.localizedDescription)
-        case .invalidChatHistory, .emptyResponse, .responseTruncated, .modelListRequestFailed:
-            return make(kind: .aiProvider, operation: operation, service: service, diagnostic: error.localizedDescription)
+            // 配置类错误直接展示底层已本地化文案，避免再包一层「需要有效 AI 配置」泛化句。
+            return UserFacingError(
+                title: String.l10n("error.user.aiConfiguration.title"),
+                message: error.localizedDescription,
+                recovery: String.l10n("error.user.aiConfiguration.recovery"),
+                diagnosticSummary: DiagnosticEvent.redact(error.localizedDescription),
+                shouldRecordDiagnostic: false
+            )
+        case .authenticationRejected:
+            return make(
+                kind: .unauthorized,
+                operation: operation,
+                service: service,
+                diagnostic: error.diagnosticDetail ?? error.localizedDescription,
+                statusCode: 401
+            )
+        case .rateLimited:
+            return make(
+                kind: .rateLimited,
+                operation: operation,
+                service: service,
+                diagnostic: error.diagnosticDetail ?? error.localizedDescription,
+                statusCode: 429
+            )
+        case .paymentRequired:
+            // 402：文案已在 AIClientError 写清「余额/付费」，直接展示，避免再套泛化模板。
+            return UserFacingError(
+                title: String.l10n("error.user.aiProvider.title"),
+                message: error.localizedDescription,
+                recovery: String.l10n("error.user.aiProvider.recovery"),
+                diagnosticSummary: DiagnosticEvent.redact(error.diagnosticDetail ?? error.localizedDescription),
+                statusCode: 402,
+                shouldRecordDiagnostic: false
+            )
+        case .requestRejected(let statusCode, let detail):
+            return make(
+                kind: .aiProvider,
+                operation: operation,
+                service: service,
+                diagnostic: detail,
+                statusCode: statusCode
+            )
+        case .invalidChatHistory, .emptyResponse, .responseTruncated, .modelListRequestFailed,
+             .networkUnavailable, .timedOut, .requestFailed:
+            return make(
+                kind: .aiProvider,
+                operation: operation,
+                service: service,
+                diagnostic: error.diagnosticDetail ?? error.localizedDescription
+            )
+        }
+    }
+
+    /// 单仓摘要 / 标签生成的配置错误。
+    ///
+    /// `.missingProvider` / `.missingAPIKey` 属于「生成前本地配置不完整」，文案已在
+    /// `RepoAIInsightError` 内写清楚设置路径；这里不要再套 `error.user.aiConfiguration.message`
+    /// 的 operation/service 模板，否则会盖掉具体原因。
+    private static func mapRepoAIInsight(
+        _ error: RepoAIInsightError,
+        operation: String,
+        service: String?
+    ) -> UserFacingError {
+        switch error {
+        case .missingProvider, .missingAPIKey:
+            return UserFacingError(
+                title: String.l10n("error.user.aiConfiguration.title"),
+                message: error.localizedDescription,
+                recovery: String.l10n("error.user.aiConfiguration.recovery"),
+                diagnosticSummary: DiagnosticEvent.redact(error.localizedDescription),
+                shouldRecordDiagnostic: false
+            )
+        case .invalidJSON:
+            return make(
+                kind: .aiProvider,
+                operation: operation,
+                service: service,
+                diagnostic: error.localizedDescription
+            )
         }
     }
 
@@ -290,6 +392,10 @@ struct UserFacingError: Equatable, Sendable {
             titleKey = "error.user.aiProvider.title"
             messageKey = "error.user.aiProvider.message"
             recoveryKey = "error.user.aiProvider.recovery"
+        case .recoverable:
+            titleKey = "error.user.unknown.title"
+            messageKey = "error.user.unknown.message"
+            recoveryKey = "error.user.unknown.recovery"
         case .unknown:
             titleKey = "error.user.unknown.title"
             messageKey = "error.user.unknown.message"
@@ -301,13 +407,22 @@ struct UserFacingError: Equatable, Sendable {
         if let context {
             diagnostic += " (\(context))"
         }
+        let shouldRecordDiagnostic: Bool
+        switch kind {
+        case .decoding, .localData, .secureStorage:
+            shouldRecordDiagnostic = true
+        case .networkUnavailable, .unauthorized, .rateLimited, .notFound,
+             .serverUnavailable, .aiConfiguration, .aiProvider, .recoverable, .unknown:
+            shouldRecordDiagnostic = false
+        }
         return UserFacingError(
             title: String.l10n(titleKey),
             message: String(format: String.l10n(messageKey), operation, serviceName),
             recovery: String.l10n(recoveryKey),
             diagnosticSummary: diagnostic,
             statusCode: statusCode,
-            errorCode: errorCode
+            errorCode: errorCode,
+            shouldRecordDiagnostic: shouldRecordDiagnostic
         )
     }
 }

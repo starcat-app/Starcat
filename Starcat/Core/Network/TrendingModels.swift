@@ -27,7 +27,7 @@ import SwiftUI
 ///
 /// R-01 v1.2 起从 `StarcatRepoCardDTO + TrendingExtension` 转换而来（见 `init(card:since:)`）。
 /// 包含计算属性用于格式化显示。
-struct TrendingRepo: Identifiable, Equatable {
+struct TrendingRepo: Identifiable, Equatable, Sendable {
     /// 唯一标识（使用 fullName 作为 id）
     var id: String { fullName }
 
@@ -215,7 +215,7 @@ struct TrendingRepo: Identifiable, Equatable {
     }
 
     /// 贡献者模型。
-    struct Contributor: Identifiable, Equatable {
+    struct Contributor: Identifiable, Equatable, Sendable {
         var id: String { username }
         let username: String
         let avatarURL: URL?
@@ -286,7 +286,7 @@ struct TrendingRepo: Identifiable, Equatable {
 // MARK: - Period
 
 /// Trending 时间周期。
-enum TrendingPeriod: String, CaseIterable, Identifiable {
+enum TrendingPeriod: String, CaseIterable, Identifiable, Sendable {
     case daily = "daily"
     case weekly = "weekly"
     case monthly = "monthly"

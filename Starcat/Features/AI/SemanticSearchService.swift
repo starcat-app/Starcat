@@ -142,14 +142,15 @@ final class SemanticSearchService {
         query: String,
         candidates: [Repo],
         ftsHitIDs: Set<Int64> = [],
-        limit: Int = 80
+        limit: Int = 80,
+        usageContext: AIUsageContext = AIUsageContext(feature: .semanticSearch, phase: "query")
     ) async throws -> [SemanticSearchHit] {
         try entitlementGate?.requirePro(.semanticSearch)
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
         guard !candidates.isEmpty else { return [] }
 
-        let (client, model) = try makeClient(task: settings.aiEmbeddingTask)
+        let (client, model) = try makeClient(usageContext: usageContext)
         try await ensureIndexed(candidates, model: model, client: client)
 
         let stored = try await embeddingRepository.fetchEmbeddingsByRepoID(
@@ -212,7 +213,9 @@ final class SemanticSearchService {
     func refreshIndex(for repos: [Repo]) async throws -> Int {
         try entitlementGate?.requirePro(.semanticSearch)
         guard !repos.isEmpty else { return 0 }
-        let (client, model) = try makeClient(task: settings.aiEmbeddingTask)
+        let (client, model) = try makeClient(
+            usageContext: AIUsageContext(feature: .semanticSearch, phase: "indexing")
+        )
         return try await ensureIndexed(repos, model: model, client: client, force: true)
     }
 
@@ -223,7 +226,8 @@ final class SemanticSearchService {
     /// - `RepoNotesSectionViewModel` 笔记 upsert 成功后（已带 1.5s debounce）；
     /// - 后台 `SemanticIndexBuilder` 补完 README Markdown 后。
     ///
-    /// 不抛 missingAPIKey：未配置 Provider 时静默 no-op，避免每次保存笔记都弹错误。
+    /// 向量化配置无效时静默 no-op，避免每次保存笔记都弹错误；显式搜索 / 重建入口仍会
+    /// 抛出具体的 `AIEmbeddingError`，由上层展示可执行提示。
     ///
     /// **返回值（2026-06-13 dong4j 反馈"开始预拉闪烁"改造）**：
     /// - `true`：实际调用 embedding API 重建了向量；
@@ -246,12 +250,14 @@ final class SemanticSearchService {
     func refreshIndexIfChanged(for repos: [Repo]) async -> Int {
         do {
             try entitlementGate?.requirePro(.semanticSearch)
-            let (client, model) = try makeClient(task: settings.aiEmbeddingTask)
+            let (client, model) = try makeClient(
+                usageContext: AIUsageContext(feature: .semanticSearch, phase: "indexing")
+            )
             return try await ensureIndexed(repos, model: model, client: client)
         } catch EntitlementGateError.requiresPro {
             return 0
-        } catch SemanticSearchError.missingAPIKey {
-            // 静默：用户没配 AI，不打扰
+        } catch let error as AIEmbeddingError where error.isConfigurationIssue {
+            // 静默：后台增量补索引不能因用户尚未完成向量化配置而打扰。
             return 0
         } catch {
             AppLog.ai.error("refreshIndexIfChanged batch failed: \(error.localizedDescription, privacy: .public)")
@@ -259,26 +265,24 @@ final class SemanticSearchService {
         }
     }
 
-    private func makeClient(task: AIModelTaskConfiguration) throws -> (any AIClientProtocol, String) {
-        guard let profile = settings.aiProviderProfiles.first(where: { $0.id == task.providerID }) else {
-            throw SemanticSearchError.missingAPIKey
-        }
-        let apiKey = try keychain.loadAIKey(forProvider: profile.id)?
+    private func makeClient(usageContext: AIUsageContext) throws -> (any AIClientProtocol, String) {
+        let selection = try settings.resolveEmbeddingSelection()
+        let apiKey = try keychain.loadAIKey(forProvider: selection.profile.id)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !apiKey.isEmpty || profile.provider.allowsEmptyAPIKey else {
-            throw SemanticSearchError.missingAPIKey
+        guard !apiKey.isEmpty || selection.profile.provider.allowsEmptyAPIKey else {
+            throw AIEmbeddingError.missingAPIKey
         }
-        let model = task.resolvedModelName.nilIfBlank ?? settings.aiEmbeddingModel
 
         return (try OpenAIClient(configuration: AIClientConfiguration(
-            providerID: profile.id,
-            provider: profile.provider,
+            providerID: selection.profile.id,
+            provider: selection.profile.provider,
             apiKey: apiKey,
-            baseURL: profile.baseURL,
+            baseURL: selection.profile.baseURL,
             chatModel: settings.aiSummaryTask.resolvedModelName,
-            embeddingModel: model,
-            timeoutInterval: settings.effectiveParameters(for: task).timeoutSeconds
-        )), model)
+            embeddingModel: selection.modelName,
+            timeoutInterval: selection.parameters.timeoutSeconds,
+            usageContext: usageContext
+        )), selection.modelName)
     }
 
     /// 核心：确保 `repos` 的向量索引存在且最新。

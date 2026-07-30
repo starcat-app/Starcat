@@ -65,6 +65,13 @@ final class BatchAIQueueService {
     /// 用户主动取消标志位：在 processNext 循环开始处轮询，命中即跳出。
     private var cancelRequested: Bool = false
 
+    /// 当前串行队列 Task。普通“取消”保持协作式语义；手动任务抢占自动任务时，
+    /// 通过本句柄取消 in-flight AI 请求并等待旧循环完全退出，避免两轮并发写库。
+    private var runLoopTask: Task<Void, Never>?
+
+    /// 本轮是否已有标签落库，退出 runLoop 时据此合并一次 Sidebar 刷新。
+    private var hasPendingTagsChangedNotification: Bool = false
+
     // MARK: - 依赖（按 AppDependencies 装配顺序注入）
 
     private let insightService: RepoAIInsightService
@@ -74,7 +81,11 @@ final class BatchAIQueueService {
     private let entitlementGate: EntitlementGate?
     private let notificationService: ReleaseNotificationService?
 
-    /// 标签应用后通知外部刷新 Sidebar 计数 / 当前列表。
+    /// 一批任务内确实应用过标签后，通知外部刷新 Sidebar 计数 / 当前列表。
+    ///
+    /// 回调只在本轮退出时合并触发一次，不能每完成一个 repo 都做一次全量 Sidebar
+    /// 查询。后者会让自动整理期间持续发布十余组 Observable 状态，刚好与分类切换的
+    /// SwiftUI diff 叠加，形成整窗动画停顿。
     /// 设计上用闭包而非 NotificationCenter，避免跨模块字符串通知名飘移。
     var onTagsChanged: (() -> Void)?
 
@@ -169,10 +180,11 @@ final class BatchAIQueueService {
         self.isPaused = false
         self.isRunning = true
         self.cancelRequested = false
+        self.hasPendingTagsChangedNotification = false
         self.startedAt = Date()
         self.currentJobId = nil
         AppLog.ai.notice("[batch-ai] start: count=\(repos.count, privacy: .public), autoApplyTags=\(options.autoApplyTags, privacy: .public), threshold=\(options.confidenceThreshold, privacy: .public), silent=\(silent, privacy: .public)")
-        Task { await runLoop() }
+        launchRunLoop()
     }
 
     /// 暂停。当前 job 跑完即停；不杀进行中的 AI 调用（强中断会触发 partial 状态难处理）。
@@ -187,7 +199,7 @@ final class BatchAIQueueService {
         guard isRunning, isPaused else { return }
         isPaused = false
         AppLog.ai.notice("[batch-ai] resumed")
-        Task { await runLoop() }
+        launchRunLoop()
     }
 
     /// 取消整批。
@@ -214,6 +226,19 @@ final class BatchAIQueueService {
         AppLog.ai.notice("[batch-ai] cancel requested, cleared \(removed, privacy: .public) queued jobs")
     }
 
+    /// 用户明确启动手动整理时，强制抢占正在运行的自动整理轮次。
+    ///
+    /// 与面板里的普通 `cancel()` 不同：这里会取消当前 AI await，并等待旧 runLoop
+    /// 完全退出后才返回。调用方随后启动手动批次，保证“用户操作 > 自动后台任务”，
+    /// 同时避免两个批次共享同一 jobs / options 状态。
+    func preemptAutomaticRunForManualStart() async {
+        guard isRunning, silent else { return }
+        cancel()
+        let task = runLoopTask
+        task?.cancel()
+        await task?.value
+    }
+
     /// UI 派生：true 时显示"正在终止当前 AI 调用..."提示。
     /// 触发后 runLoop 仍在等 in-flight job 跑完（最多几十秒），需要给用户解释。
     var isCancelling: Bool { cancelRequested && isRunning }
@@ -228,6 +253,7 @@ final class BatchAIQueueService {
         currentJobId = nil
         cancelRequested = false
         silent = false
+        hasPendingTagsChangedNotification = false
     }
 
     /// 重试单个失败的 job。
@@ -238,13 +264,15 @@ final class BatchAIQueueService {
         guard jobs[idx].status == .failed else { return }
         jobs[idx].status = .queued
         jobs[idx].attempts = 0
-        jobs[idx].errorMessage = nil
+        jobs[idx].failure = nil
+        jobs[idx].errorDiagnostic = nil
+        jobs[idx].copyDiagnostic = nil
         jobs[idx].finishedAt = nil
         if !isRunning {
             isRunning = true
             isPaused = false
             cancelRequested = false
-            Task { await runLoop() }
+            launchRunLoop()
         }
     }
 
@@ -254,7 +282,9 @@ final class BatchAIQueueService {
         for idx in jobs.indices where jobs[idx].status == .failed {
             jobs[idx].status = .queued
             jobs[idx].attempts = 0
-            jobs[idx].errorMessage = nil
+            jobs[idx].failure = nil
+            jobs[idx].errorDiagnostic = nil
+            jobs[idx].copyDiagnostic = nil
             jobs[idx].finishedAt = nil
             touched = true
         }
@@ -262,11 +292,20 @@ final class BatchAIQueueService {
             isRunning = true
             isPaused = false
             cancelRequested = false
-            Task { await runLoop() }
+            launchRunLoop()
         }
     }
 
     // MARK: - 主循环
+
+    private func launchRunLoop() {
+        guard runLoopTask == nil else { return }
+        runLoopTask = Task { [weak self] in
+            guard let self else { return }
+            await self.runLoop()
+            self.runLoopTask = nil
+        }
+    }
 
     /// 串行拉取 queued 的 job 处理，直到全部进入终态、被暂停或被取消。
     ///
@@ -313,15 +352,17 @@ final class BatchAIQueueService {
             // 用户取消时，把可能停在 .processing 的孤儿 job 收尾，避免 UI 留"永远转圈"行。
             if cancelRequested {
                 let now = Date()
-                let reason = String.l10n("batchAI.panel.cancelledByUser")
                 for idx in jobs.indices where jobs[idx].status == .processing {
                     jobs[idx].status = .failed
-                    jobs[idx].errorMessage = reason
+                    jobs[idx].failure = .cancelled
+                    jobs[idx].errorDiagnostic = nil
+                    jobs[idx].copyDiagnostic = nil
                     jobs[idx].finishedAt = now
                 }
             }
             isRunning = false
             currentJobId = nil
+            notifyTagsChangedIfNeeded()
             if isFinished {
                 AppLog.ai.notice("[batch-ai] finished: completed=\(self.completedCount, privacy: .public), ignored=\(self.ignoredCount, privacy: .public), failed=\(self.failedCount, privacy: .public)")
                 // HOM-126：仅在自然 finished（不是 cancel）时通知订阅方写回结果，
@@ -363,7 +404,7 @@ final class BatchAIQueueService {
             throw RepoAIInsightError.invalidJSON  // 复用现有 error 类型；不应发生
         }
 
-        // 标签生成 hints：repo 自身标签（强信号）+ 全库高频前 30（弱信号）。
+        // 标签生成 hints：repo 自身标签（强信号）+ 字符预算内的全库复用词表。
         // 与单仓 AI 摘要应用标签路径（RepoAIInsightViewModel.generate）共享
         // `RepoAIInsightService.makeTagHints` 工厂方法，信号源单一信任源；
         // 详细约束见 `AITagHints` + `makeTagHints` 注释。
@@ -372,7 +413,7 @@ final class BatchAIQueueService {
         // 2026-06-14 修订（dong4j 反馈）：原版只用 `tagRepository.fetchAll().prefix(50).map(\.name)`，
         // 漏掉了 repo 自身标签——这些 repo 专属标签往往不在全局 Top 50 里，AI 看不到 →
         // 大概率生成同义新标签，与用户已有的 repo 标签重复。helper 现在显式拉 repo 自身标签
-        // 单独排前面强信号注入，全库标签去重后仅作风格参考弱信号注入。
+        // 单独排前面强信号注入，全库标签按使用频率排序、canonical 去重后作为复用词表。
         let hints: AITagHints
         if options.actions.contains(.tags) {
             hints = await RepoAIInsightService.makeTagHints(
@@ -430,7 +471,7 @@ final class BatchAIQueueService {
             jobs[idx2].finishedAt = Date()
             jobs[idx2].status = .completed
             if !appliedNames.isEmpty {
-                onTagsChanged?()
+                hasPendingTagsChangedNotification = true
             }
         } else {
             jobs[idx].didGenerateSummary = didSummary
@@ -439,20 +480,50 @@ final class BatchAIQueueService {
         }
     }
 
-    /// 把通过阈值过滤的建议落库为 repo_tags 关联。
-    /// 重复使用 RepoAIInsightViewModel 的 findOrCreate 模式：先按 name 查找，
-    /// 不存在则新建一个最小 Tag（无颜色、默认图标）。
+    /// 合并发布标签变更。自然完成与取消都会走这里：取消前已经落库的标签也必须最终
+    /// 刷新一次，但暂停仍保留 pending，等恢复后的同一轮真正退出再发布。
+    private func notifyTagsChangedIfNeeded() {
+        guard hasPendingTagsChangedNotification else { return }
+        hasPendingTagsChangedNotification = false
+        onTagsChanged?()
+    }
+
+    /// 把通过阈值过滤的建议落库为 repo_tags 关联，但只允许复用已有标签。
+    ///
+    /// 批量自动应用没有逐项人工确认，不能因为模型自报高置信度就静默扩张标签库；真正的
+    /// 新标签仍保留在 AI 建议里，用户可回到详情页手动确认。这里使用宽松 canonical key，
+    /// 让 `Open-Source` / `open source` 等形式差异复用已有记录。
     private func applyTagsToRepo(repoId: Int64, suggestions: [AITagSuggestion]) async -> [String] {
+        let existingTags: [Tag]
+        do {
+            existingTags = try await tagRepository.fetchAll()
+        } catch {
+            AppLog.ai.error("[batch-ai] load existing tags failed: repo=\(repoId, privacy: .public), error=\(error.localizedDescription, privacy: .public)")
+            return []
+        }
+
+        var existingTagByName: [String: Tag] = [:]
+        var existingTagByKey: [String: Tag] = [:]
+        for tag in existingTags {
+            existingTagByName[tag.name] = tag
+            let key = AITagSuggestionPolicy.canonicalKey(tag.name)
+            guard !key.isEmpty, existingTagByKey[key] == nil else { continue }
+            existingTagByKey[key] = tag
+        }
+
         var applied: [String] = []
         for suggestion in suggestions {
-            let normalized = suggestion.name
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            guard !normalized.isEmpty else { continue }
+            let normalized = AITagSuggestionPolicy.normalizedDisplayName(suggestion.name)
+            let key = AITagSuggestionPolicy.canonicalKey(normalized)
+            guard !normalized.isEmpty,
+                  let tag = existingTagByName[normalized] ?? existingTagByKey[key]
+            else {
+                AppLog.ai.notice("[batch-ai] skip new tag during auto-apply: repo=\(repoId, privacy: .public), tag=\(normalized, privacy: .public)")
+                continue
+            }
             do {
-                let tag = try await findOrCreateTag(named: normalized)
                 try await repoTagRepository.addTag(repoId: repoId, tagId: tag.id)
-                applied.append(normalized)
+                applied.append(tag.name)
             } catch {
                 AppLog.ai.error("[batch-ai] apply tag failed: repo=\(repoId, privacy: .public), tag=\(normalized, privacy: .public), error=\(error.localizedDescription, privacy: .public)")
             }
@@ -460,47 +531,119 @@ final class BatchAIQueueService {
         return applied
     }
 
-    /// 找到同名标签直接复用；否则按 `TagAutoVisual` 共享算法挑色 + 挑图标后落库。
-    ///
-    /// 视觉算法（FNV-1a 稳定哈希、不同位段挑色和图标、不能用 `String.hashValue`）
-    /// 已抽到 `TagAutoVisual.pick(for:)`，与单仓 AI 摘要应用标签路径
-    /// （`RepoAIInsightViewModel.findOrCreateTag`）共用。详见该枚举注释。
-    private func findOrCreateTag(named name: String) async throws -> Tag {
-        if let existing = try await tagRepository.findByName(name) {
-            return existing
-        }
-        let now = ISO8601DateFormatter.shared.string(from: Date())
-        let visual = TagAutoVisual.pick(for: name)
-        let tag = Tag(
-            id: UUID().uuidString,
-            name: name,
-            color: visual.colorHex,
-            icon: visual.iconName,
-            sortOrder: 0,
-            isPreset: false,
-            parentId: nil,
-            createdAt: now,
-            updatedAt: now
-        )
-        try await tagRepository.create(tag)
-        return tag
-    }
-
     /// 处理单个 job 的失败：分流"重试" vs "终态失败"。
     private func handleFailure(jobId: Int64, error: Error, options: BatchAIQueueOptions) {
         guard let idx = jobs.firstIndex(where: { $0.repoId == jobId }) else { return }
 
-        let message = error.localizedDescription
-        AppLog.ai.error("[batch-ai] job failed: repo=\(jobId, privacy: .public), attempt=\(self.jobs[idx].attempts, privacy: .public), error=\(message, privacy: .public)")
+        let friendly = UserFacingError.map(
+            error,
+            operation: String.l10n("diagnostics.operation.generateAIInsight"),
+            service: "AI"
+        )
+        let failure = BatchAIFailure(error: error)
+        let shortMessage = failure.localizedMessage
+        let copyDiagnostic = Self.copyFailureDiagnostic(
+            for: error,
+            friendly: friendly,
+            shortMessage: shortMessage
+        )
+        let diagnostic = Self.displayFailureDiagnostic(
+            from: copyDiagnostic,
+            shortMessage: shortMessage
+        )
+        // 完整 payload 只能在用户主动复制时使用，不能写入持久化日志或 Console。
+        AppLog.ai.error(
+            "[batch-ai] job failed: repo=\(jobId, privacy: .public), attempt=\(self.jobs[idx].attempts, privacy: .public), error=\(shortMessage, privacy: .public)"
+        )
+        friendly.record(category: "ai", operation: "batchAI.job", service: "ai-provider")
 
         if isPermanentError(error) || jobs[idx].attempts >= options.maxRetries {
             jobs[idx].status = .failed
-            jobs[idx].errorMessage = message
+            jobs[idx].failure = failure
+            jobs[idx].errorDiagnostic = diagnostic
+            jobs[idx].copyDiagnostic = copyDiagnostic
             jobs[idx].finishedAt = Date()
         } else {
             // 可重试：回退到 queued，主循环下一轮会重新拉取（重试次数已在 processNext 入口 +1）。
             jobs[idx].status = .queued
         }
+    }
+
+    /// 测试与非 UI 调用方共用入口；实际 job 只保存 `BatchAIFailure`，不缓存本地化结果。
+    static func userVisibleFailureMessage(for error: Error) -> String {
+        BatchAIFailure(error: error).localizedMessage
+    }
+
+    /// 可展开详情：只保留结构化摘要，不包含 Request / Response payload。
+    static func failureDiagnostic(
+        for error: Error,
+        friendly: UserFacingError,
+        shortMessage: String
+    ) -> String? {
+        displayFailureDiagnostic(
+            from: copyFailureDiagnostic(for: error, friendly: friendly, shortMessage: shortMessage),
+            shortMessage: shortMessage
+        )
+    }
+
+    /// 复制专用完整诊断：保留格式化 Request / Response JSON。
+    static func copyFailureDiagnostic(
+        for error: Error,
+        friendly: UserFacingError,
+        shortMessage: String
+    ) -> String? {
+        if let ai = error as? AIClientError, let detail = ai.diagnosticDetail {
+            let redacted = DiagnosticEvent.redact(detail)
+            guard redacted != shortMessage, !redacted.isEmpty else { return nil }
+            return redacted
+        }
+        let summary = friendly.diagnosticSummary
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !summary.isEmpty, summary != shortMessage else { return nil }
+        if summary.count > 1200 {
+            return String(summary.prefix(1197)) + "…"
+        }
+        return summary
+    }
+
+    /// 从完整诊断中裁掉 payload，只把轻量 HTTP 摘要交给展开区渲染。
+    static func displayFailureDiagnostic(from diagnostic: String?, shortMessage: String) -> String? {
+        guard let diagnostic = diagnostic?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !diagnostic.isEmpty
+        else { return nil }
+
+        let payloadMarkers = ["\n\nResponse JSON:", "\n\nRequest JSON:"]
+        let firstPayload = payloadMarkers
+            .compactMap { diagnostic.range(of: $0)?.lowerBound }
+            .min()
+        let display = firstPayload.map { String(diagnostic[..<$0]) } ?? diagnostic
+        let trimmed = display.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != shortMessage else { return nil }
+        return trimmed
+    }
+
+    /// 复制到剪贴板的完整失败报告：仓库 + 用户文案 + 诊断详情。
+    static func copyableFailureReport(
+        repoFullName: String,
+        message: String?,
+        diagnostic: String?
+    ) -> String {
+        var lines: [String] = []
+        let repo = repoFullName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !repo.isEmpty {
+            lines.append(String(format: String.l10n("batchAI.panel.report.repoFormat"), repo))
+        }
+        let short = (message ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !short.isEmpty {
+            lines.append(String(format: String.l10n("batchAI.panel.report.messageFormat"), short))
+        }
+        let detail = (diagnostic ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !detail.isEmpty {
+            if !lines.isEmpty { lines.append("") }
+            lines.append(detail)
+        }
+        return lines.joined(separator: "\n")
     }
 
     /// 不可重试错误判别：用户没改配置之前永远会失败的那一类。
@@ -510,6 +653,15 @@ final class BatchAIQueueService {
             case .missingAPIKey, .missingProvider:
                 return true
             case .invalidJSON:
+                return false
+            }
+        }
+        if let ai = error as? AIClientError {
+            switch ai {
+            case .missingAPIKey, .invalidBaseURL, .authenticationRejected, .paymentRequired:
+                return true
+            case .invalidChatHistory, .emptyResponse, .responseTruncated, .modelListRequestFailed,
+                 .rateLimited, .requestRejected, .networkUnavailable, .timedOut, .requestFailed:
                 return false
             }
         }

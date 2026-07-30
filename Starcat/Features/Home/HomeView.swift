@@ -50,6 +50,12 @@ struct HomeView: View {
 
     @Environment(AuthSession.self) private var authSession
     @Environment(SyncManager.self) private var syncManager
+    /// 保存应用当前的书写方向，供三栏内部内容继续渲染 Arabic RTL。
+    ///
+    /// 主窗口的 `NavigationSplitView` 外壳会固定为 LTR，避免 macOS 在 RTL 下镜像
+    /// 三栏后错误分配中栏宽度；各栏必须重新注入这里捕获的方向，不能连 Arabic
+    /// 文本和控件一起强制成 LTR。
+    @Environment(\.layoutDirection) private var appContentLayoutDirection
     @Environment(AppSettings.self) private var settings
     /// 2026-06-15:搜索浮层弹出/收起的 .snappy 动画在关动画时跳过。
     /// 与系统「减少动态效果」OR 合并(`AnimationOverrideModifier`)。
@@ -58,9 +64,13 @@ struct HomeView: View {
     @Environment(\.openSettings) private var openSettings
     /// HOM-47：拿到 ReleasePoller 启动后台调度。
     @Environment(AppDependencies.self) private var dependencies
+    /// 主窗口向菜单和 Settings Scene 发布当前可执行的快捷键动作。
+    @Environment(StarcatCommandRouter.self) private var commandRouter
 
     /// HOM-47：Release 时间线 sheet 显示状态。
     @State private var showReleaseTimeline: Bool = false
+    /// Widget Release Deep Link 的一次性定位目标；普通 Sidebar 入口保持为 nil。
+    @State private var releaseTimelineTargetID: Int64?
 
     /// HomeViewModel 在 HomeView 内部持有；用 @State 让生命周期与该视图绑定。
     /// AppDependencies 不构造它，因为 ViewModel 是 view-scoped，没必要塞进全局容器。
@@ -96,25 +106,27 @@ struct HomeView: View {
     @State private var batchAIOptions: BatchAIQueueOptions = BatchAIQueueOptions()
     /// 当前需要展示的 Pro 付费墙上下文。由批量 AI 等主窗口入口触发。
     @State private var paywallContext: ProPaywallContext?
+    /// 工作台入口缺少有效对话模型时，由主窗口展示可操作提示，而不是静默失败。
+    @State private var showsChatModelRequiredAlert = false
     /// 主界面首次操作清单。它是本机 UI 教程状态，不进入 AppDependencies，避免变成业务数据。
     @State private var gettingStartedStore = GettingStartedProgressStore()
     /// 详情页教学锚点可能受 README 滚动折叠影响；显示胶囊前先回顶恢复稳定布局。
     @State private var isPreparingDetailCoachMark = false
     @State private var preparedDetailCoachMarkStepID: GettingStartedProgressStore.StepID?
     @State private var preparedDetailCoachMarkRepoID: Repo.ID?
-    /// 主窗口操作指引默认关闭，通过 Debug 菜单临时开启，避免未完成教学流影响日常使用。
-    @State private var showsGettingStartedGuide: Bool = DebugFlags.gettingStartedGuide
     /// Agent 功能尚未进入正式上线面，toolbar 入口默认由 Debug 菜单隐藏。
     ///
     /// 这里用 HomeView 本地状态承接 `DebugFlags`，是因为 UserDefaults 写入不会自动触发
     /// SwiftUI 刷新；Debug 菜单广播后更新该状态，RepoListView 的 toolbar 立即重建。
     @State private var showsAgentToolbarEntry: Bool = DebugFlags.agentToolbarEntry
-    /// RAG 工作台同样是开发期入口，沿用 Agent 的 Debug 菜单显隐模型。
-    @State private var showsKnowledgeRAGToolbarEntry: Bool = DebugFlags.knowledgeRAGToolbarEntry
     /// 系统入口发来的重置动作必须先二次确认，避免用户误清语言 / 排序 / 筛选偏好。
     @State private var showsResetListPreferencesConfirmation: Bool = false
     /// 重置成功只给轻量 toast，不写诊断日志，也不影响用户业务数据。
     @State private var listPreferenceResetToast: String?
+    /// Universal Link 定位失败时保留可读错误。它只描述本次打开动作，不写入仓库数据。
+    @State private var repositoryDeepLinkErrorMessage: String?
+    /// 用 owner ID 保护主窗口动作注销，避免窗口重建期间旧 HomeView 清掉新实例动作。
+    @State private var commandRouterOwnerID = UUID()
 
     @Environment(\.firstRunOnboardingActive) private var firstRunOnboardingActive
 
@@ -187,6 +199,13 @@ struct HomeView: View {
     /// Activity 中栏当前选中的活动项，用于右侧详情页按类型分发。
     @State private var selectedActivityItem: ActivityItem?
 
+    /// 洞察中心保留二级主题、范围和中栏选择，跨顶级页面切换时不丢失浏览上下文。
+    @State private var selectedInsightsTopic: InsightsTopic = .overview
+    @State private var selectedInsightsScope: InsightsScope = .starred
+    @State private var selectedInsightsSelection: InsightsSelection = .overviewSummary
+    /// 中栏和详情栏共用同一个快照状态，避免相同范围重复查询或短暂显示不同数字。
+    @State private var myInsightsViewModel: MyInsightsViewModel
+
     /// W4 A2：TagManagementViewModel 实例，sheet 关掉再开时复用，
     /// 避免每次 sheet 都 new 导致选择/加载态被打断。
     @State private var tagMgmtVM: TagManagementViewModel
@@ -202,6 +221,7 @@ struct HomeView: View {
     init(
         repository: any RepoRepositoryProtocol,
         readmeAPI: ReadmeAPI,
+        projectReadmeAPI: ReadmeAPI,
         readmeAvailability: ReadmeAvailability,
         readmeOnHTMLLoaded: @escaping @MainActor (Repo) -> Void,
         tagRepository: any TagRepositoryProtocol,
@@ -215,6 +235,7 @@ struct HomeView: View {
         smartCollectionRepository: (any SmartCollectionRepositoryProtocol)? = nil,
         searchHistoryRepository: any SearchHistoryRepositoryProtocol,
         semanticSearchService: SemanticSearchService? = nil,
+        myInsightsSnapshotProvider: any MyInsightsSnapshotProviding,
         trendingRepository: any TrendingRepositoryProtocol,
         githubAPIClient: any GitHubAPIClientProtocol,
         readmeTranslationService: ReadmeTranslationService,
@@ -241,6 +262,7 @@ struct HomeView: View {
         // 的 active 详情不会触发 markdown backfill / 向量重建——见 26-向量搜索改进.md §6）。
         _readmeVM = State(initialValue: ReadmeViewModel(
             api: readmeAPI,
+            privateAPI: projectReadmeAPI,
             availability: readmeAvailability,
             onHTMLLoaded: readmeOnHTMLLoaded,
             telemetryManager: telemetryManager
@@ -259,6 +281,9 @@ struct HomeView: View {
             entitlementGate: entitlementGate,
             telemetryManager: telemetryManager
         ))
+        _myInsightsViewModel = State(initialValue: MyInsightsViewModel(
+            provider: myInsightsSnapshotProvider
+        ))
         _tagMgmtVM = State(initialValue: TagManagementViewModel(
             tagRepository: tagRepository,
             repoTagRepository: repoTagRepository
@@ -275,16 +300,26 @@ struct HomeView: View {
         // HomeView 的 modifier 链已经很长，新增后台任务监听后 Swift 6 容易在
         // 巨型泛型链上 type-check 超时。分段 AnyView 只用于切断编译期泛型推断，
         // 不改变三栏内容与状态流。
-        AnyView(NavigationSplitView(columnVisibility: $columnVisibility) {
-            sidebarColumn
-        } content: {
-            contentColumn
-        } detail: {
-            detailColumn
-        }
-        .environment(viewModel)
-        .environment(readmeVM)
-        .environment(translationVM))
+        AnyView(
+            NavigationSplitView(columnVisibility: $columnVisibility) {
+                sidebarColumn
+                    .environment(\.layoutDirection, appContentLayoutDirection)
+            } content: {
+                contentColumn
+                    .environment(\.layoutDirection, appContentLayoutDirection)
+            } detail: {
+                detailColumn
+                    .environment(\.layoutDirection, appContentLayoutDirection)
+            }
+            // macOS 15 的 NavigationSplitView 在 RTL 下会镜像三栏，但仍按 LTR 规则
+            // 协商 content 列宽：中栏宿主可能拿到超过 max width 的空间，而 RepoListView
+            // 仍被限制在 520pt，最终在列表旁留下整块空白。三栏是稳定的桌面工作区，
+            // 因此只固定结构外壳为 LTR；栏内 Arabic 内容已在上方恢复 RTL。
+            .environment(\.layoutDirection, .leftToRight)
+            .environment(viewModel)
+            .environment(readmeVM)
+            .environment(translationVM)
+        )
     }
 
     private var navigationWithOverlays: AnyView {
@@ -321,21 +356,6 @@ struct HomeView: View {
         .onReceive(NotificationCenter.default.publisher(for: DebugFlags.agentToolbarEntryDidChangeNotification)) { _ in
             showsAgentToolbarEntry = DebugFlags.agentToolbarEntry
         }
-        .onReceive(NotificationCenter.default.publisher(for: DebugFlags.knowledgeRAGToolbarEntryDidChangeNotification)) { _ in
-            showsKnowledgeRAGToolbarEntry = DebugFlags.knowledgeRAGToolbarEntry
-        }
-        .onReceive(NotificationCenter.default.publisher(for: DebugFlags.gettingStartedGuideDidChangeNotification)) { _ in
-            showsGettingStartedGuide = DebugFlags.gettingStartedGuide
-        }
-        // 隐藏按钮只用于向当前 window 注册快捷键；实际入口仍是 toolbar 按钮。
-        .background {
-            Button("") { presentSearchCenterForGettingStarted() }
-                .keyboardShortcut(
-                    settings.globalSearchShortcut.keyEquivalent,
-                    modifiers: settings.globalSearchShortcut.eventModifiers
-                )
-                .hidden()
-        }
         )
     }
 
@@ -343,14 +363,12 @@ struct HomeView: View {
         GeometryReader { proxy in
             GettingStartedChecklistView(
                 store: gettingStartedStore,
-                isEnabled: showsGettingStartedGuide,
                 isSignedIn: authSession.state.isAuthenticated,
                 hasSyncedStars: gettingStartedStore.isCompleted(.syncStars),
                 hasSelectedRepo: viewModel.selectedRepoID != nil,
                 canSelectRepo: selectedSidebarPage == .manage && !viewModel.items.isEmpty,
                 canUnstarRepo: canUnstarSelectedRepoForGettingStarted,
-                canOpenRAGWorkspace: showsKnowledgeRAGToolbarEntry,
-                canOpenAgentWorkspace: showsAgentToolbarEntry,
+                canOpenRAGWorkspace: true,
                 targetFrame: gettingStartedActiveAnchor(in: anchors, proxy: proxy),
                 onSignIn: {
                     authSession.requestLoginSheet()
@@ -377,9 +395,6 @@ struct HomeView: View {
                 },
                 onOpenRAGWorkspace: {
                     openKnowledgeRAGWorkspaceForGettingStarted()
-                },
-                onOpenAgentWorkspace: {
-                    openAgentWorkspaceForGettingStarted()
                 },
                 onOpenRepoHomepage: {
                     openRepoHomepageForGettingStarted()
@@ -423,21 +438,9 @@ struct HomeView: View {
     }
 
     private var gettingStartedActiveStepID: GettingStartedProgressStore.StepID? {
-        let orderedSteps: [GettingStartedProgressStore.StepID] = [
-            .signIn,
-            .syncStars,
-            .selectRepo,
-            .openRepoHomepage,
-            .addRepoToLibrary,
-            .organizeRepo,
-            .useSearch,
-            .useAI,
-            .useRAGWorkspace,
-            .useAgentWorkspace,
-            .shareProfile,
-            .unstarRepo
-        ]
-        return orderedSteps.first { !gettingStartedStore.isCompleted($0) }
+        GettingStartedProgressStore.StepID.guideCases.first {
+            !gettingStartedStore.isCompleted($0)
+        }
     }
 
     private func gettingStartedAnchorID(for stepID: GettingStartedProgressStore.StepID) -> GettingStartedAnchorID? {
@@ -480,8 +483,14 @@ struct HomeView: View {
         }
         // HOM-47：Release 时间线 sheet（独立窗口承载，不污染三栏布局）
         .sheet(isPresented: $showReleaseTimeline) {
-            ReleaseTimelineView()
+            ReleaseTimelineView(targetReleaseID: releaseTimelineTargetID)
                 .appSheetRootEnvironment(dependencies)
+        }
+        .onChange(of: showReleaseTimeline) { _, isPresented in
+            // Sheet 完成关闭后清除一次性目标，避免用户下次从 Sidebar 打开时仍跳到旧行。
+            if !isPresented {
+                releaseTimelineTargetID = nil
+            }
         }
         // HOM-52：批量 AI 整理"操作选择" sheet
         .sheet(isPresented: $showBatchAIOptions) {
@@ -556,6 +565,12 @@ struct HomeView: View {
         }
         .task {
             await bootstrapHome()
+        }
+        // 冷启动恢复登录时，缓存 profile 可能先让 HomeView 查询匿名库，随后才完成
+        // `_anonymous` → 用户库切换。数据库 revision 是切库完成后的确定边沿；在这里
+        // 失效 Repo Pin 快照并重载，避免匿名库的空结果屏蔽用户库中的持久化 Pin。
+        .task(id: dependencies.databaseScopeRevision) {
+            await handleDatabaseScopeChange(dependencies.databaseScopeRevision)
         }
         // 知识库入库/移出事件必须挂在 HomeView：空库时空态没有 List，原先挂在
         // RepoListView.List 上会导致 Sidebar「知识库」计数与列表都不能实时刷新。
@@ -637,6 +652,10 @@ struct HomeView: View {
         .onChange(of: settings.readmeTranslationLanguage) { _, newLanguage in
             handleReadmeTranslationLanguageChange(newLanguage)
         }
+        // 翻译方式切换后恢复原文，并重新检查该模式自己的缓存。
+        .onChange(of: settings.readmeTranslationMode) { _, newMode in
+            handleReadmeTranslationModeChange(newMode)
+        }
         )
     }
 
@@ -662,6 +681,13 @@ struct HomeView: View {
             syncGettingStartedProgressFromCurrentState()
             prepareDetailCoachMarkIfNeeded(for: gettingStartedActiveStepID)
             handleMainWindowNavigationRequest(dependencies.mainWindowNavigationDispatcher.pendingRequest)
+            registerMainWindowCommandActions()
+        }
+        .onDisappear {
+            commandRouter.unregisterMainWindowActions(ownerID: commandRouterOwnerID)
+        }
+        .onChange(of: settings.globalSearchShortcut) { _, _ in
+            registerMainWindowCommandActions()
         }
         .onChange(of: dependencies.mainWindowNavigationDispatcher.pendingRequest) { _, request in
             handleMainWindowNavigationRequest(request)
@@ -703,6 +729,7 @@ struct HomeView: View {
         }
         // Manage ↔ Trending 切换时，记住各自的上次选择，切换回来时恢复
         .onChange(of: selectedSidebarPage) { oldPage, newPage in
+            commandRouter.activate(.list)
             handleSidebarPageChange(oldPage: oldPage, newPage: newPage)
         }
         )
@@ -716,9 +743,6 @@ struct HomeView: View {
         .onReceive(NotificationCenter.default.publisher(for: FirstRunOnboardingPreferences.debugReplayNotification)) { _ in
             gettingStartedStore.reset()
             syncGettingStartedProgressFromCurrentState()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .starcatCommandOpenGlobalSearch)) { _ in
-            presentSearchCenterForGettingStarted()
         }
         .onReceive(NotificationCenter.default.publisher(for: .starcatResetListPreferencesRequested)) { _ in
             guard authSession.state.isAuthenticated else { return }
@@ -748,6 +772,11 @@ struct HomeView: View {
             guard let feature = note.object as? ProFeature else { return }
             paywallContext = ProPaywallContext(feature: feature)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .starcatWorkspaceRequiresChatModel)) { _ in
+            // AppKit 工作台控制器不持有 SwiftUI presentation state；所有入口统一回到
+            // 主窗口展示提示，确保 toolbar、智能集合和 Getting Started 行为一致。
+            showsChatModelRequiredAlert = true
+        }
         .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidOpenRepoHomepage)) { _ in
             gettingStartedStore.markCompleted(.openRepoHomepage)
         }
@@ -766,9 +795,11 @@ struct HomeView: View {
     private var navigationWithPreferenceLifecycle: AnyView {
         AnyView(navigationWithNotificationLifecycle
         .onChange(of: selectedActivityCategory) { _, newCategory in
+            commandRouter.activate(.list)
             handleActivityCategoryChange(newCategory)
         }
         .onChange(of: selectedExploreMode) { _, mode in
+            commandRouter.activate(.list)
             persistListPreference(mode.rawValue, key: ListPreferenceKey.exploreMode)
             restoreExploreLanguagePreference(for: mode)
         }
@@ -787,6 +818,14 @@ struct HomeView: View {
 
     private var navigationWithResetPresentation: AnyView {
         AnyView(navigationWithPreferenceLifecycle
+        .alert("workspace.chatModelRequired.title", isPresented: $showsChatModelRequiredAlert) {
+            Button("workspace.chatModelRequired.openSettings") {
+                openChatModelSettings()
+            }
+            Button("general.cancel", role: .cancel) {}
+        } message: {
+            Text("workspace.chatModelRequired.message")
+        }
         .alert("settings.listPreferences.reset.title", isPresented: $showsResetListPreferencesConfirmation) {
             Button("general.cancel", role: .cancel) {}
             Button("settings.listPreferences.reset.confirm", role: .destructive) {
@@ -795,12 +834,32 @@ struct HomeView: View {
         } message: {
             Text("settings.listPreferences.reset.message")
         }
+        .alert(
+            "repo.share.open.error.title",
+            isPresented: Binding(
+                get: { repositoryDeepLinkErrorMessage != nil },
+                set: { if !$0 { repositoryDeepLinkErrorMessage = nil } }
+            )
+        ) {
+            Button("general.ok", role: .cancel) {}
+        } message: {
+            Text(repositoryDeepLinkErrorMessage ?? "")
+        }
         .toast(
             message: $listPreferenceResetToast,
             icon: "arrow.counterclockwise",
             bottomPadding: 24
         )
         )
+    }
+
+    /// 使用 Settings scene 的环境动作打开设置，再精确定位到「模型配置 → 对话」。
+    /// 延后一轮发送导航事件，确保 SettingsView 首次创建时已安装通知监听。
+    private func openChatModelSettings() {
+        openSettings()
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .starcatJumpToSettingsTab, object: "ai.chat")
+        }
     }
 
     /// 开始使用清单既要响应用户动作，也要吸收当前 App 状态。
@@ -892,15 +951,10 @@ struct HomeView: View {
                 openSearchRepositoryURL(candidate)
                 return
             }
-            selectedSidebarPage = .manage
-            viewModel.selection = .allStars
-            viewModel.submitSearch("")
             searchCenterViewModel.dismiss()
-            Task {
-                await viewModel.reloadItems(forceRefresh: true)
-                viewModel.shouldScrollSelectedRepoIntoView = true
-                viewModel.selectedRepoID = repo.id
-            }
+            // Search Center 与 Companion 必须共用同一条外部仓库导航链路：先钉住详情，
+            // 再刷新和翻页，避免自动首选或当前筛选让目标仓库在点击后消失。
+            openCompanionRepository(repo)
         case .reference(let reference):
             NSWorkspace.shared.open(reference.originalURL)
         }
@@ -911,34 +965,63 @@ struct HomeView: View {
         NSWorkspace.shared.open(url)
     }
 
+    /// Search Center、Browser Plugin 和侧栏后台任务共用的本地仓库跳转入口。
     /// Browser Plugin 的 “Open in Starcat” 只对本地已 starred repo 开放。
-    /// 这里复用 Search Center 本地结果跳转语义：切到 Manage / All Stars，清空搜索，
+    /// 这里统一切到 Manage / All Stars，清空搜索，
     /// 强制 reload 后选中目标 repo，让中栏滚动和右栏详情都由 HomeViewModel 单一维护。
-    private func openCompanionRepository(_ repo: Repo, generateSummary: Bool = false) {
+    ///
+    /// 侧栏后台摘要任务也会走这里。关键点：
+    /// 1. 立刻写 `externalSelectedRepo`，避免切到 All Stars 后「自动打开第一条」
+    ///    抢选中，导致详情停在别的仓、开面板通知被丢弃。
+    /// 2. reload + `ensureRepoVisible` 后再发开面板通知，并略微延迟，等
+    ///    `RepoAIFloatingOverlay` 按新 `repo.id` 挂载完成。
+    private func openCompanionRepository(
+        _ repo: Repo,
+        generateSummary: Bool = false,
+        openSummaryPanel: Bool = false,
+        aiPanelSource: String? = nil
+    ) {
         selectedSidebarPage = .manage
         viewModel.selection = .allStars
         viewModel.submitSearch("")
+        // 先钉住目标仓详情，挡住 applyManageDetailSelectionPolicy 选中第一条。
+        viewModel.externalSelectedRepo = repo
+        viewModel.selectedRepoID = repo.id
+        // 尽早挂起展开请求：目标 overlay 一挂载就能在 onAppear 消费，不必等 reload。
+        if openSummaryPanel {
+            viewModel.pendingInlineAIPresentationRepoID = repo.id
+        }
+
         Task {
-            await viewModel.reloadItems(forceRefresh: true)
-            viewModel.shouldScrollSelectedRepoIntoView = true
+            await viewModel.reloadItems(forceRefresh: true, reason: .externalMutation)
+            await viewModel.ensureRepoLoadedForExternalNavigation(repoId: repo.id)
             viewModel.selectedRepoID = repo.id
-            guard generateSummary else { return }
+            viewModel.requestSelectedRepoScroll()
+            // 列表已能解析该 id 时，交还给 filteredSorted 真源，避免外部选中残留。
+            if viewModel.filteredSorted.contains(where: { $0.id == repo.id }) {
+                viewModel.externalSelectedRepo = nil
+            }
+
+            guard generateSummary || openSummaryPanel else { return }
             NotificationCenter.default.post(name: .gettingStartedDidOpenAI, object: nil)
-            dependencies.telemetryManager.track(
-                .aiPanelOpened,
-                properties: [.source: .string("browser-plugin")]
-            )
-            // 详情页底部横条入口随 selectedRepoID 渲染；排到下一轮 main queue 再发请求，
-            // 避免通知早于 RepoAIFloatingOverlay 挂载而被丢弃。
+            dependencies.telemetryManager.track(.aiPanelOpened, properties: [
+                .source: .string(
+                    generateSummary ? "browser-plugin" : (aiPanelSource ?? "sidebar-background-task")
+                )
+            ])
             let repoID = repo.id
-            await MainActor.run {
-                DispatchQueue.main.async {
-                    NotificationCenter.default.post(
-                        name: .repoAIInlineGenerateSummaryRequested,
-                        object: nil,
-                        userInfo: ["repoId": repoID]
-                    )
-                }
+            if generateSummary {
+                // 生成路径仍走通知：需携带 autoGenerate 意图给现有 handleExternalSummaryRequest。
+                try? await Task.sleep(for: .milliseconds(200))
+                guard !Task.isCancelled else { return }
+                NotificationCenter.default.post(
+                    name: .repoAIInlineGenerateSummaryRequested,
+                    object: nil,
+                    userInfo: ["repoId": repoID]
+                )
+            } else if viewModel.pendingInlineAIPresentationRepoID != repoID {
+                // 若 onAppear 已消费过则不必再写；否则 reload 后补一次，覆盖换仓竞态。
+                viewModel.pendingInlineAIPresentationRepoID = repoID
             }
         }
     }
@@ -959,15 +1042,24 @@ struct HomeView: View {
     }
 
     private func openSearchRepositoryAI(_ repo: Repo) {
-        NotificationCenter.default.post(name: .gettingStartedDidOpenAI, object: nil)
-        dependencies.telemetryManager.track(
-            .aiPanelOpened,
-            properties: [.source: .string("search")]
+        searchCenterViewModel.dismiss()
+        // Search Center 可能指向尚未渲染的 repo，必须先走统一详情导航；目标 overlay
+        // 挂载后再消费 pending 请求，不能直接打开附属独立窗口。
+        openCompanionRepository(
+            repo,
+            openSummaryPanel: true,
+            aiPanelSource: "search"
         )
-        RepoAIWindowController.show(
-            repo: repo,
-            dependencies: dependencies,
-            homeViewModel: viewModel
+    }
+
+    /// 把主窗口级动作登记到应用路由。Settings 独立 Scene 会复用这些动作，
+    /// 因此用户在设置页查看快捷键时可直接验证，不会因 key window 切换而失效。
+    private func registerMainWindowCommandActions() {
+        commandRouter.registerMainWindowActions(
+            ownerID: commandRouterOwnerID,
+            globalSearchShortcut: settings.globalSearchShortcut,
+            openGlobalSearch: { presentSearchCenterForGettingStarted() },
+            openKnowledgeRAGWorkspace: { openKnowledgeRAGWorkspaceForGettingStarted() }
         )
     }
 
@@ -981,8 +1073,8 @@ struct HomeView: View {
             viewModel.selection = savedManageSelection
         }
         guard viewModel.selectedRepoID == nil, let first = viewModel.items.first else { return }
-        viewModel.shouldScrollSelectedRepoIntoView = true
         viewModel.selectedRepoID = first.id
+        viewModel.requestSelectedRepoScroll()
     }
 
     /// 开始使用清单里的“添加标签”复用左侧 Tags 的管理入口，并直接弹出新建标签 sheet。
@@ -995,7 +1087,8 @@ struct HomeView: View {
     }
 
     /// 开始使用清单里的 AI 入口必须走详情页底部横条。
-    /// 这里不复用搜索结果的独立窗口入口，避免最后一步和用户在详情页看到的 AI 入口不一致。
+    /// 与搜索、快捷键入口一致，先落到详情页底部面板；只有用户随后主动点击
+    /// “在独立窗口中打开”时，才切换到附属独立窗口。
     private func openSelectedRepoAIForGettingStarted() {
         guard let repo = viewModel.selectedRepo else {
             selectFirstRepoForGettingStarted()
@@ -1116,11 +1209,15 @@ struct HomeView: View {
             selectedDiscoveryPlatform: $selectedDiscoveryPlatform,
             selectedWeeklyLanguage: $selectedWeeklyLanguage,
             selectedActivityCategory: $selectedActivityCategory,
+            selectedInsightsTopic: $selectedInsightsTopic,
             showTagManagement: $showTagManagement,
             showReleaseTimeline: $showReleaseTimeline,
             onSelectRootPage: selectSidebarRootPage,
             onShowBatchAIPanel: {
                 showBatchAIPanel = true
+            },
+            onOpenSummaryTask: { repo in
+                openCompanionRepository(repo, openSummaryPanel: true)
             },
             // 2026-06-02 21:38：透传给 SidebarHeaderView 让头像背景的语言色在 Trending 页也能联动
             currentTrendingRepo: selectedTrendingRepo,
@@ -1133,56 +1230,97 @@ struct HomeView: View {
         .navigationSplitViewColumnWidth(min: 240, ideal: 260, max: 320)
     }
 
+    @ViewBuilder
     private var contentColumn: some View {
-        RepoListView(
-            trendingRepository: trendingRepository,
-            githubAPIClient: githubAPIClient,
-            selectedPage: selectedSidebarPage,
-            selectedExploreMode: $selectedExploreMode,
-            selectedTrendingLanguage: $selectedTrendingLanguage,
-            selectedTrendingRepoID: $selectedTrendingRepoID,
-            selectedTrendingRepo: $selectedTrendingRepo,
-            selectedDiscoveryLanguage: $selectedDiscoveryLanguage,
-            selectedDiscoveryTopic: $selectedDiscoveryTopic,
-            selectedDiscoveryPlatform: $selectedDiscoveryPlatform,
-            selectedDiscoveryRepoID: $selectedDiscoveryRepoID,
-            selectedDiscoveryRepo: $selectedDiscoveryRepo,
-            selectedWeeklyLanguage: $selectedWeeklyLanguage,
-            selectedActivityCategory: $selectedActivityCategory,
-            selectedActivityItem: $selectedActivityItem,
-            undoStarAutoSelectRequestID: undoStarAutoSelectRequestID,
-            showsAgentToolbarEntry: showsAgentToolbarEntry,
-            showsKnowledgeRAGToolbarEntry: showsKnowledgeRAGToolbarEntry,
-            onStartBatchAI: {
-                // HOM-52：点击 banner"开始整理" → 弹 Options sheet。
-                // 复用上一次 batchAIOptions，让"再开一次"沿用最近偏好。
-                showBatchAIOptions = true
-            },
-            onShowBatchAIPanel: {
-                showBatchAIPanel = true
-            },
-            onOpenSearchCenter: {
-                presentSearchCenterForGettingStarted()
-            },
-            onOpenAgentWorkspace: {
-                openAgentWorkspaceForGettingStarted()
-            },
-            onOpenKnowledgeRAGWorkspace: {
-                openKnowledgeRAGWorkspaceForGettingStarted()
-            },
-            onOpenCompanionRepo: { repo in
-                openCompanionRepository(repo)
-            },
-            onGenerateCompanionSummary: { repo in
-                openCompanionRepository(repo, generateSummary: true)
-            }
-        )
+        // 顶级页面切换（探索 → 洞察等）也走 detailContentTransition；否则 Insights 会瞬切出现。
+        ZStack(alignment: .topLeading) {
+            contentColumnBody
+                .id(selectedSidebarPage)
+                .detailContentTransition()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: selectedSidebarPage)
         .navigationSplitViewColumnWidth(min: 420, ideal: 420, max: 520)
     }
 
     @ViewBuilder
+    private var contentColumnBody: some View {
+        if selectedSidebarPage == .insights {
+            InsightsListView(
+                topic: $selectedInsightsTopic,
+                selection: $selectedInsightsSelection,
+                snapshot: myInsightsViewModel.snapshot
+            )
+        } else {
+            RepoListView(
+                trendingRepository: trendingRepository,
+                githubAPIClient: githubAPIClient,
+                selectedPage: selectedSidebarPage,
+                selectedExploreMode: $selectedExploreMode,
+                selectedTrendingLanguage: $selectedTrendingLanguage,
+                selectedTrendingRepoID: $selectedTrendingRepoID,
+                selectedTrendingRepo: $selectedTrendingRepo,
+                selectedDiscoveryLanguage: $selectedDiscoveryLanguage,
+                selectedDiscoveryTopic: $selectedDiscoveryTopic,
+                selectedDiscoveryPlatform: $selectedDiscoveryPlatform,
+                selectedDiscoveryRepoID: $selectedDiscoveryRepoID,
+                selectedDiscoveryRepo: $selectedDiscoveryRepo,
+                selectedWeeklyLanguage: $selectedWeeklyLanguage,
+                selectedActivityCategory: $selectedActivityCategory,
+                selectedActivityItem: $selectedActivityItem,
+                undoStarAutoSelectRequestID: undoStarAutoSelectRequestID,
+                showsAgentToolbarEntry: showsAgentToolbarEntry,
+                onStartBatchAI: {
+                    // HOM-52：点击 banner"开始整理" → 弹 Options sheet。
+                    // 复用上一次 batchAIOptions，让"再开一次"沿用最近偏好。
+                    showBatchAIOptions = true
+                },
+                onShowBatchAIPanel: {
+                    showBatchAIPanel = true
+                },
+                onOpenSearchCenter: {
+                    presentSearchCenterForGettingStarted()
+                },
+                onOpenAgentWorkspace: {
+                    openAgentWorkspaceForGettingStarted()
+                },
+                onOpenKnowledgeRAGWorkspace: {
+                    openKnowledgeRAGWorkspaceForGettingStarted()
+                },
+                onOpenCompanionRepo: { repo in
+                    openCompanionRepository(repo)
+                },
+                onGenerateCompanionSummary: { repo in
+                    openCompanionRepository(repo, generateSummary: true)
+                },
+                onReturnToInsights: {
+                    selectSidebarRootPage(.insights)
+                }
+            )
+        }
+    }
+
+    @ViewBuilder
     private var detailColumn: some View {
-        if selectedSidebarPage == .activity, selectedActivityCategory == .undoStar {
+        ZStack(alignment: .topLeading) {
+            detailColumnBody
+                .id(selectedSidebarPage)
+                .detailContentTransition()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: selectedSidebarPage)
+    }
+
+    @ViewBuilder
+    private var detailColumnBody: some View {
+        if selectedSidebarPage == .insights {
+            MyInsightsView(
+                topic: $selectedInsightsTopic,
+                scope: $selectedInsightsScope,
+                selection: $selectedInsightsSelection,
+                viewModel: myInsightsViewModel
+            )
+        } else if selectedSidebarPage == .activity, selectedActivityCategory == .undoStar {
             RepoDetailView(selectedTrendingRepo: nil)
         } else if selectedSidebarPage == .activity {
             ActivityDetailView(item: selectedActivityItem)
@@ -1213,6 +1351,7 @@ struct HomeView: View {
             dependencies.releasePoller.stop()
             dependencies.openSSFScorePoller.stop()
             dependencies.repoHealthPoller.stop()
+            dependencies.userProjectSyncService.stopBackgroundRefresh()
             stopReadmePrefetch()
             dependencies.initialWarmupCoordinator.cancel()
             dependencies.semanticIndexBuilder.cancel()
@@ -1223,9 +1362,26 @@ struct HomeView: View {
         guard newValue != nil, authSession.state.isAuthenticated else { return }
         Task { @MainActor in
             await viewModel.refreshSidebar()
-            await viewModel.reloadItems(forceRefresh: true)
+            await viewModel.reloadItems(forceRefresh: true, reason: .firstPage)
             applyManageDetailSelectionPolicy()
         }
+    }
+
+    /// 在数据库真正完成切换后刷新所有依赖 Repo Pin 快照的 Manage 表现。
+    ///
+    /// revision 0 是 AppDependencies 初始化时的匿名库，不主动重载；后续 revision
+    /// 同时覆盖冷启动恢复、首次登录、换号和登出。即使此刻登录态尚未发布，也要先失效
+    /// Pin 快照，让紧随其后的认证入口从新数据库读取。
+    private func handleDatabaseScopeChange(_ revision: UInt64) async {
+        guard revision > 0 else { return }
+        viewModel.invalidateRepoPinsForDatabaseChange()
+
+        guard authSession.state.isAuthenticated,
+              selectedSidebarPage == .manage
+        else { return }
+
+        await viewModel.reloadItems(forceRefresh: true, reason: .externalMutation)
+        applyManageDetailSelectionPolicy()
     }
 
     private func handleSelectedRepoIDChange(_ newID: Int64?) {
@@ -1248,14 +1404,16 @@ struct HomeView: View {
             translationVM.prepare(
                 repo: repo,
                 sourceHtml: nil,
-                targetLanguage: settings.readmeTranslationLanguage
+                targetLanguage: settings.readmeTranslationLanguage,
+                mode: settings.readmeTranslationMode
             )
         } else {
             readmeVM.reset()
             translationVM.prepare(
                 repo: nil,
                 sourceHtml: nil,
-                targetLanguage: settings.readmeTranslationLanguage
+                targetLanguage: settings.readmeTranslationLanguage,
+                mode: settings.readmeTranslationMode
             )
         }
     }
@@ -1280,7 +1438,8 @@ struct HomeView: View {
         translationVM.prepare(
             repo: nil,
             sourceHtml: nil,
-            targetLanguage: settings.readmeTranslationLanguage
+            targetLanguage: settings.readmeTranslationLanguage,
+            mode: settings.readmeTranslationMode
         )
     }
 
@@ -1290,7 +1449,8 @@ struct HomeView: View {
             translationVM.prepare(
                 repo: repo,
                 sourceHtml: html,
-                targetLanguage: settings.readmeTranslationLanguage
+                targetLanguage: settings.readmeTranslationLanguage,
+                mode: settings.readmeTranslationMode
             )
         }
     }
@@ -1304,7 +1464,22 @@ struct HomeView: View {
         translationVM.changeLanguage(
             to: newLanguage,
             repo: repo,
-            sourceHtml: html
+            sourceHtml: html,
+            mode: settings.readmeTranslationMode
+        )
+    }
+
+    private func handleReadmeTranslationModeChange(_ newMode: ReadmeTranslationMode) {
+        guard let repo = viewModel.selectedRepo else { return }
+        let html: String? = {
+            if case .loaded(let value, _) = readmeVM.state { return value }
+            return nil
+        }()
+        translationVM.changeMode(
+            to: newMode,
+            repo: repo,
+            sourceHtml: html,
+            targetLanguage: settings.readmeTranslationLanguage
         )
     }
 
@@ -1340,6 +1515,22 @@ struct HomeView: View {
 
     private func handleManageSelectionChange(_ newSelection: SidebarItem) {
         guard selectedSidebarPage == .manage, !newSelection.isTrending else { return }
+
+        // 旧版本把 Languages 行建模成独立 Sidebar selection。恢复旧偏好或消费旧深链时，
+        // 立即归一化为“全部仓库 + 语言筛选”，避免再次覆盖真实基础范围。
+        switch newSelection {
+        case .language(let language):
+            viewModel.selection = .allStars
+            viewModel.selectSingleLanguageFilterFromUser(language)
+            return
+        case .allLanguages:
+            viewModel.selection = .allStars
+            viewModel.clearLanguageFiltersFromUser()
+            return
+        default:
+            break
+        }
+
         // 用户在 Sidebar 里切到另一个分类后，跨窗口注入的筛选立即失效。
         viewModel.clearTemporaryGlobalFiltersIfNeeded(for: newSelection)
         savedManageSelection = newSelection
@@ -1367,6 +1558,8 @@ struct HomeView: View {
             savedTrendingLanguage = selectedTrendingLanguage
         case .activity:
             savedActivityCategory = selectedActivityCategory
+        case .insights:
+            break
         }
 
         // 清除所有 repo 选中状态，避免详情页显示残留
@@ -1394,6 +1587,8 @@ struct HomeView: View {
             restoreExploreLanguagePreference(for: selectedExploreMode)
         case .activity:
             selectedActivityCategory = savedActivityCategory
+        case .insights:
+            break
         }
     }
 
@@ -1406,6 +1601,9 @@ struct HomeView: View {
             dependencies.telemetryManager.track(.exploreOpened)
         case .activity:
             dependencies.telemetryManager.track(.activityOpened)
+        case .insights:
+            // Mock 前端阶段不提前发正式遥测事件，避免把内部预览访问混入产品数据。
+            break
         }
     }
 
@@ -1456,7 +1654,8 @@ struct HomeView: View {
                 viewModel.applyTemporaryGlobalFilters(
                     filters,
                     requestID: request.id,
-                    anchorSelection: selection
+                    anchorSelection: selection,
+                    returnPage: request.returnPage
                 )
             } else {
                 viewModel.clearTemporaryGlobalFilters()
@@ -1470,9 +1669,71 @@ struct HomeView: View {
             selectedSidebarPage = .manage
             columnVisibility = .all
             tagsExpanded = true
+
+        case .releaseTimeline:
+            viewModel.clearTemporaryGlobalFilters()
+            releaseTimelineTargetID = nil
+            showReleaseTimeline = true
+
+        case .repository(let repository):
+            // 先消费请求再异步查库/拉 GitHub，避免 HomeView 重挂载时重复发网络请求。
+            dependencies.mainWindowNavigationDispatcher.pendingRequest = nil
+            Task { await openRepositoryDeepLink(repository) }
+            return
+
+        case .repositoryRelease(let release):
+            viewModel.clearTemporaryGlobalFilters()
+            releaseTimelineTargetID = release.releaseID
+            showReleaseTimeline = true
         }
 
         dependencies.mainWindowNavigationDispatcher.pendingRequest = nil
+    }
+
+    /// 打开分享仓库：本地命中直接定位；未命中只创建会话内 Repo，不自动 Star、
+    /// 不写 tags/notes，也不污染本地仓库表。详情页现有 Star 入口仍由用户主动决定。
+    @MainActor
+    private func openRepositoryDeepLink(_ target: RepositoryDeepLink) async {
+        do {
+            if let repositoryID = target.repositoryID,
+               let localRepo = try await dependencies.repoRepository.findById(repositoryID) {
+                guard ProjectPrivacyPolicy.allowsUniversalLink(for: localRepo) else {
+                    repositoryDeepLinkErrorMessage = String.l10n("repo.share.open.error.unavailable")
+                    return
+                }
+                openCompanionRepository(localRepo)
+                return
+            }
+            if let localRepo = try await dependencies.repoRepository.findByOwnerName(
+                owner: target.owner,
+                name: target.name
+            ) {
+                guard ProjectPrivacyPolicy.allowsUniversalLink(for: localRepo) else {
+                    repositoryDeepLinkErrorMessage = String.l10n("repo.share.open.error.unavailable")
+                    return
+                }
+                openCompanionRepository(localRepo)
+                return
+            }
+
+            let dto = try await dependencies.apiClient.repo(owner: target.owner, repo: target.name)
+            guard !dto.isPrivate else {
+                repositoryDeepLinkErrorMessage = String.l10n("repo.share.open.error.unavailable")
+                return
+            }
+            let transientRepo = GRDBRepoRepository.repoFromDTO(
+                dto,
+                starredAt: nil,
+                cachedAt: ISO8601DateFormatter.shared.string(from: Date()),
+                isStarred: false
+            )
+            openCompanionRepository(transientRepo)
+        } catch {
+            AppLog.ui.error(
+                "Repository deep link failed for \(target.owner, privacy: .public)/\(target.name, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            repositoryDeepLinkErrorMessage = String.l10n("repo.share.open.error.unavailable")
+        }
     }
 
     // MARK: - 辅助
@@ -1483,13 +1744,16 @@ struct HomeView: View {
     /// SwiftUI 的整条 body modifier 链开始触发 type-check 超时。抽成普通 async 方法后，
     /// 业务顺序不变，但编译器不需要在巨型 View 表达式里推断整段启动流程。
     private func bootstrapHome() async {
+        PerformanceTracer.shared.startMainThreadStallMonitoringIfNeeded()
+
         // 启动 / 重新进入 HomeView 时默认回三栏展开。运行期用户手动缩窗时，
         // 系统仍可按窗口宽度自动折叠 sidebar；这里只负责启动态保真。
         columnVisibility = .all
 
         // HOM-52：批量整理服务挂接 Sidebar 刷新回调。
-        // 每应用一批标签就 refreshSidebar，让 Sidebar Tags 段计数实时跟随；
-        // 不在 viewModel.reloadItems()——避免大批次每个 repo 都全量重拉列表。
+        // BatchAIQueueService 会把本轮标签写入合并成一次回调；Sidebar 在整轮退出时
+        // 刷新一次，避免自动整理每完成一个 repo 都发起十余条查询并重绘整棵侧栏。
+        // 不在 viewModel.reloadItems()——当前列表由数据库观察与既有筛选路径各自收敛。
         dependencies.batchAIQueueService.onTagsChanged = {
             Task { @MainActor in
                 await viewModel.refreshSidebar()
@@ -1677,14 +1941,16 @@ struct HomeView: View {
         guard selectedSidebarPage == .manage,
               !viewModel.hasCachedItems,
               !viewModel.isKnownEmptyGitHubStarListSelection else { return }
-        await viewModel.reloadItems()
+        await viewModel.reloadItems(reason: .selection)
+        await Task.yield()
         applyManageDetailSelectionPolicy()
     }
 
     private func reloadManageSearchIfNeeded() async {
         // Trending / Activity 有自己的数据模型；这里不应触发 Manage reload。
         guard selectedSidebarPage == .manage else { return }
-        await viewModel.reloadItems()
+        await viewModel.reloadItems(reason: .search)
+        await Task.yield()
         applyManageDetailSelectionPolicy()
     }
 
@@ -1714,7 +1980,8 @@ struct HomeView: View {
         }
         guard syncManager.lastRunWroteRepos else { return }
         // GitHub Stars List 已在上方随 stars 同步完成刷新；这里只处理 repo 数据写入后的列表重载。
-        await viewModel.reloadItems(forceRefresh: true)
+        await viewModel.reloadItems(forceRefresh: true, reason: .sync)
+        await Task.yield()
         applyManageDetailSelectionPolicy()
     }
 
@@ -1811,6 +2078,9 @@ struct HomeView: View {
             return
         }
         guard !untagged.isEmpty else { return }
+        // 用户主动整理优先于静默自动轮次。必须等待旧 runLoop 完全退出后再复用
+        // BatchAIQueueService，避免两轮同时改写 jobs / options 和标签数据。
+        await dependencies.batchAIQueueService.preemptAutomaticRunForManualStart()
         dependencies.batchAIQueueService.start(repos: untagged, options: batchAIOptions)
         showBatchAIPanel = true
     }
@@ -1847,6 +2117,7 @@ struct HomeView: View {
         if isAccountSwitch {
             viewModel.resetAllStateForUserSwitch()
         }
+        viewModel.setActiveUserID(user.id)
         restoreListPreferences(login: user.login)
 
         let wasAlreadyOnManage = selectedSidebarPage == .manage
@@ -1855,6 +2126,13 @@ struct HomeView: View {
             dependencies.telemetryManager.track(.manageOpened)
         }
         viewModel.selection = savedManageSelection
+
+        if !TestEnvironment.isRunning {
+            // 项目授权独立于主 OAuth 登录：先恢复 GitHub App 凭据，再启动 4h 系统后台刷新。
+            // 即使未配置或未连接 GitHub App，后续刷新仍会由凭据路由安全回退到 OAuth Public。
+            dependencies.userProjectSyncService.restoreAccess(userID: user.id)
+            dependencies.userProjectSyncService.startBackgroundRefresh(userID: user.id)
+        }
 
         Task { @MainActor in
             await syncGitHubStarListsAndRefreshSidebar(login: user.login)
@@ -1872,6 +2150,20 @@ struct HomeView: View {
                 syncManager.performFullSync(userID: user.id)
             } else {
                 syncManager.performFullSyncIfStale(userID: user.id)
+            }
+        }
+
+        // 项目同步不阻塞 Stars 首屏。完成后只刷新项目计数；用户当前正在浏览“我的项目”
+        // 时才重查中栏，并沿用 HomeViewModel 的 resetPage=false 刷新语义保留 selection/分页。
+        if !TestEnvironment.isRunning {
+            Task { @MainActor in
+                _ = try? await dependencies.userProjectSyncService.refresh(userID: user.id)
+                viewModel.invalidateDatabaseSnapshotsForMyProjectsChange()
+                await viewModel.refreshSidebar()
+                if viewModel.selection == .myProjects {
+                    await viewModel.reloadItems(forceRefresh: true, reason: .sync)
+                    applyManageDetailSelectionPolicy()
+                }
             }
         }
     }
@@ -1973,7 +2265,8 @@ struct HomeView: View {
         case .trending:
             // .trending 不是合法的 Manage 分类（属于 Trending 页），恢复时应回落 allStars
             return false
-        case .allStars, .untagged, .library, .allLanguages, .smartCollectionsHome, .smartCollection:
+        case .allStars, .myProjects, .untagged, .library, .allLanguages,
+             .smartCollectionsHome, .smartCollection:
             return true
         case .userSmartCollection(let id):
             return viewModel.userSmartCollections.contains { $0.id == id }

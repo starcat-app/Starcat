@@ -11,8 +11,8 @@
 - [x] **支付成功页重做** — 成功页属于 `supports/starcat-license-api`，不是 `pages`；生产环境只展示 Order、License Key 和许可证可用数，测试环境折叠显示 checkout/subscription/customer 等调试信息。
 - [~] **Monthly → Lifetime 保护** — Lifetime 权益优先级高于 Monthly；成功页 deep link 会保留旧月订阅 id，App 已提供取消入口，自动化提示待补。
 - [x] **App 内取消订阅入口** — Direct 版 Pro 设置页添加“取消月订阅”入口，调用 Starcat License API；后端再调用 Creem `POST /v1/subscriptions/{id}/cancel`，默认 `mode=scheduled`、`onExecute=cancel`。
-- [x] **落地页 checkout 入口** — `pages/index.html` 和 `pages/index-zh.html` 的 Pro Buy 按钮调用 Starcat License API `/v1/direct/checkout`，只传 `plan` 和 `requestID`；页面不直连 Creem / Waffo。
-- [x] **nginx 安全加固** — `pages/starcat.ink.conf` 只处理静态站安全头、缓存、gzip 和敏感文件拒绝访问；不处理支付回跳。
+- [x] **落地页 checkout 入口** — `supports/starcat-site/direct/index.html` 和 `supports/starcat-site/direct/index-zh.html` 的 Pro Buy 按钮调用 Starcat License API `/v1/direct/checkout`，只传 `plan` 和 `requestID`；页面不直连 Creem / Waffo。
+- [x] **nginx 安全加固** — `supports/starcat-site/direct/starcat.ink.conf` 只处理静态站安全头、缓存、gzip 和敏感文件拒绝访问；不处理支付回跳。
 - [x] **文档和验证** — 同步 README 与本文件；后端跑 `go test ./...`，App 跑 `xcodebuild build`，落地页 HTML 解析、diff 检查、静态资源部署和 nginx 远端语法检查均已完成。
 
 ## 环境分层
@@ -241,7 +241,7 @@ curl -fsS https://starcat-license-api.fly.dev/healthz
 
 ```bash
 # 测试环境：test.starcat.ink -> starcat-license-api-staging
-cd pages/direct-test
+cd supports/starcat-site/direct-test
 DEPLOY_SSH_KEY="$HOME/.ssh/server" ./deploy.sh
 
 # 生产环境：starcat.ink -> starcat-license-api
@@ -249,7 +249,7 @@ cd ../direct
 DEPLOY_SSH_KEY="$HOME/.ssh/server" ./deploy.sh
 ```
 
-执行 `deploy.sh` 会先同步对应 nginx 配置并执行 `nginx -t && systemctl reload nginx`，再同步对应静态资源。生产目录 `pages/direct` 固定 production checkout，测试目录 `pages/direct-test` 固定 staging checkout。
+执行 `deploy.sh` 会先同步对应 nginx 配置并执行 `nginx -t && systemctl reload nginx`，再同步对应静态资源。生产目录 `supports/starcat-site/direct` 固定 production checkout，测试目录 `supports/starcat-site/direct-test` 固定 staging checkout。
 
 #### 2.4 Production checkout smoke test
 

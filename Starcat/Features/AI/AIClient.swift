@@ -26,6 +26,8 @@ struct AIClientConfiguration: Equatable, Sendable {
     var chatModel: String
     var embeddingModel: String
     var timeoutInterval: TimeInterval = 300
+    /// 业务归因必须在创建客户端时确定，底层 adapter 不猜调用方属于哪个功能。
+    var usageContext: AIUsageContext = .unknown
 }
 
 /// Chat 返回格式要求。
@@ -122,6 +124,9 @@ struct AIChatRequest: Equatable, Sendable {
     var parallelToolCalls: Bool = false
     var metadata: [String: String] = [:]
     var includeUsage: Bool = false
+    /// 同一长寿命客户端可服务 RAG 的 planning / answer / title 等阶段，请求级归因优先于
+    /// client configuration；普通业务不传时继续使用客户端默认值。
+    var usageContext: AIUsageContext? = nil
 }
 
 /// 非流式 Chat 响应。
@@ -271,13 +276,32 @@ protocol AIClientProtocol: Sendable {
 }
 
 /// AI 客户端错误。
-enum AIClientError: Error, LocalizedError, Equatable {
+///
+/// chat / completions 路径会把 MacPaw SDK 的 `OpenAIError.statusError` 等原始 dump
+/// 收成这里的枚举，避免 UI 直接展示 `NSHTTPURLResponse` 调试字符串。
+/// 带 `detail` 的 case 把结构化诊断留给日志与「可展开详情」；`errorDescription` 始终是
+/// 按 HTTP 状态码区分的用户可读短文案。
+enum AIClientError: Error, LocalizedError, Equatable, Sendable {
     case missingAPIKey
     case invalidBaseURL(String)
     case invalidChatHistory(String)
     case emptyResponse
     case responseTruncated
     case modelListRequestFailed(String)
+    /// Provider 拒绝凭据（HTTP 401 / 403 或等价鉴权文案）。
+    case authenticationRejected(detail: String)
+    /// Provider 限流（HTTP 429）。
+    case rateLimited(detail: String)
+    /// 需要付费 / 余额不足（HTTP 402）。
+    case paymentRequired(detail: String)
+    /// Provider 拒绝本次请求（HTTP 400 / 404 / 422 等）；`detail` 供展开诊断。
+    case requestRejected(statusCode: Int, detail: String)
+    /// 网络不可达或 5xx。
+    case networkUnavailable(detail: String)
+    /// 请求超时。
+    case timedOut(detail: String)
+    /// 其它已归类失败；`detail` 供展开诊断。
+    case requestFailed(detail: String)
 
     var errorDescription: String? {
         switch self {
@@ -293,6 +317,116 @@ enum AIClientError: Error, LocalizedError, Equatable {
             return String.l10n("ai.client.error.responseTruncated")
         case .modelListRequestFailed(let message):
             return String(format: String.l10n("ai.client.error.modelListRequestFailedFormat"), message)
+        case .authenticationRejected:
+            return String.l10n("ai.client.error.authenticationRejected")
+        case .rateLimited:
+            return String.l10n("ai.client.error.rateLimited")
+        case .paymentRequired:
+            return String.l10n("ai.client.error.paymentRequired")
+        case .requestRejected(let statusCode, _):
+            switch statusCode {
+            case 400:
+                return String.l10n("ai.client.error.badRequest")
+            case 404, 405:
+                return String.l10n("ai.client.error.notFound")
+            case 422:
+                return String.l10n("ai.client.error.unprocessable")
+            default:
+                return String(format: String.l10n("ai.client.error.requestRejectedFormat"), statusCode)
+            }
+        case .networkUnavailable:
+            return String.l10n("ai.client.error.networkUnavailable")
+        case .timedOut:
+            return String.l10n("ai.client.error.timedOut")
+        case .requestFailed:
+            return String.l10n("ai.client.error.requestFailed")
+        }
+    }
+
+    /// 可展开详情 / 诊断日志用的结构化细节；配置类错误通常为 nil。
+    var diagnosticDetail: String? {
+        switch self {
+        case .invalidChatHistory(let message):
+            return Self.nonEmpty(message)
+        case .modelListRequestFailed(let message):
+            return Self.nonEmpty(message)
+        case .authenticationRejected(let detail),
+             .rateLimited(let detail),
+             .paymentRequired(let detail),
+             .networkUnavailable(let detail),
+             .timedOut(let detail),
+             .requestFailed(let detail):
+            return Self.nonEmpty(detail)
+        case .requestRejected(_, let detail):
+            return Self.nonEmpty(detail)
+        case .missingAPIKey, .invalidBaseURL, .emptyResponse, .responseTruncated:
+            return nil
+        }
+    }
+
+    private static func nonEmpty(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+/// 向量化配置与请求错误。
+///
+/// 配置类错误可在调用 Provider 前确定，便于设置页和 RAG 工作台直接引导用户修正；
+/// 请求类错误只能由真实 embedding 请求确认，不能误报成笔记内容或数据格式问题。
+enum AIEmbeddingError: Error, LocalizedError, Equatable, Sendable {
+    case missingProvider
+    case providerUnavailable
+    case missingAPIKey
+    case missingModel
+    case incompatibleModel(String)
+    case authenticationRejected
+    case rateLimited
+    case modelRequestRejected
+    case networkUnavailable
+    case timedOut
+    case invalidResponse
+    case emptyResponse
+    case requestFailed
+
+    var isConfigurationIssue: Bool {
+        switch self {
+        case .missingProvider, .providerUnavailable, .missingAPIKey, .missingModel, .incompatibleModel:
+            return true
+        case .authenticationRejected, .rateLimited, .modelRequestRejected, .networkUnavailable,
+             .timedOut, .invalidResponse, .emptyResponse, .requestFailed:
+            return false
+        }
+    }
+
+    var errorDescription: String? {
+        switch self {
+        case .missingProvider:
+            return String.l10n("ai.embedding.error.missingProvider")
+        case .providerUnavailable:
+            return String.l10n("ai.embedding.error.providerUnavailable")
+        case .missingAPIKey:
+            return String.l10n("ai.embedding.error.missingAPIKey")
+        case .missingModel:
+            return String.l10n("ai.embedding.error.missingModel")
+        case .incompatibleModel(let model):
+            return String(format: String.l10n("ai.embedding.error.incompatibleModelFormat"), model)
+        case .authenticationRejected:
+            return String.l10n("ai.embedding.error.authenticationRejected")
+        case .rateLimited:
+            return String.l10n("ai.embedding.error.rateLimited")
+        case .modelRequestRejected:
+            return String.l10n("ai.embedding.error.modelRequestRejected")
+        case .networkUnavailable:
+            return String.l10n("ai.embedding.error.networkUnavailable")
+        case .timedOut:
+            return String.l10n("ai.embedding.error.timedOut")
+        case .invalidResponse:
+            return String.l10n("ai.embedding.error.invalidResponse")
+        case .emptyResponse:
+            return String.l10n("ai.embedding.error.emptyResponse")
+        case .requestFailed:
+            return String.l10n("ai.embedding.error.requestFailed")
         }
     }
 }

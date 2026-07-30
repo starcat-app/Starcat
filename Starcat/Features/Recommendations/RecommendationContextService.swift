@@ -14,13 +14,13 @@
 //  与 `WikiContextService` 的差异：
 //    1. **不做 SWR 后台刷新**：wiki 列表"已收录基本永久稳定"，stale 时仍可返回
 //       旧值 + 后台慢慢刷；推荐是"看到新东西"的发现型能力，stale 价值不大，
-//       直接重新拉即可。所以本服务只提供 `cachedItems`（同步只读）+ `refresh`
+//       直接重新拉即可。所以本服务只提供 `cachedSnapshot`（同步只读）+ `refresh`
 //       （同步拉取 + 写盘），VM 自己拼装"先 cache 立刻渲染 + 异步 refresh"流程。
 //    2. **不存 inFlight 去重**：WikiContextService 有 `inFlightRefreshes` map
 //       防止并发刷新；推荐调用方只有详情页的 VM 持有 service，不会多入口并发，
 //       同一 repo 同时只会有一个 refresh 任务在跑（VM 的 `isLoading` 守卫）。
-//    3. **错误吞掉**：网络失败不抛给 UI，只 warn 日志 —— 推荐是辅助能力，挂了
-//       不应阻塞详情页主内容。调用方通过 `errorMessage` 显示给用户。
+//    3. **错误上抛但保留缓存**：网络失败不覆盖磁盘旧值，由 VM 记录 `errorMessage`；
+//       推荐是辅助能力，错误不会阻塞详情页主内容。
 //
 
 import Foundation
@@ -76,7 +76,7 @@ final class RecommendationContextService {
     /// 返回完整 snapshot（items / hasMore / nextOffset）而非仅 items，是为了避免
     /// 调用方再回头 `cachedSnapshot(repoID:)` 多读一次盘。
     ///
-    /// 错误吞掉：API 失败不更新 cache（保留旧值如果有），下次 loadInitial 自然重试。
+    /// API 失败会向上抛出且不更新 cache（保留旧值如果有），下次 loadInitial 自然重试。
     @discardableResult
     func refresh(repoID: Int64, offset: Int = 0) async throws -> RecommendationCacheSnapshot {
         let page = try await fetcher.fetchRecommendations(repoID: repoID, limit: pageSize, offset: offset)

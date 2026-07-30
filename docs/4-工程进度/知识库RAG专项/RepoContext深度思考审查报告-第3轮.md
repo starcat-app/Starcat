@@ -18,7 +18,7 @@
 - 新增 Swift 文件已在工程中可编译；模型、Prompt、预算、Provider、Composer、时间线、Debug、Plan、citation 与 Evidence 均有对应实现。
 - RepoContext 相关变更从方案到两轮审查修复均为独立中文 commit；未执行 push、打包、发布或上传。
 - `docs/功能实现总览.md` 当前存在其他任务的 Direct Pro 并行改动，本专项未暂存、未提交；根据仓库铁律只起草待确认同步内容。
-- `pages/appstore/index.html` 同样是并行改动，本专项未纳入任何提交。
+- `supports/starcat-site/appstore/index.html` 同样是并行改动，本专项未纳入任何提交。
 
 ## 3. 发现的问题
 

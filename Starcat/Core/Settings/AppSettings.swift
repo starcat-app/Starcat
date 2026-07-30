@@ -516,26 +516,38 @@ enum SmartSearchMode: String, CaseIterable, Identifiable {
 ///   后续做"按 App 当前 locale 自动选默认目标"或写日志时可以直接传给 Locale；
 /// - **默认值不再写死 `.simplifiedChinese`**（HOM-198 fix，2026-06-14）：
 ///   首次启动 / UserDefaults 未持久化时，由 `defaultForCurrentLocale()`
-///   按 App 当前 i18n locale 推断；中日韩 locale → 对应语言，其余一律落到英文。
+///   按 App 当前 i18n locale 推断；18 种已支持 locale → 对应语言，其余落到英文。
 ///   选择英文作为兜底（而不是简体中文）：原默认值对所有非中文用户硬塞中文，
-///   issue 的核心抱怨就是这条；英文是 README 原文最普遍的语言，也是绝大多数
-///   非中日韩用户的工作语言，作为 fallback 比中文合理。老用户 UserDefaults
+///   issue 的核心抱怨就是这条；英文是 README 原文最普遍的语言，作为未知语言
+///   fallback 比中文合理。老用户 UserDefaults
 ///   里已有值的不被覆盖，迁移零风险。
-/// - 第一版只列 5 个主流语言；后续按用户反馈追加。
-/// - `displayName` 走本地化（菜单显示的是「简体中文 / English / 日本語」之类用户母语标签）；
+/// - 目标语言与 App 当前正式开放的 18 种显示语言保持同一组 BCP-47 identifier；
+/// - `displayName` 使用“旗帜 + 母语名称”，不跟随当前界面语言翻译；
 /// - `promptName` 是发给 LLM 的目标语言名称，固定走英文（`Simplified Chinese`），
 ///   避免不同 provider 对中文 prompt 关键词的解析差异，提示词中明确语言能更稳定。
 ///
 /// **与 App UI 本地化语言（`Localizable.xcstrings`）解耦**：
-/// App UI 当前只支持 zh-Hans + en，但翻译目标语言列了 5 种——日韩用户完全可能
-/// 用英文界面但把 README 翻成日韩文。这两个概念不应该拉齐，扩展支持语言时
-/// 各自迭代各自的列表。
+/// 两者当前都开放 18 种语言，但仍是独立类型：README 翻译语言参与 Prompt、缓存 key
+/// 和用户偏好；AppLocale 负责界面 Catalog 与布局方向，不能把两者合并成同一枚举。
 enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sendable {
     case simplifiedChinese = "zh-Hans"
     case traditionalChinese = "zh-Hant"
     case english = "en"
     case japanese = "ja"
     case korean = "ko"
+    case german = "de"
+    case french = "fr"
+    case spanish = "es"
+    case brazilianPortuguese = "pt-BR"
+    case italian = "it"
+    case russian = "ru"
+    case dutch = "nl"
+    case polish = "pl"
+    case ukrainian = "uk"
+    case turkish = "tr"
+    case vietnamese = "vi"
+    case indonesian = "id"
+    case arabic = "ar"
 
     var id: String { rawValue }
 
@@ -549,6 +561,19 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
         case .english:            return "🇺🇸 English"
         case .japanese:           return "🇯🇵 日本語"
         case .korean:             return "🇰🇷 한국어"
+        case .german:             return "🇩🇪 Deutsch"
+        case .french:             return "🇫🇷 Français"
+        case .spanish:            return "🇪🇸 Español"
+        case .brazilianPortuguese: return "🇧🇷 Português (Brasil)"
+        case .italian:            return "🇮🇹 Italiano"
+        case .russian:            return "🇷🇺 Русский"
+        case .dutch:              return "🇳🇱 Nederlands"
+        case .polish:             return "🇵🇱 Polski"
+        case .ukrainian:          return "🇺🇦 Українська"
+        case .turkish:            return "🇹🇷 Türkçe"
+        case .vietnamese:         return "🇻🇳 Tiếng Việt"
+        case .indonesian:         return "🇮🇩 Bahasa Indonesia"
+        case .arabic:             return "🇸🇦 العربية"
         }
     }
 
@@ -560,6 +585,19 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
         case .english:            return "English"
         case .japanese:           return "Japanese"
         case .korean:             return "Korean"
+        case .german:             return "German"
+        case .french:             return "French"
+        case .spanish:            return "Spanish"
+        case .brazilianPortuguese: return "Brazilian Portuguese"
+        case .italian:            return "Italian"
+        case .russian:            return "Russian"
+        case .dutch:              return "Dutch"
+        case .polish:             return "Polish"
+        case .ukrainian:          return "Ukrainian"
+        case .turkish:            return "Turkish"
+        case .vietnamese:         return "Vietnamese"
+        case .indonesian:         return "Indonesian"
+        case .arabic:             return "Arabic"
         }
     }
 
@@ -580,8 +618,14 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
     ///
     /// 只在"用户从未选过"时被消费（见 `AppSettings.init`），用户主动改过
     /// 之后这个函数就不再影响默认行为。
-    static func defaultForCurrentLocale() -> ReadmeTranslationLanguage {
-        let identifier = Bundle.main.preferredLocalizations.first
+    static func defaultForCurrentLocale(
+        appLocaleOverride: String? = UserDefaults.standard.string(forKey: "AppLocaleOverride")
+    ) -> ReadmeTranslationLanguage {
+        // 用户显式选择的 App 显示语言优先于进程启动时确定的 Bundle localization。
+        // `.system` 不是 BCP-47 identifier，仍需回到 Bundle / Locale 推断。
+        let explicitIdentifier = appLocaleOverride.flatMap { $0 == "system" ? nil : $0 }
+        let identifier = explicitIdentifier
+            ?? Bundle.main.preferredLocalizations.first
             ?? Locale.current.identifier
         return defaultLanguage(forLocaleIdentifier: identifier)
     }
@@ -594,9 +638,8 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
     /// 映射规则：
     /// - `zh-Hant` / `zh-TW` / `zh-HK` / `zh-MO` → `.traditionalChinese`；
     /// - 其余 `zh*`（含 `zh-Hans` / `zh-CN` / `zh-SG` / 裸 `zh`）→ `.simplifiedChinese`；
-    /// - `ja*` → `.japanese`；
-    /// - `ko*` → `.korean`；
-    /// - 其余（含 `en*` / `fr*` / `de*` / `es*` …）→ `.english`。
+    /// - 其余 16 种目标语言按 language code 映射，其中 `pt*` 固定使用巴西葡萄牙语；
+    /// - 未支持或无效 identifier → `.english`。
     ///
     /// 用 `Locale.Language` 而不是字符串 `hasPrefix` 比对：标准 API 会正确处理
     /// `zh_CN`（旧 POSIX 格式）/ `zh-Hans-CN`（带脚本和区域）/ 大小写差异等边角情形。
@@ -617,6 +660,32 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
             return .japanese
         case "ko":
             return .korean
+        case "de":
+            return .german
+        case "fr":
+            return .french
+        case "es":
+            return .spanish
+        case "pt":
+            return .brazilianPortuguese
+        case "it":
+            return .italian
+        case "ru":
+            return .russian
+        case "nl":
+            return .dutch
+        case "pl":
+            return .polish
+        case "uk":
+            return .ukrainian
+        case "tr":
+            return .turkish
+        case "vi":
+            return .vietnamese
+        case "id":
+            return .indonesian
+        case "ar":
+            return .arabic
         default:
             return .english
         }
@@ -827,6 +896,14 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.aiTranslationTask, value: aiTranslationTask) }
     }
 
+    /// README 全文翻译 Prompt。
+    ///
+    /// Provider、Model 与参数仍统一读取 `aiTranslationTask`；这里只单独保存全文模式
+    /// 的 system/user Prompt，避免为了两个模板复制整套任务配置。
+    var aiFullTranslationPrompt: AIPromptConfiguration {
+        didSet { persistJSON(key: Keys.aiFullTranslationPrompt, value: aiFullTranslationPrompt) }
+    }
+
     /// 对话任务模型配置（2026-06-14 v4 引入）。
     ///
     /// 之前对话路径直接复用 `aiSummaryTask` 的 model + 参数，system prompt 在
@@ -932,10 +1009,11 @@ final class AppSettings {
 
     // MARK: - AI 代码上下文（2026-06-13 引入，RepoContextPacker 客户端接入阶段 X1）
     //
-    // 3 个偏好字段对应 `docs/3-设计/详细设计/27-RepoContextPacker设计.md` §0.3 X1：
+    // 4 个偏好字段对应 RepoContextPacker 的运行期配置：
     //   1. aiRepoContextEnabled       —— 总开关（默认 true，启用 RepoContextPacker 注入 AI prompt）
     //   2. aiRepoContextTokenBudget   —— Token 预算（默认 8000，范围 4000-32000，控制 XML 体积）
     //   3. aiRepoContextTier1MaxLines —— 关键文件保留行数（默认 80，范围 40-200，对应 `TierTruncation.tier1MaxLines`）
+    //   4. aiRepoContextMaximumArchiveMB —— 源码 ZIP 上限（默认 50MB，范围 1-500MB）
     //
     // 设计要点：
     //   - 字段独立于 `externalContextEnabled`（那个是 External Search 检索结果注入）；
@@ -965,8 +1043,20 @@ final class AppSettings {
         didSet { defaults.set(aiRepoContextTier1MaxLines, forKey: Keys.aiRepoContextTier1MaxLines) }
     }
 
+    /// AI 代码上下文允许处理的源码 ZIP 上限。
+    ///
+    /// 单仓 AI 与知识库 RAG 共用该阈值；RepoContextPacker 解压前使用同一运行期上限，
+    /// 避免“下载允许、打包仍按固定 100MB 拒绝”的伪配置。CodeFlow / CodebaseMemory
+    /// 保留各自独立的安全上限，不读取此偏好。
+    static let aiRepoContextMaximumArchiveMBRange = 1...500
+    static let defaultAIRepoContextMaximumArchiveMB = 50
+
+    var aiRepoContextMaximumArchiveMB: Int {
+        didSet { defaults.set(aiRepoContextMaximumArchiveMB, forKey: Keys.aiRepoContextMaximumArchiveMB) }
+    }
+
     /// 贡献草坪贪吃蛇玩法（HOM-SNAKE-MODES 2026-06-05）。
-    /// 默认 `.greedy`（snk 同款），让"草坪 + 蛇"的卖点立刻直观可感。
+    /// 默认 `.off`；用户主动选择其他玩法后继续持久化其选择。
     /// 修改时 `ContributionGraphView` 会通过 `.onChange` 重建 animator。
     var snakeStyle: SnakeStyle {
         didSet { persist(key: Keys.snakeStyle, value: snakeStyle.rawValue) }
@@ -974,11 +1064,16 @@ final class AppSettings {
 
     /// README 翻译目标语言（HOM-68；HOM-198 调整默认值来源）。
     /// 默认值由 `ReadmeTranslationLanguage.defaultForCurrentLocale()` 按 App 当前
-    /// i18n locale 推断（中日韩 → 对应语言，其余 → 英文），不再写死中文；用户可在
+    /// i18n locale 推断（18 种已支持语言 → 对应语言，其余 → 英文），不再写死中文；用户可在
     /// 详情页翻译按钮的下拉菜单里切换，选择后即时落盘，下次进入详情页直接命中
     /// 本地翻译缓存（按 `(repo_id, language)` 查表）。
     var readmeTranslationLanguage: ReadmeTranslationLanguage {
         didSet { persist(key: Keys.readmeTranslationLanguage, value: readmeTranslationLanguage.rawValue) }
+    }
+
+    /// README 翻译方式。默认分段翻译；用户可在详情页翻译下拉菜单切换。
+    var readmeTranslationMode: ReadmeTranslationMode {
+        didSet { persist(key: Keys.readmeTranslationMode, value: readmeTranslationMode.rawValue) }
     }
 
     /// Undo Star 历史保留天数（2026-07-05）。-1 = 永久不删。
@@ -1012,8 +1107,14 @@ final class AppSettings {
     }
 
     /// 开启后 AI 多行输入必须按 Command+Return 才发送；普通 Return 始终换行。
+    /// 这是输入行为偏好，不属于应用命令快捷键，不受下方总开关或逐项开关影响。
     var aiChatRequiresCommandReturn: Bool {
         didSet { persistBool(key: Keys.aiChatRequiresCommandReturn, value: aiChatRequiresCommandReturn) }
+    }
+
+    /// 应用命令快捷键总开关。关闭只停止键盘注册，菜单、toolbar 和详情按钮仍可使用。
+    var keyboardShortcutsEnabled: Bool {
+        didSet { persistBool(key: Keys.keyboardShortcutsEnabled, value: keyboardShortcutsEnabled) }
     }
 
     /// 全局搜索入口快捷键，默认 Command+K。值对象在写入设置页前已完成合法性校验。
@@ -1021,9 +1122,49 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.globalSearchShortcut, value: globalSearchShortcut) }
     }
 
+    var globalSearchShortcutEnabled: Bool {
+        didSet { persistBool(key: Keys.globalSearchShortcutEnabled, value: globalSearchShortcutEnabled) }
+    }
+
     /// 列表 toolbar 常规搜索快捷键，默认 Command+F。展开 SmartSearchField 并聚焦输入框。
     var regularSearchShortcut: KeyboardShortcutConfiguration {
         didSet { persistJSON(key: Keys.regularSearchShortcut, value: regularSearchShortcut) }
+    }
+
+    var regularSearchShortcutEnabled: Bool {
+        didSet { persistBool(key: Keys.regularSearchShortcutEnabled, value: regularSearchShortcutEnabled) }
+    }
+
+    /// 刷新当前中栏列表或右栏详情的快捷键，默认 Command+R。
+    var refreshCurrentContentShortcut: KeyboardShortcutConfiguration {
+        didSet { persistJSON(key: Keys.refreshCurrentContentShortcut, value: refreshCurrentContentShortcut) }
+    }
+
+    var refreshCurrentContentShortcutEnabled: Bool {
+        didSet {
+            persistBool(
+                key: Keys.refreshCurrentContentShortcutEnabled,
+                value: refreshCurrentContentShortcutEnabled
+            )
+        }
+    }
+
+    /// 打开知识库 RAG 工作台的快捷键，默认 Shift+Command+K。
+    var knowledgeRAGShortcut: KeyboardShortcutConfiguration {
+        didSet { persistJSON(key: Keys.knowledgeRAGShortcut, value: knowledgeRAGShortcut) }
+    }
+
+    var knowledgeRAGShortcutEnabled: Bool {
+        didSet { persistBool(key: Keys.knowledgeRAGShortcutEnabled, value: knowledgeRAGShortcutEnabled) }
+    }
+
+    /// 打开当前详情仓库 AI 窗口的快捷键，默认 Shift+Command+A。
+    var selectedRepoAIShortcut: KeyboardShortcutConfiguration {
+        didSet { persistJSON(key: Keys.selectedRepoAIShortcut, value: selectedRepoAIShortcut) }
+    }
+
+    var selectedRepoAIShortcutEnabled: Bool {
+        didSet { persistBool(key: Keys.selectedRepoAIShortcutEnabled, value: selectedRepoAIShortcutEnabled) }
     }
 
     // MARK: - 通知（2026-06-20）
@@ -1074,12 +1215,17 @@ final class AppSettings {
         didSet { persistBool(key: Keys.mcpServiceEnabled, value: mcpServiceEnabled) }
     }
 
-    /// MCP HTTP 监听端口。默认 `defaultMCPServicePort`（5555），监听地址固定为 127.0.0.1。
-    ///
-    /// 端口保留为设置项，是为了让用户避开本机已有服务；host 不开放配置，避免误把
-    /// Starcat 私人数据暴露到局域网。
+    /// MCP HTTP 监听端口。默认 `defaultMCPServicePort`（5555）。
     var mcpServicePort: Int {
         didSet { defaults.set(mcpServicePort, forKey: Keys.mcpServicePort) }
+    }
+
+    /// 是否允许已配对设备从可信网络连接。
+    ///
+    /// 默认关闭并仅监听 loopback；开启后必须切换为 TLS listener，禁止把现有明文
+    /// Bearer endpoint 直接绑定到局域网地址。
+    var mcpAllowRemoteConnections: Bool {
+        didSet { persistBool(key: Keys.mcpAllowRemoteConnections, value: mcpAllowRemoteConnections) }
     }
 
     /// 是否允许 MCP 读取用户私有笔记。
@@ -1492,8 +1638,24 @@ final class AppSettings {
             profileID: defaultProfile.id,
             modelName: resolvedAIEmbeddingModel
         )
-        self.aiSummaryTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiSummaryTask, defaults: defaults) ?? defaultSummaryTask
-        self.aiTagsTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiTagsTask, defaults: defaults) ?? defaultTagsTask
+        let persistedSummaryTask = Self.decodeJSON(
+            AIModelTaskConfiguration.self,
+            key: Keys.aiSummaryTask,
+            defaults: defaults
+        ) ?? defaultSummaryTask
+        self.aiSummaryTask = Self.migrateLegacyDefaultSummaryPromptIfNeeded(
+            persistedSummaryTask,
+            defaults: defaults
+        )
+        let persistedTagsTask = Self.decodeJSON(
+            AIModelTaskConfiguration.self,
+            key: Keys.aiTagsTask,
+            defaults: defaults
+        ) ?? defaultTagsTask
+        self.aiTagsTask = Self.migrateLegacyDefaultTagsPromptIfNeeded(
+            persistedTagsTask,
+            defaults: defaults
+        )
         self.aiEmbeddingTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiEmbeddingTask, defaults: defaults) ?? defaultEmbeddingTask
         // HOM-68 follow-up：翻译任务首次升级时与摘要使用同一 provider+model，
         // 参数走 translationDefault（低温度 + 高 maxToken），用户可在设置页改。
@@ -1502,7 +1664,20 @@ final class AppSettings {
             profileID: defaultProfile.id,
             modelName: resolvedAIChatModel
         )
-        self.aiTranslationTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiTranslationTask, defaults: defaults) ?? defaultTranslationTask
+        let persistedTranslationTask = Self.decodeJSON(
+            AIModelTaskConfiguration.self,
+            key: Keys.aiTranslationTask,
+            defaults: defaults
+        ) ?? defaultTranslationTask
+        self.aiTranslationTask = Self.migrateLegacyDefaultTranslationPromptIfNeeded(
+            persistedTranslationTask,
+            defaults: defaults
+        )
+        self.aiFullTranslationPrompt = Self.decodeJSON(
+            AIPromptConfiguration.self,
+            key: Keys.aiFullTranslationPrompt,
+            defaults: defaults
+        ) ?? AIDefaultPrompts.fullTranslation
         // 2026-06-14 v4：对话任务首次升级时与摘要使用同一 provider+model + summaryDefault
         // 参数（chat 跟摘要场景接近，参数没必要再分一套）。老用户没有 aiChatTask key →
         // decode 失败 fallback 到默认值，行为跟之前"复用 aiSummaryTask"基本等价（model 一致），
@@ -1512,7 +1687,15 @@ final class AppSettings {
             profileID: defaultProfile.id,
             modelName: resolvedAIChatModel
         )
-        self.aiChatTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiChatTask, defaults: defaults) ?? defaultChatTask
+        let persistedChatTask = Self.decodeJSON(
+            AIModelTaskConfiguration.self,
+            key: Keys.aiChatTask,
+            defaults: defaults
+        ) ?? defaultChatTask
+        self.aiChatTask = Self.migrateLegacyDefaultChatPromptIfNeeded(
+            persistedChatTask,
+            defaults: defaults
+        )
         self.ragBackendConfiguration = Self.decodeJSON(
             RAGBackendConfiguration.self,
             key: Keys.ragBackendConfiguration,
@@ -1558,24 +1741,36 @@ final class AppSettings {
                 defaults: defaults
             )
         )
-        // 2026-06-13 RepoContextPacker 客户端接入（3 个字段）：
-        // 总开关默认 true（P0 价值卖点）；token budget 默认 8000 / Tier 1 行数默认 80
+        // RepoContextPacker 客户端配置：
+        // 总开关默认 true；token budget 默认 8000 / Tier 1 行数默认 80 / ZIP 上限默认 50MB
         // 与 RepoContextPacker `PackInput.tokenBudget` / `TierTruncation.tier1MaxLines` 缺省值对齐。
         self.aiRepoContextEnabled = defaults.object(forKey: Keys.aiRepoContextEnabled) as? Bool ?? true
         self.aiRepoContextTokenBudget = defaults.object(forKey: Keys.aiRepoContextTokenBudget) as? Int ?? 8000
         self.aiRepoContextTier1MaxLines = defaults.object(forKey: Keys.aiRepoContextTier1MaxLines) as? Int ?? 80
+        let storedMaximumArchiveMB = defaults.object(forKey: Keys.aiRepoContextMaximumArchiveMB) as? Int
+            ?? Self.defaultAIRepoContextMaximumArchiveMB
+        self.aiRepoContextMaximumArchiveMB = min(
+            max(storedMaximumArchiveMB, Self.aiRepoContextMaximumArchiveMBRange.lowerBound),
+            Self.aiRepoContextMaximumArchiveMBRange.upperBound
+        )
 
         let snakeStyleRaw = defaults.string(forKey: Keys.snakeStyle)
         self.snakeStyle = snakeStyleRaw.flatMap(SnakeStyle.init(rawValue:)) ?? SnakeStyle.default
 
         // HOM-68 / HOM-198：README 翻译目标语言。
         // 老用户已有持久化值 → 保留；首次启动 → 按 App 当前 locale 推断
-        // （`defaultForCurrentLocale()`，中日韩 → 对应语言，其余 → 英文）。
+        // （`defaultForCurrentLocale()`，18 种已支持语言 → 对应语言，其余 → 英文）。
         // 不再写死 `.simplifiedChinese`，避免对所有非中文用户硬塞中文。
         let translationLangRaw = defaults.string(forKey: Keys.readmeTranslationLanguage)
         self.readmeTranslationLanguage = translationLangRaw
             .flatMap(ReadmeTranslationLanguage.init(rawValue:))
-            ?? .defaultForCurrentLocale()
+            ?? .defaultForCurrentLocale(
+                appLocaleOverride: defaults.string(forKey: "AppLocaleOverride")
+            )
+        let translationModeRaw = defaults.string(forKey: Keys.readmeTranslationMode)
+        self.readmeTranslationMode = translationModeRaw
+            .flatMap(ReadmeTranslationMode.init(rawValue:))
+            ?? .segmented
 
         let retentionDays = defaults.integer(forKey: Keys.undoStarRetentionDays)
         self.undoStarRetentionDays = retentionDays == 0 ? 7 : retentionDays  // 首次默认 7 天
@@ -1587,25 +1782,80 @@ final class AppSettings {
         self.disableAnimations = defaults.object(forKey: Keys.disableAnimations) as? Bool ?? false
         self.hideDockIcon = defaults.object(forKey: Keys.hideDockIcon) as? Bool ?? false
         self.aiChatRequiresCommandReturn = defaults.object(forKey: Keys.aiChatRequiresCommandReturn) as? Bool ?? false
+        self.keyboardShortcutsEnabled = defaults.object(forKey: Keys.keyboardShortcutsEnabled) as? Bool ?? true
+        self.globalSearchShortcutEnabled = defaults.object(forKey: Keys.globalSearchShortcutEnabled) as? Bool ?? true
+        self.regularSearchShortcutEnabled = defaults.object(forKey: Keys.regularSearchShortcutEnabled) as? Bool ?? true
+        self.refreshCurrentContentShortcutEnabled = defaults.object(
+            forKey: Keys.refreshCurrentContentShortcutEnabled
+        ) as? Bool ?? true
+        self.knowledgeRAGShortcutEnabled = defaults.object(forKey: Keys.knowledgeRAGShortcutEnabled) as? Bool ?? true
+        self.selectedRepoAIShortcutEnabled = defaults.object(forKey: Keys.selectedRepoAIShortcutEnabled) as? Bool ?? true
+
         let storedSearchShortcut = Self.decodeJSON(
             KeyboardShortcutConfiguration.self,
             key: Keys.globalSearchShortcut,
             defaults: defaults
         )
-        if let storedSearchShortcut, storedSearchShortcut.validationError == nil {
-            self.globalSearchShortcut = storedSearchShortcut
-        } else {
-        self.globalSearchShortcut = .globalSearchDefault
-        }
         let storedRegularSearchShortcut = Self.decodeJSON(
             KeyboardShortcutConfiguration.self,
             key: Keys.regularSearchShortcut,
             defaults: defaults
         )
-        if let storedRegularSearchShortcut, storedRegularSearchShortcut.validationError == nil {
-            self.regularSearchShortcut = storedRegularSearchShortcut
-        } else {
+        let storedRefreshShortcut = Self.decodeJSON(
+            KeyboardShortcutConfiguration.self,
+            key: Keys.refreshCurrentContentShortcut,
+            defaults: defaults
+        )
+        let storedKnowledgeRAGShortcut = Self.decodeJSON(
+            KeyboardShortcutConfiguration.self,
+            key: Keys.knowledgeRAGShortcut,
+            defaults: defaults
+        )
+        let storedSelectedRepoAIShortcut = Self.decodeJSON(
+            KeyboardShortcutConfiguration.self,
+            key: Keys.selectedRepoAIShortcut,
+            defaults: defaults
+        )
+
+        let resolvedSearchShortcut = storedSearchShortcut.flatMap {
+            $0.validationError == nil ? $0 : nil
+        } ?? .globalSearchDefault
+        let resolvedRegularSearchShortcut = storedRegularSearchShortcut.flatMap {
+            $0.validationError == nil ? $0 : nil
+        } ?? .regularSearchDefault
+        let resolvedRefreshShortcut = storedRefreshShortcut.flatMap {
+            $0.validationError == nil ? $0 : nil
+        } ?? StarcatShortcutCatalog.refreshCurrentContentDefault
+        let resolvedKnowledgeRAGShortcut = storedKnowledgeRAGShortcut.flatMap {
+            $0.validationError == nil ? $0 : nil
+        } ?? StarcatShortcutCatalog.openKnowledgeRAGDefault
+        let resolvedSelectedRepoAIShortcut = storedSelectedRepoAIShortcut.flatMap {
+            $0.validationError == nil ? $0 : nil
+        } ?? StarcatShortcutCatalog.openSelectedRepoAIDefault
+
+        let resolvedShortcuts = [
+            resolvedSearchShortcut,
+            resolvedRegularSearchShortcut,
+            resolvedRefreshShortcut,
+            resolvedKnowledgeRAGShortcut,
+            resolvedSelectedRepoAIShortcut
+        ]
+
+        // 五项应用命令始终保持唯一，即使某项暂时关闭也不能占用另一项键位。
+        // 这样重新开启时不会突然产生两个命令竞争；遇到手工篡改或旧版本重复值时，
+        // 五项一起恢复默认，比静默偏袒其中一个动作更可预测。
+        if Set(resolvedShortcuts).count != resolvedShortcuts.count {
+            self.globalSearchShortcut = .globalSearchDefault
             self.regularSearchShortcut = .regularSearchDefault
+            self.refreshCurrentContentShortcut = StarcatShortcutCatalog.refreshCurrentContentDefault
+            self.knowledgeRAGShortcut = StarcatShortcutCatalog.openKnowledgeRAGDefault
+            self.selectedRepoAIShortcut = StarcatShortcutCatalog.openSelectedRepoAIDefault
+        } else {
+            self.globalSearchShortcut = resolvedSearchShortcut
+            self.regularSearchShortcut = resolvedRegularSearchShortcut
+            self.refreshCurrentContentShortcut = resolvedRefreshShortcut
+            self.knowledgeRAGShortcut = resolvedKnowledgeRAGShortcut
+            self.selectedRepoAIShortcut = resolvedSelectedRepoAIShortcut
         }
         self.notificationsEnabled = defaults.object(forKey: Keys.notificationsEnabled) as? Bool ?? true
         self.releaseNotificationsEnabled = defaults.object(forKey: Keys.releaseNotificationsEnabled) as? Bool ?? true
@@ -1616,6 +1866,7 @@ final class AppSettings {
         self.mcpServiceEnabled = defaults.object(forKey: Keys.mcpServiceEnabled) as? Bool ?? false
         let storedMCPPort = defaults.object(forKey: Keys.mcpServicePort) as? Int ?? Self.defaultMCPServicePort
         self.mcpServicePort = (1024...65535).contains(storedMCPPort) ? storedMCPPort : Self.defaultMCPServicePort
+        self.mcpAllowRemoteConnections = defaults.object(forKey: Keys.mcpAllowRemoteConnections) as? Bool ?? false
         self.mcpExposePrivateNotes = defaults.object(forKey: Keys.mcpExposePrivateNotes) as? Bool ?? false
         self.mcpAllowLocalWrites = defaults.object(forKey: Keys.mcpAllowLocalWrites) as? Bool ?? false
         self.mcpAllowBatchWrites = defaults.object(forKey: Keys.mcpAllowBatchWrites) as? Bool ?? false
@@ -1739,6 +1990,7 @@ final class AppSettings {
         aiTagsTask = Self.makeDefaultTask(task: .tags, profileID: defaultProfile.id, modelName: chatModel)
         aiEmbeddingTask = Self.makeDefaultTask(task: .embedding, profileID: defaultProfile.id, modelName: embeddingModel)
         aiTranslationTask = Self.makeDefaultTask(task: .translation, profileID: defaultProfile.id, modelName: chatModel)
+        aiFullTranslationPrompt = AIDefaultPrompts.fullTranslation
         aiChatTask = Self.makeDefaultTask(task: .chat, profileID: defaultProfile.id, modelName: chatModel)
         ragBackendConfiguration = RAGBackendConfiguration()
         ragPromptSettings = .default
@@ -1759,13 +2011,24 @@ final class AppSettings {
         aiRepoContextEnabled = true
         aiRepoContextTokenBudget = 8_000
         aiRepoContextTier1MaxLines = 80
+        aiRepoContextMaximumArchiveMB = Self.defaultAIRepoContextMaximumArchiveMB
         snakeStyle = SnakeStyle.default
         readmeTranslationLanguage = .defaultForCurrentLocale()
+        readmeTranslationMode = .segmented
         disableAnimations = false
         hideDockIcon = false
         aiChatRequiresCommandReturn = false
+        keyboardShortcutsEnabled = true
         globalSearchShortcut = .globalSearchDefault
+        globalSearchShortcutEnabled = true
         regularSearchShortcut = .regularSearchDefault
+        regularSearchShortcutEnabled = true
+        refreshCurrentContentShortcut = StarcatShortcutCatalog.refreshCurrentContentDefault
+        refreshCurrentContentShortcutEnabled = true
+        knowledgeRAGShortcut = StarcatShortcutCatalog.openKnowledgeRAGDefault
+        knowledgeRAGShortcutEnabled = true
+        selectedRepoAIShortcut = StarcatShortcutCatalog.openSelectedRepoAIDefault
+        selectedRepoAIShortcutEnabled = true
         notificationsEnabled = true
         releaseNotificationsEnabled = true
         batchAINotificationsEnabled = true
@@ -1774,6 +2037,7 @@ final class AppSettings {
         telemetryEnabled = false
         mcpServiceEnabled = false
         mcpServicePort = Self.defaultMCPServicePort
+        mcpAllowRemoteConnections = false
         mcpExposePrivateNotes = false
         mcpAllowLocalWrites = false
         mcpAllowBatchWrites = false
@@ -1860,6 +2124,15 @@ final class AppSettings {
             defaults.set(String(decoding: data, as: UTF8.self), forKey: key)
         } catch {
             AppLog.general.error("persistJSON failed for \(key, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            DiagnosticLogStore.record(
+                level: .error,
+                visibility: .issue,
+                category: "settings",
+                operation: "settings.persistJSON",
+                message: "A settings value could not be encoded",
+                underlying: DiagnosticEvent.summarize(error),
+                context: ["key": key]
+            )
         }
     }
 
@@ -1935,8 +2208,101 @@ final class AppSettings {
             return try JSONDecoder().decode(type, from: data)
         } catch {
             AppLog.general.error("decodeJSON failed for \(key, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            DiagnosticLogStore.record(
+                level: .error,
+                visibility: .issue,
+                category: "settings",
+                operation: "settings.decodeJSON",
+                message: "A persisted settings value could not be decoded",
+                underlying: DiagnosticEvent.summarize(error),
+                context: ["key": key]
+            )
             return nil
         }
+    }
+
+    /// 只升级仍等于已发布旧默认值的标签 Prompt，保留用户选择的 Provider / Model / 参数。
+    ///
+    /// 标签任务整份配置持久化在同一个 JSON key 下；若仅修改 `AIDefaultPrompts.tags`，
+    /// 老用户会永久继续使用“每次生成 3...8 个”的旧 Prompt。反过来，直接覆盖整份配置
+    /// 又会破坏用户自定义 Prompt。本迁移用完整值相等判断区分两者，并在命中时只替换
+    /// `prompt` 字段。编码失败时返回内存中的新值，下次启动仍可重试持久化。
+    private static func migrateLegacyDefaultTagsPromptIfNeeded(
+        _ task: AIModelTaskConfiguration,
+        defaults: UserDefaults
+    ) -> AIModelTaskConfiguration {
+        guard task.prompt == AIDefaultPrompts.legacyTagsV1 else { return task }
+
+        var migrated = task
+        migrated.prompt = AIDefaultPrompts.tags
+        if let data = try? JSONEncoder().encode(migrated) {
+            defaults.set(String(decoding: data, as: UTF8.self), forKey: Keys.aiTagsTask)
+        }
+        return migrated
+    }
+
+    /// 只为仍使用旧默认值的摘要任务补上 `{insightsContext}`，保留自定义 Prompt。
+    private static func migrateLegacyDefaultSummaryPromptIfNeeded(
+        _ task: AIModelTaskConfiguration,
+        defaults: UserDefaults
+    ) -> AIModelTaskConfiguration {
+        migrateLegacyDefaultPrompt(
+            task,
+            legacy: AIDefaultPrompts.legacySummaryWithoutInsights,
+            current: AIDefaultPrompts.summary,
+            key: Keys.aiSummaryTask,
+            defaults: defaults
+        )
+    }
+
+    /// 只为仍使用旧默认值的仓库对话任务补上 `{insightsContext}`，保留自定义 Prompt。
+    private static func migrateLegacyDefaultChatPromptIfNeeded(
+        _ task: AIModelTaskConfiguration,
+        defaults: UserDefaults
+    ) -> AIModelTaskConfiguration {
+        migrateLegacyDefaultPrompt(
+            task,
+            legacy: AIDefaultPrompts.legacyChatWithoutInsights,
+            current: AIDefaultPrompts.chat,
+            key: Keys.aiChatTask,
+            defaults: defaults
+        )
+    }
+
+    /// 默认 Prompt 的窄迁移：完整相等才替换 prompt，其余 Provider / Model / 参数原样保留。
+    private static func migrateLegacyDefaultPrompt(
+        _ task: AIModelTaskConfiguration,
+        legacy: AIPromptConfiguration,
+        current: AIPromptConfiguration,
+        key: String,
+        defaults: UserDefaults
+    ) -> AIModelTaskConfiguration {
+        guard task.prompt == legacy else { return task }
+
+        var migrated = task
+        migrated.prompt = current
+        if let data = try? JSONEncoder().encode(migrated) {
+            defaults.set(String(decoding: data, as: UTF8.self), forKey: key)
+        }
+        return migrated
+    }
+
+    /// 只迁移仍等于已发布“整份 HTML 翻译”默认值的 Prompt。
+    ///
+    /// Provider、Model 与参数全部保留；用户自定义 Prompt 不覆盖。旧自定义模板中的
+    /// `{readmeHTML}` 仍由 Service 作为段落 JSON 别名替换，避免升级后直接失效。
+    private static func migrateLegacyDefaultTranslationPromptIfNeeded(
+        _ task: AIModelTaskConfiguration,
+        defaults: UserDefaults
+    ) -> AIModelTaskConfiguration {
+        guard task.prompt == AIDefaultPrompts.legacyTranslationHTMLV1 else { return task }
+
+        var migrated = task
+        migrated.prompt = AIDefaultPrompts.translation
+        if let data = try? JSONEncoder().encode(migrated) {
+            defaults.set(String(decoding: data, as: UTF8.self), forKey: Keys.aiTranslationTask)
+        }
+        return migrated
     }
 
     /// HOM-68 follow-up v9 (dong4j 反馈 2026-06-05 23:35)：
@@ -2055,6 +2421,7 @@ final class AppSettings {
         static let aiTagsTask = "settings.ai.task.tags.v2"
         static let aiEmbeddingTask = "settings.ai.task.embedding.v2"
         static let aiTranslationTask = "settings.ai.task.translation.v2"  // HOM-68 follow-up
+        static let aiFullTranslationPrompt = "settings.ai.prompt.translation.full.v1"
         static let aiChatTask = "settings.ai.task.chat.v1"  // 2026-06-14 v4 占位符化（chat 提到 task 平级）
         static let ragBackendConfiguration = "settings.ai.rag.backends.v1"
         static let ragPromptSettings = "settings.rag.prompts.v1"
@@ -2073,13 +2440,23 @@ final class AppSettings {
         static let externalSearchProviderSettings = "settings.externalSearch.providerSettings.v1"
         static let snakeStyle = "settings.contribution.snakeStyle"  // HOM-SNAKE-MODES
         static let readmeTranslationLanguage = "settings.readme.translation.language"  // HOM-68
+        static let readmeTranslationMode = "settings.readme.translation.mode.v1"
         static let undoStarRetentionDays = "settings.undoStar.retentionDays"  // 2026-07-05
         static let isProUser = "settings.pro.isProUser"  // HOM-151
         static let disableAnimations = "settings.general.disableAnimations.v1"  // 2026-06-15
         static let hideDockIcon = "settings.general.hideDockIcon.v1"  // 2026-07-02
         static let aiChatRequiresCommandReturn = "settings.general.shortcuts.aiCommandReturn.v1"
+        static let keyboardShortcutsEnabled = "settings.general.shortcuts.enabled.v1"
         static let globalSearchShortcut = "settings.general.shortcuts.globalSearch.v1"
+        static let globalSearchShortcutEnabled = "settings.general.shortcuts.globalSearch.enabled.v1"
         static let regularSearchShortcut = "settings.general.shortcuts.regularSearch.v1"
+        static let regularSearchShortcutEnabled = "settings.general.shortcuts.regularSearch.enabled.v1"
+        static let refreshCurrentContentShortcut = "settings.general.shortcuts.refreshCurrentContent.v1"
+        static let refreshCurrentContentShortcutEnabled = "settings.general.shortcuts.refreshCurrentContent.enabled.v1"
+        static let knowledgeRAGShortcut = "settings.general.shortcuts.knowledgeRAG.v1"
+        static let knowledgeRAGShortcutEnabled = "settings.general.shortcuts.knowledgeRAG.enabled.v1"
+        static let selectedRepoAIShortcut = "settings.general.shortcuts.selectedRepoAI.v1"
+        static let selectedRepoAIShortcutEnabled = "settings.general.shortcuts.selectedRepoAI.enabled.v1"
         static let notificationsEnabled = "settings.notifications.enabled.v1"
         static let releaseNotificationsEnabled = "settings.notifications.release.enabled.v1"
         static let batchAINotificationsEnabled = "settings.notifications.batchAI.enabled.v1"
@@ -2088,6 +2465,7 @@ final class AppSettings {
         static let telemetryEnabled = "settings.telemetry.enabled.v1"
         static let mcpServiceEnabled = "settings.mcp.enabled.v1"
         static let mcpServicePort = "settings.mcp.port.v1"
+        static let mcpAllowRemoteConnections = "settings.mcp.allowRemoteConnections.v1"
         static let mcpExposePrivateNotes = "settings.mcp.exposePrivateNotes.v1"
         static let mcpAllowLocalWrites = "settings.mcp.allowLocalWrites.v1"
         static let mcpAllowBatchWrites = "settings.mcp.allowBatchWrites.v1"
@@ -2111,6 +2489,7 @@ final class AppSettings {
         static let aiRepoContextEnabled = "settings.ai.repoContext.enabled.v1"
         static let aiRepoContextTokenBudget = "settings.ai.repoContext.tokenBudget.v1"
         static let aiRepoContextTier1MaxLines = "settings.ai.repoContext.tier1MaxLines.v1"
+        static let aiRepoContextMaximumArchiveMB = "settings.ai.repoContext.maximumArchiveMB.v1"
 
         static let resettableKeys: [String] = [
             appearanceMode,
@@ -2141,6 +2520,7 @@ final class AppSettings {
             aiTagsTask,
             aiEmbeddingTask,
             aiTranslationTask,
+            aiFullTranslationPrompt,
             aiChatTask,
             ragBackendConfiguration,
             ragPromptSettings,
@@ -2159,12 +2539,22 @@ final class AppSettings {
             externalSearchProviderSettings,
             snakeStyle,
             readmeTranslationLanguage,
+            readmeTranslationMode,
             isProUser,
             disableAnimations,
             hideDockIcon,
             aiChatRequiresCommandReturn,
+            keyboardShortcutsEnabled,
             globalSearchShortcut,
+            globalSearchShortcutEnabled,
             regularSearchShortcut,
+            regularSearchShortcutEnabled,
+            refreshCurrentContentShortcut,
+            refreshCurrentContentShortcutEnabled,
+            knowledgeRAGShortcut,
+            knowledgeRAGShortcutEnabled,
+            selectedRepoAIShortcut,
+            selectedRepoAIShortcutEnabled,
             notificationsEnabled,
             releaseNotificationsEnabled,
             batchAINotificationsEnabled,
@@ -2173,6 +2563,7 @@ final class AppSettings {
             telemetryEnabled,
             mcpServiceEnabled,
             mcpServicePort,
+            mcpAllowRemoteConnections,
             mcpExposePrivateNotes,
             mcpAllowLocalWrites,
             mcpAllowBatchWrites,
@@ -2189,7 +2580,8 @@ final class AppSettings {
             aiSemanticSearchScoreThreshold,
             aiRepoContextEnabled,
             aiRepoContextTokenBudget,
-            aiRepoContextTier1MaxLines
+            aiRepoContextTier1MaxLines,
+            aiRepoContextMaximumArchiveMB
         ]
     }
 }

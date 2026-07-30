@@ -12,7 +12,7 @@
 //    1. ZIP 缓存统一复用 CodeFlow 旧目录：
 //       `Application Support/Starcat/archives/github.com/<owner>/<repo>.zip`。
 //       RepoContextPacker 不再维护第二份 `repository-snapshots` 下载缓存。
-//    2. 100MB 上限不变（`maximumArchiveBytes = 100_000_000`）。
+//    2. 默认 100MB 安全上限不变；AI 代码上下文可为单次请求传入更低的用户阈值。
 //    3. 错误自治：`SharedSnapshotError` 与 `CodeFlowError` 各自独立，CodeFlowRunner
 //       在 catch SharedSnapshotError 时映射成 CodeFlowError 保持现有文案不变。
 //    4. 私有仓库：`repo.isPrivate` 时**直接抛** `.privateRepository`——这是 GitHub
@@ -121,16 +121,28 @@ struct SharedSnapshotService: @unchecked Sendable {
     /// 旧缓存只按 `<owner>/<repo>.zip` 命名，因此不能只凭“文件存在”判断命中。GitHub
     /// zipball 的首个目录名包含 7 位 commit SHA；只有它与请求 SHA 匹配时才复用，避免
     /// 分支 HEAD 更新后把旧源码误标成新提交。任何下游都不得主动删除这个共享 ZIP。
-    func archiveIfNeeded(repo: Repo, commitSHA: String) async throws -> CodeFlowArchiveResult {
+    func archiveIfNeeded(
+        repo: Repo,
+        commitSHA: String,
+        maximumBytes: Int = Self.maximumArchiveBytes,
+        beforeDownload: (@Sendable () async throws -> Void)? = nil
+    ) async throws -> CodeFlowArchiveResult {
         guard !repo.isPrivate else { throw SharedSnapshotError.privateRepository }
         let archiveURL = try archiveFileURL(owner: repo.owner, name: repo.name, commitSHA: commitSHA)
         if fileManager.fileExists(atPath: archiveURL.path) {
             let bytes = try fileSize(archiveURL)
             guard bytes > 0 else { throw SharedSnapshotError.emptyArchive }
             if try archiveMatchesCommit(at: archiveURL, commitSHA: commitSHA) {
+                // 阈值也必须约束缓存命中。否则用户降低设置后，同一个大 ZIP 会绕过下载后校验，
+                // 继续进入解压和打包，造成“设置已改但没有生效”的错觉。
+                guard bytes <= Int64(maximumBytes) else { throw SharedSnapshotError.archiveTooLarge }
                 return CodeFlowArchiveResult(url: archiveURL, wasDownloaded: false, bytes: bytes)
             }
         }
+
+        // 只有确认本地 ZIP 不可复用后才进入门控。单仓摘要在这里展示下载步骤并提供
+        // 3 秒取消缓冲；CodeFlow / RAG 等调用方不传闭包，行为与性能保持不变。
+        try await beforeDownload?()
 
         let encodedOwner = Self.encodePathComponent(repo.owner)
         let encodedName = Self.encodePathComponent(repo.name)
@@ -148,7 +160,7 @@ struct SharedSnapshotService: @unchecked Sendable {
             throw SharedSnapshotError.requestFailed(statusCode: response.statusCode)
         }
         guard !data.isEmpty else { throw SharedSnapshotError.emptyArchive }
-        guard data.count <= Self.maximumArchiveBytes else { throw SharedSnapshotError.archiveTooLarge }
+        guard data.count <= maximumBytes else { throw SharedSnapshotError.archiveTooLarge }
 
         try fileManager.createDirectory(at: archiveURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         let temporaryURL = archiveURL.appendingPathExtension("tmp")

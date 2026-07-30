@@ -53,6 +53,8 @@ struct ActivityView: View {
     // R-01 §3.1.4 Step 7.3：refreshRow 改用 SyncIconButton 后顶层 reduceMotion 已不需要。
     // ActivityRowView 内部仍保留自己的 reduceMotion env 处理 isSelected 动画。
 
+    /// 由 Repo List 窗口会话持有，离开 Activity 时保留聚合与分类快照。
+    @Binding private var viewModel: ActivityViewModel?
     @Binding var selectedCategory: ActivityCategory
     @Binding var selectedItem: ActivityItem?
     /// Getting Started 的 Undo Star 教学跳转后，一次性请求打开第一条记录。
@@ -65,18 +67,20 @@ struct ActivityView: View {
     @State private var selectedUndoStarRecord: UndoStarRecord?
     var onSelectUndoStarRepo: ((Repo?) -> Void)?
 
-    @State private var viewModel: ActivityViewModel?
     @State private var showClearFollowingConfirmation = false
     @State private var showClearAnnouncementConfirmation = false
     @State private var libraryStateMap: [Int64: LibraryState] = [:]
+    @State private var wikiAvailabilityMap: [Int64: Bool] = [:]
 
     init(
+        viewModel: Binding<ActivityViewModel?>,
         selectedCategory: Binding<ActivityCategory>,
         selectedItem: Binding<ActivityItem?>,
         undoStarAutoSelectRequestID: Int = 0,
         onItemCountChange: @escaping (Int) -> Void = { _ in },
         onSelectUndoStarRepo: ((Repo?) -> Void)? = nil
     ) {
+        _viewModel = viewModel
         _selectedCategory = selectedCategory
         _selectedItem = selectedItem
         self.undoStarAutoSelectRequestID = undoStarAutoSelectRequestID
@@ -97,15 +101,24 @@ struct ActivityView: View {
             } else if let viewModel {
                 content(viewModel)
             } else {
-                ProgressView()
+                // ViewModel 尚未 ensureLoaded 的极短首帧，与分类空载同款骨架。
+                RepoSkeletonListView(rowCount: 8)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .task {
             // 首次进入 Activity：全量 ensureLoaded。Weekly 已迁移到 Explore,Activity 只处理本地聚合分类。
             let model = ensureViewModel()
-            await reloadLibraryStateMap()
+            async let libraryLoad: Void = reloadLibraryStateMap()
+            if settings.libraryFilter != .all {
+                await libraryLoad
+            }
             await model.ensureLoaded(category: selectedCategory)
+            if settings.libraryFilter == .all {
+                await libraryLoad
+            }
+            guard !Task.isCancelled else { return }
+            await Task.yield()
             applySelectionPolicy(from: model.items)
             reportItemCount(model)
         }
@@ -165,6 +178,14 @@ struct ActivityView: View {
                 activityItemList(viewModel)
             }
         }
+        .starcatRefreshCommand(
+            pane: .list,
+            identity: "activity-\(selectedCategory.rawValue)-\(viewModel.isRefreshing)",
+            title: String.l10n("commands.actions.refreshCurrentList"),
+            isEnabled: !viewModel.isRefreshing
+        ) {
+            refreshCurrentActivityList(viewModel)
+        }
         .alert(
             "activity.following.clear.confirm",
             isPresented: $showClearFollowingConfirmation
@@ -208,7 +229,9 @@ struct ActivityView: View {
     private func activityItemList(_ viewModel: ActivityViewModel) -> some View {
         let visibleItems = globalFilteredItems(viewModel.items)
         List {
-            ForEach(visibleItems) { item in
+            // Activity 首屏最多 30 行，enumerated 的小数组成本可控；真实 index 是“只动画
+            // 前 15 行”的正确性边界，不能再用 item ID 哈希伪造顺序。
+            ForEach(Array(visibleItems.enumerated()), id: \.element.id) { index, item in
                 Button {
                     selectedItem = item
                 } label: {
@@ -217,9 +240,9 @@ struct ActivityView: View {
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
                 .listRowReveal(
-                    index: Self.listRevealStaggerIndex(for: item.id),
-                    snapshotID: viewModel.itemsRevision,
-                    skipAnimation: viewModel.skipListRowReveal
+                    index: index,
+                    snapshotID: viewModel.rowRevealRevision,
+                    replayAfterSnapshotCommit: true
                 )
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
@@ -233,9 +256,15 @@ struct ActivityView: View {
         .listStyle(.inset)
         .alternatingRowBackgrounds()
         .task(id: viewModel.itemsRevision) {
-            let repoIds = viewModel.items.compactMap { $0.repo?.id }
-            await dependencies.openSSFScoreStore.loadCachedScores(for: repoIds)
-            await dependencies.repoHealthStore.loadCachedSnapshots(for: repoIds)
+            let repos = viewModel.items.compactMap(\.repo)
+            let repoIds = repos.map(\.id)
+            async let openSSF: Void = dependencies.openSSFScoreStore.loadCachedScores(for: repoIds)
+            async let health: Void = dependencies.repoHealthStore.loadCachedSnapshots(for: repoIds)
+            async let wiki: Void = reloadWikiAvailabilityMap(for: repos)
+            _ = await (openSSF, health, wiki)
+        }
+        .task(id: settings.wikiAvailabilityFilter.rawValue) {
+            await reloadWikiAvailabilityMap(for: viewModel.items.compactMap(\.repo))
         }
     }
 
@@ -280,7 +309,7 @@ struct ActivityView: View {
         case .outsideLibrary:
             guard libraryStateMap[repo.id] != .inLibrary else { return false }
         }
-        if !matchesWikiFilter(owner: repo.owner, name: repo.name) { return false }
+        if !matchesWikiFilter(repoId: repo.id) { return false }
         if !matchesAvailability(dependencies.repoHealthStore.snapshot(for: repo.id) != nil, filter: settings.healthAvailabilityFilter) {
             return false
         }
@@ -290,12 +319,10 @@ struct ActivityView: View {
         return true
     }
 
-    private func matchesWikiFilter(owner: String, name: String) -> Bool {
+    private func matchesWikiFilter(repoId: Int64) -> Bool {
         guard settings.wikiAvailabilityFilter != .unknown else { return true }
-        guard let snapshot = DiskWikiCache.shared.load(owner: owner, repo: name) else {
-            return false
-        }
-        return matchesAvailability(!snapshot.indexedLinks.isEmpty, filter: settings.wikiAvailabilityFilter)
+        guard let available = wikiAvailabilityMap[repoId] else { return false }
+        return matchesAvailability(available, filter: settings.wikiAvailabilityFilter)
     }
 
     private func matchesAvailability(_ available: Bool, filter: RepoSignalAvailabilityFilter) -> Bool {
@@ -389,8 +416,8 @@ struct ActivityView: View {
     ///
     /// **派发规则**（设计 §3.1.5 + v1.9 dong4j 拍板 / v2.0 删时戳）：
     /// - `star` / `repository` / `suggestion` → `UnifiedRepoRow` 与 Manage/Trending/Weekly
-    ///   100% 视觉同构（badge 走 `.activityKind(category)`，
-    ///   头像角 kind icon 由 UnifiedRepoRow 承担；v2.0 已删右上 RelativeDateBadge）；
+    ///   100% 视觉同构；头像角 kind 标仅在 `selectedCategory == .all` 时挂上
+    ///   （单一分类下再标类型无辨识价值）；
     /// - 其它 kind（release 主体 = release name 而非 repo / announcement 无 repo）走老路径。
     ///
     /// `item.repo` 为 nil 的 corner case（announcement、未来的 following）一律退化到老视觉，
@@ -402,9 +429,10 @@ struct ActivityView: View {
         if let repo = item.repo, isUnifiedRowKind(item.kind) {
             // v1.9：纯仓库型 kind 走 UnifiedRepoRow。`showStarredCheckmark` 不传（默认 false）
             // —— ActivityViewModel.filter { $0.isStarred } 已过滤 100% starred，挂 ✓ 视觉冗余。
+            // 头像角 kind 标只在「全部分类」混排时有辨识意义；已切入单一分类再挂角标是冗余噪声。
             UnifiedRepoRow(
                 card: repo.asCardData(
-                    badge: .activityKind(item.category),
+                    badge: selectedCategory == .all ? .activityKind(item.category) : .none,
                     inlineMetadata: inlineMetadata(for: item),
                     isInLibrary: isInLibrary(repo.id),
                     openSSFScore: dependencies.openSSFScoreStore.badge(for: repo.id)
@@ -450,11 +478,16 @@ struct ActivityView: View {
             disabled: viewModel.isRefreshing,
             tooltip: String.l10n("activity.refresh")
         ) {
-            Task {
-                await viewModel.refresh(category: selectedCategory)
-                applySelectionPolicy(from: viewModel.items)
-                reportItemCount(viewModel)
-            }
+            refreshCurrentActivityList(viewModel)
+        }
+    }
+
+    /// Activity 只请求当前分类所需网络，并在发布后重新应用当前详情选择策略。
+    private func refreshCurrentActivityList(_ viewModel: ActivityViewModel) {
+        Task {
+            await viewModel.refresh(category: selectedCategory)
+            applySelectionPolicy(from: viewModel.items)
+            reportItemCount(viewModel)
         }
     }
 
@@ -497,6 +530,19 @@ struct ActivityView: View {
 
     private func reloadLibraryStateMap() async {
         libraryStateMap = (try? await dependencies.repoNoteRepository.fetchAllLibraryStateMap()) ?? [:]
+    }
+
+    private func reloadWikiAvailabilityMap(for repos: [Repo]) async {
+        guard settings.wikiAvailabilityFilter != .unknown else {
+            wikiAvailabilityMap = [:]
+            return
+        }
+        let requests = repos.map {
+            WikiAvailabilityRequest(id: $0.id, owner: $0.owner, repo: $0.name)
+        }
+        let snapshot = await WikiAvailabilitySnapshotLoader.load(requests: requests)
+        guard !Task.isCancelled else { return }
+        wikiAvailabilityMap = snapshot
     }
 
     private func observeLibraryStateChanges() async {
@@ -594,10 +640,6 @@ struct ActivityView: View {
         return formatter.string(from: date)
     }
 
-    /// `listRowReveal` stagger 用：由 item id 派生，避免 `Array(enumerated())` 每帧分配。
-    private static func listRevealStaggerIndex(for itemID: String) -> Int {
-        abs(itemID.hashValue % 14)
-    }
 }
 
 // MARK: - Row

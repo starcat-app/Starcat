@@ -6,7 +6,8 @@
 //    - save / load round-trip（WikiStatusItem Codable + Snapshot Codable）
 //    - load miss / load 损坏 JSON 兜底（删文件 + 返回 nil）
 //    - 路径段安全校验（`..` / `/` / 空串 → 抛 unsafePathComponent）
-//    - WikiCacheSnapshot.computeNextProbeAt 双 TTL（全 indexed 30d / 含未收录 3d）
+//    - WikiCacheSnapshot.computeNextProbeAt 分层 TTL（indexed 30d / notIndexed 3d /
+//      unknown 6h / error 30m）
 //    - freshness 判定（now < nextProbeAt = fresh）
 //    - observable 派生量 itemCount / totalBytes 随 save / delete 更新
 //    - deleteEverything 全清 + reload 归零
@@ -113,6 +114,57 @@ struct DiskWikiCacheTests {
         #expect(links[1].source == .zread)
     }
 
+    @Test("批量 availability 在后台读取，并保留 available / missing / unknown 三态")
+    func batchAvailabilityKeepsUnknownDistinct() async throws {
+        let (cache, root) = makeIsolatedCache()
+        defer { cleanup(root) }
+        let threadRecorder = WikiReadThreadRecorder()
+
+        try cache.save(snapshot: makeSnapshot(owner: "foo", repo: "available"))
+        try cache.save(snapshot: makeSnapshot(
+            owner: "foo",
+            repo: "missing",
+            items: [makeItem(source: .deepWiki, status: .notIndexed)]
+        ))
+
+        let result = await WikiAvailabilitySnapshotLoader.load(
+            requests: [
+                WikiAvailabilityRequest(id: 1, owner: "foo", repo: "available"),
+                WikiAvailabilityRequest(id: 2, owner: "foo", repo: "missing"),
+                WikiAvailabilityRequest(id: 3, owner: "foo", repo: "never-probed")
+            ],
+            rootOverride: root,
+            readObserverForTesting: { isMainThread in
+                threadRecorder.record(isMainThread: isMainThread)
+            }
+        )
+
+        #expect(result[1] == true)
+        #expect(result[2] == false)
+        #expect(result[3] == nil, "没有缓存必须保持 unknown，不能误归类为 missing")
+        #expect(threadRecorder.observations == [false, false, false],
+                "每个 JSON 文件检查都必须在 MainActor / 主线程之外执行")
+    }
+
+    @Test("批量 availability 遇到损坏文件只返回 unknown，不在后台线程改缓存统计")
+    func batchAvailabilityTreatsCorruptionAsUnknownWithoutMutation() async throws {
+        let (_, root) = makeIsolatedCache()
+        defer { cleanup(root) }
+        let directory = root.appendingPathComponent("foo", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let corrupted = directory.appendingPathComponent("broken.json")
+        try Data("broken".utf8).write(to: corrupted)
+
+        let result = await WikiAvailabilitySnapshotLoader.load(
+            requests: [WikiAvailabilityRequest(id: 9, owner: "foo", repo: "broken")],
+            rootOverride: root
+        )
+
+        #expect(result[9] == nil)
+        #expect(FileManager.default.fileExists(atPath: corrupted.path),
+                "批量只读加载器不能越过 DiskWikiCache 的 @MainActor CRUD 边界删文件")
+    }
+
     // MARK: - miss / 损坏兜底
 
     @Test("load 未命中返回 nil")
@@ -159,7 +211,7 @@ struct DiskWikiCacheTests {
         }
     }
 
-    // MARK: - 双 TTL 计算
+    // MARK: - 分层 TTL 计算
 
     @Test("全部 indexed → 长 TTL = 30 天")
     func testLongTTLAllIndexed() {
@@ -174,24 +226,37 @@ struct DiskWikiCacheTests {
         #expect(abs(next.timeIntervalSince(expected)) < 0.001)
     }
 
-    @Test("任一未收录 → 短 TTL = 3 天")
-    func testShortTTLAnyUnindexed() {
+    @Test("任一明确未收录 → 短 TTL = 3 天")
+    func testShortTTLAnyNotIndexed() {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
-        let cases: [[WikiStatusItem]] = [
-            [makeItem(source: .deepWiki, status: .notIndexed)],
-            [
-                makeItem(source: .deepWiki, status: .indexed),
-                makeItem(source: .zread, status: .error)
-            ],
-            [
-                makeItem(source: .deepWiki, status: .indexed),
-                makeItem(source: .zread, status: .indexed),
-                makeItem(source: .codeWiki, status: .unknown("probing"))
-            ]
+        let items = [
+            makeItem(source: .deepWiki, status: .indexed),
+            makeItem(source: .zread, status: .notIndexed)
         ]
-        for items in cases {
+        let next = WikiCacheSnapshot.computeNextProbeAt(items: items, now: now)
+        let expected = now.addingTimeInterval(WikiCacheSnapshot.shortTTL)
+        #expect(abs(next.timeIntervalSince(expected)) < 0.001)
+    }
+
+    @Test("任一错误 → 错误 TTL = 30 分钟")
+    func testErrorTTL() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let items = [
+            makeItem(source: .deepWiki, status: .indexed),
+            makeItem(source: .zread, status: .error)
+        ]
+        let next = WikiCacheSnapshot.computeNextProbeAt(items: items, now: now)
+        let expected = now.addingTimeInterval(WikiCacheSnapshot.errorTTL)
+        #expect(abs(next.timeIntervalSince(expected)) < 0.001)
+    }
+
+    @Test("未知或空结果 → 未知 TTL = 6 小时")
+    func testUnknownTTL() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let unknownItems = [makeItem(source: .codeWiki, status: .unknown("probing"))]
+        for items in [unknownItems, []] {
             let next = WikiCacheSnapshot.computeNextProbeAt(items: items, now: now)
-            let expected = now.addingTimeInterval(WikiCacheSnapshot.shortTTL)
+            let expected = now.addingTimeInterval(WikiCacheSnapshot.unknownTTL)
             #expect(abs(next.timeIntervalSince(expected)) < 0.001)
         }
     }
@@ -295,6 +360,22 @@ struct DiskWikiCacheTests {
             WikiRepoKey(owner: "octo", repo: "one"),
             WikiRepoKey(owner: "swiftlang", repo: "two")
         ]))
+    }
+}
+
+/// Sendable 测试记录器：只记录读盘线程，不参与生产路径。
+private final class WikiReadThreadRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [Bool] = []
+
+    var observations: [Bool] {
+        lock.withLock { values }
+    }
+
+    func record(isMainThread: Bool) {
+        lock.withLock {
+            values.append(isMainThread)
+        }
     }
 }
 

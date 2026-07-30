@@ -150,10 +150,6 @@ struct CodeFlowArchiveResult: Sendable {
 @MainActor
 struct CodeFlowRunner {
 
-    /// 100MB ZIP 上限——保留向后兼容（外部代码可能引用 `CodeFlowRunner.maximumArchiveBytes`）。
-    /// 真实生效的常量在 `SharedSnapshotService.maximumArchiveBytes`，本字段只是别名。
-    static let maximumArchiveBytes = SharedSnapshotService.maximumArchiveBytes
-
     /// W2 改造（2026-06-13）：分支查询 / ZIP 下载逻辑全部委托给共享服务。
     /// CodeFlowRunner 本身只保留：HTML 模板注入 + storage 写盘 + 业务级 metadata 拼装。
     private let snapshotService: SharedSnapshotService
@@ -192,9 +188,17 @@ struct CodeFlowRunner {
     }
 
     /// 共享源码快照按不可变 commit SHA 命名，CodeFlow 删除或重新生成不得删除它。
-    func archiveIfNeeded(repo: Repo, commitSHA: String) async throws -> CodeFlowArchiveResult {
+    func archiveIfNeeded(
+        repo: Repo,
+        commitSHA: String,
+        maximumBytes: Int
+    ) async throws -> CodeFlowArchiveResult {
         do {
-            return try await snapshotService.archiveIfNeeded(repo: repo, commitSHA: commitSHA)
+            return try await snapshotService.archiveIfNeeded(
+                repo: repo,
+                commitSHA: commitSHA,
+                maximumBytes: maximumBytes
+            )
         } catch let error as SharedSnapshotError {
             throw Self.mapSnapshotError(error)
         }
@@ -206,7 +210,8 @@ struct CodeFlowRunner {
         branch: CodeFlowBranch,
         startedAt: Date,
         steps: [CodeFlowExecutionStep],
-        previousGenerationCount: Int? = nil
+        previousGenerationCount: Int? = nil,
+        maximumBytes: Int
     ) throws -> CodeFlowStoredProject {
         guard let templateURL = Bundle.main.url(forResource: "codeflow", withExtension: "html", subdirectory: "CodeFlow")
             ?? Bundle.main.url(forResource: "codeflow", withExtension: "html") else {
@@ -214,7 +219,7 @@ struct CodeFlowRunner {
         }
         let archiveData = try Data(contentsOf: archive.url, options: .mappedIfSafe)
         guard !archiveData.isEmpty else { throw CodeFlowError.emptyArchive }
-        guard archiveData.count <= Self.maximumArchiveBytes else { throw CodeFlowError.archiveTooLarge }
+        guard archiveData.count <= maximumBytes else { throw CodeFlowError.archiveTooLarge }
 
         var html = try String(contentsOf: templateURL, encoding: .utf8)
         let token = "__STARCAT_CODEFLOW_ZIP_PAYLOAD_TOKEN__"

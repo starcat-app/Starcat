@@ -40,6 +40,8 @@ import SwiftUI
 struct ServicePingPayload: Decodable, Sendable, Equatable {
     let service: String
     let ok: Bool
+    /// 后端逐步补齐版本号期间必须保持可选，旧服务不返回该字段时仍能正常通过健康检查。
+    let version: String?
 }
 
 /// 健康检查结果。文案走 i18n key，UI 用 `LocalizedStringKey` 渲染。
@@ -50,7 +52,8 @@ struct ServicePingPayload: Decodable, Sendable, Equatable {
 enum HealthCheckOutcome: Equatable {
     /// 服务可达 + Key 正确 + ping 响应 service 与设置项一致（HTTP 200）。
     /// `statusCode` 一般是 200，留参数是为了未来后端可能扩展到 2xx 其它码（如 204）。
-    case ok(statusCode: Int)
+    /// `version` 直接展示后端返回值；旧服务未返回或只返回空白时为 nil。
+    case ok(statusCode: Int, version: String?)
     /// ping 返回 200，但 `data.service` 与当前设置项不一致（典型：端口 / 服务填错）。
     /// UI 不暴露期望 / 实际服务名，只提示验证失败。
     case serviceMismatch
@@ -91,16 +94,26 @@ enum HealthCheckOutcome: Equatable {
         }
     }
 
-    /// 副文本：状态码或错误原因。**所有状态都会展示**，方便排查。
+    /// 副文本：成功时只展示可选服务版本；失败时保留状态码或错误原因，方便排查。
     var subtitle: String {
         switch self {
-        case .ok(let code): return "HTTP \(code)"
+        case .ok(_, let version): return version ?? ""
         case .serviceMismatch: return ""
         case .unauthorized(let code): return "HTTP \(code)"
         case .serverError(let code): return "HTTP \(code)"
         case .networkError(let reason): return reason
         case .cancelled: return ""
         }
+    }
+
+    /// 成功态版本副文案包含前导标点，供 UI 与“可达”无缝拼成完整句子。
+    /// 保留为独立 Text 是为了继续让版本信息使用 `.secondary`，不抢成功状态的视觉层级。
+    var successVersionSuffix: String? {
+        guard case .ok(_, let version?) = self else { return nil }
+        return String(
+            format: String.l10n("settings.services.health.versionSuffixFormat"),
+            version
+        )
     }
 
     /// ping 探测是否视为「健康」——用于设置页四服务汇总徽标。
@@ -333,7 +346,12 @@ actor ServiceHealthChecker {
             guard payload.service == expected else {
                 return .serviceMismatch
             }
-            return .ok(statusCode: 200)
+            // 版本字段采用渐进兼容：后端未升级时保持成功且不显示副文本；空白版本也不占 UI 空间。
+            let normalizedVersion = payload.version?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return .ok(
+                statusCode: 200,
+                version: normalizedVersion?.isEmpty == false ? normalizedVersion : nil
+            )
         } catch {
             return .serverError(statusCode: 200)
         }

@@ -10,7 +10,11 @@
 # 支撑项目统一放在 supports/ 目录下:
 #   - 6 个 Go API 服务(starcat-*-api)
 #   - starcat-pro / starcat-license-api / starcat-localization
-#   - homebrew-starcat / vscode-makefile-explorer
+#   - starcat-skill / starcat-cli / starcat-alfred-workflow / starcat-utools-plugin
+#   - starcat-raycast-extension
+#   - homebrew-starcat-cli
+#   - homebrew-starcat
+#   - .github / starcat-docs / starcat-site
 #   - extensions/ 下 2 个浏览器插件
 #
 # 前置条件: git 可用; starcat-license-api 是私有仓库,需要 gh CLI 或 SSH key 已配置
@@ -59,11 +63,19 @@ if $SHOW_HELP; then
   echo ""
   echo "支撑项目列表:"
   echo "  6 个 Go API 服务  (starcat-*-api)"
-  echo "  starcat-pro        Pro 订阅服务"
+  echo "  starcat-pro        公开支持与发布说明"
   echo "  starcat-license-api  Direct 分发授权 API (🔒 私有)"
   echo "  starcat-localization  本地化资源"
-  echo "  homebrew-starcat    Homebrew tap"
-  echo "  vscode-makefile-explorer  VS Code 插件"
+  echo "  homebrew-starcat    Starcat App Homebrew Cask tap"
+  echo "  starcat-skill       Starcat AI Agent Skill"
+  echo "  starcat-cli         跨平台 Starcat CLI"
+  echo "  starcat-alfred-workflow  Alfred 仓库搜索 Workflow"
+  echo "  starcat-utools-plugin  uTools 仓库搜索插件"
+  echo "  starcat-raycast-extension  Raycast 仓库搜索扩展"
+  echo "  homebrew-starcat-cli  Starcat CLI Homebrew Formula tap"
+  echo "  .github             组织主页与共享社区健康文件"
+  echo "  starcat-docs        Starcat 官方文档"
+  echo "  starcat-site        Starcat 官方网站源码"
   echo "  starcat-chrome-plugin     Chrome 浏览器插件"
   echo "  starcat-safari-plugin     Safari 浏览器插件"
   exit 0
@@ -73,19 +85,27 @@ fi
 # 格式: "目录名|GitHub URL|描述"
 # extensions/ 下的项目目录名带 "extensions/" 前缀
 PROJECTS=(
-  "starcat-sharing-api|https://github.com/dong4j/starcat-sharing-api.git|Go API - 分享服务"
-  "starcat-trending-api|https://github.com/dong4j/starcat-trending-api.git|Go API - 趋势服务"
-  "starcat-weekly-api|https://github.com/dong4j/starcat-weekly-api.git|Go API - 周刊服务"
-  "starcat-wiki-api|https://github.com/dong4j/starcat-wiki-api.git|Go API - Wiki 服务"
-  "starcat-recommend-api|https://github.com/dong4j/starcat-recommend-api.git|Go API - 推荐服务"
-  "starcat-discovery-api|https://github.com/dong4j/starcat-discovery-api.git|Go API - 发现服务"
-  "starcat-pro|https://github.com/dong4j/starcat-pro.git|Pro 订阅服务"
-  "starcat-license-api|https://github.com/dong4j/starcat-license-api.git|Direct 分发授权 API 🔒"
-  "starcat-localization|https://github.com/dong4j/starcat-localization.git|本地化资源"
-  "homebrew-starcat|https://github.com/dong4j/homebrew-starcat.git|Homebrew tap"
-  "vscode-makefile-explorer|https://github.com/dong4j/vscode-makefile-explorer.git|VS Code 插件"
-  "extensions/starcat-chrome-plugin|https://github.com/dong4j/starcat-chrome-plugin.git|Chrome 浏览器插件"
-  "extensions/starcat-safari-plugin|https://github.com/dong4j/starcat-safari-plugin.git|Safari 浏览器插件"
+  "starcat-sharing-api|https://github.com/starcat-app/starcat-sharing-api.git|Go API - 分享服务"
+  "starcat-trending-api|https://github.com/starcat-app/starcat-trending-api.git|Go API - 趋势服务"
+  "starcat-weekly-api|https://github.com/starcat-app/starcat-weekly-api.git|Go API - 周刊服务"
+  "starcat-wiki-api|https://github.com/starcat-app/starcat-wiki-api.git|Go API - Wiki 服务"
+  "starcat-recommend-api|https://github.com/starcat-app/starcat-recommend-api.git|Go API - 推荐服务"
+  "starcat-discovery-api|https://github.com/starcat-app/starcat-discovery-api.git|Go API - 发现服务"
+  "starcat-pro|https://github.com/starcat-app/starcat-pro.git|公开支持与发布说明"
+  ".github|https://github.com/starcat-app/.github.git|组织主页与共享社区健康文件"
+  "starcat-docs|https://github.com/starcat-app/starcat-docs.git|Starcat 官方文档"
+  "starcat-site|https://github.com/starcat-app/starcat-site.git|Starcat 官方网站源码"
+  "starcat-license-api|https://github.com/starcat-app/starcat-license-api.git|Direct 分发授权 API 🔒"
+  "starcat-localization|https://github.com/starcat-app/starcat-localization.git|本地化资源"
+  "homebrew-starcat|https://github.com/starcat-app/homebrew-starcat.git|Starcat App Homebrew Cask tap"
+  "starcat-skill|https://github.com/starcat-app/starcat-skill.git|Starcat AI Agent Skill"
+  "starcat-cli|https://github.com/starcat-app/starcat-cli.git|跨平台 Starcat CLI"
+  "starcat-alfred-workflow|https://github.com/starcat-app/starcat-alfred-workflow.git|Alfred 仓库搜索 Workflow"
+  "starcat-utools-plugin|https://github.com/starcat-app/starcat-utools-plugin.git|uTools 仓库搜索插件"
+  "starcat-raycast-extension|https://github.com/starcat-app/starcat-raycast-extension.git|Raycast 仓库搜索扩展"
+  "homebrew-starcat-cli|https://github.com/starcat-app/homebrew-starcat-cli.git|Starcat CLI Homebrew Formula tap"
+  "extensions/starcat-chrome-plugin|https://github.com/starcat-app/starcat-chrome-plugin.git|Chrome 浏览器插件"
+  "extensions/starcat-safari-plugin|https://github.com/starcat-app/starcat-safari-plugin.git|Safari 浏览器插件"
 )
 
 # ---- 计数器 ----

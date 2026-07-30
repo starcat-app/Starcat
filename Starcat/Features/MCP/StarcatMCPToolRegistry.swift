@@ -67,6 +67,46 @@ final class StarcatMCPToolRegistry {
     private var tools: [Tool] {
         [
             Tool(
+                name: "starcat.get_capabilities",
+                title: "Get Starcat MCP capabilities",
+                description: "Read the current Starcat MCP privacy and write-permission capabilities before planning a workflow.",
+                inputSchema: Self.objectSchema([:]),
+                annotations: .init(readOnlyHint: true, openWorldHint: false)
+            ),
+            Tool(
+                name: "starcat.get_overview_statistics",
+                title: "Get Starcat overview statistics",
+                description: "Read common local counts in one call: starred repositories, knowledge-base projects, all-time AI token usage, and RAG index health.",
+                inputSchema: Self.objectSchema([:]),
+                annotations: .init(readOnlyHint: true, openWorldHint: false)
+            ),
+            Tool(
+                name: "starcat.get_ai_usage_statistics",
+                title: "Get Starcat AI usage statistics",
+                description: "Read local aggregate AI token and call statistics. This never returns prompts, responses, API keys, or raw error text.",
+                inputSchema: Self.objectSchema([
+                    "time_range": Self.stringSchema(
+                        "Aggregation window.",
+                        enumValues: AIUsageTimeRange.allCases.map(\.rawValue),
+                        defaultValue: AIUsageTimeRange.all.rawValue
+                    ),
+                    "feature": Self.stringSchema(
+                        "Optional Starcat feature filter.",
+                        enumValues: AIUsageFeature.allCases.map(\.rawValue)
+                    ),
+                    "provider_id": Self.stringSchema("Optional AI provider profile identifier."),
+                    "model": Self.stringSchema("Optional model name.")
+                ]),
+                annotations: .init(readOnlyHint: true, openWorldHint: false)
+            ),
+            Tool(
+                name: "starcat.get_knowledge_base_statistics",
+                title: "Get Starcat knowledge-base statistics",
+                description: "Read local knowledge-base organization, source coverage, RAG chunk counts, and index health. Private-note counts follow the private_notes_read capability.",
+                inputSchema: Self.objectSchema([:]),
+                annotations: .init(readOnlyHint: true, openWorldHint: false)
+            ),
+            Tool(
                 name: "starcat.search_repos",
                 title: "Search Starcat repositories",
                 description: "Search repositories cached in Starcat using local keyword/FTS data.",
@@ -76,6 +116,24 @@ final class StarcatMCPToolRegistry {
                     "limit": Self.integerSchema("Maximum number of repositories to return.", defaultValue: 20, minimum: 1, maximum: 100)
                 ]),
                 annotations: .init(readOnlyHint: true, openWorldHint: false)
+            ),
+            Tool(
+                name: "starcat.global_search_repos",
+                title: "Search local and GitHub repositories",
+                description: "Search Starcat local repositories and GitHub in one request. Results preserve source labels, prefer local metadata, and include safe open URLs for external launchers.",
+                inputSchema: Self.objectSchema([
+                    "query": Self.stringSchema("Required repository keyword query, 1 to 200 characters."),
+                    "limit": Self.integerSchema(
+                        "Maximum number of deduplicated repositories to return.",
+                        defaultValue: 30,
+                        minimum: 1,
+                        maximum: 50
+                    ),
+                    "sources": Self.stringArraySchema(
+                        "Optional search sources. Supported values: local, github. Defaults to both."
+                    )
+                ], required: ["query"]),
+                annotations: .init(readOnlyHint: true, openWorldHint: true)
             ),
             Tool(
                 name: "starcat.semantic_search",
@@ -94,6 +152,34 @@ final class StarcatMCPToolRegistry {
                 description: "Read metadata for one repository by repo_id or owner/name.",
                 inputSchema: Self.repoSelectorSchema(),
                 annotations: .init(readOnlyHint: true, openWorldHint: false)
+            ),
+            Tool(
+                name: "starcat.get_repo_context",
+                title: "Get aggregated repository context",
+                description: "Read repository metadata, assigned tags, optional private note/status, and cached AI summary in one call.",
+                inputSchema: Self.repoSelectorSchema(),
+                annotations: .init(readOnlyHint: true, openWorldHint: false)
+            ),
+            Tool(
+                name: "starcat.get_repo_summary",
+                title: "Get cached repository summary",
+                description: "Read the latest cached Starcat AI summary without generating content or making network requests.",
+                inputSchema: Self.repoSelectorSchema(),
+                annotations: .init(readOnlyHint: true, openWorldHint: false)
+            ),
+            Tool(
+                name: "starcat.generate_repo_summary",
+                title: "Generate repository summary",
+                description: "Generate a Starcat AI summary using the user's configured provider. This consumes AI quota and may use external context when explicitly allowed.",
+                inputSchema: Self.objectSchema(
+                    Self.repoSelectorProperties().merging([
+                        "allow_external_context": Self.booleanSchema(
+                            "Allow Starcat's configured External Search provider to supplement the summary.",
+                            defaultValue: false
+                        )
+                    ]) { _, new in new }
+                ),
+                annotations: .init(readOnlyHint: false, openWorldHint: true)
             ),
             Tool(
                 name: "starcat.get_readme",
@@ -200,11 +286,37 @@ final class StarcatMCPToolRegistry {
     private func callTool(_ params: CallTool.Parameters) async -> CallTool.Result {
         do {
             switch params.name {
+            case "starcat.get_capabilities":
+                return try Self.result(facade.getCapabilities())
+
+            case "starcat.get_overview_statistics":
+                return try Self.result(try await facade.getOverviewStatistics())
+
+            case "starcat.get_ai_usage_statistics":
+                let filter = try Self.aiUsageFilter(from: params.arguments)
+                return try Self.result(try await facade.getAIUsageStatistics(filter: filter))
+
+            case "starcat.get_knowledge_base_statistics":
+                return try Self.result(try await facade.getKnowledgeBaseStatistics())
+
             case "starcat.search_repos":
                 let query = params.arguments?["query"]?.stringValue
                 let limit = params.arguments?["limit"]?.intValue ?? 20
                 let scope = try Self.semanticScope(from: params.arguments)
                 let value = try await facade.searchRepos(query: query, limit: limit, scope: scope)
+                return try Self.result(value)
+
+            case "starcat.global_search_repos":
+                guard let query = params.arguments?["query"]?.stringValue else {
+                    throw StarcatMCPError.invalidArguments("Missing required argument: query")
+                }
+                let limit = params.arguments?["limit"]?.intValue ?? 30
+                let sources = try Self.globalSearchSources(from: params.arguments)
+                let value = try await facade.globalSearchRepos(
+                    query: query,
+                    limit: limit,
+                    sources: sources
+                )
                 return try Self.result(value)
 
             case "starcat.semantic_search":
@@ -219,6 +331,26 @@ final class StarcatMCPToolRegistry {
             case "starcat.get_repo":
                 let selector = Self.repoSelector(from: params.arguments)
                 let value = try await facade.getRepo(repoID: selector.repoID, owner: selector.owner, name: selector.name)
+                return try Self.result(value)
+
+            case "starcat.get_repo_context":
+                let selector = Self.repoSelector(from: params.arguments)
+                let value = try await facade.getRepoContext(repoID: selector.repoID, owner: selector.owner, name: selector.name)
+                return try Self.result(value)
+
+            case "starcat.get_repo_summary":
+                let selector = Self.repoSelector(from: params.arguments)
+                let value = try await facade.getRepoSummary(repoID: selector.repoID, owner: selector.owner, name: selector.name)
+                return try Self.result(value)
+
+            case "starcat.generate_repo_summary":
+                let selector = Self.repoSelector(from: params.arguments)
+                let value = try await facade.generateRepoSummary(
+                    repoID: selector.repoID,
+                    owner: selector.owner,
+                    name: selector.name,
+                    allowExternalContext: Self.bool(params.arguments, "allow_external_context", defaultValue: false)
+                )
                 return try Self.result(value)
 
             case "starcat.get_readme":
@@ -311,14 +443,63 @@ final class StarcatMCPToolRegistry {
                 return try Self.result(value)
 
             default:
-                throw StarcatMCPError.invalidArguments("Unknown tool: \(params.name)")
+                throw StarcatMCPError.unsupported("Unknown tool: \(params.name)")
             }
         } catch {
-            return .init(
-                content: [.text(text: error.localizedDescription, annotations: nil, _meta: nil)],
-                isError: true
-            )
+            return Self.errorResult(error)
         }
+    }
+
+    /// 同时返回人类文本与稳定错误 code。
+    ///
+    /// MCP SDK 把 Tool 业务失败放在 `result.isError`，不是 JSON-RPC 顶层 error；
+    /// 因此机器可读 code 必须跟随 `structuredContent` 返回。构造失败时才退化为
+    /// 纯文本结果，避免错误处理自身让整次协议调用失败。
+    private static func errorResult(_ error: Error) -> CallTool.Result {
+        let message = error.localizedDescription
+        let payload = MCPToolErrorDTO(code: toolErrorCode(for: error), message: message)
+        return (try? .init(
+            content: [.text(text: message, annotations: nil, _meta: nil)],
+            structuredContent: payload,
+            isError: true
+        )) ?? .init(
+            content: [.text(text: message, annotations: nil, _meta: nil)],
+            isError: true
+        )
+    }
+
+    private static func toolErrorCode(for error: Error) -> String {
+        if let error = error as? StarcatMCPError {
+            switch error {
+            case .disabled:
+                return "MCP_DISABLED"
+            case .requiresPro:
+                return "REQUIRES_PRO"
+            case .unauthorized:
+                return "UNAUTHORIZED"
+            case .invalidArguments:
+                return "INVALID_ARGUMENTS"
+            case .notFound:
+                return "NOT_FOUND"
+            case .privateNotesDisabled:
+                return "PRIVATE_NOTES_DISABLED"
+            case .unsupported:
+                return "UPGRADE_REQUIRED"
+            }
+        }
+        if let error = error as? GlobalRepositorySearchError {
+            switch error {
+            case .noSources:
+                return "INVALID_ARGUMENTS"
+            case .allProvidersFailed:
+                return "SEARCH_FAILED"
+            }
+        }
+        if let entitlementError = error as? EntitlementGateError,
+           case .requiresPro = entitlementError {
+            return "REQUIRES_PRO"
+        }
+        return "INTERNAL_ERROR"
     }
 
     private static func result<T: Codable>(_ value: T) throws -> CallTool.Result {
@@ -366,6 +547,56 @@ final class StarcatMCPToolRegistry {
         )
     }
 
+    private static func globalSearchSources(
+        from arguments: [String: Value]?
+    ) throws -> Set<GlobalRepositorySearchSource> {
+        guard let value = arguments?["sources"] else {
+            return Set(GlobalRepositorySearchSource.allCases)
+        }
+        guard let rawSources = value.arrayValue else {
+            throw StarcatMCPError.invalidArguments("sources must be an array of strings")
+        }
+        let strings = rawSources.compactMap(\.stringValue)
+        guard strings.count == rawSources.count, !strings.isEmpty else {
+            throw StarcatMCPError.invalidArguments(
+                "sources must contain at least one of: local, github"
+            )
+        }
+        let parsed = strings.compactMap(GlobalRepositorySearchSource.init(rawValue:))
+        guard parsed.count == strings.count else {
+            throw StarcatMCPError.invalidArguments("sources must only contain: local, github")
+        }
+        return Set(parsed)
+    }
+
+    private static func aiUsageFilter(from arguments: [String: Value]?) throws -> AIUsageFilter {
+        let rawRange = arguments?["time_range"]?.stringValue ?? AIUsageTimeRange.all.rawValue
+        guard let timeRange = AIUsageTimeRange(rawValue: rawRange) else {
+            throw StarcatMCPError.invalidArguments(
+                "time_range must be one of: \(AIUsageTimeRange.allCases.map(\.rawValue).joined(separator: ", "))"
+            )
+        }
+
+        let feature: AIUsageFeature?
+        if let rawFeature = Self.trimmedString(arguments?["feature"]?.stringValue) {
+            guard let parsed = AIUsageFeature(rawValue: rawFeature) else {
+                throw StarcatMCPError.invalidArguments(
+                    "feature must be one of: \(AIUsageFeature.allCases.map(\.rawValue).joined(separator: ", "))"
+                )
+            }
+            feature = parsed
+        } else {
+            feature = nil
+        }
+
+        return AIUsageFilter(
+            timeRange: timeRange,
+            feature: feature,
+            providerID: Self.trimmedString(arguments?["provider_id"]?.stringValue),
+            model: Self.trimmedString(arguments?["model"]?.stringValue)
+        )
+    }
+
     private static func objectSchema(_ properties: [String: Value], required: [String] = []) -> Value {
         .object([
             "type": .string("object"),
@@ -374,7 +605,11 @@ final class StarcatMCPToolRegistry {
         ])
     }
 
-    private static func stringSchema(_ description: String, enumValues: [String]? = nil) -> Value {
+    private static func stringSchema(
+        _ description: String,
+        enumValues: [String]? = nil,
+        defaultValue: String? = nil
+    ) -> Value {
         var schema: [String: Value] = [
             "type": .string("string"),
             "description": .string(description)
@@ -382,7 +617,16 @@ final class StarcatMCPToolRegistry {
         if let enumValues {
             schema["enum"] = .array(enumValues.map(Value.string))
         }
+        if let defaultValue {
+            schema["default"] = .string(defaultValue)
+        }
         return .object(schema)
+    }
+
+    private static func trimmedString(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private static func integerSchema(

@@ -75,7 +75,7 @@ final class CompanionLocalServer {
     private func bind(port: UInt16) {
         guard CompanionConfiguration.allowedPortRange.contains(Int(port)),
               let nwPort = NWEndpoint.Port(rawValue: port) else {
-            configuration.updateServerStatus(.failed)
+            configuration.updateServerStatus(.failed(.invalidPort(port)))
             return
         }
 
@@ -91,16 +91,22 @@ final class CompanionLocalServer {
                     guard let self else { return }
                     switch state {
                     case .ready:
+                        guard self.listener === listener else { return }
                         self.listener = listener
-                        self.configuration.updateBoundPort(port)
                         self.configuration.updateServerStatus(.running)
-                    case .failed:
+                        AppLog.network.info(
+                            "Browser Plugin Service started on 127.0.0.1:\(port, privacy: .public)"
+                        )
+                    case .failed(let error):
+                        guard self.listener === listener else { return }
                         listener?.cancel()
-                        if port < UInt16(CompanionConfiguration.allowedPortRange.upperBound) {
-                            self.bind(port: port + 1)
-                        } else {
-                            self.configuration.updateServerStatus(.failed)
-                        }
+                        self.listener = nil
+                        let failure = Self.serverFailure(for: error, port: port)
+                        self.configuration.updateServerStatus(.failed(failure))
+                        AppLog.network.error(
+                            "Browser Plugin Service failed on 127.0.0.1:\(port, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                        )
+                        Self.recordUnexpectedListenerFailure(failure, error: error, port: port)
                     case .cancelled:
                         if self.listener === listener { self.listener = nil }
                     default:
@@ -111,12 +117,48 @@ final class CompanionLocalServer {
             self.listener = listener
             listener.start(queue: queue)
         } catch {
-            if port < UInt16(CompanionConfiguration.allowedPortRange.upperBound) {
-                bind(port: port + 1)
+            let failure: CompanionConfiguration.ServerFailure
+            if let networkError = error as? NWError {
+                failure = Self.serverFailure(for: networkError, port: port)
             } else {
-                configuration.updateServerStatus(.failed)
+                failure = .listener(error.localizedDescription)
             }
+            listener = nil
+            configuration.updateServerStatus(.failed(failure))
+            AppLog.network.error(
+                "Browser Plugin Service failed on 127.0.0.1:\(port, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            Self.recordUnexpectedListenerFailure(failure, error: error, port: port)
         }
+    }
+
+    /// 端口冲突是用户可以直接处理的配置问题，必须从普通 listener 错误中单独识别。
+    static func serverFailure(
+        for error: NWError,
+        port: UInt16
+    ) -> CompanionConfiguration.ServerFailure {
+        if case .posix(.EADDRINUSE) = error {
+            return .portInUse(port)
+        }
+        return .listener(error.localizedDescription)
+    }
+
+    /// 端口范围和占用都能由用户改设置恢复；其余 listener 错误才属于开发者诊断。
+    private static func recordUnexpectedListenerFailure(
+        _ failure: CompanionConfiguration.ServerFailure,
+        error: Error,
+        port: UInt16
+    ) {
+        guard case .listener = failure else { return }
+        DiagnosticLogStore.record(
+            level: .error,
+            visibility: .issue,
+            category: "browser-plugin",
+            operation: "browserPlugin.listener",
+            message: "Browser Plugin local listener failed unexpectedly",
+            underlying: DiagnosticEvent.summarize(error),
+            context: ["port": String(port)]
+        )
     }
 
     nonisolated private func receive(_ connection: NWConnection) {
@@ -248,12 +290,14 @@ final class CompanionLocalServer {
         } catch CompanionContextError.invalidRepoPath {
             return response(status: 400, body: ["error": "invalid_repo"], origin: origin)
         } catch {
+            Self.recordInternalFailure(endpoint: "repo-context", error: error)
             return response(status: 500, body: ["error": "internal_error"], origin: origin)
         }
     }
 
     private func updateStarStateResponse(request: CompanionHTTPRequest, origin: String?) async -> Data {
         guard let starStateHandler else {
+            Self.recordMissingHandler(endpoint: "star-state")
             return response(status: 500, body: ["error": "internal_error"], origin: origin)
         }
         let payload: CompanionStarStateUpdateRequest
@@ -276,6 +320,7 @@ final class CompanionLocalServer {
             // Bearer key 已通过，但 Starcat 尚未登录 GitHub；用 409 与本地 API 401 区分。
             return response(status: 409, body: ["error": "github_not_authenticated"], origin: origin)
         } catch {
+            Self.recordInternalFailure(endpoint: "star-state", error: error)
             return response(status: 500, body: ["error": "star_state_update_failed"], origin: origin)
         }
     }
@@ -307,6 +352,7 @@ final class CompanionLocalServer {
 
     private func saveNoteResponse(request: CompanionHTTPRequest, origin: String?) async -> Data {
         guard let noteWriter else {
+            Self.recordMissingHandler(endpoint: "notes")
             return response(status: 500, body: ["error": "internal_error"], origin: origin)
         }
         let payload: CompanionNoteSaveRequest
@@ -330,12 +376,14 @@ final class CompanionLocalServer {
         } catch CompanionNoteWriteError.repoNotStarred {
             return response(status: 403, body: ["error": "repo_not_starred"], origin: origin)
         } catch {
+            Self.recordInternalFailure(endpoint: "notes", error: error)
             return response(status: 500, body: ["error": "internal_error"], origin: origin)
         }
     }
 
     private func saveTagsResponse(request: CompanionHTTPRequest, origin: String?) async -> Data {
         guard let tagWriter else {
+            Self.recordMissingHandler(endpoint: "tags")
             return response(status: 500, body: ["error": "internal_error"], origin: origin)
         }
         let payload: CompanionTagsUpdateRequest
@@ -359,12 +407,14 @@ final class CompanionLocalServer {
         } catch CompanionTagWriteError.unknownTagIDs {
             return response(status: 400, body: ["error": "unknown_tag"], origin: origin)
         } catch {
+            Self.recordInternalFailure(endpoint: "tags", error: error)
             return response(status: 500, body: ["error": "internal_error"], origin: origin)
         }
     }
 
     private func saveLibraryStateResponse(request: CompanionHTTPRequest, origin: String?) async -> Data {
         guard let libraryStateWriter else {
+            Self.recordMissingHandler(endpoint: "library-state")
             return response(status: 500, body: ["error": "internal_error"], origin: origin)
         }
         let payload: CompanionLibraryStateUpdateRequest
@@ -378,8 +428,7 @@ final class CompanionLocalServer {
             let result = try await libraryStateWriter.save(
                 owner: payload.owner,
                 repo: payload.repo,
-                state: payload.state,
-                downgradeUsingStatus: payload.downgradeUsingStatus ?? false
+                state: payload.state
             )
             return response(
                 status: 200,
@@ -395,15 +444,15 @@ final class CompanionLocalServer {
             return response(status: 400, body: ["error": "invalid_library_state"], origin: origin)
         } catch CompanionLibraryStateWriteError.repoNotFound {
             return response(status: 404, body: ["error": "repo_not_found"], origin: origin)
-        } catch CompanionLibraryStateWriteError.usingRemovalRequiresConfirmation {
-            return response(status: 409, body: ["error": "using_removal_requires_confirmation"], origin: origin)
         } catch {
+            Self.recordInternalFailure(endpoint: "library-state", error: error)
             return response(status: 500, body: ["error": "internal_error"], origin: origin)
         }
     }
 
     private func openActionResponse(request: CompanionHTTPRequest, origin: String?) async -> Data {
         guard let actionHandler else {
+            Self.recordMissingHandler(endpoint: "open-action")
             return response(status: 500, body: ["error": "internal_error"], origin: origin)
         }
         let payload: CompanionOpenActionRequest
@@ -427,8 +476,38 @@ final class CompanionLocalServer {
         } catch CompanionActionError.requiresPro {
             return response(status: 403, body: ["error": "requires_pro"], origin: origin)
         } catch {
+            Self.recordInternalFailure(endpoint: "open-action", error: error)
             return response(status: 500, body: ["error": "internal_error"], origin: origin)
         }
+    }
+
+    private static func recordInternalFailure(endpoint: String, error: Error) {
+        guard !(error is CancellationError),
+              !(error is NetworkError),
+              !(error is URLError),
+              !(error is EntitlementGateError) else {
+            return
+        }
+        DiagnosticLogStore.record(
+            level: .error,
+            visibility: .issue,
+            category: "browser-plugin",
+            operation: "browserPlugin.internalRequest",
+            message: "Browser Plugin local API returned an internal error",
+            underlying: DiagnosticEvent.summarize(error),
+            context: ["endpoint": endpoint]
+        )
+    }
+
+    private static func recordMissingHandler(endpoint: String) {
+        DiagnosticLogStore.record(
+            level: .critical,
+            visibility: .issue,
+            category: "browser-plugin",
+            operation: "browserPlugin.missingHandler",
+            message: "Browser Plugin local API handler was not assembled",
+            context: ["endpoint": endpoint]
+        )
     }
 
     private func isAllowedOrigin(_ origin: String?) -> Bool {

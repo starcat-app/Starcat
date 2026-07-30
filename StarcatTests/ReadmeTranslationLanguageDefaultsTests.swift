@@ -8,8 +8,8 @@
 //  覆盖目标：
 //  - 中文：简体（`zh-Hans` / `zh-CN` / `zh-SG` / 裸 `zh` / 旧 POSIX `zh_CN`）→ `.simplifiedChinese`；
 //  - 中文：繁体（`zh-Hant` / `zh-TW` / `zh-HK` / `zh-MO` / `zh-Hant-TW`）→ `.traditionalChinese`；
-//  - 日韩：`ja*` / `ko*` → `.japanese` / `.korean`；
-//  - 其他：英文、法文、德文、空串等 → `.english`（fallback）。
+//  - 其余 16 种支持语言按 language code 映射到对应目标；
+//  - 不支持或无效 identifier → `.english`（fallback）。
 //
 //  这部分不测试 `defaultForCurrentLocale()` 本身——它读 `Bundle.main.preferredLocalizations`，
 //  在测试 host 里值不稳定。可注入版本 `defaultLanguage(forLocaleIdentifier:)`
@@ -71,39 +71,42 @@ struct ReadmeTranslationLanguageDefaultsTests {
         )
     }
 
-    // MARK: - Fallback：英文
+    // MARK: - 其余已支持语言
 
-    /// 非中日韩 locale 一律落到英文：这是 HOM-198 的核心改动——原默认值 `.simplifiedChinese`
-    /// 对非中文用户硬塞中文，issue 的核心抱怨即此。
-    @Test("非中日韩 locale → English（fallback）", arguments: [
-        "en",
-        "en-US",
-        "en-GB",
-        "fr",
-        "fr-FR",
-        "de",
-        "de-DE",
-        "es",
-        "es-ES",
-        "pt-BR",
-        "ru",
-        "it",
-        "ar",
-        "vi",
-        "th"
+    @Test("其余目标 locale 映射到对应 README 翻译语言", arguments: [
+        ("en-US", ReadmeTranslationLanguage.english),
+        ("de-DE", ReadmeTranslationLanguage.german),
+        ("fr-FR", ReadmeTranslationLanguage.french),
+        ("es-ES", ReadmeTranslationLanguage.spanish),
+        ("pt-BR", ReadmeTranslationLanguage.brazilianPortuguese),
+        ("it-IT", ReadmeTranslationLanguage.italian),
+        ("ru-RU", ReadmeTranslationLanguage.russian),
+        ("nl-NL", ReadmeTranslationLanguage.dutch),
+        ("pl-PL", ReadmeTranslationLanguage.polish),
+        ("uk-UA", ReadmeTranslationLanguage.ukrainian),
+        ("tr-TR", ReadmeTranslationLanguage.turkish),
+        ("vi-VN", ReadmeTranslationLanguage.vietnamese),
+        ("id-ID", ReadmeTranslationLanguage.indonesian),
+        ("ar-SA", ReadmeTranslationLanguage.arabic),
     ])
-    func nonCJKFallsBackToEnglish(identifier: String) {
+    func supportedIdentifiers(
+        identifier: String,
+        expected: ReadmeTranslationLanguage
+    ) {
         #expect(
-            ReadmeTranslationLanguage.defaultLanguage(forLocaleIdentifier: identifier) == .english
+            ReadmeTranslationLanguage.defaultLanguage(forLocaleIdentifier: identifier) == expected
         )
     }
 
+    // MARK: - Fallback：英文
+
     /// 空 identifier / 完全无法解析的串：Locale.Language 返回 nil languageCode，
     /// 走 default 分支 → `.english`。
-    @Test("空 / 无效 identifier → English（fallback）", arguments: [
+    @Test("不支持 / 无效 identifier → English（fallback）", arguments: [
         "",
         "xx",            // 不存在的语言码
-        "garbage-input"  // 完全不合法
+        "garbage-input", // 完全不合法
+        "th-TH"
     ])
     func invalidIdentifierFallsBackToEnglish(identifier: String) {
         #expect(

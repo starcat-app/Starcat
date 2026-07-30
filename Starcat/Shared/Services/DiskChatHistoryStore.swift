@@ -752,6 +752,14 @@ private final class SQLiteChatHistoryStorageBackend: ChatHistoryStorageBackend {
             self.dbQueue = queue
         } catch {
             AppLog.ai.error("Chat history SQLite open failed: \(error.localizedDescription, privacy: .public)")
+            DiagnosticLogStore.record(
+                level: .critical,
+                visibility: .issue,
+                category: "database",
+                operation: "chatHistory.openDatabase",
+                message: "Chat history database could not be opened or migrated",
+                underlying: DiagnosticEvent.summarize(error)
+            )
             self.dbURL = nil
             self.dbQueue = nil
         }

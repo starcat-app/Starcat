@@ -80,9 +80,6 @@ BuddyBuild/
 CircleCI/
 Travis/
 
-# Starcat local-only admin panel secrets
-pages/_local-admin/config.js
-
 # Linux
 *~
 
@@ -245,3 +242,15 @@ Starcat/Resources/Codebase/codebase
 !.claude/skills/macos-app-skills/build
 
 sparkle-private-key
+
+# AI
+.playwright-cli/
+apple-skills/
+
+
+# 工具
+.cube/
+
+# 其他
+*.mp4
+*.csv

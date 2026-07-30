@@ -34,6 +34,8 @@ struct SidebarHeaderView: View {
     /// HOM-174：Pro 用户标识需要从 AppSettings 获取。
     @Environment(AppSettings.self) private var appSettings
     @Environment(AppDependencies.self) private var dependencies
+    /// 用户名 Pro 渐变随明暗主题切换：浅色要保证对比度，深色对齐暖色头像环。
+    @Environment(\.colorScheme) private var colorScheme
     /// 2026-06-06 A 方案：accountMenu 中"刷新个人信息"项触发 `load(force: true)`，
     /// 同时让贡献草坪和开发语言也跟着刷一下（用户主动刷新时一并更新）。
     @Environment(UserProfileService.self) private var userProfileService
@@ -452,17 +454,40 @@ struct SidebarHeaderView: View {
             .lineLimit(1)
 
         if appSettings.isProUser {
-            // Pro 用户用多色渐变强化身份感；只作用在 Sidebar 用户名，避免污染其它 profile 展示。
-            text.foregroundStyle(
-                LinearGradient(
-                    colors: [.blue, .purple, .pink, .orange, .yellow],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-            )
+            // Pro 用户名渐变分主题：浅色走冷色可读谱，深色走暖色头像环谱。
+            text.foregroundStyle(proIdentityNameGradient)
         } else {
             text
         }
+    }
+
+    /// 侧栏 Pro 用户名渐变（随 `colorScheme` 切换）。
+    ///
+    /// - **深色**：对齐 `UserAvatar.proAvatarRing` 暗色暖环（粉 → 橙 → 金），短 login 不去冷蓝起手。
+    /// - **浅色**：对齐浅色头像环的冷色家族（紫 → 靛 → 蓝），但全部用更深一档的色值；
+    ///   环上的 `#B8D7FF` / 暖金 `#FDE68A` 在浅底上对比度不够，不能直接当文字色。
+    private var proIdentityNameGradient: LinearGradient {
+        let stops: [Gradient.Stop] = if colorScheme == .dark {
+            [
+                .init(color: Color.fromHex6(0xE879F9), location: 0.0),
+                .init(color: Color.fromHex6(0xF472B6), location: 0.38),
+                .init(color: Color.fromHex6(0xFB923C), location: 0.70),
+                .init(color: Color.fromHex6(0xFDE68A), location: 1.0),
+            ]
+        } else {
+            [
+                .init(color: Color.fromHex6(0x7C3AED), location: 0.0),  // deep violet
+                .init(color: Color.fromHex6(0x6366F1), location: 0.40), // indigo
+                .init(color: Color.fromHex6(0x2563EB), location: 0.72), // blue
+                .init(color: Color.fromHex6(0x0284C7), location: 1.0),  // sky，仍深于浅底
+            ]
+        }
+
+        return LinearGradient(
+            stops: stops,
+            startPoint: .leading,
+            endPoint: .trailing
+        )
     }
 
     // MARK: - 三栏统计

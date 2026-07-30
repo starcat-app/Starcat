@@ -13,54 +13,56 @@
 //  - 只在用户操作时调用 AI，不自动批量生成；
 //  - 标签应用是显式动作，AI 结果本身不会直接修改用户数据；
 //  - 成功应用标签后通知 HomeViewModel 刷新 Sidebar 计数与当前列表；
-//  - W4（2026-06-21）：新增 `prepProgress` / `prepTask` 状态机与
-//    `startBackgroundContextPrep(repo:)` 方法。打开 AI 面板时若 DB 里没有
-//    cached insight，就立刻起后台 prep（解析分支 → 下载 ZIP → pack context.xml），
-//    期间「生成摘要」按钮可点，UI 在按钮上方显示 step chip。`generate(repo:)`
-//    入口先 await prep 完成再进入主流程，保证 LLM 拿到最新 context。
+//  - 代码上下文只在用户发起生成 / 重新生成后准备；打开 AI 面板只读取摘要缓存，
+//    不触发分支解析、ZIP 下载或 context.xml 打包。
 //
 
 import Foundation
 import Observation
 
-/// Y1（2026-06-13）：AI 摘要生成的两阶段状态机。
+/// Y1（2026-06-13）：AI 摘要生成的阶段状态机。
 ///
-/// 用户体验目标：在 RepoContextPacker pipeline 跑的几秒 ~ 十几秒里给 UI 一个有信息量的
-/// 进度提示，而不是空白旋转 spinner。
+/// 用户体验目标：在 RepoContextPacker / External Search / 等待首 token 的空档里给 UI
+/// 有信息量的进度提示，而不是空白旋转 spinner。
 ///
-/// 两阶段区分点：
-///   - `preparingContext`：从 `generate(repo:)` 入口开始，直到收到第一个 streaming delta。
-///     语义上覆盖：makeSource（含 RepoContextPacker pack）+ LLM 请求建立连接。
-///   - `streamingSummary`：收到第一个 streaming delta 之后切换；语义 = LLM 输出阶段。
-enum SummaryPhase: Sendable {
+/// 阶段区分点：
+///   - `preparingContext`：代码上下文准备（解析分支 / 下载 ZIP / 打包 XML），可本次跳过。
+///   - `fetchingExternalContext`：设置开启 External Search 时，拉取外部网页资料；
+///     代码上下文已完成，不可再跳过 XML。
+///   - `requestingSummary`：外部材料已结束（或未开启），正在组装 Prompt 并等待 LLM
+///     首个正文 token；不能再取消代码上下文。
+///   - `streamingSummary`：收到第一个 streaming delta 之后；语义 = LLM 输出阶段。
+enum SummaryPhase: Sendable, Equatable {
     case preparingContext
+    case fetchingExternalContext
+    case requestingSummary
     case streamingSummary
 }
 
-/// W4（2026-06-21）：打开 AI 面板时的「后台准备代码上下文」进度状态。
+/// 代码上下文结束后、流式摘要开始前的可见子步骤。
 ///
-/// 设计动机：原 `load(repo:)` 在入口 await `service.cachedInsight(for:)`，里面会跑
-/// `makeSource`（GitHub branches API + 可能 ZIP 下载 + RepoContextPacker.pack），
-/// 用户体感是「打开面板后好几秒看到按钮」。把代码上下文准备拆成「后台 prep + 按
-/// 钮即时可点」两条路径后：
-///   - 按钮不再被前置 IO 阻塞；
-///   - prep 进度通过 step 行可视化（解析分支 / 下载项目代码 / 解压并生成上下文）；
-///   - 用户在 prep 期间点「生成摘要」会先 await prep 完成再进入 generate，保证 LLM
-///     拿到最新 context（避免钱白烧）。
+/// 仅当本次生成冻结了「会跑 External Search」时才展示两段 chip；关闭外部搜索时
+/// 直接停留在 `requestingSummary` 文案，不渲染本枚举。
+enum RequestPrepStep: String, Sendable, Equatable, Hashable {
+    /// `ExternalSearchContextProvider.collect` 进行中。
+    case externalSearch
+    /// 外部搜索已结束（或未开启），等待 LLM 首个正文 token。
+    case requestingLLM
+}
+
+/// 单次摘要生成期间的代码上下文准备状态。
+///
+/// 只有设置中启用代码上下文，并且用户发起生成 / 重新生成时才进入非 idle 状态。
+/// 面板打开阶段始终保持 `.idle`，避免未经用户生成操作就下载仓库源码。
 ///
 /// 状态转移：
-///   - `.idle`（未启动 prep） → toggle off / 已有 cached insight / 未切换 repo
+///   - `.idle` → 未生成、代码上下文关闭或本次生成已经离开准备阶段
 ///   - `.preparing(.resolvingBranch)` → 进入 `RepoAIContextProvider.contextOutcome`
 ///   - `.preparing(.downloadingArchive)` → 进入 `archiveIfNeeded`（cache 命中分支跳过此步）
 ///   - `.preparing(.packingContext)` → 进入 `RepoContextPacker.pack`
-///   - `.ready` → prep 成功；generate 路径会复用此结果（cache hit 路径下走内部 makeSource 复用）
-///   - `.failed(reason)` → prep 失败（如 ZIP 下载失败 / packer 抛错），按钮仍可点，
-///     generate 走降级路径（README-only）+ UI 显示降级 banner
 enum PrepProgress: Sendable, Equatable {
     case idle
     case preparing(step: PrepStep)
-    case ready
-    case failed(reason: ContextDegradationReason)
 }
 
 /// W4：prep 步骤枚举。对应 `RepoAIContextProgress`，但限定到 ViewModel 关心的 3 段。
@@ -90,13 +92,33 @@ final class RepoAIInsightViewModel {
     /// `nil` 表示当前不在生成中。
     private(set) var phase: SummaryPhase?
 
-    /// W4：后台 prep 代码上下文的进度状态。`idle` 表示当前没有 prep 在跑或已 ready。
-    /// UI（`emptySummaryState`）根据此状态在按钮上方显示 step chip 行。
+    /// 本次生成是否由用户主动跳过代码上下文。只用于生成中的即时反馈，不写全局设置。
+    private(set) var didSkipCodeContextForCurrentGeneration = false
+
+    /// 本次生成是否会跑 External Search（点击生成瞬间按 repo + 设置冻结）。
+    /// UI 用它决定是否展示「获取外部资料 → 准备摘要请求」两段 chip。
+    private(set) var usesExternalContextForCurrentGeneration = false
+
+    /// 本次生成的代码上下文准备进度；面板空态不会启动或展示该状态机。
     private(set) var prepProgress: PrepProgress = .idle
 
-    /// W4：当前进行中的后台 prep task。仅在 `prepProgress == .preparing(step:)` 期间非 nil。
-    /// 用户点「生成摘要」时 `generate(repo:)` 会先 `await prepTask?.value` 等其完成。
-    private var prepTask: Task<Void, Never>?
+    /// 本次摘要生成的请求级控制器；负责跳过当前 provider 工作，但不改全局设置。
+    private var currentCodeContextRequest: RepoAICodeContextRequest?
+
+    /// 当前正在生成的仓库 id。虽然 session store 已按 repo 隔离 ViewModel，
+    /// 仍在跳过入口校验 id，防止错误调用改写其它仓库的请求。
+    private var activeGenerationRepoID: Repo.ID?
+
+    /// 生成世代号：session 重置时递增，丢弃已取消 generate 的迟到写回与进度回调。
+    private var generationEpoch: UInt64 = 0
+
+    /// 本 ViewModel 已完成缓存加载的仓库。
+    ///
+    /// `RepoAIInsightSessionStore` 会按 repo 复用 ViewModel；面板收起、切走再切回时
+    /// SwiftUI 会重新触发 `.task`，这里必须把重复 load 收敛成 no-op，否则缓存加载会
+    /// 清掉仍在生成中的 streaming / phase 状态。
+    private var loadedRepoID: Repo.ID?
+    private var loadingRepoID: Repo.ID?
 
     /// Y4：本次摘要生成时代码上下文的降级原因（nil = 成功 或 用户主动关）。
     /// 由 `generate(repo:)` 写入；缓存命中（`load`）路径不写，保持旧摘要 UI 状态干净。
@@ -127,8 +149,28 @@ final class RepoAIInsightViewModel {
     }
 
     func load(repo: Repo) async {
+        // 每个 session 只绑定一个 repo。重复挂载同一面板时直接复用内存状态，
+        // 尤其不能用数据库中的旧摘要覆盖仍在流式生成的新摘要。
+        guard loadedRepoID == nil || loadedRepoID == repo.id else {
+            assertionFailure("RepoAIInsightViewModel cannot be rebound to another repo")
+            return
+        }
+        guard loadedRepoID != repo.id,
+              loadingRepoID != repo.id,
+              !isGenerating,
+              activeGenerationRepoID != repo.id else { return }
+
+        // `cachedInsightFast` / `fetchTags` 期间用户可能已经点了生成；
+        // 用 epoch 门控写回，避免 TOCTOU 把 streaming 状态冲掉。
+        let loadEpoch = generationEpoch
+        loadingRepoID = repo.id
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            if loadingRepoID == repo.id {
+                loadingRepoID = nil
+                isLoading = false
+            }
+        }
         do {
             // W4：换成 fast 路径——只查 DB + JSON decode，**不做** hash 校验。
             // 旧 `cachedInsight(for:)` 内部 await `makeSource`（含 ZIP 下载 / pack），
@@ -140,8 +182,11 @@ final class RepoAIInsightViewModel {
             // 这是显式的 tradeoff（启动延迟 vs 数据新鲜度），与 HOM-199 缓存稳定化
             // 设计目标一致。
             let cached = try await service.cachedInsightFast(for: repo)
-            insight = cached
+            guard canApplyIdleLoad(for: repo.id, loadEpoch: loadEpoch) else { return }
             let currentTags = try await repoTagRepository.fetchTags(forRepo: repo.id)
+            guard canApplyIdleLoad(for: repo.id, loadEpoch: loadEpoch) else { return }
+
+            insight = cached
             appliedTagNames = Set(currentTags.map { $0.name.normalizedTagName })
             errorMessage = nil
             tagErrorMessage = nil
@@ -152,15 +197,12 @@ final class RepoAIInsightViewModel {
             // Y9.3：anysearch 降级原因同款生命周期，load 路径一并清零。
             externalContextDegradationReason = nil
 
-            // W4：只有当「无 cached insight」时才需要 prep code context——
-            // 有 cached insight 的 repo 走「重新生成」按钮时由 `generate` 路径内部
-            // 的 `makeSource` 顺带做 context 检查（cache hit 直接复用，免下载）。
-            // 顺便：repo 切换时必须 cancel 上一个 prep task，避免「切到新 repo 时旧
-            // prep 的 chip 状态机串到新 repo 上」这种串扰。
-            if cached == nil {
-                startBackgroundContextPrep(repo: repo)
-            }
+            // 打开面板只读摘要与标签缓存。代码上下文必须等用户发起生成后再准备，
+            // 避免“只是查看空面板”也产生网络下载和本地 XML。
+            prepProgress = .idle
+            loadedRepoID = repo.id
         } catch {
+            guard canApplyIdleLoad(for: repo.id, loadEpoch: loadEpoch) else { return }
             presentPaywallIfNeeded(error)
             let friendly = UserFacingError.map(
                 error,
@@ -172,74 +214,34 @@ final class RepoAIInsightViewModel {
         }
     }
 
-    /// W4：在后台启动「准备代码上下文」pipeline，进度通过 `prepProgress` 暴露给 UI。
-    ///
-    /// 设计要点：
-    ///   - **不阻塞 UI**：本方法立刻返回，pipeline 在 detached task 里跑，按钮在
-    ///     `prepProgress == .preparing(step:)` 期间保持可点；
-    ///   - **重新进入前 cancel 上一个 task**：repo 切换 / VM 重建场景下防止串扰；
-    ///   - **失败也保留按钮可点**：`.failed(reason)` 让 UI 显示降级 banner，但
-    ///     `generate(repo:)` 路径仍可触发（走 README-only 降级生成）。
-    ///   - **`toggle off` 时 provider 不存在**：`service.prepareContextForGeneration`
-    ///     会立刻返回 `.featureDisabled`，prep 状态停留在 `.idle`，按钮秒到。
-    private func startBackgroundContextPrep(repo: Repo) {
-        // 防御：repo 切换时上一个 prep task 还没完，先 cancel 避免 chip 状态串到新 repo。
-        prepTask?.cancel()
-        prepProgress = .preparing(step: .resolvingBranch)
-        let service = self.service
-
-        // detached：避免继承 ViewModel 的 cancellation（ViewModel 自身没有 cancel，
-        // 但 task 用 [weak self] 即可在 self 释放时让闭包内的 self 变 nil 自然退出）。
-        let task = Task { [weak self] in
-            let outcome: RepoAIContextOutcome
-            do {
-                outcome = try await service.prepareContextForGeneration(for: repo) { step in
-                    // onProgress 回调本身已被 provider 强制 `@MainActor`，直接同步
-                    // 改 prepProgress 即可。但因为外层 Task 没有强制 MainActor，这里
-                    // 通过 MainActor.run 包一层保险（@Observable 必须主线程写）。
-                    MainActor.assumeIsolated {
-                        guard let self else { return }
-                        self.prepProgress = .preparing(step: Self.mapStep(step))
-                    }
-                }
-            } catch is CancellationError {
-                // 用户主动停止 / repo 切换 cancel 都不应降级成失败态；调用方已经把
-                // prepProgress 收回 idle，旧 task 直接退出，避免异步回写污染新 UI。
-                return
-            } catch {
-                outcome = .degraded(.networkUnavailable)
-            }
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard let self else { return }
-                switch outcome {
-                case .success:
-                    // prep 完成。generate 路径会在 cache 命中分支里直接复用本地 xml，
-                    // 不再重跑 prep pipeline。
-                    self.prepProgress = .ready
-                case .featureDisabled:
-                    // 用户关了 toggle（或 provider 没注入）——prep 没启动。
-                    // chip 行淡出，按钮照常可点，generate 走 README-only 路径。
-                    self.prepProgress = .idle
-                case .degraded(let reason):
-                    self.prepProgress = .failed(reason: reason)
-                    AppLog.ai.warning(
-                        "[RepoAIInsightViewModel] background prep degraded for \(repo.fullName, privacy: .public): \(String(describing: reason), privacy: .public)"
-                    )
-                }
-            }
-        }
-        prepTask = task
+    /// load 写回前的二次校验：生成已开始或 session 被重置时丢弃迟到缓存结果。
+    private func canApplyIdleLoad(for repoID: Repo.ID, loadEpoch: UInt64) -> Bool {
+        generationEpoch == loadEpoch
+            && !isGenerating
+            && activeGenerationRepoID != repoID
+            && (loadedRepoID == nil || loadedRepoID == repoID)
     }
 
-    /// 用户显式停止后台代码上下文准备。
+    /// 用户在摘要生成中的“准备代码上下文”行点击停止。
     ///
-    /// 交互语义：停止后进度 chip 直接隐藏；只清理当前下载留下的 `.tmp`，不删除已经
-    /// 完整落盘的共享 ZIP / context 缓存，避免下一次生成失去可复用产物。
-    func cancelContextPreparation(repo: Repo) {
-        prepTask?.cancel()
-        prepTask = nil
+    /// 这不是取消摘要：只取消当前 provider 子任务，并把本次 request 标记为跳过。
+    /// `makeSource` 随后以空 `{codeContext}` 继续组装 metadata + README 等现有上下文；
+    /// 下一次生成会创建全新的 request，因此自动恢复正常代码上下文策略。
+    ///
+    /// 关键约束：`repo` 必须是当前这一次 `generate` 绑定的仓库；换仓后旧面板上的
+    /// 跳过按钮即使还在视图树里，也不能改写新仓库的生成状态。
+    func skipCodeContextForCurrentGeneration(repo: Repo) {
+        guard isGenerating,
+              phase == .preparingContext,
+              activeGenerationRepoID == repo.id else { return }
+
+        didSkipCodeContextForCurrentGeneration = true
+        currentCodeContextRequest?.skip()
         prepProgress = .idle
+        // 跳过 XML 后仍可能继续 External Search；保持与 onContextResolved 一致的阶段语义。
+        phase = usesExternalContextForCurrentGeneration
+            ? .fetchingExternalContext
+            : .requestingSummary
         service.cleanupTemporaryContextPreparation(for: repo)
     }
 
@@ -256,6 +258,11 @@ final class RepoAIInsightViewModel {
         }
     }
 
+    /// 立刻刷新当前真实步骤；缓存命中不会伪造下载或打包事件。
+    private func publishPrepStep(_ step: PrepStep) {
+        prepProgress = .preparing(step: step)
+    }
+
     /// 触发生成 AI 摘要（含可选的标签推荐）。
     ///
     /// R-01 §3.2.7 Step 8：`includeTags` 由调用方根据「窗口打开瞬间冻结的 star 状态」决定。
@@ -263,34 +270,66 @@ final class RepoAIInsightViewModel {
     /// - 未 star（`includeTags == false`）：仅摘要，**不发**标签生成请求
     ///   （未 star 的 repo 没有"绑定标签"语义，强行让 AI 生成无意义且浪费 token）
     func generate(repo: Repo, includeTags: Bool = true) async {
-        // W4：如果后台 prep 还在跑（用户秒点「生成摘要」），先等 prep 完成再进入
-        // generate 主流程——LLM 必须拿到最新 context，不能在 ZIP 下载到一半时就发
-        // 请求。prep 已 ready / idle / failed 都直接跳过 await。
-        // 关键约束：await 期间 UI 仍能看到 `isGenerating == true`（下面赋值），
-        // 按钮会显示 ProgressView（现有 `emptySummaryState` 行为），用户体感是
-        // 「点击后看到加载 → 等了一会 → 开始流式」。
-        if let task = prepTask {
-            _ = await task.value
+        // 重新点「生成摘要」时立刻藏掉上次失败条，避免与「正在准备…」叠显。
+        errorMessage = nil
+        tagErrorMessage = nil
+
+        // 配置校验必须在 isGenerating / 代码上下文准备之前：
+        // 没有可用 AI 服务时，不应进入「解析分支 / 下载 ZIP / 生成 XML」。
+        do {
+            try service.ensureGenerationClientsReady(
+                includeSummary: true,
+                includeTags: includeTags
+            )
+        } catch {
+            presentPaywallIfNeeded(error)
+            presentGenerateFailure(error)
+            return
         }
 
+        let codeContextRequest = RepoAICodeContextRequest()
+        let usesCodeContext = service.isCodeContextEnabled
+        // 把点击瞬间的开关状态冻结到本次请求：生成过程中即使用户在设置里打开开关，
+        // 本次也不会突然开始下载 / 外部搜索；下一次生成再使用新设置。
+        let usesExternalContext = service.isExternalContextAllowed(for: repo)
+        if !usesCodeContext {
+            codeContextRequest.skip()
+        }
+
+        // 作废任何残留的旧世代（例如上一仓未完成生成），再绑定本次 repo。
+        generationEpoch &+= 1
+        let runEpoch = generationEpoch
+        activeGenerationRepoID = repo.id
+        currentCodeContextRequest = codeContextRequest
+        didSkipCodeContextForCurrentGeneration = false
+        usesExternalContextForCurrentGeneration = usesExternalContext
         isGenerating = true
         streamingSummaryText = ""
-        // Y1：入口先设 preparingContext，让 UI 在 makeSource（含 RepoContextPacker）期间
-        // 显示"准备代码上下文…"文案。首个 streaming delta 到来时再切到 streamingSummary。
-        phase = .preparingContext
+        // 标签 hints、README 等本地材料会先读取；真正收到 provider 进度事件后再切到
+        // `.preparingContext`，避免在尚未解析分支时提前展示“解析分支”假状态。
+        // External Search 同理：等 `onExternalContextProgress(.started)` / `onContextResolved`
+        // 再进入 `.fetchingExternalContext`，不要在 ZIP/XML 阶段误标成外搜。
+        phase = .requestingSummary
+        prepProgress = .idle
         defer {
-            isGenerating = false
-            streamingSummaryText = nil
-            phase = nil
-            // W4：清掉 prepTask 引用，让下一次 `load(repo:)` 重新判断要不要启动新 prep。
-            // prepProgress 保留 .ready/.failed 不清零，避免用户在 generate 期间看到
-            // chip 行"抖回去"。
+            // 只有当前世代结束时才清 UI 生成态；被换仓作废的旧 generate 收尾不得清掉新生成。
+            if generationEpoch == runEpoch {
+                isGenerating = false
+                streamingSummaryText = nil
+                phase = nil
+                currentCodeContextRequest = nil
+                prepProgress = .idle
+                usesExternalContextForCurrentGeneration = false
+                didSkipCodeContextForCurrentGeneration = false
+                activeGenerationRepoID = nil
+            }
         }
+
         do {
             // 2026-06-14 dong4j 反馈：单仓路径之前漏传 hints，AI 不知道用户已有标签库 →
             // 容易生成「向量搜索 / Vector Search / 向量检索」这种同义不同名标签。
             // 与批量 AI 整理路径走同一份 `RepoAIInsightService.makeTagHints` 工厂，
-            // 信号源单一：repo 自身标签（强信号）+ 全库高频前 30（弱信号），见 helper 注释。
+            // 信号源单一：repo 自身标签（强信号）+ 字符预算内的全库复用词表，见 helper 注释。
             // includeTags == false 时不构造 hints，节省两次 DB 查询。
             let hints: AITagHints = includeTags
                 ? await RepoAIInsightService.makeTagHints(
@@ -299,16 +338,49 @@ final class RepoAIInsightViewModel {
                     tagRepository: tagRepository
                 )
                 : .empty
+            guard generationEpoch == runEpoch else { return }
+
             let result = try await service.generateInsight(
                 for: repo,
                 existingTagHints: hints,
-                includeTags: includeTags
+                includeTags: includeTags,
+                codeContextRequest: codeContextRequest,
+                onContextProgress: { [weak self] progress in
+                    guard let self,
+                          self.generationEpoch == runEpoch,
+                          usesCodeContext,
+                          !codeContextRequest.isSkipped else { return }
+                    self.phase = .preparingContext
+                    self.publishPrepStep(Self.mapStep(progress))
+                },
+                onContextResolved: { [weak self] in
+                    guard let self, self.generationEpoch == runEpoch else { return }
+                    self.prepProgress = .idle
+                    // 代码上下文结束后：有外部搜索则先进入该阶段，否则直接准备 LLM 请求。
+                    self.phase = usesExternalContext
+                        ? .fetchingExternalContext
+                        : .requestingSummary
+                },
+                onExternalContextProgress: { [weak self] progress in
+                    guard let self,
+                          self.generationEpoch == runEpoch,
+                          usesExternalContext else { return }
+                    switch progress {
+                    case .started:
+                        self.phase = .fetchingExternalContext
+                    case .finished:
+                        self.phase = .requestingSummary
+                    }
+                }
             ) { [weak self] partial in
-                self?.streamingSummaryText = partial
+                guard let self, self.generationEpoch == runEpoch else { return }
+                self.streamingSummaryText = partial
                 // 第一次 delta 时切阶段——之后所有 delta 都已经是 streamingSummary，
                 // 不需要 if 判等比较（赋值同款值开销可忽略）。
-                self?.phase = .streamingSummary
+                self.phase = .streamingSummary
             }
+            guard generationEpoch == runEpoch else { return }
+
             insight = result.insight
             tagErrorMessage = result.tagErrorMessage
             // Y4：透传降级原因到 UI banner。
@@ -317,15 +389,70 @@ final class RepoAIInsightViewModel {
             externalContextDegradationReason = result.externalContextDegradationReason
             errorMessage = nil
         } catch {
+            guard generationEpoch == runEpoch else { return }
             presentPaywallIfNeeded(error)
-            let friendly = UserFacingError.map(
-                error,
-                operation: String.l10n("diagnostics.operation.generateAIInsight"),
-                service: "AI"
-            )
-            errorMessage = friendly.message
-            friendly.record(category: "ai", operation: "insight.generate", service: "ai-provider")
+            presentGenerateFailure(error)
         }
+    }
+
+    /// App 级 session store 清理（例如切换登录用户）时作废本仓运行态。
+    ///
+    /// 先递增 epoch 再取消 Task，可保证取消错误与迟到的 streaming 回调都被丢弃；
+    /// `RepoAICodeContextRequest.skip()` 只终止当前代码上下文子任务，不改全局设置。
+    func invalidateForSessionStoreReset() {
+        generationEpoch &+= 1
+        currentCodeContextRequest?.skip()
+        currentCodeContextRequest = nil
+        activeGenerationRepoID = nil
+        isGenerating = false
+        streamingSummaryText = nil
+        phase = nil
+        prepProgress = .idle
+        usesExternalContextForCurrentGeneration = false
+        didSkipCodeContextForCurrentGeneration = false
+        loadedRepoID = nil
+        loadingRepoID = nil
+        isLoading = false
+    }
+
+    /// 把摘要生成失败分成两类用户文案：
+    /// 1. 本地尚未配置 AI 服务（`RepoAIInsightError` / 明确的配置类 `AIClientError`）；
+    /// 2. 已发起真实 AI 请求后失败（网络、鉴权、模型/URL 错误等），给出可行动建议。
+    private func presentGenerateFailure(_ error: Error) {
+        let friendly = UserFacingError.map(
+            error,
+            operation: String.l10n("diagnostics.operation.generateAIInsight"),
+            service: "AI"
+        )
+        errorMessage = Self.userVisibleGenerateFailureMessage(for: error)
+        friendly.record(category: "ai", operation: "insight.generate", service: "ai-provider")
+    }
+
+    private static func userVisibleGenerateFailureMessage(for error: Error) -> String {
+        if let insightError = error as? RepoAIInsightError {
+            return insightError.localizedDescription
+        }
+        if let aiError = error as? AIClientError {
+            switch aiError {
+            case .missingAPIKey, .invalidBaseURL, .authenticationRejected, .paymentRequired:
+                return aiError.localizedDescription
+            case .invalidChatHistory, .emptyResponse, .responseTruncated, .modelListRequestFailed,
+                 .rateLimited, .requestRejected, .networkUnavailable, .timedOut, .requestFailed:
+                return String(
+                    format: String.l10n("ai.assistant.summary.error.requestFailedFormat"),
+                    aiError.localizedDescription
+                )
+            }
+        }
+        let detail = error.localizedDescription
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if detail.isEmpty {
+            return String.l10n("ai.assistant.summary.error.requestFailed")
+        }
+        return String(
+            format: String.l10n("ai.assistant.summary.error.requestFailedFormat"),
+            detail
+        )
     }
 
     func applyTag(_ suggestion: AITagSuggestion, repo: Repo) async {
@@ -358,11 +485,21 @@ final class RepoAIInsightViewModel {
 
     /// 找到同名标签直接复用；否则按 `TagAutoVisual` 共享算法挑色 + 挑图标后落库。
     ///
-    /// 视觉与「批量 AI 整理」（`BatchAIQueueService`）走同一份 FNV-1a 算法，确保
-    /// AI 推荐路径上自动建出来的标签风格统一，且同名标签每次新建落到同一 (颜色, 图标)。
+    /// 只有详情页的人工确认路径允许新建；批量 AI 整理只复用已有标签。新建时继续走
+    /// `TagAutoVisual` 的 FNV-1a 算法，保证同名标签稳定落到同一 (颜色, 图标)。
     /// 详细约束见 `TagAutoVisual` 注释。
     private func findOrCreateTag(named name: String) async throws -> Tag {
         if let existing = try await tagRepository.findByName(name) {
+            return existing
+        }
+        // SQLite `name` 唯一约束默认区分大小写；AI 即使只改了大小写 / 空格 / 连字符，
+        // 精确查询也会 miss 并创建重复项。手动确认新建前先做一次 AI 专用宽松匹配，
+        // 仅当词表里确实没有等价形式时才继续创建。
+        let key = AITagSuggestionPolicy.canonicalKey(name)
+        let allTags = try await tagRepository.fetchAll()
+        if let existing = allTags.first(where: {
+            AITagSuggestionPolicy.canonicalKey($0.name) == key
+        }) {
             return existing
         }
         let now = ISO8601DateFormatter.shared.string(from: Date())
@@ -390,6 +527,236 @@ final class RepoAIInsightViewModel {
         guard let gateError = error as? EntitlementGateError else { return }
         paywallContext = ProPaywallContext(feature: gateError.feature, message: gateError.localizedDescription)
     }
+}
+
+/// 单仓 AI 摘要的 App 级会话表。
+///
+/// 为什么放在依赖容器而不是 SwiftUI View：
+/// - 内联浮层会随 repo 切换和折叠而销毁；View 持有 Task 会让进度与流式文本一起丢失；
+/// - 每个 repo 独占一个 ViewModel 与 Task，天然隔离「跳过本次」、阶段和错误状态；
+/// - Task 由本 Store 持有，因此 A、B 可以并发生成，切回任一仓都能恢复实时状态。
+///
+/// 这是进程内会话，不做磁盘恢复。App 退出后只有成功写入数据库的最终摘要会保留。
+///
+/// 空闲会话（无 running task）受 LRU 上限约束，避免「看过的仓」永久钉在内存里；
+/// 正在生成的会话永不淘汰，直到任务结束或用户切换账号。
+@MainActor
+@Observable
+final class RepoAIInsightSessionStore {
+    private struct RunningTask {
+        let id: UUID
+        let repo: Repo
+        let task: Task<Void, Never>
+        var wasBackgrounded: Bool
+    }
+
+    private struct FinishedTask {
+        let repo: Repo
+        let state: RepoAISummaryBackgroundTask.State
+    }
+
+    /// 生产默认空闲会话上限；测试可注入更小值验证淘汰。
+    static let defaultMaxIdleSessionCount = 24
+    /// 后台摘要完成/失败后保留一小段时间，给用户确认结果并支持点击返回。
+    static let finishedTaskRetention: Duration = .seconds(5)
+
+    private let service: RepoAIInsightService
+    private let tagRepository: any TagRepositoryProtocol
+    private let repoTagRepository: any RepoTagRepositoryProtocol
+    private let maxIdleSessionCount: Int
+    private var viewModels: [Repo.ID: RepoAIInsightViewModel] = [:]
+    private var runningTasks: [Repo.ID: RunningTask] = [:]
+    private var finishedTasks: [Repo.ID: FinishedTask] = [:]
+    private var finishedExpiryTasks: [Repo.ID: Task<Void, Never>] = [:]
+    /// 同一 repo 可能同时开着内联面板和独立窗口，因此不能只存 Bool。
+    private var visiblePanelCounts: [Repo.ID: Int] = [:]
+    /// 最近访问的空闲/活跃 repo，队尾最新；淘汰只扫无 running task 的前缀。
+    private var lruOrder: [Repo.ID] = []
+
+    init(
+        service: RepoAIInsightService,
+        tagRepository: any TagRepositoryProtocol,
+        repoTagRepository: any RepoTagRepositoryProtocol,
+        maxIdleSessionCount: Int = RepoAIInsightSessionStore.defaultMaxIdleSessionCount
+    ) {
+        self.service = service
+        self.tagRepository = tagRepository
+        self.repoTagRepository = repoTagRepository
+        self.maxIdleSessionCount = max(1, maxIdleSessionCount)
+    }
+
+    /// 同一 repo 始终返回同一 ViewModel；不同 repo 的运行态互不共享。
+    func viewModel(for repoID: Repo.ID) -> RepoAIInsightViewModel {
+        if let existing = viewModels[repoID] {
+            touch(repoID)
+            return existing
+        }
+        let viewModel = RepoAIInsightViewModel(
+            service: service,
+            tagRepository: tagRepository,
+            repoTagRepository: repoTagRepository
+        )
+        viewModels[repoID] = viewModel
+        touch(repoID)
+        evictIdleSessionsIfNeeded()
+        return viewModel
+    }
+
+    /// 启动由 Store 托管的生成 Task。
+    ///
+    /// 不把 Task 交给 Button / `.task` 生命周期持有，避免视图切换时 SwiftUI 取消工作。
+    /// 每仓同一时间只允许一个生成；其它仓库不受影响，可以并行执行。
+    func startGeneration(for repo: Repo, includeTags: Bool) {
+        guard runningTasks[repo.id] == nil else { return }
+
+        finishedExpiryTasks[repo.id]?.cancel()
+        finishedExpiryTasks[repo.id] = nil
+        finishedTasks[repo.id] = nil
+        let viewModel = viewModel(for: repo.id)
+        let taskID = UUID()
+        let task = Task { [weak self, viewModel] in
+            await viewModel.generate(repo: repo, includeTags: includeTags)
+            self?.finishGeneration(for: repo.id, taskID: taskID)
+        }
+        runningTasks[repo.id] = RunningTask(
+            id: taskID,
+            repo: repo,
+            task: task,
+            wasBackgrounded: visiblePanelCounts[repo.id, default: 0] == 0
+        )
+        touch(repo.id)
+    }
+
+    /// 摘要面板挂载/卸载时维护引用计数；任务只在所有面板都不可见时进入 Sidebar。
+    func panelDidAppear(for repoID: Repo.ID) {
+        visiblePanelCounts[repoID, default: 0] += 1
+    }
+
+    func panelDidDisappear(for repoID: Repo.ID) {
+        let next = max(0, visiblePanelCounts[repoID, default: 0] - 1)
+        if next == 0 {
+            visiblePanelCounts[repoID] = nil
+            if var running = runningTasks[repoID] {
+                running.wasBackgrounded = true
+                runningTasks[repoID] = running
+            }
+        } else {
+            visiblePanelCounts[repoID] = next
+        }
+    }
+
+    /// Sidebar 只展示面板不可见的运行任务，以及曾进入后台的短暂完成态。
+    var backgroundTasks: [RepoAISummaryBackgroundTask] {
+        let running = runningTasks.values.compactMap { entry -> RepoAISummaryBackgroundTask? in
+            guard visiblePanelCounts[entry.repo.id, default: 0] == 0 else { return nil }
+            let phase = viewModels[entry.repo.id]?.phase
+            return RepoAISummaryBackgroundTask(repo: entry.repo, state: .running(phase))
+        }
+        let finished = finishedTasks.values.compactMap { entry -> RepoAISummaryBackgroundTask? in
+            guard visiblePanelCounts[entry.repo.id, default: 0] == 0 else { return nil }
+            return RepoAISummaryBackgroundTask(repo: entry.repo, state: entry.state)
+        }
+        return (running + finished).sorted { lhs, rhs in
+            if lhs.state.sortPriority != rhs.state.sortPriority {
+                return lhs.state.sortPriority < rhs.state.sortPriority
+            }
+            return lhs.repo.fullName.localizedCaseInsensitiveCompare(rhs.repo.fullName) == .orderedAscending
+        }
+    }
+
+    /// 登录用户变化时清空所有进程内状态，防止旧账号摘要状态显示到新账号。
+    ///
+    /// 必须等待取消真正完成后再允许依赖容器切换数据库；只发出 `cancel()` 就返回，
+    /// 迟到的摘要持久化可能落进新用户数据库，造成跨账号数据污染。
+    func removeAll() async {
+        let tasks = runningTasks.values.map(\.task)
+        runningTasks.removeAll()
+        viewModels.values.forEach { $0.invalidateForSessionStoreReset() }
+        viewModels.removeAll()
+        finishedTasks.removeAll()
+        finishedExpiryTasks.values.forEach { $0.cancel() }
+        finishedExpiryTasks.removeAll()
+        visiblePanelCounts.removeAll()
+        lruOrder.removeAll()
+        tasks.forEach { $0.cancel() }
+        for task in tasks {
+            await task.value
+        }
+    }
+
+    /// 测试与诊断用：当前进程内会话数（含正在生成的仓）。
+    var retainedSessionCount: Int { viewModels.count }
+
+    private func finishGeneration(for repoID: Repo.ID, taskID: UUID) {
+        guard let running = runningTasks[repoID], running.id == taskID else { return }
+        runningTasks[repoID] = nil
+        if running.wasBackgrounded {
+            let state: RepoAISummaryBackgroundTask.State =
+                viewModels[repoID]?.errorMessage == nil ? .completed : .failed
+            finishedTasks[repoID] = FinishedTask(repo: running.repo, state: state)
+            scheduleFinishedTaskExpiry(for: repoID)
+        }
+        // 任务结束后才允许按空闲上限淘汰；生成中的仓必须始终可切回。
+        evictIdleSessionsIfNeeded()
+    }
+
+    private func scheduleFinishedTaskExpiry(for repoID: Repo.ID) {
+        finishedExpiryTasks[repoID]?.cancel()
+        finishedExpiryTasks[repoID] = Task { [weak self] in
+            try? await Task.sleep(for: Self.finishedTaskRetention)
+            guard !Task.isCancelled else { return }
+            self?.finishedTasks[repoID] = nil
+            self?.finishedExpiryTasks[repoID] = nil
+        }
+    }
+
+    private func touch(_ repoID: Repo.ID) {
+        if let index = lruOrder.firstIndex(of: repoID) {
+            lruOrder.remove(at: index)
+        }
+        lruOrder.append(repoID)
+    }
+
+    /// 只驱逐「无 running task」的最旧会话；正在生成的仓始终保留。
+    private func evictIdleSessionsIfNeeded() {
+        var idleCount = viewModels.keys.reduce(into: 0) { count, repoID in
+            if runningTasks[repoID] == nil { count += 1 }
+        }
+        guard idleCount > maxIdleSessionCount else { return }
+
+        var index = 0
+        while idleCount > maxIdleSessionCount, index < lruOrder.count {
+            let candidate = lruOrder[index]
+            if runningTasks[candidate] == nil, viewModels[candidate] != nil {
+                viewModels[candidate] = nil
+                lruOrder.remove(at: index)
+                idleCount -= 1
+                continue
+            }
+            index += 1
+        }
+    }
+}
+
+/// Sidebar 使用的单仓摘要后台任务只读快照。
+struct RepoAISummaryBackgroundTask: Identifiable {
+    enum State: Equatable {
+        case running(SummaryPhase?)
+        case completed
+        case failed
+
+        fileprivate var sortPriority: Int {
+            switch self {
+            case .running: 0
+            case .failed: 1
+            case .completed: 2
+            }
+        }
+    }
+
+    var id: Repo.ID { repo.id }
+    let repo: Repo
+    let state: State
 }
 
 private extension String {

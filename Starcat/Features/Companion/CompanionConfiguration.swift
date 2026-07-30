@@ -16,11 +16,38 @@ import Observation
 @MainActor
 @Observable
 final class CompanionConfiguration {
-    enum ServerStatus: String, Equatable {
+    enum ServerFailure: Equatable {
+        case portInUse(UInt16)
+        case invalidPort(UInt16)
+        case listener(String)
+
+        /// 设置页、菜单栏和 Toolbar 共用结构化失败原因，避免三处各自猜测底层错误。
+        var localizedDescription: String {
+            switch self {
+            case .portInUse(let port):
+                return String(
+                    format: String.l10n("settings.integration.browserPlugin.port.error.inUseFormat"),
+                    Int(port)
+                )
+            case .invalidPort(let port):
+                return String(
+                    format: String.l10n("settings.integration.browserPlugin.port.error.invalidFormat"),
+                    Int(port)
+                )
+            case .listener(let message):
+                return String(
+                    format: String.l10n("settings.integration.browserPlugin.status.failedFormat"),
+                    message
+                )
+            }
+        }
+    }
+
+    enum ServerStatus: Equatable {
         case stopped
         case starting
         case running
-        case failed
+        case failed(ServerFailure)
     }
 
     private enum Key {
@@ -29,7 +56,7 @@ final class CompanionConfiguration {
     }
 
     static let defaultPort: UInt16 = 5051
-    static let allowedPortRange: ClosedRange<Int> = 5051...5060
+    static let allowedPortRange: ClosedRange<Int> = 1024...65_535
     /// 进程级配置实例。设置页和菜单栏入口必须观察同一份对象，否则从菜单栏切换
     /// Browser Plugin Service 后，设置页会继续显示旧状态。
     static let shared = CompanionConfiguration()
@@ -60,10 +87,13 @@ final class CompanionConfiguration {
         isEnabled = defaults.bool(forKey: Key.enabled)
     }
 
-    func updateBoundPort(_ value: UInt16) {
-        guard Self.allowedPortRange.contains(Int(value)) else { return }
-        port = value
-        defaults.set(Int(value), forKey: Key.port)
+    /// 只保存用户明确选择的端口。服务监听成功或失败都不能反向改写该值。
+    @discardableResult
+    func updateConfiguredPort(_ value: Int) -> Bool {
+        guard Self.allowedPortRange.contains(value) else { return false }
+        port = UInt16(value)
+        defaults.set(value, forKey: Key.port)
+        return true
     }
 
     func updateServerStatus(_ value: ServerStatus) {

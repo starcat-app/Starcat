@@ -2,10 +2,10 @@
 //  RAGWorkspaceErrorSheet.swift
 //  Starcat
 //
-//  RAG 工作台 / 知识库浏览器的用户可见错误面板。
+//  RAG 工作台 / 知识库浏览器的用户可见错误提示。
 //
 //  关键约束：界面只展示友好文案，不暴露 CancellationError / GRDB / HTTP 等内部细节；
-//  技术细节仅随「反馈」邮件发给开发者，避免用户面对无法理解的系统异常串。
+//  技术细节仅随「反馈」邮件发给开发者；视觉与键盘行为交给 macOS 原生 alert。
 //
 
 import AppKit
@@ -14,12 +14,40 @@ import SwiftUI
 /// RAG 错误反馈收件人（与 About / 菜单「联系作者」一致）。
 enum RAGWorkspaceFeedbackMail {
     static let address = "dong4j@gmail.com"
+
+    /// 打开系统邮件客户端；正文附带版本与技术细节供排障。
+    static func open(for error: RAGWorkspaceError) {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
+        let trimmedDetail = error.technicalDetail.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = """
+        \(String.l10n("rag.workspace.error.feedback.bodyIntro"))
+
+        ---
+        Starcat \(version) (\(build))
+        \(ISO8601DateFormatter.shared.string(from: Date()))
+
+        \(trimmedDetail.isEmpty ? String.l10n("rag.workspace.error.feedback.noDetail") : trimmedDetail)
+        """
+
+        var components = URLComponents()
+        components.scheme = "mailto"
+        components.path = address
+        components.queryItems = [
+            URLQueryItem(name: "subject", value: String.l10n("rag.workspace.error.feedback.subject")),
+            URLQueryItem(name: "body", value: body)
+        ]
+        guard let url = components.url else { return }
+        NSWorkspace.shared.open(url)
+    }
 }
 
 /// 工作台只向用户暴露下一步操作；底层 Provider、HTTP 与数据库细节保留在 `technicalDetail`，
 /// 仅随反馈邮件发送。这样既能恢复问题，也不会把内部错误字符串当成产品文案。
 enum RAGWorkspaceErrorKind: Equatable {
     case configuration
+    case embeddingConfiguration
+    case embeddingRequest
     case authentication
     case network
     case timeout
@@ -55,6 +83,8 @@ struct RAGWorkspaceError: Identifiable {
     var titleKey: String {
         switch kind {
         case .configuration, .authentication: return "rag.workspace.error.configuration.title"
+        case .embeddingConfiguration: return "rag.workspace.error.embeddingConfiguration.title"
+        case .embeddingRequest: return "rag.workspace.error.embeddingRequest.title"
         case .network, .timeout: return "rag.workspace.error.network.title"
         case .planner: return "rag.workspace.error.planner.title"
         case .attachment: return "rag.workspace.error.attachment.title"
@@ -66,6 +96,8 @@ struct RAGWorkspaceError: Identifiable {
     var messageKey: String {
         switch kind {
         case .configuration: return "rag.workspace.error.configuration.message"
+        case .embeddingConfiguration: return "rag.workspace.error.embeddingConfiguration.message"
+        case .embeddingRequest: return "rag.workspace.error.embeddingRequest.message"
         case .authentication: return "rag.workspace.error.authentication.message"
         case .network: return "rag.workspace.error.network.message"
         case .timeout: return "rag.workspace.error.timeout.message"
@@ -76,9 +108,20 @@ struct RAGWorkspaceError: Identifiable {
         }
     }
 
+    /// 向量化领域错误本身已经是本地化、可执行的产品文案，直接展示具体原因；
+    /// 其他错误仍用固定文案，避免把 HTTP / GRDB 等内部细节暴露给用户。
+    var messageText: String {
+        switch kind {
+        case .embeddingConfiguration, .embeddingRequest:
+            return technicalDetail
+        case .configuration, .authentication, .network, .timeout, .planner, .attachment, .generation, .unknown:
+            return String.l10n(messageKey)
+        }
+    }
+
     var action: RAGWorkspaceErrorAction {
         switch kind {
-        case .configuration, .authentication: return .openAISettings
+        case .configuration, .embeddingConfiguration, .embeddingRequest, .authentication: return .openAISettings
         case .network: return .checkNetwork
         case .timeout, .planner, .generation: return .retry
         case .attachment: return .removeAttachments
@@ -99,11 +142,24 @@ struct RAGWorkspaceError: Identifiable {
     private static func classify(error: Error?, detail: String) -> RAGWorkspaceErrorKind {
         if error is RAGAttachmentError { return .attachment }
         if error is RAGQueryPlannerError { return .planner }
+        if let error = error as? AIEmbeddingError {
+            if error.isConfigurationIssue { return .embeddingConfiguration }
+            switch error {
+            case .authenticationRejected: return .authentication
+            case .networkUnavailable, .rateLimited: return .network
+            case .timedOut: return .timeout
+            case .modelRequestRejected, .invalidResponse, .emptyResponse, .requestFailed:
+                return .embeddingRequest
+            case .missingProvider, .providerUnavailable, .missingAPIKey, .missingModel, .incompatibleModel:
+                return .embeddingConfiguration
+            }
+        }
         if let error = error as? AIClientError {
             switch error {
-            case .missingAPIKey, .invalidBaseURL: return .configuration
+            case .missingAPIKey, .invalidBaseURL, .authenticationRejected, .paymentRequired: return .configuration
             case .invalidChatHistory, .emptyResponse, .responseTruncated: return .generation
-            case .modelListRequestFailed: return .network
+            case .modelListRequestFailed, .rateLimited, .networkUnavailable, .timedOut: return .network
+            case .requestRejected, .requestFailed: return .generation
             }
         }
         if let error = error as? GitHubRemoteContextError,
@@ -130,80 +186,59 @@ struct RAGWorkspaceError: Identifiable {
     }
 }
 
-/// 用 sheet 替代系统 alert：标题 + 友好说明 + 关闭 / 邮件反馈。
-struct RAGWorkspaceErrorSheet: View {
-    let error: RAGWorkspaceError
-    let onAction: (RAGWorkspaceErrorAction) -> Void
-    let onDismiss: () -> Void
+extension View {
+    /// 用系统 alert 呈现 RAG 错误。macOS 负责应用图标、窗口附着、按钮顺序与 Return/Esc，
+    /// 避免自绘大圆角 Sheet 与桌面平台交互习惯冲突。
+    func ragWorkspaceErrorAlert(
+        error: Binding<RAGWorkspaceError?>,
+        onAction: @escaping (RAGWorkspaceError) -> Void
+    ) -> some View {
+        modifier(RAGWorkspaceErrorAlertModifier(error: error, onAction: onAction))
+    }
+}
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.title2)
-                    .foregroundStyle(.orange)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(LocalizedStringKey(error.titleKey))
-                        .font(.headline)
-                    Text(LocalizedStringKey(error.messageKey))
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 8)
-                SheetCloseButton(action: onDismiss)
+private struct RAGWorkspaceErrorAlertModifier: ViewModifier {
+    @Binding var error: RAGWorkspaceError?
+    let onAction: (RAGWorkspaceError) -> Void
+
+    private var isPresented: Binding<Bool> {
+        Binding(
+            get: { error != nil },
+            set: { isPresented in
+                if !isPresented { error = nil }
             }
-
-            HStack(spacing: 10) {
-                if error.action != .dismiss {
-                    Button(LocalizedStringKey(error.actionKey)) {
-                        onAction(error.action)
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-
-                Button("rag.workspace.error.feedback") {
-                    openFeedbackMail()
-                }
-                .buttonStyle(.bordered)
-
-                Spacer(minLength: 0)
-
-                Button(error.action == .dismiss ? LocalizedStringKey(error.actionKey) : "common.close") {
-                    onDismiss()
-                }
-                .buttonStyle(.bordered)
-                .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(20)
-        .frame(width: 420)
-        .background(Color(nsColor: .windowBackgroundColor))
+        )
     }
 
-    /// 打开系统邮件客户端；正文附带版本与技术细节供排障。
-    private func openFeedbackMail() {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
-        let trimmedDetail = error.technicalDetail.trimmingCharacters(in: .whitespacesAndNewlines)
-        let body = """
-        \(String.l10n("rag.workspace.error.feedback.bodyIntro"))
+    func body(content: Content) -> some View {
+        let titleKey = LocalizedStringKey(error?.titleKey ?? "rag.workspace.error.title")
 
-        ---
-        Starcat \(version) (\(build))
-        \(ISO8601DateFormatter.shared.string(from: Date()))
+        content.alert(
+            titleKey,
+            isPresented: isPresented,
+            presenting: error
+        ) { presentedError in
+            if presentedError.action != .dismiss {
+                Button(LocalizedStringKey(presentedError.actionKey)) {
+                    onAction(presentedError)
+                    error = nil
+                }
+                .keyboardShortcut(.defaultAction)
+            }
 
-        \(trimmedDetail.isEmpty ? String.l10n("rag.workspace.error.feedback.noDetail") : trimmedDetail)
-        """
+            Button("rag.workspace.error.feedback") {
+                RAGWorkspaceFeedbackMail.open(for: presentedError)
+                error = nil
+            }
 
-        var components = URLComponents()
-        components.scheme = "mailto"
-        components.path = RAGWorkspaceFeedbackMail.address
-        components.queryItems = [
-            URLQueryItem(name: "subject", value: String.l10n("rag.workspace.error.feedback.subject")),
-            URLQueryItem(name: "body", value: body)
-        ]
-        guard let url = components.url else { return }
-        NSWorkspace.shared.open(url)
+            if presentedError.action == .dismiss {
+                Button("common.close") { error = nil }
+                    .keyboardShortcut(.defaultAction)
+            } else {
+                Button("common.close", role: .cancel) { error = nil }
+            }
+        } message: { presentedError in
+            Text(presentedError.messageText)
+        }
     }
 }

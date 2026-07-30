@@ -300,19 +300,33 @@ xcodegen generate && make run
 
 ```bash
 cd supports
-make fly-backup-trending          # 只备份 trending
+make fly-backup-weekly            # 一致性备份 weekly 的 SQLite + weekly-repo
 make fly-backup-all               # 顺序备份有状态 App
-
-# 短暂停机后备份（SQLite 一致性更好，约 20–30s 不可用）
-FLY_BACKUP_STOP=1 make fly-backup-trending
 ```
+
+备份脚本不会停止或启动 Machine。它会先对该 Machine 挂载的 Fly Volume 创建平台级
+Snapshot，并从快照列表识别新建 ID 后轮询至状态为 `created`；这避免依赖不同 fly CLI
+版本的创建命令输出。平台快照创建失败或 5 分钟内未完成时，脚本会退出，不会继续本地归档。
+随后它会在远端 `/tmp` 用 `VACUUM INTO` 为对应 SQLite 主库创建一致性
+副本，并在归档前排除运行中的 `.db`、`.db-wal`、`.db-shm`；归档中的 `data/weekly.db`
+因此可独立恢复。`weekly-repo/` 等非数据库文件仍是在线打包，不保证与 SQLite 之间的同一
+时刻一致性。
+
+脚本会在本机临时编译并上传一个静态 Go 快照工具到远端 `/tmp`，结束时自动删除；前提是
+本机有 Go 工具链。若 App 有多台 Machine，必须显式指定挂载目标 Volume 的实例：
+
+```bash
+FLY_BACKUP_MACHINE_ID=<machine-id> make fly-backup-weekly
+```
+
+Machine 未启动时脚本会失败退出，避免为了备份擅自改变生产服务生命周期。
 
 输出目录（默认，可用 `FLY_BACKUP_ROOT` 覆盖）：
 
 ```
 supports/backups/<fly-app-name>/<YYYYMMDD-HHMMSS>/
-  data.tar.gz      # 远端 /data 整包
-  MANIFEST.txt     # app / 时间戳 / 恢复提示
+  data.tar.gz      # 一致性 SQLite 快照 + 其余远端 /data 文件
+  MANIFEST.txt     # app / 时间戳 / Fly Snapshot ID / 快照方式 / 恢复提示
 ```
 
 `supports/backups/` 已 `.gitignore`，勿把生产库提交进 git。

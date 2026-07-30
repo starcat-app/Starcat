@@ -52,6 +52,9 @@ DOWNLOADS_DIR="${DIST_DIR}/downloads"
 APPCAST_INPUT_DIR="${DIST_DIR}/appcast-input"
 APP_PATH="${DERIVED_DIR}/Build/Products/Release/Starcat.app"
 CODEBASE_BINARY_PATH="${APP_PATH}/Contents/Resources/codebase.bin"
+SPARKLE_FRAMEWORK_PATH="${APP_PATH}/Contents/Frameworks/Sparkle.framework"
+SPARKLE_CURRENT_PATH="${SPARKLE_FRAMEWORK_PATH}/Versions/Current"
+SWIFT_COMPATIBILITY_PATH="${APP_PATH}/Contents/Frameworks/libswiftCompatibilitySpan.dylib"
 DMG_PATH="${DOWNLOADS_DIR}/Starcat-${VERSION}-arm64.dmg"
 SHA_PATH="${DMG_PATH}.sha256"
 CURRENT_APPCAST_PATH="${DOWNLOADS_DIR}/appcast-current.xml"
@@ -121,8 +124,18 @@ if [ "$BUILD_EXIT" -ne 0 ]; then
 fi
 
 [ -d "$APP_PATH" ] || fail "未找到 Direct app: $APP_PATH"
-[ -d "$APP_PATH/Contents/Frameworks/Sparkle.framework" ] || fail "Direct 包缺少 Sparkle.framework"
+[ -d "$SPARKLE_FRAMEWORK_PATH" ] || fail "Direct 包缺少 Sparkle.framework"
 [ -f "$CODEBASE_BINARY_PATH" ] || fail "Direct 包缺少 CodebaseMemory 二进制: $CODEBASE_BINARY_PATH"
+
+SPARKLE_NESTED_CODE=(
+  "$SPARKLE_CURRENT_PATH/XPCServices/Downloader.xpc"
+  "$SPARKLE_CURRENT_PATH/XPCServices/Installer.xpc"
+  "$SPARKLE_CURRENT_PATH/Updater.app"
+  "$SPARKLE_CURRENT_PATH/Autoupdate"
+)
+for COMPONENT_PATH in "${SPARKLE_NESTED_CODE[@]}"; do
+  [ -e "$COMPONENT_PATH" ] || fail "Sparkle.framework 缺少待签名组件: $COMPONENT_PATH"
+done
 
 DIST_VALUE=$(/usr/libexec/PlistBuddy -c 'Print :STARCAT_DISTRIBUTION' "$APP_PATH/Contents/Info.plist")
 [ "$DIST_VALUE" = "direct" ] || fail "STARCAT_DISTRIBUTION 应为 direct，实际为 $DIST_VALUE"
@@ -154,25 +167,98 @@ if [ "${STARCAT_NOTARIZE:-0}" = "1" ]; then
   fi
 fi
 
-# `codebase.bin` 位于 Resources，不属于 codesign --deep 稳定识别的嵌套代码目录。
-# 必须先单独签名，再让 App 外层资源封条绑定它；否则下载后的 Direct App 首次启动
-# 子进程时可能被 Gatekeeper 拦截，而 Runner 的启动过程又会因此卡住。
-if [ "$SIGN_IDENTITY" = "-" ]; then
-  codesign --force --sign "$SIGN_IDENTITY" --timestamp=none "$CODEBASE_BINARY_PATH" >/dev/null
-  codesign --force --deep --sign "$SIGN_IDENTITY" --timestamp=none "$APP_PATH" >/dev/null
-else
-  codesign --force --options runtime --sign "$SIGN_IDENTITY" --timestamp "$CODEBASE_BINARY_PATH" >/dev/null
-  codesign --force --deep --options runtime --sign "$SIGN_IDENTITY" --timestamp "$APP_PATH" >/dev/null
+sign_nested_code() {
+  local target_path="$1"
+
+  # Sparkle 的 XPC / helper 需要保留各自 identifier 与 entitlement；但不能保留
+  # Xcode 生成的 Apple Development designated requirement，否则换成 Developer ID
+  # 后签名自身会无法满足旧 requirement。
+  if [ "$SIGN_IDENTITY" = "-" ]; then
+    codesign --force --sign "$SIGN_IDENTITY" --timestamp=none \
+      --preserve-metadata=identifier,entitlements "$target_path" >/dev/null
+  else
+    codesign --force --options runtime --sign "$SIGN_IDENTITY" --timestamp \
+      --preserve-metadata=identifier,entitlements "$target_path" >/dev/null
+  fi
+}
+
+sign_distribution_code() {
+  local target_path="$1"
+
+  # App 外层与普通二进制故意不保留构建期 entitlement，避免把开发签名中的
+  # get-task-allow 或 App Sandbox 带入 Direct 分发包。
+  if [ "$SIGN_IDENTITY" = "-" ]; then
+    codesign --force --sign "$SIGN_IDENTITY" --timestamp=none "$target_path" >/dev/null
+  else
+    codesign --force --options runtime --sign "$SIGN_IDENTITY" --timestamp "$target_path" >/dev/null
+  fi
+}
+
+sign_dmg_container() {
+  # DMG 是用户实际下载并由 Gatekeeper 首先检查的外层容器。它必须在提交
+  # notarization 之前签名；公证或 staple 之后再签会改变容器并使票据失效。
+  if [ "$SIGN_IDENTITY" = "-" ]; then
+    codesign --force --sign "$SIGN_IDENTITY" --timestamp=none "$DMG_PATH" >/dev/null
+  else
+    codesign --force --sign "$SIGN_IDENTITY" --timestamp "$DMG_PATH" >/dev/null
+  fi
+}
+
+write_dmg_sha256() {
+  local sha256
+  sha256="$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')"
+  printf '%s  %s\n' "$sha256" "$(basename "$DMG_PATH")" > "$SHA_PATH"
+}
+
+verify_developer_id_code() {
+  local component_name="$1"
+  local target_path="$2"
+  local signature_output
+  signature_output="$(codesign -dvvv "$target_path" 2>&1)"
+
+  grep -q '^Authority=Developer ID Application:' <<<"$signature_output" \
+    || fail "$component_name 未使用 Developer ID Application 签名"
+  grep -q 'flags=.*runtime' <<<"$signature_output" \
+    || fail "$component_name 未启用 hardened runtime"
+  grep -q '^Timestamp=' <<<"$signature_output" \
+    || fail "$component_name 缺少安全时间戳"
+}
+
+# `codesign --deep` 适合做最终递归校验，但不适合作为签名策略：它不会可靠地
+# 修复已有错误签名的嵌套代码。必须严格按最内层 helper -> framework -> app
+# 的顺序签名，确保外层资源封条绑定的始终是最终签名。
+for COMPONENT_PATH in "${SPARKLE_NESTED_CODE[@]}"; do
+  sign_nested_code "$COMPONENT_PATH"
+done
+sign_nested_code "$SPARKLE_FRAMEWORK_PATH"
+
+if [ -f "$SWIFT_COMPATIBILITY_PATH" ]; then
+  sign_distribution_code "$SWIFT_COMPATIBILITY_PATH"
 fi
+
+# `codebase.bin` 位于 Resources，不属于 codesign 稳定识别的嵌套代码目录，
+# 因此要在 App 外层签名之前单独处理。
+sign_distribution_code "$CODEBASE_BINARY_PATH"
+sign_distribution_code "$APP_PATH"
+
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 codesign --verify --strict --verbose=2 "$CODEBASE_BINARY_PATH"
 
 if [ "$SIGN_IDENTITY" != "-" ]; then
-  CODEBASE_SIGNATURE="$(codesign -dvvv "$CODEBASE_BINARY_PATH" 2>&1)"
-  grep -q '^Authority=Developer ID Application:' <<<"$CODEBASE_SIGNATURE" \
-    || fail "CodebaseMemory 二进制未使用 Developer ID Application 签名"
-  grep -q 'flags=.*runtime' <<<"$CODEBASE_SIGNATURE" \
-    || fail "CodebaseMemory 二进制未启用 hardened runtime"
+  verify_developer_id_code "Starcat.app" "$APP_PATH"
+  verify_developer_id_code "CodebaseMemory 二进制" "$CODEBASE_BINARY_PATH"
+  verify_developer_id_code "Sparkle.framework" "$SPARKLE_FRAMEWORK_PATH"
+  for COMPONENT_PATH in "${SPARKLE_NESTED_CODE[@]}"; do
+    verify_developer_id_code "$(basename "$COMPONENT_PATH")" "$COMPONENT_PATH"
+  done
+  if [ -f "$SWIFT_COMPATIBILITY_PATH" ]; then
+    verify_developer_id_code "libswiftCompatibilitySpan.dylib" "$SWIFT_COMPATIBILITY_PATH"
+  fi
+fi
+
+FINAL_ENTITLEMENTS="$(codesign -d --entitlements :- "$APP_PATH" 2>/dev/null || true)"
+if grep -Eq 'com\.apple\.security\.(app-sandbox|get-task-allow)' <<<"$FINAL_ENTITLEMENTS"; then
+  fail "Direct 包最终签名仍包含 App Sandbox 或 get-task-allow entitlement"
 fi
 
 log "生成 DMG"
@@ -206,8 +292,10 @@ else
     "$DMG_PATH" >/dev/null
 fi
 
-SHA256="$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')"
-printf '%s  %s\n' "$SHA256" "$(basename "$DMG_PATH")" > "$SHA_PATH"
+log "签名 DMG 容器"
+sign_dmg_container
+codesign --verify --verbose=2 "$DMG_PATH"
+write_dmg_sha256
 
 if [ "${STARCAT_NOTARIZE:-0}" = "1" ]; then
   log "提交 notarization"
@@ -258,7 +346,9 @@ if [ "${STARCAT_NOTARIZE:-0}" = "1" ]; then
   log "staple DMG"
   xcrun stapler staple "$DMG_PATH"
   xcrun stapler validate "$DMG_PATH"
-  spctl --assess --type open --verbose "$DMG_PATH"
+  spctl --assess --type open --context context:primary-signature --verbose "$DMG_PATH"
+  # stapler 会写入 DMG，因此最终发布 SHA 必须在装订票据后重新计算。
+  write_dmg_sha256
 else
   log "跳过 notarization；正式公开分发前请设置 STARCAT_NOTARIZE=1"
 fi
@@ -269,7 +359,7 @@ if [ "${STARCAT_GENERATE_APPCAST:-0}" = "1" ]; then
   DOWNLOAD_BASE_URL="${STARCAT_DOWNLOAD_BASE_URL:-https://starcat.ink/downloads/}"
   log "生成当前版本 appcast: $CURRENT_APPCAST_PATH"
   # 这里只生成当前版本 item。历史版本由 release-direct.sh 增量合并进
-  # pages/direct/appcast.xml，避免发布机必须保存所有旧 DMG。
+  # supports/starcat-site/direct/appcast.xml，避免发布机必须保存所有旧 DMG。
   mkdir -p "$APPCAST_INPUT_DIR"
   cp "$DMG_PATH" "$APPCAST_INPUT_DIR/"
   "$GENERATE_APPCAST" --download-url-prefix "$DOWNLOAD_BASE_URL" "$APPCAST_INPUT_DIR"

@@ -40,6 +40,7 @@ struct ContentView: View {
         HomeView(
             repository: dependencies.repoRepository,
             readmeAPI: dependencies.readmeAPI,
+            projectReadmeAPI: dependencies.projectReadmeAPI,
             readmeAvailability: dependencies.readmeAvailability,
             readmeOnHTMLLoaded: dependencies.makeReadmeOnHTMLLoadedHandler(),
             tagRepository: dependencies.tagRepository,
@@ -53,6 +54,7 @@ struct ContentView: View {
             smartCollectionRepository: dependencies.smartCollectionRepository,
             searchHistoryRepository: dependencies.searchHistoryRepository,
             semanticSearchService: dependencies.semanticSearchService,
+            myInsightsSnapshotProvider: dependencies.myInsightsSnapshotProvider,
             trendingRepository: dependencies.trendingRepository,
             githubAPIClient: dependencies.apiClient,
             readmeTranslationService: dependencies.readmeTranslationService,

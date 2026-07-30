@@ -33,10 +33,18 @@
 	<false/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
+	<key>LSMultipleInstancesProhibited</key>
+	<true/>
 	<key>STARCAT_APTABASE_APP_KEY</key>
 	<string>$(STARCAT_APTABASE_APP_KEY)</string>
 	<key>STARCAT_DISTRIBUTION</key>
 	<string>$(STARCAT_DISTRIBUTION)</string>
+	<key>STARCAT_GITHUB_APP_CLIENT_ID</key>
+	<string>$(STARCAT_GITHUB_APP_CLIENT_ID)</string>
+	<key>STARCAT_GITHUB_APP_CLIENT_SECRET</key>
+	<string>$(STARCAT_GITHUB_APP_CLIENT_SECRET)</string>
+	<key>STARCAT_GITHUB_APP_SLUG</key>
+	<string>$(STARCAT_GITHUB_APP_SLUG)</string>
 	<key>STARCAT_LICENSE_API_ENVIRONMENT</key>
 	<string>$(STARCAT_LICENSE_API_ENVIRONMENT)</string>
 	<key>STARCAT_LICENSE_API_LIVE_BASE_URL</key>
@@ -61,6 +69,8 @@
 	<string>$(STARCAT_PRODUCTION_API_KEY_WEEKLY)</string>
 	<key>STARCAT_PRODUCTION_API_KEY_WIKI</key>
 	<string>$(STARCAT_PRODUCTION_API_KEY_WIKI)</string>
+	<key>STARCAT_WIDGET_APP_GROUP</key>
+	<string>group.com.starcat.app.direct.widgets</string>
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
 	<key>SUFeedURL</key>

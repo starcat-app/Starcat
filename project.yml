@@ -19,7 +19,8 @@ options:
   createIntermediateGroups: true
   groupSortPosition: top
   # XcodeGen 2.45.4 不能可靠生成嵌套的 SystemCapabilities 字典；
-  # App Store 版的 In-App Purchase capability 由后处理脚本写入生成后的 .xcodeproj。
+  # App Store 版的 In-App Purchase、双渠道 Associated Domains capability
+  # 由后处理脚本写入生成后的 .xcodeproj。
   postGenCommand: python3 scripts/postprocess-xcodeproj.py
 
 # 全局 Build Settings：
@@ -113,6 +114,13 @@ targets:
         # （PKCE 保护 code 安全但不替代 client authentication）。本字段通过 xcconfig 注入，
         # 不提交到 git。缺失时 Web Flow 退化为不可用提示。
         STARCAT_OAUTH_CLIENT_SECRET: $(STARCAT_OAUTH_CLIENT_SECRET)
+        # “我的项目”GitHub App Web Flow 配置。Client Secret 会随原生应用分发，
+        # 只用于 user access token 的 code 交换与刷新；private key 仍严禁进入客户端。
+        STARCAT_GITHUB_APP_CLIENT_ID: $(STARCAT_GITHUB_APP_CLIENT_ID)
+        STARCAT_GITHUB_APP_CLIENT_SECRET: $(STARCAT_GITHUB_APP_CLIENT_SECRET)
+        # GitHub App 页面 URL 中的公开 slug，用于构造安装入口。
+        # Client ID 与 slug 缺一时均保持 OAuth public fallback。
+        STARCAT_GITHUB_APP_SLUG: $(STARCAT_GITHUB_APP_SLUG)
         CFBundleURLTypes:
           - CFBundleURLName: com.starcat.app.store
             CFBundleURLSchemes:
@@ -130,6 +138,9 @@ targets:
         STARCAT_APTABASE_APP_KEY: $(STARCAT_APTABASE_APP_KEY)
         # 显式构建渠道。App Store build 默认 appstore；Direct build 后续覆盖为 direct。
         STARCAT_DISTRIBUTION: $(STARCAT_DISTRIBUTION)
+        # Widget Extension 与 Store Host 必须读取同一 App Group；通过 Info.plist
+        # 注入，避免运行时根据 bundle id 猜测并误连 Direct 渠道容器。
+        STARCAT_WIDGET_APP_GROUP: group.com.starcat.app.store.widgets
         LSApplicationCategoryType: public.app-category.developer-tools
         # Starcat 只使用系统 TLS/Keychain/StoreKit 等标准加密能力，不包含非豁免加密。
         ITSAppUsesNonExemptEncryption: false
@@ -144,6 +155,7 @@ targets:
       - package: MCPSwiftSDK
         product: MCP
       - package: Aptabase
+      - target: StarcatWidgets
     # 在所有 build phase 跑完之后、codesign 之前执行：
     # 用 git 元数据改写产物 Info.plist 的 CFBundleVersion / CFBundleShortVersionString。
     # 详见 scripts/bump-version.sh 文件头注释。
@@ -204,15 +216,20 @@ targets:
         INFOPLIST_KEY_CFBundleURLTypes: ""
       configs:
         Debug:
-          INFOPLIST_KEY_LSMultipleInstancesProhibited: NO
           STARCAT_LICENSE_API_ENVIRONMENT: test
         Release:
-          INFOPLIST_KEY_LSMultipleInstancesProhibited: YES
           STARCAT_LICENSE_API_ENVIRONMENT: live
     info:
       path: Starcat/Generated/Info.direct.generated.plist
       properties:
+        # Direct Debug 不承载 StarcatTests test host；Debug/Release 都保持单实例，
+        # 避免多个进程争用同一份 AppKit window restoration 状态。
+        LSMultipleInstancesProhibited: true
         STARCAT_OAUTH_CLIENT_SECRET: $(STARCAT_OAUTH_CLIENT_SECRET)
+        # GitHub App 配置必须同时进入 Direct 包；仅定义 xcconfig 变量不会自动写入 Info.plist。
+        STARCAT_GITHUB_APP_CLIENT_ID: $(STARCAT_GITHUB_APP_CLIENT_ID)
+        STARCAT_GITHUB_APP_CLIENT_SECRET: $(STARCAT_GITHUB_APP_CLIENT_SECRET)
+        STARCAT_GITHUB_APP_SLUG: $(STARCAT_GITHUB_APP_SLUG)
         CFBundleURLTypes:
           - CFBundleURLName: com.starcat.app.direct
             CFBundleURLSchemes:
@@ -230,6 +247,8 @@ targets:
         STARCAT_LICENSE_API_LIVE_KEY: $(STARCAT_LICENSE_API_LIVE_KEY)
         STARCAT_APTABASE_APP_KEY: $(STARCAT_APTABASE_APP_KEY)
         STARCAT_DISTRIBUTION: $(STARCAT_DISTRIBUTION)
+        # Direct 渠道使用独立 App Group，防止两个版本同时安装时互相读取快照。
+        STARCAT_WIDGET_APP_GROUP: group.com.starcat.app.direct.widgets
         LSApplicationCategoryType: public.app-category.developer-tools
         # Direct 包同样只使用系统 TLS/Keychain 等标准加密能力，保持双渠道合规声明一致。
         ITSAppUsesNonExemptEncryption: false
@@ -249,6 +268,7 @@ targets:
         product: MCP
       - package: Aptabase
       - package: Sparkle
+      - target: StarcatDirectWidgets
     postBuildScripts:
       - name: "Copy Changelog Resource"
         script: |
@@ -278,6 +298,53 @@ targets:
         runOnlyWhenInstalling: false
         showEnvVarsInLog: false
         basedOnDependencyAnalysis: false
+
+  # App Store 与 Direct 使用两个独立 Extension target，但复用同一份 Swift 源码。
+  # 独立 bundle id / App Group 是两个渠道同时安装时不串宿主、不串数据的签名边界。
+  StarcatWidgets:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: StarcatWidgets
+      # 仅复用纯 Foundation 快照契约；Extension 不编译 GRDB、网络或业务层。
+      - path: Starcat/Core/Widget/Shared
+      - path: Starcat/Resources/Localizable.xcstrings
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.store.widgets
+        CODE_SIGN_ENTITLEMENTS: Starcat/Resources/Widget/StarcatWidgets.entitlements
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Starcat Widgets
+    info:
+      path: Starcat/Generated/WidgetInfo.generated.plist
+      properties:
+        STARCAT_WIDGET_APP_GROUP: group.com.starcat.app.store.widgets
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
+  StarcatDirectWidgets:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: StarcatWidgets
+      - path: Starcat/Core/Widget/Shared
+      - path: Starcat/Resources/Localizable.xcstrings
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.direct.widgets
+        CODE_SIGN_ENTITLEMENTS: Starcat/Resources/Widget/StarcatDirectWidgets.entitlements
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Starcat Widgets
+    info:
+      path: Starcat/Generated/WidgetInfo.direct.generated.plist
+      properties:
+        STARCAT_WIDGET_APP_GROUP: group.com.starcat.app.direct.widgets
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
 schemes:
   Starcat:

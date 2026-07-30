@@ -43,7 +43,7 @@ Evidence 区目前只判断 `displayedRepoContextSnapshot != nil`。Provider 禁
 - Composer 顺序、唯一项目门禁、草稿保存/恢复：代码与既有定向测试一致。
 - Plan、citation、历史 hash 校验、Debug stage：实现边界与方案一致。
 - SwiftUI 规范：未发现 `.tertiary`、缺失 focus ring 禁用或折叠行仅 chevron 可点问题。
-- 当前工作区的 `docs/功能实现总览.md`、`pages/appstore/index.html` 仍为并行改动，本轮不暂存、不提交。
+- 当前工作区的 `docs/功能实现总览.md`、`supports/starcat-site/appstore/index.html` 仍为并行改动，本轮不暂存、不提交。
 
 ## 5. 修复回填
 
