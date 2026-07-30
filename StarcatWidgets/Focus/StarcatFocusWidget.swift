@@ -9,57 +9,6 @@ import AppIntents
 import SwiftUI
 import WidgetKit
 
-struct FocusWidgetConfigurationIntent: WidgetConfigurationIntent {
-    static let title: LocalizedStringResource = "widget.focus.configuration.title"
-    static let description = IntentDescription("widget.focus.configuration.description")
-
-    @Parameter(title: "widget.focus.configuration.repository")
-    var repository: WidgetRepositoryEntity?
-
-    init() {}
-}
-
-struct WidgetRepositoryEntity: AppEntity, Identifiable, Hashable, Sendable {
-    static let typeDisplayRepresentation = TypeDisplayRepresentation(
-        name: "widget.focus.entity.type"
-    )
-    static let defaultQuery = WidgetRepositoryEntityQuery()
-
-    let id: String
-    let repositoryID: Int64
-    let owner: String
-    let name: String
-
-    var displayRepresentation: DisplayRepresentation {
-        DisplayRepresentation(title: "\(owner)/\(name)")
-    }
-}
-
-struct WidgetRepositoryEntityQuery: EntityQuery {
-    func entities(for identifiers: [String]) async throws -> [WidgetRepositoryEntity] {
-        let identifierSet = Set(identifiers)
-        return Self.availableEntities().filter { identifierSet.contains($0.id) }
-    }
-
-    func suggestedEntities() async throws -> [WidgetRepositoryEntity] {
-        Self.availableEntities()
-    }
-
-    private static func availableEntities() -> [WidgetRepositoryEntity] {
-        guard let snapshot = StarcatWidgetSnapshotLoader.load().snapshot else { return [] }
-        var seen = Set<Int64>()
-        return snapshot.focusRepositories.compactMap { repository in
-            guard seen.insert(repository.id).inserted else { return nil }
-            return WidgetRepositoryEntity(
-                id: String(repository.id),
-                repositoryID: repository.id,
-                owner: repository.owner,
-                name: repository.name
-            )
-        }
-    }
-}
-
 struct StarcatFocusWidget: Widget {
     private let kind = "com.starcat.widget.focus"
 
