@@ -388,8 +388,6 @@ struct RAGWorkspaceSettingsSheet: View {
                     .font(interfaceScale.font(size: 11, weight: .semibold))
                 Text("rag.workspace.prompt.placeholders.open")
                     .font(ragFont(.caption, scale: interfaceScale, weight: .medium))
-                Image(systemName: "info.circle")
-                    .font(interfaceScale.font(size: 11, weight: .semibold))
             }
             .foregroundStyle(.secondary)
             .contentShape(Rectangle())
