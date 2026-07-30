@@ -710,8 +710,31 @@ final class KnowledgeRAGIndexBuilder {
     }
 
     private func embedPendingChunks(recordsRefreshSummary: Bool = false) async throws {
-        // 模型切换不依赖 API key：先把旧模型向量标 stale，再决定是否真的需要发 embedding 请求。
         let resolvedModel = resolvedEmbeddingModel()
+        // 文本分片一旦写入 rag_chunks 就已可被 FTS 检索。Embedding 配置缺失或失效时，
+        // 将本轮作为关键词索引成功收口，不能把已经可用的本地知识误报成构建失败。
+        guard !resolvedModel.isEmpty, settings.embeddingConfigurationIssue == nil else {
+            let total = try await chunkRepository.countChunksNeedingEmbedding()
+            let coverage = try await chunkRepository.coverage(model: "")
+            if recordsRefreshSummary {
+                updateRefreshSummary(
+                    embeddingProcessed: 0,
+                    embeddingTotal: total,
+                    readyChunksBeforeEmbedding: coverage.readyChunks,
+                    totalChunksAtEmbedding: coverage.totalChunks
+                )
+            }
+            try await syncKeywordBackendWithoutEmbedding()
+            status = .completed(coverage)
+            if recordsRefreshSummary {
+                await markRefreshSummaryCompleted(at: Date())
+            }
+            NotificationCenter.default.post(name: .knowledgeRAGIndexDidChange, object: nil)
+            return
+        }
+
+        // 模型切换不依赖 API key：确认当前配置可用后，再把旧模型向量标 stale。
+        // 缺少配置的关键词模式必须保留旧向量状态，便于用户恢复配置后继续增量处理。
         try await chunkRepository.markStaleForOtherModels(currentModel: resolvedModel)
         var processed = 0
         // 总数只用 COUNT 查询获取；正文与 embedding 列始终按 batch size 读取，
@@ -892,6 +915,37 @@ final class KnowledgeRAGIndexBuilder {
             externalIndexChanges.markSynced(revision: changes.revision)
         } catch {
             AppLog.ai.error("RAG external backend sync failed: \(error.localizedDescription, privacy: .public)")
+            try RAGExternalBackendFallbackPolicy.handle(
+                error,
+                fallbackToSQLite: configuration.fallbackToSQLite
+            )
+        }
+    }
+
+    /// 没有 Embedding 时只同步外部关键词索引，绝不以空模型清空 Qdrant。
+    ///
+    /// 关键词分片不依赖向量状态；这里使用全量替换保证 Meilisearch 与 SQLite FTS 口径一致。
+    /// 变更追踪仍保留，用户之后配置 Embedding 时可继续完成向量后端同步。
+    private func syncKeywordBackendWithoutEmbedding() async throws {
+        let configuration = settings.ragBackendConfiguration
+        guard configuration.keywordBackend == .meilisearch else { return }
+
+        do {
+            let repos = try await repoRepository.fetchKnowledgeRepos()
+            let publicRepoIDs = repos.filter { !$0.isPrivate }.map(\.id)
+            let chunks = try await chunkRepository.fetchKeywordSearchableChunks(repoIDs: publicRepoIDs)
+            let provider = MeilisearchRAGProvider(
+                configuration: configuration.meilisearch,
+                apiKey: try keychain.loadAIKey(
+                    forProvider: RAGBackendConfiguration.meilisearchKeychainID
+                ),
+                repository: chunkRepository
+            )
+            try await provider.replaceAll(chunks: chunks)
+        } catch {
+            AppLog.ai.error(
+                "RAG keyword-only external sync failed: \(error.localizedDescription, privacy: .public)"
+            )
             try RAGExternalBackendFallbackPolicy.handle(
                 error,
                 fallbackToSQLite: configuration.fallbackToSQLite

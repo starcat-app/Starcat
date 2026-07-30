@@ -486,7 +486,7 @@ struct RAGChunkRepositoryTests {
         #expect(chunks.map(\.repoId) == [12, 13])
     }
 
-    @Test("coverage 区分 ready pending failed stale")
+    @Test("coverage 将全部文本计为可检索并单独保留向量问题")
     func coverageCountsStatuses() async throws {
         let (database, repository) = try makeRepository()
         try await database.insertRepoFixture(id: 20)
@@ -506,7 +506,7 @@ struct RAGChunkRepositoryTests {
         #expect(coverage.knowledgeRepoCount == 1)
         #expect(coverage.indexedRepoCount == 1)
         #expect(coverage.totalChunks == 2)
-        #expect(coverage.readyChunks == 1)
+        #expect(coverage.readyChunks == 2)
         #expect(coverage.failedChunks == 1)
     }
 

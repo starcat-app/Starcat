@@ -670,9 +670,9 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
             let row = try Row.fetchOne(db, sql: """
                 SELECT
                     (SELECT COUNT(*) FROM repo_notes WHERE library_state = 'in_library') AS knowledge_repos,
-                    COUNT(DISTINCT CASE WHEN (c.embedding_status = 'ready' AND c.embedding_model = ?) OR c.embedding_status = 'keyword_only' THEN c.repo_id END) AS indexed_repos,
+                    COUNT(DISTINCT c.repo_id) AS indexed_repos,
                     COUNT(c.id) AS total_chunks,
-                    SUM(CASE WHEN (c.embedding_status = 'ready' AND c.embedding_model = ?) OR c.embedding_status = 'keyword_only' THEN 1 ELSE 0 END) AS ready_chunks,
+                    COUNT(c.id) AS ready_chunks,
                     SUM(CASE WHEN c.embedding_status = 'pending' THEN 1 ELSE 0 END) AS pending_chunks,
                     SUM(CASE WHEN c.embedding_status = 'failed' THEN 1 ELSE 0 END) AS failed_chunks,
                     SUM(CASE WHEN c.embedding_status = 'stale' OR (c.embedding_model IS NOT NULL AND c.embedding_model != ?) THEN 1 ELSE 0 END) AS stale_chunks
@@ -683,7 +683,7 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                         WHERE o.chunk_id = c.id AND o.is_excluded = 1
                     )
                 WHERE n.library_state = 'in_library'
-                """, arguments: [model, model, model])
+                """, arguments: [model])
             return RAGIndexStatusProjection(
                 knowledgeRepoCount: row?["knowledge_repos"] ?? 0,
                 indexedRepoCount: row?["indexed_repos"] ?? 0,
