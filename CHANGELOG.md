@@ -19,6 +19,7 @@ Starcat 1.3.0 adds My Projects, library-wide and repository-level insights, macO
 
 ### Improvements
 
+- Shared insight aggregates: My Insights and RAG now reuse the same cached Knowledge Base facts, with richer organization, technology, health, risk, and index context.
 - RAG Prompt Settings: Compare and copy read-only default prompts, with clearer Markdown formatting for Q&A and conversation compression templates.
 - Custom Prompt Diagnostics: See which context capabilities and placeholders a custom template supports without Starcat automatically rewriting user content.
 - First-run onboarding: Feature screenshots, refined welcome audio timing, clearer card hierarchy, and more stable window sizing.
