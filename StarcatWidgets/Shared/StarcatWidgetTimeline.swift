@@ -2,7 +2,7 @@
 //  StarcatWidgetTimeline.swift
 //  StarcatWidgets
 //
-//  三个 Widget 共用的快照加载、错误降级和 Timeline 基础模型。
+//  四个 Widget 共用的快照加载、错误降级和 Timeline 基础模型。
 //
 
 import Foundation
@@ -131,12 +131,38 @@ private extension WidgetSnapshot {
             avatarFileName: nil,
             openURL: repository.openURL
         )
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let currentWeek = calendar.dateInterval(of: .weekOfYear, for: Date())!.start
+        let trendPoints = (0..<12).compactMap { offset -> WidgetCollectionTrendPoint? in
+            guard let week = calendar.date(
+                byAdding: .weekOfYear,
+                value: offset - 11,
+                to: currentWeek
+            ) else {
+                return nil
+            }
+            return WidgetCollectionTrendPoint(
+                weekStart: week,
+                count: [3, 5, 2, 7, 4, 8, 6, 9, 5, 11, 8, 13][offset]
+            )
+        }
         return WidgetSnapshot(
             accountState: .ready,
             focusRepositories: [repository, repository, repository],
             rediscoveryRepository: repository,
             unreadReleaseCount: 1,
-            unreadReleases: [release]
+            unreadReleases: [release],
+            collectionTrend: WidgetCollectionTrend(
+                totalCount: 186,
+                addedInLast30DaysCount: 37,
+                weeklyPoints: trendPoints,
+                statusBreakdown: WidgetCollectionStatusBreakdown(
+                    unreadCount: 82,
+                    readCount: 71,
+                    usingCount: 33
+                )
+            )
         )
     }
 }

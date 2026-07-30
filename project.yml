@@ -427,8 +427,8 @@ schemes:
     archive:
       config: Release
 
-  # WidgetBundle 同时声明 3 个 Widget 时，WidgetKit Simulator 必须通过
-  # `_XCWidgetKind` 明确选择调试对象。三个共享 Scheme 让开发者无需每次手改
+  # WidgetBundle 同时声明 4 个 Widget 时，WidgetKit Simulator 必须通过
+  # `_XCWidgetKind` 明确选择调试对象。四个共享 Scheme 让开发者无需每次手改
   # Xcode Arguments，即可逐个验证 Timeline / Medium 布局。
   StarcatWidget-Focus:
     build:
@@ -469,5 +469,19 @@ schemes:
       launchAutomaticallySubstyle: "2"
       environmentVariables:
         _XCWidgetKind: com.starcat.widget.release-watch
+        _XCWidgetFamily: medium
+        _XCWidgetDefaultView: timeline
+
+  StarcatWidget-CollectionTrend:
+    build:
+      targets:
+        StarcatWidgets: all
+    run:
+      config: Debug
+      executable: StarcatWidgets
+      macroExpansion: StarcatWidgets
+      launchAutomaticallySubstyle: "2"
+      environmentVariables:
+        _XCWidgetKind: com.starcat.widget.collection-trend
         _XCWidgetFamily: medium
         _XCWidgetDefaultView: timeline

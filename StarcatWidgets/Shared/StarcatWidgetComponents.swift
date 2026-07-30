@@ -2,13 +2,13 @@
 //  StarcatWidgetComponents.swift
 //  StarcatWidgets
 //
-//  三个 Widget 共用的头像、空态和元信息视图。
+//  四个 Widget 共用的头像、空态和元信息视图。
 //
 
 import AppKit
 import SwiftUI
 
-/// 三类 Widget 共用的紧凑 Header。
+/// 四类 Widget 共用的紧凑 Header。
 ///
 /// 标题、过期提示和右侧摘要使用同一套基线，避免每个 Widget 单独拼装后产生字号与
 /// 间距漂移；业务含义仍由调用方通过 `trailing` 提供，不在共享组件中猜测。

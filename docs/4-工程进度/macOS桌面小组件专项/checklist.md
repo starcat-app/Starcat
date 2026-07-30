@@ -232,16 +232,16 @@
 - [x] 趋势投影连续输出 12 个 ISO 周，空周补零
 - [x] 趋势投影包含近 30 天、总数和未读 / 已读 / 使用中状态计数
 - [x] 趋势投影排除 Private 与 inaccessible repository
-- [ ] Small 显示近 30 天指标与最近 6 周迷你柱形图
-- [ ] Medium 显示 12 周柱形图与本周 / 近 30 天 / 总数
-- [ ] Large 增加 12 周周均与状态分布图
-- [ ] Widget 固定文案全部进入 `Localizable.xcstrings`
+- [x] Small 显示近 30 天指标与最近 6 周迷你柱形图
+- [x] Medium 显示 12 周柱形图与本周 / 近 30 天 / 总数
+- [x] Large 增加 12 周周均与状态分布图
+- [x] Widget 固定文案全部进入 `Localizable.xcstrings`
 - [x] 点击趋势卡片前台 / 冷启动打开“我的洞察”
   - 证据：`WidgetAppDeepLink.insights` → dispatcher pending request → `SidebarRootPage.insights`
-- [ ] Store / Direct Widget Extension 共用同一份实现
-- [ ] 新增 `StarcatWidget-CollectionTrend` 独立调试 Scheme
-- [ ] 趋势投影、快照兼容与 Deep Link 单元测试通过
-- [ ] Store / Direct Widget 构建通过
+- [x] Store / Direct Widget Extension 共用同一份实现
+- [x] 新增 `StarcatWidget-CollectionTrend` 独立调试 Scheme
+- [x] 趋势投影、快照兼容与 Deep Link 单元测试通过
+- [x] Store / Direct Widget 构建通过
 - [ ] Small / Medium / Large 完成真实桌面复验
 
 ---
