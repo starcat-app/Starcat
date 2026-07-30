@@ -13,6 +13,13 @@ import GRDB
 
 /// 注入回答 Prompt 的知识库全局事实；数组已由仓储限制，防止统计维度挤占分片预算。
 struct KnowledgeBaseMetadataSnapshot: Equatable, Sendable {
+    /// Generator 使用的可独立引用事实段。`id` 会持久化到 citation，不能随 UI 文案变化。
+    struct CitationSection: Equatable, Sendable {
+        let id: String
+        let promptTitle: String
+        let content: String
+    }
+
     struct NamedCount: Equatable, Sendable {
         let name: String
         let count: Int
@@ -129,6 +136,19 @@ struct KnowledgeBaseMetadataSnapshot: Equatable, Sendable {
 
     /// 保持英文、键值式表达，避免受显示语言或自定义 Prompt 影响而改变数据库事实的含义。
     func promptContext() -> String {
+        let sections = citationSections().map {
+            "\($0.promptTitle):\n\($0.content)"
+        }.joined(separator: "\n")
+        return """
+        Authoritative local knowledge-base metadata snapshot (generated now; not vector-search evidence):
+        \(sections)
+        Use these values as database facts for applicable count, distribution, activity, index-health, and star-ranking questions. Do not fabricate chunk citations for this snapshot. If a requested exact value is not present here, say the snapshot does not contain it.
+        """
+    }
+
+    /// 将大快照拆成事实口径稳定的小段，Generator 才能只引用真正用于回答的部分。
+    /// 这里仍保持英文数据库语义；Inspector 通过稳定 id 映射当前 App 语言的标题。
+    func citationSections() -> [CitationSection] {
         let status = rendered(insights.normalizedStatusCounts)
         let languages = rendered(topLanguages)
         let tags = rendered(topTags)
@@ -146,25 +166,48 @@ struct KnowledgeBaseMetadataSnapshot: Equatable, Sendable {
         let sourceCoverage = sourceIndexCoverage.map {
             "\($0.source.rawValue): \($0.repositoryCount) repositories with content, \($0.readyChunkCount) ready, \($0.failedChunkCount) failed, \($0.staleChunkCount) stale, \($0.chunkCount) active chunks"
         }.joined(separator: "; ")
-        return """
-        Authoritative local knowledge-base metadata snapshot (generated now; not vector-search evidence):
-        - Scope: \(projectCount) in-library repositories; \(starredProjectCount) still starred; \(retainedAfterUnstarCount) retained after unstar.
-        - Organization: status counts [\(status)]; \(taggedProjectCount) tagged; \(untaggedProjectCount) untagged; \(tagCount) distinct tags.
-        - Technology: \(knownLanguageProjectCount) repositories have a language; \(unknownLanguageProjectCount) unknown; top languages [\(languages)].
-        - GitHub topics: [\(topics)]; licenses: [\(licenses)].
-        - Top tags: [\(tags)].
-        - Activity: \(addedInLast30DaysCount) added to the library in the last 30 days; \(pushedInLast30DaysCount) repositories pushed in the last 30 days.
-        - Curation: \(insights.organizedProjectCount) organized; \(insights.dormantProjectCount) dormant for over 1 year; \(insights.archivedProjectCount) archived; \(insights.unavailableProjectCount) unavailable.
-        - Quality coverage: \(insights.healthCompletedProjectCount) have health snapshots; \(insights.openSSFCompletedProjectCount) have OpenSSF scores; \(insights.maintenanceRiskProjectCount) have maintenance risk; \(insights.securityRiskProjectCount) have security risk.
-        - Knowledge artifacts: \(aiSummaryProjectCount) repositories have an AI summary; \(privateNoteProjectCount) have private notes (\(aiGeneratedNoteProjectCount) AI-generated).
-        - Content freshness: \(privateNotesEditedInLast30DaysProjectCount) repositories had private notes edited in the last 30 days; \(aiSummariesGeneratedInLast30DaysProjectCount) had AI summaries generated in the last 30 days. Older summaries are not automatically invalid.
-        - Indexed source coverage: [\(sourceCoverage)].
-        - Index availability: \(excludedChunkCount) chunks are excluded; \(withoutReadmeSourceProjectCount) repositories have no README source; \(withoutIndexableSourceProjectCount) have no active indexable source.
-        - Repository-level index readiness: \(insights.readmeSourceProjectCount) have README content; \(insights.indexableSourceProjectCount) have an active source; \(insights.embeddingReadyProjectCount) have a current-model vector-ready chunk; \(insights.indexIssueProjectCount) have failed or stale chunks.
-        - Star leaders (top \(topStarredRepositories.count)): [\(topRepositories)].
-        - RAG index for model \(indexHealth.embeddingModel.isEmpty ? "not configured (keyword-only mode)" : indexHealth.embeddingModel): \(indexHealth.totalChunks) active chunks; vector-ready \(indexHealth.readyChunks), keyword-ready \(indexHealth.keywordOnlyChunks), pending \(indexHealth.pendingChunks), failed \(indexHealth.failedChunks), stale \(indexHealth.staleChunks).
-        Use these values as database facts for applicable count, distribution, activity, index-health, and star-ranking questions. Do not fabricate chunk citations for this snapshot. If a requested exact value is not present here, say the snapshot does not contain it.
-        """
+        return [
+            CitationSection(
+                id: "scope",
+                promptTitle: "Scope",
+                content: "- \(projectCount) in-library repositories; \(starredProjectCount) still starred; \(retainedAfterUnstarCount) retained after unstar."
+            ),
+            CitationSection(
+                id: "organization",
+                promptTitle: "Organization",
+                content: "- Status counts [\(status)]; \(taggedProjectCount) tagged; \(untaggedProjectCount) untagged; \(tagCount) distinct tags.\n- Top tags: [\(tags)]."
+            ),
+            CitationSection(
+                id: "technology",
+                promptTitle: "Technology",
+                content: "- \(knownLanguageProjectCount) repositories have a language; \(unknownLanguageProjectCount) unknown; top languages [\(languages)].\n- GitHub topics: [\(topics)]; licenses: [\(licenses)]."
+            ),
+            CitationSection(
+                id: "activity_quality",
+                promptTitle: "Activity and quality",
+                content: "- \(addedInLast30DaysCount) added to the library in the last 30 days; \(pushedInLast30DaysCount) repositories pushed in the last 30 days.\n- \(insights.organizedProjectCount) organized; \(insights.dormantProjectCount) dormant for over 1 year; \(insights.archivedProjectCount) archived; \(insights.unavailableProjectCount) unavailable.\n- \(insights.healthCompletedProjectCount) have health snapshots; \(insights.openSSFCompletedProjectCount) have OpenSSF scores; \(insights.maintenanceRiskProjectCount) have maintenance risk; \(insights.securityRiskProjectCount) have security risk."
+            ),
+            CitationSection(
+                id: "knowledge_artifacts",
+                promptTitle: "Knowledge artifacts",
+                content: "- \(aiSummaryProjectCount) repositories have an AI summary; \(privateNoteProjectCount) have private notes (\(aiGeneratedNoteProjectCount) AI-generated).\n- \(privateNotesEditedInLast30DaysProjectCount) repositories had private notes edited in the last 30 days; \(aiSummariesGeneratedInLast30DaysProjectCount) had AI summaries generated in the last 30 days. Older summaries are not automatically invalid."
+            ),
+            CitationSection(
+                id: "index_coverage",
+                promptTitle: "Index coverage",
+                content: "- Indexed source coverage: [\(sourceCoverage)].\n- \(excludedChunkCount) chunks are excluded; \(withoutReadmeSourceProjectCount) repositories have no README source; \(withoutIndexableSourceProjectCount) have no active indexable source.\n- \(insights.readmeSourceProjectCount) have README content; \(insights.indexableSourceProjectCount) have an active source; \(insights.embeddingReadyProjectCount) have a current-model vector-ready chunk; \(insights.indexIssueProjectCount) have failed or stale chunks."
+            ),
+            CitationSection(
+                id: "star_leaders",
+                promptTitle: "Star leaders",
+                content: "- Top \(topStarredRepositories.count): [\(topRepositories)]."
+            ),
+            CitationSection(
+                id: "index_health",
+                promptTitle: "RAG index health",
+                content: "- Model \(indexHealth.embeddingModel.isEmpty ? "not configured (keyword-only mode)" : indexHealth.embeddingModel): \(indexHealth.totalChunks) active chunks; vector-ready \(indexHealth.readyChunks), keyword-ready \(indexHealth.keywordOnlyChunks), pending \(indexHealth.pendingChunks), failed \(indexHealth.failedChunks), stale \(indexHealth.staleChunks)."
+            )
+        ]
     }
 
     /// 规划阶段只需知道有哪些可验证的库存事实，不应重复发送标签排行或 Star Top10 等生成阶段信息。

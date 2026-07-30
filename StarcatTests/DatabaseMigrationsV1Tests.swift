@@ -40,6 +40,92 @@ struct DatabaseMigrationsV1Tests {
         }
     }
 
+    @Test("RAG v18 应支持无仓库的结构化引用并保留历史引用")
+    func structuredCitationMigrationPreservesHistory() throws {
+        let queue = try DatabaseQueue()
+        var migrator = DatabaseMigrator()
+        DatabaseMigrations.registerAll(into: &migrator)
+        try migrator.migrate(queue, upTo: "v17-my-projects")
+
+        try queue.write { db in
+            try db.execute(sql: """
+                INSERT INTO repos (id, owner, name, full_name, html_url)
+                VALUES (42, 'octo', 'demo', 'octo/demo', 'https://github.com/octo/demo')
+                """)
+            try db.execute(sql: """
+                INSERT INTO rag_conversations (id, title, created_at, updated_at)
+                VALUES ('conversation-1', 'History', '2026-07-30T00:00:00Z', '2026-07-30T00:00:00Z')
+                """)
+            try db.execute(sql: """
+                INSERT INTO rag_messages (id, conversation_id, role, content, created_at)
+                VALUES ('message-1', 'conversation-1', 'assistant', 'Answer [S1]', '2026-07-30T00:00:00Z')
+                """)
+            try db.execute(sql: """
+                INSERT INTO rag_message_citations (
+                    id, message_id, repo_id, repo_full_name, marker, source,
+                    section_title, rank, score, hit_kind
+                ) VALUES (
+                    'citation-1', 'message-1', 42, 'octo/demo', 'S1', 'readme',
+                    'README', 0, 0.8, 'keyword'
+                )
+                """)
+        }
+
+        try migrator.migrate(queue)
+
+        try queue.write { db in
+            let applied = try migrator.appliedMigrations(db)
+            #expect(applied.contains("v18-rag-structured-citations"))
+            let columns = try db.columns(in: "rag_message_citations").map(\.name)
+            #expect(columns.contains("evidence_content"))
+            let repoIDIsNotNull = try Int.fetchOne(
+                db,
+                sql: """
+                    SELECT "notnull"
+                    FROM pragma_table_info('rag_message_citations')
+                    WHERE name = 'repo_id'
+                    """
+            )
+            #expect(repoIDIsNotNull == 0)
+            #expect(
+                try String.fetchOne(
+                    db,
+                    sql: "SELECT repo_full_name FROM rag_message_citations WHERE id = 'citation-1'"
+                ) == "octo/demo"
+            )
+
+            try db.execute(sql: """
+                INSERT INTO rag_message_citations (
+                    id, message_id, repo_id, repo_full_name, marker, source,
+                    section_title, rank, score, hit_kind, evidence_content
+                ) VALUES (
+                    'citation-2', 'message-1', NULL, '', 'S2', 'knowledge_base_metadata',
+                    'scope', 1, 1, 'structured', '- 1878 in-library repositories.'
+                )
+                """)
+            try db.execute(sql: "DELETE FROM repos WHERE id = 42")
+
+            #expect(
+                try Int.fetchOne(
+                    db,
+                    sql: "SELECT COUNT(*) FROM rag_message_citations WHERE message_id = 'message-1'"
+                ) == 2
+            )
+            #expect(
+                try Int.fetchOne(
+                    db,
+                    sql: "SELECT COUNT(*) FROM rag_message_citations WHERE repo_id IS NULL"
+                ) == 2
+            )
+            #expect(
+                try String.fetchOne(
+                    db,
+                    sql: "SELECT evidence_content FROM rag_message_citations WHERE id = 'citation-2'"
+                ) == "- 1878 in-library repositories."
+            )
+        }
+    }
+
     @Test("我的项目 v17 应建立关系表、同步状态表和查询索引")
     func myProjectsMigrationCreatesTables() throws {
         let writer = try makeDB()

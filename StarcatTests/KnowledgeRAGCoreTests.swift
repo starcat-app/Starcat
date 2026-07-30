@@ -317,6 +317,18 @@ struct KnowledgeRAGCoreTests {
         #expect(prompt.userPrompt.contains("3 in-library repositories"))
         #expect(prompt.userPrompt.contains("1 repositories have an AI summary"))
         #expect(prompt.userPrompt.contains("keyword-ready 1"))
+        #expect(prompt.citationsByMarker.count == snapshot.citationSections().count)
+        let scopeCitation = try #require(prompt.citationsByMarker["S1"])
+        #expect(scopeCitation.repoID == nil)
+        #expect(scopeCitation.source == .knowledgeBaseMetadata)
+        #expect(scopeCitation.sectionTitle == "scope")
+        #expect(scopeCitation.hitKind == .structured)
+        #expect(scopeCitation.evidenceContent?.contains("3 in-library repositories") == true)
+        #expect(
+            KnowledgeRAGPromptBuilder()
+                .citationsUsed(in: "共有 3 个项目 [S1]，主要语言见统计 [S3]。", prompt: prompt)
+                .map(\.marker) == ["S1", "S3"]
+        )
     }
 
     @Test("知识库元数据快照按数据库修订号缓存并在写入后失效")
@@ -4645,6 +4657,43 @@ struct KnowledgeRAGCoreTests {
         #expect(citation.marker == "S1")
         #expect(citation.vectorSimilarity == 0.91)
         #expect(citation.scoreBreakdown?.vectorRank == 2)
+    }
+
+    @Test("结构化知识库元数据引用应保存证据快照且不依赖 Repo")
+    func structuredMetadataCitationPersistsEvidenceSnapshot() async throws {
+        let database = try InMemoryDatabaseManager()
+        let store = GRDBRAGConversationStore(database: database)
+        let conversation = try await store.createConversation(title: nil)
+        let evidence = "- 1878 in-library repositories; 1860 still starred."
+
+        try await store.appendTurn(
+            conversationID: conversation.id,
+            question: "我的知识库中一共有多少个项目？",
+            answer: "共有 1878 个项目 [S1]。",
+            model: "chat",
+            citations: [RAGCitation(
+                id: UUID(),
+                marker: "S1",
+                chunkID: nil,
+                repoID: nil,
+                repoFullName: "",
+                source: .knowledgeBaseMetadata,
+                sectionTitle: "scope",
+                score: 1,
+                hitKind: .structured,
+                vectorSimilarity: nil,
+                sourceURL: nil,
+                evidenceContent: evidence
+            )]
+        )
+
+        let detail = try #require(try await store.loadConversation(id: conversation.id))
+        let citation = try #require(detail.messages.last?.citations.first)
+        #expect(citation.repoID == nil)
+        #expect(citation.source == .knowledgeBaseMetadata)
+        #expect(citation.hitKind == .structured)
+        #expect(citation.evidenceContent == evidence)
+        #expect(try await store.statistics().totalBytes >= Int64(evidence.utf8.count))
     }
 
     @Test("会话历史保存用户可见执行轨迹，不保存 Debug payload")

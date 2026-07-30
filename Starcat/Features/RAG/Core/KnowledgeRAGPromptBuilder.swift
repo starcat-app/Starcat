@@ -196,8 +196,40 @@ struct KnowledgeRAGPromptBuilder: Sendable {
             \(degradation)
             """.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // 先按分段裁剪并计量，再填进可编辑模板；删掉模板占位符 = 不注入对应段。
-        let metadataContext = metadataSnapshot.map { "\n\n\($0.promptContext())" } ?? ""
+        // 全局元数据不是 RAGChunk，但仍是回答使用的数据库事实。每段分配真实 marker，
+        // 让模型只引用使用到的口径；正文快照随 citation 保存，历史回放不会漂移到新数据。
+        let metadataContext: String
+        if let metadataSnapshot {
+            var parts: [String] = []
+            for section in metadataSnapshot.citationSections() {
+                let marker = "S\(nextCitation)"
+                parts.append("[\(marker)] \(section.promptTitle)\n\(section.content)")
+                citations[marker] = RAGCitation(
+                    id: UUID(),
+                    marker: marker,
+                    chunkID: nil,
+                    repoID: nil,
+                    repoFullName: "",
+                    source: .knowledgeBaseMetadata,
+                    sectionTitle: section.id,
+                    score: 1,
+                    hitKind: .structured,
+                    vectorSimilarity: nil,
+                    sourceURL: nil,
+                    evidenceContent: section.content
+                )
+                nextCitation += 1
+            }
+            metadataContext = """
+
+
+            Authoritative local knowledge-base metadata snapshot (generated now; not vector-search evidence):
+            \(parts.joined(separator: "\n"))
+            Use these values as database facts for applicable count, distribution, activity, index-health, and star-ranking questions. Cite only the supplied [S#] marker for each fact section you actually use. If a requested exact value is not present here, say the snapshot does not contain it.
+            """
+        } else {
+            metadataContext = ""
+        }
         let analyticsContext = analyticsResult.map { "\n\n\($0.promptContext())" } ?? ""
         let questionSection = budget.consume("""
             User question:
@@ -361,6 +393,7 @@ struct KnowledgeRAGPromptBuilder: Sendable {
             evidenceSection.contains("[\($0.key)]")
                 || repositoryInsightsSection.contains("[\($0.key)]")
                 || repoContextSection.contains("[\($0.key)]")
+                || questionSection.contains("[\($0.key)]")
         }
 
         let remoteSection = rawRemoteText.isEmpty
