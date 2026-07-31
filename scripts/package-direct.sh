@@ -343,8 +343,19 @@ else
 fi
 
 log "签名 DMG 容器"
-sign_dmg_container
-codesign --verify --verbose=2 "$DMG_PATH"
+# Apple 时间戳服务偶发瞬时失败（1.3.0 曾报 “A timestamp was expected but was not found”），
+# 对 DMG 容器签名做有限次重试，避免整包重建。
+DMG_SIGN_OK=0
+for DMG_SIGN_ATTEMPT in 1 2 3 4 5; do
+  if sign_dmg_container \
+    && codesign --verify --verbose=2 "$DMG_PATH"; then
+    DMG_SIGN_OK=1
+    break
+  fi
+  log "DMG 签名或校验失败，重试 ${DMG_SIGN_ATTEMPT}/5"
+  sleep 3
+done
+[ "$DMG_SIGN_OK" = "1" ] || fail "DMG 容器签名失败（含安全时间戳）"
 write_dmg_sha256
 
 if [ "${STARCAT_NOTARIZE:-0}" = "1" ]; then
