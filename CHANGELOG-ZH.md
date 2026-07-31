@@ -15,7 +15,7 @@ Starcat 1.3.0 新增“我的项目”、全局与单仓库洞察、macOS 桌面
 - 仓库洞察：查看 Star 增长、协作活动、提交趋势、贡献者、发布节奏、项目健康度、社区规范与安全信号；切换仓库和刷新时保持内容稳定。
   ![20260730224524_01AnNgnJ](https://cdn.dong4j.site/source/image/20260730224524_01AnNgnJ.webp)
 - 仓库洞察上下文：生成后的洞察可复用于 AI 摘要、仓库对话与 RAG 回答，并以可移除的只读 XML 上下文展示，同时准确说明不可用、自定义提示词未注入和回退状态。
-- macOS 桌面小组件：提供 Starcat Focus、今日重逢和 Release Watch，可在桌面查看常用仓库、每日推荐与未读 Release，并点击直达对应内容。
+- macOS 桌面小组件：提供 Starcat Focus、今日重逢、Release Watch 和收藏趋势，可在桌面查看常用仓库、每日推荐、未读 Release 与近期收藏增长，并点击直达对应内容。
   ![20260730231856_O82ii1o3](https://cdn.dong4j.site/source/image/20260730231856_O82ii1o3.webp)
 - Alfred Workflow：可直接从 Alfred 搜索 Starcat 本地仓库与 GitHub。[查看项目](https://github.com/starcat-app/starcat-alfred-workflow)
 - uTools 插件：可直接从 uTools 搜索 Starcat 本地仓库与 GitHub。[查看项目](https://github.com/starcat-app/starcat-utools-plugin)

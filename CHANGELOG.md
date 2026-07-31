@@ -15,7 +15,7 @@ Starcat 1.3.0 adds My Projects, library-wide and repository-level insights, macO
 - Repository Insights: View Star growth, collaboration activity, commit trends, contributors, release cadence, project health, community standards, and security signals, with stable content while switching repositories or refreshing.
   ![20260730224524_01AnNgnJ](https://cdn.dong4j.site/source/image/20260730224524_01AnNgnJ.webp)
 - Repository Insights Context: Reuse generated insights in AI summaries, repository conversations, and RAG answers through a removable read-only XML context, with distinct status for unavailable data, custom prompts that omit insights, and actual fallback.
-- macOS desktop widgets: Starcat Focus, Rediscovery, and Release Watch show frequently used repositories, a daily rediscovery, and unread releases with deep links to the corresponding content.
+- macOS desktop widgets: Starcat Focus, Rediscovery, Release Watch, and Star Trend show frequently used repositories, a daily rediscovery, unread releases, and recent starring growth with deep links to the corresponding content.
   ![20260730231856_O82ii1o3](https://cdn.dong4j.site/source/image/20260730231856_O82ii1o3.webp)
 - Alfred Workflow: Search Starcat local repositories and GitHub directly from Alfred. [View project](https://github.com/starcat-app/starcat-alfred-workflow)
 - uTools Plugin: Search Starcat local repositories and GitHub directly from uTools. [View project](https://github.com/starcat-app/starcat-utools-plugin)
