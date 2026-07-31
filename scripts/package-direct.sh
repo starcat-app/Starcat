@@ -55,6 +55,10 @@ CODEBASE_BINARY_PATH="${APP_PATH}/Contents/Resources/codebase.bin"
 SPARKLE_FRAMEWORK_PATH="${APP_PATH}/Contents/Frameworks/Sparkle.framework"
 SPARKLE_CURRENT_PATH="${SPARKLE_FRAMEWORK_PATH}/Versions/Current"
 SWIFT_COMPATIBILITY_PATH="${APP_PATH}/Contents/Frameworks/libswiftCompatibilitySpan.dylib"
+PLUGINS_DIR="${APP_PATH}/Contents/PlugIns"
+# Direct Widget 仍是独立沙箱扩展；重新签名时必须用这份正式 entitlement，
+# 不能 --preserve-metadata=entitlements，否则会把开发签名注入的 get-task-allow 带进公证包。
+DIRECT_WIDGET_ENTITLEMENTS="${PROJECT_ROOT}/Starcat/Resources/Widget/StarcatDirectWidgets.entitlements"
 DMG_PATH="${DOWNLOADS_DIR}/Starcat-${VERSION}-arm64.dmg"
 SHA_PATH="${DMG_PATH}.sha256"
 CURRENT_APPCAST_PATH="${DOWNLOADS_DIR}/appcast-current.xml"
@@ -194,6 +198,22 @@ sign_distribution_code() {
   fi
 }
 
+sign_appex_code() {
+  local target_path="$1"
+  local entitlements_path="$2"
+
+  [ -f "$entitlements_path" ] || fail "缺少 appex entitlement 文件: $entitlements_path"
+
+  # Widget appex 必须保留 app-sandbox / app group，同时换上 Developer ID + 安全时间戳。
+  if [ "$SIGN_IDENTITY" = "-" ]; then
+    codesign --force --sign "$SIGN_IDENTITY" --timestamp=none \
+      --entitlements "$entitlements_path" "$target_path" >/dev/null
+  else
+    codesign --force --options runtime --sign "$SIGN_IDENTITY" --timestamp \
+      --entitlements "$entitlements_path" "$target_path" >/dev/null
+  fi
+}
+
 sign_dmg_container() {
   # DMG 是用户实际下载并由 Gatekeeper 首先检查的外层容器。它必须在提交
   # notarization 之前签名；公证或 staple 之后再签会改变容器并使票据失效。
@@ -239,6 +259,26 @@ fi
 # `codebase.bin` 位于 Resources，不属于 codesign 稳定识别的嵌套代码目录，
 # 因此要在 App 外层签名之前单独处理。
 sign_distribution_code "$CODEBASE_BINARY_PATH"
+
+# PlugIns/*.appex 必须在外层 App 之前单独换签。Xcode Automatic 签名常留下
+# Apple Development + get-task-allow，公证会直接 Invalid（1.3.0 首次提交已踩坑）。
+APPEX_PATHS=()
+if [ -d "$PLUGINS_DIR" ]; then
+  while IFS= read -r -d '' APPEX_PATH; do
+    APPEX_PATHS+=("$APPEX_PATH")
+  done < <(find "$PLUGINS_DIR" -maxdepth 1 -type d -name '*.appex' -print0 | sort -z)
+fi
+for APPEX_PATH in "${APPEX_PATHS[@]+"${APPEX_PATHS[@]}"}"; do
+  case "$(basename "$APPEX_PATH")" in
+    StarcatDirectWidgets.appex)
+      sign_appex_code "$APPEX_PATH" "$DIRECT_WIDGET_ENTITLEMENTS"
+      ;;
+    *)
+      fail "未配置 entitlement 映射的 Direct appex: $(basename "$APPEX_PATH")"
+      ;;
+  esac
+done
+
 sign_distribution_code "$APP_PATH"
 
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
@@ -254,6 +294,16 @@ if [ "$SIGN_IDENTITY" != "-" ]; then
   if [ -f "$SWIFT_COMPATIBILITY_PATH" ]; then
     verify_developer_id_code "libswiftCompatibilitySpan.dylib" "$SWIFT_COMPATIBILITY_PATH"
   fi
+  for APPEX_PATH in "${APPEX_PATHS[@]+"${APPEX_PATHS[@]}"}"; do
+    verify_developer_id_code "$(basename "$APPEX_PATH")" "$APPEX_PATH"
+    APPEX_ENTITLEMENTS="$(codesign -d --entitlements :- "$APPEX_PATH" 2>/dev/null || true)"
+    if grep -q 'com.apple.security.get-task-allow' <<<"$APPEX_ENTITLEMENTS"; then
+      fail "$(basename "$APPEX_PATH") 仍包含 get-task-allow entitlement"
+    fi
+    if ! grep -q 'com.apple.security.app-sandbox' <<<"$APPEX_ENTITLEMENTS"; then
+      fail "$(basename "$APPEX_PATH") 缺少 app-sandbox entitlement"
+    fi
+  done
 fi
 
 FINAL_ENTITLEMENTS="$(codesign -d --entitlements :- "$APP_PATH" 2>/dev/null || true)"
