@@ -355,7 +355,7 @@ struct DefaultRepositoryInsightsAIContextProvider:
         do {
             cached = try await remoteProvider.cachedReleaseCadence(repoID: repo.id)
         } catch {
-            return try? await remoteProvider.refreshReleaseCadence(repository: identity).map {
+            return try? await remoteProvider.refreshReleaseCadence(repository: identity).cadence.map {
                 RepositoryInsightsPreparedValue(value: $0, fetchedAt: now(), isStale: false)
             }
         }
@@ -374,7 +374,7 @@ struct DefaultRepositoryInsightsAIContextProvider:
             return try await remoteProvider.refreshReleaseCadence(
                 repository: identity,
                 ifNoneMatch: cached?.responseETag
-            ).map {
+            ).cadence.map {
                 RepositoryInsightsPreparedValue(value: $0, fetchedAt: now(), isStale: false)
             }
         } catch {

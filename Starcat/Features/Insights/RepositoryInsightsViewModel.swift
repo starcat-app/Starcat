@@ -5,6 +5,10 @@
 //  仓库洞察的本地数据状态机。Release、Health、OpenSSF 与 Community 各自独立，
 //  单一区块失败不会把整个页面切成错误态；repo generation 防止快速切换时旧结果回写。
 //
+//  GitHub stats / contributors 首次常回 HTTP 202（generating）。远端刷新统一走
+//  `refreshWithGeneratingRetry`：最多自动轮询 3 次（对齐 Star History），间隔与 Metrics
+//  Client 的 generating backoff（`retryAfter ?? 2`）对齐，避免轮询打到缓存的 202。
+//
 
 import Foundation
 import GRDB
@@ -406,6 +410,8 @@ struct DefaultRepositoryLocalInsightsProvider: RepositoryLocalInsightsProviding,
 @MainActor
 @Observable
 final class RepositoryInsightsViewModel {
+    typealias Sleep = @Sendable (TimeInterval) async throws -> Void
+
     private enum ManualRefreshTarget: Hashable {
         case activity
         case commitActivity
@@ -420,14 +426,32 @@ final class RepositoryInsightsViewModel {
         let target: ManualRefreshTarget
     }
 
+    /// 远端刷新在 GitHub 202 上的自动轮询结果。
+    private enum GeneratingRetryOutcome<Value> {
+        case value(Value)
+        /// 切仓 / sleep 取消：不得再写当前区块状态。
+        case abandoned
+        case failed(Error)
+    }
+
     /// 与洞察 UI 规范一致：同一个刷新入口完成后 10 秒内不重复触发网络。
     private static let manualRefreshCooldown: TimeInterval = 10
+    /// 对齐 Star History：首次请求 + 最多 3 次自动重试。
+    private static let maximumAutomaticPolls = 3
+    private static let maximumPollDelay: TimeInterval = 10
+    /// 与 `DefaultGitHubRepositoryMetricsClient.recordEndpointFailure(.generating)` 的默认退避一致。
+    private static let defaultGeneratingRetryDelay: TimeInterval = 2
 
     private let provider: any RepositoryLocalInsightsProviding
     private let remoteProvider: (any RepositoryRemoteInsightsProviding)?
+    /// nil 时保持旧行为：仅公开仓允许远端；测试可注入放行「我的项目」私仓。
+    private let remoteAccessProvider: (any RepositoryRemoteInsightsAccessProviding)?
+    /// 我的项目私仓在远端指标到位后，用 App token 补齐 Health 本地快照；公开仓不走此回调。
+    private let healthEnrichmentHandler: (@MainActor @Sendable (Repo) async -> Void)?
     /// 页面数据稳定后通知共享 Coordinator 更新 XML；nil 保持既有测试与 Preview 行为。
     private let contextRefreshHandler: (@MainActor @Sendable (Repo) async -> Void)?
     private let now: @Sendable () -> Date
+    private let sleep: Sleep
     private var lastManualRefreshAt: [ManualRefreshKey: Date] = [:]
     private var generation: UInt64 = 0
     private var releaseCadenceGeneration: UInt64 = 0
@@ -439,6 +463,8 @@ final class RepositoryInsightsViewModel {
     private var timelineGeneration: UInt64 = 0
     /// 本地 Release 订阅历史是更完整的数据源；只有它没有内容时才允许 GitHub 回退接管。
     private var hasLocalReleaseCadence = false
+    /// 当前活跃仓库是否私有；供 loadLocalSections 在尚无完整 Repo 时判断 OpenSSF 不可用。
+    private var activeRepoIsPrivateFlag = false
 
     private(set) var activeRepoID: Int64?
     private(set) var releaseState: RepositoryInsightsSectionState<RepositoryReleaseInsight> = .idle
@@ -472,13 +498,21 @@ final class RepositoryInsightsViewModel {
     init(
         provider: any RepositoryLocalInsightsProviding,
         remoteProvider: (any RepositoryRemoteInsightsProviding)? = nil,
+        remoteAccessProvider: (any RepositoryRemoteInsightsAccessProviding)? = nil,
+        healthEnrichmentHandler: (@MainActor @Sendable (Repo) async -> Void)? = nil,
         contextRefreshHandler: (@MainActor @Sendable (Repo) async -> Void)? = nil,
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = Date.init,
+        sleep: @escaping Sleep = { seconds in
+            try await Task.sleep(for: .seconds(seconds))
+        }
     ) {
         self.provider = provider
         self.remoteProvider = remoteProvider
+        self.remoteAccessProvider = remoteAccessProvider
+        self.healthEnrichmentHandler = healthEnrichmentHandler
         self.contextRefreshHandler = contextRefreshHandler
         self.now = now
+        self.sleep = sleep
     }
 
     /// 本地 Provider 单测继续使用此入口；生产页面使用 `load(repo:isAuthenticated:)`。
@@ -513,12 +547,22 @@ final class RepositoryInsightsViewModel {
         }
         releaseCadenceState = sectionState(from: snapshot.releaseCadence)
         healthState = sectionState(from: snapshot.health)
-        openSSFState = sectionState(from: snapshot.openSSF)
+        // 公开 Scorecard 不覆盖私人仓库；固定 unavailable，避免灰「暂无数据」被误读成拉取失败。
+        if activeRepoIsPrivate(repoId: repoId) {
+            openSSFState = .unavailable
+        } else {
+            openSSFState = sectionState(from: snapshot.openSSF)
+        }
         communityState = sectionState(from: snapshot.community)
         return requestedGeneration
     }
 
+    private func activeRepoIsPrivate(repoId: Int64) -> Bool {
+        activeRepoID == repoId && activeRepoIsPrivateFlag
+    }
+
     func load(repo: Repo, isAuthenticated: Bool) async {
+        activeRepoIsPrivateFlag = repo.isPrivate
         let localGeneration = await loadLocalSections(repoId: repo.id)
         guard !Task.isCancelled,
               generation == localGeneration,
@@ -571,6 +615,17 @@ final class RepositoryInsightsViewModel {
             timelineLoad
         )
         guard generation == localGeneration, activeRepoID == repo.id else { return }
+        if repo.isPrivate,
+           await allowsRemoteInsights(repo: repo, isAuthenticated: isAuthenticated) {
+            await healthEnrichmentHandler?(repo)
+            // Health 可能刚写入；只重读本地区块，避免再打一轮远端。
+            let enriched = await provider.snapshot(repoId: repo.id)
+            guard generation == localGeneration, activeRepoID == repo.id else { return }
+            healthState = sectionState(from: enriched.health)
+            if case .empty = releaseState, case .value(let release?) = enriched.release {
+                releaseState = .content(release)
+            }
+        }
         await contextRefreshHandler?(repo)
     }
 
@@ -750,6 +805,7 @@ final class RepositoryInsightsViewModel {
         cancelRemoteLoading()
         lastManualRefreshAt.removeAll(keepingCapacity: true)
         activeRepoID = nil
+        activeRepoIsPrivateFlag = false
         hasLocalReleaseCadence = false
     }
 
@@ -793,7 +849,9 @@ final class RepositoryInsightsViewModel {
             releaseCadenceState = .loading
         }
 
-        guard isAuthenticated, let remoteProvider else {
+        guard await allowsRemoteInsights(repo: repo, isAuthenticated: isAuthenticated),
+              isAuthenticated,
+              let remoteProvider else {
             releaseCadenceState = retainedValue.map(RepositoryInsightsSectionState.content)
                 ?? .unavailable
             return
@@ -827,21 +885,34 @@ final class RepositoryInsightsViewModel {
         }
 
         let fallbackValue = retainedValue ?? cached?.value
-        do {
-            let fresh = try await remoteProvider.refreshReleaseCadence(
-                repository: repoIdentity(for: repo),
-                ifNoneMatch: cached?.responseETag
-            )
-            guard ownsReleaseCadenceResult(
-                generation: requestedGeneration,
-                repoID: repo.id
-            ) else { return }
-            releaseCadenceState = fresh.map(RepositoryInsightsSectionState.content) ?? .empty
-        } catch let error as GitHubRepositoryMetricsError {
-            guard ownsReleaseCadenceResult(
-                generation: requestedGeneration,
-                repoID: repo.id
-            ) else { return }
+        switch await refreshWithGeneratingRetry(
+            ownsCurrentRequest: {
+                ownsReleaseCadenceResult(generation: requestedGeneration, repoID: repo.id)
+            },
+            onGenerating: {
+                // Release 节奏是本地 section 状态，无 generating 分支；轮询期间保持 loading/旧值。
+            },
+            operation: {
+                try await remoteProvider.refreshReleaseCadence(
+                    repository: repoIdentity(for: repo),
+                    ifNoneMatch: cached?.responseETag
+                )
+            }
+        ) {
+        case .abandoned:
+            return
+        case .value(let fresh):
+            releaseCadenceState = fresh.cadence.map(RepositoryInsightsSectionState.content) ?? .empty
+            // 本地无订阅 Release 时，用同一次远端响应填 Latest Release 卡片。
+            if let latest = fresh.latest {
+                switch releaseState {
+                case .content:
+                    break
+                case .idle, .loading, .empty, .unavailable, .failed:
+                    releaseState = .content(latest)
+                }
+            }
+        case .failed(let error as GitHubRepositoryMetricsError):
             if let fallbackValue {
                 releaseCadenceState = .content(fallbackValue)
             } else {
@@ -852,11 +923,7 @@ final class RepositoryInsightsViewModel {
                     releaseCadenceState = cached == nil ? .failed : .empty
                 }
             }
-        } catch {
-            guard ownsReleaseCadenceResult(
-                generation: requestedGeneration,
-                repoID: repo.id
-            ) else { return }
+        case .failed:
             releaseCadenceState = fallbackValue.map(RepositoryInsightsSectionState.content)
                 ?? (cached == nil ? .failed : .empty)
         }
@@ -892,8 +959,10 @@ final class RepositoryInsightsViewModel {
             }
         }
 
-        guard !repo.isPrivate, isAuthenticated, let remoteProvider else {
-            // 私有项目只展示本地数据库洞察，避免 owner/name 进入公共 OAuth 的远端指标链路。
+        guard await allowsRemoteInsights(repo: repo, isAuthenticated: isAuthenticated),
+              isAuthenticated,
+              let remoteProvider else {
+            // 非「我的项目」私仓 / 未登录：只展示本地洞察，避免私仓身份进入 OAuth Metrics。
             activityState = .unavailable(cached: retainedValue)
             return
         }
@@ -930,27 +999,33 @@ final class RepositoryInsightsViewModel {
 
         isRefreshingActivity = true
         let fallbackValue = retainedValue ?? cached?.value
-        do {
-            let fresh = try await remoteProvider.refreshActivity(
-                repository: RepoIdentity(
-                    ghRepoID: repo.id,
-                    owner: repo.owner,
-                    name: repo.name
-                ),
-                range: selectedRange
-            )
-            guard ownsRemoteResult(
-                generation: requestedGeneration,
-                repoID: repo.id,
-                range: selectedRange
-            ) else { return }
+        switch await refreshWithGeneratingRetry(
+            ownsCurrentRequest: {
+                ownsRemoteResult(
+                    generation: requestedGeneration,
+                    repoID: repo.id,
+                    range: selectedRange
+                )
+            },
+            onGenerating: {
+                activityState = .generating(cached: fallbackValue)
+            },
+            operation: {
+                try await remoteProvider.refreshActivity(
+                    repository: RepoIdentity(
+                        ghRepoID: repo.id,
+                        owner: repo.owner,
+                        name: repo.name
+                    ),
+                    range: selectedRange
+                )
+            }
+        ) {
+        case .abandoned:
+            return
+        case .value(let fresh):
             activityState = .content(fresh)
-        } catch let error as GitHubRepositoryMetricsError {
-            guard ownsRemoteResult(
-                generation: requestedGeneration,
-                repoID: repo.id,
-                range: selectedRange
-            ) else { return }
+        case .failed(let error as GitHubRepositoryMetricsError):
             switch error {
             case .generating:
                 activityState = .generating(cached: fallbackValue)
@@ -959,12 +1034,7 @@ final class RepositoryInsightsViewModel {
             default:
                 activityState = .failed(cached: fallbackValue)
             }
-        } catch {
-            guard ownsRemoteResult(
-                generation: requestedGeneration,
-                repoID: repo.id,
-                range: selectedRange
-            ) else { return }
+        case .failed:
             activityState = .failed(cached: fallbackValue)
         }
     }
@@ -999,8 +1069,10 @@ final class RepositoryInsightsViewModel {
             }
         }
 
-        guard !repo.isPrivate, isAuthenticated, let remoteProvider else {
-            // 与首次加载使用同一门禁，手动刷新也不能绕过私有项目的本地-only 约束。
+        guard await allowsRemoteInsights(repo: repo, isAuthenticated: isAuthenticated),
+              isAuthenticated,
+              let remoteProvider else {
+            // 与首次加载使用同一门禁，手动刷新也不能绕过非「我的项目」私仓的本地-only 约束。
             commitActivityState = .unavailable(cached: retainedValue)
             return
         }
@@ -1026,19 +1098,29 @@ final class RepositoryInsightsViewModel {
 
         isRefreshingCommitActivity = true
         let fallbackValue = retainedValue ?? cached?.value
-        do {
-            let fresh = try await remoteProvider.refreshCommitActivity(
-                repository: RepoIdentity(
-                    ghRepoID: repo.id,
-                    owner: repo.owner,
-                    name: repo.name
-                ),
-                ifNoneMatch: cached?.responseETag
-            )
-            guard ownsCommitResult(generation: requestedGeneration, repoID: repo.id) else { return }
+        switch await refreshWithGeneratingRetry(
+            ownsCurrentRequest: {
+                ownsCommitResult(generation: requestedGeneration, repoID: repo.id)
+            },
+            onGenerating: {
+                commitActivityState = .generating(cached: fallbackValue)
+            },
+            operation: {
+                try await remoteProvider.refreshCommitActivity(
+                    repository: RepoIdentity(
+                        ghRepoID: repo.id,
+                        owner: repo.owner,
+                        name: repo.name
+                    ),
+                    ifNoneMatch: cached?.responseETag
+                )
+            }
+        ) {
+        case .abandoned:
+            return
+        case .value(let fresh):
             commitActivityState = .content(fresh)
-        } catch let error as GitHubRepositoryMetricsError {
-            guard ownsCommitResult(generation: requestedGeneration, repoID: repo.id) else { return }
+        case .failed(let error as GitHubRepositoryMetricsError):
             switch error {
             case .generating:
                 commitActivityState = .generating(cached: fallbackValue)
@@ -1047,8 +1129,7 @@ final class RepositoryInsightsViewModel {
             default:
                 commitActivityState = .failed(cached: fallbackValue)
             }
-        } catch {
-            guard ownsCommitResult(generation: requestedGeneration, repoID: repo.id) else { return }
+        case .failed:
             commitActivityState = .failed(cached: fallbackValue)
         }
     }
@@ -1077,8 +1158,10 @@ final class RepositoryInsightsViewModel {
             }
         }
 
-        guard !repo.isPrivate, isAuthenticated, let remoteProvider else {
-            // Contributors 会把仓库身份发往 GitHub Metrics；私有项目明确禁止该出站路径。
+        guard await allowsRemoteInsights(repo: repo, isAuthenticated: isAuthenticated),
+              isAuthenticated,
+              let remoteProvider else {
+            // Contributors 会把仓库身份发往 GitHub Metrics；非「我的项目」私仓禁止该出站路径。
             contributorsState = .unavailable(cached: retainedValue)
             return
         }
@@ -1104,23 +1187,34 @@ final class RepositoryInsightsViewModel {
 
         isRefreshingContributors = true
         let fallbackValue = retainedValue ?? cached?.value
-        do {
-            let fresh = try await remoteProvider.refreshContributors(
-                repository: repoIdentity(for: repo),
-                ifNoneMatch: cached?.responseETag
-            )
-            guard ownsContributorResult(generation: requestedGeneration, repoID: repo.id) else { return }
+        switch await refreshWithGeneratingRetry(
+            ownsCurrentRequest: {
+                ownsContributorResult(generation: requestedGeneration, repoID: repo.id)
+            },
+            onGenerating: {
+                contributorsState = .generating(cached: fallbackValue)
+            },
+            operation: {
+                try await remoteProvider.refreshContributors(
+                    repository: repoIdentity(for: repo),
+                    ifNoneMatch: cached?.responseETag
+                )
+            }
+        ) {
+        case .abandoned:
+            return
+        case .value(let fresh):
             contributorsState = .content(fresh)
-        } catch let error as GitHubRepositoryMetricsError {
-            guard ownsContributorResult(generation: requestedGeneration, repoID: repo.id) else { return }
+        case .failed(let error as GitHubRepositoryMetricsError):
             switch error {
+            case .generating:
+                contributorsState = .generating(cached: fallbackValue)
             case .unauthorized, .forbidden, .unavailable:
                 contributorsState = .unavailable(cached: fallbackValue)
             default:
                 contributorsState = .failed(cached: fallbackValue)
             }
-        } catch {
-            guard ownsContributorResult(generation: requestedGeneration, repoID: repo.id) else { return }
+        case .failed:
             contributorsState = .failed(cached: fallbackValue)
         }
     }
@@ -1145,8 +1239,9 @@ final class RepositoryInsightsViewModel {
             }
         }
 
-        guard !repo.isPrivate, let remoteProvider else {
-            // Community 缓存同样来自远端链路，私有项目不能读取或刷新这类共享指标缓存。
+        guard await allowsRemoteInsights(repo: repo, isAuthenticated: isAuthenticated),
+              let remoteProvider else {
+            // Community 缓存同样来自远端链路；非「我的项目」私仓不能读取或刷新。
             remoteCommunityState = .unavailable(cached: retainedValue)
             return
         }
@@ -1175,23 +1270,34 @@ final class RepositoryInsightsViewModel {
 
         isRefreshingCommunity = true
         let fallbackValue = retainedValue ?? cached?.value
-        do {
-            let fresh = try await remoteProvider.refreshCommunityProfile(
-                repository: repoIdentity(for: repo),
-                ifNoneMatch: cached?.responseETag
-            )
-            guard ownsCommunityResult(generation: requestedGeneration, repoID: repo.id) else { return }
+        switch await refreshWithGeneratingRetry(
+            ownsCurrentRequest: {
+                ownsCommunityResult(generation: requestedGeneration, repoID: repo.id)
+            },
+            onGenerating: {
+                remoteCommunityState = .generating(cached: fallbackValue)
+            },
+            operation: {
+                try await remoteProvider.refreshCommunityProfile(
+                    repository: repoIdentity(for: repo),
+                    ifNoneMatch: cached?.responseETag
+                )
+            }
+        ) {
+        case .abandoned:
+            return
+        case .value(let fresh):
             remoteCommunityState = .content(fresh)
-        } catch let error as GitHubRepositoryMetricsError {
-            guard ownsCommunityResult(generation: requestedGeneration, repoID: repo.id) else { return }
+        case .failed(let error as GitHubRepositoryMetricsError):
             switch error {
+            case .generating:
+                remoteCommunityState = .generating(cached: fallbackValue)
             case .unauthorized, .forbidden, .unavailable:
                 remoteCommunityState = .unavailable(cached: fallbackValue)
             default:
                 remoteCommunityState = .failed(cached: fallbackValue)
             }
-        } catch {
-            guard ownsCommunityResult(generation: requestedGeneration, repoID: repo.id) else { return }
+        case .failed:
             remoteCommunityState = .failed(cached: fallbackValue)
         }
     }
@@ -1218,8 +1324,10 @@ final class RepositoryInsightsViewModel {
             securityAdvisoriesState = .loading(cached: nil)
         }
 
-        guard !repo.isPrivate, isAuthenticated, let remoteProvider else {
-            // 私有项目的安全公告暂不进入公共指标客户端，只保留本地已同步区块。
+        guard await allowsRemoteInsights(repo: repo, isAuthenticated: isAuthenticated),
+              isAuthenticated,
+              let remoteProvider else {
+            // 非「我的项目」私仓的安全公告不进入 Metrics 客户端。
             securityAdvisoriesState = .unavailable(cached: retainedValue)
             return
         }
@@ -1244,23 +1352,34 @@ final class RepositoryInsightsViewModel {
         }
 
         let fallbackValue = retainedValue ?? cached?.value
-        do {
-            let fresh = try await remoteProvider.refreshSecurityAdvisories(
-                repository: repoIdentity(for: repo),
-                ifNoneMatch: cached?.responseETag
-            )
-            guard ownsSecurityResult(generation: requestedGeneration, repoID: repo.id) else { return }
+        switch await refreshWithGeneratingRetry(
+            ownsCurrentRequest: {
+                ownsSecurityResult(generation: requestedGeneration, repoID: repo.id)
+            },
+            onGenerating: {
+                securityAdvisoriesState = .generating(cached: fallbackValue)
+            },
+            operation: {
+                try await remoteProvider.refreshSecurityAdvisories(
+                    repository: repoIdentity(for: repo),
+                    ifNoneMatch: cached?.responseETag
+                )
+            }
+        ) {
+        case .abandoned:
+            return
+        case .value(let fresh):
             securityAdvisoriesState = .content(fresh)
-        } catch let error as GitHubRepositoryMetricsError {
-            guard ownsSecurityResult(generation: requestedGeneration, repoID: repo.id) else { return }
+        case .failed(let error as GitHubRepositoryMetricsError):
             switch error {
+            case .generating:
+                securityAdvisoriesState = .generating(cached: fallbackValue)
             case .unauthorized, .forbidden, .unavailable:
                 securityAdvisoriesState = .unavailable(cached: fallbackValue)
             default:
                 securityAdvisoriesState = .failed(cached: fallbackValue)
             }
-        } catch {
-            guard ownsSecurityResult(generation: requestedGeneration, repoID: repo.id) else { return }
+        case .failed:
             securityAdvisoriesState = .failed(cached: fallbackValue)
         }
     }
@@ -1293,8 +1412,10 @@ final class RepositoryInsightsViewModel {
             }
         }
 
-        guard !repo.isPrivate, isAuthenticated, let remoteProvider else {
-            // 时间线包含仓库身份与活动详情，私有项目统一停留在本地数据边界内。
+        guard await allowsRemoteInsights(repo: repo, isAuthenticated: isAuthenticated),
+              isAuthenticated,
+              let remoteProvider else {
+            // 时间线包含仓库身份与活动详情；非「我的项目」私仓停留在本地边界。
             recentActivityState = .unavailable(cached: retainedValue)
             return
         }
@@ -1320,29 +1441,96 @@ final class RepositoryInsightsViewModel {
 
         isRefreshingRecentActivity = true
         let fallbackValue = retainedValue ?? cached?.value
-        do {
-            let fresh = try await remoteProvider.refreshRecentActivity(
-                repository: repoIdentity(for: repo),
-                activityRange: activityRange
-            )
-            guard ownsTimelineResult(generation: requestedGeneration, repoID: repo.id) else { return }
+        switch await refreshWithGeneratingRetry(
+            ownsCurrentRequest: {
+                ownsTimelineResult(generation: requestedGeneration, repoID: repo.id)
+            },
+            onGenerating: {
+                recentActivityState = .generating(cached: fallbackValue)
+            },
+            operation: {
+                try await remoteProvider.refreshRecentActivity(
+                    repository: repoIdentity(for: repo),
+                    activityRange: activityRange
+                )
+            }
+        ) {
+        case .abandoned:
+            return
+        case .value(let fresh):
             recentActivityState = .content(fresh)
-        } catch let error as GitHubRepositoryMetricsError {
-            guard ownsTimelineResult(generation: requestedGeneration, repoID: repo.id) else { return }
+        case .failed(let error as GitHubRepositoryMetricsError):
             switch error {
+            case .generating:
+                recentActivityState = .generating(cached: fallbackValue)
             case .unauthorized, .forbidden, .unavailable:
                 recentActivityState = .unavailable(cached: fallbackValue)
             default:
                 recentActivityState = .failed(cached: fallbackValue)
             }
-        } catch {
-            guard ownsTimelineResult(generation: requestedGeneration, repoID: repo.id) else { return }
+        case .failed:
             recentActivityState = .failed(cached: fallbackValue)
         }
     }
 
     private func ownsTimelineResult(generation: UInt64, repoID: Int64) -> Bool {
         timelineGeneration == generation && activeRepoID == repoID
+    }
+
+    /// GitHub 对 stats / contributors 等端点首次常回 202；在所有权仍有效时自动轮询。
+    ///
+    /// - 最多 3 次自动重试（合计最多 4 次请求），与 Star History 一致。
+    /// - 间隔下限 2s，对齐 Metrics Client 对 `.generating` 的默认 backoff，避免打到缓存 202。
+    /// - 轮询期间调用 `onGenerating`，让刷新钮保持转、UI 显示 preparing。
+    private func refreshWithGeneratingRetry<Value>(
+        ownsCurrentRequest: () -> Bool,
+        onGenerating: () -> Void,
+        operation: () async throws -> Value
+    ) async -> GeneratingRetryOutcome<Value> {
+        var automaticPolls = 0
+        while true {
+            do {
+                let value = try await operation()
+                guard ownsCurrentRequest() else { return .abandoned }
+                return .value(value)
+            } catch let error as GitHubRepositoryMetricsError {
+                guard case .generating(let retryAfter) = error,
+                      automaticPolls < Self.maximumAutomaticPolls,
+                      ownsCurrentRequest()
+                else {
+                    guard ownsCurrentRequest() else { return .abandoned }
+                    return .failed(error)
+                }
+                onGenerating()
+                automaticPolls += 1
+                let delay = min(
+                    max(retryAfter ?? Self.defaultGeneratingRetryDelay, Self.defaultGeneratingRetryDelay),
+                    Self.maximumPollDelay
+                )
+                do {
+                    try await sleep(delay)
+                } catch {
+                    return .abandoned
+                }
+                guard ownsCurrentRequest() else { return .abandoned }
+            } catch {
+                guard ownsCurrentRequest() else { return .abandoned }
+                return .failed(error)
+            }
+        }
+    }
+
+    /// 公开仓：结构上允许远端（Community 未登录也可读缓存）；私仓：仅「我的项目」命中。
+    /// 需要登录的区块（Activity 等）在各自 guard 里额外要求 `isAuthenticated`。
+    private func allowsRemoteInsights(repo: Repo, isAuthenticated: Bool) async -> Bool {
+        if let remoteAccessProvider {
+            return await remoteAccessProvider.allowsRemoteInsights(
+                repo: repo,
+                isAuthenticated: isAuthenticated
+            )
+        }
+        // 未注入策略时保持旧行为：私仓一律本地-only。
+        return !repo.isPrivate
     }
 
     private func sectionState<Value: Equatable & Sendable>(

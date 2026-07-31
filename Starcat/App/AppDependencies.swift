@@ -150,10 +150,14 @@ final class AppDependencies {
     /// 仓库 Star 历史的本地优先合并仓库；公开远端与本机精确点在此统一。
     let repoStarHistoryRepository: any RepoStarHistoryRepositoryProtocol
     /// 仓库洞察与 RAG 共用协议的类型化 GitHub Metrics 客户端。
-    /// 动态读取 Keychain token，登录态变化时无需重建依赖树。
+    /// 公开仓走 OAuth；「我的项目」私人 / Internal 走 GitHub App token。
     let repositoryMetricsClient: any GitHubRepositoryMetricsClient
     /// 洞察页面与 AI 共用的远端 Provider；统一缓存之外还合并相同数据集的并发刷新。
     let repositoryRemoteInsightsProvider: any RepositoryRemoteInsightsProviding
+    /// ViewModel 远端门禁：私仓仅「我的项目」关系命中时放行。
+    let repositoryRemoteInsightsAccessProvider: any RepositoryRemoteInsightsAccessProviding
+    /// 「我的项目」专用 GitHub API 客户端（App token）；Health 信号刷新与 README 共用。
+    let projectGitHubAPIClient: GitHubAPIClient
     /// 页面、AI 与 RAG 共用的洞察 XML 生命周期；生成、存储、删除抑制只保留这一份。
     let repositoryInsightsContextCoordinator: RepositoryInsightsContextCoordinator
     /// 切库完成点同步更新，Coordinator 用它拒绝旧账号的迟到 Artifact 写回。
@@ -744,17 +748,8 @@ final class AppDependencies {
         )
         let repositoryInsightsCache = GRDBRepositoryInsightsCache(database: db)
         self.repositoryInsightsCache = repositoryInsightsCache
-        let repositoryMetricsClient = DefaultGitHubRepositoryMetricsClient(
-            tokenProvider: KeychainTokenProvider()
-        )
-        self.repositoryMetricsClient = repositoryMetricsClient
-        let repositoryRemoteInsightsProvider = SharedRepositoryRemoteInsightsProvider(
-            base: DefaultRepositoryRemoteInsightsProvider(
-                metricsClient: repositoryMetricsClient,
-                cache: repositoryInsightsCache
-            )
-        )
-        self.repositoryRemoteInsightsProvider = repositoryRemoteInsightsProvider
+        // Metrics / Remote Insights Provider 延后到 ProjectAccessSession 与 user_projects
+        // 就绪后再装配，以便按仓库路由 OAuth 与 GitHub App token。
         // AI adapter 通过同一个可切换 DatabaseManaging 门面旁路记录用量；配置动作必须
         // 发生在任何 Service 创建 OpenAIClient 之前，避免启动早期请求漏记。
         AIUsageRecorder.shared.configure(database: db)
@@ -832,6 +827,30 @@ final class AppDependencies {
             projectAccessSession: projectAccessSession,
             credentialRouter: ProjectCredentialRouter(projectAccessSession: projectAccessSession)
         )
+        let publicRepositoryMetricsClient = DefaultGitHubRepositoryMetricsClient(
+            tokenProvider: KeychainTokenProvider()
+        )
+        let projectRepositoryMetricsClient = DefaultGitHubRepositoryMetricsClient(
+            tokenProvider: ProjectAccessTokenProvider(session: projectAccessSession)
+        )
+        let repositoryMetricsClient = RoutingGitHubRepositoryMetricsClient(
+            publicClient: publicRepositoryMetricsClient,
+            projectClient: projectRepositoryMetricsClient,
+            resolver: GRDBRepositoryInsightsCredentialResolver(
+                projectRepository: userProjectRepository
+            )
+        )
+        self.repositoryMetricsClient = repositoryMetricsClient
+        let repositoryRemoteInsightsProvider = SharedRepositoryRemoteInsightsProvider(
+            base: DefaultRepositoryRemoteInsightsProvider(
+                metricsClient: repositoryMetricsClient,
+                cache: repositoryInsightsCache
+            )
+        )
+        self.repositoryRemoteInsightsProvider = repositoryRemoteInsightsProvider
+        self.repositoryRemoteInsightsAccessProvider = DefaultRepositoryRemoteInsightsAccessProvider(
+            projectRepository: userProjectRepository
+        )
         let directLicenseManager = DirectLicenseManager()
         self.directLicenseManager = directLicenseManager
         let subscriptions = SubscriptionManager(
@@ -879,11 +898,10 @@ final class AppDependencies {
             inflightTracker: inflightTracker,
             metrics: metrics
         )
-        // GitHub App 安装令牌同时服务项目 README 与受限 Stargazers 接口，二者必须
-        // 共享同一个动态 token provider，避免 README 可读但 Star 历史误用 OAuth。
         let projectAPIClient = GitHubAPIClient(
             tokenProvider: ProjectAccessTokenProvider(session: projectAccessSession)
         )
+        self.projectGitHubAPIClient = projectAPIClient
         self.projectReadmeAPI = ReadmeAPI(
             client: projectAPIClient,
             repository: readmeRepo,

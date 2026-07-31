@@ -77,10 +77,16 @@ actor RepoHealthService {
     ///
     /// OpenSSF 刻意只读本地库：大多数 repo 没有 Scorecard 数据，前台刷新直接打
     /// OpenSSF 会放大 Health sheet 卡顿；后台 `OpenSSFScorePoller` 已负责慢速补齐。
-    func refreshWithLatestSignals(repo: Repo) async throws -> RepoHealthSnapshot {
-        async let latestRelease = refreshLatestReleaseSignal(repo: repo)
+    ///
+    /// - Parameter apiClient: 「我的项目」私仓传入 GitHub App 客户端；默认仍用主 OAuth。
+    func refreshWithLatestSignals(
+        repo: Repo,
+        apiClient: (any GitHubAPIClientProtocol)? = nil
+    ) async throws -> RepoHealthSnapshot {
+        let client = apiClient ?? self.apiClient
+        async let latestRelease = refreshLatestReleaseSignal(repo: repo, apiClient: client)
         async let openSSF = openSSFRepository.record(for: repo.id)
-        async let freshRepo = refreshRepoMetadataSignal(repo: repo)
+        async let freshRepo = refreshRepoMetadataSignal(repo: repo, apiClient: client)
 
         let snapshot = RepoHealthCalculator.makeSnapshot(
             repo: await freshRepo,
@@ -175,7 +181,10 @@ actor RepoHealthService {
         )
     }
 
-    private func refreshLatestReleaseSignal(repo: Repo) async -> ReleaseRecord? {
+    private func refreshLatestReleaseSignal(
+        repo: Repo,
+        apiClient: any GitHubAPIClientProtocol
+    ) async -> ReleaseRecord? {
         do {
             let response = try await apiClient.releases(owner: repo.owner, repo: repo.name, perPage: 100)
             let nowISO = ISO8601DateFormatter.shared.string(from: Date())
@@ -207,7 +216,10 @@ actor RepoHealthService {
     }
 
     /// 拉取 `/repos/{owner}/{repo}` 刷新 Health 算分用的 repo 信号字段。
-    private func refreshRepoMetadataSignal(repo: Repo) async -> Repo {
+    private func refreshRepoMetadataSignal(
+        repo: Repo,
+        apiClient: any GitHubAPIClientProtocol
+    ) async -> Repo {
         do {
             let dto = try await apiClient.repo(owner: repo.owner, repo: repo.name)
             let cachedAt = ISO8601DateFormatter.shared.string(from: Date())
