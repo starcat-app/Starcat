@@ -317,6 +317,18 @@ struct RepositoryInsightsView: View {
         }
     }
 
+    /// 卡片浅 tint 对角渐变：比纯色块略有层次，饱和度仍压低，避免营销页大渐变。
+    private func insightsCardFill(_ tint: Color) -> LinearGradient {
+        LinearGradient(
+            colors: [
+                tint.opacity(0.16),
+                tint.opacity(0.05)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
     private func localFact(
         title: LocalizedStringKey,
         systemImage: String,
@@ -349,9 +361,9 @@ struct RepositoryInsightsView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 72)
         .padding(10)
-        // 与我的洞察 KPI 同款：极浅语义 tint，避免中性灰块在 emphasized 面板里糊成一片。
+        // 极浅语义 tint 渐变：比纯色块略有层次，仍避免大面积营销渐变。
         .background(
-            tint.opacity(0.08),
+            insightsCardFill(tint),
             in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
         .overlay {
@@ -651,7 +663,7 @@ struct RepositoryInsightsView: View {
         .frame(maxWidth: .infinity, minHeight: 72)
         .padding(10)
         .background(
-            tint.opacity(0.08),
+            insightsCardFill(tint),
             in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
         .overlay {
@@ -893,8 +905,15 @@ struct RepositoryInsightsView: View {
         .accessibilityHint(Text("insights.repo.star.restriction.message"))
     }
 
-    private func starMetric(value: String, label: LocalizedStringKey) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+    private func starMetric(
+        value: String,
+        label: LocalizedStringKey,
+        motifID: String,
+        motifSeed: Int
+    ) -> some View {
+        let tint = Color.yellow
+        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+        return VStack(alignment: .leading, spacing: 3) {
             Text(label)
                 .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
@@ -908,13 +927,21 @@ struct RepositoryInsightsView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
-        .background(
-            Color.yellow.opacity(0.08),
-            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-        )
+        .background {
+            ZStack(alignment: .bottomTrailing) {
+                shape.fill(tint.opacity(0.08))
+                // Star 趋势三卡比我的洞察 KPI 更矮，用 compact 口袋避免压住数字。
+                InsightsMetricMotifCorner(
+                    metricID: motifID,
+                    value: abs(motifSeed),
+                    tint: tint,
+                    pocket: .compact
+                )
+            }
+            .clipShape(shape)
+        }
         .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.yellow.opacity(0.22), lineWidth: 1)
+            shape.stroke(tint.opacity(0.22), lineWidth: 1)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(label))
@@ -963,15 +990,21 @@ struct RepositoryInsightsView: View {
                 starMetric(
                     value: starHistoryViewModel.currentStars?.formatted(.number.locale(locale))
                         ?? String.l10n("insights.repo.state.noData"),
-                    label: "insights.repo.star.current"
+                    label: "insights.repo.star.current",
+                    motifID: "starCurrent",
+                    motifSeed: starHistoryViewModel.currentStars ?? 0
                 )
                 starMetric(
                     value: signed(starHistoryViewModel.growth30Days),
-                    label: "insights.repo.star.growth30Days"
+                    label: "insights.repo.star.growth30Days",
+                    motifID: "starGrowth30",
+                    motifSeed: starHistoryViewModel.growth30Days ?? 0
                 )
                 starMetric(
                     value: signed(starHistoryViewModel.growthOneYear),
-                    label: "insights.repo.star.growthOneYear"
+                    label: "insights.repo.star.growthOneYear",
+                    motifID: "starGrowthYear",
+                    motifSeed: starHistoryViewModel.growthOneYear ?? 0
                 )
             }
 
@@ -2121,11 +2154,8 @@ struct RepositoryInsightsView: View {
             Group {
                 switch viewModel.healthState {
                 case .content(let health):
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 148), spacing: 10)],
-                        alignment: .leading,
-                        spacing: 8
-                    ) {
+                    // 固定四维等分铺满，避免 adaptive 网格在宽屏留下右侧空白。
+                    HStack(alignment: .top, spacing: 10) {
                         ForEach(healthDimensions(from: health)) { dimension in
                             healthItem(dimension)
                         }

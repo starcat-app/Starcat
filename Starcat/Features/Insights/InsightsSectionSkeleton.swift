@@ -244,20 +244,11 @@ struct InsightsSectionSkeleton: View {
         phase: Double,
         palette: SkeletonPalette
     ) -> some View {
-        let columns = 2
-        let rows = Int(ceil(Double(count) / Double(columns)))
-        return VStack(spacing: 8) {
-            ForEach(0..<rows, id: \.self) { row in
-                HStack(spacing: 10) {
-                    ForEach(0..<columns, id: \.self) { column in
-                        let index = row * columns + column
-                        if index < count {
-                            healthTile(index: index, phase: phase, palette: palette)
-                        } else {
-                            Color.clear.frame(maxWidth: .infinity, minHeight: 40)
-                        }
-                    }
-                }
+        // 与正式 Health 四维卡一致：单行等分，不走 2×2 adaptive。
+        HStack(spacing: 10) {
+            ForEach(0..<count, id: \.self) { index in
+                healthTile(index: index, phase: phase, palette: palette)
+                    .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
             }
         }
     }
