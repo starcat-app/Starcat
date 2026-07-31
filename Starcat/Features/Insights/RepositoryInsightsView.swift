@@ -45,18 +45,24 @@ enum StarHistoryChartSeriesBuilder {
 }
 
 enum StarHistoryRestrictionNoticePolicy {
-    /// 已拿到 GitHub Stargazers 数据时不再提示访问限制；加载与失败状态也不抢占主反馈。
+    /// 已拿到 GitHub Stargazers 数据时不再提示；私仓 / privateOnly 不适用「公开 API 限制」文案。
+    /// 加载与失败状态也不抢占主反馈。
     static func shouldShow(
         points: [StarHistoryPoint],
-        phase: StarHistoryViewPhase
+        phase: StarHistoryViewPhase,
+        isPrivateRepository: Bool = false
     ) -> Bool {
         guard !points.contains(where: { $0.source == .githubStargazers }) else {
             return false
         }
+        // 我的项目私仓与 privateOnly 走项目凭据或本机快照，挂公开 Stargazers 限制链接会误导。
+        if isPrivateRepository || phase == .privateOnly {
+            return false
+        }
         switch phase {
-        case .content, .stale, .privateOnly, .unavailable:
+        case .content, .stale, .unavailable:
             return true
-        case .idle, .loading, .building, .failed:
+        case .idle, .loading, .building, .failed, .privateOnly:
             return false
         }
     }
@@ -793,7 +799,8 @@ struct RepositoryInsightsView: View {
                 if displayedStarPoints.isEmpty,
                    StarHistoryRestrictionNoticePolicy.shouldShow(
                     points: displayedStarPoints,
-                    phase: starHistoryViewModel.phase
+                    phase: starHistoryViewModel.phase,
+                    isPrivateRepository: repo.isPrivate
                    ) {
                     starHistoryRestrictionLink
                         .padding(.horizontal, 2)
@@ -851,7 +858,8 @@ struct RepositoryInsightsView: View {
     private var starFooter: some View {
         let showsRestriction = StarHistoryRestrictionNoticePolicy.shouldShow(
             points: displayedStarPoints,
-            phase: starHistoryViewModel.phase
+            phase: starHistoryViewModel.phase,
+            isPrivateRepository: repo.isPrivate
         )
         return VStack(alignment: .trailing, spacing: 4) {
             HStack(spacing: 8) {
