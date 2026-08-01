@@ -164830,6 +164830,150 @@
         }
       }
     },
+    "rag.workspace.citation.knowledgeBaseMetadata" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Knowledge base metadata"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "知识库元数据"
+          }
+        }
+      }
+    },
+    "rag.workspace.citation.section.activityQuality" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activity and quality"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "活跃度与质量"
+          }
+        }
+      }
+    },
+    "rag.workspace.citation.section.indexCoverage" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Index coverage"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "索引覆盖"
+          }
+        }
+      }
+    },
+    "rag.workspace.citation.section.indexHealth" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "RAG index health"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "RAG 索引健康度"
+          }
+        }
+      }
+    },
+    "rag.workspace.citation.section.knowledgeArtifacts" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Knowledge artifacts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "知识产物"
+          }
+        }
+      }
+    },
+    "rag.workspace.citation.section.organization" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organization"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "整理情况"
+          }
+        }
+      }
+    },
+    "rag.workspace.citation.section.scope" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Knowledge base scope"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "知识库范围"
+          }
+        }
+      }
+    },
+    "rag.workspace.citation.section.starLeaders" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Star leaders"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "高星仓库"
+          }
+        }
+      }
+    },
+    "rag.workspace.citation.section.technology" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Technology distribution"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "技术分布"
+          }
+        }
+      }
+    },
     "rag.workspace.citations.collapse" : {
       "localizations" : {
         "ar" : {
@@ -165050,150 +165194,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "还有 %d 个"
-          }
-        }
-      }
-    },
-    "rag.workspace.citation.knowledgeBaseMetadata" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Knowledge base metadata"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "知识库元数据"
-          }
-        }
-      }
-    },
-    "rag.workspace.citation.section.activityQuality" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Activity and quality"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "活跃度与质量"
-          }
-        }
-      }
-    },
-    "rag.workspace.citation.section.indexCoverage" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Index coverage"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "索引覆盖"
-          }
-        }
-      }
-    },
-    "rag.workspace.citation.section.indexHealth" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "RAG index health"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "RAG 索引健康度"
-          }
-        }
-      }
-    },
-    "rag.workspace.citation.section.knowledgeArtifacts" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Knowledge artifacts"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "知识产物"
-          }
-        }
-      }
-    },
-    "rag.workspace.citation.section.organization" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Organization"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "整理情况"
-          }
-        }
-      }
-    },
-    "rag.workspace.citation.section.scope" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Knowledge base scope"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "知识库范围"
-          }
-        }
-      }
-    },
-    "rag.workspace.citation.section.starLeaders" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Star leaders"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "高星仓库"
-          }
-        }
-      }
-    },
-    "rag.workspace.citation.section.technology" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Technology distribution"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "技术分布"
           }
         }
       }
@@ -196558,70 +196558,6 @@
         }
       }
     },
-    "rag.workspace.inspector.matchType.hybrid" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hybrid (FTS5 + vector)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "混合检索（FTS5 + 向量）"
-          }
-        }
-      }
-    },
-    "rag.workspace.inspector.matchType.keyword" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keyword (FTS5)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关键词检索（FTS5）"
-          }
-        }
-      }
-    },
-    "rag.workspace.inspector.matchType.structured" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Structured database facts"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "结构化数据库事实"
-          }
-        }
-      }
-    },
-    "rag.workspace.inspector.matchType.vector" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vector"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "向量检索"
-          }
-        }
-      }
-    },
     "rag.workspace.inspector.matchType" : {
       "localizations" : {
         "ar" : {
@@ -196730,6 +196666,70 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "命中方式"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.matchType.hybrid" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hybrid (FTS5 + vector)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "混合检索（FTS5 + 向量）"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.matchType.keyword" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keyword (FTS5)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关键词检索（FTS5）"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.matchType.structured" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Structured database facts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "结构化数据库事实"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.matchType.vector" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vector"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "向量检索"
           }
         }
       }
@@ -197298,12 +197298,6 @@
         }
       }
     },
-    "rag.workspace.inspector.metadata.group.insights" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Insights summary" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "洞察摘要" } }
-      }
-    },
     "rag.workspace.inspector.metadata.group.activity" : {
       "localizations" : {
         "ar" : {
@@ -197863,6 +197857,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "索引"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.metadata.group.insights" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Insights summary"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "洞察摘要"
           }
         }
       }
@@ -202157,32 +202167,82 @@
     },
     "rag.workspace.inspector.metadata.insights.archivedUnavailable" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Archived · unavailable" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已归档 · 不可访问" } }
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archived · unavailable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已归档 · 不可访问"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.insights.dormant" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Dormant for over 1 year" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "超过 1 年未活跃" } }
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dormant for over 1 year"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "超过 1 年未活跃"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.insights.organized" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Organized coverage" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "整理覆盖" } }
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organized coverage"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "整理覆盖"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.insights.qualityCoverage" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Health · OpenSSF coverage" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "健康度 · OpenSSF 覆盖" } }
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health · OpenSSF coverage"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "健康度 · OpenSSF 覆盖"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.insights.risks" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Maintenance · security risk" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "维护 · 安全风险" } }
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maintenance · security risk"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "维护 · 安全风险"
+          }
+        }
       }
     },
     "rag.workspace.inspector.metadata.languages" : {
@@ -205791,6 +205851,22 @@
         }
       }
     },
+    "rag.workspace.inspector.plan.analytics.dimension.topic" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Topic"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "技术主题"
+          }
+        }
+      }
+    },
     "rag.workspace.inspector.plan.analytics.direction.ascending" : {
       "localizations" : {
         "ar" : {
@@ -206013,82 +206089,6 @@
             "value" : "降序"
           }
         }
-      }
-    },
-    "rag.workspace.inspector.plan.analytics.dimension.topic" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Topic"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "技术主题"
-          }
-        }
-      }
-    },
-    "rag.workspace.inspector.plan.analytics.measure.repositoriesArchived" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Archived repositories" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已归档仓库" } }
-      }
-    },
-    "rag.workspace.inspector.plan.analytics.measure.repositoriesDormant" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Dormant repositories" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "长期未活跃仓库" } }
-      }
-    },
-    "rag.workspace.inspector.plan.analytics.measure.repositoriesOrganized" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Organized repositories" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已整理仓库" } }
-      }
-    },
-    "rag.workspace.inspector.plan.analytics.measure.repositoriesUnavailable" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unavailable repositories" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "不可访问仓库" } }
-      }
-    },
-    "rag.workspace.inspector.plan.analytics.measure.repositoriesUnread" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unread repositories" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未读仓库" } }
-      }
-    },
-    "rag.workspace.inspector.plan.analytics.measure.repositoriesUntagged" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Untagged repositories" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未打标签仓库" } }
-      }
-    },
-    "rag.workspace.inspector.plan.analytics.measure.repositoriesWithHealthSnapshot" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories with health data" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已有健康度数据的仓库" } }
-      }
-    },
-    "rag.workspace.inspector.plan.analytics.measure.repositoriesWithMaintenanceRisk" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories with maintenance risk" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "存在维护风险的仓库" } }
-      }
-    },
-    "rag.workspace.inspector.plan.analytics.measure.repositoriesWithOpenSSFScore" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories with OpenSSF scores" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已有 OpenSSF 评分的仓库" } }
-      }
-    },
-    "rag.workspace.inspector.plan.analytics.measure.repositoriesWithSecurityRisk" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories with security risk" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "存在安全风险的仓库" } }
       }
     },
     "rag.workspace.inspector.plan.analytics.measure.averageForks" : {
@@ -206764,6 +206764,102 @@
         }
       }
     },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesArchived" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archived repositories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已归档仓库"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesDormant" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dormant repositories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "长期未活跃仓库"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesOrganized" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organized repositories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已整理仓库"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesUnavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unavailable repositories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不可访问仓库"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesUnread" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unread repositories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未读仓库"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesUntagged" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Untagged repositories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未打标签仓库"
+          }
+        }
+      }
+    },
     "rag.workspace.inspector.plan.analytics.measure.repositoriesWithAIGeneratedNotes" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -206986,6 +207082,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "含 AI 摘要的儲存庫數"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesWithHealthSnapshot" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repositories with health data"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已有健康度数据的仓库"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesWithMaintenanceRisk" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repositories with maintenance risk"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "存在维护风险的仓库"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesWithOpenSSFScore" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repositories with OpenSSF scores"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已有 OpenSSF 评分的仓库"
           }
         }
       }
@@ -207551,6 +207695,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "近 30 天產生過摘要的儲存庫數"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.plan.analytics.measure.repositoriesWithSecurityRisk" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repositories with security risk"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "存在安全风险的仓库"
           }
         }
       }
@@ -229475,22 +229635,6 @@
         }
       }
     },
-    "rag.workspace.inspector.structuredPreview" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Used fact fragment"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用的事实片段"
-          }
-        }
-      }
-    },
     "rag.workspace.inspector.source" : {
       "localizations" : {
         "ar" : {
@@ -229599,6 +229743,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "來源"
+          }
+        }
+      }
+    },
+    "rag.workspace.inspector.structuredPreview" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Used fact fragment"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用的事实片段"
           }
         }
       }
@@ -452797,6 +452957,9 @@
           }
         }
       }
+    },
+    "widget.releaseWatch.unreadShort %@" : {
+
     },
     "widget.releaseWatch.unreadShort %lld" : {
       "comment" : "Compact unread Release count shown in the Widget header.",

@@ -14,7 +14,6 @@
 
 import SwiftUI
 import AppKit  // W4-5 D1 follow-up：NSApp.appearance 控制主题（preferredColorScheme 在 macOS 有 nil-restore bug）
-import TipKit
 
 extension Notification.Name {
     /// 三处系统入口共用的列表偏好重置意图；实际重置由 HomeView 在当前账号上下文执行。
@@ -403,16 +402,6 @@ struct StarcatApp: App {
         // 内部不走 String(localized:),但保险起见早装早安心)。详见
         // `Starcat/Core/Settings/LocalizedBundle.swift` 顶部注释。
         LocalizedBundle.install()
-
-        // TipKit 只承载少量局部功能发现提示；真正的新手任务进度由 Starcat 自己的
-        // GettingStartedProgressStore 管理，避免用户关闭 tip 后被误判为完成步骤。
-        // 测试 host 跳过，保持单测环境没有额外持久化写入和展示频率状态。
-        if !TestEnvironment.isRunning {
-            try? Tips.configure([
-                .displayFrequency(.immediate),
-                .datastoreLocation(.applicationDefault)
-            ])
-        }
 
         AppLog.general.info("Starcat starting (bundle=\(AppConstants.bundleIdentifier, privacy: .public))")
 

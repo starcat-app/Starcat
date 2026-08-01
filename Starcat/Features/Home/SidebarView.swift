@@ -1155,7 +1155,8 @@ struct SidebarView: View {
                     .symbolEffect(.bounce, value: rootNavigationBounceTokens[page, default: 0])
                     .frame(height: 30)
                 Text(page.titleKey)
-                    .font(interfaceScale.font(.body, weight: .semibold))
+                    // 四入口文案比 body 小一号：图标仍占主视觉，标签只做识别不抢权重。
+                    .font(interfaceScale.font(.captionStrong))
                     .lineLimit(1)
             }
             .foregroundStyle(isSelected ? Color.accentColor : (needsLogin ? Color.primary.opacity(0.3) : Color.primary.opacity(0.75)))

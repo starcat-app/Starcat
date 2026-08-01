@@ -7,11 +7,11 @@
 //  设计边界：
 //  - `FirstRunOnboardingView` 继续负责品牌 / 能力介绍；本文件只负责进入主界面后的操作闭环。
 //  - 清单状态由真实行为推进（登录、同步、选中仓库、保存标签/笔记、搜索、打开 AI），避免用户只点「下一步」。
-//  - TipKit 只用于局部发现提示，不承担任务进度；进度仍由 `GettingStartedProgressStore` 持久化。
+//  - 主界面操作引导统一用黄色 `GettingStartedCoachMark` 胶囊；不再并行挂 TipKit 气泡，避免双引导叠层。
+//  - 进度仍由 `GettingStartedProgressStore` 持久化。
 //
 
 import SwiftUI
-import TipKit
 
 // MARK: - Notification hooks
 
@@ -151,36 +151,6 @@ final class GettingStartedProgressStore {
     }
 }
 
-// MARK: - TipKit
-
-/// TipKit 的提示定义集中在一处，避免各个 toolbar / section 分散创建匿名 tip。
-///
-/// TipKit 展示次数与失效状态由系统管理；清单完成状态由 `GettingStartedProgressStore` 管理，
-/// 二者故意分离，避免用户关闭 tip 后误判为已经完成任务。
-enum GettingStartedTips {
-    struct SyncStarsTip: Tip {
-        var title: Text { Text("gettingStarted.tip.sync.title") }
-        var message: Text? { Text("gettingStarted.tip.sync.message") }
-        var image: Image? { Image(systemName: "arrow.triangle.2.circlepath") }
-    }
-
-    struct SearchTip: Tip {
-        var title: Text { Text("gettingStarted.tip.search.title") }
-        var message: Text? { Text("gettingStarted.tip.search.message") }
-        var image: Image? { Image(systemName: "magnifyingglass") }
-    }
-
-    struct AITip: Tip {
-        var title: Text { Text("gettingStarted.tip.ai.title") }
-        var message: Text? { Text("gettingStarted.tip.ai.message") }
-        var image: Image? { Image(systemName: "sparkles") }
-    }
-
-    static let syncStars = SyncStarsTip()
-    static let search = SearchTip()
-    static let ai = AITip()
-}
-
 // MARK: - Checklist View
 
 enum GettingStartedAnchorID: Hashable {
@@ -209,25 +179,6 @@ struct GettingStartedAnchorPreferenceKey: PreferenceKey {
 extension View {
     func gettingStartedAnchor(_ id: GettingStartedAnchorID) -> some View {
         anchorPreference(key: GettingStartedAnchorPreferenceKey.self, value: .bounds) { [id: $0] }
-    }
-
-    func gettingStartedPopoverTip<T: Tip>(_ tip: T) -> some View {
-        modifier(GettingStartedPopoverTipModifier(tip: tip))
-    }
-}
-
-private struct GettingStartedPopoverTipModifier<T: Tip>: ViewModifier {
-    let tip: T
-
-    @Environment(\.firstRunOnboardingActive) private var firstRunOnboardingActive
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if firstRunOnboardingActive {
-            content
-        } else {
-            content.popoverTip(tip)
-        }
     }
 }
 

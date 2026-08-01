@@ -415,7 +415,7 @@ struct HomeView: View {
 
     /// 聚焦式开始使用指引只在真实主窗口可交互后运行。
     /// 当前步骤必须拿到真实控件锚点才画胶囊指引；拿不到锚点时直接不画，
-    /// 避免 splash / 首启 welcome 背后的隐藏控件触发 TipKit 或空目标高亮。
+    /// 避免 splash / 首启 welcome 背后的隐藏控件出现空目标高亮。
     private func gettingStartedActiveAnchor(
         in anchors: [GettingStartedAnchorID: Anchor<CGRect>],
         proxy: GeometryProxy
