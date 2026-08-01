@@ -36,9 +36,14 @@ final class SubscriptionManager: ProEntitlementProviding {
         }
     }
     private(set) var isLoadingProducts: Bool = false
-    private(set) var isPurchasing: Bool = false
+    /// 正在购买的商品 ID；为 nil 表示当前没有进行中的购买。
+    /// UI 应用这个字段做「只让被点的那一行转圈」，不要再用全局 Bool 让三行同时 busy。
+    private(set) var purchasingProductID: String?
     private(set) var isRestoring: Bool = false
     private(set) var lastErrorMessage: String?
+
+    /// 是否有任意 StoreKit 购买进行中（Paywall 禁用入口等仍可用）。
+    var isPurchasing: Bool { purchasingProductID != nil }
 
     /// 权益变化回调（AppDependencies 注入）。StoreKit 异步刷新完成后需重启 MCP 等 Pro 门控服务。
     var onEntitlementDidChange: (@MainActor () -> Void)?
@@ -151,8 +156,8 @@ final class SubscriptionManager: ProEntitlementProviding {
             entitlement = .testEnvironment
             return true
         }
-        isPurchasing = true
-        defer { isPurchasing = false }
+        purchasingProductID = product.id
+        defer { purchasingProductID = nil }
 
         do {
             let result = try await product.purchase()

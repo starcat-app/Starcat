@@ -554,7 +554,9 @@ struct ProSettingsTab: View {
                     ProProductRow(
                         product: product,
                         isCurrent: subscriptionManager.entitlement.productID == product.id,
-                        isBusy: subscriptionManager.isPurchasing
+                        // 只给当前点击的商品转圈；其它行在购买进行中仅禁用，避免三行一起 loading。
+                        isBusy: subscriptionManager.purchasingProductID == product.id,
+                        isInteractionLocked: subscriptionManager.isPurchasing
                     ) {
                         Task { await purchase(product) }
                     }
@@ -2078,7 +2080,10 @@ private struct ProAccountActionRow: View {
 private struct ProProductRow: View {
     let product: Product
     let isCurrent: Bool
+    /// 本行正在购买（显示 ProgressView）。
     let isBusy: Bool
+    /// 任意商品购买进行中（禁用本行，避免并发购买；未 busy 的行不显示转圈）。
+    let isInteractionLocked: Bool
     let onPurchase: () -> Void
 
     private var productID: ProProductID? {
@@ -2182,7 +2187,7 @@ private struct ProProductRow: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(isBusy || isCurrent)
+                .disabled(isBusy || isCurrent || isInteractionLocked)
                 .fixedSize()
             }
         }

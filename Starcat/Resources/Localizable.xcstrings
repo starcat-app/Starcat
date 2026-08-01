@@ -118603,6 +118603,7 @@
       }
     },
     "gettingStarted.tip.ai.message" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -118715,6 +118716,7 @@
       }
     },
     "gettingStarted.tip.ai.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -118827,6 +118829,7 @@
       }
     },
     "gettingStarted.tip.search.message" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -118939,6 +118942,7 @@
       }
     },
     "gettingStarted.tip.search.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -119051,6 +119055,7 @@
       }
     },
     "gettingStarted.tip.sync.message" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -119163,6 +119168,7 @@
       }
     },
     "gettingStarted.tip.sync.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
