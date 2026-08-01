@@ -17,6 +17,7 @@
 #                                     未配置 STARCAT_NOTARY_PROFILE 时的兼容凭证。
 #   STARCAT_GENERATE_APPCAST=1         使用 Sparkle generate_appcast 生成当前版本 appcast。
 #   STARCAT_DOWNLOAD_BASE_URL          appcast 下载前缀，默认 https://starcat.ink/downloads/。
+#                                     生成后会从 CHANGELOG 注入 Sparkle 更新说明（description）。
 #   STARCAT_DMG_TOOL=create-dmg|hdiutil
 #                                     默认 create-dmg；仅显式设置 hdiutil 时生成裸 DMG。
 #   STARCAT_DMG_APPLESCRIPT_TIMEOUT_SECONDS
@@ -130,6 +131,12 @@ fi
 [ -d "$APP_PATH" ] || fail "未找到 Direct app: $APP_PATH"
 [ -d "$SPARKLE_FRAMEWORK_PATH" ] || fail "Direct 包缺少 Sparkle.framework"
 [ -f "$CODEBASE_BINARY_PATH" ] || fail "Direct 包缺少 CodebaseMemory 二进制: $CODEBASE_BINARY_PATH"
+
+# Sparkle 更新弹窗固定英文：签名前移除非英文本地化，只留 Base/en。
+# 必须在 codesign Sparkle 之前做，否则改 Resources 会破坏框架签名。
+log "固定 Sparkle 更新 UI 为英文"
+bash "${SCRIPT_DIR}/strip-sparkle-non-english-localizations.sh" "$APP_PATH" \
+  || fail "剥离 Sparkle 非英文本地化失败"
 
 SPARKLE_NESTED_CODE=(
   "$SPARKLE_CURRENT_PATH/XPCServices/Downloader.xpc"
@@ -425,6 +432,11 @@ if [ "${STARCAT_GENERATE_APPCAST:-0}" = "1" ]; then
   cp "$DMG_PATH" "$APPCAST_INPUT_DIR/"
   "$GENERATE_APPCAST" --download-url-prefix "$DOWNLOAD_BASE_URL" "$APPCAST_INPUT_DIR"
   cp "$APPCAST_INPUT_DIR/appcast.xml" "$CURRENT_APPCAST_PATH"
+  # generate_appcast 不读 Changelog；补 description 后更新窗才会显示更新说明。
+  log "注入 Sparkle 更新说明: ${VERSION}"
+  python3 "${SCRIPT_DIR}/inject-appcast-release-notes.py" \
+    --appcast "$CURRENT_APPCAST_PATH" \
+    --version "$VERSION"
 else
   log "跳过 appcast 生成；需要时设置 STARCAT_GENERATE_APPCAST=1"
 fi

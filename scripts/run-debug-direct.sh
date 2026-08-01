@@ -27,6 +27,9 @@ DIRECT_DEBUG_WIDGET_BUNDLE_ID="com.starcat.app.direct.debug.widgets"
 # 正式 Apple Developer Team ID。后续如果换账号，可用环境变量覆盖：
 #   STARCAT_DEVELOPMENT_TEAM=XXXXXXXXXX ./scripts/run-debug-direct.sh
 DEVELOPMENT_TEAM_ID="${STARCAT_DEVELOPMENT_TEAM:-8WCUMGCWMB}"
+# 本机若有多张 Apple Development 证书，裸写 "Apple Development" 会歧义失败。
+# 默认钉死 Starcat 主账号那张；可用 STARCAT_DEBUG_SIGN_IDENTITY 覆盖。
+DEBUG_SIGN_IDENTITY="${STARCAT_DEBUG_SIGN_IDENTITY:-Apple Development: liwen gong (MZ4R5J393K)}"
 
 BUILD_VERSION="$(git -C "$PROJECT_ROOT" rev-list --count HEAD 2>/dev/null || true)"
 if ! [[ "$BUILD_VERSION" =~ ^[1-9][0-9]*$ ]]; then
@@ -176,6 +179,27 @@ if [ ! -d "$APP_PATH/Contents/Frameworks/Sparkle.framework" ]; then
   echo "ERROR: Direct 构建产物缺少 Sparkle.framework，拒绝启动。"
   exit 1
 fi
+
+# 更新弹窗标题/按钮来自 Sparkle.framework 本地化；Debug 构建也会带上 zh_CN 等。
+# 产品要求弹窗固定英文，所以启动前剥离非英文 .lproj，再按内→外重签。
+echo "==> 固定 Sparkle 更新 UI 为英文..."
+bash "$SCRIPT_DIR/strip-sparkle-non-english-localizations.sh" "$APP_PATH"
+SPARKLE_FRAMEWORK_PATH="$APP_PATH/Contents/Frameworks/Sparkle.framework"
+SPARKLE_CURRENT_PATH="$SPARKLE_FRAMEWORK_PATH/Versions/Current"
+SPARKLE_NESTED_CODE=(
+  "$SPARKLE_CURRENT_PATH/XPCServices/Downloader.xpc"
+  "$SPARKLE_CURRENT_PATH/XPCServices/Installer.xpc"
+  "$SPARKLE_CURRENT_PATH/Updater.app"
+  "$SPARKLE_CURRENT_PATH/Autoupdate"
+)
+for COMPONENT_PATH in "${SPARKLE_NESTED_CODE[@]}"; do
+  if [ -e "$COMPONENT_PATH" ]; then
+    codesign --force --sign "$DEBUG_SIGN_IDENTITY" --timestamp=none "$COMPONENT_PATH" >/dev/null
+  fi
+done
+codesign --force --sign "$DEBUG_SIGN_IDENTITY" --timestamp=none "$SPARKLE_FRAMEWORK_PATH" >/dev/null
+codesign --force --sign "$DEBUG_SIGN_IDENTITY" --timestamp=none "$APP_PATH" >/dev/null
+
 if ! codesign --verify --deep --strict "$APP_PATH"; then
   echo "ERROR: Direct App 或内嵌 Widget Extension 签名校验失败，拒绝启动。"
   exit 1
