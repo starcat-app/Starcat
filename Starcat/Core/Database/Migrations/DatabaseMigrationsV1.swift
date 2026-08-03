@@ -70,6 +70,63 @@ enum DatabaseMigrations {
         registerV15(into: &migrator)
         registerV16(into: &migrator)
         registerV17(into: &migrator)
+        registerV18(into: &migrator)
+    }
+
+    // MARK: - v18-rag-structured-citations：结构化知识库事实引用（2026-07-30）
+
+    /// 全局知识库统计不属于单个仓库，也没有可在未来重新加载的 chunk。引用表因此需要：
+    ///
+    /// - 允许 `repo_id` 为空，并将仓库删除改为 SET NULL，保留用户可见历史；
+    /// - 保存结构化证据正文快照，避免旧回答重新打开后显示当前数据库的新统计；
+    /// - 通过重建表修改 SQLite 的 NOT NULL / FK 约束，不能回写已发布的 v7 schema。
+    private static func registerV18(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v18-rag-structured-citations") { db in
+            try db.execute(sql: "DROP INDEX IF EXISTS idx_rag_citations_message_rank")
+            try db.execute(sql: """
+                ALTER TABLE rag_message_citations
+                RENAME TO rag_message_citations_v17
+                """)
+            try db.create(table: "rag_message_citations") { table in
+                table.column("id", .text).primaryKey()
+                table.column("message_id", .text).notNull()
+                    .references("rag_messages", column: "id", onDelete: .cascade)
+                table.column("chunk_id", .integer)
+                    .references("rag_chunks", column: "id", onDelete: .setNull)
+                table.column("repo_id", .integer)
+                    .references("repos", column: "id", onDelete: .setNull)
+                table.column("repo_full_name", .text).notNull()
+                table.column("marker", .text).notNull().defaults(to: "")
+                table.column("source", .text).notNull()
+                table.column("section_title", .text).notNull().defaults(to: "")
+                table.column("rank", .integer).notNull()
+                table.column("score", .double).notNull()
+                table.column("hit_kind", .text).notNull().defaults(to: "hybrid")
+                table.column("vector_similarity", .double)
+                table.column("score_breakdown_json", .text)
+                table.column("source_url", .text)
+                table.column("evidence_content", .text)
+                table.column("fetched_at", .text)
+            }
+            try db.execute(sql: """
+                INSERT INTO rag_message_citations (
+                    id, message_id, chunk_id, repo_id, repo_full_name, marker, source,
+                    section_title, rank, score, hit_kind, vector_similarity,
+                    score_breakdown_json, source_url, evidence_content, fetched_at
+                )
+                SELECT
+                    id, message_id, chunk_id, repo_id, repo_full_name, marker, source,
+                    section_title, rank, score, hit_kind, vector_similarity,
+                    score_breakdown_json, source_url, NULL, fetched_at
+                FROM rag_message_citations_v17
+                """)
+            try db.drop(table: "rag_message_citations_v17")
+            try db.create(
+                index: "idx_rag_citations_message_rank",
+                on: "rag_message_citations",
+                columns: ["message_id", "rank"]
+            )
+        }
     }
 
     // MARK: - v17-my-projects：当前用户的个人 / 组织项目关系（2026-07-29）

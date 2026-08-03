@@ -10,8 +10,8 @@ import SwiftUI
 
 /// 中栏与详情栏顶栏尺寸契约：两边分割线必须落在同一水平线。
 enum InsightsColumnChrome {
-    /// 容纳「标题 + 一行副标题」与详情栏右侧分段控件的单行布局。
-    static let headerHeight: CGFloat = 68
+    /// 容纳「标题 + 最多两行副标题」与详情栏右侧分段控件；两侧共用同一高度对齐分割线。
+    static let headerHeight: CGFloat = 84
     static let headerVerticalPadding: CGFloat = 12
 }
 
@@ -79,8 +79,9 @@ struct InsightsListView: View {
                 Text(topic.subtitleKey)
                     .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
-                    // 与详情栏一样只占一行，避免副标题换行把分割线顶歪。
-                    .lineLimit(1)
+                    // 分类说明允许两行完整展示；顶栏高度与详情栏共用契约，避免分割线错位。
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .contentTransition(reduceMotion ? .identity : .opacity)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: topic)

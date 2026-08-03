@@ -12,7 +12,6 @@
 //
 
 import SwiftUI
-import TipKit
 import AppKit
 
 /// repo 详情顶部元信息内容。
@@ -481,7 +480,6 @@ struct RepoAIOpenButton: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .pressableHover()
-        .gettingStartedPopoverTip(GettingStartedTips.ai)
         .help(Text(verbatim: openButtonHelp))
     }
 

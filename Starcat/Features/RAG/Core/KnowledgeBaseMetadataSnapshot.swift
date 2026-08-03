@@ -13,6 +13,13 @@ import GRDB
 
 /// 注入回答 Prompt 的知识库全局事实；数组已由仓储限制，防止统计维度挤占分片预算。
 struct KnowledgeBaseMetadataSnapshot: Equatable, Sendable {
+    /// Generator 使用的可独立引用事实段。`id` 会持久化到 citation，不能随 UI 文案变化。
+    struct CitationSection: Equatable, Sendable {
+        let id: String
+        let promptTitle: String
+        let content: String
+    }
+
     struct NamedCount: Equatable, Sendable {
         let name: String
         let count: Int
@@ -22,6 +29,42 @@ struct KnowledgeBaseMetadataSnapshot: Equatable, Sendable {
         let repoID: Int64
         let fullName: String
         let stars: Int
+    }
+
+    /// “我的洞察”与 RAG 共用的知识库事实。这里不携带任何 UI 文案，避免展示模型反向污染 Prompt。
+    struct InsightsFacts: Equatable, Sendable {
+        struct PriorityRepository: Equatable, Sendable {
+            let repoID: Int64
+            let fullName: String
+            let stars: Int
+            let isUnread: Bool
+            let isUntagged: Bool
+        }
+
+        struct WeeklyCount: Equatable, Sendable {
+            let weekStart: Date
+            let count: Int
+        }
+
+        let organizedProjectCount: Int
+        let normalizedStatusCounts: [NamedCount]
+        /// 保留完整分布，由 UI 决定 Top N 与“其他”；Prompt 只读取受限前缀。
+        let languageCounts: [NamedCount]
+        let topicCounts: [NamedCount]
+        let licenseCounts: [NamedCount]
+        let dormantProjectCount: Int
+        let archivedProjectCount: Int
+        let unavailableProjectCount: Int
+        let healthCompletedProjectCount: Int
+        let openSSFCompletedProjectCount: Int
+        let maintenanceRiskProjectCount: Int
+        let securityRiskProjectCount: Int
+        let readmeSourceProjectCount: Int
+        let indexableSourceProjectCount: Int
+        let embeddingReadyProjectCount: Int
+        let indexIssueProjectCount: Int
+        let priorityRepositories: [PriorityRepository]
+        let weeklyAdditions: [WeeklyCount]
     }
 
     struct IndexHealth: Equatable, Sendable {
@@ -88,32 +131,83 @@ struct KnowledgeBaseMetadataSnapshot: Equatable, Sendable {
     let withoutIndexableSourceProjectCount: Int
     let topStarredRepositories: [TopRepository]
     let indexHealth: IndexHealth
+    /// 供“我的洞察”、RAG Prompt 与 Inspector 投影的单一知识库聚合事实。
+    let insights: InsightsFacts
 
     /// 保持英文、键值式表达，避免受显示语言或自定义 Prompt 影响而改变数据库事实的含义。
     func promptContext() -> String {
-        let status = rendered(statusCounts)
+        let sections = citationSections().map {
+            "\($0.promptTitle):\n\($0.content)"
+        }.joined(separator: "\n")
+        return """
+        Authoritative local knowledge-base metadata snapshot (generated now; not vector-search evidence):
+        \(sections)
+        Use these values as database facts for applicable count, distribution, activity, index-health, and star-ranking questions. Do not fabricate chunk citations for this snapshot. If a requested exact value is not present here, say the snapshot does not contain it.
+        """
+    }
+
+    /// 将大快照拆成事实口径稳定的小段，Generator 才能只引用真正用于回答的部分。
+    /// 这里仍保持英文数据库语义；Inspector 通过稳定 id 映射当前 App 语言的标题。
+    func citationSections() -> [CitationSection] {
+        let status = rendered(insights.normalizedStatusCounts)
         let languages = rendered(topLanguages)
         let tags = rendered(topTags)
+        let topics = rendered(Array(insights.topicCounts.prefix(8)))
+        let licenses = rendered(
+            Array(insights.licenseCounts.prefix(8)).map {
+                KnowledgeBaseMetadataSnapshot.NamedCount(
+                    name: $0.name == "__unknown__" ? "Unknown" : $0.name,
+                    count: $0.count
+                )
+            }
+        )
         let topRepositories = topStarredRepositories.map { "\($0.fullName) (\($0.stars) stars)" }
             .joined(separator: "; ")
         let sourceCoverage = sourceIndexCoverage.map {
             "\($0.source.rawValue): \($0.repositoryCount) repositories with content, \($0.readyChunkCount) ready, \($0.failedChunkCount) failed, \($0.staleChunkCount) stale, \($0.chunkCount) active chunks"
         }.joined(separator: "; ")
-        return """
-        Authoritative local knowledge-base metadata snapshot (generated now; not vector-search evidence):
-        - Scope: \(projectCount) in-library repositories; \(starredProjectCount) still starred; \(retainedAfterUnstarCount) retained after unstar.
-        - Organization: status counts [\(status)]; \(taggedProjectCount) tagged; \(untaggedProjectCount) untagged; \(tagCount) distinct tags.
-        - Technology: \(knownLanguageProjectCount) repositories have a language; \(unknownLanguageProjectCount) unknown; top languages [\(languages)].
-        - Top tags: [\(tags)].
-        - Activity: \(addedInLast30DaysCount) added to the library in the last 30 days; \(pushedInLast30DaysCount) repositories pushed in the last 30 days.
-        - Knowledge artifacts: \(aiSummaryProjectCount) repositories have an AI summary; \(privateNoteProjectCount) have private notes (\(aiGeneratedNoteProjectCount) AI-generated).
-        - Content freshness: \(privateNotesEditedInLast30DaysProjectCount) repositories had private notes edited in the last 30 days; \(aiSummariesGeneratedInLast30DaysProjectCount) had AI summaries generated in the last 30 days. Older summaries are not automatically invalid.
-        - Indexed source coverage: [\(sourceCoverage)].
-        - Index availability: \(excludedChunkCount) chunks are excluded; \(withoutReadmeSourceProjectCount) repositories have no README source; \(withoutIndexableSourceProjectCount) have no active indexable source.
-        - Star leaders (top \(topStarredRepositories.count)): [\(topRepositories)].
-        - RAG index for model \(indexHealth.embeddingModel): \(indexHealth.totalChunks) active chunks; vector-ready \(indexHealth.readyChunks), keyword-ready \(indexHealth.keywordOnlyChunks), pending \(indexHealth.pendingChunks), failed \(indexHealth.failedChunks), stale \(indexHealth.staleChunks).
-        Use these values as database facts for applicable count, distribution, activity, index-health, and star-ranking questions. Do not fabricate chunk citations for this snapshot. If a requested exact value is not present here, say the snapshot does not contain it.
-        """
+        return [
+            CitationSection(
+                id: "scope",
+                promptTitle: "Scope",
+                content: "- \(projectCount) in-library repositories; \(starredProjectCount) still starred; \(retainedAfterUnstarCount) retained after unstar."
+            ),
+            CitationSection(
+                id: "organization",
+                promptTitle: "Organization",
+                content: "- Status counts [\(status)]; \(taggedProjectCount) tagged; \(untaggedProjectCount) untagged; \(tagCount) distinct tags.\n- Top tags: [\(tags)]."
+            ),
+            CitationSection(
+                id: "technology",
+                promptTitle: "Technology",
+                content: "- \(knownLanguageProjectCount) repositories have a language; \(unknownLanguageProjectCount) unknown; top languages [\(languages)].\n- GitHub topics: [\(topics)]; licenses: [\(licenses)]."
+            ),
+            CitationSection(
+                id: "activity_quality",
+                promptTitle: "Activity and quality",
+                content: "- \(addedInLast30DaysCount) added to the library in the last 30 days; \(pushedInLast30DaysCount) repositories pushed in the last 30 days.\n- \(insights.organizedProjectCount) organized; \(insights.dormantProjectCount) dormant for over 1 year; \(insights.archivedProjectCount) archived; \(insights.unavailableProjectCount) unavailable.\n- \(insights.healthCompletedProjectCount) have health snapshots; \(insights.openSSFCompletedProjectCount) have OpenSSF scores; \(insights.maintenanceRiskProjectCount) have maintenance risk; \(insights.securityRiskProjectCount) have security risk."
+            ),
+            CitationSection(
+                id: "knowledge_artifacts",
+                promptTitle: "Knowledge artifacts",
+                content: "- \(aiSummaryProjectCount) repositories have an AI summary; \(privateNoteProjectCount) have private notes (\(aiGeneratedNoteProjectCount) AI-generated).\n- \(privateNotesEditedInLast30DaysProjectCount) repositories had private notes edited in the last 30 days; \(aiSummariesGeneratedInLast30DaysProjectCount) had AI summaries generated in the last 30 days. Older summaries are not automatically invalid."
+            ),
+            CitationSection(
+                id: "index_coverage",
+                promptTitle: "Index coverage",
+                content: "- Indexed source coverage: [\(sourceCoverage)].\n- \(excludedChunkCount) chunks are excluded; \(withoutReadmeSourceProjectCount) repositories have no README source; \(withoutIndexableSourceProjectCount) have no active indexable source.\n- \(insights.readmeSourceProjectCount) have README content; \(insights.indexableSourceProjectCount) have an active source; \(insights.embeddingReadyProjectCount) have a current-model vector-ready chunk; \(insights.indexIssueProjectCount) have failed or stale chunks."
+            ),
+            CitationSection(
+                id: "star_leaders",
+                promptTitle: "Star leaders",
+                content: "- Top \(topStarredRepositories.count): [\(topRepositories)]."
+            ),
+            CitationSection(
+                id: "index_health",
+                promptTitle: "RAG index health",
+                content: "- Model \(indexHealth.embeddingModel.isEmpty ? "not configured (keyword-only mode)" : indexHealth.embeddingModel): \(indexHealth.totalChunks) active chunks; vector-ready \(indexHealth.readyChunks), keyword-ready \(indexHealth.keywordOnlyChunks), pending \(indexHealth.pendingChunks), failed \(indexHealth.failedChunks), stale \(indexHealth.staleChunks)."
+            )
+        ]
     }
 
     /// 规划阶段只需知道有哪些可验证的库存事实，不应重复发送标签排行或 Star Top10 等生成阶段信息。
@@ -126,6 +220,7 @@ struct KnowledgeBaseMetadataSnapshot: Equatable, Sendable {
         - Scope: \(projectCount) in-library repositories.
         - AI summaries: \(aiSummaryProjectCount) repositories; private notes: \(privateNoteProjectCount) repositories (\(aiGeneratedNoteProjectCount) AI-generated).
         - Last 30 days: \(privateNotesEditedInLast30DaysProjectCount) repositories with edited private notes; \(aiSummariesGeneratedInLast30DaysProjectCount) with generated AI summaries.
+        - Curation and risk: \(insights.organizedProjectCount) organized; \(insights.dormantProjectCount) dormant; \(insights.archivedProjectCount) archived; \(insights.unavailableProjectCount) unavailable; \(insights.maintenanceRiskProjectCount) maintenance risk; \(insights.securityRiskProjectCount) security risk.
         - Indexed source coverage: [\(sourceCoverage)].
         - Index availability: \(excludedChunkCount) excluded chunks; \(withoutReadmeSourceProjectCount) repositories without a README source; \(withoutIndexableSourceProjectCount) without an active indexable source.
         Use this only to choose a supported local inventory analytics metric when the user asks for these counts. Do not invent an unsupported metric or treat these aggregates as vector-search evidence.
@@ -146,13 +241,22 @@ actor KnowledgeBaseMetadataSnapshotCache {
     /// 因此修订号命中仍只复用一分钟，避免把版本缓存误做成无限期缓存。
     private static let maximumAge: TimeInterval = 60
 
+    struct Revision: Equatable, Sendable {
+        let userID: Int64?
+        let metadataRevision: Int64
+        let healthCount: Int
+        let latestHealthAt: String?
+        let openSSFCount: Int
+        let latestOpenSSFAt: String?
+    }
+
     private struct Entry {
-        let revision: Int64
+        let revision: Revision
         let snapshot: KnowledgeBaseMetadataSnapshot
     }
 
     private struct InFlightLoad {
-        let revision: Int64
+        let revision: Revision
         let task: Task<KnowledgeBaseMetadataSnapshot, Error>
     }
 
@@ -161,12 +265,13 @@ actor KnowledgeBaseMetadataSnapshotCache {
 
     func value(
         embeddingModel: String,
-        revision: Int64,
+        revision: Revision,
+        now: Date,
         load: @escaping @Sendable () async throws -> KnowledgeBaseMetadataSnapshot
     ) async throws -> KnowledgeBaseMetadataSnapshot {
         if let entry = entries[embeddingModel],
            entry.revision == revision,
-           Date().timeIntervalSince(entry.snapshot.generatedAt) < Self.maximumAge {
+           now.timeIntervalSince(entry.snapshot.generatedAt) < Self.maximumAge {
             return entry.snapshot
         }
         if let inFlight = inFlightLoads[embeddingModel], inFlight.revision == revision {
@@ -208,39 +313,72 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
     private let database: any DatabaseManaging
     private let embeddingModel: String
     private let cache: KnowledgeBaseMetadataSnapshotCache?
+    private let now: @Sendable () -> Date
 
     init(
         database: any DatabaseManaging,
         embeddingModel: String,
-        cache: KnowledgeBaseMetadataSnapshotCache? = nil
+        cache: KnowledgeBaseMetadataSnapshotCache? = nil,
+        now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.database = database
         self.embeddingModel = embeddingModel
         self.cache = cache
+        self.now = now
     }
 
     func fetch() async throws -> KnowledgeBaseMetadataSnapshot {
+        let generatedAt = now()
         guard let cache, let revision = try await fetchRevision() else {
-            return try await fetchUncached()
+            return try await fetchUncached(generatedAt: generatedAt)
         }
-        return try await cache.value(embeddingModel: embeddingModel, revision: revision) {
-            try await self.fetchUncached()
+        return try await cache.value(
+            embeddingModel: embeddingModel,
+            revision: revision,
+            now: generatedAt
+        ) {
+            try await self.fetchUncached(generatedAt: generatedAt)
         }
     }
 
     /// 老测试草稿库或尚未迁移到 v12 的数据库没有修订表时直接读取，不能为了缓存让 RAG 失效。
-    private func fetchRevision() async throws -> Int64? {
-        try await database.writer.read { db in
+    private func fetchRevision() async throws -> KnowledgeBaseMetadataSnapshotCache.Revision? {
+        let userID = database.currentUserId
+        return try await database.writer.read { db in
             guard try db.tableExists("rag_metadata_revision") else { return nil }
-            return try Int64.fetchOne(
+            let metadataRevision = try Int64.fetchOne(
                 db,
                 sql: "SELECT revision FROM rag_metadata_revision WHERE id = 1"
+            ) ?? 0
+            let health = try Self.tableRevision(
+                db,
+                table: "repo_health_snapshots",
+                timestampColumn: "computed_at"
+            )
+            let openSSF = try Self.tableRevision(
+                db,
+                table: "open_ssf_scores",
+                timestampColumn: "fetched_at"
+            )
+            return KnowledgeBaseMetadataSnapshotCache.Revision(
+                userID: userID,
+                metadataRevision: metadataRevision,
+                healthCount: health.count,
+                latestHealthAt: health.latest,
+                openSSFCount: openSSF.count,
+                latestOpenSSFAt: openSSF.latest
             )
         }
     }
 
-    private func fetchUncached() async throws -> KnowledgeBaseMetadataSnapshot {
-        try await database.writer.read { db in
+    private func fetchUncached(generatedAt: Date) async throws -> KnowledgeBaseMetadataSnapshot {
+        let recentCutoff = ISO8601DateFormatter.shared.string(
+            from: generatedAt.addingTimeInterval(-30 * 24 * 60 * 60)
+        )
+        let dormantCutoff = ISO8601DateFormatter.shared.string(
+            from: generatedAt.addingTimeInterval(-365 * 24 * 60 * 60)
+        )
+        return try await database.writer.read { db in
             let overview = try Row.fetchOne(db, sql: """
                 SELECT
                     COUNT(*) AS project_count,
@@ -248,20 +386,35 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
                     COALESCE(SUM(CASE WHEN r.is_starred = 0 THEN 1 ELSE 0 END), 0) AS retained_count,
                     COALESCE(SUM(CASE WHEN EXISTS (SELECT 1 FROM repo_tags rt WHERE rt.repo_id = r.id) THEN 1 ELSE 0 END), 0) AS tagged_count,
                     COALESCE(SUM(CASE WHEN r.language IS NOT NULL AND TRIM(r.language) != '' THEN 1 ELSE 0 END), 0) AS known_language_count,
-                    COALESCE(SUM(CASE WHEN datetime(n.library_updated_at) >= datetime('now', '-30 days') THEN 1 ELSE 0 END), 0) AS added_recently_count,
-                    COALESCE(SUM(CASE WHEN datetime(r.pushed_at) >= datetime('now', '-30 days') THEN 1 ELSE 0 END), 0) AS pushed_recently_count,
+                    COALESCE(SUM(CASE WHEN datetime(n.library_updated_at) >= datetime(?) THEN 1 ELSE 0 END), 0) AS added_recently_count,
+                    COALESCE(SUM(CASE WHEN datetime(r.pushed_at) >= datetime(?) THEN 1 ELSE 0 END), 0) AS pushed_recently_count,
+                    COALESCE(SUM(CASE WHEN n.status = 'using' THEN 1 ELSE 0 END), 0) AS using_count,
+                    COALESCE(SUM(CASE WHEN
+                        EXISTS (SELECT 1 FROM repo_tags rt WHERE rt.repo_id = r.id)
+                        OR NULLIF(TRIM(n.content), '') IS NOT NULL
+                        OR n.status IN ('read', 'using')
+                    THEN 1 ELSE 0 END), 0) AS organized_count,
+                    COALESCE(SUM(CASE WHEN r.pushed_at IS NOT NULL AND datetime(r.pushed_at) < datetime(?) THEN 1 ELSE 0 END), 0) AS dormant_count,
+                    COALESCE(SUM(CASE WHEN r.is_archived = 1 THEN 1 ELSE 0 END), 0) AS archived_count,
+                    COALESCE(SUM(CASE WHEN r.access_state = 'unavailable' THEN 1 ELSE 0 END), 0) AS unavailable_count,
                     COALESCE(SUM(CASE WHEN NULLIF(TRIM(n.content), '') IS NOT NULL THEN 1 ELSE 0 END), 0) AS private_note_count,
                     COALESCE(SUM(CASE WHEN NULLIF(TRIM(n.content), '') IS NOT NULL AND n.is_ai_generated = 1 THEN 1 ELSE 0 END), 0) AS ai_generated_note_count,
                     COALESCE(SUM(CASE WHEN EXISTS (SELECT 1 FROM ai_summaries s WHERE s.repo_id = r.id) THEN 1 ELSE 0 END), 0) AS ai_summary_count,
-                    COALESCE(SUM(CASE WHEN NULLIF(TRIM(n.content), '') IS NOT NULL AND datetime(n.edited_at) >= datetime('now', '-30 days') THEN 1 ELSE 0 END), 0) AS notes_edited_recently_count,
+                    COALESCE(SUM(CASE WHEN NULLIF(TRIM(n.content), '') IS NOT NULL AND datetime(n.edited_at) >= datetime(?) THEN 1 ELSE 0 END), 0) AS notes_edited_recently_count,
                     COALESCE(SUM(CASE WHEN EXISTS (
                         SELECT 1 FROM ai_summaries s
-                        WHERE s.repo_id = r.id AND datetime(s.generated_at) >= datetime('now', '-30 days')
+                        WHERE s.repo_id = r.id AND datetime(s.generated_at) >= datetime(?)
                     ) THEN 1 ELSE 0 END), 0) AS summaries_generated_recently_count
                 FROM repos r
                 JOIN repo_notes n ON n.repo_id = r.id
                 WHERE n.library_state = 'in_library'
-                """)!
+                """, arguments: [
+                    recentCutoff,
+                    recentCutoff,
+                    dormantCutoff,
+                    recentCutoff,
+                    recentCutoff
+                ])!
             let projectCount: Int = overview["project_count"]
             let taggedProjectCount: Int = overview["tagged_count"]
             let knownLanguageProjectCount: Int = overview["known_language_count"]
@@ -303,15 +456,53 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
                 GROUP BY COALESCE(NULLIF(TRIM(n.status), ''), 'unclassified')
                 ORDER BY count DESC, name ASC
                 """)
-            let topLanguages = try Self.namedCounts(db, sql: """
-                SELECT COALESCE(NULLIF(TRIM(r.language), ''), 'Unknown') AS name, COUNT(*) AS count
+            let normalizedStatusCounts = try Self.namedCounts(db, sql: """
+                SELECT
+                    CASE
+                        WHEN n.status = 'unread' THEN 'unread'
+                        WHEN n.status = 'using' THEN 'using'
+                        ELSE 'read'
+                    END AS name,
+                    COUNT(*) AS count
                 FROM repos r
                 JOIN repo_notes n ON n.repo_id = r.id
                 WHERE n.library_state = 'in_library'
-                GROUP BY COALESCE(NULLIF(TRIM(r.language), ''), 'Unknown')
+                GROUP BY 1
                 ORDER BY count DESC, name ASC
-                LIMIT \(Self.distributionLimit)
                 """)
+            let languageCounts = try Self.namedCounts(db, sql: """
+                SELECT COALESCE(NULLIF(TRIM(r.language), ''), '__unknown__') AS name, COUNT(*) AS count
+                FROM repos r
+                JOIN repo_notes n ON n.repo_id = r.id
+                WHERE n.library_state = 'in_library'
+                GROUP BY COALESCE(NULLIF(TRIM(r.language), ''), '__unknown__')
+                ORDER BY count DESC, name ASC
+                """)
+            let topicCounts = try Self.namedCounts(db, sql: """
+                SELECT LOWER(TRIM(topic.value)) AS name, COUNT(DISTINCT r.id) AS count
+                FROM repos r
+                JOIN repo_notes n ON n.repo_id = r.id
+                JOIN json_each(CASE WHEN json_valid(r.topics) THEN r.topics ELSE '[]' END) topic
+                WHERE n.library_state = 'in_library'
+                  AND topic.type = 'text'
+                  AND NULLIF(TRIM(topic.value), '') IS NOT NULL
+                GROUP BY LOWER(TRIM(topic.value))
+                ORDER BY count DESC, name COLLATE NOCASE ASC
+                """)
+            let licenseCounts = try Self.namedCounts(db, sql: """
+                SELECT COALESCE(NULLIF(TRIM(r.license), ''), '__unknown__') AS name, COUNT(*) AS count
+                FROM repos r
+                JOIN repo_notes n ON n.repo_id = r.id
+                WHERE n.library_state = 'in_library'
+                GROUP BY COALESCE(NULLIF(TRIM(r.license), ''), '__unknown__')
+                ORDER BY count DESC, name COLLATE NOCASE ASC
+                """)
+            let topLanguages = Array(languageCounts.prefix(Self.distributionLimit)).map {
+                KnowledgeBaseMetadataSnapshot.NamedCount(
+                    name: $0.name == "__unknown__" ? "Unknown" : $0.name,
+                    count: $0.count
+                )
+            }
             let topTags = try Self.namedCounts(db, sql: """
                 SELECT t.name AS name, COUNT(*) AS count
                 FROM tags t
@@ -342,6 +533,38 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
                         stars: row["stars_count"]
                     )
                 }
+            let priorityRepositories = try Row.fetchAll(db, sql: """
+                SELECT
+                    r.id,
+                    r.full_name,
+                    r.stars_count,
+                    CASE WHEN n.status = 'unread' THEN 1 ELSE 0 END AS is_unread,
+                    CASE WHEN NOT EXISTS (
+                        SELECT 1 FROM repo_tags rt WHERE rt.repo_id = r.id
+                    ) THEN 1 ELSE 0 END AS is_untagged
+                FROM repos r
+                JOIN repo_notes n ON n.repo_id = r.id
+                WHERE n.library_state = 'in_library'
+                  AND (
+                    n.status = 'unread'
+                    OR NOT EXISTS (SELECT 1 FROM repo_tags rt WHERE rt.repo_id = r.id)
+                  )
+                ORDER BY r.stars_count DESC, COALESCE(n.library_updated_at, r.cached_at) DESC, r.id DESC
+                LIMIT 5
+                """).map { row in
+                    KnowledgeBaseMetadataSnapshot.InsightsFacts.PriorityRepository(
+                        repoID: row["id"],
+                        fullName: row["full_name"],
+                        stars: row["stars_count"],
+                        isUnread: row["is_unread"],
+                        isUntagged: row["is_untagged"]
+                    )
+                }
+            let weeklyAdditions = try Self.weeklyAdditions(
+                db,
+                generatedAt: generatedAt
+            )
+            let quality = try Self.qualityCounts(db)
             // 知识库内容最后变化时间：在库仓库里最大的 library_updated_at。存储为一致的
             // ISO8601 UTC 文本，字典序 MAX 即时间序 MAX；解析在 Swift 侧兼容有/无小数秒。
             let latestContentUpdatedRaw = try String.fetchOne(db, sql: """
@@ -437,14 +660,53 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
                           AND NOT EXISTS (
                               SELECT 1 FROM rag_chunk_overrides o
                               WHERE o.chunk_id = c.id AND o.is_excluded = 1
-                          )
+                        )
                     ) THEN 1 ELSE 0 END), 0) AS without_indexable_source_count
+                    ,
+                    COALESCE(SUM(CASE WHEN EXISTS (
+                        SELECT 1 FROM rag_chunks c
+                        WHERE c.repo_id = n.repo_id AND c.source = 'readme'
+                    ) THEN 1 ELSE 0 END), 0) AS readme_source_count,
+                    COALESCE(SUM(CASE WHEN EXISTS (
+                        SELECT 1 FROM rag_chunks c
+                        WHERE c.repo_id = n.repo_id
+                          AND NOT EXISTS (
+                              SELECT 1 FROM rag_chunk_overrides o
+                              WHERE o.chunk_id = c.id AND o.is_excluded = 1
+                          )
+                    ) THEN 1 ELSE 0 END), 0) AS indexable_source_count,
+                    COALESCE(SUM(CASE WHEN EXISTS (
+                        SELECT 1 FROM rag_chunks c
+                        WHERE c.repo_id = n.repo_id
+                          AND c.embedding_status = 'ready'
+                          AND c.embedding_model = ?
+                          AND NOT EXISTS (
+                              SELECT 1 FROM rag_chunk_overrides o
+                              WHERE o.chunk_id = c.id AND o.is_excluded = 1
+                          )
+                    ) THEN 1 ELSE 0 END), 0) AS embedding_ready_count,
+                    COALESCE(SUM(CASE WHEN EXISTS (
+                        SELECT 1 FROM rag_chunks c
+                        WHERE c.repo_id = n.repo_id
+                          AND NOT EXISTS (
+                              SELECT 1 FROM rag_chunk_overrides o
+                              WHERE o.chunk_id = c.id AND o.is_excluded = 1
+                          )
+                          AND (
+                              c.embedding_status IN ('failed', 'stale')
+                              OR (
+                                  c.embedding_status = 'ready'
+                                  AND c.embedding_model IS NOT NULL
+                                  AND c.embedding_model != ?
+                              )
+                          )
+                    ) THEN 1 ELSE 0 END), 0) AS index_issue_count
                 FROM repo_notes n
                 WHERE n.library_state = 'in_library'
-                """)!
+                """, arguments: [embeddingModel, embeddingModel])!
 
             return KnowledgeBaseMetadataSnapshot(
-                generatedAt: Date(),
+                generatedAt: generatedAt,
                 contentUpdatedAt: Self.parseISO8601(latestContentUpdatedRaw),
                 projectCount: projectCount,
                 starredProjectCount: overview["starred_count"],
@@ -480,6 +742,26 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
                     failedChunks: index["failed_chunks"],
                     staleChunks: index["stale_chunks"],
                     embeddingModel: embeddingModel
+                ),
+                insights: .init(
+                    organizedProjectCount: overview["organized_count"],
+                    normalizedStatusCounts: normalizedStatusCounts,
+                    languageCounts: languageCounts,
+                    topicCounts: topicCounts,
+                    licenseCounts: licenseCounts,
+                    dormantProjectCount: overview["dormant_count"],
+                    archivedProjectCount: overview["archived_count"],
+                    unavailableProjectCount: overview["unavailable_count"],
+                    healthCompletedProjectCount: quality.healthCompleted,
+                    openSSFCompletedProjectCount: quality.openSSFCompleted,
+                    maintenanceRiskProjectCount: quality.maintenanceRisk,
+                    securityRiskProjectCount: quality.securityRisk,
+                    readmeSourceProjectCount: availability["readme_source_count"],
+                    indexableSourceProjectCount: availability["indexable_source_count"],
+                    embeddingReadyProjectCount: availability["embedding_ready_count"],
+                    indexIssueProjectCount: availability["index_issue_count"],
+                    priorityRepositories: priorityRepositories,
+                    weeklyAdditions: weeklyAdditions
                 )
             )
         }
@@ -489,6 +771,102 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
         try Row.fetchAll(db, sql: sql).map { row in
             .init(name: row["name"], count: row["count"])
         }
+    }
+
+    /// 健康度与 OpenSSF 在旧测试草稿库中可能尚未建表，缺表按未计算处理。
+    private static func qualityCounts(
+        _ db: Database
+    ) throws -> (healthCompleted: Int, openSSFCompleted: Int, maintenanceRisk: Int, securityRisk: Int) {
+        let hasHealth = try db.tableExists("repo_health_snapshots")
+        let hasOpenSSF = try db.tableExists("open_ssf_scores")
+        let healthJoin = hasHealth ? "LEFT JOIN repo_health_snapshots h ON h.repo_id = r.id" : ""
+        let openSSFJoin = hasOpenSSF ? "LEFT JOIN open_ssf_scores os ON os.repo_id = r.id" : ""
+        let healthCompleted = hasHealth
+            ? "COALESCE(SUM(CASE WHEN h.repo_id IS NOT NULL AND h.fetch_status != 'failed' THEN 1 ELSE 0 END), 0)"
+            : "0"
+        let maintenanceRisk = hasHealth
+            ? "COALESCE(SUM(CASE WHEN h.repo_id IS NOT NULL AND h.fetch_status != 'failed' AND h.maintenance_score < 50 THEN 1 ELSE 0 END), 0)"
+            : "0"
+        let openSSFCompleted = hasOpenSSF
+            ? "COALESCE(SUM(CASE WHEN os.fetch_status = 'success' AND os.aggregate_score IS NOT NULL THEN 1 ELSE 0 END), 0)"
+            : "0"
+        let securityRisk = hasOpenSSF
+            ? "COALESCE(SUM(CASE WHEN os.fetch_status = 'success' AND os.aggregate_score IS NOT NULL AND os.aggregate_score < 5 THEN 1 ELSE 0 END), 0)"
+            : "0"
+        // SQL 结构只由上面的本地布尔值选择固定片段，永不接收模型或用户输入。
+        let row = try Row.fetchOne(db, sql: """
+            SELECT
+                \(healthCompleted) AS health_completed,
+                \(openSSFCompleted) AS openssf_completed,
+                \(maintenanceRisk) AS maintenance_risk,
+                \(securityRisk) AS security_risk
+            FROM repos r
+            JOIN repo_notes n ON n.repo_id = r.id
+            \(healthJoin)
+            \(openSSFJoin)
+            WHERE n.library_state = 'in_library'
+            """)!
+        return (
+            healthCompleted: row["health_completed"],
+            openSSFCompleted: row["openssf_completed"],
+            maintenanceRisk: row["maintenance_risk"],
+            securityRisk: row["security_risk"]
+        )
+    }
+
+    /// 与“我的洞察”保持 ISO 周一口径，并显式补齐空周，避免快照消费者各自补零。
+    private static func weeklyAdditions(
+        _ db: Database,
+        generatedAt: Date
+    ) throws -> [KnowledgeBaseMetadataSnapshot.InsightsFacts.WeeklyCount] {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        guard let currentWeek = calendar.dateInterval(of: .weekOfYear, for: generatedAt)?.start,
+              let firstWeek = calendar.date(byAdding: .weekOfYear, value: -11, to: currentWeek)
+        else {
+            return []
+        }
+        let rows = try Row.fetchAll(db, sql: """
+            SELECT
+                date(
+                    n.library_updated_at,
+                    printf(
+                        '-%d days',
+                        (CAST(strftime('%w', n.library_updated_at) AS INTEGER) + 6) % 7
+                    )
+                ) AS week_start,
+                COUNT(*) AS count
+            FROM repo_notes n
+            WHERE n.library_state = 'in_library'
+              AND n.library_updated_at IS NOT NULL
+              AND datetime(n.library_updated_at) >= datetime(?)
+            GROUP BY week_start
+            ORDER BY week_start ASC
+            """, arguments: [ISO8601DateFormatter.shared.string(from: firstWeek)])
+        let counts = Dictionary(uniqueKeysWithValues: rows.map {
+            ($0["week_start"] as String, $0["count"] as Int)
+        })
+        return (0..<12).compactMap { offset in
+            guard let week = calendar.date(byAdding: .weekOfYear, value: offset, to: firstWeek) else {
+                return nil
+            }
+            let key = String(ISO8601DateFormatter.shared.string(from: week).prefix(10))
+            return .init(weekStart: week, count: counts[key] ?? 0)
+        }
+    }
+
+    private static func tableRevision(
+        _ db: Database,
+        table: String,
+        timestampColumn: String
+    ) throws -> (count: Int, latest: String?) {
+        // table / column 只来自本文件固定字面量，禁止接收用户输入。
+        guard try db.tableExists(table) else { return (0, nil) }
+        let row = try Row.fetchOne(
+            db,
+            sql: "SELECT COUNT(*) AS row_count, MAX(\(timestampColumn)) AS latest FROM \(table)"
+        )
+        return (row?["row_count"] ?? 0, row?["latest"])
     }
 
     /// 解析 library_updated_at 文本：写入端统一带小数秒，但对历史/异常数据兼容无小数秒格式。

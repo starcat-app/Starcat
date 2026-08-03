@@ -97,9 +97,16 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.store
         CODE_SIGN_ENTITLEMENTS: Starcat/Starcat.entitlements
+        # macOS 的 group.* App Group 需要 Xcode 自动注册并维护对应签名资源。
+        # 固化在 target 上，保证 Xcode Run 与命令行构建行为一致。
+        REGISTER_APP_GROUPS: YES
         INFOPLIST_KEY_CFBundleURLTypes: ""  # 由 entitlements + plist 增量在 info 段定义
       configs:
         Debug:
+          # macOS 可同时登记多个同 Bundle ID 的 .app；WidgetKit 按宿主标识解析
+          # AppIntent 元数据时可能误命中已安装的 App Store 版本或旧 DerivedData。
+          # Debug 使用独立标识，Release 继续继承 base 中的正式标识。
+          PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.store.debug
           # Debug/test 必须允许多实例：xcodebuild test 会另外启动一个 test host，
           # 如果本机已有 Starcat 正在运行，固定单实例会被 LaunchServices 拒绝。
           INFOPLIST_KEY_LSMultipleInstancesProhibited: NO
@@ -212,10 +219,17 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.direct
         PRODUCT_NAME: Starcat
         CODE_SIGN_ENTITLEMENTS: Starcat/StarcatDirect.entitlements
+        REGISTER_APP_GROUPS: YES
         STARCAT_DISTRIBUTION: direct
+        # Direct 使用绿色 GitHub 角标图标；App Store 仍走默认 AppIcon（蓝色）。
+        # 应用内 About / 启动页 / AI 气泡等均读 NSApp.applicationIconImage，会随此切换。
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIconDirect
         INFOPLIST_KEY_CFBundleURLTypes: ""
       configs:
         Debug:
+          # 与 Store 渠道保持相同隔离策略，避免 Direct 调试 Extension 解析到
+          # 已安装正式版宿主；Release 仍使用 com.starcat.app.direct。
+          PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.direct.debug
           STARCAT_LICENSE_API_ENVIRONMENT: test
         Release:
           STARCAT_LICENSE_API_ENVIRONMENT: live
@@ -310,19 +324,37 @@ targets:
       - path: Starcat/Core/Widget/Shared
       - path: Starcat/Resources/Localizable.xcstrings
         buildPhase: resources
+    # Extension 必须复用宿主的本地签名 Team；否则宿主可以签名而 Widget
+    # 会在 Xcode Run 阶段因缺少 development certificate 单独失败。
+    configFiles:
+      Debug: Configs/Build.xcconfig
+      Release: Configs/Build.xcconfig
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.store.widgets
         CODE_SIGN_ENTITLEMENTS: Starcat/Resources/Widget/StarcatWidgets.entitlements
+        REGISTER_APP_GROUPS: YES
         APPLICATION_EXTENSION_API_ONLY: YES
         SKIP_INSTALL: YES
         INFOPLIST_KEY_CFBundleDisplayName: Starcat Widgets
+      configs:
+        Debug:
+          # 必须以 Debug 宿主标识为前缀，确保 WidgetKit 将 Extension 绑定到唯一宿主。
+          PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.store.debug.widgets
     info:
       path: Starcat/Generated/WidgetInfo.generated.plist
       properties:
         STARCAT_WIDGET_APP_GROUP: group.com.starcat.app.store.widgets
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    # App Store 要求 Extension 与宿主的 CFBundleVersion 一致。复用同一脚本，
+    # 让两者都从当前 git commit count 生成版本，避免只更新宿主造成上传失败。
+    postBuildScripts:
+      - name: "Auto Bump Version (from git)"
+        script: '"${SRCROOT}/scripts/bump-version.sh"'
+        runOnlyWhenInstalling: false
+        showEnvVarsInLog: false
+        basedOnDependencyAnalysis: false
 
   StarcatDirectWidgets:
     type: app-extension
@@ -332,19 +364,32 @@ targets:
       - path: Starcat/Core/Widget/Shared
       - path: Starcat/Resources/Localizable.xcstrings
         buildPhase: resources
+    configFiles:
+      Debug: Configs/Build.xcconfig
+      Release: Configs/Build.xcconfig
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.direct.widgets
         CODE_SIGN_ENTITLEMENTS: Starcat/Resources/Widget/StarcatDirectWidgets.entitlements
+        REGISTER_APP_GROUPS: YES
         APPLICATION_EXTENSION_API_ONLY: YES
         SKIP_INSTALL: YES
         INFOPLIST_KEY_CFBundleDisplayName: Starcat Widgets
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.starcat.app.direct.debug.widgets
     info:
       path: Starcat/Generated/WidgetInfo.direct.generated.plist
       properties:
         STARCAT_WIDGET_APP_GROUP: group.com.starcat.app.direct.widgets
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    postBuildScripts:
+      - name: "Auto Bump Version (from git)"
+        script: '"${SRCROOT}/scripts/bump-version.sh"'
+        runOnlyWhenInstalling: false
+        showEnvVarsInLog: false
+        basedOnDependencyAnalysis: false
 
 schemes:
   Starcat:
@@ -384,3 +429,62 @@ schemes:
       config: Debug
     archive:
       config: Release
+
+  # WidgetBundle 同时声明 4 个 Widget 时，WidgetKit Simulator 必须通过
+  # `_XCWidgetKind` 明确选择调试对象。四个共享 Scheme 让开发者无需每次手改
+  # Xcode Arguments，即可逐个验证 Timeline / Medium 布局。
+  StarcatWidget-Focus:
+    build:
+      targets:
+        StarcatWidgets: all
+    run:
+      config: Debug
+      executable: StarcatWidgets
+      macroExpansion: StarcatWidgets
+      launchAutomaticallySubstyle: "2"
+      environmentVariables:
+        _XCWidgetKind: com.starcat.widget.focus
+        _XCWidgetFamily: medium
+        _XCWidgetDefaultView: timeline
+
+  StarcatWidget-Rediscovery:
+    build:
+      targets:
+        StarcatWidgets: all
+    run:
+      config: Debug
+      executable: StarcatWidgets
+      macroExpansion: StarcatWidgets
+      launchAutomaticallySubstyle: "2"
+      environmentVariables:
+        _XCWidgetKind: com.starcat.widget.rediscovery
+        _XCWidgetFamily: medium
+        _XCWidgetDefaultView: timeline
+
+  StarcatWidget-ReleaseWatch:
+    build:
+      targets:
+        StarcatWidgets: all
+    run:
+      config: Debug
+      executable: StarcatWidgets
+      macroExpansion: StarcatWidgets
+      launchAutomaticallySubstyle: "2"
+      environmentVariables:
+        _XCWidgetKind: com.starcat.widget.release-watch
+        _XCWidgetFamily: medium
+        _XCWidgetDefaultView: timeline
+
+  StarcatWidget-CollectionTrend:
+    build:
+      targets:
+        StarcatWidgets: all
+    run:
+      config: Debug
+      executable: StarcatWidgets
+      macroExpansion: StarcatWidgets
+      launchAutomaticallySubstyle: "2"
+      environmentVariables:
+        _XCWidgetKind: com.starcat.widget.collection-trend
+        _XCWidgetFamily: medium
+        _XCWidgetDefaultView: timeline

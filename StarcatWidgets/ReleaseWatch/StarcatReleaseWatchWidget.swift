@@ -79,27 +79,16 @@ struct StarcatReleaseWatchWidgetView: View {
     private func releaseList(snapshot: WidgetSnapshot) -> some View {
         let limit = family == .systemLarge ? 6 : 3
         return VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Label("widget.releaseWatch.title", systemImage: "shippingbox")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                Spacer()
-                Label {
-                    Text(snapshot.unreadReleaseCount, format: .number)
-                } icon: {
-                    Image(systemName: "circle.fill")
-                }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .accessibilityLabel(
-                    Text("widget.releaseWatch.unread \(snapshot.unreadReleaseCount)")
-                )
-                if entry.isStale {
-                    Image(systemName: "clock.badge.exclamationmark")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel(Text("widget.common.stale"))
-                }
+            StarcatWidgetHeader(
+                "widget.releaseWatch.title",
+                systemImage: "shippingbox",
+                isStale: entry.isStale
+            ) {
+                Text("widget.releaseWatch.unreadShort \(snapshot.unreadReleaseCount)")
+                    .lineLimit(1)
+                    .accessibilityLabel(
+                        Text("widget.releaseWatch.unread \(snapshot.unreadReleaseCount)")
+                    )
             }
             .padding(.bottom, 6)
 
@@ -145,7 +134,11 @@ private struct StarcatReleaseWatchRow: View {
             }
             Spacer(minLength: 4)
             if let publishedAt = release.publishedAt {
-                Text(publishedAt, style: .relative)
+                // RelativeFormatStyle 只保留主要时间单位，避免“7 小时 47 分钟”挤压 tag。
+                Text(
+                    publishedAt,
+                    format: .relative(presentation: .numeric, unitsStyle: .abbreviated)
+                )
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

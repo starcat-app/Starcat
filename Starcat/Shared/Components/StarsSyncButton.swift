@@ -14,7 +14,6 @@
 //
 
 import SwiftUI
-import TipKit
 
 /// Manage 列表顶栏的 Stars 同步按钮（保留侧边栏时代的取消 / 限流交互）。
 struct StarsSyncButton: View {
@@ -53,7 +52,6 @@ struct StarsSyncButton: View {
             updateRotation(isSyncing: newValue)
         }
         .gettingStartedAnchor(.syncStars)
-        .gettingStartedPopoverTip(GettingStartedTips.syncStars)
         .help(helpText)
     }
 

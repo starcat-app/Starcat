@@ -172,9 +172,12 @@ struct RAGDeletedChunkIdentity: Equatable, Hashable, Sendable {
 /// 选择与任务生命周期，不能通过此类型共享可观察 UI 状态。
 struct RAGIndexStatusProjection: Equatable, Sendable {
     var knowledgeRepoCount: Int
+    /// 已生成至少一个可供关键词检索文本分片的知识库仓库数。
     var indexedRepoCount: Int
     var totalChunks: Int
+    /// 当前可检索文本分片总数；向量待处理或失败不会让分片退出 FTS。
     var readyChunks: Int
+    /// 以下三项只描述向量增强状态，可与 readyChunks 重叠。
     var pendingChunks: Int
     var failedChunks: Int
     var staleChunks: Int

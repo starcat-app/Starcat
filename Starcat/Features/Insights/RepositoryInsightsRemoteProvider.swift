@@ -357,6 +357,16 @@ struct RepositoryCachedReleaseCadenceInsight: Equatable, Sendable {
     let responseETag: String?
 }
 
+/// 远端 Release 回退结果：节奏缓存与「Latest Release」卡片共用同一次 `/releases` 响应。
+struct RepositoryReleaseRemoteSnapshot: Equatable, Sendable {
+    let cadence: RepositoryReleaseCadenceInsight?
+    let latest: RepositoryReleaseInsight?
+
+    static func cadenceOnly(_ cadence: RepositoryReleaseCadenceInsight?) -> Self {
+        Self(cadence: cadence, latest: nil)
+    }
+}
+
 protocol RepositoryRemoteInsightsProviding: Sendable {
     func cachedActivity(
         repoID: Int64,
@@ -398,13 +408,14 @@ protocol RepositoryRemoteInsightsProviding: Sendable {
     func cachedReleaseCadence(repoID: Int64) async throws
         -> RepositoryCachedReleaseCadenceInsight?
 
+    /// 远端 Release 回退同时带回最新一条，供 Local Insights「Latest Release」在无私有订阅时上屏。
     func refreshReleaseCadence(repository: RepoIdentity) async throws
-        -> RepositoryReleaseCadenceInsight?
+        -> RepositoryReleaseRemoteSnapshot
 
     func refreshReleaseCadence(
         repository: RepoIdentity,
         ifNoneMatch: String?
-    ) async throws -> RepositoryReleaseCadenceInsight?
+    ) async throws -> RepositoryReleaseRemoteSnapshot
 
     func cachedSecurityAdvisories(repoID: Int64) async throws
         -> RepositoryCachedSecurityAdvisoriesInsight?
@@ -455,7 +466,7 @@ extension RepositoryRemoteInsightsProviding {
     }
 
     func refreshReleaseCadence(repository: RepoIdentity) async throws
-        -> RepositoryReleaseCadenceInsight? {
+        -> RepositoryReleaseRemoteSnapshot {
         throw GitHubRepositoryMetricsError.unavailable(
             statusCode: 503,
             message: "Release cadence provider unavailable"
@@ -465,7 +476,7 @@ extension RepositoryRemoteInsightsProviding {
     func refreshReleaseCadence(
         repository: RepoIdentity,
         ifNoneMatch: String?
-    ) async throws -> RepositoryReleaseCadenceInsight? {
+    ) async throws -> RepositoryReleaseRemoteSnapshot {
         try await refreshReleaseCadence(repository: repository)
     }
 
@@ -519,7 +530,7 @@ struct SharedRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProviding
     private let communityFlights =
         RepositoryInsightsSingleFlight<RepositoryKey, RepositoryCommunityInsight>()
     private let releaseFlights =
-        RepositoryInsightsSingleFlight<RepositoryKey, RepositoryReleaseCadenceInsight?>()
+        RepositoryInsightsSingleFlight<RepositoryKey, RepositoryReleaseRemoteSnapshot>()
     private let securityFlights =
         RepositoryInsightsSingleFlight<RepositoryKey, RepositorySecurityAdvisoriesInsight>()
     private let recentActivityFlights =
@@ -618,14 +629,14 @@ struct SharedRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProviding
 
     func refreshReleaseCadence(
         repository: RepoIdentity
-    ) async throws -> RepositoryReleaseCadenceInsight? {
+    ) async throws -> RepositoryReleaseRemoteSnapshot {
         try await refreshReleaseCadence(repository: repository, ifNoneMatch: nil)
     }
 
     func refreshReleaseCadence(
         repository: RepoIdentity,
         ifNoneMatch: String?
-    ) async throws -> RepositoryReleaseCadenceInsight? {
+    ) async throws -> RepositoryReleaseRemoteSnapshot {
         try await releaseFlights.value(for: RepositoryKey(repository)) {
             try await base.refreshReleaseCadence(
                 repository: repository,
@@ -1040,20 +1051,21 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
     }
 
     func refreshReleaseCadence(repository: RepoIdentity) async throws
-        -> RepositoryReleaseCadenceInsight? {
+        -> RepositoryReleaseRemoteSnapshot {
         try await refreshReleaseCadence(repository: repository, ifNoneMatch: nil)
     }
 
     func refreshReleaseCadence(
         repository: RepoIdentity,
         ifNoneMatch: String?
-    ) async throws -> RepositoryReleaseCadenceInsight? {
+    ) async throws -> RepositoryReleaseRemoteSnapshot {
         let fetchedAt = now()
         guard let repoID = repository.ghRepoID else {
             throw GitHubRepositoryMetricsError.invalidResponse
         }
         do {
             // 节奏只消费最近 12 次发布日期；不写 release 订阅表，避免未订阅仓库进入活动时间线。
+            // latest 仅回传给洞察页 Local Insights，不入库 releases 表。
             let response = try await metricsClient.loadReleases(
                 repository: repository,
                 limit: 12,
@@ -1077,16 +1089,17 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
                 responseETag: response.etag,
                 defaultBranchSHA: nil
             )
-            return value
+            return RepositoryReleaseRemoteSnapshot(cadence: value, latest: releases.first)
         } catch GitHubRepositoryMetricsError.notModified(let responseETag) {
             do {
-                return try await revalidatedCachedValue(
+                let cadence = try await revalidatedCachedValue(
                     repoID: repoID,
                     dataset: .releaseCadence,
                     fetchedAt: fetchedAt,
                     responseETag: responseETag ?? ifNoneMatch,
                     as: RepositoryReleaseCadenceInsight?.self
                 )
+                return .cadenceOnly(cadence)
             } catch GitHubRepositoryMetricsError.invalidResponse where ifNoneMatch != nil {
                 // 304 到达前缓存可能被清理；无 payload 时只允许无条件补拉一次。
                 return try await refreshReleaseCadence(

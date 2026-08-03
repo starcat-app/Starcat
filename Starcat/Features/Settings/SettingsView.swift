@@ -401,6 +401,7 @@ struct SettingsView: View {
                 ConfigurableShortcutSettingRow(
                     titleKey: "settings.general.shortcuts.search.title",
                     shortcut: $settings.globalSearchShortcut,
+                    defaultShortcut: ConfigurableShortcutAction.globalSearch.defaultShortcut,
                     isEnabled: $settings.globalSearchShortcutEnabled,
                     onValidationError: { shortcutValidationError = $0 },
                     conflictingShortcuts: conflictingShortcuts(excluding: .globalSearch),
@@ -413,6 +414,7 @@ struct SettingsView: View {
                 ConfigurableShortcutSettingRow(
                     titleKey: "settings.general.shortcuts.regularSearch.title",
                     shortcut: $settings.regularSearchShortcut,
+                    defaultShortcut: ConfigurableShortcutAction.regularSearch.defaultShortcut,
                     isEnabled: $settings.regularSearchShortcutEnabled,
                     onValidationError: { shortcutValidationError = $0 },
                     conflictingShortcuts: conflictingShortcuts(excluding: .regularSearch),
@@ -425,6 +427,7 @@ struct SettingsView: View {
                 ConfigurableShortcutSettingRow(
                     titleKey: "settings.general.shortcuts.refreshCurrentContent.title",
                     shortcut: $settings.refreshCurrentContentShortcut,
+                    defaultShortcut: ConfigurableShortcutAction.refreshCurrentContent.defaultShortcut,
                     isEnabled: $settings.refreshCurrentContentShortcutEnabled,
                     onValidationError: { shortcutValidationError = $0 },
                     conflictingShortcuts: conflictingShortcuts(excluding: .refreshCurrentContent),
@@ -437,6 +440,7 @@ struct SettingsView: View {
                 ConfigurableShortcutSettingRow(
                     titleKey: "settings.general.shortcuts.knowledgeRAG.title",
                     shortcut: $settings.knowledgeRAGShortcut,
+                    defaultShortcut: ConfigurableShortcutAction.knowledgeRAG.defaultShortcut,
                     isEnabled: $settings.knowledgeRAGShortcutEnabled,
                     onValidationError: { shortcutValidationError = $0 },
                     conflictingShortcuts: conflictingShortcuts(excluding: .knowledgeRAG),
@@ -449,6 +453,7 @@ struct SettingsView: View {
                 ConfigurableShortcutSettingRow(
                     titleKey: "settings.general.shortcuts.selectedRepoAI.title",
                     shortcut: $settings.selectedRepoAIShortcut,
+                    defaultShortcut: ConfigurableShortcutAction.selectedRepoAI.defaultShortcut,
                     isEnabled: $settings.selectedRepoAIShortcutEnabled,
                     onValidationError: { shortcutValidationError = $0 },
                     conflictingShortcuts: conflictingShortcuts(excluding: .selectedRepoAI),

@@ -48,21 +48,27 @@ struct RAGCitationChipsRow: View {
                             // captionSmall(11) 比正文 body(13) 再小一档，避免底部引用抢视线。
                             .font(interfaceScale.font(.captionSmall, weight: .medium))
                             .foregroundStyle(.primary)
-                        // owner logo 走 Kingfisher 缓存；芯片内 12pt、无描边，避免挤爆短芯片。
-                        RepoIdentityLabel(
-                            fullName: citation.repoFullName,
-                            avatarSize: 12,
-                            font: interfaceScale.font(.captionSmall, weight: .medium),
-                            spacing: 4,
-                            showAvatarBorder: false
-                        )
+                        if citation.source == .knowledgeBaseMetadata {
+                            Text(citation.source.titleKey)
+                                .font(interfaceScale.font(.captionSmall, weight: .medium))
+                                .lineLimit(1)
+                        } else {
+                            // owner logo 走 Kingfisher 缓存；芯片内 12pt、无描边，避免挤爆短芯片。
+                            RepoIdentityLabel(
+                                fullName: citation.repoFullName,
+                                avatarSize: 12,
+                                font: interfaceScale.font(.captionSmall, weight: .medium),
+                                spacing: 4,
+                                showAvatarBorder: false
+                            )
+                        }
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(
                         RAGCitationChipPalette.background(
                             for: citation.repoLanguage,
-                            fallbackRepoFullName: citation.repoFullName
+                            fallbackRepoFullName: citation.localizedIdentityTitle
                         ),
                         in: RoundedRectangle(cornerRadius: 7, style: .continuous)
                     )
@@ -103,9 +109,9 @@ struct RAGCitationChipsRow: View {
     private func chipHelp(for citation: RAGCitation) -> String {
         let section = citation.sectionTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         if section.isEmpty {
-            return "\(citation.marker) · \(citation.repoFullName)"
+            return "\(citation.marker) · \(citation.localizedIdentityTitle)"
         }
-        return "\(citation.marker) · \(citation.repoFullName) · \(section)"
+        return "\(citation.marker) · \(citation.localizedIdentityTitle) · \(citation.localizedSectionTitle)"
     }
 }
 

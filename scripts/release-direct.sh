@@ -11,6 +11,7 @@
 #   - 默认走完整发布流程；重跑某一段时用 STARCAT_RELEASE_SKIP_* 显式跳过。
 #   - 默认要求 main 分支和干净工作区，避免从临时状态打 tag 或发布不可复现产物。
 #   - appcast 使用增量合并，历史版本以 supports/starcat-site/direct/appcast.xml 为准，不依赖本地保留旧 DMG。
+#   - appcast item 会注入 CHANGELOG 衍生的 Sparkle 更新说明（description CDATA）。
 #
 
 set -euo pipefail
@@ -376,6 +377,11 @@ generate_current_appcast_from_existing_dmg() {
   "$generate_appcast" --download-url-prefix "$DOWNLOAD_BASE_URL" "$APPCAST_INPUT_DIR"
   cp "$APPCAST_INPUT_DIR/appcast.xml" "$CURRENT_APPCAST_PATH"
   rm -rf "$APPCAST_INPUT_DIR"
+  # 与 package-direct.sh 一致：补上 CHANGELOG 衍生的更新说明，避免断点续跑路径漏注。
+  log "注入 Sparkle 更新说明: ${VERSION}"
+  python3 "${SCRIPT_DIR}/inject-appcast-release-notes.py" \
+    --appcast "$CURRENT_APPCAST_PATH" \
+    --version "$VERSION"
   rm -f "$NOTARY_SUBMISSION_PATH"
 }
 
@@ -392,6 +398,10 @@ verify_local_artifacts() {
 
   if ! grep -q "<sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>" "$CURRENT_APPCAST_PATH"; then
     fail "当前版本 appcast 中的 sparkle:shortVersionString 不是 ${VERSION}"
+  fi
+
+  if ! grep -q "<description><!\[CDATA\[" "$CURRENT_APPCAST_PATH"; then
+    fail "当前版本 appcast 缺少 Sparkle 更新说明（description CDATA）"
   fi
 }
 
@@ -416,8 +426,17 @@ merge_appcast() {
     --incoming "$CURRENT_APPCAST_PATH" \
     --output "$APPCAST_PATH"
 
+  # 合并后再按 CHANGELOG 全量回填，历史版本说明与当前版本保持一致来源。
+  log "回填 appcast 更新说明"
+  python3 "${SCRIPT_DIR}/inject-appcast-release-notes.py" \
+    --appcast "$APPCAST_PATH"
+
   if ! grep -q "Starcat-${VERSION}-arm64.dmg" "$APPCAST_PATH"; then
     fail "合并后的 appcast 未指向本次 DMG: Starcat-${VERSION}-arm64.dmg"
+  fi
+
+  if ! grep -q "<description><!\[CDATA\[" "$APPCAST_PATH"; then
+    fail "合并后的 appcast 缺少 Sparkle 更新说明（description CDATA）"
   fi
 
   log "上传 appcast.xml"

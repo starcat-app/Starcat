@@ -844,6 +844,16 @@ struct AppSettingsTests {
         #expect(upgraded.ragPromptSettings.planner.systemPrompt.contains("keywordQueries"))
         #expect(upgraded.ragPromptSettings.planner.systemPrompt.contains("Retrieval, not the Planner"))
 
+        let insightsAnalyticsDefaults = makeIsolatedDefaults()
+        let insightsAnalyticsSettings = AppSettings(defaults: insightsAnalyticsDefaults)
+        insightsAnalyticsSettings.ragPromptSettings = RAGPromptSettings(
+            generator: RAGDefaultPrompts.generator,
+            planner: RAGDefaultPrompts.plannerBeforeInsightsAnalytics
+        )
+        let insightsAnalyticsUpgraded = AppSettings(defaults: insightsAnalyticsDefaults)
+        #expect(insightsAnalyticsUpgraded.ragPromptSettings.planner == RAGDefaultPrompts.planner)
+        #expect(insightsAnalyticsUpgraded.ragPromptSettings.planner.systemPrompt.contains("repositories_organized"))
+
         let scopeGuardDefaults = makeIsolatedDefaults()
         let scopeGuardSettings = AppSettings(defaults: scopeGuardDefaults)
         scopeGuardSettings.ragPromptSettings = RAGPromptSettings(

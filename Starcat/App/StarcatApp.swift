@@ -14,7 +14,6 @@
 
 import SwiftUI
 import AppKit  // W4-5 D1 follow-up：NSApp.appearance 控制主题（preferredColorScheme 在 macOS 有 nil-restore bug）
-import TipKit
 
 extension Notification.Name {
     /// 三处系统入口共用的列表偏好重置意图；实际重置由 HomeView 在当前账号上下文执行。
@@ -108,6 +107,8 @@ struct StarcatApp: App {
                 AppDelegate.activateMainWindowIfPossible()
             case .releaseTimeline:
                 dependencies.mainWindowNavigationDispatcher.navigate(to: .releaseTimeline)
+            case .insights:
+                dependencies.mainWindowNavigationDispatcher.navigate(to: .insights)
             }
             return
         }
@@ -292,6 +293,9 @@ struct StarcatApp: App {
     ///   dong4j 历史截图反馈"切语言后部分时间格式没变"就是少了 identity 重建。
     @ViewBuilder
     private func contentRoot(dependencies: AppDependencies) -> some View {
+        let updateController = dependencies.appStoreUpdateController
+        let updatePresentation = updateController.presentation
+
         // LaunchSplashContainer 必须在 `.id(localeStore...)` 外层，否则切语言会重播 splash。
         // Auth restore 时序已迁入 Container 的 `.task`，与最短展示时长并行等待。
         LaunchSplashContainer {
@@ -302,6 +306,41 @@ struct StarcatApp: App {
                 .id(localeStore.selection.rawValue)
         }
         .starcatMCPPairingApprovalPresenter(store: dependencies.mcpDeviceStore)
+        .task {
+            await updateController.checkAutomaticallyIfNeeded()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task {
+                await updateController.checkAutomaticallyIfNeeded()
+            }
+        }
+        .alert(
+            updatePresentation?.title ?? "",
+            isPresented: Binding(
+                get: { updatePresentation != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        updateController.dismissPresentation()
+                    }
+                }
+            )
+        ) {
+            if let storeURL = updatePresentation?.storeURL {
+                Button(String.l10n("app.update.openAppStore")) {
+                    NSWorkspace.shared.open(storeURL)
+                    updateController.dismissPresentation()
+                }
+                Button(String.l10n("app.update.later"), role: .cancel) {
+                    updateController.dismissPresentation()
+                }
+            } else {
+                Button(String.l10n("common.ok")) {
+                    updateController.dismissPresentation()
+                }
+            }
+        } message: {
+            Text(updatePresentation?.message ?? "")
+        }
     }
 
     /// Settings scene 的语言注入与重建逻辑，与 `contentRoot` 完全对称。
@@ -363,16 +402,6 @@ struct StarcatApp: App {
         // 内部不走 String(localized:),但保险起见早装早安心)。详见
         // `Starcat/Core/Settings/LocalizedBundle.swift` 顶部注释。
         LocalizedBundle.install()
-
-        // TipKit 只承载少量局部功能发现提示；真正的新手任务进度由 Starcat 自己的
-        // GettingStartedProgressStore 管理，避免用户关闭 tip 后被误判为完成步骤。
-        // 测试 host 跳过，保持单测环境没有额外持久化写入和展示频率状态。
-        if !TestEnvironment.isRunning {
-            try? Tips.configure([
-                .displayFrequency(.immediate),
-                .datastoreLocation(.applicationDefault)
-            ])
-        }
 
         AppLog.general.info("Starcat starting (bundle=\(AppConstants.bundleIdentifier, privacy: .public))")
 
@@ -495,6 +524,14 @@ private struct StarcatAppCommands: Commands {
                     dependencies?.directUpdateController.checkForUpdates()
                 }
                 .disabled(dependencies?.directUpdateController.canCheckForUpdates != true)
+            } else if let updateController = dependencies?.appStoreUpdateController,
+                      updateController.isAppStoreBuild {
+                Button("commands.actions.checkForUpdates") {
+                    Task {
+                        await updateController.checkManually()
+                    }
+                }
+                .disabled(!updateController.canCheckForUpdates)
             }
 
             Button("diagnostics.export.button") {

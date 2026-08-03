@@ -11,11 +11,15 @@ from __future__ import annotations
 
 import argparse
 import re
+import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+# 允许直接 `python3 scripts/merge-appcast.py` 找到同目录工具模块。
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-SPARKLE_NS = "http://www.andymatuschak.org/xml-namespaces/sparkle"
+from appcast_xml_util import SPARKLE_NS, write_appcast_xml
+
 SPARKLE_SHORT_VERSION = f"{{{SPARKLE_NS}}}shortVersionString"
 ET.register_namespace("sparkle", SPARKLE_NS)
 
@@ -106,12 +110,8 @@ def main() -> None:
         reverse=True,
     )
     root = build_root_with_items(base_channel, merged_items)
-
-    tree = ET.ElementTree(root)
-    ET.indent(tree, space="    ")
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    xml_body = ET.tostring(tree.getroot(), encoding="unicode")
-    args.output.write_text(f'<?xml version="1.0" standalone="yes"?>\n{xml_body}', encoding="utf-8")
+    # description 含 HTML；必须走 CDATA 写出，否则下次合并会把 < 转义掉。
+    write_appcast_xml(args.output, root)
     print(f"Merged {incoming_version} into {args.output}")
 
 

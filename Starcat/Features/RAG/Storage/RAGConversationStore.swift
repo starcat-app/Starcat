@@ -302,8 +302,9 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                 try db.execute(sql: """
                     INSERT INTO rag_message_citations (
                         id, message_id, chunk_id, repo_id, repo_full_name, marker, source,
-                        section_title, rank, score, hit_kind, vector_similarity, score_breakdown_json, source_url, fetched_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        section_title, rank, score, hit_kind, vector_similarity, score_breakdown_json,
+                        source_url, evidence_content, fetched_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, arguments: [
                         citation.id.uuidString,
                         assistantID.uuidString,
@@ -319,6 +320,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                         citation.vectorSimilarity,
                         scoreBreakdownJSON,
                         citation.sourceURL?.absoluteString,
+                        citation.evidenceContent,
                         assistantAt
                 ])
             }
@@ -515,7 +517,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                     (SELECT COUNT(*) FROM rag_messages) AS message_count,
                     (SELECT COALESCE(SUM(length(title) + length(scope)), 0) FROM rag_conversations)
                     + (SELECT COALESCE(SUM(length(content) + COALESCE(length(model), 0) + COALESCE(length(execution_trace_json), 0) + COALESCE(length(suggested_actions_json), 0)), 0) FROM rag_messages)
-                    + (SELECT COALESCE(SUM(length(repo_full_name) + length(marker) + length(source) + length(section_title) + COALESCE(length(source_url), 0)), 0) FROM rag_message_citations)
+                    + (SELECT COALESCE(SUM(length(repo_full_name) + length(marker) + length(source) + length(section_title) + COALESCE(length(source_url), 0) + COALESCE(length(evidence_content), 0)), 0) FROM rag_message_citations)
                     + (SELECT COALESCE(SUM(length(resource) + length(title) + COALESCE(length(source_url), 0) + COALESCE(length(error_message), 0)), 0) FROM rag_message_remote_contexts)
                     AS total_bytes
                 """)
@@ -609,7 +611,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
         let rows = try Row.fetchAll(db, sql: """
             SELECT c.id, c.message_id, c.chunk_id, c.repo_id, c.repo_full_name, c.marker,
                    c.source, c.section_title, c.rank, c.score, c.hit_kind, c.vector_similarity,
-                   c.score_breakdown_json, c.source_url, r.language AS repo_language
+                   c.score_breakdown_json, c.source_url, c.evidence_content, r.language AS repo_language
             FROM rag_message_citations c
             LEFT JOIN repos r ON r.id = c.repo_id
             WHERE c.message_id IN (\(placeholders))
@@ -624,6 +626,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
             let sourceURLString: String? = row["source_url"]
             let scoreBreakdownJSON: String? = row["score_breakdown_json"]
             let storedMarker: String = row["marker"]
+            let repoID: Int64? = row["repo_id"]
             // ensure 补列后旧行为空串：用 rank+1 仅恢复本机开发会话显示。
             let rank: Int = row["rank"]
             let marker = storedMarker.isEmpty ? "S\(rank + 1)" : storedMarker
@@ -631,7 +634,7 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                 id: id,
                 marker: marker,
                 chunkID: row["chunk_id"],
-                repoID: row["repo_id"],
+                repoID: repoID,
                 repoFullName: row["repo_full_name"],
                 repoLanguage: row["repo_language"],
                 source: source,
@@ -642,7 +645,8 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                 scoreBreakdown: scoreBreakdownJSON.flatMap {
                     try? JSONDecoder().decode(RAGScoreBreakdown.self, from: Data($0.utf8))
                 },
-                sourceURL: sourceURLString.flatMap(URL.init(string:))
+                sourceURL: sourceURLString.flatMap(URL.init(string:)),
+                evidenceContent: row["evidence_content"]
             )
             grouped[messageID, default: []].append(citation)
         }

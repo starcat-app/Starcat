@@ -415,7 +415,7 @@ struct HomeView: View {
 
     /// 聚焦式开始使用指引只在真实主窗口可交互后运行。
     /// 当前步骤必须拿到真实控件锚点才画胶囊指引；拿不到锚点时直接不画，
-    /// 避免 splash / 首启 welcome 背后的隐藏控件触发 TipKit 或空目标高亮。
+    /// 避免 splash / 首启 welcome 背后的隐藏控件出现空目标高亮。
     private func gettingStartedActiveAnchor(
         in anchors: [GettingStartedAnchorID: Anchor<CGRect>],
         proxy: GeometryProxy
@@ -1232,15 +1232,39 @@ struct HomeView: View {
 
     @ViewBuilder
     private var contentColumn: some View {
-        // 顶级页面切换（探索 → 洞察等）也走 detailContentTransition；否则 Insights 会瞬切出现。
         ZStack(alignment: .topLeading) {
             contentColumnBody
-                .id(selectedSidebarPage)
-                .detailContentTransition()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: selectedSidebarPage)
-        .navigationSplitViewColumnWidth(min: 420, ideal: 420, max: 520)
+        .navigationSplitViewColumnWidth(
+            min: contentColumnWidths.min,
+            ideal: contentColumnWidths.ideal,
+            max: contentColumnWidths.max
+        )
+    }
+
+    /// 洞察中栏只承载少量分类，缩窄后把横向空间优先留给右侧数据面板。
+    ///
+    /// 其他页面仍需要容纳仓库列表、筛选和批量操作，因此继续使用原有范围，
+    /// 避免洞察的高密度布局选择改变主列表的尺寸契约。
+    private var contentColumnWidths: (min: CGFloat, ideal: CGFloat, max: CGFloat) {
+        if selectedSidebarPage == .insights {
+            return (min: 260, ideal: 260, max: 260)
+        }
+        return (min: 420, ideal: 420, max: 520)
+    }
+
+    /// 只用于洞察与其他顶级页面之间的切换。
+    ///
+    /// 中栏跨越洞察边界时会在同一帧改变宽度；旧页面若继续淡出，就会先按新宽度
+    /// 重排并出现卡片裁切。这里让旧页面立即移除，只保留新页面的进入动画。
+    /// 非洞察页面之间仍由 `detailContentTransition()` 负责原有转场。
+    private var insightsBoundaryTransition: AnyTransition {
+        let insertion: AnyTransition = reduceMotion
+            ? .opacity
+            : .opacity.combined(with: .offset(y: 14))
+        return .asymmetric(insertion: insertion, removal: .identity)
     }
 
     @ViewBuilder
@@ -1251,52 +1275,60 @@ struct HomeView: View {
                 selection: $selectedInsightsSelection,
                 snapshot: myInsightsViewModel.snapshot
             )
+            .transition(insightsBoundaryTransition)
         } else {
-            RepoListView(
-                trendingRepository: trendingRepository,
-                githubAPIClient: githubAPIClient,
-                selectedPage: selectedSidebarPage,
-                selectedExploreMode: $selectedExploreMode,
-                selectedTrendingLanguage: $selectedTrendingLanguage,
-                selectedTrendingRepoID: $selectedTrendingRepoID,
-                selectedTrendingRepo: $selectedTrendingRepo,
-                selectedDiscoveryLanguage: $selectedDiscoveryLanguage,
-                selectedDiscoveryTopic: $selectedDiscoveryTopic,
-                selectedDiscoveryPlatform: $selectedDiscoveryPlatform,
-                selectedDiscoveryRepoID: $selectedDiscoveryRepoID,
-                selectedDiscoveryRepo: $selectedDiscoveryRepo,
-                selectedWeeklyLanguage: $selectedWeeklyLanguage,
-                selectedActivityCategory: $selectedActivityCategory,
-                selectedActivityItem: $selectedActivityItem,
-                undoStarAutoSelectRequestID: undoStarAutoSelectRequestID,
-                showsAgentToolbarEntry: showsAgentToolbarEntry,
-                onStartBatchAI: {
-                    // HOM-52：点击 banner"开始整理" → 弹 Options sheet。
-                    // 复用上一次 batchAIOptions，让"再开一次"沿用最近偏好。
-                    showBatchAIOptions = true
-                },
-                onShowBatchAIPanel: {
-                    showBatchAIPanel = true
-                },
-                onOpenSearchCenter: {
-                    presentSearchCenterForGettingStarted()
-                },
-                onOpenAgentWorkspace: {
-                    openAgentWorkspaceForGettingStarted()
-                },
-                onOpenKnowledgeRAGWorkspace: {
-                    openKnowledgeRAGWorkspaceForGettingStarted()
-                },
-                onOpenCompanionRepo: { repo in
-                    openCompanionRepository(repo)
-                },
-                onGenerateCompanionSummary: { repo in
-                    openCompanionRepository(repo, generateSummary: true)
-                },
-                onReturnToInsights: {
-                    selectSidebarRootPage(.insights)
-                }
-            )
+            // 外层只在进入/离开洞察时插入或移除；内层 ID 继续维持其他顶级页面
+            // 之间原有的淡入淡出，不把洞察的即时移除策略扩散出去。
+            ZStack(alignment: .topLeading) {
+                RepoListView(
+                    trendingRepository: trendingRepository,
+                    githubAPIClient: githubAPIClient,
+                    selectedPage: selectedSidebarPage,
+                    selectedExploreMode: $selectedExploreMode,
+                    selectedTrendingLanguage: $selectedTrendingLanguage,
+                    selectedTrendingRepoID: $selectedTrendingRepoID,
+                    selectedTrendingRepo: $selectedTrendingRepo,
+                    selectedDiscoveryLanguage: $selectedDiscoveryLanguage,
+                    selectedDiscoveryTopic: $selectedDiscoveryTopic,
+                    selectedDiscoveryPlatform: $selectedDiscoveryPlatform,
+                    selectedDiscoveryRepoID: $selectedDiscoveryRepoID,
+                    selectedDiscoveryRepo: $selectedDiscoveryRepo,
+                    selectedWeeklyLanguage: $selectedWeeklyLanguage,
+                    selectedActivityCategory: $selectedActivityCategory,
+                    selectedActivityItem: $selectedActivityItem,
+                    undoStarAutoSelectRequestID: undoStarAutoSelectRequestID,
+                    showsAgentToolbarEntry: showsAgentToolbarEntry,
+                    onStartBatchAI: {
+                        // HOM-52：点击 banner"开始整理" → 弹 Options sheet。
+                        // 复用上一次 batchAIOptions，让"再开一次"沿用最近偏好。
+                        showBatchAIOptions = true
+                    },
+                    onShowBatchAIPanel: {
+                        showBatchAIPanel = true
+                    },
+                    onOpenSearchCenter: {
+                        presentSearchCenterForGettingStarted()
+                    },
+                    onOpenAgentWorkspace: {
+                        openAgentWorkspaceForGettingStarted()
+                    },
+                    onOpenKnowledgeRAGWorkspace: {
+                        openKnowledgeRAGWorkspaceForGettingStarted()
+                    },
+                    onOpenCompanionRepo: { repo in
+                        openCompanionRepository(repo)
+                    },
+                    onGenerateCompanionSummary: { repo in
+                        openCompanionRepository(repo, generateSummary: true)
+                    },
+                    onReturnToInsights: {
+                        selectSidebarRootPage(.insights)
+                    }
+                )
+                .id(selectedSidebarPage)
+                .detailContentTransition()
+            }
+            .transition(insightsBoundaryTransition)
         }
     }
 
@@ -1674,6 +1706,10 @@ struct HomeView: View {
             viewModel.clearTemporaryGlobalFilters()
             releaseTimelineTargetID = nil
             showReleaseTimeline = true
+
+        case .insights:
+            viewModel.clearTemporaryGlobalFilters()
+            selectSidebarRootPage(.insights)
 
         case .repository(let repository):
             // 先消费请求再异步查库/拉 GitHub，避免 HomeView 重挂载时重复发网络请求。

@@ -390,6 +390,102 @@ struct RepoStarHistoryRepositoryTests {
         #expect(await discoveryAPI.requests().isEmpty)
     }
 
+    @Test("公开 GitHub App 项目在 App Stargazers 403 后回退 OAuth")
+    func publicGitHubAppProjectFallsBackToOAuthOnForbidden() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 11, owner: "octo", name: "public-app")
+        try await insertProject(
+            database: database,
+            repoID: 11,
+            affiliation: .owner,
+            permission: .admin,
+            authorizationSource: .githubApp
+        )
+        let now = try #require(
+            ISO8601DateFormatter.shared.date(from: "2026-07-27T12:00:00.000Z")
+        )
+        let discoveryAPI = StubStarHistoryAPI(results: [])
+        let oauthAPI = StubGitHubStargazersAPI(pages: [
+            1: .init(starredAt: ["2026-06-01T01:00:00Z"], nextPage: nil)
+        ])
+        let githubAppAPI = StubGitHubStargazersAPI(
+            pages: [:],
+            error: NetworkError.clientError(statusCode: 403, message: "forbidden")
+        )
+        let repository = GRDBRepoStarHistoryRepository(
+            database: database,
+            api: discoveryAPI,
+            projectRepository: GRDBUserProjectRepository(database: database),
+            oauthStargazersAPI: oauthAPI,
+            githubAppStargazersAPI: githubAppAPI,
+            now: { now }
+        )
+        var repo = fixtureRepo(id: 11, name: "public-app", stars: 1)
+        repo.isPrivate = false
+
+        let snapshot = try await repository.refresh(
+            repo: repo,
+            range: .oneYear,
+            forceRefresh: true
+        )
+
+        #expect(snapshot.remoteState == .fresh)
+        #expect(snapshot.points.contains {
+            $0.source == .githubStargazers && $0.precision == .reconstructed
+        })
+        #expect(await githubAppAPI.requestedPages() == [1])
+        #expect(await oauthAPI.requestedPages() == [1])
+        #expect(await discoveryAPI.requests().isEmpty)
+    }
+
+    @Test("私有 GitHub App 项目 403 后不回退 OAuth 也不调用 Discovery")
+    func privateGitHubAppProjectDoesNotFallBackToOAuth() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 12, owner: "acme", name: "private-app")
+        try await insertProject(
+            database: database,
+            repoID: 12,
+            affiliation: .organizationMember,
+            permission: .pull,
+            authorizationSource: .githubApp
+        )
+        let now = try #require(
+            ISO8601DateFormatter.shared.date(from: "2026-07-27T12:00:00.000Z")
+        )
+        let discoveryAPI = StubStarHistoryAPI(results: [])
+        let oauthAPI = StubGitHubStargazersAPI(pages: [
+            1: .init(starredAt: ["2026-06-01T01:00:00Z"], nextPage: nil)
+        ])
+        let githubAppAPI = StubGitHubStargazersAPI(
+            pages: [:],
+            error: NetworkError.clientError(statusCode: 403, message: "forbidden")
+        )
+        let repository = GRDBRepoStarHistoryRepository(
+            database: database,
+            api: discoveryAPI,
+            projectRepository: GRDBUserProjectRepository(database: database),
+            oauthStargazersAPI: oauthAPI,
+            githubAppStargazersAPI: githubAppAPI,
+            now: { now }
+        )
+        var repo = fixtureRepo(id: 12, name: "private-app", stars: 1)
+        repo.owner = "acme"
+        repo.fullName = "acme/private-app"
+        repo.isPrivate = true
+
+        let snapshot = try await repository.refresh(
+            repo: repo,
+            range: .oneYear,
+            forceRefresh: true
+        )
+
+        #expect(snapshot.remoteState == .privateOnly)
+        #expect(!snapshot.points.contains { $0.source == .githubStargazers })
+        #expect(await githubAppAPI.requestedPages() == [1])
+        #expect(await oauthAPI.requestedPages().isEmpty)
+        #expect(await discoveryAPI.requests().isEmpty)
+    }
+
     @Test("远端失败应保留陈旧缓存并复用 ETag")
     func remoteFailurePreservesStaleCacheAndETag() async throws {
         let database = try InMemoryDatabaseManager()
@@ -542,10 +638,12 @@ private actor StubGitHubStargazersAPI: GitHubStargazersAPIProtocol {
     }
 
     private let pages: [Int: Page]
+    private let error: Error?
     private var recordedPages: [Int] = []
 
-    init(pages: [Int: Page]) {
+    init(pages: [Int: Page], error: Error? = nil) {
         self.pages = pages
+        self.error = error
     }
 
     func stargazers(
@@ -555,6 +653,9 @@ private actor StubGitHubStargazersAPI: GitHubStargazersAPIProtocol {
         perPage: Int
     ) async throws -> APIResponse<[GitHubStargazerDTO]> {
         recordedPages.append(page)
+        if let error {
+            throw error
+        }
         guard let result = pages[page] else {
             throw StarHistoryAPIError.providerUnavailable
         }

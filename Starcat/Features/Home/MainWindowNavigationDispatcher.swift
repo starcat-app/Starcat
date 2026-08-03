@@ -94,6 +94,8 @@ final class MainWindowNavigationDispatcher {
         case revealTags
         /// Widget 没有具体 Release ID 的空态入口打开完整 Release 时间线。
         case releaseTimeline
+        /// 收藏趋势 Widget 打开“我的洞察”根页面，不覆盖 Manage 的用户筛选。
+        case insights
         /// Universal Link 只携带稳定的 owner / repo，不把网页端数据写入本地库。
         case repository(RepositoryDeepLink)
         /// Widget Release 行打开现有 Release 时间线，并尽量定位到对应记录。

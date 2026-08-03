@@ -20,6 +20,7 @@ struct RAGWorkspaceAnswerSurface: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.ragSettingsNavigation) private var settingsNavigation
     @Environment(AppSettings.self) private var settings
     @Environment(AuthSession.self) private var authSession
 
@@ -31,6 +32,7 @@ struct RAGWorkspaceAnswerSurface: View {
     @State private var isMessageNearBottom = true
     @State private var isComposerContextExpanded = false
     @State private var isConversationSkeletonHandoffVisible = false
+    @State private var deepThinkingToastMessage: String?
 
     private static let messageNearBottomThreshold: CGFloat = 64
     private static let conversationSkeletonFadeDuration: TimeInterval = 0.16
@@ -76,6 +78,12 @@ struct RAGWorkspaceAnswerSurface: View {
                         .zIndex(1)
                 }
             }
+            .toast(
+                message: $deepThinkingToastMessage,
+                icon: "info.circle.fill",
+                duration: 3.0,
+                iconColor: Color.secondary
+            )
             Divider()
             commandComposer
         }
@@ -659,6 +667,11 @@ struct RAGWorkspaceAnswerSurface: View {
                     .padding(.horizontal, 16)
             }
 
+            if viewModel.embeddingConfigurationIssue != nil {
+                keywordOnlyModeNotice
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+
             if let reason = viewModel.composerBlockingReason {
                 Label(reason, systemImage: "exclamationmark.triangle.fill")
                     .font(ragFont(.caption))
@@ -748,6 +761,10 @@ struct RAGWorkspaceAnswerSurface: View {
                     // 深度思考严格位于联网之后、发送之前。它只读取唯一显式项目的
                     // RepoContext；附件数量不参与门禁，避免把材料数量误当成项目范围。
                     Button {
+                        guard viewModel.canEnableDeepThinking else {
+                            deepThinkingToastMessage = "rag.workspace.composer.deepThinking.singleRepoRequired"
+                            return
+                        }
                         viewModel.deepThinkingEnabled.toggle()
                     } label: {
                         Image(systemName: "brain.head.profile")
@@ -761,7 +778,10 @@ struct RAGWorkspaceAnswerSurface: View {
                     }
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
-                    .disabled(viewModel.isAnswering || !viewModel.canEnableDeepThinking)
+                    // 范围不满足时只保留置灰视觉，不能使用 `.disabled` 拦截点击，
+                    // 否则首次使用者无法通过 Toast 理解“仅支持单仓库”的约束。
+                    .opacity(viewModel.canEnableDeepThinking ? 1 : 0.45)
+                    .disabled(viewModel.isAnswering)
                     .help(!viewModel.canEnableDeepThinking
                           ? "rag.workspace.composer.deepThinking.singleRepoRequired"
                           : (viewModel.deepThinkingEnabled
@@ -802,12 +822,51 @@ struct RAGWorkspaceAnswerSurface: View {
             .padding(.horizontal, 16)
         }
         .padding(.vertical, 12)
+        .animation(
+            reduceMotion ? nil : .easeInOut(duration: 0.16),
+            value: viewModel.embeddingConfigurationIssue != nil
+        )
         .onChange(of: composerContextItemCount) { _, itemCount in
             // 清空上下文后恢复默认折叠态；下次重新选择大量仓库时不会继承旧展开状态。
             if itemCount == 0 {
                 isComposerContextExpanded = false
             }
         }
+    }
+
+    /// 未配置可用 Embedding 时只提示当前为关键词模式，不阻塞提问。
+    ///
+    /// 关键词 FTS、元数据、笔记及仓库特殊 XML 上下文仍可正常参与回答；这里保留配置入口，
+    /// 让用户按需开启语义召回，而不是把向量模型误做成 RAG 的硬前置条件。
+    var keywordOnlyModeNotice: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "text.magnifyingglass")
+                .font(iconFont(size: 12, weight: .medium))
+                .foregroundStyle(Color.accentColor)
+
+            Text("rag.browser.status.keywordOnly")
+                .font(ragFont(.caption, weight: .semibold))
+                .foregroundStyle(.primary)
+
+            if let issue = viewModel.embeddingConfigurationIssue {
+                Text(issue.localizedDescription)
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            Button("rag.workspace.index.embeddingModel.configure") {
+                settingsNavigation("ai.embedding")
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .font(ragFont(.caption, weight: .semibold))
+            .foregroundStyle(Color.accentColor)
+            .help("rag.workspace.index.embeddingModel.configure")
+        }
+        .padding(.horizontal, 16)
     }
 
     /// 单行 chip 的可用高度上限。留出少量字体缩放余量，但仍显著小于两行 chip

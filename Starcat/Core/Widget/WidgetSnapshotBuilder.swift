@@ -135,6 +135,10 @@ struct WidgetSnapshotBuilder: Sendable {
                   AND r.access_state = 'accessible'
                 """
             ) ?? 0
+            let collectionTrend = try Self.makeCollectionTrend(
+                db: db,
+                generatedAt: generatedAt
+            )
 
             let projectedRepositoryIDs = Set(
                 focusRows.compactMap { $0["id"] as Int64? }
@@ -165,9 +169,133 @@ struct WidgetSnapshotBuilder: Sendable {
                 focusRepositories: focus,
                 rediscoveryRepository: rediscovery,
                 unreadReleaseCount: unreadReleaseCount,
-                unreadReleases: releases
+                unreadReleases: releases,
+                collectionTrend: collectionTrend
             )
         }
+    }
+
+    /// 构建固定 12 周的公开收藏趋势。
+    ///
+    /// 周边界与“我的洞察”保持 ISO 周一口径，但这里有意排除 Private 和 inaccessible
+    /// repository；Widget 快照是跨进程桌面数据，不能因为只展示聚合值就绕过既有隐私门禁。
+    private static func makeCollectionTrend(
+        db: Database,
+        generatedAt: Date
+    ) throws -> WidgetCollectionTrend {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        guard let currentWeek = calendar.dateInterval(
+            of: .weekOfYear,
+            for: generatedAt
+        )?.start,
+        let firstWeek = calendar.date(
+            byAdding: .weekOfYear,
+            value: -11,
+            to: currentWeek
+        ) else {
+            return WidgetCollectionTrend(
+                totalCount: 0,
+                addedInLast30DaysCount: 0,
+                weeklyPoints: [],
+                statusBreakdown: WidgetCollectionStatusBreakdown(
+                    unreadCount: 0,
+                    readCount: 0,
+                    usingCount: 0
+                )
+            )
+        }
+
+        let generatedAtISO = ISO8601DateFormatter.shared.string(from: generatedAt)
+        let recentCutoffISO = ISO8601DateFormatter.shared.string(
+            from: generatedAt.addingTimeInterval(-30 * 24 * 60 * 60)
+        )
+        let overview = try Row.fetchOne(
+            db,
+            sql: """
+            SELECT
+                COUNT(*) AS total_count,
+                COALESCE(SUM(CASE
+                    WHEN r.starred_at IS NOT NULL
+                     AND datetime(r.starred_at) >= datetime(?)
+                     AND datetime(r.starred_at) <= datetime(?)
+                    THEN 1 ELSE 0
+                END), 0) AS recent_count,
+                COALESCE(SUM(CASE
+                    WHEN rn.repo_id IS NULL OR rn.status = 'unread'
+                    THEN 1 ELSE 0
+                END), 0) AS unread_count,
+                COALESCE(SUM(CASE WHEN rn.status = 'using' THEN 1 ELSE 0 END), 0)
+                    AS using_count,
+                COALESCE(SUM(CASE
+                    WHEN rn.repo_id IS NOT NULL
+                     AND rn.status NOT IN ('unread', 'using')
+                    THEN 1 ELSE 0
+                END), 0) AS read_count
+            FROM repos r
+            LEFT JOIN repo_notes rn ON rn.repo_id = r.id
+            WHERE r.is_starred = 1
+              AND r.is_private = 0
+              AND r.access_state = 'accessible'
+            """,
+            arguments: [recentCutoffISO, generatedAtISO]
+        )!
+
+        let rows = try Row.fetchAll(
+            db,
+            sql: """
+            SELECT
+                date(
+                    r.starred_at,
+                    printf(
+                        '-%d days',
+                        (CAST(strftime('%w', r.starred_at) AS INTEGER) + 6) % 7
+                    )
+                ) AS week_start,
+                COUNT(*) AS count
+            FROM repos r
+            WHERE r.is_starred = 1
+              AND r.is_private = 0
+              AND r.access_state = 'accessible'
+              AND r.starred_at IS NOT NULL
+              AND datetime(r.starred_at) >= datetime(?)
+              AND datetime(r.starred_at) <= datetime(?)
+            GROUP BY week_start
+            ORDER BY week_start ASC
+            """,
+            arguments: [
+                ISO8601DateFormatter.shared.string(from: firstWeek),
+                generatedAtISO
+            ]
+        )
+        let counts = Dictionary(uniqueKeysWithValues: rows.map {
+            ($0["week_start"] as String, $0["count"] as Int)
+        })
+        let weeklyPoints = (0..<12).compactMap { offset -> WidgetCollectionTrendPoint? in
+            guard let week = calendar.date(
+                byAdding: .weekOfYear,
+                value: offset,
+                to: firstWeek
+            ) else {
+                return nil
+            }
+            let key = String(ISO8601DateFormatter.shared.string(from: week).prefix(10))
+            return WidgetCollectionTrendPoint(
+                weekStart: week,
+                count: max(0, counts[key] ?? 0)
+            )
+        }
+
+        return WidgetCollectionTrend(
+            totalCount: max(0, overview["total_count"] as Int),
+            addedInLast30DaysCount: max(0, overview["recent_count"] as Int),
+            weeklyPoints: weeklyPoints,
+            statusBreakdown: WidgetCollectionStatusBreakdown(
+                unreadCount: max(0, overview["unread_count"] as Int),
+                readCount: max(0, overview["read_count"] as Int),
+                usingCount: max(0, overview["using_count"] as Int)
+            )
+        )
     }
 
     /// 返回稳定排序的候选 ID；完整 Repo 只为最终被选中的一条解码。

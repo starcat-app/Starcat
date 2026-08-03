@@ -25,8 +25,9 @@ struct KnowledgeRAGRetriever: Sendable {
     private let privateRepoVectorProvider: any RAGVectorSearchProvider
     private let fusion: RAGHybridFusionEngine
     private let parentPacker: RAGParentContextPacker
-    private let embeddingClient: any AIClientProtocol
-    private let embeddingModel: String
+    /// Embedding 是增强能力而不是 RAG 启动前提。没有配置时保留 nil，关键词分支仍可独立运行。
+    private let embeddingClient: (any AIClientProtocol)?
+    private let embeddingModel: String?
     private let childLimit: Int
     private let repoLimit: Int
     private let parentTokenLimit: Int
@@ -43,8 +44,8 @@ struct KnowledgeRAGRetriever: Sendable {
         privateRepoVectorProvider: (any RAGVectorSearchProvider)? = nil,
         fusion: RAGHybridFusionEngine = .init(),
         parentPacker: RAGParentContextPacker = .init(),
-        embeddingClient: any AIClientProtocol,
-        embeddingModel: String,
+        embeddingClient: (any AIClientProtocol)? = nil,
+        embeddingModel: String? = nil,
         childLimit: Int = 60,
         repoLimit: Int = 5,
         parentTokenLimit: Int = 1_600,
@@ -73,11 +74,6 @@ struct KnowledgeRAGRetriever: Sendable {
         self.minimumVectorSimilarity = retrievalSettings.minimumVectorSimilarity
         self.enabledSources = retrievalSettings.enabledSources
         self.retrievalSettings = retrievalSettings
-    }
-
-    func hasReadyChunks(repoIDs: [Int64]) async throws -> Bool {
-        guard !repoIDs.isEmpty else { return false }
-        return try await chunkRepository.hasReadyChunks(model: embeddingModel, repoIDs: repoIDs)
     }
 
     var hasEnabledSources: Bool { !enabledSources.isEmpty }
@@ -399,8 +395,7 @@ struct KnowledgeRAGRetriever: Sendable {
         // 命中的 parent 一次性加载，避免每个 child hit 都触发一次 SQLite read。
         // 随后按完整 parent 身份分组，维持原有 repo/section 隔离和 chunk 顺序。
         let siblingsByParent = Dictionary(grouping: try await chunkRepository.fetchChunks(
-            parents: Array(parentKeys),
-            model: embeddingModel
+            parents: Array(parentKeys)
         )) { RAGChunkParentKey(repoID: $0.repoId, parentKey: $0.parentKey) }
         var bundles: [RepoContextBundle] = []
         var parentTokenLimitedChunkIDs = Set<Int64>()
@@ -466,7 +461,6 @@ struct KnowledgeRAGRetriever: Sendable {
         if !publicRepoIDs.isEmpty {
             hits += try await keywordProvider.search(
                 query: query,
-                model: embeddingModel,
                 repoIDs: publicRepoIDs,
                 limit: childLimit
             )
@@ -474,7 +468,6 @@ struct KnowledgeRAGRetriever: Sendable {
         if !privateRepoIDs.isEmpty {
             hits += try await privateRepoKeywordProvider.search(
                 query: query,
-                model: embeddingModel,
                 repoIDs: privateRepoIDs,
                 limit: childLimit
             )
@@ -503,10 +496,23 @@ struct KnowledgeRAGRetriever: Sendable {
         publicRepoIDs: [Int64],
         privateRepoIDs: [Int64]
     ) async -> RAGRetrievalBranchResult {
+        // 未配置 Embedding 时不是检索错误：只跳过向量分支，让本地 FTS 继续完成回答。
+        guard let embeddingClient, let embeddingModel else {
+            return .init(hits: [])
+        }
         do {
+            let repoIDs = publicRepoIDs + privateRepoIDs
+            // 即使配置了 Embedding，只要候选范围没有当前模型向量，就不发起无意义的网络请求。
+            guard try await chunkRepository.hasReadyVectorChunks(
+                model: embeddingModel,
+                repoIDs: repoIDs
+            ) else {
+                return .init(hits: [])
+            }
             let queryVector = try await embeddingClient.embedding(input: query, model: embeddingModel)
             return .init(hits: try await vectorHits(
                 queryVector: queryVector,
+                model: embeddingModel,
                 publicRepoIDs: publicRepoIDs,
                 privateRepoIDs: privateRepoIDs
             ))
@@ -515,12 +521,17 @@ struct KnowledgeRAGRetriever: Sendable {
         }
     }
 
-    private func vectorHits(queryVector: [Float], publicRepoIDs: [Int64], privateRepoIDs: [Int64]) async throws -> [RAGChildHit] {
+    private func vectorHits(
+        queryVector: [Float],
+        model: String,
+        publicRepoIDs: [Int64],
+        privateRepoIDs: [Int64]
+    ) async throws -> [RAGChildHit] {
         var hits: [RAGChildHit] = []
         if !publicRepoIDs.isEmpty {
             hits += try await vectorProvider.search(
                 queryVector: queryVector,
-                model: embeddingModel,
+                model: model,
                 repoIDs: publicRepoIDs,
                 limit: childLimit
             )
@@ -528,7 +539,7 @@ struct KnowledgeRAGRetriever: Sendable {
         if !privateRepoIDs.isEmpty {
             hits += try await privateRepoVectorProvider.search(
                 queryVector: queryVector,
-                model: embeddingModel,
+                model: model,
                 repoIDs: privateRepoIDs,
                 limit: childLimit
             )

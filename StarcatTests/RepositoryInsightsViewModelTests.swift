@@ -125,7 +125,7 @@ struct RepositoryInsightsViewModelTests {
             },
             refreshReleaseCadenceHandler: { _ in
                 await refreshCounter.increment()
-                return nil
+                return .cadenceOnly(nil)
             }
         )
         let viewModel = RepositoryInsightsViewModel(
@@ -144,7 +144,7 @@ struct RepositoryInsightsViewModelTests {
         let emptyRemoteProvider = StubRepositoryRemoteInsightsProvider(
             cachedHandler: { _, _ in nil },
             refreshHandler: { _, _ in throw StubError.failed },
-            refreshReleaseCadenceHandler: { _ in nil }
+            refreshReleaseCadenceHandler: { _ in .cadenceOnly(nil) }
         )
         let emptyViewModel = RepositoryInsightsViewModel(
             provider: emptyLocalProvider(),
@@ -272,8 +272,8 @@ struct RepositoryInsightsViewModelTests {
         #expect(viewModel.securityAdvisoriesState.visibleValue == cached)
     }
 
-    @Test("私有项目首次加载和手动刷新都不会进入远端洞察")
-    func privateRepositoryNeverLoadsRemoteInsights() async {
+    @Test("非我的项目私仓首次加载和手动刷新都不会进入远端洞察")
+    func privateRepositoryOutsideMyProjectsNeverLoadsRemoteInsights() async {
         let counter = RepositoryInsightsCallCounter()
         let remoteProvider = StubRepositoryRemoteInsightsProvider(
             cachedHandler: { _, _ in
@@ -342,6 +342,92 @@ struct RepositoryInsightsViewModelTests {
         #expect(viewModel.remoteCommunityState == .unavailable(cached: nil))
         #expect(viewModel.securityAdvisoriesState == .unavailable(cached: nil))
         #expect(viewModel.recentActivityState == .unavailable(cached: nil))
+        #expect(viewModel.openSSFState == .unavailable)
+    }
+
+    @Test("我的项目私仓在门禁放行后会拉取远端洞察且 OpenSSF 固定不可用")
+    func myProjectPrivateRepositoryLoadsRemoteInsights() async {
+        let activity = RepositoryActivityCounts(
+            createdPullRequests: 1,
+            mergedPullRequests: 1,
+            createdIssues: 0,
+            closedIssues: 0,
+            generatedAt: Date(timeIntervalSince1970: 5_000)
+        )
+        let remoteProvider = StubRepositoryRemoteInsightsProvider(
+            cachedHandler: { _, _ in nil },
+            refreshHandler: { _, _ in activity },
+            cachedCommitHandler: { _ in nil },
+            refreshCommitHandler: { _ in
+                RepositoryCommitActivity(points: [], generatedAt: Date(timeIntervalSince1970: 5_000))
+            },
+            cachedContributorsHandler: { _ in nil },
+            refreshContributorsHandler: { _ in
+                RepositoryContributorsInsight(contributors: [], generatedAt: Date(timeIntervalSince1970: 5_000))
+            },
+            cachedCommunityHandler: { _ in nil },
+            refreshCommunityHandler: { _ in
+                RepositoryCommunityInsight(
+                    healthPercentage: 80,
+                    hasReadme: true,
+                    hasCodeOfConduct: false,
+                    hasContributing: false,
+                    hasIssueTemplate: false,
+                    hasLicense: true,
+                    hasPullRequestTemplate: false,
+                    readmeHTMLURL: nil,
+                    codeOfConductHTMLURL: nil,
+                    contributingHTMLURL: nil,
+                    issueTemplateHTMLURL: nil,
+                    licenseHTMLURL: nil,
+                    pullRequestTemplateHTMLURL: nil
+                )
+            },
+            refreshReleaseCadenceHandler: { _ in
+                RepositoryReleaseRemoteSnapshot(
+                    cadence: RepositoryReleaseCadenceInsight(
+                        releasesLastYear: 1,
+                        averageIntervalDays: nil,
+                        latestPublishedAt: Date(timeIntervalSince1970: 4_900)
+                    ),
+                    latest: RepositoryReleaseInsight(
+                        tagName: "v1.0.0",
+                        name: "First",
+                        publishedAt: Date(timeIntervalSince1970: 4_900),
+                        htmlURL: nil
+                    )
+                )
+            },
+            cachedSecurityAdvisoriesHandler: { _ in nil },
+            refreshSecurityAdvisoriesHandler: { _ in
+                RepositorySecurityAdvisoriesInsight(advisories: [], generatedAt: Date(timeIntervalSince1970: 5_000))
+            },
+            cachedRecentActivityHandler: { _ in nil },
+            refreshRecentActivityHandler: { _ in
+                RepositoryRecentActivity(events: [], generatedAt: Date(timeIntervalSince1970: 5_000))
+            }
+        )
+        let expectedRelease = RepositoryReleaseInsight(
+            tagName: "v1.0.0",
+            name: "First",
+            publishedAt: Date(timeIntervalSince1970: 4_900),
+            htmlURL: nil
+        )
+        let viewModel = RepositoryInsightsViewModel(
+            provider: emptyLocalProvider(),
+            remoteProvider: remoteProvider,
+            remoteAccessProvider: StubRepositoryRemoteInsightsAccessProvider { repo, isAuthenticated in
+                isAuthenticated && repo.isPrivate
+            }
+        )
+        var privateRepo = fixtureRepo(id: 28)
+        privateRepo.isPrivate = true
+
+        await viewModel.load(repo: privateRepo, isAuthenticated: true)
+
+        #expect(viewModel.activityState == RepositoryRemoteInsightsSectionState.content(activity))
+        #expect(viewModel.releaseState == RepositoryInsightsSectionState.content(expectedRelease))
+        #expect(viewModel.openSSFState == .unavailable)
     }
 
     @Test("五个独立刷新入口在刷新期间保持现有内容")
@@ -862,7 +948,10 @@ struct RepositoryInsightsViewModelTests {
             },
             refreshReleaseCadenceHandler: { _ in
                 await refreshGate.block()
-                return refreshedReleaseCadence
+                return RepositoryReleaseRemoteSnapshot(
+                    cadence: refreshedReleaseCadence,
+                    latest: nil
+                )
             },
             cachedSecurityAdvisoriesHandler: { _ in
                 RepositoryCachedSecurityAdvisoriesInsight(
@@ -945,6 +1034,101 @@ struct RepositoryInsightsViewModelTests {
         )
         #expect(viewModel.activityRange == .week)
         #expect(viewModel.commitActivityRange == .year)
+    }
+
+    @Test("Commit Activity 首次 202 后自动轮询直到成功")
+    func commitActivityPollsGeneratingUntilSuccess() async {
+        let generatedAt = Date(timeIntervalSince1970: 9_100)
+        let commitActivity = RepositoryCommitActivity(
+            points: [RepositoryCommitActivityPoint(weekStart: generatedAt, commits: 4)],
+            generatedAt: generatedAt
+        )
+        let attempts = RepositoryInsightsCallCounter()
+        let remoteProvider = StubRepositoryRemoteInsightsProvider(
+            cachedHandler: { _, _ in nil },
+            refreshHandler: { _, _ in throw StubError.failed },
+            refreshCommitHandler: { _ in
+                await attempts.increment()
+                if await attempts.value() < 3 {
+                    throw GitHubRepositoryMetricsError.generating(retryAfter: 30)
+                }
+                return commitActivity
+            }
+        )
+        let viewModel = RepositoryInsightsViewModel(
+            provider: emptyLocalProvider(),
+            remoteProvider: remoteProvider,
+            sleep: { _ in }
+        )
+
+        await viewModel.load(repo: fixtureRepo(id: 910), isAuthenticated: true)
+
+        #expect(await attempts.value() == 3)
+        #expect(viewModel.commitActivityState == .content(commitActivity))
+        #expect(!viewModel.isRefreshingCommitActivity)
+    }
+
+    @Test("Commit Activity generating 最多自动轮询三次")
+    func commitActivityGeneratingPollingIsBounded() async {
+        let attempts = RepositoryInsightsCallCounter()
+        let remoteProvider = StubRepositoryRemoteInsightsProvider(
+            cachedHandler: { _, _ in nil },
+            refreshHandler: { _, _ in throw StubError.failed },
+            refreshCommitHandler: { _ in
+                await attempts.increment()
+                throw GitHubRepositoryMetricsError.generating(retryAfter: 30)
+            }
+        )
+        let viewModel = RepositoryInsightsViewModel(
+            provider: emptyLocalProvider(),
+            remoteProvider: remoteProvider,
+            sleep: { _ in }
+        )
+
+        await viewModel.load(repo: fixtureRepo(id: 911), isAuthenticated: true)
+
+        #expect(await attempts.value() == 4)
+        #expect(viewModel.commitActivityState == .generating(cached: nil))
+        #expect(!viewModel.isRefreshingCommitActivity)
+    }
+
+    @Test("Contributors 首次 202 后自动轮询且不得误报 failed")
+    func contributorsPollsGeneratingUntilSuccess() async {
+        let generatedAt = Date(timeIntervalSince1970: 9_200)
+        let contributors = RepositoryContributorsInsight(
+            contributors: [
+                RepositoryContributor(
+                    id: "octo",
+                    login: "octo",
+                    commits: 3,
+                    colorName: "blue"
+                )
+            ],
+            generatedAt: generatedAt
+        )
+        let attempts = RepositoryInsightsCallCounter()
+        let remoteProvider = StubRepositoryRemoteInsightsProvider(
+            cachedHandler: { _, _ in nil },
+            refreshHandler: { _, _ in throw StubError.failed },
+            refreshContributorsHandler: { _ in
+                await attempts.increment()
+                if await attempts.value() == 1 {
+                    throw GitHubRepositoryMetricsError.generating(retryAfter: nil)
+                }
+                return contributors
+            }
+        )
+        let viewModel = RepositoryInsightsViewModel(
+            provider: emptyLocalProvider(),
+            remoteProvider: remoteProvider,
+            sleep: { _ in }
+        )
+
+        await viewModel.load(repo: fixtureRepo(id: 912), isAuthenticated: true)
+
+        #expect(await attempts.value() == 2)
+        #expect(viewModel.contributorsState == .content(contributors))
+        #expect(!viewModel.isRefreshingContributors)
     }
 
     @Test("切换活动范围期间保留现有内容")
@@ -1413,6 +1597,14 @@ struct RepositoryInsightsViewModelTests {
     }
 }
 
+private struct StubRepositoryRemoteInsightsAccessProvider: RepositoryRemoteInsightsAccessProviding {
+    let handler: @Sendable (Repo, Bool) async -> Bool
+
+    func allowsRemoteInsights(repo: Repo, isAuthenticated: Bool) async -> Bool {
+        await handler(repo, isAuthenticated)
+    }
+}
+
 private enum StubError: Error {
     case failed
 }
@@ -1571,7 +1763,7 @@ private struct StubRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsPro
     ) async throws -> RepositoryCachedReleaseCadenceInsight? = { _ in nil }
     var refreshReleaseCadenceHandler: @Sendable (
         RepoIdentity
-    ) async throws -> RepositoryReleaseCadenceInsight? = { _ in
+    ) async throws -> RepositoryReleaseRemoteSnapshot = { _ in
         throw StubError.failed
     }
     var cachedSecurityAdvisoriesHandler: @Sendable (
@@ -1635,7 +1827,7 @@ private struct StubRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsPro
     }
 
     func refreshReleaseCadence(repository: RepoIdentity) async throws
-        -> RepositoryReleaseCadenceInsight? {
+        -> RepositoryReleaseRemoteSnapshot {
         try await refreshReleaseCadenceHandler(repository)
     }
 

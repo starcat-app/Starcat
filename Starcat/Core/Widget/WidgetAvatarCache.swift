@@ -77,7 +77,9 @@ struct WidgetAvatarCache: Sendable {
             focusRepositories: focus,
             rediscoveryRepository: rediscovery,
             unreadReleaseCount: snapshot.unreadReleaseCount,
-            unreadReleases: releases
+            unreadReleases: releases,
+            // 头像补全只允许改写头像文件名；趋势等非头像投影必须原样透传。
+            collectionTrend: snapshot.collectionTrend
         )
         prune(keeping: Set(fileNamesByOwner.values.compactMap { $0 }))
         return enriched

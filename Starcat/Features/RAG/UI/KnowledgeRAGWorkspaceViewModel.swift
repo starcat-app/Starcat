@@ -99,6 +99,7 @@ struct RAGConversationPresentationSnapshot: Sendable {
                     + citation.repoFullName.utf8.count
                     + citation.sectionTitle.utf8.count
                     + (citation.sourceURL?.absoluteString.utf8.count ?? 0)
+                    + (citation.evidenceContent?.utf8.count ?? 0)
             }
             for audit in message.remoteContextAudits {
                 total += audit.id.utf8.count
@@ -138,6 +139,7 @@ struct RAGConversationPresentationSnapshot: Sendable {
         citations.reduce(0) {
             $0 + $1.marker.utf8.count + $1.repoFullName.utf8.count + $1.sectionTitle.utf8.count
                 + ($1.sourceURL?.absoluteString.utf8.count ?? 0)
+                + ($1.evidenceContent?.utf8.count ?? 0)
         }
     }
 
@@ -752,15 +754,17 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     func repositoryInsightsDocument(for citation: RAGCitation) -> RAGRepositoryInsightsDocument? {
-        repositoryInsightsDocuments.first {
-            $0.snapshot.repoID == citation.repoID
+        guard let repoID = citation.repoID else { return nil }
+        return repositoryInsightsDocuments.first {
+            $0.snapshot.repoID == repoID
                 && $0.snapshot.repoFullName == citation.repoFullName
         }
     }
 
     func repositoryInsightsSnapshot(for citation: RAGCitation) -> RAGRepositoryInsightsSnapshot? {
-        displayedRepositoryInsightsSnapshots.first {
-            $0.repoID == citation.repoID && $0.repoFullName == citation.repoFullName
+        guard let repoID = citation.repoID else { return nil }
+        return displayedRepositoryInsightsSnapshots.first {
+            $0.repoID == repoID && $0.repoFullName == citation.repoFullName
         }
     }
 
@@ -2465,7 +2469,7 @@ final class KnowledgeRAGWorkspaceViewModel {
     func presentCitationChunk(_ citation: RAGCitation) {
         // RepoContext 不是数据库分片，没有 chunkID。正文 marker 应定位右侧独立 XML 证据卡，
         // 不能复用“分片缺失”popover，否则会把正常的仓库级证据误报成索引损坏。
-        if citation.source == .repoContext {
+        if citation.source == .repoContext || citation.source == .knowledgeBaseMetadata {
             selectCitation(citation)
             return
         }
@@ -2602,7 +2606,8 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     private func openLocalRepoDetail(for citation: RAGCitation) async {
-        if let repo = try? await dependencies.repoRepository.findById(citation.repoID) {
+        if let repoID = citation.repoID,
+           let repo = try? await dependencies.repoRepository.findById(repoID) {
             openLocalRepoDetail(repo)
         } else if let url = citation.sourceURL {
             NSWorkspace.shared.open(url)
@@ -2730,8 +2735,9 @@ final class KnowledgeRAGWorkspaceViewModel {
             guard let previousAssistant = priorMessages.last(where: { $0.role == .assistant }) else { return [] }
             var seen = Set<Int64>()
             return previousAssistant.citations.compactMap { citation in
-                guard seen.insert(citation.repoID).inserted else { return nil }
-                return RAGPlannerRepoReference(id: citation.repoID, fullName: citation.repoFullName)
+                guard let repoID = citation.repoID,
+                      seen.insert(repoID).inserted else { return nil }
+                return RAGPlannerRepoReference(id: repoID, fullName: citation.repoFullName)
             }
         }()
         let userMessage = RAGStoredMessage(

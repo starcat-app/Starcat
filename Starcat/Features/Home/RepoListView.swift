@@ -18,7 +18,6 @@
 import SwiftUI
 import AppKit
 import Observation
-import TipKit
 
 /// 中栏导航副标题的轻量计数状态。
 ///
@@ -1878,7 +1877,6 @@ struct RepoListView: View {
             }
         )
         .gettingStartedAnchor(.search)
-        .gettingStartedPopoverTip(GettingStartedTips.search)
         .onAppear {
             if viewModel.smartSearchMode != settings.smartSearchMode {
                 viewModel.smartSearchMode = settings.smartSearchMode

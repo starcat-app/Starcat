@@ -263,6 +263,15 @@ struct ManageDetailContent: View {
             ),
             // AI 摘要 / 对话也消费这一进程级 Provider；缓存与正在刷新的请求都只保留一份。
             remoteProvider: dependencies.repositoryRemoteInsightsProvider,
+            remoteAccessProvider: dependencies.repositoryRemoteInsightsAccessProvider,
+            healthEnrichmentHandler: { repo in
+                guard repo.isPrivate else { return }
+                // 我的项目私仓用 App token 拉 Release / 元数据信号，再算 Health（OpenSSF 仍跳过）。
+                _ = try? await dependencies.repoHealthService.refreshWithLatestSignals(
+                    repo: repo,
+                    apiClient: dependencies.projectGitHubAPIClient
+                )
+            },
             contextRefreshHandler: { repo in
                 _ = await dependencies.repositoryInsightsContextCoordinator.prepareArtifact(
                     for: repo,

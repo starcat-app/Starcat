@@ -329,20 +329,14 @@ struct RAGWorkspaceInspector: View {
                             } label: {
                                 HStack(alignment: .top, spacing: 8) {
                                     VStack(alignment: .leading, spacing: 3) {
-                                        RepoIdentityLabel(
-                                            fullName: citation.repoFullName,
-                                            avatarSize: 16,
-                                            font: ragFont(.callout, weight: .semibold),
-                                            spacing: 6,
-                                            showAvatarBorder: false
-                                        )
+                                        citationIdentityLabel(citation)
                                         // source 图标跟面包屑同排：一眼对来源类型，又不挤第一行 logo。
                                         HStack(alignment: .firstTextBaseline, spacing: 5) {
                                             Image(systemName: citation.source.systemImageName)
                                                 .font(iconFont(size: 11, weight: .semibold))
                                                 .foregroundStyle(citation.source.tintColor)
                                             // 来源·路径合成单行：小字 + 尾部省略，避免侧栏窄时把 section 折成两行。
-                                            (Text(citation.source.titleKey) + Text(" · \(citation.sectionTitle)"))
+                                            (Text(citation.source.titleKey) + Text(" · \(citation.localizedSectionTitle)"))
                                                 .font(ragFont(.caption2))
                                                 .foregroundStyle(.secondary)
                                                 .lineLimit(1)
@@ -660,6 +654,7 @@ struct RAGWorkspaceInspector: View {
                         metadataTagsGroup(snapshot)
                         metadataLanguagesGroup(Array(snapshot.topLanguages.prefix(6)))
                         metadataActivityGroup(snapshot)
+                        metadataInsightsGroup(snapshot)
                         metadataKnowledgeArtifactsGroup(snapshot)
                         metadataContentFreshnessGroup(snapshot)
                         metadataSourceCoverageGroup(snapshot)
@@ -886,6 +881,39 @@ struct RAGWorkspaceInspector: View {
             metadataMetricRow(
                 "rag.workspace.inspector.metadata.pushed30d",
                 value: localizedInteger(snapshot.pushedInLast30DaysCount)
+            )
+        }
+    }
+
+    /// 复用“我的洞察”的同一份聚合事实，只展示可解释的摘要，不在 Inspector 再次访问数据库。
+    @ViewBuilder
+    private func metadataInsightsGroup(_ snapshot: KnowledgeBaseMetadataSnapshot) -> some View {
+        let facts = snapshot.insights
+        metadataGroupCard {
+            metadataGroupHeader(
+                titleKey: "rag.workspace.inspector.metadata.group.insights",
+                systemImage: "gauge.with.dots.needle.bottom.0percent",
+                tint: Color.orange
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.insights.organized",
+                value: metadataCoverageValue(facts.organizedProjectCount, total: snapshot.projectCount)
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.insights.dormant",
+                value: localizedInteger(facts.dormantProjectCount)
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.insights.archivedUnavailable",
+                value: "\(localizedInteger(facts.archivedProjectCount)) · \(localizedInteger(facts.unavailableProjectCount))"
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.insights.qualityCoverage",
+                value: "\(localizedInteger(facts.healthCompletedProjectCount)) · \(localizedInteger(facts.openSSFCompletedProjectCount))"
+            )
+            metadataMetricRow(
+                "rag.workspace.inspector.metadata.insights.risks",
+                value: "\(localizedInteger(facts.maintenanceRiskProjectCount)) · \(localizedInteger(facts.securityRiskProjectCount))"
             )
         }
     }
@@ -1227,13 +1255,22 @@ struct RAGWorkspaceInspector: View {
                         .foregroundStyle(citation.source.tintColor)
                 }
             }
-            citationField("rag.workspace.inspector.location", value: citation.sectionTitle)
-            if citation.source == .repoContext {
+            citationField("rag.workspace.inspector.location", value: citation.localizedSectionTitle)
+            if citation.source == .knowledgeBaseMetadata {
+                citationField(
+                    "rag.workspace.inspector.matchType",
+                    value: citation.hitKind.localizedTitle
+                )
+                structuredCitationPreview(citation)
+            } else if citation.source == .repoContext {
                 repoContextCitationDetail(citation)
             } else if citation.source == .repositoryInsights {
                 repositoryInsightsCitationDetail(citation)
             } else {
-                citationField("rag.workspace.inspector.matchType", value: citation.hitKind.rawValue)
+                citationField(
+                    "rag.workspace.inspector.matchType",
+                    value: citation.hitKind.localizedTitle
+                )
                 retrievalScoreValue(citation)
                 if let vectorSimilarity = citation.vectorSimilarity {
                     citationField(
@@ -1270,40 +1307,86 @@ struct RAGWorkspaceInspector: View {
                         .foregroundStyle(.orange)
                 }
             }
-            HStack(spacing: 8) {
-                Spacer()
-                // logo-only：与知识库详情同源，文案降级为 help / accessibility。
-                Button {
-                    viewModel.openCitation(citation)
-                } label: {
-                    // App Icon 带玻璃外框，缩小时看不清；用 CompactMark 放大主体。
-                    StarcatCompactMark(size: 16)
-                        .squareLogoActionChrome()
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help("rag.workspace.inspector.citationStarcatDetail")
-                .accessibilityLabel(Text("rag.workspace.inspector.citationStarcatDetail"))
+            if citation.repoID != nil || citation.sourceURL != nil {
+                HStack(spacing: 8) {
+                    Spacer()
+                    // logo-only：与知识库详情同源，文案降级为 help / accessibility。
+                    Button {
+                        viewModel.openCitation(citation)
+                    } label: {
+                        // App Icon 带玻璃外框，缩小时看不清；用 CompactMark 放大主体。
+                        StarcatCompactMark(size: 16)
+                            .squareLogoActionChrome()
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .help("rag.workspace.inspector.citationStarcatDetail")
+                    .accessibilityLabel(Text("rag.workspace.inspector.citationStarcatDetail"))
 
-                Button {
-                    viewModel.openGitHub(citation)
-                } label: {
-                    // Devicons 经典 mark；template 以适配明暗主题。
-                    Image("github")
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 16, height: 16)
-                        .foregroundStyle(.primary)
-                        .squareLogoActionChrome()
+                    if citation.sourceURL != nil {
+                        Button {
+                            viewModel.openGitHub(citation)
+                        } label: {
+                            // Devicons 经典 mark；template 以适配明暗主题。
+                            Image("github")
+                                .renderingMode(.template)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 16, height: 16)
+                                .foregroundStyle(.primary)
+                                .squareLogoActionChrome()
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                        .help("rag.workspace.inspector.citationGitHub")
+                        .accessibilityLabel(Text("rag.workspace.inspector.citationGitHub"))
+                    }
                 }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help("rag.workspace.inspector.citationGitHub")
-                .accessibilityLabel(Text("rag.workspace.inspector.citationGitHub"))
             }
         }
         .padding(.top, 2)
+    }
+
+    @ViewBuilder
+    private func citationIdentityLabel(_ citation: RAGCitation) -> some View {
+        if citation.source == .knowledgeBaseMetadata {
+            Label {
+                Text(citation.source.titleKey)
+                    .font(ragFont(.callout, weight: .semibold))
+            } icon: {
+                Image(systemName: citation.source.systemImageName)
+                    .font(iconFont(size: 12, weight: .semibold))
+                    .foregroundStyle(citation.source.tintColor)
+            }
+        } else {
+            RepoIdentityLabel(
+                fullName: citation.repoFullName,
+                avatarSize: 16,
+                font: ragFont(.callout, weight: .semibold),
+                spacing: 6,
+                showAvatarBorder: false
+            )
+        }
+    }
+
+    /// 结构化元数据没有可回查的 chunk；直接展示随消息保存的事实片段，保证历史可核验。
+    @ViewBuilder
+    private func structuredCitationPreview(_ citation: RAGCitation) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("rag.workspace.inspector.structuredPreview")
+                .font(ragFont(.caption, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Text(citation.evidenceContent ?? "-")
+                .font(ragFont(.caption))
+                .foregroundStyle(.primary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+                .background(
+                    Color(nsColor: .textBackgroundColor).opacity(0.55),
+                    in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                )
+        }
     }
 
     /// RepoContext 以仓库级 `context.xml` 证据展示，不伪装成 `rag_chunks` 数据库分片。
@@ -2350,6 +2433,7 @@ struct RAGWorkspaceInspector: View {
         case .keyword: return "rag.workspace.inspector.plan.retrieval.detail.hitKind.keyword"
         case .vector: return "rag.workspace.inspector.plan.retrieval.detail.hitKind.vector"
         case .hybrid: return "rag.workspace.inspector.plan.retrieval.detail.hitKind.hybrid"
+        case .structured: return "rag.workspace.inspector.matchType.structured"
         case .repositoryInsights:
             return "rag.workspace.inspector.plan.retrieval.detail.hitKind.repositoryInsights"
         case .repoContext: return "rag.workspace.inspector.plan.retrieval.detail.hitKind.repoContext"
@@ -2467,6 +2551,8 @@ struct RAGWorkspaceInspector: View {
         case .language: return String.l10n("rag.workspace.inspector.plan.analytics.dimension.language")
         case .status: return String.l10n("rag.workspace.inspector.plan.analytics.dimension.status")
         case .tag: return String.l10n("rag.workspace.inspector.plan.analytics.dimension.tag")
+        case .topic: return String.l10n("rag.workspace.inspector.plan.analytics.dimension.topic")
+        case .license: return String.l10n("rag.workspace.inspector.plan.analytics.dimension.license")
         case nil: return String.l10n("rag.workspace.inspector.plan.analytics.dimension.all")
         }
     }
@@ -2486,6 +2572,16 @@ struct RAGWorkspaceInspector: View {
         case .excludedRAGChunks: return String.l10n("rag.workspace.inspector.plan.analytics.measure.excludedRAGChunks")
         case .repositoriesWithoutREADME: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesWithoutREADME")
         case .repositoriesWithoutIndexableSource: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesWithoutIndexableSource")
+        case .repositoriesOrganized: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesOrganized")
+        case .repositoriesUntagged: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesUntagged")
+        case .repositoriesUnread: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesUnread")
+        case .repositoriesDormant: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesDormant")
+        case .repositoriesArchived: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesArchived")
+        case .repositoriesUnavailable: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesUnavailable")
+        case .repositoriesWithHealthSnapshot: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesWithHealthSnapshot")
+        case .repositoriesWithOpenSSFScore: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesWithOpenSSFScore")
+        case .repositoriesWithMaintenanceRisk: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesWithMaintenanceRisk")
+        case .repositoriesWithSecurityRisk: return String.l10n("rag.workspace.inspector.plan.analytics.measure.repositoriesWithSecurityRisk")
         }
     }
 
@@ -3700,6 +3796,8 @@ struct RAGWorkspaceInspector: View {
             "rag.workspace.inspector.retrievalScore.formula.keyword"
         case .hybrid:
             "rag.workspace.inspector.retrievalScore.formula.hybrid"
+        case .structured:
+            "rag.workspace.inspector.matchType.structured"
         case .repositoryInsights:
             "rag.workspace.inspector.retrievalScore.formula.repositoryInsights"
         case .repoContext:
@@ -3728,6 +3826,8 @@ struct RAGWorkspaceInspector: View {
             return "\(final) = (\(formattedScoreValue(score.keywordWeight, precision: 2)) / (\(rrfConstant) + \(score.keywordRank ?? 0)) + \(formattedScoreValue(score.keywordScore ?? 0, precision: 3)) × \(formattedScoreValue(score.keywordScoreWeight, precision: 2))) × \(sourceWeight) + \(boost)"
         case .hybrid:
             return "\(final) = (\(formattedScoreValue(score.keywordWeight, precision: 2)) / (\(rrfConstant) + \(score.keywordRank ?? 0)) + \(formattedScoreValue(score.keywordScore ?? 0, precision: 3)) × \(formattedScoreValue(score.keywordScoreWeight, precision: 2)) + \(formattedScoreValue(score.vectorWeight, precision: 2)) / (\(rrfConstant) + \(score.vectorRank ?? 0)) + \(formattedScoreValue(score.vectorSimilarity ?? 0, precision: 3)) × \(formattedScoreValue(score.vectorScoreWeight, precision: 2))) × \(sourceWeight) + \(boost)"
+        case .structured:
+            return String.l10n("rag.workspace.inspector.matchType.structured")
         case .repositoryInsights:
             return String.l10n("rag.workspace.inspector.retrievalScore.formula.repositoryInsights")
         case .repoContext:

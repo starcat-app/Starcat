@@ -580,17 +580,20 @@ enum RAGHitKind: String, Codable, Sendable {
     case keyword
     case vector
     case hybrid
+    /// SQLite 聚合事实等不经过分片召回、但仍可被回答明确引用的结构化证据。
+    case structured
     case repositoryInsights = "repository_insights"
     case repoContext = "repo_context"
 }
 
-/// Citation 的来源集合与数据库分片来源刻意分离。两个 XML 都是仓库级临时证据，
+/// Citation 的来源集合与数据库分片来源刻意分离。结构化元数据与两个 XML 都不是普通分片，
 /// 不能加入 `RAGChunkSource.CaseIterable`，否则会污染索引覆盖率与检索设置。
 enum RAGCitationSource: String, Codable, Equatable, Sendable {
     case readme
     case notes
     case summary
     case metadata
+    case knowledgeBaseMetadata = "knowledge_base_metadata"
     case repositoryInsights = "repository_insights"
     case repoContext = "repo_context"
 
@@ -1225,7 +1228,8 @@ struct RAGCitation: Identifiable, Equatable, Sendable {
     /// Prompt / 回答正文里的证据编号，形如 `S1`；与 UI 芯片、可点击 `[S1]` 一一对应。
     var marker: String
     var chunkID: Int64?
-    var repoID: Int64
+    /// 全局知识库元数据不属于单个仓库；其它来源仍必须携带 repoID。
+    var repoID: Int64?
     var repoFullName: String
     /// 仅用于 UI 语义色；当前回答直接取检索候选，历史回答由仓库表联表补齐。
     /// 仓库被删除或没有主语言时保持 nil，引用 chip 回退原有稳定色盘。
@@ -1240,12 +1244,14 @@ struct RAGCitation: Identifiable, Equatable, Sendable {
     /// 与本轮引用绑定的融合快照；旧历史没有该字段时为 nil。
     var scoreBreakdown: RAGScoreBreakdown? = nil
     var sourceURL: URL?
+    /// 非分片结构化证据必须随消息保存正文快照，历史回放不能重新读取“现在”的聚合值。
+    var evidenceContent: String? = nil
 
     init(
         id: UUID,
         marker: String,
         chunkID: Int64?,
-        repoID: Int64,
+        repoID: Int64?,
         repoFullName: String,
         repoLanguage: String? = nil,
         source: RAGCitationSource,
@@ -1254,7 +1260,8 @@ struct RAGCitation: Identifiable, Equatable, Sendable {
         hitKind: RAGHitKind,
         vectorSimilarity: Double?,
         scoreBreakdown: RAGScoreBreakdown? = nil,
-        sourceURL: URL?
+        sourceURL: URL?,
+        evidenceContent: String? = nil
     ) {
         self.id = id
         self.marker = marker
@@ -1269,6 +1276,7 @@ struct RAGCitation: Identifiable, Equatable, Sendable {
         self.vectorSimilarity = vectorSimilarity
         self.scoreBreakdown = scoreBreakdown
         self.sourceURL = sourceURL
+        self.evidenceContent = evidenceContent
     }
 
 }

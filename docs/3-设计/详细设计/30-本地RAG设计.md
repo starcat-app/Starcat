@@ -525,13 +525,13 @@ slug 加 occurrence 后缀,如 `setup`、`setup-2`;每个 section 内再用 `ord
 
 chunk 内容更新和 embedding 更新不是同一个瞬间完成。为了避免 Retriever 读到“新 content + 旧 embedding”的不一致状态,chunk 需要显式状态:
 
-| 状态 | 含义 | Retriever 是否召回 |
+| 状态 | 含义 | 关键词 / 向量召回 |
 |---|---|---:|
-| `pending` | content 已写入,等待 embedding | 否 |
-| `ready` | content 与 embedding 对应当前 model | 是 |
-| `failed` | embedding 失败,保留错误信息 | 否 |
-| `stale` | 内容或模型已过期,等待重建 | 否 |
-| `keyword_only` | Metadata 精确事实索引，仅 FTS 可召回 | 仅关键词 |
+| `pending` | content 已写入,等待 embedding | 是 / 否 |
+| `ready` | content 与 embedding 对应当前 model | 是 / 是 |
+| `failed` | embedding 失败,保留错误信息 | 是 / 否 |
+| `stale` | 内容或模型已过期,等待重建 | 是 / 否 |
+| `keyword_only` | Metadata 精确事实索引，不生成 embedding | 是 / 否 |
 
 更新流程:
 
@@ -547,7 +547,7 @@ content_hash changed
   -> 失败后 status = failed + embedding_error
 ```
 
-Retriever 默认只读:
+向量分支只读:
 
 ```sql
 embedding_status = 'ready'
@@ -555,7 +555,9 @@ AND embedding_model = current_model
 AND embedding IS NOT NULL
 ```
 
-UI 如果发现 pending / failed 数量不为 0,在工作台顶部显示“索引更新中,部分新内容暂未进入问答”。
+FTS 分支读取知识库内全部未排除文本分片，不受 `embedding_status` 或当前 model 限制。UI
+如果发现 pending / failed / stale 数量不为 0，只说明这些分片暂不能参与向量增强，不得把
+已经可用的关键词索引描述成“尚未进入问答”。
 
 ### 6.6 README 更新
 
@@ -598,7 +600,7 @@ Metadata 是独立的 `source = metadata` 精确事实索引，状态固定为 `
 
 - 数据只从本地 `repos` / `repo_notes` / tags / releases / health / OpenSSF 缓存聚合，重建绝不请求网络。
 - 同一 repo 的连续事实变更合并 debounce；notes 仍是单独 source，不与 Metadata 混写。
-- FTS keyword 查询接受当前 model 的 `ready` chunk 和 `keyword_only` Metadata；向量查询只读取 `ready` + 当前 model。
+- FTS keyword 查询接受全部未排除文本 chunk；向量查询只读取 `ready` + 当前 model。
 - 精确筛选、统计、排序仍优先使用结构化表；Metadata 用于文本问题中的可引用事实召回。
 
 ### 6.10 覆盖率统计
@@ -609,13 +611,15 @@ Settings 或 RAG 工作台需要展示:
 |---|---|
 | 知识库 repo 总数 | `library_state = in_library` |
 | 已有 RAG chunk 的 repo 数 | 至少 1 个 chunk |
+| 可关键词检索的 chunk 数 | 全部未排除文本 chunk，不依赖向量状态 |
 | 已有 embedding 的 chunk 数 | 当前 embedding model 下非空 |
 | pending chunk 数 | 等待 embedding 的 chunk |
 | failed chunk 数 | embedding 失败的 chunk |
 | stale chunk 数 | content_hash 变化或 model 不一致 |
 | 最近索引时间 | max(indexed_at) |
 
-覆盖率按当前 embedding model 计算,换模型后应显示需要重建。
+关键词覆盖率按文本分片计算；向量健康度仍按当前 embedding model 计算。换模型后应显示向量
+需要重建，但不能把 FTS、知识库元数据或仓库特殊 XML 上下文判定为不可用。
 
 ### 6.11 多账号数据库切换屏障
 
@@ -1431,8 +1435,10 @@ Planner 关键词独立双引号转义、追加前缀匹配，再用显式 OR �
 表达式。中文问题若只生成英文关键词，只能命中含英文术语的分片；默认双语协议必须同时生成
 中英文关键词，真正跨语言同义匹配仍依赖 embedding。
 
-两路检索独立降级: query embedding/vector provider 失败时仍使用 keyword hits;keyword provider
-失败时仍使用 vector hits。只有两路都失败才把本轮作为检索错误返回,不能让单路故障抹掉有效证据。
+两路检索独立降级：未配置 Embedding、缺少 API Key、候选范围没有当前模型向量，或 query
+embedding/vector provider 失败时，均跳过向量分支并继续使用 keyword hits；keyword provider
+失败时仍使用 vector hits。只有已启用的检索分支全部失败才把本轮作为检索错误返回，不能让
+未配置的增强能力或单路故障抹掉有效证据。
 
 Fusion 第一版建议用 RRF:
 
@@ -1617,7 +1623,7 @@ index/collection/vectorName。外部 provider 报错或空命中时按配置回�
 
 | 类型 | 判断 | UI |
 |---|---|---|
-| 无索引 | 知识库有 repo,但无 embedding chunk | 引导构建索引 |
+| 无索引 | 知识库有 repo,但尚未生成任何可检索文本 chunk，且无元数据 / 特殊 XML 证据 | 引导构建关键词索引 |
 | 低相关 | top score 低于阈值 | 说明知识库资料不足,可去 GitHub/AnySearch 搜索 |
 | 知识库为空 | repo 数为 0 | 引导加入知识库 |
 

@@ -21,12 +21,13 @@
 本专项一次性交付可安装、可配置、可点击、可验证的 Starcat macOS Widget：
 
 1. `Starcat Focus`：展示用户指定、置顶或正在使用的仓库。
-2. `今日重逢`：每天稳定推荐一个长期未关注的本地仓库。
+2. `仓库回顾`：每天稳定回顾一个长期未关注的本地仓库。
 3. `Release Watch`：展示订阅仓库的未读 Release。
-4. App Store 与 Direct 两个主应用 target 分别嵌入匹配的 Widget Extension。
-5. 主应用通过 App Group 发布只读 JSON 快照；Widget 不读取业务数据库、不联网、不读取 Keychain。
-6. 退出登录、切换用户和数据准备失败时，不泄露上一位用户的数据。
-7. 点击仓库或 Release 后由统一 Deep Link 路由回 Starcat 对应页面。
+4. `收藏趋势 / Star Rhythm`：用图表展示最近 12 周公开收藏节奏和仓库状态分布。
+5. App Store 与 Direct 两个主应用 target 分别嵌入匹配的 Widget Extension。
+6. 主应用通过 App Group 发布只读 JSON 快照；Widget 不读取业务数据库、不联网、不读取 Keychain。
+7. 退出登录、切换用户和数据准备失败时，不泄露上一位用户的数据。
+8. 点击仓库、Release 或趋势卡片后由统一 Deep Link 路由回 Starcat 对应页面。
 
 完成标准不是“代码存在”，而是专项 checklist 全部具备自动化或人工证据，三轮及以上审查
 没有未关闭的 P0/P1 问题，最终结果报告与代码、测试、工程配置一致。
@@ -40,8 +41,9 @@
 | Widget | 支持尺寸 | 首发内容 | 点击行为 |
 |--------|----------|----------|----------|
 | Starcat Focus | Small / Medium / Large | 1 / 3 / 6 个仓库 | 打开仓库详情 |
-| 今日重逢 | Small / Medium | 当日稳定仓库 | 打开仓库详情 |
+| 仓库回顾 | Small / Medium | 当日稳定仓库 | 打开仓库详情 |
 | Release Watch | Medium / Large | 3 / 6 条未读 Release | 打开仓库 Release 区域 |
+| 收藏趋势 | Small / Medium / Large | 6 / 12 / 12 周收藏柱形图与统计 | 打开“我的洞察” |
 
 ### 2.2 明确不做
 
@@ -50,6 +52,7 @@
 - 不把 Starcat 数据库迁入 App Group。
 - 不增加数据库 schema 或迁移。
 - 不在首发 Widget 内执行 Star / Unstar、改标签、删笔记、标记 Release 已读等写操作。
+- 不在趋势图中提供悬停、筛选或逐柱点击；整个 Widget 只有一个稳定跳转目标。
 - 不为 Widget 新增一套 Pro 权益。
 - 不把 Private repository、私有笔记、RAG chunk、对话或凭据默认写入快照。
 
@@ -115,7 +118,8 @@ StarcatWidgets/
 │   └── WidgetRepositoryRow.swift
 ├── Focus/
 ├── Rediscovery/
-└── ReleaseWatch/
+├── ReleaseWatch/
+└── CollectionTrend/
 ```
 
 `Starcat/Core/Widget/` 中只有纯 Foundation 模型、选择算法与主应用发布服务。Extension
@@ -233,9 +237,24 @@ enum WidgetAccountState: String, Codable, Sendable {
 
 不写入 release body 和 assets JSON，避免快照膨胀。
 
-### 4.5 向前兼容
+### 4.5 收藏趋势最小投影
 
-- `schemaVersion == 1`：正常解码。
+`WidgetCollectionTrend` 只保存图表实际需要的聚合结果：
+
+- `totalCount`：公开、可访问且仍处于 Star 状态的仓库总数。
+- `addedInLast30DaysCount`：以 `generatedAt` 为上界，向前 30 天内新增的公开收藏数。
+- `weeklyPoints`：连续 12 个 ISO 周，每项只有 `weekStart` 和 `count`，空周补零。
+- `statusBreakdown`：`unread`、`read`、`using` 三类计数；没有 `repo_notes` 的仓库归入
+  `unread`，未知旧状态保守归入 `read`。
+
+该投影不包含 repository ID、owner、name、笔记或标签。它与“我的洞察”的统计口径存在一个
+有意差异：桌面快照继续排除 Private / inaccessible repository，因此 UI 必须用本地化短文案
+标明“公开收藏”，不能让用户误以为它是全部收藏数。
+
+### 4.6 向前兼容
+
+- `schemaVersion == 1`：正常解码，缺失 `collectionTrend` 时按 `nil` 降级。
+- 新写入快照使用 schema v2，并附带可选的 `collectionTrend`。
 - `schemaVersion > currentSchemaVersion`：Extension 显示升级提示，不尝试猜测字段。
 - 文件不存在：显示 preparing。
 - JSON 损坏：记录 Extension 诊断并显示 unavailable；不得崩溃。
@@ -258,7 +277,7 @@ enum WidgetAccountState: String, Codable, Sendable {
 
 输出最多 6 条，按 repo ID 去重，默认过滤 Private repository。
 
-### 5.2 今日重逢
+### 5.2 仓库回顾
 
 候选必须满足：
 
@@ -301,6 +320,23 @@ AND repos.is_private = 0
 - 快照只保存相对文件名，Extension 通过当前 App Group 根目录解析，防止跨渠道路径串用。
 - 缓存清理保留当前快照引用和最近使用文件，设置合理总量上限。
 
+### 5.4 收藏趋势
+
+查询范围固定为：
+
+```sql
+r.is_starred = 1
+AND r.is_private = 0
+AND r.access_state = 'accessible'
+```
+
+以 UTC ISO 8601 日历计算 `generatedAt` 所在周的周一，再向前推 11 周。SQLite 按周一聚合
+`starred_at`，Swift 补齐没有收藏事件的周，保证三个尺寸始终收到位置稳定的 12 个点。
+近 30 天与周聚合都以 `generatedAt` 为上界，避免测试数据或异常未来时间污染统计。
+
+本周数量取 `weeklyPoints.last.count`；12 周周均值由 Extension 使用 12 个点计算，不能在
+快照中再保存可推导字段。状态分布沿用“我的洞察”的映射规则，但只作用于上述公开范围。
+
 ---
 
 ## 6. 发布与刷新时机
@@ -342,7 +378,7 @@ Repository 内复制快照构建逻辑。
 ### 6.3 Timeline
 
 - 正常快照：下一次系统建议刷新时间为 30 分钟后。
-- 今日重逢：额外计算本地次日 00:05 的刷新点。
+- 仓库回顾：额外计算本地次日 00:05 的刷新点。
 - preparing / signedOut：1 小时后重试，并引导打开主应用。
 - 主应用发布后主动请求 `WidgetCenter`，但不假定系统立即刷新。
 
@@ -358,7 +394,7 @@ Repository 内复制快照构建逻辑。
 - 每个仓库行都设置明确的 `.widgetURL` 或 `Link`。
 - 信息密度按尺寸增长，不在 Small 塞多行滚动列表。
 - 所有固定文案进入 `Localizable.xcstrings`，key 使用 `widget.*` 前缀。
-- VoiceOver label 包含仓库名、来源状态和操作含义。
+- VoiceOver label 包含仓库名、可见状态和操作含义。
 
 ### 7.2 空态
 
@@ -368,8 +404,81 @@ Repository 内复制快照构建逻辑。
 | signedOut | 登录 Starcat 后显示收藏 | 打开 Starcat 登录 |
 | unavailable | 暂时无法读取数据 | 打开 Starcat 修复 |
 | empty Focus | 置顶或标记正在使用的仓库 | 打开 Starcat |
-| empty Rediscovery | 暂无适合重逢的仓库 | 打开 Starcat |
+| empty Rediscovery | 暂无可回顾的仓库 | 打开 Starcat |
 | empty Release | 没有未读 Release | 打开 Release 页面 |
+
+### 7.3 真实桌面 UI 优化增量
+
+2026-07-30 在 Direct Debug 版本完成首次真实桌面验收后，确认数据、头像和点击入口可以
+正常渲染，但三类 Widget 仍存在尺寸适配与信息层级问题。本轮只调整 Extension 视图，
+不修改快照契约、查询口径、App Group 或双渠道 target。
+
+#### Starcat Focus
+
+- Medium 保持 3 条两行仓库信息，不增加描述；来源文案使用紧凑表达。
+- Large 保持最多 6 条，并使用专用紧凑三行布局，避免标题与末行被系统边界裁切。
+- Large 的描述降为 `.caption2`，头像和垂直间距按尺寸收紧；仓库名仍保持最高行内层级。
+- “使用中”继续进入视觉内容和 VoiceOver；候选来源不再重复占用仓库元信息行。
+
+#### 仓库回顾
+
+- Medium 从单一居中内容改为“统一 Header + 仓库内容行”，减少无效留白。
+- 仓库内容行保留头像、名称、描述、语言和 Star 数，并增加右侧点击指示。
+- Small 不增加业务字段，只统一标题、仓库名和辅助元信息的层级。
+
+#### Release Watch
+
+- Header 的未读总数必须使用明确的本地化短文案，不再只显示无语义圆点和数字。
+- 相对时间使用紧凑单单位表达，避免时间列挤压 tag 和仓库名。
+- Medium / Large 继续分别展示最多 3 / 6 条，不改变未读总数与列表过滤口径。
+
+#### 共享约束
+
+- 使用轻量共享 Header 统一图标、标题、过期状态和右侧摘要，不抽象业务行。
+- 所有文本和图标继续只使用 `.primary` / `.secondary`，不增加装饰性渐变或固定背景色。
+- Store / Direct 继续编译同一份 Widget 源码；两个渠道必须分别构建通过。
+- 自动化只能验证布局代码、i18n 和构建门禁；最终深浅色、所有尺寸与 VoiceOver 仍需真实
+  桌面截图或人工记录。
+
+### 7.4 第二轮真实桌面 UI 优化
+
+2026-07-30 第二次真实桌面验收确认：Focus 的“置顶”来源标识重复且容易被理解为操作；
+Rediscovery 的“今日重逢”命名偏离工具属性，Small / Medium 也没有充分使用系统分配空间。
+本轮继续只调整 Extension 视图与本地化，不修改候选查询、快照 schema、App Group 或
+Deep Link。
+
+#### Starcat Focus
+
+- 所有 `.pinned` 仓库不再显示“置顶”文字、图钉或对应 VoiceOver 来源；底层候选和排序不变。
+- Header 的 `pin.fill` 改为 `scope`，空态图标同步改为 `scope`。
+- `.using` 继续显示“使用中”，因为它是仓库工作状态，不是重复的候选来源说明。
+
+#### 仓库回顾
+
+- 中文统一命名为“仓库回顾”，英文统一命名为“Repo Recall”；Widget Gallery、标题和空态
+  使用同一术语。
+- Small 删除装饰性 `sparkles` 和制造留白的弹性间隔，展示头像、标题、仓库名、一行描述、
+  语言和紧凑 Star 数。
+- Medium 使用 `clock.arrow.circlepath`，展示更大的头像、两行描述、语言、Star 数和最多
+  3 个标签；内容在可用高度内垂直居中，不用空白承担层级。
+- 现有快照已经包含上述字段，不为 UI 增密扩展共享快照或数据库读取边界。
+
+### 7.5 收藏趋势 / Star Rhythm
+
+该 Widget 使用 Swift Charts 的 `Chart` + `BarMark`，不同尺寸共享同一份趋势数据，但按
+系统分配空间裁剪信息密度：
+
+- **Small**：显示“近 30 天新增”主指标和最近 6 周迷你柱形图；隐藏坐标轴，保留趋势轮廓。
+- **Medium**：显示连续 12 周柱形图，以及本周、近 30 天和公开收藏总数。
+- **Large**：在 12 周柱形图下增加本周、近 30 天、12 周周均、公开收藏总数，并展示
+  未读 / 已读 / 使用中三段状态分布。
+
+历史柱使用 `.secondary`，当前周使用应用强调色；状态分布仅在表达状态语义时使用
+orange / blue / green。文字和非语义图标继续只用 `.primary` / `.secondary`。整个卡片
+通过 `widgetURL` 打开“我的洞察”，不为单根柱子创建伪交互。
+
+空数据不是错误：已登录但没有公开收藏时仍显示零值图表和引导文案；只有 preparing、
+signedOut、unavailable 才复用共享业务空态。
 
 ---
 
@@ -399,6 +508,18 @@ starcat://repo/{owner}/{name}/releases?v=1&rid={repository-id}&release_id={relea
 - 冷启动时由现有 dispatcher 保存 pending navigation。
 - 找不到指定 Release 时降级打开仓库 Release 区域，不打开外部任意 URL。
 
+### 8.3 收藏趋势
+
+新增受限应用路由：
+
+```text
+starcat://app/insights?v=1
+```
+
+`WidgetAppDeepLink` 继续要求 scheme、host、单段 path 和唯一 `v=1` query 全部匹配。
+主应用收到 `.insights` 后，通过现有 `MainWindowNavigationDispatcher` 激活主窗口并选择
+`SidebarRootPage.insights`；不携带筛选条件，也不覆盖用户保存的 Manage selection。
+
 ---
 
 ## 9. 实施阶段与提交边界
@@ -415,10 +536,14 @@ starcat://repo/{owner}/{name}/releases?v=1&rid={repository-id}&release_id={relea
 8. `feat(widget): 接入小组件快照刷新协调器`
 9. `feat(widget): 添加共享头像缓存`
 10. `feat(widget): 实现 Starcat Focus 小组件`
-11. `feat(widget): 实现今日重逢小组件`
+11. `feat(widget): 实现仓库回顾小组件`
 12. `feat(widget): 实现 Release Watch 小组件`
 13. `feat(widget): 完善 Release 深层链接`
 14. `test(widget): 补齐桌面小组件单元测试`
+15. `docs(widget): 补充收藏趋势小组件方案`
+16. `feat(widget): 添加收藏趋势快照投影`
+17. `feat(widget): 添加我的洞察小组件路由`
+18. `feat(widget): 实现收藏趋势小组件`
 
 若实现中发现必须拆分或合并，以“一个 commit 可独立说明、验证和回退”为准；审查报告与
 审查修复也分别提交。
@@ -437,9 +562,11 @@ starcat://repo/{owner}/{name}/releases?v=1&rid={repository-id}&release_id={relea
 - signedOut / preparing 快照不携带 repository / release。
 - Private repository 永不进入投影。
 - Focus 优先级、去重、数量上限。
-- 今日重逢过滤与同日稳定选择。
+- 仓库回顾过滤与同日稳定选择。
 - Release 未读、订阅、隐私过滤和排序。
+- 收藏趋势连续 12 周补零、近 30 天、状态分布和 Private / inaccessible 过滤。
 - Deep Link encode / parse / 非法输入拒绝。
+- 收藏趋势 Deep Link 能前台或冷启动选择“我的洞察”。
 - 渠道配置选择正确 App Group。
 
 ### 10.2 工程与构建
@@ -453,16 +580,12 @@ xcodegen generate
 关闭 Xcode 后执行：
 
 ```bash
-# 本地尚未取得 Widget App Group provisioning profile 时，测试动作使用 ad-hoc
-# 签名并仅对测试构建清空 entitlement；正式 target 配置和分发产物不受影响。
-xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' \
-  CODE_SIGN_ENTITLEMENTS='' CODE_SIGN_IDENTITY='-' DEVELOPMENT_TEAM='' test
+xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
 
-# 开发者后台和本机 profile 就绪后，再用正式 entitlement 复测。
-# xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
-
-xcodebuild -scheme Starcat -configuration Debug -destination 'platform=macOS,arch=arm64' build
-xcodebuild -scheme StarcatDirect -configuration Debug -destination 'platform=macOS,arch=arm64' build
+xcodebuild -scheme Starcat -configuration Debug -destination 'platform=macOS,arch=arm64' \
+  -allowProvisioningUpdates build
+xcodebuild -scheme StarcatDirect -configuration Debug -destination 'platform=macOS,arch=arm64' \
+  -allowProvisioningUpdates build
 ```
 
 并检查：
@@ -475,11 +598,43 @@ codesign -d --entitlements :- <Widget.appex>
 /usr/libexec/PlistBuddy -c Print <Widget.appex>/Contents/Info.plist
 ```
 
+`Configs/Build.xcconfig` 需要配置本机 `DEVELOPMENT_TEAM`。`project.yml` 为 Host 与
+Extension 同时注入 `REGISTER_APP_GROUPS = YES`，并让两个 Extension target 继承该
+xcconfig；不要只在命令行临时覆盖 Team，否则 Xcode IDE 运行 Widget 时仍会缺少
+Development 签名。
+
+### 10.2.1 独立调试四个 Widget
+
+`WidgetBundle` 同时包含四个 kind，直接运行 Extension target 时，WidgetKit 无法判断
+应展示哪一个组件。`project.yml` 因此提供四个共享 Scheme：
+
+| Scheme | `_XCWidgetKind` | 默认尺寸 |
+|--------|-----------------|----------|
+| `StarcatWidget-Focus` | `com.starcat.widget.focus` | `medium` |
+| `StarcatWidget-Rediscovery` | `com.starcat.widget.rediscovery` | `medium` |
+| `StarcatWidget-ReleaseWatch` | `com.starcat.widget.release-watch` | `medium` |
+| `StarcatWidget-CollectionTrend` | `com.starcat.widget.collection-trend` | `medium` |
+
+新增或修改 Scheme 后先生成工程，并用命令行确认配置可用：
+
+```bash
+xcodegen generate
+xcodebuild -project Starcat.xcodeproj -list
+xcodebuild -project Starcat.xcodeproj -scheme StarcatWidget-Focus \
+  -configuration Debug -destination 'platform=macOS,arch=arm64' build
+```
+
+人工调试时，在 Xcode 顶部 Scheme 菜单选择其中一个 `StarcatWidget-*` Scheme，再执行
+Run。Xcode 会打开对应 kind 的 WidgetKit 调试画布；切换组件时只需切换 Scheme，不要
+重复修改环境变量。尺寸或渲染阶段需要临时调整时，修改 Scheme 的
+`_XCWidgetFamily`（`small` / `medium` / `large`）或 `_XCWidgetDefaultView`
+（`timeline` / `snapshot` / `placeholder`），正式配置仍以 `project.yml` 为准。
+
 ### 10.3 真机人工验收
 
 自动化无法替代以下验收：
 
-1. 在“编辑小组件”图库找到三个 Starcat Widget。
+1. 在“编辑小组件”图库找到四个 Starcat Widget。
 2. 将所有支持尺寸添加到桌面。
 3. 数据、头像、空态、深浅色和 VoiceOver 表现正确。
 4. 点击仓库与 Release 能冷启动或前台定位。
@@ -497,7 +652,7 @@ codesign -d --entitlements :- <Widget.appex>
 
 1. **第一轮：架构与功能完整性**
    - 对照本文、初步方案、checklist、代码和 commit。
-   - 检查数据边界、触发链路、三个 Widget 与双渠道。
+   - 检查数据边界、触发链路、四个 Widget 与双渠道。
 2. **第二轮：代码、测试、隐私与签名**
    - 检查并发、原子写、错误降级、i18n、可访问性、测试质量、签名产物。
 3. **第三轮：最终一致性**
@@ -537,5 +692,7 @@ docs/4-工程进度/macOS桌面小组件专项/结果报告.md
 - [Keeping a widget up to date](https://developer.apple.com/documentation/widgetkit/keeping-a-widget-up-to-date)
 - [Configuring App Groups](https://developer.apple.com/documentation/xcode/configuring-app-groups)
 - [AppIntentConfiguration](https://developer.apple.com/documentation/widgetkit/appintentconfiguration)
+- [Chart](https://developer.apple.com/documentation/charts/chart)
+- [BarMark](https://developer.apple.com/documentation/charts/barmark)
 - [Linking widgets to specific app scenes](https://developer.apple.com/documentation/widgetkit/linking-to-specific-app-scenes-from-your-widget-or-live-activity)
 - [XcodeGen Project Spec](https://github.com/yonaskolb/XcodeGen/blob/master/Docs/ProjectSpec.md)

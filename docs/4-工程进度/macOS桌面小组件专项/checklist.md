@@ -1,10 +1,10 @@
 # macOS 桌面小组件专项 Checklist
 
-> 状态：实施中
+> 状态：自动化与签名门禁完成，人工桌面验收中
 >
 > 基线：`dev@aa135b7e899b209c6e074d0b4821dc302d40b8cc`
 >
-> 分支：`codex/macos-widget`
+> 开发分支：`codex/macos-widget`；当前状态：已合并到 `dev`
 >
 > 约束：每个小功能单独提交，不 push；所有勾选必须有代码、命令输出、产物检查、截图或
 > 审查报告作为证据。
@@ -47,12 +47,16 @@
   - 证据：仅 `StarcatWidgets.appex`，bundle id 为 `com.starcat.app.store.widgets`
 - [x] Direct `.app` 只包含 Direct `.appex`
   - 证据：仅 `StarcatDirectWidgets.appex`，bundle id 为 `com.starcat.app.direct.widgets`
-- [ ] `codesign` 验证 Store Host / Extension App Group 一致
-- [ ] `codesign` 验证 Direct Host / Extension App Group 一致
+- [x] `codesign` 验证 Store Host / Extension App Group 一致
+  - 证据：Team `8WCUMGCWMB`，两者均为 `group.com.starcat.app.store.widgets`，
+    `codesign --verify --deep --strict` 通过
+- [x] `codesign` 验证 Direct Host / Extension App Group 一致
+  - 证据：Team `8WCUMGCWMB`，两者均为 `group.com.starcat.app.direct.widgets`，
+    `codesign --verify --deep --strict` 通过
 
-> 当前签名阻断：本机 Xcode Team `8WCUMGCWMB` 账号凭据失效，且新 Widget bundle
-> 尚无 provisioning profile。`xcodebuild -allowProvisioningUpdates` 已得到
-> `No Accounts` / `No profiles for 'com.starcat.app.store.widgets'`，待 Xcode 重新登录后复测。
+> 签名阻断已于 2026-07-30 解除：Store / Direct 全新 DerivedData 构建均使用
+> `Apple Development: liwen gong (MZ4R5J393K)`，Host / Extension 的 Team、App Group
+> 和 `CFBundleVersion=2291` 一致。
 
 ---
 
@@ -95,9 +99,9 @@
 
 - [x] Focus 候选按指定 / 置顶 / using 优先
 - [x] Focus 按 repo ID 去重并限制 6 条
-- [x] 今日重逢过滤 archived、Private、近 30 天、置顶和 using
-- [x] 今日重逢同一账号同一天选择稳定
-- [x] 今日重逢空候选可恢复
+- [x] 仓库回顾过滤 archived、Private、近 30 天、置顶和 using
+- [x] 仓库回顾同一账号同一天选择稳定
+- [x] 仓库回顾空候选可恢复
 - [x] Release Watch 只取已订阅且未读 Release
 - [x] Release Watch 排除 Private repository
 - [x] Release Watch 未读总数与列表过滤口径一致
@@ -131,7 +135,7 @@
 - [x] Medium 最多展示三个仓库
 - [x] Large 最多展示六个仓库
 - [x] 支持自动选择与指定仓库配置
-- [x] 每行展示 owner avatar、仓库名与来源状态
+- [x] 每行展示 owner avatar、仓库名，并按需展示“使用中”工作状态
 - [x] 空态可点击打开 Starcat
 - [x] 每个仓库可点击打开对应详情
 
@@ -139,7 +143,7 @@
 
 ---
 
-## 7. 今日重逢
+## 7. 仓库回顾
 
 - [x] 提供 Small / Medium
 - [x] Small 展示头像、名称、语言
@@ -182,6 +186,71 @@
 
 > 证据：`7a7be021`、`f23c2b24`；深浅色最终项保留给已签名安装后的人工验收。
 
+### 9.1 真实桌面 UI 优化增量
+
+- [x] 基于 Direct Debug 真实桌面截图记录尺寸适配与信息层级问题
+  - 证据：2026-07-30 首次桌面验收截图；Focus Large 顶部 / 末行拥挤、今日重逢留白过大、
+    Release Watch 未读计数语义不明确
+- [x] 新增共享 Widget Header，统一标题、过期状态与右侧摘要
+  - 证据：`StarcatWidgetHeader`；Focus 已接入，另外两个 Widget 在各自增量中接入
+- [x] Focus Medium / Large 使用独立行密度，分别承载 3 / 6 条数据
+  - 证据：`StarcatFocusWidgetView.repositoryList` 按 family 选择标准 / 紧凑行
+- [x] Focus 仅保留“使用中”工作状态及对应 VoiceOver 语义
+  - 证据：`.pinned` 不再产生视觉或可访问性标签；`.using` 继续显示
+- [x] 仓库回顾 Medium 使用 Header + 内容行并减少无效留白
+  - 证据：`StarcatRediscoveryWidgetView.mediumContent` 顶部对齐 Header，内容行增加点击指示
+- [x] Release Watch 未读总数改为明确本地化短文案
+  - 证据：`widget.releaseWatch.unreadShort %lld` 显示“%lld 未读 / %lld unread”
+- [x] Release Watch 相对时间使用紧凑单单位表达
+  - 证据：`Date.RelativeFormatStyle` 使用 `.numeric` + `.abbreviated`
+- [x] Widget 文本和图标继续只使用 `.primary` / `.secondary`
+  - 证据：`StarcatWidgets/**/*.swift` 静态检查无 `.tertiary`
+- [x] Widget 定向测试、Store Debug、Direct Debug 构建通过
+  - 证据：收藏趋势增量 25 项定向测试无失败；Store / Direct Widget 构建通过
+- [ ] 优化后所有声明尺寸完成真实桌面复验
+
+### 9.2 第二轮真实桌面 UI 优化增量
+
+- [x] Focus 删除所有“置顶”文字、图钉和对应 VoiceOver 来源
+  - 证据：`StarcatFocusStatusLabel` 对 `.pinned` 返回 `EmptyView`
+- [x] Focus Header 与空态改用 `scope`，继续保留“使用中”状态
+  - 证据：`StarcatFocusWidgetView` 与 `StarcatFocusStatusLabel`
+- [x] Rediscovery 中文改名“仓库回顾”，英文改名“Repo Recall”
+  - 证据：`widget.rediscovery.displayName`、`widget.rediscovery.title`
+- [x] 仓库回顾 Small 删除装饰图标和无效留白，增加描述与 Star 数
+  - 证据：`StarcatRediscoveryWidgetView.smallContent`
+- [x] 仓库回顾 Medium 展示两行描述、语言、Star 数和最多 3 个标签
+  - 证据：`StarcatRediscoveryWidgetView.mediumContent`
+- [x] 第二轮修改后固定文案全部通过 String Catalog 校验
+  - 证据：`jq empty` 与 `xcstringstool compile --dry-run` 均通过
+- [x] 第二轮 Widget 定向测试、Store / Direct Widget 构建通过
+  - 证据：收藏趋势增量完成后重新执行 25 项定向测试及 Store / Direct Widget 构建
+- [ ] 第二轮优化后 Small / Medium / Large 完成真实桌面复验
+
+### 9.3 收藏趋势小组件增量
+
+- [x] 详细方案明确公开收藏口径、三种尺寸、隐私边界与验收标准
+  - 证据：详细方案 §4.5、§5.4、§7.5、§8.3
+- [x] `WidgetSnapshot` 升级为向后兼容的 v2，并新增可选趋势投影
+- [x] 趋势投影连续输出 12 个 ISO 周，空周补零
+- [x] 趋势投影包含近 30 天、总数和未读 / 已读 / 使用中状态计数
+- [x] 趋势投影排除 Private 与 inaccessible repository
+- [x] Small 显示近 30 天指标与最近 6 周迷你柱形图
+- [x] Medium 显示 12 周柱形图与本周 / 近 30 天 / 总数
+- [x] Large 增加 12 周周均与状态分布图
+- [x] Widget 固定文案全部进入 `Localizable.xcstrings`
+- [x] 点击趋势卡片前台 / 冷启动打开“我的洞察”
+  - 证据：`WidgetAppDeepLink.insights` → dispatcher pending request → `SidebarRootPage.insights`
+- [x] Store / Direct Widget Extension 共用同一份实现
+- [x] 新增 `StarcatWidget-CollectionTrend` 独立调试 Scheme
+- [x] 趋势投影、快照兼容与 Deep Link 单元测试通过
+- [x] Store / Direct Widget 构建通过
+- [x] 头像补全后保留 `collectionTrend` 非头像投影
+  - 证据：commit `de47ab1`；`WidgetAvatarCacheTests` 覆盖趋势透传
+- [x] Direct ready 快照真实落盘收藏趋势
+  - 证据：2026-07-30 18:20:26 的 schema v2 快照包含 12 周趋势与状态分布
+- [ ] Small / Medium / Large 完成真实桌面复验
+
 ---
 
 ## 10. 自动化测试
@@ -192,14 +261,18 @@
 - [x] signedOut / preparing 不携带业务数据
 - [x] Private repository 过滤
 - [x] Focus 优先级、去重和上限
-- [x] 今日重逢过滤、稳定性和空候选
+- [x] 仓库回顾过滤、稳定性和空候选
 - [x] Release 订阅、未读、隐私过滤和排序
 - [x] Deep Link 正常与非法输入
 - [x] Store / Direct 渠道配置
+- [x] snapshot v2 向后兼容 v1 文件
+- [x] 收藏趋势聚合、隐私过滤与状态分布
+- [x] 收藏趋势 Deep Link 正常与非法输入
+  - 证据：`WidgetAppDeepLinkTests`
 - [x] Widget 相关定向测试通过
-  - 证据：29 tests，0 failures，0 skipped
+  - 证据：既有基线 29 tests；收藏趋势增量 25 tests，0 failures，0 skipped
 - [x] Starcat 全量测试通过
-  - 证据：2061 tests，0 failures，8 skipped，1 expected failure
+  - 证据：2080 tests，2071 passed，0 failures，8 skipped，1 expected failure
 
 ---
 
@@ -209,9 +282,13 @@
 - [x] `xcodegen generate` 后工程无未预期漂移
 - [x] Store Debug build 通过
 - [x] Direct Debug build 通过
-- [ ] Store Host / Extension 签名与 App Group 检查通过
-- [ ] Direct Host / Extension 签名与 App Group 检查通过
-- [ ] Widget Gallery 出现三个组件
+- [x] Store Host / Extension 签名与 App Group 检查通过
+  - 证据：bundle ID 为 `com.starcat.app.store` / `com.starcat.app.store.widgets`，
+    App Group 为 `group.com.starcat.app.store.widgets`
+- [x] Direct Host / Extension 签名与 App Group 检查通过
+  - 证据：bundle ID 为 `com.starcat.app.direct` / `com.starcat.app.direct.widgets`，
+    App Group 为 `group.com.starcat.app.direct.widgets`
+- [ ] Widget Gallery 出现四个组件
 - [ ] 所有声明尺寸均可添加到桌面
 - [ ] 真实数据、头像、空态符合方案
 - [ ] 仓库点击前台 / 冷启动定位正确
@@ -241,6 +318,24 @@
   - 证据：第三轮未发现新问题，无需追加第四轮修复
 - [x] 文档、代码、测试、工程进度和 checklist 一致
   - 证据：第三轮审查报告第 3、4 节
+- [x] 第四轮签名与调试增量审查报告先落档并提交
+  - 证据：commit `176be40`
+- [x] 第四轮签名阻断、调试入口与运行时问题完成修复
+  - 证据：commits `3917714`、`61034a2`、`f5a102e`、`60246d0`
+- [x] 第五轮修复后复审无新增 P0 / P1 / P2
+  - 证据：commit `c0c8760`，第一轮 Clean
+- [x] 第六轮最终复审无新增 P0 / P1 / P2
+  - 证据：commit `e0ec026`，第二轮连续 Clean
+- [x] 第七轮收藏趋势增量审查报告先落档并提交
+  - 证据：commit `5cf31ce`
+- [x] 第七轮发现的文档与进度 P2 已修复
+  - 证据：详细方案改为四个 Widget；§9.1、§9.2 回填当前测试与构建证据
+- [x] 第八轮修复后复审无新增 P0 / P1 / P2
+  - 证据：commit `7f45d54`，收藏趋势增量第一轮 Clean
+- [x] 第九轮最终复审无新增 P0 / P1 / P2
+  - 证据：commit `1270578`，收藏趋势增量第二轮连续 Clean
+- [x] 第十轮真实桌面空态根因已修复并完成运行时复审
+  - 证据：commit `4b5d880`；Direct App Group 快照包含 `collectionTrend`
 - [ ] 所有 checklist 项均有真实证据
 - [ ] 新增并提交最终结果报告
 - [x] 最终分支无未提交改动
@@ -288,5 +383,26 @@
 | `d15a900` | 修复 | 补充快照降级诊断 | 双渠道 unsigned build |
 | `76727db` | 文档 | 回填第二轮审查进度 | `git diff --check` |
 | `4690484` | 审查 | 新增第三轮审查报告 | 29 项定向测试 + 2061 项全量测试 |
+| `3917714` | 工程 | 固化 App Group 自动签名配置 | 双渠道签名构建 + entitlement 检查 |
+| `61034a2` | 修复 | 同步宿主与扩展构建版本 | 双渠道 Host / Extension 均为 `2291` |
+| `f5a102e` | 工程 | 添加三个组件调试 Scheme | `xcodebuild -list` + 三个 Scheme 构建 |
+| `60246d0` | 修复 | 避免 Focus 占位列表重复身份 | Focus Scheme 构建通过 |
+| `176be40` | 审查 | 新增第四轮签名与调试审查报告 | 报告先于文档修复提交 |
+| `1ae18d2` | 文档 | 同步签名结果与独立调试入口 | `xcodegen` + Scheme 列表检查 |
+| `c0c8760` | 审查 | 新增第五轮 Clean 复审报告 | 无新增 P0 / P1 / P2 |
+| `883816a` | 文档 | 回填第五轮 Clean 审查进度 | `git diff --check` |
+| `e0ec026` | 审查 | 新增第六轮最终 Clean 复审报告 | 29 项定向测试 + 2076 项全量测试 |
+| `9066848` | 文档 | 补充收藏趋势小组件方案 | `git diff --check` |
+| `66d8047` | 功能 | 添加收藏趋势快照投影 | 快照兼容与趋势投影测试通过 |
+| `6eb0332` | 功能 | 添加我的洞察小组件路由 | Deep Link 定向测试通过 |
+| `278c7b5` | 功能 | 实现收藏趋势小组件 | Store / Direct Widget 构建通过 |
+| `5cf31ce` | 审查 | 新增第七轮收藏趋势审查报告 | 25 项定向测试 + 2080 项全量测试 |
+| `24065e3` | 文档 | 修正收藏趋势审查进度 | `git diff --check` |
+| `7f45d54` | 审查 | 新增第八轮收藏趋势复审报告 | 双渠道重新构建 + 第一轮 Clean |
+| `87963a7` | 文档 | 回填收藏趋势复审进度 | `git diff --check` |
+| `1270578` | 审查 | 新增第九轮收藏趋势复审报告 | 第二轮连续 Clean |
+| `de47ab1` | 修复 | 保留头像补全后的趋势数据 | 25 项 Widget 定向测试 + 双渠道构建 |
+| `4b5d880` | 审查 | 记录收藏趋势运行时修复 | Direct ready 快照真实落盘趋势 |
 
-审查时继续以 `git log --reverse dev..HEAD` 反向核对；本表在每轮审查后补齐新增提交。
+审查时继续以 `git log --reverse aa135b7e..HEAD -- <Widget 相关路径>` 反向核对；本表在
+每轮审查后补齐新增提交。

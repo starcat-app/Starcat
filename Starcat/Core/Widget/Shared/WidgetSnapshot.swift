@@ -63,9 +63,34 @@ struct WidgetRelease: Codable, Equatable, Identifiable, Sendable {
     let openURL: URL
 }
 
+/// 收藏趋势中的单周聚合点。
+///
+/// 只保存周起点和数量，不携带任何仓库身份，避免为一个桌面图表扩大共享数据面。
+struct WidgetCollectionTrendPoint: Codable, Equatable, Sendable {
+    let weekStart: Date
+    let count: Int
+}
+
+/// 公开收藏的阅读状态聚合。
+struct WidgetCollectionStatusBreakdown: Codable, Equatable, Sendable {
+    let unreadCount: Int
+    let readCount: Int
+    let usingCount: Int
+}
+
+/// 收藏趋势 Widget 所需的最小聚合投影。
+///
+/// 该模型只统计公开且当前可访问的 Star，不包含 repository ID、名称、笔记或标签。
+struct WidgetCollectionTrend: Codable, Equatable, Sendable {
+    let totalCount: Int
+    let addedInLast30DaysCount: Int
+    let weeklyPoints: [WidgetCollectionTrendPoint]
+    let statusBreakdown: WidgetCollectionStatusBreakdown
+}
+
 /// App Group 中 `widget-snapshot-v1.json` 的顶层契约。
 struct WidgetSnapshot: Codable, Equatable, Sendable {
-    static let currentSchemaVersion = 1
+    static let currentSchemaVersion = 2
 
     let schemaVersion: Int
     let generatedAt: Date
@@ -74,6 +99,7 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
     let rediscoveryRepository: WidgetRepository?
     let unreadReleaseCount: Int
     let unreadReleases: [WidgetRelease]
+    let collectionTrend: WidgetCollectionTrend?
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion
@@ -83,6 +109,7 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
         case rediscoveryRepository
         case unreadReleaseCount
         case unreadReleases
+        case collectionTrend
     }
 
     /// 构造快照时集中执行账户隔离不变量。
@@ -96,7 +123,8 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
         focusRepositories: [WidgetRepository] = [],
         rediscoveryRepository: WidgetRepository? = nil,
         unreadReleaseCount: Int = 0,
-        unreadReleases: [WidgetRelease] = []
+        unreadReleases: [WidgetRelease] = [],
+        collectionTrend: WidgetCollectionTrend? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.generatedAt = generatedAt
@@ -107,11 +135,13 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
             self.rediscoveryRepository = rediscoveryRepository
             self.unreadReleaseCount = max(0, unreadReleaseCount)
             self.unreadReleases = Array(unreadReleases.prefix(6))
+            self.collectionTrend = collectionTrend
         } else {
             self.focusRepositories = []
             self.rediscoveryRepository = nil
             self.unreadReleaseCount = 0
             self.unreadReleases = []
+            self.collectionTrend = nil
         }
     }
 
@@ -139,7 +169,12 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
                 forKey: .rediscoveryRepository
             ),
             unreadReleaseCount: try container.decode(Int.self, forKey: .unreadReleaseCount),
-            unreadReleases: try container.decode([WidgetRelease].self, forKey: .unreadReleases)
+            unreadReleases: try container.decode([WidgetRelease].self, forKey: .unreadReleases),
+            // v1 文件没有趋势字段；可选解码让已安装用户升级后无需删除旧快照。
+            collectionTrend: try container.decodeIfPresent(
+                WidgetCollectionTrend.self,
+                forKey: .collectionTrend
+            )
         )
     }
 }

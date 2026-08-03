@@ -268,9 +268,12 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
         let cachedPoints = try await points(repoId: repo.id)
 
         if let project = try await projectRepository?.fetchProject(repoID: repo.id) {
-            guard project.canReadStargazers,
-                  let stargazersAPI = stargazersAPI(for: project)
-            else {
+            guard project.canReadStargazers else {
+                let state: StarHistoryRemoteState = repo.isPrivate ? .privateOnly : .unavailable
+                return snapshot(range: range, rawPoints: cachedPoints, remoteState: state)
+            }
+            let candidates = stargazersAPICandidates(for: project, repo: repo)
+            guard !candidates.isEmpty else {
                 let state: StarHistoryRemoteState = repo.isPrivate ? .privateOnly : .unavailable
                 return snapshot(range: range, rawPoints: cachedPoints, remoteState: state)
             }
@@ -279,34 +282,46 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
                 return snapshot(range: range, rawPoints: cachedPoints, remoteState: .cached)
             }
 
-            do {
-                let githubPoints = try await fetchGitHubStargazerPoints(
-                    repo: repo,
-                    api: stargazersAPI
-                )
-                try await replaceRemotePoints(repoId: repo.id, points: githubPoints)
-                loadedGitHubStargazerRepoIDs.insert(repo.id)
-                let refreshedPoints = try await points(repoId: repo.id)
-                return snapshot(range: range, rawPoints: refreshedPoints, remoteState: .fresh)
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                // 项目已经匹配到专属 GitHub 数据源后不再降级到公共 Discovery，
-                // 防止私有项目外泄，也避免同一项目在两种统计口径间来回切换。
-                if repo.isPrivate,
-                   !cachedPoints.contains(where: { $0.source == .githubStargazers }) {
-                    return snapshot(
-                        range: range,
-                        rawPoints: cachedPoints,
-                        remoteState: .privateOnly
+            var lastError: Error?
+            for (index, api) in candidates.enumerated() {
+                do {
+                    let githubPoints = try await fetchGitHubStargazerPoints(
+                        repo: repo,
+                        api: api
                     )
+                    try await replaceRemotePoints(repoId: repo.id, points: githubPoints)
+                    loadedGitHubStargazerRepoIDs.insert(repo.id)
+                    let refreshedPoints = try await points(repoId: repo.id)
+                    return snapshot(range: range, rawPoints: refreshedPoints, remoteState: .fresh)
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    lastError = error
+                    let hasNext = index + 1 < candidates.count
+                    // 仅鉴权类失败才换下一张凭据；解码/契约错误换 token 也不会更好。
+                    if hasNext, Self.shouldTryNextStargazersCredential(error) {
+                        continue
+                    }
+                    break
                 }
+            }
+
+            // 项目路径失败后绝不降级 Discovery：私仓防外泄，公开仓避免与 Stargazers 口径混用。
+            if repo.isPrivate,
+               !cachedPoints.contains(where: { $0.source == .githubStargazers }) {
                 return snapshot(
                     range: range,
                     rawPoints: cachedPoints,
-                    remoteState: .stale(.transport(error.localizedDescription))
+                    remoteState: .privateOnly
                 )
             }
+            return snapshot(
+                range: range,
+                rawPoints: cachedPoints,
+                remoteState: .stale(
+                    .transport(lastError?.localizedDescription ?? "stargazers unavailable")
+                )
+            )
         }
 
         // 没有“我的项目”关系的私有仓库绝不调用公共 Discovery。
@@ -376,14 +391,40 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
         }
     }
 
-    private func stargazersAPI(
-        for project: UserProject
-    ) -> (any GitHubStargazersAPIProtocol)? {
+    /// 按项目授权来源排列 Stargazers 客户端；公开 GitHub App 项目附带 OAuth 兜底。
+    ///
+    /// 私仓绝不能回退 OAuth：`public_repo` 读不到 Private / Internal。公开仓在 App token
+    /// 过期或 403 时回退主登录，避免「已连接 App 反而丢历史」的回归。
+    private func stargazersAPICandidates(
+        for project: UserProject,
+        repo: Repo
+    ) -> [any GitHubStargazersAPIProtocol] {
         switch project.authorizationSource {
         case .oauth:
-            return oauthStargazersAPI
+            return [oauthStargazersAPI].compactMap { $0 }
         case .githubApp:
-            return githubAppStargazersAPI
+            var candidates: [any GitHubStargazersAPIProtocol] = []
+            if let githubAppStargazersAPI {
+                candidates.append(githubAppStargazersAPI)
+            }
+            if !repo.isPrivate, let oauthStargazersAPI {
+                candidates.append(oauthStargazersAPI)
+            }
+            return candidates
+        }
+    }
+
+    /// App → OAuth 仅对「换凭据可能成功」的失败开放，避免把契约错误打两遍。
+    private static func shouldTryNextStargazersCredential(_ error: Error) -> Bool {
+        guard let error = error as? NetworkError else { return false }
+        switch error {
+        case .unauthorized, .notFound, .rateLimited:
+            return true
+        case .clientError(let statusCode, _):
+            return statusCode == 401 || statusCode == 403 || statusCode == 404
+        case .transport, .serverError, .cancelled, .invalidURL, .invalidResponse,
+             .notModified, .decodingError:
+            return false
         }
     }
 

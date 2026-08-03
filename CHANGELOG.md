@@ -2,28 +2,42 @@
 
 Release notes for the Mac App Store edition of Starcat.
 
+## 1.4.0-待发布
+
+### Improvements
+
+- Shortcut recorder: Expands the key display area and shows an inline reset-to-default control only after a shortcut is changed.
+
 ## 1.3.0
 
-Starcat 1.3.0 adds My Projects, library-wide and repository-level insights, reusable insight context for AI and RAG, and external search integrations for Alfred, uTools, and Raycast—helping you manage more repositories, understand them, and reach them from the tools you already use.
+Starcat 1.3.0 adds My Projects, library-wide and repository-level insights, macOS desktop widgets, reusable insight context for AI and RAG, and external search integrations for Alfred, uTools, and Raycast—helping you manage, understand, and rediscover repositories faster.
 
 ### New
 
-- My Projects: Browse personal and organization repositories—including authorized public, private, and internal projects—with existing filters, details, and Star trends.
+- App Store update checks: Automatically detect new versions at launch or when the app becomes active, with manual checks from the Actions menu and menu bar and a shortcut to upgrade in the Mac App Store.
+- My Projects: Browse personal, organization, and external collaboration repositories; use GitHub App permissions for authorized public, private, and internal projects, with existing filters, details, and Star trends.
 - My Insights: Review organization progress, technology distribution, project status, and items needing attention across all saved repositories or your Knowledge Base, then drill down to the matching repository list.
-- Repository Insights: View Star growth, collaboration activity, commit trends, contributors, release cadence, project health, community standards, and security signals directly in repository details.
-- Repository Insights Context: Reuse generated insights in AI summaries, repository conversations, and RAG answers, with a removable read-only XML context visible in the Knowledge Base.
+  ![20260730232032_p1AUnCiu](https://cdn.dong4j.site/source/image/20260730232032_p1AUnCiu.webp)
+- Repository Insights: View Star growth, collaboration activity, commit trends, contributors, release cadence, project health, community standards, and security signals, with stable content while switching repositories or refreshing.
+  ![20260730224524_01AnNgnJ](https://cdn.dong4j.site/source/image/20260730224524_01AnNgnJ.webp)
+- Repository Insights Context: Reuse generated insights in AI summaries, repository conversations, and RAG answers through a removable read-only XML context, with distinct status for unavailable data, custom prompts that omit insights, and actual fallback.
+- macOS desktop widgets: Starcat Focus, Rediscovery, Release Watch, and Star Trend show frequently used repositories, a daily rediscovery, unread releases, and recent starring growth with deep links to the corresponding content.
+  ![20260730231856_O82ii1o3](https://cdn.dong4j.site/source/image/20260730231856_O82ii1o3.webp)
 - Alfred Workflow: Search Starcat local repositories and GitHub directly from Alfred. [View project](https://github.com/starcat-app/starcat-alfred-workflow)
 - uTools Plugin: Search Starcat local repositories and GitHub directly from uTools. [View project](https://github.com/starcat-app/starcat-utools-plugin)
 - Raycast Extension: Search Starcat local repositories and GitHub directly from Raycast. [View project](https://github.com/starcat-app/starcat-raycast-extension)
 
 ### Improvements
 
+- Shared insight aggregates: My Insights and repository insights data are used as context for RAG knowledge base Q&A.
 - RAG Prompt Settings: Compare and copy read-only default prompts, with clearer Markdown formatting for Q&A and conversation compression templates.
 - Custom Prompt Diagnostics: See which context capabilities and placeholders a custom template supports without Starcat automatically rewriting user content.
+- First-run onboarding: Feature screenshots, refined welcome audio timing, clearer card hierarchy, and more stable window sizing.
 
 ### Fixes
 
-- Repository Insights Injection Status: Distinguishes unavailable data, custom prompts that do not inject insights, and actual fallback cases instead of showing a generic degraded state.
+- Share card theme controls: Uses full, contiguous click targets for style and color controls, eliminating missed clicks near edges and between buttons.
+- RAG evidence citations: Metadata found through keyword search and Knowledge Base statistics now appear as actual cited snippets, so sources remain verifiable in answers and conversation history without vector indexing.
 
 ## 1.2.0
 

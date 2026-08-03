@@ -130,6 +130,58 @@ struct WidgetSnapshotBuilderTests {
         )
     }
 
+    @Test("收藏趋势补齐十二周并排除私有和不可访问仓库")
+    func buildsCollectionTrendProjection() async throws {
+        let database = try InMemoryDatabaseManager(userId: 42)
+        let dates = [
+            "2026-05-11T08:00:00Z",
+            "2026-07-01T08:00:00Z",
+            "2026-07-27T08:00:00Z",
+            "2026-07-30T08:00:00Z",
+            "2026-07-29T08:00:00Z",
+            "2026-07-28T08:00:00Z"
+        ]
+        for (offset, starredAt) in dates.enumerated() {
+            try await database.insertRepoFixture(
+                id: Int64(offset + 1),
+                starredAt: starredAt
+            )
+        }
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO repo_notes (
+                    repo_id, content, status, library_state, is_ai_generated
+                ) VALUES
+                    (2, NULL, 'read', 'outside_library', 0),
+                    (3, NULL, 'using', 'outside_library', 0),
+                    (4, NULL, 'read', 'outside_library', 0)
+                """
+            )
+            try db.execute(sql: "UPDATE repos SET is_private = 1 WHERE id = 5")
+            try db.execute(
+                sql: "UPDATE repos SET access_state = 'inaccessible' WHERE id = 6"
+            )
+        }
+
+        let generatedAt = ISO8601DateFormatter().date(
+            from: "2026-07-30T12:00:00Z"
+        )!
+        let snapshot = try await WidgetSnapshotBuilder(database: database).build(
+            generatedAt: generatedAt
+        )
+        let trend = try #require(snapshot.collectionTrend)
+
+        #expect(trend.totalCount == 4)
+        #expect(trend.addedInLast30DaysCount == 3)
+        #expect(trend.weeklyPoints.count == 12)
+        #expect(trend.weeklyPoints.map(\.count).reduce(0, +) == 4)
+        #expect(trend.weeklyPoints.last?.count == 2)
+        #expect(trend.statusBreakdown.unreadCount == 1)
+        #expect(trend.statusBreakdown.readCount == 2)
+        #expect(trend.statusBreakdown.usingCount == 1)
+    }
+
     @Test("Release Watch 只投影订阅未读公开记录并保持排序与总数口径")
     func buildsReleaseProjection() async throws {
         let database = try InMemoryDatabaseManager(userId: 42)

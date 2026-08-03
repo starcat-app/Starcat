@@ -608,7 +608,7 @@ struct RepositoryInsightsRemoteProviderTests {
         let refreshed = try #require(
             try await provider.refreshReleaseCadence(
                 repository: RepoIdentity(ghRepoID: 26, owner: "octo", name: "cadence")
-            )
+            ).cadence
         )
         let cached = try #require(try await provider.cachedReleaseCadence(repoID: 26))
         let request = try #require(await httpClient.request())
@@ -649,7 +649,8 @@ struct RepositoryInsightsRemoteProviderTests {
         )
         let cached = try #require(try await provider.cachedReleaseCadence(repoID: 27))
 
-        #expect(refreshed == nil)
+        #expect(refreshed.cadence == nil)
+        #expect(refreshed.latest == nil)
         #expect(cached.value == nil)
         #expect(!cached.isStale)
     }

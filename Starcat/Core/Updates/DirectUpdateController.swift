@@ -103,6 +103,9 @@ final class DirectUpdateController {
     /// 打开 Sparkle 标准检查更新流程。
     ///
     /// 这里不自绘更新 UI，保持 Sparkle 负责签名校验、下载、安装和错误展示。
+    /// 产品约束：更新弹窗与 appcast release notes 固定英文——Direct 打包会剥离
+    /// Sparkle.framework 的非英文本地化；说明正文由 inject-appcast-release-notes.py
+    /// 只写入 `xml:lang=en` 的 description。不跟 `AppLocale` 走。
     func checkForUpdates(_ sender: Any? = nil) {
         guard canCheckForUpdates else { return }
         #if canImport(Sparkle)

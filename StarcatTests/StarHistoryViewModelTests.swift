@@ -350,14 +350,46 @@ struct StarHistoryRestrictionNoticePolicyTests {
     func estimatedHistoryShowsNotice() {
         let points = [point(source: .discoverySnapshot, precision: .estimated)]
 
-        #expect(StarHistoryRestrictionNoticePolicy.shouldShow(points: points, phase: .content))
+        #expect(
+            StarHistoryRestrictionNoticePolicy.shouldShow(
+                points: points,
+                phase: .content,
+                isPrivateRepository: false
+            )
+        )
     }
 
-    @Test("仅有本机快照时应显示访问限制说明")
-    func localSnapshotShowsNotice() {
+    @Test("公开仓仅有本机快照时可显示访问限制说明")
+    func localSnapshotOnPublicShowsNotice() {
         let points = [point(source: .localSnapshot, precision: .snapshot)]
 
-        #expect(StarHistoryRestrictionNoticePolicy.shouldShow(points: points, phase: .privateOnly))
+        #expect(
+            StarHistoryRestrictionNoticePolicy.shouldShow(
+                points: points,
+                phase: .content,
+                isPrivateRepository: false
+            )
+        )
+    }
+
+    @Test("私仓与 privateOnly 不显示公开访问限制说明")
+    func privateContextsHidePublicRestrictionNotice() {
+        let points = [point(source: .localSnapshot, precision: .snapshot)]
+
+        #expect(
+            !StarHistoryRestrictionNoticePolicy.shouldShow(
+                points: points,
+                phase: .privateOnly,
+                isPrivateRepository: true
+            )
+        )
+        #expect(
+            !StarHistoryRestrictionNoticePolicy.shouldShow(
+                points: points,
+                phase: .content,
+                isPrivateRepository: true
+            )
+        )
     }
 
     @Test("加载或失败状态不应抢占主反馈")
