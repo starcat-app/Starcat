@@ -221,6 +221,9 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Starcat/StarcatDirect.entitlements
         REGISTER_APP_GROUPS: YES
         STARCAT_DISTRIBUTION: direct
+        # Direct 使用绿色 GitHub 角标图标；App Store 仍走默认 AppIcon（蓝色）。
+        # 应用内 About / 启动页 / AI 气泡等均读 NSApp.applicationIconImage，会随此切换。
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIconDirect
         INFOPLIST_KEY_CFBundleURLTypes: ""
       configs:
         Debug:

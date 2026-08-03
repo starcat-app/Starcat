@@ -12,7 +12,9 @@ import SwiftUI
 
 struct ShortcutRecorderView: View {
     @Binding var shortcut: KeyboardShortcutConfiguration
+    let defaultShortcut: KeyboardShortcutConfiguration
     let onValidationError: (KeyboardShortcutConfiguration.ValidationError) -> Void
+    let onRestoreDefault: () -> Void
     var conflictingShortcuts: Set<KeyboardShortcutConfiguration> = []
     var helpKey: LocalizedStringKey = "settings.general.shortcuts.search.help"
 
@@ -48,9 +50,29 @@ struct ShortcutRecorderView: View {
                 isRecording: $isRecording,
                 onCapture: capture
             )
+
+            if shortcut != defaultShortcut {
+                // 恢复入口只有在用户改过键位后才出现，并内嵌在录制框中。
+                // 这样既保留原有“恢复默认”语义，也把行外空间还给录制框本身。
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    Button(action: onRestoreDefault) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 24, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .help(Text("settings.general.shortcuts.restoreDefault"))
+                    .accessibilityLabel(Text("settings.general.shortcuts.restoreDefault"))
+                    .padding(.trailing, 2)
+                }
+            }
         }
-        // 设置页右侧行内控件：按原 112pt 缩小约 1/3，给恢复图标留出横向空间。
-        .frame(width: 76, height: 28)
+        // 恢复入口收进录制框后使用接近原生快捷键 Recorder 的宽度，避免键位显示过于局促。
+        .frame(width: 128, height: 28)
         .help(helpKey)
     }
 
@@ -70,6 +92,7 @@ struct ShortcutRecorderView: View {
 struct ConfigurableShortcutSettingRow: View {
     let titleKey: LocalizedStringKey
     @Binding var shortcut: KeyboardShortcutConfiguration
+    let defaultShortcut: KeyboardShortcutConfiguration
     @Binding var isEnabled: Bool
     let onValidationError: (KeyboardShortcutConfiguration.ValidationError) -> Void
     let conflictingShortcuts: Set<KeyboardShortcutConfiguration>
@@ -87,18 +110,15 @@ struct ConfigurableShortcutSettingRow: View {
             HStack(spacing: 8) {
                 ShortcutRecorderView(
                     shortcut: $shortcut,
+                    defaultShortcut: defaultShortcut,
                     onValidationError: onValidationError,
+                    onRestoreDefault: onRestoreDefault,
                     conflictingShortcuts: conflictingShortcuts,
                     helpKey: helpKey
                 )
                 .onChange(of: shortcut) { _, _ in
                     onShortcutChanged()
                 }
-
-                ResetIconButton(
-                    help: Text("settings.general.shortcuts.restoreDefault"),
-                    action: onRestoreDefault
-                )
 
                 // 与 Section 中的总开关保持同一紧凑尺寸，并放在末尾对齐设置卡片右缘。
                 Toggle(isOn: $isEnabled) {
