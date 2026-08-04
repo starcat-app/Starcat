@@ -27,7 +27,6 @@ final class AgentWorkspaceViewModel {
     private var mentionTask: Task<Void, Never>?
     private var activeRunID: UUID?
     private var draftsByAgentID: [String: String] = [:]
-    private var isContextPickerTriggeredByMention = false
 
     private(set) var agents: [AgentDefinition]
     var selectedAgentID: String
@@ -352,26 +351,18 @@ final class AgentWorkspaceViewModel {
         guard !isRunning else { return }
         draftsByAgentID[selectedAgentID] = prompt
         githubLinks = AIComposerGitHubLinkDetector.links(in: prompt)
-        guard let query = activeMentionQuery(in: prompt) else {
-            if isContextPickerTriggeredByMention {
-                // `@` 只负责打开并同步首次筛选；删掉触发词不代表用户完成了仓库选择。
-                // 面板生命周期与 RAG 一致，只由关闭按钮、Esc 或正式发送结束。
-                isContextPickerTriggeredByMention = false
-                contextPickerQuery = ""
-                refreshMentionCandidates()
-            }
-            return
-        }
-        isContextPickerTriggeredByMention = true
-        contextPickerQuery = query
-        isContextPickerPresented = true
-        refreshMentionCandidates()
+    }
+
+    /// Agent 把 `@` 当成打开仓库选择器的命令，正文绑定值在整个过程中保持不变。
+    func handleMentionTrigger() -> Bool {
+        guard !isRunning, selectedAgentSupportsRepositorySelection else { return false }
+        presentContextPicker()
+        return true
     }
 
     func presentContextPicker() {
         guard !isRunning else { return }
         contextPickerQuery = ""
-        isContextPickerTriggeredByMention = false
         isContextPickerPresented = true
         refreshMentionCandidates()
     }
@@ -384,7 +375,6 @@ final class AgentWorkspaceViewModel {
     func dismissContextPicker() {
         mentionTask?.cancel()
         isContextPickerPresented = false
-        isContextPickerTriggeredByMention = false
         highlightedMentionIndex = 0
     }
 
@@ -434,7 +424,6 @@ final class AgentWorkspaceViewModel {
                 starsCount: candidate.starsCount
             ))
         }
-        consumeActiveMentionTokenKeepingPickerOpen()
     }
 
     func removeRepoContext(_ reference: AIComposerRepoReference) {
@@ -470,26 +459,6 @@ final class AgentWorkspaceViewModel {
                 self?.errorMessage = error.localizedDescription
             }
         }
-    }
-
-    private func activeMentionQuery(in value: String) -> String? {
-        guard let index = value.lastIndex(of: "@") else { return nil }
-        let query = value[value.index(after: index)...]
-        guard !query.contains(where: \.isWhitespace) else { return nil }
-        return String(query)
-    }
-
-    private func consumeActiveMentionTokenKeepingPickerOpen() {
-        guard isContextPickerTriggeredByMention else { return }
-        guard let index = prompt.lastIndex(of: "@") else { return }
-        let query = prompt[prompt.index(after: index)...]
-        guard !query.contains(where: \.isWhitespace) else { return }
-        // 先解除 `@` 触发态，再更新 prompt，避免 SwiftUI 的 onChange 把仍在连续选择的面板关掉。
-        isContextPickerTriggeredByMention = false
-        prompt = String(prompt[..<index])
-        contextPickerQuery = ""
-        draftsByAgentID[selectedAgentID] = prompt
-        refreshMentionCandidates()
     }
 
     private func effectivePrompt(for agent: AgentDefinition) -> String {

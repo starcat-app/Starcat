@@ -563,6 +563,8 @@ struct AgentWorkspaceView: View {
 
     private func handleComposerCommand(_ command: AICommandTextEditor.Command) -> Bool {
         switch command {
+        case .mentionTrigger:
+            return viewModel.handleMentionTrigger()
         case .returnKey(let modifiers):
             if viewModel.isContextPickerPresented, !modifiers.contains(.command) {
                 viewModel.selectHighlightedMention()

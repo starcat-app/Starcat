@@ -17,10 +17,16 @@ struct AICommandTextEditor: NSViewRepresentable {
     static let verticalInset: CGFloat = 4
 
     enum Command {
+        case mentionTrigger
         case returnKey(NSEvent.ModifierFlags)
         case upArrow
         case downArrow
         case escape
+    }
+
+    /// 业务层可把 `@` 接管为 Composer 命令；输入法存在 marked text 时必须交还给文本系统处理。
+    static func shouldRouteMentionTrigger(characters: String?, hasMarkedText: Bool) -> Bool {
+        !hasMarkedText && characters == "@"
     }
 
     @Binding var text: String
@@ -180,6 +186,13 @@ private final class AICommandTextView: NSTextView {
 
     override func keyDown(with event: NSEvent) {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if AICommandTextEditor.shouldRouteMentionTrigger(
+            characters: event.characters,
+            hasMarkedText: hasMarkedText()
+        ), onCommand?(.mentionTrigger) == true {
+            // 业务层接管后不调用 super，确保 `@` 从未写入 NSTextView。
+            return
+        }
         // 36 = Return，76 = 小键盘 Enter。Cmd+Enter 通常不会走 insertNewline:。
         if (event.keyCode == 36 || event.keyCode == 76), flags.contains(.command),
            onCommand?(.returnKey(flags)) == true {

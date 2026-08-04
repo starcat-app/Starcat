@@ -1422,6 +1422,9 @@ struct RAGWorkspaceAnswerSurface: View {
 
     func handleComposerCommand(_ command: AICommandTextEditor.Command) -> Bool {
         switch command {
+        case .mentionTrigger:
+            // RAG 仍通过 draftQuestion 解析 @ 查询，返回 false 让 NSTextView 正常插入字符。
+            return false
         case .returnKey(let modifiers):
             let flags = modifiers.intersection(.deviceIndependentFlagsMask)
             // @ 候选打开时：Enter 切换勾选；Cmd+Enter 仍走发送偏好。

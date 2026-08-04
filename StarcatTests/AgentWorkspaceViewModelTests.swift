@@ -73,20 +73,24 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.displayedMentionCandidates.map(\.id) == [1, 2])
     }
 
-    @Test("通过 @ 选择仓库后消费触发词但不关闭面板")
-    func mentionSelectionConsumesTokenWithoutClosingPicker() {
+    @Test("@ 作为命令打开仓库选择器且不修改正文")
+    func mentionCommandOpensPickerWithoutMutatingPrompt() {
         let viewModel = AgentWorkspaceViewModel(agents: [BuiltInAgents.githubWeeklyReport])
-        let candidate = mentionCandidate(id: 1, fullName: "octo/one")
-        viewModel.prompt = "生成周刊 @octo"
-        viewModel.handlePromptChanged()
-        viewModel.mentionCandidates = [candidate]
+        viewModel.prompt = "生成周刊"
 
-        viewModel.toggleRepoContext(candidate)
+        let handled = viewModel.handleMentionTrigger()
 
-        #expect(viewModel.prompt == "生成周刊 ")
+        #expect(handled)
+        #expect(viewModel.prompt == "生成周刊")
         #expect(viewModel.contextPickerQuery.isEmpty)
         #expect(viewModel.isContextPickerPresented)
-        #expect(viewModel.selectedRepoContexts.map(\.id) == [1])
+    }
+
+    @Test("Composer 仅在非输入法组合态识别 @ 命令")
+    func composerRoutesStandaloneMentionTrigger() {
+        #expect(AICommandTextEditor.shouldRouteMentionTrigger(characters: "@", hasMarkedText: false))
+        #expect(!AICommandTextEditor.shouldRouteMentionTrigger(characters: "@", hasMarkedText: true))
+        #expect(!AICommandTextEditor.shouldRouteMentionTrigger(characters: "a", hasMarkedText: false))
     }
 
     @Test("仓库选择器将已选仓库置顶并支持一键清空")
