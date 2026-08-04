@@ -108,6 +108,16 @@ final class AgentWorkspaceViewModel {
         selectedAgent?.workflow.maximumSelectedRepositories ?? 0
     }
 
+    /// 与 RAG 仓库选择器保持一致：已选仓库固定置顶，即使它不匹配当前筛选词也不能消失。
+    var displayedMentionCandidates: [RAGMentionCandidate] {
+        let candidatesByID = Dictionary(uniqueKeysWithValues: mentionCandidates.map { ($0.id, $0) })
+        let selectedCandidates = selectedRepoContexts.map { reference in
+            candidatesByID[reference.id] ?? RAGMentionCandidate(reference: reference)
+        }
+        let selectedIDs = Set(selectedCandidates.map(\.id))
+        return selectedCandidates + mentionCandidates.filter { !selectedIDs.contains($0.id) }
+    }
+
     /// 按钮和键盘发送共用同一校验，避免 UI 显示不可发送但 Return 仍启动 run。
     var canSubmit: Bool {
         guard !isRunning,
@@ -344,7 +354,11 @@ final class AgentWorkspaceViewModel {
         githubLinks = AIComposerGitHubLinkDetector.links(in: prompt)
         guard let query = activeMentionQuery(in: prompt) else {
             if isContextPickerTriggeredByMention {
-                dismissContextPicker()
+                // `@` 只负责打开并同步首次筛选；删掉触发词不代表用户完成了仓库选择。
+                // 面板生命周期与 RAG 一致，只由关闭按钮、Esc 或正式发送结束。
+                isContextPickerTriggeredByMention = false
+                contextPickerQuery = ""
+                refreshMentionCandidates()
             }
             return
         }
@@ -381,16 +395,17 @@ final class AgentWorkspaceViewModel {
     }
 
     func moveMentionSelection(by offset: Int) {
-        guard !mentionCandidates.isEmpty else { return }
+        guard !displayedMentionCandidates.isEmpty else { return }
         highlightedMentionIndex = min(
             max(highlightedMentionIndex + offset, 0),
-            mentionCandidates.count - 1
+            displayedMentionCandidates.count - 1
         )
     }
 
     func selectHighlightedMention() {
-        guard mentionCandidates.indices.contains(highlightedMentionIndex) else { return }
-        toggleRepoContext(mentionCandidates[highlightedMentionIndex])
+        let candidates = displayedMentionCandidates
+        guard candidates.indices.contains(highlightedMentionIndex) else { return }
+        toggleRepoContext(candidates[highlightedMentionIndex])
     }
 
     func toggleRepoContext(_ candidate: RAGMentionCandidate) {
@@ -419,7 +434,7 @@ final class AgentWorkspaceViewModel {
                 starsCount: candidate.starsCount
             ))
         }
-        removeActiveMentionToken()
+        consumeActiveMentionTokenKeepingPickerOpen()
     }
 
     func removeRepoContext(_ reference: AIComposerRepoReference) {
@@ -464,13 +479,17 @@ final class AgentWorkspaceViewModel {
         return String(query)
     }
 
-    private func removeActiveMentionToken() {
+    private func consumeActiveMentionTokenKeepingPickerOpen() {
+        guard isContextPickerTriggeredByMention else { return }
         guard let index = prompt.lastIndex(of: "@") else { return }
         let query = prompt[prompt.index(after: index)...]
         guard !query.contains(where: \.isWhitespace) else { return }
+        // 先解除 `@` 触发态，再更新 prompt，避免 SwiftUI 的 onChange 把仍在连续选择的面板关掉。
+        isContextPickerTriggeredByMention = false
         prompt = String(prompt[..<index])
         contextPickerQuery = ""
         draftsByAgentID[selectedAgentID] = prompt
+        refreshMentionCandidates()
     }
 
     private func effectivePrompt(for agent: AgentDefinition) -> String {
@@ -672,6 +691,23 @@ final class AgentWorkspaceViewModel {
             content: content,
             contentType: contentType
         )
+    }
+}
+
+private extension RAGMentionCandidate {
+    /// 历史 run 或当前筛选结果不含已选仓库时，用轻量引用补出置顶行。
+    init(reference: AIComposerRepoReference) {
+        id = reference.id
+        owner = reference.owner
+        name = reference.name
+        fullName = reference.fullName
+        language = reference.language
+        starsCount = reference.starsCount
+        ownerAvatar = nil
+        chunkCount = 0
+        hasAISummary = false
+        hasPrivateNote = false
+        normalizedSearchText = Self.normalize([reference.fullName, reference.language ?? ""].joined(separator: " "))
     }
 }
 

@@ -57,6 +57,70 @@ struct AgentWorkspaceViewModelTests {
         #expect(!viewModel.canSubmit)
     }
 
+    @Test("Weekly 仓库选择器保持打开并支持连续多选")
+    func weeklyRepositoryPickerStaysOpenForMultipleSelections() {
+        let viewModel = AgentWorkspaceViewModel(agents: [BuiltInAgents.githubWeeklyReport])
+        let first = mentionCandidate(id: 1, fullName: "octo/one")
+        let second = mentionCandidate(id: 2, fullName: "octo/two")
+        viewModel.mentionCandidates = [first, second]
+
+        viewModel.presentContextPicker()
+        viewModel.toggleRepoContext(first)
+        viewModel.toggleRepoContext(second)
+
+        #expect(viewModel.isContextPickerPresented)
+        #expect(viewModel.selectedRepoContexts.map(\.id) == [1, 2])
+        #expect(viewModel.displayedMentionCandidates.map(\.id) == [1, 2])
+    }
+
+    @Test("通过 @ 选择仓库后消费触发词但不关闭面板")
+    func mentionSelectionConsumesTokenWithoutClosingPicker() {
+        let viewModel = AgentWorkspaceViewModel(agents: [BuiltInAgents.githubWeeklyReport])
+        let candidate = mentionCandidate(id: 1, fullName: "octo/one")
+        viewModel.prompt = "生成周刊 @octo"
+        viewModel.handlePromptChanged()
+        viewModel.mentionCandidates = [candidate]
+
+        viewModel.toggleRepoContext(candidate)
+
+        #expect(viewModel.prompt == "生成周刊 ")
+        #expect(viewModel.contextPickerQuery.isEmpty)
+        #expect(viewModel.isContextPickerPresented)
+        #expect(viewModel.selectedRepoContexts.map(\.id) == [1])
+    }
+
+    @Test("仓库选择器将已选仓库置顶并支持一键清空")
+    func repositoryPickerPinsAndClearsSelectedRepositories() {
+        let viewModel = AgentWorkspaceViewModel(agents: [BuiltInAgents.githubWeeklyReport])
+        let selected = mentionCandidate(id: 1, fullName: "octo/selected")
+        let filteredMatch = mentionCandidate(id: 2, fullName: "redis/redis")
+        viewModel.mentionCandidates = [selected]
+        viewModel.toggleRepoContext(selected)
+        viewModel.mentionCandidates = [filteredMatch]
+
+        #expect(viewModel.displayedMentionCandidates.map(\.id) == [1, 2])
+
+        viewModel.clearSelectedRepoContexts()
+
+        #expect(viewModel.selectedRepoContexts.isEmpty)
+        #expect(viewModel.displayedMentionCandidates.map(\.id) == [2])
+    }
+
+    @Test("Repo Insight 替换单仓库选择时不关闭面板")
+    func repoInsightReplacesSelectionWithoutClosingPicker() {
+        let viewModel = AgentWorkspaceViewModel(agents: [BuiltInAgents.repoInsight])
+        let first = mentionCandidate(id: 1, fullName: "octo/one")
+        let second = mentionCandidate(id: 2, fullName: "octo/two")
+        viewModel.mentionCandidates = [first, second]
+        viewModel.presentContextPicker()
+
+        viewModel.toggleRepoContext(first)
+        viewModel.toggleRepoContext(second)
+
+        #expect(viewModel.isContextPickerPresented)
+        #expect(viewModel.selectedRepoContexts.map(\.id) == [2])
+    }
+
     @Test("run 会把 runtime 事件投影成工作台状态")
     func runProjectsRuntimeEventsIntoWorkspaceState() async throws {
         let runID = UUID()
@@ -725,6 +789,13 @@ struct AgentWorkspaceViewModelTests {
             defaultProviderID: model.providerID,
             defaultModelName: model.name
         )
+    }
+
+    private func mentionCandidate(id: Int64, fullName: String) -> RAGMentionCandidate {
+        let parts = fullName.split(separator: "/", maxSplits: 1).map(String.init)
+        var repo = Repo.makeMinimal(owner: parts[0], name: parts[1])
+        repo.id = id
+        return RAGMentionCandidate(repo: repo)
     }
 }
 

@@ -684,7 +684,7 @@ struct AgentWorkspaceView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 10)
 
-            if viewModel.mentionCandidates.isEmpty {
+            if viewModel.displayedMentionCandidates.isEmpty {
                 Text("agent.workspace.repositoryPicker.emptyFilter")
                     .font(agentFont(.callout))
                     .foregroundStyle(.secondary)
@@ -694,7 +694,7 @@ struct AgentWorkspaceView: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 4) {
-                        ForEach(Array(viewModel.mentionCandidates.enumerated()), id: \.element.id) { index, candidate in
+                        ForEach(Array(viewModel.displayedMentionCandidates.enumerated()), id: \.element.id) { index, candidate in
                             agentContextPickerRow(candidate, index: index)
                         }
                     }
