@@ -597,7 +597,8 @@ struct RepoListView: View {
                         Button {
                             onOpenAgentWorkspace?()
                         } label: {
-                            workspaceToolbarIcon("a.circle", tint: Color(nsColor: .systemIndigo))
+                            // systemRed 在明暗主题下都够亮，暗色 toolbar 上也能一眼认出 Agent 入口。
+                            workspaceToolbarIcon("a.circle", tint: Color(nsColor: .systemRed))
                                 .accessibilityLabel(Text("toolbar.agentWorkspace.label"))
                         }
                         .help("toolbar.agentWorkspace.help")
