@@ -23846,6 +23846,118 @@
         }
       }
     },
+    "agent.workspace.repositoryPicker.clearFilter" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear repository search"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除仓库搜索"
+          }
+        }
+      }
+    },
+    "agent.workspace.repositoryPicker.clearSelected" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear Selected"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除已选"
+          }
+        }
+      }
+    },
+    "agent.workspace.repositoryPicker.emptyFilter" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No matching repositories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有匹配的仓库"
+          }
+        }
+      }
+    },
+    "agent.workspace.repositoryPicker.searchPlaceholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search repositories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索仓库"
+          }
+        }
+      }
+    },
+    "agent.workspace.repositoryPicker.selectionLimit" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can select up to %1$d repositories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最多选择 %1$d 个仓库"
+          }
+        }
+      }
+    },
+    "agent.workspace.repositoryPicker.stats" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selected %1$d/%2$d · Results %3$d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已选 %1$d/%2$d · 结果 %3$d"
+          }
+        }
+      }
+    },
+    "agent.workspace.repositoryPicker.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select repositories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择仓库"
+          }
+        }
+      }
+    },
     "agent.workspace.header.estimatedRun" : {
       "localizations" : {
         "ar" : {

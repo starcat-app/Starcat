@@ -363,6 +363,34 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.attachments.isEmpty)
     }
 
+    @Test("发送后清空输入框与当前 Agent 草稿，但 Runtime 仍收到冻结指令")
+    func submissionClearsComposerAndSubmittedDraft() async throws {
+        let recorder = AgentRunInputRecorder()
+        let runtime = EventReplayAgentRuntime(events: [
+            .runStarted(title: "Run"),
+            .runCompleted
+        ])
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport, BuiltInAgents.repoInsight],
+            runtime: runtime,
+            contextProvider: RecordingAgentRunContextProvider(recorder: recorder)
+        )
+        configureRunnable(viewModel)
+        viewModel.prompt = "给我最近 7 天的热门仓库"
+        viewModel.handlePromptChanged()
+
+        viewModel.run()
+
+        #expect(viewModel.prompt.isEmpty)
+        try await waitUntil { viewModel.status == .completed }
+        #expect(await recorder.input()?.goal == "给我最近 7 天的热门仓库")
+
+        // 切换 Agent 后再回来也不能恢复已经发送过的旧草稿。
+        viewModel.selectAgent(BuiltInAgents.repoInsight)
+        viewModel.selectAgent(BuiltInAgents.githubWeeklyReport)
+        #expect(viewModel.prompt.isEmpty)
+    }
+
     @Test("Weekly 空 prompt 会使用固定默认指令直接运行")
     func emptyPromptUsesWeeklyDefaultPrompt() {
         let viewModel = AgentWorkspaceViewModel(

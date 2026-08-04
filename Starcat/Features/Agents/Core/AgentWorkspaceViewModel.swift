@@ -249,7 +249,12 @@ final class AgentWorkspaceViewModel {
         )
         let contextProvider = contextProvider
         let runtime = runtime
+        // 输入已经冻结进 AgentRunInput，发送后立即清空 Composer 与当前 Agent 草稿。
+        // 不能等 run 完成再清空，否则长任务期间输入框会一直残留已发送内容。
+        prompt = ""
+        draftsByAgentID[selectedAgent.id] = ""
         attachments = []
+        dismissContextPicker()
 
         runTask = Task { [weak self] in
             let context = await contextProvider.makeContext(
@@ -400,7 +405,7 @@ final class AgentWorkspaceViewModel {
             }
             guard selectedRepoContexts.count < maximum else {
                 errorMessage = String(
-                    format: String.l10n("rag.workspace.mention.selectionLimit"),
+                    format: String.l10n("agent.workspace.repositoryPicker.selectionLimit"),
                     maximum
                 )
                 return
@@ -420,6 +425,17 @@ final class AgentWorkspaceViewModel {
     func removeRepoContext(_ reference: AIComposerRepoReference) {
         guard !isRunning else { return }
         selectedRepoContexts.removeAll { $0.id == reference.id }
+    }
+
+    func clearSelectedRepoContexts() {
+        guard !isRunning else { return }
+        selectedRepoContexts.removeAll()
+    }
+
+    func clearContextPickerQuery() {
+        guard !isRunning else { return }
+        contextPickerQuery = ""
+        refreshMentionCandidates()
     }
 
     private func refreshMentionCandidates() {

@@ -13,11 +13,15 @@ import SwiftUI
 
 struct AgentWorkspaceView: View {
 
+    private static let contextPickerPanelHeight: CGFloat = 420
+    private static let contextPickerPanelGap: CGFloat = 12
+
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
     @State private var viewModel = AgentWorkspaceViewModel()
     @State private var composerContentHeight: CGFloat = 0
+    @FocusState private var isContextPickerSearchFocused: Bool
     let chromeState: WorkspaceChromeState
 
     var body: some View {
@@ -355,7 +359,16 @@ struct AgentWorkspaceView: View {
             Divider()
             HStack(spacing: 0) {
                 VStack(spacing: 0) {
-                    runTimeline
+                    ZStack(alignment: .bottom) {
+                        runTimeline
+
+                        if viewModel.isContextPickerPresented {
+                            agentContextPicker
+                                .padding(.horizontal, 16)
+                                .padding(.bottom, Self.contextPickerPanelGap)
+                                .zIndex(1)
+                        }
+                    }
                     Divider()
                     composer
                 }
@@ -373,48 +386,17 @@ struct AgentWorkspaceView: View {
     private var runHeader: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Text(viewModel.selectedAgent?.title ?? String.l10n("agent.workspace.window.title"))
-                        .font(agentFont(.title3, weight: .semibold))
-                    Image(systemName: "chevron.down")
-                        .font(agentFont(.caption, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
+                Text(viewModel.selectedAgent?.title ?? String.l10n("agent.workspace.window.title"))
+                    .font(agentFont(.title3, weight: .semibold))
                 Text("agent.workspace.header.subtitle")
                     .font(agentFont(.caption))
                     .foregroundStyle(.secondary)
             }
 
             Spacer()
-
-            headerPill(statusText, icon: statusIcon)
-            headerPill(String.l10n("agent.workspace.header.readOnly"), icon: "lock")
-            headerPill(String.l10n("agent.workspace.header.estimatedRun"), icon: "chart.bar.doc.horizontal")
-
-            Button {
-                if viewModel.isRunning {
-                    viewModel.cancel()
-                }
-            } label: {
-                Label("agent.workspace.stop", systemImage: "stop.circle")
-            }
-            .controlSize(.small)
-            .disabled(!viewModel.isRunning)
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 13)
-    }
-
-    private func headerPill(_ text: String, icon: String) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: icon)
-            Text(text)
-        }
-        .font(agentFont(.caption))
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var runTimeline: some View {
@@ -494,10 +476,7 @@ struct AgentWorkspaceView: View {
                 .focusEffectDisabled()
                 .foregroundStyle(.secondary)
                 .disabled(viewModel.isRunning || !viewModel.selectedAgentSupportsRepositorySelection)
-                .help("rag.workspace.mention.title")
-                .popover(isPresented: $viewModel.isContextPickerPresented, arrowEdge: .bottom) {
-                    agentContextPicker
-                }
+                .help("agent.workspace.repositoryPicker.title")
 
                 agentModelMenu
 
@@ -659,64 +638,160 @@ struct AgentWorkspaceView: View {
         .scrollIndicators(.hidden)
     }
 
+    /// Agent 与 RAG 共用同一种仓库选择交互，但候选范围仍由各自 ViewModel 决定。
+    /// Agent 搜索全部 Star 仓库，不能因为视觉复用而退回“仅知识库仓库”的 RAG 语义。
     private var agentContextPicker: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("rag.workspace.mention.title")
-                .font(agentFont(.headline))
+        VStack(alignment: .leading, spacing: 0) {
+            agentContextPickerHeader
+            Divider()
 
-            TextField("rag.workspace.mention.searchPlaceholder", text: $viewModel.contextPickerQuery)
-                .textFieldStyle(.roundedBorder)
-                .onChange(of: viewModel.contextPickerQuery) { _, _ in
-                    viewModel.handleContextPickerQueryChanged()
-                }
-
-            ScrollView {
-                LazyVStack(spacing: 4) {
-                    ForEach(Array(viewModel.mentionCandidates.enumerated()), id: \.element.id) { index, candidate in
-                        let selected = viewModel.selectedRepoContexts.contains { $0.id == candidate.id }
-                        Button { viewModel.toggleRepoContext(candidate) } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(selected ? Color.accentColor : .secondary)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(candidate.fullName)
-                                        .font(agentFont(.subheadline, weight: .semibold))
-                                        .foregroundStyle(.primary)
-                                    if let language = candidate.language {
-                                        Text(language)
-                                            .font(agentFont(.caption))
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                                Spacer()
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 6)
-                            .background(
-                                index == viewModel.highlightedMentionIndex
-                                    ? Color.accentColor.opacity(0.10)
-                                    : Color.clear,
-                                in: RoundedRectangle(cornerRadius: 7)
-                            )
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .focusEffectDisabled()
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(agentFont(.caption))
+                    .foregroundStyle(.secondary)
+                TextField("agent.workspace.repositoryPicker.searchPlaceholder", text: $viewModel.contextPickerQuery)
+                    .textFieldStyle(.plain)
+                    .font(agentFont(.callout))
+                    .focused($isContextPickerSearchFocused)
+                    .onChange(of: viewModel.contextPickerQuery) { _, _ in
+                        viewModel.handleContextPickerQueryChanged()
                     }
+                    .onSubmit {
+                        viewModel.selectHighlightedMention()
+                    }
+                    .onExitCommand {
+                        _ = viewModel.handleContextPickerEscape()
+                    }
+                if !viewModel.contextPickerQuery.isEmpty {
+                    Button {
+                        viewModel.clearContextPickerQuery()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(agentFont(.caption))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .help("agent.workspace.repositoryPicker.clearFilter")
                 }
             }
-            .frame(minHeight: 180, maxHeight: 300)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity)
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
 
-            Text(String(
-                format: String.l10n("rag.workspace.mention.selectionLimit"),
-                viewModel.maximumSelectedRepoContexts
-            ))
-            .font(agentFont(.caption))
-            .foregroundStyle(.secondary)
+            if viewModel.mentionCandidates.isEmpty {
+                Text("agent.workspace.repositoryPicker.emptyFilter")
+                    .font(agentFont(.callout))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 16)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        ForEach(Array(viewModel.mentionCandidates.enumerated()), id: \.element.id) { index, candidate in
+                            agentContextPickerRow(candidate, index: index)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 8)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
-        .padding(12)
-        .frame(width: 360)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.16), radius: 12, y: 5)
+        .frame(height: Self.contextPickerPanelHeight)
+        .onAppear { isContextPickerSearchFocused = true }
+        .onChange(of: viewModel.isContextPickerPresented) { _, presented in
+            isContextPickerSearchFocused = presented
+        }
         .appLocaleEnvironment()
+    }
+
+    private var agentContextPickerHeader: some View {
+        HStack(spacing: 8) {
+            Text(String(
+                format: String.l10n("agent.workspace.repositoryPicker.stats"),
+                locale: locale,
+                viewModel.selectedRepoContexts.count,
+                viewModel.maximumSelectedRepoContexts,
+                viewModel.mentionCandidates.count
+            ))
+            .font(agentFont(.caption, weight: .semibold))
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+
+            Spacer(minLength: 4)
+
+            Button {
+                viewModel.clearSelectedRepoContexts()
+            } label: {
+                Text("agent.workspace.repositoryPicker.clearSelected")
+                    .font(agentFont(.caption, weight: .semibold))
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .foregroundStyle(.secondary)
+            .disabled(viewModel.selectedRepoContexts.isEmpty)
+            .help("agent.workspace.repositoryPicker.clearSelected")
+
+            Button {
+                viewModel.dismissContextPicker()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(agentFont(.caption))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20, height: 20)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("common.close")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+    }
+
+    private func agentContextPickerRow(_ candidate: RAGMentionCandidate, index: Int) -> some View {
+        let isSelected = viewModel.selectedRepoContexts.contains { $0.id == candidate.id }
+        let selectionFull = viewModel.selectedRepoContexts.count >= viewModel.maximumSelectedRepoContexts
+        let canToggle = isSelected || !selectionFull
+        return Button {
+            viewModel.toggleRepoContext(candidate)
+        } label: {
+            UnifiedCompactRepoRow(
+                fullName: candidate.fullName,
+                owner: candidate.owner,
+                ownerAvatarURL: candidate.ownerAvatar,
+                language: candidate.language,
+                starsCount: candidate.starsCount,
+                isChecked: isSelected,
+                isHighlighted: index == viewModel.highlightedMentionIndex,
+                isEnabled: canToggle
+            ) {
+                EmptyView()
+            }
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .disabled(!canToggle)
+        .help(
+            canToggle
+                ? Text(candidate.fullName)
+                : Text(String(
+                    format: String.l10n("agent.workspace.repositoryPicker.selectionLimit"),
+                    locale: locale,
+                    viewModel.maximumSelectedRepoContexts
+                ))
+        )
     }
 
     private var agentModelMenu: some View {
@@ -835,40 +910,6 @@ struct AgentWorkspaceView: View {
 
     private func agentIconFont(size: CGFloat, weight: Font.Weight = .regular) -> Font {
         interfaceScale.font(size: size, weight: weight)
-    }
-
-    private var statusText: String {
-        switch viewModel.status {
-        case .idle:
-            return String.l10n("agent.workspace.status.ready")
-        case .planning:
-            return String.l10n("agent.workspace.status.planning")
-        case .running:
-            return String.l10n("agent.workspace.status.running")
-        case .waitingForConfirmation:
-            return String.l10n("agent.workspace.status.waitingForConfirmation")
-        case .completed:
-            return String.l10n("agent.workspace.status.completed")
-        case .failed:
-            return String.l10n("agent.workspace.status.failed")
-        case .cancelled:
-            return String.l10n("agent.workspace.status.cancelled")
-        }
-    }
-
-    private var statusIcon: String {
-        switch viewModel.status {
-        case .idle:
-            return "circle"
-        case .planning, .running, .waitingForConfirmation:
-            return "circle.dotted"
-        case .completed:
-            return "checkmark.circle.fill"
-        case .failed:
-            return "xmark.circle.fill"
-        case .cancelled:
-            return "minus.circle"
-        }
     }
 
 }
