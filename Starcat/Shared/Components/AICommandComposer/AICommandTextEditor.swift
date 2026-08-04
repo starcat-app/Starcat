@@ -1,20 +1,19 @@
 //
-//  RAGComposerTextEditor.swift
+//  AICommandTextEditor.swift
 //  Starcat
 //
-//  RAG Composer 的 AppKit 文本编辑器桥接。
+//  RAG 与 Agent 工作台共享的 AppKit 多行命令输入内核。
 //
 
 import AppKit
 import SwiftUI
 
-/// RAG 输入框的 AppKit 桥接层。
+/// AI 工作台统一使用的 AppKit 文本编辑器桥接层。
 ///
-/// SwiftUI `TextEditor` 会在弹性 VStack 中被扩展到远超 `maxHeight`，且 overlay
-/// placeholder 无法与 NSTextView 的 insertion point 共享基线。本组件让 placeholder
-/// 直接由同一个 NSTextView 绘制，并把内容实际高度回传给工作台，保证首帧两行且仍可
-/// 在长问题时增长到调用方规定的上限。
-struct RAGComposerTextEditor: NSViewRepresentable {
+/// SwiftUI `TextEditor` 在弹性 VStack 中会忽略稳定的高度上限，placeholder 也难以与
+/// insertion point 共享基线。这里由 NSTextView 同时负责绘制、测高和键盘命令，再由
+/// RAG / Agent 各自决定“发送、换行、@ 候选导航”的产品语义。
+struct AICommandTextEditor: NSViewRepresentable {
     static let verticalInset: CGFloat = 4
 
     enum Command {
@@ -28,8 +27,9 @@ struct RAGComposerTextEditor: NSViewRepresentable {
     let placeholder: String
     let font: NSFont
     let maximumHeight: CGFloat
+    var isEditable: Bool = true
     let onHeightChange: (CGFloat) -> Void
-    /// `@` 字形相对 NSScrollView 左上角的锚点（弹层挂这里，避免整框居中）。
+    /// `@` 字形相对 NSScrollView 左上角的锚点，供业务层把候选面板挂到光标附近。
     let onMentionAnchorChange: (CGPoint) -> Void
     let onCommand: (Command) -> Bool
 
@@ -39,15 +39,17 @@ struct RAGComposerTextEditor: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
-        let textView = RAGComposerTextView()
+        let textView = AICommandTextView()
 
         textView.delegate = context.coordinator
         textView.string = text
         textView.isRichText = false
+        textView.isEditable = isEditable
         textView.importsGraphics = false
         textView.allowsUndo = true
         textView.drawsBackground = false
         textView.font = font
+        textView.isEditable = isEditable
         textView.textColor = .labelColor
         textView.insertionPointColor = .labelColor
         textView.textContainerInset = NSSize(width: 0, height: Self.verticalInset)
@@ -81,7 +83,7 @@ struct RAGComposerTextEditor: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
-        guard let textView = scrollView.documentView as? RAGComposerTextView else { return }
+        guard let textView = scrollView.documentView as? AICommandTextView else { return }
 
         textView.font = font
         textView.placeholder = placeholder
@@ -99,14 +101,14 @@ struct RAGComposerTextEditor: NSViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
-        var parent: RAGComposerTextEditor
+        var parent: AICommandTextEditor
 
-        init(parent: RAGComposerTextEditor) {
+        init(parent: AICommandTextEditor) {
             self.parent = parent
         }
 
         func textDidChange(_ notification: Notification) {
-            guard let textView = notification.object as? RAGComposerTextView else { return }
+            guard let textView = notification.object as? AICommandTextView else { return }
             parent.text = textView.string
             textView.needsDisplay = true
             reportHeight(for: textView)
@@ -116,7 +118,6 @@ struct RAGComposerTextEditor: NSViewRepresentable {
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             switch commandSelector {
             case #selector(NSResponder.insertNewline(_:)):
-                // 去掉 capsLock 等噪声位，否则 .command 判断偶发失败。
                 let modifiers = (NSApp.currentEvent?.modifierFlags ?? [])
                     .intersection(.deviceIndependentFlagsMask)
                 return parent.onCommand(.returnKey(modifiers))
@@ -137,13 +138,13 @@ struct RAGComposerTextEditor: NSViewRepresentable {
             layoutManager.ensureLayout(for: textContainer)
             let usedHeight = layoutManager.usedRect(for: textContainer).height
             let height = min(
-                ceil(usedHeight + RAGComposerTextEditor.verticalInset * 2),
+                ceil(usedHeight + AICommandTextEditor.verticalInset * 2),
                 parent.maximumHeight
             )
             parent.onHeightChange(height)
         }
 
-        /// 把最后一个未完成 `@token` 的字形矩形换算到 scrollView 坐标，供 SwiftUI 弹层锚定。
+        /// 把最后一个未完成 `@token` 的字形矩形换算到 scrollView 坐标。
         func reportMentionAnchor(for textView: NSTextView) {
             guard let scrollView = textView.enclosingScrollView,
                   let at = textView.string.lastIndex(of: "@") else { return }
@@ -165,29 +166,24 @@ struct RAGComposerTextEditor: NSViewRepresentable {
             guard let window = textView.window, screenRect != .zero else { return }
             let windowRect = window.convertFromScreen(screenRect)
             let local = scrollView.convert(windowRect, from: nil)
-            // AppKit Y 从底向上；SwiftUI topLeading offset 从顶向下，需要翻转。
-            // 锚在 `@` 字形下缘，arrowEdge=.top 时弹层出现在光标正下方。
+            // AppKit Y 从底向上，SwiftUI topLeading offset 从顶向下，需要翻转。
             let swiftY = scrollView.bounds.height - local.minY
             parent.onMentionAnchorChange(CGPoint(x: local.minX, y: swiftY))
         }
     }
 }
 
-/// placeholder 在 NSTextView 自身坐标系中绘制，基线与光标完全一致。
-final class RAGComposerTextView: NSTextView {
+/// placeholder 在 NSTextView 自身坐标系中绘制，保证基线与光标一致。
+private final class AICommandTextView: NSTextView {
     var placeholder = ""
-    /// 键盘命令回调（Cmd+Enter 发送等）；由 Representable 注入。
-    var onCommand: ((RAGComposerTextEditor.Command) -> Bool)?
+    var onCommand: ((AICommandTextEditor.Command) -> Bool)?
 
     override func keyDown(with event: NSEvent) {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        // 36 = Return，76 = 小键盘 Enter。
-        // Cmd+Enter 通常不会走 insertNewline:，必须在 keyDown 拦下再交给 onCommand
-        // （是否真正发送由设置里的 aiChatRequiresCommandReturn 决定）。
-        if (event.keyCode == 36 || event.keyCode == 76), flags.contains(.command) {
-            if onCommand?(.returnKey(flags)) == true {
-                return
-            }
+        // 36 = Return，76 = 小键盘 Enter。Cmd+Enter 通常不会走 insertNewline:。
+        if (event.keyCode == 36 || event.keyCode == 76), flags.contains(.command),
+           onCommand?(.returnKey(flags)) == true {
+            return
         }
         super.keyDown(with: event)
     }

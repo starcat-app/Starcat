@@ -1238,11 +1238,11 @@ private struct KnowledgeRAGBrowserView: View {
     }
 
     private var retrievalQueryMinHeight: CGFloat {
-        ceil(retrievalQueryLineHeight * 2 + RAGComposerTextEditor.verticalInset * 2)
+        ceil(retrievalQueryLineHeight * 2 + AICommandTextEditor.verticalInset * 2)
     }
 
     private var retrievalQueryMaxHeight: CGFloat {
-        ceil(retrievalQueryLineHeight * 4 + RAGComposerTextEditor.verticalInset * 2)
+        ceil(retrievalQueryLineHeight * 4 + AICommandTextEditor.verticalInset * 2)
     }
 
     private var retrievalQueryFrameHeight: CGFloat {
@@ -1779,7 +1779,7 @@ private struct KnowledgeRAGBrowserView: View {
         VStack(alignment: .leading, spacing: 9) {
             ZStack(alignment: .bottomTrailing) {
                 // AppKit 输入：默认 2 行 / 最高 4 行；超长时 NSScrollView 出滚动条。
-                RAGComposerTextEditor(
+                AICommandTextEditor(
                     text: $viewModel.retrievalQuery,
                     placeholder: String.l10n("rag.browser.retrieval.placeholder"),
                     font: retrievalQueryFont,

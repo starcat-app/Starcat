@@ -131,6 +131,127 @@ struct AgentRunRepositoryTests {
         #expect(snapshot.artifacts.first?.sequence == toolMessage.sequence)
     }
 
+    @Test("knowledge retrieval audit 随 parts_json 完整恢复")
+    func restoresKnowledgeRetrievalAuditFromMessageFacts() async throws {
+        let repository = GRDBAgentRunRepository(database: try InMemoryDatabaseManager())
+        let runID = UUID()
+        _ = try await repository.createRun(
+            id: runID,
+            definition: BuiltInAgents.repoInsight,
+            prompt: "检查数据库写入",
+            context: AgentRunContext(sourceDescription: "Unit", repos: [repoSnapshot()]),
+            createdAt: fixedDate(0)
+        )
+        let call = AgentToolCall(
+            id: "call-knowledge",
+            name: "knowledge_search",
+            input: .object(["query": .string("database writes")]),
+            sequence: 1
+        )
+        let audit = AgentKnowledgeRetrievalAudit(
+            scopeMode: .only,
+            frozenRepoIDs: [42],
+            explicitRepoIDs: [42],
+            evidenceBlockCount: 1,
+            citations: [AgentKnowledgeCitationAudit(
+                marker: "S1",
+                chunkID: 99,
+                repoID: 42,
+                repoFullName: "groue/GRDB.swift",
+                source: "readme",
+                sectionTitle: "Usage",
+                score: 0.8,
+                hitKind: "hybrid",
+                vectorSimilarity: 0.7,
+                sourceURL: "https://github.com/groue/GRDB.swift"
+            )],
+            retrievalTrace: RAGRetrievalTrace(candidates: [
+                RAGRetrievalCandidateTrace(repoID: 42, fullName: "groue/GRDB.swift")
+            ]),
+            diagnostics: nil,
+            limitations: []
+        )
+        let messages = [
+            AgentMessage(runID: runID, role: .user, turn: 0, sequence: 0, parts: [.text("检查数据库写入")]),
+            AgentMessage(runID: runID, role: .assistant, turn: 0, sequence: 1, parts: [.toolCall(call)]),
+            AgentMessage(
+                runID: runID,
+                role: .tool,
+                turn: 0,
+                sequence: 2,
+                parts: [.toolResult(AgentToolResultMessage(
+                    toolCallID: call.id,
+                    toolName: call.name,
+                    output: .object(["summary": .string("1 evidence")]),
+                    isError: false,
+                    status: .completed,
+                    toolAudit: .knowledge(audit),
+                    sequence: 2
+                ))]
+            )
+        ]
+        for message in messages {
+            try await repository.appendMessage(message, runStatus: .running)
+        }
+
+        let snapshot = try #require(try await repository.snapshot(runID: runID))
+        guard case .toolResult(let restoredResult) = snapshot.messages[2].parts.first else {
+            Issue.record("Expected restored tool result")
+            return
+        }
+
+        #expect(restoredResult.toolAudit?.knowledgeRetrieval?.frozenRepoIDs == [42])
+        #expect(restoredResult.toolAudit?.knowledgeRetrieval?.retrievalTrace?.candidates.first?.repoID == 42)
+        #expect(restoredResult.toolAudit?.knowledgeRetrieval?.citations.first?.marker == "S1")
+    }
+
+    @Test("附件正文只在运行期存在，历史快照仅保留元数据")
+    func attachmentBodyIsRemovedFromPersistenceSnapshot() async throws {
+        let repository = GRDBAgentRunRepository(database: try InMemoryDatabaseManager())
+        let runID = UUID()
+        let content = "private draft body"
+        _ = try await repository.createRun(
+            id: runID,
+            definition: BuiltInAgents.githubWeeklyReport,
+            prompt: "生成周刊",
+            context: AgentRunContext(
+                sourceDescription: "Unit",
+                attachments: [AgentPromptAttachment(
+                    name: "brief.md",
+                    content: content,
+                    contentType: "net.daringfireball.markdown"
+                )]
+            ),
+            createdAt: fixedDate(0)
+        )
+
+        let snapshot = try #require(try await repository.snapshot(runID: runID))
+        let attachment = try #require(snapshot.context.attachments.first)
+
+        #expect(attachment.name == "brief.md")
+        #expect(attachment.content.isEmpty)
+        #expect(attachment.contentType == "net.daringfireball.markdown")
+        #expect(attachment.byteCount == content.utf8.count)
+        #expect(attachment.contentHash?.count == 64)
+        #expect(snapshot.context.hasUnavailableAttachmentBodies)
+    }
+
+    @Test("旧版 context JSON 缺少 Composer 字段时仍可解码")
+    func legacyContextJSONRemainsDecodable() throws {
+        let json = #"{"sourceDescription":"Legacy","generatedAt":"2026-07-07T00:00:00Z","repos":[],"attachments":[]}"#
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let context = try decoder.decode(AgentRunContext.self, from: Data(json.utf8))
+
+        #expect(context.sourceDescription == "Legacy")
+        #expect(context.explicitRepos == nil)
+        #expect(context.explicitRepoMode == nil)
+        #expect(context.selectedModelID == nil)
+        #expect(context.githubLinks == nil)
+        #expect(context.webSearchEnabled == nil)
+    }
+
     @Test("消息插入失败时 run 状态不会发生部分更新")
     func messageAndStatusUpdateAreTransactional() async throws {
         let repository = GRDBAgentRunRepository(database: try InMemoryDatabaseManager())

@@ -28,6 +28,7 @@ struct DatabaseMigrationsV1Tests {
             "sync_state", "tag_stats_cache", "open_ssf_scores",
             "repo_pins", "repo_insights_snapshots", "repo_star_history_points",
             "user_projects", "project_sync_state",
+            "agent_runs", "agent_messages", "agent_approvals", "agent_artifacts",
             "rag_chunks", "rag_chunks_fts", "rag_conversation_groups",
             "rag_conversations", "rag_messages", "rag_message_citations",
             "rag_message_remote_contexts", "rag_metadata_revision"
@@ -37,6 +38,160 @@ struct DatabaseMigrationsV1Tests {
                 let exists = try db.tableExists(table)
                 #expect(exists, "Table \(table) should exist")
             }
+        }
+    }
+
+    @Test("Agent v19 应建立 message/approval/artifact 最终契约")
+    func agentMessageContractMigrationCreatesSchema() throws {
+        let writer = try makeDB()
+
+        try writer.read { db in
+            let runColumns = try db.columns(in: "agent_runs").map(\.name)
+            #expect(runColumns.contains("context_json"))
+            #expect(runColumns.contains("model"))
+            #expect(runColumns.contains("usage_json"))
+
+            let messageColumns = try db.columns(in: "agent_messages").map(\.name)
+            #expect(messageColumns == [
+                "id", "run_id", "role", "turn", "sequence",
+                "parts_json", "usage_json", "created_at"
+            ])
+
+            let approvalColumns = try db.columns(in: "agent_approvals").map(\.name)
+            #expect(approvalColumns == [
+                "id", "run_id", "tool_call_id", "tool_name", "input_json",
+                "permission", "sequence", "status", "created_at", "decided_at"
+            ])
+
+            let artifactColumns = try db.columns(in: "agent_artifacts").map(\.name)
+            #expect(artifactColumns == [
+                "id", "run_id", "tool_call_id", "message_id", "sequence",
+                "type", "title", "content", "created_at"
+            ])
+            #expect(!artifactColumns.contains("artifact_index"))
+        }
+    }
+
+    @Test("Agent v19 应保留旧 run/artifact 并明确归档旧事件表")
+    func agentMessageContractMigrationPreservesLegacyData() throws {
+        let queue = try DatabaseQueue()
+        var migrator = DatabaseMigrator()
+        DatabaseMigrations.registerAll(into: &migrator)
+        try migrator.migrate(queue, upTo: "v18-rag-structured-citations")
+
+        let runID = "00000000-0000-0000-0000-000000000101"
+        let artifactID = "00000000-0000-0000-0000-000000000102"
+        try queue.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO agent_runs (
+                        id, agent_id, title, user_prompt, context_source, status,
+                        assistant_output, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                arguments: [
+                    runID, "github-weekly-report", "Legacy Weekly", "生成旧周刊",
+                    "Legacy Selection", "completed", "# Legacy Weekly",
+                    "2026-07-07T00:00:00Z", "2026-07-07T00:01:00Z"
+                ]
+            )
+            try db.execute(
+                sql: """
+                    INSERT INTO agent_run_steps (
+                        id, run_id, step_index, title, detail, status, updated_at
+                    ) VALUES ('legacy-step', ?, 0, 'Collect', 'Collected repos', 'completed', ?)
+                    """,
+                arguments: [runID, "2026-07-07T00:00:10Z"]
+            )
+            try db.execute(
+                sql: """
+                    INSERT INTO agent_run_traces (
+                        id, run_id, trace_index, kind, title, summary, input, output,
+                        log, status, created_at
+                    ) VALUES (
+                        'legacy-trace', ?, 0, 'tool', 'Build', 'Built report', '{}',
+                        '{}', '', 'completed', ?
+                    )
+                    """,
+                arguments: [runID, "2026-07-07T00:00:20Z"]
+            )
+            try db.execute(
+                sql: """
+                    INSERT INTO agent_run_tool_outputs (
+                        id, run_id, output_index, tool_name, summary, detail, input,
+                        output, log, created_at
+                    ) VALUES (
+                        'legacy-output', ?, 0, 'artifact_build_weekly_report',
+                        'Built report', 'Legacy detail', '{}', '{}', '', ?
+                    )
+                    """,
+                arguments: [runID, "2026-07-07T00:00:30Z"]
+            )
+            try db.execute(
+                sql: """
+                    INSERT INTO agent_artifacts (
+                        id, run_id, artifact_index, type, title, content, created_at
+                    ) VALUES (?, ?, 3, 'markdown', 'Legacy', '# Legacy', ?)
+                    """,
+                arguments: [artifactID, runID, "2026-07-07T00:00:40Z"]
+            )
+        }
+
+        try migrator.migrate(queue)
+        // 再次执行用于覆盖真实启动路径：已应用的 v19 不得重复搬运历史消息。
+        try migrator.migrate(queue)
+
+        try queue.read { db in
+            let contextJSON: String = try String.fetchOne(
+                db,
+                sql: "SELECT context_json FROM agent_runs WHERE id = ?",
+                arguments: [runID]
+            )!
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let context = try decoder.decode(AgentRunContext.self, from: Data(contextJSON.utf8))
+            #expect(context.sourceDescription == "Legacy Selection")
+
+            let messageRows = try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT role, sequence, parts_json
+                    FROM agent_messages
+                    WHERE run_id = ?
+                    ORDER BY sequence
+                    """,
+                arguments: [runID]
+            )
+            #expect(messageRows.count == 2)
+            #expect(messageRows.map { $0["role"] as String } == ["user", "assistant"])
+            #expect(messageRows.map { $0["sequence"] as Int } == [0, 1])
+
+            let userPartsJSON: String = messageRows[0]["parts_json"]
+            let userParts = try JSONDecoder().decode([AgentMessagePart].self, from: Data(userPartsJSON.utf8))
+            #expect(userParts == [.text("生成旧周刊")])
+
+            let artifactRow = try Row.fetchOne(
+                db,
+                sql: "SELECT sequence, title, content FROM agent_artifacts WHERE id = ?",
+                arguments: [artifactID]
+            )
+            let artifact = try #require(artifactRow)
+            #expect(artifact["sequence"] as Int == 3)
+            #expect(artifact["title"] as String == "Legacy")
+            #expect(artifact["content"] as String == "# Legacy")
+
+            #expect(try db.tableExists("agent_legacy_run_steps"))
+            #expect(try db.tableExists("agent_legacy_run_traces"))
+            #expect(try db.tableExists("agent_legacy_run_tool_outputs"))
+            let hasOldSteps = try db.tableExists("agent_run_steps")
+            let hasOldTraces = try db.tableExists("agent_run_traces")
+            let hasOldToolOutputs = try db.tableExists("agent_run_tool_outputs")
+            #expect(!hasOldSteps)
+            #expect(!hasOldTraces)
+            #expect(!hasOldToolOutputs)
+            #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM agent_legacy_run_steps") == 1)
+            #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM agent_legacy_run_traces") == 1)
+            #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM agent_legacy_run_tool_outputs") == 1)
         }
     }
 

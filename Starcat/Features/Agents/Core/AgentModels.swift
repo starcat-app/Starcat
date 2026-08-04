@@ -9,6 +9,7 @@
 //
 
 import Foundation
+import CryptoKit
 
 /// 内置 Agent 的静态定义。
 ///
@@ -159,22 +160,68 @@ struct AgentRunContext: Codable, Hashable, Sendable {
     var repos: [AgentRepoSnapshot]
     var attachments: [AgentPromptAttachment]
     var failureReason: String?
+    /// 以下字段均为 optional，确保 v19 之前已经写入的 context JSON 仍可直接解码。
+    var explicitRepos: [AIComposerRepoReference]?
+    var explicitRepoMode: AIComposerExplicitRepoMode?
+    var selectedModelID: String?
+    var githubLinks: [AIComposerGitHubLink]?
+    var webSearchEnabled: Bool?
 
     init(
         sourceDescription: String,
         generatedAt: Date = Date(),
         repos: [AgentRepoSnapshot] = [],
         attachments: [AgentPromptAttachment] = [],
-        failureReason: String? = nil
+        failureReason: String? = nil,
+        explicitRepos: [AIComposerRepoReference]? = nil,
+        explicitRepoMode: AIComposerExplicitRepoMode? = nil,
+        selectedModelID: String? = nil,
+        githubLinks: [AIComposerGitHubLink]? = nil,
+        webSearchEnabled: Bool? = nil
     ) {
         self.sourceDescription = sourceDescription
         self.generatedAt = generatedAt
         self.repos = repos
         self.attachments = attachments
         self.failureReason = failureReason
+        self.explicitRepos = explicitRepos
+        self.explicitRepoMode = explicitRepoMode
+        self.selectedModelID = selectedModelID
+        self.githubLinks = githubLinks
+        self.webSearchEnabled = webSearchEnabled
     }
 
     static let empty = AgentRunContext(sourceDescription: "Agent Workspace")
+
+    /// 数据库只保留附件名称、大小和摘要；正文仅在当前 Runtime 内存中存活。
+    var persistenceSnapshot: AgentRunContext {
+        var snapshot = self
+        snapshot.attachments = attachments.map(\.persistenceSnapshot)
+        return snapshot
+    }
+
+    /// App 重启后附件正文无法恢复；审批中的 run 必须据此阻止继续执行旧工具链。
+    var hasUnavailableAttachmentBodies: Bool {
+        attachments.contains { attachment in
+            attachment.content.isEmpty && (attachment.originalByteCount ?? 0) > 0
+        }
+    }
+}
+
+/// Composer 在点击发送时冻结的不可变输入。
+///
+/// Context Provider 只读取这份值快照，不再读取正在变化的 SwiftUI 状态，因此切换 Agent、
+/// 修改仓库范围或关闭联网都不会反向污染已经启动的 run。
+struct AgentRunInput: Hashable, Sendable {
+    var goal: String
+    var agentID: String
+    var explicitRepos: [AIComposerRepoReference]
+    var explicitRepoMode: AIComposerExplicitRepoMode
+    var selectedModelID: String?
+    var attachments: [AgentPromptAttachment]
+    var githubLinks: [AIComposerGitHubLink]
+    var webSearchEnabled: Bool
+    var source: String
 }
 
 /// 用户显式附加到一次 run 的 UTF-8 文本快照。
@@ -185,14 +232,40 @@ struct AgentPromptAttachment: Codable, Identifiable, Hashable, Sendable {
     var id: UUID
     var name: String
     var content: String
+    /// UTType identifier；optional 让旧版 context JSON 保持可解码。
+    var contentType: String?
+    var originalByteCount: Int?
+    var contentHash: String?
 
-    init(id: UUID = UUID(), name: String, content: String) {
+    init(
+        id: UUID = UUID(),
+        name: String,
+        content: String,
+        contentType: String? = nil,
+        originalByteCount: Int? = nil,
+        contentHash: String? = nil
+    ) {
         self.id = id
         self.name = name
         self.content = content
+        self.contentType = contentType
+        self.originalByteCount = originalByteCount
+        self.contentHash = contentHash
     }
 
-    var byteCount: Int { content.utf8.count }
+    var byteCount: Int { originalByteCount ?? content.utf8.count }
+
+    var persistenceSnapshot: AgentPromptAttachment {
+        let digest = SHA256.hash(data: Data(content.utf8)).map { String(format: "%02x", $0) }.joined()
+        return AgentPromptAttachment(
+            id: id,
+            name: name,
+            content: "",
+            contentType: contentType,
+            originalByteCount: byteCount,
+            contentHash: contentHash ?? digest
+        )
+    }
 }
 
 /// Agent 可消费的仓库快照。

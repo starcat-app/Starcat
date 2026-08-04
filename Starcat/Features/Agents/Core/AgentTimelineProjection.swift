@@ -31,8 +31,10 @@ struct AgentTimelineItem: Identifiable, Sendable {
     var input: String?
     var output: String?
     var log: String?
+    var toolCallID: String?
     var toolStatus: AgentToolResultStatus?
     var sources: [AgentToolResultSource]
+    var toolAudit: AgentToolAudit?
     var approval: AgentApprovalRequest?
     var artifact: AgentArtifact?
 }
@@ -107,6 +109,7 @@ enum AgentTimelineProjection {
                         title: call.name,
                         text: result?.status.localizedTitle ?? String.l10n("agent.tool.status.pending"),
                         input: call.rawInput ?? ((try? call.input.jsonString()) ?? "{}"),
+                        toolCallID: call.id,
                         toolStatus: result?.status,
                         sources: []
                     ))
@@ -124,8 +127,10 @@ enum AgentTimelineProjection {
                         text: object?["summary"]?.stringValue ?? result.status.localizedTitle,
                         output: object?["detail"]?.stringValue ?? object?["output"]?.stringValue ?? ((try? result.output.jsonString()) ?? "{}"),
                         log: Self.resultLog(result),
+                        toolCallID: result.toolCallID,
                         toolStatus: result.status,
-                        sources: result.sources
+                        sources: result.sources,
+                        toolAudit: result.toolAudit
                     ))
                 }
             }

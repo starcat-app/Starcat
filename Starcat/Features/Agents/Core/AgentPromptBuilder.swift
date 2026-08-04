@@ -180,6 +180,8 @@ struct AgentPromptBuilder: AgentPromptBuilding {
         # Frozen Starcat Context
         source: \(context.runContext.sourceDescription)
         generated_at: \(ISO8601DateFormatter.shared.string(from: context.runContext.generatedAt))
+        explicit_repo_mode: \(context.runContext.explicitRepoMode?.rawValue ?? "legacy")
+        explicit_repo_ids: \(context.runContext.explicitRepos?.map(\.id) ?? [])
         repositories:
         \(boundedRepos)
 
@@ -372,7 +374,18 @@ struct AgentMessageCompactor: Sendable {
     }
 
     private func estimatedCharacters(_ messages: [AgentMessage]) -> Int {
-        guard let data = try? JSONEncoder().encode(messages) else {
+        // toolAudit 是数据库/Inspector 事实，Provider envelope 明确不会发送它。预算估算也必须
+        // 使用相同的模型可见投影，否则一份较大的 retrieval trace 会错误挤掉完整 tool turn。
+        let modelVisibleMessages = messages.map { message in
+            var copy = message
+            copy.parts = message.parts.map { part in
+                guard case .toolResult(var result) = part else { return part }
+                result.toolAudit = nil
+                return .toolResult(result)
+            }
+            return copy
+        }
+        guard let data = try? JSONEncoder().encode(modelVisibleMessages) else {
             return messages.count * 1_000
         }
         return data.count

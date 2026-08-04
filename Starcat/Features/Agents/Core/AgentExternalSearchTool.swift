@@ -194,17 +194,28 @@ struct ExternalSearchAgentTool: AgentTool {
 
     func execute(_ input: AgentToolInput) async -> AgentToolResult {
         let collection: AgentExternalSearchCollection
-        do {
-            let request = try AgentExternalSearchRequest(arguments: input.arguments)
-            collection = await collector.collect(request: request, context: input.context)
-        } catch {
+        if input.context.webSearchEnabled == false {
+            // 全局设置只代表“能力可用”；每个 run 还必须由 Composer 单独授权。
             collection = AgentExternalSearchCollection(
-                status: .failed,
+                status: .skipped,
                 markdown: "",
                 sourceItems: [],
-                querySummary: (try? input.arguments.jsonString()) ?? "invalid_arguments",
-                log: error.localizedDescription
+                querySummary: (try? input.arguments.jsonString()) ?? "",
+                log: "External Search is disabled for this run."
             )
+        } else {
+            do {
+                let request = try AgentExternalSearchRequest(arguments: input.arguments)
+                collection = await collector.collect(request: request, context: input.context)
+            } catch {
+                collection = AgentExternalSearchCollection(
+                    status: .failed,
+                    markdown: "",
+                    sourceItems: [],
+                    querySummary: (try? input.arguments.jsonString()) ?? "invalid_arguments",
+                    log: error.localizedDescription
+                )
+            }
         }
         let outputText = Self.formatSources(collection.sourceItems)
         let output = AgentToolOutput(

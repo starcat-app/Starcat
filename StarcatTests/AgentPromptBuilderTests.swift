@@ -112,6 +112,33 @@ struct AgentPromptBuilderTests {
         #expect(!block.contains("ignored.txt"))
     }
 
+    @Test("首轮 prompt 明示冻结的仓库范围模式与显式 ID")
+    func frozenScopeMetadataEntersFirstTurnPrompt() {
+        var context = promptContext()
+        context.runContext = AgentRunContext(
+            sourceDescription: "Unit",
+            explicitRepos: [AIComposerRepoReference(
+                id: 42,
+                owner: "groue",
+                name: "GRDB.swift",
+                fullName: "groue/GRDB.swift",
+                language: "Swift",
+                starsCount: 8_000
+            )],
+            explicitRepoMode: .exclude
+        )
+
+        let request = AgentPromptBuilder().buildTurnRequest(
+            userInput: "排除 GRDB",
+            messages: [],
+            environment: environment(mode: .reportGeneration),
+            context: context
+        )
+
+        #expect(request.userPrompt.contains("explicit_repo_mode: exclude"))
+        #expect(request.userPrompt.contains("explicit_repo_ids: [42]"))
+    }
+
     @Test("消息压缩保留首个目标和最近完整 tool turn")
     func compactsMessagesByTurn() {
         let runID = UUID()
@@ -182,7 +209,7 @@ struct AgentPromptBuilderTests {
             sequence: 1,
             parts: [.toolCall(AgentToolCall(
                 id: "call-large",
-                name: "external_search",
+                name: "knowledge_search",
                 input: .object(["query": .string("Swift")]),
                 sequence: 0
             ))]
@@ -195,17 +222,29 @@ struct AgentPromptBuilderTests {
             sequence: 2,
             parts: [.toolResult(AgentToolResultMessage(
                 toolCallID: "call-large",
-                toolName: "external_search",
+                toolName: "knowledge_search",
                 output: .object(["detail": .string(originalOutput)]),
                 isError: false,
                 status: .completed,
+                toolAudit: .knowledge(AgentKnowledgeRetrievalAudit(
+                    scopeMode: .only,
+                    frozenRepoIDs: [1],
+                    explicitRepoIDs: [1],
+                    evidenceBlockCount: 1,
+                    citations: [],
+                    retrievalTrace: RAGRetrievalTrace(candidates: [
+                        RAGRetrievalCandidateTrace(repoID: 1, fullName: "octo/demo")
+                    ]),
+                    diagnostics: nil,
+                    limitations: []
+                )),
                 sequence: 0
             ))]
         )
 
         let compacted = AgentMessageCompactor(
             maxCharacters: 1_500,
-            maxToolResultCharacters: 800,
+            maxToolResultCharacters: 400,
             maxExternalContextCharacters: 400
         ).compact([first, call, result])
 
@@ -215,6 +254,7 @@ struct AgentPromptBuilderTests {
             return result
         }.first)
         #expect(compactedResult.output.objectValue?["truncated"] == .bool(true))
+        #expect(compactedResult.toolAudit?.knowledgeRetrieval?.frozenRepoIDs == [1])
         #expect(try compactedResult.output.jsonString().contains("truncated by Agent message budget"))
         #expect(result.parts.first != compacted.last?.parts.first)
         try AgentMessageContract.validate(compacted)

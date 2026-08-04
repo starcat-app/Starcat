@@ -526,91 +526,15 @@ final class AppDependencies {
             missingAPIKeyError: AIClientError.missingAPIKey,
             usageContext: AIUsageContext(feature: .rag, phase: "shared_chat")
         )
-        let embeddingClient: (any AIClientProtocol)?
-        if let embeddingSelection {
-            // Provider / Keychain 异常同样只关闭向量分支；设置页仍负责展示具体配置问题。
-            embeddingClient = try? makeRAGClient(
-                profile: embeddingSelection.profile,
-                chatModel: chatSelection.modelName,
-                embeddingModel: embeddingSelection.modelName,
-                timeout: embeddingSelection.parameters.timeoutSeconds,
-                missingAPIKeyError: AIEmbeddingError.missingAPIKey,
-                usageContext: AIUsageContext(feature: .rag, phase: "query_embedding")
-            )
-        } else {
-            embeddingClient = nil
-        }
-        let localKeyword = SQLiteRAGKeywordSearchProvider(repository: ragChunkRepository)
-        let localVector = SQLiteRAGVectorSearchProvider(repository: ragChunkRepository)
-        let backendConfiguration = settings.ragBackendConfiguration
-        try backendConfiguration.validateSelectedBackendsForRuntime(
-            requiresVectorBackend: embeddingClient != nil
-        )
-        let rerankConfiguration = settings.ragRerankConfiguration.normalized
-
-        let keywordProvider: any RAGKeywordSearchProvider
-        if backendConfiguration.keywordBackend == .meilisearch,
-           backendConfiguration.meilisearch.validationMessage == nil {
-            let external = MeilisearchRAGProvider(
-                configuration: backendConfiguration.meilisearch,
-                apiKey: try KeychainManager.shared.loadAIKey(forProvider: RAGBackendConfiguration.meilisearchKeychainID),
-                repository: ragChunkRepository
-            )
-            keywordProvider = FallbackRAGKeywordSearchProvider(
-                primary: external,
-                fallback: localKeyword,
-                fallbackToSQLite: backendConfiguration.fallbackToSQLite
-            )
-        } else {
-            keywordProvider = localKeyword
-        }
-
-        let vectorProvider: any RAGVectorSearchProvider
-        if embeddingClient != nil,
-           backendConfiguration.vectorBackend == .qdrant,
-           backendConfiguration.qdrant.validationMessage == nil {
-            let external = QdrantRAGProvider(
-                configuration: backendConfiguration.qdrant,
-                apiKey: try KeychainManager.shared.loadAIKey(forProvider: RAGBackendConfiguration.qdrantKeychainID),
-                repository: ragChunkRepository
-            )
-            vectorProvider = FallbackRAGVectorSearchProvider(
-                primary: external,
-                fallback: localVector,
-                fallbackToSQLite: backendConfiguration.fallbackToSQLite
-            )
-        } else {
-            vectorProvider = localVector
-        }
-        let reranker: (any RAGReranking)?
-        if rerankConfiguration.isEnabled {
-            let rerankAPIKey = try KeychainManager.shared.loadAIKey(forProvider: RAGRerankConfiguration.keychainID)
-            switch rerankConfiguration.provider {
-            case .huggingFaceTEI:
-                reranker = HuggingFaceTEIRAGReranker(configuration: rerankConfiguration, apiKey: rerankAPIKey)
-            case .cohereCompatible:
-                reranker = CohereCompatibleRAGReranker(configuration: rerankConfiguration, apiKey: rerankAPIKey)
-            }
-        } else {
-            reranker = nil
-        }
-        let retriever = KnowledgeRAGRetriever(
-            chunkRepository: ragChunkRepository,
-            keywordProvider: keywordProvider,
-            vectorProvider: vectorProvider,
-            // 自托管 provider 永远不接收私有 repo id 或查询。私有知识库内容仍参与
-            // 本轮问答，但 keyword/vector 两路都固定走 SQLite。
-            privateRepoKeywordProvider: localKeyword,
-            privateRepoVectorProvider: localVector,
-            embeddingClient: embeddingClient,
-            embeddingModel: embeddingSelection?.modelName,
-            retrievalSettings: (retrievalSettingsOverride ?? settings.ragRetrievalSettings).normalized(),
-            reranker: reranker
+        let retrievalSettings = (retrievalSettingsOverride ?? settings.ragRetrievalSettings).normalized()
+        let retriever = try makeKnowledgeRAGRetriever(
+            chatModel: chatSelection.modelName,
+            embeddingSelection: embeddingSelection,
+            retrievalSettings: retrievalSettings,
+            usageFeature: .rag
         )
         let outputLanguage = LocaleStore.shared.selection.aiOutputLanguageDescriptor
         let ragPrompts = settings.ragPromptSettings
-        // 召回测试传入的草稿只在本次 Service 生命周期内生效；正常问答继续使用已保存配置。
-        let retrievalSettings = (retrievalSettingsOverride ?? settings.ragRetrievalSettings).normalized()
         let planner = KnowledgeRAGQueryPlanner(
             client: chatClient,
             model: chatSelection.modelName,
@@ -651,6 +575,118 @@ final class AppDependencies {
             compressorPromptConfiguration: ragPrompts.compressor,
             titlePromptConfiguration: ragPrompts.title,
             outputLanguage: outputLanguage
+        )
+    }
+
+    /// Agent 只复用 RAG 检索层，不构造 Planner / Generator，也不装配 GitHub 或 Web
+    /// 临时上下文 Provider。范围由 `AgentRunContext` 冻结，执行期无法通过 tool 参数扩权。
+    func makeAgentKnowledgeCapabilityAdapter(selectedModelID: String?) throws -> AgentKnowledgeCapabilityAdapter {
+        try entitlementGate.requirePro(.knowledgeRAG)
+        let chatSelection = try resolveRAGChatSelection(selectedModelID: selectedModelID)
+        let embeddingSelection = try? settings.resolveEmbeddingSelection()
+        let retriever = try makeKnowledgeRAGRetriever(
+            chatModel: chatSelection.modelName,
+            embeddingSelection: embeddingSelection,
+            retrievalSettings: settings.ragRetrievalSettings.normalized(),
+            usageFeature: .agent
+        )
+        return AgentKnowledgeCapabilityAdapter(
+            executor: KnowledgeSearchCapabilityExecutor(
+                candidateProvider: RAGKnowledgeSearchCandidateProvider(repository: ragCandidateRepository),
+                retriever: retriever,
+                maxEvidenceTokens: min(settings.ragRetrievalSettings.normalized().evidenceTokenBudget, 1_600)
+            )
+        )
+    }
+
+    /// RAG Workspace 与 AgentKnowledgeTool 的共享检索装配点。私有仓库始终固定走本地
+    /// SQLite；外部 Meilisearch / Qdrant / Rerank 仅沿用用户已经配置的 RAG 后端策略。
+    private func makeKnowledgeRAGRetriever(
+        chatModel: String,
+        embeddingSelection: AIEmbeddingSelection?,
+        retrievalSettings: RAGRetrievalSettings,
+        usageFeature: AIUsageFeature
+    ) throws -> KnowledgeRAGRetriever {
+        let embeddingClient: (any AIClientProtocol)?
+        if let embeddingSelection {
+            // Provider / Keychain 异常只关闭向量分支；本地 FTS 仍应继续服务 Agent。
+            embeddingClient = try? makeRAGClient(
+                profile: embeddingSelection.profile,
+                chatModel: chatModel,
+                embeddingModel: embeddingSelection.modelName,
+                timeout: embeddingSelection.parameters.timeoutSeconds,
+                missingAPIKeyError: AIEmbeddingError.missingAPIKey,
+                usageContext: AIUsageContext(feature: usageFeature, phase: "query_embedding")
+            )
+        } else {
+            embeddingClient = nil
+        }
+        let localKeyword = SQLiteRAGKeywordSearchProvider(repository: ragChunkRepository)
+        let localVector = SQLiteRAGVectorSearchProvider(repository: ragChunkRepository)
+        let backendConfiguration = settings.ragBackendConfiguration
+        try backendConfiguration.validateSelectedBackendsForRuntime(
+            requiresVectorBackend: embeddingClient != nil
+        )
+
+        let keywordProvider: any RAGKeywordSearchProvider
+        if backendConfiguration.keywordBackend == .meilisearch,
+           backendConfiguration.meilisearch.validationMessage == nil {
+            let external = MeilisearchRAGProvider(
+                configuration: backendConfiguration.meilisearch,
+                apiKey: try KeychainManager.shared.loadAIKey(forProvider: RAGBackendConfiguration.meilisearchKeychainID),
+                repository: ragChunkRepository
+            )
+            keywordProvider = FallbackRAGKeywordSearchProvider(
+                primary: external,
+                fallback: localKeyword,
+                fallbackToSQLite: backendConfiguration.fallbackToSQLite
+            )
+        } else {
+            keywordProvider = localKeyword
+        }
+
+        let vectorProvider: any RAGVectorSearchProvider
+        if embeddingClient != nil,
+           backendConfiguration.vectorBackend == .qdrant,
+           backendConfiguration.qdrant.validationMessage == nil {
+            let external = QdrantRAGProvider(
+                configuration: backendConfiguration.qdrant,
+                apiKey: try KeychainManager.shared.loadAIKey(forProvider: RAGBackendConfiguration.qdrantKeychainID),
+                repository: ragChunkRepository
+            )
+            vectorProvider = FallbackRAGVectorSearchProvider(
+                primary: external,
+                fallback: localVector,
+                fallbackToSQLite: backendConfiguration.fallbackToSQLite
+            )
+        } else {
+            vectorProvider = localVector
+        }
+
+        let rerankConfiguration = settings.ragRerankConfiguration.normalized
+        let reranker: (any RAGReranking)?
+        if rerankConfiguration.isEnabled {
+            let apiKey = try KeychainManager.shared.loadAIKey(forProvider: RAGRerankConfiguration.keychainID)
+            switch rerankConfiguration.provider {
+            case .huggingFaceTEI:
+                reranker = HuggingFaceTEIRAGReranker(configuration: rerankConfiguration, apiKey: apiKey)
+            case .cohereCompatible:
+                reranker = CohereCompatibleRAGReranker(configuration: rerankConfiguration, apiKey: apiKey)
+            }
+        } else {
+            reranker = nil
+        }
+
+        return KnowledgeRAGRetriever(
+            chunkRepository: ragChunkRepository,
+            keywordProvider: keywordProvider,
+            vectorProvider: vectorProvider,
+            privateRepoKeywordProvider: localKeyword,
+            privateRepoVectorProvider: localVector,
+            embeddingClient: embeddingClient,
+            embeddingModel: embeddingSelection?.modelName,
+            retrievalSettings: retrievalSettings,
+            reranker: reranker
         )
     }
 

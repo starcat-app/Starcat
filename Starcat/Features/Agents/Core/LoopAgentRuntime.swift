@@ -274,6 +274,9 @@ struct LoopAgentRuntime: AgentRuntime {
         let allowedTools = visibleTools(from: registeredTools)
         let toolDefinitions = allowedTools.map(\.definition)
         let visibleToolNames = Set(toolDefinitions.map(\.name))
+        var effectiveExternalSearchPolicy = externalSearchPolicy
+        effectiveExternalSearchPolicy.isEnabled = externalSearchPolicy.isEnabled
+            && context.webSearchEnabled != false
         let promptContext = AgentPromptContext(
             definition: definition,
             runContext: context,
@@ -282,7 +285,7 @@ struct LoopAgentRuntime: AgentRuntime {
             },
             rules: rules + definitionRules(definition) + artifactRules(toolDefinitions),
             preferredLanguage: preferredLanguage,
-            externalSearch: externalSearchPolicy
+            externalSearch: effectiveExternalSearchPolicy
         )
         let environment = AgentPromptEnvironment.current(
             mode: mode,
@@ -314,6 +317,7 @@ struct LoopAgentRuntime: AgentRuntime {
                 elapsedMilliseconds: restored.execution.elapsedMilliseconds,
                 attempts: restored.execution.attempts,
                 sources: restored.execution.sources,
+                toolAudit: restored.execution.toolAudit,
                 sequence: restored.call.sequence
             )
             let toolMessage = try await session.append(
@@ -441,6 +445,7 @@ struct LoopAgentRuntime: AgentRuntime {
                     elapsedMilliseconds: execution.elapsedMilliseconds,
                     attempts: execution.attempts,
                     sources: execution.sources,
+                    toolAudit: execution.toolAudit,
                     sequence: call.sequence
                 )
                 let toolMessage = try await session.append(
@@ -866,7 +871,7 @@ struct LoopAgentRuntime: AgentRuntime {
             return [
                 AgentPromptRule(
                     id: "weekly-local-facts",
-                    content: "Treat repository IDs and metadata in Frozen Starcat Context as the only local facts. Do not claim live GitHub trends, releases, activity, README or license data unless a tool result provides that evidence."
+                    content: "Treat repository IDs and metadata in Frozen Starcat Context as the only local facts. Use knowledge_search for indexed README, notes, summaries or metadata and cite only its supplied [S#] markers. Do not claim live GitHub trends, releases or activity unless a network tool result provides that evidence."
                 ),
                 AgentPromptRule(
                     id: "weekly-artifact-contract",
@@ -877,7 +882,7 @@ struct LoopAgentRuntime: AgentRuntime {
             return [
                 AgentPromptRule(
                     id: "repo-insight-selection",
-                    content: "Select the target with context_select_repo using repoID or exact fullName. Base repository facts only on the frozen Starcat context."
+                    content: "Select the target with context_select_repo using repoID or exact fullName. Base repository facts only on the frozen Starcat context; use knowledge_search for indexed README, notes, summaries or metadata and preserve its [S#] citations."
                 ),
                 AgentPromptRule(
                     id: "repo-insight-artifact-contract",
@@ -1059,6 +1064,8 @@ private struct ToolExecution: Sendable {
     var elapsedMilliseconds: Int
     var attempts: [AgentToolExecutionAttempt]
     var sources: [AgentToolResultSource]
+
+    var toolAudit: AgentToolAudit? { result?.toolAudit }
 
     init(
         result: AgentToolResult,

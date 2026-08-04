@@ -13,7 +13,7 @@ import Testing
 struct GitHubWeeklyReportToolsTests {
 
     @Test("resolveCandidateRepos 使用真实 context 快照并按 stars 排序")
-    func resolveCandidateReposUsesContextSnapshot() {
+    func resolveCandidateReposUsesContextSnapshot() async throws {
         let context = AgentRunContext(
             sourceDescription: "Unit Snapshot",
             repos: [
@@ -23,13 +23,35 @@ struct GitHubWeeklyReportToolsTests {
             ]
         )
 
-        let result = GitHubWeeklyReportTools.resolveCandidateRepos(context: context, limit: 2)
+        let result = try await GitHubWeeklyReportTools.resolveCandidateRepos(context: context, limit: 2)
 
         #expect(result.output.summary == "2 repos")
         #expect(result.output.output.contains("groue/GRDB.swift"))
         #expect(result.output.output.contains("swiftlang/swift-markdown"))
         #expect(result.output.output.contains("modelcontextprotocol/swift-sdk") == false)
         #expect(result.trace.input.contains("Unit Snapshot"))
+    }
+
+    @Test("context_resolve_repos 遇到冻结范围外 ID 时整次失败")
+    func resolveReposToolFailsClosedForUnknownRepository() async throws {
+        let context = AgentRunContext(
+            sourceDescription: "Unit Snapshot",
+            repos: [repo(fullName: "groue/GRDB.swift", language: "Swift", stars: 7_800)]
+        )
+        let registry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.all)
+        let tool = try registry.tool(named: "context_resolve_repos")
+
+        let result = await tool.execute(AgentToolInput(
+            arguments: .object([
+                "repoIDs": .array([.number(Double(context.repos[0].id)), .number(999_999)])
+            ]),
+            prompt: "resolve",
+            context: context
+        ))
+
+        #expect(result.status == .failed)
+        #expect(result.output.log == "Unknown Agent repository IDs: 999999")
+        #expect(result.output.output.contains("groue/GRDB.swift") == false)
     }
 
     @Test("context_resolve_repos 消费模型数量和排序参数")

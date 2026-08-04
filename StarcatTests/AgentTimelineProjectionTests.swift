@@ -16,7 +16,7 @@ struct AgentTimelineProjectionTests {
         let runID = UUID()
         let call = AgentToolCall(
             id: "call-1",
-            name: "external_search",
+            name: "knowledge_search",
             input: .object(["query": .string("Swift Agent")]),
             rawInput: "{\"query\":\"Swift Agent\"}",
             sequence: 0
@@ -33,7 +33,7 @@ struct AgentTimelineProjectionTests {
             role: .assistant,
             turn: 0,
             sequence: 1,
-            parts: [.reasoning("需要外部证据"), .toolCall(call)]
+            parts: [.reasoning("需要本地知识证据"), .toolCall(call)]
         )
         let result = AgentToolResultMessage(
             toolCallID: call.id,
@@ -51,6 +51,18 @@ struct AgentTimelineProjectionTests {
                 AgentToolExecutionAttempt(number: 2, status: .completed, elapsedMilliseconds: 30, errorSummary: nil)
             ],
             sources: [AgentToolResultSource(title: "Source", url: "https://example.com", provider: "Exa")],
+            toolAudit: .knowledge(AgentKnowledgeRetrievalAudit(
+                scopeMode: .only,
+                frozenRepoIDs: [1],
+                explicitRepoIDs: [1],
+                evidenceBlockCount: 1,
+                citations: [],
+                retrievalTrace: RAGRetrievalTrace(candidates: [
+                    RAGRetrievalCandidateTrace(repoID: 1, fullName: "octo/demo")
+                ]),
+                diagnostics: nil,
+                limitations: []
+            )),
             sequence: 0
         )
         let tool = AgentMessage(
@@ -90,8 +102,10 @@ struct AgentTimelineProjectionTests {
         #expect(items.first?.title == String.l10n("agent.workspace.timeline.user"))
         #expect(items.last?.artifact?.id == artifact.id)
         #expect(items.first(where: { $0.kind == .toolResult })?.sources.count == 1)
+        #expect(items.first(where: { $0.kind == .toolResult })?.toolCallID == call.id)
+        #expect(items.first(where: { $0.kind == .toolResult })?.toolAudit?.knowledgeRetrieval?.metrics.candidateCount == 1)
         #expect(items.first(where: { $0.kind == .toolResult })?.log?.contains("elapsed_ms=42") == true)
         #expect(items.first(where: { $0.kind == .toolResult })?.log?.contains("attempt_count=2") == true)
-        #expect(items.first(where: { $0.kind == .assistant })?.reasoning == "需要外部证据")
+        #expect(items.first(where: { $0.kind == .assistant })?.reasoning == "需要本地知识证据")
     }
 }

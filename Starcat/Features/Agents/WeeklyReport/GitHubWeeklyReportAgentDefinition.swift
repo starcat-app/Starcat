@@ -26,6 +26,7 @@ enum BuiltInAgents {
         toolIDs: [
             "agent_parse_goal",
             "context_resolve_repos",
+            "knowledge_search",
             "external_search",
             "repo_cluster_topics",
             "artifact_build_weekly_report"
@@ -48,6 +49,7 @@ enum BuiltInAgents {
         toolIDs: [
             "agent_parse_repo_insight_goal",
             "context_select_repo",
+            "knowledge_search",
             "external_search",
             "artifact_build_repo_insight"
         ],

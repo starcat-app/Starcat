@@ -57,6 +57,56 @@ struct LoopAgentRuntimeTests {
         #expect(events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
     }
 
+    @Test("Runtime 将结构化 tool audit 写入 tool-result 消息")
+    func persistsStructuredToolAuditInResultMessage() async throws {
+        let audit = AgentKnowledgeRetrievalAudit(
+            scopeMode: .only,
+            frozenRepoIDs: [1],
+            explicitRepoIDs: [1],
+            evidenceBlockCount: 1,
+            citations: [],
+            retrievalTrace: RAGRetrievalTrace(candidates: [
+                RAGRetrievalCandidateTrace(repoID: 1, fullName: "octo/demo")
+            ]),
+            diagnostics: nil,
+            limitations: []
+        )
+        let recorder = ModelRequestRecorder(responses: [
+            .init(
+                text: "",
+                reasoning: nil,
+                toolCalls: [.init(id: "call-knowledge", name: "knowledge_search", arguments: "{}")],
+                model: "test",
+                finishReason: "tool_calls"
+            ),
+            .init(text: "完成", reasoning: nil, toolCalls: [], model: "test", finishReason: "stop")
+        ])
+        let runtime = LoopAgentRuntime(
+            modelClient: RecordedAgentModelClient(recorder: recorder),
+            toolRegistry: try AgentToolRegistry(tools: [RuntimeStubTool(
+                name: "knowledge_search",
+                result: "evidence",
+                toolAudit: .knowledge(audit)
+            )])
+        )
+
+        let events = await collect(runtime.run(
+            definition: makeDefinition(toolIDs: ["knowledge_search"]),
+            prompt: "检索",
+            context: .empty
+        ))
+        let result = try #require(events.compactMap { event -> AgentToolResultMessage? in
+            guard case .messageAppended(let message) = event else { return nil }
+            return message.parts.compactMap { part -> AgentToolResultMessage? in
+                guard case .toolResult(let result) = part else { return nil }
+                return result
+            }.first
+        }.first)
+
+        #expect(result.toolAudit?.knowledgeRetrieval?.frozenRepoIDs == [1])
+        #expect(result.toolAudit?.knowledgeRetrieval?.metrics.candidateCount == 1)
+    }
+
     @Test("单轮多个 tool-call 会按确定顺序执行并全部回灌下一轮")
     func executesMultipleToolCallsAndReturnsEveryResult() async throws {
         let recorder = ModelRequestRecorder(responses: [
@@ -874,6 +924,7 @@ private struct RuntimeStubTool: AgentTool {
     let definition: AgentToolDefinition
     private let result: String
     private let payload: AgentToolPayload
+    private let toolAudit: AgentToolAudit?
     private let counter = RuntimeToolCounter()
 
     init(
@@ -881,7 +932,8 @@ private struct RuntimeStubTool: AgentTool {
         result: String,
         permission: AgentToolPermission = .readOnly,
         completesRun: Bool = false,
-        payload: AgentToolPayload = .none
+        payload: AgentToolPayload = .none,
+        toolAudit: AgentToolAudit? = nil
     ) {
         self.definition = AgentToolDefinition(
             name: name,
@@ -892,6 +944,7 @@ private struct RuntimeStubTool: AgentTool {
         )
         self.result = result
         self.payload = payload
+        self.toolAudit = toolAudit
     }
 
     func execute(_ input: AgentToolInput) async -> AgentToolResult {
@@ -914,7 +967,8 @@ private struct RuntimeStubTool: AgentTool {
                 output: result,
                 log: "executed"
             ),
-            payload: payload
+            payload: payload,
+            toolAudit: toolAudit
         )
     }
 

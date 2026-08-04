@@ -284,7 +284,9 @@ struct GRDBAgentRunRepository: AgentRunRepositoryProtocol {
             title: definition.title,
             userPrompt: prompt,
             contextSource: context.sourceDescription,
-            contextJSON: try AgentPersistenceJSON.encode(context),
+            // 附件正文只属于当前 Runtime；历史记录保留名称、字节数和 SHA-256，避免把
+            // 用户临时材料长期复制进数据库。
+            contextJSON: try AgentPersistenceJSON.encode(context.persistenceSnapshot),
             status: AgentRunStatus.planning.rawValue,
             model: nil,
             usageJSON: nil,

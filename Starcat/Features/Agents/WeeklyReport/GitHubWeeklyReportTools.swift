@@ -57,13 +57,21 @@ enum GitHubWeeklyReportTools {
         repoIDs: [Int64] = [],
         limit: Int = 12,
         sort: WeeklyReportRepoSort = .stars
-    ) -> WeeklyReportToolResult {
-        let allowedIDs = Set(repoIDs)
-        let scopedRepos = repoIDs.isEmpty ? context.repos : context.repos.filter { allowedIDs.contains($0.id) }
-        let sorted = scopedRepos
-            .sorted { orderedBefore($0, $1, sort: sort) }
-            .prefix(limit)
-        let repos = Array(sorted)
+    ) async throws -> WeeklyReportToolResult {
+        let executor = RepositoryReadCapabilityExecutor(
+            source: FrozenRepositoryReadCapabilitySource(repositories: context.repos)
+        )
+        let result = try await executor.search(
+            RepositorySearchCapabilityRequest(
+                limit: limit,
+                restrictedRepoIDs: repoIDs,
+                // Agent 的 repoIDs 是模型对冻结上下文施加的进一步约束。任何未知 ID 都
+                // 必须让整次读取失败，不能被静默丢弃后继续生成不完整 artifact。
+                requiresCompleteRestriction: true,
+                sort: sort.capabilitySort
+            )
+        )
+        let repos = result.repositories
         let output = repos.isEmpty
             ? "repos: []"
             : repos.map { "- id=\($0.id) | \($0.displaySummary)" }.joined(separator: "\n")
@@ -130,24 +138,6 @@ enum GitHubWeeklyReportTools {
         )
     }
 
-    private static func orderedBefore(
-        _ lhs: AgentRepoSnapshot,
-        _ rhs: AgentRepoSnapshot,
-        sort: WeeklyReportRepoSort
-    ) -> Bool {
-        switch sort {
-        case .starredAt:
-            let lhsDate = lhs.starredAt ?? ""
-            let rhsDate = rhs.starredAt ?? ""
-            if lhsDate != rhsDate { return lhsDate > rhsDate }
-        case .stars:
-            if lhs.starsCount != rhs.starsCount { return lhs.starsCount > rhs.starsCount }
-        case .name:
-            break
-        }
-        return lhs.fullName.localizedCaseInsensitiveCompare(rhs.fullName) == .orderedAscending
-    }
-
     fileprivate static func makeResult(
         toolName: String,
         summary: String,
@@ -180,6 +170,16 @@ enum GitHubWeeklyReportTools {
     private static func nonEmpty(_ value: String?) -> String? {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+private extension WeeklyReportRepoSort {
+    var capabilitySort: RepositoryCapabilitySort {
+        switch self {
+        case .starredAt: .starredAt
+        case .stars: .stars
+        case .name: .name
+        }
     }
 }
 
@@ -238,13 +238,27 @@ private extension AgentJSONValue {
 
 enum GitHubWeeklyReportAgentTools {
     static var all: [any AgentTool] {
-        makeAll(externalSearchTool: ExternalSearchAgentTool(collector: DisabledAgentExternalSearchCollector()))
+        makeAll(
+            externalSearchTool: ExternalSearchAgentTool(collector: DisabledAgentExternalSearchCollector()),
+            knowledgeTool: AgentKnowledgeTool(searcher: UnavailableAgentKnowledgeSearcher())
+        )
     }
 
     static func makeAll(externalSearchTool: any AgentTool) -> [any AgentTool] {
+        makeAll(
+            externalSearchTool: externalSearchTool,
+            knowledgeTool: AgentKnowledgeTool(searcher: UnavailableAgentKnowledgeSearcher())
+        )
+    }
+
+    static func makeAll(
+        externalSearchTool: any AgentTool,
+        knowledgeTool: any AgentTool
+    ) -> [any AgentTool] {
         [
             ParseGoalTool(),
             ResolveReposTool(),
+            knowledgeTool,
             externalSearchTool,
             ClusterTopicsTool(),
             BuildMarkdownTool(),
@@ -291,22 +305,28 @@ enum GitHubWeeklyReportAgentTools {
         func execute(_ input: AgentToolInput) async -> AgentToolResult {
             let arguments = input.arguments.objectValue ?? [:]
             let repoIDs = arguments["repoIDs"]?.integerArrayValue.map(Int64.init) ?? []
-            let unknownIDs = repoIDs.filter { id in !input.context.repos.contains(where: { $0.id == id }) }
-            guard unknownIDs.isEmpty else {
+            let limit = min(max(arguments["maxRepositories"]?.integerValue ?? 40, 1), 100)
+            let sort = arguments["sort"]?.stringValue.flatMap(WeeklyReportRepoSort.init(rawValue:)) ?? .starredAt
+            do {
+                return try await GitHubWeeklyReportTools.resolveCandidateRepos(
+                    context: input.context,
+                    repoIDs: repoIDs,
+                    limit: limit,
+                    sort: sort
+                ).agentToolResult()
+            } catch RepositoryReadCapabilityError.repositoriesOutsideScope(let unknownIDs) {
                 return failedAgentToolResult(
                     toolName: id,
                     input: (try? input.arguments.jsonString()) ?? "{}",
                     message: "Unknown Agent repository IDs: \(unknownIDs.map(String.init).joined(separator: ", "))"
                 )
+            } catch {
+                return failedAgentToolResult(
+                    toolName: id,
+                    input: (try? input.arguments.jsonString()) ?? "{}",
+                    message: error.localizedDescription
+                )
             }
-            let limit = min(max(arguments["maxRepositories"]?.integerValue ?? 40, 1), 100)
-            let sort = arguments["sort"]?.stringValue.flatMap(WeeklyReportRepoSort.init(rawValue:)) ?? .starredAt
-            return GitHubWeeklyReportTools.resolveCandidateRepos(
-                context: input.context,
-                repoIDs: repoIDs,
-                limit: limit,
-                sort: sort
-            ).agentToolResult()
         }
     }
 
@@ -475,7 +495,17 @@ enum RepoInsightAgentTools {
 
         func execute(_ input: AgentToolInput) async -> AgentToolResult {
             let arguments = input.arguments.objectValue ?? [:]
-            guard let repo = selectRepo(arguments: arguments, repos: input.context.repos) else {
+            let selector = RepositoryCapabilitySelector(
+                repoID: arguments["repoID"]?.integerValue.map(Int64.init),
+                fullName: arguments["fullName"]?.stringValue
+            )
+            let executor = RepositoryReadCapabilityExecutor(
+                source: FrozenRepositoryReadCapabilitySource(repositories: input.context.repos)
+            )
+            let repo: AgentRepoSnapshot
+            do {
+                repo = try await executor.get(selector)
+            } catch {
                 return failedAgentToolResult(
                     toolName: id,
                     input: (try? input.arguments.jsonString()) ?? "{}",
@@ -496,19 +526,6 @@ enum RepoInsightAgentTools {
                 log: "Selected target repo from frozen AgentRunContext."
             )
             return result.agentToolResult(payload: .repo(repo))
-        }
-
-        private func selectRepo(
-            arguments: [String: AgentJSONValue],
-            repos: [AgentRepoSnapshot]
-        ) -> AgentRepoSnapshot? {
-            if let repoID = arguments["repoID"]?.integerValue {
-                return repos.first(where: { $0.id == Int64(repoID) })
-            }
-            if let fullName = arguments["fullName"]?.stringValue {
-                return repos.first(where: { $0.fullName.caseInsensitiveCompare(fullName) == .orderedSame })
-            }
-            return nil
         }
     }
 

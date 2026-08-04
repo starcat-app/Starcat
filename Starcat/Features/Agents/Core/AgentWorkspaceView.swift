@@ -17,6 +17,7 @@ struct AgentWorkspaceView: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
     @State private var viewModel = AgentWorkspaceViewModel()
+    @State private var composerContentHeight: CGFloat = 0
     let chromeState: WorkspaceChromeState
 
     var body: some View {
@@ -33,32 +34,62 @@ struct AgentWorkspaceView: View {
         .defaultCursorShield()
         .task {
             viewModel.configureContextProvider(RepositoryAgentRunContextProvider(
-                repository: dependencies.repoRepository
+                candidateRepository: dependencies.ragCandidateRepository
             ))
             viewModel.configureRunRepository(dependencies.agentRunRepository)
-            let externalSearchTool = ExternalSearchAgentTool(
-                collector: AppSettingsAgentExternalSearchCollector(settings: dependencies.settings)
+            viewModel.configureRepoCandidateRepository(dependencies.ragCandidateRepository)
+            viewModel.configureModelOptions(
+                dependencies.knowledgeRAGChatModels,
+                defaultProviderID: dependencies.settings.aiChatTask.providerID,
+                defaultModelName: dependencies.settings.aiChatTask.resolvedModelName
             )
-            do {
-                let toolRegistry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.makeAll(
-                    externalSearchTool: externalSearchTool
-                ))
-                let modelClient = try AgentLoopModelClientFactory.make(settings: dependencies.settings)
-                viewModel.configureRuntime(LoopAgentRuntime(
-                    modelClient: modelClient,
-                    toolRegistry: toolRegistry,
-                    runRepository: dependencies.agentRunRepository,
-                    localeIdentifier: locale.identifier,
-                    preferredLanguage: locale.language.languageCode?.identifier == "zh" ? "Simplified Chinese" : "English",
-                    externalSearchPolicy: AgentExternalSearchPolicy.current(settings: dependencies.settings)
-                ))
-            } catch {
-                viewModel.configureRuntime(UnavailableAgentRuntime(message: error.localizedDescription))
-            }
+            configureAgentRuntime()
             await viewModel.reloadHistory()
+        }
+        .onChange(of: viewModel.selectedModelID) { _, _ in
+            configureAgentRuntime()
         }
         .animation(.easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)
         .animation(.easeInOut(duration: 0.16), value: chromeState.isRightColumnCollapsed)
+    }
+
+    /// 每次模型选择变化都重建尚未启动的 Runtime；已经运行的实例由 ViewModel 拒绝替换，
+    /// 从而保证一次 run 从首个 token 到最终 artifact 始终使用同一模型。
+    private func configureAgentRuntime() {
+        let externalSearchTool = ExternalSearchAgentTool(
+            collector: AppSettingsAgentExternalSearchCollector(settings: dependencies.settings)
+        )
+        let knowledgeSearcher: any AgentKnowledgeSearching
+        do {
+            knowledgeSearcher = try dependencies.makeAgentKnowledgeCapabilityAdapter(
+                selectedModelID: viewModel.selectedModelID
+            )
+        } catch {
+            // RAG 配置或权益异常只关闭 knowledge_search；周刊的冻结元数据工具与 Artifact
+            // 仍然可用，避免一个可选增强能力让整个 Agent Runtime 无法启动。
+            AppLog.ai.warning("Agent knowledge tool unavailable: \(error.localizedDescription, privacy: .public)")
+            knowledgeSearcher = UnavailableAgentKnowledgeSearcher()
+        }
+        do {
+            let toolRegistry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.makeAll(
+                externalSearchTool: externalSearchTool,
+                knowledgeTool: AgentKnowledgeTool(searcher: knowledgeSearcher)
+            ))
+            let modelClient = try AgentLoopModelClientFactory.make(
+                settings: dependencies.settings,
+                selectedModelID: viewModel.selectedModelID
+            )
+            viewModel.configureRuntime(LoopAgentRuntime(
+                modelClient: modelClient,
+                toolRegistry: toolRegistry,
+                runRepository: dependencies.agentRunRepository,
+                localeIdentifier: locale.identifier,
+                preferredLanguage: locale.language.languageCode?.identifier == "zh" ? "Simplified Chinese" : "English",
+                externalSearchPolicy: AgentExternalSearchPolicy.current(settings: dependencies.settings)
+            ))
+        } catch {
+            viewModel.configureRuntime(UnavailableAgentRuntime(message: error.localizedDescription))
+        }
     }
 
     // MARK: - Agent Rail
@@ -383,13 +414,10 @@ struct AgentWorkspaceView: View {
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                composerContextChip(String.l10n("agent.workspace.composer.scope"), icon: "tray.full")
-                composerContextChip(String.l10n("agent.workspace.composer.mode"), icon: "lock")
-                composerContextChip(String.l10n("agent.workspace.composer.tools"), icon: "wrench.and.screwdriver")
-                Spacer()
+            if !viewModel.selectedRepoContexts.isEmpty || !viewModel.githubLinks.isEmpty {
+                composerContextStrip
+                    .padding(.horizontal, 18)
             }
-            .padding(.horizontal, 18)
 
             agentComposerInputBox
         }
@@ -400,51 +428,56 @@ struct AgentWorkspaceView: View {
     private var agentComposerInputBox: some View {
         let canSubmit = !viewModel.isRunning
             && viewModel.selectedAgent?.isEnabled == true
+            && (!viewModel.selectedAgentRequiresRepositories || !viewModel.selectedRepoContexts.isEmpty)
             && !viewModel.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let requiresCommandReturn = dependencies.settings.aiChatRequiresCommandReturn
-        return VStack(alignment: .leading, spacing: 8) {
+        return AICommandComposerView {
             if !viewModel.attachments.isEmpty {
                 attachmentStrip
             }
 
-            TextField(String.l10n("agent.workspace.composer.placeholder"), text: $viewModel.prompt, axis: .vertical)
-                .font(agentFont(.body))
-                .textFieldStyle(.plain)
-                .lineLimit(2...6)
-                // 与 RAG composer 保持同一布局约束，避免纵向 TextField 首次测量时提前换行。
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
-                .disabled(viewModel.isRunning)
-                // 纯 Return：开=换行 / 关=发送。⌘↩ 由下方隐藏 Button 承接（onKeyPress 无 modifiers 参数）。
-                .onKeyPress(.return) {
-                    let flags = (NSApp.currentEvent?.modifierFlags ?? [])
-                        .intersection(.deviceIndependentFlagsMask)
-                    if flags.contains(.command) {
-                        return .ignored
-                    }
-                    if requiresCommandReturn {
-                        return .ignored
-                    }
-                    guard canSubmit else { return .handled }
-                    viewModel.run()
-                    return .handled
-                }
-                .background {
-                    // 与设置对称：开=⌘↩发送，关=⌘↩换行。
-                    Button("") {
-                        if requiresCommandReturn {
-                            guard canSubmit else { return }
-                            viewModel.run()
-                        } else {
-                            insertNewlineIntoFocusedFieldEditor()
-                        }
-                    }
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .opacity(0)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-                }
+            if viewModel.selectedAgentRequiresRepositories, viewModel.selectedRepoContexts.isEmpty {
+                Label("agent.loop.error.repositoryContextEmpty", systemImage: "shippingbox")
+                    .font(agentFont(.caption))
+                    .foregroundStyle(.secondary)
+            }
+
+            AICommandTextEditor(
+                text: $viewModel.prompt,
+                placeholder: String.l10n("agent.workspace.composer.placeholder"),
+                font: composerNSFont,
+                maximumHeight: composerMaximumHeight,
+                isEditable: !viewModel.isRunning,
+                onHeightChange: { composerContentHeight = $0 },
+                onMentionAnchorChange: { _ in },
+                onCommand: handleComposerCommand
+            )
+            .frame(height: composerEditorHeight)
+            .onChange(of: viewModel.prompt) { _, _ in
+                viewModel.handlePromptChanged()
+            }
 
             HStack(spacing: 8) {
+                Button { viewModel.presentContextPicker() } label: {
+                    Image(systemName: "plus")
+                        .font(agentFont(.caption, weight: .semibold))
+                        .frame(width: 26, height: 26)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .foregroundStyle(.secondary)
+                .disabled(viewModel.isRunning)
+                .help("rag.workspace.mention.title")
+                .popover(isPresented: $viewModel.isContextPickerPresented, arrowEdge: .bottom) {
+                    agentContextPicker
+                }
+
+                agentModelMenu
+
+                if !viewModel.selectedRepoContexts.isEmpty {
+                    explicitModeMenu
+                }
+
                 Spacer()
 
                 Button {
@@ -461,41 +494,98 @@ struct AgentWorkspaceView: View {
                 .disabled(viewModel.isRunning)
 
                 Button {
-                    viewModel.run()
+                    viewModel.webSearchEnabled.toggle()
                 } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(agentFont(.title2))
-                        .foregroundStyle(canSubmit ? Color.accentColor : .secondary)
+                    Image(systemName: "globe")
+                        .font(agentFont(.caption))
+                        .foregroundStyle(viewModel.webSearchEnabled ? Color.accentColor : .secondary)
+                        .frame(width: 26, height: 26)
+                        .background(
+                            viewModel.webSearchEnabled ? Color.accentColor.opacity(0.14) : Color.clear,
+                            in: Circle()
+                        )
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
-                .disabled(!canSubmit)
+                .disabled(viewModel.isRunning || !dependencies.settings.externalContextEnabled)
+                .help(viewModel.webSearchEnabled
+                      ? "rag.workspace.composer.webSearch.on"
+                      : "rag.workspace.composer.webSearch.off")
+
+                Button {
+                    if viewModel.isRunning {
+                        viewModel.cancel()
+                    } else {
+                        viewModel.run()
+                    }
+                } label: {
+                    Image(systemName: viewModel.isRunning ? "stop.circle.fill" : "arrow.up.circle.fill")
+                        .font(agentFont(.title2))
+                        .foregroundStyle(viewModel.isRunning || canSubmit ? Color.accentColor : .secondary)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .disabled(!viewModel.isRunning && !canSubmit)
                 .help(
-                    requiresCommandReturn
+                    viewModel.isRunning
+                        ? "rag.workspace.composer.cancel"
+                        : requiresCommandReturn
                         ? "settings.general.shortcuts.aiCommandReturn.description.on"
                         : "settings.general.shortcuts.aiCommandReturn.description.off"
                 )
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color(nsColor: .separatorColor).opacity(0.44))
-        )
         .padding(.horizontal, 18)
     }
 
-    /// ⌘↩ 换行时写进当前 field editor，尽量落在光标处而不是字符串末尾。
-    private func insertNewlineIntoFocusedFieldEditor() {
-        if let textView = NSApp.keyWindow?.firstResponder as? NSTextView {
-            textView.insertNewline(nil)
-            return
+    private var composerNSFont: NSFont {
+        NSFont.systemFont(ofSize: interfaceScale.scaled(StarcatTypography.body.pointSize))
+    }
+
+    private var composerMinimumHeight: CGFloat {
+        let lineHeight = composerNSFont.ascender - composerNSFont.descender + composerNSFont.leading
+        return ceil(lineHeight * 2 + AICommandTextEditor.verticalInset * 2)
+    }
+
+    private var composerMaximumHeight: CGFloat { 118 * interfaceScale.multiplier }
+
+    private var composerEditorHeight: CGFloat {
+        min(max(composerContentHeight, composerMinimumHeight), composerMaximumHeight)
+    }
+
+    private func handleComposerCommand(_ command: AICommandTextEditor.Command) -> Bool {
+        switch command {
+        case .returnKey(let modifiers):
+            if viewModel.isContextPickerPresented, !modifiers.contains(.command) {
+                viewModel.selectHighlightedMention()
+                return true
+            }
+            switch AIComposerKeyboardPolicy.action(
+                for: modifiers,
+                requiresCommandReturn: dependencies.settings.aiChatRequiresCommandReturn
+            ) {
+            case .send:
+                if viewModel.isRunning {
+                    viewModel.cancel()
+                } else {
+                    viewModel.run()
+                }
+                return true
+            case .insertNewline:
+                return false
+            }
+        case .upArrow:
+            guard viewModel.isContextPickerPresented else { return false }
+            viewModel.moveMentionSelection(by: -1)
+            return true
+        case .downArrow:
+            guard viewModel.isContextPickerPresented else { return false }
+            viewModel.moveMentionSelection(by: 1)
+            return true
+        case .escape:
+            return viewModel.handleContextPickerEscape()
         }
-        viewModel.prompt += "\n"
     }
 
     private func composerContextChip(_ title: String, icon: String) -> some View {
@@ -508,6 +598,146 @@ struct AgentWorkspaceView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7))
+    }
+
+    private var composerContextStrip: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 6) {
+                ForEach(viewModel.selectedRepoContexts) { reference in
+                    HStack(spacing: 5) {
+                        Image(systemName: "shippingbox")
+                            .foregroundStyle(.secondary)
+                        Text(reference.fullName)
+                            .lineLimit(1)
+                        Button { viewModel.removeRepoContext(reference) } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                    }
+                    .font(agentFont(.caption))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7))
+                }
+
+                ForEach(viewModel.githubLinks) { link in
+                    composerContextChip("\(link.owner)/\(link.repository)", icon: "link")
+                }
+            }
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    private var agentContextPicker: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("rag.workspace.mention.title")
+                .font(agentFont(.headline))
+
+            TextField("rag.workspace.mention.searchPlaceholder", text: $viewModel.contextPickerQuery)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: viewModel.contextPickerQuery) { _, _ in
+                    viewModel.handleContextPickerQueryChanged()
+                }
+
+            ScrollView {
+                LazyVStack(spacing: 4) {
+                    ForEach(Array(viewModel.mentionCandidates.enumerated()), id: \.element.id) { index, candidate in
+                        let selected = viewModel.selectedRepoContexts.contains { $0.id == candidate.id }
+                        Button { viewModel.toggleRepoContext(candidate) } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(selected ? Color.accentColor : .secondary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(candidate.fullName)
+                                        .font(agentFont(.subheadline, weight: .semibold))
+                                        .foregroundStyle(.primary)
+                                    if let language = candidate.language {
+                                        Text(language)
+                                            .font(agentFont(.caption))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer()
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .background(
+                                index == viewModel.highlightedMentionIndex
+                                    ? Color.accentColor.opacity(0.10)
+                                    : Color.clear,
+                                in: RoundedRectangle(cornerRadius: 7)
+                            )
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                    }
+                }
+            }
+            .frame(minHeight: 180, maxHeight: 300)
+
+            Text(String(
+                format: String.l10n("rag.workspace.mention.selectionLimit"),
+                AgentWorkspaceViewModel.maxSelectedRepoContexts
+            ))
+            .font(agentFont(.caption))
+            .foregroundStyle(.secondary)
+        }
+        .padding(12)
+        .frame(width: 360)
+    }
+
+    private var agentModelMenu: some View {
+        Menu {
+            ForEach(viewModel.availableModels) { model in
+                Button {
+                    viewModel.selectedModelID = model.id
+                } label: {
+                    if model.id == viewModel.selectedModelID {
+                        Label(model.name, systemImage: "checkmark")
+                    } else {
+                        Text(model.name)
+                    }
+                }
+            }
+        } label: {
+            Label(viewModel.selectedModelDisplayName, systemImage: "sparkles")
+                .font(agentFont(.caption, weight: .semibold))
+                .lineLimit(1)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(viewModel.isRunning || viewModel.availableModels.isEmpty)
+        .help("rag.workspace.composer.model")
+    }
+
+    private var explicitModeMenu: some View {
+        Menu {
+            Picker("", selection: $viewModel.explicitRepoMode) {
+                Text("rag.workspace.repoMode.only").tag(AIComposerExplicitRepoMode.only)
+                Text("rag.workspace.repoMode.prefer").tag(AIComposerExplicitRepoMode.prefer)
+                Text("rag.workspace.repoMode.exclude").tag(AIComposerExplicitRepoMode.exclude)
+            }
+            .labelsHidden()
+            .pickerStyle(.inline)
+        } label: {
+            Label(repoModeKey(viewModel.explicitRepoMode), systemImage: "scope")
+                .font(agentFont(.caption, weight: .semibold))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(viewModel.isRunning || viewModel.selectedRepoContexts.isEmpty)
+        .help("rag.workspace.composer.scope")
+    }
+
+    private func repoModeKey(_ mode: AIComposerExplicitRepoMode) -> LocalizedStringKey {
+        switch mode {
+        case .only: return "rag.workspace.repoMode.only"
+        case .prefer: return "rag.workspace.repoMode.prefer"
+        case .exclude: return "rag.workspace.repoMode.exclude"
+        }
     }
 
     private var attachmentStrip: some View {

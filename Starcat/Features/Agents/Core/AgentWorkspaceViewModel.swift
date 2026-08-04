@@ -17,11 +17,17 @@ import UniformTypeIdentifiers
 @Observable
 final class AgentWorkspaceViewModel {
 
+    static let maxSelectedRepoContexts = RAGMentionPickerLogic.maxSelectedRepoContexts
+
     private var runtime: any AgentRuntime
     private var contextProvider: any AgentRunContextProviding
     private var runRepository: (any AgentRunRepositoryProtocol)?
+    private var repoCandidateRepository: (any RAGRepoCandidateRepositoryProtocol)?
     private var runTask: Task<Void, Never>?
+    private var mentionTask: Task<Void, Never>?
     private var activeRunID: UUID?
+    private var draftsByAgentID: [String: String] = [:]
+    private var isContextPickerTriggeredByMention = false
 
     let agents: [AgentDefinition]
     var selectedAgentID: String
@@ -34,8 +40,19 @@ final class AgentWorkspaceViewModel {
     var artifacts: [AgentArtifact] = []
     var historyRuns: [AgentRunRecord] = []
     var selectedArtifactID: UUID?
+    var selectedToolCallID: String?
     var selectedHistoryRunID: String?
     var attachments: [AgentPromptAttachment] = []
+    var selectedRepoContexts: [AIComposerRepoReference] = []
+    var explicitRepoMode: AIComposerExplicitRepoMode = .only
+    var availableModels: [AIModelDescriptor] = []
+    var selectedModelID: String?
+    var webSearchEnabled = false
+    var githubLinks: [AIComposerGitHubLink] = []
+    var isContextPickerPresented = false
+    var contextPickerQuery = ""
+    var mentionCandidates: [RAGMentionCandidate] = []
+    var highlightedMentionIndex = 0
     var assistantReasoningOutput: String = ""
     var assistantOutput: String = ""
     var errorMessage: String?
@@ -61,13 +78,36 @@ final class AgentWorkspaceViewModel {
         return artifacts.first { $0.id == selectedArtifactID } ?? artifacts.first
     }
 
+    var selectedKnowledgeAudit: AgentKnowledgeRetrievalAudit? {
+        guard let selectedToolCallID else { return nil }
+        return messages.lazy.compactMap { message in
+            message.parts.lazy.compactMap { part -> AgentKnowledgeRetrievalAudit? in
+                guard case .toolResult(let result) = part,
+                      result.toolCallID == selectedToolCallID
+                else { return nil }
+                return result.toolAudit?.knowledgeRetrieval
+            }.first
+        }.first
+    }
+
     var isRunning: Bool {
         status == .planning || status == .running || status == .waitingForConfirmation
     }
 
+    var selectedAgentRequiresRepositories: Bool {
+        [BuiltInAgents.githubWeeklyReport.id, BuiltInAgents.repoInsight.id].contains(selectedAgentID)
+    }
+
+    var selectedModelDisplayName: String {
+        availableModels.first(where: { $0.id == selectedModelID })?.name ?? "—"
+    }
+
     func selectAgent(_ agent: AgentDefinition) {
         guard !isRunning else { return }
+        draftsByAgentID[selectedAgentID] = prompt
         selectedAgentID = agent.id
+        prompt = draftsByAgentID[agent.id] ?? ""
+        handlePromptChanged()
     }
 
     func configureContextProvider(_ provider: any AgentRunContextProviding) {
@@ -83,6 +123,26 @@ final class AgentWorkspaceViewModel {
     func configureRunRepository(_ repository: any AgentRunRepositoryProtocol) {
         guard !isRunning else { return }
         runRepository = repository
+    }
+
+    func configureRepoCandidateRepository(_ repository: any RAGRepoCandidateRepositoryProtocol) {
+        guard !isRunning else { return }
+        repoCandidateRepository = repository
+    }
+
+    func configureModelOptions(
+        _ models: [AIModelDescriptor],
+        defaultProviderID: String,
+        defaultModelName: String
+    ) {
+        guard !isRunning else { return }
+        availableModels = models
+        if let selectedModelID, models.contains(where: { $0.id == selectedModelID }) {
+            return
+        }
+        selectedModelID = models.first(where: {
+            $0.providerID == defaultProviderID && $0.name == defaultModelName
+        })?.id ?? models.first?.id
     }
 
     func reloadHistory(limit: Int = 20) async {
@@ -102,6 +162,11 @@ final class AgentWorkspaceViewModel {
             if snapshot.run.status == AgentRunStatus.waitingForConfirmation.rawValue,
                let definition = agents.first(where: { $0.id == snapshot.run.agentId }),
                snapshot.approvals.contains(where: { $0.status == .pending }) {
+                guard !snapshot.context.hasUnavailableAttachmentBodies else {
+                    // 附件正文按隐私契约不持久化，重启后不能假装仍拥有完整输入继续执行。
+                    errorMessage = String.l10n("agent.loop.error.contextUnavailable")
+                    return
+                }
                 resumePendingRun(snapshot, definition: definition)
             }
         } catch {
@@ -122,24 +187,34 @@ final class AgentWorkspaceViewModel {
         usage = .zero
         artifacts = []
         selectedArtifactID = nil
+        selectedToolCallID = nil
         assistantReasoningOutput = ""
         assistantOutput = ""
         errorMessage = nil
 
+        let input = AgentRunInput(
+            goal: effectivePrompt,
+            agentID: selectedAgent.id,
+            explicitRepos: selectedRepoContexts,
+            explicitRepoMode: explicitRepoMode,
+            selectedModelID: selectedModelID,
+            attachments: attachments,
+            githubLinks: githubLinks,
+            webSearchEnabled: webSearchEnabled,
+            source: "Agent Workspace"
+        )
         let contextProvider = contextProvider
         let runtime = runtime
-        let promptAttachments = attachments
         attachments = []
 
         runTask = Task { [weak self] in
-            var context = await contextProvider.makeContext(
+            let context = await contextProvider.makeContext(
                 definition: selectedAgent,
-                prompt: effectivePrompt
+                input: input
             )
-            context.attachments = promptAttachments
             let stream = runtime.run(
                 definition: selectedAgent,
-                prompt: effectivePrompt,
+                prompt: input.goal,
                 context: context
             )
             for await event in stream {
@@ -173,7 +248,11 @@ final class AgentWorkspaceViewModel {
     func attachTextFiles() {
         let panel = NSOpenPanel()
         panel.title = String.l10n("agent.workspace.attachment.panelTitle")
-        panel.allowedContentTypes = [.plainText, .sourceCode, .json]
+        var allowedContentTypes: [UTType] = [.plainText, .sourceCode, .json]
+        if let markdown = UTType(filenameExtension: "md") {
+            allowedContentTypes.append(markdown)
+        }
+        panel.allowedContentTypes = allowedContentTypes
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK else { return }
@@ -197,6 +276,140 @@ final class AgentWorkspaceViewModel {
     func removeAttachment(_ attachment: AgentPromptAttachment) {
         guard !isRunning else { return }
         attachments.removeAll { $0.id == attachment.id }
+    }
+
+    func selectArtifact(_ artifactID: UUID) {
+        selectedArtifactID = artifactID
+        selectedToolCallID = nil
+    }
+
+    func selectKnowledgeAudit(toolCallID: String) {
+        selectedToolCallID = toolCallID
+    }
+
+    // MARK: - Composer context
+
+    func handlePromptChanged() {
+        guard !isRunning else { return }
+        draftsByAgentID[selectedAgentID] = prompt
+        githubLinks = AIComposerGitHubLinkDetector.links(in: prompt)
+        guard let query = activeMentionQuery(in: prompt) else {
+            if isContextPickerTriggeredByMention {
+                dismissContextPicker()
+            }
+            return
+        }
+        isContextPickerTriggeredByMention = true
+        contextPickerQuery = query
+        isContextPickerPresented = true
+        refreshMentionCandidates()
+    }
+
+    func presentContextPicker() {
+        guard !isRunning else { return }
+        contextPickerQuery = ""
+        isContextPickerTriggeredByMention = false
+        isContextPickerPresented = true
+        refreshMentionCandidates()
+    }
+
+    func handleContextPickerQueryChanged() {
+        guard isContextPickerPresented else { return }
+        refreshMentionCandidates()
+    }
+
+    func dismissContextPicker() {
+        mentionTask?.cancel()
+        isContextPickerPresented = false
+        isContextPickerTriggeredByMention = false
+        highlightedMentionIndex = 0
+    }
+
+    func handleContextPickerEscape() -> Bool {
+        guard isContextPickerPresented else { return false }
+        dismissContextPicker()
+        return true
+    }
+
+    func moveMentionSelection(by offset: Int) {
+        guard !mentionCandidates.isEmpty else { return }
+        highlightedMentionIndex = min(
+            max(highlightedMentionIndex + offset, 0),
+            mentionCandidates.count - 1
+        )
+    }
+
+    func selectHighlightedMention() {
+        guard mentionCandidates.indices.contains(highlightedMentionIndex) else { return }
+        toggleRepoContext(mentionCandidates[highlightedMentionIndex])
+    }
+
+    func toggleRepoContext(_ candidate: RAGMentionCandidate) {
+        guard !isRunning else { return }
+        if let index = selectedRepoContexts.firstIndex(where: { $0.id == candidate.id }) {
+            selectedRepoContexts.remove(at: index)
+        } else {
+            guard selectedRepoContexts.count < Self.maxSelectedRepoContexts else {
+                errorMessage = String(
+                    format: String.l10n("rag.workspace.mention.selectionLimit"),
+                    Self.maxSelectedRepoContexts
+                )
+                return
+            }
+            selectedRepoContexts.append(AIComposerRepoReference(
+                id: candidate.id,
+                owner: candidate.owner,
+                name: candidate.name,
+                fullName: candidate.fullName,
+                language: candidate.language,
+                starsCount: candidate.starsCount
+            ))
+        }
+        removeActiveMentionToken()
+    }
+
+    func removeRepoContext(_ reference: AIComposerRepoReference) {
+        guard !isRunning else { return }
+        selectedRepoContexts.removeAll { $0.id == reference.id }
+    }
+
+    private func refreshMentionCandidates() {
+        guard let repoCandidateRepository else { return }
+        let query = contextPickerQuery
+        mentionTask?.cancel()
+        mentionTask = Task { [weak self] in
+            do {
+                let page = try await repoCandidateRepository.fetchMentionCandidates(
+                    query: query,
+                    limit: 30,
+                    offset: 0,
+                    sort: RAGComposerMentionSort.default,
+                    filters: .empty
+                )
+                guard !Task.isCancelled, self?.contextPickerQuery == query else { return }
+                self?.mentionCandidates = page.candidates
+                self?.highlightedMentionIndex = 0
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func activeMentionQuery(in value: String) -> String? {
+        guard let index = value.lastIndex(of: "@") else { return nil }
+        let query = value[value.index(after: index)...]
+        guard !query.contains(where: \.isWhitespace) else { return nil }
+        return String(query)
+    }
+
+    private func removeActiveMentionToken() {
+        guard let index = prompt.lastIndex(of: "@") else { return }
+        let query = prompt[prompt.index(after: index)...]
+        guard !query.contains(where: \.isWhitespace) else { return }
+        prompt = String(prompt[..<index])
+        contextPickerQuery = ""
+        draftsByAgentID[selectedAgentID] = prompt
     }
 
     func copySelectedArtifact() {
@@ -275,6 +488,27 @@ final class AgentWorkspaceViewModel {
         selectedAgentID = snapshot.run.agentId
         runTitle = snapshot.run.title
         prompt = snapshot.run.userPrompt
+        draftsByAgentID[selectedAgentID] = prompt
+        selectedRepoContexts = snapshot.context.explicitRepos
+            ?? snapshot.context.repos.map { repo in
+                AIComposerRepoReference(
+                    id: repo.id,
+                    owner: repo.owner,
+                    name: repo.name,
+                    fullName: repo.fullName,
+                    language: repo.language,
+                    starsCount: repo.starsCount
+                )
+            }
+        explicitRepoMode = snapshot.context.explicitRepoMode ?? .only
+        githubLinks = snapshot.context.githubLinks ?? []
+        webSearchEnabled = snapshot.context.webSearchEnabled ?? false
+        if let modelID = snapshot.context.selectedModelID,
+           availableModels.contains(where: { $0.id == modelID }) {
+            selectedModelID = modelID
+        }
+        // 历史附件正文按隐私契约不可恢复，不能重新塞回可发送 Composer。
+        attachments = []
         status = AgentRunStatus(rawValue: snapshot.run.status) ?? .idle
         messages = snapshot.messages
         usage = snapshot.messages.compactMap(\.usage).reduce(.zero) { partial, next in
@@ -285,6 +519,7 @@ final class AgentWorkspaceViewModel {
         approvals = snapshot.approvals
         artifacts = snapshot.artifacts
         selectedArtifactID = artifacts.first?.id
+        selectedToolCallID = nil
         assistantReasoningOutput = ""
         assistantOutput = ""
         errorMessage = snapshot.run.errorMessage
@@ -363,7 +598,13 @@ final class AgentWorkspaceViewModel {
         guard let content = String(data: data, encoding: .utf8) else {
             throw AgentAttachmentError.notUTF8(name: url.lastPathComponent)
         }
-        return AgentPromptAttachment(name: url.lastPathComponent, content: content)
+        let contentType = UTType(filenameExtension: url.pathExtension)?.identifier
+            ?? UTType.plainText.identifier
+        return AgentPromptAttachment(
+            name: url.lastPathComponent,
+            content: content,
+            contentType: contentType
+        )
     }
 }
 

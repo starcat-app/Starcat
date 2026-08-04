@@ -89,6 +89,8 @@ struct AgentToolResultMessage: Codable, Hashable, Sendable {
     var elapsedMilliseconds: Int
     var attempts: [AgentToolExecutionAttempt]
     var sources: [AgentToolResultSource]
+    /// 仅供历史回放与 Inspector 使用，不会回灌给模型。
+    var toolAudit: AgentToolAudit?
     var sequence: Int
 
     init(
@@ -100,6 +102,7 @@ struct AgentToolResultMessage: Codable, Hashable, Sendable {
         elapsedMilliseconds: Int = 0,
         attempts: [AgentToolExecutionAttempt] = [],
         sources: [AgentToolResultSource] = [],
+        toolAudit: AgentToolAudit? = nil,
         sequence: Int
     ) {
         self.toolCallID = toolCallID
@@ -110,6 +113,7 @@ struct AgentToolResultMessage: Codable, Hashable, Sendable {
         self.elapsedMilliseconds = elapsedMilliseconds
         self.attempts = attempts
         self.sources = sources
+        self.toolAudit = toolAudit
         self.sequence = sequence
     }
 }

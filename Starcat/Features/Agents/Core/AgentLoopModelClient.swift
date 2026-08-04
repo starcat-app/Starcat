@@ -264,10 +264,22 @@ struct OpenAIAgentLoopModelClient: AgentLoopModelClient {
 enum AgentLoopModelClientFactory {
     static func make(
         settings: AppSettings,
+        selectedModelID: String? = nil,
         keychain: any KeychainManaging = KeychainManager.shared
     ) throws -> any AgentLoopModelClient {
         let task = settings.aiChatTask
-        guard let profile = settings.aiProviderProfiles.first(where: { $0.id == task.providerID && $0.isEnabled }) else {
+        let selection = selectedModelID.flatMap { selectedID in
+            settings.aiProviderProfiles.lazy
+                .filter { $0.isEnabled }
+                .compactMap { profile in
+                    profile.models.first(where: {
+                        $0.id == selectedID && $0.isEnabled && $0.capability != .embedding
+                    }).map { (profile, $0) }
+                }
+                .first
+        }
+        guard let profile = selection?.0
+            ?? settings.aiProviderProfiles.first(where: { $0.id == task.providerID && $0.isEnabled }) else {
             throw AgentLoopModelError.missingProvider
         }
 
@@ -277,15 +289,19 @@ enum AgentLoopModelClientFactory {
             throw AgentLoopModelError.missingAPIKey
         }
 
-        let model = task.resolvedModelName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedModel = model.isEmpty ? settings.aiChatModel : model
+        let taskModel = task.resolvedModelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedModel = selection?.1.name ?? (taskModel.isEmpty ? settings.aiChatModel : taskModel)
         let descriptor = profile.models.first(where: { $0.name == resolvedModel })
         let capability = descriptor?.capability ?? AIModelCapability.inferred(from: resolvedModel)
         guard capability != .embedding else {
             throw AgentLoopModelError.toolCallingUnsupported(model: resolvedModel)
         }
 
-        let parameters = settings.effectiveParameters(for: task)
+        // 显式选择模型时读取该 descriptor 的参数；没有选择时保持全局 chat task 行为。
+        let parameters = selection?.1.parameters
+            ?? (selection == nil
+                ? settings.effectiveParameters(for: task)
+                : AIModelParameters.defaults(for: capability))
         let client = try OpenAIClient(configuration: AIClientConfiguration(
             providerID: profile.id,
             provider: profile.provider,

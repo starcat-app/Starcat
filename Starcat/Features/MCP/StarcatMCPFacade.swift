@@ -121,16 +121,21 @@ final class StarcatMCPFacade {
 
     func searchRepos(query: String?, limit: Int, scope: SemanticIndexScope = .starred) async throws -> MCPRepoSearchResult {
         let sanitizedLimit = Self.sanitizeLimit(limit, defaultValue: 20, maxValue: 100)
-        let trimmed = query?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let repos = trimmed.isEmpty
-            ? try await fetchRepos(scope: scope)
-            : try await searchFTS(query: trimmed, scope: scope)
-        let clipped = Array(repos.prefix(sanitizedLimit)).map(MCPRepoDTO.init(repo:))
+        let executor = repositoryReadExecutor(scope: scope)
+        let result = try await executor.search(
+            RepositorySearchCapabilityRequest(
+                query: query,
+                limit: sanitizedLimit,
+                // MCP 的 FTS rank / Repository 默认顺序是已发布行为，不能被 Agent 的
+                // starred_at / stars 排序规则覆盖。
+                sort: .sourceOrder
+            )
+        )
         return MCPRepoSearchResult(
-            query: trimmed.isEmpty ? nil : trimmed,
-            total: repos.count,
+            query: result.query,
+            total: result.total,
             limit: sanitizedLimit,
-            repos: clipped
+            repos: result.repositories.map(MCPRepoDTO.init(repo:))
         )
     }
 
@@ -322,47 +327,33 @@ final class StarcatMCPFacade {
     }
 
     private func fetchRepos(scope: SemanticIndexScope) async throws -> [Repo] {
-        switch scope {
-        case .starred:
-            let starred = try await repoRepository.fetchAllStarred()
-            return SemanticIndexScope.selectCandidates(scope: scope, starred: starred, knowledge: [])
-        case .knowledge:
-            let knowledge = try await repoRepository.fetchKnowledgeRepos()
-            return SemanticIndexScope.selectCandidates(scope: scope, starred: [], knowledge: knowledge)
-        case .all:
-            let starred = try await repoRepository.fetchAllStarred()
-            let knowledge = try await repoRepository.fetchKnowledgeRepos()
-            return SemanticIndexScope.selectCandidates(scope: scope, starred: starred, knowledge: knowledge)
-        }
+        try await repositoryReadSource(scope: scope).list()
     }
 
     private func searchFTS(query: String, scope: SemanticIndexScope) async throws -> [Repo] {
-        switch scope {
-        case .starred:
-            return try await repoRepository.searchFTS(query: query)
-        case .knowledge:
-            return try await repoRepository.searchKnowledgeFTS(query: query)
-        case .all:
-            let starred = try await repoRepository.searchFTS(query: query)
-            let knowledge = try await repoRepository.searchKnowledgeFTS(query: query)
-            return SemanticIndexScope.selectCandidates(scope: scope, starred: starred, knowledge: knowledge)
-        }
+        try await repositoryReadSource(scope: scope).search(query: query)
     }
 
     private func resolveRepo(repoID: Int64?, owner: String?, name: String?) async throws -> Repo {
-        if let repoID {
-            guard let repo = try await repoRepository.findById(repoID) else {
-                throw StarcatMCPError.notFound("Repo not found: \(repoID)")
-            }
-            return repo
-        }
-        guard let owner, let name, !owner.isEmpty, !name.isEmpty else {
+        let selector = RepositoryCapabilitySelector(repoID: repoID, owner: owner, name: name)
+        do {
+            return try await repositoryReadExecutor(scope: .all).get(selector)
+        } catch RepositoryReadCapabilityError.invalidSelector {
             throw StarcatMCPError.invalidArguments("Provide repo_id or owner + name")
+        } catch RepositoryReadCapabilityError.notFound {
+            throw StarcatMCPError.notFound("Repo not found: \(selector.displayValue)")
         }
-        guard let repo = try await repoRepository.findByOwnerName(owner: owner, name: name) else {
-            throw StarcatMCPError.notFound("Repo not found: \(owner)/\(name)")
-        }
-        return repo
+    }
+
+    /// 创建绑定到单一数据库 scope 的 Source；所有 MCP 仓库读取都从这里进入统一能力层。
+    private func repositoryReadSource(scope: SemanticIndexScope) -> DatabaseRepositoryReadCapabilitySource {
+        DatabaseRepositoryReadCapabilitySource(repository: repoRepository, scope: scope)
+    }
+
+    private func repositoryReadExecutor(
+        scope: SemanticIndexScope
+    ) -> RepositoryReadCapabilityExecutor<DatabaseRepositoryReadCapabilitySource> {
+        RepositoryReadCapabilityExecutor(source: repositoryReadSource(scope: scope))
     }
 
     private func cachedSummary(for repo: Repo) async throws -> MCPRepoSummaryDTO? {

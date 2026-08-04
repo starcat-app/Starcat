@@ -83,6 +83,29 @@ struct AgentExternalSearchToolTests {
         #expect(result.output.log.contains("disabled"))
     }
 
+    @Test("单次 run 未授权联网时不会调用已配置 Collector")
+    func perRunWebAuthorizationBlocksCollector() async {
+        let collector = StubExternalSearchCollector(collection: AgentExternalSearchCollection(
+            status: .completed,
+            markdown: "should not be used",
+            sourceItems: [],
+            querySummary: "unused",
+            log: "unused"
+        ))
+        let tool = ExternalSearchAgentTool(collector: collector)
+        let context = AgentRunContext(sourceDescription: "Unit", webSearchEnabled: false)
+
+        let result = await tool.execute(AgentToolInput(
+            arguments: .object(["query": .string("Swift agents")]),
+            prompt: "生成周刊",
+            context: context
+        ))
+
+        #expect(result.status == .skipped)
+        #expect(collector.requests.isEmpty)
+        #expect(result.output.log.contains("disabled for this run"))
+    }
+
     @Test("external_search 不会用用户 prompt 替代缺失的模型 query")
     func externalSearchRejectsMissingModelQuery() async {
         let collector = StubExternalSearchCollector(collection: AgentExternalSearchCollection(

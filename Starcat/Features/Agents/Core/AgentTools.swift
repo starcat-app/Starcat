@@ -120,27 +120,30 @@ struct AgentToolInput: Sendable {
 
 /// Agent tool 的标准输出。
 ///
-/// `payload` 只保存当前 Runtime 继续执行需要的轻量结构。完整原文、网页正文或大 JSON
-/// 后续应进入 artifact / cache,不得无限塞进 LLM prompt。
+/// `payload` 只保存当前 Runtime 继续执行需要的轻量结构。模型可见的有界 output 仍会作为
+/// message fact 持久化；完整原文、网页正文或大 JSON 应进入 artifact / cache。
 struct AgentToolResult: Sendable {
     var status: AgentToolStatus
     var output: AgentToolOutput
     var trace: AgentTraceSpan
     var payload: AgentToolPayload
     var sources: [AgentToolResultSource]
+    var toolAudit: AgentToolAudit?
 
     init(
         status: AgentToolStatus = .completed,
         output: AgentToolOutput,
         trace: AgentTraceSpan,
         payload: AgentToolPayload = .none,
-        sources: [AgentToolResultSource] = []
+        sources: [AgentToolResultSource] = [],
+        toolAudit: AgentToolAudit? = nil
     ) {
         self.status = status
         self.output = output
         self.trace = trace
         self.payload = payload
         self.sources = sources
+        self.toolAudit = toolAudit
     }
 }
 
@@ -151,6 +154,8 @@ enum AgentToolPayload: Sendable {
     case repo(AgentRepoSnapshot)
     case markdown(String)
     case externalContextMarkdown(String)
+    /// 当前 run 内的有界知识证据；结构化检索审计由 `toolAudit` 随消息事实持久化。
+    case knowledge(AgentKnowledgeResult)
 }
 
 /// 所有 Agent tool 的统一协议。

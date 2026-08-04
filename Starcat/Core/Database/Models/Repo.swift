@@ -25,7 +25,9 @@ enum RepoAccessState: String, Codable, Sendable {
 ///
 /// Hashable 实现：用 `id` 作为唯一标识（GitHub repo id 全局唯一），
 /// SwiftUI `List(selection:)` 需要 Hashable，避免对所有字段做散列。
-struct Repo: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, Equatable, Hashable {
+// Repo 是纯值数据库快照，字段全部为 Sendable 值类型；显式声明后可以安全地从 repository
+// actor 交给统一只读 capability executor，而不需要使用 @unchecked Sendable。
+struct Repo: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, Equatable, Hashable, Sendable {
 
     static let databaseTableName = "repos"
 

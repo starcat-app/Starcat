@@ -680,8 +680,8 @@ struct RAGWorkspaceAnswerSurface: View {
             }
 
             // 输入主体：文本区 + 底栏；与上方 chip 分离。
-            VStack(alignment: .leading, spacing: 8) {
-                RAGComposerTextEditor(
+            AICommandComposerView {
+                AICommandTextEditor(
                     text: $viewModel.draftQuestion,
                     placeholder: String.l10n(
                         settings.aiChatRequiresCommandReturn
@@ -816,9 +816,6 @@ struct RAGWorkspaceAnswerSurface: View {
                     }
                 }
             }
-            .padding(10)
-            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor), lineWidth: 1))
             .padding(.horizontal, 16)
         }
         .padding(.vertical, 12)
@@ -1412,7 +1409,7 @@ struct RAGWorkspaceAnswerSurface: View {
 
     var composerMinimumHeight: CGFloat {
         let lineHeight = composerNSFont.ascender - composerNSFont.descender + composerNSFont.leading
-        return ceil(lineHeight * 2 + RAGComposerTextEditor.verticalInset * 2)
+        return ceil(lineHeight * 2 + AICommandTextEditor.verticalInset * 2)
     }
 
     var composerMaximumHeight: CGFloat {
@@ -1423,7 +1420,7 @@ struct RAGWorkspaceAnswerSurface: View {
         min(max(composerContentHeight, composerMinimumHeight), composerMaximumHeight)
     }
 
-    func handleComposerCommand(_ command: RAGComposerTextEditor.Command) -> Bool {
+    func handleComposerCommand(_ command: AICommandTextEditor.Command) -> Bool {
         switch command {
         case .returnKey(let modifiers):
             let flags = modifiers.intersection(.deviceIndependentFlagsMask)
@@ -1432,20 +1429,16 @@ struct RAGWorkspaceAnswerSurface: View {
                 viewModel.selectHighlightedMention()
                 return true
             }
-            // 与设置「需按 ⌘ + 回车键发送 AI 问题」同一偏好：
-            // 开=⌘↩发送 / Return 换行；关=Return 发送 / ⌘↩ 换行。
-            if settings.aiChatRequiresCommandReturn {
-                if flags.contains(.command) {
-                    submitComposerQuestion()
-                    return true
-                }
+            switch AIComposerKeyboardPolicy.action(
+                for: flags,
+                requiresCommandReturn: settings.aiChatRequiresCommandReturn
+            ) {
+            case .send:
+                submitComposerQuestion()
+                return true
+            case .insertNewline:
                 return false
             }
-            if flags.contains(.command) {
-                return false
-            }
-            submitComposerQuestion()
-            return true
         case .upArrow:
             guard viewModel.isContextPickerPresented else { return false }
             viewModel.moveMentionSelection(by: -1)

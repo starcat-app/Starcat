@@ -42,7 +42,11 @@ struct StarcatMCPRuntimeTests {
         #expect(tools.contains { $0["name"] as? String == "starcat.get_repo_summary" })
         #expect(tools.contains { $0["name"] as? String == "starcat.generate_repo_summary" })
         #expect(tools.contains { $0["name"] as? String == "starcat.search_repos" })
+        #expect(tools.contains { $0["name"] as? String == "starcat.semantic_search" })
         #expect(tools.contains { $0["name"] as? String == "starcat.global_search_repos" })
+        // knowledge.search 当前只完成内部共享 capability；不能在没有独立 MCP 契约评审时
+        // 偷偷扩张已发布的公共 tool catalog。
+        #expect(tools.contains { $0["name"] as? String == "starcat.search_knowledge" } == false)
         let searchTool = try #require(tools.first { $0["name"] as? String == "starcat.search_repos" })
         let inputSchema = try #require(searchTool["inputSchema"] as? [String: Any])
         let properties = try #require(inputSchema["properties"] as? [String: Any])
@@ -98,6 +102,22 @@ struct StarcatMCPRuntimeTests {
         let repos = try #require(knowledgeStructured["repos"] as? [[String: Any]])
         #expect(knowledgeStructured["total"] as? Int == 1)
         #expect(repos.first?["full_name"] as? String == "openai/codex")
+
+        let getRepoCall = await runtime.handle(Self.request(
+            id: 28,
+            method: "tools/call",
+            params: [
+                "name": "starcat.get_repo",
+                "arguments": ["owner": "apple", "name": "swift"]
+            ]
+        ))
+        let getRepoJSON = try Self.jsonObject(from: getRepoCall)
+        let getRepoResult = try #require(getRepoJSON["result"] as? [String: Any])
+        #expect(getRepoResult["isError"] as? Bool != true)
+        let getRepo = try #require(getRepoResult["structuredContent"] as? [String: Any])
+        #expect(getRepo["full_name"] as? String == "apple/swift")
+        #expect(getRepo["owner"] as? String == "apple")
+        #expect(getRepo["name"] as? String == "swift")
 
         let capabilitiesCall = await runtime.handle(Self.request(
             id: 20,

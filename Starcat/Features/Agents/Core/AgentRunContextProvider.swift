@@ -15,7 +15,7 @@ import Foundation
 protocol AgentRunContextProviding: Sendable {
     func makeContext(
         definition: AgentDefinition,
-        prompt: String
+        input: AgentRunInput
     ) async -> AgentRunContext
 }
 
@@ -23,32 +23,42 @@ protocol AgentRunContextProviding: Sendable {
 struct EmptyAgentRunContextProvider: AgentRunContextProviding {
     func makeContext(
         definition: AgentDefinition,
-        prompt: String
+        input: AgentRunInput
     ) async -> AgentRunContext {
-        AgentRunContext(sourceDescription: "Agent Workspace")
+        AgentRunContext(
+            sourceDescription: input.source,
+            attachments: input.attachments,
+            explicitRepos: input.explicitRepos,
+            explicitRepoMode: input.explicitRepoMode,
+            selectedModelID: input.selectedModelID,
+            githubLinks: input.githubLinks,
+            webSearchEnabled: input.webSearchEnabled
+        )
     }
 }
 
 /// 从 Starcat 本地仓库库表冻结 Agent 上下文。
 struct RepositoryAgentRunContextProvider: AgentRunContextProviding {
 
-    private let repository: any RepoRepositoryProtocol
-    private let limit: Int
+    private let candidateRepository: any RAGRepoCandidateRepositoryProtocol
+    private let candidateLimit: Int
 
     init(
-        repository: any RepoRepositoryProtocol,
-        limit: Int = 30
+        candidateRepository: any RAGRepoCandidateRepositoryProtocol,
+        candidateLimit: Int = 30
     ) {
-        self.repository = repository
-        self.limit = limit
+        self.candidateRepository = candidateRepository
+        self.candidateLimit = candidateLimit
     }
 
     func makeContext(
         definition: AgentDefinition,
-        prompt: String
+        input: AgentRunInput
     ) async -> AgentRunContext {
         do {
-            let repos = try await loadCandidateRepos()
+            // 复用 RAG 的知识库候选层执行 only / prefer / exclude，禁止在 Agent 里再造一套
+            // 范围 SQL。候选最多冻结 candidateLimit 条，README/笔记正文仍按需由工具读取。
+            let repos = try await loadScopedRepos(input: input)
             let sourceDescription: String
             if repos.isEmpty {
                 sourceDescription = String.l10n("agent.context.source.empty")
@@ -57,28 +67,55 @@ struct RepositoryAgentRunContextProvider: AgentRunContextProviding {
             }
             return AgentRunContext(
                 sourceDescription: sourceDescription,
-                repos: repos.map(Self.snapshot(from:))
+                repos: repos.map(Self.snapshot(from:)),
+                attachments: input.attachments,
+                explicitRepos: input.explicitRepos,
+                explicitRepoMode: input.explicitRepoMode,
+                selectedModelID: input.selectedModelID,
+                githubLinks: input.githubLinks,
+                webSearchEnabled: input.webSearchEnabled
             )
         } catch {
             // 详细数据库错误只进入本地日志；模型和 UI 只收到稳定的通用失败原因。
             AppLog.general.warning("Agent context snapshot failed: \(error.localizedDescription, privacy: .public)")
             return AgentRunContext(
                 sourceDescription: String.l10n("agent.context.source.failure"),
-                failureReason: String.l10n("agent.loop.error.contextUnavailable")
+                attachments: input.attachments,
+                failureReason: String.l10n("agent.loop.error.contextUnavailable"),
+                explicitRepos: input.explicitRepos,
+                explicitRepoMode: input.explicitRepoMode,
+                selectedModelID: input.selectedModelID,
+                githubLinks: input.githubLinks,
+                webSearchEnabled: input.webSearchEnabled
             )
         }
     }
 
-    private func loadCandidateRepos() async throws -> [Repo] {
-        let starred = try await repository.fetchRecentStarred(limit: limit)
-        if starred.count >= limit {
-            return Array(starred.prefix(limit))
+    private func loadScopedRepos(input: AgentRunInput) async throws -> [Repo] {
+        let explicitIDs = input.explicitRepos.map(\.id)
+        let explicitRepos = try await candidateRepository.fetchMentionRepos(ids: explicitIDs)
+        guard explicitRepos.count == explicitIDs.count else {
+            throw AgentRunContextProviderError.explicitRepositoryUnavailable
+        }
+        if input.explicitRepoMode == .only {
+            return explicitRepos
         }
 
-        let knowledge = try await repository.fetchKnowledgeRepos()
-        var seenIDs = Set(starred.map(\.id))
-        let merged = starred + knowledge.filter { seenIDs.insert($0.id).inserted }
-        return Array(merged.prefix(limit))
+        let plan = RAGQueryPlan(
+            mode: .semanticOnly,
+            semanticQuery: input.goal,
+            candidateLimit: candidateLimit
+        )
+        let candidates = try await candidateRepository.fetchCandidates(
+            plan: plan,
+            explicitRepoIDs: explicitIDs,
+            explicitMode: input.explicitRepoMode.ragMode
+        ).map(\.repo)
+
+        guard input.explicitRepoMode == .prefer else { return candidates }
+        var seen = Set(explicitRepos.map(\.id))
+        // prefer 不能只依赖 SQL LIMIT 恰好包含显式仓库；显式项必须稳定置顶，再补全库候选。
+        return Array((explicitRepos + candidates.filter { seen.insert($0.id).inserted }).prefix(candidateLimit))
     }
 
     private static func snapshot(from repo: Repo) -> AgentRepoSnapshot {
@@ -96,5 +133,19 @@ struct RepositoryAgentRunContextProvider: AgentRunContextProviding {
             starredAt: repo.starredAt,
             htmlUrl: repo.htmlUrl
         )
+    }
+}
+
+private enum AgentRunContextProviderError: Error {
+    case explicitRepositoryUnavailable
+}
+
+private extension AIComposerExplicitRepoMode {
+    var ragMode: RAGExplicitRepoMode {
+        switch self {
+        case .only: return .only
+        case .prefer: return .prefer
+        case .exclude: return .exclude
+        }
     }
 }

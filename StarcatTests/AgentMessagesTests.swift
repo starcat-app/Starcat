@@ -171,6 +171,78 @@ struct AgentMessagesTests {
         #expect(usage.estimatedCost == 0.03)
     }
 
+    @Test("knowledge tool audit 可随消息稳定往返编码")
+    func knowledgeToolAuditRoundTrip() throws {
+        let audit = sampleKnowledgeAudit()
+        let result = AgentToolResultMessage(
+            toolCallID: "call-knowledge",
+            toolName: "knowledge_search",
+            output: .object(["summary": .string("1 evidence")]),
+            isError: false,
+            status: .completed,
+            toolAudit: .knowledge(audit),
+            sequence: 2
+        )
+
+        let data = try JSONEncoder().encode(result)
+        let decoded = try JSONDecoder().decode(AgentToolResultMessage.self, from: data)
+
+        #expect(decoded == result)
+        #expect(decoded.toolAudit?.knowledgeRetrieval?.retrievalTrace?.candidates.count == 1)
+        #expect(decoded.toolAudit?.knowledgeRetrieval?.citations.first?.chunkID == 9)
+    }
+
+    @Test("旧 tool-result 缺少 toolAudit 字段时仍可解码")
+    func legacyToolResultWithoutAuditRemainsDecodable() throws {
+        let legacy = AgentToolResultMessage(
+            toolCallID: "call-legacy",
+            toolName: "external_search",
+            output: .object(["summary": .string("legacy")]),
+            isError: false,
+            status: .completed,
+            sequence: 2
+        )
+        let data = try JSONEncoder().encode(legacy)
+        #expect(String(decoding: data, as: UTF8.self).contains("toolAudit") == false)
+
+        let decoded = try JSONDecoder().decode(AgentToolResultMessage.self, from: data)
+
+        #expect(decoded.toolAudit == nil)
+        #expect(decoded.toolCallID == "call-legacy")
+    }
+
+    private func sampleKnowledgeAudit() -> AgentKnowledgeRetrievalAudit {
+        AgentKnowledgeRetrievalAudit(
+            scopeMode: .only,
+            frozenRepoIDs: [1],
+            explicitRepoIDs: [1],
+            evidenceBlockCount: 1,
+            citations: [AgentKnowledgeCitationAudit(
+                marker: "S1",
+                chunkID: 9,
+                repoID: 1,
+                repoFullName: "octo/demo",
+                source: "readme",
+                sectionTitle: "Usage",
+                score: 0.9,
+                hitKind: "hybrid",
+                vectorSimilarity: 0.8,
+                sourceURL: "https://github.com/octo/demo"
+            )],
+            retrievalTrace: RAGRetrievalTrace(candidates: [
+                RAGRetrievalCandidateTrace(repoID: 1, fullName: "octo/demo", language: "Swift", stars: 10)
+            ]),
+            diagnostics: RAGRetrievalDiagnostics(
+                settings: .balanced,
+                candidateRepoCount: 1,
+                finalChildHitCount: 1,
+                bundleCount: 1,
+                outcome: .completed
+            ),
+            limitations: []
+        )
+    }
+
     private func validToolConversation() -> [AgentMessage] {
         let runID = UUID(uuidString: "00000000-0000-0000-0000-000000000202")!
         return [

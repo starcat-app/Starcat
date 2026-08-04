@@ -145,6 +145,10 @@ struct AgentMessageTimelineView: View {
         return VStack(alignment: .leading, spacing: 8) {
             Button {
                 toggle(item.id)
+                if let toolCallID = item.toolCallID,
+                   item.toolAudit?.knowledgeRetrieval != nil {
+                    viewModel.selectKnowledgeAudit(toolCallID: toolCallID)
+                }
             } label: {
                 HStack(spacing: 9) {
                     Image(systemName: isResult ? statusIcon(item.toolStatus) : "wrench.and.screwdriver")
@@ -172,6 +176,11 @@ struct AgentMessageTimelineView: View {
             .focusEffectDisabled()
 
             if expandedItemIDs.contains(item.id) {
+                if let audit = item.toolAudit?.knowledgeRetrieval {
+                    AgentKnowledgeAuditView(audit: audit)
+                        .padding(10)
+                        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                }
                 if let input = item.input {
                     auditBlock(String.l10n("agent.workspace.timeline.input"), icon: "arrow.down.right", text: input)
                 }
@@ -236,7 +245,7 @@ struct AgentMessageTimelineView: View {
     private func artifactRow(_ item: AgentTimelineItem) -> some View {
         Button {
             if let artifact = item.artifact {
-                viewModel.selectedArtifactID = artifact.id
+                viewModel.selectArtifact(artifact.id)
             }
         } label: {
             HStack(alignment: .top, spacing: 10) {

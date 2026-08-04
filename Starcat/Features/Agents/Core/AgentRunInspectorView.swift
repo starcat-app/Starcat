@@ -4,8 +4,9 @@
 //
 //  Agent 工作台通用 Inspector。
 //
-//  Inspector 只根据当前事实展示 pending approval、选中 artifact 或 run summary，不按
-//  具体 Agent 拼专用卡片，因此 Weekly、Repo Insight 和后续 Agent 共用同一交互契约。
+//  Inspector 只根据当前事实展示 pending approval、选中 tool audit、artifact 或 run summary。
+//  Knowledge 检索属于通用工具审计类型，不按具体 Agent 拼专用卡片，因此 Weekly、Repo
+//  Insight 和后续 Agent 仍共用同一交互契约。
 //
 
 import SwiftUI
@@ -37,7 +38,9 @@ struct AgentRunInspectorView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            if viewModel.selectedArtifact != nil, pendingApproval == nil {
+            if viewModel.selectedArtifact != nil,
+               viewModel.selectedKnowledgeAudit == nil,
+               pendingApproval == nil {
                 Button {
                     viewModel.copySelectedArtifact()
                 } label: {
@@ -59,10 +62,19 @@ struct AgentRunInspectorView: View {
     private var content: some View {
         if let approval = pendingApproval {
             approvalInspector(approval)
+        } else if let audit = viewModel.selectedKnowledgeAudit {
+            knowledgeAuditInspector(audit)
         } else if let artifact = viewModel.selectedArtifact {
             artifactInspector(artifact)
         } else {
             runSummaryInspector
+        }
+    }
+
+    private func knowledgeAuditInspector(_ audit: AgentKnowledgeRetrievalAudit) -> some View {
+        ScrollView {
+            AgentKnowledgeAuditView(audit: audit, showsTitle: false)
+                .padding(16)
         }
     }
 
@@ -118,7 +130,7 @@ struct AgentRunInspectorView: View {
                 if viewModel.artifacts.count > 1 {
                     Picker("agent.workspace.inspector.artifactPicker", selection: Binding(
                         get: { viewModel.selectedArtifactID ?? artifact.id },
-                        set: { viewModel.selectedArtifactID = $0 }
+                        set: { viewModel.selectArtifact($0) }
                     )) {
                         ForEach(viewModel.artifacts) { item in
                             Text(item.title).tag(item.id)
@@ -222,6 +234,7 @@ struct AgentRunInspectorView: View {
 
     private var inspectorSubtitle: String {
         if pendingApproval != nil { return String.l10n("agent.workspace.inspector.approval.subtitle") }
+        if viewModel.selectedKnowledgeAudit != nil { return String.l10n("agent.workspace.knowledgeAudit.subtitle") }
         if viewModel.selectedArtifact != nil { return String.l10n("agent.workspace.inspector.artifact.subtitle") }
         return String.l10n("agent.workspace.inspector.summary.subtitle")
     }

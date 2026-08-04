@@ -37,6 +37,7 @@
 //    `v10-rag-conversation-pinned-at` / `v11-rag-embedding-claim` /
 //    `v12-rag-metadata-revision` / `v13-weekly-multi-source` /
 //    `v14-ai-usage-events` / `v15-repo-pins` / `v16-repository-insights`
+//    `v17-my-projects` / `v18-rag-structured-citations` / `v19-agent-message-contract`
 //
 
 import Foundation
@@ -71,6 +72,214 @@ enum DatabaseMigrations {
         registerV16(into: &migrator)
         registerV17(into: &migrator)
         registerV18(into: &migrator)
+        registerV19(into: &migrator)
+    }
+
+    // MARK: - v19-agent-message-contract：Agent 可回放事实契约（2026-08-04）
+
+    /// v3/v4 的 step/trace/tool-output 是早期 UI 投影模型，新版 Runtime 只以
+    /// message/approval/artifact 为事实源。这里一次性完成 schema 收口，并保留可识别历史：
+    ///
+    /// - 旧 prompt / assistant_output 转成 user / assistant message；
+    /// - 旧 artifact_index 搬到 sequence，彻底移除会阻断新版 insert 的 NOT NULL 列；
+    /// - 无法无损映射为新版 tool-call 关系的旧事件表改名归档，应用层不做永久双读。
+    private static func registerV19(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v19-agent-message-contract") { db in
+            try db.alter(table: "agent_runs") { table in
+                // 默认值只服务 ALTER TABLE 对既有行的兼容；下方会立刻写入可解码的快照。
+                table.add(column: "context_json", .text).notNull().defaults(to: "")
+                table.add(column: "model", .text)
+                table.add(column: "usage_json", .text)
+            }
+
+            try createAgentMessagesV19(db)
+            try createAgentApprovalsV19(db)
+            try migrateLegacyAgentRunsV19(db)
+            try rebuildAgentArtifactsV19(db)
+            try archiveLegacyAgentEventTablesV19(db)
+        }
+    }
+
+    /// 消息按 run 内 sequence 唯一，事务测试依赖数据库拒绝重复序号。
+    private static func createAgentMessagesV19(_ db: Database) throws {
+        try db.create(table: "agent_messages") { table in
+            table.column("id", .text).primaryKey()
+            table.column("run_id", .text).notNull()
+                .references("agent_runs", column: "id", onDelete: .cascade)
+            table.column("role", .text).notNull()
+            table.column("turn", .integer).notNull()
+            table.column("sequence", .integer).notNull()
+            table.column("parts_json", .text).notNull()
+            table.column("usage_json", .text)
+            table.column("created_at", .text).notNull()
+            table.uniqueKey(["run_id", "sequence"])
+        }
+    }
+
+    /// 审批事实与 message 分表保存，既能恢复 waiting 状态，也不把审批结果伪装成模型消息。
+    private static func createAgentApprovalsV19(_ db: Database) throws {
+        try db.create(table: "agent_approvals") { table in
+            table.column("id", .text).primaryKey()
+            table.column("run_id", .text).notNull()
+                .references("agent_runs", column: "id", onDelete: .cascade)
+            table.column("tool_call_id", .text).notNull()
+            table.column("tool_name", .text).notNull()
+            table.column("input_json", .text).notNull()
+            table.column("permission", .text).notNull()
+            table.column("sequence", .integer).notNull()
+            table.column("status", .text).notNull()
+            table.column("created_at", .text).notNull()
+            table.column("decided_at", .text)
+            table.uniqueKey(["run_id", "sequence"])
+        }
+    }
+
+    /// 把 v3 中仍可无损识别的输入、输出和上下文来源写入新版事实表。
+    private static func migrateLegacyAgentRunsV19(_ db: Database) throws {
+        let rows = try Row.fetchAll(
+            db,
+            sql: """
+                SELECT id, user_prompt, context_source, assistant_output, created_at, updated_at
+                FROM agent_runs
+                """
+        )
+        for row in rows {
+            let runID: String = row["id"]
+            let prompt: String = row["user_prompt"]
+            let contextSource: String = row["context_source"]
+            let assistantOutput: String = row["assistant_output"]
+            let createdAt: String = row["created_at"]
+            let updatedAt: String = row["updated_at"]
+
+            let contextJSON = try legacyAgentContextJSONV19(
+                sourceDescription: contextSource,
+                generatedAt: createdAt
+            )
+            try db.execute(
+                sql: "UPDATE agent_runs SET context_json = ? WHERE id = ?",
+                arguments: [contextJSON, runID]
+            )
+
+            try insertLegacyAgentTextMessageV19(
+                db,
+                runID: runID,
+                role: "user",
+                sequence: 0,
+                text: prompt,
+                createdAt: createdAt
+            )
+            if !assistantOutput.isEmpty {
+                try insertLegacyAgentTextMessageV19(
+                    db,
+                    runID: runID,
+                    role: "assistant",
+                    sequence: 1,
+                    text: assistantOutput,
+                    createdAt: updatedAt
+                )
+            }
+        }
+    }
+
+    private static func insertLegacyAgentTextMessageV19(
+        _ db: Database,
+        runID: String,
+        role: String,
+        sequence: Int,
+        text: String,
+        createdAt: String
+    ) throws {
+        let partsJSON = try agentJSONV19([
+            ["type": "text", "text": text]
+        ])
+        try db.execute(
+            sql: """
+                INSERT INTO agent_messages (
+                    id, run_id, role, turn, sequence, parts_json, created_at
+                ) VALUES (?, ?, ?, 0, ?, ?, ?)
+                """,
+            arguments: [UUID().uuidString, runID, role, sequence, partsJSON, createdAt]
+        )
+    }
+
+    /// 旧 run 没有 repo/attachment 快照，只能冻结当时记录的 context_source。
+    /// generatedAt 不是合法 ISO8601 时使用 Unix epoch，保证历史记录至少可以被 Repository 打开。
+    private static func legacyAgentContextJSONV19(
+        sourceDescription: String,
+        generatedAt: String
+    ) throws -> String {
+        let formatter = ISO8601DateFormatter()
+        let safeGeneratedAt = formatter.date(from: generatedAt) == nil
+            ? "1970-01-01T00:00:00Z"
+            : generatedAt
+        return try agentJSONV19([
+            "attachments": [],
+            "generatedAt": safeGeneratedAt,
+            "repos": [],
+            "sourceDescription": sourceDescription
+        ])
+    }
+
+    private static func agentJSONV19(_ value: Any) throws -> String {
+        let data = try JSONSerialization.data(
+            withJSONObject: value,
+            options: [.sortedKeys, .withoutEscapingSlashes]
+        )
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    /// SQLite 无法移除 v3 的 artifact_index NOT NULL，只能重建表后复制历史数据。
+    private static func rebuildAgentArtifactsV19(_ db: Database) throws {
+        try db.execute(sql: "DROP INDEX IF EXISTS idx_agent_artifacts_run_index")
+        try db.execute(sql: "ALTER TABLE agent_artifacts RENAME TO agent_artifacts_v3")
+        try db.create(table: "agent_artifacts") { table in
+            table.column("id", .text).primaryKey()
+            table.column("run_id", .text).notNull()
+                .references("agent_runs", column: "id", onDelete: .cascade)
+            table.column("tool_call_id", .text)
+            table.column("message_id", .text)
+                .references("agent_messages", column: "id", onDelete: .setNull)
+            table.column("sequence", .integer).notNull()
+            table.column("type", .text).notNull()
+            table.column("title", .text).notNull()
+            table.column("content", .text).notNull()
+            table.column("created_at", .text).notNull()
+        }
+        try db.execute(sql: """
+            INSERT INTO agent_artifacts (
+                id, run_id, tool_call_id, message_id, sequence,
+                type, title, content, created_at
+            )
+            SELECT
+                id, run_id, NULL, NULL, artifact_index,
+                type, title, content, created_at
+            FROM agent_artifacts_v3
+            """)
+        try db.drop(table: "agent_artifacts_v3")
+        try db.create(
+            index: "idx_agent_artifacts_run_sequence",
+            on: "agent_artifacts",
+            columns: ["run_id", "sequence"]
+        )
+    }
+
+    /// 旧事件无法可靠还原 tool-call/result 的强关联，直接改名为 legacy archive，
+    /// 避免 Timeline 在新版事实表与旧 UI 投影之间长期猜测、双读。
+    private static func archiveLegacyAgentEventTablesV19(_ db: Database) throws {
+        let tables = [
+            ("agent_run_steps", "agent_legacy_run_steps", "idx_agent_run_steps_run_index", "idx_agent_legacy_run_steps_run_index", "step_index"),
+            ("agent_run_traces", "agent_legacy_run_traces", "idx_agent_run_traces_run_index", "idx_agent_legacy_run_traces_run_index", "trace_index"),
+            ("agent_run_tool_outputs", "agent_legacy_run_tool_outputs", "idx_agent_run_tool_outputs_run_index", "idx_agent_legacy_run_tool_outputs_run_index", "output_index")
+        ]
+        for (source, archive, sourceIndex, archiveIndex, orderColumn) in tables {
+            try db.execute(sql: "DROP INDEX IF EXISTS \(sourceIndex)")
+            try db.execute(sql: "ALTER TABLE \(source) RENAME TO \(archive)")
+            try db.create(
+                index: archiveIndex,
+                on: archive,
+                columns: ["run_id", orderColumn]
+            )
+        }
     }
 
     // MARK: - v18-rag-structured-citations：结构化知识库事实引用（2026-07-30）

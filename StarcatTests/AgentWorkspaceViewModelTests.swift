@@ -72,6 +72,61 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.selectedArtifact?.content == "run log")
     }
 
+    @Test("knowledge audit 与 artifact 使用互斥 Inspector 选择")
+    func knowledgeAuditSelectionDrivesInspectorState() async throws {
+        let runID = UUID()
+        let artifact = AgentArtifact(type: .markdown, title: "报告", content: "# Report")
+        let audit = AgentKnowledgeRetrievalAudit(
+            scopeMode: .prefer,
+            frozenRepoIDs: [1, 2],
+            explicitRepoIDs: [1],
+            evidenceBlockCount: 1,
+            citations: [],
+            retrievalTrace: RAGRetrievalTrace(candidates: [
+                RAGRetrievalCandidateTrace(repoID: 1, fullName: "octo/one"),
+                RAGRetrievalCandidateTrace(repoID: 2, fullName: "octo/two")
+            ]),
+            diagnostics: nil,
+            limitations: []
+        )
+        let toolMessage = AgentMessage(
+            runID: runID,
+            role: .tool,
+            turn: 0,
+            sequence: 2,
+            parts: [.toolResult(AgentToolResultMessage(
+                toolCallID: "call-knowledge",
+                toolName: "knowledge_search",
+                output: .object(["summary": .string("1 evidence")]),
+                isError: false,
+                status: .completed,
+                toolAudit: .knowledge(audit),
+                sequence: 2
+            ))]
+        )
+        let runtime = EventReplayAgentRuntime(events: [
+            .runStarted(title: "Run"),
+            .messageAppended(toolMessage),
+            .artifactCreated(artifact),
+            .runCompleted
+        ])
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.repoInsight],
+            runtime: runtime
+        )
+        viewModel.prompt = "检查仓库"
+        viewModel.run()
+        try await waitUntil { viewModel.status == .completed }
+
+        viewModel.selectKnowledgeAudit(toolCallID: "call-knowledge")
+        #expect(viewModel.selectedKnowledgeAudit?.scopeMode == .prefer)
+        #expect(viewModel.selectedKnowledgeAudit?.metrics.candidateCount == 2)
+
+        viewModel.selectArtifact(artifact.id)
+        #expect(viewModel.selectedKnowledgeAudit == nil)
+        #expect(viewModel.selectedArtifact?.id == artifact.id)
+    }
+
     @Test("通用 Inspector 按 Agent 类型生成正确导出文件名")
     func artifactExportFilenameUsesSelectedAgent() {
         let viewModel = AgentWorkspaceViewModel(agents: [
@@ -273,6 +328,81 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.isRunning == false)
     }
 
+    @Test("每个 Agent 独立恢复自己的输入草稿")
+    func restoresDraftPerAgent() {
+        let viewModel = AgentWorkspaceViewModel(agents: [
+            BuiltInAgents.githubWeeklyReport,
+            BuiltInAgents.repoInsight
+        ])
+        viewModel.prompt = "weekly draft"
+        viewModel.handlePromptChanged()
+
+        viewModel.selectAgent(BuiltInAgents.repoInsight)
+        viewModel.prompt = "insight draft"
+        viewModel.handlePromptChanged()
+        viewModel.selectAgent(BuiltInAgents.githubWeeklyReport)
+
+        #expect(viewModel.prompt == "weekly draft")
+        viewModel.selectAgent(BuiltInAgents.repoInsight)
+        #expect(viewModel.prompt == "insight draft")
+    }
+
+    @Test("发送瞬间冻结结构化 Run Input")
+    func freezesStructuredRunInputBeforeAsyncContextBuild() async throws {
+        let recorder = AgentRunInputRecorder()
+        let provider = RecordingAgentRunContextProvider(recorder: recorder)
+        let runtime = EventReplayAgentRuntime(events: [
+            .runStarted(title: "Run"),
+            .runCompleted
+        ])
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: runtime,
+            contextProvider: provider
+        )
+        let repo = AIComposerRepoReference(
+            id: 42,
+            owner: "groue",
+            name: "GRDB.swift",
+            fullName: "groue/GRDB.swift",
+            language: "Swift",
+            starsCount: 8_000
+        )
+        viewModel.prompt = "参考 https://github.com/groue/GRDB.swift 生成周刊"
+        viewModel.handlePromptChanged()
+        let model = AIModelDescriptor(providerID: "provider", name: "agent-model")
+        viewModel.configureModelOptions(
+            [model],
+            defaultProviderID: model.providerID,
+            defaultModelName: model.name
+        )
+        viewModel.selectedRepoContexts = [repo]
+        viewModel.attachments = [AgentPromptAttachment(name: "brief.md", content: "private")]
+        viewModel.webSearchEnabled = true
+
+        viewModel.run()
+        viewModel.prompt = "mutated"
+        viewModel.selectedRepoContexts = []
+        viewModel.webSearchEnabled = false
+        try await waitUntil { viewModel.status == .completed }
+        let input = try #require(await recorder.input())
+
+        #expect(input.goal.contains("生成周刊"))
+        #expect(input.explicitRepos == [repo])
+        #expect(input.selectedModelID == model.id)
+        #expect(input.attachments.first?.content == "private")
+        #expect(input.githubLinks.first?.owner == "groue")
+        #expect(input.webSearchEnabled)
+    }
+
+    @Test("共享 Composer 键盘策略与 RAG 设置语义一致")
+    func composerKeyboardPolicyMatchesSettings() {
+        #expect(AIComposerKeyboardPolicy.action(for: [], requiresCommandReturn: false) == .send)
+        #expect(AIComposerKeyboardPolicy.action(for: [.command], requiresCommandReturn: false) == .insertNewline)
+        #expect(AIComposerKeyboardPolicy.action(for: [], requiresCommandReturn: true) == .insertNewline)
+        #expect(AIComposerKeyboardPolicy.action(for: [.command], requiresCommandReturn: true) == .send)
+    }
+
     @Test("reloadHistory 会加载真实 run 历史")
     func reloadHistoryLoadsPersistedRuns() async throws {
         let database = try InMemoryDatabaseManager()
@@ -305,7 +435,24 @@ struct AgentWorkspaceViewModelTests {
             id: runID,
             definition: BuiltInAgents.githubWeeklyReport,
             prompt: "打开历史",
-            context: AgentRunContext(sourceDescription: "Unit"),
+            context: AgentRunContext(
+                sourceDescription: "Unit",
+                explicitRepos: [AIComposerRepoReference(
+                    id: 42,
+                    owner: "groue",
+                    name: "GRDB.swift",
+                    fullName: "groue/GRDB.swift",
+                    language: "Swift",
+                    starsCount: 8_000
+                )],
+                explicitRepoMode: .exclude,
+                githubLinks: [AIComposerGitHubLink(
+                    url: URL(string: "https://github.com/groue/GRDB.swift")!,
+                    owner: "groue",
+                    repository: "GRDB.swift"
+                )],
+                webSearchEnabled: true
+            ),
             createdAt: Date(timeIntervalSince1970: 1_788_000_000)
         )
         let call = AgentToolCall(
@@ -383,6 +530,10 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.messages.map(\.role) == [.user, .assistant, .tool, .assistant])
         #expect(viewModel.selectedArtifact?.content == "# 历史")
         #expect(viewModel.assistantOutput.isEmpty)
+        #expect(viewModel.selectedRepoContexts.map(\.id) == [42])
+        #expect(viewModel.explicitRepoMode == .exclude)
+        #expect(viewModel.githubLinks.first?.repository == "GRDB.swift")
+        #expect(viewModel.webSearchEnabled)
     }
 
     @Test("重启后打开 pending approval 只恢复等待态且不会自动决策")
@@ -435,6 +586,44 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.approvals == [approval])
         #expect(await recorder.commands().isEmpty)
         #expect(viewModel.messages.map(\.sequence) == [0, 1])
+    }
+
+    @Test("重启后附件正文不可恢复时禁止继续 pending approval")
+    func pendingApprovalWithTransientAttachmentFailsClosedAfterRestart() async throws {
+        let repository = GRDBAgentRunRepository(database: try InMemoryDatabaseManager())
+        let runID = UUID()
+        let run = try await repository.createRun(
+            id: runID,
+            definition: BuiltInAgents.githubWeeklyReport,
+            prompt: "根据附件执行",
+            context: AgentRunContext(
+                sourceDescription: "Unit",
+                attachments: [AgentPromptAttachment(name: "private.md", content: "transient body")]
+            ),
+            createdAt: Date(timeIntervalSince1970: 1_788_000_000)
+        )
+        let approval = AgentApprovalRequest(
+            runID: runID,
+            toolCallID: "pending-attachment-call",
+            toolName: "write_tag",
+            input: .object(["tag": .string("swift")]),
+            permission: .requiresConfirmation,
+            sequence: 1
+        )
+        try await repository.saveApproval(approval, runStatus: .waitingForConfirmation)
+        let recorder = RestartApprovalRecorder()
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: RestartApprovalRuntime(approval: approval, recorder: recorder)
+        )
+        viewModel.configureRunRepository(repository)
+
+        await viewModel.openHistoryRun(run)
+
+        #expect(viewModel.status == .waitingForConfirmation)
+        #expect(viewModel.errorMessage == String.l10n("agent.loop.error.contextUnavailable"))
+        #expect(await recorder.resumeCount() == 0)
+        #expect(await recorder.commands().isEmpty)
     }
 
     private func waitUntil(
@@ -557,9 +746,44 @@ private struct StaticAgentRunContextProvider: AgentRunContextProviding {
 
     func makeContext(
         definition: AgentDefinition,
-        prompt: String
+        input: AgentRunInput
     ) async -> AgentRunContext {
-        context
+        var snapshot = context
+        snapshot.attachments = input.attachments
+        snapshot.explicitRepos = input.explicitRepos
+        snapshot.githubLinks = input.githubLinks
+        snapshot.webSearchEnabled = input.webSearchEnabled
+        return snapshot
+    }
+}
+
+private actor AgentRunInputRecorder {
+    private var recordedInput: AgentRunInput?
+
+    func record(_ input: AgentRunInput) {
+        recordedInput = input
+    }
+
+    func input() -> AgentRunInput? { recordedInput }
+}
+
+private struct RecordingAgentRunContextProvider: AgentRunContextProviding {
+    let recorder: AgentRunInputRecorder
+
+    func makeContext(
+        definition: AgentDefinition,
+        input: AgentRunInput
+    ) async -> AgentRunContext {
+        await recorder.record(input)
+        return AgentRunContext(
+            sourceDescription: input.source,
+            attachments: input.attachments,
+            explicitRepos: input.explicitRepos,
+            explicitRepoMode: input.explicitRepoMode,
+            selectedModelID: input.selectedModelID,
+            githubLinks: input.githubLinks,
+            webSearchEnabled: input.webSearchEnabled
+        )
     }
 }
 

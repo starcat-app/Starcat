@@ -456387,6 +456387,111 @@
         }
       }
     },
+    "agent.workspace.knowledgeAudit.candidates": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Candidates" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "候选仓库" } }
+      }
+    },
+    "agent.workspace.knowledgeAudit.evidence": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Evidence" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "最终证据" } }
+      }
+    },
+    "agent.workspace.knowledgeAudit.explicitRepositories": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Explicit repositories" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "显式仓库" } }
+      }
+    },
+    "agent.workspace.knowledgeAudit.frozenRepositories": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Frozen repositories" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "冻结仓库" } }
+      }
+    },
+    "agent.workspace.knowledgeAudit.keywordHits": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Keyword hits" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "关键词命中" } }
+      }
+    },
+    "agent.workspace.knowledgeAudit.limitation.evidenceBudget": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Some matched chunks were omitted by the Agent evidence budget." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "部分命中分片因 Agent 证据预算被省略。" } }
+      }
+    },
+    "agent.workspace.knowledgeAudit.limitation.keywordUnavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Keyword retrieval was unavailable; vector retrieval remained active." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "关键词检索不可用，向量检索仍正常执行。" } }
+      }
+    },
+    "agent.workspace.knowledgeAudit.limitation.noEvidence": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No relevant indexed evidence was found in the frozen repository scope." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "冻结仓库范围内未找到相关的已索引证据。" } }
+      }
+    },
+    "agent.workspace.knowledgeAudit.limitation.vectorUnavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Vector retrieval was unavailable; keyword retrieval remained active." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "向量检索不可用，关键词检索仍正常执行。" } }
+      }
+    },
+    "agent.workspace.knowledgeAudit.limitations": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Limitations" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "检索限制" } }
+      }
+    },
+    "agent.workspace.knowledgeAudit.outcome": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Outcome" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "检索结果" } }
+      }
+    },
+    "agent.workspace.knowledgeAudit.scopeMode": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Scope mode" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "范围模式" } }
+      }
+    },
+    "agent.workspace.knowledgeAudit.semanticHits": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Semantic hits" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "语义命中" } }
+      }
+    },
+    "agent.workspace.knowledgeAudit.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Knowledge retrieval audit" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "知识检索审计" } }
+      }
+    },
+    "agent.workspace.knowledgeAudit.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Knowledge Retrieval" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "知识检索" } }
+      }
+    },
     "agent.workspace.status.waitingForConfirmation": {
       "extractionState": "manual",
       "localizations": {
