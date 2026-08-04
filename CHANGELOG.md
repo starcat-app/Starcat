@@ -8,6 +8,10 @@ Release notes for the Mac App Store edition of Starcat.
 
 - Shortcut recorder: Expands the key display area and shows an inline reset-to-default control only after a shortcut is changed.
 
+### Fixes
+
+- Global filter panel: Removes the noticeable delay when opening repository filters for faster access.
+
 ## 1.3.0
 
 Starcat 1.3.0 adds My Projects, library-wide and repository-level insights, macOS desktop widgets, reusable insight context for AI and RAG, and external search integrations for Alfred, uTools, and Raycast—helping you manage, understand, and rediscover repositories faster.
