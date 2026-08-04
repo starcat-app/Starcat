@@ -1,7 +1,9 @@
 # Agent 底层平台技术方案
 
+> ⚠️ **已过时（2026-08-04）**：本文记录旧版 Agent 底层设计和 Cline-style 首轮落地事实，仅供历史追溯。后续 Agent UI、上下文、RAG、MCP、CLI、权限、持久化与实施顺序统一以 [`../../../3-设计/详细设计/57-Agent工作台与统一能力层详细设计.md`](../../../3-设计/详细设计/57-Agent工作台与统一能力层详细设计.md) 为准；本文不得继续作为新功能实现入口。
+
 > **文档定位**: Starcat 内置 Agent 底层平台方案。本文设计的是后续所有 Agent 共用的运行时、工具系统、AI 接入、UI/UX、存储、权限与扩展边界；`GitHub Weekly Report Agent` 仅作为首个接入实例验证这套底座。
-> **状态**: Cline-style Agent 底层平台已于 2026-07-11 落地;当前正式启用 GitHub Weekly Report 和 Repo Insight 两个只读 Agent。
+> **状态**: 已过时；Cline-style 首轮实现事实仍可追溯，后续开发不得继续沿用本文旧架构路线。
 > **关联文档**:
 > - [`00-概览-Agent方向讨论与方案.md`](00-概览-Agent方向讨论与方案.md)
 > - [`04-AgentRunKit-Swarm-SwiftAgent-对比分析.md`](04-AgentRunKit-Swarm-SwiftAgent-对比分析.md)

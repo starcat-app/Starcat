@@ -1,8 +1,10 @@
 # CLI Agent 作为 AI Provider 初步方案
 
+> ⚠️ **已过时（2026-08-04）**：本文不再代表当前 Agent 开发主线。`starcat-cli` 的现行定位是外部 Agent 使用 Starcat MCP 的跨平台 CLI / stdio bridge；Starcat 主动托管 Codex、Claude Code、Gemini CLI 的外部 Runtime 已降为远期可选实验。当前权威边界和实施顺序见 [`../../../3-设计/详细设计/57-Agent工作台与统一能力层详细设计.md`](../../../3-设计/详细设计/57-Agent工作台与统一能力层详细设计.md)。本文仅保留安全、审批和进程隔离研究供后续参考。
+
 > **文档定位**：讨论 Starcat 如何把 Claude Code、Codex、Gemini CLI 及后续同类 CLI Agent 接入为 AI 执行后端。本文是初步方案，用于固定问题边界、推荐架构、渠道限制和分阶段落地路径，不代表已经立项或开始实现。
 >
-> **状态**：初步方案，已确认与 Agent 工作台后续迭代一起实施；Direct-only、动态人工审批闭环及 RAG Tool 边界已确认，尚未开始代码实现。
+> **状态**：已过时；不再与 Agent 工作台主线一起实施，仅保留为 Direct-only 外部 CLI Runtime 的远期研究材料。
 >
 > **创建日期**：2026-07-30。
 >

@@ -6,7 +6,7 @@
 >
 > 操作规范：[`docs/5-规范/Git-分支与Worktree规范.md`](docs/5-规范/Git-分支与Worktree规范.md)
 >
-> 最后核对：2026-08-03
+> 最后核对：2026-08-04
 
 ## 登记说明
 
@@ -34,7 +34,7 @@
 |---|---|---|---|---|
 | `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-08-03 核对时本地与 `origin/dev` 一致。 | 持续开发；推送、合并或发布前先检查工作区和提交范围。 |
 | `main` | 本地 + `origin/main`；当前无独立 worktree | 远端默认稳定主线和发布基线。 | `长期保留`；2026-08-03 核对时本地与 `origin/main` 一致，且落后于 `dev`。 | 只接受经过验收的合并，不在该分支直接开展日常功能开发。 |
-| `codex/agent-iteration` | 仅本地；worktree `../Starcat-agent-iteration` | Agent 工作台后续开发分支；包含未完成的 Agent 工作台实现，以及外部 CLI Runtime 作为 AI Provider 的衔接方案。 | `开发中`；2026-08-03 已合入 `dev@4d574d24`，当前包含最新 `dev`，禁止误删。 | 在现有 worktree 继续 Agent 功能开发；达到可用和验收标准、重新同步 `dev` 后再合回 `dev`。 |
+| `codex/agent-iteration` | 仅本地；worktree `../Starcat-agent-iteration` | Agent 工作台后续开发分支；按 `57-Agent工作台与统一能力层详细设计.md` 复用 RAG Composer/证据链并统一 Agent 与 MCP 领域能力，外部 CLI Runtime 不再是当前主线。 | `开发中`；2026-08-04 核对时位于 `f294d56c`，已包含此前合入的 `dev@4d574d24`，禁止误删。 | 先追加 v19 修复 Agent schema，再分阶段完成共享 Composer、Knowledge Tool、统一能力层和写入审批；验收并重新同步 `dev` 后合回 `dev`。 |
 | `origin/codex/search` | 仅远端；无本地分支、无 worktree | 早期 Repo Command Search 后续方案文档，最新提交为 `docs: add repo command search follow-up plan`。 | `待审查`；相对当前 `dev` 仍有 2 个独有提交，不能仅凭分支时间直接删除。 | 单独审查两个提交是否已被 `dev` 的现有搜索能力和文档覆盖，再决定保留或删除。 |
 
 ## 近期已清理分支
