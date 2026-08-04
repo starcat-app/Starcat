@@ -40,15 +40,18 @@ struct EmptyAgentRunContextProvider: AgentRunContextProviding {
 /// 从 Starcat 本地仓库库表冻结 Agent 上下文。
 struct RepositoryAgentRunContextProvider: AgentRunContextProviding {
 
-    private let candidateRepository: any RAGRepoCandidateRepositoryProtocol
+    private let repoRepository: any RepoRepositoryProtocol
     private let candidateLimit: Int
+    private let now: @Sendable () -> Date
 
     init(
-        candidateRepository: any RAGRepoCandidateRepositoryProtocol,
-        candidateLimit: Int = 30
+        repoRepository: any RepoRepositoryProtocol,
+        candidateLimit: Int = 100,
+        now: @escaping @Sendable () -> Date = Date.init
     ) {
-        self.candidateRepository = candidateRepository
+        self.repoRepository = repoRepository
         self.candidateLimit = candidateLimit
+        self.now = now
     }
 
     func makeContext(
@@ -56,15 +59,13 @@ struct RepositoryAgentRunContextProvider: AgentRunContextProviding {
         input: AgentRunInput
     ) async -> AgentRunContext {
         do {
-            // 复用 RAG 的知识库候选层执行 only / prefer / exclude，禁止在 Agent 里再造一套
-            // 范围 SQL。候选最多冻结 candidateLimit 条，README/笔记正文仍按需由工具读取。
-            let repos = try await loadScopedRepos(input: input)
-            let sourceDescription: String
-            if repos.isEmpty {
-                sourceDescription = String.l10n("agent.context.source.empty")
-            } else {
-                sourceDescription = String(format: String.l10n("agent.context.source.repoCountFormat"), repos.count)
-            }
+            let repos = try await loadBusinessRepos(definition: definition, input: input)
+            let knowledgeEligibleRepoIDs = await loadKnowledgeEligibleRepoIDs(from: repos)
+            let sourceDescription = sourceDescription(
+                definition: definition,
+                input: input,
+                repositoryCount: repos.count
+            )
             return AgentRunContext(
                 sourceDescription: sourceDescription,
                 repos: repos.map(Self.snapshot(from:)),
@@ -73,7 +74,8 @@ struct RepositoryAgentRunContextProvider: AgentRunContextProviding {
                 explicitRepoMode: input.explicitRepoMode,
                 selectedModelID: input.selectedModelID,
                 githubLinks: input.githubLinks,
-                webSearchEnabled: input.webSearchEnabled
+                webSearchEnabled: input.webSearchEnabled,
+                knowledgeEligibleRepoIDs: knowledgeEligibleRepoIDs
             )
         } catch {
             // 详细数据库错误只进入本地日志；模型和 UI 只收到稳定的通用失败原因。
@@ -91,31 +93,96 @@ struct RepositoryAgentRunContextProvider: AgentRunContextProviding {
         }
     }
 
-    private func loadScopedRepos(input: AgentRunInput) async throws -> [Repo] {
-        let explicitIDs = input.explicitRepos.map(\.id)
-        let explicitRepos = try await candidateRepository.fetchMentionRepos(ids: explicitIDs)
-        guard explicitRepos.count == explicitIDs.count else {
-            throw AgentRunContextProviderError.explicitRepositoryUnavailable
+    private func loadBusinessRepos(
+        definition: AgentDefinition,
+        input: AgentRunInput
+    ) async throws -> [Repo] {
+        switch definition.workflow.repositoryContext {
+        case .none:
+            return []
+        case .recentStars(let days):
+            let cutoff = now().addingTimeInterval(-Double(max(1, days)) * 86_400)
+            let recent = try await repoRepository.fetchStarred(since: cutoff, limit: candidateLimit)
+            guard definition.workflow.allowsManualRepositoryOverride, !input.explicitRepos.isEmpty else {
+                return recent
+            }
+            let explicit = try await loadExplicitRepos(input.explicitRepos)
+            switch input.explicitRepoMode {
+            case .only:
+                return explicit
+            case .prefer:
+                var seen = Set(explicit.map(\.id))
+                return Array((explicit + recent.filter { seen.insert($0.id).inserted }).prefix(candidateLimit))
+            case .exclude:
+                let excluded = Set(explicit.map(\.id))
+                return recent.filter { !excluded.contains($0.id) }
+            }
+        case .singleRepository:
+            let explicit = try await loadExplicitRepos(input.explicitRepos)
+            if explicit.count == 1 {
+                return explicit
+            }
+            guard explicit.isEmpty,
+                  input.githubLinks.count == 1,
+                  let link = input.githubLinks.first,
+                  let linkedRepo = try await repoRepository.findByOwnerName(
+                    owner: link.owner,
+                    name: link.repository
+                  ),
+                  linkedRepo.isStarred
+            else {
+                throw AgentRunContextProviderError.singleRepositoryRequired
+            }
+            return [linkedRepo]
         }
-        if input.explicitRepoMode == .only {
-            return explicitRepos
+    }
+
+    private func sourceDescription(
+        definition: AgentDefinition,
+        input: AgentRunInput,
+        repositoryCount: Int
+    ) -> String {
+        switch definition.workflow.repositoryContext {
+        case .recentStars(let days) where input.explicitRepos.isEmpty:
+            return String(
+                format: String.l10n("agent.context.source.recentStarsFormat"),
+                days,
+                repositoryCount
+            )
+        case .singleRepository where repositoryCount == 1:
+            return String.l10n("agent.context.source.singleRepository")
+        default:
+            return repositoryCount == 0
+                ? String.l10n("agent.context.source.empty")
+                : String(format: String.l10n("agent.context.source.repoCountFormat"), repositoryCount)
         }
+    }
 
-        let plan = RAGQueryPlan(
-            mode: .semanticOnly,
-            semanticQuery: input.goal,
-            candidateLimit: candidateLimit
-        )
-        let candidates = try await candidateRepository.fetchCandidates(
-            plan: plan,
-            explicitRepoIDs: explicitIDs,
-            explicitMode: input.explicitRepoMode.ragMode
-        ).map(\.repo)
+    private func loadExplicitRepos(_ references: [AIComposerRepoReference]) async throws -> [Repo] {
+        guard references.count <= candidateLimit else {
+            throw AgentRunContextProviderError.tooManyExplicitRepositories
+        }
+        var repos: [Repo] = []
+        for reference in references {
+            guard let repo = try await repoRepository.findById(reference.id), repo.isStarred else {
+                throw AgentRunContextProviderError.explicitRepositoryUnavailable
+            }
+            repos.append(repo)
+        }
+        return repos
+    }
 
-        guard input.explicitRepoMode == .prefer else { return candidates }
-        var seen = Set(explicitRepos.map(\.id))
-        // prefer 不能只依赖 SQL LIMIT 恰好包含显式仓库；显式项必须稳定置顶，再补全库候选。
-        return Array((explicitRepos + candidates.filter { seen.insert($0.id).inserted }).prefix(candidateLimit))
+    /// Knowledge 是业务上下文上的可选证据层。普通 Star 不在知识库时只会让
+    /// `knowledge_search` 缩小到可用子集，不能让 Weekly / Repo Insight 整次失败。
+    private func loadKnowledgeEligibleRepoIDs(from repos: [Repo]) async -> [Int64] {
+        guard !repos.isEmpty else { return [] }
+        do {
+            let knowledgeIDs = Set(try await repoRepository.fetchKnowledgeRepoIDs())
+            return repos.map(\.id).filter(knowledgeIDs.contains)
+        } catch {
+            AppLog.general.warning("Agent knowledge eligibility snapshot failed: \(error.localizedDescription, privacy: .public)")
+            return []
+        }
     }
 
     private static func snapshot(from repo: Repo) -> AgentRepoSnapshot {
@@ -138,14 +205,6 @@ struct RepositoryAgentRunContextProvider: AgentRunContextProviding {
 
 private enum AgentRunContextProviderError: Error {
     case explicitRepositoryUnavailable
-}
-
-private extension AIComposerExplicitRepoMode {
-    var ragMode: RAGExplicitRepoMode {
-        switch self {
-        case .only: return .only
-        case .prefer: return .prefer
-        case .exclude: return .exclude
-        }
-    }
+    case singleRepositoryRequired
+    case tooManyExplicitRepositories
 }

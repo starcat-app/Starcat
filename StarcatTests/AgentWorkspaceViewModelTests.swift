@@ -17,6 +17,46 @@ import Testing
 @Suite("AgentWorkspaceViewModel")
 struct AgentWorkspaceViewModelTests {
 
+    @Test("Weekly 可用默认指令和自动时间窗发送，但必须先选择有效模型")
+    func weeklySubmissionValidationUsesWorkflowPolicy() {
+        let viewModel = AgentWorkspaceViewModel(agents: [BuiltInAgents.githubWeeklyReport])
+        #expect(!viewModel.canSubmit)
+
+        configureRunnable(viewModel)
+
+        #expect(viewModel.prompt.isEmpty)
+        #expect(viewModel.selectedRepoContexts.isEmpty)
+        #expect(viewModel.canSubmit)
+    }
+
+    @Test("Repo Insight 必须且只能选择一个仓库")
+    func repoInsightSubmissionRequiresSingleRepository() {
+        let viewModel = AgentWorkspaceViewModel(agents: [BuiltInAgents.repoInsight])
+        configureRunnable(viewModel)
+        #expect(!viewModel.canSubmit)
+
+        let first = AIComposerRepoReference(
+            id: 1,
+            owner: "octo",
+            name: "one",
+            fullName: "octo/one",
+            language: "Swift",
+            starsCount: 1
+        )
+        let second = AIComposerRepoReference(
+            id: 2,
+            owner: "octo",
+            name: "two",
+            fullName: "octo/two",
+            language: "Swift",
+            starsCount: 2
+        )
+        viewModel.selectedRepoContexts = [first]
+        #expect(viewModel.canSubmit)
+        viewModel.selectedRepoContexts = [first, second]
+        #expect(!viewModel.canSubmit)
+    }
+
     @Test("run 会把 runtime 事件投影成工作台状态")
     func runProjectsRuntimeEventsIntoWorkspaceState() async throws {
         let runID = UUID()
@@ -36,6 +76,7 @@ struct AgentWorkspaceViewModelTests {
             agents: [BuiltInAgents.githubWeeklyReport],
             runtime: runtime
         )
+        configureRunnable(viewModel)
         viewModel.prompt = "生成本周 GitHub 热门项目周刊"
 
         viewModel.run()
@@ -62,6 +103,7 @@ struct AgentWorkspaceViewModelTests {
             agents: [BuiltInAgents.githubWeeklyReport],
             runtime: runtime
         )
+        configureRunnable(viewModel)
         viewModel.prompt = "生成周刊"
 
         viewModel.run()
@@ -111,9 +153,10 @@ struct AgentWorkspaceViewModelTests {
             .runCompleted
         ])
         let viewModel = AgentWorkspaceViewModel(
-            agents: [BuiltInAgents.repoInsight],
+            agents: [BuiltInAgents.githubWeeklyReport],
             runtime: runtime
         )
+        configureRunnable(viewModel)
         viewModel.prompt = "检查仓库"
         viewModel.run()
         try await waitUntil { viewModel.status == .completed }
@@ -150,6 +193,7 @@ struct AgentWorkspaceViewModelTests {
             agents: [BuiltInAgents.githubWeeklyReport],
             runtime: NeverFinishingAgentRuntime()
         )
+        configureRunnable(viewModel)
         viewModel.prompt = "生成本周 GitHub 热门项目周刊"
 
         viewModel.run()
@@ -178,6 +222,7 @@ struct AgentWorkspaceViewModelTests {
             agents: [BuiltInAgents.githubWeeklyReport],
             runtime: runtime
         )
+        configureRunnable(viewModel)
         viewModel.prompt = "规划标签"
 
         viewModel.run()
@@ -198,6 +243,7 @@ struct AgentWorkspaceViewModelTests {
             agents: [BuiltInAgents.githubWeeklyReport],
             runtime: runtime
         )
+        configureRunnable(viewModel)
         viewModel.prompt = "生成周刊"
 
         viewModel.run()
@@ -227,6 +273,7 @@ struct AgentWorkspaceViewModelTests {
             agents: [BuiltInAgents.githubWeeklyReport],
             runtime: runtime
         )
+        configureRunnable(viewModel)
         viewModel.prompt = "生成周刊"
 
         viewModel.run()
@@ -256,6 +303,7 @@ struct AgentWorkspaceViewModelTests {
             agents: [BuiltInAgents.githubWeeklyReport],
             runtime: runtime
         )
+        configureRunnable(viewModel)
         viewModel.prompt = "写入标签"
 
         viewModel.run()
@@ -302,6 +350,7 @@ struct AgentWorkspaceViewModelTests {
             runtime: runtime,
             contextProvider: StaticAgentRunContextProvider(context: context)
         )
+        configureRunnable(viewModel)
         viewModel.prompt = "生成本周 GitHub 热门项目周刊"
         viewModel.attachments = [AgentPromptAttachment(name: "brief.md", content: "重点关注本地 AI 工具")]
 
@@ -314,18 +363,19 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.attachments.isEmpty)
     }
 
-    @Test("空 prompt 不会自动使用默认 Agent 指令运行")
-    func emptyPromptDoesNotRunWithDefaultPrompt() {
+    @Test("Weekly 空 prompt 会使用固定默认指令直接运行")
+    func emptyPromptUsesWeeklyDefaultPrompt() {
         let viewModel = AgentWorkspaceViewModel(
             agents: [BuiltInAgents.githubWeeklyReport],
             runtime: NeverFinishingAgentRuntime()
         )
+        configureRunnable(viewModel)
 
         viewModel.run()
 
-        #expect(viewModel.status == .idle)
+        #expect(viewModel.status == .planning)
         #expect(viewModel.prompt.isEmpty)
-        #expect(viewModel.isRunning == false)
+        #expect(viewModel.isRunning)
     }
 
     @Test("每个 Agent 独立恢复自己的输入草稿")
@@ -638,6 +688,15 @@ struct AgentWorkspaceViewModelTests {
             }
             try await Task.sleep(nanoseconds: 5_000_000)
         }
+    }
+
+    private func configureRunnable(_ viewModel: AgentWorkspaceViewModel) {
+        let model = AIModelDescriptor(providerID: "test-provider", name: "test-agent-model")
+        viewModel.configureModelOptions(
+            [model],
+            defaultProviderID: model.providerID,
+            defaultModelName: model.name
+        )
     }
 }
 

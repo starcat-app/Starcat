@@ -11,7 +11,8 @@
 import Foundation
 
 enum BuiltInAgents {
-    static let githubWeeklyReport = AgentDefinition(
+    /// 使用计算属性而不是进程级静态缓存，切换 App 语言后可重新解析标题与默认提示词。
+    static var githubWeeklyReport: AgentDefinition { AgentDefinition(
         id: "github-weekly-report",
         title: String.l10n("agent.definition.githubWeeklyReport.title"),
         subtitle: String.l10n("agent.definition.githubWeeklyReport.subtitle"),
@@ -23,6 +24,25 @@ enum BuiltInAgents {
         ],
         defaultPrompt: String.l10n("agent.definition.githubWeeklyReport.defaultPrompt"),
         isEnabled: true,
+        workflow: AgentWorkflowPolicy(
+            repositoryContext: .recentStars(days: 7),
+            executionMode: .reportGeneration,
+            allowsManualRepositoryOverride: true,
+            allowsEmptyRepositoryContext: true,
+            usesDefaultPromptWhenEmpty: true,
+            maximumSelectedRepositories: 30
+        ),
+        promptRules: [
+            AgentPromptRule(
+                id: "weekly-local-facts",
+                content: "Treat repository IDs and metadata in Frozen Starcat Context as the only local facts. Use knowledge_search only for the eligible indexed subset and cite only its supplied [S#] markers. Do not claim live GitHub trends, releases, or activity unless a network tool result provides that evidence."
+            ),
+            AgentPromptRule(
+                id: "weekly-artifact-contract",
+                content: "Use context_resolve_repos and repo_cluster_topics as needed, then submit exactly one structured artifact_build_weekly_report call. An empty sections array is valid only when the frozen recent-stars context is empty."
+            )
+        ],
+        artifactTitle: String.l10n("agent.runtime.artifact.weeklyReport.title"),
         toolIDs: [
             "agent_parse_goal",
             "context_resolve_repos",
@@ -32,9 +52,9 @@ enum BuiltInAgents {
             "artifact_build_weekly_report"
         ],
         artifactTypes: [.markdown]
-    )
+    ) }
 
-    static let repoInsight = AgentDefinition(
+    static var repoInsight: AgentDefinition { AgentDefinition(
         id: "repo-insight",
         title: String.l10n("agent.definition.repoInsight.title"),
         subtitle: String.l10n("agent.definition.repoInsight.subtitle"),
@@ -46,6 +66,24 @@ enum BuiltInAgents {
         ],
         defaultPrompt: String.l10n("agent.definition.repoInsight.defaultPrompt"),
         isEnabled: true,
+        workflow: AgentWorkflowPolicy(
+            repositoryContext: .singleRepository,
+            executionMode: .reportGeneration,
+            allowsManualRepositoryOverride: true,
+            allowsEmptyRepositoryContext: false,
+            usesDefaultPromptWhenEmpty: true,
+            maximumSelectedRepositories: 1
+        ),
+        promptRules: [
+            AgentPromptRule(
+                id: "repo-insight-selection",
+                content: "The frozen business context contains exactly one target repository. Base repository facts only on that snapshot; use knowledge_search only when the target is in the eligible indexed subset and preserve supplied [S#] citations."
+            ),
+            AgentPromptRule(
+                id: "repo-insight-artifact-contract",
+                content: "Submit exactly one structured artifact_build_repo_insight call. State missing README, license, maintenance, or live activity evidence as limitations rather than inventing it."
+            )
+        ],
         toolIDs: [
             "agent_parse_repo_insight_goal",
             "context_select_repo",
@@ -54,9 +92,9 @@ enum BuiltInAgents {
             "artifact_build_repo_insight"
         ],
         artifactTypes: [.markdown]
-    )
+    ) }
 
-    static let all: [AgentDefinition] = [
+    static var all: [AgentDefinition] { [
         githubWeeklyReport,
         repoInsight,
         AgentDefinition(
@@ -123,5 +161,5 @@ enum BuiltInAgents {
             defaultPrompt: String.l10n("agent.definition.releaseWatcher.defaultPrompt"),
             isEnabled: false
         )
-    ]
+    ] }
 }

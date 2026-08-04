@@ -78,6 +78,10 @@ protocol RepoRepositoryProtocol: Sendable {
     /// Manage 仍走 `fetchAllStarred()`。
     func fetchRecentStarred(limit: Int) async throws -> [Repo]
 
+    /// 读取指定时间之后新增的 Star。Agent Weekly 用它冻结最近 7 天业务上下文，
+    /// 不能用“最近 N 条”冒充时间窗口。
+    func fetchStarred(since: Date, limit: Int) async throws -> [Repo]
+
     /// 按 GitHub repo id 查找。HOM-47 ReleaseMonitor 巡检每个订阅时需要拿 owner/name。
     /// 不存在返回 nil（不抛错），调用方决定后续行为（如跳过该次巡检）。
     func findById(_ repoId: Int64) async throws -> Repo?
@@ -222,6 +226,18 @@ protocol RepoRepositoryProtocol: Sendable {
 }
 
 extension RepoRepositoryProtocol {
+    /// 测试替身和轻量实现可复用的兼容实现；生产 GRDB 会用 SQL 下推时间过滤。
+    func fetchStarred(since: Date, limit: Int) async throws -> [Repo] {
+        let formatter = ISO8601DateFormatter()
+        return try await fetchAllStarred()
+            .filter { repo in
+                guard let value = repo.starredAt, let date = formatter.date(from: value) else { return false }
+                return date >= since
+            }
+            .prefix(max(1, limit))
+            .map { $0 }
+    }
+
     /// 兼容只关心普通 Repo 查询的测试替身；生产 GRDB 实现会返回真实项目维度。
     func fetchProjectFilterOptions(userID: Int64) async throws -> ProjectFilterOptions {
         .empty

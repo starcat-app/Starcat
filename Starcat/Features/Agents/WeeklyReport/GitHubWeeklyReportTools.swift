@@ -34,7 +34,7 @@ enum GitHubWeeklyReportTools {
         let normalizedGoal = effectivePrompt.isEmpty ? "生成 GitHub 技术周刊 Markdown" : effectivePrompt
         return makeResult(
             toolName: "agent_parse_goal",
-            summary: "Markdown Weekly Report",
+            summary: String.l10n("agent.weekly.tool.summary.report"),
             input: """
             prompt:
             \(normalizedGoal)
@@ -48,7 +48,7 @@ enum GitHubWeeklyReportTools {
             write_policy: read-only
             repo_count: \(context.repos.count)
             """,
-            log: "Parsed user goal without write-capable actions."
+            log: String.l10n("agent.weekly.tool.log.goalParsed")
         )
     }
 
@@ -92,7 +92,7 @@ enum GitHubWeeklyReportTools {
             \(sort.rawValue)
             """,
             output: output,
-            log: "Resolved top candidates from frozen AgentRunContext."
+            log: String.l10n("agent.weekly.tool.log.repositoriesResolved")
         )
     }
 
@@ -104,13 +104,15 @@ enum GitHubWeeklyReportTools {
         let allowedIDs = Set(repoIDs)
         let repos = repoIDs.isEmpty ? context.repos : context.repos.filter { allowedIDs.contains($0.id) }
         let groupedByLanguage = Dictionary(grouping: repos) { repo in
-            nonEmpty(repo.language) ?? "Other"
+            nonEmpty(repo.language) ?? String.l10n("agent.weekly.topic.other")
         }
         let unsortedTopics: [WeeklyReportTopic] = groupedByLanguage.map { language, repos in
             let sortedRepos = repos.sorted { $0.starsCount > $1.starsCount }
             return WeeklyReportTopic(
-                title: language == "Other" ? "跨语言工具与基础设施" : "\(language) 生态项目",
-                reason: "按主要语言聚合,用于形成周刊主题段落。",
+                title: language == String.l10n("agent.weekly.topic.other")
+                    ? String.l10n("agent.weekly.topic.crossLanguage")
+                    : String(format: String.l10n("agent.weekly.topic.languageFormat"), language),
+                reason: String.l10n("agent.weekly.topic.reason"),
                 repos: Array(sortedRepos.prefix(5))
             )
         }
@@ -133,7 +135,7 @@ enum GitHubWeeklyReportTools {
                 summary: "\(topicList.count) topics",
                 input: "repo_count: \(repos.count)\nrepo_ids: \(repos.map(\.id))\nmax_topics: \(maxTopics)\nstrategy: language-first clustering",
                 output: output,
-                log: "Clustered frozen repo snapshots into weekly report topics."
+                log: String.l10n("agent.weekly.tool.log.topicsClustered")
             )
         )
     }
@@ -156,7 +158,7 @@ enum GitHubWeeklyReportTools {
         return WeeklyReportToolResult(
             output: toolOutput,
             trace: AgentTraceSpan(
-                kind: "Tool",
+                kind: String.l10n("agent.trace.kind.tool"),
                 title: toolName,
                 summary: summary,
                 input: input,
@@ -207,7 +209,7 @@ private func makeReadOnlyToolDefinition(
 private func failedAgentToolResult(toolName: String, input: String, message: String) -> AgentToolResult {
     let output = AgentToolOutput(
         toolName: toolName,
-        summary: "failed",
+        summary: String.l10n("agent.tool.status.failed"),
         detail: message,
         input: input,
         output: "error: \(message)",
@@ -217,7 +219,7 @@ private func failedAgentToolResult(toolName: String, input: String, message: Str
         status: .failed,
         output: output,
         trace: AgentTraceSpan(
-            kind: "Tool",
+            kind: String.l10n("agent.trace.kind.tool"),
             title: toolName,
             summary: output.summary,
             input: input,
@@ -382,7 +384,7 @@ enum GitHubWeeklyReportAgentTools {
 
         let definition = makeReadOnlyToolDefinition(
             name: "artifact_build_weekly_report",
-            description: "Submit a structured weekly report. Every section must cite repository IDs from the frozen Starcat context.",
+            description: "Submit a structured weekly report. Sections must cite frozen repository IDs when repositories exist; use an empty sections array for a valid no-new-stars report.",
             properties: [
                 "title": AgentJSONSchema(type: .string, description: "Report title"),
                 "executiveSummary": AgentJSONSchema(type: .string, description: "Concise report overview grounded in prior tool results"),
@@ -416,7 +418,7 @@ enum GitHubWeeklyReportAgentTools {
                     summary: "\(markdown.count) chars",
                     input: (try? input.arguments.jsonString()) ?? "{}",
                     output: String(markdown.prefix(1_200)),
-                    log: "Validated repository references and built the final weekly report artifact."
+                    log: String.l10n("agent.weekly.tool.log.artifactBuilt")
                 )
                 let referencedIDs = Set(request.sections.flatMap(\.repoIDs))
                 let sources = input.context.repos.filter { referencedIDs.contains($0.id) }.map {
@@ -464,7 +466,7 @@ enum RepoInsightAgentTools {
             let effectivePrompt = prompt.isEmpty ? String.l10n("agent.definition.repoInsight.defaultPrompt") : prompt
             return makeResult(
                 toolName: id,
-                summary: "Repo Insight",
+                summary: String.l10n("agent.repoInsight.tool.summary.report"),
                 input: """
                 prompt:
                 \(effectivePrompt)
@@ -478,7 +480,7 @@ enum RepoInsightAgentTools {
                 write_policy: read-only
                 repo_count: \(input.context.repos.count)
                 """,
-                log: "Parsed repo insight goal without write-capable actions."
+                log: String.l10n("agent.repoInsight.tool.log.goalParsed")
             ).agentToolResult()
         }
     }
@@ -523,7 +525,7 @@ enum RepoInsightAgentTools {
                 \(input.context.repos.map { "- \($0.displaySummary)" }.joined(separator: "\n"))
                 """,
                 output: repoDetail(repo),
-                log: "Selected target repo from frozen AgentRunContext."
+                log: String.l10n("agent.repoInsight.tool.log.repositorySelected")
             )
             return result.agentToolResult(payload: .repo(repo))
         }
@@ -578,7 +580,7 @@ enum RepoInsightAgentTools {
                     summary: "\(markdown.count) chars",
                     input: (try? input.arguments.jsonString()) ?? "{}",
                     output: String(markdown.prefix(1_200)),
-                    log: "Validated the repository reference and built the final Repo Insight artifact."
+                    log: String.l10n("agent.repoInsight.tool.log.artifactBuilt")
                 )
                 return result.agentToolResult(
                     payload: .markdown(markdown),
@@ -612,7 +614,7 @@ enum RepoInsightAgentTools {
         return WeeklyReportToolResult(
             output: toolOutput,
             trace: AgentTraceSpan(
-                kind: "Tool",
+                kind: String.l10n("agent.trace.kind.tool"),
                 title: toolName,
                 summary: summary,
                 input: input,

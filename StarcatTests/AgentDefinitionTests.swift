@@ -27,6 +27,11 @@ struct AgentDefinitionTests {
             "artifact_build_weekly_report"
         ])
         #expect(agent.artifactTypes == [.markdown])
+        #expect(agent.workflow.repositoryContext == .recentStars(days: 7))
+        #expect(agent.workflow.allowsEmptyRepositoryContext)
+        #expect(agent.workflow.allowsManualRepositoryOverride)
+        #expect(agent.workflow.usesDefaultPromptWhenEmpty)
+        #expect(agent.promptRules.map(\.id) == ["weekly-local-facts", "weekly-artifact-contract"])
     }
 
     @Test("Repo Insight Agent 声明只读工具 allowlist 并默认启用")
@@ -42,5 +47,9 @@ struct AgentDefinitionTests {
             "artifact_build_repo_insight"
         ])
         #expect(agent.artifactTypes == [.markdown])
+        #expect(agent.workflow.repositoryContext == .singleRepository)
+        #expect(agent.workflow.maximumSelectedRepositories == 1)
+        #expect(!agent.workflow.allowsEmptyRepositoryContext)
+        #expect(agent.promptRules.map(\.id) == ["repo-insight-selection", "repo-insight-artifact-contract"])
     }
 }

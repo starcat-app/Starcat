@@ -33,6 +33,7 @@ struct AgentExternalSearchToolTests {
             log: "provider=exa\ncache=miss"
         ))
         let tool = ExternalSearchAgentTool(collector: collector)
+        #expect(tool.permission == .openWorldRead)
         let arguments: AgentJSONValue = .object([
             "query": .string("Swift GRDB release notes"),
             "maxResults": .number(6),
@@ -45,7 +46,10 @@ struct AgentExternalSearchToolTests {
 
         #expect(result.status == .completed)
         #expect(result.output.toolName == "external_search")
-        #expect(result.output.summary == "1 sources")
+        #expect(result.output.summary == String(
+            format: String.l10n("agent.externalSearch.summary.sourcesFormat"),
+            1
+        ))
         #expect(result.trace.output.contains("https://example.com/grdb"))
         if case .externalContextMarkdown(let markdown) = result.payload {
             #expect(markdown.contains("GRDB"))
@@ -79,7 +83,7 @@ struct AgentExternalSearchToolTests {
 
         #expect(result.status == .skipped)
         #expect(result.trace.status == .skipped)
-        #expect(result.output.summary == "skipped")
+        #expect(result.output.summary == String.l10n("agent.tool.status.skipped"))
         #expect(result.output.log.contains("disabled"))
     }
 
@@ -103,7 +107,7 @@ struct AgentExternalSearchToolTests {
 
         #expect(result.status == .skipped)
         #expect(collector.requests.isEmpty)
-        #expect(result.output.log.contains("disabled for this run"))
+        #expect(result.output.log == String.l10n("agent.externalSearch.log.disabledForRun"))
     }
 
     @Test("external_search 不会用用户 prompt 替代缺失的模型 query")
@@ -169,17 +173,20 @@ struct AgentExternalSearchToolTests {
             )]
         )
         let request = AgentExternalSearchRequest(
-            query: "acme/secret release roadmap",
+            query: "Swift release roadmap",
             maxResults: 5,
             allowedDomains: [],
             recency: nil,
-            repoIDs: [99]
+            repoIDs: []
         )
 
         let collection = await collector.collect(request: request, context: context)
 
         #expect(collection.status == .skipped)
-        #expect(collection.log.contains("blocked private repositories"))
+        #expect(collection.log == String(
+            format: String.l10n("agent.externalSearch.log.privateRepositoriesBlockedFormat"),
+            "acme/secret"
+        ))
         #expect(recorder.requestCount == 0)
     }
 }

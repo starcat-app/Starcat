@@ -17,6 +17,7 @@ enum LoopAgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
     case approvalRequired(String)
     case contextUnavailable
     case repositoryContextEmpty
+    case duplicateCompletionArtifact
     case toolNotVisible(String)
 
     var errorDescription: String? {
@@ -31,6 +32,8 @@ enum LoopAgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
             return String.l10n("agent.loop.error.contextUnavailable")
         case .repositoryContextEmpty:
             return String.l10n("agent.loop.error.repositoryContextEmpty")
+        case .duplicateCompletionArtifact:
+            return String.l10n("agent.loop.error.duplicateCompletionArtifact")
         case .toolNotVisible(let toolName):
             return String(format: String.l10n("agent.loop.error.toolNotVisibleFormat"), toolName)
         }
@@ -424,6 +427,11 @@ struct LoopAgentRuntime: AgentRuntime {
             for call in calls {
                 try Task.checkCancellation()
                 let completesRun = (try? toolRegistry.tool(named: call.name).definition.completesRun) == true
+                if completesRun, pendingCompletionArtifact != nil {
+                    // 一个 run 只能有一个终态 artifact。若同轮覆盖前一个，审计记录会把
+                    // 模型的首个提交静默抹掉，因此直接终止并要求模型下一次只提交一次。
+                    throw LoopAgentRuntimeError.duplicateCompletionArtifact
+                }
                 let execution = try await executeToolCall(
                     call,
                     runID: runID,
@@ -586,7 +594,7 @@ struct LoopAgentRuntime: AgentRuntime {
                 values: values,
                 payload: payload
             )
-            if tool.permission != .readOnly {
+            if !tool.permission.isAutomaticRead {
                 return try await executeApprovedTool(
                     tool: tool,
                     input: input,
@@ -716,7 +724,7 @@ struct LoopAgentRuntime: AgentRuntime {
         }
 
         let tool = try toolRegistry.validatedTool(for: call)
-        guard tool.permission != .readOnly, tool.permission == approval.permission else {
+        guard !tool.permission.isAutomaticRead, tool.permission == approval.permission else {
             throw LoopAgentRuntimeError.approvalRequired(approval.toolName)
         }
         let input = AgentToolInput(
@@ -755,7 +763,7 @@ struct LoopAgentRuntime: AgentRuntime {
         let startedAt = Date()
         // 写入型和高成本工具即使定义误配 retryPolicy，也只允许执行一次；否则审批只
         // 覆盖一次调用却可能产生多次副作用。
-        let policy = tool.permission == .readOnly ? tool.definition.retryPolicy : .none
+        let policy = tool.permission.isAutomaticRead ? tool.definition.retryPolicy : .none
         var attempt = 0
         var attempts: [AgentToolExecutionAttempt] = []
         while attempt <= policy.maxRetries {
@@ -845,7 +853,7 @@ struct LoopAgentRuntime: AgentRuntime {
         case .approvedAction:
             return tools
         case .readonlyPlanning, .reportGeneration, .backgroundDigest:
-            return tools.filter { $0.permission == .readOnly }
+            return tools.filter { $0.permission.isAutomaticRead }
         }
     }
 
@@ -856,42 +864,13 @@ struct LoopAgentRuntime: AgentRuntime {
         if context.failureReason != nil {
             throw LoopAgentRuntimeError.contextUnavailable
         }
-        let requiresRepositories = [
-            BuiltInAgents.githubWeeklyReport.id,
-            BuiltInAgents.repoInsight.id
-        ].contains(definition.id)
-        if requiresRepositories, context.repos.isEmpty {
+        if !definition.workflow.allowsEmptyRepositoryContext, context.repos.isEmpty {
             throw LoopAgentRuntimeError.repositoryContextEmpty
         }
     }
 
     private func definitionRules(_ definition: AgentDefinition) -> [AgentPromptRule] {
-        switch definition.id {
-        case BuiltInAgents.githubWeeklyReport.id:
-            return [
-                AgentPromptRule(
-                    id: "weekly-local-facts",
-                    content: "Treat repository IDs and metadata in Frozen Starcat Context as the only local facts. Use knowledge_search for indexed README, notes, summaries or metadata and cite only its supplied [S#] markers. Do not claim live GitHub trends, releases or activity unless a network tool result provides that evidence."
-                ),
-                AgentPromptRule(
-                    id: "weekly-artifact-contract",
-                    content: "Use context_resolve_repos and repo_cluster_topics as needed, then submit exactly one structured artifact_build_weekly_report call. Cite only repository IDs returned by the frozen context."
-                )
-            ]
-        case BuiltInAgents.repoInsight.id:
-            return [
-                AgentPromptRule(
-                    id: "repo-insight-selection",
-                    content: "Select the target with context_select_repo using repoID or exact fullName. Base repository facts only on the frozen Starcat context; use knowledge_search for indexed README, notes, summaries or metadata and preserve its [S#] citations."
-                ),
-                AgentPromptRule(
-                    id: "repo-insight-artifact-contract",
-                    content: "Submit exactly one structured artifact_build_repo_insight call. State missing README, license, maintenance or live activity evidence as limitations rather than inventing it."
-                )
-            ]
-        default:
-            return []
-        }
+        definition.promptRules
     }
 
     private func applyPayload(
@@ -910,12 +889,7 @@ struct LoopAgentRuntime: AgentRuntime {
     }
 
     private func artifactTitle(for definition: AgentDefinition) -> String {
-        switch definition.id {
-        case BuiltInAgents.githubWeeklyReport.id:
-            return String.l10n("agent.runtime.artifact.weeklyReport.title")
-        default:
-            return definition.title
-        }
+        definition.artifactTitle ?? definition.title
     }
 
     private func persistCreateRun(

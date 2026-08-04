@@ -16,15 +16,22 @@ import Foundation
 /// 只注册只读工具。后续接 tag/note/star 时必须声明对应权限,不能把写操作混进自动 loop。
 enum AgentToolPermission: String, Codable, Hashable, Sendable {
     case readOnly
+    /// 会访问开放网络、但不写入 Starcat 数据；必须同时经过 Run 级联网授权与隐私策略。
+    case openWorldRead
     case requiresConfirmation
     case highCost
 
     var localizedTitle: String {
         switch self {
         case .readOnly: return String.l10n("agent.tool.permission.readOnly")
+        case .openWorldRead: return String.l10n("agent.tool.permission.openWorldRead")
         case .requiresConfirmation: return String.l10n("agent.tool.permission.requiresConfirmation")
         case .highCost: return String.l10n("agent.tool.permission.highCost")
         }
+    }
+
+    var isAutomaticRead: Bool {
+        self == .readOnly || self == .openWorldRead
     }
 }
 

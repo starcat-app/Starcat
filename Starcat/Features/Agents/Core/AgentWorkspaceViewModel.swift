@@ -22,14 +22,14 @@ final class AgentWorkspaceViewModel {
     private var runtime: any AgentRuntime
     private var contextProvider: any AgentRunContextProviding
     private var runRepository: (any AgentRunRepositoryProtocol)?
-    private var repoCandidateRepository: (any RAGRepoCandidateRepositoryProtocol)?
+    private var repoRepository: (any RepoRepositoryProtocol)?
     private var runTask: Task<Void, Never>?
     private var mentionTask: Task<Void, Never>?
     private var activeRunID: UUID?
     private var draftsByAgentID: [String: String] = [:]
     private var isContextPickerTriggeredByMention = false
 
-    let agents: [AgentDefinition]
+    private(set) var agents: [AgentDefinition]
     var selectedAgentID: String
     var prompt: String
     var runTitle: String = String.l10n("agent.workspace.status.ready")
@@ -95,7 +95,35 @@ final class AgentWorkspaceViewModel {
     }
 
     var selectedAgentRequiresRepositories: Bool {
-        [BuiltInAgents.githubWeeklyReport.id, BuiltInAgents.repoInsight.id].contains(selectedAgentID)
+        guard let selectedAgent else { return false }
+        if case .singleRepository = selectedAgent.workflow.repositoryContext { return true }
+        return false
+    }
+
+    var selectedAgentSupportsRepositorySelection: Bool {
+        selectedAgent?.workflow.allowsManualRepositoryOverride == true
+    }
+
+    var maximumSelectedRepoContexts: Int {
+        selectedAgent?.workflow.maximumSelectedRepositories ?? 0
+    }
+
+    /// 按钮和键盘发送共用同一校验，避免 UI 显示不可发送但 Return 仍启动 run。
+    var canSubmit: Bool {
+        guard !isRunning,
+              let selectedAgent,
+              selectedAgent.isEnabled,
+              let selectedModelID,
+              availableModels.contains(where: { $0.id == selectedModelID }),
+              !effectivePrompt(for: selectedAgent).isEmpty
+        else { return false }
+
+        switch selectedAgent.workflow.repositoryContext {
+        case .none, .recentStars:
+            return true
+        case .singleRepository:
+            return selectedRepoContexts.count == 1 || (selectedRepoContexts.isEmpty && githubLinks.count == 1)
+        }
     }
 
     var selectedModelDisplayName: String {
@@ -107,7 +135,24 @@ final class AgentWorkspaceViewModel {
         draftsByAgentID[selectedAgentID] = prompt
         selectedAgentID = agent.id
         prompt = draftsByAgentID[agent.id] ?? ""
+        if agent.workflow.maximumSelectedRepositories == 0 {
+            selectedRepoContexts = []
+        } else if selectedRepoContexts.count > agent.workflow.maximumSelectedRepositories {
+            selectedRepoContexts = Array(selectedRepoContexts.prefix(agent.workflow.maximumSelectedRepositories))
+        }
+        if case .singleRepository = agent.workflow.repositoryContext {
+            explicitRepoMode = .only
+        }
         handlePromptChanged()
+    }
+
+    /// `.xcstrings` 运行时切换后重建定义中的已解析 String，同时保留当前 Agent 身份。
+    func refreshLocalizedDefinitions(_ definitions: [AgentDefinition]) {
+        guard !isRunning else { return }
+        agents = definitions
+        if !agents.contains(where: { $0.id == selectedAgentID }) {
+            selectedAgentID = agents.first?.id ?? ""
+        }
     }
 
     func configureContextProvider(_ provider: any AgentRunContextProviding) {
@@ -125,9 +170,9 @@ final class AgentWorkspaceViewModel {
         runRepository = repository
     }
 
-    func configureRepoCandidateRepository(_ repository: any RAGRepoCandidateRepositoryProtocol) {
+    func configureRepoRepository(_ repository: any RepoRepositoryProtocol) {
         guard !isRunning else { return }
-        repoCandidateRepository = repository
+        repoRepository = repository
     }
 
     func configureModelOptions(
@@ -175,9 +220,8 @@ final class AgentWorkspaceViewModel {
     }
 
     func run() {
-        guard let selectedAgent, selectedAgent.isEnabled else { return }
-        let effectivePrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !effectivePrompt.isEmpty else { return }
+        guard canSubmit, let selectedAgent else { return }
+        let effectivePrompt = effectivePrompt(for: selectedAgent)
 
         runTask?.cancel()
         status = .planning
@@ -349,10 +393,15 @@ final class AgentWorkspaceViewModel {
         if let index = selectedRepoContexts.firstIndex(where: { $0.id == candidate.id }) {
             selectedRepoContexts.remove(at: index)
         } else {
-            guard selectedRepoContexts.count < Self.maxSelectedRepoContexts else {
+            let maximum = maximumSelectedRepoContexts
+            guard maximum > 0 else { return }
+            if maximum == 1 {
+                selectedRepoContexts.removeAll()
+            }
+            guard selectedRepoContexts.count < maximum else {
                 errorMessage = String(
                     format: String.l10n("rag.workspace.mention.selectionLimit"),
-                    Self.maxSelectedRepoContexts
+                    maximum
                 )
                 return
             }
@@ -374,20 +423,16 @@ final class AgentWorkspaceViewModel {
     }
 
     private func refreshMentionCandidates() {
-        guard let repoCandidateRepository else { return }
+        guard let repoRepository else { return }
         let query = contextPickerQuery
         mentionTask?.cancel()
         mentionTask = Task { [weak self] in
             do {
-                let page = try await repoCandidateRepository.fetchMentionCandidates(
-                    query: query,
-                    limit: 30,
-                    offset: 0,
-                    sort: RAGComposerMentionSort.default,
-                    filters: .empty
-                )
+                // Agent 目标来自普通 Star，而不是知识库候选。RAG 只在运行时为其中已入库的
+                // 子集补充证据，不能反过来限制 Agent 能选择哪些仓库。
+                let repos = try await repoRepository.searchFTS(query: query)
                 guard !Task.isCancelled, self?.contextPickerQuery == query else { return }
-                self?.mentionCandidates = page.candidates
+                self?.mentionCandidates = repos.prefix(30).map(RAGMentionCandidate.init(repo:))
                 self?.highlightedMentionIndex = 0
             } catch {
                 guard !Task.isCancelled else { return }
@@ -410,6 +455,12 @@ final class AgentWorkspaceViewModel {
         prompt = String(prompt[..<index])
         contextPickerQuery = ""
         draftsByAgentID[selectedAgentID] = prompt
+    }
+
+    private func effectivePrompt(for agent: AgentDefinition) -> String {
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { return trimmed }
+        return agent.workflow.usesDefaultPromptWhenEmpty ? agent.defaultPrompt : ""
     }
 
     func copySelectedArtifact() {

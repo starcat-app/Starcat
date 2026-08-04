@@ -160,9 +160,9 @@ struct AgentKnowledgeAuditView: View {
 
     private func localizedLimitation(_ limitation: String) -> String {
         switch limitation {
-        case "No relevant indexed evidence was found in the frozen repository scope.":
+        case "No relevant indexed evidence was found in the provided repository scope.":
             String.l10n("agent.workspace.knowledgeAudit.limitation.noEvidence")
-        case "Some matched chunks were omitted by the Agent knowledge evidence budget.":
+        case "Some matched chunks were omitted by the knowledge evidence budget.":
             String.l10n("agent.workspace.knowledgeAudit.limitation.evidenceBudget")
         case "Vector retrieval was unavailable; keyword retrieval remained active.":
             String.l10n("agent.workspace.knowledgeAudit.limitation.vectorUnavailable")

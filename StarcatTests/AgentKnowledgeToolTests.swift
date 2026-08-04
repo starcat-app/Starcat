@@ -37,8 +37,8 @@ struct AgentKnowledgeToolTests {
         #expect(request.explicitRepoIDs == [5])
     }
 
-    @Test("only prefer exclude 都只检索冻结仓库并向 Retriever 传递原模式")
-    func frozenScopeAndExplicitModeReachRetriever() async throws {
+    @Test("业务层模式不再二次解释，Knowledge 只检索冻结的 eligible 子集")
+    func knowledgeUsesFrozenEligibleScopeAsOnly() async throws {
         let cases: [(AIComposerExplicitRepoMode, [Int64], [Int64])] = [
             (.only, [3, 1], [3, 1]),
             (.prefer, [3, 1, 2], [3]),
@@ -63,8 +63,8 @@ struct AgentKnowledgeToolTests {
             #expect(await candidates.requestedRepoIDs() == frozenIDs)
             let request = try #require(await retriever.latestRequest())
             #expect(request.candidateIDs == frozenIDs)
-            #expect(request.explicitMode.rawValue == mode.rawValue)
-            #expect(request.explicitRepoIDs == explicitIDs)
+            #expect(request.explicitMode == .only)
+            #expect(request.explicitRepoIDs == frozenIDs)
         }
     }
 
@@ -261,7 +261,8 @@ struct AgentKnowledgeToolTests {
             sourceDescription: "Unit Snapshot",
             repos: frozenIDs.map(repoSnapshot),
             explicitRepos: explicitIDs.map(repoReference),
-            explicitRepoMode: mode
+            explicitRepoMode: mode,
+            knowledgeEligibleRepoIDs: frozenIDs
         )
     }
 

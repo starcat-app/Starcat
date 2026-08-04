@@ -397,11 +397,13 @@ struct LoopAgentRuntimeTests {
         #expect(!events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
     }
 
-    @Test("Weekly 缺少仓库上下文时在模型请求前失败且不生成产物")
-    func weeklyFailsBeforeModelWhenRepositoryContextIsEmpty() async throws {
+    @Test("Weekly 最近一周无新增仓库时仍可进入模型生成空周报")
+    func weeklyAllowsEmptyRepositoryContext() async throws {
         let database = try InMemoryDatabaseManager()
         let repository = GRDBAgentRunRepository(database: database)
-        let recorder = ModelRequestRecorder(responses: [])
+        let recorder = ModelRequestRecorder(responses: [
+            .init(text: "本周没有新增 Star。", reasoning: nil, toolCalls: [], model: "test", finishReason: "stop")
+        ])
         let runtime = LoopAgentRuntime(
             modelClient: RecordedAgentModelClient(recorder: recorder),
             toolRegistry: try AgentToolRegistry(tools: []),
@@ -415,8 +417,16 @@ struct LoopAgentRuntimeTests {
             capabilityLabels: [],
             defaultPrompt: "",
             isEnabled: true,
+            workflow: AgentWorkflowPolicy(
+                repositoryContext: .recentStars(days: 7),
+                executionMode: .reportGeneration,
+                allowsManualRepositoryOverride: true,
+                allowsEmptyRepositoryContext: true,
+                usesDefaultPromptWhenEmpty: true,
+                maximumSelectedRepositories: 30
+            ),
             toolIDs: [],
-            artifactTypes: [.markdown]
+            artifactTypes: []
         )
 
         let events = await collect(runtime.run(
@@ -427,13 +437,10 @@ struct LoopAgentRuntimeTests {
         let run = try #require(try await repository.recentRuns(limit: 1).first)
         let snapshot = try #require(try await repository.snapshot(runID: UUID(uuidString: run.id)!))
 
-        #expect((await recorder.recordedRequests()).isEmpty)
-        #expect(snapshot.run.status == AgentRunStatus.failed.rawValue)
+        #expect((await recorder.recordedRequests()).count == 1)
+        #expect(snapshot.run.status == AgentRunStatus.completed.rawValue)
         #expect(snapshot.artifacts.isEmpty)
-        #expect(events.contains(where: { event in
-            guard case .runFailed(let message) = event else { return false }
-            return message == LoopAgentRuntimeError.repositoryContextEmpty.localizedDescription
-        }))
+        #expect(events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
     }
 
     @Test("迭代预算耗尽会进入失败终态")
@@ -585,6 +592,45 @@ struct LoopAgentRuntimeTests {
         #expect(artifact.sequence > (messages.map(\.sequence).max() ?? -1))
         #expect(artifactIndex < completedIndex)
         #expect(events.suffix(from: artifactIndex).contains(where: { if case .messageAppended = $0 { return true }; return false }) == false)
+    }
+
+    @Test("同一轮重复提交 completion artifact 会失败且不会覆盖首个提交")
+    func duplicateCompletionArtifactsAreRejected() async throws {
+        let recorder = ModelRequestRecorder(responses: [
+            .init(
+                text: "",
+                reasoning: nil,
+                toolCalls: [
+                    .init(id: "call-submit-1", name: "submit_report", arguments: "{}"),
+                    .init(id: "call-submit-2", name: "submit_report", arguments: "{}")
+                ],
+                model: "test",
+                finishReason: "tool_calls"
+            )
+        ])
+        let tool = RuntimeStubTool(
+            name: "submit_report",
+            result: "submitted",
+            completesRun: true,
+            payload: .markdown("# Final Report")
+        )
+        let runtime = LoopAgentRuntime(
+            modelClient: RecordedAgentModelClient(recorder: recorder),
+            toolRegistry: try AgentToolRegistry(tools: [tool])
+        )
+
+        let events = await collect(runtime.run(
+            definition: makeDefinition(toolIDs: ["submit_report"], artifactTypes: [.markdown]),
+            prompt: "生成报告",
+            context: .empty
+        ))
+
+        #expect(await tool.executionCount() == 1)
+        #expect(!events.contains(where: { if case .artifactCreated = $0 { return true }; return false }))
+        #expect(events.contains(where: { event in
+            guard case .runFailed(let message) = event else { return false }
+            return message == LoopAgentRuntimeError.duplicateCompletionArtifact.localizedDescription
+        }))
     }
 
     @Test("批准后只执行原 tool-call 一次并继续同一 run")

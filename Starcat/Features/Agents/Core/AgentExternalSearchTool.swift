@@ -149,7 +149,7 @@ struct DisabledAgentExternalSearchCollector: AgentExternalSearchCollecting {
             markdown: "",
             sourceItems: [],
             querySummary: request.auditSummary,
-            log: "External Search collector is not configured for this runtime."
+            log: String.l10n("agent.externalSearch.log.unconfigured")
         )
     }
 }
@@ -181,7 +181,7 @@ struct ExternalSearchAgentTool: AgentTool {
             ],
             required: ["query"]
         ),
-        permission: .readOnly,
+        permission: .openWorldRead,
         timeoutMilliseconds: 45_000,
         retryPolicy: .transientRead
     )
@@ -201,7 +201,7 @@ struct ExternalSearchAgentTool: AgentTool {
                 markdown: "",
                 sourceItems: [],
                 querySummary: (try? input.arguments.jsonString()) ?? "",
-                log: "External Search is disabled for this run."
+                log: String.l10n("agent.externalSearch.log.disabledForRun")
             )
         } else {
             do {
@@ -230,7 +230,7 @@ struct ExternalSearchAgentTool: AgentTool {
             status: collection.status,
             output: output,
             trace: AgentTraceSpan(
-                kind: "Tool",
+                kind: String.l10n("agent.trace.kind.tool"),
                 title: id,
                 summary: output.summary,
                 input: output.input,
@@ -253,11 +253,14 @@ struct ExternalSearchAgentTool: AgentTool {
     private static func summary(for collection: AgentExternalSearchCollection) -> String {
         switch collection.status {
         case .completed:
-            return "\(collection.sourceItems.count) sources"
+            return String(
+                format: String.l10n("agent.externalSearch.summary.sourcesFormat"),
+                collection.sourceItems.count
+            )
         case .skipped:
-            return "skipped"
+            return String.l10n("agent.tool.status.skipped")
         case .failed:
-            return "failed"
+            return String.l10n("agent.tool.status.failed")
         }
     }
 
@@ -289,7 +292,7 @@ final class AppSettingsAgentExternalSearchCollector: AgentExternalSearchCollecti
                 markdown: "",
                 sourceItems: [],
                 querySummary: request.auditSummary,
-                log: "External Search is disabled in Settings."
+                log: String.l10n("agent.externalSearch.log.disabledInSettings")
             )
         }
 
@@ -301,23 +304,29 @@ final class AppSettingsAgentExternalSearchCollector: AgentExternalSearchCollecti
                 markdown: "",
                 sourceItems: [],
                 querySummary: request.auditSummary,
-                log: "Unknown Agent repository IDs: \(unknownRepoIDs.map(String.init).joined(separator: ", "))"
+                log: String(
+                    format: String.l10n("agent.externalSearch.log.unknownRepositoriesFormat"),
+                    unknownRepoIDs.map(String.init).joined(separator: ", ")
+                )
             )
         }
 
         let selectedRepos = request.repoIDs.compactMap { reposByID[$0] }
-        let blockedPrivateRepos = context.repos.filter { repo in
-            guard repo.isPrivate, !settings.externalSearchAllowPrivateRepos else { return false }
-            return selectedRepos.contains(where: { $0.id == repo.id })
-                || request.query.localizedCaseInsensitiveContains(repo.fullName)
-        }
+        // 模型已经看过完整冻结上下文，不能靠 query 是否恰好包含 fullName 判断泄漏。
+        // 用户未授权私有仓库联网时，只要业务上下文含私有仓库，就关闭该 run 的外部搜索。
+        let blockedPrivateRepos = settings.externalSearchAllowPrivateRepos
+            ? []
+            : context.repos.filter(\.isPrivate)
         guard blockedPrivateRepos.isEmpty else {
             return AgentExternalSearchCollection(
                 status: .skipped,
                 markdown: "",
                 sourceItems: [],
                 querySummary: request.auditSummary,
-                log: "External Search blocked private repositories: \(blockedPrivateRepos.map(\.fullName).joined(separator: ", "))"
+                log: String(
+                    format: String.l10n("agent.externalSearch.log.privateRepositoriesBlockedFormat"),
+                    blockedPrivateRepos.map(\.fullName).joined(separator: ", ")
+                )
             )
         }
 
@@ -346,7 +355,10 @@ final class AppSettingsAgentExternalSearchCollector: AgentExternalSearchCollecti
                 markdown: "",
                 sourceItems: [],
                 querySummary: request.auditSummary,
-                log: "External Search failed: \(error.localizedDescription)"
+                log: String(
+                    format: String.l10n("agent.externalSearch.log.failedFormat"),
+                    error.localizedDescription
+                )
             )
         }
     }

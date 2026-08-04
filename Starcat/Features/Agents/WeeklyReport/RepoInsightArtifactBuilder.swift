@@ -74,9 +74,9 @@ enum RepoInsightArtifactError: LocalizedError, Equatable, Sendable {
     var errorDescription: String? {
         switch self {
         case .invalidArguments(let detail):
-            return "Invalid Repo Insight artifact arguments: \(detail)"
+            return String(format: String.l10n("agent.artifact.repoInsight.error.invalidArgumentsFormat"), detail)
         case .unknownRepositoryID(let id):
-            return "Repo Insight references repository \(id) outside the frozen run context"
+            return String(format: String.l10n("agent.artifact.repoInsight.error.unknownRepositoryFormat"), id)
         }
     }
 }
@@ -91,74 +91,76 @@ enum RepoInsightArtifactBuilder {
         guard let repo = context.repos.first(where: { $0.id == request.repoID }) else {
             throw RepoInsightArtifactError.unknownRepositoryID(request.repoID)
         }
-        let topics = repo.topics.isEmpty ? "None in local snapshot" : repo.topics.joined(separator: ", ")
+        let topics = repo.topics.isEmpty
+            ? String.l10n("agent.artifact.repoInsight.noTopics")
+            : repo.topics.joined(separator: ", ")
         let external = cleanExternalContext(externalContextMarkdown)
         let externalSources: String
         if request.includeSources, !external.isEmpty {
             externalSources = """
 
-            ### External Search
+            ### \(String.l10n("agent.artifact.common.externalSearch"))
 
             \(external)
             """
         } else {
-            externalSources = "\n\n### External Search\n\n- Not used, disabled, or no verifiable results were returned."
+            externalSources = "\n\n### \(String.l10n("agent.artifact.common.externalSearch"))\n\n- \(String.l10n("agent.artifact.common.externalUnavailable"))"
         }
 
         return """
         # \(request.title)
 
-        > User goal: \(prompt)
-        > Repository: [\(repo.fullName)](\(repo.htmlUrl))
-        > Data source: \(context.sourceDescription)
-        > Snapshot time: \(ISO8601DateFormatter.shared.string(from: context.generatedAt))
+        > \(String.l10n("agent.artifact.common.userGoal")): \(prompt)
+        > \(String.l10n("agent.artifact.common.repository")): [\(repo.fullName)](\(repo.htmlUrl))
+        > \(String.l10n("agent.artifact.common.dataSource")): \(context.sourceDescription)
+        > \(String.l10n("agent.artifact.common.snapshotTime")): \(ISO8601DateFormatter.shared.string(from: context.generatedAt))
 
-        ## Summary
+        ## \(String.l10n("agent.artifact.common.summary"))
 
         \(request.summary)
 
-        ## Repository Snapshot
+        ## \(String.l10n("agent.artifact.repoInsight.repositorySnapshot"))
 
         - [R1] **[\(repo.fullName)](\(repo.htmlUrl))**
-        - Language: \(repo.language ?? "Unknown")
-        - Stars: \(repo.starsCount)
-        - Description: \(repo.description ?? "No description in local snapshot")
-        - Topics: \(topics)
-        - Private: \(repo.isPrivate)
+        - \(String.l10n("agent.artifact.common.language")): \(repo.language ?? String.l10n("agent.artifact.common.unknown"))
+        - \(String.l10n("agent.artifact.common.stars")): \(repo.starsCount)
+        - \(String.l10n("agent.artifact.common.description")): \(repo.description ?? String.l10n("agent.artifact.common.noDescription"))
+        - \(String.l10n("agent.artifact.common.topics")): \(topics)
+        - \(String.l10n("agent.artifact.common.private")): \(repo.isPrivate)
 
-        ## Positioning
+        ## \(String.l10n("agent.artifact.repoInsight.positioning"))
 
         \(request.positioning)
 
-        ## Adoption Fit
+        ## \(String.l10n("agent.artifact.repoInsight.adoptionFit"))
 
         \(request.adoptionFit)
 
-        ## Risks
+        ## \(String.l10n("agent.artifact.repoInsight.risks"))
 
         \(list(request.risks))
 
-        ## Recommended Actions
+        ## \(String.l10n("agent.artifact.repoInsight.recommendedActions"))
 
         \(list(request.recommendedActions))
 
-        ## Sources
+        ## \(String.l10n("agent.artifact.common.sources"))
 
-        ### Starcat Local Snapshot
+        ### \(String.l10n("agent.artifact.common.localSnapshot"))
 
-        - [R1] [\(repo.fullName)](\(repo.htmlUrl)) — frozen repository metadata
+        - [R1] [\(repo.fullName)](\(repo.htmlUrl)) — \(String.l10n("agent.artifact.common.frozenMetadata"))
         \(externalSources)
 
-        ## Limitations
+        ## \(String.l10n("agent.artifact.common.limitations"))
 
-        - Repository metadata comes from the frozen Starcat run context, not live GitHub.
-        - README, License and maintenance activity are not claimed unless present in cited evidence.
+        - \(String.l10n("agent.artifact.weekly.metadataLimitation"))
+        - \(String.l10n("agent.artifact.repoInsight.evidenceLimitation"))
         \(list(request.limitations))
         """
     }
 
     private static func list(_ items: [String]) -> String {
-        items.isEmpty ? "- None reported." : items.map { "- \($0)" }.joined(separator: "\n")
+        items.isEmpty ? "- \(String.l10n("agent.artifact.common.noneReported"))" : items.map { "- \($0)" }.joined(separator: "\n")
     }
 
     private static func cleanExternalContext(_ markdown: String) -> String {

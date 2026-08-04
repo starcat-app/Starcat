@@ -2,7 +2,7 @@
 
 > 日期：2026-08-04
 >
-> 状态：新版权威方案，待按阶段实施
+> 状态：新版权威方案，阶段实施中
 >
 > 范围：Starcat 内置 Agent 工作台、运行时、上下文、RAG、MCP、CLI、权限、持久化与发布边界
 >
@@ -33,7 +33,7 @@ Starcat Agent 不再按“重新建设一套 AI、上下文、工具和 CLI 集�
 4. 从现有 MCP Facade / Tool Registry 中抽取进程内共享能力和权限策略，由 Agent 与 MCP 分别适配。
 5. `starcat-cli` 继续作为外部 Agent 的跨平台 CLI 与 MCP stdio 桥，不是 Starcat 的模型 Provider。
 6. Starcat 主动托管 Codex、Claude Code、Gemini CLI 的 `CLIExternalAgentRuntime` 降为远期可选实验，不进入当前主线。
-7. 首个工程阻断是 Agent Repository 与已发布数据库 schema 不一致，必须追加 `v19` migration 修复。
+7. `v19-agent-message-contract` 已完成并通过旧库迁移测试；当前收口重点转为声明式 Workflow、业务上下文、Knowledge eligible 子集与国际化。
 
 一句话架构：
 
@@ -77,7 +77,7 @@ Agent 工作台在 Release 构建中仍由 `DebugFlags.agentToolbarEntry` 强制
 
 > Agent 底层技术原型已完成较多，产品能力、统一上下文、工具复用、数据迁移与发布验收尚未收口。
 
-### 2.3 当前硬阻断
+### 2.3 已解除的数据阻断
 
 `GRDBAgentRunRepository` 已按消息链 schema 访问：
 
@@ -88,13 +88,13 @@ Agent 工作台在 Release 构建中仍由 `DebugFlags.agentToolbarEntry` 强制
 - `agent_approvals`
 - 新版 `agent_artifacts`
 
-但 `v3-agent-runs` 仍创建旧的 run / step / trace / tool output / artifact schema。当前 Agent 专项测试因此无法全绿。
+`v3-agent-runs` 创建的是旧 run / step / trace / tool output / artifact schema；该差异已由追加的 `registerV19` 迁移完成一次性升级，Agent 专项测试已覆盖旧库升级和新契约读写。
 
-修复约束：
+已落实约束：
 
 - 禁止回改 `v3-agent-runs`。
-- 必须追加 `registerV19`。
-- 必须用 pre-v19 fixture 验证升级。
+- 已追加 `registerV19`。
+- 已用 pre-v19 fixture 验证升级。
 - 不能要求用户删库重建。
 - 旧 run 与 artifact 的可识别数据必须迁移；不能静默丢弃。
 
@@ -256,7 +256,7 @@ Shared/Components/AICommandComposer/
 - 多行输入与稳定动态高度。
 - Return / Cmd+Return 发送策略。
 - `@repo` 搜索、上下键、Enter、Esc。
-- 多选 repo 与 only/prefer/exclude。
+- 仓库选择按 Agent Workflow 决定：Weekly 可选多仓覆盖，Repo Insight 只允许单仓。
 - 文本、Markdown、JSON、源码附件。
 - GitHub 链接识别。
 - 本轮联网授权。
@@ -312,12 +312,14 @@ struct AgentRunInput: Sendable {
 
 以下规则必须由宿主执行层强制应用，不能交给模型理解：
 
-- `@repo` 默认 `.only`。
-- `.only` 不能被 Tool 或模型扩大。
-- `.exclude` 仓库不能进入 RAG evidence。
-- 非知识库 repo 不能静默进入 Knowledge Tool。
+- AgentDefinition 必须声明 `repositoryContext`、`executionMode`、目标仓库基数、是否允许空上下文和是否允许手动覆盖；UI 与 Runtime 禁止按 Agent ID 猜测。
+- Weekly 默认冻结最近 7 天新增 Star；没有新增 Star 时生成合法空周报，不因空仓库失败。
+- Weekly 的手选仓库是可选覆盖：`.only` 替换自动时间窗，`.prefer` 置顶后补时间窗，`.exclude` 从时间窗排除。
+- Repo Insight 必须且只能冻结 1 个普通 Star 仓库；仓库无需先进入知识库。
+- Business Context 与 Knowledge Eligible Scope 分离；非知识库 repo 保留在业务上下文，但不得进入 Knowledge Tool。
+- Knowledge Tool 只对 frozen business context 与知识库 ID 的交集执行 `.only` 检索，不再次解释 Composer 的 only/prefer/exclude。
 - 只有用户显式开启联网，才允许普通 External Search。
-- 私有仓库是否可进入外部查询继续使用现有设置。
+- 未授权私有仓库联网时，只要本次业务上下文包含私有仓库，就关闭该 Run 的 External Search，不能依赖 query 是否包含 fullName 猜测泄漏。
 
 ### 6.3 上下文来源
 
@@ -332,7 +334,17 @@ Agent Run 可使用四类上下文：
 
 禁止在 Run 启动时把整个数据库或所有 README 预先塞入 Prompt。
 
-### 6.4 预算
+### 6.4 内置 Workflow 契约
+
+| Agent | Business Context | 手动选择 | 空上下文 | Execution Mode |
+|---|---|---|---|---|
+| GitHub Weekly Report | 最近 7 天新增 Star | 可选多仓覆盖 | 允许，输出空周报 | `reportGeneration` |
+| Repo Insight | 单个普通 Star | 必须 1 个；GitHub 链接可解析本地 Star | 不允许 | `reportGeneration` |
+| Untagged Tidy（后续） | 待整理集合 | 按预览批次 | 允许无操作结果 | `approvedAction` |
+
+知识库不是 Agent 的前置条件。它只决定业务上下文中的哪些仓库可以由 `knowledge_search` 补充 README、笔记、摘要和引用证据。
+
+### 6.5 预算
 
 每轮至少设置：
 
@@ -438,9 +450,6 @@ Agent 需要的是“可引用的知识证据”，不是另一个自由回答�
 ```swift
 struct AgentKnowledgeQuery: Sendable {
     var query: String
-    var explicitRepoIDs: [Int64]
-    var explicitRepoMode: AIComposerRepoMode
-    var webSearchEnabled: Bool
     var maxRepos: Int
 }
 
@@ -456,8 +465,8 @@ struct AgentKnowledgeResult: Sendable {
 ### 8.2 执行边界
 
 - 使用 `KnowledgeRAGRetriever` 和现有候选仓储。
-- 固定知识库边界。
-- 复用 only/prefer/exclude。
+- 固定为 Business Context 中已进入知识库的 eligible 子集。
+- Capability 请求使用 eligible IDs + `.only`；业务层 only/prefer/exclude 在冻结上下文前已完成，禁止 Knowledge Tool 二次解释。
 - 复用 FTS/向量/RRF/rerank/parent packing。
 - 无向量配置时继续走关键词检索。
 - 返回 evidence 与 citation，不先生成一份 RAG 最终回答再交给 Agent 二次改写。
@@ -544,15 +553,15 @@ build prompt
 
 推荐首批产品顺序：
 
-1. 修复 Weekly Report 与新版 Composer/Context。
-2. 把 Repo Insight 收敛为有明确 Artifact 的“采用决策”。
+1. 收口 Weekly Report 的最近 7 天自动上下文、合法空周报与多仓覆盖。（已实现）
+2. 把 Repo Insight 收敛为普通 Star 单仓目标和明确 Artifact。（已实现）
 3. 实现 Repo Alternatives，验证 RAG + 全局搜索协同。
 4. 实现 Untagged Tidy，验证真正写入审批。
 5. 再评估 Overlap Scan 与 Release Automation。
 
 ---
 
-## 11. 持久化与 v19 Migration
+## 11. 持久化与 v19 Migration（已完成）
 
 ### 11.1 目标 schema
 
@@ -567,7 +576,7 @@ agent_artifacts
 
 ### 11.2 `v19-agent-message-contract`
 
-迁移至少完成：
+迁移已完成：
 
 1. 为 `agent_runs` 增加 `context_json`、`model`、`usage_json`。
 2. 创建 `agent_messages`。
@@ -640,6 +649,8 @@ propose / dry-run
 
 ### P0：恢复可信基线
 
+> 状态：已完成。
+
 目标：当前 Agent 代码与数据库重新一致。
 
 交付：
@@ -656,6 +667,8 @@ propose / dry-run
 - `git diff --check` 通过。
 
 ### P1：统一 Composer 与 Run Context
+
+> 状态：Agent 侧已完成；RAG 保持既有行为。
 
 目标：Agent 使用与 RAG 一致的输入体验和确定性上下文。
 
@@ -674,6 +687,8 @@ propose / dry-run
 
 ### P2：Knowledge Tool 与统一 Capability
 
+> 状态：Knowledge Tool、Repository Read Capability 与 External Search Adapter 已完成；MCP 其余领域能力迁移仍在后续阶段。
+
 目标：Agent 复用 RAG 与 MCP 背后的现成能力。
 
 交付：
@@ -687,7 +702,7 @@ propose / dry-run
 验收：
 
 - Agent 产物能引用真实 RAG citation。
-- `.only/.exclude` 不可被模型扩大。
+- Knowledge Tool 只能读取 frozen business context 的 eligible 子集，模型不可扩大。
 - 内置 Agent 不依赖 MCP listener/port/API key。
 - MCP 既有 Tool 名称和响应兼容。
 
@@ -740,7 +755,7 @@ propose / dry-run
 |---|---|
 | Migration | pre-v19 fixture、数据转换、索引、外键、重复启动 |
 | Composer | Return 策略、mention 键盘、chip 同步、附件边界、草稿 |
-| Context | 冻结、only/prefer/exclude、非知识库 repo、私有仓库 |
+| Context | 最近 7 天、合法空周报、单仓基数、手动覆盖、eligible 子集、私有仓库 |
 | Knowledge | FTS-only、hybrid、无证据、citation、audit、取消 |
 | Capability | schema、permission、dry-run、read-back、错误映射 |
 | Runtime | multi-tool、approval、resume、retry、budget、cancel |

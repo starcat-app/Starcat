@@ -14,6 +14,33 @@ import Testing
 
 @Suite("Agent Product Runtime")
 struct AgentProductRuntimeTests {
+    @Test("Weekly 无新增 Star 时允许生成可审计的空周报")
+    func weeklyBuildsValidEmptyReport() throws {
+        let request = try WeeklyReportArtifactRequest(arguments: .object([
+            "title": .string("Weekly"),
+            "executiveSummary": .string("本周没有新增 Star。"),
+            "sections": .array([]),
+            "limitations": .array([]),
+            "includeSources": .bool(true)
+        ]))
+
+        let markdown = try WeeklyReportArtifactBuilder.build(
+            request: request,
+            prompt: "生成本周周报",
+            context: AgentRunContext(
+                sourceDescription: String(
+                    format: String.l10n("agent.context.source.recentStarsFormat"),
+                    7,
+                    0
+                )
+            ),
+            externalContextMarkdown: ""
+        )
+
+        #expect(markdown.contains(String.l10n("agent.artifact.weekly.emptyReport")))
+        #expect(markdown.contains(String.l10n("agent.artifact.common.localSnapshot")))
+    }
+
     @Test("Weekly 在 External Search 关闭时基于本地事实生成底部产物")
     func weeklyCompletesWithLocalFactsWhenSearchIsDisabled() async throws {
         let outcome = try await runWeekly(searchStatus: .skipped)
@@ -33,7 +60,7 @@ struct AgentProductRuntimeTests {
 
         #expect(searchResult.status == .skipped)
         #expect(artifact.content.contains("groue/GRDB.swift"))
-        #expect(artifact.content.contains("Not used, disabled"))
+        #expect(artifact.content.contains(String.l10n("agent.artifact.common.externalUnavailable")))
         #expect(artifactIndex < completedIndex)
         #expect(outcome.requests.count == 2)
     }
@@ -50,7 +77,7 @@ struct AgentProductRuntimeTests {
         #expect(searchResult.status == .failed)
         #expect(searchResult.isError)
         #expect(artifact.content.contains("groue/GRDB.swift"))
-        #expect(artifact.content.contains("Not used, disabled"))
+        #expect(artifact.content.contains(String.l10n("agent.artifact.common.externalUnavailable")))
         #expect(!artifact.content.contains("https://search.invalid"))
     }
 

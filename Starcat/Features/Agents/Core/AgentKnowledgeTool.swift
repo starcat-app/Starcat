@@ -45,12 +45,16 @@ struct AgentKnowledgeCapabilityAdapter: AgentKnowledgeSearching {
     }
 
     func search(query: AgentKnowledgeQuery, context: AgentRunContext) async throws -> AgentKnowledgeResult {
+        let repositoryScopeIDs = context.knowledgeEligibleRepoIDs ?? context.repos.map(\.id)
+        let allowedIDs = Set(repositoryScopeIDs)
         do {
             return try await executor.execute(KnowledgeSearchCapabilityRequest(
                 query: query.text,
-                repositoryScopeIDs: context.repos.map(\.id),
-                explicitRepoIDs: context.explicitRepos?.map(\.id) ?? [],
-                explicitMode: context.explicitRepoMode?.ragMode ?? .only,
+                repositoryScopeIDs: repositoryScopeIDs,
+                // 业务层已完成 only / prefer / exclude。Knowledge 只允许读取该结果中已入库的
+                // 子集，不能再次解释 Composer 模式并扩大或清空范围。
+                explicitRepoIDs: repositoryScopeIDs.filter(allowedIDs.contains),
+                explicitMode: .only,
                 maxRepositories: query.maxRepositories
             ))
         } catch let error as KnowledgeSearchCapabilityError {
@@ -93,6 +97,31 @@ struct AgentKnowledgeTool: AgentTool {
         let query = arguments["query"]?.stringValue ?? ""
         let maxRepositories = min(max(arguments["maxRepositories"]?.integerValue ?? 12, 1), 30)
         let serializedInput = (try? input.arguments.jsonString()) ?? "{}"
+        if input.context.knowledgeEligibleRepoIDs?.isEmpty == true {
+            let message = String.l10n("agent.knowledge.status.noEligibleRepositories")
+            let output = AgentToolOutput(
+                toolName: id,
+                summary: String.l10n("agent.tool.status.skipped"),
+                detail: message,
+                input: serializedInput,
+                output: "evidence: []\nlimitation: \(message)",
+                log: message
+            )
+            return AgentToolResult(
+                status: .skipped,
+                output: output,
+                trace: AgentTraceSpan(
+                    kind: String.l10n("agent.trace.kind.knowledgeRetrieval"),
+                    title: id,
+                    summary: output.summary,
+                    input: serializedInput,
+                    output: output.output,
+                    log: message,
+                    status: .skipped,
+                    relatedToolOutputID: output.id
+                )
+            )
+        }
         do {
             let result = try await searcher.search(
                 query: AgentKnowledgeQuery(text: query, maxRepositories: maxRepositories),
@@ -104,11 +133,15 @@ struct AgentKnowledgeTool: AgentTool {
             let audit = Self.auditSummary(result: result, context: input.context)
             let output = AgentToolOutput(
                 toolName: id,
-                summary: "\(result.evidenceBlocks.count) evidence blocks / \(result.citations.count) citations",
+                summary: String(
+                    format: String.l10n("agent.knowledge.summaryFormat"),
+                    result.evidenceBlocks.count,
+                    result.citations.count
+                ),
                 detail: audit,
                 input: serializedInput,
                 output: outputText,
-                log: "Reused Knowledge RAG retrieval inside the frozen Agent repository scope."
+                log: String.l10n("agent.knowledge.log.reused")
             )
             let sources = result.citations.compactMap { citation -> AgentToolResultSource? in
                 guard let url = citation.sourceURL?.absoluteString else { return nil }
@@ -122,7 +155,7 @@ struct AgentKnowledgeTool: AgentTool {
             return AgentToolResult(
                 output: output,
                 trace: AgentTraceSpan(
-                    kind: "Knowledge Retrieval",
+                    kind: String.l10n("agent.trace.kind.knowledgeRetrieval"),
                     title: id,
                     summary: output.summary,
                     input: serializedInput,
@@ -138,7 +171,7 @@ struct AgentKnowledgeTool: AgentTool {
             let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             let output = AgentToolOutput(
                 toolName: id,
-                summary: "failed",
+                summary: String.l10n("agent.tool.status.failed"),
                 detail: message,
                 input: serializedInput,
                 output: "error: \(message)",
@@ -148,7 +181,7 @@ struct AgentKnowledgeTool: AgentTool {
                 status: .failed,
                 output: output,
                 trace: AgentTraceSpan(
-                    kind: "Knowledge Retrieval",
+                    kind: String.l10n("agent.trace.kind.knowledgeRetrieval"),
                     title: id,
                     summary: output.summary,
                     input: serializedInput,
@@ -196,23 +229,13 @@ enum AgentKnowledgeError: LocalizedError, Equatable, Sendable {
     var errorDescription: String? {
         switch self {
         case .emptyQuery:
-            return "Knowledge search query cannot be empty."
+            return String.l10n("agent.knowledge.error.emptyQuery")
         case .emptyRepositoryScope:
-            return "The frozen Agent run has no repositories available for knowledge search."
+            return String.l10n("agent.knowledge.error.emptyRepositoryScope")
         case .repositoryScopeChanged:
-            return "The frozen repository scope is no longer fully available; knowledge search stopped without widening access."
+            return String.l10n("agent.knowledge.error.repositoryScopeChanged")
         case .unavailable:
-            return "Agent knowledge retrieval is unavailable in the current runtime."
-        }
-    }
-}
-
-private extension AIComposerExplicitRepoMode {
-    var ragMode: RAGExplicitRepoMode {
-        switch self {
-        case .only: .only
-        case .prefer: .prefer
-        case .exclude: .exclude
+            return String.l10n("agent.knowledge.error.unavailable")
         }
     }
 }

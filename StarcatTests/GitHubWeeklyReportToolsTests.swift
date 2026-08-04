@@ -166,7 +166,7 @@ struct GitHubWeeklyReportToolsTests {
             Issue.record("Expected weekly report markdown")
             return
         }
-        #expect(markdown.contains("### External Search"))
+        #expect(markdown.contains("### \(String.l10n("agent.artifact.common.externalSearch"))"))
         #expect(markdown.contains("https://example.com/release"))
         #expect(markdown.contains("<external_context") == false)
     }
@@ -187,7 +187,10 @@ struct GitHubWeeklyReportToolsTests {
         ))
 
         #expect(result.status == .failed)
-        #expect(result.output.log.contains("outside the frozen run context"))
+        #expect(result.output.log == String(
+            format: String.l10n("agent.artifact.weekly.error.unknownRepositoriesFormat"),
+            "999999"
+        ))
     }
 
     @Test("Weekly tools 可以通过 AgentToolRegistry 执行")
@@ -277,7 +280,10 @@ struct GitHubWeeklyReportToolsTests {
         ))
 
         #expect(result.status == .failed)
-        #expect(result.output.log.contains("outside the frozen run context"))
+        #expect(result.output.log == String(
+            format: String.l10n("agent.artifact.repoInsight.error.unknownRepositoryFormat"),
+            Int64(999_999)
+        ))
     }
 
     private func repo(

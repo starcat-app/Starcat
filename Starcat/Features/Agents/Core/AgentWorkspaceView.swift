@@ -34,10 +34,10 @@ struct AgentWorkspaceView: View {
         .defaultCursorShield()
         .task {
             viewModel.configureContextProvider(RepositoryAgentRunContextProvider(
-                candidateRepository: dependencies.ragCandidateRepository
+                repoRepository: dependencies.repoRepository
             ))
             viewModel.configureRunRepository(dependencies.agentRunRepository)
-            viewModel.configureRepoCandidateRepository(dependencies.ragCandidateRepository)
+            viewModel.configureRepoRepository(dependencies.repoRepository)
             viewModel.configureModelOptions(
                 dependencies.knowledgeRAGChatModels,
                 defaultProviderID: dependencies.settings.aiChatTask.providerID,
@@ -47,6 +47,13 @@ struct AgentWorkspaceView: View {
             await viewModel.reloadHistory()
         }
         .onChange(of: viewModel.selectedModelID) { _, _ in
+            configureAgentRuntime()
+        }
+        .onChange(of: viewModel.selectedAgentID) { _, _ in
+            configureAgentRuntime()
+        }
+        .onChange(of: locale.identifier) { _, _ in
+            viewModel.refreshLocalizedDefinitions(BuiltInAgents.all)
             configureAgentRuntime()
         }
         .animation(.easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)
@@ -83,13 +90,23 @@ struct AgentWorkspaceView: View {
                 modelClient: modelClient,
                 toolRegistry: toolRegistry,
                 runRepository: dependencies.agentRunRepository,
+                mode: viewModel.selectedAgent?.workflow.executionMode ?? .readonlyPlanning,
                 localeIdentifier: locale.identifier,
-                preferredLanguage: locale.language.languageCode?.identifier == "zh" ? "Simplified Chinese" : "English",
+                preferredLanguage: preferredOutputLanguage,
                 externalSearchPolicy: AgentExternalSearchPolicy.current(settings: dependencies.settings)
             ))
         } catch {
             viewModel.configureRuntime(UnavailableAgentRuntime(message: error.localizedDescription))
         }
+    }
+
+    /// 模型提示词使用英文语言名，避免只支持中英文而让其它 App locale 静默回退英语。
+    private var preferredOutputLanguage: String {
+        let languageCode = locale.language.languageCode?.identifier ?? "en"
+        if languageCode == "zh" {
+            return locale.language.script?.identifier == "Hant" ? "Traditional Chinese" : "Simplified Chinese"
+        }
+        return Locale(identifier: "en").localizedString(forLanguageCode: languageCode) ?? languageCode
     }
 
     // MARK: - Agent Rail
@@ -101,7 +118,7 @@ struct AgentWorkspaceView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     agentSection("agent.workspace.section.discovery", agents: viewModel.agents.filter { ["github-weekly-report", "repo-alternatives"].contains($0.id) })
-                    agentSection("agent.workspace.section.digest", agents: viewModel.agents.filter { ["recall-search", "repo-insight"].contains($0.id) })
+                    agentSection("agent.workspace.section.digest", agents: viewModel.agents.filter { ["repo-insight", "release-watcher"].contains($0.id) })
                     agentSection("agent.workspace.section.organize", agents: viewModel.agents.filter { ["overlap-scan", "untagged-tidy"].contains($0.id) })
                     historySection
                 }
@@ -426,10 +443,7 @@ struct AgentWorkspaceView: View {
     }
 
     private var agentComposerInputBox: some View {
-        let canSubmit = !viewModel.isRunning
-            && viewModel.selectedAgent?.isEnabled == true
-            && (!viewModel.selectedAgentRequiresRepositories || !viewModel.selectedRepoContexts.isEmpty)
-            && !viewModel.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let canSubmit = viewModel.canSubmit
         let requiresCommandReturn = dependencies.settings.aiChatRequiresCommandReturn
         return AICommandComposerView {
             if !viewModel.attachments.isEmpty {
@@ -437,7 +451,20 @@ struct AgentWorkspaceView: View {
             }
 
             if viewModel.selectedAgentRequiresRepositories, viewModel.selectedRepoContexts.isEmpty {
-                Label("agent.loop.error.repositoryContextEmpty", systemImage: "shippingbox")
+                Label("agent.workspace.context.singleRepositoryRequired", systemImage: "shippingbox")
+                    .font(agentFont(.caption))
+                    .foregroundStyle(.secondary)
+            }
+
+            if case .recentStars = viewModel.selectedAgent?.workflow.repositoryContext,
+               viewModel.selectedRepoContexts.isEmpty {
+                Label("agent.workspace.context.recentStarsAutomatic", systemImage: "calendar.badge.clock")
+                    .font(agentFont(.caption))
+                    .foregroundStyle(.secondary)
+            }
+
+            if viewModel.selectedModelID == nil {
+                Label("agent.workspace.model.required", systemImage: "sparkles")
                     .font(agentFont(.caption))
                     .foregroundStyle(.secondary)
             }
@@ -466,7 +493,7 @@ struct AgentWorkspaceView: View {
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
                 .foregroundStyle(.secondary)
-                .disabled(viewModel.isRunning)
+                .disabled(viewModel.isRunning || !viewModel.selectedAgentSupportsRepositorySelection)
                 .help("rag.workspace.mention.title")
                 .popover(isPresented: $viewModel.isContextPickerPresented, arrowEdge: .bottom) {
                     agentContextPicker
@@ -474,7 +501,8 @@ struct AgentWorkspaceView: View {
 
                 agentModelMenu
 
-                if !viewModel.selectedRepoContexts.isEmpty {
+                if !viewModel.selectedRepoContexts.isEmpty,
+                   case .recentStars = viewModel.selectedAgent?.workflow.repositoryContext {
                     explicitModeMenu
                 }
 
@@ -569,6 +597,7 @@ struct AgentWorkspaceView: View {
                 if viewModel.isRunning {
                     viewModel.cancel()
                 } else {
+                    guard viewModel.canSubmit else { return true }
                     viewModel.run()
                 }
                 return true
@@ -680,13 +709,14 @@ struct AgentWorkspaceView: View {
 
             Text(String(
                 format: String.l10n("rag.workspace.mention.selectionLimit"),
-                AgentWorkspaceViewModel.maxSelectedRepoContexts
+                viewModel.maximumSelectedRepoContexts
             ))
             .font(agentFont(.caption))
             .foregroundStyle(.secondary)
         }
         .padding(12)
         .frame(width: 360)
+        .appLocaleEnvironment()
     }
 
     private var agentModelMenu: some View {

@@ -340,6 +340,26 @@ struct GRDBRepoRepository {
         }
     }
 
+    /// Weekly 的“最近一周”是滚动 7 天时间窗，不是固定条数。
+    func fetchStarred(since: Date, limit: Int) async throws -> [Repo] {
+        let safeLimit = max(1, limit)
+        let cutoff = ISO8601DateFormatter().string(from: since)
+        return try await database.writer.read { db in
+            try Repo.fetchAll(
+                db,
+                sql: """
+                    SELECT * FROM repos
+                    WHERE is_starred = 1
+                      AND starred_at IS NOT NULL
+                      AND starred_at >= ?
+                    ORDER BY starred_at DESC
+                    LIMIT ?
+                    """,
+                arguments: [cutoff, safeLimit]
+            )
+        }
+    }
+
     /// HOM-47：按 GitHub repo id 找单条记录（含 is_starred=0 的"曾经 star 过"行）。
     func findById(_ repoId: Int64) async throws -> Repo? {
         try await database.writer.read { db in

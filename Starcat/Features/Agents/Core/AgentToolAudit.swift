@@ -115,8 +115,9 @@ struct AgentKnowledgeRetrievalAudit: Codable, Hashable, Sendable {
 
     init(result: AgentKnowledgeResult, context: AgentRunContext) {
         scopeMode = context.explicitRepoMode ?? .only
-        frozenRepoIDs = context.repos.map(\.id)
-        explicitRepoIDs = context.explicitRepos?.map(\.id) ?? []
+        frozenRepoIDs = context.knowledgeEligibleRepoIDs ?? context.repos.map(\.id)
+        let frozenIDs = Set(frozenRepoIDs)
+        explicitRepoIDs = (context.explicitRepos?.map(\.id) ?? []).filter(frozenIDs.contains)
         evidenceBlockCount = result.evidenceBlocks.count
         citations = result.citations.map(AgentKnowledgeCitationAudit.init)
         retrievalTrace = result.retrievalTrace

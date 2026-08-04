@@ -34,10 +34,6 @@ struct WeeklyReportArtifactRequest: Equatable, Sendable {
         self.limitations = try Self.stringArray("limitations", in: object)
         self.includeSources = object["includeSources"]?.boolValue ?? true
 
-        guard !sections.isEmpty else { throw WeeklyReportArtifactError.emptySections }
-        guard sections.allSatisfy({ !$0.repoIDs.isEmpty }) else {
-            throw WeeklyReportArtifactError.sectionWithoutRepositories
-        }
     }
 
     private static func sections(in object: [String: AgentJSONValue]) throws -> [Section] {
@@ -109,13 +105,16 @@ enum WeeklyReportArtifactError: LocalizedError, Equatable, Sendable {
     var errorDescription: String? {
         switch self {
         case .invalidArguments(let detail):
-            return "Invalid weekly report artifact arguments: \(detail)"
+            return String(format: String.l10n("agent.artifact.weekly.error.invalidArgumentsFormat"), detail)
         case .emptySections:
-            return "Weekly report artifact requires at least one section"
+            return String.l10n("agent.artifact.weekly.error.emptySections")
         case .sectionWithoutRepositories:
-            return "Every weekly report section must reference at least one repository"
+            return String.l10n("agent.artifact.weekly.error.sectionWithoutRepositories")
         case .unknownRepositoryIDs(let ids):
-            return "Weekly report references repositories outside the frozen run context: \(ids.map(String.init).joined(separator: ", "))"
+            return String(
+                format: String.l10n("agent.artifact.weekly.error.unknownRepositoriesFormat"),
+                ids.map(String.init).joined(separator: ", ")
+            )
         }
     }
 }
@@ -127,6 +126,12 @@ enum WeeklyReportArtifactBuilder {
         context: AgentRunContext,
         externalContextMarkdown: String
     ) throws -> String {
+        if !context.repos.isEmpty {
+            guard !request.sections.isEmpty else { throw WeeklyReportArtifactError.emptySections }
+            guard request.sections.allSatisfy({ !$0.repoIDs.isEmpty }) else {
+                throw WeeklyReportArtifactError.sectionWithoutRepositories
+            }
+        }
         let reposByID = Dictionary(uniqueKeysWithValues: context.repos.map { ($0.id, $0) })
         let referencedIDs = request.sections.flatMap(\.repoIDs).uniqued()
         let unknownIDs = referencedIDs.filter { reposByID[$0] == nil }
@@ -153,57 +158,60 @@ enum WeeklyReportArtifactBuilder {
             """
         }.joined(separator: "\n\n")
 
-        let localSources = referencedIDs.compactMap { id -> String? in
+        let resolvedLocalSources = referencedIDs.compactMap { id -> String? in
             guard let repo = reposByID[id], let reference = references[id] else { return nil }
-            return "- [\(reference)] [\(repo.fullName)](\(repo.htmlUrl)) — Starcat frozen repository snapshot"
+            return "- [\(reference)] [\(repo.fullName)](\(repo.htmlUrl)) — \(String.l10n("agent.artifact.common.frozenMetadata"))"
         }.joined(separator: "\n")
+        let localSources = resolvedLocalSources.isEmpty
+            ? "- \(String.l10n("agent.artifact.weekly.emptyReport"))"
+            : resolvedLocalSources
         let externalSources = cleanedExternalContext(externalContextMarkdown)
         let externalSection: String
         if request.includeSources, !externalSources.isEmpty {
             externalSection = """
 
-            ### External Search
+            ### \(String.l10n("agent.artifact.common.externalSearch"))
 
             \(externalSources)
             """
         } else {
-            externalSection = "\n\n### External Search\n\n- Not used, disabled, or no verifiable results were returned."
+            externalSection = "\n\n### \(String.l10n("agent.artifact.common.externalSearch"))\n\n- \(String.l10n("agent.artifact.common.externalUnavailable"))"
         }
         let modelLimitations = request.limitations.map { "- \($0)" }.joined(separator: "\n")
 
         return """
         # \(request.title)
 
-        > User goal: \(prompt)
-        > Scope: \(referencedIDs.count) repositories from \(context.sourceDescription)
-        > Snapshot time: \(ISO8601DateFormatter.shared.string(from: context.generatedAt))
+        > \(String.l10n("agent.artifact.common.userGoal")): \(prompt)
+        > \(String.l10n("agent.artifact.common.scope")): \(referencedIDs.count) · \(context.sourceDescription)
+        > \(String.l10n("agent.artifact.common.snapshotTime")): \(ISO8601DateFormatter.shared.string(from: context.generatedAt))
 
-        ## Overview
+        ## \(String.l10n("agent.artifact.weekly.overview"))
 
         \(request.executiveSummary)
 
-        \(sectionMarkdown)
+        \(sectionMarkdown.isEmpty ? String.l10n("agent.artifact.weekly.emptyReport") : sectionMarkdown)
 
-        ## Sources
+        ## \(String.l10n("agent.artifact.common.sources"))
 
-        ### Starcat Local Snapshot
+        ### \(String.l10n("agent.artifact.common.localSnapshot"))
 
         \(localSources)
         \(externalSection)
 
-        ## Limitations
+        ## \(String.l10n("agent.artifact.common.limitations"))
 
-        - Repository metadata comes from the frozen Starcat run context, not live GitHub.
-        - Stars, descriptions and topics may have changed after the snapshot time.
+        - \(String.l10n("agent.artifact.weekly.metadataLimitation"))
+        - \(String.l10n("agent.artifact.weekly.freshnessLimitation"))
         \(modelLimitations)
         """
     }
 
     private static func repoLine(_ repo: AgentRepoSnapshot, reference: String) -> String {
-        let description = nonEmpty(repo.description) ?? "No description in the local snapshot."
+        let description = nonEmpty(repo.description) ?? String.l10n("agent.artifact.common.noDescription")
         let topics = repo.topics.prefix(5).joined(separator: ", ")
-        let topicSuffix = topics.isEmpty ? "" : " Topics: \(topics)."
-        return "- [\(reference)] **[\(repo.fullName)](\(repo.htmlUrl))** — \(repo.starsCount) stars; \(description)\(topicSuffix)"
+        let topicSuffix = topics.isEmpty ? "" : " \(String.l10n("agent.artifact.common.topics")): \(topics)."
+        return "- [\(reference)] **[\(repo.fullName)](\(repo.htmlUrl))** — \(repo.starsCount) \(String.l10n("agent.artifact.common.stars")); \(description)\(topicSuffix)"
     }
 
     private static func cleanedExternalContext(_ markdown: String) -> String {

@@ -11,6 +11,35 @@
 import Foundation
 import CryptoKit
 
+/// Agent 如何取得业务仓库上下文。
+///
+/// 这是 Agent 工作流契约，不是 RAG 检索范围：Weekly 按时间窗口自动取 Star，
+/// Repo Insight 要求单仓目标；知识库只在后续工具阶段提供可用证据。
+enum AgentRepositoryContextPolicy: Hashable, Sendable {
+    case none
+    case recentStars(days: Int)
+    case singleRepository
+}
+
+/// 内置 Agent 的声明式运行策略。
+struct AgentWorkflowPolicy: Hashable, Sendable {
+    var repositoryContext: AgentRepositoryContextPolicy
+    var executionMode: AgentExecutionMode
+    var allowsManualRepositoryOverride: Bool
+    var allowsEmptyRepositoryContext: Bool
+    var usesDefaultPromptWhenEmpty: Bool
+    var maximumSelectedRepositories: Int
+
+    static let general = AgentWorkflowPolicy(
+        repositoryContext: .none,
+        executionMode: .readonlyPlanning,
+        allowsManualRepositoryOverride: false,
+        allowsEmptyRepositoryContext: true,
+        usesDefaultPromptWhenEmpty: false,
+        maximumSelectedRepositories: 0
+    )
+}
+
 /// 内置 Agent 的静态定义。
 ///
 /// AgentDefinition 描述“这个 Agent 能做什么”，不保存某次运行状态。这样后续新增
@@ -24,6 +53,12 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
     let capabilityLabels: [String]
     let defaultPrompt: String
     let isEnabled: Bool
+    /// 上下文来源、目标基数和执行权限必须由定义声明，Runtime/UI 不再按 Agent ID 猜测。
+    let workflow: AgentWorkflowPolicy
+    /// 注入 system prompt 的 Agent 专属规则；Runtime 只消费声明，不按 Agent ID 分支。
+    let promptRules: [AgentPromptRule]
+    /// 最终 Artifact 在 Inspector 中显示的标题；nil 时使用 Agent 标题。
+    let artifactTitle: String?
     /// 模型在当前 Agent 中可见的工具 allowlist；数组顺序不代表执行顺序。
     let toolIDs: [String]
     let artifactTypes: [AgentArtifactType]
@@ -36,6 +71,9 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
         capabilityLabels: [String],
         defaultPrompt: String,
         isEnabled: Bool,
+        workflow: AgentWorkflowPolicy = .general,
+        promptRules: [AgentPromptRule] = [],
+        artifactTitle: String? = nil,
         toolIDs: [String] = [],
         artifactTypes: [AgentArtifactType] = []
     ) {
@@ -46,6 +84,9 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
         self.capabilityLabels = capabilityLabels
         self.defaultPrompt = defaultPrompt
         self.isEnabled = isEnabled
+        self.workflow = workflow
+        self.promptRules = promptRules
+        self.artifactTitle = artifactTitle
         self.toolIDs = toolIDs
         self.artifactTypes = artifactTypes
     }
@@ -166,6 +207,8 @@ struct AgentRunContext: Codable, Hashable, Sendable {
     var selectedModelID: String?
     var githubLinks: [AIComposerGitHubLink]?
     var webSearchEnabled: Bool?
+    /// 业务上下文中已经进入知识库的仓库 ID。nil 仅代表旧快照，需兼容旧运行记录。
+    var knowledgeEligibleRepoIDs: [Int64]?
 
     init(
         sourceDescription: String,
@@ -177,7 +220,8 @@ struct AgentRunContext: Codable, Hashable, Sendable {
         explicitRepoMode: AIComposerExplicitRepoMode? = nil,
         selectedModelID: String? = nil,
         githubLinks: [AIComposerGitHubLink]? = nil,
-        webSearchEnabled: Bool? = nil
+        webSearchEnabled: Bool? = nil,
+        knowledgeEligibleRepoIDs: [Int64]? = nil
     ) {
         self.sourceDescription = sourceDescription
         self.generatedAt = generatedAt
@@ -189,6 +233,7 @@ struct AgentRunContext: Codable, Hashable, Sendable {
         self.selectedModelID = selectedModelID
         self.githubLinks = githubLinks
         self.webSearchEnabled = webSearchEnabled
+        self.knowledgeEligibleRepoIDs = knowledgeEligibleRepoIDs
     }
 
     static let empty = AgentRunContext(sourceDescription: "Agent Workspace")
