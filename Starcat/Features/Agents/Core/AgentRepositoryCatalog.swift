@@ -42,31 +42,6 @@ enum AgentRepositorySource: String, CaseIterable, Codable, Hashable, Sendable {
     }
 }
 
-/// 选择器的单来源筛选。`.all` 只表示不按来源收窄，不改变 Agent 数据权限。
-enum AgentRepositorySourceFilter: String, CaseIterable, Identifiable, Sendable {
-    case all
-    case local
-    case starred
-    case knowledge
-    case weekly
-    case trending
-    case discovery
-
-    var id: String { rawValue }
-
-    var source: AgentRepositorySource? {
-        self == .all ? nil : AgentRepositorySource(rawValue: rawValue)
-    }
-
-    var title: LocalizedStringKey {
-        source?.title ?? "general.all"
-    }
-
-    var systemImage: String {
-        source?.systemImage ?? "tray.full"
-    }
-}
-
 /// 目录中的统一候选。运行时只冻结 `snapshot`；其余字段只服务选择器筛选与排序。
 struct AgentRepositoryCandidate: Identifiable, Hashable, Sendable {
     var snapshot: AgentRepoSnapshot
@@ -414,14 +389,14 @@ enum AgentRepositoryPickerLogic {
         selected: [AIComposerRepoReference],
         query: String,
         filters: RAGComposerMentionFilters,
-        sourceFilter: AgentRepositorySourceFilter,
+        selectedSources: Set<AgentRepositorySource>,
         sort: RepoSortOption
     ) -> AgentRepositoryPickerSnapshot {
         let normalizedQuery = RAGMentionCandidate.normalize(query)
         let matched = candidates
             .filter { candidate in
                 (normalizedQuery.isEmpty || candidate.normalizedSearchText.contains(normalizedQuery))
-                    && matches(candidate, filters: filters, sourceFilter: sourceFilter)
+                    && matches(candidate, filters: filters, selectedSources: selectedSources)
             }
             .sorted { compare($0, $1, sort: sort) }
         let byID = Dictionary(uniqueKeysWithValues: candidates.map { ($0.id, $0) })
@@ -444,9 +419,10 @@ enum AgentRepositoryPickerLogic {
     private static func matches(
         _ candidate: AgentRepositoryCandidate,
         filters: RAGComposerMentionFilters,
-        sourceFilter: AgentRepositorySourceFilter
+        selectedSources: Set<AgentRepositorySource>
     ) -> Bool {
-        if let source = sourceFilter.source, !candidate.sources.contains(source) { return false }
+        // 来源多选采用 OR：候选命中任一已选来源即可；空集合表示不按来源收窄。
+        if !selectedSources.isEmpty, candidate.sources.isDisjoint(with: selectedSources) { return false }
         if filters.hideArchived, candidate.isArchived { return false }
         if filters.hideForks, candidate.isFork { return false }
         if let status = filters.status, candidate.status != status { return false }

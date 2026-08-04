@@ -742,10 +742,10 @@ struct AgentWorkspaceView: View {
                     isLanguageAddPresented: $viewModel.isContextPickerLanguageAddPresented,
                     includeSignalFilters: false,
                     sortOptions: agentRepositorySortOptions,
+                    additionalFilterItems: agentRepositorySourceFilterItems,
+                    isAdditionalFilterActive: !viewModel.selectedRepositorySources.isEmpty,
                     onReset: { viewModel.resetRepositoryPickerFilters() }
                 )
-
-                agentRepositorySourceMenu
 
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
@@ -881,22 +881,36 @@ struct AgentWorkspaceView: View {
         [.updatedDesc, .updatedAsc, .starsDesc, .starsAsc, .createdDesc, .createdAsc, .nameAsc, .nameDesc]
     }
 
-    /// 来源筛选是 Agent 独有维度：它只收窄列表，不把任何来源升级为运行准入条件。
-    private var agentRepositorySourceMenu: some View {
-        Menu {
-            Picker("agent.workspace.repositoryPicker.source.title", selection: $viewModel.repositorySourceFilter) {
-                ForEach(AgentRepositorySourceFilter.allCases) { filter in
-                    Label(filter.title, systemImage: filter.systemImage)
-                        .tag(filter)
+    private var agentRepositorySourceFilterItems: [FilterMenuItem] {
+        [.content(id: "agent-repository-sources", view: AnyView(agentRepositorySourceFilterSection))]
+    }
+
+    /// 来源是 Agent 筛选面板中的多选分组。多项之间按 OR 匹配，点选时保持面板打开，
+    /// 便于连续组合 Weekly / Trending / Discovery 等数据来源。
+    private var agentRepositorySourceFilterSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label("agent.workspace.repositoryPicker.source.title", systemImage: "square.stack.3d.up")
+                .foregroundStyle(.secondary)
+            ForEach(AgentRepositorySource.allCases, id: \.self) { source in
+                Toggle(isOn: repositorySourceBinding(source)) {
+                    Label(source.title, systemImage: source.systemImage)
                 }
             }
-        } label: {
-            Label(viewModel.repositorySourceFilter.title, systemImage: viewModel.repositorySourceFilter.systemImage)
-                .labelStyle(.iconOnly)
         }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .help("agent.workspace.repositoryPicker.source.title")
+    }
+
+    private func repositorySourceBinding(_ source: AgentRepositorySource) -> Binding<Bool> {
+        Binding(
+            get: { viewModel.selectedRepositorySources.contains(source) },
+            set: { isSelected in
+                if isSelected {
+                    viewModel.selectedRepositorySources.insert(source)
+                } else {
+                    viewModel.selectedRepositorySources.remove(source)
+                }
+                viewModel.highlightedMentionIndex = 0
+            }
+        )
     }
 
     private func agentContextPickerRow(_ candidate: RAGMentionCandidate, index: Int) -> some View {

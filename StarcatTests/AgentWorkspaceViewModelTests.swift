@@ -110,6 +110,18 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.displayedMentionCandidates.map(\.id) == [2])
     }
 
+    @Test("仓库筛选重置会同时清空多选来源")
+    func repositoryPickerResetClearsSelectedSources() {
+        let viewModel = AgentWorkspaceViewModel(agents: [BuiltInAgents.githubWeeklyReport])
+        viewModel.selectedRepositorySources = [.weekly, .discovery]
+        viewModel.repositoryPickerFilters.star = .unstarred
+
+        viewModel.resetRepositoryPickerFilters()
+
+        #expect(viewModel.selectedRepositorySources.isEmpty)
+        #expect(viewModel.repositoryPickerFilters == .empty)
+    }
+
     @Test("Repo Insight 替换单仓库选择时不关闭面板")
     func repoInsightReplacesSelectionWithoutClosingPicker() {
         let viewModel = AgentWorkspaceViewModel(agents: [BuiltInAgents.repoInsight])

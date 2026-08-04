@@ -54,7 +54,7 @@ final class AgentWorkspaceViewModel {
     private var repositoryCatalogCandidates: [AgentRepositoryCandidate] = []
     var repositoryPickerFilters = RAGComposerMentionFilters.empty
     var repositoryPickerSortOption: RepoSortOption = .updatedDesc
-    var repositorySourceFilter: AgentRepositorySourceFilter = .all
+    var selectedRepositorySources: Set<AgentRepositorySource> = []
     var isContextPickerFilterPresented = false
     var isContextPickerLanguageAddPresented = false
     var highlightedMentionIndex = 0
@@ -152,7 +152,7 @@ final class AgentWorkspaceViewModel {
             selected: selectedRepoContexts,
             query: contextPickerQuery,
             filters: repositoryPickerFilters,
-            sourceFilter: repositorySourceFilter,
+            selectedSources: selectedRepositorySources,
             sort: repositoryPickerSortOption
         )
     }
@@ -487,7 +487,7 @@ final class AgentWorkspaceViewModel {
     func resetRepositoryPickerFilters() {
         guard !isRunning else { return }
         repositoryPickerFilters.reset()
-        repositorySourceFilter = .all
+        selectedRepositorySources.removeAll()
         highlightedMentionIndex = 0
     }
 

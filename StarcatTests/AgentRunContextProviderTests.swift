@@ -122,7 +122,8 @@ struct AgentRunContextProviderTests {
         let candidates = [
             candidate(id: 1, isStarred: true, sources: [.local, .starred, .weekly], latest: "2026-08-04T10:00:00Z"),
             candidate(id: 2, isStarred: false, sources: [.weekly], latest: "2026-08-03T10:00:00Z"),
-            candidate(id: 3, isStarred: false, sources: [.discovery], latest: "2026-08-02T10:00:00Z")
+            candidate(id: 3, isStarred: false, sources: [.discovery], latest: "2026-08-02T10:00:00Z"),
+            candidate(id: 4, isStarred: false, sources: [.local], latest: "2026-08-01T10:00:00Z")
         ]
         var filters = RAGComposerMentionFilters.empty
         filters.star = .unstarred
@@ -132,21 +133,21 @@ struct AgentRunContextProviderTests {
             selected: [],
             query: "",
             filters: filters,
-            sourceFilter: .all,
+            selectedSources: [],
             sort: .updatedDesc
         )
-        let weekly = AgentRepositoryPickerLogic.build(
+        let weeklyAndDiscovery = AgentRepositoryPickerLogic.build(
             candidates: candidates,
             selected: [],
             query: "",
             filters: .empty,
-            sourceFilter: .weekly,
+            selectedSources: [.weekly, .discovery],
             sort: .updatedDesc
         )
 
-        #expect(unstarred.suggestions.map(\.id) == [2, 3])
-        #expect(weekly.suggestions.map(\.id) == [1, 2])
-        #expect(weekly.totalCount == 3)
+        #expect(unstarred.suggestions.map(\.id) == [2, 3, 4])
+        #expect(weeklyAndDiscovery.suggestions.map(\.id) == [1, 2, 3])
+        #expect(weeklyAndDiscovery.totalCount == 4)
     }
 
     @Test("Agent 选择器在搜索和筛选后仍固定展示已选项目")
@@ -169,7 +170,7 @@ struct AgentRunContextProviderTests {
             )],
             query: "does-not-match",
             filters: .empty,
-            sourceFilter: .weekly,
+            selectedSources: [.weekly],
             sort: .updatedDesc
         )
 

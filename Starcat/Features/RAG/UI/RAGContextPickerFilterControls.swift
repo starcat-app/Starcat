@@ -21,6 +21,9 @@ struct RAGContextPickerFilterControls: View {
     var includeSignalFilters: Bool
     /// Agent 目录没有知识库专属分数，调用方可收窄为真实可用的排序项。
     var sortOptions: [RepoSortOption]
+    /// 调用方特有的筛选分组直接并入同一个漏斗面板，避免再套一层独立菜单。
+    var additionalFilterItems: [FilterMenuItem]
+    var isAdditionalFilterActive: Bool
     var onReset: () -> Void
 
     @State private var draftLanguage = ""
@@ -32,6 +35,8 @@ struct RAGContextPickerFilterControls: View {
         isLanguageAddPresented: Binding<Bool>,
         includeSignalFilters: Bool = true,
         sortOptions: [RepoSortOption] = RepoSortOption.manageOptions,
+        additionalFilterItems: [FilterMenuItem] = [],
+        isAdditionalFilterActive: Bool = false,
         onReset: @escaping () -> Void
     ) {
         self._sortOption = sortOption
@@ -40,6 +45,8 @@ struct RAGContextPickerFilterControls: View {
         self._isLanguageAddPresented = isLanguageAddPresented
         self.includeSignalFilters = includeSignalFilters
         self.sortOptions = sortOptions
+        self.additionalFilterItems = additionalFilterItems
+        self.isAdditionalFilterActive = isAdditionalFilterActive
         self.onReset = onReset
     }
 
@@ -98,17 +105,22 @@ struct RAGContextPickerFilterControls: View {
 
     /// 浏览器 SQL-only 模式不把 Wiki / Health / OpenSSF 算进激活态。
     private var isAnyFilterActive: Bool {
-        includeSignalFilters ? filters.isActive : filters.isSQLOnlyActive
+        (includeSignalFilters ? filters.isActive : filters.isSQLOnlyActive)
+            || isAdditionalFilterActive
     }
 
     private var filterItems: [FilterMenuItem] {
-        var items: [FilterMenuItem] = [
+        var items = additionalFilterItems
+        if !additionalFilterItems.isEmpty {
+            items.append(.divider(id: "after-additional-filters"))
+        }
+        items.append(contentsOf: [
             .content(id: "starStatus", view: AnyView(starFilterSection)),
             .divider(id: "after-star"),
             .content(id: "status", view: AnyView(statusFilterSection)),
             .divider(id: "after-status"),
             .content(id: "language", view: AnyView(languageFilterSection)),
-        ]
+        ])
         if includeSignalFilters {
             items.append(contentsOf: [
                 .divider(id: "after-language"),
