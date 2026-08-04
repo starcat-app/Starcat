@@ -1,6 +1,6 @@
 # GitHub Weekly Report Agent 技术实现方案
 
-> **文档定位**: `GitHub Weekly Report Agent` 作为 Starcat Agent 底层平台的首个接入实例的技术实现方案。本文只写该 Agent 的实现边界、工具接入、上下文注入、Artifact schema、UI 细节、测试与分期；底层 Runtime / Workspace / Tool / Artifact 通用设计以 [`16-Agent底层平台技术方案.md`](16-Agent底层平台技术方案.md) 为准。
+> **文档定位**: `GitHub Weekly Report Agent` 作为 Starcat Agent 底层平台的首个接入实例的技术实现方案。本文只写该 Agent 的场景实现事实；底层 Runtime、Workspace、统一仓库目录、RAG/MCP/CLI 与权限边界以 [`../../../3-设计/详细设计/57-Agent工作台与统一能力层详细设计.md`](../../../3-设计/详细设计/57-Agent工作台与统一能力层详细设计.md) 为准，旧版 [`16-Agent底层平台技术方案.md`](16-Agent底层平台技术方案.md) 仅供历史追溯。
 > **状态**: Cline-style 正式版本已于 2026-07-11 落地。
 > **实现状态**: 已接入模型驱动 tool-calling loop、冻结的本地仓库上下文、可选 External Search、消息链审计和单 Markdown artifact;AI 未配置时明确失败,不生成 sample artifact。写 tag / note / status / star 操作仍不在本轮范围。
 > **关联文档**:
@@ -21,6 +21,9 @@
 - run 启动时冻结用户选择和本地仓库快照,避免执行中数据库变化导致上下文漂移。
 - `external_search` 复用设置页 Provider、API Key、隐私开关和缓存;关闭时返回 skipped tool-result,搜索失败时把错误作为可审计结果回灌给模型,本地链路仍可继续。
 - `artifact_build_weekly_report` 是终止工具,输出一份 Markdown 周刊并持久化;结果位于执行时间线底部,可在 Inspector 预览、复制和导出。
+- 未手选仓库时，默认业务上下文是最近 7 天由 Weekly 数据源采集到的项目，不是“最近 7 天新增 Star”。没有项目时输出合法空周报。
+- 手选仓库来自 Agent 统一目录：按 repo ID 合并本地 `repos`、Weekly、Trending 与 Discovery。Star、知识库和各公共来源只是可多选筛选维度，任何一项都不是准入条件。
+- 目录按 6,000+ 全量已知仓库设计；最多上屏 80 条只是选择器展示窗口，搜索和筛选仍覆盖全量目录。
 
 ### Repo Insight 复用
 

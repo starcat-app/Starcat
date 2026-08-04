@@ -122,6 +122,30 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.repositoryPickerFilters == .empty)
     }
 
+    @Test("6,000+ 多来源目录的面板、选择和清空不会重复派生全量筛选")
+    func repositoryPickerLightweightInteractionsReuseFullCatalogDerivation() async throws {
+        let candidates = (1...6_500).map { agentRepositoryCandidate(id: Int64($0)) }
+        let viewModel = AgentWorkspaceViewModel(agents: [BuiltInAgents.githubWeeklyReport])
+        viewModel.configureRepositoryCatalog(FixedWorkspaceAgentRepositoryCatalog(candidates: candidates))
+        try await waitUntil(timeoutNanoseconds: 2_000_000_000) {
+            viewModel.repositoryPickerTotalCount == candidates.count
+        }
+
+        let initialDerivationCount = viewModel.repositoryPickerDerivationCountForTesting
+        let first = try #require(viewModel.displayedMentionCandidates.first)
+
+        viewModel.isContextPickerFilterPresented = true
+        viewModel.toggleRepoContext(first)
+        viewModel.clearSelectedRepoContexts()
+
+        #expect(viewModel.repositoryPickerDerivationCountForTesting == initialDerivationCount)
+        #expect(viewModel.repositoryPickerDisplayedCount == AgentRepositoryPickerLogic.unselectedDisplayLimit)
+
+        viewModel.selectedRepositorySources = [.weekly, .discovery]
+
+        #expect(viewModel.repositoryPickerDerivationCountForTesting == initialDerivationCount + 1)
+    }
+
     @Test("Repo Insight 替换单仓库选择时不关闭面板")
     func repoInsightReplacesSelectionWithoutClosingPicker() {
         let viewModel = AgentWorkspaceViewModel(agents: [BuiltInAgents.repoInsight])
@@ -812,6 +836,59 @@ struct AgentWorkspaceViewModelTests {
         var repo = Repo.makeMinimal(owner: parts[0], name: parts[1])
         repo.id = id
         return RAGMentionCandidate(repo: repo)
+    }
+
+    private func agentRepositoryCandidate(id: Int64) -> AgentRepositoryCandidate {
+        let fullName = "owner-\(id % 50)/repo-\(id)"
+        let source: AgentRepositorySource = switch id % 4 {
+        case 0: .local
+        case 1: .weekly
+        case 2: .trending
+        default: .discovery
+        }
+        return AgentRepositoryCandidate(
+            snapshot: AgentRepoSnapshot(
+                id: id,
+                owner: "owner-\(id % 50)",
+                name: "repo-\(id)",
+                fullName: fullName,
+                description: "Repository \(id)",
+                language: id.isMultiple(of: 2) ? "Swift" : "TypeScript",
+                starsCount: Int(id),
+                topics: [],
+                isPrivate: false,
+                isStarred: id.isMultiple(of: 3),
+                starredAt: nil,
+                htmlUrl: "https://github.com/\(fullName)",
+                sourceIDs: [source.rawValue],
+                firstObservedAt: nil,
+                latestObservedAt: "2026-08-04T12:00:00Z"
+            ),
+            ownerAvatar: nil,
+            sources: [source],
+            status: .unread,
+            isArchived: false,
+            isFork: false,
+            pushedAt: "2026-08-04T12:00:00Z",
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-08-04T12:00:00Z",
+            libraryUpdatedAt: nil,
+            firstObservedAt: nil,
+            latestObservedAt: "2026-08-04T12:00:00Z",
+            normalizedSearchText: RAGMentionCandidate.normalize(fullName)
+        )
+    }
+}
+
+private struct FixedWorkspaceAgentRepositoryCatalog: AgentRepositoryCatalogProviding {
+    let candidatesValue: [AgentRepositoryCandidate]
+
+    init(candidates: [AgentRepositoryCandidate]) {
+        candidatesValue = candidates
+    }
+
+    func candidates() async throws -> [AgentRepositoryCandidate] {
+        candidatesValue
     }
 }
 

@@ -18,6 +18,7 @@ import UniformTypeIdentifiers
 final class AgentWorkspaceViewModel {
 
     static let maxSelectedRepoContexts = RAGMentionPickerLogic.maxSelectedRepoContexts
+    private static let repositoryCatalogFreshnessInterval: TimeInterval = 60
 
     private var runtime: any AgentRuntime
     private var contextProvider: any AgentRunContextProviding
@@ -27,6 +28,19 @@ final class AgentWorkspaceViewModel {
     private var mentionTask: Task<Void, Never>?
     private var activeRunID: UUID?
     private var draftsByAgentID: [String: String] = [:]
+    private var hasLoadedRepositoryCatalog = false
+    private var isRepositoryCatalogLoading = false
+    private var repositoryCatalogLoadID: UUID?
+    private var repositoryCatalogLoadedAt: Date?
+    private var isBatchingRepositoryPickerCriteria = false
+    private var repositoryCatalogCandidates: [AgentRepositoryCandidate] = []
+    private var repositoryCandidatesByID: [Int64: AgentRepositoryCandidate] = [:]
+    private var repositorySourcesByID: [Int64: [AgentRepositorySource]] = [:]
+    private var orderedRepositoryCandidates: [AgentRepositoryCandidate] = []
+    private var matchedRepositoryCandidates = AgentRepositoryPickerMatches(candidates: [], candidateIDs: [])
+    private(set) var repositoryPickerSnapshot = AgentRepositoryPickerSnapshot.empty
+    /// 回归测试用：只有查询、筛选、来源、排序或目录变化才允许递增。
+    private(set) var repositoryPickerDerivationCountForTesting = 0
 
     private(set) var agents: [AgentDefinition]
     var selectedAgentID: String
@@ -42,19 +56,40 @@ final class AgentWorkspaceViewModel {
     var selectedToolCallID: String?
     var selectedHistoryRunID: String?
     var attachments: [AgentPromptAttachment] = []
-    var selectedRepoContexts: [AIComposerRepoReference] = []
+    var selectedRepoContexts: [AIComposerRepoReference] = [] {
+        didSet { rebuildRepositoryPickerPresentation() }
+    }
     var explicitRepoMode: AIComposerExplicitRepoMode = .only
     var availableModels: [AIModelDescriptor] = []
     var selectedModelID: String?
     var webSearchEnabled = false
     var githubLinks: [AIComposerGitHubLink] = []
     var isContextPickerPresented = false
-    var contextPickerQuery = ""
+    var contextPickerQuery = "" {
+        didSet {
+            guard contextPickerQuery != oldValue else { return }
+            rebuildRepositoryPickerMatches()
+        }
+    }
     var mentionCandidates: [RAGMentionCandidate] = []
-    private var repositoryCatalogCandidates: [AgentRepositoryCandidate] = []
-    var repositoryPickerFilters = RAGComposerMentionFilters.empty
-    var repositoryPickerSortOption: RepoSortOption = .updatedDesc
-    var selectedRepositorySources: Set<AgentRepositorySource> = []
+    var repositoryPickerFilters = RAGComposerMentionFilters.empty {
+        didSet {
+            guard repositoryPickerFilters != oldValue, !isBatchingRepositoryPickerCriteria else { return }
+            rebuildRepositoryPickerMatches()
+        }
+    }
+    var repositoryPickerSortOption: RepoSortOption = .updatedDesc {
+        didSet {
+            guard repositoryPickerSortOption != oldValue else { return }
+            rebuildRepositoryPickerOrder()
+        }
+    }
+    var selectedRepositorySources: Set<AgentRepositorySource> = [] {
+        didSet {
+            guard selectedRepositorySources != oldValue, !isBatchingRepositoryPickerCriteria else { return }
+            rebuildRepositoryPickerMatches()
+        }
+    }
     var isContextPickerFilterPresented = false
     var isContextPickerLanguageAddPresented = false
     var highlightedMentionIndex = 0
@@ -115,7 +150,7 @@ final class AgentWorkspaceViewModel {
 
     /// 与 RAG 仓库选择器保持一致：已选仓库固定置顶，即使它不匹配当前筛选词也不能消失。
     var displayedMentionCandidates: [RAGMentionCandidate] {
-        if !repositoryCatalogCandidates.isEmpty {
+        if hasLoadedRepositoryCatalog {
             return repositoryPickerSnapshot.suggestions.map(\.mentionCandidate)
         }
         let candidatesByID = Dictionary(uniqueKeysWithValues: mentionCandidates.map { ($0.id, $0) })
@@ -127,34 +162,19 @@ final class AgentWorkspaceViewModel {
     }
 
     var repositoryPickerTotalCount: Int {
-        repositoryCatalogCandidates.isEmpty
-            ? mentionCandidates.count
-            : repositoryPickerSnapshot.totalCount
+        hasLoadedRepositoryCatalog ? repositoryPickerSnapshot.totalCount : mentionCandidates.count
     }
 
     var repositoryPickerMatchCount: Int {
-        repositoryCatalogCandidates.isEmpty
-            ? mentionCandidates.count
-            : repositoryPickerSnapshot.matchCount
+        hasLoadedRepositoryCatalog ? repositoryPickerSnapshot.matchCount : mentionCandidates.count
     }
 
     var repositoryPickerDisplayedCount: Int {
-        displayedMentionCandidates.count
+        hasLoadedRepositoryCatalog ? repositoryPickerSnapshot.displayedCount : displayedMentionCandidates.count
     }
 
     var isRepositoryPickerTruncated: Bool {
-        !repositoryCatalogCandidates.isEmpty && repositoryPickerSnapshot.isTruncated
-    }
-
-    private var repositoryPickerSnapshot: AgentRepositoryPickerSnapshot {
-        AgentRepositoryPickerLogic.build(
-            candidates: repositoryCatalogCandidates,
-            selected: selectedRepoContexts,
-            query: contextPickerQuery,
-            filters: repositoryPickerFilters,
-            selectedSources: selectedRepositorySources,
-            sort: repositoryPickerSortOption
-        )
+        hasLoadedRepositoryCatalog && repositoryPickerSnapshot.isTruncated
     }
 
     /// 按钮和键盘发送共用同一校验，避免 UI 显示不可发送但 Return 仍启动 run。
@@ -221,7 +241,14 @@ final class AgentWorkspaceViewModel {
 
     func configureRepositoryCatalog(_ catalog: any AgentRepositoryCatalogProviding) {
         guard !isRunning else { return }
+        mentionTask?.cancel()
         repositoryCatalog = catalog
+        repositoryCatalogLoadedAt = nil
+        isRepositoryCatalogLoading = false
+        repositoryCatalogLoadID = nil
+        // 工作台建立依赖后立即预热目录；用户首次打开选择器时优先使用内存快照，
+        // 不把四张表的读取、合并和首轮排序阻塞在点击动作上。
+        refreshMentionCandidates(force: true)
     }
 
     func configureModelOptions(
@@ -413,7 +440,6 @@ final class AgentWorkspaceViewModel {
     }
 
     func dismissContextPicker() {
-        mentionTask?.cancel()
         isContextPickerPresented = false
         isContextPickerFilterPresented = false
         isContextPickerLanguageAddPresented = false
@@ -486,35 +512,105 @@ final class AgentWorkspaceViewModel {
 
     func resetRepositoryPickerFilters() {
         guard !isRunning else { return }
-        repositoryPickerFilters.reset()
-        selectedRepositorySources.removeAll()
+        // 两组筛选状态必须作为一次事务更新，否则 reset 会连续扫描两次全量目录。
+        isBatchingRepositoryPickerCriteria = true
+        repositoryPickerFilters = .empty
+        selectedRepositorySources = []
+        isBatchingRepositoryPickerCriteria = false
+        rebuildRepositoryPickerMatches()
         highlightedMentionIndex = 0
     }
 
     func repositorySources(for repoID: Int64) -> [AgentRepositorySource] {
-        repositoryCatalogCandidates
-            .first(where: { $0.id == repoID })?
-            .sources
-            .sorted { $0.rawValue < $1.rawValue }
-            ?? []
+        repositorySourcesByID[repoID] ?? []
     }
 
-    private func refreshMentionCandidates() {
-        guard let repositoryCatalog else { return }
-        mentionTask?.cancel()
+    private func refreshMentionCandidates(force: Bool = false) {
+        guard let repositoryCatalog, !isRepositoryCatalogLoading else { return }
+        if !force,
+           let repositoryCatalogLoadedAt,
+           Date().timeIntervalSince(repositoryCatalogLoadedAt) < Self.repositoryCatalogFreshnessInterval {
+            return
+        }
+        isRepositoryCatalogLoading = true
+        let loadID = UUID()
+        repositoryCatalogLoadID = loadID
         mentionTask = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                // 已取消的旧任务不能清掉新任务的 loading 状态。
+                if self.repositoryCatalogLoadID == loadID {
+                    self.isRepositoryCatalogLoading = false
+                    self.repositoryCatalogLoadID = nil
+                    self.mentionTask = nil
+                }
+            }
             do {
                 // 目录读取合并本地 repos 与 Weekly / Trending / Discovery 缓存；Star 和
                 // 知识库只作为筛选维度，绝不能再次成为 Agent 的候选准入条件。
                 let candidates = try await repositoryCatalog.candidates()
-                guard !Task.isCancelled else { return }
-                self?.repositoryCatalogCandidates = candidates
-                self?.mentionCandidates = candidates.map(\.mentionCandidate)
-                self?.highlightedMentionIndex = 0
+                guard !Task.isCancelled, self.repositoryCatalogLoadID == loadID else { return }
+                self.applyRepositoryCatalog(candidates)
             } catch {
                 guard !Task.isCancelled else { return }
-                self?.errorMessage = error.localizedDescription
+                // 后台预热失败不应污染工作台；用户已经打开选择器时才显示读取错误。
+                if self.isContextPickerPresented {
+                    self.errorMessage = error.localizedDescription
+                }
             }
+        }
+    }
+
+    /// 一次性建立全量目录的 ID/来源索引，并启动分层派生。目录规模来自本地多来源
+    /// 去重结果，不能使用 RAG 知识库数量或 Star 数量代替。
+    private func applyRepositoryCatalog(_ candidates: [AgentRepositoryCandidate]) {
+        repositoryCatalogCandidates = candidates
+        repositoryCandidatesByID = Dictionary(uniqueKeysWithValues: candidates.map { ($0.id, $0) })
+        repositorySourcesByID = Dictionary(uniqueKeysWithValues: candidates.map { candidate in
+            (candidate.id, candidate.sources.sorted { $0.rawValue < $1.rawValue })
+        })
+        hasLoadedRepositoryCatalog = true
+        repositoryCatalogLoadedAt = Date()
+        rebuildRepositoryPickerOrder()
+        highlightedMentionIndex = 0
+    }
+
+    /// 目录或排序变化时才执行全量排序。查询与筛选继续复用该稳定顺序。
+    private func rebuildRepositoryPickerOrder() {
+        guard hasLoadedRepositoryCatalog else { return }
+        orderedRepositoryCandidates = AgentRepositoryPickerLogic.ordered(
+            candidates: repositoryCatalogCandidates,
+            sort: repositoryPickerSortOption
+        )
+        rebuildRepositoryPickerMatches()
+    }
+
+    /// 查询、筛选和来源变化只做一次线性扫描，不再重复排序。
+    private func rebuildRepositoryPickerMatches() {
+        guard hasLoadedRepositoryCatalog, !isBatchingRepositoryPickerCriteria else { return }
+        matchedRepositoryCandidates = AgentRepositoryPickerLogic.matched(
+            orderedCandidates: orderedRepositoryCandidates,
+            query: contextPickerQuery,
+            filters: repositoryPickerFilters,
+            selectedSources: selectedRepositorySources
+        )
+        repositoryPickerDerivationCountForTesting += 1
+        rebuildRepositoryPickerPresentation()
+    }
+
+    /// 选择、取消与一键清空只重建最多 80 行的展示投影，不触发全量筛选或排序。
+    private func rebuildRepositoryPickerPresentation() {
+        guard hasLoadedRepositoryCatalog else { return }
+        repositoryPickerSnapshot = AgentRepositoryPickerLogic.present(
+            candidatesByID: repositoryCandidatesByID,
+            matches: matchedRepositoryCandidates,
+            selected: selectedRepoContexts,
+            totalCount: repositoryCatalogCandidates.count
+        )
+        if repositoryPickerSnapshot.suggestions.isEmpty {
+            highlightedMentionIndex = 0
+        } else if highlightedMentionIndex >= repositoryPickerSnapshot.suggestions.count {
+            highlightedMentionIndex = repositoryPickerSnapshot.suggestions.count - 1
         }
     }
 

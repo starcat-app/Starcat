@@ -730,8 +730,14 @@ struct AgentWorkspaceView: View {
     /// Agent 与 RAG 共用同一种仓库选择交互，但候选范围仍由各自 ViewModel 决定。
     /// Agent 搜索全部已知项目；Star、知识库和公共 Feed 都只是可选筛选维度。
     private var agentContextPicker: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            agentContextPickerHeader
+        // 一个 body 周期只读取一次缓存投影，避免 header/list/footer 分别触发派生读取，
+        // 也保证筛选结果计数和本轮显示行来自同一份快照。
+        let candidates = viewModel.displayedMentionCandidates
+        let totalCount = viewModel.repositoryPickerTotalCount
+        let matchCount = viewModel.repositoryPickerMatchCount
+        let isTruncated = viewModel.isRepositoryPickerTruncated
+        return VStack(alignment: .leading, spacing: 0) {
+            agentContextPickerHeader(totalCount: totalCount)
             Divider()
 
             HStack(spacing: 8) {
@@ -785,7 +791,7 @@ struct AgentWorkspaceView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 10)
 
-            if viewModel.displayedMentionCandidates.isEmpty {
+            if candidates.isEmpty {
                 Text("agent.workspace.repositoryPicker.emptyFilter")
                     .font(agentFont(.callout))
                     .foregroundStyle(.secondary)
@@ -795,7 +801,7 @@ struct AgentWorkspaceView: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 4) {
-                        ForEach(Array(viewModel.displayedMentionCandidates.enumerated()), id: \.element.id) { index, candidate in
+                        ForEach(Array(candidates.enumerated()), id: \.element.id) { index, candidate in
                             agentContextPickerRow(candidate, index: index)
                         }
                     }
@@ -805,13 +811,13 @@ struct AgentWorkspaceView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
-            if viewModel.isRepositoryPickerTruncated {
+            if isTruncated {
                 Divider()
                 Text(String(
                     format: String.l10n("agent.workspace.repositoryPicker.narrowHint"),
                     locale: locale,
-                    viewModel.repositoryPickerDisplayedCount,
-                    viewModel.repositoryPickerMatchCount
+                    candidates.count,
+                    matchCount
                 ))
                 .font(agentFont(.caption))
                 .foregroundStyle(.secondary)
@@ -834,14 +840,14 @@ struct AgentWorkspaceView: View {
         .appLocaleEnvironment()
     }
 
-    private var agentContextPickerHeader: some View {
+    private func agentContextPickerHeader(totalCount: Int) -> some View {
         HStack(spacing: 8) {
             Text(String(
                 format: String.l10n("agent.workspace.repositoryPicker.stats"),
                 locale: locale,
                 viewModel.selectedRepoContexts.count,
                 viewModel.maximumSelectedRepoContexts,
-                viewModel.repositoryPickerTotalCount
+                totalCount
             ))
             .font(agentFont(.caption, weight: .semibold))
             .foregroundStyle(.primary)

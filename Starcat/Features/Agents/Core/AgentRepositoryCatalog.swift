@@ -379,6 +379,21 @@ struct AgentRepositoryPickerSnapshot: Sendable {
     var matchCount: Int
     var displayedCount: Int
     var isTruncated: Bool
+
+    static let empty = AgentRepositoryPickerSnapshot(
+        suggestions: [],
+        totalCount: 0,
+        matchCount: 0,
+        displayedCount: 0,
+        isTruncated: false
+    )
+}
+
+/// 已完成排序和筛选的中间结果。选择/取消仓库只基于这份缓存生成最多 80 行，
+/// 不能再次扫描和排序 6,000+ 全量目录。
+struct AgentRepositoryPickerMatches: Sendable {
+    var candidates: [AgentRepositoryCandidate]
+    var candidateIDs: Set<Int64>
 }
 
 enum AgentRepositoryPickerLogic {
@@ -392,27 +407,78 @@ enum AgentRepositoryPickerLogic {
         selectedSources: Set<AgentRepositorySource>,
         sort: RepoSortOption
     ) -> AgentRepositoryPickerSnapshot {
+        let ordered = ordered(candidates: candidates, sort: sort)
+        let matches = matched(
+            orderedCandidates: ordered,
+            query: query,
+            filters: filters,
+            selectedSources: selectedSources
+        )
+        let candidatesByID = Dictionary(uniqueKeysWithValues: candidates.map { ($0.id, $0) })
+        return present(
+            candidatesByID: candidatesByID,
+            matches: matches,
+            selected: selected,
+            totalCount: candidates.count
+        )
+    }
+
+    /// 排序只依赖目录和排序选项。查询、筛选和选择变化都复用该顺序，避免每次
+    /// 点击筛选项都重新执行全量 `sorted`。
+    static func ordered(
+        candidates: [AgentRepositoryCandidate],
+        sort: RepoSortOption
+    ) -> [AgentRepositoryCandidate] {
+        candidates.sorted { compare($0, $1, sort: sort) }
+    }
+
+    /// 在已经排好序的目录上做一次线性筛选，结果天然保留当前排序。
+    static func matched(
+        orderedCandidates: [AgentRepositoryCandidate],
+        query: String,
+        filters: RAGComposerMentionFilters,
+        selectedSources: Set<AgentRepositorySource>
+    ) -> AgentRepositoryPickerMatches {
         let normalizedQuery = RAGMentionCandidate.normalize(query)
-        let matched = candidates
-            .filter { candidate in
-                (normalizedQuery.isEmpty || candidate.normalizedSearchText.contains(normalizedQuery))
-                    && matches(candidate, filters: filters, selectedSources: selectedSources)
-            }
-            .sorted { compare($0, $1, sort: sort) }
-        let byID = Dictionary(uniqueKeysWithValues: candidates.map { ($0.id, $0) })
+        let candidates = orderedCandidates.filter { candidate in
+            (normalizedQuery.isEmpty || candidate.normalizedSearchText.contains(normalizedQuery))
+                && matches(candidate, filters: filters, selectedSources: selectedSources)
+        }
+        return AgentRepositoryPickerMatches(
+            candidates: candidates,
+            candidateIDs: Set(candidates.map(\.id))
+        )
+    }
+
+    /// 将已选仓库置顶并截取展示窗口。这里故意只遍历到凑满 80 条为止；选择、取消、
+    /// 清空只走该方法，不能让轻量 UI 操作退化成全目录过滤和排序。
+    static func present(
+        candidatesByID: [Int64: AgentRepositoryCandidate],
+        matches: AgentRepositoryPickerMatches,
+        selected: [AIComposerRepoReference],
+        totalCount: Int
+    ) -> AgentRepositoryPickerSnapshot {
         let selectedCandidates = selected.map { reference in
-            byID[reference.id] ?? fallbackCandidate(reference)
+            candidatesByID[reference.id] ?? fallbackCandidate(reference)
         }
         let selectedIDs = Set(selectedCandidates.map(\.id))
-        let unselected = matched.filter { !selectedIDs.contains($0.id) }
-        let visibleUnselected = Array(unselected.prefix(unselectedDisplayLimit))
+        let selectedMatchCount = selectedIDs.reduce(into: 0) { count, id in
+            if matches.candidateIDs.contains(id) { count += 1 }
+        }
+        let unselectedMatchCount = matches.candidates.count - selectedMatchCount
+        var visibleUnselected: [AgentRepositoryCandidate] = []
+        visibleUnselected.reserveCapacity(min(unselectedDisplayLimit, unselectedMatchCount))
+        for candidate in matches.candidates where !selectedIDs.contains(candidate.id) {
+            visibleUnselected.append(candidate)
+            if visibleUnselected.count == unselectedDisplayLimit { break }
+        }
         let suggestions = selectedCandidates + visibleUnselected
         return AgentRepositoryPickerSnapshot(
             suggestions: suggestions,
-            totalCount: candidates.count,
-            matchCount: matched.count,
+            totalCount: totalCount,
+            matchCount: matches.candidates.count,
             displayedCount: suggestions.count,
-            isTruncated: unselected.count > visibleUnselected.count
+            isTruncated: unselectedMatchCount > visibleUnselected.count
         )
     }
 

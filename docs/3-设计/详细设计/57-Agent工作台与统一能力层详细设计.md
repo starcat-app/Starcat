@@ -313,9 +313,9 @@ struct AgentRunInput: Sendable {
 以下规则必须由宿主执行层强制应用，不能交给模型理解：
 
 - AgentDefinition 必须声明 `repositoryContext`、`executionMode`、目标仓库基数、是否允许空上下文和是否允许手动覆盖；UI 与 Runtime 禁止按 Agent ID 猜测。
-- Weekly 默认冻结最近 7 天新增 Star；没有新增 Star 时生成合法空周报，不因空仓库失败。
+- Weekly 默认冻结最近 7 天由 Weekly 数据源采集到的仓库；没有采集项目时生成合法空周报，不因空仓库失败。这里的时间窗不是 Star 时间窗。
 - Weekly 的手选仓库是可选覆盖：`.only` 替换自动时间窗，`.prefer` 置顶后补时间窗，`.exclude` 从时间窗排除。
-- Repo Insight 必须且只能冻结 1 个普通 Star 仓库；仓库无需先进入知识库。
+- Repo Insight 必须且只能冻结 1 个 Agent 统一目录中的已知仓库；不要求已 Star，也不要求先进入知识库。
 - Business Context 与 Knowledge Eligible Scope 分离；非知识库 repo 保留在业务上下文，但不得进入 Knowledge Tool。
 - Knowledge Tool 只对 frozen business context 与知识库 ID 的交集执行 `.only` 检索，不再次解释 Composer 的 only/prefer/exclude。
 - 只有用户显式开启联网，才允许普通 External Search。
@@ -334,17 +334,45 @@ Agent Run 可使用四类上下文：
 
 禁止在 Run 启动时把整个数据库或所有 README 预先塞入 Prompt。
 
-### 6.4 内置 Workflow 契约
+### 6.4 Agent 统一仓库目录
+
+Agent 仓库选择器的候选范围是 Starcat 已经采集并落入本地 SQLite 的**全量已知仓库**，不是 Star 集合，也不是 RAG 知识库集合。当前目录按 GitHub repo ID 去重合并：
+
+| 目录来源 | 本地事实表 | 含义 |
+|---|---|---|
+| Local | `repos` | Starcat 本地已经持有的仓库事实；可能已 Star，也可能已取消 Star |
+| Weekly | `weekly_bulk_repos` | Weekly 多来源采集到的项目 |
+| Trending | `trending_repos` | Trending 各周期与语言缓存 |
+| Discovery | `discovery_bulk_repos` | Discovery 批量缓存 |
+
+硬性边界：
+
+- `Starred`、`Knowledge`、`Weekly`、`Trending`、`Discovery` 都是可多选的来源/筛选维度，不是 Agent 候选准入条件。
+- 同一仓库可同时拥有多个来源；来源筛选多选项之间按 OR 匹配。
+- 知识库数量只属于 RAG 工作台，禁止用 RAG 的候选数量描述 Agent 目录规模。
+- 目录总量是运行时数据库事实，当前真实用户库已达到 6,000+ 量级；设计和测试按 6,000+ 全量目录执行，文案不得写死某个截图数字。
+- 选择器最多上屏 80 条未选候选只是渲染窗口，不是读取、准入或业务上下文上限；搜索与筛选必须覆盖全量去重目录。
+- Workflow 的默认业务上下文与选择器目录是两层概念：例如 Weekly 自动取最近 7 天 Weekly 项目，但用户手选覆盖仍可来自任意目录来源。
+
+性能契约：
+
+- 工作台建立依赖后预热统一目录；重复打开面板优先使用内存快照，并以短 TTL 后台刷新，不能把四张表读取和合并阻塞在点击动作上。
+- 目录和排序变化才允许重建全量排序；搜索、筛选和来源变化只在已排序目录上做一次线性扫描。
+- 选择、取消和一键清空只重建“已选置顶 + 最多 80 条未选候选”的展示投影，禁止重新过滤或排序全量目录。
+- repo ID 与来源信息必须建立字典索引；每行渲染禁止再用 `first(where:)` 扫描全量目录。
+- 打开筛选 Popover 只改变展示状态，不得触发候选派生。
+
+### 6.5 内置 Workflow 契约
 
 | Agent | Business Context | 手动选择 | 空上下文 | Execution Mode |
 |---|---|---|---|---|
-| GitHub Weekly Report | 最近 7 天新增 Star | 可选多仓覆盖 | 允许，输出空周报 | `reportGeneration` |
-| Repo Insight | 单个普通 Star | 必须 1 个；GitHub 链接可解析本地 Star | 不允许 | `reportGeneration` |
+| GitHub Weekly Report | 最近 7 天 Weekly 采集项目 | 可选多仓覆盖；可来自统一目录任意来源 | 允许，输出空周报 | `reportGeneration` |
+| Repo Insight | 统一目录中的单个已知仓库 | 必须 1 个；不要求 Star 或知识库状态 | 不允许 | `reportGeneration` |
 | Untagged Tidy（后续） | 待整理集合 | 按预览批次 | 允许无操作结果 | `approvedAction` |
 
 知识库不是 Agent 的前置条件。它只决定业务上下文中的哪些仓库可以由 `knowledge_search` 补充 README、笔记、摘要和引用证据。
 
-### 6.5 预算
+### 6.6 预算
 
 每轮至少设置：
 
@@ -554,7 +582,7 @@ build prompt
 推荐首批产品顺序：
 
 1. 收口 Weekly Report 的最近 7 天自动上下文、合法空周报与多仓覆盖。（已实现）
-2. 把 Repo Insight 收敛为普通 Star 单仓目标和明确 Artifact。（已实现）
+2. 把 Repo Insight 收敛为统一目录中的单仓目标和明确 Artifact，不要求 Star 或知识库状态。（已实现）
 3. 实现 Repo Alternatives，验证 RAG + 全局搜索协同。
 4. 实现 Untagged Tidy，验证真正写入审批。
 5. 再评估 Overlap Scan 与 Release Automation。
@@ -677,6 +705,7 @@ propose / dry-run
 - `AICommandComposer` 共享组件。
 - Agent `@repo`、附件、链接、联网、模型和草稿。
 - `AgentRunInput` → `AgentRunContextSnapshot` 冻结。
+- `repos + Weekly + Trending + Discovery` 全量仓库目录、来源多选筛选与有界展示投影。
 - RAG 行为无回归。
 
 验收：
@@ -684,6 +713,7 @@ propose / dry-run
 - 两个工作台的 Return/Cmd+Return、mention、附件限制一致。
 - 删除 chip 会真实修改执行上下文。
 - Run 启动后修改 Composer 不影响已启动 Run。
+- 6,000+ 目录下打开筛选面板、选择、取消和一键清空不触发全量筛选/排序；80 仅为上屏窗口。
 
 ### P2：Knowledge Tool 与统一 Capability
 
@@ -755,7 +785,8 @@ propose / dry-run
 |---|---|
 | Migration | pre-v19 fixture、数据转换、索引、外键、重复启动 |
 | Composer | Return 策略、mention 键盘、chip 同步、附件边界、草稿 |
-| Context | 最近 7 天、合法空周报、单仓基数、手动覆盖、eligible 子集、私有仓库 |
+| Context | 最近 7 天 Weekly、合法空周报、全量多来源目录、单仓基数、手动覆盖、eligible 子集、私有仓库 |
+| Repository Picker | 6,000+ 去重目录、来源 OR 多选、80 条展示窗口、缓存失效、选择/清空不重复派生 |
 | Knowledge | FTS-only、hybrid、无证据、citation、audit、取消 |
 | Capability | schema、permission、dry-run、read-back、错误映射 |
 | Runtime | multi-tool、approval、resume、retry、budget、cancel |
@@ -812,6 +843,7 @@ propose / dry-run
 
 - v19 升级可靠，Agent 专项和全量测试通过。
 - Agent Composer 复用共享输入组件，不再维持弱化副本。
+- Agent 仓库选择覆盖 `repos + Weekly + Trending + Discovery` 全量去重目录，Star 与知识库只作为筛选维度；6,000+ 性能回归通过。
 - Agent 可在确定 repo 范围内获取真实 RAG evidence/citation。
 - Agent 与 MCP 使用同一领域能力和权限语义，无重复业务实现。
 - 至少一个只读 Artifact Agent 和一个写入型 Agent 完成真实闭环。
