@@ -609,33 +609,35 @@ struct AgentWorkspaceView: View {
     }
 
     private var composerContextStrip: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 6) {
-                ForEach(viewModel.selectedRepoContexts) { reference in
-                    HStack(spacing: 5) {
-                        Image(systemName: "shippingbox")
+        // 与 RAG Composer 使用同一个 FlowLayout：上下文超过可用宽度时按 chip
+        // 边界换行，而不是塞进只能左右滚动、无法一眼看全的单行 ScrollView。
+        RAGFlowLayout(spacing: 7) {
+            ForEach(viewModel.selectedRepoContexts) { reference in
+                HStack(spacing: 5) {
+                    Image(systemName: "shippingbox")
+                        .foregroundStyle(.secondary)
+                    Text(reference.fullName)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .layoutPriority(1)
+                    Button { viewModel.removeRepoContext(reference) } label: {
+                        Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary)
-                        Text(reference.fullName)
-                            .lineLimit(1)
-                        Button { viewModel.removeRepoContext(reference) } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .focusEffectDisabled()
                     }
-                    .font(agentFont(.caption))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7))
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
                 }
+                .font(agentFont(.caption))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7))
+            }
 
-                ForEach(viewModel.githubLinks) { link in
-                    composerContextChip("\(link.owner)/\(link.repository)", icon: "link")
-                }
+            ForEach(viewModel.githubLinks) { link in
+                composerContextChip("\(link.owner)/\(link.repository)", icon: "link")
             }
         }
-        .scrollIndicators(.hidden)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Agent 与 RAG 共用同一种仓库选择交互，但候选范围仍由各自 ViewModel 决定。
