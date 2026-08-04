@@ -963,77 +963,6 @@ struct RepoListView: View {
     /// 排序与 Stars 同步已迁到列表顶栏 `manageFilterBar`（对齐 Weekly / Activity）。
     @MainActor
     private func makeManageToolbarSpec() -> PageToolbarSpec {
-        let effectiveFilters = viewModel.effectiveGlobalFilterState
-        var filterItems: [FilterMenuItem] = []
-        // 「我的项目」专属维度（含可见性 / 私有）只在该 scope 出现，避免污染 Stars 筛选。
-        if viewModel.selection == .myProjects {
-            filterItems.append(.content(
-                id: "project",
-                view: AnyView(projectFilterSection())
-            ))
-            filterItems.append(.divider(id: "after-project"))
-        }
-        filterItems.append(contentsOf: [
-            .content(id: "starStatus", view: AnyView(
-                starFilterSection(selection: globalFilterBinding(\.starFilter))
-            )),
-            .divider(id: "after-star-status"),
-            .content(id: "status", view: AnyView(
-                statusFilterSection(selection: globalFilterBinding(\.statusFilter))
-            )),
-            .divider(id: "after-status"),
-            .content(id: "library", view: AnyView(
-                libraryFilterSection(selection: globalFilterBinding(\.libraryFilter))
-            )),
-            .divider(id: "after-library"),
-            .content(id: "language", view: AnyView(
-                languageFilterSection()
-            )),
-            .divider(id: "after-language"),
-            .content(id: "wikiAvailability", view: AnyView(
-                availabilityPicker(
-                    title: "list.filter.wikiAvailability",
-                    icon: "doc.text.magnifyingglass",
-                    selection: globalFilterBinding(\.wikiAvailabilityFilter)
-                )
-            )),
-            .content(id: "healthAvailability", view: AnyView(
-                availabilityPicker(
-                    title: "list.filter.healthAvailability",
-                    icon: "heart.text.square",
-                    selection: globalFilterBinding(\.healthAvailabilityFilter)
-                )
-            )),
-            .content(id: "openSSFAvailability", view: AnyView(
-                availabilityPicker(
-                    title: "list.filter.openSSFAvailability",
-                    icon: "checkmark.shield",
-                    selection: globalFilterBinding(\.openSSFAvailabilityFilter)
-                )
-            )),
-            .divider(id: "after-signal-availability"),
-            .toggle(
-                id: "hideArchived",
-                label: "settings.general.hideArchived",
-                icon: "archivebox",
-                isOn: globalFilterBinding(\.hideArchived)
-            ),
-            .toggle(
-                id: "hideForks",
-                label: "settings.general.hideForks",
-                icon: "tuningfork",
-                isOn: globalFilterBinding(\.hideForks)
-            )
-        ])
-        if viewModel.selection == .myProjects {
-            filterItems.append(.toggle(
-                id: "onlyPrivateProjects",
-                label: "list.filter.project.onlyPrivate",
-                icon: "lock.fill",
-                isOn: onlyPrivateProjectsBinding
-            ))
-        }
-
         let leading = AnyView(
             Group {
                 Button {
@@ -1044,44 +973,7 @@ struct RepoListView: View {
                 .disabled(!canOpenSmartCollectionEditor)
                 .help("smartCollections.editor.help")
 
-                UnifiedFilterMenu(
-                    items: filterItems,
-                    isAnyFilterActive: viewModel.hasActiveFilter,
-                    accessibilityLabel: effectiveFilters.statusFilter == nil
-                        ? "list.filter.status"
-                        : LocalizedStringKey(effectiveFilters.statusFilter?.localizedDisplayName ?? "list.filter.status"),
-                    onReset: { viewModel.resetAllFilters() }
-                )
-                .onChange(of: viewModel.hideArchived) { _, newValue in
-                    settings.hideArchived = newValue
-                }
-                .onChange(of: viewModel.hideForks) { _, newValue in
-                    settings.hideForks = newValue
-                }
-                .onChange(of: viewModel.statusFilter) { _, newValue in
-                    settings.statusFilter = newValue
-                }
-                .onChange(of: viewModel.starFilter) { _, newValue in
-                    settings.starFilter = newValue
-                }
-                .onChange(of: viewModel.libraryFilter) { _, newValue in
-                    settings.libraryFilter = newValue
-                }
-                .onChange(of: viewModel.repoLanguageFilter) { _, newValue in
-                    settings.repoLanguageFilter = newValue
-                }
-                .onChange(of: viewModel.globalFilterLanguages) { _, newValue in
-                    settings.globalFilterLanguages = AppSettings.normalizedLanguageList(newValue)
-                }
-                .onChange(of: viewModel.wikiAvailabilityFilter) { _, newValue in
-                    settings.wikiAvailabilityFilter = newValue
-                }
-                .onChange(of: viewModel.healthAvailabilityFilter) { _, newValue in
-                    settings.healthAvailabilityFilter = newValue
-                }
-                .onChange(of: viewModel.openSSFAvailabilityFilter) { _, newValue in
-                    settings.openSSFAvailabilityFilter = newValue
-                }
+                globalFilterMenu(includesStatusFilter: true)
 
                 // W12 PR-5：Manage 多选按钮直接驱动 manageMultiSelectionStore（替代原
                 // viewModel.toggleMultiSelectMode），与 trending/weekly/activity 同款机制。
@@ -1120,88 +1012,42 @@ struct RepoListView: View {
     }
 
     @MainActor
-    private func globalFilterMenu() -> some View {
-        var filterItems: [FilterMenuItem] = []
-        if viewModel.selection == .myProjects {
-            filterItems.append(.content(
-                id: "project",
-                view: AnyView(projectFilterSection())
-            ))
-            filterItems.append(.divider(id: "after-project"))
-        }
-        filterItems.append(contentsOf: [
-            .content(id: "starStatus", view: AnyView(
-                starFilterSection(selection: globalFilterBinding(\.starFilter))
-            )),
-            .divider(id: "after-star-status"),
-            .content(id: "library", view: AnyView(
-                libraryFilterSection(selection: globalFilterBinding(\.libraryFilter))
-            )),
-            .divider(id: "after-library"),
-            .content(id: "language", view: AnyView(
-                languageFilterSection()
-            )),
-            .divider(id: "after-language"),
-            .content(id: "wikiAvailability", view: AnyView(
-                availabilityPicker(
-                    title: "list.filter.wikiAvailability",
-                    icon: "doc.text.magnifyingglass",
-                    selection: globalFilterBinding(\.wikiAvailabilityFilter)
-                )
-            )),
-            .content(id: "healthAvailability", view: AnyView(
-                availabilityPicker(
-                    title: "list.filter.healthAvailability",
-                    icon: "heart.text.square",
-                    selection: globalFilterBinding(\.healthAvailabilityFilter)
-                )
-            )),
-            .content(id: "openSSFAvailability", view: AnyView(
-                availabilityPicker(
-                    title: "list.filter.openSSFAvailability",
-                    icon: "checkmark.shield",
-                    selection: globalFilterBinding(\.openSSFAvailabilityFilter)
-                )
-            )),
-            .divider(id: "after-signal-availability"),
-            .toggle(
-                id: "hideArchived",
-                label: "settings.general.hideArchived",
-                icon: "archivebox",
-                isOn: globalFilterBinding(\.hideArchived)
-            ),
-            .toggle(
-                id: "hideForks",
-                label: "settings.general.hideForks",
-                icon: "tuningfork",
-                isOn: globalFilterBinding(\.hideForks)
-            )
-        ])
-        if viewModel.selection == .myProjects {
-            filterItems.append(.toggle(
-                id: "onlyPrivateProjects",
-                label: "list.filter.project.onlyPrivate",
-                icon: "lock.fill",
-                isOn: onlyPrivateProjectsBinding
-            ))
-        }
+    private func globalFilterMenu(includesStatusFilter: Bool = false) -> some View {
+        let effectiveFilters = viewModel.effectiveGlobalFilterState
 
         return UnifiedFilterMenu(
-            items: filterItems,
             isAnyFilterActive: viewModel.hasActiveFilter,
+            accessibilityLabel: includesStatusFilter && effectiveFilters.statusFilter != nil
+                ? LocalizedStringKey(effectiveFilters.statusFilter?.localizedDisplayName ?? "list.filter.status")
+                : "list.filter.status",
             onReset: { viewModel.resetAllFilters() }
-        )
+        ) {
+            globalFilterMenuContent(includesStatusFilter: includesStatusFilter)
+        }
+        // SVG 解析与 NSImage 缩放必须发生在用户点击之前；缓存有界且只随语言池变化预热。
+        .onAppear {
+            FilterMenuLanguageIconCache.prewarm(settings.interestedLanguages, size: 14)
+        }
+        .onChange(of: settings.interestedLanguages) { _, languages in
+            FilterMenuLanguageIconCache.prewarm(languages, size: 14)
+        }
         .onChange(of: viewModel.hideArchived) { _, newValue in
             settings.hideArchived = newValue
         }
         .onChange(of: viewModel.hideForks) { _, newValue in
             settings.hideForks = newValue
         }
+        .onChange(of: viewModel.statusFilter) { _, newValue in
+            settings.statusFilter = newValue
+        }
         .onChange(of: viewModel.starFilter) { _, newValue in
             settings.starFilter = newValue
         }
         .onChange(of: viewModel.libraryFilter) { _, newValue in
             settings.libraryFilter = newValue
+        }
+        .onChange(of: viewModel.repoLanguageFilter) { _, newValue in
+            settings.repoLanguageFilter = newValue
         }
         .onChange(of: viewModel.globalFilterLanguages) { _, newValue in
             settings.globalFilterLanguages = AppSettings.normalizedLanguageList(newValue)
@@ -1214,6 +1060,56 @@ struct RepoListView: View {
         }
         .onChange(of: viewModel.openSSFAvailabilityFilter) { _, newValue in
             settings.openSSFAvailabilityFilter = newValue
+        }
+    }
+
+    /// 固定结构直接交给 SwiftUI 的泛型 ViewBuilder，避免每次打开 popover 都从
+    /// `[FilterMenuItem] + AnyView` 恢复整棵筛选树。Manage 只额外插入状态筛选。
+    @ViewBuilder
+    private func globalFilterMenuContent(includesStatusFilter: Bool) -> some View {
+        if viewModel.selection == .myProjects {
+            projectFilterSection()
+            Divider()
+        }
+
+        starFilterSection(selection: globalFilterBinding(\.starFilter))
+        Divider()
+
+        if includesStatusFilter {
+            statusFilterSection(selection: globalFilterBinding(\.statusFilter))
+            Divider()
+        }
+
+        libraryFilterSection(selection: globalFilterBinding(\.libraryFilter))
+        Divider()
+        languageFilterSection()
+        Divider()
+        availabilityPicker(
+            title: "list.filter.wikiAvailability",
+            icon: "doc.text.magnifyingglass",
+            selection: globalFilterBinding(\.wikiAvailabilityFilter)
+        )
+        availabilityPicker(
+            title: "list.filter.healthAvailability",
+            icon: "heart.text.square",
+            selection: globalFilterBinding(\.healthAvailabilityFilter)
+        )
+        availabilityPicker(
+            title: "list.filter.openSSFAvailability",
+            icon: "checkmark.shield",
+            selection: globalFilterBinding(\.openSSFAvailabilityFilter)
+        )
+        Divider()
+        Toggle(isOn: globalFilterBinding(\.hideArchived)) {
+            Label("settings.general.hideArchived", systemImage: "archivebox")
+        }
+        Toggle(isOn: globalFilterBinding(\.hideForks)) {
+            Label("settings.general.hideForks", systemImage: "tuningfork")
+        }
+        if viewModel.selection == .myProjects {
+            Toggle(isOn: onlyPrivateProjectsBinding) {
+                Label("list.filter.project.onlyPrivate", systemImage: "lock.fill")
+            }
         }
     }
 
@@ -2998,8 +2894,8 @@ private struct ManageRepoRowContent: View {
     }
 }
 
-/// `Menu` 会桥到 `NSMenuItem`。直接把通用 `LanguageIconView` 放进 Toggle label 时，
-/// 部分 SVG asset 会被 AppKit 按原始矢量尺寸布局，导致图标撑爆菜单行。
+/// 筛选 Popover 挂载 Toggle label 时，直接使用通用 `LanguageIconView` 会让
+/// 部分 SVG asset 被 AppKit 按原始矢量尺寸布局，导致图标撑爆菜单行。
 /// 这里先把 NSImage 点尺寸收口到菜单需要的大小，再用固定容器裁切兜底。
 private struct FilterMenuLanguageIcon: View {
     let language: String
@@ -3024,7 +2920,7 @@ private struct FilterMenuLanguageIcon: View {
 
         switch result.type {
         case .localSVG(let assetName):
-            if let image = resizedImage(named: assetName) {
+            if let image = FilterMenuLanguageIconCache.image(named: assetName, size: size) {
                 Image(nsImage: image)
                     .frame(width: size, height: size)
             } else {
@@ -3041,16 +2937,46 @@ private struct FilterMenuLanguageIcon: View {
             .fill(colorHex.flatMap(Color.init(hex:)) ?? .gray)
             .frame(width: size, height: size)
     }
+}
 
-    private func resizedImage(named assetName: String) -> NSImage? {
+/// Toolbar 语言图标的有界内存缓存。
+///
+/// `NSImage(named:)` + SVG copy/resize 都是同步 AppKit 工作；如果放在 popover 首次挂载
+/// 路径，每个感兴趣语言都会阻塞一次主线程。缓存按 asset + 点尺寸区分，toolbar 出现时
+/// 预热，语言池变化时只补新增项。
+@MainActor
+private enum FilterMenuLanguageIconCache {
+    private static let images: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 96
+        return cache
+    }()
+
+    static func prewarm(_ languages: [String], size: CGFloat) {
+        for language in languages where !UncategorizedLanguageKey.matches(language) {
+            let result = LanguageIconResolver.resolve(language: language)
+            if case .localSVG(let assetName) = result.type {
+                _ = image(named: assetName, size: size)
+            }
+        }
+    }
+
+    static func image(named assetName: String, size: CGFloat) -> NSImage? {
+        let key = NSString(string: "\(assetName)#\(size)")
+        if let cached = images.object(forKey: key) {
+            return cached
+        }
+
         guard let base = NSImage(named: assetName) else { return nil }
-        guard let copy = base.copy() as? NSImage else {
-            base.size = NSSize(width: size, height: size)
+        // 不允许直接改 `NSImage(named:)` 返回的共享实例，否则其他页面会继承菜单尺寸。
+        guard let image = base.copy() as? NSImage else {
+            images.setObject(base, forKey: key)
             return base
         }
-        copy.size = NSSize(width: size, height: size)
-        copy.isTemplate = false
-        return copy
+        image.size = NSSize(width: size, height: size)
+        image.isTemplate = false
+        images.setObject(image, forKey: key)
+        return image
     }
 }
 

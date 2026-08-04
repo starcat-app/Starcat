@@ -8,14 +8,12 @@
 //  - Manage 的筛选项是 hideArchived / hideForks / statusFilter，Weekly 的筛选项是
 //    language picker，Trending 不接入。**字段差异太大不强行合并 model**，但 UI
 //    形态完全可以统一：「漏斗图标 + Picker + Toggle 混合的筛选浮层」。
-//  - 把 UI 容器抽出来，每个 page 自己组装 `FilterMenuItem` 数组传进来。
+//  - 把 UI 容器抽出来；固定结构优先使用 `ViewBuilder`，只有运行期动态分组才组装
+//    `FilterMenuItem` 数组。
 //
 //  关键约束：
-//  - `FilterMenuItem` 用 enum case 而非协议：让调用方一眼看清能用哪些控件类型
-//    （toggle / content / divider）。
-//  - `.content` case 接受 `AnyView`：picker 的 selection / 标签 / .tag 由调用方
-//    完整持有，避免本组件帮 caller 写半截 binding（之前的 picker case 尝试这样
-//    做反而把代码弄复杂）。
+//  - 固定 toolbar 筛选树不要先擦除成 `[AnyView]`：popover 打开时需要恢复整棵动态
+//    视图树，会放大首次挂载成本。Agent / RAG 的运行期附加分组仍可走数组适配器。
 //  - icon 激活态由调用方传入 `isAnyFilterActive` 决定，组件不再扫描 items 自己算，
 //    避免「toggle 是否激活」与「picker 选了什么算激活」的判定逻辑分散到本组件。
 //
@@ -46,10 +44,35 @@ enum FilterMenuItem: Identifiable {
     }
 }
 
+/// 动态筛选数组的渲染适配器。
+///
+/// Agent / RAG 会在运行期插入来源筛选分组，因此仍需要数组描述；固定结构的主窗口
+/// toolbar 直接使用 `UnifiedFilterMenu` 的 `ViewBuilder`，不经过这里的 `AnyView`。
+struct FilterMenuItemsView: View {
+    let items: [FilterMenuItem]
+
+    var body: some View {
+        ForEach(items) { item in
+            switch item {
+            case .toggle(_, let label, let icon, let isOn):
+                Toggle(isOn: isOn) {
+                    Label(label, systemImage: icon)
+                }
+
+            case .content(_, let view):
+                view
+
+            case .divider:
+                Divider()
+            }
+        }
+    }
+}
+
 /// 通用筛选菜单。toolbar primaryAction 槽内调用。
 ///
 /// `isAnyFilterActive` 决定漏斗图标的"激活态"渲染（实心 vs 空心）。
-struct UnifiedFilterMenu: View {
+struct UnifiedFilterMenu<Content: View>: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -57,7 +80,7 @@ struct UnifiedFilterMenu: View {
     /// 可选外绑：调用方需要在 Esc 等路径感知「筛选浮层是否打开」时传入。
     private var externalPresented: Binding<Bool>?
 
-    let items: [FilterMenuItem]
+    private let content: Content
     let isAnyFilterActive: Bool
     let accessibilityLabel: LocalizedStringKey
     let helpKey: LocalizedStringKey
@@ -65,19 +88,19 @@ struct UnifiedFilterMenu: View {
     var onReset: (() -> Void)?
 
     init(
-        items: [FilterMenuItem],
         isAnyFilterActive: Bool,
         accessibilityLabel: LocalizedStringKey = "list.filter.status",
         helpKey: LocalizedStringKey = "list.filter.hint",
         isPresented: Binding<Bool>? = nil,
-        onReset: (() -> Void)? = nil
+        onReset: (() -> Void)? = nil,
+        @ViewBuilder content: () -> Content
     ) {
-        self.items = items
         self.isAnyFilterActive = isAnyFilterActive
         self.accessibilityLabel = accessibilityLabel
         self.helpKey = helpKey
         self.externalPresented = isPresented
         self.onReset = onReset
+        self.content = content()
     }
 
     private var isPresented: Binding<Bool> {
@@ -101,20 +124,7 @@ struct UnifiedFilterMenu: View {
         .popover(isPresented: isPresented, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(items) { item in
-                        switch item {
-                        case .toggle(_, let label, let icon, let isOn):
-                            Toggle(isOn: isOn) {
-                                Label(label, systemImage: icon)
-                            }
-
-                        case .content(_, let view):
-                            view
-
-                        case .divider:
-                            Divider()
-                        }
-                    }
+                    content
                 }
                 .padding(.vertical, 10)
                 .padding(.horizontal, 12)
@@ -176,5 +186,27 @@ struct UnifiedFilterMenu: View {
 
     private var activeBorderColor: Color {
         colorScheme == .dark ? Color.accentColor.opacity(0.55) : Color.accentColor.opacity(0.45)
+    }
+}
+
+extension UnifiedFilterMenu where Content == FilterMenuItemsView {
+    /// 运行期动态分组兼容入口；固定结构应使用 `ViewBuilder` initializer，避免类型擦除。
+    init(
+        items: [FilterMenuItem],
+        isAnyFilterActive: Bool,
+        accessibilityLabel: LocalizedStringKey = "list.filter.status",
+        helpKey: LocalizedStringKey = "list.filter.hint",
+        isPresented: Binding<Bool>? = nil,
+        onReset: (() -> Void)? = nil
+    ) {
+        self.init(
+            isAnyFilterActive: isAnyFilterActive,
+            accessibilityLabel: accessibilityLabel,
+            helpKey: helpKey,
+            isPresented: isPresented,
+            onReset: onReset
+        ) {
+            FilterMenuItemsView(items: items)
+        }
     }
 }
