@@ -25,7 +25,7 @@ enum BuiltInAgents {
         defaultPrompt: String.l10n("agent.definition.githubWeeklyReport.defaultPrompt"),
         isEnabled: true,
         workflow: AgentWorkflowPolicy(
-            repositoryContext: .recentStars(days: 7),
+            repositoryContext: .weeklyHotspots(days: 7),
             executionMode: .reportGeneration,
             allowsManualRepositoryOverride: true,
             allowsEmptyRepositoryContext: true,
@@ -35,11 +35,11 @@ enum BuiltInAgents {
         promptRules: [
             AgentPromptRule(
                 id: "weekly-local-facts",
-                content: "Treat repository IDs and metadata in Frozen Starcat Context as the only local facts. Use knowledge_search only for the eligible indexed subset and cite only its supplied [S#] markers. Do not claim live GitHub trends, releases, or activity unless a network tool result provides that evidence."
+                content: "Treat repository IDs, source IDs, observation timestamps, and metadata in Frozen Starcat Context as the only local facts. The default context comes from Starcat's Weekly multi-source catalog and does not require repositories to be starred. Use knowledge_search only for the eligible indexed subset and cite only its supplied [S#] markers. Do not claim live GitHub trends, releases, or activity unless a network tool result provides that evidence."
             ),
             AgentPromptRule(
                 id: "weekly-artifact-contract",
-                content: "Use context_resolve_repos and repo_cluster_topics as needed, then submit exactly one structured artifact_build_weekly_report call. An empty sections array is valid only when the frozen recent-stars context is empty."
+                content: "Use context_resolve_repos and repo_cluster_topics as needed, then submit exactly one structured artifact_build_weekly_report call. An empty sections array is valid only when the frozen Weekly hotspot context is empty."
             )
         ],
         artifactTitle: String.l10n("agent.runtime.artifact.weeklyReport.title"),

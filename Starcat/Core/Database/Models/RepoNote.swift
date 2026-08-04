@@ -101,7 +101,7 @@ enum LibraryState: String, CaseIterable, Codable {
 /// `RepoStatus(rawValue:)`**——后者对旧值会返回 nil，造成静默丢状态。
 ///
 /// 用 String enum 让 UI 端类型安全，落库时用 `rawValue`。
-enum RepoStatus: String, CaseIterable, Codable {
+enum RepoStatus: String, CaseIterable, Codable, Hashable, Sendable {
     case unread // 未读
     case read   // 已读（v2 新增）
     case using  // 正在使用

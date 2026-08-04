@@ -418,7 +418,7 @@ struct LoopAgentRuntimeTests {
             defaultPrompt: "",
             isEnabled: true,
             workflow: AgentWorkflowPolicy(
-                repositoryContext: .recentStars(days: 7),
+                repositoryContext: .weeklyHotspots(days: 7),
                 executionMode: .reportGeneration,
                 allowsManualRepositoryOverride: true,
                 allowsEmptyRepositoryContext: true,

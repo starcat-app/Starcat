@@ -14,11 +14,11 @@ import Testing
 
 @Suite("Agent Product Runtime")
 struct AgentProductRuntimeTests {
-    @Test("Weekly 无新增 Star 时允许生成可审计的空周报")
+    @Test("Weekly 时间窗无采集项目时允许生成可审计的空周报")
     func weeklyBuildsValidEmptyReport() throws {
         let request = try WeeklyReportArtifactRequest(arguments: .object([
             "title": .string("Weekly"),
-            "executiveSummary": .string("本周没有新增 Star。"),
+            "executiveSummary": .string("本周暂无可用项目。"),
             "sections": .array([]),
             "limitations": .array([]),
             "includeSources": .bool(true)
@@ -29,7 +29,7 @@ struct AgentProductRuntimeTests {
             prompt: "生成本周周报",
             context: AgentRunContext(
                 sourceDescription: String(
-                    format: String.l10n("agent.context.source.recentStarsFormat"),
+                    format: String.l10n("agent.context.source.weeklyHotspotsFormat"),
                     7,
                     0
                 )

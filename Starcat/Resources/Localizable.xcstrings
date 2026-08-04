@@ -22950,6 +22950,18 @@
         }
       }
     },
+    "agent.workspace.composer.clearContext" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear selected repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清空已选仓库" } }
+      }
+    },
+    "agent.workspace.composer.contextDisclosure" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Selected Context" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已选择的上下文" } }
+      }
+    },
     "agent.workspace.composer.mode" : {
       "localizations" : {
         "ar" : {
@@ -23878,6 +23890,22 @@
         }
       }
     },
+    "agent.workspace.repositoryPicker.narrowHint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Showing %1$d of %2$d matches · Keep typing to narrow the list"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示 %1$d / 命中 %2$d · 继续输入可缩小范围"
+          }
+        }
+      }
+    },
     "agent.workspace.repositoryPicker.emptyFilter" : {
       "localizations" : {
         "en" : {
@@ -23931,15 +23959,57 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Selected %1$d/%2$d · Results %3$d"
+            "value" : "Selected %1$d/%2$d · Repositories %3$d"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已选 %1$d/%2$d · 结果 %3$d"
+            "value" : "已选 %1$d/%2$d · 仓库 %3$d"
           }
         }
+      }
+    },
+    "agent.workspace.repositoryPicker.source.discovery" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Discovery" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "发现" } }
+      }
+    },
+    "agent.workspace.repositoryPicker.source.knowledge" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Knowledge Library" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识库" } }
+      }
+    },
+    "agent.workspace.repositoryPicker.source.local" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Local Repository" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本地仓库" } }
+      }
+    },
+    "agent.workspace.repositoryPicker.source.starred" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Starred" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已 Star" } }
+      }
+    },
+    "agent.workspace.repositoryPicker.source.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repository Source" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库来源" } }
+      }
+    },
+    "agent.workspace.repositoryPicker.source.trending" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Trending" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "趋势" } }
+      }
+    },
+    "agent.workspace.repositoryPicker.source.weekly" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Weekly" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "周报" } }
       }
     },
     "agent.workspace.repositoryPicker.title" : {
@@ -469737,18 +469807,34 @@
         }
       }
     },
-    "agent.context.source.singleRepository" : {
+    "agent.context.source.weeklyHotspotsFormat" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "One selected Starred repository"
+            "value" : "Last %d days: %d repositories from the Weekly feed"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "1 个已选择的 Star 仓库"
+            "value" : "最近 %d 天：Weekly 数据中的 %d 个仓库"
+          }
+        }
+      }
+    },
+    "agent.context.source.singleRepository" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "One selected repository"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 个已选择的仓库"
           }
         },
         "ar" : {
@@ -470297,18 +470383,34 @@
         }
       }
     },
-    "agent.workspace.context.singleRepositoryRequired" : {
+    "agent.workspace.context.weeklyHotspotsAutomatic" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Select one Starred repository for Repo Insight."
+            "value" : "Repositories observed by Weekly in the last 7 days will be used automatically."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请为仓库洞察选择 1 个已 Star 仓库。"
+            "value" : "将自动使用 Weekly 最近 7 天采集到的仓库。"
+          }
+        }
+      }
+    },
+    "agent.workspace.context.singleRepositoryRequired" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select one repository for Repo Insight."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请为仓库洞察选择 1 个仓库。"
           }
         },
         "ar" : {

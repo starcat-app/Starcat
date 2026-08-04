@@ -19,6 +19,8 @@ struct RAGContextPickerFilterControls: View {
     @Binding var isLanguageAddPresented: Bool
     /// `false`：只暴露 SQL 可下推条件（星标 / 状态 / 语言 / 归档 / Fork），供知识库浏览器使用。
     var includeSignalFilters: Bool
+    /// Agent 目录没有知识库专属分数，调用方可收窄为真实可用的排序项。
+    var sortOptions: [RepoSortOption]
     var onReset: () -> Void
 
     @State private var draftLanguage = ""
@@ -29,6 +31,7 @@ struct RAGContextPickerFilterControls: View {
         isFilterPresented: Binding<Bool>,
         isLanguageAddPresented: Binding<Bool>,
         includeSignalFilters: Bool = true,
+        sortOptions: [RepoSortOption] = RepoSortOption.manageOptions,
         onReset: @escaping () -> Void
     ) {
         self._sortOption = sortOption
@@ -36,6 +39,7 @@ struct RAGContextPickerFilterControls: View {
         self._isFilterPresented = isFilterPresented
         self._isLanguageAddPresented = isLanguageAddPresented
         self.includeSignalFilters = includeSignalFilters
+        self.sortOptions = sortOptions
         self.onReset = onReset
     }
 
@@ -67,7 +71,7 @@ struct RAGContextPickerFilterControls: View {
         HStack(spacing: 6) {
             UnifiedSortMenu(
                 selection: $sortOption,
-                options: RepoSortOption.manageOptions,
+                options: sortOptions,
                 displayName: { $0.displayName },
                 systemImage: { $0.systemImage },
                 dividerBefore: {

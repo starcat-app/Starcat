@@ -41,15 +41,18 @@ struct EmptyAgentRunContextProvider: AgentRunContextProviding {
 struct RepositoryAgentRunContextProvider: AgentRunContextProviding {
 
     private let repoRepository: any RepoRepositoryProtocol
+    private let repositoryCatalog: any AgentRepositoryCatalogProviding
     private let candidateLimit: Int
     private let now: @Sendable () -> Date
 
     init(
         repoRepository: any RepoRepositoryProtocol,
+        repositoryCatalog: any AgentRepositoryCatalogProviding,
         candidateLimit: Int = 100,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.repoRepository = repoRepository
+        self.repositoryCatalog = repositoryCatalog
         self.candidateLimit = candidateLimit
         self.now = now
     }
@@ -68,7 +71,7 @@ struct RepositoryAgentRunContextProvider: AgentRunContextProviding {
             )
             return AgentRunContext(
                 sourceDescription: sourceDescription,
-                repos: repos.map(Self.snapshot(from:)),
+                repos: repos,
                 attachments: input.attachments,
                 explicitRepos: input.explicitRepos,
                 explicitRepoMode: input.explicitRepoMode,
@@ -96,17 +99,31 @@ struct RepositoryAgentRunContextProvider: AgentRunContextProviding {
     private func loadBusinessRepos(
         definition: AgentDefinition,
         input: AgentRunInput
-    ) async throws -> [Repo] {
+    ) async throws -> [AgentRepoSnapshot] {
+        let candidates = try await repositoryCatalog.candidates()
+        let candidatesByID = Dictionary(uniqueKeysWithValues: candidates.map { ($0.id, $0) })
         switch definition.workflow.repositoryContext {
         case .none:
             return []
-        case .recentStars(let days):
+        case .weeklyHotspots(let days):
             let cutoff = now().addingTimeInterval(-Double(max(1, days)) * 86_400)
-            let recent = try await repoRepository.fetchStarred(since: cutoff, limit: candidateLimit)
+            let cutoffISO = ISO8601DateFormatter.shared.string(from: cutoff)
+            let recent = candidates
+                .filter { candidate in
+                    candidate.sources.contains(.weekly)
+                        && (candidate.latestObservedAt ?? "") >= cutoffISO
+                }
+                .sorted { lhs, rhs in
+                    let left = lhs.latestObservedAt ?? ""
+                    let right = rhs.latestObservedAt ?? ""
+                    return left == right ? lhs.starsCount > rhs.starsCount : left > right
+                }
+                .prefix(candidateLimit)
+                .map(\.snapshot)
             guard definition.workflow.allowsManualRepositoryOverride, !input.explicitRepos.isEmpty else {
-                return recent
+                return Array(recent)
             }
-            let explicit = try await loadExplicitRepos(input.explicitRepos)
+            let explicit = try loadExplicitRepos(input.explicitRepos, candidatesByID: candidatesByID)
             switch input.explicitRepoMode {
             case .only:
                 return explicit
@@ -118,18 +135,17 @@ struct RepositoryAgentRunContextProvider: AgentRunContextProviding {
                 return recent.filter { !excluded.contains($0.id) }
             }
         case .singleRepository:
-            let explicit = try await loadExplicitRepos(input.explicitRepos)
+            let explicit = try loadExplicitRepos(input.explicitRepos, candidatesByID: candidatesByID)
             if explicit.count == 1 {
                 return explicit
             }
             guard explicit.isEmpty,
                   input.githubLinks.count == 1,
                   let link = input.githubLinks.first,
-                  let linkedRepo = try await repoRepository.findByOwnerName(
-                    owner: link.owner,
-                    name: link.repository
-                  ),
-                  linkedRepo.isStarred
+                  let linkedRepo = candidates.first(where: {
+                      $0.owner.caseInsensitiveCompare(link.owner) == .orderedSame
+                          && $0.name.caseInsensitiveCompare(link.repository) == .orderedSame
+                  })?.snapshot
             else {
                 throw AgentRunContextProviderError.singleRepositoryRequired
             }
@@ -143,9 +159,9 @@ struct RepositoryAgentRunContextProvider: AgentRunContextProviding {
         repositoryCount: Int
     ) -> String {
         switch definition.workflow.repositoryContext {
-        case .recentStars(let days) where input.explicitRepos.isEmpty:
+        case .weeklyHotspots(let days) where input.explicitRepos.isEmpty:
             return String(
-                format: String.l10n("agent.context.source.recentStarsFormat"),
+                format: String.l10n("agent.context.source.weeklyHotspotsFormat"),
                 days,
                 repositoryCount
             )
@@ -158,13 +174,16 @@ struct RepositoryAgentRunContextProvider: AgentRunContextProviding {
         }
     }
 
-    private func loadExplicitRepos(_ references: [AIComposerRepoReference]) async throws -> [Repo] {
+    private func loadExplicitRepos(
+        _ references: [AIComposerRepoReference],
+        candidatesByID: [Int64: AgentRepositoryCandidate]
+    ) throws -> [AgentRepoSnapshot] {
         guard references.count <= candidateLimit else {
             throw AgentRunContextProviderError.tooManyExplicitRepositories
         }
-        var repos: [Repo] = []
+        var repos: [AgentRepoSnapshot] = []
         for reference in references {
-            guard let repo = try await repoRepository.findById(reference.id), repo.isStarred else {
+            guard let repo = candidatesByID[reference.id]?.snapshot else {
                 throw AgentRunContextProviderError.explicitRepositoryUnavailable
             }
             repos.append(repo)
@@ -172,9 +191,9 @@ struct RepositoryAgentRunContextProvider: AgentRunContextProviding {
         return repos
     }
 
-    /// Knowledge 是业务上下文上的可选证据层。普通 Star 不在知识库时只会让
+    /// Knowledge 是业务上下文上的可选证据层。任何来源项目不在知识库时只会让
     /// `knowledge_search` 缩小到可用子集，不能让 Weekly / Repo Insight 整次失败。
-    private func loadKnowledgeEligibleRepoIDs(from repos: [Repo]) async -> [Int64] {
+    private func loadKnowledgeEligibleRepoIDs(from repos: [AgentRepoSnapshot]) async -> [Int64] {
         guard !repos.isEmpty else { return [] }
         do {
             let knowledgeIDs = Set(try await repoRepository.fetchKnowledgeRepoIDs())
@@ -183,23 +202,6 @@ struct RepositoryAgentRunContextProvider: AgentRunContextProviding {
             AppLog.general.warning("Agent knowledge eligibility snapshot failed: \(error.localizedDescription, privacy: .public)")
             return []
         }
-    }
-
-    private static func snapshot(from repo: Repo) -> AgentRepoSnapshot {
-        AgentRepoSnapshot(
-            id: repo.id,
-            owner: repo.owner,
-            name: repo.name,
-            fullName: repo.fullName,
-            description: repo.description,
-            language: repo.language,
-            starsCount: repo.starsCount,
-            topics: repo.topicsArray,
-            isPrivate: repo.isPrivate,
-            isStarred: repo.isStarred,
-            starredAt: repo.starredAt,
-            htmlUrl: repo.htmlUrl
-        )
     }
 }
 

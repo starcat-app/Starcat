@@ -13,11 +13,12 @@ import CryptoKit
 
 /// Agent 如何取得业务仓库上下文。
 ///
-/// 这是 Agent 工作流契约，不是 RAG 检索范围：Weekly 按时间窗口自动取 Star，
-/// Repo Insight 要求单仓目标；知识库只在后续工具阶段提供可用证据。
+/// 这是 Agent 工作流契约，不是 RAG 检索范围：Weekly 按时间窗口读取公共周报缓存，
+/// Repo Insight 要求单仓目标；Star 和知识库都不能成为 Agent 的全局准入条件。
 enum AgentRepositoryContextPolicy: Hashable, Sendable {
     case none
-    case recentStars(days: Int)
+    /// Weekly Report 从 Weekly 多来源缓存冻结最近时间窗，不依赖用户是否 Star。
+    case weeklyHotspots(days: Int)
     case singleRepository
 }
 
@@ -330,10 +331,23 @@ struct AgentRepoSnapshot: Codable, Identifiable, Hashable, Sendable {
     var isStarred: Bool
     var starredAt: String?
     var htmlUrl: String
+    /// 数据来源由 Agent 目录冻结；旧 run 没有该字段时保持 nil，兼容历史持久化快照。
+    var sourceIDs: [String]? = nil
+    /// 多来源目录首次/最近观察时间。Weekly Report 用它解释热点时间窗，而不是 Star 时间。
+    var firstObservedAt: String? = nil
+    var latestObservedAt: String? = nil
 
     var displaySummary: String {
         let languagePart = language.map { " · \($0)" } ?? ""
-        return String(format: String.l10n("agent.repoSnapshot.summaryFormat"), fullName, languagePart, starsCount)
+        let sourcePart = sourceIDs.map { values in
+            values.isEmpty ? "" : " · \(values.joined(separator: ", "))"
+        } ?? ""
+        return String(
+            format: String.l10n("agent.repoSnapshot.summaryFormat"),
+            fullName,
+            languagePart + sourcePart,
+            starsCount
+        )
     }
 }
 

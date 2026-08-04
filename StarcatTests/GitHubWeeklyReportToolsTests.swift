@@ -12,7 +12,7 @@ import Testing
 @Suite("GitHubWeeklyReportTools")
 struct GitHubWeeklyReportToolsTests {
 
-    @Test("resolveCandidateRepos 使用真实 context 快照并按 stars 排序")
+    @Test("resolveCandidateRepos 默认保留 Weekly 最近观察顺序")
     func resolveCandidateReposUsesContextSnapshot() async throws {
         let context = AgentRunContext(
             sourceDescription: "Unit Snapshot",
@@ -30,6 +30,7 @@ struct GitHubWeeklyReportToolsTests {
         #expect(result.output.output.contains("swiftlang/swift-markdown"))
         #expect(result.output.output.contains("modelcontextprotocol/swift-sdk") == false)
         #expect(result.trace.input.contains("Unit Snapshot"))
+        #expect(result.trace.input.contains("sort:\nrecent"))
     }
 
     @Test("context_resolve_repos 遇到冻结范围外 ID 时整次失败")

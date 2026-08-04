@@ -22,7 +22,8 @@ struct WeeklyReportToolResult: Sendable {
 }
 
 enum WeeklyReportRepoSort: String, Sendable {
-    case starredAt = "starred_at"
+    /// 保留 Context Provider 按 Weekly 最近观察时间冻结的顺序。
+    case recent
     case stars
     case name
 }
@@ -56,7 +57,7 @@ enum GitHubWeeklyReportTools {
         context: AgentRunContext,
         repoIDs: [Int64] = [],
         limit: Int = 12,
-        sort: WeeklyReportRepoSort = .stars
+        sort: WeeklyReportRepoSort = .recent
     ) async throws -> WeeklyReportToolResult {
         let executor = RepositoryReadCapabilityExecutor(
             source: FrozenRepositoryReadCapabilitySource(repositories: context.repos)
@@ -178,7 +179,7 @@ enum GitHubWeeklyReportTools {
 private extension WeeklyReportRepoSort {
     var capabilitySort: RepositoryCapabilitySort {
         switch self {
-        case .starredAt: .starredAt
+        case .recent: .sourceOrder
         case .stars: .stars
         case .name: .name
         }
@@ -298,8 +299,8 @@ enum GitHubWeeklyReportAgentTools {
                 "sort": AgentJSONSchema(
                     type: .string,
                     description: "Repository ordering",
-                    enumValues: [.string("starred_at"), .string("stars"), .string("name")],
-                    defaultValue: .string("starred_at")
+                    enumValues: [.string("recent"), .string("stars"), .string("name")],
+                    defaultValue: .string("recent")
                 )
             ]
         )
@@ -308,7 +309,7 @@ enum GitHubWeeklyReportAgentTools {
             let arguments = input.arguments.objectValue ?? [:]
             let repoIDs = arguments["repoIDs"]?.integerArrayValue.map(Int64.init) ?? []
             let limit = min(max(arguments["maxRepositories"]?.integerValue ?? 40, 1), 100)
-            let sort = arguments["sort"]?.stringValue.flatMap(WeeklyReportRepoSort.init(rawValue:)) ?? .starredAt
+            let sort = arguments["sort"]?.stringValue.flatMap(WeeklyReportRepoSort.init(rawValue:)) ?? .recent
             do {
                 return try await GitHubWeeklyReportTools.resolveCandidateRepos(
                     context: input.context,

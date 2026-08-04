@@ -22,7 +22,7 @@ final class AgentWorkspaceViewModel {
     private var runtime: any AgentRuntime
     private var contextProvider: any AgentRunContextProviding
     private var runRepository: (any AgentRunRepositoryProtocol)?
-    private var repoRepository: (any RepoRepositoryProtocol)?
+    private var repositoryCatalog: (any AgentRepositoryCatalogProviding)?
     private var runTask: Task<Void, Never>?
     private var mentionTask: Task<Void, Never>?
     private var activeRunID: UUID?
@@ -51,6 +51,12 @@ final class AgentWorkspaceViewModel {
     var isContextPickerPresented = false
     var contextPickerQuery = ""
     var mentionCandidates: [RAGMentionCandidate] = []
+    private var repositoryCatalogCandidates: [AgentRepositoryCandidate] = []
+    var repositoryPickerFilters = RAGComposerMentionFilters.empty
+    var repositoryPickerSortOption: RepoSortOption = .updatedDesc
+    var repositorySourceFilter: AgentRepositorySourceFilter = .all
+    var isContextPickerFilterPresented = false
+    var isContextPickerLanguageAddPresented = false
     var highlightedMentionIndex = 0
     var assistantReasoningOutput: String = ""
     var assistantOutput: String = ""
@@ -109,12 +115,46 @@ final class AgentWorkspaceViewModel {
 
     /// 与 RAG 仓库选择器保持一致：已选仓库固定置顶，即使它不匹配当前筛选词也不能消失。
     var displayedMentionCandidates: [RAGMentionCandidate] {
+        if !repositoryCatalogCandidates.isEmpty {
+            return repositoryPickerSnapshot.suggestions.map(\.mentionCandidate)
+        }
         let candidatesByID = Dictionary(uniqueKeysWithValues: mentionCandidates.map { ($0.id, $0) })
         let selectedCandidates = selectedRepoContexts.map { reference in
             candidatesByID[reference.id] ?? RAGMentionCandidate(reference: reference)
         }
         let selectedIDs = Set(selectedCandidates.map(\.id))
         return selectedCandidates + mentionCandidates.filter { !selectedIDs.contains($0.id) }
+    }
+
+    var repositoryPickerTotalCount: Int {
+        repositoryCatalogCandidates.isEmpty
+            ? mentionCandidates.count
+            : repositoryPickerSnapshot.totalCount
+    }
+
+    var repositoryPickerMatchCount: Int {
+        repositoryCatalogCandidates.isEmpty
+            ? mentionCandidates.count
+            : repositoryPickerSnapshot.matchCount
+    }
+
+    var repositoryPickerDisplayedCount: Int {
+        displayedMentionCandidates.count
+    }
+
+    var isRepositoryPickerTruncated: Bool {
+        !repositoryCatalogCandidates.isEmpty && repositoryPickerSnapshot.isTruncated
+    }
+
+    private var repositoryPickerSnapshot: AgentRepositoryPickerSnapshot {
+        AgentRepositoryPickerLogic.build(
+            candidates: repositoryCatalogCandidates,
+            selected: selectedRepoContexts,
+            query: contextPickerQuery,
+            filters: repositoryPickerFilters,
+            sourceFilter: repositorySourceFilter,
+            sort: repositoryPickerSortOption
+        )
     }
 
     /// 按钮和键盘发送共用同一校验，避免 UI 显示不可发送但 Return 仍启动 run。
@@ -128,7 +168,7 @@ final class AgentWorkspaceViewModel {
         else { return false }
 
         switch selectedAgent.workflow.repositoryContext {
-        case .none, .recentStars:
+        case .none, .weeklyHotspots:
             return true
         case .singleRepository:
             return selectedRepoContexts.count == 1 || (selectedRepoContexts.isEmpty && githubLinks.count == 1)
@@ -179,9 +219,9 @@ final class AgentWorkspaceViewModel {
         runRepository = repository
     }
 
-    func configureRepoRepository(_ repository: any RepoRepositoryProtocol) {
+    func configureRepositoryCatalog(_ catalog: any AgentRepositoryCatalogProviding) {
         guard !isRunning else { return }
-        repoRepository = repository
+        repositoryCatalog = catalog
     }
 
     func configureModelOptions(
@@ -369,12 +409,14 @@ final class AgentWorkspaceViewModel {
 
     func handleContextPickerQueryChanged() {
         guard isContextPickerPresented else { return }
-        refreshMentionCandidates()
+        highlightedMentionIndex = 0
     }
 
     func dismissContextPicker() {
         mentionTask?.cancel()
         isContextPickerPresented = false
+        isContextPickerFilterPresented = false
+        isContextPickerLanguageAddPresented = false
         highlightedMentionIndex = 0
     }
 
@@ -439,20 +481,35 @@ final class AgentWorkspaceViewModel {
     func clearContextPickerQuery() {
         guard !isRunning else { return }
         contextPickerQuery = ""
-        refreshMentionCandidates()
+        highlightedMentionIndex = 0
+    }
+
+    func resetRepositoryPickerFilters() {
+        guard !isRunning else { return }
+        repositoryPickerFilters.reset()
+        repositorySourceFilter = .all
+        highlightedMentionIndex = 0
+    }
+
+    func repositorySources(for repoID: Int64) -> [AgentRepositorySource] {
+        repositoryCatalogCandidates
+            .first(where: { $0.id == repoID })?
+            .sources
+            .sorted { $0.rawValue < $1.rawValue }
+            ?? []
     }
 
     private func refreshMentionCandidates() {
-        guard let repoRepository else { return }
-        let query = contextPickerQuery
+        guard let repositoryCatalog else { return }
         mentionTask?.cancel()
         mentionTask = Task { [weak self] in
             do {
-                // Agent 目标来自普通 Star，而不是知识库候选。RAG 只在运行时为其中已入库的
-                // 子集补充证据，不能反过来限制 Agent 能选择哪些仓库。
-                let repos = try await repoRepository.searchFTS(query: query)
-                guard !Task.isCancelled, self?.contextPickerQuery == query else { return }
-                self?.mentionCandidates = repos.prefix(30).map(RAGMentionCandidate.init(repo:))
+                // 目录读取合并本地 repos 与 Weekly / Trending / Discovery 缓存；Star 和
+                // 知识库只作为筛选维度，绝不能再次成为 Agent 的候选准入条件。
+                let candidates = try await repositoryCatalog.candidates()
+                guard !Task.isCancelled else { return }
+                self?.repositoryCatalogCandidates = candidates
+                self?.mentionCandidates = candidates.map(\.mentionCandidate)
                 self?.highlightedMentionIndex = 0
             } catch {
                 guard !Task.isCancelled else { return }

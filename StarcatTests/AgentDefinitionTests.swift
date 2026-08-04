@@ -27,7 +27,7 @@ struct AgentDefinitionTests {
             "artifact_build_weekly_report"
         ])
         #expect(agent.artifactTypes == [.markdown])
-        #expect(agent.workflow.repositoryContext == .recentStars(days: 7))
+        #expect(agent.workflow.repositoryContext == .weeklyHotspots(days: 7))
         #expect(agent.workflow.allowsEmptyRepositoryContext)
         #expect(agent.workflow.allowsManualRepositoryOverride)
         #expect(agent.workflow.usesDefaultPromptWhenEmpty)
