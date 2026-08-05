@@ -52,6 +52,8 @@ struct ShareRepoDTO: Codable, Sendable {
     let language: String?
     let starsCount: Int
     let forksCount: Int
+    /// GitHub 真实 Watch 数（`subscribers_count`）。list/search 路径常为 nil，缺省传 0。
+    let subscribersCount: Int
     let topics: [String]
     let homepage: String?
     let url: String
@@ -62,6 +64,7 @@ struct ShareRepoDTO: Codable, Sendable {
         case language
         case starsCount = "stars_count"
         case forksCount = "forks_count"
+        case subscribersCount = "subscribers_count"
         case topics
         case homepage
         case url

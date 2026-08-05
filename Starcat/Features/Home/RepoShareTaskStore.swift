@@ -214,6 +214,8 @@ final class RepoShareTaskStore {
             language: repo.language,
             starsCount: repo.starsCount,
             forksCount: repo.forksCount,
+            // 真实 Watch；勿用 watchersCount（stars list 里常与 stars 同值）。
+            subscribersCount: repo.subscribersCount ?? 0,
             topics: repo.topicsArray,
             homepage: repo.homepage,
             url: repo.htmlUrl

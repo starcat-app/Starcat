@@ -267389,109 +267389,109 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "تم نسخ رابط المستودع"
+            "value" : "تم نسخ رابط المشاركة"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Repository-Link kopiert"
+            "value" : "Share-Link kopiert"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Repository link copied"
+            "value" : "Share link copied"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Enlace del repositorio copiado"
+            "value" : "Enlace para compartir copiado"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lien du dépôt copié"
+            "value" : "Lien de partage copié"
           }
         },
         "id" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tautan repositori disalin"
+            "value" : "Tautan berbagi disalin"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Link del repository copiato"
+            "value" : "Link di condivisione copiato"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "リポジトリリンクをコピーしました"
+            "value" : "共有リンクをコピーしました"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "저장소 링크가 복사되었습니다"
+            "value" : "공유 링크가 복사됨"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Repositorylink gekopieerd"
+            "value" : "Deellink gekopieerd"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Skopiowano link do repozytorium"
+            "value" : "Skopiowano link udostępniania"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Link do repositório copiado"
+            "value" : "Link de compartilhamento copiado"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ссылка на репозиторий скопирована"
+            "value" : "Ссылка для обмена скопирована"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Depo bağlantısı kopyalandı"
+            "value" : "Paylaşım bağlantısı kopyalandı"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Посилання на репозиторій скопійовано"
+            "value" : "Посилання для поширення скопійовано"
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Đã sao chép liên kết kho lưu trữ"
+            "value" : "Đã sao chép liên kết chia sẻ"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "仓库链接已复制"
+            "value" : "分享链接已复制"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "倉庫連結已複製"
+            "value" : "分享連結已複製"
           }
         }
       }
@@ -267502,109 +267502,109 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "نسخ رابط المستودع"
+            "value" : "نسخ رابط المشاركة"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Repository-Link kopieren"
+            "value" : "Share-Link kopieren"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copy Repository Link"
+            "value" : "Copy Share Link"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copiar enlace del repositorio"
+            "value" : "Copiar enlace para compartir"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copier le lien du dépôt"
+            "value" : "Copier le lien de partage"
           }
         },
         "id" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Salin Tautan Repositori"
+            "value" : "Salin tautan berbagi"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copia link del repository"
+            "value" : "Copia link di condivisione"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "リポジトリリンクをコピー"
+            "value" : "共有リンクをコピー"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "저장소 링크 복사"
+            "value" : "공유 링크 복사"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Repositorylink kopiëren"
+            "value" : "Deellink kopiëren"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kopiuj link do repozytorium"
+            "value" : "Kopiuj link udostępniania"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copiar link do repositório"
+            "value" : "Copiar link de compartilhamento"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Копировать ссылку на репозиторий"
+            "value" : "Копировать ссылку для обмена"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Depo Bağlantısını Kopyala"
+            "value" : "Paylaşım Bağlantısını Kopyala"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Копіювати посилання на репозиторій"
+            "value" : "Копіювати посилання для поширення"
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sao chép Liên kết Kho lưu trữ"
+            "value" : "Sao chép liên kết chia sẻ"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "复制仓库链接"
+            "value" : "复制分享链接"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "複製倉庫連結"
+            "value" : "複製分享連結"
           }
         }
       }
@@ -267615,109 +267615,109 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "نسخ رابط مستودع Starcat العام"
+            "value" : "نسخ رابط مشاركة Starcat العام"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Den öffentlichen Starcat-Repository-Link kopieren"
+            "value" : "Den öffentlichen Starcat-Share-Link kopieren"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copy the public Starcat repository link"
+            "value" : "Copy the public Starcat share link"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copiar el enlace público del repositorio de Starcat"
+            "value" : "Copiar el enlace público de Starcat para compartir"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copier le lien public du dépôt Starcat"
+            "value" : "Copier le lien de partage Starcat public"
           }
         },
         "id" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Salin tautan repositori Starcat publik"
+            "value" : "Salin tautan berbagi Starcat publik"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copia il link pubblico del repository Starcat"
+            "value" : "Copia il link di condivisione pubblico Starcat"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "公開Starcatリポジトリリンクをコピー"
+            "value" : "公開の Starcat 共有リンクをコピー"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "공개 Starcat 저장소 링크 복사"
+            "value" : "공개 Starcat 공유 링크 복사"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kopieer de openbare Starcat-repositorylink"
+            "value" : "Kopieer de openbare Starcat-deellink"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kopiuj publiczny link do repozytorium Starcat"
+            "value" : "Kopiuj publiczny link udostępniania Starcat"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copiar o link público do repositório no Starcat"
+            "value" : "Copiar o link público de compartilhamento do Starcat"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Скопировать публичную ссылку на репозиторий Starcat"
+            "value" : "Скопировать публичную ссылку для обмена Starcat"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Genel Starcat depo bağlantısını kopyala"
+            "value" : "Genel Starcat paylaşım bağlantısını kopyala"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Копіювати публічне посилання на репозиторій Starcat"
+            "value" : "Копіювати публічне посилання для поширення Starcat"
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sao chép liên kết kho lưu trữ Starcat công khai"
+            "value" : "Sao chép liên kết chia sẻ Starcat công khai"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "复制 Starcat 公开仓库链接"
+            "value" : "复制 Starcat 公开分享链接"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "複製 Starcat 公開倉庫連結"
+            "value" : "複製 Starcat 公開分享連結"
           }
         }
       }
