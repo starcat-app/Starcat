@@ -53,21 +53,23 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 | 4 | `starcat-wiki-api/` | `starcat-app/starcat-wiki-api` |
 | 5 | `starcat-recommend-api/` | `starcat-app/starcat-recommend-api` |
 | 6 | `starcat-discovery-api/` | `starcat-app/starcat-discovery-api` |
-| 7 | `starcat-pro/` | `starcat-app/starcat-pro` |
-| 8 | `.github/` | `starcat-app/.github` |
-| 9 | `starcat-docs/` | `starcat-app/starcat-docs` |
-| 10 | `starcat-site/` | `starcat-app/starcat-site` |
-| 11 | `starcat-license-api/` | `starcat-app/starcat-license-api` 🔒 私有 |
-| 12 | `starcat-localization/` | `starcat-app/starcat-localization` |
-| 13 | `homebrew-starcat/` | `starcat-app/homebrew-starcat` |
-| 14 | `starcat-skill/` | `starcat-app/starcat-skill` |
-| 15 | `starcat-cli/` | `starcat-app/starcat-cli` |
-| 16 | `starcat-alfred-workflow/` | `starcat-app/starcat-alfred-workflow` |
-| 17 | `starcat-utools-plugin/` | `starcat-app/starcat-utools-plugin` |
-| 18 | `starcat-raycast-extension/` | `starcat-app/starcat-raycast-extension` |
-| 19 | `homebrew-starcat-cli/` | `starcat-app/homebrew-starcat-cli` |
-| 20 | `extensions/starcat-chrome-plugin/` | `starcat-app/starcat-chrome-plugin` |
-| 21 | `extensions/starcat-safari-plugin/` | `starcat-app/starcat-safari-plugin` |
+| 7 | `starcat-api-kit/` | `starcat-app/starcat-api-kit`（本地已建，远端待授权创建） |
+| 8 | `starcat-api/` | `starcat-app/starcat-api`（本地已建，远端待授权创建） |
+| 9 | `starcat-pro/` | `starcat-app/starcat-pro` |
+| 10 | `.github/` | `starcat-app/.github` |
+| 11 | `starcat-docs/` | `starcat-app/starcat-docs` |
+| 12 | `starcat-site/` | `starcat-app/starcat-site` |
+| 13 | `starcat-license-api/` | `starcat-app/starcat-license-api` 🔒 私有 |
+| 14 | `starcat-localization/` | `starcat-app/starcat-localization` |
+| 15 | `homebrew-starcat/` | `starcat-app/homebrew-starcat` |
+| 16 | `starcat-skill/` | `starcat-app/starcat-skill` |
+| 17 | `starcat-cli/` | `starcat-app/starcat-cli` |
+| 18 | `starcat-alfred-workflow/` | `starcat-app/starcat-alfred-workflow` |
+| 19 | `starcat-utools-plugin/` | `starcat-app/starcat-utools-plugin` |
+| 20 | `starcat-raycast-extension/` | `starcat-app/starcat-raycast-extension` |
+| 21 | `homebrew-starcat-cli/` | `starcat-app/homebrew-starcat-cli` |
+| 22 | `extensions/starcat-chrome-plugin/` | `starcat-app/starcat-chrome-plugin` |
+| 23 | `extensions/starcat-safari-plugin/` | `starcat-app/starcat-safari-plugin` |
 
 ### 一键拉取所有独立仓库
 

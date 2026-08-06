@@ -91,6 +91,8 @@ PROJECTS=(
   "starcat-wiki-api|https://github.com/starcat-app/starcat-wiki-api.git|Go API - Wiki 服务"
   "starcat-recommend-api|https://github.com/starcat-app/starcat-recommend-api.git|Go API - 推荐服务"
   "starcat-discovery-api|https://github.com/starcat-app/starcat-discovery-api.git|Go API - 发现服务"
+  "starcat-api-kit|https://github.com/starcat-app/starcat-api-kit.git|Go 库 - API 共享工具包"
+  "starcat-api|https://github.com/starcat-app/starcat-api.git|Go API - 业务 API 聚合服务"
   "starcat-pro|https://github.com/starcat-app/starcat-pro.git|公开支持与发布说明"
   ".github|https://github.com/starcat-app/.github.git|组织主页与共享社区健康文件"
   "starcat-docs|https://github.com/starcat-app/starcat-docs.git|Starcat 官方文档"

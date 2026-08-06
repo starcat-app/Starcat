@@ -151,6 +151,22 @@ PROJECTS = [
         "Private backend service for Starcat Direct licensing flows.",
     ),
     Project(
+        Path("supports/starcat-api-kit"),
+        "starcat-api-kit",
+        "api",
+        "starcat-api-kit",
+        "这是 Starcat 自建 API 共享的鉴权、envelope、CORS 与 Token Pool 工具包。",
+        "Shared Go kit for Starcat self-hosted APIs: auth, envelope, CORS, and token pool.",
+    ),
+    Project(
+        Path("supports/starcat-api"),
+        "starcat-api",
+        "api",
+        "starcat-api",
+        "这是将多个 Starcat 开源 API 聚合到单进程部署的网关服务。",
+        "Aggregated gateway that mounts Starcat open-source API server packages in one process.",
+    ),
+    Project(
         Path("supports/starcat-recommend-api"),
         "starcat-recommend-api",
         "api",
