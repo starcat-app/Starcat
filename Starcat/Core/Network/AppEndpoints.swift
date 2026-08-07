@@ -33,6 +33,10 @@
 //  - v8（2026-06-30）：新增 Discovery 自建后端，提供探索发现、热门和新发布接口。
 //  - v9（2026-07-08）：新增 Direct License 后端端点。该服务不放进「设置 → 服务」列表，
 //    因为它承载支付 / 授权，不应暴露为普通 BYOK 服务。
+//  - v10（2026-08-07）：后端引入 starcat-api 聚合网关（Host / X-Starcat-Service 分流）。
+//    **默认生产 URL 仍指向各独立 `*.fly.dev`**，HTTP path 与 ping envelope 契约不变；
+//    若将来切到聚合域名，只需在设置页覆盖各服务 baseURL（或扩展 resolve），无需改 Paths。
+//    审查结论见 docs/4-工程进度/重构专项/API聚合与Kit抽离专项/03-Starcat客户端契约审查.md。
 //
 //  非 REST 链接（GitHub 网页跳转、第三方装饰链接）**不**放本文件：
 //    - GitHub 网页跳转（github.com/{login}, github.com/{owner}/{repo} 等）→ `GitHubURLs.swift`

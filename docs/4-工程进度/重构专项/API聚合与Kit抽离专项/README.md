@@ -11,6 +11,7 @@
 |------|------|
 | [01-架构调整-server导出与聚合.md](./01-架构调整-server导出与聚合.md) | 上一轮：server 包导出、kit 初建、聚合网关 |
 | [02-Kit继续抽离方案-GitHub-ping-env.md](./02-Kit继续抽离方案-GitHub-ping-env.md) | 本轮：github / ping / env 抽离方案 |
+| [03-Starcat客户端契约审查.md](./03-Starcat客户端契约审查.md) | 客户端是否需改：结论否 |
 | [checklist.md](./checklist.md) | 任务 checklist |
 | [第N轮审查报告.md](./第1轮审查报告.md) | 多轮审查 |
 | [API聚合与Kit抽离专项完成结果报告.md](./API聚合与Kit抽离专项完成结果报告.md) | 最终报告（收口后写） |

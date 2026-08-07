@@ -8,33 +8,33 @@
 - [x] 六个业务 API `server` 包导出（本地分支已有）
 - [x] starcat-api-kit / starcat-api 本地仓
 - [x] 版本策略写入 README（2.0.0 / sharing 2.1.0）
-- [ ] 各 API CHANGELOG 回填对应版本号
+- [x] 各 API CHANGELOG 回填对应版本号
 - [ ] 主仓 supports 登记文件提交（可选，随主仓策略）
 
 ## B. 本轮 Kit 抽离
 
-- [ ] 方案文档 `02-Kit继续抽离方案-GitHub-ping-env.md`（本文档已写）
-- [ ] kit: `github` + RateLimitHandler + 单测
-- [ ] kit: `httputil` ping + 单测
-- [ ] kit: `env` + 单测
-- [ ] weekly / trending / sharing / discovery 接入 kit github
-- [ ] 六个 API ping 改用 kit
-- [ ] 相关 FromEnv 改用 kit/env（可渐进）
+- [x] 方案文档 `02-Kit继续抽离方案-GitHub-ping-env.md`
+- [x] kit: `github` + RateLimitHandler + 单测（含 AllowAnonymous）
+- [x] kit: `httputil` ping + 单测
+- [x] kit: `env` + 单测
+- [x] weekly / trending / sharing / discovery 接入 kit github
+- [x] 六个 API ping 改用 kit
+- [x] 相关 FromEnv 改用 kit/env（recommend / sharing；其余可继续渐进）
 
 ## C. Starcat 客户端
 
-- [ ] 审查 AppEndpoints / 各 *API actor 是否需改
-- [ ] 若契约不变：文档说明；若需改：最小 diff
+- [x] 审查 AppEndpoints / 各 *API actor 是否需改
+- [x] 契约不变：文档 `03-Starcat客户端契约审查.md` + AppEndpoints v10 注释
 
 ## D. 质量闸门
 
-- [ ] 本地 go test / go build 全绿（相关仓）
-- [ ] 不 push、不 Fly 部署
+- [x] 本地 go test / go build 相关包全绿
+- [x] 不 push、不 Fly 部署
 - [ ] 第 1 轮审查报告
 - [ ] 第 2 轮审查报告（若第 1 轮有修复）
 - [ ] 最终结果报告
 
 ## E. 功能实现总览
 
-- [ ] 拟写入文案已起草
+- [x] 拟写入文案已起草（见最终结果报告附录；审查收口后补齐）
 - [ ] 等待 dong4j「可以写总览」后再改 `docs/功能实现总览.md`
