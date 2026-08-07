@@ -73,9 +73,18 @@ go build -o bin/<name> ./cmd/server/
 ## 6. 明确不做
 
 - 不把 license-api 并入聚合
-- 不在本轮改生产 Fly / 不 push 远端
-- 不把各仓 SQLite schema 合成单库
+- 不在本轮改生产 Fly / 不 push 远端（本地可完善 fly.toml / Docker）
+- 不把各仓 SQLite schema 合成单库（同卷 `/data` 下**分文件**）
 - 不要求客户端立刻改为单一 baseURL（可后续迁移）
+
+## 6.1 聚合进程环境变量（已落地）
+
+同进程多服务时，裸 `STORE_FILE` 会撞库。`starcat-api` 在调用各 `FromEnv` 前应用前缀覆盖：
+
+- `WIKI_STORE_FILE` → 临时 `STORE_FILE`
+- `TRENDING_API_KEYS` → 临时 `API_KEYS`
+- 规则：`<SERVICE_UPPER>_<KEY>`；`PORT` 永不被覆盖
+- Fly：`[[mounts]]` → `/data`；`[env]` 默认分库路径见 `supports/starcat-api/fly.toml`
 
 ## 7. 与 R-01 的关系
 
