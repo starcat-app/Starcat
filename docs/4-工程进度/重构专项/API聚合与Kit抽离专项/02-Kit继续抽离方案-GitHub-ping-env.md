@@ -1,7 +1,7 @@
 # Kit 继续抽离方案：GitHub / ping / env
 
 > 适用版本: starcat-api-kit ≥ 0.2.0  
-> 状态: 本轮落地范围 = **批次 A（github+ratelimit）+ ping + env**  
+> 状态: **已落地**（A + ping/env；2026-08-07）  
 > 日期: 2026-08-07
 
 ## 1. 目标

@@ -4,7 +4,8 @@
 //
 //  第三方后端服务的「测试连接」探测器（R-03 2026-06-11 重构为单步探测）。
 //
-//  约定：每个后端都暴露 `GET /api/v1/ping`（sharing 是 `/v1/ping`，因为它 baseURL 含 `/api`），
+//  约定：每个后端都暴露 `GET /api/v1/ping`（Sharing 与其它服务对齐：baseURL 不含 `/api`，
+//  Paths 写绝对 `/api/v1/ping`；详见 AppEndpoints v5 / v10），
 //  由 BearerAuth middleware 保护。`ServiceHealthChecker` 用本端点单步探测：
 //   - 200 + body.data.service 与期望服务一致 + ok=true → 服务可达 + Key 正确 + 地址没配错
 //   - 200 但 service 不匹配 → serviceMismatch（典型：把 trending 端口填到 sharing）
@@ -35,8 +36,8 @@ import SwiftUI
 
 /// `GET /api/v1/ping` 200 响应里 envelope `data` 段的结构。
 ///
-/// 与后端 `handler/ping.go` 的 `pingResponse` 对齐；各 API 在路由注册时
-/// 传入固定 service 名（`trending` / `weekly` / `sharing` / `wiki`）。
+/// 与后端 `starcat-api-kit/httputil.HandlePingV1`（各 API handler 薄包装）对齐；
+/// 路由注册时传入固定 service 名（`trending` / `weekly` / `sharing` / `wiki` 等）。
 struct ServicePingPayload: Decodable, Sendable, Equatable {
     let service: String
     let ok: Bool
