@@ -223,6 +223,7 @@ actor TrendingAPI {
         if let key = apiKey, !key.isEmpty {
             request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         }
+        StarcatGatewayRouting.applyServiceHeader(to: &request, service: .trending)
 
         do {
             return try await session.data(for: request)

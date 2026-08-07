@@ -183,6 +183,7 @@ actor StarHistoryAPI: StarHistoryAPIProtocol {
         if let apiKey, !apiKey.isEmpty {
             urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
+        StarcatGatewayRouting.applyServiceHeader(to: &urlRequest, service: .discovery)
         if let ifNoneMatch, !ifNoneMatch.isEmpty {
             urlRequest.setValue(ifNoneMatch, forHTTPHeaderField: "If-None-Match")
         }

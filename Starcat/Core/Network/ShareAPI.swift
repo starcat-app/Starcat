@@ -110,6 +110,7 @@ actor ShareAPI {
         if let key = apiKey, !key.isEmpty {
             urlRequest.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         }
+        StarcatGatewayRouting.applyServiceHeader(to: &urlRequest, service: .sharing)
 
         do {
             urlRequest.httpBody = try encoder.encode(request)

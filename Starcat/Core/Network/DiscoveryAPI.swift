@@ -154,6 +154,7 @@ actor DiscoveryAPI {
         if let apiKey, !apiKey.isEmpty {
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
+        StarcatGatewayRouting.applyServiceHeader(to: &request, service: .discovery)
         do {
             return try await session.data(for: request)
         } catch {

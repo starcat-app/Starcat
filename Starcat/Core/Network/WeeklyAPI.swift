@@ -315,6 +315,7 @@ actor WeeklyAPI {
         if let key = apiKey, !key.isEmpty {
             request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         }
+        StarcatGatewayRouting.applyServiceHeader(to: &request, service: .weekly)
 
         do {
             return try await session.data(for: request)

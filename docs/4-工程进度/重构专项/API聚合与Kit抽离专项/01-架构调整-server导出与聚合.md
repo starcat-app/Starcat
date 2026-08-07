@@ -11,7 +11,7 @@ Fly.io 上六个业务 API（sharing / trending / weekly / wiki / recommend / di
 1. **不合并开源仓业务叙事**：各 API 仍独立 Git 仓、独立 LICENSE / Issue。
 2. **可依赖引入**：各仓抽出可导出 `server` 包，供聚合进程 import。
 3. **共享横切逻辑**：`starcat-api-kit` 收敛 auth / cors / envelope / tokenpool（及后续 github 等）。
-4. **聚合部署单元**：`starcat-api` 单进程 Host 分流，把多台 Machine 收成一台（license-api 永远独立）。
+4. **聚合部署单元**：`starcat-api` 单进程，生产默认 **单一 Host + `X-SC-Svc` 头分流**（B 方案）；Host 分流仅作本地 / 自托管回退（license-api 永远独立）。
 
 ## 2. 目标架构
 
@@ -20,10 +20,10 @@ supports/
 ├── starcat-api-kit/          # 共享库（独立仓）
 ├── starcat-*-api/            # 业务 API：cmd/server + server/ + internal/
 │   └── server/               # 可导出：FromEnv / Handler / Close / Name
-└── starcat-api/              # 聚合：gateway 按 Host 挂载各 server.Handler()
+└── starcat-api/              # 聚合：gateway 按 X-SC-Svc（优先）或 Host 挂载
 ```
 
-### 2.1 为何必须 Host 分流
+### 2.1 为何必须按服务分流（不能只靠 path）
 
 以下路径在多个 API 上冲突，不能挂到同一个 `ServeMux`：
 
@@ -34,11 +34,11 @@ supports/
 | `POST /internal/sync/discovery` | discovery ↔ weekly |
 | `GET /api/v1/ping` / `GET /healthz` | 全部 |
 
-聚合网关按 `Host`（或调试头 `X-Starcat-Service`）转发；**各仓原路径保持不变**。
+**B 方案（已定）：** 生产只用 `starcat-api.fly.dev`，客户端请求带短头 `X-SC-Svc: <name>`。网关头优先；无头时回退 Host（`*.localhost` / `STARCAT_HOST_*`）。**不配多自定义域名。** 各仓原路径保持不变。
 
 ### 2.2 客户端兼容
 
-生产在切换到单一 Fly app 并绑定原 `*.fly.dev` / 自定义域之前，Starcat 客户端可继续使用分服务 baseURL。路径与 envelope 契约不变，**默认无需改 App 逻辑**（见本专项「Starcat 对接检查」）。
+Starcat 默认六个业务 `productionURL` → `https://starcat-api.fly.dev`，并注入 `X-SC-Svc`（见 `StarcatGatewayRouting`）。设置页仍可覆盖为用户自托管 baseURL；Paths / envelope / Bearer 契约不变。
 
 ## 3. 已落地清单
 

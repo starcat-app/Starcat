@@ -63,6 +63,7 @@ actor WikiAPI {
         if let apiKey, !apiKey.isEmpty {
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
+        StarcatGatewayRouting.applyServiceHeader(to: &request, service: .wiki)
 
         let data: Data
         let response: URLResponse

@@ -61,6 +61,7 @@ actor RecommendAPI {
         if let apiKey, !apiKey.isEmpty {
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
+        StarcatGatewayRouting.applyServiceHeader(to: &request, service: .recommend)
 
         let data: Data
         let response: URLResponse

@@ -33,9 +33,10 @@
 //  - v8（2026-06-30）：新增 Discovery 自建后端，提供探索发现、热门和新发布接口。
 //  - v9（2026-07-08）：新增 Direct License 后端端点。该服务不放进「设置 → 服务」列表，
 //    因为它承载支付 / 授权，不应暴露为普通 BYOK 服务。
-//  - v10（2026-08-07）：后端引入 starcat-api 聚合网关（Host / X-Starcat-Service 分流）。
-//    **默认生产 URL 仍指向各独立 `*.fly.dev`**，HTTP path 与 ping envelope 契约不变；
-//    若将来切到聚合域名，只需在设置页覆盖各服务 baseURL（或扩展 resolve），无需改 Paths。
+//  - v10（2026-08-07）：后端引入 starcat-api 聚合网关文档化；当时默认 URL 仍各独立 `*.fly.dev`。
+//  - v11（2026-08-07 B 方案）：六个业务服务默认 productionURL 统一为
+//    `https://starcat-api.fly.dev`，请求带 `X-SC-Svc`（见 `StarcatGatewayRouting`）。
+//    Path / ping envelope 不变；用户自托管仍可在设置页覆盖各服务 baseURL。
 //    审查结论见 docs/4-工程进度/重构专项/API聚合与Kit抽离专项/03-Starcat客户端契约审查.md。
 //
 //  非 REST 链接（GitHub 网页跳转、第三方装饰链接）**不**放本文件：
@@ -68,8 +69,8 @@ enum AppEndpoints {
 
     /// Weekly 多来源后端 endpoint 集合。
     enum Weekly {
-        /// 生产环境默认 URL（fly.io）。
-        static let productionURL = URL(string: "https://starcat-weekly-api.fly.dev")!
+        /// 生产环境默认 URL（聚合网关；分流靠 `X-SC-Svc: weekly`）。
+        static let productionURL = StarcatGatewayRouting.aggregatedProductionURL
 
         /// 当前生效的 baseURL（用户设置页可改）。先查 `AppSettings.customServiceURL(for: .weekly)`，
         /// 无则回退到 `productionURL`。@MainActor 是因为读 AppSettings.shared。
@@ -117,7 +118,8 @@ enum AppEndpoints {
 
     /// GitHub Trending 后端 endpoint 集合。
     enum Trending {
-        static let productionURL = URL(string: "https://starcat-trending-api.fly.dev")!
+        /// 生产环境默认 URL（聚合网关；分流靠 `X-SC-Svc: trending`）。
+        static let productionURL = StarcatGatewayRouting.aggregatedProductionURL
 
         @MainActor
         static var baseURL: URL {
@@ -159,8 +161,8 @@ enum AppEndpoints {
     /// 「baseURL 总会有 `/api`」。本地自部署填 `http://127.0.0.1:5001`（不含 `/api`）
     /// 一进来就 404——不只 ping，业务 share 也是。dong4j 2026-06-11 反馈后修正。
     enum Sharing {
-        /// 生产 URL（不含 `/api` 后缀）。
-        static let productionURL = URL(string: "https://starcat-sharing-api.fly.dev")!
+        /// 生产 URL（聚合网关；分流靠 `X-SC-Svc: sharing`；不含 `/api` 后缀）。
+        static let productionURL = StarcatGatewayRouting.aggregatedProductionURL
 
         @MainActor
         static var baseURL: URL {
@@ -190,7 +192,8 @@ enum AppEndpoints {
 
     /// DeepWiki / Zread / Google Code Wiki 收录状态探测后端。
     enum Wiki {
-        static let productionURL = URL(string: "https://starcat-wiki-api.fly.dev")!
+        /// 生产 URL（聚合网关；分流靠 `X-SC-Svc: wiki`）。
+        static let productionURL = StarcatGatewayRouting.aggregatedProductionURL
 
         @MainActor
         static var baseURL: URL {
@@ -217,7 +220,8 @@ enum AppEndpoints {
 
     /// 相似仓库推荐后端 endpoint 集合。
     enum Recommend {
-        static let productionURL = URL(string: "https://starcat-recommend-api.fly.dev")!
+        /// 生产 URL（聚合网关；分流靠 `X-SC-Svc: recommend`）。
+        static let productionURL = StarcatGatewayRouting.aggregatedProductionURL
 
         @MainActor
         static var baseURL: URL {
@@ -244,7 +248,8 @@ enum AppEndpoints {
 
     /// 探索发现后端 endpoint 集合。
     enum Discovery {
-        static let productionURL = URL(string: "https://starcat-discovery-api.fly.dev")!
+        /// 生产 URL（聚合网关；分流靠 `X-SC-Svc: discovery`）。
+        static let productionURL = StarcatGatewayRouting.aggregatedProductionURL
 
         @MainActor
         static var baseURL: URL {

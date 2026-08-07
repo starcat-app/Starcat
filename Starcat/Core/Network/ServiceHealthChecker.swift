@@ -284,6 +284,7 @@ actor ServiceHealthChecker {
         if let apiKey, !apiKey.isEmpty {
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
+        StarcatGatewayRouting.applyServiceHeader(to: &request, service: service)
 
         do {
             let (data, response) = try await session.data(for: request)
