@@ -1,7 +1,7 @@
 # API 聚合与 Kit 抽离专项
 
 > 创建: 2026-08-07  
-> 状态: 进行中  
+> 状态: **已完成**（本地；未 push / 未 Fly）  
 > 范围: `starcat-api-kit` / `starcat-api` / 六个业务 API（不含 license）/ Starcat 客户端对接检查  
 > 约束: 仅本地验证；禁止 Fly 部署与生产变更；禁止 push
 
