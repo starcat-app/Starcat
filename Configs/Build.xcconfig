@@ -18,10 +18,14 @@
 // 3. project.yml `info.properties` 段加 `MY_NEW_SECRET: $(MY_NEW_SECRET)` 让值进 Info.plist
 // 4. 代码里通过 `Bundle.main.infoDictionary["MY_NEW_SECRET"] as? String` 读取
 
-// MARK: - R-01 自建后端 production 默认 API Key（每服务独立，Secrets.xcconfig 覆盖）
+// MARK: - R-01 自建后端 production 默认 API Key（每服务一个槽位；聚合后六槽同值）
 //
-// trending / weekly / sharing / wiki / recommend / discovery 各自一条。默认空 = 该服务 BYOK-only。
-// 自动化：make setup-production-api-keys（从 supports/*/ .env 读取）
+// trending / weekly / sharing / wiki / recommend / discovery 各一条槽位（策略保留）。
+// 默认空 = 该服务 BYOK-only。聚合 starcat-api 时六个槽填相同 sk-starcat-...，
+// 与 supports/starcat-api/.env 的 STARCAT_SHARED_API_KEY 一致。
+// 自动化：make setup-production-api-keys（读 starcat-api/.env，不再读各独立仓）
+//
+// 旧：每服务从 supports/starcat-*-api/.env 各自同步、可互不相同（已弃用，脚本内注释保留）
 STARCAT_PRODUCTION_API_KEY_TRENDING =
 STARCAT_PRODUCTION_API_KEY_WEEKLY =
 STARCAT_PRODUCTION_API_KEY_SHARING =

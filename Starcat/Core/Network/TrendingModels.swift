@@ -4,7 +4,7 @@
 //
 //  GitHub Trending API 响应 DTO。
 //
-//  数据源：https://starcat-trending-api.fly.dev/repo
+//  默认数据源：聚合网关 https://starcat-api.fly.dev（X-SC-Svc: trending）。
 //  API 参数：since (daily/weekly/monthly), lang (语言筛选)
 //
 //  设计约束：

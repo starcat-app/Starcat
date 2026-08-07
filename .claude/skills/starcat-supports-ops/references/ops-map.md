@@ -2,6 +2,16 @@
 
 ## 服务与端口
 
+### 生产默认：聚合
+
+| 服务目录 | Fly App | 分流 | 状态 |
+|---|---|---|---|
+| `starcat-api` | `starcat-api` | `X-SC-Svc` | 有状态，同卷分库 `/data/*.db` |
+
+客户端默认：`https://starcat-api.fly.dev`。迁库：`docs/4-工程进度/重构专项/API聚合与Kit抽离专项/04-聚合迁库SOP.md`。
+
+### 遗留：独立 App（自托管 / 过渡）
+
 | 服务目录 | Fly App | 本地端口 | 状态 |
 |---|---|---:|---|
 | `starcat-sharing-api` | `starcat-sharing-api` | 5001 | 有状态，`/data/sharing.db` |
@@ -13,13 +23,25 @@
 
 ## 本地多服务启动
 
-`supports/start-all.sh` 负责构建并启动全部服务：
+### 聚合（推荐调试）
+
+```bash
+cd supports/starcat-api
+cp .env.example .env   # 填 STARCAT_SHARED_API_KEY 与分库路径
+go run ./cmd/server/
+# 默认 PORT=8080；请求带 X-SC-Svc
+```
+
+sharing 模板已 `go:embed`，聚合 cwd 不再需要 `templates/` 软链。
+
+### 遗留：多独立进程
+
+`supports/start-all.sh` 负责构建并启动六个独立服务：
 
 ```bash
 cd supports && ./start-all.sh
 cd supports && ./start-all.sh --status
 cd supports && ./start-all.sh --stop
-cd supports && ./start-all.sh --no-build
 ```
 
 关键约束：
@@ -27,11 +49,17 @@ cd supports && ./start-all.sh --no-build
 - 需要 Go 版本与各项目 `go.mod` 对齐。
 - 端口 5001 到 5006 必须空闲。
 - 脚本会把二进制放到各项目 `bin/`，日志放到各项目 `logs/`。
-- 服务必须从项目根启动，因为 sharing 模板、SQLite 路径、weekly repo 路径依赖相对路径。
 
 ## Fly secrets 同步
 
-入口：
+**推荐（聚合）：**
+
+```bash
+make -C supports fly-secrets-api
+bash supports/scripts/fly-secrets-sync.sh starcat-api
+```
+
+**遗留（独立 App）：**
 
 ```bash
 make sync-fly-secrets
@@ -42,34 +70,35 @@ bash supports/scripts/fly-secrets-sync.sh starcat-trending-api
 
 规则：
 
-- 从 `supports/starcat-*-api/.env` 读取，不 `source` 整个 `.env`。
+- 从目标项目 `.env` 读取，不 `source` 整个 `.env`。
 - 不输出 secrets 明文。
-- `STORE_FILE` / `REPO_DIR` 在 Fly 上强制使用 `/data/*`。
-- `sharing` 的 `BASE_URL` 强制为 `https://starcat-sharing-api.fly.dev`。
-- `trending` / `weekly` 的 `WIKI_API_URL` 强制为 `https://starcat-wiki-api.fly.dev`。
+- 聚合：前缀变量 + `/data/*` 分库；`SHARING_BASE_URL` 强制 `https://starcat.ink`。
+- 遗留独立 App：`STORE_FILE` / `REPO_DIR` 强制 `/data/*`；独立 sharing `BASE_URL` 强制 `https://starcat.ink`；独立 trending/weekly 的 `WIKI_API_URL` 强制 `https://starcat-wiki-api.fly.dev`。
 
 ## Fly 状态与部署
 
-只读检查：
+聚合：
+
+```bash
+make -C supports fly-status-api
+make -C supports fly-health-api
+make -C supports fly-deploy-api    # 生产变更，必须确认
+```
+
+遗留独立 App：
 
 ```bash
 make -C supports fly-status-all
 make -C supports fly-health-all
 make -C supports fly-secrets-list
-```
-
-部署：
-
-```bash
 make -C supports fly-deploy-all
-make -C supports fly-deploy-trending
 ```
 
 部署会调用 `fly deploy --remote-only --ha=false`，属于生产变更，必须确认。
 
 ## 备份与恢复
 
-备份：
+备份（迁库前针对**旧独立 App**）：
 
 ```bash
 make -C supports fly-backup-trending
@@ -78,57 +107,9 @@ FLY_BACKUP_STOP=1 make -C supports fly-backup-trending
 
 输出在 `supports/backups/<app>/<timestamp>/`，包含 `data.tar.gz` 和 `MANIFEST.txt`。
 
-恢复：
+恢复到聚合卷的步骤见迁库 SOP（勿与「恢复到原独立 App」混淆）。
 
-```bash
-make -C supports fly-restore-trending LOCAL_DB=/path/to/trending.db
-make -C supports fly-restore-trending RESTORE_ARCHIVE=supports/backups/.../data.tar.gz
-FLY_RESTORE_YES=1 make -C supports fly-restore-trending LOCAL_DB=/path/to/trending.db
-```
+## 长期待决
 
-恢复会 stop/start machine、清空远端 `/data`、上传数据并 restart。操作前先备份，除非用户明确跳过。
-
-## API key 与客户端编译配置
-
-生成 key：
-
-```bash
-bash supports/scripts/gen-api-key.sh
-bash supports/scripts/gen-api-key.sh 3
-bash supports/scripts/gen-api-key.sh 2 --env
-```
-
-从 supports `.env` 同步到客户端编译配置：
-
-```bash
-make setup-production-api-keys
-```
-
-这会重写 `Configs/Secrets.xcconfig`，随后需要 `xcodegen generate && 重新 build App`。
-
-## wiki 缓存预热
-
-```bash
-bash supports/scripts/warm-wiki-cache.sh --dry-run
-bash supports/scripts/warm-wiki-cache.sh --trending
-bash supports/scripts/warm-wiki-cache.sh --weekly
-bash supports/scripts/warm-wiki-cache.sh --zread
-bash supports/scripts/warm-wiki-cache.sh
-```
-
-前置条件：
-
-- 本地 `trending-api`、`weekly-api`、`wiki-api` 已启动。
-- `sqlite3` 可用。
-- dry-run 只统计，不调用 wiki-api。
-
-## 失败处理
-
-| 问题 | 处理 |
-|---|---|
-| 端口占用 | 先 `cd supports && ./start-all.sh --stop`，仍占用再用 `lsof` 定位 |
-| `.env` 缺失 | 从对应 `.env.example` 复制并填值 |
-| Fly 未登录 | 让用户执行 `fly auth login` |
-| backup 找不到 machine | 先 `fly status -a <app>` 确认 App 存在 |
-| restore archive 格式不对 | 必须是 `fly-backup-data.sh` 产出的包含顶层 `data/` 的 tar |
-| secrets 同步失败 | 检查缺失 key，不输出实际值 |
+- 是否停机 / 销毁六个独立 Fly App（开源仓可继续保留单仓叙事与自托管）。
+- `make sync-fly-secrets` 是否改为默认 `fly-secrets-api`（当前仍指向遗留 `fly-secrets-all`，避免误伤过渡期）。

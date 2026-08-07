@@ -70,22 +70,32 @@ Close() error                 // 停 scheduler / 关 SQLite，可重复调用
 go build -o bin/<name> ./cmd/server/
 ```
 
-## 6. 明确不做
-
-- 不把 license-api 并入聚合
-- 不在本轮改生产 Fly / 不 push 远端（本地可完善 fly.toml / Docker）
-- 不把各仓 SQLite schema 合成单库（同卷 `/data` 下**分文件**）
-- 不要求客户端立刻改为单一 baseURL（可后续迁移）
-
-## 6.1 聚合进程环境变量（已落地）
+## 6. 聚合进程环境变量（已落地）
 
 同进程多服务时，裸 `STORE_FILE` 会撞库。`starcat-api` 在调用各 `FromEnv` 前应用前缀覆盖：
 
-- `WIKI_STORE_FILE` → 临时 `STORE_FILE`
-- `TRENDING_API_KEYS` → 临时 `API_KEYS`
-- 规则：`<SERVICE_UPPER>_<KEY>`；`PORT` 永不被覆盖
+- `WIKI_STORE_FILE` → Pin 写入裸 `STORE_FILE`
+- `TRENDING_API_KEYS` → 裸 `API_KEYS`
+- 规则：`<SERVICE_UPPER>_<KEY>`；网关 `PORT` 永不被服务前缀覆盖
 - Fly：`[[mounts]]` → `/data`；`[env]` 默认分库路径见 `supports/starcat-api/fly.toml`
 
-## 7. 与 R-01 的关系
+## 7. 进程内内存缓存（聚合后）
+
+各业务在各自 `server.FromEnv` / `New` 里 **new 独立 cache 实例**（如 trending `TrendingCache`、weekly/discovery `BulkCache`、sharing `RepositoryCache`、recommend `CachedProvider`）。模块路径不同，**不会**共用一张全局 map，因此不存在「跨服务 cache key 撞车」。
+
+聚合后真正要盯的：
+
+- **内存叠加**：六套缓存 + 多套 cron 同进程，比单服务吃 RAM/CPU（通常仍为 MB～小几十 MB 级，按 Machine 规格观察）
+- **冷启动**：进程重启后内存缓存清空，靠 cron / 请求回填（与旧单 App 重启语义相同）
+- **环境变量 Pin**：装配顺序后，进程环境里裸名以最后 Pin 的服务为准；各服务 FromEnv 已在 Pin 窗口内把配置读入自己的结构体，业务路径不依赖事后 getenv（wiki 运行期 `CACHE_*` 已用永久 Pin 处理）
+
+## 8. 明确不做
+
+- 不把 license-api 并入聚合
+- **不在未授权时**改生产 Fly / push / 迁库（见铁律 #3；迁库步骤见 `04-聚合迁库SOP.md`）
+- 不把各仓 SQLite schema 合成单库（同卷 `/data` 下**分文件**）
+- 客户端默认已切聚合 URL + `X-SC-Svc`；设置页仍支持自托管覆盖
+
+## 9. 与 R-01 的关系
 
 R-01「跨仓 byte-level 复制」条款由本架构升级为：**以 `starcat-api-kit` 为单一实现源**，各仓仅保留薄别名。详细抽离路线见同目录 `02-Kit继续抽离方案-GitHub-ping-env.md`。

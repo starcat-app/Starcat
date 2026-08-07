@@ -6,10 +6,11 @@
 # 环境变量说明见 docs/fly-io-环境变量.md
 #
 # 示例：
-#   make fly-secrets-all          # 从各 API .env 同步 secrets 到 Fly
-#   make fly-secrets-trending     # 只同步 trending
+#   make fly-secrets-api          # 同步聚合 App starcat-api（推荐）
+#   make fly-secrets-all          # 遗留：并行同步六个独立 App
+#   make fly-secrets-trending     # 遗留：只同步独立 trending
 #   make fly-status-all           # 查看全部 App 状态 + healthz
-#   make fly-deploy-all           # 部署全部 App（remote build）
+#   make fly-deploy-api           # 部署聚合 App（需人工确认）
 #   make fly-backup-trending      # 拉取有状态服务 /data 卷到 supports/backups/
 #   make fly-restore-trending LOCAL_DB=./starcat-trending-api/trending.db
 # =============================================================================
@@ -26,7 +27,7 @@ FLY_RESTORE_DATA := bash $(SCRIPTS)/fly-restore-data.sh
 
 .DEFAULT_GOAL := help
 
-.PHONY: help fly-secrets-list fly-secrets-all fly-status-all fly-health-all fly-deploy-all
+.PHONY: help fly-secrets-list fly-secrets-all fly-secrets-api fly-status-all fly-health-all fly-deploy-all fly-deploy-api fly-status-api fly-health-api
 .PHONY: $(foreach s,$(APIS),fly-secrets-$(s) fly-deploy-$(s) fly-status-$(s))
 .PHONY: $(foreach s,$(STATEFUL_APIS),fly-wipe-data-$(s) fly-restore-$(s))
 .PHONY: $(foreach s,$(BACKUP_APIS),fly-backup-$(s))
@@ -35,17 +36,24 @@ FLY_RESTORE_DATA := bash $(SCRIPTS)/fly-restore-data.sh
 help: ## 显示帮助
 	@echo "supports/ Fly.io 运维命令："
 	@echo ""
-	@echo "  make fly-secrets-all        从各 API .env 并行同步 fly secrets"
+	@echo "  【推荐】聚合 App starcat-api"
+	@echo "  make fly-secrets-api        从 starcat-api/.env 同步前缀 secrets"
+	@echo "  make fly-status-api         fly status -a starcat-api"
+	@echo "  make fly-health-api         curl https://starcat-api.fly.dev/healthz"
+	@echo "  make fly-deploy-api         fly deploy --remote-only -a starcat-api（生产变更）"
+	@echo ""
+	@echo "  【遗留】独立 starcat-*-api（自托管 / 过渡期）"
+	@echo "  make fly-secrets-all        并行同步六个独立 App secrets"
 	@echo "  make fly-secrets-trending   只同步 starcat-trending-api"
 	@echo "  make fly-secrets-sharing    只同步 starcat-sharing-api"
 	@echo "  make fly-secrets-weekly     只同步 starcat-weekly-api"
 	@echo "  make fly-secrets-wiki       只同步 starcat-wiki-api"
 	@echo "  make fly-secrets-recommend  只同步 starcat-recommend-api"
 	@echo "  make fly-secrets-discovery  只同步 starcat-discovery-api"
-	@echo "  make fly-secrets-list       列出全部 App 已配置的 secret 名称（不含值）"
-	@echo "  make fly-status-all         fly status × 全部 App"
-	@echo "  make fly-health-all         curl /healthz × 全部 App"
-	@echo "  make fly-deploy-all         fly deploy --remote-only × 全部 App"
+	@echo "  make fly-secrets-list       列出独立 App 已配置的 secret 名称（不含值）"
+	@echo "  make fly-status-all         fly status × 独立 App"
+	@echo "  make fly-health-all         curl /healthz × 独立 App"
+	@echo "  make fly-deploy-all         fly deploy × 独立 App"
 	@echo "  make fly-backup-all         先建 Fly Volume Snapshot，再一致性备份 SQLite + /data"
 	@echo "  make fly-backup-weekly      创建平台快照后备份 starcat-weekly-api（无需停机）"
 	@echo "  make fly-backup-license     创建平台快照后备份 starcat-license-api（无需停机）"
@@ -58,10 +66,26 @@ help: ## 显示帮助
 	@echo "  FLY_RESTORE_YES=1 make fly-restore-trending LOCAL_DB=...   跳过交互确认"
 	@echo ""
 	@echo "文档：docs/fly-io-环境变量.md"
+	@echo "迁库：../docs/4-工程进度/重构专项/API聚合与Kit抽离专项/04-聚合迁库SOP.md"
 
-# --- secrets 同步（从各项目 .env → fly secrets set）---
+# --- secrets：聚合（推荐）---
 
-fly-secrets-all: ## 并行同步全部 App secrets
+fly-secrets-api: ## 同步 starcat-api 聚合 secrets
+	$(FLY_SECRETS_SYNC) starcat-api
+
+fly-status-api: ## 查看 starcat-api 状态
+	@fly status -a starcat-api
+
+fly-health-api: ## curl 聚合 /healthz
+	@curl -fsS "https://starcat-api.fly.dev/healthz" && echo ""
+
+fly-deploy-api: ## 部署 starcat-api（生产变更，需确认）
+	@echo "Deploying starcat-api (remote-only, ha=false)..."
+	cd starcat-api && fly deploy --remote-only --ha=false
+
+# --- secrets 同步：遗留独立 App ---
+
+fly-secrets-all: ## 【遗留】并行同步六个独立 App secrets
 	@set -e; \
 	pids=""; \
 	for app in $(FLY_APPS); do \

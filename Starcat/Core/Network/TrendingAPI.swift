@@ -4,7 +4,8 @@
 //
 //  GitHub Trending REST API 客户端。
 //
-//  数据源：https://starcat-trending-api.fly.dev/repo
+//  默认数据源：聚合网关 https://starcat-api.fly.dev（请求带 X-SC-Svc: trending）。
+//  路径仍为 /api/v1/repos 等；用户可在「设置 → 服务」覆盖为自托管独立 trending-api。
 //
 //  设计约束：
 //  - 独立于 GitHubAPIClient，直接使用 URLSession（无需 GitHub token）

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # =============================================================================
-# fly-secrets-sync.sh — 从各 API 项目本地 .env 同步 Fly.io secrets
+# fly-secrets-sync.sh — 从本地 .env 同步 Fly.io secrets
 # =============================================================================
 #
 # 用途：
-#   把 supports/starcat-*-api/.env 里的生产相关变量，通过 `fly secrets set`
+#   把 supports/ 下对应项目的 .env 生产相关变量，通过 `fly secrets set`
 #   推到对应 Fly App。避免手抄 key 出错。
 #
 # 设计约束：
@@ -14,31 +14,35 @@
 #     recommend-api 无持久化卷，不同步 STORE_FILE。
 #   - sharing 的 BASE_URL 在 Fly 上强制为 https://starcat.ink；公开仓库、OG 与既有
 #     AI 分享链接都由阿里云 Nginx 统一代理（本地 .env 常见 localhost，不能直接同步）。
-#   - trending / weekly 的 WIKI_API_URL 在 Fly 上强制为
-#     https://starcat-wiki-api.fly.dev（本地 .env 常见 127.0.0.1:5004，不能直接同步）。
-#     仅当 .env 配置了 WIKI_API_KEY 时才同步 wiki 预热相关 secrets。
+#   - **生产默认**：聚合 App `starcat-api`（前缀环境变量 + 分库路径）。
+#   - **遗留**：独立 `starcat-*-api` App 仍可同步，供自托管 / 过渡期；
+#     trending/weekly 的 WIKI_API_URL 在独立部署时强制为 https://starcat-wiki-api.fly.dev。
 #   - 密钥值只传给 fly CLI，脚本不 echo 明文。
 #
 # 用法：
-#   bash supports/scripts/fly-secrets-sync.sh starcat-sharing-api
+#   bash supports/scripts/fly-secrets-sync.sh starcat-api
+#   bash supports/scripts/fly-secrets-sync.sh starcat-sharing-api   # 遗留独立 App
 #   bash supports/scripts/fly-secrets-sync.sh starcat-trending-api
 #   bash supports/scripts/fly-secrets-sync.sh starcat-weekly-api
 #   bash supports/scripts/fly-secrets-sync.sh starcat-wiki-api
 #   bash supports/scripts/fly-secrets-sync.sh starcat-recommend-api
 #   bash supports/scripts/fly-secrets-sync.sh starcat-discovery-api
 #
-# 依赖：flyctl、各项目目录下已有 .env（从 .env.example 复制并填值）
+# 依赖：flyctl、目标项目目录下已有 .env（从 .env.example 复制并填值）
 # =============================================================================
 
 set -euo pipefail
 
-# wiki-api 在 Fly 上是独立 App；trending / weekly 预热时不能沿用本地 127.0.0.1:5004。
-FLY_WIKI_API_URL="https://starcat-wiki-api.fly.dev"
+# 独立部署遗留：wiki 仍是单独 App 时，trending/weekly 预热打旧域名。
+FLY_WIKI_API_URL_LEGACY="https://starcat-wiki-api.fly.dev"
+# 聚合部署：同进程内 wiki；notifier 打本机 loopback + X-SC-Svc（见 trending notifier）。
+FLY_AGG_WIKI_API_URL="http://127.0.0.1:8080"
 
 APP="${1:-}"
 if [[ -z "$APP" ]]; then
   echo "Usage: $0 <fly-app-name>" >&2
-  echo "  e.g. starcat-trending-api" >&2
+  echo "  e.g. starcat-api   (推荐聚合)" >&2
+  echo "  e.g. starcat-trending-api   (遗留独立 App)" >&2
   exit 1
 fi
 
@@ -52,7 +56,6 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-# 从 .env 读取单个 key（取首个匹配行，保留 = 后的完整值）
 read_env_val() {
   local key="$1"
   local line
@@ -77,10 +80,63 @@ require_env_val() {
   printf '%s' "$val"
 }
 
+first_csv() {
+  local raw="$1"
+  raw="${raw%%,*}"
+  raw="$(printf '%s' "$raw" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  printf '%s' "$raw"
+}
+
 echo ">>> Syncing fly secrets for $APP (from .env, values redacted in output)"
 
 case "$APP" in
+  starcat-api)
+    SHARED="$(first_csv "$(require_env_val STARCAT_SHARED_API_KEY)")"
+    TRENDING_GH="$(require_env_val TRENDING_GITHUB_TOKENS)"
+    WEEKLY_GH="$(require_env_val WEEKLY_GITHUB_TOKENS)"
+    DISCOVERY_GH="$(require_env_val DISCOVERY_GITHUB_TOKENS)"
+    SHARING_GH="$(require_env_val SHARING_GITHUB_TOKENS)"
+    RECOMMEND_SIM="$(require_env_val RECOMMEND_SIMREPO_API_KEY)"
+
+    args=(
+      "STARCAT_API_SERVICES=all"
+      "STARCAT_SHARED_API_KEY=$SHARED"
+      "WIKI_API_KEYS=$SHARED"
+      "SHARING_API_KEYS=$SHARED"
+      "TRENDING_API_KEYS=$SHARED"
+      "WEEKLY_API_KEYS=$SHARED"
+      "RECOMMEND_API_KEYS=$SHARED"
+      "DISCOVERY_API_KEYS=$SHARED"
+      "WIKI_STORE_FILE=/data/wiki.db"
+      "SHARING_STORE_FILE=/data/sharing.db"
+      "TRENDING_STORE_FILE=/data/trending.db"
+      "WEEKLY_STORE_FILE=/data/weekly.db"
+      "WEEKLY_REPO_DIR=/data/weekly-repo"
+      "DISCOVERY_STORE_FILE=/data/discovery.db"
+      "SHARING_BASE_URL=https://starcat.ink"
+      "SHARING_GITHUB_TOKENS=$SHARING_GH"
+      "TRENDING_GITHUB_TOKENS=$TRENDING_GH"
+      "WEEKLY_GITHUB_TOKENS=$WEEKLY_GH"
+      "DISCOVERY_GITHUB_TOKENS=$DISCOVERY_GH"
+      "RECOMMEND_SIMREPO_API_KEY=$RECOMMEND_SIM"
+      "TRENDING_WIKI_API_URL=$FLY_AGG_WIKI_API_URL"
+      "TRENDING_WIKI_API_KEY=$SHARED"
+    )
+
+    if WEEKLY_ADMIN="$(read_env_val WEEKLY_ADMIN_API_KEYS 2>/dev/null || true)" && [[ -n "$WEEKLY_ADMIN" ]]; then
+      args+=("WEEKLY_ADMIN_API_KEYS=$WEEKLY_ADMIN")
+    fi
+    if DISCOVERY_ADMIN="$(read_env_val DISCOVERY_ADMIN_API_KEYS 2>/dev/null || true)" && [[ -n "$DISCOVERY_ADMIN" ]]; then
+      args+=("DISCOVERY_ADMIN_API_KEYS=$DISCOVERY_ADMIN")
+    fi
+    if RECOMMEND_EP="$(read_env_val RECOMMEND_SIMREPO_ENDPOINT 2>/dev/null || true)" && [[ -n "$RECOMMEND_EP" ]]; then
+      args+=("RECOMMEND_SIMREPO_ENDPOINT=$RECOMMEND_EP")
+    fi
+
+    fly secrets set -a "$APP" "${args[@]}"
+    ;;
   starcat-sharing-api)
+    # 遗留：独立部署 App（自托管 / 过渡期）
     API_KEYS="$(require_env_val API_KEYS)"
     GITHUB_TOKENS="$(require_env_val GITHUB_TOKENS)"
     fly secrets set -a "$APP" \
@@ -96,10 +152,9 @@ case "$APP" in
       "API_KEYS=$API_KEYS" \
       "GITHUB_TOKENS=$GITHUB_TOKENS" \
       "STORE_FILE=/data/trending.db"
-    # 可选：wiki 预热（.env 有 WIKI_API_KEY 则同步；URL 强制 Fly 生产地址）
     if WIKI_API_KEY="$(read_env_val WIKI_API_KEY 2>/dev/null || true)" && [[ -n "$WIKI_API_KEY" ]]; then
       fly secrets set -a "$APP" \
-        "WIKI_API_URL=$FLY_WIKI_API_URL" \
+        "WIKI_API_URL=$FLY_WIKI_API_URL_LEGACY" \
         "WIKI_API_KEY=$WIKI_API_KEY"
     fi
     ;;
@@ -120,14 +175,12 @@ case "$APP" in
       "${GH_SECRET_NAME}=${GH_SECRET_VAL}" \
       "STORE_FILE=/data/weekly.db" \
       "REPO_DIR=/data/weekly-repo"
-    # 可选 admin key
     if ADMIN_API_KEYS="$(read_env_val ADMIN_API_KEYS 2>/dev/null || true)" && [[ -n "$ADMIN_API_KEYS" ]]; then
       fly secrets set -a "$APP" "ADMIN_API_KEYS=$ADMIN_API_KEYS"
     fi
-    # 可选 wiki 预热（.env 有 WIKI_API_KEY 则同步；URL 强制 Fly 生产地址）
     if WIKI_API_KEY="$(read_env_val WIKI_API_KEY 2>/dev/null || true)" && [[ -n "$WIKI_API_KEY" ]]; then
       fly secrets set -a "$APP" \
-        "WIKI_API_URL=$FLY_WIKI_API_URL" \
+        "WIKI_API_URL=$FLY_WIKI_API_URL_LEGACY" \
         "WIKI_API_KEY=$WIKI_API_KEY"
     fi
     ;;

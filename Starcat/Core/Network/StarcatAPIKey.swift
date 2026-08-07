@@ -14,7 +14,8 @@
 //    1. 用户在「设置 → 服务」Tab 填的 BYOK Key
 //       → 持久化在 KeychainManager 加密本地文件（`Starcat/Core/Keychain/KeychainManager.swift`）
 //       → AppSettings.customServiceAPIKey(for:) 读取
-//    2. xcconfig 注入的 baked-in production 默认 Key（**每服务独立**）
+//    2. xcconfig 注入的 baked-in production 默认 Key（**每服务一个槽位**；
+//       聚合 starcat-api 时六个槽填**相同**值，与 `STARCAT_SHARED_API_KEY` 对齐）
 //       → `Configs/Secrets.xcconfig` 的 `STARCAT_PRODUCTION_API_KEY_<SERVICE>`
 //       → 经 project.yml `info.properties` 写入 `Info.plist`
 //       → `StarcatAPIKeyDefaults.productionKeyOrNil(for:)` 读 Bundle.main.infoDictionary
@@ -38,10 +39,11 @@ import Foundation
 
 // MARK: - Production 默认 API Key（编译期 baked-in）
 
-/// production 后端 fly.io 部署的默认 API Key（按服务从 `Info.plist` 读取）。
+/// production 后端默认 API Key（按服务从 `Info.plist` 读取）。
 ///
-/// 每个自建服务各自一条 xcconfig / plist 字段，允许 Fly 上 `API_KEYS` 白名单互不相同。
-/// 自动化写入：`make setup-production-api-keys`（读 supports/*/ .env）。
+/// 每个自建服务各自一条 xcconfig / plist 槽位。聚合 `starcat-api` 时六个槽填相同值
+///（与 `supports/starcat-api/.env` 的 `STARCAT_SHARED_API_KEY` 一致）。
+/// 自动化写入：`make setup-production-api-keys`（读 starcat-api/.env，不再读各独立仓）。
 enum StarcatAPIKeyDefaults {
 
     /// 读取指定服务的 production 默认 Key；缺失或空 → nil。

@@ -204,6 +204,9 @@ credentials/
 # 真实 Secrets.xcconfig 由开发者本地 cp template + 填值，**绝不 commit**
 # （含 production API Key 等敏感信息；缺失时 Build.xcconfig 用空字符串默认值兜底，CI 仍可编译）
 Configs/Secrets.xcconfig
+Configs/Secrets.xcconfig.bak
+Configs/Secrets.xcconfig.bak.*
+Configs/Secrets.xcconfig.wiped-by-agent.*
 
 # Notes
 notes.md
@@ -255,3 +258,4 @@ CHANGELOG-ZH/
 # 其他
 *.mp4
 *.csv
+
