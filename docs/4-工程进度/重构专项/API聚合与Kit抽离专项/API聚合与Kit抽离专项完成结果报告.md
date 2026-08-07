@@ -16,7 +16,7 @@
 |----|------|
 | 专项文档 | `01` 架构、`02` kit 方案、`03` 客户端审查、README、checklist、两轮审查、本报告 |
 | kit 0.2.0 | `github`（含 AllowAnonymous）、`httputil` ping、`env` |
-| 业务 API | weekly/trending/sharing/discovery 接入 kit github；六仓 ping；recommend/sharing FromEnv 用 kit env |
+| 业务 API | weekly/trending/sharing/discovery 接入 kit github；六仓 ping；六仓 FromEnv 均用 kit env |
 | 版本 CHANGELOG | recommend/wiki/trending/weekly/discovery **2.0.0**；sharing **2.1.0**；kit **0.2.0**；starcat-api **0.1.0** |
 | Starcat | AppEndpoints v10 + ServiceHealthChecker 注释修正；无 Paths/actor 行为变更 |
 | 测试 | 相关包本地 `go test` / `go build` 通过 |
