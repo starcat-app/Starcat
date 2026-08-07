@@ -52,9 +52,8 @@
 
 非阻塞 / 可选后续：
 
-- weekly / trending / wiki / discovery 的 `FromEnv` 可继续渐进切到 kit `env`  
-- discovery Search / Releases 完整迁入 kit（方案已标明本轮不做）  
-- 生产切聚合域名时再改客户端 baseURL / Host 头  
+- discovery Search / Releases 完整迁入 kit（方案已标明本轮不做）
+- 生产切聚合域名时再改客户端 baseURL / Host 头
 
 ## 附录：拟写入「功能实现总览」文案（待 dong4j 确认）
 

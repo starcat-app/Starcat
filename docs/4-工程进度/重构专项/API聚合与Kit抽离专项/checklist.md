@@ -19,7 +19,7 @@
 - [x] kit: `env` + 单测
 - [x] weekly / trending / sharing / discovery 接入 kit github
 - [x] 六个 API ping 改用 kit
-- [x] 相关 FromEnv 改用 kit/env（recommend / sharing；其余可继续渐进）
+- [x] 相关 FromEnv 改用 kit/env（六业务 API 均已接入）
 
 ## C. Starcat 客户端
 
