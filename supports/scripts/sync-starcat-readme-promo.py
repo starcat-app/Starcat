@@ -153,18 +153,18 @@ PROJECTS = [
     Project(
         Path("supports/starcat-api-kit"),
         "starcat-api-kit",
-        "api",
+        "library",
         "starcat-api-kit",
-        "这是 Starcat 自建 API 共享的鉴权、envelope、CORS 与 Token Pool 工具包。",
-        "Shared Go kit for Starcat self-hosted APIs: auth, envelope, CORS, and token pool.",
+        "这是 Starcat API 共享的鉴权、envelope、GitHub、env、ping 与 Token Pool 工具包。",
+        "Shared Go kit for Starcat APIs: auth, envelopes, GitHub access, environment parsing, ping handlers, and token pools.",
     ),
     Project(
         Path("supports/starcat-api"),
         "starcat-api",
-        "api",
+        "private-aggregate-api",
         "starcat-api",
-        "这是将多个 Starcat 开源 API 聚合到单进程部署的网关服务。",
-        "Aggregated gateway that mounts Starcat open-source API server packages in one process.",
+        "这是 Starcat 托管后端使用的私有聚合部署单元，将六个业务 API 装配到单进程。",
+        "Private aggregate deployment unit that mounts six Starcat API server packages in one process.",
     ),
     Project(
         Path("supports/starcat-recommend-api"),
@@ -280,6 +280,10 @@ def promo(project: Project, lang: str) -> str:
         if project.kind == "private-api" and is_zh
         else "\n\n> This repository contains Starcat's private Direct licensing and payment backend. It is not distributed as a self-hostable public API."
         if project.kind == "private-api"
+        else "\n\n> 此仓库是 Starcat 托管后端使用的私有聚合部署单元，不作为可自部署公共 API 分发。"
+        if project.kind == "private-aggregate-api" and is_zh
+        else "\n\n> This repository is Starcat's private aggregate deployment unit for the hosted backend. It is not distributed as a self-hostable public API."
+        if project.kind == "private-aggregate-api"
         else ""
     )
     return f"""{START}

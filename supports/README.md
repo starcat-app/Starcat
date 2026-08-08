@@ -1,8 +1,8 @@
 # Starcat 支撑项目（supports）
 
 > 本目录收录 Starcat 主仓库依赖的**独立项目**。每个子目录（除明确标注外）都是独立的
-> git 仓库，并拥有自己的版本和 CI 边界；其中 `starcat-api` / `starcat-api-kit` 的 GitHub
-> 远端尚待授权创建。可部署服务是独立部署单元，`starcat-api-kit` 则是供多个服务复用的 Go 库。
+> git 仓库，并拥有自己的版本和 CI 边界。可部署服务是独立部署单元，
+> `starcat-api-kit` 是公开 Go 共享库，`starcat-api` 是私有聚合部署单元。
 >
 > 文件同步关系详见 [`SYNC.md`](./SYNC.md)。
 
@@ -21,8 +21,8 @@
 | [`starcat-recommend-api/`](./starcat-recommend-api/) | [`starcat-app/starcat-recommend-api`](https://github.com/starcat-app/starcat-recommend-api) | 5005 | 相似仓库推荐 API |
 | [`starcat-discovery-api/`](./starcat-discovery-api/) | [`starcat-app/starcat-discovery-api`](https://github.com/starcat-app/starcat-discovery-api) | 5006 | 探索发现、热门、新发布榜单 |
 | [`starcat-license-api/`](./starcat-license-api/) | [`starcat-app/starcat-license-api`](https://github.com/starcat-app/starcat-license-api) 🔒 | 5010 | Direct 分发授权 API |
-| [`starcat-api-kit/`](./starcat-api-kit/) | `starcat-app/starcat-api-kit`（远端待授权创建） | — | 六个业务 API 共用的 auth / envelope / GitHub / env 等基础包 |
-| [`starcat-api/`](./starcat-api/) | `starcat-app/starcat-api`（远端待授权创建） | 8080 | 目标聚合部署单元；以 `X-SC-Svc` 分流六个业务 API，不含 license |
+| [`starcat-api-kit/`](./starcat-api-kit/) | [`starcat-app/starcat-api-kit`](https://github.com/starcat-app/starcat-api-kit) | — | 六个业务 API 共用的 auth / envelope / GitHub / env 等基础包 |
+| [`starcat-api/`](./starcat-api/) | [`starcat-app/starcat-api`](https://github.com/starcat-app/starcat-api) 🔒 | 8080 | 私有聚合部署单元；以 `X-SC-Svc` 分流六个业务 API，不含 license |
 
 ### 其他支撑项目（15 个）
 
@@ -55,11 +55,11 @@ Starcat App
   ├─ GitHub 官方 API
   ├─ 六个业务 API
   │    ├─ 当前业务生产（2026-08-08）：六个独立 starcat-*-api Fly App
-  │    └─ 已部署维护态：starcat-api.fly.dev + X-SC-Svc → 六个 server 包
+  │    └─ 已验证后停机保留：starcat-api.fly.dev + X-SC-Svc → 六个 server 包
   └─ starcat-license-api（支付 / 授权边界，始终独立）
 ```
 
-客户端代码已经默认指向聚合 URL。Fly App、Volume、Secrets、首轮五库种子迁移已完成，并已解除维护模式通过六服务 ping 与只读业务验证。六个旧 App 未停用且仍持续写入，当前仅用于本地 / 受控双跑验证；正式切流前必须重新进入维护模式，完成最终同步 / 写入冻结和全链路验收，不能把“功能可用”误写成“数据已最终切换”。
+客户端代码已经默认指向聚合 URL。Fly App、Volume、Secrets、首轮五库种子迁移已完成，并曾解除维护模式通过六服务 ping 与只读业务验证；验证后已重新开启维护模式、关闭请求自动唤醒并停止聚合 Machine。六个旧 App 未停用且仍持续写入；1.4.0 正式切流前必须以维护模式启动聚合服务，完成最终同步 / 写入冻结和全链路验收。
 
 ### 核心 API 角色
 
@@ -106,8 +106,7 @@ cd supports
 ./clone-all.sh --pull
 ```
 
-> `starcat-license-api` 是**私有**仓库，需 `gh auth login` 或 SSH key。
-> `starcat-api` / `starcat-api-kit` 当前没有 remote；在组织仓库获授权创建前，若本地目录不存在，`clone-all.sh` 对这两项会失败。
+> `starcat-license-api` 与 `starcat-api` 是**私有**仓库，需使用具备 `starcat-app` 组织权限的 `gh auth login` 或 SSH key；`starcat-api-kit` 为公开仓库。
 
 ### 一次性启动全部 API
 
@@ -163,7 +162,7 @@ secrets 需要单独确认。
 
 ### 独立 git 仓库（各自管理）
 
-- 上表除 `ai-file-wall` 外的 23 个独立仓库目录；其中 `starcat-api` / `starcat-api-kit` 远端待创建
+- 上表除 `ai-file-wall` 外的 23 个独立仓库目录
 
 ### 跨机器同步（`sync-untracked.sh`）
 

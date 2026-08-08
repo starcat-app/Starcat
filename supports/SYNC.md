@@ -41,7 +41,7 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 
 ---
 
-## 独立仓库目录（23 个；其中 2 个远端待创建）
+## 独立仓库目录（23 个）
 
 以下目录各自是**独立的 git 仓库**，有自己的 GitHub remote、CI/CD 和版本号：
 
@@ -53,8 +53,8 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 | 4 | `starcat-wiki-api/` | `starcat-app/starcat-wiki-api` |
 | 5 | `starcat-recommend-api/` | `starcat-app/starcat-recommend-api` |
 | 6 | `starcat-discovery-api/` | `starcat-app/starcat-discovery-api` |
-| 7 | `starcat-api-kit/` | `starcat-app/starcat-api-kit`（本地已建，远端待授权创建） |
-| 8 | `starcat-api/` | `starcat-app/starcat-api`（本地已建，远端待授权创建） |
+| 7 | `starcat-api-kit/` | `starcat-app/starcat-api-kit`（公开） |
+| 8 | `starcat-api/` | `starcat-app/starcat-api` 🔒 私有 |
 | 9 | `starcat-pro/` | `starcat-app/starcat-pro` |
 | 10 | `.github/` | `starcat-app/.github` |
 | 11 | `starcat-docs/` | `starcat-app/starcat-docs` |
@@ -83,8 +83,7 @@ cd supports
 ./clone-all.sh --pull
 ```
 
-> `starcat-license-api` 是**私有**仓库，需要 `gh auth login` 或配置 SSH key。
-> `starcat-api` / `starcat-api-kit` 当前只有本地仓；远端未获授权创建前，`clone-all.sh` 只能跳过已存在目录，无法在新机器成功 clone 这两项。
+> `starcat-license-api` 与 `starcat-api` 是**私有**仓库，需要使用具备 `starcat-app` 组织权限的 `gh auth login` 或 SSH key；`starcat-api-kit` 为公开仓库。
 
 ### 新增独立仓库登记
 
