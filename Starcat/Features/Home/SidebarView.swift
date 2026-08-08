@@ -921,8 +921,7 @@ struct SidebarView: View {
     private func exploreModeCount(_ mode: ExploreMode) -> Int? {
         switch mode {
         case .trending:
-            let total = dependencies.trendingLanguageStore.displayList.reduce(0) { $0 + $1.count }
-            return total > 0 ? total : nil
+            return dependencies.trendingLanguageStore.sidebarTotalCount
         case .discover, .popular, .newReleases:
             return dependencies.exploreCatalogStore.total(for: mode)
         case .weekly:

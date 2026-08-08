@@ -13,6 +13,7 @@ import AppKit
 import CryptoKit
 import Foundation
 import Observation
+import SwiftUI
 import UniformTypeIdentifiers
 
 /// 刷新操作可能立即完成；保留最短可见时长，才能让用户确认点击已被接收。
@@ -560,6 +561,9 @@ final class KnowledgeRAGWorkspaceViewModel {
     var knowledgeBaseMetadataSnapshot: KnowledgeBaseMetadataSnapshot?
     /// RAG 工作台内「从 Stars 加入知识库」Sheet；空库空态 / 左栏 / 失败态共用。
     var isAddToLibraryPresented = false
+    /// 标题编辑 sheet 必须挂在工作台根视图上；挂在窄侧栏会被系统压成接近 alert 的宽度。
+    var titleEditRequest: RAGWorkspaceTitleEditRequest?
+    var titleEditDraft = ""
 
     /// 知识库尚无任何仓库时，问答没有可检索边界。
     var isKnowledgeBaseEmpty: Bool {
@@ -1375,6 +1379,45 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
+    /// 打开会话重命名 sheet（由根视图呈现，避免窄侧栏压宽度）。
+    func presentRenameConversation(_ conversation: RAGConversationSummary) {
+        titleEditDraft = conversation.title
+        titleEditRequest = .renameConversation(conversation.id)
+    }
+
+    /// 打开分组重命名 sheet。
+    func presentRenameGroup(_ group: RAGConversationGroup) {
+        titleEditDraft = group.title
+        titleEditRequest = .renameGroup(group.id)
+    }
+
+    /// 打开新建分组 sheet。
+    func presentCreateGroup() {
+        titleEditDraft = String.l10n("rag.workspace.group.newTitle")
+        titleEditRequest = .createGroup
+    }
+
+    func dismissTitleEdit() {
+        titleEditRequest = nil
+        titleEditDraft = ""
+    }
+
+    /// 确认标题编辑：先关 sheet，再落库，避免确认瞬间输入框跟着闪一下。
+    func confirmTitleEdit() async {
+        let draft = titleEditDraft
+        guard let request = titleEditRequest else { return }
+        titleEditRequest = nil
+        titleEditDraft = ""
+        switch request {
+        case .renameConversation(let conversationID):
+            await renameConversation(id: conversationID, title: draft)
+        case .renameGroup(let groupID):
+            await renameGroup(id: groupID, title: draft)
+        case .createGroup:
+            await createGroup(title: draft)
+        }
+    }
+
     /// 置顶 / 取消置顶：先本地乐观更新，再落库刷新，保证钉子图标与置顶区位置立刻响应。
     func setConversationPinned(id: UUID, isPinned: Bool) async {
         let now = ISO8601DateFormatter.shared.string(from: Date())
@@ -1395,16 +1438,31 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     func moveConversation(id: UUID, toGroupID groupID: UUID?) async {
+        // 乐观更新：先改内存列表，避免系统拖拽预览尚未卸完时源行还停在旧位置造成残影。
+        let previousGroupID = conversations.first(where: { $0.id == id })?.groupID
+        applyConversationGroupLocally(id: id, groupID: groupID, animated: false)
+
         do {
             try await conversationStore.setConversationGroup(id: id, groupID: groupID)
             conversationPresentationCache.remove(id)
-            if let index = conversations.firstIndex(where: { $0.id == id }) {
-                conversations[index].groupID = groupID
-            } else {
-                conversations = try await conversationStore.listConversations()
-            }
         } catch {
+            // 写库失败：回滚到拖拽前分组。
+            applyConversationGroupLocally(id: id, groupID: previousGroupID, animated: false)
+            if conversations.contains(where: { $0.id == id }) == false {
+                conversations = (try? await conversationStore.listConversations()) ?? conversations
+            }
             errorMessage = error.localizedDescription
+        }
+    }
+
+    /// 仅更新内存中的 `groupID`；拖拽落点必须关动画，防止与系统 lift preview 叠影。
+    private func applyConversationGroupLocally(id: UUID, groupID: UUID?, animated: Bool) {
+        guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
+        var transaction = Transaction()
+        transaction.disablesAnimations = !animated
+        withTransaction(transaction) {
+            conversations[index].groupID = groupID
+            conversationPresentationCache.remove(id)
         }
     }
 

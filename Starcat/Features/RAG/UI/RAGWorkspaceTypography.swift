@@ -91,6 +91,47 @@ enum RAGConversationDropTarget: Equatable {
     case ungrouped
 }
 
+/// 侧栏标题编辑请求。
+///
+/// 必须由工作台根视图 `.sheet(item:)` 呈现：若挂在窄左栏上，macOS 会把 sheet
+/// 压成接近系统 alert 的宽度，长对话标题仍然截断。
+enum RAGWorkspaceTitleEditRequest: Identifiable, Equatable {
+    case renameConversation(UUID)
+    case renameGroup(UUID)
+    case createGroup
+
+    var id: String {
+        switch self {
+        case .renameConversation(let conversationID):
+            return "rename-conversation-\(conversationID.uuidString)"
+        case .renameGroup(let groupID):
+            return "rename-group-\(groupID.uuidString)"
+        case .createGroup:
+            return "create-group"
+        }
+    }
+
+    var titleKey: LocalizedStringKey {
+        switch self {
+        case .renameConversation:
+            return "rag.workspace.conversation.rename.title"
+        case .renameGroup:
+            return "rag.workspace.group.rename.title"
+        case .createGroup:
+            return "rag.workspace.group.create.title"
+        }
+    }
+
+    var placeholderKey: LocalizedStringKey {
+        switch self {
+        case .renameConversation:
+            return "rag.workspace.conversation.rename.placeholder"
+        case .renameGroup, .createGroup:
+            return "rag.workspace.group.rename.placeholder"
+        }
+    }
+}
+
 enum RAGInspectorTab: String, CaseIterable, Identifiable {
     case evidence
     case plan

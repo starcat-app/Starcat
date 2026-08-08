@@ -217,6 +217,9 @@ final class TrendingViewModel {
     /// 错误信息
     private(set) var loadError: String?
 
+    /// 有可用缓存时网络刷新失败的横条提示（与探索发现/热门同语义）。
+    private(set) var cacheWarning: String?
+
     // MARK: - 筛选状态
 
     /// 当前时间周期。只能通过 `selectPeriod` 修改，确保一次交互只触发一次查询。
@@ -376,7 +379,7 @@ final class TrendingViewModel {
     /// - 缓存命中 + `.respectTTL` + TTL 过期 → 上屏缓存 → 后台拉网络 → 智能 revision
     /// - 缓存命中 + `.forceNetwork` → 上屏缓存 → 后台拉网络 → 智能 revision
     /// - 缓存空 → 必拉网络（不管 cachePolicy），isLoading=true
-    /// - 网络失败 + 有缓存 → 保留已显示，仅 loadError 记录
+    /// - 网络失败 + 有缓存 → 保留已显示，提示 cacheWarning（不遮住列表）
     /// - 网络失败 + 无缓存 → errorView
     ///
     /// 智能 revision 规则（关键，与 2026-06-02 版本一致）：
@@ -414,6 +417,7 @@ final class TrendingViewModel {
         // 主动刷新仍跳过动画，避免同一份已显示内容因后台更新再次整批闪动。
         skipListRowReveal = !revealsRows && publishedQueryIdentity != nil
         loadError = nil
+        cacheWarning = nil
 
         if hasPublishedCurrentQuery {
             isLoading = false
@@ -483,20 +487,30 @@ final class TrendingViewModel {
             self.isRefreshing = hasUsableSnapshot
 
             do {
-                let fetched = try await self.repository.fetchTrending(
+                let fetchResult = try await self.repository.fetchTrending(
                     since: identity.period,
                     language: identity.language
                 )
                 guard self.isCurrentReload(generation, identity: identity) else { return }
 
-                let prepared = await self.prepare(fetched, for: identity)
+                let prepared = await self.prepare(fetchResult.repos, for: identity)
                 guard self.isCurrentReload(generation, identity: identity) else { return }
 
                 self.publish(prepared, for: identity, resetVisiblePage: !hasUsableSnapshot)
-                let refreshedAt = Date()
-                self.lastRefreshedAt = refreshedAt
-                self.memoryRefreshDates[identity] = refreshedAt
-                self.loadError = nil
+                if case .cachedFallback = fetchResult.source {
+                    // 网络失败但仓库层回退了缓存：保留旧刷新时间，只提示横条。
+                    self.loadError = nil
+                    self.cacheWarning = Self.cacheFallbackWarning(fetchResult.fallbackErrorDescription)
+                    AppLog.network.warning(
+                        "Trending fetch returned cachedFallback: \(fetchResult.fallbackErrorDescription ?? "", privacy: .public)"
+                    )
+                } else {
+                    let refreshedAt = Date()
+                    self.lastRefreshedAt = refreshedAt
+                    self.memoryRefreshDates[identity] = refreshedAt
+                    self.loadError = nil
+                    self.cacheWarning = nil
+                }
             } catch {
                 guard self.isCurrentReload(generation, identity: identity) else { return }
                 let friendly = UserFacingError.map(
@@ -504,8 +518,10 @@ final class TrendingViewModel {
                     operation: String.l10n("diagnostics.operation.loadTrending"),
                     service: "Trending"
                 )
-                self.loadError = friendly.message
                 if hasUsableSnapshot {
+                    // 与探索发现一致：列表继续用缓存，横条说明刷新失败原因。
+                    self.loadError = nil
+                    self.cacheWarning = Self.cacheFallbackWarning(friendly.message)
                     AppLog.network.warning("Trending 后台刷新失败但内存有快照，保持已显示: \(error.localizedDescription, privacy: .public)")
                     friendly.record(
                         level: .warning,
@@ -514,6 +530,8 @@ final class TrendingViewModel {
                         service: "trending"
                     )
                 } else {
+                    self.loadError = friendly.message
+                    self.cacheWarning = nil
                     friendly.record(category: "network", operation: "trending.reload", service: "trending")
                 }
             }
@@ -604,6 +622,7 @@ final class TrendingViewModel {
             recommendedRepos = snapshot.recommendedRepos
             publishedQueryIdentity = identity
             loadError = nil
+            cacheWarning = nil
 
             if resetVisiblePage || identityChanged {
                 visibleLimit = Self.pageSize
@@ -725,6 +744,15 @@ final class TrendingViewModel {
     /// 兼容读取面，但不再在 SwiftUI body 求值期间创建新的全量数组。
     var displayedRepos: [TrendingRepo] {
         repos
+    }
+
+    /// 与探索发现共用文案键：刷新失败但仍展示本地缓存。
+    private static func cacheFallbackWarning(_ errorDescription: String?) -> String {
+        // 底层 TLS / 网络细节只进日志；横条用固定用户文案。
+        if let errorDescription, !errorDescription.isEmpty {
+            AppLog.network.warning("Trending cache fallback detail: \(errorDescription, privacy: .public)")
+        }
+        return String.l10n("explore.cacheFallback.warning")
     }
 
 }

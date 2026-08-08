@@ -31,7 +31,7 @@ private actor StubTrendingRepository: TrendingRepositoryProtocol {
     var lastRefreshedCallCount: Int = 0
 
     /// 用于测试可注入的 fetch 行为（默认返回 self.repos，可重写为抛错或动态返回）。
-    var fetchHandler: (@Sendable (_ since: TrendingPeriod, _ language: TrendingLanguage) async throws -> [TrendingRepo])?
+    var fetchHandler: (@Sendable (_ since: TrendingPeriod, _ language: TrendingLanguage) async throws -> TrendingFetchResult)?
 
     init(
         repos: [TrendingRepo] = [],
@@ -47,7 +47,7 @@ private actor StubTrendingRepository: TrendingRepositoryProtocol {
         self.repos = value
     }
 
-    func setFetchHandler(_ handler: @escaping @Sendable (_ since: TrendingPeriod, _ language: TrendingLanguage) async throws -> [TrendingRepo]) {
+    func setFetchHandler(_ handler: @escaping @Sendable (_ since: TrendingPeriod, _ language: TrendingLanguage) async throws -> TrendingFetchResult) {
         self.fetchHandler = handler
     }
 
@@ -56,12 +56,16 @@ private actor StubTrendingRepository: TrendingRepositoryProtocol {
         return cached
     }
 
-    func fetchTrending(since: TrendingPeriod, language: TrendingLanguage) async throws -> [TrendingRepo] {
+    func fetchTrending(since: TrendingPeriod, language: TrendingLanguage) async throws -> TrendingFetchResult {
         fetchCallCount += 1
         if let handler = fetchHandler {
             return try await handler(since, language)
         }
-        return repos
+        return TrendingFetchResult(
+            repos: repos,
+            source: .network,
+            fallbackErrorDescription: nil
+        )
     }
 
     func lastRefreshedAt(since: TrendingPeriod, language: TrendingLanguage) async -> Date? {
@@ -401,7 +405,11 @@ struct TrendingTests {
         let stub = StubTrendingRepository()
         await stub.setFetchHandler { _, _ in
             try? await Task.sleep(for: .milliseconds(50))
-            return [makeTrendingRepo(fullName: "owner/once")]
+            return TrendingFetchResult(
+                repos: [makeTrendingRepo(fullName: "owner/once")],
+                source: .network,
+                fallbackErrorDescription: nil
+            )
         }
         let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
 
@@ -427,9 +435,17 @@ struct TrendingTests {
             if period == .daily {
                 // 故意吞掉取消并晚返回，验证 ViewModel 的 generation guard。
                 try? await Task.sleep(for: .milliseconds(80))
-                return [makeTrendingRepo(fullName: "owner/daily")]
+                return TrendingFetchResult(
+                    repos: [makeTrendingRepo(fullName: "owner/daily")],
+                    source: .network,
+                    fallbackErrorDescription: nil
+                )
             }
-            return [makeTrendingRepo(fullName: "owner/weekly")]
+            return TrendingFetchResult(
+                repos: [makeTrendingRepo(fullName: "owner/weekly")],
+                source: .network,
+                fallbackErrorDescription: nil
+            )
         }
         let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
 
@@ -807,5 +823,77 @@ struct TrendingTests {
         _ = await pipeline.preparedSnapshot(for: identity, context: contexts[0])
         #expect(await pipeline.derivationCountForTesting() == derivationsAfterThirteenContexts + 1,
                 "容量为 12 时，第 13 个 context 必须淘汰最久未访问项")
+    }
+
+    // MARK: - 后端不可用时的缓存兜底
+
+    @MainActor
+    @Test("TrendingViewModel.reload(.forceNetwork): 有缓存且网络失败时设置 cacheWarning")
+    func reloadForceNetworkSetsCacheWarningWhenFetchFailsWithCache() async throws {
+        let cachedRepos = [
+            makeTrendingRepo(fullName: "owner/a"),
+            makeTrendingRepo(fullName: "owner/b")
+        ]
+        let stub = StubTrendingRepository(
+            repos: [],
+            cached: cachedRepos,
+            lastRefreshedAt: Date(timeIntervalSinceNow: -60)
+        )
+        await stub.setFetchHandler { _, _ in
+            TrendingFetchResult(
+                repos: cachedRepos,
+                source: .cachedFallback,
+                fallbackErrorDescription: "TLS 错误导致安全连接失败。"
+            )
+        }
+        let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
+
+        await vm.reload(cachePolicy: .forceNetwork)
+
+        #expect(vm.hasPublishedCurrentQuery)
+        #expect(vm.repos.count == 2)
+        #expect(vm.loadError == nil)
+        #expect(vm.cacheWarning == String.l10n("explore.cacheFallback.warning"))
+    }
+
+    @MainActor
+    @Test("TrendingLanguageStore.sidebarTotalCount 优先使用磁盘语言快照")
+    func languageStoreSidebarTotalUsesDiskCache() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("trending-lang-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let dtos = [
+            TrendingLanguageAggregateDTO(key: "Go", label: "Go", count: 40),
+            TrendingLanguageAggregateDTO(key: "Swift", label: "Swift", count: 17)
+        ]
+        try JSONEncoder().encode(dtos).write(to: url, options: [.atomic])
+
+        let api = TrendingAPI(
+            baseURL: URL(string: "https://starcat-api.invalid")!,
+            apiKey: "sk-starcat-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        )
+        let store = TrendingLanguageStore(api: api, trendingRepository: nil, diskCacheURL: url)
+        #expect(store.sidebarTotalCount == 57)
+        #expect(store.displayList.count == 2)
+    }
+
+    @MainActor
+    @Test("TrendingLanguageStore.sidebarTotalCount 无语言快照时回退 trending_repos 计数")
+    func languageStoreSidebarTotalFallsBackToRepoCache() async {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("trending-lang-empty-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let stub = StubTrendingRepository(
+            cached: (0..<97).map { makeTrendingRepo(fullName: "owner/repo\($0)") }
+        )
+        let api = TrendingAPI(
+            baseURL: URL(string: "https://starcat-api.invalid")!,
+            apiKey: "sk-starcat-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        )
+        let store = TrendingLanguageStore(api: api, trendingRepository: stub, diskCacheURL: url)
+        await store.reload()
+        #expect(store.sidebarTotalCount == 97)
     }
 }

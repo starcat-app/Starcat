@@ -115,6 +115,9 @@ struct WeeklyContentView: View {
 
             Divider()
 
+            // 与探索发现一致：横条挂在筛选栏下方、列表上方，避免埋进 List 滚动区。
+            weeklyCacheWarningBanner(viewModel)
+
             weeklyContentBody(viewModel)
                 .id(contentStateID(for: viewModel))
                 .transition(contentTransition)
@@ -160,6 +163,20 @@ struct WeeklyContentView: View {
             }
         } else {
             projectList(viewModel)
+        }
+    }
+
+    @ViewBuilder
+    private func weeklyCacheWarningBanner(_ viewModel: WeeklyContentViewModel) -> some View {
+        if let warning = viewModel.cacheWarning {
+            Label(warning, systemImage: "exclamationmark.triangle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
+                .padding(.vertical, 6)
+                .background(.bar)
         }
     }
 
@@ -835,6 +852,8 @@ final class WeeklyContentViewModel {
     private(set) var isLoading: Bool = false
     private(set) var isLoadingMore: Bool = false
     private(set) var loadError: String?
+    /// 有可用列表时网络刷新失败的横条提示（与探索发现 / 趋势同语义）。
+    private(set) var cacheWarning: String?
     /// 入场动画 / row-reveal 用的"身份快照"版本，仅在筛选切换 / 重新加载时 bump。
     private(set) var itemsRevision: Int = 0
 
@@ -1023,32 +1042,51 @@ final class WeeklyContentViewModel {
         isLoading = true
         isLoadingMore = false
         loadError = nil
+        cacheWarning = nil
 
         do {
-            let result = try await bulkRepository.fetchBulk()
+            let fetchResult = try await bulkRepository.fetchBulk()
             guard myGen == generation else { return }
+            let bulk = fetchResult.bulk
+            let lastFetchedAt: Date
+            if case .cachedFallback = fetchResult.source {
+                // 缓存回退不能把刷新时间推成「现在」，否则 TTL 会假新鲜。
+                lastFetchedAt = await bulkRepository.lastRefreshedAt()
+                    ?? lastBulkFetchedAt
+                    ?? Date()
+            } else {
+                lastFetchedAt = Date()
+            }
             let snapshot = WeeklyBulkCachedSnapshot(
-                sources: result.sources,
-                items: result.items,
-                languages: result.languages,
-                etag: result.etag,
-                lastFetchedAt: Date(),
-                generatedAt: result.generatedAt,
-                total: result.total
+                sources: bulk.sources,
+                items: bulk.items,
+                languages: bulk.languages,
+                etag: bulk.etag,
+                lastFetchedAt: lastFetchedAt,
+                generatedAt: bulk.generatedAt,
+                total: bulk.total
             )
             await applyLocalSnapshot(snapshot, bumpRevision: true)
+            if case .cachedFallback = fetchResult.source {
+                // applyLocalSnapshot 会清 cacheWarning；成功应用缓存后再挂横条。
+                cacheWarning = Self.cacheFallbackWarning(fetchResult.fallbackErrorDescription)
+            }
         } catch {
             guard myGen == generation else { return }
+            let friendly = UserFacingError.map(
+                error,
+                operation: String.l10n("diagnostics.operation.loadWeekly"),
+                service: "Weekly"
+            )
             if usesLocalOnlyFilters {
-                let friendly = UserFacingError.map(
-                    error,
-                    operation: String.l10n("diagnostics.operation.loadWeekly"),
-                    service: "Weekly"
-                )
-                loadError = friendly.message
                 if items.isEmpty {
+                    loadError = friendly.message
                     total = 0
                     hasMore = false
+                } else {
+                    // 本地筛选依赖 bulk；失败时保留缓存列表并提示横条。
+                    loadError = nil
+                    cacheWarning = Self.cacheFallbackWarning(friendly.message)
                 }
                 friendly.record(category: "network", operation: "weekly.reloadBulkForFilters", service: "weekly")
                 if myGen == generation {
@@ -1056,9 +1094,16 @@ final class WeeklyContentViewModel {
                 }
                 return
             }
-            // bulk 失败 → 退到分页 API 拿第一页（保证刷新按钮不空手而归）
+            // bulk 彻底失败（无缓存可回退）→ 退到分页 API；若分页也失败且仍有列表，横条提示。
             AppLog.network.warning("Weekly reload bulkSync failed, falling back to paginated API: \(error.localizedDescription, privacy: .public)")
             await loadRemotePage()
+            guard myGen == generation else { return }
+            if !items.isEmpty, loadError != nil {
+                cacheWarning = Self.cacheFallbackWarning(loadError)
+                loadError = nil
+            } else if items.isEmpty {
+                loadError = loadError ?? friendly.message
+            }
         }
         if myGen == generation {
             isLoading = false
@@ -1214,16 +1259,24 @@ final class WeeklyContentViewModel {
     private func silentBulkSync() async {
         let myGen = generation
         do {
-            let result = try await bulkRepository.fetchBulk()
+            let fetchResult = try await bulkRepository.fetchBulk()
             guard myGen == generation else { return }
+            // 静默路径：缓存回退只记日志，不弹横条（用户没点刷新）。
+            if case .cachedFallback = fetchResult.source {
+                AppLog.network.warning(
+                    "Weekly silent bulkSync cachedFallback: \(fetchResult.fallbackErrorDescription ?? "", privacy: .public)"
+                )
+                return
+            }
+            let bulk = fetchResult.bulk
             let snapshot = WeeklyBulkCachedSnapshot(
-                sources: result.sources,
-                items: result.items,
-                languages: result.languages,
-                etag: result.etag,
+                sources: bulk.sources,
+                items: bulk.items,
+                languages: bulk.languages,
+                etag: bulk.etag,
                 lastFetchedAt: Date(),
-                generatedAt: result.generatedAt,
-                total: result.total
+                generatedAt: bulk.generatedAt,
+                total: bulk.total
             )
             await applyLocalSnapshot(snapshot, bumpRevision: true)
         } catch {
@@ -1253,6 +1306,8 @@ final class WeeklyContentViewModel {
             page = result.page
             hasMore = result.hasMore
             itemsRevision += 1
+            loadError = nil
+            cacheWarning = nil
             selectionService?.applyTotal(result.total)
         } catch {
             guard myGen == generation else { return }
@@ -1284,6 +1339,7 @@ final class WeeklyContentViewModel {
         dataSource = .local
         usesPagedCache = false
         loadError = nil
+        cacheWarning = nil
         // 手动 / 静默刷新保留当前卡片，等新快照准备好后静默替换；首次进入本来就是空列表。
         await applyFiltersLocally(
             bumpRevision: bumpRevision,
@@ -1535,6 +1591,15 @@ final class WeeklyContentViewModel {
     /// 6h TTL 判断；时间倒着算（lastFetchedAt 之后过了 < 6h 即新鲜）。
     private func isCacheFresh(at lastFetchedAt: Date) -> Bool {
         Date().timeIntervalSince(lastFetchedAt) < Self.bulkTTL
+    }
+
+    /// 与探索发现共用文案键：刷新失败但仍展示本地缓存。
+    private static func cacheFallbackWarning(_ errorDescription: String?) -> String {
+        // 底层 TLS / 网络细节只进日志；横条用固定用户文案。
+        if let errorDescription, !errorDescription.isEmpty {
+            AppLog.network.warning("Weekly cache fallback detail: \(errorDescription, privacy: .public)")
+        }
+        return String.l10n("explore.cacheFallback.warning")
     }
 
     /// 排序函数：与后端 `WeeklyFeedSort` 对齐（详见后端 `internal/store/sqlite.go`

@@ -40,10 +40,11 @@ protocol TrendingRepositoryProtocol: Sendable {
     /// 没缓存或解码失败时返回空数组（调用方据此判断"是否有可用快照"）。
     func cachedTrending(since: TrendingPeriod, language: TrendingLanguage) async -> [TrendingRepo]
 
-    /// 走网络拉取榜单 + 整批替换缓存 + 返回新数据。
-    /// - 网络成功：覆盖该 (period, language_filter) 的本地缓存，返回新数据
-    /// - 网络失败：回退到本地缓存（非空则返回缓存，等价于"上次成功的快照"）；缓存为空才把错误抛出
-    func fetchTrending(since: TrendingPeriod, language: TrendingLanguage) async throws -> [TrendingRepo]
+    /// 走网络拉取榜单 + 整批替换缓存 + 返回结果（含网络失败时的缓存回退标记）。
+    /// - 网络成功：覆盖该 (period, language_filter) 的本地缓存，`source == .network`
+    /// - 网络失败且本地有缓存：返回缓存，`source == .cachedFallback`（不抛错）
+    /// - 网络失败且缓存为空：抛出原网络错误
+    func fetchTrending(since: TrendingPeriod, language: TrendingLanguage) async throws -> TrendingFetchResult
 
     /// 读取该 (period, language_filter) 桶的最近一次成功写入时间。
     ///
@@ -54,6 +55,21 @@ protocol TrendingRepositoryProtocol: Sendable {
     /// 用途：UI 展示"上次刷新 X 分钟前"新鲜度提示；ViewModel 判断是否要在
     /// 进入页面时主动拉网络（首次入场策略）。
     func lastRefreshedAt(since: TrendingPeriod, language: TrendingLanguage) async -> Date?
+}
+
+/// `fetchTrending` 的回传：区分真·网络成功与「网络失败但用了本地缓存」。
+///
+/// 与 `DiscoveryBulkFetchResult` 同构，避免 ViewModel 把缓存回退误当成刷新成功
+/// （否则会清空失败提示、并把 `lastRefreshedAt` 推成现在导致 TTL 假新鲜）。
+struct TrendingFetchResult: Sendable {
+    let repos: [TrendingRepo]
+    let source: Source
+    let fallbackErrorDescription: String?
+
+    enum Source: Sendable, Equatable {
+        case network
+        case cachedFallback
+    }
 }
 
 /// Trending 数据仓库实现。
@@ -114,14 +130,14 @@ actor TrendingRepository: TrendingRepositoryProtocol {
     /// 1. 调 `TrendingAPI.fetchTrending` 拿新数据
     /// 2. 在单事务内 DELETE 旧的 (period, language_filter) 行 → 按 rank 顺序 INSERT 新行
     /// 3. 写入失败 → 抛错（保留已上屏的缓存数据由调用方决定是否回滚 UI）
-    /// 4. 网络失败 → 回退到 `cachedTrending`：非空返回缓存（"离线兜底"），空则抛原网络错误
+    /// 4. 网络失败 → 回退到 `cachedTrending`：非空则 `cachedFallback`；空则抛原网络错误
     ///
     /// 注意：网络成功 + DB 写入失败的极少数 case，这里把 DB 错误抛出，
     /// 因为内存里的新数据没有持久化失败兜底意义，且调用方需要知道"持久化没成功"。
     func fetchTrending(
         since: TrendingPeriod,
         language: TrendingLanguage
-    ) async throws -> [TrendingRepo] {
+    ) async throws -> TrendingFetchResult {
         let period = since.rawValue
         let langFilter = language.apiValue
 
@@ -131,11 +147,15 @@ actor TrendingRepository: TrendingRepositoryProtocol {
             AppLog.network.info("Fetching trending: \(period)/\(langFilter)")
             repos = try await api.fetchTrending(since: since, language: language)
         } catch {
-            // 网络失败 → 离线兜底：返回缓存（非空）
+            // 网络失败 → 离线兜底：返回缓存（非空），并标记 source 供 UI 提示。
             let cached = await cachedTrending(since: since, language: language)
             if !cached.isEmpty {
                 AppLog.network.warning("Trending network failed, falling back to cache (\(cached.count) repos): \(error.localizedDescription, privacy: .public)")
-                return cached
+                return TrendingFetchResult(
+                    repos: cached,
+                    source: .cachedFallback,
+                    fallbackErrorDescription: error.localizedDescription
+                )
             }
             // 缓存也空 → 抛原网络错误
             throw error
@@ -166,7 +186,11 @@ actor TrendingRepository: TrendingRepositoryProtocol {
             throw error
         }
 
-        return repos
+        return TrendingFetchResult(
+            repos: repos,
+            source: .network,
+            fallbackErrorDescription: nil
+        )
     }
 
     /// 读取该桶最近一次成功写入时间（trending_repos.cached_at 的 max）。

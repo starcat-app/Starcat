@@ -52,14 +52,10 @@ struct RAGWorkspaceConversationRail: View {
     @Environment(\.ragSettingsNavigation) private var settingsNavigation
 
     @Bindable var viewModel: KnowledgeRAGWorkspaceViewModel
-    @State private var renameTarget: RAGConversationSummary?
-    @State private var renameDraft = ""
     @State private var expandedGroupIDs: Set<UUID> = []
-    @State private var isCreateGroupPresented = false
-    @State private var createGroupDraft = ""
-    @State private var renameGroupTarget: RAGConversationGroup?
-    @State private var renameGroupDraft = ""
     @State private var conversationDropTarget: RAGConversationDropTarget?
+    /// 正在拖拽的会话；源行压暗，避免系统 preview 与源行叠成残影。
+    @State private var draggingConversationID: UUID?
     @State private var isKnowledgeBaseHovered = false
     @State private var isNewConversationHovered = false
     @State private var hoveredConversationID: UUID?
@@ -126,8 +122,7 @@ struct RAGWorkspaceConversationRail: View {
                             .textCase(.uppercase)
                         Spacer(minLength: 4)
                         Button {
-                            createGroupDraft = String.l10n("rag.workspace.group.newTitle")
-                            isCreateGroupPresented = true
+                            viewModel.presentCreateGroup()
                         } label: {
                             Image(systemName: "folder.badge.plus")
                                 .font(iconFont(size: 13, weight: .medium))
@@ -140,14 +135,26 @@ struct RAGWorkspaceConversationRail: View {
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .onDrop(
-                        of: [.plainText],
-                        isTargeted: Binding(
-                            get: { conversationDropTarget == .ungrouped },
-                            set: { conversationDropTarget = $0 ? .ungrouped : nil }
-                        )
-                    ) { providers in
-                        handleConversationDrop(providers, toGroupID: nil)
+                    .background(
+                        conversationDropTarget == .ungrouped
+                            ? Color.accentColor.opacity(0.08)
+                            : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 7)
+                    )
+                    .overlay {
+                        if conversationDropTarget == .ungrouped {
+                            RoundedRectangle(cornerRadius: 7)
+                                .strokeBorder(Color.accentColor.opacity(0.85), lineWidth: 1.5)
+                        }
+                    }
+                    .dropDestination(for: String.self) { items, _ in
+                        guard let conversationID = Self.conversationID(fromDropItems: items) else {
+                            return false
+                        }
+                        finishConversationDrop(conversationID: conversationID, toGroupID: nil)
+                        return true
+                    } isTargeted: { targeted in
+                        updateDropTarget(.ungrouped, isTargeted: targeted)
                     }
 
                     // 置顶会话直接顶到列表最前，不单独做「置顶」分组标题；靠 pin 图标区分即可。
@@ -173,21 +180,6 @@ struct RAGWorkspaceConversationRail: View {
             }
         }
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.34))
-        .alert("rag.workspace.conversation.rename.title", isPresented: Binding(get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } })) {
-            TextField("rag.workspace.conversation.rename.placeholder", text: $renameDraft)
-            Button("common.cancel", role: .cancel) { renameTarget = nil }
-            Button("common.ok") { guard let target = renameTarget else { return }; let title = renameDraft; renameTarget = nil; Task { await viewModel.renameConversation(id: target.id, title: title) } }.disabled(renameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        }
-        .alert("rag.workspace.group.create.title", isPresented: $isCreateGroupPresented) {
-            TextField("rag.workspace.group.rename.placeholder", text: $createGroupDraft)
-            Button("common.cancel", role: .cancel) { createGroupDraft = "" }
-            Button("common.ok") { let title = createGroupDraft; createGroupDraft = ""; Task { await viewModel.createGroup(title: title) } }.disabled(createGroupDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        }
-        .alert("rag.workspace.group.rename.title", isPresented: Binding(get: { renameGroupTarget != nil }, set: { if !$0 { renameGroupTarget = nil } })) {
-            TextField("rag.workspace.group.rename.placeholder", text: $renameGroupDraft)
-            Button("common.cancel", role: .cancel) { renameGroupTarget = nil }
-            Button("common.ok") { guard let target = renameGroupTarget else { return }; let title = renameGroupDraft; renameGroupTarget = nil; Task { await viewModel.renameGroup(id: target.id, title: title) } }.disabled(renameGroupDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        }
         .onChange(of: viewModel.conversationGroups.map(\.id)) { _, ids in expandedGroupIDs.formUnion(ids) }
     }
 
@@ -301,8 +293,7 @@ struct RAGWorkspaceConversationRail: View {
 
                 Menu {
                     Button("rag.workspace.group.rename") {
-                        renameGroupTarget = group
-                        renameGroupDraft = group.title
+                        viewModel.presentRenameGroup(group)
                     }
                     Button("common.delete", role: .destructive) {
                         Task { await viewModel.deleteGroup(id: group.id) }
@@ -318,21 +309,28 @@ struct RAGWorkspaceConversationRail: View {
                 .help("rag.workspace.group.actions")
                 .padding(.trailing, 6)
             }
-            .background(
-                isDropTarget
-                    ? Color.accentColor.opacity(0.18)
-                    : (isSelected ? Color.accentColor.opacity(0.11) : Color.clear)
-            )
+            .background(isSelected ? Color.accentColor.opacity(0.11) : Color.clear)
+            .overlay {
+                // 落点用描边 + 浅底，避免整行大面积 fill 与拖拽 preview 同色叠影。
+                if isDropTarget {
+                    RoundedRectangle(cornerRadius: 7)
+                        .strokeBorder(Color.accentColor.opacity(0.9), lineWidth: 1.5)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7)
+                                .fill(Color.accentColor.opacity(0.08))
+                        )
+                }
+            }
             .clipShape(RoundedRectangle(cornerRadius: 7))
             .padding(.horizontal, 8)
-            .onDrop(
-                of: [.plainText],
-                isTargeted: Binding(
-                    get: { conversationDropTarget == .group(group.id) },
-                    set: { conversationDropTarget = $0 ? .group(group.id) : nil }
-                )
-            ) { providers in
-                handleConversationDrop(providers, toGroupID: group.id)
+            .dropDestination(for: String.self) { items, _ in
+                guard let conversationID = Self.conversationID(fromDropItems: items) else {
+                    return false
+                }
+                finishConversationDrop(conversationID: conversationID, toGroupID: group.id)
+                return true
+            } isTargeted: { targeted in
+                updateDropTarget(.group(group.id), isTargeted: targeted)
             }
 
             if isExpanded {
@@ -342,8 +340,8 @@ struct RAGWorkspaceConversationRail: View {
                 )) { entry in
                     conversationRow(entry.conversation, rowIndex: entry.rowIndex)
                         .padding(.leading, 14)
-                        // 子会话随分组高度一起淡入淡出，避免硬切。
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        // 仅淡入淡出：去掉 .move，降低松手时与 drag preview 的位移叠影。
+                        .transition(reduceMotion ? .identity : .opacity)
                 }
             }
         }
@@ -352,6 +350,7 @@ struct RAGWorkspaceConversationRail: View {
     func conversationRow(_ conversation: RAGConversationSummary, rowIndex: Int) -> some View {
         let selected = conversation.id == viewModel.selectedConversationID
         let isHovered = conversation.id == hoveredConversationID
+        let isDragging = draggingConversationID == conversation.id
         return HStack(spacing: 0) {
             Button {
                 Task { await viewModel.selectConversation(conversation.id) }
@@ -401,8 +400,7 @@ struct RAGWorkspaceConversationRail: View {
                     }
                 }
                 Button("rag.workspace.conversation.rename") {
-                    renameTarget = conversation
-                    renameDraft = conversation.title
+                    viewModel.presentRenameConversation(conversation)
                 }
                 Menu("rag.workspace.conversation.moveToGroup") {
                     Button("rag.workspace.conversation.ungroup") {
@@ -435,6 +433,8 @@ struct RAGWorkspaceConversationRail: View {
         .clipShape(RoundedRectangle(cornerRadius: 7))
         .contentShape(RoundedRectangle(cornerRadius: 7))
         .padding(.horizontal, 8)
+        // 拖起时压暗源行，避免与系统 lift preview 叠成双影。
+        .opacity(isDragging ? 0.35 : 1)
         .onHover { hovering in
             if hovering {
                 hoveredConversationID = conversation.id
@@ -446,12 +446,56 @@ struct RAGWorkspaceConversationRail: View {
             if hoveredConversationID == conversation.id {
                 hoveredConversationID = nil
             }
+            if draggingConversationID == conversation.id {
+                draggingConversationID = nil
+            }
         }
         .animation(
             reduceMotion ? nil : .easeOut(duration: 0.15),
             value: isHovered
         )
-        .draggable(conversation.id.uuidString)
+        .draggable(conversation.id.uuidString) {
+            conversationDragPreview(conversation)
+                .onAppear { draggingConversationID = conversation.id }
+                .onDisappear {
+                    // 取消拖拽（未落到目标）时 preview 消失，清掉压暗态。
+                    if draggingConversationID == conversation.id {
+                        draggingConversationID = nil
+                    }
+                }
+        }
+    }
+
+    /// 精简拖拽预览：不含 Menu / ellipsis，降低松手时系统预览与真实行叠影概率。
+    @ViewBuilder
+    private func conversationDragPreview(_ conversation: RAGConversationSummary) -> some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: conversation.isPinned ? "pin.fill" : "bubble.left")
+                .font(iconFont(size: 13, weight: .medium))
+                .foregroundStyle(conversation.isPinned ? Color.accentColor : .secondary)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(conversation.title)
+                    .font(interfaceScale.font(RAGConversationTypography.text, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(String(conversation.updatedAt.prefix(10)))
+                    .font(ragFont(.caption2))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 4)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(width: 220, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.96))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .overlay(
+            RoundedRectangle(cornerRadius: 7)
+                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(reduceMotion ? 0 : 0.12), radius: reduceMotion ? 0 : 6, y: 2)
+        .opacity(0.92)
     }
 
     /// 会话行沿用选中态淡蓝底；普通 hover 再弱一档，保留选中与悬停的视觉层级。
@@ -465,17 +509,100 @@ struct RAGWorkspaceConversationRail: View {
         return rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045)
     }
 
-    /// 从拖拽 payload 解析会话 UUID，再写入目标分组（`nil` = 未分组）。
-    func handleConversationDrop(_ providers: [NSItemProvider], toGroupID groupID: UUID?) -> Bool {
-        guard let provider = providers.first else { return false }
-        _ = provider.loadObject(ofClass: NSString.self) { object, _ in
-            guard let raw = object as? String,
-                  let conversationID = UUID(uuidString: raw) else { return }
-            Task { @MainActor in
-                await viewModel.moveConversation(id: conversationID, toGroupID: groupID)
-                conversationDropTarget = nil
+    /// 解析 `dropDestination(for: String.self)` 的会话 UUID。
+    private static func conversationID(fromDropItems items: [String]) -> UUID? {
+        guard let raw = items.first else { return nil }
+        return UUID(uuidString: raw)
+    }
+
+    private func updateDropTarget(_ target: RAGConversationDropTarget, isTargeted: Bool) {
+        if isTargeted {
+            conversationDropTarget = target
+        } else if conversationDropTarget == target {
+            conversationDropTarget = nil
+        }
+    }
+
+    /// 松手瞬间清高亮 / 压暗，再乐观改分组；折叠组先展开以免插入动画与 preview 打架。
+    private func finishConversationDrop(conversationID: UUID, toGroupID groupID: UUID?) {
+        conversationDropTarget = nil
+        draggingConversationID = nil
+        hoveredConversationID = nil
+
+        // 折叠组先瞬时展开：松手这一拍若再叠开合动画，会与系统 preview 淡出打架。
+        if let groupID, !expandedGroupIDs.contains(groupID) {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                _ = expandedGroupIDs.insert(groupID)
             }
         }
-        return true
+
+        Task {
+            await viewModel.moveConversation(id: conversationID, toGroupID: groupID)
+        }
+    }
+}
+
+/// RAG 侧栏标题编辑 sheet。
+///
+/// 为什么不用系统 `alert`：macOS alert 里的 `TextField` 宽度几乎固定且偏窄，
+/// 对话标题常被截断。本 sheet 固定约 560pt，并由工作台根视图呈现，避免窄侧栏压宽。
+struct RAGWorkspaceTitleEditSheet: View {
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+
+    let titleKey: LocalizedStringKey
+    let placeholderKey: LocalizedStringKey
+    @Binding var draft: String
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
+
+    @FocusState private var isFieldFocused: Bool
+
+    private var canConfirm: Bool {
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: interfaceScale.scaled(16)) {
+            HStack(alignment: .center, spacing: 12) {
+                Text(titleKey)
+                    .font(ragFont(.headline, scale: interfaceScale, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 8)
+                SheetCloseButton(
+                    action: onCancel,
+                    iconFont: iconFont(size: 16, scale: interfaceScale, weight: .medium),
+                    frameSize: interfaceScale.scaled(26)
+                )
+            }
+
+            TextField(placeholderKey, text: $draft)
+                .textFieldStyle(.roundedBorder)
+                .font(ragFont(.body, scale: interfaceScale))
+                .focused($isFieldFocused)
+                .onSubmit {
+                    guard canConfirm else { return }
+                    onConfirm()
+                }
+
+            HStack {
+                Spacer()
+                Button("common.cancel", role: .cancel, action: onCancel)
+                    .keyboardShortcut(.cancelAction)
+                Button("common.ok", action: onConfirm)
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!canConfirm)
+            }
+        }
+        .padding(interfaceScale.scaled(20))
+        // 按常见长标题预留宽度；再靠 presentationSizing(.fitted) 让窗口跟着内容走。
+        .frame(width: 560 * interfaceScale.multiplier)
+        .fixedSize(horizontal: true, vertical: true)
+        .appLocaleEnvironment()
+        .onAppear {
+            isFieldFocused = true
+        }
     }
 }

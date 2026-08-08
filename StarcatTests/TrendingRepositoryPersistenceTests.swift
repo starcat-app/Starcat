@@ -123,8 +123,9 @@ struct TrendingRepositoryPersistenceTests {
         }
 
         let fetched = try await repo.fetchTrending(since: .daily, language: .swift)
-        #expect(fetched.count == 2)
-        #expect(fetched.first?.fullName == "owner/a")
+        #expect(fetched.source == .network)
+        #expect(fetched.repos.count == 2)
+        #expect(fetched.repos.first?.fullName == "owner/a")
 
         let cached = await repo.cachedTrending(since: .daily, language: .swift)
         #expect(cached.count == 2)
@@ -205,8 +206,9 @@ struct TrendingRepositoryPersistenceTests {
 
         // 第二次拉失败 → 应该返回上次缓存的数据
         let result = try await repo.fetchTrending(since: .daily, language: .swift)
-        #expect(result.count == 1)
-        #expect(result.first?.fullName == "owner/cached")
+        #expect(result.source == .cachedFallback)
+        #expect(result.repos.count == 1)
+        #expect(result.repos.first?.fullName == "owner/cached")
     }
 
     @Test("fetchTrending 网络失败 + 缓存空 → 抛原网络错误")
@@ -286,8 +288,9 @@ struct TrendingRepositoryPersistenceTests {
 
         // 1. fetch → 写库
         let fetched = try await repo.fetchTrending(since: .daily, language: .all)
-        #expect(fetched.count == 1)
-        let mem = try #require(fetched.first)
+        #expect(fetched.source == .network)
+        #expect(fetched.repos.count == 1)
+        let mem = try #require(fetched.repos.first)
         #expect(mem.ownerAvatar?.absoluteString == "https://avatars.githubusercontent.com/owner.png")
         #expect(mem.subscribersCount == 55)
         #expect(mem.defaultBranch == "develop")
@@ -355,8 +358,9 @@ struct TrendingRepositoryPersistenceTests {
 
         // 1. fetch → 内存域模型 10 字段透传
         let fetched = try await repo.fetchTrending(since: .daily, language: .all)
-        #expect(fetched.count == 1)
-        let mem = try #require(fetched.first)
+        #expect(fetched.source == .network)
+        #expect(fetched.repos.count == 1)
+        let mem = try #require(fetched.repos.first)
         #expect(mem.watchersCount == 5000)
         #expect(mem.topics == #"["ai","swift","macos"]"#)
         #expect(mem.license == "Apache-2.0")

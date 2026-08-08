@@ -7,7 +7,8 @@
 //  用途：
 //  - 在 App 启动 / Home 页面进入时拉取后端 `/api/v1/languages`（聚合接口）
 //  - 把结果缓存为 [TrendingLanguageAggregateDTO]，供 SidebarView 驱动 trending 语言列表
-//  - 后端返空 / 不可达时退化到 `fallbackList`，保证 sidebar 始终能展示一组语言入口
+//  - 后端返空 / 不可达时：优先用上次成功的磁盘快照；再退 `trending_repos` 全部语言桶计数；
+//    最后才用 `fallbackList`（count=0）保证侧栏仍有语言入口
 //
 //  历史背景（已踩过的坑）：
 //  - SidebarView 的 `trendingLanguages` 之前从 `HomeViewModel.languageStats`（用户本地 stars 聚合）
@@ -17,15 +18,13 @@
 //    在我们库里没数据。前端如果直接用，问题更严重。
 //  - 改造：后端 v2 改基于 trending_repos 实际数据聚合 + 加 `__uncategorized__` 一项；前端切
 //    sidebar 数据源到本 Store。
+//  - 2026-08-08：聚合网关未部署时 TLS 失败，语言接口无本地缓存导致侧栏「趋势」总数空白，
+//    而中栏仍能读 `trending_repos`——补磁盘快照 + repo 桶计数兜底。
 //
 //  设计约束：
 //  - @MainActor + @Observable：sidebar 直接观察 `aggregates` 变化自动重渲染
-//  - 不持有 GRDB writer / cache 表：trending 语言列表是「站内统一视图」，所有客户端从同一个
-//    后端 endpoint 拿；本地不再缓存（后端响应通常 < 5KB，每次启动拉一次开销可忽略）
-//  - 失败兜底：保留 `fallbackList` 让 sidebar 在以下三种情况都有可探索的入口：
-//      ① 后端不可达（用户离线 / 后端宕机）
-//      ② 后端返空（trending_repos 表暂时没数据，比如冷启动）
-//      ③ Bearer Auth 配置错误（用户没填 / 填错 API Key）
+//  - 语言聚合不写 GRDB schema（避免额外 migration）；磁盘 JSON 与 `trending_repos` 复用即可
+//  - 失败兜底顺序：内存 aggregates → 磁盘快照 → daily/all repo 缓存计数 → fallbackList
 //
 
 import Foundation
@@ -49,6 +48,9 @@ final class TrendingLanguageStore {
     /// 当前 sidebar 的语言区域不显示 loader（列表很短，几乎瞬间到货 + 有 fallback 兜底），
     /// 仅作 debug / 未来扩展用。
     private(set) var loadState: LoadState = .idle
+
+    /// `/languages` 与磁盘快照都不可用时，用「今日 / 全部语言」榜单缓存行数兜底侧栏总数。
+    private(set) var repoCacheFallbackTotal: Int?
 
     enum LoadState: Equatable {
         case idle
@@ -86,14 +88,32 @@ final class TrendingLanguageStore {
     // MARK: - 依赖
 
     private let api: TrendingAPI
+    private let trendingRepository: (any TrendingRepositoryProtocol)?
+    private let diskCacheURL: URL?
+    private var diskCachedAggregates: [TrendingLanguageAggregateDTO] = []
 
     /// 当前 in-flight 的拉取任务，新调进来取消老任务避免 race（同 `TrendingViewModel.reload` 模式）。
     private var currentLoadTask: Task<Void, Never>?
 
     // MARK: - Init
 
-    init(api: TrendingAPI) {
+    /// - Parameters:
+    ///   - api: trending languages 网络客户端
+    ///   - trendingRepository: 可选；网络失败时用 `trending_repos` daily/all 桶计数兜底侧栏总数
+    ///   - diskCacheURL: 单测可注入临时文件；默认 Application Support 下 JSON
+    init(
+        api: TrendingAPI,
+        trendingRepository: (any TrendingRepositoryProtocol)? = nil,
+        diskCacheURL: URL? = nil
+    ) {
         self.api = api
+        self.trendingRepository = trendingRepository
+        self.diskCacheURL = diskCacheURL ?? Self.defaultDiskCacheURL()
+        self.diskCachedAggregates = Self.loadDiskCache(from: self.diskCacheURL)
+        // 启动即用磁盘快照填内存，避免首屏 reload 失败前侧栏总数空白一帧。
+        if aggregates.isEmpty, !diskCachedAggregates.isEmpty {
+            aggregates = diskCachedAggregates
+        }
     }
 
     // MARK: - Public API
@@ -103,14 +123,11 @@ final class TrendingLanguageStore {
     /// 调用时机：
     /// - HomeView 首次进入时（`task` modifier）
     /// - 用户在设置页改 baseURL / API Key 后（AppDependencies 主动调）
-    /// - 切换页面到 trending（可选，当前不做——语言聚合变化频率低，首屏拿到一次即可）
     ///
     /// 行为：
-    /// - 拉成功且 data 非空 → 写入 `aggregates`、状态 `.success`
-    /// - 拉成功但 data 空 → 不写入（保留上次结果或空），状态 `.success`，
-    ///   sidebar 看到 aggregates 仍空时自动走 fallbackList 兜底
-    /// - 拉失败（网络 / 401 / 解码）→ 不动 `aggregates`、状态 `.failed`，
-    ///   日志记录 error description；UI 由调用方决定是否提示
+    /// - 拉成功且 data 非空 → 写入 `aggregates`、落盘、状态 `.success`
+    /// - 拉成功但 data 空 → 保留上次真实结果；状态 `.success`
+    /// - 拉失败 → 保留内存 / 磁盘快照；必要时用 repo 缓存行数兜底；状态 `.failed`
     func reload() async {
         currentLoadTask?.cancel()
 
@@ -123,11 +140,20 @@ final class TrendingLanguageStore {
                 guard !Task.isCancelled else { return }
                 if !dtos.isEmpty {
                     self.aggregates = dtos
+                    self.diskCachedAggregates = dtos
+                    self.persistDiskCache(dtos)
+                    self.repoCacheFallbackTotal = nil
+                } else if self.aggregates.isEmpty, !self.diskCachedAggregates.isEmpty {
+                    self.aggregates = self.diskCachedAggregates
                 }
                 self.loadState = .success
                 AppLog.network.debug("Trending languages loaded: \(dtos.count) entries")
             } catch {
                 guard !Task.isCancelled else { return }
+                if self.aggregates.isEmpty, !self.diskCachedAggregates.isEmpty {
+                    self.aggregates = self.diskCachedAggregates
+                }
+                await self.refreshRepoCacheFallbackTotalIfNeeded()
                 self.loadState = .failed(error.localizedDescription)
                 AppLog.network.warning(
                     "Trending languages load failed: \(error.localizedDescription, privacy: .public)"
@@ -140,9 +166,74 @@ final class TrendingLanguageStore {
 
     /// SidebarView 实际使用的「展示用」数组。
     ///
-    /// 优先返回真实聚合结果；空（首次进入还没拉到 / 后端返空 / 拉失败）时返回 `fallbackList`。
-    /// 这样把「兜底逻辑」收敛在 store 一处，sidebar 直接 ForEach 这个属性，无需关心数据来源。
+    /// 优先真实聚合 → 磁盘快照 → `fallbackList`。
     var displayList: [TrendingLanguageAggregateDTO] {
-        aggregates.isEmpty ? Self.fallbackList : aggregates
+        if !aggregates.isEmpty { return aggregates }
+        if !diskCachedAggregates.isEmpty { return diskCachedAggregates }
+        return Self.fallbackList
+    }
+
+    /// 侧栏「趋势」模式行右侧总数。
+    ///
+    /// 不用 fallbackList 的全 0 去冒充总数（否则 `reduce` 得 0 → UI 隐藏徽章）。
+    /// 顺序：语言聚合/磁盘快照之和 → `trending_repos` daily/all 行数。
+    var sidebarTotalCount: Int? {
+        let source: [TrendingLanguageAggregateDTO]
+        if !aggregates.isEmpty {
+            source = aggregates
+        } else if !diskCachedAggregates.isEmpty {
+            source = diskCachedAggregates
+        } else {
+            return repoCacheFallbackTotal.flatMap { $0 > 0 ? $0 : nil }
+        }
+        let total = source.reduce(0) { $0 + $1.count }
+        if total > 0 { return total }
+        return repoCacheFallbackTotal.flatMap { $0 > 0 ? $0 : nil }
+    }
+
+    // MARK: - Disk / repo fallback
+
+    private func refreshRepoCacheFallbackTotalIfNeeded() async {
+        guard sidebarTotalCount == nil, let trendingRepository else { return }
+        let cached = await trendingRepository.cachedTrending(since: .daily, language: .all)
+        guard !Task.isCancelled else { return }
+        repoCacheFallbackTotal = cached.isEmpty ? nil : cached.count
+    }
+
+    private static func defaultDiskCacheURL() -> URL? {
+        guard let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first else {
+            return nil
+        }
+        return appSupport
+            .appendingPathComponent(AppConstants.bundleIdentifier, isDirectory: true)
+            .appendingPathComponent("trending-languages-cache.json", isDirectory: false)
+    }
+
+    private static func loadDiskCache(from url: URL?) -> [TrendingLanguageAggregateDTO] {
+        guard let url else { return [] }
+        do {
+            let data = try Data(contentsOf: url)
+            return try JSONDecoder().decode([TrendingLanguageAggregateDTO].self, from: data)
+        } catch {
+            // 首次安装或文件损坏：静默当无缓存。
+            return []
+        }
+    }
+
+    private func persistDiskCache(_ dtos: [TrendingLanguageAggregateDTO]) {
+        guard let diskCacheURL else { return }
+        do {
+            let directory = diskCacheURL.deletingLastPathComponent()
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let data = try JSONEncoder().encode(dtos)
+            try data.write(to: diskCacheURL, options: [.atomic])
+        } catch {
+            AppLog.network.warning(
+                "Trending languages disk cache write failed: \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 }

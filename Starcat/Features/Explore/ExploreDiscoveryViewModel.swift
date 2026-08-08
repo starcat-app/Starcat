@@ -577,10 +577,11 @@ final class ExploreDiscoveryViewModel {
     }
 
     private static func cacheFallbackWarning(_ errorDescription: String?) -> String {
-        guard let errorDescription, !errorDescription.isEmpty else {
-            return String.l10n("explore.cacheFallback.warning")
+        // 底层 TLS / 网络细节只进日志；横条用固定用户文案。
+        if let errorDescription, !errorDescription.isEmpty {
+            AppLog.network.warning("Explore cache fallback detail: \(errorDescription, privacy: .public)")
         }
-        return String(format: String.l10n("explore.cacheFallback.warningFormat"), errorDescription)
+        return String.l10n("explore.cacheFallback.warning")
     }
 
     private static func isCachedBulkUsable(_ snapshot: DiscoveryBulkCachedSnapshot, for mode: ExploreMode) -> Bool {

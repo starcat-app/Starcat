@@ -175,6 +175,21 @@ struct KnowledgeRAGWorkspaceView: View {
                 .dynamicTypeSize(dependencies.settings.interfaceScale.dynamicTypeSize)
                 .appLocaleEnvironment()
         }
+        // 标题编辑挂在整窗容器上：左栏宽度只有 ~250–380，挂在侧栏会被系统压成窄 alert。
+        .sheet(item: $viewModel.titleEditRequest) { request in
+            RAGWorkspaceTitleEditSheet(
+                titleKey: request.titleKey,
+                placeholderKey: request.placeholderKey,
+                draft: $viewModel.titleEditDraft,
+                onCancel: { viewModel.dismissTitleEdit() },
+                onConfirm: {
+                    Task { await viewModel.confirmTitleEdit() }
+                }
+            )
+            .environment(\.starcatInterfaceScale, dependencies.settings.interfaceScale)
+            .dynamicTypeSize(dependencies.settings.interfaceScale.dynamicTypeSize)
+            .presentationSizing(.fitted)
+        }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: chromeState.isRightColumnCollapsed)
     }

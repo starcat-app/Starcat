@@ -391,7 +391,7 @@ struct TrendingLanguage: Hashable, Identifiable, Sendable {
 ///     转 `TrendingLanguage` 渲染 + 透出 count
 ///
 /// 字段命名走 envelope schema_version=1 的 snake_case 约定（CodingKeys 显式映射）。
-struct TrendingLanguageAggregateDTO: Decodable, Hashable, Sendable {
+struct TrendingLanguageAggregateDTO: Codable, Hashable, Sendable {
     /// 后端语言 key（GitHub 规范化名 / `__uncategorized__`）。
     let key: String
     /// 后端展示名（`key` 同值 / `Uncategorized`）。

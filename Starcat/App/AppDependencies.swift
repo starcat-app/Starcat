@@ -1187,7 +1187,10 @@ final class AppDependencies {
         )
         // sidebar 语言列表 store。注意：构造期不主动 reload，避免拉网络阻塞启动；
         // 由 HomeView `.task` 在首次进入时调 `reload()`，与 trending 列表的首屏入场时序一致。
-        self.trendingLanguageStore = TrendingLanguageStore(api: trendingAPIInstance)
+        self.trendingLanguageStore = TrendingLanguageStore(
+            api: trendingAPIInstance,
+            trendingRepository: trendingRepository
+        )
 
         // starcat-discovery-api 客户端。发现 / 热门 / 新发布走独立后端服务；
         // 现有 Trending 仍保持走 trending-api，降低迁移风险。

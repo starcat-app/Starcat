@@ -98,17 +98,20 @@ struct TrendingView: View {
 
             // List 宿主始终存在。切到未加载桶时只在中栏局部覆盖骨架，不销毁列表树，
             // 因而工具栏、侧栏、详情栏和其它 TimelineView 动画都不会跟随重建。
-            ZStack {
-                contentView
-                    .opacity(viewModel.hasPublishedCurrentQuery ? 1 : 0)
-                    .allowsHitTesting(viewModel.hasPublishedCurrentQuery)
+            VStack(spacing: 0) {
+                cacheWarningBanner
+                ZStack {
+                    contentView
+                        .opacity(viewModel.hasPublishedCurrentQuery ? 1 : 0)
+                        .allowsHitTesting(viewModel.hasPublishedCurrentQuery)
 
-                if !viewModel.hasPublishedCurrentQuery {
-                    if let error = viewModel.loadError, !viewModel.isLoading {
-                        errorView(message: error)
-                    } else {
-                        RepoSkeletonListView(rowCount: 10)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if !viewModel.hasPublishedCurrentQuery {
+                        if let error = viewModel.loadError, !viewModel.isLoading {
+                            errorView(message: error)
+                        } else {
+                            RepoSkeletonListView(rowCount: 10)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
                     }
                 }
             }
@@ -444,6 +447,21 @@ struct TrendingView: View {
             tooltip: refreshButtonHelpText
         ) {
             refreshCurrentTrendingList()
+        }
+    }
+
+    /// 与探索发现一致：有缓存时网络失败只出横条，不拆列表。
+    @ViewBuilder
+    private var cacheWarningBanner: some View {
+        if let warning = viewModel.cacheWarning {
+            Label(warning, systemImage: "exclamationmark.triangle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
+                .padding(.vertical, 6)
+                .background(.bar)
         }
     }
 

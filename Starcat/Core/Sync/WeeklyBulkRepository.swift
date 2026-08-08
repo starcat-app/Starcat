@@ -54,11 +54,12 @@ protocol WeeklyBulkRepositoryProtocol: Sendable {
     /// 只 decode 当前页，显著降低切到 Weekly 分类时的主线程等待体感。
     func cachedPage(query: WeeklyBulkCacheQuery) async -> WeeklyBulkPageSnapshot?
 
-    /// 走网络拉新 + 整批替换缓存 + 返回新数据。
+    /// 走网络拉新 + 整批替换缓存 + 返回结果（含网络失败时的缓存回退标记）。
     ///
-    /// - 网络成功：覆盖缓存，返回新数据
-    /// - 网络失败：fallback 到本地缓存（非空则返回缓存）；缓存为空才把错误抛出
-    func fetchBulk() async throws -> WeeklyBulkResult
+    /// - 网络成功：覆盖缓存，`source == .network`
+    /// - 网络失败且本地有缓存：返回缓存，`source == .cachedFallback`（不抛错）
+    /// - 网络失败且缓存为空：抛出原网络错误
+    func fetchBulk() async throws -> WeeklyBulkFetchResult
 
     /// 读取最近一次成功 bulk 拉取的客户端时间戳。
     ///
@@ -68,6 +69,21 @@ protocol WeeklyBulkRepositoryProtocol: Sendable {
 
     /// 清空 bulk cache（设置页"清除全部缓存"路径走这里）。
     func clearCache() async
+}
+
+/// `fetchBulk` 的回传：区分真·网络成功与「网络失败但用了本地缓存」。
+///
+/// 与 `DiscoveryBulkFetchResult` / `TrendingFetchResult` 同构，避免 ViewModel 把缓存回退
+/// 误当成刷新成功（否则点刷新时不会出失败横条，还会把 `lastFetchedAt` 推成现在）。
+struct WeeklyBulkFetchResult: Sendable {
+    let bulk: WeeklyBulkResult
+    let source: Source
+    let fallbackErrorDescription: String?
+
+    enum Source: Sendable, Equatable {
+        case network
+        case cachedFallback
+    }
 }
 
 /// 缓存读出的快照——repos + languages + 元信息 1:1 反映服务端 bulk 响应。
@@ -247,23 +263,27 @@ actor WeeklyBulkRepository: WeeklyBulkRepositoryProtocol {
         }
     }
 
-    func fetchBulk() async throws -> WeeklyBulkResult {
+    func fetchBulk() async throws -> WeeklyBulkFetchResult {
         // 第一步：拉网络
         let result: WeeklyBulkResult
         do {
             AppLog.network.info("Fetching weekly bulk")
             result = try await api.fetchBulkRepos()
         } catch {
-            // 网络失败 → 离线兜底：返回缓存（非空）
+            // 网络失败 → 离线兜底：返回缓存（非空），并标记 source 供 UI 提示。
             if let cached = await cachedBulk(), !cached.items.isEmpty {
                 AppLog.network.warning("WeeklyBulk network failed, falling back to cache (\(cached.items.count) repos): \(error.localizedDescription, privacy: .public)")
-                return WeeklyBulkResult(
-                    sources: cached.sources,
-                    items: cached.items,
-                    languages: cached.languages,
-                    etag: cached.etag,
-                    generatedAt: cached.generatedAt,
-                    total: cached.total
+                return WeeklyBulkFetchResult(
+                    bulk: WeeklyBulkResult(
+                        sources: cached.sources,
+                        items: cached.items,
+                        languages: cached.languages,
+                        etag: cached.etag,
+                        generatedAt: cached.generatedAt,
+                        total: cached.total
+                    ),
+                    source: .cachedFallback,
+                    fallbackErrorDescription: error.localizedDescription
                 )
             }
             throw error
@@ -309,7 +329,11 @@ actor WeeklyBulkRepository: WeeklyBulkRepositoryProtocol {
             throw error
         }
 
-        return result
+        return WeeklyBulkFetchResult(
+            bulk: result,
+            source: .network,
+            fallbackErrorDescription: nil
+        )
     }
 
     func lastRefreshedAt() async -> Date? {

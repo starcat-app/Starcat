@@ -103451,109 +103451,109 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "استخدام بيانات الاكتشاف المخزنة مؤقتًا. قم بالتحديث مرة أخرى لاحقًا."
+            "value" : "تعذر التحديث. يتم عرض الذاكرة المؤقتة المحلية حالياً."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Verwende zwischengespeicherte Entdeckungsdaten. Aktualisieren Sie später erneut."
+            "value" : "Aktualisierung nicht möglich. Es wird der lokale Cache angezeigt."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Using cached discovery data. Refresh again later."
+            "value" : "Couldn't refresh. Showing your local cache for now."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Usando datos de descubrimiento en caché. Actualiza de nuevo más tarde."
+            "value" : "No se pudo actualizar. Mostrando la caché local por ahora."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Utilisation des données de découverte en cache. Actualisez à nouveau plus tard."
+            "value" : "Impossible d'actualiser. Affichage du cache local pour le moment."
           }
         },
         "id" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Menggunakan data penemuan yang di-cache. Segarkan lagi nanti."
+            "value" : "Tidak dapat menyegarkan. Menampilkan cache lokal untuk saat ini."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Utilizzo dati di scoperta memorizzati nella cache. Aggiorna di nuovo più tardi."
+            "value" : "Impossibile aggiornare. Mostra la cache locale per ora."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "キャッシュされた発見データを使用しています。後でもう一度更新してください。"
+            "value" : "更新できませんでした。ローカルのキャッシュを表示しています。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "캐시된 탐색 데이터를 사용 중입니다. 나중에 다시 새로고침하세요."
+            "value" : "새로고침할 수 없습니다. 로컬 캐시를 표시합니다."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Gebruik van cache-ontdekkingsgegevens. Vernieuw later opnieuw."
+            "value" : "Vernieuwen mislukt. De lokale cache wordt getoond."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Używanie buforowanych danych odkrywania. Odśwież ponownie później."
+            "value" : "Nie udało się odświeżyć. Wyświetlana jest lokalna pamięć podręczna."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Usando dados de descoberta em cache. Atualize novamente mais tarde."
+            "value" : "Não foi possível atualizar. Mostrando o cache local por enquanto."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Используются кэшированные данные. Обновите позже."
+            "value" : "Не удалось обновить. Показан локальный кэш."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Önbelleğe alınmış keşif verileri kullanılıyor. Daha sonra tekrar yenileyin."
+            "value" : "Yenilenemedi. Şimdilik yerel önbellek gösteriliyor."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Використовуються кешовані дані пошуку. Оновіть пізніше."
+            "value" : "Не вдалося оновити. Показано локальний кеш."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Đang sử dụng dữ liệu khám phá đã lưu trong bộ nhớ đệm. Làm mới lại sau."
+            "value" : "Không thể làm mới. Đang hiển thị bộ nhớ đệm cục bộ."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在使用本地缓存的探索数据，稍后可再次刷新。"
+            "value" : "暂时无法刷新，已显示本地缓存。稍后可再试。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在使用快取的探索資料，稍後可重新整理。"
+            "value" : "暫時無法重新整理，已顯示本機快取。稍後可再試。"
           }
         }
       }
@@ -103563,109 +103563,109 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "استخدام بيانات الاكتشاف المخزنة مؤقتًا بسبب فشل التحديث: %@"
+            "value" : "تعذر التحديث. يتم عرض الذاكرة المؤقتة المحلية حالياً."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Verwende zwischengespeicherte Entdeckungsdaten, da die Aktualisierung fehlgeschlagen ist: %@"
+            "value" : "Aktualisierung nicht möglich. Es wird der lokale Cache angezeigt."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Using cached discovery data because refresh failed: %@"
+            "value" : "Couldn't refresh. Showing your local cache for now."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Usando datos de descubrimiento en caché porque la actualización falló: %@"
+            "value" : "No se pudo actualizar. Mostrando la caché local por ahora."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Utilisation des données de découverte en cache car l'actualisation a échoué : %@"
+            "value" : "Impossible d'actualiser. Affichage du cache local pour le moment."
           }
         },
         "id" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Menggunakan data penemuan yang di-cache karena penyegaran gagal: %@"
+            "value" : "Tidak dapat menyegarkan. Menampilkan cache lokal untuk saat ini."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Utilizzo dati di scoperta memorizzati nella cache perché l'aggiornamento è fallito: %@"
+            "value" : "Impossibile aggiornare. Mostra la cache locale per ora."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更新に失敗したため、キャッシュされた発見データを使用しています：%@"
+            "value" : "更新できませんでした。ローカルのキャッシュを表示しています。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "새로고침 실패로 인해 캐시된 탐색 데이터를 사용 중입니다: %@"
+            "value" : "새로고침할 수 없습니다. 로컬 캐시를 표시합니다."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Gebruik van cache-ontdekkingsgegevens omdat vernieuwen mislukte: %@"
+            "value" : "Vernieuwen mislukt. De lokale cache wordt getoond."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Używanie buforowanych danych odkrywania, ponieważ odświeżenie nie powiodło się: %@"
+            "value" : "Nie udało się odświeżyć. Wyświetlana jest lokalna pamięć podręczna."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Usando dados de descoberta em cache porque a atualização falhou: %@"
+            "value" : "Não foi possível atualizar. Mostrando o cache local por enquanto."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Используются кэшированные данные, так как обновление не удалось: %@"
+            "value" : "Не удалось обновить. Показан локальный кэш."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Yenileme başarısız olduğu için önbelleğe alınmış keşif verileri kullanılıyor: %@"
+            "value" : "Yenilenemedi. Şimdilik yerel önbellek gösteriliyor."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Використовуються кешовані дані пошуку, оскільки оновлення не вдалося: %@"
+            "value" : "Не вдалося оновити. Показано локальний кеш."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Đang sử dụng dữ liệu khám phá đã lưu trong bộ nhớ đệm vì làm mới thất bại: %@"
+            "value" : "Không thể làm mới. Đang hiển thị bộ nhớ đệm cục bộ."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "刷新失败，正在使用本地缓存的探索数据：%@"
+            "value" : "暂时无法刷新，已显示本地缓存。稍后可再试。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "因重新整理失敗，正在使用快取的探索資料：%@"
+            "value" : "暫時無法重新整理，已顯示本機快取。稍後可再試。"
           }
         }
       }

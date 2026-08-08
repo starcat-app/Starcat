@@ -216,11 +216,12 @@ struct WeeklyBulkRepositoryTests {
         }
 
         let fetched = try await repo.fetchBulk()
-        #expect(fetched.items.count == 2)
-        #expect(fetched.sources.map(\.code) == ["weekly", "hellogithub", "ai_intelligence"])
-        #expect(fetched.languages.count == 2)
-        #expect(fetched.etag == "W/\"abc12345\"")
-        #expect(fetched.generatedAt == "2026-06-15T12:00:00Z")
+        #expect(fetched.source == .network)
+        #expect(fetched.bulk.items.count == 2)
+        #expect(fetched.bulk.sources.map(\.code) == ["weekly", "hellogithub", "ai_intelligence"])
+        #expect(fetched.bulk.languages.count == 2)
+        #expect(fetched.bulk.etag == "W/\"abc12345\"")
+        #expect(fetched.bulk.generatedAt == "2026-06-15T12:00:00Z")
 
         let cached = try #require(await repo.cachedBulk())
         #expect(cached.items.count == 2)
@@ -377,8 +378,10 @@ struct WeeklyBulkRepositoryTests {
         _ = try await repo.fetchBulk()
 
         let result = try await repo.fetchBulk()
-        #expect(result.items.count == 1)
-        #expect(result.items.first?.fullName == "owner/cached")
+        #expect(result.source == .cachedFallback)
+        #expect(result.bulk.items.count == 1)
+        #expect(result.bulk.items.first?.fullName == "owner/cached")
+        #expect(result.fallbackErrorDescription != nil)
     }
 
     @Test("fetchBulk 网络失败 + 缓存空 → 抛原网络错误")
