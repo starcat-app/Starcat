@@ -56,6 +56,12 @@ struct RAGWorkspaceConversationRail: View {
     @State private var conversationDropTarget: RAGConversationDropTarget?
     /// 正在拖拽的会话；源行压暗，避免系统 preview 与源行叠成残影。
     @State private var draggingConversationID: UUID?
+    /// 已接受落点：源行先全隐，等系统 lift 淡出后再改列表，减轻松手叠影。
+    @State private var settlingConversationID: UUID?
+    /// 取消尚未完成的落点 settle，避免连拖时旧 Task 误改分组。
+    @State private var dropSettleTask: Task<Void, Never>?
+    /// 取消拖拽时系统 preview `onDisappear` 不一定触发；用 mouseUp 兜底清掉压暗态。
+    @State private var dragSessionBox = RAGConversationDragSessionBox()
     @State private var isKnowledgeBaseHovered = false
     @State private var isNewConversationHovered = false
     @State private var hoveredConversationID: UUID?
@@ -151,7 +157,8 @@ struct RAGWorkspaceConversationRail: View {
                         guard let conversationID = Self.conversationID(fromDropItems: items) else {
                             return false
                         }
-                        finishConversationDrop(conversationID: conversationID, toGroupID: nil)
+                        // 先 return true 让拖拽会话结束；列表改动放到 settle 阶段，避免预览卡片残留叠影。
+                        scheduleConversationDrop(conversationID: conversationID, toGroupID: nil)
                         return true
                     } isTargeted: { targeted in
                         updateDropTarget(.ungrouped, isTargeted: targeted)
@@ -181,6 +188,14 @@ struct RAGWorkspaceConversationRail: View {
         }
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.34))
         .onChange(of: viewModel.conversationGroups.map(\.id)) { _, ids in expandedGroupIDs.formUnion(ids) }
+        .onDisappear {
+            dropSettleTask?.cancel()
+            dropSettleTask = nil
+            settlingConversationID = nil
+            draggingConversationID = nil
+            conversationDropTarget = nil
+            dragSessionBox.stop()
+        }
     }
 
     private func ragFont(_ role: RAGFontRole, weight: Font.Weight? = nil, design: Font.Design = .default) -> Font {
@@ -327,7 +342,7 @@ struct RAGWorkspaceConversationRail: View {
                 guard let conversationID = Self.conversationID(fromDropItems: items) else {
                     return false
                 }
-                finishConversationDrop(conversationID: conversationID, toGroupID: group.id)
+                scheduleConversationDrop(conversationID: conversationID, toGroupID: group.id)
                 return true
             } isTargeted: { targeted in
                 updateDropTarget(.group(group.id), isTargeted: targeted)
@@ -351,6 +366,7 @@ struct RAGWorkspaceConversationRail: View {
         let selected = conversation.id == viewModel.selectedConversationID
         let isHovered = conversation.id == hoveredConversationID
         let isDragging = draggingConversationID == conversation.id
+        let isSettling = settlingConversationID == conversation.id
         return HStack(spacing: 0) {
             Button {
                 Task { await viewModel.selectConversation(conversation.id) }
@@ -433,8 +449,8 @@ struct RAGWorkspaceConversationRail: View {
         .clipShape(RoundedRectangle(cornerRadius: 7))
         .contentShape(RoundedRectangle(cornerRadius: 7))
         .padding(.horizontal, 8)
-        // 拖起时压暗源行，避免与系统 lift preview 叠成双影。
-        .opacity(isDragging ? 0.35 : 1)
+        // settling：源行全隐；dragging：压暗。取消拖拽必须清掉 dragging，否则文案会一直发灰。
+        .opacity(isSettling ? 0 : (isDragging ? 0.35 : 1))
         .onHover { hovering in
             if hovering {
                 hoveredConversationID = conversation.id
@@ -446,9 +462,8 @@ struct RAGWorkspaceConversationRail: View {
             if hoveredConversationID == conversation.id {
                 hoveredConversationID = nil
             }
-            if draggingConversationID == conversation.id {
-                draggingConversationID = nil
-            }
+            // 故意不在这里清 draggingConversationID：
+            // LazyVStack 离屏复用也会走 onDisappear，会把进行中的拖拽态误清掉。
         }
         .animation(
             reduceMotion ? nil : .easeOut(duration: 0.15),
@@ -456,17 +471,17 @@ struct RAGWorkspaceConversationRail: View {
         )
         .draggable(conversation.id.uuidString) {
             conversationDragPreview(conversation)
-                .onAppear { draggingConversationID = conversation.id }
+                .onAppear {
+                    beginConversationDrag(conversation.id)
+                }
                 .onDisappear {
-                    // 取消拖拽（未落到目标）时 preview 消失，清掉压暗态。
-                    if draggingConversationID == conversation.id {
-                        draggingConversationID = nil
-                    }
+                    // 成功路径由 settle 清理；取消路径以 mouseUp 兜底，这里再补一次。
+                    endConversationDragIfCancelled(conversation.id)
                 }
         }
     }
 
-    /// 精简拖拽预览：不含 Menu / ellipsis，降低松手时系统预览与真实行叠影概率。
+    /// 精简拖拽预览：可见、轻量；去掉重阴影，减轻松手淡出拖尾感。
     @ViewBuilder
     private func conversationDragPreview(_ conversation: RAGConversationSummary) -> some View {
         HStack(alignment: .top, spacing: 9) {
@@ -488,13 +503,12 @@ struct RAGWorkspaceConversationRail: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .frame(width: 220, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.96))
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.94))
         .clipShape(RoundedRectangle(cornerRadius: 7))
         .overlay(
             RoundedRectangle(cornerRadius: 7)
-                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
         )
-        .shadow(color: .black.opacity(reduceMotion ? 0 : 0.12), radius: reduceMotion ? 0 : 6, y: 2)
         .opacity(0.92)
     }
 
@@ -523,24 +537,96 @@ struct RAGWorkspaceConversationRail: View {
         }
     }
 
-    /// 松手瞬间清高亮 / 压暗，再乐观改分组；折叠组先展开以免插入动画与 preview 打架。
-    private func finishConversationDrop(conversationID: UUID, toGroupID groupID: UUID?) {
-        conversationDropTarget = nil
-        draggingConversationID = nil
-        hoveredConversationID = nil
-
-        // 折叠组先瞬时展开：松手这一拍若再叠开合动画，会与系统 preview 淡出打架。
-        if let groupID, !expandedGroupIDs.contains(groupID) {
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                _ = expandedGroupIDs.insert(groupID)
+    /// 拖起：记录源行，并监听 mouseUp；取消落点时清掉压暗（preview onDisappear 在 macOS 上不可靠）。
+    private func beginConversationDrag(_ conversationID: UUID) {
+        settlingConversationID = nil
+        draggingConversationID = conversationID
+        dragSessionBox.onMouseUp = { [dragSessionBox] in
+            Task { @MainActor in
+                // 给 dropDestination 一点时间先把 settling 设上；否则成功落点会被误判成取消。
+                try? await Task.sleep(for: .milliseconds(64))
+                if settlingConversationID == nil {
+                    if draggingConversationID == conversationID {
+                        draggingConversationID = nil
+                    }
+                    conversationDropTarget = nil
+                }
+                dragSessionBox.stop()
             }
         }
+        dragSessionBox.start()
+    }
 
-        Task {
-            await viewModel.moveConversation(id: conversationID, toGroupID: groupID)
+    private func endConversationDragIfCancelled(_ conversationID: UUID) {
+        guard settlingConversationID == nil else { return }
+        if draggingConversationID == conversationID {
+            draggingConversationID = nil
         }
+        conversationDropTarget = nil
+    }
+
+    /// 先藏源行并 return drop；等系统 lift 淡出一小段后再改 `groupID`，减轻松手叠影。
+    private func scheduleConversationDrop(conversationID: UUID, toGroupID groupID: UUID?) {
+        conversationDropTarget = nil
+        hoveredConversationID = nil
+        settlingConversationID = conversationID
+        draggingConversationID = conversationID
+        dragSessionBox.stop()
+
+        dropSettleTask?.cancel()
+        dropSettleTask = Task { @MainActor in
+            // 让 dropDestination 先返回 true，AppKit 才能开始拆除拖拽会话。
+            await Task.yield()
+            if !reduceMotion {
+                try? await Task.sleep(for: .milliseconds(120))
+            } else {
+                try? await Task.sleep(for: .milliseconds(16))
+            }
+            guard !Task.isCancelled else { return }
+
+            if let groupID, !expandedGroupIDs.contains(groupID) {
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    _ = expandedGroupIDs.insert(groupID)
+                }
+            }
+
+            await viewModel.moveConversation(id: conversationID, toGroupID: groupID)
+
+            guard !Task.isCancelled else { return }
+            if settlingConversationID == conversationID {
+                settlingConversationID = nil
+            }
+            if draggingConversationID == conversationID {
+                draggingConversationID = nil
+            }
+        }
+    }
+}
+
+/// 拖拽会话 mouseUp 监听；取消落点时用于清掉源行压暗态。
+@MainActor
+private final class RAGConversationDragSessionBox {
+    var onMouseUp: (() -> Void)?
+    private var monitor: Any?
+
+    func start() {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseUp]) { [weak self] event in
+            Task { @MainActor in
+                self?.onMouseUp?()
+            }
+            return event
+        }
+    }
+
+    func stop() {
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
+        onMouseUp = nil
     }
 }
 

@@ -67,5 +67,5 @@ ErrNotFound / ErrRateLimited / HTTPError
 1. kit 实现 `github` + `httputil` + `env` + 测试 → kit 记 0.2.0  
 2. weekly 切换 → trending → sharing → discovery  
 3. 六个 API ping / FromEnv 改用 kit  
-4. Starcat 客户端契约检查（默认无代码变更）  
-5. 多轮审查与专项报告
+4. Starcat 客户端按 B 方案切换六服务默认 URL，并统一注入 `X-SC-Svc`；`/healthz` 保持无分流头
+5. 多轮审查、迁库工具加固与专项报告

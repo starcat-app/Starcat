@@ -14,14 +14,14 @@
 #     recommend-api 无持久化卷，不同步 STORE_FILE。
 #   - sharing 的 BASE_URL 在 Fly 上强制为 https://starcat.ink；公开仓库、OG 与既有
 #     AI 分享链接都由阿里云 Nginx 统一代理（本地 .env 常见 localhost，不能直接同步）。
-#   - **生产默认**：聚合 App `starcat-api`（前缀环境变量 + 分库路径）。
-#   - **遗留**：独立 `starcat-*-api` App 仍可同步，供自托管 / 过渡期；
+#   - **目标生产架构**：聚合 App `starcat-api`（前缀环境变量 + 分库路径）。
+#   - **当前生产**：独立 `starcat-*-api` App 仍需同步；迁移后继续供自托管；
 #     trending/weekly 的 WIKI_API_URL 在独立部署时强制为 https://starcat-wiki-api.fly.dev。
 #   - 密钥值只传给 fly CLI，脚本不 echo 明文。
 #
 # 用法：
 #   bash supports/scripts/fly-secrets-sync.sh starcat-api
-#   bash supports/scripts/fly-secrets-sync.sh starcat-sharing-api   # 遗留独立 App
+#   bash supports/scripts/fly-secrets-sync.sh starcat-sharing-api   # 当前生产独立 App
 #   bash supports/scripts/fly-secrets-sync.sh starcat-trending-api
 #   bash supports/scripts/fly-secrets-sync.sh starcat-weekly-api
 #   bash supports/scripts/fly-secrets-sync.sh starcat-wiki-api
@@ -33,7 +33,7 @@
 
 set -euo pipefail
 
-# 独立部署遗留：wiki 仍是单独 App 时，trending/weekly 预热打旧域名。
+# 当前独立部署：wiki 仍是单独 App 时，trending/weekly 预热打独立域名。
 FLY_WIKI_API_URL_LEGACY="https://starcat-wiki-api.fly.dev"
 # 聚合部署：同进程内 wiki；notifier 打本机 loopback + X-SC-Svc（见 trending notifier）。
 FLY_AGG_WIKI_API_URL="http://127.0.0.1:8080"
@@ -41,8 +41,8 @@ FLY_AGG_WIKI_API_URL="http://127.0.0.1:8080"
 APP="${1:-}"
 if [[ -z "$APP" ]]; then
   echo "Usage: $0 <fly-app-name>" >&2
-  echo "  e.g. starcat-api   (推荐聚合)" >&2
-  echo "  e.g. starcat-trending-api   (遗留独立 App)" >&2
+  echo "  e.g. starcat-api   (目标聚合架构)" >&2
+  echo "  e.g. starcat-trending-api   (当前生产独立 App)" >&2
   exit 1
 fi
 
@@ -95,6 +95,7 @@ case "$APP" in
     TRENDING_GH="$(require_env_val TRENDING_GITHUB_TOKENS)"
     WEEKLY_GH="$(require_env_val WEEKLY_GITHUB_TOKENS)"
     DISCOVERY_GH="$(require_env_val DISCOVERY_GITHUB_TOKENS)"
+    DISCOVERY_ADMIN="$(require_env_val DISCOVERY_ADMIN_API_KEYS)"
     SHARING_GH="$(require_env_val SHARING_GITHUB_TOKENS)"
     RECOMMEND_SIM="$(require_env_val RECOMMEND_SIMREPO_API_KEY)"
 
@@ -118,16 +119,16 @@ case "$APP" in
       "TRENDING_GITHUB_TOKENS=$TRENDING_GH"
       "WEEKLY_GITHUB_TOKENS=$WEEKLY_GH"
       "DISCOVERY_GITHUB_TOKENS=$DISCOVERY_GH"
+      "DISCOVERY_ADMIN_API_KEYS=$DISCOVERY_ADMIN"
       "RECOMMEND_SIMREPO_API_KEY=$RECOMMEND_SIM"
       "TRENDING_WIKI_API_URL=$FLY_AGG_WIKI_API_URL"
       "TRENDING_WIKI_API_KEY=$SHARED"
+      "WEEKLY_WIKI_API_URL=$FLY_AGG_WIKI_API_URL"
+      "WEEKLY_WIKI_API_KEY=$SHARED"
     )
 
     if WEEKLY_ADMIN="$(read_env_val WEEKLY_ADMIN_API_KEYS 2>/dev/null || true)" && [[ -n "$WEEKLY_ADMIN" ]]; then
       args+=("WEEKLY_ADMIN_API_KEYS=$WEEKLY_ADMIN")
-    fi
-    if DISCOVERY_ADMIN="$(read_env_val DISCOVERY_ADMIN_API_KEYS 2>/dev/null || true)" && [[ -n "$DISCOVERY_ADMIN" ]]; then
-      args+=("DISCOVERY_ADMIN_API_KEYS=$DISCOVERY_ADMIN")
     fi
     if RECOMMEND_EP="$(read_env_val RECOMMEND_SIMREPO_ENDPOINT 2>/dev/null || true)" && [[ -n "$RECOMMEND_EP" ]]; then
       args+=("RECOMMEND_SIMREPO_ENDPOINT=$RECOMMEND_EP")
@@ -136,7 +137,7 @@ case "$APP" in
     fly secrets set -a "$APP" "${args[@]}"
     ;;
   starcat-sharing-api)
-    # 遗留：独立部署 App（自托管 / 过渡期）
+    # 当前生产：独立部署 App（迁移后仍可自托管）
     API_KEYS="$(require_env_val API_KEYS)"
     GITHUB_TOKENS="$(require_env_val GITHUB_TOKENS)"
     fly secrets set -a "$APP" \

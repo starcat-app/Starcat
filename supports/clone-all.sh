@@ -63,6 +63,8 @@ if $SHOW_HELP; then
   echo ""
   echo "支撑项目列表:"
   echo "  6 个 Go API 服务  (starcat-*-api)"
+  echo "  starcat-api-kit    Go API 共享工具包"
+  echo "  starcat-api        六业务 API 聚合服务"
   echo "  starcat-pro        公开支持与发布说明"
   echo "  starcat-license-api  Direct 分发授权 API (🔒 私有)"
   echo "  starcat-localization  本地化资源"

@@ -190,7 +190,7 @@ struct ThirdPartyServiceTests {
 
     // MARK: - healthURL
 
-    @Test("healthURL: 4 个服务统一命中 /healthz")
+    @Test("healthURL: 6 个服务统一命中 /healthz")
     func healthURLUnifiedPath() {
         for service in ThirdPartyService.allCases {
             let url = service.healthURL(base: URL(string: "https://api.local")!)

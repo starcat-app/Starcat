@@ -6,9 +6,9 @@
 # 环境变量说明见 docs/fly-io-环境变量.md
 #
 # 示例：
-#   make fly-secrets-api          # 同步聚合 App starcat-api（推荐）
-#   make fly-secrets-all          # 遗留：并行同步六个独立 App
-#   make fly-secrets-trending     # 遗留：只同步独立 trending
+#   make fly-secrets-api          # 同步目标聚合 App starcat-api
+#   make fly-secrets-all          # 当前生产：并行同步六个独立 App
+#   make fly-secrets-trending     # 当前生产：只同步独立 trending
 #   make fly-status-all           # 查看全部 App 状态 + healthz
 #   make fly-deploy-api           # 部署聚合 App（需人工确认）
 #   make fly-backup-trending      # 拉取有状态服务 /data 卷到 supports/backups/
@@ -24,10 +24,12 @@ SCRIPTS := scripts
 FLY_SECRETS_SYNC := bash $(SCRIPTS)/fly-secrets-sync.sh
 FLY_BACKUP_DATA := bash $(SCRIPTS)/fly-backup-data.sh
 FLY_RESTORE_DATA := bash $(SCRIPTS)/fly-restore-data.sh
+PREPARE_API_RESTORE := bash $(SCRIPTS)/prepare-starcat-api-restore.sh
 
 .DEFAULT_GOAL := help
 
-.PHONY: help fly-secrets-list fly-secrets-all fly-secrets-api fly-status-all fly-health-all fly-deploy-all fly-deploy-api fly-status-api fly-health-api
+.PHONY: help fly-secrets-list fly-secrets-all fly-secrets-api fly-status-all fly-health-all fly-deploy-all fly-deploy-api fly-build-check-api fly-status-api fly-health-api
+.PHONY: fly-maintenance-api-on fly-maintenance-api-off fly-prepare-api-restore fly-restore-api
 .PHONY: $(foreach s,$(APIS),fly-secrets-$(s) fly-deploy-$(s) fly-status-$(s))
 .PHONY: $(foreach s,$(STATEFUL_APIS),fly-wipe-data-$(s) fly-restore-$(s))
 .PHONY: $(foreach s,$(BACKUP_APIS),fly-backup-$(s))
@@ -36,13 +38,18 @@ FLY_RESTORE_DATA := bash $(SCRIPTS)/fly-restore-data.sh
 help: ## 显示帮助
 	@echo "supports/ Fly.io 运维命令："
 	@echo ""
-	@echo "  【推荐】聚合 App starcat-api"
+	@echo "  【目标架构】聚合 App starcat-api（部署前确认 App 已创建）"
 	@echo "  make fly-secrets-api        从 starcat-api/.env 同步前缀 secrets"
 	@echo "  make fly-status-api         fly status -a starcat-api"
 	@echo "  make fly-health-api         curl https://starcat-api.fly.dev/healthz"
-	@echo "  make fly-deploy-api         fly deploy --remote-only -a starcat-api（生产变更）"
+	@echo "  make fly-build-check-api    本地检查聚合 Dockerfile 与构建上下文（不部署）"
+	@echo "  make fly-deploy-api         从 supports/ context 部署 starcat-api（生产变更）"
+	@echo "  make fly-maintenance-api-on 迁库前仅开放 /healthz，业务路由返回 503（生产变更）"
+	@echo "  make fly-prepare-api-restore 离线合并五份旧 App 备份并做 SQLite 完整性检查"
+	@echo "  make fly-restore-api        维护模式下整包恢复聚合 /data（需 RESTORE_ARCHIVE）"
+	@echo "  make fly-maintenance-api-off 恢复业务服务（生产变更）"
 	@echo ""
-	@echo "  【遗留】独立 starcat-*-api（自托管 / 过渡期）"
+	@echo "  【当前生产】独立 starcat-*-api（迁移后仍可自托管）"
 	@echo "  make fly-secrets-all        并行同步六个独立 App secrets"
 	@echo "  make fly-secrets-trending   只同步 starcat-trending-api"
 	@echo "  make fly-secrets-sharing    只同步 starcat-sharing-api"
@@ -57,7 +64,7 @@ help: ## 显示帮助
 	@echo "  make fly-backup-all         先建 Fly Volume Snapshot，再一致性备份 SQLite + /data"
 	@echo "  make fly-backup-weekly      创建平台快照后备份 starcat-weekly-api（无需停机）"
 	@echo "  make fly-backup-license     创建平台快照后备份 starcat-license-api（无需停机）"
-	@echo "  make fly-restore-trending   本地库/备份 tar 覆盖 Fly /data（需 LOCAL_DB 或 RESTORE_ARCHIVE）"
+	@echo "  make fly-restore-trending   清空整个 Fly /data 后恢复本地库/备份 tar（需 LOCAL_DB 或 RESTORE_ARCHIVE）"
 	@echo "  make fly-wipe-data-all      ⚠️  SSH 清空有状态 App 的 /data 卷（删库重建）"
 	@echo ""
 	@echo "  FLY_BACKUP_MACHINE_ID=<id> make fly-backup-weekly   多 Machine 时指定目标 Volume 所在实例"
@@ -68,7 +75,7 @@ help: ## 显示帮助
 	@echo "文档：docs/fly-io-环境变量.md"
 	@echo "迁库：../docs/4-工程进度/重构专项/API聚合与Kit抽离专项/04-聚合迁库SOP.md"
 
-# --- secrets：聚合（推荐）---
+# --- secrets：目标聚合架构 ---
 
 fly-secrets-api: ## 同步 starcat-api 聚合 secrets
 	$(FLY_SECRETS_SYNC) starcat-api
@@ -79,13 +86,37 @@ fly-status-api: ## 查看 starcat-api 状态
 fly-health-api: ## curl 聚合 /healthz
 	@curl -fsS "https://starcat-api.fly.dev/healthz" && echo ""
 
+fly-build-check-api: ## 本地静态检查聚合 Dockerfile；要求 Docker daemon 已运行
+	docker buildx build --check -f starcat-api/Dockerfile .
+
 fly-deploy-api: ## 部署 starcat-api（生产变更，需确认）
 	@echo "Deploying starcat-api (remote-only, ha=false)..."
-	cd starcat-api && fly deploy --remote-only --ha=false
+	fly deploy . --config starcat-api/fly.toml --dockerfile starcat-api/Dockerfile --ignorefile .dockerignore --remote-only --ha=false
 
-# --- secrets 同步：遗留独立 App ---
+fly-maintenance-api-on: ## 开启 starcat-api 迁库维护模式（生产变更）
+	fly secrets set -a starcat-api STARCAT_MAINTENANCE_MODE=true
 
-fly-secrets-all: ## 【遗留】并行同步六个独立 App secrets
+fly-maintenance-api-off: ## 关闭 starcat-api 迁库维护模式（生产变更）
+	fly secrets unset -a starcat-api STARCAT_MAINTENANCE_MODE
+
+fly-prepare-api-restore: ## 离线合并五份旧 App 备份（需 *_BACKUP）
+	@test -n "$(SHARING_BACKUP)" || (echo "✗ 需要 SHARING_BACKUP=" >&2; exit 1)
+	@test -n "$(TRENDING_BACKUP)" || (echo "✗ 需要 TRENDING_BACKUP=" >&2; exit 1)
+	@test -n "$(WEEKLY_BACKUP)" || (echo "✗ 需要 WEEKLY_BACKUP=" >&2; exit 1)
+	@test -n "$(WIKI_BACKUP)" || (echo "✗ 需要 WIKI_BACKUP=" >&2; exit 1)
+	@test -n "$(DISCOVERY_BACKUP)" || (echo "✗ 需要 DISCOVERY_BACKUP=" >&2; exit 1)
+	SHARING_BACKUP="$(SHARING_BACKUP)" TRENDING_BACKUP="$(TRENDING_BACKUP)" \
+	WEEKLY_BACKUP="$(WEEKLY_BACKUP)" WIKI_BACKUP="$(WIKI_BACKUP)" \
+	DISCOVERY_BACKUP="$(DISCOVERY_BACKUP)" OUTPUT_ARCHIVE="$(OUTPUT_ARCHIVE)" \
+	$(PREPARE_API_RESTORE)
+
+fly-restore-api: ## 维护模式下用合并归档恢复 starcat-api /data
+	@test -n "$(RESTORE_ARCHIVE)" || (echo "✗ 需要 RESTORE_ARCHIVE=" >&2; exit 1)
+	RESTORE_ARCHIVE="$(RESTORE_ARCHIVE)" $(FLY_RESTORE_DATA) starcat-api
+
+# --- secrets 同步：当前生产独立 App ---
+
+fly-secrets-all: ## 【当前生产】并行同步六个独立 App secrets
 	@set -e; \
 	pids=""; \
 	for app in $(FLY_APPS); do \

@@ -30,9 +30,9 @@
 //  `ServiceHealthChecker` 基于本端点单步探测。
 //
 //  状态栏可用性约定（2026-06-21）：
-//  状态栏只需要知道自建 API 进程是否在线，因此走后端专门暴露的无鉴权 `GET /healthz`。
-//  它不校验 API Key，也不替代设置页「测试连接」；两个入口语义分离，避免状态面板把
-//  “Key 错”误报成“服务不可用”。
+//  状态栏只需要知道当前 baseURL 是否在线，因此走后端专门暴露的无鉴权 `GET /healthz`。
+//  默认聚合 URL 下它检查的是网关整体，不解析单服务状态；它不校验 API Key，也不替代
+//  设置页「测试连接」。两个入口语义分离，避免状态面板把“Key 错”误报成“服务不可用”。
 //
 //  URL 规范化（R-03.1 2026-06-11）：
 //  用户在设置页可能输入各种形态——`http://127.0.0.1:5004`、`http://127.0.0.1:5004/`
@@ -194,8 +194,8 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
 
     /// 给定生效 baseURL 构造状态栏服务可用性巡检 URL（2026-06-21）。
     ///
-    /// `/healthz` 是后端进程级健康检查，不需要 Authorization。状态栏用它做轻量实时巡检；
-    /// 设置页「测试连接」仍走 `pingURL(base:)`，负责校验服务类型 + API Key。
+    /// `/healthz` 是后端进程级健康检查，不需要 Authorization。默认聚合 URL 下六个服务会
+    /// 命中同一网关 healthz；设置页「测试连接」仍走 `pingURL(base:)`，校验服务类型 + API Key。
     func healthURL(base: URL) -> URL {
         let normalized = normalizedBaseURL(base)
         switch self {

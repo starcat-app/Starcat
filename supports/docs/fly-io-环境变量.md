@@ -7,7 +7,7 @@
 
 ## 1. App 一览
 
-### 1.1 生产默认：聚合 `starcat-api`
+### 1.1 目标生产架构：聚合 `starcat-api`
 
 | Fly App | 默认 URL | 分流 | 持久化 | SQLite（同卷分文件） |
 |---------|----------|------|--------|----------------------|
@@ -16,9 +16,25 @@
 Starcat 客户端六个业务默认 baseURL 均为 `https://starcat-api.fly.dev`，见 `StarcatGatewayRouting` / `AppEndpoints`。  
 license-api **不**并入聚合。
 
+> **当前生产状态（2026-08-08）**：`starcat-api` App、nrt Volume、Secrets 与首轮五库种子迁移已完成；五库远端 SHA-256 与合并归档一致，`weekly-repo` 文件数一致，迁后 Snapshot 已创建。聚合曾解除维护并通过六服务鉴权 ping 和只读业务抽样；验证后已重新设置维护模式，Machine `185de96f791908` 已停止且 `autostart=false`。App、Volume、Secrets 与 Snapshot 保留，六个旧 App 继续承载生产；1.4.0 切流前必须最终同步 / 冻结写入。
+
+首次创建、首轮种子迁移与功能验证已完成，禁止重复创建 App / Volume 或把本轮归档当作最终切流快照。下一阶段在 1.4.0 发布窗口恢复聚合 Machine 后，必须保持维护模式执行最终同步并复验；未经再次授权不得执行最终同步、切换 `starcat.ink` 或停用旧 App。
+
+恢复已停机聚合 Machine：
+
+```bash
+fly machine update 185de96f791908 -a starcat-api --autostart=true --skip-start -y
+fly machine start 185de96f791908 -a starcat-api
+make -C supports fly-health-api  # 必须返回 {"status":"maintenance"}
+```
+
+当前 `autostart=false` 是 Machine 运行态覆盖，仓库 `starcat-api/fly.toml` 仍保留正式生产所需的 `auto_start_machines = true` 和 `min_machines_running = 1`；1.4.0 前不得误执行 deploy 将停机实例重新拉起。现有 Snapshot `vs_P2NQQAXpbv9jUyVVmvy5qe5v` 的平台保留期仅 5 天，不能替代最终迁移批次的新备份和新 Snapshot。
+
+1.4.0 上线后，只有确认 Direct / App Store 两个渠道均可下载，才停止六个旧 App Machine；先保留旧 App / Volume 作回滚资产。旧版本仅能继续展示本地缓存，在线刷新、推荐、发现、Wiki 和分享等能力会随旧服务停机而失效，发布说明必须明确提示用户尽快更新。
+
 迁库步骤见主仓：`docs/4-工程进度/重构专项/API聚合与Kit抽离专项/04-聚合迁库SOP.md`。
 
-### 1.2 遗留：独立 `starcat-*-api`（自托管 / 过渡期）
+### 1.2 当前生产：独立 `starcat-*-api`（兼容自托管 / 待迁移）
 
 | Fly App | 默认 URL | 端口 | 持久化卷 | SQLite 路径 |
 |---------|----------|------|----------|-------------|
@@ -38,7 +54,7 @@ license-api **不**并入聚合。
 | 渠道 | 用途 | 何时改 |
 |------|------|--------|
 | **`fly.toml` `[env]`** | 非敏感、随部署走的固定值（`PORT`、`GOGC`、分库路径等） | 改仓库 `fly.toml` 后 `fly deploy` |
-| **`fly secrets set`** | 密钥、路径、生产 URL 等敏感/环境相关值 | `make fly-secrets-api` 或遗留 `make fly-secrets-<name>` |
+| **`fly secrets set`** | 密钥、路径、生产 URL 等敏感/环境相关值 | 目标聚合用 `make fly-secrets-api`；当前独立 App 用 `make fly-secrets-<name>` |
 | **本地 `.env`** | 开发机 `go run` / 聚合本地调试 | **不**自动上传；用 Makefile 同步到 Fly |
 
 > Fly 上**没有** `.env` 文件。容器启动时只读 OS 环境变量；`fly secrets` 会在运行时注入。
@@ -51,21 +67,25 @@ license-api **不**并入聚合。
 
 ```bash
 make help                  # 列出全部命令
-make fly-secrets-api       # 【推荐】同步聚合 starcat-api
+make fly-secrets-api       # 同步聚合 starcat-api（2026-08-08 首次同步已完成）
 make fly-health-api        # curl 聚合 /healthz
-make fly-secrets-all       # 【遗留】六个独立 App secrets
-make fly-secrets-trending  # 【遗留】只同步某一个独立 App
+make fly-secrets-all       # 当前业务生产：六个独立 App secrets
+make fly-secrets-trending  # 【当前生产】只同步某一个独立 App
 make fly-secrets-list      # 查看独立 App secret 名称
 make fly-health-all        # curl 独立 App /healthz
 make fly-deploy-api        # 部署聚合（生产变更，需确认）
 make fly-backup-all        # 备份有状态独立 App 的 /data（迁库前用）
+make fly-prepare-api-restore ...  # 离线合并五份备份并检查 SQLite
+make fly-maintenance-api-on       # 聚合迁库维护模式（生产变更）
+make fly-restore-api RESTORE_ARCHIVE=backups/starcat-api/<ts>/data.tar.gz
+make fly-maintenance-api-off      # 恢复六服务（生产变更）
 make fly-restore-trending LOCAL_DB=./starcat-trending-api/trending.db
 ```
 
 在 Starcat 主仓库根目录：
 
 ```bash
-make sync-fly-secrets              # 当前仍等价于遗留 fly-secrets-all；聚合请 make -C supports fly-secrets-api
+make sync-fly-secrets              # 当前等价于 fly-secrets-all；聚合请 make -C supports fly-secrets-api
 make setup-production-api-keys     # 从 starcat-api/.env 共用 Key 写入 Secrets.xcconfig（六槽同值，原地改）
 ```
 
@@ -79,9 +99,10 @@ make setup-production-api-keys     # 从 starcat-api/.env 共用 Key 写入 Secr
 
 - **格式**：`sk-starcat-<32 位 base32 大写>`，多个 key 逗号分隔
 - **生成**：`bash supports/scripts/gen-api-key.sh`
-- **聚合**：`STARCAT_SHARED_API_KEY` 与六个 `*_API_KEYS` **同值**；Pin 后映射为各服务裸 `API_KEYS`
+- **聚合本地运行**：`.env` 需提供六个 `*_API_KEYS`，并与 `STARCAT_SHARED_API_KEY` **同值**；仅在对应服务 `FromEnv` 装配窗口临时映射为裸 `API_KEYS`，随后恢复
+- **Fly 同步**：`fly-secrets-sync.sh starcat-api` 只把 `STARCAT_SHARED_API_KEY` 作为六服务共用 Key 输入，并自动生成六个 Fly `*_API_KEYS` secret；本地 `.env` 中的六个 `*_API_KEYS` 不作为同步输入
 - **鉴权**：各业务 `/api/v1/*` 仍各自 BearerAuth（网关不做统一鉴权）
-- **例外**：`/healthz`、sharing 的 `GET /s/{id}` 不鉴权
+- **例外**：`/healthz` 不鉴权；sharing 的 `GET /s/{id}`、`GET /r/starcat-logo.png`、`GET /r/fonts/{file}`、`GET /r/{owner}/{repo}`、`GET /og/repo/{owner}/{repo}` 也不鉴权
 
 **与 Starcat 客户端对齐**（见 §7）：六个 `STARCAT_PRODUCTION_API_KEY_*` 槽位保留，聚合发版时填**相同**值。
 
@@ -107,9 +128,9 @@ make setup-production-api-keys     # 从 starcat-api/.env 共用 Key 写入 Secr
 
 ## 5. 分 App 环境变量表
 
-> §5.0 为聚合；§5.1 起为**遗留独立 App**（字段与历史一致，自托管仍可用）。
+> §5.0 为目标聚合；§5.1 起为**当前生产独立 App**（迁移后仍保留自托管能力）。
 
-### 5.0 starcat-api（聚合，推荐）
+### 5.0 starcat-api（目标聚合架构）
 
 完整前缀清单见 `supports/starcat-api/.env.example`。同步入口：`make -C supports fly-secrets-api`。
 
@@ -117,16 +138,23 @@ make setup-production-api-keys     # 从 starcat-api/.env 共用 Key 写入 Secr
 
 | 变量 | 说明 |
 |------|------|
-| `STARCAT_SHARED_API_KEY` + 六个 `*_API_KEYS` | 同值；与客户端六个 `STARCAT_PRODUCTION_API_KEY_*` 对齐 |
+| 本地 `go run`：`STARCAT_SHARED_API_KEY` + 六个 `*_API_KEYS` | 七项同值；与客户端六个 `STARCAT_PRODUCTION_API_KEY_*` 对齐 |
+| Fly 同步：`STARCAT_SHARED_API_KEY` | `fly-secrets-sync.sh` 用它生成六个 `*_API_KEYS` secret；无需从 `.env` 读取六项 |
 | `*_STORE_FILE` / `WEEKLY_REPO_DIR` | 强制 `/data/...` |
 | `SHARING_BASE_URL` | Fly 强制 `https://starcat.ink` |
 | `TRENDING_GITHUB_TOKENS` 等 | 各服务 GitHub PAT |
 | `RECOMMEND_SIMREPO_API_KEY` | simrepo |
 | `TRENDING_WIKI_API_URL` / `TRENDING_WIKI_API_KEY` | 聚合内预热：loopback + 共用 Key；notifier 带 `X-SC-Svc: wiki` |
+| `WEEKLY_WIKI_API_URL` / `WEEKLY_WIKI_API_KEY` | 同上；Weekly notifier 也固定带 `X-SC-Svc: wiki` |
+| `DISCOVERY_ADMIN_API_KEYS` | 必填；Discovery 管理接口独立 key，不继承 Weekly Admin Key |
+
+> 2026-08-08 已使用 `gen-api-key.sh` 在本地聚合 `.env` 生成独立 `DISCOVERY_ADMIN_API_KEYS`，并校验格式、唯一性、权限与 Git 忽略状态；这只表示本地输入已就绪，尚未执行 `fly secrets set`。
+
+配置隔离规则：`Apply(service) → FromEnv() → restore()`。只有 wiki 请求路径仍读取的四个 `CACHE_*` 通过显式 `Pin` 保留；禁止把整组服务前缀永久展开到进程环境。
 
 图例（以下独立 App 表）：**R** = Fly secrets 必填　**O** = 可选　**T** = 已在 `fly.toml` 固定　**—** = 不适用
 
-### 5.1 starcat-sharing-api（遗留）
+### 5.1 starcat-sharing-api（当前生产独立 App）
 
 | 变量 | 级别 | 默认值 / Fly 生产值 | 说明 |
 |------|------|---------------------|------|
@@ -136,11 +164,11 @@ make setup-production-api-keys     # 从 starcat-api/.env 共用 Key 写入 Secr
 | `API_KEYS` | R | — | Bearer 白名单 |
 | `BASE_URL` | R | `https://starcat.ink`（sync 强制；勿用独立 `*.fly.dev`） | 生成分享短链 `shareUrl` 的 host；**不要**用本地 `localhost` |
 
-公开路由：`GET /healthz`、`GET /s/{id}`（分享页 HTML）。
+公开路由：`GET /healthz`、`GET /s/{id}`、`GET /r/starcat-logo.png`、`GET /r/fonts/{file}`、`GET /r/{owner}/{repo}`、`GET /og/repo/{owner}/{repo}`。
 
 ---
 
-### 5.2 starcat-trending-api（遗留）
+### 5.2 starcat-trending-api（当前生产独立 App）
 
 | 变量 | 级别 | 默认值 | 说明 |
 |------|------|--------|------|
@@ -155,7 +183,7 @@ cron 频率在代码内固定（daily/weekly/monthly 等），无需 Fly env。
 
 ---
 
-### 5.3 starcat-weekly-api（遗留）
+### 5.3 starcat-weekly-api（当前生产独立 App）
 
 | 变量 | 级别 | 默认值 | 说明 |
 |------|------|--------|------|
@@ -174,7 +202,7 @@ cron 频率在代码内固定（daily/weekly/monthly 等），无需 Fly env。
 
 ---
 
-### 5.4 starcat-wiki-api（遗留）
+### 5.4 starcat-wiki-api（当前生产独立 App）
 
 | 变量 | 级别 | 默认值 | 说明 |
 |------|------|--------|------|
@@ -197,7 +225,7 @@ cron 频率在代码内固定（daily/weekly/monthly 等），无需 Fly env。
 
 ---
 
-### 5.5 starcat-recommend-api（遗留）
+### 5.5 starcat-recommend-api（当前生产独立 App）
 
 | 变量 | 级别 | 默认值 / Fly 生产值 | 说明 |
 |------|------|---------------------|------|
@@ -213,7 +241,7 @@ cron 频率在代码内固定（daily/weekly/monthly 等），无需 Fly env。
 
 ---
 
-### 5.6 starcat-discovery-api（遗留）
+### 5.6 starcat-discovery-api（当前生产独立 App）
 
 | 变量 | 级别 | 默认值 / Fly 生产值 | 说明 |
 |------|------|---------------------|------|
@@ -238,7 +266,7 @@ bash supports/scripts/gen-api-key.sh
 fly secrets set -a starcat-sharing-api \
   API_KEYS='sk-starcat-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' \
   STORE_FILE='/data/sharing.db' \
-  BASE_URL='https://starcat-sharing-api.fly.dev'
+  BASE_URL='https://starcat.ink'
 
 # trending
 fly secrets set -a starcat-trending-api \
@@ -294,7 +322,8 @@ fly secrets list -a starcat-trending-api
 **开箱即用发版路径（聚合）**：
 
 ```bash
-# 1. supports/starcat-api/.env：STARCAT_SHARED_API_KEY + 六个 *_API_KEYS 同值
+# 1. supports/starcat-api/.env：本地运行时 STARCAT_SHARED_API_KEY + 六个 *_API_KEYS 同值；
+#    Fly 同步脚本只读取 STARCAT_SHARED_API_KEY，并生成六个 Fly *_API_KEYS secret
 # 2. 推到 Fly 聚合 App
 make -C supports fly-secrets-api
 
@@ -360,14 +389,37 @@ supports/backups/<fly-app-name>/<YYYYMMDD-HHMMSS>/
 
 ### 8.2 恢复（Makefile，推荐）
 
-**方式 A：只上传本地单个 SQLite 文件**
+#### 聚合迁库
+
+聚合 App 禁止逐库恢复，也禁止在线覆盖。先用五份旧 App 备份离线生成唯一归档：
+
+```bash
+make fly-prepare-api-restore \
+  SHARING_BACKUP=backups/starcat-sharing-api/<ts>/data.tar.gz \
+  TRENDING_BACKUP=backups/starcat-trending-api/<ts>/data.tar.gz \
+  WEEKLY_BACKUP=backups/starcat-weekly-api/<ts>/data.tar.gz \
+  WIKI_BACKUP=backups/starcat-wiki-api/<ts>/data.tar.gz \
+  DISCOVERY_BACKUP=backups/starcat-discovery-api/<ts>/data.tar.gz
+
+make fly-maintenance-api-on
+make fly-restore-api RESTORE_ARCHIVE=backups/starcat-api/<ts>/data.tar.gz
+make fly-maintenance-api-off
+```
+
+`fly-restore-api` 只接受合并归档；它会验证五库、`weekly-repo/`、`PRAGMA integrity_check` 和远端 `status=maintenance`，再清空一次 `/data`。完整生产门禁见专项 `04-聚合迁库SOP.md`。
+
+#### 当前独立 App 恢复
+
+> **破坏范围**：`fly-restore-data.sh` 两种模式都会先清空远端整个 `/data`。`LOCAL_DB` 只是上传来源为单个 SQLite，不代表只覆盖目标数据库；同卷其它文件也会丢失。Weekly 若需要保留 `/data/weekly-repo`，必须使用包含它的整包归档，不能使用 `LOCAL_DB`。
+
+**方式 A：清空整卷后，只上传本地单个 SQLite 文件**
 
 ```bash
 cd supports
 make fly-restore-trending LOCAL_DB=./starcat-trending-api/trending.db
 ```
 
-脚本会写到 Fly 上对应的 `STORE_FILE`（如 `/data/trending.db`），并删除远端旧的 `-wal` / `-shm`；若本地同目录有 `trending.db-wal` / `trending.db-shm` 会一并上传。
+脚本清空 `/data` 后，把文件写到对应的 `STORE_FILE`（如 `/data/trending.db`）；若本地同目录有 `trending.db-wal` / `trending.db-shm` 会一并上传。该模式只适合确认卷内没有其它必须保留数据的独立 App。
 
 **方式 B：从 `fly-backup` 的 tar 整包恢复 `/data`**
 
@@ -375,7 +427,7 @@ make fly-restore-trending LOCAL_DB=./starcat-trending-api/trending.db
 make fly-restore-trending RESTORE_ARCHIVE=supports/backups/starcat-trending-api/<timestamp>/data.tar.gz
 ```
 
-weekly 应用此方式可同时恢复 `weekly.db` + `weekly-repo/`。
+weekly 应使用此方式同时恢复 `weekly.db` + `weekly-repo/`。
 
 **安全确认**
 
@@ -397,9 +449,16 @@ tar xzf supports/backups/starcat-trending-api/<timestamp>/data.tar.gz -C /tmp/re
 
 ---
 
-## 9. 删库重建 SOP（schema 变更后）
+## 9. 生产数据与 schema 变更约束
 
-项目未上线，不做 migration；schema 变了直接清卷：
+六个独立 App 已承载生产数据，禁止把“清卷重建”作为日常 schema 变更方案：
+
+- schema 变更必须由对应服务提供向前迁移，先备份并验证恢复路径；
+- 聚合迁库必须按专项 `04-聚合迁库SOP.md` 执行，不能用 wipe 代替迁移；
+- `fly-wipe-data-*` 是会永久删除生产卷数据的应急命令，只能在明确指定 App、已有可验证备份且 dong4j 再次授权后人工执行；
+- scheduler 能重新抓取部分缓存，不代表 sharing、weekly、discovery 等全部数据都可重建。
+
+以下命令仅保留为破坏性工具示例，**不是 schema 变更 SOP**：
 
 ```bash
 make -C supports fly-wipe-data-all    # 或单个 fly-wipe-data-trending
@@ -407,13 +466,13 @@ make -C supports fly-deploy-all       # 可选：确保镜像最新
 make -C supports fly-health-all
 ```
 
-服务重启后 `createSchema()` 会建空库；trending/weekly 的 scheduler 会重新抓取数据。
+执行后服务只会创建空库；任何无法重新抓取的数据都需要从备份恢复。
 
 ---
 
 ## 10. 常驻运行（fly.toml）
 
-各 App 的 `fly.toml` 已统一：
+各 App 的 `fly.toml` 都关闭自动停机并至少保持一台 Machine：
 
 ```toml
 [http_service]
@@ -421,7 +480,16 @@ make -C supports fly-health-all
   min_machines_running = 1
 ```
 
-改完后 `fly deploy` 生效。Machine 规格：`shared-cpu-1x` + **256MB RAM**（仪表盘「1 GB」是 Volume 磁盘，不是内存）。
+当前仓库配置：
+
+| Fly App | CPU | 内存 |
+|---------|-----|------|
+| `starcat-api` | `shared-cpu-1x` | 1024 MB |
+| `starcat-discovery-api` | `shared-cpu-1x` | 512 MB |
+| sharing / trending / weekly / wiki | `shared-cpu-1x` | 256 MB |
+| `starcat-recommend-api` | 未在 `fly.toml` 显式声明 | 以 Fly 当前 Machine 配置为准 |
+
+仪表盘显示的 Volume 容量不是 Machine 内存。配置变更需 `fly deploy` 后才生效；真实线上规格仍以 `fly status` / `fly machine status` 为准。
 
 ---
 
@@ -433,6 +501,7 @@ make -C supports fly-health-all
 | `supports/scripts/fly-secrets-sync.sh` | `.env` → `fly secrets set` |
 | `supports/scripts/fly-backup-data.sh` | Fly `/data` → 本地 `supports/backups/` |
 | `supports/scripts/fly-restore-data.sh` | 本地 `.db` / backup tar → Fly `/data` |
+| `supports/scripts/prepare-starcat-api-restore.sh` | 五份旧 App 备份 → 唯一聚合恢复归档 |
 | `supports/scripts/gen-api-key.sh` | 生成 `sk-starcat-...` |
 | `supports/starcat-*/fly.toml` | 端口、volume、常驻策略 |
 | `supports/starcat-*/.env.example` | 本地开发模板 |

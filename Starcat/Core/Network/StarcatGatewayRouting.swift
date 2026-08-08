@@ -4,7 +4,7 @@
 //
 //  自建后端聚合网关分流约定（B 方案）：
 //  - 默认生产 baseURL 统一为 https://starcat-api.fly.dev
-//  - 每个请求带短头 `X-SC-Svc: <service>`（trending / weekly / …）
+//  - 业务请求与 `/api/v1/ping` 带短头 `X-SC-Svc: <service>`；聚合 `/healthz` 不带头
 //  - 用户自托管：设置页改各服务 baseURL 即可；仍可带同一头（独立进程会忽略未知头）
 //
 //  与 supports/starcat-api/internal/gateway.HeaderService 必须保持同名同值。

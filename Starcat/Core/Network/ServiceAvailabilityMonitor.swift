@@ -6,16 +6,17 @@
 //
 //  这里刻意不复用 `ServiceHealthChecker`：设置页「测试连接」要走带鉴权的 `/api/v1/ping`，
 //  用来验证 URL、服务类型与 API Key；状态栏只需要知道后端进程是否在线，因此走无鉴权
-//  `/healthz`。把两者拆开可以避免 Key 错时把 toolbar 误标成“服务不可用”。
+//  `/healthz`。把两者拆开可以避免 Key 错时把 toolbar 误标成“服务不可用”。默认六服务
+//  共用聚合 URL 时，这里只确认网关进程返回 2xx，不解析 `services`，不能替代单服务 ping。
 //
 
 import Foundation
 
 private let serviceAvailabilityDefaultInterval: Duration = .seconds(10 * 60)
 
-/// 单个服务的 `/healthz` 巡检状态。
+/// 单个服务槽位对应的 `/healthz` 巡检状态；聚合默认 URL 下多个槽位会命中同一网关。
 enum ServiceAvailabilityStatus: Equatable {
-    /// HTTP 2xx，服务进程可用。
+    /// HTTP 2xx，目标 health URL 可达；聚合场景只代表网关可达。
     case available(statusCode: Int)
     /// 服务器有响应但不是 2xx。
     case serverError(statusCode: Int)
@@ -30,7 +31,7 @@ enum ServiceAvailabilityStatus: Equatable {
     }
 }
 
-/// 单个服务最近一次 `/healthz` 巡检结果。
+/// 单个服务槽位最近一次 `/healthz` 巡检结果。
 struct ServiceAvailabilityResult: Equatable, Identifiable {
     let service: ThirdPartyService
     let status: ServiceAvailabilityStatus
@@ -64,7 +65,8 @@ struct ServiceAvailabilitySummary: Equatable {
 /// 执行单次 `/healthz` 请求的 actor。
 ///
 /// actor 自身无持久状态，只负责 URLSession 调用与结果映射；这样 monitor 可以安全地用
-/// `withTaskGroup` 并发检查自建服务。
+/// `withTaskGroup` 并发检查自建服务。它故意不解析聚合 healthz 的 `services` 字段，因此
+/// 2xx 只代表当前 URL 可达，不证明请求槽位对应的业务服务已挂载。
 actor ServiceAvailabilityChecker {
     private static let timeout: TimeInterval = 5
 

@@ -2,7 +2,7 @@
 //  ServiceAvailabilityMonitorTests.swift
 //  StarcatTests
 //
-//  覆盖状态栏服务可用性巡检：4 个自建 API 并发请求 `/healthz`，再聚合成 toolbar 可读摘要。
+//  覆盖状态栏服务可用性巡检：用 4 个服务样本并发请求 `/healthz`，再聚合成 toolbar 可读摘要。
 //  设置页的 API Key / ping 校验由 `ServiceHealthCheckerTests` 覆盖，本文件只关心进程可用性。
 //
 

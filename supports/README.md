@@ -1,15 +1,16 @@
 # Starcat 支撑项目（supports）
 
 > 本目录收录 Starcat 主仓库依赖的**独立项目**。每个子目录（除明确标注外）都是独立的
-> git 仓库、独立 GitHub 仓库、独立部署单元，**不**与主仓库共享版本号或 CI。
+> git 仓库，并拥有自己的版本和 CI 边界；其中 `starcat-api` / `starcat-api-kit` 的 GitHub
+> 远端尚待授权创建。可部署服务是独立部署单元，`starcat-api-kit` 则是供多个服务复用的 Go 库。
 >
 > 文件同步关系详见 [`SYNC.md`](./SYNC.md)。
 
 ---
 
-## 📦 项目清单（共 22 个）
+## 📦 项目清单（共 24 个）
 
-### Go API 服务（7 个）
+### Go 后端项目（9 个）
 
 | 子目录 | GitHub | 端口 | 角色 |
 |--------|--------|:----:|------|
@@ -20,6 +21,8 @@
 | [`starcat-recommend-api/`](./starcat-recommend-api/) | [`starcat-app/starcat-recommend-api`](https://github.com/starcat-app/starcat-recommend-api) | 5005 | 相似仓库推荐 API |
 | [`starcat-discovery-api/`](./starcat-discovery-api/) | [`starcat-app/starcat-discovery-api`](https://github.com/starcat-app/starcat-discovery-api) | 5006 | 探索发现、热门、新发布榜单 |
 | [`starcat-license-api/`](./starcat-license-api/) | [`starcat-app/starcat-license-api`](https://github.com/starcat-app/starcat-license-api) 🔒 | 5010 | Direct 分发授权 API |
+| [`starcat-api-kit/`](./starcat-api-kit/) | `starcat-app/starcat-api-kit`（远端待授权创建） | — | 六个业务 API 共用的 auth / envelope / GitHub / env 等基础包 |
+| [`starcat-api/`](./starcat-api/) | `starcat-app/starcat-api`（远端待授权创建） | 8080 | 目标聚合部署单元；以 `X-SC-Svc` 分流六个业务 API，不含 license |
 
 ### 其他支撑项目（15 个）
 
@@ -48,28 +51,15 @@
 ## 🧩 在 Starcat 中的角色
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                    Starcat App (macOS)                        │
-│                                                               │
-│  ┌────────────┐  ┌────────────┐  ┌──────────┐  ┌──────────┐ │
-│  │ GitHub     │  │  Trending  │  │  Share   │  │  Direct  │ │
-│  │ Stars      │  │  视图/入口  │  │  入口    │  │  购买    │ │
-│  │ (SQLite)   │  │            │  │          │  │  入口    │ │
-│  └─────┬──────┘  └─────┬──────┘  └────┬─────┘  └────┬─────┘ │
-│        │               │              │              │       │
-│        │   GitHub REST │  GET /repo   │  POST /api   │  POST │
-│        │   API (官方)  │  GET /user   │  /share      │  /v1/ │
-│        │               │  GET /lang   │              │direct │
-│        │               ↓              ↓              ↓       │
-└────────┼───────────────┼──────────────┼──────────────┼───────┘
-         │               │              │              │
-         │          port 5002      port 5001           │
-         │               ↓              ↓          port 5010
-  ┌──────┴──────┐ ┌────────────┐ ┌────────────┐ ┌──────────────┐
-  │ GitHub REST │ │ trending   │ │ sharing    │ │ license      │
-  │ (官方)      │ │ -api       │ │ -api       │ │ -api 🔒      │
-  └─────────────┘ └────────────┘ └────────────┘ └──────────────┘
+Starcat App
+  ├─ GitHub 官方 API
+  ├─ 六个业务 API
+  │    ├─ 当前业务生产（2026-08-08）：六个独立 starcat-*-api Fly App
+  │    └─ 已部署维护态：starcat-api.fly.dev + X-SC-Svc → 六个 server 包
+  └─ starcat-license-api（支付 / 授权边界，始终独立）
 ```
+
+客户端代码已经默认指向聚合 URL。Fly App、Volume、Secrets、首轮五库种子迁移已完成，并已解除维护模式通过六服务 ping 与只读业务验证。六个旧 App 未停用且仍持续写入，当前仅用于本地 / 受控双跑验证；正式切流前必须重新进入维护模式，完成最终同步 / 写入冻结和全链路验收，不能把“功能可用”误写成“数据已最终切换”。
 
 ### 核心 API 角色
 
@@ -77,16 +67,18 @@
 
 | Method | Path | 说明 |
 |--------|------|------|
-| GET | `/repo?lang=…&since=daily/weekly/monthly` | Trending 仓库列表 |
-| GET | `/user?lang=…&since=…&sponsorable=1` | Trending 开发者列表 |
-| GET | `/lang` | 支持的语言字典 |
+| GET | `/api/v1/repos?lang=…&since=daily/weekly/monthly` | Trending 仓库列表 |
+| GET | `/api/v1/users?lang=…&since=…&sponsorable=1` | Trending 开发者列表 |
+| GET | `/api/v1/languages` | 支持的语言字典 |
 
-**`starcat-sharing-api`（5001）** — 分享页要被**未安装 Starcat** 的人访问，必须是独立 Web 服务。
+**`starcat-sharing-api`（5001）** — 分享页要被**未安装 Starcat** 的人访问，因此公开 Web 路由必须持续可访问；目标聚合架构由 `starcat-api` 挂载其 `server` 包，并由 `starcat.ink` 代理注入 `X-SC-Svc: sharing`。
 
 | Method | Path | 说明 |
 |--------|------|------|
-| POST | `/api/share` | 接收 repo 数据 + AI 摘要，返回短链 |
+| POST | `/api/v1/share` | 接收 repo 数据 + AI 摘要，返回短链 |
 | GET | `/s/{id}` | 公开分享页（服务端渲染） |
+| GET | `/r/{owner}/{repo}` | 公开仓库预览页 |
+| GET | `/og/repo/{owner}/{repo}` | 公开仓库 Open Graph 图片 |
 
 **`starcat-weekly-api`（5003）** — 聚合阮一峰周刊、zread、Show HN、HelloGitHub 与人工情报，生成统一的项目发现数据。
 
@@ -107,7 +99,7 @@
 ```bash
 cd supports
 
-# 首次 clone 全部 21 个 GitHub 独立仓库
+# 首次 clone 全部 23 个远端目标
 ./clone-all.sh
 
 # 后续批量更新
@@ -115,6 +107,7 @@ cd supports
 ```
 
 > `starcat-license-api` 是**私有**仓库，需 `gh auth login` 或 SSH key。
+> `starcat-api` / `starcat-api-kit` 当前没有 remote；在组织仓库获授权创建前，若本地目录不存在，`clone-all.sh` 对这两项会失败。
 
 ### 一次性启动全部 API
 
@@ -170,7 +163,7 @@ secrets 需要单独确认。
 
 ### 独立 git 仓库（各自管理）
 
-- 上表除 `ai-file-wall` 外的 21 个 GitHub 独立仓库目录
+- 上表除 `ai-file-wall` 外的 23 个独立仓库目录；其中 `starcat-api` / `starcat-api-kit` 远端待创建
 
 ### 跨机器同步（`sync-untracked.sh`）
 
@@ -192,6 +185,7 @@ secrets 需要单独确认。
 ## 🔐 安全
 
 - **Fly 生产**：`API_KEYS`、`GITHUB_TOKENS` 通过 `fly secrets set` 注入
+- **聚合目标**：`starcat-api` 使用带服务前缀的 secrets 和 `/data` 分库；当前六个独立 App 在完成迁库验收前继续保留
 - **本地开发**：各项目 `.env`（gitignore），跨机器用 `scripts/sync-untracked.sh` 同步
 - **绝不要**把真实 API Key / Token 提交到 git
 

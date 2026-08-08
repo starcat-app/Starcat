@@ -233,6 +233,7 @@ supports/*
 !supports/CLAUDE.md
 !supports/SYNC.md
 !supports/clone-all.sh
+!supports/.dockerignore
 !supports/Makefile
 !supports/README.md
 !supports/start-all.sh
@@ -258,4 +259,3 @@ CHANGELOG-ZH/
 # 其他
 *.mp4
 *.csv
-

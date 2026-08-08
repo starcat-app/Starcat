@@ -41,7 +41,7 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 
 ---
 
-## GitHub 独立仓库（21 个）
+## 独立仓库目录（23 个；其中 2 个远端待创建）
 
 以下目录各自是**独立的 git 仓库**，有自己的 GitHub remote、CI/CD 和版本号：
 
@@ -76,7 +76,7 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 ```bash
 cd supports
 
-# 首次 clone 全部 21 个项目
+# 首次 clone 全部 23 个远端目标
 ./clone-all.sh
 
 # 后续更新全部
@@ -84,6 +84,7 @@ cd supports
 ```
 
 > `starcat-license-api` 是**私有**仓库，需要 `gh auth login` 或配置 SSH key。
+> `starcat-api` / `starcat-api-kit` 当前只有本地仓；远端未获授权创建前，`clone-all.sh` 只能跳过已存在目录，无法在新机器成功 clone 这两项。
 
 ### 新增独立仓库登记
 

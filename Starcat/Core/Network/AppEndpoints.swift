@@ -35,7 +35,8 @@
 //    因为它承载支付 / 授权，不应暴露为普通 BYOK 服务。
 //  - v10（2026-08-07）：后端引入 starcat-api 聚合网关文档化；当时默认 URL 仍各独立 `*.fly.dev`。
 //  - v11（2026-08-07 B 方案）：六个业务服务默认 productionURL 统一为
-//    `https://starcat-api.fly.dev`，请求带 `X-SC-Svc`（见 `StarcatGatewayRouting`）。
+//    `https://starcat-api.fly.dev`，业务/ping 请求带 `X-SC-Svc`，聚合 `/healthz` 不带头
+//    （见 `StarcatGatewayRouting`）。
 //    Path / ping envelope 不变；用户自托管仍可在设置页覆盖各服务 baseURL。
 //    审查结论见 docs/4-工程进度/重构专项/API聚合与Kit抽离专项/03-Starcat客户端契约审查.md。
 //
@@ -51,8 +52,8 @@
 //    由 BearerAuth 保护。避免借用业务 endpoint 作 auth probe 的副作用（sharing 的 GET /share
 //    返 405、wiki 的 GET /wikis 缺参数返 400 等需要客户端特判的尴尬场景）。
 //    详见 ServiceHealthChecker.swift。
-//  - 客户端「状态栏服务可用性」走 `/healthz`，不带鉴权，只判断自建后端进程是否活着；
-//    详见 ServiceAvailabilityMonitor.swift。
+//  - 客户端「状态栏服务可用性」走 `/healthz`，不带鉴权。默认聚合 URL 下只判断网关进程
+//    是否活着，不解析单个服务状态；详见 ServiceAvailabilityMonitor.swift。
 //  - `Paths.xxx` 全部以 `/` 开头，便于源码 grep 时直观；`url(_:)` 内部做 trim。
 //
 
@@ -65,7 +66,7 @@ import SwiftUI
 /// 不可实例化，仅暴露嵌套命名空间。
 enum AppEndpoints {
 
-    // MARK: - 自建后端 1/4：Weekly（阮一峰周刊推荐 GitHub 项目）
+    // MARK: - 自建后端 1/6：Weekly（阮一峰周刊推荐 GitHub 项目）
 
     /// Weekly 多来源后端 endpoint 集合。
     enum Weekly {
@@ -82,7 +83,7 @@ enum AppEndpoints {
         /// Path 常量目录。新增端点时在此追加。
         ///
         /// R-01 v1.2（2026-06-09）：旧的 `/api/weekly/*` 已统一迁到 `/api/v1/*`
-        /// （后端要求 Bearer Auth，详见 supports/starcat-weekly-api/cmd/server/main.go）。
+        /// （后端要求 Bearer Auth，详见 supports/starcat-weekly-api/server/server.go）。
         ///
         /// weekly-api v0.5.2（2026-06-11）：阮一峰周刊端点命名空间从通用 `projects` 改为 weekly 命名
         /// （与 `/api/v1/zread` 风格对齐），`/api/v1/projects` → `/api/v1/weekly`。
@@ -114,7 +115,7 @@ enum AppEndpoints {
         }
     }
 
-    // MARK: - 自建后端 2/4：Trending（GitHub Trending 抓取）
+    // MARK: - 自建后端 2/6：Trending（GitHub Trending 抓取）
 
     /// GitHub Trending 后端 endpoint 集合。
     enum Trending {
@@ -127,7 +128,7 @@ enum AppEndpoints {
         }
 
         /// R-01 v1.2（2026-06-09）：旧的 `/repo` `/lang` `/user` 已统一迁到 `/api/v1/*`
-        /// （后端要求 Bearer Auth，详见 supports/starcat-trending-api/cmd/server/main.go）。
+        /// （后端要求 Bearer Auth，详见 supports/starcat-trending-api/server/server.go）。
         enum Paths {
             /// `GET /api/v1/repos?lang=&since=daily/weekly/monthly&limit=` —— Trending 仓库列表（envelope 包装）。
             static let repos = "/api/v1/repos"
@@ -148,7 +149,7 @@ enum AppEndpoints {
         }
     }
 
-    // MARK: - 自建后端 3/4：Sharing（AI 分享卡）
+    // MARK: - 自建后端 3/6：Sharing（AI 分享卡）
 
     /// AI 分享卡后端 endpoint 集合。
     ///
@@ -171,7 +172,7 @@ enum AppEndpoints {
 
         /// R-01 v1.2（2026-06-09）建立 `/api/v1/*` 命名空间；R-03.1 客户端口径对齐
         /// 后，本目录的 path 与 trending/weekly/wiki 完全同款（绝对路径 `/api/v1/...`）。
-        /// 后端路由：详见 supports/starcat-sharing-api/cmd/server/main.go。
+        /// 后端路由：详见 supports/starcat-sharing-api/server/server.go。
         enum Paths {
             /// `POST /api/v1/share` —— 创建分享链接。envelope 包装 + Bearer Auth。
             static let share = "/api/v1/share"
@@ -188,7 +189,7 @@ enum AppEndpoints {
         }
     }
 
-    // MARK: - 自建后端 4/4：Wiki（外部文档站索引探测）
+    // MARK: - 自建后端 4/6：Wiki（外部文档站索引探测）
 
     /// DeepWiki / Zread / Google Code Wiki 收录状态探测后端。
     enum Wiki {

@@ -16,7 +16,7 @@
 | 公开支持 | `starcat-pro/` | Issue、公开发布说明与营销图片源 |
 | 工具与集成 | `starcat-cli/`、`starcat-skill/`、`extensions/` | CLI/MCP、AI Agent Skill 与浏览器插件 |
 | 分发与协作 | `homebrew-starcat*/`、`starcat-localization/`、`.github/` | Homebrew、本地化和组织主页 |
-| 后端 API | `starcat-*-api/` | 下表列出的 Go 服务；Fly.io 规则只适用于这些项目 |
+| 后端 API | `starcat-*-api/`、`starcat-api-kit/`、`starcat-api/` | 六个业务服务、共享 kit、聚合网关与独立 license；Fly.io 规则只适用于可部署服务 |
 
 > 官网源码、Changelog 生成与部署统一归 `starcat-site/`，不要在主仓库另建平行站点目录。
 
@@ -42,31 +42,32 @@
 | `starcat-recommend-api` | 5005 | 进程内缓存 | SimRepo 相似仓库推荐代理 | `starcat-recommend-api` | `github.com/joho/godotenv` |
 | `starcat-discovery-api` | 5006 | SQLite(`discovery.db`) | 探索发现、热门、新发布榜单 | `starcat-discovery-api` | `modernc.org/sqlite`、`robfig/cron` |
 | `starcat-api-kit` | — | — | 共享 auth / envelope / CORS / tokenpool | — | 被各 API `replace` 引用 |
-| `starcat-api` | 8080 | `/data` 多库 | Host 分流聚合 6 个业务 API（不含 license） | `starcat-api` | 依赖各 API `server` 包 |
+| `starcat-api` | 8080 | `/data` 多库 | `X-SC-Svc` 优先、Host 回退，聚合 6 个业务 API（不含 license） | `starcat-api` | 依赖各 API `server` 包 |
 
-> 聚合路线：各业务 API 导出 `server` 包 + 共享 `starcat-api-kit`；`starcat-api` 单进程托管以降低 Fly 常开机成本。`license-api` 保持独立。
+> 聚合路线：各业务 API 导出 `server` 包 + 共享 `starcat-api-kit`；`starcat-api` 单进程托管以降低 Fly 常开机成本。`license-api` 保持独立。2026-08-08 已完成 Fly App / Volume / Secrets / 首轮五库种子迁移，并解除维护模式完成六服务 ping 与只读业务验证；旧 App 未停用且仍持续写入，当前属于双跑验证，不是最终数据切流。切流前必须重新进入维护模式并安排最终同步 / 写入冻结窗口。
 
 ---
 
 ## 通用技术栈
 
-- **Go 1.25.0** — 6 个项目 go.mod 统一(2026-06-08 起,详见 [`CLAUDE.md`](./CLAUDE.md))
+- **Go 1.25.0** — 六个业务 API、`starcat-api-kit` 与 `starcat-api` 的 go.mod 统一
 - **net/http** — 标准库 HTTP 服务,无第三方框架
 - **godotenv** — `github.com/joho/godotenv`,从 `.env` 文件加载环境变量(2026-06-09 R-01 起统一,详见 §R-01 配置规范)
 - **modernc.org/sqlite** — 有状态 API 使用 SQLite(R-01 起 sharing 也改 SQLite,详见对应方案)
 - **Docker** — 多阶段构建,slim / scratch 镜像
-- **Fly.io** — 部署平台,6 个项目 6 个独立 app
+- **Fly.io** — 当前为 6 个业务独立 App；目标为 `starcat-api` 聚合 App，license 继续独立
 - **GitHub Actions** — CI(`go vet` + `gofmt` + 编译 + 单测) + CD(fly deploy) + Release(多平台二进制 + GitHub Release),三个 workflow 串联: `go.yml` 成功 → `fly-deploy.yml` + `release.yml` 并行跑
 
 ---
 
 ## 通用项目结构(参考)
 
-各 API 项目都遵循相似的布局:
+六个可聚合业务 API 遵循相似的布局；license 和聚合网关按自身边界调整：
 
 ```
 starcat-xxx-api/
 ├── cmd/server/main.go          # 程序入口
+├── server/server.go            # 可导出装配入口，供独立 main 与聚合网关共用
 ├── internal/                   # 业务逻辑(不可被外部 import)
 │   ├── handler/                # HTTP handlers
 │   ├── model/                  # 数据模型
@@ -163,6 +164,8 @@ cd ../starcat-discovery-api && go mod tidy && go build ./... && go vet ./...
 
 ## 部署(Fly.io)
 
+当前六个独立业务 App 的部署方式如下。目标聚合 App 统一从 `supports/` 作为 Docker build context，并通过 `make -C supports fly-deploy-api` 部署；两类操作都是生产变更，必须先获得明确授权。
+
 ### 首次部署
 
 ```bash
@@ -197,7 +200,7 @@ fly ssh console               # SSH 进容器
 
 | Secret | 用途 | 共享? |
 |--------|------|--------|
-| `FLY_API_TOKEN` | Fly.io 部署 token | 6 个项目共用同一个 |
+| `FLY_API_TOKEN` | Fly.io 部署 token | 六个业务 App 与目标聚合 App 可共用 |
 | `GITHUB_TOKEN` / `GITHUB_TOKENS` | 调用 GitHub API | 项目特定(sharing / trending / weekly / discovery 需要) |
 
 ---
@@ -277,12 +280,13 @@ bash supports/scripts/gen-api-key.sh 2 --env     # 输出 API_KEYS=k1,k2 可直�
 |---|---|---|
 | `GET /healthz` | ❌ 不鉴权 | fly.io health check 用,鉴权会打挂自动重启 |
 | `GET /s/{id}` | ❌ 不鉴权 | sharing HTML 渲染,浏览器直访 |
+| sharing `GET /r/*`、`GET /og/repo/*` | ❌ 不鉴权 | 公开仓库页、静态资源与 OG 图片；完整路由见 sharing `server/server.go` |
 | `/api/v1/*` 全部 | ✅ 必须 | 业务数据,无 key 一律 401 |
 | `/internal/sync/*` 全部 | ✅ 必须 | admin 操作,优先使用独立 `ADMIN_API_KEYS`;旧服务如未拆分则使用业务 key 白名单 |
 
 ### 跨项目共享鉴权代码
 
-`internal/middleware/auth.go` 在多个项目 **byte-level 一致** 复制粘贴（详见 R-01 总体设计 §4.1）。新增 API 服务时必须先复用现有实现,除非接口鉴权模型确实不同。
+R-01 初版曾要求复制 `internal/middleware/auth.go`；当前实现已把通用鉴权收敛到 `starcat-api-kit/auth`。新增或修改服务应优先复用 kit，并保留各服务自身的路由装配和业务约束。
 
 ### 日志脱敏
 
@@ -299,7 +303,7 @@ ghp_xxx****abcd
 
 ## 跨项目共享代码同步约定（2026-06-09 R-01 起）
 
-依据 [`CLAUDE.md`](./CLAUDE.md)「不要跨项目 import」原则,以下文件在 N 个项目里 **byte-level 一致**（除 package 名 / module path 引用）。**任何一份更新必须同步另外 N 份**,PR 描述里勾「跨 N 个 API 同步 xxx.go」清单。
+下表是 R-01 初期的复制范围记录。当前共享的 auth / envelope / CORS / tokenpool / GitHub / env / ping 应优先从 `starcat-api-kit` 使用；只有尚未抽离的业务专属实现才按表核对，不再新增通用代码的多仓复制。
 
 | 共享文件 | sharing | trending | weekly | wiki | recommend | discovery | 备注 |
 |---|---|---|---|---|---|---|---|

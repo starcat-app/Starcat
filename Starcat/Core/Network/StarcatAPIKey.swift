@@ -2,7 +2,8 @@
 //  StarcatAPIKey.swift
 //  Starcat
 //
-//  Starcat 自建后端（trending / weekly / sharing / wiki）的 Bearer Token 解析中心。
+//  Starcat 六个自建业务后端（trending / weekly / sharing / wiki / recommend / discovery）的
+//  Bearer Token 解析中心。
 //
 //  对应文档：`docs/3-设计/详细设计/18-三场景共用架构.md` v1.2 §6.4（Bearer Auth 注入）
 //
@@ -68,7 +69,7 @@ enum StarcatAPIKeyResolver {
 
     /// 解析当前生效的 API Key。
     ///
-    /// - Parameter service: 目标服务（trending / weekly / sharing）。
+    /// - Parameter service: 目标业务服务（trending / weekly / sharing / wiki / recommend / discovery）。
     /// - Parameter settings: BYOK 来源；默认 nil 时函数内部走 `AppSettings.shared`。
     ///   测试可注入隔离实例（同时避免 `AppSettings.shared` 是 `@MainActor` 隔离属性
     ///   被作为 default expression 引用产生的 Swift 6 跨 actor 引用警告）。
