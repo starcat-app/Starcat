@@ -11,6 +11,8 @@ Release notes for the Mac App Store edition of Starcat.
 ### Fixes
 
 - Global filter panel: Removes the noticeable delay when opening repository filters for faster access.
+- Explore offline cache: Shows cached Discovery, Popular, and New Releases data immediately when the service is unavailable instead of leaving skeleton rows visible.
+- Explore category counts: Restores cached Discovery, Popular, New Releases, and Weekly totals on first launch without opening each category.
 
 ## 1.3.0
 

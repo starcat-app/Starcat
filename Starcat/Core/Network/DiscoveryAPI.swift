@@ -11,7 +11,10 @@
 import Foundation
 
 actor DiscoveryAPI {
-    private static let timeout: TimeInterval = 30
+    /// 自动加载有本地缓存兜底，应尽快失败；手动刷新允许更长等待，但也不能让 UI
+    /// 在服务下线时保持数十秒刷新状态。
+    private static let automaticRequestTimeout: TimeInterval = 5
+    private static let manualRefreshTimeout: TimeInterval = 10
 
     private var baseURL: URL
     private var apiKey: String?
@@ -30,8 +33,8 @@ actor DiscoveryAPI {
             self.session = session
         } else {
             let configuration = URLSessionConfiguration.default
-            configuration.timeoutIntervalForRequest = Self.timeout
-            configuration.timeoutIntervalForResource = Self.timeout
+            configuration.timeoutIntervalForRequest = Self.automaticRequestTimeout
+            configuration.timeoutIntervalForResource = Self.manualRefreshTimeout
             self.session = URLSession(configuration: configuration)
         }
         self.decoder = JSONDecoder()
@@ -143,6 +146,9 @@ actor DiscoveryAPI {
     private func performRequest(url: URL, ignoresCache: Bool = false) async throws -> (Data, URLResponse) {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
+        request.timeoutInterval = ignoresCache
+            ? Self.manualRefreshTimeout
+            : Self.automaticRequestTimeout
         if ignoresCache {
             // 手动刷新必须越过 URLCache，否则后端 bulk 已更新时仍可能拿到系统缓存的旧快照。
             request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData

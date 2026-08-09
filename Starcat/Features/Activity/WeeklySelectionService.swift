@@ -13,7 +13,7 @@
 //  逐层 binding 改动面太大；改成单个 @Observable 服务，谁需要就 @Environment 取。
 //
 //  关键约束：
-//  - 仅承载 UI 临时状态，不做持久化、不做网络请求；
+//  - 仅承载 UI 临时状态，不做持久化、不主动发网络请求；启动时只读取 SQLite bulk meta；
 //  - 主线程隔离（`@MainActor`），所有写入都来自 SwiftUI 视图层；
 //  - 切换分类 / 退出 Explore Weekly 时由调用方主动 `clearSelection()`，避免详情页停留陈旧数据。
 //
@@ -46,6 +46,17 @@ final class WeeklySelectionService {
     /// 一来省一次 API 调用，二来保证 sidebar 与列表数据口径一致。
     func applyTotal(_ value: Int) {
         total = value
+    }
+
+    /// 启动时从 Weekly bulk meta 恢复 sidebar 数量，不需要先创建列表 ViewModel。
+    ///
+    /// await 期间用户可能已经点击周刊并发布了更新值，因此返回后必须再次检查 `total`，
+    /// 避免较旧的启动缓存覆盖刚完成的列表加载结果。
+    func restoreCachedTotal(from repository: any WeeklyBulkRepositoryProtocol) async {
+        guard total == nil else { return }
+        guard let cachedTotal = await repository.cachedTotal() else { return }
+        guard total == nil else { return }
+        total = cachedTotal
     }
 
     /// 选中项目（点击行触发）。

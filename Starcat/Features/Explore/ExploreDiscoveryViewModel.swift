@@ -24,6 +24,9 @@ final class ExploreDiscoveryViewModel {
     /// Discovery 服务端默认每 3 小时刷新一次 bulk；客户端复用同一窗口，
     /// 避免本地 30 分钟一过就重复请求尚未更新的服务端快照。
     private static let bulkTTL: TimeInterval = 3 * 60 * 60
+    /// 自动刷新失败后暂缓重试。用户切换发现 / 热门 / 新发布时只做本地派生，
+    /// 避免已知不可用的服务在每次分类切换时都触发一次超时请求；手动刷新不受此限制。
+    private static let automaticRefreshFailureCooldown: TimeInterval = 5 * 60
 
     private(set) var repos: [DiscoveryRepoDTO] = []
     private(set) var total: Int = 0
@@ -50,6 +53,7 @@ final class ExploreDiscoveryViewModel {
     private var preparedSnapshotLRU: [String] = []
     private var page: Int = 1
     private var inFlightRequestID = UUID()
+    private var automaticRefreshBlockedUntil: Date?
     /// 定向测试确认 prepared snapshot 命中没有再次扫描 bulk；不参与 UI 逻辑。
     private(set) var localDerivationCountForTesting = 0
 
@@ -79,7 +83,9 @@ final class ExploreDiscoveryViewModel {
         isRefreshing = showsRefreshIndicator
         loadError = nil
         cacheWarning = nil
-        var didPublishPreparedSnapshot = false
+        var didPublishLocalSnapshot = showsRefreshIndicator
+            && publishedQueryIdentity == queryIdentity
+            && !bulkAllRepos.isEmpty
 
         // A → B → A 时直接提交已经派生好的快照。TTL 过期只触发后台 SWR，
         // 不让仍可用的列表重新退回骨架屏。
@@ -87,9 +93,13 @@ final class ExploreDiscoveryViewModel {
             publishPreparedSnapshot(prepared, bumpRevision: true)
             publishedQueryIdentity = queryIdentity
             isLoading = false
-            didPublishPreparedSnapshot = true
+            didPublishLocalSnapshot = true
 
             if let lastRefreshedAt, isCacheFresh(at: lastRefreshedAt) {
+                finish(requestID: requestID)
+                return
+            }
+            if skipAutomaticRefreshDuringCooldown() {
                 finish(requestID: requestID)
                 return
             }
@@ -98,7 +108,7 @@ final class ExploreDiscoveryViewModel {
 
         // 发现 / 热门 / 新发布共用同一 bulk。切换分类时先用会话内快照后台派生首屏，
         // 不再每次重新读取 SQLite；快照过期时仍保留已发布列表并继续后台刷新。
-        if !showsRefreshIndicator, !didPublishPreparedSnapshot, !bulkAllRepos.isEmpty {
+        if !showsRefreshIndicator, !didPublishLocalSnapshot, !bulkAllRepos.isEmpty {
             await applyFiltersLocally(
                 sourceRepos: bulkAllRepos,
                 mode: mode,
@@ -115,8 +125,13 @@ final class ExploreDiscoveryViewModel {
             }
             publishedQueryIdentity = queryIdentity
             isLoading = false
+            didPublishLocalSnapshot = true
 
             if let lastRefreshedAt, isCacheFresh(at: lastRefreshedAt) {
+                finish(requestID: requestID)
+                return
+            }
+            if skipAutomaticRefreshDuringCooldown() {
                 finish(requestID: requestID)
                 return
             }
@@ -131,10 +146,10 @@ final class ExploreDiscoveryViewModel {
             return
         }
 
-        if let cached,
-           isCacheFresh(at: cached.lastFetchedAt),
-           Self.isCachedBulkUsable(cached, for: mode),
-           !(await isSummaryNewerThanBulk(cached, repository: repository)) {
+        if let cached, Self.isCachedBulkUsable(cached, for: mode) {
+            let cacheIsStale = !isCacheFresh(at: cached.lastFetchedAt)
+            let summaryIsNewer = await isSummaryNewerThanBulk(cached, repository: repository)
+            let requiresRefresh = cacheIsStale || summaryIsNewer
             guard !shouldStop(requestID: requestID) else {
                 finish(requestID: requestID)
                 return
@@ -154,8 +169,14 @@ final class ExploreDiscoveryViewModel {
                 return
             }
             publishedQueryIdentity = queryIdentity
-            finish(requestID: requestID)
-            return
+            isLoading = false
+            didPublishLocalSnapshot = true
+
+            if !requiresRefresh || skipAutomaticRefreshDuringCooldown() {
+                finish(requestID: requestID)
+                return
+            }
+            isRefreshing = true
         }
 
         do {
@@ -164,15 +185,17 @@ final class ExploreDiscoveryViewModel {
                 finish(requestID: requestID)
                 return
             }
-            await apply(
-                result: fetchResult.result,
-                mode: mode,
-                language: language,
-                topic: topic,
-                platform: platform,
-                sort: sort,
-                requestID: requestID
-            )
+            if fetchResult.source == .remote || !didPublishLocalSnapshot {
+                await apply(
+                    result: fetchResult.result,
+                    mode: mode,
+                    language: language,
+                    topic: topic,
+                    platform: platform,
+                    sort: sort,
+                    requestID: requestID
+                )
+            }
             guard !shouldStop(requestID: requestID) else {
                 finish(requestID: requestID)
                 return
@@ -180,6 +203,11 @@ final class ExploreDiscoveryViewModel {
             publishedQueryIdentity = queryIdentity
             if case .cachedFallback = fetchResult.source {
                 cacheWarning = Self.cacheFallbackWarning(fetchResult.fallbackErrorDescription)
+                if !showsRefreshIndicator {
+                    recordAutomaticRefreshFailure()
+                }
+            } else {
+                automaticRefreshBlockedUntil = nil
             }
         } catch is CancellationError {
             finish(requestID: requestID)
@@ -189,7 +217,10 @@ final class ExploreDiscoveryViewModel {
                 finish(requestID: requestID)
                 return
             }
-            if !bulkAllRepos.isEmpty || didPublishPreparedSnapshot {
+            if !showsRefreshIndicator {
+                recordAutomaticRefreshFailure()
+            }
+            if !bulkAllRepos.isEmpty || didPublishLocalSnapshot {
                 // SWR / 手动刷新失败不能删除最后一次成功快照；列表保持可用，只提示缓存状态。
                 loadError = nil
                 cacheWarning = Self.cacheFallbackWarning(error.localizedDescription)
@@ -545,6 +576,21 @@ final class ExploreDiscoveryViewModel {
 
     private func isCacheFresh(at lastFetchedAt: Date) -> Bool {
         Date().timeIntervalSince(lastFetchedAt) < Self.bulkTTL
+    }
+
+    /// 冷却期只约束自动 SWR。手动刷新不会调用此方法，因此用户始终可以主动重试。
+    private func skipAutomaticRefreshDuringCooldown() -> Bool {
+        guard let automaticRefreshBlockedUntil else { return false }
+        guard Date() < automaticRefreshBlockedUntil else {
+            self.automaticRefreshBlockedUntil = nil
+            return false
+        }
+        cacheWarning = Self.cacheFallbackWarning(nil)
+        return true
+    }
+
+    private func recordAutomaticRefreshFailure() {
+        automaticRefreshBlockedUntil = Date().addingTimeInterval(Self.automaticRefreshFailureCooldown)
     }
 
     private func shouldStop(requestID: UUID) -> Bool {

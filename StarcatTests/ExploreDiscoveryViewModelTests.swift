@@ -289,8 +289,8 @@ struct ExploreDiscoveryViewModelTests {
         #expect(await repository.fetchBulkCount() == 1, "LRU miss 只允许重做本地派生，不能重复请求事实源")
     }
 
-    @Test("过期缓存等待远端完成后只发布远端快照")
-    func staleCacheWaitsForRemoteBeforePublishing() async throws {
+    @Test("过期缓存立即发布，远端完成后再替换快照")
+    func staleCachePublishesBeforeRemoteCompletes() async throws {
         let repository = FakeDiscoveryRepository()
         await repository.seedCached(
             Self.makeBulkResult(repos: [
@@ -316,28 +316,31 @@ struct ExploreDiscoveryViewModelTests {
         }
         await repository.waitForBulkFetchToStart()
 
-        // 远端尚未返回时，过期缓存只作为失败兜底，不能先发布造成二次换榜。
-        #expect(viewModel.repos.isEmpty)
-        #expect(viewModel.publishedQueryIdentity == nil)
-        #expect(viewModel.reposRevision == 0)
+        // 远端尚未返回时，本地快照必须已经可用；后台刷新只体现为刷新图标。
+        #expect(viewModel.repos.map(\.fullName) == ["stale/repo"])
+        #expect(viewModel.publishedQueryIdentity != nil)
+        #expect(viewModel.reposRevision == 1)
+        #expect(!viewModel.isLoading)
+        #expect(viewModel.isRefreshing)
 
         await repository.resumeBulkFetch()
         await reloadTask.value
 
         #expect(viewModel.repos.map(\.fullName) == ["remote/repo"])
         #expect(viewModel.publishedQueryIdentity != nil)
-        #expect(viewModel.reposRevision == 1)
+        #expect(viewModel.reposRevision == 2)
         #expect(await repository.fetchBulkCount() == 1)
     }
 
-    @Test("过期缓存仅在远端失败后作为单次兜底发布")
+    @Test("过期缓存立即发布，远端失败后保持原快照并显示警告")
     func staleCachePublishesOnceAfterRemoteFailure() async throws {
         let repository = FakeDiscoveryRepository()
+        let staleDate = Date().addingTimeInterval(-(3 * 60 * 60 + 60))
         await repository.seedCached(
             Self.makeBulkResult(repos: [
                 Self.makeRepo(repoID: 135, owner: "fallback", name: "repo", categoryRanks: ["popular": 1])
             ]),
-            lastFetchedAt: Date().addingTimeInterval(-(3 * 60 * 60 + 60))
+            lastFetchedAt: staleDate
         )
         await repository.setFetchError(FakeDiscoveryError.unavailable)
         let viewModel = ExploreDiscoveryViewModel()
@@ -356,11 +359,57 @@ struct ExploreDiscoveryViewModelTests {
         #expect(viewModel.reposRevision == 1)
         #expect(viewModel.loadError == nil)
         #expect(viewModel.cacheWarning?.isEmpty == false)
+        #expect(viewModel.lastRefreshedAt == staleDate)
         #expect(await repository.fetchBulkCount() == 1)
     }
 
-    @Test("取消的分类请求不会发布结果或遗留 loading")
-    func cancelledReloadDoesNotPublish() async throws {
+    @Test("自动刷新失败后冷却期内切换分类只使用本地 bulk")
+    func automaticRefreshFailureCooldownAvoidsRepeatedFetches() async throws {
+        let repository = FakeDiscoveryRepository()
+        await repository.seedCached(
+            Self.makeBulkResult(repos: [
+                Self.makeRepo(repoID: 136, owner: "cached", name: "popular"),
+                Self.makeRepo(
+                    repoID: 137,
+                    owner: "cached",
+                    name: "release",
+                    categories: ["new_releases"],
+                    categoryRanks: ["new_releases": 1]
+                ),
+            ]),
+            lastFetchedAt: Date().addingTimeInterval(-(3 * 60 * 60 + 60))
+        )
+        await repository.setFetchError(FakeDiscoveryError.unavailable)
+        let viewModel = ExploreDiscoveryViewModel()
+
+        await viewModel.reload(
+            repository: repository,
+            mode: .popular,
+            language: nil,
+            topic: nil,
+            platform: nil,
+            sort: .popular
+        )
+        #expect(await repository.fetchBulkCount() == 1)
+
+        await viewModel.reload(
+            repository: repository,
+            mode: .newReleases,
+            language: nil,
+            topic: nil,
+            platform: nil,
+            sort: .release
+        )
+
+        #expect(viewModel.repos.map(\.fullName) == ["cached/release"])
+        #expect(viewModel.cacheWarning?.isEmpty == false)
+        #expect(!viewModel.isLoading)
+        #expect(!viewModel.isRefreshing)
+        #expect(await repository.fetchBulkCount() == 1)
+    }
+
+    @Test("取消的后台刷新保留已发布缓存且不遗留 loading")
+    func cancelledReloadKeepsPublishedCache() async throws {
         let repository = FakeDiscoveryRepository()
         await repository.seedCached(
             Self.makeBulkResult(repos: [
@@ -389,9 +438,9 @@ struct ExploreDiscoveryViewModelTests {
         await repository.resumeBulkFetch()
         await reloadTask.value
 
-        #expect(viewModel.repos.isEmpty)
-        #expect(viewModel.publishedQueryIdentity == nil)
-        #expect(viewModel.reposRevision == 0)
+        #expect(viewModel.repos.map(\.fullName) == ["stale/repo"])
+        #expect(viewModel.publishedQueryIdentity != nil)
+        #expect(viewModel.reposRevision == 1)
         #expect(!viewModel.isLoading)
         #expect(!viewModel.isRefreshing)
     }
@@ -427,6 +476,40 @@ struct ExploreDiscoveryViewModelTests {
         #expect(catalogStore.total(for: .discover) == 386)
         #expect(catalogStore.total(for: .popular) == 351)
         #expect(catalogStore.total(for: .newReleases) == 110)
+    }
+
+    @Test("Discovery 远端未返回时先发布缓存 summary 数量")
+    func catalogStorePublishesCachedSummaryBeforeRemoteCompletes() async throws {
+        let repository = FakeDiscoveryRepository()
+        let summary = DiscoverySummaryDTO(
+            modes: [
+                DiscoveryModeSummaryDTO(mode: "discover", total: 616, topics: nil, platforms: nil, languages: nil),
+                DiscoveryModeSummaryDTO(mode: "popular", total: 407, topics: nil, platforms: nil, languages: nil),
+                DiscoveryModeSummaryDTO(mode: "new_releases", total: 266, topics: nil, platforms: nil, languages: nil),
+            ],
+            generatedAt: "2026-08-09T08:00:00Z"
+        )
+        await repository.seedCached(
+            Self.makeBulkResult(
+                repos: [Self.makeRepo(repoID: 151, owner: "cached", name: "repo")],
+                summary: summary
+            ),
+            lastFetchedAt: Date().addingTimeInterval(-60)
+        )
+        await repository.pauseNextSummaryFetch()
+        let catalogStore = ExploreCatalogStore(repository: repository)
+
+        let reloadTask = Task {
+            await catalogStore.reload()
+        }
+        await repository.waitForSummaryFetchToStart()
+
+        #expect(catalogStore.total(for: .discover) == 616)
+        #expect(catalogStore.total(for: .popular) == 407)
+        #expect(catalogStore.total(for: .newReleases) == 266)
+
+        await repository.resumeSummaryFetch()
+        await reloadTask.value
     }
 
     @Test("本地分页 meta 驱动 loadMore 追加下一页")
@@ -668,6 +751,10 @@ private actor FakeDiscoveryRepository: DiscoveryRepositoryProtocol {
     private var bulkFetchHasStarted = false
     private var bulkFetchStartWaiters: [CheckedContinuation<Void, Never>] = []
     private var bulkFetchResumeContinuation: CheckedContinuation<Void, Never>?
+    private var shouldPauseNextSummaryFetch = false
+    private var summaryFetchHasStarted = false
+    private var summaryFetchStartWaiters: [CheckedContinuation<Void, Never>] = []
+    private var summaryFetchResumeContinuation: CheckedContinuation<Void, Never>?
 
     func cachedPage(mode: DiscoveryListMode, query: DiscoveryListQuery) async -> DiscoveryCachedPage? {
         nil
@@ -737,7 +824,17 @@ private actor FakeDiscoveryRepository: DiscoveryRepositoryProtocol {
     }
 
     func fetchSummary() async throws -> DiscoverySummaryDTO {
-        cached?.summary ?? DiscoverySummaryDTO(modes: [], generatedAt: nil)
+        if shouldPauseNextSummaryFetch {
+            shouldPauseNextSummaryFetch = false
+            summaryFetchHasStarted = true
+            let waiters = summaryFetchStartWaiters
+            summaryFetchStartWaiters.removeAll()
+            waiters.forEach { $0.resume() }
+            await withCheckedContinuation { continuation in
+                summaryFetchResumeContinuation = continuation
+            }
+        }
+        return cached?.summary ?? DiscoverySummaryDTO(modes: [], generatedAt: nil)
     }
 
     func clearCache() async {
@@ -775,6 +872,23 @@ private actor FakeDiscoveryRepository: DiscoveryRepositoryProtocol {
     func resumeBulkFetch() {
         bulkFetchResumeContinuation?.resume()
         bulkFetchResumeContinuation = nil
+    }
+
+    func pauseNextSummaryFetch() {
+        shouldPauseNextSummaryFetch = true
+        summaryFetchHasStarted = false
+    }
+
+    func waitForSummaryFetchToStart() async {
+        if summaryFetchHasStarted { return }
+        await withCheckedContinuation { continuation in
+            summaryFetchStartWaiters.append(continuation)
+        }
+    }
+
+    func resumeSummaryFetch() {
+        summaryFetchResumeContinuation?.resume()
+        summaryFetchResumeContinuation = nil
     }
 
     func setFetchError(_ error: Error?) {

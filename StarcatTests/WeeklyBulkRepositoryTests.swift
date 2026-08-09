@@ -623,6 +623,28 @@ struct WeeklyBulkRepositoryTests {
     }
 
     @MainActor
+    @Test("WeeklySelectionService: 未打开周刊时从 bulk meta 恢复 sidebar 数量")
+    func selectionServiceRestoresCachedTotalBeforeListLoads() async throws {
+        let (repo, _) = try makeRepository { request in
+            let body = bulkFixtureBody(
+                repos: [("owner/weekly", "Swift", 300, "2026-06-15T10:00:00Z")],
+                total: 4_491
+            )
+            return (bulkHTTPResponse(200, request.url!), body)
+        }
+        _ = try await repo.fetchBulk()
+        let service = WeeklySelectionService()
+
+        await service.restoreCachedTotal(from: repo)
+        #expect(service.total == 4_491)
+
+        // 列表发布的新值优先，后续启动恢复不能用旧 meta 覆盖它。
+        service.applyTotal(4_500)
+        await service.restoreCachedTotal(from: repo)
+        #expect(service.total == 4_500)
+    }
+
+    @MainActor
     @Test("WeeklyContentViewModel: 本地 bulk 模式组合筛选收录强度 / 状态 / 热度 / 推送时间")
     func localBulkFiltersByAdvancedCriteria() async throws {
         let recentPush = isoDaysAgo(10)

@@ -80,7 +80,9 @@ struct DiscoveryRepositoryPersistenceTests {
 
         let fetchResult = try await repository.fetchBulk()
         let fetched = fetchResult.result
+        let request = try #require(URLProtocolStub.receivedRequests.first)
         #expect(fetchResult.source == .remote)
+        #expect(request.timeoutInterval == 5)
         #expect(fetched.repos.first?.fullName == "bulk/repo")
         #expect(fetched.repos.first?.popularityScore == 8.5)
         #expect(fetched.repos.first?.categories == ["popular", "new_releases"])
@@ -92,6 +94,21 @@ struct DiscoveryRepositoryPersistenceTests {
         #expect(cached.repos.first?.categoryRanks["new_releases"] == 2)
         #expect(cached.summary.mode(.popular)?.languages?.first?.key == "Swift")
         #expect(cached.etag == "W/bulk-test")
+    }
+
+    @Test("bulk 手动刷新使用 10 秒超时并绕过 URLCache")
+    func manualBulkRefreshUsesBoundedTimeout() async throws {
+        let repository = try makeRepository { request in
+            let body = Self.makeBulkBody(repoID: 602, owner: "manual", name: "repo")
+            return (Self.httpResponse(200, request.url!), body)
+        }
+
+        _ = try await repository.fetchBulk(ignoresCache: true)
+
+        let request = try #require(URLProtocolStub.receivedRequests.first)
+        #expect(request.timeoutInterval == 10)
+        #expect(request.cachePolicy == .reloadIgnoringLocalAndRemoteCacheData)
+        #expect(request.value(forHTTPHeaderField: "Cache-Control") == "no-cache")
     }
 
 
