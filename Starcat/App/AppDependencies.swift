@@ -1124,18 +1124,38 @@ final class AppDependencies {
             entitlementGate: self.entitlementGate,
             settings: self.settings
         )
-        let mcpWriteFacade = StarcatMCPWriteFacade(
-            repoRepository: repo,
-            tagRepository: tagRepo,
-            repoTagRepository: repoTagRepo,
-            repoNoteRepository: self.repoNoteRepository,
-            settings: self.settings,
-            entitlementGate: self.entitlementGate,
-            refreshSemanticIndex: { [weak semantic] repo in
-                Task { @MainActor in
+        let repositoryMetadataCapability = RepositoryMetadataCapabilityExecutor(
+            source: DatabaseRepositoryMetadataCapabilitySource(
+                repoRepository: repo,
+                repoNoteRepository: self.repoNoteRepository,
+                onRepositoryMutation: { [weak semantic] repo, mutation in
+                    if case .status(let status) = mutation {
+                        NotificationCenter.default.post(
+                            name: .repoStatusDidChange,
+                            object: nil,
+                            userInfo: ["repoId": repo.id, "status": status.rawValue]
+                        )
+                    }
                     await semantic?.refreshIndexIfChanged(for: repo)
                 }
-            }
+            )
+        )
+        let repositoryTagCapability = RepositoryTagCapabilityExecutor(
+            source: DatabaseRepositoryTagCapabilitySource(
+                repoRepository: repo,
+                tagRepository: tagRepo,
+                repoTagRepository: repoTagRepo,
+                onRepositoryMutation: { [weak semantic] repo in
+                    await semantic?.refreshIndexIfChanged(for: repo)
+                }
+            )
+        )
+        let mcpWriteFacade = StarcatMCPWriteFacade(
+            repoRepository: repo,
+            metadataCapability: repositoryMetadataCapability,
+            tagCapability: repositoryTagCapability,
+            settings: self.settings,
+            entitlementGate: self.entitlementGate
         )
         let mcpDeviceStore = StarcatMCPDeviceStore()
         self.mcpDeviceStore = mcpDeviceStore

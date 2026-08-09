@@ -129,6 +129,45 @@ struct RepositoryTagCapabilityTests {
         #expect(preview.output.output.contains("preview_hash:"))
     }
 
+    @Test("通用标签能力复用 create、add、remove 与 replace 领域写入")
+    func mutationCapabilityCoversPublishedMCPTagSemantics() async throws {
+        let source = RepositoryTagCapabilityStub(
+            repos: [repo(id: 1)],
+            tags: [tag(id: "swift", name: "Swift")]
+        )
+        let executor = RepositoryTagCapabilityExecutor(source: source)
+
+        let dryRun = try await executor.addTags(
+            repoID: 1,
+            tagNames: ["AI"],
+            createMissing: true,
+            dryRun: true
+        )
+        #expect(dryRun.changed == false)
+        #expect(await source.tagNames() == ["Swift"])
+
+        _ = try await executor.addTags(
+            repoID: 1,
+            tagNames: ["Swift", "AI"],
+            createMissing: true,
+            dryRun: false
+        )
+        #expect(Set(await source.assignedTagNames(repoID: 1)) == ["AI", "Swift"])
+
+        _ = try await executor.removeTags(repoID: 1, tagNames: ["Swift"], dryRun: false)
+        #expect(await source.assignedTagNames(repoID: 1) == ["AI"])
+
+        let replacement = try await executor.replaceTags(
+            repoID: 1,
+            tagNames: ["Swift"],
+            createMissing: false,
+            dryRun: false
+        )
+        #expect(replacement.warnings == ["This replaces all existing tags on the repository."])
+        #expect(await source.assignedTagNames(repoID: 1) == ["Swift"])
+        #expect(await source.mutationCount() == 3)
+    }
+
     private func repo(id: Int64) -> Repo {
         var repo = Repo.makeMinimal(owner: "octo", name: "repo-\(id)")
         repo.id = id
@@ -182,11 +221,12 @@ private struct RepositoryTagWrite: Equatable, Sendable {
     var repoIDs: [Int64]
 }
 
-private actor RepositoryTagCapabilityStub: RepositoryTagCapabilitySource {
+private actor RepositoryTagCapabilityStub: RepositoryTagMutationCapabilitySource {
     private let reposByID: [Int64: Repo]
-    private let tags: [Starcat.Tag]
+    private var tags: [Starcat.Tag]
     private var assignments: [Int64: [Starcat.Tag]]
     private var writes: [RepositoryTagWrite] = []
+    private var repositoryMutationCount = 0
 
     init(repos: [Repo], tags: [Starcat.Tag], assignments: [Int64: [Starcat.Tag]] = [:]) {
         self.reposByID = Dictionary(uniqueKeysWithValues: repos.map { ($0.id, $0) })
@@ -210,5 +250,43 @@ private actor RepositoryTagCapabilityStub: RepositoryTagCapabilitySource {
         }
     }
 
+    func findTag(name: String) -> Starcat.Tag? {
+        tags.first { $0.name == name }
+    }
+
+    func createTag(_ tag: Starcat.Tag) {
+        tags.append(tag)
+    }
+
+    func addTag(repoID: Int64, tagID: String) throws {
+        try batchAddTag(repoIDs: [repoID], tagID: tagID)
+    }
+
+    func removeTag(repoID: Int64, tagID: String) {
+        assignments[repoID, default: []].removeAll { $0.id == tagID }
+    }
+
+    func replaceTags(repoID: Int64, tagIDs: [String]) throws {
+        let resolved = try tagIDs.map { tagID in
+            guard let tag = tags.first(where: { $0.id == tagID }) else {
+                throw RepositoryTagMutationCapabilityError.tagNotFound(tagID)
+            }
+            return tag
+        }
+        assignments[repoID] = resolved
+    }
+
+    func didMutateRepository(_ repository: Repo) {
+        repositoryMutationCount += 1
+    }
+
     func recordedWrites() -> [RepositoryTagWrite] { writes }
+
+    func tagNames() -> [String] { tags.map(\.name).sorted() }
+
+    func assignedTagNames(repoID: Int64) -> [String] {
+        assignments[repoID, default: []].map(\.name).sorted()
+    }
+
+    func mutationCount() -> Int { repositoryMutationCount }
 }

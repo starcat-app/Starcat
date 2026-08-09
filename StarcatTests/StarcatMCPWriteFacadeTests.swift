@@ -45,15 +45,38 @@ struct StarcatMCPWriteFacadeTests {
         let refreshCounter = RefreshCounter()
         let tmpLog = FileManager.default.temporaryDirectory
             .appendingPathComponent("starcat-mcp-audit-\(UUID().uuidString).jsonl")
+        let repoRepository = GRDBRepoRepository(database: db)
+        let metadataCapability = RepositoryMetadataCapabilityExecutor(
+            source: DatabaseRepositoryMetadataCapabilitySource(
+                repoRepository: repoRepository,
+                repoNoteRepository: noteRepo,
+                onRepositoryMutation: { repo, mutation in
+                    if case .status(let status) = mutation {
+                        NotificationCenter.default.post(
+                            name: .repoStatusDidChange,
+                            object: nil,
+                            userInfo: ["repoId": repo.id, "status": status.rawValue]
+                        )
+                    }
+                    refreshCounter.count += 1
+                }
+            )
+        )
+        let tagCapability = RepositoryTagCapabilityExecutor(
+            source: DatabaseRepositoryTagCapabilitySource(
+                repoRepository: repoRepository,
+                tagRepository: tagRepo,
+                repoTagRepository: repoTagRepo,
+                onRepositoryMutation: { _ in refreshCounter.count += 1 }
+            )
+        )
         let facade = StarcatMCPWriteFacade(
-            repoRepository: GRDBRepoRepository(database: db),
-            tagRepository: tagRepo,
-            repoTagRepository: repoTagRepo,
-            repoNoteRepository: noteRepo,
+            repoRepository: repoRepository,
+            metadataCapability: metadataCapability,
+            tagCapability: tagCapability,
             settings: settings,
             entitlementGate: gate,
-            auditLog: StarcatMCPAuditLog(fileURL: tmpLog),
-            refreshSemanticIndex: { _ in refreshCounter.count += 1 }
+            auditLog: StarcatMCPAuditLog(fileURL: tmpLog)
         )
         return (facade, noteRepo, repoTagRepo, rawTagRepo, db, refreshCounter)
     }
@@ -145,6 +168,28 @@ struct StarcatMCPWriteFacadeTests {
         #expect(try await tagRepo.findByName("ai") != nil)
         #expect(Set(try await repoTagRepo.fetchTags(forRepo: 1).map(\.name)) == ["swift", "ai"])
         #expect(refreshCounter.count == 1)
+    }
+
+    @Test("共享 Capability 错误保持 MCP 已发布的 NOT_FOUND 分类")
+    func missingTagKeepsMCPNotFoundError() async throws {
+        let (facade, _, _, _, db, _) = try makeSUT()
+        try await db.insertRepoFixture(id: 1)
+
+        do {
+            _ = try await facade.addRepoTags(
+                repoID: 1,
+                owner: nil,
+                name: nil,
+                tagNames: ["missing"],
+                createMissing: false,
+                dryRun: false
+            )
+            Issue.record("Missing tag should keep MCP not-found semantics")
+        } catch let StarcatMCPError.notFound(message) {
+            #expect(message == "Tag not found: missing")
+        } catch {
+            Issue.record("Unexpected error type: \(error)")
+        }
     }
 }
 

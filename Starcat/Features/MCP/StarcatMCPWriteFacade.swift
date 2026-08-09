@@ -17,32 +17,26 @@ import Foundation
 @MainActor
 final class StarcatMCPWriteFacade {
     private let repoRepository: any RepoRepositoryProtocol
-    private let tagRepository: any TagRepositoryProtocol
-    private let repoTagRepository: any RepoTagRepositoryProtocol
-    private let repoNoteRepository: any RepoNoteRepositoryProtocol
+    private let metadataCapability: any RepositoryMetadataCapabilityExecuting
+    private let tagCapability: any RepositoryTagMutationCapabilityExecuting
     private let settings: AppSettings
     private let entitlementGate: EntitlementGate
     private let auditLog: StarcatMCPAuditLog
-    private let refreshSemanticIndex: @MainActor (Repo) -> Void
 
     init(
         repoRepository: any RepoRepositoryProtocol,
-        tagRepository: any TagRepositoryProtocol,
-        repoTagRepository: any RepoTagRepositoryProtocol,
-        repoNoteRepository: any RepoNoteRepositoryProtocol,
+        metadataCapability: any RepositoryMetadataCapabilityExecuting,
+        tagCapability: any RepositoryTagMutationCapabilityExecuting,
         settings: AppSettings,
         entitlementGate: EntitlementGate,
-        auditLog: StarcatMCPAuditLog = .shared,
-        refreshSemanticIndex: @escaping @MainActor (Repo) -> Void
+        auditLog: StarcatMCPAuditLog = .shared
     ) {
         self.repoRepository = repoRepository
-        self.tagRepository = tagRepository
-        self.repoTagRepository = repoTagRepository
-        self.repoNoteRepository = repoNoteRepository
+        self.metadataCapability = metadataCapability
+        self.tagCapability = tagCapability
         self.settings = settings
         self.entitlementGate = entitlementGate
         self.auditLog = auditLog
-        self.refreshSemanticIndex = refreshSemanticIndex
     }
 
     func upsertRepoNote(
@@ -60,20 +54,18 @@ final class StarcatMCPWriteFacade {
             repo: repo,
             affectedTags: []
         ) {
-            let trimmed = content?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let normalized = trimmed?.isEmpty == true ? nil : content
-            if !dryRun {
-                try await repoNoteRepository.updateContent(repoId: repo.id, content: normalized)
-                refreshSemanticIndex(repo)
-            }
-            let note = try await repoNoteRepository.find(repoId: repo.id)
+            let mutation = try await metadataCapability.upsertNote(
+                repoID: repo.id,
+                content: content,
+                dryRun: dryRun
+            )
             return MCPWriteResult(
                 dryRun: dryRun,
-                changed: !dryRun,
+                changed: mutation.changed,
                 permission: .localWrite,
                 action: "upsert_repo_note",
-                repo: repo,
-                note: note
+                repo: mutation.repository,
+                note: mutation.note
             )
         }
     }
@@ -93,19 +85,18 @@ final class StarcatMCPWriteFacade {
             repo: repo,
             affectedTags: []
         ) {
-            if !dryRun {
-                try await repoNoteRepository.updateStatus(repoId: repo.id, status: status)
-                postStatusDidChange(repoId: repo.id, status: status)
-                refreshSemanticIndex(repo)
-            }
-            let note = try await repoNoteRepository.find(repoId: repo.id)
+            let mutation = try await metadataCapability.setStatus(
+                repoID: repo.id,
+                status: status,
+                dryRun: dryRun
+            )
             return MCPWriteResult(
                 dryRun: dryRun,
-                changed: !dryRun,
+                changed: mutation.changed,
                 permission: .localWrite,
                 action: "set_repo_status",
-                repo: repo,
-                note: note
+                repo: mutation.repository,
+                note: mutation.note
             )
         }
     }
@@ -116,54 +107,26 @@ final class StarcatMCPWriteFacade {
         icon: String?,
         dryRun: Bool
     ) async throws -> MCPWriteResult {
-        let normalized = try Self.normalizeTagName(name)
-        if let existing = try await tagRepository.findByName(normalized) {
-            return try await perform(
-                tool: "starcat.create_tag",
-                permission: .localWrite,
-                dryRun: dryRun,
-                repo: nil,
-                affectedTags: [existing.name]
-            ) {
-                MCPWriteResult(
-                    dryRun: dryRun,
-                    changed: false,
-                    permission: .localWrite,
-                    action: "create_tag",
-                    tags: [existing],
-                    warnings: ["Tag already exists."]
-                )
-            }
-        }
-
         return try await perform(
             tool: "starcat.create_tag",
             permission: .localWrite,
             dryRun: dryRun,
             repo: nil,
-            affectedTags: [normalized]
+            affectedTags: [name]
         ) {
-            let now = ISO8601DateFormatter.shared.string(from: Date())
-            let tag = Tag(
-                id: UUID().uuidString,
-                name: normalized,
-                color: color?.nilIfBlank,
-                icon: icon?.nilIfBlank,
-                sortOrder: 0,
-                isPreset: false,
-                parentId: nil,
-                createdAt: now,
-                updatedAt: now
+            let mutation = try await tagCapability.createTag(
+                name: name,
+                color: color,
+                icon: icon,
+                dryRun: dryRun
             )
-            if !dryRun {
-                try await tagRepository.create(tag)
-            }
             return MCPWriteResult(
                 dryRun: dryRun,
-                changed: !dryRun,
+                changed: mutation.changed,
                 permission: .localWrite,
                 action: "create_tag",
-                tags: [tag]
+                tags: mutation.tags,
+                warnings: mutation.warnings
             )
         }
     }
@@ -184,20 +147,20 @@ final class StarcatMCPWriteFacade {
             repo: repo,
             affectedTags: tagNames
         ) {
-            let tags = try await resolveTags(names: tagNames, createMissing: createMissing, dryRun: dryRun)
-            if !dryRun {
-                for tag in tags {
-                    try await repoTagRepository.addTag(repoId: repo.id, tagId: tag.id)
-                }
-                refreshSemanticIndex(repo)
-            }
+            let mutation = try await tagCapability.addTags(
+                repoID: repo.id,
+                tagNames: tagNames,
+                createMissing: createMissing,
+                dryRun: dryRun
+            )
             return MCPWriteResult(
                 dryRun: dryRun,
-                changed: !dryRun && !tags.isEmpty,
+                changed: mutation.changed,
                 permission: .localWrite,
                 action: "add_repo_tags",
-                repo: repo,
-                tags: tags
+                repo: mutation.repository,
+                tags: mutation.tags,
+                warnings: mutation.warnings
             )
         }
     }
@@ -217,20 +180,19 @@ final class StarcatMCPWriteFacade {
             repo: repo,
             affectedTags: tagNames
         ) {
-            let tags = try await existingTags(names: tagNames)
-            if !dryRun {
-                for tag in tags {
-                    try await repoTagRepository.removeTag(repoId: repo.id, tagId: tag.id)
-                }
-                refreshSemanticIndex(repo)
-            }
+            let mutation = try await tagCapability.removeTags(
+                repoID: repo.id,
+                tagNames: tagNames,
+                dryRun: dryRun
+            )
             return MCPWriteResult(
                 dryRun: dryRun,
-                changed: !dryRun && !tags.isEmpty,
+                changed: mutation.changed,
                 permission: .localWrite,
                 action: "remove_repo_tags",
-                repo: repo,
-                tags: tags
+                repo: mutation.repository,
+                tags: mutation.tags,
+                warnings: mutation.warnings
             )
         }
     }
@@ -251,19 +213,20 @@ final class StarcatMCPWriteFacade {
             repo: repo,
             affectedTags: tagNames
         ) {
-            let tags = try await resolveTags(names: tagNames, createMissing: createMissing, dryRun: dryRun)
-            if !dryRun {
-                try await repoTagRepository.setTags(repoId: repo.id, tagIds: tags.map(\.id))
-                refreshSemanticIndex(repo)
-            }
+            let mutation = try await tagCapability.replaceTags(
+                repoID: repo.id,
+                tagNames: tagNames,
+                createMissing: createMissing,
+                dryRun: dryRun
+            )
             return MCPWriteResult(
                 dryRun: dryRun,
-                changed: !dryRun,
+                changed: mutation.changed,
                 permission: .destructiveWrite,
                 action: "set_repo_tags",
-                repo: repo,
-                tags: tags,
-                warnings: ["This replaces all existing tags on the repository."]
+                repo: mutation.repository,
+                tags: mutation.tags,
+                warnings: mutation.warnings
             )
         }
     }
@@ -291,6 +254,7 @@ final class StarcatMCPWriteFacade {
             )
             return result
         } catch {
+            let outwardError = Self.mapCapabilityError(error)
             await auditLog.record(
                 tool: tool,
                 permission: permission,
@@ -299,9 +263,26 @@ final class StarcatMCPWriteFacade {
                 repo: repo,
                 affectedTags: affectedTags,
                 warnings: [],
-                error: error.localizedDescription
+                error: outwardError.localizedDescription
             )
-            throw error
+            throw outwardError
+        }
+    }
+
+    /// 共享 Capability 保持与传输层无关；MCP adapter 在唯一出口恢复已发布的错误分类。
+    private static func mapCapabilityError(_ error: Error) -> Error {
+        switch error {
+        case RepositoryMetadataCapabilityError.repositoryNotLocal(let repoID),
+             RepositoryTagMutationCapabilityError.repositoryNotLocal(let repoID):
+            return StarcatMCPError.notFound("Repo not found: \(repoID)")
+        case RepositoryTagMutationCapabilityError.tagNotFound(let name):
+            return StarcatMCPError.notFound("Tag not found: \(name)")
+        case RepositoryTagMutationCapabilityError.emptyTagName:
+            return StarcatMCPError.invalidArguments("Tag name cannot be empty.")
+        case RepositoryTagMutationCapabilityError.emptyTagNames:
+            return StarcatMCPError.invalidArguments("Provide at least one tag name.")
+        default:
+            return error
         }
     }
 
@@ -339,74 +320,6 @@ final class StarcatMCPWriteFacade {
         return repo
     }
 
-    private func resolveTags(names: [String], createMissing: Bool, dryRun: Bool) async throws -> [Tag] {
-        let normalized = try Self.normalizeTagNames(names)
-        var out: [Tag] = []
-        for name in normalized {
-            if let tag = try await tagRepository.findByName(name) {
-                out.append(tag)
-                continue
-            }
-            guard createMissing else {
-                throw StarcatMCPError.notFound("Tag not found: \(name)")
-            }
-            let now = ISO8601DateFormatter.shared.string(from: Date())
-            let tag = Tag(
-                id: UUID().uuidString,
-                name: name,
-                color: nil,
-                icon: nil,
-                sortOrder: 0,
-                isPreset: false,
-                parentId: nil,
-                createdAt: now,
-                updatedAt: now
-            )
-            if !dryRun {
-                try await tagRepository.create(tag)
-            }
-            out.append(tag)
-        }
-        return out
-    }
-
-    private func existingTags(names: [String]) async throws -> [Tag] {
-        let normalized = try Self.normalizeTagNames(names)
-        var out: [Tag] = []
-        for name in normalized {
-            if let tag = try await tagRepository.findByName(name) {
-                out.append(tag)
-            }
-        }
-        return out
-    }
-
-    private func postStatusDidChange(repoId: Int64, status: RepoStatus) {
-        NotificationCenter.default.post(
-            name: .repoStatusDidChange,
-            object: nil,
-            userInfo: [
-                "repoId": repoId,
-                "status": status.rawValue
-            ]
-        )
-    }
-
-    private static func normalizeTagNames(_ names: [String]) throws -> [String] {
-        let deduped = Array(Set(try names.map(normalizeTagName))).sorted()
-        guard !deduped.isEmpty else {
-            throw StarcatMCPError.invalidArguments("Provide at least one tag name.")
-        }
-        return deduped
-    }
-
-    private static func normalizeTagName(_ name: String) throws -> String {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            throw StarcatMCPError.invalidArguments("Tag name cannot be empty.")
-        }
-        return trimmed
-    }
 }
 
 private extension String {

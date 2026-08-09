@@ -406,13 +406,22 @@ struct StarcatMCPRuntimeTests {
         )
         let writeFacade = StarcatMCPWriteFacade(
             repoRepository: repoRepository,
-            tagRepository: GatedTagRepository(base: tagRepository, entitlementGate: gate),
-            repoTagRepository: repoTagRepository,
-            repoNoteRepository: noteRepository,
+            metadataCapability: RepositoryMetadataCapabilityExecutor(
+                source: DatabaseRepositoryMetadataCapabilitySource(
+                    repoRepository: repoRepository,
+                    repoNoteRepository: noteRepository
+                )
+            ),
+            tagCapability: RepositoryTagCapabilityExecutor(
+                source: DatabaseRepositoryTagCapabilitySource(
+                    repoRepository: repoRepository,
+                    tagRepository: GatedTagRepository(base: tagRepository, entitlementGate: gate),
+                    repoTagRepository: repoTagRepository
+                )
+            ),
             settings: settings,
             entitlementGate: gate,
-            auditLog: StarcatMCPAuditLog(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("starcat-mcp-runtime-\(UUID().uuidString).jsonl")),
-            refreshSemanticIndex: { _ in }
+            auditLog: StarcatMCPAuditLog(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("starcat-mcp-runtime-\(UUID().uuidString).jsonl"))
         )
         let runtime = StarcatMCPRuntime(
             facade: facade,

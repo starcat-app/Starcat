@@ -24,6 +24,30 @@ enum RepositoryTagCapabilities {
         summary: "Apply a previously previewed tag diff and verify persisted assignments.",
         permission: .requiresConfirmation
     )
+
+    static let create = StarcatCapabilityDefinition(
+        id: "repository.tags.create",
+        summary: "Create one local repository tag.",
+        permission: .requiresConfirmation
+    )
+
+    static let add = StarcatCapabilityDefinition(
+        id: "repository.tags.add",
+        summary: "Add local tags to one repository.",
+        permission: .requiresConfirmation
+    )
+
+    static let remove = StarcatCapabilityDefinition(
+        id: "repository.tags.remove",
+        summary: "Remove local tags from one repository.",
+        permission: .requiresConfirmation
+    )
+
+    static let replace = StarcatCapabilityDefinition(
+        id: "repository.tags.replace",
+        summary: "Replace all local tags on one repository.",
+        permission: .requiresConfirmation
+    )
 }
 
 struct RepositoryTagAssignment: Codable, Hashable, Sendable {
@@ -47,11 +71,24 @@ struct RepositoryTagApplyResult: Sendable {
     var verifiedTagNamesByRepoID: [Int64: [String]]
 }
 
+struct RepositoryTagMutationResult: Sendable {
+    var repository: Repo?
+    var tags: [Tag]
+    var changed: Bool
+    var warnings: [String]
+}
+
 protocol RepositoryTagCapabilitySource: Sendable {
     func findRepository(id: Int64) async throws -> Repo?
     func fetchAllTags() async throws -> [Tag]
     func fetchTags(repoID: Int64) async throws -> [Tag]
     func batchAddTag(repoIDs: [Int64], tagID: String) async throws
+    func didMutateRepository(_ repository: Repo) async
+}
+
+extension RepositoryTagCapabilitySource {
+    /// 纯内存测试源或无需派生缓存的调用方可以 no-op；数据库源会刷新语义索引。
+    func didMutateRepository(_ repository: Repo) async {}
 }
 
 protocol RepositoryTagCapabilityExecuting: Sendable {
@@ -67,10 +104,42 @@ protocol RepositoryTagCapabilityExecuting: Sendable {
     ) async throws -> RepositoryTagApplyResult
 }
 
-struct DatabaseRepositoryTagCapabilitySource: RepositoryTagCapabilitySource {
+/// MCP 与后续 Agent 写工具共用的标签变更表面。
+///
+/// `dryRun` 属于能力输入而不是 MCP 特例：任何 adapter 都必须能先得到确定性结果，再决定
+/// 是否申请审批。设置开关、Pro entitlement 和外部协议错误仍由各 adapter 自己负责。
+protocol RepositoryTagMutationCapabilityExecuting: Sendable {
+    func createTag(name: String, color: String?, icon: String?, dryRun: Bool) async throws -> RepositoryTagMutationResult
+    func addTags(repoID: Int64, tagNames: [String], createMissing: Bool, dryRun: Bool) async throws -> RepositoryTagMutationResult
+    func removeTags(repoID: Int64, tagNames: [String], dryRun: Bool) async throws -> RepositoryTagMutationResult
+    func replaceTags(repoID: Int64, tagNames: [String], createMissing: Bool, dryRun: Bool) async throws -> RepositoryTagMutationResult
+}
+
+protocol RepositoryTagMutationCapabilitySource: RepositoryTagCapabilitySource {
+    func findTag(name: String) async throws -> Tag?
+    func createTag(_ tag: Tag) async throws
+    func addTag(repoID: Int64, tagID: String) async throws
+    func removeTag(repoID: Int64, tagID: String) async throws
+    func replaceTags(repoID: Int64, tagIDs: [String]) async throws
+}
+
+struct DatabaseRepositoryTagCapabilitySource: RepositoryTagMutationCapabilitySource {
     let repoRepository: any RepoRepositoryProtocol
     let tagRepository: any TagRepositoryProtocol
     let repoTagRepository: any RepoTagRepositoryProtocol
+    let onRepositoryMutation: @MainActor @Sendable (Repo) async -> Void
+
+    init(
+        repoRepository: any RepoRepositoryProtocol,
+        tagRepository: any TagRepositoryProtocol,
+        repoTagRepository: any RepoTagRepositoryProtocol,
+        onRepositoryMutation: @escaping @MainActor @Sendable (Repo) async -> Void = { _ in }
+    ) {
+        self.repoRepository = repoRepository
+        self.tagRepository = tagRepository
+        self.repoTagRepository = repoTagRepository
+        self.onRepositoryMutation = onRepositoryMutation
+    }
 
     func findRepository(id: Int64) async throws -> Repo? {
         try await repoRepository.findById(id)
@@ -86,6 +155,30 @@ struct DatabaseRepositoryTagCapabilitySource: RepositoryTagCapabilitySource {
 
     func batchAddTag(repoIDs: [Int64], tagID: String) async throws {
         try await repoTagRepository.batchAddTag(repoIds: repoIDs, tagId: tagID)
+    }
+
+    func findTag(name: String) async throws -> Tag? {
+        try await tagRepository.findByName(name)
+    }
+
+    func createTag(_ tag: Tag) async throws {
+        try await tagRepository.create(tag)
+    }
+
+    func addTag(repoID: Int64, tagID: String) async throws {
+        try await repoTagRepository.addTag(repoId: repoID, tagId: tagID)
+    }
+
+    func removeTag(repoID: Int64, tagID: String) async throws {
+        try await repoTagRepository.removeTag(repoId: repoID, tagId: tagID)
+    }
+
+    func replaceTags(repoID: Int64, tagIDs: [String]) async throws {
+        try await repoTagRepository.setTags(repoId: repoID, tagIds: tagIDs)
+    }
+
+    func didMutateRepository(_ repository: Repo) async {
+        await onRepositoryMutation(repository)
     }
 }
 
@@ -177,6 +270,7 @@ struct RepositoryTagCapabilityExecutor<Source: RepositoryTagCapabilitySource>: R
         }
 
         var verified: [Int64: [String]] = [:]
+        var mutatedRepositories: [Repo] = []
         for assignment in preview.assignments {
             let persistedNames = try await source.fetchTags(repoID: assignment.repoID).map(\.name)
             let persistedSet = Set(persistedNames.map { $0.lowercased() })
@@ -185,6 +279,14 @@ struct RepositoryTagCapabilityExecutor<Source: RepositoryTagCapabilitySource>: R
                 throw RepositoryTagCapabilityError.readBackMismatch(assignment.repoID)
             }
             verified[assignment.repoID] = persistedNames
+            guard let repository = try await source.findRepository(id: assignment.repoID) else {
+                throw RepositoryTagCapabilityError.repositoryNotLocal(assignment.repoID)
+            }
+            mutatedRepositories.append(repository)
+        }
+        // 所有仓库都通过 read-back 后再刷新派生缓存，避免半成功批次被展示成完整结果。
+        for repository in mutatedRepositories {
+            await source.didMutateRepository(repository)
         }
         return RepositoryTagApplyResult(preview: preview, verifiedTagNamesByRepoID: verified)
     }
@@ -229,6 +331,224 @@ struct RepositoryTagCapabilityExecutor<Source: RepositoryTagCapabilitySource>: R
         encoder.outputFormatting = [.sortedKeys]
         let digest = SHA256.hash(data: try encoder.encode(assignments))
         return digest.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+extension RepositoryTagCapabilityExecutor: RepositoryTagMutationCapabilityExecuting where Source: RepositoryTagMutationCapabilitySource {
+    func createTag(
+        name: String,
+        color: String?,
+        icon: String?,
+        dryRun: Bool
+    ) async throws -> RepositoryTagMutationResult {
+        let normalized = try normalizeTagName(name)
+        if let existing = try await source.findTag(name: normalized) {
+            return RepositoryTagMutationResult(
+                repository: nil,
+                tags: [existing],
+                changed: false,
+                warnings: ["Tag already exists."]
+            )
+        }
+        let now = ISO8601DateFormatter.shared.string(from: Date())
+        let tag = Tag(
+            id: UUID().uuidString,
+            name: normalized,
+            color: normalizedOptional(color),
+            icon: normalizedOptional(icon),
+            sortOrder: 0,
+            isPreset: false,
+            parentId: nil,
+            createdAt: now,
+            updatedAt: now
+        )
+        if !dryRun {
+            try await source.createTag(tag)
+            guard try await source.findTag(name: normalized)?.id == tag.id else {
+                throw RepositoryTagMutationCapabilityError.readBackMismatch("tag \(normalized)")
+            }
+        }
+        return RepositoryTagMutationResult(
+            repository: nil,
+            tags: [tag],
+            changed: !dryRun,
+            warnings: []
+        )
+    }
+
+    func addTags(
+        repoID: Int64,
+        tagNames: [String],
+        createMissing: Bool,
+        dryRun: Bool
+    ) async throws -> RepositoryTagMutationResult {
+        let repository = try await requireRepository(repoID)
+        let tags = try await resolveTags(names: tagNames, createMissing: createMissing, dryRun: dryRun)
+        if !dryRun {
+            for tag in tags {
+                try await source.addTag(repoID: repoID, tagID: tag.id)
+            }
+            try await verifyAdded(tags, repoID: repoID)
+            await source.didMutateRepository(repository)
+        }
+        return RepositoryTagMutationResult(
+            repository: repository,
+            tags: tags,
+            changed: !dryRun && !tags.isEmpty,
+            warnings: []
+        )
+    }
+
+    func removeTags(
+        repoID: Int64,
+        tagNames: [String],
+        dryRun: Bool
+    ) async throws -> RepositoryTagMutationResult {
+        let repository = try await requireRepository(repoID)
+        let tags = try await existingTags(names: tagNames)
+        if !dryRun {
+            for tag in tags {
+                try await source.removeTag(repoID: repoID, tagID: tag.id)
+            }
+            try await verifyRemoved(tags, repoID: repoID)
+            await source.didMutateRepository(repository)
+        }
+        return RepositoryTagMutationResult(
+            repository: repository,
+            tags: tags,
+            changed: !dryRun && !tags.isEmpty,
+            warnings: []
+        )
+    }
+
+    func replaceTags(
+        repoID: Int64,
+        tagNames: [String],
+        createMissing: Bool,
+        dryRun: Bool
+    ) async throws -> RepositoryTagMutationResult {
+        let repository = try await requireRepository(repoID)
+        let tags = try await resolveTags(names: tagNames, createMissing: createMissing, dryRun: dryRun)
+        if !dryRun {
+            try await source.replaceTags(repoID: repoID, tagIDs: tags.map(\.id))
+            try await verifyReplacement(tags, repoID: repoID)
+            await source.didMutateRepository(repository)
+        }
+        return RepositoryTagMutationResult(
+            repository: repository,
+            tags: tags,
+            changed: !dryRun,
+            warnings: ["This replaces all existing tags on the repository."]
+        )
+    }
+
+    private func requireRepository(_ repoID: Int64) async throws -> Repo {
+        guard let repository = try await source.findRepository(id: repoID) else {
+            throw RepositoryTagMutationCapabilityError.repositoryNotLocal(repoID)
+        }
+        return repository
+    }
+
+    private func resolveTags(names: [String], createMissing: Bool, dryRun: Bool) async throws -> [Tag] {
+        let normalizedNames = try normalizeTagNames(names)
+        var tags: [Tag] = []
+        for name in normalizedNames {
+            if let existing = try await source.findTag(name: name) {
+                tags.append(existing)
+                continue
+            }
+            guard createMissing else {
+                throw RepositoryTagMutationCapabilityError.tagNotFound(name)
+            }
+            let now = ISO8601DateFormatter.shared.string(from: Date())
+            let tag = Tag(
+                id: UUID().uuidString,
+                name: name,
+                color: nil,
+                icon: nil,
+                sortOrder: 0,
+                isPreset: false,
+                parentId: nil,
+                createdAt: now,
+                updatedAt: now
+            )
+            if !dryRun {
+                try await source.createTag(tag)
+            }
+            tags.append(tag)
+        }
+        return tags
+    }
+
+    private func existingTags(names: [String]) async throws -> [Tag] {
+        var tags: [Tag] = []
+        for name in try normalizeTagNames(names) {
+            if let tag = try await source.findTag(name: name) {
+                tags.append(tag)
+            }
+        }
+        return tags
+    }
+
+    private func normalizeTagNames(_ names: [String]) throws -> [String] {
+        let normalized = Array(Set(try names.map(normalizeTagName))).sorted()
+        guard !normalized.isEmpty else {
+            throw RepositoryTagMutationCapabilityError.emptyTagNames
+        }
+        return normalized
+    }
+
+    private func normalizeTagName(_ name: String) throws -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw RepositoryTagMutationCapabilityError.emptyTagName
+        }
+        return trimmed
+    }
+
+    private func normalizedOptional(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func verifyAdded(_ tags: [Tag], repoID: Int64) async throws {
+        let persistedIDs = Set(try await source.fetchTags(repoID: repoID).map(\.id))
+        guard Set(tags.map(\.id)).isSubset(of: persistedIDs) else {
+            throw RepositoryTagMutationCapabilityError.readBackMismatch("repository \(repoID) add")
+        }
+    }
+
+    private func verifyRemoved(_ tags: [Tag], repoID: Int64) async throws {
+        let persistedIDs = Set(try await source.fetchTags(repoID: repoID).map(\.id))
+        guard Set(tags.map(\.id)).isDisjoint(with: persistedIDs) else {
+            throw RepositoryTagMutationCapabilityError.readBackMismatch("repository \(repoID) remove")
+        }
+    }
+
+    private func verifyReplacement(_ tags: [Tag], repoID: Int64) async throws {
+        let persistedIDs = Set(try await source.fetchTags(repoID: repoID).map(\.id))
+        guard persistedIDs == Set(tags.map(\.id)) else {
+            throw RepositoryTagMutationCapabilityError.readBackMismatch("repository \(repoID) replace")
+        }
+    }
+}
+
+enum RepositoryTagMutationCapabilityError: LocalizedError, Equatable, Sendable {
+    case repositoryNotLocal(Int64)
+    case emptyTagName
+    case emptyTagNames
+    case tagNotFound(String)
+    case readBackMismatch(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .repositoryNotLocal(let repoID): return "Repository not found: \(repoID)"
+        case .emptyTagName: return "Tag name cannot be empty."
+        case .emptyTagNames: return "Provide at least one tag name."
+        case .tagNotFound(let name): return "Tag not found: \(name)"
+        case .readBackMismatch(let operation): return "Tag read-back verification failed for \(operation)."
+        }
     }
 }
 
