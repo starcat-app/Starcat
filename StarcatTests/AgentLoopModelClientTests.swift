@@ -257,6 +257,9 @@ struct AgentLoopModelClientTests {
         #expect(request.tools.map(\.name) == ["external_search"])
         #expect(request.metadata["run_id"] == runID.uuidString)
         #expect(request.includeUsage)
+        #expect(request.usageContext?.feature == .agent)
+        #expect(request.usageContext?.phase == "loop")
+        #expect(request.usageContext?.correlationID == runID.uuidString)
     }
 
     @Test("拒绝 provider 不接受的工具名称")

@@ -150,7 +150,13 @@ struct OpenAIAgentLoopModelClient: AgentLoopModelClient {
             toolChoice: tools.isEmpty ? .none : .auto,
             parallelToolCalls: false,
             metadata: request.metadata,
-            includeUsage: true
+            includeUsage: true,
+            // 每次模型回合都归因到 Agent，并用 run_id 串起同一 Run 的多次 tool loop。
+            usageContext: AIUsageContext(
+                feature: .agent,
+                phase: "loop",
+                correlationID: request.metadata["run_id"]
+            )
         )
     }
 

@@ -22952,14 +22952,46 @@
     },
     "agent.workspace.composer.clearContext" : {
       "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "مسح المستودعات المحددة" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Ausgewählte Repositorys löschen" } },
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear selected repositories" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清空已选仓库" } }
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Borrar repositorios seleccionados" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Effacer les dépôts sélectionnés" } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Hapus repositori yang dipilih" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Cancella repository selezionati" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "選択したリポジトリをクリア" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "선택한 저장소 지우기" } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Geselecteerde repositories wissen" } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Wyczyść wybrane repozytoria" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Limpar repositórios selecionados" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Очистить выбранные репозитории" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Seçilen depoları temizle" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Очистити вибрані репозиторії" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Xóa các kho lưu trữ đã chọn" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清空已选仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "清空已選儲存庫" } }
       }
     },
     "agent.workspace.composer.contextDisclosure" : {
       "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "السياق المحدد" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Ausgewählter Kontext" } },
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Selected Context" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已选择的上下文" } }
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Contexto seleccionado" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Contexte sélectionné" } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Konteks Terpilih" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Contesto selezionato" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "選択したコンテキスト" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "선택한 컨텍스트" } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Geselecteerde context" } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Wybrany kontekst" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Contexto selecionado" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Выбранный контекст" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Seçilen Bağlam" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Вибраний контекст" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Ngữ cảnh đã chọn" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已选择的上下文" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "已選擇的上下文" } }
       }
     },
     "agent.workspace.composer.mode" : {
@@ -23860,172 +23892,332 @@
     },
     "agent.workspace.repositoryPicker.clearFilter" : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear repository search"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除仓库搜索"
-          }
-        }
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "مسح بحث المستودعات" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Repository-Suche löschen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear repository search" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Borrar búsqueda de repositorios" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Effacer la recherche de dépôts" } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Hapus pencarian repositori" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Cancella ricerca repository" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "リポジトリ検索をクリア" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "저장소 검색 지우기" } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Repositoryzoekopdracht wissen" } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Wyczyść wyszukiwanie repozytoriów" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Limpar pesquisa de repositórios" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Очистить поиск репозиториев" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Depo aramasını temizle" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Очистити пошук репозиторіїв" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Xóa tìm kiếm kho lưu trữ" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清除仓库搜索" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "清除儲存庫搜尋" } }
       }
     },
     "agent.workspace.repositoryPicker.clearSelected" : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear Selected"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除已选"
-          }
-        }
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "مسح المحدد" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Auswahl löschen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clear Selected" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Borrar selección" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Effacer la sélection" } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Hapus pilihan" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Cancella selezione" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "選択をクリア" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "선택 지우기" } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Selectie wissen" } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Wyczyść wybór" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Limpar seleção" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Очистить выбранное" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Seçimi temizle" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Очистити вибране" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Xóa lựa chọn" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "清除已选" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "清除已選" } }
       }
     },
     "agent.workspace.repositoryPicker.narrowHint" : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Showing %1$d of %2$d matches · Keep typing to narrow the list"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "显示 %1$d / 命中 %2$d · 继续输入可缩小范围"
-          }
-        }
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "عرض %1$d من %2$d نتيجة · تابع الكتابة لتضييق القائمة" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "%1$d von %2$d Treffern · Weiter tippen, um die Liste einzugrenzen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Showing %1$d of %2$d matches · Keep typing to narrow the list" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Se muestran %1$d de %2$d resultados · Sigue escribiendo para reducir la lista" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "%1$d résultats sur %2$d affichés · Continuez à saisir pour affiner la liste" } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Menampilkan %1$d dari %2$d hasil · Lanjutkan mengetik untuk mempersempit daftar" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Visualizzati %1$d di %2$d risultati · Continua a digitare per restringere l’elenco" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "%2$d件中%1$d件を表示 · 入力を続けて絞り込めます" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "%2$d개 결과 중 %1$d개 표시 · 계속 입력하여 목록을 좁히세요" } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "%1$d van %2$d resultaten · Typ verder om de lijst te verfijnen" } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Wyświetlono %1$d z %2$d wyników · Pisz dalej, aby zawęzić listę" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Exibindo %1$d de %2$d resultados · Continue digitando para refinar a lista" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Показано %1$d из %2$d результатов · Продолжайте ввод для уточнения списка" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "%2$d eşleşmeden %1$d tanesi gösteriliyor · Listeyi daraltmak için yazmaya devam edin" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Показано %1$d із %2$d результатів · Продовжуйте введення, щоб звузити список" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Hiển thị %1$d trong %2$d kết quả · Tiếp tục nhập để thu hẹp danh sách" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "显示 %1$d / 命中 %2$d · 继续输入可缩小范围" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "顯示 %1$d / 符合 %2$d · 繼續輸入可縮小範圍" } }
       }
     },
     "agent.workspace.repositoryPicker.emptyFilter" : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No matching repositories"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "没有匹配的仓库"
-          }
-        }
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "لا توجد مستودعات مطابقة" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Keine passenden Repositorys" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No matching repositories" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "No hay repositorios coincidentes" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Aucun dépôt correspondant" } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Tidak ada repositori yang cocok" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Nessun repository corrispondente" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "一致するリポジトリはありません" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "일치하는 저장소가 없습니다" } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Geen overeenkomende repositories" } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Brak pasujących repozytoriów" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nenhum repositório correspondente" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Нет подходящих репозиториев" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Eşleşen depo yok" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Немає відповідних репозиторіїв" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Không có kho lưu trữ phù hợp" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有匹配的仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "沒有符合的儲存庫" } }
       }
     },
     "agent.workspace.repositoryPicker.searchPlaceholder" : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Search repositories"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "搜索仓库"
-          }
-        }
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "البحث في المستودعات" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Repositorys durchsuchen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Search repositories" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Buscar repositorios" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Rechercher des dépôts" } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Cari repositori" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Cerca repository" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "リポジトリを検索" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "저장소 검색" } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Repositories zoeken" } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Szukaj repozytoriów" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Pesquisar repositórios" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Поиск репозиториев" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Depolarda ara" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Пошук репозиторіїв" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Tìm kiếm kho lưu trữ" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "搜索仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "搜尋儲存庫" } }
       }
     },
     "agent.workspace.repositoryPicker.selectionLimit" : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You can select up to %1$d repositories"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最多选择 %1$d 个仓库"
-          }
-        }
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "يمكنك تحديد ما يصل إلى %1$d مستودعًا" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Du kannst bis zu %1$d Repositorys auswählen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "You can select up to %1$d repositories" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Puedes seleccionar hasta %1$d repositorios" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Vous pouvez sélectionner jusqu’à %1$d dépôts" } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Anda dapat memilih hingga %1$d repositori" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Puoi selezionare fino a %1$d repository" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "最大%1$d個のリポジトリを選択できます" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "최대 %1$d개의 저장소를 선택할 수 있습니다" } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Je kunt maximaal %1$d repositories selecteren" } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Możesz wybrać maksymalnie %1$d repozytoriów" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Você pode selecionar até %1$d repositórios" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Можно выбрать до %1$d репозиториев" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "En fazla %1$d depo seçebilirsiniz" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Можна вибрати до %1$d репозиторіїв" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Bạn có thể chọn tối đa %1$d kho lưu trữ" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "最多选择 %1$d 个仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "最多選擇 %1$d 個儲存庫" } }
       }
     },
     "agent.workspace.repositoryPicker.stats" : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Selected %1$d/%2$d · Repositories %3$d"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已选 %1$d/%2$d · 仓库 %3$d"
-          }
-        }
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "المحدد %1$d/%2$d · المستودعات %3$d" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Ausgewählt %1$d/%2$d · Repositorys %3$d" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Selected %1$d/%2$d · Repositories %3$d" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Seleccionados %1$d/%2$d · Repositorios %3$d" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Sélectionnés %1$d/%2$d · Dépôts %3$d" } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Dipilih %1$d/%2$d · Repositori %3$d" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Selezionati %1$d/%2$d · Repository %3$d" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "選択済み %1$d/%2$d · リポジトリ %3$d" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "선택 %1$d/%2$d · 저장소 %3$d" } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Geselecteerd %1$d/%2$d · Repositories %3$d" } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Wybrano %1$d/%2$d · Repozytoria %3$d" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Selecionados %1$d/%2$d · Repositórios %3$d" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Выбрано %1$d/%2$d · Репозитории %3$d" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Seçilen %1$d/%2$d · Depolar %3$d" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Вибрано %1$d/%2$d · Репозиторії %3$d" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Đã chọn %1$d/%2$d · Kho lưu trữ %3$d" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已选 %1$d/%2$d · 仓库 %3$d" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "已選 %1$d/%2$d · 儲存庫 %3$d" } }
       }
     },
     "agent.workspace.repositoryPicker.source.discovery" : {
       "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "الاكتشاف" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Entdecken" } },
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Discovery" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "发现" } }
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Descubrimiento" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Découverte" } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Penemuan" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Scoperta" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "発見" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "탐색" } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Ontdekken" } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Odkrywanie" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Descoberta" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Обзор" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Keşif" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Огляд" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Khám phá" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "发现" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "探索" } }
       }
     },
     "agent.workspace.repositoryPicker.source.knowledge" : {
       "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "مكتبة المعرفة" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Wissensbibliothek" } },
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Knowledge Library" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识库" } }
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Biblioteca de conocimiento" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Bibliothèque de connaissances" } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Pustaka Pengetahuan" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Raccolta conoscenze" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "ナレッジライブラリ" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "지식 라이브러리" } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Kennisbibliotheek" } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Biblioteka wiedzy" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Biblioteca de conhecimento" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Библиотека знаний" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Bilgi Kitaplığı" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Бібліотека знань" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Thư viện kiến thức" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "知識庫" } }
       }
     },
     "agent.workspace.repositoryPicker.source.local" : {
       "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "مستودع محلي" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Lokales Repository" } },
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Local Repository" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本地仓库" } }
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Repositorio local" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Dépôt local" } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Repositori Lokal" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Repository locale" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "ローカルリポジトリ" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "로컬 저장소" } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Lokale repository" } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Lokalne repozytorium" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Repositório local" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Локальный репозиторий" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Yerel Depo" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Локальний репозиторій" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Kho lưu trữ cục bộ" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本地仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "本機儲存庫" } }
       }
     },
     "agent.workspace.repositoryPicker.source.starred" : {
       "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "المميّزة بنجمة" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Mit Stern" } },
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Starred" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已 Star" } }
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Con estrella" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Avec étoile" } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Berbintang" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Con stella" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "スター済み" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "Star 표시됨" } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Met ster" } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Z gwiazdką" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Com estrela" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Со звездой" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Yıldızlı" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Із зіркою" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Đã gắn sao" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已 Star" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "已 Star" } }
       }
     },
     "agent.workspace.repositoryPicker.source.title" : {
       "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "مصدر المستودع" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Repository-Quelle" } },
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Repository Source" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库来源" } }
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Origen del repositorio" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Source du dépôt" } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Sumber Repositori" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Origine repository" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "リポジトリのソース" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "저장소 출처" } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Repositorybron" } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Źródło repozytorium" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Origem do repositório" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Источник репозитория" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Depo Kaynağı" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Джерело репозиторію" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Nguồn kho lưu trữ" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库来源" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "儲存庫來源" } }
       }
     },
     "agent.workspace.repositoryPicker.source.trending" : {
       "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "الرائج" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Im Trend" } },
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Trending" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "趋势" } }
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Tendencias" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Tendances" } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Tren" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Di tendenza" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "トレンド" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "트렌딩" } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Trending" } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Na czasie" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Em alta" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "В тренде" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Trendler" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "У тренді" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Xu hướng" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "趋势" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "趨勢" } }
       }
     },
     "agent.workspace.repositoryPicker.source.weekly" : {
       "localizations" : {
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "الأسبوعي" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Wöchentlich" } },
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Weekly" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "周报" } }
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Semanal" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Hebdomadaire" } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Mingguan" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Settimanale" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "週間" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "주간" } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Wekelijks" } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Tygodniowe" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Semanal" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Еженедельное" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Haftalık" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Щотижневе" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Hàng tuần" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "周报" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "週報" } }
       }
     },
     "agent.workspace.repositoryPicker.title" : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Select repositories"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选择仓库"
-          }
-        }
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "تحديد المستودعات" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Repositorys auswählen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Select repositories" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Seleccionar repositorios" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Sélectionner des dépôts" } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Pilih repositori" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Seleziona repository" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "リポジトリを選択" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "저장소 선택" } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Repositories selecteren" } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Wybierz repozytoria" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Selecionar repositórios" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Выбрать репозитории" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Depoları seç" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Вибрати репозиторії" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Chọn kho lưu trữ" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "选择仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "選擇儲存庫" } }
       }
     },
     "agent.workspace.header.estimatedRun" : {
@@ -469809,18 +470001,24 @@
     },
     "agent.context.source.weeklyHotspotsFormat" : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Last %d days: %d repositories from the Weekly feed"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最近 %d 天：Weekly 数据中的 %d 个仓库"
-          }
-        }
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "آخر %d أيام: %d مستودعًا من موجز Weekly" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Letzte %d Tage: %d Repositorys aus dem Weekly-Feed" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Last %d days: %d repositories from the Weekly feed" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Últimos %d días: %d repositorios del feed Weekly" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "%d derniers jours : %d dépôts du flux Weekly" } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "%d hari terakhir: %d repositori dari feed Weekly" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Ultimi %d giorni: %d repository dal feed Weekly" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "過去%d日間：Weeklyフィードのリポジトリ%d件" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "최근 %d일: Weekly 피드의 저장소 %d개" } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Afgelopen %d dagen: %d repositories uit de Weekly-feed" } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Ostatnie %d dni: %d repozytoriów z kanału Weekly" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Últimos %d dias: %d repositórios do feed Weekly" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "За последние %d дней: %d репозиториев из Weekly" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Son %d gün: Weekly akışından %d depo" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "За останні %d днів: %d репозиторіїв із Weekly" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "%d ngày qua: %d kho lưu trữ từ nguồn Weekly" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "最近 %d 天：Weekly 数据中的 %d 个仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "最近 %d 天：Weekly 資料中的 %d 個儲存庫" } }
       }
     },
     "agent.context.source.singleRepository" : {
@@ -470385,18 +470583,24 @@
     },
     "agent.workspace.context.weeklyHotspotsAutomatic" : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Repositories observed by Weekly in the last 7 days will be used automatically."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将自动使用 Weekly 最近 7 天采集到的仓库。"
-          }
-        }
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "ستُستخدم تلقائيًا المستودعات التي رصدها Weekly خلال آخر 7 أيام." } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Repositorys, die Weekly in den letzten 7 Tagen erfasst hat, werden automatisch verwendet." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories observed by Weekly in the last 7 days will be used automatically." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Se usarán automáticamente los repositorios detectados por Weekly en los últimos 7 días." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Les dépôts observés par Weekly au cours des 7 derniers jours seront utilisés automatiquement." } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Repositori yang diamati Weekly dalam 7 hari terakhir akan digunakan secara otomatis." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "I repository rilevati da Weekly negli ultimi 7 giorni verranno usati automaticamente." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "Weeklyが過去7日間に収集したリポジトリを自動的に使用します。" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "Weekly가 최근 7일 동안 수집한 저장소를 자동으로 사용합니다." } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Repositories die Weekly in de afgelopen 7 dagen heeft waargenomen, worden automatisch gebruikt." } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Repozytoria zebrane przez Weekly w ciągu ostatnich 7 dni zostaną użyte automatycznie." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Os repositórios observados pelo Weekly nos últimos 7 dias serão usados automaticamente." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Репозитории, собранные Weekly за последние 7 дней, будут использованы автоматически." } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Weekly tarafından son 7 günde gözlemlenen depolar otomatik olarak kullanılacak." } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Репозиторії, зібрані Weekly за останні 7 днів, буде використано автоматично." } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Các kho lưu trữ được Weekly ghi nhận trong 7 ngày qua sẽ tự động được sử dụng." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "将自动使用 Weekly 最近 7 天采集到的仓库。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "將自動使用 Weekly 最近 7 天收集到的儲存庫。" } }
       }
     },
     "agent.workspace.context.singleRepositoryRequired" : {
