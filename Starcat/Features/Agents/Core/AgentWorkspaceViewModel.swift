@@ -625,15 +625,6 @@ final class AgentWorkspaceViewModel {
         return agent.workflow.usesDefaultPromptWhenEmpty ? agent.defaultPrompt : ""
     }
 
-    func copySelectedArtifact() {
-        guard let content = selectedArtifact?.content else { return }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        if !pasteboard.setString(content, forType: .string) {
-            errorMessage = String.l10n("agent.workspace.inspector.copyFailed")
-        }
-    }
-
     func exportSelectedArtifact() {
         guard let artifact = selectedArtifact else { return }
         let panel = NSSavePanel()

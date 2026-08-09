@@ -15,6 +15,11 @@ struct AgentWorkspaceView: View {
 
     private static let contextPickerPanelHeight: CGFloat = 420
     private static let contextPickerPanelGap: CGFloat = 12
+    // Header 与正文必须复用同一组列宽，否则窗口缩放时中间分隔线会发生错位。
+    private static let runColumnMinWidth: CGFloat = 460
+    private static let runColumnIdealWidth: CGFloat = 560
+    private static let inspectorColumnMinWidth: CGFloat = 430
+    private static let inspectorColumnIdealWidth: CGFloat = 520
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -384,31 +389,47 @@ struct AgentWorkspaceView: View {
                     Divider()
                     composer
                 }
-                .frame(minWidth: 460, idealWidth: 560)
+                .frame(minWidth: Self.runColumnMinWidth, idealWidth: Self.runColumnIdealWidth)
                 .layoutPriority(1)
                 if !chromeState.isRightColumnCollapsed {
                     Divider()
                     artifactInspector
-                        .frame(minWidth: 430, idealWidth: 520)
+                        .frame(
+                            minWidth: Self.inspectorColumnMinWidth,
+                            idealWidth: Self.inspectorColumnIdealWidth
+                        )
                 }
             }
         }
     }
 
     private var runHeader: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(viewModel.selectedAgent?.title ?? String.l10n("agent.workspace.window.title"))
-                    .font(agentFont(.title3, weight: .semibold))
-                Text("agent.workspace.header.subtitle")
-                    .font(agentFont(.caption))
-                    .foregroundStyle(.secondary)
-            }
+        HStack(spacing: 0) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(viewModel.selectedAgent?.title ?? String.l10n("agent.workspace.window.title"))
+                        .font(agentFont(.title3, weight: .semibold))
+                    Text("agent.workspace.header.subtitle")
+                        .font(agentFont(.caption))
+                        .foregroundStyle(.secondary)
+                }
 
-            Spacer()
+                Spacer()
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 13)
+            .frame(minWidth: Self.runColumnMinWidth, idealWidth: Self.runColumnIdealWidth)
+            .layoutPriority(1)
+
+            if !chromeState.isRightColumnCollapsed {
+                Divider()
+                AgentRunInspectorHeader(viewModel: viewModel)
+                    .frame(
+                        minWidth: Self.inspectorColumnMinWidth,
+                        idealWidth: Self.inspectorColumnIdealWidth
+                    )
+            }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 13)
     }
 
     private var runTimeline: some View {

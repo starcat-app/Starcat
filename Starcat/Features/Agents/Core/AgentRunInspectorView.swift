@@ -11,7 +11,8 @@
 
 import SwiftUI
 
-struct AgentRunInspectorView: View {
+/// Inspector 的顶部标题区由工作台父布局托管，确保它与 Run Surface 标题共享同一行和列宽。
+struct AgentRunInspectorHeader: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     let viewModel: AgentWorkspaceViewModel
@@ -21,14 +22,6 @@ struct AgentRunInspectorView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-            content
-        }
-    }
-
-    private var header: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("agent.workspace.inspector.title")
@@ -41,10 +34,16 @@ struct AgentRunInspectorView: View {
             if viewModel.selectedArtifact != nil,
                viewModel.selectedKnowledgeAudit == nil,
                pendingApproval == nil {
-                Button {
-                    viewModel.copySelectedArtifact()
-                } label: {
-                    Label("agent.workspace.inspector.copy", systemImage: "doc.on.doc")
+                CopyFeedbackButton(
+                    providesContent: { viewModel.selectedArtifact?.content ?? "" },
+                    tooltip: "agent.workspace.inspector.copy",
+                    style: .bordered
+                ) { didCopy in
+                    Label(
+                        "agent.workspace.inspector.copy",
+                        systemImage: didCopy ? "checkmark.circle.fill" : "doc.on.doc"
+                    )
+                    .foregroundStyle(didCopy ? Color.green : Color.primary)
                 }
                 Button {
                     viewModel.exportSelectedArtifact()
@@ -56,6 +55,27 @@ struct AgentRunInspectorView: View {
         .controlSize(.small)
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+    }
+
+    private var inspectorSubtitle: String {
+        if pendingApproval != nil { return String.l10n("agent.workspace.inspector.approval.subtitle") }
+        if viewModel.selectedKnowledgeAudit != nil { return String.l10n("agent.workspace.knowledgeAudit.subtitle") }
+        if viewModel.selectedArtifact != nil { return String.l10n("agent.workspace.inspector.artifact.subtitle") }
+        return String.l10n("agent.workspace.inspector.summary.subtitle")
+    }
+}
+
+struct AgentRunInspectorView: View {
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+
+    let viewModel: AgentWorkspaceViewModel
+
+    private var pendingApproval: AgentApprovalRequest? {
+        viewModel.approvals.first { $0.status == .pending }
+    }
+
+    var body: some View {
+        content
     }
 
     @ViewBuilder
@@ -230,13 +250,6 @@ struct AgentRunInspectorView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-    }
-
-    private var inspectorSubtitle: String {
-        if pendingApproval != nil { return String.l10n("agent.workspace.inspector.approval.subtitle") }
-        if viewModel.selectedKnowledgeAudit != nil { return String.l10n("agent.workspace.knowledgeAudit.subtitle") }
-        if viewModel.selectedArtifact != nil { return String.l10n("agent.workspace.inspector.artifact.subtitle") }
-        return String.l10n("agent.workspace.inspector.summary.subtitle")
     }
 
     private var toolCallCount: Int {
