@@ -287,6 +287,84 @@ struct GitHubWeeklyReportToolsTests {
         ))
     }
 
+    @Test("Repo Alternatives 只接受 External Search 已返回的 GitHub 候选")
+    func repoAlternativesBuildsComparisonFromExternalEvidence() async throws {
+        let source = repo(fullName: "groue/GRDB.swift", language: "Swift", stars: 7_800)
+        let context = AgentRunContext(sourceDescription: "Unit Snapshot", repos: [source])
+        let registry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.all)
+        let tool = try registry.tool(named: "artifact_build_repo_alternatives")
+        let candidateURL = "https://github.com/stephencelis/SQLite.swift"
+
+        let result = await tool.execute(AgentToolInput(
+            arguments: repoAlternativesArtifactArguments(
+                sourceRepoID: source.id,
+                candidateFullName: "stephencelis/SQLite.swift",
+                candidateURL: candidateURL
+            ),
+            prompt: "对比 GRDB.swift 的替代方案",
+            context: context,
+            values: [
+                "externalContextMarkdown": externalContext("- [SQLite.swift](\(candidateURL)) — typed SQLite wrapper")
+            ]
+        ))
+
+        #expect(result.status == .completed)
+        #expect(result.sources.map(\.url).contains(candidateURL))
+        if case .markdown(let markdown) = result.payload {
+            #expect(markdown.contains("# GRDB.swift Alternatives"))
+            #expect(markdown.contains("[stephencelis/SQLite.swift](\(candidateURL))"))
+            #expect(markdown.contains(String.l10n("agent.definition.repoAlternatives.title")))
+            #expect(markdown.contains("<external_context") == false)
+        } else {
+            Issue.record("Expected Repo Alternatives markdown payload")
+        }
+    }
+
+    @Test("Repo Alternatives 拒绝没有 External Search 证据的候选")
+    func repoAlternativesRejectsUnevidencedCandidate() async throws {
+        let source = repo(fullName: "groue/GRDB.swift", language: "Swift", stars: 7_800)
+        let context = AgentRunContext(sourceDescription: "Unit Snapshot", repos: [source])
+        let registry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.all)
+        let tool = try registry.tool(named: "artifact_build_repo_alternatives")
+
+        let result = await tool.execute(AgentToolInput(
+            arguments: repoAlternativesArtifactArguments(
+                sourceRepoID: source.id,
+                candidateFullName: "invented/fake-db",
+                candidateURL: "https://github.com/invented/fake-db"
+            ),
+            prompt: "对比替代方案",
+            context: context,
+            values: ["externalContextMarkdown": externalContext("No matching repository")]
+        ))
+
+        #expect(result.status == .failed)
+        #expect(result.output.log.contains("invented/fake-db"))
+    }
+
+    @Test("Repo Alternatives 搜索不可用时允许提交空候选和限制")
+    func repoAlternativesAllowsEmptyCandidatesWithoutSearch() throws {
+        let source = repo(fullName: "groue/GRDB.swift", language: "Swift", stars: 7_800)
+        let request = try RepoAlternativesArtifactRequest(arguments: .object([
+            "sourceRepoID": .number(Double(source.id)),
+            "title": .string("GRDB.swift Alternatives"),
+            "summary": .string("当前没有可核验的公开候选。"),
+            "candidates": .array([]),
+            "recommendedActions": .array([.string("启用 External Search 后重试。")]),
+            "limitations": .array([.string("External Search 当前不可用。")])
+        ]))
+
+        let markdown = try RepoAlternativesArtifactBuilder.build(
+            request: request,
+            prompt: "对比替代方案",
+            context: AgentRunContext(sourceDescription: "Unit Snapshot", repos: [source]),
+            externalContextMarkdown: ""
+        )
+
+        #expect(markdown.contains(String.l10n("agent.artifact.common.externalUnavailable")))
+        #expect(markdown.contains("External Search 当前不可用。"))
+    }
+
     private func repo(
         fullName: String,
         language: String,
@@ -343,6 +421,28 @@ struct GitHubWeeklyReportToolsTests {
             "risks": .array([.string("需要继续核验 API 稳定性。")]),
             "recommendedActions": .array([.string("用真实 README 样本做兼容性测试。")]),
             "limitations": .array([.string("没有实时维护活跃度数据。")]),
+            "includeSources": .bool(true)
+        ])
+    }
+
+    private func repoAlternativesArtifactArguments(
+        sourceRepoID: Int64,
+        candidateFullName: String,
+        candidateURL: String
+    ) -> AgentJSONValue {
+        .object([
+            "sourceRepoID": .number(Double(sourceRepoID)),
+            "title": .string("GRDB.swift Alternatives"),
+            "summary": .string("基于公开证据比较 SQLite 访问层方案。"),
+            "candidates": .array([.object([
+                "fullName": .string(candidateFullName),
+                "url": .string(candidateURL),
+                "positioning": .string("轻量 Swift SQLite 封装。"),
+                "adoptionFit": .string("适合偏好类型安全查询 API 的项目。"),
+                "risks": .array([.string("仍需核验迁移与并发模型。")])
+            ])]),
+            "recommendedActions": .array([.string("使用同一 schema 做基准验证。")]),
+            "limitations": .array([.string("实时维护状态以公开搜索结果为准。")]),
             "includeSources": .bool(true)
         ])
     }

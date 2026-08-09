@@ -52,4 +52,27 @@ struct AgentDefinitionTests {
         #expect(!agent.workflow.allowsEmptyRepositoryContext)
         #expect(agent.promptRules.map(\.id) == ["repo-insight-selection", "repo-insight-artifact-contract"])
     }
+
+    @Test("Repo Alternatives Agent 只读取单仓上下文和公开搜索证据")
+    func repoAlternativesDeclaresEvidenceBoundToolAllowlist() {
+        let agent = BuiltInAgents.repoAlternatives
+
+        #expect(agent.isEnabled)
+        #expect(agent.toolIDs == [
+            "agent_parse_repo_alternatives_goal",
+            "context_select_repo",
+            "knowledge_search",
+            "external_search",
+            "artifact_build_repo_alternatives"
+        ])
+        #expect(agent.artifactTypes == [.markdown])
+        #expect(agent.workflow.repositoryContext == .singleRepository)
+        #expect(agent.workflow.maximumSelectedRepositories == 1)
+        #expect(!agent.workflow.allowsEmptyRepositoryContext)
+        #expect(agent.promptRules.map(\.id) == [
+            "repo-alternatives-source",
+            "repo-alternatives-evidence",
+            "repo-alternatives-artifact-contract"
+        ])
+    }
 }

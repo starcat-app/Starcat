@@ -94,22 +94,54 @@ enum BuiltInAgents {
         artifactTypes: [.markdown]
     ) }
 
+    static var repoAlternatives: AgentDefinition { AgentDefinition(
+        id: "repo-alternatives",
+        title: String.l10n("agent.definition.repoAlternatives.title"),
+        subtitle: String.l10n("agent.definition.repoAlternatives.subtitle"),
+        systemImage: "arrow.triangle.branch",
+        capabilityLabels: [
+            String.l10n("agent.capability.compare"),
+            String.l10n("agent.capability.github"),
+            String.l10n("agent.capability.table")
+        ],
+        defaultPrompt: String.l10n("agent.definition.repoAlternatives.defaultPrompt"),
+        isEnabled: true,
+        workflow: AgentWorkflowPolicy(
+            repositoryContext: .singleRepository,
+            executionMode: .reportGeneration,
+            allowsManualRepositoryOverride: true,
+            allowsEmptyRepositoryContext: false,
+            usesDefaultPromptWhenEmpty: true,
+            maximumSelectedRepositories: 1
+        ),
+        promptRules: [
+            AgentPromptRule(
+                id: "repo-alternatives-source",
+                content: "The frozen business context contains exactly one source repository. Base source facts only on that snapshot. Use knowledge_search only for the eligible indexed source repository and preserve supplied [S#] citations."
+            ),
+            AgentPromptRule(
+                id: "repo-alternatives-evidence",
+                content: "Discover candidate repositories only through external_search with allowedDomains=[\"github.com\"]. Do not invent candidates, stars, licenses, maintenance status, or activity. A candidate fullName and root GitHub URL must appear in the returned External Search evidence."
+            ),
+            AgentPromptRule(
+                id: "repo-alternatives-artifact-contract",
+                content: "Select the frozen source repository before searching, then submit exactly one structured artifact_build_repo_alternatives call. Use at most 6 candidates. If External Search is unavailable or yields no verified candidate, submit an empty candidates array and state that limitation."
+            )
+        ],
+        toolIDs: [
+            "agent_parse_repo_alternatives_goal",
+            "context_select_repo",
+            "knowledge_search",
+            "external_search",
+            "artifact_build_repo_alternatives"
+        ],
+        artifactTypes: [.markdown]
+    ) }
+
     static var all: [AgentDefinition] { [
         githubWeeklyReport,
         repoInsight,
-        AgentDefinition(
-            id: "repo-alternatives",
-            title: String.l10n("agent.definition.repoAlternatives.title"),
-            subtitle: String.l10n("agent.definition.repoAlternatives.subtitle"),
-            systemImage: "arrow.triangle.branch",
-            capabilityLabels: [
-                String.l10n("agent.capability.compare"),
-                String.l10n("agent.capability.github"),
-                String.l10n("agent.capability.table")
-            ],
-            defaultPrompt: String.l10n("agent.definition.repoAlternatives.defaultPrompt"),
-            isEnabled: false
-        ),
+        repoAlternatives,
         AgentDefinition(
             id: "overlap-scan",
             title: String.l10n("agent.definition.overlapScan.title"),

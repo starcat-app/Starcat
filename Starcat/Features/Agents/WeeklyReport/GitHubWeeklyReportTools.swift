@@ -267,7 +267,9 @@ enum GitHubWeeklyReportAgentTools {
             BuildMarkdownTool(),
             RepoInsightAgentTools.ParseGoalTool(),
             RepoInsightAgentTools.SelectRepoTool(),
-            RepoInsightAgentTools.BuildMarkdownTool()
+            RepoInsightAgentTools.BuildMarkdownTool(),
+            RepoAlternativesAgentTools.ParseGoalTool(),
+            RepoAlternativesAgentTools.BuildMarkdownTool()
         ]
     }
 
@@ -635,5 +637,153 @@ enum RepoInsightAgentTools {
         topics: \(repo.topics.joined(separator: ", "))
         url: \(repo.htmlUrl)
         """
+    }
+}
+
+/// Repo Alternatives 复用单仓选择工具，但使用独立的目标解析和 artifact 契约。
+///
+/// 候选仓库只能由 External Search 提供，因此这里不增加“扫描全部本地仓库”的旁路工具，
+/// 也不会把单仓冻结上下文误解释成候选池。
+enum RepoAlternativesAgentTools {
+    struct ParseGoalTool: AgentTool {
+        let definition = makeReadOnlyToolDefinition(
+            name: "agent_parse_repo_alternatives_goal",
+            description: "Normalize a repository alternatives goal without creating write-capable actions.",
+            properties: ["goal": AgentJSONSchema(type: .string, description: "Repository comparison goal")],
+            required: ["goal"]
+        )
+
+        func execute(_ input: AgentToolInput) async -> AgentToolResult {
+            let prompt = (input.arguments.objectValue?["goal"]?.stringValue ?? input.prompt)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let effectivePrompt = prompt.isEmpty
+                ? String.l10n("agent.definition.repoAlternatives.defaultPrompt")
+                : prompt
+            return makeResult(
+                toolName: id,
+                summary: String.l10n("agent.definition.repoAlternatives.title"),
+                input: """
+                prompt:
+                \(effectivePrompt)
+
+                context_source:
+                \(input.context.sourceDescription)
+                """,
+                output: """
+                goal: Repo Alternatives
+                artifact: markdown
+                write_policy: read-only
+                repo_count: \(input.context.repos.count)
+                """
+            ).agentToolResult()
+        }
+    }
+
+    struct BuildMarkdownTool: AgentTool {
+        private static let candidateSchema = AgentJSONSchema(
+            type: .object,
+            properties: [
+                "fullName": AgentJSONSchema(type: .string, description: "Candidate GitHub owner/name from External Search evidence"),
+                "url": AgentJSONSchema(type: .string, description: "Candidate https://github.com/owner/name repository URL"),
+                "positioning": AgentJSONSchema(type: .string, description: "Evidence-grounded positioning"),
+                "adoptionFit": AgentJSONSchema(type: .string, description: "Fit compared with the source repository"),
+                "risks": AgentJSONSchema(
+                    type: .array,
+                    description: "Evidence limitations or adoption risks",
+                    items: AgentJSONSchema(type: .string)
+                )
+            ],
+            required: ["fullName", "url", "positioning", "adoptionFit", "risks"]
+        )
+
+        let definition = makeReadOnlyToolDefinition(
+            name: "artifact_build_repo_alternatives",
+            description: "Submit a structured comparison. Every candidate must be a public GitHub repository present in External Search evidence; use an empty candidates array when no evidence is available.",
+            properties: [
+                "sourceRepoID": AgentJSONSchema(type: .integer, description: "Selected Starcat source repository ID"),
+                "title": AgentJSONSchema(type: .string, description: "Artifact title"),
+                "summary": AgentJSONSchema(type: .string, description: "Concise evidence-based comparison summary"),
+                "candidates": AgentJSONSchema(
+                    type: .array,
+                    description: "At most 6 externally evidenced alternative repositories",
+                    items: Self.candidateSchema
+                ),
+                "recommendedActions": AgentJSONSchema(
+                    type: .array,
+                    description: "Concrete follow-up evaluation actions",
+                    items: AgentJSONSchema(type: .string)
+                ),
+                "limitations": AgentJSONSchema(
+                    type: .array,
+                    description: "Known evidence or freshness limitations",
+                    items: AgentJSONSchema(type: .string)
+                ),
+                "includeSources": AgentJSONSchema(type: .boolean, description: "Include External Search references", defaultValue: .bool(true))
+            ],
+            required: [
+                "sourceRepoID", "title", "summary", "candidates",
+                "recommendedActions", "limitations"
+            ],
+            completesRun: true
+        )
+
+        func execute(_ input: AgentToolInput) async -> AgentToolResult {
+            do {
+                let request = try RepoAlternativesArtifactRequest(arguments: input.arguments)
+                let markdown = try RepoAlternativesArtifactBuilder.build(
+                    request: request,
+                    prompt: input.prompt,
+                    context: input.context,
+                    externalContextMarkdown: input.values["externalContextMarkdown"] ?? ""
+                )
+                let sourceRepo = input.context.repos.first(where: { $0.id == request.sourceRepoID })!
+                let sources = [
+                    AgentToolResultSource(title: sourceRepo.fullName, url: sourceRepo.htmlUrl, provider: "Starcat")
+                ] + request.candidates.map {
+                    AgentToolResultSource(title: $0.fullName, url: $0.url.absoluteString, provider: "External Search")
+                }
+                return makeResult(
+                    toolName: id,
+                    summary: "\(markdown.count) chars",
+                    input: (try? input.arguments.jsonString()) ?? "{}",
+                    output: String(markdown.prefix(1_200))
+                ).agentToolResult(payload: .markdown(markdown), sources: sources)
+            } catch {
+                return failedAgentToolResult(
+                    toolName: id,
+                    input: (try? input.arguments.jsonString()) ?? "{}",
+                    message: error.localizedDescription
+                )
+            }
+        }
+    }
+
+    private static func makeResult(
+        toolName: String,
+        summary: String,
+        input: String,
+        output: String
+    ) -> WeeklyReportToolResult {
+        let completed = String.l10n("agent.tool.status.completed")
+        let toolOutput = AgentToolOutput(
+            toolName: toolName,
+            summary: summary,
+            detail: output,
+            input: input,
+            output: output,
+            log: completed
+        )
+        return WeeklyReportToolResult(
+            output: toolOutput,
+            trace: AgentTraceSpan(
+                kind: String.l10n("agent.trace.kind.tool"),
+                title: toolName,
+                summary: summary,
+                input: input,
+                output: output,
+                log: completed,
+                relatedToolOutputID: toolOutput.id
+            )
+        )
     }
 }

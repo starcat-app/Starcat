@@ -472863,6 +472863,116 @@
         }
       }
     },
+    "agent.artifact.repoAlternatives.error.invalidArgumentsFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Invalid Repo Alternatives artifact arguments: %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库替代方案产出物参数无效：%@" } },
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "وسيطات عنصر بدائل المستودع غير صالحة: %@" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Ungültige Argumente für das Repo-Alternativen-Artefakt: %@" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Argumentos no válidos para el artefacto de alternativas de repositorio: %@" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Arguments d’artéfact d’alternatives de dépôt non valides : %@" } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Argumen artefak alternatif repositori tidak valid: %@" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Argomenti non validi per l’artefatto delle alternative al repository: %@" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "リポジトリ代替候補アーティファクトの引数が無効です: %@" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "저장소 대안 아티팩트 인수가 잘못되었습니다: %@" } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Ongeldige argumenten voor het repository-alternatievenartefact: %@" } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Nieprawidłowe argumenty artefaktu alternatyw repozytorium: %@" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Argumentos inválidos para o artefato de alternativas de repositório: %@" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Недопустимые аргументы артефакта альтернатив репозитория: %@" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Depo alternatifleri yapıtı için geçersiz bağımsız değişkenler: %@" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Некоректні аргументи артефакту альтернатив репозиторію: %@" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Đối số artifact phương án thay thế kho lưu trữ không hợp lệ: %@" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "儲存庫替代方案產出物參數無效：%@" } }
+      }
+    },
+    "agent.artifact.repoAlternatives.error.unknownRepositoryFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repo Alternatives references source repository %lld outside the frozen run context." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库替代方案引用了冻结运行上下文之外的源仓库 %lld。" } },
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "تشير بدائل المستودع إلى المستودع المصدر %lld خارج سياق التشغيل المجمّد." } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Repo-Alternativen verweist auf das Quell-Repository %lld außerhalb des eingefrorenen Ausführungskontexts." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Alternativas de repositorio hace referencia al repositorio de origen %lld fuera del contexto de ejecución congelado." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Les alternatives de dépôt font référence au dépôt source %lld hors du contexte d’exécution figé." } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Alternatif repositori merujuk repositori sumber %lld di luar konteks proses yang dibekukan." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Le alternative al repository fanno riferimento al repository di origine %lld al di fuori del contesto di esecuzione congelato." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "リポジトリ代替候補が凍結された実行コンテキスト外のソースリポジトリ %lld を参照しています。" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "저장소 대안이 동결된 실행 컨텍스트 외부의 소스 저장소 %lld를 참조합니다." } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Repository-alternatieven verwijst naar bronrepository %lld buiten de bevroren uitvoeringscontext." } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Alternatywy repozytorium odwołują się do repozytorium źródłowego %lld poza zamrożonym kontekstem uruchomienia." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Alternativas de repositório faz referência ao repositório de origem %lld fora do contexto de execução congelado." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Альтернативы репозитория ссылаются на исходный репозиторий %lld вне замороженного контекста запуска." } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Depo alternatifleri, dondurulmuş çalıştırma bağlamı dışındaki %lld kaynak deposuna başvuruyor." } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Альтернативи репозиторію посилаються на вихідний репозиторій %lld поза замороженим контекстом запуску." } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Phương án thay thế kho lưu trữ tham chiếu kho nguồn %lld ngoài bối cảnh chạy đã đóng băng." } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "儲存庫替代方案引用了凍結執行內容之外的來源儲存庫 %lld。" } }
+      }
+    },
+    "agent.artifact.repoAlternatives.error.duplicateCandidateFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Duplicate candidate repository: %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "候选仓库重复：%@" } },
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "مستودع مرشح مكرر: %@" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Doppeltes Kandidaten-Repository: %@" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Repositorio candidato duplicado: %@" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Dépôt candidat en double : %@" } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Repositori kandidat duplikat: %@" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Repository candidato duplicato: %@" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "候補リポジトリが重複しています: %@" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "중복된 후보 저장소: %@" } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Dubbele kandidaat-repository: %@" } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Zduplikowane repozytorium kandydujące: %@" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Repositório candidato duplicado: %@" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Дублирующийся репозиторий-кандидат: %@" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Yinelenen aday depo: %@" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Дубльований репозиторій-кандидат: %@" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Kho ứng viên bị trùng: %@" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "候選儲存庫重複：%@" } }
+      }
+    },
+    "agent.artifact.repoAlternatives.error.missingExternalEvidenceFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Candidate is not present in External Search evidence: %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "External Search 证据中不存在该候选仓库：%@" } },
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "المرشح غير موجود في أدلة البحث الخارجي: %@" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Der Kandidat ist nicht in den External-Search-Belegen enthalten: %@" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "El candidato no aparece en la evidencia de External Search: %@" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Le candidat n’apparaît pas dans les preuves d’External Search : %@" } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Kandidat tidak ditemukan dalam bukti External Search: %@" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Il candidato non è presente nelle prove di External Search: %@" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "候補が External Search の証拠に含まれていません: %@" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "후보가 External Search 증거에 없습니다: %@" } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "De kandidaat komt niet voor in het External Search-bewijs: %@" } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Kandydata nie ma w dowodach External Search: %@" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O candidato não está presente nas evidências do External Search: %@" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Кандидат отсутствует в данных External Search: %@" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Aday External Search kanıtlarında bulunmuyor: %@" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Кандидат відсутній у доказах External Search: %@" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Ứng viên không có trong bằng chứng External Search: %@" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "External Search 證據中不存在該候選儲存庫：%@" } }
+      }
+    },
+    "agent.artifact.repoAlternatives.error.sourceIncludedFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Candidate duplicates the source repository: %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "候选仓库与源仓库重复：%@" } },
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "المستودع المرشح يكرر المستودع المصدر: %@" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Das Kandidaten-Repository entspricht dem Quell-Repository: %@" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "El repositorio candidato duplica el repositorio de origen: %@" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Le dépôt candidat est identique au dépôt source : %@" } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Repositori kandidat sama dengan repositori sumber: %@" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Il repository candidato coincide con il repository di origine: %@" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "候補リポジトリがソースリポジトリと重複しています: %@" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "후보 저장소가 소스 저장소와 같습니다: %@" } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "De kandidaat-repository is gelijk aan de bronrepository: %@" } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Repozytorium kandydujące jest takie samo jak repozytorium źródłowe: %@" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O repositório candidato é igual ao repositório de origem: %@" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Репозиторий-кандидат совпадает с исходным репозиторием: %@" } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Aday depo kaynak depoyla aynı: %@" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Репозиторій-кандидат збігається з вихідним репозиторієм: %@" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Kho ứng viên trùng với kho nguồn: %@" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "候選儲存庫與來源儲存庫重複：%@" } }
+      }
+    },
     "agent.artifact.repoInsight.adoptionFit" : {
       "localizations" : {
         "en" : {

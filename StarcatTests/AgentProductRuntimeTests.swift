@@ -136,6 +136,77 @@ struct AgentProductRuntimeTests {
         #expect(events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
     }
 
+    @Test("Repo Alternatives 通过 External Search 证据生成可审计对比产物")
+    func repoAlternativesBuildsEvidenceBoundArtifactThroughLoop() async throws {
+        let context = AgentRunContext(sourceDescription: "Unit Snapshot", repos: [repoSnapshot()])
+        let candidateURL = "https://github.com/stephencelis/SQLite.swift"
+        let recorder = ProductModelRecorder(responses: [
+            AgentModelResponse(
+                text: "",
+                reasoning: "先确认冻结快照中的源仓库",
+                toolCalls: [AgentModelToolCall(
+                    id: "select-source",
+                    name: "context_select_repo",
+                    arguments: try AgentJSONValue.object([
+                        "fullName": .string("groue/GRDB.swift")
+                    ]).jsonString()
+                )],
+                model: "test",
+                finishReason: "tool_calls"
+            ),
+            AgentModelResponse(
+                text: "",
+                reasoning: "搜索公开 GitHub 候选",
+                toolCalls: [AgentModelToolCall(
+                    id: "search-alternatives",
+                    name: "external_search",
+                    arguments: "{\"query\":\"GRDB.swift alternatives\",\"allowedDomains\":[\"github.com\"]}"
+                )],
+                model: "test",
+                finishReason: "tool_calls"
+            ),
+            AgentModelResponse(
+                text: "",
+                reasoning: "候选已由公开搜索证据确认，提交对比产物",
+                toolCalls: [AgentModelToolCall(
+                    id: "build-alternatives",
+                    name: "artifact_build_repo_alternatives",
+                    arguments: try repoAlternativesArguments(
+                        sourceRepoID: 42,
+                        candidateURL: candidateURL
+                    ).jsonString()
+                )],
+                model: "test",
+                finishReason: "tool_calls"
+            )
+        ])
+        let searchTool = ProductAlternativesSearchTool(candidateURL: candidateURL)
+        let runtime = LoopAgentRuntime(
+            modelClient: ProductModelClient(recorder: recorder),
+            toolRegistry: try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.makeAll(
+                externalSearchTool: searchTool
+            ))
+        )
+
+        let events = await collect(runtime.run(
+            definition: BuiltInAgents.repoAlternatives,
+            prompt: "寻找 GRDB.swift 的替代方案",
+            context: context
+        ))
+        let requests = await recorder.recordedRequests()
+        let artifact = try #require(events.compactMap { event -> AgentArtifact? in
+            guard case .artifactCreated(let artifact) = event else { return nil }
+            return artifact
+        }.first)
+        let searchResult = try #require(toolResult(named: "external_search", in: requests[2]))
+
+        #expect(searchResult.output.jsonDescription.contains(candidateURL))
+        #expect(artifact.content.contains("# GRDB.swift Alternatives"))
+        #expect(artifact.content.contains(candidateURL))
+        #expect(requests.count == 3)
+        #expect(events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
+    }
+
     private func runWeekly(searchStatus: AgentToolStatus) async throws -> ProductRunOutcome {
         let context = AgentRunContext(sourceDescription: "Unit Snapshot", repos: [repoSnapshot()])
         let recorder = ProductModelRecorder(responses: [
@@ -201,6 +272,27 @@ struct AgentProductRuntimeTests {
             "risks": .array([.string("需要结合目标 schema 做迁移测试。")]),
             "recommendedActions": .array([.string("先用隔离数据库验证查询与迁移。")]),
             "limitations": .array([.string("未使用实时 README 和维护活跃度证据。")]),
+            "includeSources": .bool(true)
+        ])
+    }
+
+    private func repoAlternativesArguments(
+        sourceRepoID: Int64,
+        candidateURL: String
+    ) -> AgentJSONValue {
+        .object([
+            "sourceRepoID": .number(Double(sourceRepoID)),
+            "title": .string("GRDB.swift Alternatives"),
+            "summary": .string("SQLite.swift 是公开搜索证据中的候选方案。"),
+            "candidates": .array([.object([
+                "fullName": .string("stephencelis/SQLite.swift"),
+                "url": .string(candidateURL),
+                "positioning": .string("Swift SQLite 类型安全封装。"),
+                "adoptionFit": .string("适合希望使用轻量查询 API 的项目。"),
+                "risks": .array([.string("需要核验迁移能力和并发模型。")])
+            ])]),
+            "recommendedActions": .array([.string("在同一 schema 上做迁移验证。")]),
+            "limitations": .array([.string("实时指标仅以当前公开搜索证据为准。")]),
             "includeSources": .bool(true)
         ])
     }
@@ -309,6 +401,58 @@ private struct ProductSearchTool: AgentTool {
                 log: summary,
                 status: status == .failed ? .failed : .skipped
             )
+        )
+    }
+}
+
+private struct ProductAlternativesSearchTool: AgentTool {
+    let candidateURL: String
+    let definition = AgentToolDefinition(
+        name: "external_search",
+        description: "Search public GitHub repositories.",
+        inputSchema: AgentJSONSchema(
+            type: .object,
+            properties: [
+                "query": AgentJSONSchema(type: .string),
+                "allowedDomains": AgentJSONSchema(
+                    type: .array,
+                    items: AgentJSONSchema(type: .string)
+                )
+            ],
+            required: ["query"]
+        )
+    )
+
+    func execute(_ input: AgentToolInput) async -> AgentToolResult {
+        let markdown = """
+        <external_context source="Test Search">
+        - [stephencelis/SQLite.swift](\(candidateURL)) — Swift SQLite wrapper
+        </external_context>
+        """
+        let output = AgentToolOutput(
+            toolName: definition.name,
+            summary: "1 source",
+            detail: markdown,
+            input: (try? input.arguments.jsonString()) ?? "{}",
+            output: candidateURL,
+            log: "completed"
+        )
+        return AgentToolResult(
+            output: output,
+            trace: AgentTraceSpan(
+                kind: "Tool",
+                title: definition.name,
+                summary: output.summary,
+                input: output.input,
+                output: output.output,
+                log: output.log
+            ),
+            payload: .externalContextMarkdown(markdown),
+            sources: [AgentToolResultSource(
+                title: "stephencelis/SQLite.swift",
+                url: candidateURL,
+                provider: "Test Search"
+            )]
         )
     }
 }
