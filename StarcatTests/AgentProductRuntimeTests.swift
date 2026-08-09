@@ -207,6 +207,95 @@ struct AgentProductRuntimeTests {
         #expect(events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
     }
 
+    @Test("Untagged Tidy 先 dry-run，批准后写入并生成 read-back 产物")
+    func untaggedTidyPreviewsApprovesAndAppliesThroughLoop() async throws {
+        let source = ProductRepositoryTagSource(
+            repo: productTagRepo(),
+            tag: productTag()
+        )
+        let executor = RepositoryTagCapabilityExecutor(source: source)
+        let assignments = [RepositoryTagAssignment(repoID: 42, tagNames: ["Database"])]
+        let preview = try await executor.preview(assignments: assignments, allowedRepoIDs: [42])
+        let assignmentArguments = productTagArguments(assignments: assignments)
+        let recorder = ProductModelRecorder(responses: [
+            AgentModelResponse(
+                text: "",
+                reasoning: "读取明确选择的仓库和现有标签体系",
+                toolCalls: [AgentModelToolCall(
+                    id: "inspect-tags",
+                    name: "tag_inspect_untagged",
+                    arguments: "{}"
+                )],
+                model: "test",
+                finishReason: "tool_calls"
+            ),
+            AgentModelResponse(
+                text: "",
+                reasoning: "提交完整 dry-run diff",
+                toolCalls: [AgentModelToolCall(
+                    id: "preview-tags",
+                    name: "tag_preview_untagged",
+                    arguments: try assignmentArguments.jsonString()
+                )],
+                model: "test",
+                finishReason: "tool_calls"
+            ),
+            AgentModelResponse(
+                text: "",
+                reasoning: "使用相同 diff 和 preview hash 请求确认写入",
+                toolCalls: [AgentModelToolCall(
+                    id: "apply-tags",
+                    name: "tag_apply_untagged",
+                    arguments: try assignmentArguments.mergingObject([
+                        "previewHash": .string(preview.previewHash)
+                    ]).jsonString()
+                )],
+                model: "test",
+                finishReason: "tool_calls"
+            )
+        ])
+        let runtime = LoopAgentRuntime(
+            modelClient: ProductModelClient(recorder: recorder),
+            toolRegistry: try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.makeAll(
+                externalSearchTool: ProductSearchTool(status: .skipped),
+                knowledgeTool: AgentKnowledgeTool(searcher: UnavailableAgentKnowledgeSearcher()),
+                additionalTools: UntaggedTidyAgentTools.make(executor: executor)
+            )),
+            mode: .approvedAction
+        )
+        var events: [AgentRunEvent] = []
+
+        for await event in runtime.run(
+            definition: BuiltInAgents.untaggedTidy,
+            prompt: "给 GRDB.swift 整理标签",
+            context: AgentRunContext(sourceDescription: "Explicit Selection", repos: [repoSnapshot()])
+        ) {
+            events.append(event)
+            if case .approvalUpdated(let approval) = event, approval.status == .pending {
+                await runtime.send(.decideApproval(
+                    runID: approval.runID,
+                    approvalID: approval.id,
+                    toolCallID: approval.toolCallID,
+                    decision: .approved
+                ))
+            }
+        }
+
+        let approvals = events.compactMap { event -> AgentApprovalRequest? in
+            guard case .approvalUpdated(let approval) = event else { return nil }
+            return approval
+        }
+        let artifact = try #require(events.compactMap { event -> AgentArtifact? in
+            guard case .artifactCreated(let artifact) = event else { return nil }
+            return artifact
+        }.first)
+        #expect(approvals.map(\.status) == [.pending, .approved, .executing, .executed])
+        #expect(await source.persistedTagNames() == ["Database"])
+        #expect(artifact.content.contains("groue/GRDB.swift"))
+        #expect(artifact.content.contains("Database"))
+        #expect(events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
+    }
+
     private func runWeekly(searchStatus: AgentToolStatus) async throws -> ProductRunOutcome {
         let context = AgentRunContext(sourceDescription: "Unit Snapshot", repos: [repoSnapshot()])
         let recorder = ProductModelRecorder(responses: [
@@ -312,6 +401,38 @@ struct AgentProductRuntimeTests {
             starredAt: "2026-07-07T00:00:00Z",
             htmlUrl: "https://github.com/groue/GRDB.swift"
         )
+    }
+
+    private func productTagRepo() -> Repo {
+        var repo = Repo.makeMinimal(owner: "groue", name: "GRDB.swift")
+        repo.id = 42
+        repo.isStarred = true
+        return repo
+    }
+
+    private func productTag() -> Starcat.Tag {
+        Starcat.Tag(
+            id: "database",
+            name: "Database",
+            color: nil,
+            icon: nil,
+            sortOrder: 0,
+            isPreset: false,
+            parentId: nil,
+            createdAt: "2026-08-10T00:00:00Z",
+            updatedAt: "2026-08-10T00:00:00Z"
+        )
+    }
+
+    private func productTagArguments(assignments: [RepositoryTagAssignment]) -> AgentJSONValue {
+        .object([
+            "assignments": .array(assignments.map { assignment in
+                .object([
+                    "repoID": .number(Double(assignment.repoID)),
+                    "tagNames": .array(assignment.tagNames.map(AgentJSONValue.string))
+                ])
+            })
+        ])
     }
 
     private func toolResult(named name: String, in request: AgentModelRequest) -> AgentToolResultMessage? {
@@ -457,6 +578,34 @@ private struct ProductAlternativesSearchTool: AgentTool {
     }
 }
 
+private actor ProductRepositoryTagSource: RepositoryTagCapabilitySource {
+    private let repo: Repo
+    private let tag: Starcat.Tag
+    private var persisted: [Starcat.Tag] = []
+
+    init(repo: Repo, tag: Starcat.Tag) {
+        self.repo = repo
+        self.tag = tag
+    }
+
+    func findRepository(id: Int64) -> Repo? { id == repo.id ? repo : nil }
+    func fetchAllTags() -> [Starcat.Tag] { [tag] }
+    func fetchTags(repoID: Int64) -> [Starcat.Tag] { repoID == repo.id ? persisted : [] }
+
+    func batchAddTag(repoIDs: [Int64], tagID: String) {
+        guard repoIDs.contains(repo.id), tagID == tag.id else { return }
+        if !persisted.contains(where: { $0.id == tag.id }) { persisted.append(tag) }
+    }
+
+    func persistedTagNames() -> [String] { persisted.map(\.name) }
+}
+
 private extension AgentJSONValue {
     var jsonDescription: String { (try? jsonString()) ?? "" }
+
+    func mergingObject(_ additions: [String: AgentJSONValue]) -> AgentJSONValue {
+        guard case .object(var object) = self else { return self }
+        object.merge(additions) { _, new in new }
+        return .object(object)
+    }
 }

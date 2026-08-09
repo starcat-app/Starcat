@@ -117,6 +117,31 @@ struct AgentRunContextProviderTests {
         #expect(context.failureReason == String.l10n("agent.loop.error.contextUnavailable"))
     }
 
+    @Test("Untagged Tidy 只冻结用户明确选择的仓库集合")
+    func untaggedTidyUsesExplicitRepositorySelection() async throws {
+        let fixture = try await makeFixture()
+        let context = await fixture.provider.makeContext(
+            definition: BuiltInAgents.untaggedTidy,
+            input: input(mode: .only, repoIDs: [1, 3])
+        )
+
+        #expect(context.failureReason == nil)
+        #expect(context.repos.map(\.id) == [1, 3])
+        #expect(context.knowledgeEligibleRepoIDs == [1])
+    }
+
+    @Test("Untagged Tidy 没有明确选择时拒绝启动")
+    func untaggedTidyRejectsEmptySelection() async throws {
+        let fixture = try await makeFixture()
+        let context = await fixture.provider.makeContext(
+            definition: BuiltInAgents.untaggedTidy,
+            input: input(mode: .only, repoIDs: [])
+        )
+
+        #expect(context.repos.isEmpty)
+        #expect(context.failureReason == String.l10n("agent.loop.error.contextUnavailable"))
+    }
+
     @Test("Agent 选择器把 Star 和来源当筛选维度而不是准入条件")
     func pickerFiltersAcrossAllKnownRepositories() {
         let candidates = [

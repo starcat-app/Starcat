@@ -192,6 +192,9 @@ final class AgentWorkspaceViewModel {
             return true
         case .singleRepository:
             return selectedRepoContexts.count == 1 || (selectedRepoContexts.isEmpty && githubLinks.count == 1)
+        case .selectedRepositories:
+            return !selectedRepoContexts.isEmpty
+                && selectedRepoContexts.count <= selectedAgent.workflow.maximumSelectedRepositories
         }
     }
 
@@ -210,6 +213,8 @@ final class AgentWorkspaceViewModel {
             selectedRepoContexts = Array(selectedRepoContexts.prefix(agent.workflow.maximumSelectedRepositories))
         }
         if case .singleRepository = agent.workflow.repositoryContext {
+            explicitRepoMode = .only
+        } else if case .selectedRepositories = agent.workflow.repositoryContext {
             explicitRepoMode = .only
         }
         handlePromptChanged()

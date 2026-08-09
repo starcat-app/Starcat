@@ -150,6 +150,15 @@ struct RepositoryAgentRunContextProvider: AgentRunContextProviding {
                 throw AgentRunContextProviderError.singleRepositoryRequired
             }
             return [linkedRepo]
+        case .selectedRepositories:
+            let explicit = try loadExplicitRepos(input.explicitRepos, candidatesByID: candidatesByID)
+            guard explicit.count <= definition.workflow.maximumSelectedRepositories else {
+                throw AgentRunContextProviderError.tooManyExplicitRepositories
+            }
+            guard definition.workflow.allowsEmptyRepositoryContext || !explicit.isEmpty else {
+                throw AgentRunContextProviderError.explicitRepositoryUnavailable
+            }
+            return explicit
         }
     }
 
@@ -167,6 +176,10 @@ struct RepositoryAgentRunContextProvider: AgentRunContextProviding {
             )
         case .singleRepository where repositoryCount == 1:
             return String.l10n("agent.context.source.singleRepository")
+        case .selectedRepositories:
+            return repositoryCount == 0
+                ? String.l10n("agent.context.source.empty")
+                : String(format: String.l10n("agent.context.source.repoCountFormat"), repositoryCount)
         default:
             return repositoryCount == 0
                 ? String.l10n("agent.context.source.empty")

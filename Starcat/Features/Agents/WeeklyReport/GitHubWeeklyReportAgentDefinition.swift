@@ -138,6 +138,49 @@ enum BuiltInAgents {
         artifactTypes: [.markdown]
     ) }
 
+    static var untaggedTidy: AgentDefinition { AgentDefinition(
+        id: "untagged-tidy",
+        title: String.l10n("agent.definition.untaggedTidy.title"),
+        subtitle: String.l10n("agent.definition.untaggedTidy.subtitle"),
+        systemImage: "tag",
+        capabilityLabels: [
+            String.l10n("agent.capability.taxonomy"),
+            String.l10n("agent.capability.queue"),
+            String.l10n("agent.capability.review")
+        ],
+        defaultPrompt: String.l10n("agent.definition.untaggedTidy.defaultPrompt"),
+        isEnabled: true,
+        workflow: AgentWorkflowPolicy(
+            repositoryContext: .selectedRepositories,
+            executionMode: .approvedAction,
+            allowsManualRepositoryOverride: true,
+            allowsEmptyRepositoryContext: false,
+            usesDefaultPromptWhenEmpty: true,
+            maximumSelectedRepositories: 30
+        ),
+        promptRules: [
+            AgentPromptRule(
+                id: "untagged-explicit-scope",
+                content: "Operate only on repositories in Frozen Starcat Context. First call tag_inspect_untagged. Repositories must exist in the local repos table and still have no tags. Never add a repository to Starcat, star it, or expand the frozen scope."
+            ),
+            AgentPromptRule(
+                id: "untagged-existing-taxonomy",
+                content: "Suggest only exact existing tag names returned by tag_inspect_untagged. Do not create, rename, merge, or delete tags. Use knowledge_search only for the eligible subset when additional repository evidence is needed."
+            ),
+            AgentPromptRule(
+                id: "untagged-preview-approval",
+                content: "Call tag_preview_untagged with the complete proposed diff before any write. Then call tag_apply_untagged with the exact same assignments and preview_hash. The apply tool requires explicit user confirmation and performs read-back verification."
+            )
+        ],
+        toolIDs: [
+            "tag_inspect_untagged",
+            "knowledge_search",
+            "tag_preview_untagged",
+            "tag_apply_untagged"
+        ],
+        artifactTypes: [.markdown]
+    ) }
+
     static var all: [AgentDefinition] { [
         githubWeeklyReport,
         repoInsight,
@@ -168,19 +211,7 @@ enum BuiltInAgents {
             defaultPrompt: String.l10n("agent.definition.recallSearch.defaultPrompt"),
             isEnabled: false
         ),
-        AgentDefinition(
-            id: "untagged-tidy",
-            title: String.l10n("agent.definition.untaggedTidy.title"),
-            subtitle: String.l10n("agent.definition.untaggedTidy.subtitle"),
-            systemImage: "tag",
-            capabilityLabels: [
-                String.l10n("agent.capability.taxonomy"),
-                String.l10n("agent.capability.queue"),
-                String.l10n("agent.capability.review")
-            ],
-            defaultPrompt: String.l10n("agent.definition.untaggedTidy.defaultPrompt"),
-            isEnabled: false
-        ),
+        untaggedTidy,
         AgentDefinition(
             id: "release-watcher",
             title: String.l10n("agent.definition.releaseWatcher.title"),

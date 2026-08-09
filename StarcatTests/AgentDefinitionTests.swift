@@ -75,4 +75,26 @@ struct AgentDefinitionTests {
             "repo-alternatives-artifact-contract"
         ])
     }
+
+    @Test("Untagged Tidy 只操作明确多选仓库并要求审批写入")
+    func untaggedTidyDeclaresApprovedActionWorkflow() {
+        let agent = BuiltInAgents.untaggedTidy
+
+        #expect(agent.isEnabled)
+        #expect(agent.workflow.repositoryContext == .selectedRepositories)
+        #expect(agent.workflow.executionMode == .approvedAction)
+        #expect(agent.workflow.maximumSelectedRepositories == 30)
+        #expect(!agent.workflow.allowsEmptyRepositoryContext)
+        #expect(agent.toolIDs == [
+            "tag_inspect_untagged",
+            "knowledge_search",
+            "tag_preview_untagged",
+            "tag_apply_untagged"
+        ])
+        #expect(agent.promptRules.map(\.id) == [
+            "untagged-explicit-scope",
+            "untagged-existing-taxonomy",
+            "untagged-preview-approval"
+        ])
+    }
 }

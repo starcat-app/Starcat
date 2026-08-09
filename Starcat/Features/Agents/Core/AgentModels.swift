@@ -20,6 +20,8 @@ enum AgentRepositoryContextPolicy: Hashable, Sendable {
     /// Weekly Report 从 Weekly 多来源缓存冻结最近时间窗，不依赖用户是否 Star。
     case weeklyHotspots(days: Int)
     case singleRepository
+    /// 写入型工作流只允许操作用户在 Composer 中明确选择并冻结的仓库集合。
+    case selectedRepositories
 }
 
 /// 内置 Agent 的声明式运行策略。

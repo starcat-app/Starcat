@@ -256,7 +256,8 @@ enum GitHubWeeklyReportAgentTools {
 
     static func makeAll(
         externalSearchTool: any AgentTool,
-        knowledgeTool: any AgentTool
+        knowledgeTool: any AgentTool,
+        additionalTools: [any AgentTool] = []
     ) -> [any AgentTool] {
         [
             ParseGoalTool(),
@@ -270,7 +271,7 @@ enum GitHubWeeklyReportAgentTools {
             RepoInsightAgentTools.BuildMarkdownTool(),
             RepoAlternativesAgentTools.ParseGoalTool(),
             RepoAlternativesAgentTools.BuildMarkdownTool()
-        ]
+        ] + additionalTools
     }
 
     struct ParseGoalTool: AgentTool {

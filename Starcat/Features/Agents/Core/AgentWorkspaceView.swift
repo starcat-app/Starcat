@@ -86,9 +86,17 @@ struct AgentWorkspaceView: View {
             knowledgeSearcher = UnavailableAgentKnowledgeSearcher()
         }
         do {
+            let tagCapability = RepositoryTagCapabilityExecutor(
+                source: DatabaseRepositoryTagCapabilitySource(
+                    repoRepository: dependencies.repoRepository,
+                    tagRepository: dependencies.tagRepository,
+                    repoTagRepository: dependencies.repoTagRepository
+                )
+            )
             let toolRegistry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.makeAll(
                 externalSearchTool: externalSearchTool,
-                knowledgeTool: AgentKnowledgeTool(searcher: knowledgeSearcher)
+                knowledgeTool: AgentKnowledgeTool(searcher: knowledgeSearcher),
+                additionalTools: UntaggedTidyAgentTools.make(executor: tagCapability)
             ))
             let modelClient = try AgentLoopModelClientFactory.make(
                 settings: dependencies.settings,

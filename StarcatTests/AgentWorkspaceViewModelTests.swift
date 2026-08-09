@@ -57,6 +57,35 @@ struct AgentWorkspaceViewModelTests {
         #expect(!viewModel.canSubmit)
     }
 
+    @Test("Untagged Tidy 必须明确选择一到三十个仓库")
+    func untaggedTidySubmissionRequiresExplicitSelection() {
+        let viewModel = AgentWorkspaceViewModel(agents: [BuiltInAgents.untaggedTidy])
+        configureRunnable(viewModel)
+        #expect(!viewModel.canSubmit)
+
+        viewModel.selectedRepoContexts = [AIComposerRepoReference(
+            id: 1,
+            owner: "octo",
+            name: "one",
+            fullName: "octo/one",
+            language: "Swift",
+            starsCount: 1
+        )]
+        #expect(viewModel.canSubmit)
+
+        viewModel.selectedRepoContexts = (1...31).map { id in
+            AIComposerRepoReference(
+                id: Int64(id),
+                owner: "octo",
+                name: "repo-\(id)",
+                fullName: "octo/repo-\(id)",
+                language: "Swift",
+                starsCount: id
+            )
+        }
+        #expect(!viewModel.canSubmit)
+    }
+
     @Test("Weekly 仓库选择器保持打开并支持连续多选")
     func weeklyRepositoryPickerStaysOpenForMultipleSelections() {
         let viewModel = AgentWorkspaceViewModel(agents: [BuiltInAgents.githubWeeklyReport])

@@ -472973,6 +472973,160 @@
         "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "候選儲存庫與來源儲存庫重複：%@" } }
       }
     },
+    "agent.untaggedTidy.error.alreadyTagged" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The selected repository is no longer untagged. Refresh the preview." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "所选仓库已不再是未标签状态，请刷新预览。" } },
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "لم يعد المستودع المحدد بلا علامات. حدّث المعاينة." } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Das ausgewählte Repository ist nicht mehr ungetaggt. Aktualisiere die Vorschau." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "El repositorio seleccionado ya tiene etiquetas. Actualiza la vista previa." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Le dépôt sélectionné possède désormais des étiquettes. Actualisez l’aperçu." } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Repositori yang dipilih tidak lagi tanpa tag. Muat ulang pratinjau." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Il repository selezionato non è più senza tag. Aggiorna l’anteprima." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "選択したリポジトリには既にタグがあります。プレビューを更新してください。" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "선택한 저장소에 이제 태그가 있습니다. 미리보기를 새로 고치세요." } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "De geselecteerde repository is niet meer ongelabeld. Vernieuw het voorbeeld." } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Wybrane repozytorium nie jest już bez tagów. Odśwież podgląd." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O repositório selecionado não está mais sem tags. Atualize a prévia." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "У выбранного репозитория уже есть теги. Обновите предпросмотр." } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Seçilen depo artık etiketsiz değil. Önizlemeyi yenileyin." } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Вибраний репозиторій уже має теги. Оновіть попередній перегляд." } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Kho lưu trữ đã chọn không còn chưa gắn thẻ. Hãy làm mới bản xem trước." } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "所選儲存庫已不再是未標籤狀態，請重新整理預覽。" } }
+      }
+    },
+    "agent.untaggedTidy.error.invalidTaxonomy" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tag suggestions must use one to eight existing Starcat tags." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "标签建议必须使用 1 到 8 个现有 Starcat 标签。" } },
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "يجب أن تستخدم اقتراحات العلامات من علامة إلى ثماني علامات موجودة في Starcat." } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Tag-Vorschläge müssen ein bis acht vorhandene Starcat-Tags verwenden." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Las sugerencias deben usar entre una y ocho etiquetas existentes de Starcat." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Les suggestions doivent utiliser entre une et huit étiquettes Starcat existantes." } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Saran tag harus menggunakan satu hingga delapan tag Starcat yang sudah ada." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "I suggerimenti devono usare da uno a otto tag Starcat esistenti." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "タグ候補には既存の Starcat タグを1〜8個使用してください。" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "태그 제안은 기존 Starcat 태그 1~8개를 사용해야 합니다." } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Tagsuggesties moeten één tot acht bestaande Starcat-tags gebruiken." } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Sugestie muszą używać od jednego do ośmiu istniejących tagów Starcat." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "As sugestões devem usar de uma a oito tags existentes do Starcat." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Предложения должны использовать от одного до восьми существующих тегов Starcat." } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Etiket önerileri mevcut bir ila sekiz Starcat etiketi kullanmalıdır." } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Пропозиції мають використовувати від одного до восьми наявних тегів Starcat." } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Đề xuất phải dùng từ một đến tám thẻ Starcat hiện có." } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "標籤建議必須使用 1 到 8 個現有 Starcat 標籤。" } }
+      }
+    },
+    "agent.untaggedTidy.error.previewChanged" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The tag diff has changed. Generate a new dry-run preview." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "标签差异已变化，请重新生成 dry-run 预览。" } },
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "تغيّرت فروق العلامات. أنشئ معاينة dry-run جديدة." } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Die Tag-Änderungen haben sich geändert. Erstelle eine neue Dry-Run-Vorschau." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Los cambios de etiquetas han variado. Genera una nueva vista previa dry-run." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Les modifications d’étiquettes ont changé. Générez un nouvel aperçu dry-run." } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Perbedaan tag telah berubah. Buat pratinjau dry-run baru." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Le modifiche ai tag sono cambiate. Genera una nuova anteprima dry-run." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "タグの差分が変わりました。新しい dry-run プレビューを生成してください。" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "태그 변경 사항이 달라졌습니다. 새 dry-run 미리보기를 생성하세요." } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "De tagwijzigingen zijn veranderd. Genereer een nieuw dry-run-voorbeeld." } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Zmiany tagów uległy zmianie. Wygeneruj nowy podgląd dry-run." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "As alterações de tags mudaram. Gere uma nova prévia dry-run." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Изменения тегов обновились. Создайте новый предпросмотр dry-run." } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Etiket farkı değişti. Yeni bir dry-run önizlemesi oluşturun." } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Зміни тегів оновилися. Створіть новий попередній перегляд dry-run." } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Các thay đổi thẻ đã khác. Hãy tạo bản xem trước dry-run mới." } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "標籤差異已變更，請重新產生 dry-run 預覽。" } }
+      }
+    },
+    "agent.untaggedTidy.error.verificationFailed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tag write-back verification failed. Refresh repository tags before retrying." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "标签写入后的回读校验失败，请刷新仓库标签后重试。" } },
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "فشل التحقق بعد كتابة العلامات. حدّث علامات المستودع قبل إعادة المحاولة." } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Die Prüfung nach dem Tag-Schreibvorgang ist fehlgeschlagen. Aktualisiere die Repository-Tags vor einem erneuten Versuch." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Falló la verificación tras escribir las etiquetas. Actualiza las etiquetas antes de reintentar." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La vérification après écriture des étiquettes a échoué. Actualisez-les avant de réessayer." } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Verifikasi setelah penulisan tag gagal. Muat ulang tag repositori sebelum mencoba lagi." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "La verifica dopo la scrittura dei tag non è riuscita. Aggiorna i tag prima di riprovare." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "タグ書き込み後の検証に失敗しました。再試行前にリポジトリのタグを更新してください。" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "태그 쓰기 후 검증에 실패했습니다. 다시 시도하기 전에 저장소 태그를 새로 고치세요." } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Verificatie na het schrijven van tags is mislukt. Vernieuw de repositorytags voordat je opnieuw probeert." } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Weryfikacja po zapisaniu tagów nie powiodła się. Odśwież tagi przed ponowną próbą." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "A verificação após gravar as tags falhou. Atualize as tags antes de tentar novamente." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Проверка после записи тегов не удалась. Обновите теги репозитория перед повтором." } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Etiket yazma sonrası doğrulama başarısız oldu. Yeniden denemeden önce depo etiketlerini yenileyin." } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Перевірка після запису тегів не вдалася. Оновіть теги репозиторію перед повтором." } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Xác minh sau khi ghi thẻ thất bại. Hãy làm mới thẻ kho lưu trữ trước khi thử lại." } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "標籤寫入後的回讀驗證失敗，請重新整理儲存庫標籤後再試。" } }
+      }
+    },
+    "agent.untaggedTidy.error.invalidScope" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The selected repositories are outside the allowed local tag scope." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "所选仓库不在允许的本地标签操作范围内。" } },
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "تقع المستودعات المحددة خارج نطاق العلامات المحلي المسموح." } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Die ausgewählten Repositorys liegen außerhalb des zulässigen lokalen Tag-Bereichs." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Los repositorios seleccionados están fuera del ámbito local permitido para etiquetas." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Les dépôts sélectionnés sont hors du périmètre local autorisé pour les étiquettes." } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Repositori yang dipilih berada di luar cakupan tag lokal yang diizinkan." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "I repository selezionati non rientrano nell’ambito locale consentito per i tag." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "選択したリポジトリは許可されたローカルタグ操作範囲外です。" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "선택한 저장소가 허용된 로컬 태그 범위를 벗어났습니다." } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "De geselecteerde repositories vallen buiten het toegestane lokale tagbereik." } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Wybrane repozytoria są poza dozwolonym lokalnym zakresem tagów." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Os repositórios selecionados estão fora do escopo local permitido para tags." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Выбранные репозитории находятся вне разрешённой локальной области тегов." } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Seçilen depolar izin verilen yerel etiket kapsamının dışında." } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Вибрані репозиторії перебувають поза дозволеною локальною областю тегів." } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Các kho lưu trữ đã chọn nằm ngoài phạm vi thẻ cục bộ được phép." } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "所選儲存庫不在允許的本機標籤操作範圍內。" } }
+      }
+    },
+    "agent.untaggedTidy.error.invalidArguments" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The tag assignment input is invalid. Generate a new preview." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "标签分配参数无效，请重新生成预览。" } },
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "إدخال تعيين العلامات غير صالح. أنشئ معاينة جديدة." } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Die Eingabe für die Tag-Zuweisung ist ungültig. Erstelle eine neue Vorschau." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "La asignación de etiquetas no es válida. Genera una nueva vista previa." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "L’attribution des étiquettes n’est pas valide. Générez un nouvel aperçu." } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Input penetapan tag tidak valid. Buat pratinjau baru." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "L’assegnazione dei tag non è valida. Genera una nuova anteprima." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "タグ割り当ての入力が無効です。新しいプレビューを生成してください。" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "태그 할당 입력이 잘못되었습니다. 새 미리보기를 생성하세요." } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "De invoer voor tagtoewijzing is ongeldig. Genereer een nieuw voorbeeld." } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Dane przypisania tagów są nieprawidłowe. Wygeneruj nowy podgląd." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "A atribuição de tags é inválida. Gere uma nova prévia." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Данные назначения тегов недопустимы. Создайте новый предпросмотр." } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Etiket atama girdisi geçersiz. Yeni bir önizleme oluşturun." } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Дані призначення тегів некоректні. Створіть новий попередній перегляд." } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Dữ liệu gán thẻ không hợp lệ. Hãy tạo bản xem trước mới." } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "標籤分配參數無效，請重新產生預覽。" } }
+      }
+    },
+    "agent.untaggedTidy.error.operationFailed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The tag operation failed. No further automatic write was attempted." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "标签操作失败，未继续执行任何自动写入。" } },
+        "ar" : { "stringUnit" : { "state" : "translated", "value" : "فشلت عملية العلامات. لم تتم محاولة أي كتابة تلقائية أخرى." } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Der Tag-Vorgang ist fehlgeschlagen. Es wurde kein weiterer automatischer Schreibversuch unternommen." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "La operación de etiquetas falló. No se intentó ninguna escritura automática adicional." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "L’opération d’étiquetage a échoué. Aucune autre écriture automatique n’a été tentée." } },
+        "id" : { "stringUnit" : { "state" : "translated", "value" : "Operasi tag gagal. Tidak ada penulisan otomatis lanjutan yang dicoba." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "L’operazione sui tag non è riuscita. Non sono state tentate altre scritture automatiche." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "タグ操作に失敗しました。追加の自動書き込みは実行されていません。" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "태그 작업에 실패했습니다. 추가 자동 쓰기는 시도하지 않았습니다." } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "De tagbewerking is mislukt. Er is geen verdere automatische schrijfactie geprobeerd." } },
+        "pl" : { "stringUnit" : { "state" : "translated", "value" : "Operacja na tagach nie powiodła się. Nie podjęto kolejnego automatycznego zapisu." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "A operação de tags falhou. Nenhuma outra gravação automática foi tentada." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Операция с тегами не удалась. Других автоматических записей не выполнялось." } },
+        "tr" : { "stringUnit" : { "state" : "translated", "value" : "Etiket işlemi başarısız oldu. Başka otomatik yazma girişiminde bulunulmadı." } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Операція з тегами не вдалася. Інших автоматичних записів не виконувалося." } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Thao tác thẻ thất bại. Không có lần ghi tự động nào khác được thực hiện." } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "標籤操作失敗，未繼續執行任何自動寫入。" } }
+      }
+    },
     "agent.artifact.repoInsight.adoptionFit" : {
       "localizations" : {
         "en" : {
