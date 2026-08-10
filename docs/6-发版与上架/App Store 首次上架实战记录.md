@@ -339,6 +339,8 @@ starcat.sandbox.lifetime.001@dong4j.test
 
 当前手动上传、手动配置，不需要创建 App Store Connect API Key。
 
+2026-08-10 补充：已评估 [App Store Connect CLI](App%20Store%20Connect%20CLI%20评估与暂缓接入记录.md) 对 Starcat 的适用性。当前决定仍是暂缓接入，继续使用 Xcode Organizer；后续如需自动化 `.pkg` 上传、TestFlight、metadata 或截图维护，再按评估记录分阶段启动。
+
 这个 Key 主要用于：
 
 - CI 自动上传 build。
