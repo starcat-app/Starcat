@@ -246,4 +246,22 @@ struct CuratedPublisherBatch: Decodable, Equatable, Sendable {
         case updatedAt = "updated_at"
         case items
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        batchID = try container.decode(String.self, forKey: .batchID)
+        sourceCode = try container.decode(String.self, forKey: .sourceCode)
+        kind = try container.decode(String.self, forKey: .kind)
+        idempotencyKey = try container.decodeIfPresent(String.self, forKey: .idempotencyKey)
+        status = try container.decode(CuratedPublisherBatchStatus.self, forKey: .status)
+        total = try container.decode(Int.self, forKey: .total)
+        success = try container.decode(Int.self, forKey: .success)
+        discarded = try container.decode(Int.self, forKey: .discarded)
+        createdAt = try container.decode(String.self, forKey: .createdAt)
+        startedAt = try container.decodeIfPresent(String.self, forKey: .startedAt)
+        finishedAt = try container.decodeIfPresent(String.self, forKey: .finishedAt)
+        updatedAt = try container.decode(String.self, forKey: .updatedAt)
+        // Go 的 `omitempty` 会在空批次时省略 items；客户端统一投影为空数组。
+        items = try container.decodeIfPresent([CuratedPublisherBatchItem].self, forKey: .items) ?? []
+    }
 }
