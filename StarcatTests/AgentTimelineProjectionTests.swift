@@ -182,6 +182,69 @@ struct AgentTimelineProjectionTests {
         #expect(presentation.processSections.flatMap(\.items).allSatisfy { $0.text != "hidden reasoning" })
     }
 
+    @Test("审批形成活动边界且终态使用正确默认折叠策略")
+    func preservesApprovalBoundaryAndStatusDefaults() {
+        let runID = UUID()
+        let call = AgentToolCall(
+            id: "write-call",
+            name: "tag_apply_untagged",
+            input: .object(["preview_hash": .string("hash")]),
+            sequence: 0
+        )
+        let messages = [
+            AgentMessage(
+                runID: runID,
+                role: .assistant,
+                turn: 0,
+                sequence: 1,
+                parts: [.toolCall(call)]
+            ),
+            AgentMessage(
+                runID: runID,
+                role: .tool,
+                turn: 0,
+                sequence: 2,
+                parts: [.toolResult(toolResult(call: call, summary: "applied"))]
+            )
+        ]
+        let approval = AgentApprovalRequest(
+            runID: runID,
+            toolCallID: call.id,
+            toolName: call.name,
+            input: call.input,
+            permission: .requiresConfirmation,
+            sequence: 1,
+            status: .pending
+        )
+
+        let waiting = AgentTimelineProjection.makePresentation(
+            messages: messages,
+            approvals: [approval],
+            artifacts: [],
+            userPrompt: "",
+            status: .waitingForConfirmation
+        )
+        let failed = AgentTimelineProjection.makePresentation(
+            messages: messages,
+            approvals: [approval],
+            artifacts: [],
+            userPrompt: "",
+            status: .failed
+        )
+        let cancelled = AgentTimelineProjection.makePresentation(
+            messages: messages,
+            approvals: [approval],
+            artifacts: [],
+            userPrompt: "",
+            status: .cancelled
+        )
+
+        #expect(waiting.processSections.map(\.kind) == [.activity, .approval])
+        #expect(waiting.isProcessExpandedByDefault)
+        #expect(failed.isProcessExpandedByDefault)
+        #expect(!cancelled.isProcessExpandedByDefault)
+    }
+
     private func toolResult(call: AgentToolCall, summary: String) -> AgentToolResultMessage {
         AgentToolResultMessage(
             toolCallID: call.id,

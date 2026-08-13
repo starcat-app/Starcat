@@ -33,7 +33,7 @@ Starcat Agent 不再按“重新建设一套 AI、上下文、工具和 CLI 集�
 4. 从现有 MCP Facade / Tool Registry 中抽取进程内共享能力和权限策略，由 Agent 与 MCP 分别适配。
 5. `starcat-cli` 继续作为外部 Agent 的跨平台 CLI 与 MCP stdio 桥，不是 Starcat 的模型 Provider。
 6. Starcat 主动托管 Codex、Claude Code、Gemini CLI 的 `CLIExternalAgentRuntime` 降为远期可选实验，不进入当前主线。
-7. `v19-agent-message-contract` 已完成并通过旧库迁移测试；当前收口重点转为声明式 Workflow、业务上下文、Knowledge eligible 子集与国际化。
+7. `v19-agent-message-contract`、声明式 Workflow、业务上下文、Knowledge eligible 子集与 18 locale 已完成；当前阶段只收口自动化、真实人工门禁和多轮终审证据。
 8. Agent Run Surface 采用“过程可追踪、结果可阅读”的双层结构；原始消息链继续作为事实源，UI 不再把 tool call / result 逐条平铺成主阅读内容。
 
 一句话架构：
