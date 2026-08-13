@@ -150,38 +150,42 @@ struct CuratedPublisherView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Button {
-                Task {
-                    await identification.identify(
-                        externalSearchProvider: settings.externalSearchDefaultProvider
-                    )
-                    guard identification.errorMessage == nil else { return }
-                    await publisher.activatePublishing(
-                        findings: identification.publishableFindings,
-                        currentUserID: currentUserID
-                    )
+            HStack(spacing: 10) {
+                if identification.isRunning {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(identificationPhaseTitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-            } label: {
-                HStack(spacing: 8) {
-                    if identification.isRunning {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: "sparkle.magnifyingglass")
+
+                Spacer()
+
+                Button {
+                    Task {
+                        await identification.identify(
+                            externalSearchProvider: settings.externalSearchDefaultProvider
+                        )
+                        guard identification.errorMessage == nil else { return }
+                        await publisher.activatePublishing(
+                            findings: identification.publishableFindings,
+                            currentUserID: currentUserID
+                        )
                     }
-                    Text(identification.isRunning
-                        ? identificationPhaseTitle
-                        : String.l10n("curatedPublisher.action.aiIdentify"))
-                    Spacer()
+                } label: {
+                    Label("curatedPublisher.action.aiIdentify", systemImage: "sparkle.magnifyingglass")
                 }
-                .frame(maxWidth: .infinity)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .disabled(
+                    identification.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || identification.isRunning
+                        || identification.selectedModelID == nil
+                )
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(
-                identification.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    || identification.isRunning
-                    || identification.selectedModelID == nil
-            )
+            // 固定操作行高度，避免进度状态出现或消失时让输入区发生纵向跳动。
+            .frame(minHeight: 28)
 
             if let error = identification.errorMessage {
                 errorText(error)
@@ -488,28 +492,33 @@ struct CuratedPublisherView: View {
 
             if let error = publisher.errorMessage { errorText(error) }
 
-            Button {
-                Task { await publisher.publish(currentUserID: currentUserID) }
-            } label: {
-                HStack(spacing: 8) {
+            HStack(spacing: 10) {
+                HStack(spacing: 6) {
                     if publisher.operation == .publishing || publisher.operation == .polling {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: "paperplane.fill")
+                        ProgressView()
+                            .controlSize(.small)
                     }
-                    Text("curatedPublisher.action.publish")
-                    Spacer()
-                    Text(publisher.preparedFindings.count.formatted())
-                        .font(.caption.weight(.bold))
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2)
-                        .background(Color.white.opacity(0.18), in: Capsule())
+                    Text(String(
+                        format: String.l10n("batch.selectedCountFormat"),
+                        publisher.preparedFindings.count
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
                 }
-                .frame(maxWidth: .infinity)
+
+                Spacer()
+
+                Button {
+                    Task { await publisher.publish(currentUserID: currentUserID) }
+                } label: {
+                    Label("curatedPublisher.action.publish", systemImage: "paperplane.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .disabled(!publisher.canPublish)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(!publisher.canPublish)
+            .frame(minHeight: 28)
 
             if let batch = publisher.batch { batchStatus(batch) }
         }
