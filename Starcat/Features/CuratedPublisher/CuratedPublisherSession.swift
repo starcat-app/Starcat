@@ -2,10 +2,10 @@
 //  CuratedPublisherSession.swift
 //  Starcat
 //
-//  精选发布台的 App 级状态机：连接、识别、确认、提交、恢复与轮询。
+//  精选发布台的 Weekly 发布会话：管理员连接、动态分类、批量提交、恢复与轮询。
 //
-//  为什么由 AppDependencies 持有而不是放在 View：独立窗口关闭后，已经持久化的
-//  weekly-api 批次仍应继续轮询；View 生命周期不能决定服务端任务是否被追踪。
+//  关键边界：本类型不做自然语言解析、AI 推理或 GitHub 搜索。窗口打开时只从
+//  Keychain 读取本机凭据；必须等 AI 甄别成功并激活发布阶段后才访问 weekly-api。
 //
 
 import Foundation
@@ -24,13 +24,9 @@ struct UserDefaultsCuratedPublisherBatchTracker: CuratedPublisherBatchTracking, 
         self.defaults = defaults
     }
 
-    func loadLastBatchID() -> String? {
-        defaults.string(forKey: Self.key)
-    }
+    func loadLastBatchID() -> String? { defaults.string(forKey: Self.key) }
 
-    func storeLastBatchID(_ batchID: String) {
-        defaults.set(batchID, forKey: Self.key)
-    }
+    func storeLastBatchID(_ batchID: String) { defaults.set(batchID, forKey: Self.key) }
 }
 
 protocol CuratedPublisherSleeping: Sendable {
@@ -46,8 +42,7 @@ struct CuratedPublisherPollSleeper: CuratedPublisherSleeping {
 enum CuratedPublisherOperation: Equatable {
     case idle
     case connecting
-    case resolving
-    case verifying
+    case creatingSource
     case publishing
     case polling
 }
@@ -56,60 +51,38 @@ enum CuratedPublisherSessionError: Error, LocalizedError {
     case accessDenied
     case missingAdminKey
     case noManualSources
+    case noSelectedFindings
     case invalidFinalURL
-    case invalidSourceURL
-    case unverifiedRepository
-    case confirmationRequired
 
     var errorDescription: String? {
         switch self {
         case .accessDenied: String.l10n("curatedPublisher.error.accessDenied")
         case .missingAdminKey: String.l10n("curatedPublisher.error.missingAdminKey")
         case .noManualSources: String.l10n("curatedPublisher.error.noManualSources")
+        case .noSelectedFindings: String.l10n("curatedPublisher.error.noSelectedFindings")
         case .invalidFinalURL: String.l10n("curatedPublisher.error.invalidFinalURL")
-        case .invalidSourceURL: String.l10n("curatedPublisher.error.invalidSourceURL")
-        case .unverifiedRepository: String.l10n("curatedPublisher.error.unverifiedRepository")
-        case .confirmationRequired: String.l10n("curatedPublisher.error.confirmationRequired")
         }
     }
 }
 
+/// 维护者确认后的 Weekly 发布状态机。
+///
+/// `preparedFindings` 只接收识别会话中已核验且被勾选的结果。提交前再次检查每条
+/// repository，避免绕过 UI 把 `needs_review` 或 `not_found` 项塞进请求。
 @MainActor
 @Observable
 final class CuratedPublisherSession {
-    /// 连续失败达到上限后暂停后台请求，避免服务长期不可用时每两秒持续打点。
-    /// 批次 ID 会保留，维护者可从状态卡片手动恢复查询。
     private static let maximumConsecutivePollFailures = 3
 
-    var clue: String = "" {
-        didSet {
-            guard clue != oldValue else { return }
-            clearResolution()
-        }
-    }
-    var candidates: [RepositoryCandidate] = []
-    private(set) var verifiedCandidate: RepositoryCandidate?
-    var finalGitHubURL: String = "" {
-        didSet {
-            guard finalGitHubURL != oldValue,
-                  finalGitHubURL != verifiedCandidate?.canonicalGitHubURL.absoluteString
-            else { return }
-            verifiedCandidate = nil
-            hasConfirmedOfficialRepository = false
-        }
-    }
-    var displayTitle: String = ""
-    var sourceURL: String = ""
-    var hasConfirmedOfficialRepository = false
     var sources: [CuratedPublisherSource] = []
     var selectedSourceCode: String?
+    private(set) var preparedFindings: [CuratedProjectFinding] = []
     private(set) var operation: CuratedPublisherOperation = .idle
+    private(set) var hasStoredAdminCredential = false
     private(set) var isAdminConnected = false
-    private(set) var didFallbackFromWebSearch = false
     private(set) var batch: CuratedPublisherBatch?
     private(set) var errorMessage: String?
 
-    @ObservationIgnored private let resolver: any CuratedProjectResolving
     @ObservationIgnored private let api: any CuratedPublisherAPIProtocol
     @ObservationIgnored private let credentialStore: any CuratedPublisherCredentialStoring
     @ObservationIgnored private let batchTracker: any CuratedPublisherBatchTracking
@@ -118,22 +91,18 @@ final class CuratedPublisherSession {
     @ObservationIgnored private var pollingTask: Task<Void, Never>?
 
     init(
-        resolver: any CuratedProjectResolving,
         api: any CuratedPublisherAPIProtocol,
         credentialStore: any CuratedPublisherCredentialStoring = CuratedPublisherCredentialStore(),
         batchTracker: any CuratedPublisherBatchTracking = UserDefaultsCuratedPublisherBatchTracker(),
         sleeper: any CuratedPublisherSleeping = CuratedPublisherPollSleeper()
     ) {
-        self.resolver = resolver
         self.api = api
         self.credentialStore = credentialStore
         self.batchTracker = batchTracker
         self.sleeper = sleeper
     }
 
-    deinit {
-        pollingTask?.cancel()
-    }
+    deinit { pollingTask?.cancel() }
 
     var selectedSource: CuratedPublisherSource? {
         guard let selectedSourceCode else { return nil }
@@ -141,38 +110,62 @@ final class CuratedPublisherSession {
     }
 
     var canPublish: Bool {
-        guard operation == .idle,
-              isAdminConnected,
-              selectedSource != nil,
-              hasConfirmedOfficialRepository,
-              let candidate = verifiedCandidate,
-              GitHubRepositoryAddress.parse(finalGitHubURL)?.normalizedFullName
-                == candidate.identity.normalizedFullName
-        else { return false }
-        return validatedSourceURL != nil || sourceURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        operation == .idle
+            && isAdminConnected
+            && selectedSource != nil
+            && !preparedFindings.isEmpty
+            && preparedFindings.allSatisfy(\.isPublishable)
     }
 
-    /// 窗口首次显示时加载本机 admin key、动态分类和最近批次。
+    /// 窗口显示时只读本机凭据，不向 weekly-api 发请求。
     func bootstrap(currentUserID: Int64?) async {
         guard CuratedPublisherAccessPolicy.canAccess(userID: currentUserID) else {
             resetForDeniedAccess()
             return
         }
         do {
-            guard let storedKey = try credentialStore.loadAdminKey(), !storedKey.isEmpty else { return }
-            adminKey = storedKey
-            try await loadSources(using: storedKey)
-            if let batchID = batchTracker.loadLastBatchID(), !batchID.isEmpty {
-                try await refreshBatch(id: batchID, adminKey: storedKey)
-                if batch?.status.isTerminal == false { startPolling(batchID: batchID) }
-            }
+            let storedKey = try credentialStore.loadAdminKey()?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            adminKey = storedKey?.isEmpty == false ? storedKey : nil
+            hasStoredAdminCredential = adminKey != nil
         } catch {
-            isAdminConnected = false
-            errorMessage = error.localizedDescription
+            present(error: error)
         }
     }
 
-    /// 只有服务端接受 admin key 并返回至少一个人工来源后才持久化密钥。
+    /// AI 甄别成功后才激活发布阶段；此时允许使用已存凭据读取分类和最近批次。
+    func activatePublishing(
+        findings: [CuratedProjectFinding],
+        currentUserID: Int64?
+    ) async {
+        guard CuratedPublisherAccessPolicy.canAccess(userID: currentUserID) else {
+            present(error: CuratedPublisherSessionError.accessDenied)
+            return
+        }
+        setPreparedFindings(findings)
+        guard let adminKey else { return }
+        operation = .connecting
+        errorMessage = nil
+        do {
+            try await loadSources(using: adminKey)
+            if let batchID = batchTracker.loadLastBatchID(), !batchID.isEmpty {
+                try await refreshBatch(id: batchID, adminKey: adminKey)
+                if batch?.status.isTerminal == false { startPolling(batchID: batchID) }
+            }
+            if operation == .connecting { operation = .idle }
+        } catch {
+            operation = .idle
+            isAdminConnected = false
+            present(error: error)
+        }
+    }
+
+    /// 入选项变化只更新本地发布草稿，不触发任何网络请求。
+    func setPreparedFindings(_ findings: [CuratedProjectFinding]) {
+        preparedFindings = findings.filter(\.isPublishable)
+    }
+
+    /// 只有服务端接受 admin key 并返回人工来源后才持久化密钥。
     func connect(adminKey rawKey: String, currentUserID: Int64?) async {
         guard CuratedPublisherAccessPolicy.canAccess(userID: currentUserID) else {
             present(error: CuratedPublisherSessionError.accessDenied)
@@ -189,6 +182,7 @@ final class CuratedPublisherSession {
             try await loadSources(using: key)
             try credentialStore.storeAdminKey(key)
             adminKey = key
+            hasStoredAdminCredential = true
             operation = .idle
         } catch {
             operation = .idle
@@ -203,6 +197,7 @@ final class CuratedPublisherSession {
         do {
             try credentialStore.deleteAdminKey()
             adminKey = nil
+            hasStoredAdminCredential = false
             isAdminConnected = false
             sources = []
             selectedSourceCode = nil
@@ -211,53 +206,45 @@ final class CuratedPublisherSession {
         }
     }
 
-    func resolveClue(externalSearchProvider: ExternalSearchProviderID) async {
-        operation = .resolving
+    /// 创建分类成功后直接加入来源列表并选中，避免额外刷新请求。
+    func createSource(
+        code: String,
+        displayNameZH: String,
+        displayNameEN: String,
+        currentUserID: Int64?
+    ) async -> Bool {
+        guard CuratedPublisherAccessPolicy.canAccess(userID: currentUserID) else {
+            present(error: CuratedPublisherSessionError.accessDenied)
+            return false
+        }
+        guard let adminKey, isAdminConnected else {
+            present(error: CuratedPublisherSessionError.missingAdminKey)
+            return false
+        }
+        operation = .creatingSource
         errorMessage = nil
         do {
-            let resolution = try await resolver.resolve(
-                clue: clue,
-                externalSearchProvider: externalSearchProvider
+            let created = try await api.createManualSource(
+                CuratedPublisherSourceCreationRequest(
+                    code: code.trimmingCharacters(in: .whitespacesAndNewlines),
+                    displayNameZH: displayNameZH.trimmingCharacters(in: .whitespacesAndNewlines),
+                    displayNameEN: displayNameEN.trimmingCharacters(in: .whitespacesAndNewlines)
+                ),
+                adminKey: adminKey
             )
-            candidates = resolution.candidates
-            didFallbackFromWebSearch = resolution.didFallbackFromWebSearch
-            if candidates.count == 1, let onlyCandidate = candidates.first {
-                applyVerifiedCandidate(onlyCandidate)
-            } else {
-                // 多候选不能替维护者猜答案：保持未核验，必须由用户显式点击候选。
-                verifiedCandidate = nil
-                finalGitHubURL = ""
-                hasConfirmedOfficialRepository = false
-            }
+            sources.append(created)
+            sources.sort { $0.sortOrder == $1.sortOrder ? $0.code < $1.code : $0.sortOrder < $1.sortOrder }
+            selectedSourceCode = created.code
             operation = .idle
+            return true
         } catch {
             operation = .idle
             present(error: error)
+            return false
         }
     }
 
-    func selectCandidate(_ candidate: RepositoryCandidate) {
-        applyVerifiedCandidate(candidate)
-    }
-
-    func verifyFinalURL() async {
-        guard let address = GitHubRepositoryAddress.parse(finalGitHubURL) else {
-            present(error: CuratedPublisherSessionError.invalidFinalURL)
-            return
-        }
-        operation = .verifying
-        errorMessage = nil
-        do {
-            let candidate = try await resolver.verify(address: address)
-            applyVerifiedCandidate(candidate)
-            operation = .idle
-        } catch {
-            operation = .idle
-            present(error: error)
-        }
-    }
-
-    /// 提交前再次检查访问者与完整状态，禁止通过绕过 UI disabled 直接调用发布。
+    /// 提交前再次检查访问者与全部 finding，禁止绕过 UI 发布未核验项目。
     func publish(currentUserID: Int64?) async {
         guard CuratedPublisherAccessPolicy.canAccess(userID: currentUserID) else {
             present(error: CuratedPublisherSessionError.accessDenied)
@@ -271,38 +258,31 @@ final class CuratedPublisherSession {
             present(error: CuratedPublisherSessionError.noManualSources)
             return
         }
-        guard let address = GitHubRepositoryAddress.parse(finalGitHubURL),
-              let candidate = verifiedCandidate,
-              address.normalizedFullName == candidate.identity.normalizedFullName
-        else {
-            present(error: CuratedPublisherSessionError.unverifiedRepository)
-            return
-        }
-        guard hasConfirmedOfficialRepository else {
-            present(error: CuratedPublisherSessionError.confirmationRequired)
-            return
-        }
-        guard validatedSourceURL != nil || sourceURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            present(error: CuratedPublisherSessionError.invalidSourceURL)
+        guard !preparedFindings.isEmpty, preparedFindings.allSatisfy(\.isPublishable) else {
+            present(error: CuratedPublisherSessionError.noSelectedFindings)
             return
         }
 
-        let title = displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let repositories = preparedFindings.compactMap { finding -> CuratedPublisherImportRequest.Repository? in
+            guard let repository = finding.repository else { return nil }
+            return .init(
+                owner: repository.identity.owner,
+                repo: repository.identity.name,
+                title: finding.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : finding.title,
+                sourceURL: finding.sourceURL?.absoluteString
+            )
+        }
+        guard repositories.count == preparedFindings.count else {
+            present(error: CuratedPublisherSessionError.noSelectedFindings)
+            return
+        }
         let request = CuratedPublisherImportRequest(
             sourceCode: source.code,
             idempotencyKey: CuratedPublisherImportRequest.stableIdempotencyKey(
                 sourceCode: source.code,
-                address: address,
-                originalClue: clue
+                repositories: repositories
             ),
-            repositories: [
-                .init(
-                    owner: address.owner,
-                    repo: address.repo,
-                    title: title.isEmpty ? nil : title,
-                    sourceURL: validatedSourceURL?.absoluteString
-                )
-            ]
+            repositories: repositories
         )
 
         operation = .publishing
@@ -324,16 +304,10 @@ final class CuratedPublisherSession {
     }
 
     func clearDraft() {
-        clue = ""
-        displayTitle = ""
-        sourceURL = ""
-        clearResolution()
+        preparedFindings = []
         errorMessage = nil
     }
 
-    /// 后台轮询因连续网络错误暂停后，允许维护者从最近批次继续查询。
-    ///
-    /// 这里重复执行权限校验，避免调用者绕过只对维护者可见的 UI。
     func retryBatchStatus(currentUserID: Int64?) async {
         guard CuratedPublisherAccessPolicy.canAccess(userID: currentUserID) else {
             present(error: CuratedPublisherSessionError.accessDenied)
@@ -344,31 +318,15 @@ final class CuratedPublisherSession {
             return
         }
         guard let batchID = batch?.batchID ?? batchTracker.loadLastBatchID(), !batchID.isEmpty else { return }
-
         operation = .polling
         errorMessage = nil
         do {
             try await refreshBatch(id: batchID, adminKey: adminKey)
-            if batch?.status.isTerminal == true {
-                operation = .idle
-            } else {
-                startPolling(batchID: batchID)
-            }
+            if batch?.status.isTerminal == true { operation = .idle } else { startPolling(batchID: batchID) }
         } catch {
             operation = .idle
             present(error: error)
         }
-    }
-
-    private var validatedSourceURL: URL? {
-        let raw = sourceURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !raw.isEmpty,
-              let url = URL(string: raw),
-              let scheme = url.scheme?.lowercased(),
-              (scheme == "http" || scheme == "https"),
-              url.host != nil
-        else { return nil }
-        return url
     }
 
     private func loadSources(using key: String) async throws {
@@ -379,24 +337,6 @@ final class CuratedPublisherSession {
             selectedSourceCode = loaded.first?.code
         }
         isAdminConnected = true
-    }
-
-    private func applyVerifiedCandidate(_ candidate: RepositoryCandidate) {
-        verifiedCandidate = candidate
-        finalGitHubURL = candidate.canonicalGitHubURL.absoluteString
-        if displayTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            displayTitle = candidate.card.fullName
-        }
-        hasConfirmedOfficialRepository = false
-        errorMessage = nil
-    }
-
-    private func clearResolution() {
-        candidates = []
-        verifiedCandidate = nil
-        finalGitHubURL = ""
-        hasConfirmedOfficialRepository = false
-        didFallbackFromWebSearch = false
     }
 
     private func refreshBatch(id: String, adminKey: String) async throws {
@@ -425,7 +365,6 @@ final class CuratedPublisherSession {
                     consecutiveFailures += 1
                     self.present(error: error)
                     if consecutiveFailures >= Self.maximumConsecutivePollFailures {
-                        // 保留非终态 batch 与恢复 ID；暂停后由状态卡片显式恢复查询。
                         self.operation = .idle
                         return
                     }
@@ -438,19 +377,12 @@ final class CuratedPublisherSession {
         pollingTask?.cancel()
         pollingTask = nil
         adminKey = nil
+        hasStoredAdminCredential = false
         isAdminConnected = false
         sources = []
         selectedSourceCode = nil
         present(error: CuratedPublisherSessionError.accessDenied)
     }
 
-    private func present(error: Error) {
-        errorMessage = error.localizedDescription
-    }
-}
-
-private extension RepositoryCandidate {
-    var canonicalGitHubURL: URL {
-        GitHubRepositoryAddress(owner: identity.owner, repo: identity.name).canonicalURL
-    }
+    private func present(error: Error) { errorMessage = error.localizedDescription }
 }

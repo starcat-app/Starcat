@@ -160,6 +160,7 @@ protocol CuratedProjectIdentifying {
         selectedModelID: String?,
         onProgress: @escaping @MainActor (CuratedProjectIdentificationPhase) -> Void
     ) async throws -> CuratedProjectIdentification
+    func verify(repositoryURL: String) async throws -> RepositoryCandidate
 }
 
 enum CuratedProjectIdentificationError: Error, LocalizedError {
@@ -244,6 +245,14 @@ final class CuratedProjectIdentificationService: CuratedProjectIdentifying {
             findings: findings.sorted { $0.id < $1.id },
             modelName: parsedCompletion.modelName
         )
+    }
+
+    /// 人工修正只接受 GitHub canonical 核验成功的仓库，不能把自由文本直接升级为可发布项。
+    func verify(repositoryURL: String) async throws -> RepositoryCandidate {
+        guard let address = GitHubRepositoryAddress.parse(repositoryURL) else {
+            throw CuratedPublisherSessionError.invalidFinalURL
+        }
+        return try await repositories.verify(address: address)
     }
 
     private func collectEvidence(

@@ -45,23 +45,27 @@ struct CuratedPublisherModelsTests {
         #expect(GitHubRepositoryAddress.parse("-owner/repo") == nil)
     }
 
-    @Test("幂等键对相同业务输入稳定且对来源变化敏感")
+    @Test("批量幂等键忽略仓库顺序且对来源变化敏感")
     func idempotencyKeyIsStable() {
-        let address = GitHubRepositoryAddress(owner: "OpenAI", repo: "Codex")
+        let repositories = [
+            CuratedPublisherImportRequest.Repository(
+                owner: "OpenAI", repo: "Codex", title: "Codex", sourceURL: nil
+            ),
+            CuratedPublisherImportRequest.Repository(
+                owner: "Apple", repo: "swift", title: nil, sourceURL: nil
+            )
+        ]
         let first = CuratedPublisherImportRequest.stableIdempotencyKey(
             sourceCode: "ai_intelligence",
-            address: address,
-            originalClue: " useful agent "
+            repositories: repositories
         )
         let second = CuratedPublisherImportRequest.stableIdempotencyKey(
             sourceCode: "AI_INTELLIGENCE",
-            address: address,
-            originalClue: "useful agent"
+            repositories: Array(repositories.reversed())
         )
         let changed = CuratedPublisherImportRequest.stableIdempotencyKey(
             sourceCode: "weekly",
-            address: address,
-            originalClue: "useful agent"
+            repositories: repositories
         )
 
         #expect(first == second)

@@ -2,7 +2,7 @@
 //  CuratedPublisherAPI.swift
 //  Starcat
 //
-//  weekly-api 管理员导入客户端。只覆盖精选发布台需要的三个端点。
+//  weekly-api 管理员导入客户端。只覆盖精选发布台需要的来源与批次端点。
 //
 //  安全约束：
 //  - admin key 只在构造单次 URLRequest 时进入 Authorization header；
@@ -14,6 +14,10 @@ import Foundation
 
 protocol CuratedPublisherAPIProtocol: Sendable {
     func fetchManualSources(adminKey: String) async throws -> [CuratedPublisherSource]
+    func createManualSource(
+        _ request: CuratedPublisherSourceCreationRequest,
+        adminKey: String
+    ) async throws -> CuratedPublisherSource
     func submit(
         _ request: CuratedPublisherImportRequest,
         adminKey: String
@@ -82,6 +86,21 @@ actor CuratedPublisherAPIClient: CuratedPublisherAPIProtocol {
             .sorted { lhs, rhs in
                 lhs.sortOrder == rhs.sortOrder ? lhs.code < rhs.code : lhs.sortOrder < rhs.sortOrder
             }
+    }
+
+    func createManualSource(
+        _ request: CuratedPublisherSourceCreationRequest,
+        adminKey: String
+    ) async throws -> CuratedPublisherSource {
+        let url = AppEndpoints.appendPath(AppEndpoints.Weekly.Paths.internalSources, to: baseURL)
+        let body: Data
+        do {
+            body = try encoder.encode(request)
+        } catch {
+            throw CuratedPublisherAPIError.decoding(underlying: error)
+        }
+        let data = try await perform(url: url, method: "POST", body: body, adminKey: adminKey)
+        return try decodeEnvelope(CuratedPublisherSource.self, from: data)
     }
 
     func submit(

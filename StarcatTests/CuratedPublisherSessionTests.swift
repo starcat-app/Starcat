@@ -2,17 +2,46 @@
 //  CuratedPublisherSessionTests.swift
 //  StarcatTests
 //
-//  覆盖精选发布状态机的权限守卫、编辑失效、连接持久化、提交与恢复。
+//  覆盖 Weekly 发布会话的网络边界、批量提交、动态分类、权限与轮询恢复。
 //
 
 import Foundation
 import Testing
 @testable import Starcat
 
-@Suite("精选发布台会话", .serialized)
+@Suite("精选发布台 Weekly 会话", .serialized)
 @MainActor
 struct CuratedPublisherSessionTests {
-    @Test("连接验证成功后才保存管理员密钥并选择首个来源")
+    @Test("窗口启动只读取本机凭据且不调用 Weekly")
+    func bootstrapDoesNotCallWeekly() async {
+        let credentials = CuratedCredentialStoreSpy(storedKey: "stored-admin")
+        let api = CuratedAPIStub(sourcesResult: .success([Self.source]))
+        let session = makeSession(api: api, credentials: credentials)
+
+        await session.bootstrap(currentUserID: 20_341_123)
+
+        #expect(session.hasStoredAdminCredential)
+        #expect(!session.isAdminConnected)
+        #expect(api.fetchSourcesCount == 0)
+        #expect(api.fetchedBatchIDs.isEmpty)
+    }
+
+    @Test("AI 甄别成功激活发布阶段后才读取 Weekly 分类")
+    func activateAfterIdentificationLoadsSources() async {
+        let credentials = CuratedCredentialStoreSpy(storedKey: "stored-admin")
+        let api = CuratedAPIStub(sourcesResult: .success([Self.source]))
+        let session = makeSession(api: api, credentials: credentials)
+        await session.bootstrap(currentUserID: 20_341_123)
+
+        await session.activatePublishing(findings: [Self.finding()], currentUserID: 20_341_123)
+
+        #expect(session.isAdminConnected)
+        #expect(session.selectedSourceCode == "ai_intelligence")
+        #expect(session.preparedFindings.count == 1)
+        #expect(api.fetchSourcesCount == 1)
+    }
+
+    @Test("连接验证成功后才保存管理员密钥")
     func connectPersistsOnlyValidatedKey() async {
         let credentials = CuratedCredentialStoreSpy()
         let api = CuratedAPIStub(sourcesResult: .success([Self.source]))
@@ -21,108 +50,85 @@ struct CuratedPublisherSessionTests {
         await session.connect(adminKey: " admin-key ", currentUserID: 20_341_123)
 
         #expect(session.isAdminConnected)
-        #expect(session.selectedSourceCode == "ai_intelligence")
         #expect(credentials.storedKey == "admin-key")
     }
 
     @Test("非维护者即使直接调用也不能连接或发布")
     func executionLayerRejectsUnauthorizedUser() async {
-        let credentials = CuratedCredentialStoreSpy()
         let api = CuratedAPIStub(sourcesResult: .success([Self.source]))
-        let session = makeSession(api: api, credentials: credentials)
+        let session = makeSession(api: api)
+        session.setPreparedFindings([Self.finding()])
 
         await session.connect(adminKey: "admin-key", currentUserID: 1)
         await session.publish(currentUserID: 1)
 
         #expect(!session.isAdminConnected)
-        #expect(credentials.storedKey == nil)
         #expect(api.submittedRequests.isEmpty)
     }
 
-    @Test("编辑最终 URL 会撤销官方核验与人工确认")
-    func editingFinalURLInvalidatesVerification() async {
-        let candidate = Self.candidate()
-        let resolver = CuratedResolverStub(candidate: candidate)
-        let session = makeSession(resolver: resolver)
-        session.clue = "openai/codex"
-        await session.resolveClue(externalSearchProvider: .anySearch)
-        session.hasConfirmedOfficialRepository = true
-        #expect(session.verifiedCandidate != nil)
-
-        session.finalGitHubURL = "https://github.com/openai/openai-python"
-
-        #expect(session.verifiedCandidate == nil)
-        #expect(!session.hasConfirmedOfficialRepository)
-        #expect(!session.canPublish)
-    }
-
-    @Test("普通线索返回多个候选时必须由维护者显式选择")
-    func multipleCandidatesRequireExplicitSelection() async {
-        let first = Self.candidate()
-        let second = Self.candidate(
-            id: 2,
-            owner: "openai",
-            name: "openai-python",
-            description: "Python SDK"
-        )
-        let resolver = CuratedResolverStub(candidates: [first, second])
-        let session = makeSession(resolver: resolver)
-        session.clue = "OpenAI developer project"
-
-        await session.resolveClue(externalSearchProvider: .anySearch)
-
-        #expect(session.candidates.count == 2)
-        #expect(session.verifiedCandidate == nil)
-        #expect(session.finalGitHubURL.isEmpty)
-        #expect(!session.canPublish)
-
-        session.selectCandidate(second)
-        #expect(session.verifiedCandidate?.identity == second.identity)
-        #expect(session.finalGitHubURL == "https://github.com/openai/openai-python")
-    }
-
-    @Test("发布提交稳定契约并读取终态")
-    func publishSubmitsAndLoadsTerminalBatch() async {
+    @Test("发布一次提交全部已确认项目并读取终态")
+    func publishSubmitsWholeBatch() async {
         let api = CuratedAPIStub(
             sourcesResult: .success([Self.source]),
-            acceptance: Self.acceptance,
-            batches: [Self.successBatch]
+            acceptance: Self.acceptance(total: 2),
+            batches: [Self.successBatch(total: 2)]
         )
         let tracker = CuratedBatchTrackerSpy()
         let session = makeSession(api: api, tracker: tracker)
         await session.connect(adminKey: "admin-key", currentUserID: 20_341_123)
-        session.clue = "great coding agent"
-        await session.resolveClue(externalSearchProvider: .anySearch)
-        session.displayTitle = "Codex"
-        session.sourceURL = "https://example.com/article"
-        session.hasConfirmedOfficialRepository = true
+        session.setPreparedFindings([
+            Self.finding(),
+            Self.finding(id: 2, owner: "openai", name: "openai-python", title: "OpenAI Python")
+        ])
 
         await session.publish(currentUserID: 20_341_123)
 
+        let request = api.submittedRequests.first
         #expect(api.submittedRequests.count == 1)
-        #expect(api.submittedRequests.first?.sourceCode == "ai_intelligence")
-        #expect(api.submittedRequests.first?.repositories.first?.owner == "openai")
-        #expect(api.submittedRequests.first?.repositories.first?.sourceURL == "https://example.com/article")
+        #expect(request?.repositories.count == 2)
+        #expect(request?.repositories.map(\.owner) == ["openai", "openai"])
+        #expect(request?.repositories.first?.sourceURL == "https://example.com/article")
         #expect(tracker.batchID == "batch-1")
         #expect(session.batch?.status == .success)
-        #expect(session.operation == .idle)
     }
 
-    @Test("启动时用安全存储密钥恢复最近批次")
-    func bootstrapRestoresLastBatch() async {
-        let credentials = CuratedCredentialStoreSpy(storedKey: "stored-admin")
-        let tracker = CuratedBatchTrackerSpy(batchID: "batch-1")
-        let api = CuratedAPIStub(
-            sourcesResult: .success([Self.source]),
-            batches: [Self.successBatch]
+    @Test("新增分类成功后直接加入列表并选中")
+    func createSourceSelectsCreatedCategory() async {
+        let created = CuratedPublisherSource(
+            code: "developer_tools",
+            displayNameZH: "开发工具",
+            displayNameEN: "Developer Tools",
+            iconKey: "bookmark.fill",
+            sortOrder: 20,
+            count: 0,
+            ingestMode: "manual",
+            enabled: true,
+            manualImportEnabled: true,
+            pending: 0,
+            processing: 0,
+            retrying: 0,
+            discarded: 0
         )
-        let session = makeSession(api: api, credentials: credentials, tracker: tracker)
+        let api = CuratedAPIStub(sourcesResult: .success([Self.source]), createdSource: created)
+        let session = makeSession(api: api)
+        await session.connect(adminKey: "admin-key", currentUserID: 20_341_123)
 
-        await session.bootstrap(currentUserID: 20_341_123)
+        let succeeded = await session.createSource(
+            code: "developer_tools",
+            displayNameZH: "开发工具",
+            displayNameEN: "Developer Tools",
+            currentUserID: 20_341_123
+        )
 
-        #expect(session.isAdminConnected)
-        #expect(session.batch?.batchID == "batch-1")
-        #expect(api.fetchedBatchIDs == ["batch-1"])
+        #expect(succeeded)
+        #expect(session.selectedSourceCode == "developer_tools")
+        #expect(api.createdSourceRequests == [
+            CuratedPublisherSourceCreationRequest(
+                code: "developer_tools",
+                displayNameZH: "开发工具",
+                displayNameEN: "Developer Tools"
+            )
+        ])
     }
 
     @Test("轮询遇到瞬时网络错误后继续追踪到终态")
@@ -132,11 +138,12 @@ struct CuratedPublisherSessionTests {
             batchResults: [
                 .success(Self.pendingBatch),
                 .failure(URLError(.timedOut)),
-                .success(Self.successBatch)
+                .success(Self.successBatch(total: 1))
             ]
         )
         let session = makeSession(api: api, sleeper: CuratedImmediateSleeper())
-        await preparePublishableSession(session)
+        await session.connect(adminKey: "admin-key", currentUserID: 20_341_123)
+        session.setPreparedFindings([Self.finding()])
 
         await session.publish(currentUserID: 20_341_123)
         await waitForIdle(session)
@@ -146,42 +153,13 @@ struct CuratedPublisherSessionTests {
         #expect(session.errorMessage == nil)
     }
 
-    @Test("连续轮询失败暂停后可以手动恢复最近批次")
-    func manualRetryResumesPausedPolling() async {
-        let api = CuratedAPIStub(
-            sourcesResult: .success([Self.source]),
-            batchResults: [
-                .success(Self.pendingBatch),
-                .failure(URLError(.timedOut)),
-                .failure(URLError(.timedOut)),
-                .failure(URLError(.timedOut)),
-                .success(Self.successBatch)
-            ]
-        )
-        let session = makeSession(api: api, sleeper: CuratedImmediateSleeper())
-        await preparePublishableSession(session)
-
-        await session.publish(currentUserID: 20_341_123)
-        await waitForIdle(session)
-        #expect(session.batch?.status == .pending)
-        #expect(session.errorMessage != nil)
-
-        await session.retryBatchStatus(currentUserID: 20_341_123)
-
-        #expect(session.batch?.status == .success)
-        #expect(session.operation == .idle)
-        #expect(session.errorMessage == nil)
-    }
-
     private func makeSession(
-        resolver: CuratedResolverStub = CuratedResolverStub(candidate: Self.candidate()),
         api: CuratedAPIStub = CuratedAPIStub(sourcesResult: .success([Self.source])),
         credentials: CuratedCredentialStoreSpy = CuratedCredentialStoreSpy(),
         tracker: CuratedBatchTrackerSpy = CuratedBatchTrackerSpy(),
         sleeper: any CuratedPublisherSleeping = CuratedNeverSleeper()
     ) -> CuratedPublisherSession {
         CuratedPublisherSession(
-            resolver: resolver,
             api: api,
             credentialStore: credentials,
             batchTracker: tracker,
@@ -189,17 +167,8 @@ struct CuratedPublisherSessionTests {
         )
     }
 
-    private func preparePublishableSession(_ session: CuratedPublisherSession) async {
-        await session.connect(adminKey: "admin-key", currentUserID: 20_341_123)
-        session.clue = "great coding agent"
-        await session.resolveClue(externalSearchProvider: .anySearch)
-        session.hasConfirmedOfficialRepository = true
-    }
-
     private func waitForIdle(_ session: CuratedPublisherSession) async {
-        for _ in 0..<100 where session.operation != .idle {
-            await Task.yield()
-        }
+        for _ in 0..<100 where session.operation != .idle { await Task.yield() }
     }
 
     private static let source = CuratedPublisherSource(
@@ -207,7 +176,7 @@ struct CuratedPublisherSessionTests {
         displayNameZH: "AI 情报",
         displayNameEN: "AI Intelligence",
         iconKey: "sparkles",
-        sortOrder: 1,
+        sortOrder: 10,
         count: 1,
         ingestMode: "manual",
         enabled: true,
@@ -218,33 +187,52 @@ struct CuratedPublisherSessionTests {
         discarded: 0
     )
 
-    private static let acceptance = CuratedPublisherBatchAcceptance(
-        batchID: "batch-1",
-        sourceCode: "ai_intelligence",
-        status: .pending,
-        total: 1,
-        duplicateCount: 0,
-        createdAt: "2026-08-13T00:00:00Z"
-    )
-
-    private static var successBatch: CuratedPublisherBatch {
-        try! JSONDecoder().decode(CuratedPublisherBatch.self, from: Data("""
-        {"batch_id":"batch-1","source_code":"ai_intelligence","kind":"manual_import","status":"success","total":1,"success":1,"discarded":0,"created_at":"2026-08-13T00:00:00Z","finished_at":"2026-08-13T00:00:01Z","updated_at":"2026-08-13T00:00:01Z"}
-        """.utf8))
+    private static func acceptance(total: Int) -> CuratedPublisherBatchAcceptance {
+        CuratedPublisherBatchAcceptance(
+            batchID: "batch-1",
+            sourceCode: "ai_intelligence",
+            status: .pending,
+            total: total,
+            duplicateCount: 0,
+            createdAt: "2026-08-13T00:00:00Z"
+        )
     }
 
     private static var pendingBatch: CuratedPublisherBatch {
+        decodeBatch(status: "pending", total: 1, success: 0)
+    }
+
+    private static func successBatch(total: Int) -> CuratedPublisherBatch {
+        decodeBatch(status: "success", total: total, success: total)
+    }
+
+    private static func decodeBatch(status: String, total: Int, success: Int) -> CuratedPublisherBatch {
         try! JSONDecoder().decode(CuratedPublisherBatch.self, from: Data("""
-        {"batch_id":"batch-1","source_code":"ai_intelligence","kind":"manual_import","status":"pending","total":1,"success":0,"discarded":0,"created_at":"2026-08-13T00:00:00Z","updated_at":"2026-08-13T00:00:00Z"}
+        {"batch_id":"batch-1","source_code":"ai_intelligence","kind":"manual_import","status":"\(status)","total":\(total),"success":\(success),"discarded":0,"created_at":"2026-08-13T00:00:00Z","updated_at":"2026-08-13T00:00:01Z"}
         """.utf8))
     }
 
-    private static func candidate(
-        id: Int64 = 1,
+    private static func finding(
+        id: Int = 1,
         owner: String = "openai",
         name: String = "codex",
-        description: String = "Coding agent"
-    ) -> RepositoryCandidate {
+        title: String = "Codex"
+    ) -> CuratedProjectFinding {
+        let candidate = candidate(id: Int64(id), owner: owner, name: name)
+        return CuratedProjectFinding(
+            id: id,
+            originalText: title,
+            title: title,
+            sourceURL: URL(string: "https://example.com/article"),
+            status: .confirmed,
+            reason: "官方仓库",
+            repository: candidate,
+            candidates: [candidate],
+            evidence: []
+        )
+    }
+
+    private static func candidate(id: Int64, owner: String, name: String) -> RepositoryCandidate {
         RepositoryCandidate(
             identity: RepoIdentity(ghRepoID: id, owner: owner, name: name),
             card: RepoCardViewData(
@@ -253,10 +241,10 @@ struct CuratedPublisherSessionTests {
                 owner: owner,
                 repo: name,
                 avatarURL: nil,
-                description: description,
-                language: "Rust",
-                starsCount: 10_000,
-                forksCount: 500,
+                description: "Project",
+                language: "Swift",
+                starsCount: 100,
+                forksCount: 10,
                 isArchived: false,
                 isFork: false,
                 isPrivate: false,
@@ -279,39 +267,15 @@ struct CuratedPublisherSessionTests {
     }
 }
 
-private struct CuratedResolverStub: CuratedProjectResolving {
-    let candidates: [RepositoryCandidate]
-
-    init(candidate: RepositoryCandidate) {
-        candidates = [candidate]
-    }
-
-    init(candidates: [RepositoryCandidate]) {
-        self.candidates = candidates
-    }
-
-    func resolve(
-        clue: String,
-        externalSearchProvider: ExternalSearchProviderID
-    ) async throws -> CuratedProjectResolution {
-        CuratedProjectResolution(
-            candidates: candidates,
-            usedWebSearch: false,
-            didFallbackFromWebSearch: false
-        )
-    }
-
-    func verify(address: GitHubRepositoryAddress) async throws -> RepositoryCandidate {
-        candidates.first!
-    }
-}
-
 private final class CuratedAPIStub: CuratedPublisherAPIProtocol, @unchecked Sendable {
     let sourcesResult: Result<[CuratedPublisherSource], Error>
     let acceptance: CuratedPublisherBatchAcceptance
+    let createdSource: CuratedPublisherSource?
     private var batchResults: [Result<CuratedPublisherBatch, Error>]
     private let lock = NSLock()
+    private(set) var fetchSourcesCount = 0
     private(set) var submittedRequests: [CuratedPublisherImportRequest] = []
+    private(set) var createdSourceRequests: [CuratedPublisherSourceCreationRequest] = []
     private(set) var fetchedBatchIDs: [String] = []
 
     init(
@@ -324,16 +288,30 @@ private final class CuratedAPIStub: CuratedPublisherAPIProtocol, @unchecked Send
             duplicateCount: 0,
             createdAt: "2026-08-13T00:00:00Z"
         ),
+        createdSource: CuratedPublisherSource? = nil,
         batches: [CuratedPublisherBatch] = [],
         batchResults: [Result<CuratedPublisherBatch, Error>]? = nil
     ) {
         self.sourcesResult = sourcesResult
         self.acceptance = acceptance
+        self.createdSource = createdSource
         self.batchResults = batchResults ?? batches.map(Result.success)
     }
 
     func fetchManualSources(adminKey: String) async throws -> [CuratedPublisherSource] {
-        try sourcesResult.get()
+        lock.withLock { fetchSourcesCount += 1 }
+        return try sourcesResult.get()
+    }
+
+    func createManualSource(
+        _ request: CuratedPublisherSourceCreationRequest,
+        adminKey: String
+    ) async throws -> CuratedPublisherSource {
+        try lock.withLock {
+            createdSourceRequests.append(request)
+            guard let createdSource else { throw URLError(.badServerResponse) }
+            return createdSource
+        }
     }
 
     func submit(
@@ -357,9 +335,7 @@ private final class CuratedCredentialStoreSpy: CuratedPublisherCredentialStoring
     private let lock = NSLock()
     private(set) var storedKey: String?
 
-    init(storedKey: String? = nil) {
-        self.storedKey = storedKey
-    }
+    init(storedKey: String? = nil) { self.storedKey = storedKey }
 
     func loadAdminKey() throws -> String? { lock.withLock { storedKey } }
     func storeAdminKey(_ key: String) throws { lock.withLock { storedKey = key } }
@@ -370,22 +346,16 @@ private final class CuratedBatchTrackerSpy: CuratedPublisherBatchTracking, @unch
     private let lock = NSLock()
     private(set) var batchID: String?
 
-    init(batchID: String? = nil) {
-        self.batchID = batchID
-    }
+    init(batchID: String? = nil) { self.batchID = batchID }
 
     func loadLastBatchID() -> String? { lock.withLock { batchID } }
     func storeLastBatchID(_ batchID: String) { lock.withLock { self.batchID = batchID } }
 }
 
 private struct CuratedNeverSleeper: CuratedPublisherSleeping {
-    func sleepBeforeNextPoll() async throws {
-        try await Task.sleep(for: .seconds(60))
-    }
+    func sleepBeforeNextPoll() async throws { try await Task.sleep(for: .seconds(60)) }
 }
 
 private struct CuratedImmediateSleeper: CuratedPublisherSleeping {
-    func sleepBeforeNextPoll() async throws {
-        await Task.yield()
-    }
+    func sleepBeforeNextPoll() async throws { await Task.yield() }
 }

@@ -293,7 +293,10 @@ struct StarcatApp: App {
     @ViewBuilder
     private var curatedPublisherSceneRoot: some View {
         if let dependencies {
-            CuratedPublisherView(session: dependencies.curatedPublisherSession)
+            CuratedPublisherView(
+                identification: dependencies.curatedProjectIdentificationSession,
+                publisher: dependencies.curatedPublisherSession
+            )
                 .frame(minWidth: 900, minHeight: 620)
                 .starcatAnimationOverride()
                 .environment(dependencies)

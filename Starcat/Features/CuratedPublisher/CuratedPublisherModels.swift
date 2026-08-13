@@ -125,7 +125,20 @@ struct CuratedPublisherSource: Decodable, Identifiable, Equatable, Sendable {
     }
 }
 
-/// 单仓库人工导入请求。
+/// 管理员创建人工发布分类的请求。
+struct CuratedPublisherSourceCreationRequest: Encodable, Equatable, Sendable {
+    let code: String
+    let displayNameZH: String
+    let displayNameEN: String
+
+    enum CodingKeys: String, CodingKey {
+        case code
+        case displayNameZH = "display_name_zh"
+        case displayNameEN = "display_name_en"
+    }
+}
+
+/// 人工批量导入请求。
 struct CuratedPublisherImportRequest: Encodable, Equatable, Sendable {
     struct Repository: Encodable, Equatable, Sendable {
         let owner: String
@@ -149,17 +162,16 @@ struct CuratedPublisherImportRequest: Encodable, Equatable, Sendable {
         case repositories
     }
 
-    /// 同一来源、仓库和原始线索生成稳定键，网络重试不会创建重复事件。
+    /// 同一来源与同一组仓库生成稳定键，输入文案调整或网络重试不会创建重复批次。
     static func stableIdempotencyKey(
         sourceCode: String,
-        address: GitHubRepositoryAddress,
-        originalClue: String
+        repositories: [Repository]
     ) -> String {
-        let seed = [
-            sourceCode.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
-            address.normalizedFullName,
-            originalClue.trimmingCharacters(in: .whitespacesAndNewlines)
-        ].joined(separator: "|")
+        let normalizedRepositories = repositories
+            .map { "\($0.owner)/\($0.repo)".lowercased() }
+            .sorted()
+        let seed = ([sourceCode.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()]
+            + normalizedRepositories).joined(separator: "|")
         let digest = SHA256.hash(data: Data(seed.utf8)).map { String(format: "%02x", $0) }.joined()
         return "starcat-curated-\(digest)"
     }

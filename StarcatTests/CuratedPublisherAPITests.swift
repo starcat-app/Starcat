@@ -76,6 +76,35 @@ struct CuratedPublisherAPITests {
         #expect(sources.first?.displayNameZH == "AI 情报")
     }
 
+    @Test("新增分类使用管理员接口并解码创建结果")
+    func createManualSourceBuildsContract() async throws {
+        let api = makeAPI()
+        URLProtocolStub.requestHandler = { request in
+            #expect(request.httpMethod == "POST")
+            #expect(request.url?.path == "/root/internal/sources")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer admin-secret")
+            guard let body = bodyData(from: request) else {
+                Issue.record("POST request should contain a JSON body")
+                return response(for: request, status: 400, body: "{}")
+            }
+            let object = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            #expect(object["code"] as? String == "developer_tools")
+            #expect(object["display_name_zh"] as? String == "开发工具")
+            #expect(object["display_name_en"] as? String == "Developer Tools")
+            return response(for: request, status: 201, body: """
+            {"schema_version":1,"data":{"code":"developer_tools","display_name_zh":"开发工具","display_name_en":"Developer Tools","icon_key":"bookmark.fill","sort_order":30,"count":0,"ingest_mode":"manual","enabled":true,"manual_import_enabled":true,"pending":0,"processing":0,"retrying":0,"discarded":0}}
+            """)
+        }
+
+        let source = try await api.createManualSource(
+            .init(code: "developer_tools", displayNameZH: "开发工具", displayNameEN: "Developer Tools"),
+            adminKey: "admin-secret"
+        )
+        #expect(source.code == "developer_tools")
+        #expect(source.manualImportEnabled)
+        #expect(source.iconKey == "bookmark.fill")
+    }
+
     @Test("提交编码与 202 acceptance 解码保持一致")
     func submitBuildsContract() async throws {
         let api = makeAPI()

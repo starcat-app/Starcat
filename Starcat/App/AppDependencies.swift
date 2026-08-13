@@ -252,6 +252,7 @@ final class AppDependencies {
     /// 维护者专用的 weekly-api 管理员导入客户端与长生命周期发布会话。
     /// 两者独立于普通 WeeklyAPI：管理员凭据不能进入普通 Bearer key 的配置路径。
     let curatedPublisherAPI: CuratedPublisherAPIClient
+    let curatedProjectIdentificationSession: CuratedProjectIdentificationSession
     let curatedPublisherSession: CuratedPublisherSession
 
     /// Weekly UI 共享状态：sidebar 计数徽章 + HomeView 详情页路由共用。
@@ -1252,16 +1253,22 @@ final class AppDependencies {
 
         let curatedPublisherAPI = CuratedPublisherAPIClient(baseURL: AppEndpoints.Weekly.baseURL)
         self.curatedPublisherAPI = curatedPublisherAPI
-        self.curatedPublisherSession = CuratedPublisherSession(
-            resolver: CuratedProjectResolver(
-                githubProvider: GitHubRepositorySearchProvider(
-                    client: api,
-                    noteRepository: self.repoNoteRepository
-                ),
-                webProvider: ExternalSearchWebProvider()
-            ),
-            api: curatedPublisherAPI
+        let curatedGitHubSearch = GitHubRepositorySearchProvider(
+            client: api,
+            noteRepository: self.repoNoteRepository
         )
+        let curatedIdentificationService = CuratedProjectIdentificationService(
+            reasoner: DefaultCuratedProjectAIReasoner(settings: self.settings),
+            webProvider: ExternalSearchWebProvider(),
+            repositories: DefaultCuratedRepositoryEvidenceProvider(
+                searchProvider: curatedGitHubSearch,
+                githubClient: api
+            )
+        )
+        self.curatedProjectIdentificationSession = CuratedProjectIdentificationSession(
+            service: curatedIdentificationService
+        )
+        self.curatedPublisherSession = CuratedPublisherSession(api: curatedPublisherAPI)
 
         // MUL-176 followup：UI 共享状态总线，sidebar 与 HomeView 通过它读 total / 选中项目。
         self.weeklySelectionService = WeeklySelectionService()
