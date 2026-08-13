@@ -57,7 +57,7 @@ struct AgentWorkspaceView: View {
                 defaultModelName: dependencies.settings.aiChatTask.resolvedModelName
             )
             configureAgentRuntime()
-            await viewModel.reloadHistory()
+            await viewModel.initializeHistory()
         }
         .onChange(of: viewModel.selectedModelID) { _, _ in
             configureAgentRuntime()

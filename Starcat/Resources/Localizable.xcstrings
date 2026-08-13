@@ -461396,6 +461396,119 @@
         }
       }
     },
+    "agent.persistence.error.runInterrupted" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The previous Agent run was interrupted before it finished. You can retry it from this run."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次 Agent 运行在完成前被中断，可在当前 Run 中重试。"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تمت مقاطعة تشغيل Agent السابق قبل اكتماله. يمكنك إعادة المحاولة من هذا التشغيل."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der vorherige Agent-Lauf wurde vor Abschluss unterbrochen. Sie können ihn in diesem Lauf erneut versuchen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La ejecución anterior del Agent se interrumpió antes de finalizar. Puedes reintentarla desde esta ejecución."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’exécution précédente de l’Agent a été interrompue avant la fin. Vous pouvez la relancer depuis cette exécution."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Proses Agent sebelumnya terhenti sebelum selesai. Anda dapat mencoba lagi dari proses ini."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’esecuzione precedente dell’Agent è stata interrotta prima del completamento. Puoi riprovarla da questa esecuzione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回の Agent 実行は完了前に中断されました。この Run から再試行できます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이전 Agent 실행이 완료되기 전에 중단되었습니다. 이 Run에서 다시 시도할 수 있습니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De vorige Agent-run is onderbroken voordat deze was voltooid. U kunt deze vanuit deze run opnieuw proberen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poprzednie uruchomienie Agenta zostało przerwane przed zakończeniem. Możesz ponowić je z tego uruchomienia."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A execução anterior do Agent foi interrompida antes de terminar. Você pode tentar novamente a partir desta execução."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Предыдущий запуск Agent был прерван до завершения. Его можно повторить из этого запуска."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Önceki Agent çalışması tamamlanmadan kesildi. Bu çalışmadan yeniden deneyebilirsiniz."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Попередній запуск Agent було перервано до завершення. Його можна повторити з цього запуску."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lần chạy Agent trước đã bị gián đoạn trước khi hoàn tất. Bạn có thể thử lại từ lần chạy này."
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次 Agent 執行在完成前被中斷，可在目前 Run 中重試。"
+          }
+        }
+      }
+    },
     "agent.persistence.error.invalidRecordFormat" : {
       "extractionState" : "manual",
       "localizations" : {

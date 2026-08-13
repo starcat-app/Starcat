@@ -17,7 +17,7 @@
 - [x] Knowledge Tool、Repository Read Capability 与 External Search Adapter 已落地。
 - [x] GitHub Weekly Report、Repo Insight、Repo Alternatives 三个只读 Artifact Agent 已启用。
 - [x] Untagged Tidy 已完成 dry-run、明确审批、共享 Tag Capability、apply 与 read-back 写入闭环。
-- [x] Run 取消、等待确认恢复、历史列表与历史快照查看已落地。
+- [x] Run 取消、等待确认恢复、进程中断收口、历史列表与历史快照查看已落地。
 - [x] Pro Gate、Agent 用量归因、私有仓库外部搜索边界和现有 Agent 国际化已落地。
 
 ## 3. 本轮实施任务
@@ -30,8 +30,9 @@
 - [x] 已执行写工具不得因重试再次执行；上下文不可恢复或存在未决写操作时 fail closed。
 - [x] Agent Workspace 在失败错误行提供明确重试动作，并防止重复点击并发重试。
 - [x] 补齐 Runtime、Session、Repository、ViewModel 与 UI 状态投影测试。
+- [x] 首次加载历史时把上次进程遗留的 `planning` / `running` 原子收口为可重试失败态；等待审批与既有终态不受影响。
 
-> 验证：2026-08-14 完成 4 个重试核心测试套件及 24 个 Agent / Capability / MCP 相关测试套件；同一 Run 续跑、写工具不重放、未决审批拒绝、终态字段原子清理均有自动化覆盖。
+> 验证：2026-08-14 完成重试与进程中断恢复测试；同一 Run 续跑、写工具不重放、未决审批拒绝、终态字段原子清理、遗留执行态收口均有自动化覆盖。
 
 ### B. Agent / MCP 统一能力层
 

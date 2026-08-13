@@ -28,6 +28,7 @@ final class AgentWorkspaceViewModel {
     private var mentionTask: Task<Void, Never>?
     private var activeRunID: UUID?
     private var currentRunSnapshot: AgentRunSnapshotRecord?
+    private var hasInitializedHistory = false
     private var draftsByAgentID: [String: String] = [:]
     private var hasLoadedRepositoryCatalog = false
     private var isRepositoryCatalogLoading = false
@@ -253,6 +254,7 @@ final class AgentWorkspaceViewModel {
     func configureRunRepository(_ repository: any AgentRunRepositoryProtocol) {
         guard !isRunning else { return }
         runRepository = repository
+        hasInitializedHistory = false
     }
 
     func configureRepositoryCatalog(_ catalog: any AgentRepositoryCatalogProviding) {
@@ -287,6 +289,28 @@ final class AgentWorkspaceViewModel {
         do {
             historyRuns = try await runRepository.recentRuns(limit: limit)
         } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// 每个 Workspace 生命周期只执行一次启动恢复。它不能并入普通 `reloadHistory`：
+    /// Run 结束后的列表刷新也会调用后者，若重复执行就可能把本进程仍在推进的 Run
+    /// 误判为上次启动遗留任务。
+    func initializeHistory(limit: Int = 20) async {
+        guard !hasInitializedHistory, let runRepository else {
+            await reloadHistory(limit: limit)
+            return
+        }
+        hasInitializedHistory = true
+        do {
+            _ = try await runRepository.recoverInterruptedRuns(
+                errorMessage: String.l10n("agent.persistence.error.runInterrupted"),
+                recoveredAt: Date()
+            )
+            historyRuns = try await runRepository.recentRuns(limit: limit)
+        } catch {
+            // 初始化失败后保留重试机会，避免一次瞬时数据库错误让历史永久空白。
+            hasInitializedHistory = false
             errorMessage = error.localizedDescription
         }
     }

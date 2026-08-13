@@ -346,6 +346,69 @@ struct AgentRunRepositoryTests {
         }
     }
 
+    @Test("启动恢复只收口遗留执行态并保留等待审批与终态")
+    func startupRecoveryFailsOnlyInterruptedRuns() async throws {
+        let repository = GRDBAgentRunRepository(database: try InMemoryDatabaseManager())
+        let planningID = UUID()
+        let runningID = UUID()
+        let waitingID = UUID()
+        let completedID = UUID()
+
+        for (id, prompt) in [
+            (planningID, "planning"),
+            (runningID, "running"),
+            (waitingID, "waiting"),
+            (completedID, "completed"),
+        ] {
+            _ = try await repository.createRun(
+                id: id,
+                definition: BuiltInAgents.githubWeeklyReport,
+                prompt: prompt,
+                context: .empty,
+                createdAt: fixedDate(0)
+            )
+        }
+        try await repository.appendMessage(
+            AgentMessage(runID: runningID, role: .user, turn: 0, sequence: 0, parts: [.text("running")]),
+            runStatus: .running
+        )
+        try await repository.saveApproval(
+            AgentApprovalRequest(
+                runID: waitingID,
+                toolCallID: "pending-call",
+                toolName: "tag_apply",
+                input: .object([:]),
+                permission: .requiresConfirmation,
+                sequence: 0
+            ),
+            runStatus: .waitingForConfirmation
+        )
+        try await repository.updateRunStatus(
+            runID: completedID,
+            status: .completed,
+            model: "test-model",
+            usage: .zero,
+            errorMessage: nil,
+            finishedAt: fixedDate(5)
+        )
+
+        let recoveredAt = fixedDate(10)
+        let recoveredCount = try await repository.recoverInterruptedRuns(
+            errorMessage: "run interrupted",
+            recoveredAt: recoveredAt
+        )
+
+        #expect(recoveredCount == 2)
+        for runID in [planningID, runningID] {
+            let snapshot = try #require(try await repository.snapshot(runID: runID))
+            #expect(snapshot.run.status == AgentRunStatus.failed.rawValue)
+            #expect(snapshot.run.errorMessage == "run interrupted")
+            #expect(snapshot.run.finishedAt == ISO8601DateFormatter.shared.string(from: recoveredAt))
+        }
+        #expect(try await repository.snapshot(runID: waitingID)?.run.status == AgentRunStatus.waitingForConfirmation.rawValue)
+        #expect(try await repository.snapshot(runID: completedID)?.run.status == AgentRunStatus.completed.rawValue)
+    }
+
     private func fixedDate(_ offset: TimeInterval) -> Date {
         Date(timeIntervalSince1970: 1_788_000_000 + offset)
     }

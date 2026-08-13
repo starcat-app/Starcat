@@ -259,6 +259,7 @@ protocol AgentRunRepositoryProtocol: Sendable {
         finishedAt: Date?
     ) async throws
     func restartFailedRun(runID: UUID, usage: AgentUsage) async throws
+    func recoverInterruptedRuns(errorMessage: String, recoveredAt: Date) async throws -> Int
     func appendArtifact(_ artifact: AgentArtifact, runID: UUID) async throws
     func recentRuns(limit: Int) async throws -> [AgentRunRecord]
     func snapshot(runID: UUID) async throws -> AgentRunSnapshotRecord?
@@ -378,6 +379,31 @@ struct GRDBAgentRunRepository: AgentRunRepositoryProtocol {
             guard db.changesCount == 1 else {
                 throw AgentRunRetryValidationError.notFailed
             }
+        }
+    }
+
+    /// App 进程结束后不会再有 Runtime 驱动 `planning` / `running` Run，因此首次加载
+    /// 历史时必须把这些遗留状态收口成可重试失败态。`waitingForConfirmation` 刻意排除：
+    /// 它拥有独立的恢复协议，不能被启动清理误伤。
+    func recoverInterruptedRuns(errorMessage: String, recoveredAt: Date = Date()) async throws -> Int {
+        let recovered = ISO8601DateFormatter.shared.string(from: recoveredAt)
+        return try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                UPDATE agent_runs
+                SET status = ?, error_message = ?, updated_at = ?, finished_at = ?
+                WHERE status IN (?, ?)
+                """,
+                arguments: [
+                    AgentRunStatus.failed.rawValue,
+                    errorMessage,
+                    recovered,
+                    recovered,
+                    AgentRunStatus.planning.rawValue,
+                    AgentRunStatus.running.rawValue,
+                ]
+            )
+            return db.changesCount
         }
     }
 

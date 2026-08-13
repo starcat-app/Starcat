@@ -637,6 +637,36 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.historyRuns.first?.userPrompt == "历史 run")
     }
 
+    @Test("首次历史初始化把上次进程遗留 Run 转为可重试失败态")
+    func initializeHistoryRecoversInterruptedRunForRetry() async throws {
+        let repository = GRDBAgentRunRepository(database: try InMemoryDatabaseManager())
+        let runID = UUID()
+        let staleRun = try await repository.createRun(
+            id: runID,
+            definition: BuiltInAgents.githubWeeklyReport,
+            prompt: "恢复中断运行",
+            context: .empty,
+            createdAt: Date(timeIntervalSince1970: 1_788_000_000)
+        )
+        try await repository.appendMessage(
+            AgentMessage(runID: runID, role: .user, turn: 0, sequence: 0, parts: [.text("恢复中断运行")]),
+            runStatus: .running
+        )
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: NeverFinishingAgentRuntime()
+        )
+        viewModel.configureRunRepository(repository)
+
+        await viewModel.initializeHistory()
+        await viewModel.openHistoryRun(staleRun)
+
+        #expect(viewModel.historyRuns.first?.status == AgentRunStatus.failed.rawValue)
+        #expect(viewModel.status == .failed)
+        #expect(viewModel.errorMessage == String.l10n("agent.persistence.error.runInterrupted"))
+        #expect(viewModel.canRetryFailedRun)
+    }
+
     @Test("openHistoryRun 会只读恢复 run 快照")
     func openHistoryRunRestoresSnapshot() async throws {
         let database = try InMemoryDatabaseManager()

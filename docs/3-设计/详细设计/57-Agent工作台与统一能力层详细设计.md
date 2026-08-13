@@ -828,6 +828,12 @@ agent_artifacts
 - 账号切库不串 run。
 - 禁止修改 `v3-agent-runs` checksum/内容。
 
+### 11.4 进程中断恢复
+
+`planning` / `running` 只表示当前进程中存在 Runtime 任务；App 重新启动后若仍保留这两个状态，UI 会展示一个无法继续、无法取消的假运行态。Workspace 每个生命周期首次加载历史时，必须在同一数据库事务中把遗留 `planning` / `running` Run 标记为 `failed`，写入本地化中断原因与终态时间，并保留原 Run ID、消息、上下文、usage、审批和 Artifact，随后复用失败 Run 的安全重试协议。
+
+`waitingForConfirmation` 不属于遗留执行态，必须保留并走审批恢复；`completed` / `failed` / `cancelled` 终态不得被启动恢复改写。启动恢复只允许执行一次，不能混入普通历史刷新，否则可能误伤本进程正在推进的 Run。
+
 ---
 
 ## 12. 写入、审批与审计
@@ -1077,7 +1083,7 @@ P0～P3、定向自动化、Release 构建与真实入口门禁验收通过后�
 - Agent 与 MCP 使用同一领域能力和权限语义，无重复业务实现。
 - 至少一个只读 Artifact Agent 和一个写入型 Agent 完成真实闭环。
 - 写入全部经过 dry-run、明确审批、领域 Repository 和 read-back。
-- Run 可取消、恢复、失败重试并保留一致审计。
+- Run 可取消；进程中断可恢复为同 Run ID 的可重试失败态；等待审批可继续；失败重试保留一致审计。
 - Run Surface 明确区分过程与结果；call/result 合并，Activity Group 可展开核验。
 - 完成态和历史完成态默认折叠过程，失败与审批态定位关键活动，且尊重用户手动折叠和滚动选择。
 - `.markdown` Artifact 在中栏按富文本正确呈现；关闭 Inspector 后最终结果仍完整可读。
