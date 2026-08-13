@@ -20,6 +20,7 @@ DERIVED_DATA="$PROJECT_ROOT/build/DerivedData-NoSandbox"
 APP_PATH="$DERIVED_DATA/Build/Products/Debug/Starcat.app"
 APP_EXECUTABLE="$APP_PATH/Contents/MacOS/Starcat"
 WIDGET_EXTENSION_PATH="$APP_PATH/Contents/PlugIns/StarcatDirectWidgets.appex"
+STABLE_XCODE_DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
 DIRECT_DEBUG_BUNDLE_ID="com.starcat.app.direct.debug"
 DIRECT_RELEASE_BUNDLE_ID="com.starcat.app.direct"
 DIRECT_DEBUG_WIDGET_BUNDLE_ID="com.starcat.app.direct.debug.widgets"
@@ -30,6 +31,21 @@ DEVELOPMENT_TEAM_ID="${STARCAT_DEVELOPMENT_TEAM:-8WCUMGCWMB}"
 # 本机若有多张 Apple Development 证书，裸写 "Apple Development" 会歧义失败。
 # 默认钉死 Starcat 主账号那张；可用 STARCAT_DEBUG_SIGN_IDENTITY 覆盖。
 DEBUG_SIGN_IDENTITY="${STARCAT_DEBUG_SIGN_IDENTITY:-Apple Development: liwen gong (MZ4R5J393K)}"
+
+# Direct 日常调试固定使用稳定版 Xcode，避免系统当前选中 Xcode Beta 时继承其
+# 未安装的可选 Metal Toolchain。必须在关闭现有 App 前完成前置检查，否则一次
+# 工具链配置错误也会中断正在运行的调试实例。
+if [ ! -x "$STABLE_XCODE_DEVELOPER_DIR/usr/bin/xcodebuild" ]; then
+  echo "ERROR: 未找到稳定版 Xcode：$STABLE_XCODE_DEVELOPER_DIR"
+  echo "       请确认 /Applications/Xcode.app 已安装且可用。"
+  exit 1
+fi
+export DEVELOPER_DIR="$STABLE_XCODE_DEVELOPER_DIR"
+if ! xcrun metal --version >/dev/null 2>&1; then
+  echo "ERROR: 稳定版 Xcode 的 Metal Toolchain 不可用，无法编译 .metal 文件。"
+  echo "       请在 Xcode > Settings > Components 中安装 Metal Toolchain。"
+  exit 1
+fi
 
 BUILD_VERSION="$(git -C "$PROJECT_ROOT" rev-list --count HEAD 2>/dev/null || true)"
 if ! [[ "$BUILD_VERSION" =~ ^[1-9][0-9]*$ ]]; then

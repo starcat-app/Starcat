@@ -16,10 +16,26 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DERIVED_DATA="$PROJECT_ROOT/build/DerivedData-Sandbox"
 APP_PATH="$DERIVED_DATA/Build/Products/Debug/Starcat.app"
+STABLE_XCODE_DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
 
 # 正式 Apple Developer Team ID。后续如果换账号，可用环境变量覆盖：
 #   STARCAT_DEVELOPMENT_TEAM=XXXXXXXXXX ./scripts/run-debug-appstore.sh
 DEVELOPMENT_TEAM_ID="${STARCAT_DEVELOPMENT_TEAM:-8WCUMGCWMB}"
+
+# App Store 日常调试固定使用稳定版 Xcode，避免系统当前选中 Xcode Beta 时继承其
+# 未安装的可选 Metal Toolchain。必须在关闭现有 App 前完成前置检查，否则一次
+# 工具链配置错误也会中断正在运行的调试实例。
+if [ ! -x "$STABLE_XCODE_DEVELOPER_DIR/usr/bin/xcodebuild" ]; then
+  echo "ERROR: 未找到稳定版 Xcode：$STABLE_XCODE_DEVELOPER_DIR"
+  echo "       请确认 /Applications/Xcode.app 已安装且可用。"
+  exit 1
+fi
+export DEVELOPER_DIR="$STABLE_XCODE_DEVELOPER_DIR"
+if ! xcrun metal --version >/dev/null 2>&1; then
+  echo "ERROR: 稳定版 Xcode 的 Metal Toolchain 不可用，无法编译 .metal 文件。"
+  echo "       请在 Xcode > Settings > Components 中安装 Metal Toolchain。"
+  exit 1
+fi
 
 cd "$PROJECT_ROOT"
 
