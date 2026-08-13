@@ -105,6 +105,10 @@ enum AppEndpoints {
             static let ping = "/api/v1/ping"
             /// `GET /healthz` —— 状态栏服务可用性巡检端点；无鉴权，只判断后端是否在线。
             static let healthz = "/healthz"
+            /// `GET /internal/sources?manual_import=true` —— 管理员可人工导入的动态来源目录。
+            static let internalSources = "/internal/sources"
+            /// `POST /internal/imports` / `GET /internal/imports/{batch_id}` —— 管理员导入与批次状态。
+            static let internalImports = "/internal/imports"
         }
 
         /// 把 `Paths.xxx` 拼到当前 baseURL 上。
