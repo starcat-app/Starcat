@@ -249,6 +249,11 @@ final class AppDependencies {
     /// 独立 actor，无需 GitHub OAuth；Explore 页 `weekly` 分类直接消费。
     let weeklyAPI: WeeklyAPI
 
+    /// 维护者专用的 weekly-api 管理员导入客户端与长生命周期发布会话。
+    /// 两者独立于普通 WeeklyAPI：管理员凭据不能进入普通 Bearer key 的配置路径。
+    let curatedPublisherAPI: CuratedPublisherAPIClient
+    let curatedPublisherSession: CuratedPublisherSession
+
     /// Weekly UI 共享状态：sidebar 计数徽章 + HomeView 详情页路由共用。
     /// 详见 `WeeklySelectionService` 文件头注释。
     let weeklySelectionService: WeeklySelectionService
@@ -1245,6 +1250,19 @@ final class AppDependencies {
         )
         self.weeklyAPI = weeklyAPIInstance
 
+        let curatedPublisherAPI = CuratedPublisherAPIClient(baseURL: AppEndpoints.Weekly.baseURL)
+        self.curatedPublisherAPI = curatedPublisherAPI
+        self.curatedPublisherSession = CuratedPublisherSession(
+            resolver: CuratedProjectResolver(
+                githubProvider: GitHubRepositorySearchProvider(
+                    client: api,
+                    noteRepository: self.repoNoteRepository
+                ),
+                webProvider: ExternalSearchWebProvider()
+            ),
+            api: curatedPublisherAPI
+        )
+
         // MUL-176 followup：UI 共享状态总线，sidebar 与 HomeView 通过它读 total / 选中项目。
         self.weeklySelectionService = WeeklySelectionService()
         self.activityCategoryCountService = ActivityCategoryCountService()
@@ -1731,7 +1749,9 @@ final class AppDependencies {
         // 2) 推送到对应 actor 热更新
         switch service {
         case .trending: await trendingAPI.updateBaseURL(target)
-        case .weekly:   await weeklyAPI.updateBaseURL(target)
+        case .weekly:
+            await weeklyAPI.updateBaseURL(target)
+            await curatedPublisherAPI.updateBaseURL(target)
         case .sharing:  await shareAPI.updateBaseURL(target)
         case .wiki:     await wikiAPI.updateBaseURL(target)
         case .recommend: await recommendAPI.updateBaseURL(target)

@@ -241,6 +241,7 @@ struct RepoListView: View {
     /// `RelativeDateTimeFormatter` 须显式注入 locale（对齐 ActivityView）。
     @Environment(\.locale) private var locale
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.openWindow) private var openWindow
 
     /// HOM-54：TrendingRepository，用于渲染 Trending 页面。
     var trendingRepository: (any TrendingRepositoryProtocol)?
@@ -899,6 +900,15 @@ struct RepoListView: View {
         let trailing = AnyView(
             Group {
                 selectionView
+                if CuratedPublisherAccessPolicy.canAccess(userID: authSession.state.user?.id) {
+                    Button {
+                        openWindow(id: CuratedPublisherWindow.id)
+                    } label: {
+                        ToolbarIcon("sparkles.rectangle.stack")
+                            .accessibilityLabel(Text("curatedPublisher.toolbar.open"))
+                    }
+                    .help("curatedPublisher.toolbar.open")
+                }
                 MultiSelectButton(
                     isActive: store.isActive,
                     action: { store.toggle() },
