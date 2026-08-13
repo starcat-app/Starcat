@@ -305,19 +305,17 @@ final class StarcatMCPWriteFacade {
     }
 
     private func resolveRepo(repoID: Int64?, owner: String?, name: String?) async throws -> Repo {
-        if let repoID {
-            guard let repo = try await repoRepository.findById(repoID) else {
-                throw StarcatMCPError.notFound("Repo not found: \(repoID)")
-            }
-            return repo
-        }
-        guard let owner, let name, !owner.isEmpty, !name.isEmpty else {
+        let selector = RepositoryCapabilitySelector(repoID: repoID, owner: owner, name: name)
+        let executor = RepositoryReadCapabilityExecutor(
+            source: DatabaseRepositoryReadCapabilitySource(repository: repoRepository, scope: .all)
+        )
+        do {
+            return try await executor.get(selector)
+        } catch RepositoryReadCapabilityError.invalidSelector {
             throw StarcatMCPError.invalidArguments("Provide repo_id or owner + name")
+        } catch RepositoryReadCapabilityError.notFound {
+            throw StarcatMCPError.notFound("Repo not found: \(selector.displayValue)")
         }
-        guard let repo = try await repoRepository.findByOwnerName(owner: owner, name: name) else {
-            throw StarcatMCPError.notFound("Repo not found: \(owner)/\(name)")
-        }
-        return repo
     }
 
 }

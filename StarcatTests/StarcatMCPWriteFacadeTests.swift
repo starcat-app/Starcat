@@ -170,6 +170,40 @@ struct StarcatMCPWriteFacadeTests {
         #expect(refreshCounter.count == 1)
     }
 
+    @Test("写入工具按 owner/name 复用统一仓库选择语义")
+    func ownerNameSelectorUsesSharedReadCapability() async throws {
+        let (facade, _, repoTagRepo, _, db, _) = try makeSUT()
+        try await db.insertRepoFixture(id: 7, owner: "octo", name: "shared-capability")
+
+        let result = try await facade.addRepoTags(
+            repoID: nil,
+            owner: "octo",
+            name: "shared-capability",
+            tagNames: ["agent"],
+            createMissing: true,
+            dryRun: false
+        )
+
+        #expect(result.repo?.id == 7)
+        #expect(try await repoTagRepo.fetchTags(forRepo: 7).map(\.name) == ["agent"])
+    }
+
+    @Test("写入工具保持已发布的无效仓库选择错误")
+    func invalidSelectorKeepsMCPErrorContract() async throws {
+        let (facade, _, _, _, _, _) = try makeSUT()
+
+        await #expect(throws: StarcatMCPError.invalidArguments("Provide repo_id or owner + name")) {
+            _ = try await facade.addRepoTags(
+                repoID: nil,
+                owner: nil,
+                name: nil,
+                tagNames: ["agent"],
+                createMissing: true,
+                dryRun: true
+            )
+        }
+    }
+
     @Test("共享 Capability 错误保持 MCP 已发布的 NOT_FOUND 分类")
     func missingTagKeepsMCPNotFoundError() async throws {
         let (facade, _, _, _, db, _) = try makeSUT()

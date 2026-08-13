@@ -584,6 +584,35 @@ final class AppDependencies {
         )
     }
 
+    /// Agent 与 MCP 必须经过同一个标签 Capability 装配点。这样两个入口不仅复用领域
+    /// executor，也一致触发写后 read-back 与语义索引刷新，而不依赖 MCP listener。
+    func makeRepositoryTagCapability() -> RepositoryTagCapabilityExecutor<DatabaseRepositoryTagCapabilitySource> {
+        Self.makeRepositoryTagCapability(
+            repoRepository: repoRepository,
+            tagRepository: tagRepository,
+            repoTagRepository: repoTagRepository,
+            semanticSearchService: semanticSearchService
+        )
+    }
+
+    private static func makeRepositoryTagCapability(
+        repoRepository: any RepoRepositoryProtocol,
+        tagRepository: any TagRepositoryProtocol,
+        repoTagRepository: any RepoTagRepositoryProtocol,
+        semanticSearchService: SemanticSearchService
+    ) -> RepositoryTagCapabilityExecutor<DatabaseRepositoryTagCapabilitySource> {
+        RepositoryTagCapabilityExecutor(
+            source: DatabaseRepositoryTagCapabilitySource(
+                repoRepository: repoRepository,
+                tagRepository: tagRepository,
+                repoTagRepository: repoTagRepository,
+                onRepositoryMutation: { [weak semanticSearchService] repo in
+                    await semanticSearchService?.refreshIndexIfChanged(for: repo)
+                }
+            )
+        )
+    }
+
     /// Agent 只复用 RAG 检索层，不构造 Planner / Generator，也不装配 GitHub 或 Web
     /// 临时上下文 Provider。范围由 `AgentRunContext` 冻结，执行期无法通过 tool 参数扩权。
     func makeAgentKnowledgeCapabilityAdapter(selectedModelID: String?) throws -> AgentKnowledgeCapabilityAdapter {
@@ -1146,15 +1175,11 @@ final class AppDependencies {
                 }
             )
         )
-        let repositoryTagCapability = RepositoryTagCapabilityExecutor(
-            source: DatabaseRepositoryTagCapabilitySource(
-                repoRepository: repo,
-                tagRepository: tagRepo,
-                repoTagRepository: repoTagRepo,
-                onRepositoryMutation: { [weak semantic] repo in
-                    await semantic?.refreshIndexIfChanged(for: repo)
-                }
-            )
+        let repositoryTagCapability = Self.makeRepositoryTagCapability(
+            repoRepository: repo,
+            tagRepository: tagRepo,
+            repoTagRepository: repoTagRepo,
+            semanticSearchService: semantic
         )
         let mcpWriteFacade = StarcatMCPWriteFacade(
             repoRepository: repo,

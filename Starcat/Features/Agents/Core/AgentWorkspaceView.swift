@@ -91,17 +91,11 @@ struct AgentWorkspaceView: View {
             knowledgeSearcher = UnavailableAgentKnowledgeSearcher()
         }
         do {
-            let tagCapability = RepositoryTagCapabilityExecutor(
-                source: DatabaseRepositoryTagCapabilitySource(
-                    repoRepository: dependencies.repoRepository,
-                    tagRepository: dependencies.tagRepository,
-                    repoTagRepository: dependencies.repoTagRepository
-                )
-            )
             let toolRegistry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.makeAll(
                 externalSearchTool: externalSearchTool,
                 knowledgeTool: AgentKnowledgeTool(searcher: knowledgeSearcher),
-                additionalTools: UntaggedTidyAgentTools.make(executor: tagCapability)
+                // 与 MCP 走同一组 Capability 装配规则，避免 Agent 写标签后漏掉语义索引刷新。
+                additionalTools: UntaggedTidyAgentTools.make(executor: dependencies.makeRepositoryTagCapability())
             ))
             let modelClient = try AgentLoopModelClientFactory.make(
                 settings: dependencies.settings,

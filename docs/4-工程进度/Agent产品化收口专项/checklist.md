@@ -35,10 +35,12 @@
 
 ### B. Agent / MCP 统一能力层
 
-- [ ] 核对仓库读取、metadata、Tag、Note、Status 与 Knowledge Search 的共享 executor。
-- [ ] 消除 Agent 当前使用领域中的重复业务实现；不重构与 Agent 无关的 MCP Tool。
-- [ ] 增加 Agent / MCP 契约测试，证明两端复用同一能力、权限、dry-run 和 read-back 语义。
-- [ ] 保证内置 Agent 不依赖 MCP listener、端口或 API Key。
+- [x] 核对仓库读取、metadata、Tag、Note、Status 与 Knowledge Search 的共享 executor。
+- [x] 消除 Agent 当前使用领域中的重复业务实现；不重构与 Agent 无关的 MCP Tool。
+- [x] 增加 Agent / MCP 契约测试，证明两端复用同一能力、权限、dry-run 和 read-back 语义。
+- [x] 保证内置 Agent 不依赖 MCP listener、端口或 API Key。
+
+> 验证：2026-08-14 将 Agent / MCP 标签能力统一到同一装配点，补回 Agent 写后语义索引刷新；MCP 写入仓库解析改用 Repository Read Capability。Note / Status 继续由共享 Metadata Capability 执行，当前内置 Agent 不臆造未使用 adapter；24 个相关测试套件通过。
 
 ### C. 产品化与 Release Gate
 

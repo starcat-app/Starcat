@@ -78,6 +78,7 @@ struct RepositoryTagCapabilityTests {
         #expect(result.verifiedTagNamesByRepoID[1] == ["Swift"])
         #expect(result.verifiedTagNamesByRepoID[2] == ["Swift"])
         #expect(await source.recordedWrites() == [RepositoryTagWrite(tagID: "swift", repoIDs: [1, 2])])
+        #expect(await source.mutationCount() == 2)
     }
 
     @Test("apply 拒绝与最新 dry-run 不一致的 hash")
