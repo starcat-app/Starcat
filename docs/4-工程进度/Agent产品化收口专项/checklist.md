@@ -68,12 +68,12 @@
 - [x] 更新权威 Agent 设计中的当前实现状态、阶段状态与验收结论。
 - [x] 同步 `docs/功能实现总览.md` checkbox、`> 实现：`、进度仪表盘与变更日志。
 - [x] Agent、Capability、MCP 定向测试全部通过。
-- [ ] StarcatTests 全量测试与 Debug build 通过。
+- [x] StarcatTests 全量测试与 Debug build 通过。
 - [ ] 完成真实 UI、真实 Provider、External Search、GitHub、私有仓库与双渠道人工验收；无法自动观察的证据如实记录。
-- [ ] 完成至少三轮完整审查，每轮保存独立报告、修复问题并提交。
+- [x] 完成至少三轮完整审查，每轮保存独立报告、修复问题并提交。
 - [ ] 生成 `Agent产品化收口需求完成结果报告.md`。
 
-> 当前证据：2026-08-14 已完成 24 个 Agent / Capability / MCP 定向套件、Release build、Agent String Catalog 18 locale 完整性检查与真实入口门禁验收；全量测试、最终 Debug build、多轮审查和外部人工门禁继续执行。
+> 当前证据：2026-08-14 已完成 24 个 Agent / Capability / MCP 定向套件、2280 项全量测试（0 failed）、Debug / Release build、Agent String Catalog 18 locale 完整性检查、三轮审查与真实入口门禁验收；真实 Provider、External Search、GitHub、私仓和双渠道产物仍等待人工环境。
 
 ## 4. 明确非目标
 
