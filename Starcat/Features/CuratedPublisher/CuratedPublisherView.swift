@@ -58,15 +58,16 @@ struct CuratedPublisherView: View {
             header
             Divider()
             HSplitView {
-                ScrollView { inputColumn.padding(20) }
-                    .frame(minWidth: 300, idealWidth: 340, maxWidth: 430)
+                ScrollView { inputColumn.padding(16) }
+                    .frame(minWidth: 300, idealWidth: 330, maxWidth: 390)
 
-                ScrollView { reviewColumn.padding(20) }
-                    .frame(minWidth: 410, idealWidth: 520)
+                reviewColumn
+                    .padding(16)
+                    .frame(minWidth: 430, idealWidth: 560, maxHeight: .infinity, alignment: .topLeading)
                     .background(Color(nsColor: .controlBackgroundColor).opacity(0.45))
 
-                ScrollView { publishColumn.padding(20) }
-                    .frame(minWidth: 320, idealWidth: 360, maxWidth: 430)
+                ScrollView { publishColumn.padding(16) }
+                    .frame(minWidth: 320, idealWidth: 360, maxWidth: 400)
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
@@ -90,12 +91,6 @@ struct CuratedPublisherView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Label(
-                identification.modelName ?? selectedModelName,
-                systemImage: "brain.head.profile"
-            )
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
             connectionBadge
             Button("curatedPublisher.action.clear") {
                 identification.clear()
@@ -247,12 +242,14 @@ struct CuratedPublisherView: View {
     // MARK: - Review
 
     private var reviewColumn: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 0) {
             columnHeader(
                 number: 2,
                 title: "curatedPublisher.review.title",
                 subtitle: "curatedPublisher.review.subtitle"
             )
+            .padding(.bottom, 14)
+
             if identification.findings.isEmpty {
                 ContentUnavailableView(
                     "curatedPublisher.review.emptyTitle",
@@ -262,11 +259,27 @@ struct CuratedPublisherView: View {
                 .frame(maxWidth: .infinity, minHeight: 360)
             } else {
                 resultSummary
-                ForEach(identification.findings) { finding in
-                    findingCard(finding)
-                }
-                if let selected = identification.selectedFinding {
-                    findingDetail(selected)
+                    .padding(.bottom, 12)
+
+                // 结果列表与证据区独立滚动，避免批量甄别后证据被长列表挤到窗口之外。
+                VSplitView {
+                    ScrollView {
+                        LazyVStack(spacing: 8) {
+                            ForEach(identification.findings) { finding in
+                                findingCard(finding)
+                            }
+                        }
+                        .padding(.bottom, 8)
+                    }
+                    .frame(minHeight: 180, idealHeight: 340)
+
+                    if let selected = identification.selectedFinding {
+                        ScrollView {
+                            findingDetail(selected)
+                                .padding(.top, 12)
+                        }
+                        .frame(minHeight: 150, idealHeight: 210, maxHeight: 280)
+                    }
                 }
             }
         }
@@ -291,8 +304,8 @@ struct CuratedPublisherView: View {
             )
             Spacer()
         }
-        .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .padding(10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func summaryMetric(value: Int, label: LocalizedStringKey, color: Color) -> some View {
@@ -305,42 +318,43 @@ struct CuratedPublisherView: View {
     private func findingCard(_ finding: CuratedProjectFinding) -> some View {
         let isSelected = identification.selectedFindingID == finding.id
         let isIncluded = identification.includedFindingIDs.contains(finding.id)
-        return HStack(alignment: .top, spacing: 10) {
+        return HStack(alignment: .center, spacing: 9) {
             Button {
                 identification.toggleIncluded(finding)
                 publisher.setPreparedFindings(identification.publishableFindings)
             } label: {
                 Image(systemName: isIncluded ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
+                    .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(isIncluded ? Color.accentColor : Color.secondary)
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .disabled(!finding.isPublishable)
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text(finding.title)
-                        .font(.body.weight(.semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
-                        .lineLimit(2)
+                        .lineLimit(1)
                     Spacer(minLength: 8)
                     statusBadge(finding.status)
                 }
                 Text(finding.repository?.card.fullName ?? finding.reason)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(1)
             }
         }
-        .padding(12)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
         .background(
-            isSelected ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.04),
-            in: RoundedRectangle(cornerRadius: 10)
+            isSelected ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.035),
+            in: RoundedRectangle(cornerRadius: 8)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(isSelected ? Color.accentColor.opacity(0.55) : Color.clear)
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isSelected ? Color.accentColor.opacity(0.45) : Color.clear)
         }
         // 卡片负责切换详情，勾选按钮保持独立操作，避免嵌套 Button 造成点击事件冲突。
         .contentShape(Rectangle())
@@ -358,15 +372,15 @@ struct CuratedPublisherView: View {
         return Label(String.l10n(configuration.0), systemImage: configuration.1)
             .font(.caption2.weight(.semibold))
             .foregroundStyle(configuration.2)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
-            .background(configuration.2.opacity(0.12), in: Capsule())
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(configuration.2.opacity(0.10), in: Capsule())
     }
 
     private func findingDetail(_ finding: CuratedProjectFinding) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             Text("curatedPublisher.review.evidenceTitle")
-                .font(.headline)
+                .font(.subheadline.weight(.semibold))
             Text(finding.reason)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -429,14 +443,15 @@ struct CuratedPublisherView: View {
                 }
             }
         }
-        .padding(14)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
     }
 
     // MARK: - Publish
 
     private var publishColumn: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             columnHeader(
                 number: 3,
                 title: "curatedPublisher.publish.title",
@@ -444,13 +459,15 @@ struct CuratedPublisherView: View {
             )
             adminConnectionSection
 
-            HStack {
+            HStack(spacing: 8) {
                 Picker("curatedPublisher.source.title", selection: $publisher.selectedSourceCode) {
                     ForEach(publisher.sources) { source in
                         Label(localizedName(for: source), systemImage: sourceIcon(for: source))
                             .tag(Optional(source.code))
                     }
                 }
+                .frame(maxWidth: .infinity)
+                .controlSize(.regular)
                 .disabled(!publisher.isAdminConnected || publisher.operation != .idle)
                 Button {
                     isCreatingSource = true
@@ -458,6 +475,7 @@ struct CuratedPublisherView: View {
                     Image(systemName: "plus")
                 }
                 .buttonStyle(.bordered)
+                .controlSize(.regular)
                 .help("curatedPublisher.source.create")
                 .disabled(!publisher.isAdminConnected || publisher.operation != .idle)
             }
@@ -499,11 +517,11 @@ struct CuratedPublisherView: View {
 
     private var adminConnectionSection: some View {
         GroupBox {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
                 if publisher.isAdminConnected {
-                    Label("curatedPublisher.connection.ready", systemImage: "lock.shield.fill")
-                        .foregroundStyle(.green)
                     HStack {
+                        Label("curatedPublisher.connection.ready", systemImage: "lock.shield.fill")
+                            .foregroundStyle(.green)
                         Spacer()
                         Button("curatedPublisher.action.disconnect", role: .destructive) {
                             publisher.disconnect()
@@ -528,13 +546,15 @@ struct CuratedPublisherView: View {
                     }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         } label: {
             Label("curatedPublisher.connection.title", systemImage: "server.rack")
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var publishPreview: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 7) {
             HStack {
                 Text("curatedPublisher.preview.title").font(.headline)
                 Spacer()
@@ -560,28 +580,32 @@ struct CuratedPublisherView: View {
                 .foregroundStyle(.secondary)
             }
         }
-        .padding(14)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func batchStatus(_ batch: CuratedPublisherBatch) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(batchStatusTitle(batch.status), systemImage: batchStatusIcon(batch.status))
-                .font(.headline)
-                .foregroundStyle(batchStatusColor(batch.status))
-            Text(String(
-                format: String.l10n("curatedPublisher.batch.summaryFormat"),
-                batch.success,
-                batch.total,
-                batch.discarded
-            ))
-            .font(.caption)
-            .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Label(batchStatusTitle(batch.status), systemImage: batchStatusIcon(batch.status))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(batchStatusColor(batch.status))
+                Spacer(minLength: 8)
+                Text(String(
+                    format: String.l10n("curatedPublisher.batch.summaryFormat"),
+                    batch.success,
+                    batch.total,
+                    batch.discarded
+                ))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
             Text(batch.batchID)
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
+                .lineLimit(1)
             ForEach(batch.items.filter { $0.lastErrorMessage != nil }, id: \.id) { item in
                 Text("\(item.normalizedFullName): \(item.lastErrorMessage ?? "")")
                     .font(.caption)
@@ -598,8 +622,9 @@ struct CuratedPublisherView: View {
                 }
             }
         }
-        .padding(14)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: - Helpers
