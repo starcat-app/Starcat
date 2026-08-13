@@ -837,6 +837,50 @@ struct AgentWorkspaceViewModelTests {
         #expect(await recorder.commands().isEmpty)
     }
 
+    @Test("失败历史 run 只触发一次重试并立即关闭重复入口")
+    func failedHistoryRunRetriesOnce() async throws {
+        let repository = GRDBAgentRunRepository(database: try InMemoryDatabaseManager())
+        let runID = UUID()
+        let run = try await repository.createRun(
+            id: runID,
+            definition: BuiltInAgents.githubWeeklyReport,
+            prompt: "重试失败运行",
+            context: .empty,
+            createdAt: Date(timeIntervalSince1970: 1_788_000_000)
+        )
+        try await repository.appendMessage(
+            AgentMessage(runID: runID, role: .user, turn: 0, sequence: 0, parts: [.text("重试失败运行")]),
+            runStatus: .running
+        )
+        try await repository.updateRunStatus(
+            runID: runID,
+            status: .failed,
+            model: "test-model",
+            usage: .zero,
+            errorMessage: "provider unavailable",
+            finishedAt: Date(timeIntervalSince1970: 1_788_000_010)
+        )
+        let recorder = FailedRunRetryRecorder()
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: FailedRunRetryRuntime(recorder: recorder)
+        )
+        viewModel.configureRunRepository(repository)
+
+        await viewModel.openHistoryRun(run)
+        #expect(viewModel.canRetryFailedRun)
+
+        viewModel.retryFailedRun()
+        viewModel.retryFailedRun()
+        try await waitUntil {
+            await recorder.retryCount() == 1 && viewModel.status == .completed
+        }
+
+        #expect(await recorder.retryCount() == 1)
+        #expect(!viewModel.canRetryFailedRun)
+        #expect(viewModel.errorMessage == nil)
+    }
+
     private func waitUntil(
         timeoutNanoseconds: UInt64 = 500_000_000,
         _ predicate: @escaping @MainActor () async -> Bool
@@ -998,6 +1042,39 @@ private struct RestartApprovalRuntime: AgentRuntime {
     func send(_ command: AgentRunCommand) async {
         await recorder.record(command)
     }
+}
+
+private struct FailedRunRetryRuntime: AgentRuntime {
+    let recorder: FailedRunRetryRecorder
+
+    func run(
+        definition: AgentDefinition,
+        prompt: String,
+        context: AgentRunContext
+    ) -> AsyncStream<AgentRunEvent> {
+        AsyncStream { $0.finish() }
+    }
+
+    func retryFailedRun(
+        snapshot: AgentRunSnapshotRecord,
+        definition: AgentDefinition
+    ) -> AsyncStream<AgentRunEvent> {
+        AsyncStream { continuation in
+            Task {
+                await recorder.recordRetry(runID: snapshot.run.id)
+                continuation.yield(.runStarted(title: definition.title))
+                continuation.yield(.runCompleted)
+                continuation.finish()
+            }
+        }
+    }
+}
+
+private actor FailedRunRetryRecorder {
+    private var runIDs: [String] = []
+
+    func recordRetry(runID: String) { runIDs.append(runID) }
+    func retryCount() -> Int { runIDs.count }
 }
 
 private actor RestartApprovalRecorder {

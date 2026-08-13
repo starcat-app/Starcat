@@ -84,6 +84,25 @@ private actor AgentRuntimeSessionRouter {
     }
 }
 
+private enum AgentRunRestoration: Sendable {
+    case pendingApproval(AgentRunSnapshotRecord)
+    case failedRetry(AgentRunSnapshotRecord)
+
+    var snapshot: AgentRunSnapshotRecord {
+        switch self {
+        case .pendingApproval(let snapshot), .failedRetry(let snapshot):
+            return snapshot
+        }
+    }
+
+    var logLabel: String {
+        switch self {
+        case .pendingApproval: return "approval"
+        case .failedRetry: return "failure"
+        }
+    }
+}
+
 struct LoopAgentRuntime: AgentRuntime {
     private let modelClient: any AgentLoopModelClient
     private let promptBuilder: any AgentPromptBuilding
@@ -194,41 +213,68 @@ struct LoopAgentRuntime: AgentRuntime {
         snapshot: AgentRunSnapshotRecord,
         definition: AgentDefinition
     ) -> AsyncStream<AgentRunEvent> {
+        guard snapshot.run.status == AgentRunStatus.waitingForConfirmation.rawValue,
+              snapshot.run.agentId == definition.id,
+              let pendingApproval = snapshot.approvals.last(where: { $0.status == .pending })
+        else {
+            return failedStream(String.l10n("agent.loop.error.noPendingApproval"))
+        }
+        do {
+            let session = try AgentRunSession(
+                restoring: snapshot,
+                pendingApproval: pendingApproval,
+                limits: limits
+            )
+            return resumeRestoredRun(
+                session: session,
+                definition: definition,
+                restoration: .pendingApproval(snapshot)
+            )
+        } catch {
+            return failedStream(Self.errorMessage(error))
+        }
+    }
+
+    func retryFailedRun(
+        snapshot: AgentRunSnapshotRecord,
+        definition: AgentDefinition
+    ) -> AsyncStream<AgentRunEvent> {
+        guard snapshot.run.agentId == definition.id else {
+            return failedStream(String.l10n("agent.loop.error.retryUnavailable"))
+        }
+        do {
+            let session = try AgentRunSession(retrying: snapshot, limits: limits)
+            return resumeRestoredRun(
+                session: session,
+                definition: definition,
+                restoration: .failedRetry(snapshot)
+            )
+        } catch {
+            return failedStream(Self.errorMessage(error))
+        }
+    }
+
+    /// 两种恢复都继续同一个持久化 Run，因此共用 task、取消和终态竞争处理；差异只留在
+    /// `execute` 的恢复前置步骤，避免新增一条容易漂移的 Runtime 循环。
+    private func resumeRestoredRun(
+        session: AgentRunSession,
+        definition: AgentDefinition,
+        restoration: AgentRunRestoration
+    ) -> AsyncStream<AgentRunEvent> {
         AsyncStream { continuation in
-            guard snapshot.run.status == AgentRunStatus.waitingForConfirmation.rawValue,
-                  let runID = UUID(uuidString: snapshot.run.id),
-                  let pendingApproval = snapshot.approvals.last(where: { $0.status == .pending })
-            else {
-                continuation.yield(.runFailed(String.l10n("agent.loop.error.noPendingApproval")))
-                continuation.finish()
-                return
-            }
-
-            let session: AgentRunSession
-            do {
-                session = try AgentRunSession(
-                    restoring: snapshot,
-                    pendingApproval: pendingApproval,
-                    limits: limits
-                )
-            } catch {
-                continuation.yield(.runFailed(Self.errorMessage(error)))
-                continuation.finish()
-                return
-            }
-
+            let runID = session.runID
             let taskHandle = AgentRuntimeTaskHandle()
             let task = Task {
-                AppLog.ai.info("[AgentRuntime] run.resume runID=\(runID.uuidString, privacy: .public) agent=\(definition.id, privacy: .public) approvalID=\(pendingApproval.id.uuidString, privacy: .public)")
+                AppLog.ai.info("[AgentRuntime] run.resume runID=\(runID.uuidString, privacy: .public) agent=\(definition.id, privacy: .public) reason=\(restoration.logLabel, privacy: .public)")
                 await sessionRouter.activate(session, taskHandle: taskHandle)
                 do {
                     try await execute(
                         runID: runID,
                         session: session,
                         definition: definition,
-                        prompt: snapshot.run.userPrompt,
-                        context: snapshot.context,
-                        restoration: snapshot,
+                        prompt: restoration.snapshot.run.userPrompt,
+                        context: restoration.snapshot.context,
+                        restoration: restoration,
                         continuation: continuation
                     )
                 } catch is CancellationError {
@@ -263,13 +309,20 @@ struct LoopAgentRuntime: AgentRuntime {
         }
     }
 
+    private func failedStream(_ message: String) -> AsyncStream<AgentRunEvent> {
+        AsyncStream { continuation in
+            continuation.yield(.runFailed(message))
+            continuation.finish()
+        }
+    }
+
     private func execute(
         runID: UUID,
         session: AgentRunSession,
         definition: AgentDefinition,
         prompt: String,
         context: AgentRunContext,
-        restoration: AgentRunSnapshotRecord? = nil,
+        restoration: AgentRunRestoration? = nil,
         continuation: AsyncStream<AgentRunEvent>.Continuation
     ) async throws {
         try Task.checkCancellation()
@@ -295,13 +348,14 @@ struct LoopAgentRuntime: AgentRuntime {
             locale: Locale(identifier: localeIdentifier)
         )
         var payload: AgentToolPayload = .none
-        var values = Self.restoredValues(from: restoration?.messages ?? [])
-        var artifactCount = restoration?.artifacts.count ?? 0
+        var values = Self.restoredValues(from: restoration?.snapshot.messages ?? [])
+        var artifactCount = restoration?.snapshot.artifacts.count ?? 0
 
-        if let restoration {
+        switch restoration {
+        case .pendingApproval(let snapshot):
             continuation.yield(.runStarted(title: definition.title))
             let restored = try await resolveRestoredApproval(
-                snapshot: restoration,
+                snapshot: snapshot,
                 runID: runID,
                 session: session,
                 prompt: prompt,
@@ -333,7 +387,12 @@ struct LoopAgentRuntime: AgentRuntime {
             if let result = restored.execution.result {
                 applyPayload(result.payload, payload: &payload, values: &values)
             }
-        } else {
+        case .failedRetry:
+            try Self.validateRequiredContext(definition: definition, context: context)
+            let restoredSession = await session.snapshot()
+            try await persistRetryStarted(runID: runID, usage: restoredSession.usage)
+            continuation.yield(.runStarted(title: definition.title))
+        case nil:
             let initialRequest = promptBuilder.buildTurnRequest(
                 userInput: prompt,
                 messages: [],
@@ -927,6 +986,12 @@ struct LoopAgentRuntime: AgentRuntime {
         } catch {
             AppLog.database.warning("Agent loop status persistence failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// 重试前必须原子清除旧错误与 finishedAt。若这一步落库失败，不能继续请求 Provider，
+    /// 否则 UI 与历史会同时把同一个 Run 视为 failed/running 两种状态。
+    private func persistRetryStarted(runID: UUID, usage: AgentUsage) async throws {
+        try await runRepository?.restartFailedRun(runID: runID, usage: usage)
     }
 
     private func persistMessage(_ message: AgentMessage, runStatus: AgentRunStatus?) async throws {

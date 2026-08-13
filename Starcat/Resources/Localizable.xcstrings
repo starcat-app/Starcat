@@ -459362,6 +459362,119 @@
         }
       }
     },
+    "agent.loop.error.retryUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Agent run cannot be retried safely from its saved state."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此 Agent 运行无法从已保存状态安全重试。"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يمكن إعادة محاولة تشغيل الوكيل هذا بأمان من حالته المحفوظة."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Agent-Lauf kann aus seinem gespeicherten Zustand nicht sicher erneut versucht werden."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta ejecución del Agente no se puede reintentar de forma segura desde su estado guardado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette exécution de l’Agent ne peut pas être relancée en toute sécurité depuis son état enregistré."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Proses Agent ini tidak dapat dicoba lagi dengan aman dari status tersimpannya."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa esecuzione dell’Agent non può essere ritentata in sicurezza dallo stato salvato."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Agent 実行は保存された状態から安全に再試行できません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 Agent 실행은 저장된 상태에서 안전하게 다시 시도할 수 없습니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deze Agent-run kan niet veilig opnieuw worden geprobeerd vanuit de opgeslagen status."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tego uruchomienia Agenta nie można bezpiecznie ponowić z zapisanego stanu."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta execução do Agente não pode ser tentada novamente com segurança a partir do estado salvo."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Этот запуск Agent нельзя безопасно повторить из сохранённого состояния."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu Agent çalışması kaydedilmiş durumundan güvenli şekilde yeniden denenemez."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цей запуск Agent не можна безпечно повторити зі збереженого стану."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lần chạy Agent này không thể được thử lại an toàn từ trạng thái đã lưu."
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此 Agent 執行無法從已儲存狀態安全重試。"
+          }
+        }
+      }
+    },
     "agent.loop.error.toolNotVisibleFormat" : {
       "extractionState" : "manual",
       "localizations" : {

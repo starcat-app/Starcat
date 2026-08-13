@@ -20,6 +20,10 @@ protocol AgentRuntime: Sendable {
         snapshot: AgentRunSnapshotRecord,
         definition: AgentDefinition
     ) -> AsyncStream<AgentRunEvent>
+    func retryFailedRun(
+        snapshot: AgentRunSnapshotRecord,
+        definition: AgentDefinition
+    ) -> AsyncStream<AgentRunEvent>
     func send(_ command: AgentRunCommand) async
 }
 
@@ -32,6 +36,16 @@ extension AgentRuntime {
     ) -> AsyncStream<AgentRunEvent> {
         AsyncStream { continuation in
             continuation.yield(.runFailed(String.l10n("agent.loop.error.resumeUnavailable")))
+            continuation.finish()
+        }
+    }
+
+    func retryFailedRun(
+        snapshot: AgentRunSnapshotRecord,
+        definition: AgentDefinition
+    ) -> AsyncStream<AgentRunEvent> {
+        AsyncStream { continuation in
+            continuation.yield(.runFailed(String.l10n("agent.loop.error.retryUnavailable")))
             continuation.finish()
         }
     }

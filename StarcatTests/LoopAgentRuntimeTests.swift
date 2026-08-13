@@ -855,6 +855,93 @@ struct LoopAgentRuntimeTests {
         #expect(events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
     }
 
+    @Test("失败 run 从持久化消息继续且不重复执行已完成写工具")
+    func failedRunRetryContinuesSameAuditWithoutRepeatingWrites() async throws {
+        let repository = GRDBAgentRunRepository(database: try InMemoryDatabaseManager())
+        let definition = makeDefinition(toolIDs: ["write_tag"])
+        let runID = UUID()
+        _ = try await repository.createRun(
+            id: runID,
+            definition: definition,
+            prompt: "写入标签",
+            context: .empty,
+            createdAt: Date(timeIntervalSince1970: 1_788_000_000)
+        )
+        let call = AgentToolCall(
+            id: "completed-write",
+            name: "write_tag",
+            input: .object(["tag": .string("swift")]),
+            rawInput: "{\"tag\":\"swift\"}",
+            sequence: 1
+        )
+        try await repository.appendMessage(
+            AgentMessage(runID: runID, role: .user, turn: 0, sequence: 0, parts: [.text("写入标签")]),
+            runStatus: .running
+        )
+        try await repository.appendMessage(
+            AgentMessage(runID: runID, role: .assistant, turn: 0, sequence: 1, parts: [.toolCall(call)]),
+            runStatus: .running
+        )
+        try await repository.appendMessage(
+            AgentMessage(
+                runID: runID,
+                role: .tool,
+                turn: 0,
+                sequence: 2,
+                parts: [.toolResult(AgentToolResultMessage(
+                    toolCallID: call.id,
+                    toolName: call.name,
+                    output: .object(["status": .string("executed")]),
+                    isError: false,
+                    status: .completed,
+                    sequence: 2
+                ))]
+            ),
+            runStatus: .running
+        )
+        try await repository.saveApproval(AgentApprovalRequest(
+            runID: runID,
+            toolCallID: call.id,
+            toolName: call.name,
+            input: call.input,
+            permission: .requiresConfirmation,
+            sequence: call.sequence,
+            status: .executed
+        ), runStatus: .running)
+        try await repository.updateRunStatus(
+            runID: runID,
+            status: .failed,
+            model: "test-model",
+            usage: .zero,
+            errorMessage: "provider unavailable",
+            finishedAt: Date(timeIntervalSince1970: 1_788_000_010)
+        )
+        let failed = try #require(try await repository.snapshot(runID: runID))
+        let recorder = ModelRequestRecorder(responses: [
+            .init(text: "写入完成", reasoning: nil, toolCalls: [], model: "test-model", finishReason: "stop")
+        ])
+        let tool = RuntimeStubTool(name: "write_tag", result: "must-not-run", permission: .requiresConfirmation)
+        let runtime = LoopAgentRuntime(
+            modelClient: RecordedAgentModelClient(recorder: recorder),
+            toolRegistry: try AgentToolRegistry(tools: [tool]),
+            runRepository: repository,
+            mode: .approvedAction
+        )
+
+        let events = await collect(runtime.retryFailedRun(snapshot: failed, definition: definition))
+        let restored = try #require(try await repository.snapshot(runID: runID))
+
+        #expect(await tool.executionCount() == 0)
+        #expect((await recorder.recordedRequests()).count == 1)
+        #expect(restored.run.id == runID.uuidString)
+        #expect(restored.run.status == AgentRunStatus.completed.rawValue)
+        #expect(restored.run.errorMessage == nil)
+        #expect(restored.messages.map(\.sequence) == [0, 1, 2, 3])
+        #expect(restored.approvals.map(\.status) == [.executed])
+        #expect(events.contains(where: { if case .runStarted = $0 { return true }; return false }))
+        #expect(events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
+    }
+
     private func collect(_ stream: AsyncStream<AgentRunEvent>) async -> [AgentRunEvent] {
         var events: [AgentRunEvent] = []
         for await event in stream { events.append(event) }

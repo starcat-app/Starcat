@@ -299,12 +299,26 @@ struct AgentMessageTimelineView: View {
     }
 
     private func errorRow(_ error: String) -> some View {
-        Label(error, systemImage: "exclamationmark.triangle.fill")
-            .font(interfaceScale.font(.bodyEmphasis))
-            .foregroundStyle(.red)
-            .padding(12)
-            .frame(maxWidth: 860, alignment: .leading)
-            .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        VStack(alignment: .leading, spacing: 10) {
+            Label(error, systemImage: "exclamationmark.triangle.fill")
+                .font(interfaceScale.font(.bodyEmphasis))
+                .foregroundStyle(.red)
+            if viewModel.canRetryFailedRun {
+                HStack {
+                    Spacer()
+                    Button {
+                        viewModel.retryFailedRun()
+                    } label: {
+                        Label("action.retry", systemImage: "play.circle")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: 860, alignment: .leading)
+        .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var agentIcon: some View {

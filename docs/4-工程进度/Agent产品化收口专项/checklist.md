@@ -24,12 +24,14 @@
 
 ### A. 失败 Run 重试
 
-- [ ] 为 `AgentRuntime` 增加失败 Run 重试契约，和等待审批恢复契约分离。
-- [ ] 从持久化消息恢复同一 Run 的上下文、预算、usage、sequence 与 Artifact 计数。
-- [ ] 重试时清理旧错误和终态时间，同时保持原 Run ID 与完整审计链。
-- [ ] 已执行写工具不得因重试再次执行；上下文不可恢复或存在未决写操作时 fail closed。
-- [ ] Agent Workspace 在失败错误行提供明确重试动作，并防止重复点击并发重试。
-- [ ] 补齐 Runtime、Session、Repository、ViewModel 与 UI 状态投影测试。
+- [x] 为 `AgentRuntime` 增加失败 Run 重试契约，和等待审批恢复契约分离。
+- [x] 从持久化消息恢复同一 Run 的上下文、预算、usage、sequence 与 Artifact 计数。
+- [x] 重试时清理旧错误和终态时间，同时保持原 Run ID 与完整审计链。
+- [x] 已执行写工具不得因重试再次执行；上下文不可恢复或存在未决写操作时 fail closed。
+- [x] Agent Workspace 在失败错误行提供明确重试动作，并防止重复点击并发重试。
+- [x] 补齐 Runtime、Session、Repository、ViewModel 与 UI 状态投影测试。
+
+> 验证：2026-08-14 完成 4 个重试核心测试套件及 24 个 Agent / Capability / MCP 相关测试套件；同一 Run 续跑、写工具不重放、未决审批拒绝、终态字段原子清理均有自动化覆盖。
 
 ### B. Agent / MCP 统一能力层
 

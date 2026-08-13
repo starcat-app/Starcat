@@ -309,6 +309,43 @@ struct AgentRunRepositoryTests {
         #expect(snapshot.messages.map(\.sequence) == [0])
     }
 
+    @Test("失败 run 重试时清除旧错误和终态时间并保留模型用量")
+    func retryTransitionClearsPreviousTerminalFacts() async throws {
+        let repository = GRDBAgentRunRepository(database: try InMemoryDatabaseManager())
+        let runID = UUID()
+        _ = try await repository.createRun(
+            id: runID,
+            definition: BuiltInAgents.githubWeeklyReport,
+            prompt: "retry",
+            context: .empty,
+            createdAt: fixedDate(0)
+        )
+        let usage = AgentUsage(inputTokens: 8, outputTokens: 2)
+        try await repository.updateRunStatus(
+            runID: runID,
+            status: .failed,
+            model: "test-model",
+            usage: usage,
+            errorMessage: "provider unavailable",
+            finishedAt: fixedDate(10)
+        )
+
+        try await repository.restartFailedRun(runID: runID, usage: usage)
+        let snapshot = try #require(try await repository.snapshot(runID: runID))
+
+        #expect(snapshot.run.status == AgentRunStatus.running.rawValue)
+        #expect(snapshot.run.model == "test-model")
+        #expect(snapshot.run.errorMessage == nil)
+        #expect(snapshot.run.finishedAt == nil)
+        let usageData = try #require(snapshot.run.usageJSON?.data(using: .utf8))
+        let persistedUsage = try JSONDecoder().decode(AgentUsage.self, from: usageData)
+        #expect(persistedUsage == usage)
+
+        await #expect(throws: AgentRunRetryValidationError.notFailed) {
+            try await repository.restartFailedRun(runID: runID, usage: usage)
+        }
+    }
+
     private func fixedDate(_ offset: TimeInterval) -> Date {
         Date(timeIntervalSince1970: 1_788_000_000 + offset)
     }

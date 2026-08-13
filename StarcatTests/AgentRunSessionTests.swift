@@ -166,4 +166,114 @@ struct AgentRunSessionTests {
         )))
         #expect(try await session.beginIteration() == 0)
     }
+
+    @Test("失败 run 从持久化事实恢复预算、序列与运行态")
+    func failedRunRetryRestoresPersistedAuditState() async throws {
+        let runID = UUID()
+        let call = AgentToolCall(
+            id: "write-call",
+            name: "write_tag",
+            input: .object(["tag": .string("swift")]),
+            sequence: 1
+        )
+        let messages = [
+            AgentMessage(runID: runID, role: .user, turn: 0, sequence: 0, parts: [.text("tag repos")]),
+            AgentMessage(
+                runID: runID,
+                role: .assistant,
+                turn: 0,
+                sequence: 1,
+                parts: [.toolCall(call)],
+                usage: AgentUsage(inputTokens: 4, outputTokens: 1)
+            ),
+            AgentMessage(
+                runID: runID,
+                role: .tool,
+                turn: 0,
+                sequence: 2,
+                parts: [.toolResult(AgentToolResultMessage(
+                    toolCallID: call.id,
+                    toolName: call.name,
+                    output: .object(["status": .string("executed")]),
+                    isError: false,
+                    status: .completed,
+                    sequence: 2
+                ))]
+            )
+        ]
+        let approval = AgentApprovalRequest(
+            runID: runID,
+            toolCallID: call.id,
+            toolName: call.name,
+            input: call.input,
+            permission: .requiresConfirmation,
+            sequence: call.sequence,
+            status: .executed
+        )
+        let snapshot = failedSnapshot(
+            runID: runID,
+            messages: messages,
+            approvals: [approval],
+            artifacts: [AgentArtifact(type: .markdown, title: "Draft", content: "draft", sequence: 3)]
+        )
+
+        let session = try AgentRunSession(retrying: snapshot)
+        let restored = await session.snapshot()
+
+        #expect(restored.runID == runID)
+        #expect(restored.state == .running)
+        #expect(restored.iteration == 1)
+        #expect(restored.toolCallCount == 1)
+        #expect(restored.usage.totalTokens == 5)
+        #expect(restored.nextSequence == 4)
+        #expect(try await session.beginIteration() == 1)
+    }
+
+    @Test("失败 run 存在未决审批时拒绝重试")
+    func failedRunRetryRejectsUnresolvedApproval() {
+        let runID = UUID()
+        let approval = AgentApprovalRequest(
+            runID: runID,
+            toolCallID: "pending-call",
+            toolName: "write_tag",
+            input: .object(["tag": .string("swift")]),
+            permission: .requiresConfirmation,
+            sequence: 1
+        )
+        let snapshot = failedSnapshot(runID: runID, approvals: [approval])
+
+        #expect(throws: AgentRunRetryValidationError.unresolvedApproval) {
+            _ = try AgentRunSession(retrying: snapshot)
+        }
+    }
+
+    private func failedSnapshot(
+        runID: UUID,
+        messages: [AgentMessage] = [],
+        approvals: [AgentApprovalRequest] = [],
+        artifacts: [AgentArtifact] = []
+    ) -> AgentRunSnapshotRecord {
+        let date = ISO8601DateFormatter.shared.string(from: Date(timeIntervalSince1970: 1_788_000_000))
+        return AgentRunSnapshotRecord(
+            run: AgentRunRecord(
+                id: runID.uuidString,
+                agentId: "test-agent",
+                title: "Test Agent",
+                userPrompt: "retry",
+                contextSource: "Unit",
+                contextJSON: "{}",
+                status: AgentRunStatus.failed.rawValue,
+                model: "test-model",
+                usageJSON: nil,
+                errorMessage: "provider unavailable",
+                createdAt: date,
+                updatedAt: date,
+                finishedAt: date
+            ),
+            context: .empty,
+            messages: messages,
+            approvals: approvals,
+            artifacts: artifacts
+        )
+    }
 }

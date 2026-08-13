@@ -99,6 +99,57 @@ enum AgentRunSessionError: Error, LocalizedError, Equatable, Sendable {
     }
 }
 
+/// 失败 Run 只能从完整的事实快照继续。尤其是写工具：如果审批仍处于中间态，或审批
+/// 已落库但对应 tool-result 缺失，就无法证明副作用是否已经发生，必须拒绝重试。
+enum AgentRunRetryValidationError: Error, LocalizedError, Equatable, Sendable {
+    case invalidRun
+    case notFailed
+    case contextUnavailable
+    case unresolvedApproval
+    case incompleteApprovalAudit
+
+    var errorDescription: String? {
+        switch self {
+        case .contextUnavailable:
+            return String.l10n("agent.loop.error.contextUnavailable")
+        case .invalidRun, .notFailed, .unresolvedApproval, .incompleteApprovalAudit:
+            return String.l10n("agent.loop.error.retryUnavailable")
+        }
+    }
+}
+
+enum AgentRunRetryPolicy {
+    static func validatedRunID(for snapshot: AgentRunSnapshotRecord) throws -> UUID {
+        guard let runID = UUID(uuidString: snapshot.run.id) else {
+            throw AgentRunRetryValidationError.invalidRun
+        }
+        guard snapshot.run.status == AgentRunStatus.failed.rawValue else {
+            throw AgentRunRetryValidationError.notFailed
+        }
+        guard !snapshot.context.hasUnavailableAttachmentBodies else {
+            throw AgentRunRetryValidationError.contextUnavailable
+        }
+
+        let persistedToolResultIDs = Set(snapshot.messages.flatMap { message in
+            message.parts.compactMap { part -> String? in
+                guard case .toolResult(let result) = part else { return nil }
+                return result.toolCallID
+            }
+        })
+        for approval in snapshot.approvals {
+            switch approval.status {
+            case .pending, .approved, .executing, .cancelled:
+                throw AgentRunRetryValidationError.unresolvedApproval
+            case .executed, .failed, .rejected:
+                guard persistedToolResultIDs.contains(approval.toolCallID) else {
+                    throw AgentRunRetryValidationError.incompleteApprovalAudit
+                }
+            }
+        }
+        return runID
+    }
+}
+
 actor AgentRunSession {
     let runID: UUID
     let limits: AgentRunLimits
@@ -143,20 +194,36 @@ actor AgentRunSession {
         self.startedAt = now()
         self.now = now
         self.messages = snapshot.messages
-        self.iteration = (snapshot.messages.filter { $0.role == .assistant }.map(\.turn).max() ?? -1) + 1
-        self.toolCallCount = snapshot.messages.reduce(0) { count, message in
-            count + message.parts.filter { if case .toolCall = $0 { return true }; return false }.count
-        }
-        self.usage = snapshot.messages.compactMap(\.usage).reduce(.zero) { partial, next in
-            var merged = partial
-            merged.merge(next)
-            return merged
-        }
+        let metrics = Self.restorationMetrics(from: snapshot)
+        self.iteration = metrics.iteration
+        self.toolCallCount = metrics.toolCallCount
+        self.usage = metrics.usage
         self.pendingApproval = pendingApproval
         self.state = .waitingForConfirmation
-        let maxMessageSequence = snapshot.messages.map(\.sequence).max() ?? -1
-        let maxArtifactSequence = snapshot.artifacts.map(\.sequence).max() ?? -1
-        self.nextSequence = max(maxMessageSequence, maxArtifactSequence) + 1
+        self.nextSequence = metrics.nextSequence
+    }
+
+    /// 从失败快照继续同一个 Run。只恢复已经持久化的事实，不重放任何工具调用；Runtime
+    /// 下一步会把完整消息历史交给 Provider，让模型从最后一条 tool-result 或 assistant
+    /// message 后继续。活跃时长重新计时，但迭代、工具与 token 预算不能借重试归零。
+    init(
+        retrying snapshot: AgentRunSnapshotRecord,
+        limits: AgentRunLimits = AgentRunLimits(),
+        now: @escaping @Sendable () -> Date = Date.init
+    ) throws {
+        let runID = try AgentRunRetryPolicy.validatedRunID(for: snapshot)
+        let metrics = Self.restorationMetrics(from: snapshot)
+        self.runID = runID
+        self.limits = limits
+        self.startedAt = now()
+        self.now = now
+        self.messages = snapshot.messages
+        self.iteration = metrics.iteration
+        self.toolCallCount = metrics.toolCallCount
+        self.usage = metrics.usage
+        self.pendingApproval = nil
+        self.state = .running
+        self.nextSequence = metrics.nextSequence
     }
 
     func append(
@@ -304,5 +371,24 @@ actor AgentRunSession {
         guard elapsed <= limits.maxDuration else {
             throw AgentRunSessionError.durationLimit(limits.maxDuration)
         }
+    }
+
+    /// 审批恢复与失败重试必须使用完全相同的计数恢复规则，否则用户可以通过不同恢复
+    /// 入口绕过预算，或让 message/artifact sequence 在历史中发生碰撞。
+    private static func restorationMetrics(
+        from snapshot: AgentRunSnapshotRecord
+    ) -> (iteration: Int, toolCallCount: Int, usage: AgentUsage, nextSequence: Int) {
+        let iteration = (snapshot.messages.filter { $0.role == .assistant }.map(\.turn).max() ?? -1) + 1
+        let toolCallCount = snapshot.messages.reduce(0) { count, message in
+            count + message.parts.filter { if case .toolCall = $0 { return true }; return false }.count
+        }
+        let usage = snapshot.messages.compactMap(\.usage).reduce(AgentUsage.zero) { partial, next in
+            var merged = partial
+            merged.merge(next)
+            return merged
+        }
+        let maxMessageSequence = snapshot.messages.map(\.sequence).max() ?? -1
+        let maxArtifactSequence = snapshot.artifacts.map(\.sequence).max() ?? -1
+        return (iteration, toolCallCount, usage, max(maxMessageSequence, maxArtifactSequence) + 1)
     }
 }

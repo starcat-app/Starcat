@@ -258,6 +258,7 @@ protocol AgentRunRepositoryProtocol: Sendable {
         errorMessage: String?,
         finishedAt: Date?
     ) async throws
+    func restartFailedRun(runID: UUID, usage: AgentUsage) async throws
     func appendArtifact(_ artifact: AgentArtifact, runID: UUID) async throws
     func recentRuns(limit: Int) async throws -> [AgentRunRecord]
     func snapshot(runID: UUID) async throws -> AgentRunSnapshotRecord?
@@ -350,6 +351,33 @@ struct GRDBAgentRunRepository: AgentRunRepositoryProtocol {
                 """,
                 arguments: [status.rawValue, model, usageJSON, errorMessage, now, finished, runID.uuidString]
             )
+        }
+    }
+
+    /// 失败重试是唯一需要主动清空终态字段的状态迁移，因此使用独立 SQL，避免把
+    /// `updateRunStatus` 中 `nil` 表示“不覆盖”的既有语义改成“清空”。
+    func restartFailedRun(runID: UUID, usage: AgentUsage) async throws {
+        let now = ISO8601DateFormatter.shared.string(from: Date())
+        let usageJSON = try AgentPersistenceJSON.encode(usage)
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                UPDATE agent_runs
+                SET status = ?, usage_json = ?, error_message = NULL,
+                    updated_at = ?, finished_at = NULL
+                WHERE id = ? AND status = ?
+                """,
+                arguments: [
+                    AgentRunStatus.running.rawValue,
+                    usageJSON,
+                    now,
+                    runID.uuidString,
+                    AgentRunStatus.failed.rawValue,
+                ]
+            )
+            guard db.changesCount == 1 else {
+                throw AgentRunRetryValidationError.notFailed
+            }
         }
     }
 

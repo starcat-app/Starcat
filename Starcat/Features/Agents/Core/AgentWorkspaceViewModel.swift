@@ -27,6 +27,7 @@ final class AgentWorkspaceViewModel {
     private var runTask: Task<Void, Never>?
     private var mentionTask: Task<Void, Never>?
     private var activeRunID: UUID?
+    private var currentRunSnapshot: AgentRunSnapshotRecord?
     private var draftsByAgentID: [String: String] = [:]
     private var hasLoadedRepositoryCatalog = false
     private var isRepositoryCatalogLoading = false
@@ -132,6 +133,16 @@ final class AgentWorkspaceViewModel {
 
     var isRunning: Bool {
         status == .planning || status == .running || status == .waitingForConfirmation
+    }
+
+    var canRetryFailedRun: Bool {
+        guard !isRunning,
+              status == .failed,
+              let snapshot = currentRunSnapshot,
+              let definition = agents.first(where: { $0.id == snapshot.run.agentId && $0.isEnabled })
+        else { return false }
+        guard definition.id == selectedAgentID else { return false }
+        return (try? AgentRunRetryPolicy.validatedRunID(for: snapshot)) != nil
     }
 
     var selectedAgentRequiresRepositories: Bool {
@@ -300,6 +311,28 @@ final class AgentWorkspaceViewModel {
         }
     }
 
+    func retryFailedRun() {
+        guard canRetryFailedRun,
+              let snapshot = currentRunSnapshot,
+              let definition = agents.first(where: { $0.id == snapshot.run.agentId })
+        else { return }
+
+        runTask?.cancel()
+        status = .planning
+        errorMessage = nil
+        assistantReasoningOutput = ""
+        assistantOutput = ""
+        let runtime = runtime
+        runTask = Task { [weak self] in
+            let stream = runtime.retryFailedRun(snapshot: snapshot, definition: definition)
+            for await event in stream {
+                await MainActor.run { self?.apply(event) }
+            }
+            await self?.reloadHistory()
+            await self?.refreshActiveRunSnapshot()
+        }
+    }
+
     func run() {
         guard canSubmit, let selectedAgent else { return }
         let effectivePrompt = effectivePrompt(for: selectedAgent)
@@ -316,6 +349,8 @@ final class AgentWorkspaceViewModel {
         assistantReasoningOutput = ""
         assistantOutput = ""
         errorMessage = nil
+        currentRunSnapshot = nil
+        selectedHistoryRunID = nil
 
         let input = AgentRunInput(
             goal: effectivePrompt,
@@ -353,6 +388,7 @@ final class AgentWorkspaceViewModel {
                 }
             }
             await self?.reloadHistory()
+            await self?.refreshActiveRunSnapshot()
         }
     }
 
@@ -687,6 +723,7 @@ final class AgentWorkspaceViewModel {
     }
 
     private func apply(_ snapshot: AgentRunSnapshotRecord) {
+        currentRunSnapshot = snapshot
         activeRunID = UUID(uuidString: snapshot.run.id)
         selectedHistoryRunID = snapshot.run.id
         selectedAgentID = snapshot.run.agentId
@@ -743,6 +780,19 @@ final class AgentWorkspaceViewModel {
                 await MainActor.run { self?.apply(event) }
             }
             await self?.reloadHistory()
+            await self?.refreshActiveRunSnapshot()
+        }
+    }
+
+    private func refreshActiveRunSnapshot() async {
+        guard let runRepository, let activeRunID else { return }
+        do {
+            currentRunSnapshot = try await runRepository.snapshot(runID: activeRunID)
+        } catch {
+            // 主错误（例如 Provider 失败）比历史刷新错误更重要，不能被后台刷新覆盖。
+            if errorMessage == nil {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
