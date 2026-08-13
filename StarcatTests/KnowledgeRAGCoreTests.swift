@@ -1801,9 +1801,10 @@ struct KnowledgeRAGCoreTests {
     @Test("keyword provider 失败时保留 vector 检索结果")
     func keywordFailureKeepsVectorResults() async throws {
         let database = try InMemoryDatabaseManager()
+        let chunkRepository = try await vectorReadyRepository(database: database, repoIDs: [1])
         let chunk = fixtureChunk(id: 810, repoID: 1, source: .readme)
         let retriever = KnowledgeRAGRetriever(
-            chunkRepository: GRDBRAGChunkRepository(database: database),
+            chunkRepository: chunkRepository,
             keywordProvider: StubRAGKeywordProvider(
                 backendName: "SQLite",
                 hits: [],
@@ -1921,12 +1922,13 @@ struct KnowledgeRAGCoreTests {
     @Test("检索设置仅过滤向量阈值，并尊重分片来源开关")
     func retrievalSettingsFilterVectorAndSources() async throws {
         let database = try InMemoryDatabaseManager()
+        let chunkRepository = try await vectorReadyRepository(database: database, repoIDs: [1])
         let keywordChunk = fixtureChunk(id: 82, repoID: 1, source: .readme)
         let lowSimilarityChunk = fixtureChunk(id: 83, repoID: 1, source: .readme)
         let disabledSourceChunk = fixtureChunk(id: 84, repoID: 1, source: .metadata)
         let highSimilarityChunk = fixtureChunk(id: 85, repoID: 1, source: .readme)
         let retriever = KnowledgeRAGRetriever(
-            chunkRepository: GRDBRAGChunkRepository(database: database),
+            chunkRepository: chunkRepository,
             keywordProvider: StubRAGKeywordProvider(
                 backendName: "SQLite",
                 hits: [RAGChildHit(chunk: keywordChunk, score: 1, kind: .keyword)],
@@ -2562,11 +2564,12 @@ struct KnowledgeRAGCoreTests {
     @Test("双语 OR 查询只传入多仓库候选 id，不使用 repo 名扩展范围")
     func bilingualORUsesOnlyCandidateRepoIDs() async throws {
         let database = try InMemoryDatabaseManager()
+        let chunkRepository = try await vectorReadyRepository(database: database, repoIDs: [21, 22])
         let keywordRecorder = RAGRepoIDRecorder()
         let vectorRecorder = RAGRepoIDRecorder()
         let queryRecorder = RAGKeywordQueryRecorder()
         let retriever = KnowledgeRAGRetriever(
-            chunkRepository: GRDBRAGChunkRepository(database: database),
+            chunkRepository: chunkRepository,
             keywordProvider: RecordingRAGKeywordProvider(
                 backendName: "SQLite",
                 recorder: keywordRecorder,
@@ -5766,6 +5769,53 @@ struct KnowledgeRAGCoreTests {
             createdAt: "2026-07-10T00:00:00.000Z",
             updatedAt: "2026-07-10T00:00:00.000Z"
         )
+    }
+
+    /// Retriever 会先查询本地索引是否存在当前模型的 ready 向量，再决定是否调用
+    /// Vector Provider。Stub 命中本身不能绕过这条生产边界，测试必须显式准备索引前置条件。
+    private func vectorReadyRepository(
+        database: InMemoryDatabaseManager,
+        repoIDs: [Int64]
+    ) async throws -> GRDBRAGChunkRepository {
+        let repository = GRDBRAGChunkRepository(database: database)
+        for repoID in repoIDs {
+            try await database.insertRepoFixture(id: repoID)
+            try await GRDBRepoNoteRepository(database: database)
+                .updateLibraryState(repoId: repoID, state: .inLibrary)
+            _ = try await repository.replaceSource(
+                repoId: repoID,
+                source: .readme,
+                drafts: [RAGChunkDraft(
+                    repoId: repoID,
+                    source: .readme,
+                    sourceId: "",
+                    parentType: .readmeSection,
+                    parentKey: "readme:vector-gate",
+                    parentTitle: "Vector gate",
+                    chunkKey: "readme:vector-gate:0",
+                    chunkIndex: 0,
+                    sectionPath: "Vector gate",
+                    title: "Vector gate",
+                    content: "ready vector gate",
+                    tokenCount: 3,
+                    isTruncated: false
+                )]
+            )
+        }
+        try await database.writer.write { db in
+            var arguments: [any DatabaseValueConvertible] = [RepoEmbedding.encode([1, 0])]
+            arguments.append(contentsOf: repoIDs)
+            try db.execute(
+                sql: """
+                    UPDATE rag_chunks
+                    SET embedding = ?, embedding_dim = 2, embedding_model = 'embed',
+                        embedding_status = 'ready', indexed_at = datetime('now')
+                    WHERE repo_id IN (\(repoIDs.map { _ in "?" }.joined(separator: ",")))
+                    """,
+                arguments: StatementArguments(arguments)
+            )
+        }
+        return repository
     }
 
     private func fixtureCitation(marker: String) -> RAGCitation {
