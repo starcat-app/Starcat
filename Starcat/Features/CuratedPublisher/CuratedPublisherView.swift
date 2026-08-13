@@ -409,7 +409,18 @@ struct CuratedPublisherView: View {
                     Text([item.lastErrorCode, item.lastErrorMessage].compactMap { $0 }.joined(separator: ": "))
                         .font(.caption)
                         .foregroundStyle(.red)
-                        .textSelection(.enabled)
+                    .textSelection(.enabled)
+                }
+            }
+            if !batch.status.isTerminal, session.operation == .idle {
+                HStack {
+                    Spacer()
+                    Button("curatedPublisher.action.retryStatus") {
+                        Task {
+                            await session.retryBatchStatus(currentUserID: authSession.state.user?.id)
+                        }
+                    }
+                    .buttonStyle(.bordered)
                 }
             }
         }

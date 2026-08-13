@@ -478483,6 +478483,22 @@
         }
       }
     },
+    "curatedPublisher.action.retryStatus" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retry status"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重试状态查询"
+          }
+        }
+      }
+    },
     "curatedPublisher.action.verify" : {
       "localizations" : {
         "en" : {

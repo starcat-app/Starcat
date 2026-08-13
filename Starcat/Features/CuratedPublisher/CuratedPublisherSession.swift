@@ -77,6 +77,10 @@ enum CuratedPublisherSessionError: Error, LocalizedError {
 @MainActor
 @Observable
 final class CuratedPublisherSession {
+    /// 连续失败达到上限后暂停后台请求，避免服务长期不可用时每两秒持续打点。
+    /// 批次 ID 会保留，维护者可从状态卡片手动恢复查询。
+    private static let maximumConsecutivePollFailures = 3
+
     var clue: String = "" {
         didSet {
             guard clue != oldValue else { return }
@@ -322,6 +326,35 @@ final class CuratedPublisherSession {
         errorMessage = nil
     }
 
+    /// 后台轮询因连续网络错误暂停后，允许维护者从最近批次继续查询。
+    ///
+    /// 这里重复执行权限校验，避免调用者绕过只对维护者可见的 UI。
+    func retryBatchStatus(currentUserID: Int64?) async {
+        guard CuratedPublisherAccessPolicy.canAccess(userID: currentUserID) else {
+            present(error: CuratedPublisherSessionError.accessDenied)
+            return
+        }
+        guard let adminKey, isAdminConnected else {
+            present(error: CuratedPublisherSessionError.missingAdminKey)
+            return
+        }
+        guard let batchID = batch?.batchID ?? batchTracker.loadLastBatchID(), !batchID.isEmpty else { return }
+
+        operation = .polling
+        errorMessage = nil
+        do {
+            try await refreshBatch(id: batchID, adminKey: adminKey)
+            if batch?.status.isTerminal == true {
+                operation = .idle
+            } else {
+                startPolling(batchID: batchID)
+            }
+        } catch {
+            operation = .idle
+            present(error: error)
+        }
+    }
+
     private var validatedSourceURL: URL? {
         let raw = sourceURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty,
@@ -369,11 +402,14 @@ final class CuratedPublisherSession {
         pollingTask?.cancel()
         pollingTask = Task { [weak self] in
             guard let self else { return }
+            var consecutiveFailures = 0
             while !Task.isCancelled {
                 do {
                     try await self.sleeper.sleepBeforeNextPoll()
                     guard !Task.isCancelled, let key = self.adminKey else { return }
                     try await self.refreshBatch(id: batchID, adminKey: key)
+                    consecutiveFailures = 0
+                    self.errorMessage = nil
                     if self.batch?.status.isTerminal == true {
                         self.operation = .idle
                         return
@@ -381,10 +417,13 @@ final class CuratedPublisherSession {
                 } catch is CancellationError {
                     return
                 } catch {
-                    // 暂时网络失败保留 batch 与恢复 ID，但停止自动轮询，避免无上限重试。
-                    self.operation = .idle
+                    consecutiveFailures += 1
                     self.present(error: error)
-                    return
+                    if consecutiveFailures >= Self.maximumConsecutivePollFailures {
+                        // 保留非终态 batch 与恢复 ID；暂停后由状态卡片显式恢复查询。
+                        self.operation = .idle
+                        return
+                    }
                 }
             }
         }

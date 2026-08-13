@@ -100,19 +100,81 @@ struct CuratedPublisherSessionTests {
         #expect(api.fetchedBatchIDs == ["batch-1"])
     }
 
+    @Test("轮询遇到瞬时网络错误后继续追踪到终态")
+    func pollingRetriesTransientFailure() async {
+        let api = CuratedAPIStub(
+            sourcesResult: .success([Self.source]),
+            batchResults: [
+                .success(Self.pendingBatch),
+                .failure(URLError(.timedOut)),
+                .success(Self.successBatch)
+            ]
+        )
+        let session = makeSession(api: api, sleeper: CuratedImmediateSleeper())
+        await preparePublishableSession(session)
+
+        await session.publish(currentUserID: 20_341_123)
+        await waitForIdle(session)
+
+        #expect(session.batch?.status == .success)
+        #expect(api.fetchedBatchIDs.count == 3)
+        #expect(session.errorMessage == nil)
+    }
+
+    @Test("连续轮询失败暂停后可以手动恢复最近批次")
+    func manualRetryResumesPausedPolling() async {
+        let api = CuratedAPIStub(
+            sourcesResult: .success([Self.source]),
+            batchResults: [
+                .success(Self.pendingBatch),
+                .failure(URLError(.timedOut)),
+                .failure(URLError(.timedOut)),
+                .failure(URLError(.timedOut)),
+                .success(Self.successBatch)
+            ]
+        )
+        let session = makeSession(api: api, sleeper: CuratedImmediateSleeper())
+        await preparePublishableSession(session)
+
+        await session.publish(currentUserID: 20_341_123)
+        await waitForIdle(session)
+        #expect(session.batch?.status == .pending)
+        #expect(session.errorMessage != nil)
+
+        await session.retryBatchStatus(currentUserID: 20_341_123)
+
+        #expect(session.batch?.status == .success)
+        #expect(session.operation == .idle)
+        #expect(session.errorMessage == nil)
+    }
+
     private func makeSession(
         resolver: CuratedResolverStub = CuratedResolverStub(candidate: Self.candidate()),
         api: CuratedAPIStub = CuratedAPIStub(sourcesResult: .success([Self.source])),
         credentials: CuratedCredentialStoreSpy = CuratedCredentialStoreSpy(),
-        tracker: CuratedBatchTrackerSpy = CuratedBatchTrackerSpy()
+        tracker: CuratedBatchTrackerSpy = CuratedBatchTrackerSpy(),
+        sleeper: any CuratedPublisherSleeping = CuratedNeverSleeper()
     ) -> CuratedPublisherSession {
         CuratedPublisherSession(
             resolver: resolver,
             api: api,
             credentialStore: credentials,
             batchTracker: tracker,
-            sleeper: CuratedNeverSleeper()
+            sleeper: sleeper
         )
+    }
+
+    private func preparePublishableSession(_ session: CuratedPublisherSession) async {
+        await session.connect(adminKey: "admin-key", currentUserID: 20_341_123)
+        session.clue = "great coding agent"
+        await session.resolveClue(externalSearchProvider: .anySearch)
+        session.hasConfirmedOfficialRepository = true
+    }
+
+    private func waitForIdle(_ session: CuratedPublisherSession) async {
+        for _ in 0..<100 where session.operation != .idle {
+            await Task.yield()
+        }
     }
 
     private static let source = CuratedPublisherSource(
@@ -143,6 +205,12 @@ struct CuratedPublisherSessionTests {
     private static var successBatch: CuratedPublisherBatch {
         try! JSONDecoder().decode(CuratedPublisherBatch.self, from: Data("""
         {"batch_id":"batch-1","source_code":"ai_intelligence","kind":"manual_import","status":"success","total":1,"success":1,"discarded":0,"created_at":"2026-08-13T00:00:00Z","finished_at":"2026-08-13T00:00:01Z","updated_at":"2026-08-13T00:00:01Z"}
+        """.utf8))
+    }
+
+    private static var pendingBatch: CuratedPublisherBatch {
+        try! JSONDecoder().decode(CuratedPublisherBatch.self, from: Data("""
+        {"batch_id":"batch-1","source_code":"ai_intelligence","kind":"manual_import","status":"pending","total":1,"success":0,"discarded":0,"created_at":"2026-08-13T00:00:00Z","updated_at":"2026-08-13T00:00:00Z"}
         """.utf8))
     }
 
@@ -203,7 +271,7 @@ private struct CuratedResolverStub: CuratedProjectResolving {
 private final class CuratedAPIStub: CuratedPublisherAPIProtocol, @unchecked Sendable {
     let sourcesResult: Result<[CuratedPublisherSource], Error>
     let acceptance: CuratedPublisherBatchAcceptance
-    private var batches: [CuratedPublisherBatch]
+    private var batchResults: [Result<CuratedPublisherBatch, Error>]
     private let lock = NSLock()
     private(set) var submittedRequests: [CuratedPublisherImportRequest] = []
     private(set) var fetchedBatchIDs: [String] = []
@@ -218,11 +286,12 @@ private final class CuratedAPIStub: CuratedPublisherAPIProtocol, @unchecked Send
             duplicateCount: 0,
             createdAt: "2026-08-13T00:00:00Z"
         ),
-        batches: [CuratedPublisherBatch] = []
+        batches: [CuratedPublisherBatch] = [],
+        batchResults: [Result<CuratedPublisherBatch, Error>]? = nil
     ) {
         self.sourcesResult = sourcesResult
         self.acceptance = acceptance
-        self.batches = batches
+        self.batchResults = batchResults ?? batches.map(Result.success)
     }
 
     func fetchManualSources(adminKey: String) async throws -> [CuratedPublisherSource] {
@@ -240,8 +309,8 @@ private final class CuratedAPIStub: CuratedPublisherAPIProtocol, @unchecked Send
     func fetchBatch(id: String, adminKey: String) async throws -> CuratedPublisherBatch {
         try lock.withLock {
             fetchedBatchIDs.append(id)
-            guard !batches.isEmpty else { throw URLError(.resourceUnavailable) }
-            return batches.removeFirst()
+            guard !batchResults.isEmpty else { throw URLError(.resourceUnavailable) }
+            return try batchResults.removeFirst().get()
         }
     }
 }
@@ -274,5 +343,11 @@ private final class CuratedBatchTrackerSpy: CuratedPublisherBatchTracking, @unch
 private struct CuratedNeverSleeper: CuratedPublisherSleeping {
     func sleepBeforeNextPoll() async throws {
         try await Task.sleep(for: .seconds(60))
+    }
+}
+
+private struct CuratedImmediateSleeper: CuratedPublisherSleeping {
+    func sleepBeforeNextPoll() async throws {
+        await Task.yield()
     }
 }
