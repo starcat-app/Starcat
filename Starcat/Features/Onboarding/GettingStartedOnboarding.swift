@@ -67,9 +67,6 @@ final class GettingStartedProgressStore {
         var id: String { rawValue }
 
         /// 正式版操作指引只包含已经开放且用户能够完成的入口。
-        ///
-        /// Agent 工作台仍是 Debug-only 能力，因此保留历史枚举值与事件兼容性，但不计入
-        /// 当前公开清单；否则 Release 用户会停在一个无法点击、也无法完成的步骤上。
         static let guideCases: [StepID] = [
             .signIn,
             .syncStars,
@@ -80,6 +77,7 @@ final class GettingStartedProgressStore {
             .useSearch,
             .useAI,
             .useRAGWorkspace,
+            .useAgentWorkspace,
             .shareProfile,
             .unstarRepo
         ]

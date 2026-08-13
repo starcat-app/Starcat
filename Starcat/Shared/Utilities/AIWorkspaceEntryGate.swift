@@ -7,6 +7,28 @@
 
 import Foundation
 
+/// 使用统一门禁的工作台类型。
+///
+/// 权益和提示文案都由类型绑定，避免 Agent 复用 RAG 门禁时显示错误产品文案。
+enum AIWorkspaceKind: Sendable {
+    case agent
+    case knowledgeRAG
+
+    var proFeature: ProFeature {
+        switch self {
+        case .agent: .aiChat
+        case .knowledgeRAG: .knowledgeRAG
+        }
+    }
+
+    var chatModelRequiredMessageKey: String {
+        switch self {
+        case .agent: "agent.workspace.chatModelRequired.message"
+        case .knowledgeRAG: "workspace.chatModelRequired.message"
+        }
+    }
+}
+
 /// 工作台入口的判定结果。
 ///
 /// Pro 权益优先于模型配置判断：免费用户应先看到与所点功能对应的付费墙，
@@ -31,9 +53,9 @@ enum AIWorkspaceEntryGate {
     static func access(
         isProUser: Bool,
         hasConfiguredChatModel: Bool,
-        proFeature: ProFeature
+        workspace: AIWorkspaceKind
     ) -> AIWorkspaceEntryAccess {
-        guard isProUser else { return .requiresPro(proFeature) }
+        guard isProUser else { return .requiresPro(workspace.proFeature) }
         guard hasConfiguredChatModel else { return .requiresChatModel }
         return .allowed
     }
@@ -41,12 +63,12 @@ enum AIWorkspaceEntryGate {
     /// 在所有工作台窗口入口执行同一判定，并将失败交回现有主窗口 UI。
     static func authorizeOpening(
         dependencies: AppDependencies,
-        proFeature: ProFeature
+        workspace: AIWorkspaceKind
     ) -> Bool {
         switch access(
             isProUser: dependencies.entitlementGate.isProUser,
             hasConfiguredChatModel: dependencies.settings.hasConfiguredChatModel,
-            proFeature: proFeature
+            workspace: workspace
         ) {
         case .allowed:
             return true
@@ -57,7 +79,7 @@ enum AIWorkspaceEntryGate {
             // 门禁只报告“为什么不能打开”，由主窗口用 SwiftUI Alert 承接交互。
             // 不能在这里发送旧的 AppKit `showSettingsWindow:` action：App Store 构建会明确
             // 要求 Settings scene 使用 SettingsLink / OpenSettingsAction，并产生运行时错误日志。
-            NotificationCenter.default.post(name: .starcatWorkspaceRequiresChatModel, object: nil)
+            NotificationCenter.default.post(name: .starcatWorkspaceRequiresChatModel, object: workspace)
             return false
         }
     }

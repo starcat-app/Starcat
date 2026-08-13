@@ -44,10 +44,12 @@
 
 ### C. 产品化与 Release Gate
 
-- [ ] 补齐失败重试、历史恢复、空态、错误态和取消状态的一致 UI。
-- [ ] 新增文案同步 18 个 locale，并执行 String Catalog 格式与完整性检查。
-- [ ] 复核 Pro、AI Provider、用量、隐私与 App Store / Direct 渠道边界。
-- [ ] 自动化与真实 UI 验收通过后解除 `DebugFlags.agentToolbarEntry`，并保留既有权限门禁。
+- [x] 补齐失败重试、历史恢复、空态、错误态和取消状态的一致 UI。
+- [x] 新增文案同步 18 个 locale，并执行 String Catalog 格式与完整性检查。
+- [x] 复核 Pro、AI Provider、用量、隐私与 App Store / Direct 渠道边界。
+- [x] 自动化与真实 UI 验收通过后解除 `DebugFlags.agentToolbarEntry`，并保留既有权限门禁。
+
+> 验证：2026-08-14 已移除 Agent 工具栏 Debug 开关，Release 构建通过；真实 UI 证明正式入口可见、免费用户进入 AI Chat Pro 付费墙、Pro 用户未配置模型进入配置门禁。修复门禁失败仍误记新手引导完成，以及 Agent 误用 RAG 模型提示文案；Agent 新增文案 18 个 locale 完整、非空且均为 translated。
 
 ### D. 文档、测试与工程进度
 

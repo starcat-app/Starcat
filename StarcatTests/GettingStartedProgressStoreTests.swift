@@ -22,23 +22,23 @@ struct GettingStartedProgressStoreTests {
         return defaults
     }
 
-    @Test("正式清单不包含尚未开放的 Agent 工作台")
-    func publicGuideExcludesAgentWorkspace() {
+    @Test("正式清单包含已开放的 Agent 工作台")
+    func publicGuideIncludesAgentWorkspace() {
         let defaults = makeIsolatedDefaults()
         let store = GettingStartedProgressStore(defaults: defaults)
 
-        #expect(!GettingStartedProgressStore.StepID.guideCases.contains(.useAgentWorkspace))
-        #expect(store.totalCount == 11)
+        #expect(GettingStartedProgressStore.StepID.guideCases.contains(.useAgentWorkspace))
+        #expect(store.totalCount == 12)
     }
 
-    @Test("历史 Agent 完成记录不影响正式清单进度")
-    func agentCompletionDoesNotAffectPublicProgress() {
+    @Test("完成 Agent 步骤会计入正式清单进度")
+    func agentCompletionAffectsPublicProgress() {
         let defaults = makeIsolatedDefaults()
         let store = GettingStartedProgressStore(defaults: defaults)
 
         store.markCompleted(.useAgentWorkspace)
 
-        #expect(store.completedCount == 0)
+        #expect(store.completedCount == 1)
         #expect(!store.isComplete)
     }
 

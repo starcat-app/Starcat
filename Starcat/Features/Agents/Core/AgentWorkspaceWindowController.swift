@@ -27,13 +27,17 @@ final class AgentWorkspaceWindowController: NSWindowController, NSWindowDelegate
     private let chromeState: WorkspaceChromeState
 
     /// 显示 Agent 工作台窗口。
+    ///
+    /// - Returns: 入口门禁通过并实际展示窗口时返回 `true`。调用方据此决定是否记录完成事件，
+    ///   避免 Pro 或模型配置门禁拦截后仍误把新手引导标记为已完成。
+    @discardableResult
     @MainActor
-    static func show(dependencies: AppDependencies) {
+    static func show(dependencies: AppDependencies) -> Bool {
         guard AIWorkspaceEntryGate.authorizeOpening(
             dependencies: dependencies,
-            proFeature: .aiChat
+            workspace: .agent
         ) else {
-            return
+            return false
         }
 
         let controller: AgentWorkspaceWindowController
@@ -54,6 +58,7 @@ final class AgentWorkspaceWindowController: NSWindowController, NSWindowDelegate
         }
         controller.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        return true
     }
 
     private init(dependencies: AppDependencies) {

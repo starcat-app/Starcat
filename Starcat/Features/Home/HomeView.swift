@@ -108,17 +108,14 @@ struct HomeView: View {
     @State private var paywallContext: ProPaywallContext?
     /// 工作台入口缺少有效对话模型时，由主窗口展示可操作提示，而不是静默失败。
     @State private var showsChatModelRequiredAlert = false
+    /// 记录触发模型门禁的工作台，确保 Agent 与 RAG 展示各自准确的产品文案。
+    @State private var chatModelRequiredWorkspace: AIWorkspaceKind = .knowledgeRAG
     /// 主界面首次操作清单。它是本机 UI 教程状态，不进入 AppDependencies，避免变成业务数据。
     @State private var gettingStartedStore = GettingStartedProgressStore()
     /// 详情页教学锚点可能受 README 滚动折叠影响；显示胶囊前先回顶恢复稳定布局。
     @State private var isPreparingDetailCoachMark = false
     @State private var preparedDetailCoachMarkStepID: GettingStartedProgressStore.StepID?
     @State private var preparedDetailCoachMarkRepoID: Repo.ID?
-    /// Agent 功能尚未进入正式上线面，toolbar 入口默认由 Debug 菜单隐藏。
-    ///
-    /// 这里用 HomeView 本地状态承接 `DebugFlags`，是因为 UserDefaults 写入不会自动触发
-    /// SwiftUI 刷新；Debug 菜单广播后更新该状态，RepoListView 的 toolbar 立即重建。
-    @State private var showsAgentToolbarEntry: Bool = DebugFlags.agentToolbarEntry
     /// 系统入口发来的重置动作必须先二次确认，避免用户误清语言 / 排序 / 筛选偏好。
     @State private var showsResetListPreferencesConfirmation: Bool = false
     /// 重置成功只给轻量 toast，不写诊断日志，也不影响用户业务数据。
@@ -353,9 +350,6 @@ struct HomeView: View {
         }
         // 弹出/关闭：纯淡入淡出，贴近 Spotlight / 命令面板；不再叠加 scale 弹入。
         .animation(reduceMotion ? nil : .easeOut(duration: 0.20), value: searchCenterViewModel.isPresented)
-        .onReceive(NotificationCenter.default.publisher(for: DebugFlags.agentToolbarEntryDidChangeNotification)) { _ in
-            showsAgentToolbarEntry = DebugFlags.agentToolbarEntry
-        }
         )
     }
 
@@ -772,9 +766,11 @@ struct HomeView: View {
             guard let feature = note.object as? ProFeature else { return }
             paywallContext = ProPaywallContext(feature: feature)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .starcatWorkspaceRequiresChatModel)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .starcatWorkspaceRequiresChatModel)) { note in
             // AppKit 工作台控制器不持有 SwiftUI presentation state；所有入口统一回到
             // 主窗口展示提示，确保 toolbar、智能集合和 Getting Started 行为一致。
+            guard let workspace = note.object as? AIWorkspaceKind else { return }
+            chatModelRequiredWorkspace = workspace
             showsChatModelRequiredAlert = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidOpenRepoHomepage)) { _ in
@@ -824,7 +820,7 @@ struct HomeView: View {
             }
             Button("general.cancel", role: .cancel) {}
         } message: {
-            Text("workspace.chatModelRequired.message")
+            Text(String.l10n(chatModelRequiredWorkspace.chatModelRequiredMessageKey))
         }
         .alert("settings.listPreferences.reset.title", isPresented: $showsResetListPreferencesConfirmation) {
             Button("general.cancel", role: .cancel) {}
@@ -1118,8 +1114,11 @@ struct HomeView: View {
 
     private func openAgentWorkspaceForGettingStarted() {
         searchCenterViewModel.dismiss()
+        // 只有门禁通过且窗口真正打开后才完成引导，不能让付费墙或模型配置提示制造假进度。
+        guard AgentWorkspaceWindowController.show(dependencies: dependencies) else {
+            return
+        }
         NotificationCenter.default.post(name: .gettingStartedDidOpenAgentWorkspace, object: nil)
-        AgentWorkspaceWindowController.show(dependencies: dependencies)
     }
 
     private func openRepoHomepageForGettingStarted() {
@@ -1297,7 +1296,6 @@ struct HomeView: View {
                     selectedActivityCategory: $selectedActivityCategory,
                     selectedActivityItem: $selectedActivityItem,
                     undoStarAutoSelectRequestID: undoStarAutoSelectRequestID,
-                    showsAgentToolbarEntry: showsAgentToolbarEntry,
                     onStartBatchAI: {
                         // HOM-52：点击 banner"开始整理" → 弹 Options sheet。
                         // 复用上一次 batchAIOptions，让"再开一次"沿用最近偏好。

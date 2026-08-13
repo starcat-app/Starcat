@@ -267,9 +267,6 @@ struct RepoListView: View {
     @Binding var selectedActivityItem: ActivityItem?
     /// Getting Started 的 Undo Star 教学跳转后，一次性请求打开第一条记录。
     let undoStarAutoSelectRequestID: Int
-    /// Agent 功能当前不随正式产品入口上线；Debug 菜单打开后才显示 toolbar 入口。
-    let showsAgentToolbarEntry: Bool
-
     /// HOM-52：Untagged 视图顶部 banner 的"启动整理 / 查看进度"回调。
     /// 这两个动作产生 sheet 由 HomeView 统一承载（避免 RepoListView 多持一个 @State）。
     var onStartBatchAI: (() -> Void)?
@@ -593,18 +590,16 @@ struct RepoListView: View {
                         onShowBatchAIPanel: onShowBatchAIPanel
                     )
                 }
-                if showsAgentToolbarEntry {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button {
-                            onOpenAgentWorkspace?()
-                        } label: {
-                            // systemRed 在明暗主题下都够亮，暗色 toolbar 上也能一眼认出 Agent 入口。
-                            workspaceToolbarIcon("a.circle", tint: Color(nsColor: .systemRed))
-                                .accessibilityLabel(Text("toolbar.agentWorkspace.label"))
-                        }
-                        .help("toolbar.agentWorkspace.help")
-                        .gettingStartedAnchor(.agentWorkspace)
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        onOpenAgentWorkspace?()
+                    } label: {
+                        // systemRed 在明暗主题下都够亮，暗色 toolbar 上也能一眼认出 Agent 入口。
+                        workspaceToolbarIcon("a.circle", tint: Color(nsColor: .systemRed))
+                            .accessibilityLabel(Text("toolbar.agentWorkspace.label"))
                     }
+                    .help("toolbar.agentWorkspace.help")
+                    .gettingStartedAnchor(.agentWorkspace)
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button {

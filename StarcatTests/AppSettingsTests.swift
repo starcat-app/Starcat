@@ -1152,10 +1152,15 @@ struct AppSettingsTests {
 
     @Test("AI: 工作台入口先校验 Pro，再校验对话模型")
     func workspaceEntryAccessOrder() {
+        #expect(AIWorkspaceKind.agent.proFeature == .aiChat)
+        #expect(AIWorkspaceKind.agent.chatModelRequiredMessageKey == "agent.workspace.chatModelRequired.message")
+        #expect(AIWorkspaceKind.knowledgeRAG.proFeature == .knowledgeRAG)
+        #expect(AIWorkspaceKind.knowledgeRAG.chatModelRequiredMessageKey == "workspace.chatModelRequired.message")
+
         switch AIWorkspaceEntryGate.access(
             isProUser: false,
             hasConfiguredChatModel: false,
-            proFeature: .knowledgeRAG
+            workspace: .knowledgeRAG
         ) {
         case .requiresPro(.knowledgeRAG):
             break
@@ -1166,7 +1171,7 @@ struct AppSettingsTests {
         switch AIWorkspaceEntryGate.access(
             isProUser: true,
             hasConfiguredChatModel: false,
-            proFeature: .aiChat
+            workspace: .agent
         ) {
         case .requiresChatModel:
             break

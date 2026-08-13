@@ -101,7 +101,7 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
     ) {
         guard AIWorkspaceEntryGate.authorizeOpening(
             dependencies: dependencies,
-            proFeature: .knowledgeRAG
+            workspace: .knowledgeRAG
         ) else {
             return
         }

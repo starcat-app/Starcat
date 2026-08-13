@@ -714,7 +714,6 @@ private enum DebugWindowResizer {
 
 struct DebugMenuCommands: Commands {
     @AppStorage(DebugFlags.debugProOverrideKey) private var debugProOverride = false
-    @AppStorage(DebugFlags.agentToolbarEntryKey) private var agentToolbarEntry = false
 
     var body: some Commands {
         CommandMenu("Who's Your Daddy") {
@@ -730,19 +729,6 @@ struct DebugMenuCommands: Commands {
                     set: { newValue in
                         debugProOverride = newValue
                         DebugFlags.setDebugProOverride(newValue)
-                    }
-                )
-            )
-
-            Divider()
-
-            Toggle(
-                "Show Agent Toolbar Entry",
-                isOn: Binding(
-                    get: { agentToolbarEntry },
-                    set: { newValue in
-                        agentToolbarEntry = newValue
-                        DebugFlags.setAgentToolbarEntry(newValue)
                     }
                 )
             )

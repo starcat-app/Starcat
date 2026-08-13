@@ -28700,6 +28700,119 @@
         }
       }
     },
+    "agent.workspace.chatModelRequired.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تتطلب مساحة عمل الوكيل نموذجًا واحدًا على الأقل تم التحقق منه وتمكينه ومخصصًا لمهمة الدردشة. يمكنك استخدامها بعد إكمال التكوين."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Agent-Arbeitsbereich erfordert mindestens ein verifiziertes und aktiviertes Modell, das der Chat-Aufgabe zugewiesen ist. Sie können ihn nach Abschluss der Konfiguration verwenden."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Agent workspace requires at least one verified and enabled model assigned to the Chat task. You can use it after completing the configuration."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El espacio de trabajo del agente requiere al menos un modelo verificado y habilitado asignado a la tarea de Chat. Puedes usarlo después de completar la configuración."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’espace de travail de l’agent nécessite au moins un modèle vérifié et activé pour la tâche de chat. Vous pouvez l’utiliser après avoir terminé la configuration."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ruang kerja Agen memerlukan setidaknya satu model terverifikasi dan diaktifkan yang ditetapkan untuk tugas Chat. Anda dapat menggunakannya setelah menyelesaikan konfigurasi."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’area di lavoro dell’agente richiede almeno un modello verificato e abilitato assegnato all’attività Chat. Puoi usarla dopo aver completato la configurazione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エージェントワークスペースでは、Chatタスクに割り当てられた検証済みで有効なモデルが少なくとも1つ必要です。設定を完了すると使用できます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "에이전트 작업 공간은 채팅 작업에 할당된 검증되고 활성화된 모델이 하나 이상 필요합니다. 설정을 완료한 후 사용할 수 있습니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De agentwerkruimte vereist ten minste één geverifieerd en ingeschakeld model dat aan de Chat-taak is toegewezen. U kunt deze na het voltooien van de configuratie gebruiken."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Przestrzeń robocza agenta wymaga co najmniej jednego zweryfikowanego i włączonego modelu przypisanego do zadania czatu. Możesz jej użyć po zakończeniu konfiguracji."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O espaço de trabalho do agente requer pelo menos um modelo verificado e habilitado atribuído à tarefa de Chat. Você pode usá-lo após concluir a configuração."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Для рабочего пространства агента требуется хотя бы одна проверенная и включённая модель, назначенная задаче чата. Вы сможете использовать его после завершения настройки."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent çalışma alanı, Sohbet görevine atanmış en az bir doğrulanmış ve etkin model gerektirir. Yapılandırmayı tamamladıktan sonra kullanabilirsiniz."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Робоче середовище агента потребує принаймні однієї перевіреної та ввімкненої моделі, призначеної для завдання чату. Ви можете використовувати його після завершення налаштування."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không gian làm việc Agent yêu cầu ít nhất một mô hình đã được xác minh và bật được gán cho tác vụ Chat. Bạn có thể sử dụng sau khi hoàn tất cấu hình."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent 工作台需要至少一个已验证、已启用，并分配给“对话”任务的模型。完成配置后即可使用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent 工作台需要至少一個已驗證、已啟用並分配給「對話」任務的模型。完成設定後即可使用。"
+          }
+        }
+      }
+    },
     "agent.workspace.window.title" : {
       "localizations" : {
         "ar" : {
