@@ -221,8 +221,13 @@ final class CuratedPublisherSession {
             )
             candidates = resolution.candidates
             didFallbackFromWebSearch = resolution.didFallbackFromWebSearch
-            if let first = candidates.first {
-                applyVerifiedCandidate(first)
+            if candidates.count == 1, let onlyCandidate = candidates.first {
+                applyVerifiedCandidate(onlyCandidate)
+            } else {
+                // 多候选不能替维护者猜答案：保持未核验，必须由用户显式点击候选。
+                verifiedCandidate = nil
+                finalGitHubURL = ""
+                hasConfirmedOfficialRepository = false
             }
             operation = .idle
         } catch {

@@ -56,6 +56,31 @@ struct CuratedPublisherSessionTests {
         #expect(!session.canPublish)
     }
 
+    @Test("普通线索返回多个候选时必须由维护者显式选择")
+    func multipleCandidatesRequireExplicitSelection() async {
+        let first = Self.candidate()
+        let second = Self.candidate(
+            id: 2,
+            owner: "openai",
+            name: "openai-python",
+            description: "Python SDK"
+        )
+        let resolver = CuratedResolverStub(candidates: [first, second])
+        let session = makeSession(resolver: resolver)
+        session.clue = "OpenAI developer project"
+
+        await session.resolveClue(externalSearchProvider: .anySearch)
+
+        #expect(session.candidates.count == 2)
+        #expect(session.verifiedCandidate == nil)
+        #expect(session.finalGitHubURL.isEmpty)
+        #expect(!session.canPublish)
+
+        session.selectCandidate(second)
+        #expect(session.verifiedCandidate?.identity == second.identity)
+        #expect(session.finalGitHubURL == "https://github.com/openai/openai-python")
+    }
+
     @Test("发布提交稳定契约并读取终态")
     func publishSubmitsAndLoadsTerminalBatch() async {
         let api = CuratedAPIStub(
@@ -214,16 +239,21 @@ struct CuratedPublisherSessionTests {
         """.utf8))
     }
 
-    private static func candidate() -> RepositoryCandidate {
+    private static func candidate(
+        id: Int64 = 1,
+        owner: String = "openai",
+        name: String = "codex",
+        description: String = "Coding agent"
+    ) -> RepositoryCandidate {
         RepositoryCandidate(
-            identity: RepoIdentity(ghRepoID: 1, owner: "openai", name: "codex"),
+            identity: RepoIdentity(ghRepoID: id, owner: owner, name: name),
             card: RepoCardViewData(
-                ghRepoId: 1,
-                fullName: "openai/codex",
-                owner: "openai",
-                repo: "codex",
+                ghRepoId: id,
+                fullName: "\(owner)/\(name)",
+                owner: owner,
+                repo: name,
                 avatarURL: nil,
-                description: "Coding agent",
+                description: description,
                 language: "Rust",
                 starsCount: 10_000,
                 forksCount: 500,
@@ -250,21 +280,29 @@ struct CuratedPublisherSessionTests {
 }
 
 private struct CuratedResolverStub: CuratedProjectResolving {
-    let candidate: RepositoryCandidate
+    let candidates: [RepositoryCandidate]
+
+    init(candidate: RepositoryCandidate) {
+        candidates = [candidate]
+    }
+
+    init(candidates: [RepositoryCandidate]) {
+        self.candidates = candidates
+    }
 
     func resolve(
         clue: String,
         externalSearchProvider: ExternalSearchProviderID
     ) async throws -> CuratedProjectResolution {
         CuratedProjectResolution(
-            candidates: [candidate],
+            candidates: candidates,
             usedWebSearch: false,
             didFallbackFromWebSearch: false
         )
     }
 
     func verify(address: GitHubRepositoryAddress) async throws -> RepositoryCandidate {
-        candidate
+        candidates.first!
     }
 }
 
