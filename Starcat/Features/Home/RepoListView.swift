@@ -904,7 +904,9 @@ struct RepoListView: View {
                     Button {
                         openWindow(id: CuratedPublisherWindow.id)
                     } label: {
-                        ToolbarIcon("sparkles.rectangle.stack")
+                        ToolbarIcon("star.circle.fill")
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(Color(nsColor: .systemRed))
                             .accessibilityLabel(Text("curatedPublisher.toolbar.open"))
                     }
                     .help("curatedPublisher.toolbar.open")
