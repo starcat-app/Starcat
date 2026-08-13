@@ -41,7 +41,12 @@ struct AgentMessageTimelineView: View {
     private var presentationRevision: String {
         let sectionIDs = presentation.processSections.map(\.id).joined(separator: "|")
         let artifactIDs = presentation.inlineArtifacts.map(\.id).joined(separator: "|")
-        return "\(sectionIDs)#\(presentation.finalAnswer?.id ?? "")#\(artifactIDs)#\(viewModel.assistantOutput.count)"
+        let approvalStates = viewModel.approvals
+            .map { "\($0.id.uuidString):\($0.status.rawValue)" }
+            .joined(separator: "|")
+        return "\(sectionIDs)#\(presentation.finalAnswer?.id ?? "")#\(artifactIDs)"
+            + "#\(viewModel.assistantOutput.count)#\(viewModel.status.rawValue)"
+            + "#\(approvalStates)#\(viewModel.errorMessage ?? "")"
     }
 
     var body: some View {
@@ -97,7 +102,7 @@ struct AgentMessageTimelineView: View {
             }
             .onChange(of: presentationRevision) { _, _ in
                 // 只有仍在跟随尾部的运行中 Run 才自动滚动；用户主动上滚后不能抢回位置。
-                guard isNearBottom, viewModel.isRunning else { return }
+                guard isNearBottom else { return }
                 withAnimation(.easeOut(duration: 0.16)) {
                     proxy.scrollTo("run-surface-bottom", anchor: .bottom)
                 }
@@ -228,6 +233,10 @@ struct AgentMessageTimelineView: View {
         return VStack(alignment: .leading, spacing: 8) {
             Button {
                 toggle(section.id)
+                if let auditedItem = section.items.first(where: { $0.toolAudit?.knowledgeRetrieval != nil }),
+                   let toolCallID = auditedItem.toolCallID {
+                    viewModel.selectKnowledgeAudit(toolCallID: toolCallID)
+                }
             } label: {
                 HStack(spacing: 9) {
                     Image(systemName: statusIcon(status))
