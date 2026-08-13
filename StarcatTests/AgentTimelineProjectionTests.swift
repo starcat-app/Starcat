@@ -97,15 +97,102 @@ struct AgentTimelineProjectionTests {
             userPrompt: "真实用户问题"
         )
 
-        #expect(items.map(\.kind) == [.user, .assistant, .toolCall, .approval, .toolResult, .artifact])
+        #expect(items.map(\.kind) == [.user, .assistant, .toolExecution, .approval, .artifact])
         #expect(items.first?.text == "真实用户问题")
         #expect(items.first?.title == String.l10n("agent.workspace.timeline.user"))
         #expect(items.last?.artifact?.id == artifact.id)
-        #expect(items.first(where: { $0.kind == .toolResult })?.sources.count == 1)
-        #expect(items.first(where: { $0.kind == .toolResult })?.toolCallID == call.id)
-        #expect(items.first(where: { $0.kind == .toolResult })?.toolAudit?.knowledgeRetrieval?.metrics.candidateCount == 1)
-        #expect(items.first(where: { $0.kind == .toolResult })?.log?.contains("elapsed_ms=42") == true)
-        #expect(items.first(where: { $0.kind == .toolResult })?.log?.contains("attempt_count=2") == true)
+        #expect(items.first(where: { $0.kind == .toolExecution })?.sources.count == 1)
+        #expect(items.first(where: { $0.kind == .toolExecution })?.toolCallID == call.id)
+        #expect(items.first(where: { $0.kind == .toolExecution })?.toolAudit?.knowledgeRetrieval?.metrics.candidateCount == 1)
+        #expect(items.first(where: { $0.kind == .toolExecution })?.log?.contains("elapsed_ms=42") == true)
+        #expect(items.first(where: { $0.kind == .toolExecution })?.log?.contains("attempt_count=2") == true)
         #expect(items.first(where: { $0.kind == .assistant })?.reasoning == "需要本地知识证据")
+    }
+
+    @Test("call result 合并、相邻活动聚合且完成态结果优先")
+    func buildsProcessAndResultLayers() {
+        let runID = UUID()
+        let firstCall = AgentToolCall(
+            id: "call-1",
+            name: "knowledge_search",
+            input: .object(["query": .string("one")]),
+            sequence: 0
+        )
+        let secondCall = AgentToolCall(
+            id: "call-2",
+            name: "knowledge_search",
+            input: .object(["query": .string("two")]),
+            sequence: 1
+        )
+        let messages = [
+            AgentMessage(
+                runID: runID,
+                role: .user,
+                turn: 0,
+                sequence: 0,
+                parts: [.text("provider prompt")]
+            ),
+            AgentMessage(
+                runID: runID,
+                role: .assistant,
+                turn: 0,
+                sequence: 1,
+                parts: [.reasoning("hidden reasoning"), .text("正在检索"), .toolCall(firstCall), .toolCall(secondCall)]
+            ),
+            AgentMessage(
+                runID: runID,
+                role: .tool,
+                turn: 0,
+                sequence: 2,
+                parts: [
+                    .toolResult(toolResult(call: firstCall, summary: "first")),
+                    .toolResult(toolResult(call: secondCall, summary: "second"))
+                ]
+            ),
+            AgentMessage(
+                runID: runID,
+                role: .assistant,
+                turn: 1,
+                sequence: 3,
+                parts: [.text("# 最终答案\n\n完成。")]
+            )
+        ]
+        let markdown = AgentArtifact(type: .markdown, title: "报告", content: "# 报告", sequence: 4)
+        let log = AgentArtifact(type: .log, title: "日志", content: "raw", sequence: 5)
+
+        let presentation = AgentTimelineProjection.makePresentation(
+            messages: messages,
+            approvals: [],
+            artifacts: [markdown, log],
+            userPrompt: "真实问题",
+            status: .completed
+        )
+
+        #expect(presentation.userItems.map(\.text) == ["真实问题"])
+        #expect(presentation.processSections.count == 2)
+        #expect(presentation.processSections[0].kind == .progress)
+        #expect(presentation.processSections[0].items.first?.text == "正在检索")
+        #expect(presentation.processSections[1].kind == .activity)
+        #expect(presentation.processSections[1].items.count == 2)
+        #expect(presentation.processSections[1].items.map(\.toolCallID) == ["call-1", "call-2"])
+        #expect(presentation.processSections[1].items.map(\.text) == ["first", "second"])
+        #expect(presentation.finalAnswer?.text == "# 最终答案\n\n完成。")
+        #expect(presentation.inlineArtifacts.map(\.artifact?.id) == [markdown.id])
+        #expect(!presentation.isProcessExpandedByDefault)
+        #expect(presentation.processSections.flatMap(\.items).allSatisfy { $0.text != "hidden reasoning" })
+    }
+
+    private func toolResult(call: AgentToolCall, summary: String) -> AgentToolResultMessage {
+        AgentToolResultMessage(
+            toolCallID: call.id,
+            toolName: call.name,
+            output: .object(["summary": .string(summary), "detail": .string("detail")]),
+            isError: false,
+            status: .completed,
+            elapsedMilliseconds: 10,
+            attempts: [],
+            sources: [],
+            sequence: call.sequence
+        )
     }
 }

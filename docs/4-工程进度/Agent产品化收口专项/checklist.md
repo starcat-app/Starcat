@@ -51,7 +51,19 @@
 
 > 验证：2026-08-14 已移除 Agent 工具栏 Debug 开关，Release 构建通过；真实 UI 证明正式入口可见、免费用户进入 AI Chat Pro 付费墙、Pro 用户未配置模型进入配置门禁。修复门禁失败仍误记新手引导完成，以及 Agent 误用 RAG 模型提示文案；Agent 新增文案 18 个 locale 完整、非空且均为 translated。
 
-### D. 文档、测试与工程进度
+### D. Run Surface 过程 / 结果双层呈现
+
+- [x] 使用 `toolCallID` 把 call/result 投影成单个工具执行节点，不改消息事实和数据库。
+- [x] 相邻同类工具按稳定 `presentationKey` 聚合，Approval、失败与用户可见进度形成边界。
+- [x] 运行与审批态默认展开过程，完成、取消和历史完成态默认折叠，并尊重用户手动选择。
+- [x] 最终回答与 Markdown Artifact 在中栏直接渲染，`.log` 与原始审计不进入主结果区。
+- [x] 普通 UI 不展示模型原始 reasoning，input/output/source/log 仍可在过程详情或 Inspector 核验。
+- [x] 用户主动上滚后流式更新不再抢回滚动位置，切换 Run 时重置折叠偏好。
+- [x] 补齐 call/result 合并、Activity Group、顺序、结果分层、Markdown/log 边界和默认折叠测试。
+
+> 验证：2026-08-14 `AgentTimelineProjectionTests` 通过；投影只消费现有 Message / Approval / Artifact，Run Surface 复用 RAG Markdown 渲染能力，未修改 Runtime、消息协议或数据库 schema。
+
+### E. 文档、测试与工程进度
 
 - [ ] 更新权威 Agent 设计中的当前实现状态、阶段状态与验收结论。
 - [ ] 同步 `docs/功能实现总览.md` checkbox、`> 实现：`、进度仪表盘与变更日志。

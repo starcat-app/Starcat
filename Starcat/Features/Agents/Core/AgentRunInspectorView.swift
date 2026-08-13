@@ -174,11 +174,15 @@ struct AgentRunInspectorView: View {
                     Spacer()
                 }
 
-                Text(artifact.content)
-                    .font(interfaceScale.font(.code, design: .monospaced))
-                    .foregroundStyle(.primary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                if artifact.type == .log {
+                    // Markdown 已在中栏作为最终结果阅读；Inspector 只保留元数据、复制和导出，
+                    // 避免同一正文在中栏、Inspector 和导出入口三处重复。原始 log 仍在此核验。
+                    Text(artifact.content)
+                        .font(interfaceScale.font(.code, design: .monospaced))
+                        .foregroundStyle(.primary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             .padding(16)
         }
