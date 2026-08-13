@@ -132,7 +132,7 @@ struct DefaultCuratedRepositoryEvidenceProvider: CuratedRepositoryEvidenceProvid
         guard let exact = candidates.first(where: {
             $0.identity.normalizedFullName == address.normalizedFullName
         }) else {
-            throw CuratedProjectResolverError.repositoryNotFound("\(address.owner)/\(address.repo)")
+            throw CuratedProjectIdentificationError.repositoryNotFound("\(address.owner)/\(address.repo)")
         }
         return exact
     }
@@ -167,6 +167,7 @@ enum CuratedProjectIdentificationError: Error, LocalizedError {
     case emptyInput
     case invalidAIResponse
     case noItems
+    case repositoryNotFound(String)
 
     var errorDescription: String? {
         switch self {
@@ -176,6 +177,8 @@ enum CuratedProjectIdentificationError: Error, LocalizedError {
             return String.l10n("curatedPublisher.error.aiInvalidResponse")
         case .noItems:
             return String.l10n("curatedPublisher.error.noCandidates")
+        case .repositoryNotFound(let fullName):
+            return String(format: String.l10n("curatedPublisher.error.repositoryNotFoundFormat"), fullName)
         }
     }
 }

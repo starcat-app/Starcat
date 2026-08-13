@@ -242,7 +242,7 @@ private final class CuratedRepositoryEvidenceStub: CuratedRepositoryEvidenceProv
 
     func verify(address: GitHubRepositoryAddress) async throws -> RepositoryCandidate {
         guard let candidate = verified[address.normalizedFullName] else {
-            throw CuratedProjectResolverError.repositoryNotFound(address.normalizedFullName)
+            throw CuratedProjectIdentificationError.repositoryNotFound(address.normalizedFullName)
         }
         return candidate
     }
