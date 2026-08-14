@@ -473,6 +473,66 @@ struct LoopAgentRuntimeTests {
         #expect(!events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
     }
 
+    @Test("最后一次迭代仅暴露 completion 工具并强制提交 Artifact")
+    func finalIterationForcesCompletionTool() async throws {
+        let recorder = ModelRequestRecorder(responses: [
+            .init(
+                text: "",
+                reasoning: nil,
+                toolCalls: [.init(id: "call-read-1", name: "read_repo", arguments: "{}")],
+                model: "test",
+                finishReason: "tool_calls"
+            ),
+            .init(
+                text: "",
+                reasoning: nil,
+                toolCalls: [.init(id: "call-read-2", name: "read_repo", arguments: "{}")],
+                model: "test",
+                finishReason: "tool_calls"
+            ),
+            .init(
+                text: "",
+                reasoning: "提交已有事实",
+                toolCalls: [.init(id: "call-submit", name: "submit_report", arguments: "{}")],
+                model: "test",
+                finishReason: "tool_calls"
+            )
+        ])
+        let readTool = RuntimeStubTool(name: "read_repo", result: "evidence")
+        let submitTool = RuntimeStubTool(
+            name: "submit_report",
+            result: "submitted",
+            completesRun: true,
+            payload: .markdown("# Final Report")
+        )
+        let runtime = LoopAgentRuntime(
+            modelClient: RecordedAgentModelClient(recorder: recorder),
+            toolRegistry: try AgentToolRegistry(tools: [readTool, submitTool]),
+            limits: AgentRunLimits(maxIterations: 3)
+        )
+
+        let events = await collect(runtime.run(
+            definition: makeDefinition(
+                toolIDs: ["read_repo", "submit_report"],
+                artifactTypes: [.markdown]
+            ),
+            prompt: "生成报告",
+            context: .empty
+        ))
+        let requests = await recorder.recordedRequests()
+
+        #expect(requests.count == 3)
+        #expect(requests[0].tools.map(\.name) == ["read_repo", "submit_report"])
+        #expect(requests[0].toolChoice == .auto)
+        #expect(requests[2].tools.map(\.name) == ["submit_report"])
+        #expect(requests[2].toolChoice == .required)
+        #expect(requests[2].prompt.systemPrompt.contains("runtime-finalization"))
+        #expect(await readTool.executionCount() == 2)
+        #expect(await submitTool.executionCount() == 1)
+        #expect(events.contains(where: { if case .artifactCreated = $0 { return true }; return false }))
+        #expect(events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
+    }
+
     @Test("cancel 命令会中断模型流并把持久化 run 收敛为 cancelled")
     func cancellationCommandPersistsCancelledTerminalState() async throws {
         let database = try InMemoryDatabaseManager()

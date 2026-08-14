@@ -243,6 +243,7 @@ struct AgentLoopModelClientTests {
             request: AgentModelRequest(
                 prompt: .init(systemPrompt: "system", userPrompt: "turn", messages: messages),
                 tools: [definition],
+                toolChoice: .required,
                 metadata: ["run_id": runID.uuidString]
             ),
             model: "test-model",
@@ -255,6 +256,7 @@ struct AgentLoopModelClientTests {
         #expect(request.history[2].toolCallID == "call-1")
         #expect(request.history[2].content.contains("\"status\":\"completed\""))
         #expect(request.tools.map(\.name) == ["external_search"])
+        #expect(request.toolChoice == .required)
         #expect(request.metadata["run_id"] == runID.uuidString)
         #expect(request.includeUsage)
         #expect(request.usageContext?.feature == .agent)

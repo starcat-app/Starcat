@@ -742,6 +742,12 @@ build prompt
 - 有顺序依赖、写入、开放网络调用默认串行。
 - 同一 repo 的写入必须串行，避免预览后状态漂移。
 - Artifact completion tool 每轮只能成功一次。
+- 声明了 `completesRun` 的 Agent 在最后一次模型机会仍未生成 Artifact 时，Runtime
+  进入通用最终提交回合：Prompt 和 Provider 只暴露 completion tool，`toolChoice`
+  切为 `required`，要求模型使用消息历史中已经持久化的事实提交结构化产物。
+- 最终提交回合禁止继续扩张证据范围，但不由宿主拼接假报告；Artifact 内容仍由模型
+  生成并经过 completion tool schema、执行结果和单产物约束校验。该规则不得按 Agent ID
+  分支，必须完全由 Tool Definition 驱动。
 
 ### 9.3 错误与降级
 
@@ -752,7 +758,8 @@ build prompt
 | RAG 无证据 | 返回 limitations，模型不得编造 |
 | 外部搜索失败 | 保留本地证据并标记降级 |
 | AI Provider 失败 | Run failed，可从持久化消息重试 |
-| 超预算 | 终止并说明预算阶段，不生成假 Artifact |
+| 迭代将耗尽且存在 completion tool | 最后一轮仅开放 completion tool 并强制结构化提交；仍失败则按预算错误终止 |
+| 其他超预算 | 终止并说明预算阶段，不生成假 Artifact |
 | 用户取消 | 取消网络、模型和工具 Task，flush 已有消息 |
 
 ### 9.4 流式性能
@@ -1015,7 +1022,7 @@ P0～P3、定向自动化、Release 构建与真实入口门禁验收通过后�
 | Repository Picker | 6,000+ 去重目录、来源 OR 多选、80 条展示窗口、缓存失效、选择/清空不重复派生 |
 | Knowledge | FTS-only、hybrid、无证据、citation、audit、取消 |
 | Capability | schema、permission、dry-run、read-back、错误映射 |
-| Runtime | multi-tool、approval、resume、retry、budget、cancel |
+| Runtime | multi-tool、approval、resume、retry、completion finalization、budget、cancel |
 | Presentation | call/result 配对、稳定分组、未知工具降级、Approval / Error 边界、事实顺序不变 |
 | Run Surface | 状态默认折叠、用户手动覆盖、最终结果优先、Markdown 渲染、原始 reasoning 隐藏 |
 | MCP | 现有 Tool contract 回归、权限、错误码 |

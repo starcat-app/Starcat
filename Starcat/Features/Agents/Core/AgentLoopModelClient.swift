@@ -16,6 +16,9 @@ import Foundation
 struct AgentModelRequest: Sendable {
     var prompt: AgentPromptTurnRequest
     var tools: [AgentToolDefinition]
+    /// Runtime 在普通回合使用 auto；进入最终提交回合后切为 required，避免模型用纯文本
+    /// 消耗最后一次机会而跳过结构化 Artifact 工具。
+    var toolChoice: AIChatToolChoice = .auto
     var metadata: [String: String]
 }
 
@@ -147,7 +150,7 @@ struct OpenAIAgentLoopModelClient: AgentLoopModelClient {
             parameters: parameters,
             responseFormat: .text,
             tools: tools,
-            toolChoice: tools.isEmpty ? .none : .auto,
+            toolChoice: tools.isEmpty ? .none : request.toolChoice,
             parallelToolCalls: false,
             metadata: request.metadata,
             includeUsage: true,

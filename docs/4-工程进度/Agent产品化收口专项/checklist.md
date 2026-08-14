@@ -31,8 +31,9 @@
 - [x] Agent Workspace 在失败错误行提供明确重试动作，并防止重复点击并发重试。
 - [x] 补齐 Runtime、Session、Repository、ViewModel 与 UI 状态投影测试。
 - [x] 首次加载历史时把上次进程遗留的 `planning` / `running` 原子收口为可重试失败态；等待审批与既有终态不受影响。
+- [x] Artifact Agent 在迭代耗尽前进入 Definition 驱动的最终提交回合，只暴露 `completesRun` 工具并强制结构化调用，不按 Agent ID 写特例。
 
-> 验证：2026-08-14 完成重试与进程中断恢复测试；同一 Run 续跑、写工具不重放、未决审批拒绝、终态字段原子清理、遗留执行态收口均有自动化覆盖。
+> 验证：2026-08-14 完成重试、进程中断恢复与 Artifact 收敛测试；同一 Run 续跑、写工具不重放、未决审批拒绝、终态字段原子清理、遗留执行态收口和最后一轮 completion-only 均有自动化覆盖。
 
 ### B. Agent / MCP 统一能力层
 

@@ -329,6 +329,7 @@ struct LoopAgentRuntime: AgentRuntime {
         let registeredTools = try toolRegistry.tools(named: definition.toolIDs)
         let allowedTools = visibleTools(from: registeredTools)
         let toolDefinitions = allowedTools.map(\.definition)
+        let completionToolDefinitions = toolDefinitions.filter(\.completesRun)
         let visibleToolNames = Set(toolDefinitions.map(\.name))
         var effectiveExternalSearchPolicy = externalSearchPolicy
         effectiveExternalSearchPolicy.isEnabled = externalSearchPolicy.isEnabled
@@ -423,16 +424,31 @@ struct LoopAgentRuntime: AgentRuntime {
             let turn = try await session.beginIteration()
             let snapshot = await session.snapshot()
             try AgentMessageContract.validate(snapshot.messages)
+            let isFinalizationTurn = artifactCount == 0
+                && !completionToolDefinitions.isEmpty
+                && turn == limits.maxIterations - 1
+            let requestTools = isFinalizationTurn ? completionToolDefinitions : toolDefinitions
+            let turnVisibleToolNames = Set(requestTools.map(\.name))
+            var turnPromptContext = promptContext
+            if isFinalizationTurn {
+                // Prompt 中的工具摘要必须和 Provider 真正收到的工具集合一致。只缩小 Provider
+                // tools 而保留读取工具说明，会诱导模型继续请求一个本轮已不可用的工具。
+                turnPromptContext.availableTools = requestTools.map {
+                    AgentPromptToolSummary(name: $0.name, description: $0.description, permission: $0.permission)
+                }
+                turnPromptContext.rules.append(finalizationRule(requestTools))
+            }
             let promptRequest = promptBuilder.buildTurnRequest(
                 userInput: prompt,
                 messages: snapshot.messages,
                 environment: environment,
-                context: promptContext
+                context: turnPromptContext
             )
             let response = try await requestModel(
                 runID: runID,
                 promptRequest: promptRequest,
-                tools: toolDefinitions,
+                tools: requestTools,
+                toolChoice: isFinalizationTurn ? .required : .auto,
                 continuation: continuation
             )
             AppLog.ai.info("[AgentRuntime] model.completed runID=\(runID.uuidString, privacy: .public) turn=\(turn, privacy: .public) toolCalls=\(response.toolCalls.count, privacy: .public) tokens=\(response.usage?.totalTokens ?? 0, privacy: .public)")
@@ -499,7 +515,7 @@ struct LoopAgentRuntime: AgentRuntime {
                     context: context,
                     values: values,
                     payload: payload,
-                    visibleToolNames: visibleToolNames,
+                    visibleToolNames: turnVisibleToolNames,
                     continuation: continuation
                 )
                 AppLog.ai.info("[AgentRuntime] tool.completed runID=\(runID.uuidString, privacy: .public) turn=\(turn, privacy: .public) sequence=\(call.sequence, privacy: .public) toolCallID=\(call.id, privacy: .public) tool=\(call.name, privacy: .public) status=\(execution.status.rawValue, privacy: .public) attempts=\(execution.attempts.count, privacy: .public)")
@@ -586,6 +602,7 @@ struct LoopAgentRuntime: AgentRuntime {
         runID: UUID,
         promptRequest: AgentPromptTurnRequest,
         tools: [AgentToolDefinition],
+        toolChoice: AIChatToolChoice,
         continuation: AsyncStream<AgentRunEvent>.Continuation
     ) async throws -> AgentModelResponse {
         var completed: AgentModelResponse?
@@ -594,6 +611,7 @@ struct LoopAgentRuntime: AgentRuntime {
         let stream = modelClient.stream(request: AgentModelRequest(
             prompt: promptRequest,
             tools: tools,
+            toolChoice: toolChoice,
             metadata: ["run_id": runID.uuidString]
         ))
         for try await event in stream {
@@ -905,6 +923,16 @@ struct LoopAgentRuntime: AgentRuntime {
             id: "required-artifact",
             content: "Before the final answer, create the required artifact with one of: \(submitTools.joined(separator: ", "))."
         )]
+    }
+
+    /// 最后一次模型机会不再允许继续扩张证据范围，只允许基于已持久化事实提交终态产物。
+    /// 这是由 `completesRun` 驱动的 Runtime 通用规则，不绑定 Weekly 或任何具体 Agent ID。
+    private func finalizationRule(_ definitions: [AgentToolDefinition]) -> AgentPromptRule {
+        let submitTools = definitions.map(\.name).joined(separator: ", ")
+        return AgentPromptRule(
+            id: "runtime-finalization",
+            content: "This is the final allowed model turn. Use exactly one available completion tool now (\(submitTools)) and build its structured arguments from facts already present in the message history. Do not request more evidence and do not return a prose-only answer."
+        )
     }
 
     private func visibleTools(from tools: [any AgentTool]) -> [any AgentTool] {
