@@ -748,6 +748,9 @@ build prompt
 - 同一 Run 多次调用 `external_search` 时，Runtime 必须按执行顺序累积全部成功批次的
   External Context；Artifact 证据校验与来源导出不得只读取最后一次搜索。历史 Run 恢复
   必须从已持久化 Tool Result 使用同一合并规则重建，且禁止跨 Run 复用网页证据。
+- Repo Alternatives 的候选准入使用完整累计 External Context；最终 Markdown 只列通过
+  校验的候选仓库根 URL。搜索标题、摘要和正文保留在 Tool Result 审计链与过程详情中，
+  禁止为追求“来源完整”把多批原始网页材料复制进最终交付物。
 - 同一 repo 的写入必须串行，避免预览后状态漂移。
 - Artifact completion tool 每轮只能成功一次。
 - 声明了 `completesRun` 的 Agent 在最后一次模型机会仍未生成 Artifact 时，Runtime

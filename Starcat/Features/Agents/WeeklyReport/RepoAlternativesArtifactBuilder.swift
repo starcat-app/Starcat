@@ -176,7 +176,9 @@ enum RepoAlternativesArtifactBuilder {
             ? String.l10n("agent.artifact.repoInsight.noTopics")
             : sourceRepo.topics.joined(separator: ", ")
         let comparison = comparisonMarkdown(request.candidates)
-        let external = cleanedExternalContext(externalContextMarkdown)
+        // 原始搜索正文用于上方候选准入校验，并已完整保存在 Tool Result 审计链中。
+        // 最终交付物只列已验证候选的根 URL，避免多轮搜索把整页摘要重复塞进 Markdown。
+        let external = verifiedExternalSources(request.candidates)
         let externalSources: String
         if request.includeSources, !external.isEmpty {
             externalSources = """
@@ -279,15 +281,10 @@ enum RepoAlternativesArtifactBuilder {
             .replacingOccurrences(of: "\n", with: "<br>")
     }
 
-    private static func cleanedExternalContext(_ markdown: String) -> String {
-        markdown.split(separator: "\n", omittingEmptySubsequences: false)
-            .map(String.init)
-            .filter { line in
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                return !trimmed.hasPrefix("<external_context") && trimmed != "</external_context>"
-            }
-            .joined(separator: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+    private static func verifiedExternalSources(_ candidates: [RepoAlternativeCandidate]) -> String {
+        candidates.map { candidate in
+            "- [\(candidate.fullName)](\(candidate.url.absoluteString))"
+        }.joined(separator: "\n")
     }
 }
 

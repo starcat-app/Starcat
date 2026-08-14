@@ -285,7 +285,8 @@ struct AgentProductRuntimeTests {
         }.first)
 
         #expect(artifact.content.contains(candidateURL))
-        #expect(artifact.content.contains(laterURL))
+        #expect(!artifact.content.contains(laterURL))
+        #expect(artifact.content.count < 5_000)
         #expect(events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
     }
 
