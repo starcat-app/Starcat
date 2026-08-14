@@ -285,7 +285,7 @@ Composer 草稿与当前 Run 的 `user_prompt` 是两个独立状态：前者只
 
 ### 5.5 Run Surface 重构目标
 
-当前 `AgentTimelineProjection` 直接把 `AgentMessage`、Approval 与 Artifact 投影成一条事件时间线。该结构能保证审计完整，但存在四个产品问题：
+改造前 `AgentTimelineProjection` 直接把 `AgentMessage`、Approval 与 Artifact 投影成一条事件时间线。该结构能保证审计完整，但存在四个产品问题：
 
 1. 同一次工具执行的 call 与 result 分成两行，用户需要自己配对。
 2. input / output / log 的技术层级过高，工具卡片压过了 Agent 的结论。
@@ -297,7 +297,7 @@ Composer 草稿与当前 Run 的 `user_prompt` 是两个独立状态：前者只
 - **过程层**：回答“Agent 正在做什么、做到哪一步、哪里需要确认”。
 - **结果层**：回答“Agent 最终交付了什么、依据是什么、下一步能做什么”。
 
-过程默认提供可理解的活动摘要；原始参数、返回值、日志和审计仍保留在二级详情或 Inspector。结果使用适合阅读的 Markdown、表格和结构化 Artifact，不再把产物降级成日志附件。
+过程默认提供由工具 `output.log` 或结构化状态形成的用户可读叙事；来源与 Knowledge Audit 保留二级入口。原始参数、返回值和技术日志继续作为持久化事实存在，但不在普通产品 UI 展开。结果使用适合阅读的 Markdown、表格和结构化 Artifact，不再把产物降级成日志附件。
 
 ### 5.6 信息架构与主阅读顺序
 
@@ -306,11 +306,11 @@ Agent 工作台继续保持三栏，不调整 Agent Rail 与 Inspector 的顶层
 ```text
 ┌──────── Agent Rail ────────┬────────────── Run Surface ──────────────┬──── Inspector ────┐
 │ Agent 分类                  │ 用户问题                                │ 选中活动详情        │
-│ 当前 Agent                  │ Starcat Agent · 状态 · 耗时             │ input / output       │
-│ Run History                 │ ┌ 执行过程 ─────────────── 展开 / 收起 ┐ │ evidence / audit     │
+│ 当前 Agent                  │ Starcat Agent · 状态                    │ Knowledge Audit      │
+│ Run History                 │ ┌ 任务进展 ─────────────── 展开 / 收起 ┐ │ evidence / citation  │
 │                             │ │ 进度说明                              │ │ approval diff        │
-│                             │ │ Activity Group                       │ │ Artifact metadata    │
-│                             │ │ Approval / Failure                    │ │ export / raw log      │
+│                             │ │ 用户可读活动叙事                      │ │ Artifact metadata    │
+│                             │ │ Approval / Failure                    │ │ copy / export         │
 │                             │ └─────────────────────────────────────┘ │                     │
 │                             │ 最终结果                                │                     │
 │                             │ Markdown / Table / Inline Artifact      │                     │
@@ -322,7 +322,7 @@ Agent 工作台继续保持三栏，不调整 Agent Rail 与 Inspector 的顶层
 中栏固定阅读顺序：
 
 1. 用户问题。
-2. Agent 身份、Run 状态与耗时。
+2. Agent 身份与 Run 状态。
 3. 可折叠执行过程。
 4. 最终答案与行内 Artifact。
 5. 来源、复制、导出、模型、用量等弱化元信息。
@@ -383,22 +383,22 @@ AgentToolExecutionPresentation
 
 ### 5.8 Activity Group 与用户可读标题
 
-工具分组不能直接依赖内部函数名。每个内置工具应提供展示元数据，至少包含：
+工具分组不能把内部函数名暴露给用户。当前实现优先使用工具结果中的本地化 `output.log` 作为主叙事、`summary` 作为弱化补充；稳定 `presentationKey` 只服务本地分组，不进入文案。后续新增工具至少保证：
 
 - `presentationKey`：稳定分组键，例如 `collect_sources`、`analyze_repositories`、`apply_changes`。
-- `activityTitle`：本地化的用户可读标题。
-- `activityIcon`：符合 `DESIGN.md` 的 SF Symbol。
-- `detailPolicy`：摘要中允许出现的字段，避免把路径、JSON 或敏感参数直接暴露到主阅读层。
+- `output.log`：本地化、用户可读的完成说明，不包含 status、elapsed、attempt 等技术元数据。
+- `summary`：可选的一行计数或目标补充，不与状态或主叙事重复。
+- `detailPolicy`：只允许来源链接和专用审计入口进入二级内容，避免把路径、JSON 或敏感参数暴露到产品 UI。
 
 示例：
 
-| 原始工具事实 | 主阅读层 | 展开后的二级详情 |
+| 原始工具事实 | 主阅读层 | 可用的二级内容 |
 |---|---|---|
-| 2 次外部搜索 + 3 次网页读取 | 收集外部资料 · 5 项完成 | 查询、域名、状态、来源链接 |
-| 4 次 repo metadata + 4 次 knowledge search | 分析候选仓库 · 8 项完成 | 仓库名、命中摘要、citation |
-| dry-run + approval + apply + read-back | 应用标签整理 · 等待确认 / 已完成 | diff、权限、审批决定、回读结果 |
+| 2 次外部搜索 + 3 次网页读取 | 已收集并核对外部资料 | 来源链接 |
+| 4 次 repo metadata + 4 次 knowledge search | 已分析候选仓库并整理证据 | Knowledge Audit、citation |
+| dry-run + approval + apply + read-back | 已生成标签整理预览 / 等待确认 | diff、审批动作、回读结果 |
 
-默认只显示组标题、聚合状态和一行摘要。用户展开 Activity Group 后，才显示每次工具执行；继续选择某一项时，Inspector 展示完整 input / output / log / audit。
+默认只显示聚合状态、用户可读叙事和可选摘要。用户展开 Activity Group 后，只展示来源或专用审计入口；原始 input / output / log 不在普通产品 UI 展开，避免主界面重新退化为调试台。
 
 ### 5.9 过程摘要与推理边界
 
@@ -439,7 +439,7 @@ AgentToolExecutionPresentation
 - 同一内容不得同时完整显示在 Assistant Row、Artifact Row 和 Inspector 三处。
 - `.markdown` 使用项目现有 Markdown 渲染能力，支持标题、段落、列表、表格、代码、链接和文本选择。
 - `.log` 不进入主结果区，只在 Inspector / Debug 详情中查看。
-- Artifact 卡片仍可承担选择和导出入口，但不能只显示三行摘要后强迫用户去右栏阅读全文。
+- Artifact 直接作为连续正文展示；若 Markdown 一级标题已等于 Artifact 标题，不再额外绘制重复标题。标题不重复时才保留轻量选择入口。
 
 结构化产物分阶段扩展：
 
@@ -452,13 +452,13 @@ AgentToolExecutionPresentation
 
 ### 5.12 Inspector 职责边界
 
-Inspector 从“最终产物正文阅读器”调整为“选中对象的详情与审计面板”：
+Inspector 从“最终产物正文阅读器”调整为“选中对象的详情与审计面板”。P4-A 当前实现边界为：
 
-- Activity：完整 input、output、source、duration、retry、audit。
-- Knowledge：evidence、citation、检索范围和限制。
-- Approval：dry-run diff、权限、风险、approve / reject。
-- Artifact：metadata、导出、原始 payload、校验与关联 tool call。
-- Failure：错误分类、失败阶段、可重试条件和日志。
+- Activity：中栏保留用户可读叙事和来源，不提供通用 raw payload Inspector。
+- Knowledge：Inspector 展示 evidence、citation、检索范围和限制。
+- Approval：中栏保留 dry-run 参数复核、权限提示和 approve / reject。
+- Artifact：Inspector 展示 metadata、复制和导出，正文仍在中栏完整阅读。
+- Failure：中栏展示用户可读错误和重试入口；技术日志只保留在事实层或专用 Debug 诊断。
 
 中栏负责理解和阅读，右栏负责核验和操作。关闭 Inspector 不得导致最终结果不可读；打开 Inspector 也不得让中栏低于 `DESIGN.md` 规定的最小可用宽度。
 
@@ -993,7 +993,7 @@ propose / dry-run
 
 1. 新增 Presentation Projection，以 `toolCallID` 合并 call/result，并按稳定 `presentationKey` 生成 Activity Group。
 2. 把 `AgentMessageTimelineView` 的主阅读结构调整为 Run Header、Process Disclosure、Final Answer 与 Footer。
-3. 在中栏正确渲染 `.markdown` Artifact；`.log`、原始 payload 与审计留在 Inspector。
+3. 在中栏正确渲染 `.markdown` Artifact；`.log` 与原始 payload 不进入普通产品 UI，Knowledge Audit 进入 Inspector。
 4. 补齐运行、审批、完成、失败、取消与历史恢复的折叠、滚动和焦点规则。
 5. 完成自动化、Light/Dark、窗口缩放、18 种语言、RTL、VoiceOver 与真实长输出人工验收。
 
@@ -1110,7 +1110,7 @@ P0～P3、定向自动化、Release 构建与真实入口门禁验收通过后�
 - Run Surface 明确区分过程与结果；call/result 合并，Activity Group 可展开核验。
 - 完成态和历史完成态默认折叠过程，失败与审批态定位关键活动，且尊重用户手动折叠和滚动选择。
 - `.markdown` Artifact 在中栏按富文本正确呈现；关闭 Inspector 后最终结果仍完整可读。
-- 原始 reasoning、input、output 与 log 不进入主阅读层，但授权用户仍能通过二级详情核验必要审计。
+- 原始 reasoning、input、output 与 log 不进入普通产品 UI；来源与 Knowledge Audit 保留可核验入口，完整工具事实继续持久化。
 - Pro、用量、隐私、i18n、渠道门禁完整。
 - 自动化证据与人工/UI-only 验收均有真实记录。
 - dong4j 确认后，才允许同步 `docs/功能实现总览.md` 与解除 Release 门禁。

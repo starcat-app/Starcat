@@ -59,13 +59,15 @@
 - [x] 相邻同类工具按稳定 `presentationKey` 聚合，Approval、失败与用户可见进度形成边界。
 - [x] 运行与审批态默认展开过程，完成、取消和历史完成态默认折叠，并尊重用户手动选择。
 - [x] 最终回答与 Markdown Artifact 在中栏直接渲染，`.log` 与原始审计不进入主结果区。
-- [x] 普通 UI 不展示模型原始 reasoning，input/output/source/log 仍可在过程详情或 Inspector 核验。
+- [x] 普通 UI 不展示模型原始 reasoning、input/output 或技术 log；来源和 Knowledge Audit 保留二级核验入口，完整工具事实继续持久化。
 - [x] 用户主动上滚后流式更新不再抢回滚动位置，切换 Run 时重置折叠偏好。
 - [x] 当前 Run 展示问题与 Composer 草稿分离，发送、完成刷新和打开历史都不会把已发送问题重新塞回输入框。
 - [x] Run Header 固定为紧凑高度，标题区不再与正文争抢剩余高度，用户问题和执行过程直接进入首屏。
+- [x] 移除 Header 开发者副标题、大卡片嵌套与内部英文工具名；过程改为连续任务叙事，Artifact 改为连续 Markdown 正文。
+- [x] 增加真实 `NSWindow + NSHostingView` 像素渲染测试，禁止尺寸正确但内容全白的截图假通过。
 - [x] 补齐 call/result 合并、Activity Group、顺序、结果分层、Markdown/log 边界和默认折叠测试。
 
-> 验证：2026-08-14 `AgentTimelineProjectionTests` 与 `AgentWorkspaceViewModelTests` 35 项通过；Direct Debug 真实窗口复验确认 Header 收敛为 60pt，用户问题、过程和 Inspector 摘要均进入首屏。投影只消费现有 Message / Approval / Artifact，未修改消息协议或数据库 schema。
+> 验证：2026-08-14 `AgentTimelineProjectionTests` 与 `AgentWorkspaceViewModelTests` 最新 36 项通过；`NSHostingView` 真实像素渲染确认浅灰用户消息、单一 Agent 身份、纵向任务进展、自然语言活动与连续 Markdown 正文进入同一阅读流。投影只消费现有 Message / Approval / Artifact，未修改消息协议或数据库 schema。
 
 ### E. 文档、测试与工程进度
 
@@ -82,7 +84,7 @@
 - [x] 完成至少三轮完整审查，每轮保存独立报告、修复问题并提交。
 - [x] 生成 `Agent产品化收口需求完成结果报告.md`，并如实保留未关闭的外部人工门禁。
 
-> 当前证据：2026-08-14 已完成 Agent / Capability / MCP 定向套件、2,286 项全量测试（0 failed）、最新 35 项 Run Surface 定向测试、Debug build、App Store / Direct Release build、Agent String Catalog 18 locale 完整性检查与九轮审查。最终代码真实 Run `B5B9A14A-E616-4EE4-AC7A-536D8EF42F4F` 在 31 秒内完成成功 External Search、Run Surface、历史回看及 2,779 字符 Artifact 导出；仅真实分发产物双渠道验收仍等待发版授权。
+> 当前证据：2026-08-14 已完成 Agent / Capability / MCP 定向套件、2,286 项全量测试（0 failed）、最新 36 项 Run Surface 定向测试、Debug build、App Store / Direct Release build、Agent String Catalog 18 locale 完整性检查与十轮审查。最终代码真实 Run `B5B9A14A-E616-4EE4-AC7A-536D8EF42F4F` 在 31 秒内完成成功 External Search、Run Surface、历史回看及 2,779 字符 Artifact 导出；仅真实分发产物双渠道验收仍等待发版授权。
 
 ## 4. 明确非目标
 
