@@ -1,6 +1,6 @@
 # Agent 产品化收口专项 Checklist
 
-> 状态：工程与真实 Debug 验收完成，真实分发验收待授权
+> 状态：工程、真实窗口视觉验收与历史真实 Run 数据闭环完成；Debug 历史页面复验等待模型配置，真实分发验收待授权
 > 创建：2026-08-14
 > 权威设计：`docs/3-设计/详细设计/57-Agent工作台与统一能力层详细设计.md`
 > 目标范围：完成权威设计 P0～P4 与 Definition of Done，不扩张到 P5 外部 CLI Runtime。
@@ -84,7 +84,7 @@
 - [x] 完成至少三轮完整审查，每轮保存独立报告、修复问题并提交。
 - [x] 生成 `Agent产品化收口需求完成结果报告.md`，并如实保留未关闭的外部人工门禁。
 
-> 当前证据：2026-08-14 已完成 Agent / Capability / MCP 定向套件、2,286 项全量测试（0 failed）、最新 36 项 Run Surface 定向测试、Debug build、App Store / Direct Release build、Agent String Catalog 18 locale 完整性检查与十轮审查。最终代码真实 Run `B5B9A14A-E616-4EE4-AC7A-536D8EF42F4F` 在 31 秒内完成成功 External Search、Run Surface、历史回看及 2,779 字符 Artifact 导出；仅真实分发产物双渠道验收仍等待发版授权。
+> 当前证据：2026-08-14 已完成 Agent / Capability / MCP 定向套件、最新 2,287 项全量测试（0 failed）、36 项 Run Surface 定向测试、Debug build、App Store / Direct Release build、Agent String Catalog 18 locale 完整性检查与十一轮审查。历史真实 Run `B5B9A14A-E616-4EE4-AC7A-536D8EF42F4F` 在 31 秒内完成 External Search、历史回看及 2,779 字符 Artifact 导出；最新连续任务叙事界面由同一生产视图在真实 `NSWindow + NSHostingView` 中通过像素验收。Debug 数据容器的真实历史页面复验受既有对话模型配置门禁限制，真实分发产物双渠道验收仍等待发版授权。
 
 ## 4. 明确非目标
 
