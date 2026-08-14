@@ -103,9 +103,10 @@ struct AgentMessageTimelineView: View {
             .onChange(of: presentationRevision) { _, _ in
                 // 只有仍在跟随尾部的运行中 Run 才自动滚动；用户主动上滚后不能抢回位置。
                 guard isNearBottom else { return }
-                withAnimation(.easeOut(duration: 0.16)) {
-                    proxy.scrollTo("run-surface-bottom", anchor: .bottom)
-                }
+                // 流式回答会连续改变正文高度。对每个展示快照启动滚动动画会让多个
+                // AttributeGraph 布局事务互相追赶，长工具链中甚至能持续占满主线程。
+                // 直接跟随尾部既保留自动滚动语义，也不会累积动画事务。
+                proxy.scrollTo("run-surface-bottom", anchor: .bottom)
             }
             .onChange(of: runIdentity) { _, _ in
                 // 切换实时 / 历史 Run 后恢复该状态的默认折叠策略，不沿用上一 Run 的手动选择。

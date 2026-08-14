@@ -40,9 +40,16 @@ final class AgentWorkspaceViewModel {
     private var repositorySourcesByID: [Int64: [AgentRepositorySource]] = [:]
     private var orderedRepositoryCandidates: [AgentRepositoryCandidate] = []
     private var matchedRepositoryCandidates = AgentRepositoryPickerMatches(candidates: [], candidateIDs: [])
+    /// Provider 往往按 token 推送增量。若每个 token 都直接写入 Observable，SwiftUI 会在长回答中
+    /// 反复解析 Markdown、测量时间线并滚动，最终可能饿死同在主线程消费的 Runtime 事件。
+    /// 复用 RAG 已验证的展示节流器：完整文本仍保留在 buffer，UI 只接收有界、低频快照。
+    private var assistantReasoningPresentationBuffer = AgentWorkspaceViewModel.makeStreamingPresentationBuffer()
+    private var assistantPresentationBuffer = AgentWorkspaceViewModel.makeStreamingPresentationBuffer()
     private(set) var repositoryPickerSnapshot = AgentRepositoryPickerSnapshot.empty
     /// 回归测试用：只有查询、筛选、来源、排序或目录变化才允许递增。
     private(set) var repositoryPickerDerivationCountForTesting = 0
+    /// 回归测试用：证明一批 token 不会退化成同等数量的 SwiftUI 刷新。
+    private(set) var streamingPresentationUpdateCountForTesting = 0
 
     private(set) var agents: [AgentDefinition]
     var selectedAgentID: String
@@ -347,8 +354,7 @@ final class AgentWorkspaceViewModel {
         runTask?.cancel()
         status = .planning
         errorMessage = nil
-        assistantReasoningOutput = ""
-        assistantOutput = ""
+        resetStreamingPresentation(resetUpdateCount: true)
         let runtime = runtime
         runTask = Task { [weak self] in
             let stream = runtime.retryFailedRun(snapshot: snapshot, definition: definition)
@@ -373,8 +379,7 @@ final class AgentWorkspaceViewModel {
         artifacts = []
         selectedArtifactID = nil
         selectedToolCallID = nil
-        assistantReasoningOutput = ""
-        assistantOutput = ""
+        resetStreamingPresentation(resetUpdateCount: true)
         errorMessage = nil
         currentRunSnapshot = nil
         selectedHistoryRunID = nil
@@ -723,30 +728,76 @@ final class AgentWorkspaceViewModel {
             messages.append(message)
             if message.role == .assistant {
                 // 流式缓冲只显示尚未落库的增量；assistant message 成为事实后立即清空。
-                assistantReasoningOutput = ""
-                assistantOutput = ""
+                resetStreamingPresentation(resetUpdateCount: false)
             }
         case .usageUpdated(let nextUsage):
             usage = nextUsage
         case .assistantReasoningDelta(let text):
-            assistantReasoningOutput += text
+            if let snapshot = assistantReasoningPresentationBuffer.append(
+                text,
+                now: Date.timeIntervalSinceReferenceDate
+            ) {
+                assistantReasoningOutput = snapshot
+                streamingPresentationUpdateCountForTesting += 1
+            }
         case .assistantDelta(let text):
-            assistantOutput += text
+            if let snapshot = assistantPresentationBuffer.append(
+                text,
+                now: Date.timeIntervalSinceReferenceDate
+            ) {
+                assistantOutput = snapshot
+                streamingPresentationUpdateCountForTesting += 1
+            }
         case .artifactCreated(let artifact):
             artifacts.append(artifact)
             if selectedArtifactID == nil {
                 selectedArtifactID = artifact.id
             }
         case .runCompleted:
+            flushStreamingPresentation()
             status = .completed
             runTask = nil
         case .runFailed(let message):
+            flushStreamingPresentation()
             status = .failed
             errorMessage = message
             runTask = nil
         case .runCancelled:
+            flushStreamingPresentation()
             status = .cancelled
             runTask = nil
+        }
+    }
+
+    private static func makeStreamingPresentationBuffer() -> StreamingTextPresentationBuffer {
+        StreamingTextPresentationBuffer(
+            throttleInterval: 0.15,
+            immediateCharacterCount: 256,
+            // 运行中只展示尾部窗口；完整响应仍由 Runtime 消息持久化，不能让临时 Markdown
+            // 随异常 Provider 输出无限增大并再次拖垮 Run Surface。
+            maximumPresentedCharacterCount: 12_000
+        )
+    }
+
+    private func resetStreamingPresentation(resetUpdateCount: Bool) {
+        assistantReasoningPresentationBuffer = Self.makeStreamingPresentationBuffer()
+        assistantPresentationBuffer = Self.makeStreamingPresentationBuffer()
+        assistantReasoningOutput = ""
+        assistantOutput = ""
+        if resetUpdateCount {
+            streamingPresentationUpdateCountForTesting = 0
+        }
+    }
+
+    private func flushStreamingPresentation() {
+        let now = Date.timeIntervalSinceReferenceDate
+        if let snapshot = assistantReasoningPresentationBuffer.flush(now: now) {
+            assistantReasoningOutput = snapshot
+            streamingPresentationUpdateCountForTesting += 1
+        }
+        if let snapshot = assistantPresentationBuffer.flush(now: now) {
+            assistantOutput = snapshot
+            streamingPresentationUpdateCountForTesting += 1
         }
     }
 
@@ -792,8 +843,7 @@ final class AgentWorkspaceViewModel {
         artifacts = snapshot.artifacts
         selectedArtifactID = artifacts.first?.id
         selectedToolCallID = nil
-        assistantReasoningOutput = ""
-        assistantOutput = ""
+        resetStreamingPresentation(resetUpdateCount: true)
         errorMessage = snapshot.run.errorMessage
     }
 

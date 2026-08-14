@@ -479,6 +479,7 @@ Inspector 从“最终产物正文阅读器”调整为“选中对象的详情�
 - call/result 合并后只更新同一稳定节点，不插入第二张卡片。
 - 完成态折叠过程时保持结果起点锚定，不能把视口跳到 Composer 底部。
 - 用户离开底部后暂停自动跟随；显示显式“回到底部”入口。
+- 运行中自动跟随必须直接定位，不为每个流式快照叠加滚动动画；否则正文高度变化会造成 AttributeGraph 布局事务追赶。
 - 长输出完成前不启用高成本全文 Selection Overlay，完成后再开放完整文本选择。
 - 窗口缩放、Light/Dark、18 种语言、RTL、Reduce Motion 和 VoiceOver 必须进入人工验收。
 - 主阅读层只使用 `.primary` / `.secondary`，状态色只表达成功、警告、失败或当前操作。
@@ -779,6 +780,7 @@ build prompt
 
 - 原始 token/delta 不逐条写入 `@Observable`。
 - reasoning 与正文分别按受控频率发布。
+- Agent Workspace 复用 `StreamingTextPresentationBuffer`：150 ms / 256 字符双阈值，运行中展示最多 12,000 字符的尾部窗口；完整内容仍由 Runtime 消息持久化。
 - 完成、取消、失败必须 flush。
 - Timeline 的 identity 不得使用持续变化的正文。
 - 长输出完成前不创建高成本 Selection Overlay。

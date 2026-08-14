@@ -386,6 +386,30 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.assistantOutput == "正在生成周刊")
     }
 
+    @Test("密集 token 只形成少量流式展示快照")
+    func throttlesBurstStreamingPresentationUpdates() async throws {
+        let deltaCount = 400
+        let runtime = EventReplayAgentRuntime(events:
+            [.runStarted(title: BuiltInAgents.githubWeeklyReport.title)]
+                + Array(repeating: AgentRunEvent.assistantDelta("字"), count: deltaCount)
+                + [.runCompleted]
+        )
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: runtime
+        )
+        configureRunnable(viewModel)
+        viewModel.prompt = "生成周刊"
+
+        viewModel.run()
+        try await waitUntil { viewModel.status == .completed }
+
+        #expect(viewModel.assistantOutput == String(repeating: "字", count: deltaCount))
+        // 首包立即展示、字符阈值提交、结束 flush；即使慢速测试机跨过时间阈值，
+        // 刷新次数也必须远低于 token 数，防止再次按 token 驱动 SwiftUI 布局。
+        #expect(viewModel.streamingPresentationUpdateCountForTesting < 20)
+    }
+
     @Test("assistant 消息落库后会清空临时流式缓冲")
     func persistedAssistantMessageClearsStreamingBuffers() async throws {
         let message = AgentMessage(
