@@ -1,9 +1,9 @@
 # Agent 产品化收口需求完成结果报告
 
-- 报告时间：2026-08-14 03:27 CST
+- 报告时间：2026-08-14 11:26 CST
 - 当前分支：`dev`
 - 专项范围：权威设计 P0～P4；P5 外部 CLI Runtime 不在本轮范围
-- 当前状态：仓库内工程实现完成，发布候选的外部人工门禁尚未全部关闭
+- 当前状态：仓库内工程实现与真实 Debug 验收完成，仅真实分发产物双渠道验收等待发版授权
 
 ## 1. 项目目标
 
@@ -49,6 +49,13 @@
 - 仓库目录覆盖 `repos + Weekly + Trending + Discovery`，Star 与知识库只作为筛选维度，80 条只是上屏窗口。
 - Agent 新增和既有 key 全部覆盖 18 locale，目录内没有 `String(localized:)` / `NSLocalizedString` 违规调用。
 
+### 2.6 真实联网、产物与运行性能
+
+- Artifact Agent 在迭代预算耗尽前进入 Definition 驱动的最终提交回合，确保成功 Run 产生结构化产物。
+- External Search 的多批成功结果在运行与恢复路径统一累积；Repo Alternatives 使用完整证据校验候选，但最终来源区只保留候选 GitHub 根 URL。
+- Run 展示问题与下一次 Composer 草稿分离，发送、完成刷新和历史回看均不会把已发送问题重新填回输入框。
+- 流式文本按时间和字符阈值节流，并限制展示尾部长度；自动滚动取消逐帧动画，`RAGFlowLayout` 明确对齐边界，消除了真实运行期间的主线程递归布局卡顿。
+
 ## 3. 功能清单
 
 | 功能 | 状态 | 主要证据 |
@@ -61,9 +68,9 @@
 | 过程 / 结果双层 Run Surface | 完成 | Timeline Projection / ViewModel 测试 |
 | Markdown Artifact 与 Inspector | 完成 | 投影测试 + Debug build |
 | 18 locale 国际化 | 完成 | JSON 完整性检查，0 缺失 / 空值 / 非 translated |
-| 真实 Provider 历史闭环 | 有证据 | 3 个完成 Run、47 条消息、3 个 Markdown Artifact |
-| 最终代码完整 Run Surface 视觉验收 | 待人工环境 | Mac 锁屏阻断 |
-| 成功 External Search / GitHub Run | 待人工环境 | 历史 4 次 external_search 均为 skipped |
+| 真实 Provider 历史闭环 | 完成 | 最终代码真实 Run、历史回看与 Artifact 持久化 |
+| 最终代码完整 Run Surface 视觉验收 | 完成 | Run `B5B9A14A-E616-4EE4-AC7A-536D8EF42F4F` |
+| 成功 External Search / GitHub Run | 完成 | 多批成功搜索共同校验 3 个候选仓库 |
 | App Store / Direct 真实分发产物验收 | 待发版环境 | 两个 Release scheme 已编译，未获授权执行打包脚本 |
 
 ## 4. 文档同步情况
@@ -81,22 +88,23 @@
 
 - Repository / ViewModel 中断恢复定向测试：40 项，0 failed。
 - Agent / Capability / MCP 定向测试：通过。
-- StarcatTests：2283 项，0 failed、8 skipped、1 expected failure。
-- 全量测试结果：`Test-Starcat-2026.08.14_03-06-48-+0800.xcresult`。
+- StarcatTests：2,286 项，0 failed、8 skipped、1 expected failure。
+- 全量测试结果：`Test-Starcat-2026.08.14_11-10-59-+0800.xcresult`。
 - Runtime warnings：4 条，均来自既有 `DiagnosticsTests.swift` 后台发布，与 Agent 改动无关。
 - Debug build：通过。
 - App Store `Starcat` Release `CODE_SIGNING_ALLOWED=NO` build：通过。
 - Direct `StarcatDirect` Release `CODE_SIGNING_ALLOWED=NO` build：通过。
-- Direct Debug 最新构建：通过，bundle ID `com.starcat.app.direct.debug`。
+- Direct Debug 最新构建与真实 UI 运行：通过，bundle ID `com.starcat.app.direct.debug`。
 
 ## 6. 真实数据与隐私验证
 
 只对当前用户 v19 数据执行只读聚合查询，没有读取或记录 Prompt、Artifact 正文、仓库名称或密钥：
 
-- 3 个真实模型完成 Run，47 条 Agent Message，3 个 Markdown Artifact。
+- 最终代码真实 Run `B5B9A14A-E616-4EE4-AC7A-536D8EF42F4F` 在约 31 秒完成 10 条消息和 1 个 Markdown Artifact。
 - Knowledge Search 有完成记录与 citation/source 事实。
 - 5 个 Run 使用私有上下文；其中外部搜索保持 skipped，知识库检索可在冻结范围内完成。
-- 4 次 External Search 记录全部为 skipped，因此本报告不把它们写成成功联网证据。
+- 公开仓库上下文下的多批 External Search 均成功，完整证据共同校验 `zed-industries/zed`、`neovim/neovim`、`helix-editor/helix`；私有上下文仍保持 fail closed。
+- 最终 Artifact 为 2,779 字符，来源区只包含 3 个候选仓库根 URL；UI 导出文件为 `starcat-agent-alternatives-r606.md`（54 行、4,975 bytes）。
 - 真实数据暴露的 2 个遗留 running Run 已通过 `c870dd4` 的进程中断恢复修复。
 
 ## 7. 审查轮次
@@ -108,6 +116,8 @@
 | 第 3 轮 | i18n、全量测试、Release、权限与 schema | 仓库内无新问题，登记人工门禁 |
 | 第 4 轮 | 真实 v19 数据与异常退出恢复 | 发现假运行态并以 `c870dd4` 修复 |
 | 第 5 轮 | 修复后代码、文档、测试、渠道构建 | 未发现新的仓库内问题 |
+| 第 6 轮 | 解锁后的真实 Provider、联网、视觉、历史与导出复验 | 发现并修复最终提交、证据累积、草稿恢复、产物噪声与运行卡顿 |
+| 第 7 轮 | 最终文档漂移与最新代码测试 / 构建证据 | 文档已修复，2,286 项测试和三个目标构建通过 |
 
 ## 8. 本地提交
 
@@ -124,18 +134,25 @@
 - `c870dd4` 进程中断恢复。
 - `6680524` 第四轮真实数据审查。
 - `bb026ad` 第五轮修复后终审。
+- `36c5223` 最终回合结构化产物。
+- `95975d5` 运行问题与输入草稿状态分离。
+- `f81a78f` 多批联网搜索证据累积。
+- `eaae375` 替代品产物来源区精简。
+- `00ec878` 流式输出与自动滚动节流。
+- `e6f18dc` FlowLayout 对齐递归修复。
+- `30cb1e9` 第六轮真实复验报告。
+- `adbbf22` 真实联网与产物验收回填。
+- `97ad3f1` 历史审查环境门禁关闭。
 
 没有执行 push。
 
 ## 9. 遗留问题
 
-1. 需要手动解锁 Mac，使用最新 Direct Debug 完成最终代码的一次真实 Provider Run、Run Surface、历史恢复和 Artifact 导出视觉验收。
-2. 需要在公开仓库上下文显式启用联网，完成一次成功 External Search / GitHub Run；当前只有 skipped 与私仓阻断证据。
-3. 需要在获得发版授权后，按既有 SOP 生成 App Store / Direct 真实分发产物并分别验收；本专项没有执行打包、签名、公证或上传。
-4. 全量测试保留 4 条既有 Diagnostics runtime warning，不属于 Agent 专项，未借本轮做相邻重构。
+1. 需要在获得发版授权后，按既有 SOP 生成 App Store / Direct 真实分发产物并分别验收；本专项没有执行打包、签名、公证或上传。
+2. 全量测试保留 4 条既有 Diagnostics runtime warning，均来自 `DiagnosticsTests.swift` 的后台发布，不属于 Agent 专项，未借本轮做相邻重构。
 
 ## 10. 最终完成状态
 
-仓库内代码、设计、专项 checklist、功能实现总览、国际化、单元测试、全量测试和 Debug / 双 Release scheme 构建已完成并一致；第 4 轮发现的隐藏恢复问题已修复，第 5 轮未发现新的仓库内问题。
+仓库内代码、设计、专项 checklist、功能实现总览、国际化、单元测试、2,286 项全量测试、Debug / 双 Release scheme 构建，以及最终代码真实 Provider、External Search、Run Surface、历史回看和 Artifact 导出验收均已完成并一致。
 
-由于最终视觉、成功联网和真实分发产物三个外部人工门禁仍未关闭，本专项当前状态是“工程实现完成，发布验收待人工环境”，不能宣称全部结束。门禁完成后应新增下一轮审查报告，并把本报告与专项 checklist 更新为最终完成。
+当前只剩 App Store / Direct 真实分发产物双渠道验收。该步骤需要当前消息明确授权后运行既有发版 SOP；在未获授权前，本报告如实保持“工程与真实 Debug 验收完成，分发验收待授权”，不以无签名 Release 编译替代真实产物验收。
