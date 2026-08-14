@@ -278,6 +278,11 @@ Shared/Components/AICommandComposer/
 
 等待审批时 Composer 禁止启动新 Run，但允许用户查看参数、证据和已有产物。
 
+Composer 草稿与当前 Run 的 `user_prompt` 是两个独立状态：前者只表示下一次可编辑输入，
+后者只用于 Timeline 展示与重试。发送后 Composer 必须立即清空；完成刷新、打开历史、
+恢复审批或失败重试都不得把持久化问题重新回填到输入框。跨 Agent 查看历史时，仍保留
+各 Agent 尚未发送的草稿。
+
 ### 5.5 Run Surface 重构目标
 
 当前 `AgentTimelineProjection` 直接把 `AgentMessage`、Approval 与 Artifact 投影成一条事件时间线。该结构能保证审计完整，但存在四个产品问题：

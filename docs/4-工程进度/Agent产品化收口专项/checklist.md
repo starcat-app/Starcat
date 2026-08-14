@@ -61,9 +61,10 @@
 - [x] 最终回答与 Markdown Artifact 在中栏直接渲染，`.log` 与原始审计不进入主结果区。
 - [x] 普通 UI 不展示模型原始 reasoning，input/output/source/log 仍可在过程详情或 Inspector 核验。
 - [x] 用户主动上滚后流式更新不再抢回滚动位置，切换 Run 时重置折叠偏好。
+- [x] 当前 Run 展示问题与 Composer 草稿分离，发送、完成刷新和打开历史都不会把已发送问题重新塞回输入框。
 - [x] 补齐 call/result 合并、Activity Group、顺序、结果分层、Markdown/log 边界和默认折叠测试。
 
-> 验证：2026-08-14 `AgentTimelineProjectionTests` 通过；投影只消费现有 Message / Approval / Artifact，Run Surface 复用 RAG Markdown 渲染能力，未修改 Runtime、消息协议或数据库 schema。
+> 验证：2026-08-14 `AgentTimelineProjectionTests` 与 `AgentWorkspaceViewModelTests` 通过；投影只消费现有 Message / Approval / Artifact，Run 展示问题与下一次 Composer 草稿分离，Run Surface 复用 RAG Markdown 渲染能力，未修改消息协议或数据库 schema。
 
 ### E. 文档、测试与工程进度
 

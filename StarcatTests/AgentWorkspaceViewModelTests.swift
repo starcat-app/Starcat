@@ -517,6 +517,7 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.prompt.isEmpty)
         try await waitUntil { viewModel.status == .completed }
         #expect(await recorder.input()?.goal == "给我最近 7 天的热门仓库")
+        #expect(viewModel.currentRunUserPrompt == "给我最近 7 天的热门仓库")
 
         // 切换 Agent 后再回来也不能恢复已经发送过的旧草稿。
         viewModel.selectAgent(BuiltInAgents.repoInsight)
@@ -762,11 +763,14 @@ struct AgentWorkspaceViewModelTests {
             runtime: NeverFinishingAgentRuntime()
         )
         viewModel.configureRunRepository(repository)
+        viewModel.prompt = "尚未发送的草稿"
+        viewModel.handlePromptChanged()
 
         await viewModel.openHistoryRun(run)
 
         #expect(viewModel.selectedHistoryRunID == run.id)
-        #expect(viewModel.prompt == "打开历史")
+        #expect(viewModel.prompt == "尚未发送的草稿")
+        #expect(viewModel.currentRunUserPrompt == "打开历史")
         #expect(viewModel.status == .completed)
         #expect(viewModel.messages.map(\.role) == [.user, .assistant, .tool, .assistant])
         #expect(viewModel.selectedArtifact?.content == "# 历史")

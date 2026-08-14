@@ -23,7 +23,7 @@ struct AgentMessageTimelineView: View {
             messages: viewModel.messages,
             approvals: viewModel.approvals,
             artifacts: viewModel.artifacts,
-            userPrompt: viewModel.prompt,
+            userPrompt: viewModel.currentRunUserPrompt,
             status: viewModel.status
         )
     }

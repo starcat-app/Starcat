@@ -46,6 +46,9 @@ final class AgentWorkspaceViewModel {
 
     private(set) var agents: [AgentDefinition]
     var selectedAgentID: String
+    /// 当前 Run 的原始用户问题只服务时间线展示；Composer `prompt` 始终代表下一次可编辑输入。
+    /// 两者不能复用，否则快照刷新会把已经发送的内容重新塞回输入框。
+    private(set) var currentRunUserPrompt = ""
     var prompt: String
     var runTitle: String = String.l10n("agent.workspace.status.ready")
     var status: AgentRunStatus = .idle
@@ -375,6 +378,7 @@ final class AgentWorkspaceViewModel {
         errorMessage = nil
         currentRunSnapshot = nil
         selectedHistoryRunID = nil
+        currentRunUserPrompt = effectivePrompt
 
         let input = AgentRunInput(
             goal: effectivePrompt,
@@ -750,10 +754,13 @@ final class AgentWorkspaceViewModel {
         currentRunSnapshot = snapshot
         activeRunID = UUID(uuidString: snapshot.run.id)
         selectedHistoryRunID = snapshot.run.id
+        // 历史快照切换 Agent 时保留每个 Agent 尚未发送的草稿；持久化 user_prompt
+        // 只恢复到 Run 展示字段，绝不能覆盖 Composer 或草稿缓存。
+        draftsByAgentID[selectedAgentID] = prompt
         selectedAgentID = snapshot.run.agentId
         runTitle = snapshot.run.title
-        prompt = snapshot.run.userPrompt
-        draftsByAgentID[selectedAgentID] = prompt
+        currentRunUserPrompt = snapshot.run.userPrompt
+        prompt = draftsByAgentID[selectedAgentID] ?? ""
         selectedRepoContexts = snapshot.context.explicitRepos
             ?? snapshot.context.repos.map { repo in
                 AIComposerRepoReference(
