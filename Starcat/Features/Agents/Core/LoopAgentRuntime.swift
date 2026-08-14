@@ -969,7 +969,10 @@ struct LoopAgentRuntime: AgentRuntime {
         case .none:
             return
         case .externalContextMarkdown(let markdown):
-            values["externalContextMarkdown"] = markdown
+            values["externalContextMarkdown"] = Self.mergingExternalContextMarkdown(
+                values["externalContextMarkdown"],
+                with: markdown
+            )
         default:
             payload = next
         }
@@ -1100,10 +1103,26 @@ struct LoopAgentRuntime: AgentRuntime {
                       let detail = result.output.objectValue?["detail"]?.stringValue,
                       detail.contains("external_context")
                 else { continue }
-                values["externalContextMarkdown"] = detail
+                values["externalContextMarkdown"] = mergingExternalContextMarkdown(
+                    values["externalContextMarkdown"],
+                    with: detail
+                )
             }
         }
         return values
+    }
+
+    /// 同一个 Run 允许多次收窄 External Search；Artifact 校验必须看到全部批次证据。
+    /// 这里只合并 Runtime 的瞬时值，不改写模型消息历史，也不会把跨 Run 的网页内容串在一起。
+    private static func mergingExternalContextMarkdown(
+        _ existing: String?,
+        with next: String
+    ) -> String {
+        let normalizedNext = next.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedNext.isEmpty else { return existing ?? "" }
+        guard let existing, !existing.isEmpty else { return normalizedNext }
+        guard existing != normalizedNext else { return existing }
+        return existing + "\n\n" + normalizedNext
     }
 }
 

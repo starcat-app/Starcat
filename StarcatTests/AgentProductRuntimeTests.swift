@@ -207,6 +207,88 @@ struct AgentProductRuntimeTests {
         #expect(events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
     }
 
+    @Test("Repo Alternatives 累积多次 External Search 证据后再校验产物")
+    func repoAlternativesAccumulatesExternalSearchEvidence() async throws {
+        let context = AgentRunContext(sourceDescription: "Unit Snapshot", repos: [repoSnapshot()])
+        let candidateURL = "https://github.com/stephencelis/SQLite.swift"
+        let laterURL = "https://github.com/sqlcipher/sqlcipher"
+        let recorder = ProductModelRecorder(responses: [
+            AgentModelResponse(
+                text: "",
+                reasoning: "先确认源仓库",
+                toolCalls: [AgentModelToolCall(
+                    id: "select-source",
+                    name: "context_select_repo",
+                    arguments: try AgentJSONValue.object([
+                        "fullName": .string("groue/GRDB.swift")
+                    ]).jsonString()
+                )],
+                model: "test",
+                finishReason: "tool_calls"
+            ),
+            AgentModelResponse(
+                text: "",
+                reasoning: "第一批搜索取得候选",
+                toolCalls: [AgentModelToolCall(
+                    id: "search-first",
+                    name: "external_search",
+                    arguments: "{\"query\":\"first candidate\",\"allowedDomains\":[\"github.com\"]}"
+                )],
+                model: "test",
+                finishReason: "tool_calls"
+            ),
+            AgentModelResponse(
+                text: "",
+                reasoning: "第二批搜索补充证据",
+                toolCalls: [AgentModelToolCall(
+                    id: "search-later",
+                    name: "external_search",
+                    arguments: "{\"query\":\"later candidate\",\"allowedDomains\":[\"github.com\"]}"
+                )],
+                model: "test",
+                finishReason: "tool_calls"
+            ),
+            AgentModelResponse(
+                text: "",
+                reasoning: "使用第一批证据中的候选提交产物",
+                toolCalls: [AgentModelToolCall(
+                    id: "build-alternatives",
+                    name: "artifact_build_repo_alternatives",
+                    arguments: try repoAlternativesArguments(
+                        sourceRepoID: 42,
+                        candidateURL: candidateURL
+                    ).jsonString()
+                )],
+                model: "test",
+                finishReason: "tool_calls"
+            )
+        ])
+        let searchTool = ProductQueryAlternativesSearchTool(
+            firstURL: candidateURL,
+            laterURL: laterURL
+        )
+        let runtime = LoopAgentRuntime(
+            modelClient: ProductModelClient(recorder: recorder),
+            toolRegistry: try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.makeAll(
+                externalSearchTool: searchTool
+            ))
+        )
+
+        let events = await collect(runtime.run(
+            definition: BuiltInAgents.repoAlternatives,
+            prompt: "分批检索 GRDB.swift 的替代方案",
+            context: context
+        ))
+        let artifact = try #require(events.compactMap { event -> AgentArtifact? in
+            guard case .artifactCreated(let artifact) = event else { return nil }
+            return artifact
+        }.first)
+
+        #expect(artifact.content.contains(candidateURL))
+        #expect(artifact.content.contains(laterURL))
+        #expect(events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
+    }
+
     @Test("Untagged Tidy 先 dry-run，批准后写入并生成 read-back 产物")
     func untaggedTidyPreviewsApprovesAndAppliesThroughLoop() async throws {
         let source = ProductRepositoryTagSource(
@@ -574,6 +656,46 @@ private struct ProductAlternativesSearchTool: AgentTool {
                 url: candidateURL,
                 provider: "Test Search"
             )]
+        )
+    }
+}
+
+/// 用不同 query 模拟分批返回不同仓库，确保 Runtime 不会只保留最后一次搜索结果。
+private struct ProductQueryAlternativesSearchTool: AgentTool {
+    let firstURL: String
+    let laterURL: String
+    let definition = ProductAlternativesSearchTool(candidateURL: "").definition
+
+    func execute(_ input: AgentToolInput) async -> AgentToolResult {
+        let query = input.arguments.objectValue?["query"]?.stringValue ?? ""
+        let isLater = query.contains("later")
+        let url = isLater ? laterURL : firstURL
+        let fullName = isLater ? "sqlcipher/sqlcipher" : "stephencelis/SQLite.swift"
+        let markdown = """
+        <external_context source="Test Search">
+        - [\(fullName)](\(url)) — public GitHub repository
+        </external_context>
+        """
+        let output = AgentToolOutput(
+            toolName: definition.name,
+            summary: "1 source",
+            detail: markdown,
+            input: (try? input.arguments.jsonString()) ?? "{}",
+            output: url,
+            log: "completed"
+        )
+        return AgentToolResult(
+            output: output,
+            trace: AgentTraceSpan(
+                kind: "Tool",
+                title: definition.name,
+                summary: output.summary,
+                input: output.input,
+                output: output.output,
+                log: output.log
+            ),
+            payload: .externalContextMarkdown(markdown),
+            sources: [AgentToolResultSource(title: fullName, url: url, provider: "Test Search")]
         )
     }
 }
