@@ -480,6 +480,7 @@ Inspector 从“最终产物正文阅读器”调整为“选中对象的详情�
 - 完成态折叠过程时保持结果起点锚定，不能把视口跳到 Composer 底部。
 - 用户离开底部后暂停自动跟随；显示显式“回到底部”入口。
 - 运行中自动跟随必须直接定位，不为每个流式快照叠加滚动动画；否则正文高度变化会造成 AttributeGraph 布局事务追赶。
+- Agent Composer 复用的 `RAGFlowLayout` 不提供自定义对齐线，必须显式对水平/垂直 `explicitAlignment` 返回 `nil`，禁止触发 SwiftUI 默认的 child geometry 递归测量。
 - 长输出完成前不启用高成本全文 Selection Overlay，完成后再开放完整文本选择。
 - 窗口缩放、Light/Dark、18 种语言、RTL、Reduce Motion 和 VoiceOver 必须进入人工验收。
 - 主阅读层只使用 `.primary` / `.secondary`，状态色只表达成功、警告、失败或当前操作。

@@ -175,6 +175,30 @@ struct RAGFlowLayout: Layout {
         }
     }
 
+    /// FlowLayout 不向父容器声明自定义对齐线。SwiftUI 的默认实现会为求显式对齐值
+    /// 再次遍历全部 child geometry，并在嵌套 ScrollView / Stack 中反复进入
+    /// `placeSubviews`。Agent 流式更新曾因此把主线程永久锁在 AttributeGraph 布局事务中。
+    func explicitAlignment(
+        of guide: HorizontalAlignment,
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGFloat? {
+        nil
+    }
+
+    /// 与水平对齐一致，明确返回 nil，交给父容器按 frame alignment 放置整个 FlowLayout。
+    func explicitAlignment(
+        of guide: VerticalAlignment,
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGFloat? {
+        nil
+    }
+
     private func arrange(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, items: [(origin: CGPoint, size: CGSize)]) {
         let maxWidth = proposal.width ?? .infinity
         var items: [(origin: CGPoint, size: CGSize)] = []
