@@ -403,13 +403,8 @@ struct AgentWorkspaceView: View {
     private var runHeader: some View {
         HStack(spacing: 0) {
             HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(viewModel.selectedAgent?.title ?? String.l10n("agent.workspace.window.title"))
-                        .font(agentFont(.title3, weight: .semibold))
-                    Text("agent.workspace.header.subtitle")
-                        .font(agentFont(.caption))
-                        .foregroundStyle(.secondary)
-                }
+                Text(viewModel.selectedAgent?.title ?? String.l10n("agent.workspace.window.title"))
+                    .font(agentFont(.title3, weight: .semibold))
 
                 Spacer()
             }

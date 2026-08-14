@@ -10,6 +10,7 @@
 //
 
 import Foundation
+import SwiftUI
 import Testing
 @testable import Starcat
 
@@ -220,6 +221,134 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.artifacts.count == 2)
         #expect(viewModel.selectedArtifact?.content == "# 周刊")
         #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test("Agent 中间区可渲染为连续任务叙事而非调试卡片")
+    func runSurfaceRendersEditorialActivityFeed() async throws {
+        let runID = UUID()
+        let calls = [
+            AgentToolCall(id: "goal", name: "agent_parse_goal", input: .object([:]), sequence: 0),
+            AgentToolCall(id: "repos", name: "context_resolve_repos", input: .object([:]), sequence: 1),
+            AgentToolCall(id: "topics", name: "repo_cluster_topics", input: .object([:]), sequence: 2),
+            AgentToolCall(id: "artifact", name: "artifact_build_weekly_report", input: .object([:]), sequence: 3)
+        ]
+        let user = AgentMessage(
+            runID: runID,
+            role: .user,
+            turn: 0,
+            sequence: 0,
+            parts: [.text("provider prompt")]
+        )
+        let assistant = AgentMessage(
+            runID: runID,
+            role: .assistant,
+            turn: 0,
+            sequence: 1,
+            parts: calls.map(AgentMessagePart.toolCall)
+        )
+        let narratives = [
+            "已理解周报目标并确定本次任务范围。",
+            "已读取 40 个候选仓库，准备筛选本周热点。",
+            "已将仓库快照整理为 AI、开发工具与安全三个主题。",
+            "已核对仓库引用并生成最终周报。"
+        ]
+        let results = zip(calls, narratives).map { pair in
+            let (call, narrative) = pair
+            return AgentMessagePart.toolResult(AgentToolResultMessage(
+                toolCallID: call.id,
+                toolName: call.name,
+                output: .object([
+                    "summary": .string(call.id == "repos" ? "40 个仓库" : "已完成"),
+                    "log": .string(narrative)
+                ]),
+                isError: false,
+                status: .completed,
+                elapsedMilliseconds: 12,
+                attempts: [],
+                sources: [],
+                sequence: call.sequence
+            ))
+        }
+        let tool = AgentMessage(
+            runID: runID,
+            role: .tool,
+            turn: 0,
+            sequence: 2,
+            parts: results
+        )
+        let artifact = AgentArtifact(
+            type: .markdown,
+            title: "GitHub 热门项目周报",
+            content: """
+            # GitHub 热门项目周报
+
+            ## 本周风向
+
+            AI Agent 基础设施与本地开发工具持续升温，安全工具也出现了新的高增长项目。
+
+            ## 值得关注
+
+            | 项目 | 方向 | 推荐理由 |
+            | --- | --- | --- |
+            | example/agent-kit | AI Agent | 任务编排清晰，适合快速验证工作流 |
+            | example/dev-tool | 开发工具 | 本地优先，安装和迁移成本低 |
+            """,
+            sequence: 3
+        )
+        let runtime = EventReplayAgentRuntime(events: [
+            .runStarted(title: BuiltInAgents.githubWeeklyReport.title),
+            .messageAppended(user),
+            .messageAppended(assistant),
+            .messageAppended(tool),
+            .artifactCreated(artifact),
+            .runCompleted
+        ])
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: runtime
+        )
+        configureRunnable(viewModel)
+        viewModel.prompt = "帮我生成本周 GitHub 热门开源项目周刊，风格参考阮一峰 Weekly。"
+
+        viewModel.run()
+        try await waitUntil { viewModel.status == .completed }
+        // 运行态默认展开过程，正好覆盖用户最关注的 WorkBuddy 式过程流首屏。
+        viewModel.status = .running
+
+        let content = AgentMessageTimelineView(viewModel: viewModel)
+            .frame(width: 820, height: 1_080)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .environment(\.colorScheme, .light)
+        let hostingView = NSHostingView(rootView: content)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 820, height: 1_080),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = hostingView
+        // LazyVStack 只有进入真实窗口和布局周期后才会实例化可见行；纯 ImageRenderer
+        // 会得到尺寸正确但像素全白的假截图，无法承担 UI 回归门禁。
+        window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        try await Task.sleep(for: .milliseconds(200))
+        hostingView.layoutSubtreeIfNeeded()
+
+        let bitmap = try #require(hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds))
+        hostingView.cacheDisplay(in: hostingView.bounds, to: bitmap)
+        #expect(bitmap.pixelsWide >= 820)
+        #expect(bitmap.pixelsHigh >= 1_080)
+        let foregroundSamples = stride(from: 0, to: bitmap.pixelsWide, by: 20).reduce(into: 0) { count, x in
+            for y in stride(from: 0, to: bitmap.pixelsHigh, by: 20) {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+                if color.redComponent < 0.95 || color.greenComponent < 0.95 || color.blueComponent < 0.95 {
+                    count += 1
+                }
+            }
+        }
+        #expect(foregroundSamples > 20)
     }
 
     @Test("selectedArtifactID 会联动 Inspector 当前产出物")

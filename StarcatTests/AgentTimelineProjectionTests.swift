@@ -104,6 +104,7 @@ struct AgentTimelineProjectionTests {
         #expect(items.first(where: { $0.kind == .toolExecution })?.sources.count == 1)
         #expect(items.first(where: { $0.kind == .toolExecution })?.toolCallID == call.id)
         #expect(items.first(where: { $0.kind == .toolExecution })?.toolAudit?.knowledgeRetrieval?.metrics.candidateCount == 1)
+        #expect(items.first(where: { $0.kind == .toolExecution })?.narrative == "provider=exa")
         #expect(items.first(where: { $0.kind == .toolExecution })?.log?.contains("elapsed_ms=42") == true)
         #expect(items.first(where: { $0.kind == .toolExecution })?.log?.contains("attempt_count=2") == true)
         #expect(items.first(where: { $0.kind == .assistant })?.reasoning == "需要本地知识证据")

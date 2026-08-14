@@ -2,7 +2,7 @@
 //  AgentMessageTimelineView.swift
 //  Starcat
 //
-//  Agent 工作台的过程 / 结果双层 Run Surface。
+//  Agent 工作台的连续任务叙事与最终结果界面。
 //
 //  持久化消息仍是唯一事实源；本视图只消费 AgentTimelineProjection 的确定性投影。
 //  原始 reasoning 不进入普通界面，call/result 合并和折叠状态也不会写回运行数据。
@@ -52,13 +52,15 @@ struct AgentMessageTimelineView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 16) {
+                LazyVStack(alignment: .leading, spacing: 18) {
                     if isEmpty {
                         emptyState
                     } else {
                         ForEach(presentation.userItems) { item in
                             userRow(item)
                         }
+
+                        agentIdentityRow
 
                         if !presentation.processSections.isEmpty {
                             processSection
@@ -69,7 +71,10 @@ struct AgentMessageTimelineView: View {
                                 .id("streaming-assistant")
                         }
 
-                        if let finalAnswer = presentation.finalAnswer {
+                        // 工具型 Agent 的 Markdown artifact 就是最终正文；不再在正文前重复一段
+                        // assistant 结语，确保结果像文档而不是“消息 + 卡片”的双重包装。
+                        if presentation.inlineArtifacts.isEmpty,
+                           let finalAnswer = presentation.finalAnswer {
                             finalAnswerRow(finalAnswer)
                                 .id(finalAnswer.id)
                         }
@@ -89,8 +94,10 @@ struct AgentMessageTimelineView: View {
                             .id("run-surface-bottom")
                     }
                 }
-                .padding(20)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 18)
+                .frame(maxWidth: 820, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 let remaining = geometry.contentSize.height
@@ -144,22 +151,39 @@ struct AgentMessageTimelineView: View {
 
     private func userRow(_ item: AgentTimelineItem) -> some View {
         HStack(alignment: .top) {
-            Spacer(minLength: 80)
+            Spacer(minLength: 120)
             Text(item.text)
                 .font(interfaceScale.font(.body))
                 .foregroundStyle(.primary)
                 .textSelection(.enabled)
                 .lineSpacing(3)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .frame(maxWidth: 620, alignment: .leading)
-                .background(Color.accentColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
+                .padding(.horizontal, 13)
+                .padding(.vertical, 9)
+                .frame(maxWidth: 560, alignment: .leading)
+                .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 8))
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
+    /// 连续任务叙事的核心不是卡片数量，而是让用户知道“谁正在做、做到哪一步”。
+    /// Agent 身份只出现一次，下面的工具活动因此能自然组成同一条连续叙事。
+    private var agentIdentityRow: some View {
+        HStack(spacing: 9) {
+            agentIcon
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Starcat Agent")
+                    .font(interfaceScale.font(.caption, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Text(runStatusTitle)
+                    .font(interfaceScale.font(.captionSmall))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     private var processSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             Button {
                 withAnimation(.easeInOut(duration: 0.16)) {
                     processExpandedOverride = !isProcessExpanded
@@ -169,15 +193,15 @@ struct AgentMessageTimelineView: View {
                     Image(systemName: isProcessExpanded ? "chevron.down" : "chevron.right")
                         .font(interfaceScale.font(.captionSmall, weight: .semibold))
                         .foregroundStyle(.secondary)
-                    Label("agent.workspace.timeline.execution", systemImage: "list.bullet.rectangle")
+                    Text("agent.workspace.timeline.execution")
                         .font(interfaceScale.font(.caption, weight: .semibold))
                         .foregroundStyle(.primary)
-                    Spacer()
-                    Text(presentation.processSections.count.formatted())
-                        .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                    Text("· \(presentation.processSections.count.formatted())")
+                        .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
+                    Spacer()
                 }
-                .frame(maxWidth: .infinity, minHeight: 28)
+                .frame(maxWidth: .infinity, minHeight: 24)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -186,18 +210,21 @@ struct AgentMessageTimelineView: View {
             .accessibilityHint(String.l10n(isProcessExpanded ? "gettingStarted.collapse" : "gettingStarted.expand"))
 
             if isProcessExpanded {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 9) {
                     ForEach(presentation.processSections) { section in
                         processRow(section)
                     }
                 }
-                .padding(.leading, 12)
+                .padding(.leading, 20)
+                .overlay(alignment: .leading) {
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.09))
+                        .frame(width: 1)
+                        .padding(.leading, 6)
+                }
             }
         }
-        .padding(12)
-        .frame(maxWidth: 900, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08)))
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -217,21 +244,24 @@ struct AgentMessageTimelineView: View {
     }
 
     private func progressRow(_ item: AgentTimelineItem) -> some View {
-        HStack(alignment: .top, spacing: 9) {
-            agentIcon
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "sparkles")
+                .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 16, height: 18)
             Text(item.text)
-                .font(interfaceScale.font(.body))
+                .font(interfaceScale.font(.caption))
                 .foregroundStyle(.primary)
-                .lineSpacing(4)
+                .lineSpacing(3)
                 .textSelection(.enabled)
         }
-        .frame(maxWidth: 860, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func activityRow(_ section: AgentProcessSection) -> some View {
         let status = aggregateStatus(section.items)
         let isExpanded = expandedItemIDs.contains(section.id)
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 6) {
             Button {
                 toggle(section.id)
                 if let auditedItem = section.items.first(where: { $0.toolAudit?.knowledgeRetrieval != nil }),
@@ -239,28 +269,33 @@ struct AgentMessageTimelineView: View {
                     viewModel.selectKnowledgeAudit(toolCallID: toolCallID)
                 }
             } label: {
-                HStack(spacing: 9) {
+                HStack(alignment: .top, spacing: 8) {
                     Image(systemName: statusIcon(status))
                         .foregroundStyle(statusTint(status))
-                        .frame(width: 18)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(section.items.first?.title ?? "")
-                            .font(interfaceScale.font(.caption, weight: .semibold))
+                        .font(interfaceScale.font(.captionSmall))
+                        .frame(width: 16, height: 18)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(activityNarrative(section))
+                            .font(interfaceScale.font(.caption))
                             .foregroundStyle(.primary)
-                        Text(section.items.last?.text ?? "")
+                            .lineLimit(3)
+                        if let summary = activitySummary(section) {
+                            Text(summary)
                             .font(interfaceScale.font(.captionSmall))
                             .foregroundStyle(.secondary)
-                            .lineLimit(2)
+                            .lineLimit(1)
+                        }
                     }
                     Spacer()
                     if section.items.count > 1 {
-                        Label(section.items.count.formatted(), systemImage: "wrench.and.screwdriver")
-                            .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                        Text("×\(section.items.count.formatted())")
+                            .font(interfaceScale.font(.captionSmall))
                             .foregroundStyle(.secondary)
                     }
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .font(interfaceScale.font(.captionSmall, weight: .semibold))
                         .foregroundStyle(.secondary)
+                        .padding(.top, 2)
                 }
                 .contentShape(Rectangle())
             }
@@ -273,47 +308,36 @@ struct AgentMessageTimelineView: View {
                 }
             }
         }
-        .padding(11)
-        .frame(maxWidth: 860, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.08)))
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func toolExecutionDetail(_ item: AgentTimelineItem) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(item.title)
-                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
-                Spacer()
-                Text(item.toolStatus?.localizedTitle ?? String.l10n("agent.tool.status.pending"))
+        VStack(alignment: .leading, spacing: 7) {
+            if item.narrative == nil, !item.text.isEmpty {
+                Text(item.text)
                     .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
-            }
-            if let audit = item.toolAudit?.knowledgeRetrieval {
-                AgentKnowledgeAuditView(audit: audit)
-                    .padding(10)
-                    .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
-                    .onTapGesture {
-                        if let toolCallID = item.toolCallID {
-                            viewModel.selectKnowledgeAudit(toolCallID: toolCallID)
-                        }
-                    }
-            }
-            if let input = item.input {
-                auditBlock(String.l10n("agent.workspace.timeline.input"), icon: "arrow.down.right", text: input)
-            }
-            if let output = item.output {
-                auditBlock(String.l10n("agent.workspace.timeline.output"), icon: "arrow.up.right", text: output)
+                    .textSelection(.enabled)
             }
             if !item.sources.isEmpty {
                 sourceBlock(item.sources)
             }
-            if let log = item.log {
-                auditBlock(String.l10n("agent.workspace.timeline.execution"), icon: "clock", text: log)
+
+            if item.toolAudit?.knowledgeRetrieval != nil,
+               let toolCallID = item.toolCallID {
+                Button {
+                    viewModel.selectKnowledgeAudit(toolCallID: toolCallID)
+                } label: {
+                    Label("agent.workspace.knowledgeAudit.title", systemImage: "sidebar.right")
+                        .font(interfaceScale.font(.captionSmall, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
             }
         }
-        .padding(9)
-        .background(Color(nsColor: .textBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 6))
+        .padding(.leading, 24)
+        .padding(.vertical, 2)
     }
 
     private func approvalRow(_ item: AgentTimelineItem) -> some View {
@@ -356,48 +380,41 @@ struct AgentMessageTimelineView: View {
     }
 
     private func finalAnswerRow(_ item: AgentTimelineItem) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            agentIcon
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Starcat")
-                    .font(interfaceScale.font(.rowTitle, weight: .semibold))
-                RAGMarkdownText(content: item.text)
-            }
-            .frame(maxWidth: 860, alignment: .leading)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        RAGMarkdownText(content: item.text)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func inlineArtifactRow(_ item: AgentTimelineItem) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Button {
-                if let artifact = item.artifact {
-                    viewModel.selectArtifact(artifact.id)
-                }
-            } label: {
-                HStack(spacing: 9) {
-                    Image(systemName: "doc.richtext")
-                        .foregroundStyle(Color.accentColor)
-                    Text(item.title)
-                        .font(interfaceScale.font(.rowTitle, weight: .semibold))
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    Image(systemName: "sidebar.right")
-                        .foregroundStyle(.secondary)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
+            Divider()
 
             if let artifact = item.artifact {
+                if !artifactBeginsWithOwnTitle(artifact) {
+                    Button {
+                        viewModel.selectArtifact(artifact.id)
+                    } label: {
+                        HStack(spacing: 9) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(interfaceScale.font(.caption))
+                                .foregroundStyle(.green)
+                            Text(item.title)
+                                .font(interfaceScale.font(.rowTitle, weight: .semibold))
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Image(systemName: "sidebar.right")
+                                .foregroundStyle(.secondary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                }
+
                 RAGMarkdownText(content: artifact.content)
             }
         }
-        .padding(14)
-        .frame(maxWidth: 900, alignment: .leading)
-        .background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.accentColor.opacity(0.18)))
+        .padding(.top, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var streamingResultRow: some View {
@@ -464,15 +481,6 @@ struct AgentMessageTimelineView: View {
         .focusEffectDisabled()
     }
 
-    private func auditBlock(_ title: String, icon: String, text: String) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Label(title, systemImage: icon)
-                .font(interfaceScale.font(.captionSmall, weight: .semibold))
-                .foregroundStyle(.secondary)
-            auditText(text)
-        }
-    }
-
     private func auditText(_ text: String) -> some View {
         Text(text)
             .font(interfaceScale.font(.code, design: .monospaced))
@@ -503,6 +511,8 @@ struct AgentMessageTimelineView: View {
                 }
             }
         }
+        .padding(9)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
     }
 
     private func approvalActions(_ approval: AgentApprovalRequest) -> some View {
@@ -549,6 +559,47 @@ struct AgentMessageTimelineView: View {
         case .completed: return .green
         case .failed, .timedOut, .rejected: return .red
         case .skipped, nil: return .secondary
+        }
+    }
+
+    private func activityNarrative(_ section: AgentProcessSection) -> String {
+        section.items.last?.narrative
+            ?? section.items.last?.text
+            ?? ""
+    }
+
+    private func activitySummary(_ section: AgentProcessSection) -> String? {
+        guard let item = section.items.last,
+              !item.text.isEmpty,
+              item.text != item.narrative,
+              item.text != item.toolStatus?.localizedTitle else {
+            return nil
+        }
+        return item.text
+    }
+
+    /// Markdown 已经用一级标题表达产出物名称时，不再额外绘制 artifact 卡片标题。
+    /// 这是最终结果从“卡片附件”回归“正文文档”的关键视觉约束。
+    private func artifactBeginsWithOwnTitle(_ artifact: AgentArtifact) -> Bool {
+        guard let firstLine = artifact.content
+            .split(whereSeparator: \.isNewline)
+            .first else {
+            return false
+        }
+        let markdownTitle = String(firstLine.drop(while: { $0 == "#" || $0.isWhitespace }))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return markdownTitle.caseInsensitiveCompare(artifact.title) == .orderedSame
+    }
+
+    private var runStatusTitle: String {
+        switch viewModel.status {
+        case .completed: return String.l10n("agent.workspace.status.completed")
+        case .failed: return String.l10n("agent.workspace.status.failed")
+        case .cancelled: return String.l10n("agent.workspace.status.cancelled")
+        case .planning: return String.l10n("agent.workspace.status.planning")
+        case .running: return String.l10n("agent.workspace.status.running")
+        case .waitingForConfirmation: return String.l10n("agent.workspace.status.waitingForConfirmation")
+        case .idle: return String.l10n("agent.workspace.status.idle")
         }
     }
 

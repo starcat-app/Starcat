@@ -26,6 +26,9 @@ struct AgentTimelineItem: Identifiable, Sendable {
     var kind: AgentTimelineItemKind
     var title: String
     var text: String
+    /// 工具提供的用户可读运行叙事。它与完整审计日志分开，避免主界面暴露
+    /// status / elapsed_ms 等实现细节，同时仍保留 log 作为持久化事实投影。
+    var narrative: String? = nil
     var reasoning: String?
     var input: String?
     var output: String?
@@ -189,6 +192,7 @@ enum AgentTimelineProjection {
                         text: object?["summary"]?.stringValue
                             ?? result?.status.localizedTitle
                             ?? String.l10n("agent.tool.status.pending"),
+                        narrative: result.flatMap(Self.resultNarrative),
                         input: call.rawInput ?? ((try? call.input.jsonString()) ?? "{}"),
                         output: object?["detail"]?.stringValue
                             ?? object?["output"]?.stringValue
@@ -294,5 +298,13 @@ enum AgentTimelineProjection {
             "source_count=\(result.sources.count)"
         ] + attemptLines).joined(separator: "\n")
         return persistedLog.isEmpty ? metadata : "\(metadata)\n\(persistedLog)"
+    }
+
+    /// 工具协议里的 output.log 是面向用户的完成说明；技术元数据由 resultLog 单独生成。
+    /// 两者不能混用，否则用户可读的任务叙事会退化成运行时调试日志。
+    private static func resultNarrative(_ result: AgentToolResultMessage) -> String? {
+        let persistedLog = result.output.objectValue?["log"]?.stringValue ?? ""
+        let narrative = persistedLog.trimmingCharacters(in: .whitespacesAndNewlines)
+        return narrative.isEmpty ? nil : narrative
     }
 }

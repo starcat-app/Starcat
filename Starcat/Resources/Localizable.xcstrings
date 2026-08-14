@@ -469198,109 +469198,109 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Execution"
+            "value" : "Task progress"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "执行信息"
+            "value" : "任务进展"
           }
         },
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "تنفيذ"
+            "value" : "تقدم المهمة"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ausführung"
+            "value" : "Aufgabenfortschritt"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ejecución"
+            "value" : "Progreso de la tarea"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Exécution"
+            "value" : "Progression de la tâche"
           }
         },
         "id" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Eksekusi"
+            "value" : "Progres tugas"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esecuzione"
+            "value" : "Avanzamento attività"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "実行中"
+            "value" : "タスクの進行状況"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "실행"
+            "value" : "작업 진행 상황"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uitvoering"
+            "value" : "Taakvoortgang"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wykonanie"
+            "value" : "Postęp zadania"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Execução"
+            "value" : "Progresso da tarefa"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Выполнение"
+            "value" : "Ход выполнения задачи"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "İşleme"
+            "value" : "Görev ilerlemesi"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Виконання"
+            "value" : "Хід виконання завдання"
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Thực thi"
+            "value" : "Tiến độ tác vụ"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "執行中"
+            "value" : "任務進度"
           }
         }
       }
