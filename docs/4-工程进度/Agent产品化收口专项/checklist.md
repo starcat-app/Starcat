@@ -62,9 +62,10 @@
 - [x] 普通 UI 不展示模型原始 reasoning，input/output/source/log 仍可在过程详情或 Inspector 核验。
 - [x] 用户主动上滚后流式更新不再抢回滚动位置，切换 Run 时重置折叠偏好。
 - [x] 当前 Run 展示问题与 Composer 草稿分离，发送、完成刷新和打开历史都不会把已发送问题重新塞回输入框。
+- [x] Run Header 固定为紧凑高度，标题区不再与正文争抢剩余高度，用户问题和执行过程直接进入首屏。
 - [x] 补齐 call/result 合并、Activity Group、顺序、结果分层、Markdown/log 边界和默认折叠测试。
 
-> 验证：2026-08-14 `AgentTimelineProjectionTests` 与 `AgentWorkspaceViewModelTests` 通过；投影只消费现有 Message / Approval / Artifact，Run 展示问题与下一次 Composer 草稿分离，Run Surface 复用 RAG Markdown 渲染能力，未修改消息协议或数据库 schema。
+> 验证：2026-08-14 `AgentTimelineProjectionTests` 与 `AgentWorkspaceViewModelTests` 35 项通过；Direct Debug 真实窗口复验确认 Header 收敛为 60pt，用户问题、过程和 Inspector 摘要均进入首屏。投影只消费现有 Message / Approval / Artifact，未修改消息协议或数据库 schema。
 
 ### E. 文档、测试与工程进度
 
@@ -81,7 +82,7 @@
 - [x] 完成至少三轮完整审查，每轮保存独立报告、修复问题并提交。
 - [x] 生成 `Agent产品化收口需求完成结果报告.md`，并如实保留未关闭的外部人工门禁。
 
-> 当前证据：2026-08-14 已完成 Agent / Capability / MCP 定向套件、2,286 项全量测试（0 failed）、Debug build、App Store / Direct Release build、Agent String Catalog 18 locale 完整性检查与八轮审查。最终代码真实 Run `B5B9A14A-E616-4EE4-AC7A-536D8EF42F4F` 在 31 秒内完成成功 External Search、Run Surface、历史回看及 2,779 字符 Artifact 导出；仅真实分发产物双渠道验收仍等待发版授权。
+> 当前证据：2026-08-14 已完成 Agent / Capability / MCP 定向套件、2,286 项全量测试（0 failed）、最新 35 项 Run Surface 定向测试、Debug build、App Store / Direct Release build、Agent String Catalog 18 locale 完整性检查与九轮审查。最终代码真实 Run `B5B9A14A-E616-4EE4-AC7A-536D8EF42F4F` 在 31 秒内完成成功 External Search、Run Surface、历史回看及 2,779 字符 Artifact 导出；仅真实分发产物双渠道验收仍等待发版授权。
 
 ## 4. 明确非目标
 

@@ -1,6 +1,6 @@
 # Agent 产品化收口需求完成结果报告
 
-- 报告时间：2026-08-14 11:29 CST
+- 报告时间：2026-08-14 12:30 CST
 - 当前分支：`dev`
 - 专项范围：权威设计 P0～P4；P5 外部 CLI Runtime 不在本轮范围
 - 当前状态：仓库内工程实现与真实 Debug 验收完成，仅真实分发产物双渠道验收等待发版授权
@@ -41,6 +41,7 @@
 - 最终回答和 Markdown Artifact 在中栏直接渲染；log 与原始审计保留在二级详情。
 - 普通 UI 不展示模型 raw reasoning；用户上滚后流式更新不抢回位置。
 - Activity Group 可直接定位 Knowledge Audit。
+- Run Header 明确限制为 60pt 紧凑高度，消除竖向 Divider 导致的半屏拉伸，用户问题、过程与 Inspector 摘要进入首屏。
 
 ### 2.5 Composer、仓库与国际化边界
 
@@ -65,7 +66,7 @@
 | 等待审批恢复与写入 fail closed | 完成 | Approval / Retry 测试 |
 | Agent / MCP 共享领域 Capability | 完成 | Capability / MCP 契约测试 |
 | 正式入口、Pro 与模型门禁 | 完成 | 真实入口 UI + Release build |
-| 过程 / 结果双层 Run Surface | 完成 | Timeline Projection / ViewModel 测试 |
+| 过程 / 结果双层 Run Surface | 完成 | Timeline Projection / ViewModel 测试 + Direct Debug 首屏复验 |
 | Markdown Artifact 与 Inspector | 完成 | 投影测试 + Debug build |
 | 18 locale 国际化 | 完成 | JSON 完整性检查，0 缺失 / 空值 / 非 translated |
 | 真实 Provider 历史闭环 | 完成 | 最终代码真实 Run、历史回看与 Artifact 持久化 |
@@ -88,6 +89,7 @@
 
 - Repository / ViewModel 中断恢复定向测试：40 项，0 failed。
 - Agent / Capability / MCP 定向测试：通过。
+- Header 修复后 Run Surface 定向测试：35 项，0 failed；`Test-Starcat-2026.08.14_12-27-20-+0800.xcresult`。
 - StarcatTests：2,286 项，0 failed、8 skipped、1 expected failure。
 - 全量测试结果：`Test-Starcat-2026.08.14_11-10-59-+0800.xcresult`。
 - Runtime warnings：4 条，均来自既有 `DiagnosticsTests.swift` 后台发布，与 Agent 改动无关。
@@ -119,6 +121,7 @@
 | 第 6 轮 | 解锁后的真实 Provider、联网、视觉、历史与导出复验 | 发现并修复最终提交、证据累积、草稿恢复、产物噪声与运行卡顿 |
 | 第 7 轮 | 最终文档漂移与最新代码测试 / 构建证据 | 文档已修复，2,286 项测试和三个目标构建通过 |
 | 第 8 轮 | 修复后文档、代码、测试、进度与真实验收复审 | 未发现新的仓库内问题，仅保留分发授权门禁 |
+| 第 9 轮 | Run Header 首屏高度与真实窗口复验 | 发现半屏拉伸并以 `113912d` 修复 |
 
 ## 8. 本地提交
 
@@ -144,6 +147,7 @@
 - `30cb1e9` 第六轮真实复验报告。
 - `adbbf22` 真实联网与产物验收回填。
 - `97ad3f1` 历史审查环境门禁关闭。
+- `113912d` Run Header 首屏高度修复。
 
 没有执行 push。
 

@@ -330,6 +330,8 @@ Agent 工作台继续保持三栏，不调整 Agent Rail 与 Inspector 的顶层
 
 最终结果存在时，过程不得占据结果之前的大面积首屏空间。完成态和历史恢复态默认折叠过程，用户仍可随时展开核验。
 
+Run Header 必须保持紧凑并具有明确的高度上限，标题、状态与 Inspector 标题共享同一行。Header 内的竖向分隔线不得让整行参与剩余高度分配；正常窗口下，用户问题与执行过程必须在首屏直接可见，禁止用大面积空白充当 hero 区。
+
 ### 5.7 事实层与展示投影
 
 `AgentMessage`、`AgentApprovalRequest`、`AgentArtifact` 继续是可恢复、可审计的事实源。第一阶段不修改 Runtime、消息协议、数据库 schema 或历史数据，只新增确定性的 Presentation Projection。
