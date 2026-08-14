@@ -15,6 +15,9 @@ struct AgentWorkspaceView: View {
 
     private static let contextPickerPanelHeight: CGFloat = 420
     private static let contextPickerPanelGap: CGFloat = 12
+    // Header 内含竖向 Divider；若不限制高度，Divider 会把 Header 变成可伸缩视图，
+    // 与正文争抢窗口剩余高度，最终把真正的 Run 内容推到首屏以下。
+    private static let runHeaderHeight: CGFloat = 60
     // Header 与正文必须复用同一组列宽，否则窗口缩放时中间分隔线会发生错位。
     private static let runColumnMinWidth: CGFloat = 460
     private static let runColumnIdealWidth: CGFloat = 560
@@ -411,7 +414,7 @@ struct AgentWorkspaceView: View {
                 Spacer()
             }
             .padding(.horizontal, 18)
-            .padding(.vertical, 13)
+            .padding(.vertical, 8)
             .frame(minWidth: Self.runColumnMinWidth, idealWidth: Self.runColumnIdealWidth)
             .layoutPriority(1)
 
@@ -424,6 +427,7 @@ struct AgentWorkspaceView: View {
                     )
             }
         }
+        .frame(height: Self.runHeaderHeight)
     }
 
     private var runTimeline: some View {
