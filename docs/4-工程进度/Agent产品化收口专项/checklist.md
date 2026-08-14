@@ -74,14 +74,14 @@
 - [x] StarcatTests 全量测试与 Debug build 通过。
 - [x] 正式 Agent 入口、免费 Pro 付费墙与 Pro 无模型配置门禁完成真实 UI 验收。
 - [x] 真实 v19 数据证明 Provider 完成 Run、消息 / Artifact 持久化、Knowledge Search citation 与私有上下文外部搜索阻断。
-- [ ] 使用最终代码完成一次真实 Provider Run 与完整 Run Surface / 历史 / Artifact 导出视觉验收。
-- [ ] 完成一次成功 External Search / GitHub 联网 Run；现有真实记录均为 `skipped`，不能冒充成功证据。
+- [x] 使用最终代码完成一次真实 Provider Run 与完整 Run Surface / 历史 / Artifact 导出视觉验收。
+- [x] 完成一次成功 External Search / GitHub 联网 Run；多批成功搜索证据共同支撑候选准入与最终 Artifact。
 - [x] App Store / Direct 两个 Release scheme 最终代码均完成 `CODE_SIGNING_ALLOWED=NO` 构建。
 - [ ] 在发版流程生成的 App Store / Direct 真实产物上完成双渠道人工验收；本专项未获授权执行打包、签名、公证或上传脚本。
 - [x] 完成至少三轮完整审查，每轮保存独立报告、修复问题并提交。
 - [x] 生成 `Agent产品化收口需求完成结果报告.md`，并如实保留未关闭的外部人工门禁。
 
-> 当前证据：2026-08-14 已完成 Agent / Capability / MCP 定向套件、2283 项全量测试（0 failed）、Debug build、App Store / Direct Release build、Agent String Catalog 18 locale 完整性检查、四轮审查与真实入口门禁验收；真实 Provider 历史数据与私仓边界已有脱敏事实，最终代码视觉、成功联网和真实分发产物仍等待人工环境。
+> 当前证据：2026-08-14 已完成 Agent / Capability / MCP 定向套件、2283 项全量测试（0 failed）、Debug build、App Store / Direct Release build、Agent String Catalog 18 locale 完整性检查与六轮审查。最终代码真实 Run `B5B9A14A-E616-4EE4-AC7A-536D8EF42F4F` 在 31 秒内完成成功 External Search、Run Surface、历史回看及 2,779 字符 Artifact 导出；仅真实分发产物双渠道验收仍等待发版授权。
 
 ## 4. 明确非目标
 
