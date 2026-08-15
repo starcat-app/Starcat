@@ -17,6 +17,7 @@
 > - `docs/3-设计/详细设计/34-StarcatCLI与外部MCP桥接设计.md`
 > - `docs/3-设计/详细设计/37-外部搜索服务设计.md`
 > - `docs/3-设计/详细设计/37-AI用量统计面板设计.md`
+> - `docs/3-设计/详细设计/58-DeepSeekHarness集成评估与POC技术方案.md`
 > - `docs/2-产品/需求讨论/agent/19-Cline-Agent设计学习心得.md`
 
 ---
@@ -1016,6 +1017,8 @@ propose / dry-run
 P0～P3、定向自动化、Release 构建与真实入口门禁验收通过后，已于 2026-08-14 解除 `DebugFlags.agentToolbarEntry`；Pro、模型、用量和隐私边界保持不变。
 
 ### P5：可选外部 CLI Runtime
+
+DeepSeek Harness 已作为首个候选 Runtime 完成架构评估，POC 边界、协议缺口、安全约束与 GO / NO-GO 条件见 `58-DeepSeekHarness集成评估与POC技术方案.md`。该评估不改变 P0～P4 的完成状态，也不代表外部 Runtime 已实现。
 
 进入条件：
 
