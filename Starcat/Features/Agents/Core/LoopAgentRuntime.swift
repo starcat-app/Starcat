@@ -103,6 +103,62 @@ private enum AgentRunRestoration: Sendable {
     }
 }
 
+/// Provider 原始流式增量进入 Workspace `MainActor` 前的批处理器。
+///
+/// Provider 可能在一次长回答中产生数千个 token 事件。若每个事件都直接进入
+/// `AgentWorkspaceViewModel`，即使展示层随后再节流，主线程仍需要先消费全部事件并触发
+/// Observation 检查。这里按固定时间窗合并正文与 reasoning，完整文本仍由模型响应和消息
+/// 持久化保存，批处理只降低 UI 事件频率，不改变 Agent 的消息事实或 tool-calling 语义。
+struct AgentStreamDeltaBatcher {
+    static let defaultEmissionInterval: TimeInterval = 0.1
+
+    private let emissionInterval: TimeInterval
+    private var pendingText = ""
+    private var pendingReasoning = ""
+    private var lastEmissionTime: TimeInterval?
+
+    init(emissionInterval: TimeInterval = Self.defaultEmissionInterval) {
+        self.emissionInterval = max(0, emissionInterval)
+    }
+
+    mutating func appendText(_ delta: String, now: TimeInterval) -> [AgentRunEvent] {
+        guard !delta.isEmpty else { return [] }
+        pendingText += delta
+        return flushIfDue(now: now)
+    }
+
+    mutating func appendReasoning(_ delta: String, now: TimeInterval) -> [AgentRunEvent] {
+        guard !delta.isEmpty else { return [] }
+        pendingReasoning += delta
+        return flushIfDue(now: now)
+    }
+
+    mutating func flush() -> [AgentRunEvent] {
+        drain()
+    }
+
+    private mutating func flushIfDue(now: TimeInterval) -> [AgentRunEvent] {
+        if let lastEmissionTime, now - lastEmissionTime < emissionInterval {
+            return []
+        }
+        lastEmissionTime = now
+        return drain()
+    }
+
+    private mutating func drain() -> [AgentRunEvent] {
+        var events: [AgentRunEvent] = []
+        if !pendingReasoning.isEmpty {
+            events.append(.assistantReasoningDelta(pendingReasoning))
+            pendingReasoning = ""
+        }
+        if !pendingText.isEmpty {
+            events.append(.assistantDelta(pendingText))
+            pendingText = ""
+        }
+        return events
+    }
+}
+
 struct LoopAgentRuntime: AgentRuntime {
     private let modelClient: any AgentLoopModelClient
     private let promptBuilder: any AgentPromptBuilding
@@ -608,26 +664,50 @@ struct LoopAgentRuntime: AgentRuntime {
         var completed: AgentModelResponse?
         var streamedText = ""
         var streamedReasoning = ""
+        var deltaBatcher = AgentStreamDeltaBatcher()
         let stream = modelClient.stream(request: AgentModelRequest(
             prompt: promptRequest,
             tools: tools,
             toolChoice: toolChoice,
             metadata: ["run_id": runID.uuidString]
         ))
-        for try await event in stream {
-            try Task.checkCancellation()
-            switch event {
-            case .textDelta(let delta):
-                streamedText += delta
-                continuation.yield(.assistantDelta(delta))
-            case .reasoningDelta(let delta):
-                streamedReasoning += delta
-                continuation.yield(.assistantReasoningDelta(delta))
-            case .toolCallDelta, .usage:
-                continue
-            case .completed(let response):
-                completed = response
+        do {
+            for try await event in stream {
+                try Task.checkCancellation()
+                switch event {
+                case .textDelta(let delta):
+                    streamedText += delta
+                    for batchedEvent in deltaBatcher.appendText(
+                        delta,
+                        now: Date.timeIntervalSinceReferenceDate
+                    ) {
+                        continuation.yield(batchedEvent)
+                    }
+                case .reasoningDelta(let delta):
+                    streamedReasoning += delta
+                    for batchedEvent in deltaBatcher.appendReasoning(
+                        delta,
+                        now: Date.timeIntervalSinceReferenceDate
+                    ) {
+                        continuation.yield(batchedEvent)
+                    }
+                case .toolCallDelta, .usage:
+                    continue
+                case .completed(let response):
+                    completed = response
+                }
             }
+        } catch {
+            // Provider 失败或任务取消时也保留已经到达的尾部增量，避免错误行出现前
+            // 正文突然缺一截；随后仍把原始错误交给上层统一收口 Run 状态。
+            for batchedEvent in deltaBatcher.flush() {
+                continuation.yield(batchedEvent)
+            }
+            throw error
+        }
+        // 正常结束时补发不足一个时间窗的尾部增量，避免短回答或最后一批 token 丢失。
+        for batchedEvent in deltaBatcher.flush() {
+            continuation.yield(batchedEvent)
         }
         try Task.checkCancellation()
         guard let completed else { throw LoopAgentRuntimeError.emptyModelResponse }

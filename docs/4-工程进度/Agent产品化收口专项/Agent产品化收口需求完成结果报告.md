@@ -1,6 +1,6 @@
 # Agent 产品化收口需求完成结果报告
 
-- 报告时间：2026-08-14 13:05 CST
+- 报告时间：2026-08-15 14:22 CST
 - 当前分支：`dev`
 - 专项范围：权威设计 P0～P4；P5 外部 CLI Runtime 不在本轮范围
 - 当前状态：仓库内工程实现、真实窗口视觉验收与历史真实 Run 数据闭环完成；Debug 数据容器仍受既有对话模型配置门禁限制，真实分发产物双渠道验收等待发版授权
@@ -58,7 +58,8 @@
 - Artifact Agent 在迭代预算耗尽前进入 Definition 驱动的最终提交回合，确保成功 Run 产生结构化产物。
 - External Search 的多批成功结果在运行与恢复路径统一累积；Repo Alternatives 使用完整证据校验候选，但最终来源区只保留候选 GitHub 根 URL。
 - Run 展示问题与下一次 Composer 草稿分离，发送、完成刷新和历史回看均不会把已发送问题重新填回输入框。
-- 流式文本按时间和字符阈值节流，并限制展示尾部长度；自动滚动取消逐帧动画，`RAGFlowLayout` 明确对齐边界，消除了真实运行期间的主线程递归布局卡顿。
+- Provider 原始正文 / reasoning delta 先在 Runtime 按 100 ms 时间窗合并，再进入 `MainActor`；Workspace 展示层继续按时间和字符阈值节流并限制尾部长度。
+- Run Surface 复用 `ScrollTailController` 与 `sizeChanges` anchor，移除状态 / 正文变化触发的同步 `scrollTo`，修复长工具链完成后 `GraphHost.flushTransactions` 持续占用主线程的布局风暴。
 
 ## 3. 功能清单
 
@@ -84,7 +85,7 @@
 - 前置决策：`docs/1-立项/开发前问题清单.md`
 - 主进度：`docs/功能实现总览.md`
 - 专项 checklist：`docs/4-工程进度/Agent产品化收口专项/checklist.md`
-- 审查报告：`docs/4-工程进度/Agent产品化收口专项/审查报告/`（第 1～11 轮）
+- 审查报告：`docs/4-工程进度/Agent产品化收口专项/审查报告/`（第 1～12 轮）
 
 上述文档已同步当前 P0～P4 实现、P5 非目标、Agent/RAG 产品边界、全量仓库来源、能力复用、进程中断恢复和人工门禁。功能总览只更新已实现且有自动化或构建证据的条目。
 
@@ -93,9 +94,10 @@
 - Repository / ViewModel 中断恢复定向测试：40 项，0 failed。
 - Agent / Capability / MCP 定向测试：通过。
 - 最终 Run Surface 定向测试：36 项，0 failed、0 skipped；`Test-Starcat-2026.08.14_12-53-14-+0800.xcresult`。
-- StarcatTests：2,287 项，0 failed、8 skipped、1 expected failure。
-- 最终全量测试结果：`Test-Starcat-2026.08.14_13-00-30-+0800.xcresult`。
+- StarcatTests：2,291 项，0 failed、8 skipped、1 expected failure。
+- 最终全量测试结果：`Test-Starcat-2026.08.15_14-30-41-+0800.xcresult`。
 - Runtime warnings：4 条，均来自既有 `DiagnosticsTests.swift` 后台发布，与 Agent 改动无关。
+- 2026-08-15 卡死修复定向测试：`LoopAgentRuntimeTests`、`AgentWorkspaceViewModelTests`、`ScrollTailControllerTests` 通过；覆盖 400 个 Provider delta 的内容完整性、事件数量上界与生产视图渲染。
 - Debug build：通过。
 - App Store `Starcat` Release `CODE_SIGNING_ALLOWED=NO` build：通过。
 - Direct `StarcatDirect` Release `CODE_SIGNING_ALLOWED=NO` build：通过。
@@ -128,6 +130,7 @@
 | 第 9 轮 | Run Header 首屏高度与真实窗口复验 | 发现半屏拉伸并以 `113912d` 修复 |
 | 第 10 轮 | WorkBuddy 原型对齐、任务叙事、Markdown 正文与视觉门禁 | 发现调试面板方向错误和空白截图假通过并以 `bffcf9a` 修复 |
 | 第 11 轮 | 修复后代码、文档、i18n、定向与全量测试终审 | 未发现新的仓库内遗留问题，仅保留分发授权门禁 |
+| 第 12 轮 | 长工具链完成后主线程卡死、入站增量与尾部跟随复审 | 发现同步 `scrollTo` 布局风暴并修复，定向回归通过 |
 
 ## 8. 本地提交
 
@@ -166,6 +169,6 @@
 
 ## 10. 最终完成状态
 
-仓库内代码、设计、专项 checklist、功能实现总览、国际化、36 项定向测试、2,287 项全量测试、Debug / 双 Release scheme 构建、历史真实 Provider / External Search 数据闭环，以及最新连续任务叙事 Run Surface 的真实窗口渲染验收均已完成并一致。
+仓库内代码、设计、专项 checklist、功能实现总览、国际化、Agent 定向测试、2,291 项全量测试、Debug / 双 Release scheme 构建、历史真实 Provider / External Search 数据闭环，以及最新连续任务叙事 Run Surface 的真实窗口渲染验收均已完成并一致。2026-08-15 新增的 Runtime 入站增量合并与安全尾部跟随已完成定向回归。
 
 当前还保留两个外部门禁：Debug 数据容器需由用户配置对话模型后复验真实历史任务页面，App Store / Direct 真实分发产物需获得发版授权后按既有 SOP 分别验收。在未获授权前，不绕过产品门禁，不以离屏窗口、无签名 Release 编译替代这些外部验收。

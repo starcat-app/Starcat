@@ -14,7 +14,7 @@ struct AgentMessageTimelineView: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @State private var expandedItemIDs: Set<String> = []
     @State private var processExpandedOverride: Bool?
-    @State private var isNearBottom = true
+    @State private var messageTail = ScrollTailController()
 
     let viewModel: AgentWorkspaceViewModel
 
@@ -38,89 +38,74 @@ struct AgentMessageTimelineView: View {
             ?? "draft"
     }
 
-    private var presentationRevision: String {
-        let sectionIDs = presentation.processSections.map(\.id).joined(separator: "|")
-        let artifactIDs = presentation.inlineArtifacts.map(\.id).joined(separator: "|")
-        let approvalStates = viewModel.approvals
-            .map { "\($0.id.uuidString):\($0.status.rawValue)" }
-            .joined(separator: "|")
-        return "\(sectionIDs)#\(presentation.finalAnswer?.id ?? "")#\(artifactIDs)"
-            + "#\(viewModel.assistantOutput.count)#\(viewModel.status.rawValue)"
-            + "#\(approvalStates)#\(viewModel.errorMessage ?? "")"
-    }
-
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 18) {
-                    if isEmpty {
-                        emptyState
-                    } else {
-                        ForEach(presentation.userItems) { item in
-                            userRow(item)
-                        }
-
-                        agentIdentityRow
-
-                        if !presentation.processSections.isEmpty {
-                            processSection
-                        }
-
-                        if !viewModel.assistantOutput.isEmpty || !viewModel.assistantReasoningOutput.isEmpty {
-                            streamingResultRow
-                                .id("streaming-assistant")
-                        }
-
-                        // 工具型 Agent 的 Markdown artifact 就是最终正文；不再在正文前重复一段
-                        // assistant 结语，确保结果像文档而不是“消息 + 卡片”的双重包装。
-                        if presentation.inlineArtifacts.isEmpty,
-                           let finalAnswer = presentation.finalAnswer {
-                            finalAnswerRow(finalAnswer)
-                                .id(finalAnswer.id)
-                        }
-
-                        ForEach(presentation.inlineArtifacts) { item in
-                            inlineArtifactRow(item)
-                                .id(item.id)
-                        }
-
-                        if let error = viewModel.errorMessage {
-                            errorRow(error)
-                                .id("run-error")
-                        }
-
-                        Color.clear
-                            .frame(height: 1)
-                            .id("run-surface-bottom")
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 18) {
+                if isEmpty {
+                    emptyState
+                } else {
+                    ForEach(presentation.userItems) { item in
+                        userRow(item)
                     }
+
+                    agentIdentityRow
+
+                    if !presentation.processSections.isEmpty {
+                        processSection
+                    }
+
+                    if !viewModel.assistantOutput.isEmpty || !viewModel.assistantReasoningOutput.isEmpty {
+                        streamingResultRow
+                            .id("streaming-assistant")
+                    }
+
+                    // 工具型 Agent 的 Markdown artifact 就是最终正文；不再在正文前重复一段
+                    // assistant 结语，确保结果像文档而不是“消息 + 卡片”的双重包装。
+                    if presentation.inlineArtifacts.isEmpty,
+                       let finalAnswer = presentation.finalAnswer {
+                        finalAnswerRow(finalAnswer)
+                            .id(finalAnswer.id)
+                    }
+
+                    ForEach(presentation.inlineArtifacts) { item in
+                        inlineArtifactRow(item)
+                            .id(item.id)
+                    }
+
+                    if let error = viewModel.errorMessage {
+                        errorRow(error)
+                            .id("run-error")
+                    }
+
+                    // 底部 sentinel 是“用户是否仍在尾部”的唯一位置真源。内容高度变化时
+                    // 由 ScrollView 的 sizeChanges anchor 校正 offset，不能再同步 scrollTo；
+                    // 后者会在长工具链完成突发刷新时形成 AttributeGraph 布局反馈环。
+                    Color.clear
+                        .frame(height: 1)
+                        .id("run-surface-bottom")
+                        .onScrollVisibilityChange(threshold: 0.5) { isVisible in
+                            messageTail.updateBottomVisibility(isVisible)
+                        }
                 }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 18)
-                .frame(maxWidth: 820, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .center)
             }
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                let remaining = geometry.contentSize.height
-                    - geometry.contentOffset.y
-                    - geometry.containerSize.height
-                return remaining <= 80
-            } action: { _, newValue in
-                isNearBottom = newValue
-            }
-            .onChange(of: presentationRevision) { _, _ in
-                // 只有仍在跟随尾部的运行中 Run 才自动滚动；用户主动上滚后不能抢回位置。
-                guard isNearBottom else { return }
-                // 流式回答会连续改变正文高度。对每个展示快照启动滚动动画会让多个
-                // AttributeGraph 布局事务互相追赶，长工具链中甚至能持续占满主线程。
-                // 直接跟随尾部既保留自动滚动语义，也不会累积动画事务。
-                proxy.scrollTo("run-surface-bottom", anchor: .bottom)
-            }
-            .onChange(of: runIdentity) { _, _ in
-                // 切换实时 / 历史 Run 后恢复该状态的默认折叠策略，不沿用上一 Run 的手动选择。
-                processExpandedOverride = nil
-                expandedItemIDs.removeAll()
-                isNearBottom = true
-            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 18)
+            .frame(maxWidth: 820, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+        .defaultScrollAnchor(
+            messageTail.isFollowing ? .bottom : nil,
+            for: .sizeChanges
+        )
+        .onScrollPhaseChange { _, newPhase in
+            messageTail.updatePhase(newPhase)
+        }
+        .onChange(of: runIdentity) { _, _ in
+            // 切换实时 / 历史 Run 后恢复该状态的默认折叠与尾部跟随策略，
+            // 不沿用上一 Run 的手动选择或滚动意图。
+            processExpandedOverride = nil
+            expandedItemIDs.removeAll()
+            messageTail.resumeFollowing()
         }
     }
 

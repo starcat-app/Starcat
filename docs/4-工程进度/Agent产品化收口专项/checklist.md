@@ -61,13 +61,14 @@
 - [x] 最终回答与 Markdown Artifact 在中栏直接渲染，`.log` 与原始审计不进入主结果区。
 - [x] 普通 UI 不展示模型原始 reasoning、input/output 或技术 log；来源和 Knowledge Audit 保留二级核验入口，完整工具事实继续持久化。
 - [x] 用户主动上滚后流式更新不再抢回滚动位置，切换 Run 时重置折叠偏好。
+- [x] Provider 原始增量在 Runtime 进入 `MainActor` 前合并；Run Surface 使用共享尾部跟随状态机和 `sizeChanges` anchor，移除高频同步 `scrollTo`。
 - [x] 当前 Run 展示问题与 Composer 草稿分离，发送、完成刷新和打开历史都不会把已发送问题重新塞回输入框。
 - [x] Run Header 固定为紧凑高度，标题区不再与正文争抢剩余高度，用户问题和执行过程直接进入首屏。
 - [x] 移除 Header 开发者副标题、大卡片嵌套与内部英文工具名；过程改为连续任务叙事，Artifact 改为连续 Markdown 正文。
 - [x] 增加真实 `NSWindow + NSHostingView` 像素渲染测试，禁止尺寸正确但内容全白的截图假通过。
 - [x] 补齐 call/result 合并、Activity Group、顺序、结果分层、Markdown/log 边界和默认折叠测试。
 
-> 验证：2026-08-14 `AgentTimelineProjectionTests` 与 `AgentWorkspaceViewModelTests` 最新 36 项通过；`NSHostingView` 真实像素渲染确认浅灰用户消息、单一 Agent 身份、纵向任务进展、自然语言活动与连续 Markdown 正文进入同一阅读流。投影只消费现有 Message / Approval / Artifact，未修改消息协议或数据库 schema。
+> 验证：2026-08-15 `LoopAgentRuntimeTests`、`AgentWorkspaceViewModelTests` 与 `ScrollTailControllerTests` 定向通过，新增 400 个 Provider delta 突发流量回归；`NSHostingView` 真实像素渲染继续覆盖生产 Run Surface。投影只消费现有 Message / Approval / Artifact，未修改消息协议或数据库 schema。
 
 ### E. 文档、测试与工程进度
 
@@ -84,7 +85,7 @@
 - [x] 完成至少三轮完整审查，每轮保存独立报告、修复问题并提交。
 - [x] 生成 `Agent产品化收口需求完成结果报告.md`，并如实保留未关闭的外部人工门禁。
 
-> 当前证据：2026-08-14 已完成 Agent / Capability / MCP 定向套件、最新 2,287 项全量测试（0 failed）、36 项 Run Surface 定向测试、Debug build、App Store / Direct Release build、Agent String Catalog 18 locale 完整性检查与十一轮审查。历史真实 Run `B5B9A14A-E616-4EE4-AC7A-536D8EF42F4F` 在 31 秒内完成 External Search、历史回看及 2,779 字符 Artifact 导出；最新连续任务叙事界面由同一生产视图在真实 `NSWindow + NSHostingView` 中通过像素验收。Debug 数据容器的真实历史页面复验受既有对话模型配置门禁限制，真实分发产物双渠道验收仍等待发版授权。
+> 当前证据：2026-08-15 已完成 Agent / Capability / MCP 定向套件、最新 2,291 项全量测试（0 failed、8 skipped、1 expected failure）、Run Surface 定向测试、Debug build、App Store / Direct Release build、Agent String Catalog 18 locale 完整性检查与十二轮审查；本轮新增 Runtime 入站合并和安全尾部跟随回归。历史真实 Run `B5B9A14A-E616-4EE4-AC7A-536D8EF42F4F` 在 31 秒内完成 External Search、历史回看及 2,779 字符 Artifact 导出；最新连续任务叙事界面由同一生产视图在真实 `NSWindow + NSHostingView` 中通过像素验收。Debug 数据容器的真实历史页面复验受既有对话模型配置门禁限制，真实分发产物双渠道验收仍等待发版授权。
 
 ## 4. 明确非目标
 

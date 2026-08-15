@@ -480,8 +480,8 @@ Inspector 从“最终产物正文阅读器”调整为“选中对象的详情�
 - 流式 token 不直接改变 Activity Group identity。
 - call/result 合并后只更新同一稳定节点，不插入第二张卡片。
 - 完成态折叠过程时保持结果起点锚定，不能把视口跳到 Composer 底部。
-- 用户离开底部后暂停自动跟随；显示显式“回到底部”入口。
-- 运行中自动跟随必须直接定位，不为每个流式快照叠加滚动动画；否则正文高度变化会造成 AttributeGraph 布局事务追赶。
+- 用户离开底部后暂停自动跟随；底部 sentinel 可见性与 `ScrollPhase` 是用户滚动意图的唯一事实源。
+- 运行中内容增长统一复用 `ScrollTailController` 与 `.defaultScrollAnchor(..., for: .sizeChanges)`；禁止在流式快照、状态或 Artifact 变化时同步调用 `scrollTo`，否则长工具链完成时会形成 AttributeGraph 布局反馈环。
 - Agent Composer 复用的 `RAGFlowLayout` 不提供自定义对齐线，必须显式对水平/垂直 `explicitAlignment` 返回 `nil`，禁止触发 SwiftUI 默认的 child geometry 递归测量。
 - 长输出完成前不启用高成本全文 Selection Overlay，完成后再开放完整文本选择。
 - 窗口缩放、Light/Dark、18 种语言、RTL、Reduce Motion 和 VoiceOver 必须进入人工验收。
@@ -783,9 +783,11 @@ build prompt
 
 - 原始 token/delta 不逐条写入 `@Observable`。
 - reasoning 与正文分别按受控频率发布。
-- Agent Workspace 复用 `StreamingTextPresentationBuffer`：150 ms / 256 字符双阈值，运行中展示最多 12,000 字符的尾部窗口；完整内容仍由 Runtime 消息持久化。
+- `LoopAgentRuntime` 先用 `AgentStreamDeltaBatcher` 按 100 ms 时间窗合并 Provider 原始正文 / reasoning 增量，再把事件交给 `MainActor`，避免主线程先消费数千个原始 token 事件。
+- Agent Workspace 继续复用 `StreamingTextPresentationBuffer`：150 ms / 256 字符双阈值，运行中展示最多 12,000 字符的尾部窗口；完整内容仍由 Runtime 消息持久化。Runtime 与展示层两级合并分别控制事件入口和 Observable 发布，不能互相替代。
 - 完成、取消、失败必须 flush。
 - Timeline 的 identity 不得使用持续变化的正文。
+- Timeline 内容尺寸变化由 `ScrollTailController` + `sizeChanges` anchor 跟随尾部；禁止通过正文长度或复合 revision 高频触发同步 `scrollTo`。
 - 长输出完成前不创建高成本 Selection Overlay。
 
 ---

@@ -11,6 +11,90 @@ import Testing
 
 @Suite("LoopAgentRuntime")
 struct LoopAgentRuntimeTests {
+    @Test("Provider 高频正文增量在进入 UI 前合并且内容不丢失")
+    func batchesBurstTextDeltasBeforeMainActor() {
+        var batcher = AgentStreamDeltaBatcher(emissionInterval: 0.1)
+        var events: [AgentRunEvent] = []
+
+        for _ in 0..<400 {
+            events += batcher.appendText("字", now: 10)
+        }
+        events += batcher.flush()
+
+        let text = events.compactMap { event -> String? in
+            guard case .assistantDelta(let delta) = event else { return nil }
+            return delta
+        }.joined()
+        #expect(text == String(repeating: "字", count: 400))
+        #expect(events.count == 2)
+    }
+
+    @Test("正文与 reasoning 分通道合并并按时间窗发送")
+    func batchesTextAndReasoningIndependently() {
+        var batcher = AgentStreamDeltaBatcher(emissionInterval: 0.1)
+        var events: [AgentRunEvent] = []
+
+        events += batcher.appendReasoning("分析", now: 20)
+        events += batcher.appendText("答", now: 20.05)
+        events += batcher.appendText("案", now: 20.11)
+        events += batcher.flush()
+
+        let reasoning = events.compactMap { event -> String? in
+            guard case .assistantReasoningDelta(let delta) = event else { return nil }
+            return delta
+        }.joined()
+        let text = events.compactMap { event -> String? in
+            guard case .assistantDelta(let delta) = event else { return nil }
+            return delta
+        }.joined()
+        #expect(reasoning == "分析")
+        #expect(text == "答案")
+        #expect(events.count == 2)
+    }
+
+    @Test("Runtime 不把 Provider 高频增量逐条转发到 Workspace")
+    func runtimeCoalescesProviderDeltas() async throws {
+        let runtime = LoopAgentRuntime(
+            modelClient: BurstStreamingAgentModelClient(deltaCount: 400),
+            toolRegistry: try AgentToolRegistry(tools: [])
+        )
+
+        let events = await collect(runtime.run(
+            definition: makeDefinition(toolIDs: []),
+            prompt: "生成长回答",
+            context: .empty
+        ))
+        let deltas = events.compactMap { event -> String? in
+            guard case .assistantDelta(let delta) = event else { return nil }
+            return delta
+        }
+
+        #expect(deltas.joined() == String(repeating: "字", count: 400))
+        #expect(deltas.count < 20)
+        #expect(events.contains(where: { if case .runCompleted = $0 { return true }; return false }))
+    }
+
+    @Test("Provider 失败时 Runtime flush 已到达的尾部增量")
+    func runtimeFlushesPendingDeltasOnProviderFailure() async throws {
+        let runtime = LoopAgentRuntime(
+            modelClient: FailingBurstStreamingAgentModelClient(deltaCount: 400),
+            toolRegistry: try AgentToolRegistry(tools: [])
+        )
+
+        let events = await collect(runtime.run(
+            definition: makeDefinition(toolIDs: []),
+            prompt: "生成后失败",
+            context: .empty
+        ))
+        let text = events.compactMap { event -> String? in
+            guard case .assistantDelta(let delta) = event else { return nil }
+            return delta
+        }.joined()
+
+        #expect(text == String(repeating: "字", count: 400))
+        #expect(events.contains(where: { if case .runFailed = $0 { return true }; return false }))
+    }
+
     @Test("模型主动选择 allowlist 中非首个工具并在下一轮读取结果")
     func modelSelectsToolAndReceivesResult() async throws {
         let recorder = ModelRequestRecorder(responses: [
@@ -1083,6 +1167,42 @@ private struct RecordedAgentModelClient: AgentLoopModelClient {
                     continuation.finish(throwing: error)
                 }
             }
+        }
+    }
+}
+
+/// 用同一事件循环连续发送大量原始 delta，复现真实 Provider 的突发流量。
+private struct BurstStreamingAgentModelClient: AgentLoopModelClient {
+    let deltaCount: Int
+
+    func stream(request: AgentModelRequest) -> AsyncThrowingStream<AgentModelStreamEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let text = String(repeating: "字", count: deltaCount)
+            for _ in 0..<deltaCount {
+                continuation.yield(.textDelta("字"))
+            }
+            continuation.yield(.completed(AgentModelResponse(
+                text: text,
+                reasoning: nil,
+                toolCalls: [],
+                model: "burst-test",
+                finishReason: "stop"
+            )))
+            continuation.finish()
+        }
+    }
+}
+
+/// 先发送突发 delta 再失败，验证 Runtime 错误收口前不会丢失最后一个批次。
+private struct FailingBurstStreamingAgentModelClient: AgentLoopModelClient {
+    let deltaCount: Int
+
+    func stream(request: AgentModelRequest) -> AsyncThrowingStream<AgentModelStreamEvent, Error> {
+        AsyncThrowingStream { continuation in
+            for _ in 0..<deltaCount {
+                continuation.yield(.textDelta("字"))
+            }
+            continuation.finish(throwing: LoopAgentRuntimeError.emptyModelResponse)
         }
     }
 }
