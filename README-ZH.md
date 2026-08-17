@@ -14,6 +14,14 @@
 
 「**整理，理解、找回、评估**」—— 将 GitHub Stars 从扁平收藏夹升级为可复用知识库。
 
+## 为什么开源
+
+Starcat 一开始是按收费产品来做的，上线后也确实这么卖。后来发现几乎没人买。把 GitHub Stars 管到这个深度，需求可能太小众了——小到大概只有我自己才有。
+
+所以现在把 Starcat 生态里的项目全部开源，只保留 [`starcat-license-api`](https://github.com/starcat-app/starcat-license-api) 为私有（它负责 Direct 渠道授权）。源码公开之后，也许还能换来一点关注和认可；这已经比关着卖更好。
+
+**Mac App Store** 和 **Direct**（[starcat.ink](https://starcat.ink)）仍会提供下载，也会继续维护。你也可以用本仓库自己编译、自己部署。本地编译与自建服务的说明后续会补上。
+
 ## 功能特性
 
 ### 基础功能
@@ -124,6 +132,8 @@ xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
 | [GithubStarsManager](https://github.com/AmintaCCCP/GithubStarsManager) | AI 摘要、语义搜索、Release 追踪 |
 
 ## 定价
+
+Mac App Store 与 Direct 仍按下面的方案提供。从源码编译并自建服务不需要 Starcat 授权；Direct 授权签发仍走私有的 `starcat-license-api`。
 
 | 方案 | 价格 | 说明 |
 |------|------|------|

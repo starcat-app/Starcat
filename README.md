@@ -14,6 +14,14 @@
 
 **Organize, understand, rediscover, and evaluate** — turn GitHub Stars from a flat list of bookmarks into a reusable knowledge base.
 
+## Why this is open source
+
+Starcat started as a paid product, and it shipped that way. In practice almost nobody bought it. Managing GitHub Stars this deeply turned out to be a niche of one: me.
+
+So everything in the Starcat ecosystem is now open source, except [`starcat-license-api`](https://github.com/starcat-app/starcat-license-api), which stays private because it issues Direct licenses. If the source is useful to anyone else, that is already more than a closed paid app was going to achieve.
+
+Official **Mac App Store** and **Direct** ([starcat.ink](https://starcat.ink)) builds remain available and will keep being maintained. You can also build from this repository and run your own stack. Self-hosting notes will follow.
+
 ## Features
 
 ### Essentials
@@ -128,6 +136,8 @@ Supported providers:
 | [GithubStarsManager](https://github.com/AmintaCCCP/GithubStarsManager) | AI summaries, semantic search, and release tracking |
 
 ## Pricing
+
+Official Mac App Store and Direct builds still use the plans below. Building from source and running your own services does not require a Starcat license; Direct license issuance stays on the private `starcat-license-api`.
 
 | Plan | Price | Includes |
 |------|-------|----------|
