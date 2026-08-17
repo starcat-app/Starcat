@@ -18,6 +18,8 @@
 # 前置条件:
 #   - trending-api (5002)、weekly-api (5003)、wiki-api (5004) 已启动
 #   - sqlite3 已安装
+#   - 各服务项目根目录 `.env` 已填 API_KEYS，或导出 TRENDING_KEY / WEEKLY_KEY / WIKI_KEY
+#     禁止把真实 key 写进本脚本，避免与 start-all.sh 两套真源，也避免提交进 Git。
 #
 # =============================================================================
 set -euo pipefail
@@ -30,11 +32,6 @@ TRENDING_API="http://127.0.0.1:5002"
 WEEKLY_API="http://127.0.0.1:5003"
 WIKI_API="http://127.0.0.1:5004"
 WIKI_BATCH_URL="$WIKI_API/api/v1/wikis/batch"
-
-# API Keys (与 start-all.sh 保持一致)
-TRENDING_KEY="sk-starcat-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-WEEKLY_KEY="sk-starcat-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-WIKI_KEY="sk-starcat-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 
 # 参数
 POLL_INTERVAL=5
@@ -78,6 +75,43 @@ warn() { echo -e "${YELLOW}  ⚠${NC} $1"; }
 err()  { echo -e "${RED}  ✘${NC} $1"; }
 
 auth_header() { echo "Authorization: Bearer $1"; }
+
+# 从服务 `.env` 读 API_KEYS 的第一项；环境变量同名覆盖，避免脚本再持有第二份真源。
+read_env_api_key() {
+  local env_file="$1"
+  local line val
+  [[ -f "$env_file" ]] || return 1
+  line="$(grep -E '^API_KEYS=' "$env_file" | head -1 || true)"
+  [[ -n "$line" ]] || return 1
+  val="${line#*=}"
+  val="${val%$'\r'}"
+  val="${val#\"}"
+  val="${val%\"}"
+  val="${val#\'}"
+  val="${val%\'}"
+  val="${val%%,*}"
+  val="${val#"${val%%[![:space:]]*}"}"
+  val="${val%"${val##*[![:space:]]}"}"
+  [[ -n "$val" ]] || return 1
+  printf '%s' "$val"
+}
+
+require_service_key() {
+  local env_name="$1"
+  local service_dir="$2"
+  local label="$3"
+  local val=""
+  if [[ -n "${!env_name:-}" ]]; then
+    val="${!env_name}"
+  else
+    val="$(read_env_api_key "$SUPPORTS_DIR/$service_dir/.env" || true)"
+  fi
+  if [[ -z "$val" ]]; then
+    err "缺少 $label API Key。请导出 $env_name，或在 $service_dir/.env 填写 API_KEYS"
+    exit 1
+  fi
+  printf '%s' "$val"
+}
 
 # ---- ensure_data: 确保 DB 有足够数据 ----
 # 用法: ensure_data <label> <api_url> <key> <sync_endpoint> <db_path> <sql_count> <poll_url>
@@ -181,6 +215,10 @@ warm_wiki() {
   echo ""
   ok "$label 预热完成: 成功 $success / 失败 $fail / 总计 $total"
 }
+
+TRENDING_KEY="$(require_service_key TRENDING_KEY starcat-trending-api Trending)"
+WEEKLY_KEY="$(require_service_key WEEKLY_KEY starcat-weekly-api Weekly)"
+WIKI_KEY="$(require_service_key WIKI_KEY starcat-wiki-api Wiki)"
 
 # =============================================================================
 # 主流程
