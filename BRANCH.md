@@ -6,7 +6,7 @@
 >
 > 操作规范：[`docs/5-规范/Git-分支与Worktree规范.md`](docs/5-规范/Git-分支与Worktree规范.md)
 >
-> 最后核对：2026-08-13
+> 最后核对：2026-08-17
 
 ## 登记说明
 
@@ -32,15 +32,15 @@
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
-| `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-08-13 已本地合并精选发布台，未 push。 | 在仓库根目录验证精选发布功能；推送或发布前再检查工作区和提交范围。 |
+| `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；精选发布台已合并进本分支。 | 推送或发布前再检查工作区和提交范围。 |
 | `main` | 本地 + `origin/main`；当前无独立 worktree | 远端默认稳定主线和发布基线。 | `长期保留`；2026-08-03 核对时本地与 `origin/main` 一致，且落后于 `dev`。 | 只接受经过验收的合并，不在该分支直接开展日常功能开发。 |
-| `codex/curated-publisher` | 本地；`../Starcat-curated-publisher` worktree | 实现仅管理员可用的「精选发布台」，完成任意线索解析、GitHub 仓库核验、Weekly 分类选择、人工确认、批次提交与终态反馈。基线为本地 `dev@a147c30d`。 | `已合并`；2026-08-13 本地合并进 `dev`，未 push；分支与 worktree 暂保留。 | dong4j 在 `dev` 验证后，再单独确认是否删除该分支与 worktree。 |
 | `origin/codex/search` | 仅远端；无本地分支、无 worktree | 早期 Repo Command Search 后续方案文档，最新提交为 `docs: add repo command search follow-up plan`。 | `待审查`；相对当前 `dev` 仍有 2 个独有提交，不能仅凭分支时间直接删除。 | 单独审查两个提交是否已被 `dev` 的现有搜索能力和文档覆盖，再决定保留或删除。 |
 
 ## 近期已清理分支
 
 | 分支 | 处理结论 | 清理依据 |
 |---|---|---|
+| `codex/curated-publisher` | 已删除 | dong4j 确认已全部合并进 `dev`；`git merge-base --is-ancestor` 成立，独有提交为 0，diff 为空。对应 `../Starcat-curated-publisher` worktree 与本地分支已清理；从未存在远端分支。 |
 | `codex/agent-iteration` | 已删除 | dong4j 已确认 Agent 迭代内容合并到 `dev`；对应 `../Starcat-agent-iteration` worktree 与本地分支已清理。 |
 | `codex/macos-widget` | 已删除 | 已合并到 `dev`，对应 worktree 已清理。 |
 | `codex/my-projects` | 已删除 | 已合并到 `dev`，对应 worktree 已清理。 |
