@@ -74,8 +74,12 @@ CoreSimulator/
 .swiftlint.yml
 .swiftformat
 
-# CI/CD
-.github/
+# CI/CD leftovers from other templates.
+# Track only the repository-root community files. Nested `.github/` directories
+# (including scaffold templates under `.claude/skills/`) stay ignored.
+**/.github/
+!/.github/
+!/.github/**
 BuddyBuild/
 CircleCI/
 Travis/

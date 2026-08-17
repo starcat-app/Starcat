@@ -1,0 +1,50 @@
+name: Bug report
+description: Report a reproducible problem in the Starcat macOS app
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Remove GitHub tokens, AI API keys, license keys, private notes, and other secrets before submitting.
+  - type: input
+    id: version
+    attributes:
+      label: Starcat version or commit
+      placeholder: 1.3.0, or a git commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: channel
+    attributes:
+      label: Distribution
+      options:
+        - Mac App Store
+        - Direct (starcat.ink / Homebrew)
+        - Built from source
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include macOS version and architecture (for example macOS 15.6 arm64).
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true

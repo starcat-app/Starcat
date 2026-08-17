@@ -96,8 +96,8 @@ Starcat/
 ### 全量测试
 
 ```bash
-cd /Users/dong4j/Developer/1.AI/ai-Incubator/Starcat && \
-  xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
+xcodegen generate
+xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
 ```
 
 ### AI 服务配置
@@ -140,6 +140,21 @@ cd /Users/dong4j/Developer/1.AI/ai-Incubator/Starcat && \
 - [详细设计索引](docs/3-设计/详细设计/README.md) - 技术设计文档入口
 - [Open Design UI 技能](docs/原型设计/Starcat-UI-SKILL.md) - UI 设计规范
 
+## 贡献
+
+见 [CONTRIBUTING.md](./CONTRIBUTING.md)。请遵守 [Code of Conduct](./CODE_OF_CONDUCT.md)。
+
+## 安全
+
+请按 [SECURITY.md](./SECURITY.md) 私下报告漏洞，不要发到公开 Issue。
+
+## 支持
+
+产品问题请到 [starcat-pro](https://github.com/starcat-app/starcat-pro/issues)。
+源码问题请到本仓库。说明见 [SUPPORT.md](./SUPPORT.md)。
+
 ## License
 
-MIT License
+[MIT](./LICENSE) © 2026 dong4j
+
+第三方声明：[THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)
