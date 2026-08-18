@@ -37,7 +37,8 @@
 //    `v10-rag-conversation-pinned-at` / `v11-rag-embedding-claim` /
 //    `v12-rag-metadata-revision` / `v13-weekly-multi-source` /
 //    `v14-ai-usage-events` / `v15-repo-pins` / `v16-repository-insights`
-//    `v17-my-projects` / `v18-rag-structured-citations` / `v19-agent-message-contract`
+//    `v17-my-projects` / `v18-rag-structured-citations` / `v19-agent-message-contract` /
+//    `v20-rag-chunks-fts-trigram`
 //
 
 import Foundation
@@ -73,6 +74,57 @@ enum DatabaseMigrations {
         registerV17(into: &migrator)
         registerV18(into: &migrator)
         registerV19(into: &migrator)
+        registerV20(into: &migrator)
+    }
+
+    // MARK: - v20-rag-chunks-fts-trigram：chunk FTS 与笔记同款 trigram（2026-08-18）
+
+    /// unicode61 把连续 CJK 当成单个 token，「部署失败」打不中「试过部署失败」。
+    /// 与 `notes_fts` 同一决策：trigram 做中缀；不足 3 个字符的 query 无法命中，
+    /// 由 `RAGKeywordQueryBuilder` 从 SQLite 表达式里丢掉。`repos_fts` 保持 unicode61。
+    /// v7 建表 SQL 已冻结，这里只重建 FTS；尚无 `rag_chunks` 的安装 no-op。
+    private static func registerV20(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v20-rag-chunks-fts-trigram") { db in
+            guard try db.tableExists("rag_chunks") else { return }
+
+            try db.execute(sql: "DROP TRIGGER IF EXISTS rag_chunks_ai")
+            try db.execute(sql: "DROP TRIGGER IF EXISTS rag_chunks_ad")
+            try db.execute(sql: "DROP TRIGGER IF EXISTS rag_chunks_au")
+            try db.execute(sql: "DROP TABLE IF EXISTS rag_chunks_fts")
+
+            try db.execute(sql: """
+                CREATE VIRTUAL TABLE rag_chunks_fts USING fts5(
+                    title,
+                    section_path,
+                    content,
+                    content='rag_chunks',
+                    content_rowid='id',
+                    tokenize='trigram'
+                )
+                """)
+            try db.execute(sql: """
+                CREATE TRIGGER rag_chunks_ai AFTER INSERT ON rag_chunks BEGIN
+                    INSERT INTO rag_chunks_fts(rowid, title, section_path, content)
+                    VALUES (new.id, new.title, new.section_path, new.content);
+                END
+                """)
+            try db.execute(sql: """
+                CREATE TRIGGER rag_chunks_ad AFTER DELETE ON rag_chunks BEGIN
+                    INSERT INTO rag_chunks_fts(rag_chunks_fts, rowid, title, section_path, content)
+                    VALUES ('delete', old.id, old.title, old.section_path, old.content);
+                END
+                """)
+            try db.execute(sql: """
+                CREATE TRIGGER rag_chunks_au AFTER UPDATE ON rag_chunks BEGIN
+                    INSERT INTO rag_chunks_fts(rag_chunks_fts, rowid, title, section_path, content)
+                    VALUES ('delete', old.id, old.title, old.section_path, old.content);
+                    INSERT INTO rag_chunks_fts(rowid, title, section_path, content)
+                    VALUES (new.id, new.title, new.section_path, new.content);
+                END
+                """)
+            // 外部内容表 CREATE 后是空索引；rebuild 从 rag_chunks 回填，避免老用户升级后全文检索全空。
+            try db.execute(sql: "INSERT INTO rag_chunks_fts(rag_chunks_fts) VALUES('rebuild')")
+        }
     }
 
     // MARK: - v19-agent-message-contract：Agent 可回放事实契约（2026-08-04）

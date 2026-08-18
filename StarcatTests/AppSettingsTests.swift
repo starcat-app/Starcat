@@ -843,6 +843,26 @@ struct AppSettingsTests {
         #expect(upgraded.ragPromptSettings.planner.systemPrompt.contains("webSearchRequests"))
         #expect(upgraded.ragPromptSettings.planner.systemPrompt.contains("keywordQueries"))
         #expect(upgraded.ragPromptSettings.planner.systemPrompt.contains("Retrieval, not the Planner"))
+        #expect(upgraded.ragPromptSettings.planner.systemPrompt.contains("Retrieval intent:"))
+        #expect(upgraded.ragPromptSettings.planner.systemPrompt.contains("candidateLimit must be null"))
+
+        let introGuardDefaults = makeIsolatedDefaults()
+        let introGuardSettings = AppSettings(defaults: introGuardDefaults)
+        introGuardSettings.ragPromptSettings = RAGPromptSettings(
+            generator: RAGDefaultPrompts.generator,
+            planner: RAGDefaultPrompts.plannerBeforeIntroRetrievalGuard
+        )
+        let introGuardUpgraded = AppSettings(defaults: introGuardDefaults)
+        #expect(introGuardUpgraded.ragPromptSettings.planner == RAGDefaultPrompts.planner)
+        #expect(!RAGDefaultPrompts.plannerBeforeIntroRetrievalGuard.systemPrompt.contains("Retrieval intent:"))
+        #expect(
+            !RAGDefaultPrompts.plannerBeforeIntroRetrievalGuard.systemPrompt
+                .contains("Inventory analytics cannot substitute")
+        )
+        #expect(
+            RAGDefaultPrompts.plannerBeforeIntroRetrievalGuard.systemPrompt
+                .contains("Never claim that selected-repository content is absent")
+        )
 
         let insightsAnalyticsDefaults = makeIsolatedDefaults()
         let insightsAnalyticsSettings = AppSettings(defaults: insightsAnalyticsDefaults)

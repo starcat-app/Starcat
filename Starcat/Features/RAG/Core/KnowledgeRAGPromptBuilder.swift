@@ -61,6 +61,7 @@ struct KnowledgeRAGPromptBuilder: Sendable {
         plan: RAGQueryPlan,
         retrieval: RAGRetrievalResult,
         metadataSnapshot: KnowledgeBaseMetadataSnapshot? = nil,
+        includeInventorySnapshot: Bool = true,
         analyticsResult: KnowledgeBaseAnalyticsResult? = nil,
         repositoryInsightsDocuments: [RAGRepositoryInsightsDocument] = [],
         repoContextDocument: RAGRepoContextDocument? = nil,
@@ -199,7 +200,7 @@ struct KnowledgeRAGPromptBuilder: Sendable {
         // 全局元数据不是 RAGChunk，但仍是回答使用的数据库事实。每段分配真实 marker，
         // 让模型只引用使用到的口径；正文快照随 citation 保存，历史回放不会漂移到新数据。
         let metadataContext: String
-        if let metadataSnapshot {
+        if let metadataSnapshot, includeInventorySnapshot {
             var parts: [String] = []
             for section in metadataSnapshot.citationSections(
                 includeInventoryLeaders: retrieval.bundles.isEmpty

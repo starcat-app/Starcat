@@ -428,7 +428,7 @@ struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning, KnowledgeR
 
     For aggregate/ranking/filter questions, optionally include analytics. It is a local-only DSL:
     {"dimension":"repository|language|status|tag|topic|license|null","measure":"count|max_stars|average_stars|max_forks|average_forks|repositories_with_ai_summary|repositories_with_private_notes|repositories_with_ai_generated_notes|repositories_with_recently_edited_private_notes|repositories_with_recently_generated_ai_summaries|excluded_rag_chunks|repositories_without_readme|repositories_without_indexable_source|repositories_organized|repositories_untagged|repositories_unread|repositories_dormant|repositories_archived|repositories_unavailable|repositories_with_health_snapshot|repositories_with_openssf_score|repositories_with_maintenance_risk|repositories_with_security_risk","direction":"asc|desc","limit":1}
-    Use analytics only for a database aggregation or ranking. Never use SQL, table names, column names, expressions, or additional analytics fields. Set mode=structured_only when analytics is present.
+    Use analytics only for a database aggregation or ranking (how many, top N, coverage counts). Never use analytics for introduce / explain / related-projects questions. Never use SQL, table names, column names, expressions, or additional analytics fields. Set mode=structured_only when analytics is present and the user only wants that aggregation or ranking.
     """
 
     private static func validateRanges(_ filters: RAGRepoFilter) throws {

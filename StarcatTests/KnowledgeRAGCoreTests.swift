@@ -358,6 +358,39 @@ struct KnowledgeRAGCoreTests {
         )
         #expect(!listingPrompt.userPrompt.contains("Star leaders"))
         #expect(!listingPrompt.userPrompt.contains("Top tags"))
+
+        #expect(
+            RAGPromptInventorySnapshot.shouldInclude(
+                explicitMode: .only,
+                explicitRepoIDs: [1],
+                hasAnalytics: false
+            ) == false
+        )
+        #expect(
+            RAGPromptInventorySnapshot.shouldInclude(
+                explicitMode: .only,
+                explicitRepoIDs: [1],
+                hasAnalytics: true
+            )
+        )
+        #expect(
+            RAGPromptInventorySnapshot.shouldInclude(
+                explicitMode: .prefer,
+                explicitRepoIDs: [1],
+                hasAnalytics: false
+            )
+        )
+        let scopedPrompt = KnowledgeRAGPromptBuilder().build(
+            question: "介绍一下这个项目",
+            plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "Starcat 项目介绍"),
+            retrieval: RAGRetrievalResult(candidates: [], bundles: [], childHits: []),
+            metadataSnapshot: snapshot,
+            includeInventorySnapshot: false,
+            remoteBlocks: [],
+            attachmentContexts: []
+        )
+        #expect(!scopedPrompt.userPrompt.contains("Authoritative local knowledge-base metadata snapshot"))
+        #expect(!scopedPrompt.userPrompt.contains("1879"))
     }
 
     @Test("知识库元数据快照按数据库修订号缓存并在写入后失效")
@@ -2106,6 +2139,101 @@ struct KnowledgeRAGCoreTests {
         #expect(Set(result.bundles.map { $0.candidate.repo.id }) == Set(1...7))
     }
 
+    @Test("explicit only 检索 0 命中时仍打包已索引 README，不打包私有笔记")
+    func explicitOnlyPacksIndexedReadmeWhenSearchMisses() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 21, owner: "starcat-app", name: "Starcat")
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 21, state: .inLibrary)
+        let chunks = GRDBRAGChunkRepository(database: database)
+        _ = try await chunks.replaceSource(repoId: 21, source: .readme, drafts: [
+            RAGChunkDraft(
+                repoId: 21,
+                source: .readme,
+                sourceId: "",
+                parentType: .readmeSection,
+                parentKey: "readme:intro",
+                parentTitle: "README > Intro",
+                chunkKey: "readme:intro:0",
+                chunkIndex: 0,
+                sectionPath: "Intro",
+                title: "Intro",
+                content: "Starcat turns GitHub stars into a local knowledge base.",
+                tokenCount: 12,
+                isTruncated: false
+            )
+        ])
+        _ = try await chunks.replaceSource(repoId: 21, source: .notes, drafts: [
+            RAGChunkDraft(
+                repoId: 21,
+                source: .notes,
+                sourceId: "",
+                parentType: .notes,
+                parentKey: "notes",
+                parentTitle: "Private note (user-authored in Starcat)",
+                chunkKey: "notes:0",
+                chunkIndex: 0,
+                sectionPath: "Private notes",
+                title: "Private notes",
+                content: "do not pack this note as a product intro",
+                tokenCount: 8,
+                isTruncated: false
+            )
+        ])
+        _ = try await chunks.replaceSource(repoId: 21, source: .metadata, drafts: [
+            RAGChunkDraft(
+                repoId: 21,
+                source: .metadata,
+                sourceId: "",
+                parentType: .metadata,
+                parentKey: "metadata",
+                parentTitle: "Repository metadata",
+                chunkKey: "metadata:0",
+                chunkIndex: 0,
+                sectionPath: "Metadata",
+                title: "starcat-app/Starcat",
+                content: "Repository: starcat-app/Starcat\nDescription: GitHub Star manager",
+                tokenCount: 8,
+                isTruncated: false
+            )
+        ])
+        let retriever = KnowledgeRAGRetriever(
+            chunkRepository: chunks,
+            keywordProvider: StubRAGKeywordProvider(
+                backendName: "SQLite",
+                hits: [],
+                shouldThrow: false
+            ),
+            vectorProvider: StubRAGVectorProvider(backendName: "SQLite", hits: [], shouldThrow: false),
+            embeddingClient: nil,
+            embeddingModel: nil
+        )
+        let candidate = RAGRepoCandidate(
+            repo: fixtureRepo(id: 21, isPrivate: false),
+            status: .using,
+            libraryUpdatedAt: nil,
+            tagNames: []
+        )
+        let packed = try await retriever.retrieve(
+            semanticQuery: "介绍一下这个项目",
+            candidates: [candidate],
+            explicitMode: .only,
+            explicitRepoIDs: [21]
+        )
+        #expect(packed.bundles.count == 1)
+        #expect(packed.childHits.contains { $0.chunk.source == .readme })
+        #expect(packed.childHits.contains { $0.chunk.source == .metadata })
+        #expect(!packed.childHits.contains { $0.chunk.source == .notes })
+        #expect(packed.bundles.first?.sectionParents.contains { $0.content.contains("local knowledge base") } == true)
+
+        let preferMiss = try await retriever.retrieve(
+            semanticQuery: "介绍一下这个项目",
+            candidates: [candidate],
+            explicitMode: .prefer,
+            explicitRepoIDs: [21]
+        )
+        #expect(preferMiss.bundles.isEmpty)
+    }
+
     @Test("query embedding 失败时保留 keyword 检索结果")
     func embeddingFailureKeepsKeywordResults() async throws {
         let database = try InMemoryDatabaseManager()
@@ -3031,18 +3159,22 @@ struct KnowledgeRAGCoreTests {
             generatorParameters: .summaryDefault
         )
 
-        for try await _ in service.ask(request: RAGServiceRequest(
+        for try await event in service.ask(request: RAGServiceRequest(
             rawQuestion: "数据库是怎么工作的？",
             composerContext: RAGComposerContext(
                 explicitRepoIDs: [21],
                 explicitRepoReferences: [.init(id: 21, fullName: "octo/demo-21")]
             ),
             conversationID: nil
-        )) {}
+        )) {
+            if case .retrieval = event { break }
+        }
 
         let recorded = try #require(await queryRecorder.latestQuery())
-        #expect(recorded.terms == ["数据库", "database"])
-        #expect(recorded.sqliteFTS5Expression == #""数据库"* OR "database"*"#)
+        #expect(recorded.terms.contains("octo/demo-21"))
+        #expect(recorded.terms.contains("metadata"))
+        #expect(recorded.terms.contains("数据库"))
+        #expect(recorded.terms.contains("database"))
         #expect(recorded.usedSemanticFallback == false)
     }
 
@@ -3094,17 +3226,21 @@ struct KnowledgeRAGCoreTests {
             generatorParameters: .summaryDefault
         )
 
-        for try await _ in service.ask(request: RAGServiceRequest(
+        for try await event in service.ask(request: RAGServiceRequest(
             rawQuestion: "查一下 starcat 相关的项目",
             composerContext: RAGComposerContext(
                 explicitRepoIDs: [21],
                 explicitRepoReferences: [.init(id: 21, fullName: "starcat-app/starcat-pro")]
             ),
             conversationID: nil
-        )) {}
+        )) {
+            if case .retrieval = event { break }
+        }
 
         let recorded = try #require(await queryRecorder.latestQuery())
         #expect(recorded.terms.first == "starcat")
+        #expect(recorded.terms.contains("starcat-app/starcat-pro"))
+        #expect(recorded.terms.contains("metadata"))
         #expect(recorded.terms.contains("项目"))
         #expect(recorded.terms.contains("仓库"))
     }

@@ -70,6 +70,7 @@ struct RAGPromptSettings: Codable, Equatable, Sendable {
             || decodedPlanner == RAGDefaultPrompts.plannerBeforeKeywordQueries
             || decodedPlanner == RAGDefaultPrompts.plannerBeforeExplicitRepoScopeGuard
             || decodedPlanner == RAGDefaultPrompts.plannerBeforeInsightsAnalytics
+            || decodedPlanner == RAGDefaultPrompts.plannerBeforeIntroRetrievalGuard
             ? RAGDefaultPrompts.planner
             : decodedPlanner
         if let decodedCompressor = try container.decodeIfPresent(
@@ -185,10 +186,16 @@ enum RAGDefaultPrompts {
         Supported filter fields: status(using/read/unread), languages, tags, minStars, maxStars, minForks, maxForks, license, includeArchived, includeForks, starredAfter, starredBefore, libraryUpdatedAfter, libraryUpdatedBefore, repoCreatedAfter, repoCreatedBefore, pushedAfter, pushedBefore.
         Dates must be ISO-8601. Do not invent fields. When the user has no filter intent, filters must be an empty object.
 
+        Retrieval intent:
+        - Introduce / explain / related-projects questions (介绍, 是干什么的, 相关项目) must use semantic_only or filtered_semantic with bilingual keywordQueries. Do not use analytics or structured_only unless the user only wants a count or ranking.
+        - When filters are empty and sort is null, candidateLimit must be null. Do not sample a top-N or highest-stars window unless the user asked for ranking or a numeric cap.
+        - Distinctive latin identity tokens from the user question (for example starcat) must appear in keywordQueries. Do not add an explicitly selected owner/repo identity merely to constrain scope; the local executor already enforces repo ids.
+
         Explicit repository scope:
         - When explicitRepositories is not empty, factual questions about those selected repositories are inside the knowledge-base boundary even when their content is not repeated in this planning prompt.
         - Repository metadata such as homepage, wiki links, license, language, topics, stars, forks, releases, health, OpenSSF, and timestamps is searchable local evidence. Use semantic_only or filtered_semantic to retrieve it.
         - Questions about whether a selected repository has a private note, AI summary, README, or other repository-specific artifact require semantic retrieval. Global inventory analytics cannot identify which selected repository owns an artifact and must not be used to infer a per-repository answer.
+        - Introduction or "what does this project do" questions about selected repositories must retrieve README, summary, and metadata via semantic_only or filtered_semantic. Inventory analytics cannot substitute for that retrieval.
         - Never claim that selected-repository content is absent merely because this planning prompt only contains repository identities and aggregate inventory. Retrieval, not the Planner, determines whether evidence exists.
 
         mode:
@@ -250,10 +257,37 @@ enum RAGDefaultPrompts {
         """
     )
 
+    /// 2026-08-18 介绍/相关项目检索护栏之前发布的 Planner 默认值。
+    /// 只识别完整官方旧值；用户改过任意字符都视为自定义，必须原样保留。
+    static let plannerBeforeIntroRetrievalGuard = AIPromptConfiguration(
+        systemPrompt: planner.systemPrompt
+            .replacingOccurrences(
+                of: """
+
+            Retrieval intent:
+            - Introduce / explain / related-projects questions (介绍, 是干什么的, 相关项目) must use semantic_only or filtered_semantic with bilingual keywordQueries. Do not use analytics or structured_only unless the user only wants a count or ranking.
+            - When filters are empty and sort is null, candidateLimit must be null. Do not sample a top-N or highest-stars window unless the user asked for ranking or a numeric cap.
+            - Distinctive latin identity tokens from the user question (for example starcat) must appear in keywordQueries. Do not add an explicitly selected owner/repo identity merely to constrain scope; the local executor already enforces repo ids.
+
+            """,
+                with: """
+
+            """
+            )
+            .replacingOccurrences(
+                of: """
+            - Introduction or "what does this project do" questions about selected repositories must retrieve README, summary, and metadata via semantic_only or filtered_semantic. Inventory analytics cannot substitute for that retrieval.
+
+            """,
+                with: ""
+            ),
+        userPromptTemplate: planner.userPromptTemplate
+    )
+
     /// 2026-07-30 知识库洞察分析指标扩展之前发布的 Planner 默认值。
     /// 只识别完整官方旧值，用户自定义 Prompt 不会被自动覆盖。
     static let plannerBeforeInsightsAnalytics = AIPromptConfiguration(
-        systemPrompt: planner.systemPrompt.replacingOccurrences(
+        systemPrompt: plannerBeforeIntroRetrievalGuard.systemPrompt.replacingOccurrences(
             of: """
                       "analytics":null or {"dimension":"repository|language|status|tag|topic|license|null","measure":"count|max_stars|average_stars|max_forks|average_forks|repositories_with_ai_summary|repositories_with_private_notes|repositories_with_ai_generated_notes|repositories_with_recently_edited_private_notes|repositories_with_recently_generated_ai_summaries|excluded_rag_chunks|repositories_without_readme|repositories_without_indexable_source|repositories_organized|repositories_untagged|repositories_unread|repositories_dormant|repositories_archived|repositories_unavailable|repositories_with_health_snapshot|repositories_with_openssf_score|repositories_with_maintenance_risk|repositories_with_security_risk","direction":"asc|desc","limit":10},
             """,

@@ -21,8 +21,16 @@ struct RAGKeywordSearchQuery: Equatable, Sendable {
 
     /// 空 terms 没有可执行的字面意图。Provider 必须返回零命中，不能把空字符串交给
     /// SQLite MATCH 或外部搜索后端，以免语法错误或被解释成全量检索。
+    ///
+    /// trigram 无法索引不足 3 个字符的 term：SQLite 表达式可能为空，但 Meilisearch
+    /// 仍应拿到 `externalQuery`。因此可执行性只看 terms，SQLite 另看 `hasSQLiteMatchExpression`。
     var isExecutable: Bool {
-        !terms.isEmpty && !sqliteFTS5Expression.isEmpty && !externalQuery.isEmpty
+        !terms.isEmpty && !externalQuery.isEmpty
+    }
+
+    /// `rag_chunks_fts` 是 trigram：短于 3 个字符的 MATCH 必空，不能发给 SQLite。
+    var hasSQLiteMatchExpression: Bool {
+        !sqliteFTS5Expression.isEmpty
     }
 }
 
@@ -34,6 +42,8 @@ struct RAGKeywordSearchQuery: Equatable, Sendable {
 enum RAGKeywordQueryBuilder {
     static let maximumTermCount = 8
     static let maximumTermLength = 80
+    /// 与 `rag_chunks_fts` / `notes_fts` 的 trigram 对齐：不足 3 个字符无法 MATCH。
+    static let minimumTrigramTermLength = 3
 
     static func build(
         keywordQueries: [String],
@@ -52,10 +62,29 @@ enum RAGKeywordQueryBuilder {
             : plannedTerms
         return RAGKeywordSearchQuery(
             terms: terms,
-            sqliteFTS5Expression: terms.map(fts5Clause).joined(separator: " OR "),
+            sqliteFTS5Expression: terms.compactMap(fts5Clause).joined(separator: " OR "),
             externalQuery: terms.joined(separator: " "),
             usedSemanticFallback: usedSemanticFallback
         )
+    }
+
+    /// Composer `@owner/repo` 必须进 FTS。Planner 仍会从 keywords 里删掉仓名（旧 AND 语义），执行层用 OR 加回来。
+    static func identityTerms(fromExplicitRepositories references: [RAGPlannerRepoReference]) -> [String] {
+        identityTerms(from: references.map(\.fullName).joined(separator: " "))
+    }
+
+    /// 问答检索的额外身份词：原句/标签身份 ∪ 显式仓名；`.only` 再加 `"metadata"` 打 `section_path`。
+    static func extraTermsForRetrieval(
+        identityTerms: [String],
+        explicitRepositories: [RAGPlannerRepoReference],
+        explicitMode: RAGExplicitRepoMode
+    ) -> [String] {
+        var extra = identityTerms
+        extra.append(contentsOf: self.identityTerms(fromExplicitRepositories: explicitRepositories))
+        if explicitMode == .only, !explicitRepositories.isEmpty {
+            extra.append("metadata")
+        }
+        return extra
     }
 
     /// 从用户原句抽出仓库身份词（`owner/repo`、拉丁标识符），供候选 SQL 与 FTS 共用。
@@ -130,7 +159,9 @@ enum RAGKeywordQueryBuilder {
         return result
     }
 
-    private static func fts5Clause(_ value: String) -> String {
+    /// trigram 对不足 3 个字符的查询恒为空；短词仍留在 `terms` / `externalQuery` 给 Meilisearch。
+    private static func fts5Clause(_ value: String) -> String? {
+        guard value.count >= minimumTrigramTermLength else { return nil }
         let escaped = value.replacingOccurrences(of: "\"", with: "\"\"")
         return "\"\(escaped)\"*"
     }
@@ -155,7 +186,7 @@ struct SQLiteRAGKeywordSearchProvider: RAGKeywordSearchProvider {
     }
 
     func search(query: RAGKeywordSearchQuery, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit] {
-        guard query.isExecutable else { return [] }
+        guard query.isExecutable, query.hasSQLiteMatchExpression else { return [] }
         let hits = try await repository.keywordSearch(
             query: query.sqliteFTS5Expression,
             repoIDs: repoIDs,

@@ -54,9 +54,34 @@ struct RAGKeywordQueryBuilderTests {
             semanticQuery: "ignored fallback"
         )
         #expect(query.terms == ["配置", "build target", "OR", "say\"hi"])
-        #expect(query.sqliteFTS5Expression == "\"配置\"* OR \"build target\"* OR \"OR\"* OR \"say\"\"hi\"*")
+        #expect(query.sqliteFTS5Expression == "\"build target\"* OR \"say\"\"hi\"*")
         #expect(query.externalQuery == "配置 build target OR say\"hi")
+        #expect(query.isExecutable)
+        #expect(query.hasSQLiteMatchExpression)
         #expect(!query.usedSemanticFallback)
+    }
+
+    @Test("trigram 无法索引的短词仍留给 Meilisearch，不进 SQLite MATCH")
+    func shortTermsStayInExternalQueryOnly() {
+        let query = RAGKeywordQueryBuilder.build(
+            keywordQueries: ["AI", "OR", "配置", "starcat"],
+            semanticQuery: "ignored"
+        )
+        #expect(query.terms == ["AI", "OR", "配置", "starcat"])
+        #expect(query.sqliteFTS5Expression == "\"starcat\"*")
+        #expect(query.externalQuery == "AI OR 配置 starcat")
+        #expect(query.isExecutable)
+        #expect(query.hasSQLiteMatchExpression)
+
+        let onlyShort = RAGKeywordQueryBuilder.build(
+            keywordQueries: ["AI", "Go"],
+            semanticQuery: "ignored"
+        )
+        #expect(onlyShort.terms == ["AI", "Go"])
+        #expect(onlyShort.sqliteFTS5Expression.isEmpty)
+        #expect(onlyShort.externalQuery == "AI Go")
+        #expect(onlyShort.isExecutable)
+        #expect(!onlyShort.hasSQLiteMatchExpression)
     }
 
     @Test("旧 Prompt 缺少关键词时从语义查询构建有界 OR")
@@ -121,7 +146,36 @@ struct RAGKeywordQueryBuilderTests {
         )
         #expect(query.terms.first == "知识库")
         #expect(query.terms.contains("项目"))
+        #expect(query.sqliteFTS5Expression.contains("\"知识库\"*"))
+        #expect(!query.sqliteFTS5Expression.contains("\"项目\"*"))
         #expect(RAGKeywordQueryBuilder.containsCJK("知识库"))
         #expect(!RAGKeywordQueryBuilder.containsCJK("starcat"))
+    }
+
+    @Test("显式 @仓身份词 OR 进 FTS，.only 另加 metadata 保险")
+    func explicitRepositoryNamesJoinKeywordOR() {
+        let only = RAGKeywordQueryBuilder.build(
+            keywordQueries: ["项目介绍"],
+            semanticQuery: "介绍一下这个项目",
+            anchorQuestion: "介绍一下这个项目",
+            extraIdentityTerms: RAGKeywordQueryBuilder.extraTermsForRetrieval(
+                identityTerms: [],
+                explicitRepositories: [RAGPlannerRepoReference(id: 1, fullName: "starcat-app/Starcat")],
+                explicitMode: .only
+            )
+        )
+        #expect(only.terms.contains("starcat-app/Starcat"))
+        #expect(only.terms.contains("starcat-app"))
+        #expect(only.terms.contains("Starcat"))
+        #expect(only.terms.contains("metadata"))
+        #expect(only.sqliteFTS5Expression.contains(" OR "))
+
+        let prefer = RAGKeywordQueryBuilder.extraTermsForRetrieval(
+            identityTerms: [],
+            explicitRepositories: [RAGPlannerRepoReference(id: 1, fullName: "starcat-app/Starcat")],
+            explicitMode: .prefer
+        )
+        #expect(prefer.contains("Starcat"))
+        #expect(!prefer.contains("metadata"))
     }
 }

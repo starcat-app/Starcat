@@ -1049,7 +1049,11 @@ struct KnowledgeRAGService: Sendable {
                 keywordQueries: RAGKeywordQueryBuilder.mergedKeywordQueries(
                     planned: plan.keywordQueries,
                     anchorQuestion: request.rawQuestion,
-                    extraIdentityTerms: resolvedCandidates.identityTerms
+                    extraIdentityTerms: RAGKeywordQueryBuilder.extraTermsForRetrieval(
+                        identityTerms: resolvedCandidates.identityTerms,
+                        explicitRepositories: request.composerContext.explicitRepoReferences,
+                        explicitMode: request.composerContext.explicitRepoMode
+                    )
                 ),
                 candidates: candidates,
                 explicitMode: request.composerContext.explicitRepoMode,
@@ -1313,6 +1317,11 @@ struct KnowledgeRAGService: Sendable {
             plan: plan,
             retrieval: retrieval,
             metadataSnapshot: metadataSnapshot,
+            includeInventorySnapshot: RAGPromptInventorySnapshot.shouldInclude(
+                explicitMode: request.composerContext.explicitRepoMode,
+                explicitRepoIDs: request.composerContext.explicitRepoIDs,
+                hasAnalytics: plan.analytics != nil
+            ),
             analyticsResult: analyticsResult,
             repositoryInsightsDocuments: repositoryInsightsDocuments,
             repoContextDocument: repoContextDocument,

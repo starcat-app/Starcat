@@ -88,6 +88,20 @@ enum RAGIdentityHitPrioritizer {
     }
 }
 
+/// Generator 的全库快照是「知识库有多少项目」用的。`@仓` 介绍题再注入会变成 S1–S7 噪音。
+enum RAGPromptInventorySnapshot {
+    static func shouldInclude(
+        explicitMode: RAGExplicitRepoMode,
+        explicitRepoIDs: [Int64],
+        hasAnalytics: Bool
+    ) -> Bool {
+        if explicitMode == .only, !explicitRepoIDs.isEmpty, !hasAnalytics {
+            return false
+        }
+        return true
+    }
+}
+
 /// 身份命中必须排在计划窗口前面，且不受 `candidateLimit` 截断。
 enum RAGRepoCandidateMerger {
     static func merge(identity: [RAGRepoCandidate], window: [RAGRepoCandidate]) -> [RAGRepoCandidate] {

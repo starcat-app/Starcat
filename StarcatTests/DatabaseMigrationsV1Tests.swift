@@ -553,6 +553,12 @@ struct DatabaseMigrationsV1Tests {
         let db = try makeDB()
         try db.read { db in
             #expect(try db.tableExists("rag_chunks_fts"))
+            let sql = try String.fetchOne(
+                db,
+                sql: "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'rag_chunks_fts'"
+            )
+            #expect(sql?.contains("tokenize='trigram'") == true)
+            #expect(sql?.contains("unicode61") != true)
             let triggers = try String.fetchAll(
                 db,
                 sql: "SELECT name FROM sqlite_master WHERE type = 'trigger' ORDER BY name"
@@ -560,6 +566,80 @@ struct DatabaseMigrationsV1Tests {
             #expect(triggers.contains("rag_chunks_ai"))
             #expect(triggers.contains("rag_chunks_ad"))
             #expect(triggers.contains("rag_chunks_au"))
+        }
+    }
+
+    @Test("v20 重建 rag_chunks_fts 后中文子串与英文身份词都能 MATCH")
+    func ragChunkFTSTrigramMatchesCJKSubstringAndRebuildsExistingRows() throws {
+        let queue = try DatabaseQueue()
+        var migrator = DatabaseMigrator()
+        DatabaseMigrations.registerAll(into: &migrator)
+        try migrator.migrate(queue, upTo: "v19-agent-message-contract")
+
+        try queue.write { db in
+            try db.execute(sql: """
+                INSERT INTO repos (id, owner, name, full_name, html_url)
+                VALUES (30, 'starcat-app', 'Starcat', 'starcat-app/Starcat', 'https://github.com/starcat-app/Starcat')
+                """)
+            try db.execute(sql: """
+                INSERT INTO rag_chunks (
+                    repo_id, source, source_id, parent_type, parent_key, parent_title, chunk_key,
+                    chunk_index, section_path, title, content, content_hash, token_count, is_truncated,
+                    embedding_status, created_at, updated_at
+                ) VALUES (
+                    30, 'readme', '', 'readme', 'readme', 'README', 'readme:0',
+                    0, '', 'README',
+                    'Starcat 把 GitHub Star 整理成可搜索知识库。试过部署失败 已切到别的方案。',
+                    'readme-starcat', 24, 0, 'ready', datetime('now'), datetime('now')
+                )
+                """)
+        }
+
+        try queue.read { db in
+            let sql = try String.fetchOne(
+                db,
+                sql: "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'rag_chunks_fts'"
+            )
+            #expect(sql?.contains("unicode61") == true)
+        }
+
+        try migrator.migrate(queue)
+
+        try queue.read { db in
+            let sql = try String.fetchOne(
+                db,
+                sql: "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'rag_chunks_fts'"
+            )
+            #expect(sql?.contains("tokenize='trigram'") == true)
+
+            let chineseQuery = RAGKeywordQueryBuilder.build(
+                keywordQueries: ["部署失败"],
+                semanticQuery: ""
+            ).sqliteFTS5Expression
+            let chineseHits = try Int.fetchOne(
+                db,
+                sql: "SELECT count(*) FROM rag_chunks_fts WHERE rag_chunks_fts MATCH ?",
+                arguments: [chineseQuery]
+            )
+            #expect(chineseHits == 1, "trigram 应命中中文中缀，表达式=\(chineseQuery)")
+
+            let identityQuery = RAGKeywordQueryBuilder.build(
+                keywordQueries: ["starcat"],
+                semanticQuery: ""
+            ).sqliteFTS5Expression
+            let identityHits = try Int.fetchOne(
+                db,
+                sql: "SELECT count(*) FROM rag_chunks_fts WHERE rag_chunks_fts MATCH ?",
+                arguments: [identityQuery]
+            )
+            #expect(identityHits == 1, "trigram 应命中英文身份词，表达式=\(identityQuery)")
+
+            let shortHits = try Int.fetchOne(
+                db,
+                sql: "SELECT count(*) FROM rag_chunks_fts WHERE rag_chunks_fts MATCH ?",
+                arguments: ["\"AI\"*"]
+            )
+            #expect(shortHits == 0, "不足 3 字符的 trigram MATCH 必须为空")
         }
     }
 
@@ -577,6 +657,7 @@ struct DatabaseMigrationsV1Tests {
             #expect(applied.contains("v11-rag-embedding-claim"))
             #expect(applied.contains("v12-rag-metadata-revision"))
             #expect(applied.contains("v13-weekly-multi-source"))
+            #expect(applied.contains("v20-rag-chunks-fts-trigram"))
             #expect(try db.tableExists("rag_metadata_revision"))
 
             let chunkColumns = try db.columns(in: "rag_chunks").map(\.name)

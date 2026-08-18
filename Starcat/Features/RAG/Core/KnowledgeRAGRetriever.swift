@@ -185,7 +185,11 @@ struct KnowledgeRAGRetriever: Sendable {
             configured: retrievalSettings.finalEvidenceChunkLimit
         )
         let fusionResult = fusion.applyLimits(to: orderedHits, totalLimit: evidenceChunkLimit)
-        let hits = fusionResult.hits.filter(passesEvidenceScore)
+        var hits = fusionResult.hits.filter(passesEvidenceScore)
+        // applyLimits 之后再并保底分片：搜索命中保留排序，README 不被 3 条/仓裁掉。
+        if explicitMode == .only {
+            hits = try await mergingExplicitIndexedFloor(into: hits, repoIDs: explicitRepoIDs)
+        }
         let bundleBuild = try await buildBundles(
             hits: hits,
             candidates: candidates,
@@ -253,6 +257,28 @@ struct KnowledgeRAGRetriever: Sendable {
             diagnostics: diagnostics,
             trace: trace
         )
+    }
+
+    /// `@仓` 范围已经由 id 钉死。FTS/向量 0 命中时仍要把该仓已索引的 README/摘要/metadata
+    /// 送进 bundle；私有笔记不保底，避免把用户笔记默认当成产品介绍。
+    private func mergingExplicitIndexedFloor(
+        into hits: [RAGChildHit],
+        repoIDs: [Int64]
+    ) async throws -> [RAGChildHit] {
+        guard !repoIDs.isEmpty else { return hits }
+        let floorSources: Set<RAGChunkSource> = [.readme, .summary, .metadata]
+        let chunks = try await chunkRepository.fetchKeywordSearchableChunks(repoIDs: repoIDs)
+        var seen = Set(hits.compactMap(\.chunk.id))
+        var floor: [RAGChildHit] = []
+        for chunk in chunks {
+            guard floorSources.contains(chunk.source),
+                  enabledSources.contains(chunk.source),
+                  let id = chunk.id,
+                  seen.insert(id).inserted
+            else { continue }
+            floor.append(RAGChildHit(chunk: chunk, score: 0.05, kind: .keyword))
+        }
+        return hits + floor
     }
 
     /// 把当前轮内存命中收成可持久化的最小审计数据；分片正文不可进入会话轨迹，避免历史库成为知识库副本。
