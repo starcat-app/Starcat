@@ -201,7 +201,10 @@ struct KnowledgeRAGPromptBuilder: Sendable {
         let metadataContext: String
         if let metadataSnapshot {
             var parts: [String] = []
-            for section in metadataSnapshot.citationSections() {
+            for section in metadataSnapshot.citationSections(
+                includeInventoryLeaders: retrieval.bundles.isEmpty
+                    && (plan.analytics != nil || plan.mode == .structuredOnly)
+            ) {
                 let marker = "S\(nextCitation)"
                 parts.append("[\(marker)] \(section.promptTitle)\n\(section.content)")
                 citations[marker] = RAGCitation(

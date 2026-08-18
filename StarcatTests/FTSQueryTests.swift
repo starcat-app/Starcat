@@ -110,4 +110,18 @@ struct RAGKeywordQueryBuilderTests {
         #expect(!query.terms.contains("topic-7"))
         #expect(!query.usedSemanticFallback)
     }
+
+    @Test("中文标签名作为额外身份词进入关键词队头")
+    func extraChineseTagNamesJoinIdentityTerms() {
+        let query = RAGKeywordQueryBuilder.build(
+            keywordQueries: ["项目"],
+            semanticQuery: "these projects",
+            anchorQuestion: "查一下知识库相关的项目",
+            extraIdentityTerms: ["知识库"]
+        )
+        #expect(query.terms.first == "知识库")
+        #expect(query.terms.contains("项目"))
+        #expect(RAGKeywordQueryBuilder.containsCJK("知识库"))
+        #expect(!RAGKeywordQueryBuilder.containsCJK("starcat"))
+    }
 }

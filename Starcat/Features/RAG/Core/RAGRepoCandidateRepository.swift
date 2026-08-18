@@ -28,6 +28,9 @@ protocol RAGRepoCandidateRepositoryProtocol: Sendable {
         limit: Int
     ) async throws -> [RAGRepoCandidate]
 
+    /// 原句包含的已有中文标签名。拉丁标签仍走 identityTerms，避免短英文 tag 误伤普通句子。
+    func fetchContainedTagNames(in question: String, limit: Int) async throws -> [String]
+
     /// 知识库浏览器左侧列表专用分页；与 Planner 候选查询解耦，避免 semantic_only 全库哨兵 LIMIT。
     /// 排序 / 筛选复用 Composer mention 条件；Wiki 等磁盘信号不在此层处理。
     func fetchKnowledgeBrowserPage(
@@ -406,6 +409,26 @@ struct GRDBRAGRepoCandidateRepository: RAGRepoCandidateRepositoryProtocol {
                 """, arguments: StatementArguments(filter.arguments))
             return try rows.map(Self.mapCandidate(row:))
         }
+    }
+
+    func fetchContainedTagNames(in question: String, limit: Int) async throws -> [String] {
+        let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, limit > 0 else { return [] }
+        let names = try await database.writer.read { db in
+            try String.fetchAll(db, sql: """
+                SELECT DISTINCT t.name
+                FROM tags t
+                JOIN repo_tags rt ON rt.tag_id = t.id
+                JOIN repo_notes n ON n.repo_id = rt.repo_id
+                WHERE n.library_state = 'in_library'
+                  AND length(t.name) >= 2
+                  AND instr(lower(?), lower(t.name)) > 0
+                ORDER BY length(t.name) DESC, t.name COLLATE NOCASE ASC
+                LIMIT ?
+                """, arguments: [trimmed, min(max(limit, 1), 20)])
+        }
+        // 拉丁标签已由 identityTerms 覆盖；这里只保留 CJK，避免 "AI" 误伤普通英文句子。
+        return names.filter(RAGKeywordQueryBuilder.containsCJK)
     }
 
     func fetchKnowledgeBrowserPage(

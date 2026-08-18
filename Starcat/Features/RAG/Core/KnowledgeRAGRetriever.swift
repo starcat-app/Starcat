@@ -96,6 +96,8 @@ struct KnowledgeRAGRetriever: Sendable {
         candidates: [RAGRepoCandidate],
         explicitMode: RAGExplicitRepoMode,
         explicitRepoIDs: [Int64],
+        identityRepoIDs: [Int64] = [],
+        repoLimitOverride: Int? = nil,
         progress: @Sendable (RAGRetrievalProgress) -> Void = { _ in }
     ) async throws -> RAGRetrievalResult {
         let query = semanticQuery.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -157,7 +159,11 @@ struct KnowledgeRAGRetriever: Sendable {
         progress(.keywordSearchCompleted(eligibleKeywordHits.count))
         progress(.semanticSearchCompleted(eligibleVectorHits.count))
         if failures.count == 2, let error = failures.first { throw error }
-        let preferred = explicitMode == .prefer ? Set(explicitRepoIDs) : []
+        // 身份仓与 @repo prefer 共用加分，避免高星关键词噪音把实体列表挤出 bundle。
+        var preferred = Set(identityRepoIDs)
+        if explicitMode == .prefer {
+            preferred.formUnion(explicitRepoIDs)
+        }
         let fusedCandidates = fusion.fuseWithDiagnostics(
             keywordHits: eligibleKeywordHits,
             vectorHits: eligibleVectorHits,
@@ -170,9 +176,22 @@ struct KnowledgeRAGRetriever: Sendable {
             query: query,
             repositoryNames: repositoryNames
         )
-        let fusionResult = fusion.applyLimits(to: rerankResult.hits)
-        let hits = fusionResult.hits.filter { $0.score >= minimumEvidenceScore }
-        let bundleBuild = try await buildBundles(hits: hits, candidates: candidates)
+        let orderedHits = RAGIdentityHitPrioritizer.order(
+            rerankResult.hits,
+            identityRepoIDs: identityRepoIDs
+        )
+        let evidenceChunkLimit = RAGIdentityBundleLimit.evidenceChunkLimit(
+            identityCount: identityRepoIDs.count,
+            configured: retrievalSettings.finalEvidenceChunkLimit
+        )
+        let fusionResult = fusion.applyLimits(to: orderedHits, totalLimit: evidenceChunkLimit)
+        let hits = fusionResult.hits.filter(passesEvidenceScore)
+        let bundleBuild = try await buildBundles(
+            hits: hits,
+            candidates: candidates,
+            identityRepoIDs: Set(identityRepoIDs),
+            repoLimit: repoLimitOverride ?? repoLimit
+        )
         let bundles = bundleBuild.bundles
         let trace = RAGRetrievalTrace(
             keywordQuery: RAGKeywordQueryTrace(query: keywordQuery),
@@ -193,8 +212,9 @@ struct KnowledgeRAGRetriever: Sendable {
                 }
             ),
             fusionHits: fusionTrace(
-                rerankResult.hits,
-                repositoryNames: repositoryNames
+                orderedHits,
+                repositoryNames: repositoryNames,
+                totalLimit: evidenceChunkLimit
             ),
             finalEvidence: hitTrace(
                 hits,
@@ -261,7 +281,8 @@ struct KnowledgeRAGRetriever: Sendable {
     /// 裁剪顺序必须与 `RAGHybridFusionEngine.applyLimits` 完全一致；否则 UI 会把“为何过滤”解释错。
     private func fusionTrace(
         _ hits: [RAGChildHit],
-        repositoryNames: [Int64: String]
+        repositoryNames: [Int64: String],
+        totalLimit: Int
     ) -> [RAGRetrievalHitTrace] {
         var acceptedByRepository: [Int64: Int] = [:]
         var acceptedAfterRepositoryLimit = 0
@@ -271,12 +292,17 @@ struct KnowledgeRAGRetriever: Sendable {
                 return .perRepositoryLimit
             }
             acceptedByRepository[hit.chunk.repoId] = repositoryCount + 1
-            guard acceptedAfterRepositoryLimit < retrievalSettings.finalEvidenceChunkLimit else {
+            guard acceptedAfterRepositoryLimit < totalLimit else {
                 return .totalLimit
             }
             acceptedAfterRepositoryLimit += 1
-            return hit.score >= minimumEvidenceScore ? .retained : .belowEvidenceScore
+            return passesEvidenceScore(hit) ? .retained : .belowEvidenceScore
         }
+    }
+
+    /// 关键词-only 综合分第 3 名以后常低于 0.08；精确字面命中必须能独立成证据。
+    private func passesEvidenceScore(_ hit: RAGChildHit) -> Bool {
+        hit.kind == .keyword || hit.score >= minimumEvidenceScore
     }
 
     private func candidateTrace(_ candidates: [RAGRepoCandidate]) -> [RAGRetrievalCandidateTrace] {
@@ -383,7 +409,12 @@ struct KnowledgeRAGRetriever: Sendable {
         }
     }
 
-    private func buildBundles(hits: [RAGChildHit], candidates: [RAGRepoCandidate]) async throws -> RAGBundleBuildResult {
+    private func buildBundles(
+        hits: [RAGChildHit],
+        candidates: [RAGRepoCandidate],
+        identityRepoIDs: Set<Int64>,
+        repoLimit: Int
+    ) async throws -> RAGBundleBuildResult {
         let candidateByID = Dictionary(uniqueKeysWithValues: candidates.map { ($0.repo.id, $0) })
         let grouped = Dictionary(grouping: hits, by: { $0.chunk.repoId })
         // Metadata 不是普通 parent：它以 keyword_only 形式由专用批量查询附加到最终 repo bundle，
@@ -437,7 +468,17 @@ struct KnowledgeRAGRetriever: Sendable {
                 sectionParents: parents
             ))
         }
-        var limitedBundles = bundles.sorted { $0.score > $1.score }.prefix(repoLimit).map { $0 }
+        let rankedBundles = bundles.sorted { $0.score > $1.score }
+        // 身份仓优先占满列表额度。只靠 preferRepoBoost 不足以对抗高星 README 的关键词 OR。
+        let limitedSource: [RepoContextBundle]
+        if identityRepoIDs.count >= 2 {
+            let identityBundles = rankedBundles.filter { identityRepoIDs.contains($0.candidate.repo.id) }
+            let otherBundles = rankedBundles.filter { !identityRepoIDs.contains($0.candidate.repo.id) }
+            limitedSource = identityBundles + otherBundles
+        } else {
+            limitedSource = rankedBundles
+        }
+        var limitedBundles = Array(limitedSource.prefix(repoLimit))
         let metadataByRepoID = Dictionary(
             uniqueKeysWithValues: try await chunkRepository.fetchActiveMetadata(
                 repoIDs: limitedBundles.map { $0.candidate.repo.id }

@@ -329,6 +329,35 @@ struct KnowledgeRAGCoreTests {
                 .citationsUsed(in: "共有 3 个项目 [S1]，主要语言见统计 [S3]。", prompt: prompt)
                 .map(\.marker) == ["S1", "S3"]
         )
+        let listingSections = snapshot.citationSections(includeInventoryLeaders: false)
+        #expect(!listingSections.contains(where: { $0.id == "star_leaders" }))
+        #expect(!listingSections.contains(where: { $0.content.contains("Top tags") }))
+        let listingPrompt = KnowledgeRAGPromptBuilder().build(
+            question: "查一下 starcat 相关的项目",
+            plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "starcat"),
+            retrieval: RAGRetrievalResult(
+                candidates: [],
+                bundles: [
+                    RepoContextBundle(
+                        candidate: RAGRepoCandidate(
+                            repo: fixtureRepo(id: 1, isPrivate: false),
+                            status: .using,
+                            libraryUpdatedAt: nil,
+                            tagNames: ["Starcat"]
+                        ),
+                        score: 1,
+                        matchedChildren: [],
+                        sectionParents: []
+                    )
+                ],
+                childHits: []
+            ),
+            metadataSnapshot: snapshot,
+            remoteBlocks: [],
+            attachmentContexts: []
+        )
+        #expect(!listingPrompt.userPrompt.contains("Star leaders"))
+        #expect(!listingPrompt.userPrompt.contains("Top tags"))
     }
 
     @Test("知识库元数据快照按数据库修订号缓存并在写入后失效")
@@ -1514,6 +1543,58 @@ struct KnowledgeRAGCoreTests {
         #expect(hits.first?.tagNames == ["Starcat"])
     }
 
+    @Test("中文标签按问题包含已有 tag.name 命中，不抽任意中文")
+    func containedChineseTagNamesBecomeIdentityTerms() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 1, owner: "octo", name: "unrelated")
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 1, state: .inLibrary)
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO tags (id, name, created_at, updated_at)
+                    VALUES ('tag-kb', '知识库', '2026-08-18T00:00:00Z', '2026-08-18T00:00:00Z')
+                    """
+            )
+            try db.execute(
+                sql: """
+                    INSERT INTO repo_tags (repo_id, tag_id, created_at)
+                    VALUES (1, 'tag-kb', '2026-08-18T00:00:00Z')
+                    """
+            )
+        }
+        let repository = GRDBRAGRepoCandidateRepository(database: database)
+        let names = try await repository.fetchContainedTagNames(
+            in: "查一下知识库相关的项目",
+            limit: 20
+        )
+        #expect(names == ["知识库"])
+        let latinOnly = try await repository.fetchContainedTagNames(
+            in: "查一下 starcat 相关的项目",
+            limit: 20
+        )
+        #expect(latinOnly.isEmpty)
+
+        let identity = try await repository.fetchIdentityCandidates(
+            terms: names,
+            plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "知识库"),
+            explicitRepoIDs: [],
+            explicitMode: .only,
+            limit: 40
+        )
+        #expect(identity.map(\.repo.id) == [1])
+    }
+
+    @Test("身份列表额度在 2 个仓以上按仓数放宽，最多 12")
+    func identityBundleLimitFollowsIdentityCount() {
+        #expect(RAGIdentityBundleLimit.repoLimit(identityCount: 0) == 5)
+        #expect(RAGIdentityBundleLimit.repoLimit(identityCount: 1) == 5)
+        #expect(RAGIdentityBundleLimit.repoLimit(identityCount: 7) == 7)
+        #expect(RAGIdentityBundleLimit.repoLimit(identityCount: 20) == 12)
+        #expect(RAGIdentityBundleLimit.evidenceChunkLimit(identityCount: 1, configured: 8) == 8)
+        #expect(RAGIdentityBundleLimit.evidenceChunkLimit(identityCount: 7, configured: 8) == 8)
+        #expect(RAGIdentityBundleLimit.evidenceChunkLimit(identityCount: 12, configured: 8) == 12)
+    }
+
     @Test("召回测试 followPlan 复用窗口并丢掉 analytics")
     func retrievalTestFollowPlanDropsAnalyticsAndKeepsWindow() {
         let displayed = RAGQueryPlan(
@@ -1928,6 +2009,101 @@ struct KnowledgeRAGCoreTests {
         let hit = try #require(hits.first)
         #expect(hit.kind == .keyword)
         #expect(hit.score >= 0.08)
+    }
+
+    @Test("keyword-only 第 3 名以后不再被 0.08 综合分砍掉")
+    func keywordOnlyHitsSkipEvidenceScoreCutoff() async throws {
+        let database = try InMemoryDatabaseManager()
+        let chunks = (1...3).map { index in
+            fixtureChunk(id: Int64(index), repoID: Int64(index), source: .readme)
+        }
+        let retriever = KnowledgeRAGRetriever(
+            chunkRepository: GRDBRAGChunkRepository(database: database),
+            keywordProvider: StubRAGKeywordProvider(
+                backendName: "SQLite",
+                hits: [
+                    RAGChildHit(chunk: chunks[0], score: 1, kind: .keyword),
+                    RAGChildHit(chunk: chunks[1], score: 0.4, kind: .keyword),
+                    RAGChildHit(chunk: chunks[2], score: 0.15, kind: .keyword)
+                ],
+                shouldThrow: false
+            ),
+            vectorProvider: StubRAGVectorProvider(backendName: "SQLite", hits: [], shouldThrow: false),
+            embeddingClient: nil,
+            embeddingModel: nil
+        )
+        let result = try await retriever.retrieve(
+            semanticQuery: "starcat",
+            candidates: (1...3).map { id in
+                RAGRepoCandidate(
+                    repo: fixtureRepo(id: Int64(id), isPrivate: false),
+                    status: .using,
+                    libraryUpdatedAt: nil,
+                    tagNames: []
+                )
+            },
+            explicitMode: .only,
+            explicitRepoIDs: []
+        )
+        #expect(result.childHits.count == 3)
+        #expect(result.childHits.allSatisfy { $0.kind == .keyword })
+        #expect(result.childHits.contains { $0.score < 0.08 })
+    }
+
+    @Test("身份仓优先占满 bundle 额度，不被高星噪音挤掉")
+    func identityReposTakeBundleSlotsBeforeStarLeaders() async throws {
+        let database = try InMemoryDatabaseManager()
+        var identityHits: [RAGChildHit] = []
+        var noiseHits: [RAGChildHit] = []
+        var candidates: [RAGRepoCandidate] = []
+        for id in Int64(1)...7 {
+            candidates.append(
+                RAGRepoCandidate(
+                    repo: fixtureRepo(id: id, isPrivate: false),
+                    status: .using,
+                    libraryUpdatedAt: nil,
+                    tagNames: []
+                )
+            )
+            identityHits.append(
+                RAGChildHit(chunk: fixtureChunk(id: id, repoID: id, source: .readme), score: 0.2, kind: .keyword)
+            )
+        }
+        for id in Int64(101)...105 {
+            candidates.append(
+                RAGRepoCandidate(
+                    repo: fixtureRepo(id: id, isPrivate: false),
+                    status: .using,
+                    libraryUpdatedAt: nil,
+                    tagNames: []
+                )
+            )
+            noiseHits.append(
+                RAGChildHit(chunk: fixtureChunk(id: id, repoID: id, source: .readme), score: 1, kind: .keyword)
+            )
+        }
+        let retriever = KnowledgeRAGRetriever(
+            chunkRepository: GRDBRAGChunkRepository(database: database),
+            keywordProvider: StubRAGKeywordProvider(
+                backendName: "SQLite",
+                hits: noiseHits + identityHits,
+                shouldThrow: false
+            ),
+            vectorProvider: StubRAGVectorProvider(backendName: "SQLite", hits: [], shouldThrow: false),
+            embeddingClient: nil,
+            embeddingModel: nil,
+            repoLimit: 5
+        )
+        let result = try await retriever.retrieve(
+            semanticQuery: "starcat",
+            candidates: candidates,
+            explicitMode: .only,
+            explicitRepoIDs: [],
+            identityRepoIDs: Array(1...7),
+            repoLimitOverride: RAGIdentityBundleLimit.repoLimit(identityCount: 7)
+        )
+        #expect(result.bundles.count == 7)
+        #expect(Set(result.bundles.map { $0.candidate.repo.id }) == Set(1...7))
     }
 
     @Test("query embedding 失败时保留 keyword 检索结果")
@@ -2970,6 +3146,68 @@ struct KnowledgeRAGCoreTests {
             }
         }
         #expect(emitted?.candidateLimit == nil)
+    }
+
+    @Test("有身份锚时 analytics 仍检索分片")
+    func analyticsWithIdentityAnchorStillRetrievesChunks() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 21, owner: "starcat-app", name: "starcat-pro")
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 21, state: .inLibrary)
+        let chunks = GRDBRAGChunkRepository(database: database)
+        _ = try await chunks.replaceSource(repoId: 21, source: .metadata, drafts: [
+            RAGChunkDraft(
+                repoId: 21,
+                source: .metadata,
+                sourceId: "",
+                parentType: .metadata,
+                parentKey: "metadata",
+                parentTitle: "Repository metadata",
+                chunkKey: "metadata:0",
+                chunkIndex: 0,
+                sectionPath: "Metadata",
+                title: "Metadata",
+                content: "Starcat product site",
+                tokenCount: 3,
+                isTruncated: false
+            )
+        ])
+        let recorder = RAGRepoIDRecorder()
+        let spy = SpyRAGAIClient()
+        let service = KnowledgeRAGService(
+            planner: FixedRAGPlanner(plan: RAGQueryPlan(
+                mode: .structuredOnly,
+                semanticQuery: "",
+                analytics: KnowledgeBaseAnalyticsPlan(measure: .count, limit: 1)
+            )),
+            candidateRepository: GRDBRAGRepoCandidateRepository(database: database),
+            retriever: KnowledgeRAGRetriever(
+                chunkRepository: chunks,
+                keywordProvider: RecordingRAGKeywordProvider(
+                    backendName: "SQLite",
+                    recorder: recorder
+                ),
+                vectorProvider: StubRAGVectorProvider(backendName: "SQLite", hits: [], shouldThrow: false),
+                embeddingClient: nil,
+                embeddingModel: nil
+            ),
+            generatorClient: spy,
+            generatorModel: "chat",
+            generatorParameters: .summaryDefault,
+            analyticsExecutor: KnowledgeBaseAnalyticsExecutor(database: database)
+        )
+        var retrieval: RAGRetrievalResult?
+        for try await event in service.ask(request: RAGServiceRequest(
+            rawQuestion: "查一下 starcat 相关的项目有多少、都是干什么的",
+            composerContext: .init(),
+            conversationID: nil
+        )) {
+            if case .retrieval(let value) = event {
+                retrieval = value
+                break
+            }
+        }
+        #expect(retrieval?.candidates.contains(where: { $0.repo.id == 21 }) == true)
+        #expect(Set(await recorder.recordedRepoIDs()) == [21])
     }
 
     @Test("无候选时不调用 embedding 或 Generator")

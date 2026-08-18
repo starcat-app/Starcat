@@ -7,7 +7,7 @@
 //  关键约束：
 //  - semantic_only 且没有筛选/排序时，设计约定是全库检索；执行层丢掉模型随手填的 50。
 //  - 带 sort 的高星窗口仍合法（“在 star 最多的项目里找 …”），这时靠身份仓合并补洞。
-//  - 合并只改变候选 repo 集合，不改 chunk 融合公式或 repoLimit。
+//  - 列表类问题按身份仓数放宽 bundle 上限；深挖单仓仍走 Retriever 默认 5。
 //
 
 import Foundation
@@ -30,6 +30,62 @@ enum RAGRetrievalTestMode: String, CaseIterable, Identifiable, Sendable {
     case followPlan
 
     var id: String { rawValue }
+}
+
+/// 计划窗口 + 身份仓合并后的可执行候选。`identityRepoIDs` 只含身份 SQL 命中，不含高星窗口。
+struct RAGResolvedRetrievalCandidates: Equatable, Sendable {
+    var candidates: [RAGRepoCandidate]
+    var identityRepoIDs: [Int64]
+    var identityTerms: [String]
+
+    var hasIdentityAnchor: Bool { !identityTerms.isEmpty }
+}
+
+/// 实体列表要把多个同名仓展开成 bundle；深挖仍用 Retriever 默认 5。
+enum RAGIdentityBundleLimit {
+    static let `default` = 5
+    static let maximum = 12
+
+    static func repoLimit(identityCount: Int, defaultLimit: Int = `default`) -> Int {
+        guard identityCount >= 2 else { return defaultLimit }
+        return min(max(identityCount, defaultLimit), maximum)
+    }
+
+    /// 列表题至少给每个身份仓留 1 条分片，否则 `finalEvidenceChunkLimit=8` 会先吃高星噪音。
+    static func evidenceChunkLimit(identityCount: Int, configured: Int) -> Int {
+        guard identityCount >= 2 else { return configured }
+        return max(configured, min(identityCount, maximum))
+    }
+}
+
+/// `applyLimits` 按当前顺序从头截断。身份仓必须轮询排在噪音前面，才能占满列表额度。
+enum RAGIdentityHitPrioritizer {
+    static func order(_ hits: [RAGChildHit], identityRepoIDs: [Int64]) -> [RAGChildHit] {
+        guard identityRepoIDs.count >= 2 else { return hits }
+        let identitySet = Set(identityRepoIDs)
+        let identityHits = hits.filter { identitySet.contains($0.chunk.repoId) }
+        let otherHits = hits.filter { !identitySet.contains($0.chunk.repoId) }
+        var grouped = Dictionary(grouping: identityHits, by: { $0.chunk.repoId })
+        for repoID in grouped.keys {
+            grouped[repoID]?.sort { lhs, rhs in
+                if lhs.score == rhs.score { return lhs.chunk.chunkIndex < rhs.chunk.chunkIndex }
+                return lhs.score > rhs.score
+            }
+        }
+        var roundRobin: [RAGChildHit] = []
+        var round = 0
+        while true {
+            var appended = false
+            for repoID in identityRepoIDs {
+                guard let bucket = grouped[repoID], round < bucket.count else { continue }
+                roundRobin.append(bucket[round])
+                appended = true
+            }
+            if !appended { break }
+            round += 1
+        }
+        return roundRobin + otherHits
+    }
 }
 
 /// 身份命中必须排在计划窗口前面，且不受 `candidateLimit` 截断。

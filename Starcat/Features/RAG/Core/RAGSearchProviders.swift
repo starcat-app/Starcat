@@ -38,9 +38,14 @@ enum RAGKeywordQueryBuilder {
     static func build(
         keywordQueries: [String],
         semanticQuery: String,
-        anchorQuestion: String = ""
+        anchorQuestion: String = "",
+        extraIdentityTerms: [String] = []
     ) -> RAGKeywordSearchQuery {
-        let plannedTerms = mergedKeywordQueries(planned: keywordQueries, anchorQuestion: anchorQuestion)
+        let plannedTerms = mergedKeywordQueries(
+            planned: keywordQueries,
+            anchorQuestion: anchorQuestion,
+            extraIdentityTerms: extraIdentityTerms
+        )
         let usedSemanticFallback = plannedTerms.isEmpty
         let terms = usedSemanticFallback
             ? normalizedTerms([semanticQuery], splitsWords: true)
@@ -55,7 +60,7 @@ enum RAGKeywordQueryBuilder {
 
     /// 从用户原句抽出仓库身份词（`owner/repo`、拉丁标识符），供候选 SQL 与 FTS 共用。
     ///
-    /// 不抽取连续中文：整句 LIKE 对 `full_name` 无效，中文标签匹配留到后续召回目标分层。
+    /// 不抽取连续中文：整句 LIKE 对 `full_name` 无效。中文标签由仓库层按「问题包含已有 tag.name」补入。
     static func identityTerms(from question: String) -> [String] {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
@@ -75,9 +80,21 @@ enum RAGKeywordQueryBuilder {
         return normalizedTerms(raw, splitsWords: false)
     }
 
+    /// 中文标签名含 CJK，不能靠拉丁 regex；由「问题包含已有 tag.name」补进身份词。
+    static func containsCJK(_ text: String) -> Bool {
+        text.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) }
+    }
+
     /// 身份词始终排在 Planner 关键词之前；超出 8 个时丢掉 Planner 词，避免实体被挤出 OR 列表。
-    static func mergedKeywordQueries(planned: [String], anchorQuestion: String) -> [String] {
-        let identity = identityTerms(from: anchorQuestion)
+    static func mergedKeywordQueries(
+        planned: [String],
+        anchorQuestion: String,
+        extraIdentityTerms: [String] = []
+    ) -> [String] {
+        let identity = normalizedTerms(
+            identityTerms(from: anchorQuestion) + extraIdentityTerms,
+            splitsWords: false
+        )
         let plannedTerms = normalizedTerms(planned, splitsWords: false)
         var seen = Set(identity.map { $0.lowercased() })
         var result = identity
@@ -584,7 +601,8 @@ struct RAGHybridFusionEngine: Sendable {
     }
 
     /// Rerank 必须发生在多样性/总数裁剪前；否则只能重排已被截成少数的候选，收益很低。
-    func applyLimits(to ranked: [RAGChildHit]) -> RAGHybridFusionResult {
+    func applyLimits(to ranked: [RAGChildHit], totalLimit: Int? = nil) -> RAGHybridFusionResult {
+        let totalLimit = totalLimit ?? configuration.totalLimit
         var repoCounts: [Int64: Int] = [:]
         var perRepositoryAccepted: [RAGChildHit] = []
         var perRepositoryLimitFilteredCount = 0
@@ -597,9 +615,9 @@ struct RAGHybridFusionEngine: Sendable {
             repoCounts[hit.chunk.repoId] = count + 1
             perRepositoryAccepted.append(hit)
         }
-        let totalLimitFilteredCount = max(perRepositoryAccepted.count - configuration.totalLimit, 0)
+        let totalLimitFilteredCount = max(perRepositoryAccepted.count - totalLimit, 0)
         return RAGHybridFusionResult(
-            hits: Array(perRepositoryAccepted.prefix(configuration.totalLimit)),
+            hits: Array(perRepositoryAccepted.prefix(totalLimit)),
             diagnostics: RAGHybridFusionDiagnostics(
                 uniqueCount: ranked.count,
                 perRepositoryLimitFilteredCount: perRepositoryLimitFilteredCount,

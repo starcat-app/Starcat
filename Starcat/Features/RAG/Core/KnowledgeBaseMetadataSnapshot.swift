@@ -148,7 +148,7 @@ struct KnowledgeBaseMetadataSnapshot: Equatable, Sendable {
 
     /// 将大快照拆成事实口径稳定的小段，Generator 才能只引用真正用于回答的部分。
     /// 这里仍保持英文数据库语义；Inspector 通过稳定 id 映射当前 App 语言的标题。
-    func citationSections() -> [CitationSection] {
+    func citationSections(includeInventoryLeaders: Bool = true) -> [CitationSection] {
         let status = rendered(insights.normalizedStatusCounts)
         let languages = rendered(topLanguages)
         let tags = rendered(topTags)
@@ -166,7 +166,7 @@ struct KnowledgeBaseMetadataSnapshot: Equatable, Sendable {
         let sourceCoverage = sourceIndexCoverage.map {
             "\($0.source.rawValue): \($0.repositoryCount) repositories with content, \($0.readyChunkCount) ready, \($0.failedChunkCount) failed, \($0.staleChunkCount) stale, \($0.chunkCount) active chunks"
         }.joined(separator: "; ")
-        return [
+        var sections = [
             CitationSection(
                 id: "scope",
                 promptTitle: "Scope",
@@ -175,7 +175,9 @@ struct KnowledgeBaseMetadataSnapshot: Equatable, Sendable {
             CitationSection(
                 id: "organization",
                 promptTitle: "Organization",
-                content: "- Status counts [\(status)]; \(taggedProjectCount) tagged; \(untaggedProjectCount) untagged; \(tagCount) distinct tags.\n- Top tags: [\(tags)]."
+                content: includeInventoryLeaders
+                    ? "- Status counts [\(status)]; \(taggedProjectCount) tagged; \(untaggedProjectCount) untagged; \(tagCount) distinct tags.\n- Top tags: [\(tags)]."
+                    : "- Status counts [\(status)]; \(taggedProjectCount) tagged; \(untaggedProjectCount) untagged; \(tagCount) distinct tags."
             ),
             CitationSection(
                 id: "technology",
@@ -196,18 +198,21 @@ struct KnowledgeBaseMetadataSnapshot: Equatable, Sendable {
                 id: "index_coverage",
                 promptTitle: "Index coverage",
                 content: "- Indexed source coverage: [\(sourceCoverage)].\n- \(excludedChunkCount) chunks are excluded; \(withoutReadmeSourceProjectCount) repositories have no README source; \(withoutIndexableSourceProjectCount) have no active indexable source.\n- \(insights.readmeSourceProjectCount) have README content; \(insights.indexableSourceProjectCount) have an active source; \(insights.embeddingReadyProjectCount) have a current-model vector-ready chunk; \(insights.indexIssueProjectCount) have failed or stale chunks."
-            ),
-            CitationSection(
+            )
+        ]
+        if includeInventoryLeaders {
+            sections.append(CitationSection(
                 id: "star_leaders",
                 promptTitle: "Star leaders",
                 content: "- Top \(topStarredRepositories.count): [\(topRepositories)]."
-            ),
-            CitationSection(
-                id: "index_health",
-                promptTitle: "RAG index health",
-                content: "- Model \(indexHealth.embeddingModel.isEmpty ? "not configured (keyword-only mode)" : indexHealth.embeddingModel): \(indexHealth.totalChunks) active chunks; vector-ready \(indexHealth.readyChunks), keyword-ready \(indexHealth.keywordOnlyChunks), pending \(indexHealth.pendingChunks), failed \(indexHealth.failedChunks), stale \(indexHealth.staleChunks)."
-            )
-        ]
+            ))
+        }
+        sections.append(CitationSection(
+            id: "index_health",
+            promptTitle: "RAG index health",
+            content: "- Model \(indexHealth.embeddingModel.isEmpty ? "not configured (keyword-only mode)" : indexHealth.embeddingModel): \(indexHealth.totalChunks) active chunks; vector-ready \(indexHealth.readyChunks), keyword-ready \(indexHealth.keywordOnlyChunks), pending \(indexHealth.pendingChunks), failed \(indexHealth.failedChunks), stale \(indexHealth.staleChunks)."
+        ))
+        return sections
     }
 
     /// 规划阶段只需知道有哪些可验证的库存事实，不应重复发送标签排行或 Star Top10 等生成阶段信息。

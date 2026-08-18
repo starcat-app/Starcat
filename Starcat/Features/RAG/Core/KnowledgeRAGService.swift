@@ -977,19 +977,18 @@ struct KnowledgeRAGService: Sendable {
         } else {
             analyticsResult = nil
         }
-        // analytics 已由固定聚合 SQL 给出完整结果；再加载 1,000 个候选并塞入
-        // structured rows 既浪费 I/O，也会让“排行”答案混入无关的项目清单。
-        let candidates: [RAGRepoCandidate]
-        if plan.analytics == nil {
-            candidates = try await resolveRetrievalCandidates(
-                plan: plan,
-                question: request.rawQuestion,
-                explicitRepoIDs: request.composerContext.explicitRepoIDs,
-                explicitMode: request.composerContext.explicitRepoMode
-            )
-        } else {
-            candidates = []
-        }
+        // 纯计数仍只跑 analytics，避免把排行混进无关项目清单。
+        // 有身份锚时允许并存：例如「有多少个 Starcat、都是干什么的」。
+        let resolvedCandidates = try await resolveRetrievalCandidates(
+            plan: plan,
+            question: request.rawQuestion,
+            explicitRepoIDs: request.composerContext.explicitRepoIDs,
+            explicitMode: request.composerContext.explicitRepoMode,
+            allowsWindow: plan.analytics == nil
+        )
+        let candidates = (plan.analytics == nil || resolvedCandidates.hasIdentityAnchor)
+            ? resolvedCandidates.candidates
+            : []
         sink.debug(.candidates, candidates.map { candidate in
             """
             repo: \(candidate.repo.fullName)
@@ -1014,7 +1013,7 @@ struct KnowledgeRAGService: Sendable {
                 : "rag.workspace.execution.noKnowledgeRepos"
             localMissingReasonKey = missingReasonKey
             sink.yield(.execution(.terminated(.retrieval, summary: String.l10n(missingReasonKey))))
-        } else if plan.mode == .structuredOnly {
+        } else if plan.mode == .structuredOnly, !resolvedCandidates.hasIdentityAnchor {
             retrieval = RAGRetrievalResult(
                 candidates: candidates,
                 bundles: [],
@@ -1044,14 +1043,21 @@ struct KnowledgeRAGService: Sendable {
             // FTS 与向量检索是独立能力。即使没有当前模型的 ready 向量，pending /
             // failed / stale 文本仍然已经进入本地 FTS，必须允许 Retriever 走关键词降级。
             retrieval = try await retriever.retrieve(
-                semanticQuery: plan.semanticQuery,
+                semanticQuery: plan.semanticQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? request.rawQuestion
+                    : plan.semanticQuery,
                 keywordQueries: RAGKeywordQueryBuilder.mergedKeywordQueries(
                     planned: plan.keywordQueries,
-                    anchorQuestion: request.rawQuestion
+                    anchorQuestion: request.rawQuestion,
+                    extraIdentityTerms: resolvedCandidates.identityTerms
                 ),
                 candidates: candidates,
                 explicitMode: request.composerContext.explicitRepoMode,
                 explicitRepoIDs: request.composerContext.explicitRepoIDs,
+                identityRepoIDs: resolvedCandidates.identityRepoIDs,
+                repoLimitOverride: RAGIdentityBundleLimit.repoLimit(
+                    identityCount: resolvedCandidates.identityRepoIDs.count
+                ),
                 progress: { progress in sink.yield(.execution(.retrieval(progress))) }
             )
             if retrieval.bundles.isEmpty {
@@ -1769,21 +1775,27 @@ struct KnowledgeRAGService: Sendable {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return RAGRetrievalResult(candidates: [], bundles: [], childHits: []) }
         let plan = RAGRetrievalTestPlanning.resolve(query: normalized, scope: scope)
-        let candidates = try await resolveRetrievalCandidates(
+        let resolved = try await resolveRetrievalCandidates(
             plan: plan,
             question: normalized,
             explicitRepoIDs: [],
-            explicitMode: .only
+            explicitMode: .only,
+            allowsWindow: true
         )
         let result = try await retriever.retrieve(
             semanticQuery: normalized,
             keywordQueries: RAGKeywordQueryBuilder.mergedKeywordQueries(
                 planned: plan.keywordQueries,
-                anchorQuestion: normalized
+                anchorQuestion: normalized,
+                extraIdentityTerms: resolved.identityTerms
             ),
-            candidates: candidates,
+            candidates: resolved.candidates,
             explicitMode: .only,
-            explicitRepoIDs: []
+            explicitRepoIDs: [],
+            identityRepoIDs: resolved.identityRepoIDs,
+            repoLimitOverride: RAGIdentityBundleLimit.repoLimit(
+                identityCount: resolved.identityRepoIDs.count
+            )
         )
         return RAGRetrievalResult(
             candidates: result.candidates,
@@ -1795,19 +1807,37 @@ struct KnowledgeRAGService: Sendable {
     }
 
     /// 计划窗口 + 身份仓并集。身份命中不受 `candidateLimit` 挤掉。
+    /// `allowsWindow == false` 时只拉身份仓，避免 analytics 再扫一遍高星窗口。
     private func resolveRetrievalCandidates(
         plan: RAGQueryPlan,
         question: String,
         explicitRepoIDs: [Int64],
-        explicitMode: RAGExplicitRepoMode
-    ) async throws -> [RAGRepoCandidate] {
-        let window = try await candidateRepository.fetchCandidates(
-            plan: plan,
-            explicitRepoIDs: explicitRepoIDs,
-            explicitMode: explicitMode
+        explicitMode: RAGExplicitRepoMode,
+        allowsWindow: Bool
+    ) async throws -> RAGResolvedRetrievalCandidates {
+        let tagNames = try await candidateRepository.fetchContainedTagNames(in: question, limit: 20)
+        let terms = RAGKeywordQueryBuilder.mergedKeywordQueries(
+            planned: [],
+            anchorQuestion: question,
+            extraIdentityTerms: tagNames
         )
-        let terms = RAGKeywordQueryBuilder.identityTerms(from: question)
-        guard !terms.isEmpty else { return window }
+        let window: [RAGRepoCandidate]
+        if allowsWindow {
+            window = try await candidateRepository.fetchCandidates(
+                plan: plan,
+                explicitRepoIDs: explicitRepoIDs,
+                explicitMode: explicitMode
+            )
+        } else {
+            window = []
+        }
+        guard !terms.isEmpty else {
+            return RAGResolvedRetrievalCandidates(
+                candidates: window,
+                identityRepoIDs: [],
+                identityTerms: []
+            )
+        }
         let identity = try await candidateRepository.fetchIdentityCandidates(
             terms: terms,
             plan: plan,
@@ -1815,7 +1845,11 @@ struct KnowledgeRAGService: Sendable {
             explicitMode: explicitMode,
             limit: RAGRetrievalTestPlanning.identityCandidateLimit
         )
-        return RAGRepoCandidateMerger.merge(identity: identity, window: window)
+        return RAGResolvedRetrievalCandidates(
+            candidates: RAGRepoCandidateMerger.merge(identity: identity, window: window),
+            identityRepoIDs: identity.map(\.repo.id),
+            identityTerms: terms
+        )
     }
 
     /// 防御性清理模型偶发的引用符、换行和过长输出；不会改写标题语义。
