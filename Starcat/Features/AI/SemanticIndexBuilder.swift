@@ -17,7 +17,9 @@
 //  - **README 串行 + Embedding 批量**：README 拉取受 GitHub rate limit 约束，仍逐个 repo
 //    补 Markdown；Embedding 不受这个限速约束，按小批量提交给 `SemanticSearchService`，
 //    让 provider 的 batch endpoint 与本地 snapshot 准备都能摊薄开销。
-//  - **限速实现**：拉一次 README sleep `intervalMillis` 毫秒（默认 800ms ≈ 4500/h）。
+//  - **限速实现**：只有 `refreshMarkdownIfNeeded` 返回 `.updated`（这次真的打了 GitHub）
+//    才 sleep `intervalMillis` 毫秒（默认 800ms ≈ 4500/h）。本地已有 Markdown、无 HTML
+//    行而跳过、404 / 失败都不睡，避免 2000 仓缓存命中还空转半小时。
 //    用 Task.sleep 而非外部计时器，让 cancel 立即生效。
 //  - **错误隔离**：单个 repo 失败 → 累加 `failureCount`，继续下一个，不打断整体进度。
 //  - **MainActor**：与 SemanticSearchService 一致，避免跨 actor 跳转。
@@ -48,6 +50,25 @@ enum SemanticIndexBuilderStatus: Equatable, Sendable {
     /// UI 渲染为绿色 checkmark.circle.fill + "已是最新（共 N 个仓库）"。
     case alreadyUpToDate(total: Int)
     case failed(message: String)
+}
+
+/// 最近一次预拉 / 全量重建的落盘快照。
+///
+/// `SemanticIndexBuilder.status` 只活在进程里，关设置页或重启后会回到 `.idle`，
+/// 设置页必须靠这份记录回答「上次拉取是什么时候、结果如何」。
+struct SemanticIndexPrefetchLastRun: Codable, Equatable, Sendable {
+    enum Outcome: String, Codable, Sendable {
+        case completed
+        case alreadyUpToDate
+        case failed
+    }
+
+    var finishedAt: Date
+    var processed: Int
+    var total: Int
+    var failures: Int
+    var outcome: Outcome
+    var failureMessage: String?
 }
 
 /// 语义索引候选范围。
@@ -120,10 +141,11 @@ final class SemanticIndexBuilder {
     private let repoRepository: any RepoRepositoryProtocol
     private let readmeAPI: ReadmeAPI
     private let semanticSearchService: SemanticSearchService
+    private let settings: AppSettings
     private let scope: SemanticIndexScope
 
-    /// 单条 README 拉取之间的限速间隔（毫秒）。
-    /// 默认 800ms ≈ 4500 req/h，留 500 给同步流程，详见模块注释。
+    /// 单条真正打到 GitHub 的 README 拉取之间的限速间隔（毫秒）。
+    /// 默认 800ms ≈ 4500 req/h，留 500 给同步流程；本地命中不走这个间隔。
     private let intervalMillis: Int
 
     /// Embedding 重建批大小。
@@ -142,12 +164,14 @@ final class SemanticIndexBuilder {
         repoRepository: any RepoRepositoryProtocol,
         readmeAPI: ReadmeAPI,
         semanticSearchService: SemanticSearchService,
+        settings: AppSettings,
         scope: SemanticIndexScope = .all,
         intervalMillis: Int = 800
     ) {
         self.repoRepository = repoRepository
         self.readmeAPI = readmeAPI
         self.semanticSearchService = semanticSearchService
+        self.settings = settings
         self.scope = scope
         self.intervalMillis = intervalMillis
     }
@@ -272,14 +296,14 @@ final class SemanticIndexBuilder {
                 indexCandidates.reserveCapacity(chunk.count)
                 for repo in chunk {
                     if Task.isCancelled { break }
-                    await refreshMarkdownForIndexing(repo)
+                    let fetchedMarkdown = await refreshMarkdownForIndexing(repo)
                     indexCandidates.append(repo)
                     processed += 1
 
                     if Task.isCancelled { break }
-                    // 限速：单条 README 拉取后 sleep。注意此处用 Task.sleep（cancel 时立刻抛错），
-                    // 不能用 DispatchQueue.asyncAfter，否则 pause 时进度会卡住等定时器结束。
-                    if intervalMillis > 0 {
+                    // 限速只保护 GitHub：本地命中 / 跳过不能按仓 sleep。
+                    // Task.sleep 可被 cancel 立刻打断；DispatchQueue.asyncAfter 会让暂停卡住。
+                    if fetchedMarkdown, intervalMillis > 0 {
                         try? await Task.sleep(for: .milliseconds(intervalMillis))
                     }
                 }
@@ -311,12 +335,15 @@ final class SemanticIndexBuilder {
             // 用户明确点了"全量重建"按钮，应该看到"已完成 N / N"反馈而不是"已是最新"。
             if skipped == processed && failures == 0 {
                 status = .alreadyUpToDate(total: total)
+                persistLastRun(outcome: .alreadyUpToDate)
             } else {
                 status = .completed(processed: processed, total: total)
+                persistLastRun(outcome: .completed)
             }
         } catch {
             AppLog.ai.error("SemanticIndexBuilder failed: \(error.localizedDescription, privacy: .public)")
             status = .failed(message: error.localizedDescription)
+            persistLastRun(outcome: .failed, failureMessage: error.localizedDescription)
             let friendly = UserFacingError.map(
                 error,
                 operation: "semanticIndex.rebuild",
@@ -333,6 +360,18 @@ final class SemanticIndexBuilder {
                 )
             }
         }
+    }
+
+    /// 预拉结束立刻落盘，设置页下次打开才能读到时间和计数。暂停 / 取消不写。
+    private func persistLastRun(outcome: SemanticIndexPrefetchLastRun.Outcome, failureMessage: String? = nil) {
+        settings.semanticIndexLastPrefetch = SemanticIndexPrefetchLastRun(
+            finishedAt: Date(),
+            processed: processed,
+            total: total,
+            failures: failures,
+            outcome: outcome,
+            failureMessage: failureMessage
+        )
     }
 
     private func fetchRepos(scope: SemanticIndexScope) async throws -> [Repo] {
@@ -354,10 +393,18 @@ final class SemanticIndexBuilder {
     ///
     /// Markdown 失败不计入 `failures`：snapshot 仍可走 HTML / metadata 兜底，embedding
     /// 是否需要重建由后续批量 `SemanticSearchService` 决定。
-    private func refreshMarkdownForIndexing(_ repo: Repo) async {
+    /// - Returns: `true` 表示这次向 GitHub 拉取并落库了 Markdown，调用方才需要做 800ms 限速。
+    @discardableResult
+    private func refreshMarkdownForIndexing(_ repo: Repo) async -> Bool {
         let mdResult = await readmeAPI.refreshMarkdownIfNeeded(for: repo)
-        if case .failed(let error) = mdResult {
+        switch mdResult {
+        case .updated:
+            return true
+        case .failed(let error):
             AppLog.ai.warning("refreshMarkdownIfNeeded failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return false
+        case .notModified, .notFound:
+            return false
         }
     }
 

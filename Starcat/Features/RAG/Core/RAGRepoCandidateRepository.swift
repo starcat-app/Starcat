@@ -27,6 +27,8 @@ protocol RAGRepoCandidateRepositoryProtocol: Sendable {
         sort: RepoSortOption,
         filters: RAGComposerMentionFilters
     ) async throws -> RAGRepoCandidatePage
+    /// 按仓库 ID 取浏览器候选，忽略当前搜索/筛选。定位分片时目标仓可能不在已加载的分页里。
+    func fetchKnowledgeBrowserCandidate(repoId: Int64) async throws -> RAGRepoCandidate?
     /// Composer 上下文选择器专用轻量投影；大库按关键词 + 面板排序/筛选分页。
     func fetchMentionCandidates(
         query: String,
@@ -461,6 +463,25 @@ struct GRDBRAGRepoCandidateRepository: RAGRepoCandidateRepositoryProtocol {
                 candidates: Array(mapped.prefix(limit)),
                 hasMore: mapped.count > limit
             )
+        }
+    }
+
+    func fetchKnowledgeBrowserCandidate(repoId: Int64) async throws -> RAGRepoCandidate? {
+        try await database.writer.read { db in
+            // 与列表页同一套 repo + notes + tags 投影，但不套搜索/筛选：
+            // Inspector 定位必须能打开当前不在第一页里的仓库。
+            let row = try Row.fetchOne(db, sql: """
+                SELECT r.*, n.status AS rag_status, n.library_updated_at AS rag_library_updated_at,
+                       COALESCE((
+                           SELECT GROUP_CONCAT(t.name, '\u{1F}')
+                           FROM repo_tags rt JOIN tags t ON t.id = rt.tag_id
+                           WHERE rt.repo_id = r.id
+                       ), '') AS rag_tag_names
+                FROM repos r
+                JOIN repo_notes n ON n.repo_id = r.id AND n.library_state = 'in_library'
+                WHERE r.id = ?
+                """, arguments: [repoId])
+            return try row.map(Self.mapCandidate(row:))
         }
     }
 

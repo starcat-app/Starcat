@@ -8,6 +8,8 @@ description: Starcat 本地化生产、同步与发布门禁流程。用于同�
 处理 Starcat 运行时 String Catalog 与公开本地化仓库之间的完整生命周期。先读
 `references/localization-map.md`，再按本文件选择执行路径。
 
+**硬闸（2026-08-18）**：日常功能开发往 `Starcat/Resources/Localizable.xcstrings` 加 key / 改文案，**禁止**走本 skill，**禁止** `scripts/xcstrings_patch.py --apply`，**禁止** Python/`jq` 读入全文再写回。只允许按 [`docs/5-规范/i18n-军规.md`](../../../docs/5-规范/i18n-军规.md) 铁律 #6 做相邻 key 关键词局部匹配。本 skill 仅在 dong4j **明确要求**本地化同步 / 导入导出 / 审计时使用。
+
 ## 核心模型
 
 始终区分四个阶段，不得用后一个阶段的状态掩盖前一个阶段缺失的证据：

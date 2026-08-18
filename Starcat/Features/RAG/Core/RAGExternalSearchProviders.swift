@@ -58,8 +58,10 @@ struct RAGExternalIndexChangeSet: Equatable, Sendable {
     }
 }
 
-/// 把本地变更集投影为两个外部后端的独立操作。Qdrant 只接受当前模型的
-/// ready 向量；Metadata 是 FTS-only，无论更新还是删除都不得产生 Qdrant 请求。
+/// 把本地变更集投影为两个外部后端的独立操作。
+///
+/// Meilisearch 存的是可检索正文，pending / stale 也必须 upsert，不能等向量 ready。
+/// Qdrant 只接受当前模型的 ready 向量；Metadata 是 FTS-only，不得产生 Qdrant 请求。
 struct RAGExternalIndexSyncPlan: Sendable {
     var keywordUpserts: [RAGChunk]
     var keywordDeleteIDs: [Int64]
@@ -76,16 +78,17 @@ struct RAGExternalIndexSyncPlan: Sendable {
             chunk.id.map { ($0, chunk) }
         })
         let keywordUpserts = changes.upsertIDs.compactMap { currentByID[$0] }.filter { chunk in
-            guard publicKnowledgeRepoIDs.contains(chunk.repoId) else { return false }
-            return chunk.source == .metadata
-                || (chunk.embeddingStatus == .ready && chunk.embeddingModel == model)
+            publicKnowledgeRepoIDs.contains(chunk.repoId)
         }
         let keywordUpsertIDs = Set(keywordUpserts.compactMap(\.id))
         let keywordDeleteIDs = Set(changes.deletedSources.keys)
             .union(changes.upsertIDs.subtracting(keywordUpsertIDs))
 
         let vectorUpserts = keywordUpserts.filter { chunk in
-            chunk.source != .metadata && !chunk.vector.isEmpty
+            chunk.source != .metadata
+                && chunk.embeddingStatus == .ready
+                && chunk.embeddingModel == model
+                && !chunk.vector.isEmpty
         }
         let vectorUpsertIDs = Set(vectorUpserts.compactMap(\.id))
         let changedVectorIDs = changes.upsertIDs.filter { id in
@@ -208,14 +211,14 @@ struct MeilisearchRAGProvider: RAGKeywordSearchProvider {
 
     func replaceAll(chunks: [RAGChunk]) async throws {
         try validate()
-        do {
+        // 空实例上 DELETE 会 202 入队，随后 task 以 index_not_found 失败，不是 HTTP 404。
+        // POST documents 才会创建 index；缺库时必须继续写，不能把清空失败当成整轮失败。
+        try await ignoringMissingIndex {
             try await enqueueAndWait(
                 path: "indexes/\(configuration.indexName)/documents",
                 method: "DELETE",
                 json: nil
             )
-        } catch let RAGExternalBackendError.http(_, status, _) where status == 404 {
-            // 首次同步时 index 尚不存在，后续 documents/settings 写入会创建它。
         }
         try await upsertDocuments(chunks)
         try await enqueueAndWait(
@@ -229,13 +232,37 @@ struct MeilisearchRAGProvider: RAGKeywordSearchProvider {
     func applyChanges(upserts: [RAGChunk], deleteIDs: [Int64]) async throws {
         try validate()
         for batch in deleteIDs.chunked(into: 500) where !batch.isEmpty {
-            try await enqueueAndWait(
-                path: "indexes/\(configuration.indexName)/documents/delete-batch",
-                method: "POST",
-                json: batch
-            )
+            try await ignoringMissingIndex {
+                try await enqueueAndWait(
+                    path: "indexes/\(configuration.indexName)/documents/delete-batch",
+                    method: "POST",
+                    json: batch
+                )
+            }
         }
         try await upsertDocuments(upserts)
+    }
+
+    /// Meilisearch 1.53 对不存在的 index 做 DELETE / delete-batch 会 202 入队，task 再报
+    /// `index_not_found`，而不是 HTTP 404。POST documents 会自动建库，所以清空失败必须当成空库。
+    private func ignoringMissingIndex(_ operation: () async throws -> Void) async throws {
+        do {
+            try await operation()
+        } catch {
+            guard Self.isMissingIndex(error) else { throw error }
+        }
+    }
+
+    private static func isMissingIndex(_ error: Error) -> Bool {
+        switch error as? RAGExternalBackendError {
+        case .http(_, let status, _) where status == 404:
+            return true
+        case .operationFailed(_, let message):
+            let lowered = message.lowercased()
+            return lowered.contains("index") && lowered.contains("not found")
+        default:
+            return false
+        }
     }
 
     private func upsertDocuments(_ chunks: [RAGChunk]) async throws {

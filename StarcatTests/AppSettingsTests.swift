@@ -1662,3 +1662,37 @@ struct AppSettingsRepoContextTests {
         #expect(s2.aiRepoContextTier1MaxLines == -5)
     }
 }
+
+@Suite("AppSettings.SemanticIndexLastPrefetch")
+struct AppSettingsSemanticIndexLastPrefetchTests {
+    private func makeIsolatedDefaults() -> UserDefaults {
+        let suiteName = "starcat.tests.semanticIndexLastPrefetch.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            fatalError("Unable to create isolated UserDefaults")
+        }
+        defaults.removePersistentDomain(forName: suiteName)
+        return defaults
+    }
+
+    @Test("写入后新建实例能回读上次预拉时间和计数")
+    func roundTripPersists() {
+        let defaults = makeIsolatedDefaults()
+        let s1 = AppSettings(defaults: defaults)
+        let finishedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        s1.semanticIndexLastPrefetch = SemanticIndexPrefetchLastRun(
+            finishedAt: finishedAt,
+            processed: 151,
+            total: 1939,
+            failures: 0,
+            outcome: .completed,
+            failureMessage: nil
+        )
+
+        let s2 = AppSettings(defaults: defaults)
+        #expect(s2.semanticIndexLastPrefetch?.processed == 151)
+        #expect(s2.semanticIndexLastPrefetch?.total == 1939)
+        #expect(s2.semanticIndexLastPrefetch?.failures == 0)
+        #expect(s2.semanticIndexLastPrefetch?.outcome == .completed)
+        #expect(s2.semanticIndexLastPrefetch?.finishedAt.timeIntervalSince1970 == 1_700_000_000)
+    }
+}

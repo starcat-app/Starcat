@@ -1318,6 +1318,20 @@ final class AppSettings {
         didSet { persistBool(key: Keys.aiIndexAutoPrefetchEnabled, value: aiIndexAutoPrefetchEnabled) }
     }
 
+    /// 最近一次向量索引预拉 / 全量重建的时间和计数。
+    ///
+    /// `SemanticIndexBuilder` 进程内状态关设置页就会回到 idle；设置页要靠这份快照
+    /// 显示「上次拉取」时间和记录。暂停不写，只有跑完或整轮失败才更新。
+    var semanticIndexLastPrefetch: SemanticIndexPrefetchLastRun? {
+        didSet {
+            if let semanticIndexLastPrefetch {
+                persistJSON(key: Keys.semanticIndexLastPrefetch, value: semanticIndexLastPrefetch)
+            } else {
+                defaults.removeObject(forKey: Keys.semanticIndexLastPrefetch)
+            }
+        }
+    }
+
     /// 是否启用 README 后台预拉。
     ///
     /// 默认开启：该任务只处理本地已 star 仓库，单轮限量 + 串行 + 退避冷却，不参与 AI 向量索引，
@@ -1887,6 +1901,11 @@ final class AppSettings {
         let notesRatioRaw = defaults.object(forKey: Keys.aiIndexNotesDiffRatio) as? Double
         self.aiIndexNotesDiffRatio = notesRatioRaw ?? DiffThresholds.default.notesDiffRatio
         self.aiIndexAutoPrefetchEnabled = defaults.object(forKey: Keys.aiIndexAutoPrefetchEnabled) as? Bool ?? false
+        self.semanticIndexLastPrefetch = Self.decodeJSON(
+            SemanticIndexPrefetchLastRun.self,
+            key: Keys.semanticIndexLastPrefetch,
+            defaults: defaults
+        )
         self.readmePrefetchEnabled = defaults.object(forKey: Keys.readmePrefetchEnabled) as? Bool ?? true
         // HOM-197：语义搜索过滤阈值默认 0.75；老用户首启缺 key 走默认。
         let semScoreRaw = defaults.object(forKey: Keys.aiSemanticSearchScoreThreshold) as? Double
@@ -2047,6 +2066,7 @@ final class AppSettings {
         aiReadmeTruncateLength = ReadmePreprocessor.defaultMaxLength
         applyAIIndexPreset(.standard)
         aiIndexAutoPrefetchEnabled = false
+        semanticIndexLastPrefetch = nil
         readmePrefetchEnabled = true
         aiSemanticSearchScoreThreshold = 0.75
         customServiceURLs = [:]
@@ -2482,6 +2502,7 @@ final class AppSettings {
         static let aiIndexBodyDiffRatio = "settings.ai.index.bodyDiffRatio.v1"
         static let aiIndexNotesDiffRatio = "settings.ai.index.notesDiffRatio.v1"
         static let aiIndexAutoPrefetchEnabled = "settings.ai.index.autoPrefetchEnabled.v1"
+        static let semanticIndexLastPrefetch = "settings.ai.index.lastPrefetch.v1"
         static let readmePrefetchEnabled = "settings.readme.prefetch.enabled.v1"
         // HOM-197（2026-06-13 dong4j）：AI 语义搜索过滤阈值，默认 0.75。
         static let aiSemanticSearchScoreThreshold = "settings.ai.semanticSearch.scoreThreshold.v1"
@@ -2576,6 +2597,7 @@ final class AppSettings {
             aiIndexBodyDiffRatio,
             aiIndexNotesDiffRatio,
             aiIndexAutoPrefetchEnabled,
+            semanticIndexLastPrefetch,
             readmePrefetchEnabled,
             aiSemanticSearchScoreThreshold,
             aiRepoContextEnabled,

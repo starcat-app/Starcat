@@ -7,7 +7,7 @@
 //  模块职责：
 //  - 在一个 toolbar 组件内承载关键词搜索 / AI 语义搜索两种模式；
 //  - 折叠态只占一个图标宽度，避免挤压 macOS toolbar；
-//  - 展开态内嵌模式切换、输入框、清空按钮和 AI 向量索引刷新入口；
+//  - 展开态内嵌模式切换、输入框、清空按钮、AI 向量索引刷新，以及语义查询忙态环；
 //  - AI 模式提供克制的彩色光晕，但仍保持桌面应用的原生工具栏比例。
 //
 //  关键约束：
@@ -32,6 +32,10 @@ struct SmartSearchField: View {
     @Binding var semanticScope: SemanticIndexScope
 
     let isIndexing: Bool
+    /// 语义索引刷新进度；有值时刷新按钮从转圈换成进度环。
+    var indexingProgress: (processed: Int, total: Int)? = nil
+    /// 语义搜索 query 正在跑。和 `isIndexing` 分开：重建走确定进度环，查询走不确定细环。
+    var isQuerying: Bool = false
     let onSubmitSearch: (String) -> Void
     let onRefreshSemanticIndex: () -> Void
     var onOpenGlobalSearch: (() -> Void)?
@@ -459,17 +463,92 @@ struct SmartSearchField: View {
     }
 
     private var semanticRefreshButton: some View {
-        SyncIconButton(
-            isRefreshing: isIndexing,
-            disabled: isIndexing || isDisabled,
-            font: .system(size: 13, weight: .medium),
-            frameSize: 24,
-            minVisibleDuration: 0,
-            tooltip: isIndexing
-                ? String.l10n("search.semantic.indexing")
-                : String.l10n("search.semantic.refreshIndex"),
-            action: onRefreshSemanticIndex
-        )
+        Group {
+            if isIndexing {
+                // 重建索引更长，占用同一槽时优先显示确定进度。
+                semanticIndexingProgressRing
+            } else if isQuerying {
+                semanticQueryingProgressRing
+            } else {
+                SyncIconButton(
+                    isRefreshing: false,
+                    disabled: isDisabled,
+                    font: .system(size: 13, weight: .medium),
+                    frameSize: 24,
+                    minVisibleDuration: 0,
+                    tooltip: String.l10n("search.semantic.refreshIndex"),
+                    action: onRefreshSemanticIndex
+                )
+            }
+        }
+    }
+
+    /// 刷新中不用 SyncIconButton 转圈：用户要的是本轮向量化进度，不是「还在忙」。
+    /// 底轨 secondary、进度弧 accent，与工具栏刷新中图标同色。
+    private var semanticIndexingProgressRing: some View {
+        let total = max(indexingProgress?.total ?? 0, 0)
+        let processed = min(max(indexingProgress?.processed ?? 0, 0), total)
+        let fraction = total > 0 ? Double(processed) / Double(total) : 0
+        let tooltip = total > 0
+            ? String(format: String.l10n("search.semantic.indexingProgressFormat"), processed, total)
+            : String.l10n("search.semantic.indexing")
+
+        return ZStack {
+            Circle()
+                .stroke(Color.secondary.opacity(0.3), lineWidth: 2)
+            Circle()
+                .trim(from: 0, to: fraction)
+                .stroke(
+                    Color.accentColor,
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: fraction)
+        }
+        .frame(width: 13, height: 13)
+        .frame(width: 24, height: 24)
+        .contentShape(Rectangle())
+        .help(tooltip)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("search.semantic.indexing"))
+        .accessibilityValue(Text(verbatim: total > 0 ? "\(processed)/\(total)" : ""))
+    }
+
+    /// 查询忙态：不确定进度细环，尺寸与重建环同一 13pt / 24pt 槽，避免胶囊宽度跳动。
+    /// Reduce Motion 时停在顶部静态弧，不转圈。
+    private var semanticQueryingProgressRing: some View {
+        Group {
+            if reduceMotion {
+                semanticIndeterminateRing(angle: -90)
+            } else {
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+                    let turns = timeline.date.timeIntervalSinceReferenceDate
+                        .truncatingRemainder(dividingBy: 0.8) / 0.8
+                    semanticIndeterminateRing(angle: turns * 360 - 90)
+                }
+            }
+        }
+        .frame(width: 24, height: 24)
+        .contentShape(Rectangle())
+        .help("search.semantic.querying")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("search.semantic.querying"))
+        .accessibilityAddTraits(.updatesFrequently)
+    }
+
+    private func semanticIndeterminateRing(angle: Double) -> some View {
+        ZStack {
+            Circle()
+                .stroke(Color.secondary.opacity(0.3), lineWidth: 2)
+            Circle()
+                .trim(from: 0, to: 0.28)
+                .stroke(
+                    Color.accentColor,
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                )
+                .rotationEffect(.degrees(angle))
+        }
+        .frame(width: 13, height: 13)
     }
 
     private var clearButton: some View {
@@ -515,7 +594,7 @@ struct SmartSearchField: View {
     @ViewBuilder
     private var aiGlow: some View {
         if isSemantic {
-            SmartSearchAIGlow(isActive: isTextFieldFocused || hasDraftText || hasCommittedText || isIndexing)
+            SmartSearchAIGlow(isActive: isTextFieldFocused || hasDraftText || hasCommittedText || isIndexing || isQuerying)
                 .allowsHitTesting(false)
         }
     }

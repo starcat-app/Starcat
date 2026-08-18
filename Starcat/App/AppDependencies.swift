@@ -1217,7 +1217,8 @@ final class AppDependencies {
         self.semanticIndexBuilder = SemanticIndexBuilder(
             repoRepository: repo,
             readmeAPI: self.readmeAPI,
-            semanticSearchService: semantic
+            semanticSearchService: semantic,
+            settings: self.settings
         )
 
         // HOM-54：Trending Repository（W7+ 起接入 GRDB 持久化）。

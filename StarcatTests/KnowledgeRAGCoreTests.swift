@@ -510,13 +510,15 @@ struct KnowledgeRAGCoreTests {
         #expect(summary.embeddingReadyChunks == 15_345)
     }
 
-    @Test("仅 embedding 阶段暴露本轮分片进度")
+    @Test("仅 embedding 阶段暴露当前模型向量覆盖")
     func indexingStatusExposesOnlyActiveEmbeddingProgress() {
         let active = RAGIndexingStatus.embedding(processedChunks: 12, totalChunks: 30)
 
         #expect(active.embeddingProgress?.processedChunks == 12)
         #expect(active.embeddingProgress?.totalChunks == 30)
+        #expect(active.isActivelyIndexing)
         #expect(RAGIndexingStatus.idle.embeddingProgress == nil)
+        #expect(!RAGIndexingStatus.idle.isActivelyIndexing)
     }
 
     @MainActor
@@ -1471,6 +1473,10 @@ struct KnowledgeRAGCoreTests {
 
         let overlap = Set(first.candidates.map(\.repo.id)).intersection(second.candidates.map(\.repo.id))
         #expect(overlap.isEmpty)
+
+        let latePageRepo = try await repository.fetchKnowledgeBrowserCandidate(repoId: 25)
+        #expect(latePageRepo?.repo.id == 25)
+        #expect(try await repository.fetchKnowledgeBrowserCandidate(repoId: 99) == nil)
     }
 
     @Test("知识库浏览器默认按 library_updated_at 倒序")
@@ -5235,6 +5241,66 @@ struct KnowledgeRAGCoreTests {
         #expect(await httpClient.requestCount == 4)
     }
 
+    @Test("Meilisearch 空实例 DELETE 以 index_not_found 入队失败后仍 POST 文档")
+    func meilisearchReplaceAllContinuesWhenDeleteTaskReportsMissingIndex() async throws {
+        let database = try InMemoryDatabaseManager()
+        let httpClient = SequencedRAGHTTPClient(responses: [
+            (Data(#"{"taskUid":1}"#.utf8), 202),
+            (Data(#"""
+            {"status":"failed","error":{"message":"Index `starcat_rag_chunks` not found.","code":"index_not_found"}}
+            """#.utf8), 200),
+            (Data(#"{"taskUid":2}"#.utf8), 202),
+            (Data(#"{"status":"succeeded"}"#.utf8), 200),
+            (Data(#"{"taskUid":3}"#.utf8), 202),
+            (Data(#"{"status":"succeeded"}"#.utf8), 200)
+        ])
+        let provider = MeilisearchRAGProvider(
+            configuration: RAGMeilisearchConfiguration(),
+            apiKey: nil,
+            repository: GRDBRAGChunkRepository(database: database),
+            httpClient: httpClient
+        )
+
+        try await provider.replaceAll(chunks: [fixtureChunk(id: 91, repoID: 9, source: .readme)])
+
+        let requests = await httpClient.recordedRequests
+        #expect(requests.count == 6)
+        #expect(requests[0].httpMethod == "DELETE")
+        #expect(requests[2].httpMethod == "POST")
+        #expect(requests[2].url?.path.contains("/documents") == true)
+        #expect(requests[4].httpMethod == "PUT")
+    }
+
+    @Test("Meilisearch 增量删除遇 index_not_found 时仍 upsert")
+    func meilisearchApplyChangesContinuesWhenDeleteTaskReportsMissingIndex() async throws {
+        let database = try InMemoryDatabaseManager()
+        let httpClient = SequencedRAGHTTPClient(responses: [
+            (Data(#"{"taskUid":1}"#.utf8), 202),
+            (Data(#"""
+            {"status":"failed","error":{"message":"Index `starcat_rag_chunks` not found.","code":"index_not_found"}}
+            """#.utf8), 200),
+            (Data(#"{"taskUid":2}"#.utf8), 202),
+            (Data(#"{"status":"succeeded"}"#.utf8), 200)
+        ])
+        let provider = MeilisearchRAGProvider(
+            configuration: RAGMeilisearchConfiguration(),
+            apiKey: nil,
+            repository: GRDBRAGChunkRepository(database: database),
+            httpClient: httpClient
+        )
+
+        try await provider.applyChanges(
+            upserts: [fixtureChunk(id: 94, repoID: 9, source: .readme)],
+            deleteIDs: [91]
+        )
+
+        let requests = await httpClient.recordedRequests
+        #expect(requests.count == 4)
+        #expect(requests[0].url?.path.hasSuffix("/documents/delete-batch") == true)
+        #expect(requests[2].httpMethod == "POST")
+        #expect(requests[2].url?.path.contains("/documents") == true)
+    }
+
     @Test("Metadata-only 变更只生成 Meilisearch 增量操作")
     func metadataOnlyExternalSyncSkipsQdrant() {
         var metadata = fixtureChunk(id: 93, repoID: 9, source: .metadata)
@@ -5255,6 +5321,49 @@ struct KnowledgeRAGCoreTests {
         #expect(plan.keywordDeleteIDs.isEmpty)
         #expect(plan.vectorUpserts.isEmpty)
         #expect(plan.vectorDeleteIDs.isEmpty)
+    }
+
+    @Test("pending 正文分片仍同步 Meilisearch，不写入 Qdrant")
+    func pendingReadmeSyncsKeywordOnly() {
+        var pending = fixtureChunk(id: 95, repoID: 9, source: .readme)
+        pending.embeddingStatus = .pending
+        pending.embeddingModel = nil
+        pending.embedding = nil
+
+        var changes = RAGExternalIndexChangeSet()
+        changes.recordUpserts([95])
+        let plan = RAGExternalIndexSyncPlan(
+            changes: changes,
+            currentChunks: [pending],
+            publicKnowledgeRepoIDs: Set([9]),
+            model: "embed-v1"
+        )
+
+        #expect(plan.keywordUpserts.compactMap(\.id) == [95])
+        #expect(plan.keywordDeleteIDs.isEmpty)
+        #expect(plan.vectorUpserts.isEmpty)
+        #expect(plan.vectorDeleteIDs == [95])
+    }
+
+    @Test("stale 旧向量只更新 Meilisearch 正文，不把过期向量写入 Qdrant")
+    func staleReadmeKeepsKeywordAndDropsVector() {
+        var stale = fixtureChunk(id: 96, repoID: 9, source: .readme)
+        stale.embeddingStatus = .stale
+        stale.embeddingModel = "old-embed"
+
+        var changes = RAGExternalIndexChangeSet()
+        changes.recordUpserts([96])
+        let plan = RAGExternalIndexSyncPlan(
+            changes: changes,
+            currentChunks: [stale],
+            publicKnowledgeRepoIDs: Set([9]),
+            model: "embed-v1"
+        )
+
+        #expect(plan.keywordUpserts.compactMap(\.id) == [96])
+        #expect(plan.keywordDeleteIDs.isEmpty)
+        #expect(plan.vectorUpserts.isEmpty)
+        #expect(plan.vectorDeleteIDs == [96])
     }
 
     @Test("Meilisearch 增量同步不清空全量文档")

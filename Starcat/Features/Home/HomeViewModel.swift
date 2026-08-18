@@ -452,6 +452,8 @@ final class HomeViewModel {
 
     /// 是否正在构建 / 刷新语义索引。
     private(set) var isSemanticIndexing: Bool = false
+    /// 工具栏进度环用：已写入向量的仓数 / 本轮总仓数。空闲时为 nil。
+    private(set) var semanticIndexProgress: (processed: Int, total: Int)?
 
     /// 最近一次语义搜索结果的 repo id → 命中信息。
     /// UI 行只通过 `semanticHit(for:)` 读取，不直接操作字典，避免把语义搜索状态扩散到 View。
@@ -459,6 +461,15 @@ final class HomeViewModel {
 
     var isSemanticSearching: Bool {
         isSearching && smartSearchMode == .semantic
+    }
+
+    /// 语义搜索 query 正在跑（补齐向量 + query embedding + 算分）。
+    ///
+    /// 不复用 `isSemanticIndexing`：那是工具栏「刷新语义索引」的确定进度。
+    /// 这里跟 `isLoading` 对齐，是因为 `reloadItems` 在搜索路径上会立刻把 loading 打开，
+    /// 直到 `SemanticSearchService.search()` 返回才关掉；UI 用它驱动胶囊右侧忙态环。
+    var isSemanticQueryInFlight: Bool {
+        isSemanticSearching && isLoading
     }
 
     // MARK: - Sidebar 数据
@@ -1440,6 +1451,7 @@ final class HomeViewModel {
         loadError = nil
         isRefreshing = false
         isSemanticIndexing = false
+        semanticIndexProgress = nil
         isLoading = true
     }
 
@@ -2897,20 +2909,27 @@ final class HomeViewModel {
         return projectStarGrowth30Days[repoID]
     }
 
-    /// 手动刷新 active repo 的语义索引。
+    /// 手动补齐语义索引：只处理尚未有当前模型向量、或正文/笔记/摘要 diff 超阈值的仓。
+    /// 不强制全量重打。换模型后旧模型行对不上，会按「未处理」补齐。
     ///
-    /// 入口放在列表 toolbar；适合用户刚切换 embedding model 或大量同步后主动更新。
-    /// active scope 固定为 starred 与知识库并集，避免未 star 但已入库的 repo 永远没有 embedding。
+    /// 入口放在列表 toolbar。active scope 固定为 starred 与知识库并集，
+    /// 避免未 star 但已入库的 repo 永远没有 embedding。
     func refreshSemanticIndex() async {
         guard let semanticSearchService else {
             loadError = SemanticSearchError.missingAPIKey.localizedDescription
             return
         }
         isSemanticIndexing = true
-        defer { isSemanticIndexing = false }
+        defer {
+            isSemanticIndexing = false
+            semanticIndexProgress = nil
+        }
         do {
             let repos = try await fetchSearchCandidates(scope: .all)
-            try await semanticSearchService.refreshIndex(for: repos)
+            semanticIndexProgress = (processed: 0, total: repos.count)
+            try await semanticSearchService.refreshIndex(for: repos, force: false) { [weak self] processed, total in
+                self?.semanticIndexProgress = (processed: processed, total: total)
+            }
             if isSemanticSearching {
                 await reloadItems(forceRefresh: true)
             }

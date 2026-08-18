@@ -15,7 +15,8 @@
 //  - AI 只参与语义排序，不自动改用户标签 / 笔记 / 状态；
 //  - "要不要重建向量"由 `IndexedTextDiff.shouldRebuild` 决定，**不再**走旧的 `content_hash`
 //    全等比对——避免 stars / forks 等高频字段误触发；
-//  - `refreshIndex(for:)` = 强制重建路径（force=true，跳过 diff），UI 手动按钮 / 全量重建用；
+//  - `refreshIndex(for:force:)`：`force: true` 给设置页全量重建；`force: false` 给
+//    工具栏刷新，只补缺 / 过期，不整表重打。
 //  - `refreshIndexIfChanged(for:)` = 单 repo 路径，供 README 加载完毕 / AI 摘要生成 /
 //    用户笔记保存等触发。debounce / 节流由调用方负责。
 //
@@ -201,22 +202,33 @@ final class SemanticSearchService {
         return Array(scored.sorted { $0.sortScore > $1.sortScore }.prefix(limit).map(\.hit))
     }
 
-    /// 强制刷新一批 repo 的向量索引（force=true 路径）。
+    /// 刷新一批 repo 的向量索引。
     ///
-    /// UI 工具栏的"重建索引"按钮 + 设置页"全量重建" 调这里；搜索时缺失索引也会走
-    /// `ensureIndexed(force: false)` 自动补缺，但走 diff 短路。
+    /// - `force: true`：跳过 diff，每个仓都重打 embedding。设置页「全量重建」用。
+    /// - `force: false`：只处理本地没有当前模型向量、或 snapshot diff 超阈值的仓。
+    ///   工具栏刷新按钮走这条，避免已经齐的库被整表重烧配额。
     ///
-    /// **返回值（2026-06-13 dong4j 反馈"开始预拉闪烁"改造）**：实际调用 embedding
-    /// API 重新写入的 repo 数。`force=true` 路径下通常等于 `repos.count`；空入参 = 0。
-    /// `@discardableResult` 让既有 callsite 无需修改（HomeViewModel 等只关心异常）。
+    /// 搜索时缺失索引也会走 `ensureIndexed(force: false)` 自动补缺。
+    ///
+    /// **返回值**：实际调用 embedding API 重新写入的 repo 数。
     @discardableResult
-    func refreshIndex(for repos: [Repo]) async throws -> Int {
+    func refreshIndex(
+        for repos: [Repo],
+        force: Bool = true,
+        onProgress: ((Int, Int) -> Void)? = nil
+    ) async throws -> Int {
         try entitlementGate?.requirePro(.semanticSearch)
         guard !repos.isEmpty else { return 0 }
         let (client, model) = try makeClient(
             usageContext: AIUsageContext(feature: .semanticSearch, phase: "indexing")
         )
-        return try await ensureIndexed(repos, model: model, client: client, force: true)
+        return try await ensureIndexed(
+            repos,
+            model: model,
+            client: client,
+            force: force,
+            onProgress: onProgress
+        )
     }
 
     /// 单 repo 按 diff 阈值判定后**有需要**才重建。
@@ -299,9 +311,11 @@ final class SemanticSearchService {
         _ repos: [Repo],
         model: String,
         client: any AIClientProtocol,
-        force: Bool = false
+        force: Bool = false,
+        onProgress: ((Int, Int) -> Void)? = nil
     ) async throws -> Int {
         guard !repos.isEmpty else { return 0 }
+        onProgress?(0, repos.count)
 
         // 取本地已有 embedding（用于 diff 比对）
         let existing = try await embeddingRepository.fetchEmbeddingsByRepoID(
@@ -349,7 +363,14 @@ final class SemanticSearchService {
             }
             workItems.append(WorkItem(repo: repo, snapshot: snapshot, renderedText: renderedText))
         }
-        guard !workItems.isEmpty else { return 0 }
+        guard !workItems.isEmpty else {
+            onProgress?(repos.count, repos.count)
+            return 0
+        }
+
+        // 进度按「本轮总仓数」计：diff 跳过的先算完成，其余每写入一批 embedding 再加。
+        var processed = repos.count - workItems.count
+        onProgress?(processed, repos.count)
 
         // 分批调 embedding API
         for chunk in workItems.chunked(into: batchSize) {
@@ -366,6 +387,8 @@ final class SemanticSearchService {
                 )
             }
             try await embeddingRepository.upsert(rows)
+            processed += chunk.count
+            onProgress?(processed, repos.count)
         }
         return workItems.count
     }

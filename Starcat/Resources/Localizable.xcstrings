@@ -150167,6 +150167,86 @@
         }
       }
     },
+    "rag.browser.chunk.indexHelp" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Embedding status for the current model."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前模型的向量化状态。"
+          }
+        }
+      }
+    },
+    "rag.browser.chunk.indexLabel" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Index"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "索引"
+          }
+        }
+      }
+    },
+    "rag.browser.chunk.labelSeparator" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : ": "
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "："
+          }
+        }
+      }
+    },
+    "rag.browser.chunk.libraryHelp" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Whether this chunk is still in the knowledge base and searchable. Independent of embedding status."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分片是否仍在知识库中、可被检索；与向量化是否完成无关。"
+          }
+        }
+      }
+    },
+    "rag.browser.chunk.libraryLabel" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chunk"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分片"
+          }
+        }
+      }
+    },
     "rag.browser.chunk.metadataManaged" : {
       "localizations" : {
         "ar" : {
@@ -152179,6 +152259,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "向量模型"
+          }
+        }
+      }
+    },
+    "rag.browser.overview.refresh" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rebuild the knowledge index and re-embed pending, failed, and stale shards"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重建知识库索引并重新向量化待处理、失败和过期分片"
           }
         }
       }
@@ -193911,6 +194007,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "加载更多"
+          }
+        }
+      }
+    },
+    "rag.workspace.index.issues.openChunk" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open in knowledge base and locate this chunk"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开知识库并定位到该分片"
           }
         }
       }
@@ -295248,6 +295360,22 @@
         }
       }
     },
+    "search.semantic.indexingProgressFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refreshing semantic index %d/%d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在刷新语义索引 %d/%d"
+          }
+        }
+      }
+    },
     "search.semantic.placeholder" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -295357,6 +295485,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "用自然语言搜索项目能力..."
+          }
+        }
+      }
+    },
+    "search.semantic.querying" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Searching semantically..."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在语义搜索..."
           }
         }
       }
@@ -309382,6 +309526,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "失敗：%@"
+          }
+        }
+      }
+    },
+    "settings.aiIndex.prefetch.lastRunFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last prefetch: %@ · %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次预拉：%@ · %@"
+          }
+        }
+      }
+    },
+    "settings.aiIndex.prefetch.neverRun" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No prefetch yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未预拉"
           }
         }
       }

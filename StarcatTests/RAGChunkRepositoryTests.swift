@@ -159,6 +159,80 @@ struct RAGChunkRepositoryTests {
         #expect(current.embedding == nil)
     }
 
+    @Test("已领取分片不进入下一轮队列，第二路不能抢领")
+    func claimedChunksStayOutOfFetchAndCannotBeStolen() async throws {
+        let (database, repository) = try makeRepository()
+        try await database.insertRepoFixture(id: 44)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 44, state: .inLibrary)
+        let drafts = (0..<3).map { index in
+            draft(repoId: 44, key: "readme:claim-skip:\(index)", content: "Claim skip \(index)")
+        }
+        let inserted = try await repository.replaceSource(repoId: 44, source: .readme, drafts: drafts)
+        let firstID = try #require(inserted.pendingChunkIDs.first)
+        let first = try #require(try await repository.fetchChunks(ids: [firstID]).first)
+        let identity = RAGEmbeddingIdentity(chunkID: firstID, contentHash: first.contentHash)
+
+        let claimed = try await repository.claimChunksForEmbedding([identity], claimID: "claim-a")
+        #expect(claimed.count == 1)
+        let remaining = try await repository.fetchChunksNeedingEmbedding(limit: 10)
+        #expect(!remaining.contains(where: { $0.id == firstID }))
+
+        let stolen = try await repository.claimChunksForEmbedding([identity], claimID: "claim-b")
+        #expect(stolen.isEmpty)
+
+        try await repository.releaseEmbeddingClaim(claimID: "claim-a")
+        let afterRelease = try await repository.fetchChunksNeedingEmbedding(limit: 10)
+        #expect(afterRelease.contains(where: { $0.id == firstID }))
+    }
+
+    @Test("无主 claim 可在新一轮开始时清掉")
+    func orphanEmbeddingClaimsCanBeCleared() async throws {
+        let (database, repository) = try makeRepository()
+        try await database.insertRepoFixture(id: 45)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 45, state: .inLibrary)
+        let inserted = try await repository.replaceSource(
+            repoId: 45,
+            source: .readme,
+            drafts: [draft(repoId: 45, key: "readme:orphan:0", content: "Orphan claim")]
+        )
+        let chunkID = try #require(inserted.pendingChunkIDs.first)
+        let chunk = try #require(try await repository.fetchChunks(ids: [chunkID]).first)
+        _ = try await repository.claimChunksForEmbedding(
+            [RAGEmbeddingIdentity(chunkID: chunkID, contentHash: chunk.contentHash)],
+            claimID: "dead-task"
+        )
+        #expect(try await repository.fetchChunksNeedingEmbedding(limit: 10).isEmpty)
+
+        try await repository.clearOrphanEmbeddingClaims()
+        #expect(try await repository.fetchChunksNeedingEmbedding(limit: 10).contains(where: { $0.id == chunkID }))
+    }
+
+    @Test("markReady 在 claim 不匹配时返回 0 且不把分片标 ready")
+    func markReadyReturnsZeroWhenClaimDoesNotMatch() async throws {
+        let (database, repository) = try makeRepository()
+        try await database.insertRepoFixture(id: 46)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 46, state: .inLibrary)
+        let inserted = try await repository.replaceSource(
+            repoId: 46,
+            source: .readme,
+            drafts: [draft(repoId: 46, key: "readme:lost-claim:0", content: "Lost claim")]
+        )
+        let chunkID = try #require(inserted.pendingChunkIDs.first)
+        let chunk = try #require(try await repository.fetchChunks(ids: [chunkID]).first)
+        let identity = RAGEmbeddingIdentity(chunkID: chunkID, contentHash: chunk.contentHash)
+        _ = try await repository.claimChunksForEmbedding([identity], claimID: "live-claim")
+
+        let updated = try await repository.markReady(
+            [RAGEmbeddingWrite(identity: identity, vector: [0.1, 0.2, 0.3])],
+            model: "test-model",
+            claimID: "stale-claim"
+        )
+        #expect(updated == 0)
+        let unchanged = try #require(try await repository.fetchChunks(ids: [chunkID]).first)
+        #expect(unchanged.embeddingStatus == .pending)
+        #expect(unchanged.embeddingClaimID == "live-claim")
+    }
+
     @Test("替换单一 source 只删除该 source 的过期 chunks")
     func sourceReplacementDoesNotTouchOtherSources() async throws {
         let (database, repository) = try makeRepository()
@@ -607,6 +681,61 @@ struct RAGChunkRepositoryTests {
         #expect(!second.hasMore)
     }
 
+    @Test("知识库浏览器能按与分页相同的顺序定位分片偏移")
+    func managedKnowledgeChunkOffsetMatchesPaginationOrder() async throws {
+        let (database, repository) = try makeRepository()
+        try await database.insertRepoFixture(id: 36)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 36, state: .inLibrary)
+        _ = try await repository.replaceSource(
+            repoId: 36,
+            source: .readme,
+            drafts: [
+                draft(repoId: 36, key: "readme:offset:0", content: "One", chunkIndex: 0),
+                draft(repoId: 36, key: "readme:offset:1", content: "Two", chunkIndex: 1),
+                draft(repoId: 36, key: "readme:offset:2", content: "Three", chunkIndex: 2)
+            ]
+        )
+
+        let page = try await repository.fetchManagedKnowledgeChunks(repoId: 36, limit: 10, offset: 0)
+        #expect(page.chunks.map(\.chunk.content) == ["One", "Two", "Three"])
+        let lastID = try #require(page.chunks.last?.chunk.id)
+        #expect(try await repository.fetchManagedKnowledgeChunkOffset(repoId: 36, chunkId: lastID) == 2)
+        #expect(try await repository.fetchManagedKnowledgeChunkOffset(repoId: 36, chunkId: 9_999) == nil)
+
+        try await repository.permanentlyDeleteKnowledgeChunk(id: lastID)
+        #expect(try await repository.fetchManagedKnowledgeChunkOffset(repoId: 36, chunkId: lastID) == nil)
+    }
+
+    @Test("向量化进度只统计当前模型 ready，并排除 keyword_only")
+    func vectorizationProgressCountsCurrentModelReady() async throws {
+        let (database, repository) = try makeRepository()
+        try await database.insertRepoFixture(id: 37)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 37, state: .inLibrary)
+        let result = try await repository.replaceSource(
+            repoId: 37,
+            source: .readme,
+            drafts: [
+                draft(repoId: 37, key: "readme:vec:0", content: "One", chunkIndex: 0),
+                draft(repoId: 37, key: "readme:vec:1", content: "Two", chunkIndex: 1),
+                draft(repoId: 37, key: "readme:vec:2", content: "Three", chunkIndex: 2)
+            ]
+        )
+        let ids = result.pendingChunkIDs
+        #expect(ids.count == 3)
+
+        let initial = try await repository.fetchVectorizationProgress(model: "embed-v1")
+        #expect(initial.readyChunks == 0)
+        #expect(initial.totalChunks == 3)
+
+        let firstID = try #require(ids.first)
+        try await markReady([firstID: [0.1, 0.2]], model: "embed-v1", repository: repository)
+
+        let afterOne = try await repository.fetchVectorizationProgress(model: "embed-v1")
+        #expect(afterOne.readyChunks == 1)
+        #expect(afterOne.totalChunks == 3)
+        #expect(try await repository.fetchVectorizationProgress(model: "embed-other").readyChunks == 0)
+    }
+
     @Test("人工覆盖与排除在源重建后保留且可恢复")
     func knowledgeChunkOverrideSurvivesSourceRebuild() async throws {
         let (database, repository) = try makeRepository()
@@ -673,7 +802,7 @@ struct RAGChunkRepositoryTests {
         #expect(try await repository.fetchManagedKnowledgeChunks(repoId: 42, limit: 5, offset: 0).chunks.isEmpty)
     }
 
-    private func draft(repoId: Int64, key: String, content: String) -> RAGChunkDraft {
+    private func draft(repoId: Int64, key: String, content: String, chunkIndex: Int = 0) -> RAGChunkDraft {
         RAGChunkDraft(
             repoId: repoId,
             source: .readme,
@@ -682,7 +811,7 @@ struct RAGChunkRepositoryTests {
             parentKey: "readme:test",
             parentTitle: "README > Test",
             chunkKey: key,
-            chunkIndex: 0,
+            chunkIndex: chunkIndex,
             sectionPath: "Test",
             title: "Test",
             content: content,

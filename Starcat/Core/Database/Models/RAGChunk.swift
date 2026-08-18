@@ -200,6 +200,14 @@ struct RAGIndexStatusProjection: Equatable, Sendable {
     var issueChunkCount: Int { pendingChunks + failedChunks + staleChunks }
 }
 
+/// 当前模型的向量覆盖：只统计需要 embedding 的分片，不含 keyword_only Metadata。
+struct RAGVectorizationProgress: Equatable, Sendable {
+    var readyChunks: Int
+    var totalChunks: Int
+
+    static let empty = RAGVectorizationProgress(readyChunks: 0, totalChunks: 0)
+}
+
 struct RAGKeywordHit: Equatable, Sendable {
     var chunk: RAGChunk
     /// SQLite bm25 越小越相关；Provider 会统一转换成越大越好的分数。

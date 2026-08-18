@@ -537,9 +537,12 @@ struct SemanticScoreBadge: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "sparkles")
-                .font(interfaceScale.font(.captionSmall, weight: .bold))
+                .font(interfaceScale.font(.captionSmall))
+            // 与同行 Language / Stars / Forks 统一：captionSmall + 常规字重。
+            // 旧实现用 .code + semibold，百分数会明显偏大偏粗。
             Text(scoreText)
-                .font(interfaceScale.font(.code, weight: .semibold))
+                .font(interfaceScale.font(.captionSmall))
+                .monospacedDigit()
         }
         .foregroundStyle(.purple)
         .padding(.horizontal, 6)

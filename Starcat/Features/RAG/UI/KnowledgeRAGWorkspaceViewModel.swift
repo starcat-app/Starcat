@@ -2259,13 +2259,15 @@ final class KnowledgeRAGWorkspaceViewModel {
     /// 左侧标题与索引摘要都指向同一真实数据浏览器，避免用户误以为“知识库”只是装饰标签。
     func showKnowledgeBrowser(
         presentingWindow: NSWindow?,
-        settingsNavigation: RAGSettingsNavigationAction
+        settingsNavigation: RAGSettingsNavigationAction,
+        revealingChunk: RAGChunk? = nil
     ) {
         KnowledgeRAGBrowserWindowController.show(
             dependencies: dependencies,
             homeViewModel: homeViewModel,
             settingsNavigation: settingsNavigation,
-            centeredOver: presentingWindow
+            centeredOver: presentingWindow,
+            revealingChunk: revealingChunk
         )
     }
 
@@ -2420,6 +2422,7 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     func rebuildIndex() {
         guard !isIndexing else { return }
+        guard !dependencies.knowledgeRAGIndexBuilder.status.isActivelyIndexing else { return }
         isIndexing = true
         errorMessage = nil
         Task { [weak self] in
@@ -2429,6 +2432,8 @@ final class KnowledgeRAGWorkspaceViewModel {
             do {
                 try await dependencies.knowledgeRAGIndexBuilder.rebuildKnowledgeBase()
                 try await refreshIndexCoverage()
+            } catch is CancellationError {
+                // 工具栏暂停已经把 builder 打成 idle；这里不能再把取消写成工作台错误。
             } catch {
                 errorMessage = error.localizedDescription
             }

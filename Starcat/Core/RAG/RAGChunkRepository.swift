@@ -22,8 +22,14 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     func fetchActiveMetadata(repoIDs: [Int64]) async throws -> [RAGChunk]
     /// 只统计知识库边界内待向量化分片，不读取正文或 embedding BLOB。
     func countChunksNeedingEmbedding() async throws -> Int
+    /// 当前模型已就绪 / 应向量化（不含 keyword_only）。活进度用覆盖率，避免本轮队列重置造成数字回跳。
+    func fetchVectorizationProgress(model: String) async throws -> RAGVectorizationProgress
     func fetchChunksNeedingEmbedding(limit: Int) async throws -> [RAGChunk]
     func claimChunksForEmbedding(_ chunks: [RAGEmbeddingIdentity], claimID: String) async throws -> [RAGChunk]
+    /// 取消或丢领时释放本批 claim，分片保持 pending，供下一轮领取。
+    func releaseEmbeddingClaim(claimID: String) async throws
+    /// 崩溃或被取消的任务可能留下 claim；新一轮开始前清掉，避免分片永久跳过队列。
+    func clearOrphanEmbeddingClaims() async throws
     /// 只检查当前模型的向量分片；Retriever 用它避免在纯关键词语料上浪费 query embedding 请求。
     func hasReadyVectorChunks(model: String, repoIDs: [Int64]) async throws -> Bool
     /// 只读取向量扫描所需的列；调用方必须按页消费，避免大知识库把正文和全部向量同时留在内存。
@@ -34,7 +40,8 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     func fetchKeywordSearchableChunks(repoIDs: [Int64]) async throws -> [RAGChunk]
     /// `query` 必须是由 RAG 专用构造器生成的安全 FTS5 表达式；Repository 不再二次改写语义。
     func keywordSearch(query: String, repoIDs: [Int64], limit: Int) async throws -> [RAGKeywordHit]
-    func markReady(_ embeddings: [RAGEmbeddingWrite], model: String, claimID: String) async throws
+    @discardableResult
+    func markReady(_ embeddings: [RAGEmbeddingWrite], model: String, claimID: String) async throws -> Int
     func markFailed(_ chunks: [RAGEmbeddingIdentity], claimID: String, error: String) async throws
     func markStaleForOtherModels(currentModel: String) async throws
     func coverage(model: String) async throws -> RAGIndexStatusProjection
@@ -45,6 +52,8 @@ protocol RAGChunkRepositoryProtocol: Sendable {
     func fetchIndexIssueChunks(kind: RAGIndexIssueKind, model: String, limit: Int, offset: Int) async throws -> RAGIndexIssueChunkPage
     func fetchKnowledgeChunks(repoId: Int64) async throws -> [RAGChunk]
     func fetchManagedKnowledgeChunks(repoId: Int64, limit: Int, offset: Int) async throws -> RAGManagedChunkPage
+    /// 与浏览器分页同一排序下的 0-based 偏移；分片不存在或已 tombstone 时返回 nil。
+    func fetchManagedKnowledgeChunkOffset(repoId: Int64, chunkId: Int64) async throws -> Int?
     func saveKnowledgeChunkOverride(id: Int64, title: String, sectionPath: String, content: String) async throws
     func setKnowledgeChunkExcluded(id: Int64, isExcluded: Bool) async throws
     func permanentlyDeleteKnowledgeChunk(id: Int64) async throws
@@ -392,6 +401,26 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
         }
     }
 
+    func fetchVectorizationProgress(model: String) async throws -> RAGVectorizationProgress {
+        try await database.writer.read { db in
+            let row = try Row.fetchOne(db, sql: """
+                SELECT
+                    COALESCE(SUM(CASE WHEN c.embedding_status = 'ready' AND c.embedding_model = ? THEN 1 ELSE 0 END), 0) AS ready_chunks,
+                    COALESCE(SUM(CASE WHEN c.embedding_status != 'keyword_only' THEN 1 ELSE 0 END), 0) AS total_chunks
+                FROM rag_chunks c
+                JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM rag_chunk_overrides o
+                    WHERE o.chunk_id = c.id AND o.is_excluded = 1
+                )
+                """, arguments: [model])
+            return RAGVectorizationProgress(
+                readyChunks: row?["ready_chunks"] ?? 0,
+                totalChunks: row?["total_chunks"] ?? 0
+            )
+        }
+    }
+
     func fetchChunksNeedingEmbedding(limit: Int) async throws -> [RAGChunk] {
         guard limit > 0 else { return [] }
         return try await database.writer.read { db in
@@ -400,6 +429,7 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                 FROM rag_chunks c
                 JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
                 WHERE c.embedding_status IN ('pending', 'failed', 'stale')
+                  AND c.embedding_claim_id IS NULL
                   AND NOT EXISTS (SELECT 1 FROM rag_chunk_overrides o WHERE o.chunk_id = c.id AND o.is_excluded = 1)
                 ORDER BY
                     CASE c.source
@@ -420,19 +450,42 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
             var claimed: [RAGChunk] = []
             claimed.reserveCapacity(chunks.count)
             for chunk in chunks {
-                // SQLite writer 事务保证领取与回读不可交错。后来的同 chunk claim 可以接管所有权，
-                // 先返回的旧请求会因 claim 不匹配而被安全丢弃。
+                // 禁止抢领：第二路 HTTP 不得把正在向量化的分片再打一遍。无主残留由
+                // `clearOrphanEmbeddingClaims` 在新一轮开始时清掉。
                 try db.execute(sql: """
                     UPDATE rag_chunks
                     SET embedding_status = 'pending', embedding_error = NULL, embedding_claim_id = ?
                     WHERE id = ? AND content_hash = ?
                       AND embedding_status IN ('pending', 'failed', 'stale')
+                      AND embedding_claim_id IS NULL
                     """, arguments: [claimID, chunk.chunkID, chunk.contentHash])
                 guard db.changesCount == 1,
                       let row = try RAGChunk.fetchOne(db, key: chunk.chunkID) else { continue }
                 claimed.append(row)
             }
             return claimed
+        }
+    }
+
+    func releaseEmbeddingClaim(claimID: String) async throws {
+        guard !claimID.isEmpty else { return }
+        try await database.writer.write { db in
+            try db.execute(sql: """
+                UPDATE rag_chunks
+                SET embedding_claim_id = NULL
+                WHERE embedding_claim_id = ? AND embedding_status = 'pending'
+                """, arguments: [claimID])
+        }
+    }
+
+    func clearOrphanEmbeddingClaims() async throws {
+        try await database.writer.write { db in
+            try db.execute(sql: """
+                UPDATE rag_chunks
+                SET embedding_claim_id = NULL
+                WHERE embedding_claim_id IS NOT NULL
+                  AND embedding_status IN ('pending', 'failed', 'stale')
+                """)
         }
     }
 
@@ -591,10 +644,12 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
         }
     }
 
-    func markReady(_ embeddings: [RAGEmbeddingWrite], model: String, claimID: String) async throws {
-        guard !embeddings.isEmpty else { return }
-        try await database.writer.write { db in
+    @discardableResult
+    func markReady(_ embeddings: [RAGEmbeddingWrite], model: String, claimID: String) async throws -> Int {
+        guard !embeddings.isEmpty else { return 0 }
+        return try await database.writer.write { db in
             let now = ISO8601DateFormatter.shared.string(from: Date())
+            var updated = 0
             for update in embeddings where !update.vector.isEmpty {
                 try db.execute(sql: """
                     UPDATE rag_chunks
@@ -608,7 +663,9 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                         RepoEmbedding.encode(update.vector), update.vector.count, model, now, now,
                         update.identity.chunkID, update.identity.contentHash, claimID
                     ])
+                updated += db.changesCount
             }
+            return updated
         }
     }
 
@@ -825,7 +882,7 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                     AND t.source_id = c.source_id
                     AND t.chunk_key = c.chunk_key
                 WHERE c.repo_id = ? AND t.repo_id IS NULL
-                ORDER BY c.source, c.parent_title, c.chunk_index
+                ORDER BY c.source, c.parent_title, c.chunk_index, c.id
                 LIMIT ? OFFSET ?
                 """, arguments: [repoId, limit + 1, offset])
             let chunks = try rows.map { row in
@@ -839,6 +896,25 @@ struct GRDBRAGChunkRepository: RAGChunkRepositoryProtocol {
                 chunks: Array(chunks.prefix(limit)),
                 hasMore: chunks.count > limit
             )
+        }
+    }
+
+    func fetchManagedKnowledgeChunkOffset(repoId: Int64, chunkId: Int64) async throws -> Int? {
+        try await database.writer.read { db in
+            // 只取 id：定位不需要正文，但必须与 `fetchManagedKnowledgeChunks` 同一 JOIN / ORDER BY，
+            // 否则 Inspector 点到的第 N 条会滚到浏览器里另一条。
+            let ids = try Int64.fetchAll(db, sql: """
+                SELECT c.id
+                FROM rag_chunks c
+                JOIN repo_notes n ON n.repo_id = c.repo_id AND n.library_state = 'in_library'
+                LEFT JOIN rag_chunk_tombstones t ON t.repo_id = c.repo_id
+                    AND t.source = c.source
+                    AND t.source_id = c.source_id
+                    AND t.chunk_key = c.chunk_key
+                WHERE c.repo_id = ? AND t.repo_id IS NULL
+                ORDER BY c.source, c.parent_title, c.chunk_index, c.id
+                """, arguments: [repoId])
+            return ids.firstIndex(of: chunkId)
         }
     }
 

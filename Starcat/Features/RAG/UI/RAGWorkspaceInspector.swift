@@ -20,6 +20,15 @@ private enum RAGRetrievalDetailTarget: String, Identifiable {
     var id: String { rawValue }
 }
 
+/// 「最近一次构建」三行的完成/激活态。抽成纯值，避免写进 ViewBuilder 被当成 View 分支。
+private struct RAGIndexBuildStageMetrics {
+    var readmeComplete: Bool
+    var sourceBuildComplete: Bool
+    var embeddingComplete: Bool
+    var embeddingValue: String
+    var activeStageID: String?
+}
+
 /// 检索详情胶囊只用系统语义色的浅底与描边；正文保持 primary，明暗主题均有足够对比度。
 private enum RetrievalDetailPillTone {
     case retrievalScore
@@ -4086,7 +4095,7 @@ struct RAGWorkspaceInspector: View {
     }
 
     /// 三类问题分片共享同一列表结构：每一行只承载一个语义字段，避免窄 Inspector
-    /// 把仓库名、来源和章节路径挤在同一行。斑马纹负责连续扫描，hover 只增强当前行。
+    /// 把仓库名、来源和章节路径挤在同一行。斑马纹负责连续扫描；整卡可点，打开知识库并滚到该分片。
     func indexIssueChunkRow(
         _ kind: RAGIndexIssueKind,
         chunk: RAGChunk,
@@ -4095,40 +4104,52 @@ struct RAGWorkspaceInspector: View {
         let isHovered = chunk.id.map { hoveredIndexIssueChunkID == $0 } ?? false
         let section = chunk.sectionPath.isEmpty ? chunk.title : chunk.sectionPath
 
-        return VStack(alignment: .leading, spacing: 3) {
-            Text(viewModel.knowledgeRepositoryName(for: chunk.repoId))
-                .font(ragFont(.caption, weight: .semibold))
-                .foregroundStyle(.primary)
+        return Button {
+            viewModel.showKnowledgeBrowser(
+                presentingWindow: NSApp.keyWindow,
+                settingsNavigation: settingsNavigation,
+                revealingChunk: chunk
+            )
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(viewModel.knowledgeRepositoryName(for: chunk.repoId))
+                    .font(ragFont(.caption, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .help(viewModel.knowledgeRepositoryName(for: chunk.repoId))
+
+                (Text("rag.workspace.index.issues.sourcePrefix") + Text(indexIssueSourceTitle(chunk.source)))
+                    .font(ragFont(.caption2))
+                    .foregroundStyle(.secondary)
+
+                Text(String(
+                    format: String.l10n("rag.workspace.index.issues.sectionFormat"),
+                    section
+                ))
+                .font(ragFont(.caption2))
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
-                .help(viewModel.knowledgeRepositoryName(for: chunk.repoId))
+                .help(section)
 
-            (Text("rag.workspace.index.issues.sourcePrefix") + Text(indexIssueSourceTitle(chunk.source)))
-                .font(ragFont(.caption2))
-                .foregroundStyle(.secondary)
-
-            Text(String(
-                format: String.l10n("rag.workspace.index.issues.sectionFormat"),
-                section
-            ))
-            .font(ragFont(.caption2))
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .help(section)
-
-            indexIssueReason(kind, chunk: chunk)
-                .font(ragFont(.caption2))
-                .foregroundStyle(.secondary)
+                indexIssueReason(kind, chunk: chunk)
+                    .font(ragFont(.caption2))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .background(
+                isHovered
+                    ? Color.accentColor.opacity(0.08)
+                    : (rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045)),
+                in: RoundedRectangle(cornerRadius: 5, style: .continuous)
+            )
         }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .background(
-            isHovered
-                ? Color.accentColor.opacity(0.08)
-                : (rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045)),
-            in: RoundedRectangle(cornerRadius: 5, style: .continuous)
-        )
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .pointerStyle(.link)
+        .help("rag.workspace.index.issues.openChunk")
         .onHover { hovering in
             if hovering {
                 hoveredIndexIssueChunkID = chunk.id
@@ -4233,8 +4254,8 @@ struct RAGWorkspaceInspector: View {
                     .foregroundStyle(.secondary)
                 }
                 SyncIconButton(
-                    isRefreshing: viewModel.isIndexing,
-                    disabled: viewModel.isIndexing,
+                    isRefreshing: viewModel.isIndexing || viewModel.indexingStatus.isActivelyIndexing,
+                    disabled: viewModel.isIndexing || viewModel.indexingStatus.isActivelyIndexing,
                     font: ragFont(.caption),
                     frameSize: 18,
                     tooltip: String.l10n("rag.workspace.index.rebuild")
@@ -4244,50 +4265,95 @@ struct RAGWorkspaceInspector: View {
             }
 
             if let summary = viewModel.indexRefreshSummary {
-                let activeStageID: String? = switch viewModel.indexingStatus {
-                case .fetchingReadmes: "readme"
-                case .building: "source"
-                case .embedding: "embedding"
-                case .idle, .completed, .failed: nil
-                }
-                let readmeComplete = summary.totalRepos > 0
-                    && summary.readmesProcessed >= summary.totalRepos
-                let sourceBuildComplete = summary.totalRepos > 0
-                    && summary.sourceReposProcessed >= summary.totalRepos
-                let embeddingComplete = summary.completedAt != nil
-                    || (
-                        summary.totalChunksAtEmbedding > 0
-                        && summary.embeddingReadyChunks >= summary.totalChunksAtEmbedding
-                    )
-
-                VStack(alignment: .leading, spacing: 2) {
-                    indexBuildStageRow(
-                        id: "readme",
-                        "rag.workspace.index.readmeShort",
-                        value: "\(summary.readmesProcessed)/\(summary.totalRepos)",
-                        rowIndex: 0,
-                        isComplete: readmeComplete,
-                        isActive: activeStageID == "readme"
-                    )
-                    indexBuildStageRow(
-                        id: "source",
-                        "rag.workspace.index.sourceBuild",
-                        value: "\(summary.sourceReposProcessed)/\(summary.totalRepos)",
-                        rowIndex: 1,
-                        isComplete: sourceBuildComplete,
-                        isActive: activeStageID == "source"
-                    )
-                    indexBuildStageRow(
-                        id: "embedding",
-                        "rag.workspace.index.embedding",
-                        value: embeddingProgressValue(for: summary),
-                        rowIndex: 2,
-                        isComplete: embeddingComplete,
-                        isActive: activeStageID == "embedding"
-                    )
-                }
+                indexBuildStageList(summary)
             }
         }
+    }
+
+    /// 不能写在 ViewBuilder 里：`if let` 赋值会被当成 View 分支。
+    private func indexBuildStageList(_ summary: RAGIndexRefreshSummary) -> some View {
+        let metrics = indexBuildStageMetrics(summary: summary, indexingStatus: viewModel.indexingStatus)
+        return VStack(alignment: .leading, spacing: 2) {
+            indexBuildStageRow(
+                id: "readme",
+                "rag.workspace.index.readmeShort",
+                value: "\(summary.readmesProcessed)/\(summary.totalRepos)",
+                rowIndex: 0,
+                isComplete: metrics.readmeComplete,
+                isActive: metrics.activeStageID == "readme"
+            )
+            indexBuildStageRow(
+                id: "source",
+                "rag.workspace.index.sourceBuild",
+                value: "\(summary.sourceReposProcessed)/\(summary.totalRepos)",
+                rowIndex: 1,
+                isComplete: metrics.sourceBuildComplete,
+                isActive: metrics.activeStageID == "source"
+            )
+            indexBuildStageRow(
+                id: "embedding",
+                "rag.workspace.index.embedding",
+                value: metrics.embeddingValue,
+                rowIndex: 2,
+                isComplete: metrics.embeddingComplete,
+                isActive: metrics.activeStageID == "embedding"
+            )
+        }
+    }
+
+    /// 上一轮 `completedAt` 不能让本轮向量化提前打绿勾；embedding 进行中改用 live 覆盖率。
+    private func indexBuildStageMetrics(
+        summary: RAGIndexRefreshSummary,
+        indexingStatus: RAGIndexingStatus
+    ) -> RAGIndexBuildStageMetrics {
+        let isFetchingReadmes: Bool
+        if case .fetchingReadmes = indexingStatus {
+            isFetchingReadmes = true
+        } else {
+            isFetchingReadmes = false
+        }
+        let isBuildingSources: Bool
+        if case .building = indexingStatus {
+            isBuildingSources = true
+        } else {
+            isBuildingSources = false
+        }
+        let embeddingComplete: Bool
+        let embeddingValue: String
+        if let liveEmbedding = indexingStatus.embeddingProgress {
+            embeddingValue = "\(liveEmbedding.processedChunks)/\(liveEmbedding.totalChunks)"
+            embeddingComplete = liveEmbedding.totalChunks > 0
+                && liveEmbedding.processedChunks >= liveEmbedding.totalChunks
+        } else if indexingStatus.isActivelyIndexing {
+            embeddingValue = embeddingProgressValue(for: summary)
+            embeddingComplete = false
+        } else {
+            embeddingValue = embeddingProgressValue(for: summary)
+            embeddingComplete = summary.completedAt != nil
+                && (
+                    summary.totalChunksAtEmbedding == 0
+                    || summary.embeddingReadyChunks >= summary.totalChunksAtEmbedding
+                )
+        }
+        let activeStageID: String?
+        switch indexingStatus {
+        case .fetchingReadmes: activeStageID = "readme"
+        case .building: activeStageID = "source"
+        case .embedding: activeStageID = embeddingComplete ? nil : "embedding"
+        case .idle, .completed, .failed: activeStageID = nil
+        }
+        return RAGIndexBuildStageMetrics(
+            readmeComplete: summary.totalRepos > 0
+                && summary.readmesProcessed >= summary.totalRepos
+                && !isFetchingReadmes,
+            sourceBuildComplete: summary.totalRepos > 0
+                && summary.sourceReposProcessed >= summary.totalRepos
+                && !isFetchingReadmes
+                && !isBuildingSources,
+            embeddingComplete: embeddingComplete,
+            embeddingValue: embeddingValue,
+            activeStageID: activeStageID
+        )
     }
 
     /// 阶段标题 / 数字与计划 Tab 的键值行同为 caption；callout 只留给分组标题。
@@ -4347,7 +4413,7 @@ struct RAGWorkspaceInspector: View {
         }
     }
 
-    /// 对用户展示全库向量覆盖，而不是本轮待处理队列；这样无新增分片的刷新仍会显示 20,281/20,281。
+    /// 对用户展示全库向量覆盖，而不是本轮待处理队列；无新增分片时刷新仍显示已就绪/应向量化。
     func embeddingProgressValue(for summary: RAGIndexRefreshSummary) -> String {
         guard summary.totalChunksAtEmbedding > 0 else {
             return "\(viewModel.indexStatus.readyChunks)/\(viewModel.indexStatus.totalChunks)"

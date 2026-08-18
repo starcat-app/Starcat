@@ -635,6 +635,18 @@ struct OpenAIClient: AIClientProtocol {
                 error: CancellationError()
             )
             throw CancellationError()
+        } catch let error where Self.isCancellation(error) || Task.isCancelled {
+            // 与 chat 同源：URLSession 取消常为 URLError.cancelled / NSURLErrorCancelled。
+            // 若走 embeddingError，会被收成 `.networkUnavailable`，暂停后进度又会弹回 embedding。
+            await recordEmbeddingFailure(
+                startedAt: startedAt,
+                model: resolvedModel,
+                itemCount: inputs.count,
+                status: .cancelled,
+                usage: capturedUsage,
+                error: CancellationError()
+            )
+            throw CancellationError()
         } catch {
             // SDK 对 OpenAI-compatible Provider 的非标准错误体可能只暴露 DecodingError。
             // 原始错误写入日志用于反馈诊断，产品层统一收到可执行的向量化错误。

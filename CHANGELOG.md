@@ -6,10 +6,19 @@ Release notes for the Mac App Store edition of Starcat.
 
 ### Improvements
 
+- Last AI-index prefetch: Opening Settings shows when the last prefetch finished, with counts and green, orange, or red status icons.
+- External index test status: Meilisearch and Qdrant each show their own result next to Test and Save, with green success, orange rebuild-needed, and red failure icons.
+- Semantic search progress: Index refresh shows a determinate ring and only fills missing or stale vectors; a query in flight shows a busy ring.
+- Semantic relevance badge: Percent size matches Language, Stars, and Forks on the same row.
+- Knowledge-base chunk status: Details distinguish whether a shard is still in the library from current-model embedding status.
+- Knowledge-base embedding progress: Shows current-model coverage, no longer marks a previous run as finished, and can be viewed or paused from the toolbar status panel.
+- Index issue shards: Open the knowledge base from pending, failed, or expired cards and jump to the matching chunk.
+- Meilisearch keyword index: Text is synced at the start of a knowledge-base rebuild so keyword search works before embeddings finish.
 - Shortcut recorder: Expands the key display area and shows an inline reset-to-default control only after a shortcut is changed.
 
 ### Fixes
 
+- Embedding cancel: Pausing vectorization no longer reports a network error or bounce the progress back.
 - Global filter panel: Removes the noticeable delay when opening repository filters for faster access.
 - Explore offline cache: Shows cached Discovery, Popular, and New Releases data immediately when the service is unavailable instead of leaving skeleton rows visible.
 - Explore category counts: Restores cached Discovery, Popular, New Releases, and Weekly totals on first launch without opening each category.

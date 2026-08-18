@@ -1736,6 +1736,8 @@ struct RepoListView: View {
             mode: $vm.smartSearchMode,
             semanticScope: $vm.semanticSearchScope,
             isIndexing: viewModel.isSemanticIndexing,
+            indexingProgress: viewModel.semanticIndexProgress,
+            isQuerying: viewModel.isSemanticQueryInFlight,
             onSubmitSearch: { query in
                 viewModel.submitSearch(query)
                 let submitted = query.trimmingCharacters(in: .whitespacesAndNewlines)

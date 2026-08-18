@@ -118,8 +118,10 @@ struct AISettingsTab: View {
     @SceneStorage("settings.ai.ragBackends.expanded") private var isRAGBackendsExpanded: Bool = false
     @State private var meilisearchAPIKey: String = ""
     @State private var qdrantAPIKey: String = ""
-    @State private var testingRAGBackend: String?
-    @State private var ragBackendStatusMessage: String?
+    @State private var testingRAGBackends: Set<String> = []
+    /// 连接结果按后端分行，贴在各自「测试并保存」左侧；共用一行会把 Meilisearch / Qdrant 互相覆盖。
+    @State private var meilisearchStatus: RAGBackendTestStatus?
+    @State private var qdrantStatus: RAGBackendTestStatus?
 
     /// 2026-06-13 RepoContextPacker 客户端接入（§0.4 Y3）：「AI 代码上下文」分组的展开偏好。
     /// 默认收起——与 promptSection / aiIndexSection 一致；避免设置页首次打开就被新 section 撑高。
@@ -1392,7 +1394,8 @@ struct AISettingsTab: View {
                         Divider()
                         ragBackendActionRow(
                             id: "meilisearch",
-                            label: "settings.rag.backends.testAndSave"
+                            label: "settings.rag.backends.testAndSave",
+                            status: meilisearchStatus
                         ) { await testMeilisearch() }
                         .padding(.vertical, 8)
                     }
@@ -1423,7 +1426,8 @@ struct AISettingsTab: View {
                         Divider()
                         ragBackendActionRow(
                             id: "qdrant",
-                            label: "settings.rag.backends.testAndSave"
+                            label: "settings.rag.backends.testAndSave",
+                            status: qdrantStatus
                         ) { await testQdrant() }
                         .padding(.vertical, 8)
                     }
@@ -1431,15 +1435,6 @@ struct AISettingsTab: View {
                     Divider()
                     Toggle("settings.rag.backends.fallback", isOn: ragFallbackBinding)
                         .padding(.vertical, 8)
-
-                    if let ragBackendStatusMessage {
-                        Divider()
-                        Text(ragBackendStatusMessage)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                            .padding(.vertical, 8)
-                    }
                 }
                 .padding(.top, 4)
             } label: {
@@ -1495,17 +1490,39 @@ struct AISettingsTab: View {
     private func ragBackendActionRow(
         id: String,
         label: LocalizedStringKey,
+        status: RAGBackendTestStatus?,
         action: @escaping @MainActor () async -> Void
     ) -> some View {
-        HStack {
-            Spacer()
-            if testingRAGBackend == id {
+        // 状态紧贴「测试并保存」左侧，按钮靠右（设置页独立操作按钮右对齐）。
+        HStack(alignment: .center, spacing: 8) {
+            Spacer(minLength: 0)
+            ragBackendStatusLabel(status)
+            if testingRAGBackends.contains(id) {
                 ProgressView().controlSize(.small)
             }
             Button(label) {
                 Task { await action() }
             }
-            .disabled(testingRAGBackend != nil)
+            .disabled(testingRAGBackends.contains(id))
+        }
+    }
+
+    /// 成功绿勾、需重建橙警告、失败红叉。
+    /// 状态色只上图标（DESIGN.md success / warning / danger），正文仍走 `.secondary`。
+    @ViewBuilder
+    private func ragBackendStatusLabel(_ status: RAGBackendTestStatus?) -> some View {
+        if let status {
+            HStack(alignment: .center, spacing: 6) {
+                Image(systemName: status.systemImage)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(status.badgeColor)
+                    .font(.callout)
+                Text(status.message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(2)
+            }
         }
     }
 
@@ -1516,7 +1533,7 @@ struct AISettingsTab: View {
                 var configuration = settings.ragBackendConfiguration
                 configuration.keywordBackend = value
                 settings.ragBackendConfiguration = configuration
-                ragBackendStatusMessage = String.l10n("settings.rag.backends.rebuildRequired")
+                meilisearchStatus = value == .meilisearch ? .rebuildRequired : nil
             }
         )
     }
@@ -1528,7 +1545,7 @@ struct AISettingsTab: View {
                 var configuration = settings.ragBackendConfiguration
                 configuration.vectorBackend = value
                 settings.ragBackendConfiguration = configuration
-                ragBackendStatusMessage = String.l10n("settings.rag.backends.rebuildRequired")
+                qdrantStatus = value == .qdrant ? .rebuildRequired : nil
             }
         )
     }
@@ -1578,8 +1595,8 @@ struct AISettingsTab: View {
     }
 
     private func testMeilisearch() async {
-        testingRAGBackend = "meilisearch"
-        defer { testingRAGBackend = nil }
+        testingRAGBackends = testingRAGBackends.union(["meilisearch"])
+        defer { testingRAGBackends = testingRAGBackends.subtracting(["meilisearch"]) }
         do {
             try KeychainManager.shared.storeAIKey(
                 meilisearchAPIKey,
@@ -1591,15 +1608,15 @@ struct AISettingsTab: View {
                 repository: dependencies.ragChunkRepository
             )
             try await provider.testConnection()
-            ragBackendStatusMessage = String.l10n("settings.rag.backends.connectionSuccess")
+            meilisearchStatus = .success
         } catch {
-            ragBackendStatusMessage = error.localizedDescription
+            meilisearchStatus = .failure(error.localizedDescription)
         }
     }
 
     private func testQdrant() async {
-        testingRAGBackend = "qdrant"
-        defer { testingRAGBackend = nil }
+        testingRAGBackends = testingRAGBackends.union(["qdrant"])
+        defer { testingRAGBackends = testingRAGBackends.subtracting(["qdrant"]) }
         do {
             try KeychainManager.shared.storeAIKey(
                 qdrantAPIKey,
@@ -1611,9 +1628,9 @@ struct AISettingsTab: View {
                 repository: dependencies.ragChunkRepository
             )
             try await provider.testConnection()
-            ragBackendStatusMessage = String.l10n("settings.rag.backends.connectionSuccess")
+            qdrantStatus = .success
         } catch {
-            ragBackendStatusMessage = error.localizedDescription
+            qdrantStatus = .failure(error.localizedDescription)
         }
     }
 
@@ -1748,13 +1765,8 @@ struct AISettingsTab: View {
 
     /// 开始 / 暂停 / 进度行。
     ///
-    /// **布局（设置页按钮右对齐规范）**：进度 /「已是最新」徽章在左，操作按钮在右。
-    ///
-    /// **2026-06-13 dong4j 反馈"开始预拉闪烁"改造**：
-    /// `.alreadyUpToDate(total)` 与 `.completed` 共用按钮分支（都回到"开始预拉"），
-    /// 左侧进度文字位置换成 `alreadyUpToDateBadge`——palette 模式渲染的白勾 + 深森林绿圆
-    /// + 同色系文字"已是最新（共 N 个仓库）"，参考登录页 `GithubAuthView` 的复制成功
-    /// 徽章姿势（保持视觉语言一致，新用户一眼就懂）。
+    /// **布局（设置页按钮右对齐规范）**：进度 / 上次预拉记录在左，操作按钮在右。
+    /// 进程内 `.idle` 不再留空：打开设置页时读落盘的上次预拉时间和计数。
     @ViewBuilder
     private var builderControlsRow: some View {
         let builder = dependencies.semanticIndexBuilder
@@ -1778,62 +1790,126 @@ struct AISettingsTab: View {
         }
     }
 
-    /// 左侧进度信息视图。`.alreadyUpToDate` 渲染为绿色 ✓ palette 徽章 + 友好文案，
-    /// 其它状态保持原"caption 灰色文本"行为。
+    /// 左侧进度 / 上次预拉记录。进行中显示活进度；其余状态显示落盘快照和相对时间。
     @ViewBuilder
     private var builderProgressView: some View {
         let builder = dependencies.semanticIndexBuilder
         switch builder.status {
-        case .alreadyUpToDate(let total):
-            alreadyUpToDateBadge(total: total)
+        case .running:
+            prefetchLiveProgress(
+                icon: "arrow.triangle.2.circlepath",
+                processed: builder.processed,
+                total: builder.total,
+                failures: builder.failures,
+                tint: .accentColor
+            )
+        case .paused:
+            prefetchLiveProgress(
+                icon: "pause.circle.fill",
+                processed: builder.processed,
+                total: builder.total,
+                failures: builder.failures,
+                tint: RAGBackendTestStatus.warningTint
+            )
         default:
-            Text(builderProgressText)
+            lastPrefetchRecordView
+        }
+    }
+
+    /// 进行中用 accent 同步箭头，暂停用橙色暂停图标；失败数 > 0 时改警告色。
+    private func prefetchLiveProgress(
+        icon: String,
+        processed: Int,
+        total: Int,
+        failures: Int,
+        tint: Color
+    ) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(failures > 0 ? RAGBackendTestStatus.warningTint : tint)
+                .font(.callout)
+            Text(
+                String(
+                    format: String.l10n("settings.aiIndex.prefetch.progressFmt"),
+                    processed, total, failures
+                )
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+        }
+    }
+
+    /// 打开设置页就能看到上次预拉时间和记录。没有快照时显示尚未预拉。
+    @ViewBuilder
+    private var lastPrefetchRecordView: some View {
+        if let last = settings.semanticIndexLastPrefetch {
+            let timeAgo = RelativeTimeText.pastEvent(last.finishedAt, locale: locale)
+            HStack(spacing: 6) {
+                Image(systemName: lastPrefetchIcon(last))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(lastPrefetchBadgeColor(last))
+                    .font(.callout)
+                Text(
+                    String(
+                        format: String.l10n("settings.aiIndex.prefetch.lastRunFormat"),
+                        timeAgo,
+                        lastPrefetchRecordText(last)
+                    )
+                )
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .monospacedDigit()
+            }
+        } else {
+            HStack(spacing: 6) {
+                Image(systemName: "clock")
+                    .foregroundStyle(.secondary)
+                    .font(.callout)
+                Text("settings.aiIndex.prefetch.neverRun")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
-    /// "已是最新"绿色徽章。
-    ///
-    /// 视觉规范（与登录页 `GithubAuthView` 的"已复制 ✓"反馈保持一致）：
-    /// - 图标 `checkmark.circle.fill` 用 `symbolRenderingMode(.palette)` 渲染两层色：
-    ///   ⚠️ palette 模式下 `foregroundStyle` 第一参数是**前景层（✓）**、第二参数是
-    ///   **背景层（圆）**，给反了在浅色面板上会看不见圆，需小心顺序。
-    ///   颜色取深森林绿（0.12, 0.42, 0.18）+ 白勾，"成功徽章"的常见视觉语义。
-    /// - 文字与圆同色系，形成"图标 + 文字"一体的成功反馈块。
-    /// - `total == 0` 时（用户没 starred 任何 repo）也走这条分支，文案"已是最新
-    ///   （共 0 个仓库）"逻辑自洽——预拉完空集合本来就是"无事可做" = 已是最新。
-    private func alreadyUpToDateBadge(total: Int) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "checkmark.circle.fill")
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(Color.white, Color(red: 0.12, green: 0.42, blue: 0.18))
-                .font(.callout)
-            Text(String(format: String.l10n("settings.aiIndex.prefetch.alreadyUpToDateFmt"), total))
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundStyle(Color(red: 0.12, green: 0.42, blue: 0.18))
-        }
-    }
-
-    private var builderProgressText: String {
-        let b = dependencies.semanticIndexBuilder
-        switch b.status {
-        case .idle:
-            return ""
-        case .running, .paused:
+    private func lastPrefetchRecordText(_ last: SemanticIndexPrefetchLastRun) -> String {
+        switch last.outcome {
+        case .alreadyUpToDate:
+            return String(format: String.l10n("settings.aiIndex.prefetch.alreadyUpToDateFmt"), last.total)
+        case .completed:
             return String(
                 format: String.l10n("settings.aiIndex.prefetch.progressFmt"),
-                b.processed, b.total, b.failures
+                last.processed, last.total, last.failures
             )
-        case .completed(let p, let t):
-            return String(format: String.l10n("settings.aiIndex.prefetch.completedFmt"), p, t)
-        case .alreadyUpToDate(let total):
-            // builderProgressView 会优先走 alreadyUpToDateBadge 分支，这里只是为了
-            // switch 穷举性兜底，理论上不会被调用到。返回 i18n 文案保持安全。
-            return String(format: String.l10n("settings.aiIndex.prefetch.alreadyUpToDateFmt"), total)
-        case .failed(let msg):
-            return String(format: String.l10n("settings.aiIndex.prefetch.failedFmt"), msg)
+        case .failed:
+            return String(
+                format: String.l10n("settings.aiIndex.prefetch.failedFmt"),
+                last.failureMessage ?? ""
+            )
+        }
+    }
+
+    private func lastPrefetchIcon(_ last: SemanticIndexPrefetchLastRun) -> String {
+        switch last.outcome {
+        case .alreadyUpToDate:
+            return "checkmark.circle.fill"
+        case .completed:
+            return last.failures == 0 ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+        case .failed:
+            return "xmark.circle.fill"
+        }
+    }
+
+    private func lastPrefetchBadgeColor(_ last: SemanticIndexPrefetchLastRun) -> Color {
+        switch last.outcome {
+        case .alreadyUpToDate:
+            return RAGBackendTestStatus.successTint
+        case .completed:
+            return last.failures == 0 ? RAGBackendTestStatus.successTint : RAGBackendTestStatus.warningTint
+        case .failed:
+            return RAGBackendTestStatus.dangerTint
         }
     }
 
@@ -2893,6 +2969,45 @@ private struct SettingsWindowCloseListener: NSViewRepresentable {
                 NotificationCenter.default.removeObserver(observer)
                 self.observer = nil
             }
+        }
+    }
+}
+
+/// 知识库外部后端「测试并保存」的分行状态。图标颜色表达结果，正文保持 `.secondary`。
+private enum RAGBackendTestStatus: Equatable {
+    case success
+    case rebuildRequired
+    case failure(String)
+
+    /// DESIGN.md `success` / `warning` / `danger`。状态色只上图标，正文保持 `.secondary`。
+    static let successTint = Color(red: 52 / 255, green: 199 / 255, blue: 89 / 255)
+    static let warningTint = Color(red: 255 / 255, green: 149 / 255, blue: 0 / 255)
+    static let dangerTint = Color(red: 255 / 255, green: 59 / 255, blue: 48 / 255)
+
+    var message: String {
+        switch self {
+        case .success:
+            return String.l10n("settings.rag.backends.connectionSuccess")
+        case .rebuildRequired:
+            return String.l10n("settings.rag.backends.rebuildRequired")
+        case .failure(let message):
+            return message
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .success: return "checkmark.circle.fill"
+        case .rebuildRequired: return "exclamationmark.triangle.fill"
+        case .failure: return "xmark.circle.fill"
+        }
+    }
+
+    var badgeColor: Color {
+        switch self {
+        case .success: return Self.successTint
+        case .rebuildRequired: return Self.warningTint
+        case .failure: return Self.dangerTint
         }
     }
 }

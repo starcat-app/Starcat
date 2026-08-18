@@ -6,6 +6,7 @@
 //
 //  设计约束：
 //  - 只展示“同步 / 后台任务 / 服务可用性 / MCP / 浏览器插件 / 诊断问题”的轻量概览；
+//  - 知识库向量化与 README 预拉一样计入后台任务，避免只能在设置页看到进度；
 //  - 诊断问题从本机 JSONL 摘要读取，避免把状态面板变成新的错误来源；
 //  - 服务可用性走四个自建 API 的 `/healthz`，打开面板时实时刷新，后台每 10 分钟巡检；
 //  - 跳转复用 SettingsView 已有的 Notification 路由，不新增主窗口路由状态。
@@ -70,6 +71,7 @@ struct AppStatusToolbarButton: View {
                 repoHealthPoller: dependencies.repoHealthPoller,
                 undoStarCleanup: dependencies.undoStarCleanupScheduler,
                 batchService: dependencies.batchAIQueueService,
+                ragIndexBuilder: dependencies.knowledgeRAGIndexBuilder,
                 mcpState: dependencies.mcpService.state,
                 mcpEnabled: settings.mcpServiceEnabled,
                 mcpEndpointURL: dependencies.mcpService.endpointURL,
@@ -138,7 +140,16 @@ struct AppStatusToolbarButton: View {
         let healthRemaining = health.isRefreshing
             ? max(1, health.refreshTotal - health.refreshProcessed)
             : 0
-        return batchRemaining + readmeRemaining + warmupRemaining + openSSFRemaining + healthRemaining
+        let rag = dependencies.knowledgeRAGIndexBuilder.status
+        let ragRemaining: Int
+        if case let .embedding(processed, total) = rag {
+            ragRemaining = max(0, total - processed)
+        } else if rag.isActivelyIndexing {
+            ragRemaining = 1
+        } else {
+            ragRemaining = 0
+        }
+        return batchRemaining + readmeRemaining + warmupRemaining + openSSFRemaining + healthRemaining + ragRemaining
     }
 
     private var hasIssue: Bool {
@@ -216,6 +227,7 @@ private struct AppStatusPanel: View {
     let repoHealthPoller: RepoHealthPoller
     let undoStarCleanup: UndoStarCleanupScheduler
     let batchService: BatchAIQueueService
+    let ragIndexBuilder: KnowledgeRAGIndexBuilder
     let mcpState: StarcatMCPService.State
     let mcpEnabled: Bool
     let mcpEndpointURL: String
@@ -500,7 +512,7 @@ private struct AppStatusPanel: View {
 
     private var taskIcon: String {
         if isInitialWarmupPaused || isReadmePrefetchWaitingForRetry || batchService.failedCount > 0 { return "exclamationmark.triangle.fill" }
-        if initialWarmupCoordinator.isRunning || openSSFScorePoller.isRefreshing || repoHealthPoller.isRefreshing || readmePrefetchService.isRunning || readmePrefetchPoller.isDraining || batchService.isRunning {
+        if initialWarmupCoordinator.isRunning || openSSFScorePoller.isRefreshing || repoHealthPoller.isRefreshing || readmePrefetchService.isRunning || readmePrefetchPoller.isDraining || batchService.isRunning || ragIndexBuilder.status.isActivelyIndexing {
             return "clock.arrow.circlepath"
         }
         if batchService.isPaused { return "pause.circle.fill" }
@@ -509,7 +521,7 @@ private struct AppStatusPanel: View {
 
     private var taskTint: Color {
         if isInitialWarmupPaused || isReadmePrefetchWaitingForRetry || readmePrefetchService.failures > 0 || batchService.failedCount > 0 { return .orange }
-        if initialWarmupCoordinator.isRunning || openSSFScorePoller.isRefreshing || repoHealthPoller.isRefreshing || readmePrefetchService.isRunning || readmePrefetchPoller.isDraining || isReadmePrefetchCoolingDown || batchService.isRunning || batchService.isPaused {
+        if initialWarmupCoordinator.isRunning || openSSFScorePoller.isRefreshing || repoHealthPoller.isRefreshing || readmePrefetchService.isRunning || readmePrefetchPoller.isDraining || isReadmePrefetchCoolingDown || batchService.isRunning || batchService.isPaused || ragIndexBuilder.status.isActivelyIndexing {
             return .accentColor
         }
         if initialWarmupCoordinator.isCompleted || isReadmePrefetchAllFetched { return .green }
@@ -538,10 +550,38 @@ private struct AppStatusPanel: View {
                 batchService.failedCount
             ))
         }
+        if let ragLine = ragIndexSubtitle {
+            lines.append(ragLine)
+        }
         guard !lines.isEmpty else {
             return String.l10n("toolbar.status.tasks.empty")
         }
         return lines.joined(separator: "\n")
+    }
+
+    private var ragIndexSubtitle: String? {
+        switch ragIndexBuilder.status {
+        case .fetchingReadmes(let processed, let total):
+            return String(
+                format: String.l10n("toolbar.status.tasks.ragRebuildFormat"),
+                processed,
+                total
+            )
+        case .building(let processed, let total):
+            return String(
+                format: String.l10n("toolbar.status.tasks.ragRebuildFormat"),
+                processed,
+                total
+            )
+        case .embedding(let processed, let total):
+            return String(
+                format: String.l10n("toolbar.status.tasks.ragEmbeddingFormat"),
+                processed,
+                total
+            )
+        case .idle, .completed, .failed:
+            return nil
+        }
     }
 
     @ViewBuilder
@@ -571,6 +611,7 @@ private struct AppStatusPanel: View {
             || readmePrefetchService.isRunning
             || readmePrefetchPoller.isDraining
             || batchService.isRunning
+            || ragIndexBuilder.status.isActivelyIndexing
     }
 
     private var cancellableTaskIndicator: some View {
@@ -610,6 +651,9 @@ private struct AppStatusPanel: View {
         }
         if batchService.isRunning {
             batchService.cancel()
+        }
+        if ragIndexBuilder.status.isActivelyIndexing {
+            ragIndexBuilder.cancel()
         }
     }
 
