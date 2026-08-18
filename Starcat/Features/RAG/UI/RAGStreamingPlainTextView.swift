@@ -2,7 +2,7 @@
 //  RAGStreamingPlainTextView.swift
 //  Starcat
 //
-//  RAG 思考的 AppKit 追加渲染。
+//  RAG / 主窗口 AI 对话 Think 的 AppKit 追加渲染。
 //
 //  SwiftUI `Text` 每次都对整段字符串做 CoreText 重排，思考越长越卡。这里把完整
 //  文本留在 session，只把 delta 追加进 `NSTextStorage`；视口高度固定，避免外层
@@ -25,9 +25,12 @@ enum RAGStreamingPlainTextMetrics {
         return lineHeight * CGFloat(visibleLineCount)
     }
 
-    static func reasoningFont(scale: InterfaceScale) -> NSFont {
+    static func reasoningFont(
+        scale: InterfaceScale,
+        typography: StarcatTypography = .body
+    ) -> NSFont {
         NSFont.systemFont(
-            ofSize: scale.scaled(StarcatTypography.body.pointSize),
+            ofSize: scale.scaled(typography.pointSize),
             weight: .regular
         )
     }
@@ -351,9 +354,14 @@ struct RAGStreamingReasoningViewport: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     let session: RAGStreamingPlainTextSession
     var pinsToBottom: Bool = true
+    /// RAG 时间线用 `.body`；主窗口 AI 对话 Think 用 `.caption`，与改前字号对齐。
+    var typography: StarcatTypography = .body
 
     var body: some View {
-        let font = RAGStreamingPlainTextMetrics.reasoningFont(scale: interfaceScale)
+        let font = RAGStreamingPlainTextMetrics.reasoningFont(
+            scale: interfaceScale,
+            typography: typography
+        )
         RAGStreamingPlainTextView(session: session, font: font, pinsToBottom: pinsToBottom)
             .frame(height: RAGStreamingPlainTextMetrics.viewportHeight(for: font))
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -366,9 +374,13 @@ struct RAGStreamingReasoningViewport: View {
 struct RAGCompletedReasoningViewport: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     let text: String
+    var typography: StarcatTypography = .body
 
     var body: some View {
-        let font = RAGStreamingPlainTextMetrics.reasoningFont(scale: interfaceScale)
+        let font = RAGStreamingPlainTextMetrics.reasoningFont(
+            scale: interfaceScale,
+            typography: typography
+        )
         RAGStaticReasoningPlainTextView(text: text, font: font)
             .frame(height: RAGStreamingPlainTextMetrics.viewportHeight(for: font))
             .frame(maxWidth: .infinity, alignment: .leading)

@@ -121,11 +121,12 @@ enum RAGStreamingPresentationCadence {
     static let reasoningInterval: TimeInterval = 0.1
 }
 
-/// 主窗口 AI 对话中一次 Think 展示提交对应的状态。
+/// 主窗口 AI 对话中一次 Think 的展开/折叠边界。
 ///
 /// `isStreaming` 只描述 reasoning 阶段：provider 明确结束 reasoning，或首个正文 delta
 /// 到达后即变为 `false`，让 UI 自动折叠 Think；整个 assistant 回答仍可继续流式生成。
-/// `revision` 专门用于滚动跟随，避免用增长文本作为 SwiftUI `onChange` 输入。
+/// `text` 不再承担 UI 展示：增长文本只追加进 `RAGStreamingPlainTextSession`，避免
+/// 完整字符串进入 @Observable。`revision` 仍随阶段切换递增，便于需要时观察边界。
 struct StreamingReasoningSnapshot: Equatable, Sendable {
     let text: String
     let isStreaming: Bool
@@ -134,12 +135,12 @@ struct StreamingReasoningSnapshot: Equatable, Sendable {
     let revision: Int
 }
 
-/// 协调主窗口 AI 对话的 reasoning 展示边界。
+/// 协调主窗口 AI 对话的 reasoning 时间边界。
 ///
-/// reasoning 期间复用 `StreamingTextPresentationBuffer` 降频；provider 的
-/// `reasoningCompleted` 是首选完成边界，首个正文 delta 是兼容未发送该事件的兜底。
-/// 两条路径都会强制 flush 并发布完成态；取消、失败或只有 reasoning 没有正文时，再由
-/// `finish()` 无损收口。
+/// UI 不再消费本 buffer 的增长文本；`begin` / `completeReasoning` / `finish` 只提供
+/// `isStreaming` 与起止时间。文本真源是 `RAGStreamingPlainTextSession`。
+/// provider 的 `reasoningCompleted` 是首选完成边界，首个正文 delta 是兼容未发送
+/// 该事件的兜底。取消、失败或只有 reasoning 没有正文时，再由 `finish()` 收口时间戳。
 struct StreamingReasoningPresentationBuffer: Sendable {
     private var textBuffer: StreamingTextPresentationBuffer
     private var reasoningCompleted = false

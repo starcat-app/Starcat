@@ -248,6 +248,9 @@ struct AIChatBubble: View {
 
 /// 同一条 assistant 消息内的真实模型推理。只接收 provider 已公开的 reasoning stream，
 /// 不把正文外的“加载提示”伪装成模型思考；流结束后自动折叠，正文始终保持可见。
+///
+/// 运行中与完成后都走固定高度 NSTextView 视口（与 RAG 思考同一套），禁止用 SwiftUI
+/// `Text` 整段替换：长 Think 会把外层对话 ScrollView 一起撑卡。
 private struct AIChatReasoningDisclosure: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -257,7 +260,7 @@ private struct AIChatReasoningDisclosure: View {
     let isStreaming: Bool
     let startedAt: Date?
     let completedAt: Date?
-    let allowsTextSelection: Bool
+    let liveSession: RAGStreamingPlainTextSession?
     @State private var isExpanded: Bool
 
     init(
@@ -265,13 +268,13 @@ private struct AIChatReasoningDisclosure: View {
         isStreaming: Bool,
         startedAt: Date? = nil,
         completedAt: Date? = nil,
-        allowsTextSelection: Bool = true
+        liveSession: RAGStreamingPlainTextSession? = nil
     ) {
         self.content = content
         self.isStreaming = isStreaming
         self.startedAt = startedAt
         self.completedAt = completedAt
-        self.allowsTextSelection = allowsTextSelection
+        self.liveSession = liveSession
         _isExpanded = State(initialValue: isStreaming)
     }
 
@@ -308,20 +311,9 @@ private struct AIChatReasoningDisclosure: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
 
-            if isExpanded, !content.isEmpty {
-                Group {
-                    if allowsTextSelection {
-                        Text(content).textSelection(.enabled)
-                    } else {
-                        // 流式可变文本不创建 SelectionOverlay，避免长 Think 的每次
-                        // 快照都触发 AppKit 选择层和 SwiftUI AttributeGraph 重排。
-                        Text(content)
-                    }
-                }
-                .font(interfaceScale.font(.caption))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 23)
+            if isExpanded {
+                reasoningViewport
+                    .padding(.leading, 23)
             }
         }
         .onChange(of: isStreaming) { _, streaming in
@@ -333,6 +325,28 @@ private struct AIChatReasoningDisclosure: View {
                 isExpanded = true
             }
         }
+    }
+
+    /// 运行中绑 session 追加；完成后用落库文本建静态视口，不复用运行中 NSTextView。
+    @ViewBuilder
+    private var reasoningViewport: some View {
+        if isStreaming, let liveSession {
+            RAGStreamingReasoningViewport(
+                session: liveSession,
+                pinsToBottom: true,
+                typography: .caption
+            )
+        } else if let text = completedReasoningText, !text.isEmpty {
+            RAGCompletedReasoningViewport(text: text, typography: .caption)
+        }
+    }
+
+    /// 完成后优先用消息里的 reasoning；流式气泡尚未落库时用 session 兜底。
+    private var completedReasoningText: String? {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { return content }
+        let sessionText = liveSession?.text ?? ""
+        return sessionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : sessionText
     }
 
     @ViewBuilder
@@ -362,6 +376,7 @@ private struct AIChatReasoningDisclosure: View {
 struct AIStreamingChatBubble: View {
     let snapshot: StreamingMarkdownSnapshot
     let reasoning: StreamingReasoningSnapshot?
+    let liveReasoningSession: RAGStreamingPlainTextSession?
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
@@ -374,7 +389,7 @@ struct AIStreamingChatBubble: View {
                     isStreaming: reasoning?.isStreaming ?? true,
                     startedAt: reasoning?.startedAt,
                     completedAt: reasoning?.completedAt,
-                    allowsTextSelection: false
+                    liveSession: liveReasoningSession
                 )
 
                 if !snapshot.isEmpty {

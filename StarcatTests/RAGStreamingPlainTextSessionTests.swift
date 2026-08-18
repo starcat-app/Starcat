@@ -62,4 +62,13 @@ struct RAGStreamingPlainTextSessionTests {
         session.append("续")
         #expect(session.text == "完整思考续")
     }
+
+    @Test("对话 Think 用 caption 字号，小于 RAG 时间线 body")
+    func chatCaptionFontSmallerThanRAGBody() {
+        let body = RAGStreamingPlainTextMetrics.reasoningFont(scale: .standard, typography: .body)
+        let caption = RAGStreamingPlainTextMetrics.reasoningFont(scale: .standard, typography: .caption)
+        #expect(caption.pointSize < body.pointSize)
+        #expect(body.pointSize == 13)
+        #expect(caption.pointSize == 12)
+    }
 }

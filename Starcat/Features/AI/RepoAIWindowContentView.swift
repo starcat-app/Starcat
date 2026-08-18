@@ -1654,7 +1654,8 @@ struct RepoAIWindowContentView: View {
                                 if let streaming = chat.streamingPresentation {
                                     AIStreamingChatBubble(
                                         snapshot: streaming,
-                                        reasoning: chat.streamingReasoningPresentation
+                                        reasoning: chat.streamingReasoningPresentation,
+                                        liveReasoningSession: chat.liveChatReasoningSession()
                                     )
                                 }
 
@@ -1683,11 +1684,6 @@ struct RepoAIWindowContentView: View {
                         scheduleChatTailScroll(proxy: proxy)
                     }
                     .onChange(of: chat.streamingPresentation?.revision ?? 0) { _, _ in
-                        scheduleChatTailScroll(proxy: proxy)
-                    }
-                    .onChange(of: chat.streamingReasoningPresentation?.revision ?? 0) { _, _ in
-                        // Think 独立于正文快照降频发布；展开中的高度变化也要复用同一套
-                        // 尾部跟随策略，用户主动上滚后 `ScrollTailController` 会拒绝抢滚。
                         scheduleChatTailScroll(proxy: proxy)
                     }
                     .onChange(of: chat.isSending) { _, isSending in
