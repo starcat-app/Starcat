@@ -18,6 +18,7 @@ Release notes for the Mac App Store edition of Starcat.
 
 ### Fixes
 
+- Query planning timeline: Thinking is nested under Query planning, and the plan plus Context Plan panel appear only after planning actually finishes.
 - Embedding cancel: Pausing vectorization no longer reports a network error or bounce the progress back.
 - Global filter panel: Removes the noticeable delay when opening repository filters for faster access.
 - Explore offline cache: Shows cached Discovery, Popular, and New Releases data immediately when the service is unavailable instead of leaving skeleton rows visible.

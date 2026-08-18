@@ -81,4 +81,33 @@ struct RAGKeywordQueryBuilderTests {
         #expect(query.terms[0] == "Swift")
         #expect(query.terms[1].count == RAGKeywordQueryBuilder.maximumTermLength)
     }
+
+    @Test("原句身份词进入关键词队头，中文整句不会变成 LIKE term")
+    func identityTermsComeFromLatinAnchorsOnly() {
+        let terms = RAGKeywordQueryBuilder.identityTerms(
+            from: "查一下 starcat 相关的项目, 告诉我这些项目是干嘛的"
+        )
+        #expect(terms == ["starcat"])
+        #expect(!terms.contains(where: { $0.contains("项目") }))
+
+        let ownerRepo = RAGKeywordQueryBuilder.identityTerms(from: "看看 starcat-app/starcat-pro")
+        #expect(ownerRepo.contains("starcat-app/starcat-pro"))
+        #expect(ownerRepo.contains("starcat-app"))
+        #expect(ownerRepo.contains("starcat-pro"))
+    }
+
+    @Test("Planner 关键词挤满时仍保留原句身份词")
+    func anchorQuestionPrependsIdentityBeforePlannedTerms() {
+        let planned = (0..<8).map { "topic-\($0)" }
+        let query = RAGKeywordQueryBuilder.build(
+            keywordQueries: planned,
+            semanticQuery: "these projects",
+            anchorQuestion: "查一下 starcat 相关的项目"
+        )
+        #expect(query.terms.first == "starcat")
+        #expect(query.terms.contains("topic-0"))
+        #expect(query.terms.count == RAGKeywordQueryBuilder.maximumTermCount)
+        #expect(!query.terms.contains("topic-7"))
+        #expect(!query.usedSemanticFallback)
+    }
 }

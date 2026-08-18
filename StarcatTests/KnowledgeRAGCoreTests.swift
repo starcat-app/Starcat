@@ -1387,6 +1387,200 @@ struct KnowledgeRAGCoreTests {
         #expect(candidates.map(\.repo.id) == [1])
     }
 
+    @Test("semantic_only 无筛选时执行层丢掉 Planner 的 candidateLimit")
+    func candidateWindowGuardClearsUnboundedSemanticLimit() {
+        let limited = RAGCandidateWindowGuard.resolve(
+            RAGQueryPlan(mode: .semanticOnly, semanticQuery: "starcat", candidateLimit: 50)
+        )
+        #expect(limited.candidateLimit == nil)
+
+        let sorted = RAGCandidateWindowGuard.resolve(
+            RAGQueryPlan(
+                mode: .filteredSemantic,
+                semanticQuery: "starcat",
+                sort: RAGRepoSort(field: .stars, direction: .descending),
+                candidateLimit: 50
+            )
+        )
+        #expect(sorted.candidateLimit == 50)
+    }
+
+    @Test("高星窗口截断时身份仓仍并进候选")
+    func identityCandidatesBypassStarWindowLimit() async throws {
+        let database = try InMemoryDatabaseManager()
+        let notes = GRDBRepoNoteRepository(database: database)
+        for id in Int64(1)...60 {
+            try await database.insertRepoFixture(id: id, owner: "octo", name: "popular-\(id)")
+            try await notes.updateLibraryState(repoId: id, state: .inLibrary)
+            try await database.writer.write { db in
+                try db.execute(sql: "UPDATE repos SET stars_count = ? WHERE id = ?", arguments: [10_000 - Int(id), id])
+            }
+        }
+        try await database.insertRepoFixture(id: 61, owner: "starcat-app", name: "starcat-pro")
+        try await notes.updateLibraryState(repoId: 61, state: .inLibrary)
+        try await database.writer.write { db in
+            try db.execute(sql: "UPDATE repos SET stars_count = 1 WHERE id = 61")
+        }
+
+        let repository = GRDBRAGRepoCandidateRepository(database: database)
+        let plan = RAGQueryPlan(
+            mode: .filteredSemantic,
+            semanticQuery: "starcat related projects",
+            sort: RAGRepoSort(field: .stars, direction: .descending),
+            candidateLimit: 50
+        )
+        let window = try await repository.fetchCandidates(plan: plan, explicitRepoIDs: [], explicitMode: .only)
+        #expect(window.count == 50)
+        #expect(!window.contains(where: { $0.repo.id == 61 }))
+
+        let identity = try await repository.fetchIdentityCandidates(
+            terms: RAGKeywordQueryBuilder.identityTerms(from: "查一下 starcat 相关的项目"),
+            plan: plan,
+            explicitRepoIDs: [],
+            explicitMode: .only,
+            limit: 40
+        )
+        #expect(identity.contains(where: { $0.repo.fullName == "starcat-app/starcat-pro" }))
+        let merged = RAGRepoCandidateMerger.merge(identity: identity, window: window)
+        #expect(merged.contains(where: { $0.repo.id == 61 }))
+        #expect(merged.first?.repo.id == 61)
+        #expect(merged.count == 51)
+    }
+
+    @Test("身份仓仍遵守语言筛选和显式 only 范围")
+    func identityCandidatesKeepPlannerFiltersAndExplicitScope() async throws {
+        let database = try InMemoryDatabaseManager()
+        let notes = GRDBRepoNoteRepository(database: database)
+        try await database.insertRepoFixture(id: 1, owner: "starcat-app", name: "starcat-go")
+        try await notes.updateLibraryState(repoId: 1, state: .inLibrary)
+        try await database.insertRepoFixture(id: 2, owner: "starcat-app", name: "starcat-swift")
+        try await notes.updateLibraryState(repoId: 2, state: .inLibrary)
+        try await database.writer.write { db in
+            try db.execute(sql: "UPDATE repos SET language = 'Go' WHERE id = 1")
+            try db.execute(sql: "UPDATE repos SET language = 'Swift' WHERE id = 2")
+        }
+        let repository = GRDBRAGRepoCandidateRepository(database: database)
+        let plan = RAGQueryPlan(
+            mode: .filteredSemantic,
+            semanticQuery: "starcat",
+            filters: RAGRepoFilter(languages: ["Swift"])
+        )
+        let swiftOnly = try await repository.fetchIdentityCandidates(
+            terms: ["starcat"],
+            plan: plan,
+            explicitRepoIDs: [],
+            explicitMode: .only,
+            limit: 40
+        )
+        #expect(swiftOnly.map(\.repo.id) == [2])
+
+        let explicit = try await repository.fetchIdentityCandidates(
+            terms: ["starcat"],
+            plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "starcat"),
+            explicitRepoIDs: [1],
+            explicitMode: .only,
+            limit: 40
+        )
+        #expect(explicit.map(\.repo.id) == [1])
+    }
+
+    @Test("身份仓能按标签名命中，不靠仓库全名")
+    func identityCandidatesMatchTagNames() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 1, owner: "octo", name: "unrelated")
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 1, state: .inLibrary)
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO tags (id, name, created_at, updated_at)
+                    VALUES ('tag-starcat', 'Starcat', '2026-08-18T00:00:00Z', '2026-08-18T00:00:00Z')
+                    """
+            )
+            try db.execute(
+                sql: """
+                    INSERT INTO repo_tags (repo_id, tag_id, created_at)
+                    VALUES (1, 'tag-starcat', '2026-08-18T00:00:00Z')
+                    """
+            )
+        }
+        let hits = try await GRDBRAGRepoCandidateRepository(database: database).fetchIdentityCandidates(
+            terms: ["starcat"],
+            plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "starcat"),
+            explicitRepoIDs: [],
+            explicitMode: .only,
+            limit: 40
+        )
+        #expect(hits.map(\.repo.id) == [1])
+        #expect(hits.first?.tagNames == ["Starcat"])
+    }
+
+    @Test("召回测试 followPlan 复用窗口并丢掉 analytics")
+    func retrievalTestFollowPlanDropsAnalyticsAndKeepsWindow() {
+        let displayed = RAGQueryPlan(
+            mode: .structuredOnly,
+            semanticQuery: "",
+            sort: RAGRepoSort(field: .stars, direction: .descending),
+            candidateLimit: 50,
+            analytics: KnowledgeBaseAnalyticsPlan(measure: .count, limit: 10)
+        )
+        let plan = RAGRetrievalTestPlanning.resolve(
+            query: "查一下 starcat 相关的项目",
+            scope: .followPlan(displayed)
+        )
+        #expect(plan.mode == .filteredSemantic)
+        #expect(plan.semanticQuery == "查一下 starcat 相关的项目")
+        #expect(plan.candidateLimit == 50)
+        #expect(plan.analytics == nil)
+        #expect(plan.sort?.field == .stars)
+    }
+
+    @Test("召回测试 followPlan 的候选包含身份合并")
+    func retrievalTestFollowPlanMergesIdentityCandidates() async throws {
+        let database = try InMemoryDatabaseManager()
+        let notes = GRDBRepoNoteRepository(database: database)
+        for id in Int64(1)...3 {
+            try await database.insertRepoFixture(id: id, owner: "octo", name: "popular-\(id)")
+            try await notes.updateLibraryState(repoId: id, state: .inLibrary)
+            try await database.writer.write { db in
+                try db.execute(sql: "UPDATE repos SET stars_count = ? WHERE id = ?", arguments: [1_000 - Int(id), id])
+            }
+        }
+        try await database.insertRepoFixture(id: 4, owner: "starcat-app", name: "starcat-pro")
+        try await notes.updateLibraryState(repoId: 4, state: .inLibrary)
+        try await database.writer.write { db in
+            try db.execute(sql: "UPDATE repos SET stars_count = 1 WHERE id = 4")
+        }
+        let chunks = GRDBRAGChunkRepository(database: database)
+        let spy = SpyRAGAIClient()
+        let service = KnowledgeRAGService(
+            planner: FixedRAGPlanner(plan: RAGQueryPlan(mode: .semanticOnly, semanticQuery: "unused")),
+            candidateRepository: GRDBRAGRepoCandidateRepository(database: database),
+            retriever: KnowledgeRAGRetriever(
+                chunkRepository: chunks,
+                keywordProvider: SQLiteRAGKeywordSearchProvider(repository: chunks),
+                vectorProvider: SQLiteRAGVectorSearchProvider(repository: chunks),
+                embeddingClient: spy,
+                embeddingModel: "embed"
+            ),
+            generatorClient: spy,
+            generatorModel: "chat",
+            generatorParameters: .summaryDefault
+        )
+        let displayed = RAGQueryPlan(
+            mode: .filteredSemantic,
+            semanticQuery: "starcat",
+            sort: RAGRepoSort(field: .stars, direction: .descending),
+            candidateLimit: 2
+        )
+        let result = try await service.testRetrieval(
+            query: "查一下 starcat 相关的项目",
+            scope: .followPlan(displayed)
+        )
+        #expect(result.candidates.contains(where: { $0.repo.id == 4 }))
+        #expect(result.candidates.count == 3)
+        #expect(result.diagnostics?.candidateRepoCount == 3)
+    }
+
     @Test("@repo only 由本地候选层强制收窄")
     func explicitRepoOnly() async throws {
         let database = try InMemoryDatabaseManager()
@@ -2674,6 +2868,108 @@ struct KnowledgeRAGCoreTests {
         #expect(recorded.terms == ["数据库", "database"])
         #expect(recorded.sqliteFTS5Expression == #""数据库"* OR "database"*"#)
         #expect(recorded.usedSemanticFallback == false)
+    }
+
+    @Test("Service 把原句身份词放到 Planner 关键词队头")
+    func servicePrependsIdentityKeywordFromRawQuestion() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 21, owner: "starcat-app", name: "starcat-pro")
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 21, state: .inLibrary)
+        let chunks = GRDBRAGChunkRepository(database: database)
+        _ = try await chunks.replaceSource(repoId: 21, source: .metadata, drafts: [
+            RAGChunkDraft(
+                repoId: 21,
+                source: .metadata,
+                sourceId: "",
+                parentType: .metadata,
+                parentKey: "metadata",
+                parentTitle: "Repository metadata",
+                chunkKey: "metadata:0",
+                chunkIndex: 0,
+                sectionPath: "Metadata",
+                title: "Metadata",
+                content: "Starcat product site",
+                tokenCount: 3,
+                isTruncated: false
+            )
+        ])
+        let queryRecorder = RAGKeywordQueryRecorder()
+        let spy = SpyRAGAIClient()
+        let service = KnowledgeRAGService(
+            planner: FixedRAGPlanner(plan: RAGQueryPlan(
+                mode: .semanticOnly,
+                semanticQuery: "these related projects",
+                keywordQueries: ["项目", "仓库"]
+            )),
+            candidateRepository: GRDBRAGRepoCandidateRepository(database: database),
+            retriever: KnowledgeRAGRetriever(
+                chunkRepository: chunks,
+                keywordProvider: RecordingRAGKeywordProvider(
+                    backendName: "SQLite",
+                    recorder: RAGRepoIDRecorder(),
+                    queryRecorder: queryRecorder
+                ),
+                vectorProvider: StubRAGVectorProvider(backendName: "SQLite", hits: [], shouldThrow: false),
+                embeddingClient: spy,
+                embeddingModel: "embed"
+            ),
+            generatorClient: spy,
+            generatorModel: "chat",
+            generatorParameters: .summaryDefault
+        )
+
+        for try await _ in service.ask(request: RAGServiceRequest(
+            rawQuestion: "查一下 starcat 相关的项目",
+            composerContext: RAGComposerContext(
+                explicitRepoIDs: [21],
+                explicitRepoReferences: [.init(id: 21, fullName: "starcat-app/starcat-pro")]
+            ),
+            conversationID: nil
+        )) {}
+
+        let recorded = try #require(await queryRecorder.latestQuery())
+        #expect(recorded.terms.first == "starcat")
+        #expect(recorded.terms.contains("项目"))
+        #expect(recorded.terms.contains("仓库"))
+    }
+
+    @Test("Service 丢掉 semantic_only 无筛选时的 candidateLimit")
+    func serviceClearsUnboundedSemanticCandidateLimit() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 1)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 1, state: .inLibrary)
+        let chunks = GRDBRAGChunkRepository(database: database)
+        let spy = SpyRAGAIClient()
+        let service = KnowledgeRAGService(
+            planner: FixedRAGPlanner(plan: RAGQueryPlan(
+                mode: .semanticOnly,
+                semanticQuery: "starcat",
+                candidateLimit: 50
+            )),
+            candidateRepository: GRDBRAGRepoCandidateRepository(database: database),
+            retriever: KnowledgeRAGRetriever(
+                chunkRepository: chunks,
+                keywordProvider: SQLiteRAGKeywordSearchProvider(repository: chunks),
+                vectorProvider: SQLiteRAGVectorSearchProvider(repository: chunks),
+                embeddingClient: spy,
+                embeddingModel: "embed"
+            ),
+            generatorClient: spy,
+            generatorModel: "chat",
+            generatorParameters: .summaryDefault
+        )
+        var emitted: RAGQueryPlan?
+        for try await event in service.ask(request: RAGServiceRequest(
+            rawQuestion: "查一下 starcat 相关的项目",
+            composerContext: .init(),
+            conversationID: nil
+        )) {
+            if case .plan(let plan) = event {
+                emitted = plan
+                break
+            }
+        }
+        #expect(emitted?.candidateLimit == nil)
     }
 
     @Test("无候选时不调用 embedding 或 Generator")

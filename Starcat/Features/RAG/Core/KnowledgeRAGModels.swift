@@ -411,6 +411,12 @@ enum RAGExecutionStepKind: String, Codable, CaseIterable, Sendable {
     case remoteContext
     case answerReasoning
     case generation
+
+    /// 规划思考发生在查询规划内部，开始时不能当成「下一步」去结束仍在 running 的父步骤。
+    /// 回答阶段的思考这次仍保持并列，避免把 generation 的完成时机一起改掉。
+    var nestsInsideCurrentPhase: Bool {
+        self == .planningReasoning
+    }
 }
 
 enum RAGExecutionStepState: String, Codable, Sendable {

@@ -4,6 +4,9 @@
 //
 //  RAG 回答前后的紧凑步骤轨迹。
 //
+//  查询规划把规划思考缩进成子步骤；规划 JSON 仍须等思考流结束才解析，
+//  所以父步骤在 planningCompleted 之前保持 running。
+//
 //  步骤图标只表达状态，不按 kind 换语义符号：
 //  - running：`ellipsis.circle` + accent + `.symbolEffect(.pulse)`（reduceMotion 关闭）
 //  - completed：绿色 `checkmark.circle.fill`
@@ -40,44 +43,106 @@ extension EnvironmentValues {
     }
 }
 
-/// 执行步骤的局部折叠状态。
-///
-/// 运行中默认展开、完成后默认折叠是时间线的自动行为；两个集合只记录用户对当前默认值的反向操作。
-/// 必须把运行中主动折叠单独保存，否则后续流式 delta 触发 View 刷新时会再次被 `running` 强制展开。
-struct RAGExecutionDisclosureState {
-    private var manuallyExpanded: Set<RAGExecutionStepKind> = []
-    private var collapsedWhileRunning: Set<RAGExecutionStepKind> = []
+/// 时间线顶层条目。规划思考不是并列第二步，渲染时缩进挂在查询规划下面。
+enum RAGExecutionTimelineItem: Identifiable, Equatable {
+    case step(RAGExecutionStep)
+    case planning(parent: RAGExecutionStep, reasoning: RAGExecutionStep?)
 
-    func isExpanded(_ step: RAGExecutionStep) -> Bool {
-        if step.state == .running {
-            return !collapsedWhileRunning.contains(step.kind)
+    var id: RAGExecutionStepKind {
+        switch self {
+        case .step(let step):
+            return step.kind
+        case .planning:
+            return .planning
         }
-        return manuallyExpanded.contains(step.kind)
+    }
+}
+
+/// 把扁平 execution trace 收成 Agent 常见的「父步骤 + 内部思考」结构。
+///
+/// 存储仍保持 `planning` / `planningReasoning` 两条记录，避免改已落地的会话 JSON。
+enum RAGExecutionTimelineGrouping {
+    static func items(from steps: [RAGExecutionStep]) -> [RAGExecutionTimelineItem] {
+        var items: [RAGExecutionTimelineItem] = []
+        var index = 0
+        while index < steps.count {
+            let step = steps[index]
+            if step.kind == .planning {
+                var reasoning: RAGExecutionStep?
+                if index + 1 < steps.count, steps[index + 1].kind == .planningReasoning {
+                    reasoning = steps[index + 1]
+                    index += 1
+                }
+                items.append(.planning(parent: step, reasoning: reasoning))
+            } else {
+                items.append(.step(step))
+            }
+            index += 1
+        }
+        return items
     }
 
-    mutating func toggle(_ step: RAGExecutionStep) {
+    /// 运行中默认展开。查询规划在结果刚写出、还没有下一个顶层步骤时也保持展开。
+    static func defaultExpanded(
+        for step: RAGExecutionStep,
+        items: [RAGExecutionTimelineItem]
+    ) -> Bool {
         if step.state == .running {
-            if collapsedWhileRunning.contains(step.kind) {
-                collapsedWhileRunning.remove(step.kind)
+            return true
+        }
+        if step.kind == .planning {
+            return items.last?.id == .planning
+        }
+        return false
+    }
+}
+
+/// 执行步骤的局部折叠状态。
+///
+/// 默认展开/折叠由 `defaultExpanded` 决定；两个集合只记录用户对当前默认值的反向操作。
+/// 必须把「默认展开时的主动折叠」单独保存，否则后续流式 delta 触发 View 刷新时会再次被强制展开。
+struct RAGExecutionDisclosureState {
+    private var userExpanded: Set<RAGExecutionStepKind> = []
+    private var userCollapsed: Set<RAGExecutionStepKind> = []
+
+    func isExpanded(_ step: RAGExecutionStep, defaultExpanded: Bool) -> Bool {
+        if defaultExpanded {
+            return !userCollapsed.contains(step.kind)
+        }
+        return userExpanded.contains(step.kind)
+    }
+
+    func isExpanded(_ step: RAGExecutionStep) -> Bool {
+        isExpanded(step, defaultExpanded: step.state == .running)
+    }
+
+    mutating func toggle(_ step: RAGExecutionStep, defaultExpanded: Bool) {
+        if defaultExpanded {
+            if userCollapsed.contains(step.kind) {
+                userCollapsed.remove(step.kind)
             } else {
-                collapsedWhileRunning.insert(step.kind)
+                userCollapsed.insert(step.kind)
             }
             return
         }
 
-        if manuallyExpanded.contains(step.kind) {
-            manuallyExpanded.remove(step.kind)
+        if userExpanded.contains(step.kind) {
+            userExpanded.remove(step.kind)
         } else {
-            manuallyExpanded.insert(step.kind)
+            userExpanded.insert(step.kind)
         }
+    }
+
+    mutating func toggle(_ step: RAGExecutionStep) {
+        toggle(step, defaultExpanded: step.state == .running)
     }
 }
 
 /// RAG 回答前后的紧凑步骤轨迹。
 ///
-/// 当前运行步骤默认展开，但用户可在输出期间随时折叠或重新展开；前序步骤完成后自动折叠为摘要。
-/// 用户也可重新展开已完成步骤，
-/// 但生成回答是最终阅读上下文，始终展开而不会被折叠逻辑收起。该组件只渲染脱敏的
+/// 查询规划把规划思考收成缩进子步骤；规划结果刚写出时父步骤保持展开，下一步开始后再收成摘要。
+/// 当前运行步骤默认展开，用户可在输出期间随时折叠或重新展开。
+/// 生成回答是最终阅读上下文，始终展开而不会被折叠逻辑收起。该组件只渲染脱敏的
 /// `RAGExecutionStep`，不能读取 Debug trace。
 struct RAGExecutionTimeline: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -89,89 +154,140 @@ struct RAGExecutionTimeline: View {
     @State private var disclosureState = RAGExecutionDisclosureState()
 
     var body: some View {
+        let items = RAGExecutionTimelineGrouping.items(from: steps)
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(steps) { step in
-                executionStep(step)
+            ForEach(items) { item in
+                switch item {
+                case .planning(let parent, let reasoning):
+                    planningGroup(parent: parent, reasoning: reasoning, items: items)
+                case .step(let step):
+                    executionStep(step, indent: 0, items: items)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func executionStep(_ step: RAGExecutionStep) -> some View {
-        let isExpanded = disclosureState.isExpanded(step)
-        return VStack(alignment: .leading, spacing: 7) {
-            Button {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
-                    disclosureState.toggle(step)
-                }
-            } label: {
-                // 图标槽与消息头 Starcat logo 同宽，glyph 居中，保证竖向轴线对齐。
-                HStack(spacing: 7) {
-                    stepStatusIcon(step)
-                        .frame(
-                            width: RAGMessageAvatarMetrics.size,
-                            height: RAGMessageAvatarMetrics.size
-                        )
-                    Text(titleKey(for: step.kind))
-                        .font(interfaceScale.font(
-                            RAGConversationTypography.executionTitle,
-                            weight: .medium
-                        ))
-                        .foregroundStyle(.primary)
-                    // 摘要、耗时与 chevron 均紧随标题，和主窗口 AI 对话的 Think 行保持一致；
-                    // 此处不能用 Spacer 将折叠信息推到窗口最右侧。
-                    if !isExpanded, let summary = step.summary, !summary.isEmpty {
-                        Text(summary)
-                            .font(interfaceScale.font(.caption))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    if step.kind != .generation {
-                        executionDuration(step)
-                    }
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(interfaceScale.font(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 12)
-                }
-                .contentShape(Rectangle())
+    /// 查询规划是父步骤；思考缩进一级，规划 notes 在思考之后作为这一步的结果。
+    private func planningGroup(
+        parent: RAGExecutionStep,
+        reasoning: RAGExecutionStep?,
+        items: [RAGExecutionTimelineItem]
+    ) -> some View {
+        let defaultExpanded = RAGExecutionTimelineGrouping.defaultExpanded(for: parent, items: items)
+        let isExpanded = disclosureState.isExpanded(parent, defaultExpanded: defaultExpanded)
+        return VStack(alignment: .leading, spacing: 4) {
+            stepHeader(parent, isExpanded: isExpanded) {
+                disclosureState.toggle(parent, defaultExpanded: defaultExpanded)
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-
             if isExpanded {
-                VStack(alignment: .leading, spacing: 5) {
-                    ForEach(step.details.indices, id: \.self) { index in
-                        let detail = step.details[index]
-                        if step.kind == .planningReasoning || step.kind == .answerReasoning {
-                            // 运行中只会改变当前 Think 的详情。Equatable 边界让其余已完成
-                            // 步骤继续复用现有 Text 布局，不跟着数组快照重复测量。
-                            RAGReasoningDetailText(text: detail)
-                                .equatable()
-                                .font(interfaceScale.font(RAGConversationTypography.executionDetail))
-                        } else {
-                            Label(detail, systemImage: "minus")
-                                .font(interfaceScale.font(RAGConversationTypography.executionDetail))
-                                .foregroundStyle(.secondary)
-                                .labelStyle(.titleAndIcon)
-                        }
-                    }
-                    if step.kind == .remoteContext {
-                        ForEach(step.remoteAuditItems ?? []) { item in
-                            remoteAuditItem(item)
-                        }
-                    }
-                    if let summary = step.summary, !summary.isEmpty {
-                        Text(summary)
-                            .font(interfaceScale.font(.caption, weight: .medium))
-                            .foregroundStyle(.secondary)
-                    }
+                if let reasoning {
+                    executionStep(reasoning, indent: 1, items: items)
                 }
-                // 与标题行一致：logo 槽宽 + HStack spacing，让展开内容贴齐标题文字左缘。
-                .padding(.leading, RAGMessageAvatarMetrics.size + 7)
+                // 思考还在流式输出时规划 notes 尚未写入，不要留一块空内容区。
+                if !parent.details.isEmpty || !(parent.summary ?? "").isEmpty {
+                    stepDetails(parent)
+                        .padding(.leading, RAGMessageAvatarMetrics.size + 7)
+                }
             }
         }
         .padding(.vertical, 3)
+    }
+
+    private func executionStep(
+        _ step: RAGExecutionStep,
+        indent: Int,
+        items: [RAGExecutionTimelineItem]
+    ) -> some View {
+        let defaultExpanded = RAGExecutionTimelineGrouping.defaultExpanded(for: step, items: items)
+        let isExpanded = disclosureState.isExpanded(step, defaultExpanded: defaultExpanded)
+        return VStack(alignment: .leading, spacing: 7) {
+            stepHeader(step, isExpanded: isExpanded) {
+                disclosureState.toggle(step, defaultExpanded: defaultExpanded)
+            }
+            if isExpanded {
+                stepDetails(step)
+                    .padding(.leading, RAGMessageAvatarMetrics.size + 7)
+            }
+        }
+        .padding(.leading, CGFloat(indent) * RAGMessageAvatarMetrics.size)
+        .padding(.vertical, 3)
+    }
+
+    private func stepHeader(
+        _ step: RAGExecutionStep,
+        isExpanded: Bool,
+        toggle: @escaping () -> Void
+    ) -> some View {
+        Button {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                toggle()
+            }
+        } label: {
+            // 图标槽与消息头 Starcat logo 同宽，glyph 居中，保证竖向轴线对齐。
+            HStack(spacing: 7) {
+                stepStatusIcon(step)
+                    .frame(
+                        width: RAGMessageAvatarMetrics.size,
+                        height: RAGMessageAvatarMetrics.size
+                    )
+                Text(titleKey(for: step.kind))
+                    .font(interfaceScale.font(
+                        RAGConversationTypography.executionTitle,
+                        weight: .medium
+                    ))
+                    .foregroundStyle(.primary)
+                // 摘要、耗时与 chevron 均紧随标题，和主窗口 AI 对话的 Think 行保持一致；
+                // 此处不能用 Spacer 将折叠信息推到窗口最右侧。
+                if !isExpanded, let summary = step.summary, !summary.isEmpty {
+                    Text(summary)
+                        .font(interfaceScale.font(.caption))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                if step.kind != .generation {
+                    executionDuration(step)
+                }
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(interfaceScale.font(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 12)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+    }
+
+    @ViewBuilder
+    private func stepDetails(_ step: RAGExecutionStep) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            ForEach(step.details.indices, id: \.self) { index in
+                let detail = step.details[index]
+                if step.kind == .planningReasoning || step.kind == .answerReasoning {
+                    // 运行中只会改变当前 Think 的详情。Equatable 边界让其余已完成
+                    // 步骤继续复用现有 Text 布局，不跟着数组快照重复测量。
+                    RAGReasoningDetailText(text: detail)
+                        .equatable()
+                        .font(interfaceScale.font(RAGConversationTypography.executionDetail))
+                } else {
+                    Label(detail, systemImage: "minus")
+                        .font(interfaceScale.font(RAGConversationTypography.executionDetail))
+                        .foregroundStyle(.secondary)
+                        .labelStyle(.titleAndIcon)
+                }
+            }
+            if step.kind == .remoteContext {
+                ForEach(step.remoteAuditItems ?? []) { item in
+                    remoteAuditItem(item)
+                }
+            }
+            if let summary = step.summary, !summary.isEmpty {
+                Text(summary)
+                    .font(interfaceScale.font(.caption, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     /// 回答前的可折叠步骤显示真实耗时；结束后固定为真实起止时间差。

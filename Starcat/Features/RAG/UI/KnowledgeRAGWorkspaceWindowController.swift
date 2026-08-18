@@ -226,6 +226,12 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
         window?.resignKey()
         Self.shared = nil
     }
+
+    /// 知识库浏览器的召回测试需要复用最近一轮问答计划；工作台未打开时为 nil。
+    @MainActor
+    static var displayedQueryPlanForRetrievalTest: RAGQueryPlan? {
+        shared?.viewModel.displayedQueryPlan
+    }
 }
 
 /// 复用单个知识库浏览器窗口。它只读本地知识库数据，索引操作仍交由既有 builder 执行。
@@ -530,6 +536,8 @@ private final class KnowledgeRAGBrowserViewModel {
     }
     var retrievalQuery = ""
     var retrievalHits: [RAGChildHit] = []
+    /// 默认全库 oracle；按当前计划需要工作台已有一轮问答计划。
+    var retrievalTestMode: RAGRetrievalTestMode = .indexOracle
     /// 测试面板维护独立草稿，连续调参不会在用户明确保存前污染正式问答配置。
     var retrievalTestSettings: RAGRetrievalSettings
     var retrievalTestDiagnostics: RAGRetrievalDiagnostics?
@@ -871,6 +879,14 @@ private final class KnowledgeRAGBrowserViewModel {
     func runRetrievalTest() {
         let query = retrievalQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty, !isTestingRetrieval else { return }
+        let scope: RAGRetrievalTestScope
+        switch retrievalTestMode {
+        case .indexOracle:
+            scope = .indexOracle
+        case .followPlan:
+            guard let plan = KnowledgeRAGWorkspaceWindowController.displayedQueryPlanForRetrievalTest else { return }
+            scope = .followPlan(plan)
+        }
         let testSettings = retrievalTestSettings.normalized()
         isTestingRetrieval = true
         hasCompletedRetrievalTest = false
@@ -884,12 +900,16 @@ private final class KnowledgeRAGBrowserViewModel {
                     selectedModelID: nil,
                     retrievalSettingsOverride: testSettings
                 )
-                let result = try await service.testRetrieval(query: query)
+                let result = try await service.testRetrieval(query: query, scope: scope)
                 retrievalHits = result.childHits.sorted { $0.score > $1.score }
                 retrievalTestDiagnostics = result.diagnostics
                 hasCompletedRetrievalTest = true
             } catch { presentError(error) }
         }
+    }
+
+    var canFollowPlanForRetrievalTest: Bool {
+        KnowledgeRAGWorkspaceWindowController.displayedQueryPlanForRetrievalTest != nil
     }
 
     var hasUnsavedRetrievalTestSettings: Bool {
@@ -1920,6 +1940,27 @@ private struct KnowledgeRAGBrowserView: View {
 
     private var retrievalTestContent: some View {
         VStack(alignment: .leading, spacing: 9) {
+            Picker(selection: $viewModel.retrievalTestMode) {
+                Text("rag.browser.retrieval.scope.indexOracle")
+                    .tag(RAGRetrievalTestMode.indexOracle)
+                Text("rag.browser.retrieval.scope.followPlan")
+                    .tag(RAGRetrievalTestMode.followPlan)
+            } label: {
+                EmptyView()
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            Text(
+                viewModel.retrievalTestMode == .followPlan
+                    ? (viewModel.canFollowPlanForRetrievalTest
+                        ? "rag.browser.retrieval.scope.hint.followPlan"
+                        : "rag.browser.retrieval.scope.followPlanDisabled")
+                    : "rag.browser.retrieval.scope.hint.indexOracle"
+            )
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+
             ZStack(alignment: .bottomTrailing) {
                 // AppKit 输入：默认 2 行 / 最高 4 行；超长时 NSScrollView 出滚动条。
                 AICommandTextEditor(
@@ -1946,6 +1987,7 @@ private struct KnowledgeRAGBrowserView: View {
                         // 与主 RAG composer 共用上箭头发送语义和圆形符号比例；不要在小圆钮
                         // 中再塞试管图标，否则图形会显得拥挤且被误读为设置入口。
                         let canRun = !viewModel.retrievalQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            && (viewModel.retrievalTestMode == .indexOracle || viewModel.canFollowPlanForRetrievalTest)
                         Button { viewModel.runRetrievalTest() } label: {
                             Image(systemName: "arrow.up.circle.fill")
                                 // 输入框内只承担发送语义，尺寸收敛到与 loading 占位一致。

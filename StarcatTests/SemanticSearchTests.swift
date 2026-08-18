@@ -430,9 +430,11 @@ struct SemanticIndexProgressSinkTests {
         sink.markSkipped()
         sink.finish()
 
-        #expect(reports.first == (0, 4))
+        #expect(reports.first?.0 == 0)
+        #expect(reports.first?.1 == 4)
         #expect(reports.contains(where: { $0 == (1, 4) }))
-        #expect(reports.last == (4, 4))
+        #expect(reports.last?.0 == 4)
+        #expect(reports.last?.1 == 4)
     }
 
     @Test("embedding 批次加在已跳过数量之上")

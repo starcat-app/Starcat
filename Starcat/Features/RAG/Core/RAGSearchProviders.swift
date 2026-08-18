@@ -35,8 +35,12 @@ enum RAGKeywordQueryBuilder {
     static let maximumTermCount = 8
     static let maximumTermLength = 80
 
-    static func build(keywordQueries: [String], semanticQuery: String) -> RAGKeywordSearchQuery {
-        let plannedTerms = normalizedTerms(keywordQueries, splitsWords: false)
+    static func build(
+        keywordQueries: [String],
+        semanticQuery: String,
+        anchorQuestion: String = ""
+    ) -> RAGKeywordSearchQuery {
+        let plannedTerms = mergedKeywordQueries(planned: keywordQueries, anchorQuestion: anchorQuestion)
         let usedSemanticFallback = plannedTerms.isEmpty
         let terms = usedSemanticFallback
             ? normalizedTerms([semanticQuery], splitsWords: true)
@@ -47,6 +51,43 @@ enum RAGKeywordQueryBuilder {
             externalQuery: terms.joined(separator: " "),
             usedSemanticFallback: usedSemanticFallback
         )
+    }
+
+    /// 从用户原句抽出仓库身份词（`owner/repo`、拉丁标识符），供候选 SQL 与 FTS 共用。
+    ///
+    /// 不抽取连续中文：整句 LIKE 对 `full_name` 无效，中文标签匹配留到后续召回目标分层。
+    static func identityTerms(from question: String) -> [String] {
+        let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        // owner/repo 优先，再拆成 owner 与 name；其余至少 3 个字符的拉丁标识符。
+        let pattern = #"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+|[A-Za-z][A-Za-z0-9._-]{2,}"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let range = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
+        var raw: [String] = []
+        for match in regex.matches(in: trimmed, range: range) {
+            guard let swiftRange = Range(match.range, in: trimmed) else { continue }
+            let token = String(trimmed[swiftRange])
+            raw.append(token)
+            if token.contains("/") {
+                raw.append(contentsOf: token.split(separator: "/").map(String.init))
+            }
+        }
+        return normalizedTerms(raw, splitsWords: false)
+    }
+
+    /// 身份词始终排在 Planner 关键词之前；超出 8 个时丢掉 Planner 词，避免实体被挤出 OR 列表。
+    static func mergedKeywordQueries(planned: [String], anchorQuestion: String) -> [String] {
+        let identity = identityTerms(from: anchorQuestion)
+        let plannedTerms = normalizedTerms(planned, splitsWords: false)
+        var seen = Set(identity.map { $0.lowercased() })
+        var result = identity
+        for term in plannedTerms {
+            let identityKey = term.lowercased()
+            guard seen.insert(identityKey).inserted else { continue }
+            result.append(term)
+            if result.count == maximumTermCount { break }
+        }
+        return result
     }
 
     private static func normalizedTerms(_ values: [String], splitsWords: Bool) -> [String] {

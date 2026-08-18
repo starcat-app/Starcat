@@ -1663,6 +1663,7 @@ struct AppSettingsRepoContextTests {
     }
 }
 
+@MainActor
 @Suite("AppSettings.SemanticIndexLastPrefetch")
 struct AppSettingsSemanticIndexLastPrefetchTests {
     private func makeIsolatedDefaults() -> UserDefaults {

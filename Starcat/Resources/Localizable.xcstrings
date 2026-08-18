@@ -156683,6 +156683,86 @@
         }
       }
     },
+    "rag.browser.retrieval.scope.followPlan" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Current plan"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按当前计划"
+          }
+        }
+      }
+    },
+    "rag.browser.retrieval.scope.followPlanDisabled" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ask a question in the RAG workspace first"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先在 RAG 工作台问一轮"
+          }
+        }
+      }
+    },
+    "rag.browser.retrieval.scope.hint.followPlan" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uses the latest Q&A candidate window. The test query is still the original sentence."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复用最近一轮问答的候选窗口，检索句仍用测试框原文。"
+          }
+        }
+      }
+    },
+    "rag.browser.retrieval.scope.hint.indexOracle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Searches the whole knowledge base and skips the Query Planner. This is not the Q&A path."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全库检索且不走 Query Planner，不能代表工作台问答路径。"
+          }
+        }
+      }
+    },
+    "rag.browser.retrieval.scope.indexOracle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Index recall"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "索引召回"
+          }
+        }
+      }
+    },
     "rag.browser.retrieval.vectorSimilarity" : {
       "localizations" : {
         "ar" : {

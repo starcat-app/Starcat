@@ -3756,14 +3756,7 @@ final class KnowledgeRAGWorkspaceViewModel {
     private func applyExecution(_ event: RAGExecutionEvent, to executionSteps: inout [RAGExecutionStep]) {
         switch event {
         case .started(let kind):
-            let transitionTime = Date()
-            for index in executionSteps.indices where executionSteps[index].state == .running {
-                executionSteps[index].state = .completed
-                if executionSteps[index].completedAt == nil {
-                    executionSteps[index].completedAt = transitionTime
-                }
-            }
-            executionSteps.append(RAGExecutionStep(kind: kind))
+            RAGExecutionTraceReducer.applyStarted(kind, to: &executionSteps)
 
         case .planningCompleted(let plan):
             let fallback = String(
