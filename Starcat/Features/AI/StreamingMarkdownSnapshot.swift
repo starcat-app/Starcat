@@ -113,8 +113,9 @@ struct StreamingPresentationThrottle: Sendable {
 
 /// RAG 流式回答的 UI 发布上限。
 ///
-/// 正文的稳定 Markdown chunk 使 15Hz 仍只重算当前尾部；Think 涉及执行步骤
-/// 数组快照，保守限制为 10Hz。两者都禁止字符数旁路突破时间上限。
+/// 正文的稳定 Markdown chunk 使 15Hz 仍只重算当前尾部。`reasoningInterval` 留给主窗口
+/// AI 对话的 Think buffer；知识库 RAG 运行中思考已改走 NSTextView 追加，不再按
+/// 该频率发布 `executionSteps`。两者都禁止字符数旁路突破时间上限。
 enum RAGStreamingPresentationCadence {
     static let answerInterval: TimeInterval = 1.0 / 15.0
     static let reasoningInterval: TimeInterval = 0.1

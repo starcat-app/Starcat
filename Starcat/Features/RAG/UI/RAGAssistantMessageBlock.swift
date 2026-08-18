@@ -20,6 +20,9 @@ struct RAGAssistantMessageBlock: View {
     let showsActions: Bool
     /// 执行轨迹属于本轮 assistant 消息，不允许在消息块之外另起视觉容器。
     let executionTrace: [RAGExecutionStep]
+    /// 仅流式兜底路径需要；历史消息保持默认 nil，仍用落库后的 Text。
+    var livePlanningReasoning: RAGStreamingPlainTextSession? = nil
+    var liveAnswerReasoning: RAGStreamingPlainTextSession? = nil
     /// 仅用于“正在生成回答”或步骤尚未建立的短暂过渡；回答正文始终不折叠。
     let activityLabel: String?
     /// 从提交问题到最后一个 LLM 响应结束的耗时；运行中持续刷新，历史回答保持冻结值。
@@ -84,7 +87,11 @@ struct RAGAssistantMessageBlock: View {
     private var assistantMessageContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             if !preparationSteps.isEmpty {
-                RAGExecutionTimeline(steps: preparationSteps)
+                RAGExecutionTimeline(
+                    steps: preparationSteps,
+                    livePlanningReasoning: livePlanningReasoning,
+                    liveAnswerReasoning: liveAnswerReasoning
+                )
             }
 
             if let activityLabel, !activityLabel.isEmpty {
@@ -199,6 +206,8 @@ private struct RAGStableStoredMarkdown: View, Equatable {
 struct RAGStreamingAssistantMessageBlock: View {
     let snapshot: StreamingMarkdownSnapshot
     let executionTrace: [RAGExecutionStep]
+    var livePlanningReasoning: RAGStreamingPlainTextSession? = nil
+    var liveAnswerReasoning: RAGStreamingPlainTextSession? = nil
     let activityLabel: String?
     let processingDuration: TimeInterval?
     let processingStartedAt: Date?
@@ -238,7 +247,11 @@ struct RAGStreamingAssistantMessageBlock: View {
     private var streamingAssistantMessageContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             if !preparationSteps.isEmpty {
-                RAGExecutionTimeline(steps: preparationSteps)
+                RAGExecutionTimeline(
+                    steps: preparationSteps,
+                    livePlanningReasoning: livePlanningReasoning,
+                    liveAnswerReasoning: liveAnswerReasoning
+                )
             }
 
             if let activityLabel, !activityLabel.isEmpty, snapshot.isEmpty {

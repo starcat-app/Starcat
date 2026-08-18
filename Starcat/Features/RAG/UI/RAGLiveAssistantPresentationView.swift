@@ -9,9 +9,10 @@ import SwiftUI
 
 /// 只订阅当前流式回答所需的高频状态。
 ///
-/// `streamingPresentation` 与 Think 会高频更新，计时则由标签内的局部时钟独立推进。如果这些读取发生
-/// 在整个回答中栏的根 View 中，SwiftUI 会同时重算历史消息、输入框和浮层。独立子 View
-/// 让高频刷新停在当前助手消息内，历史 Markdown 继续由稳定的 Equatable 边界复用。
+/// `streamingPresentation` 会随正文 chunk 更新；运行中 Think 已改走 NSTextView 追加，
+/// 不再通过 `executionSteps.details` 高频刷新。计时由标签内的局部时钟独立推进。
+/// 如果这些读取发生在整个回答中栏的根 View 中，SwiftUI 会同时重算历史消息、输入框和浮层。
+/// 独立子 View 让正文刷新停在当前助手消息内，历史 Markdown 继续由稳定的 Equatable 边界复用。
 struct RAGLiveAssistantPresentationView: View {
     @Bindable var viewModel: KnowledgeRAGWorkspaceViewModel
 
@@ -21,6 +22,8 @@ struct RAGLiveAssistantPresentationView: View {
                 RAGStreamingAssistantMessageBlock(
                     snapshot: snapshot,
                     executionTrace: viewModel.executionSteps,
+                    livePlanningReasoning: viewModel.liveReasoningSession(kind: .planningReasoning),
+                    liveAnswerReasoning: viewModel.liveReasoningSession(kind: .answerReasoning),
                     activityLabel: activityLabel,
                     processingDuration: viewModel.answerElapsedDuration,
                     processingStartedAt: viewModel.answerStartedAt
@@ -32,6 +35,8 @@ struct RAGLiveAssistantPresentationView: View {
                     createdAtLabel: nil,
                     showsActions: false,
                     executionTrace: viewModel.executionSteps,
+                    livePlanningReasoning: viewModel.liveReasoningSession(kind: .planningReasoning),
+                    liveAnswerReasoning: viewModel.liveReasoningSession(kind: .answerReasoning),
                     activityLabel: activityLabel,
                     processingDuration: viewModel.answerElapsedDuration,
                     processingStartedAt: viewModel.answerStartedAt,

@@ -418,6 +418,9 @@ final class KnowledgeRAGWorkspaceViewModel {
     @ObservationIgnored private var approvedRemoteWorkItemIDsByConversation: [UUID: Set<String>] = [:]
     /// 后台回答的展示值必须同进同退；单一字典避免新增字段时漏掉 restore/clear 其中一端。
     @ObservationIgnored private var conversationRuntimeStates: [UUID: RAGConversationRuntimeState] = [:]
+    /// 运行中思考文本不进 `executionSteps`，避免 10Hz 整段 `Text` 重排。完成后才把
+    /// `session.text` 写入 details 供落库；字典本身不参与 Observation。
+    @ObservationIgnored private var liveReasoningSessions: [UUID: RAGLiveReasoningSessions] = [:]
     /// 运行中的 Debug Trace 按会话隔离；切换后事件仍写原会话，并在切回时与磁盘历史合并。
     @ObservationIgnored private var liveDebugTracesByConversation: [UUID: [RAGDebugTrace]] = [:]
     @ObservationIgnored private var linkDetectionTask: Task<Void, Never>?
@@ -1788,6 +1791,17 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     private func clearActiveAnswerPresentation(for conversationID: UUID) {
         conversationRuntimeStates[conversationID] = nil
+        liveReasoningSessions[conversationID] = nil
+    }
+
+    /// 时间线只在运行中思考步骤读取 session；切会话时按当前选中项查找。
+    func liveReasoningSession(
+        kind: RAGExecutionStepKind,
+        conversationID: UUID? = nil
+    ) -> RAGStreamingPlainTextSession? {
+        let resolvedID = conversationID ?? selectedConversationID
+        guard let resolvedID else { return nil }
+        return liveReasoningSessions[resolvedID]?.session(for: kind)
     }
 
     private func questionRequestSnapshot() -> QuestionRequestSnapshot {
@@ -2866,19 +2880,10 @@ final class KnowledgeRAGWorkspaceViewModel {
         )
         var presentationRevision = 0
         var markdownAssembler = StreamingMarkdownAssembler()
-        // Think 可能按 token 回调。完整文本留在 buffer，只有节流后的快照进入
-        // `executionSteps`。运行态严格 10Hz 且只展示最近 8,000 字符，避免长 Think
-        // 反复测量完整增长文本；终态仍从 buffer.text 发布完整内容并持久化。
-        var planningReasoningBuffer = StreamingTextPresentationBuffer(
-            throttleInterval: RAGStreamingPresentationCadence.reasoningInterval,
-            immediateCharacterCount: nil,
-            maximumPresentedCharacterCount: 8_000
-        )
-        var answerReasoningBuffer = StreamingTextPresentationBuffer(
-            throttleInterval: RAGStreamingPresentationCadence.reasoningInterval,
-            immediateCharacterCount: nil,
-            maximumPresentedCharacterCount: 8_000
-        )
+        // 运行中思考只追加进 session 的 NSTextStorage，不再把增长字符串写入
+        // `executionSteps.details`。8,000 字滑窗会每次替换整段，无法走 TextKit 追加。
+        let reasoningSessions = RAGLiveReasoningSessions()
+        liveReasoningSessions[conversationID] = reasoningSessions
         let initialStreamingPresentation = StreamingMarkdownSnapshot(
             messageID: streamingMessageID,
             timestamp: streamingTimestamp,
@@ -2950,38 +2955,13 @@ final class KnowledgeRAGWorkspaceViewModel {
                 case .execution(let event):
                     switch event {
                     case .reasoningDelta(let kind, let text):
-                        let now = Date.timeIntervalSinceReferenceDate
-                        let presentation: String?
-                        switch kind {
-                        case .planningReasoning:
-                            presentation = planningReasoningBuffer.append(text, now: now)
-                        case .answerReasoning:
-                            presentation = answerReasoningBuffer.append(text, now: now)
-                        default:
-                            presentation = nil
-                        }
-                        if let presentation {
-                            applyReasoningPresentation(
-                                kind: kind,
-                                text: presentation,
-                                in: &turnExecutionSteps
-                            )
-                            syncExecutionSteps(turnExecutionSteps, for: conversationID)
-                        }
+                        // 只追加进 AppKit session。禁止 syncExecutionSteps：那会让时间线
+                        // 和 Inspector 跟着每个 token 重算。
+                        reasoningSessions.session(for: kind)?.append(text)
                     case .reasoningCompleted(let kind):
-                        let now = Date.timeIntervalSinceReferenceDate
-                        let finalPresentation: String?
-                        switch kind {
-                        case .planningReasoning:
-                            _ = planningReasoningBuffer.flush(now: now)
-                            finalPresentation = planningReasoningBuffer.text
-                        case .answerReasoning:
-                            _ = answerReasoningBuffer.flush(now: now)
-                            finalPresentation = answerReasoningBuffer.text
-                        default:
-                            finalPresentation = nil
-                        }
-                        if let finalPresentation, !finalPresentation.isEmpty {
+                        reasoningSessions.session(for: kind)?.flushNow()
+                        let finalPresentation = reasoningSessions.session(for: kind)?.text ?? ""
+                        if !finalPresentation.isEmpty {
                             applyReasoningPresentation(
                                 kind: kind,
                                 text: finalPresentation,
@@ -3086,8 +3066,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             // Provider 失败或提前结束时未必发送 reasoningCompleted；落库前仍要补齐最后
             // 一批 Think，避免性能节流变成数据丢失。
             flushReasoningPresentations(
-                planning: &planningReasoningBuffer,
-                answer: &answerReasoningBuffer,
+                sessions: reasoningSessions,
                 executionSteps: &turnExecutionSteps
             )
             syncExecutionSteps(turnExecutionSteps, for: conversationID)
@@ -3146,8 +3125,7 @@ final class KnowledgeRAGWorkspaceViewModel {
                 updateAnswerState(.cancelled, for: conversationID)
             }
             flushReasoningPresentations(
-                planning: &planningReasoningBuffer,
-                answer: &answerReasoningBuffer,
+                sessions: reasoningSessions,
                 executionSteps: &turnExecutionSteps
             )
             if canPublishCancelledState {
@@ -3179,8 +3157,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             }
         } catch {
             flushReasoningPresentations(
-                planning: &planningReasoningBuffer,
-                answer: &answerReasoningBuffer,
+                sessions: reasoningSessions,
                 executionSteps: &turnExecutionSteps
             )
             // 停止按钮会 cancel Task；部分底层 API 不抛 CancellationError 而是带上
@@ -4048,8 +4025,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
-    /// 用稳定的单条详情承载节流后的完整 Think。数组下标不变，配合时间线按 index
-    /// 标识后，SwiftUI 只更新文字内容，不会把每个 token 当成一棵全新的 View 子树。
+    /// 终态才把完整思考写入步骤详情，供折叠展开和落库。运行中不要调用。
     private func applyReasoningPresentation(
         kind: RAGExecutionStepKind,
         text: String,
@@ -4060,27 +4036,25 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
     }
 
-    /// Provider 在失败和取消路径上不保证发送 `reasoningCompleted`。所有退出路径都走
-    /// 同一刷新逻辑，确保 UI 降频只减少重绘次数，不吞掉最后一批 Think。
+    /// Provider 在失败和取消路径上不保证发送 `reasoningCompleted`。退出前仍要把
+    /// session 里的完整思考写进步骤，避免只在 NSTextView 里看过、落库却是空的。
     private func flushReasoningPresentations(
-        planning: inout StreamingTextPresentationBuffer,
-        answer: inout StreamingTextPresentationBuffer,
+        sessions: RAGLiveReasoningSessions,
         executionSteps: inout [RAGExecutionStep]
     ) {
-        let now = Date.timeIntervalSinceReferenceDate
-        _ = planning.flush(now: now)
-        if !planning.text.isEmpty {
+        sessions.planning.flushNow()
+        if !sessions.planning.text.isEmpty {
             applyReasoningPresentation(
                 kind: .planningReasoning,
-                text: planning.text,
+                text: sessions.planning.text,
                 in: &executionSteps
             )
         }
-        _ = answer.flush(now: now)
-        if !answer.text.isEmpty {
+        sessions.answer.flushNow()
+        if !sessions.answer.text.isEmpty {
             applyReasoningPresentation(
                 kind: .answerReasoning,
-                text: answer.text,
+                text: sessions.answer.text,
                 in: &executionSteps
             )
         }

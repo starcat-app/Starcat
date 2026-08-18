@@ -151,6 +151,9 @@ struct RAGExecutionTimeline: View {
     @Environment(\.ragSettingsNavigation) private var settingsNavigation
 
     let steps: [RAGExecutionStep]
+    /// 运行中思考由 session 直接追加到 NSTextView；历史消息保持 nil。
+    var livePlanningReasoning: RAGStreamingPlainTextSession? = nil
+    var liveAnswerReasoning: RAGStreamingPlainTextSession? = nil
     @State private var disclosureState = RAGExecutionDisclosureState()
 
     var body: some View {
@@ -262,19 +265,24 @@ struct RAGExecutionTimeline: View {
     @ViewBuilder
     private func stepDetails(_ step: RAGExecutionStep) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            ForEach(step.details.indices, id: \.self) { index in
-                let detail = step.details[index]
-                if step.kind == .planningReasoning || step.kind == .answerReasoning {
-                    // 运行中只会改变当前 Think 的详情。Equatable 边界让其余已完成
-                    // 步骤继续复用现有 Text 布局，不跟着数组快照重复测量。
-                    RAGReasoningDetailText(text: detail)
-                        .equatable()
-                        .font(interfaceScale.font(RAGConversationTypography.executionDetail))
-                } else {
-                    Label(detail, systemImage: "minus")
-                        .font(interfaceScale.font(RAGConversationTypography.executionDetail))
-                        .foregroundStyle(.secondary)
-                        .labelStyle(.titleAndIcon)
+            if step.state == .running,
+               let session = liveReasoningSession(for: step.kind) {
+                // 固定高度视口，文本增长不向外层 ScrollView 上报。
+                RAGStreamingReasoningViewport(session: session)
+            } else {
+                ForEach(step.details.indices, id: \.self) { index in
+                    let detail = step.details[index]
+                    if step.kind == .planningReasoning || step.kind == .answerReasoning {
+                        // 完成后折叠；用户展开时才用一次性 Text 排完整思考。
+                        RAGReasoningDetailText(text: detail)
+                            .equatable()
+                            .font(interfaceScale.font(RAGConversationTypography.executionDetail))
+                    } else {
+                        Label(detail, systemImage: "minus")
+                            .font(interfaceScale.font(RAGConversationTypography.executionDetail))
+                            .foregroundStyle(.secondary)
+                            .labelStyle(.titleAndIcon)
+                    }
                 }
             }
             if step.kind == .remoteContext {
@@ -287,6 +295,17 @@ struct RAGExecutionTimeline: View {
                     .font(interfaceScale.font(.caption, weight: .medium))
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    private func liveReasoningSession(for kind: RAGExecutionStepKind) -> RAGStreamingPlainTextSession? {
+        switch kind {
+        case .planningReasoning:
+            return livePlanningReasoning
+        case .answerReasoning:
+            return liveAnswerReasoning
+        default:
+            return nil
         }
     }
 
