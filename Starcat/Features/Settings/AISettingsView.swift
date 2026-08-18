@@ -119,7 +119,7 @@ struct AISettingsTab: View {
     @State private var meilisearchAPIKey: String = ""
     @State private var qdrantAPIKey: String = ""
     @State private var testingRAGBackends: Set<String> = []
-    /// 连接结果按后端分行，贴在各自「测试并保存」左侧；共用一行会把 Meilisearch / Qdrant 互相覆盖。
+    /// 连接结果按后端分行：文案左对齐，按钮右对齐，中间拉开，不贴在按钮旁边。
     @State private var meilisearchStatus: RAGBackendTestStatus?
     @State private var qdrantStatus: RAGBackendTestStatus?
 
@@ -1493,10 +1493,10 @@ struct AISettingsTab: View {
         status: RAGBackendTestStatus?,
         action: @escaping @MainActor () async -> Void
     ) -> some View {
-        // 状态紧贴「测试并保存」左侧，按钮靠右（设置页独立操作按钮右对齐）。
+        // 同一行：状态左对齐，按钮右对齐。不要把文案贴在按钮左侧。
         HStack(alignment: .center, spacing: 8) {
-            Spacer(minLength: 0)
             ragBackendStatusLabel(status)
+            Spacer(minLength: 8)
             if testingRAGBackends.contains(id) {
                 ProgressView().controlSize(.small)
             }
@@ -1520,7 +1520,7 @@ struct AISettingsTab: View {
                 Text(status.message)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
+                    .multilineTextAlignment(.leading)
                     .lineLimit(2)
             }
         }

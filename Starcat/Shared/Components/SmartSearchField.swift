@@ -484,7 +484,8 @@ struct SmartSearchField: View {
     }
 
     /// 刷新中不用 SyncIconButton 转圈：用户要的是本轮向量化进度，不是「还在忙」。
-    /// 底轨 secondary、进度弧 accent，与工具栏刷新中图标同色。
+    /// 底轨 secondary、进度弧 accent。0% 时 trim 为空，只剩灰圈，看起来像没反应，
+    /// 所以在读库 / 尚未跳过任何仓时改走忙碌细环。
     private var semanticIndexingProgressRing: some View {
         let total = max(indexingProgress?.total ?? 0, 0)
         let processed = min(max(indexingProgress?.processed ?? 0, 0), total)
@@ -493,19 +494,25 @@ struct SmartSearchField: View {
             ? String(format: String.l10n("search.semantic.indexingProgressFormat"), processed, total)
             : String.l10n("search.semantic.indexing")
 
-        return ZStack {
-            Circle()
-                .stroke(Color.secondary.opacity(0.3), lineWidth: 2)
-            Circle()
-                .trim(from: 0, to: fraction)
-                .stroke(
-                    Color.accentColor,
-                    style: StrokeStyle(lineWidth: 2, lineCap: .round)
-                )
-                .rotationEffect(.degrees(-90))
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: fraction)
+        return Group {
+            if fraction > 0 {
+                ZStack {
+                    Circle()
+                        .stroke(Color.secondary.opacity(0.3), lineWidth: 2)
+                    Circle()
+                        .trim(from: 0, to: fraction)
+                        .stroke(
+                            Color.accentColor,
+                            style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                        )
+                        .rotationEffect(.degrees(-90))
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: fraction)
+                }
+                .frame(width: 13, height: 13)
+            } else {
+                semanticIndeterminateRingContent
+            }
         }
-        .frame(width: 13, height: 13)
         .frame(width: 24, height: 24)
         .contentShape(Rectangle())
         .help(tooltip)
@@ -517,23 +524,26 @@ struct SmartSearchField: View {
     /// 查询忙态：不确定进度细环，尺寸与重建环同一 13pt / 24pt 槽，避免胶囊宽度跳动。
     /// Reduce Motion 时停在顶部静态弧，不转圈。
     private var semanticQueryingProgressRing: some View {
-        Group {
-            if reduceMotion {
-                semanticIndeterminateRing(angle: -90)
-            } else {
-                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
-                    let turns = timeline.date.timeIntervalSinceReferenceDate
-                        .truncatingRemainder(dividingBy: 0.8) / 0.8
-                    semanticIndeterminateRing(angle: turns * 360 - 90)
-                }
+        semanticIndeterminateRingContent
+            .frame(width: 24, height: 24)
+            .contentShape(Rectangle())
+            .help("search.semantic.querying")
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text("search.semantic.querying"))
+            .accessibilityAddTraits(.updatesFrequently)
+    }
+
+    @ViewBuilder
+    private var semanticIndeterminateRingContent: some View {
+        if reduceMotion {
+            semanticIndeterminateRing(angle: -90)
+        } else {
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+                let turns = timeline.date.timeIntervalSinceReferenceDate
+                    .truncatingRemainder(dividingBy: 0.8) / 0.8
+                semanticIndeterminateRing(angle: turns * 360 - 90)
             }
         }
-        .frame(width: 24, height: 24)
-        .contentShape(Rectangle())
-        .help("search.semantic.querying")
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("search.semantic.querying"))
-        .accessibilityAddTraits(.updatesFrequently)
     }
 
     private func semanticIndeterminateRing(angle: Double) -> some View {

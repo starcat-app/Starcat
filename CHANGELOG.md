@@ -8,7 +8,7 @@ Release notes for the Mac App Store edition of Starcat.
 
 - Last AI-index prefetch: Opening Settings shows when the last prefetch finished, with counts and green, orange, or red status icons.
 - External index test status: Meilisearch and Qdrant each show their own result next to Test and Save, with green success, orange rebuild-needed, and red failure icons.
-- Semantic search progress: Index refresh shows a determinate ring and only fills missing or stale vectors; a query in flight shows a busy ring.
+- Semantic search progress: Index refresh shows a busy ring immediately, then a determinate ring as up-to-date repos are skipped; only missing or stale vectors are rebuilt.
 - Semantic relevance badge: Percent size matches Language, Stars, and Forks on the same row.
 - Knowledge-base chunk status: Details distinguish whether a shard is still in the library from current-model embedding status.
 - Knowledge-base embedding progress: Shows current-model coverage, no longer marks a previous run as finished, and can be viewed or paused from the toolbar status panel.

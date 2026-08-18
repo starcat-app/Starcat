@@ -2920,6 +2920,9 @@ final class HomeViewModel {
             return
         }
         isSemanticIndexing = true
+        // 拉候选库之前先给 0/0，搜索框立刻切到忙碌环，避免空等几秒仍显示静止刷新图标。
+        semanticIndexProgress = (processed: 0, total: 0)
+        await Task.yield()
         defer {
             isSemanticIndexing = false
             semanticIndexProgress = nil

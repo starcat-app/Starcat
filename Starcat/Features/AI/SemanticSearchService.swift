@@ -85,6 +85,55 @@ enum SemanticSearchError: Error, LocalizedError, Equatable {
     }
 }
 
+/// 工具栏刷新进度：已完成仓数 = diff 跳过 + 已写入 embedding。
+///
+/// 必须是 class：`ensureIndexed` 会在多次 `await` 之间更新进度。若用 struct，
+/// Swift 6 会把跨挂起点的 `mutating` 判成并发捕获局部变量，直接编不过。
+final class SemanticIndexProgressSink {
+    let total: Int
+    var minInterval: TimeInterval
+    let onProgress: ((Int, Int) -> Void)?
+
+    private(set) var completed = 0
+    private var lastReport = Date.distantPast
+
+    init(
+        total: Int,
+        minInterval: TimeInterval = 0.08,
+        onProgress: ((Int, Int) -> Void)? = nil
+    ) {
+        self.total = total
+        self.minInterval = minInterval
+        self.onProgress = onProgress
+    }
+
+    func start() {
+        report(force: true)
+    }
+
+    func markSkipped() {
+        completed += 1
+        report()
+    }
+
+    func markEmbedded(_ count: Int) {
+        completed += count
+        report(force: true)
+    }
+
+    func finish() {
+        completed = total
+        report(force: true)
+    }
+
+    private func report(force: Bool = false) {
+        let now = Date()
+        guard force || now.timeIntervalSince(lastReport) >= minInterval else { return }
+        lastReport = now
+        onProgress?(min(completed, total), total)
+    }
+}
+
 @MainActor
 final class SemanticSearchService {
 
@@ -315,7 +364,8 @@ final class SemanticSearchService {
         onProgress: ((Int, Int) -> Void)? = nil
     ) async throws -> Int {
         guard !repos.isEmpty else { return 0 }
-        onProgress?(0, repos.count)
+        let progress = SemanticIndexProgressSink(total: repos.count, onProgress: onProgress)
+        progress.start()
 
         // 取本地已有 embedding（用于 diff 比对）
         let existing = try await embeddingRepository.fetchEmbeddingsByRepoID(
@@ -358,21 +408,18 @@ final class SemanticSearchService {
                     new: snapshot,
                     thresholds: thresholds
                 ) {
+                    progress.markSkipped()
                     continue
                 }
             }
             workItems.append(WorkItem(repo: repo, snapshot: snapshot, renderedText: renderedText))
         }
         guard !workItems.isEmpty else {
-            onProgress?(repos.count, repos.count)
+            progress.finish()
             return 0
         }
 
-        // 进度按「本轮总仓数」计：diff 跳过的先算完成，其余每写入一批 embedding 再加。
-        var processed = repos.count - workItems.count
-        onProgress?(processed, repos.count)
-
-        // 分批调 embedding API
+        // 分批调 embedding API。跳过的仓已计入 completed，这里只加实际写入的批次。
         for chunk in workItems.chunked(into: batchSize) {
             let vectors = try await client.embeddings(inputs: chunk.map(\.renderedText), model: model)
             let now = ISO8601DateFormatter.shared.string(from: Date())
@@ -387,8 +434,7 @@ final class SemanticSearchService {
                 )
             }
             try await embeddingRepository.upsert(rows)
-            processed += chunk.count
-            onProgress?(processed, repos.count)
+            progress.markEmbedded(chunk.count)
         }
         return workItems.count
     }

@@ -414,3 +414,38 @@ struct RepoAIInsightTests {
         #expect(exactLanguageHit?.oneLiner == "English summary")
     }
 }
+
+@Suite("SemanticIndexProgressSink")
+struct SemanticIndexProgressSinkTests {
+    @Test("跳过的仓立刻计入完成，全部跳过时进度走到 N / N")
+    func skippedReposAdvanceCompletedCount() {
+        var reports: [(Int, Int)] = []
+        let sink = SemanticIndexProgressSink(total: 4, minInterval: 0) { processed, total in
+            reports.append((processed, total))
+        }
+        sink.start()
+        sink.markSkipped()
+        sink.markSkipped()
+        sink.markSkipped()
+        sink.markSkipped()
+        sink.finish()
+
+        #expect(reports.first == (0, 4))
+        #expect(reports.contains(where: { $0 == (1, 4) }))
+        #expect(reports.last == (4, 4))
+    }
+
+    @Test("embedding 批次加在已跳过数量之上")
+    func embeddedCountAddsToSkipped() {
+        var last = (processed: 0, total: 0)
+        let sink = SemanticIndexProgressSink(total: 5, minInterval: 0) { processed, total in
+            last = (processed, total)
+        }
+        sink.start()
+        sink.markSkipped()
+        sink.markSkipped()
+        sink.markEmbedded(3)
+        #expect(last.processed == 5)
+        #expect(last.total == 5)
+    }
+}
