@@ -51,4 +51,15 @@ struct RAGStreamingPlainTextSessionTests {
         #expect(attrs[.foregroundColor] as? NSColor == NSColor.secondaryLabelColor)
         #expect(attrs[.font] as? NSFont == font)
     }
+
+    @Test("replaceAll 覆盖完整文本，供历史展开一次写入")
+    @MainActor
+    func replaceAllReplacesAccumulatedText() {
+        let session = RAGStreamingPlainTextSession()
+        session.append("旧内容")
+        session.replaceAll(with: "完整思考")
+        #expect(session.text == "完整思考")
+        session.append("续")
+        #expect(session.text == "完整思考续")
+    }
 }

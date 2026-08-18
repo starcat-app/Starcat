@@ -265,24 +265,14 @@ struct RAGExecutionTimeline: View {
     @ViewBuilder
     private func stepDetails(_ step: RAGExecutionStep) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            if step.state == .running,
-               let session = liveReasoningSession(for: step.kind) {
-                // 固定高度视口，文本增长不向外层 ScrollView 上报。
-                RAGStreamingReasoningViewport(session: session)
+            if isReasoningStep(step.kind) {
+                reasoningDetails(step)
             } else {
                 ForEach(step.details.indices, id: \.self) { index in
-                    let detail = step.details[index]
-                    if step.kind == .planningReasoning || step.kind == .answerReasoning {
-                        // 完成后折叠；用户展开时才用一次性 Text 排完整思考。
-                        RAGReasoningDetailText(text: detail)
-                            .equatable()
-                            .font(interfaceScale.font(RAGConversationTypography.executionDetail))
-                    } else {
-                        Label(detail, systemImage: "minus")
-                            .font(interfaceScale.font(RAGConversationTypography.executionDetail))
-                            .foregroundStyle(.secondary)
-                            .labelStyle(.titleAndIcon)
-                    }
+                    Label(step.details[index], systemImage: "minus")
+                        .font(interfaceScale.font(RAGConversationTypography.executionDetail))
+                        .foregroundStyle(.secondary)
+                        .labelStyle(.titleAndIcon)
                 }
             }
             if step.kind == .remoteContext {
@@ -296,6 +286,30 @@ struct RAGExecutionTimeline: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    @ViewBuilder
+    private func reasoningDetails(_ step: RAGExecutionStep) -> some View {
+        if step.state == .running, let session = liveReasoningSession(for: step.kind) {
+            RAGStreamingReasoningViewport(session: session, pinsToBottom: true)
+        } else {
+            let text = completedReasoningText(for: step)
+            if !text.isEmpty {
+                RAGCompletedReasoningViewport(text: text)
+            }
+        }
+    }
+
+    /// 完成后优先用已写入步骤的 details；同轮 session 尚未被清时作为兜底。
+    private func completedReasoningText(for step: RAGExecutionStep) -> String {
+        if let detail = step.details.first, !detail.isEmpty {
+            return detail
+        }
+        return liveReasoningSession(for: step.kind)?.text ?? ""
+    }
+
+    private func isReasoningStep(_ kind: RAGExecutionStepKind) -> Bool {
+        kind == .planningReasoning || kind == .answerReasoning
     }
 
     private func liveReasoningSession(for kind: RAGExecutionStepKind) -> RAGStreamingPlainTextSession? {
@@ -511,15 +525,5 @@ struct RAGExecutionTimeline: View {
         case .answerReasoning: return "rag.workspace.execution.reasoning.answer.title"
         case .generation: return "rag.workspace.execution.generation.title"
         }
-    }
-}
-
-/// 将 Think 长文本的布局缓存边界收窄到单条详情；只有文字或字号环境改变才会重算。
-private struct RAGReasoningDetailText: View, Equatable {
-    let text: String
-
-    var body: some View {
-        Text(text)
-            .foregroundStyle(.secondary)
     }
 }

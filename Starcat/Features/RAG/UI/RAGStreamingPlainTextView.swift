@@ -2,11 +2,11 @@
 //  RAGStreamingPlainTextView.swift
 //  Starcat
 //
-//  RAG 运行中思考的 AppKit 追加渲染。
+//  RAG 思考的 AppKit 追加渲染。
 //
 //  SwiftUI `Text` 每次都对整段字符串做 CoreText 重排，思考越长越卡。这里把完整
 //  文本留在 session，只把 delta 追加进 `NSTextStorage`；视口高度固定，避免外层
-//  对话 ScrollView 跟着每个 token 重新测高。
+//  对话 ScrollView 跟着每个 token 重新测高。完成后展开走同一视口，不再用 `Text`。
 //
 
 import AppKit
@@ -68,17 +68,39 @@ final class RAGStreamingPlainTextSession {
         applyPendingToTextView()
     }
 
+    /// 历史展开一次写入全文。必须在 attach 前或后都能用：无 view 时只更新 `text`。
+    func replaceAll(with string: String) {
+        text = string
+        pending = ""
+        flushTask?.cancel()
+        flushTask = nil
+        guard let textView else { return }
+        replaceStorage(with: text, in: textView)
+        scrollToStart(in: textView)
+    }
+
     /// `NSViewRepresentable` 挂接或复用 view 时调用。新 view 必须用完整 `text` 恢复，
     /// 不能只靠 pending：折叠、切会话都会拆掉旧 view。
-    func attach(_ textView: NSTextView) {
-        if self.textView === textView {
-            return
+    /// 运行中贴底；完成后从顶部开始读。
+    func attach(_ textView: NSTextView, pinsToBottom: Bool) {
+        if self.textView !== textView {
+            detachCurrentView()
+            self.textView = textView
         }
-        detachCurrentView()
-        self.textView = textView
         pending = ""
         replaceStorage(with: text, in: textView)
-        scrollToEnd(in: textView, force: true)
+        if pinsToBottom {
+            scrollToEnd(in: textView, force: true)
+        } else {
+            scrollToStart(in: textView)
+        }
+    }
+
+    /// SwiftUI 可能复用空的 NSTextView 且不走 makeNSView；storage 空而 session 有字时必须再写入。
+    func attachIfNeeded(_ textView: NSTextView, pinsToBottom: Bool) {
+        let alreadyShowing = self.textView === textView && (textView.textStorage?.length ?? 0) > 0
+        guard !alreadyShowing else { return }
+        attach(textView, pinsToBottom: pinsToBottom)
     }
 
     func detach(_ textView: NSTextView) {
@@ -159,6 +181,10 @@ final class RAGStreamingPlainTextSession {
         if !force, !isPinnedToBottom(textView) { return }
         textView.scrollRangeToVisible(NSRange(location: max(0, length - 1), length: 1))
     }
+
+    private func scrollToStart(in textView: NSTextView) {
+        textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
+    }
 }
 
 /// 一对会话级思考 session。规划思考与回答思考不会同时增长，但仍按步骤拆开，
@@ -185,12 +211,67 @@ struct RAGLiveReasoningSessions {
 struct RAGStreamingPlainTextView: NSViewRepresentable {
     let session: RAGStreamingPlainTextSession
     let font: NSFont
+    var pinsToBottom: Bool = true
 
     func makeCoordinator() -> Coordinator {
         Coordinator(session: session)
     }
 
     func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = Self.makeUnadornedScrollView(font: font)
+        context.coordinator.session = session
+        if let textView = scrollView.documentView as? NSTextView {
+            session.attach(textView, pinsToBottom: pinsToBottom)
+        }
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NSTextView else { return }
+        if context.coordinator.session !== session {
+            context.coordinator.session.detach(textView)
+            context.coordinator.session = session
+            Self.applyReasoningAppearance(to: textView, font: font)
+            session.attach(textView, pinsToBottom: pinsToBottom)
+        } else {
+            applyReasoningAppearanceIfNeeded(to: textView, font: font)
+            session.attachIfNeeded(textView, pinsToBottom: pinsToBottom)
+        }
+        let width = max(scrollView.contentSize.width, scrollView.bounds.width)
+        if width > 0 {
+            textView.textContainer?.containerSize = NSSize(
+                width: width,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+        }
+    }
+
+    static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
+        guard let textView = scrollView.documentView as? NSTextView else { return }
+        coordinator.session.detach(textView)
+    }
+
+    /// 先设 font 会把 `textColor` 打回 labelColor，必须随后再设 secondary。
+    static func applyReasoningAppearance(to textView: NSTextView, font: NSFont) {
+        textView.font = font
+        textView.textColor = .secondaryLabelColor
+        textView.insertionPointColor = .clear
+        textView.typingAttributes = RAGStreamingPlainTextMetrics.textAttributes(font: font)
+    }
+
+    static func write(_ string: String, to textView: NSTextView, font: NSFont) {
+        let attributed = NSAttributedString(
+            string: string,
+            attributes: RAGStreamingPlainTextMetrics.textAttributes(font: font)
+        )
+        let storage = textView.textStorage ?? NSTextStorage()
+        storage.beginEditing()
+        storage.setAttributedString(attributed)
+        storage.endEditing()
+    }
+
+    /// 无边框、无滚动条轨道的只读思考容器，避免看起来像输入框。
+    static func makeUnadornedScrollView(font: NSFont) -> NSScrollView {
         let scrollView = NSScrollView()
         let textView = NSTextView()
 
@@ -201,6 +282,8 @@ struct RAGStreamingPlainTextView: NSViewRepresentable {
         textView.isSelectable = true
         textView.importsGraphics = false
         textView.drawsBackground = false
+        textView.backgroundColor = .clear
+        textView.focusRingType = .none
         applyReasoningAppearance(to: textView, font: font)
         textView.textContainerInset = NSSize(width: 0, height: 2)
         textView.textContainer?.lineFragmentPadding = 0
@@ -224,48 +307,16 @@ struct RAGStreamingPlainTextView: NSViewRepresentable {
         textView.enabledTextCheckingTypes = 0
 
         scrollView.documentView = textView
-        scrollView.hasVerticalScroller = true
+        scrollView.hasVerticalScroller = false
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = false
+        scrollView.backgroundColor = .clear
+        scrollView.contentView.drawsBackground = false
         scrollView.borderType = .noBorder
+        scrollView.focusRingType = .none
         scrollView.scrollerStyle = .overlay
-
-        context.coordinator.session = session
-        session.attach(textView)
         return scrollView
-    }
-
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        guard let textView = scrollView.documentView as? NSTextView else { return }
-        if context.coordinator.session !== session {
-            context.coordinator.session.detach(textView)
-            context.coordinator.session = session
-            applyReasoningAppearance(to: textView, font: font)
-            session.attach(textView)
-        } else {
-            applyReasoningAppearanceIfNeeded(to: textView, font: font)
-        }
-        let width = max(scrollView.contentSize.width, scrollView.bounds.width)
-        if width > 0 {
-            textView.textContainer?.containerSize = NSSize(
-                width: width,
-                height: CGFloat.greatestFiniteMagnitude
-            )
-        }
-    }
-
-    static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
-        guard let textView = scrollView.documentView as? NSTextView else { return }
-        coordinator.session.detach(textView)
-    }
-
-    /// 先设 font 会把 `textColor` 打回 labelColor，必须随后再设 secondary。
-    private func applyReasoningAppearance(to textView: NSTextView, font: NSFont) {
-        textView.font = font
-        textView.textColor = .secondaryLabelColor
-        textView.insertionPointColor = .clear
-        textView.typingAttributes = RAGStreamingPlainTextMetrics.textAttributes(font: font)
     }
 
     /// 字号没变时不要重设 font，否则 AppKit 会把已有文本刷回主色。
@@ -275,7 +326,7 @@ struct RAGStreamingPlainTextView: NSViewRepresentable {
             textView.typingAttributes = RAGStreamingPlainTextMetrics.textAttributes(font: font)
             return
         }
-        applyReasoningAppearance(to: textView, font: font)
+        Self.applyReasoningAppearance(to: textView, font: font)
         let storage = textView.textStorage
         let length = storage?.length ?? 0
         if length > 0 {
@@ -299,12 +350,59 @@ struct RAGStreamingPlainTextView: NSViewRepresentable {
 struct RAGStreamingReasoningViewport: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     let session: RAGStreamingPlainTextSession
+    var pinsToBottom: Bool = true
 
     var body: some View {
         let font = RAGStreamingPlainTextMetrics.reasoningFont(scale: interfaceScale)
-        RAGStreamingPlainTextView(session: session, font: font)
+        RAGStreamingPlainTextView(session: session, font: font, pinsToBottom: pinsToBottom)
             .frame(height: RAGStreamingPlainTextMetrics.viewportHeight(for: font))
             .frame(maxWidth: .infinity, alignment: .leading)
             .id(ObjectIdentifier(session))
+    }
+}
+
+/// 完成后 / 历史展开用的只读视口。不复用运行中 session 的 NSTextView 绑定，
+/// 避免折叠后再展开时 SwiftUI 交出空 view 却跳过写入。
+struct RAGCompletedReasoningViewport: View {
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+    let text: String
+
+    var body: some View {
+        let font = RAGStreamingPlainTextMetrics.reasoningFont(scale: interfaceScale)
+        RAGStaticReasoningPlainTextView(text: text, font: font)
+            .frame(height: RAGStreamingPlainTextMetrics.viewportHeight(for: font))
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// 把完整思考一次性写入 TextKit。`updateNSView` 只在长度对不上时重写，避免 15Hz 整段替换。
+private struct RAGStaticReasoningPlainTextView: NSViewRepresentable {
+    let text: String
+    let font: NSFont
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = RAGStreamingPlainTextView.makeUnadornedScrollView(font: font)
+        guard let textView = scrollView.documentView as? NSTextView else { return scrollView }
+        RAGStreamingPlainTextView.write(text, to: textView, font: font)
+        textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NSTextView else { return }
+        let displayedLength = textView.textStorage?.length ?? 0
+        let expectedLength = (text as NSString).length
+        if textView.font?.pointSize != font.pointSize || displayedLength != expectedLength {
+            RAGStreamingPlainTextView.applyReasoningAppearance(to: textView, font: font)
+            RAGStreamingPlainTextView.write(text, to: textView, font: font)
+            textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
+        }
+        let width = max(scrollView.contentSize.width, scrollView.bounds.width)
+        if width > 0 {
+            textView.textContainer?.containerSize = NSSize(
+                width: width,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+        }
     }
 }
