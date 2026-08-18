@@ -1,0 +1,44 @@
+# Starcat 本机 Qdrant（RAG 向量后端验证用）
+#
+# 为什么单独放 docker/qdrant/：Starcat 是 macOS App，不把可选向量库当成仓库根服务。
+# 为什么必须设 QDRANT_API_KEY：自托管默认无鉴权；索引里是知识库向量与 payload，
+#   即使只绑 loopback 也不要无密钥启动。Starcat 设置页填同一把 key（请求头 api-key），
+#   没有 Meilisearch 那种 master / Admin 分叉。
+# 为什么 key 放同目录 .env：compose 从本文件所在目录加载变量，且仓库已忽略 .env。
+# 为什么只绑 127.0.0.1:6333：REST 足够；Starcat 不用 gRPC（6334），dashboard 也走 6333。
+# 为什么钉版本：latest 会让不同机器拉到不同引擎。客户端用 named vector + /points/query。
+# 为什么不做 TLS：与 Meilisearch 一样只服务本机 loopback；官方建议公网必须 TLS。
+#
+# 首次：cp .env.example .env 后填入随机串，再启动。
+# 启动：docker compose -f docker/qdrant/docker-compose.yml up -d
+# 停止：docker compose -f docker/qdrant/docker-compose.yml down
+# 清数据：docker compose -f docker/qdrant/docker-compose.yml down -v
+
+name: starcat-qdrant
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.19.0
+    container_name: starcat-qdrant
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6333:6333"
+    env_file:
+      - .env
+    environment:
+      QDRANT__TELEMETRY_DISABLED: "true"
+      # `:?`：缺少 .env 时直接失败，避免再次无密钥启动。
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?Set QDRANT_API_KEY in docker/qdrant/.env}
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    healthcheck:
+      # 官方镜像是 debian-slim，不带 curl。端口起来即可；Starcat「测试并保存」另打 /healthz。
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333'"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+
+volumes:
+  qdrant_storage:
+    name: starcat-qdrant-storage

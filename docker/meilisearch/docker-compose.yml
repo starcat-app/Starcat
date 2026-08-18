@@ -1,0 +1,45 @@
+# Starcat 本机 Meilisearch（RAG 关键词后端验证用）
+#
+# 为什么单独放 docker/meilisearch/：Starcat 是 macOS App，不把可选搜索引擎当成仓库根服务。
+# 为什么必须设 MEILI_MASTER_KEY：官方要求自托管用 master key 保护实例（≥16 字节）。
+#   master key 只用来管理 /keys；Starcat 设置页应填 Default Admin API Key，不要填 master key。
+# 为什么 key 放同目录 .env：compose 从本文件所在目录加载变量，且仓库已忽略 .env，避免进 Git。
+# 为什么仍用 development：本机验证需要 mini-dashboard；production 会关掉它，但不免除 master key。
+# 为什么只绑 127.0.0.1：索引里是公开知识库分片正文，禁止暴露到局域网/公网。
+# 为什么钉版本：latest 会让不同机器、不同时间拉到不同引擎，检索行为不可复现。
+#
+# 首次：cp .env.example .env 后填入 ≥16 字节随机串，再启动。
+# 启动：docker compose -f docker/meilisearch/docker-compose.yml up -d
+# 停止：docker compose -f docker/meilisearch/docker-compose.yml down
+# 清数据：docker compose -f docker/meilisearch/docker-compose.yml down -v
+
+name: starcat-meilisearch
+
+services:
+  meilisearch:
+    image: getmeili/meilisearch:v1.53.1
+    container_name: starcat-meilisearch
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:7700:7700"
+    env_file:
+      - .env
+    environment:
+      MEILI_ENV: development
+      MEILI_DB_PATH: /meili_data
+      MEILI_NO_ANALYTICS: "true"
+      # `:?`：缺少 .env 时直接失败，避免再次无密钥启动。
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?Set MEILI_MASTER_KEY in docker/meilisearch/.env}
+    volumes:
+      - meili_data:/meili_data
+    healthcheck:
+      # 官方镜像带 curl；/health 是 Starcat「测试并保存」用的同一探针。
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7700/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  meili_data:
+    name: starcat-meilisearch-data
