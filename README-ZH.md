@@ -5,7 +5,9 @@
 <p>GitHub Stars 管理、本地知识库 RAG、Agent 工作台、我的项目、全局与仓库洞察、macOS 桌面小组件、AI 摘要与语义搜索、Release 追踪、Browser Plugin、Alfred / uTools / Raycast 等能力。</p>
 
 <a href="https://github.com/starcat-app/homebrew-starcat"><img src="https://img.shields.io/badge/Install%20with-Homebrew-FBBF24?style=for-the-badge&logo=homebrew&logoColor=white" width="220" alt="Install with Homebrew"/></a>
-<a href="https://apps.apple.com/cn/app/starcat-for-github/id6788809803?mt=12"><img src="./screenshots/mac-app-store-zh.png" alt="在 Mac App Store 下载" height="40"/></a><br/>
+<br/>
+<a href="https://apps.apple.com/cn/app/starcat-for-github/id6788809803?mt=12"><img src="./screenshots/mac-app-store-zh.png" alt="在 Mac App Store 下载" height="40"/></a>
+<br/>
 <sub>
 <b>macOS 15 Sequoia 或更高版本</b>：优先使用 <a href="https://github.com/starcat-app/homebrew-starcat">Homebrew</a> 安装，也可以下载面向 Apple Silicon Mac 的 <a href="https://starcat.ink/downloads/Starcat-1.3.0-arm64.dmg">当前 Direct 版本（1.3.0）</a>，或在 Mac App Store 获取 <b><a href="https://apps.apple.com/cn/app/starcat-for-github/id6788809803?mt=12">Starcat for GitHub</a></b>。<br>
 历史版本与发布说明：<a href="./CHANGELOG-ZH.md">更新日志</a> · <a href="https://starcat.ink/changelog-zh.html">官网更新记录</a><br>
