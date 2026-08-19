@@ -29,6 +29,7 @@
 //
 
 import AppKit
+import UserNotifications
 
 /// 两件事：
 /// 1. `applicationWillFinishLaunching` 注册 `NSAppleEventManager` handler 拦截
@@ -61,6 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        UNUserNotificationCenter.current().delegate = self
         Self.applyActivationPolicy(hideDockIcon: AppSettings.shared.hideDockIcon)
     }
 
@@ -159,6 +161,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 冷启动早期 MainWindowFrameReader 可能尚未写入 autosaveName。
             // 用 WindowGroup 的标题做短暂兜底，避免启动期误判为"没有主窗口"。
             window.title == "Starcat" && window.canBecomeMain
+        }
+    }
+}
+
+extension AppDelegate: UNUserNotificationCenterDelegate {
+    /// 前台也展示 banner。点击走 didReceive。
+    ///
+    /// 必须 `nonisolated`：系统从非主 actor 调 delegate，Swift 6 不允许把
+    /// 非 Sendable 的 `UNUserNotificationCenter` / `UNNotification` 送进 `@MainActor` AppDelegate。
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        [.banner, .sound]
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        let threadId = response.notification.request.content.userInfo["threadId"] as? String
+        await MainActor.run {
+            if let threadId {
+                NotificationCenter.default.post(
+                    name: .starcatOpenGitHubNotification,
+                    object: nil,
+                    userInfo: ["threadId": threadId]
+                )
+            }
+            Self.activateMainWindowIfPossible()
         }
     }
 }

@@ -38,7 +38,7 @@
 //    `v12-rag-metadata-revision` / `v13-weekly-multi-source` /
 //    `v14-ai-usage-events` / `v15-repo-pins` / `v16-repository-insights`
 //    `v17-my-projects` / `v18-rag-structured-citations` / `v19-agent-message-contract` /
-//    `v20-rag-chunks-fts-trigram`
+//    `v20-rag-chunks-fts-trigram` / `v21-github-notifications`
 //
 
 import Foundation
@@ -75,6 +75,61 @@ enum DatabaseMigrations {
         registerV18(into: &migrator)
         registerV19(into: &migrator)
         registerV20(into: &migrator)
+        registerV21(into: &migrator)
+    }
+
+    // MARK: - v21-github-notifications：GitHub 通知时间线（2026-08-19）
+
+    /// 活动页「通知」inbox。独立于 `activity_events`（那是 following 的 received_events）。
+    /// 已发布库只能追加迁移；thread 已读 / 摘录缓存均为本机数据，不进 CloudKit。
+    private static func registerV21(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v21-github-notifications") { db in
+            try db.create(table: "github_notification_threads") { t in
+                t.column("id", .text).primaryKey()
+                t.column("reason", .text).notNull()
+                t.column("unread", .boolean).notNull().defaults(to: true)
+                t.column("github_unread", .boolean).notNull().defaults(to: true)
+                t.column("repository_id", .integer)
+                t.column("repository_full_name", .text).notNull()
+                t.column("subject_title", .text).notNull()
+                t.column("subject_type", .text).notNull()
+                t.column("subject_api_url", .text).notNull()
+                t.column("subject_number", .integer)
+                t.column("html_url", .text)
+                t.column("actor_login", .text)
+                t.column("excerpt", .text)
+                t.column("hydrated_at", .text)
+                t.column("updated_at", .text).notNull()
+                t.column("first_seen_at", .text).notNull()
+                t.column("notified_at", .text)
+                t.column("mark_read_state", .text).notNull().defaults(to: "idle")
+                t.column("fetched_at", .text).notNull()
+            }
+            try db.create(
+                index: "idx_github_notification_threads_updated",
+                on: "github_notification_threads",
+                columns: ["updated_at"]
+            )
+            try db.create(
+                index: "idx_github_notification_threads_unread",
+                on: "github_notification_threads",
+                columns: ["unread"]
+            )
+            try db.create(
+                index: "idx_github_notification_threads_reason",
+                on: "github_notification_threads",
+                columns: ["reason"]
+            )
+
+            try db.create(table: "github_notification_sync_state") { t in
+                t.column("id", .text).primaryKey()
+                t.column("last_modified", .text)
+                t.column("watermark_updated_at", .text)
+                t.column("last_fetched_at", .text)
+                t.column("backfill_completed_at", .text)
+                t.column("last_poll_interval_seconds", .integer)
+            }
+        }
     }
 
     // MARK: - v20-rag-chunks-fts-trigram：chunk FTS 与笔记同款 trigram（2026-08-18）

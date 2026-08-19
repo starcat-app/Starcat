@@ -122,6 +122,23 @@ protocol GitHubAPIClientProtocol: Sendable {
         ifNoneMatch: String?
     ) async throws -> APIResponse<[GitHubEventDTO]>
 
+    // MARK: - Notifications inbox（2026-08-19）
+
+    /// `GET /notifications`。304 时 `notModified == true` 且 `threads` 为空，不抛 `notModified`。
+    func listNotifications(
+        all: Bool,
+        since: String?,
+        page: Int,
+        perPage: Int,
+        ifModifiedSince: String?
+    ) async throws -> GitHubNotificationsListResponse
+
+    /// `GET subject.url` 补全请求人 / 摘要 / 官方 html_url。
+    func hydrateNotificationSubject(path: String) async throws -> GitHubNotificationSubjectHydration
+
+    /// `PATCH /notifications/threads/{id}` 标已读。成功含 205。
+    func markNotificationThreadRead(id: String) async throws
+
     // MARK: - Security Advisories（Activity 公告与关注 PR-3，2026-06-17）
 
     /// 拉取单个仓库的 Security Advisory 列表（可能为空数组）。
@@ -175,5 +192,23 @@ extension GitHubAPIClientProtocol {
         perPage: Int
     ) async throws -> APIResponse<GitHubRepositorySearchDTO> {
         throw NetworkError.clientError(statusCode: 501, message: "Repository search is not implemented by this client")
+    }
+
+    func listNotifications(
+        all: Bool,
+        since: String?,
+        page: Int,
+        perPage: Int,
+        ifModifiedSince: String?
+    ) async throws -> GitHubNotificationsListResponse {
+        throw NetworkError.clientError(statusCode: 501, message: "Notifications inbox is not implemented by this client")
+    }
+
+    func hydrateNotificationSubject(path: String) async throws -> GitHubNotificationSubjectHydration {
+        throw NetworkError.clientError(statusCode: 501, message: "Notification subject hydration is not implemented by this client")
+    }
+
+    func markNotificationThreadRead(id: String) async throws {
+        throw NetworkError.clientError(statusCode: 501, message: "Mark notification thread read is not implemented by this client")
     }
 }

@@ -498,6 +498,8 @@ struct SettingsView: View {
 
                 Toggle("settings.notifications.release.title", isOn: $settings.releaseNotificationsEnabled)
                     .disabled(!settings.notificationsEnabled)
+                Toggle("settings.notifications.githubInbox.title", isOn: $settings.githubInboxNotificationsEnabled)
+                    .disabled(!settings.notificationsEnabled)
                 Toggle("settings.notifications.batchAI.title", isOn: $settings.batchAINotificationsEnabled)
                     .disabled(!settings.notificationsEnabled)
                 Toggle("settings.notifications.syncIssues.title", isOn: $settings.syncIssueNotificationsEnabled)

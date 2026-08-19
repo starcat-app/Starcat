@@ -72,6 +72,9 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     var securityAdvisoriesHandler: ((_ owner: String, _ repo: String) async throws -> APIResponse<[GitHubSecurityAdvisoryDTO]>)?
     /// Search Center GitHub 搜索 mock handler。默认不设，避免老测试误用假空结果。
     var searchRepositoriesHandler: ((_ query: GitHubRepositorySearchQuery, _ page: Int, _ perPage: Int) async throws -> APIResponse<GitHubRepositorySearchDTO>)?
+    var listNotificationsHandler: ((_ all: Bool, _ since: String?, _ page: Int, _ perPage: Int, _ ifModifiedSince: String?) async throws -> GitHubNotificationsListResponse)?
+    var hydrateNotificationSubjectHandler: ((_ path: String) async throws -> GitHubNotificationSubjectHydration)?
+    var markNotificationThreadReadHandler: ((_ id: String) async throws -> Void)?
 
     // MARK: - 调用记录（供断言用）
     //
@@ -91,6 +94,8 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     private let _receivedEventsCalls = OSAllocatedUnfairLock<[(username: String, perPage: Int, ifNoneMatch: String?)]>(initialState: [])
     /// 2026-06-17 Activity 公告与关注 PR-3：security-advisories 调用日志。
     private let _securityAdvisoriesCalls = OSAllocatedUnfairLock<[(owner: String, repo: String)]>(initialState: [])
+    private let _listNotificationsCalls = OSAllocatedUnfairLock<[(all: Bool, since: String?, page: Int, perPage: Int, ifModifiedSince: String?)]>(initialState: [])
+    private let _markNotificationThreadReadCalls = OSAllocatedUnfairLock<[String]>(initialState: [])
 
     /// 快照 getter：测试断言用 `mock.readmeHTMLCalls.count` 继续生效。
     var readmeHTMLCalls: [(owner: String, repo: String, ifNoneMatch: String?, ifModifiedSince: String?)] {
@@ -113,6 +118,12 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     }
     var securityAdvisoriesCalls: [(owner: String, repo: String)] {
         _securityAdvisoriesCalls.withLock { $0 }
+    }
+    var listNotificationsCalls: [(all: Bool, since: String?, page: Int, perPage: Int, ifModifiedSince: String?)] {
+        _listNotificationsCalls.withLock { $0 }
+    }
+    var markNotificationThreadReadCalls: [String] {
+        _markNotificationThreadReadCalls.withLock { $0 }
     }
 
     // MARK: - Protocol conformance
@@ -233,6 +244,35 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
         }
         return try await handler(query, page, perPage)
     }
+
+    func listNotifications(
+        all: Bool,
+        since: String?,
+        page: Int,
+        perPage: Int,
+        ifModifiedSince: String?
+    ) async throws -> GitHubNotificationsListResponse {
+        _listNotificationsCalls.withLock { $0.append((all, since, page, perPage, ifModifiedSince)) }
+        guard let handler = listNotificationsHandler else {
+            fatalError("MockGitHubAPIClient.listNotificationsHandler 未设置")
+        }
+        return try await handler(all, since, page, perPage, ifModifiedSince)
+    }
+
+    func hydrateNotificationSubject(path: String) async throws -> GitHubNotificationSubjectHydration {
+        guard let handler = hydrateNotificationSubjectHandler else {
+            fatalError("MockGitHubAPIClient.hydrateNotificationSubjectHandler 未设置")
+        }
+        return try await handler(path)
+    }
+
+    func markNotificationThreadRead(id: String) async throws {
+        _markNotificationThreadReadCalls.withLock { $0.append(id) }
+        guard let handler = markNotificationThreadReadHandler else {
+            fatalError("MockGitHubAPIClient.markNotificationThreadReadHandler 未设置")
+        }
+        try await handler(id)
+    }
 }
 
 // MARK: - 构造便利
@@ -253,7 +293,8 @@ extension BytesResponse {
             lastModified: lastModified,
             statusCode: 200,
             notModified: false,
-            rateLimit: .empty
+            rateLimit: .empty,
+            pollIntervalSeconds: nil
         )
     }
 
@@ -265,7 +306,8 @@ extension BytesResponse {
             lastModified: lastModified,
             statusCode: 304,
             notModified: true,
-            rateLimit: .empty
+            rateLimit: .empty,
+            pollIntervalSeconds: nil
         )
     }
 }

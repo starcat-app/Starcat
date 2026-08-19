@@ -23,6 +23,8 @@ import SwiftUI
 /// 与 Tags / Trending / Manage 现有色块共存时不冲突。
 enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
     case all
+    /// GitHub Notifications inbox（2026-08-19），不参与「全部」聚合。
+    case notification
     case announcement
     case release
     case star
@@ -44,6 +46,7 @@ enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
         case .following:    return "activity.category.following"
         case .suggestion:   return "activity.category.suggestion"
         case .undoStar:     return "activity.category.undoStar"
+        case .notification: return "activity.category.notification"
         }
     }
 
@@ -57,6 +60,7 @@ enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
         case .following:    return String.l10n("activity.category.following")
         case .suggestion:   return String.l10n("activity.category.suggestion")
         case .undoStar:     return String.l10n("activity.category.undoStar")
+        case .notification: return String.l10n("activity.category.notification")
         }
     }
 
@@ -72,6 +76,7 @@ enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
         case .following:    return "#701516" // Ruby deep red
         case .suggestion:   return "#3178c6" // TypeScript blue
         case .undoStar:     return "#F05138" // Swift orange-red（与 all 同色）
+        case .notification: return "#0969da" // GitHub mention blue
         }
     }
 
@@ -90,6 +95,7 @@ enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
         case .following:    return "person.2"
         case .suggestion:   return "sparkles"
         case .undoStar:     return "arrow.uturn.backward.circle"
+        case .notification: return "bell"
         }
     }
 }
@@ -152,7 +158,7 @@ extension ActivityCategory {
         switch self {
         case .star, .repository, .suggestion, .undoStar:
             return true
-        case .all, .announcement, .release, .following:
+        case .all, .announcement, .release, .following, .notification:
             return false
         }
     }
@@ -166,6 +172,7 @@ enum ActivityKind: String, Sendable {
     case repository
     case following
     case suggestion
+    case notification
 }
 
 /// following 分类卡片专属 payload（PR-2，2026-06-16）。
@@ -214,6 +221,18 @@ struct ActivityAnnouncementPayload: Equatable, Sendable {
     let repoName: String?
 }
 
+/// 通知 inbox 行 / 详情 payload。人名和摘要只在选中 hydrate 后才有。
+struct ActivityNotificationPayload: Equatable, Sendable {
+    let threadId: String
+    let reason: String
+    let chip: GitHubNotificationChip
+    let subjectType: String
+    let subjectNumber: Int?
+    let repositoryFullName: String
+    let actorLogin: String?
+    let excerpt: String?
+}
+
 /// Activity 中栏与右栏共享的展示模型。
 ///
 /// 这里保留 `repo` / `release` 引用，而不是把字段全部摊平成字符串，是因为右侧详情页
@@ -245,6 +264,8 @@ struct ActivityItem: Identifiable, Equatable {
 
     /// announcement 分类专属（PR-3，2026-06-17）。`kind != .announcement` 时永远为 nil。
     var announcement: ActivityAnnouncementPayload? = nil
+    /// 通知 inbox 专属。`kind != .notification` 时永远为 nil。
+    var notification: ActivityNotificationPayload? = nil
 
     /// 行 / 详情头部 accent 配色：
     /// - 若卡片关联到具体 repo 且 repo 有主语言，复用语言色，维持与 RepoRowView 一致的视觉

@@ -1179,6 +1179,11 @@ final class AppSettings {
         didSet { persistBool(key: Keys.releaseNotificationsEnabled, value: releaseNotificationsEnabled) }
     }
 
+    /// GitHub 通知 inbox 的高信号系统通知（mention / assign / review / security）。默认开启。
+    var githubInboxNotificationsEnabled: Bool {
+        didSet { persistBool(key: Keys.githubInboxNotificationsEnabled, value: githubInboxNotificationsEnabled) }
+    }
+
     /// 批量 AI 队列整批结束时通知。单个 repo 完成不通知，避免刷屏。
     var batchAINotificationsEnabled: Bool {
         didSet { persistBool(key: Keys.batchAINotificationsEnabled, value: batchAINotificationsEnabled) }
@@ -1873,6 +1878,7 @@ final class AppSettings {
         }
         self.notificationsEnabled = defaults.object(forKey: Keys.notificationsEnabled) as? Bool ?? true
         self.releaseNotificationsEnabled = defaults.object(forKey: Keys.releaseNotificationsEnabled) as? Bool ?? true
+        self.githubInboxNotificationsEnabled = defaults.object(forKey: Keys.githubInboxNotificationsEnabled) as? Bool ?? true
         self.batchAINotificationsEnabled = defaults.object(forKey: Keys.batchAINotificationsEnabled) as? Bool ?? true
         self.syncIssueNotificationsEnabled = defaults.object(forKey: Keys.syncIssueNotificationsEnabled) as? Bool ?? true
         self.mcpIssueNotificationsEnabled = defaults.object(forKey: Keys.mcpIssueNotificationsEnabled) as? Bool ?? true
@@ -2050,6 +2056,7 @@ final class AppSettings {
         selectedRepoAIShortcutEnabled = true
         notificationsEnabled = true
         releaseNotificationsEnabled = true
+        githubInboxNotificationsEnabled = true
         batchAINotificationsEnabled = true
         syncIssueNotificationsEnabled = true
         mcpIssueNotificationsEnabled = true
@@ -2479,6 +2486,7 @@ final class AppSettings {
         static let selectedRepoAIShortcutEnabled = "settings.general.shortcuts.selectedRepoAI.enabled.v1"
         static let notificationsEnabled = "settings.notifications.enabled.v1"
         static let releaseNotificationsEnabled = "settings.notifications.release.enabled.v1"
+        static let githubInboxNotificationsEnabled = "settings.notifications.githubInbox.enabled.v1"
         static let batchAINotificationsEnabled = "settings.notifications.batchAI.enabled.v1"
         static let syncIssueNotificationsEnabled = "settings.notifications.syncIssues.enabled.v1"
         static let mcpIssueNotificationsEnabled = "settings.notifications.mcpIssues.enabled.v1"
@@ -2578,6 +2586,7 @@ final class AppSettings {
             selectedRepoAIShortcutEnabled,
             notificationsEnabled,
             releaseNotificationsEnabled,
+            githubInboxNotificationsEnabled,
             batchAINotificationsEnabled,
             syncIssueNotificationsEnabled,
             mcpIssueNotificationsEnabled,

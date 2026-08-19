@@ -373,6 +373,15 @@ final class AppDependencies {
     /// PR-2/PR-3 读取它判 TTL 与 304 短路，并写回最新 ETag。
     let activitySyncStateRepository: any ActivitySyncStateRepositoryProtocol
 
+    /// GitHub 通知 inbox 本地 thread 表。
+    let githubNotificationThreadRepository: any GitHubNotificationThreadRepositoryProtocol
+    /// 通知 inbox 水位 / Last-Modified。
+    let githubNotificationSyncStateRepository: any GitHubNotificationSyncStateRepositoryProtocol
+    /// 回填 / 增量 / 已读 dwell / hydrate。
+    let githubNotificationInboxService: GitHubNotificationInboxService
+    /// 通知 inbox 后台轮询（下限 30 分钟）。
+    let githubNotificationPoller: GitHubNotificationPoller
+
     /// PR-3：GitHub Blog RSS 客户端（`github.blog/feed/`，独立 host）。
     let blogRSSClient: any GitHubBlogRSSAPIProtocol
 
@@ -1445,6 +1454,24 @@ final class AppDependencies {
         self.activityAnnouncementRepository = GRDBActivityAnnouncementRepository(database: db)
         self.activitySyncStateRepository = GRDBActivitySyncStateRepository(database: db)
         self.blogRSSClient = GitHubBlogRSSClient()
+
+        let notificationThreadRepo = GRDBGitHubNotificationThreadRepository(database: db)
+        let notificationSyncRepo = GRDBGitHubNotificationSyncStateRepository(database: db)
+        self.githubNotificationThreadRepository = notificationThreadRepo
+        self.githubNotificationSyncStateRepository = notificationSyncRepo
+        let inboxService = GitHubNotificationInboxService(
+            apiClient: api,
+            threadRepository: notificationThreadRepo,
+            syncStateRepository: notificationSyncRepo,
+            notificationService: notificationService,
+            settings: self.settings
+        )
+        self.githubNotificationInboxService = inboxService
+        self.githubNotificationPoller = GitHubNotificationPoller(
+            inbox: inboxService,
+            syncStateRepository: notificationSyncRepo
+        )
+        self.activityCategoryCountService.configureNotifications(repository: notificationThreadRepo)
 
         // HOM-PROFILE 2026-06-05：贡献草坪服务。
         // 直接持有具体 GitHubAPIClient（actor），不走 protocol——因为 graphql<T> 是泛型方法，

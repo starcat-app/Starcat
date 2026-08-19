@@ -75,6 +75,8 @@ struct BytesResponse {
     /// 命中 If-None-Match → 304 时为 true，调用方应使用本地缓存。
     let notModified: Bool
     let rateLimit: RateLimitInfo
+    /// GitHub Notifications 等轮询端点的 `X-Poll-Interval`（秒）。其它端点为 nil。
+    let pollIntervalSeconds: Int?
 }
 
 // MARK: - Client
@@ -174,6 +176,15 @@ actor GitHubAPIClient {
     /// D-03：改走 `performNoBody`，理由同 `delete(path:)`。
     func put(path: String) async throws {
         let request = try buildRequest(method: "PUT", path: path, queryItems: [], accept: "application/vnd.github+json", body: nil)
+        try await performNoBody(request)
+    }
+
+    /// PATCH 请求，无返回值。
+    ///
+    /// 通知时间线用它标已读：`PATCH /notifications/threads/{id}` 成功时 GitHub 回 205，
+    /// `performNoBody` 已把整个 2xx 当成功，不必为 205 单开分支。
+    func patch(path: String) async throws {
+        let request = try buildRequest(method: "PATCH", path: path, queryItems: [], accept: "application/vnd.github+json", body: nil)
         try await performNoBody(request)
     }
 
@@ -433,6 +444,7 @@ actor GitHubAPIClient {
         let rateLimit = RateLimitInfo.parse(http)
         let etag = http.value(forHTTPHeaderField: "ETag")
         let lastModified = http.value(forHTTPHeaderField: "Last-Modified")
+        let pollIntervalSeconds = http.value(forHTTPHeaderField: "X-Poll-Interval").flatMap(Int.init)
 
         AppLog.network.debug("GET-bytes \(req.url?.path ?? "?", privacy: .public) -> \(http.statusCode, privacy: .public), bytes=\(data.count, privacy: .public)")
 
@@ -444,7 +456,8 @@ actor GitHubAPIClient {
                 lastModified: lastModified,
                 statusCode: http.statusCode,
                 notModified: false,
-                rateLimit: rateLimit
+                rateLimit: rateLimit,
+                pollIntervalSeconds: pollIntervalSeconds
             )
 
         case 304:
@@ -455,7 +468,8 @@ actor GitHubAPIClient {
                 lastModified: lastModified,
                 statusCode: 304,
                 notModified: true,
-                rateLimit: rateLimit
+                rateLimit: rateLimit,
+                pollIntervalSeconds: pollIntervalSeconds
             )
 
         case 401:

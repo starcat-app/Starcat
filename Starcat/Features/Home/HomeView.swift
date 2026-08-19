@@ -785,6 +785,14 @@ struct HomeView: View {
         .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidUnstarRepo)) { _ in
             gettingStartedStore.markCompleted(.unstarRepo)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .starcatOpenGitHubNotification)) { note in
+            guard let threadId = note.userInfo?["threadId"] as? String else { return }
+            openGitHubNotification(threadId: threadId)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .starcatRevealRepoInManage)) { note in
+            guard let repoId = note.userInfo?["repoId"] as? Int64 else { return }
+            Task { await revealRepoInManage(repoId: repoId) }
+        }
         )
     }
 
@@ -1190,6 +1198,22 @@ struct HomeView: View {
         }
     }
 
+    private func openGitHubNotification(threadId: String) {
+        dependencies.githubNotificationInboxService.pendingOpenThreadId = threadId
+        savedActivityCategory = .notification
+        if selectedSidebarPage == .activity {
+            selectedActivityCategory = .notification
+        } else {
+            selectedSidebarPage = .activity
+        }
+        AppDelegate.activateMainWindowIfPossible()
+    }
+
+    private func revealRepoInManage(repoId: Int64) async {
+        guard let repo = try? await dependencies.repoRepository.findById(repoId) else { return }
+        openCompanionRepository(repo)
+    }
+
     private func toggleSearchRepositoryStar(_ repo: Repo) async throws -> Bool {
         try await dependencies.starActionService.toggle(repo: repo)
         await viewModel.refreshAfterExternalStarChange()
@@ -1372,6 +1396,7 @@ struct HomeView: View {
             dependencies.releasePoller.start()
             dependencies.openSSFScorePoller.start()
             dependencies.repoHealthPoller.start()
+            dependencies.githubNotificationPoller.start()
             startReadmePrefetchIfNeeded()
             startInitialWarmupIfNeeded()
             if !TestEnvironment.isRunning, settings.aiIndexAutoPrefetchEnabled {
@@ -1381,6 +1406,7 @@ struct HomeView: View {
             dependencies.releasePoller.stop()
             dependencies.openSSFScorePoller.stop()
             dependencies.repoHealthPoller.stop()
+            dependencies.githubNotificationPoller.stop()
             dependencies.userProjectSyncService.stopBackgroundRefresh()
             stopReadmePrefetch()
             dependencies.initialWarmupCoordinator.cancel()
@@ -1812,6 +1838,7 @@ struct HomeView: View {
             dependencies.releasePoller.start()
             dependencies.openSSFScorePoller.start()
             dependencies.repoHealthPoller.start()
+            dependencies.githubNotificationPoller.start()
         }
         startReadmePrefetchIfNeeded()
         startInitialWarmupIfNeeded()

@@ -108,6 +108,29 @@ final class AppNotificationService {
         }
     }
 
+    /// 高信号 GitHub 通知（mention / assign / review / security）。回填路径不会走到这里。
+    func dispatchGitHubInbox(_ records: [GitHubNotificationThreadRecord]) async {
+        guard !records.isEmpty else { return }
+        guard settings.notificationsEnabled, settings.githubInboxNotificationsEnabled else { return }
+
+        for record in records {
+            let content = UNMutableNotificationContent()
+            content.title = record.repositoryFullName
+            content.body = record.subjectTitle
+            content.sound = .default
+            content.userInfo = [
+                "kind": "githubInbox",
+                "threadId": record.id
+            ]
+            let request = UNNotificationRequest(
+                identifier: "github-inbox-\(record.id)",
+                content: content,
+                trigger: nil
+            )
+            await add(request, logContext: "githubInbox")
+        }
+    }
+
     /// 批量 AI 整批结束通知。单个 repo 完成不通知；小于 2 个 job 的批次也不打扰。
     func dispatchBatchAIFinished(completed: Int, ignored: Int, failed: Int, total: Int) async {
         guard settings.notificationsEnabled, settings.batchAINotificationsEnabled else { return }

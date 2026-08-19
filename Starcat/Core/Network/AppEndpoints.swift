@@ -396,6 +396,16 @@ enum AppEndpoints {
                 "/users/\(username)/received_events/public"
             }
 
+            /// `GET /notifications` —— 当前用户的 GitHub 通知 inbox。
+            ///
+            /// 需要 OAuth `notifications` scope。不加 `repo`：私仓 thread 能显示多少算多少。
+            static let notifications = "/notifications"
+
+            /// `PATCH /notifications/threads/{id}` —— 把一条 thread 标为已读。
+            static func notificationThread(id: String) -> String {
+                "/notifications/threads/\(id)"
+            }
+
             /// `GET /repos/{owner}/{repo}/security-advisories` —— 仓库安全公告列表。
             ///
             /// Activity PR-3（2026-06-17）：仅扫「最近 30 天有 push」的 starred repo 子集

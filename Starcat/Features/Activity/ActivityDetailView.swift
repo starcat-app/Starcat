@@ -232,6 +232,8 @@ struct ActivityDetailView: View {
             followingDetail(item)
         case .suggestion:
             repoDetail(item, titleKey: "activity.detail.suggestionTitle")
+        case .notification:
+            notificationDetail(item)
         }
     }
 
@@ -282,6 +284,75 @@ struct ActivityDetailView: View {
                 }
                 .buttonStyle(.bordered)
                 .focusEffectDisabled()
+            }
+        }
+    }
+
+    private func notificationDetail(_ item: ActivityItem) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let payload = item.notification {
+                HStack(spacing: 8) {
+                    GitHubNotificationReasonChip(chip: payload.chip)
+                    Text(verbatim: payload.subjectType)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    if let number = payload.subjectNumber {
+                        Text(verbatim: "#\(number)")
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Text(verbatim: payload.repositoryFullName)
+                    .font(.headline)
+                    .textSelection(.enabled)
+
+                if let actor = payload.actorLogin, !actor.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("activity.notification.detail.actor")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(verbatim: actor)
+                            .font(.body)
+                    }
+                }
+
+                if let excerpt = payload.excerpt, !excerpt.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("activity.notification.detail.excerpt")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(verbatim: excerpt)
+                            .font(.body)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+
+            HStack(spacing: 8) {
+                if let url = item.htmlURL {
+                    Button {
+                        NSWorkspace.shared.open(url)
+                    } label: {
+                        Label("activity.notification.detail.openOnGitHub", systemImage: "arrow.up.right.square")
+                    }
+                    .buttonStyle(.bordered)
+                    .focusEffectDisabled()
+                }
+
+                if let repo = item.repo {
+                    Button {
+                        NotificationCenter.default.post(
+                            name: .starcatRevealRepoInManage,
+                            object: nil,
+                            userInfo: ["repoId": repo.id]
+                        )
+                    } label: {
+                        Label("activity.notification.detail.openInStarcat", systemImage: "macwindow")
+                    }
+                    .buttonStyle(.bordered)
+                    .focusEffectDisabled()
+                }
             }
         }
     }
@@ -434,7 +505,7 @@ struct ActivityDetailView: View {
         switch item.kind {
         case .star, .repository, .suggestion:
             return true
-        case .announcement, .release, .following:
+        case .announcement, .release, .following, .notification:
             return false
         }
     }

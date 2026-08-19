@@ -98,6 +98,14 @@ struct ActivityView: View {
                     autoSelectFirstRecordRequestID: undoStarAutoSelectRequestID,
                     onSelectRepo: onSelectUndoStarRepo
                 )
+            } else if selectedCategory == .notification {
+                GitHubNotificationInboxView(selectedItem: $selectedItem)
+                    .onAppear {
+                        onItemCountChange(dependencies.activityCategoryCountService.count(for: .notification) ?? 0)
+                    }
+                    .onReceive(NotificationCenter.default.publisher(for: .githubNotificationInboxDidChange)) { _ in
+                        onItemCountChange(dependencies.activityCategoryCountService.count(for: .notification) ?? 0)
+                    }
             } else if let viewModel {
                 content(viewModel)
             } else {
@@ -462,7 +470,7 @@ struct ActivityView: View {
         switch kind {
         case .release, .star, .repository, .suggestion:
             return true
-        case .announcement, .following:
+        case .announcement, .following, .notification:
             return false
         }
     }

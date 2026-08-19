@@ -583,15 +583,7 @@ struct RepoShareTaskSheet: View {
 
     private func header(_ job: RepoShareJob) -> some View {
         HStack(alignment: .top, spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(headerTint(for: job.state).gradient)
-                    .frame(width: 48, height: 48)
-                    .shadow(color: headerTint(for: job.state).opacity(0.25), radius: 16, x: 0, y: 8)
-                Image(systemName: headerIcon(for: job.state))
-                    .font(.system(size: 21, weight: .semibold))
-                    .foregroundStyle(.white)
-            }
+            RepoShareOwnerAIAvatar(repo: job.repo)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(titleKey(for: job.state))
@@ -752,24 +744,6 @@ struct RepoShareTaskSheet: View {
         }
     }
 
-    private func headerIcon(for state: RepoShareJob.State) -> String {
-        switch state {
-        case .checkingCache: return "magnifyingglass.circle.fill"
-        case .generatingSummary: return "sparkles"
-        case .creatingLink, .success: return "link.circle.fill"
-        case .cancelled: return "xmark.circle.fill"
-        case .failure: return "exclamationmark.triangle.fill"
-        }
-    }
-
-    private func headerTint(for state: RepoShareJob.State) -> Color {
-        switch state {
-        case .failure: return .orange
-        case .cancelled: return .secondary
-        case .checkingCache, .generatingSummary, .creatingLink, .success: return .accentColor
-        }
-    }
-
     private func phaseKey(for state: RepoShareJob.State) -> LocalizedStringKey {
         switch state {
         case .checkingCache: return "repo.share.progress.checkingCache"
@@ -785,6 +759,38 @@ struct RepoShareTaskSheet: View {
         case .generatingSummary: return "sparkles"
         case .creatingLink, .success, .failure: return "link"
         case .cancelled: return "xmark.circle"
+        }
+    }
+}
+
+/// 分享 Sheet 左上角身份：仓库 owner 头像 + 右下角 AI sparkles 角标。
+///
+/// 为什么不用原来的纯色 sparkles 圆：窗口标题已经写明「AI 分享页」，主图应锚定
+/// 具体仓库，而不是再放一个泛化 AI 图标。owner 头像走 `RemoteAvatar` / Kingfisher，
+/// 命中列表与详情 hero 已有的内存 / 磁盘缓存，不额外打 GitHub API。
+///
+/// 角标只表达「这是 AI 能力」，不随任务阶段变色；阶段信息由标题和中间进度条承担。
+/// 尺寸与 Activity 行 `avatarWithKindBadge` 同比例（头像约 1/3），避免抢 owner 识别。
+private struct RepoShareOwnerAIAvatar: View {
+    let repo: Repo
+
+    var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            RemoteAvatar(
+                urlString: repo.ownerAvatar ?? RepoAvatarURL.from(owner: repo.owner),
+                size: 48
+            )
+
+            Image(systemName: "sparkles")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 18, height: 18)
+                .background(Circle().fill(Color.accentColor.gradient))
+                .overlay(
+                    Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1.5)
+                )
+                .offset(x: 2, y: 2)
+                .accessibilityHidden(true)
         }
     }
 }

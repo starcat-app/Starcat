@@ -15,12 +15,17 @@ final class ActivityCategoryCountService {
     private(set) var localCounts: [ActivityCategory: Int]?
     /// Undo Star 计数独立存储（不依赖 ActivityViewModel 是否已加载）。
     private var undoStarCount: Int?
+    /// 通知 inbox 未读数独立存储，不进「全部」聚合。
+    private var notificationUnreadCount: Int?
 
     private var undoStarRepository: (any UndoStarHistoryRepositoryProtocol)?
+    private var notificationRepository: (any GitHubNotificationThreadRepositoryProtocol)?
     private var countTask: Task<Void, Never>?
+    private var notificationCountTask: Task<Void, Never>?
 
     func count(for category: ActivityCategory) -> Int? {
         if category == .undoStar { return undoStarCount }
+        if category == .notification { return notificationUnreadCount }
         guard let localCounts else { return nil }
         return localCounts[category] ?? 0
     }
@@ -44,11 +49,29 @@ final class ActivityCategoryCountService {
         }
     }
 
+    func configureNotifications(repository: any GitHubNotificationThreadRepositoryProtocol) {
+        self.notificationRepository = repository
+        Task { await refreshNotificationUnreadCount() }
+        notificationCountTask = Task {
+            for await _ in NotificationCenter.default.notifications(named: .githubNotificationInboxDidChange) {
+                guard !Task.isCancelled else { break }
+                await refreshNotificationUnreadCount()
+            }
+        }
+    }
+
     private func refreshUndoStarCount() async {
         guard let repo = undoStarRepository else { return }
         do {
             let records = try await repo.fetchAll(sort: .unstarredAtDesc)
             undoStarCount = records.count
+        } catch { }
+    }
+
+    private func refreshNotificationUnreadCount() async {
+        guard let repo = notificationRepository else { return }
+        do {
+            notificationUnreadCount = try await repo.unreadCount()
         } catch { }
     }
 }
