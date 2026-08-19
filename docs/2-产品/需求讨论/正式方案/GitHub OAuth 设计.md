@@ -37,14 +37,17 @@ Starcat 需要访问用户的 GitHub Stars 数据。GitHub 提供了多种「让
 ### 2.1 最小权限 Scope
 
 ```swift
-let scopes = ["read:user", "public_repo"]
+let scopes = ["read:user", "public_repo", "user", "notifications"]
 ```
 
 | Scope | 说明 | 是否必须 |
 |-------|------|---------|
 | `read:user` | 读取用户公开信息（ID、用户名、头像） | ✅ 必须 |
 | `public_repo` | 访问公共仓库的 Stars（包含 star/unstar 权限） | ✅ 必须 |
+| `user` | 读取用户资料（现有代码已申请；与 `read:user` 重叠部分可保留） | ✅ 现网已发 |
+| `notifications` | 读 GitHub 通知 inbox，并把单条 thread 标已读 | ✅ 必须（2026-08-19 通知时间线） |
 | `user:email` | 读取用户邮箱 | ❌ 可选 |
+| `repo` | 私有仓库内容 | ❌ 不做 |
 
 ### 2.2 为什么只需要这些
 
@@ -53,10 +56,12 @@ Starcat 需要以下能力：
 ├── 读取用户的 Star 列表 ✅ (public_repo)
 ├── 读取被 Star 的仓库信息 ✅ (public_repo)
 ├── 读取用户信息 ✅ (read:user)
-└── 取消 Star ✅ (public_repo) - DELETE /user/starred/{owner}/{repo}
+├── 取消 Star ✅ (public_repo) - DELETE /user/starred/{owner}/{repo}
+└── GitHub 通知 inbox ✅ (notifications) - GET /notifications + PATCH /notifications/threads/{id}
 ```
 
 > **说明**：`public_repo` scope 已包含对公开仓库的 star/unstar 操作权限，不需要 `repo` scope。
+> **说明**：`notifications` 不加 `repo`。已登录用户必须重新授权后才能看到通知时间线。
 
 ### 2.3 三种方式共享同一份 Scope
 

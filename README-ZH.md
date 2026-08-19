@@ -4,12 +4,13 @@
 <h2>Starcat</h2>
 <p>GitHub Stars 管理、本地知识库 RAG、Agent 工作台、我的项目、全局与仓库洞察、macOS 桌面小组件、AI 摘要与语义搜索、Release 追踪、Browser Plugin、Alfred / uTools / Raycast 等能力。</p>
 
-<a href="https://github.com/starcat-app/homebrew-starcat"><img src="https://img.shields.io/badge/Install%20with-Homebrew-FBBF24?style=for-the-badge&logo=homebrew&logoColor=white" width="220" alt="Install with Homebrew"/></a><br/>
+<a href="https://github.com/starcat-app/homebrew-starcat"><img src="https://img.shields.io/badge/Install%20with-Homebrew-FBBF24?style=for-the-badge&logo=homebrew&logoColor=white" width="220" alt="Install with Homebrew"/></a>
+<a href="https://apps.apple.com/cn/app/starcat-for-github/id6788809803?mt=12"><img src="./screenshots/mac-app-store-zh.png" alt="在 Mac App Store 下载" height="40"/></a><br/>
 <sub>
 <b>macOS 15 Sequoia 或更高版本</b>：优先使用 <a href="https://github.com/starcat-app/homebrew-starcat">Homebrew</a> 安装，也可以下载面向 Apple Silicon Mac 的 <a href="https://starcat.ink/downloads/Starcat-1.3.0-arm64.dmg">当前 Direct 版本（1.3.0）</a>，或在 Mac App Store 获取 <b><a href="https://apps.apple.com/cn/app/starcat-for-github/id6788809803?mt=12">Starcat for GitHub</a></b>。<br>
 历史版本与发布说明：<a href="./CHANGELOG-ZH.md">更新日志</a> · <a href="https://starcat.ink/changelog-zh.html">官网更新记录</a><br>
 公开问题反馈：<a href="https://github.com/starcat-app/starcat-pro/issues">反馈 bug 或提出功能建议</a><br>
-用户文档：<a href="https://starcat.mintlify.app/">starcat.mintlify.app</a> · 隐私：<a href="https://starcat.ink/privacy-zh.html">隐私政策</a> · <a href="https://starcat.ink/eula-zh.html">用户协议</a><br>
+用户文档：<a href="https://starcat.mintlify.app/">starcat.mintlify.app</a> · Mac App Store：<a href="https://dong4j.app/starcat/">dong4j.app/starcat</a> · 隐私：<a href="https://starcat.ink/privacy-zh.html">隐私政策</a> · <a href="https://starcat.ink/eula-zh.html">用户协议</a><br>
 English: <a href="./README.md">README.md</a>
 </sub>
 </div>
@@ -18,6 +19,7 @@ English: <a href="./README.md">README.md</a>
 
 <div align="center">
 <a href="https://starcat.ink"><img src="https://img.shields.io/badge/website-starcat.ink-38BDF8?style=flat&color=blue" alt="website"/></a>
+<a href="https://dong4j.app/starcat/"><img src="https://img.shields.io/badge/Mac%20App%20Store-dong4j.app-lightgrey.svg?style=flat&color=blue" alt="Mac App Store"/></a>
 <a href="https://starcat.ink/downloads/Starcat-1.3.0-arm64.dmg"><img src="https://img.shields.io/badge/platform-macOS%2015%2B-lightgrey.svg?style=flat&color=blue" alt="platform"/></a>
 <a href="https://github.com/starcat-app/starcat-localization"><img src="https://img.shields.io/badge/localization-open-lightgrey.svg?style=flat&color=blue" alt="localization"/></a>
 <a href="https://github.com/starcat-app/starcat-pro/issues"><img src="https://img.shields.io/github/issues/starcat-app/starcat-pro?style=flat&color=blue" alt="issues"/></a>
@@ -46,7 +48,7 @@ Starcat 一开始是按收费产品来做的，上线后几乎没人买。把 Gi
 
 ## 官方包和自己编译
 
-官方渠道是 Mac App Store（[Starcat for GitHub](https://apps.apple.com/cn/app/starcat-for-github/id6788809803?mt=12)）和 Direct（官网 DMG / Homebrew + Sparkle）。核心整理能力可免费使用。官方包里的 Pro 工作流、更高 AI 配额和代码智能，走 App Store 内购或 Direct 授权。
+官方渠道是 Mac App Store（[Starcat for GitHub](https://apps.apple.com/cn/app/starcat-for-github/id6788809803?mt=12)，落地页 [dong4j.app/starcat](https://dong4j.app/starcat/)）和 Direct（官网 DMG / Homebrew + Sparkle）。核心整理能力可免费使用。官方包里的 Pro 工作流、更高 AI 配额和代码智能，走 App Store 内购或 Direct 授权。
 
 从本仓库编译、自建服务，不需要 Starcat License。Direct 授权签发仍走私有的 `starcat-license-api`。
 
@@ -93,16 +95,6 @@ Star 和知识库是两层。GitHub Star 表示公开认同；知识库表示这
 
 还可以带上仓库洞察 XML、README / 笔记 / 摘要分片，以及文本、Markdown、JSON、源码附件。需要时可以显式走 GitHub 结构化查询或联网搜索，步骤会写进执行时间线。默认只读，不会自动改标签、笔记或入库状态。
 
-### Agent 工作台
-
-覆盖式任务窗口：左侧选 Agent 和历史，中间看步骤与工具调用，右侧看产物和确认。当前工具面向仓库、知识库、周刊、Trending、Discovery 这类只读或受确认的操作，例如整理未打标仓库、生成周报。运行过程可审计，写操作要经过确认。
-
-### 理解单个仓库
-
-详情页围绕当前仓库工作。AI 读完 README 后生成结构化摘要：项目做什么、技术栈是什么、适用场景有哪些。标签推荐带确认，不会直接写入。也可以对当前仓库追问，或按需翻译 README，保留原结构，支持分段对照和全文替换。
-
-CodeFlow 用来看仓库内部的依赖和调用关系，不必离开 App 去另开编辑器。
-
 ### 评估与洞察
 
 ![我的洞察与仓库洞察](./screenshots/insights.webp)
@@ -118,6 +110,35 @@ CodeFlow 用来看仓库内部的依赖和调用关系，不必离开 App 去另
 智能集合覆盖 Needs Review、Unmaintained、High Value、No Tags 等规则，也可以自己组合元数据、状态、笔记和 Health 信号。我的项目用来看个人仓、组织仓和协作仓，私有仓走 GitHub App 授权。
 
 探索侧有 GitHub Trending、发现榜单、阮一峰周刊等来源，以及 Release 订阅、时间线和按平台过滤的下载资产。桌面小组件可以看常用仓库、今日重逢、未读 Release 和收藏趋势。
+
+### 分享你 Starred 的项目
+
+![分享你 Starred 的项目](./screenshots/share-page.webp)
+
+仓库详情里可以直接复制 GitHub 链接，给还没装 Starcat 的人看。已 Star 的公开仓库还可以生成一份独立的公开分享页：简介、Star / Fork、README 要点、Topics，以及可切换的卡片样式。对方打开的是网页，不需要账号。
+
+公开分享页走 [`starcat-sharing-api`](https://github.com/starcat-app/starcat-sharing-api)，可以自建。私有仓库不会生成可被服务端抓取的页面。
+
+### 分析你 Starred 的项目
+
+![分析你 Starred 的项目](./screenshots/code-analysis.webp)
+
+当前仓库的源码可以拉到本机再看结构，不必先 clone 到别的 IDE。Starcat 集成了两套开源分析器：
+
+- **[codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)**：符号级知识图谱。文件、类、函数、依赖在本机 3D 图里展开，可按类型过滤和搜索。
+- **[codeflow](https://github.com/braedonsaunders/codeflow)**：架构体检。看文件规模、耦合、循环依赖、重复和复杂度，并给出健康分。
+
+源码默认从 GitHub ZIP 拉取，产物可以清掉。
+
+### 深入了解你的项目
+
+![深入了解你的项目](./screenshots/understand.webp)
+
+这是主窗口详情页里的 AI，不是独立工作台。笔记、摘要、标签都在本机，入库后会进入 RAG。
+
+- **笔记**：用 AI 根据 README 起草一版私有笔记，你可以随时改。适合记下接入步骤、踩过的坑、和文档对不上的地方。笔记只属于你，不会写回 GitHub。
+- **摘要和标签**：AI 读完 README 后给出结构化摘要（做什么、技术栈、适用场景），并推荐标签。标签要你确认才会写入；也可以对全部 Starred 仓库批量生成，再逐条确认。摘要和标签同样会进知识库索引。
+- **仓库对话**：直接问当前项目，例如怎么编译、某个功能在哪。回答带这个仓库的 README、笔记和摘要。也可以翻译 README，保留原结构，支持分段对照或全文替换。
 
 ### 接到其他工具
 
@@ -174,6 +195,7 @@ CloudKit 同步字段已经预留，生产版本还没有接上。Starcat 不托
 | 项目 | 说明 |
 |------|------|
 | [starcat.ink](https://starcat.ink) | Direct 官网、下载、更新说明 |
+| [dong4j.app/starcat](https://dong4j.app/starcat/) | Mac App Store 落地页 |
 | [starcat-pro](https://github.com/starcat-app/starcat-pro) | 公开支持、Issue、Changelog 与营销图 |
 | [starcat-docs](https://github.com/starcat-app/starcat-docs) | 官方用户文档源码，发布于 [starcat.mintlify.app](https://starcat.mintlify.app/) |
 | [starcat-site](https://github.com/starcat-app/starcat-site) | Direct / App Store 官网与法律页面源码 |
@@ -313,6 +335,55 @@ xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
 
 产品问题请到 [starcat-pro](https://github.com/starcat-app/starcat-pro/issues)。
 源码问题请到本仓库。说明见 [SUPPORT.md](./SUPPORT.md)。
+
+## 致谢
+
+Starcat 建立在这些开源项目之上。应用内 **关于 → 开源致谢** 是完整登记表（`Starcat/Features/About/AboutView.swift`）。随包许可证文本见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。
+
+Starcat 自己的 CLI、插件和 API 已写在「相关项目」，这里不重复。
+
+### Swift 依赖（SPM）
+
+| 项目 | 许可 | 用途 |
+|------|------|------|
+| [GRDB.swift](https://github.com/groue/GRDB.swift) | MIT | 本地 SQLite |
+| [KeychainAccess](https://github.com/kishikawakatsumi/KeychainAccess) | MIT | Token 与 API Key 存储 |
+| [Kingfisher](https://github.com/onevcat/Kingfisher) | MIT | 图片加载与缓存 |
+| [swift-markdown-ui](https://github.com/gonzalezreal/swift-markdown-ui) | MIT | AI 摘要的 SwiftUI Markdown |
+| [OpenAI](https://github.com/MacPaw/OpenAI) | MIT | OpenAI 兼容客户端 |
+| [ConfettiSwiftUI](https://github.com/simibac/ConfettiSwiftUI) | MIT | 庆祝动效 |
+| [ZIPFoundation](https://github.com/weichsel/ZIPFoundation) | MIT | 解压 GitHub 源码 ZIP |
+| [MCP Swift SDK](https://github.com/modelcontextprotocol/swift-sdk) | Apache-2.0 / MIT | 本地 MCP |
+| [Aptabase Swift](https://github.com/aptabase/aptabase-swift) | MIT | 可选统计 |
+| [Sparkle](https://github.com/sparkle-project/Sparkle) | MIT | 仅 Direct 渠道自动更新 |
+
+### 嵌入资源与生成数据
+
+| 项目 | 许可 | 用途 |
+|------|------|------|
+| [Devicon](https://github.com/devicons/devicon) | MIT | 语言 / 工具图标 |
+| [GitHub Linguist](https://github.com/github/linguist) | MIT | 语言颜色与名称 |
+| [Mermaid](https://github.com/mermaid-js/mermaid) | MIT | README 图表 |
+| [CodeFlow](https://github.com/braedonsaunders/codeflow) | MIT | 应用内架构视图 |
+| [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) | MIT | 符号图谱与 3D 浏览 |
+| [Repomix](https://github.com/yamadashy/repomix) | MIT | 仓库上下文打包 |
+| [OpenSSF Scorecard](https://github.com/ossf/scorecard) | CDLA-2.0 / Apache-2.0 | 安全评分雷达 |
+
+### 上游服务与数据
+
+这些不是 SPM 包。Starcat 通过配套 API 或公开数据集使用它们。
+
+| 项目 | 许可 | 用途 |
+|------|------|------|
+| [SimRepo](https://github.com/Mubelotix/SimRepo) | MIT / GPL-3.0 | 相似仓库推荐，经 `starcat-recommend-api` 中转 |
+| [ruanyf/weekly](https://github.com/ruanyf/weekly) | CC BY-NC-SA 4.0 | 周刊发现源 |
+| [HelloGitHub](https://github.com/521xueweihan/HelloGitHub) | — | 周刊 / 发现源 |
+
+### CodeFlow WebView 运行时
+
+内嵌的 CodeFlow 页面还会加载：
+
+[React](https://github.com/facebook/react)、[ReactDOM](https://github.com/facebook/react)、[Babel Standalone](https://github.com/babel/babel)、[D3](https://github.com/d3/d3)、[d3-sankey](https://github.com/d3/d3-sankey)、[Acorn](https://github.com/acornjs/acorn)、[jsrsasign](https://github.com/kjur/jsrsasign)、[JSZip](https://github.com/Stuk/jszip)、[jsPDF](https://github.com/parallax/jsPDF)、[web-tree-sitter](https://github.com/tree-sitter/tree-sitter)、[3d-force-graph](https://github.com/vasturiano/3d-force-graph)。
 
 ## License
 

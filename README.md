@@ -4,12 +4,13 @@
 <h2>Starcat</h2>
 <p>GitHub Stars management, local RAG knowledge base, Agent workspace, My Projects, library and repository insights, macOS desktop widgets, AI summaries, semantic search, release tracking, browser plugins, Alfred / uTools / Raycast, and more.</p>
 
-<a href="https://github.com/starcat-app/homebrew-starcat"><img src="https://img.shields.io/badge/Install%20with-Homebrew-FBBF24?style=for-the-badge&logo=homebrew&logoColor=white" width="220" alt="Install with Homebrew"/></a><br/>
+<a href="https://github.com/starcat-app/homebrew-starcat"><img src="https://img.shields.io/badge/Install%20with-Homebrew-FBBF24?style=for-the-badge&logo=homebrew&logoColor=white" width="220" alt="Install with Homebrew"/></a>
+<a href="https://apps.apple.com/app/starcat-for-github/id6788809803?mt=12"><img src="./screenshots/mac-app-store-en.png" alt="Download on the Mac App Store" height="40"/></a><br/>
 <sub>
 <b>macOS 15 Sequoia or newer</b>: Install with <a href="https://github.com/starcat-app/homebrew-starcat">Homebrew</a>, download the <a href="https://starcat.ink/downloads/Starcat-1.3.0-arm64.dmg">current Direct build (1.3.0)</a> for Apple Silicon Macs, or get <b><a href="https://apps.apple.com/app/starcat-for-github/id6788809803?mt=12">Starcat for GitHub</a></b> from the Mac App Store.<br>
 Previous versions and release notes: <a href="./CHANGELOG.md">Changelog</a> · <a href="https://starcat.ink/changelog.html">Website changelog</a><br>
 Public issue tracker: <a href="https://github.com/starcat-app/starcat-pro/issues">Report a bug or request a feature</a><br>
-User docs: <a href="https://starcat.mintlify.app/">starcat.mintlify.app</a> · Privacy: <a href="https://starcat.ink/privacy.html">Privacy Policy</a> · <a href="https://starcat.ink/eula.html">EULA</a><br>
+User docs: <a href="https://starcat.mintlify.app/">starcat.mintlify.app</a> · Mac App Store: <a href="https://dong4j.app/starcat/">dong4j.app/starcat</a> · Privacy: <a href="https://starcat.ink/privacy.html">Privacy Policy</a> · <a href="https://starcat.ink/eula.html">EULA</a><br>
 中文说明: <a href="./README-ZH.md">README-ZH.md</a>
 </sub>
 </div>
@@ -18,6 +19,7 @@ User docs: <a href="https://starcat.mintlify.app/">starcat.mintlify.app</a> · P
 
 <div align="center">
 <a href="https://starcat.ink"><img src="https://img.shields.io/badge/website-starcat.ink-38BDF8?style=flat&color=blue" alt="website"/></a>
+<a href="https://dong4j.app/starcat/"><img src="https://img.shields.io/badge/Mac%20App%20Store-dong4j.app-lightgrey.svg?style=flat&color=blue" alt="Mac App Store"/></a>
 <a href="https://starcat.ink/downloads/Starcat-1.3.0-arm64.dmg"><img src="https://img.shields.io/badge/platform-macOS%2015%2B-lightgrey.svg?style=flat&color=blue" alt="platform"/></a>
 <a href="https://github.com/starcat-app/starcat-localization"><img src="https://img.shields.io/badge/localization-open-lightgrey.svg?style=flat&color=blue" alt="localization"/></a>
 <a href="https://github.com/starcat-app/starcat-pro/issues"><img src="https://img.shields.io/github/issues/starcat-app/starcat-pro?style=flat&color=blue" alt="issues"/></a>
@@ -46,7 +48,7 @@ The current public version is **Starcat 1.3.0**.
 
 ## Official builds and source
 
-Official channels are the Mac App Store ([Starcat for GitHub](https://apps.apple.com/app/starcat-for-github/id6788809803?mt=12)) and Direct (website DMG / Homebrew with Sparkle). Core organization features are free. Pro workflows, higher AI quotas, and code-intelligence features in official builds use App Store in-app purchase or a Direct license.
+Official channels are the Mac App Store ([Starcat for GitHub](https://apps.apple.com/app/starcat-for-github/id6788809803?mt=12), landing page [dong4j.app/starcat](https://dong4j.app/starcat/)) and Direct (website DMG / Homebrew with Sparkle). Core organization features are free. Pro workflows, higher AI quotas, and code-intelligence features in official builds use App Store in-app purchase or a Direct license.
 
 Building from this repository and running your own services does not require a Starcat license. Direct license issuance stays on the private `starcat-license-api`.
 
@@ -93,16 +95,6 @@ The layout is a conversation rail, an answer surface, and a Citation Inspector. 
 
 You can attach insight XML, README / notes / summary chunks, and text, Markdown, JSON, or source-code files. GitHub structured lookups and web search are opt-in, and they show up on the execution timeline. The workspace is read-only by default. It will not write tags, notes, or library state on its own.
 
-### Agent workspace
-
-An overlay task window: pick an agent and past runs on the left, follow steps and tool calls in the middle, inspect artifacts and confirmations on the right. Tools cover repos, the knowledge base, Weekly, Trending, and Discovery. Typical jobs include tidying untagged repos and drafting a weekly report. Runs are auditable. Writes wait for confirmation.
-
-### Understand a repository
-
-The detail pane stays on the current repo. AI reads the README and writes a structured summary: what it does, which stack it uses, where it fits. Tag suggestions need confirmation before they land. You can chat against that repo, or translate the README while keeping structure, either as a bilingual view or a full replacement.
-
-CodeFlow shows dependency and call structure without leaving the app.
-
 ### Evaluate and review
 
 ![My Insights and Repository Insights](./screenshots/insights.webp)
@@ -118,6 +110,35 @@ CodeFlow shows dependency and call structure without leaving the app.
 Smart Collections cover Needs Review, Unmaintained, High Value, No Tags, and custom rules over metadata, status, notes, and Health. My Projects lists personal, organization, and collaborator repos, including private ones via GitHub App.
 
 Explore covers GitHub Trending, discovery boards, and sources such as ruanyf Weekly, plus Release subscriptions, a unified timeline, and platform-filtered assets. Desktop widgets surface frequent repos, a daily rediscovery, unread releases, and star trends.
+
+### Share a starred repository
+
+![Share a starred repository](./screenshots/share-page.webp)
+
+From the repo detail you can copy the GitHub link for people who do not have Starcat. Starred public repos can also get a standalone public share page: summary, stars / forks, README highlights, topics, and switchable card styles. Recipients open a webpage. No account required.
+
+Public share pages run on [`starcat-sharing-api`](https://github.com/starcat-app/starcat-sharing-api), which you can self-host. Private repos do not get a page the server can crawl.
+
+### Analyze a starred repository
+
+![Analyze a starred repository](./screenshots/code-analysis.webp)
+
+You can pull the current repo's source onto this Mac and inspect structure without cloning it into another IDE. Starcat embeds two open-source analyzers:
+
+- **[codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)**: a symbol-level knowledge graph. Files, classes, functions, and dependencies unfold in a local 3D view, filterable by type.
+- **[codeflow](https://github.com/braedonsaunders/codeflow)**: an architecture checkup. File size, coupling, cycles, duplication, complexity, and a health score.
+
+Source defaults to a GitHub ZIP. Generated artifacts can be deleted.
+
+### Notes, summaries, and repo chat
+
+![Notes, summaries, and repo chat](./screenshots/understand.webp)
+
+This is AI in the main-window detail pane, not a separate workspace. Notes, summaries, and tags stay on this Mac. After ingest they enter RAG.
+
+- **Notes**: AI can draft a private note from the README. You edit it afterwards. This is where gotchas, setup steps, and mismatches with upstream docs belong. Notes never go back to GitHub.
+- **Summaries and tags**: AI reads the README and writes a structured summary (what it does, which stack, where it fits), then suggests tags. Tags land only after you confirm. You can also batch-generate tags for every starred repo and confirm them one by one. Both summaries and tags are indexed for RAG.
+- **Repo chat**: Ask the current project directly, for example how to build it or where a feature lives. Answers use that repo's README, notes, and summary. You can also translate the README while keeping structure, as a bilingual view or a full replacement.
 
 ### Use the same data elsewhere
 
@@ -174,6 +195,7 @@ This repository is the macOS app. Starcat also has standalone repos for docs, di
 | Project | Role |
 |---------|------|
 | [starcat.ink](https://starcat.ink) | Direct website, downloads, release notes |
+| [dong4j.app/starcat](https://dong4j.app/starcat/) | Mac App Store landing page |
 | [starcat-pro](https://github.com/starcat-app/starcat-pro) | Public support, issues, changelog, and promo images |
 | [starcat-docs](https://github.com/starcat-app/starcat-docs) | Official user docs, published at [starcat.mintlify.app](https://starcat.mintlify.app/) |
 | [starcat-site](https://github.com/starcat-app/starcat-site) | Direct / App Store site and legal pages |
@@ -313,6 +335,55 @@ Report vulnerabilities privately as described in [SECURITY.md](./SECURITY.md).
 
 Product questions: [starcat-pro](https://github.com/starcat-app/starcat-pro/issues).
 Source-code issues: this repository. Details in [SUPPORT.md](./SUPPORT.md).
+
+## Acknowledgments
+
+Starcat is built on open-source work. The in-app **About → Credits** list is the canonical registry (`Starcat/Features/About/AboutView.swift`). License texts for bundled files are in [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
+
+Starcat's own CLI, plugins, and APIs are listed under Related projects, not repeated here.
+
+### Swift packages
+
+| Project | License | Role |
+|---------|---------|------|
+| [GRDB.swift](https://github.com/groue/GRDB.swift) | MIT | Local SQLite |
+| [KeychainAccess](https://github.com/kishikawakatsumi/KeychainAccess) | MIT | Token and API key storage |
+| [Kingfisher](https://github.com/onevcat/Kingfisher) | MIT | Image loading and cache |
+| [swift-markdown-ui](https://github.com/gonzalezreal/swift-markdown-ui) | MIT | SwiftUI Markdown for AI summaries |
+| [OpenAI](https://github.com/MacPaw/OpenAI) | MIT | OpenAI-compatible client |
+| [ConfettiSwiftUI](https://github.com/simibac/ConfettiSwiftUI) | MIT | Celebration effects |
+| [ZIPFoundation](https://github.com/weichsel/ZIPFoundation) | MIT | GitHub source ZIP extraction |
+| [MCP Swift SDK](https://github.com/modelcontextprotocol/swift-sdk) | Apache-2.0 / MIT | Local MCP |
+| [Aptabase Swift](https://github.com/aptabase/aptabase-swift) | MIT | Optional analytics |
+| [Sparkle](https://github.com/sparkle-project/Sparkle) | MIT | Direct-channel updates only |
+
+### Bundled resources and generated data
+
+| Project | License | Role |
+|---------|---------|------|
+| [Devicon](https://github.com/devicons/devicon) | MIT | Language / tool icons |
+| [GitHub Linguist](https://github.com/github/linguist) | MIT | Language colors and names |
+| [Mermaid](https://github.com/mermaid-js/mermaid) | MIT | README diagrams |
+| [CodeFlow](https://github.com/braedonsaunders/codeflow) | MIT | In-app architecture view |
+| [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) | MIT | Symbol graph and 3D explorer |
+| [Repomix](https://github.com/yamadashy/repomix) | MIT | Repository context packing |
+| [OpenSSF Scorecard](https://github.com/ossf/scorecard) | CDLA-2.0 / Apache-2.0 | Security radar |
+
+### Upstream services and data
+
+These are not SPM packages. Starcat uses them through support APIs or as public datasets.
+
+| Project | License | Role |
+|---------|---------|------|
+| [SimRepo](https://github.com/Mubelotix/SimRepo) | MIT / GPL-3.0 | Similar-repository recommendations via `starcat-recommend-api` |
+| [ruanyf/weekly](https://github.com/ruanyf/weekly) | CC BY-NC-SA 4.0 | Weekly discovery source |
+| [HelloGitHub](https://github.com/521xueweihan/HelloGitHub) | — | Weekly / discovery source |
+
+### CodeFlow WebView runtime
+
+The vendored CodeFlow page also loads these libraries:
+
+[React](https://github.com/facebook/react), [ReactDOM](https://github.com/facebook/react), [Babel Standalone](https://github.com/babel/babel), [D3](https://github.com/d3/d3), [d3-sankey](https://github.com/d3/d3-sankey), [Acorn](https://github.com/acornjs/acorn), [jsrsasign](https://github.com/kjur/jsrsasign), [JSZip](https://github.com/Stuk/jszip), [jsPDF](https://github.com/parallax/jsPDF), [web-tree-sitter](https://github.com/tree-sitter/tree-sitter), [3d-force-graph](https://github.com/vasturiano/3d-force-graph).
 
 ## License
 
