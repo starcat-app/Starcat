@@ -354,7 +354,8 @@ private struct GitHubNotificationCommentComposer: View {
     @State private var paywallContext: ProPaywallContext?
     @State private var isAIHovered = false
     @State private var isOwnProject = false
-    @State private var isClosed = false
+    /// 没向 GitHub 确认是 open 之前当已关闭，避免已关闭 Issue 先闪一下「关闭问题」。
+    @State private var isClosed = true
     @State private var isClosing = false
 
     private var threadId: String { payload.threadId }
@@ -478,11 +479,11 @@ private struct GitHubNotificationCommentComposer: View {
         .sheet(item: $paywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
-        .task {
-            await refreshCloseEligibility()
+        .task(id: threadId) {
+            await refreshCloseEligibility(fetchRemoteState: true)
         }
         .onReceive(NotificationCenter.default.publisher(for: .githubNotificationInboxDidChange)) { _ in
-            Task { await refreshCloseEligibility() }
+            Task { await refreshCloseEligibility(fetchRemoteState: false) }
         }
         .onDisappear {
             generateTask?.cancel()
@@ -740,9 +741,26 @@ private struct GitHubNotificationCommentComposer: View {
         }
     }
 
-    private func refreshCloseEligibility() async {
-        isClosed = inbox.cachedIssueState(threadId: threadId) == "closed"
+    /// 关闭按钮默认隐藏。必须先 GET 到 `state == open`，不能用「缓存里没有 closed」当未关闭。
+    private func refreshCloseEligibility(fetchRemoteState: Bool) async {
+        if fetchRemoteState {
+            isClosed = true
+        }
         isOwnProject = await resolveOwnProject()
+        let canConsiderClose = isOwnProject
+            && !GitHubNotificationMapper.isDemoThread(threadId)
+            && GitHubNotificationMapper.canReply(
+                subjectType: payload.subjectType,
+                number: payload.subjectNumber
+            )
+        guard canConsiderClose else {
+            isClosed = true
+            return
+        }
+        if fetchRemoteState {
+            await inbox.refreshIssueState(threadId: threadId)
+        }
+        isClosed = inbox.cachedIssueState(threadId: threadId) != "open"
     }
 
     /// 「我的项目」关系优先；否则 owner 等于当前登录名（个人仓还没进项目列表也能关）。

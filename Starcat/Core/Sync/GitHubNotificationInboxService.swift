@@ -48,8 +48,10 @@ final class GitHubNotificationInboxService {
     var listSegment: GitHubNotificationSegment = .all
 
     private var dwellTasks: [String: Task<Void, Never>] = [:]
-    /// hydrate 后记下 Issue / PR 的 open/closed；关单成功也写这里，避免再加一列。
+    /// hydrate / 打开详情后记下 Issue / PR 的 open/closed；关单成功也写这里，避免再加一列。
     private var issueStates: [String: String] = [:]
+    /// 同一 thread 并发刷新状态时共用一次 GET，避免选中 hydrate 和评论框各打一遍。
+    private var issueStateRefreshTasks: [String: Task<Void, Never>] = [:]
 
     init(
         apiClient: any GitHubAPIClientProtocol,
@@ -143,9 +145,7 @@ final class GitHubNotificationInboxService {
                 comments = (try? await apiClient.listNotificationIssueComments(path: commentsPath)) ?? []
             }
             let now = ISO8601DateFormatter.shared.string(from: clock())
-            if let state = hydration.state, !state.isEmpty {
-                issueStates[id] = state.lowercased()
-            }
+            cacheIssueState(id: id, state: hydration.state)
             try await threadRepository.updateHydration(
                 id: id,
                 actorLogin: hydration.actorLogin,
@@ -201,6 +201,44 @@ final class GitHubNotificationInboxService {
 
     func cachedIssueState(threadId: String) -> String? {
         issueStates[threadId]
+    }
+
+    /// 打开详情时再 GET 一次 subject，确认当前是 open 才允许显示「关闭」。
+    /// hydrate 会因 `hydratedAt` 跳过，不能靠那次缓存当真相。
+    func refreshIssueState(threadId: String) async {
+        guard !GitHubNotificationMapper.isDemoThread(threadId) else { return }
+        if let inflight = issueStateRefreshTasks[threadId] {
+            await inflight.value
+            return
+        }
+        let task = Task { await self.fetchIssueState(threadId: threadId) }
+        issueStateRefreshTasks[threadId] = task
+        await task.value
+        issueStateRefreshTasks[threadId] = nil
+    }
+
+    private func fetchIssueState(threadId: String) async {
+        guard let record = try? await threadRepository.fetch(id: threadId),
+              GitHubNotificationMapper.canReply(
+                subjectType: record.subjectType,
+                number: record.subjectNumber
+              ),
+              let path = GitHubNotificationMapper.path(fromAbsoluteAPIURL: record.subjectApiUrl),
+              !path.isEmpty
+        else { return }
+        do {
+            let hydration = try await apiClient.hydrateNotificationSubject(path: path)
+            cacheIssueState(id: threadId, state: hydration.state)
+        } catch {
+            AppLog.network.info(
+                "Notification issue state skipped id=\(threadId, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
+    private func cacheIssueState(id: String, state: String?) {
+        guard let state, !state.isEmpty else { return }
+        issueStates[id] = state.lowercased()
     }
 
     /// `PATCH` Issue / PR 为 closed。演示 thread 和不能回复的类型直接拒绝。

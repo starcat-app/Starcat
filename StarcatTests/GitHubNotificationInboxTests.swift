@@ -656,6 +656,47 @@ struct GitHubNotificationInboxTests {
         }
     }
 
+    @Test("已 hydrate 的 thread 打开详情仍会 GET state；closed 不当成可关闭")
+    func refreshIssueStateAfterHydrateCache() async throws {
+        let env = try makeEnv()
+        var hydrateCalls = 0
+        env.mock.hydrateNotificationSubjectHandler = { _ in
+            hydrateCalls += 1
+            return GitHubNotificationSubjectHydration(
+                htmlURL: "https://github.com/o/r/issues/1",
+                actorLogin: "alice",
+                excerpt: "hello body",
+                createdAt: "2026-07-19T00:00:00Z",
+                state: hydrateCalls == 1 ? "open" : "closed"
+            )
+        }
+        env.mock.listNotificationIssueCommentsHandler = { _ in [] }
+        let fetchedAt = "2026-08-19T00:00:00Z"
+        try await env.threads.upsertMany([
+            GitHubNotificationMapper.record(
+                from: Self.makeDTO(id: "stale-open", reason: "comment"),
+                fetchedAt: fetchedAt,
+                firstSeenAt: fetchedAt
+            )
+        ])
+
+        await env.inbox.hydrate(id: "stale-open")
+        #expect(env.inbox.cachedIssueState(threadId: "stale-open") == "open")
+        await env.inbox.hydrate(id: "stale-open")
+        #expect(hydrateCalls == 1)
+
+        await env.inbox.refreshIssueState(threadId: "stale-open")
+        #expect(hydrateCalls == 2)
+        #expect(env.inbox.cachedIssueState(threadId: "stale-open") == "closed")
+
+        await env.inbox.seedDemoThreads()
+        let demoId = GitHubNotificationDemoSeed.records()[0].id
+        let callsBeforeDemo = hydrateCalls
+        await env.inbox.refreshIssueState(threadId: demoId)
+        #expect(hydrateCalls == callsBeforeDemo)
+        #expect(env.inbox.cachedIssueState(threadId: demoId) == nil)
+    }
+
     // MARK: - Harness
 
     private struct Env {
