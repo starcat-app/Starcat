@@ -74,6 +74,8 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     var searchRepositoriesHandler: ((_ query: GitHubRepositorySearchQuery, _ page: Int, _ perPage: Int) async throws -> APIResponse<GitHubRepositorySearchDTO>)?
     var listNotificationsHandler: ((_ all: Bool, _ since: String?, _ page: Int, _ perPage: Int, _ ifModifiedSince: String?) async throws -> GitHubNotificationsListResponse)?
     var hydrateNotificationSubjectHandler: ((_ path: String) async throws -> GitHubNotificationSubjectHydration)?
+    var listNotificationIssueCommentsHandler: ((_ path: String) async throws -> [GitHubNotificationComment])?
+    var createNotificationIssueCommentHandler: ((_ path: String, _ body: String) async throws -> GitHubNotificationComment)?
     var markNotificationThreadReadHandler: ((_ id: String) async throws -> Void)?
 
     // MARK: - 调用记录（供断言用）
@@ -96,6 +98,7 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     private let _securityAdvisoriesCalls = OSAllocatedUnfairLock<[(owner: String, repo: String)]>(initialState: [])
     private let _listNotificationsCalls = OSAllocatedUnfairLock<[(all: Bool, since: String?, page: Int, perPage: Int, ifModifiedSince: String?)]>(initialState: [])
     private let _markNotificationThreadReadCalls = OSAllocatedUnfairLock<[String]>(initialState: [])
+    private let _createNotificationIssueCommentCalls = OSAllocatedUnfairLock<[(path: String, body: String)]>(initialState: [])
 
     /// 快照 getter：测试断言用 `mock.readmeHTMLCalls.count` 继续生效。
     var readmeHTMLCalls: [(owner: String, repo: String, ifNoneMatch: String?, ifModifiedSince: String?)] {
@@ -124,6 +127,9 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     }
     var markNotificationThreadReadCalls: [String] {
         _markNotificationThreadReadCalls.withLock { $0 }
+    }
+    var createNotificationIssueCommentCalls: [(path: String, body: String)] {
+        _createNotificationIssueCommentCalls.withLock { $0 }
     }
 
     // MARK: - Protocol conformance
@@ -264,6 +270,21 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
             fatalError("MockGitHubAPIClient.hydrateNotificationSubjectHandler 未设置")
         }
         return try await handler(path)
+    }
+
+    func listNotificationIssueComments(path: String) async throws -> [GitHubNotificationComment] {
+        if let handler = listNotificationIssueCommentsHandler {
+            return try await handler(path)
+        }
+        return []
+    }
+
+    func createNotificationIssueComment(path: String, body: String) async throws -> GitHubNotificationComment {
+        _createNotificationIssueCommentCalls.withLock { $0.append((path, body)) }
+        guard let handler = createNotificationIssueCommentHandler else {
+            fatalError("MockGitHubAPIClient.createNotificationIssueCommentHandler 未设置")
+        }
+        return try await handler(path, body)
     }
 
     func markNotificationThreadRead(id: String) async throws {

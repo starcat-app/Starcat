@@ -71,7 +71,7 @@ extension GitHubAPIClient {
         )
     }
 
-    /// 选中后对 `subject.url` 打 1 次。失败由调用方忽略，骨架仍可用。
+    /// 选中后对 `subject.url` 打 1 次，Issue / PR 再拉 comments。失败由调用方忽略，骨架仍可用。
     func hydrateNotificationSubject(path: String) async throws -> GitHubNotificationSubjectHydration {
         let bytes = try await getBytes(
             path: path,
@@ -89,17 +89,74 @@ extension GitHubAPIClient {
     /// Issue / PR / Discussion / Release 字段不完全相同，松散取 html_url / user|author.login / body。
     nonisolated private static func parseSubjectHydration(from data: Data) -> GitHubNotificationSubjectHydration {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return GitHubNotificationSubjectHydration(htmlURL: nil, actorLogin: nil, excerpt: nil)
+            return GitHubNotificationSubjectHydration(htmlURL: nil, actorLogin: nil, excerpt: nil, createdAt: nil)
         }
         let htmlURL = obj["html_url"] as? String
         let user = obj["user"] as? [String: Any]
         let author = obj["author"] as? [String: Any]
         let actorLogin = (user?["login"] as? String) ?? (author?["login"] as? String)
-        let excerpt = GitHubNotificationMapper.truncatedExcerpt(obj["body"] as? String)
+        let excerpt = GitHubNotificationMapper.bodyMarkdown(obj["body"] as? String)
+        let createdAt = (obj["created_at"] as? String) ?? (obj["published_at"] as? String)
         return GitHubNotificationSubjectHydration(
             htmlURL: htmlURL,
             actorLogin: actorLogin,
-            excerpt: excerpt
+            excerpt: excerpt,
+            createdAt: createdAt
         )
     }
+
+    func listNotificationIssueComments(path: String) async throws -> [GitHubNotificationComment] {
+        let queryPath = path.contains("?") ? path : path + "?per_page=100"
+        let bytes = try await getBytes(
+            path: queryPath,
+            accept: "application/vnd.github+json",
+            ifNoneMatch: nil,
+            ifModifiedSince: nil
+        )
+        return Self.parseIssueComments(from: bytes.data)
+    }
+
+    /// 公开 Issue / PR 用 `public_repo` 就能发；私有仓没 `repo` scope 时 GitHub 回 404。
+    func createNotificationIssueComment(path: String, body: String) async throws -> GitHubNotificationComment {
+        struct Payload: Encodable {
+            let body: String
+        }
+        let response = try await post(path: path, body: Payload(body: body), as: GitHubIssueCommentDTO.self)
+        guard let comment = Self.comment(from: response.value) else {
+            throw NetworkError.decodingError(underlying: GitHubNotificationCommentDecodingError.missingLogin)
+        }
+        return comment
+    }
+
+    nonisolated private static func parseIssueComments(from data: Data) -> [GitHubNotificationComment] {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        guard let rows = try? decoder.decode([GitHubIssueCommentDTO].self, from: data) else {
+            return []
+        }
+        return rows.compactMap(comment(from:))
+    }
+
+    nonisolated private static func comment(from row: GitHubIssueCommentDTO) -> GitHubNotificationComment? {
+        guard let login = row.user?.login, !login.isEmpty else { return nil }
+        return GitHubNotificationComment(
+            id: row.id,
+            login: login,
+            body: GitHubNotificationMapper.bodyMarkdown(row.body) ?? "",
+            htmlURL: row.htmlUrl,
+            createdAt: row.createdAt
+        )
+    }
+}
+
+private enum GitHubNotificationCommentDecodingError: Error {
+    case missingLogin
+}
+
+private struct GitHubIssueCommentDTO: Decodable {
+    let id: Int64
+    let htmlUrl: String?
+    let body: String?
+    let createdAt: String?
+    let user: GitHubNotificationOwnerDTO?
 }

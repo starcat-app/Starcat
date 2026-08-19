@@ -229,8 +229,14 @@ struct ActivityNotificationPayload: Equatable, Sendable {
     let subjectType: String
     let subjectNumber: Int?
     let repositoryFullName: String
+    /// 时间线事件句用的人（常是最新评论者）。
     let actorLogin: String?
+    /// Issue / PR 开帖人。详情「发布了这条」必须用这个，不能用 `actorLogin`。
+    let authorLogin: String?
+    let authorCreatedAt: Date?
     let excerpt: String?
+    let comments: [GitHubNotificationComment]
+    let people: [GitHubNotificationPerson]
 }
 
 /// Activity 中栏与右栏共享的展示模型。

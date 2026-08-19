@@ -44,6 +44,233 @@ struct GitHubNotificationMapperTests {
         )
     }
 
+    @Test("时间线次行拼 full_name · PR #n · 相对时间")
+    func timelineCaption() {
+        #expect(
+            GitHubNotificationMapper.timelineCaption(
+                fullName: "octo/hello",
+                subjectType: "PullRequest",
+                number: 9,
+                relativeTime: "2 小时前"
+            ) == "octo/hello · PR #9 · 2 小时前"
+        )
+        #expect(
+            GitHubNotificationMapper.timelineCaption(
+                fullName: "octo/hello",
+                subjectType: "Release",
+                number: nil,
+                relativeTime: "昨天"
+            ) == "octo/hello · 昨天"
+        )
+    }
+
+    @Test("正文入库不截断；Issue / PR 评论走 issues comments path")
+    func bodyMarkdownAndCommentsPath() {
+        let long = String(repeating: "a", count: 800)
+        #expect(GitHubNotificationMapper.bodyMarkdown(long) == long)
+        #expect(
+            GitHubNotificationMapper.issueCommentsPath(
+                subjectType: "Issue",
+                subjectApiURL: "https://api.github.com/repos/o/r/issues/30"
+            ) == "/repos/o/r/issues/30/comments"
+        )
+        #expect(
+            GitHubNotificationMapper.issueCommentsPath(
+                subjectType: "PullRequest",
+                subjectApiURL: "https://api.github.com/repos/o/r/pulls/9"
+            ) == "/repos/o/r/issues/9/comments"
+        )
+        #expect(
+            GitHubNotificationMapper.issueCommentsPath(
+                subjectType: "Release",
+                subjectApiURL: "https://api.github.com/repos/o/r/releases/1"
+            ) == nil
+        )
+    }
+
+    @Test("列表摘录把 markdown 链接收成可见文字")
+    func listSnippetStripsLinks() {
+        #expect(
+            GitHubNotificationMapper.listSnippet("[Starcat](https://github.com/starcat-app/Starcat) is native")
+            == "Starcat is native"
+        )
+    }
+
+    @Test("时钟格式 HH:mm")
+    func clockLabel() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let date = calendar.date(from: DateComponents(year: 2026, month: 8, day: 19, hour: 14, minute: 32))!
+        let label = GitHubNotificationMapper.clockLabel(date: date, locale: Locale(identifier: "en_US_POSIX"))
+        #expect(label.contains(":"))
+        #expect(label.count == 5)
+
+        let posix = Locale(identifier: "en_US_POSIX")
+        let stamp = GitHubNotificationMapper.timelineStamp(date: date, locale: posix)
+        let expectedDate = DateFormatter()
+        expectedDate.locale = posix
+        expectedDate.timeZone = TimeZone.current
+        var gregorian = Calendar(identifier: .gregorian)
+        gregorian.timeZone = TimeZone.current
+        expectedDate.calendar = gregorian
+        expectedDate.dateFormat = "yyyy-MM-dd"
+        let expectedTime = DateFormatter()
+        expectedTime.locale = posix
+        expectedTime.timeZone = TimeZone.current
+        expectedTime.dateFormat = "HH:mm"
+        #expect(stamp.date == expectedDate.string(from: date))
+        #expect(stamp.time == expectedTime.string(from: date))
+
+        let commentTime = GitHubNotificationMapper.commentTimeLabel(date: date, locale: posix)
+        #expect(commentTime.contains(expectedDate.string(from: date)))
+        #expect(commentTime.contains(expectedTime.string(from: date)))
+    }
+
+    @Test("事件句按 reason 生成，不用 GitHub title")
+    func eventHeadlineUsesReason() {
+        let record = GitHubNotificationMapper.record(
+            from: GitHubNotificationThreadDTO(
+                id: "1",
+                unread: true,
+                reason: "review_requested",
+                updatedAt: "2026-08-19T00:00:00Z",
+                subject: GitHubNotificationSubjectDTO(
+                    title: "Ignore this title",
+                    url: "https://api.github.com/repos/o/r/pulls/9",
+                    latestCommentUrl: nil,
+                    type: "PullRequest"
+                ),
+                repository: GitHubNotificationRepositoryDTO(
+                    id: 1,
+                    fullName: "o/r",
+                    name: "r",
+                    owner: GitHubNotificationOwnerDTO(login: "o")
+                )
+            ),
+            fetchedAt: "2026-08-19T00:00:00Z",
+            firstSeenAt: "2026-08-19T00:00:00Z"
+        )
+        let zh = GitHubNotificationMapper.eventHeadline(for: record, locale: Locale(identifier: "zh-Hans"))
+        #expect(zh.contains("Review"))
+        #expect(!zh.contains("Ignore this title"))
+    }
+
+    @Test("PR 评论的 chip / 事件句用 PR，不用 Issue 或评论")
+    func pullRequestCommentUsesPRChip() {
+        let record = GitHubNotificationMapper.record(
+            from: GitHubNotificationThreadDTO(
+                id: "2",
+                unread: true,
+                reason: "comment",
+                updatedAt: "2026-08-19T14:32:00Z",
+                subject: GitHubNotificationSubjectDTO(
+                    title: "Add notifications",
+                    url: "https://api.github.com/repos/starcat-app/starcat-api/pulls/2",
+                    latestCommentUrl: nil,
+                    type: "PullRequest"
+                ),
+                repository: GitHubNotificationRepositoryDTO(
+                    id: 2,
+                    fullName: "starcat-app/starcat-api",
+                    name: "starcat-api",
+                    owner: GitHubNotificationOwnerDTO(login: "starcat-app")
+                )
+            ),
+            fetchedAt: "2026-08-19T14:32:00Z",
+            firstSeenAt: "2026-08-19T14:32:00Z"
+        )
+        #expect(GitHubNotificationMapper.chip(for: record) == .pullRequest)
+        let zh = GitHubNotificationMapper.eventHeadline(for: record, locale: Locale(identifier: "zh-Hans"))
+        #expect(zh.contains("PR"))
+        #expect(!zh.contains("Issue"))
+        #expect(GitHubNotificationMapper.chipTitle(for: .pullRequest, locale: Locale(identifier: "zh-Hans")) == "PR")
+    }
+
+    @Test("GitHub 无毫秒的 ISO8601 能解析，时钟和相对时间才有值")
+    func parseGitHubDateWithoutFractionalSeconds() {
+        let date = GitHubNotificationMapper.parseDate("2026-08-19T14:32:00Z")
+        #expect(date != nil)
+        #expect(GitHubNotificationMapper.parseDate("2026-08-19T14:32:00.123Z") != nil)
+        #expect(GitHubNotificationMapper.parseDate(nil) == nil)
+    }
+
+    @Test("HTML img 收成 Markdown 图片语法")
+    func prepareMarkdownConvertsHTMLImages() {
+        let html = """
+        historically accurate.
+
+        <img width="3104" height="1854" alt="Image" src="https://github.com/user-attachments/assets/9dbbde49-2912-4e03-bd94-db81e1333d0e" />
+
+        I noticed your work.
+        """
+        let markdown = GitHubNotificationMapper.prepareMarkdown(html)
+        #expect(markdown.contains("![Image](https://github.com/user-attachments/assets/9dbbde49-2912-4e03-bd94-db81e1333d0e)"))
+        #expect(!markdown.contains("<img"))
+        #expect(
+            GitHubNotificationMapper.listSnippet(html) == "historically accurate."
+        )
+        let wrapped = #"<a href="https://github.com/user-attachments/assets/abc"><img alt="shot" src="https://github.com/user-attachments/assets/abc" /></a>"#
+        let unwrapped = GitHubNotificationMapper.prepareMarkdown(wrapped)
+        #expect(unwrapped.contains("![shot](https://github.com/user-attachments/assets/abc)"))
+        #expect(!unwrapped.contains("<a"))
+        #expect(!unwrapped.contains("<img"))
+    }
+
+    @Test("Issue / PR 才能在详情里回复")
+    func canReplyOnlyIssueAndPullRequest() {
+        #expect(GitHubNotificationMapper.canReply(subjectType: "Issue", number: 182))
+        #expect(GitHubNotificationMapper.canReply(subjectType: "PullRequest", number: 2))
+        #expect(!GitHubNotificationMapper.canReply(subjectType: "Release", number: 1))
+        #expect(!GitHubNotificationMapper.canReply(subjectType: "Issue", number: nil))
+    }
+
+    @Test("Issue 开帖人是 subject.user，不是最后一条评论")
+    func openingPostAuthorIsNotLastCommenter() {
+        var record = GitHubNotificationMapper.record(
+            from: GitHubNotificationThreadDTO(
+                id: "issue-1",
+                unread: true,
+                reason: "comment",
+                updatedAt: "2026-08-19T14:32:00Z",
+                subject: GitHubNotificationSubjectDTO(
+                    title: "npm package name",
+                    url: "https://api.github.com/repos/dong4j/hexo-plugin-llms/issues/1",
+                    latestCommentUrl: nil,
+                    type: "Issue"
+                ),
+                repository: GitHubNotificationRepositoryDTO(
+                    id: 1,
+                    fullName: "dong4j/hexo-plugin-llms",
+                    name: "hexo-plugin-llms",
+                    owner: GitHubNotificationOwnerDTO(login: "dong4j")
+                )
+            ),
+            fetchedAt: "2026-08-19T14:32:00Z",
+            firstSeenAt: "2026-08-19T14:32:00Z"
+        )
+        record.actorLogin = "493505110"
+        record.commentsJson = GitHubNotificationMapper.encodeComments([
+            GitHubNotificationComment(
+                id: 88,
+                login: "dong4j",
+                body: "感谢提醒 晚点改一下",
+                htmlURL: nil,
+                createdAt: "2026-08-19T14:32:00Z"
+            )
+        ])
+        #expect(GitHubNotificationMapper.openingPostAuthor(for: record) == "493505110")
+        #expect(GitHubNotificationMapper.eventActor(for: record) == "dong4j")
+    }
+
+    @Test("仓库 owner 用于 logo URL")
+    func repositoryAvatarURLFromFullName() {
+        #expect(
+            GitHubNotificationMapper.repositoryAvatarURL(fromFullName: "nguyenphutrong/quotio")
+            == "https://github.com/nguyenphutrong.png?size=80"
+        )
+        #expect(GitHubNotificationMapper.repositoryOwner(fromFullName: "o/r") == "o")
+    }
+
     @Test("绝对 API URL 转成 client path")
     func pathFromAbsoluteAPIURL() {
         #expect(
@@ -180,8 +407,21 @@ struct GitHubNotificationInboxTests {
             return GitHubNotificationSubjectHydration(
                 htmlURL: "https://github.com/o/r/issues/1",
                 actorLogin: "alice",
-                excerpt: "hello body"
+                excerpt: "hello body",
+                createdAt: "2026-07-19T00:00:00Z"
             )
+        }
+        env.mock.listNotificationIssueCommentsHandler = { path in
+            #expect(path == "/repos/o/r/issues/1/comments" || path.hasPrefix("/repos/o/r/issues/1/comments"))
+            return [
+                GitHubNotificationComment(
+                    id: 99,
+                    login: "bob",
+                    body: "full **markdown** comment",
+                    htmlURL: "https://github.com/o/r/issues/1#issuecomment-99",
+                    createdAt: "2026-08-19T00:00:00Z"
+                )
+            ]
         }
 
         await env.inbox.sync()
@@ -193,6 +433,50 @@ struct GitHubNotificationInboxTests {
         #expect(stored.actorLogin == "alice")
         #expect(stored.excerpt == "hello body")
         #expect(stored.htmlUrl == "https://github.com/o/r/issues/1")
+        #expect(stored.subjectCreatedAt == "2026-07-19T00:00:00Z")
+        let comments = GitHubNotificationMapper.decodeComments(stored.commentsJson)
+        #expect(comments.count == 1)
+        #expect(comments.first?.login == "bob")
+        #expect(comments.first?.body == "full **markdown** comment")
+    }
+
+    @Test("发表评论会 POST 并追加到本地 comments_json")
+    func postCommentAppendsLocally() async throws {
+        let env = try makeEnv()
+        let record = GitHubNotificationMapper.record(
+            from: Self.makeDTO(id: "c1"),
+            fetchedAt: "2026-08-19T00:00:00Z",
+            firstSeenAt: "2026-08-19T00:00:00Z"
+        )
+        try await env.threads.upsertMany([record])
+        try await env.threads.updateHydration(
+            id: "c1",
+            actorLogin: "alice",
+            excerpt: "opening",
+            commentsJson: nil,
+            htmlUrl: "https://github.com/o/r/issues/1",
+            subjectCreatedAt: "2026-07-19T00:00:00Z",
+            hydratedAt: "2026-08-19T00:00:00Z"
+        )
+        env.mock.createNotificationIssueCommentHandler = { path, body in
+            #expect(path == "/repos/o/r/issues/1/comments")
+            #expect(body == "hello from starcat")
+            return GitHubNotificationComment(
+                id: 501,
+                login: "dong4j",
+                body: body,
+                htmlURL: "https://github.com/o/r/issues/1#issuecomment-501",
+                createdAt: "2026-08-19T14:32:00Z"
+            )
+        }
+
+        try await env.inbox.postComment(threadId: "c1", body: "  hello from starcat  ")
+
+        #expect(env.mock.createNotificationIssueCommentCalls.count == 1)
+        let stored = try #require(try await env.threads.fetch(id: "c1"))
+        let comments = GitHubNotificationMapper.decodeComments(stored.commentsJson)
+        #expect(comments.map(\.id) == [501])
+        #expect(comments.first?.body == "hello from starcat")
     }
 
     @Test("403 视为缺 notifications scope")
@@ -245,7 +529,7 @@ struct GitHubNotificationInboxTests {
         let mock = MockGitHubAPIClient()
         mock.markNotificationThreadReadHandler = { _ in }
         mock.hydrateNotificationSubjectHandler = { _ in
-            GitHubNotificationSubjectHydration(htmlURL: nil, actorLogin: nil, excerpt: nil)
+            GitHubNotificationSubjectHydration(htmlURL: nil, actorLogin: nil, excerpt: nil, createdAt: nil)
         }
         let defaults = UserDefaults(suiteName: "test.starcat.github-inbox.\(UUID().uuidString)")!
         let settings = AppSettings(defaults: defaults, keychain: InMemoryKeychain())

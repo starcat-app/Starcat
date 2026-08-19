@@ -38,7 +38,8 @@
 //    `v12-rag-metadata-revision` / `v13-weekly-multi-source` /
 //    `v14-ai-usage-events` / `v15-repo-pins` / `v16-repository-insights`
 //    `v17-my-projects` / `v18-rag-structured-citations` / `v19-agent-message-contract` /
-//    `v20-rag-chunks-fts-trigram` / `v21-github-notifications`
+    //    `v20-rag-chunks-fts-trigram` / `v21-github-notifications` /
+    //    `v22-github-notification-comments` / `v23-github-notification-subject-created`
 //
 
 import Foundation
@@ -76,6 +77,44 @@ enum DatabaseMigrations {
         registerV19(into: &migrator)
         registerV20(into: &migrator)
         registerV21(into: &migrator)
+        registerV22(into: &migrator)
+        registerV23(into: &migrator)
+    }
+
+    // MARK: - v23-github-notification-subject-created：Issue / PR 开帖时间（2026-08-19）
+
+    /// 详情「发布了这条」需要 `created_at`；列表 `updated_at` 是最后一条评论时间。
+    /// 表不存在则 no-op。已 hydrate 但缺这个字段的行，选中后会再补一次 subject。
+    private static func registerV23(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v23-github-notification-subject-created") { db in
+            guard try db.tableExists("github_notification_threads") else { return }
+            let columns = try db.columns(in: "github_notification_threads").map(\.name)
+            if !columns.contains("subject_created_at") {
+                try db.alter(table: "github_notification_threads") { t in
+                    t.add(column: "subject_created_at", .text)
+                }
+            }
+        }
+    }
+
+    // MARK: - v22-github-notification-comments：通知详情存全文 + 评论（2026-08-19）
+
+    /// v21 把正文截成 500 字，详情页对不上 GitHub Issue。本迁移加 `comments_json`，
+    /// 并清掉已截断的 hydrate 缓存，选中后重拉全文和评论。表不存在则 no-op。
+    private static func registerV22(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v22-github-notification-comments") { db in
+            guard try db.tableExists("github_notification_threads") else { return }
+            let columns = try db.columns(in: "github_notification_threads").map(\.name)
+            if !columns.contains("comments_json") {
+                try db.alter(table: "github_notification_threads") { t in
+                    t.add(column: "comments_json", .text)
+                }
+            }
+            try db.execute(sql: """
+                UPDATE github_notification_threads
+                SET excerpt = NULL, hydrated_at = NULL, comments_json = NULL
+                """)
+        }
     }
 
     // MARK: - v21-github-notifications：GitHub 通知时间线（2026-08-19）

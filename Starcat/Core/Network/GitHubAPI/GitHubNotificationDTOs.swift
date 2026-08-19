@@ -57,4 +57,14 @@ struct GitHubNotificationSubjectHydration: Equatable, Sendable {
     let htmlURL: String?
     let actorLogin: String?
     let excerpt: String?
+    let createdAt: String?
+}
+
+/// Issue / PR 下的一条评论。详情页按 GitHub 会话顺序渲染 Markdown。
+struct GitHubNotificationComment: Equatable, Codable, Sendable, Identifiable {
+    let id: Int64
+    let login: String
+    let body: String
+    let htmlURL: String?
+    let createdAt: String?
 }

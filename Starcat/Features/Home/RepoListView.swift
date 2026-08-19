@@ -924,6 +924,15 @@ struct RepoListView: View {
     /// Activity 页面 toolbar spec。Undo Star 分类支持多选。
     @MainActor
     private func makeActivityToolbarSpec() -> PageToolbarSpec {
+        if selectedActivityCategory == .notification {
+            // 通知详情不是仓库页：过滤 / 打开网页 / clone / 分享都不适用。
+            return PageToolbarSpec(
+                leadingPrimary: nil,
+                trailingPrimary: nil,
+                searchField: AnyView(smartSearchField())
+            )
+        }
+
         let registry = dependencies.starredRegistry
         let isAuthed = authSession.state.isAuthenticated
 

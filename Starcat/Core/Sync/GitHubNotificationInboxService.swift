@@ -24,6 +24,7 @@ extension Notification.Name {
 
 enum GitHubNotificationInboxError: Error, Equatable {
     case missingScope
+    case cannotComment
 }
 
 @MainActor
@@ -42,6 +43,8 @@ final class GitHubNotificationInboxService {
     private(set) var lastErrorMessage: String?
     /// 系统通知点击时 inbox 视图可能还没挂上，先记在这里。
     var pendingOpenThreadId: String?
+    /// 中栏当前分段。右栏上下一条要用同一份过滤结果。
+    var listSegment: GitHubNotificationSegment = .all
 
     private var dwellTasks: [String: Task<Void, Never>] = [:]
 
@@ -69,7 +72,7 @@ final class GitHubNotificationInboxService {
 
     func lastFetchedAt() async -> Date? {
         guard let raw = try? await syncStateRepository.current()?.lastFetchedAt else { return nil }
-        return ISO8601DateFormatter.shared.date(from: raw)
+        return ISO8601DateFormatter.githubDate(from: raw)
     }
 
     /// 打开分类 / 手动刷新 / 后台 poller 共用。
@@ -103,24 +106,68 @@ final class GitHubNotificationInboxService {
 
     func hydrate(id: String) async {
         guard let record = try? await threadRepository.fetch(id: id) else { return }
-        guard record.hydratedAt == nil else { return }
+        guard record.hydratedAt == nil || record.subjectCreatedAt == nil else { return }
         guard let path = GitHubNotificationMapper.path(fromAbsoluteAPIURL: record.subjectApiUrl),
               !path.isEmpty
         else { return }
         do {
             let hydration = try await apiClient.hydrateNotificationSubject(path: path)
+            var comments: [GitHubNotificationComment] = []
+            if let commentsPath = GitHubNotificationMapper.issueCommentsPath(
+                subjectType: record.subjectType,
+                subjectApiURL: record.subjectApiUrl
+            ) {
+                comments = (try? await apiClient.listNotificationIssueComments(path: commentsPath)) ?? []
+            }
             let now = ISO8601DateFormatter.shared.string(from: clock())
             try await threadRepository.updateHydration(
                 id: id,
                 actorLogin: hydration.actorLogin,
                 excerpt: hydration.excerpt,
+                commentsJson: GitHubNotificationMapper.encodeComments(comments),
                 htmlUrl: hydration.htmlURL ?? record.htmlUrl,
+                subjectCreatedAt: hydration.createdAt ?? record.subjectCreatedAt ?? record.updatedAt,
                 hydratedAt: now
             )
             postDidChange()
         } catch {
             AppLog.network.info("Notification hydrate skipped id=\(id, privacy: .public): \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// 把评论发到 GitHub，成功后再写入本地 comments_json。
+    /// 不加 `repo` scope：私有仓会 404，UI 引导去 GitHub 打开。
+    func postComment(threadId: String, body: String) async throws {
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard let record = try await threadRepository.fetch(id: threadId),
+              GitHubNotificationMapper.canReply(
+                subjectType: record.subjectType,
+                number: record.subjectNumber
+              ),
+              let path = GitHubNotificationMapper.issueCommentsPath(
+                subjectType: record.subjectType,
+                subjectApiURL: record.subjectApiUrl
+              )
+        else {
+            throw GitHubNotificationInboxError.cannotComment
+        }
+        let created = try await apiClient.createNotificationIssueComment(path: path, body: trimmed)
+        var comments = GitHubNotificationMapper.decodeComments(record.commentsJson)
+        if !comments.contains(where: { $0.id == created.id }) {
+            comments.append(created)
+        }
+        let now = ISO8601DateFormatter.shared.string(from: clock())
+        try await threadRepository.updateHydration(
+            id: threadId,
+            actorLogin: record.actorLogin,
+            excerpt: record.excerpt,
+            commentsJson: GitHubNotificationMapper.encodeComments(comments),
+            htmlUrl: record.htmlUrl,
+            subjectCreatedAt: record.subjectCreatedAt,
+            hydratedAt: record.hydratedAt ?? now
+        )
+        postDidChange()
     }
 
     /// 选中一行：蓝点先灭，再开始 400ms dwell。

@@ -17,9 +17,12 @@ protocol GitHubNotificationThreadRepositoryProtocol: Sendable {
         id: String,
         actorLogin: String?,
         excerpt: String?,
+        commentsJson: String?,
         htmlUrl: String?,
+        subjectCreatedAt: String?,
         hydratedAt: String
     ) async throws
+
     func markNotified(ids: [String], notifiedAt: String) async throws
     func fetchFailedMarkRead() async throws -> [GitHubNotificationThreadRecord]
     /// 还没发过系统通知的 thread。回填入库后会先 markNotified，避免历史条目在增量里补发。

@@ -133,8 +133,14 @@ protocol GitHubAPIClientProtocol: Sendable {
         ifModifiedSince: String?
     ) async throws -> GitHubNotificationsListResponse
 
-    /// `GET subject.url` 补全请求人 / 摘要 / 官方 html_url。
+    /// `GET subject.url` 补全请求人 / 正文 / 官方 html_url。
     func hydrateNotificationSubject(path: String) async throws -> GitHubNotificationSubjectHydration
+
+    /// `GET .../issues/{n}/comments`。失败由调用方忽略，正文仍可用。
+    func listNotificationIssueComments(path: String) async throws -> [GitHubNotificationComment]
+
+    /// `POST .../issues/{n}/comments`。公开仓库用现有 `public_repo`；私有仓可能 404。
+    func createNotificationIssueComment(path: String, body: String) async throws -> GitHubNotificationComment
 
     /// `PATCH /notifications/threads/{id}` 标已读。成功含 205。
     func markNotificationThreadRead(id: String) async throws
@@ -206,6 +212,14 @@ extension GitHubAPIClientProtocol {
 
     func hydrateNotificationSubject(path: String) async throws -> GitHubNotificationSubjectHydration {
         throw NetworkError.clientError(statusCode: 501, message: "Notification subject hydration is not implemented by this client")
+    }
+
+    func listNotificationIssueComments(path: String) async throws -> [GitHubNotificationComment] {
+        throw NetworkError.clientError(statusCode: 501, message: "Notification comments are not implemented by this client")
+    }
+
+    func createNotificationIssueComment(path: String, body: String) async throws -> GitHubNotificationComment {
+        throw NetworkError.clientError(statusCode: 501, message: "Create notification comment is not implemented by this client")
     }
 
     func markNotificationThreadRead(id: String) async throws {

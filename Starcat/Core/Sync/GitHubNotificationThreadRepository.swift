@@ -56,9 +56,9 @@ struct GRDBGitHubNotificationThreadRepository: GitHubNotificationThreadRepositor
                         id, reason, unread, github_unread,
                         repository_id, repository_full_name,
                         subject_title, subject_type, subject_api_url, subject_number,
-                        html_url, actor_login, excerpt, hydrated_at,
+                        html_url, actor_login, subject_created_at, excerpt, comments_json, hydrated_at,
                         updated_at, first_seen_at, notified_at, mark_read_state, fetched_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         reason = excluded.reason,
                         github_unread = excluded.github_unread,
@@ -92,10 +92,20 @@ struct GRDBGitHubNotificationThreadRepository: GitHubNotificationThreadRepositor
                             THEN github_notification_threads.actor_login
                             ELSE NULL
                         END,
+                        subject_created_at = COALESCE(
+                            github_notification_threads.subject_created_at,
+                            excluded.subject_created_at
+                        ),
                         excerpt = CASE
                             WHEN github_notification_threads.subject_api_url = excluded.subject_api_url
                              AND github_notification_threads.updated_at = excluded.updated_at
                             THEN github_notification_threads.excerpt
+                            ELSE NULL
+                        END,
+                        comments_json = CASE
+                            WHEN github_notification_threads.subject_api_url = excluded.subject_api_url
+                             AND github_notification_threads.updated_at = excluded.updated_at
+                            THEN github_notification_threads.comments_json
                             ELSE NULL
                         END,
                         hydrated_at = CASE
@@ -118,7 +128,9 @@ struct GRDBGitHubNotificationThreadRepository: GitHubNotificationThreadRepositor
                         record.subjectNumber,
                         record.htmlUrl,
                         record.actorLogin,
+                        record.subjectCreatedAt,
                         record.excerpt,
+                        record.commentsJson,
                         record.hydratedAt,
                         record.updatedAt,
                         record.firstSeenAt,
@@ -148,17 +160,20 @@ struct GRDBGitHubNotificationThreadRepository: GitHubNotificationThreadRepositor
         id: String,
         actorLogin: String?,
         excerpt: String?,
+        commentsJson: String?,
         htmlUrl: String?,
+        subjectCreatedAt: String?,
         hydratedAt: String
     ) async throws {
         try await database.writer.write { db in
             try db.execute(
                 sql: """
                 UPDATE github_notification_threads
-                SET actor_login = ?, excerpt = ?, html_url = ?, hydrated_at = ?
+                SET actor_login = ?, excerpt = ?, comments_json = ?, html_url = ?,
+                    subject_created_at = ?, hydrated_at = ?
                 WHERE id = ?
                 """,
-                arguments: [actorLogin, excerpt, htmlUrl, hydratedAt, id]
+                arguments: [actorLogin, excerpt, commentsJson, htmlUrl, subjectCreatedAt, hydratedAt, id]
             )
         }
     }

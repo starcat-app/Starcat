@@ -116,6 +116,22 @@ struct ReadmeWebViewTests {
         #expect(source.contains(#"globalThis["mermaid"]"#))
     }
 
+    @Test("深色 README 代码块和表格相对系统窗底抬升，不用 GitHub 近黑画布色")
+    func assembleDocument_darkLiftsCodeAndTableSurfacesOffWindowBackground() {
+        let html = ReadmeWebView.assembleDocument(
+            fragment: "<pre>code</pre><table><tr><td>cell</td></tr></table>",
+            isDark: true
+        )
+
+        // 半透明白叠在 transparent 正文上，才能跟着 NSColor.windowBackgroundColor 抬升。
+        #expect(html.contains("body class=\"markdown-body dark\""))
+        #expect(html.contains("--code-bg: rgba(255, 255, 255, 0.08);"))
+        #expect(html.contains("--border: rgba(255, 255, 255, 0.14);"))
+        #expect(html.contains(".markdown-body .highlight pre"))
+        #expect(!html.contains("--code-bg: #161b22;"))
+        #expect(!html.contains("--border: #30363d;"))
+    }
+
     @Test("README 正文字号接入界面倍率")
     func assembleDocument_injectsReadableFontSizeFromInterfaceScale() {
         let standardHTML = ReadmeWebView.assembleDocument(

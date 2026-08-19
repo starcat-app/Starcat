@@ -39,7 +39,9 @@ struct GitHubNotificationThreadRecord: Codable, FetchableRecord, PersistableReco
     var subjectNumber: Int?
     var htmlUrl: String?
     var actorLogin: String?
+    var subjectCreatedAt: String?
     var excerpt: String?
+    var commentsJson: String?
     var hydratedAt: String?
     var updatedAt: String
     var firstSeenAt: String
@@ -64,7 +66,9 @@ struct GitHubNotificationThreadRecord: Codable, FetchableRecord, PersistableReco
         case subjectNumber = "subject_number"
         case htmlUrl = "html_url"
         case actorLogin = "actor_login"
+        case subjectCreatedAt = "subject_created_at"
         case excerpt
+        case commentsJson = "comments_json"
         case hydratedAt = "hydrated_at"
         case updatedAt = "updated_at"
         case firstSeenAt = "first_seen_at"

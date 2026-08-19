@@ -73,6 +73,7 @@
 
 import SwiftUI
 import AppKit
+import MarkdownUI
 
 struct ActivityDetailView: View {
 
@@ -85,6 +86,7 @@ struct ActivityDetailView: View {
     /// Watchers badge 按主题切换紫色(StatSemanticColor.watchers)。
     @Environment(\.colorScheme) private var colorScheme
     @Environment(AppSettings.self) private var settings
+    @Environment(\.locale) private var locale
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -303,30 +305,7 @@ struct ActivityDetailView: View {
                     }
                 }
 
-                Text(verbatim: payload.repositoryFullName)
-                    .font(.headline)
-                    .textSelection(.enabled)
-
-                if let actor = payload.actorLogin, !actor.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("activity.notification.detail.actor")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(verbatim: actor)
-                            .font(.body)
-                    }
-                }
-
-                if let excerpt = payload.excerpt, !excerpt.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("activity.notification.detail.excerpt")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(verbatim: excerpt)
-                            .font(.body)
-                            .textSelection(.enabled)
-                    }
-                }
+                notificationMarkdownThread(payload)
             }
 
             HStack(spacing: 8) {
@@ -352,6 +331,43 @@ struct ActivityDetailView: View {
                     }
                     .buttonStyle(.bordered)
                     .focusEffectDisabled()
+                }
+            }
+        }
+    }
+
+    /// 右栏按 GitHub Issue 会话渲染：楼主正文 + 后续评论，Markdown 全文，不再截断。
+    @ViewBuilder
+    private func notificationMarkdownThread(_ payload: ActivityNotificationPayload) -> some View {
+        if let actor = payload.actorLogin, !actor.isEmpty {
+            Text(verbatim: actor)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+        }
+
+        if let excerpt = payload.excerpt, !excerpt.isEmpty {
+            Markdown(excerpt)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        ForEach(payload.comments) { comment in
+            Divider()
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text(verbatim: comment.login)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    if let createdAt = comment.createdAt.flatMap({ ISO8601DateFormatter.shared.date(from: $0) }) {
+                        Text(verbatim: RelativeTimeText.pastEvent(createdAt, locale: locale))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                if !comment.body.isEmpty {
+                    Markdown(comment.body)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }

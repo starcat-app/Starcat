@@ -199,6 +199,18 @@ actor GitHubAPIClient {
         return try await perform(request)
     }
 
+    /// POST 请求，带 JSON body 和返回值。
+    /// 通知详情发 Issue / PR 评论走 `POST /repos/.../issues/{n}/comments`。
+    func post<T: Encodable, U: Decodable>(
+        path: String,
+        body: T,
+        as type: U.Type = U.self
+    ) async throws -> APIResponse<U> {
+        let bodyData = try JSONEncoder().encode(body)
+        let request = try buildRequest(method: "POST", path: path, queryItems: [], accept: "application/vnd.github+json", body: bodyData)
+        return try await perform(request)
+    }
+
     /// 发起 GraphQL POST 请求（HOM-PROFILE 2026-06-05 引入）。
     ///
     /// 设计动机：GitHub 贡献草坪数据只能通过 GraphQL `contributionsCollection.contributionCalendar`

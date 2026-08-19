@@ -16,13 +16,32 @@ enum GitHubNotificationChip: String, Sendable {
     case assign
     case security
     case comment
+    case pullRequest
+    case issue
+    case release
+}
+
+enum GitHubNotificationPersonRole: String, Sendable {
+    case author
+    case commenter
+    case reviewRequester
+}
+
+struct GitHubNotificationPerson: Equatable, Identifiable, Sendable {
+    let login: String
+    let role: GitHubNotificationPersonRole
+
+    var id: String { "\(login)-\(role.rawValue)" }
+
+    var avatarURLString: String {
+        "https://github.com/\(login).png"
+    }
 }
 
 enum GitHubNotificationMapper {
 
     static let backfillLimit = 300
     static let pageSize = 50
-    static let excerptLimit = 500
     static let dwellNanoseconds: UInt64 = 400_000_000
 
     static let systemNotificationReasons: Set<String> = [
@@ -42,6 +61,264 @@ enum GitHubNotificationMapper {
         default:
             return .comment
         }
+    }
+
+    static func chip(for record: GitHubNotificationThreadRecord) -> GitHubNotificationChip {
+        if record.subjectType == "Release" {
+            return .release
+        }
+        let reasonChip = chip(forReason: record.reason)
+        // comment / subscribed / author 这类通用 reason 不能盖过主体类型：
+        // PR 评论若显示「评论」，列表会把 Pull Request 误读成 Issue。
+        guard reasonChip == .comment else { return reasonChip }
+        switch record.subjectType {
+        case "PullRequest":
+            return .pullRequest
+        case "Issue":
+            return .issue
+        default:
+            return .comment
+        }
+    }
+
+    /// 列表主行：原型是「谁对你做了什么」，不是 GitHub subject.title。
+    /// Catalog 本轮不能安全追加 key，文案按 locale 在这里分流。
+    static func eventHeadline(for record: GitHubNotificationThreadRecord, locale: Locale) -> String {
+        let someone = eventActor(for: record) ?? copy(locale, zh: "有人", en: "Someone")
+        switch chip(for: record) {
+        case .mention:
+            if record.subjectType == "PullRequest" {
+                return copy(locale, zh: "\(someone) 在 PR 里 @ 了你", en: "\(someone) mentioned you in a PR")
+            }
+            if record.subjectType == "Issue" {
+                return copy(locale, zh: "\(someone) 在 Issue 里 @ 了你", en: "\(someone) mentioned you in an issue")
+            }
+            return copy(locale, zh: "\(someone) @ 了你", en: "\(someone) mentioned you")
+        case .review:
+            return copy(locale, zh: "\(someone) 请求你 Review 这个 PR", en: "\(someone) requested your review")
+        case .assign:
+            return copy(locale, zh: "\(someone) 把这个指派给你", en: "\(someone) assigned this to you")
+        case .comment, .issue:
+            return copy(locale, zh: "\(someone) 评论了这个 Issue", en: "\(someone) commented on this issue")
+        case .pullRequest:
+            return copy(locale, zh: "\(someone) 评论了这个 PR", en: "\(someone) commented on this PR")
+        case .security:
+            return copy(locale, zh: "仓库有安全公告", en: "Security alert")
+        case .release:
+            return copy(locale, zh: "发布了新的 Release", en: "New release published")
+        }
+    }
+
+    static func subjectHeading(type: String, number: Int?, locale: Locale) -> String {
+        let name: String
+        switch type {
+        case "PullRequest":
+            name = "Pull Request"
+        case "Issue":
+            name = "Issue"
+        case "Discussion":
+            name = "Discussion"
+        case "Release":
+            name = "Release"
+        default:
+            name = type
+        }
+        if let number {
+            return "\(name) #\(number)"
+        }
+        return name
+    }
+
+    static func chipTitle(for chip: GitHubNotificationChip, locale: Locale) -> String {
+        switch chip {
+        case .release:
+            return copy(locale, zh: "发行", en: "Release")
+        case .pullRequest:
+            return "PR"
+        case .issue:
+            return "Issue"
+        default:
+            return String.l10n(chipTitleKey(chip))
+        }
+    }
+
+    /// GitHub REST 常见 `2026-08-19T14:32:00Z`（无毫秒）。
+    /// `ISO8601DateFormatter.shared` 强制 `.withFractionalSeconds`，解析会失败，
+    /// 时间线时钟和「2 小时前」会一起消失。
+    static func parseDate(_ raw: String?) -> Date? {
+        ISO8601DateFormatter.githubDate(from: raw)
+    }
+
+    static func repositoryOwner(fromFullName fullName: String) -> String? {
+        let owner = fullName.split(separator: "/").first.map(String.init) ?? ""
+        return owner.isEmpty ? nil : owner
+    }
+
+    static func repositoryAvatarURL(fromFullName fullName: String) -> String? {
+        repositoryOwner(fromFullName: fullName).map { "https://github.com/\($0).png?size=80" }
+    }
+
+    static func actorAvatarURL(for record: GitHubNotificationThreadRecord) -> String? {
+        eventActor(for: record).map { "https://github.com/\($0).png?size=80" }
+    }
+
+    /// GitHub 评论常夹 HTML `<img src="https://github.com/user-attachments/...">`。
+    /// MarkdownUI 不会把裸 HTML 当图片，必须先收成 `![alt](url)`。
+    static func prepareMarkdown(_ raw: String) -> String {
+        var text = raw.replacingOccurrences(
+            of: #"<br\s*/?>"#,
+            with: "\n",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        let imgTag = Self.htmlImageTagRegex
+        let srcAttr = Self.htmlSrcRegex
+        let altAttr = Self.htmlAltRegex
+        let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
+        for match in imgTag.matches(in: text, range: nsRange).reversed() {
+            guard let range = Range(match.range, in: text) else { continue }
+            let tag = String(text[range])
+            let tagRange = NSRange(tag.startIndex..<tag.endIndex, in: tag)
+            guard let srcMatch = srcAttr.firstMatch(in: tag, range: tagRange),
+                  let srcRange = Range(srcMatch.range(at: 1), in: tag)
+            else { continue }
+            let src = String(tag[srcRange]).replacingOccurrences(of: "&amp;", with: "&")
+            var alt = "Image"
+            if let altMatch = altAttr.firstMatch(in: tag, range: tagRange),
+               let altRange = Range(altMatch.range(at: 1), in: tag) {
+                let value = String(tag[altRange])
+                if !value.isEmpty { alt = value }
+            }
+            let escapedAlt = alt.replacingOccurrences(of: "]", with: "\\]")
+            text.replaceSubrange(range, with: "\n\n![\(escapedAlt)](\(src))\n\n")
+        }
+        // GitHub 常把图包在 <a href="..."><img></a> 里；img 收成 Markdown 后要去掉外壳，
+        // 否则 MarkdownUI 会把残留的 `<a>` 当正文显示。
+        text = text.replacingOccurrences(
+            of: #"</?a\b[^>]*>"#,
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        text = text.replacingOccurrences(
+            of: #"</?p\b[^>]*>"#,
+            with: "\n\n",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        return text
+    }
+
+    static func copy(_ locale: Locale, zh: String, en: String) -> String {
+        locale.identifier.lowercased().hasPrefix("zh") ? zh : en
+    }
+
+    /// 评论 / mention 优先用最新评论作者；否则用 hydrate 到的 subject.user。
+    /// 通知列表里的「谁」：comment / mention 用最新评论作者。
+    /// 详情里 Issue 正文的发布人不能走这个，否则会被最后一条回复盖掉。
+    static func eventActor(for record: GitHubNotificationThreadRecord) -> String? {
+        let comments = decodeComments(record.commentsJson)
+        switch chip(for: record) {
+        case .comment, .mention, .pullRequest, .issue:
+            if let login = comments.last?.login, !login.isEmpty {
+                return login
+            }
+        default:
+            break
+        }
+        if let login = record.actorLogin, !login.isEmpty {
+            return login
+        }
+        return comments.last?.login
+    }
+
+    /// Issue / PR 开帖人：hydrate 时从 `subject.user` 写入 `actor_login`，不是评论区最后一人。
+    static func openingPostAuthor(for record: GitHubNotificationThreadRecord) -> String? {
+        if let login = record.actorLogin, !login.isEmpty {
+            return login
+        }
+        return nil
+    }
+
+    static func clockLabel(date: Date, locale: Locale) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.timeZone = TimeZone.current
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
+    }
+
+    /// 时间线左侧：年月日 + 时钟。只有 `HH:mm` 跨组之后看不出是哪一天。
+    static func timelineStamp(date: Date, locale: Locale) -> (date: String, time: String) {
+        let dateFormatter = DateFormatter()
+        dateFormatter.locale = locale
+        dateFormatter.timeZone = TimeZone.current
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone.current
+        dateFormatter.calendar = calendar
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        return (dateFormatter.string(from: date), clockLabel(date: date, locale: locale))
+    }
+
+    /// 评论卡片右侧时间：相对时间不够时补绝对日期。
+    static func commentTimeLabel(date: Date, locale: Locale) -> String {
+        let relative = RelativeTimeText.pastEvent(date, locale: locale)
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.timeZone = TimeZone.current
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return "\(relative) · \(formatter.string(from: date))"
+    }
+
+    /// 列表摘录：第一行可见文字。跳过纯图片行，链接改成锚文本，大约 88 字。
+    static func listSnippet(_ excerpt: String?) -> String? {
+        guard let excerpt else { return nil }
+        let prepared = prepareMarkdown(excerpt)
+        for rawLine in prepared.split(whereSeparator: \.isNewline).map(String.init) {
+            var line = rawLine
+            if let imageRegex = try? NSRegularExpression(pattern: #"!\[[^\]]*\]\([^)]+\)"#) {
+                let range = NSRange(line.startIndex..<line.endIndex, in: line)
+                line = imageRegex.stringByReplacingMatches(in: line, range: range, withTemplate: "")
+            }
+            if let linkRegex = try? NSRegularExpression(pattern: #"\[([^\]]+)\]\([^)]+\)"#) {
+                let range = NSRange(line.startIndex..<line.endIndex, in: line)
+                line = linkRegex.stringByReplacingMatches(in: line, range: range, withTemplate: "$1")
+            }
+            line = line.trimmingCharacters(in: .whitespaces)
+            guard !line.isEmpty, !line.lowercased().hasPrefix("<img") else { continue }
+            if line.count > 88 {
+                let end = line.index(line.startIndex, offsetBy: 88)
+                return String(line[..<end]) + "…"
+            }
+            return line
+        }
+        return nil
+    }
+
+    static func detailTimeLabel(date: Date, locale: Locale) -> String {
+        let relative = RelativeTimeText.pastEvent(date, locale: locale)
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.dateStyle = .long
+        formatter.timeStyle = .short
+        return "\(relative) (\(formatter.string(from: date)))"
+    }
+
+    static func relatedPeople(for record: GitHubNotificationThreadRecord) -> [GitHubNotificationPerson] {
+        var people: [GitHubNotificationPerson] = []
+        var seen = Set<String>()
+        func append(_ login: String, role: GitHubNotificationPersonRole) {
+            let key = login.lowercased()
+            guard !key.isEmpty, !seen.contains(key) else { return }
+            seen.insert(key)
+            people.append(GitHubNotificationPerson(login: login, role: role))
+        }
+        let chip = chip(for: record)
+        if let actor = record.actorLogin {
+            let role: GitHubNotificationPersonRole = chip == .review ? .reviewRequester : .author
+            append(actor, role: role)
+        }
+        for comment in decodeComments(record.commentsJson) {
+            append(comment.login, role: .commenter)
+        }
+        return people
     }
 
     static func matchesSegment(_ record: GitHubNotificationThreadRecord, segment: GitHubNotificationSegment) -> Bool {
@@ -102,11 +379,37 @@ enum GitHubNotificationMapper {
         return url.path
     }
 
-    static func truncatedExcerpt(_ body: String?) -> String? {
-        guard let body, !body.isEmpty else { return nil }
-        if body.count <= excerptLimit { return body }
-        let end = body.index(body.startIndex, offsetBy: excerptLimit)
-        return String(body[..<end])
+    /// 入库全文。GitHub Issue / comment body 上限约 65536，不再截 500 字。
+    static func bodyMarkdown(_ body: String?) -> String? {
+        guard let body else { return nil }
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Issue 评论：`/repos/o/r/issues/30/comments`。
+    /// PR 评论走同一套 issue comments API，把 `/pulls/N` 换成 `/issues/N`。
+    static func issueCommentsPath(subjectType: String, subjectApiURL: String) -> String? {
+        guard let path = path(fromAbsoluteAPIURL: subjectApiURL), !path.isEmpty else { return nil }
+        switch subjectType {
+        case "Issue":
+            return path.hasSuffix("/comments") ? path : path + "/comments"
+        case "PullRequest":
+            let issuePath = path.replacingOccurrences(of: "/pulls/", with: "/issues/")
+            return issuePath.hasSuffix("/comments") ? issuePath : issuePath + "/comments"
+        default:
+            return nil
+        }
+    }
+
+    static func encodeComments(_ comments: [GitHubNotificationComment]) -> String? {
+        guard !comments.isEmpty else { return nil }
+        let data = try? JSONEncoder().encode(comments)
+        return data.flatMap { String(data: $0, encoding: .utf8) }
+    }
+
+    static func decodeComments(_ json: String?) -> [GitHubNotificationComment] {
+        guard let json, let data = json.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([GitHubNotificationComment].self, from: data)) ?? []
     }
 
     static func subtitle(fullName: String, subjectType: String, number: Int?) -> String {
@@ -119,6 +422,32 @@ enum GitHubNotificationMapper {
             }
         }
         return fullName
+    }
+
+    /// 中栏次行：`owner/repo · PR #n · 相对时间`。不要单独再写时钟。
+    static func timelineCaption(
+        fullName: String,
+        subjectType: String,
+        number: Int?,
+        relativeTime: String
+    ) -> String {
+        var parts: [String] = [fullName]
+        if let number {
+            switch subjectType {
+            case "PullRequest":
+                parts.append("PR #\(number)")
+            case "Issue":
+                parts.append("Issue #\(number)")
+            case "Discussion":
+                parts.append("Discussion #\(number)")
+            default:
+                parts.append("#\(number)")
+            }
+        }
+        if !relativeTime.isEmpty {
+            parts.append(relativeTime)
+        }
+        return parts.joined(separator: " · ")
     }
 
     /// 时间线分组：今天 / 昨天 / 本周 / 更早。
@@ -138,6 +467,31 @@ enum GitHubNotificationMapper {
 
     static func chipTitleKey(_ chip: GitHubNotificationChip) -> String {
         "activity.notification.chip.\(chip.rawValue)"
+    }
+
+    private static let htmlImageTagRegex = try! NSRegularExpression(
+        pattern: #"<img\b[^>]*>"#,
+        options: [.caseInsensitive, .dotMatchesLineSeparators]
+    )
+    private static let htmlSrcRegex = try! NSRegularExpression(
+        pattern: #"\bsrc\s*=\s*["']([^"']+)["']"#,
+        options: .caseInsensitive
+    )
+    private static let htmlAltRegex = try! NSRegularExpression(
+        pattern: #"\balt\s*=\s*["']([^"']*)["']"#,
+        options: .caseInsensitive
+    )
+
+    static func canReply(subjectType: String, number: Int?) -> Bool {
+        guard number != nil else { return false }
+        return subjectType == "Issue" || subjectType == "PullRequest"
+    }
+
+    static func commentCardHeader(login: String, isOpeningPost: Bool, locale: Locale) -> String {
+        if isOpeningPost {
+            return copy(locale, zh: "\(login) 发布了这条", en: "\(login) opened")
+        }
+        return copy(locale, zh: "\(login) 评论", en: "\(login) commented")
     }
 
     static func record(
@@ -164,7 +518,9 @@ enum GitHubNotificationMapper {
                 apiURL: apiURL
             ),
             actorLogin: nil,
+            subjectCreatedAt: nil,
             excerpt: nil,
+            commentsJson: nil,
             hydratedAt: nil,
             updatedAt: dto.updatedAt,
             firstSeenAt: firstSeenAt,

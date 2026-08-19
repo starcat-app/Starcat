@@ -1376,6 +1376,8 @@ struct HomeView: View {
             )
         } else if selectedSidebarPage == .activity, selectedActivityCategory == .undoStar {
             RepoDetailView(selectedTrendingRepo: nil)
+        } else if selectedSidebarPage == .activity, selectedActivityCategory == .notification {
+            GitHubNotificationDetailView(selectedItem: $selectedActivityItem)
         } else if selectedSidebarPage == .activity {
             ActivityDetailView(item: selectedActivityItem)
         } else if selectedSidebarPage == .trending, selectedExploreMode == .weekly {
