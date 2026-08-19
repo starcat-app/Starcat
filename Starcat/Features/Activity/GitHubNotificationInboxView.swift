@@ -34,9 +34,7 @@ struct GitHubNotificationInboxView: View {
         }
         .task {
             inbox.listSegment = segment
-            #if DEBUG
-            await inbox.seedDemoThreadsIfNeeded()
-            #endif
+            await inbox.clearDemoThreads()
             records = await inbox.fetchCached()
             lastFetchedAt = await inbox.lastFetchedAt()
             consumePendingOpenIfNeeded()
@@ -110,25 +108,6 @@ struct GitHubNotificationInboxView: View {
                 } label: {
                     Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "在 GitHub 打开通知收件箱", en: "Open GitHub Notifications"))
                 }
-                #if DEBUG
-                Divider()
-                Button {
-                    Task {
-                        await inbox.seedDemoThreads()
-                        await reloadFromCache()
-                    }
-                } label: {
-                    Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "插入 Mention / Review 演示", en: "Insert Mention / Review demos"))
-                }
-                Button {
-                    Task {
-                        await inbox.clearDemoThreads()
-                        await reloadFromCache()
-                    }
-                } label: {
-                    Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "清除演示通知", en: "Remove demo notifications"))
-                }
-                #endif
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 13, weight: .semibold))

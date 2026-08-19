@@ -354,9 +354,10 @@ private struct GitHubNotificationCommentComposer: View {
     @State private var paywallContext: ProPaywallContext?
     @State private var isAIHovered = false
     @State private var isOwnProject = false
-    /// 没向 GitHub 确认是 open 之前当已关闭，避免已关闭 Issue 先闪一下「关闭问题」。
-    @State private var isClosed = true
-    @State private var isClosing = false
+    /// 没向 GitHub 确认 state 之前不显示关闭/重开，避免已关闭 Issue 误显示「关闭问题」。
+    @State private var knownIssueState: String?
+    @State private var isUpdatingIssueState = false
+    @State private var isComposerExpanded = false
 
     private var threadId: String { payload.threadId }
     private var repositoryFullName: String { payload.repositoryFullName }
@@ -389,45 +390,10 @@ private struct GitHubNotificationCommentComposer: View {
                 ) {
                     isPreview = true
                 }
+                composerExpandButton
             }
 
-            if isPreview {
-                Group {
-                    if trimmed.isEmpty {
-                        Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "没什么可预览的", en: "Nothing to preview"))
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, minHeight: 88, alignment: .topLeading)
-                    } else {
-                        ScrollView {
-                            GitHubNotificationMarkdown(
-                                content: draft,
-                                repositoryFullName: repositoryFullName
-                            )
-                        }
-                        .frame(minHeight: 88, maxHeight: 160)
-                    }
-                }
-                .padding(8)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Color.secondary.opacity(0.28), lineWidth: 1)
-                )
-            } else {
-                GitHubNotificationCommentTextEditor(
-                    text: $draft,
-                    placeholder: GitHubNotificationMapper.copy(
-                        locale,
-                        zh: "用 Markdown 写下评论…",
-                        en: "Write a comment with Markdown…"
-                    ),
-                    isEditable: !isPosting && !isGenerating
-                )
-                .frame(minHeight: 88, maxHeight: 160)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Color.secondary.opacity(0.28), lineWidth: 1)
-                )
-            }
+            composerBody
 
             if let errorMessage {
                 Text(verbatim: errorMessage)
@@ -438,23 +404,23 @@ private struct GitHubNotificationCommentComposer: View {
             HStack(spacing: 8) {
                 Spacer()
                 aiCommentButton
-                if canShowClose {
+                if canShowIssueStateButton {
                     Button {
-                        Task { await closeIssue() }
+                        Task { await applyIssueState() }
                     } label: {
-                        if isClosing {
+                        if isUpdatingIssueState {
                             ProgressView()
                                 .controlSize(.small)
                                 .frame(width: 72)
                         } else {
-                            Text(verbatim: closeButtonTitle)
+                            Text(verbatim: issueStateButtonTitle)
                         }
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .focusEffectDisabled()
-                    .disabled(isPosting || isGenerating || isClosing)
-                    .help(closeButtonTitle)
+                    .disabled(isPosting || isGenerating || isUpdatingIssueState)
+                    .help(issueStateButtonTitle)
                 }
                 Button {
                     Task { await submit() }
@@ -470,7 +436,7 @@ private struct GitHubNotificationCommentComposer: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .focusEffectDisabled()
-                .disabled(trimmed.isEmpty || isPosting || isGenerating || isClosing)
+                .disabled(trimmed.isEmpty || isPosting || isGenerating || isUpdatingIssueState)
             }
         }
         .padding(.horizontal, 18)
@@ -480,6 +446,7 @@ private struct GitHubNotificationCommentComposer: View {
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
         .task(id: threadId) {
+            isComposerExpanded = false
             await refreshCloseEligibility(fetchRemoteState: true)
         }
         .onReceive(NotificationCenter.default.publisher(for: .githubNotificationInboxDidChange)) { _ in
@@ -495,11 +462,10 @@ private struct GitHubNotificationCommentComposer: View {
         draft.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// 关闭和评论是一套动作：放在评论按钮左边，和 GitHub 网页同一位置。
-    /// 只给「我的项目」或当前用户当 owner 的公开仓；演示数据绝不 PATCH。
-    private var canShowClose: Bool {
+    /// 状态按钮：open 关、closed 重开。未知 state 先不画，避免误显示关闭。
+    private var canShowIssueStateButton: Bool {
         isOwnProject
-            && !isClosed
+            && (knownIssueState == "open" || knownIssueState == "closed")
             && !GitHubNotificationMapper.isDemoThread(threadId)
             && GitHubNotificationMapper.canReply(
                 subjectType: payload.subjectType,
@@ -507,15 +473,79 @@ private struct GitHubNotificationCommentComposer: View {
             )
     }
 
-    private var closeButtonTitle: String {
-        let isPR = payload.subjectType == "PullRequest"
-        if !trimmed.isEmpty {
-            return GitHubNotificationMapper.copy(locale, zh: "评论并关闭", en: "Close with comment")
+    private var issueStateButtonTitle: String {
+        GitHubNotificationMapper.issueStateActionTitle(
+            isClosed: knownIssueState == "closed",
+            isPullRequest: payload.subjectType == "PullRequest",
+            hasComment: !trimmed.isEmpty,
+            locale: locale
+        )
+    }
+
+    /// 撰写 / 预览共用同一外框高度，展开后只加高这一块。
+    private var composerBodyHeight: CGFloat {
+        isComposerExpanded ? 320 : 160
+    }
+
+    @ViewBuilder
+    private var composerBody: some View {
+        Group {
+            if isPreview {
+                ScrollView {
+                    if trimmed.isEmpty {
+                        Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "没什么可预览的", en: "Nothing to preview"))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                    } else {
+                        GitHubNotificationMarkdown(
+                            content: draft,
+                            repositoryFullName: repositoryFullName
+                        )
+                    }
+                }
+                .padding(8)
+            } else {
+                GitHubNotificationCommentTextEditor(
+                    text: $draft,
+                    placeholder: GitHubNotificationMapper.copy(
+                        locale,
+                        zh: "用 Markdown 写下评论…",
+                        en: "Write a comment with Markdown…"
+                    ),
+                    isEditable: !isPosting && !isGenerating
+                )
+            }
         }
-        if isPR {
-            return GitHubNotificationMapper.copy(locale, zh: "关闭 Pull Request", en: "Close pull request")
+        .frame(height: composerBodyHeight)
+        .frame(maxWidth: .infinity)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.28), lineWidth: 1)
+        )
+    }
+
+    private var composerExpandButton: some View {
+        Button {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                isComposerExpanded.toggle()
+            }
+        } label: {
+            Image(systemName: isComposerExpanded
+                  ? "arrow.down.right.and.arrow.up.left"
+                  : "arrow.up.left.and.arrow.down.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(5)
+                .background(Circle().fill(Color.secondary.opacity(0.15)))
+                .contentShape(Circle())
         }
-        return GitHubNotificationMapper.copy(locale, zh: "关闭问题", en: "Close issue")
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(GitHubNotificationMapper.copy(
+            locale,
+            zh: isComposerExpanded ? "收起评论框" : "展开评论框",
+            en: isComposerExpanded ? "Collapse comment box" : "Expand comment box"
+        ))
     }
 
     private var hasHydratedThread: Bool {
@@ -724,43 +754,54 @@ private struct GitHubNotificationCommentComposer: View {
         }
     }
 
-    private func closeIssue() async {
-        isClosing = true
+    private func applyIssueState() async {
+        isUpdatingIssueState = true
         errorMessage = nil
-        defer { isClosing = false }
+        defer { isUpdatingIssueState = false }
+        let shouldReopen = knownIssueState == "closed"
         do {
             if !trimmed.isEmpty {
                 try await inbox.postComment(threadId: threadId, body: trimmed)
                 draft = ""
                 isPreview = false
             }
-            try await inbox.closeIssue(threadId: threadId)
-            isClosed = true
+            if shouldReopen {
+                try await inbox.reopenIssue(threadId: threadId)
+                knownIssueState = "open"
+            } else {
+                try await inbox.closeIssue(threadId: threadId)
+                knownIssueState = "closed"
+            }
         } catch {
             errorMessage = submitErrorMessage(error)
         }
     }
 
-    /// 关闭按钮默认隐藏。必须先 GET 到 `state == open`，不能用「缓存里没有 closed」当未关闭。
+    /// 关闭 / 重开都要先 GET 到明确的 open/closed。未知 state 不画按钮。
     private func refreshCloseEligibility(fetchRemoteState: Bool) async {
         if fetchRemoteState {
-            isClosed = true
+            knownIssueState = nil
         }
         isOwnProject = await resolveOwnProject()
-        let canConsiderClose = isOwnProject
+        let canConsider = isOwnProject
             && !GitHubNotificationMapper.isDemoThread(threadId)
             && GitHubNotificationMapper.canReply(
                 subjectType: payload.subjectType,
                 number: payload.subjectNumber
             )
-        guard canConsiderClose else {
-            isClosed = true
+        guard canConsider else {
+            knownIssueState = nil
             return
         }
         if fetchRemoteState {
             await inbox.refreshIssueState(threadId: threadId)
         }
-        isClosed = inbox.cachedIssueState(threadId: threadId) != "open"
+        let cached = inbox.cachedIssueState(threadId: threadId)
+        if cached == "open" || cached == "closed" {
+            knownIssueState = cached
+        } else {
+            knownIssueState = nil
+        }
     }
 
     /// 「我的项目」关系优先；否则 owner 等于当前登录名（个人仓还没进项目列表也能关）。

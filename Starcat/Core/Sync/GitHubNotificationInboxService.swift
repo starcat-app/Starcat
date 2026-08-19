@@ -75,22 +75,9 @@ final class GitHubNotificationInboxService {
         (try? await threadRepository.fetchAll(limit: limit)) ?? []
     }
 
-    /// 本机插入 Mention / Review 演示行。已有同 id 则覆盖正文，不打 GitHub。
-    func seedDemoThreads() async {
-        let rows = GitHubNotificationDemoSeed.records(now: clock())
-        try? await threadRepository.upsertMany(rows)
-        postDidChange()
-    }
-
-    /// 打开 inbox 时若还没有演示行，补一套，方便对照空的 Mention / Review 分段。
-    func seedDemoThreadsIfNeeded() async {
-        let cached = await fetchCached()
-        guard !cached.contains(where: { GitHubNotificationMapper.isDemoThread($0.id) }) else { return }
-        await seedDemoThreads()
-    }
-
+    /// 清掉本机残留的 `starcat-demo-` 演示 thread。不再生成新的。
     func clearDemoThreads() async {
-        try? await threadRepository.deleteIDs(withPrefix: GitHubNotificationDemoSeed.idPrefix)
+        try? await threadRepository.deleteIDs(withPrefix: GitHubNotificationMapper.demoThreadIDPrefix)
         postDidChange()
     }
 
@@ -241,8 +228,12 @@ final class GitHubNotificationInboxService {
         issueStates[id] = state.lowercased()
     }
 
-    /// `PATCH` Issue / PR 为 closed。演示 thread 和不能回复的类型直接拒绝。
-    func closeIssue(threadId: String) async throws {
+    /// `PATCH` Issue / PR 的 `state`。演示 thread 和不能回复的类型直接拒绝。
+    func updateIssueState(threadId: String, state: String) async throws {
+        let normalized = state.lowercased()
+        guard normalized == "open" || normalized == "closed" else {
+            throw GitHubNotificationInboxError.cannotClose
+        }
         guard !GitHubNotificationMapper.isDemoThread(threadId) else {
             throw GitHubNotificationInboxError.cannotClose
         }
@@ -255,8 +246,8 @@ final class GitHubNotificationInboxService {
             throw GitHubNotificationInboxError.cannotClose
         }
         do {
-            try await apiClient.updateNotificationIssueState(path: path, state: "closed")
-            issueStates[threadId] = "closed"
+            try await apiClient.updateNotificationIssueState(path: path, state: normalized)
+            issueStates[threadId] = normalized
             postDidChange()
         } catch let network as NetworkError {
             switch network {
@@ -268,6 +259,14 @@ final class GitHubNotificationInboxService {
                 throw network
             }
         }
+    }
+
+    func closeIssue(threadId: String) async throws {
+        try await updateIssueState(threadId: threadId, state: "closed")
+    }
+
+    func reopenIssue(threadId: String) async throws {
+        try await updateIssueState(threadId: threadId, state: "open")
     }
 
     /// 选中一行：蓝点先灭，再开始 400ms dwell。

@@ -169,14 +169,35 @@ struct GitHubNotificationMapperTests {
         )
     }
 
-    @Test("demo seed 覆盖 mention 和 review，且全部是演示 id")
-    func demoSeedCoversMentionAndReview() {
-        let rows = GitHubNotificationDemoSeed.records(now: Date())
-        #expect(rows.contains { GitHubNotificationMapper.chip(forReason: $0.reason) == .mention })
-        #expect(rows.contains { GitHubNotificationMapper.chip(forReason: $0.reason) == .review })
-        #expect(rows.allSatisfy { GitHubNotificationDemoSeed.isDemoID($0.id) })
-        #expect(rows.contains { $0.unread && $0.reason == "mention" })
-        #expect(rows.contains { $0.unread && $0.reason == "review_requested" })
+    @Test("GitHub 状态按钮文案：关闭 / 重新打开，有评论时带评论")
+    func issueStateActionTitle() {
+        let zh = Locale(identifier: "zh-Hans")
+        let en = Locale(identifier: "en")
+        #expect(
+            GitHubNotificationMapper.issueStateActionTitle(
+                isClosed: false, isPullRequest: false, hasComment: false, locale: zh
+            ) == "关闭问题"
+        )
+        #expect(
+            GitHubNotificationMapper.issueStateActionTitle(
+                isClosed: true, isPullRequest: false, hasComment: false, locale: zh
+            ) == "重新打开问题"
+        )
+        #expect(
+            GitHubNotificationMapper.issueStateActionTitle(
+                isClosed: true, isPullRequest: false, hasComment: true, locale: zh
+            ) == "评论并重新打开"
+        )
+        #expect(
+            GitHubNotificationMapper.issueStateActionTitle(
+                isClosed: true, isPullRequest: true, hasComment: false, locale: en
+            ) == "Reopen pull request"
+        )
+        #expect(
+            GitHubNotificationMapper.issueStateActionTitle(
+                isClosed: true, isPullRequest: false, hasComment: true, locale: en
+            ) == "Reopen with comment"
+        )
     }
 
     @Test("时钟格式 HH:mm")
@@ -614,20 +635,23 @@ struct GitHubNotificationInboxTests {
         #expect(!env.dispatcher.requestIdentifiers.contains("github-inbox-old"))
     }
 
-    @Test("演示通知能写入再按前缀删掉")
-    func demoSeedPersistsAndClears() async throws {
+    @Test("残留演示 thread 能按前缀删掉")
+    func leftoverDemoThreadsClearByPrefix() async throws {
         let env = try makeEnv()
-        await env.inbox.seedDemoThreads()
-        let seeded = try await env.threads.fetchAll(limit: 20)
-        #expect(seeded.count == 4)
-        #expect(seeded.contains { GitHubNotificationMapper.matchesSegment($0, segment: .mention) })
-        #expect(seeded.contains { GitHubNotificationMapper.matchesSegment($0, segment: .review) })
+        let fetchedAt = "2026-08-19T00:00:00Z"
+        try await env.threads.upsertMany([
+            GitHubNotificationMapper.record(
+                from: Self.makeDTO(id: "\(GitHubNotificationMapper.demoThreadIDPrefix)left", reason: "mention"),
+                fetchedAt: fetchedAt,
+                firstSeenAt: fetchedAt
+            )
+        ])
         await env.inbox.clearDemoThreads()
         let cleared = try await env.threads.fetchAll(limit: 20)
         #expect(cleared.isEmpty)
     }
 
-    @Test("关闭 Issue 走 issues path；演示 id 拒绝")
+    @Test("关闭 Issue 走 issues path；演示 id 拒绝；已关闭可 reopen")
     func closeIssuePatchesState() async throws {
         let env = try makeEnv()
         let lock = OSAllocatedUnfairLock<[(String, String)]>(initialState: [])
@@ -643,16 +667,20 @@ struct GitHubNotificationInboxTests {
             )
         ])
         try await env.inbox.closeIssue(threadId: "issue-1")
-        let patched = lock.withLock { $0 }
+        var patched = lock.withLock { $0 }
         #expect(patched.count == 1)
         #expect(patched.first?.0 == "/repos/o/r/issues/1")
         #expect(patched.first?.1 == "closed")
         #expect(env.inbox.cachedIssueState(threadId: "issue-1") == "closed")
 
-        await env.inbox.seedDemoThreads()
-        let demoId = GitHubNotificationDemoSeed.records()[0].id
+        try await env.inbox.reopenIssue(threadId: "issue-1")
+        patched = lock.withLock { $0 }
+        #expect(patched.count == 2)
+        #expect(patched.last?.1 == "open")
+        #expect(env.inbox.cachedIssueState(threadId: "issue-1") == "open")
+
         await #expect(throws: GitHubNotificationInboxError.cannotClose) {
-            try await env.inbox.closeIssue(threadId: demoId)
+            try await env.inbox.closeIssue(threadId: "\(GitHubNotificationMapper.demoThreadIDPrefix)x")
         }
     }
 
@@ -689,12 +717,10 @@ struct GitHubNotificationInboxTests {
         #expect(hydrateCalls == 2)
         #expect(env.inbox.cachedIssueState(threadId: "stale-open") == "closed")
 
-        await env.inbox.seedDemoThreads()
-        let demoId = GitHubNotificationDemoSeed.records()[0].id
         let callsBeforeDemo = hydrateCalls
-        await env.inbox.refreshIssueState(threadId: demoId)
+        await env.inbox.refreshIssueState(threadId: "\(GitHubNotificationMapper.demoThreadIDPrefix)x")
         #expect(hydrateCalls == callsBeforeDemo)
-        #expect(env.inbox.cachedIssueState(threadId: demoId) == nil)
+        #expect(env.inbox.cachedIssueState(threadId: "\(GitHubNotificationMapper.demoThreadIDPrefix)x") == nil)
     }
 
     // MARK: - Harness
