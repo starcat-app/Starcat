@@ -85,6 +85,8 @@ RAG indexing, knowledge-base browsing, and the default CLI / MCP context all sta
 
 ### Knowledge-base RAG workspace
 
+![Knowledge-base RAG workbench](./screenshots/rag-workbench.webp)
+
 Opens in its own window (`⇧⌘K`). Questions default to ingested repos. Answers stream with citations you can open back to the matching repository and evidence chunk.
 
 The layout is a conversation rail, an answer surface, and a Citation Inspector. Retrieval mixes FTS5 keywords, embeddings, and RRF. The index is chunk-level, so a citation can point at a paragraph, not only a repo name.
@@ -102,6 +104,8 @@ The detail pane stays on the current repo. AI reads the README and writes a stru
 CodeFlow shows dependency and call structure without leaving the app.
 
 ### Evaluate and review
+
+![My Insights and Repository Insights](./screenshots/insights.webp)
 
 - Repo Health: activity, maintenance, risk signals
 - OpenSSF Scorecard: public security radar

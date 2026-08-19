@@ -85,6 +85,8 @@ Star 和知识库是两层。GitHub Star 表示公开认同；知识库表示这
 
 ### 知识库 RAG 工作台
 
+![知识库 RAG 工作台](./screenshots/rag-workbench.webp)
+
 独立窗口，快捷键 `⇧⌘K`。默认只问知识库里的仓库，回答带引用，并能跳回对应仓库和证据片段。
 
 工作台分三栏：左侧会话与知识库状态，中间流式回答，右侧 Citation Inspector 核对来源。检索是混合的：FTS5 关键词、Embedding 语义召回、RRF 融合。索引按分片建立，citation 能指到具体段落，而不只是仓库名。
@@ -102,6 +104,8 @@ Star 和知识库是两层。GitHub Star 表示公开认同；知识库表示这
 CodeFlow 用来看仓库内部的依赖和调用关系，不必离开 App 去另开编辑器。
 
 ### 评估与洞察
+
+![我的洞察与仓库洞察](./screenshots/insights.webp)
 
 - Repo Health：活跃度、维护状态、风险信号
 - OpenSSF Scorecard：公开安全评分雷达图
