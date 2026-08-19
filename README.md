@@ -9,7 +9,7 @@
 <b>macOS 15 Sequoia or newer</b>: Install with <a href="https://github.com/starcat-app/homebrew-starcat">Homebrew</a>, download the <a href="https://starcat.ink/downloads/Starcat-1.3.0-arm64.dmg">current Direct build (1.3.0)</a> for Apple Silicon Macs, or get <b><a href="https://apps.apple.com/app/starcat-for-github/id6788809803?mt=12">Starcat for GitHub</a></b> from the Mac App Store.<br>
 Previous versions and release notes: <a href="./CHANGELOG.md">Changelog</a> · <a href="https://starcat.ink/changelog.html">Website changelog</a><br>
 Public issue tracker: <a href="https://github.com/starcat-app/starcat-pro/issues">Report a bug or request a feature</a><br>
-User docs: <a href="https://docs.starcat.ink">docs.starcat.ink</a> · Privacy: <a href="https://starcat.ink/privacy.html">Privacy Policy</a> · <a href="https://starcat.ink/eula.html">EULA</a><br>
+User docs: <a href="https://starcat.mintlify.app/">starcat.mintlify.app</a> · Privacy: <a href="https://starcat.ink/privacy.html">Privacy Policy</a> · <a href="https://starcat.ink/eula.html">EULA</a><br>
 中文说明: <a href="./README-ZH.md">README-ZH.md</a>
 </sub>
 </div>
@@ -171,7 +171,7 @@ This repository is the macOS app. Starcat also has standalone repos for docs, di
 |---------|------|
 | [starcat.ink](https://starcat.ink) | Direct website, downloads, release notes |
 | [starcat-pro](https://github.com/starcat-app/starcat-pro) | Public support, issues, changelog, and promo images |
-| [starcat-docs](https://github.com/starcat-app/starcat-docs) | Official user docs, published at [docs.starcat.ink](https://docs.starcat.ink) |
+| [starcat-docs](https://github.com/starcat-app/starcat-docs) | Official user docs, published at [starcat.mintlify.app](https://starcat.mintlify.app/) |
 | [starcat-site](https://github.com/starcat-app/starcat-site) | Direct / App Store site and legal pages |
 | [starcat-localization](https://github.com/starcat-app/starcat-localization) | UI localization, currently 18 languages |
 | [homebrew-starcat](https://github.com/starcat-app/homebrew-starcat) | App Homebrew Cask: `brew install --cask starcat` |
@@ -291,7 +291,7 @@ xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
 ## Documentation
 
 - [Local build guide](docs/7-工具与脚本/本地编译教程.md) - compile the app, support APIs, and CLI (Chinese)
-- [User docs](https://docs.starcat.ink) - install, features, daily use
+- [User docs](https://starcat.mintlify.app/) - install, features, daily use
 - [Feature list](docs/1-立项/功能清单.md) - complete feature specification
 - [Implementation overview](docs/功能实现总览.md) - primary progress index and engineering debt
 - [Detailed design index](docs/3-设计/详细设计/README.md) - technical design documentation

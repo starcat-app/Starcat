@@ -16,7 +16,7 @@ For Starcat application and product support (downloads, billing, Pro entitlement
 how to use a feature), use [starcat-pro Issues](https://github.com/starcat-app/starcat-pro/issues)
 or email [dong4j@gmail.com](mailto:dong4j@gmail.com).
 
-User documentation: [docs.starcat.ink](https://docs.starcat.ink)
+User documentation: [starcat.mintlify.app](https://starcat.mintlify.app/)
 
 Report vulnerabilities privately through this repository's Security tab as described in
 [SECURITY.md](./SECURITY.md).

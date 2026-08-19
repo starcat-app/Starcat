@@ -9,7 +9,7 @@
 <b>macOS 15 Sequoia 或更高版本</b>：优先使用 <a href="https://github.com/starcat-app/homebrew-starcat">Homebrew</a> 安装，也可以下载面向 Apple Silicon Mac 的 <a href="https://starcat.ink/downloads/Starcat-1.3.0-arm64.dmg">当前 Direct 版本（1.3.0）</a>，或在 Mac App Store 获取 <b><a href="https://apps.apple.com/cn/app/starcat-for-github/id6788809803?mt=12">Starcat for GitHub</a></b>。<br>
 历史版本与发布说明：<a href="./CHANGELOG-ZH.md">更新日志</a> · <a href="https://starcat.ink/changelog-zh.html">官网更新记录</a><br>
 公开问题反馈：<a href="https://github.com/starcat-app/starcat-pro/issues">反馈 bug 或提出功能建议</a><br>
-用户文档：<a href="https://docs.starcat.ink">docs.starcat.ink</a> · 隐私：<a href="https://starcat.ink/privacy-zh.html">隐私政策</a> · <a href="https://starcat.ink/eula-zh.html">用户协议</a><br>
+用户文档：<a href="https://starcat.mintlify.app/">starcat.mintlify.app</a> · 隐私：<a href="https://starcat.ink/privacy-zh.html">隐私政策</a> · <a href="https://starcat.ink/eula-zh.html">用户协议</a><br>
 English: <a href="./README.md">README.md</a>
 </sub>
 </div>
@@ -171,7 +171,7 @@ CloudKit 同步字段已经预留，生产版本还没有接上。Starcat 不托
 |------|------|
 | [starcat.ink](https://starcat.ink) | Direct 官网、下载、更新说明 |
 | [starcat-pro](https://github.com/starcat-app/starcat-pro) | 公开支持、Issue、Changelog 与营销图 |
-| [starcat-docs](https://github.com/starcat-app/starcat-docs) | 官方用户文档源码，发布于 [docs.starcat.ink](https://docs.starcat.ink) |
+| [starcat-docs](https://github.com/starcat-app/starcat-docs) | 官方用户文档源码，发布于 [starcat.mintlify.app](https://starcat.mintlify.app/) |
 | [starcat-site](https://github.com/starcat-app/starcat-site) | Direct / App Store 官网与法律页面源码 |
 | [starcat-localization](https://github.com/starcat-app/starcat-localization) | 界面本地化资源，目前 18 种语言 |
 | [homebrew-starcat](https://github.com/starcat-app/homebrew-starcat) | App 的 Homebrew Cask：`brew install --cask starcat` |
@@ -291,7 +291,7 @@ xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
 ## 文档
 
 - [本地编译教程](docs/7-工具与脚本/本地编译教程.md) - 从源码编 App、配套 API 和 CLI
-- [用户文档](https://docs.starcat.ink) - 安装、功能与日常使用
+- [用户文档](https://starcat.mintlify.app/) - 安装、功能与日常使用
 - [功能清单](docs/1-立项/功能清单.md) - 完整功能规格
 - [功能实现总览](docs/功能实现总览.md) - 主进度索引与工程债
 - [详细设计索引](docs/3-设计/详细设计/README.md) - 技术设计文档入口
