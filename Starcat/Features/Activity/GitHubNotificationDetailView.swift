@@ -2,8 +2,9 @@
 //  GitHubNotificationDetailView.swift
 //  Starcat
 //
-//  通知页右栏：按 GitHub Issue 会话排版（标题 + 评论卡片 + 底部评论框），
-//  不走 ActivityDetailView 的仓库 hero / 语言徽章。
+//  通知页右栏：按 GitHub Issue 会话排版（评论卡片 + 底部评论框）。
+//  顶区与中栏同构：`.navigationTitle` / `.navigationSubtitle` + 与分段条同高的工具行，
+//  避免中栏 / 右栏分割线错层。
 //
 
 import AppKit
@@ -18,6 +19,7 @@ struct GitHubNotificationDetailView: View {
     @Environment(\.locale) private var locale
 
     @Binding var selectedItem: ActivityItem?
+    @State private var isComposerExpanded = false
 
     private var inbox: GitHubNotificationInboxService {
         dependencies.githubNotificationInboxService
@@ -49,51 +51,56 @@ struct GitHubNotificationDetailView: View {
 
     private func populatedDetail(_ item: ActivityItem) -> some View {
         VStack(spacing: 0) {
-            header(item)
+            headerToolbar(item)
             Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    if let payload = item.notification {
-                        repoRow(payload)
-                        conversation(payload)
+            if !isComposerExpanded {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        if let payload = item.notification {
+                            repoRow(payload)
+                            conversation(payload)
+                        }
+                        actionButtons(item)
                     }
-                    actionButtons(item)
+                    .padding(18)
                 }
-                .padding(18)
             }
             if let payload = item.notification,
                GitHubNotificationMapper.canReply(
                 subjectType: payload.subjectType,
                 number: payload.subjectNumber
                ) {
-                Divider()
+                if !isComposerExpanded {
+                    Divider()
+                }
                 GitHubNotificationCommentComposer(
                     payload: payload,
                     issueTitle: item.title,
-                    repo: item.repo
+                    repo: item.repo,
+                    isExpanded: $isComposerExpanded
                 )
+                .frame(maxHeight: isComposerExpanded ? .infinity : nil)
             }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // 标题进系统导航栏，和中栏「活动 > 通知 / 46 条通知」同一层；下面只留一行工具条。
+        .navigationTitle(item.title)
+        .navigationSubtitle(navigationSubtitle(item))
+        .onChange(of: item.notification?.threadId) { _, _ in
+            isComposerExpanded = false
         }
     }
 
-    private func header(_ item: ActivityItem) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(verbatim: item.title)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(3)
-                    .multilineTextAlignment(.leading)
-                HStack(spacing: 8) {
-                    if let chip = item.notification?.chip {
-                        GitHubNotificationReasonChip(chip: chip)
-                    }
-                    GitHubNotificationSubjectHeading(
-                        title: heading(item),
-                        url: item.htmlURL
-                    )
-                }
+    /// 与中栏分段条同高：chip + 可点 `Issue #20` 在左，上下条 / 关闭在右。
+    private func headerToolbar(_ item: ActivityItem) -> some View {
+        HStack(spacing: 8) {
+            if let chip = item.notification?.chip {
+                GitHubNotificationReasonChip(chip: chip)
             }
+            GitHubNotificationSubjectHeading(
+                title: heading(item),
+                url: item.htmlURL
+            )
             Spacer(minLength: 8)
             HStack(spacing: 4) {
                 Button {
@@ -130,8 +137,13 @@ struct GitHubNotificationDetailView: View {
                 }
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 12)
+        .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
+        .padding(.top, ManageListFilterBarMetrics.topPadding)
+        .padding(.bottom, ManageListFilterBarMetrics.bottomPadding)
+    }
+
+    private func navigationSubtitle(_ item: ActivityItem) -> String {
+        item.notification?.repositoryFullName ?? heading(item)
     }
 
     private func repoRow(_ payload: ActivityNotificationPayload) -> some View {
@@ -336,6 +348,7 @@ private struct GitHubNotificationCommentComposer: View {
     let payload: ActivityNotificationPayload
     let issueTitle: String
     let repo: Repo?
+    @Binding var isExpanded: Bool
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
@@ -357,7 +370,8 @@ private struct GitHubNotificationCommentComposer: View {
     /// 没向 GitHub 确认 state 之前不显示关闭/重开，避免已关闭 Issue 误显示「关闭问题」。
     @State private var knownIssueState: String?
     @State private var isUpdatingIssueState = false
-    @State private var isComposerExpanded = false
+    /// AppKit 回传的内容高度；收起时从 3 行起涨，到上限再滚动。
+    @State private var measuredEditorHeight: CGFloat = 0
 
     private var threadId: String { payload.threadId }
     private var repositoryFullName: String { payload.repositoryFullName }
@@ -442,11 +456,12 @@ private struct GitHubNotificationCommentComposer: View {
         .padding(.horizontal, 18)
         .padding(.vertical, 12)
         .background(.background)
+        .frame(maxHeight: isExpanded ? .infinity : nil)
         .sheet(item: $paywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
         .task(id: threadId) {
-            isComposerExpanded = false
+            measuredEditorHeight = 0
             await refreshCloseEligibility(fetchRemoteState: true)
         }
         .onReceive(NotificationCenter.default.publisher(for: .githubNotificationInboxDidChange)) { _ in
@@ -482,9 +497,28 @@ private struct GitHubNotificationCommentComposer: View {
         )
     }
 
-    /// 撰写 / 预览共用同一外框高度，展开后只加高这一块。
-    private var composerBodyHeight: CGFloat {
-        isComposerExpanded ? 320 : 160
+    /// 收起态对齐 RAG composer：默认 3 行，随正文长高，到上限后内部滚动。
+    /// 点展开后由父视图收起会话列表，输入区吃掉右栏剩余高度。
+    private var composerFont: NSFont {
+        .systemFont(ofSize: NSFont.systemFontSize)
+    }
+
+    private var composerLineHeight: CGFloat {
+        let font = composerFont
+        return font.ascender - font.descender + font.leading
+    }
+
+    private var composerMinHeight: CGFloat {
+        ceil(composerLineHeight * 3 + GitHubNotificationCommentNSTextView.contentInset.height * 2)
+    }
+
+    private var composerCollapsedMaxHeight: CGFloat {
+        ceil(composerLineHeight * 8 + GitHubNotificationCommentNSTextView.contentInset.height * 2)
+    }
+
+    private var composerEditorHeight: CGFloat {
+        let measured = measuredEditorHeight > 0 ? measuredEditorHeight : composerMinHeight
+        return min(max(measured, composerMinHeight), composerCollapsedMaxHeight)
     }
 
     @ViewBuilder
@@ -512,12 +546,16 @@ private struct GitHubNotificationCommentComposer: View {
                         zh: "用 Markdown 写下评论…",
                         en: "Write a comment with Markdown…"
                     ),
-                    isEditable: !isPosting && !isGenerating
+                    isEditable: !isPosting && !isGenerating,
+                    maximumHeight: composerCollapsedMaxHeight,
+                    onHeightChange: { measuredEditorHeight = $0 }
                 )
             }
         }
-        .frame(height: composerBodyHeight)
         .frame(maxWidth: .infinity)
+        .frame(maxHeight: isExpanded ? .infinity : composerEditorHeight)
+        .frame(height: isExpanded ? nil : composerEditorHeight)
+        .layoutPriority(isExpanded ? 1 : 0)
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(Color.secondary.opacity(0.28), lineWidth: 1)
@@ -527,10 +565,10 @@ private struct GitHubNotificationCommentComposer: View {
     private var composerExpandButton: some View {
         Button {
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
-                isComposerExpanded.toggle()
+                isExpanded.toggle()
             }
         } label: {
-            Image(systemName: isComposerExpanded
+            Image(systemName: isExpanded
                   ? "arrow.down.right.and.arrow.up.left"
                   : "arrow.up.left.and.arrow.down.right")
                 .font(.system(size: 10, weight: .semibold))
@@ -543,8 +581,8 @@ private struct GitHubNotificationCommentComposer: View {
         .focusEffectDisabled()
         .help(GitHubNotificationMapper.copy(
             locale,
-            zh: isComposerExpanded ? "收起评论框" : "展开评论框",
-            en: isComposerExpanded ? "Collapse comment box" : "Expand comment box"
+            zh: isExpanded ? "收起评论框" : "展开评论框",
+            en: isExpanded ? "Collapse comment box" : "Expand comment box"
         ))
     }
 
@@ -856,14 +894,14 @@ private struct GitHubNotificationCommentComposer: View {
 }
 
 /// 评论输入必须走 NSTextView：SwiftUI `TextEditor` + overlay `Text` 的 placeholder
-/// 和 insertion point 不在同一坐标系。笔记页已经用 padding 猜过几次（`RepoNotesSection`
-/// / `NoteEditorSheet` 的 5pt inset 公式），macOS 版本一变就会再错位。
-/// 这里与 `AICommandTextEditor` / `AIChatTextView` 相同：placeholder 画在
-/// `NSTextView.draw` 里，原点就是 `textContainerInset`，和光标同一条基线。
+/// 和 insertion point 不在同一坐标系。测高对齐 RAG `AICommandTextEditor`：
+/// usedRect + inset，由外层按 3 行下限 / 8 行上限钳制，超出后内部滚动。
 private struct GitHubNotificationCommentTextEditor: NSViewRepresentable {
     @Binding var text: String
     let placeholder: String
     var isEditable: Bool = true
+    let maximumHeight: CGFloat
+    let onHeightChange: (CGFloat) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -897,6 +935,10 @@ private struct GitHubNotificationCommentTextEditor: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
+        // 等容器拿到宽度后再测 usedRect，避免首帧按单行高度跳动。
+        DispatchQueue.main.async {
+            context.coordinator.reportHeight(for: textView)
+        }
         return scrollView
     }
 
@@ -910,6 +952,7 @@ private struct GitHubNotificationCommentTextEditor: NSViewRepresentable {
         if textView.string != text {
             textView.string = text
             textView.needsDisplay = true
+            context.coordinator.reportHeight(for: textView)
         }
     }
 
@@ -925,20 +968,42 @@ private struct GitHubNotificationCommentTextEditor: NSViewRepresentable {
             guard let textView = notification.object as? GitHubNotificationCommentNSTextView else { return }
             parent.text = textView.string
             textView.needsDisplay = true
+            reportHeight(for: textView)
+        }
+
+        func reportHeight(for textView: NSTextView) {
+            guard let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer else { return }
+            layoutManager.ensureLayout(for: textContainer)
+            let usedHeight = layoutManager.usedRect(for: textContainer).height
+            let height = min(
+                ceil(usedHeight + GitHubNotificationCommentNSTextView.contentInset.height * 2),
+                parent.maximumHeight
+            )
+            parent.onHeightChange(height)
         }
     }
 }
 
 private final class GitHubNotificationCommentScrollView: NSScrollView {
-    /// 让 NSTextView 至少铺满评论框，空白处点击也能聚焦，而不是只有第一行可点。
+    /// 空白处也能点进输入：textView 至少铺满当前 SwiftUI 框；内容更高时再长高，交给滚动。
     override func layout() {
         super.layout()
         guard let textView = documentView as? NSTextView else { return }
         let width = contentSize.width
         let minHeight = contentSize.height
-        if abs(textView.frame.width - width) >= 0.5 || textView.minSize.height < minHeight {
-            textView.minSize = NSSize(width: 0, height: minHeight)
-            textView.setFrameSize(NSSize(width: width, height: max(textView.frame.height, minHeight)))
+        var used = minHeight
+        if let layoutManager = textView.layoutManager, let textContainer = textView.textContainer {
+            layoutManager.ensureLayout(for: textContainer)
+            used = ceil(
+                layoutManager.usedRect(for: textContainer).height
+                    + textView.textContainerInset.height * 2
+            )
+        }
+        let height = max(minHeight, used)
+        textView.minSize = NSSize(width: 0, height: minHeight)
+        if abs(textView.frame.width - width) >= 0.5 || abs(textView.frame.height - height) >= 0.5 {
+            textView.setFrameSize(NSSize(width: width, height: height))
         }
     }
 }
