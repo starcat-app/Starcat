@@ -237,6 +237,8 @@ struct ActivityNotificationPayload: Equatable, Sendable {
     let excerpt: String?
     let comments: [GitHubNotificationComment]
     let people: [GitHubNotificationPerson]
+    /// GitHub `repository.id`，用来查「我的项目」关系；没有时关闭按钮走 owner login 兜底。
+    var repositoryId: Int64? = nil
 }
 
 /// Activity 中栏与右栏共享的展示模型。

@@ -101,10 +101,10 @@ struct ActivityView: View {
             } else if selectedCategory == .notification {
                 GitHubNotificationInboxView(selectedItem: $selectedItem)
                     .onAppear {
-                        onItemCountChange(dependencies.activityCategoryCountService.count(for: .notification) ?? 0)
+                        reportNotificationItemCount()
                     }
                     .onReceive(NotificationCenter.default.publisher(for: .githubNotificationInboxDidChange)) { _ in
-                        onItemCountChange(dependencies.activityCategoryCountService.count(for: .notification) ?? 0)
+                        reportNotificationItemCount()
                     }
             } else if let viewModel {
                 content(viewModel)
@@ -623,6 +623,11 @@ struct ActivityView: View {
 
     private func reportItemCount(_ viewModel: ActivityViewModel) {
         onItemCountChange(viewModel.filteredItemTotalCount)
+    }
+
+    /// 通知中栏副标题走 CountService；这里只回写总数，避免把未读数塞进「条活动」格式。
+    private func reportNotificationItemCount() {
+        onItemCountChange(dependencies.activityCategoryCountService.notificationTotalCount ?? 0)
     }
 
     private func relativeDate(_ date: Date) -> String {

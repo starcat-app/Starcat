@@ -77,6 +77,7 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     var listNotificationIssueCommentsHandler: ((_ path: String) async throws -> [GitHubNotificationComment])?
     var createNotificationIssueCommentHandler: ((_ path: String, _ body: String) async throws -> GitHubNotificationComment)?
     var markNotificationThreadReadHandler: ((_ id: String) async throws -> Void)?
+    var updateNotificationIssueStateHandler: ((_ path: String, _ state: String) async throws -> Void)?
 
     // MARK: - 调用记录（供断言用）
     //
@@ -293,6 +294,13 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
             fatalError("MockGitHubAPIClient.markNotificationThreadReadHandler 未设置")
         }
         try await handler(id)
+    }
+
+    func updateNotificationIssueState(path: String, state: String) async throws {
+        guard let handler = updateNotificationIssueStateHandler else {
+            fatalError("MockGitHubAPIClient.updateNotificationIssueStateHandler 未设置")
+        }
+        try await handler(path, state)
     }
 }
 

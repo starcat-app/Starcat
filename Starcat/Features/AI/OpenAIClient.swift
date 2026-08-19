@@ -38,7 +38,8 @@ struct OpenAIClient: AIClientProtocol {
         self.usageRecorder = usageRecorder
         self.client = OpenAI(
             configuration: sdkConfig,
-            session: Self.makeDiagnosticSession(timeoutInterval: configuration.timeoutInterval)
+            session: Self.makeDiagnosticSession(timeoutInterval: configuration.timeoutInterval),
+            middlewares: [OpenAIDisableThinkingMiddleware()]
         )
     }
 
@@ -916,6 +917,9 @@ struct OpenAIClient: AIClientProtocol {
         return ChatQuery(
             messages: messages,
             model: resolvedModel,
+            // `.none` 写在 ReasoningEffort? 上下文里会被推断成 Optional.none（即省略字段），
+            // 评论路径必须显式写成 enum case，Qwen / vLLM 才看得到 reasoning_effort=none。
+            reasoningEffort: request.disableThinking ? ChatQuery.ReasoningEffort.none : nil,
             maxCompletionTokens: request.parameters.maxCompletionTokens > 0 ? request.parameters.maxCompletionTokens : nil,
             metadata: request.metadata.isEmpty ? nil : request.metadata,
             parallelToolCalls: tools.isEmpty ? nil : request.parallelToolCalls,

@@ -25,6 +25,7 @@ extension Notification.Name {
 enum GitHubNotificationInboxError: Error, Equatable {
     case missingScope
     case cannotComment
+    case cannotClose
 }
 
 @MainActor
@@ -47,6 +48,8 @@ final class GitHubNotificationInboxService {
     var listSegment: GitHubNotificationSegment = .all
 
     private var dwellTasks: [String: Task<Void, Never>] = [:]
+    /// hydrate 后记下 Issue / PR 的 open/closed；关单成功也写这里，避免再加一列。
+    private var issueStates: [String: String] = [:]
 
     init(
         apiClient: any GitHubAPIClientProtocol,
@@ -68,6 +71,25 @@ final class GitHubNotificationInboxService {
 
     func fetchCached(limit: Int = GitHubNotificationMapper.backfillLimit) async -> [GitHubNotificationThreadRecord] {
         (try? await threadRepository.fetchAll(limit: limit)) ?? []
+    }
+
+    /// 本机插入 Mention / Review 演示行。已有同 id 则覆盖正文，不打 GitHub。
+    func seedDemoThreads() async {
+        let rows = GitHubNotificationDemoSeed.records(now: clock())
+        try? await threadRepository.upsertMany(rows)
+        postDidChange()
+    }
+
+    /// 打开 inbox 时若还没有演示行，补一套，方便对照空的 Mention / Review 分段。
+    func seedDemoThreadsIfNeeded() async {
+        let cached = await fetchCached()
+        guard !cached.contains(where: { GitHubNotificationMapper.isDemoThread($0.id) }) else { return }
+        await seedDemoThreads()
+    }
+
+    func clearDemoThreads() async {
+        try? await threadRepository.deleteIDs(withPrefix: GitHubNotificationDemoSeed.idPrefix)
+        postDidChange()
     }
 
     func lastFetchedAt() async -> Date? {
@@ -105,6 +127,7 @@ final class GitHubNotificationInboxService {
     }
 
     func hydrate(id: String) async {
+        guard !GitHubNotificationMapper.isDemoThread(id) else { return }
         guard let record = try? await threadRepository.fetch(id: id) else { return }
         guard record.hydratedAt == nil || record.subjectCreatedAt == nil else { return }
         guard let path = GitHubNotificationMapper.path(fromAbsoluteAPIURL: record.subjectApiUrl),
@@ -120,6 +143,9 @@ final class GitHubNotificationInboxService {
                 comments = (try? await apiClient.listNotificationIssueComments(path: commentsPath)) ?? []
             }
             let now = ISO8601DateFormatter.shared.string(from: clock())
+            if let state = hydration.state, !state.isEmpty {
+                issueStates[id] = state.lowercased()
+            }
             try await threadRepository.updateHydration(
                 id: id,
                 actorLogin: hydration.actorLogin,
@@ -140,6 +166,9 @@ final class GitHubNotificationInboxService {
     func postComment(threadId: String, body: String) async throws {
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        guard !GitHubNotificationMapper.isDemoThread(threadId) else {
+            throw GitHubNotificationInboxError.cannotComment
+        }
         guard let record = try await threadRepository.fetch(id: threadId),
               GitHubNotificationMapper.canReply(
                 subjectType: record.subjectType,
@@ -168,6 +197,39 @@ final class GitHubNotificationInboxService {
             hydratedAt: record.hydratedAt ?? now
         )
         postDidChange()
+    }
+
+    func cachedIssueState(threadId: String) -> String? {
+        issueStates[threadId]
+    }
+
+    /// `PATCH` Issue / PR 为 closed。演示 thread 和不能回复的类型直接拒绝。
+    func closeIssue(threadId: String) async throws {
+        guard !GitHubNotificationMapper.isDemoThread(threadId) else {
+            throw GitHubNotificationInboxError.cannotClose
+        }
+        guard let record = try await threadRepository.fetch(id: threadId),
+              let path = GitHubNotificationMapper.issueResourcePath(
+                subjectType: record.subjectType,
+                subjectApiURL: record.subjectApiUrl
+              )
+        else {
+            throw GitHubNotificationInboxError.cannotClose
+        }
+        do {
+            try await apiClient.updateNotificationIssueState(path: path, state: "closed")
+            issueStates[threadId] = "closed"
+            postDidChange()
+        } catch let network as NetworkError {
+            switch network {
+            case .notFound:
+                throw GitHubNotificationInboxError.cannotClose
+            case .clientError(let code, _) where code == 403 || code == 404:
+                throw GitHubNotificationInboxError.cannotClose
+            default:
+                throw network
+            }
+        }
     }
 
     /// 选中一行：蓝点先灭，再开始 400ms dwell。
@@ -338,7 +400,7 @@ final class GitHubNotificationInboxService {
 
     private func retryFailedMarkRead() async throws {
         let failed = try await threadRepository.fetchFailedMarkRead()
-        for record in failed {
+        for record in failed where !GitHubNotificationMapper.isDemoThread(record.id) {
             do {
                 try await apiClient.markNotificationThreadRead(id: record.id)
                 try await threadRepository.updateLocalUnread(
@@ -353,6 +415,16 @@ final class GitHubNotificationInboxService {
     }
 
     private func patchRead(id: String) async {
+        if GitHubNotificationMapper.isDemoThread(id) {
+            try? await threadRepository.updateLocalUnread(
+                id: id,
+                unread: false,
+                markReadState: .synced
+            )
+            dwellTasks[id] = nil
+            postDidChange()
+            return
+        }
         do {
             try await apiClient.markNotificationThreadRead(id: id)
             try await threadRepository.updateLocalUnread(

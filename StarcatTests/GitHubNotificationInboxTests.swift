@@ -86,6 +86,18 @@ struct GitHubNotificationMapperTests {
                 subjectApiURL: "https://api.github.com/repos/o/r/releases/1"
             ) == nil
         )
+        #expect(
+            GitHubNotificationMapper.issueResourcePath(
+                subjectType: "Issue",
+                subjectApiURL: "https://api.github.com/repos/o/r/issues/30"
+            ) == "/repos/o/r/issues/30"
+        )
+        #expect(
+            GitHubNotificationMapper.issueResourcePath(
+                subjectType: "PullRequest",
+                subjectApiURL: "https://api.github.com/repos/o/r/pulls/9"
+            ) == "/repos/o/r/issues/9"
+        )
     }
 
     @Test("列表摘录把 markdown 链接收成可见文字")
@@ -93,6 +105,20 @@ struct GitHubNotificationMapperTests {
         #expect(
             GitHubNotificationMapper.listSnippet("[Starcat](https://github.com/starcat-app/Starcat) is native")
             == "Starcat is native"
+        )
+    }
+
+    @Test("中栏面包屑副标题拼总数和未读")
+    func listCountSubtitle() {
+        let zh = Locale(identifier: "zh-Hans")
+        let en = Locale(identifier: "en")
+        #expect(
+            GitHubNotificationMapper.listCountSubtitle(total: 42, unread: 3, locale: zh)
+            == "42 条通知 · 3 未读"
+        )
+        #expect(
+            GitHubNotificationMapper.listCountSubtitle(total: 42, unread: 0, locale: en)
+            == "42 notifications · 0 unread"
         )
     }
 
@@ -141,6 +167,16 @@ struct GitHubNotificationMapperTests {
                 repositoryFullName: fullName
             ) == "see https://example.test/foo#20"
         )
+    }
+
+    @Test("demo seed 覆盖 mention 和 review，且全部是演示 id")
+    func demoSeedCoversMentionAndReview() {
+        let rows = GitHubNotificationDemoSeed.records(now: Date())
+        #expect(rows.contains { GitHubNotificationMapper.chip(forReason: $0.reason) == .mention })
+        #expect(rows.contains { GitHubNotificationMapper.chip(forReason: $0.reason) == .review })
+        #expect(rows.allSatisfy { GitHubNotificationDemoSeed.isDemoID($0.id) })
+        #expect(rows.contains { $0.unread && $0.reason == "mention" })
+        #expect(rows.contains { $0.unread && $0.reason == "review_requested" })
     }
 
     @Test("时钟格式 HH:mm")
@@ -382,6 +418,25 @@ struct GitHubNotificationInboxTests {
         #expect(stored.githubUnread == true)
     }
 
+    @Test("totalCount 是全部 thread，unreadCount 只计未读")
+    func totalCountSeparateFromUnread() async throws {
+        let env = try makeEnv()
+        try await env.threads.upsertMany([
+            GitHubNotificationMapper.record(
+                from: Self.makeDTO(id: "u1", unread: true),
+                fetchedAt: "2026-08-19T00:00:00Z",
+                firstSeenAt: "2026-08-19T00:00:00Z"
+            ),
+            GitHubNotificationMapper.record(
+                from: Self.makeDTO(id: "r1", unread: false),
+                fetchedAt: "2026-08-19T00:00:00Z",
+                firstSeenAt: "2026-08-19T00:00:00Z"
+            )
+        ])
+        #expect(try await env.threads.totalCount() == 2)
+        #expect(try await env.threads.unreadCount() == 1)
+    }
+
     @Test("304 增量不改本地 thread")
     func notModifiedSkipsUpsert() async throws {
         let env = try makeEnv()
@@ -455,7 +510,8 @@ struct GitHubNotificationInboxTests {
                 htmlURL: "https://github.com/o/r/issues/1",
                 actorLogin: "alice",
                 excerpt: "hello body",
-                createdAt: "2026-07-19T00:00:00Z"
+                createdAt: "2026-07-19T00:00:00Z",
+                state: "open"
             )
         }
         env.mock.listNotificationIssueCommentsHandler = { path in
@@ -558,6 +614,48 @@ struct GitHubNotificationInboxTests {
         #expect(!env.dispatcher.requestIdentifiers.contains("github-inbox-old"))
     }
 
+    @Test("演示通知能写入再按前缀删掉")
+    func demoSeedPersistsAndClears() async throws {
+        let env = try makeEnv()
+        await env.inbox.seedDemoThreads()
+        let seeded = try await env.threads.fetchAll(limit: 20)
+        #expect(seeded.count == 4)
+        #expect(seeded.contains { GitHubNotificationMapper.matchesSegment($0, segment: .mention) })
+        #expect(seeded.contains { GitHubNotificationMapper.matchesSegment($0, segment: .review) })
+        await env.inbox.clearDemoThreads()
+        let cleared = try await env.threads.fetchAll(limit: 20)
+        #expect(cleared.isEmpty)
+    }
+
+    @Test("关闭 Issue 走 issues path；演示 id 拒绝")
+    func closeIssuePatchesState() async throws {
+        let env = try makeEnv()
+        let lock = OSAllocatedUnfairLock<[(String, String)]>(initialState: [])
+        env.mock.updateNotificationIssueStateHandler = { path, state in
+            lock.withLock { $0.append((path, state)) }
+        }
+        let fetchedAt = "2026-08-19T00:00:00Z"
+        try await env.threads.upsertMany([
+            GitHubNotificationMapper.record(
+                from: Self.makeDTO(id: "issue-1", reason: "comment"),
+                fetchedAt: fetchedAt,
+                firstSeenAt: fetchedAt
+            )
+        ])
+        try await env.inbox.closeIssue(threadId: "issue-1")
+        let patched = lock.withLock { $0 }
+        #expect(patched.count == 1)
+        #expect(patched.first?.0 == "/repos/o/r/issues/1")
+        #expect(patched.first?.1 == "closed")
+        #expect(env.inbox.cachedIssueState(threadId: "issue-1") == "closed")
+
+        await env.inbox.seedDemoThreads()
+        let demoId = GitHubNotificationDemoSeed.records()[0].id
+        await #expect(throws: GitHubNotificationInboxError.cannotClose) {
+            try await env.inbox.closeIssue(threadId: demoId)
+        }
+    }
+
     // MARK: - Harness
 
     private struct Env {
@@ -576,7 +674,7 @@ struct GitHubNotificationInboxTests {
         let mock = MockGitHubAPIClient()
         mock.markNotificationThreadReadHandler = { _ in }
         mock.hydrateNotificationSubjectHandler = { _ in
-            GitHubNotificationSubjectHydration(htmlURL: nil, actorLogin: nil, excerpt: nil, createdAt: nil)
+            GitHubNotificationSubjectHydration(htmlURL: nil, actorLogin: nil, excerpt: nil, createdAt: nil, state: nil)
         }
         let defaults = UserDefaults(suiteName: "test.starcat.github-inbox.\(UUID().uuidString)")!
         let settings = AppSettings(defaults: defaults, keychain: InMemoryKeychain())

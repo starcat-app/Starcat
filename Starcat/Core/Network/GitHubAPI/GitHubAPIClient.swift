@@ -188,6 +188,20 @@ actor GitHubAPIClient {
         try await performNoBody(request)
     }
 
+    /// PATCH 带 JSON body。关 Issue / PR 走这里，不能复用无 body 的 `patch(path:)`。
+    func patch<T: Encodable>(path: String, body: T) async throws {
+        let bodyData = try JSONEncoder().encode(body)
+        var request = try buildRequest(
+            method: "PATCH",
+            path: path,
+            queryItems: [],
+            accept: "application/vnd.github+json",
+            body: bodyData
+        )
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        try await performNoBody(request)
+    }
+
     /// PUT 请求，带 Body 和 返回值
     func put<T: Encodable, U: Decodable>(
         path: String,

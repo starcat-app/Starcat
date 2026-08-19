@@ -68,8 +68,9 @@ struct GitHubNotificationDetailView: View {
                ) {
                 Divider()
                 GitHubNotificationCommentComposer(
-                    threadId: payload.threadId,
-                    repositoryFullName: payload.repositoryFullName
+                    payload: payload,
+                    issueTitle: item.title,
+                    repo: item.repo
                 )
             }
         }
@@ -187,6 +188,8 @@ struct GitHubNotificationDetailView: View {
 
     private func actionButtons(_ item: ActivityItem) -> some View {
         HStack(spacing: 8) {
+            Spacer(minLength: 0)
+
             if let repo = item.repo {
                 Button {
                     NotificationCenter.default.post(
@@ -223,8 +226,6 @@ struct GitHubNotificationDetailView: View {
                 .help("activity.notification.detail.openOnGitHub")
                 .accessibilityLabel(Text("activity.notification.detail.openOnGitHub"))
             }
-
-            Spacer(minLength: 0)
         }
         .padding(.top, 8)
     }
@@ -332,17 +333,35 @@ private struct GitHubNotificationCommentCard: View {
 
 /// 底部评论框：撰写 / 预览 + 发到 GitHub。Catalog 本轮不能加 key，文案走 mapper.copy。
 private struct GitHubNotificationCommentComposer: View {
-    let threadId: String
-    let repositoryFullName: String
+    let payload: ActivityNotificationPayload
+    let issueTitle: String
+    let repo: Repo?
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
     @Environment(\.locale) private var locale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @State private var draft = ""
     @State private var isPreview = false
     @State private var isPosting = false
     @State private var errorMessage: String?
+    @State private var isGenerating = false
+    @State private var didGenerate = false
+    @State private var previousDraft: String?
+    @State private var generateTask: Task<Void, Never>?
+    @State private var successResetTask: Task<Void, Never>?
+    @State private var paywallContext: ProPaywallContext?
+    @State private var isAIHovered = false
+    @State private var isOwnProject = false
+    @State private var isClosed = false
+    @State private var isClosing = false
+
+    private var threadId: String { payload.threadId }
+    private var repositoryFullName: String { payload.repositoryFullName }
+    private var inbox: GitHubNotificationInboxService {
+        dependencies.githubNotificationInboxService
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -400,7 +419,7 @@ private struct GitHubNotificationCommentComposer: View {
                         zh: "用 Markdown 写下评论…",
                         en: "Write a comment with Markdown…"
                     ),
-                    isEditable: !isPosting
+                    isEditable: !isPosting && !isGenerating
                 )
                 .frame(minHeight: 88, maxHeight: 160)
                 .overlay(
@@ -415,8 +434,27 @@ private struct GitHubNotificationCommentComposer: View {
                     .foregroundStyle(.secondary)
             }
 
-            HStack {
+            HStack(spacing: 8) {
                 Spacer()
+                aiCommentButton
+                if canShowClose {
+                    Button {
+                        Task { await closeIssue() }
+                    } label: {
+                        if isClosing {
+                            ProgressView()
+                                .controlSize(.small)
+                                .frame(width: 72)
+                        } else {
+                            Text(verbatim: closeButtonTitle)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .focusEffectDisabled()
+                    .disabled(isPosting || isGenerating || isClosing)
+                    .help(closeButtonTitle)
+                }
                 Button {
                     Task { await submit() }
                 } label: {
@@ -431,16 +469,227 @@ private struct GitHubNotificationCommentComposer: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .focusEffectDisabled()
-                .disabled(trimmed.isEmpty || isPosting)
+                .disabled(trimmed.isEmpty || isPosting || isGenerating || isClosing)
             }
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 12)
         .background(.background)
+        .sheet(item: $paywallContext) { context in
+            ProPaywallSheet.hosted(context: context, dependencies: dependencies)
+        }
+        .task {
+            await refreshCloseEligibility()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .githubNotificationInboxDidChange)) { _ in
+            Task { await refreshCloseEligibility() }
+        }
+        .onDisappear {
+            generateTask?.cancel()
+            successResetTask?.cancel()
+        }
     }
 
     private var trimmed: String {
         draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// 关闭和评论是一套动作：放在评论按钮左边，和 GitHub 网页同一位置。
+    /// 只给「我的项目」或当前用户当 owner 的公开仓；演示数据绝不 PATCH。
+    private var canShowClose: Bool {
+        isOwnProject
+            && !isClosed
+            && !GitHubNotificationMapper.isDemoThread(threadId)
+            && GitHubNotificationMapper.canReply(
+                subjectType: payload.subjectType,
+                number: payload.subjectNumber
+            )
+    }
+
+    private var closeButtonTitle: String {
+        let isPR = payload.subjectType == "PullRequest"
+        if !trimmed.isEmpty {
+            return GitHubNotificationMapper.copy(locale, zh: "评论并关闭", en: "Close with comment")
+        }
+        if isPR {
+            return GitHubNotificationMapper.copy(locale, zh: "关闭 Pull Request", en: "Close pull request")
+        }
+        return GitHubNotificationMapper.copy(locale, zh: "关闭问题", en: "Close issue")
+    }
+
+    private var hasHydratedThread: Bool {
+        if let excerpt = payload.excerpt, !excerpt.isEmpty { return true }
+        return !payload.comments.isEmpty
+    }
+
+    @ViewBuilder
+    private var aiCommentButton: some View {
+        Group {
+            if isGenerating {
+                Button {
+                    cancelGeneration()
+                } label: {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 22, height: 22)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help(GitHubNotificationMapper.copy(locale, zh: "停止生成", en: "Stop generating"))
+            } else if previousDraft != nil {
+                Menu {
+                    Button {
+                        startGeneration()
+                    } label: {
+                        Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "用 AI 撰写", en: "Write with AI"))
+                    }
+                    Button {
+                        restorePreviousDraft()
+                    } label: {
+                        Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "还原上次草稿", en: "Restore last draft"))
+                    }
+                } label: {
+                    aiIcon
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .frame(width: 22, height: 22)
+                .focusEffectDisabled()
+                .disabled(!hasHydratedThread)
+                .help(aiHelp)
+            } else {
+                Button {
+                    startGeneration()
+                } label: {
+                    aiIcon
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .disabled(!hasHydratedThread)
+                .help(aiHelp)
+            }
+        }
+        .onHover { hovering in
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) {
+                isAIHovered = hovering
+            }
+        }
+    }
+
+    private var aiIcon: some View {
+        Image(systemName: didGenerate ? "checkmark.circle.fill" : "sparkles")
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(didGenerate ? Color.green : (isAIHovered ? Color.accentColor : Color.secondary))
+            .frame(width: 22, height: 22)
+            .background(
+                Circle().fill(Color.secondary.opacity(isAIHovered || didGenerate ? 0.16 : 0.10))
+            )
+            .contentTransition(.symbolEffect(.replace))
+    }
+
+    private var aiHelp: String {
+        if !hasHydratedThread {
+            return GitHubNotificationMapper.copy(
+                locale,
+                zh: "等评论加载完成后再用 AI 撰写",
+                en: "Wait for comments to load, then write with AI"
+            )
+        }
+        return GitHubNotificationMapper.copy(
+            locale,
+            zh: trimmed.isEmpty ? "用 AI 撰写评论" : "用 AI 润色并补全评论",
+            en: trimmed.isEmpty ? "Write a comment with AI" : "Improve and complete this comment with AI"
+        )
+    }
+
+    private func startGeneration() {
+        guard hasHydratedThread, !isGenerating else { return }
+        do {
+            try dependencies.repoAIInsightService.ensureGitHubCommentReady()
+        } catch let error as EntitlementGateError {
+            paywallContext = ProPaywallContext(feature: error.feature, message: error.localizedDescription)
+            return
+        } catch {
+            errorMessage = error.localizedDescription
+            return
+        }
+
+        isPreview = false
+        errorMessage = nil
+        previousDraft = draft
+        isGenerating = true
+        didGenerate = false
+        successResetTask?.cancel()
+        generateTask?.cancel()
+        generateTask = Task { await generateComment() }
+    }
+
+    private func cancelGeneration() {
+        generateTask?.cancel()
+        generateTask = nil
+        isGenerating = false
+        if let previousDraft {
+            draft = previousDraft
+        }
+    }
+
+    private func restorePreviousDraft() {
+        guard let previousDraft else { return }
+        draft = previousDraft
+        self.previousDraft = nil
+        didGenerate = false
+    }
+
+    private func generateComment() async {
+        let snapshot = previousDraft ?? draft
+        let login = authSession.state.user?.login ?? "user"
+        var summary: String?
+        if let repo,
+           let insight = try? await dependencies.repoAIInsightService.cachedInsightFast(for: repo) {
+            summary = insight.summaryMarkdown ?? insight.summary
+        }
+        let pack = GitHubNotificationCommentAI.pack(
+            title: issueTitle,
+            payload: payload,
+            repo: repo,
+            summaryMarkdown: summary,
+            currentUserLogin: login,
+            draft: snapshot
+        )
+        do {
+            let result = try await dependencies.repoAIInsightService.generateGitHubCommentDraft(pack: pack) { partial in
+                guard !Task.isCancelled else { return }
+                draft = partial
+            }
+            guard !Task.isCancelled else {
+                isGenerating = false
+                return
+            }
+            draft = result
+            isGenerating = false
+            didGenerate = true
+            scheduleSuccessReset()
+        } catch is CancellationError {
+            isGenerating = false
+            if let previousDraft {
+                draft = previousDraft
+            }
+        } catch {
+            isGenerating = false
+            if let previousDraft {
+                draft = previousDraft
+            }
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func scheduleSuccessReset() {
+        successResetTask?.cancel()
+        successResetTask = Task {
+            try? await Task.sleep(for: .milliseconds(reduceMotion ? 200 : 1_500))
+            guard !Task.isCancelled else { return }
+            didGenerate = false
+        }
     }
 
     private func composerTab(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
@@ -474,6 +723,41 @@ private struct GitHubNotificationCommentComposer: View {
         }
     }
 
+    private func closeIssue() async {
+        isClosing = true
+        errorMessage = nil
+        defer { isClosing = false }
+        do {
+            if !trimmed.isEmpty {
+                try await inbox.postComment(threadId: threadId, body: trimmed)
+                draft = ""
+                isPreview = false
+            }
+            try await inbox.closeIssue(threadId: threadId)
+            isClosed = true
+        } catch {
+            errorMessage = submitErrorMessage(error)
+        }
+    }
+
+    private func refreshCloseEligibility() async {
+        isClosed = inbox.cachedIssueState(threadId: threadId) == "closed"
+        isOwnProject = await resolveOwnProject()
+    }
+
+    /// 「我的项目」关系优先；否则 owner 等于当前登录名（个人仓还没进项目列表也能关）。
+    private func resolveOwnProject() async -> Bool {
+        if GitHubNotificationMapper.isDemoThread(threadId) { return false }
+        if let repoId = payload.repositoryId ?? repo?.id,
+           (try? await dependencies.userProjectRepository.fetchProject(repoID: repoId)) != nil {
+            return true
+        }
+        guard let login = authSession.state.user?.login,
+              let owner = payload.repositoryFullName.split(separator: "/").first
+        else { return false }
+        return String(owner).caseInsensitiveCompare(login) == .orderedSame
+    }
+
     /// 私有仓没 `repo` scope 时常 404；不要假装发出去了。
     private func submitErrorMessage(_ error: Error) -> String {
         if error as? GitHubNotificationInboxError == .cannotComment {
@@ -481,6 +765,13 @@ private struct GitHubNotificationCommentComposer: View {
                 locale,
                 zh: "这类通知不能在 Starcat 里回复。",
                 en: "This notification can’t be replied to in Starcat."
+            )
+        }
+        if error as? GitHubNotificationInboxError == .cannotClose {
+            return GitHubNotificationMapper.copy(
+                locale,
+                zh: "无法关闭（可能没有写权限或仓库是私有的）。请到 GitHub 打开。",
+                en: "Couldn’t close this (no write access, or private repo?). Open it on GitHub."
             )
         }
         if let network = error as? NetworkError {

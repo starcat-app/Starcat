@@ -46,6 +46,15 @@ struct GRDBGitHubNotificationThreadRepository: GitHubNotificationThreadRepositor
         }
     }
 
+    func totalCount() async throws -> Int {
+        try await database.writer.read { db in
+            try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM github_notification_threads"
+            ) ?? 0
+        }
+    }
+
     func upsertMany(_ records: [GitHubNotificationThreadRecord]) async throws {
         guard !records.isEmpty else { return }
         try await database.writer.write { db in
@@ -223,6 +232,16 @@ struct GRDBGitHubNotificationThreadRepository: GitHubNotificationThreadRepositor
             try String.fetchOne(
                 db,
                 sql: "SELECT MAX(updated_at) FROM github_notification_threads"
+            )
+        }
+    }
+
+    func deleteIDs(withPrefix prefix: String) async throws {
+        guard !prefix.isEmpty else { return }
+        try await database.writer.write { db in
+            try db.execute(
+                sql: "DELETE FROM github_notification_threads WHERE id LIKE ?",
+                arguments: [prefix + "%"]
             )
         }
     }

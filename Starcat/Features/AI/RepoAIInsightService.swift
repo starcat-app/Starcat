@@ -909,6 +909,44 @@ final class RepoAIInsightService {
         )
     }
 
+    /// GitHub 通知评论：走 Chat 任务，强制关 thinking，不写仓库摘要缓存。
+    func ensureGitHubCommentReady() throws {
+        try entitlementGate?.requirePro(.aiChat)
+        _ = try makeClient(
+            task: settings.aiChatTask,
+            fallbackModel: settings.aiChatModel,
+            taskName: String.l10n("ai.taskName.chat")
+        )
+    }
+
+    func generateGitHubCommentDraft(
+        pack: GitHubNotificationCommentPack,
+        onDelta: @escaping @MainActor (String) -> Void
+    ) async throws -> String {
+        try ensureGitHubCommentReady()
+        let task = settings.aiChatTask
+        let (client, model) = try makeClient(
+            task: task,
+            fallbackModel: settings.aiChatModel,
+            taskName: String.l10n("ai.taskName.chat")
+        )
+        let params = settings.effectiveParameters(for: task)
+        let request = GitHubNotificationCommentAI.makeRequest(
+            pack: pack,
+            model: model,
+            parameters: params
+        )
+        let raw = try await Self.generateText(
+            client: client,
+            request: request,
+            streamEnabled: params.streamEnabled,
+            onDelta: { snapshot in
+                onDelta(GitHubNotificationCommentAI.sanitizeComment(snapshot))
+            }
+        )
+        return GitHubNotificationCommentAI.sanitizeComment(raw)
+    }
+
     /// 纯请求构造器，便于单测精确验证笔记与 README 的边界。
     static func makeRepoNoteRequest(
         readmeMarkdown: String,

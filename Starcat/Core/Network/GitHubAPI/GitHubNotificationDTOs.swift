@@ -58,6 +58,8 @@ struct GitHubNotificationSubjectHydration: Equatable, Sendable {
     let actorLogin: String?
     let excerpt: String?
     let createdAt: String?
+    /// Issue / PR 的 `open` / `closed`。Release 等没有。
+    let state: String?
 }
 
 /// Issue / PR 下的一条评论。详情页按 GitHub 会话顺序渲染 Markdown。

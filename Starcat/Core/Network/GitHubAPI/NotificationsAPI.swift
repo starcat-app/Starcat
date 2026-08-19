@@ -89,7 +89,7 @@ extension GitHubAPIClient {
     /// Issue / PR / Discussion / Release 字段不完全相同，松散取 html_url / user|author.login / body。
     nonisolated private static func parseSubjectHydration(from data: Data) -> GitHubNotificationSubjectHydration {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return GitHubNotificationSubjectHydration(htmlURL: nil, actorLogin: nil, excerpt: nil, createdAt: nil)
+            return GitHubNotificationSubjectHydration(htmlURL: nil, actorLogin: nil, excerpt: nil, createdAt: nil, state: nil)
         }
         let htmlURL = obj["html_url"] as? String
         let user = obj["user"] as? [String: Any]
@@ -97,11 +97,13 @@ extension GitHubAPIClient {
         let actorLogin = (user?["login"] as? String) ?? (author?["login"] as? String)
         let excerpt = GitHubNotificationMapper.bodyMarkdown(obj["body"] as? String)
         let createdAt = (obj["created_at"] as? String) ?? (obj["published_at"] as? String)
+        let state = obj["state"] as? String
         return GitHubNotificationSubjectHydration(
             htmlURL: htmlURL,
             actorLogin: actorLogin,
             excerpt: excerpt,
-            createdAt: createdAt
+            createdAt: createdAt,
+            state: state
         )
     }
 
@@ -126,6 +128,14 @@ extension GitHubAPIClient {
             throw NetworkError.decodingError(underlying: GitHubNotificationCommentDecodingError.missingLogin)
         }
         return comment
+    }
+
+    /// `PATCH /repos/{owner}/{repo}/issues/{n}`，`state=closed` 也能关 PR（GitHub 把 PR 当 issue）。
+    func updateNotificationIssueState(path: String, state: String) async throws {
+        struct Payload: Encodable {
+            let state: String
+        }
+        try await patch(path: path, body: Payload(state: state))
     }
 
     nonisolated private static func parseIssueComments(from data: Data) -> [GitHubNotificationComment] {

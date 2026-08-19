@@ -34,6 +34,9 @@ struct GitHubNotificationInboxView: View {
         }
         .task {
             inbox.listSegment = segment
+            #if DEBUG
+            await inbox.seedDemoThreadsIfNeeded()
+            #endif
             records = await inbox.fetchCached()
             lastFetchedAt = await inbox.lastFetchedAt()
             consumePendingOpenIfNeeded()
@@ -63,68 +66,84 @@ struct GitHubNotificationInboxView: View {
         }
     }
 
+    /// 只保留分段 + 同步行，和星标中栏 `manageFilterBar` 同高。
+    /// 总数 / 未读走系统 `navigationSubtitle`（面包屑下一行），不要再叠 `通知 42` 标题。
     @ViewBuilder
     private var toolbar: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(String(format: "%@ %d", String.l10n("activity.category.notification"), records.count))
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.primary)
-
-            HStack(spacing: 8) {
-                Picker("", selection: $segment) {
-                    ForEach(GitHubNotificationSegment.allCases) { item in
-                        Text(LocalizedStringKey(item.titleKey)).tag(item)
-                    }
+        HStack(spacing: 8) {
+            Picker("", selection: $segment) {
+                ForEach(GitHubNotificationSegment.allCases) { item in
+                    Text(LocalizedStringKey(item.titleKey)).tag(item)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .onChange(of: segment) { _, newValue in
-                    inbox.listSegment = newValue
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .onChange(of: segment) { _, newValue in
+                inbox.listSegment = newValue
+            }
+
+            Spacer(minLength: 8)
+
+            if let lastFetchedAt {
+                Text(String(format: String.l10n("activity.notification.lastSynced"), RelativeTimeText.pastEvent(lastFetchedAt, locale: locale)))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            SyncIconButton(
+                isRefreshing: inbox.isSyncing,
+                disabled: inbox.isSyncing,
+                tooltip: String.l10n("activity.refresh")
+            ) {
+                Task {
+                    await inbox.sync()
+                    await reloadFromCache()
                 }
+            }
 
-                Spacer(minLength: 8)
-
-                if let lastFetchedAt {
-                    Text(String(format: String.l10n("activity.notification.lastSynced"), RelativeTimeText.pastEvent(lastFetchedAt, locale: locale)))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                SyncIconButton(
-                    isRefreshing: inbox.isSyncing,
-                    disabled: inbox.isSyncing,
-                    tooltip: String.l10n("activity.refresh")
-                ) {
-                    Task {
-                        await inbox.sync()
-                        await reloadFromCache()
-                    }
-                }
-
-                Menu {
-                    Button {
-                        if let url = URL(string: "https://github.com/notifications") {
-                            NSWorkspace.shared.open(url)
-                        }
-                    } label: {
-                        Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "在 GitHub 打开通知收件箱", en: "Open GitHub Notifications"))
+            Menu {
+                Button {
+                    if let url = URL(string: "https://github.com/notifications") {
+                        NSWorkspace.shared.open(url)
                     }
                 } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 22, height: 22)
-                        .contentShape(Rectangle())
+                    Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "在 GitHub 打开通知收件箱", en: "Open GitHub Notifications"))
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .frame(width: 22, height: 22)
-                .help(GitHubNotificationMapper.copy(locale, zh: "在 GitHub 打开通知收件箱", en: "Open GitHub Notifications"))
+                #if DEBUG
+                Divider()
+                Button {
+                    Task {
+                        await inbox.seedDemoThreads()
+                        await reloadFromCache()
+                    }
+                } label: {
+                    Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "插入 Mention / Review 演示", en: "Insert Mention / Review demos"))
+                }
+                Button {
+                    Task {
+                        await inbox.clearDemoThreads()
+                        await reloadFromCache()
+                    }
+                } label: {
+                    Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "清除演示通知", en: "Remove demo notifications"))
+                }
+                #endif
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
             }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .frame(width: 22, height: 22)
+            .help(GitHubNotificationMapper.copy(locale, zh: "在 GitHub 打开通知收件箱", en: "Open GitHub Notifications"))
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
+        .padding(.top, ManageListFilterBarMetrics.topPadding)
+        .padding(.bottom, ManageListFilterBarMetrics.bottomPadding)
     }
 
     @ViewBuilder
@@ -320,7 +339,8 @@ struct GitHubNotificationInboxView: View {
                 authorCreatedAt: GitHubNotificationMapper.parseDate(record.subjectCreatedAt),
                 excerpt: record.excerpt,
                 comments: GitHubNotificationMapper.decodeComments(record.commentsJson),
-                people: GitHubNotificationMapper.relatedPeople(for: record)
+                people: GitHubNotificationMapper.relatedPeople(for: record),
+                repositoryId: record.repositoryId
             )
         )
     }

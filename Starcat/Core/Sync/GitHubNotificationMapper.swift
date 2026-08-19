@@ -280,6 +280,15 @@ enum GitHubNotificationMapper {
         locale.identifier.lowercased().hasPrefix("zh") ? zh : en
     }
 
+    /// 中栏面包屑下一行：总数 + 未读。和「1948 个仓库」同一槽位，不要再在工具栏里叠一行标题。
+    static func listCountSubtitle(total: Int, unread: Int, locale: Locale) -> String {
+        copy(
+            locale,
+            zh: "\(total) 条通知 · \(unread) 未读",
+            en: "\(total) notifications · \(unread) unread"
+        )
+    }
+
     /// 评论 / mention 优先用最新评论作者；否则用 hydrate 到的 subject.user。
     /// 通知列表里的「谁」：comment / mention 用最新评论作者。
     /// 详情里 Issue 正文的发布人不能走这个，否则会被最后一条回复盖掉。
@@ -404,6 +413,11 @@ enum GitHubNotificationMapper {
         }
     }
 
+    /// 本机演示 thread：永不打 GitHub API（hydrate / PATCH / 发评）。
+    static func isDemoThread(_ id: String) -> Bool {
+        GitHubNotificationDemoSeed.isDemoID(id)
+    }
+
     static func subjectNumber(fromApiURL url: String) -> Int? {
         guard let last = url.split(separator: "/").last else { return nil }
         return Int(last)
@@ -469,6 +483,16 @@ enum GitHubNotificationMapper {
         default:
             return nil
         }
+    }
+
+    /// 关 Issue / PR：`/repos/o/r/issues/N`。PR 的 subject.url 是 `/pulls/N`，GitHub 允许改走 issues。
+    static func issueResourcePath(subjectType: String, subjectApiURL: String) -> String? {
+        guard let commentsPath = issueCommentsPath(subjectType: subjectType, subjectApiURL: subjectApiURL) else {
+            return nil
+        }
+        let suffix = "/comments"
+        guard commentsPath.hasSuffix(suffix) else { return commentsPath }
+        return String(commentsPath.dropLast(suffix.count))
     }
 
     static func encodeComments(_ comments: [GitHubNotificationComment]) -> String? {
@@ -652,5 +676,146 @@ enum GitHubNotificationDayGroup: String, CaseIterable, Identifiable, Sendable {
         case .thisWeek: return "activity.notification.group.thisWeek"
         case .earlier: return "activity.notification.group.earlier"
         }
+    }
+}
+
+/// 本机演示通知：把 Mention / Review 分段填满，方便对照 chip、事件句和右栏会话。
+///
+/// 用稳定 id 前缀 `starcat-demo-`，GitHub 同步按 thread id upsert，不会覆盖这些行；
+/// 也绝不能拿这个 id 去 PATCH。正文预填好，详情页不用再 hydrate。
+enum GitHubNotificationDemoSeed {
+    static let idPrefix = "starcat-demo-"
+
+    static func isDemoID(_ id: String) -> Bool {
+        id.hasPrefix(idPrefix)
+    }
+
+    static func records(now: Date = Date()) -> [GitHubNotificationThreadRecord] {
+        let calendar = Calendar.current
+        let mentionUnread = makeRecord(
+            id: "\(idPrefix)mention-20",
+            reason: "mention",
+            unread: true,
+            fullName: "starcat-app/Starcat",
+            title: "Can API endpoints be used publicly?",
+            subjectType: "Issue",
+            number: 20,
+            actor: "octocat",
+            updatedAt: now.addingTimeInterval(-12 * 60),
+            excerpt: "We're considering exposing selected API endpoints. Feedback welcome.",
+            comments: [
+                GitHubNotificationComment(
+                    id: 900_020,
+                    login: "hubot",
+                    body: "Hi, this is a follow-up to #20.\n\nAlso see starcat-app/Starcat#7.",
+                    htmlURL: "https://github.com/starcat-app/Starcat/issues/20#issuecomment-900020",
+                    createdAt: githubStamp(now.addingTimeInterval(-8 * 60))
+                )
+            ]
+        )
+        let mentionRead = makeRecord(
+            id: "\(idPrefix)mention-18",
+            reason: "team_mention",
+            unread: false,
+            fullName: "starcat-app/Starcat",
+            title: "Document the public API surface",
+            subjectType: "Issue",
+            number: 18,
+            actor: "defunkt",
+            updatedAt: calendar.date(byAdding: .day, value: -1, to: now) ?? now.addingTimeInterval(-86_400),
+            excerpt: "@starcat-app please take a look at the remaining public endpoints.",
+            comments: []
+        )
+        let reviewUnread = makeRecord(
+            id: "\(idPrefix)review-42",
+            reason: "review_requested",
+            unread: true,
+            fullName: "starcat-app/Starcat",
+            title: "Add GitHub notification inbox",
+            subjectType: "PullRequest",
+            number: 42,
+            actor: "ghost",
+            updatedAt: now.addingTimeInterval(-45 * 60),
+            excerpt: "Please review the inbox timeline and the Mention / Review filters.",
+            comments: [
+                GitHubNotificationComment(
+                    id: 900_042,
+                    login: "ghost",
+                    body: "Ready for review. Related discussion is in #20.",
+                    htmlURL: "https://github.com/starcat-app/Starcat/pull/42#issuecomment-900042",
+                    createdAt: githubStamp(now.addingTimeInterval(-40 * 60))
+                )
+            ]
+        )
+        let reviewRead = makeRecord(
+            id: "\(idPrefix)review-41",
+            reason: "review_submitted",
+            unread: false,
+            fullName: "starcat-app/Starcat",
+            title: "Harden OAuth notification scopes",
+            subjectType: "PullRequest",
+            number: 41,
+            actor: "monalisa",
+            updatedAt: calendar.date(byAdding: .day, value: -3, to: now) ?? now.addingTimeInterval(-3 * 86_400),
+            excerpt: "Left a few comments on the `notifications` scope request.",
+            comments: []
+        )
+        return [mentionUnread, reviewUnread, mentionRead, reviewRead]
+    }
+
+    private static func makeRecord(
+        id: String,
+        reason: String,
+        unread: Bool,
+        fullName: String,
+        title: String,
+        subjectType: String,
+        number: Int,
+        actor: String,
+        updatedAt: Date,
+        excerpt: String,
+        comments: [GitHubNotificationComment]
+    ) -> GitHubNotificationThreadRecord {
+        let stamp = githubStamp(updatedAt)
+        let path: String
+        let html: String
+        switch subjectType {
+        case "PullRequest":
+            path = "pulls"
+            html = "https://github.com/\(fullName)/pull/\(number)"
+        default:
+            path = "issues"
+            html = "https://github.com/\(fullName)/issues/\(number)"
+        }
+        return GitHubNotificationThreadRecord(
+            id: id,
+            reason: reason,
+            unread: unread,
+            githubUnread: unread,
+            repositoryId: nil,
+            repositoryFullName: fullName,
+            subjectTitle: title,
+            subjectType: subjectType,
+            subjectApiUrl: "https://api.github.com/repos/\(fullName)/\(path)/\(number)",
+            subjectNumber: number,
+            htmlUrl: html,
+            actorLogin: actor,
+            subjectCreatedAt: stamp,
+            excerpt: excerpt,
+            commentsJson: GitHubNotificationMapper.encodeComments(comments),
+            hydratedAt: stamp,
+            updatedAt: stamp,
+            firstSeenAt: stamp,
+            notifiedAt: stamp,
+            markReadState: unread ? GitHubNotificationMarkReadState.idle.rawValue : GitHubNotificationMarkReadState.synced.rawValue,
+            fetchedAt: stamp
+        )
+    }
+
+    /// 列表时钟走 `githubDate`，不能带小数秒。
+    private static func githubStamp(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.string(from: date)
     }
 }

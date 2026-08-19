@@ -127,6 +127,11 @@ struct AIChatRequest: Equatable, Sendable {
     /// 同一长寿命客户端可服务 RAG 的 planning / answer / title 等阶段，请求级归因优先于
     /// client configuration；普通业务不传时继续使用客户端默认值。
     var usageContext: AIUsageContext? = nil
+    /// 关闭推理模型的 thinking / reasoning。GitHub 评论这类短回复不需要思考链。
+    ///
+    /// `true` 时 Chat 请求带 `reasoning_effort=none`，中间件再补 Qwen / vLLM 的
+    /// `enable_thinking=false`。默认 false，避免改掉对话、RAG 里需要思考的路径。
+    var disableThinking: Bool = false
 }
 
 /// 非流式 Chat 响应。

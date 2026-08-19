@@ -104,6 +104,8 @@ private struct RepoListNavigationSubtitleModifier: ViewModifier {
     let weeklySelectionService: WeeklySelectionService
     let activityCategoryCountService: ActivityCategoryCountService
 
+    @Environment(\.locale) private var locale
+
     func body(content: Content) -> some View {
         content.navigationSubtitle(navigationSubtitle)
     }
@@ -115,6 +117,13 @@ private struct RepoListNavigationSubtitleModifier: ViewModifier {
         case .trending:
             return exploreRepoCountSubtitle
         case .activity:
+            if selectedActivityCategory == .notification {
+                return GitHubNotificationMapper.listCountSubtitle(
+                    total: activityCategoryCountService.notificationTotalCount ?? 0,
+                    unread: activityCategoryCountService.count(for: .notification) ?? 0,
+                    locale: locale
+                )
+            }
             let count = selectedActivityCategory == .undoStar
                 ? (activityCategoryCountService.count(for: .undoStar) ?? 0)
                 : metrics.activityItemCount

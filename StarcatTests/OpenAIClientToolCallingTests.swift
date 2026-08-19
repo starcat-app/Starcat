@@ -69,4 +69,58 @@ struct OpenAIClientToolCallingTests {
             _ = try OpenAIClient.makeChatQuery(request: request, resolvedModel: "test-model", stream: false)
         }
     }
+
+    @Test("disableThinking 编码 reasoning_effort=none，默认请求不带该字段")
+    func encodesReasoningEffortNoneOnlyWhenDisabled() throws {
+        let enabled = try encodedChatQuery(disableThinking: false)
+        let disabled = try encodedChatQuery(disableThinking: true)
+
+        #expect(enabled["reasoning_effort"] == nil || enabled["reasoning_effort"] is NSNull)
+        #expect(disabled["reasoning_effort"] as? String == "none")
+    }
+
+    @Test("中间件只在 reasoning_effort=none 时补 Qwen/vLLM 关思考字段")
+    func middlewareInjectsEnableThinkingFalse() throws {
+        let middleware = OpenAIDisableThinkingMiddleware()
+
+        let disabled = middleware.intercept(request: try chatRequest(body: [
+            "model": "qwen3",
+            "reasoning_effort": "none"
+        ]))
+        let disabledObject = try jsonObject(from: disabled)
+        #expect(disabledObject["enable_thinking"] as? Bool == false)
+        #expect((disabledObject["chat_template_kwargs"] as? [String: Any])?["enable_thinking"] as? Bool == false)
+
+        let untouched = middleware.intercept(request: try chatRequest(body: [
+            "model": "qwen3",
+            "reasoning_effort": "medium"
+        ]))
+        let untouchedObject = try jsonObject(from: untouched)
+        #expect(untouchedObject["enable_thinking"] == nil)
+        #expect(untouchedObject["chat_template_kwargs"] == nil)
+    }
+
+    private func encodedChatQuery(disableThinking: Bool) throws -> [String: Any] {
+        let request = AIChatRequest(
+            systemPrompt: "system",
+            userPrompt: "hello",
+            model: "test-model",
+            parameters: .summaryDefault,
+            disableThinking: disableThinking
+        )
+        let query = try OpenAIClient.makeChatQuery(request: request, resolvedModel: "test-model", stream: false)
+        return try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(query)) as? [String: Any])
+    }
+
+    private func chatRequest(body: [String: Any]) throws -> URLRequest {
+        var request = URLRequest(url: URL(string: "https://example.com/v1/chat/completions")!)
+        request.httpMethod = "POST"
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        return request
+    }
+
+    private func jsonObject(from request: URLRequest) throws -> [String: Any] {
+        let body = try #require(request.httpBody)
+        return try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+    }
 }
