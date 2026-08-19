@@ -137,8 +137,12 @@ CloudKit sync fields are reserved. The production adapter is not wired yet. Star
 ## Screenshots
 
 <p align="center">
-  <img src="screenshots/rag.webp" alt="Knowledge-base RAG workspace" width="48%" />
+  <img src="screenshots/rag.webp" alt="Knowledge-base RAG workbench" width="48%" />
   <img src="screenshots/explore.webp" alt="Explore and discovery" width="48%" />
+</p>
+<p align="center">
+  <img src="screenshots/insights.webp" alt="My Insights overview" width="48%" />
+  <img src="screenshots/repo-insights.webp" alt="Repository Insights" width="48%" />
 </p>
 <p align="center">
   <img src="screenshots/search.webp" alt="Global search and structured filters" width="48%" />
