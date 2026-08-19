@@ -1904,7 +1904,11 @@ struct SidebarView: View {
                     Image(systemName: projectAccessSystemImage)
                         .font(interfaceScale.font(.captionSmall))
                         // 授权成功用绿色勾表达「已可用」；其它状态沿用 statusTone（灰 / 橙 / 红）。
-                        .foregroundStyle(projectAccessIconColor)
+                        // 必须走 SidebarSemanticIconStyle：明亮主题选中蓝底会把系统绿几乎吃掉，
+                        // 不能手写 selection == .myProjects（按下高亮与 binding 不同步）。
+                        .foregroundStyle(
+                            SidebarSemanticIconStyle(semanticColor: projectAccessIconColor)
+                        )
                         .frame(width: 18, height: 18)
                         .contentShape(Rectangle())
                 }
