@@ -67,7 +67,10 @@ struct GitHubNotificationDetailView: View {
                 number: payload.subjectNumber
                ) {
                 Divider()
-                GitHubNotificationCommentComposer(threadId: payload.threadId)
+                GitHubNotificationCommentComposer(
+                    threadId: payload.threadId,
+                    repositoryFullName: payload.repositoryFullName
+                )
             }
         }
     }
@@ -84,9 +87,10 @@ struct GitHubNotificationDetailView: View {
                     if let chip = item.notification?.chip {
                         GitHubNotificationReasonChip(chip: chip)
                     }
-                    Text(verbatim: heading(item))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    GitHubNotificationSubjectHeading(
+                        title: heading(item),
+                        url: item.htmlURL
+                    )
                 }
             }
             Spacer(minLength: 8)
@@ -165,6 +169,7 @@ struct GitHubNotificationDetailView: View {
                 login: payload.authorLogin ?? GitHubNotificationMapper.copy(locale, zh: "有人", en: "Someone"),
                 createdAt: payload.authorCreatedAt,
                 markdown: excerpt,
+                repositoryFullName: payload.repositoryFullName,
                 isOpeningPost: true
             )
         }
@@ -174,6 +179,7 @@ struct GitHubNotificationDetailView: View {
                 login: comment.login,
                 createdAt: GitHubNotificationMapper.parseDate(comment.createdAt),
                 markdown: comment.body,
+                repositoryFullName: payload.repositoryFullName,
                 isOpeningPost: false
             )
         }
@@ -181,17 +187,6 @@ struct GitHubNotificationDetailView: View {
 
     private func actionButtons(_ item: ActivityItem) -> some View {
         HStack(spacing: 8) {
-            if let url = item.htmlURL {
-                Button {
-                    NSWorkspace.shared.open(url)
-                } label: {
-                    Label("activity.notification.detail.openOnGitHub", systemImage: "arrow.up.right.square")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
-                .focusEffectDisabled()
-            }
-
             if let repo = item.repo {
                 Button {
                     NotificationCenter.default.post(
@@ -200,11 +195,33 @@ struct GitHubNotificationDetailView: View {
                         userInfo: ["repoId": repo.id]
                     )
                 } label: {
-                    Label("activity.notification.detail.openInStarcat", systemImage: "macwindow")
+                    // App Icon 带玻璃外框，缩小时看不清；用 CompactMark 放大主体。
+                    StarcatCompactMark(size: 16)
+                        .squareLogoActionChrome()
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
+                .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .help("activity.notification.detail.openInStarcat")
+                .accessibilityLabel(Text("activity.notification.detail.openInStarcat"))
+            }
+
+            if let url = item.htmlURL {
+                Button {
+                    NSWorkspace.shared.open(url)
+                } label: {
+                    // Devicons 经典 mark；template 以适配明暗主题。与知识库引用行同一套方钮。
+                    Image("github")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 16, height: 16)
+                        .foregroundStyle(.primary)
+                        .squareLogoActionChrome()
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help("activity.notification.detail.openOnGitHub")
+                .accessibilityLabel(Text("activity.notification.detail.openOnGitHub"))
             }
 
             Spacer(minLength: 0)
@@ -234,11 +251,40 @@ struct GitHubNotificationDetailView: View {
     }
 }
 
+/// 标题下的 `Issue #20`：有 GitHub URL 时可点，hover 用 accent 提示是链接。
+private struct GitHubNotificationSubjectHeading: View {
+    let title: String
+    let url: URL?
+    @State private var isHovered = false
+
+    var body: some View {
+        if let url {
+            Button {
+                NSWorkspace.shared.open(url)
+            } label: {
+                Text(verbatim: title)
+                    .font(.subheadline)
+                    .foregroundStyle(isHovered ? Color.accentColor : Color.secondary)
+                    .underline(isHovered, color: Color.accentColor)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .onHover { isHovered = $0 }
+            .help(url.absoluteString)
+        } else {
+            Text(verbatim: title)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
 /// GitHub 风格评论卡片：头像 + 「谁在何时发布/评论」+ Markdown 正文。
 private struct GitHubNotificationCommentCard: View {
     let login: String
     let createdAt: Date?
     let markdown: String
+    let repositoryFullName: String
     let isOpeningPost: Bool
     @Environment(\.locale) private var locale
 
@@ -273,7 +319,7 @@ private struct GitHubNotificationCommentCard: View {
             Divider()
 
             if !markdown.isEmpty {
-                GitHubNotificationMarkdown(content: markdown)
+                GitHubNotificationMarkdown(content: markdown, repositoryFullName: repositoryFullName)
                     .padding(12)
             }
         }
@@ -287,6 +333,7 @@ private struct GitHubNotificationCommentCard: View {
 /// 底部评论框：撰写 / 预览 + 发到 GitHub。Catalog 本轮不能加 key，文案走 mapper.copy。
 private struct GitHubNotificationCommentComposer: View {
     let threadId: String
+    let repositoryFullName: String
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
@@ -332,7 +379,10 @@ private struct GitHubNotificationCommentComposer: View {
                             .frame(maxWidth: .infinity, minHeight: 88, alignment: .topLeading)
                     } else {
                         ScrollView {
-                            GitHubNotificationMarkdown(content: draft)
+                            GitHubNotificationMarkdown(
+                                content: draft,
+                                repositoryFullName: repositoryFullName
+                            )
                         }
                         .frame(minHeight: 88, maxHeight: 160)
                     }
@@ -343,20 +393,16 @@ private struct GitHubNotificationCommentComposer: View {
                         .strokeBorder(Color.secondary.opacity(0.28), lineWidth: 1)
                 )
             } else {
-                ZStack(alignment: .topLeading) {
-                    TextEditor(text: $draft)
-                        .font(.body)
-                        .scrollContentBackground(.hidden)
-                        .frame(minHeight: 88, maxHeight: 160)
-                    if draft.isEmpty {
-                        Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "用 Markdown 写下评论…", en: "Write a comment with Markdown…"))
-                            .foregroundStyle(.secondary)
-                            .padding(.top, 8)
-                            .padding(.leading, 5)
-                            .allowsHitTesting(false)
-                    }
-                }
-                .padding(4)
+                GitHubNotificationCommentTextEditor(
+                    text: $draft,
+                    placeholder: GitHubNotificationMapper.copy(
+                        locale,
+                        zh: "用 Markdown 写下评论…",
+                        en: "Write a comment with Markdown…"
+                    ),
+                    isEditable: !isPosting
+                )
+                .frame(minHeight: 88, maxHeight: 160)
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .strokeBorder(Color.secondary.opacity(0.28), lineWidth: 1)
@@ -459,15 +505,132 @@ private struct GitHubNotificationCommentComposer: View {
     }
 }
 
+/// 评论输入必须走 NSTextView：SwiftUI `TextEditor` + overlay `Text` 的 placeholder
+/// 和 insertion point 不在同一坐标系。笔记页已经用 padding 猜过几次（`RepoNotesSection`
+/// / `NoteEditorSheet` 的 5pt inset 公式），macOS 版本一变就会再错位。
+/// 这里与 `AICommandTextEditor` / `AIChatTextView` 相同：placeholder 画在
+/// `NSTextView.draw` 里，原点就是 `textContainerInset`，和光标同一条基线。
+private struct GitHubNotificationCommentTextEditor: NSViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+    var isEditable: Bool = true
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = GitHubNotificationCommentScrollView()
+        let textView = GitHubNotificationCommentNSTextView()
+        textView.delegate = context.coordinator
+        textView.string = text
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.allowsUndo = true
+        textView.drawsBackground = false
+        textView.font = .systemFont(ofSize: NSFont.systemFontSize)
+        textView.textColor = .labelColor
+        textView.insertionPointColor = .labelColor
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.textContainerInset = GitHubNotificationCommentNSTextView.contentInset
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.placeholder = placeholder
+        textView.setAccessibilityLabel(placeholder)
+
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        context.coordinator.parent = self
+        guard let textView = scrollView.documentView as? GitHubNotificationCommentNSTextView else { return }
+        textView.placeholder = placeholder
+        textView.setAccessibilityLabel(placeholder)
+        textView.isEditable = isEditable
+        textView.isSelectable = true
+        if textView.string != text {
+            textView.string = text
+            textView.needsDisplay = true
+        }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: GitHubNotificationCommentTextEditor
+
+        init(parent: GitHubNotificationCommentTextEditor) {
+            self.parent = parent
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? GitHubNotificationCommentNSTextView else { return }
+            parent.text = textView.string
+            textView.needsDisplay = true
+        }
+    }
+}
+
+private final class GitHubNotificationCommentScrollView: NSScrollView {
+    /// 让 NSTextView 至少铺满评论框，空白处点击也能聚焦，而不是只有第一行可点。
+    override func layout() {
+        super.layout()
+        guard let textView = documentView as? NSTextView else { return }
+        let width = contentSize.width
+        let minHeight = contentSize.height
+        if abs(textView.frame.width - width) >= 0.5 || textView.minSize.height < minHeight {
+            textView.minSize = NSSize(width: 0, height: minHeight)
+            textView.setFrameSize(NSSize(width: width, height: max(textView.frame.height, minHeight)))
+        }
+    }
+}
+
+private final class GitHubNotificationCommentNSTextView: NSTextView {
+    static let contentInset = NSSize(width: 8, height: 8)
+    var placeholder = ""
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard string.isEmpty, !placeholder.isEmpty else { return }
+        placeholder.draw(
+            at: NSPoint(x: textContainerInset.width, y: textContainerInset.height),
+            withAttributes: [
+                .font: font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                .foregroundColor: NSColor.placeholderTextColor
+            ]
+        )
+    }
+}
+
 /// 通知正文：GitHub 评论里的 HTML `<img>` 先收成 Markdown 图片，再用 Kingfisher 拉远程图。
+/// `#20` 在 `prepareMarkdown` 之后再 autolink，点了走系统浏览器。
 private struct GitHubNotificationMarkdown: View {
     let content: String
+    let repositoryFullName: String
 
     var body: some View {
-        Markdown(GitHubNotificationMapper.prepareMarkdown(content))
-            .markdownImageProvider(GitHubNotificationImageProvider())
-            .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        Markdown(
+            GitHubNotificationMapper.autolinkIssueReferences(
+                GitHubNotificationMapper.prepareMarkdown(content),
+                repositoryFullName: repositoryFullName
+            )
+        )
+        .markdownImageProvider(GitHubNotificationImageProvider())
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .environment(\.openURL, OpenURLAction { url in
+            guard url.scheme == "http" || url.scheme == "https" else { return .discarded }
+            NSWorkspace.shared.open(url)
+            return .handled
+        })
     }
 }
 

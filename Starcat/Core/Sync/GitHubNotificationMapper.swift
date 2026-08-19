@@ -206,6 +206,76 @@ enum GitHubNotificationMapper {
         return text
     }
 
+    /// GitHub 风格：把评论里的 `#20` / `owner/repo#20` 收成可点 Markdown 链接。
+    ///
+    /// CommonMark / MarkdownUI 不会把裸 `#20` 当链接，必须在渲染前自己收。
+    /// 一律指向 `/issues/N`：GitHub 对 PR 编号会 302 到 `/pull/N`，和网页评论一致。
+    /// 代码块、行内 code、现成链接、URL 片段不改，避免把示例或已有锚点再包一层。
+    static func autolinkIssueReferences(_ markdown: String, repositoryFullName: String) -> String {
+        guard !markdown.isEmpty else { return markdown }
+        let ns = markdown as NSString
+        let fullRange = NSRange(location: 0, length: ns.length)
+        let protected = protectedMarkdownRanges(in: markdown)
+
+        func overlapsProtected(_ range: NSRange) -> Bool {
+            protected.contains { NSIntersectionRange($0, range).length > 0 }
+        }
+
+        var replacements: [(NSRange, String)] = []
+
+        for match in crossRepoIssueRefRegex.matches(in: markdown, range: fullRange) {
+            guard !overlapsProtected(match.range),
+                  let repoRange = Range(match.range(at: 1), in: markdown),
+                  let numberRange = Range(match.range(at: 2), in: markdown)
+            else { continue }
+            let repo = String(markdown[repoRange])
+            let number = String(markdown[numberRange])
+            let text = ns.substring(with: match.range)
+            replacements.append((
+                match.range,
+                "[\(text)](https://github.com/\(repo)/issues/\(number))"
+            ))
+        }
+
+        let sameRepoOK = repositoryFullName.split(separator: "/").count == 2
+        if sameRepoOK {
+            for match in hashIssueRefRegex.matches(in: markdown, range: fullRange) {
+                guard !overlapsProtected(match.range),
+                      let numberRange = Range(match.range(at: 1), in: markdown)
+                else { continue }
+                let overlapsCrossRepo = replacements.contains {
+                    NSIntersectionRange($0.0, match.range).length > 0
+                }
+                guard !overlapsCrossRepo else { continue }
+                let number = String(markdown[numberRange])
+                let text = ns.substring(with: match.range)
+                replacements.append((
+                    match.range,
+                    "[\(text)](https://github.com/\(repositoryFullName)/issues/\(number))"
+                ))
+            }
+        }
+
+        let mutable = NSMutableString(string: markdown)
+        for (range, replacement) in replacements.sorted(by: { $0.0.location > $1.0.location }) {
+            mutable.replaceCharacters(in: range, with: replacement)
+        }
+        return mutable as String
+    }
+
+    /// 代码、链接、URL 里的 `#20` 不是 Issue 引用。
+    private static func protectedMarkdownRanges(in markdown: String) -> [NSRange] {
+        let ns = markdown as NSString
+        let fullRange = NSRange(location: 0, length: ns.length)
+        var ranges: [NSRange] = []
+        for regex in protectedMarkdownRegexes {
+            for match in regex.matches(in: markdown, range: fullRange) {
+                ranges.append(match.range)
+            }
+        }
+        return ranges
+    }
+
     static func copy(_ locale: Locale, zh: String, en: String) -> String {
         locale.identifier.lowercased().hasPrefix("zh") ? zh : en
     }
@@ -481,6 +551,22 @@ enum GitHubNotificationMapper {
         pattern: #"\balt\s*=\s*["']([^"']*)["']"#,
         options: .caseInsensitive
     )
+    /// `owner/repo#20`。先于裸 `#20` 匹配，避免把仓库前缀拆掉。
+    private static let crossRepoIssueRefRegex = try! NSRegularExpression(
+        pattern: #"\b([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?/[A-Za-z0-9._-]+)#(\d{1,8})\b"#
+    )
+    /// 裸 `#20`。前面不能是标识符 / `&`，否则会误伤 `C#20`、`&#39;`。
+    private static let hashIssueRefRegex = try! NSRegularExpression(
+        pattern: #"(?<![A-Za-z0-9_/&])#(\d{1,8})\b"#
+    )
+    private static let protectedMarkdownRegexes: [NSRegularExpression] = [
+        try! NSRegularExpression(pattern: #"```[\s\S]*?```"#),
+        try! NSRegularExpression(pattern: #"~~~[\s\S]*?~~~"#),
+        try! NSRegularExpression(pattern: #"`[^`\n]+`"#),
+        try! NSRegularExpression(pattern: #"!\[[^\]]*\]\([^)]*\)"#),
+        try! NSRegularExpression(pattern: #"(?<!!)\[[^\]]*\]\([^)]*\)"#),
+        try! NSRegularExpression(pattern: #"https?://[^\s)<\]]+"#)
+    ]
 
     static func canReply(subjectType: String, number: Int?) -> Bool {
         guard number != nil else { return false }

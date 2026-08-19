@@ -96,6 +96,53 @@ struct GitHubNotificationMapperTests {
         )
     }
 
+    @Test("评论里的 #20 和 owner/repo#20 收成 GitHub 链接")
+    func autolinkIssueReferences() {
+        let fullName = "octo/hello"
+        #expect(
+            GitHubNotificationMapper.autolinkIssueReferences(
+                "Hi, this is a follow-up to #20.",
+                repositoryFullName: fullName
+            ) == "Hi, this is a follow-up to [#20](https://github.com/octo/hello/issues/20)."
+        )
+        #expect(
+            GitHubNotificationMapper.autolinkIssueReferences(
+                "see starcat-app/Starcat#7 and #20",
+                repositoryFullName: fullName
+            ) == "see [starcat-app/Starcat#7](https://github.com/starcat-app/Starcat/issues/7) and [#20](https://github.com/octo/hello/issues/20)"
+        )
+        #expect(
+            GitHubNotificationMapper.autolinkIssueReferences(
+                "use `#20` in code",
+                repositoryFullName: fullName
+            ) == "use `#20` in code"
+        )
+        #expect(
+            GitHubNotificationMapper.autolinkIssueReferences(
+                "```\n#20\n```",
+                repositoryFullName: fullName
+            ) == "```\n#20\n```"
+        )
+        #expect(
+            GitHubNotificationMapper.autolinkIssueReferences(
+                "[#20](https://example.test/20)",
+                repositoryFullName: fullName
+            ) == "[#20](https://example.test/20)"
+        )
+        #expect(
+            GitHubNotificationMapper.autolinkIssueReferences(
+                "C#20 is a language version",
+                repositoryFullName: fullName
+            ) == "C#20 is a language version"
+        )
+        #expect(
+            GitHubNotificationMapper.autolinkIssueReferences(
+                "see https://example.test/foo#20",
+                repositoryFullName: fullName
+            ) == "see https://example.test/foo#20"
+        )
+    }
+
     @Test("时钟格式 HH:mm")
     func clockLabel() {
         var calendar = Calendar(identifier: .gregorian)
