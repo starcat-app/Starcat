@@ -37,6 +37,9 @@
 //    是必须成对存在的。任一缺失就会在暗色下看到色差
 //    （GitHub `#0d1117` 与 SwiftUI 宿主 `NSColor.windowBackgroundColor` 不同色）。
 //    亮色下虽然两者都接近 `#ffffff`，看不出差异，但同样要保留 transparent。
+//  - **暗色局部表面**（代码块 / 行内 code / 表格斑马纹 / 引用条）不能再用 GitHub
+//    `#161b22` / `#30363d`：那组色是给更黑的 `#0d1117` 画布准备的抬升面。页面已经
+//    透出系统窗底后，它们会变成比页面更黑的坑。改为半透明白叠加，相对真实窗底抬升。
 //
 //  已知系统噪音（**不是 Bug，不要排查**）：
 //  macOS App Sandbox 下 WKWebView 加载新内容时，WebContent 进程会向 RunningBoard /
@@ -1582,6 +1585,7 @@ struct ReadmeKey: Equatable {
 /// - 同时定义亮/暗变量，通过 body.dark 切换
 /// - 与 GitHub 渲染好的 HTML 类名对齐（.markdown-body / .highlight / .anchor 等）
 /// - 字体大小、行距与 GitHub 网页保持相近，方便用户上下文切换
+/// - 暗色 `--code-bg` / `--border` 用半透明白相对系统窗底抬升，不用 GitHub 画布色
 enum ReadmeCSS {
     static let full: String = """
     :root {
@@ -1601,10 +1605,11 @@ enum ReadmeCSS {
         --fg: #e6edf3;
         --muted: #8b949e;
         --link: #4493f8;
-        --border: #30363d;
-        --code-bg: #161b22;
+        /* 相对透明页透出的系统窗底抬升，跟随真实底色（含 Sequoia 偏紫灰），避免 GitHub #161b22 沉成黑坑 */
+        --border: rgba(255, 255, 255, 0.14);
+        --code-bg: rgba(255, 255, 255, 0.08);
         --blockquote-fg: #8b949e;
-        --blockquote-border: #30363d;
+        --blockquote-border: rgba(255, 255, 255, 0.14);
         --image-preview-bg: rgba(13, 17, 23, 0.88);
         --image-preview-shadow: rgba(0, 0, 0, 0.42);
     }
@@ -1615,6 +1620,7 @@ enum ReadmeCSS {
      * 避免 README 区与上方元信息卡片之间出现色差（GitHub `#0d1117` ↔ macOS 系统暗灰）。
      * 亮色下系统底色 ≈ 纯白，效果也一致。
      * `--bg` 变量保留给后续可能用到的局部组件，不在此处画背景。
+     * 代码块 / 表格线用 `--code-bg` / `--border`；暗色是半透明白，叠在这层透明底上才会相对窗底抬升。
      */
     html, body {
         margin: 0;
@@ -1681,6 +1687,16 @@ enum ReadmeCSS {
         background: var(--code-bg);
         border-radius: 6px;
         line-height: 1.45;
+    }
+    /* GitHub 带语言 fence 会包一层 .highlight；底色只画在外层，避免暗色 rgba 叠两次变黑 */
+    .markdown-body .highlight {
+        background: var(--code-bg);
+        border-radius: 6px;
+        overflow: auto;
+    }
+    .markdown-body .highlight pre {
+        background: transparent;
+        margin-bottom: 0;
     }
     .markdown-body pre code {
         padding: 0;
