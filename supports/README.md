@@ -193,6 +193,7 @@ secrets 需要单独确认。
 ## 📚 相关文档
 
 - [`SYNC.md`](./SYNC.md) — 文件同步说明（git 管理 vs 跨机器同步）
+- [本地编译教程](../docs/7-工具与脚本/本地编译教程.md) — 从源码编 App、本地 API 和 CLI
 - [主仓库 CLAUDE.md](../CLAUDE.md)
 - [supports/CLAUDE.md](./CLAUDE.md)
 - [supports/AGENTS.md](./AGENTS.md)

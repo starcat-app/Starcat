@@ -1,133 +1,286 @@
-# Starcat
+<div align="center">
+<a href="https://starcat.ink"><img src="./banner.webp" width="100%" alt="Starcat" align="center"/></a>
 
-![20260618205538_4cHWbTNy](./banner.png)
+<h2>Starcat</h2>
+<p>GitHub Stars management, local RAG knowledge base, Agent workspace, My Projects, library and repository insights, macOS desktop widgets, AI summaries, semantic search, release tracking, browser plugins, Alfred / uTools / Raycast, and more.</p>
 
-> A GitHub Star manager and AI knowledge organizer for power users on Apple platforms
+<a href="https://github.com/starcat-app/homebrew-starcat"><img src="https://img.shields.io/badge/Install%20with-Homebrew-FBBF24?style=for-the-badge&logo=homebrew&logoColor=white" width="220" alt="Install with Homebrew"/></a><br/>
+<sub>
+<b>macOS 15 Sequoia or newer</b>: Install with <a href="https://github.com/starcat-app/homebrew-starcat">Homebrew</a>, download the <a href="https://starcat.ink/downloads/Starcat-1.3.0-arm64.dmg">current Direct build (1.3.0)</a> for Apple Silicon Macs, or get <b><a href="https://apps.apple.com/app/starcat-for-github/id6788809803?mt=12">Starcat for GitHub</a></b> from the Mac App Store.<br>
+Previous versions and release notes: <a href="./CHANGELOG.md">Changelog</a> · <a href="https://starcat.ink/changelog.html">Website changelog</a><br>
+Public issue tracker: <a href="https://github.com/starcat-app/starcat-pro/issues">Report a bug or request a feature</a><br>
+User docs: <a href="https://docs.starcat.ink">docs.starcat.ink</a> · Privacy: <a href="https://starcat.ink/privacy.html">Privacy Policy</a> · <a href="https://starcat.ink/eula.html">EULA</a><br>
+中文说明: <a href="./README-ZH.md">README-ZH.md</a>
+</sub>
+</div>
 
-[![Platform](https://img.shields.io/badge/platform-macOS%2015+-blue)](https://developer.apple.com)
-[![Swift](https://img.shields.io/badge/Swift-5.0-orange)](https://swift.org)
-[![Design](https://img.shields.io/badge/Design-Liquid%20Glass-ff69b4)](https://www.apple.com/macos)
+<br />
 
-[简体中文](./README-ZH.md)
+<div align="center">
+<a href="https://starcat.ink"><img src="https://img.shields.io/badge/website-starcat.ink-38BDF8?style=flat&color=blue" alt="website"/></a>
+<a href="https://starcat.ink/downloads/Starcat-1.3.0-arm64.dmg"><img src="https://img.shields.io/badge/platform-macOS%2015%2B-lightgrey.svg?style=flat&color=blue" alt="platform"/></a>
+<a href="https://github.com/starcat-app/starcat-localization"><img src="https://img.shields.io/badge/localization-open-lightgrey.svg?style=flat&color=blue" alt="localization"/></a>
+<a href="https://github.com/starcat-app/starcat-pro/issues"><img src="https://img.shields.io/github/issues/starcat-app/starcat-pro?style=flat&color=blue" alt="issues"/></a>
+<a href="https://github.com/starcat-app"><img src="https://img.shields.io/badge/org-starcat--app-lightgrey.svg?style=flat&color=blue" alt="organization"/></a>
+</div>
 
-## Core Value
+<br />
 
-**Organize, understand, rediscover, and evaluate** — turn GitHub Stars from a flat list of bookmarks into a reusable knowledge base.
+This repository is the **macOS app source**. Public support, issues, and release notes live in [starcat-pro](https://github.com/starcat-app/starcat-pro). Docs, CLI, plugins, and self-hostable APIs are listed under Related projects.
 
-## Why this is open source
+## About Starcat
 
-Starcat started as a paid product, and it shipped that way. In practice almost nobody bought it. Managing GitHub Stars this deeply turned out to be a niche of one: me.
+**Starcat** is a native macOS app for people whose GitHub Stars have outgrown a bookmark list. It syncs starred repositories into a local-first desktop workspace, renders README content, adds tags, notes and reading status, tracks releases, evaluates repository health, and turns the repos you still need into a searchable, askable knowledge base.
 
-So everything in the Starcat ecosystem is now open source, except [`starcat-license-api`](https://github.com/starcat-app/starcat-license-api), which stays private because it issues Direct licenses. If the source is useful to anyone else, that is already more than a closed paid app was going to achieve.
+While building Starcat I started thinking about what a GitHub Star is. We treat them as read-later bookmarks. Over time they become a digital asset: a record of professional interest, technical judgment, and projects we may still need.
 
-Official **Mac App Store** and **Direct** ([starcat.ink](https://starcat.ink)) builds remain available and will keep being maintained. You can also build from this repository and run your own stack. Self-hosting notes will follow.
+A public Star is still an endorsement. Repositories you plan to learn, use, or keep go into the Starcat knowledge base. Starring does not create a backlog you must tidy. Only ingested repos enter search, summaries, and RAG.
 
-## Features
+Starcat started as a paid product. Almost nobody bought it. Managing GitHub Stars this deeply turned out to be a niche of one. The related projects are now open source, except [`starcat-license-api`](https://github.com/starcat-app/starcat-license-api), which stays private because it issues Direct licenses. Official **Mac App Store** and **Direct** ([starcat.ink](https://starcat.ink)) builds remain available and will keep being maintained. You can also build from this repository and run your own stack.
 
-### Essentials
+<div align="center">
+<img width="900" src="./main.webp" alt="Starcat main window"/>
+</div>
 
-- GitHub OAuth sign-in and incremental synchronization
-- Native three-column interface for macOS 15+, with first-class Liquid Glass support on macOS 26
-- Tag organization and language filters
-- FTS5 full-text search
-- README Markdown rendering
-- Private notes and reading status management (Unread / Reading / Adopted / Deprecated)
+The current public version is **Starcat 1.3.0**.
+
+## Official builds and source
+
+Official channels are the Mac App Store ([Starcat for GitHub](https://apps.apple.com/app/starcat-for-github/id6788809803?mt=12)) and Direct (website DMG / Homebrew with Sparkle). Core organization features are free. Pro workflows, higher AI quotas, and code-intelligence features in official builds use App Store in-app purchase or a Direct license.
+
+Building from this repository and running your own services does not require a Starcat license. Direct license issuance stays on the private `starcat-license-api`.
+
+Homebrew is the preferred install:
+
+```bash
+brew tap starcat-app/starcat
+brew trust starcat-app/starcat
+brew install --cask starcat
+```
+
+You can also download the Direct `.dmg` from [starcat.ink](https://starcat.ink), move Starcat to `/Applications`, and sign in with GitHub.
+
+## What it does
+
+The main window is a three-column workspace: sidebar, repository list, and the current repo. Two more windows sit beside it: the knowledge-base RAG workspace and the Agent workspace.
+
+### Manage Stars
+
+Sign in with GitHub OAuth, sync starred repos incrementally, and keep the cache in local SQLite. Repository cache can be rebuilt. Tags, private notes, and reading status are user data and must not be lost.
+
+- Three-column layout, with Liquid Glass on macOS 26
+- Tags, languages, untagged, Smart Collections, pinning
+- Reading status: Unread / Reading / Adopted / Deprecated
+- Private notes, with optional AI drafts from the README
+- FTS5 search across names, descriptions, topics, and notes
+- Semantic search by intent, not only exact keywords
+- README rendering with images, Mermaid, and a reading surface
 - JSON import and export compatible with OhMyStar and Astral
 
-### AI
+### Knowledge base
 
-- AI-generated summaries in English and Chinese
-- AI tag recommendations with a confirmation workflow
-- Hybrid semantic search using BM25, Embeddings, and RRF
-- Personalized daily recommendations from GitHub Trending
-- AI-assisted repository health evaluation
-- 14 preset categories
+Stars and the knowledge base are separate layers. A GitHub Star is a public endorsement. The knowledge base is your private set of repos worth keeping. You can ingest from Stars in bulk, or add a repo from Explore, Weekly, or Trending without starring it on GitHub first.
 
-### Differentiators
+RAG indexing, knowledge-base browsing, and the default CLI / MCP context all start from ingested repos. Stars you never ingest stay a collection.
 
-- Release subscription tracking
-- Unified activity timeline
-- Smart release asset filtering for macOS, Windows, and Linux
-- One-click subscription and download workflows
+### Knowledge-base RAG workspace
 
-## Technology Stack
+Opens in its own window (`⇧⌘K`). Questions default to ingested repos. Answers stream with citations you can open back to the matching repository and evidence chunk.
 
-| Layer | Technology |
-|------|------------|
-| Client | SwiftUI + macOS 26 |
-| Local database | GRDB.swift (SQLite) |
-| Cloud sync | CloudKit |
-| Secure storage | Keychain |
-| AI proxy | Self-hosted service (Gemini/OpenAI/DeepSeek) |
+The layout is a conversation rail, an answer surface, and a Citation Inspector. Retrieval mixes FTS5 keywords, embeddings, and RRF. The index is chunk-level, so a citation can point at a paragraph, not only a repo name.
 
-## Requirements
+You can attach insight XML, README / notes / summary chunks, and text, Markdown, JSON, or source-code files. GitHub structured lookups and web search are opt-in, and they show up on the execution timeline. The workspace is read-only by default. It will not write tags, notes, or library state on its own.
 
-- macOS 15 (Sequoia) or later
-- Apple Developer Program membership ($99/year)
+### Agent workspace
 
-## Development
+An overlay task window: pick an agent and past runs on the left, follow steps and tool calls in the middle, inspect artifacts and confirmations on the right. Tools cover repos, the knowledge base, Weekly, Trending, and Discovery. Typical jobs include tidying untagged repos and drafting a weekly report. Runs are auditable. Writes wait for confirmation.
 
-### Setup
+### Understand a repository
 
-1. Install Xcode 26 or later.
-2. Clone this repository.
-3. Open `Starcat.xcodeproj`.
-4. Configure Signing & Capabilities.
-5. Run the project.
+The detail pane stays on the current repo. AI reads the README and writes a structured summary: what it does, which stack it uses, where it fits. Tag suggestions need confirmation before they land. You can chat against that repo, or translate the README while keeping structure, either as a bilingual view or a full replacement.
 
-### Project Structure
+CodeFlow shows dependency and call structure without leaving the app.
+
+### Evaluate and review
+
+- Repo Health: activity, maintenance, risk signals
+- OpenSSF Scorecard: public security radar
+- My Insights: organization progress, tech mix, follow-ups
+- Repository Insights: star growth, commits, collaboration, release cadence, health and security
+- Generated insights can feed summaries, repo chat, and RAG as removable read-only context
+
+### Rediscover and explore
+
+Smart Collections cover Needs Review, Unmaintained, High Value, No Tags, and custom rules over metadata, status, notes, and Health. My Projects lists personal, organization, and collaborator repos, including private ones via GitHub App.
+
+Explore covers GitHub Trending, discovery boards, and sources such as ruanyf Weekly, plus Release subscriptions, a unified timeline, and platform-filtered assets. Desktop widgets surface frequent repos, a daily rediscovery, unread releases, and star trends.
+
+### Use the same data elsewhere
+
+CLI, MCP, an Agent Skill, browser plugins, and launchers all read the local store. The browser plugins bring notes, tags, health, and AI actions onto GitHub pages. Alfred, uTools, and Raycast search local repos. Share cards and short links work for people who do not have Starcat installed.
+
+AI runs through BYOK or a self-hosted proxy: Gemini, OpenAI, Anthropic Claude, DeepSeek, Ollama. Keys and quotas stay with you. The UI ships in 18 languages. Translations live in [starcat-localization](https://github.com/starcat-app/starcat-localization).
+
+## Where data lives
+
+Tags, private notes, reading status, knowledge-base membership, and RAG chunks stay in local SQLite. GitHub tokens and AI API keys stay in Keychain. Repository cache (README, metadata) can be rebuilt. User data cannot.
+
+Traffic that leaves the Mac:
+
+- GitHub.com: Stars sync, README / Release fetch, OAuth
+- The AI provider you configure: summaries, chat, RAG generation, and embeddings (Ollama stays on-device)
+- Optional Starcat support APIs: Trending, Weekly, discovery, wiki probes, similar-repo recommendations, public share pages. All of these can be self-hosted
+- Optional external search backends: Meilisearch and Qdrant. The default remains SQLite FTS5 and local vectors
+
+CloudKit sync fields are reserved. The production adapter is not wired yet. Starcat does not host your AI keys, and it does not upload the knowledge base to a Starcat server by default.
+
+## Screenshots
+
+<p align="center">
+  <img src="screenshots/rag.webp" alt="Knowledge-base RAG workspace" width="48%" />
+  <img src="screenshots/explore.webp" alt="Explore and discovery" width="48%" />
+</p>
+<p align="center">
+  <img src="screenshots/search.webp" alt="Global search and structured filters" width="48%" />
+  <img src="screenshots/collections.webp" alt="Smart collections" width="48%" />
+</p>
+<p align="center">
+  <img src="screenshots/ai-summary.webp" alt="AI-generated repository summaries" width="48%" />
+  <img src="screenshots/translation.webp" alt="README translation" width="48%" />
+</p>
+<p align="center">
+  <img src="screenshots/ai-chat.webp" alt="AI chat with repository context" width="48%" />
+  <img src="screenshots/health.webp" alt="Repo Health score" width="48%" />
+</p>
+<p align="center">
+  <img src="screenshots/openssf.webp" alt="OpenSSF Scorecard" width="48%" />
+  <img src="screenshots/code-graph.webp" alt="Built-in code graph" width="48%" />
+</p>
+<p align="center">
+  <img src="screenshots/share-card.webp" alt="Share cards" width="48%" />
+  <img src="screenshots/ai-config.webp" alt="BYOK AI configuration" width="48%" />
+</p>
+
+## Related projects
+
+This repository is the macOS app. Starcat also has standalone repos for docs, distribution, CLI, plugins, and self-hostable APIs. The full map is in [`supports/README.md`](supports/README.md). Organization home: [github.com/starcat-app](https://github.com/starcat-app).
+
+### Product, docs, and distribution
+
+| Project | Role |
+|---------|------|
+| [starcat.ink](https://starcat.ink) | Direct website, downloads, release notes |
+| [starcat-pro](https://github.com/starcat-app/starcat-pro) | Public support, issues, changelog, and promo images |
+| [starcat-docs](https://github.com/starcat-app/starcat-docs) | Official user docs, published at [docs.starcat.ink](https://docs.starcat.ink) |
+| [starcat-site](https://github.com/starcat-app/starcat-site) | Direct / App Store site and legal pages |
+| [starcat-localization](https://github.com/starcat-app/starcat-localization) | UI localization, currently 18 languages |
+| [homebrew-starcat](https://github.com/starcat-app/homebrew-starcat) | App Homebrew Cask: `brew install --cask starcat` |
+
+### Use Starcat from other tools
+
+| Project | Role |
+|---------|------|
+| [starcat-cli](https://github.com/starcat-app/starcat-cli) | Cross-platform CLI and MCP runtime over the local knowledge base |
+| [homebrew-starcat-cli](https://github.com/starcat-app/homebrew-starcat-cli) | CLI Homebrew Formula |
+| [starcat-skill](https://github.com/starcat-app/starcat-skill) | Skill for agents such as Codex and Claude Code |
+| [starcat-chrome-plugin](https://github.com/starcat-app/starcat-chrome-plugin) | Chrome extension with Starcat context on GitHub pages |
+| [starcat-safari-plugin](https://github.com/starcat-app/starcat-safari-plugin) | Safari extension |
+| [starcat-alfred-workflow](https://github.com/starcat-app/starcat-alfred-workflow) | Search local repos and GitHub from Alfred |
+| [starcat-utools-plugin](https://github.com/starcat-app/starcat-utools-plugin) | Search local repos and GitHub from uTools |
+| [starcat-raycast-extension](https://github.com/starcat-app/starcat-raycast-extension) | Search local repos and GitHub from Raycast |
+
+### Self-hostable APIs
+
+The app talks to a small set of independent APIs. GitHub has no Trending endpoint. Weekly, discovery, wiki probes, similar-repo recommendations, and public share pages also need a server. These repos can be deployed on your own. Each one has its own README and deploy notes.
+
+| Project | Role |
+|---------|------|
+| [starcat-sharing-api](https://github.com/starcat-app/starcat-sharing-api) | Share short links and public share pages |
+| [starcat-trending-api](https://github.com/starcat-app/starcat-trending-api) | GitHub Trending crawl and API |
+| [starcat-weekly-api](https://github.com/starcat-app/starcat-weekly-api) | Weekly, Show HN, HelloGitHub, and related feeds |
+| [starcat-wiki-api](https://github.com/starcat-app/starcat-wiki-api) | DeepWiki / Zread / CodeWiki availability |
+| [starcat-recommend-api](https://github.com/starcat-app/starcat-recommend-api) | Similar-repository recommendations |
+| [starcat-discovery-api](https://github.com/starcat-app/starcat-discovery-api) | Explore, popular, and new-release boards |
+| [starcat-api-kit](https://github.com/starcat-app/starcat-api-kit) | Shared auth, envelope, and GitHub helpers |
+| [starcat-license-api](https://github.com/starcat-app/starcat-license-api) | Direct licensing, private repository |
+
+Knowledge-base keywords default to SQLite FTS5. Vectors default to local cosine. To try the optional external backends on this Mac, see [`docker/meilisearch`](docker/meilisearch/README.md) and [`docker/qdrant`](docker/qdrant/README.md). Bind them to `127.0.0.1` only.
+
+## Articles
+
+- SSPAI: [我为 GitHub 重度使用者做了一款 macOS 原生应用](https://sspai.com/post/113420)
+- Blog: [the same essay](https://blog.dong4j.site/posts/37f07b70.html)
+
+## Build from source
+
+The full walkthrough (macOS app, support APIs, CLI, local Meilisearch / Qdrant) is **[本地编译教程](docs/7-工具与脚本/本地编译教程.md)** (Chinese). Contributor rules: [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+Short path: macOS 15+, Xcode 26+, `brew install xcodegen`, checkout `dev`, copy `Configs/Secrets.xcconfig.template`, run `xcodegen generate`, then Run the `Starcat` scheme. After adding or deleting Swift files, generate the project again.
+
+Clone the supporting repos in one pass:
+
+```bash
+cd supports
+./clone-all.sh
+```
+
+`supports/` is a workspace of independent git repos. Those trees are not committed here. `starcat-license-api` and `starcat-api` are private and need org access.
+
+### Project structure
 
 ```text
 Starcat/
-├── App/
-│   ├── StarcatApp.swift          # Application entry point
-│   ├── ContentView.swift         # Root view
-│   └── AppDependencies.swift     # Dependency composition
+├── App/                 # Entry, lifecycle, dependency composition
 ├── Features/
-│   ├── Auth/                     # GitHub OAuth
-│   ├── Home/                     # Three-column main interface
-│   ├── Tags/                     # Tag management
-│   ├── Notes/                    # Private notes and reading status
-│   └── Settings/                 # Settings
+│   ├── Home/            # Three-column main window
+│   ├── RAG/             # Knowledge-base RAG workspace
+│   ├── Agents/          # Agent workspace
+│   ├── AI/              # Summaries, chat, translation, semantic search
+│   ├── Insights/        # Library and repository insights
+│   ├── Explore/         # Discovery
+│   ├── Trending/        # GitHub Trending
+│   ├── Tags/            # Tags
+│   ├── Releases/        # Release subscriptions and timeline
+│   ├── MCP/             # Local MCP facade
+│   └── Settings/        # Settings
 ├── Core/
-│   ├── Database/                 # GRDB database layer
-│   ├── Network/                  # GitHub API
-│   ├── Sync/                     # Synchronization and repositories
-│   ├── Keychain/                 # Secure storage
-│   ├── Settings/                 # Local settings
-│   ├── Cache/                    # Cache cleanup
-│   └── Models/                   # Domain models
-├── Shared/
-│   ├── Components/               # Shared components
-│   └── Utilities/                # Utilities and logging
+│   ├── Database/        # GRDB / migrations
+│   ├── RAG/             # Chunk index and writes
+│   ├── Network/         # GitHub API
+│   ├── Sync/            # Stars sync
+│   └── Keychain/        # Tokens and API keys
+├── Shared/              # Shared components and utilities
 └── Resources/
-    └── Assets.xcassets
 ```
 
-### Full Test Suite
+### Tests
+
+Quit Xcode before command-line tests, or the two will fight over `testmanagerd`. Any start-up path that talks to Keychain or system authorization must be gated with `TestEnvironment.isRunning`, or the test host hangs.
 
 ```bash
 xcodegen generate
 xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
 ```
 
-### AI Service Configuration
+### Technology stack
 
-Starcat supports several AI service modes:
+| Layer | Technology |
+|------|------------|
+| Client | SwiftUI on macOS 15+, Liquid Glass on macOS 26 |
+| Local database | GRDB.swift (SQLite), FTS5, local embeddings |
+| Cloud sync | CloudKit fields are reserved, production adapter not wired yet |
+| Secure storage | Keychain |
+| AI | BYOK / self-hosted proxy (Gemini / OpenAI / Claude / DeepSeek / Ollama) |
 
-1. **Starcat Pro** with built-in quota
-2. **Self-hosted service** on your own server
-3. **BYOK** with your own API key
+## Compatibility
 
-Supported providers:
+- Starcat currently supports **macOS 15 Sequoia or newer**
+- The public Direct download is for **Apple Silicon Macs**
+- There are no iOS, iPadOS, watchOS, Windows, or Android builds
+- Building from source needs Apple Developer Program membership ($99/year)
+- AI features depend on the provider or API key you configure
 
-- Google Gemini
-- OpenAI
-- Anthropic Claude
-- DeepSeek
-- Ollama for local models
-
-## Related Projects
+## Related apps
 
 | App | Highlights |
 |-----|------------|
@@ -135,24 +288,14 @@ Supported providers:
 | [OhMyStar](https://apps.apple.com/cn/app/ohmystar/id1218642292) | Comprehensive features and powerful search |
 | [GithubStarsManager](https://github.com/AmintaCCCP/GithubStarsManager) | AI summaries, semantic search, and release tracking |
 
-## Pricing
-
-Official Mac App Store and Direct builds still use the plans below. Building from source and running your own services does not require a Starcat license; Direct license issuance stays on the private `starcat-license-api`.
-
-| Plan | Price | Includes |
-|------|-------|----------|
-| Free | $0 | GitHub OAuth and Stars sync, offline SQLite cache, untagged/tag/language views, filters, README previews, Clone URL and GitHub shortcuts, private notes, status management, local full-text search, HTML/Markdown export, and share cards; free limits are 20 tags, 4 Smart Collections, and 5 Release subscriptions |
-| Pro Monthly | $3.99/month | Unlimited tags, collections, and Release subscriptions; Release polling and notifications; AI summaries, AI tag recommendations, AI Chat, README translation, automatic AI organization, Embedding semantic search, LLM-friendly web context, RepoContextPacker, CodeFlow, Trending AI recommendations, and BYOK provider configuration |
-| Pro Yearly | $29.99/year | Everything in Pro Monthly, with about 37% savings compared with monthly billing |
-| Pro Lifetime | $39.99 one-time | Everything in Pro Monthly, with lifetime access to the current Pro feature set and no recurring subscription |
-| Self-hosted service | Free | Use your own server |
-
 ## Documentation
 
-- [Feature list](docs/1-立项/功能清单.md) — complete feature specification
-- [Implementation overview](docs/功能实现总览.md) — primary progress index and engineering debt
-- [Detailed design index](docs/3-设计/详细设计/README.md) — technical design documentation
-- [Open Design UI skill](docs/原型设计/Starcat-UI-SKILL.md) — UI design guidelines
+- [Local build guide](docs/7-工具与脚本/本地编译教程.md) - compile the app, support APIs, and CLI (Chinese)
+- [User docs](https://docs.starcat.ink) - install, features, daily use
+- [Feature list](docs/1-立项/功能清单.md) - complete feature specification
+- [Implementation overview](docs/功能实现总览.md) - primary progress index and engineering debt
+- [Detailed design index](docs/3-设计/详细设计/README.md) - technical design documentation
+- [DESIGN.md](DESIGN.md) - UI contract for the main window, RAG, and Agent
 
 ## Contributing
 

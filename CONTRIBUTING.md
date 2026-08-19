@@ -15,6 +15,9 @@ Thank you for contributing to Starcat, a native macOS GitHub Star manager.
 
 ## Local setup
 
+The full local build guide (app, support APIs, CLI) is
+[`docs/7-工具与脚本/本地编译教程.md`](docs/7-工具与脚本/本地编译教程.md).
+
 1. Install Xcode 26 or later on macOS 15+.
 2. Clone this repository and work from the `dev` branch.
 3. Copy `Configs/Secrets.xcconfig.template` to `Configs/Secrets.xcconfig`. Leave secrets
