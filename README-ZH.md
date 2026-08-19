@@ -141,10 +141,6 @@ CloudKit 同步字段已经预留，生产版本还没有接上。Starcat 不托
   <img src="screenshots/explore.webp" alt="探索与发现" width="48%" />
 </p>
 <p align="center">
-  <img src="screenshots/insights.webp" alt="我的洞察概览" width="48%" />
-  <img src="screenshots/repo-insights.webp" alt="仓库洞察" width="48%" />
-</p>
-<p align="center">
   <img src="screenshots/search.webp" alt="全局搜索与结构化过滤" width="48%" />
   <img src="screenshots/collections.webp" alt="智能集合" width="48%" />
 </p>
