@@ -9,11 +9,9 @@ Starcat 1.4.0 brings GitHub Notifications into Activity so you can handle mentio
 ### New
 
 - GitHub notification inbox: Review mentions, review requests, assignments, discussions, releases, and security alerts in Activity. Filter by Unread, Mentions, Reviews, Issues, PRs, and more; group by Today, Yesterday, This week, and Earlier. All also interleaves your own Stars, Unstars, and Forks. The timeline distinguishes Issues from PRs; avatars and usernames open GitHub profiles, and Dependabot uses its official circular mark. Viewed items stay read, and the sync control spins while refreshing. Starcat asks to re-authorize if notification access is missing, and can post reminders in Notification Center.
-
+  ![20260820212317_QsP1FsMm](https://cdn.dong4j.site/source/image/20260820212317_QsP1FsMm.png)
 - Issue / PR threads: Open a notification to read the opening post and comments, write or preview a reply, and move to the previous or next item. Done matches GitHub Inbox Done and does not close the issue. Open the thread on GitHub, or the repository in Starcat.
-
 - AI comment drafts: Generate a reply from the current thread, or polish text you already typed. The reply follows the thread language, not your draft or the app UI language.
-
 - Thread translation: Translate the opening post and comments in segmented or full mode; titles, repository names, and the composer stay original. Target language can follow the app UI, paragraphs already in that language are skipped, and new translations fade in briefly.
 
 ### Improvements
