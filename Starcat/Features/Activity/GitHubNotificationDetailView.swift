@@ -27,7 +27,6 @@ struct GitHubNotificationDetailView: View {
     @State private var doneError: String?
     @State private var translationVM: ReadmeTranslationViewModel?
     @State private var translationPaywall: ProPaywallContext?
-    @State private var isConversationScrolling = false
 
     private var inbox: GitHubNotificationInboxService {
         dependencies.githubNotificationInboxService
@@ -80,8 +79,8 @@ struct GitHubNotificationDetailView: View {
             Divider()
             if !isComposerExpanded {
                 ScrollView {
-                    // 长会话继续用 LazyVStack 控制屏外卡片数量；滚动期另外暂停文字选择层，
-                    // 避免译文批次更新和 NSTextField SelectionOverlay 一起反复刷新布局图。
+                    // 长会话继续用 LazyVStack 控制屏外卡片数量。正文不再挂 SwiftUI
+                    // SelectionOverlay；文字选择移到单卡片 AppKit popover，滚动不再改视图状态。
                     LazyVStack(alignment: .leading, spacing: 12) {
                         if let payload = item.notification {
                             repoRow(payload)
@@ -89,11 +88,6 @@ struct GitHubNotificationDetailView: View {
                         }
                     }
                     .padding(18)
-                }
-                .onScrollPhaseChange { _, newPhase in
-                    let isScrolling = newPhase != .idle
-                    guard isConversationScrolling != isScrolling else { return }
-                    isConversationScrolling = isScrolling
                 }
             }
             if let payload = item.notification,
@@ -121,14 +115,9 @@ struct GitHubNotificationDetailView: View {
         .navigationSubtitle(navigationSubtitle(item))
         .onChange(of: item.notification?.threadId) { _, _ in
             isComposerExpanded = false
-            isConversationScrolling = false
             isDoneHelpPresented = false
             doneError = nil
             prepareTranslation(for: item)
-        }
-        .onChange(of: isComposerExpanded) { _, isExpanded in
-            // 展开撰写器会移除会话 ScrollView；手动复位，避免重新折叠后仍保持滚动态策略。
-            if isExpanded { isConversationScrolling = false }
         }
         .onChange(of: settings.readmeTranslationLanguage) { _, _ in
             prepareTranslation(for: item)
@@ -145,7 +134,6 @@ struct GitHubNotificationDetailView: View {
             refreshTranslationSourceIfNeeded(for: item)
         }
         .onAppear {
-            isConversationScrolling = false
             prepareTranslation(for: item)
         }
     }
@@ -308,14 +296,18 @@ struct GitHubNotificationDetailView: View {
             if case .showingTranslation = translation?.displayMode { return true }
             return false
         }()
-        let translations = translation?.renderState.translations ?? []
+        let renderedTranslations = translation?.renderState.translations ?? []
+        let translationsByID = Dictionary(
+            renderedTranslations.map { ($0.id, $0) },
+            uniquingKeysWith: { _, latest in latest }
+        )
+        let openingBlocks = document.blocks.filter { $0.kind == .opening }
+        let commentBlocks = groupedCommentBlocks(document.blocks)
         // 对照/替换跟当前这次翻译的 mode，避免菜单已改、译文还是上一档。
         let translationMode = translation?.renderState.mode ?? settings.readmeTranslationMode
         let isJobTranslating = translation?.isTranslating ?? false
         let translationLanguage = settings.effectiveReadmeTranslationLanguage
-        let allowsTextSelection = !isConversationScrolling
-        let prefersAnimatedEntrance =
-            (translation?.renderState.prefersAnimatedEntrance ?? false) && !isConversationScrolling
+        let prefersAnimatedEntrance = translation?.renderState.prefersAnimatedEntrance ?? false
 
         if let excerpt = payload.excerpt, !excerpt.isEmpty {
             GitHubNotificationCommentCard(
@@ -324,37 +316,61 @@ struct GitHubNotificationDetailView: View {
                 markdown: excerpt,
                 repositoryFullName: payload.repositoryFullName,
                 isOpeningPost: true,
-                blocks: document.blocks.filter { $0.kind == .opening },
-                translations: translations,
+                locale: locale,
+                reduceMotion: reduceMotion,
+                blocks: openingBlocks,
+                translations: cardTranslations(for: openingBlocks, from: translationsByID),
                 isShowingTranslation: isShowing,
                 translationMode: translationMode,
                 prefersAnimatedEntrance: prefersAnimatedEntrance,
                 isJobTranslating: isJobTranslating,
-                translationLanguage: translationLanguage,
-                allowsTextSelection: allowsTextSelection
+                translationLanguage: translationLanguage
             )
+            .equatable()
         }
 
         ForEach(payload.comments) { comment in
+            let blocks = commentBlocks[comment.id] ?? []
             GitHubNotificationCommentCard(
                 login: comment.login,
                 createdAt: GitHubNotificationMapper.parseDate(comment.createdAt),
                 markdown: comment.body,
                 repositoryFullName: payload.repositoryFullName,
                 isOpeningPost: false,
-                blocks: document.blocks.filter {
-                    if case .comment(let id) = $0.kind { return id == comment.id }
-                    return false
-                },
-                translations: translations,
+                locale: locale,
+                reduceMotion: reduceMotion,
+                blocks: blocks,
+                translations: cardTranslations(for: blocks, from: translationsByID),
                 isShowingTranslation: isShowing,
                 translationMode: translationMode,
                 prefersAnimatedEntrance: prefersAnimatedEntrance,
                 isJobTranslating: isJobTranslating,
-                translationLanguage: translationLanguage,
-                allowsTextSelection: allowsTextSelection
+                translationLanguage: translationLanguage
             )
+            .equatable()
         }
+    }
+
+    /// 每次新译文只交给所属卡片；配合 EquatableView，其他可见评论不重新跑 Markdown 布局。
+    private func cardTranslations(
+        for blocks: [GitHubNotificationTranslation.Block],
+        from renderedByID: [String: ReadmeRenderedTranslation]
+    ) -> [ReadmeRenderedTranslation] {
+        blocks.compactMap { block in
+            block.segmentId.flatMap { renderedByID[$0] }
+        }
+    }
+
+    /// 会话块只分组一次，避免每个评论卡片都遍历整份 Document。
+    private func groupedCommentBlocks(
+        _ blocks: [GitHubNotificationTranslation.Block]
+    ) -> [Int64: [GitHubNotificationTranslation.Block]] {
+        var grouped: [Int64: [GitHubNotificationTranslation.Block]] = [:]
+        for block in blocks {
+            guard case .comment(let id) = block.kind else { continue }
+            grouped[id, default: []].append(block)
+        }
+        return grouped
     }
 
     private func translationDocument(_ payload: ActivityNotificationPayload) -> GitHubNotificationTranslation.Document {
@@ -741,12 +757,14 @@ private struct GitHubNotificationUserLink: View {
     }
 }
 
-private struct GitHubNotificationCommentCard: View {
+private struct GitHubNotificationCommentCard: View, @MainActor Equatable {
     let login: String
     let createdAt: Date?
     let markdown: String
     let repositoryFullName: String
     let isOpeningPost: Bool
+    let locale: Locale
+    let reduceMotion: Bool
     var blocks: [GitHubNotificationTranslation.Block] = []
     var translations: [ReadmeRenderedTranslation] = []
     var isShowingTranslation: Bool = false
@@ -755,14 +773,11 @@ private struct GitHubNotificationCommentCard: View {
     /// 整帖任务还在跑。光圈是否亮看 `isHaloActive`：本卡段到齐就先灭。
     var isJobTranslating: Bool = false
     var translationLanguage: ReadmeTranslationLanguage = .auto
-    var allowsTextSelection: Bool = true
-    @Environment(\.locale) private var locale
-    @Environment(\.starcatReduceMotion) private var reduceMotion
+    @State private var isTextSelectionPresented = false
 
     private var relevantTranslations: [ReadmeRenderedTranslation] {
-        let ids = Set(blocks.compactMap(\.segmentId))
-        guard !ids.isEmpty else { return [] }
-        return translations.filter { ids.contains($0.id) }
+        // 父视图已经按 segmentId 过滤，避免每个翻译分段让所有评论卡片失效。
+        translations
     }
 
     /// 本卡还有未完成、且需要送 AI 的段才亮。围栏 / 已是目标语言的段不占光圈。
@@ -839,13 +854,34 @@ private struct GitHubNotificationCommentCard: View {
             }
         }
         .padding(-StarcatAIHaloMetrics.glowBleed)
+        .contextMenu {
+            Button {
+                isTextSelectionPresented = true
+            } label: {
+                Label {
+                    Text(verbatim: GitHubNotificationMapper.copy(
+                        locale,
+                        zh: "选择并复制文字",
+                        en: "Select and copy text"
+                    ))
+                } icon: {
+                    Image(systemName: "character.cursor.ibeam")
+                }
+            }
+        }
+        .popover(isPresented: $isTextSelectionPresented, arrowEdge: .top) {
+            GitHubNotificationSelectableTextPopover(
+                text: selectableText,
+                locale: locale
+            )
+        }
     }
 
     @ViewBuilder
     private var commentBody: some View {
         if isShowingTranslation, !blocks.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                ForEach(blocks, id: \.index) { block in
                     translatedBlock(block)
                 }
             }
@@ -854,10 +890,36 @@ private struct GitHubNotificationCommentCard: View {
         } else {
             GitHubNotificationMarkdown(
                 content: markdown,
-                repositoryFullName: repositoryFullName,
-                allowsTextSelection: allowsTextSelection
+                repositoryFullName: repositoryFullName
             )
         }
+    }
+
+    /// 与卡片当前显示模式一致：原文、分段对照或全文替换，选择弹层不会复制隐藏内容。
+    private var selectableText: String {
+        let fragments: [String]
+        if isShowingTranslation, !blocks.isEmpty {
+            fragments = blocks.flatMap { block -> [String] in
+                let translated = block.segmentId.flatMap { id in
+                    GitHubNotificationTranslation.translation(for: id, from: relevantTranslations)
+                }
+                switch translationMode {
+                case .segmented:
+                    return [block.markdown, translated].compactMap { value in
+                        guard let value, !value.isEmpty else { return nil }
+                        return value
+                    }
+                case .full:
+                    return [translated.flatMap { $0.isEmpty ? nil : $0 } ?? block.markdown]
+                }
+            }
+        } else {
+            fragments = [markdown]
+        }
+        return fragments
+            .map { GitHubNotificationSelectableTextPopover.plainText(from: $0) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n")
     }
 
     private var translationEntranceAnimation: Animation? {
@@ -881,14 +943,12 @@ private struct GitHubNotificationCommentCard: View {
             VStack(alignment: .leading, spacing: 6) {
                 GitHubNotificationMarkdown(
                     content: block.markdown,
-                    repositoryFullName: repositoryFullName,
-                    allowsTextSelection: allowsTextSelection
+                    repositoryFullName: repositoryFullName
                 )
                 if let translated, !translated.isEmpty {
                     Text(translated)
                         .font(.body)
                         .foregroundStyle(.secondary)
-                        .notificationTextSelection(allowsTextSelection)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .transition(.asymmetric(
                             insertion: .opacity.combined(with: .offset(y: 6)),
@@ -900,12 +960,29 @@ private struct GitHubNotificationCommentCard: View {
             // 全文替换：有译文就只显示译文；围栏和尚未翻完的段仍用原文，避免卡片被掏空。
             GitHubNotificationMarkdown(
                 content: translated.flatMap { $0.isEmpty ? nil : $0 } ?? block.markdown,
-                repositoryFullName: repositoryFullName,
-                allowsTextSelection: allowsTextSelection
+                repositoryFullName: repositoryFullName
             )
             .id("\(block.segmentId ?? "fence")-\(translated == nil || translated?.isEmpty == true ? "src" : "tx")")
             .transition(.asymmetric(insertion: .opacity, removal: .identity))
         }
+    }
+
+    /// 只比较渲染输入；popover 的本地展示状态不能触发兄弟卡片重算。
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.login == rhs.login
+            && lhs.createdAt == rhs.createdAt
+            && lhs.markdown == rhs.markdown
+            && lhs.repositoryFullName == rhs.repositoryFullName
+            && lhs.isOpeningPost == rhs.isOpeningPost
+            && lhs.locale.identifier == rhs.locale.identifier
+            && lhs.reduceMotion == rhs.reduceMotion
+            && lhs.blocks == rhs.blocks
+            && lhs.translations == rhs.translations
+            && lhs.isShowingTranslation == rhs.isShowingTranslation
+            && lhs.translationMode == rhs.translationMode
+            && lhs.prefersAnimatedEntrance == rhs.prefersAnimatedEntrance
+            && lhs.isJobTranslating == rhs.isJobTranslating
+            && lhs.translationLanguage == rhs.translationLanguage
     }
 }
 
@@ -2048,7 +2125,6 @@ private final class GitHubNotificationCommentNSTextView: NSTextView {
 private struct GitHubNotificationMarkdown: View {
     let content: String
     let repositoryFullName: String
-    var allowsTextSelection: Bool = true
 
     var body: some View {
         Markdown(
@@ -2058,7 +2134,6 @@ private struct GitHubNotificationMarkdown: View {
             )
         )
         .markdownImageProvider(GitHubNotificationImageProvider())
-        .notificationTextSelection(allowsTextSelection)
         .frame(maxWidth: .infinity, alignment: .leading)
         .environment(\.openURL, OpenURLAction { url in
             guard url.scheme == "http" || url.scheme == "https" else { return .discarded }
@@ -2068,14 +2143,90 @@ private struct GitHubNotificationMarkdown: View {
     }
 }
 
-private extension View {
-    /// macOS 的文字选择会创建 AppKit SelectionOverlay。会话滚动时临时卸掉，停止后恢复。
-    @ViewBuilder
-    func notificationTextSelection(_ isEnabled: Bool) -> some View {
-        if isEnabled {
-            self.textSelection(.enabled)
-        } else {
-            self.textSelection(.disabled)
+/// 单卡片文字选择弹层：显示当前卡片实际可见内容，原列表继续由 MarkdownUI 负责视觉。
+private struct GitHubNotificationSelectableTextPopover: View {
+    let text: String
+    let locale: Locale
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "选择文字", en: "Select text"))
+                .font(.headline)
+                .foregroundStyle(.primary)
+            Text(verbatim: GitHubNotificationMapper.copy(
+                locale,
+                zh: "拖动选择文字，然后按 ⌘C 复制。",
+                en: "Drag to select text, then press ⌘C to copy."
+            ))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            GitHubNotificationSelectableTextView(text: text)
+                .frame(width: 500, height: 320)
+        }
+        .padding(14)
+    }
+
+    /// 选择弹层只需要可复制文字；先用 Foundation Markdown 去掉标记，不复制隐藏链接语法。
+    static func plainText(from markdown: String) -> String {
+        let prepared = GitHubNotificationMapper.prepareMarkdown(markdown)
+        let options = AttributedString.MarkdownParsingOptions(
+            interpretedSyntax: .full,
+            failurePolicy: .returnPartiallyParsedIfPossible
+        )
+        guard let attributed = try? AttributedString(markdown: prepared, options: options) else {
+            return prepared
+        }
+        return String(attributed.characters)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+/// NSTextView 原生维护选择范围，和外层 LazyVStack / AttributeGraph 没有选择状态关联。
+private struct GitHubNotificationSelectableTextView: NSViewRepresentable {
+    let text: String
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        let textView = NSTextView()
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.drawsBackground = false
+        textView.backgroundColor = .clear
+        textView.font = .systemFont(ofSize: NSFont.systemFontSize)
+        textView.textColor = .labelColor
+        textView.textContainerInset = NSSize(width: 8, height: 8)
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = true
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.string = text
+
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = false
+        scrollView.backgroundColor = .clear
+        scrollView.contentView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.focusRingType = .none
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NSTextView,
+              textView.string != text
+        else { return }
+        let selectedRanges = textView.selectedRanges
+        textView.string = text
+        let upperBound = (text as NSString).length
+        textView.selectedRanges = selectedRanges.map { value in
+            let range = value.rangeValue
+            let location = min(range.location, upperBound)
+            let length = min(range.length, max(upperBound - location, 0))
+            return NSValue(range: NSRange(location: location, length: length))
         }
     }
 }
