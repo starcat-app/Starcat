@@ -151,6 +151,16 @@ protocol GitHubAPIClientProtocol: Sendable {
     /// `PATCH .../issues/{n}` 改 `state`。公开仓 `public_repo` 即可；私仓可能 404。
     func updateNotificationIssueState(path: String, state: String) async throws
 
+    // MARK: - Organization Issues（2026-08-21）
+
+    /// 拉取当前用户在指定组织内可见的一页 Issue；实现方必须排除 Pull Request。
+    func organizationIssues(
+        organization: String,
+        state: GitHubOrganizationIssueState,
+        page: Int,
+        perPage: Int
+    ) async throws -> APIResponse<[GitHubOrganizationIssue]>
+
     // MARK: - Security Advisories（Activity 公告与关注 PR-3，2026-06-17）
 
     /// 拉取单个仓库的 Security Advisory 列表（可能为空数组）。
@@ -238,5 +248,14 @@ extension GitHubAPIClientProtocol {
 
     func updateNotificationIssueState(path: String, state: String) async throws {
         throw NetworkError.clientError(statusCode: 501, message: "Update notification issue state is not implemented by this client")
+    }
+
+    func organizationIssues(
+        organization: String,
+        state: GitHubOrganizationIssueState,
+        page: Int,
+        perPage: Int
+    ) async throws -> APIResponse<[GitHubOrganizationIssue]> {
+        throw NetworkError.clientError(statusCode: 501, message: "Organization Issues is not implemented by this client")
     }
 }

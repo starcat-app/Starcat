@@ -629,8 +629,8 @@ final class ActivityViewModel {
                 events: events,
                 announcements: announcements
             ))
-        case .notification:
-            // 通知 inbox 有自己的数据路径，不进 allItems。
+        case .notification, .organizationIssues:
+            // 两个远端 inbox 都有自己的数据路径，不进 allItems。
             return
         }
     }
@@ -1503,7 +1503,7 @@ final class ActivityViewModel {
         switch kind {
         case .star, .repository, .suggestion:
             return true
-        case .announcement, .release, .following, .notification, .userRepoActivity:
+        case .announcement, .release, .following, .notification, .organizationIssue, .userRepoActivity:
             return false
         }
     }
@@ -1524,7 +1524,7 @@ final class ActivityViewModel {
         case .star:         return 3
         case .repository:   return 2
         case .suggestion:   return 1
-        case .announcement, .release, .following, .notification, .userRepoActivity:
+        case .announcement, .release, .following, .notification, .organizationIssue, .userRepoActivity:
             return 0
         }
     }

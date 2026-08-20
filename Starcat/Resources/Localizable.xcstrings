@@ -10252,6 +10252,14 @@
         }
       }
     },
+    "activity.category.organizationIssues" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Organization Issues" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "组织 Issues" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "組織 Issues" } }
+      }
+    },
     "activity.category.release" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -15420,6 +15428,142 @@
             "value" : "未讀"
           }
         }
+      }
+    },
+    "activity.organizationIssues.detail.empty.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Select an issue from the list to view its details." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "从列表中选择一条 Issue 查看详情。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "從列表中選擇一條 Issue 查看詳情。" } }
+      }
+    },
+    "activity.organizationIssues.detail.empty.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No issue selected" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未选择 Issue" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "未選擇 Issue" } }
+      }
+    },
+    "activity.organizationIssues.detail.noBody" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No description was provided." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这条 Issue 没有描述。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "這條 Issue 沒有描述。" } }
+      }
+    },
+    "activity.organizationIssues.detail.openOnGitHub" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open on GitHub" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "在 GitHub 打开" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "在 GitHub 開啟" } }
+      }
+    },
+    "activity.organizationIssues.empty.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No issues match the current organization and state filters." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前组织和状态筛选下没有 Issue。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "目前組織和狀態篩選下沒有 Issue。" } }
+      }
+    },
+    "activity.organizationIssues.empty.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No organization issues" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有组织 Issue" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "沒有組織 Issue" } }
+      }
+    },
+    "activity.organizationIssues.error.generic" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Organization issues could not be loaded." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法加载组织 Issues。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "無法載入組織 Issues。" } }
+      }
+    },
+    "activity.organizationIssues.error.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not load issues" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Issue 加载失败" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Issue 載入失敗" } }
+      }
+    },
+    "activity.organizationIssues.loadMore" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Load more" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "加载更多" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "載入更多" } }
+      }
+    },
+    "activity.organizationIssues.noOrganizations.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Connect My Projects and sync the organizations you want Starcat to access." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请先连接“我的项目”，并同步允许 Starcat 访问的组织。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "請先連接「我的專案」，並同步允許 Starcat 存取的組織。" } }
+      }
+    },
+    "activity.organizationIssues.noOrganizations.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No authorized organizations" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有已授权组织" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "沒有已授權組織" } }
+      }
+    },
+    "activity.organizationIssues.organization.all" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "All organizations" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "全部组织" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "全部組織" } }
+      }
+    },
+    "activity.organizationIssues.retry" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Try again" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重试" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "重試" } }
+      }
+    },
+    "activity.organizationIssues.state.all" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "All" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "全部" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "全部" } }
+      }
+    },
+    "activity.organizationIssues.state.closed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Closed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已关闭" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "已關閉" } }
+      }
+    },
+    "activity.organizationIssues.state.label" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Issue state" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Issue 状态" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Issue 狀態" } }
+      }
+    },
+    "activity.organizationIssues.state.open" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "进行中" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "進行中" } }
       }
     },
     "activity.refresh" : {

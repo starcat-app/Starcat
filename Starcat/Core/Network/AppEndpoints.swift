@@ -406,6 +406,12 @@ enum AppEndpoints {
                 "/notifications/threads/\(id)"
             }
 
+            /// `GET /orgs/{org}/issues` —— 当前用户在组织内可见的全部 Issue。
+            /// GitHub 会把 Pull Request 混在响应里，端点封装层必须按 `pull_request` 字段排除。
+            static func organizationIssues(organization: String) -> String {
+                "/orgs/\(organization)/issues"
+            }
+
             /// `GET /repos/{owner}/{repo}/security-advisories` —— 仓库安全公告列表。
             ///
             /// Activity PR-3（2026-06-17）：仅扫「最近 30 天有 push」的 starred repo 子集

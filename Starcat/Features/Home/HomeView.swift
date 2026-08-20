@@ -1387,6 +1387,8 @@ struct HomeView: View {
             } else {
                 GitHubNotificationDetailView(selectedItem: $selectedActivityItem)
             }
+        } else if selectedSidebarPage == .activity, selectedActivityCategory == .organizationIssues {
+            OrganizationIssueDetailView(selectedItem: $selectedActivityItem)
         } else if selectedSidebarPage == .activity {
             ActivityDetailView(item: selectedActivityItem)
         } else if selectedSidebarPage == .trending, selectedExploreMode == .weekly {
