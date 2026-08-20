@@ -531,21 +531,47 @@ final class AppDependencies {
         // 工作台可在非 Pro 状态下打开以查看历史和索引覆盖，但创建服务就意味着将发起模型调用，
         // 因此必须在装配边界再校验一次，避免未来新增调用方绕过 ViewModel 门禁。
         try entitlementGate.requirePro(.knowledgeRAG)
-        let chatSelection = try resolveRAGChatSelection(selectedModelID: selectedModelID)
+        let configuredBackend = settings.ragInferenceBackend
+        // App Store 与 Direct 可能读到同一份迁移偏好。不可用的 CLI 偏好必须在装配时
+        // 回退 API，既不启动外部进程，也不能让 App Store 的 RAG 因旧值整体失效。
+        let inferenceBackend = RAGInferenceBackend.available(using: distributionGate)
+            .contains(configuredBackend) ? configuredBackend : .api
+        let generatorClient: any AITextGenerating
+        let generatorModel: String
+        let generatorParameters: AIModelParameters
+        switch inferenceBackend {
+        case .api:
+            let chatSelection = try resolveRAGChatSelection(selectedModelID: selectedModelID)
+            generatorClient = try makeRAGClient(
+                profile: chatSelection.profile,
+                chatModel: chatSelection.modelName,
+                embeddingModel: chatSelection.modelName,
+                timeout: chatSelection.parameters.timeoutSeconds,
+                missingAPIKeyError: AIClientError.missingAPIKey,
+                usageContext: AIUsageContext(feature: .rag, phase: "shared_chat")
+            )
+            generatorModel = chatSelection.modelName
+            generatorParameters = chatSelection.parameters
+        case .codexCLI, .claudeCLI:
+            // UI 只在 Direct 版展示 CLI，但执行边界仍必须再次拦截，防止快捷键、历史偏好
+            // 或未来新入口绕过渠道限制。CLI 自己决定实际模型，Starcat 只保留预算参数。
+            try distributionGate.requireDirect(.externalToolBridge)
+            generatorParameters = settings.effectiveParameters(for: settings.aiChatTask)
+            generatorModel = inferenceBackend.runtimeModelName
+            generatorClient = RAGCLIModelClient(
+                backend: inferenceBackend,
+                distributionGate: distributionGate,
+                timeout: generatorParameters.timeoutSeconds
+            )
+        }
         // Embedding 是混合召回增强项。配置缺失或失效时仍构建关键词模式 runtime，
         // 不能让本地 FTS、结构化分析和特殊 XML 上下文一起被阻断。
         let embeddingSelection = try? settings.resolveEmbeddingSelection()
-        let chatClient = try makeRAGClient(
-            profile: chatSelection.profile,
-            chatModel: chatSelection.modelName,
-            embeddingModel: embeddingSelection?.modelName ?? chatSelection.modelName,
-            timeout: chatSelection.parameters.timeoutSeconds,
-            missingAPIKeyError: AIClientError.missingAPIKey,
-            usageContext: AIUsageContext(feature: .rag, phase: "shared_chat")
-        )
         let retrievalSettings = (retrievalSettingsOverride ?? settings.ragRetrievalSettings).normalized()
         let retriever = try makeKnowledgeRAGRetriever(
-            chatModel: chatSelection.modelName,
+            // Embedding client 只使用 embedding endpoint；CLI 模式不应为了这个占位字段
+            // 强制要求一个有效的 API Chat Provider。
+            chatModel: embeddingSelection?.modelName ?? generatorModel,
             embeddingSelection: embeddingSelection,
             retrievalSettings: retrievalSettings,
             usageFeature: .rag
@@ -553,9 +579,9 @@ final class AppDependencies {
         let outputLanguage = LocaleStore.shared.selection.aiOutputLanguageDescriptor
         let ragPrompts = settings.ragPromptSettings
         let planner = KnowledgeRAGQueryPlanner(
-            client: chatClient,
-            model: chatSelection.modelName,
-            parameters: chatSelection.parameters,
+            client: generatorClient,
+            model: generatorModel,
+            parameters: generatorParameters,
             promptConfiguration: ragPrompts.planner,
             outputLanguage: outputLanguage
         )
@@ -574,9 +600,9 @@ final class AppDependencies {
             repositoryInsightsProvider: repositoryInsightsContextCoordinator,
             repoContextProvider: repoAIContextProvider,
             repoContextTokenBudget: settings.aiRepoContextTokenBudget,
-            generatorClient: chatClient,
-            generatorModel: chatSelection.modelName,
-            generatorParameters: chatSelection.parameters,
+            generatorClient: generatorClient,
+            generatorModel: generatorModel,
+            generatorParameters: generatorParameters,
             promptBuilder: KnowledgeRAGPromptBuilder(
                 maxEvidenceTokens: retrievalSettings.evidenceTokenBudget,
                 maxRepoContextTokens: settings.aiRepoContextTokenBudget,

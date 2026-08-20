@@ -994,6 +994,12 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.ragRerankConfiguration, value: ragRerankConfiguration.normalized) }
     }
 
+    /// RAG 的文本推理后端。只切换 Planner / Generator / 压缩 / 标题，不影响
+    /// Embedding、Rerank 和其它 AI 功能；CLI 的 Direct 渠道门禁由执行层再次校验。
+    var ragInferenceBackend: RAGInferenceBackend {
+        didSet { persist(key: Keys.ragInferenceBackend, value: ragInferenceBackend.rawValue) }
+    }
+
     /// RAG 工作台上次选用的聊天模型 ID（`AIModelDescriptor.id`）。
     ///
     /// 空字符串表示从未选过，打开工作台时回退到 `aiChatTask` 对齐的模型。
@@ -1792,6 +1798,8 @@ final class AppSettings {
             key: Keys.ragRerankConfiguration,
             defaults: defaults
         ) ?? RAGRerankConfiguration()).normalized
+        self.ragInferenceBackend = defaults.string(forKey: Keys.ragInferenceBackend)
+            .flatMap(RAGInferenceBackend.init(rawValue:)) ?? .api
         self.ragWorkspaceSelectedModelID = defaults.string(forKey: Keys.ragWorkspaceSelectedModelID) ?? ""
         self.ragWorkspaceDebugModeEnabled = defaults.object(forKey: Keys.ragWorkspaceDebugModeEnabled) as? Bool ?? false
         let chatHistoryStorageRaw = defaults.string(forKey: Keys.chatHistoryStorageKind)
@@ -2073,6 +2081,7 @@ final class AppSettings {
         ragPromptSettings = .default
         ragRetrievalSettings = .balanced
         ragRerankConfiguration = RAGRerankConfiguration()
+        ragInferenceBackend = .api
         ragWorkspaceSelectedModelID = ""
         ragWorkspaceDebugModeEnabled = false
 
@@ -2506,6 +2515,7 @@ final class AppSettings {
         static let ragPromptSettings = "settings.rag.prompts.v1"
         static let ragRetrievalSettings = "settings.rag.retrieval.v1"
         static let ragRerankConfiguration = "settings.rag.rerank.v1"
+        static let ragInferenceBackend = "settings.rag.inference.backend.v1"
         static let ragWorkspaceSelectedModelID = "settings.rag.workspace.selectedModelID.v1"
         static let ragWorkspaceDebugModeEnabled = "settings.rag.workspace.debugModeEnabled.v1"
         static let chatHistoryStorageKind = "settings.ai.chatHistory.storageKind.v1"
@@ -2607,6 +2617,7 @@ final class AppSettings {
             ragPromptSettings,
             ragRetrievalSettings,
             ragRerankConfiguration,
+            ragInferenceBackend,
             ragWorkspaceSelectedModelID,
             ragWorkspaceDebugModeEnabled,
             chatHistoryStorageKind,

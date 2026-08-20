@@ -436,7 +436,7 @@ struct KnowledgeRAGService: Sendable {
     private let repositoryInsightsTokenBudget: Int
     private let repoContextProvider: (any RepoAIContextProviding)?
     private let repoContextTokenBudget: Int
-    private let generatorClient: any AIClientProtocol
+    private let generatorClient: any AITextGenerating
     private let generatorModel: String
     private let generatorParameters: AIModelParameters
     private let promptBuilder: KnowledgeRAGPromptBuilder
@@ -460,7 +460,7 @@ struct KnowledgeRAGService: Sendable {
         repositoryInsightsTokenBudget: Int = 8_000,
         repoContextProvider: (any RepoAIContextProviding)? = nil,
         repoContextTokenBudget: Int = 8_000,
-        generatorClient: any AIClientProtocol,
+        generatorClient: any AITextGenerating,
         generatorModel: String,
         generatorParameters: AIModelParameters,
         promptBuilder: KnowledgeRAGPromptBuilder = .init(),

@@ -1356,6 +1356,9 @@ struct RAGWorkspaceAnswerSurface: View {
         .menuStyle(.borderlessButton)
         .ragComposerMenuLabelStyle(font: ragFont(.caption, weight: .semibold))
         .fixedSize()
+        // CLI 后端由 RAG 设置统一选择；这里保留当前 API 模型作为切回 API 时的偏好，
+        // 但不能让用户误以为 Codex / Claude 会使用这个 OpenAI-compatible 模型名。
+        .disabled(!viewModel.usesAPIInferenceBackend)
         .help("rag.workspace.composer.model")
     }
 

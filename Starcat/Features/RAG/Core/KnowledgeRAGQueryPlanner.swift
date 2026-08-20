@@ -65,14 +65,14 @@ extension KnowledgeRAGQueryPlanning {
 }
 
 struct KnowledgeRAGQueryPlanner: KnowledgeRAGDebuggableQueryPlanning, KnowledgeRAGMetadataAwareQueryPlanning {
-    private let client: any AIClientProtocol
+    private let client: any AITextGenerating
     private let model: String
     private let parameters: AIModelParameters
     private let promptConfiguration: AIPromptConfiguration
     private let outputLanguage: String
 
     init(
-        client: any AIClientProtocol,
+        client: any AITextGenerating,
         model: String,
         parameters: AIModelParameters,
         promptConfiguration: AIPromptConfiguration = RAGDefaultPrompts.planner,

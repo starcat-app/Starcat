@@ -2,7 +2,7 @@
 //  RAGWorkspaceSettingsSheet.swift
 //  Starcat
 //
-//  RAG 工作台配置 Sheet：提示词与检索策略共用一个入口。
+//  RAG 工作台配置 Sheet：推理后端、提示词与检索策略共用一个入口。
 //  提示词写入 `AppSettings.ragPromptSettings`；检索写入
 //  `AppSettings.ragRetrievalSettings`（UserDefaults JSON），下一轮问答由
 //  `makeKnowledgeRAGService` 读入生效。
@@ -20,6 +20,7 @@
 import SwiftUI
 
 private enum RAGSettingsSection: String, CaseIterable, Identifiable {
+    case inference
     case prompts
     case retrieval
 
@@ -27,8 +28,17 @@ private enum RAGSettingsSection: String, CaseIterable, Identifiable {
 
     var titleKey: LocalizedStringKey {
         switch self {
+        case .inference: return "rag.workspace.settings.section.inference"
         case .prompts: return "rag.workspace.settings.section.prompts"
         case .retrieval: return "rag.workspace.settings.section.retrieval"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .inference: return "cpu"
+        case .prompts: return "text.quote"
+        case .retrieval: return "magnifyingglass"
         }
     }
 }
@@ -158,9 +168,14 @@ struct RAGWorkspaceSettingsSheet: View {
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
     @Bindable var settings: AppSettings
-    @State private var section: RAGSettingsSection = .prompts
+    @State private var section: RAGSettingsSection = .inference
     @State private var tab: RAGPromptEditorTab = .generator
     @State private var draft: RAGPromptSettings
+    /// CLI 只在 Direct 版可选；App Store 即使从旧偏好读到 CLI，也先归一成 API 草稿。
+    @State private var inferenceBackend: RAGInferenceBackend
+    @State private var codexRuntimeInspection: RAGCLIRuntimeInspection = .checking
+    @State private var claudeRuntimeInspection: RAGCLIRuntimeInspection = .checking
+    @State private var isInspectingCLIRuntimes = false
     @State private var isPlaceholderPopoverPresented = false
     @State private var isDefaultPromptPopoverPresented = false
     /// Sheet 内草稿；点「保存」才写入 `AppSettings.ragRetrievalSettings`。
@@ -190,6 +205,10 @@ struct RAGWorkspaceSettingsSheet: View {
     init(settings: AppSettings) {
         self.settings = settings
         _draft = State(initialValue: settings.ragPromptSettings)
+        let availableBackends = RAGInferenceBackend.available(using: DistributionGate())
+        _inferenceBackend = State(initialValue:
+            availableBackends.contains(settings.ragInferenceBackend) ? settings.ragInferenceBackend : .api
+        )
         let retrieval = settings.ragRetrievalSettings.normalized()
         _retrievalPreset = State(initialValue: RAGRetrievalPreset.matching(settings: retrieval))
         _minimumVectorSimilarity = State(initialValue: retrieval.minimumVectorSimilarity)
@@ -213,6 +232,10 @@ struct RAGWorkspaceSettingsSheet: View {
 
     /// 直接订阅设置档位，避免 sheet 只缩放外框、字体仍停在 standard。
     private var interfaceScale: InterfaceScale { settings.interfaceScale }
+
+    private var availableInferenceBackends: [RAGInferenceBackend] {
+        RAGInferenceBackend.available(using: DistributionGate())
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -241,7 +264,7 @@ struct RAGWorkspaceSettingsSheet: View {
                     section = item
                 } label: {
                     HStack(spacing: interfaceScale.scaled(9)) {
-                        Image(systemName: item == .prompts ? "text.quote" : "magnifyingglass")
+                        Image(systemName: item.systemImage)
                             .font(interfaceScale.font(size: 14, weight: .medium))
                             .frame(width: interfaceScale.scaled(18))
                         Text(item.titleKey)
@@ -296,10 +319,10 @@ struct RAGWorkspaceSettingsSheet: View {
             detailHeader
 
             Group {
-                if section == .prompts {
-                    promptSettingsContent
-                } else {
-                    retrievalSettingsContent
+                switch section {
+                case .inference: inferenceSettingsContent
+                case .prompts: promptSettingsContent
+                case .retrieval: retrievalSettingsContent
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -322,7 +345,7 @@ struct RAGWorkspaceSettingsSheet: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(.tint.opacity(0.12))
-                Image(systemName: section == .prompts ? "text.quote" : "magnifyingglass")
+                Image(systemName: section.systemImage)
                     .font(interfaceScale.font(size: 15, weight: .semibold))
                     .foregroundStyle(.tint)
             }
@@ -366,6 +389,7 @@ struct RAGWorkspaceSettingsSheet: View {
                 settings.ragPromptSettings = draft
                 settings.ragRetrievalSettings = buildRetrievalSettings()
                 settings.ragRerankConfiguration = buildRerankConfiguration()
+                settings.ragInferenceBackend = inferenceBackend
                 dismiss()
             }
             .font(ragFont(.body, scale: interfaceScale))
@@ -499,6 +523,112 @@ struct RAGWorkspaceSettingsSheet: View {
             isPlaceholderPopoverPresented = false
             isDefaultPromptPopoverPresented = false
         }
+    }
+
+    /// 推理后端只决定四个文本模型阶段；检索、Embedding 与 Rerank 仍由 Starcat 运行。
+    private var inferenceSettingsContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: interfaceScale.scaled(14)) {
+                VStack(alignment: .leading, spacing: interfaceScale.scaled(12)) {
+                    HStack(spacing: interfaceScale.scaled(8)) {
+                        sectionTitle("rag.workspace.inference.backend.title", systemImage: "cpu")
+                        Spacer(minLength: 0)
+                        if availableInferenceBackends.contains(where: \.isCLI) {
+                            SyncIconButton(
+                                isRefreshing: isInspectingCLIRuntimes,
+                                disabled: isInspectingCLIRuntimes,
+                                font: interfaceScale.font(size: 15, weight: .medium),
+                                frameSize: interfaceScale.scaled(28),
+                                tooltip: String.l10n("rag.workspace.inference.refresh.help")
+                            ) {
+                                Task { await inspectCLIRuntimes() }
+                            }
+                            .accessibilityLabel("rag.workspace.inference.refresh.label")
+                        }
+                    }
+
+                    Text("rag.workspace.inference.backend.summary")
+                        .font(ragFont(.caption, scale: interfaceScale))
+                        .foregroundStyle(.secondary)
+
+                    VStack(spacing: interfaceScale.scaled(10)) {
+                        ForEach(availableInferenceBackends) { backend in
+                            RAGInferenceBackendCard(
+                                backend: backend,
+                                inspection: runtimeInspection(for: backend),
+                                isSelected: inferenceBackend == backend,
+                                interfaceScale: interfaceScale
+                            ) {
+                                selectInferenceBackend(backend)
+                            }
+                        }
+                    }
+
+                    if availableInferenceBackends.contains(where: \.isCLI) {
+                        Label("rag.workspace.inference.loginNotice", systemImage: "person.badge.key")
+                            .font(ragFont(.caption, scale: interfaceScale))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                settingsGroup(
+                    titleKey: "rag.workspace.inference.boundary.title",
+                    systemImage: "lock.shield"
+                ) {
+                    VStack(alignment: .leading, spacing: interfaceScale.scaled(8)) {
+                        Label("rag.workspace.inference.boundary.retrieval", systemImage: "checkmark.shield")
+                        Label("rag.workspace.inference.boundary.tools", systemImage: "nosign")
+                        Label("rag.workspace.inference.boundary.otherFeatures", systemImage: "arrow.triangle.branch")
+                    }
+                    .font(ragFont(.caption, scale: interfaceScale))
+                    .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, interfaceScale.scaled(RAGSettingsSheetMetrics.scrollTrailerGutter))
+            .padding(.bottom, interfaceScale.scaled(8))
+        }
+        .scrollIndicators(.automatic)
+        .frame(maxHeight: .infinity)
+        .task {
+            await inspectCLIRuntimes()
+        }
+    }
+
+    private func runtimeInspection(for backend: RAGInferenceBackend) -> RAGCLIRuntimeInspection? {
+        switch backend {
+        case .api: return nil
+        case .codexCLI: return codexRuntimeInspection
+        case .claudeCLI: return claudeRuntimeInspection
+        }
+    }
+
+    /// 未安装的 CLI 不允许新选中；若用户卸载了当前 CLI，则保留选中态并显示恢复提示，
+    /// 不能静默切到 API 产生意外费用。
+    private func selectInferenceBackend(_ backend: RAGInferenceBackend) {
+        guard backend == .api || runtimeInspection(for: backend)?.isAvailable == true else { return }
+        inferenceBackend = backend
+    }
+
+    @MainActor
+    private func inspectCLIRuntimes() async {
+        guard availableInferenceBackends.contains(where: \.isCLI), !isInspectingCLIRuntimes else { return }
+        isInspectingCLIRuntimes = true
+        codexRuntimeInspection = .checking
+        claudeRuntimeInspection = .checking
+
+        let inspector = RAGCLIRuntimeInspector()
+        async let codex = inspector.inspect(.codex)
+        async let claude = inspector.inspect(.claude)
+        let results = await (codex, claude)
+        guard !Task.isCancelled else {
+            isInspectingCLIRuntimes = false
+            return
+        }
+        codexRuntimeInspection = results.0
+        claudeRuntimeInspection = results.1
+        isInspectingCLIRuntimes = false
     }
 
     private var retrievalSettingsContent: some View {

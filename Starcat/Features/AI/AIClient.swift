@@ -269,10 +269,18 @@ struct AIStreamReasoningNormalizer {
     }
 }
 
-/// 业务层依赖的最小 AI 能力集。
-protocol AIClientProtocol: Sendable {
+/// 只需要文本生成的业务契约。
+///
+/// RAG 的 Planner / Generator 不应被迫依赖 Embedding、模型列表和连接测试。把这两项
+/// chat 能力单独抽出来后，本机 CLI 可以只在 RAG 装配边界接入，不会自动变成 README
+/// 翻译、笔记或其它普通 AI 功能的全局 Provider。
+protocol AITextGenerating: Sendable {
     func chat(request: AIChatRequest) async throws -> AIChatResponse
     func chatStream(request: AIChatRequest) -> AsyncThrowingStream<AIChatStreamEvent, Error>
+}
+
+/// API Provider 客户端的完整能力集。
+protocol AIClientProtocol: AITextGenerating {
     func chat(systemPrompt: String, userPrompt: String, model: String?) async throws -> String
     func embedding(input: String, model: String?) async throws -> [Float]
     func embeddings(inputs: [String], model: String?) async throws -> [[Float]]

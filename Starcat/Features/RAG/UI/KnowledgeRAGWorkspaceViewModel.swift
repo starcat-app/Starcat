@@ -685,6 +685,12 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     var availableModels: [AIModelDescriptor] { dependencies.knowledgeRAGChatModels }
+    var inferenceBackend: RAGInferenceBackend {
+        let configuredBackend = dependencies.settings.ragInferenceBackend
+        return RAGInferenceBackend.available(using: dependencies.distributionGate)
+            .contains(configuredBackend) ? configuredBackend : .api
+    }
+    var usesAPIInferenceBackend: Bool { inferenceBackend == .api }
 
     var historicalRemoteContextAudits: [RAGRemoteContextAudit] {
         messages.flatMap(\.remoteContextAudits)
@@ -781,14 +787,18 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     var selectedModelDisplayName: String {
-        availableModels.first(where: { $0.id == selectedModelID })?.name
+        guard usesAPIInferenceBackend else { return String.l10n(inferenceBackend.titleKey) }
+        return availableModels.first(where: { $0.id == selectedModelID })?.name
             ?? dependencies.settings.aiChatTask.resolvedModelName
     }
 
     /// 与 `AppDependencies.resolveRAGChatSelection` 同一优先级：选中模型参数优先，
     /// 否则回退全局 chat task，保证 UI 展示的窗口与实际 Service 请求一致。
     var selectedModelParameters: AIModelParameters {
-        availableModels.first(where: { $0.id == selectedModelID })?.parameters
+        guard usesAPIInferenceBackend else {
+            return dependencies.settings.effectiveParameters(for: dependencies.settings.aiChatTask)
+        }
+        return availableModels.first(where: { $0.id == selectedModelID })?.parameters
             ?? dependencies.settings.effectiveParameters(for: dependencies.settings.aiChatTask)
     }
 
@@ -816,11 +826,13 @@ final class KnowledgeRAGWorkspaceViewModel {
 
     /// 模型记录保存的是 provider profile ID；解析为枚举后，UI 才能复用统一的服务商 logo。
     var selectedModelProvider: AIServiceProvider? {
+        guard usesAPIInferenceBackend else { return nil }
         guard let selectedModel = availableModels.first(where: { $0.id == selectedModelID }) else { return nil }
         return provider(for: selectedModel)
     }
 
     var selectedModelEndpoint: String? {
+        guard usesAPIInferenceBackend else { return "cli://\(inferenceBackend.runtimeModelName)" }
         let profileID = availableModels.first(where: { $0.id == selectedModelID })?.providerID
             ?? dependencies.settings.aiChatTask.providerID
         return dependencies.settings.aiProviderProfiles
