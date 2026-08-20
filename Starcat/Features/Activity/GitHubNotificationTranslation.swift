@@ -8,6 +8,8 @@
 //  - README 从 WebView DOM 抽段，这里是 Markdown 评论卡片；
 //  - 缓存必须按 threadId 隔离。若复用 owner/repo 目录，会覆盖该仓库 README 译文，
 //    同仓库其它 Issue 也会互相踩。
+//  - 分段 / 全文共用同一套 Markdown 切段；呈现和磁盘文件名（`.full` 后缀）走
+//    ReadmeTranslationMode，不在这里再抽一套 text node。
 //
 
 import Foundation

@@ -118,6 +118,9 @@ struct GitHubNotificationDetailView: View {
         .onChange(of: settings.readmeTranslationLanguage) { _, _ in
             prepareTranslation(for: item)
         }
+        .onChange(of: settings.readmeTranslationMode) { _, _ in
+            prepareTranslation(for: item)
+        }
         .onChange(of: translationHydrationSignature(item)) { _, _ in
             // 评论后到时不要把已显示的对照打回原文；只在原文态刷新缓存探测。
             refreshTranslationSourceIfNeeded(for: item)
@@ -223,18 +226,18 @@ struct GitHubNotificationDetailView: View {
                     urlString: GitHubNotificationMapper.repositoryAvatarURL(
                         fromFullName: payload.repositoryFullName
                     ),
-                    size: 22,
+                    size: 26,
                     fallbackSymbol: "shippingbox.fill",
                     showBorder: false
                 )
-                // 原先 caption + secondary 比评论作者还弱；提到与 opening post 同一档，仓库才是会话上下文。
+                // 比评论作者再大一档：title3 是项目里仓库名的常用档，headline 在 macOS 上几乎看不出差。
                 Text(verbatim: payload.repositoryFullName)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.title3.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Image(systemName: "arrow.up.right")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
         }
@@ -253,6 +256,8 @@ struct GitHubNotificationDetailView: View {
             return false
         }()
         let translations = translation?.renderState.translations ?? []
+        // 对照/替换跟当前这次翻译的 mode，避免菜单已改、译文还是上一档。
+        let translationMode = translation?.renderState.mode ?? settings.readmeTranslationMode
 
         if let excerpt = payload.excerpt, !excerpt.isEmpty {
             GitHubNotificationCommentCard(
@@ -263,7 +268,8 @@ struct GitHubNotificationDetailView: View {
                 isOpeningPost: true,
                 blocks: document.blocks.filter { $0.kind == .opening },
                 translations: translations,
-                isShowingTranslation: isShowing
+                isShowingTranslation: isShowing,
+                translationMode: translationMode
             )
         }
 
@@ -279,7 +285,8 @@ struct GitHubNotificationDetailView: View {
                     return false
                 },
                 translations: translations,
-                isShowingTranslation: isShowing
+                isShowingTranslation: isShowing,
+                translationMode: translationMode
             )
         }
     }
@@ -314,7 +321,7 @@ struct GitHubNotificationDetailView: View {
                 cacheRepo: nil,
                 sourceHtml: nil,
                 targetLanguage: settings.readmeTranslationLanguage,
-                mode: .segmented
+                mode: settings.readmeTranslationMode
             )
             return
         }
@@ -325,7 +332,7 @@ struct GitHubNotificationDetailView: View {
             cacheRepo: GitHubNotificationTranslation.cacheRepo(threadId: payload.threadId),
             sourceHtml: document.sourceText,
             targetLanguage: settings.readmeTranslationLanguage,
-            mode: .segmented
+            mode: settings.readmeTranslationMode
         )
     }
 
@@ -672,6 +679,7 @@ private struct GitHubNotificationCommentCard: View {
     var blocks: [GitHubNotificationTranslation.Block] = []
     var translations: [ReadmeRenderedTranslation] = []
     var isShowingTranslation: Bool = false
+    var translationMode: ReadmeTranslationMode = .segmented
     @Environment(\.locale) private var locale
 
     var body: some View {
@@ -719,34 +727,47 @@ private struct GitHubNotificationCommentCard: View {
         if isShowingTranslation, !blocks.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                    VStack(alignment: .leading, spacing: 6) {
-                        GitHubNotificationMarkdown(
-                            content: block.markdown,
-                            repositoryFullName: repositoryFullName
-                        )
-                        if let segmentId = block.segmentId,
-                           let translated = GitHubNotificationTranslation.translation(
-                            for: segmentId,
-                            from: translations
-                           ),
-                           !translated.isEmpty {
-                            Text(translated)
-                                .font(.body)
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
+                    translatedBlock(block)
                 }
             }
         } else {
             GitHubNotificationMarkdown(content: markdown, repositoryFullName: repositoryFullName)
         }
     }
+
+    @ViewBuilder
+    private func translatedBlock(_ block: GitHubNotificationTranslation.Block) -> some View {
+        let translated = block.segmentId.flatMap { id in
+            GitHubNotificationTranslation.translation(for: id, from: translations)
+        }
+        switch translationMode {
+        case .segmented:
+            // 分段对照：原文保留，译文跟在下面。代码围栏没有 segmentId，只显示原文。
+            VStack(alignment: .leading, spacing: 6) {
+                GitHubNotificationMarkdown(
+                    content: block.markdown,
+                    repositoryFullName: repositoryFullName
+                )
+                if let translated, !translated.isEmpty {
+                    Text(translated)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        case .full:
+            // 全文替换：有译文就只显示译文；围栏和尚未翻完的段仍用原文，避免卡片被掏空。
+            GitHubNotificationMarkdown(
+                content: translated.flatMap { $0.isEmpty ? nil : $0 } ?? block.markdown,
+                repositoryFullName: repositoryFullName
+            )
+        }
+    }
 }
 
-/// 顶栏翻译：22×22 气泡图标 + 语言/重翻菜单，对齐 Starcat / GitHub 入口。
-/// 固定分段对照，不提供 README 的全文替换模式。
+/// 顶栏翻译：22×22 气泡图标 + 语言/模式/重翻菜单，对齐 README 详情底栏。
+/// 默认分段对照；全文只替换卡片正文。切段仍按 Markdown 块，缓存按 mode 分文件。
 private struct GitHubNotificationTranslationControls: View {
     let viewModel: ReadmeTranslationViewModel
     let document: GitHubNotificationTranslation.Document
@@ -778,7 +799,7 @@ private struct GitHubNotificationTranslationControls: View {
                         sourceHtml: document.sourceText,
                         sourceSegments: document.segments,
                         targetLanguage: settings.readmeTranslationLanguage,
-                        mode: .segmented
+                        mode: settings.readmeTranslationMode
                     )
                 }
             } label: {
@@ -807,6 +828,24 @@ private struct GitHubNotificationTranslationControls: View {
 
             Menu {
                 Picker(selection: Binding(
+                    get: { settings.readmeTranslationMode },
+                    set: { settings.readmeTranslationMode = $0 }
+                )) {
+                    ForEach(ReadmeTranslationMode.allCases) { mode in
+                        Label(
+                            LocalizedStringKey(mode.displayNameKey),
+                            systemImage: mode.systemImage
+                        )
+                        .tag(mode)
+                    }
+                } label: {
+                    Text("readme.translate.menu.mode")
+                }
+                .pickerStyle(.inline)
+
+                Divider()
+
+                Picker(selection: Binding(
                     get: { settings.readmeTranslationLanguage },
                     set: { settings.readmeTranslationLanguage = $0 }
                 )) {
@@ -828,7 +867,7 @@ private struct GitHubNotificationTranslationControls: View {
                         sourceHtml: document.sourceText,
                         sourceSegments: document.segments,
                         targetLanguage: settings.readmeTranslationLanguage,
-                        mode: .segmented
+                        mode: settings.readmeTranslationMode
                     )
                 } label: {
                     Label("readme.translate.menu.regenerate", systemImage: "arrow.clockwise")
