@@ -264,6 +264,16 @@ struct GRDBGitHubNotificationThreadRepository: GitHubNotificationThreadRepositor
             )
         }
     }
+
+    func delete(id: String) async throws {
+        guard !id.isEmpty else { return }
+        try await database.writer.write { db in
+            try db.execute(
+                sql: "DELETE FROM github_notification_threads WHERE id = ?",
+                arguments: [id]
+            )
+        }
+    }
 }
 
 struct GRDBGitHubNotificationSyncStateRepository: GitHubNotificationSyncStateRepositoryProtocol {

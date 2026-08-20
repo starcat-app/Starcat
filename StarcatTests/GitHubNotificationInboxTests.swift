@@ -894,6 +894,88 @@ struct GitHubNotificationInboxTests {
         #expect(env.inbox.cachedIssueState(threadId: "\(GitHubNotificationMapper.demoThreadIDPrefix)x") == nil)
     }
 
+    @Test("完成只 DELETE 当前 thread，成功后删本地行")
+    func markThreadDoneDeletesOnlyThatRow() async throws {
+        let env = try makeEnv()
+        env.mock.listNotificationsHandler = { _, _, _, _, _ in
+            Self.listResponse([
+                Self.makeDTO(id: "keep", updatedAt: "2026-08-19T01:00:00Z"),
+                Self.makeDTO(id: "done", updatedAt: "2026-08-19T00:00:00Z")
+            ])
+        }
+        env.mock.markNotificationThreadDoneHandler = { _ in }
+
+        await env.inbox.sync()
+        try await env.inbox.markThreadDone(id: "done")
+
+        #expect(env.mock.markNotificationThreadDoneCalls == ["done"])
+        #expect(try await env.threads.fetch(id: "done") == nil)
+        #expect(try await env.threads.fetch(id: "keep") != nil)
+        #expect(try await env.threads.totalCount() == 1)
+    }
+
+    @Test("完成遇到 404 仍清掉本地行")
+    func markThreadDoneTreats404AsAlreadyDone() async throws {
+        let env = try makeEnv()
+        env.mock.listNotificationsHandler = { _, _, _, _, _ in
+            Self.listResponse([Self.makeDTO(id: "gone")])
+        }
+        env.mock.markNotificationThreadDoneHandler = { _ in
+            throw NetworkError.notFound
+        }
+
+        await env.inbox.sync()
+        try await env.inbox.markThreadDone(id: "gone")
+
+        #expect(env.mock.markNotificationThreadDoneCalls == ["gone"])
+        #expect(try await env.threads.fetch(id: "gone") == nil)
+    }
+
+    @Test("完成失败时保留本地行，也不 PATCH 其它 thread")
+    func markThreadDoneFailureKeepsRow() async throws {
+        let env = try makeEnv()
+        env.mock.listNotificationsHandler = { _, _, _, _, _ in
+            Self.listResponse([
+                Self.makeDTO(id: "keep"),
+                Self.makeDTO(id: "fail")
+            ])
+        }
+        env.mock.markNotificationThreadDoneHandler = { id in
+            if id == "fail" {
+                throw NetworkError.serverError(statusCode: 500)
+            }
+        }
+
+        await env.inbox.sync()
+        await #expect(throws: NetworkError.self) {
+            try await env.inbox.markThreadDone(id: "fail")
+        }
+
+        #expect(env.mock.markNotificationThreadDoneCalls == ["fail"])
+        #expect(try await env.threads.fetch(id: "fail") != nil)
+        #expect(try await env.threads.fetch(id: "keep") != nil)
+        #expect(env.mock.markNotificationThreadReadCalls.isEmpty)
+    }
+
+    @Test("演示 thread 完成只删本地，不打 GitHub")
+    func markDemoThreadDoneSkipsAPI() async throws {
+        let env = try makeEnv()
+        let demoID = "\(GitHubNotificationMapper.demoThreadIDPrefix)local"
+        let fetchedAt = "2026-08-19T00:00:00Z"
+        try await env.threads.upsertMany([
+            GitHubNotificationMapper.record(
+                from: Self.makeDTO(id: demoID),
+                fetchedAt: fetchedAt,
+                firstSeenAt: fetchedAt
+            )
+        ])
+
+        try await env.inbox.markThreadDone(id: demoID)
+
+        #expect(env.mock.markNotificationThreadDoneCalls.isEmpty)
+        #expect(try await env.threads.fetch(id: demoID) == nil)
+    }
+
     // MARK: - Harness
 
     private struct Env {

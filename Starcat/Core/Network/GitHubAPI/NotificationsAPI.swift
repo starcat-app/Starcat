@@ -3,7 +3,7 @@
 //  Starcat
 //
 //  GitHub Notifications inbox：列表走 getBytes（要 Last-Modified / X-Poll-Interval），
-//  选中后 GET subject.url 补全，PATCH thread 标已读。
+//  选中后 GET subject.url 补全，PATCH thread 标已读，DELETE thread 标 Done。
 //
 //  不做 mark-all。403 原样抛给 InboxService 判断缺 scope。
 //
@@ -84,6 +84,11 @@ extension GitHubAPIClient {
 
     func markNotificationThreadRead(id: String) async throws {
         try await patch(path: AppEndpoints.GitHubREST.Paths.notificationThread(id: id))
+    }
+
+    /// `DELETE /notifications/threads/{id}`。和网页 Inbox 点 Done 一样，不是删 Issue。
+    func markNotificationThreadDone(id: String) async throws {
+        try await delete(path: AppEndpoints.GitHubREST.Paths.notificationThread(id: id))
     }
 
     /// Issue / PR / Discussion / Release 字段不完全相同，松散取 html_url / user|author.login / body。

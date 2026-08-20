@@ -20,6 +20,8 @@ struct GitHubNotificationDetailView: View {
 
     @Binding var selectedItem: ActivityItem?
     @State private var isComposerExpanded = false
+    @State private var isMarkingDone = false
+    @State private var doneError: String?
 
     private var inbox: GitHubNotificationInboxService {
         dependencies.githubNotificationInboxService
@@ -52,6 +54,13 @@ struct GitHubNotificationDetailView: View {
     private func populatedDetail(_ item: ActivityItem) -> some View {
         VStack(spacing: 0) {
             headerToolbar(item)
+            if let doneError, !doneError.isEmpty {
+                Text(verbatim: doneError)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
+                    .padding(.bottom, 6)
+            }
             Divider()
             if !isComposerExpanded {
                 ScrollView {
@@ -87,6 +96,7 @@ struct GitHubNotificationDetailView: View {
         .navigationSubtitle(navigationSubtitle(item))
         .onChange(of: item.notification?.threadId) { _, _ in
             isComposerExpanded = false
+            doneError = nil
         }
     }
 
@@ -104,6 +114,7 @@ struct GitHubNotificationDetailView: View {
             Spacer(minLength: 8)
             HStack(spacing: 4) {
                 detailLinkButtons(item)
+                doneButton(item)
                 Button {
                     selectAdjacent(-1)
                 } label: {
@@ -134,6 +145,34 @@ struct GitHubNotificationDetailView: View {
         .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
         .padding(.top, ManageListFilterBarMetrics.topPadding)
         .padding(.bottom, ManageListFilterBarMetrics.bottomPadding)
+    }
+
+    /// 只 Done 当前这条，等同 GitHub Inbox 的 Done，不会关闭 Issue。
+    private func doneButton(_ item: ActivityItem) -> some View {
+        Button {
+            Task { await markCurrentDone(item) }
+        } label: {
+            if isMarkingDone {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 22, height: 22)
+            } else {
+                Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "完成", en: "Done"))
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .frame(height: 22)
+                    .contentShape(Rectangle())
+            }
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .disabled(isMarkingDone || item.notification?.threadId == nil)
+        .help(GitHubNotificationMapper.copy(
+            locale,
+            zh: "从 GitHub 收件箱移走这条，不会关闭 Issue",
+            en: "Remove this from the GitHub inbox. Does not close the issue."
+        ))
     }
 
     private func navigationSubtitle(_ item: ActivityItem) -> String {
@@ -238,18 +277,85 @@ struct GitHubNotificationDetailView: View {
 
     private func selectAdjacent(_ delta: Int) {
         Task {
-            let records = await inbox.fetchCached()
-            let visible = records.filter {
-                GitHubNotificationMapper.matchesSegment($0, segment: inbox.listSegment)
-            }
             guard let current = selectedItem?.notification?.threadId,
-                  let index = visible.firstIndex(where: { $0.id == current })
+                  let next = await adjacentThreadId(after: current, delta: delta)
             else { return }
-            let next = index + delta
-            guard visible.indices.contains(next) else { return }
-            inbox.pendingOpenThreadId = visible[next].id
+            inbox.pendingOpenThreadId = next
             NotificationCenter.default.post(name: .starcatOpenGitHubNotification, object: nil)
         }
+    }
+
+    /// 完成当前条后优先打开下一条；已经是最后一条则打开上一条。
+    private func markCurrentDone(_ item: ActivityItem) async {
+        guard let threadId = item.notification?.threadId, !threadId.isEmpty else { return }
+        isMarkingDone = true
+        doneError = nil
+        defer { isMarkingDone = false }
+
+        let nextId: String?
+        if let following = await adjacentThreadId(after: threadId, delta: 1) {
+            nextId = following
+        } else {
+            nextId = await adjacentThreadId(after: threadId, delta: -1)
+        }
+        inbox.pendingOpenThreadId = nextId
+        do {
+            try await inbox.markThreadDone(id: threadId)
+            if nextId == nil {
+                selectedItem = nil
+            }
+        } catch {
+            if inbox.pendingOpenThreadId == nextId {
+                inbox.pendingOpenThreadId = nil
+            }
+            doneError = doneErrorMessage(error)
+        }
+    }
+
+    private func adjacentThreadId(after currentId: String, delta: Int) async -> String? {
+        let records = await inbox.fetchCached()
+        let visible = records.filter {
+            GitHubNotificationMapper.matchesSegment($0, segment: inbox.listSegment)
+        }
+        guard let index = visible.firstIndex(where: { $0.id == currentId }) else { return nil }
+        let next = index + delta
+        guard visible.indices.contains(next) else { return nil }
+        return visible[next].id
+    }
+
+    private func doneErrorMessage(_ error: Error) -> String {
+        if error as? GitHubNotificationInboxError == .cannotDone {
+            return GitHubNotificationMapper.copy(
+                locale,
+                zh: "没法把这条标为完成。",
+                en: "Couldn’t mark this notification as done."
+            )
+        }
+        if let network = error as? NetworkError {
+            switch network {
+            case .unauthorized:
+                return GitHubNotificationMapper.copy(
+                    locale,
+                    zh: "GitHub 授权失效，请重新登录后再试。",
+                    en: "GitHub authorization expired. Sign in again and retry."
+                )
+            case .clientError(let code, _) where code == 401:
+                return GitHubNotificationMapper.copy(
+                    locale,
+                    zh: "GitHub 授权失效，请重新登录后再试。",
+                    en: "GitHub authorization expired. Sign in again and retry."
+                )
+            case .clientError(let code, _) where code == 403:
+                return GitHubNotificationMapper.copy(
+                    locale,
+                    zh: "没有通知权限，请重新授权后再试。",
+                    en: "Missing notifications access. Reauthorize and retry."
+                )
+            default:
+                break
+            }
+        }
+        return error.localizedDescription
     }
 }
 

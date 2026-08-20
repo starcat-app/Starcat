@@ -240,9 +240,16 @@ struct GitHubNotificationInboxView: View {
     private func reloadFromCache() async {
         records = await inbox.fetchCached()
         lastFetchedAt = await inbox.lastFetchedAt()
+        if inbox.pendingOpenThreadId != nil {
+            consumePendingOpenIfNeeded()
+            return
+        }
         if let selectedThreadId,
            let record = records.first(where: { $0.id == selectedThreadId }) {
             selectedItem = await makeItem(from: record)
+        } else if selectedThreadId != nil {
+            selectedThreadId = nil
+            selectedItem = nil
         }
     }
 

@@ -145,6 +145,9 @@ protocol GitHubAPIClientProtocol: Sendable {
     /// `PATCH /notifications/threads/{id}` 标已读。成功含 205。
     func markNotificationThreadRead(id: String) async throws
 
+    /// `DELETE /notifications/threads/{id}` 标 Done，从 GitHub inbox 拿掉。成功含 204。
+    func markNotificationThreadDone(id: String) async throws
+
     /// `PATCH .../issues/{n}` 改 `state`。公开仓 `public_repo` 即可；私仓可能 404。
     func updateNotificationIssueState(path: String, state: String) async throws
 
@@ -227,6 +230,10 @@ extension GitHubAPIClientProtocol {
 
     func markNotificationThreadRead(id: String) async throws {
         throw NetworkError.clientError(statusCode: 501, message: "Mark notification thread read is not implemented by this client")
+    }
+
+    func markNotificationThreadDone(id: String) async throws {
+        throw NetworkError.clientError(statusCode: 501, message: "Mark notification thread done is not implemented by this client")
     }
 
     func updateNotificationIssueState(path: String, state: String) async throws {

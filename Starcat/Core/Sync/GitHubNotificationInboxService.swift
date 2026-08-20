@@ -4,6 +4,7 @@
 //
 //  通知 inbox 同步：首次 all=true 翻页回填最多 300 条；之后 since + If-Modified-Since。
 //  选中已读：蓝点先灭，400ms 内划走则恢复且不 PATCH；停满再异步 PATCH。
+//  右栏「完成」：DELETE thread 标 Done，只动当前这一条，成功后删本地行。
 //
 //  关键约束：
 //  - 回填历史不发系统通知，但会写 notified_at，避免增量把旧条目补弹一次。
@@ -26,6 +27,7 @@ enum GitHubNotificationInboxError: Error, Equatable {
     case missingScope
     case cannotComment
     case cannotClose
+    case cannotDone
 }
 
 @MainActor
@@ -52,6 +54,8 @@ final class GitHubNotificationInboxService {
     private var issueStates: [String: String] = [:]
     /// 同一 thread 并发刷新状态时共用一次 GET，避免选中 hydrate 和评论框各打一遍。
     private var issueStateRefreshTasks: [String: Task<Void, Never>] = [:]
+    /// 正在 Done 的 id。取消 dwell 时不要把蓝点闪回来，这条马上要从表里删掉。
+    private var completingIDs: Set<String> = []
 
     init(
         apiClient: any GitHubAPIClientProtocol,
@@ -267,6 +271,44 @@ final class GitHubNotificationInboxService {
 
     func reopenIssue(threadId: String) async throws {
         try await updateIssueState(threadId: threadId, state: "open")
+    }
+
+    /// 只 Done 这一条：GitHub `DELETE /notifications/threads/{id}`，成功后删本地行。
+    /// 不是关 Issue，也不是 mark-all。404 当已经 Done，仍清本地。
+    func markThreadDone(id: String) async throws {
+        guard !id.isEmpty else {
+            throw GitHubNotificationInboxError.cannotDone
+        }
+        completingIDs.insert(id)
+        dwellTasks[id]?.cancel()
+        dwellTasks[id] = nil
+        defer { completingIDs.remove(id) }
+
+        if GitHubNotificationMapper.isDemoThread(id) {
+            try await threadRepository.delete(id: id)
+            issueStates[id] = nil
+            postDidChange()
+            return
+        }
+
+        guard try await threadRepository.fetch(id: id) != nil else {
+            throw GitHubNotificationInboxError.cannotDone
+        }
+
+        do {
+            try await apiClient.markNotificationThreadDone(id: id)
+        } catch NetworkError.notFound {
+            // GitHub 已经没有这条 inbox 项，本地照样删。
+        } catch let NetworkError.clientError(code, _) where code == 404 {
+            // 同上。
+        } catch {
+            await restoreUnreadIfPending(id: id)
+            throw error
+        }
+
+        try await threadRepository.delete(id: id)
+        issueStates[id] = nil
+        postDidChange()
     }
 
     /// 选中一行：蓝点先灭，再开始 400ms dwell。
@@ -499,6 +541,7 @@ final class GitHubNotificationInboxService {
     }
 
     private func restoreUnreadIfPending(id: String) async {
+        guard !completingIDs.contains(id) else { return }
         guard let record = try? await threadRepository.fetch(id: id),
               record.markReadStateValue == .pending
         else { return }

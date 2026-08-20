@@ -401,7 +401,7 @@ enum AppEndpoints {
             /// 需要 OAuth `notifications` scope。不加 `repo`：私仓 thread 能显示多少算多少。
             static let notifications = "/notifications"
 
-            /// `PATCH /notifications/threads/{id}` —— 把一条 thread 标为已读。
+            /// `PATCH /notifications/threads/{id}` 标已读；`DELETE` 同一路径标 Done。
             static func notificationThread(id: String) -> String {
                 "/notifications/threads/\(id)"
             }

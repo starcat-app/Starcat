@@ -37,6 +37,8 @@ protocol GitHubNotificationThreadRepositoryProtocol: Sendable {
     func maxUpdatedAt() async throws -> String?
     /// 清掉本机演示 thread。前缀由调用方保证是 `starcat-demo-` 这种字面量。
     func deleteIDs(withPrefix prefix: String) async throws
+    /// 标 Done 成功后删这一行。空 id 直接忽略。
+    func delete(id: String) async throws
 }
 
 extension GitHubNotificationThreadRepositoryProtocol {

@@ -77,6 +77,7 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     var listNotificationIssueCommentsHandler: ((_ path: String) async throws -> [GitHubNotificationComment])?
     var createNotificationIssueCommentHandler: ((_ path: String, _ body: String) async throws -> GitHubNotificationComment)?
     var markNotificationThreadReadHandler: ((_ id: String) async throws -> Void)?
+    var markNotificationThreadDoneHandler: ((_ id: String) async throws -> Void)?
     var updateNotificationIssueStateHandler: ((_ path: String, _ state: String) async throws -> Void)?
 
     // MARK: - 调用记录（供断言用）
@@ -99,6 +100,7 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     private let _securityAdvisoriesCalls = OSAllocatedUnfairLock<[(owner: String, repo: String)]>(initialState: [])
     private let _listNotificationsCalls = OSAllocatedUnfairLock<[(all: Bool, since: String?, page: Int, perPage: Int, ifModifiedSince: String?)]>(initialState: [])
     private let _markNotificationThreadReadCalls = OSAllocatedUnfairLock<[String]>(initialState: [])
+    private let _markNotificationThreadDoneCalls = OSAllocatedUnfairLock<[String]>(initialState: [])
     private let _createNotificationIssueCommentCalls = OSAllocatedUnfairLock<[(path: String, body: String)]>(initialState: [])
 
     /// 快照 getter：测试断言用 `mock.readmeHTMLCalls.count` 继续生效。
@@ -128,6 +130,9 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     }
     var markNotificationThreadReadCalls: [String] {
         _markNotificationThreadReadCalls.withLock { $0 }
+    }
+    var markNotificationThreadDoneCalls: [String] {
+        _markNotificationThreadDoneCalls.withLock { $0 }
     }
     var createNotificationIssueCommentCalls: [(path: String, body: String)] {
         _createNotificationIssueCommentCalls.withLock { $0 }
@@ -292,6 +297,14 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
         _markNotificationThreadReadCalls.withLock { $0.append(id) }
         guard let handler = markNotificationThreadReadHandler else {
             fatalError("MockGitHubAPIClient.markNotificationThreadReadHandler 未设置")
+        }
+        try await handler(id)
+    }
+
+    func markNotificationThreadDone(id: String) async throws {
+        _markNotificationThreadDoneCalls.withLock { $0.append(id) }
+        guard let handler = markNotificationThreadDoneHandler else {
+            fatalError("MockGitHubAPIClient.markNotificationThreadDoneHandler 未设置")
         }
         try await handler(id)
     }
