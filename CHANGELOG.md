@@ -4,6 +4,10 @@ Release notes for the Mac App Store edition of Starcat.
 
 ## 1.4.0-待发布
 
+### New
+
+- GitHub Notifications: Review mentions, review requests, assignments, and security alerts in Activity; grouped by Today, Yesterday, and This week, with Issue / PR threads and replies in the detail pane.
+
 ### Improvements
 
 - Last AI-index prefetch: Opening Settings shows when the last prefetch finished, with counts and green, orange, or red status icons.
@@ -15,6 +19,7 @@ Release notes for the Mac App Store edition of Starcat.
 - Index issue shards: Open the knowledge base from pending, failed, or expired cards and jump to the matching chunk.
 - Meilisearch keyword index: Text is synced at the start of a knowledge-base rebuild so keyword search works before embeddings finish.
 - Shortcut recorder: Expands the key display area and shows an inline reset-to-default control only after a shortcut is changed.
+- Notification timeline: Clearer Issue / PR type chips and type size; avatars and usernames open GitHub profiles, and Dependabot uses its official circular mark.
 
 ### Fixes
 
@@ -23,6 +28,7 @@ Release notes for the Mac App Store edition of Starcat.
 - Global filter panel: Removes the noticeable delay when opening repository filters for faster access.
 - Explore offline cache: Shows cached Discovery, Popular, and New Releases data immediately when the service is unavailable instead of leaving skeleton rows visible.
 - Explore category counts: Restores cached Discovery, Popular, New Releases, and Weekly totals on first launch without opening each category.
+- Notification read state: Viewed notifications no longer flip back to unread.
 
 ## 1.3.0
 
