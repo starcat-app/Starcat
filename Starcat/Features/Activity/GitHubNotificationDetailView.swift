@@ -19,6 +19,7 @@ struct GitHubNotificationDetailView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(\.locale) private var locale
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.openSettings) private var openSettings
 
     @Binding var selectedItem: ActivityItem?
     @State private var isComposerExpanded = false
@@ -27,6 +28,9 @@ struct GitHubNotificationDetailView: View {
     @State private var doneError: String?
     @State private var translationVM: ReadmeTranslationViewModel?
     @State private var translationPaywall: ProPaywallContext?
+    /// 翻译 / AI 撰写共用 toast：未配置 AI 时不能只写一行 caption，评论框还会把提示收掉。
+    @State private var aiErrorToast: String?
+    @State private var aiErrorToastNeedsSettings = false
 
     private var inbox: GitHubNotificationInboxService {
         dependencies.githubNotificationInboxService
@@ -69,13 +73,6 @@ struct GitHubNotificationDetailView: View {
                     .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
                     .padding(.bottom, 6)
             }
-            if let translationError = translationVM?.errorMessage, !translationError.isEmpty {
-                Text(verbatim: translationError)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
-                    .padding(.bottom, 6)
-            }
             Divider()
             if !isComposerExpanded {
                 ScrollView {
@@ -102,7 +99,8 @@ struct GitHubNotificationDetailView: View {
                     payload: payload,
                     issueTitle: item.title,
                     repo: item.repo,
-                    isExpanded: $isComposerExpanded
+                    isExpanded: $isComposerExpanded,
+                    onAIFailure: presentAIFailure
                 )
                 .frame(maxHeight: isComposerExpanded ? .infinity : nil)
             }
@@ -117,6 +115,8 @@ struct GitHubNotificationDetailView: View {
             isComposerExpanded = false
             isDoneHelpPresented = false
             doneError = nil
+            aiErrorToast = nil
+            aiErrorToastNeedsSettings = false
             prepareTranslation(for: item)
         }
         .onChange(of: settings.readmeTranslationLanguage) { _, _ in
@@ -136,6 +136,51 @@ struct GitHubNotificationDetailView: View {
         .onAppear {
             prepareTranslation(for: item)
         }
+        // 对齐 README 翻译：错误走右下角 toast，配置类错误带「前往设置」。
+        .toast(
+            message: $aiErrorToast,
+            icon: "exclamationmark.triangle.fill",
+            iconColor: .orange,
+            bottomPadding: isComposerExpanded ? 20 : 56,
+            autoDismiss: false,
+            actionLabel: aiErrorToastActionLabel,
+            onAction: aiErrorToastOnAction
+        )
+        .onChange(of: translationVM?.errorMessage) { _, newValue in
+            if let msg = newValue {
+                aiErrorToastNeedsSettings = translationVM?.translationErrorKind == .aiConfiguration
+                aiErrorToast = msg
+            }
+        }
+        .onChange(of: aiErrorToast) { _, newValue in
+            if newValue == nil {
+                translationVM?.dismissError()
+                aiErrorToastNeedsSettings = false
+            }
+        }
+    }
+
+    /// 仅 AI 配置不完整时显示「前往设置」，其它错误只给关闭。
+    private var aiErrorToastActionLabel: String? {
+        aiErrorToastNeedsSettings ? "readme.translate.error.goToAISettings" : nil
+    }
+
+    private var aiErrorToastOnAction: (() -> Void)? {
+        guard aiErrorToastNeedsSettings else { return nil }
+        return { [openSettings] in
+            openSettings()
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: .starcatJumpToSettingsTab,
+                    object: "ai"
+                )
+            }
+        }
+    }
+
+    private func presentAIFailure(_ message: String, needsSettings: Bool) {
+        aiErrorToastNeedsSettings = needsSettings
+        aiErrorToast = message
     }
 
     /// 与中栏分段条同高：chip + 可点 `Issue #20` 在左，入口 / 上下条在右。
@@ -1198,11 +1243,16 @@ private struct GitHubNotificationTranslationControls: View {
 }
 
 /// 底部评论框：空草稿缩成一行；点进去才展开撰写 / 预览。Catalog 本轮不能加 key，文案走 mapper.copy。
+///
+/// AI 撰写失败必须回调给详情页 toast。点 sparkles 会让 NSTextView 失焦，
+/// 120ms 后空草稿收成一行，写在框内的 caption 会被一起收掉，看起来像「没任何提示」。
 private struct GitHubNotificationCommentComposer: View {
     let payload: ActivityNotificationPayload
     let issueTitle: String
     let repo: Repo?
     @Binding var isExpanded: Bool
+    /// `(用户可读文案, 是否应显示「前往设置」)`。配置类错误与 README 翻译同一套判断。
+    let onAIFailure: (String, Bool) -> Void
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
@@ -1303,7 +1353,7 @@ private struct GitHubNotificationCommentComposer: View {
         }
     }
 
-    /// 全屏、正在写、有草稿、预览或 AI 生成中都保持卡片，避免半当中缩成一行。
+    /// 全屏、正在写、有草稿、预览、AI 生成中或有 GitHub 提交错误都保持卡片，避免半当中缩成一行。
     private var showsFullComposer: Bool {
         isExpanded
             || isComposerActive
@@ -1311,6 +1361,7 @@ private struct GitHubNotificationCommentComposer: View {
             || isGenerating
             || isPosting
             || isPreview
+            || errorMessage != nil
     }
 
     private var composerAnimation: Animation? {
@@ -1412,7 +1463,8 @@ private struct GitHubNotificationCommentComposer: View {
               !isPosting,
               !isPreview,
               !isExpanded,
-              paywallContext == nil
+              paywallContext == nil,
+              errorMessage == nil
         else { return }
         withAnimation(composerAnimation) {
             isComposerActive = false
@@ -1720,7 +1772,7 @@ private struct GitHubNotificationCommentComposer: View {
             paywallContext = ProPaywallContext(feature: error.feature, message: error.localizedDescription)
             return
         } catch {
-            errorMessage = error.localizedDescription
+            presentAIGenerationFailure(error)
             return
         }
 
@@ -1784,13 +1836,35 @@ private struct GitHubNotificationCommentComposer: View {
             if let previousDraft {
                 draft = previousDraft
             }
+        } catch let error as EntitlementGateError {
+            isGenerating = false
+            if let previousDraft {
+                draft = previousDraft
+            }
+            paywallContext = ProPaywallContext(feature: error.feature, message: error.localizedDescription)
         } catch {
             isGenerating = false
             if let previousDraft {
                 draft = previousDraft
             }
-            errorMessage = error.localizedDescription
+            presentAIGenerationFailure(error)
         }
+    }
+
+    /// 生成前配置检查与请求失败共用：友好文案 + 诊断记录 + 详情页 toast。
+    /// 不要写 `errorMessage`——空草稿收起后 caption 会消失。
+    private func presentAIGenerationFailure(_ error: Error) {
+        let friendly = UserFacingError.map(
+            error,
+            operation: String.l10n("diagnostics.operation.aiChat"),
+            service: "AI"
+        )
+        friendly.record(
+            category: "ai",
+            operation: "notification.comment.generate",
+            service: "ai-provider"
+        )
+        onAIFailure(friendly.message, notificationAIErrorNeedsSettings(error))
     }
 
     private func scheduleSuccessReset() {
@@ -2252,6 +2326,28 @@ private struct GitHubNotificationImageProvider: ImageProvider {
             }
         }
     }
+}
+
+/// 与 README 翻译同一套：缺 provider / API Key / 无效 URL / 鉴权失败，toast 给「前往设置」。
+private func notificationAIErrorNeedsSettings(_ error: Error) -> Bool {
+    if let insight = error as? RepoAIInsightError {
+        switch insight {
+        case .missingProvider, .missingAPIKey:
+            return true
+        case .invalidJSON:
+            return false
+        }
+    }
+    if let ai = error as? AIClientError {
+        switch ai {
+        case .missingAPIKey, .invalidBaseURL, .authenticationRejected, .paymentRequired:
+            return true
+        case .invalidChatHistory, .emptyResponse, .responseTruncated, .modelListRequestFailed,
+             .rateLimited, .requestRejected, .networkUnavailable, .timedOut, .requestFailed:
+            return false
+        }
+    }
+    return false
 }
 
 /// user-attachments 在私有 Issue 里要带 token；测试 host 禁止碰 Keychain。
