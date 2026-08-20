@@ -18,6 +18,7 @@ Starcat 1.4.0 brings GitHub Notifications into Activity so you can handle mentio
 
 ### Improvements
 
+- Long thinking smoothness: Knowledge Q&A and repository AI chat stay responsive during long reasoning, and you can still expand to read the full text when it finishes.
 - Last AI-index prefetch: Opening Settings shows when the last prefetch finished, with counts and green, orange, or red status icons.
 - External index test status: Meilisearch and Qdrant each show their own result next to Test and Save, with green success, orange rebuild-needed, and red failure icons.
 - Semantic search progress: Index refresh shows a busy ring immediately, then a determinate ring as up-to-date repos are skipped; only missing or stale vectors are rebuilt.
