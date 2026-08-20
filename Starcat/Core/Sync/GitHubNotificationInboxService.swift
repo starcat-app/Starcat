@@ -270,7 +270,20 @@ final class GitHubNotificationInboxService {
     }
 
     /// 选中一行：蓝点先灭，再开始 400ms dwell。
+    /// 已经 PATCH 成功 / 失败待重试的已读行不要再打成 pending，否则一取消 dwell 蓝点会闪回来。
     func beginDwell(id: String) async {
+        guard let record = try? await threadRepository.fetch(id: id) else { return }
+        if !record.unread {
+            switch record.markReadStateValue {
+            case .synced, .failed:
+                return
+            case .pending where dwellTasks[id] != nil:
+                return
+            case .idle, .pending:
+                break
+            }
+        }
+
         dwellTasks[id]?.cancel()
         dwellTasks[id] = nil
         do {
@@ -443,7 +456,8 @@ final class GitHubNotificationInboxService {
                 try await threadRepository.updateLocalUnread(
                     id: record.id,
                     unread: false,
-                    markReadState: .synced
+                    markReadState: .synced,
+                    githubUnread: false
                 )
             } catch {
                 AppLog.network.info("Retry mark-read failed id=\(record.id, privacy: .public)")
@@ -456,7 +470,8 @@ final class GitHubNotificationInboxService {
             try? await threadRepository.updateLocalUnread(
                 id: id,
                 unread: false,
-                markReadState: .synced
+                markReadState: .synced,
+                githubUnread: false
             )
             dwellTasks[id] = nil
             postDidChange()
@@ -467,7 +482,8 @@ final class GitHubNotificationInboxService {
             try await threadRepository.updateLocalUnread(
                 id: id,
                 unread: false,
-                markReadState: .synced
+                markReadState: .synced,
+                githubUnread: false
             )
             dwellTasks[id] = nil
             postDidChange()

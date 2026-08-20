@@ -14,7 +14,12 @@ protocol GitHubNotificationThreadRepositoryProtocol: Sendable {
     /// 中栏面包屑副标题用总数；侧栏角标仍走 `unreadCount()`。
     func totalCount() async throws -> Int
     func upsertMany(_ records: [GitHubNotificationThreadRecord]) async throws
-    func updateLocalUnread(id: String, unread: Bool, markReadState: GitHubNotificationMarkReadState) async throws
+    func updateLocalUnread(
+        id: String,
+        unread: Bool,
+        markReadState: GitHubNotificationMarkReadState,
+        githubUnread: Bool?
+    ) async throws
     func updateHydration(
         id: String,
         actorLogin: String?,
@@ -32,6 +37,16 @@ protocol GitHubNotificationThreadRepositoryProtocol: Sendable {
     func maxUpdatedAt() async throws -> String?
     /// 清掉本机演示 thread。前缀由调用方保证是 `starcat-demo-` 这种字面量。
     func deleteIDs(withPrefix prefix: String) async throws
+}
+
+extension GitHubNotificationThreadRepositoryProtocol {
+    func updateLocalUnread(
+        id: String,
+        unread: Bool,
+        markReadState: GitHubNotificationMarkReadState
+    ) async throws {
+        try await updateLocalUnread(id: id, unread: unread, markReadState: markReadState, githubUnread: nil)
+    }
 }
 
 protocol GitHubNotificationSyncStateRepositoryProtocol: Sendable {

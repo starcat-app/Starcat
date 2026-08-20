@@ -35,7 +35,7 @@ struct GitHubNotificationPerson: Equatable, Identifiable, Sendable {
     var id: String { "\(login)-\(role.rawValue)" }
 
     var avatarURLString: String {
-        "https://github.com/\(login).png"
+        GitHubNotificationMapper.actorAvatarURL(login: login) ?? ""
     }
 }
 
@@ -191,7 +191,19 @@ enum GitHubNotificationMapper {
     }
 
     static func actorAvatarURL(for record: GitHubNotificationThreadRecord) -> String? {
-        eventActor(for: record).map { "https://github.com/\($0).png?size=80" }
+        guard let login = eventActor(for: record) else { return nil }
+        return actorAvatarURL(login: login)
+    }
+
+    /// Dependabot 用本地 mark，不走远程 png（`dependabot[bot]` 不是合法 user login，会 404）。
+    static func actorAvatarURL(login: String) -> String? {
+        if actorAvatarAssetName(login: login) != nil { return nil }
+        let trimmed = login.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let slug = githubAppSlug(login: trimmed) {
+            return "https://github.com/\(slug).png?size=80"
+        }
+        guard isGitHubLogin(trimmed) else { return nil }
+        return "https://github.com/\(trimmed).png?size=80"
     }
 
     /// GitHub 评论常夹 HTML `<img src="https://github.com/user-attachments/...">`。
@@ -653,10 +665,52 @@ enum GitHubNotificationMapper {
     }
 
     static func commentCardHeader(login: String, isOpeningPost: Bool, locale: Locale) -> String {
+        "\(login) \(commentCardAction(isOpeningPost: isOpeningPost, locale: locale))"
+    }
+
+    /// 卡片里登录名单独成链接，动作文案跟在后面。
+    static func commentCardAction(isOpeningPost: Bool, locale: Locale) -> String {
         if isOpeningPost {
-            return copy(locale, zh: "\(login) 发布了这条", en: "\(login) opened")
+            return copy(locale, zh: "发布了这条", en: "opened")
         }
-        return copy(locale, zh: "\(login) 评论", en: "\(login) commented")
+        return copy(locale, zh: "评论", en: "commented")
+    }
+
+    /// GitHub 用户主页，或 GitHub App 主页（`foo[bot]` → `/apps/foo`）。
+    /// 占位「有人 / Someone」或非法 login 返回 nil，避免打开坏链接。
+    static func profileHTMLURL(login: String) -> URL? {
+        let trimmed = login.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let slug = githubAppSlug(login: trimmed) {
+            return GitHubURLs.githubApp(slug: slug)
+        }
+        guard isGitHubLogin(trimmed) else { return nil }
+        return GitHubURLs.userProfile(login: trimmed)
+    }
+
+    /// GitHub App 登录名 `foo[bot]` → slug `foo`。方括号不是 user login，不能当用户主页。
+    static func githubAppSlug(login: String) -> String? {
+        let trimmed = login.trimmingCharacters(in: .whitespacesAndNewlines)
+        let suffix = "[bot]"
+        guard trimmed.lowercased().hasSuffix(suffix) else { return nil }
+        let slug = String(trimmed.dropLast(suffix.count))
+        guard isGitHubLogin(slug) else { return nil }
+        return slug
+    }
+
+    /// dong4j 提供的 Dependabot 官方 mark，资源名 `DependabotMark`。
+    static func actorAvatarAssetName(login: String) -> String? {
+        guard let slug = githubAppSlug(login: login) else { return nil }
+        guard slug.compare("dependabot", options: .caseInsensitive) == .orderedSame else { return nil }
+        return "DependabotMark"
+    }
+
+    /// GitHub login：1–39 位，字母数字和连字符，不能首尾是 `-`。纯数字账号（如 `493505110`）合法。
+    /// `dependabot[bot]` 这类 App 账号走 `githubAppSlug`，不要用这条判断。
+    static func isGitHubLogin(_ login: String) -> Bool {
+        let count = login.utf8.count
+        guard (1...39).contains(count) else { return false }
+        let pattern = #"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$"#
+        return login.range(of: pattern, options: .regularExpression) != nil
     }
 
     static func record(

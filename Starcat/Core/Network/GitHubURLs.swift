@@ -35,6 +35,12 @@ enum GitHubURLs {
         baseURL.appendingPathComponent(login)
     }
 
+    /// GitHub App 主页：`https://github.com/apps/{slug}`。
+    /// `dependabot[bot]` 这类 App 账号不是用户 login，不能拼 `github.com/dependabot[bot]`。
+    static func githubApp(slug: String) -> URL {
+        baseURL.appendingPathComponent("apps").appendingPathComponent(slug)
+    }
+
     /// 用户主页 + Stars Tab：`https://github.com/{login}?tab=stars`。
     /// 用 URLComponents 拼 query 而非字符串插值，避免 login 含特殊字符时 URL 失效。
     static func userStarsTab(login: String) -> URL {

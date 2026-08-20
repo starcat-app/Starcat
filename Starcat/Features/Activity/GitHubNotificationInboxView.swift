@@ -48,9 +48,8 @@ struct GitHubNotificationInboxView: View {
         .onReceive(NotificationCenter.default.publisher(for: .starcatOpenGitHubNotification)) { _ in
             consumePendingOpenIfNeeded()
         }
-        .onDisappear {
-            inbox.cancelAllDwells()
-        }
+        // dwell 活在 InboxService 上。中栏 SwiftUI 重建 / 切走时不要 cancelAllDwells，
+        // 否则 pending 会被恢复成未读，点开看过的条目会反复亮蓝点。
         .starcatRefreshCommand(
             pane: .list,
             identity: "activity-notification-\(inbox.isSyncing)",
@@ -366,7 +365,7 @@ private struct GitHubNotificationTimelineHeader: View {
             Color.clear
                 .frame(width: GitHubNotificationTimelineMetrics.railWidth)
             Text(LocalizedStringKey(titleKey))
-                .font(.caption.weight(.semibold))
+                .font(.callout.weight(.semibold))
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
         }
@@ -409,7 +408,7 @@ private struct GitHubNotificationTimelineRow: View {
         Button(action: onSelect) {
             HStack(alignment: .top, spacing: GitHubNotificationTimelineMetrics.stampSpacing) {
                 Text(verbatim: stamp)
-                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                    .font(.caption.weight(.medium).monospacedDigit())
                     .foregroundStyle(.secondary)
                     .frame(width: GitHubNotificationTimelineMetrics.stampWidth, alignment: .trailing)
                     .padding(.top, 3)
@@ -417,11 +416,9 @@ private struct GitHubNotificationTimelineRow: View {
                 Color.clear
                     .frame(width: GitHubNotificationTimelineMetrics.railWidth)
 
-                RemoteAvatar(
-                    urlString: GitHubNotificationMapper.actorAvatarURL(for: record),
-                    size: 24,
-                    fallbackSymbol: "person.crop.circle.fill",
-                    showBorder: false
+                GitHubNotificationActorAvatar(
+                    login: GitHubNotificationMapper.eventActor(for: record) ?? "",
+                    size: 24
                 )
                 .padding(.top, 1)
 
@@ -446,7 +443,7 @@ private struct GitHubNotificationTimelineRow: View {
                             showBorder: false
                         )
                         Text(verbatim: caption)
-                            .font(.caption)
+                            .font(.callout)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -454,7 +451,7 @@ private struct GitHubNotificationTimelineRow: View {
 
                     if let snippet {
                         Text(verbatim: snippet)
-                            .font(.caption)
+                            .font(.callout)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -581,7 +578,7 @@ struct GitHubNotificationReasonChip: View {
 
     var body: some View {
         Text(verbatim: GitHubNotificationMapper.chipTitle(for: chip, locale: locale))
-            .font(.system(size: 10, weight: .semibold))
+            .font(.caption2.weight(.semibold))
             .foregroundStyle(tint)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)

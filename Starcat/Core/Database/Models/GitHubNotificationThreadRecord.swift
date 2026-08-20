@@ -15,7 +15,8 @@ import GRDB
 /// GitHub thread 在本地的已读同步状态。
 ///
 /// `pending`：用户已停在这一行、PATCH 还没回来。增量同步不得把蓝点打回去。
-/// `failed`：PATCH 失败，下次同步结束后重试；此时允许用 GitHub `unread` 校准。
+/// `synced`：已经 PATCH 成功。GitHub 列表短暂仍 unread 时也不能闪回蓝点。
+/// `failed`：PATCH 失败，下次同步结束后重试；本地保持已读，等重试，不拿 GitHub unread 校准回来。
 enum GitHubNotificationMarkReadState: String, Codable, Sendable {
     case idle
     case pending

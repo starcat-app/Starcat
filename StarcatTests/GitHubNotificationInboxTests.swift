@@ -322,6 +322,41 @@ struct GitHubNotificationMapperTests {
         )
     }
 
+    @Test("合法 GitHub login 才生成用户主页 URL")
+    func profileHTMLURLRejectsPlaceholders() {
+        #expect(
+            GitHubNotificationMapper.profileHTMLURL(login: "dong4j")?.absoluteString
+                == "https://github.com/dong4j"
+        )
+        #expect(
+            GitHubNotificationMapper.profileHTMLURL(login: "493505110")?.absoluteString
+                == "https://github.com/493505110"
+        )
+        #expect(GitHubNotificationMapper.profileHTMLURL(login: "有人") == nil)
+        #expect(GitHubNotificationMapper.profileHTMLURL(login: "") == nil)
+        #expect(GitHubNotificationMapper.profileHTMLURL(login: "-bot") == nil)
+        #expect(
+            GitHubNotificationMapper.profileHTMLURL(login: "dependabot[bot]")?.absoluteString
+                == "https://github.com/apps/dependabot"
+        )
+        #expect(GitHubNotificationMapper.actorAvatarAssetName(login: "dependabot[bot]") == "DependabotMark")
+        #expect(GitHubNotificationMapper.actorAvatarURL(login: "dependabot[bot]") == nil)
+        #expect(
+            GitHubNotificationMapper.actorAvatarURL(login: "renovate[bot]")
+                == "https://github.com/renovate.png?size=80"
+        )
+        #expect(GitHubNotificationMapper.githubAppSlug(login: "dependabot[bot]") == "dependabot")
+        #expect(GitHubNotificationMapper.isGitHubLogin("dependabot[bot]") == false)
+        let zh = Locale(identifier: "zh-Hans")
+        #expect(
+            GitHubNotificationMapper.commentCardHeader(
+                login: "dong4j",
+                isOpeningPost: true,
+                locale: zh
+            ) == "dong4j 发布了这条"
+        )
+    }
+
     @Test("GitHub 无毫秒的 ISO8601 能解析，时钟和相对时间才有值")
     func parseGitHubDateWithoutFractionalSeconds() {
         let date = GitHubNotificationMapper.parseDate("2026-08-19T14:32:00Z")
@@ -471,6 +506,85 @@ struct GitHubNotificationInboxTests {
         #expect(stored.githubUnread == true)
     }
 
+    @Test("synced 后 GitHub 仍 unread 且 updated_at 没变，不能把蓝点打回去")
+    func upsertPreservesSyncedUnreadWhenGitHubLags() async throws {
+        let env = try makeEnv()
+        let first = GitHubNotificationMapper.record(
+            from: Self.makeDTO(id: "t-sync", unread: true, updatedAt: "2026-08-01T00:00:00Z"),
+            fetchedAt: "2026-08-01T00:00:00Z",
+            firstSeenAt: "2026-08-01T00:00:00Z"
+        )
+        try await env.threads.upsertMany([first])
+        try await env.threads.updateLocalUnread(
+            id: "t-sync",
+            unread: false,
+            markReadState: .synced,
+            githubUnread: false
+        )
+
+        let incoming = GitHubNotificationMapper.record(
+            from: Self.makeDTO(id: "t-sync", unread: true, updatedAt: "2026-08-01T00:00:00Z"),
+            fetchedAt: "2026-08-19T00:00:00Z",
+            firstSeenAt: "2026-08-19T00:00:00Z"
+        )
+        try await env.threads.upsertMany([incoming])
+
+        let stored = try #require(try await env.threads.fetch(id: "t-sync"))
+        #expect(stored.unread == false)
+        #expect(stored.markReadStateValue == .synced)
+    }
+
+    @Test("failed 后 GitHub 仍 unread 且 updated_at 没变，保持已读等重试")
+    func upsertPreservesFailedUnreadWhenGitHubStillUnread() async throws {
+        let env = try makeEnv()
+        let first = GitHubNotificationMapper.record(
+            from: Self.makeDTO(id: "t-fail", unread: true, updatedAt: "2026-08-01T00:00:00Z"),
+            fetchedAt: "2026-08-01T00:00:00Z",
+            firstSeenAt: "2026-08-01T00:00:00Z"
+        )
+        try await env.threads.upsertMany([first])
+        try await env.threads.updateLocalUnread(id: "t-fail", unread: false, markReadState: .failed)
+
+        let incoming = GitHubNotificationMapper.record(
+            from: Self.makeDTO(id: "t-fail", unread: true, updatedAt: "2026-08-01T00:00:00Z"),
+            fetchedAt: "2026-08-19T00:00:00Z",
+            firstSeenAt: "2026-08-19T00:00:00Z"
+        )
+        try await env.threads.upsertMany([incoming])
+
+        let stored = try #require(try await env.threads.fetch(id: "t-fail"))
+        #expect(stored.unread == false)
+        #expect(stored.markReadStateValue == .failed)
+    }
+
+    @Test("synced 后 subject 有新 updated_at，GitHub unread 才重新亮蓝点")
+    func upsertResetsSyncedWhenThreadUpdatedAgain() async throws {
+        let env = try makeEnv()
+        let first = GitHubNotificationMapper.record(
+            from: Self.makeDTO(id: "t-new", unread: true, updatedAt: "2026-08-01T00:00:00Z"),
+            fetchedAt: "2026-08-01T00:00:00Z",
+            firstSeenAt: "2026-08-01T00:00:00Z"
+        )
+        try await env.threads.upsertMany([first])
+        try await env.threads.updateLocalUnread(
+            id: "t-new",
+            unread: false,
+            markReadState: .synced,
+            githubUnread: false
+        )
+
+        let incoming = GitHubNotificationMapper.record(
+            from: Self.makeDTO(id: "t-new", unread: true, updatedAt: "2026-08-19T12:00:00Z"),
+            fetchedAt: "2026-08-19T12:00:00Z",
+            firstSeenAt: "2026-08-19T12:00:00Z"
+        )
+        try await env.threads.upsertMany([incoming])
+
+        let stored = try #require(try await env.threads.fetch(id: "t-new"))
+        #expect(stored.unread == true)
+        #expect(stored.markReadStateValue == .idle)
+    }
+
     @Test("totalCount 是全部 thread，unreadCount 只计未读")
     func totalCountSeparateFromUnread() async throws {
         let env = try makeEnv()
@@ -548,6 +662,31 @@ struct GitHubNotificationInboxTests {
         let stored = try #require(try await env.threads.fetch(id: "ok"))
         #expect(stored.unread == false)
         #expect(stored.markReadStateValue == .synced)
+        #expect(stored.githubUnread == false)
+    }
+
+    @Test("已 synced 的已读行再选中不重复 PATCH，划走也不回未读")
+    func syncedDwellDoesNotPatchOrRestore() async throws {
+        let env = try makeEnv(dwellNanoseconds: 20_000_000)
+        env.mock.listNotificationsHandler = { _, _, _, _, _ in
+            Self.listResponse([Self.makeDTO(id: "ok")])
+        }
+        env.mock.markNotificationThreadReadHandler = { _ in }
+
+        await env.inbox.sync()
+        await env.inbox.beginDwell(id: "ok")
+        try await Task.sleep(nanoseconds: 80_000_000)
+        #expect(env.mock.markNotificationThreadReadCalls == ["ok"])
+
+        await env.inbox.beginDwell(id: "ok")
+        await env.inbox.cancelDwell(id: "ok")
+        try await Task.sleep(nanoseconds: 80_000_000)
+
+        #expect(env.mock.markNotificationThreadReadCalls == ["ok"])
+        let stored = try #require(try await env.threads.fetch(id: "ok"))
+        #expect(stored.unread == false)
+        #expect(stored.markReadStateValue == .synced)
+        #expect(stored.githubUnread == false)
     }
 
     @Test("hydrate 命中缓存后不再请求 subject.url")

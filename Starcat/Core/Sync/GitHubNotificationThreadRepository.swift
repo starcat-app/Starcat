@@ -81,12 +81,19 @@ struct GRDBGitHubNotificationThreadRepository: GitHubNotificationThreadRepositor
                         updated_at = excluded.updated_at,
                         unread = CASE
                             WHEN excluded.github_unread = 0 THEN 0
-                            WHEN github_notification_threads.mark_read_state IN ('pending', 'synced')
+                            WHEN excluded.updated_at != github_notification_threads.updated_at
+                             AND github_notification_threads.mark_read_state IN ('synced', 'failed')
+                                THEN excluded.github_unread
+                            WHEN github_notification_threads.mark_read_state IN ('pending', 'synced', 'failed')
                                 THEN github_notification_threads.unread
                             ELSE excluded.github_unread
                         END,
                         mark_read_state = CASE
                             WHEN excluded.github_unread = 0 THEN 'synced'
+                            WHEN excluded.updated_at != github_notification_threads.updated_at
+                             AND excluded.github_unread = 1
+                             AND github_notification_threads.mark_read_state IN ('synced', 'failed')
+                                THEN 'idle'
                             ELSE github_notification_threads.mark_read_state
                         END,
                         html_url = CASE
@@ -152,15 +159,27 @@ struct GRDBGitHubNotificationThreadRepository: GitHubNotificationThreadRepositor
         }
     }
 
-    func updateLocalUnread(id: String, unread: Bool, markReadState: GitHubNotificationMarkReadState) async throws {
+    func updateLocalUnread(
+        id: String,
+        unread: Bool,
+        markReadState: GitHubNotificationMarkReadState,
+        githubUnread: Bool?
+    ) async throws {
         try await database.writer.write { db in
             try db.execute(
                 sql: """
                 UPDATE github_notification_threads
-                SET unread = ?, mark_read_state = ?
+                SET unread = ?,
+                    mark_read_state = ?,
+                    github_unread = COALESCE(?, github_unread)
                 WHERE id = ?
                 """,
-                arguments: [unread ? 1 : 0, markReadState.rawValue, id]
+                arguments: [
+                    unread ? 1 : 0,
+                    markReadState.rawValue,
+                    githubUnread.map { $0 ? 1 : 0 },
+                    id
+                ]
             )
         }
     }

@@ -90,7 +90,8 @@ struct GitHubNotificationDetailView: View {
         }
     }
 
-    /// 与中栏分段条同高：chip + 可点 `Issue #20` 在左，上下条 / 关闭在右。
+    /// 与中栏分段条同高：chip + 可点 `Issue #20` 在左，入口 / 上下条在右。
+    /// 关掉详情靠中栏改选或清空选择，不再单独放关闭钮。
     private func headerToolbar(_ item: ActivityItem) -> some View {
         HStack(spacing: 8) {
             if let chip = item.notification?.chip {
@@ -128,13 +129,6 @@ struct GitHubNotificationDetailView: View {
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
                 .help(GitHubNotificationMapper.copy(locale, zh: "下一条", en: "Next notification"))
-
-                SheetCloseButton {
-                    if let threadId = item.notification?.threadId {
-                        Task { await inbox.cancelDwell(id: threadId) }
-                    }
-                    selectedItem = nil
-                }
             }
         }
         .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
@@ -179,7 +173,7 @@ struct GitHubNotificationDetailView: View {
     private func conversation(_ payload: ActivityNotificationPayload) -> some View {
         if let excerpt = payload.excerpt, !excerpt.isEmpty {
             GitHubNotificationCommentCard(
-                login: payload.authorLogin ?? GitHubNotificationMapper.copy(locale, zh: "有人", en: "Someone"),
+                login: payload.authorLogin ?? "",
                 createdAt: payload.authorCreatedAt,
                 markdown: excerpt,
                 repositoryFullName: payload.repositoryFullName,
@@ -334,6 +328,91 @@ private struct GitHubNotificationSubjectHeading: View {
     }
 }
 
+/// 通知 actor 头像。Dependabot 不是合法 user login，远程 png 会 404，
+/// 所以用本地 `DependabotMark`；裁成圆，和其他 GitHub 头像一致。
+struct GitHubNotificationActorAvatar: View {
+    let login: String
+    var size: CGFloat
+    var fallbackSymbol: String = "person.crop.circle.fill"
+
+    var body: some View {
+        if let assetName = GitHubNotificationMapper.actorAvatarAssetName(login: login) {
+            Image(assetName)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(Circle())
+        } else {
+            RemoteAvatar(
+                urlString: GitHubNotificationMapper.actorAvatarURL(login: login),
+                size: size,
+                fallbackSymbol: fallbackSymbol,
+                showBorder: false
+            )
+        }
+    }
+}
+
+/// GitHub 用户头像 + login：有合法 login / App slug 时打开对应主页。
+/// hover 用 accent + 下划线，和 `Issue #N` 同一套提示。
+private struct GitHubNotificationUserLink: View {
+    let login: String
+    var avatarSize: CGFloat
+    var nameFont: Font = .subheadline.weight(.semibold)
+    var showsName: Bool = true
+    @Environment(\.locale) private var locale
+    @State private var isHovered = false
+
+    var body: some View {
+        let label = HStack(spacing: 8) {
+            GitHubNotificationActorAvatar(login: trimmedLogin, size: avatarSize)
+            if showsName {
+                Text(verbatim: displayName)
+                    .font(nameFont)
+                    .foregroundStyle(linkTint)
+                    .underline(isHovered && profileURL != nil, color: Color.accentColor)
+                    .lineLimit(1)
+            }
+        }
+        .contentShape(Rectangle())
+
+        if let profileURL {
+            Button {
+                NSWorkspace.shared.open(profileURL)
+            } label: {
+                label
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .onHover { isHovered = $0 }
+            .help(profileURL.absoluteString)
+            .accessibilityLabel(Text(verbatim: displayName))
+        } else {
+            label
+        }
+    }
+
+    private var trimmedLogin: String {
+        login.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var profileURL: URL? {
+        GitHubNotificationMapper.profileHTMLURL(login: trimmedLogin)
+    }
+
+    private var displayName: String {
+        if trimmedLogin.isEmpty {
+            return GitHubNotificationMapper.copy(locale, zh: "有人", en: "Someone")
+        }
+        return trimmedLogin
+    }
+
+    private var linkTint: Color {
+        isHovered && profileURL != nil ? Color.accentColor : Color.primary
+    }
+}
+
 /// GitHub 风格评论卡片：头像 + 「谁在何时发布/评论」+ Markdown 正文。
 private struct GitHubNotificationCommentCard: View {
     let login: String
@@ -345,19 +424,16 @@ private struct GitHubNotificationCommentCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                RemoteAvatar(
-                    urlString: "https://github.com/\(login).png?size=80",
-                    size: isOpeningPost ? 26 : 22,
-                    fallbackSymbol: "person.crop.circle.fill",
-                    showBorder: false
-                )
-                Text(verbatim: GitHubNotificationMapper.commentCardHeader(
+            HStack(spacing: 6) {
+                GitHubNotificationUserLink(
                     login: login,
+                    avatarSize: isOpeningPost ? 26 : 22
+                )
+                Text(verbatim: GitHubNotificationMapper.commentCardAction(
                     isOpeningPost: isOpeningPost,
                     locale: locale
                 ))
-                .font(isOpeningPost ? .subheadline.weight(.semibold) : .callout.weight(.medium))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 Spacer(minLength: 8)
@@ -468,12 +544,20 @@ private struct GitHubNotificationCommentComposer: View {
     /// 「留下评论」做成卡片顶栏：浅底 + 底部分割，输入区不再套第二圈重描边。
     private var composerHeader: some View {
         HStack(spacing: 8) {
-            RemoteAvatar(
-                urlString: authSession.state.user?.avatarUrl,
-                size: 22,
-                fallbackSymbol: "person.crop.circle.fill",
-                showBorder: false
-            )
+            if let login = authSession.state.user?.login, !login.isEmpty {
+                GitHubNotificationUserLink(
+                    login: login,
+                    avatarSize: 22,
+                    showsName: false
+                )
+            } else {
+                RemoteAvatar(
+                    urlString: authSession.state.user?.avatarUrl,
+                    size: 22,
+                    fallbackSymbol: "person.crop.circle.fill",
+                    showBorder: false
+                )
+            }
             Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "留下评论", en: "Leave a comment"))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
