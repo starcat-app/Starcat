@@ -281,6 +281,7 @@ struct GitHubNotificationDetailView: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
+        .clickablePointer()
     }
 
     @ViewBuilder
@@ -595,6 +596,7 @@ private struct GitHubNotificationComposerTabBar: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
+        .clickablePointer()
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
@@ -617,6 +619,7 @@ private struct GitHubNotificationSubjectHeading: View {
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
+            .clickablePointer()
             .onHover { isHovered = $0 }
             .help(url.absoluteString)
         } else {
@@ -684,6 +687,7 @@ private struct GitHubNotificationUserLink: View {
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
+            .clickablePointer()
             .onHover { isHovered = $0 }
             .help(profileURL.absoluteString)
             .accessibilityLabel(Text(verbatim: displayName))
@@ -851,7 +855,7 @@ private struct GitHubNotificationDoneHelpPopover: View {
     }
 }
 
-/// 顶栏翻译：22×22 气泡图标 + 语言/模式/重翻菜单，对齐 README 详情底栏。
+/// 顶栏翻译：气泡 + 附属 chevron 共用一块 22pt 底，对齐 README 详情底栏。
 /// 默认分段对照；全文只替换卡片正文。切段仍按 Markdown 块，缓存按 mode 分文件。
 private struct GitHubNotificationTranslationControls: View {
     let viewModel: ReadmeTranslationViewModel
@@ -872,6 +876,7 @@ private struct GitHubNotificationTranslationControls: View {
     }
 
     var body: some View {
+        // 共用一块 22pt 圆角底，避免气泡和 chevron 各画一方、高度也对不齐。
         HStack(spacing: 0) {
             Button {
                 if viewModel.isTranslating {
@@ -889,16 +894,12 @@ private struct GitHubNotificationTranslationControls: View {
                 }
             } label: {
                 iconView
-                    .squareLogoActionChrome(
-                        side: 22,
-                        backgroundColor: isShowingTranslation
-                            ? Color.accentColor.opacity(0.14)
-                            : Color.secondary.opacity(0.10)
-                    )
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
-            .toolbarIconHover()
+            .toolbarIconHover(cornerRadius: 0)
             .disabled(!viewModel.isTranslating && !hasSegments)
             .help(buttonTooltip)
             .onHover { hovering in
@@ -960,20 +961,33 @@ private struct GitHubNotificationTranslationControls: View {
                 }
                 .disabled(viewModel.isTranslating || !hasSegments)
             } label: {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 12, weight: .semibold))
+                // compact + 8pt：附属指示器，不要和主操作抢视觉。
+                Image(systemName: "chevron.compact.down")
+                    .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(.secondary)
-                    .frame(width: 16, height: 22)
+                    .frame(width: 14, height: 22)
                     .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .tint(.secondary)
-            .frame(width: 16, height: 22)
+            .frame(width: 14, height: 22)
+            .clipped()
             .focusEffectDisabled()
-            .toolbarIconHover(cornerRadius: 4)
+            .toolbarIconHover(cornerRadius: 0)
+            .clickablePointer()
             .help("readme.translate.menu.tooltip")
         }
+        .frame(height: 22)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(
+                    isShowingTranslation
+                        ? Color.accentColor.opacity(0.14)
+                        : Color.secondary.opacity(0.10)
+                )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 
     /// 翻译中不用系统 8 瓣 spinner：那段数已经在 VM 里，圆环才能看出走了多少。
@@ -993,9 +1007,9 @@ private struct GitHubNotificationTranslationControls: View {
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: isHoveringWhileTranslating)
             .accessibilityValue(Text(verbatim: translationProgressLabel))
         } else {
-            // SF Symbol 笔画比 14pt bitmap logo 更满，13pt semibold 会显得大一圈。
+            // 比 14pt logo 再收一档：气泡符号本身笔画就满。
             Image(systemName: isShowingTranslation ? "character.bubble.fill" : "character.bubble")
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 10, weight: .regular))
                 .foregroundStyle(isShowingTranslation ? Color.accentColor : Color.primary)
                 .frame(width: 14, height: 14)
         }
@@ -1110,14 +1124,16 @@ private struct GitHubNotificationCommentComposer: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
                 .opacity(isGenerating ? 0 : 1)
-                .animation(.easeInOut(duration: reduceMotion ? 0.16 : 0.22), value: isGenerating)
+                .animation(.easeInOut(duration: GitHubNotificationAIHaloMetrics.fadeDuration(reduceMotion)), value: isGenerating)
         )
+        // 光晕铺在 clip 外面的一圈 gutter 里，加大 blur 才不会被圆角裁掉。
+        .padding(GitHubNotificationAIHaloMetrics.glowBleed)
         .overlay {
             GitHubNotificationAIGeneratingHalo(isActive: isGenerating)
         }
         .animation(composerAnimation, value: showsFullComposer)
-        .padding(.horizontal, 18)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
         .background(.background)
         .frame(maxHeight: isExpanded ? .infinity : nil)
         .sheet(item: $paywallContext) { context in
@@ -1134,6 +1150,10 @@ private struct GitHubNotificationCommentComposer: View {
             generateTask?.cancel()
             successResetTask?.cancel()
             collapseIdleTask?.cancel()
+        }
+        // 预览态焦点在 SwiftUI；撰写态在 NSTextView，Esc 由 textView doCommandBy 再走同一套。
+        .onKeyPress(.escape) {
+            handleEscape() ? .handled : .ignored
         }
     }
 
@@ -1197,6 +1217,7 @@ private struct GitHubNotificationCommentComposer: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
+        .clickablePointer()
         .accessibilityLabel(Text(verbatim: GitHubNotificationMapper.copy(
             locale,
             zh: "留下评论",
@@ -1252,6 +1273,29 @@ private struct GitHubNotificationCommentComposer: View {
         }
     }
 
+    /// Esc：全屏先缩回卡片；卡片且草稿空再收成一行。有草稿不丢内容。
+    /// 输入法未上屏时交给 NSTextView，避免把拼音一起取消。
+    @discardableResult
+    private func handleEscape() -> Bool {
+        if isExpanded {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                isExpanded = false
+            }
+            return true
+        }
+        guard showsFullComposer,
+              trimmed.isEmpty,
+              !isGenerating,
+              !isPosting,
+              !isPreview
+        else { return false }
+        collapseIdleTask?.cancel()
+        withAnimation(composerAnimation) {
+            isComposerActive = false
+        }
+        return true
+    }
+
     private func resetComposerForThreadChange() {
         collapseIdleTask?.cancel()
         draft = ""
@@ -1280,6 +1324,7 @@ private struct GitHubNotificationCommentComposer: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .focusEffectDisabled()
+                .clickablePointer()
                 .disabled(isPosting || isGenerating || isUpdatingIssueState)
                 .help(issueStateButtonTitle)
             }
@@ -1297,6 +1342,7 @@ private struct GitHubNotificationCommentComposer: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
             .focusEffectDisabled()
+            .clickablePointer()
             .disabled(trimmed.isEmpty || isPosting || isGenerating || isUpdatingIssueState)
         }
         .padding(.horizontal, 12)
@@ -1387,7 +1433,8 @@ private struct GitHubNotificationCommentComposer: View {
                         } else {
                             scheduleCollapseIfIdle()
                         }
-                    }
+                    },
+                    onEscape: { handleEscape() }
                 )
             }
         }
@@ -1413,6 +1460,7 @@ private struct GitHubNotificationCommentComposer: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
+        .clickablePointer()
         .help(GitHubNotificationMapper.copy(
             locale,
             zh: isExpanded ? "收起评论框" : "展开评论框",
@@ -1438,6 +1486,7 @@ private struct GitHubNotificationCommentComposer: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .clickablePointer()
                 .help(GitHubNotificationMapper.copy(locale, zh: "停止生成", en: "Stop generating"))
             } else if previousDraft != nil {
                 Menu {
@@ -1458,6 +1507,7 @@ private struct GitHubNotificationCommentComposer: View {
                 .menuIndicator(.hidden)
                 .frame(width: 22, height: 22)
                 .focusEffectDisabled()
+                .clickablePointer()
                 .disabled(!hasHydratedThread)
                 .help(aiHelp)
             } else {
@@ -1468,6 +1518,7 @@ private struct GitHubNotificationCommentComposer: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .clickablePointer()
                 .disabled(!hasHydratedThread)
                 .help(aiHelp)
             }
@@ -1716,6 +1767,18 @@ private struct GitHubNotificationCommentComposer: View {
     }
 }
 
+/// AI 生成光圈的尺寸 / 时长。光晕要铺出卡片边缘，gutter 必须大于 blur。
+private enum GitHubNotificationAIHaloMetrics {
+    static let cornerRadius: CGFloat = 8
+    static let glowBleed: CGFloat = 12
+    static let fade: TimeInterval = 0.48
+    static let reduceMotionFade: TimeInterval = 0.28
+
+    static func fadeDuration(_ reduceMotion: Bool) -> TimeInterval {
+        reduceMotion ? reduceMotionFade : fade
+    }
+}
+
 /// AI 生成评论时的彩色光圈。配色对齐搜索框语义光晕（青 / 紫 / 粉 / 橙），
 /// 用角向渐变绕边转做出流动。出现和消失都走透明度过渡，Reduce Motion 只停转动、仍淡入淡出。
 private struct GitHubNotificationAIGeneratingHalo: View {
@@ -1723,13 +1786,12 @@ private struct GitHubNotificationAIGeneratingHalo: View {
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
-    private let cornerRadius: CGFloat = 8
     private let colors: [Color] = [
-        .cyan.opacity(0.85),
-        .purple.opacity(0.88),
-        .pink.opacity(0.82),
-        .orange.opacity(0.72),
-        .cyan.opacity(0.85)
+        .cyan.opacity(0.95),
+        .purple.opacity(0.95),
+        .pink.opacity(0.90),
+        .orange.opacity(0.82),
+        .cyan.opacity(0.95)
     ]
 
     var body: some View {
@@ -1745,18 +1807,18 @@ private struct GitHubNotificationAIGeneratingHalo: View {
                 }
             }
         }
+        .padding(GitHubNotificationAIHaloMetrics.glowBleed)
         .opacity(isActive ? 1 : 0)
-        .animation(fadeAnimation, value: isActive)
+        .animation(.easeInOut(duration: GitHubNotificationAIHaloMetrics.fadeDuration(reduceMotion)), value: isActive)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 
-    private var fadeAnimation: Animation {
-        .easeInOut(duration: reduceMotion ? 0.16 : 0.22)
-    }
-
     private func ring(angle: Double) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let shape = RoundedRectangle(
+            cornerRadius: GitHubNotificationAIHaloMetrics.cornerRadius,
+            style: .continuous
+        )
         let gradient = AngularGradient(
             colors: colors,
             center: .center,
@@ -1764,12 +1826,19 @@ private struct GitHubNotificationAIGeneratingHalo: View {
         )
         return ZStack {
             shape
-                .stroke(gradient, lineWidth: 6)
-                .blur(radius: 7)
+                .stroke(gradient, lineWidth: 14)
+                .blur(radius: 16)
+                .opacity(0.78)
+            shape
+                .stroke(gradient, lineWidth: 8)
+                .blur(radius: 8)
                 .opacity(0.55)
             shape
-                .strokeBorder(gradient, lineWidth: 1.6)
+                .strokeBorder(gradient, lineWidth: 2)
         }
+        .shadow(color: .cyan.opacity(0.35), radius: 10)
+        .shadow(color: .pink.opacity(0.28), radius: 14)
+        .shadow(color: .purple.opacity(0.22), radius: 18)
     }
 }
 
@@ -1784,6 +1853,8 @@ private struct GitHubNotificationCommentTextEditor: NSViewRepresentable {
     var shouldBecomeFirstResponder: Bool = false
     let onHeightChange: (CGFloat) -> Void
     var onEditingChange: ((Bool) -> Void)? = nil
+    /// 撰写态 first responder 在 NSTextView，Esc 不会回到 SwiftUI，这里回传是否已处理。
+    var onEscape: (() -> Bool)? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -1817,6 +1888,10 @@ private struct GitHubNotificationCommentTextEditor: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
+        scrollView.onMeasuredHeight = { [coordinator = context.coordinator] height in
+            coordinator.parent.onHeightChange(height)
+        }
+        scrollView.maximumHeight = maximumHeight
         // 等容器拿到宽度后再测 usedRect，避免首帧按单行高度跳动。
         DispatchQueue.main.async {
             context.coordinator.reportHeight(for: textView)
@@ -1827,6 +1902,12 @@ private struct GitHubNotificationCommentTextEditor: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
         guard let textView = scrollView.documentView as? GitHubNotificationCommentNSTextView else { return }
+        if let commentScroll = scrollView as? GitHubNotificationCommentScrollView {
+            commentScroll.onMeasuredHeight = { [coordinator = context.coordinator] height in
+                coordinator.parent.onHeightChange(height)
+            }
+            commentScroll.maximumHeight = maximumHeight
+        }
         textView.placeholder = placeholder
         textView.setAccessibilityLabel(placeholder)
         textView.isEditable = isEditable
@@ -1834,7 +1915,13 @@ private struct GitHubNotificationCommentTextEditor: NSViewRepresentable {
         if textView.string != text {
             textView.string = text
             textView.needsDisplay = true
+            // 手打字走 textDidChange，glyph 已经按当前宽度折行。
+            // AI 流式写 draft 只进这里，立刻测高会把整段当成一行，框就停在 3 行。
+            scrollView.layoutSubtreeIfNeeded()
             context.coordinator.reportHeight(for: textView)
+            DispatchQueue.main.async {
+                context.coordinator.reportHeight(for: textView)
+            }
         }
         if shouldBecomeFirstResponder {
             context.coordinator.focusIfNeeded(textView, in: scrollView)
@@ -1875,9 +1962,23 @@ private struct GitHubNotificationCommentTextEditor: NSViewRepresentable {
             reportHeight(for: textView)
         }
 
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            guard commandSelector == #selector(NSResponder.cancelOperation(_:)) else { return false }
+            // 输入法候选未上屏时 Esc 应只取消拼音，不能收评论框。
+            if textView.hasMarkedText() { return false }
+            return parent.onEscape?() ?? false
+        }
+
         func reportHeight(for textView: NSTextView) {
             guard let layoutManager = textView.layoutManager,
                   let textContainer = textView.textContainer else { return }
+            if let scrollView = textView.enclosingScrollView {
+                let width = scrollView.contentSize.width
+                if width <= 1 { return }
+                if abs(textView.frame.width - width) >= 0.5 {
+                    textView.setFrameSize(NSSize(width: width, height: max(textView.frame.height, 1)))
+                }
+            }
             layoutManager.ensureLayout(for: textContainer)
             let usedHeight = layoutManager.usedRect(for: textContainer).height
             let height = min(
@@ -1890,6 +1991,11 @@ private struct GitHubNotificationCommentTextEditor: NSViewRepresentable {
 }
 
 private final class GitHubNotificationCommentScrollView: NSScrollView {
+    /// SwiftUI 侧的高度上限，layout 里测高后回传，让 AI 写入也能把外框撑开。
+    var maximumHeight: CGFloat = 0
+    var onMeasuredHeight: ((CGFloat) -> Void)?
+    private var lastReportedHeight: CGFloat = 0
+
     /// 空白处也能点进输入：textView 至少铺满当前 SwiftUI 框；内容更高时再长高，交给滚动。
     override func layout() {
         super.layout()
@@ -1909,6 +2015,10 @@ private final class GitHubNotificationCommentScrollView: NSScrollView {
         if abs(textView.frame.width - width) >= 0.5 || abs(textView.frame.height - height) >= 0.5 {
             textView.setFrameSize(NSSize(width: width, height: height))
         }
+        let reported = maximumHeight > 0 ? min(used, maximumHeight) : used
+        guard abs(reported - lastReportedHeight) >= 0.5 else { return }
+        lastReportedHeight = reported
+        onMeasuredHeight?(reported)
     }
 }
 

@@ -184,6 +184,11 @@ extension View {
     func toolbarIconHover(cornerRadius: CGFloat = 6) -> some View {
         modifier(ToolbarIconHover(cornerRadius: cornerRadius))
     }
+
+    /// 可点入口统一手型光标。plain / bordered Button 默认仍是箭头。
+    func clickablePointer() -> some View {
+        pointerStyle(.link)
+    }
 }
 
 #Preview("PressableHover 演示") {
