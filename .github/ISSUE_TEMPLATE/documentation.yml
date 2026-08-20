@@ -1,0 +1,73 @@
+# Keep documentation corrections focused on one source and make bilingual
+# impact explicit because public Starcat documentation is maintained in English and Chinese.
+name: Documentation improvement
+description: Report incorrect, missing, outdated, or unclear documentation
+title: "[Docs]: "
+labels: ["documentation"]
+body:
+  - type: input
+    id: location
+    attributes:
+      label: Document or page
+      description: Provide a repository path, heading, or public URL.
+      placeholder: docs/7-工具与脚本/本地编译教程.md, README.md, or https://...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: language
+    attributes:
+      label: Affected language
+      options:
+        - English
+        - Simplified Chinese
+        - Both English and Simplified Chinese
+        - Another language
+        - Language-independent
+    validations:
+      required: true
+
+  - type: dropdown
+    id: issue_type
+    attributes:
+      label: Documentation problem
+      options:
+        - Incorrect information
+        - Missing information
+        - Outdated instructions
+        - Broken link or reference
+        - Translation inconsistency
+        - Unclear wording or structure
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Current problem
+      description: Explain what is wrong and how it affects readers.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed correction
+      description: Provide replacement wording, corrected steps, or the information that should be added.
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Supporting evidence
+      description: Link to the relevant code, official documentation, command output, or current product behavior when applicable.
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      options:
+        - label: I checked the current default branch or the current public page before submitting.
+          required: true

@@ -1,0 +1,106 @@
+# Collect reproducible measurements separately from functional bug reports so
+# maintainers can compare the same workload, scale, and distribution channel.
+name: Performance report
+description: Report a reproducible performance regression or resource-usage problem
+title: "[Performance]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Remove GitHub tokens, AI API keys, license keys, private repository names, private notes, and other sensitive data before submitting measurements or logs.
+
+  - type: input
+    id: version
+    attributes:
+      label: Starcat version or commit
+      description: Use the app version for a release build or a full commit SHA for a source build.
+      placeholder: 1.3.0, or a git commit SHA
+    validations:
+      required: true
+
+  - type: dropdown
+    id: channel
+    attributes:
+      label: Distribution
+      options:
+        - Mac App Store
+        - Direct (starcat.ink / Homebrew)
+        - Built from source
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the macOS version, Mac model, architecture, memory, and any relevant Xcode version.
+      placeholder: macOS 15.6, MacBook Pro M3 Pro, arm64, 18 GB memory
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - App launch or activation
+        - GitHub synchronization
+        - Search or filtering
+        - Repository list or detail
+        - README rendering or translation
+        - AI or RAG
+        - Agent workspace
+        - CodeFlow or CodebaseMemory
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: workload
+    attributes:
+      label: Workload and data scale
+      description: Describe the repository count, archive size, message length, indexed project size, or other input that affects the result.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest repeatable sequence that produces the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: measurements
+    attributes:
+      label: Measurements
+      description: Include the tool, sample count, baseline, observed result, and units. Attach a sanitized sample or trace when available.
+      placeholder: Activity Monitor, Instruments, or wall-clock measurements with at least three samples
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected performance
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual performance
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      options:
+        - label: I reproduced this on the version or commit listed above.
+          required: true
+        - label: I removed credentials, private repository data, and other sensitive information.
+          required: true

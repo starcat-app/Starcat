@@ -1,0 +1,88 @@
+# Architecture and maintenance work needs explicit scope and acceptance criteria;
+# this form is not a replacement for user-facing feature requests.
+name: Engineering proposal
+description: Propose a focused architecture, maintenance, or developer-workflow change
+title: "[Engineering]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use the Feature request form for user-facing product ideas. Use this form for an implementation, architecture, maintenance, or contributor-workflow proposal that needs technical review before code changes begin.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Engineering problem
+      description: Describe the concrete limitation, maintenance cost, failure mode, or contributor friction.
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: State exactly what the proposal changes and which modules or workflows are affected.
+    validations:
+      required: true
+
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+      description: State adjacent work that must remain outside this issue.
+    validations:
+      required: true
+
+  - type: textarea
+    id: approach
+    attributes:
+      label: Proposed approach
+      description: Explain the smallest implementation strategy and the important technical constraints.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: channel_impact
+    attributes:
+      label: Distribution impact
+      options:
+        - Shared by Mac App Store and Direct builds
+        - Mac App Store only
+        - Direct only
+        - Support service or companion project
+        - No distribution impact
+        - Unknown or requires investigation
+    validations:
+      required: true
+
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility, data, and security impact
+      description: Cover persisted user data, database migrations, sandbox or entitlement boundaries, credentials, external processes, and backward compatibility as applicable.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Provide observable, testable completion criteria.
+      placeholder: "- [ ] ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Explain why simpler or existing approaches are insufficient.
+
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification plan
+      description: List the tests, builds, static checks, and manual acceptance needed. Separate code evidence from UI, release, or device acceptance.
+    validations:
+      required: true

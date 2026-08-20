@@ -1,0 +1,99 @@
+# Separate build, installation, signing, and launch failures from runtime bugs;
+# each distribution path has different diagnostics and ownership boundaries.
+name: Build or installation problem
+description: Report a build, installation, launch, signing, or update failure
+title: "[Build]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Remove credentials, provisioning profiles, API keys, license keys, certificate details, private paths, and other sensitive data from commands and logs. Report security vulnerabilities through the private security advisory link instead.
+
+  - type: input
+    id: version
+    attributes:
+      label: Starcat version or commit
+      placeholder: 1.3.0, or a git commit SHA
+    validations:
+      required: true
+
+  - type: dropdown
+    id: channel
+    attributes:
+      label: Distribution
+      options:
+        - Mac App Store
+        - Direct download from starcat.ink
+        - Homebrew
+        - Built from source
+    validations:
+      required: true
+
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Failure stage
+      options:
+        - Download
+        - Installation
+        - First launch or Gatekeeper
+        - Source generation or dependency resolution
+        - Build
+        - Test
+        - Code signing or entitlements
+        - Notarization or packaging
+        - Sparkle or Homebrew update
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include macOS version and architecture. For source builds, also include Xcode, Swift, and XcodeGen versions.
+      placeholder: macOS 15.6 arm64; Xcode 26.0; XcodeGen 2.44.1
+    validations:
+      required: true
+
+  - type: textarea
+    id: method
+    attributes:
+      label: Installation method or command
+      description: Describe the exact action or sanitized command that failed.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: error
+    attributes:
+      label: Error output
+      description: Include the complete relevant error block, not only the final line.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+
+  - type: textarea
+    id: attempted
+    attributes:
+      label: Troubleshooting already attempted
+      description: List relevant checks already performed without deleting user data or bypassing security controls.
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      options:
+        - label: I used an official Starcat distribution source or followed the repository build guide.
+          required: true
+        - label: I removed credentials, signing identities, private paths, and other sensitive information.
+          required: true
