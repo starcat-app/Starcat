@@ -23,6 +23,7 @@ struct GitHubNotificationDetailView: View {
     @Binding var selectedItem: ActivityItem?
     @State private var isComposerExpanded = false
     @State private var isMarkingDone = false
+    @State private var isDoneHelpPresented = false
     @State private var doneError: String?
     @State private var translationVM: ReadmeTranslationViewModel?
     @State private var translationPaywall: ProPaywallContext?
@@ -112,6 +113,7 @@ struct GitHubNotificationDetailView: View {
         .navigationSubtitle(navigationSubtitle(item))
         .onChange(of: item.notification?.threadId) { _, _ in
             isComposerExpanded = false
+            isDoneHelpPresented = false
             doneError = nil
             prepareTranslation(for: item)
         }
@@ -166,6 +168,7 @@ struct GitHubNotificationDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .toolbarIconHover()
                 .help(GitHubNotificationMapper.copy(locale, zh: "上一条", en: "Previous notification"))
 
                 Button {
@@ -179,6 +182,7 @@ struct GitHubNotificationDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .toolbarIconHover()
                 .help(GitHubNotificationMapper.copy(locale, zh: "下一条", en: "Next notification"))
             }
         }
@@ -187,32 +191,62 @@ struct GitHubNotificationDetailView: View {
         .background(.clear)
     }
 
-    /// 只 Done 当前这条，等同 GitHub Inbox 的 Done，不会关闭 Issue。
+    /// 完成走 Inbox Done；感叹号只开说明，避免把主操作吃进 popover。
     private func doneButton(_ item: ActivityItem) -> some View {
-        Button {
-            Task { await markCurrentDone(item) }
-        } label: {
-            if isMarkingDone {
-                ProgressView()
-                    .controlSize(.small)
-                    .frame(width: 22, height: 22)
-            } else {
-                Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "完成", en: "Done"))
-                    .font(.callout.weight(.medium))
+        HStack(spacing: 0) {
+            Button {
+                Task { await markCurrentDone(item) }
+            } label: {
+                if isMarkingDone {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 22, height: 22)
+                } else {
+                    Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "完成", en: "Done"))
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .frame(height: 22)
+                        .contentShape(Rectangle())
+                }
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .disabled(isMarkingDone || item.notification?.threadId == nil)
+            .toolbarIconHover(cornerRadius: 0)
+            .help(GitHubNotificationMapper.copy(
+                locale,
+                zh: "从 GitHub 收件箱移走这条，不会关闭 Issue",
+                en: "Remove this from the GitHub inbox. Does not close the issue."
+            ))
+
+            Button {
+                isDoneHelpPresented.toggle()
+            } label: {
+                Image(systemName: "exclamationmark.circle")
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-                    .frame(height: 22)
+                    .frame(width: 20, height: 22)
                     .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .toolbarIconHover(cornerRadius: 0)
+            .help(GitHubNotificationMapper.copy(
+                locale,
+                zh: "查看「完成」会做什么",
+                en: "What Done does"
+            ))
+            .popover(isPresented: $isDoneHelpPresented, arrowEdge: .bottom) {
+                GitHubNotificationDoneHelpPopover(locale: locale)
+                    .appLocaleEnvironment()
+            }
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .disabled(isMarkingDone || item.notification?.threadId == nil)
-        .help(GitHubNotificationMapper.copy(
-            locale,
-            zh: "从 GitHub 收件箱移走这条，不会关闭 Issue",
-            en: "Remove this from the GitHub inbox. Does not close the issue."
-        ))
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.35), lineWidth: 1)
+        )
     }
 
     private func navigationSubtitle(_ item: ActivityItem) -> String {
@@ -404,6 +438,7 @@ struct GitHubNotificationDetailView: View {
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
+            .toolbarIconHover()
             .help("activity.notification.detail.openInStarcat")
             .accessibilityLabel(Text("activity.notification.detail.openInStarcat"))
         }
@@ -422,6 +457,7 @@ struct GitHubNotificationDetailView: View {
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
+            .toolbarIconHover()
             .help("activity.notification.detail.openOnGitHub")
             .accessibilityLabel(Text("activity.notification.detail.openOnGitHub"))
         }
@@ -792,6 +828,29 @@ private struct GitHubNotificationCommentCard: View {
     }
 }
 
+/// 完成钮说明：Inbox Done 只移走收件箱条目，不关 Issue / PR。文案走 mapper，不改 Catalog。
+private struct GitHubNotificationDoneHelpPopover: View {
+    let locale: Locale
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "完成", en: "Done"))
+                .font(.headline)
+                .foregroundStyle(.primary)
+            Text(verbatim: GitHubNotificationMapper.copy(
+                locale,
+                zh: "把这条从 GitHub 收件箱移走，等同 Inbox 的 Done。不会关闭 Issue 或 Pull Request。",
+                en: "Removes this thread from the GitHub inbox (same as Inbox Done). It does not close the issue or pull request."
+            ))
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(width: 260, alignment: .leading)
+    }
+}
+
 /// 顶栏翻译：22×22 气泡图标 + 语言/模式/重翻菜单，对齐 README 详情底栏。
 /// 默认分段对照；全文只替换卡片正文。切段仍按 Markdown 块，缓存按 mode 分文件。
 private struct GitHubNotificationTranslationControls: View {
@@ -839,6 +898,7 @@ private struct GitHubNotificationTranslationControls: View {
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
+            .toolbarIconHover()
             .disabled(!viewModel.isTranslating && !hasSegments)
             .help(buttonTooltip)
             .onHover { hovering in
@@ -911,6 +971,7 @@ private struct GitHubNotificationTranslationControls: View {
             .tint(.secondary)
             .frame(width: 16, height: 22)
             .focusEffectDisabled()
+            .toolbarIconHover(cornerRadius: 4)
             .help("readme.translate.menu.tooltip")
         }
     }
@@ -932,8 +993,9 @@ private struct GitHubNotificationTranslationControls: View {
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: isHoveringWhileTranslating)
             .accessibilityValue(Text(verbatim: translationProgressLabel))
         } else {
+            // SF Symbol 笔画比 14pt bitmap logo 更满，13pt semibold 会显得大一圈。
             Image(systemName: isShowingTranslation ? "character.bubble.fill" : "character.bubble")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(isShowingTranslation ? Color.accentColor : Color.primary)
                 .frame(width: 14, height: 14)
         }
@@ -1040,11 +1102,19 @@ private struct GitHubNotificationCommentComposer: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: isExpanded ? .infinity : nil, alignment: .top)
+        // 非全屏必须按内容高度收拢。光圈 overlay 不能再写成 ZStack + infinity，
+        // 否则会吃掉右栏剩余高度，一行占位会被撑在大空盒子中间。
+        .fixedSize(horizontal: false, vertical: !isExpanded)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
+                .opacity(isGenerating ? 0 : 1)
+                .animation(.easeInOut(duration: reduceMotion ? 0.16 : 0.22), value: isGenerating)
         )
+        .overlay {
+            GitHubNotificationAIGeneratingHalo(isActive: isGenerating)
+        }
         .animation(composerAnimation, value: showsFullComposer)
         .padding(.horizontal, 18)
         .padding(.vertical, 12)
@@ -1643,6 +1713,63 @@ private struct GitHubNotificationCommentComposer: View {
             }
         }
         return error.localizedDescription
+    }
+}
+
+/// AI 生成评论时的彩色光圈。配色对齐搜索框语义光晕（青 / 紫 / 粉 / 橙），
+/// 用角向渐变绕边转做出流动。出现和消失都走透明度过渡，Reduce Motion 只停转动、仍淡入淡出。
+private struct GitHubNotificationAIGeneratingHalo: View {
+    var isActive: Bool
+
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
+    private let cornerRadius: CGFloat = 8
+    private let colors: [Color] = [
+        .cyan.opacity(0.85),
+        .purple.opacity(0.88),
+        .pink.opacity(0.82),
+        .orange.opacity(0.72),
+        .cyan.opacity(0.85)
+    ]
+
+    var body: some View {
+        Group {
+            if reduceMotion {
+                ring(angle: 0)
+            } else {
+                // 生成中才转；paused 在淡出时冻住最后一帧，避免颜色跳回 0°。
+                TimelineView(.animation(minimumInterval: 1.0 / 24.0, paused: !isActive)) { timeline in
+                    let turns = timeline.date.timeIntervalSinceReferenceDate
+                        .truncatingRemainder(dividingBy: 3.2) / 3.2
+                    ring(angle: turns * 360)
+                }
+            }
+        }
+        .opacity(isActive ? 1 : 0)
+        .animation(fadeAnimation, value: isActive)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private var fadeAnimation: Animation {
+        .easeInOut(duration: reduceMotion ? 0.16 : 0.22)
+    }
+
+    private func ring(angle: Double) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let gradient = AngularGradient(
+            colors: colors,
+            center: .center,
+            angle: .degrees(angle)
+        )
+        return ZStack {
+            shape
+                .stroke(gradient, lineWidth: 6)
+                .blur(radius: 7)
+                .opacity(0.55)
+            shape
+                .strokeBorder(gradient, lineWidth: 1.6)
+        }
     }
 }
 

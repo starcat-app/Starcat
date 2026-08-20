@@ -5,6 +5,7 @@
 //  共享 hover 反馈 modifier：
 //  - `pressableHover` 给 hero logo / Stat / 头像等纯视觉元素提供 opacity + scale 反馈。
 //  - `inlineActionHover` 给详情页文字操作与整行操作提供底色、文字层级和手型光标反馈。
+//  - `toolbarIconHover` 给已有方底的 22pt 工具条图标加深浅底 + 手型光标，不缩放。
 //
 //  设计动机：
 //  - 2026-06-02 dong4j 反馈：两个详情页（Manage / Trending）的可点击元素
@@ -104,6 +105,34 @@ private struct InlineActionHover: ViewModifier {
     }
 }
 
+/// 给工具条方钮加 hover：浅底略加深 + 手型光标。
+///
+/// `pressableHover` 的 scale 会让 22pt 工具行跳动，违反 DESIGN.md「hover 不改变布局尺寸」。
+/// 通知详情顶栏的 Starcat / GitHub / 翻译已经有 `squareLogoActionChrome` 浅底，
+/// 这里只叠一层 `primary 8%`，光标改成 link，让用户看出来能点。
+private struct ToolbarIconHover: ViewModifier {
+    var cornerRadius: CGFloat = 6
+
+    @State private var isHovered = false
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color.primary.opacity(isHovered ? 0.08 : 0))
+                    .allowsHitTesting(false)
+            )
+            .pointerStyle(.link)
+            .onHover { isHovered = $0 }
+            .onDisappear { isHovered = false }
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: 0.12),
+                value: isHovered
+            )
+    }
+}
+
 extension View {
     /// 给可点击的纯视觉元素（图标 / 头像 / 文字按钮）加 hover 透明度反馈。
     ///
@@ -149,6 +178,11 @@ extension View {
             cornerRadius: cornerRadius,
             backgroundOpacity: backgroundOpacity
         ))
+    }
+
+    /// 给 22pt 工具条图标加 hover 浅底和手型光标，不缩放。
+    func toolbarIconHover(cornerRadius: CGFloat = 6) -> some View {
+        modifier(ToolbarIconHover(cornerRadius: cornerRadius))
     }
 }
 
