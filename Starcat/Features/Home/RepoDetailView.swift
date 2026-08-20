@@ -530,6 +530,10 @@ struct ReadmeStateView: View {
         }
     }
 
+    private var isReadmeTranslating: Bool {
+        translationControl?.translationVM.isTranslating ?? false
+    }
+
     @ViewBuilder
     private var resolvedReadmeContent: some View {
         switch state {
@@ -568,6 +572,33 @@ struct ReadmeStateView: View {
                 // 与 ActivityReleaseDetailContent 对齐：body slot 必须吃满 Scaffold 剩余
                 // 高度，否则 WKWebView 在 VStack 里按零 intrinsic 高度布局 → 闪一下后空白。
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: StarcatAIHaloMetrics.cornerRadius, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: StarcatAIHaloMetrics.cornerRadius, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
+                        .opacity(isReadmeTranslating ? 0 : 1)
+                        .animation(
+                            .easeInOut(duration: StarcatAIHaloMetrics.fadeDuration(reduceMotion)),
+                            value: isReadmeTranslating
+                        )
+                )
+                // 和 AI 写评论同一套开花光圈：blur 铺在 clip 外的 gutter 里。
+                .padding(StarcatAIHaloMetrics.glowBleed)
+                .overlay {
+                    StarcatAIGeneratingHalo(isActive: isReadmeTranslating)
+                }
+                // 光圈围 README 可视窗格，不围脚注翻译按钮。滚动在 WKWebView 内部，
+                // 包围盒只是窗格大小，走 CA 描边以免 SwiftUI blur 拖慢 WebView。
+                .overlay {
+                    if translationControl != nil {
+                        StarcatAIHaloLayerView(
+                            isActive: translationControl?.translationVM.isTranslating == true,
+                            reduceMotion: reduceMotion
+                        )
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                    }
+                }
                 cacheFooter(
                     cachedAt: cachedAt,
                     sourceHtml: html,

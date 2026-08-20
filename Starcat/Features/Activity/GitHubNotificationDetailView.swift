@@ -802,15 +802,15 @@ private struct GitHubNotificationCommentCard: View {
                 .strokeBorder(Color.primary.opacity(isOpeningPost ? 0.12 : 0.08), lineWidth: 1)
                 .opacity(isHaloActive ? 0 : 1)
                 .animation(
-                    .easeInOut(duration: GitHubNotificationAIHaloMetrics.fadeDuration(reduceMotion)),
+                    .easeInOut(duration: StarcatAIHaloMetrics.fadeDuration(reduceMotion)),
                     value: isHaloActive
                 )
         )
         // 正 padding 给光圈留 gutter；负 padding 把占位收回去，空闲时卡片间距不变。
-        .padding(GitHubNotificationAIHaloMetrics.glowBleed)
+        .padding(StarcatAIHaloMetrics.glowBleed)
         .overlay {
             if isJobTranslating {
-                GitHubNotificationAIHaloRepresentable(
+                StarcatAIHaloLayerView(
                     isActive: isHaloActive,
                     reduceMotion: reduceMotion
                 )
@@ -818,7 +818,7 @@ private struct GitHubNotificationCommentCard: View {
                 .accessibilityHidden(true)
             }
         }
-        .padding(-GitHubNotificationAIHaloMetrics.glowBleed)
+        .padding(-StarcatAIHaloMetrics.glowBleed)
     }
 
     @ViewBuilder
@@ -1167,12 +1167,12 @@ private struct GitHubNotificationCommentComposer: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
                 .opacity(isGenerating ? 0 : 1)
-                .animation(.easeInOut(duration: GitHubNotificationAIHaloMetrics.fadeDuration(reduceMotion)), value: isGenerating)
+                .animation(.easeInOut(duration: StarcatAIHaloMetrics.fadeDuration(reduceMotion)), value: isGenerating)
         )
         // 光晕铺在 clip 外面的一圈 gutter 里，加大 blur 才不会被圆角裁掉。
-        .padding(GitHubNotificationAIHaloMetrics.glowBleed)
+        .padding(StarcatAIHaloMetrics.glowBleed)
         .overlay {
-            GitHubNotificationAIGeneratingHalo(isActive: isGenerating)
+            StarcatAIGeneratingHalo(isActive: isGenerating)
         }
         .animation(composerAnimation, value: showsFullComposer)
         .padding(.horizontal, 10)
@@ -1817,226 +1817,6 @@ private struct GitHubNotificationCommentComposer: View {
             }
         }
         return error.localizedDescription
-    }
-}
-
-/// AI 生成光圈的尺寸 / 时长。光晕要铺出卡片边缘，gutter 必须大于 bloom blur。
-private enum GitHubNotificationAIHaloMetrics {
-    static let cornerRadius: CGFloat = 8
-    static let glowBleed: CGFloat = 8
-    static let fade: TimeInterval = 0.48
-    static let reduceMotionFade: TimeInterval = 0.28
-    static let rotationPeriod: TimeInterval = 3.2
-    static let cardStrokeWidth: CGFloat = 3
-
-    static func fadeDuration(_ reduceMotion: Bool) -> TimeInterval {
-        reduceMotion ? reduceMotionFade : fade
-    }
-}
-
-/// 撰写框光圈：面积小，SwiftUI TimelineView + blur 可以接受。
-/// 评论卡不要走这条路径，见 `GitHubNotificationAIHaloRepresentable`。
-private struct GitHubNotificationAIGeneratingHalo: View {
-    var isActive: Bool
-
-    @Environment(\.starcatReduceMotion) private var reduceMotion
-
-    private let colors: [Color] = [
-        .cyan.opacity(0.95),
-        .purple.opacity(0.95),
-        .pink.opacity(0.90),
-        .orange.opacity(0.82),
-        .cyan.opacity(0.95)
-    ]
-
-    var body: some View {
-        ZStack {
-            // 灭掉之后卸掉 TimelineView / blur 层，避免 opacity 0 还在合成。
-            if isActive {
-                haloContent
-                    .transition(.opacity)
-            }
-        }
-        .padding(GitHubNotificationAIHaloMetrics.glowBleed)
-        .animation(
-            .easeInOut(duration: GitHubNotificationAIHaloMetrics.fadeDuration(reduceMotion)),
-            value: isActive
-        )
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-
-    @ViewBuilder
-    private var haloContent: some View {
-        if reduceMotion {
-            bloomRing(angle: 0)
-        } else {
-            TimelineView(
-                .animation(
-                    minimumInterval: 1.0 / 12.0,
-                    paused: !isActive
-                )
-            ) { timeline in
-                let turns = timeline.date.timeIntervalSinceReferenceDate
-                    .truncatingRemainder(dividingBy: GitHubNotificationAIHaloMetrics.rotationPeriod)
-                    / GitHubNotificationAIHaloMetrics.rotationPeriod
-                bloomRing(angle: turns * 360)
-            }
-        }
-    }
-
-    private func bloomRing(angle: Double) -> some View {
-        let shape = RoundedRectangle(
-            cornerRadius: GitHubNotificationAIHaloMetrics.cornerRadius,
-            style: .continuous
-        )
-        let gradient = AngularGradient(
-            colors: colors,
-            center: .center,
-            angle: .degrees(angle)
-        )
-        return ZStack {
-            shape
-                .stroke(gradient, lineWidth: 8)
-                .blur(radius: 9)
-                .opacity(0.62)
-            shape
-                .stroke(gradient, lineWidth: 4)
-                .blur(radius: 4)
-                .opacity(0.45)
-            shape
-                .strokeBorder(gradient, lineWidth: 1.6)
-        }
-        .shadow(color: .cyan.opacity(0.22), radius: 6)
-        .shadow(color: .pink.opacity(0.16), radius: 8)
-    }
-}
-
-/// 评论卡光圈：Core Animation 圆锥渐变 + 描边 mask，旋转走合成线程。
-///
-/// 不能用 SwiftUI `TimelineView`：长卡片上每帧 AngularGradient 会把整卡（含 MarkdownUI）标脏，
-/// 翻译时多卡同时亮、再滚动，主线程会卡死。
-private struct GitHubNotificationAIHaloRepresentable: NSViewRepresentable {
-    var isActive: Bool
-    var reduceMotion: Bool
-
-    func makeNSView(context: Context) -> GitHubNotificationAIHaloNSView {
-        GitHubNotificationAIHaloNSView()
-    }
-
-    func updateNSView(_ nsView: GitHubNotificationAIHaloNSView, context: Context) {
-        nsView.apply(isActive: isActive, reduceMotion: reduceMotion)
-    }
-}
-
-/// 固定圆角描边 mask，只转渐变层。layout 里关掉隐式动画，避免滚动改 bounds 时 mask 跟着 tween。
-private final class GitHubNotificationAIHaloNSView: NSView {
-    private let gradientLayer = CAGradientLayer()
-    private let maskLayer = CAShapeLayer()
-    private var isActive = false
-    private var reduceMotion = false
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.masksToBounds = false
-        layer?.isOpaque = false
-        layer?.opacity = 0
-
-        gradientLayer.type = .conic
-        gradientLayer.startPoint = CGPoint(x: 0.5, y: 0.5)
-        gradientLayer.endPoint = CGPoint(x: 0.5, y: 0)
-        gradientLayer.colors = [
-            NSColor.cyan.withAlphaComponent(0.95).cgColor,
-            NSColor.purple.withAlphaComponent(0.95).cgColor,
-            NSColor.systemPink.withAlphaComponent(0.90).cgColor,
-            NSColor.systemOrange.withAlphaComponent(0.82).cgColor,
-            NSColor.cyan.withAlphaComponent(0.95).cgColor
-        ]
-
-        maskLayer.fillColor = nil
-        maskLayer.strokeColor = NSColor.white.cgColor
-        maskLayer.lineWidth = GitHubNotificationAIHaloMetrics.cardStrokeWidth
-        maskLayer.lineJoin = .round
-        maskLayer.lineCap = .round
-
-        layer?.addSublayer(gradientLayer)
-        layer?.mask = maskLayer
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        nil
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
-    }
-
-    override func viewDidChangeBackingProperties() {
-        super.viewDidChangeBackingProperties()
-        let scale = window?.backingScaleFactor ?? 2
-        layer?.contentsScale = scale
-        gradientLayer.contentsScale = scale
-        maskLayer.contentsScale = scale
-    }
-
-    override func layout() {
-        super.layout()
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        gradientLayer.frame = bounds
-        maskLayer.frame = bounds
-        let inset = GitHubNotificationAIHaloMetrics.glowBleed
-            + GitHubNotificationAIHaloMetrics.cardStrokeWidth / 2
-        let rect = bounds.insetBy(dx: inset, dy: inset)
-        let radius = GitHubNotificationAIHaloMetrics.cornerRadius
-        maskLayer.path = CGPath(
-            roundedRect: rect,
-            cornerWidth: min(radius, rect.width / 2),
-            cornerHeight: min(radius, rect.height / 2),
-            transform: nil
-        )
-        CATransaction.commit()
-        if isActive && !reduceMotion {
-            startSpinIfNeeded()
-        }
-    }
-
-    func apply(isActive: Bool, reduceMotion: Bool) {
-        let fade = GitHubNotificationAIHaloMetrics.fadeDuration(reduceMotion)
-        self.reduceMotion = reduceMotion
-        self.isActive = isActive
-
-        CATransaction.begin()
-        CATransaction.setAnimationDuration(fade)
-        layer?.opacity = isActive ? 1 : 0
-        CATransaction.commit()
-
-        if isActive && !reduceMotion {
-            startSpinIfNeeded()
-        } else {
-            stopSpin()
-        }
-    }
-
-    private func startSpinIfNeeded() {
-        guard gradientLayer.animation(forKey: "spin") == nil else { return }
-        let spin = CABasicAnimation(keyPath: "transform.rotation.z")
-        spin.fromValue = 0
-        spin.toValue = Double.pi * 2
-        spin.duration = GitHubNotificationAIHaloMetrics.rotationPeriod
-        spin.repeatCount = .infinity
-        spin.isRemovedOnCompletion = false
-        gradientLayer.add(spin, forKey: "spin")
-    }
-
-    private func stopSpin() {
-        gradientLayer.removeAnimation(forKey: "spin")
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        gradientLayer.transform = CATransform3DIdentity
-        CATransaction.commit()
     }
 }
 
