@@ -22,8 +22,10 @@ final class ActivityCategoryCountService {
 
     private var undoStarRepository: (any UndoStarHistoryRepositoryProtocol)?
     private var notificationRepository: (any GitHubNotificationThreadRepositoryProtocol)?
+    private var activityRepository: (any UserRepoActivityRepositoryProtocol)?
     private var countTask: Task<Void, Never>?
     private var notificationCountTask: Task<Void, Never>?
+    private var activityCountTask: Task<Void, Never>?
 
     func count(for category: ActivityCategory) -> Int? {
         if category == .undoStar { return undoStarCount }
@@ -51,11 +53,21 @@ final class ActivityCategoryCountService {
         }
     }
 
-    func configureNotifications(repository: any GitHubNotificationThreadRepositoryProtocol) {
+    func configureNotifications(
+        repository: any GitHubNotificationThreadRepositoryProtocol,
+        activityRepository: (any UserRepoActivityRepositoryProtocol)? = nil
+    ) {
         self.notificationRepository = repository
+        self.activityRepository = activityRepository
         Task { await refreshNotificationCounts() }
         notificationCountTask = Task {
             for await _ in NotificationCenter.default.notifications(named: .githubNotificationInboxDidChange) {
+                guard !Task.isCancelled else { break }
+                await refreshNotificationCounts()
+            }
+        }
+        activityCountTask = Task {
+            for await _ in NotificationCenter.default.notifications(named: .userRepoActivityDidChange) {
                 guard !Task.isCancelled else { break }
                 await refreshNotificationCounts()
             }
@@ -76,7 +88,9 @@ final class ActivityCategoryCountService {
             async let unread = repo.unreadCount()
             async let total = repo.totalCount()
             notificationUnreadCount = try await unread
-            notificationTotalCount = try await total
+            // 「全部」面包屑含账本行；侧栏角标仍只用 GitHub 未读。
+            let activities = (try? await activityRepository?.count()) ?? 0
+            notificationTotalCount = (try await total) + activities
         } catch { }
     }
 }

@@ -5,14 +5,20 @@
 //  通知 inbox 同步：首次 all=true 翻页回填最多 300 条；之后 since + If-Modified-Since。
 //  选中已读：蓝点先灭，400ms 内划走则恢复且不 PATCH；停满再异步 PATCH。
 //  右栏「完成」：DELETE thread 标 Done，只动当前这一条，成功后删本地行。
+//  Star / Unstar / Fork 在 `user_repo_activity` 账本，时间线两表 UNION 游标翻页。
 //
 //  关键约束：
 //  - 回填历史不发系统通知，但会写 notified_at，避免增量把旧条目补弹一次。
 //  - 禁止 mark-all。
 //  - 403 视为缺 `notifications` scope，UI 引导重新授权。
+//  - `@Observable`：Inbox 工具栏 `SyncIconButton(isRefreshing: inbox.isSyncing)` 必须能
+//    收到 `isSyncing` 变化。普通 class 赋值 SwiftUI 看不见，点刷新会真拉网、时间文案
+//    会更新，图标却不转圈。304 / 极快返回仍走 `isSyncing=true`，交给按钮的
+//    `minVisibleDuration`（默认 1s）转满一圈。
 //
 
 import Foundation
+import Observation
 
 extension Notification.Name {
     /// 本地 thread 表变了（同步 / 已读 / 补全）。Sidebar 未读数和 inbox 列表都听这个。
@@ -31,6 +37,7 @@ enum GitHubNotificationInboxError: Error, Equatable {
 }
 
 @MainActor
+@Observable
 final class GitHubNotificationInboxService {
 
     private let apiClient: any GitHubAPIClientProtocol
@@ -38,9 +45,11 @@ final class GitHubNotificationInboxService {
     private let syncStateRepository: any GitHubNotificationSyncStateRepositoryProtocol
     private let notificationService: AppNotificationService
     private let settings: AppSettings
+    private let activityRepository: (any UserRepoActivityRepositoryProtocol)?
     private let clock: () -> Date
     private let dwellNanoseconds: UInt64
 
+    /// Inbox 刷新按钮绑定这个旗标。必须可被 Observation 跟踪，否则 `SyncIconButton` 不转。
     private(set) var isSyncing = false
     private(set) var missingScope = false
     private(set) var lastErrorMessage: String?
@@ -63,6 +72,7 @@ final class GitHubNotificationInboxService {
         syncStateRepository: any GitHubNotificationSyncStateRepositoryProtocol,
         notificationService: AppNotificationService,
         settings: AppSettings,
+        activityRepository: (any UserRepoActivityRepositoryProtocol)? = nil,
         clock: @escaping () -> Date = Date.init,
         dwellNanoseconds: UInt64 = GitHubNotificationMapper.dwellNanoseconds
     ) {
@@ -71,12 +81,45 @@ final class GitHubNotificationInboxService {
         self.syncStateRepository = syncStateRepository
         self.notificationService = notificationService
         self.settings = settings
+        self.activityRepository = activityRepository
         self.clock = clock
         self.dwellNanoseconds = dwellNanoseconds
     }
 
     func fetchCached(limit: Int = GitHubNotificationMapper.backfillLimit) async -> [GitHubNotificationThreadRecord] {
         (try? await threadRepository.fetchAll(limit: limit)) ?? []
+    }
+
+    /// 「全部」两表混排；Unread / Mention / Review 只含通知；Star / Unstar / Fork 只含账本。
+    func fetchTimelinePage(
+        cursor: GitHubInboxTimelineCursor?,
+        limit: Int = GitHubNotificationMapper.timelinePageSize
+    ) async -> (rows: [GitHubInboxTimelineRow], hasMore: Bool) {
+        guard let activityRepository else {
+            let threads = (try? await threadRepository.fetchAll(limit: limit + 1)) ?? []
+            let hasMore = threads.count > limit
+            let page = Array(threads.prefix(limit))
+            return (page.map { .notification($0, language: nil) }, hasMore)
+        }
+        return (try? await activityRepository.fetchPage(
+            segment: listSegment,
+            cursor: cursor,
+            limit: limit
+        )) ?? ([], false)
+    }
+
+    func timelineTotalCount() async -> Int {
+        let notifications = (try? await threadRepository.totalCount()) ?? 0
+        guard listSegment == .all else { return notifications }
+        let activities = (try? await activityRepository?.count()) ?? 0
+        return notifications + activities
+    }
+
+    /// 把本地仍 star / 仍是自己的 fork 灌进账本。可重复跑。
+    func backfillUserRepoActivity(userID: Int64, login: String) async {
+        try? await activityRepository?.backfillFromLocalCaches(
+            actor: UserRepoActivityActor(userID: userID, userName: login)
+        )
     }
 
     /// 清掉本机残留的 `starcat-demo-` 演示 thread。不再生成新的。
@@ -91,6 +134,9 @@ final class GitHubNotificationInboxService {
     }
 
     /// 打开分类 / 手动刷新 / 后台 poller 共用。
+    ///
+    /// 无论回填、增量还是 304，都先拉高 `isSyncing`。已在同步中的二次点击直接返回，
+    /// 按钮此时已经在转，不需要再写一套空转动画。
     func sync() async {
         guard !isSyncing else { return }
         isSyncing = true

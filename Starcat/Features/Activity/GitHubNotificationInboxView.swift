@@ -3,7 +3,8 @@
 //  Starcat
 //
 //  活动页「通知」中栏：Mail 密度时间线（HH:mm + 轴线 + 事件句 + 主体类型 chip）。
-//  不用 UnifiedRepoRow，也不走活动页通用详情。
+//  「全部」把 GitHub 通知和当前用户 Star / Unstar / Fork 账本按时间混排，SQL UNION 游标翻页。
+//  类型筛选用下拉（默认 All），形态对齐 Manage 排序菜单；账本行点开走仓库详情，不是 Issue 会话。
 //
 
 import AppKit
@@ -17,7 +18,10 @@ struct GitHubNotificationInboxView: View {
 
     @Binding var selectedItem: ActivityItem?
 
-    @State private var records: [GitHubNotificationThreadRecord] = []
+    @State private var rows: [GitHubInboxTimelineRow] = []
+    @State private var cursor: GitHubInboxTimelineCursor?
+    @State private var hasMore = false
+    @State private var isLoadingPage = false
     @State private var segment: GitHubNotificationSegment = .all
     @State private var lastFetchedAt: Date?
     @State private var selectedThreadId: String?
@@ -35,15 +39,20 @@ struct GitHubNotificationInboxView: View {
         .task {
             inbox.listSegment = segment
             await inbox.clearDemoThreads()
-            records = await inbox.fetchCached()
-            lastFetchedAt = await inbox.lastFetchedAt()
+            if let user = authSession.state.user {
+                await inbox.backfillUserRepoActivity(userID: user.id, login: user.login)
+            }
+            await reloadFirstPage()
             consumePendingOpenIfNeeded()
             await inbox.sync()
-            await reloadFromCache()
+            await reloadFirstPage()
             consumePendingOpenIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .githubNotificationInboxDidChange)) { _ in
-            Task { await reloadFromCache() }
+            Task { await reloadFirstPage() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .userRepoActivityDidChange)) { _ in
+            Task { await reloadFirstPage() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .starcatOpenGitHubNotification)) { _ in
             consumePendingOpenIfNeeded()
@@ -58,26 +67,21 @@ struct GitHubNotificationInboxView: View {
         ) {
             Task {
                 await inbox.sync()
-                await reloadFromCache()
+                await reloadFirstPage()
             }
         }
     }
 
-    /// 只保留分段 + 同步行，和星标中栏 `manageFilterBar` 同高。
+    /// 只保留类型下拉 + 同步行，和星标中栏 `manageFilterBar` 同高。
     /// 总数 / 未读走系统 `navigationSubtitle`（面包屑下一行），不要再叠 `通知 42` 标题。
     @ViewBuilder
     private var toolbar: some View {
         HStack(spacing: 8) {
-            Picker("", selection: $segment) {
-                ForEach(GitHubNotificationSegment.allCases) { item in
-                    Text(LocalizedStringKey(item.titleKey)).tag(item)
+            GitHubNotificationSegmentMenu(selection: $segment, locale: locale)
+                .onChange(of: segment) { _, newValue in
+                    inbox.listSegment = newValue
+                    Task { await reloadFirstPage() }
                 }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .onChange(of: segment) { _, newValue in
-                inbox.listSegment = newValue
-            }
 
             Spacer(minLength: 8)
 
@@ -88,15 +92,16 @@ struct GitHubNotificationInboxView: View {
                     .lineLimit(1)
             }
 
+            // InboxService 是 @Observable：isSyncing 闪过 true 后，按钮 minVisibleDuration 会转满一圈。
             SyncIconButton(
                 isRefreshing: inbox.isSyncing,
                 disabled: inbox.isSyncing,
                 tooltip: String.l10n("activity.refresh")
             ) {
-                Task {
-                    await inbox.sync()
-                    await reloadFromCache()
-                }
+            Task {
+                await inbox.sync()
+                await reloadFirstPage()
+            }
             }
 
             Menu {
@@ -119,41 +124,35 @@ struct GitHubNotificationInboxView: View {
             .frame(width: 22, height: 22)
             .help(GitHubNotificationMapper.copy(locale, zh: "在 GitHub 打开通知收件箱", en: "Open GitHub Notifications"))
         }
-        .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
-        .padding(.top, ManageListFilterBarMetrics.topPadding)
-        .padding(.bottom, ManageListFilterBarMetrics.bottomPadding)
+        .manageListFilterBarChrome()
     }
 
     @ViewBuilder
     private var content: some View {
-        if inbox.missingScope && records.isEmpty {
+        if inbox.missingScope && rows.isEmpty {
             missingScopeEmpty
-        } else if records.isEmpty && inbox.isSyncing {
+        } else if rows.isEmpty && inbox.isSyncing {
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if visibleRecords.isEmpty {
+        } else if rows.isEmpty {
             emptyState
         } else {
             timeline
         }
     }
 
-    private var visibleRecords: [GitHubNotificationThreadRecord] {
-        records.filter { GitHubNotificationMapper.matchesSegment($0, segment: segment) }
-    }
-
-    private var groupedRecords: [(GitHubNotificationDayGroup, [GitHubNotificationThreadRecord])] {
+    private var groupedRows: [(GitHubNotificationDayGroup, [GitHubInboxTimelineRow])] {
         let calendar = Calendar.current
         let now = Date()
-        var buckets: [GitHubNotificationDayGroup: [GitHubNotificationThreadRecord]] = [:]
-        for record in visibleRecords {
-            let date = GitHubNotificationMapper.parseDate(record.updatedAt) ?? now
+        var buckets: [GitHubNotificationDayGroup: [GitHubInboxTimelineRow]] = [:]
+        for row in rows {
+            let date = GitHubNotificationMapper.parseDate(row.occurredAt) ?? now
             let group = GitHubNotificationMapper.dayGroup(for: date, now: now, calendar: calendar)
-            buckets[group, default: []].append(record)
+            buckets[group, default: []].append(row)
         }
         return GitHubNotificationDayGroup.allCases.compactMap { group in
-            guard let rows = buckets[group], !rows.isEmpty else { return nil }
-            return (group, rows)
+            guard let grouped = buckets[group], !grouped.isEmpty else { return nil }
+            return (group, grouped)
         }
     }
 
@@ -169,16 +168,21 @@ struct GitHubNotificationInboxView: View {
                             titleKey: group.titleKey,
                             isFirst: isFirst
                         )
-                    case .row(let record, let isFirst, let isLast):
+                    case .row(let row, let isFirst, let isLast):
                         GitHubNotificationTimelineRow(
-                            record: record,
-                            isSelected: selectedThreadId == record.id,
+                            display: timelineDisplay(for: row),
+                            isSelected: selectedThreadId == row.id,
                             isFirstInTimeline: isFirst,
                             isLastInTimeline: isLast,
                             onSelect: {
-                                Task { await select(record) }
+                                Task { await select(row) }
                             }
                         )
+                        .onAppear {
+                            if isLast {
+                                Task { await loadNextPageIfNeeded() }
+                            }
+                        }
                     }
                 }
             }
@@ -188,13 +192,13 @@ struct GitHubNotificationInboxView: View {
 
     /// 整条时间线（含分组标题）共用一根轴线，避免「一组只有一条」时上下线段都被裁掉。
     private var timelineEntries: [GitHubNotificationTimelineEntry] {
-        let groups = groupedRecords
+        let groups = groupedRows
         var entries: [GitHubNotificationTimelineEntry] = []
-        for (groupIndex, (group, rows)) in groups.enumerated() {
+        for (groupIndex, (group, grouped)) in groups.enumerated() {
             entries.append(.header(group, isFirst: groupIndex == 0))
-            for (rowIndex, record) in rows.enumerated() {
-                let isLast = groupIndex == groups.count - 1 && rowIndex == rows.count - 1
-                entries.append(.row(record, isFirst: false, isLast: isLast))
+            for (rowIndex, row) in grouped.enumerated() {
+                let isLast = groupIndex == groups.count - 1 && rowIndex == grouped.count - 1
+                entries.append(.row(row, isFirst: false, isLast: isLast))
             }
         }
         return entries
@@ -237,19 +241,37 @@ struct GitHubNotificationInboxView: View {
         .padding()
     }
 
-    private func reloadFromCache() async {
-        records = await inbox.fetchCached()
+    private func reloadFirstPage() async {
+        isLoadingPage = true
+        defer { isLoadingPage = false }
+        let page = await inbox.fetchTimelinePage(cursor: nil)
+        rows = page.rows
+        hasMore = page.hasMore
+        cursor = page.rows.last?.cursor
         lastFetchedAt = await inbox.lastFetchedAt()
         if inbox.pendingOpenThreadId != nil {
             consumePendingOpenIfNeeded()
             return
         }
         if let selectedThreadId,
-           let record = records.first(where: { $0.id == selectedThreadId }) {
-            selectedItem = await makeItem(from: record)
-        } else if selectedThreadId != nil {
+           let row = rows.first(where: { $0.id == selectedThreadId }) {
+            selectedItem = await makeItem(from: row)
+        } else if selectedThreadId != nil, !rows.contains(where: { $0.id == selectedThreadId }) {
             selectedThreadId = nil
             selectedItem = nil
+        }
+    }
+
+    private func loadNextPageIfNeeded() async {
+        guard hasMore, !isLoadingPage, let cursor else { return }
+        isLoadingPage = true
+        defer { isLoadingPage = false }
+        let page = await inbox.fetchTimelinePage(cursor: cursor)
+        let existing = Set(rows.map(\.id))
+        rows.append(contentsOf: page.rows.filter { !existing.contains($0.id) })
+        hasMore = page.hasMore
+        if let last = page.rows.last {
+            self.cursor = last.cursor
         }
     }
 
@@ -257,30 +279,41 @@ struct GitHubNotificationInboxView: View {
         guard let threadId = inbox.pendingOpenThreadId else { return }
         inbox.pendingOpenThreadId = nil
         Task {
-            if let cached = records.first(where: { $0.id == threadId }) {
-                await select(cached)
+            if let row = rows.first(where: { $0.id == threadId }) {
+                await select(row)
                 return
             }
             if let record = try? await dependencies.githubNotificationThreadRepository.fetch(id: threadId) {
-                await select(record)
+                await select(.notification(record, language: nil))
             }
         }
     }
 
-    private func select(_ record: GitHubNotificationThreadRecord) async {
-        if let previous = selectedThreadId, previous != record.id {
+    private func select(_ row: GitHubInboxTimelineRow) async {
+        if let previous = selectedThreadId, previous != row.id {
             await inbox.cancelDwell(id: previous)
         }
-        selectedThreadId = record.id
-        selectedItem = await makeItem(from: record)
-        await inbox.beginDwell(id: record.id)
-        await inbox.hydrate(id: record.id)
-        if let updated = try? await dependencies.githubNotificationThreadRepository.fetch(id: record.id) {
-            selectedItem = await makeItem(from: updated)
+        selectedThreadId = row.id
+        selectedItem = await makeItem(from: row)
+        if case .notification(let record, _) = row {
+            await inbox.beginDwell(id: record.id)
+            await inbox.hydrate(id: record.id)
+            if let updated = try? await dependencies.githubNotificationThreadRepository.fetch(id: record.id) {
+                selectedItem = await makeItem(from: .notification(updated, language: row.language))
+            }
         }
     }
 
-    private func makeItem(from record: GitHubNotificationThreadRecord) async -> ActivityItem {
+    private func makeItem(from row: GitHubInboxTimelineRow) async -> ActivityItem {
+        switch row {
+        case .notification(let record, _):
+            return await makeNotificationItem(from: record)
+        case .activity(let item):
+            return await makeActivityItem(from: item)
+        }
+    }
+
+    private func makeNotificationItem(from record: GitHubNotificationThreadRecord) async -> ActivityItem {
         let date = GitHubNotificationMapper.parseDate(record.updatedAt)
         var localRepo: Repo?
         if let repoId = record.repositoryId {
@@ -329,20 +362,113 @@ struct GitHubNotificationInboxView: View {
             )
         )
     }
+
+    private func makeActivityItem(from item: UserRepoActivityListItem) async -> ActivityItem {
+        let date = GitHubNotificationMapper.parseDate(item.record.occurredAt)
+        var localRepo = try? await dependencies.repoRepository.findById(item.record.repoId)
+        if localRepo == nil {
+            let parts = item.record.fullName.split(separator: "/")
+            if parts.count == 2 {
+                localRepo = try? await dependencies.repoRepository.findByOwnerName(
+                    owner: String(parts[0]),
+                    name: String(parts[1])
+                )
+            }
+        }
+        return ActivityItem(
+            id: "user-repo-activity:\(item.record.id)",
+            kind: .userRepoActivity,
+            category: .notification,
+            title: item.record.fullName,
+            subtitle: GitHubNotificationMapper.userRepoActivityHeadline(
+                kind: item.record.kind,
+                locale: locale
+            ),
+            body: item.snippet,
+            createdAt: date,
+            htmlURL: URL(string: item.record.htmlUrl),
+            repo: localRepo,
+            release: nil,
+            releases: [],
+            isRead: true,
+            userRepoActivity: ActivityUserRepoActivityPayload(kind: item.record.kind)
+        )
+    }
+
+    private func timelineDisplay(for row: GitHubInboxTimelineRow) -> GitHubNotificationTimelineDisplay {
+        switch row {
+        case .notification(let record, let language):
+            return GitHubNotificationTimelineDisplay(
+                id: record.id,
+                occurredAt: record.updatedAt,
+                unread: record.unread,
+                actorLogin: GitHubNotificationMapper.eventActor(for: record) ?? record.actorLogin ?? "",
+                headline: GitHubNotificationMapper.eventHeadline(for: record, locale: locale),
+                chip: GitHubNotificationMapper.subjectChip(for: record),
+                fullName: record.repositoryFullName,
+                snippet: GitHubNotificationMapper.listSnippet(record.excerpt),
+                subjectType: record.subjectType,
+                subjectNumber: record.subjectNumber,
+                language: language
+            )
+        case .activity(let item):
+            let login = authSession.state.user?.login
+                ?? item.ownerLogin
+                ?? ""
+            return GitHubNotificationTimelineDisplay(
+                id: item.record.id,
+                occurredAt: item.record.occurredAt,
+                unread: false,
+                actorLogin: login,
+                headline: GitHubNotificationMapper.userRepoActivityHeadline(
+                    kind: item.record.kind,
+                    locale: locale
+                ),
+                chip: GitHubNotificationMapper.userRepoActivityChip(kind: item.record.kind),
+                fullName: item.record.fullName,
+                snippet: item.snippet,
+                subjectType: "",
+                subjectNumber: nil,
+                language: item.language
+            )
+        }
+    }
 }
 
 /// 时间线条目：分组标题与通知行共用一根轴线。
 private enum GitHubNotificationTimelineEntry: Identifiable {
     case header(GitHubNotificationDayGroup, isFirst: Bool)
-    case row(GitHubNotificationThreadRecord, isFirst: Bool, isLast: Bool)
+    case row(GitHubInboxTimelineRow, isFirst: Bool, isLast: Bool)
 
     var id: String {
         switch self {
         case .header(let group, _):
             return "header-\(group.rawValue)"
-        case .row(let record, _, _):
-            return record.id
+        case .row(let row, _, _):
+            return row.id
         }
+    }
+}
+
+private struct GitHubNotificationTimelineDisplay: Equatable {
+    let id: String
+    let occurredAt: String
+    let unread: Bool
+    let actorLogin: String
+    let headline: String
+    let chip: GitHubNotificationChip
+    let fullName: String
+    let snippet: String?
+    let subjectType: String
+    let subjectNumber: Int?
+    let language: String?
+
+    /// 选中条 / 轴点：有语言走 GitHub 语言色，否则通知分类蓝。
+    var accentColor: Color {
+        if let language, !language.isEmpty {
+            return LanguageColor.color(for: language)
+        }
+        return ActivityCategory.notification.iconColor
     }
 }
 
@@ -358,6 +484,51 @@ private enum GitHubNotificationTimelineMetrics {
 
     static var railLeadingInset: CGFloat {
         leadingPadding + stampWidth + stampSpacing
+    }
+}
+
+/// 通知类型下拉。视觉对齐 `UnifiedSortMenu`，图标用筛选而不是排序箭头。
+///
+/// 不用分段控件：All / Unread / Mention / Review / Star / Unstar / Fork
+/// 七项会把同步行挤掉。`Picker` + `.inline` 让当前项带勾。
+private struct GitHubNotificationSegmentMenu: View {
+    @Binding var selection: GitHubNotificationSegment
+    let locale: Locale
+
+    var body: some View {
+        Menu {
+            Picker(
+                GitHubNotificationMapper.copy(locale, zh: "筛选", en: "Filter"),
+                selection: $selection
+            ) {
+                ForEach(GitHubNotificationSegment.allCases) { item in
+                    if item.showsDividerBefore {
+                        Divider()
+                    }
+                    Label {
+                        Text(verbatim: item.displayTitle(locale: locale))
+                    } icon: {
+                        Image(systemName: item.systemImage)
+                    }
+                    .tag(item)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                    .foregroundStyle(.secondary)
+                Text(verbatim: selection.displayTitle(locale: locale))
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityLabel(GitHubNotificationMapper.copy(locale, zh: "筛选", en: "Filter"))
+            .accessibilityValue(selection.displayTitle(locale: locale))
+        }
+        .fixedSize()
+        .help(GitHubNotificationMapper.copy(locale, zh: "按类型筛选通知", en: "Filter notifications by type"))
     }
 }
 
@@ -400,9 +571,10 @@ private struct GitHubNotificationTimelineHeader: View {
     }
 }
 
-/// 时间线行：`HH:mm` + 轴线 + 头像 + 事件句 + 仓库次行 + 可选摘录。选中是行内圆角底，不整行拉满。
+/// 时间线行：`HH:mm` + 轴线 + 头像 + 事件句 + 仓库次行 + 可选摘录。
+/// 选中跟 repo 卡片同一套语言色浅底 / 描边 / 左侧 3pt 竖条；不整行拉满，也不挪时间轴。
 private struct GitHubNotificationTimelineRow: View {
-    let record: GitHubNotificationThreadRecord
+    let display: GitHubNotificationTimelineDisplay
     let isSelected: Bool
     let isFirstInTimeline: Bool
     let isLastInTimeline: Bool
@@ -424,26 +596,26 @@ private struct GitHubNotificationTimelineRow: View {
                     .frame(width: GitHubNotificationTimelineMetrics.railWidth)
 
                 GitHubNotificationActorAvatar(
-                    login: GitHubNotificationMapper.eventActor(for: record) ?? "",
+                    login: display.actorLogin,
                     size: 24
                 )
                 .padding(.top, 1)
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .top, spacing: 8) {
-                        Text(verbatim: GitHubNotificationMapper.eventHeadline(for: record, locale: locale))
-                            .font(.subheadline.weight(.semibold))
+                        Text(verbatim: display.headline)
+                            .font(.subheadline.weight(display.unread ? .semibold : .regular))
                             .foregroundStyle(.primary)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                         Spacer(minLength: 4)
-                        GitHubNotificationReasonChip(chip: GitHubNotificationMapper.subjectChip(for: record))
+                        GitHubNotificationReasonChip(chip: display.chip)
                     }
 
                     HStack(spacing: 6) {
                         RemoteAvatar(
                             urlString: GitHubNotificationMapper.repositoryAvatarURL(
-                                fromFullName: record.repositoryFullName
+                                fromFullName: display.fullName
                             ),
                             size: 14,
                             fallbackSymbol: "shippingbox.fill",
@@ -473,10 +645,11 @@ private struct GitHubNotificationTimelineRow: View {
             .overlay(alignment: .leading) {
                 GeometryReader { proxy in
                     GitHubNotificationTimelineRail(
-                        unread: record.unread,
+                        unread: display.unread,
                         isFirst: isFirstInTimeline,
                         isLast: isLastInTimeline,
-                        showsDot: true
+                        showsDot: true,
+                        accent: display.accentColor
                     )
                     .frame(
                         width: GitHubNotificationTimelineMetrics.railWidth,
@@ -494,6 +667,22 @@ private struct GitHubNotificationTimelineRow: View {
                 style: .continuous
             )
             .fill(rowFill)
+            .background {
+                // 与 `RepoRowSurface` 同款：半透明 controlBackground 让浅/深色下选中都够跳。
+                RoundedRectangle(
+                    cornerRadius: GitHubNotificationTimelineMetrics.rowCornerRadius,
+                    style: .continuous
+                )
+                .fill(Color(nsColor: .controlBackgroundColor).opacity(isSelected || isHovered ? 0.40 : 0))
+            }
+            .overlay(alignment: .leading) {
+                // 选中左侧 3pt 语言色条。贴在圆角底上，不改 `HH:mm` / 轴线布局。
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(display.accentColor)
+                    .frame(width: isSelected ? 3 : 0)
+                    .padding(.vertical, 8)
+                    .opacity(isSelected ? 1 : 0)
+            }
             .padding(.horizontal, GitHubNotificationTimelineMetrics.selectedInset)
             .padding(.vertical, 1)
         }
@@ -502,7 +691,10 @@ private struct GitHubNotificationTimelineRow: View {
                 cornerRadius: GitHubNotificationTimelineMetrics.rowCornerRadius,
                 style: .continuous
             )
-            .stroke(isSelected ? Color.accentColor.opacity(0.22) : Color.clear, lineWidth: 1)
+            .stroke(
+                isSelected ? display.accentColor.opacity(0.42) : Color.clear,
+                lineWidth: 1
+            )
             .padding(.horizontal, GitHubNotificationTimelineMetrics.selectedInset)
             .padding(.vertical, 1)
         }
@@ -511,20 +703,21 @@ private struct GitHubNotificationTimelineRow: View {
                 isHovered = hovering
             }
         }
+        .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.82), value: isSelected)
     }
 
     private var rowFill: Color {
         if isSelected {
-            return Color.accentColor.opacity(0.12)
+            return display.accentColor.opacity(0.18)
         }
         if isHovered {
-            return Color.primary.opacity(0.04)
+            return display.accentColor.opacity(0.08)
         }
         return .clear
     }
 
     private var updatedAt: Date? {
-        GitHubNotificationMapper.parseDate(record.updatedAt)
+        GitHubNotificationMapper.parseDate(display.occurredAt)
     }
 
     private var stamp: String {
@@ -535,28 +728,27 @@ private struct GitHubNotificationTimelineRow: View {
     private var caption: String {
         let relative = updatedAt.map { RelativeTimeText.pastEvent($0, locale: locale) } ?? ""
         return GitHubNotificationMapper.timelineCaption(
-            fullName: record.repositoryFullName,
-            subjectType: record.subjectType,
-            number: record.subjectNumber,
+            fullName: display.fullName,
+            subjectType: display.subjectType,
+            number: display.subjectNumber,
             relativeTime: relative
         )
     }
 
     /// 没 hydrate 就不要留空行，行高才稳。
     private var snippet: String? {
-        guard let text = GitHubNotificationMapper.listSnippet(record.excerpt),
-              !text.isEmpty
-        else { return nil }
+        guard let text = display.snippet, !text.isEmpty else { return nil }
         return text
     }
 }
 
-/// 组内上下接缝的 1pt 轴线；圆点本身就是未读指示。高度必须铺满整行，不能写死。
+/// 组内上下接缝的 1pt 轴线。语言色点：实心 = 未读，空心 = 已读 / 账本。
 private struct GitHubNotificationTimelineRail: View {
     let unread: Bool
     let isFirst: Bool
     let isLast: Bool
     var showsDot: Bool = true
+    var accent: Color = Color.secondary
 
     var body: some View {
         VStack(spacing: 0) {
@@ -565,9 +757,15 @@ private struct GitHubNotificationTimelineRail: View {
                 .frame(width: 1)
                 .frame(maxHeight: .infinity)
             if showsDot {
-                Circle()
-                    .fill(unread ? Color.accentColor : Color.secondary)
-                    .frame(width: unread ? 8 : 6, height: unread ? 8 : 6)
+                if unread {
+                    Circle()
+                        .fill(accent)
+                        .frame(width: 8, height: 8)
+                } else {
+                    Circle()
+                        .strokeBorder(accent, lineWidth: 1.5)
+                        .frame(width: 6, height: 6)
+                }
             }
             Rectangle()
                 .fill(Color.secondary.opacity(isLast ? 0 : 0.35))
@@ -600,6 +798,12 @@ struct GitHubNotificationReasonChip: View {
             return Color(hex: "#8250df") ?? .purple
         case .security:
             return Color.red
+        case .star:
+            return Color(hex: "#9a6700") ?? .yellow
+        case .unstar:
+            return Color(hex: "#cf222e") ?? .red
+        case .fork:
+            return Color(hex: "#1b7c83") ?? .teal
         case .release, .discussion, .comment, .mention, .review, .assign:
             // Release / Discussion / 其它剩余 chip 用安静灰，不靠彩虹色抢扫描。
             return Color.secondary

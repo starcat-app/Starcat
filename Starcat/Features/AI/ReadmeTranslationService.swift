@@ -43,15 +43,53 @@ enum ReadmeTranslationError: Error, LocalizedError, Equatable {
     }
 }
 
-/// 一次 README 翻译的完整上下文。
+/// 一次翻译的完整上下文。缓存按 `cacheOwner/cacheRepo` 落盘，不要求一定是 GitHub 仓库。
 struct ReadmeTranslationRequest: Sendable {
-    var repo: Repo
+    var cacheOwner: String
+    var cacheRepo: String
+    var repoId: Int64?
     /// 只用于完整文档指纹；不会发送给 AI。
     var sourceHtml: String
-    /// WebView 从可见 DOM 中提取的自然语言段落。
+    /// 发给模型的自然语言段落（README 来自 DOM，通知来自 Markdown 切段）。
     var sourceSegments: [ReadmeSourceSegment]
     var targetLanguage: ReadmeTranslationLanguage
     var mode: ReadmeTranslationMode
+
+    init(
+        repo: Repo,
+        sourceHtml: String,
+        sourceSegments: [ReadmeSourceSegment],
+        targetLanguage: ReadmeTranslationLanguage,
+        mode: ReadmeTranslationMode
+    ) {
+        self.init(
+            cacheOwner: repo.owner,
+            cacheRepo: repo.name,
+            repoId: repo.id,
+            sourceHtml: sourceHtml,
+            sourceSegments: sourceSegments,
+            targetLanguage: targetLanguage,
+            mode: mode
+        )
+    }
+
+    init(
+        cacheOwner: String,
+        cacheRepo: String,
+        repoId: Int64? = nil,
+        sourceHtml: String,
+        sourceSegments: [ReadmeSourceSegment],
+        targetLanguage: ReadmeTranslationLanguage,
+        mode: ReadmeTranslationMode
+    ) {
+        self.cacheOwner = cacheOwner
+        self.cacheRepo = cacheRepo
+        self.repoId = repoId
+        self.sourceHtml = sourceHtml
+        self.sourceSegments = sourceSegments
+        self.targetLanguage = targetLanguage
+        self.mode = mode
+    }
 }
 
 @MainActor
@@ -187,8 +225,8 @@ final class ReadmeTranslationService {
             // 旧缓存可能是“内容重排但段落全复用”；写回当前文档 hash，后续即可完整命中。
             try await translationRepository.upsert(
                 record,
-                owner: request.repo.owner,
-                repo: request.repo.name,
+                owner: request.cacheOwner,
+                repo: request.cacheRepo,
                 mode: request.mode
             )
             return record
@@ -296,8 +334,8 @@ final class ReadmeTranslationService {
     ) async throws {
         try await translationRepository.upsert(
             record,
-            owner: request.repo.owner,
-            repo: request.repo.name,
+            owner: request.cacheOwner,
+            repo: request.cacheRepo,
             mode: request.mode
         )
         onBatch?(
@@ -366,7 +404,7 @@ final class ReadmeTranslationService {
             .map { ReadmeTranslatedSegment(sourceHash: $0.key, translatedText: $0.value) }
             .sorted { $0.sourceHash < $1.sourceHash }
         return ReadmeTranslation(
-            repoId: request.repo.id,
+            repoId: request.repoId,
             targetLanguage: request.targetLanguage.rawValue,
             model: model,
             sourceHash: documentHash,

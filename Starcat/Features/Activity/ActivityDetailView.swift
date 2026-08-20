@@ -236,6 +236,8 @@ struct ActivityDetailView: View {
             repoDetail(item, titleKey: "activity.detail.suggestionTitle")
         case .notification:
             notificationDetail(item)
+        case .userRepoActivity:
+            repoDetail(item, titleKey: "activity.detail.starTitle")
         }
     }
 
@@ -519,7 +521,7 @@ struct ActivityDetailView: View {
 
     private func shouldShowReadme(for item: ActivityItem) -> Bool {
         switch item.kind {
-        case .star, .repository, .suggestion:
+        case .star, .repository, .suggestion, .userRepoActivity:
             return true
         case .announcement, .release, .following, .notification:
             return false

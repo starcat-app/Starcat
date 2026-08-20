@@ -113,6 +113,10 @@ final class SyncManager {
     private let apiClient: any GitHubAPIClientProtocol
     /// D-01：依赖协议而非具体 struct，便于单测注入 Mock。
     private let repository: any RepoRepositoryProtocol
+    /// 当前用户 Star / Unstar 账本。单测可不传。
+    private let activityRepository: (any UserRepoActivityRepositoryProtocol)?
+    /// GitHub `login`，写入账本 `user_name`。没有 login 就不记账本。
+    private let userNameProvider: @MainActor () -> String?
     /// 系统通知入口。只在需要用户回来处理的失败态使用，普通同步完成不通知。
     private let notificationService: ReleaseNotificationService?
     /// 匿名遥测入口。仅记录 sync 结果类别和粗粒度数量分桶，不包含用户 ID 或 repo 信息。
@@ -141,13 +145,17 @@ final class SyncManager {
         repository: any RepoRepositoryProtocol,
         notificationService: ReleaseNotificationService? = nil,
         telemetryManager: TelemetryManager? = nil,
-        rateLimitBufferSeconds: TimeInterval = 5
+        rateLimitBufferSeconds: TimeInterval = 5,
+        activityRepository: (any UserRepoActivityRepositoryProtocol)? = nil,
+        userNameProvider: @escaping @MainActor () -> String? = { nil }
     ) {
         self.apiClient = apiClient
         self.repository = repository
         self.notificationService = notificationService
         self.telemetryManager = telemetryManager
         self.rateLimitBufferSeconds = rateLimitBufferSeconds
+        self.activityRepository = activityRepository
+        self.userNameProvider = userNameProvider
     }
 
     // MARK: - 同步入口
@@ -318,6 +326,7 @@ final class SyncManager {
                 }
 
                 try await repository.upsertStarred(dtos, userID: userID, syncedAt: syncStartedAt)
+                await recordSyncedStars(dtos, userID: userID)
                 allRemoteIDs.formUnion(dtos.map { $0.repo.id })
                 totalSynced += dtos.count
                 progress?.current = totalSynced
@@ -351,7 +360,16 @@ final class SyncManager {
 
             // 全量路径才做 unstar 兜底；增量看不到中间页 unstar，跳过避免误删。
             if !incrementalMode {
-                try await repository.markUnstarredExcept(remoteRepoIDs: allRemoteIDs, userID: userID)
+                let unstarredIDs = try await repository.markUnstarredExcept(
+                    remoteRepoIDs: allRemoteIDs,
+                    userID: userID
+                )
+                // 网页 Unstar 没有历史接口；全量扫完才能知道哪些本地 star 消失了。
+                try? await activityRepository?.recordUnstars(
+                    repoIDs: unstarredIDs,
+                    actor: activityActor(userID: userID),
+                    occurredAt: UserRepoActivityRecord.timestamp()
+                )
             }
 
             // 进度与统计的最终值：
@@ -459,6 +477,26 @@ final class SyncManager {
         }
 
         runningTask = nil
+    }
+
+    /// Stars 同步看到的 `starred_at` 记进账本。最新事件已是 star 时仓储会跳过。
+    private func recordSyncedStars(_ dtos: [StarredRepoDTO], userID: Int64) async {
+        guard let activityRepository, !dtos.isEmpty else { return }
+        let actor = activityActor(userID: userID)
+        guard actor.isIdentified else { return }
+        let items = dtos.map { dto in
+            UserRepoActivityStarDraft(
+                repoID: dto.repo.id,
+                fullName: dto.repo.fullName,
+                htmlURL: dto.repo.htmlUrl,
+                occurredAt: UserRepoActivityRecord.normalizedTimestamp(dto.starredAt)
+            )
+        }
+        try? await activityRepository.recordSyncedStars(items, actor: actor)
+    }
+
+    private func activityActor(userID: Int64) -> UserRepoActivityActor {
+        UserRepoActivityActor(userID: userID, userName: userNameProvider() ?? "")
     }
 
     /// 判断本地 `lastSyncAt` 是否在 TTL 内。解析失败 / 无记录 → 视为过期（需要 sync）。

@@ -4,7 +4,7 @@
 //
 //  通知页右栏：按 GitHub Issue 会话排版（评论卡片 + 底部评论框）。
 //  顶区与中栏同构：`.navigationTitle` / `.navigationSubtitle` + 与分段条同高的工具行，
-//  避免中栏 / 右栏分割线错层。
+//  避免中栏 / 右栏分割线错层。根节点挂 `detailHeroTintBackground`，和账本仓库详情同一道光晕。
 //
 
 import AppKit
@@ -16,12 +16,16 @@ struct GitHubNotificationDetailView: View {
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
+    @Environment(AppSettings.self) private var settings
     @Environment(\.locale) private var locale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @Binding var selectedItem: ActivityItem?
     @State private var isComposerExpanded = false
     @State private var isMarkingDone = false
     @State private var doneError: String?
+    @State private var translationVM: ReadmeTranslationViewModel?
+    @State private var translationPaywall: ProPaywallContext?
 
     private var inbox: GitHubNotificationInboxService {
         dependencies.githubNotificationInboxService
@@ -36,7 +40,9 @@ struct GitHubNotificationDetailView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(.background)
+        .sheet(item: translationPaywallBinding) { context in
+            ProPaywallSheet.hosted(context: context, dependencies: dependencies)
+        }
     }
 
     private var emptyState: some View {
@@ -49,6 +55,7 @@ struct GitHubNotificationDetailView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.background)
     }
 
     private func populatedDetail(_ item: ActivityItem) -> some View {
@@ -61,13 +68,20 @@ struct GitHubNotificationDetailView: View {
                     .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
                     .padding(.bottom, 6)
             }
+            if let translationError = translationVM?.errorMessage, !translationError.isEmpty {
+                Text(verbatim: translationError)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
+                    .padding(.bottom, 6)
+            }
             Divider()
             if !isComposerExpanded {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
                         if let payload = item.notification {
                             repoRow(payload)
-                            conversation(payload)
+                            conversation(payload, translation: translationVM)
                         }
                     }
                     .padding(18)
@@ -91,16 +105,30 @@ struct GitHubNotificationDetailView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // 语言色光晕挂在会话详情根上，和账本 / Manage 详情同一套；工具行走透明才能透出来。
+        .detailHeroTintBackground(tint: item.accentColor)
         // 标题进系统导航栏，和中栏「活动 > 通知 / 46 条通知」同一层；下面只留一行工具条。
         .navigationTitle(item.title)
         .navigationSubtitle(navigationSubtitle(item))
         .onChange(of: item.notification?.threadId) { _, _ in
             isComposerExpanded = false
             doneError = nil
+            prepareTranslation(for: item)
+        }
+        .onChange(of: settings.readmeTranslationLanguage) { _, _ in
+            prepareTranslation(for: item)
+        }
+        .onChange(of: translationHydrationSignature(item)) { _, _ in
+            // 评论后到时不要把已显示的对照打回原文；只在原文态刷新缓存探测。
+            refreshTranslationSourceIfNeeded(for: item)
+        }
+        .onAppear {
+            prepareTranslation(for: item)
         }
     }
 
     /// 与中栏分段条同高：chip + 可点 `Issue #20` 在左，入口 / 上下条在右。
+    /// 高度走 `manageListFilterBarChrome()`，不要只靠相同 padding——Picker 比 chip 高。
     /// 关掉详情靠中栏改选或清空选择，不再单独放关闭钮。
     private func headerToolbar(_ item: ActivityItem) -> some View {
         HStack(spacing: 8) {
@@ -114,7 +142,12 @@ struct GitHubNotificationDetailView: View {
             Spacer(minLength: 8)
             HStack(spacing: 4) {
                 detailLinkButtons(item)
-                doneButton(item)
+                if let vm = translationVM, let payload = item.notification {
+                    translationControls(payload: payload, viewModel: vm)
+                }
+                if item.notification?.threadId != nil {
+                    doneButton(item)
+                }
                 Button {
                     selectAdjacent(-1)
                 } label: {
@@ -142,9 +175,9 @@ struct GitHubNotificationDetailView: View {
                 .help(GitHubNotificationMapper.copy(locale, zh: "下一条", en: "Next notification"))
             }
         }
-        .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
-        .padding(.top, ManageListFilterBarMetrics.topPadding)
-        .padding(.bottom, ManageListFilterBarMetrics.bottomPadding)
+        .manageListFilterBarChrome()
+        // 透明，让根节点语言色光晕透到 chip 行和标题栏背后。
+        .background(.clear)
     }
 
     /// 只 Done 当前这条，等同 GitHub Inbox 的 Done，不会关闭 Issue。
@@ -190,17 +223,18 @@ struct GitHubNotificationDetailView: View {
                     urlString: GitHubNotificationMapper.repositoryAvatarURL(
                         fromFullName: payload.repositoryFullName
                     ),
-                    size: 18,
+                    size: 22,
                     fallbackSymbol: "shippingbox.fill",
                     showBorder: false
                 )
+                // 原先 caption + secondary 比评论作者还弱；提到与 opening post 同一档，仓库才是会话上下文。
                 Text(verbatim: payload.repositoryFullName)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Image(systemName: "arrow.up.right")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
         }
@@ -209,14 +243,27 @@ struct GitHubNotificationDetailView: View {
     }
 
     @ViewBuilder
-    private func conversation(_ payload: ActivityNotificationPayload) -> some View {
+    private func conversation(
+        _ payload: ActivityNotificationPayload,
+        translation: ReadmeTranslationViewModel?
+    ) -> some View {
+        let document = translationDocument(payload)
+        let isShowing = {
+            if case .showingTranslation = translation?.displayMode { return true }
+            return false
+        }()
+        let translations = translation?.renderState.translations ?? []
+
         if let excerpt = payload.excerpt, !excerpt.isEmpty {
             GitHubNotificationCommentCard(
                 login: payload.authorLogin ?? "",
                 createdAt: payload.authorCreatedAt,
                 markdown: excerpt,
                 repositoryFullName: payload.repositoryFullName,
-                isOpeningPost: true
+                isOpeningPost: true,
+                blocks: document.blocks.filter { $0.kind == .opening },
+                translations: translations,
+                isShowingTranslation: isShowing
             )
         }
 
@@ -226,9 +273,106 @@ struct GitHubNotificationDetailView: View {
                 createdAt: GitHubNotificationMapper.parseDate(comment.createdAt),
                 markdown: comment.body,
                 repositoryFullName: payload.repositoryFullName,
-                isOpeningPost: false
+                isOpeningPost: false,
+                blocks: document.blocks.filter {
+                    if case .comment(let id) = $0.kind { return id == comment.id }
+                    return false
+                },
+                translations: translations,
+                isShowingTranslation: isShowing
             )
         }
+    }
+
+    private func translationDocument(_ payload: ActivityNotificationPayload) -> GitHubNotificationTranslation.Document {
+        GitHubNotificationTranslation.makeDocument(
+            opening: payload.excerpt.map(GitHubNotificationMapper.prepareMarkdown),
+            comments: payload.comments.map { comment in
+                GitHubNotificationComment(
+                    id: comment.id,
+                    login: comment.login,
+                    body: GitHubNotificationMapper.prepareMarkdown(comment.body),
+                    htmlURL: comment.htmlURL,
+                    createdAt: comment.createdAt
+                )
+            }
+        )
+    }
+
+    private func prepareTranslation(for item: ActivityItem) {
+        let vm: ReadmeTranslationViewModel
+        if let existing = translationVM {
+            vm = existing
+        } else {
+            vm = ReadmeTranslationViewModel(service: dependencies.readmeTranslationService)
+            translationVM = vm
+        }
+        guard let payload = item.notification else {
+            vm.prepare(
+                identity: nil,
+                cacheOwner: nil,
+                cacheRepo: nil,
+                sourceHtml: nil,
+                targetLanguage: settings.readmeTranslationLanguage,
+                mode: .segmented
+            )
+            return
+        }
+        let document = translationDocument(payload)
+        vm.prepare(
+            identity: GitHubNotificationTranslation.identity(threadId: payload.threadId),
+            cacheOwner: GitHubNotificationTranslation.cacheOwner,
+            cacheRepo: GitHubNotificationTranslation.cacheRepo(threadId: payload.threadId),
+            sourceHtml: document.sourceText,
+            targetLanguage: settings.readmeTranslationLanguage,
+            mode: .segmented
+        )
+    }
+
+    /// excerpt / 评论条数变化（同一 thread 后到）才刷新；切帖走 threadId onChange。
+    private func translationHydrationSignature(_ item: ActivityItem) -> String {
+        guard let payload = item.notification else { return "" }
+        return "\(payload.excerpt?.count ?? 0)|\(payload.comments.count)|\(payload.comments.last?.id ?? 0)"
+    }
+
+    /// 评论后到时：原文态重新探测缓存；对照已上屏或正在翻译则不动，避免闪回原文。
+    private func refreshTranslationSourceIfNeeded(for item: ActivityItem) {
+        guard let vm = translationVM else {
+            prepareTranslation(for: item)
+            return
+        }
+        if vm.isTranslating { return }
+        if case .showingTranslation = vm.displayMode { return }
+        prepareTranslation(for: item)
+    }
+
+    private var translationPaywallBinding: Binding<ProPaywallContext?> {
+        Binding(
+            get: { translationPaywall ?? translationVM?.paywallContext },
+            set: { newValue in
+                if newValue == nil {
+                    translationPaywall = nil
+                    translationVM?.dismissPaywall()
+                } else {
+                    translationPaywall = newValue
+                }
+            }
+        )
+    }
+
+    @ViewBuilder
+    private func translationControls(
+        payload: ActivityNotificationPayload,
+        viewModel: ReadmeTranslationViewModel
+    ) -> some View {
+        let document = translationDocument(payload)
+        GitHubNotificationTranslationControls(
+            viewModel: viewModel,
+            document: document,
+            threadId: payload.threadId,
+            settings: settings,
+            reduceMotion: reduceMotion
+        )
     }
 
     /// GitHub / Starcat 入口放工具行：会话滚走或评论框展开时仍能点。
@@ -519,13 +663,15 @@ private struct GitHubNotificationUserLink: View {
     }
 }
 
-/// GitHub 风格评论卡片：头像 + 「谁在何时发布/评论」+ Markdown 正文。
 private struct GitHubNotificationCommentCard: View {
     let login: String
     let createdAt: Date?
     let markdown: String
     let repositoryFullName: String
     let isOpeningPost: Bool
+    var blocks: [GitHubNotificationTranslation.Block] = []
+    var translations: [ReadmeRenderedTranslation] = []
+    var isShowingTranslation: Bool = false
     @Environment(\.locale) private var locale
 
     var body: some View {
@@ -557,7 +703,7 @@ private struct GitHubNotificationCommentCard: View {
             Divider()
 
             if !markdown.isEmpty {
-                GitHubNotificationMarkdown(content: markdown, repositoryFullName: repositoryFullName)
+                commentBody
                     .padding(12)
             }
         }
@@ -566,6 +712,173 @@ private struct GitHubNotificationCommentCard: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(Color.primary.opacity(isOpeningPost ? 0.12 : 0.08), lineWidth: 1)
         )
+    }
+
+    @ViewBuilder
+    private var commentBody: some View {
+        if isShowingTranslation, !blocks.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                    VStack(alignment: .leading, spacing: 6) {
+                        GitHubNotificationMarkdown(
+                            content: block.markdown,
+                            repositoryFullName: repositoryFullName
+                        )
+                        if let segmentId = block.segmentId,
+                           let translated = GitHubNotificationTranslation.translation(
+                            for: segmentId,
+                            from: translations
+                           ),
+                           !translated.isEmpty {
+                            Text(translated)
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+            }
+        } else {
+            GitHubNotificationMarkdown(content: markdown, repositoryFullName: repositoryFullName)
+        }
+    }
+}
+
+/// 顶栏翻译：22×22 气泡图标 + 语言/重翻菜单，对齐 Starcat / GitHub 入口。
+/// 固定分段对照，不提供 README 的全文替换模式。
+private struct GitHubNotificationTranslationControls: View {
+    let viewModel: ReadmeTranslationViewModel
+    let document: GitHubNotificationTranslation.Document
+    let threadId: String
+    let settings: AppSettings
+    let reduceMotion: Bool
+
+    @State private var isHoveringWhileTranslating = false
+
+    private var isShowingTranslation: Bool {
+        if case .showingTranslation = viewModel.displayMode { return true }
+        return false
+    }
+
+    private var hasSegments: Bool {
+        !document.segments.isEmpty
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button {
+                if viewModel.isTranslating {
+                    viewModel.cancelTranslation()
+                } else {
+                    viewModel.toggleTranslation(
+                        identity: GitHubNotificationTranslation.identity(threadId: threadId),
+                        cacheOwner: GitHubNotificationTranslation.cacheOwner,
+                        cacheRepo: GitHubNotificationTranslation.cacheRepo(threadId: threadId),
+                        sourceHtml: document.sourceText,
+                        sourceSegments: document.segments,
+                        targetLanguage: settings.readmeTranslationLanguage,
+                        mode: .segmented
+                    )
+                }
+            } label: {
+                iconView
+                    .squareLogoActionChrome(
+                        side: 22,
+                        backgroundColor: isShowingTranslation
+                            ? Color.accentColor.opacity(0.14)
+                            : Color.secondary.opacity(0.10)
+                    )
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .disabled(!viewModel.isTranslating && !hasSegments)
+            .help(buttonTooltip)
+            .onHover { hovering in
+                if viewModel.isTranslating {
+                    isHoveringWhileTranslating = hovering
+                } else if isHoveringWhileTranslating {
+                    isHoveringWhileTranslating = false
+                }
+            }
+            .accessibilityLabel(Text(isShowingTranslation
+                ? "readme.translate.showOriginal"
+                : "readme.translate.action"))
+
+            Menu {
+                Picker(selection: Binding(
+                    get: { settings.readmeTranslationLanguage },
+                    set: { settings.readmeTranslationLanguage = $0 }
+                )) {
+                    ForEach(ReadmeTranslationLanguage.allCases) { lang in
+                        Text(verbatim: lang.displayName).tag(lang)
+                    }
+                } label: {
+                    Text("readme.translate.menu.language")
+                }
+                .pickerStyle(.inline)
+
+                Divider()
+
+                Button {
+                    viewModel.regenerate(
+                        identity: GitHubNotificationTranslation.identity(threadId: threadId),
+                        cacheOwner: GitHubNotificationTranslation.cacheOwner,
+                        cacheRepo: GitHubNotificationTranslation.cacheRepo(threadId: threadId),
+                        sourceHtml: document.sourceText,
+                        sourceSegments: document.segments,
+                        targetLanguage: settings.readmeTranslationLanguage,
+                        mode: .segmented
+                    )
+                } label: {
+                    Label("readme.translate.menu.regenerate", systemImage: "arrow.clockwise")
+                }
+                .disabled(viewModel.isTranslating || !hasSegments)
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .tint(.secondary)
+            .frame(width: 16, height: 22)
+            .focusEffectDisabled()
+            .help("readme.translate.menu.tooltip")
+        }
+    }
+
+    @ViewBuilder
+    private var iconView: some View {
+        if viewModel.isTranslating {
+            ZStack {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 14, height: 14)
+                    .opacity(isHoveringWhileTranslating ? 0 : 1)
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.red)
+                    .opacity(isHoveringWhileTranslating ? 1 : 0)
+            }
+            .frame(width: 14, height: 14)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: isHoveringWhileTranslating)
+        } else {
+            Image(systemName: isShowingTranslation ? "character.bubble.fill" : "character.bubble")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isShowingTranslation ? Color.accentColor : Color.primary)
+                .frame(width: 14, height: 14)
+        }
+    }
+
+    private var buttonTooltip: LocalizedStringKey {
+        if viewModel.isTranslating && isHoveringWhileTranslating {
+            return "readme.translate.tooltip.stop"
+        }
+        if isShowingTranslation { return "readme.translate.tooltip.showOriginal" }
+        return "readme.translate.tooltip.translate"
     }
 }
 

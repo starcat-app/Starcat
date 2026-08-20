@@ -60,6 +60,7 @@ struct ActivityDetailScaffoldShell: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
     @Environment(HomeViewModel.self) private var homeViewModel
+    @Environment(\.locale) private var locale
 
     /// 局部 README ViewModel；首次进入时 lazy 构造。
     /// 与 Weekly / Trending Shell 同款:Shell 自持 → 不污染主路径 README 状态。
@@ -95,6 +96,20 @@ struct ActivityDetailScaffoldShell: View {
         }
     }
 
+    /// 账本行顶栏：「你 Star 了 · 2 小时前」。传入 Scaffold `topBanner`，
+    /// 画在语言色光晕里面，避免右栏顶上一截白板。GitHub 通知不进这个 shell。
+    private var userRepoActivityBanner: String? {
+        guard item.kind == .userRepoActivity, let kind = item.userRepoActivity?.kind else {
+            return nil
+        }
+        let relative = item.createdAt.map { RelativeTimeText.pastEvent($0, locale: locale) } ?? ""
+        return GitHubNotificationMapper.userRepoActivityBanner(
+            kind: kind,
+            relativeTime: relative,
+            locale: locale
+        )
+    }
+
     // MARK: - Scaffold 装配
 
     @ViewBuilder
@@ -110,6 +125,7 @@ struct ActivityDetailScaffoldShell: View {
             fallbackAccentColor: item.category.iconColor,
             // v2.0:tooltip 与 toggle 行为对齐,直接派生自 `repo.isStarred`。
             starHelpKey: repo.isStarred ? "repo.unstar" : "repo.star",
+            topBanner: userRepoActivityBanner,
             onStarTapped: {
                 try await handleStarTapped(repo: repo)
             }

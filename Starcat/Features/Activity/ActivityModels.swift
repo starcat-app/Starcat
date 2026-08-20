@@ -173,6 +173,8 @@ enum ActivityKind: String, Sendable {
     case following
     case suggestion
     case notification
+    /// 当前用户自己的 Star / Unstar / Fork。出现在通知时间线，右栏走仓库详情。
+    case userRepoActivity
 }
 
 /// following 分类卡片专属 payload（PR-2，2026-06-16）。
@@ -241,6 +243,11 @@ struct ActivityNotificationPayload: Equatable, Sendable {
     var repositoryId: Int64? = nil
 }
 
+/// 通知时间线里当前用户 Star / Unstar / Fork 的右栏 banner。
+struct ActivityUserRepoActivityPayload: Equatable, Sendable {
+    let kind: UserRepoActivityKind
+}
+
 /// Activity 中栏与右栏共享的展示模型。
 ///
 /// 这里保留 `repo` / `release` 引用，而不是把字段全部摊平成字符串，是因为右侧详情页
@@ -274,6 +281,8 @@ struct ActivityItem: Identifiable, Equatable {
     var announcement: ActivityAnnouncementPayload? = nil
     /// 通知 inbox 专属。`kind != .notification` 时永远为 nil。
     var notification: ActivityNotificationPayload? = nil
+    /// 账本行专属。`kind != .userRepoActivity` 时永远为 nil。
+    var userRepoActivity: ActivityUserRepoActivityPayload? = nil
 
     /// 行 / 详情头部 accent 配色：
     /// - 若卡片关联到具体 repo 且 repo 有主语言，复用语言色，维持与 RepoRowView 一致的视觉

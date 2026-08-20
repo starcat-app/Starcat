@@ -99,11 +99,12 @@ struct GRDBRepoRepository {
     /// 将本地存在但不在传入 ID 集合中的 repo 标记为 is_starred = false。
     /// 同时清理 starred_repos 中相应行。
     /// 不删除 repo / 笔记 / 标签，确保用户数据安全。
-    func markUnstarredExcept(remoteRepoIDs: Set<Int64>, userID: Int64) async throws {
+    @discardableResult
+    func markUnstarredExcept(remoteRepoIDs: Set<Int64>, userID: Int64) async throws -> Set<Int64> {
         try await database.writer.write { db in
             let localIDs = try Int64.fetchSet(db, sql: "SELECT id FROM repos WHERE is_starred = 1")
             let toUnstar = localIDs.subtracting(remoteRepoIDs)
-            guard !toUnstar.isEmpty else { return }
+            guard !toUnstar.isEmpty else { return [] }
 
             // SQLite IN (...) 不支持数组绑定，手动展开占位符
             let placeholders = Array(repeating: "?", count: toUnstar.count).joined(separator: ",")
@@ -119,6 +120,7 @@ struct GRDBRepoRepository {
             )
 
             AppLog.sync.info("Marked \(toUnstar.count, privacy: .public) repos as unstarred")
+            return toUnstar
         }
     }
 
@@ -356,6 +358,36 @@ struct GRDBRepoRepository {
                     LIMIT ?
                     """,
                 arguments: [cutoff, safeLimit]
+            )
+        }
+    }
+
+    /// 当前用户 Fork 出去的仓库。owner 命中或 `user_projects` 归属为 owner 都算。
+    /// 排序用 `created_at`：Fork 会产生新仓库，GitHub 把这一刻写成 created_at；本地没有更准的 fork 时间。
+    func fetchRecentOwnedForks(userID: Int64, ownerLogin: String, limit: Int) async throws -> [Repo] {
+        let safeLimit = max(1, limit)
+        let login = ownerLogin.trimmingCharacters(in: .whitespacesAndNewlines)
+        return try await database.writer.read { db in
+            try Repo.fetchAll(
+                db,
+                sql: """
+                    SELECT r.*
+                    FROM repos r
+                    WHERE r.is_fork = 1
+                      AND (
+                        (? != '' AND r.owner = ? COLLATE NOCASE)
+                        OR EXISTS (
+                            SELECT 1
+                            FROM user_projects p
+                            WHERE p.repo_id = r.id
+                              AND p.user_id = ?
+                              AND p.affiliation = 'owner'
+                        )
+                      )
+                    ORDER BY r.created_at DESC
+                    LIMIT ?
+                    """,
+                arguments: [login, login, userID, safeLimit]
             )
         }
     }

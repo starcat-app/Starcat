@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Observation
 import Testing
 import UserNotifications
 import os.lock
@@ -120,6 +121,37 @@ struct GitHubNotificationMapperTests {
             GitHubNotificationMapper.listCountSubtitle(total: 42, unread: 0, locale: en)
             == "42 notifications · 0 unread"
         )
+    }
+
+    @Test("账本分段不匹配 GitHub 通知行")
+    func ledgerSegmentsDoNotMatchNotifications() {
+        let record = GitHubNotificationMapper.record(
+            from: GitHubNotificationThreadDTO(
+                id: "n-1",
+                unread: true,
+                reason: "mention",
+                updatedAt: "2026-08-19T10:00:00Z",
+                subject: GitHubNotificationSubjectDTO(
+                    title: "Hello",
+                    url: "https://api.github.com/repos/o/r/issues/1",
+                    latestCommentUrl: nil,
+                    type: "Issue"
+                ),
+                repository: GitHubNotificationRepositoryDTO(
+                    id: 1,
+                    fullName: "o/r",
+                    name: "r",
+                    owner: GitHubNotificationOwnerDTO(login: "o")
+                )
+            ),
+            fetchedAt: "2026-08-19T10:00:00Z",
+            firstSeenAt: "2026-08-19T10:00:00Z"
+        )
+        #expect(GitHubNotificationMapper.matchesSegment(record, segment: .all))
+        #expect(GitHubNotificationMapper.matchesSegment(record, segment: .mention))
+        #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .star))
+        #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .unstar))
+        #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .fork))
     }
 
     @Test("评论里的 #20 和 owner/repo#20 收成 GitHub 链接")
@@ -319,6 +351,27 @@ struct GitHubNotificationMapperTests {
         #expect(GitHubNotificationMapper.subjectChip(type: "Issue", reason: "security_alert") == .security)
         #expect(
             GitHubNotificationMapper.chipTitle(for: .discussion, locale: Locale(identifier: "zh-Hans")) == "讨论"
+        )
+    }
+
+    @Test("账本事件句与 chip：Star / Unstar / Fork")
+    func userRepoActivityCopy() {
+        let zh = Locale(identifier: "zh-Hans")
+        let en = Locale(identifier: "en")
+        #expect(GitHubNotificationMapper.userRepoActivityHeadline(kind: .star, locale: zh) == "你 Star 了这个项目")
+        #expect(GitHubNotificationMapper.userRepoActivityHeadline(kind: .fork, locale: en) == "You forked this repository")
+        #expect(GitHubNotificationMapper.userRepoActivityHeadline(kind: .unstar, locale: zh) == "你 Unstar 了这个项目")
+        #expect(GitHubNotificationMapper.userRepoActivityChip(kind: .star) == .star)
+        #expect(GitHubNotificationMapper.userRepoActivityChip(kind: .unstar) == .unstar)
+        #expect(GitHubNotificationMapper.userRepoActivityChip(kind: .fork) == .fork)
+        #expect(GitHubNotificationMapper.chipTitle(for: .star, locale: zh) == "Star")
+        #expect(GitHubNotificationMapper.chipTitle(for: .unstar, locale: zh) == "Unstar")
+        #expect(
+            GitHubNotificationMapper.userRepoActivityBanner(
+                kind: .star,
+                relativeTime: "2 小时前",
+                locale: zh
+            ) == "你 Star 了 · 2 小时前"
         )
     }
 
@@ -627,6 +680,35 @@ struct GitHubNotificationInboxTests {
         let stored = try await env.threads.fetchAll(limit: 10)
         #expect(stored.count == 1)
         #expect(stored.first?.id == "only")
+    }
+
+    /// SyncIconButton 只认 `isRefreshing`。服务若不走 Observation，
+    /// `isSyncing` 变 true 时视图收不到，图标就不会转圈。
+    @Test("isSyncing 对 Observation 可见，手动刷新才能驱动 SyncIconButton 转圈")
+    @MainActor
+    func isSyncingIsObservableForRefreshButton() async throws {
+        let env = try makeEnv()
+        env.mock.listNotificationsHandler = { _, _, _, _, _ in
+            try await Task.sleep(for: .milliseconds(80))
+            return Self.listResponse([Self.makeDTO(id: "obs")])
+        }
+
+        let observedChange = OSAllocatedUnfairLock(initialState: false)
+        withObservationTracking {
+            _ = env.inbox.isSyncing
+        } onChange: {
+            observedChange.withLock { $0 = true }
+        }
+
+        #expect(env.inbox.isSyncing == false)
+
+        let syncTask = Task { await env.inbox.sync() }
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(env.inbox.isSyncing)
+        #expect(observedChange.withLock { $0 })
+
+        await syncTask.value
+        #expect(env.inbox.isSyncing == false)
     }
 
     @Test("400ms 内划走不 PATCH")
@@ -976,12 +1058,62 @@ struct GitHubNotificationInboxTests {
         #expect(try await env.threads.fetch(id: demoID) == nil)
     }
 
+    @Test("账本行进时间线，GitHub thread API 仍只对通知 id")
+    func ledgerMergesIntoTimelineAndSkipsGitHubThreadAPIs() async throws {
+        let env = try makeEnv()
+        let fetchedAt = "2026-08-19T00:00:00Z"
+        try await env.threads.upsertMany([
+            GitHubNotificationMapper.record(
+                from: Self.makeDTO(id: "n1", updatedAt: "2026-08-19T00:00:00Z"),
+                fetchedAt: fetchedAt,
+                firstSeenAt: fetchedAt
+            )
+        ])
+        try await env.repos.upsertStarred(
+            [Self.makeStarredDTO(id: 42, name: "hello", starredAt: "2026-08-19T12:00:00Z")],
+            userID: 1,
+            syncedAt: Date()
+        )
+        await env.inbox.backfillUserRepoActivity(userID: 1, login: "tester")
+
+        var hydrateCalls = 0
+        env.mock.hydrateNotificationSubjectHandler = { _ in
+            hydrateCalls += 1
+            return GitHubNotificationSubjectHydration(
+                htmlURL: nil,
+                actorLogin: nil,
+                excerpt: nil,
+                createdAt: nil,
+                state: nil
+            )
+        }
+        env.mock.markNotificationThreadDoneHandler = { _ in }
+
+        env.inbox.listSegment = .all
+        let page = await env.inbox.fetchTimelinePage(cursor: nil)
+        #expect(page.rows.contains(where: { $0.id.hasPrefix("star:github_sync:42:") }))
+        #expect(page.rows.contains(where: { $0.id == "n1" }))
+        #expect(page.rows.first?.id.hasPrefix("star:github_sync:42:") == true)
+
+        let starID = page.rows.first { $0.id.hasPrefix("star:") }!.id
+        await env.inbox.hydrate(id: starID)
+        await env.inbox.beginDwell(id: starID)
+        #expect(hydrateCalls == 0)
+        #expect(env.mock.markNotificationThreadReadCalls.isEmpty)
+
+        try await env.inbox.markThreadDone(id: "n1")
+        #expect(env.mock.markNotificationThreadDoneCalls == ["n1"])
+        #expect(try await env.threads.fetch(id: "n1") == nil)
+    }
+
     // MARK: - Harness
 
     private struct Env {
         let db: InMemoryDatabaseManager
         let threads: GRDBGitHubNotificationThreadRepository
         let syncState: GRDBGitHubNotificationSyncStateRepository
+        let repos: GRDBRepoRepository
+        let activity: GRDBUserRepoActivityRepository
         let mock: MockGitHubAPIClient
         let dispatcher: RecordingNotificationDispatcher
         let inbox: GitHubNotificationInboxService
@@ -991,6 +1123,8 @@ struct GitHubNotificationInboxTests {
         let db = try InMemoryDatabaseManager()
         let threads = GRDBGitHubNotificationThreadRepository(database: db)
         let syncState = GRDBGitHubNotificationSyncStateRepository(database: db)
+        let repos = GRDBRepoRepository(database: db)
+        let activity = GRDBUserRepoActivityRepository(database: db)
         let mock = MockGitHubAPIClient()
         mock.markNotificationThreadReadHandler = { _ in }
         mock.hydrateNotificationSubjectHandler = { _ in
@@ -1006,9 +1140,19 @@ struct GitHubNotificationInboxTests {
             syncStateRepository: syncState,
             notificationService: notifications,
             settings: settings,
+            activityRepository: activity,
             dwellNanoseconds: dwellNanoseconds
         )
-        return Env(db: db, threads: threads, syncState: syncState, mock: mock, dispatcher: dispatcher, inbox: inbox)
+        return Env(
+            db: db,
+            threads: threads,
+            syncState: syncState,
+            repos: repos,
+            activity: activity,
+            mock: mock,
+            dispatcher: dispatcher,
+            inbox: inbox
+        )
     }
 
     private static func makeDTO(
@@ -1045,6 +1189,60 @@ struct GitHubNotificationInboxTests {
             nextPage: threads.count < 50 ? nil : 2,
             notModified: false
         )
+    }
+
+    private static func makeStarredDTO(
+        id: Int64,
+        name: String,
+        starredAt: String,
+        fork: Bool = false,
+        createdAt: String? = nil
+    ) -> StarredRepoDTO {
+        let user = GitHubUserDTO(
+            id: 1,
+            login: "tester",
+            name: nil,
+            avatarUrl: nil,
+            publicRepos: nil,
+            followers: nil,
+            following: nil,
+            bio: nil,
+            company: nil,
+            location: nil,
+            email: nil,
+            blog: nil,
+            twitterUsername: nil,
+            htmlUrl: nil
+        )
+        let repo = GitHubRepoDTO(
+            id: id,
+            name: name,
+            fullName: "tester/\(name)",
+            owner: user,
+            description: "desc \(name)",
+            language: "Swift",
+            stargazersCount: 10,
+            forksCount: 1,
+            watchersCount: 2,
+            topics: nil,
+            license: nil,
+            homepage: nil,
+            htmlUrl: "https://github.com/tester/\(name)",
+            cloneUrl: nil,
+            sshUrl: nil,
+            isPrivate: false,
+            fork: fork,
+            archived: false,
+            pushedAt: nil,
+            createdAt: createdAt,
+            updatedAt: starredAt,
+            openIssuesCount: nil,
+            defaultBranch: nil,
+            disabled: nil,
+            isTemplate: nil,
+            score: nil
+        )
+        return StarredRepoDTO(starredAt: starredAt, repo: repo)
     }
 }
 

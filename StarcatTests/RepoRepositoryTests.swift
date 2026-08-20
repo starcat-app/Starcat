@@ -21,15 +21,21 @@ struct RepoRepositoryTests {
         return (repo, db)
     }
 
-    private func makeDTO(id: Int64, name: String) -> StarredRepoDTO {
-        let user = GitHubUserDTO(id: 1, login: "tester", name: nil, avatarUrl: nil,
+    private func makeDTO(
+        id: Int64,
+        name: String,
+        fork: Bool = false,
+        ownerLogin: String = "tester",
+        createdAt: String? = nil
+    ) -> StarredRepoDTO {
+        let user = GitHubUserDTO(id: 1, login: ownerLogin, name: nil, avatarUrl: nil,
                                  publicRepos: nil, followers: nil, following: nil,
                                  bio: nil, company: nil, location: nil, email: nil,
                                  blog: nil, twitterUsername: nil, htmlUrl: nil)
         let repo = GitHubRepoDTO(
             id: id,
             name: name,
-            fullName: "tester/\(name)",
+            fullName: "\(ownerLogin)/\(name)",
             owner: user,
             description: "desc \(name)",
             language: "Swift",
@@ -39,14 +45,14 @@ struct RepoRepositoryTests {
             topics: ["a", "b"],
             license: nil,
             homepage: nil,
-            htmlUrl: "https://github.com/tester/\(name)",
+            htmlUrl: "https://github.com/\(ownerLogin)/\(name)",
             cloneUrl: nil,
             sshUrl: nil,
             isPrivate: false,
-            fork: false,
+            fork: fork,
             archived: false,
             pushedAt: nil,
-            createdAt: nil,
+            createdAt: createdAt,
             updatedAt: nil,
             openIssuesCount: nil,
             defaultBranch: nil,
@@ -383,6 +389,30 @@ struct RepoRepositoryTests {
         #expect(recent.count == 2)
         let all = try await repo.fetchAllStarred()
         #expect(recent.map(\.id) == Array(all.prefix(2).map(\.id)))
+    }
+
+    @Test("fetchRecentOwnedForks 只返回当前用户自己的 fork")
+    func fetchRecentOwnedForks_onlyCurrentUserForks() async throws {
+        let (repo, _) = try makeRepo()
+        try await repo.upsertStarred(
+            [
+                makeDTO(id: 10, name: "mine", fork: true, createdAt: "2026-08-02T00:00:00Z"),
+                makeDTO(
+                    id: 11,
+                    name: "theirs",
+                    fork: true,
+                    ownerLogin: "someone",
+                    createdAt: "2026-08-03T00:00:00Z"
+                ),
+                makeDTO(id: 12, name: "original", fork: false, createdAt: "2026-08-04T00:00:00Z")
+            ],
+            userID: 100,
+            syncedAt: Date()
+        )
+
+        let forks = try await repo.fetchRecentOwnedForks(userID: 100, ownerLogin: "tester", limit: 10)
+        #expect(forks.map(\.id) == [10])
+        #expect(forks.first?.isFork == true)
     }
 
     @Test("fetchUntagged 无 tag 时等于全部")

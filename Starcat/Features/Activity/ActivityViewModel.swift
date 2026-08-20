@@ -1503,7 +1503,7 @@ final class ActivityViewModel {
         switch kind {
         case .star, .repository, .suggestion:
             return true
-        case .announcement, .release, .following, .notification:
+        case .announcement, .release, .following, .notification, .userRepoActivity:
             return false
         }
     }
@@ -1524,7 +1524,7 @@ final class ActivityViewModel {
         case .star:         return 3
         case .repository:   return 2
         case .suggestion:   return 1
-        case .announcement, .release, .following, .notification:
+        case .announcement, .release, .following, .notification, .userRepoActivity:
             return 0
         }
     }

@@ -35,7 +35,9 @@ protocol RepoRepositoryProtocol: Sendable {
     func upsertStarred(_ dtos: [StarredRepoDTO], userID: Int64, syncedAt: Date) async throws
 
     /// 将本地存在但不在远端集合中的 repo 标记为 is_starred = false。
-    func markUnstarredExcept(remoteRepoIDs: Set<Int64>, userID: Int64) async throws
+    /// - returns: 本次被取消 star 的 repo id，给账本写 Unstar 用。
+    @discardableResult
+    func markUnstarredExcept(remoteRepoIDs: Set<Int64>, userID: Int64) async throws -> Set<Int64>
 
     /// W4 B1：把单个 repo 标记为 is_starred = false。
     /// 同时清理 starred_repos 中对应行。
@@ -81,6 +83,12 @@ protocol RepoRepositoryProtocol: Sendable {
     /// 读取指定时间之后新增的 Star。Agent Weekly 用它冻结最近 7 天业务上下文，
     /// 不能用“最近 N 条”冒充时间窗口。
     func fetchStarred(since: Date, limit: Int) async throws -> [Repo]
+
+    /// 当前用户自己 Fork 出去的仓库（`is_fork = 1` 且归当前用户）。
+    ///
+    /// 通知时间线要叠「我 Fork 了哪些项目」。GitHub 没有 `/user/forked`，
+    /// 用本地 `repos.owner` 或 `user_projects` 的 owner 关系近似 Fork 时间（`created_at`）。
+    func fetchRecentOwnedForks(userID: Int64, ownerLogin: String, limit: Int) async throws -> [Repo]
 
     /// 按 GitHub repo id 查找。HOM-47 ReleaseMonitor 巡检每个订阅时需要拿 owner/name。
     /// 不存在返回 nil（不抛错），调用方决定后续行为（如跳过该次巡检）。
@@ -249,6 +257,10 @@ extension RepoRepositoryProtocol {
 
     func fetchLocalStarGrowth30Days(repoIDs: [Int64], now: Date) async throws -> [Int64: Int] {
         [:]
+    }
+
+    func fetchRecentOwnedForks(userID: Int64, ownerLogin: String, limit: Int) async throws -> [Repo] {
+        []
     }
 }
 

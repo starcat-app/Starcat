@@ -168,11 +168,15 @@ final class StarActionService {
     private let registry: StarredRegistry
     /// Undo Star 历史记录仓储（unstar 时写入，star 时移除）。
     private let undoStarHistory: any UndoStarHistoryRepositoryProtocol
+    /// 当前用户 Star / Unstar 账本。通知时间线混排用；单测可不传。
+    private let activityRepository: (any UserRepoActivityRepositoryProtocol)?
 
     /// 当前登录用户 ID 提供者。注入闭包而非直接持有 AuthSession 是为了：
     /// ① 单测注入 stub `{ 42 }` 即可，不用 mock AuthSession；
     /// ② AuthSession 状态变化时 Service 不需要 KVO，每次操作时取最新值。
     private let userIDProvider: @MainActor () -> Int64?
+    /// GitHub `login`，写入账本 `user_name`。没有 login 就不记账本，避免匿名行。
+    private let userNameProvider: @MainActor () -> String?
 
     /// HomeView 刷新协议（weak）。注入时机：HomeView `.task` 时通过
     /// `dependencies.starActionService.attachHomeRefresher(homeViewModel)` 挂接。
@@ -184,19 +188,30 @@ final class StarActionService {
         registry: StarredRegistry,
         undoStarHistory: any UndoStarHistoryRepositoryProtocol,
         userIDProvider: @escaping @MainActor () -> Int64?,
-        homeRefresher: (any HomeRefreshing)? = nil
+        userNameProvider: @escaping @MainActor () -> String? = { nil },
+        homeRefresher: (any HomeRefreshing)? = nil,
+        activityRepository: (any UserRepoActivityRepositoryProtocol)? = nil
     ) {
         self.apiClient = apiClient
         self.repoRepository = repoRepository
         self.registry = registry
         self.undoStarHistory = undoStarHistory
         self.userIDProvider = userIDProvider
+        self.userNameProvider = userNameProvider
         self.homeRefresher = homeRefresher
+        self.activityRepository = activityRepository
     }
 
     /// 给 HomeView 在 `.task` 里挂接 refresher。
     func attachHomeRefresher(_ refresher: any HomeRefreshing) {
         self.homeRefresher = refresher
+    }
+
+    /// 账本必须同时有 GitHub id 和 login，否则推荐侧无法标识「谁」。
+    private func currentActivityActor() -> UserRepoActivityActor? {
+        guard let userID = userIDProvider() else { return nil }
+        let actor = UserRepoActivityActor(userID: userID, userName: userNameProvider() ?? "")
+        return actor.isIdentified ? actor : nil
     }
 
     // MARK: - 操作
@@ -249,7 +264,21 @@ final class StarActionService {
             )
         }
 
-        // 6. HomeView 刷新
+        // 6. 通知时间线账本。失败不影响 star 本身。
+        if let actor = currentActivityActor() {
+            do {
+                try await activityRepository?.recordStar(
+                    repo: saved,
+                    source: .starcat,
+                    actor: actor,
+                    occurredAt: UserRepoActivityRecord.timestamp()
+                )
+            } catch {
+                AppLog.sync.error("UserRepoActivity star failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+
+        // 7. HomeView 刷新
         await homeRefresher?.refreshAfterStarChange()
 
         AppLog.sync.info("Star OK \(saved.fullName, privacy: .public) (id=\(saved.id, privacy: .public))")
@@ -315,6 +344,22 @@ final class StarActionService {
                 underlying: DiagnosticEvent.summarize(error),
                 context: ["repoID": String(ghRepoId)]
             )
+        }
+
+        // 通知时间线账本。和 undo_star_history 分开：那边每个仓库只留一行，这边可追加。
+        if let actor = currentActivityActor() {
+            do {
+                try await activityRepository?.recordUnstar(
+                    repoID: ghRepoId,
+                    fullName: "\(owner)/\(name)",
+                    htmlURL: "https://github.com/\(owner)/\(name)",
+                    source: .starcat,
+                    actor: actor,
+                    occurredAt: UserRepoActivityRecord.timestamp()
+                )
+            } catch {
+                AppLog.sync.error("UserRepoActivity unstar failed: \(error.localizedDescription, privacy: .public)")
+            }
         }
 
         AppLog.sync.info("Unstar OK \(owner, privacy: .public)/\(name, privacy: .public) (id=\(ghRepoId, privacy: .public))")

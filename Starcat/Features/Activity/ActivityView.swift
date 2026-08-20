@@ -470,7 +470,7 @@ struct ActivityView: View {
         switch kind {
         case .release, .star, .repository, .suggestion:
             return true
-        case .announcement, .following, .notification:
+        case .announcement, .following, .notification, .userRepoActivity:
             return false
         }
     }

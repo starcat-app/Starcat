@@ -39,7 +39,8 @@
 //    `v14-ai-usage-events` / `v15-repo-pins` / `v16-repository-insights`
 //    `v17-my-projects` / `v18-rag-structured-citations` / `v19-agent-message-contract` /
     //    `v20-rag-chunks-fts-trigram` / `v21-github-notifications` /
-    //    `v22-github-notification-comments` / `v23-github-notification-subject-created`
+    //    `v22-github-notification-comments` / `v23-github-notification-subject-created` /
+    //    `v24-user-repo-activity`
 //
 
 import Foundation
@@ -79,6 +80,77 @@ enum DatabaseMigrations {
         registerV21(into: &migrator)
         registerV22(into: &migrator)
         registerV23(into: &migrator)
+        registerV24(into: &migrator)
+        registerV25(into: &migrator)
+    }
+
+    // MARK: - v25-user-repo-activity-actor：账本补 user_id / user_name（2026-08-20）
+
+    /// 推荐要用「谁 star 了哪个项目」。v24 行没有身份，库又按 GitHub user 目录隔离，
+    /// 导出后会变成匿名 `(repo, time)`。已落地表只能 ALTER，不能改 v24 建表语句。
+    /// `user_name` 存 GitHub `login`；旧行的 `user_id` 能从 `starred_repos` 抄，login 等打开时间线再补。
+    private static func registerV25(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v25-user-repo-activity-actor") { db in
+            guard try db.tableExists("user_repo_activity") else { return }
+            let columns = try db.columns(in: "user_repo_activity").map(\.name)
+            if !columns.contains("user_id") {
+                try db.alter(table: "user_repo_activity") { t in
+                    t.add(column: "user_id", .integer)
+                }
+            }
+            if !columns.contains("user_name") {
+                try db.alter(table: "user_repo_activity") { t in
+                    t.add(column: "user_name", .text)
+                }
+            }
+            try db.create(
+                index: "idx_user_repo_activity_user",
+                on: "user_repo_activity",
+                columns: ["user_id", "occurred_at"],
+                ifNotExists: true
+            )
+            guard try db.tableExists("starred_repos") else { return }
+            try db.execute(
+                sql: """
+                    UPDATE user_repo_activity
+                    SET user_id = (
+                        SELECT sr.user_id FROM starred_repos sr
+                        WHERE sr.repo_id = user_repo_activity.repo_id
+                    )
+                    WHERE user_id IS NULL
+                    """
+            )
+        }
+    }
+
+    // MARK: - v24-user-repo-activity：当前用户 Star / Unstar / Fork 账本（2026-08-20）
+
+    /// 通知时间线要混入「我自己对仓库做的事」。GitHub Notifications 没有这些事件，
+    /// 也不能写进 `github_notification_threads`（那张表的 id / PATCH / Done 都按 GitHub thread）。
+    /// 只追加、不覆盖；Star 可能来自 App 或 Stars 同步，Unstar 的 GitHub 网页操作只能在全量同步发现。
+    private static func registerV24(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v24-user-repo-activity") { db in
+            try db.create(table: "user_repo_activity") { t in
+                t.column("id", .text).primaryKey()
+                t.column("kind", .text).notNull()
+                t.column("source", .text).notNull()
+                t.column("repo_id", .integer).notNull()
+                t.column("full_name", .text).notNull()
+                t.column("html_url", .text).notNull()
+                t.column("occurred_at", .text).notNull()
+                t.column("created_at", .text).notNull()
+            }
+            try db.create(
+                index: "idx_user_repo_activity_occurred",
+                on: "user_repo_activity",
+                columns: ["occurred_at", "id"]
+            )
+            try db.create(
+                index: "idx_user_repo_activity_repo",
+                on: "user_repo_activity",
+                columns: ["repo_id", "occurred_at"]
+            )
+        }
     }
 
     // MARK: - v23-github-notification-subject-created：Issue / PR 开帖时间（2026-08-19）

@@ -46,7 +46,11 @@ final class ReadmeTranslationViewModel {
     private(set) var paywallContext: ProPaywallContext?
     private(set) var cacheIsStale = false
 
-    private var currentRepoId: Int64?
+    /// README 用 `readme:owner/name`；通知详情用 `inbox:threadId`。不能只用 repoId：
+    /// 未入库通知没有稳定 GitHub id，全是 0 会让切线程时串台。
+    private var currentIdentity: String?
+    private var currentCacheOwner: String?
+    private var currentCacheRepo: String?
     private var currentLanguage: ReadmeTranslationLanguage?
     private var currentMode: ReadmeTranslationMode?
     private var currentTask: Task<Void, Never>?
@@ -65,6 +69,24 @@ final class ReadmeTranslationViewModel {
         targetLanguage: ReadmeTranslationLanguage,
         mode: ReadmeTranslationMode
     ) {
+        prepare(
+            identity: repo.map { "readme:\($0.owner)/\($0.name)" },
+            cacheOwner: repo?.owner,
+            cacheRepo: repo?.name,
+            sourceHtml: sourceHtml,
+            targetLanguage: targetLanguage,
+            mode: mode
+        )
+    }
+
+    func prepare(
+        identity: String?,
+        cacheOwner: String?,
+        cacheRepo: String?,
+        sourceHtml: String?,
+        targetLanguage: ReadmeTranslationLanguage,
+        mode: ReadmeTranslationMode
+    ) {
         currentTask?.cancel()
         currentTask = nil
         isTranslating = false
@@ -76,30 +98,34 @@ final class ReadmeTranslationViewModel {
         totalSegmentCount = 0
         cacheIsStale = false
 
-        guard let repo else {
-            currentRepoId = nil
+        guard let identity, let cacheOwner, let cacheRepo else {
+            currentIdentity = nil
+            currentCacheOwner = nil
+            currentCacheRepo = nil
             currentLanguage = nil
             currentMode = nil
             return
         }
-        currentRepoId = repo.id
+        currentIdentity = identity
+        currentCacheOwner = cacheOwner
+        currentCacheRepo = cacheRepo
         currentLanguage = targetLanguage
         currentMode = mode
 
-        let requestedRepoId = repo.id
+        let requestedIdentity = identity
         let requestedLanguage = targetLanguage
         let requestedMode = mode
         currentTask = Task { [weak self] in
             guard let self else { return }
             do {
                 let cached = try await self.service.cachedTranslation(
-                    owner: repo.owner,
-                    repo: repo.name,
+                    owner: cacheOwner,
+                    repo: cacheRepo,
                     targetLanguage: requestedLanguage,
                     mode: requestedMode
                 )
                 guard !Task.isCancelled,
-                      self.currentRepoId == requestedRepoId,
+                      self.currentIdentity == requestedIdentity,
                       self.currentLanguage == requestedLanguage,
                       self.currentMode == requestedMode
                 else { return }
@@ -155,6 +181,28 @@ final class ReadmeTranslationViewModel {
         targetLanguage: ReadmeTranslationLanguage,
         mode: ReadmeTranslationMode
     ) {
+        toggleTranslation(
+            identity: "readme:\(repo.owner)/\(repo.name)",
+            cacheOwner: repo.owner,
+            cacheRepo: repo.name,
+            repoId: repo.id,
+            sourceHtml: sourceHtml,
+            sourceSegments: sourceSegments,
+            targetLanguage: targetLanguage,
+            mode: mode
+        )
+    }
+
+    func toggleTranslation(
+        identity: String,
+        cacheOwner: String,
+        cacheRepo: String,
+        repoId: Int64? = nil,
+        sourceHtml: String,
+        sourceSegments: [ReadmeSourceSegment],
+        targetLanguage: ReadmeTranslationLanguage,
+        mode: ReadmeTranslationMode
+    ) {
         if case .showingTranslation = displayMode {
             displayMode = .showingOriginal
             publishRenderState(
@@ -166,7 +214,10 @@ final class ReadmeTranslationViewModel {
         }
 
         startTranslation(
-            repo: repo,
+            identity: identity,
+            cacheOwner: cacheOwner,
+            cacheRepo: cacheRepo,
+            repoId: repoId,
             sourceHtml: sourceHtml,
             sourceSegments: sourceSegments,
             targetLanguage: targetLanguage,
@@ -182,8 +233,33 @@ final class ReadmeTranslationViewModel {
         targetLanguage: ReadmeTranslationLanguage,
         mode: ReadmeTranslationMode
     ) {
+        regenerate(
+            identity: "readme:\(repo.owner)/\(repo.name)",
+            cacheOwner: repo.owner,
+            cacheRepo: repo.name,
+            repoId: repo.id,
+            sourceHtml: sourceHtml,
+            sourceSegments: sourceSegments,
+            targetLanguage: targetLanguage,
+            mode: mode
+        )
+    }
+
+    func regenerate(
+        identity: String,
+        cacheOwner: String,
+        cacheRepo: String,
+        repoId: Int64? = nil,
+        sourceHtml: String,
+        sourceSegments: [ReadmeSourceSegment],
+        targetLanguage: ReadmeTranslationLanguage,
+        mode: ReadmeTranslationMode
+    ) {
         startTranslation(
-            repo: repo,
+            identity: identity,
+            cacheOwner: cacheOwner,
+            cacheRepo: cacheRepo,
+            repoId: repoId,
             sourceHtml: sourceHtml,
             sourceSegments: sourceSegments,
             targetLanguage: targetLanguage,
@@ -214,7 +290,10 @@ final class ReadmeTranslationViewModel {
     // MARK: - 翻译流程
 
     private func startTranslation(
-        repo: Repo,
+        identity: String,
+        cacheOwner: String,
+        cacheRepo: String,
+        repoId: Int64?,
         sourceHtml: String,
         sourceSegments: [ReadmeSourceSegment],
         targetLanguage: ReadmeTranslationLanguage,
@@ -222,7 +301,9 @@ final class ReadmeTranslationViewModel {
         force: Bool
     ) {
         currentTask?.cancel()
-        currentRepoId = repo.id
+        currentIdentity = identity
+        currentCacheOwner = cacheOwner
+        currentCacheRepo = cacheRepo
         currentLanguage = targetLanguage
         currentMode = mode
         errorMessage = nil
@@ -233,7 +314,10 @@ final class ReadmeTranslationViewModel {
 
         currentTask = Task { [weak self] in
             await self?.performTranslation(
-                repo: repo,
+                identity: identity,
+                cacheOwner: cacheOwner,
+                cacheRepo: cacheRepo,
+                repoId: repoId,
                 sourceHtml: sourceHtml,
                 sourceSegments: sourceSegments,
                 targetLanguage: targetLanguage,
@@ -244,21 +328,24 @@ final class ReadmeTranslationViewModel {
     }
 
     private func performTranslation(
-        repo: Repo,
+        identity: String,
+        cacheOwner: String,
+        cacheRepo: String,
+        repoId: Int64?,
         sourceHtml: String,
         sourceSegments: [ReadmeSourceSegment],
         targetLanguage: ReadmeTranslationLanguage,
         mode: ReadmeTranslationMode,
         force: Bool
     ) async {
-        let requestedRepoId = repo.id
+        let requestedIdentity = identity
         let requestedLanguage = targetLanguage
         let requestedMode = mode
 
         do {
             let cached = force ? nil : try await service.cachedTranslation(
-                owner: repo.owner,
-                repo: repo.name,
+                owner: cacheOwner,
+                repo: cacheRepo,
                 targetLanguage: targetLanguage,
                 mode: mode
             )
@@ -289,7 +376,9 @@ final class ReadmeTranslationViewModel {
 
             let record = try await service.translate(
                 request: ReadmeTranslationRequest(
-                    repo: repo,
+                    cacheOwner: cacheOwner,
+                    cacheRepo: cacheRepo,
+                    repoId: repoId,
                     sourceHtml: sourceHtml,
                     sourceSegments: sourceSegments,
                     targetLanguage: targetLanguage,
@@ -298,7 +387,7 @@ final class ReadmeTranslationViewModel {
                 cached: cached,
                 onBatch: { [weak self] rendered, completed, total in
                     guard let self,
-                          self.currentRepoId == requestedRepoId,
+                          self.currentIdentity == requestedIdentity,
                           self.currentLanguage == requestedLanguage,
                           self.currentMode == requestedMode
                     else { return }
@@ -313,7 +402,7 @@ final class ReadmeTranslationViewModel {
                 }
             )
 
-            guard currentRepoId == requestedRepoId,
+            guard currentIdentity == requestedIdentity,
                   currentLanguage == requestedLanguage,
                   currentMode == requestedMode
             else { return }
@@ -332,7 +421,7 @@ final class ReadmeTranslationViewModel {
         } catch is CancellationError {
             // 主动取消不是错误；状态已经由 cancelTranslation 立即复位。
         } catch {
-            guard currentRepoId == requestedRepoId,
+            guard currentIdentity == requestedIdentity,
                   currentLanguage == requestedLanguage,
                   currentMode == requestedMode
             else { return }

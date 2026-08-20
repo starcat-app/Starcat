@@ -3,6 +3,7 @@
 //  Starcat
 //
 //  通知 JSON → 本地行、reason / 主体类型 chip、降级 GitHub Web URL。
+//  当前用户 Star / Unstar / Fork 在独立账本，时间线两表 UNION 混排。
 //  纯函数，单测不需要网络或数据库。
 //
 //  约束：通知列表没有 actor / body / html_url。人名和摘要只能在选中后从 subject.url 补。
@@ -20,6 +21,12 @@ enum GitHubNotificationChip: String, Sendable {
     case issue
     case release
     case discussion
+    /// 当前用户自己的 Unstar。GitHub 没有历史接口，只能记在本地账本。
+    case unstar
+    /// 当前用户自己的 Star。GitHub Notifications API 不给这条，时间线来自本地账本。
+    case star
+    /// 当前用户自己的 Fork。同样不是 GitHub inbox thread。
+    case fork
 }
 
 enum GitHubNotificationPersonRole: String, Sendable {
@@ -79,6 +86,10 @@ enum GitHubNotificationMapper {
             return .issue
         case "Discussion":
             return .discussion
+        case "Star":
+            return .star
+        case "Fork":
+            return .fork
         default:
             return .comment
         }
@@ -104,6 +115,10 @@ enum GitHubNotificationMapper {
             return .release
         case "Discussion":
             return .discussion
+        case "Star":
+            return .star
+        case "Fork":
+            return .fork
         default:
             return .comment
         }
@@ -136,7 +151,50 @@ enum GitHubNotificationMapper {
             return copy(locale, zh: "仓库有安全公告", en: "Security alert")
         case .release:
             return copy(locale, zh: "发布了新的 Release", en: "New release published")
+        case .star:
+            return copy(locale, zh: "你 Star 了这个项目", en: "You starred this repository")
+        case .fork:
+            return copy(locale, zh: "你 Fork 了这个项目", en: "You forked this repository")
+        case .unstar:
+            return copy(locale, zh: "你 Unstar 了这个项目", en: "You unstarred this repository")
         }
+    }
+
+    static func userRepoActivityHeadline(kind: UserRepoActivityKind, locale: Locale) -> String {
+        switch kind {
+        case .star:
+            return copy(locale, zh: "你 Star 了这个项目", en: "You starred this repository")
+        case .unstar:
+            return copy(locale, zh: "你 Unstar 了这个项目", en: "You unstarred this repository")
+        case .fork:
+            return copy(locale, zh: "你 Fork 了这个项目", en: "You forked this repository")
+        }
+    }
+
+    /// 详情顶栏短句，比时间线事件句少「这个项目」。
+    static func userRepoActivityShortAction(kind: UserRepoActivityKind, locale: Locale) -> String {
+        switch kind {
+        case .star:
+            return copy(locale, zh: "你 Star 了", en: "You starred")
+        case .unstar:
+            return copy(locale, zh: "你 Unstar 了", en: "You unstarred")
+        case .fork:
+            return copy(locale, zh: "你 Fork 了", en: "You forked")
+        }
+    }
+
+    static func userRepoActivityChip(kind: UserRepoActivityKind) -> GitHubNotificationChip {
+        switch kind {
+        case .star: return .star
+        case .unstar: return .unstar
+        case .fork: return .fork
+        }
+    }
+
+    static func userRepoActivityBanner(kind: UserRepoActivityKind, relativeTime: String, locale: Locale) -> String {
+        let action = userRepoActivityShortAction(kind: kind, locale: locale)
+        if relativeTime.isEmpty { return action }
+        return "\(action) · \(relativeTime)"
     }
 
     static func subjectHeading(type: String, number: Int?, locale: Locale) -> String {
@@ -150,6 +208,10 @@ enum GitHubNotificationMapper {
             name = "Discussion"
         case "Release":
             name = "Release"
+        case "Star":
+            name = "Star"
+        case "Fork":
+            name = "Fork"
         default:
             name = type
         }
@@ -169,6 +231,12 @@ enum GitHubNotificationMapper {
             return "PR"
         case .issue:
             return "Issue"
+        case .star:
+            return "Star"
+        case .unstar:
+            return "Unstar"
+        case .fork:
+            return "Fork"
         default:
             return String.l10n(chipTitleKey(chip))
         }
@@ -447,11 +515,16 @@ enum GitHubNotificationMapper {
             return chip(forReason: record.reason) == .mention
         case .review:
             return chip(forReason: record.reason) == .review
+        case .star, .unstar, .fork:
+            // 账本分段只含 `user_repo_activity`，GitHub thread 永远对不上。
+            return false
         }
     }
 
     /// 本机曾插入过 `starcat-demo-` 前缀的演示 thread。永不打 GitHub API。
     static let demoThreadIDPrefix = "starcat-demo-"
+    /// 通知时间线每页条数。两表 UNION 游标翻页，对齐 Manage 列表。
+    static let timelinePageSize = 40
 
     static func isDemoThread(_ id: String) -> Bool {
         id.hasPrefix(demoThreadIDPrefix)
@@ -750,21 +823,65 @@ enum GitHubNotificationMapper {
     }
 }
 
-/// 通知分类内的分段筛选（全部 / 未读 / Mention / Review）。
+/// 通知 inbox 类型筛选。选项变多后顶栏用下拉，不再用分段控件。
+///
+/// `all` 两表 UNION；`unread` / `mention` / `review` 只含 GitHub 通知；
+/// `star` / `unstar` / `fork` 只含账本。
 enum GitHubNotificationSegment: String, CaseIterable, Identifiable, Sendable {
     case all
     case unread
     case mention
     case review
+    case star
+    case unstar
+    case fork
 
     var id: String { rawValue }
 
-    var titleKey: String {
+    /// Star / Unstar / Fork 只筛账本；其余筛 GitHub 通知（`all` 再 UNION 账本）。
+    var ledgerKind: UserRepoActivityKind? {
         switch self {
-        case .all: return "activity.notification.segment.all"
-        case .unread: return "activity.notification.segment.unread"
-        case .mention: return "activity.notification.segment.mention"
-        case .review: return "activity.notification.segment.review"
+        case .star: return .star
+        case .unstar: return .unstar
+        case .fork: return .fork
+        case .all, .unread, .mention, .review: return nil
+        }
+    }
+
+    /// 菜单分组：状态一组、Mention/Review 一组、账本一组。
+    var showsDividerBefore: Bool {
+        self == .mention || self == .star
+    }
+
+    var systemImage: String {
+        switch self {
+        case .all: return "tray"
+        case .unread: return "circle.inset.filled"
+        case .mention: return "at"
+        case .review: return "eye"
+        case .star: return "star"
+        case .unstar: return "star.slash"
+        case .fork: return "arrow.triangle.branch"
+        }
+    }
+
+    /// All / Unread / Mention / Review 走已有 Catalog；账本三项复用 chip 文案，不新增 key。
+    func displayTitle(locale: Locale) -> String {
+        switch self {
+        case .all:
+            return String.l10n("activity.notification.segment.all")
+        case .unread:
+            return String.l10n("activity.notification.segment.unread")
+        case .mention:
+            return String.l10n("activity.notification.segment.mention")
+        case .review:
+            return String.l10n("activity.notification.segment.review")
+        case .star:
+            return GitHubNotificationMapper.chipTitle(for: .star, locale: locale)
+        case .unstar:
+            return GitHubNotificationMapper.chipTitle(for: .unstar, locale: locale)
+        case .fork:
+            return GitHubNotificationMapper.chipTitle(for: .fork, locale: locale)
         }
     }
 }

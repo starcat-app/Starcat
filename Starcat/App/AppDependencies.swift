@@ -377,6 +377,8 @@ final class AppDependencies {
     let githubNotificationThreadRepository: any GitHubNotificationThreadRepositoryProtocol
     /// 通知 inbox 水位 / Last-Modified。
     let githubNotificationSyncStateRepository: any GitHubNotificationSyncStateRepositoryProtocol
+    /// 当前用户 Star / Unstar / Fork 账本。通知「全部」时间线混排用。
+    let userRepoActivityRepository: any UserRepoActivityRepositoryProtocol
     /// 回填 / 增量 / 已读 dwell / hydrate。
     let githubNotificationInboxService: GitHubNotificationInboxService
     /// 通知 inbox 后台轮询（下限 30 分钟）。
@@ -879,6 +881,8 @@ final class AppDependencies {
         // D-01：构造时用具体类型 GRDBRepoRepository，字段类型是协议 any RepoRepositoryProtocol
         let repo = GRDBRepoRepository(database: db)
         self.repoRepository = repo
+        let userRepoActivity = GRDBUserRepoActivityRepository(database: db)
+        self.userRepoActivityRepository = userRepoActivity
         self.agentRunRepository = GRDBAgentRunRepository(database: db)
         let settings = AppSettings.shared
         self.settings = settings
@@ -896,7 +900,11 @@ final class AppDependencies {
             apiClient: api,
             repository: repo,
             notificationService: notificationService,
-            telemetryManager: telemetry
+            telemetryManager: telemetry,
+            activityRepository: userRepoActivity,
+            userNameProvider: { [weak session] in
+                session?.state.user?.login
+            }
         )
         let projectAccessSession = ProjectAccessSession()
         self.projectAccessSession = projectAccessSession
@@ -1464,14 +1472,18 @@ final class AppDependencies {
             threadRepository: notificationThreadRepo,
             syncStateRepository: notificationSyncRepo,
             notificationService: notificationService,
-            settings: self.settings
+            settings: self.settings,
+            activityRepository: self.userRepoActivityRepository
         )
         self.githubNotificationInboxService = inboxService
         self.githubNotificationPoller = GitHubNotificationPoller(
             inbox: inboxService,
             syncStateRepository: notificationSyncRepo
         )
-        self.activityCategoryCountService.configureNotifications(repository: notificationThreadRepo)
+        self.activityCategoryCountService.configureNotifications(
+            repository: notificationThreadRepo,
+            activityRepository: self.userRepoActivityRepository
+        )
 
         // HOM-PROFILE 2026-06-05：贡献草坪服务。
         // 直接持有具体 GitHubAPIClient（actor），不走 protocol——因为 graphql<T> 是泛型方法，
@@ -1516,7 +1528,11 @@ final class AppDependencies {
             userIDProvider: { [weak session] in
                 session?.state.user?.id
             },
-            homeRefresher: nil           // HomeView 在 .task 时通过 attachHomeRefresher 挂接
+            userNameProvider: { [weak session] in
+                session?.state.user?.login
+            },
+            homeRefresher: nil,           // HomeView 在 .task 时通过 attachHomeRefresher 挂接
+            activityRepository: self.userRepoActivityRepository
         )
         self.starActionService = starActionSvc
 

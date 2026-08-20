@@ -178,6 +178,12 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// OpenSSF 入口，避免把 Pro 私人功能暴露到公共发现页。
     let showsRepoHealthEntry: Bool
 
+    /// 账本行等场景的顶栏一句（如「你 Star 了 · 2 小时前」）。
+    ///
+    /// 必须画在本骨架内部、tint 下面：挂在 Scaffold 外面会挡住语言色光晕，
+    /// 右栏顶上一截变成白板。背景保持透明，对齐中栏 `manageListTopInset`。
+    let topBanner: String?
+
     // v2.1 修订（2026-06-11）：原 `onRefresh: (() async -> Void)?` 入参已删除。
     // 该字段曾给 §3.2.9「右下角浮动刷新按钮」用,但与 cacheFooter 内置 SyncIconButton
     // 视觉重叠造成 bug,详见文件头 v2.1 修订段。现刷新入口统一收口到 cacheFooter
@@ -282,6 +288,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         fallbackAccentColor: Color = .accentColor,
         starHelpKey: LocalizedStringKey = "repo.unstar",
         showsRepoHealthEntry: Bool = false,
+        topBanner: String? = nil,
         onStarTapped: @escaping () async throws -> Void,
         @ViewBuilder heroExtension: @escaping () -> HeroExt,
         @ViewBuilder body: @escaping (@escaping (RepoDetailScrollReport) -> Void) -> Body
@@ -291,6 +298,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         self.fallbackAccentColor = fallbackAccentColor
         self.starHelpKey = starHelpKey
         self.showsRepoHealthEntry = showsRepoHealthEntry
+        self.topBanner = topBanner
         self.onStarTapped = onStarTapped
         self.heroExtension_ = heroExtension
         self.body_ = body
@@ -303,6 +311,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         fallbackAccentColor: Color = .accentColor,
         starHelpKey: LocalizedStringKey = "repo.unstar",
         showsRepoHealthEntry: Bool = false,
+        topBanner: String? = nil,
         onStarTapped: @escaping () async throws -> Void,
         @ViewBuilder body: @escaping (@escaping (RepoDetailScrollReport) -> Void) -> Body
     ) where HeroExt == EmptyView {
@@ -312,6 +321,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             fallbackAccentColor: fallbackAccentColor,
             starHelpKey: starHelpKey,
             showsRepoHealthEntry: showsRepoHealthEntry,
+            topBanner: topBanner,
             onStarTapped: onStarTapped,
             heroExtension: { EmptyView() },
             body: body
@@ -328,6 +338,16 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             // v2.1 修订（2026-06-11）：原 `.overlay(alignment: .bottomTrailing)` 浮动刷新
             // 按钮已删除（与 cacheFooter 内置按钮视觉重叠造成 bug,详见文件头 v2.1 修订段）。
             VStack(alignment: .leading, spacing: 0) {
+                if let topBanner, !topBanner.isEmpty {
+                    Text(verbatim: topBanner)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .manageListFilterBarChrome()
+                        // 透明，让根节点 `detailHeroTintBackground` 透到这句和标题栏背后。
+                        .background(.clear)
+                    Divider()
+                }
                 metadataPanelViewport(availableHeight: viewportSize.height)
                 body_(updateScrollReport)
                     .overlay(alignment: .bottom) {
