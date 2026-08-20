@@ -79,7 +79,8 @@ struct GitHubNotificationDetailView: View {
             Divider()
             if !isComposerExpanded {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
+                    // Lazy：屏外评论不挂光圈 TimelineView。VStack 会把整帖 blur 层一直合成。
+                    LazyVStack(alignment: .leading, spacing: 12) {
                         if let payload = item.notification {
                             repoRow(payload)
                             conversation(payload, translation: translationVM)
@@ -297,6 +298,8 @@ struct GitHubNotificationDetailView: View {
         let translations = translation?.renderState.translations ?? []
         // 对照/替换跟当前这次翻译的 mode，避免菜单已改、译文还是上一档。
         let translationMode = translation?.renderState.mode ?? settings.readmeTranslationMode
+        let isJobTranslating = translation?.isTranslating ?? false
+        let translationLanguage = settings.effectiveReadmeTranslationLanguage
 
         if let excerpt = payload.excerpt, !excerpt.isEmpty {
             GitHubNotificationCommentCard(
@@ -309,7 +312,9 @@ struct GitHubNotificationDetailView: View {
                 translations: translations,
                 isShowingTranslation: isShowing,
                 translationMode: translationMode,
-                prefersAnimatedEntrance: translation?.renderState.prefersAnimatedEntrance ?? false
+                prefersAnimatedEntrance: translation?.renderState.prefersAnimatedEntrance ?? false,
+                isJobTranslating: isJobTranslating,
+                translationLanguage: translationLanguage
             )
         }
 
@@ -327,7 +332,9 @@ struct GitHubNotificationDetailView: View {
                 translations: translations,
                 isShowingTranslation: isShowing,
                 translationMode: translationMode,
-                prefersAnimatedEntrance: translation?.renderState.prefersAnimatedEntrance ?? false
+                prefersAnimatedEntrance: translation?.renderState.prefersAnimatedEntrance ?? false,
+                isJobTranslating: isJobTranslating,
+                translationLanguage: translationLanguage
             )
         }
     }
@@ -727,8 +734,34 @@ private struct GitHubNotificationCommentCard: View {
     var isShowingTranslation: Bool = false
     var translationMode: ReadmeTranslationMode = .segmented
     var prefersAnimatedEntrance: Bool = false
+    /// 整帖任务还在跑。光圈是否亮看 `isHaloActive`：本卡段到齐就先灭。
+    var isJobTranslating: Bool = false
+    var translationLanguage: ReadmeTranslationLanguage = .auto
     @Environment(\.locale) private var locale
     @Environment(\.starcatReduceMotion) private var reduceMotion
+
+    private var relevantTranslations: [ReadmeRenderedTranslation] {
+        let ids = Set(blocks.compactMap(\.segmentId))
+        guard !ids.isEmpty else { return [] }
+        return translations.filter { ids.contains($0.id) }
+    }
+
+    /// 本卡还有未完成、且需要送 AI 的段才亮。围栏 / 已是目标语言的段不占光圈。
+    private var isHaloActive: Bool {
+        guard isJobTranslating else { return false }
+        let done = Set(relevantTranslations.map(\.id))
+        for block in blocks {
+            guard let id = block.segmentId, !done.contains(id) else { continue }
+            if TranslationSourceLanguageGate.shouldSkipTranslation(
+                text: block.markdown,
+                target: translationLanguage
+            ) {
+                continue
+            }
+            return true
+        }
+        return false
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -767,7 +800,25 @@ private struct GitHubNotificationCommentCard: View {
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(Color.primary.opacity(isOpeningPost ? 0.12 : 0.08), lineWidth: 1)
+                .opacity(isHaloActive ? 0 : 1)
+                .animation(
+                    .easeInOut(duration: GitHubNotificationAIHaloMetrics.fadeDuration(reduceMotion)),
+                    value: isHaloActive
+                )
         )
+        // 正 padding 给光圈留 gutter；负 padding 把占位收回去，空闲时卡片间距不变。
+        .padding(GitHubNotificationAIHaloMetrics.glowBleed)
+        .overlay {
+            if isJobTranslating {
+                GitHubNotificationAIHaloRepresentable(
+                    isActive: isHaloActive,
+                    reduceMotion: reduceMotion
+                )
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+        }
+        .padding(-GitHubNotificationAIHaloMetrics.glowBleed)
     }
 
     @ViewBuilder
@@ -779,7 +830,7 @@ private struct GitHubNotificationCommentCard: View {
                 }
             }
             // 只给「新译文到达」做入场；切回原文走 identity，避免整卡闪。
-            .animation(translationEntranceAnimation, value: translations.map(\.id))
+            .animation(translationEntranceAnimation, value: relevantTranslations.map(\.id))
         } else {
             GitHubNotificationMarkdown(content: markdown, repositoryFullName: repositoryFullName)
         }
@@ -798,7 +849,7 @@ private struct GitHubNotificationCommentCard: View {
     @ViewBuilder
     private func translatedBlock(_ block: GitHubNotificationTranslation.Block) -> some View {
         let translated = block.segmentId.flatMap { id in
-            GitHubNotificationTranslation.translation(for: id, from: translations)
+            GitHubNotificationTranslation.translation(for: id, from: relevantTranslations)
         }
         switch translationMode {
         case .segmented:
@@ -855,7 +906,7 @@ private struct GitHubNotificationDoneHelpPopover: View {
     }
 }
 
-/// 顶栏翻译：气泡 + 附属 chevron 共用一块 22pt 底，对齐 README 详情底栏。
+/// 顶栏翻译：22×22 方底气泡，和 Starcat / GitHub 同一套节奏；chevron 无独立底，只做附属。
 /// 默认分段对照；全文只替换卡片正文。切段仍按 Markdown 块，缓存按 mode 分文件。
 private struct GitHubNotificationTranslationControls: View {
     let viewModel: ReadmeTranslationViewModel
@@ -876,7 +927,6 @@ private struct GitHubNotificationTranslationControls: View {
     }
 
     var body: some View {
-        // 共用一块 22pt 圆角底，避免气泡和 chevron 各画一方、高度也对不齐。
         HStack(spacing: 0) {
             Button {
                 if viewModel.isTranslating {
@@ -894,12 +944,16 @@ private struct GitHubNotificationTranslationControls: View {
                 }
             } label: {
                 iconView
-                    .frame(width: 22, height: 22)
-                    .contentShape(Rectangle())
+                    .squareLogoActionChrome(
+                        side: 22,
+                        backgroundColor: isShowingTranslation
+                            ? Color.accentColor.opacity(0.14)
+                            : Color.secondary.opacity(0.10)
+                    )
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
-            .toolbarIconHover(cornerRadius: 0)
+            .toolbarIconHover()
             .disabled(!viewModel.isTranslating && !hasSegments)
             .help(buttonTooltip)
             .onHover { hovering in
@@ -961,33 +1015,22 @@ private struct GitHubNotificationTranslationControls: View {
                 }
                 .disabled(viewModel.isTranslating || !hasSegments)
             } label: {
-                // compact + 8pt：附属指示器，不要和主操作抢视觉。
-                Image(systemName: "chevron.compact.down")
-                    .font(.system(size: 8, weight: .semibold))
+                // 和中栏「全部」筛选菜单右侧同一套，不要另起 compact / semibold。
+                Image(systemName: "chevron.down")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
-                    .frame(width: 14, height: 22)
+                    .frame(height: 22)
+                    .padding(.horizontal, 2)
                     .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .tint(.secondary)
-            .frame(width: 14, height: 22)
-            .clipped()
+            .frame(height: 22)
             .focusEffectDisabled()
-            .toolbarIconHover(cornerRadius: 0)
             .clickablePointer()
             .help("readme.translate.menu.tooltip")
         }
-        .frame(height: 22)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(
-                    isShowingTranslation
-                        ? Color.accentColor.opacity(0.14)
-                        : Color.secondary.opacity(0.10)
-                )
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 
     /// 翻译中不用系统 8 瓣 spinner：那段数已经在 VM 里，圆环才能看出走了多少。
@@ -1007,9 +1050,9 @@ private struct GitHubNotificationTranslationControls: View {
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: isHoveringWhileTranslating)
             .accessibilityValue(Text(verbatim: translationProgressLabel))
         } else {
-            // 比 14pt logo 再收一档：气泡符号本身笔画就满。
+            // 14×14 画布对齐 GitHub logo；12pt medium 抵消 SF Symbol 比 bitmap 更满。
             Image(systemName: isShowingTranslation ? "character.bubble.fill" : "character.bubble")
-                .font(.system(size: 10, weight: .regular))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(isShowingTranslation ? Color.accentColor : Color.primary)
                 .frame(width: 14, height: 14)
         }
@@ -1777,20 +1820,22 @@ private struct GitHubNotificationCommentComposer: View {
     }
 }
 
-/// AI 生成光圈的尺寸 / 时长。光晕要铺出卡片边缘，gutter 必须大于 blur。
+/// AI 生成光圈的尺寸 / 时长。光晕要铺出卡片边缘，gutter 必须大于 bloom blur。
 private enum GitHubNotificationAIHaloMetrics {
     static let cornerRadius: CGFloat = 8
     static let glowBleed: CGFloat = 8
     static let fade: TimeInterval = 0.48
     static let reduceMotionFade: TimeInterval = 0.28
+    static let rotationPeriod: TimeInterval = 3.2
+    static let cardStrokeWidth: CGFloat = 3
 
     static func fadeDuration(_ reduceMotion: Bool) -> TimeInterval {
         reduceMotion ? reduceMotionFade : fade
     }
 }
 
-/// AI 生成评论时的彩色光圈。配色对齐搜索框语义光晕（青 / 紫 / 粉 / 橙），
-/// 用角向渐变绕边转做出流动。出现和消失都走透明度过渡，Reduce Motion 只停转动、仍淡入淡出。
+/// 撰写框光圈：面积小，SwiftUI TimelineView + blur 可以接受。
+/// 评论卡不要走这条路径，见 `GitHubNotificationAIHaloRepresentable`。
 private struct GitHubNotificationAIGeneratingHalo: View {
     var isActive: Bool
 
@@ -1805,26 +1850,42 @@ private struct GitHubNotificationAIGeneratingHalo: View {
     ]
 
     var body: some View {
-        Group {
-            if reduceMotion {
-                ring(angle: 0)
-            } else {
-                // 生成中才转；paused 在淡出时冻住最后一帧，避免颜色跳回 0°。
-                TimelineView(.animation(minimumInterval: 1.0 / 24.0, paused: !isActive)) { timeline in
-                    let turns = timeline.date.timeIntervalSinceReferenceDate
-                        .truncatingRemainder(dividingBy: 3.2) / 3.2
-                    ring(angle: turns * 360)
-                }
+        ZStack {
+            // 灭掉之后卸掉 TimelineView / blur 层，避免 opacity 0 还在合成。
+            if isActive {
+                haloContent
+                    .transition(.opacity)
             }
         }
         .padding(GitHubNotificationAIHaloMetrics.glowBleed)
-        .opacity(isActive ? 1 : 0)
-        .animation(.easeInOut(duration: GitHubNotificationAIHaloMetrics.fadeDuration(reduceMotion)), value: isActive)
+        .animation(
+            .easeInOut(duration: GitHubNotificationAIHaloMetrics.fadeDuration(reduceMotion)),
+            value: isActive
+        )
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 
-    private func ring(angle: Double) -> some View {
+    @ViewBuilder
+    private var haloContent: some View {
+        if reduceMotion {
+            bloomRing(angle: 0)
+        } else {
+            TimelineView(
+                .animation(
+                    minimumInterval: 1.0 / 12.0,
+                    paused: !isActive
+                )
+            ) { timeline in
+                let turns = timeline.date.timeIntervalSinceReferenceDate
+                    .truncatingRemainder(dividingBy: GitHubNotificationAIHaloMetrics.rotationPeriod)
+                    / GitHubNotificationAIHaloMetrics.rotationPeriod
+                bloomRing(angle: turns * 360)
+            }
+        }
+    }
+
+    private func bloomRing(angle: Double) -> some View {
         let shape = RoundedRectangle(
             cornerRadius: GitHubNotificationAIHaloMetrics.cornerRadius,
             style: .continuous
@@ -1848,6 +1909,134 @@ private struct GitHubNotificationAIGeneratingHalo: View {
         }
         .shadow(color: .cyan.opacity(0.22), radius: 6)
         .shadow(color: .pink.opacity(0.16), radius: 8)
+    }
+}
+
+/// 评论卡光圈：Core Animation 圆锥渐变 + 描边 mask，旋转走合成线程。
+///
+/// 不能用 SwiftUI `TimelineView`：长卡片上每帧 AngularGradient 会把整卡（含 MarkdownUI）标脏，
+/// 翻译时多卡同时亮、再滚动，主线程会卡死。
+private struct GitHubNotificationAIHaloRepresentable: NSViewRepresentable {
+    var isActive: Bool
+    var reduceMotion: Bool
+
+    func makeNSView(context: Context) -> GitHubNotificationAIHaloNSView {
+        GitHubNotificationAIHaloNSView()
+    }
+
+    func updateNSView(_ nsView: GitHubNotificationAIHaloNSView, context: Context) {
+        nsView.apply(isActive: isActive, reduceMotion: reduceMotion)
+    }
+}
+
+/// 固定圆角描边 mask，只转渐变层。layout 里关掉隐式动画，避免滚动改 bounds 时 mask 跟着 tween。
+private final class GitHubNotificationAIHaloNSView: NSView {
+    private let gradientLayer = CAGradientLayer()
+    private let maskLayer = CAShapeLayer()
+    private var isActive = false
+    private var reduceMotion = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.masksToBounds = false
+        layer?.isOpaque = false
+        layer?.opacity = 0
+
+        gradientLayer.type = .conic
+        gradientLayer.startPoint = CGPoint(x: 0.5, y: 0.5)
+        gradientLayer.endPoint = CGPoint(x: 0.5, y: 0)
+        gradientLayer.colors = [
+            NSColor.cyan.withAlphaComponent(0.95).cgColor,
+            NSColor.purple.withAlphaComponent(0.95).cgColor,
+            NSColor.systemPink.withAlphaComponent(0.90).cgColor,
+            NSColor.systemOrange.withAlphaComponent(0.82).cgColor,
+            NSColor.cyan.withAlphaComponent(0.95).cgColor
+        ]
+
+        maskLayer.fillColor = nil
+        maskLayer.strokeColor = NSColor.white.cgColor
+        maskLayer.lineWidth = GitHubNotificationAIHaloMetrics.cardStrokeWidth
+        maskLayer.lineJoin = .round
+        maskLayer.lineCap = .round
+
+        layer?.addSublayer(gradientLayer)
+        layer?.mask = maskLayer
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        let scale = window?.backingScaleFactor ?? 2
+        layer?.contentsScale = scale
+        gradientLayer.contentsScale = scale
+        maskLayer.contentsScale = scale
+    }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        gradientLayer.frame = bounds
+        maskLayer.frame = bounds
+        let inset = GitHubNotificationAIHaloMetrics.glowBleed
+            + GitHubNotificationAIHaloMetrics.cardStrokeWidth / 2
+        let rect = bounds.insetBy(dx: inset, dy: inset)
+        let radius = GitHubNotificationAIHaloMetrics.cornerRadius
+        maskLayer.path = CGPath(
+            roundedRect: rect,
+            cornerWidth: min(radius, rect.width / 2),
+            cornerHeight: min(radius, rect.height / 2),
+            transform: nil
+        )
+        CATransaction.commit()
+        if isActive && !reduceMotion {
+            startSpinIfNeeded()
+        }
+    }
+
+    func apply(isActive: Bool, reduceMotion: Bool) {
+        let fade = GitHubNotificationAIHaloMetrics.fadeDuration(reduceMotion)
+        self.reduceMotion = reduceMotion
+        self.isActive = isActive
+
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(fade)
+        layer?.opacity = isActive ? 1 : 0
+        CATransaction.commit()
+
+        if isActive && !reduceMotion {
+            startSpinIfNeeded()
+        } else {
+            stopSpin()
+        }
+    }
+
+    private func startSpinIfNeeded() {
+        guard gradientLayer.animation(forKey: "spin") == nil else { return }
+        let spin = CABasicAnimation(keyPath: "transform.rotation.z")
+        spin.fromValue = 0
+        spin.toValue = Double.pi * 2
+        spin.duration = GitHubNotificationAIHaloMetrics.rotationPeriod
+        spin.repeatCount = .infinity
+        spin.isRemovedOnCompletion = false
+        gradientLayer.add(spin, forKey: "spin")
+    }
+
+    private func stopSpin() {
+        gradientLayer.removeAnimation(forKey: "spin")
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        gradientLayer.transform = CATransform3DIdentity
+        CATransaction.commit()
     }
 }
 
