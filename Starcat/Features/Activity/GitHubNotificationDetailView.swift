@@ -829,7 +829,8 @@ private struct GitHubNotificationCommentCard: View {
         .padding(StarcatAIHaloMetrics.glowBleed)
         .overlay {
             if isJobTranslating {
-                StarcatAIHaloLayerView(
+                // 和 README 共用连续 CA 光圈；卡片滚动时不进入 SwiftUI TimelineView / blur。
+                StarcatAIBloomHaloLayerView(
                     isActive: isHaloActive,
                     reduceMotion: reduceMotion
                 )

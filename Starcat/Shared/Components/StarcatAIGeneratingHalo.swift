@@ -5,9 +5,8 @@
 //  AI 正在干活时的彩色流动光圈。
 //
 //  - `StarcatAIGeneratingHalo`：Issue 撰写框用的开花光晕（SwiftUI blur + 角向渐变）。
-//  - `StarcatAIGeneratingHaloHost`：README 的全尺寸 Core Animation 光圈，避开
-//    SwiftUI TimelineView / blur 持续占用主线程，同时保持在 WKWebView 上层。
-//  - `StarcatAIHaloLayerView`：Issue 多条评论卡的细描边，避免超高卡走 blur。
+//  - `StarcatAIBloomHaloLayerView`：README 与通知评论卡共用的 Core Animation 连续光圈，
+//    避开 SwiftUI TimelineView / blur 持续占用主线程，同时保持在 WKWebView 上层。
 //
 //  关键约束：CA 路径在 layout 改 bounds 时必须关掉隐式动画，否则滚动会把 mask 路径 tween 一遍。
 //  禁止对圆锥渐变整层做 CIFilter：模糊未裁切的 conic 会在页面上拉出斜光条。
@@ -22,7 +21,6 @@ enum StarcatAIHaloMetrics {
     static let fade: TimeInterval = 0.48
     static let reduceMotionFade: TimeInterval = 0.28
     static let rotationPeriod: TimeInterval = 3.2
-    static let strokeWidth: CGFloat = 3
 
     static func fadeDuration(_ reduceMotion: Bool) -> TimeInterval {
         reduceMotion ? reduceMotionFade : fade
@@ -106,11 +104,11 @@ struct StarcatAIGeneratingHalo: View {
     }
 }
 
-/// README 使用的全尺寸光圈。NSView 保证它位于 WKWebView 上层，动画由 Core Animation
-/// render server 执行，不再用 TimelineView 周期性重建 SwiftUI 视图树。
+/// README 与通知评论卡共用的连续光圈。NSView 保证它能盖住 WKWebView，动画由
+/// Core Animation render server 执行，不再用 TimelineView 周期性重建 SwiftUI 视图树。
 ///
 /// 查：`docs/7-工具与脚本/Swift-学习索引.md` → `NSViewRepresentable`、`Core Animation`。
-struct StarcatAIGeneratingHaloHost: NSViewRepresentable {
+struct StarcatAIBloomHaloLayerView: NSViewRepresentable {
     var isActive: Bool
     var reduceMotion: Bool
 
@@ -125,7 +123,7 @@ struct StarcatAIGeneratingHaloHost: NSViewRepresentable {
     }
 }
 
-/// README 光圈只让一层圆锥渐变旋转；两层柔光保持静态，避免全尺寸 blur 每帧重算。
+/// 连续光圈只让一层圆锥渐变旋转；两层柔光保持静态，避免大尺寸 blur 每帧重算。
 /// 渐变层使用覆盖 bounds 对角线的正方形，旋转到任意角度都不会露出空白边。
 final class StarcatAIBloomHaloNSView: NSView {
     private let gradientClipLayer = CALayer()
@@ -299,136 +297,6 @@ final class StarcatAIBloomHaloNSView: NSView {
         glowLayer.shadowOffset = .zero
         glowLayer.shadowRadius = shadowRadius
         glowLayer.shadowOpacity = shadowOpacity
-    }
-
-    private func startSpinIfNeeded() {
-        guard gradientLayer.animation(forKey: "spin") == nil else { return }
-        let spin = CABasicAnimation(keyPath: "transform.rotation.z")
-        spin.fromValue = 0
-        spin.toValue = Double.pi * 2
-        spin.duration = StarcatAIHaloMetrics.rotationPeriod
-        spin.repeatCount = .infinity
-        spin.isRemovedOnCompletion = false
-        gradientLayer.add(spin, forKey: "spin")
-    }
-
-    private func stopSpin() {
-        gradientLayer.removeAnimation(forKey: "spin")
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        gradientLayer.transform = CATransform3DIdentity
-        CATransaction.commit()
-    }
-}
-
-/// Issue 评论卡细描边。旋转走合成线程，不进 SwiftUI TimelineView。
-///
-/// 查：`docs/7-工具与脚本/Swift-学习索引.md` → `NSViewRepresentable`。
-struct StarcatAIHaloLayerView: NSViewRepresentable {
-    var isActive: Bool
-    var reduceMotion: Bool
-
-    func makeNSView(context: Context) -> StarcatAIHaloNSView {
-        StarcatAIHaloNSView()
-    }
-
-    func updateNSView(_ nsView: StarcatAIHaloNSView, context: Context) {
-        nsView.apply(isActive: isActive, reduceMotion: reduceMotion)
-    }
-}
-
-/// 固定圆角描边 mask，只转渐变层。mask 不能挂在渐变上，否则圆角框会跟着转。
-final class StarcatAIHaloNSView: NSView {
-    private let gradientLayer = CAGradientLayer()
-    private let maskLayer = CAShapeLayer()
-    private var isActive = false
-    private var reduceMotion = false
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.masksToBounds = false
-        layer?.isOpaque = false
-        layer?.opacity = 0
-
-        gradientLayer.type = .conic
-        gradientLayer.startPoint = CGPoint(x: 0.5, y: 0.5)
-        gradientLayer.endPoint = CGPoint(x: 0.5, y: 0)
-        gradientLayer.colors = [
-            NSColor.cyan.withAlphaComponent(0.95).cgColor,
-            NSColor.purple.withAlphaComponent(0.95).cgColor,
-            NSColor.systemPink.withAlphaComponent(0.90).cgColor,
-            NSColor.systemOrange.withAlphaComponent(0.82).cgColor,
-            NSColor.cyan.withAlphaComponent(0.95).cgColor
-        ]
-
-        maskLayer.fillColor = nil
-        maskLayer.strokeColor = NSColor.white.cgColor
-        maskLayer.lineWidth = StarcatAIHaloMetrics.strokeWidth
-        maskLayer.lineJoin = .round
-        maskLayer.lineCap = .round
-
-        layer?.addSublayer(gradientLayer)
-        layer?.mask = maskLayer
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        nil
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
-    }
-
-    override func viewDidChangeBackingProperties() {
-        super.viewDidChangeBackingProperties()
-        let scale = window?.backingScaleFactor ?? 2
-        layer?.contentsScale = scale
-        gradientLayer.contentsScale = scale
-        maskLayer.contentsScale = scale
-    }
-
-    override func layout() {
-        super.layout()
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        gradientLayer.frame = bounds
-        maskLayer.frame = bounds
-        let inset = StarcatAIHaloMetrics.glowBleed
-            + StarcatAIHaloMetrics.strokeWidth / 2
-        let rect = bounds.insetBy(dx: inset, dy: inset)
-        let radius = StarcatAIHaloMetrics.cornerRadius
-        maskLayer.path = CGPath(
-            roundedRect: rect,
-            cornerWidth: min(radius, max(rect.width / 2, 0)),
-            cornerHeight: min(radius, max(rect.height / 2, 0)),
-            transform: nil
-        )
-        CATransaction.commit()
-        if isActive && !reduceMotion {
-            startSpinIfNeeded()
-        }
-    }
-
-    func apply(isActive: Bool, reduceMotion: Bool) {
-        // SwiftUI 会在同一翻译批次内多次调用 updateNSView；状态未变时不要重复提交
-        // opacity 事务或触碰旋转动画，避免评论卡滚动期间制造额外的 CA 更新。
-        guard self.isActive != isActive || self.reduceMotion != reduceMotion else { return }
-        let fade = StarcatAIHaloMetrics.fadeDuration(reduceMotion)
-        self.reduceMotion = reduceMotion
-        self.isActive = isActive
-
-        CATransaction.begin()
-        CATransaction.setAnimationDuration(fade)
-        layer?.opacity = isActive ? 1 : 0
-        CATransaction.commit()
-
-        if isActive && !reduceMotion {
-            startSpinIfNeeded()
-        } else {
-            stopSpin()
-        }
     }
 
     private func startSpinIfNeeded() {

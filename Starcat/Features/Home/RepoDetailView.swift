@@ -582,10 +582,10 @@ struct ReadmeStateView: View {
                             value: isReadmeTranslating
                         )
                 )
-                // 和 AI 写 Issue 回复同一份 `StarcatAIGeneratingHalo`；嵌进 NSView 才能盖住 WKWebView。
+                // README 与通知评论卡共用连续 CA 光圈；NSView 层才能稳定盖住 WKWebView。
                 .padding(StarcatAIHaloMetrics.glowBleed)
                 .overlay {
-                    StarcatAIGeneratingHaloHost(
+                    StarcatAIBloomHaloLayerView(
                         isActive: isReadmeTranslating,
                         reduceMotion: reduceMotion
                     )
