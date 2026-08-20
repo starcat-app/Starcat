@@ -6,8 +6,8 @@
 //
 //  关键约束：
 //  - 永远不调用 codebase update 子命令（沙盒 + App Store 禁忌）
-//  - CBM_CACHE_DIR 环境变量注入为 container 内路径
-//  - Process.environment 不继承父进程 PATH（纯二进制路径 spawn）
+//  - Direct 外部 0.10.8+ 不覆盖 CBM_CACHE_DIR，复用账户级 daemon 和 canonical cache
+//  - App Store 内置 0.8.1 继续注入 sandbox 内的 repo 独立 CBM_CACHE_DIR
 //  - 所有子进程生命周期由本 runner 统一管理（activeProcesses 数组 + terminationHandler）
 
 import Darwin
@@ -78,21 +78,66 @@ final class CodebaseMemoryRunner {
 
     /// 启动一个经过完整隔离校验的 UI 进程。
     ///
-    /// 这是 Starcat 管控内置二进制进程的唯一推荐入口：
+    /// 这是 Direct 外部二进制的启动入口：
     /// 1. 停止本 Runner 仍持有的旧 UI 进程。
-    /// 2. 检查端口可用后启动 UI。
+    /// 2. 读取账户级 daemon 的固定端口并启动 UI client。
     /// 3. 等待 HTTP server 响应。浏览器打开必须在端口可连通后立刻发生，
     ///    不能再被后续 CLI 校验挡住，否则用户会看到“启动 UI”长期卡住。
     func startVerifiedUI(
+        binaryURL: URL,
+        projectName: String,
+        workingDirectoryURL: URL,
+        repositoryFullName: String
+    ) async throws -> CodebaseMemoryUIProcess {
+        let port = try await currentUIPort(
+            binaryURL: binaryURL,
+            workingDirectoryURL: workingDirectoryURL
+        )
+        AppLog.ui.info("CodebaseMemory startVerifiedUI begin repo=\(repositoryFullName, privacy: .public) project=\(projectName, privacy: .public) port=\(port, privacy: .public) binary=\(binaryURL.path, privacy: .public)")
+        let pageURL = Self.graphPageURL(port: port, projectName: projectName)
+        return try await launchVerifiedUI(
+            binaryURL: binaryURL,
+            port: port,
+            cacheDir: nil,
+            workingDirectoryURL: workingDirectoryURL,
+            pageURL: pageURL,
+            requiresAvailablePort: false,
+            repositoryFullName: repositoryFullName
+        )
+    }
+
+    /// App Store 内置 0.8.1 仍使用 sandbox 内的 repo 独立 cache 和随机端口。
+    /// 该兼容入口与 Direct 的账户级 daemon 分开，避免渠道之间互相回归。
+    func startBundledVerifiedUI(
         binaryURL: URL,
         port: Int,
         cacheDir: URL,
         repositoryFullName: String
     ) async throws -> CodebaseMemoryUIProcess {
-        AppLog.ui.info("CodebaseMemory startVerifiedUI begin repo=\(repositoryFullName, privacy: .public) port=\(port, privacy: .public) cache=\(cacheDir.path, privacy: .public) binary=\(binaryURL.path, privacy: .public)")
-        stopAll()
+        AppLog.ui.info("CodebaseMemory startBundledVerifiedUI begin repo=\(repositoryFullName, privacy: .public) port=\(port, privacy: .public) cache=\(cacheDir.path, privacy: .public) binary=\(binaryURL.path, privacy: .public)")
+        return try await launchVerifiedUI(
+            binaryURL: binaryURL,
+            port: port,
+            cacheDir: cacheDir,
+            workingDirectoryURL: cacheDir,
+            pageURL: URL(string: "http://127.0.0.1:\(port)/")!,
+            requiresAvailablePort: true,
+            repositoryFullName: repositoryFullName
+        )
+    }
 
-        if CodebaseMemoryPortAvailability.unavailableMessage(for: port) != nil {
+    private func launchVerifiedUI(
+        binaryURL: URL,
+        port: Int,
+        cacheDir: URL?,
+        workingDirectoryURL: URL,
+        pageURL: URL,
+        requiresAvailablePort: Bool,
+        repositoryFullName: String
+    ) async throws -> CodebaseMemoryUIProcess {
+        stopAll()
+        if requiresAvailablePort,
+           CodebaseMemoryPortAvailability.unavailableMessage(for: port) != nil {
             AppLog.ui.error("CodebaseMemory startVerifiedUI port unavailable repo=\(repositoryFullName, privacy: .public) port=\(port, privacy: .public)")
             throw CodebaseMemoryError.portExhausted
         }
@@ -103,6 +148,7 @@ final class CodebaseMemoryRunner {
                 binaryURL: binaryURL,
                 port: port,
                 cacheDir: cacheDir,
+                workingDirectoryURL: workingDirectoryURL,
                 repositoryFullName: repositoryFullName
             )
         } catch {
@@ -113,8 +159,6 @@ final class CodebaseMemoryRunner {
             )
             throw error
         }
-        let pageURL = URL(string: "http://127.0.0.1:\(port)/")!
-
         do {
             guard process.isRunning else {
                 AppLog.ui.error("CodebaseMemory UI process exited before readiness repo=\(repositoryFullName, privacy: .public) port=\(port, privacy: .public)")
@@ -150,17 +194,37 @@ final class CodebaseMemoryRunner {
             visibility: .issue,
             category: "codebase-memory",
             operation: "codebaseMemory.startUI",
-            message: "Bundled CodebaseMemory UI process failed to start",
+            message: "CodebaseMemory UI process failed to start",
             underlying: DiagnosticEvent.summarize(error),
             context: ["repo": repositoryFullName, "port": String(port)]
         )
     }
 
-    /// 判断指定 repo 独立 cache 里是否已有项目 DB。
-    ///
-    /// 串台的根因是多个 repo 共用同一个 `.internal-cache`。现在隔离边界是
-    /// `<root>/<owner>/<repo>/.internal-cache`，这里不再启动前跑 CLI 校验阻塞 UI；
-    /// 只在 cached 快路径确认该目录里确实有项目 DB，缺失则回完整索引流程重建。
+    // MARK: - 索引入口
+
+    /// App Store 内置版本使用 sandbox 内的 repo 独立 cache，不传项目名覆盖。
+    func runBundledIndex(
+        binaryURL: URL,
+        repoPath: URL,
+        cacheDir: URL
+    ) async throws -> CodebaseMemoryIndexResult {
+        try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+        let payload = try JSONSerialization.data(withJSONObject: ["repo_path": repoPath.path])
+        guard let payloadText = String(data: payload, encoding: .utf8) else {
+            throw CodebaseMemoryError.indexFailed(underlying: "could not encode index request")
+        }
+        let output = try await runCLI(
+            binaryURL: binaryURL,
+            arguments: ["cli", "index_repository", payloadText],
+            cacheDir: cacheDir,
+            workingDirectoryURL: repoPath,
+            timeout: 120,
+            failureContext: "index_repository"
+        )
+        return CodebaseMemoryIndexResult.parse(stdout: output.stdout, stderr: output.stderr)
+    }
+
+    /// 判断 App Store repo 独立 cache 里是否已有项目 DB。
     func hasIndexedProjectCache(cacheDir: URL) -> Bool {
         guard let contents = try? FileManager.default.contentsOfDirectory(
             at: cacheDir,
@@ -173,14 +237,12 @@ final class CodebaseMemoryRunner {
         }
     }
 
-    // MARK: - 索引入口
-
     /// 用 `cli index_repository` 子命令索引一个 repo 目录。
     ///
     /// - Parameters:
     ///   - binaryURL: container 内可执行文件路径
     ///   - repoPath: 持久解压后的项目 source 目录（绝对路径）
-    ///   - cacheDir: CBM_CACHE_DIR 指向的目录（container 内）
+    ///   - projectName: Starcat 为仓库生成的稳定项目名
     ///
     /// - Returns: 解析后的 IndexResult（nodeCount / edgeCount / durationMs / errors）
     ///
@@ -188,32 +250,33 @@ final class CodebaseMemoryRunner {
     func runIndex(
         binaryURL: URL,
         repoPath: URL,
-        cacheDir: URL
+        projectName: String
     ) async throws -> CodebaseMemoryIndexResult {
-        try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
-
         let output = try await runCLI(
             binaryURL: binaryURL,
             arguments: [
                 "cli", "index_repository",
-                "{\"repo_path\": \"\(repoPath.path)\"}"
+                "--repo-path", repoPath.path,
+                "--name", projectName
             ],
-            cacheDir: cacheDir,
+            cacheDir: nil,
+            workingDirectoryURL: repoPath,
             timeout: 120,
             failureContext: "index_repository"
         )
         return CodebaseMemoryIndexResult.parse(stdout: output.stdout, stderr: output.stderr)
     }
 
-    /// 读取指定 cache 下的已索引项目。
+    /// 读取账户级 canonical cache 下的已索引项目。
     ///
-    /// 这是 UI 打开前的硬校验来源：如果 cache 中的 root_path 不是当前 repo 的
-    /// source 目录，说明即将打开的是旧 repo 的 graph，必须阻止。
-    func listProjects(binaryURL: URL, cacheDir: URL) async throws -> [CodebaseMemoryCLIProject] {
+    /// 这是 UI 打开前的硬校验来源：共享 cache 可以包含多个项目，但 Starcat
+    /// 的稳定项目名必须存在，而且 root_path 必须仍指向当前 repo 的 source。
+    func listProjects(binaryURL: URL) async throws -> [CodebaseMemoryCLIProject] {
         let output = try await runCLI(
             binaryURL: binaryURL,
-            arguments: ["cli", "list_projects", "{}"],
-            cacheDir: cacheDir,
+            arguments: ["cli", "list_projects"],
+            cacheDir: nil,
+            workingDirectoryURL: nil,
             timeout: 8,
             failureContext: "list_projects"
         )
@@ -223,13 +286,14 @@ final class CodebaseMemoryRunner {
     /// 校验 cache 中的项目确实属于当前 repo，并返回 UI 前端需要的 project name。
     func verifiedProjectName(
         binaryURL: URL,
-        cacheDir: URL,
+        expectedProjectName: String,
         expectedSourceURL: URL,
         repositoryFullName: String
     ) async throws -> String {
-        let projects = try await listProjects(binaryURL: binaryURL, cacheDir: cacheDir)
+        let projects = try await listProjects(binaryURL: binaryURL)
         return try Self.verifiedProjectName(
             projects: projects,
+            expectedProjectName: expectedProjectName,
             expectedSourceURL: expectedSourceURL,
             repositoryFullName: repositoryFullName
         )
@@ -238,13 +302,14 @@ final class CodebaseMemoryRunner {
     /// 纯函数版校验，方便单测覆盖 root_path mismatch 这类串台场景。
     nonisolated static func verifiedProjectName(
         projects: [CodebaseMemoryCLIProject],
+        expectedProjectName: String,
         expectedSourceURL: URL,
         repositoryFullName: String
     ) throws -> String {
         let expectedRoot = expectedSourceURL.standardizedFileURL.path
-        guard projects.count == 1, let project = projects.first else {
+        guard let project = projects.first(where: { $0.name == expectedProjectName }) else {
             throw CodebaseMemoryError.uiStartFailed(
-                underlying: "expected one indexed project for \(repositoryFullName), got \(projects.count)"
+                underlying: "indexed project not found for \(repositoryFullName): \(expectedProjectName)"
             )
         }
         let actualRoot = URL(fileURLWithPath: project.rootPath).standardizedFileURL.path
@@ -254,6 +319,27 @@ final class CodebaseMemoryRunner {
             )
         }
         return project.name
+    }
+
+    /// 上游项目名只接受可移植文件名字符。GitHub owner/name 已满足该约束，
+    /// 加上不可变的 GitHub ID 后可避免用户 canonical cache 中的同名仓库碰撞。
+    nonisolated static func projectName(owner: String, name: String, githubID: Int64) -> String {
+        "starcat-\(githubID)-\(owner)-\(name)"
+    }
+
+    /// UI 通过 query string 保存项目与 Tab；直接生成该路由可避免共享 daemon
+    /// 默认打开其他 Agent 最近浏览的项目。
+    nonisolated static func graphPageURL(port: Int, projectName: String) -> URL {
+        var components = URLComponents()
+        components.scheme = "http"
+        components.host = "127.0.0.1"
+        components.port = port
+        components.path = "/"
+        components.queryItems = [
+            URLQueryItem(name: "tab", value: "graph"),
+            URLQueryItem(name: "project", value: projectName)
+        ]
+        return components.url!
     }
 
     // MARK: - UI 子进程入口
@@ -266,11 +352,14 @@ final class CodebaseMemoryRunner {
     func startUI(
         binaryURL: URL,
         port: Int,
-        cacheDir: URL,
+        cacheDir: URL?,
+        workingDirectoryURL: URL,
         repositoryFullName: String
     ) async throws -> Process {
-        try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
-        AppLog.ui.info("CodebaseMemory startUI config repo=\(repositoryFullName, privacy: .public) port=\(port, privacy: .public) cache=\(cacheDir.path, privacy: .public)")
+        if let cacheDir {
+            try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+        }
+        AppLog.ui.info("CodebaseMemory startUI config repo=\(repositoryFullName, privacy: .public) port=\(port, privacy: .public)")
 
         // Step 1: 写入 UI 配置。Runner 与 ViewModel 都在 MainActor，不能用
         // waitUntilExit() 阻塞主线程；复用 runCLI 的持续 drain 和超时保护，避免
@@ -280,6 +369,7 @@ final class CodebaseMemoryRunner {
                 binaryURL: binaryURL,
                 arguments: ["--ui=true", "--port=\(port)"],
                 cacheDir: cacheDir,
+                workingDirectoryURL: workingDirectoryURL,
                 timeout: 15,
                 failureContext: "ui configuration"
             )
@@ -303,10 +393,12 @@ final class CodebaseMemoryRunner {
         process.executableURL = binaryURL
         // 不带 --ui 参数 — 从 config.json 自动读取
         process.arguments = []
-        process.currentDirectoryURL = cacheDir
-        process.environment = ProcessInfo.processInfo.environment.merging([
-            "CBM_CACHE_DIR": cacheDir.path
-        ]) { _, new in new }
+        process.currentDirectoryURL = workingDirectoryURL
+        if let cacheDir {
+            process.environment = ProcessInfo.processInfo.environment.merging([
+                "CBM_CACHE_DIR": cacheDir.path
+            ]) { _, new in new }
+        }
 
         // stdin Pipe 保持打开，防止进程因 EOF 退出
         let stdinPipe = Pipe()
@@ -357,6 +449,35 @@ final class CodebaseMemoryRunner {
             )
         )
         return process
+    }
+
+    /// 读取上游持久化端口，不自行分配随机端口。共享 daemon 可能已被其他 Agent
+    /// 启动，此时复用其端口才不会把正在工作的 UI 配置改掉。
+    private func currentUIPort(
+        binaryURL: URL,
+        workingDirectoryURL: URL
+    ) async throws -> Int {
+        let output = try await runCLI(
+            binaryURL: binaryURL,
+            arguments: ["config", "get", "ui_port"],
+            cacheDir: nil,
+            workingDirectoryURL: workingDirectoryURL,
+            timeout: 8,
+            failureContext: "read ui_port"
+        )
+        return try Self.parseUIPort(output.stdout)
+    }
+
+    nonisolated static func parseUIPort(_ data: Data) throws -> Int {
+        let values = String(decoding: data, as: UTF8.self)
+            .split(whereSeparator: \.isNewline)
+            .compactMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        guard let port = values.last, (1...65_535).contains(port) else {
+            throw CodebaseMemoryError.uiStartFailed(
+                underlying: "CodebaseMemory returned an invalid ui_port"
+            )
+        }
+        return port
     }
 
     // MARK: - 停止
@@ -522,18 +643,21 @@ final class CodebaseMemoryRunner {
     private func runCLI(
         binaryURL: URL,
         arguments: [String],
-        cacheDir: URL,
+        cacheDir: URL?,
+        workingDirectoryURL: URL?,
         timeout: TimeInterval,
         failureContext: String
     ) async throws -> CLIOutput {
         let process = Process()
         process.executableURL = binaryURL
         process.arguments = arguments
-        process.currentDirectoryURL = cacheDir
+        process.currentDirectoryURL = workingDirectoryURL
         process.standardInput = FileHandle.nullDevice
-        process.environment = ProcessInfo.processInfo.environment.merging([
-            "CBM_CACHE_DIR": cacheDir.path
-        ]) { _, new in new }
+        if let cacheDir {
+            process.environment = ProcessInfo.processInfo.environment.merging([
+                "CBM_CACHE_DIR": cacheDir.path
+            ]) { _, new in new }
+        }
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
@@ -609,25 +733,33 @@ final class CodebaseMemoryRunner {
     private func waitForServer(process: Process, port: Int, timeout: Int) async throws {
         let deadline = Date().addingTimeInterval(TimeInterval(timeout))
         while Date() < deadline {
-            guard process.isRunning else {
-                throw CodebaseMemoryError.uiStartFailed(
-                    underlying: processStartupFailureMessage(
-                        process: process,
-                        fallback: "process exited before server became ready"
-                    )
-                )
-            }
             if Self.canConnectToLocalhost(port: port) {
                 return
             }
+            guard process.isRunning else {
+                let message = processStartupFailureMessage(
+                    process: process,
+                    fallback: "process exited before server became ready"
+                )
+                if CodebaseMemoryGraphUICapability.reportsUnavailable(message) {
+                    throw CodebaseMemoryError.graphUIUnavailable(
+                        path: process.executableURL?.path ?? "codebase-memory-mcp"
+                    )
+                }
+                throw CodebaseMemoryError.uiStartFailed(underlying: message)
+            }
             try? await Task.sleep(for: .milliseconds(250))
         }
-        throw CodebaseMemoryError.uiStartFailed(
-            underlying: processStartupFailureMessage(
-                process: process,
-                fallback: "server did not listen on port \(port)"
-            )
+        let message = processStartupFailureMessage(
+            process: process,
+            fallback: "server did not listen on port \(port)"
         )
+        if CodebaseMemoryGraphUICapability.reportsUnavailable(message) {
+            throw CodebaseMemoryError.graphUIUnavailable(
+                path: process.executableURL?.path ?? "codebase-memory-mcp"
+            )
+        }
+        throw CodebaseMemoryError.uiStartFailed(underlying: message)
     }
 
     private func processStartupFailureMessage(process: Process, fallback: String) -> String {

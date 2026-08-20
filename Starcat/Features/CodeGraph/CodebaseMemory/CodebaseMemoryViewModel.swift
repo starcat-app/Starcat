@@ -185,7 +185,15 @@ final class CodebaseMemoryViewModel {
            let port = project.metadata.lastUIPort,
            let proc = uiProcess,
            proc.isRunning {
-            let url = URL(string: "http://127.0.0.1:\(port)/")!
+            let projectName = CodebaseMemoryRunner.projectName(
+                owner: repo.owner,
+                name: repo.name,
+                githubID: repo.id
+            )
+            let url = CodebaseMemoryRunner.graphPageURL(
+                port: port,
+                projectName: projectName
+            )
             AppLog.ui.info("CodebaseMemory reopening succeeded UI repo=\(self.repo.fullName, privacy: .public) port=\(port, privacy: .public) url=\(url.absoluteString, privacy: .public)")
             task = Task { await openBrowser(port: port, url: url) }
             return
@@ -222,10 +230,10 @@ final class CodebaseMemoryViewModel {
                 // Step 0: App Store 解析 bundle；Direct 解析用户选择或本机安装路径。
                 setStep(id: .resolveBinary, status: .running)
                 // Pro check done in RepoListView.openCodebaseMemory() before sheet present
-                let binaryURL: URL
+                let executable: CodebaseMemoryExecutable
                 do {
-                    binaryURL = try await binaryResolver.resolveExecutable()
-                    setStep(id: .resolveBinary, status: .succeeded, detail: binaryURL.lastPathComponent)
+                    executable = try await binaryResolver.resolveExecutableInfo()
+                    setStep(id: .resolveBinary, status: .succeeded, detail: executable.url.lastPathComponent)
                 } catch let error as CodebaseMemoryError {
                     needsExecutableConfiguration = error.isExecutableConfigurationFailure
                     setStep(id: .resolveBinary, status: .failed, detail: error.localizedDescription)
@@ -236,6 +244,13 @@ final class CodebaseMemoryViewModel {
                     state = .failed(message: error.localizedDescription)
                     return
                 }
+                let binaryURL = executable.url
+                let usesSharedDaemon = executable.source != .bundled
+                let projectName = CodebaseMemoryRunner.projectName(
+                    owner: repo.owner,
+                    name: repo.name,
+                    githubID: repo.id
+                )
 
                 // Step 1: 解析分支 → commit SHA
                 setStep(id: .resolveRevision, status: .running, detail: selectedBranchName)
@@ -248,42 +263,82 @@ final class CodebaseMemoryViewModel {
                    let existing = try? storage.existingProject(owner: repo.owner, name: repo.name),
                    existing.metadata.sourceRevision.commitSHA == branch.commitSHA {
                     let root = try storage.outputRootURL()
-                    let cacheDir = storage.projectCacheDirectory(root: root, owner: repo.owner, name: repo.name)
-                    AppLog.ui.info("CodebaseMemory cache-hit candidate repo=\(self.repo.fullName, privacy: .public) cache=\(cacheDir.path, privacy: .public) lastPort=\(existing.metadata.lastUIPort ?? -1, privacy: .public)")
-                    if runner.hasIndexedProjectCache(cacheDir: cacheDir) {
+                    let sourceURL = storage.projectDirectory(
+                        root: root,
+                        owner: repo.owner,
+                        name: repo.name
+                    ).appendingPathComponent("source", isDirectory: true)
+                    let cacheDir = storage.projectCacheDirectory(
+                        root: root,
+                        owner: repo.owner,
+                        name: repo.name
+                    )
+                    AppLog.ui.info("CodebaseMemory cache-hit candidate repo=\(self.repo.fullName, privacy: .public) project=\(projectName, privacy: .public) lastPort=\(existing.metadata.lastUIPort ?? -1, privacy: .public)")
+                    let verifiedName: String?
+                    if usesSharedDaemon {
+                        verifiedName = try? await runner.verifiedProjectName(
+                            binaryURL: binaryURL,
+                            expectedProjectName: projectName,
+                            expectedSourceURL: sourceURL,
+                            repositoryFullName: repo.fullName
+                        )
+                    } else {
+                        verifiedName = runner.hasIndexedProjectCache(cacheDir: cacheDir)
+                            ? projectName
+                            : nil
+                    }
+                    if let verifiedName {
                         // 全部跳过 → 直接 openBrowser
                         steps.forEach { step in
                             if step.id != .resolveBinary, step.id != .resolveRevision {
                                 setStep(id: step.id, status: .skipped)
                             }
                         }
-                        // 历史端口不能证明旧 UI 已退出；统一复查端口可用性，避免缓存
-                        // 命中时直接复用被残留子进程占用的端口。
-                        let port = pickPort()
-                        let pageURL = URL(string: "http://127.0.0.1:\(port)/")!
                         // 如果旧 UI 进程还在，直接打开；否则 start up
+                        var pageURL: URL
                         if uiProcess == nil || uiProcess?.isRunning == false {
                             state = .startingUI
-                            setStep(id: .startUI, status: .running, detail: "localhost:\(port)")
-                            let launched = try await runner.startVerifiedUI(
-                                binaryURL: binaryURL,
-                                port: port,
-                                cacheDir: cacheDir,
-                                repositoryFullName: repo.fullName
-                            )
+                            setStep(id: .startUI, status: .running)
+                            let launched: CodebaseMemoryUIProcess
+                            if usesSharedDaemon {
+                                launched = try await runner.startVerifiedUI(
+                                    binaryURL: binaryURL,
+                                    projectName: verifiedName,
+                                    workingDirectoryURL: sourceURL,
+                                    repositoryFullName: repo.fullName
+                                )
+                            } else {
+                                let port = pickPort()
+                                setStep(id: .startUI, status: .running, detail: "localhost:\(port)")
+                                launched = try await runner.startBundledVerifiedUI(
+                                    binaryURL: binaryURL,
+                                    port: port,
+                                    cacheDir: cacheDir,
+                                    repositoryFullName: repo.fullName
+                                )
+                            }
                             uiProcess = launched.process
-                            AppLog.ui.info("CodebaseMemory cache-hit UI launched repo=\(self.repo.fullName, privacy: .public) pid=\(launched.process.processIdentifier, privacy: .public) port=\(port, privacy: .public)")
+                            pageURL = launched.pageURL
+                            AppLog.ui.info("CodebaseMemory cache-hit UI launched repo=\(self.repo.fullName, privacy: .public) pid=\(launched.process.processIdentifier, privacy: .public) url=\(launched.pageURL.absoluteString, privacy: .public)")
                             setStep(id: .startUI, status: .succeeded)
+                        } else {
+                            let port = existing.metadata.lastUIPort ?? 9749
+                            pageURL = usesSharedDaemon
+                                ? CodebaseMemoryRunner.graphPageURL(
+                                    port: port,
+                                    projectName: verifiedName
+                                )
+                                : URL(string: "http://127.0.0.1:\(port)/")!
                         }
                         guard uiProcess != nil else {
                             state = .failed(message: CodebaseMemoryError.uiStartFailed(underlying: "missing UI process").localizedDescription)
                             return
                         }
+                        let port = pageURL.port ?? 9749
                         await openBrowser(port: port, url: pageURL)
                         return
                     }
-                    // metadata 命中但 per-repo cache 缺项目 DB 时，继续走完整生成管线。
-                    // 这是旧共享 cache 迁移到 repo 独立 cache 后的兜底，不能打开空/旧 UI。
+                    // metadata 命中但对应运行时 cache 缺当前项目时，继续走完整索引。
                 }
 
                 try Task.checkCancellation()
@@ -321,11 +376,26 @@ final class CodebaseMemoryViewModel {
                 // Step 5: 索引
                 state = .indexing
                 setStep(id: .index, status: .running)
-                let cacheDir = storage.projectCacheDirectory(root: root, owner: repo.owner, name: repo.name)
-                AppLog.ui.info("CodebaseMemory indexing complete repo=\(self.repo.fullName, privacy: .public) cache=\(cacheDir.path, privacy: .public)")
-                let indexResult = try await runner.runIndex(
-                    binaryURL: binaryURL, repoPath: source.sourceURL, cacheDir: cacheDir
+                AppLog.ui.info("CodebaseMemory indexing repo=\(self.repo.fullName, privacy: .public) project=\(projectName, privacy: .public)")
+                let cacheDir = storage.projectCacheDirectory(
+                    root: root,
+                    owner: repo.owner,
+                    name: repo.name
                 )
+                let indexResult: CodebaseMemoryIndexResult
+                if usesSharedDaemon {
+                    indexResult = try await runner.runIndex(
+                        binaryURL: binaryURL,
+                        repoPath: source.sourceURL,
+                        projectName: projectName
+                    )
+                } else {
+                    indexResult = try await runner.runBundledIndex(
+                        binaryURL: binaryURL,
+                        repoPath: source.sourceURL,
+                        cacheDir: cacheDir
+                    )
+                }
                 if !indexResult.errors.isEmpty {
                     setStep(id: .index, status: .succeeded,
                             detail: "\(indexResult.nodeCount) nodes, \(indexResult.edgeCount) edges, \(indexResult.errors.count) warnings")
@@ -338,14 +408,26 @@ final class CodebaseMemoryViewModel {
 
                 // Step 6: 启动 UI
                 state = .startingUI
-                let port = pickPort()
-                setStep(id: .startUI, status: .running, detail: "localhost:\(port)")
-                let launched = try await runner.startVerifiedUI(
-                    binaryURL: binaryURL,
-                    port: port,
-                    cacheDir: cacheDir,
-                    repositoryFullName: repo.fullName
-                )
+                setStep(id: .startUI, status: .running)
+                let launched: CodebaseMemoryUIProcess
+                if usesSharedDaemon {
+                    launched = try await runner.startVerifiedUI(
+                        binaryURL: binaryURL,
+                        projectName: projectName,
+                        workingDirectoryURL: source.sourceURL,
+                        repositoryFullName: repo.fullName
+                    )
+                } else {
+                    let port = pickPort()
+                    setStep(id: .startUI, status: .running, detail: "localhost:\(port)")
+                    launched = try await runner.startBundledVerifiedUI(
+                        binaryURL: binaryURL,
+                        port: port,
+                        cacheDir: cacheDir,
+                        repositoryFullName: repo.fullName
+                    )
+                }
+                let port = launched.pageURL.port ?? 9749
                 uiProcess = launched.process
                 AppLog.ui.info("CodebaseMemory UI launched repo=\(self.repo.fullName, privacy: .public) pid=\(launched.process.processIdentifier, privacy: .public) port=\(port, privacy: .public) url=\(launched.pageURL.absoluteString, privacy: .public)")
                 setStep(id: .startUI, status: .succeeded)
@@ -460,21 +542,21 @@ final class CodebaseMemoryViewModel {
         uiProcess = nil
     }
 
+    /// App Store 内置 0.8.1 仍为每个 repo 启动独立 UI；Direct 0.10.8+
+    /// 使用上游账户级 daemon 的固定端口，不调用此方法。
     private func pickPort() -> Int {
         let range = 40000..<50000
-        // 先试上次的端口
         if let previous = storedProject?.metadata.lastUIPort,
            CodebaseMemoryPortAvailability.unavailableMessage(for: previous) == nil {
             return previous
         }
-        // 随机碰撞最多 16 次
         for _ in 0..<16 {
             let candidate = Int.random(in: range)
             if CodebaseMemoryPortAvailability.unavailableMessage(for: candidate) == nil {
                 return candidate
             }
         }
-        return 41934 // 兜底
+        return 41934
     }
 
     private func runStep<T>(

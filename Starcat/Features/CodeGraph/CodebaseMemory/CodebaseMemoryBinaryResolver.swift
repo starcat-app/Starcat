@@ -13,7 +13,7 @@
 import Darwin
 import Foundation
 
-/// 已通过文件属性、`--version` 与 Graph UI 能力探测的 CodebaseMemory 可执行文件。
+/// 已通过文件属性与 `--version` 探测的 CodebaseMemory 可执行文件。
 struct CodebaseMemoryExecutable: Equatable, Sendable {
     enum Source: Equatable, Sendable {
         case bundled
@@ -28,28 +28,10 @@ struct CodebaseMemoryExecutable: Equatable, Sendable {
 
 actor CodebaseMemoryBinaryResolver {
 
-    typealias ExecutableProbe = @Sendable (URL, TimeInterval) async throws -> String
-
-    /// UI 能力探测会启动一次上游进程。用路径、大小和修改时间缓存成功结果，
-    /// 避免每次打开图谱都重复承担启动成本；二进制被替换后指纹会自然失效。
-    private struct ProbeCacheRecord: Codable {
-        let path: String
-        let fileSize: UInt64
-        let modificationTime: TimeInterval
-        let version: String
-
-        func matches(path: String, fileSize: UInt64, modificationTime: TimeInterval) -> Bool {
-            self.path == path
-                && self.fileSize == fileSize
-                && self.modificationTime == modificationTime
-        }
-    }
+    typealias VersionProbe = @Sendable (URL, TimeInterval) async throws -> String
 
     static let selectedExecutablePathKey = "codebaseMemory.selectedExecutablePath"
-    private static let probeCacheKey = "codebaseMemory.graphUIProbeCache"
-    static let installationURL = URL(
-        string: "https://github.com/DeusData/codebase-memory-mcp#graph-visualization-ui"
-    )!
+    static let installationURL = URL(string: "https://github.com/DeusData/codebase-memory-mcp")!
 
     private let fileManager: FileManager
     private let defaults: UserDefaults
@@ -59,7 +41,7 @@ actor CodebaseMemoryBinaryResolver {
     private let commonExecutableDirectories: [URL]
     private let probeTimeout: TimeInterval
     private let injectedBundleCodebaseURL: URL?
-    private let executableProbe: ExecutableProbe
+    private let versionProbe: VersionProbe
 
     init(
         fileManager: FileManager = .default,
@@ -71,9 +53,9 @@ actor CodebaseMemoryBinaryResolver {
             URL(fileURLWithPath: "/opt/homebrew/bin", isDirectory: true),
             URL(fileURLWithPath: "/usr/local/bin", isDirectory: true)
         ],
-        probeTimeout: TimeInterval = 12,
+        probeTimeout: TimeInterval = 2,
         bundledExecutableURL: URL? = nil,
-        executableProbe: ExecutableProbe? = nil
+        versionProbe: VersionProbe? = nil
     ) {
         self.fileManager = fileManager
         self.defaults = defaults
@@ -83,7 +65,7 @@ actor CodebaseMemoryBinaryResolver {
         self.commonExecutableDirectories = commonExecutableDirectories
         self.probeTimeout = probeTimeout
         self.injectedBundleCodebaseURL = bundledExecutableURL
-        self.executableProbe = executableProbe ?? Self.runExecutableProbe
+        self.versionProbe = versionProbe ?? Self.runVersionProbe
     }
 
     // MARK: - Public API
@@ -141,16 +123,12 @@ actor CodebaseMemoryBinaryResolver {
                 "Bundled CodebaseMemory executable validation failed",
                 context: ["path": bundleURL.path, "error": error.localizedDescription]
             )
-            if case .graphUIUnavailable = error {
-                throw error
-            }
             throw error == .binaryNotExecutable ? error : CodebaseMemoryError.binaryNotExecutable
         }
     }
 
     private func resolveDirectExecutable() async throws -> CodebaseMemoryExecutable {
         var selectedFailure: CodebaseMemoryError?
-        var automaticCapabilityFailure: CodebaseMemoryError?
         if let selectedExecutableURL {
             do {
                 return try await validateCandidate(selectedExecutableURL, source: .userSelected)
@@ -168,22 +146,10 @@ actor CodebaseMemoryBinaryResolver {
             guard seenPaths.insert(standardizedPath).inserted else { continue }
             do {
                 return try await validateCandidate(candidate, source: .automatic)
-            } catch let error as CodebaseMemoryError {
+            } catch {
                 // 自动检测会枚举多个位置；单个无效候选只进入诊断，不提前终止。
                 AppLog.ui.debug("CodebaseMemory automatic candidate rejected path=\(candidate.path, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
-                if case .graphUIUnavailable = error,
-                   automaticCapabilityFailure == nil {
-                    automaticCapabilityFailure = error
-                }
             }
-        }
-
-        if let automaticCapabilityFailure {
-            recordFailure(
-                "Detected CodebaseMemory executable does not include Graph UI",
-                context: ["error": automaticCapabilityFailure.localizedDescription]
-            )
-            throw automaticCapabilityFailure
         }
 
         if let selectedFailure {
@@ -253,136 +219,23 @@ actor CodebaseMemoryBinaryResolver {
             )
         }
 
-        let fileSize = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
-        let modificationTime = (attributes[.modificationDate] as? Date)?
-            .timeIntervalSince1970 ?? 0
-        let version: String
-        if let cached = cachedProbeRecord(),
-           cached.matches(
-               path: resolvedURL.path,
-               fileSize: fileSize,
-               modificationTime: modificationTime
-           ) {
-            version = cached.version
-        } else {
-            version = try await executableProbe(resolvedURL, probeTimeout)
-            storeProbeRecord(
-                ProbeCacheRecord(
-                    path: resolvedURL.path,
-                    fileSize: fileSize,
-                    modificationTime: modificationTime,
-                    version: version
-                )
-            )
-        }
+        let version = try await versionProbe(resolvedURL, probeTimeout)
         AppLog.ui.info("CodebaseMemory executable resolved source=\(String(describing: source), privacy: .public) path=\(resolvedURL.path, privacy: .public) version=\(version, privacy: .public)")
         return CodebaseMemoryExecutable(url: resolvedURL, version: version, source: source)
     }
 
-    private func cachedProbeRecord() -> ProbeCacheRecord? {
-        guard let data = defaults.data(forKey: Self.probeCacheKey) else { return nil }
-        return try? JSONDecoder().decode(ProbeCacheRecord.self, from: data)
-    }
-
-    private func storeProbeRecord(_ record: ProbeCacheRecord) {
-        guard let data = try? JSONEncoder().encode(record) else { return }
-        defaults.set(data, forKey: Self.probeCacheKey)
-    }
-
-    /// `--version` 不能区分 standard 与 UI variant。这里在隔离缓存目录中执行一次
-    /// `--ui=true`，只接受没有返回 upstream headless 警告的二进制。真实用户配置、
-    /// 索引和端口不会被这次探测修改。
-    private static func runExecutableProbe(
+    /// `Process.waitUntilExit()` 没有 timeout；这里用短轮询建立 2 秒硬边界。
+    /// 超时后先 TERM，再在短宽限期后 KILL，避免用户选中的异常程序残留后台进程。
+    private static func runVersionProbe(
         at executableURL: URL,
         timeout: TimeInterval
     ) async throws -> String {
-        let versionResult = try await runProbeCommand(
-            executableURL: executableURL,
-            arguments: ["--version"],
-            timeout: min(timeout, 2),
-            environment: nil,
-            currentDirectoryURL: nil
-        )
-        let versionText = versionResult.text
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard versionResult.terminationStatus == 0, versionText.isEmpty == false else {
-            let detail = versionText.isEmpty
-                ? String(
-                    format: String.l10n("codebaseMemory.error.versionExitStatusFormat"),
-                    versionResult.terminationStatus
-                )
-                : versionText
-            throw CodebaseMemoryError.executableValidationFailed(
-                path: executableURL.path,
-                underlying: detail
-            )
-        }
-
-        let probeDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
-            "Starcat-CodebaseMemory-UIProbe-\(UUID().uuidString)",
-            isDirectory: true
-        )
-        do {
-            try FileManager.default.createDirectory(
-                at: probeDirectory,
-                withIntermediateDirectories: true
-            )
-        } catch {
-            throw CodebaseMemoryError.executableValidationFailed(
-                path: executableURL.path,
-                underlying: error.localizedDescription
-            )
-        }
-        defer { try? FileManager.default.removeItem(at: probeDirectory) }
-
-        let environment = ProcessInfo.processInfo.environment.merging([
-            "CBM_CACHE_DIR": probeDirectory.path
-        ]) { _, new in new }
-        let uiResult = try await runProbeCommand(
-            executableURL: executableURL,
-            arguments: ["--ui=true", "--port=\(Int.random(in: 49_152...65_535))"],
-            timeout: timeout,
-            environment: environment,
-            currentDirectoryURL: probeDirectory
-        )
-        if CodebaseMemoryGraphUICapability.reportsUnavailable(uiResult.text) {
-            throw CodebaseMemoryError.graphUIUnavailable(path: executableURL.path)
-        }
-        guard uiResult.terminationStatus == 0 else {
-            throw CodebaseMemoryError.executableValidationFailed(
-                path: executableURL.path,
-                underlying: uiResult.text.isEmpty
-                    ? "UI capability probe exited with \(uiResult.terminationStatus)"
-                    : uiResult.text
-            )
-        }
-
-        return versionText.split(whereSeparator: \.isNewline).first.map(String.init) ?? versionText
-    }
-
-    private struct ProbeCommandResult {
-        let terminationStatus: Int32
-        let text: String
-    }
-
-    /// `Process.waitUntilExit()` 没有 timeout；短轮询建立硬边界，超时后先 TERM，
-    /// 再在宽限期后 KILL，避免异常的第三方二进制残留后台进程。
-    private static func runProbeCommand(
-        executableURL: URL,
-        arguments: [String],
-        timeout: TimeInterval,
-        environment: [String: String]?,
-        currentDirectoryURL: URL?
-    ) async throws -> ProbeCommandResult {
         let process = Process()
         let outputPipe = Pipe()
         process.executableURL = executableURL
-        process.arguments = arguments
-        process.standardInput = FileHandle.nullDevice
+        process.arguments = ["--version"]
         process.standardOutput = outputPipe
         process.standardError = outputPipe
-        process.environment = environment
-        process.currentDirectoryURL = currentDirectoryURL
 
         do {
             try process.run()
@@ -393,7 +246,7 @@ actor CodebaseMemoryBinaryResolver {
             )
         }
 
-        let deadline = Date().addingTimeInterval(max(timeout, 0.1))
+        let deadline = Date().addingTimeInterval(timeout)
         do {
             while process.isRunning, Date() < deadline {
                 try Task.checkCancellation()
@@ -412,10 +265,17 @@ actor CodebaseMemoryBinaryResolver {
         let output = outputPipe.fileHandleForReading.readDataToEndOfFile()
         let text = String(decoding: output.prefix(8_192), as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return ProbeCommandResult(
-            terminationStatus: process.terminationStatus,
-            text: text
-        )
+        guard process.terminationStatus == 0, text.isEmpty == false else {
+            let detail = text.isEmpty
+                ? String(format: String.l10n("codebaseMemory.error.versionExitStatusFormat"), process.terminationStatus)
+                : text
+            throw CodebaseMemoryError.executableValidationFailed(
+                path: executableURL.path,
+                underlying: detail
+            )
+        }
+
+        return text.split(whereSeparator: \.isNewline).first.map(String.init) ?? text
     }
 
     private static func terminate(_ process: Process) {

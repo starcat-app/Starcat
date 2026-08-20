@@ -2,7 +2,7 @@
 //  CodebaseMemoryBinaryResolverTests.swift
 //  StarcatTests
 //
-//  固化 #58 的渠道隔离、Direct 路径优先级、UI variant 校验与探测超时。
+//  固化 #58 的渠道隔离、Direct 路径优先级与版本探测超时。
 //
 
 import Foundation
@@ -131,7 +131,7 @@ struct CodebaseMemoryBinaryResolverTests {
     func versionProbeTimeoutPreservesPath() async throws {
         try await withFixture { fixture in
             let endless = try fixture.copyExecutable(named: "endless")
-            let resolver = fixture.resolver(executableProbe: { url, _ in
+            let resolver = fixture.resolver(versionProbe: { url, _ in
                 throw CodebaseMemoryError.executableProbeTimedOut(path: url.path)
             })
 
@@ -144,26 +144,6 @@ struct CodebaseMemoryBinaryResolverTests {
                     return
                 }
                 #expect(path == endless.resolvingSymlinksInPath().path)
-            }
-        }
-    }
-
-    @Test("Direct 自动检测拒绝不包含 Graph UI 的 headless 版本")
-    func directRejectsHeadlessExecutable() async throws {
-        try await withFixture { fixture in
-            let installed = try fixture.copyExecutable(
-                named: "codebase-memory-mcp",
-                directory: fixture.standardInstallDirectory
-            )
-            let resolver = fixture.resolver(executableProbe: { url, _ in
-                throw CodebaseMemoryError.graphUIUnavailable(path: url.path)
-            })
-
-            do {
-                _ = try await resolver.resolveExecutableInfo()
-                Issue.record("Expected Graph UI capability failure")
-            } catch let error as CodebaseMemoryError {
-                #expect(error == .graphUIUnavailable(path: installed.path))
             }
         }
     }
@@ -216,7 +196,7 @@ private final class ResolverFixture: @unchecked Sendable {
         commonExecutableDirectories: [URL] = [],
         probeTimeout: TimeInterval = 1,
         bundledExecutableURL: URL? = nil,
-        executableProbe: CodebaseMemoryBinaryResolver.ExecutableProbe? = { _, _ in "--version" }
+        versionProbe: CodebaseMemoryBinaryResolver.VersionProbe? = { _, _ in "--version" }
     ) -> CodebaseMemoryBinaryResolver {
         CodebaseMemoryBinaryResolver(
             fileManager: fileManager,
@@ -227,7 +207,7 @@ private final class ResolverFixture: @unchecked Sendable {
             commonExecutableDirectories: commonExecutableDirectories,
             probeTimeout: probeTimeout,
             bundledExecutableURL: bundledExecutableURL,
-            executableProbe: executableProbe
+            versionProbe: versionProbe
         )
     }
 

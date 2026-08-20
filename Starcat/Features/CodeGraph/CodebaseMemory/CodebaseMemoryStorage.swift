@@ -427,10 +427,8 @@ final class CodebaseMemoryStorage {
             .appendingPathComponent(name, isDirectory: true)
     }
 
-    /// 给定 owner/name 返回该项目专属的 codebase-memory 缓存目录。
-    ///
-    /// 该目录会存放 binary 的 graph db 与 UI config。必须放在项目目录内，而不是
-    /// `<root>/.internal-cache` 这类全局位置，否则打开 Repo B 时浏览器 UI 可能复用 Repo A 的状态。
+    /// App Store 内置 0.8.1 使用的 repo 独立 cache。
+    /// Direct 外部 0.10.8+ 必须使用账户级 canonical cache，不调用此入口。
     func projectCacheDirectory(root: URL, owner: String, name: String) -> URL {
         projectDirectory(root: root, owner: owner, name: name)
             .appendingPathComponent(".internal-cache", isDirectory: true)

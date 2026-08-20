@@ -2,23 +2,17 @@
 //  CodebaseMemoryPortAvailability.swift
 //  Starcat
 //
-//  CodebaseMemory UI 端口占用检查。
+//  App Store 内置 CodebaseMemory UI 的端口占用检查。
 //
-//  100% 对齐 Starcat/Features/MCP/StarcatMCPPortAvailability.swift 的 POSIX bind()
-//  探测策略：在真正启动 Process 前, 用 socket(AF_INET) + bind(127.0.0.1:<port>)
-//  做一次同步预检, 避免把 "Address already in use" 留给用户看。
+//  Direct 外部 0.10.8+ 复用账户级共享 daemon，不走此检查；内置 0.8.1
+//  仍需在真正启动 Process 前确认随机端口可以绑定。
 //
-//  重要：必须设置 SO_REUSEADDR, 与 codebase 二进制内部分配行为对齐。
 
 import Darwin
 import Foundation
 
 enum CodebaseMemoryPortAvailability {
-    /// 返回 nil 表示当前端口可绑定；返回字符串表示可直接展示给用户的友好错误。
-    ///
-    /// 设置 `SO_REUSEADDR`：与 NWListener 默认行为对齐, 避免 TIME_WAIT 状态下误报。
-    /// 真正被其他进程 `listen()` 占用时, `bind()` 仍会返回 EADDRINUSE,
-    /// 不影响"发现已有监听者"的目的。
+    /// 返回 nil 表示当前端口可绑定；返回字符串表示该端口不可用。
     static func unavailableMessage(for port: Int) -> String? {
         guard (1024...65_535).contains(port) else {
             return String(format: "Port %d out of range", port)
@@ -55,10 +49,7 @@ enum CodebaseMemoryPortAvailability {
             }
         }
 
-        if result == 0 {
-            return nil
-        }
-
+        if result == 0 { return nil }
         if errno == EADDRINUSE {
             return String(format: "Port %d is already in use", port)
         }
