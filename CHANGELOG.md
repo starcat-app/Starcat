@@ -4,9 +4,17 @@ Release notes for the Mac App Store edition of Starcat.
 
 ## 1.4.0-待发布
 
+Starcat 1.4.0 brings GitHub Notifications into Activity so you can handle mentions, review requests, and Issue / PR threads without leaving the app, while continuing to refine knowledge-base indexing and Explore.
+
 ### New
 
-- GitHub Notifications: Review mentions, review requests, assignments, and security alerts in Activity; grouped by Today, Yesterday, and This week, with Issue / PR threads and replies in the detail pane.
+- GitHub notification inbox: Review mentions, review requests, assignments, discussions, releases, and security alerts in Activity. Filter by Unread, Mentions, Reviews, Issues, PRs, and more; group by Today, Yesterday, This week, and Earlier. All also interleaves your own Stars, Unstars, and Forks. The timeline distinguishes Issues from PRs; avatars and usernames open GitHub profiles, and Dependabot uses its official circular mark. Viewed items stay read, and the sync control spins while refreshing. Starcat asks to re-authorize if notification access is missing, and can post reminders in Notification Center.
+
+- Issue / PR threads: Open a notification to read the opening post and comments, write or preview a reply, and move to the previous or next item. Done matches GitHub Inbox Done and does not close the issue. Open the thread on GitHub, or the repository in Starcat.
+
+- AI comment drafts: Generate a reply from the current thread, or polish text you already typed. The reply follows the thread language, not your draft or the app UI language.
+
+- Thread translation: Translate the opening post and comments in segmented or full mode; titles, repository names, and the composer stay original. Target language can follow the app UI, paragraphs already in that language are skipped, and new translations fade in briefly.
 
 ### Improvements
 
@@ -19,7 +27,7 @@ Release notes for the Mac App Store edition of Starcat.
 - Index issue shards: Open the knowledge base from pending, failed, or expired cards and jump to the matching chunk.
 - Meilisearch keyword index: Text is synced at the start of a knowledge-base rebuild so keyword search works before embeddings finish.
 - Shortcut recorder: Expands the key display area and shows an inline reset-to-default control only after a shortcut is changed.
-- Notification timeline: Clearer Issue / PR type chips and type size; avatars and usernames open GitHub profiles, and Dependabot uses its official circular mark.
+- README translation: Target language can be Auto (follows the app UI), same-language paragraphs are skipped, and new translations fade in briefly.
 
 ### Fixes
 
@@ -28,7 +36,6 @@ Release notes for the Mac App Store edition of Starcat.
 - Global filter panel: Removes the noticeable delay when opening repository filters for faster access.
 - Explore offline cache: Shows cached Discovery, Popular, and New Releases data immediately when the service is unavailable instead of leaving skeleton rows visible.
 - Explore category counts: Restores cached Discovery, Popular, New Releases, and Weekly totals on first launch without opening each category.
-- Notification read state: Viewed notifications no longer flip back to unread.
 
 ## 1.3.0
 

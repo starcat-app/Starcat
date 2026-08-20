@@ -975,7 +975,7 @@ private struct GitHubNotificationTranslationControls: View {
     }
 }
 
-/// 底部评论框：撰写 / 预览 + 发到 GitHub。Catalog 本轮不能加 key，文案走 mapper.copy。
+/// 底部评论框：空草稿缩成一行；点进去才展开撰写 / 预览。Catalog 本轮不能加 key，文案走 mapper.copy。
 private struct GitHubNotificationCommentComposer: View {
     let payload: ActivityNotificationPayload
     let issueTitle: String
@@ -1004,6 +1004,9 @@ private struct GitHubNotificationCommentComposer: View {
     @State private var isUpdatingIssueState = false
     /// AppKit 回传的内容高度；收起时从 3 行起涨，到上限再滚动。
     @State private var measuredEditorHeight: CGFloat = 0
+    /// 点进一行占位后才展开卡片。失焦且草稿空才收回，避免底栏按钮抢焦点时被立刻收掉。
+    @State private var isComposerActive = false
+    @State private var collapseIdleTask: Task<Void, Never>?
 
     private var threadId: String { payload.threadId }
     private var repositoryFullName: String { payload.repositoryFullName }
@@ -1013,19 +1016,28 @@ private struct GitHubNotificationCommentComposer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            composerHeader
-            Divider()
-            composerBody
-                .padding(.horizontal, 10)
-                .padding(.top, 8)
-            if let errorMessage {
-                Text(verbatim: errorMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 6)
+            if showsFullComposer {
+                VStack(alignment: .leading, spacing: 0) {
+                    composerHeader
+                    Divider()
+                    composerBody
+                        .padding(.horizontal, 10)
+                        .padding(.top, 8)
+                    if let errorMessage {
+                        Text(verbatim: errorMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 12)
+                            .padding(.top, 6)
+                    }
+                    composerFooter
+                }
+                .frame(maxWidth: .infinity, maxHeight: isExpanded ? .infinity : nil, alignment: .top)
+                .transition(.opacity)
+            } else {
+                idleBar
+                    .transition(.opacity)
             }
-            composerFooter
         }
         .frame(maxWidth: .infinity, maxHeight: isExpanded ? .infinity : nil, alignment: .top)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -1033,6 +1045,7 @@ private struct GitHubNotificationCommentComposer: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
         )
+        .animation(composerAnimation, value: showsFullComposer)
         .padding(.horizontal, 18)
         .padding(.vertical, 12)
         .background(.background)
@@ -1041,7 +1054,7 @@ private struct GitHubNotificationCommentComposer: View {
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
         .task(id: threadId) {
-            measuredEditorHeight = 0
+            resetComposerForThreadChange()
             await refreshCloseEligibility(fetchRemoteState: true)
         }
         .onReceive(NotificationCenter.default.publisher(for: .githubNotificationInboxDidChange)) { _ in
@@ -1050,26 +1063,28 @@ private struct GitHubNotificationCommentComposer: View {
         .onDisappear {
             generateTask?.cancel()
             successResetTask?.cancel()
+            collapseIdleTask?.cancel()
         }
+    }
+
+    /// 全屏、正在写、有草稿、预览或 AI 生成中都保持卡片，避免半当中缩成一行。
+    private var showsFullComposer: Bool {
+        isExpanded
+            || isComposerActive
+            || !trimmed.isEmpty
+            || isGenerating
+            || isPosting
+            || isPreview
+    }
+
+    private var composerAnimation: Animation? {
+        reduceMotion ? nil : .easeInOut(duration: 0.16)
     }
 
     /// 「留下评论」做成卡片顶栏：浅底 + 底部分割，输入区不再套第二圈重描边。
     private var composerHeader: some View {
         HStack(spacing: 8) {
-            if let login = authSession.state.user?.login, !login.isEmpty {
-                GitHubNotificationUserLink(
-                    login: login,
-                    avatarSize: 22,
-                    showsName: false
-                )
-            } else {
-                RemoteAvatar(
-                    urlString: authSession.state.user?.avatarUrl,
-                    size: 22,
-                    fallbackSymbol: "person.crop.circle.fill",
-                    showBorder: false
-                )
-            }
+            composerHeaderAvatar
             Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "留下评论", en: "Leave a comment"))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
@@ -1080,6 +1095,100 @@ private struct GitHubNotificationCommentComposer: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(Color.secondary.opacity(0.08))
+    }
+
+    /// 空态一行：整行可点，点进去才展开卡片。规范要求折叠行不要只靠小图标触发。
+    /// 头像不用 UserLink：外层已经是 Button，不能再套一层可点头像。
+    private var idleBar: some View {
+        Button {
+            activateComposer()
+        } label: {
+            HStack(spacing: 8) {
+                RemoteAvatar(
+                    urlString: authSession.state.user?.avatarUrl,
+                    size: 22,
+                    fallbackSymbol: "person.crop.circle.fill",
+                    showBorder: false
+                )
+                Text(verbatim: GitHubNotificationMapper.copy(
+                    locale,
+                    zh: "留下评论…",
+                    en: "Leave a comment…"
+                ))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .accessibilityLabel(Text(verbatim: GitHubNotificationMapper.copy(
+            locale,
+            zh: "留下评论",
+            en: "Leave a comment"
+        )))
+    }
+
+    @ViewBuilder
+    private var composerHeaderAvatar: some View {
+        if let login = authSession.state.user?.login, !login.isEmpty {
+            GitHubNotificationUserLink(
+                login: login,
+                avatarSize: 22,
+                showsName: false
+            )
+        } else {
+            RemoteAvatar(
+                urlString: authSession.state.user?.avatarUrl,
+                size: 22,
+                fallbackSymbol: "person.crop.circle.fill",
+                showBorder: false
+            )
+        }
+    }
+
+    private func activateComposer() {
+        collapseIdleTask?.cancel()
+        withAnimation(composerAnimation) {
+            isComposerActive = true
+        }
+    }
+
+    /// 点卡片里的 Preview / AI / 发送时，NSTextView 会先失焦。立刻收会把这次点击吃掉。
+    private func scheduleCollapseIfIdle() {
+        collapseIdleTask?.cancel()
+        collapseIdleTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+            collapseComposerIfIdle()
+        }
+    }
+
+    private func collapseComposerIfIdle() {
+        guard trimmed.isEmpty,
+              !isGenerating,
+              !isPosting,
+              !isPreview,
+              !isExpanded,
+              paywallContext == nil
+        else { return }
+        withAnimation(composerAnimation) {
+            isComposerActive = false
+        }
+    }
+
+    private func resetComposerForThreadChange() {
+        collapseIdleTask?.cancel()
+        draft = ""
+        isPreview = false
+        isComposerActive = false
+        errorMessage = nil
+        measuredEditorHeight = 0
     }
 
     private var composerFooter: some View {
@@ -1199,7 +1308,16 @@ private struct GitHubNotificationCommentComposer: View {
                     ),
                     isEditable: !isPosting && !isGenerating,
                     maximumHeight: composerCollapsedMaxHeight,
-                    onHeightChange: { measuredEditorHeight = $0 }
+                    shouldBecomeFirstResponder: true,
+                    onHeightChange: { measuredEditorHeight = $0 },
+                    onEditingChange: { editing in
+                        if editing {
+                            collapseIdleTask?.cancel()
+                            isComposerActive = true
+                        } else {
+                            scheduleCollapseIfIdle()
+                        }
+                    }
                 )
             }
         }
@@ -1420,6 +1538,7 @@ private struct GitHubNotificationCommentComposer: View {
             )
             draft = ""
             isPreview = false
+            collapseComposerIfIdle()
         } catch {
             errorMessage = submitErrorMessage(error)
         }
@@ -1435,6 +1554,7 @@ private struct GitHubNotificationCommentComposer: View {
                 try await inbox.postComment(threadId: threadId, body: trimmed)
                 draft = ""
                 isPreview = false
+                collapseComposerIfIdle()
             }
             if shouldReopen {
                 try await inbox.reopenIssue(threadId: threadId)
@@ -1534,7 +1654,9 @@ private struct GitHubNotificationCommentTextEditor: NSViewRepresentable {
     let placeholder: String
     var isEditable: Bool = true
     let maximumHeight: CGFloat
+    var shouldBecomeFirstResponder: Bool = false
     let onHeightChange: (CGFloat) -> Void
+    var onEditingChange: ((Bool) -> Void)? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -1587,14 +1709,36 @@ private struct GitHubNotificationCommentTextEditor: NSViewRepresentable {
             textView.needsDisplay = true
             context.coordinator.reportHeight(for: textView)
         }
+        if shouldBecomeFirstResponder {
+            context.coordinator.focusIfNeeded(textView, in: scrollView)
+        } else {
+            context.coordinator.didRequestFocus = false
+        }
     }
 
     @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: GitHubNotificationCommentTextEditor
+        var didRequestFocus = false
 
         init(parent: GitHubNotificationCommentTextEditor) {
             self.parent = parent
+        }
+
+        func focusIfNeeded(_ textView: NSTextView, in scrollView: NSScrollView) {
+            guard !didRequestFocus else { return }
+            didRequestFocus = true
+            DispatchQueue.main.async {
+                scrollView.window?.makeFirstResponder(textView)
+            }
+        }
+
+        func textDidBeginEditing(_ notification: Notification) {
+            parent.onEditingChange?(true)
+        }
+
+        func textDidEndEditing(_ notification: Notification) {
+            parent.onEditingChange?(false)
         }
 
         func textDidChange(_ notification: Notification) {
