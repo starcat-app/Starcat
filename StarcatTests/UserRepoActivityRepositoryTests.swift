@@ -241,6 +241,16 @@ struct UserRepoActivityRepositoryTests {
                 from: Self.makeDTO(id: "n-pr", updatedAt: "2026-08-19T14:00:00Z", type: "PullRequest"),
                 fetchedAt: "2026-08-19T16:00:00Z",
                 firstSeenAt: "2026-08-19T16:00:00Z"
+            ),
+            GitHubNotificationMapper.record(
+                from: Self.makeDTO(id: "n-disc", updatedAt: "2026-08-19T13:00:00Z", type: "Discussion"),
+                fetchedAt: "2026-08-19T16:00:00Z",
+                firstSeenAt: "2026-08-19T16:00:00Z"
+            ),
+            GitHubNotificationMapper.record(
+                from: Self.makeDTO(id: "n-rel", updatedAt: "2026-08-19T12:00:00Z", type: "Release"),
+                fetchedAt: "2026-08-19T16:00:00Z",
+                firstSeenAt: "2026-08-19T16:00:00Z"
             )
         ])
 
@@ -257,6 +267,11 @@ struct UserRepoActivityRepositoryTests {
             if case .notification = $0 { return true }
             return false
         })
+
+        let discussions = try await env.activity.fetchPage(segment: .discussion, cursor: nil, limit: 10)
+        #expect(discussions.rows.map(\.id) == ["n-disc"])
+        let releases = try await env.activity.fetchPage(segment: .release, cursor: nil, limit: 10)
+        #expect(releases.rows.map(\.id) == ["n-rel"])
     }
 
     @Test("账本写入 user_id / user_name，回填能补 v24 空身份")
@@ -378,9 +393,17 @@ struct UserRepoActivityRepositoryTests {
         updatedAt: String,
         type: String = "Issue"
     ) -> GitHubNotificationThreadDTO {
-        let subjectURL = type == "PullRequest"
-            ? "https://api.github.com/repos/o/r/pulls/2"
-            : "https://api.github.com/repos/o/r/issues/1"
+        let subjectURL: String
+        switch type {
+        case "PullRequest":
+            subjectURL = "https://api.github.com/repos/o/r/pulls/2"
+        case "Discussion":
+            subjectURL = "https://api.github.com/repos/o/r/discussions/3"
+        case "Release":
+            subjectURL = "https://api.github.com/repos/o/r/releases/4"
+        default:
+            subjectURL = "https://api.github.com/repos/o/r/issues/1"
+        }
         return GitHubNotificationThreadDTO(
             id: id,
             unread: true,

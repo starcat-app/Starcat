@@ -118,6 +118,10 @@ struct GitHubNotificationDetailView: View {
         .onChange(of: settings.readmeTranslationLanguage) { _, _ in
             prepareTranslation(for: item)
         }
+        .onChange(of: locale.identifier) { _, _ in
+            guard settings.readmeTranslationLanguage == .auto else { return }
+            prepareTranslation(for: item)
+        }
         .onChange(of: settings.readmeTranslationMode) { _, _ in
             prepareTranslation(for: item)
         }
@@ -320,7 +324,7 @@ struct GitHubNotificationDetailView: View {
                 cacheOwner: nil,
                 cacheRepo: nil,
                 sourceHtml: nil,
-                targetLanguage: settings.readmeTranslationLanguage,
+                targetLanguage: settings.effectiveReadmeTranslationLanguage,
                 mode: settings.readmeTranslationMode
             )
             return
@@ -331,7 +335,7 @@ struct GitHubNotificationDetailView: View {
             cacheOwner: GitHubNotificationTranslation.cacheOwner,
             cacheRepo: GitHubNotificationTranslation.cacheRepo(threadId: payload.threadId),
             sourceHtml: document.sourceText,
-            targetLanguage: settings.readmeTranslationLanguage,
+            targetLanguage: settings.effectiveReadmeTranslationLanguage,
             mode: settings.readmeTranslationMode
         )
     }
@@ -798,7 +802,7 @@ private struct GitHubNotificationTranslationControls: View {
                         cacheRepo: GitHubNotificationTranslation.cacheRepo(threadId: threadId),
                         sourceHtml: document.sourceText,
                         sourceSegments: document.segments,
-                        targetLanguage: settings.readmeTranslationLanguage,
+                        targetLanguage: settings.effectiveReadmeTranslationLanguage,
                         mode: settings.readmeTranslationMode
                     )
                 }
@@ -866,7 +870,7 @@ private struct GitHubNotificationTranslationControls: View {
                         cacheRepo: GitHubNotificationTranslation.cacheRepo(threadId: threadId),
                         sourceHtml: document.sourceText,
                         sourceSegments: document.segments,
-                        targetLanguage: settings.readmeTranslationLanguage,
+                        targetLanguage: settings.effectiveReadmeTranslationLanguage,
                         mode: settings.readmeTranslationMode
                     )
                 } label: {
@@ -889,13 +893,13 @@ private struct GitHubNotificationTranslationControls: View {
         }
     }
 
+    /// 翻译中不用系统 8 瓣 spinner：那段数已经在 VM 里，圆环才能看出走了多少。
+    /// hover 仍切红色 stop，ZStack + opacity 避免重建圆环把进度动画打回去。
     @ViewBuilder
     private var iconView: some View {
         if viewModel.isTranslating {
             ZStack {
-                ProgressView()
-                    .controlSize(.small)
-                    .frame(width: 14, height: 14)
+                translationProgressRing
                     .opacity(isHoveringWhileTranslating ? 0 : 1)
                 Image(systemName: "stop.fill")
                     .font(.system(size: 10, weight: .semibold))
@@ -904,12 +908,40 @@ private struct GitHubNotificationTranslationControls: View {
             }
             .frame(width: 14, height: 14)
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: isHoveringWhileTranslating)
+            .accessibilityValue(Text(verbatim: translationProgressLabel))
         } else {
             Image(systemName: isShowingTranslation ? "character.bubble.fill" : "character.bubble")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(isShowingTranslation ? Color.accentColor : Color.primary)
                 .frame(width: 14, height: 14)
         }
+    }
+
+    private var translationProgress: Double {
+        let total = viewModel.totalSegmentCount
+        guard total > 0 else { return 0 }
+        return min(max(Double(viewModel.completedSegmentCount) / Double(total), 0), 1)
+    }
+
+    private var translationProgressLabel: String {
+        "\(viewModel.completedSegmentCount)/\(viewModel.totalSegmentCount)"
+    }
+
+    private var translationProgressRing: some View {
+        let fraction = translationProgress
+        return ZStack {
+            Circle()
+                .stroke(Color.secondary.opacity(0.3), lineWidth: 2)
+            Circle()
+                .trim(from: 0, to: fraction)
+                .stroke(
+                    Color.accentColor,
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: fraction)
+        }
+        .frame(width: 14, height: 14)
     }
 
     private var buttonTooltip: LocalizedStringKey {

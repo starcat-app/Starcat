@@ -514,13 +514,11 @@ enum SmartSearchMode: String, CaseIterable, Identifiable {
 /// 设计：
 /// - **raw 用 BCP-47 标签**（`zh-Hans` / `en` / `ja` 等）：与 `Locale.identifier` 兼容，
 ///   后续做"按 App 当前 locale 自动选默认目标"或写日志时可以直接传给 Locale；
-/// - **默认值不再写死 `.simplifiedChinese`**（HOM-198 fix，2026-06-14）：
-///   首次启动 / UserDefaults 未持久化时，由 `defaultForCurrentLocale()`
-///   按 App 当前 i18n locale 推断；18 种已支持 locale → 对应语言，其余落到英文。
-///   选择英文作为兜底（而不是简体中文）：原默认值对所有非中文用户硬塞中文，
-///   issue 的核心抱怨就是这条；英文是 README 原文最普遍的语言，作为未知语言
-///   fallback 比中文合理。老用户 UserDefaults
-///   里已有值的不被覆盖，迁移零风险。
+/// - **菜单第一项是 `.auto`**：目标跟随 App 界面语言（`resolved()` →
+///   `defaultForCurrentLocale()`），外加按段跳过同语种。用户选具体语言后锁定，
+///   不再随界面变。首次启动 / 重置默认 `.auto`；已持久化的具体语言不迁移。
+/// - **未知 locale 仍落到英文**（HOM-198）：`defaultForCurrentLocale()` 只返回
+///   具体语言，不会再回到 `.auto`。英文是 README 原文最普遍的语言，比硬塞简体合理。
 /// - 目标语言与 App 当前正式开放的 18 种显示语言保持同一组 BCP-47 identifier；
 /// - `displayName` 使用“旗帜 + 母语名称”，不跟随当前界面语言翻译；
 /// - `promptName` 是发给 LLM 的目标语言名称，固定走英文（`Simplified Chinese`），
@@ -530,6 +528,8 @@ enum SmartSearchMode: String, CaseIterable, Identifiable {
 /// 两者当前都开放 18 种语言，但仍是独立类型：README 翻译语言参与 Prompt、缓存 key
 /// 和用户偏好；AppLocale 负责界面 Catalog 与布局方向，不能把两者合并成同一枚举。
 enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sendable {
+    /// 目标语言跟随 App 界面语言；真正送给模型 / 写缓存前必须 `resolved()`。
+    case auto = "auto"
     case simplifiedChinese = "zh-Hans"
     case traditionalChinese = "zh-Hant"
     case english = "en"
@@ -551,11 +551,45 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
 
     var id: String { rawValue }
 
-    /// 菜单显示文案（本地化）。
-    /// 直接返回原生语言名而不是走 xcstrings：菜单里通常用「目标语言的母语写法」
-    /// 比"Simplified Chinese / 简体中文"双语对照更短更清晰。
+    /// 菜单显示文案。具体语言用母语名；Auto 按当前 App 界面语言写短词，
+    /// 避免为本项改 Localizable.xcstrings（该文件不能整文件插入）。
     var displayName: String {
         switch self {
+        case .auto:
+            switch Self.defaultForCurrentLocale() {
+            case .auto, .english:
+                return "Auto"
+            case .simplifiedChinese:
+                return "自动"
+            case .traditionalChinese:
+                return "自動"
+            case .japanese:
+                return "自動"
+            case .korean:
+                return "자동"
+            case .german, .dutch:
+                return "Automatisch"
+            case .french:
+                return "Automatique"
+            case .spanish, .brazilianPortuguese:
+                return "Automático"
+            case .italian:
+                return "Automatico"
+            case .russian:
+                return "Авто"
+            case .polish:
+                return "Automatycznie"
+            case .ukrainian:
+                return "Автоматично"
+            case .turkish:
+                return "Otomatik"
+            case .vietnamese:
+                return "Tự động"
+            case .indonesian:
+                return "Otomatis"
+            case .arabic:
+                return "تلقائي"
+            }
         case .simplifiedChinese:  return "🇨🇳 简体中文"
         case .traditionalChinese: return "🇨🇳 繁體中文"
         case .english:            return "🇺🇸 English"
@@ -579,7 +613,25 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
 
     /// 发给 LLM 的目标语言名（固定英文，跨 provider 最稳定）。
     var promptName: String {
+        resolved().concretePromptName
+    }
+
+    /// `auto` 解析成当前 App 界面语言；具体语言原样返回。缓存和 API 只吃具体语言。
+    func resolved(
+        appLocaleOverride: String? = UserDefaults.standard.string(forKey: "AppLocaleOverride")
+    ) -> ReadmeTranslationLanguage {
         switch self {
+        case .auto:
+            return Self.defaultForCurrentLocale(appLocaleOverride: appLocaleOverride)
+        default:
+            return self
+        }
+    }
+
+    private var concretePromptName: String {
+        switch self {
+        case .auto:
+            return "English"
         case .simplifiedChinese:  return "Simplified Chinese"
         case .traditionalChinese: return "Traditional Chinese"
         case .english:            return "English"
@@ -616,8 +668,8 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
     /// Bundle 至少会回到 development localization `zh-Hans`），再回退到
     /// `Locale.current.identifier`，最后还无法解析就走 `.english`。
     ///
-    /// 只在"用户从未选过"时被消费（见 `AppSettings.init`），用户主动改过
-    /// 之后这个函数就不再影响默认行为。
+/// 两处消费：① 存储值是 `.auto` 时每次 `resolved()`；② 历史上从未持久化过
+/// 目标语言时的 init 回落。用户锁定具体语言后，这个函数不再影响目标。
     static func defaultForCurrentLocale(
         appLocaleOverride: String? = UserDefaults.standard.string(forKey: "AppLocaleOverride")
     ) -> ReadmeTranslationLanguage {
@@ -1062,13 +1114,15 @@ final class AppSettings {
         didSet { persist(key: Keys.snakeStyle, value: snakeStyle.rawValue) }
     }
 
-    /// README 翻译目标语言（HOM-68；HOM-198 调整默认值来源）。
-    /// 默认值由 `ReadmeTranslationLanguage.defaultForCurrentLocale()` 按 App 当前
-    /// i18n locale 推断（18 种已支持语言 → 对应语言，其余 → 英文），不再写死中文；用户可在
-    /// 详情页翻译按钮的下拉菜单里切换，选择后即时落盘，下次进入详情页直接命中
-    /// 本地翻译缓存（按 `(repo_id, language)` 查表）。
+    /// README / 通知翻译目标语言。
+    /// `.auto` 跟随 App 界面语言；具体语言锁定后不再随界面变。
+    /// 送给模型、写缓存时用 `effectiveReadmeTranslationLanguage`。
     var readmeTranslationLanguage: ReadmeTranslationLanguage {
         didSet { persist(key: Keys.readmeTranslationLanguage, value: readmeTranslationLanguage.rawValue) }
+    }
+
+    var effectiveReadmeTranslationLanguage: ReadmeTranslationLanguage {
+        readmeTranslationLanguage.resolved()
     }
 
     /// README 翻译方式。默认分段翻译；用户可在详情页翻译下拉菜单切换。
@@ -1776,16 +1830,11 @@ final class AppSettings {
         let snakeStyleRaw = defaults.string(forKey: Keys.snakeStyle)
         self.snakeStyle = snakeStyleRaw.flatMap(SnakeStyle.init(rawValue:)) ?? SnakeStyle.default
 
-        // HOM-68 / HOM-198：README 翻译目标语言。
-        // 老用户已有持久化值 → 保留；首次启动 → 按 App 当前 locale 推断
-        // （`defaultForCurrentLocale()`，18 种已支持语言 → 对应语言，其余 → 英文）。
-        // 不再写死 `.simplifiedChinese`，避免对所有非中文用户硬塞中文。
+        // 老用户已有持久化值（含具体语言）→ 保留；首次启动 → `.auto`（跟随界面语言）。
         let translationLangRaw = defaults.string(forKey: Keys.readmeTranslationLanguage)
         self.readmeTranslationLanguage = translationLangRaw
             .flatMap(ReadmeTranslationLanguage.init(rawValue:))
-            ?? .defaultForCurrentLocale(
-                appLocaleOverride: defaults.string(forKey: "AppLocaleOverride")
-            )
+            ?? .auto
         let translationModeRaw = defaults.string(forKey: Keys.readmeTranslationMode)
         self.readmeTranslationMode = translationModeRaw
             .flatMap(ReadmeTranslationMode.init(rawValue:))
@@ -2038,7 +2087,7 @@ final class AppSettings {
         aiRepoContextTier1MaxLines = 80
         aiRepoContextMaximumArchiveMB = Self.defaultAIRepoContextMaximumArchiveMB
         snakeStyle = SnakeStyle.default
-        readmeTranslationLanguage = .defaultForCurrentLocale()
+        readmeTranslationLanguage = .auto
         readmeTranslationMode = .segmented
         disableAnimations = false
         hideDockIcon = false

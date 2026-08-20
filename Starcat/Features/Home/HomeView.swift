@@ -57,6 +57,7 @@ struct HomeView: View {
     /// 文本和控件一起强制成 LTR。
     @Environment(\.layoutDirection) private var appContentLayoutDirection
     @Environment(AppSettings.self) private var settings
+    @Environment(\.locale) private var locale
     /// 2026-06-15:搜索浮层弹出/收起的 .snappy 动画在关动画时跳过。
     /// 与系统「减少动态效果」OR 合并(`AnimationOverrideModifier`)。
     @Environment(\.starcatReduceMotion) private var reduceMotion
@@ -645,6 +646,10 @@ struct HomeView: View {
         // 用户在详情页切换目标语言 → 重新预载缓存并复位显示。
         .onChange(of: settings.readmeTranslationLanguage) { _, newLanguage in
             handleReadmeTranslationLanguageChange(newLanguage)
+        }
+        .onChange(of: locale.identifier) { _, _ in
+            guard settings.readmeTranslationLanguage == .auto else { return }
+            handleReadmeTranslationLanguageChange(.auto)
         }
         // 翻译方式切换后恢复原文，并重新检查该模式自己的缓存。
         .onChange(of: settings.readmeTranslationMode) { _, newMode in
@@ -1466,7 +1471,7 @@ struct HomeView: View {
             translationVM.prepare(
                 repo: repo,
                 sourceHtml: nil,
-                targetLanguage: settings.readmeTranslationLanguage,
+                targetLanguage: settings.effectiveReadmeTranslationLanguage,
                 mode: settings.readmeTranslationMode
             )
         } else {
@@ -1474,7 +1479,7 @@ struct HomeView: View {
             translationVM.prepare(
                 repo: nil,
                 sourceHtml: nil,
-                targetLanguage: settings.readmeTranslationLanguage,
+                targetLanguage: settings.effectiveReadmeTranslationLanguage,
                 mode: settings.readmeTranslationMode
             )
         }
@@ -1500,7 +1505,7 @@ struct HomeView: View {
         translationVM.prepare(
             repo: nil,
             sourceHtml: nil,
-            targetLanguage: settings.readmeTranslationLanguage,
+            targetLanguage: settings.effectiveReadmeTranslationLanguage,
             mode: settings.readmeTranslationMode
         )
     }
@@ -1511,7 +1516,7 @@ struct HomeView: View {
             translationVM.prepare(
                 repo: repo,
                 sourceHtml: html,
-                targetLanguage: settings.readmeTranslationLanguage,
+                targetLanguage: settings.effectiveReadmeTranslationLanguage,
                 mode: settings.readmeTranslationMode
             )
         }
@@ -1524,7 +1529,7 @@ struct HomeView: View {
             return nil
         }()
         translationVM.changeLanguage(
-            to: newLanguage,
+            to: newLanguage.resolved(),
             repo: repo,
             sourceHtml: html,
             mode: settings.readmeTranslationMode
@@ -1541,7 +1546,7 @@ struct HomeView: View {
             to: newMode,
             repo: repo,
             sourceHtml: html,
-            targetLanguage: settings.readmeTranslationLanguage
+            targetLanguage: settings.effectiveReadmeTranslationLanguage
         )
     }
 

@@ -519,6 +519,10 @@ enum GitHubNotificationMapper {
             return record.subjectType == "Issue"
         case .pullRequest:
             return record.subjectType == "PullRequest"
+        case .discussion:
+            return record.subjectType == "Discussion"
+        case .release:
+            return record.subjectType == "Release"
         case .star, .unstar, .fork:
             // 账本分段只含 `user_repo_activity`，GitHub thread 永远对不上。
             return false
@@ -829,13 +833,15 @@ enum GitHubNotificationMapper {
 
 /// 通知 inbox 类型筛选。选项变多后顶栏用下拉，不再用分段控件。
 ///
-/// `all` 两表 UNION；`unread` / `issue` / `pullRequest` / `mention` / `review` 只含 GitHub 通知；
+/// `all` 两表 UNION；`unread` / 主体类型 / `mention` / `review` 只含 GitHub 通知；
 /// `star` / `unstar` / `fork` 只含账本。
 enum GitHubNotificationSegment: String, CaseIterable, Identifiable, Sendable {
     case all
     case unread
     case issue
     case pullRequest
+    case discussion
+    case release
     case mention
     case review
     case star
@@ -850,7 +856,7 @@ enum GitHubNotificationSegment: String, CaseIterable, Identifiable, Sendable {
         case .star: return .star
         case .unstar: return .unstar
         case .fork: return .fork
-        case .all, .unread, .issue, .pullRequest, .mention, .review: return nil
+        case .all, .unread, .issue, .pullRequest, .discussion, .release, .mention, .review: return nil
         }
     }
 
@@ -865,6 +871,8 @@ enum GitHubNotificationSegment: String, CaseIterable, Identifiable, Sendable {
         case .unread: return "circle.inset.filled"
         case .issue: return "smallcircle.filled.circle"
         case .pullRequest: return "arrow.triangle.pull"
+        case .discussion: return "text.bubble"
+        case .release: return "tag.circle"
         case .mention: return "at"
         case .review: return "eye"
         case .star: return "star"
@@ -873,7 +881,7 @@ enum GitHubNotificationSegment: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// All / Unread / Mention / Review 走已有 Catalog；Issue / PR / 账本复用 chip 文案，不新增 key。
+    /// All / Unread / Mention / Review 走已有 Catalog；主体类型与账本复用 chip 文案，不新增 key。
     func displayTitle(locale: Locale) -> String {
         switch self {
         case .all:
@@ -884,6 +892,10 @@ enum GitHubNotificationSegment: String, CaseIterable, Identifiable, Sendable {
             return GitHubNotificationMapper.chipTitle(for: .issue, locale: locale)
         case .pullRequest:
             return GitHubNotificationMapper.chipTitle(for: .pullRequest, locale: locale)
+        case .discussion:
+            return GitHubNotificationMapper.chipTitle(for: .discussion, locale: locale)
+        case .release:
+            return GitHubNotificationMapper.chipTitle(for: .release, locale: locale)
         case .mention:
             return String.l10n("activity.notification.segment.mention")
         case .review:

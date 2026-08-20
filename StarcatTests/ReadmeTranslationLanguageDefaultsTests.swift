@@ -113,4 +113,12 @@ struct ReadmeTranslationLanguageDefaultsTests {
             ReadmeTranslationLanguage.defaultLanguage(forLocaleIdentifier: identifier) == .english
         )
     }
+
+    @Test("auto 解析为当前 App locale；具体语言保持锁定")
+    func autoResolvesToLocaleAndConcreteStaysPinned() {
+        #expect(ReadmeTranslationLanguage.auto.resolved(appLocaleOverride: "zh-Hans") == .simplifiedChinese)
+        #expect(ReadmeTranslationLanguage.auto.resolved(appLocaleOverride: "en") == .english)
+        #expect(ReadmeTranslationLanguage.auto.resolved(appLocaleOverride: "ja") == .japanese)
+        #expect(ReadmeTranslationLanguage.japanese.resolved(appLocaleOverride: "zh-Hans") == .japanese)
+    }
 }

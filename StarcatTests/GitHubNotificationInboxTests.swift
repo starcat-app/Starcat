@@ -151,6 +151,8 @@ struct GitHubNotificationMapperTests {
         #expect(GitHubNotificationMapper.matchesSegment(record, segment: .mention))
         #expect(GitHubNotificationMapper.matchesSegment(record, segment: .issue))
         #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .pullRequest))
+        #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .discussion))
+        #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .release))
         #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .star))
         #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .unstar))
         #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .fork))
@@ -206,6 +208,59 @@ struct GitHubNotificationMapperTests {
         #expect(!GitHubNotificationMapper.matchesSegment(issue, segment: .pullRequest))
         #expect(GitHubNotificationMapper.matchesSegment(pull, segment: .pullRequest))
         #expect(!GitHubNotificationMapper.matchesSegment(pull, segment: .issue))
+        #expect(!GitHubNotificationMapper.matchesSegment(issue, segment: .discussion))
+        #expect(!GitHubNotificationMapper.matchesSegment(issue, segment: .release))
+
+        let discussion = GitHubNotificationMapper.record(
+            from: GitHubNotificationThreadDTO(
+                id: "n-disc",
+                unread: false,
+                reason: "subscribed",
+                updatedAt: "2026-08-19T10:00:00Z",
+                subject: GitHubNotificationSubjectDTO(
+                    title: "RFC",
+                    url: "https://api.github.com/repos/o/r/discussions/3",
+                    latestCommentUrl: nil,
+                    type: "Discussion"
+                ),
+                repository: GitHubNotificationRepositoryDTO(
+                    id: 1,
+                    fullName: "o/r",
+                    name: "r",
+                    owner: GitHubNotificationOwnerDTO(login: "o")
+                )
+            ),
+            fetchedAt: "2026-08-19T10:00:00Z",
+            firstSeenAt: "2026-08-19T10:00:00Z"
+        )
+        let release = GitHubNotificationMapper.record(
+            from: GitHubNotificationThreadDTO(
+                id: "n-rel",
+                unread: false,
+                reason: "subscribed",
+                updatedAt: "2026-08-19T10:00:00Z",
+                subject: GitHubNotificationSubjectDTO(
+                    title: "v1.0",
+                    url: "https://api.github.com/repos/o/r/releases/4",
+                    latestCommentUrl: nil,
+                    type: "Release"
+                ),
+                repository: GitHubNotificationRepositoryDTO(
+                    id: 1,
+                    fullName: "o/r",
+                    name: "r",
+                    owner: GitHubNotificationOwnerDTO(login: "o")
+                )
+            ),
+            fetchedAt: "2026-08-19T10:00:00Z",
+            firstSeenAt: "2026-08-19T10:00:00Z"
+        )
+        #expect(GitHubNotificationMapper.matchesSegment(discussion, segment: .discussion))
+        #expect(!GitHubNotificationMapper.matchesSegment(discussion, segment: .release))
+        #expect(!GitHubNotificationMapper.matchesSegment(discussion, segment: .issue))
+        #expect(GitHubNotificationMapper.matchesSegment(release, segment: .release))
+        #expect(!GitHubNotificationMapper.matchesSegment(release, segment: .discussion))
+        #expect(!GitHubNotificationMapper.matchesSegment(release, segment: .issue))
     }
 
     @Test("评论里的 #20 和 owner/repo#20 收成 GitHub 链接")

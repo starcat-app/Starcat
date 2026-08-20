@@ -286,7 +286,7 @@ struct RepoDetailWindowContent: View {
             translationVM.prepare(
                 repo: repo,
                 sourceHtml: nil,
-                targetLanguage: dependencies.settings.readmeTranslationLanguage,
+                targetLanguage: dependencies.settings.effectiveReadmeTranslationLanguage,
                 mode: dependencies.settings.readmeTranslationMode
             )
         }

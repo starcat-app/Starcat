@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import NaturalLanguage
 
 /// Issue / PR 评论生成的输入快照。生成期间用户继续改草稿也不会偷换 thread。
 struct GitHubNotificationCommentPack: Equatable, Sendable {
@@ -51,21 +52,24 @@ enum GitHubNotificationCommentAI {
     }
 
     /// 输出语言跟帖子走，不跟 App 显示语言，也不跟草稿语言。
-    /// 检测文本必须是标题 / 开帖 / 评论，不能用带英文标签的打包 markdown。
+    /// 用本机识别器取主导语种；不够确定时回退 English。
     static func outputLanguage(forThread text: String) -> String {
-        var cjk = 0
-        var latin = 0
-        for scalar in text.unicodeScalars {
-            if isCJK(scalar) {
-                cjk += 1
-            } else if CharacterSet.letters.contains(scalar) {
-                latin += 1
-            }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return ReadmeTranslationLanguage.english.promptName
         }
-        if cjk > 0, cjk * 3 >= latin {
-            return "Simplified Chinese"
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(trimmed)
+        guard let dominant = recognizer.dominantLanguage,
+              let mapped = TranslationSourceLanguageGate.mappedLanguage(from: dominant)
+        else {
+            return ReadmeTranslationLanguage.english.promptName
         }
-        return "English"
+        let confidence = recognizer.languageHypotheses(withMaximum: 1)[dominant] ?? 0
+        if confidence < TranslationSourceLanguageGate.minimumConfidence {
+            return ReadmeTranslationLanguage.english.promptName
+        }
+        return mapped.promptName
     }
 
     static func makeRequest(
@@ -181,12 +185,6 @@ enum GitHubNotificationCommentAI {
         guard text.count > limit else { return text }
         let end = text.index(text.startIndex, offsetBy: limit)
         return String(text[..<end]) + "…"
-    }
-
-    private static func isCJK(_ scalar: Unicode.Scalar) -> Bool {
-        (0x4E00...0x9FFF).contains(scalar.value)
-            || (0x3400...0x4DBF).contains(scalar.value)
-            || (0x3040...0x30FF).contains(scalar.value)
     }
 }
 

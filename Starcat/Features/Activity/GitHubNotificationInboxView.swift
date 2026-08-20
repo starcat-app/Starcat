@@ -489,7 +489,7 @@ private enum GitHubNotificationTimelineMetrics {
 
 /// 通知类型下拉。视觉对齐 `UnifiedSortMenu`，图标用筛选而不是排序箭头。
 ///
-/// 不用分段控件：状态 / Issue·PR / Mention·Review / 账本会把同步行挤掉。
+/// 不用分段控件：状态 / 主体类型 / Mention·Review / 账本会把同步行挤掉。
 /// `Picker` + `.inline` 让当前项带勾。
 private struct GitHubNotificationSegmentMenu: View {
     @Binding var selection: GitHubNotificationSegment

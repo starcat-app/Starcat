@@ -599,17 +599,23 @@ struct AppSettingsTranslationTaskTests {
 @Suite("ReadmeTranslationLanguage")
 struct ReadmeTranslationLanguageTests {
 
-    @Test("rawValue 为 BCP-47 风格 tag")
+    @Test("rawValue：auto 单独；其余为 BCP-47 风格 tag")
     func rawValuesAreBcp47() {
         let expectedIdentifiers: Set<String> = [
             "en", "zh-Hans", "zh-Hant", "ja", "ko", "de", "fr", "es", "pt-BR",
             "it", "ru", "nl", "pl", "uk", "tr", "vi", "id", "ar",
         ]
-        let actualIdentifiers = Set(ReadmeTranslationLanguage.allCases.map(\.rawValue))
+        let concreteIdentifiers = Set(
+            ReadmeTranslationLanguage.allCases
+                .filter { $0 != .auto }
+                .map(\.rawValue)
+        )
 
-        #expect(actualIdentifiers == expectedIdentifiers)
+        #expect(ReadmeTranslationLanguage.allCases.first == .auto)
+        #expect(ReadmeTranslationLanguage.auto.rawValue == "auto")
+        #expect(concreteIdentifiers == expectedIdentifiers)
         #expect(
-            actualIdentifiers == Set(
+            concreteIdentifiers == Set(
                 AppLocale.allCases
                     .filter { $0 != .system }
                     .map(\.rawValue)
@@ -619,7 +625,8 @@ struct ReadmeTranslationLanguageTests {
 
     @Test("展示名包含国旗且 promptName 非空")
     func promptNamesAreReadable() {
-        for lang in ReadmeTranslationLanguage.allCases {
+        #expect(!ReadmeTranslationLanguage.auto.displayName.isEmpty)
+        for lang in ReadmeTranslationLanguage.allCases where lang != .auto {
             #expect(!lang.promptName.isEmpty)
             #expect(!lang.displayName.isEmpty)
             let leadingScalars = lang.displayName.unicodeScalars.prefix(2)

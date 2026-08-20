@@ -37,6 +37,18 @@ struct GitHubNotificationCommentAITests {
             draft: "Looks fine to me."
         )
         #expect(chinese.outputLanguage == "Simplified Chinese")
+
+        let japanese = GitHubNotificationCommentAI.pack(
+            title: "キャッシュ無効化を確認してください",
+            payload: makePayload(
+                excerpt: "強制プッシュのあと README キャッシュが古いままです。確認をお願いします。"
+            ),
+            repo: nil,
+            summaryMarkdown: nil,
+            currentUserLogin: "dong4j",
+            draft: "I think we should clear the cache first."
+        )
+        #expect(japanese.outputLanguage == "Japanese")
     }
 
     @Test("超过 15 条时旧评论只留作者和 200 字预览，最近评论保留全文")

@@ -748,7 +748,7 @@ struct ReadmeTranslationFooterButton: View {
                         repo: control.repo,
                         sourceHtml: sourceHtml,
                         sourceSegments: selectedSourceSegments,
-                        targetLanguage: settings.readmeTranslationLanguage,
+                        targetLanguage: settings.effectiveReadmeTranslationLanguage,
                         mode: settings.readmeTranslationMode
                     )
                 }
@@ -880,7 +880,7 @@ struct ReadmeTranslationFooterButton: View {
                     repo: control.repo,
                     sourceHtml: sourceHtml,
                     sourceSegments: selectedSourceSegments,
-                    targetLanguage: settings.readmeTranslationLanguage,
+                    targetLanguage: settings.effectiveReadmeTranslationLanguage,
                     mode: settings.readmeTranslationMode
                 )
             } label: {
