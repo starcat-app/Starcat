@@ -166,6 +166,7 @@ private struct RAGPromptPlaceholderItem: Identifiable {
 struct RAGWorkspaceSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     @Bindable var settings: AppSettings
     @State private var section: RAGSettingsSection = .inference
@@ -243,6 +244,8 @@ struct RAGWorkspaceSettingsSheet: View {
             Divider()
             settingsDetail
         }
+        .background(StarcatSurface.panel(colorScheme: colorScheme))
+        .presentationBackground(StarcatSurface.panel(colorScheme: colorScheme))
         .frame(
             width: RAGSettingsSheetMetrics.width * interfaceScale.multiplier,
             height: RAGSettingsSheetMetrics.height * interfaceScale.multiplier
@@ -288,7 +291,7 @@ struct RAGWorkspaceSettingsSheet: View {
         }
         .padding(interfaceScale.scaled(14))
         .frame(width: interfaceScale.scaled(RAGSettingsSheetMetrics.sidebarWidth), alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.34))
+        .background(StarcatSurface.sidebar(colorScheme: colorScheme))
     }
 
     /// Sheet 功能身份固定在左上角；右侧标题继续只描述当前选中的配置分类。
@@ -888,7 +891,7 @@ struct RAGWorkspaceSettingsSheet: View {
                 .padding(interfaceScale.scaled(14))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
-                    Color(nsColor: .controlBackgroundColor).opacity(0.52),
+                    StarcatSurface.groupedCard(colorScheme: colorScheme),
                     in: RoundedRectangle(cornerRadius: 11, style: .continuous)
                 )
         }
@@ -946,7 +949,7 @@ struct RAGWorkspaceSettingsSheet: View {
             .padding(interfaceScale.scaled(14))
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                Color(nsColor: .controlBackgroundColor).opacity(0.72),
+                StarcatSurface.raisedCard(colorScheme: colorScheme),
                 in: RoundedRectangle(cornerRadius: 11, style: .continuous)
             )
             .overlay {
@@ -1463,11 +1466,14 @@ struct RAGWorkspaceSettingsSheet: View {
             .frame(maxWidth: .infinity, minHeight: minHeight)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color(nsColor: .textBackgroundColor))
+                    .fill(StarcatSurface.editor(colorScheme: colorScheme))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(Color.secondary.opacity(0.35), lineWidth: 0.5)
+                    .stroke(
+                        Color.primary.opacity(StarcatSurface.composerStrokeOpacity(colorScheme: colorScheme)),
+                        lineWidth: 0.5
+                    )
             )
     }
 }
@@ -1477,6 +1483,7 @@ private struct RAGDefaultPromptPopover: View {
     let configuration: AIPromptConfiguration
     let tabTitle: LocalizedStringKey
     let interfaceScale: InterfaceScale
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: interfaceScale.scaled(12)) {
@@ -1559,12 +1566,15 @@ private struct RAGDefaultPromptPopover: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(interfaceScale.scaled(10))
                 .background(
-                    Color(nsColor: .textBackgroundColor),
+                    StarcatSurface.editor(colorScheme: colorScheme),
                     in: RoundedRectangle(cornerRadius: 6, style: .continuous)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .stroke(Color.secondary.opacity(0.35), lineWidth: 0.5)
+                        .stroke(
+                            Color.primary.opacity(StarcatSurface.composerStrokeOpacity(colorScheme: colorScheme)),
+                            lineWidth: 0.5
+                        )
                 )
         }
     }

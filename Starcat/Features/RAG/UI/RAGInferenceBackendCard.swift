@@ -15,6 +15,8 @@ struct RAGInferenceBackendCard: View {
     let interfaceScale: InterfaceScale
     let onSelect: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
+
     private var isSelectable: Bool {
         backend == .api || inspection?.isAvailable == true
     }
@@ -59,7 +61,7 @@ struct RAGInferenceBackendCard: View {
         .background(
             isSelected
                 ? Color.accentColor.opacity(0.10)
-                : Color(nsColor: .controlBackgroundColor).opacity(0.72),
+                : StarcatSurface.raisedCard(colorScheme: colorScheme),
             in: RoundedRectangle(cornerRadius: 10, style: .continuous)
         )
         .overlay {

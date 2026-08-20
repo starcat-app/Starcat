@@ -34,6 +34,7 @@ struct EqualWidthSegmentedControl<Item: Hashable>: View {
     var controlHeight: CGFloat = 28
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         EqualWidthSegmentLayout(dividerWidth: EqualWidthSegmentedMetrics.dividerWidth) {
@@ -54,7 +55,11 @@ struct EqualWidthSegmentedControl<Item: Hashable>: View {
         .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: EqualWidthSegmentedMetrics.trackCornerRadius, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
+                .fill(
+                    colorScheme == .dark
+                        ? StarcatSurface.panel(colorScheme: colorScheme)
+                        : Color(nsColor: .controlBackgroundColor)
+                )
         )
         .overlay {
             RoundedRectangle(cornerRadius: EqualWidthSegmentedMetrics.trackCornerRadius, style: .continuous)

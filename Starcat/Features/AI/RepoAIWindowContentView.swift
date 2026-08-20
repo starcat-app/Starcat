@@ -270,7 +270,7 @@ struct RepoAIWindowContentView: View {
         // 内容层必须自己铺一层不透明底：浅色避免 behindWindow 采样把面板压灰；
         // 深色不再透玻璃——README 的暗底会把 vibrancy 染成近黑紫，输入框再叠
         // controlBackgroundColor 就变成黑洞。深色走 DESIGN.md panel-dark。
-        .background(AIAssistantSurface.panel(colorScheme: colorScheme))
+        .background(StarcatSurface.panel(colorScheme: colorScheme))
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)

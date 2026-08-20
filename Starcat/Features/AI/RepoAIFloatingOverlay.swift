@@ -158,9 +158,9 @@ struct RepoAIFloatingOverlay: View {
         )
         .frame(width: width, height: height)
         // 深色不用 `.regularMaterial` 采样 README：暗底 vibrancy 会把整块面板染成近黑紫。
-        // 与内容层共用 `AIAssistantSurface.panel`，浮层是实色工具面板而不是玻璃黑洞。
+        // 与内容层共用 `StarcatSurface.panel`，浮层是实色工具面板而不是玻璃黑洞。
         .background(
-            AIAssistantSurface.panel(colorScheme: colorScheme),
+            StarcatSurface.panel(colorScheme: colorScheme),
             in: RoundedRectangle(cornerRadius: Metrics.cornerRadius, style: .continuous)
         )
         .defaultCursorShield()

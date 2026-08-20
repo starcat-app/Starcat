@@ -85,14 +85,14 @@ struct AIChatInputView: View {
         // 但深色下它接近纯黑，叠在 vibrancy 面板上会陷成黑洞。深色改走 DESIGN.md
         // separator-dark（#3A3A3C），浅色仍用系统控件底（白卡片）。
         .background(
-            AIAssistantSurface.composer(colorScheme: colorScheme),
+            StarcatSurface.composer(colorScheme: colorScheme),
             in: RoundedRectangle(cornerRadius: 16, style: .continuous)
         )
         .overlay(
             // 深色底上 0.12 描边几乎看不见，提到 0.18 才能勾出圆角边界。
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(
-                    Color.primary.opacity(AIAssistantSurface.composerStrokeOpacity(colorScheme: colorScheme)),
+                    Color.primary.opacity(StarcatSurface.composerStrokeOpacity(colorScheme: colorScheme)),
                     lineWidth: 1
                 )
         )
@@ -563,29 +563,6 @@ private final class AIChatTextView: NSTextView {
             at: NSPoint(x: textContainerInset.width, y: textContainerInset.height),
             withAttributes: attributes
         )
-    }
-}
-
-/// AI 摘要 / 对话浮层的表面色。
-///
-/// 深色不能继续用近黑的 `controlBackgroundColor` 叠全透明玻璃：vibrancy 会采样
-/// README 染成暗紫，输入区再叠纯黑就变成黑洞。色值对齐 DESIGN.md：
-/// `panel-dark` `#2C2C2E`、`separator-dark` `#3A3A3C`。浅色仍走系统窗口 / 控件底。
-enum AIAssistantSurface {
-    static func panel(colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? Color.fromHex6(0x2C2C2E)
-            : Color(nsColor: .windowBackgroundColor)
-    }
-
-    static func composer(colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? Color.fromHex6(0x3A3A3C)
-            : Color(nsColor: .controlBackgroundColor)
-    }
-
-    static func composerStrokeOpacity(colorScheme: ColorScheme) -> Double {
-        colorScheme == .dark ? 0.18 : 0.12
     }
 }
 
