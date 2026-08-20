@@ -185,14 +185,14 @@ struct HomeView: View {
     @State private var savedTrendingLanguage: TrendingLanguage = .all
 
     /// Activity 页面当前分类。
-    @State private var selectedActivityCategory: ActivityCategory = .all
+    @State private var selectedActivityCategory: ActivityCategory = .notification
     /// Getting Started 的 Unstar 步骤跳转到 Undo Star 后，需要打开第一条详情。
     /// 用递增 token 表示一次性请求，避免修改 Activity 的全局默认选中偏好。
     @State private var undoStarAutoSelectRequestID = 0
 
     /// Activity 页面记住上次选择的分类。
     /// 与 Manage / Trending 的恢复策略一致：切走保存，切回恢复。
-    @State private var savedActivityCategory: ActivityCategory = .all
+    @State private var savedActivityCategory: ActivityCategory = .notification
 
     /// Activity 中栏当前选中的活动项，用于右侧详情页按类型分发。
     @State private var selectedActivityItem: ActivityItem?
@@ -1387,8 +1387,6 @@ struct HomeView: View {
             } else {
                 GitHubNotificationDetailView(selectedItem: $selectedActivityItem)
             }
-        } else if selectedSidebarPage == .activity, selectedActivityCategory == .organizationIssues {
-            OrganizationIssueDetailView(selectedItem: $selectedActivityItem)
         } else if selectedSidebarPage == .activity {
             ActivityDetailView(item: selectedActivityItem)
         } else if selectedSidebarPage == .trending, selectedExploreMode == .weekly {
@@ -1655,7 +1653,7 @@ struct HomeView: View {
             viewModel.selection = .trending
             restoreExploreLanguagePreference(for: selectedExploreMode)
         case .activity:
-            selectedActivityCategory = savedActivityCategory
+            selectedActivityCategory = savedActivityCategory == .all ? .notification : savedActivityCategory
         case .insights:
             break
         }
@@ -2305,8 +2303,8 @@ struct HomeView: View {
         selectedDiscoveryPlatform = nil
         selectedWeeklyLanguage = nil
 
-        selectedActivityCategory = .all
-        savedActivityCategory = .all
+        selectedActivityCategory = .notification
+        savedActivityCategory = .notification
 
         settings.repoSortOption = .starredAtDesc
         settings.hideArchived = false

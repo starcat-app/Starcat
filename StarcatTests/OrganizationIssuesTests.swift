@@ -2,7 +2,7 @@
 //  OrganizationIssuesTests.swift
 //  StarcatTests
 //
-//  验证组织 Issue 端点请求契约、PR 排除，以及双凭据结果的稳定去重排序。
+//  验证组织 Issue 端点请求契约、PR 排除，以及统一时间线的持久化去重。
 //
 
 import Foundation
@@ -30,6 +30,7 @@ struct OrganizationIssuesTests {
             [
               {
                 "id": 101,
+                "url": "https://api.github.com/repos/starcat-app/starcat-pro/issues/1",
                 "number": 1,
                 "title": "Organization inbox",
                 "state": "open",
@@ -46,6 +47,7 @@ struct OrganizationIssuesTests {
               },
               {
                 "id": 102,
+                "url": "https://api.github.com/repos/starcat-app/starcat-pro/issues/2",
                 "number": 2,
                 "title": "A pull request",
                 "state": "open",
@@ -92,24 +94,101 @@ struct OrganizationIssuesTests {
         #expect(response.value.count == 1)
         let issue = try #require(response.value.first)
         #expect(issue.repositoryFullName == "starcat-app/starcat-pro")
+        #expect(issue.subjectAPIURL == "https://api.github.com/repos/starcat-app/starcat-pro/issues/1")
         #expect(issue.number == 1)
         #expect(issue.authorLogin == "dong4j")
         #expect(issue.labels.map(\.name) == ["enhancement"])
         #expect(response.linkHeader.nextPage == 2)
     }
 
-    @Test("主 OAuth 与 GitHub App 的重复 Issue 只保留一条并按更新时间倒序")
-    func mergedResultsDeduplicateAndSort() throws {
-        let old = makeIssue(id: 1, repository: "starcat-app/starcat-pro", number: 1, updatedAt: "2026-08-20T00:00:00Z")
-        let refreshed = makeIssue(id: 1, repository: "starcat-app/starcat-pro", number: 1, updatedAt: "2026-08-21T00:00:00Z")
-        let another = makeIssue(id: 2, repository: "starcat-app/Starcat", number: 63, updatedAt: "2026-08-20T12:00:00Z")
+    @Test("组织 Issue 持久化后与同 subject 通知合并，Done 只移除通知 overlay")
+    func timelinePersistenceAndSourceDeduplication() async throws {
+        let database = try InMemoryDatabaseManager()
+        let repository = GRDBGitHubNotificationThreadRepository(database: database)
+        let issue = makeIssue(
+            id: 1,
+            repository: "starcat-app/starcat-pro",
+            number: 1,
+            updatedAt: "2026-08-21T00:00:00Z"
+        )
 
-        let merged = OrganizationIssueInboxService.mergedAndSorted([old, another, refreshed])
+        try await repository.upsertOrganizationIssues(
+            [issue],
+            credentialSource: .projectAccess,
+            fetchedAt: "2026-08-21T01:00:00Z"
+        )
+        var rows = try await repository.fetchAll(limit: 10)
+        #expect(rows.count == 1)
+        #expect(rows[0].id == "organization-issue:1")
+        #expect(rows[0].remoteNotificationThreadID == nil)
+        #expect(rows[0].unread == false)
+        #expect(rows[0].credentialSource == GitHubTimelineCredentialSource.projectAccess.rawValue)
 
-        #expect(merged.count == 2)
-        #expect(merged[0].deduplicationKey == "starcat-app/starcat-pro#1")
-        #expect(merged[0].updatedAt == refreshed.updatedAt)
-        #expect(merged[1].deduplicationKey == "starcat-app/starcat#63")
+        let notification = GitHubNotificationMapper.record(
+            from: GitHubNotificationThreadDTO(
+                id: "thread-1",
+                unread: true,
+                reason: "mention",
+                updatedAt: "2026-08-21T02:00:00Z",
+                subject: GitHubNotificationSubjectDTO(
+                    title: "Issue #1",
+                    url: issue.subjectAPIURL,
+                    latestCommentUrl: nil,
+                    type: "Issue"
+                ),
+                repository: GitHubNotificationRepositoryDTO(
+                    id: 99,
+                    fullName: issue.repositoryFullName,
+                    name: "starcat-pro",
+                    owner: GitHubNotificationOwnerDTO(login: "starcat-app")
+                )
+            ),
+            fetchedAt: "2026-08-21T02:00:00Z",
+            firstSeenAt: "2026-08-21T02:00:00Z"
+        )
+        try await repository.upsertMany([notification])
+
+        rows = try await repository.fetchAll(limit: 10)
+        #expect(rows.count == 1)
+        #expect(rows[0].id == "thread-1")
+        #expect(rows[0].remoteNotificationThreadID == "thread-1")
+        #expect(rows[0].organizationLogin == "starcat-app")
+
+        try await repository.removeNotificationThread(id: "thread-1")
+        rows = try await repository.fetchAll(limit: 10)
+        #expect(rows.count == 1)
+        #expect(rows[0].remoteNotificationThreadID == nil)
+        #expect(rows[0].unread == false)
+
+        let timelineRepository = GRDBUserRepoActivityRepository(database: database)
+        let page = try await timelineRepository.fetchPage(segment: .issue, cursor: nil, limit: 20)
+        #expect(page.rows.map(\.id) == ["thread-1"])
+    }
+
+    @Test("组织分页状态按凭据隔离并可恢复")
+    func paginationStatePersistsPerCredential() async throws {
+        let database = try InMemoryDatabaseManager()
+        let repository = GRDBGitHubNotificationThreadRepository(database: database)
+        try await repository.updateOrganizationIssueSyncState(
+            organization: "starcat-app",
+            credentialSource: .projectAccess,
+            nextPage: 4,
+            watermarkUpdatedAt: "2026-08-21T02:00:00Z",
+            backfillCompletedAt: nil,
+            lastFetchedAt: "2026-08-21T03:00:00Z",
+            lastError: nil
+        )
+
+        let state = try #require(await repository.organizationIssueSyncState(
+            organization: "starcat-app",
+            credentialSource: .projectAccess
+        ))
+        #expect(state.nextPage == 4)
+        #expect(state.watermarkUpdatedAt == "2026-08-21T02:00:00Z")
+        #expect(try await repository.organizationIssueSyncState(
+            organization: "starcat-app",
+            credentialSource: .primaryOAuth
+        ) == nil)
     }
 
     private func makeIssue(
@@ -121,6 +200,7 @@ struct OrganizationIssuesTests {
         let formatter = ISO8601DateFormatter()
         return GitHubOrganizationIssue(
             id: id,
+            subjectAPIURL: "https://api.github.com/repos/\(repository)/issues/\(number)",
             organization: "starcat-app",
             repositoryFullName: repository,
             number: number,

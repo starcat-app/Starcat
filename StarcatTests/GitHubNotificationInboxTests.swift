@@ -115,11 +115,11 @@ struct GitHubNotificationMapperTests {
         let en = Locale(identifier: "en")
         #expect(
             GitHubNotificationMapper.listCountSubtitle(total: 42, unread: 3, locale: zh)
-            == "42 条通知 · 3 未读"
+            == "42 条事件 · 3 未读"
         )
         #expect(
             GitHubNotificationMapper.listCountSubtitle(total: 42, unread: 0, locale: en)
-            == "42 notifications · 0 unread"
+            == "42 events · 0 unread"
         )
     }
 

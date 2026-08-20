@@ -39,6 +39,14 @@ struct ActivityViewModelTests {
         #expect(!ListRowRevealMetrics.shouldAnimate(index: 29))
     }
 
+    @Test("Activity 隐藏全部入口但保留聚合枚举，旧偏好恢复到时间线")
+    func hiddenAllCategoryRestoresTimeline() {
+        #expect(ActivityCategory.allCases.contains(.all))
+        #expect(ActivityCategory(persistedRawValue: "") == .notification)
+        #expect(ActivityCategory(persistedRawValue: "all") == .notification)
+        #expect(ActivityCategory(persistedRawValue: "release") == .release)
+    }
+
     // MARK: - Harness
 
     /// 引用类型计数器（让 releasePollerRunner 闭包能跨调用累加）。

@@ -10235,19 +10235,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Notifications"
+            "value" : "Timeline"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "通知"
+            "value" : "时间线"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "通知"
+            "value" : "時間線"
           }
         }
       }
@@ -14999,19 +14999,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mentions, review requests, and assignments will show up here."
+            "value" : "Notifications, organization issues, and your repository activity will show up here."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "被 @、Request Review、指派会显示在这里。"
+            "value" : "通知、组织 Issues 和你的仓库活动会显示在这里。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "被 @、Request Review、指派會顯示在這裡。"
+            "value" : "通知、組織 Issues 和你的倉庫活動會顯示在這裡。"
           }
         }
       }
@@ -15022,19 +15022,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No notifications yet"
+            "value" : "No timeline activity yet"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "还没有通知"
+            "value" : "时间线还没有活动"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "還沒有通知"
+            "value" : "時間線還沒有活動"
           }
         }
       }

@@ -30,8 +30,6 @@ final class ActivityCategoryCountService {
     func count(for category: ActivityCategory) -> Int? {
         if category == .undoStar { return undoStarCount }
         if category == .notification { return notificationUnreadCount }
-        // 组织 Issue 是会话级远端结果；数量由中栏回传，不把本地聚合默认 0 画成角标。
-        if category == .organizationIssues { return nil }
         guard let localCounts else { return nil }
         return localCounts[category] ?? 0
     }

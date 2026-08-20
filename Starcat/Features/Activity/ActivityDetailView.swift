@@ -236,10 +236,6 @@ struct ActivityDetailView: View {
             repoDetail(item, titleKey: "activity.detail.suggestionTitle")
         case .notification:
             notificationDetail(item)
-        case .organizationIssue:
-            // 正常路由由 HomeView 交给 OrganizationIssueDetailView；这里保留安全兜底。
-            Text(verbatim: item.body ?? "")
-                .textSelection(.enabled)
         case .userRepoActivity:
             repoDetail(item, titleKey: "activity.detail.starTitle")
         }
@@ -527,7 +523,7 @@ struct ActivityDetailView: View {
         switch item.kind {
         case .star, .repository, .suggestion, .userRepoActivity:
             return true
-        case .announcement, .release, .following, .notification, .organizationIssue:
+        case .announcement, .release, .following, .notification:
             return false
         }
     }

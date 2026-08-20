@@ -1078,6 +1078,22 @@ struct DatabaseMigrationsV1Tests {
         }
     }
 
+    // MARK: - v26 组织 Issue 统一时间线（2026-08-21）
+
+    @Test("v26：通知会话扩展来源字段并创建组织分页状态表")
+    func v26TimelineConversationColumnsCreated() throws {
+        let db = try makeDB()
+        try db.read { db in
+            let columns = try db.columns(in: "github_notification_threads").map(\.name)
+            #expect(columns.contains("notification_thread_id"))
+            #expect(columns.contains("source_kind"))
+            #expect(columns.contains("organization_login"))
+            #expect(columns.contains("credential_source"))
+            #expect(columns.contains("issue_state"))
+            #expect(try db.tableExists("github_organization_issue_sync_state"))
+        }
+    }
+
     @Test("v3：fetchAllStarred 类查询能用上新复合索引（query plan 验证）")
     func v3IndexUsedByQueryPlan() throws {
         let db = try makeDB()

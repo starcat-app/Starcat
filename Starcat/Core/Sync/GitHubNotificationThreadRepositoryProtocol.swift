@@ -7,6 +7,21 @@
 
 import Foundation
 
+enum GitHubTimelineCredentialSource: String, Sendable {
+    case primaryOAuth = "primary_oauth"
+    case projectAccess = "project_access"
+}
+
+struct GitHubOrganizationIssueSyncStateRecord: Equatable, Sendable {
+    let organizationLogin: String
+    let credentialSource: GitHubTimelineCredentialSource
+    let nextPage: Int?
+    let watermarkUpdatedAt: String?
+    let backfillCompletedAt: String?
+    let lastFetchedAt: String?
+    let lastError: String?
+}
+
 protocol GitHubNotificationThreadRepositoryProtocol: Sendable {
     func fetchAll(limit: Int) async throws -> [GitHubNotificationThreadRecord]
     func fetch(id: String) async throws -> GitHubNotificationThreadRecord?
@@ -14,6 +29,12 @@ protocol GitHubNotificationThreadRepositoryProtocol: Sendable {
     /// 中栏面包屑副标题用总数；侧栏角标仍走 `unreadCount()`。
     func totalCount() async throws -> Int
     func upsertMany(_ records: [GitHubNotificationThreadRecord]) async throws
+    /// 组织 Issue 与通知按 `subject_api_url` 合并；没有通知来源时 unread 永远为 false。
+    func upsertOrganizationIssues(
+        _ issues: [GitHubOrganizationIssue],
+        credentialSource: GitHubTimelineCredentialSource,
+        fetchedAt: String
+    ) async throws
     func updateLocalUnread(
         id: String,
         unread: Bool,
@@ -35,10 +56,25 @@ protocol GitHubNotificationThreadRepositoryProtocol: Sendable {
     /// 还没发过系统通知的 thread。回填入库后会先 markNotified，避免历史条目在增量里补发。
     func fetchUnnotified() async throws -> [GitHubNotificationThreadRecord]
     func maxUpdatedAt() async throws -> String?
+    func organizationIssueSyncState(
+        organization: String,
+        credentialSource: GitHubTimelineCredentialSource
+    ) async throws -> GitHubOrganizationIssueSyncStateRecord?
+    func updateOrganizationIssueSyncState(
+        organization: String,
+        credentialSource: GitHubTimelineCredentialSource,
+        nextPage: Int?,
+        watermarkUpdatedAt: String?,
+        backfillCompletedAt: String?,
+        lastFetchedAt: String?,
+        lastError: String?
+    ) async throws
     /// 清掉本机演示 thread。前缀由调用方保证是 `starcat-demo-` 这种字面量。
     func deleteIDs(withPrefix prefix: String) async throws
     /// 标 Done 成功后删这一行。空 id 直接忽略。
     func delete(id: String) async throws
+    /// Done 只移除通知 overlay；同一会话仍由组织 Issue 可见时必须保留本地会话。
+    func removeNotificationThread(id: String) async throws
 }
 
 extension GitHubNotificationThreadRepositoryProtocol {

@@ -941,15 +941,6 @@ struct RepoListView: View {
                 searchField: AnyView(smartSearchField())
             )
         }
-        if selectedActivityCategory == .organizationIssues {
-            // 组织 Issue 的组织 / 状态筛选在中栏内部；全局 repo 搜索对它不生效，不能展示假入口。
-            return PageToolbarSpec(
-                leadingPrimary: nil,
-                trailingPrimary: nil,
-                searchField: nil
-            )
-        }
-
         let registry = dependencies.starredRegistry
         let isAuthed = authSession.state.isAuthenticated
 

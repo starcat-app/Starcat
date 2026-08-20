@@ -82,6 +82,66 @@ enum DatabaseMigrations {
         registerV23(into: &migrator)
         registerV24(into: &migrator)
         registerV25(into: &migrator)
+        registerV26(into: &migrator)
+    }
+
+    // MARK: - v26-github-timeline-conversations：组织 Issue 并入本地时间线（2026-08-21）
+
+    /// v21 的通知表已经承载会话正文、评论和游标分页。这里把它扩成统一时间线会话缓存，
+    /// 真实 GitHub 通知仍保留独立 thread id；组织 Issue 只复用展示和详情能力，不伪造已读 / Done。
+    /// 私有 Issue 仍跟随当前 GitHub 用户数据库隔离，不进入 CloudKit、导出或 Discovery。
+    private static func registerV26(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v26-github-timeline-conversations") { db in
+            guard try db.tableExists("github_notification_threads") else { return }
+            let columns = try db.columns(in: "github_notification_threads").map(\.name)
+            try db.alter(table: "github_notification_threads") { t in
+                if !columns.contains("notification_thread_id") {
+                    t.add(column: "notification_thread_id", .text)
+                }
+                if !columns.contains("source_kind") {
+                    t.add(column: "source_kind", .text).notNull().defaults(to: "notification")
+                }
+                if !columns.contains("organization_login") {
+                    t.add(column: "organization_login", .text)
+                }
+                if !columns.contains("credential_source") {
+                    t.add(column: "credential_source", .text)
+                }
+                if !columns.contains("issue_state") {
+                    t.add(column: "issue_state", .text)
+                }
+            }
+            try db.execute(
+                sql: """
+                    UPDATE github_notification_threads
+                    SET notification_thread_id = id
+                    WHERE notification_thread_id IS NULL AND source_kind = 'notification'
+                    """
+            )
+            try db.create(
+                index: "idx_github_timeline_subject_api_url",
+                on: "github_notification_threads",
+                columns: ["subject_api_url"],
+                ifNotExists: true
+            )
+            try db.create(
+                index: "idx_github_timeline_source",
+                on: "github_notification_threads",
+                columns: ["source_kind", "organization_login", "updated_at"],
+                ifNotExists: true
+            )
+
+            try db.create(table: "github_organization_issue_sync_state", ifNotExists: true) { t in
+                t.column("scope_key", .text).primaryKey()
+                t.column("organization_login", .text).notNull()
+                t.column("credential_source", .text).notNull()
+                t.column("next_page", .integer)
+                t.column("watermark_updated_at", .text)
+                t.column("backfill_completed_at", .text)
+                t.column("last_fetched_at", .text)
+                t.column("last_error", .text)
+            }
+        }
     }
 
     // MARK: - v25-user-repo-activity-actor：账本补 user_id / user_name（2026-08-20）

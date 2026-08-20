@@ -7,7 +7,7 @@
 //  关键约束：
 //  - `/orgs/{org}/issues` 返回当前凭据可见的结果，不等同于 Notifications。
 //  - GitHub 会把 Pull Request 混进 Issue 响应；必须在 API 边界排除。
-//  - 数据只供 Activity 会话内展示，不落本地数据库，避免私有 Issue 进入 CloudKit / 导出链路。
+//  - 数据写入当前 GitHub 用户隔离的本地时间线库，但不进入 CloudKit / 导出 / Discovery。
 //
 
 import Foundation
@@ -27,6 +27,7 @@ struct GitHubOrganizationIssueLabel: Equatable, Hashable, Sendable {
 
 struct GitHubOrganizationIssue: Identifiable, Equatable, Sendable {
     let id: Int64
+    let subjectAPIURL: String
     let organization: String
     let repositoryFullName: String
     let number: Int
@@ -96,6 +97,7 @@ extension GitHubAPIClient {
 
         return GitHubOrganizationIssue(
             id: dto.id,
+            subjectAPIURL: dto.url,
             organization: organization,
             repositoryFullName: repositoryFullName,
             number: dto.number,
@@ -132,6 +134,7 @@ extension GitHubAPIClient {
 
 private struct GitHubOrganizationIssueDTO: Decodable, Sendable {
     let id: Int64
+    let url: String
     let number: Int
     let title: String
     let state: String

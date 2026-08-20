@@ -1028,7 +1028,7 @@ struct SidebarView: View {
     @ViewBuilder
     private var activitySidebarContent: some View {
         Section {
-            activityCategoryRow(.all)
+            activityCategoryRow(.notification)
             activityCategoryRow(.undoStar)
 
             if activityCategoriesExpanded {
@@ -1072,9 +1072,11 @@ struct SidebarView: View {
         .help(disclosureHelp(isExpanded: activityCategoriesExpanded))
     }
 
-    /// Activity 可折叠子分类（不含 `.all`——它常驻在 section 顶部）。
+    /// `.all` 只隐藏入口，不删除聚合逻辑；时间线作为 Activity 的默认常驻入口。
     private var activityLeafCategories: [ActivityCategory] {
-        ActivityCategory.allCases.filter { $0 != .all && $0 != .undoStar }
+        ActivityCategory.allCases.filter {
+            $0 != .all && $0 != .notification && $0 != .undoStar
+        }
     }
 
     @ViewBuilder

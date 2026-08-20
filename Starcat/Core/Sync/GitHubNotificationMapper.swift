@@ -392,12 +392,12 @@ enum GitHubNotificationMapper {
         locale.identifier.lowercased().hasPrefix("zh") ? zh : en
     }
 
-    /// 中栏面包屑下一行：总数 + 未读。和「1948 个仓库」同一槽位，不要再在工具栏里叠一行标题。
+    /// 中栏面包屑下一行：时间线总数 + 真实通知未读。组织 Issue / 账本不伪造 unread。
     static func listCountSubtitle(total: Int, unread: Int, locale: Locale) -> String {
         copy(
             locale,
-            zh: "\(total) 条通知 · \(unread) 未读",
-            en: "\(total) notifications · \(unread) unread"
+            zh: "\(total) 条事件 · \(unread) 未读",
+            en: "\(total) events · \(unread) unread"
         )
     }
 

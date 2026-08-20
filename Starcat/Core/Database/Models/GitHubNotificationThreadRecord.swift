@@ -49,6 +49,14 @@ struct GitHubNotificationThreadRecord: Codable, FetchableRecord, PersistableReco
     var notifiedAt: String?
     var markReadState: String
     var fetchedAt: String
+    /// 真实 Notifications thread id。组织 Issue 独立进入时间线时为 nil，因此不能执行已读 / Done。
+    var notificationThreadId: String? = nil
+    /// `notification` 或 `organization_issue`；描述当前是否带通知 overlay，展示统一走时间线会话。
+    var sourceKind: String = "notification"
+    var organizationLogin: String? = nil
+    /// `primary_oauth` / `project_access`，用于详情 hydration 和评论时选择同一份凭据。
+    var credentialSource: String? = nil
+    var issueState: String? = nil
 
     var markReadStateValue: GitHubNotificationMarkReadState {
         GitHubNotificationMarkReadState(rawValue: markReadState) ?? .idle
@@ -76,5 +84,14 @@ struct GitHubNotificationThreadRecord: Codable, FetchableRecord, PersistableReco
         case notifiedAt = "notified_at"
         case markReadState = "mark_read_state"
         case fetchedAt = "fetched_at"
+        case notificationThreadId = "notification_thread_id"
+        case sourceKind = "source_kind"
+        case organizationLogin = "organization_login"
+        case credentialSource = "credential_source"
+        case issueState = "issue_state"
+    }
+
+    var remoteNotificationThreadID: String? {
+        notificationThreadId ?? (sourceKind == "notification" ? id : nil)
     }
 }

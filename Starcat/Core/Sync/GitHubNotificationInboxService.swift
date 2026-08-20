@@ -41,11 +41,15 @@ enum GitHubNotificationInboxError: Error, Equatable {
 final class GitHubNotificationInboxService {
 
     private let apiClient: any GitHubAPIClientProtocol
+    private let projectAPIClient: (any GitHubAPIClientProtocol)?
     private let threadRepository: any GitHubNotificationThreadRepositoryProtocol
     private let syncStateRepository: any GitHubNotificationSyncStateRepositoryProtocol
     private let notificationService: AppNotificationService
     private let settings: AppSettings
     private let activityRepository: (any UserRepoActivityRepositoryProtocol)?
+    private let organizationIssueSyncService: OrganizationIssueTimelineSyncService?
+    private let userIDProvider: () -> Int64?
+    private let isProjectAccessAvailable: () -> Bool
     private let clock: () -> Date
     private let dwellNanoseconds: UInt64
 
@@ -73,15 +77,23 @@ final class GitHubNotificationInboxService {
         notificationService: AppNotificationService,
         settings: AppSettings,
         activityRepository: (any UserRepoActivityRepositoryProtocol)? = nil,
+        projectAPIClient: (any GitHubAPIClientProtocol)? = nil,
+        organizationIssueSyncService: OrganizationIssueTimelineSyncService? = nil,
+        userIDProvider: @escaping () -> Int64? = { nil },
+        isProjectAccessAvailable: @escaping () -> Bool = { false },
         clock: @escaping () -> Date = Date.init,
         dwellNanoseconds: UInt64 = GitHubNotificationMapper.dwellNanoseconds
     ) {
         self.apiClient = apiClient
+        self.projectAPIClient = projectAPIClient
         self.threadRepository = threadRepository
         self.syncStateRepository = syncStateRepository
         self.notificationService = notificationService
         self.settings = settings
         self.activityRepository = activityRepository
+        self.organizationIssueSyncService = organizationIssueSyncService
+        self.userIDProvider = userIDProvider
+        self.isProjectAccessAvailable = isProjectAccessAvailable
         self.clock = clock
         self.dwellNanoseconds = dwellNanoseconds
     }
@@ -137,18 +149,21 @@ final class GitHubNotificationInboxService {
     ///
     /// 无论回填、增量还是 304，都先拉高 `isSyncing`。已在同步中的二次点击直接返回，
     /// 按钮此时已经在转，不需要再写一套空转动画。
-    func sync() async {
-        await sync(forceBackfill: false)
+    func sync(forceOrganizationIssues: Bool = false) async {
+        await sync(
+            forceBackfill: false,
+            forceOrganizationIssues: forceOrganizationIssues
+        )
     }
 
     /// 组织 OAuth 授权变化后重新抓取最近历史。
     ///
     /// 只重置同步游标，保留 thread 表；相同 thread 仍走既有 upsert，继续保护本地已读状态。
     func resyncHistory() async {
-        await sync(forceBackfill: true)
+        await sync(forceBackfill: true, forceOrganizationIssues: true)
     }
 
-    private func sync(forceBackfill: Bool) async {
+    private func sync(forceBackfill: Bool, forceOrganizationIssues: Bool) async {
         guard !isSyncing else { return }
         isSyncing = true
         lastErrorMessage = nil
@@ -177,6 +192,16 @@ final class GitHubNotificationInboxService {
             AppLog.network.error("GitHub notification sync failed: \(error.localizedDescription, privacy: .public)")
             postDidChange()
         }
+
+        // Notifications 与组织 Issue 是两个独立远端源。前者缺 scope 或暂时失败时，
+        // 后者仍可刷新；同步器内部按 scope 保存错误并保留旧缓存。
+        if let userID = userIDProvider() {
+            await organizationIssueSyncService?.sync(
+                userID: userID,
+                force: forceBackfill || forceOrganizationIssues
+            )
+            postDidChange()
+        }
     }
 
     func hydrate(id: String) async {
@@ -187,13 +212,14 @@ final class GitHubNotificationInboxService {
               !path.isEmpty
         else { return }
         do {
-            let hydration = try await apiClient.hydrateNotificationSubject(path: path)
+            let client = apiClient(for: record)
+            let hydration = try await client.hydrateNotificationSubject(path: path)
             var comments: [GitHubNotificationComment] = []
             if let commentsPath = GitHubNotificationMapper.issueCommentsPath(
                 subjectType: record.subjectType,
                 subjectApiURL: record.subjectApiUrl
             ) {
-                comments = (try? await apiClient.listNotificationIssueComments(path: commentsPath)) ?? []
+                comments = (try? await client.listNotificationIssueComments(path: commentsPath)) ?? []
             }
             let now = ISO8601DateFormatter.shared.string(from: clock())
             cacheIssueState(id: id, state: hydration.state)
@@ -232,7 +258,7 @@ final class GitHubNotificationInboxService {
         else {
             throw GitHubNotificationInboxError.cannotComment
         }
-        let created = try await apiClient.createNotificationIssueComment(path: path, body: trimmed)
+        let created = try await apiClient(for: record).createNotificationIssueComment(path: path, body: trimmed)
         var comments = GitHubNotificationMapper.decodeComments(record.commentsJson)
         if !comments.contains(where: { $0.id == created.id }) {
             comments.append(created)
@@ -278,7 +304,7 @@ final class GitHubNotificationInboxService {
               !path.isEmpty
         else { return }
         do {
-            let hydration = try await apiClient.hydrateNotificationSubject(path: path)
+            let hydration = try await apiClient(for: record).hydrateNotificationSubject(path: path)
             cacheIssueState(id: threadId, state: hydration.state)
         } catch {
             AppLog.network.info(
@@ -310,7 +336,7 @@ final class GitHubNotificationInboxService {
             throw GitHubNotificationInboxError.cannotClose
         }
         do {
-            try await apiClient.updateNotificationIssueState(path: path, state: normalized)
+            try await apiClient(for: record).updateNotificationIssueState(path: path, state: normalized)
             issueStates[threadId] = normalized
             postDidChange()
         } catch let network as NetworkError {
@@ -351,12 +377,14 @@ final class GitHubNotificationInboxService {
             return
         }
 
-        guard try await threadRepository.fetch(id: id) != nil else {
+        guard let record = try await threadRepository.fetch(id: id),
+              let remoteThreadID = record.remoteNotificationThreadID
+        else {
             throw GitHubNotificationInboxError.cannotDone
         }
 
         do {
-            try await apiClient.markNotificationThreadDone(id: id)
+            try await apiClient.markNotificationThreadDone(id: remoteThreadID)
         } catch NetworkError.notFound {
             // GitHub 已经没有这条 inbox 项，本地照样删。
         } catch let NetworkError.clientError(code, _) where code == 404 {
@@ -366,7 +394,7 @@ final class GitHubNotificationInboxService {
             throw error
         }
 
-        try await threadRepository.delete(id: id)
+        try await threadRepository.removeNotificationThread(id: id)
         issueStates[id] = nil
         postDidChange()
     }
@@ -374,7 +402,9 @@ final class GitHubNotificationInboxService {
     /// 选中一行：蓝点先灭，再开始 400ms dwell。
     /// 已经 PATCH 成功 / 失败待重试的已读行不要再打成 pending，否则一取消 dwell 蓝点会闪回来。
     func beginDwell(id: String) async {
-        guard let record = try? await threadRepository.fetch(id: id) else { return }
+        guard let record = try? await threadRepository.fetch(id: id),
+              record.remoteNotificationThreadID != nil
+        else { return }
         if !record.unread {
             switch record.markReadStateValue {
             case .synced, .failed:
@@ -553,8 +583,9 @@ final class GitHubNotificationInboxService {
     private func retryFailedMarkRead() async throws {
         let failed = try await threadRepository.fetchFailedMarkRead()
         for record in failed where !GitHubNotificationMapper.isDemoThread(record.id) {
+            guard let remoteThreadID = record.remoteNotificationThreadID else { continue }
             do {
-                try await apiClient.markNotificationThreadRead(id: record.id)
+                try await apiClient.markNotificationThreadRead(id: remoteThreadID)
                 try await threadRepository.updateLocalUnread(
                     id: record.id,
                     unread: false,
@@ -579,8 +610,11 @@ final class GitHubNotificationInboxService {
             postDidChange()
             return
         }
+        guard let record = try? await threadRepository.fetch(id: id),
+              let remoteThreadID = record.remoteNotificationThreadID
+        else { return }
         do {
-            try await apiClient.markNotificationThreadRead(id: id)
+            try await apiClient.markNotificationThreadRead(id: remoteThreadID)
             try await threadRepository.updateLocalUnread(
                 id: id,
                 unread: false,
@@ -616,5 +650,16 @@ final class GitHubNotificationInboxService {
 
     private func postDidChange() {
         NotificationCenter.default.post(name: .githubNotificationInboxDidChange, object: nil)
+    }
+
+    /// 组织私仓必须继续使用把它拉下来的 Project Access 凭据；凭据失效时不静默改用
+    /// public OAuth 伪装成功，公开组织 Issue 则保持主 OAuth 路径。
+    private func apiClient(for record: GitHubNotificationThreadRecord) -> any GitHubAPIClientProtocol {
+        if record.credentialSource == GitHubTimelineCredentialSource.projectAccess.rawValue,
+           isProjectAccessAvailable(),
+           let projectAPIClient {
+            return projectAPIClient
+        }
+        return apiClient
     }
 }

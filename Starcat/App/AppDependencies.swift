@@ -1493,13 +1493,33 @@ final class AppDependencies {
         let notificationSyncRepo = GRDBGitHubNotificationSyncStateRepository(database: db)
         self.githubNotificationThreadRepository = notificationThreadRepo
         self.githubNotificationSyncStateRepository = notificationSyncRepo
+        let hasProjectAccess: () -> Bool = { [weak projectAccessSession] in
+            guard let projectAccessSession else { return false }
+            switch projectAccessSession.state {
+            case .connected, .partialAuthorization, .organizationApprovalPending:
+                return true
+            default:
+                return false
+            }
+        }
+        let organizationTimelineSync = OrganizationIssueTimelineSyncService(
+            primaryClient: api,
+            projectClient: projectAPIClient,
+            repoRepository: repo,
+            timelineRepository: notificationThreadRepo,
+            isProjectAccessAvailable: hasProjectAccess
+        )
         let inboxService = GitHubNotificationInboxService(
             apiClient: api,
             threadRepository: notificationThreadRepo,
             syncStateRepository: notificationSyncRepo,
             notificationService: notificationService,
             settings: self.settings,
-            activityRepository: self.userRepoActivityRepository
+            activityRepository: self.userRepoActivityRepository,
+            projectAPIClient: projectAPIClient,
+            organizationIssueSyncService: organizationTimelineSync,
+            userIDProvider: { [weak session] in session?.state.user?.id },
+            isProjectAccessAvailable: hasProjectAccess
         )
         self.githubNotificationInboxService = inboxService
         self.githubNotificationPoller = GitHubNotificationPoller(

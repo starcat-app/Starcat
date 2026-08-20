@@ -67,7 +67,7 @@ struct GitHubNotificationInboxView: View {
             isEnabled: !inbox.isSyncing
         ) {
             Task {
-                await inbox.sync()
+                await inbox.sync(forceOrganizationIssues: true)
                 await reloadFirstPage()
             }
         }
@@ -115,7 +115,7 @@ struct GitHubNotificationInboxView: View {
                 tooltip: String.l10n("activity.refresh")
             ) {
             Task {
-                await inbox.sync()
+                await inbox.sync(forceOrganizationIssues: true)
                 await reloadFirstPage()
             }
             }
@@ -402,7 +402,8 @@ struct GitHubNotificationInboxView: View {
                 excerpt: record.excerpt,
                 comments: GitHubNotificationMapper.decodeComments(record.commentsJson),
                 people: GitHubNotificationMapper.relatedPeople(for: record),
-                repositoryId: record.repositoryId
+                repositoryId: record.repositoryId,
+                canMarkDone: record.remoteNotificationThreadID != nil
             )
         )
     }

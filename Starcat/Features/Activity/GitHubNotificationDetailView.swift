@@ -55,7 +55,7 @@ struct GitHubNotificationDetailView: View {
             Image(systemName: "bell")
                 .font(.system(size: 28, weight: .semibold))
                 .foregroundStyle(.secondary)
-            Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "选择一条通知", en: "Select a notification"))
+            Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "选择一条时间线事件", en: "Select a timeline event"))
                 .font(.headline)
                 .foregroundStyle(.secondary)
         }
@@ -201,7 +201,7 @@ struct GitHubNotificationDetailView: View {
                 if let vm = translationVM, let payload = item.notification {
                     translationControls(payload: payload, viewModel: vm)
                 }
-                if item.notification?.threadId != nil {
+                if item.notification?.canMarkDone == true {
                     doneButton(item)
                 }
                 Button {
