@@ -5,8 +5,8 @@
 //  AI 正在干活时的彩色流动光圈。
 //
 //  - `StarcatAIGeneratingHalo`：Issue 撰写框用的开花光晕（SwiftUI blur + 角向渐变）。
-//  - `StarcatAIGeneratingHaloHost`：同一份 SwiftUI 光圈嵌进 NSView，给 README 的
-//    WKWebView 用。直接 overlay SwiftUI 会被 WebView 盖住。
+//  - `StarcatAIGeneratingHaloHost`：README 的全尺寸 Core Animation 光圈，避开
+//    SwiftUI TimelineView / blur 持续占用主线程，同时保持在 WKWebView 上层。
 //  - `StarcatAIHaloLayerView`：Issue 多条评论卡的细描边，避免超高卡走 blur。
 //
 //  关键约束：CA 路径在 layout 改 bounds 时必须关掉隐式动画，否则滚动会把 mask 路径 tween 一遍。
@@ -29,7 +29,7 @@ enum StarcatAIHaloMetrics {
     }
 }
 
-/// Issue 撰写框用的开花光圈。README 翻译通过 `StarcatAIGeneratingHaloHost` 复用这一份。
+/// Issue 撰写框用的开花光圈。README 的全尺寸区域走更轻的 Core Animation 实现。
 struct StarcatAIGeneratingHalo: View {
     var isActive: Bool
 
@@ -106,38 +106,218 @@ struct StarcatAIGeneratingHalo: View {
     }
 }
 
-struct StarcatAIGeneratingHaloRoot: View {
-    var isActive: Bool
-    var reduceMotion: Bool
-
-    var body: some View {
-        StarcatAIGeneratingHalo(isActive: isActive)
-            .environment(\.starcatReduceMotion, reduceMotion)
-    }
-}
-
-/// 把撰写框那份 SwiftUI 光圈嵌进透明 NSView，盖在 WKWebView 上面。
-final class StarcatAIHaloHostingNSView: NSHostingView<StarcatAIGeneratingHaloRoot> {
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
-    }
-}
-
+/// README 使用的全尺寸光圈。NSView 保证它位于 WKWebView 上层，动画由 Core Animation
+/// render server 执行，不再用 TimelineView 周期性重建 SwiftUI 视图树。
+///
+/// 查：`docs/7-工具与脚本/Swift-学习索引.md` → `NSViewRepresentable`、`Core Animation`。
 struct StarcatAIGeneratingHaloHost: NSViewRepresentable {
     var isActive: Bool
     var reduceMotion: Bool
 
-    func makeNSView(context: Context) -> StarcatAIHaloHostingNSView {
-        let view = StarcatAIHaloHostingNSView(
-            rootView: StarcatAIGeneratingHaloRoot(isActive: isActive, reduceMotion: reduceMotion)
-        )
-        view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.clear.cgColor
+    func makeNSView(context: Context) -> StarcatAIBloomHaloNSView {
+        let view = StarcatAIBloomHaloNSView()
+        view.apply(isActive: isActive, reduceMotion: reduceMotion)
         return view
     }
 
-    func updateNSView(_ nsView: StarcatAIHaloHostingNSView, context: Context) {
-        nsView.rootView = StarcatAIGeneratingHaloRoot(isActive: isActive, reduceMotion: reduceMotion)
+    func updateNSView(_ nsView: StarcatAIBloomHaloNSView, context: Context) {
+        nsView.apply(isActive: isActive, reduceMotion: reduceMotion)
+    }
+}
+
+/// README 光圈只让一层圆锥渐变旋转；两层柔光保持静态，避免全尺寸 blur 每帧重算。
+/// 渐变层使用覆盖 bounds 对角线的正方形，旋转到任意角度都不会露出空白边。
+final class StarcatAIBloomHaloNSView: NSView {
+    private let gradientClipLayer = CALayer()
+    private let gradientLayer = CAGradientLayer()
+    private let gradientMaskLayer = CAShapeLayer()
+    private let cyanGlowLayer = CAShapeLayer()
+    private let pinkGlowLayer = CAShapeLayer()
+
+    private var isActive = false
+    private var reduceMotion = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.masksToBounds = false
+        layer?.isOpaque = false
+        layer?.opacity = 0
+
+        configureGlowLayer(
+            cyanGlowLayer,
+            color: NSColor.cyan,
+            lineWidth: 4,
+            strokeAlpha: 0.28,
+            shadowRadius: 8,
+            shadowOpacity: 0.34
+        )
+        configureGlowLayer(
+            pinkGlowLayer,
+            color: NSColor.systemPink,
+            lineWidth: 2.5,
+            strokeAlpha: 0.20,
+            shadowRadius: 6,
+            shadowOpacity: 0.24
+        )
+
+        gradientLayer.type = .conic
+        gradientLayer.startPoint = CGPoint(x: 0.5, y: 0.5)
+        gradientLayer.endPoint = CGPoint(x: 0.5, y: 0)
+        gradientLayer.colors = [
+            NSColor.cyan.withAlphaComponent(0.95).cgColor,
+            NSColor.purple.withAlphaComponent(0.95).cgColor,
+            NSColor.systemPink.withAlphaComponent(0.90).cgColor,
+            NSColor.systemOrange.withAlphaComponent(0.82).cgColor,
+            NSColor.cyan.withAlphaComponent(0.95).cgColor
+        ]
+
+        gradientMaskLayer.fillColor = nil
+        gradientMaskLayer.strokeColor = NSColor.white.cgColor
+        gradientMaskLayer.lineWidth = 1.8
+        gradientMaskLayer.lineJoin = .round
+        gradientMaskLayer.lineCap = .round
+
+        gradientClipLayer.masksToBounds = false
+        gradientClipLayer.mask = gradientMaskLayer
+        gradientClipLayer.addSublayer(gradientLayer)
+
+        layer?.addSublayer(cyanGlowLayer)
+        layer?.addSublayer(pinkGlowLayer)
+        layer?.addSublayer(gradientClipLayer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        let scale = window?.backingScaleFactor ?? 2
+        [
+            layer,
+            gradientClipLayer,
+            gradientLayer,
+            gradientMaskLayer,
+            cyanGlowLayer,
+            pinkGlowLayer
+        ].forEach { $0?.contentsScale = scale }
+    }
+
+    override func layout() {
+        super.layout()
+        guard bounds.width > 0, bounds.height > 0 else { return }
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+
+        cyanGlowLayer.frame = bounds
+        pinkGlowLayer.frame = bounds
+        gradientClipLayer.frame = bounds
+        gradientMaskLayer.frame = gradientClipLayer.bounds
+
+        // 父视图已经预留 glowBleed；路径落在 gutter 内沿，让 shadow 只覆盖边框附近。
+        let ringRect = gradientClipLayer.bounds.insetBy(
+            dx: StarcatAIHaloMetrics.glowBleed,
+            dy: StarcatAIHaloMetrics.glowBleed
+        )
+        let radius = StarcatAIHaloMetrics.cornerRadius
+        let path = CGPath(
+            roundedRect: ringRect,
+            cornerWidth: min(radius, max(ringRect.width / 2, 0)),
+            cornerHeight: min(radius, max(ringRect.height / 2, 0)),
+            transform: nil
+        )
+        cyanGlowLayer.path = path
+        pinkGlowLayer.path = path
+        gradientMaskLayer.path = path
+        // 明确 shadowPath 后，CA 不需要根据全尺寸图层的 alpha 每帧推导阴影轮廓。
+        cyanGlowLayer.shadowPath = path.copy(
+            strokingWithWidth: cyanGlowLayer.lineWidth,
+            lineCap: .round,
+            lineJoin: .round,
+            miterLimit: 0
+        )
+        pinkGlowLayer.shadowPath = path.copy(
+            strokingWithWidth: pinkGlowLayer.lineWidth,
+            lineCap: .round,
+            lineJoin: .round,
+            miterLimit: 0
+        )
+
+        let diagonal = ceil(hypot(bounds.width, bounds.height))
+        gradientLayer.bounds = CGRect(x: 0, y: 0, width: diagonal, height: diagonal)
+        gradientLayer.position = CGPoint(
+            x: gradientClipLayer.bounds.midX,
+            y: gradientClipLayer.bounds.midY
+        )
+
+        CATransaction.commit()
+
+        if isActive && !reduceMotion {
+            startSpinIfNeeded()
+        }
+    }
+
+    func apply(isActive: Bool, reduceMotion: Bool) {
+        guard self.isActive != isActive || self.reduceMotion != reduceMotion else { return }
+        self.isActive = isActive
+        self.reduceMotion = reduceMotion
+
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(StarcatAIHaloMetrics.fadeDuration(reduceMotion))
+        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeInEaseOut))
+        layer?.opacity = isActive ? 1 : 0
+        CATransaction.commit()
+
+        if isActive && !reduceMotion {
+            startSpinIfNeeded()
+        } else {
+            stopSpin()
+        }
+    }
+
+    private func configureGlowLayer(
+        _ glowLayer: CAShapeLayer,
+        color: NSColor,
+        lineWidth: CGFloat,
+        strokeAlpha: CGFloat,
+        shadowRadius: CGFloat,
+        shadowOpacity: Float
+    ) {
+        glowLayer.fillColor = nil
+        glowLayer.strokeColor = color.withAlphaComponent(strokeAlpha).cgColor
+        glowLayer.lineWidth = lineWidth
+        glowLayer.lineJoin = .round
+        glowLayer.lineCap = .round
+        glowLayer.shadowColor = color.cgColor
+        glowLayer.shadowOffset = .zero
+        glowLayer.shadowRadius = shadowRadius
+        glowLayer.shadowOpacity = shadowOpacity
+    }
+
+    private func startSpinIfNeeded() {
+        guard gradientLayer.animation(forKey: "spin") == nil else { return }
+        let spin = CABasicAnimation(keyPath: "transform.rotation.z")
+        spin.fromValue = 0
+        spin.toValue = Double.pi * 2
+        spin.duration = StarcatAIHaloMetrics.rotationPeriod
+        spin.repeatCount = .infinity
+        spin.isRemovedOnCompletion = false
+        gradientLayer.add(spin, forKey: "spin")
+    }
+
+    private func stopSpin() {
+        gradientLayer.removeAnimation(forKey: "spin")
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        gradientLayer.transform = CATransform3DIdentity
+        CATransaction.commit()
     }
 }
 
