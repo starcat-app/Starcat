@@ -232,6 +232,9 @@ final class StarcatAIHaloNSView: NSView {
     }
 
     func apply(isActive: Bool, reduceMotion: Bool) {
+        // SwiftUI 会在同一翻译批次内多次调用 updateNSView；状态未变时不要重复提交
+        // opacity 事务或触碰旋转动画，避免评论卡滚动期间制造额外的 CA 更新。
+        guard self.isActive != isActive || self.reduceMotion != reduceMotion else { return }
         let fade = StarcatAIHaloMetrics.fadeDuration(reduceMotion)
         self.reduceMotion = reduceMotion
         self.isActive = isActive
