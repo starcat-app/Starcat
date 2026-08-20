@@ -625,7 +625,7 @@ struct ReadmeTranslationLanguageTests {
 
     @Test("展示名包含国旗且 promptName 非空")
     func promptNamesAreReadable() {
-        #expect(!ReadmeTranslationLanguage.auto.displayName.isEmpty)
+        #expect(ReadmeTranslationLanguage.auto.displayName.hasPrefix("🌐"))
         for lang in ReadmeTranslationLanguage.allCases where lang != .auto {
             #expect(!lang.promptName.isEmpty)
             #expect(!lang.displayName.isEmpty)

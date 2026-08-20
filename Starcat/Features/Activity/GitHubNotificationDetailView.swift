@@ -273,7 +273,8 @@ struct GitHubNotificationDetailView: View {
                 blocks: document.blocks.filter { $0.kind == .opening },
                 translations: translations,
                 isShowingTranslation: isShowing,
-                translationMode: translationMode
+                translationMode: translationMode,
+                prefersAnimatedEntrance: translation?.renderState.prefersAnimatedEntrance ?? false
             )
         }
 
@@ -290,7 +291,8 @@ struct GitHubNotificationDetailView: View {
                 },
                 translations: translations,
                 isShowingTranslation: isShowing,
-                translationMode: translationMode
+                translationMode: translationMode,
+                prefersAnimatedEntrance: translation?.renderState.prefersAnimatedEntrance ?? false
             )
         }
     }
@@ -684,7 +686,9 @@ private struct GitHubNotificationCommentCard: View {
     var translations: [ReadmeRenderedTranslation] = []
     var isShowingTranslation: Bool = false
     var translationMode: ReadmeTranslationMode = .segmented
+    var prefersAnimatedEntrance: Bool = false
     @Environment(\.locale) private var locale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -734,8 +738,20 @@ private struct GitHubNotificationCommentCard: View {
                     translatedBlock(block)
                 }
             }
+            // 只给「新译文到达」做入场；切回原文走 identity，避免整卡闪。
+            .animation(translationEntranceAnimation, value: translations.map(\.id))
         } else {
             GitHubNotificationMarkdown(content: markdown, repositoryFullName: repositoryFullName)
+        }
+    }
+
+    private var translationEntranceAnimation: Animation? {
+        if reduceMotion || !prefersAnimatedEntrance { return nil }
+        switch translationMode {
+        case .segmented:
+            return .easeOut(duration: 0.18)
+        case .full:
+            return .easeOut(duration: 0.16)
         }
     }
 
@@ -758,6 +774,10 @@ private struct GitHubNotificationCommentCard: View {
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .offset(y: 6)),
+                            removal: .identity
+                        ))
                 }
             }
         case .full:
@@ -766,6 +786,8 @@ private struct GitHubNotificationCommentCard: View {
                 content: translated.flatMap { $0.isEmpty ? nil : $0 } ?? block.markdown,
                 repositoryFullName: repositoryFullName
             )
+            .id("\(block.segmentId ?? "fence")-\(translated == nil || translated?.isEmpty == true ? "src" : "tx")")
+            .transition(.asymmetric(insertion: .opacity, removal: .identity))
         }
     }
 }

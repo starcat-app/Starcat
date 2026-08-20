@@ -208,7 +208,8 @@ final class ReadmeTranslationViewModel {
             publishRenderState(
                 isVisible: false,
                 mode: mode,
-                translations: renderState.translations
+                translations: renderState.translations,
+                prefersAnimatedEntrance: false
             )
             return
         }
@@ -367,7 +368,8 @@ final class ReadmeTranslationViewModel {
                         rendered,
                         mode: mode,
                         language: targetLanguage,
-                        createdAt: cachedCreatedAt(cached)
+                        createdAt: cachedCreatedAt(cached),
+                        prefersAnimatedEntrance: false
                     )
                     completedSegmentCount = Set(
                         cached.segments.map(\.sourceHash)
@@ -404,7 +406,8 @@ final class ReadmeTranslationViewModel {
                         rendered,
                         mode: mode,
                         language: targetLanguage,
-                        createdAt: Date()
+                        createdAt: Date(),
+                        prefersAnimatedEntrance: true
                     )
                 }
             )
@@ -419,7 +422,8 @@ final class ReadmeTranslationViewModel {
                 rendered,
                 mode: mode,
                 language: targetLanguage,
-                createdAt: cachedCreatedAt(record)
+                createdAt: cachedCreatedAt(record),
+                prefersAnimatedEntrance: true
             )
             completedSegmentCount = totalSegmentCount
             cacheIsStale = false
@@ -457,25 +461,33 @@ final class ReadmeTranslationViewModel {
         _ translations: [ReadmeRenderedTranslation],
         mode: ReadmeTranslationMode,
         language: ReadmeTranslationLanguage,
-        createdAt: Date
+        createdAt: Date,
+        prefersAnimatedEntrance: Bool
     ) {
         guard !translations.isEmpty else { return }
         displayMode = .showingTranslation(mode: mode, language: language, createdAt: createdAt)
-        publishRenderState(isVisible: true, mode: mode, translations: translations)
+        publishRenderState(
+            isVisible: true,
+            mode: mode,
+            translations: translations,
+            prefersAnimatedEntrance: prefersAnimatedEntrance
+        )
         errorMessage = nil
     }
 
     private func publishRenderState(
         isVisible: Bool,
         mode: ReadmeTranslationMode,
-        translations: [ReadmeRenderedTranslation]
+        translations: [ReadmeRenderedTranslation],
+        prefersAnimatedEntrance: Bool
     ) {
         renderRevision &+= 1
         renderState = ReadmeTranslationRenderState(
             isVisible: isVisible,
             mode: mode,
             translations: translations,
-            revision: renderRevision
+            revision: renderRevision,
+            prefersAnimatedEntrance: prefersAnimatedEntrance
         )
     }
 

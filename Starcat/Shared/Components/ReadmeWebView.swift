@@ -228,6 +228,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -254,7 +255,10 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         context.coordinator.webView = webView
         context.coordinator.onScrollReportChange = onScrollReportChange
         context.coordinator.onTranslationSourceChange = onTranslationSourceChange
-        context.coordinator.updateTranslationRenderState(translationRenderState)
+        context.coordinator.updateTranslationRenderState(
+            translationRenderState,
+            reduceMotion: reduceMotion
+        )
         loadIfNeeded(into: webView, context: context)
         return webView
     }
@@ -262,7 +266,10 @@ private struct ReadmeWebContentView: NSViewRepresentable {
     func updateNSView(_ webView: WKWebView, context: Context) {
         context.coordinator.onScrollReportChange = onScrollReportChange
         context.coordinator.onTranslationSourceChange = onTranslationSourceChange
-        context.coordinator.updateTranslationRenderState(translationRenderState)
+        context.coordinator.updateTranslationRenderState(
+            translationRenderState,
+            reduceMotion: reduceMotion
+        )
         loadIfNeeded(into: webView, context: context)
         scrollToTopIfNeeded(in: webView, context: context)
     }
@@ -396,6 +403,8 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         private weak var userContentController: WKUserContentController?
         private var pendingTranslationRenderState: ReadmeTranslationRenderState = .hidden
         private var lastAppliedTranslationRevision: Int?
+        /// App 关动画或系统 Reduce Motion 时，DOM 入场一律关掉。
+        private var translationReduceMotion = false
         private var mermaidDocumentRevision = 0
         private var mermaidRuntimeTask: Task<Void, Never>?
 
@@ -465,8 +474,12 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         }
 
         /// 保存最新 SwiftUI 状态，并在当前文档已可用时做无重载 DOM 更新。
-        func updateTranslationRenderState(_ state: ReadmeTranslationRenderState) {
+        func updateTranslationRenderState(
+            _ state: ReadmeTranslationRenderState,
+            reduceMotion: Bool
+        ) {
             pendingTranslationRenderState = state
+            translationReduceMotion = reduceMotion
             applyTranslationRenderStateIfNeeded()
         }
 
@@ -479,19 +492,21 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             let payload: [[String: String]] = state.translations.map {
                 ["id": $0.id, "translation": $0.translatedText]
             }
+            let animateEntrance = state.prefersAnimatedEntrance && !translationReduceMotion
             lastAppliedTranslationRevision = state.revision
             Task { @MainActor in
                 do {
                     _ = try await webView.callAsyncJavaScript(
                         """
                         if (typeof window.starcatApplyReadmeTranslations === 'function') {
-                            window.starcatApplyReadmeTranslations(mode, isVisible, translations);
+                            window.starcatApplyReadmeTranslations(mode, isVisible, translations, animate);
                         }
                         """,
                         arguments: [
                             "isVisible": state.isVisible,
                             "mode": state.mode.rawValue,
-                            "translations": payload
+                            "translations": payload,
+                            "animate": animateEntrance
                         ],
                         in: nil,
                         contentWorld: .page
@@ -950,6 +965,9 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                     document.querySelector('.markdown-body');
                 if (!article) { return; }
 
+                // 新文档重抽段：上一份 README 的入场去重表必须丢掉。
+                window.starcatReadmeAnimatedTranslationIDs = {};
+
                 var candidates = article.querySelectorAll(
                     'h1, h2, h3, h4, h5, h6, p, li, blockquote, td, th, summary, dt, dd'
                 );
@@ -1021,6 +1039,9 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                     if (entry && entry.node) {
                         entry.node.nodeValue = entry.original;
                     }
+                    if (entry && entry.wrapper) {
+                        entry.wrapper.classList.remove('is-crossfading');
+                    }
                 });
             }
 
@@ -1028,10 +1049,55 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                 var existing = document.querySelectorAll('.starcat-readme-translation');
                 for (var index = 0; index < existing.length; index += 1) {
                     existing[index].hidden = true;
+                    existing[index].classList.remove('is-entering');
                 }
             }
 
-            window.starcatApplyReadmeTranslations = function(mode, isVisible, translations) {
+            function hasAnimatedTranslation(id) {
+                return !!(window.starcatReadmeAnimatedTranslationIDs &&
+                    window.starcatReadmeAnimatedTranslationIDs[id]);
+            }
+
+            function markAnimatedTranslation(id) {
+                window.starcatReadmeAnimatedTranslationIDs =
+                    window.starcatReadmeAnimatedTranslationIDs || {};
+                window.starcatReadmeAnimatedTranslationIDs[id] = true;
+            }
+
+            function ensureFullTranslationWrapper(entry) {
+                if (entry.wrapper && entry.wrapper.isConnected) {
+                    return entry.wrapper;
+                }
+                var node = entry.node;
+                if (!node || !node.parentNode) { return null; }
+                var span = document.createElement('span');
+                span.className = 'starcat-readme-full-target';
+                node.parentNode.insertBefore(span, node);
+                span.appendChild(node);
+                entry.wrapper = span;
+                return span;
+            }
+
+            function playSegmentedEntrance(element, id, animate) {
+                if (hasAnimatedTranslation(id)) { return; }
+                if (animate) {
+                    // 强制重排后再加 class，避免刚插入的节点吃不到 animationstart。
+                    void element.offsetWidth;
+                    element.classList.add('is-entering');
+                }
+                markAnimatedTranslation(id);
+            }
+
+            function playFullCrossfade(wrapper, id, animate) {
+                if (!wrapper || hasAnimatedTranslation(id)) { return; }
+                if (animate) {
+                    void wrapper.offsetWidth;
+                    wrapper.classList.add('is-crossfading');
+                }
+                markAnimatedTranslation(id);
+            }
+
+            window.starcatApplyReadmeTranslations = function(mode, isVisible, translations, animate) {
                 // 每次先回到原始 Text node，再应用当前模式，避免全文/分段切换时残留旧 DOM。
                 restoreFullTranslationTextNodes();
                 if (!isVisible) {
@@ -1053,7 +1119,10 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                         var original = entry.original || '';
                         var leading = (original.match(/^\\s*/) || [''])[0];
                         var trailing = (original.match(/\\s*$/) || [''])[0];
-                        entry.node.nodeValue = leading + fullItem.translation.trim() + trailing;
+                        var nextValue = leading + fullItem.translation.trim() + trailing;
+                        var wrapper = ensureFullTranslationWrapper(entry);
+                        playFullCrossfade(wrapper, fullItem.id, !!animate);
+                        entry.node.nodeValue = nextValue;
                     }
                     schedule();
                     return;
@@ -1077,6 +1146,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                     }
                     translated.textContent = item.translation;
                     translated.hidden = !isVisible;
+                    playSegmentedEntrance(translated, item.id, !!animate);
                 }
 
                 var existing = document.querySelectorAll('.starcat-readme-translation');
@@ -1361,6 +1431,28 @@ private enum ReadmeTranslationDOM {
     }
     .starcat-readme-translation[hidden] {
         display: none;
+    }
+    /* 分段：新译文第一次出现时 fade + 轻微上移。同一段再次显示不加重播。 */
+    .starcat-readme-translation.is-entering {
+        animation: starcat-readme-segment-enter 180ms ease-out both;
+    }
+    /* 全文：同位置替换，只做短淡入，模拟 crossfade，禁止位移以免正文晃。 */
+    .starcat-readme-full-target.is-crossfading {
+        animation: starcat-readme-full-crossfade 160ms ease-out both;
+    }
+    @keyframes starcat-readme-segment-enter {
+        from { opacity: 0; transform: translateY(6px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes starcat-readme-full-crossfade {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .starcat-readme-translation.is-entering,
+        .starcat-readme-full-target.is-crossfading {
+            animation: none;
+        }
     }
     """
 }

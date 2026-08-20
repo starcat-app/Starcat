@@ -556,40 +556,43 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
     var displayName: String {
         switch self {
         case .auto:
+            // 🌐 和具体语言的国旗同一列，标明「跟界面语言走」而不是某个国家。
+            let localized: String
             switch Self.defaultForCurrentLocale() {
             case .auto, .english:
-                return "Auto"
+                localized = "Auto"
             case .simplifiedChinese:
-                return "自动"
+                localized = "自动"
             case .traditionalChinese:
-                return "自動"
+                localized = "自動"
             case .japanese:
-                return "自動"
+                localized = "自動"
             case .korean:
-                return "자동"
+                localized = "자동"
             case .german, .dutch:
-                return "Automatisch"
+                localized = "Automatisch"
             case .french:
-                return "Automatique"
+                localized = "Automatique"
             case .spanish, .brazilianPortuguese:
-                return "Automático"
+                localized = "Automático"
             case .italian:
-                return "Automatico"
+                localized = "Automatico"
             case .russian:
-                return "Авто"
+                localized = "Авто"
             case .polish:
-                return "Automatycznie"
+                localized = "Automatycznie"
             case .ukrainian:
-                return "Автоматично"
+                localized = "Автоматично"
             case .turkish:
-                return "Otomatik"
+                localized = "Otomatik"
             case .vietnamese:
-                return "Tự động"
+                localized = "Tự động"
             case .indonesian:
-                return "Otomatis"
+                localized = "Otomatis"
             case .arabic:
-                return "تلقائي"
+                localized = "تلقائي"
             }
+            return "🌐 \(localized)"
         case .simplifiedChinese:  return "🇨🇳 简体中文"
         case .traditionalChinese: return "🇨🇳 繁體中文"
         case .english:            return "🇺🇸 English"

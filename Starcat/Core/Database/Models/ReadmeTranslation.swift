@@ -125,17 +125,21 @@ struct ReadmeRenderedTranslation: Equatable, Sendable {
 /// SwiftUI → WKWebView 的翻译展示状态。
 ///
 /// `revision` 只用于让 Representable 判断内容是否变化；它不落盘，也不参与业务缓存。
+/// `prefersAnimatedEntrance`：直播批次里**新出现**的段才入场；缓存命中 / 切回译文为 false，
+/// 避免整页闪一次。JS 还会按 segment id 去重，同一段更新或显示/隐藏不重播。
 struct ReadmeTranslationRenderState: Equatable, Sendable {
     var isVisible: Bool
     var mode: ReadmeTranslationMode
     var translations: [ReadmeRenderedTranslation]
     var revision: Int
+    var prefersAnimatedEntrance: Bool
 
     static let hidden = ReadmeTranslationRenderState(
         isVisible: false,
         mode: .segmented,
         translations: [],
-        revision: 0
+        revision: 0,
+        prefersAnimatedEntrance: false
     )
 }
 
