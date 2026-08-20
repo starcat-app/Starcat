@@ -21,8 +21,8 @@
 //  - 上下文菜单（Y9 决议）保留在**左下角**，与右下角发送按钮**等大 28×28**，
 //    遵循「左下=辅助操作 / 右下=主操作」的 Mac 原生 idiom（参考 Mail compose
 //    / Messages）；
-//  - 整体用 `.regularMaterial` 毛玻璃 + 1pt 描边 + 16pt 圆角，与 AI 窗口的
-//    `NSVisualEffectView(.popover)` 玻璃态背景层次区分，但不抢戏。
+//  - 整体用 DESIGN.md 的面板 / 输入表面色 + 1pt 描边 + 16pt 圆角，与外层窗口分层。
+//    深色输入区必须浅于面板，避免 `controlBackgroundColor` 近黑叠玻璃底变成黑洞。
 //
 //  上下文快捷菜单暴露「代码上下文」/「外部材料 (External Search)」两个 Toggle：
 //  代码上下文直接绑 `aiRepoContextEnabled`；外部材料绑 `externalContextEnabled`，
@@ -43,6 +43,7 @@ import SwiftUI
 struct AIChatInputView: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.colorScheme) private var colorScheme
 
     /// 原生编辑器持有实际草稿，SwiftUI 只保留“是否为空”这个低频状态。
     /// 普通字符输入不会再让窗口根视图执行属性图更新；只有空/非空切换才刷新发送按钮。
@@ -79,21 +80,21 @@ struct AIChatInputView: View {
             textEditor
             controlsRow(settings: $settings)
         }
-        // 2026-06-15 13:05 dong4j 反馈：`.regularMaterial` 在 popover 玻璃态外层
-        // 几乎透明，看着没有"独立卡片"感。换成 `.controlBackgroundColor` —— 浅色
-        // 主题渲染为纯白、暗色主题渲染为深灰，跟随系统主题；Y9.2 注释明确这是
-        // "在玻璃态背景上会渲染成不透明纯白 / 纯黑"的系统色，正好与外层 popover
-        // 玻璃材质对比鲜明，输入框作为"独立卡片"视觉清晰。
+        // 输入卡片必须比外层面板更浅，才读得像可输入区。
+        // 2026-06-15 用 `.controlBackgroundColor` 是为了在玻璃底上做出不透明卡片；
+        // 但深色下它接近纯黑，叠在 vibrancy 面板上会陷成黑洞。深色改走 DESIGN.md
+        // separator-dark（#3A3A3C），浅色仍用系统控件底（白卡片）。
         .background(
-            Color(nsColor: .controlBackgroundColor),
+            AIAssistantSurface.composer(colorScheme: colorScheme),
             in: RoundedRectangle(cornerRadius: 16, style: .continuous)
         )
         .overlay(
-            // 描边跟随系统主题切深浅，避免在浅色背景上贴边看不见容器边界。
-            // 0.12 是从项目其它卡片描边浓度复用的经验值（`Color.primary.opacity(0.12)`
-            // 与外层窗口 0.14 圆角描边形成层次）。
+            // 深色底上 0.12 描边几乎看不见，提到 0.18 才能勾出圆角边界。
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                .strokeBorder(
+                    Color.primary.opacity(AIAssistantSurface.composerStrokeOpacity(colorScheme: colorScheme)),
+                    lineWidth: 1
+                )
         )
         .padding(.horizontal, 12)
         // 2026-06-23 dong4j 反馈：输入框顶边到上方 Divider、底边到窗口底边应对称。
@@ -562,6 +563,29 @@ private final class AIChatTextView: NSTextView {
             at: NSPoint(x: textContainerInset.width, y: textContainerInset.height),
             withAttributes: attributes
         )
+    }
+}
+
+/// AI 摘要 / 对话浮层的表面色。
+///
+/// 深色不能继续用近黑的 `controlBackgroundColor` 叠全透明玻璃：vibrancy 会采样
+/// README 染成暗紫，输入区再叠纯黑就变成黑洞。色值对齐 DESIGN.md：
+/// `panel-dark` `#2C2C2E`、`separator-dark` `#3A3A3C`。浅色仍走系统窗口 / 控件底。
+enum AIAssistantSurface {
+    static func panel(colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+            ? Color.fromHex6(0x2C2C2E)
+            : Color(nsColor: .windowBackgroundColor)
+    }
+
+    static func composer(colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+            ? Color.fromHex6(0x3A3A3C)
+            : Color(nsColor: .controlBackgroundColor)
+    }
+
+    static func composerStrokeOpacity(colorScheme: ColorScheme) -> Double {
+        colorScheme == .dark ? 0.18 : 0.12
     }
 }
 

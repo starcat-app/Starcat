@@ -582,23 +582,16 @@ struct ReadmeStateView: View {
                             value: isReadmeTranslating
                         )
                 )
-                // 和 AI 写评论同一套开花光圈：blur 铺在 clip 外的 gutter 里。
+                // 和 AI 写 Issue 回复同一份 `StarcatAIGeneratingHalo`；嵌进 NSView 才能盖住 WKWebView。
                 .padding(StarcatAIHaloMetrics.glowBleed)
                 .overlay {
-                    StarcatAIGeneratingHalo(isActive: isReadmeTranslating)
+                    StarcatAIGeneratingHaloHost(
+                        isActive: isReadmeTranslating,
+                        reduceMotion: reduceMotion
+                    )
                 }
-                // 光圈围 README 可视窗格，不围脚注翻译按钮。滚动在 WKWebView 内部，
-                // 包围盒只是窗格大小，走 CA 描边以免 SwiftUI blur 拖慢 WebView。
-                .overlay {
-                    if translationControl != nil {
-                        StarcatAIHaloLayerView(
-                            isActive: translationControl?.translationVM.isTranslating == true,
-                            reduceMotion: reduceMotion
-                        )
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                    }
-                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
                 cacheFooter(
                     cachedAt: cachedAt,
                     sourceHtml: html,

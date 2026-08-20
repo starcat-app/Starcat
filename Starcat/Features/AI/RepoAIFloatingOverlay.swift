@@ -25,6 +25,7 @@ struct RepoAIFloatingOverlay: View {
     @Environment(HomeViewModel.self) private var homeViewModel
     @Environment(\.openSettings) private var openSettings
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @State private var presentation: Presentation = .collapsed
     @State private var escapeKeyMonitor: Any?
     @State private var autoGenerateSummaryOnOpen = false
@@ -156,7 +157,12 @@ struct RepoAIFloatingOverlay: View {
             isInlineMaximized: isMaximized
         )
         .frame(width: width, height: height)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Metrics.cornerRadius, style: .continuous))
+        // 深色不用 `.regularMaterial` 采样 README：暗底 vibrancy 会把整块面板染成近黑紫。
+        // 与内容层共用 `AIAssistantSurface.panel`，浮层是实色工具面板而不是玻璃黑洞。
+        .background(
+            AIAssistantSurface.panel(colorScheme: colorScheme),
+            in: RoundedRectangle(cornerRadius: Metrics.cornerRadius, style: .continuous)
+        )
         .defaultCursorShield()
         .shadow(color: .black.opacity(0.18), radius: 22, x: 0, y: 12)
         .accessibilityElement(children: .contain)

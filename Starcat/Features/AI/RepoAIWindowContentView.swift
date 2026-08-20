@@ -266,9 +266,11 @@ struct RepoAIWindowContentView: View {
                     .transition(.opacity)
             }
         }
-        // AI 窗口外层仍由 NSVisualEffectView 负责圆角和阴影；浅色主题下补一层系统窗口底色，
-        // 避免 `.behindWindow` 采样主窗内容后把整个面板压成灰色。深色主题保留原玻璃态。
-        .background(colorScheme == .light ? Color(nsColor: .windowBackgroundColor) : Color.clear)
+        // 外层圆角 / 阴影仍由浮层或独立窗口的 AppKit 材质负责。
+        // 内容层必须自己铺一层不透明底：浅色避免 behindWindow 采样把面板压灰；
+        // 深色不再透玻璃——README 的暗底会把 vibrancy 染成近黑紫，输入框再叠
+        // controlBackgroundColor 就变成黑洞。深色走 DESIGN.md panel-dark。
+        .background(AIAssistantSurface.panel(colorScheme: colorScheme))
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
