@@ -9,6 +9,16 @@
 
 import Foundation
 
+/// 上游 standard/headless 版本会以状态码 0 退出，只能通过诊断文本识别缺少 UI。
+/// Resolver 与 Runner 共用同一判断，避免检测阶段和实际启动阶段出现不同结论。
+enum CodebaseMemoryGraphUICapability {
+    static func reportsUnavailable(_ text: String) -> Bool {
+        let normalized = text.lowercased()
+        return normalized.contains("built without the embedded ui")
+            || normalized.contains("http server will not start")
+    }
+}
+
 enum CodebaseMemoryError: LocalizedError, Sendable, Equatable {
     /// 二进制未打包进 Bundle（Resources/Codebase/codebase 缺失）。
     case binaryMissing
@@ -20,6 +30,8 @@ enum CodebaseMemoryError: LocalizedError, Sendable, Equatable {
     case executableValidationFailed(path: String, underlying: String)
     /// `--version` 探测超过硬超时，进程已终止。
     case executableProbeTimedOut(path: String)
+    /// 外部二进制是 standard/headless variant，不包含 Starcat 需要的 3D Graph UI。
+    case graphUIUnavailable(path: String)
     /// 空 ZIP 存档。
     case emptyArchive
     /// ZIP 文件过大（超过 100MB 上限）。
@@ -58,6 +70,11 @@ enum CodebaseMemoryError: LocalizedError, Sendable, Equatable {
                 format: String.l10n("codebaseMemory.error.executableProbeTimedOutFormat"),
                 path
             )
+        case .graphUIUnavailable(let path):
+            return String(
+                format: String.l10n("codebaseMemory.error.graphUIUnavailableFormat"),
+                path
+            )
         case .emptyArchive:
             return String.l10n("codebaseMemory.error.emptyArchive")
         case .archiveTooLarge(let actualBytes):
@@ -84,7 +101,8 @@ enum CodebaseMemoryError: LocalizedError, Sendable, Equatable {
              .binaryNotExecutable,
              .externalExecutableUnavailable,
              .executableValidationFailed,
-             .executableProbeTimedOut:
+             .executableProbeTimedOut,
+             .graphUIUnavailable:
             return true
         default:
             return false

@@ -81856,13 +81856,30 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No external CodebaseMemory executable was found. Install it or choose a file in Integration Settings."
+            "value" : "No compatible external CodebaseMemory executable was found. Install the Graph UI variant or choose it in Integration Settings."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未找到外部 CodebaseMemory 可执行文件。请先安装，或在集成设置中选择文件。"
+            "value" : "未找到兼容的外部 CodebaseMemory 可执行文件。请安装 Graph UI variant，或在集成设置中选择它。"
+          }
+        }
+      }
+    },
+    "codebaseMemory.error.graphUIUnavailableFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This CodebaseMemory executable does not include Graph UI: %@. Install the UI variant and detect again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该 CodebaseMemory 可执行文件不包含 Graph UI：%@。请安装 UI variant 后重新检测。"
           }
         }
       }
@@ -329903,13 +329920,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Installation Instructions"
+            "value" : "Install Graph UI Variant"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "安装说明"
+            "value" : "安装 Graph UI Variant"
           }
         }
       }

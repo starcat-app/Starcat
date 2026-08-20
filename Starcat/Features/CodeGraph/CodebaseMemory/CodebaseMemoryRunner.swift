@@ -276,14 +276,24 @@ final class CodebaseMemoryRunner {
         // waitUntilExit() 阻塞主线程；复用 runCLI 的持续 drain 和超时保护，避免
         // Gatekeeper 或上游二进制异常时直接把整个 App 卡成彩虹圈。
         do {
-            _ = try await runCLI(
+            let output = try await runCLI(
                 binaryURL: binaryURL,
                 arguments: ["--ui=true", "--port=\(port)"],
                 cacheDir: cacheDir,
                 timeout: 15,
                 failureContext: "ui configuration"
             )
+            let diagnostic = Self.combinedText(output)
+            if CodebaseMemoryGraphUICapability.reportsUnavailable(diagnostic) {
+                // upstream standard/headless variant 会返回状态码 0；不检查文本就会
+                // 错误进入第二阶段，并在端口等待结束后才给用户一个误导性超时。
+                throw CodebaseMemoryError.graphUIUnavailable(path: binaryURL.path)
+            }
         } catch {
+            if let codebaseError = error as? CodebaseMemoryError,
+               case .graphUIUnavailable = codebaseError {
+                throw codebaseError
+            }
             throw CodebaseMemoryError.uiStartFailed(underlying: error.localizedDescription)
         }
         AppLog.ui.info("CodebaseMemory UI config succeeded repo=\(repositoryFullName, privacy: .public) port=\(port, privacy: .public)")
@@ -391,6 +401,12 @@ final class CodebaseMemoryRunner {
     private struct CLIOutput {
         let stdout: Data
         let stderr: Data
+    }
+
+    private static func combinedText(_ output: CLIOutput) -> String {
+        let stdout = String(decoding: output.stdout, as: UTF8.self)
+        let stderr = String(decoding: output.stderr, as: UTF8.self)
+        return "\(stderr)\n\(stdout)"
     }
 
     private final class ContinuationGate: @unchecked Sendable {

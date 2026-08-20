@@ -385,6 +385,11 @@ final class CodebaseMemoryViewModel {
                 await openBrowser(port: port, url: launched.pageURL)
             } catch is CancellationError {
                 restoreCachedState()
+            } catch let error as CodebaseMemoryError {
+                stopCurrentUI()
+                needsExecutableConfiguration = error.isExecutableConfigurationFailure
+                markRunningStepFailed(error.localizedDescription)
+                state = .failed(message: error.localizedDescription)
             } catch {
                 stopCurrentUI()
                 markRunningStepFailed(error.localizedDescription)
