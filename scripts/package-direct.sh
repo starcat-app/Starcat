@@ -52,7 +52,6 @@ STAGING_DIR="${DIST_DIR}/staging"
 DOWNLOADS_DIR="${DIST_DIR}/downloads"
 APPCAST_INPUT_DIR="${DIST_DIR}/appcast-input"
 APP_PATH="${DERIVED_DIR}/Build/Products/Release/Starcat.app"
-CODEBASE_BINARY_PATH="${APP_PATH}/Contents/Resources/codebase.bin"
 SPARKLE_FRAMEWORK_PATH="${APP_PATH}/Contents/Frameworks/Sparkle.framework"
 SPARKLE_CURRENT_PATH="${SPARKLE_FRAMEWORK_PATH}/Versions/Current"
 SWIFT_COMPATIBILITY_PATH="${APP_PATH}/Contents/Frameworks/libswiftCompatibilitySpan.dylib"
@@ -130,7 +129,11 @@ fi
 
 [ -d "$APP_PATH" ] || fail "未找到 Direct app: $APP_PATH"
 [ -d "$SPARKLE_FRAMEWORK_PATH" ] || fail "Direct 包缺少 Sparkle.framework"
-[ -f "$CODEBASE_BINARY_PATH" ] || fail "Direct 包缺少 CodebaseMemory 二进制: $CODEBASE_BINARY_PATH"
+# Direct 必须使用外部可执行文件。这里作为发布硬门禁，防止 project.yml 以后误把
+# 大体积 codebase.bin 重新带回 DMG。
+if find "$APP_PATH/Contents/Resources" -type f -name 'codebase.bin' -print -quit | grep -q .; then
+  fail "Direct 包禁止内置 CodebaseMemory 二进制"
+fi
 
 # Sparkle 更新弹窗固定英文：签名前移除非英文本地化，只留 Base/en。
 # 必须在 codesign Sparkle 之前做，否则改 Resources 会破坏框架签名。
@@ -263,10 +266,6 @@ if [ -f "$SWIFT_COMPATIBILITY_PATH" ]; then
   sign_distribution_code "$SWIFT_COMPATIBILITY_PATH"
 fi
 
-# `codebase.bin` 位于 Resources，不属于 codesign 稳定识别的嵌套代码目录，
-# 因此要在 App 外层签名之前单独处理。
-sign_distribution_code "$CODEBASE_BINARY_PATH"
-
 # PlugIns/*.appex 必须在外层 App 之前单独换签。Xcode Automatic 签名常留下
 # Apple Development + get-task-allow，公证会直接 Invalid（1.3.0 首次提交已踩坑）。
 APPEX_PATHS=()
@@ -289,11 +288,9 @@ done
 sign_distribution_code "$APP_PATH"
 
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-codesign --verify --strict --verbose=2 "$CODEBASE_BINARY_PATH"
 
 if [ "$SIGN_IDENTITY" != "-" ]; then
   verify_developer_id_code "Starcat.app" "$APP_PATH"
-  verify_developer_id_code "CodebaseMemory 二进制" "$CODEBASE_BINARY_PATH"
   verify_developer_id_code "Sparkle.framework" "$SPARKLE_FRAMEWORK_PATH"
   for COMPONENT_PATH in "${SPARKLE_NESTED_CODE[@]}"; do
     verify_developer_id_code "$(basename "$COMPONENT_PATH")" "$COMPONENT_PATH"

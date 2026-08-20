@@ -14,6 +14,7 @@ import SwiftUI
 
 struct CodebaseMemoryPanel: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openSettings) private var openSettings
     @Environment(AppDependencies.self) private var dependencies
     @State private var viewModel: CodebaseMemoryViewModel
     @State private var showsDetails: Bool
@@ -55,6 +56,11 @@ struct CodebaseMemoryPanel: View {
                             .padding(12)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+
+                        if viewModel.needsExecutableConfiguration,
+                           DistributionChannel.current.isDirect {
+                            executableRecoveryActions
+                        }
                     }
 
                     executionDetailsCard
@@ -78,6 +84,36 @@ struct CodebaseMemoryPanel: View {
         .onDisappear { viewModel.cancel() }
         .onChange(of: viewModel.state) { _, state in
             if case .failed = state { showsDetails = true }
+        }
+    }
+
+    /// Direct 不携带二进制；解析失败时必须给出明确的安装与配置恢复入口。
+    private var executableRecoveryActions: some View {
+        HStack(spacing: 8) {
+            Link(
+                "settings.integration.codebaseMemory.executable.install",
+                destination: CodebaseMemoryBinaryResolver.installationURL
+            )
+            .font(.caption)
+
+            Spacer()
+
+            Button("codebaseMemory.panel.openIntegrationSettings") {
+                openExecutableSettings()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.regular)
+        }
+    }
+
+    /// 先打开 Settings scene，再延后一轮切 Tab 并滚动到 CodebaseMemory。
+    private func openExecutableSettings() {
+        openSettings()
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: .starcatJumpToSettingsTab,
+                object: "integrations.codebaseMemory"
+            )
         }
     }
 

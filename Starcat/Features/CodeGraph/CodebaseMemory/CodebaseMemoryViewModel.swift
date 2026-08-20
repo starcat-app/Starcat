@@ -46,6 +46,8 @@ final class CodebaseMemoryViewModel {
     private(set) var versionStatus: VersionStatus = .unknown
     private(set) var storedProject: CodebaseMemoryStoredProject?
     private(set) var steps: [CodebaseMemoryExecutionStep] = CodebaseMemoryViewModel.emptySteps()
+    /// 二进制配置失败时由 Panel 提供设置页与安装说明入口，其它运行错误不显示该入口。
+    private(set) var needsExecutableConfiguration = false
     var selectedBranchName = "" {
         didSet { updateSelectionVersionStatus() }
     }
@@ -92,7 +94,7 @@ final class CodebaseMemoryViewModel {
         self.repo = repo
         self.runner = runner
         self.storage = storage
-        self.binaryResolver = binaryResolver ?? CodebaseMemoryBinaryResolver(storage: storage)
+        self.binaryResolver = binaryResolver ?? CodebaseMemoryBinaryResolver()
         self.extractor = extractor
         self.snapshotService = snapshotService
         // 不在 init 跑 IO：macOS .sheet(item:) 复用 view + State,
@@ -135,6 +137,7 @@ final class CodebaseMemoryViewModel {
         versionStatus = .unknown
         selectedBranchName = ""
         steps = Self.emptySteps()
+        needsExecutableConfiguration = false
         restoreCachedState()
     }
 
@@ -160,6 +163,7 @@ final class CodebaseMemoryViewModel {
         selectedBranchName = ""
         steps = Self.emptySteps()
         state = .idle
+        needsExecutableConfiguration = false
         restoreCachedState()
     }
 
@@ -213,14 +217,20 @@ final class CodebaseMemoryViewModel {
         task = Task {
             let startedAt = Date()
             steps = Self.emptySteps()
+            needsExecutableConfiguration = false
             do {
-                // Step 0: 解析二进制（bundle → container 拷贝 + chmod）
+                // Step 0: App Store 解析 bundle；Direct 解析用户选择或本机安装路径。
                 setStep(id: .resolveBinary, status: .running)
                 // Pro check done in RepoListView.openCodebaseMemory() before sheet present
                 let binaryURL: URL
                 do {
                     binaryURL = try await binaryResolver.resolveExecutable()
                     setStep(id: .resolveBinary, status: .succeeded, detail: binaryURL.lastPathComponent)
+                } catch let error as CodebaseMemoryError {
+                    needsExecutableConfiguration = error.isExecutableConfigurationFailure
+                    setStep(id: .resolveBinary, status: .failed, detail: error.localizedDescription)
+                    state = .failed(message: error.localizedDescription)
+                    return
                 } catch {
                     setStep(id: .resolveBinary, status: .failed, detail: error.localizedDescription)
                     state = .failed(message: error.localizedDescription)

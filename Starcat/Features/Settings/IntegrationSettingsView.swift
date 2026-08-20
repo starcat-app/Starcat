@@ -13,6 +13,7 @@ struct IntegrationSettingsTab: View {
     private static let localAPIKeyAnchor = "settings.integrations.localAPIKey"
     private static let browserPluginAnchor = "settings.integrations.browserPlugin"
     private static let externalSearchAnchor = "settings.integrations.externalSearch"
+    private static let codebaseMemoryAnchor = "settings.integrations.codebaseMemory"
 
     @Environment(AppSettings.self) private var settings
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -134,8 +135,10 @@ struct IntegrationSettingsTab: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("settings.integration.codebaseMemory.subtitle")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                    .foregroundStyle(.secondary)
                 }
+
+                CodebaseMemoryExecutableSettingsView()
 
                 RepositoryArchiveLimitNotice(
                     maximumArchiveMB: settings.aiRepoContextMaximumArchiveMB
@@ -205,6 +208,7 @@ struct IntegrationSettingsTab: View {
                         style: .prominent
                     )
                 }
+                .id(Self.codebaseMemoryAnchor)
             }
             .formStyle(.grouped)
             .task { storage.reload() }
@@ -227,6 +231,8 @@ struct IntegrationSettingsTab: View {
                     anchor = Self.browserPluginAnchor
                 case "integrations.externalSearch":
                     anchor = Self.externalSearchAnchor
+                case "integrations.codebaseMemory":
+                    anchor = Self.codebaseMemoryAnchor
                 default:
                     return
                 }

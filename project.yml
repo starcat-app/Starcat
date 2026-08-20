@@ -210,6 +210,9 @@ targets:
         excludes:
           - "**/.DS_Store"
           - "**/Products.storekit"
+          # Direct 通过用户选择或本机安装路径运行 CodebaseMemory；禁止把 258 MiB
+          # 的 App Store 内置二进制复制进 Direct App。
+          - "Resources/Codebase/codebase.bin"
     configFiles:
       Debug: Configs/Build.xcconfig
       Release: Configs/Build.xcconfig
