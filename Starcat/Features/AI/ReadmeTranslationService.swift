@@ -28,6 +28,8 @@ enum ReadmeTranslationError: Error, LocalizedError, Equatable {
     case emptySource
     /// 模型没有返回可安全对齐到源段落的完整 JSON。
     case structureBroken
+    /// 每一段都已是目标语言，不打 AI。不进 Catalog：VM 吞掉，用户看不到。
+    case alreadyInTargetLanguage
 
     var errorDescription: String? {
         switch self {
@@ -39,6 +41,8 @@ enum ReadmeTranslationError: Error, LocalizedError, Equatable {
             return String.l10n("readme.translate.error.emptySource")
         case .structureBroken:
             return String.l10n("readme.translate.error.structureBroken")
+        case .alreadyInTargetLanguage:
+            return nil
         }
     }
 }
@@ -174,24 +178,10 @@ final class ReadmeTranslationService {
         cached: ReadmeTranslation?,
         onBatch: BatchProgressHandler? = nil
     ) async throws -> ReadmeTranslation {
-        try entitlementGate?.requirePro(.readmeTranslation)
-
         let trimmedSource = request.sourceHtml.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedSource.isEmpty, !request.sourceSegments.isEmpty else {
             throw ReadmeTranslationError.emptySource
         }
-
-        let task = settings.aiTranslationTask
-        let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel)
-        let parameters = settings.effectiveParameters(for: task)
-        let configuredPrompt = request.mode == .segmented
-            ? task.prompt
-            : settings.aiFullTranslationPrompt
-        let prompt = Self.effectivePromptConfiguration(
-            configuredPrompt,
-            mode: request.mode
-        )
-        let documentHash = Self.hash(trimmedSource)
 
         // 同一段落可能在 README 中重复出现；按 hash 去重请求，渲染时再映射回每个 DOM id。
         let uniqueSources = Self.uniqueSegments(request.sourceSegments)
@@ -204,24 +194,49 @@ final class ReadmeTranslationService {
         }
 
         let missing = uniqueSources.filter { translatedByHash[$0.sourceHash] == nil }
+        // 高置信同语种不送模型；跳过的段不写入译文，UI 继续显示原文。
+        let skippedHashes = Set(
+            missing
+                .filter {
+                    TranslationSourceLanguageGate.shouldSkipTranslation(
+                        text: $0.text,
+                        target: request.targetLanguage
+                    )
+                }
+                .map(\.sourceHash)
+        )
+        let toTranslate = missing.filter { !skippedHashes.contains($0.sourceHash) }
+
+        if toTranslate.isEmpty, translatedByHash.isEmpty {
+            throw ReadmeTranslationError.alreadyInTargetLanguage
+        }
+
+        try entitlementGate?.requirePro(.readmeTranslation)
+
+        let documentHash = Self.hash(trimmedSource)
+        let coverage = Self.coverage(
+            uniqueSources: uniqueSources,
+            translatedByHash: translatedByHash,
+            skippedHashes: skippedHashes
+        )
         var record = Self.makeRecord(
             request: request,
-            model: model,
+            model: cached?.model ?? "",
             documentHash: documentHash,
             translatedByHash: translatedByHash,
-            isComplete: missing.isEmpty
+            isComplete: coverage.isComplete
         )
 
         // 先把可复用缓存立即交给 UI。即使后续网络失败，用户也能看到已完成段落。
         if !translatedByHash.isEmpty {
             onBatch?(
                 renderedTranslations(from: record, matching: request.sourceSegments),
-                translatedByHash.count,
+                coverage.count,
                 uniqueSources.count
             )
         }
 
-        guard !missing.isEmpty else {
+        guard !toTranslate.isEmpty else {
             // 旧缓存可能是“内容重排但段落全复用”；写回当前文档 hash，后续即可完整命中。
             try await translationRepository.upsert(
                 record,
@@ -232,7 +247,18 @@ final class ReadmeTranslationService {
             return record
         }
 
-        let batches = Self.makeBatches(missing)
+        let task = settings.aiTranslationTask
+        let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel)
+        let parameters = settings.effectiveParameters(for: task)
+        let configuredPrompt = request.mode == .segmented
+            ? task.prompt
+            : settings.aiFullTranslationPrompt
+        let prompt = Self.effectivePromptConfiguration(
+            configuredPrompt,
+            mode: request.mode
+        )
+
+        let batches = Self.makeBatches(toTranslate)
         let firstBatch = batches[0]
         let firstRequest = try Self.makeAIRequest(
             batch: firstBatch,
@@ -247,18 +273,23 @@ final class ReadmeTranslationService {
         let firstResult = try await Self.performBatch(client: client, request: firstRequest, source: firstBatch)
         try Task.checkCancellation()
         Self.merge(firstResult, into: &translatedByHash)
+        var progress = Self.coverage(
+            uniqueSources: uniqueSources,
+            translatedByHash: translatedByHash,
+            skippedHashes: skippedHashes
+        )
         record = Self.makeRecord(
             request: request,
             model: model,
             documentHash: documentHash,
             translatedByHash: translatedByHash,
-            isComplete: translatedByHash.count == uniqueSources.count
+            isComplete: progress.isComplete
         )
         try await persistAndPublish(
             record,
             request: request,
             sourceSegments: request.sourceSegments,
-            completedCount: translatedByHash.count,
+            completedCount: progress.count,
             totalCount: uniqueSources.count,
             onBatch: onBatch
         )
@@ -291,18 +322,23 @@ final class ReadmeTranslationService {
                 while let result = try await group.next() {
                     try Task.checkCancellation()
                     Self.merge(result, into: &translatedByHash)
+                    progress = Self.coverage(
+                        uniqueSources: uniqueSources,
+                        translatedByHash: translatedByHash,
+                        skippedHashes: skippedHashes
+                    )
                     record = Self.makeRecord(
                         request: request,
                         model: model,
                         documentHash: documentHash,
                         translatedByHash: translatedByHash,
-                        isComplete: translatedByHash.count == uniqueSources.count
+                        isComplete: progress.isComplete
                     )
                     try await persistAndPublish(
                         record,
                         request: request,
                         sourceSegments: request.sourceSegments,
-                        completedCount: translatedByHash.count,
+                        completedCount: progress.count,
                         totalCount: uniqueSources.count,
                         onBatch: onBatch
                     )
@@ -350,6 +386,18 @@ final class ReadmeTranslationService {
     ) -> [ReadmeSourceSegment] {
         var seen = Set<String>()
         return segments.filter { seen.insert($0.sourceHash).inserted }
+    }
+
+    /// 跳过的同语种段不算「缺译文」，否则进度永远到不了完成、缓存也会被当成残缺。
+    private nonisolated static func coverage(
+        uniqueSources: [ReadmeSourceSegment],
+        translatedByHash: [String: String],
+        skippedHashes: Set<String>
+    ) -> (isComplete: Bool, count: Int) {
+        let count = uniqueSources.filter {
+            translatedByHash[$0.sourceHash] != nil || skippedHashes.contains($0.sourceHash)
+        }.count
+        return (count == uniqueSources.count, count)
     }
 
     /// 首批更小，后续批次略大；两者都同时受段落数和字符预算限制。

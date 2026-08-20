@@ -513,6 +513,10 @@ struct GRDBUserRepoActivityRepository: UserRepoActivityRepositoryProtocol, Senda
             return ""
         case .unread:
             return "WHERE unread = 1"
+        case .issue:
+            return "WHERE subject_type = 'Issue'"
+        case .pullRequest:
+            return "WHERE subject_type = 'PullRequest'"
         case .mention:
             return "WHERE reason IN ('mention', 'team_mention')"
         case .review:

@@ -1022,6 +1022,7 @@ enum AIDefaultPrompts {
         3. Translate only natural-language prose. Preserve project, library, framework, company, API, branch, version, command, file-path, environment-variable, URL, and code identifiers.
         4. Preserve emoji, punctuation-bearing identifiers, inline backtick content, and placeholders verbatim.
         5. Do not merge or split segments. The translation field must be a non-empty plain-text string.
+        6. If a segment is already in {targetLanguage}, copy the source text into translation unchanged. Do not paraphrase or polish it.
         """,
         userPromptTemplate: """
         Translate all README segments below into {targetLanguage}.
@@ -1050,6 +1051,7 @@ enum AIDefaultPrompts {
         4. Preserve emoji, placeholders, and punctuation-bearing identifiers verbatim.
         5. Each item represents one DOM text node. Do not merge or split items, and do not output HTML.
         6. The translation field must be a non-empty plain-text string.
+        7. If a text node is already in {targetLanguage}, copy the source text into translation unchanged. Do not paraphrase or polish it.
         """,
         userPromptTemplate: """
         Translate all visible README text nodes below into {targetLanguage}.

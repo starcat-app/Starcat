@@ -300,6 +300,13 @@ final class ReadmeTranslationViewModel {
         mode: ReadmeTranslationMode,
         force: Bool
     ) {
+        let pending = TranslationSourceLanguageGate.segmentsNeedingTranslation(
+            sourceSegments,
+            target: targetLanguage
+        )
+        // 全部已是目标语言：不转圈、不打接口。混排时只让 Service 把对不上的段送出去。
+        guard !pending.isEmpty else { return }
+
         currentTask?.cancel()
         currentIdentity = identity
         currentCacheOwner = cacheOwner
@@ -420,6 +427,9 @@ final class ReadmeTranslationViewModel {
             currentTask = nil
         } catch is CancellationError {
             // 主动取消不是错误；状态已经由 cancelTranslation 立即复位。
+        } catch ReadmeTranslationError.alreadyInTargetLanguage {
+            isTranslating = false
+            currentTask = nil
         } catch {
             guard currentIdentity == requestedIdentity,
                   currentLanguage == requestedLanguage,
@@ -482,6 +492,8 @@ final class ReadmeTranslationViewModel {
                 return .aiConfiguration
             case .emptySource, .structureBroken:
                 return .other
+            case .alreadyInTargetLanguage:
+                return .none
             }
         }
         if let ai = error as? AIClientError {

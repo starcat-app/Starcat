@@ -90,7 +90,7 @@ final class GitHubNotificationInboxService {
         (try? await threadRepository.fetchAll(limit: limit)) ?? []
     }
 
-    /// 「全部」两表混排；Unread / Mention / Review 只含通知；Star / Unstar / Fork 只含账本。
+    /// 「全部」两表混排；Unread / Issue / PR / Mention / Review 只含通知；Star / Unstar / Fork 只含账本。
     func fetchTimelinePage(
         cursor: GitHubInboxTimelineCursor?,
         limit: Int = GitHubNotificationMapper.timelinePageSize

@@ -192,6 +192,7 @@ struct ReadmeTranslationServiceStaticTests {
         #expect(prompt.systemPrompt.contains("strict JSON"))
         #expect(prompt.systemPrompt.contains(#""translations""#))
         #expect(prompt.systemPrompt.contains("Preserve each id"))
+        #expect(prompt.systemPrompt.contains("copy the source text"))
         #expect(prompt.userPromptTemplate.contains(ReadmeTranslationService.readmeSegmentsPlaceholder))
     }
 
@@ -202,6 +203,7 @@ struct ReadmeTranslationServiceStaticTests {
         #expect(prompt.systemPrompt.contains("strict JSON"))
         #expect(prompt.systemPrompt.contains("text node"))
         #expect(prompt.systemPrompt.contains("do not output HTML"))
+        #expect(prompt.systemPrompt.contains("copy the source text"))
         #expect(prompt.userPromptTemplate.contains(ReadmeTranslationService.readmeTextNodesPlaceholder))
     }
 
@@ -448,6 +450,26 @@ struct ReadmeTranslationServiceCacheTests {
 
         #expect(rendered.map(\.id) == ["current-2", "current-1"])
         #expect(rendered.map(\.translatedText) == ["第二段", "第一段"])
+    }
+
+    @Test("全部段落已是目标语言时直接失败，不要求 API Key")
+    func alreadyInTargetLanguageDoesNotNeedClient() async throws {
+        let (service, _, _, root) = try await makeStack()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let text = "这是一段足够长的简体中文说明，用来确认翻译服务在同语种时不会去创建 AI 客户端。"
+        await #expect(throws: ReadmeTranslationError.alreadyInTargetLanguage) {
+            try await service.translate(
+                request: ReadmeTranslationRequest(
+                    cacheOwner: "octo",
+                    cacheRepo: "demo",
+                    sourceHtml: text,
+                    sourceSegments: [ReadmeSourceSegment(id: "o:0", text: text)],
+                    targetLanguage: .simplifiedChinese,
+                    mode: .segmented
+                ),
+                cached: nil
+            )
+        }
     }
 }
 

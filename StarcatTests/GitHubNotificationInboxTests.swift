@@ -149,9 +149,63 @@ struct GitHubNotificationMapperTests {
         )
         #expect(GitHubNotificationMapper.matchesSegment(record, segment: .all))
         #expect(GitHubNotificationMapper.matchesSegment(record, segment: .mention))
+        #expect(GitHubNotificationMapper.matchesSegment(record, segment: .issue))
+        #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .pullRequest))
         #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .star))
         #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .unstar))
         #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .fork))
+    }
+
+    @Test("Issue / PR 分段按 subject_type 匹配")
+    func issueAndPullRequestSegmentsMatchSubjectType() {
+        let issue = GitHubNotificationMapper.record(
+            from: GitHubNotificationThreadDTO(
+                id: "n-issue",
+                unread: false,
+                reason: "subscribed",
+                updatedAt: "2026-08-19T10:00:00Z",
+                subject: GitHubNotificationSubjectDTO(
+                    title: "Bug",
+                    url: "https://api.github.com/repos/o/r/issues/1",
+                    latestCommentUrl: nil,
+                    type: "Issue"
+                ),
+                repository: GitHubNotificationRepositoryDTO(
+                    id: 1,
+                    fullName: "o/r",
+                    name: "r",
+                    owner: GitHubNotificationOwnerDTO(login: "o")
+                )
+            ),
+            fetchedAt: "2026-08-19T10:00:00Z",
+            firstSeenAt: "2026-08-19T10:00:00Z"
+        )
+        let pull = GitHubNotificationMapper.record(
+            from: GitHubNotificationThreadDTO(
+                id: "n-pr",
+                unread: false,
+                reason: "comment",
+                updatedAt: "2026-08-19T10:00:00Z",
+                subject: GitHubNotificationSubjectDTO(
+                    title: "Fix",
+                    url: "https://api.github.com/repos/o/r/pulls/2",
+                    latestCommentUrl: nil,
+                    type: "PullRequest"
+                ),
+                repository: GitHubNotificationRepositoryDTO(
+                    id: 1,
+                    fullName: "o/r",
+                    name: "r",
+                    owner: GitHubNotificationOwnerDTO(login: "o")
+                )
+            ),
+            fetchedAt: "2026-08-19T10:00:00Z",
+            firstSeenAt: "2026-08-19T10:00:00Z"
+        )
+        #expect(GitHubNotificationMapper.matchesSegment(issue, segment: .issue))
+        #expect(!GitHubNotificationMapper.matchesSegment(issue, segment: .pullRequest))
+        #expect(GitHubNotificationMapper.matchesSegment(pull, segment: .pullRequest))
+        #expect(!GitHubNotificationMapper.matchesSegment(pull, segment: .issue))
     }
 
     @Test("评论里的 #20 和 owner/repo#20 收成 GitHub 链接")

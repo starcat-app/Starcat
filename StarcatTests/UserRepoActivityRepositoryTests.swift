@@ -204,6 +204,10 @@ struct UserRepoActivityRepositoryTests {
 
         let mention = try await env.activity.fetchPage(segment: .mention, cursor: nil, limit: 10)
         #expect(mention.rows.map(\.id) == ["n-1"])
+        let issues = try await env.activity.fetchPage(segment: .issue, cursor: nil, limit: 10)
+        #expect(issues.rows.map(\.id) == ["n-1"])
+        let pulls = try await env.activity.fetchPage(segment: .pullRequest, cursor: nil, limit: 10)
+        #expect(pulls.rows.isEmpty)
         if case .notification(_, let language) = mention.rows.first {
             #expect(language == "Swift")
         } else {
@@ -215,6 +219,44 @@ struct UserRepoActivityRepositoryTests {
         } else {
             Issue.record("Star 账本行应带上本地仓库语言")
         }
+    }
+
+    @Test("Issue / PR 分段按 subject_type 只含对应 GitHub 通知，不含账本")
+    func subjectTypeSegmentsFilterNotifications() async throws {
+        let env = try makeEnv()
+        let repo = try await env.seedStarredRepo(id: 1, name: "starred", starredAt: "2026-08-19T12:00:00Z")
+        try await env.activity.recordStar(
+            repo: repo,
+            source: .starcat,
+            actor: Self.actor,
+            occurredAt: "2026-08-19T16:00:00Z"
+        )
+        try await env.threads.upsertMany([
+            GitHubNotificationMapper.record(
+                from: Self.makeDTO(id: "n-issue", updatedAt: "2026-08-19T15:00:00Z", type: "Issue"),
+                fetchedAt: "2026-08-19T16:00:00Z",
+                firstSeenAt: "2026-08-19T16:00:00Z"
+            ),
+            GitHubNotificationMapper.record(
+                from: Self.makeDTO(id: "n-pr", updatedAt: "2026-08-19T14:00:00Z", type: "PullRequest"),
+                fetchedAt: "2026-08-19T16:00:00Z",
+                firstSeenAt: "2026-08-19T16:00:00Z"
+            )
+        ])
+
+        let issues = try await env.activity.fetchPage(segment: .issue, cursor: nil, limit: 10)
+        #expect(issues.rows.map(\.id) == ["n-issue"])
+        #expect(issues.rows.allSatisfy {
+            if case .notification = $0 { return true }
+            return false
+        })
+
+        let pulls = try await env.activity.fetchPage(segment: .pullRequest, cursor: nil, limit: 10)
+        #expect(pulls.rows.map(\.id) == ["n-pr"])
+        #expect(pulls.rows.allSatisfy {
+            if case .notification = $0 { return true }
+            return false
+        })
     }
 
     @Test("账本写入 user_id / user_name，回填能补 v24 空身份")
@@ -331,17 +373,24 @@ struct UserRepoActivityRepositoryTests {
         return StarredRepoDTO(starredAt: starredAt, repo: repo)
     }
 
-    private static func makeDTO(id: String, updatedAt: String) -> GitHubNotificationThreadDTO {
-        GitHubNotificationThreadDTO(
+    private static func makeDTO(
+        id: String,
+        updatedAt: String,
+        type: String = "Issue"
+    ) -> GitHubNotificationThreadDTO {
+        let subjectURL = type == "PullRequest"
+            ? "https://api.github.com/repos/o/r/pulls/2"
+            : "https://api.github.com/repos/o/r/issues/1"
+        return GitHubNotificationThreadDTO(
             id: id,
             unread: true,
             reason: "mention",
             updatedAt: updatedAt,
             subject: GitHubNotificationSubjectDTO(
-                title: "Issue \(id)",
-                url: "https://api.github.com/repos/o/r/issues/1",
+                title: "\(type) \(id)",
+                url: subjectURL,
                 latestCommentUrl: nil,
-                type: "Issue"
+                type: type
             ),
             repository: GitHubNotificationRepositoryDTO(
                 id: 1,

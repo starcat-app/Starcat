@@ -319,6 +319,8 @@ struct UserFacingError: Equatable, Sendable {
             return make(kind: .aiConfiguration, operation: operation, service: service, diagnostic: error.localizedDescription)
         case .emptySource, .structureBroken:
             return make(kind: .aiProvider, operation: operation, service: service, diagnostic: error.localizedDescription)
+        case .alreadyInTargetLanguage:
+            return make(kind: .recoverable, operation: operation, service: service, diagnostic: "already in target language")
         }
     }
 
