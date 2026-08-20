@@ -2,7 +2,7 @@
 //  GitHubNotificationInboxView.swift
 //  Starcat
 //
-//  活动页「通知」中栏：按原型做密排时间线（时钟 + 轴线 + 事件句 + 摘录 + 彩色 chip）。
+//  活动页「通知」中栏：Mail 密度时间线（HH:mm + 轴线 + 事件句 + 主体类型 chip）。
 //  不用 UnifiedRepoRow，也不走活动页通用详情。
 //
 
@@ -309,7 +309,7 @@ struct GitHubNotificationInboxView: View {
             notification: ActivityNotificationPayload(
                 threadId: record.id,
                 reason: record.reason,
-                chip: GitHubNotificationMapper.chip(for: record),
+                chip: GitHubNotificationMapper.subjectChip(for: record),
                 subjectType: record.subjectType,
                 subjectNumber: record.subjectNumber,
                 repositoryFullName: record.repositoryFullName,
@@ -325,7 +325,7 @@ struct GitHubNotificationInboxView: View {
     }
 }
 
-/// 原型时间线：年月日 + 时钟 + 贯通轴线 + 用户头像 + 事件句。
+/// 时间线条目：分组标题与通知行共用一根轴线。
 private enum GitHubNotificationTimelineEntry: Identifiable {
     case header(GitHubNotificationDayGroup, isFirst: Bool)
     case row(GitHubNotificationThreadRecord, isFirst: Bool, isLast: Bool)
@@ -341,10 +341,14 @@ private enum GitHubNotificationTimelineEntry: Identifiable {
 }
 
 private enum GitHubNotificationTimelineMetrics {
-    static let stampWidth: CGFloat = 82
+    /// 只排 `HH:mm`，日期在分组标题里。
+    static let stampWidth: CGFloat = 40
     static let railWidth: CGFloat = 12
     static let leadingPadding: CGFloat = 10
     static let stampSpacing: CGFloat = 8
+    static let selectedInset: CGFloat = 6
+    static let rowMinHeight: CGFloat = 56
+    static let rowCornerRadius: CGFloat = 8
 
     static var railLeadingInset: CGFloat {
         leadingPadding + stampWidth + stampSpacing
@@ -390,7 +394,7 @@ private struct GitHubNotificationTimelineHeader: View {
     }
 }
 
-/// 原型时间线：时钟 + 轴线 + 用户头像 + 事件句 + 仓库 logo + 相对时间。整行铺满选中。
+/// 时间线行：`HH:mm` + 轴线 + 头像 + 事件句 + 仓库次行 + 可选摘录。选中是行内圆角底，不整行拉满。
 private struct GitHubNotificationTimelineRow: View {
     let record: GitHubNotificationThreadRecord
     let isSelected: Bool
@@ -398,40 +402,38 @@ private struct GitHubNotificationTimelineRow: View {
     let isLastInTimeline: Bool
     let onSelect: () -> Void
     @Environment(\.locale) private var locale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+    @State private var isHovered = false
 
     var body: some View {
         Button(action: onSelect) {
             HStack(alignment: .top, spacing: GitHubNotificationTimelineMetrics.stampSpacing) {
-                VStack(alignment: .trailing, spacing: 1) {
-                    Text(verbatim: stamp.date)
-                        .font(.system(size: 10, weight: .medium).monospacedDigit())
-                    Text(verbatim: stamp.time)
-                        .font(.system(size: 11, weight: .medium).monospacedDigit())
-                }
-                .foregroundStyle(.secondary)
-                .frame(width: GitHubNotificationTimelineMetrics.stampWidth, alignment: .trailing)
-                .padding(.top, 4)
+                Text(verbatim: stamp)
+                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .frame(width: GitHubNotificationTimelineMetrics.stampWidth, alignment: .trailing)
+                    .padding(.top, 3)
 
                 Color.clear
                     .frame(width: GitHubNotificationTimelineMetrics.railWidth)
 
                 RemoteAvatar(
                     urlString: GitHubNotificationMapper.actorAvatarURL(for: record),
-                    size: 28,
+                    size: 24,
                     fallbackSymbol: "person.crop.circle.fill",
                     showBorder: false
                 )
-                .padding(.top, 2)
+                .padding(.top, 1)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .top, spacing: 8) {
                         Text(verbatim: GitHubNotificationMapper.eventHeadline(for: record, locale: locale))
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                         Spacer(minLength: 4)
-                        GitHubNotificationReasonChip(chip: GitHubNotificationMapper.chip(for: record))
+                        GitHubNotificationReasonChip(chip: GitHubNotificationMapper.subjectChip(for: record))
                     }
 
                     HStack(spacing: 6) {
@@ -439,12 +441,12 @@ private struct GitHubNotificationTimelineRow: View {
                             urlString: GitHubNotificationMapper.repositoryAvatarURL(
                                 fromFullName: record.repositoryFullName
                             ),
-                            size: 16,
+                            size: 14,
                             fallbackSymbol: "shippingbox.fill",
                             showBorder: false
                         )
                         Text(verbatim: caption)
-                            .font(.system(size: 12))
+                            .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -452,7 +454,7 @@ private struct GitHubNotificationTimelineRow: View {
 
                     if let snippet {
                         Text(verbatim: snippet)
-                            .font(.system(size: 12))
+                            .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -461,8 +463,8 @@ private struct GitHubNotificationTimelineRow: View {
             }
             .padding(.leading, GitHubNotificationTimelineMetrics.leadingPadding)
             .padding(.trailing, 12)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, minHeight: 68, alignment: .leading)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, minHeight: GitHubNotificationTimelineMetrics.rowMinHeight, alignment: .leading)
             .contentShape(Rectangle())
             .overlay(alignment: .leading) {
                 GeometryReader { proxy in
@@ -483,17 +485,46 @@ private struct GitHubNotificationTimelineRow: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .background {
-            Rectangle()
-                .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+            RoundedRectangle(
+                cornerRadius: GitHubNotificationTimelineMetrics.rowCornerRadius,
+                style: .continuous
+            )
+            .fill(rowFill)
+            .padding(.horizontal, GitHubNotificationTimelineMetrics.selectedInset)
+            .padding(.vertical, 1)
         }
+        .overlay {
+            RoundedRectangle(
+                cornerRadius: GitHubNotificationTimelineMetrics.rowCornerRadius,
+                style: .continuous
+            )
+            .stroke(isSelected ? Color.accentColor.opacity(0.22) : Color.clear, lineWidth: 1)
+            .padding(.horizontal, GitHubNotificationTimelineMetrics.selectedInset)
+            .padding(.vertical, 1)
+        }
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.14)) {
+                isHovered = hovering
+            }
+        }
+    }
+
+    private var rowFill: Color {
+        if isSelected {
+            return Color.accentColor.opacity(0.12)
+        }
+        if isHovered {
+            return Color.primary.opacity(0.04)
+        }
+        return .clear
     }
 
     private var updatedAt: Date? {
         GitHubNotificationMapper.parseDate(record.updatedAt)
     }
 
-    private var stamp: (date: String, time: String) {
-        guard let date = updatedAt else { return ("---- -- --", "--:--") }
+    private var stamp: String {
+        guard let date = updatedAt else { return "--:--" }
         return GitHubNotificationMapper.timelineStamp(date: date, locale: locale)
     }
 
@@ -507,8 +538,12 @@ private struct GitHubNotificationTimelineRow: View {
         )
     }
 
+    /// 没 hydrate 就不要留空行，行高才稳。
     private var snippet: String? {
-        GitHubNotificationMapper.listSnippet(record.excerpt)
+        guard let text = GitHubNotificationMapper.listSnippet(record.excerpt),
+              !text.isEmpty
+        else { return nil }
+        return text
     }
 }
 
@@ -539,6 +574,7 @@ private struct GitHubNotificationTimelineRail: View {
     }
 }
 
+/// 时间线 / 顶栏的主体类型 chip：Issue 橙、PR 紫、其余安静灰。Mention 不在这里重复。
 struct GitHubNotificationReasonChip: View {
     let chip: GitHubNotificationChip
     @Environment(\.locale) private var locale
@@ -554,22 +590,15 @@ struct GitHubNotificationReasonChip: View {
 
     private var tint: Color {
         switch chip {
-        case .mention:
-            return Color(hex: "#0969da") ?? .accentColor
-        case .review:
-            return Color(hex: "#1f6feb") ?? .blue
-        case .assign:
-            return Color(hex: "#8250df") ?? .purple
-        case .comment:
-            return Color.secondary
-        case .pullRequest:
-            return Color(hex: "#8250df") ?? .purple
         case .issue:
             return Color(hex: "#bc4c00") ?? .orange
+        case .pullRequest:
+            return Color(hex: "#8250df") ?? .purple
         case .security:
             return Color.red
-        case .release:
-            return Color(hex: "#1a7f37") ?? .green
+        case .release, .discussion, .comment, .mention, .review, .assign:
+            // Release / Discussion / 其它剩余 chip 用安静灰，不靠彩虹色抢扫描。
+            return Color.secondary
         }
     }
 }

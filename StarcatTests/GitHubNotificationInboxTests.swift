@@ -211,20 +211,17 @@ struct GitHubNotificationMapperTests {
 
         let posix = Locale(identifier: "en_US_POSIX")
         let stamp = GitHubNotificationMapper.timelineStamp(date: date, locale: posix)
-        let expectedDate = DateFormatter()
-        expectedDate.locale = posix
-        expectedDate.timeZone = TimeZone.current
-        var gregorian = Calendar(identifier: .gregorian)
-        gregorian.timeZone = TimeZone.current
-        expectedDate.calendar = gregorian
-        expectedDate.dateFormat = "yyyy-MM-dd"
         let expectedTime = DateFormatter()
         expectedTime.locale = posix
         expectedTime.timeZone = TimeZone.current
         expectedTime.dateFormat = "HH:mm"
-        #expect(stamp.date == expectedDate.string(from: date))
-        #expect(stamp.time == expectedTime.string(from: date))
+        #expect(stamp == expectedTime.string(from: date))
+        #expect(!stamp.contains("-"))
 
+        let expectedDate = DateFormatter()
+        expectedDate.locale = posix
+        expectedDate.timeZone = TimeZone.current
+        expectedDate.dateFormat = "yyyy-MM-dd"
         let commentTime = GitHubNotificationMapper.commentTimeLabel(date: date, locale: posix)
         #expect(commentTime.contains(expectedDate.string(from: date)))
         #expect(commentTime.contains(expectedTime.string(from: date)))
@@ -288,6 +285,41 @@ struct GitHubNotificationMapperTests {
         #expect(zh.contains("PR"))
         #expect(!zh.contains("Issue"))
         #expect(GitHubNotificationMapper.chipTitle(for: .pullRequest, locale: Locale(identifier: "zh-Hans")) == "PR")
+    }
+
+    @Test("列表 chip 用主体类型，mention/review 不盖过 Issue/PR")
+    func subjectChipPrefersTypeOverReason() {
+        let mentionIssue = GitHubNotificationMapper.record(
+            from: GitHubNotificationThreadDTO(
+                id: "3",
+                unread: true,
+                reason: "mention",
+                updatedAt: "2026-08-19T14:32:00Z",
+                subject: GitHubNotificationSubjectDTO(
+                    title: "Mention me",
+                    url: "https://api.github.com/repos/o/r/issues/1",
+                    latestCommentUrl: nil,
+                    type: "Issue"
+                ),
+                repository: GitHubNotificationRepositoryDTO(
+                    id: 3,
+                    fullName: "o/r",
+                    name: "r",
+                    owner: GitHubNotificationOwnerDTO(login: "o")
+                )
+            ),
+            fetchedAt: "2026-08-19T14:32:00Z",
+            firstSeenAt: "2026-08-19T14:32:00Z"
+        )
+        #expect(GitHubNotificationMapper.chip(for: mentionIssue) == .mention)
+        #expect(GitHubNotificationMapper.subjectChip(for: mentionIssue) == .issue)
+        #expect(GitHubNotificationMapper.subjectChip(type: "PullRequest", reason: "review_requested") == .pullRequest)
+        #expect(GitHubNotificationMapper.subjectChip(type: "Release", reason: "comment") == .release)
+        #expect(GitHubNotificationMapper.subjectChip(type: "Discussion", reason: "comment") == .discussion)
+        #expect(GitHubNotificationMapper.subjectChip(type: "Issue", reason: "security_alert") == .security)
+        #expect(
+            GitHubNotificationMapper.chipTitle(for: .discussion, locale: Locale(identifier: "zh-Hans")) == "讨论"
+        )
     }
 
     @Test("GitHub 无毫秒的 ISO8601 能解析，时钟和相对时间才有值")

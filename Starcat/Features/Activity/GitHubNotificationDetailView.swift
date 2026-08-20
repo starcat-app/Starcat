@@ -55,12 +55,11 @@ struct GitHubNotificationDetailView: View {
             Divider()
             if !isComposerExpanded {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 12) {
                         if let payload = item.notification {
                             repoRow(payload)
                             conversation(payload)
                         }
-                        actionButtons(item)
                     }
                     .padding(18)
                 }
@@ -103,6 +102,7 @@ struct GitHubNotificationDetailView: View {
             )
             Spacer(minLength: 8)
             HStack(spacing: 4) {
+                detailLinkButtons(item)
                 Button {
                     selectAdjacent(-1)
                 } label: {
@@ -152,22 +152,22 @@ struct GitHubNotificationDetailView: View {
                 NSWorkspace.shared.open(url)
             }
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 RemoteAvatar(
                     urlString: GitHubNotificationMapper.repositoryAvatarURL(
                         fromFullName: payload.repositoryFullName
                     ),
-                    size: 28,
+                    size: 18,
                     fallbackSymbol: "shippingbox.fill",
                     showBorder: false
                 )
                 Text(verbatim: payload.repositoryFullName)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.primary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Image(systemName: "arrow.up.right")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
         }
@@ -198,48 +198,43 @@ struct GitHubNotificationDetailView: View {
         }
     }
 
-    private func actionButtons(_ item: ActivityItem) -> some View {
-        HStack(spacing: 8) {
-            Spacer(minLength: 0)
-
-            if let repo = item.repo {
-                Button {
-                    NotificationCenter.default.post(
-                        name: .starcatRevealRepoInManage,
-                        object: nil,
-                        userInfo: ["repoId": repo.id]
-                    )
-                } label: {
-                    // App Icon 带玻璃外框，缩小时看不清；用 CompactMark 放大主体。
-                    StarcatCompactMark(size: 16)
-                        .squareLogoActionChrome()
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help("activity.notification.detail.openInStarcat")
-                .accessibilityLabel(Text("activity.notification.detail.openInStarcat"))
+    /// GitHub / Starcat 入口放工具行：会话滚走或评论框展开时仍能点。
+    @ViewBuilder
+    private func detailLinkButtons(_ item: ActivityItem) -> some View {
+        if let repo = item.repo {
+            Button {
+                NotificationCenter.default.post(
+                    name: .starcatRevealRepoInManage,
+                    object: nil,
+                    userInfo: ["repoId": repo.id]
+                )
+            } label: {
+                StarcatCompactMark(size: 14)
+                    .squareLogoActionChrome(side: 22)
             }
-
-            if let url = item.htmlURL {
-                Button {
-                    NSWorkspace.shared.open(url)
-                } label: {
-                    // Devicons 经典 mark；template 以适配明暗主题。与知识库引用行同一套方钮。
-                    Image("github")
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 16, height: 16)
-                        .foregroundStyle(.primary)
-                        .squareLogoActionChrome()
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help("activity.notification.detail.openOnGitHub")
-                .accessibilityLabel(Text("activity.notification.detail.openOnGitHub"))
-            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("activity.notification.detail.openInStarcat")
+            .accessibilityLabel(Text("activity.notification.detail.openInStarcat"))
         }
-        .padding(.top, 8)
+
+        if let url = item.htmlURL {
+            Button {
+                NSWorkspace.shared.open(url)
+            } label: {
+                Image("github")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 14, height: 14)
+                    .foregroundStyle(.primary)
+                    .squareLogoActionChrome(side: 22)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("activity.notification.detail.openOnGitHub")
+            .accessibilityLabel(Text("activity.notification.detail.openOnGitHub"))
+        }
     }
 
     private func heading(_ item: ActivityItem) -> String {
@@ -261,6 +256,53 @@ struct GitHubNotificationDetailView: View {
             inbox.pendingOpenThreadId = visible[next].id
             NotificationCenter.default.post(name: .starcatOpenGitHubNotification, object: nil)
         }
+    }
+}
+
+/// 撰写 / 预览：对齐 `PillSegmentedControl` compact，但标题走 mapper.copy，不新增 Catalog key。
+private struct GitHubNotificationComposerTabBar: View {
+    @Binding var isPreview: Bool
+    let locale: Locale
+
+    var body: some View {
+        HStack(spacing: 0) {
+            tab(
+                GitHubNotificationMapper.copy(locale, zh: "撰写", en: "Write"),
+                selected: !isPreview
+            ) {
+                isPreview = false
+            }
+            tab(
+                GitHubNotificationMapper.copy(locale, zh: "预览", en: "Preview"),
+                selected: isPreview
+            ) {
+                isPreview = true
+            }
+        }
+        .padding(2)
+        .background(Color.secondary.opacity(0.08), in: Capsule(style: .continuous))
+        .overlay {
+            Capsule(style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.15), lineWidth: 0.5)
+        }
+    }
+
+    private func tab(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(verbatim: title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 2)
+                .background(
+                    selected ? Color.primary.opacity(0.10) : Color.clear,
+                    in: Capsule(style: .continuous)
+                )
+                .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
@@ -306,7 +348,7 @@ private struct GitHubNotificationCommentCard: View {
             HStack(spacing: 8) {
                 RemoteAvatar(
                     urlString: "https://github.com/\(login).png?size=80",
-                    size: 24,
+                    size: isOpeningPost ? 26 : 22,
                     fallbackSymbol: "person.crop.circle.fill",
                     showBorder: false
                 )
@@ -315,7 +357,7 @@ private struct GitHubNotificationCommentCard: View {
                     isOpeningPost: isOpeningPost,
                     locale: locale
                 ))
-                .font(.subheadline.weight(.semibold))
+                .font(isOpeningPost ? .subheadline.weight(.semibold) : .callout.weight(.medium))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 Spacer(minLength: 8)
@@ -327,7 +369,8 @@ private struct GitHubNotificationCommentCard: View {
                 }
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.vertical, isOpeningPost ? 10 : 8)
+            .background(isOpeningPost ? Color.secondary.opacity(0.08) : Color.secondary.opacity(0.04))
 
             Divider()
 
@@ -336,9 +379,10 @@ private struct GitHubNotificationCommentCard: View {
                     .padding(12)
             }
         }
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.secondary.opacity(0.28), lineWidth: 1)
+                .strokeBorder(Color.primary.opacity(isOpeningPost ? 0.12 : 0.08), lineWidth: 1)
         )
     }
 }
@@ -380,79 +424,27 @@ private struct GitHubNotificationCommentComposer: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                RemoteAvatar(
-                    urlString: authSession.state.user?.avatarUrl,
-                    size: 24,
-                    fallbackSymbol: "person.crop.circle.fill",
-                    showBorder: false
-                )
-                Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "留下评论", en: "Leave a comment"))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                Spacer()
-                composerTab(
-                    GitHubNotificationMapper.copy(locale, zh: "撰写", en: "Write"),
-                    selected: !isPreview
-                ) {
-                    isPreview = false
-                }
-                composerTab(
-                    GitHubNotificationMapper.copy(locale, zh: "预览", en: "Preview"),
-                    selected: isPreview
-                ) {
-                    isPreview = true
-                }
-                composerExpandButton
-            }
-
+        VStack(alignment: .leading, spacing: 0) {
+            composerHeader
+            Divider()
             composerBody
-
+                .padding(.horizontal, 10)
+                .padding(.top, 8)
             if let errorMessage {
                 Text(verbatim: errorMessage)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 6)
             }
-
-            HStack(spacing: 8) {
-                Spacer()
-                aiCommentButton
-                if canShowIssueStateButton {
-                    Button {
-                        Task { await applyIssueState() }
-                    } label: {
-                        if isUpdatingIssueState {
-                            ProgressView()
-                                .controlSize(.small)
-                                .frame(width: 72)
-                        } else {
-                            Text(verbatim: issueStateButtonTitle)
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .focusEffectDisabled()
-                    .disabled(isPosting || isGenerating || isUpdatingIssueState)
-                    .help(issueStateButtonTitle)
-                }
-                Button {
-                    Task { await submit() }
-                } label: {
-                    if isPosting {
-                        ProgressView()
-                            .controlSize(.small)
-                            .frame(width: 52)
-                    } else {
-                        Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "评论", en: "Comment"))
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .focusEffectDisabled()
-                .disabled(trimmed.isEmpty || isPosting || isGenerating || isUpdatingIssueState)
-            }
+            composerFooter
         }
+        .frame(maxWidth: .infinity, maxHeight: isExpanded ? .infinity : nil, alignment: .top)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
+        )
         .padding(.horizontal, 18)
         .padding(.vertical, 12)
         .background(.background)
@@ -471,6 +463,69 @@ private struct GitHubNotificationCommentComposer: View {
             generateTask?.cancel()
             successResetTask?.cancel()
         }
+    }
+
+    /// 「留下评论」做成卡片顶栏：浅底 + 底部分割，输入区不再套第二圈重描边。
+    private var composerHeader: some View {
+        HStack(spacing: 8) {
+            RemoteAvatar(
+                urlString: authSession.state.user?.avatarUrl,
+                size: 22,
+                fallbackSymbol: "person.crop.circle.fill",
+                showBorder: false
+            )
+            Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "留下评论", en: "Leave a comment"))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+            Spacer(minLength: 8)
+            GitHubNotificationComposerTabBar(isPreview: $isPreview, locale: locale)
+            composerExpandButton
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.secondary.opacity(0.08))
+    }
+
+    private var composerFooter: some View {
+        HStack(spacing: 8) {
+            Spacer()
+            aiCommentButton
+            if canShowIssueStateButton {
+                Button {
+                    Task { await applyIssueState() }
+                } label: {
+                    if isUpdatingIssueState {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(width: 72)
+                    } else {
+                        Text(verbatim: issueStateButtonTitle)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .focusEffectDisabled()
+                .disabled(isPosting || isGenerating || isUpdatingIssueState)
+                .help(issueStateButtonTitle)
+            }
+            Button {
+                Task { await submit() }
+            } label: {
+                if isPosting {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 52)
+                } else {
+                    Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "评论", en: "Comment"))
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .focusEffectDisabled()
+            .disabled(trimmed.isEmpty || isPosting || isGenerating || isUpdatingIssueState)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
     }
 
     private var trimmed: String {
@@ -556,10 +611,6 @@ private struct GitHubNotificationCommentComposer: View {
         .frame(maxHeight: isExpanded ? .infinity : composerEditorHeight)
         .frame(height: isExpanded ? nil : composerEditorHeight)
         .layoutPriority(isExpanded ? 1 : 0)
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.secondary.opacity(0.28), lineWidth: 1)
-        )
     }
 
     private var composerExpandButton: some View {
@@ -571,11 +622,10 @@ private struct GitHubNotificationCommentComposer: View {
             Image(systemName: isExpanded
                   ? "arrow.down.right.and.arrow.up.left"
                   : "arrow.up.left.and.arrow.down.right")
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .padding(5)
-                .background(Circle().fill(Color.secondary.opacity(0.15)))
-                .contentShape(Circle())
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
@@ -759,19 +809,6 @@ private struct GitHubNotificationCommentComposer: View {
             guard !Task.isCancelled else { return }
             didGenerate = false
         }
-    }
-
-    private func composerTab(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(verbatim: title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(selected ? .primary : .secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(selected ? Color.secondary.opacity(0.16) : Color.clear, in: Capsule())
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
     }
 
     private func submit() async {

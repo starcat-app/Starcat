@@ -2,7 +2,7 @@
 //  GitHubNotificationMapper.swift
 //  Starcat
 //
-//  通知 JSON → 本地行、reason chip、降级 GitHub Web URL。
+//  通知 JSON → 本地行、reason / 主体类型 chip、降级 GitHub Web URL。
 //  纯函数，单测不需要网络或数据库。
 //
 //  约束：通知列表没有 actor / body / html_url。人名和摘要只能在选中后从 subject.url 补。
@@ -19,6 +19,7 @@ enum GitHubNotificationChip: String, Sendable {
     case pullRequest
     case issue
     case release
+    case discussion
 }
 
 enum GitHubNotificationPersonRole: String, Sendable {
@@ -76,6 +77,33 @@ enum GitHubNotificationMapper {
             return .pullRequest
         case "Issue":
             return .issue
+        case "Discussion":
+            return .discussion
+        default:
+            return .comment
+        }
+    }
+
+    /// 列表 / 详情顶栏的类型 chip：Issue / PR / Release / Discussion。
+    /// Mention、Review 已经写在事件句里，不要再占一颗 reason 色标。
+    static func subjectChip(for record: GitHubNotificationThreadRecord) -> GitHubNotificationChip {
+        subjectChip(type: record.subjectType, reason: record.reason)
+    }
+
+    static func subjectChip(type: String, reason: String) -> GitHubNotificationChip {
+        // 安全公告是状态，不是装饰色；即使 subject 像 Issue 也优先标出来。
+        if chip(forReason: reason) == .security {
+            return .security
+        }
+        switch type {
+        case "PullRequest":
+            return .pullRequest
+        case "Issue":
+            return .issue
+        case "Release":
+            return .release
+        case "Discussion":
+            return .discussion
         default:
             return .comment
         }
@@ -102,6 +130,8 @@ enum GitHubNotificationMapper {
             return copy(locale, zh: "\(someone) 评论了这个 Issue", en: "\(someone) commented on this issue")
         case .pullRequest:
             return copy(locale, zh: "\(someone) 评论了这个 PR", en: "\(someone) commented on this PR")
+        case .discussion:
+            return copy(locale, zh: "\(someone) 评论了这个 Discussion", en: "\(someone) commented on this discussion")
         case .security:
             return copy(locale, zh: "仓库有安全公告", en: "Security alert")
         case .release:
@@ -133,6 +163,8 @@ enum GitHubNotificationMapper {
         switch chip {
         case .release:
             return copy(locale, zh: "发行", en: "Release")
+        case .discussion:
+            return copy(locale, zh: "讨论", en: "Discussion")
         case .pullRequest:
             return "PR"
         case .issue:
@@ -295,7 +327,7 @@ enum GitHubNotificationMapper {
     static func eventActor(for record: GitHubNotificationThreadRecord) -> String? {
         let comments = decodeComments(record.commentsJson)
         switch chip(for: record) {
-        case .comment, .mention, .pullRequest, .issue:
+        case .comment, .mention, .pullRequest, .issue, .discussion:
             if let login = comments.last?.login, !login.isEmpty {
                 return login
             }
@@ -324,16 +356,9 @@ enum GitHubNotificationMapper {
         return formatter.string(from: date)
     }
 
-    /// 时间线左侧：年月日 + 时钟。只有 `HH:mm` 跨组之后看不出是哪一天。
-    static func timelineStamp(date: Date, locale: Locale) -> (date: String, time: String) {
-        let dateFormatter = DateFormatter()
-        dateFormatter.locale = locale
-        dateFormatter.timeZone = TimeZone.current
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone.current
-        dateFormatter.calendar = calendar
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        return (dateFormatter.string(from: date), clockLabel(date: date, locale: locale))
+    /// 时间线左侧只留 `HH:mm`。日期交给分组标题（今天 / 昨天 / 本周），不要再写年月日。
+    static func timelineStamp(date: Date, locale: Locale) -> String {
+        clockLabel(date: date, locale: locale)
     }
 
     /// 评论卡片右侧时间：相对时间不够时补绝对日期。
