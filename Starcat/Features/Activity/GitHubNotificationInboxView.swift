@@ -25,6 +25,7 @@ struct GitHubNotificationInboxView: View {
     @State private var segment: GitHubNotificationSegment = .all
     @State private var lastFetchedAt: Date?
     @State private var selectedThreadId: String?
+    @State private var isShowingHistoryResyncConfirmation = false
 
     private var inbox: GitHubNotificationInboxService {
         dependencies.githubNotificationInboxService
@@ -70,6 +71,21 @@ struct GitHubNotificationInboxView: View {
                 await reloadFirstPage()
             }
         }
+        .confirmationDialog(
+            "activity.notification.historyResync.confirmation.title",
+            isPresented: $isShowingHistoryResyncConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("activity.notification.historyResync.confirm") {
+                Task {
+                    await inbox.resyncHistory()
+                    await reloadFirstPage()
+                }
+            }
+            Button("common.cancel", role: .cancel) {}
+        } message: {
+            Text("activity.notification.historyResync.confirmation.message")
+        }
     }
 
     /// 只保留类型下拉 + 同步行，和星标中栏 `manageFilterBar` 同高。
@@ -106,6 +122,26 @@ struct GitHubNotificationInboxView: View {
 
             Menu {
                 Button {
+                    openOAuthAppSettings()
+                } label: {
+                    Label(
+                        "activity.notification.organizationAccess.action",
+                        systemImage: "building.2"
+                    )
+                }
+
+                Button {
+                    isShowingHistoryResyncConfirmation = true
+                } label: {
+                    Label(
+                        "activity.notification.historyResync.action",
+                        systemImage: "clock.arrow.circlepath"
+                    )
+                }
+
+                Divider()
+
+                Button {
                     if let url = URL(string: "https://github.com/notifications") {
                         NSWorkspace.shared.open(url)
                     }
@@ -125,6 +161,14 @@ struct GitHubNotificationInboxView: View {
             .help(GitHubNotificationMapper.copy(locale, zh: "在 GitHub 打开通知收件箱", en: "Open GitHub Notifications"))
         }
         .manageListFilterBarChrome()
+    }
+
+    private func openOAuthAppSettings() {
+        // GitHub 的授权详情页会列出每个组织的 Grant / Request 状态；比跳到某个固定组织
+        // 更适合多组织账号，也不会把“我的项目”GitHub App 授权误当成通知 OAuth 授权。
+        let path = "https://github.com/settings/connections/applications/\(AppConstants.githubOAuthClientID)"
+        guard let url = URL(string: path) else { return }
+        NSWorkspace.shared.open(url)
     }
 
     @ViewBuilder

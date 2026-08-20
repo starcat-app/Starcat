@@ -15123,6 +15123,98 @@
         }
       }
     },
+    "activity.notification.historyResync.action" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resync notification history"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新同步通知历史"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新同步通知歷史"
+          }
+        }
+      }
+    },
+    "activity.notification.historyResync.confirm" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resync"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新同步"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新同步"
+          }
+        }
+      }
+    },
+    "activity.notification.historyResync.confirmation.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Review Starcat’s organization access on GitHub first. Existing notifications and read state will be kept while Starcat resets the sync position and fetches up to 300 recent threads again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先在 GitHub 检查 Starcat 的组织访问权限。现有通知和已读状态会保留，Starcat 只会重置同步位置并重新获取最近 300 条通知。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請先在 GitHub 檢查 Starcat 的組織存取權限。現有通知和已讀狀態會保留，Starcat 只會重設同步位置並重新取得最近 300 條通知。"
+          }
+        }
+      }
+    },
+    "activity.notification.historyResync.confirmation.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resync notification history?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新同步通知历史？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新同步通知歷史？"
+          }
+        }
+      }
+    },
     "activity.notification.lastSynced" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -15211,6 +15303,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "需要通知權限"
+          }
+        }
+      }
+    },
+    "activity.notification.organizationAccess.action" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organization notification access"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "组织通知授权"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "組織通知授權"
           }
         }
       }

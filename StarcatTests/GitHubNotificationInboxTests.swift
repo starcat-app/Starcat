@@ -791,6 +791,45 @@ struct GitHubNotificationInboxTests {
         #expect(stored.first?.id == "only")
     }
 
+    @Test("历史重拉清游标但保留已有 thread 和本地已读状态")
+    func historyResyncPreservesThreadsAndLocalReadState() async throws {
+        let env = try makeEnv()
+        var phase = 0
+        var requests: [(since: String?, ifModifiedSince: String?)] = []
+        env.mock.listNotificationsHandler = { _, since, _, _, ifModifiedSince in
+            requests.append((since, ifModifiedSince))
+            if phase == 0 {
+                return Self.listResponse([
+                    Self.makeDTO(id: "existing", updatedAt: "2026-08-01T00:00:00Z")
+                ])
+            }
+            return Self.listResponse([
+                Self.makeDTO(id: "existing", updatedAt: "2026-08-01T00:00:00Z"),
+                Self.makeDTO(id: "organization", updatedAt: "2026-07-01T00:00:00Z")
+            ])
+        }
+
+        await env.inbox.sync()
+        try await env.threads.updateLocalUnread(
+            id: "existing",
+            unread: false,
+            markReadState: .synced,
+            githubUnread: false
+        )
+
+        phase = 1
+        await env.inbox.resyncHistory()
+
+        #expect(requests.count == 2)
+        #expect(requests[1].since == nil)
+        #expect(requests[1].ifModifiedSince == nil)
+        let existing = try #require(try await env.threads.fetch(id: "existing"))
+        #expect(existing.unread == false)
+        #expect(existing.markReadStateValue == .synced)
+        #expect(try await env.threads.fetch(id: "organization") != nil)
+        #expect(try await env.syncState.current()?.backfillCompletedAt != nil)
+    }
+
     /// SyncIconButton 只认 `isRefreshing`。服务若不走 Observation，
     /// `isSyncing` 变 true 时视图收不到，图标就不会转圈。
     @Test("isSyncing 对 Observation 可见，手动刷新才能驱动 SyncIconButton 转圈")

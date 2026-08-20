@@ -53,6 +53,8 @@ extension GitHubNotificationThreadRepositoryProtocol {
 
 protocol GitHubNotificationSyncStateRepositoryProtocol: Sendable {
     func current() async throws -> GitHubNotificationSyncStateRecord?
+    /// 只清同步游标，让下一次同步重新走历史回填；通知行和本地已读状态必须保留。
+    func resetForBackfill() async throws
     func updateAfterFetch(
         lastModified: String?,
         watermarkUpdatedAt: String?,

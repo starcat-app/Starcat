@@ -293,6 +293,17 @@ struct GRDBGitHubNotificationSyncStateRepository: GitHubNotificationSyncStateRep
         }
     }
 
+    func resetForBackfill() async throws {
+        try await database.writer.write { db in
+            // 组织授权变化后 GitHub 可能补回旧 thread。只删 singleton 游标，不能清通知表，
+            // 否则会丢掉本地已读状态、详情 hydrate 缓存和仍需重试的 mark-read 状态。
+            try db.execute(
+                sql: "DELETE FROM github_notification_sync_state WHERE id = ?",
+                arguments: [GitHubNotificationSyncStateRecord.singletonID]
+            )
+        }
+    }
+
     func updateAfterFetch(
         lastModified: String?,
         watermarkUpdatedAt: String?,

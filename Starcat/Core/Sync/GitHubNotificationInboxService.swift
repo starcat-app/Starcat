@@ -138,12 +138,26 @@ final class GitHubNotificationInboxService {
     /// 无论回填、增量还是 304，都先拉高 `isSyncing`。已在同步中的二次点击直接返回，
     /// 按钮此时已经在转，不需要再写一套空转动画。
     func sync() async {
+        await sync(forceBackfill: false)
+    }
+
+    /// 组织 OAuth 授权变化后重新抓取最近历史。
+    ///
+    /// 只重置同步游标，保留 thread 表；相同 thread 仍走既有 upsert，继续保护本地已读状态。
+    func resyncHistory() async {
+        await sync(forceBackfill: true)
+    }
+
+    private func sync(forceBackfill: Bool) async {
         guard !isSyncing else { return }
         isSyncing = true
         lastErrorMessage = nil
         defer { isSyncing = false }
 
         do {
+            if forceBackfill {
+                try await syncStateRepository.resetForBackfill()
+            }
             let state = try await syncStateRepository.current()
             let isBackfill = state?.backfillCompletedAt == nil
             if isBackfill {
