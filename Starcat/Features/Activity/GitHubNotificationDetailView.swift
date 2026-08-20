@@ -1132,8 +1132,8 @@ private struct GitHubNotificationCommentComposer: View {
             GitHubNotificationAIGeneratingHalo(isActive: isGenerating)
         }
         .animation(composerAnimation, value: showsFullComposer)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
         .background(.background)
         .frame(maxHeight: isExpanded ? .infinity : nil)
         .sheet(item: $paywallContext) { context in
@@ -1531,14 +1531,24 @@ private struct GitHubNotificationCommentComposer: View {
     }
 
     private var aiIcon: some View {
-        Image(systemName: didGenerate ? "checkmark.circle.fill" : "sparkles")
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(didGenerate ? Color.green : (isAIHovered ? Color.accentColor : Color.secondary))
-            .frame(width: 22, height: 22)
-            .background(
-                Circle().fill(Color.secondary.opacity(isAIHovered || didGenerate ? 0.16 : 0.10))
-            )
-            .contentTransition(.symbolEffect(.replace))
+        Group {
+            if didGenerate {
+                // 成功态跟复制按钮一样用绿色勾；不要再垫一层 secondary 圆，会把绿色盖成灰。
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(Color.white, Color.green)
+            } else {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(isAIHovered ? Color.accentColor : Color.secondary)
+                    .background(
+                        Circle().fill(Color.secondary.opacity(isAIHovered ? 0.16 : 0.10))
+                    )
+            }
+        }
+        .frame(width: 22, height: 22)
+        .contentTransition(.symbolEffect(.replace))
     }
 
     private var aiHelp: String {
@@ -1770,7 +1780,7 @@ private struct GitHubNotificationCommentComposer: View {
 /// AI 生成光圈的尺寸 / 时长。光晕要铺出卡片边缘，gutter 必须大于 blur。
 private enum GitHubNotificationAIHaloMetrics {
     static let cornerRadius: CGFloat = 8
-    static let glowBleed: CGFloat = 12
+    static let glowBleed: CGFloat = 8
     static let fade: TimeInterval = 0.48
     static let reduceMotionFade: TimeInterval = 0.28
 
@@ -1826,19 +1836,18 @@ private struct GitHubNotificationAIGeneratingHalo: View {
         )
         return ZStack {
             shape
-                .stroke(gradient, lineWidth: 14)
-                .blur(radius: 16)
-                .opacity(0.78)
-            shape
                 .stroke(gradient, lineWidth: 8)
-                .blur(radius: 8)
-                .opacity(0.55)
+                .blur(radius: 9)
+                .opacity(0.62)
             shape
-                .strokeBorder(gradient, lineWidth: 2)
+                .stroke(gradient, lineWidth: 4)
+                .blur(radius: 4)
+                .opacity(0.45)
+            shape
+                .strokeBorder(gradient, lineWidth: 1.6)
         }
-        .shadow(color: .cyan.opacity(0.35), radius: 10)
-        .shadow(color: .pink.opacity(0.28), radius: 14)
-        .shadow(color: .purple.opacity(0.22), radius: 18)
+        .shadow(color: .cyan.opacity(0.22), radius: 6)
+        .shadow(color: .pink.opacity(0.16), radius: 8)
     }
 }
 
