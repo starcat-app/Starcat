@@ -613,6 +613,141 @@ struct GitHubNotificationMapperTests {
     }
 }
 
+@Suite("GitHubNotificationTimelinePaging")
+struct GitHubNotificationTimelinePagingTests {
+
+    @Test("未到倒数窗口不翻页，进入窗口才翻页")
+    func prefetchesWithinLastWindowNotOnlyLastRow() {
+        let count = 40
+        let window = GitHubNotificationTimelinePaging.prefetchRowCount
+        #expect(
+            GitHubNotificationTimelinePaging.shouldPrefetchNextPage(
+                rowIndex: count - window - 1,
+                rowCount: count,
+                hasMore: true,
+                isLoading: false
+            ) == false
+        )
+        #expect(
+            GitHubNotificationTimelinePaging.shouldPrefetchNextPage(
+                rowIndex: count - window,
+                rowCount: count,
+                hasMore: true,
+                isLoading: false
+            )
+        )
+        #expect(
+            GitHubNotificationTimelinePaging.shouldPrefetchNextPage(
+                rowIndex: count - 1,
+                rowCount: count,
+                hasMore: true,
+                isLoading: false
+            )
+        )
+    }
+
+    @Test("没有更多、正在加载或索引越界时不翻页")
+    func skipsWhenExhaustedLoadingOrIndexOutOfBounds() {
+        #expect(
+            GitHubNotificationTimelinePaging.shouldPrefetchNextPage(
+                rowIndex: 39,
+                rowCount: 40,
+                hasMore: false,
+                isLoading: false
+            ) == false
+        )
+        #expect(
+            GitHubNotificationTimelinePaging.shouldPrefetchNextPage(
+                rowIndex: 39,
+                rowCount: 40,
+                hasMore: true,
+                isLoading: true
+            ) == false
+        )
+        #expect(
+            GitHubNotificationTimelinePaging.shouldPrefetchNextPage(
+                rowIndex: -1,
+                rowCount: 40,
+                hasMore: true,
+                isLoading: false
+            ) == false
+        )
+        #expect(
+            GitHubNotificationTimelinePaging.shouldPrefetchNextPage(
+                rowIndex: 40,
+                rowCount: 40,
+                hasMore: true,
+                isLoading: false
+            ) == false
+        )
+    }
+
+    @Test("不足一窗口时出现任意行就翻页")
+    func prefetchesEntireShortList() {
+        #expect(
+            GitHubNotificationTimelinePaging.shouldPrefetchNextPage(
+                rowIndex: 0,
+                rowCount: 3,
+                hasMore: true,
+                isLoading: false
+            )
+        )
+    }
+
+    @Test("只接受 generation、筛选和游标都仍匹配的分页响应")
+    func acceptsOnlyCurrentPageRequest() {
+        let cursor = GitHubInboxTimelineCursor(
+            occurredAt: "2026-08-21T00:00:00Z",
+            id: "40"
+        )
+        let anotherCursor = GitHubInboxTimelineCursor(
+            occurredAt: "2026-08-20T00:00:00Z",
+            id: "80"
+        )
+
+        #expect(
+            GitHubNotificationTimelinePaging.isCurrentPageRequest(
+                requestedGeneration: 3,
+                currentGeneration: 3,
+                requestedSegment: .all,
+                currentSegment: .all,
+                requestedCursor: cursor,
+                currentCursor: cursor
+            )
+        )
+        #expect(
+            GitHubNotificationTimelinePaging.isCurrentPageRequest(
+                requestedGeneration: 2,
+                currentGeneration: 3,
+                requestedSegment: .all,
+                currentSegment: .all,
+                requestedCursor: cursor,
+                currentCursor: cursor
+            ) == false
+        )
+        #expect(
+            GitHubNotificationTimelinePaging.isCurrentPageRequest(
+                requestedGeneration: 3,
+                currentGeneration: 3,
+                requestedSegment: .all,
+                currentSegment: .unread,
+                requestedCursor: cursor,
+                currentCursor: cursor
+            ) == false
+        )
+        #expect(
+            GitHubNotificationTimelinePaging.isCurrentPageRequest(
+                requestedGeneration: 3,
+                currentGeneration: 3,
+                requestedSegment: .all,
+                currentSegment: .all,
+                requestedCursor: cursor,
+                currentCursor: anotherCursor
+            ) == false
+        )
+    }
+}
+
 @MainActor
 @Suite("GitHubNotificationInbox")
 struct GitHubNotificationInboxTests {

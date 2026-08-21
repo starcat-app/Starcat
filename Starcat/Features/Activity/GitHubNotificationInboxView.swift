@@ -22,6 +22,7 @@ struct GitHubNotificationInboxView: View {
     @State private var cursor: GitHubInboxTimelineCursor?
     @State private var hasMore = false
     @State private var isLoadingPage = false
+    @State private var pagingGeneration = 0
     @State private var segment: GitHubNotificationSegment = .all
     @State private var lastFetchedAt: Date?
     @State private var selectedThreadId: String?
@@ -212,7 +213,7 @@ struct GitHubNotificationInboxView: View {
                             titleKey: group.titleKey,
                             isFirst: isFirst
                         )
-                    case .row(let row, let isFirst, let isLast):
+                    case .row(let row, let rowIndex, let isFirst, let isLast):
                         GitHubNotificationTimelineRow(
                             display: timelineDisplay(for: row),
                             isSelected: selectedThreadId == row.id,
@@ -223,7 +224,14 @@ struct GitHubNotificationInboxView: View {
                             }
                         )
                         .onAppear {
-                            if isLast {
+                            // LazyVStack 只在行进入可视区附近才 onAppear。
+                            // 索引在时间线构建时一次生成，避免每行出现都线性扫描 rows。
+                            if GitHubNotificationTimelinePaging.shouldPrefetchNextPage(
+                                rowIndex: rowIndex,
+                                rowCount: rows.count,
+                                hasMore: hasMore,
+                                isLoading: isLoadingPage
+                            ) {
                                 Task { await loadNextPageIfNeeded() }
                             }
                         }
@@ -238,11 +246,20 @@ struct GitHubNotificationInboxView: View {
     private var timelineEntries: [GitHubNotificationTimelineEntry] {
         let groups = groupedRows
         var entries: [GitHubNotificationTimelineEntry] = []
+        var timelineRowIndex = 0
         for (groupIndex, (group, grouped)) in groups.enumerated() {
             entries.append(.header(group, isFirst: groupIndex == 0))
-            for (rowIndex, row) in grouped.enumerated() {
-                let isLast = groupIndex == groups.count - 1 && rowIndex == grouped.count - 1
-                entries.append(.row(row, isFirst: false, isLast: isLast))
+            for (groupRowIndex, row) in grouped.enumerated() {
+                let isLast = groupIndex == groups.count - 1 && groupRowIndex == grouped.count - 1
+                entries.append(
+                    .row(
+                        row,
+                        rowIndex: timelineRowIndex,
+                        isFirst: false,
+                        isLast: isLast
+                    )
+                )
+                timelineRowIndex += 1
             }
         }
         return entries
@@ -286,13 +303,23 @@ struct GitHubNotificationInboxView: View {
     }
 
     private func reloadFirstPage() async {
+        // 首页重载代表列表上下文已变化。递增 generation，让仍在等待的旧分页结果自动失效，
+        // 避免切换筛选或同步刷新时把上一份列表的下一页追加到新列表。
+        pagingGeneration += 1
+        let requestedGeneration = pagingGeneration
         isLoadingPage = true
-        defer { isLoadingPage = false }
+        defer {
+            if requestedGeneration == pagingGeneration {
+                isLoadingPage = false
+            }
+        }
         let page = await inbox.fetchTimelinePage(cursor: nil)
+        let fetchedAt = await inbox.lastFetchedAt()
+        guard requestedGeneration == pagingGeneration else { return }
         rows = page.rows
         hasMore = page.hasMore
         cursor = page.rows.last?.cursor
-        lastFetchedAt = await inbox.lastFetchedAt()
+        lastFetchedAt = fetchedAt
         if inbox.pendingOpenThreadId != nil {
             consumePendingOpenIfNeeded()
             return
@@ -306,11 +333,26 @@ struct GitHubNotificationInboxView: View {
         }
     }
 
+    /// 接近底部时预取下一页。重复 onAppear 由 `isLoadingPage` 挡住。
     private func loadNextPageIfNeeded() async {
         guard hasMore, !isLoadingPage, let cursor else { return }
+        let requestedGeneration = pagingGeneration
+        let requestedSegment = segment
         isLoadingPage = true
-        defer { isLoadingPage = false }
+        defer {
+            if requestedGeneration == pagingGeneration {
+                isLoadingPage = false
+            }
+        }
         let page = await inbox.fetchTimelinePage(cursor: cursor)
+        guard GitHubNotificationTimelinePaging.isCurrentPageRequest(
+            requestedGeneration: requestedGeneration,
+            currentGeneration: pagingGeneration,
+            requestedSegment: requestedSegment,
+            currentSegment: segment,
+            requestedCursor: cursor,
+            currentCursor: self.cursor
+        ) else { return }
         let existing = Set(rows.map(\.id))
         rows.append(contentsOf: page.rows.filter { !existing.contains($0.id) })
         hasMore = page.hasMore
@@ -483,13 +525,13 @@ struct GitHubNotificationInboxView: View {
 /// 时间线条目：分组标题与通知行共用一根轴线。
 private enum GitHubNotificationTimelineEntry: Identifiable {
     case header(GitHubNotificationDayGroup, isFirst: Bool)
-    case row(GitHubInboxTimelineRow, isFirst: Bool, isLast: Bool)
+    case row(GitHubInboxTimelineRow, rowIndex: Int, isFirst: Bool, isLast: Bool)
 
     var id: String {
         switch self {
         case .header(let group, _):
             return "header-\(group.rawValue)"
-        case .row(let row, _, _):
+        case .row(let row, _, _, _):
             return row.id
         }
     }
@@ -514,6 +556,43 @@ private struct GitHubNotificationTimelineDisplay: Equatable {
             return LanguageColor.color(for: language)
         }
         return ActivityCategory.notification.iconColor
+    }
+}
+
+/// 时间线翻页触发点。抽出谓词是为了单测「快到底部」而不是「碰到最后一行」。
+enum GitHubNotificationTimelinePaging {
+    /// 行高约 56pt，8 行大约一屏。本地 SQLite 分页便宜，提前量可以比 Weekly 网络分页的 3 行更大。
+    static let prefetchRowCount = 8
+
+    static func shouldPrefetchNextPage(
+        rowIndex: Int,
+        rowCount: Int,
+        hasMore: Bool,
+        isLoading: Bool
+    ) -> Bool {
+        guard hasMore,
+              !isLoading,
+              rowCount > 0,
+              rowIndex >= 0,
+              rowIndex < rowCount else {
+            return false
+        }
+        return rowIndex >= max(rowCount - prefetchRowCount, 0)
+    }
+
+    /// `await` 返回时再次核对请求上下文。只靠 `isLoading` 不能阻止筛选切换或首页重载期间
+    /// 已经发出的旧请求回写，因此 generation、segment 与 cursor 必须同时保持一致。
+    static func isCurrentPageRequest(
+        requestedGeneration: Int,
+        currentGeneration: Int,
+        requestedSegment: GitHubNotificationSegment,
+        currentSegment: GitHubNotificationSegment,
+        requestedCursor: GitHubInboxTimelineCursor,
+        currentCursor: GitHubInboxTimelineCursor?
+    ) -> Bool {
+        requestedGeneration == currentGeneration
+            && requestedSegment == currentSegment
+            && requestedCursor == currentCursor
     }
 }
 
