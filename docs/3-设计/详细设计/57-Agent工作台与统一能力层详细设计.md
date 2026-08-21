@@ -1019,15 +1019,18 @@ P0～P3、定向自动化、Release 构建与真实入口门禁验收通过后�
 
 ### P5：可选外部 Agent Runtime
 
-DeepSeek Harness `0.1.0-rc.8` 已作为首个候选 Runtime 完成架构评估，POC 边界、协议缺口、安全约束与 GO / NO-GO 条件见 `58-DeepSeekHarness集成评估与POC技术方案.md`。该评估不改变 P0～P4 的完成状态，也不代表外部 Runtime 已实现。
+外部 Runtime 不采用“选择一个框架并替换全部 Agent”的路线。Starcat 保留 `LoopAgentRuntime`，通过 `AgentRuntimeRouter`、`ExternalAgentRuntimeHost` 和 Provider Adapter 形成可切换底座；Codex App Server 与 DeepSeek Harness `0.1.0-rc.8` 是首批 adapter。多后端 POC 见 `59-ExternalAgentRuntime多后端POC技术方案.md`，DeepSeek 上游协议与 carrier 评估仍见 `58-DeepSeekHarness集成评估与POC技术方案.md`。
 
-已冻结的首期链路是：Starcat Direct 通过 stdio JSON-RPC 控制 Session 专属 Harness Sidecar；Harness 通过每 Session 临时 Loopback MCP HTTP Bridge 使用 Starcat 只读 Capability。`starcat-cli` 不参与内部链路，第三方 Harness 插件不允许运行时安装。
+已落地的底座 POC 链路是：Starcat Direct Debug 通过统一 newline-delimited JSON-RPC Host 控制一次 run 专属 Sidecar，Provider adapter 把原生事件映射为 `AgentRunEvent`；固定业务 Agent 的 `runtimePolicy` 仍锁定 Loop，General / Research POC 才允许选择 Codex 或 DeepSeek。当前只注入冻结上下文，不开放写工具、不持久化外部 Session，也不经过 `starcat-cli`。
+
+临时 Loopback MCP HTTP Bridge、Session 级 tool allowlist、随机 token、repo scope 与 RAG eligible scope 仍是产品化前的独立门禁；未完成这些门禁前，不把多后端底座 POC 表述为完整 P5 交付。
 
 进入条件：
 
 - 用户明确需要在 Starcat UI 内托管通用或研究型 Agent 会话。
 - 现有 MCP/CLI 外部工作流无法满足该需求。
-- Harness JSON-RPC、临时 MCP Bridge、停止与进程清理完成 POC 验证。
+- 至少一个 Provider adapter 的真实长任务、停止与进程组清理完成验证。
+- 临时 MCP Bridge 的 allowlist、token、repo scope 与 RAG eligible scope 完成验证。
 - Direct-only 的 sandbox、签名、进程组清理方案通过安全审查。
 
 未满足条件时不实施。

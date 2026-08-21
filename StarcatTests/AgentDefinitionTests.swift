@@ -32,6 +32,16 @@ struct AgentDefinitionTests {
         #expect(agent.workflow.allowsManualRepositoryOverride)
         #expect(agent.workflow.usesDefaultPromptWhenEmpty)
         #expect(agent.promptRules.map(\.id) == ["weekly-local-facts", "weekly-artifact-contract"])
+        #expect(agent.runtimePolicy == .builtinOnly)
+    }
+
+    @Test("外部 POC Agent 显式允许 Codex 与 DeepSeek，不进入固定业务 Agent 列表")
+    func externalPOCAgentsDeclareSwitchableRuntime() {
+        let agent = ExternalAgentPOCAgentDefinitions.general
+
+        #expect(agent.runtimePolicy == .externalPOC)
+        #expect(agent.runtimePolicy.allowedBackends == [.codexAppServer, .deepSeekHarness])
+        #expect(!BuiltInAgents.all.contains(where: { $0.id == agent.id }))
     }
 
     @Test("Repo Insight Agent 声明只读工具 allowlist 并默认启用")

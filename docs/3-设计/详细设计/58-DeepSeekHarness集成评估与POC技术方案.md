@@ -2,13 +2,15 @@
 
 > 日期：2026-08-16（2026-08-21 按 `0.1.0-rc.8` 修订）
 >
-> 状态：评估完成，Direct-only POC 待实施
+> 状态：adapter 评估完成；统一多后端底座 POC 见 `59-ExternalAgentRuntime多后端POC技术方案.md`
 >
 > 范围：Direct 版本中的 General Agent / Research Agent 外部 Runtime 候选，不替换现有固定业务 Agent
 >
 > 上游基线：`deepseek-ai/deepseek-harness` `0.1.0-rc.8`，tag `dsh-v0.1.0-rc.8`，提交 `141eb6f`
 >
 > 关联：`57-Agent工作台与统一能力层详细设计.md`、`34-StarcatCLI与外部MCP桥接设计.md`、`30-本地RAG设计.md`、`分发渠道能力门控规范.md`、`DESIGN.md`
+
+> 说明：本文保留 DeepSeek Harness `rc.8` 的 carrier、协议与安全评估，不再把 Harness 定义成唯一外部 Runtime。公共进程 Host、Runtime Router 与 Codex / DeepSeek 可切换结论以 59 号方案为准。
 
 ---
 
