@@ -400,7 +400,9 @@ verify_local_artifacts() {
     fail "当前版本 appcast 中的 sparkle:shortVersionString 不是 ${VERSION}"
   fi
 
-  if ! grep -q "<description><!\[CDATA\[" "$CURRENT_APPCAST_PATH"; then
+  # inject-appcast-release-notes.py 会为更新说明写入 xml:lang；门禁应验证
+  # description + CDATA 的结构，不能把合法的 XML 属性误判为缺少说明。
+  if ! grep -Eq '<description[^>]*><!\[CDATA\[' "$CURRENT_APPCAST_PATH"; then
     fail "当前版本 appcast 缺少 Sparkle 更新说明（description CDATA）"
   fi
 }
@@ -435,7 +437,7 @@ merge_appcast() {
     fail "合并后的 appcast 未指向本次 DMG: Starcat-${VERSION}-arm64.dmg"
   fi
 
-  if ! grep -q "<description><!\[CDATA\[" "$APPCAST_PATH"; then
+  if ! grep -Eq '<description[^>]*><!\[CDATA\[' "$APPCAST_PATH"; then
     fail "合并后的 appcast 缺少 Sparkle 更新说明（description CDATA）"
   fi
 
