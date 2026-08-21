@@ -34,7 +34,7 @@
 |---|---|---|---|---|
 | `dev` | 本地 + `origin/dev`；当前无独立 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；1.4.0 发版准备与 App Store 正式版 Xcode 打包门禁已进入 `main`。 | 后续功能继续在 `dev` 开发；新的发版阻断问题仍回到 `dev` 修复并重新执行门禁。 |
 | `main` | 本地 + `origin/main`；仓库根目录 worktree | 远端默认稳定主线和发布基线。 | `长期保留`；2026-08-21 已完成 1.4.0 发布：App Store Connect 构建有效，Direct 完成公证、官网、Sparkle、GitHub Release 和 Homebrew 发布。 | 保持稳定主线；后续功能与发版阻断修复仍先进入 `dev`。 |
-| `codex/external-agent-runtime-poc` | 本地；`../Starcat-external-agent-runtime-poc` worktree | 基于 `dev@f6d34d1c` 验证可切换 External Agent Runtime 底座，保留 `LoopAgentRuntime`，并接入 Codex App Server 与 DeepSeek Harness adapter。 | `开发中`；已同步 `dev@bae7e006`，等待合回 `dev`。 | 合回 `dev` 后由 dong4j 本地验证，验收完成再决定是否清理专项 worktree 与分支。 |
+| `codex/external-agent-runtime-poc` | 本地；`../Starcat-external-agent-runtime-poc` worktree | 基于 `dev@f6d34d1c` 验证可切换 External Agent Runtime 底座，保留 `LoopAgentRuntime`，并接入 Codex App Server 与 DeepSeek Harness adapter。 | `已合并`；2026-08-21 已通过 merge commit 合入本地 `dev`，专项 worktree 暂留用于对照。 | 由 dong4j 在 `dev` 本地验证；验收完成并授权后再清理专项 worktree 与分支。 |
 
 ## 近期已清理分支
 
