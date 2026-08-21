@@ -8,14 +8,20 @@
 #
 # 设计约束：
 #   - 只构建 `Starcat` scheme，不碰 `StarcatDirect`。
-#   - 默认只产出 `.xcarchive`；是否 export/upload 交给 Xcode Organizer 或 CI 处理。
+#   - 默认只产出 `.xcarchive`；设置 STARCAT_APPSTORE_EXPORT=1 时额外本地导出 `.pkg`，绝不上传。
+#   - Automatic Signing 的 archive 可以使用开发签名；Xcode 在 app-store-connect export
+#     阶段才会为主 App 与 Extension 统一换成 Distribution 签名和 Store profile。
 #   - 如果本机没有完整 App Store 签名配置，archive 可能失败；这是签名环境问题，不是脚本逻辑问题。
 #
 # 可选环境变量：
 #   STARCAT_DEVELOPMENT_TEAM=8WCUMGCWMB
 #       正式 Apple Developer Team ID。设置后 archive 显式使用该 Team。
 #   STARCAT_APPSTORE_SIGN_IDENTITY="Apple Distribution: liwen gong (8WCUMGCWMB)"
-#       archive 后重签嵌入式可执行文件时使用。未设置时从主 App 签名信息推断。
+#       archive 后重签 codebase.bin 与主 App 资源封签时使用。默认 `Apple Distribution`。
+#   STARCAT_APPSTORE_EXPORT=1
+#       使用 app-store-connect + destination=export 本地生成 `.pkg`，不会上传 App Store Connect。
+#   STARCAT_APPSTORE_ALLOW_PROVISIONING_UPDATES=1
+#       export 时允许 Xcode 获取或创建 Distribution provisioning profile。
 #   STARCAT_APPSTORE_SKIP_OPEN=1
 #       只打包和检查，不自动打开 archive。CI 或批处理环境可设置。
 #
@@ -27,7 +33,11 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DIST_DIR="${PROJECT_ROOT}/dist/appstore"
 ARCHIVE_PATH="${DIST_DIR}/Starcat-AppStore.xcarchive"
 BUILD_LOG="${DIST_DIR}/xcodebuild-appstore.log"
+EXPORT_DIR="${DIST_DIR}/export"
+EXPORT_LOG="${DIST_DIR}/xcodebuild-appstore-export.log"
+EXPORT_OPTIONS_PATH="${DIST_DIR}/ExportOptions.generated.plist"
 DEVELOPMENT_TEAM_ID="${STARCAT_DEVELOPMENT_TEAM:-${DEVELOPMENT_TEAM:-}}"
+APPSTORE_SIGN_IDENTITY="${STARCAT_APPSTORE_SIGN_IDENTITY:-Apple Distribution}"
 APPSTORE_ENTITLEMENTS_PATH="${PROJECT_ROOT}/Starcat/Starcat.entitlements"
 
 log() { printf '[appstore] %s\n' "$1"; }
@@ -74,15 +84,7 @@ APP_PATH="${ARCHIVE_PATH}/Products/Applications/Starcat.app"
 [ -d "$APP_PATH" ] || fail "archive 中未找到 Starcat.app"
 
 resolve_appstore_sign_identity() {
-  if [ -n "${STARCAT_APPSTORE_SIGN_IDENTITY:-}" ]; then
-    printf '%s\n' "$STARCAT_APPSTORE_SIGN_IDENTITY"
-    return
-  fi
-
-  local identity
-  identity="$(codesign -dv --verbose=4 "$APP_PATH" 2>&1 | sed -n 's/^Authority=\(Apple Distribution:.*\)$/\1/p' | head -1)"
-  [ -n "$identity" ] || identity="Apple Distribution"
-  printf '%s\n' "$identity"
+  printf '%s\n' "$APPSTORE_SIGN_IDENTITY"
 }
 
 sign_codebase_binary_for_appstore() {
@@ -125,6 +127,62 @@ sign_codebase_binary_for_appstore() {
 
 sign_codebase_binary_for_appstore
 
+verify_apple_distribution_signature() {
+  local target_path="$1"
+  local target_label="$2"
+  local authority
+  authority="$(codesign -dv --verbose=4 "$target_path" 2>&1 | sed -n 's/^Authority=\(Apple Distribution:.*\)$/\1/p' | head -1)"
+  [ -n "$authority" ] || fail "$target_label 未使用 Apple Distribution 签名: $target_path"
+  log "$target_label 签名: $authority"
+}
+
+verify_appstore_provisioning_profile() {
+  local bundle_path="$1"
+  local profile_path="$2"
+  local target_label="$3"
+  local profile_plist
+  profile_plist="$(mktemp)"
+
+  if ! security cms -D -i "$profile_path" >"$profile_plist" 2>/dev/null; then
+    rm -f "$profile_plist"
+    fail "$target_label 无法解析 provisioning profile: $profile_path"
+  fi
+
+  # 最终 export 的 App Store distribution profile 不能绑定开发设备，也不能使用
+  # Developer ID 的 ProvisionsAllDevices。archive 的开发 profile 不在这里检查，
+  # 因为 Xcode 会在 app-store-connect export 阶段统一替换它们。
+  if /usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices' "$profile_plist" >/dev/null 2>&1; then
+    rm -f "$profile_plist"
+    fail "$target_label provisioning profile 仍包含 ProvisionedDevices"
+  fi
+  if /usr/libexec/PlistBuddy -c 'Print :ProvisionsAllDevices' "$profile_plist" >/dev/null 2>&1; then
+    rm -f "$profile_plist"
+    fail "$target_label provisioning profile 不应包含 ProvisionsAllDevices"
+  fi
+
+  local get_task_allow
+  get_task_allow="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:get-task-allow' "$profile_plist" 2>/dev/null || true)"
+  if [ "$get_task_allow" = "true" ]; then
+    rm -f "$profile_plist"
+    fail "$target_label provisioning profile 开启了 get-task-allow"
+  fi
+
+  local bundle_id
+  local team_id
+  local profile_app_id
+  local profile_name
+  bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$bundle_path/Contents/Info.plist")"
+  team_id="$(codesign -dv --verbose=4 "$bundle_path" 2>&1 | sed -n 's/^TeamIdentifier=//p' | head -1)"
+  profile_app_id="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.application-identifier' "$profile_plist" 2>/dev/null || true)"
+  profile_name="$(/usr/libexec/PlistBuddy -c 'Print :Name' "$profile_plist" 2>/dev/null || true)"
+  rm -f "$profile_plist"
+
+  [ -n "$team_id" ] || fail "$target_label 签名缺少 TeamIdentifier"
+  [ "$profile_app_id" = "${team_id}.${bundle_id}" ] || \
+    fail "$target_label provisioning profile 与 bundle id 不匹配: ${profile_app_id:-missing}"
+  log "$target_label provisioning profile: ${profile_name:-unknown}"
+}
+
 verify_appstore_archive() {
   log "渠道自检：App Store 包不能包含 Sparkle"
   if find "$APP_PATH" -iname '*Sparkle*' -print -quit | grep -q .; then
@@ -147,14 +205,42 @@ verify_appstore_archive() {
   APP_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")
   log "Version: $APP_VERSION"
 
+  ARCHIVE_SIGN_IDENTITY="$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:SigningIdentity' "$ARCHIVE_PATH/Info.plist" 2>/dev/null || true)"
+  case "$ARCHIVE_SIGN_IDENTITY" in
+    Apple\ Development:*|Apple\ Distribution:*) ;;
+    *) fail "archive 元数据不是可识别的 Apple 签名: ${ARCHIVE_SIGN_IDENTITY:-missing}" ;;
+  esac
+  log "Archive 原始 signing identity: $ARCHIVE_SIGN_IDENTITY"
+
+  WIDGET_PATH="${APP_PATH}/Contents/PlugIns/StarcatWidgets.appex"
+  [ -d "$WIDGET_PATH" ] || fail "archive 中缺少 StarcatWidgets.appex"
+
+  # codebase.bin 位于 Resources，Xcode export 不会把它当独立 target 管理，因此先用
+  # Distribution 证书签好，再重签主 App 的资源封签。Widget 保持 archive 原始签名，
+  # 由 app-store-connect export 与主 App 一起统一重签。
+  verify_apple_distribution_signature "$APP_PATH" "主 App（archive 后处理）"
+  WIDGET_ARCHIVE_AUTHORITY="$(codesign -dv --verbose=4 "$WIDGET_PATH" 2>&1 | sed -n 's/^Authority=//p' | head -1)"
+  case "$WIDGET_ARCHIVE_AUTHORITY" in
+    Apple\ Development:*|Apple\ Distribution:*) ;;
+    *) fail "Widget archive 签名不可识别: ${WIDGET_ARCHIVE_AUTHORITY:-missing}" ;;
+  esac
+  log "Widget archive signing identity: $WIDGET_ARCHIVE_AUTHORITY"
+
   ENTITLEMENTS="$(codesign -d --entitlements :- "$APP_PATH" 2>/dev/null || true)"
   if ! grep -q "com.apple.security.app-sandbox" <<<"$ENTITLEMENTS"; then
     fail "App Store 包缺少 sandbox entitlement"
   fi
   log "主 App sandbox entitlement: OK"
 
+  WIDGET_ENTITLEMENTS="$(codesign -d --entitlements :- "$WIDGET_PATH" 2>/dev/null || true)"
+  if ! grep -q "com.apple.security.app-sandbox" <<<"$WIDGET_ENTITLEMENTS"; then
+    fail "Widget 缺少 sandbox entitlement"
+  fi
+  log "Widget sandbox entitlement: OK"
+
   CODEBASE_BIN="${APP_PATH}/Contents/Resources/codebase.bin"
   if [ -f "$CODEBASE_BIN" ]; then
+    verify_apple_distribution_signature "$CODEBASE_BIN" "codebase.bin"
     CODEBASE_ENTITLEMENTS="$(codesign -d --entitlements :- "$CODEBASE_BIN" 2>/dev/null || true)"
     if ! grep -q "com.apple.security.app-sandbox" <<<"$CODEBASE_ENTITLEMENTS"; then
       fail "codebase.bin 缺少 sandbox entitlement"
@@ -171,9 +257,93 @@ verify_appstore_archive() {
       log "codebase.bin dSYM UUID: ${CODEBASE_UUID:-unknown}"
     fi
   fi
+
+  codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+  log "codesign deep strict: OK"
 }
 
 verify_appstore_archive
+
+export_appstore_package() {
+  [ -n "$DEVELOPMENT_TEAM_ID" ] || fail "本地导出 App Store pkg 时必须设置 STARCAT_DEVELOPMENT_TEAM"
+  command -v pkgutil >/dev/null 2>&1 || fail "pkgutil 不在 PATH"
+  command -v security >/dev/null 2>&1 || fail "security 不在 PATH"
+
+  rm -rf "$EXPORT_DIR"
+  mkdir -p "$EXPORT_DIR"
+  plutil -create xml1 "$EXPORT_OPTIONS_PATH"
+  plutil -insert method -string app-store-connect "$EXPORT_OPTIONS_PATH"
+  plutil -insert destination -string export "$EXPORT_OPTIONS_PATH"
+  plutil -insert signingStyle -string automatic "$EXPORT_OPTIONS_PATH"
+  plutil -insert teamID -string "$DEVELOPMENT_TEAM_ID" "$EXPORT_OPTIONS_PATH"
+  plutil -insert manageAppVersionAndBuildNumber -bool NO "$EXPORT_OPTIONS_PATH"
+
+  EXPORT_COMMAND=(
+    xcodebuild
+    -exportArchive
+    -archivePath "$ARCHIVE_PATH"
+    -exportPath "$EXPORT_DIR"
+    -exportOptionsPlist "$EXPORT_OPTIONS_PATH"
+  )
+  if [ "${STARCAT_APPSTORE_ALLOW_PROVISIONING_UPDATES:-0}" = "1" ]; then
+    EXPORT_COMMAND+=(-allowProvisioningUpdates)
+  fi
+
+  log "本地导出 App Store pkg（destination=export，不上传）"
+  set +e
+  "${EXPORT_COMMAND[@]}" >"$EXPORT_LOG" 2>&1
+  EXPORT_EXIT=$?
+  set -e
+  if [ "$EXPORT_EXIT" -ne 0 ]; then
+    tail -80 "$EXPORT_LOG" >&2
+    fail "App Store pkg export 失败，完整日志: $EXPORT_LOG"
+  fi
+
+  EXPORTED_PKG="$(find "$EXPORT_DIR" -maxdepth 1 -type f -name '*.pkg' -print -quit)"
+  [ -n "$EXPORTED_PKG" ] || fail "export 成功但未找到 pkg: $EXPORT_DIR"
+
+  PKG_SIGNATURE="$(pkgutil --check-signature "$EXPORTED_PKG" 2>&1)"
+  if ! grep -Eq '3rd Party Mac Developer Installer:|Mac Installer Distribution:' <<<"$PKG_SIGNATURE"; then
+    printf '%s\n' "$PKG_SIGNATURE" >&2
+    fail "App Store pkg 未使用 Mac Installer Distribution 证书"
+  fi
+  INSTALLER_AUTHORITY="$(grep -E '3rd Party Mac Developer Installer:|Mac Installer Distribution:' <<<"$PKG_SIGNATURE" | head -1 | sed 's/^[[:space:]]*//')"
+  log "Installer 签名: $INSTALLER_AUTHORITY"
+
+  # 展开最终 pkg 再检查内部 App。只看 archive 会把 Automatic Signing 的开发签名
+  # 误判为发布失败；最终分发签名、Store profile 与嵌套组件一致性必须以 export 为准。
+  EXPANDED_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/starcat-appstore-pkg.XXXXXX")"
+  EXPANDED_DIR="${EXPANDED_ROOT}/expanded"
+  pkgutil --expand-full "$EXPORTED_PKG" "$EXPANDED_DIR"
+  EXPORTED_APP="$(find "$EXPANDED_DIR" -type d -name 'Starcat.app' -print -quit)"
+  [ -n "$EXPORTED_APP" ] || fail "pkg 中未找到 Starcat.app"
+  EXPORTED_WIDGET="${EXPORTED_APP}/Contents/PlugIns/StarcatWidgets.appex"
+  EXPORTED_CODEBASE="${EXPORTED_APP}/Contents/Resources/codebase.bin"
+  [ -d "$EXPORTED_WIDGET" ] || fail "pkg 中未找到 StarcatWidgets.appex"
+  [ -f "$EXPORTED_CODEBASE" ] || fail "pkg 中未找到 codebase.bin"
+
+  verify_apple_distribution_signature "$EXPORTED_APP" "主 App（export）"
+  verify_apple_distribution_signature "$EXPORTED_WIDGET" "Widget（export）"
+  verify_apple_distribution_signature "$EXPORTED_CODEBASE" "codebase.bin（export）"
+  verify_appstore_provisioning_profile \
+    "$EXPORTED_APP" \
+    "$EXPORTED_APP/Contents/embedded.provisionprofile" \
+    "主 App（export）"
+  verify_appstore_provisioning_profile \
+    "$EXPORTED_WIDGET" \
+    "$EXPORTED_WIDGET/Contents/embedded.provisionprofile" \
+    "Widget（export）"
+  codesign --verify --deep --strict --verbose=2 "$EXPORTED_APP"
+  rm -rf "$EXPANDED_ROOT"
+
+  log "App Store pkg codesign deep strict: OK"
+  log "pkg: $EXPORTED_PKG"
+  log "export log: $EXPORT_LOG"
+}
+
+if [ "${STARCAT_APPSTORE_EXPORT:-0}" = "1" ]; then
+  export_appstore_package
+fi
 
 if [ "${STARCAT_APPSTORE_SKIP_OPEN:-0}" != "1" ]; then
   log "检查通过，打开 Xcode Organizer archive"

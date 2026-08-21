@@ -120,6 +120,24 @@ STARCAT_DEVELOPMENT_TEAM=8WCUMGCWMB \
 - App Store 包不包含 `Sparkle.framework`。
 - App Store 包包含 sandbox entitlement。
 
+Automatic Signing 生成的 `.xcarchive` 是分发前中间产物，可以保留 Apple Development
+签名和开发 profile。真正的 App Store Distribution 签名与 Store profile 由 Xcode 在
+`app-store-connect` export / Organizer Distribute 阶段统一替换，不能只看 archive 判断最终签名。
+
+如需“打包但暂不上传”，本地导出最终 `.pkg`：
+
+```bash
+STARCAT_DEVELOPMENT_TEAM=8WCUMGCWMB \
+STARCAT_APPSTORE_EXPORT=1 \
+STARCAT_APPSTORE_ALLOW_PROVISIONING_UPDATES=1 \
+STARCAT_APPSTORE_SKIP_OPEN=1 \
+./scripts/package-appstore.sh
+```
+
+产物为 `dist/appstore/export/Starcat.pkg`。脚本会解包检查主 App、Widget、`codebase.bin`
+全部使用 Apple Distribution，profile 不含开发设备，并验证 Installer 与深度签名；
+`destination=export` 不会上传 App Store Connect。
+
 ### 4.3 上传
 
 第一版建议用 Xcode Organizer 或 Transporter 手动上传，避免自动脚本把不完整物料提交到 App Store Connect。
@@ -276,6 +294,16 @@ xcodegen generate
 
 ```bash
 STARCAT_DEVELOPMENT_TEAM=8WCUMGCWMB ./scripts/package-appstore.sh
+```
+
+只在本地生成 Distribution 签名的 `.pkg`，不上传：
+
+```bash
+STARCAT_DEVELOPMENT_TEAM=8WCUMGCWMB \
+STARCAT_APPSTORE_EXPORT=1 \
+STARCAT_APPSTORE_ALLOW_PROVISIONING_UPDATES=1 \
+STARCAT_APPSTORE_SKIP_OPEN=1 \
+./scripts/package-appstore.sh
 ```
 
 ### 6.4 Direct notarized DMG

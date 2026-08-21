@@ -12,6 +12,16 @@ cd /Users/dong4j/Developer/1.AI/ai-incubator/Starcat
 # 打包 App Store archive。
 STARCAT_DEVELOPMENT_TEAM=8WCUMGCWMB ./scripts/package-appstore.sh
 
+# 只在本机导出最终 App Store pkg，不上传 App Store Connect。
+STARCAT_DEVELOPMENT_TEAM=8WCUMGCWMB \
+STARCAT_APPSTORE_EXPORT=1 \
+STARCAT_APPSTORE_ALLOW_PROVISIONING_UPDATES=1 \
+STARCAT_APPSTORE_SKIP_OPEN=1 \
+./scripts/package-appstore.sh
+
+# 检查最终 Installer 签名；应为 Mac Installer Distribution。
+pkgutil --check-signature dist/appstore/export/Starcat.pkg
+
 # Make 快捷入口：打包 App Store archive。
 make package-appstore
 
@@ -41,6 +51,9 @@ open /Users/dong4j/Developer/1.AI/ai-incubator/Starcat/dist/appstore/Starcat-App
 
 # 查看 App Store archive 构建日志。
 tail -120 /Users/dong4j/Developer/1.AI/ai-incubator/Starcat/dist/appstore/xcodebuild-appstore.log
+
+# 查看 App Store 本地 export 日志。
+tail -120 /Users/dong4j/Developer/1.AI/ai-incubator/Starcat/dist/appstore/xcodebuild-appstore-export.log
 ```
 
 ## Direct 渠道

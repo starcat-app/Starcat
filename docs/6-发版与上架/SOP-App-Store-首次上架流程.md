@@ -389,6 +389,20 @@ dist/appstore/Starcat-AppStore.xcarchive
 dist/appstore/xcodebuild-appstore.log
 ```
 
+只在本机导出最终 Distribution 签名的 `.pkg`、暂不上传时：
+
+```bash
+STARCAT_DEVELOPMENT_TEAM=8WCUMGCWMB \
+STARCAT_APPSTORE_EXPORT=1 \
+STARCAT_APPSTORE_ALLOW_PROVISIONING_UPDATES=1 \
+STARCAT_APPSTORE_SKIP_OPEN=1 \
+./scripts/package-appstore.sh
+```
+
+额外产物为 `dist/appstore/export/Starcat.pkg` 和
+`dist/appstore/xcodebuild-appstore-export.log`。Automatic Signing 的 archive 可以使用开发
+签名；最终签名门禁以本地 export 解包后的主 App、Widget、`codebase.bin` 和 Store profile 为准。
+
 脚本会检查：
 
 - scheme 是 `Starcat`。
