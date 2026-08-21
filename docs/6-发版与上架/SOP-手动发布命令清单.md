@@ -93,6 +93,23 @@ cat /Users/dong4j/Developer/1.AI/ai-incubator/Starcat/dist/direct/downloads/Star
 
 # 查看当前 Direct appcast。
 cat /Users/dong4j/Developer/1.AI/ai-incubator/Starcat/supports/starcat-site/direct/appcast.xml
+
+# Direct 正式发布完成后检查本机 GitHub CLI 和目标 Release。
+gh auth status
+gh release view v1.0.0
+
+# 从 Direct 英文 Changelog 提取目标版本内容到临时文件后，本机创建 GitHub Release。
+# 不使用 GitHub Actions；不要对已存在资产默认使用 --clobber。
+gh release create v1.0.0 \
+  dist/direct/downloads/Starcat-1.0.0-arm64.dmg \
+  dist/direct/downloads/Starcat-1.0.0-arm64.dmg.sha256 \
+  --verify-tag \
+  --title "Starcat 1.0.0" \
+  --notes-file "<临时发布说明文件>"
+
+# 验证 GitHub Release 状态与资产。
+gh release view v1.0.0 \
+  --json tagName,name,isDraft,isPrerelease,url,assets
 ```
 
 ## 双渠道通用检查
@@ -109,4 +126,14 @@ git branch --show-current
 
 # 查看本地与远端版本 tag。
 git tag --list 'v1.*' --sort=version:refname && git ls-remote --tags origin 'v1.*'
+
+# dev 完成整改后检查是否能快进 main；有分叉时停止，不要 rebase 或强制合并。
+git status --short --branch
+git worktree list --porcelain
+git fetch --prune
+git rev-list --left-right --count main...dev
+
+# 获得分支操作授权且工作区干净后，切换并快进到正式发布分支。
+git switch main
+git merge --ff-only dev
 ```

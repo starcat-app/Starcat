@@ -201,6 +201,41 @@ STARCAT_NOTARIZE=1 STARCAT_RELEASE_SKIP_TAG=1 STARCAT_NOTARY_SUBMISSION_ID=<subm
 6. 上传 DMG、SHA256、appcast。
 7. 校验线上 appcast、DMG、changelog。
 
+### 5.3 GitHub Release（本机手动上传）
+
+Direct 脚本完成、`v<version>` 已推送、DMG 已通过 notarization 且线上 URL 校验成功后，
+还需要把 Direct 安装包上传到同一 tag 的 GitHub Release。该步骤使用本机 GitHub CLI，
+不使用 GitHub Actions。
+
+先检查登录状态和远端 Release 是否已存在：
+
+```bash
+gh auth status
+gh release view v1.0.0
+```
+
+从 `supports/starcat-pro/CHANGELOG.md` 提取目标版本英文内容到临时文件后执行：
+
+```bash
+gh release create v1.0.0 \
+  dist/direct/downloads/Starcat-1.0.0-arm64.dmg \
+  dist/direct/downloads/Starcat-1.0.0-arm64.dmg.sha256 \
+  --verify-tag \
+  --title "Starcat 1.0.0" \
+  --notes-file "<临时发布说明文件>"
+```
+
+验证 Release 和资产：
+
+```bash
+gh release view v1.0.0 \
+  --json tagName,name,isDraft,isPrerelease,url,assets
+```
+
+如果 Release 或同名资产已存在，停止并确认恢复策略；不要默认使用 `--clobber`
+覆盖公开资产。GitHub Release 至少上传 notarized DMG 与对应 SHA256，不上传
+DerivedData、构建日志、未公证包或含凭据文件。
+
 如果只是内部临时分发未公证包，必须显式声明：
 
 ```bash
@@ -209,19 +244,41 @@ STARCAT_RELEASE_ALLOW_UNNOTARIZED=1 ./scripts/release-direct.sh 1.0.0
 
 ## 6. 发版前检查
 
-### 6.1 双渠道构建配置
+### 6.1 从 `dev` 进入 `main`
+
+发版整改、迁移收口和编译警告修复均在 `dev` 完成。迁移测试、全量测试、App Store / Direct
+Release 构建和脚本静态检查通过后，再按分支规范核对工作区和远端状态：
+
+```bash
+git status --short --branch
+git worktree list --porcelain
+git fetch --prune
+git rev-list --left-right --count main...dev
+```
+
+只有工作区干净、`dev` 已提交、`main` 与 `dev` 未分叉且已获得分支操作授权时，才执行：
+
+```bash
+git switch main
+git merge --ff-only dev
+```
+
+`git push origin main`、tag、打包和上传仍是独立发布动作，必须获得对应授权。
+如果进入 `main` 后发现代码问题，返回 `dev` 修复并重新跑门禁，不直接在 `main` 开展日常整改。
+
+### 6.2 双渠道构建配置
 
 ```bash
 xcodegen generate
 ```
 
-### 6.2 App Store archive
+### 6.3 App Store archive
 
 ```bash
 STARCAT_DEVELOPMENT_TEAM=8WCUMGCWMB ./scripts/package-appstore.sh
 ```
 
-### 6.3 Direct notarized DMG
+### 6.4 Direct notarized DMG
 
 ```bash
 STARCAT_NOTARIZE=1 \
@@ -229,7 +286,7 @@ STARCAT_NOTARY_PROFILE=starcat-notary \
 ./scripts/package-direct.sh 1.0.0
 ```
 
-### 6.4 签名诊断
+### 6.5 签名诊断
 
 ```bash
 APP="dist/direct/DerivedData/Build/Products/Release/Starcat.app"
@@ -240,7 +297,7 @@ codesign --verify --verbose=2 "dist/direct/downloads/Starcat-1.0.0-arm64.dmg"
 spctl --assess --type open --context context:primary-signature --verbose "dist/direct/downloads/Starcat-1.0.0-arm64.dmg"
 ```
 
-### 6.5 Notary 诊断
+### 6.6 Notary 诊断
 
 ```bash
 xcrun notarytool history --keychain-profile starcat-notary
