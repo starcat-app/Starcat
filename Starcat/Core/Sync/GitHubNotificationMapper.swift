@@ -392,7 +392,7 @@ enum GitHubNotificationMapper {
         locale.identifier.lowercased().hasPrefix("zh") ? zh : en
     }
 
-    /// 中栏面包屑下一行：时间线总数 + 真实通知未读。组织 Issue / 账本不伪造 unread。
+    /// 中栏数量行：时间线总数 + 真实通知未读。组织 Issue / 账本不伪造 unread。
     static func listCountSubtitle(total: Int, unread: Int, locale: Locale) -> String {
         copy(
             locale,

@@ -19,11 +19,11 @@ import SwiftUI
 import AppKit
 import Observation
 
-/// 中栏导航副标题的轻量计数状态。
+/// 中栏数量行的轻量计数状态。
 ///
 /// Trending / Activity 的列表数据由各自子 ViewModel 发布；如果把计数继续存成
 /// `RepoListView.@State`，每次列表发布都会让包含 tint、toolbar、List 与所有 sheet 的
-/// 父视图重新计算。独立成引用状态后，只有下面的副标题 modifier 观察它。
+/// 父视图重新计算。独立成引用状态后，只有下面的数量行 modifier 观察它。
 @MainActor
 @Observable
 private final class RepoListNavigationMetrics {
@@ -85,8 +85,15 @@ final class RepoListAISummaryAvailability {
 
 /// 只观察导航计数的局部 modifier。
 ///
-/// 关键约束：调用方传入 Manage 的静态副标题，但不读取 `metrics`；因此 Trending / Activity
-/// 回写数量时，SwiftUI 只会重算这个 modifier，不会重新求值 `RepoListView.body`。
+/// 系统 `navigationSubtitle` 只能接 String，塞不进按钮。星标 / 探索 / 活动把数量画成
+/// 中栏内容区第一行，附件槽留给当前页的说明入口（现在只有探索挂 info）。
+///
+/// 关键约束：
+/// - 调用方传入 Manage 的静态数量文案，但不读取 `metrics`；Trending / Activity
+///   回写数量时，SwiftUI 只会重算这个 modifier，不会重新求值 `RepoListView.body`。
+/// - 数量行必须是 `VStack` 真实行，不能用 `safeAreaInset(edge: .top)`：macOS List
+///   会画到透明 inset 背后（与 `manageListTopInset` 同一条约束）。
+/// - 筛选行高度仍走 `ManageListFilterBarMetrics`，保证中栏和右栏顶区对齐。
 private struct RepoListNavigationSubtitleModifier: ViewModifier {
     let selectedPage: SidebarRootPage
     let selectedExploreMode: ExploreMode
@@ -107,10 +114,21 @@ private struct RepoListNavigationSubtitleModifier: ViewModifier {
     @Environment(\.locale) private var locale
 
     func body(content: Content) -> some View {
-        content.navigationSubtitle(navigationSubtitle)
+        VStack(alignment: .leading, spacing: 0) {
+            if !countText.isEmpty {
+                RepoListColumnCountHeader(text: countText) {
+                    if selectedPage == .trending {
+                        ExploreModeInfoButton(mode: selectedExploreMode)
+                            .id(selectedExploreMode)
+                    }
+                }
+            }
+            content
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    private var navigationSubtitle: String {
+    private var countText: String {
         switch selectedPage {
         case .manage:
             return manageSubtitle
@@ -214,6 +232,37 @@ private struct RepoListNavigationSubtitleModifier: ViewModifier {
             } ?? total ?? 0
             return (current, total)
         }
+    }
+}
+
+/// 中栏内容区第一行：仓库/条目数量 + 可选说明入口。
+///
+/// 系统 `navigationSubtitle` 不能放 Button。这一行顶替它，附件槽默认空，
+/// 后续星标 / 活动要加 popover 时只往这个槽塞，不必再改顶栏结构。
+private struct RepoListColumnCountHeader<Accessory: View>: View {
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+
+    let text: String
+    let accessory: Accessory
+
+    init(text: String, @ViewBuilder accessory: () -> Accessory) {
+        self.text = text
+        self.accessory = accessory()
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Text(verbatim: text)
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            accessory
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
+        // 紧贴标题栏面包屑；筛选行自己的 topPadding 负责和控件分开。
+        .padding(.top, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -556,7 +605,6 @@ struct RepoListView: View {
         contentBody
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(.clear)
-            .navigationTitle(navigationTitle)
             .modifier(RepoListNavigationSubtitleModifier(
                 selectedPage: selectedPage,
                 selectedExploreMode: selectedExploreMode,
@@ -574,6 +622,7 @@ struct RepoListView: View {
                 weeklySelectionService: dependencies.weeklySelectionService,
                 activityCategoryCountService: dependencies.activityCategoryCountService
             ))
+            .navigationTitle(navigationTitle)
             // W4 A5：多选模式底部浮动操作栏；W12 PR-4 扩展到 trending/weekly/activity；
             // W12 PR-5：统一 BatchActionBar(context:)，星标 / 探索共用同一组件。
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -2232,7 +2281,7 @@ struct RepoListView: View {
     }
 
     private var manageNavigationSubtitle: String {
-        // Smart Collections 总览：副标题是集合数量（与 sidebar 计数一致），不是仓库数。
+        // Smart Collections 总览：数量行是集合数量（与 sidebar 计数一致），不是仓库数。
         if case .smartCollectionsHome = viewModel.selection {
             return String(
                 format: String.l10n("smartCollections.collectionCountFormat"),
@@ -2373,7 +2422,7 @@ struct RepoListView: View {
     /// **为什么必须在拼字符串时就截断**：`.navigationTitle(_:)` 接的是裸 `String`，
     /// 直接绑到 macOS 窗口 chrome / NavigationStack title 区，**SwiftUI 没有 modifier 能
     /// 在 view 层 truncate**（`.lineLimit` 对 system title 无效）。任由 query 过长会
-    /// 把 toolbar 撑出列表栏右侧或挤掉计数副标题。
+    /// 把 toolbar 撑出列表栏右侧。
     ///
     /// **阈值 24 个 grapheme cluster**：经验值，覆盖典型搜索 90%+ 场景；中英混排在
     /// 280–400pt 列表栏宽度内不溢出。超长则后接 `…`（U+2026 HORIZONTAL ELLIPSIS

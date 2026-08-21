@@ -89,7 +89,7 @@ struct GitHubNotificationInboxView: View {
     }
 
     /// 只保留类型下拉 + 同步行，和星标中栏 `manageFilterBar` 同高。
-    /// 总数 / 未读走系统 `navigationSubtitle`（面包屑下一行），不要再叠 `通知 42` 标题。
+    /// 总数 / 未读走中栏数量行，不要再叠 `通知 42` 标题。
     @ViewBuilder
     private var toolbar: some View {
         HStack(spacing: 8) {

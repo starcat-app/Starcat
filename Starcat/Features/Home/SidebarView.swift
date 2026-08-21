@@ -909,12 +909,9 @@ struct SidebarView: View {
         ) {
             exploreSidebarSystemIcon(mode.systemImage, color: mode.sidebarIconColor)
         } title: {
-            HStack(spacing: 5) {
-                Text(mode.titleKey)
-                    .lineLimit(1)
-                // 信息按钮紧跟分类名，计数仍由外层 row 固定在最右侧，避免五行对齐被打散。
-                ExploreModeInfoButton(mode: mode)
-            }
+            // 分类备注入口已挪到中栏数量行，侧栏只保留「图标 + 名称 + 计数」。
+            Text(mode.titleKey)
+                .lineLimit(1)
         }
     }
 

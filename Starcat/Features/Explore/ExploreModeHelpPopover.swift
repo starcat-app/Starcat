@@ -3,7 +3,7 @@
 //  Starcat
 //
 //  探索分类的数据口径说明：复用 RAG 计划面板的结构化 popover 语言，
-//  让用户在侧栏即可核对每个分类的数据来源与入选规则。
+//  入口挂在中栏数量行「N 个仓库」后面，说明当前选中分类的数据来源与入选规则。
 //
 
 import SwiftUI
@@ -57,21 +57,9 @@ extension ExploreMode {
     }
 }
 
-/// 探索侧栏 info 图标色：比正文 `.secondary` 再淡一档，避免和分类名抢视觉。
+/// 中栏数量行上的分类说明入口；按钮自身持有 popover 状态，不污染列表选择。
 ///
-/// 明亮主题选中蓝底时反成半透明白（与 `ExploreSidebarIconStyle` 同机制）；
-/// 黑暗主题语义灰本身够用，不再强行漂白。`Color.secondary.opacity` 会随明暗主题自动适配。
-private struct ExploreModeInfoIconStyle: ShapeStyle {
-    func resolve(in environment: EnvironmentValues) -> some ShapeStyle {
-        if environment.backgroundProminence == .increased, environment.colorScheme == .light {
-            return AnyShapeStyle(Color.white.opacity(0.68))
-        }
-        // 故意弱化：辅助说明入口，不是可读正文；比 `.secondary` 更淡但仍可辨认可点。
-        return AnyShapeStyle(Color.secondary.opacity(0.52))
-    }
-}
-
-/// 探索侧栏分类标题后的说明入口；按钮自身持有 popover 状态，不污染侧栏选择状态。
+/// 颜色跟数量文案同用 `.secondary`：这里已经离开侧栏选中蓝底，不再需要反白。
 struct ExploreModeInfoButton: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
@@ -83,15 +71,15 @@ struct ExploreModeInfoButton: View {
             isPresented.toggle()
         } label: {
             Image(systemName: "info.circle")
-                .font(interfaceScale.font(size: 12, weight: .medium))
-                .foregroundStyle(ExploreModeInfoIconStyle())
+                .font(interfaceScale.font(.caption, weight: .medium))
+                .foregroundStyle(.secondary)
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .help(LocalizedStringKey(mode.helpOpenKey))
         .accessibilityLabel(Text(LocalizedStringKey(mode.helpOpenKey)))
-        // trailing：箭头贴在触发按钮右侧，弹层向右展开进中间栏，避免盖住侧栏分类列表。
-        .popover(isPresented: $isPresented, arrowEdge: .trailing) {
+        // bottom：箭头贴在触发按钮下沿，弹层向下展开进列表，避免盖住面包屑。
+        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             ExploreModeHelpPopover(mode: mode)
                 .appLocaleEnvironment()
         }
@@ -114,7 +102,7 @@ struct ExploreModeHelpPopover: View {
             }
             .padding(16)
         }
-        // 入口嵌在侧栏单行标题中，会继承外层 `.lineLimit(1)`；弹层必须显式清除该环境值，
+        // 入口曾嵌在侧栏单行标题中并继承 `.lineLimit(1)`；弹层必须显式清除该环境值，
         // 否则即使正文允许垂直扩展，来源和规则仍会在第一行末尾显示省略号。
         .lineLimit(nil)
         .frame(width: 360 * interfaceScale.multiplier, alignment: .leading)
