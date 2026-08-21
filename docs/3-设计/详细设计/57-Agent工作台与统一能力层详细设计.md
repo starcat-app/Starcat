@@ -1,6 +1,6 @@
 # 57 — Agent 工作台与统一能力层详细设计
 
-> 日期：2026-08-04（2026-08-14 修订 Agent 输出呈现）
+> 日期：2026-08-04（2026-08-21 修订外部 Runtime 边界）
 >
 > 状态：新版权威方案，P0～P4 已实现，产品化终审中
 >
@@ -33,7 +33,7 @@ Starcat Agent 不再按“重新建设一套 AI、上下文、工具和 CLI 集�
 3. Agent 通过受控 Knowledge Tool 复用现有 RAG Retriever、证据、引用和审计，不再复制一套检索流水线。
 4. 从现有 MCP Facade / Tool Registry 中抽取进程内共享能力和权限策略，由 Agent 与 MCP 分别适配。
 5. `starcat-cli` 继续作为外部 Agent 的跨平台 CLI 与 MCP stdio 桥，不是 Starcat 的模型 Provider。
-6. Starcat 主动托管 Codex、Claude Code、Gemini CLI 的 `CLIExternalAgentRuntime` 降为远期可选实验，不进入当前主线。
+6. Starcat 主动托管外部执行内核属于独立的 `ExternalAgentRuntime`：DeepSeek Harness 先进入 Direct-only POC；Codex、Claude Code、Gemini CLI 仍是远期 Provider 候选，不进入当前主线。
 7. `v19-agent-message-contract`、声明式 Workflow、业务上下文、Knowledge eligible 子集与 18 locale 已完成；当前阶段只收口自动化、真实人工门禁和多轮终审证据。
 8. Agent Run Surface 采用“过程可追踪、结果可阅读”的双层结构；原始消息链继续作为事实源，UI 不再把 tool call / result 逐条平铺成主阅读内容。
 
@@ -158,15 +158,16 @@ MCP 不是 App 内部所有模块必须调用的网络层。内置 Agent 禁止�
 
 它不包含 Starcat 业务逻辑，不直接读取 SQLite，也不作为 `AIClientProtocol` 的模型 Provider。
 
-### 3.5 外部 CLI Agent Runtime
+### 3.5 外部 Agent Runtime
 
-Starcat 主动启动 Codex、Claude Code、Gemini CLI，属于另一种能力：外部执行后端。
+Starcat 主动启动 DeepSeek Harness、Codex、Claude Code 或 Gemini CLI，属于另一种能力：由 Starcat 托管进程生命周期与会话协议的外部执行后端。
 
-该方向需要进程管理、Provider 原生事件、动态权限请求、工作目录、sandbox、子进程清理和渠道限制。现阶段已有 MCP/CLI 能满足“外部 Agent 使用 Starcat”的主要需求，因此：
+该方向需要进程管理、Provider 原生事件、动态权限请求、工作目录、sandbox、子进程清理和渠道限制。它与“外部 Agent 通过 `starcat-cli` / MCP 使用 Starcat”是两条不同链路，因此：
 
-- 不进入当前 P0～P3。
-- 不删除研究结论。
-- 只有确认必须在 Starcat UI 内托管外部 Agent 会话时，才单独立项。
+- 不进入当前 P0～P4，也不改变固定业务 Agent 的完成状态。
+- DeepSeek Harness 作为首个候选，只按 `58-DeepSeekHarness集成评估与POC技术方案.md` 实施 Direct-only POC。
+- Starcat 内部托管 Harness 时直接连接每 Session 临时 MCP HTTP Bridge，不经过 `starcat-cli`；CLI 继续服务外部 Agent Host。
+- POC 首期只读，禁用 Shell、FS、PTY、Job、Browser、Subagent 和任意第三方插件安装。
 - 仍限定 Direct build，不进入 Mac App Store 路线。
 
 ---
@@ -1016,15 +1017,17 @@ propose / dry-run
 
 P0～P3、定向自动化、Release 构建与真实入口门禁验收通过后，已于 2026-08-14 解除 `DebugFlags.agentToolbarEntry`；Pro、模型、用量和隐私边界保持不变。
 
-### P5：可选外部 CLI Runtime
+### P5：可选外部 Agent Runtime
 
-DeepSeek Harness 已作为首个候选 Runtime 完成架构评估，POC 边界、协议缺口、安全约束与 GO / NO-GO 条件见 `58-DeepSeekHarness集成评估与POC技术方案.md`。该评估不改变 P0～P4 的完成状态，也不代表外部 Runtime 已实现。
+DeepSeek Harness `0.1.0-rc.8` 已作为首个候选 Runtime 完成架构评估，POC 边界、协议缺口、安全约束与 GO / NO-GO 条件见 `58-DeepSeekHarness集成评估与POC技术方案.md`。该评估不改变 P0～P4 的完成状态，也不代表外部 Runtime 已实现。
+
+已冻结的首期链路是：Starcat Direct 通过 stdio JSON-RPC 控制 Session 专属 Harness Sidecar；Harness 通过每 Session 临时 Loopback MCP HTTP Bridge 使用 Starcat 只读 Capability。`starcat-cli` 不参与内部链路，第三方 Harness 插件不允许运行时安装。
 
 进入条件：
 
-- 用户明确需要在 Starcat UI 内托管 Codex/Claude/Gemini 会话。
+- 用户明确需要在 Starcat UI 内托管通用或研究型 Agent 会话。
 - 现有 MCP/CLI 外部工作流无法满足该需求。
-- 至少一个 Provider 有稳定双向事件与审批协议。
+- Harness JSON-RPC、临时 MCP Bridge、停止与进程清理完成 POC 验证。
 - Direct-only 的 sandbox、签名、进程组清理方案通过安全审查。
 
 未满足条件时不实施。
