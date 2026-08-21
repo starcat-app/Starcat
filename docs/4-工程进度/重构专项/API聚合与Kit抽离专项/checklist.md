@@ -58,7 +58,7 @@
 - [x] 人工执行 Fly secrets 同步（2026-08-08，未记录明文）
 - [x] 创建 `starcat-api` App 与 nrt Volume，并以维护模式完成首次部署；当前六个独立 App 继续承载生产
 - [ ] `starcat.ink` Sharing 公开路由验收（人工）
-- [ ] 1.4.0 appcast 与 App Store 更新说明加入老版本在线能力下线提示
+- [x] 1.4.0 appcast 与 App Store 更新说明加入老版本在线能力下线提示
 - [ ] 确认 Direct / App Store 1.4.0 均可下载后，六个旧 App Machine 直接停机
 - [ ] 旧 App 稳定观察与最终销毁（保留期结束后人工二次确认）
 

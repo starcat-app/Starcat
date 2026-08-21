@@ -6,6 +6,8 @@ Release notes for the Mac App Store edition of Starcat.
 
 Starcat 1.4.0 brings GitHub Notifications into Activity so you can handle mentions, review requests, and Issue / PR threads without leaving the app, while continuing to refine knowledge-base indexing and Explore.
 
+Important update: Starcat's online services have been upgraded. Please update to 1.4.0 as soon as possible. Older versions can still display existing local cache, but online refresh, recommendations, Discovery, Wiki, and sharing will no longer be available.
+
 ### New
 
 - GitHub notification inbox: Review mentions, review requests, assignments, discussions, releases, and security alerts in Activity. Filter by Unread, Mentions, Reviews, Issues, PRs, and more; group by Today, Yesterday, This week, and Earlier. All also interleaves your own Stars, Unstars, and Forks. The timeline distinguishes Issues from PRs; avatars and usernames open GitHub profiles, and Dependabot uses its official circular mark. Viewed items stay read, and the sync control spins while refreshing. Starcat asks to re-authorize if notification access is missing, and can post reminders in Notification Center.
@@ -31,6 +33,7 @@ Starcat 1.4.0 brings GitHub Notifications into Activity so you can handle mentio
 - Translation and AI-draft errors: Failures show as a bottom-right toast; incomplete AI setup can open Settings.
 - First-run coaching: Replaces overlapping system tips with a single yellow capsule.
 - Activity counts and help: List counts move to the system title-bar subtitle, and category help opens from the middle column.
+- Notification timeline pagination: Preloads the next page around eight items before the end, keeping long timelines moving without waiting at the bottom.
 
 ### Fixes
 
