@@ -8,6 +8,8 @@
 #
 # 设计约束：
 #   - 只构建 `Starcat` scheme，不碰 `StarcatDirect`。
+#   - App Store 正式包只允许使用 `/Applications/Xcode.app` 中的正式版 Xcode；
+#     Beta、RC、Preview 或其他路径在删除旧产物前直接拒绝。
 #   - 默认只产出 `.xcarchive`；设置 STARCAT_APPSTORE_EXPORT=1 时额外本地导出 `.pkg`，绝不上传。
 #   - Automatic Signing 的 archive 可以使用开发签名；Xcode 在 app-store-connect export
 #     阶段才会为主 App 与 Extension 统一换成 Distribution 签名和 Store profile。
@@ -39,12 +41,46 @@ EXPORT_OPTIONS_PATH="${DIST_DIR}/ExportOptions.generated.plist"
 DEVELOPMENT_TEAM_ID="${STARCAT_DEVELOPMENT_TEAM:-${DEVELOPMENT_TEAM:-}}"
 APPSTORE_SIGN_IDENTITY="${STARCAT_APPSTORE_SIGN_IDENTITY:-Apple Distribution}"
 APPSTORE_ENTITLEMENTS_PATH="${PROJECT_ROOT}/Starcat/Starcat.entitlements"
+FORMAL_XCODE_DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
 
 log() { printf '[appstore] %s\n' "$1"; }
 fail() { printf '[appstore] ERROR: %s\n' "$1" >&2; exit 1; }
 
 command -v xcodegen >/dev/null 2>&1 || fail "xcodegen 未安装"
-command -v xcodebuild >/dev/null 2>&1 || fail "xcodebuild 不在 PATH"
+command -v xcrun >/dev/null 2>&1 || fail "xcrun 不在 PATH"
+
+verify_formal_xcode() {
+  local xcodebuild_path
+  local developer_dir
+  local xcode_app_path
+  local xcode_version
+  local xcode_build
+  local xcode_icon_name
+
+  xcodebuild_path="$(xcrun --find xcodebuild 2>/dev/null || true)"
+  [ -n "$xcodebuild_path" ] || fail "无法通过 xcrun 定位 xcodebuild"
+
+  developer_dir="${xcodebuild_path%/usr/bin/xcodebuild}"
+  xcode_app_path="${developer_dir%/Contents/Developer}"
+  xcode_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$xcode_app_path/Contents/Info.plist" 2>/dev/null || true)"
+  xcode_build="$(/usr/libexec/PlistBuddy -c 'Print :ProductBuildVersion' "$xcode_app_path/Contents/version.plist" 2>/dev/null || true)"
+  xcode_icon_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconName' "$xcode_app_path/Contents/Info.plist" 2>/dev/null || true)"
+
+  # App Store Connect 会拒绝 Beta Xcode 生成的构建。固定正式版安装路径，
+  # 并检查 Beta 图标标记和 seed build 后缀，避免只修改 app 名称后绕过门禁。
+  [ "$developer_dir" = "$FORMAL_XCODE_DEVELOPER_DIR" ] || \
+    fail "App Store 正式包只允许使用 ${FORMAL_XCODE_DEVELOPER_DIR}；当前为 ${developer_dir}。请显式设置 DEVELOPER_DIR=${FORMAL_XCODE_DEVELOPER_DIR}"
+  [ -n "$xcode_version" ] || fail "无法读取正式版 Xcode 版本"
+  [ -n "$xcode_build" ] || fail "无法读取正式版 Xcode build"
+  if [[ "$xcode_icon_name" =~ [Bb]eta|[Pp]review|[Rr]elease[Cc]andidate ]] || [[ "$xcode_build" =~ [a-z]$ ]]; then
+    fail "App Store 正式包禁止使用 Beta/RC/Preview Xcode；当前为 Xcode ${xcode_version} (${xcode_build})"
+  fi
+
+  XCODEBUILD_BIN="$xcodebuild_path"
+  log "Xcode 正式版门禁通过: Xcode ${xcode_version} (${xcode_build})"
+}
+
+verify_formal_xcode
 
 cd "$PROJECT_ROOT"
 mkdir -p "$DIST_DIR"
@@ -63,7 +99,7 @@ if [ -n "$DEVELOPMENT_TEAM_ID" ]; then
 fi
 
 set +e
-xcodebuild \
+"$XCODEBUILD_BIN" \
   -quiet \
   -scheme Starcat \
   -configuration Release \
@@ -279,7 +315,7 @@ export_appstore_package() {
   plutil -insert manageAppVersionAndBuildNumber -bool NO "$EXPORT_OPTIONS_PATH"
 
   EXPORT_COMMAND=(
-    xcodebuild
+    "$XCODEBUILD_BIN"
     -exportArchive
     -archivePath "$ARCHIVE_PATH"
     -exportPath "$EXPORT_DIR"

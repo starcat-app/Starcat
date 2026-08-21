@@ -9,10 +9,16 @@
 # 进入 Starcat 主仓库。
 cd /Users/dong4j/Developer/1.AI/ai-incubator/Starcat
 
+# App Store 正式包只允许使用正式版 Xcode；先确认版本和 build。
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -version
+
 # 打包 App Store archive。
-STARCAT_DEVELOPMENT_TEAM=8WCUMGCWMB ./scripts/package-appstore.sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+STARCAT_DEVELOPMENT_TEAM=8WCUMGCWMB \
+./scripts/package-appstore.sh
 
 # 只在本机导出最终 App Store pkg，不上传 App Store Connect。
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 STARCAT_DEVELOPMENT_TEAM=8WCUMGCWMB \
 STARCAT_APPSTORE_EXPORT=1 \
 STARCAT_APPSTORE_ALLOW_PROVISIONING_UPDATES=1 \

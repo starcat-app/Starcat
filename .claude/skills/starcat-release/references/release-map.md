@@ -25,8 +25,13 @@
 dist/appstore/Starcat-AppStore.xcarchive
 ```
 
+该脚本只允许使用 `/Applications/Xcode.app/Contents/Developer` 中的正式版 Xcode。
+必须显式传入 `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`；Beta、RC、Preview
+或其他 Xcode 路径必须在删除旧产物前失败，不能用它们产生待审核构建。
+
 它会校验：
 
+- Xcode 为标准路径下的正式版，并记录 version / build；
 - `STARCAT_DISTRIBUTION=appstore`；
 - Bundle ID 为 `com.starcat.app.store`；
 - App Store 包包含 sandbox entitlement；
@@ -36,7 +41,7 @@ dist/appstore/Starcat-AppStore.xcarchive
 日常命令：
 
 ```bash
-make package-appstore
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer make package-appstore
 make open-appstore-archive
 ```
 
@@ -147,6 +152,7 @@ Direct 正式发布，也不要用它绕过双渠道签名、公证、上传和�
 | 失败点 | 建议处理 |
 |---|---|
 | 工作区不干净 | 停止；展示 `git status --short`；请用户决定 commit、stash 或确认范围 |
+| App Store 检测到 Beta/RC/Preview Xcode | 停止；改用 `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`，不复用已生成的待审核包 |
 | App Store archive 生成失败 | 停止；检查 `dist/appstore/xcodebuild-appstore.log`、Apple Distribution identity 与 App Store target 配置 |
 | Direct 分支不对 | 停止；询问是否切到 main，或是否仅为诊断显式跳过分支检查 |
 | 本地 tag 已存在 | Direct 重跑使用 `STARCAT_RELEASE_SKIP_TAG=1`；legacy 流程则判断是否需要删除本地 tag |

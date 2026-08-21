@@ -107,7 +107,13 @@ xcrun notarytool history --keychain-profile starcat-notary
 
 ### 4.2 本地 archive
 
+App Store 正式包只能使用 `/Applications/Xcode.app` 中的正式版 Xcode 构建。禁止使用
+Beta、RC 或 Preview；即使系统 `xcode-select` 指向其他版本，也必须显式设置
+`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`。打包脚本会先记录 Xcode 版本与 build，
+并在删除旧 archive 前拒绝非正式版。
+
 ```bash
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 STARCAT_DEVELOPMENT_TEAM=8WCUMGCWMB \
 ./scripts/package-appstore.sh
 ```
@@ -127,6 +133,7 @@ Automatic Signing 生成的 `.xcarchive` 是分发前中间产物，可以保留
 如需“打包但暂不上传”，本地导出最终 `.pkg`：
 
 ```bash
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 STARCAT_DEVELOPMENT_TEAM=8WCUMGCWMB \
 STARCAT_APPSTORE_EXPORT=1 \
 STARCAT_APPSTORE_ALLOW_PROVISIONING_UPDATES=1 \
@@ -293,12 +300,15 @@ xcodegen generate
 ### 6.3 App Store archive
 
 ```bash
-STARCAT_DEVELOPMENT_TEAM=8WCUMGCWMB ./scripts/package-appstore.sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+STARCAT_DEVELOPMENT_TEAM=8WCUMGCWMB \
+./scripts/package-appstore.sh
 ```
 
 只在本地生成 Distribution 签名的 `.pkg`，不上传：
 
 ```bash
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 STARCAT_DEVELOPMENT_TEAM=8WCUMGCWMB \
 STARCAT_APPSTORE_EXPORT=1 \
 STARCAT_APPSTORE_ALLOW_PROVISIONING_UPDATES=1 \
