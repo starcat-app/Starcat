@@ -146,8 +146,9 @@ struct AgentMessageTimelineView: View {
                 .lineSpacing(3)
                 .padding(.horizontal, 13)
                 .padding(.vertical, 9)
-                .frame(maxWidth: 560, alignment: .leading)
+                // 背景必须先跟随文本取得实际宽度；外层 frame 只负责限制长消息并靠右。
                 .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 8))
+                .frame(maxWidth: 560, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
     }
