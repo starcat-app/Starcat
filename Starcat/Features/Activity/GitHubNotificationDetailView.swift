@@ -76,9 +76,10 @@ struct GitHubNotificationDetailView: View {
             Divider()
             if !isComposerExpanded {
                 ScrollView {
-                    // 长会话继续用 LazyVStack 控制屏外卡片数量。正文不再挂 SwiftUI
-                    // SelectionOverlay；文字选择移到单卡片 AppKit popover，滚动不再改视图状态。
-                    LazyVStack(alignment: .leading, spacing: 12) {
+                    // GitHub API 单次 hydration 最多返回 100 条评论，数量有界。这里故意使用
+                    // VStack 一次性确定可变高度 Markdown 卡片的位置，避免 LazyVStack 在滚动时
+                    // 反复执行 LazySubviewPlacements，导致主线程陷入 SwiftUI 布局风暴。
+                    VStack(alignment: .leading, spacing: 12) {
                         if let payload = item.notification {
                             repoRow(payload)
                             conversation(payload, translation: translationVM)
