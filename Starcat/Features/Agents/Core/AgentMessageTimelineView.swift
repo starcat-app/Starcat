@@ -40,7 +40,9 @@ struct AgentMessageTimelineView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 18) {
+            // 顶层节点数量有界，而 Markdown / 工具过程高度会动态变化。这里必须使用
+            // eager stack，避免 LazyStack 在滚动时反复解析可见项位置并占满主线程。
+            VStack(alignment: .leading, spacing: 18) {
                 if isEmpty {
                     emptyState
                 } else {
