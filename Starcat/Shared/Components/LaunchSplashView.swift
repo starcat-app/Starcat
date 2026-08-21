@@ -213,11 +213,13 @@ struct LaunchSplashContainer<Content: View>: View {
             return isFirstLaunch ? LaunchSplashTiming.firstLaunchMinimum : LaunchSplashTiming.standardMinimum
         }()
 
-        async let restoreCompleted: Bool = restoreSessionWithinSplashBudget()
-        async let minWait: Void = {
-            try? await Task.sleep(for: minimumDisplay)
-        }()
-        let (didFinishRestore, _) = await (restoreCompleted, minWait)
+        // `async let` 会把 View 的实例方法送入 nonisolated child task；显式 MainActor Task
+        // 既保留与最短展示时间并行执行，也不跨 actor 发送非 Sendable 的 View 值。
+        let restoreTask = Task { @MainActor in
+            await restoreSessionWithinSplashBudget()
+        }
+        try? await Task.sleep(for: minimumDisplay)
+        let didFinishRestore = await restoreTask.value
 
         if !didFinishRestore {
             AppLog.auth.warning("restore: splash budget exceeded; continuing startup without blocking UI")

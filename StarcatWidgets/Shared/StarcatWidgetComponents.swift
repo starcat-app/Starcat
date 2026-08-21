@@ -134,6 +134,9 @@ struct StarcatWidgetEmptyView: View {
 }
 
 extension StarcatWidgetContent {
+    /// 返回 SwiftUI View 的初始化也受 MainActor 隔离；显式标注避免 Release WMO
+    /// 把这个纯模型 extension 入口推断为 nonisolated 后产生跨 actor 调用。
+    @MainActor
     var emptyView: StarcatWidgetEmptyView? {
         switch self {
         case .snapshot:

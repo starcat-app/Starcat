@@ -178,7 +178,8 @@ final class StarcatMCPService {
             )
         )
 
-        startupTask = Task { @MainActor in
+        startupTask = Task { @MainActor [weak self] in
+            guard let self else { return }
             do {
                 // NWListener.cancel() 是异步的，重启场景下旧 listener 的 socket
                 // 释放有延迟；这里重试最多 10 次（每次等 200ms，累计 2s），

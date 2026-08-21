@@ -47,7 +47,7 @@ struct RepoTagsSection: View {
             }
             chipsRow
         }
-        .task(id: repo.id) {
+        .task(id: repo.id) { [homeViewModel] in
             if viewModel == nil {
                 viewModel = RepoTagsSectionViewModel(
                     tagRepository: dependencies.tagRepository,

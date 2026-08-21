@@ -18,7 +18,7 @@ import SwiftUI
 struct StarcatCommandAction {
     let title: String
     let isEnabled: Bool
-    let perform: @MainActor () -> Void
+    let perform: @MainActor @Sendable () -> Void
 }
 
 /// 主窗口内可被 `⌘R` 刷新的两类目标。
@@ -51,8 +51,8 @@ final class StarcatCommandRouter {
     private struct MainWindowActions {
         let ownerID: UUID
         let globalSearchShortcut: KeyboardShortcutConfiguration
-        let openGlobalSearch: @MainActor () -> Void
-        let openKnowledgeRAGWorkspace: @MainActor () -> Void
+        let openGlobalSearch: @MainActor @Sendable () -> Void
+        let openKnowledgeRAGWorkspace: @MainActor @Sendable () -> Void
     }
 
     private var mainWindowActions: MainWindowActions?
@@ -85,8 +85,8 @@ final class StarcatCommandRouter {
     func registerMainWindowActions(
         ownerID: UUID,
         globalSearchShortcut: KeyboardShortcutConfiguration,
-        openGlobalSearch: @escaping @MainActor () -> Void,
-        openKnowledgeRAGWorkspace: @escaping @MainActor () -> Void
+        openGlobalSearch: @escaping @MainActor @Sendable () -> Void,
+        openKnowledgeRAGWorkspace: @escaping @MainActor @Sendable () -> Void
     ) {
         mainWindowActions = MainWindowActions(
             ownerID: ownerID,
@@ -214,7 +214,7 @@ private struct StarcatRefreshCommandModifier: ViewModifier {
     let identity: String
     let title: String
     let isEnabled: Bool
-    let action: @MainActor () -> Void
+    let action: @MainActor @Sendable () -> Void
 
     func body(content: Content) -> some View {
         let command = StarcatCommandAction(title: title, isEnabled: isEnabled, perform: action)
@@ -247,7 +247,7 @@ private struct StarcatRepositoryAICommandModifier: ViewModifier {
 
     let identity: String
     let isEnabled: Bool
-    let action: @MainActor () -> Void
+    let action: @MainActor @Sendable () -> Void
 
     func body(content: Content) -> some View {
         let command = StarcatCommandAction(
@@ -293,7 +293,7 @@ extension View {
         identity: String,
         title: String,
         isEnabled: Bool = true,
-        action: @escaping @MainActor () -> Void
+        action: @escaping @MainActor @Sendable () -> Void
     ) -> some View {
         modifier(StarcatRefreshCommandModifier(
             pane: pane,
@@ -308,7 +308,7 @@ extension View {
     func starcatRepositoryAICommand(
         identity: String,
         isEnabled: Bool,
-        action: @escaping @MainActor () -> Void
+        action: @escaping @MainActor @Sendable () -> Void
     ) -> some View {
         modifier(StarcatRepositoryAICommandModifier(
             identity: identity,

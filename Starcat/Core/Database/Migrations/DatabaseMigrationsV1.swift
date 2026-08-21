@@ -36,11 +36,13 @@
 //    `v8-rag-suggested-actions` / `v9-rag-metadata-keyword-only` /
 //    `v10-rag-conversation-pinned-at` / `v11-rag-embedding-claim` /
 //    `v12-rag-metadata-revision` / `v13-weekly-multi-source` /
-//    `v14-ai-usage-events` / `v15-repo-pins` / `v16-repository-insights`
-//    `v17-my-projects` / `v18-rag-structured-citations` / `v19-agent-message-contract` /
-    //    `v20-rag-chunks-fts-trigram` / `v21-github-notifications` /
-    //    `v22-github-notification-comments` / `v23-github-notification-subject-created` /
-    //    `v24-user-repo-activity`
+//    `v14-ai-usage-events` / `v15-repo-pins` / `v16-repository-insights` /
+//    `v17-my-projects` / `v18-rag-structured-citations` / `v19-release-1.4.0`
+//
+//  **1.4.0 开发期迁移（已由正式 v19 合并接管）**：
+//  `v19-agent-message-contract` 至 `v26-github-timeline-conversations` 仅在开发构建中出现过。
+//  正式 v19 使用 GRDB merging migration，既让 v18 正式用户一次升级，也让已执行部分或全部
+//  开发期迁移的本机数据库原子收口到同一个正式标识。
 //
 
 import Foundation
@@ -51,6 +53,18 @@ import GRDB
 /// 暴露一个 `registerAll(into:)` 方法将所有版本注册到 GRDB DatabaseMigrator，
 /// 由 DatabaseManager 在启动时调用。
 enum DatabaseMigrations {
+
+    private static let releaseV19Identifier = "v19-release-1.4.0"
+    private static let releaseV19DevelopmentIdentifiers: Set<String> = [
+        "v19-agent-message-contract",
+        "v20-rag-chunks-fts-trigram",
+        "v21-github-notifications",
+        "v22-github-notification-comments",
+        "v23-github-notification-subject-created",
+        "v24-user-repo-activity",
+        "v25-user-repo-activity-actor",
+        "v26-github-timeline-conversations",
+    ]
 
     /// 将所有版本的迁移注册到 migrator。
     ///
@@ -76,71 +90,129 @@ enum DatabaseMigrations {
         registerV17(into: &migrator)
         registerV18(into: &migrator)
         registerV19(into: &migrator)
-        registerV20(into: &migrator)
-        registerV21(into: &migrator)
-        registerV22(into: &migrator)
-        registerV23(into: &migrator)
-        registerV24(into: &migrator)
-        registerV25(into: &migrator)
-        registerV26(into: &migrator)
     }
+
+    // MARK: - v19-release-1.4.0：1.4.0 正式版 schema 收口（2026-08-21）
+
+    /// 开发期为便于独立验证，先后登记了 v19...v26。正式发布时这些变更对线上 v18 用户
+    /// 必须表现为一次升级；同时开发机可能停在任意中间版本，不能要求删库重建。
+    ///
+    /// GRDB 的 merging migration 会在同一事务中：
+    /// 1. 把已执行的开发期标识传入闭包，只补缺失步骤；
+    /// 2. 删除旧标识并写入唯一的正式 v19 标识。
+    ///
+    /// 禁止手工改写 `grdb_migrations`，否则 schema 与迁移账本可能失配。
+    private static func registerV19(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration(
+            releaseV19Identifier,
+            merging: releaseV19DevelopmentIdentifiers
+        ) { db, appliedIdentifiers in
+            if !appliedIdentifiers.contains("v19-agent-message-contract") {
+                try applyAgentMessageContractV19(db)
+            }
+            if !appliedIdentifiers.contains("v20-rag-chunks-fts-trigram") {
+                try applyRAGChunksFTSTrigramV19(db)
+            }
+            if !appliedIdentifiers.contains("v21-github-notifications") {
+                try applyGitHubNotificationsV19(db)
+            }
+            if !appliedIdentifiers.contains("v22-github-notification-comments") {
+                try applyGitHubNotificationCommentsV19(db)
+            }
+            if !appliedIdentifiers.contains("v23-github-notification-subject-created") {
+                try applyGitHubNotificationSubjectCreatedV19(db)
+            }
+            if !appliedIdentifiers.contains("v24-user-repo-activity") {
+                try applyUserRepoActivityV19(db)
+            }
+            if !appliedIdentifiers.contains("v25-user-repo-activity-actor") {
+                try applyUserRepoActivityActorV19(db)
+            }
+            if !appliedIdentifiers.contains("v26-github-timeline-conversations") {
+                try applyGitHubTimelineConversationsV19(db)
+            }
+        }
+    }
+
+#if DEBUG
+    /// 只供迁移测试重建开发期数据库状态，生产启动路径始终只注册正式 v19。
+    static func registerRelease140DevelopmentMigrationsForTesting(
+        into migrator: inout DatabaseMigrator
+    ) {
+        migrator.registerMigration("v19-agent-message-contract", migrate: applyAgentMessageContractV19)
+        migrator.registerMigration("v20-rag-chunks-fts-trigram", migrate: applyRAGChunksFTSTrigramV19)
+        migrator.registerMigration("v21-github-notifications", migrate: applyGitHubNotificationsV19)
+        migrator.registerMigration(
+            "v22-github-notification-comments",
+            migrate: applyGitHubNotificationCommentsV19
+        )
+        migrator.registerMigration(
+            "v23-github-notification-subject-created",
+            migrate: applyGitHubNotificationSubjectCreatedV19
+        )
+        migrator.registerMigration("v24-user-repo-activity", migrate: applyUserRepoActivityV19)
+        migrator.registerMigration("v25-user-repo-activity-actor", migrate: applyUserRepoActivityActorV19)
+        migrator.registerMigration(
+            "v26-github-timeline-conversations",
+            migrate: applyGitHubTimelineConversationsV19
+        )
+    }
+#endif
 
     // MARK: - v26-github-timeline-conversations：组织 Issue 并入本地时间线（2026-08-21）
 
     /// v21 的通知表已经承载会话正文、评论和游标分页。这里把它扩成统一时间线会话缓存，
     /// 真实 GitHub 通知仍保留独立 thread id；组织 Issue 只复用展示和详情能力，不伪造已读 / Done。
     /// 私有 Issue 仍跟随当前 GitHub 用户数据库隔离，不进入 CloudKit、导出或 Discovery。
-    private static func registerV26(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v26-github-timeline-conversations") { db in
-            guard try db.tableExists("github_notification_threads") else { return }
-            let columns = try db.columns(in: "github_notification_threads").map(\.name)
-            try db.alter(table: "github_notification_threads") { t in
-                if !columns.contains("notification_thread_id") {
-                    t.add(column: "notification_thread_id", .text)
-                }
-                if !columns.contains("source_kind") {
-                    t.add(column: "source_kind", .text).notNull().defaults(to: "notification")
-                }
-                if !columns.contains("organization_login") {
-                    t.add(column: "organization_login", .text)
-                }
-                if !columns.contains("credential_source") {
-                    t.add(column: "credential_source", .text)
-                }
-                if !columns.contains("issue_state") {
-                    t.add(column: "issue_state", .text)
-                }
+    private static func applyGitHubTimelineConversationsV19(_ db: Database) throws {
+        guard try db.tableExists("github_notification_threads") else { return }
+        let columns = try db.columns(in: "github_notification_threads").map(\.name)
+        try db.alter(table: "github_notification_threads") { t in
+            if !columns.contains("notification_thread_id") {
+                t.add(column: "notification_thread_id", .text)
             }
-            try db.execute(
-                sql: """
-                    UPDATE github_notification_threads
-                    SET notification_thread_id = id
-                    WHERE notification_thread_id IS NULL AND source_kind = 'notification'
-                    """
-            )
-            try db.create(
-                index: "idx_github_timeline_subject_api_url",
-                on: "github_notification_threads",
-                columns: ["subject_api_url"],
-                ifNotExists: true
-            )
-            try db.create(
-                index: "idx_github_timeline_source",
-                on: "github_notification_threads",
-                columns: ["source_kind", "organization_login", "updated_at"],
-                ifNotExists: true
-            )
+            if !columns.contains("source_kind") {
+                t.add(column: "source_kind", .text).notNull().defaults(to: "notification")
+            }
+            if !columns.contains("organization_login") {
+                t.add(column: "organization_login", .text)
+            }
+            if !columns.contains("credential_source") {
+                t.add(column: "credential_source", .text)
+            }
+            if !columns.contains("issue_state") {
+                t.add(column: "issue_state", .text)
+            }
+        }
+        try db.execute(
+            sql: """
+                UPDATE github_notification_threads
+                SET notification_thread_id = id
+                WHERE notification_thread_id IS NULL AND source_kind = 'notification'
+                """
+        )
+        try db.create(
+            index: "idx_github_timeline_subject_api_url",
+            on: "github_notification_threads",
+            columns: ["subject_api_url"],
+            ifNotExists: true
+        )
+        try db.create(
+            index: "idx_github_timeline_source",
+            on: "github_notification_threads",
+            columns: ["source_kind", "organization_login", "updated_at"],
+            ifNotExists: true
+        )
 
-            try db.create(table: "github_organization_issue_sync_state", ifNotExists: true) { t in
-                t.column("scope_key", .text).primaryKey()
-                t.column("organization_login", .text).notNull()
-                t.column("credential_source", .text).notNull()
-                t.column("next_page", .integer)
-                t.column("watermark_updated_at", .text)
-                t.column("backfill_completed_at", .text)
-                t.column("last_fetched_at", .text)
-                t.column("last_error", .text)
-            }
+        try db.create(table: "github_organization_issue_sync_state", ifNotExists: true) { t in
+            t.column("scope_key", .text).primaryKey()
+            t.column("organization_login", .text).notNull()
+            t.column("credential_source", .text).notNull()
+            t.column("next_page", .integer)
+            t.column("watermark_updated_at", .text)
+            t.column("backfill_completed_at", .text)
+            t.column("last_fetched_at", .text)
+            t.column("last_error", .text)
         }
     }
 
@@ -149,38 +221,36 @@ enum DatabaseMigrations {
     /// 推荐要用「谁 star 了哪个项目」。v24 行没有身份，库又按 GitHub user 目录隔离，
     /// 导出后会变成匿名 `(repo, time)`。已落地表只能 ALTER，不能改 v24 建表语句。
     /// `user_name` 存 GitHub `login`；旧行的 `user_id` 能从 `starred_repos` 抄，login 等打开时间线再补。
-    private static func registerV25(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v25-user-repo-activity-actor") { db in
-            guard try db.tableExists("user_repo_activity") else { return }
-            let columns = try db.columns(in: "user_repo_activity").map(\.name)
-            if !columns.contains("user_id") {
-                try db.alter(table: "user_repo_activity") { t in
-                    t.add(column: "user_id", .integer)
-                }
+    private static func applyUserRepoActivityActorV19(_ db: Database) throws {
+        guard try db.tableExists("user_repo_activity") else { return }
+        let columns = try db.columns(in: "user_repo_activity").map(\.name)
+        if !columns.contains("user_id") {
+            try db.alter(table: "user_repo_activity") { t in
+                t.add(column: "user_id", .integer)
             }
-            if !columns.contains("user_name") {
-                try db.alter(table: "user_repo_activity") { t in
-                    t.add(column: "user_name", .text)
-                }
-            }
-            try db.create(
-                index: "idx_user_repo_activity_user",
-                on: "user_repo_activity",
-                columns: ["user_id", "occurred_at"],
-                ifNotExists: true
-            )
-            guard try db.tableExists("starred_repos") else { return }
-            try db.execute(
-                sql: """
-                    UPDATE user_repo_activity
-                    SET user_id = (
-                        SELECT sr.user_id FROM starred_repos sr
-                        WHERE sr.repo_id = user_repo_activity.repo_id
-                    )
-                    WHERE user_id IS NULL
-                    """
-            )
         }
+        if !columns.contains("user_name") {
+            try db.alter(table: "user_repo_activity") { t in
+                t.add(column: "user_name", .text)
+            }
+        }
+        try db.create(
+            index: "idx_user_repo_activity_user",
+            on: "user_repo_activity",
+            columns: ["user_id", "occurred_at"],
+            ifNotExists: true
+        )
+        guard try db.tableExists("starred_repos") else { return }
+        try db.execute(
+            sql: """
+                UPDATE user_repo_activity
+                SET user_id = (
+                    SELECT sr.user_id FROM starred_repos sr
+                    WHERE sr.repo_id = user_repo_activity.repo_id
+                )
+                WHERE user_id IS NULL
+                """
+        )
     }
 
     // MARK: - v24-user-repo-activity：当前用户 Star / Unstar / Fork 账本（2026-08-20）
@@ -188,43 +258,39 @@ enum DatabaseMigrations {
     /// 通知时间线要混入「我自己对仓库做的事」。GitHub Notifications 没有这些事件，
     /// 也不能写进 `github_notification_threads`（那张表的 id / PATCH / Done 都按 GitHub thread）。
     /// 只追加、不覆盖；Star 可能来自 App 或 Stars 同步，Unstar 的 GitHub 网页操作只能在全量同步发现。
-    private static func registerV24(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v24-user-repo-activity") { db in
-            try db.create(table: "user_repo_activity") { t in
-                t.column("id", .text).primaryKey()
-                t.column("kind", .text).notNull()
-                t.column("source", .text).notNull()
-                t.column("repo_id", .integer).notNull()
-                t.column("full_name", .text).notNull()
-                t.column("html_url", .text).notNull()
-                t.column("occurred_at", .text).notNull()
-                t.column("created_at", .text).notNull()
-            }
-            try db.create(
-                index: "idx_user_repo_activity_occurred",
-                on: "user_repo_activity",
-                columns: ["occurred_at", "id"]
-            )
-            try db.create(
-                index: "idx_user_repo_activity_repo",
-                on: "user_repo_activity",
-                columns: ["repo_id", "occurred_at"]
-            )
+    private static func applyUserRepoActivityV19(_ db: Database) throws {
+        try db.create(table: "user_repo_activity") { t in
+            t.column("id", .text).primaryKey()
+            t.column("kind", .text).notNull()
+            t.column("source", .text).notNull()
+            t.column("repo_id", .integer).notNull()
+            t.column("full_name", .text).notNull()
+            t.column("html_url", .text).notNull()
+            t.column("occurred_at", .text).notNull()
+            t.column("created_at", .text).notNull()
         }
+        try db.create(
+            index: "idx_user_repo_activity_occurred",
+            on: "user_repo_activity",
+            columns: ["occurred_at", "id"]
+        )
+        try db.create(
+            index: "idx_user_repo_activity_repo",
+            on: "user_repo_activity",
+            columns: ["repo_id", "occurred_at"]
+        )
     }
 
     // MARK: - v23-github-notification-subject-created：Issue / PR 开帖时间（2026-08-19）
 
     /// 详情「发布了这条」需要 `created_at`；列表 `updated_at` 是最后一条评论时间。
     /// 表不存在则 no-op。已 hydrate 但缺这个字段的行，选中后会再补一次 subject。
-    private static func registerV23(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v23-github-notification-subject-created") { db in
-            guard try db.tableExists("github_notification_threads") else { return }
-            let columns = try db.columns(in: "github_notification_threads").map(\.name)
-            if !columns.contains("subject_created_at") {
-                try db.alter(table: "github_notification_threads") { t in
-                    t.add(column: "subject_created_at", .text)
-                }
+    private static func applyGitHubNotificationSubjectCreatedV19(_ db: Database) throws {
+        guard try db.tableExists("github_notification_threads") else { return }
+        let columns = try db.columns(in: "github_notification_threads").map(\.name)
+        if !columns.contains("subject_created_at") {
+            try db.alter(table: "github_notification_threads") { t in
+                t.add(column: "subject_created_at", .text)
             }
         }
     }
@@ -233,73 +299,69 @@ enum DatabaseMigrations {
 
     /// v21 把正文截成 500 字，详情页对不上 GitHub Issue。本迁移加 `comments_json`，
     /// 并清掉已截断的 hydrate 缓存，选中后重拉全文和评论。表不存在则 no-op。
-    private static func registerV22(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v22-github-notification-comments") { db in
-            guard try db.tableExists("github_notification_threads") else { return }
-            let columns = try db.columns(in: "github_notification_threads").map(\.name)
-            if !columns.contains("comments_json") {
-                try db.alter(table: "github_notification_threads") { t in
-                    t.add(column: "comments_json", .text)
-                }
+    private static func applyGitHubNotificationCommentsV19(_ db: Database) throws {
+        guard try db.tableExists("github_notification_threads") else { return }
+        let columns = try db.columns(in: "github_notification_threads").map(\.name)
+        if !columns.contains("comments_json") {
+            try db.alter(table: "github_notification_threads") { t in
+                t.add(column: "comments_json", .text)
             }
-            try db.execute(sql: """
-                UPDATE github_notification_threads
-                SET excerpt = NULL, hydrated_at = NULL, comments_json = NULL
-                """)
         }
+        try db.execute(sql: """
+            UPDATE github_notification_threads
+            SET excerpt = NULL, hydrated_at = NULL, comments_json = NULL
+            """)
     }
 
     // MARK: - v21-github-notifications：GitHub 通知时间线（2026-08-19）
 
     /// 活动页「通知」inbox。独立于 `activity_events`（那是 following 的 received_events）。
     /// 已发布库只能追加迁移；thread 已读 / 摘录缓存均为本机数据，不进 CloudKit。
-    private static func registerV21(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v21-github-notifications") { db in
-            try db.create(table: "github_notification_threads") { t in
-                t.column("id", .text).primaryKey()
-                t.column("reason", .text).notNull()
-                t.column("unread", .boolean).notNull().defaults(to: true)
-                t.column("github_unread", .boolean).notNull().defaults(to: true)
-                t.column("repository_id", .integer)
-                t.column("repository_full_name", .text).notNull()
-                t.column("subject_title", .text).notNull()
-                t.column("subject_type", .text).notNull()
-                t.column("subject_api_url", .text).notNull()
-                t.column("subject_number", .integer)
-                t.column("html_url", .text)
-                t.column("actor_login", .text)
-                t.column("excerpt", .text)
-                t.column("hydrated_at", .text)
-                t.column("updated_at", .text).notNull()
-                t.column("first_seen_at", .text).notNull()
-                t.column("notified_at", .text)
-                t.column("mark_read_state", .text).notNull().defaults(to: "idle")
-                t.column("fetched_at", .text).notNull()
-            }
-            try db.create(
-                index: "idx_github_notification_threads_updated",
-                on: "github_notification_threads",
-                columns: ["updated_at"]
-            )
-            try db.create(
-                index: "idx_github_notification_threads_unread",
-                on: "github_notification_threads",
-                columns: ["unread"]
-            )
-            try db.create(
-                index: "idx_github_notification_threads_reason",
-                on: "github_notification_threads",
-                columns: ["reason"]
-            )
+    private static func applyGitHubNotificationsV19(_ db: Database) throws {
+        try db.create(table: "github_notification_threads") { t in
+            t.column("id", .text).primaryKey()
+            t.column("reason", .text).notNull()
+            t.column("unread", .boolean).notNull().defaults(to: true)
+            t.column("github_unread", .boolean).notNull().defaults(to: true)
+            t.column("repository_id", .integer)
+            t.column("repository_full_name", .text).notNull()
+            t.column("subject_title", .text).notNull()
+            t.column("subject_type", .text).notNull()
+            t.column("subject_api_url", .text).notNull()
+            t.column("subject_number", .integer)
+            t.column("html_url", .text)
+            t.column("actor_login", .text)
+            t.column("excerpt", .text)
+            t.column("hydrated_at", .text)
+            t.column("updated_at", .text).notNull()
+            t.column("first_seen_at", .text).notNull()
+            t.column("notified_at", .text)
+            t.column("mark_read_state", .text).notNull().defaults(to: "idle")
+            t.column("fetched_at", .text).notNull()
+        }
+        try db.create(
+            index: "idx_github_notification_threads_updated",
+            on: "github_notification_threads",
+            columns: ["updated_at"]
+        )
+        try db.create(
+            index: "idx_github_notification_threads_unread",
+            on: "github_notification_threads",
+            columns: ["unread"]
+        )
+        try db.create(
+            index: "idx_github_notification_threads_reason",
+            on: "github_notification_threads",
+            columns: ["reason"]
+        )
 
-            try db.create(table: "github_notification_sync_state") { t in
-                t.column("id", .text).primaryKey()
-                t.column("last_modified", .text)
-                t.column("watermark_updated_at", .text)
-                t.column("last_fetched_at", .text)
-                t.column("backfill_completed_at", .text)
-                t.column("last_poll_interval_seconds", .integer)
-            }
+        try db.create(table: "github_notification_sync_state") { t in
+            t.column("id", .text).primaryKey()
+            t.column("last_modified", .text)
+            t.column("watermark_updated_at", .text)
+            t.column("last_fetched_at", .text)
+            t.column("backfill_completed_at", .text)
+            t.column("last_poll_interval_seconds", .integer)
         }
     }
 
@@ -309,48 +371,46 @@ enum DatabaseMigrations {
     /// 与 `notes_fts` 同一决策：trigram 做中缀；不足 3 个字符的 query 无法命中，
     /// 由 `RAGKeywordQueryBuilder` 从 SQLite 表达式里丢掉。`repos_fts` 保持 unicode61。
     /// v7 建表 SQL 已冻结，这里只重建 FTS；尚无 `rag_chunks` 的安装 no-op。
-    private static func registerV20(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v20-rag-chunks-fts-trigram") { db in
-            guard try db.tableExists("rag_chunks") else { return }
+    private static func applyRAGChunksFTSTrigramV19(_ db: Database) throws {
+        guard try db.tableExists("rag_chunks") else { return }
 
-            try db.execute(sql: "DROP TRIGGER IF EXISTS rag_chunks_ai")
-            try db.execute(sql: "DROP TRIGGER IF EXISTS rag_chunks_ad")
-            try db.execute(sql: "DROP TRIGGER IF EXISTS rag_chunks_au")
-            try db.execute(sql: "DROP TABLE IF EXISTS rag_chunks_fts")
+        try db.execute(sql: "DROP TRIGGER IF EXISTS rag_chunks_ai")
+        try db.execute(sql: "DROP TRIGGER IF EXISTS rag_chunks_ad")
+        try db.execute(sql: "DROP TRIGGER IF EXISTS rag_chunks_au")
+        try db.execute(sql: "DROP TABLE IF EXISTS rag_chunks_fts")
 
-            try db.execute(sql: """
-                CREATE VIRTUAL TABLE rag_chunks_fts USING fts5(
-                    title,
-                    section_path,
-                    content,
-                    content='rag_chunks',
-                    content_rowid='id',
-                    tokenize='trigram'
-                )
-                """)
-            try db.execute(sql: """
-                CREATE TRIGGER rag_chunks_ai AFTER INSERT ON rag_chunks BEGIN
-                    INSERT INTO rag_chunks_fts(rowid, title, section_path, content)
-                    VALUES (new.id, new.title, new.section_path, new.content);
-                END
-                """)
-            try db.execute(sql: """
-                CREATE TRIGGER rag_chunks_ad AFTER DELETE ON rag_chunks BEGIN
-                    INSERT INTO rag_chunks_fts(rag_chunks_fts, rowid, title, section_path, content)
-                    VALUES ('delete', old.id, old.title, old.section_path, old.content);
-                END
-                """)
-            try db.execute(sql: """
-                CREATE TRIGGER rag_chunks_au AFTER UPDATE ON rag_chunks BEGIN
-                    INSERT INTO rag_chunks_fts(rag_chunks_fts, rowid, title, section_path, content)
-                    VALUES ('delete', old.id, old.title, old.section_path, old.content);
-                    INSERT INTO rag_chunks_fts(rowid, title, section_path, content)
-                    VALUES (new.id, new.title, new.section_path, new.content);
-                END
-                """)
-            // 外部内容表 CREATE 后是空索引；rebuild 从 rag_chunks 回填，避免老用户升级后全文检索全空。
-            try db.execute(sql: "INSERT INTO rag_chunks_fts(rag_chunks_fts) VALUES('rebuild')")
-        }
+        try db.execute(sql: """
+            CREATE VIRTUAL TABLE rag_chunks_fts USING fts5(
+                title,
+                section_path,
+                content,
+                content='rag_chunks',
+                content_rowid='id',
+                tokenize='trigram'
+            )
+            """)
+        try db.execute(sql: """
+            CREATE TRIGGER rag_chunks_ai AFTER INSERT ON rag_chunks BEGIN
+                INSERT INTO rag_chunks_fts(rowid, title, section_path, content)
+                VALUES (new.id, new.title, new.section_path, new.content);
+            END
+            """)
+        try db.execute(sql: """
+            CREATE TRIGGER rag_chunks_ad AFTER DELETE ON rag_chunks BEGIN
+                INSERT INTO rag_chunks_fts(rag_chunks_fts, rowid, title, section_path, content)
+                VALUES ('delete', old.id, old.title, old.section_path, old.content);
+            END
+            """)
+        try db.execute(sql: """
+            CREATE TRIGGER rag_chunks_au AFTER UPDATE ON rag_chunks BEGIN
+                INSERT INTO rag_chunks_fts(rag_chunks_fts, rowid, title, section_path, content)
+                VALUES ('delete', old.id, old.title, old.section_path, old.content);
+                INSERT INTO rag_chunks_fts(rowid, title, section_path, content)
+                VALUES (new.id, new.title, new.section_path, new.content);
+            END
+            """)
+        // 外部内容表 CREATE 后是空索引；rebuild 从 rag_chunks 回填，避免老用户升级后全文检索全空。
+        try db.execute(sql: "INSERT INTO rag_chunks_fts(rag_chunks_fts) VALUES('rebuild')")
     }
 
     // MARK: - v19-agent-message-contract：Agent 可回放事实契约（2026-08-04）
@@ -361,21 +421,19 @@ enum DatabaseMigrations {
     /// - 旧 prompt / assistant_output 转成 user / assistant message；
     /// - 旧 artifact_index 搬到 sequence，彻底移除会阻断新版 insert 的 NOT NULL 列；
     /// - 无法无损映射为新版 tool-call 关系的旧事件表改名归档，应用层不做永久双读。
-    private static func registerV19(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v19-agent-message-contract") { db in
-            try db.alter(table: "agent_runs") { table in
-                // 默认值只服务 ALTER TABLE 对既有行的兼容；下方会立刻写入可解码的快照。
-                table.add(column: "context_json", .text).notNull().defaults(to: "")
-                table.add(column: "model", .text)
-                table.add(column: "usage_json", .text)
-            }
-
-            try createAgentMessagesV19(db)
-            try createAgentApprovalsV19(db)
-            try migrateLegacyAgentRunsV19(db)
-            try rebuildAgentArtifactsV19(db)
-            try archiveLegacyAgentEventTablesV19(db)
+    private static func applyAgentMessageContractV19(_ db: Database) throws {
+        try db.alter(table: "agent_runs") { table in
+            // 默认值只服务 ALTER TABLE 对既有行的兼容；下方会立刻写入可解码的快照。
+            table.add(column: "context_json", .text).notNull().defaults(to: "")
+            table.add(column: "model", .text)
+            table.add(column: "usage_json", .text)
         }
+
+        try createAgentMessagesV19(db)
+        try createAgentApprovalsV19(db)
+        try migrateLegacyAgentRunsV19(db)
+        try rebuildAgentArtifactsV19(db)
+        try archiveLegacyAgentEventTablesV19(db)
     }
 
     /// 消息按 run 内 sequence 唯一，事务测试依赖数据库拒绝重复序号。

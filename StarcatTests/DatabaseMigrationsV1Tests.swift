@@ -72,6 +72,76 @@ struct DatabaseMigrationsV1Tests {
         }
     }
 
+    @Test("1.4.0 正式迁移应只保留单个 v19 标识")
+    func release140MigrationUsesSingleFormalIdentifier() throws {
+        let writer = try makeDB()
+        try writer.read { db in
+            var migrator = DatabaseMigrator()
+            DatabaseMigrations.registerAll(into: &migrator)
+            let applied = try migrator.appliedIdentifiers(db)
+            let developmentIdentifiers: Set<String> = [
+                "v19-agent-message-contract",
+                "v20-rag-chunks-fts-trigram",
+                "v21-github-notifications",
+                "v22-github-notification-comments",
+                "v23-github-notification-subject-created",
+                "v24-user-repo-activity",
+                "v25-user-repo-activity-actor",
+                "v26-github-timeline-conversations",
+            ]
+
+            #expect(applied.contains("v19-release-1.4.0"))
+            #expect(applied.isDisjoint(with: developmentIdentifiers))
+        }
+    }
+
+    @Test("1.4.0 正式迁移应接管任意开发期中间版本")
+    func release140MigrationConvergesDevelopmentDatabases() throws {
+        let developmentBoundaries = [
+            "v19-agent-message-contract",
+            "v23-github-notification-subject-created",
+            "v26-github-timeline-conversations",
+        ]
+        let developmentIdentifiers: Set<String> = [
+            "v19-agent-message-contract",
+            "v20-rag-chunks-fts-trigram",
+            "v21-github-notifications",
+            "v22-github-notification-comments",
+            "v23-github-notification-subject-created",
+            "v24-user-repo-activity",
+            "v25-user-repo-activity-actor",
+            "v26-github-timeline-conversations",
+        ]
+
+        for boundary in developmentBoundaries {
+            let queue = try DatabaseQueue()
+            var releaseMigrator = DatabaseMigrator()
+            DatabaseMigrations.registerAll(into: &releaseMigrator)
+            try releaseMigrator.migrate(queue, upTo: "v18-rag-structured-citations")
+
+            // 复现开发机可能停在 v19、v23 或 v26 的真实迁移账本，再交给正式 v19 收口。
+            var developmentMigrator = DatabaseMigrator()
+            DatabaseMigrations.registerRelease140DevelopmentMigrationsForTesting(
+                into: &developmentMigrator
+            )
+            try developmentMigrator.migrate(queue, upTo: boundary)
+            try releaseMigrator.migrate(queue)
+
+            try queue.read { db in
+                let applied = try releaseMigrator.appliedIdentifiers(db)
+                #expect(applied.contains("v19-release-1.4.0"), "boundary=\(boundary)")
+                #expect(applied.isDisjoint(with: developmentIdentifiers), "boundary=\(boundary)")
+                #expect(try db.tableExists("agent_messages"), "boundary=\(boundary)")
+                #expect(try db.tableExists("github_notification_threads"), "boundary=\(boundary)")
+                #expect(try db.tableExists("user_repo_activity"), "boundary=\(boundary)")
+                #expect(
+                    try db.tableExists("github_organization_issue_sync_state"),
+                    "boundary=\(boundary)"
+                )
+            }
+        }
+    }
+
     @Test("Agent v19 应保留旧 run/artifact 并明确归档旧事件表")
     func agentMessageContractMigrationPreservesLegacyData() throws {
         let queue = try DatabaseQueue()
@@ -569,12 +639,12 @@ struct DatabaseMigrationsV1Tests {
         }
     }
 
-    @Test("v20 重建 rag_chunks_fts 后中文子串与英文身份词都能 MATCH")
+    @Test("正式 v19 重建 rag_chunks_fts 后中文子串与英文身份词都能 MATCH")
     func ragChunkFTSTrigramMatchesCJKSubstringAndRebuildsExistingRows() throws {
         let queue = try DatabaseQueue()
         var migrator = DatabaseMigrator()
         DatabaseMigrations.registerAll(into: &migrator)
-        try migrator.migrate(queue, upTo: "v19-agent-message-contract")
+        try migrator.migrate(queue, upTo: "v18-rag-structured-citations")
 
         try queue.write { db in
             try db.execute(sql: """
@@ -657,7 +727,7 @@ struct DatabaseMigrationsV1Tests {
             #expect(applied.contains("v11-rag-embedding-claim"))
             #expect(applied.contains("v12-rag-metadata-revision"))
             #expect(applied.contains("v13-weekly-multi-source"))
-            #expect(applied.contains("v20-rag-chunks-fts-trigram"))
+            #expect(applied.contains("v19-release-1.4.0"))
             #expect(try db.tableExists("rag_metadata_revision"))
 
             let chunkColumns = try db.columns(in: "rag_chunks").map(\.name)
@@ -1080,7 +1150,7 @@ struct DatabaseMigrationsV1Tests {
 
     // MARK: - v26 组织 Issue 统一时间线（2026-08-21）
 
-    @Test("v26：通知会话扩展来源字段并创建组织分页状态表")
+    @Test("正式 v19：通知会话扩展来源字段并创建组织分页状态表")
     func v26TimelineConversationColumnsCreated() throws {
         let db = try makeDB()
         try db.read { db in

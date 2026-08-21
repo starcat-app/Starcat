@@ -2989,7 +2989,7 @@ private struct KnowledgeRAGBrowserView: View {
     }
 
     private func managedStatusIcon(_ managed: RAGManagedChunk, embeddingStatus: RAGEmbeddingStatus) -> String {
-        if managed.isExcluded { return RAGChunkAvailabilityBadge.unavailableSymbol }
+        if managed.isExcluded { return RAGChunkAvailabilitySymbols.unavailable }
         return RAGChunkEmbeddingStatusStyle.symbolName(embeddingStatus)
     }
 
@@ -3465,7 +3465,7 @@ private enum RAGChunkEmbeddingStatusStyle {
 
     static func symbolName(_ status: RAGEmbeddingStatus) -> String {
         switch status {
-        case .ready: return RAGChunkAvailabilityBadge.availableSymbol
+        case .ready: return RAGChunkAvailabilitySymbols.available
         case .pending: return "clock.fill"
         case .failed: return "exclamationmark.triangle.fill"
         case .stale: return "clock.arrow.circlepath"
@@ -3475,10 +3475,12 @@ private enum RAGChunkEmbeddingStatusStyle {
 }
 
 /// 分片管理态徽章：分片是否下架。绿勾「可用」不等于向量已就绪。
-private struct RAGChunkAvailabilityBadge: View {
-    static let availableSymbol = "checkmark.circle.fill"
-    static let unavailableSymbol = "xmark.circle.fill"
+private enum RAGChunkAvailabilitySymbols {
+    static let available = "checkmark.circle.fill"
+    static let unavailable = "xmark.circle.fill"
+}
 
+private struct RAGChunkAvailabilityBadge: View {
     let isExcluded: Bool
     var helpKey: LocalizedStringKey = "rag.browser.chunk.libraryHelp"
 
@@ -3486,7 +3488,7 @@ private struct RAGChunkAvailabilityBadge: View {
         RAGChunkLabeledStatusBadge(
             categoryKey: "rag.browser.chunk.libraryLabel",
             titleKey: isExcluded ? "rag.browser.status.unavailable" : "rag.browser.status.available",
-            symbolName: isExcluded ? Self.unavailableSymbol : Self.availableSymbol,
+            symbolName: isExcluded ? RAGChunkAvailabilitySymbols.unavailable : RAGChunkAvailabilitySymbols.available,
             tint: isExcluded ? .red : .green,
             helpKey: helpKey
         )

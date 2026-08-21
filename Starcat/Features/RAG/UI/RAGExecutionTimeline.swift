@@ -473,7 +473,7 @@ struct RAGExecutionTimeline: View {
     }
 
     /// 仅 External Search 执行失败时提供配置入口；无结果不代表配置错误，GitHub 失败也不归该设置项处理。
-    static func shouldOfferExternalSearchSettings(for item: RAGRemoteExecutionAuditItem) -> Bool {
+    nonisolated static func shouldOfferExternalSearchSettings(for item: RAGRemoteExecutionAuditItem) -> Bool {
         item.resource == .externalWeb && item.status == .failed
     }
 

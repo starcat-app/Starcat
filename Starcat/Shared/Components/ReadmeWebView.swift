@@ -68,8 +68,8 @@ extension Notification.Name {
 struct ReadmeWebView: View {
 
     /// 与 GitHub 线上 Viewscreen 当前使用的版本对齐；测试会校验对应 Bundle 资源存在。
-    static let mermaidRendererVersion = "11.16.0"
-    static let mermaidRuntimeResourceName = "mermaid-\(mermaidRendererVersion).min"
+    nonisolated static let mermaidRendererVersion = "11.16.0"
+    nonisolated static let mermaidRuntimeResourceName = "mermaid-\(mermaidRendererVersion).min"
 
     /// README 文档结束时注入的 app-owned 脚本。保持 internal 仅用于验证真实注入内容，
     /// 页面自身脚本仍由 CSP 禁止，业务层不应直接执行或拼接该字符串。

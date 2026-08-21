@@ -2311,21 +2311,31 @@ private struct GitHubNotificationImageProvider: ImageProvider {
     func makeImage(url: URL?) -> some View {
         Group {
             if let url {
-                KFImage(url)
-                    .requestModifier(AnyModifier { request in
-                        GitHubNotificationImageRequestModifier.modify(request)
-                    })
-                    .placeholder {
-                        ProgressView()
-                            .frame(maxWidth: .infinity, minHeight: 80)
-                    }
-                    .fade(duration: 0.15)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                GitHubNotificationRemoteImage(url: url)
             }
         }
+    }
+}
+
+/// `ImageProvider.makeImage` 是 nonisolated 协议入口；Kingfisher 的 SwiftUI modifier
+/// 必须留在 `View.body` 的 MainActor 上执行，不能直接从协议方法跨 actor 调用。
+private struct GitHubNotificationRemoteImage: View {
+    let url: URL
+
+    var body: some View {
+        KFImage(url)
+            .requestModifier(AnyModifier { request in
+                GitHubNotificationImageRequestModifier.modify(request)
+            })
+            .placeholder {
+                ProgressView()
+                    .frame(maxWidth: .infinity, minHeight: 80)
+            }
+            .fade(duration: 0.15)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
 

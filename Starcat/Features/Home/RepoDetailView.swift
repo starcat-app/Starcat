@@ -322,7 +322,7 @@ struct ReadmeStateView: View {
     /// HOM-68：可选的 README 翻译控件描述。nil 时不渲染翻译入口
     /// （Trending 详情页不接翻译，传 nil；Manage 详情页传具体值）。
     let translationControl: ReadmeTranslationControl?
-    let onRetry: () -> Void
+    let onRetry: @MainActor @Sendable () -> Void
     /// 未登录用户点击"登录"按钮时的回调
     let onLogin: () -> Void
 
@@ -335,7 +335,7 @@ struct ReadmeStateView: View {
         baseURL: URL?,
         onScrollReportChange: @escaping (RepoDetailScrollReport) -> Void,
         translationControl: ReadmeTranslationControl? = nil,
-        onRetry: @escaping () -> Void,
+        onRetry: @escaping @MainActor @Sendable () -> Void,
         onLogin: @escaping () -> Void
     ) {
         self.state = state

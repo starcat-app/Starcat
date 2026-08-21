@@ -1000,7 +1000,7 @@ struct RepositoryInsightsViewModelTests {
         #expect(viewModel.recentActivityState == .content(recentActivity))
 
         await refreshGate.release()
-        await refreshTask.value
+        _ = await refreshTask.value
 
         #expect(viewModel.isRefreshingAll)
         viewModel.finishGlobalRefresh()
