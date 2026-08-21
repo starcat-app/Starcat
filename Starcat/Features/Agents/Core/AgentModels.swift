@@ -64,6 +64,8 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
     let artifactTitle: String?
     /// Runtime 路由契约。默认锁定进程内 Loop，外部 POC Agent 必须显式声明可用后端。
     let runtimePolicy: AgentRuntimePolicy
+    /// 仅覆盖进程内 Loop 的工具调用预算；外部 Runtime 使用各自的会话预算与协议限制。
+    let loopMaxToolCalls: Int?
     /// 模型在当前 Agent 中可见的工具 allowlist；数组顺序不代表执行顺序。
     let toolIDs: [String]
     let artifactTypes: [AgentArtifactType]
@@ -80,6 +82,7 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
         promptRules: [AgentPromptRule] = [],
         artifactTitle: String? = nil,
         runtimePolicy: AgentRuntimePolicy = .builtinOnly,
+        loopMaxToolCalls: Int? = nil,
         toolIDs: [String] = [],
         artifactTypes: [AgentArtifactType] = []
     ) {
@@ -94,6 +97,7 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
         self.promptRules = promptRules
         self.artifactTitle = artifactTitle
         self.runtimePolicy = runtimePolicy
+        self.loopMaxToolCalls = loopMaxToolCalls
         self.toolIDs = toolIDs
         self.artifactTypes = artifactTypes
     }

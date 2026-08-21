@@ -27,6 +27,9 @@ struct ExternalAgentProtocolAdapterTests {
         #expect(initialized.outboundFrames.map { $0[external: "method"]?.stringValue } == [
             "initialized", "thread/start"
         ])
+        let threadStart = initialized.outboundFrames[1]
+        let dynamicTool = threadStart[external: "params"]?[external: "dynamicTools"]?.externalArray?.first
+        #expect(dynamicTool?[external: "name"]?.stringValue == "fixture_lookup")
 
         let threadStarted = try driver.receive(response(
             id: 2,
@@ -46,6 +49,45 @@ struct ExternalAgentProtocolAdapterTests {
         ))
         #expect(completed.events == [.completed])
         #expect(completed.isTerminal)
+    }
+
+    @Test("Codex adapter 映射 dynamic tool 请求并回写结果")
+    func codexDynamicToolRoundTrip() throws {
+        let adapter = CodexAppServerAdapter(executableURL: URL(fileURLWithPath: "/usr/bin/true"))
+        let driver = try adapter.makeDriver(request: fixtureRequest())
+
+        let output = try driver.receive(.object([
+            "jsonrpc": .string("2.0"),
+            "id": .number(42),
+            "method": .string("item/tool/call"),
+            "params": .object([
+                "callId": .string("call-1"),
+                "tool": .string("fixture_lookup"),
+                "arguments": .object(["query": .string("starcat")]),
+                "threadId": .string("thread-1"),
+                "turnId": .string("turn-1"),
+            ]),
+        ]))
+
+        let request = try #require(output.toolRequests.first)
+        #expect(request.requestID == .number(42))
+        #expect(request.callID == "call-1")
+        #expect(request.name == "fixture_lookup")
+        #expect(request.input == .object(["query": .string("starcat")]))
+
+        let response = try #require(driver.toolResponseFrame(
+            for: request,
+            result: ExternalAgentToolExecutionResult(
+                output: .object(["summary": .string("ok")]),
+                modelText: "{\"summary\":\"ok\"}",
+                isError: false,
+                artifactMarkdown: nil
+            )
+        ))
+        #expect(response[external: "id"] == .number(42))
+        #expect(response[external: "result"]?[external: "success"]?.externalBool == true)
+        let contentItem = response[external: "result"]?[external: "contentItems"]?.externalArray?.first
+        #expect(contentItem?[external: "text"]?.stringValue == "{\"summary\":\"ok\"}")
     }
 
     @Test("DeepSeek adapter 严格过滤 session 并映射 assistant message")
@@ -118,7 +160,16 @@ struct ExternalAgentProtocolAdapterTests {
             runID: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
             prompt: "hello",
             modelName: "test-model",
-            workingDirectory: FileManager.default.temporaryDirectory
+            workingDirectory: FileManager.default.temporaryDirectory,
+            tools: [AgentToolDefinition(
+                name: "fixture_lookup",
+                description: "Looks up a fixture.",
+                inputSchema: AgentJSONSchema(
+                    type: .object,
+                    properties: ["query": AgentJSONSchema(type: .string)],
+                    required: ["query"]
+                )
+            )]
         )
     }
 

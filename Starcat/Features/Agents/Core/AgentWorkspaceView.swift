@@ -102,28 +102,37 @@ struct AgentWorkspaceView: View {
             knowledgeSearcher = UnavailableAgentKnowledgeSearcher()
         }
         var runtimes: [AgentRuntimeBackend: any AgentRuntime] = [:]
+        let toolRegistry: AgentToolRegistry?
         do {
-            let toolRegistry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.makeAll(
+            toolRegistry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.makeAll(
                 externalSearchTool: externalSearchTool,
                 knowledgeTool: AgentKnowledgeTool(searcher: knowledgeSearcher),
                 // 与 MCP 走同一组 Capability 装配规则，避免 Agent 写标签后漏掉语义索引刷新。
                 additionalTools: UntaggedTidyAgentTools.make(executor: dependencies.makeRepositoryTagCapability())
             ))
-            let modelClient = try AgentLoopModelClientFactory.make(
-                settings: dependencies.settings,
-                selectedModelID: viewModel.selectedModelID
-            )
-            runtimes[.builtinLoop] = LoopAgentRuntime(
-                modelClient: modelClient,
-                toolRegistry: toolRegistry,
-                runRepository: dependencies.agentRunRepository,
-                mode: viewModel.selectedAgent?.workflow.executionMode ?? .readonlyPlanning,
-                localeIdentifier: locale.identifier,
-                preferredLanguage: preferredOutputLanguage,
-                externalSearchPolicy: AgentExternalSearchPolicy.current(settings: dependencies.settings)
-            )
         } catch {
+            toolRegistry = nil
             runtimes[.builtinLoop] = UnavailableAgentRuntime(message: error.localizedDescription)
+        }
+
+        if let toolRegistry {
+            do {
+                let modelClient = try AgentLoopModelClientFactory.make(
+                    settings: dependencies.settings,
+                    selectedModelID: viewModel.selectedModelID
+                )
+                runtimes[.builtinLoop] = LoopAgentRuntime(
+                    modelClient: modelClient,
+                    toolRegistry: toolRegistry,
+                    runRepository: dependencies.agentRunRepository,
+                    mode: viewModel.selectedAgent?.workflow.executionMode ?? .readonlyPlanning,
+                    localeIdentifier: locale.identifier,
+                    preferredLanguage: preferredOutputLanguage,
+                    externalSearchPolicy: AgentExternalSearchPolicy.current(settings: dependencies.settings)
+                )
+            } catch {
+                runtimes[.builtinLoop] = UnavailableAgentRuntime(message: error.localizedDescription)
+            }
         }
 
         if preferredBackend != .builtinLoop {
@@ -135,7 +144,8 @@ struct AgentWorkspaceView: View {
                 runtimes[preferredBackend] = ExternalAgentRuntime(
                     adapter: adapter,
                     distributionGate: dependencies.distributionGate,
-                    selectedModelName: selectedModelName
+                    selectedModelName: selectedModelName,
+                    toolRegistry: toolRegistry
                 )
             } catch {
                 runtimes[preferredBackend] = UnavailableAgentRuntime(message: error.localizedDescription)
@@ -157,6 +167,18 @@ struct AgentWorkspaceView: View {
         // POC 不得因历史 UserDefaults 残留进入 Direct Release；产品化前只允许 Debug 装配。
         return .builtinLoop
         #endif
+    }
+
+    /// Header 展示 policy 解析后的实际后端。显式选择不兼容外部后端时返回 nil，和
+    /// Router 的“禁止静默回退 Loop”语义保持一致。
+    private var resolvedRuntimeBackend: AgentRuntimeBackend? {
+        guard let definition = viewModel.selectedAgent else { return nil }
+        let preferredBackend = selectedRuntimeBackend
+        if definition.runtimePolicy.allowedBackends.contains(preferredBackend) {
+            return preferredBackend
+        }
+        guard preferredBackend == .builtinLoop else { return nil }
+        return definition.runtimePolicy.defaultBackend
     }
 
     private var availableAgentDefinitions: [AgentDefinition] {
@@ -457,6 +479,12 @@ struct AgentWorkspaceView: View {
                     .font(agentFont(.title3, weight: .semibold))
 
                 Spacer()
+                Text(resolvedRuntimeBackend?.displayName ?? "Runtime unavailable")
+                    .font(agentFont(.caption, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.primary.opacity(0.06), in: Capsule())
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 8)

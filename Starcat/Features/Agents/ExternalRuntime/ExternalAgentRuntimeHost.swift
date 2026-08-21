@@ -13,18 +13,22 @@ import Foundation
 
 actor ExternalAgentRuntimeHost {
     typealias EventSink = @Sendable (ExternalAgentProtocolEvent) async -> Void
+    typealias ToolCallHandler = @Sendable (
+        ExternalAgentToolRequest
+    ) async -> ExternalAgentToolExecutionResult
 
     private var sessions: [UUID: ExternalAgentProcessSession] = [:]
 
     func execute(
         runID: UUID,
         driver: any ExternalAgentProtocolDriver,
+        toolCallHandler: ToolCallHandler? = nil,
         onEvent: @escaping EventSink
     ) async throws {
         let session = ExternalAgentProcessSession(driver: driver)
         sessions[runID] = session
         defer { sessions.removeValue(forKey: runID) }
-        try await session.run(onEvent: onEvent)
+        try await session.run(toolCallHandler: toolCallHandler, onEvent: onEvent)
     }
 
     func cancel(runID: UUID) async {
@@ -45,7 +49,10 @@ private actor ExternalAgentProcessSession {
         self.driver = driver
     }
 
-    func run(onEvent: @escaping ExternalAgentRuntimeHost.EventSink) async throws {
+    func run(
+        toolCallHandler: ExternalAgentRuntimeHost.ToolCallHandler?,
+        onEvent: @escaping ExternalAgentRuntimeHost.EventSink
+    ) async throws {
         let configuration = driver.processConfiguration
         let process = Process()
         let stdinPipe = Pipe()
@@ -98,6 +105,36 @@ private actor ExternalAgentProcessSession {
                 }
                 for event in output.events {
                     await onEvent(event)
+                }
+                for request in output.toolRequests {
+                    try Task.checkCancellation()
+                    await onEvent(.toolCall(
+                        id: request.callID,
+                        name: request.name,
+                        input: request.input,
+                        rawInput: request.rawInput
+                    ))
+                    guard let toolCallHandler else {
+                        throw ExternalAgentRuntimeError.protocolError(
+                            "External runtime requested an unavailable Starcat tool: \(request.name)."
+                        )
+                    }
+                    let result = await toolCallHandler(request)
+                    await onEvent(.toolResult(
+                        id: request.callID,
+                        name: request.name,
+                        output: result.output,
+                        isError: result.isError
+                    ))
+                    if let markdown = result.artifactMarkdown, !result.isError {
+                        await onEvent(.artifactMarkdown(markdown, toolCallID: request.callID))
+                    }
+                    guard let response = driver.toolResponseFrame(for: request, result: result) else {
+                        throw ExternalAgentRuntimeError.protocolError(
+                            "External runtime cannot return the Starcat tool result to its Provider."
+                        )
+                    }
+                    try write(response)
                 }
                 if output.isTerminal {
                     reachedTerminal = true

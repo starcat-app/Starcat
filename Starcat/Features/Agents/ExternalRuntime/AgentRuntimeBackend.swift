@@ -5,8 +5,7 @@
 //  Agent Runtime 后端声明、能力矩阵与路由器。
 //
 //  后端选择属于 AgentDefinition 的声明式契约，不允许 Workspace 根据 Agent ID
-//  临时分支。这样固定业务 Agent 可以继续锁定 Loop，而 General / Research POC
-//  可以在 Codex App Server 与 DeepSeek Harness 之间切换。
+//  临时分支。只读业务 Agent 可在 Loop / Codex 间切换；带审批写入的 Agent 继续锁定 Loop。
 //
 
 import Foundation
@@ -84,6 +83,13 @@ struct AgentRuntimePolicy: Hashable, Sendable {
         defaultBackend: .builtinLoop
     )
 
+    /// Codex 通过 dynamic tools 只接入 Starcat 的自动只读工具。DeepSeek rc.8 尚无
+    /// 等价双向工具协议，因此不能把两者伪装成同一能力。
+    static let codexReadOnly = AgentRuntimePolicy(
+        allowedBackends: [.builtinLoop, .codexAppServer],
+        defaultBackend: .builtinLoop
+    )
+
     static let externalPOC = AgentRuntimePolicy(
         allowedBackends: [.codexAppServer, .deepSeekHarness],
         defaultBackend: .codexAppServer
@@ -136,7 +142,10 @@ struct AgentRuntimeRouter: AgentRuntime {
         if policy.allowedBackends.contains(preferredBackend), runtimes[preferredBackend] != nil {
             return preferredBackend
         }
-        if runtimes[policy.defaultBackend] != nil {
+        // 用户显式选择外部后端后不允许悄悄降级成 Loop；不兼容的 Agent 应显示不可用，
+        // 否则 UI 看起来在跑 Codex，实际却会再次命中 Loop 的本地预算。
+        guard preferredBackend == .builtinLoop else { return nil }
+        if policy.allowedBackends.contains(policy.defaultBackend), runtimes[policy.defaultBackend] != nil {
             return policy.defaultBackend
         }
         return nil

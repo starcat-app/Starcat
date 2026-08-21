@@ -219,7 +219,7 @@ struct LoopAgentRuntime: AgentRuntime {
     ) -> AsyncStream<AgentRunEvent> {
         AsyncStream { continuation in
             let runID = UUID()
-            let session = AgentRunSession(runID: runID, limits: limits)
+            let session = AgentRunSession(runID: runID, limits: resolvedLimits(for: definition))
             let taskHandle = AgentRuntimeTaskHandle()
             let task = Task {
                 AppLog.ai.info("[AgentRuntime] run.start runID=\(runID.uuidString, privacy: .public) agent=\(definition.id, privacy: .public) mode=\(mode.rawValue, privacy: .public)")
@@ -279,7 +279,7 @@ struct LoopAgentRuntime: AgentRuntime {
             let session = try AgentRunSession(
                 restoring: snapshot,
                 pendingApproval: pendingApproval,
-                limits: limits
+                limits: resolvedLimits(for: definition)
             )
             return resumeRestoredRun(
                 session: session,
@@ -299,7 +299,10 @@ struct LoopAgentRuntime: AgentRuntime {
             return failedStream(String.l10n("agent.loop.error.retryUnavailable"))
         }
         do {
-            let session = try AgentRunSession(retrying: snapshot, limits: limits)
+            let session = try AgentRunSession(
+                retrying: snapshot,
+                limits: resolvedLimits(for: definition)
+            )
             return resumeRestoredRun(
                 session: session,
                 definition: definition,
@@ -1022,6 +1025,15 @@ struct LoopAgentRuntime: AgentRuntime {
         case .readonlyPlanning, .reportGeneration, .backgroundDigest:
             return tools.filter { $0.permission.isAutomaticRead }
         }
+    }
+
+    /// 研究/分析 Agent 的证据链通常超过通用默认值；预算由 definition 声明，避免把
+    /// 全局 32 一刀切放大后同时削弱简单 Agent 与写入型 Agent 的失控保护。
+    private func resolvedLimits(for definition: AgentDefinition) -> AgentRunLimits {
+        guard let maxToolCalls = definition.loopMaxToolCalls else { return limits }
+        var resolved = limits
+        resolved.maxToolCalls = max(1, maxToolCalls)
+        return resolved
     }
 
     private static func validateRequiredContext(

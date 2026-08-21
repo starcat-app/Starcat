@@ -24,6 +24,44 @@ struct ExternalAgentRuntimeHostTests {
 
         #expect(await collector.events == [.assistantDelta("fixture"), .completed])
     }
+
+    @Test("Host 执行动态工具并把结果写回 Provider")
+    func executesDynamicToolAndReturnsResult() async throws {
+        let collector = ExternalHostEventCollector()
+        let host = ExternalAgentRuntimeHost()
+
+        try await host.execute(
+            runID: UUID(),
+            driver: ExternalHostToolFixtureDriver(),
+            toolCallHandler: { request in
+                #expect(request.name == "fixture_lookup")
+                return ExternalAgentToolExecutionResult(
+                    output: .object(["summary": .string("fixture-result")]),
+                    modelText: "fixture-result",
+                    isError: false,
+                    artifactMarkdown: nil
+                )
+            }
+        ) { event in
+            await collector.append(event)
+        }
+
+        #expect(await collector.events == [
+            .toolCall(
+                id: "call-1",
+                name: "fixture_lookup",
+                input: .object(["query": .string("starcat")]),
+                rawInput: nil
+            ),
+            .toolResult(
+                id: "call-1",
+                name: "fixture_lookup",
+                output: .object(["summary": .string("fixture-result")]),
+                isError: false
+            ),
+            .completed,
+        ])
+    }
 }
 
 private actor ExternalHostEventCollector {
@@ -62,6 +100,55 @@ private final class ExternalHostFixtureDriver: ExternalAgentProtocolDriver, @unc
         default:
             return ExternalAgentProtocolOutput()
         }
+    }
+
+    func cancellationFrame() -> AgentJSONValue? { nil }
+    func shutdownFrame() -> AgentJSONValue? { nil }
+}
+
+private final class ExternalHostToolFixtureDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
+    let backend = AgentRuntimeBackend.codexAppServer
+    let capabilities = AgentRuntimeCapabilities.codexAppServerPOC
+    let processConfiguration = ExternalAgentProcessConfiguration(
+        executableURL: URL(fileURLWithPath: "/bin/sh"),
+        arguments: [
+            "-c",
+            "read first; printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"id\":42,\"method\":\"fixture/tool\",\"params\":{}}'; read result; printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"method\":\"fixture/completed\",\"params\":{}}'",
+        ],
+        environment: ExternalAgentProcessEnvironment.filtered(),
+        currentDirectoryURL: FileManager.default.temporaryDirectory
+    )
+
+    func initialFrames() throws -> [AgentJSONValue] {
+        [.jsonRPCRequest(id: 1, method: "fixture/start")]
+    }
+
+    func receive(_ frame: AgentJSONValue) throws -> ExternalAgentProtocolOutput {
+        switch frame[external: "method"]?.stringValue {
+        case "fixture/tool":
+            return ExternalAgentProtocolOutput(toolRequests: [ExternalAgentToolRequest(
+                requestID: .number(42),
+                callID: "call-1",
+                name: "fixture_lookup",
+                input: .object(["query": .string("starcat")]),
+                rawInput: nil
+            )])
+        case "fixture/completed":
+            return ExternalAgentProtocolOutput(events: [.completed], isTerminal: true)
+        default:
+            return ExternalAgentProtocolOutput()
+        }
+    }
+
+    func toolResponseFrame(
+        for request: ExternalAgentToolRequest,
+        result: ExternalAgentToolExecutionResult
+    ) -> AgentJSONValue? {
+        .object([
+            "jsonrpc": .string("2.0"),
+            "id": request.requestID,
+            "result": .object(["success": .bool(!result.isError)]),
+        ])
     }
 
     func cancellationFrame() -> AgentJSONValue? { nil }

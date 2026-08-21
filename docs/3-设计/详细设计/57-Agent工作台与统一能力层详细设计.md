@@ -1021,9 +1021,9 @@ P0～P3、定向自动化、Release 构建与真实入口门禁验收通过后�
 
 外部 Runtime 不采用“选择一个框架并替换全部 Agent”的路线。Starcat 保留 `LoopAgentRuntime`，通过 `AgentRuntimeRouter`、`ExternalAgentRuntimeHost` 和 Provider Adapter 形成可切换底座；Codex App Server 与 DeepSeek Harness `0.1.0-rc.8` 是首批 adapter。多后端 POC 见 `59-ExternalAgentRuntime多后端POC技术方案.md`，DeepSeek 上游协议与 carrier 评估仍见 `58-DeepSeekHarness集成评估与POC技术方案.md`。
 
-已落地的底座 POC 链路是：Starcat Direct Debug 通过统一 newline-delimited JSON-RPC Host 控制一次 run 专属 Sidecar，Provider adapter 把原生事件映射为 `AgentRunEvent`；固定业务 Agent 的 `runtimePolicy` 仍锁定 Loop，General / Research POC 才允许选择 Codex 或 DeepSeek。当前只注入冻结上下文，不开放写工具、不持久化外部 Session，也不经过 `starcat-cli`。
+已落地的底座 POC 链路是：Starcat Direct Debug 通过统一 newline-delimited JSON-RPC Host 控制一次 run 专属 Sidecar，Provider adapter 把原生事件映射为 `AgentRunEvent`。Weekly、Repo Insight、Alternatives 的 `runtimePolicy` 允许 Loop / Codex，Codex 通过 App Server `dynamicTools` 调用现有 Starcat 自动只读工具；Untagged 等带审批写入的 Agent 仍锁定 Loop；General / Research POC 可选择 Codex 或 DeepSeek。外部 Runtime 不开放写工具、不持久化外部 Session，也不经过 `starcat-cli`，显式选择不兼容后端时不静默回退 Loop。
 
-临时 Loopback MCP HTTP Bridge、Session 级 tool allowlist、随机 token、repo scope 与 RAG eligible scope 仍是产品化前的独立门禁；未完成这些门禁前，不把多后端底座 POC 表述为完整 P5 交付。
+DeepSeek 的临时 Loopback MCP HTTP Bridge、Session 级 tool allowlist、随机 token、repo scope 与 RAG eligible scope 仍是产品化前的独立门禁；Codex dynamic tools 已由宿主执行 definition allowlist、schema 与自动只读权限校验。未完成 Provider 内建工具硬禁用等门禁前，不把多后端底座 POC 表述为完整 P5 交付。
 
 进入条件：
 

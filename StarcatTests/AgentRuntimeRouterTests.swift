@@ -12,8 +12,8 @@ import Testing
 @Suite("Agent Runtime Router")
 struct AgentRuntimeRouterTests {
 
-    @Test("固定业务 Agent 即使偏好外部后端仍路由到 Loop")
-    func fixedAgentStaysOnLoop() {
+    @Test("Codex 选择会路由支持只读工具的业务 Agent")
+    func readOnlyBusinessAgentUsesCodex() {
         let router = AgentRuntimeRouter(
             preferredBackend: .codexAppServer,
             runtimes: [
@@ -22,7 +22,41 @@ struct AgentRuntimeRouterTests {
             ]
         )
 
-        #expect(router.resolvedBackend(for: BuiltInAgents.githubWeeklyReport) == .builtinLoop)
+        #expect(router.resolvedBackend(for: BuiltInAgents.githubWeeklyReport) == .codexAppServer)
+    }
+
+    @Test("不兼容外部后端时不静默回退 Loop")
+    func incompatibleExternalBackendDoesNotFallback() {
+        let router = AgentRuntimeRouter(
+            preferredBackend: .codexAppServer,
+            runtimes: [
+                .builtinLoop: EmptyRouterRuntime(),
+                .codexAppServer: EmptyRouterRuntime(),
+            ]
+        )
+
+        #expect(router.resolvedBackend(for: BuiltInAgents.untaggedTidy) == nil)
+    }
+
+    @Test("DeepSeek 尚不承载 Starcat 只读业务工具")
+    func deepSeekDoesNotPretendToSupportBusinessTools() {
+        let router = AgentRuntimeRouter(
+            preferredBackend: .deepSeekHarness,
+            runtimes: [
+                .builtinLoop: EmptyRouterRuntime(),
+                .deepSeekHarness: EmptyRouterRuntime(),
+            ]
+        )
+
+        #expect(router.resolvedBackend(for: BuiltInAgents.repoInsight) == nil)
+    }
+
+    @Test("研究类 Loop Agent 使用 96 次工具预算，写入 Agent 保持默认预算")
+    func loopToolBudgetsAreDefinitionScoped() {
+        #expect(BuiltInAgents.githubWeeklyReport.loopMaxToolCalls == 96)
+        #expect(BuiltInAgents.repoInsight.loopMaxToolCalls == 96)
+        #expect(BuiltInAgents.repoAlternatives.loopMaxToolCalls == 96)
+        #expect(BuiltInAgents.untaggedTidy.loopMaxToolCalls == nil)
     }
 
     @Test("POC Agent 可以在 Codex 与 DeepSeek 之间切换")

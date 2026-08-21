@@ -6,8 +6,8 @@
 //
 //  POC 使用用户已安装并登录的 Codex，按 initialize → thread/start → turn/start
 //  建立一次性 thread。执行目录是 Starcat 创建的空临时目录，并固定 read-only sandbox；
-//  仅保留本机 CODEX_HOME 登录态，不把 API Key 交给子进程，也不让固定业务 Agent
-//  自动迁移到该后端。
+//  仅保留本机 CODEX_HOME 登录态，不把 API Key 交给子进程。固定业务 Agent 只能通过
+//  `dynamicTools` 调用 Starcat 明确暴露的只读能力，不能直接访问数据库或文件系统。
 //
 
 import Foundation
@@ -80,8 +80,9 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
                                 ?? "development"
                         ),
                     ]),
-                    // 首期只消费稳定 v2 通知，不开启 dynamic tools 等实验 API。
-                    "capabilities": .object(["experimentalApi": .bool(false)]),
+                    // Codex dynamic tools 通过 App Server 的实验能力协商；宿主仍只暴露
+                    // Agent definition allowlist 中的 Starcat 只读工具。
+                    "capabilities": .object(["experimentalApi": .bool(true)]),
                 ])
             )
         ]
@@ -95,11 +96,13 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
             )
         }
 
+        // JSON-RPC server request 同时带 `id` 与 `method`；必须先按 method 分流，
+        // 否则 dynamic tool call 会被误判成客户端请求的 response 并静默丢弃。
+        if let method = object["method"]?.stringValue {
+            return try receiveNotificationOrRequest(method: method, object: object)
+        }
         if let id = object["id"]?.integerValue {
             return try receiveResponse(id: id, result: object["result"])
-        }
-        if let method = object["method"]?.stringValue {
-            return receiveNotificationOrRequest(method: method, object: object)
         }
         return ExternalAgentProtocolOutput()
     }
@@ -119,6 +122,25 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
     /// App Server 当前没有稳定 shutdown 方法；Host 在 turn 终态后回收专属进程。
     func shutdownFrame() -> AgentJSONValue? { nil }
 
+    func toolResponseFrame(
+        for request: ExternalAgentToolRequest,
+        result: ExternalAgentToolExecutionResult
+    ) -> AgentJSONValue? {
+        .object([
+            "jsonrpc": .string("2.0"),
+            "id": request.requestID,
+            "result": .object([
+                "success": .bool(!result.isError),
+                "contentItems": .array([
+                    .object([
+                        "type": .string("inputText"),
+                        "text": .string(result.modelText),
+                    ])
+                ]),
+            ]),
+        ])
+    }
+
     private func receiveResponse(
         id: Int,
         result: AgentJSONValue?
@@ -131,9 +153,19 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
                 "sandbox": .string("read-only"),
                 "ephemeral": .bool(true),
                 "developerInstructions": .string(
-                    "This is a Starcat read-only POC. Do not modify files, run shell commands, spawn subagents, or request elevated permissions. Answer only from the supplied prompt context."
+                    "This is a Starcat read-only POC. Do not modify files, run shell commands, spawn subagents, or request elevated permissions. Use only the supplied prompt context and Starcat dynamic tools."
                 ),
             ]
+            if !request.tools.isEmpty {
+                threadParams["dynamicTools"] = .array(try request.tools.map { definition in
+                    .object([
+                        "type": .string("function"),
+                        "name": .string(definition.name),
+                        "description": .string(definition.description),
+                        "inputSchema": try Self.jsonValue(from: definition.inputSchema),
+                    ])
+                })
+            }
             if let modelOverride { threadParams["model"] = .string(modelOverride) }
             return ExternalAgentProtocolOutput(outboundFrames: [
                 .jsonRPCNotification(method: "initialized"),
@@ -170,7 +202,7 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
     private func receiveNotificationOrRequest(
         method: String,
         object: [String: AgentJSONValue]
-    ) -> ExternalAgentProtocolOutput {
+    ) throws -> ExternalAgentProtocolOutput {
         let params = object["params"]
         switch method {
         case "turn/started":
@@ -189,6 +221,23 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
         case "thread/tokenUsage/updated":
             guard let usage = Self.usage(from: params) else { return ExternalAgentProtocolOutput() }
             return ExternalAgentProtocolOutput(events: [.usage(usage)])
+        case "item/tool/call":
+            guard let requestID = object["id"],
+                  let callID = params?[external: "callId"]?.stringValue,
+                  let tool = params?[external: "tool"]?.stringValue,
+                  let arguments = params?[external: "arguments"]
+            else {
+                throw ExternalAgentRuntimeError.protocolError(
+                    "Codex dynamic tool request is missing id, callId, tool, or arguments."
+                )
+            }
+            return ExternalAgentProtocolOutput(toolRequests: [ExternalAgentToolRequest(
+                requestID: requestID,
+                callID: callID,
+                name: tool,
+                input: arguments,
+                rawInput: try? arguments.jsonString()
+            )])
         case "turn/completed":
             let status = params?[external: "turn"]?[external: "status"]?.stringValue
             switch status {
@@ -244,6 +293,11 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
             cachedTokens: cached,
             reasoningTokens: reasoning
         )
+    }
+
+    private static func jsonValue<T: Encodable>(from value: T) throws -> AgentJSONValue {
+        let data = try JSONEncoder().encode(value)
+        return try JSONDecoder().decode(AgentJSONValue.self, from: data)
     }
 }
 

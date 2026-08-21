@@ -15,6 +15,8 @@ struct ExternalAgentRunRequest: Sendable {
     let prompt: String
     let modelName: String?
     let workingDirectory: URL
+    /// 只有已经过 Agent definition allowlist 与只读权限过滤的工具才会进入 Provider。
+    let tools: [AgentToolDefinition]
 }
 
 struct ExternalAgentProcessConfiguration: Sendable {
@@ -30,15 +32,37 @@ enum ExternalAgentProtocolEvent: Equatable, Sendable {
     case assistantMessage(String, usage: AgentUsage?)
     case toolCall(id: String, name: String, input: AgentJSONValue, rawInput: String?)
     case toolResult(id: String, name: String, output: AgentJSONValue, isError: Bool)
+    case artifactMarkdown(String, toolCallID: String)
     case usage(AgentUsage)
     case completed
     case cancelled
     case failed(String)
 }
 
+/// Provider 请求 Starcat 宿主执行一次动态工具调用。
+///
+/// `requestID` 保留 JSON-RPC 原始类型，Codex 当前通常使用数字，但 Host 不应假设
+/// Provider 的 request id 永远是 Int，否则协议升级后无法把结果准确回写给同一请求。
+struct ExternalAgentToolRequest: Sendable {
+    let requestID: AgentJSONValue
+    let callID: String
+    let name: String
+    let input: AgentJSONValue
+    let rawInput: String?
+}
+
+/// Starcat 工具执行器返回给外部 Provider 的有界结果。
+struct ExternalAgentToolExecutionResult: Sendable {
+    let output: AgentJSONValue
+    let modelText: String
+    let isError: Bool
+    let artifactMarkdown: String?
+}
+
 struct ExternalAgentProtocolOutput: Sendable {
     var outboundFrames: [AgentJSONValue] = []
     var events: [ExternalAgentProtocolEvent] = []
+    var toolRequests: [ExternalAgentToolRequest] = []
     var isTerminal = false
 }
 
@@ -50,8 +74,21 @@ protocol ExternalAgentProtocolDriver: AnyObject, Sendable {
 
     func initialFrames() throws -> [AgentJSONValue]
     func receive(_ frame: AgentJSONValue) throws -> ExternalAgentProtocolOutput
+    func toolResponseFrame(
+        for request: ExternalAgentToolRequest,
+        result: ExternalAgentToolExecutionResult
+    ) -> AgentJSONValue?
     func cancellationFrame() -> AgentJSONValue?
     func shutdownFrame() -> AgentJSONValue?
+}
+
+extension ExternalAgentProtocolDriver {
+    /// 不支持双向动态工具的 Provider 明确返回 nil；Host 收到工具请求时会终止而不是
+    /// 伪造成功结果。DeepSeek Harness rc.8 当前走这条兼容路径。
+    func toolResponseFrame(
+        for request: ExternalAgentToolRequest,
+        result: ExternalAgentToolExecutionResult
+    ) -> AgentJSONValue? { nil }
 }
 
 protocol ExternalAgentProtocolAdapter: Sendable {
