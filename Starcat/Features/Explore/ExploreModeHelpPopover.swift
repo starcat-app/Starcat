@@ -59,7 +59,8 @@ extension ExploreMode {
 
 /// 中栏数量行上的分类说明入口；按钮自身持有 popover 状态，不污染列表选择。
 ///
-/// 颜色跟数量文案同用 `.secondary`：这里已经离开侧栏选中蓝底，不再需要反白。
+/// 入口钉在标题栏系统 subtitle「N 个仓库」右侧，与面包屑左对齐。
+/// 颜色跟数量文案同用 `.secondary`。
 struct ExploreModeInfoButton: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 

@@ -85,15 +85,11 @@ final class RepoListAISummaryAvailability {
 
 /// 只观察导航计数的局部 modifier。
 ///
-/// 系统 `navigationSubtitle` 只能接 String，塞不进按钮。星标 / 探索 / 活动把数量画成
-/// 中栏内容区第一行，附件槽留给当前页的说明入口（现在只有探索挂 info）。
+/// 数量文案走系统 `navigationSubtitle`，和面包屑共用标题栏左缘，不能改成内容区内边距。
+/// 系统 subtitle 只能接 String；探索的 info 按钮用探针贴到这行文字右侧，星标 / 活动附件槽仍空。
 ///
-/// 关键约束：
-/// - 调用方传入 Manage 的静态数量文案，但不读取 `metrics`；Trending / Activity
-///   回写数量时，SwiftUI 只会重算这个 modifier，不会重新求值 `RepoListView.body`。
-/// - 数量行必须是 `VStack` 真实行，不能用 `safeAreaInset(edge: .top)`：macOS List
-///   会画到透明 inset 背后（与 `manageListTopInset` 同一条约束）。
-/// - 筛选行高度仍走 `ManageListFilterBarMetrics`，保证中栏和右栏顶区对齐。
+/// 关键约束：调用方传入 Manage 的静态数量文案，但不读取 `metrics`；Trending / Activity
+/// 回写数量时，SwiftUI 只会重算这个 modifier，不会重新求值 `RepoListView.body`。
 private struct RepoListNavigationSubtitleModifier: ViewModifier {
     let selectedPage: SidebarRootPage
     let selectedExploreMode: ExploreMode
@@ -114,18 +110,19 @@ private struct RepoListNavigationSubtitleModifier: ViewModifier {
     @Environment(\.locale) private var locale
 
     func body(content: Content) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if !countText.isEmpty {
-                RepoListColumnCountHeader(text: countText) {
-                    if selectedPage == .trending {
+        content
+            .navigationSubtitle(countText)
+            .background {
+                if selectedPage == .trending, !countText.isEmpty {
+                    TitlebarSubtitleAccessoryAttacher(subtitle: countText) {
                         ExploreModeInfoButton(mode: selectedExploreMode)
                             .id(selectedExploreMode)
                     }
+                    .frame(width: 0, height: 0)
+                    .accessibilityHidden(true)
+                    .allowsHitTesting(false)
                 }
             }
-            content
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private var countText: String {
@@ -235,34 +232,163 @@ private struct RepoListNavigationSubtitleModifier: ViewModifier {
     }
 }
 
-/// 中栏内容区第一行：仓库/条目数量 + 可选说明入口。
+/// 把 SwiftUI 附件钉在系统 `navigationSubtitle` 文字右侧。
 ///
-/// 系统 `navigationSubtitle` 不能放 Button。这一行顶替它，附件槽默认空，
-/// 后续星标 / 活动要加 popover 时只往这个槽塞，不必再改顶栏结构。
-private struct RepoListColumnCountHeader<Accessory: View>: View {
-    @Environment(\.starcatInterfaceScale) private var interfaceScale
+/// 为什么走 AppKit 探针：标题栏数量必须和面包屑共用系统 subtitle 的左缘；
+/// SwiftUI 又不能在 `navigationSubtitle(String)` 里放 Button。探针本身零尺寸、
+/// 不抢点击；真正可点的是钉到标题栏里的 `NSHostingView`。
+///
+/// 查：`docs/7-工具与脚本/Swift-学习索引.md` → `NSViewRepresentable`。
+private struct TitlebarSubtitleAccessoryAttacher<Accessory: View>: NSViewRepresentable {
+    var subtitle: String
+    var accessory: Accessory
 
-    let text: String
-    let accessory: Accessory
-
-    init(text: String, @ViewBuilder accessory: () -> Accessory) {
-        self.text = text
+    init(subtitle: String, @ViewBuilder accessory: () -> Accessory) {
+        self.subtitle = subtitle
         self.accessory = accessory()
     }
 
-    var body: some View {
-        HStack(spacing: 5) {
-            Text(verbatim: text)
-                .font(interfaceScale.font(.caption))
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        NSView(frame: .zero)
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.subtitle = subtitle
+        context.coordinator.accessory = AnyView(
             accessory
-            Spacer(minLength: 0)
+                .environment(\.locale, context.environment.locale)
+                .environment(\.starcatInterfaceScale, context.environment.starcatInterfaceScale)
+                .environment(\.colorScheme, context.environment.colorScheme)
+        )
+        DispatchQueue.main.async {
+            context.coordinator.attach(from: nsView)
+            if context.coordinator.hostingView?.superview == nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    context.coordinator.attach(from: nsView)
+                }
+            }
         }
-        .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
-        // 紧贴标题栏面包屑；筛选行自己的 topPadding 负责和控件分开。
-        .padding(.top, 4)
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.detach()
+    }
+
+    @MainActor
+    final class Coordinator {
+        var subtitle = ""
+        var accessory = AnyView(EmptyView())
+        var hostingView: NSHostingView<AnyView>?
+        weak var label: NSView?
+        var frameObserver: NSObjectProtocol?
+
+        func attach(from probe: NSView) {
+            guard let window = probe.window, !subtitle.isEmpty else {
+                detach()
+                return
+            }
+            guard let label = Self.findTitlebarLabel(in: window, matching: subtitle) else {
+                return
+            }
+            let hosted = accessory
+            if let hostingView {
+                hostingView.rootView = hosted
+            } else {
+                let view = NSHostingView(rootView: hosted)
+                view.translatesAutoresizingMaskIntoConstraints = true
+                view.autoresizingMask = []
+                hostingView = view
+            }
+            guard let hostingView else { return }
+            if hostingView.superview !== label.superview {
+                hostingView.removeFromSuperview()
+                label.superview?.addSubview(hostingView)
+            }
+            self.label = label
+            observeFrame(of: label)
+            reposition()
+        }
+
+        func detach() {
+            if let frameObserver {
+                NotificationCenter.default.removeObserver(frameObserver)
+                self.frameObserver = nil
+            }
+            hostingView?.removeFromSuperview()
+            hostingView = nil
+            label = nil
+        }
+
+        func reposition() {
+            guard let label, let hostingView, hostingView.superview != nil else { return }
+            let size: CGFloat = 16
+            hostingView.frame = NSRect(
+                x: label.frame.maxX + 4,
+                y: floor(label.frame.midY - size / 2),
+                width: size,
+                height: size
+            )
+        }
+
+        private func observeFrame(of label: NSView) {
+            if let frameObserver {
+                NotificationCenter.default.removeObserver(frameObserver)
+            }
+            label.postsFrameChangedNotifications = true
+            frameObserver = NotificationCenter.default.addObserver(
+                forName: NSView.frameDidChangeNotification,
+                object: label,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.reposition()
+                }
+            }
+        }
+
+        /// 系统面包屑 / subtitle 画在标题栏，不在 contentView 里；从 theme frame 全树搜。
+        private static func findTitlebarLabel(in window: NSWindow, matching text: String) -> NSView? {
+            let root = window.contentView?.superview ?? window.contentView
+            guard let root else { return nil }
+            var matches: [NSView] = []
+            collectLabels(in: root, matching: text, into: &matches)
+            let contentTop = window.contentLayoutRect.maxY
+            return matches
+                .filter { view in
+                    let rect = view.convert(view.bounds, to: nil)
+                    return rect.minY >= contentTop - 2
+                }
+                .max { lhs, rhs in
+                    lhs.convert(lhs.bounds, to: nil).minY < rhs.convert(rhs.bounds, to: nil).minY
+                }
+            ?? matches.first
+        }
+
+        private static func collectLabels(in view: NSView, matching text: String, into matches: inout [NSView]) {
+            if labelText(of: view) == text {
+                matches.append(view)
+            }
+            for child in view.subviews {
+                collectLabels(in: child, matching: text, into: &matches)
+            }
+        }
+
+        private static func labelText(of view: NSView) -> String? {
+            if let field = view as? NSTextField {
+                let value = field.stringValue
+                if !value.isEmpty { return value }
+                let attributed = field.attributedStringValue.string
+                if !attributed.isEmpty { return attributed }
+            }
+            if let label = view.accessibilityLabel(), !label.isEmpty {
+                return label
+            }
+            return nil
+        }
     }
 }
 
@@ -2281,7 +2407,7 @@ struct RepoListView: View {
     }
 
     private var manageNavigationSubtitle: String {
-        // Smart Collections 总览：数量行是集合数量（与 sidebar 计数一致），不是仓库数。
+        // Smart Collections 总览：副标题是集合数量（与 sidebar 计数一致），不是仓库数。
         if case .smartCollectionsHome = viewModel.selection {
             return String(
                 format: String.l10n("smartCollections.collectionCountFormat"),
