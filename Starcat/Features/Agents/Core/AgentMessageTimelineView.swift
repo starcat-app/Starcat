@@ -90,10 +90,10 @@ struct AgentMessageTimelineView: View {
                         }
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 18)
-            .frame(maxWidth: 820, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.horizontal, 28)
+            .padding(.vertical, 24)
+            // 中栏对话贴齐左右阅读边，不再用固定 maxWidth 居中成一条窄栏。
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .defaultScrollAnchor(
             messageTail.isFollowing ? .bottom : nil,
@@ -361,7 +361,7 @@ struct AgentMessageTimelineView: View {
             }
         }
         .padding(12)
-        .frame(maxWidth: 860, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.orange.opacity(0.24)))
     }
@@ -422,7 +422,7 @@ struct AgentMessageTimelineView: View {
             }
             Spacer()
         }
-        .frame(maxWidth: 860, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func errorRow(_ error: String) -> some View {
@@ -444,7 +444,7 @@ struct AgentMessageTimelineView: View {
             }
         }
         .padding(12)
-        .frame(maxWidth: 860, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
     }
 

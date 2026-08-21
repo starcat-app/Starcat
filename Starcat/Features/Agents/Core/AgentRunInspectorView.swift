@@ -11,7 +11,7 @@
 
 import SwiftUI
 
-/// Inspector 的顶部标题区由工作台父布局托管，确保它与 Run Surface 标题共享同一行和列宽。
+/// Inspector 标题与中栏 `runHeader` 同构，保证 `HSplitView` 下两栏分割线水平对齐。
 struct AgentRunInspectorHeader: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
@@ -26,35 +26,41 @@ struct AgentRunInspectorHeader: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("agent.workspace.inspector.title")
                     .font(interfaceScale.font(.panelTitle, weight: .semibold))
+                    .lineLimit(1)
                 Text(inspectorSubtitle)
                     .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-            Spacer()
+            Spacer(minLength: 8)
             if viewModel.selectedArtifact != nil,
                viewModel.selectedKnowledgeAudit == nil,
                pendingApproval == nil {
                 CopyFeedbackButton(
                     providesContent: { viewModel.selectedArtifact?.content ?? "" },
-                    tooltip: "agent.workspace.inspector.copy",
-                    style: .bordered
+                    tooltip: "agent.workspace.inspector.copy"
                 ) { didCopy in
-                    Label(
-                        "agent.workspace.inspector.copy",
-                        systemImage: didCopy ? "checkmark.circle.fill" : "doc.on.doc"
-                    )
-                    .foregroundStyle(didCopy ? Color.green : Color.primary)
+                    Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                        .font(interfaceScale.font(size: 13, weight: .medium))
+                        .foregroundStyle(didCopy ? Color.green : .secondary)
+                        .frame(width: 24, height: 24)
                 }
                 Button {
                     viewModel.exportSelectedArtifact()
                 } label: {
-                    Label("agent.workspace.inspector.export", systemImage: "square.and.arrow.down")
+                    Image(systemName: "square.and.arrow.down")
+                        .font(interfaceScale.font(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 24)
                 }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help("agent.workspace.inspector.export")
             }
         }
-        .controlSize(.small)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 11)
     }
 
     private var inspectorSubtitle: String {

@@ -1331,6 +1331,32 @@ private struct RecordingAgentRunContextProvider: AgentRunContextProviding {
     }
 }
 
+@Suite("AgentWorkspaceLayoutMetrics")
+struct AgentWorkspaceLayoutMetricsTests {
+    @Test("Agent 三栏恢复宽度钳制在可拖拽范围内")
+    func workspaceColumnWidthsClampToLayoutBounds() {
+        #expect(
+            AgentWorkspaceLayoutMetrics.clampedLeftWidth(100)
+                == AgentWorkspaceLayoutMetrics.leftMinimumWidth
+        )
+        #expect(
+            AgentWorkspaceLayoutMetrics.clampedLeftWidth(9_999)
+                == AgentWorkspaceLayoutMetrics.leftMaximumWidth
+        )
+        #expect(AgentWorkspaceLayoutMetrics.clampedLeftWidth(312) == 312)
+
+        #expect(
+            AgentWorkspaceLayoutMetrics.clampedRightWidth(100)
+                == AgentWorkspaceLayoutMetrics.rightMinimumWidth
+        )
+        #expect(
+            AgentWorkspaceLayoutMetrics.clampedRightWidth(9_999)
+                == AgentWorkspaceLayoutMetrics.rightMaximumWidth
+        )
+        #expect(AgentWorkspaceLayoutMetrics.clampedRightWidth(420) == 420)
+    }
+}
+
 private struct ContextEchoAgentRuntime: AgentRuntime {
     func run(
         definition: AgentDefinition,

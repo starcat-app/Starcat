@@ -4,25 +4,63 @@
 //
 //  Agent 独立 Workspace Window 的三栏内容视图。
 //
-//  本视图是所有内置 Agent 的唯一工作台壳子。Agent 只提供定义与运行事实，页面结构
-//  保持统一，避免 Weekly / Repo Insight 等能力各自长出一套不可复用的 UI。
+//  本视图是所有内置 Agent 的唯一工作台壳子。三栏结构对齐 RAG 工作台：`HSplitView`
+//  承载 Agent rail / Run Surface / Artifact Inspector，左右栏可拖拽并跨窗口重开恢复。
+//  Agent 只提供定义与运行事实，页面结构保持统一，避免 Weekly / Repo Insight 等
+//  能力各自长出一套不可复用的 UI。
 //
 
 import AppKit
 import SwiftUI
 
+/// Agent 工作台三栏尺寸约束与持久化键。
+///
+/// 与 RAG 工作台共用同一套 `HSplitView` 口径：左右栏可拖拽，中栏保留稳定阅读空间。
+/// 持久化值读取时必须钳制，避免旧 defaults 或手工改键后恢复出挤掉 Run Surface 的布局。
+enum AgentWorkspaceLayoutMetrics {
+    static let leftMinimumWidth: CGFloat = 250
+    static let leftIdealWidth: CGFloat = 312
+    static let leftMaximumWidth: CGFloat = 380
+
+    static let runMinimumWidth: CGFloat = 480
+
+    static let rightMinimumWidth: CGFloat = 320
+    static let rightIdealWidth: CGFloat = 420
+    static let rightMaximumWidth: CGFloat = 520
+
+    static let leftWidthDefaultsKey = "AgentWorkspace.LeftColumnWidth"
+    static let rightWidthDefaultsKey = "AgentWorkspace.RightColumnWidth"
+
+    static func clampedLeftWidth(_ width: Double) -> CGFloat {
+        min(max(CGFloat(width), leftMinimumWidth), leftMaximumWidth)
+    }
+
+    static func clampedRightWidth(_ width: Double) -> CGFloat {
+        min(max(CGFloat(width), rightMinimumWidth), rightMaximumWidth)
+    }
+}
+
+/// 只测量 `HSplitView` 最终分配的实际栏宽；默认值 0 代表该栏当前未挂载或已折叠。
+private struct AgentWorkspaceLeftWidthPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct AgentWorkspaceRightWidthPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 struct AgentWorkspaceView: View {
 
     private static let contextPickerPanelHeight: CGFloat = 420
     private static let contextPickerPanelGap: CGFloat = 12
-    // Header 内含竖向 Divider；若不限制高度，Divider 会把 Header 变成可伸缩视图，
-    // 与正文争抢窗口剩余高度，最终把真正的 Run 内容推到首屏以下。
-    private static let runHeaderHeight: CGFloat = 60
-    // Header 与正文必须复用同一组列宽，否则窗口缩放时中间分隔线会发生错位。
-    private static let runColumnMinWidth: CGFloat = 460
-    private static let runColumnIdealWidth: CGFloat = 560
-    private static let inspectorColumnMinWidth: CGFloat = 430
-    private static let inspectorColumnIdealWidth: CGFloat = 520
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -30,22 +68,72 @@ struct AgentWorkspaceView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(ExternalAgentRuntimePOCPreferences.backendKey)
     private var externalRuntimeBackendRawValue = AgentRuntimeBackend.builtinLoop.rawValue
+    @AppStorage(AgentWorkspaceLayoutMetrics.leftWidthDefaultsKey)
+    private var persistedLeftColumnWidth = Double(AgentWorkspaceLayoutMetrics.leftIdealWidth)
+    @AppStorage(AgentWorkspaceLayoutMetrics.rightWidthDefaultsKey)
+    private var persistedRightColumnWidth = Double(AgentWorkspaceLayoutMetrics.rightIdealWidth)
     @State private var viewModel = AgentWorkspaceViewModel()
     @State private var composerContentHeight: CGFloat = 0
     @State private var isComposerContextExpanded = false
+    /// 拖动期间只更新布局测量值，停止变化后再落盘，避免每个 mouse-drag 事件都写 UserDefaults。
+    @State private var lastMeasuredLeftColumnWidth: CGFloat?
+    @State private var lastMeasuredRightColumnWidth: CGFloat?
+    @State private var leftWidthPersistenceTask: Task<Void, Never>?
+    @State private var rightWidthPersistenceTask: Task<Void, Never>?
     @FocusState private var isContextPickerSearchFocused: Bool
     let chromeState: WorkspaceChromeState
 
+    private var restoredLeftColumnWidth: CGFloat {
+        AgentWorkspaceLayoutMetrics.clampedLeftWidth(persistedLeftColumnWidth)
+    }
+
+    private var restoredRightColumnWidth: CGFloat {
+        AgentWorkspaceLayoutMetrics.clampedRightWidth(persistedRightColumnWidth)
+    }
+
     var body: some View {
-        HStack(spacing: 0) {
+        HSplitView {
             if !chromeState.isLeftColumnCollapsed {
                 agentRail
-                    .frame(width: 312)
-                Divider()
+                    .frame(
+                        minWidth: AgentWorkspaceLayoutMetrics.leftMinimumWidth,
+                        idealWidth: restoredLeftColumnWidth,
+                        maxWidth: AgentWorkspaceLayoutMetrics.leftMaximumWidth
+                    )
+                    .background {
+                        GeometryReader { proxy in
+                            Color.clear.preference(
+                                key: AgentWorkspaceLeftWidthPreferenceKey.self,
+                                value: proxy.size.width
+                            )
+                        }
+                    }
             }
+
             runSurface
+                .frame(minWidth: AgentWorkspaceLayoutMetrics.runMinimumWidth)
+                .layoutPriority(1)
+
+            if !chromeState.isRightColumnCollapsed {
+                artifactInspector
+                    .frame(
+                        minWidth: AgentWorkspaceLayoutMetrics.rightMinimumWidth,
+                        idealWidth: restoredRightColumnWidth,
+                        maxWidth: AgentWorkspaceLayoutMetrics.rightMaximumWidth
+                    )
+                    .background {
+                        GeometryReader { proxy in
+                            Color.clear.preference(
+                                key: AgentWorkspaceRightWidthPreferenceKey.self,
+                                value: proxy.size.width
+                            )
+                        }
+                    }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 6)
+        .padding(.bottom, 6)
         .background(Color(nsColor: .windowBackgroundColor))
         .defaultCursorShield()
         .task {
@@ -81,6 +169,18 @@ struct AgentWorkspaceView: View {
         }
         .animation(.easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)
         .animation(.easeInOut(duration: 0.16), value: chromeState.isRightColumnCollapsed)
+        .onPreferenceChange(AgentWorkspaceLeftWidthPreferenceKey.self) { width in
+            scheduleLeftWidthPersistence(width)
+        }
+        .onPreferenceChange(AgentWorkspaceRightWidthPreferenceKey.self) { width in
+            scheduleRightWidthPersistence(width)
+        }
+        .onDisappear {
+            // 用户可能拖完立即关闭窗口；同步提交最后测量值，不能依赖 debounce 任务来得及执行。
+            persistLastMeasuredWidths()
+            leftWidthPersistenceTask?.cancel()
+            rightWidthPersistenceTask?.cancel()
+        }
     }
 
     /// 每次模型选择变化都重建尚未启动的 Runtime；已经运行的实例由 ViewModel 拒绝替换，
@@ -216,7 +316,8 @@ struct AgentWorkspaceView: View {
                 .padding(.bottom, 18)
             }
         }
-        .background(Color(nsColor: .controlBackgroundColor))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.34))
     }
 
     private var railHeader: some View {
@@ -443,74 +544,64 @@ struct AgentWorkspaceView: View {
         VStack(spacing: 0) {
             runHeader
             Divider()
-            HStack(spacing: 0) {
-                VStack(spacing: 0) {
-                    ZStack(alignment: .bottom) {
-                        runTimeline
+            ZStack(alignment: .bottom) {
+                runTimeline
 
-                        if viewModel.isContextPickerPresented {
-                            agentContextPicker
-                                .padding(.horizontal, 16)
-                                .padding(.bottom, Self.contextPickerPanelGap)
-                                .zIndex(1)
-                        }
-                    }
-                    Divider()
-                    composer
-                }
-                .frame(minWidth: Self.runColumnMinWidth, idealWidth: Self.runColumnIdealWidth)
-                .layoutPriority(1)
-                if !chromeState.isRightColumnCollapsed {
-                    Divider()
-                    artifactInspector
-                        .frame(
-                            minWidth: Self.inspectorColumnMinWidth,
-                            idealWidth: Self.inspectorColumnIdealWidth
-                        )
+                if viewModel.isContextPickerPresented {
+                    agentContextPicker
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, Self.contextPickerPanelGap)
+                        .zIndex(1)
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Divider()
+            composer
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
+    /// 与 RAG `answerHeader` 同构：headline + caption + 上下 11pt，保证 Inspector 分割线水平对齐。
     private var runHeader: some View {
-        HStack(spacing: 0) {
-            HStack(spacing: 12) {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(viewModel.selectedAgent?.title ?? String.l10n("agent.workspace.window.title"))
-                    .font(agentFont(.title3, weight: .semibold))
-
-                Spacer()
-                Text(resolvedRuntimeBackend?.displayName ?? "Runtime unavailable")
-                    .font(agentFont(.caption, weight: .semibold))
+                    .font(agentFont(.headline, weight: .semibold))
+                    .lineLimit(1)
+                Text(viewModel.runTitle)
+                    .font(agentFont(.caption))
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.primary.opacity(0.06), in: Capsule())
+                    .lineLimit(1)
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 8)
-            .frame(minWidth: Self.runColumnMinWidth, idealWidth: Self.runColumnIdealWidth)
-            .layoutPriority(1)
-
-            if !chromeState.isRightColumnCollapsed {
-                Divider()
-                AgentRunInspectorHeader(viewModel: viewModel)
-                    .frame(
-                        minWidth: Self.inspectorColumnMinWidth,
-                        idealWidth: Self.inspectorColumnIdealWidth
-                    )
-            }
+            Spacer(minLength: 8)
+            Text(resolvedRuntimeBackend?.displayName ?? "Runtime unavailable")
+                .font(agentFont(.caption, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.primary.opacity(0.06), in: Capsule())
         }
-        .frame(height: Self.runHeaderHeight)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 11)
     }
 
     private var runTimeline: some View {
         AgentMessageTimelineView(viewModel: viewModel)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Artifact Inspector
 
     private var artifactInspector: some View {
-        AgentRunInspectorView(viewModel: viewModel)
+        VStack(alignment: .leading, spacing: 0) {
+            AgentRunInspectorHeader(viewModel: viewModel)
+            Divider()
+            AgentRunInspectorView(viewModel: viewModel)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.26))
     }
 
     // MARK: - Composer
@@ -1144,7 +1235,6 @@ struct AgentWorkspaceView: View {
 
     private enum AgentFontRole {
         case title2
-        case title3
         case headline
         case subheadline
         case body
@@ -1155,7 +1245,7 @@ struct AgentWorkspaceView: View {
         /// Maps local workspace roles onto the shared `DESIGN.md` typography tokens.
         var typography: StarcatTypography {
             switch self {
-            case .title2, .title3: return .workspaceTitle
+            case .title2:          return .workspaceTitle
             case .headline:        return .panelTitle
             case .subheadline:     return .rowTitle
             case .body:            return .body
@@ -1176,6 +1266,54 @@ struct AgentWorkspaceView: View {
 
     private func agentIconFont(size: CGFloat, weight: Font.Weight = .regular) -> Font {
         interfaceScale.font(size: size, weight: weight)
+    }
+
+    /// `HSplitView` 会在拖拽和窗口缩放时连续报告尺寸；静止 250ms 后才把最终值保存为下次窗口默认值。
+    private func scheduleLeftWidthPersistence(_ measuredWidth: CGFloat) {
+        guard !chromeState.isLeftColumnCollapsed,
+              measuredWidth >= AgentWorkspaceLayoutMetrics.leftMinimumWidth else { return }
+
+        let width = AgentWorkspaceLayoutMetrics.clampedLeftWidth(Double(measuredWidth))
+        lastMeasuredLeftColumnWidth = width
+        guard abs(CGFloat(persistedLeftColumnWidth) - width) > 0.5 else { return }
+
+        leftWidthPersistenceTask?.cancel()
+        leftWidthPersistenceTask = Task { @MainActor in
+            do {
+                try await Task.sleep(for: .milliseconds(250))
+            } catch {
+                return
+            }
+            persistedLeftColumnWidth = Double(width)
+        }
+    }
+
+    private func scheduleRightWidthPersistence(_ measuredWidth: CGFloat) {
+        guard !chromeState.isRightColumnCollapsed,
+              measuredWidth >= AgentWorkspaceLayoutMetrics.rightMinimumWidth else { return }
+
+        let width = AgentWorkspaceLayoutMetrics.clampedRightWidth(Double(measuredWidth))
+        lastMeasuredRightColumnWidth = width
+        guard abs(CGFloat(persistedRightColumnWidth) - width) > 0.5 else { return }
+
+        rightWidthPersistenceTask?.cancel()
+        rightWidthPersistenceTask = Task { @MainActor in
+            do {
+                try await Task.sleep(for: .milliseconds(250))
+            } catch {
+                return
+            }
+            persistedRightColumnWidth = Double(width)
+        }
+    }
+
+    private func persistLastMeasuredWidths() {
+        if let width = lastMeasuredLeftColumnWidth {
+            persistedLeftColumnWidth = Double(width)
+        }
+        if let width = lastMeasuredRightColumnWidth {
+            persistedRightColumnWidth = Double(width)
+        }
     }
 
 }
