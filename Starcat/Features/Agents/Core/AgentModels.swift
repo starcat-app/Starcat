@@ -62,6 +62,8 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
     let promptRules: [AgentPromptRule]
     /// 最终 Artifact 在 Inspector 中显示的标题；nil 时使用 Agent 标题。
     let artifactTitle: String?
+    /// Runtime 路由契约。默认锁定进程内 Loop，外部 POC Agent 必须显式声明可用后端。
+    let runtimePolicy: AgentRuntimePolicy
     /// 模型在当前 Agent 中可见的工具 allowlist；数组顺序不代表执行顺序。
     let toolIDs: [String]
     let artifactTypes: [AgentArtifactType]
@@ -77,6 +79,7 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
         workflow: AgentWorkflowPolicy = .general,
         promptRules: [AgentPromptRule] = [],
         artifactTitle: String? = nil,
+        runtimePolicy: AgentRuntimePolicy = .builtinOnly,
         toolIDs: [String] = [],
         artifactTypes: [AgentArtifactType] = []
     ) {
@@ -90,6 +93,7 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
         self.workflow = workflow
         self.promptRules = promptRules
         self.artifactTitle = artifactTitle
+        self.runtimePolicy = runtimePolicy
         self.toolIDs = toolIDs
         self.artifactTypes = artifactTypes
     }

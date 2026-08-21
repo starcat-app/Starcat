@@ -40,5 +40,6 @@ struct DistributionGateTests {
         #expect(gate.isAvailable(.directLicense) == false)
         #expect(gate.isAvailable(.deviceFlowLogin) == false)
         #expect(gate.isAvailable(.personalAccessTokenLogin) == false)
+        #expect(gate.isAvailable(.externalAgentRuntime) == false)
     }
 }

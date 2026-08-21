@@ -34,6 +34,7 @@
 |---|---|---|---|---|
 | `dev` | 本地 + `origin/dev`；当前无独立 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；1.4.0 发版准备与 App Store 正式版 Xcode 打包门禁已进入 `main`。 | 后续功能继续在 `dev` 开发；新的发版阻断问题仍回到 `dev` 修复并重新执行门禁。 |
 | `main` | 本地 + `origin/main`；仓库根目录 worktree | 远端默认稳定主线和发布基线。 | `长期保留`；2026-08-21 已从 `dev` 快进至 1.4.0 发布基线，App Store 打包已强制使用正式版 Xcode。 | 保持发布冻结；App Store 包由 dong4j 手动上传，Direct 公开发布仍需解决 notarization 凭据门禁。 |
+| `codex/external-agent-runtime-poc` | 本地；`../Starcat-external-agent-runtime-poc` worktree | 基于 `dev@f6d34d1c` 验证可切换 External Agent Runtime 底座，保留 `LoopAgentRuntime`，并接入 Codex App Server 与 DeepSeek Harness adapter。 | `开发中`；POC 隔离实施，不修改 `dev` / `main`。 | 完成协议、能力门禁与 Direct 隐藏入口验证后，由 dong4j 验收并决定是否合回 `dev`。 |
 
 ## 近期已清理分支
 

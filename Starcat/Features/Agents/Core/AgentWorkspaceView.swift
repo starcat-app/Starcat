@@ -28,6 +28,8 @@ struct AgentWorkspaceView: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage(ExternalAgentRuntimePOCPreferences.backendKey)
+    private var externalRuntimeBackendRawValue = AgentRuntimeBackend.builtinLoop.rawValue
     @State private var viewModel = AgentWorkspaceViewModel()
     @State private var composerContentHeight: CGFloat = 0
     @State private var isComposerContextExpanded = false
@@ -47,6 +49,7 @@ struct AgentWorkspaceView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .defaultCursorShield()
         .task {
+            viewModel.refreshLocalizedDefinitions(availableAgentDefinitions)
             let repositoryCatalog = GRDBAgentRepositoryCatalog(database: dependencies.database)
             viewModel.configureContextProvider(RepositoryAgentRunContextProvider(
                 repoRepository: dependencies.repoRepository,
@@ -69,7 +72,11 @@ struct AgentWorkspaceView: View {
             configureAgentRuntime()
         }
         .onChange(of: locale.identifier) { _, _ in
-            viewModel.refreshLocalizedDefinitions(BuiltInAgents.all)
+            viewModel.refreshLocalizedDefinitions(availableAgentDefinitions)
+            configureAgentRuntime()
+        }
+        .onChange(of: externalRuntimeBackendRawValue) { _, _ in
+            viewModel.refreshLocalizedDefinitions(availableAgentDefinitions)
             configureAgentRuntime()
         }
         .animation(.easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)
@@ -79,6 +86,7 @@ struct AgentWorkspaceView: View {
     /// 每次模型选择变化都重建尚未启动的 Runtime；已经运行的实例由 ViewModel 拒绝替换，
     /// 从而保证一次 run 从首个 token 到最终 artifact 始终使用同一模型。
     private func configureAgentRuntime() {
+        let preferredBackend = selectedRuntimeBackend
         let externalSearchTool = ExternalSearchAgentTool(
             collector: AppSettingsAgentExternalSearchCollector(settings: dependencies.settings)
         )
@@ -93,6 +101,7 @@ struct AgentWorkspaceView: View {
             AppLog.ai.warning("Agent knowledge tool unavailable: \(error.localizedDescription, privacy: .public)")
             knowledgeSearcher = UnavailableAgentKnowledgeSearcher()
         }
+        var runtimes: [AgentRuntimeBackend: any AgentRuntime] = [:]
         do {
             let toolRegistry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.makeAll(
                 externalSearchTool: externalSearchTool,
@@ -104,7 +113,7 @@ struct AgentWorkspaceView: View {
                 settings: dependencies.settings,
                 selectedModelID: viewModel.selectedModelID
             )
-            viewModel.configureRuntime(LoopAgentRuntime(
+            runtimes[.builtinLoop] = LoopAgentRuntime(
                 modelClient: modelClient,
                 toolRegistry: toolRegistry,
                 runRepository: dependencies.agentRunRepository,
@@ -112,10 +121,47 @@ struct AgentWorkspaceView: View {
                 localeIdentifier: locale.identifier,
                 preferredLanguage: preferredOutputLanguage,
                 externalSearchPolicy: AgentExternalSearchPolicy.current(settings: dependencies.settings)
-            ))
+            )
         } catch {
-            viewModel.configureRuntime(UnavailableAgentRuntime(message: error.localizedDescription))
+            runtimes[.builtinLoop] = UnavailableAgentRuntime(message: error.localizedDescription)
         }
+
+        if preferredBackend != .builtinLoop {
+            do {
+                let adapter = try ExternalAgentRuntimePOCPreferences.makeAdapter(backend: preferredBackend)
+                let selectedModelName = viewModel.availableModels
+                    .first(where: { $0.id == viewModel.selectedModelID })?
+                    .name
+                runtimes[preferredBackend] = ExternalAgentRuntime(
+                    adapter: adapter,
+                    distributionGate: dependencies.distributionGate,
+                    selectedModelName: selectedModelName
+                )
+            } catch {
+                runtimes[preferredBackend] = UnavailableAgentRuntime(message: error.localizedDescription)
+            }
+        }
+        viewModel.configureRuntime(AgentRuntimeRouter(
+            preferredBackend: preferredBackend,
+            runtimes: runtimes
+        ))
+    }
+
+    private var selectedRuntimeBackend: AgentRuntimeBackend {
+        #if DEBUG
+        guard dependencies.distributionGate.isAvailable(.externalAgentRuntime) else {
+            return .builtinLoop
+        }
+        return AgentRuntimeBackend(rawValue: externalRuntimeBackendRawValue) ?? .builtinLoop
+        #else
+        // POC 不得因历史 UserDefaults 残留进入 Direct Release；产品化前只允许 Debug 装配。
+        return .builtinLoop
+        #endif
+    }
+
+    private var availableAgentDefinitions: [AgentDefinition] {
+        guard selectedRuntimeBackend != .builtinLoop else { return BuiltInAgents.all }
+        return BuiltInAgents.all + ExternalAgentPOCAgentDefinitions.all
     }
 
     /// 模型提示词使用英文语言名，避免只支持中英文而让其它 App locale 静默回退英语。
@@ -138,6 +184,10 @@ struct AgentWorkspaceView: View {
                     agentSection("agent.workspace.section.discovery", agents: viewModel.agents.filter { ["github-weekly-report", "repo-alternatives"].contains($0.id) })
                     agentSection("agent.workspace.section.digest", agents: viewModel.agents.filter { ["repo-insight", "release-watcher"].contains($0.id) })
                     agentSection("agent.workspace.section.organize", agents: viewModel.agents.filter { ["overlap-scan", "untagged-tidy"].contains($0.id) })
+                    let externalAgents = viewModel.agents.filter { $0.runtimePolicy != .builtinOnly }
+                    if !externalAgents.isEmpty {
+                        agentSection("External Runtime POC", agents: externalAgents)
+                    }
                     historySection
                 }
                 .padding(.horizontal, 12)

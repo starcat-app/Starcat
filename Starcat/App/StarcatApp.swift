@@ -714,6 +714,8 @@ private enum DebugWindowResizer {
 
 struct DebugMenuCommands: Commands {
     @AppStorage(DebugFlags.debugProOverrideKey) private var debugProOverride = false
+    @AppStorage(ExternalAgentRuntimePOCPreferences.backendKey)
+    private var externalRuntimeBackend = AgentRuntimeBackend.builtinLoop.rawValue
 
     var body: some Commands {
         CommandMenu("Who's Your Daddy") {
@@ -732,6 +734,15 @@ struct DebugMenuCommands: Commands {
                     }
                 )
             )
+
+            Divider()
+
+            Picker("External Agent Runtime POC", selection: $externalRuntimeBackend) {
+                Text("Off · Loop only").tag(AgentRuntimeBackend.builtinLoop.rawValue)
+                Text("Codex App Server").tag(AgentRuntimeBackend.codexAppServer.rawValue)
+                Text("DeepSeek Harness").tag(AgentRuntimeBackend.deepSeekHarness.rawValue)
+            }
+            .disabled(!DistributionGate().isAvailable(.externalAgentRuntime))
 
             Divider()
 
