@@ -2,7 +2,7 @@
 """校验并提交 Starcat Weekly 人工情报批次。
 
 默认只打印规范化 payload；必须显式传入 --confirm 才会访问管理接口。
-生产提交固定使用 Weekly 生产服务，并从 weekly-api 的本地 .env 读取管理员 Key；
+生产提交固定使用 Starcat 聚合 API 的 Weekly 服务，并从 starcat-api 的本地 .env 读取管理员 Key；
 只有显式 --test 才允许调用方注入测试地址和测试 Key。
 """
 
@@ -26,10 +26,13 @@ from typing import Any
 OWNER_PATTERN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
 REPO_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 TERMINAL_STATUSES = {"success", "partial_success", "failed"}
-PRODUCTION_BASE_URL = "https://starcat-weekly-api.fly.dev"
+PRODUCTION_BASE_URL = "https://starcat-api.fly.dev"
+PRODUCTION_SERVICE_HEADER = "X-SC-Svc"
+PRODUCTION_SERVICE_NAME = "weekly"
+PRODUCTION_ADMIN_KEY_NAME = "WEEKLY_ADMIN_API_KEYS"
 # 从脚本自身定位 Starcat 根目录，避免依赖调用命令时的当前工作目录。
 STARCAT_ROOT = Path(__file__).resolve().parents[4]
-PRODUCTION_ENV_FILE = STARCAT_ROOT / "supports" / "starcat-weekly-api" / ".env"
+PRODUCTION_ENV_FILE = STARCAT_ROOT / "supports" / "starcat-api" / ".env"
 
 
 def parse_args() -> argparse.Namespace:
@@ -45,10 +48,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_production_admin_key(path: Path = PRODUCTION_ENV_FILE) -> str:
-    """从 weekly-api 的 .env 读取第一个 ADMIN_API_KEYS 值。
+    """从 starcat-api 的 .env 读取第一个 WEEKLY_ADMIN_API_KEYS 值。
 
     这里不通过 shell source 加载文件，避免把 .env 内容当成命令执行；只解析本任务需要的
-    ADMIN_API_KEYS，并兼容常见的单引号或双引号包裹形式。
+    Weekly 管理密钥，并兼容常见的单引号或双引号包裹形式。
     """
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
@@ -60,7 +63,7 @@ def load_production_admin_key(path: Path = PRODUCTION_ENV_FILE) -> str:
         if not line or line.startswith("#") or "=" not in line:
             continue
         name, raw_value = line.split("=", 1)
-        if name.removeprefix("export ").strip() != "ADMIN_API_KEYS":
+        if name.removeprefix("export ").strip() != PRODUCTION_ADMIN_KEY_NAME:
             continue
         value = raw_value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
@@ -69,7 +72,7 @@ def load_production_admin_key(path: Path = PRODUCTION_ENV_FILE) -> str:
         if key:
             return key
         break
-    raise ValueError(f"生产配置文件缺少非空 ADMIN_API_KEYS: {path}")
+    raise ValueError(f"生产配置文件缺少非空 {PRODUCTION_ADMIN_KEY_NAME}: {path}")
 
 
 def resolve_runtime_config(
@@ -158,6 +161,9 @@ def api_request(base_url: str, key: str, method: str, path: str, body: dict[str,
     data = None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(url, data=data, method=method)
     request.add_header("Authorization", f"Bearer {key}")
+    # 聚合 Host 上存在同路径的多个业务 API；显式服务头是 Weekly 路由的唯一可靠依据。
+    # 独立 weekly-api 会忽略未知头，因此测试环境直接指向独立服务时也保持兼容。
+    request.add_header(PRODUCTION_SERVICE_HEADER, PRODUCTION_SERVICE_NAME)
     request.add_header("Accept", "application/json")
     if data is not None:
         request.add_header("Content-Type", "application/json")

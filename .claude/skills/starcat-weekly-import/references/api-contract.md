@@ -1,11 +1,12 @@
-# starcat-weekly-api 人工录入契约
+# starcat-api Weekly 人工录入契约
 
 ## 配置
 
-- 生产 Base URL：固定为 `https://starcat-weekly-api.fly.dev`。
-- 生产 Admin Key：从 Starcat 仓库的 `supports/starcat-weekly-api/.env` 读取 `ADMIN_API_KEYS`；多值时使用第一个非空 Key。
+- 生产 Base URL：固定为 `https://starcat-api.fly.dev`。
+- 服务路由：所有 Weekly 请求携带 `X-SC-Svc: weekly`；独立 weekly-api 会忽略该未知头。
+- 生产 Admin Key：从 Starcat 仓库的 `supports/starcat-api/.env` 读取 `WEEKLY_ADMIN_API_KEYS`；多值时使用第一个非空 Key。
 - 测试模式：只有用户明确说明测试时才启用 `--test`，并通过 `--base-url` / `STARCAT_WEEKLY_BASE_URL` 和 `STARCAT_WEEKLY_ADMIN_KEY` 注入测试配置。
-- Header：`Authorization: Bearer <Admin Key>`。
+- Header：`Authorization: Bearer <Admin Key>` 与 `X-SC-Svc: weekly`。
 - 所有写请求与来源能力查询都使用 Admin Key，不使用客户端公开 API Key。
 - 不得输出 Admin Key、完整 Authorization header，或要求用户把生产 Key 导出到 shell。
 

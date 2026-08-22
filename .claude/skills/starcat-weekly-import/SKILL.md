@@ -1,6 +1,6 @@
 ---
 name: starcat-weekly-import
-description: 从新闻摘要、项目清单、文章或其他批量文本中联网甄别并识别真实 GitHub 仓库，搜索和核验 owner/repo，向用户展示证据并在明确确认后，通过 starcat-weekly-api 批量写入 Weekly 的受控人工来源。未明确说明测试时，固定使用生产服务 https://starcat-weekly-api.fly.dev，并从 supports/starcat-weekly-api/.env 的 ADMIN_API_KEYS 读取管理员 Key。用户提到 AI 情报采集、从新闻标题找 GitHub 项目、从文本找 GitHub 地址、批量录入 Starcat Weekly、解析项目清单或补全缺失仓库链接时使用。
+description: 从新闻摘要、项目清单、文章或其他批量文本中联网甄别并识别真实 GitHub 仓库，搜索和核验 owner/repo，向用户展示证据并在明确确认后，通过 starcat-api 的 Weekly 服务批量写入受控人工来源。未明确说明测试时，固定使用生产服务 https://starcat-api.fly.dev，并从 supports/starcat-api/.env 的 WEEKLY_ADMIN_API_KEYS 读取管理员 Key。用户提到 AI 情报采集、从新闻标题找 GitHub 项目、从文本找 GitHub 地址、批量录入 Starcat Weekly、解析项目清单或补全缺失仓库链接时使用。
 ---
 
 # Starcat Weekly 情报采集
@@ -16,8 +16,8 @@ description: 从新闻摘要、项目清单、文章或其他批量文本中联�
 - 新闻标题是检索线索，不是仓库名：对于没有显式 GitHub URL 的每一条输入，必须联网定位发布主体和实际项目；不要要求用户自行补链接，也不要按标题字面猜测仓库。
 - 仅提交与新闻主体直接对应的官方仓库。若新闻是闭源产品、云服务、论文、仅在 Hugging Face/Civitai 发布的模型或硬件发布，而没有该主体的官方 GitHub 仓库，记为“未找到”；不得用同名第三方实现、上游项目、配套节点或辅助工具替代。
 - 一个输入批次最多提交 200 个仓库。批内按小写 `owner/repo` 去重，但保留用户原文标题和来源链接。
-- 用户未明确说明“测试”时，一律固定使用生产服务 `https://starcat-weekly-api.fly.dev`，不得接受或推断其他 Base URL。
-- 生产 Admin Key 只从 `supports/starcat-weekly-api/.env` 的 `ADMIN_API_KEYS` 读取；多值时使用第一个非空 Key。不得要求用户导出生产 Key，也不得在 Skill、命令或输出中显示 Key。
+- 用户未明确说明“测试”时，一律固定使用生产服务 `https://starcat-api.fly.dev`，并通过 `X-SC-Svc: weekly` 路由到 Weekly，不得接受或推断其他 Base URL。
+- 生产 Admin Key 只从 `supports/starcat-api/.env` 的 `WEEKLY_ADMIN_API_KEYS` 读取；多值时使用第一个非空 Key。不得要求用户导出生产 Key，也不得在 Skill、命令或输出中显示 Key。
 - 只有用户明确说明“测试”时才使用 `--test`，此时才允许通过 `--base-url` / `STARCAT_WEEKLY_BASE_URL` 和 `STARCAT_WEEKLY_ADMIN_KEY` 注入测试配置。
 - POST 只代表持久化入队成功，不代表 GitHub 数据已补全；拿到 `batch_id` 后必须轮询批次终态。
 
@@ -67,7 +67,8 @@ description: 从新闻摘要、项目清单、文章或其他批量文本中联�
 
 ```text
 GET /internal/sources?manual_import=true
-Authorization: Bearer <从 supports/starcat-weekly-api/.env 的 ADMIN_API_KEYS 读取>
+Authorization: Bearer <从 supports/starcat-api/.env 的 WEEKLY_ADMIN_API_KEYS 读取>
+X-SC-Svc: weekly
 ```
 
 确认目标来源仍允许人工录入。服务端返回为空或不含目标来源时停止。
@@ -85,7 +86,7 @@ python3 .claude/skills/starcat-weekly-import/scripts/submit_import.py \
   --confirm --poll
 ```
 
-第一条命令默认仅校验并打印 payload，不访问网络。第二条命令固定调用 `https://starcat-weekly-api.fly.dev`，从 `supports/starcat-weekly-api/.env` 读取 `ADMIN_API_KEYS`，检查来源能力、提交并轮询。
+第一条命令默认仅校验并打印 payload，不访问网络。第二条命令固定调用 `https://starcat-api.fly.dev`，携带 `X-SC-Svc: weekly`，并从 `supports/starcat-api/.env` 读取 `WEEKLY_ADMIN_API_KEYS`，检查来源能力、提交并轮询。
 
 只有用户明确要求测试时，才使用测试模式：
 
