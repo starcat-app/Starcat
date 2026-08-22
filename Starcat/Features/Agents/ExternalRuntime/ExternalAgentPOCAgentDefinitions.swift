@@ -35,11 +35,20 @@ enum ExternalAgentPOCAgentDefinitions {
             promptRules: [
                 AgentPromptRule(
                     id: "external-general-readonly",
-                    content: "Remain read-only. Do not use shell, filesystem mutation, browser automation, or subagents."
+                    content: "Remain read-only. Use the Starcat MCP tools for repository questions. Do not use shell, filesystem mutation, browser automation, or subagents."
                 )
             ],
             artifactTitle: "External Agent Result",
             runtimePolicy: .externalPOC,
+            externalMCPToolIDs: [
+                "starcat.get_overview_statistics",
+                "starcat.search_repos",
+                "starcat.get_repo",
+                "starcat.get_repo_context",
+                "starcat.get_repo_summary",
+                "starcat.get_readme",
+                "starcat.list_tags",
+            ],
             artifactTypes: [.markdown]
         )
     }

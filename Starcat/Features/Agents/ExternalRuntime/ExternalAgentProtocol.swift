@@ -10,6 +10,20 @@
 
 import Foundation
 
+/// 外部 Runtime 在当前 Run 内访问 Starcat MCP 的一次性连接信息。
+/// Token 只通过子进程环境传递，不进入 Cordis 文件、UserDefaults 或日志。
+struct ExternalAgentMCPConnection: Sendable {
+    let endpointURL: URL
+    let bearerToken: String
+}
+
+/// 临时 MCP Server 的租约。Runtime 无论正常、失败或取消都必须调用 `shutdown`，
+/// 防止 Agent Run 结束后仍有端口和本地数据入口残留。
+struct ExternalAgentMCPLease: Sendable {
+    let connection: ExternalAgentMCPConnection
+    let shutdown: @Sendable () async -> Void
+}
+
 struct ExternalAgentRunRequest: Sendable {
     let runID: UUID
     let prompt: String
@@ -18,6 +32,26 @@ struct ExternalAgentRunRequest: Sendable {
     let workingDirectory: URL
     /// 只有已经过 Agent definition allowlist 与只读权限过滤的工具才会进入 Provider。
     let tools: [AgentToolDefinition]
+    /// 仅外部 Runtime 自带 MCP client 使用；Codex dynamic tools 等路径保持 nil。
+    let mcpConnection: ExternalAgentMCPConnection?
+
+    init(
+        runID: UUID,
+        prompt: String,
+        modelName: String?,
+        reasoningEffort: String?,
+        workingDirectory: URL,
+        tools: [AgentToolDefinition],
+        mcpConnection: ExternalAgentMCPConnection? = nil
+    ) {
+        self.runID = runID
+        self.prompt = prompt
+        self.modelName = modelName
+        self.reasoningEffort = reasoningEffort
+        self.workingDirectory = workingDirectory
+        self.tools = tools
+        self.mcpConnection = mcpConnection
+    }
 }
 
 struct ExternalAgentProcessConfiguration: Sendable {

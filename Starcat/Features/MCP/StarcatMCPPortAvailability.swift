@@ -18,6 +18,16 @@ import Darwin
 import Foundation
 
 enum StarcatMCPPortAvailability {
+    /// 为单次 Agent Run 选择一个动态私有端口。这里只做极短的 bind 预检；真正的
+    /// listener 随后还会等待 `.ready`，若发生竞争由调用方换端口重试。
+    static func availableDynamicPort(maxAttempts: Int = 32) throws -> Int {
+        for _ in 0..<maxAttempts {
+            let port = Int.random(in: 49_152...65_535)
+            if unavailableMessage(for: port) == nil { return port }
+        }
+        throw StarcatMCPError.invalidArguments("Unable to allocate a loopback MCP port.")
+    }
+
     /// 返回 nil 表示当前端口可绑定；返回字符串表示可直接展示给用户的友好错误。
     ///
     /// 设置 `SO_REUSEADDR`：与 NWListener 默认行为对齐，避免 TIME_WAIT 状态下

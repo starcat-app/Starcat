@@ -11,6 +11,10 @@
 
 import Foundation
 
+typealias ExternalAgentMCPBridgeFactory = @MainActor @Sendable (
+    _ allowedToolNames: Set<String>
+) async throws -> ExternalAgentMCPLease
+
 struct ExternalAgentRuntime: AgentRuntime {
     let adapter: any ExternalAgentProtocolAdapter
     let host: ExternalAgentRuntimeHost
@@ -21,6 +25,7 @@ struct ExternalAgentRuntime: AgentRuntime {
     let preferredLanguage: String
     let toolRegistry: AgentToolRegistry?
     let runRepository: (any AgentRunRepositoryProtocol)?
+    let mcpBridgeFactory: ExternalAgentMCPBridgeFactory?
 
     init(
         adapter: any ExternalAgentProtocolAdapter,
@@ -31,7 +36,8 @@ struct ExternalAgentRuntime: AgentRuntime {
         localeIdentifier: String = Locale.current.identifier,
         preferredLanguage: String = "English",
         toolRegistry: AgentToolRegistry? = nil,
-        runRepository: (any AgentRunRepositoryProtocol)? = nil
+        runRepository: (any AgentRunRepositoryProtocol)? = nil,
+        mcpBridgeFactory: ExternalAgentMCPBridgeFactory? = nil
     ) {
         self.adapter = adapter
         self.host = host
@@ -42,6 +48,7 @@ struct ExternalAgentRuntime: AgentRuntime {
         self.preferredLanguage = preferredLanguage
         self.toolRegistry = toolRegistry
         self.runRepository = runRepository
+        self.mcpBridgeFactory = mcpBridgeFactory
     }
 
     func run(
@@ -85,6 +92,8 @@ struct ExternalAgentRuntime: AgentRuntime {
                     )
                     defer { try? FileManager.default.removeItem(at: workingDirectory) }
 
+                    let mcpLease = try await makeMCPLeaseIfNeeded(definition: definition)
+
                     await projector.start(userPrompt: prompt, context: context)
                     let externalPrompt = ExternalAgentPromptBuilder.build(
                         definition: definition,
@@ -99,16 +108,23 @@ struct ExternalAgentRuntime: AgentRuntime {
                         modelName: selectedModelName,
                         reasoningEffort: reasoningEffort,
                         workingDirectory: workingDirectory,
-                        tools: tools.map(\.definition)
+                        tools: tools.map(\.definition),
+                        mcpConnection: mcpLease?.connection
                     )
-                    let driver = try adapter.makeDriver(request: request)
-                    try await host.execute(
-                        runID: runID,
-                        driver: driver,
-                        toolCallHandler: toolCallHandler
-                    ) { event in
-                        await projector.consume(event)
+                    do {
+                        let driver = try adapter.makeDriver(request: request)
+                        try await host.execute(
+                            runID: runID,
+                            driver: driver,
+                            toolCallHandler: toolCallHandler
+                        ) { event in
+                            await projector.consume(event)
+                        }
+                    } catch {
+                        if let mcpLease { await mcpLease.shutdown() }
+                        throw error
                     }
+                    if let mcpLease { await mcpLease.shutdown() }
                     await projector.finishIfNeeded()
                 } catch is CancellationError {
                     await host.cancel(runID: runID)
@@ -153,6 +169,20 @@ struct ExternalAgentRuntime: AgentRuntime {
             )
         }
         return toolRegistry
+    }
+
+    private func makeMCPLeaseIfNeeded(
+        definition: AgentDefinition
+    ) async throws -> ExternalAgentMCPLease? {
+        guard adapter.backend == .deepSeekHarness,
+              !definition.externalMCPToolIDs.isEmpty
+        else { return nil }
+        guard let mcpBridgeFactory else {
+            throw ExternalAgentRuntimeError.protocolError(
+                "Starcat MCP bridge is unavailable for this DeepSeek Agent."
+            )
+        }
+        return try await mcpBridgeFactory(Set(definition.externalMCPToolIDs))
     }
 
     private static func validateRequiredContext(

@@ -15,11 +15,38 @@ import MCP
 final class StarcatMCPToolRegistry {
     private let facade: StarcatMCPFacade
     private let writeFacade: StarcatMCPWriteFacade
+    private let allowedToolNames: Set<String>?
+    private let exposesResources: Bool
 
-    init(facade: StarcatMCPFacade, writeFacade: StarcatMCPWriteFacade) {
+    init(
+        facade: StarcatMCPFacade,
+        writeFacade: StarcatMCPWriteFacade,
+        allowedToolNames: Set<String>? = nil,
+        exposesResources: Bool = true
+    ) {
         self.facade = facade
         self.writeFacade = writeFacade
+        self.allowedToolNames = allowedToolNames
+        self.exposesResources = exposesResources
     }
+
+    /// 临时外部 Runtime MCP Bridge 只能从这组工具中继续收窄。即使模型绕过
+    /// `tools/list` 直接构造 `tools/call`，Registry 入口也会再次执行 allowlist。
+    static let readOnlyToolNames: Set<String> = [
+        "starcat.get_capabilities",
+        "starcat.get_overview_statistics",
+        "starcat.get_ai_usage_statistics",
+        "starcat.get_knowledge_base_statistics",
+        "starcat.search_repos",
+        "starcat.global_search_repos",
+        "starcat.semantic_search",
+        "starcat.get_repo",
+        "starcat.get_repo_context",
+        "starcat.get_repo_summary",
+        "starcat.get_readme",
+        "starcat.list_tags",
+        "starcat.get_repo_note",
+    ]
 
     func register(on server: Server) async {
         await server.withMethodHandler(ListTools.self) { [weak self] _ in
@@ -38,6 +65,7 @@ final class StarcatMCPToolRegistry {
 
         await server.withMethodHandler(ListResources.self) { [weak self] _ in
             guard let self else { return .init(resources: []) }
+            guard self.exposesResources else { return .init(resources: []) }
             do {
                 let descriptors = try await self.facade.resources()
                 return .init(resources: descriptors.map { item in
@@ -57,6 +85,9 @@ final class StarcatMCPToolRegistry {
             guard let self else {
                 throw MCPError.internalError("MCP registry is unavailable.")
             }
+            guard self.exposesResources else {
+                throw MCPError.invalidRequest("MCP resources are disabled for this Runtime.")
+            }
             let result = try await self.facade.readResource(uri: params.uri)
             return .init(contents: [
                 .text(result.text, uri: params.uri, mimeType: result.mimeType)
@@ -65,7 +96,7 @@ final class StarcatMCPToolRegistry {
     }
 
     private var tools: [Tool] {
-        [
+        let allTools = [
             Tool(
                 name: "starcat.get_capabilities",
                 title: "Get Starcat MCP capabilities",
@@ -281,10 +312,15 @@ final class StarcatMCPToolRegistry {
                 annotations: .init(readOnlyHint: false, openWorldHint: false)
             )
         ]
+        guard let allowedToolNames else { return allTools }
+        return allTools.filter { allowedToolNames.contains($0.name) }
     }
 
     private func callTool(_ params: CallTool.Parameters) async -> CallTool.Result {
         do {
+            guard allowedToolNames?.contains(params.name) ?? true else {
+                throw StarcatMCPError.unsupported("Tool is not allowed for this Agent: \(params.name)")
+            }
             switch params.name {
             case "starcat.get_capabilities":
                 return try Self.result(facade.getCapabilities())

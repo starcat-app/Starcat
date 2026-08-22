@@ -351,9 +351,10 @@ struct ExternalAgentProtocolAdapterTests {
     }
 
     @Test(
-        "本机 DeepSeek Harness 0.1.1rc1 完成真实 turn",
+        "本机 DeepSeek Harness 0.1.1rc1 通过 MCP 读取 Starcat 数据",
         .enabled(if: shouldRunDeepSeekIntegration)
     )
+    @MainActor
     func installedDeepSeekHarnessCompletesRealTurn() async throws {
         #if arch(arm64)
         let environment = ProcessInfo.processInfo.environment
@@ -362,13 +363,44 @@ struct ExternalAgentProtocolAdapterTests {
         let apiKey = try #require(environment["DEEPSEEK_API_KEY"])
         #expect(!apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
+        let workingDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("starcat-deepseek-mcp-smoke-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: workingDirectory, withIntermediateDirectories: true)
+        let mcpRuntime = try await StarcatMCPRuntimeTests.makeRuntime(
+            allowedToolNames: ["starcat.search_repos"],
+            exposesResources: false
+        )
+        let port = try StarcatMCPPortAvailability.availableDynamicPort()
+        let token = UUID().uuidString
+        let mcpServer = StarcatMCPLoopbackHTTPServer(
+            port: port,
+            runtime: mcpRuntime,
+            requestValidator: { request in
+                guard request.path == "/mcp" else { return .notFound }
+                guard request.header("Authorization") == "Bearer \(token)" else {
+                    return .unauthorized
+                }
+                return nil
+            }
+        )
+        defer {
+            mcpServer.stop()
+            Task { @MainActor in await mcpRuntime.shutdown() }
+            try? FileManager.default.removeItem(at: workingDirectory)
+        }
+        let boundPort = try await mcpServer.startAndWaitUntilReady()
+
         let request = ExternalAgentRunRequest(
             runID: UUID(),
-            prompt: "Reply with exactly STARCAT_DEEPSEEK_SMOKE_OK and nothing else.",
+            prompt: "Use the Starcat repository search tool with limit 1. Reply with STARCAT_MCP_SMOKE_OK and the returned repository full_name.",
             modelName: environment["STARCAT_DEEPSEEK_MODEL"] ?? DeepSeekHarnessRuntime.defaultModel,
             reasoningEffort: nil,
-            workingDirectory: FileManager.default.temporaryDirectory,
-            tools: []
+            workingDirectory: workingDirectory,
+            tools: [],
+            mcpConnection: ExternalAgentMCPConnection(
+                endpointURL: URL(string: "http://127.0.0.1:\(boundPort)/mcp")!,
+                bearerToken: token
+            )
         )
         let adapter = try DeepSeekHarnessAdapter(
             executableURL: URL(fileURLWithPath: executablePath),
@@ -406,7 +438,16 @@ struct ExternalAgentProtocolAdapterTests {
                 break
             }
         }
-        #expect(assistantText.contains("STARCAT_DEEPSEEK_SMOKE_OK"))
+        #expect(assistantText.contains("STARCAT_MCP_SMOKE_OK"))
+        #expect(assistantText.contains("apple/swift"))
+        #expect(events.contains { event in
+            guard case .toolCall(_, let name, _, _) = event else { return false }
+            return name.contains("starcat_search_repos")
+        })
+        #expect(events.contains { event in
+            guard case .toolResult(_, let name, _, let isError) = event else { return false }
+            return name.contains("starcat_search_repos") && !isError
+        })
         #expect(events.contains(.completed))
         #expect(!events.contains { event in
             guard case .failed = event else { return false }
@@ -648,6 +689,52 @@ struct ExternalAgentProtocolAdapterTests {
         ))
         #expect(message.events == [.assistantMessage("right", usage: nil)])
 
+        let toolCall = try driver.receive(notification(
+            method: "session.event",
+            params: .object([
+                "sessionId": .string(sessionID),
+                "event": .object([
+                    "type": .string("tool/call"),
+                    "data": .object([
+                        "callId": .string("call-starcat-1"),
+                        "name": .string("mcp__starcat__starcat_search_repos_123456789abc"),
+                        "arguments": .string(#"{"limit":5}"#),
+                    ]),
+                ]),
+            ])
+        ))
+        #expect(toolCall.events.contains { event in
+            guard case .toolCall(let id, let name, _, _) = event else { return false }
+            return id == "call-starcat-1"
+                && name == "mcp__starcat__starcat_search_repos_123456789abc"
+        })
+
+        let toolResult = try driver.receive(notification(
+            method: "session.event",
+            params: .object([
+                "sessionId": .string(sessionID),
+                "event": .object([
+                    "type": .string("tool/result"),
+                    "data": .object([
+                        "message": .object([
+                            "source": .object(["callId": .string("call-starcat-1")]),
+                            "content": .array([.object([
+                                "type": .string("text"),
+                                "text": .string(#"{"total":1}"#),
+                            ])]),
+                            "isError": .bool(false),
+                        ]),
+                    ]),
+                ]),
+            ])
+        ))
+        #expect(toolResult.events.contains { event in
+            guard case .toolResult(let id, let name, _, let isError) = event else { return false }
+            return id == "call-starcat-1"
+                && name == "mcp__starcat__starcat_search_repos_123456789abc"
+                && !isError
+        })
+
         let unknown = try driver.receive(notification(
             method: "session.event",
             params: .object([
@@ -706,6 +793,46 @@ struct ExternalAgentProtocolAdapterTests {
                 environment: [:]
             )
         }
+        #endif
+    }
+
+    @Test("DeepSeek 每轮 Cordis 配置通过环境变量接入临时 Starcat MCP")
+    func deepSeekRunCordisInjectsTransientMCPWithoutPersistingToken() throws {
+        #if arch(arm64)
+        let fixture = try DeepSeekCarrierFixture()
+        defer { fixture.cleanup() }
+        let connection = ExternalAgentMCPConnection(
+            endpointURL: URL(string: "http://127.0.0.1:54321/mcp")!,
+            bearerToken: "fixture-secret-token"
+        )
+        let request = ExternalAgentRunRequest(
+            runID: UUID(),
+            prompt: "读取 Starcat",
+            modelName: "deepseek-test",
+            reasoningEffort: nil,
+            workingDirectory: fixture.directoryURL,
+            tools: [],
+            mcpConnection: connection
+        )
+        let adapter = try DeepSeekHarnessAdapter(
+            executableURL: fixture.executableURL,
+            provider: DeepSeekHarnessRuntime.defaultProvider,
+            modelOverride: request.modelName,
+            cordisConfigURL: fixture.configURL,
+            environment: [:]
+        )
+        let driver = try adapter.makeDriver(request: request)
+        let runConfigPath = try #require(driver.processConfiguration.environment["DSH_CORDIS_CONFIG"])
+        let runConfig = try String(contentsOfFile: runConfigPath, encoding: .utf8)
+
+        #expect(runConfig.contains("@deepseek-ai/dsh-mcp-client"))
+        #expect(runConfig.contains("process.env.STARCAT_MCP_URL"))
+        #expect(runConfig.contains("process.env.STARCAT_MCP_TOKEN"))
+        #expect(!runConfig.contains(connection.bearerToken))
+        #expect(driver.processConfiguration.environment["STARCAT_MCP_URL"] == connection.endpointURL.absoluteString)
+        #expect(driver.processConfiguration.environment["STARCAT_MCP_TOKEN"] == connection.bearerToken)
+        #else
+        #expect(Bool(true))
         #endif
     }
 

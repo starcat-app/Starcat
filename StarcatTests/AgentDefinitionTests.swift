@@ -32,7 +32,7 @@ struct AgentDefinitionTests {
         #expect(agent.workflow.allowsManualRepositoryOverride)
         #expect(agent.workflow.usesDefaultPromptWhenEmpty)
         #expect(agent.promptRules.map(\.id) == ["weekly-local-facts", "weekly-artifact-contract"])
-        #expect(agent.runtimePolicy == .builtinOnly)
+        #expect(agent.runtimePolicy == .codexReadOnly)
     }
 
     @Test("外部 POC Agent 显式允许 Codex 与 DeepSeek，不进入固定业务 Agent 列表")
@@ -41,6 +41,15 @@ struct AgentDefinitionTests {
 
         #expect(agent.runtimePolicy == .externalPOC)
         #expect(agent.runtimePolicy.allowedBackends == [.codexAppServer, .deepSeekHarness])
+        #expect(agent.externalMCPToolIDs == [
+            "starcat.get_overview_statistics",
+            "starcat.search_repos",
+            "starcat.get_repo",
+            "starcat.get_repo_context",
+            "starcat.get_repo_summary",
+            "starcat.get_readme",
+            "starcat.list_tags",
+        ])
         #expect(!BuiltInAgents.all.contains(where: { $0.id == agent.id }))
     }
 

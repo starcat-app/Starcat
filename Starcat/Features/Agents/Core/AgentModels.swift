@@ -68,6 +68,11 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
     let loopMaxToolCalls: Int?
     /// 模型在当前 Agent 中可见的工具 allowlist；数组顺序不代表执行顺序。
     let toolIDs: [String]
+    /// 通过外部 Runtime 自带 MCP client 暴露的 Starcat 工具 allowlist。
+    ///
+    /// 它与 `toolIDs` 分开：前者由 Starcat Host 双向协议执行，后者由 Runtime
+    /// 连接每轮临时 MCP Server 执行，不能用同一名称空间假装两种协议等价。
+    let externalMCPToolIDs: [String]
     let artifactTypes: [AgentArtifactType]
 
     init(
@@ -84,6 +89,7 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
         runtimePolicy: AgentRuntimePolicy = .builtinOnly,
         loopMaxToolCalls: Int? = nil,
         toolIDs: [String] = [],
+        externalMCPToolIDs: [String] = [],
         artifactTypes: [AgentArtifactType] = []
     ) {
         self.id = id
@@ -99,6 +105,7 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
         self.runtimePolicy = runtimePolicy
         self.loopMaxToolCalls = loopMaxToolCalls
         self.toolIDs = toolIDs
+        self.externalMCPToolIDs = externalMCPToolIDs
         self.artifactTypes = artifactTypes
     }
 }

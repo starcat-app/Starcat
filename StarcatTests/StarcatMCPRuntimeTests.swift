@@ -258,6 +258,84 @@ struct StarcatMCPRuntimeTests {
         #expect(tools.count == 20)
     }
 
+    @Test("临时 Runtime 只暴露 Agent allowlist 并拒绝越权调用")
+    func transientRuntimeEnforcesToolAllowlist() async throws {
+        let runtime = try await Self.makeRuntime(
+            allowedToolNames: ["starcat.search_repos"],
+            exposesResources: false
+        )
+        defer { Task { @MainActor in await runtime.shutdown() } }
+
+        _ = await runtime.handle(Self.request(id: 1, method: "initialize", params: Self.initializeParams()))
+
+        let list = await runtime.handle(Self.request(id: 2, method: "tools/list"))
+        let listJSON = try Self.jsonObject(from: list)
+        let tools = try #require((listJSON["result"] as? [String: Any])?["tools"] as? [[String: Any]])
+        #expect(tools.compactMap { $0["name"] as? String } == ["starcat.search_repos"])
+
+        // tools/list 只是模型可见性，真正的权限边界必须在 tools/call 再校验一次。
+        let denied = await runtime.handle(Self.request(
+            id: 3,
+            method: "tools/call",
+            params: ["name": "starcat.set_repo_status", "arguments": ["repo_id": 1, "status": "read"]]
+        ))
+        let deniedJSON = try Self.jsonObject(from: denied)
+        let deniedResult = try #require(deniedJSON["result"] as? [String: Any])
+        #expect(deniedResult["isError"] as? Bool == true)
+        let deniedError = try #require(deniedResult["structuredContent"] as? [String: Any])
+        #expect(deniedError["code"] as? String == "UPGRADE_REQUIRED")
+
+        let resourcesList = await runtime.handle(Self.request(id: 4, method: "resources/list"))
+        let resourcesJSON = try Self.jsonObject(from: resourcesList)
+        let resources = try #require((resourcesJSON["result"] as? [String: Any])?["resources"] as? [[String: Any]])
+        #expect(resources.isEmpty)
+    }
+
+    @Test("临时 Loopback Bridge 等待端口就绪并完成 MCP 请求")
+    func transientLoopbackBridgeIsReadyBeforeMCPRequest() async throws {
+        let runtime = try await Self.makeRuntime(
+            allowedToolNames: ["starcat.search_repos"],
+            exposesResources: false
+        )
+        let port = try StarcatMCPPortAvailability.availableDynamicPort()
+        let token = "test-run-token"
+        let server = StarcatMCPLoopbackHTTPServer(
+            port: port,
+            runtime: runtime,
+            requestValidator: { request in
+                guard request.path == "/mcp" else { return .notFound }
+                guard request.header("Authorization") == "Bearer \(token)" else {
+                    return .unauthorized
+                }
+                return nil
+            }
+        )
+        defer {
+            server.stop()
+            Task { @MainActor in await runtime.shutdown() }
+        }
+
+        let boundPort = try await server.startAndWaitUntilReady()
+        #expect(boundPort == port)
+
+        let initialized = try await Self.sendHTTPRequest(
+            port: boundPort,
+            body: Self.jsonData(id: 1, method: "initialize", params: Self.initializeParams()),
+            bearerToken: token
+        )
+        #expect(initialized.statusCode == 200)
+
+        let listed = try await Self.sendHTTPRequest(
+            port: boundPort,
+            body: Self.jsonData(id: 2, method: "tools/list", params: nil),
+            bearerToken: token
+        )
+        #expect(listed.statusCode == 200)
+        let listedJSON = try #require(JSONSerialization.jsonObject(with: listed.body) as? [String: Any])
+        let tools = try #require((listedJSON["result"] as? [String: Any])?["tools"] as? [[String: Any]])
+        #expect(tools.compactMap { $0["name"] as? String } == ["starcat.search_repos"])
+    }
+
     @Test("关闭私有笔记读取后知识库统计不返回笔记数量")
     func knowledgeStatisticsRespectPrivateNotesCapability() async throws {
         let runtime = try await Self.makeRuntime(exposePrivateNotes: false)
@@ -312,9 +390,12 @@ struct StarcatMCPRuntimeTests {
         #expect(body.contains("Host header not allowed"))
     }
 
-    private static func makeRuntime(
+    /// 真实 DeepSeek smoke 也复用同一份内存数据，避免为跨进程 MCP 验证再造一套假协议。
+    static func makeRuntime(
         originValidator: OriginValidator = .localhost(),
-        exposePrivateNotes: Bool = true
+        exposePrivateNotes: Bool = true,
+        allowedToolNames: Set<String>? = nil,
+        exposesResources: Bool = true
     ) async throws -> StarcatMCPRuntime {
         let db = try InMemoryDatabaseManager()
         try await db.insertRepoFixture(id: 1, owner: "apple", name: "swift")
@@ -426,7 +507,9 @@ struct StarcatMCPRuntimeTests {
         let runtime = StarcatMCPRuntime(
             facade: facade,
             writeFacade: writeFacade,
-            originValidator: originValidator
+            originValidator: originValidator,
+            allowedToolNames: allowedToolNames,
+            exposesResources: exposesResources
         )
         try await runtime.start()
         return runtime
@@ -441,6 +524,41 @@ struct StarcatMCPRuntimeTests {
                 "version": "1.0"
             ]
         ]
+    }
+
+    private static func jsonData(
+        id: Int,
+        method: String,
+        params: [String: Any]?
+    ) throws -> Data {
+        var object: [String: Any] = [
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+        ]
+        if let params {
+            object["params"] = params
+        }
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    }
+
+    private static func sendHTTPRequest(
+        port: Int,
+        body: Data,
+        bearerToken: String?
+    ) async throws -> (statusCode: Int, body: Data) {
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/mcp")!)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json, text/event-stream", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("2025-03-26", forHTTPHeaderField: "MCP-Protocol-Version")
+        if let bearerToken {
+            request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+        }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let httpResponse = try #require(response as? HTTPURLResponse)
+        return (httpResponse.statusCode, data)
     }
 
     private static func request(

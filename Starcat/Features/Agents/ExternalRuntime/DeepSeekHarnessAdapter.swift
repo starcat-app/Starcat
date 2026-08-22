@@ -82,14 +82,55 @@ struct DeepSeekHarnessAdapter: ExternalAgentProtocolAdapter {
         guard !resolvedModel.isEmpty else {
             throw ExternalAgentRuntimeError.missingConfiguration("DeepSeek model")
         }
+        let runCordisConfigURL = try DeepSeekHarnessCordisRunConfiguration.prepare(
+            baseConfigURL: cordisConfigURL,
+            workingDirectory: request.workingDirectory,
+            mcpConnection: request.mcpConnection
+        )
         return DeepSeekHarnessDriver(
             request: request,
             executableURL: executableURL,
             provider: provider,
             model: resolvedModel,
-            cordisConfigURL: cordisConfigURL,
+            cordisConfigURL: runCordisConfigURL,
+            mcpConnection: request.mcpConnection,
             environment: environment
         )
+    }
+}
+
+/// 为单次 Run 追加 Starcat MCP client。基础配置仍由用户选择；临时配置只保存
+/// 环境变量引用，不写 Bearer Token，并随 working directory 一起回收。
+enum DeepSeekHarnessCordisRunConfiguration {
+    static func prepare(
+        baseConfigURL: URL,
+        workingDirectory: URL,
+        mcpConnection: ExternalAgentMCPConnection?
+    ) throws -> URL {
+        guard mcpConnection != nil else { return baseConfigURL }
+        let base = try String(contentsOf: baseConfigURL, encoding: .utf8)
+        guard !base.contains("@deepseek-ai/dsh-mcp-client") else {
+            throw ExternalAgentRuntimeError.protocolError(
+                "DeepSeek Harness base Cordis config must not preconfigure the Starcat MCP client."
+            )
+        }
+        let runConfigURL = workingDirectory.appendingPathComponent("starcat-run.cordis.yml")
+        let mcpPlugin = """
+
+        # Starcat 每轮临时 MCP Bridge。URL 与 Token 只从子进程环境读取。
+        - id: starcat-mcp
+          name: '@deepseek-ai/dsh-mcp-client'
+          config:
+            serverName: starcat
+            transport: streamable-http
+            url: !!js process.env.STARCAT_MCP_URL
+            headers:
+              Authorization: !!js '`Bearer ${process.env.STARCAT_MCP_TOKEN}`'
+            toolCallTimeoutMs: 60000
+            failOnStartupError: true
+        """
+        try Data((base + mcpPlugin + "\n").utf8).write(to: runConfigURL, options: .atomic)
+        return runConfigURL
     }
 }
 
@@ -102,6 +143,9 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
     private let provider: String
     private let model: String
     private let sessionID: String
+    /// Harness 的 `tool/result` 不重复工具名，只通过 `message.source.callId` 关联。
+    /// 保留同一 session 的 call 映射，避免用 `unknown` 或随机 UUID 掩盖协议字段。
+    private var toolNamesByCallID: [String: String] = [:]
 
     init(
         request: ExternalAgentRunRequest,
@@ -109,12 +153,22 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
         provider: String,
         model: String,
         cordisConfigURL: URL,
+        mcpConnection: ExternalAgentMCPConnection?,
         environment: [String: String]
     ) {
         self.request = request
         self.provider = provider
         self.model = model
         sessionID = request.runID.uuidString.lowercased()
+        var additionalEnvironment = [
+            "DSH_CORDIS_CONFIG": cordisConfigURL.path,
+            "DSH_CWD": request.workingDirectory.path,
+            "DSH_SESSION_ROOT": request.workingDirectory.appendingPathComponent("sessions").path,
+        ]
+        if let mcpConnection {
+            additionalEnvironment["STARCAT_MCP_URL"] = mcpConnection.endpointURL.absoluteString
+            additionalEnvironment["STARCAT_MCP_TOKEN"] = mcpConnection.bearerToken
+        }
         processConfiguration = ExternalAgentProcessConfiguration(
             executableURL: executableURL,
             arguments: [],
@@ -123,11 +177,7 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
                 allowedCredentialKeys: [
                     "DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL", "OPENAI_API_KEY", "OPENAI_BASE_URL"
                 ],
-                additional: [
-                    "DSH_CORDIS_CONFIG": cordisConfigURL.path,
-                    "DSH_CWD": request.workingDirectory.path,
-                    "DSH_SESSION_ROOT": request.workingDirectory.appendingPathComponent("sessions").path,
-                ]
+                additional: additionalEnvironment
             ),
             currentDirectoryURL: request.workingDirectory
         )
@@ -192,7 +242,7 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
             }
             return ExternalAgentProtocolOutput(events: [.completed], isTerminal: true)
         case "session.event":
-            return Self.mapEvent(params[external: "event"])
+            return mapEvent(params[external: "event"])
         default:
             return ExternalAgentProtocolOutput()
         }
@@ -205,7 +255,7 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
         .jsonRPCRequest(id: 3, method: "shutdown")
     }
 
-    private static func mapEvent(_ value: AgentJSONValue?) -> ExternalAgentProtocolOutput {
+    private func mapEvent(_ value: AgentJSONValue?) -> ExternalAgentProtocolOutput {
         guard let type = value?[external: "type"]?.stringValue,
               let data = value?[external: "data"]
         else { return ExternalAgentProtocolOutput() }
@@ -231,24 +281,41 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
                     return block[external: "text"]?.stringValue
                 }
                 .joined() ?? ""
-            let usage = usage(from: data[external: "usage"] ?? message[external: "usage"])
+            let usage = Self.usage(from: data[external: "usage"] ?? message[external: "usage"])
             return ExternalAgentProtocolOutput(events: [.assistantMessage(text, usage: usage)])
         case "tool/call":
-            let id = data[external: "callId"]?.stringValue ?? UUID().uuidString
-            let name = data[external: "name"]?.stringValue ?? "unknown"
+            guard let id = Self.nonBlank(data[external: "callId"]?.stringValue),
+                  let name = Self.nonBlank(data[external: "name"]?.stringValue)
+            else {
+                return Self.malformedToolTrace(type: type, value: value)
+            }
+            toolNamesByCallID[id] = name
             let rawInput = data[external: "arguments"]?.stringValue
-            let input = rawInput.flatMap { try? decodeJSON($0) } ?? .object([:])
+            let input = rawInput.flatMap { try? Self.decodeJSON($0) } ?? .object([:])
             return ExternalAgentProtocolOutput(events: [
                 .toolCall(id: id, name: name, input: input, rawInput: rawInput)
             ])
         case "tool/result":
             let message = data[external: "message"] ?? data
-            let id = data[external: "callId"]?.stringValue
-                ?? message[external: "toolCallId"]?.stringValue
-                ?? UUID().uuidString
-            let name = data[external: "name"]?.stringValue ?? "unknown"
+            guard let id = Self.nonBlank(data[external: "callId"]?.stringValue)
+                ?? Self.nonBlank(message[external: "source"]?[external: "callId"]?.stringValue)
+                ?? Self.nonBlank(message[external: "toolCallId"]?.stringValue)
+            else {
+                return Self.malformedToolTrace(type: type, value: value)
+            }
+            guard let name = Self.nonBlank(data[external: "name"]?.stringValue)
+                ?? toolNamesByCallID.removeValue(forKey: id)
+            else {
+                return Self.malformedToolTrace(type: type, value: value)
+            }
             return ExternalAgentProtocolOutput(events: [
-                .toolResult(id: id, name: name, output: message, isError: data[external: "isError"]?.externalBool == true)
+                .toolResult(
+                    id: id,
+                    name: name,
+                    output: message,
+                    isError: data[external: "isError"]?.externalBool == true
+                        || message[external: "isError"]?.externalBool == true
+                )
             ])
         case "turn/end":
             let reason = data[external: "reason"]?[external: "kind"]?.stringValue
@@ -321,5 +388,36 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
     private static func decodeJSON(_ string: String) throws -> AgentJSONValue {
         guard let data = string.data(using: .utf8) else { throw ExternalAgentRuntimeError.invalidFrame }
         return try JSONDecoder().decode(AgentJSONValue.self, from: data)
+    }
+
+    private static func nonBlank(_ value: String?) -> String? {
+        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return value
+    }
+
+    /// 关联字段缺失属于 Harness 协议错误，不能生成随机 ID 后继续写入历史；随机 ID 会让
+    /// `tool/result` 永远找不到对应的 `tool/call`，正是 UI “未知调用 ID” 的根因。
+    private static func malformedToolTrace(
+        type: String,
+        value: AgentJSONValue?
+    ) -> ExternalAgentProtocolOutput {
+        let eventID = value?[external: "seq"]?.integerValue.map { "\(type):\($0)" }
+            ?? "\(type):malformed"
+        let message = "DeepSeek Harness emitted \(type) without a correlatable call ID and tool name."
+        return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+            id: eventID,
+            kind: .error,
+            status: .failed,
+            title: String.l10n("error.loadFailed"),
+            summary: message,
+            details: [.init(
+                label: String.l10n("error.loadFailed"),
+                value: message,
+                format: .error
+            )],
+            completedAt: Date()
+        ))])
     }
 }

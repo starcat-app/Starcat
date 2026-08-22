@@ -19,16 +19,22 @@ final class StarcatMCPRuntime {
     private let facade: StarcatMCPFacade
     private let writeFacade: StarcatMCPWriteFacade
     private let originValidator: OriginValidator
+    private let allowedToolNames: Set<String>?
+    private let exposesResources: Bool
     private var session: Session?
 
     init(
         facade: StarcatMCPFacade,
         writeFacade: StarcatMCPWriteFacade,
-        originValidator: OriginValidator = .localhost()
+        originValidator: OriginValidator = .localhost(),
+        allowedToolNames: Set<String>? = nil,
+        exposesResources: Bool = true
     ) {
         self.facade = facade
         self.writeFacade = writeFacade
         self.originValidator = originValidator
+        self.allowedToolNames = allowedToolNames
+        self.exposesResources = exposesResources
     }
 
     func start() async throws {
@@ -79,7 +85,12 @@ final class StarcatMCPRuntime {
                 tools: .init(listChanged: false)
             )
         )
-        let registry = StarcatMCPToolRegistry(facade: facade, writeFacade: writeFacade)
+        let registry = StarcatMCPToolRegistry(
+            facade: facade,
+            writeFacade: writeFacade,
+            allowedToolNames: allowedToolNames,
+            exposesResources: exposesResources
+        )
 
         // `Server.withMethodHandler` 会长期保存 handler 闭包。registry 必须由
         // Session 强持有到 server 停止，否则 handler 内的弱引用会变 nil，

@@ -84,8 +84,8 @@ struct AgentRuntimePolicy: Hashable, Sendable {
         defaultBackend: .builtinLoop
     )
 
-    /// Codex 通过 dynamic tools 只接入 Starcat 的自动只读工具。DeepSeek Harness 尚无
-    /// 等价双向工具协议，因此不能把两者伪装成同一能力。
+    /// Codex 通过 dynamic tools 接入 Starcat Host 工具；DeepSeek Harness 通过每轮
+    /// 临时 MCP Bridge 接入只读工具。两条协议独立装配，不能互相伪装。
     static let codexReadOnly = AgentRuntimePolicy(
         allowedBackends: [.builtinLoop, .codexAppServer],
         defaultBackend: .builtinLoop

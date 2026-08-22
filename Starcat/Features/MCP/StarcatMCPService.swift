@@ -40,6 +40,68 @@ final class StarcatMCPService {
     private(set) var state: State = .stopped
     var bearerToken: String { localAPIKeyStore.apiKey }
 
+    /// 为一个外部 Agent Run 创建独立的只读 MCP Server。
+    ///
+    /// 该入口不依赖设置页 MCP 开关，也不复用长期 API Key：外部 Runtime 已经过
+    /// Direct 分发门控，本租约再用随机端口、单次 Token 与工具 allowlist 收窄权限。
+    /// Run 结束后 `shutdown` 同时关闭 listener 与 MCP SDK session。
+    func makeTransientReadOnlyBridge(
+        allowedToolNames: Set<String>
+    ) async throws -> ExternalAgentMCPLease {
+        guard !allowedToolNames.isEmpty else {
+            throw StarcatMCPError.invalidArguments("Transient MCP tool allowlist must not be empty.")
+        }
+        let disallowed = allowedToolNames.subtracting(StarcatMCPToolRegistry.readOnlyToolNames)
+        guard disallowed.isEmpty else {
+            throw StarcatMCPError.invalidArguments(
+                "Transient MCP bridge rejected non-read-only tools: \(disallowed.sorted().joined(separator: ", "))"
+            )
+        }
+
+        let token = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        var lastError: Error?
+        for _ in 0..<5 {
+            let port = try StarcatMCPPortAvailability.availableDynamicPort()
+            let runtime = StarcatMCPRuntime(
+                facade: facade,
+                writeFacade: writeFacade,
+                originValidator: makeOriginValidator(port: port, allowsRemoteConnections: false),
+                allowedToolNames: allowedToolNames,
+                exposesResources: false
+            )
+            try await runtime.start()
+            let httpServer = StarcatMCPLoopbackHTTPServer(
+                port: port,
+                runtime: runtime,
+                requestValidator: { request in
+                    guard request.path == "/mcp" else { return .notFound }
+                    guard let authorization = request.header("Authorization"),
+                          authorization == "Bearer \(token)"
+                    else { return .unauthorized }
+                    return nil
+                }
+            )
+            do {
+                let boundPort = try await httpServer.startAndWaitUntilReady()
+                let connection = ExternalAgentMCPConnection(
+                    endpointURL: URL(string: "http://127.0.0.1:\(boundPort)/mcp")!,
+                    bearerToken: token
+                )
+                return ExternalAgentMCPLease(connection: connection) {
+                    await MainActor.run { httpServer.stop() }
+                    await runtime.shutdown()
+                }
+            } catch {
+                lastError = error
+                httpServer.stop()
+                await runtime.shutdown()
+            }
+        }
+        throw lastError ?? StarcatMCPError.invalidArguments(
+            "Unable to start the transient Starcat MCP bridge."
+        )
+    }
+
     init(
         settings: AppSettings,
         entitlementGate: EntitlementGate,

@@ -292,7 +292,12 @@ struct AgentWorkspaceView: View {
                     localeIdentifier: locale.identifier,
                     preferredLanguage: preferredOutputLanguage,
                     toolRegistry: toolRegistry,
-                    runRepository: dependencies.agentRunRepository
+                    runRepository: dependencies.agentRunRepository,
+                    mcpBridgeFactory: { allowedToolNames in
+                        try await dependencies.mcpService.makeTransientReadOnlyBridge(
+                            allowedToolNames: allowedToolNames
+                        )
+                    }
                 )
             } catch {
                 runtimes[preferredBackend] = UnavailableAgentRuntime(message: error.localizedDescription)
