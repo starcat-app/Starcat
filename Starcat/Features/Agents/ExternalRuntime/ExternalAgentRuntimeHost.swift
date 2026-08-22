@@ -81,6 +81,14 @@ private actor ExternalAgentProcessSession {
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
+        // macOS 默认会把“写入已关闭 pipe”升级为 SIGPIPE，信号会直接终止整个
+        // Starcat 进程，Swift 的 throws 根本没有机会接管。只在当前 Runtime stdin
+        // descriptor 上启用 F_SETNOSIGPIPE，把该场景降级为可恢复的 EPIPE 错误；
+        // 不能全局忽略 SIGPIPE，否则会改变 App 内其它子进程和网络栈的信号语义。
+        let stdinDescriptor = stdinPipe.fileHandleForWriting.fileDescriptor
+        guard Darwin.fcntl(stdinDescriptor, F_SETNOSIGPIPE, 1) != -1 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
         try process.run()
         self.process = process
         // Foundation.Process 没有“新建进程组”选项。父进程在 spawn 返回后立即尝试把
@@ -244,6 +252,9 @@ private actor ExternalAgentProcessSession {
 
     private func handleFirstOutputTimeout() {
         guard !didReceiveFirstOutput, !isStopping else { return }
+        // 先封住 cancel/shutdown 的 JSON-RPC 写入，再终止子进程。否则 AsyncStream
+        // onTermination 可能在 pipe 已关闭后继续发送 turn/interrupt。
+        isStopping = true
         didFirstOutputTimeout = true
         // 终止进程让 AsyncBytes 退出；run 的统一 catch 随后负责回收整个进程组。
         if let processGroupID {
@@ -259,7 +270,32 @@ private actor ExternalAgentProcessSession {
         }
         var data = try JSONEncoder().encode(frame)
         data.append(0x0A)
-        try stdinHandle.write(contentsOf: data)
+        do {
+            try stdinHandle.write(contentsOf: data)
+        } catch {
+            guard Self.isBrokenPipe(error) else {
+                throw error
+            }
+            // 对端关闭 stdin 是 Runtime 生命周期错误，不允许冒泡为宿主进程信号。
+            throw ExternalAgentRuntimeError.processClosedBeforeCompletion
+        }
+    }
+
+    private static func isBrokenPipe(_ error: Error) -> Bool {
+        var currentError = error as NSError
+        while true {
+            if currentError.domain == NSPOSIXErrorDomain,
+               currentError.code == Int(EPIPE) {
+                return true
+            }
+            // FileHandle 会把 EPIPE 包进 NSCocoaErrorDomain Code 512；必须沿着
+            // NSUnderlyingErrorKey 解包，不能只检查最外层 NSError。
+            guard let underlyingError = currentError.userInfo[NSUnderlyingErrorKey] as? NSError,
+                  underlyingError !== currentError else {
+                return false
+            }
+            currentError = underlyingError
+        }
     }
 
     private func terminateIfNeeded() async {
