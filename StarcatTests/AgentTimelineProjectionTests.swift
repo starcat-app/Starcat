@@ -105,8 +105,11 @@ struct AgentTimelineProjectionTests {
         #expect(items.first(where: { $0.kind == .toolExecution })?.toolCallID == call.id)
         #expect(items.first(where: { $0.kind == .toolExecution })?.toolAudit?.knowledgeRetrieval?.metrics.candidateCount == 1)
         #expect(items.first(where: { $0.kind == .toolExecution })?.narrative == "provider=exa")
+        #expect(items.first(where: { $0.kind == .toolExecution })?.input == call.rawInput)
+        #expect(items.first(where: { $0.kind == .toolExecution })?.output == "source detail")
         #expect(items.first(where: { $0.kind == .toolExecution })?.log?.contains("elapsed_ms=42") == true)
         #expect(items.first(where: { $0.kind == .toolExecution })?.log?.contains("attempt_count=2") == true)
+        #expect(items.first(where: { $0.kind == .toolExecution })?.hasExecutionDetails == true)
         #expect(items.first(where: { $0.kind == .assistant })?.reasoning == "需要本地知识证据")
     }
 
@@ -244,6 +247,60 @@ struct AgentTimelineProjectionTests {
         #expect(waiting.isProcessExpandedByDefault)
         #expect(failed.isProcessExpandedByDefault)
         #expect(!cancelled.isProcessExpandedByDefault)
+    }
+
+    @Test("只有真实详情才提供展开入口")
+    func exposesDisclosureOnlyForAdditionalDetails() {
+        let emptyItem = AgentTimelineItem(
+            id: "empty",
+            sequence: 0,
+            order: 0,
+            kind: .toolExecution,
+            title: "Tool",
+            text: "摘要已显示",
+            sources: []
+        )
+        var loggedItem = emptyItem
+        loggedItem.log = "provider=codex"
+
+        #expect(!emptyItem.hasExecutionDetails)
+        #expect(loggedItem.hasExecutionDetails)
+
+        let runID = UUID()
+        let durationOnly = AgentTraceEvent(
+            id: "duration-only",
+            runID: runID,
+            backend: .codexAppServer,
+            sequence: 0,
+            kind: .tool,
+            status: .completed,
+            title: "调用工具",
+            durationMilliseconds: 42
+        )
+        let withAttempt = AgentTraceEvent(
+            id: "with-attempt",
+            runID: runID,
+            backend: .codexAppServer,
+            sequence: 1,
+            kind: .retry,
+            status: .failed,
+            title: "重试",
+            attempt: 2
+        )
+        let withDetails = AgentTraceEvent(
+            id: "with-details",
+            runID: runID,
+            backend: .codexAppServer,
+            sequence: 2,
+            kind: .tool,
+            status: .completed,
+            title: "调用工具",
+            details: [AgentTraceDetail(label: "Output", value: "done")]
+        )
+
+        #expect(!durationOnly.hasDetails)
+        #expect(withAttempt.hasDetails)
+        #expect(withDetails.hasDetails)
     }
 
     private func toolResult(call: AgentToolCall, summary: String) -> AgentToolResultMessage {

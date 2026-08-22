@@ -412,54 +412,82 @@ struct AgentMessageTimelineView: View {
     private func activityRow(_ section: AgentProcessSection) -> some View {
         let status = aggregateStatus(section.items)
         let isExpanded = expandedItemIDs.contains(section.id)
+        let hasDetails = section.items.contains(where: \.hasExecutionDetails)
         return VStack(alignment: .leading, spacing: 6) {
-            Button {
-                toggle(section.id)
-                if let auditedItem = section.items.first(where: { $0.toolAudit?.knowledgeRetrieval != nil }),
-                   let toolCallID = auditedItem.toolCallID {
-                    viewModel.selectKnowledgeAudit(toolCallID: toolCallID)
-                }
-            } label: {
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: statusIcon(status))
-                        .foregroundStyle(statusTint(status))
-                        .font(interfaceScale.font(.captionSmall))
-                        .frame(width: 16, height: 18)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(activityNarrative(section))
-                            .font(interfaceScale.font(.caption))
-                            .foregroundStyle(.primary)
-                            .lineLimit(3)
-                        if let summary = activitySummary(section) {
-                            Text(summary)
-                            .font(interfaceScale.font(.captionSmall))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                        }
+            if hasDetails {
+                Button {
+                    toggle(section.id)
+                    if let auditedItem = section.items.first(where: { $0.toolAudit?.knowledgeRetrieval != nil }),
+                       let toolCallID = auditedItem.toolCallID {
+                        viewModel.selectKnowledgeAudit(toolCallID: toolCallID)
                     }
-                    Spacer()
-                    if section.items.count > 1 {
-                        Text("×\(section.items.count.formatted())")
-                            .font(interfaceScale.font(.captionSmall))
-                            .foregroundStyle(.secondary)
-                    }
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(interfaceScale.font(.captionSmall, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 2)
+                } label: {
+                    activityRowLabel(
+                        section,
+                        status: status,
+                        isExpanded: isExpanded,
+                        showsDisclosure: true
+                    )
+                    .contentShape(Rectangle())
                 }
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .accessibilityHint(String.l10n(isExpanded ? "gettingStarted.collapse" : "gettingStarted.expand"))
+            } else {
+                activityRowLabel(
+                    section,
+                    status: status,
+                    isExpanded: false,
+                    showsDisclosure: false
+                )
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
 
-            if isExpanded {
-                ForEach(section.items) { item in
+            if isExpanded, hasDetails {
+                ForEach(section.items.filter(\.hasExecutionDetails)) { item in
                     toolExecutionDetail(item)
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func activityRowLabel(
+        _ section: AgentProcessSection,
+        status: AgentToolResultStatus?,
+        isExpanded: Bool,
+        showsDisclosure: Bool
+    ) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: statusIcon(status))
+                .foregroundStyle(statusTint(status))
+                .font(interfaceScale.font(.captionSmall))
+                .frame(width: 16, height: 18)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(activityNarrative(section))
+                    .font(interfaceScale.font(.caption))
+                    .foregroundStyle(.primary)
+                    .lineLimit(3)
+                if let summary = activitySummary(section) {
+                    Text(summary)
+                        .font(interfaceScale.font(.captionSmall))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer()
+            if section.items.count > 1 {
+                Text("×\(section.items.count.formatted())")
+                    .font(interfaceScale.font(.captionSmall))
+                    .foregroundStyle(.secondary)
+            }
+            if showsDisclosure {
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 2)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
     }
 
     private func toolExecutionDetail(_ item: AgentTimelineItem) -> some View {
@@ -470,6 +498,10 @@ struct AgentMessageTimelineView: View {
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
             }
+            toolDetailBlock(labelKey: "agent.workspace.trace.input", value: item.input)
+            toolDetailBlock(labelKey: "agent.workspace.trace.output", value: item.output)
+            toolDetailBlock(labelKey: "agent.workspace.trace.log", value: item.log)
+
             if !item.sources.isEmpty {
                 sourceBlock(item.sources)
             }
@@ -489,6 +521,18 @@ struct AgentMessageTimelineView: View {
         }
         .padding(.leading, 24)
         .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private func toolDetailBlock(labelKey: String, value: String?) -> some View {
+        if let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(String.l10n(labelKey))
+                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                auditText(value)
+            }
+        }
     }
 
     private func approvalRow(_ item: AgentTimelineItem) -> some View {

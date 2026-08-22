@@ -41,6 +41,14 @@ struct AgentTimelineItem: Identifiable, Sendable {
     var toolAudit: AgentToolAudit?
     var approval: AgentApprovalRequest?
     var artifact: AgentArtifact?
+
+    /// disclosure 只能在确实存在可读审计数据时出现，否则用户展开后会得到空白区域。
+    /// 工具标题与摘要已在主行展示，不属于可展开详情。
+    var hasExecutionDetails: Bool {
+        [input, output, log].contains { value in
+            value?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        } || !sources.isEmpty || toolAudit?.knowledgeRetrieval != nil
+    }
 }
 
 /// Run Surface 过程区中的稳定展示分组。

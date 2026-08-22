@@ -114,7 +114,8 @@ struct AgentTraceEvent: Codable, Hashable, Identifiable, Sendable {
     }
 
     var hasDetails: Bool {
-        !details.isEmpty || attempt != nil || durationMilliseconds != nil
+        // duration 已固定显示在主行右侧，不能单独触发 disclosure；否则展开区没有新增信息。
+        !details.isEmpty || attempt != nil
     }
 }
 
