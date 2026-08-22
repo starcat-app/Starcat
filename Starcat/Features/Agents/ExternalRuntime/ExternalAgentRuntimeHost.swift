@@ -52,12 +52,12 @@ private actor ExternalAgentProcessSession {
     private var process: Process?
     private var stdinHandle: FileHandle?
     private var stderrDrainTask: Task<Void, Never>?
-    private var firstOutputWatchdogTask: Task<Void, Never>?
-    private var firstOutputDeadline: ContinuousClock.Instant?
+    private var activityWatchdogTask: Task<Void, Never>?
+    private var activityDeadline: ContinuousClock.Instant?
     private var processGroupID: pid_t?
     private var isStopping = false
     private var didReceiveFirstOutput = false
-    private var didFirstOutputTimeout = false
+    private var didProtocolActivityTimeout = false
 
     init(driver: any ExternalAgentProtocolDriver, firstOutputTimeout: Duration) {
         self.driver = driver
@@ -119,7 +119,7 @@ private actor ExternalAgentProcessSession {
                 // 进程终止时关闭 pipe 属于正常清理路径。
             }
         }
-        startFirstOutputWatchdog()
+        startProtocolActivityWatchdog()
 
         do {
             for frame in try driver.initialFrames() {
@@ -210,8 +210,12 @@ private actor ExternalAgentProcessSession {
             }
 
             if !reachedTerminal {
-                if didFirstOutputTimeout {
-                    throw ExternalAgentRuntimeError.firstOutputTimedOut(await stderrSummary.diagnostic())
+                if didProtocolActivityTimeout {
+                    let diagnostic = await stderrSummary.diagnostic()
+                    if didReceiveFirstOutput {
+                        throw ExternalAgentRuntimeError.protocolActivityTimedOut(diagnostic)
+                    }
+                    throw ExternalAgentRuntimeError.firstOutputTimedOut(diagnostic)
                 }
                 if isStopping {
                     throw CancellationError()
@@ -261,27 +265,27 @@ private actor ExternalAgentProcessSession {
         await terminateIfNeeded()
     }
 
-    /// Codex App Server 的握手、配置读取和首轮推理都可能没有可见消息。看门狗限制的
-    /// 是“连续无协议活动”时间；只要收到合法 JSON-RPC 就重新计时。真正开始流式输出
-    /// 后立即解除，不限制后续工具链或报告生成时长。
-    private func startFirstOutputWatchdog() {
-        firstOutputDeadline = ContinuousClock.now + firstOutputTimeout
-        guard firstOutputWatchdogTask == nil else { return }
-        firstOutputWatchdogTask = Task { [weak self] in
-            await self?.runFirstOutputWatchdog()
+    /// Codex / DeepSeek 的握手、首轮推理和工具执行都可能暂时没有用户可见文本。
+    /// 看门狗限制“连续无协议活动”而非 turn 总时长：每个合法 JSON-RPC 帧都会续期，
+    /// 但 Runtime 在已经输出后卡死（例如系统弹窗阻断原生模块）仍会被有界回收。
+    private func startProtocolActivityWatchdog() {
+        activityDeadline = ContinuousClock.now + firstOutputTimeout
+        guard activityWatchdogTask == nil else { return }
+        activityWatchdogTask = Task { [weak self] in
+            await self?.runProtocolActivityWatchdog()
         }
     }
 
     private func noteProtocolActivity() {
-        guard !didReceiveFirstOutput, !isStopping else { return }
+        guard !isStopping else { return }
         // 只推进 deadline，不为每个高频 JSON-RPC 帧反复取消和创建 Task；Codex
         // reasoning/token 事件密集时也只保留一个轻量看门狗。
-        firstOutputDeadline = ContinuousClock.now + firstOutputTimeout
+        activityDeadline = ContinuousClock.now + firstOutputTimeout
     }
 
-    private func runFirstOutputWatchdog() async {
-        while !didReceiveFirstOutput, !isStopping {
-            guard let deadline = firstOutputDeadline else { return }
+    private func runProtocolActivityWatchdog() async {
+        while !isStopping {
+            guard let deadline = activityDeadline else { return }
             let remaining = ContinuousClock.now.duration(to: deadline)
             if remaining > .zero {
                 do {
@@ -291,7 +295,7 @@ private actor ExternalAgentProcessSession {
                 }
                 continue
             }
-            handleFirstOutputTimeout()
+            handleProtocolActivityTimeout()
             return
         }
     }
@@ -299,17 +303,14 @@ private actor ExternalAgentProcessSession {
     private func markFirstOutputReceived() {
         guard !didReceiveFirstOutput else { return }
         didReceiveFirstOutput = true
-        firstOutputDeadline = nil
-        firstOutputWatchdogTask?.cancel()
-        firstOutputWatchdogTask = nil
     }
 
-    private func handleFirstOutputTimeout() {
-        guard !didReceiveFirstOutput, !isStopping else { return }
+    private func handleProtocolActivityTimeout() {
+        guard !isStopping else { return }
         // 先封住 cancel/shutdown 的 JSON-RPC 写入，再终止子进程。否则 AsyncStream
         // onTermination 可能在 pipe 已关闭后继续发送 turn/interrupt。
         isStopping = true
-        didFirstOutputTimeout = true
+        didProtocolActivityTimeout = true
         // 终止进程让 AsyncBytes 退出；run 的统一 catch 随后负责回收整个进程组。
         if let processGroupID {
             Darwin.kill(-processGroupID, SIGTERM)
@@ -378,9 +379,9 @@ private actor ExternalAgentProcessSession {
     }
 
     private func terminateIfNeeded() async {
-        firstOutputWatchdogTask?.cancel()
-        firstOutputWatchdogTask = nil
-        firstOutputDeadline = nil
+        activityWatchdogTask?.cancel()
+        activityWatchdogTask = nil
+        activityDeadline = nil
         stdinHandle?.closeFile()
         stdinHandle = nil
         guard let process else {

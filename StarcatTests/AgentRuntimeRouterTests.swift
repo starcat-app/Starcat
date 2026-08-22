@@ -73,15 +73,15 @@ struct AgentRuntimeRouterTests {
         #expect(deepSeekRouter.resolvedBackend(for: agent) == .deepSeekHarness)
     }
 
-    @Test("后端能力不把 DeepSeek rc.8 的协议缺口伪装成已支持")
+    @Test("后端能力不把 DeepSeek POC 的协议缺口伪装成已支持")
     func capabilitiesPreserveProtocolDifferences() {
         #expect(AgentRuntimeCapabilities.codexAppServerPOC.supportsReliableCancellation)
         #expect(!AgentRuntimeCapabilities.codexAppServerPOC.supportsSteering)
         #expect(!AgentRuntimeCapabilities.codexAppServerPOC.supportsInteractiveApproval)
         #expect(!AgentRuntimeCapabilities.codexAppServerPOC.supportsPersistentSession)
-        #expect(!AgentRuntimeCapabilities.deepSeekHarnessRC8.supportsSteering)
-        #expect(!AgentRuntimeCapabilities.deepSeekHarnessRC8.supportsInteractiveApproval)
-        #expect(!AgentRuntimeCapabilities.deepSeekHarnessRC8.supportsReliableCancellation)
+        #expect(!AgentRuntimeCapabilities.deepSeekHarnessPOC.supportsSteering)
+        #expect(!AgentRuntimeCapabilities.deepSeekHarnessPOC.supportsInteractiveApproval)
+        #expect(!AgentRuntimeCapabilities.deepSeekHarnessPOC.supportsReliableCancellation)
     }
 }
 

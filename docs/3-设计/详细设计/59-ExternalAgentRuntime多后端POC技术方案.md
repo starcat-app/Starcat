@@ -77,7 +77,8 @@ initialize
 
 ## 5. DeepSeek Harness adapter
 
-上游固定 `0.1.0-rc.8`。macOS arm64 carrier 必须同时存在：
+上游固定 `deepseek-harness-runtime-bin==0.1.1rc1`。Runtime 通过外部路径安装，
+不进入 Starcat App 或 DMG；macOS arm64 carrier 必须同时存在：
 
 ```text
 dsh-jsonrpc-agent-pkg-macos-arm64
@@ -94,7 +95,9 @@ initialize(cwd, provider, model, maxTokens)
   → shutdown
 ```
 
-adapter 按 session ID 严格过滤事件，并映射 `assistant/chunk`、`assistant/message`、`tool/call`、`tool/result` 与 `turn/end`。`rc.8` 没有 turn cancel；停止语义是回收当前 run 专属 Sidecar。该限制保留在 capability 中，不以 UI 假状态掩盖。
+adapter 按 session ID 严格过滤事件，并映射 `assistant/chunk`、`assistant/message`、`tool/call`、`tool/result` 与 `turn/end`。当前协议没有 turn cancel；停止语义是回收当前 run 专属 Sidecar。该限制保留在 capability 中，不以 UI 假状态掩盖。
+
+首次安装与配置见 [`DeepSeek Harness Runtime 配置`](../../7-工具与脚本/DeepSeek-Harness-Runtime-配置.md)。Starcat 专用 Cordis 不加载本地 Bash / subprocess；默认 wheel Cordis 不属于可接受配置。
 
 ## 6. Direct Debug 入口
 
@@ -142,7 +145,7 @@ Codex 当前不需要 Loopback MCP Bridge，dynamic tool 请求直接进入受�
 
 ## 8. Capability 口径
 
-Capability 表达“Starcat 当前 adapter 实际开放的能力”，不是上游理论能力。Codex 上游虽支持 resume、steer、approval、diff 和 subagent，本 POC 只开放可靠 turn interrupt；DeepSeek `rc.8` 当前连 turn cancel 也不具备。UI 未接入的能力统一为 false。
+Capability 表达“Starcat 当前 adapter 实际开放的能力”，不是上游理论能力。Codex 上游虽支持 resume、steer、approval、diff 和 subagent，本 POC 只开放可靠 turn interrupt；DeepSeek `0.1.1rc1` 当前连 turn cancel 也不具备。UI 未接入的能力统一为 false。
 
 ## 9. 验证
 
@@ -161,11 +164,11 @@ Capability 表达“Starcat 当前 adapter 实际开放的能力”，不是上�
 ## 10. 产品化前剩余门禁
 
 - 真实 Codex 长任务、取消和残留进程人工验证。
-- DeepSeek 固定 carrier、最小 Cordis Profile 与真实 Provider 验证。
+- DeepSeek 临时 MCP Bridge 与只读领域工具闭环。
 - 上游内建 Shell / FS / Network 工具的硬禁用或独立子进程 sandbox 验证。
 - DeepSeek 临时 MCP Bridge 与只读领域工具闭环。
 - 进程组创建失败时的确定性清理方案。
 - 外部 Session 恢复、稳定 event sequence 与数据库迁移设计。
-- 签名、Hardened Runtime、Notarization、Intel 可用性和资源占用验证。
+- 上游 Developer ID 签名 / Notarization、Intel 可用性和资源占用验证。
 
 这些门禁完成前，多后端底座 POC 不替换生产默认 Runtime，也不进入发布流程。

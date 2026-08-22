@@ -2,18 +2,29 @@
 //  DeepSeekHarnessAdapter.swift
 //  Starcat
 //
-//  DeepSeek Harness 0.1.0-rc.8 SDK JSON-RPC adapter。
+//  DeepSeek Harness 0.1.1rc1 Runtime JSON-RPC adapter。
 //
-//  rc.8 只有 initialize、session/prompt、shutdown 三个 client request；停止当前 run
+//  当前协议只有 initialize、session/prompt、shutdown 三个 client request；停止当前 run
 //  只能回收“一 run 一 Sidecar”的进程。该限制由 capability 明确表达，不能伪装成
 //  已具备 turn cancel 或双向 approval。
 //
 
 import Foundation
 
+/// Starcat 已验证的 DeepSeek Harness Runtime 契约。
+///
+/// Runtime 仍由用户通过外部路径安装，常量只用于协议版本说明与模型选择，绝不表示
+/// carrier 会进入 App bundle 或 DMG。
+enum DeepSeekHarnessRuntime {
+    static let packageVersion = "0.1.1rc1"
+    static let defaultProvider = "deepseek-official"
+    static let supportedModels = ["deepseek-v4-flash", "deepseek-v4-pro"]
+    static let defaultModel = supportedModels[0]
+}
+
 struct DeepSeekHarnessAdapter: ExternalAgentProtocolAdapter {
     let backend = AgentRuntimeBackend.deepSeekHarness
-    let capabilities = AgentRuntimeCapabilities.deepSeekHarnessRC8
+    let capabilities = AgentRuntimeCapabilities.deepSeekHarnessPOC
 
     private let executableURL: URL
     private let provider: String
@@ -31,12 +42,25 @@ struct DeepSeekHarnessAdapter: ExternalAgentProtocolAdapter {
         #if arch(arm64)
         let fileManager = FileManager.default
         for path in [executableURL.path, executableURL.path + "-rg", executableURL.path + "-spawn-helper"] {
-            guard fileManager.fileExists(atPath: path) else {
+            guard fileManager.isExecutableFile(atPath: path) else {
                 throw ExternalAgentRuntimeError.executableNotRunnable(path)
             }
         }
         guard fileManager.fileExists(atPath: cordisConfigURL.path) else {
             throw ExternalAgentRuntimeError.missingConfiguration("DebugDeepSeekHarnessCordisConfigPath")
+        }
+        let cordisConfig = try String(contentsOf: cordisConfigURL, encoding: .utf8)
+        let forbiddenPlugins = [
+            "@deepseek-ai/dsh-bash-local",
+            "@deepseek-ai/dsh-subprocess-local",
+        ]
+        if let forbiddenPlugin = forbiddenPlugins.first(where: cordisConfig.contains) {
+            // DeepSeek adapter 还没有 Starcat 的双向工具桥。放行 Harness 自带 Shell
+            // 既越过产品权限边界，也会在 wheel 动态解压 pty.node 时触发 Gatekeeper。
+            throw ExternalAgentRuntimeError.protocolError(
+                "DeepSeek Harness Cordis config enables an unsupported local tool: \(forbiddenPlugin). "
+                    + "Run scripts/install-deepseek-harness-runtime.sh and select its Starcat config."
+            )
         }
         self.executableURL = executableURL
         self.provider = provider
@@ -44,14 +68,18 @@ struct DeepSeekHarnessAdapter: ExternalAgentProtocolAdapter {
         self.cordisConfigURL = cordisConfigURL
         self.environment = environment
         #else
-        throw ExternalAgentRuntimeError.unsupportedArchitecture("DeepSeek Harness rc.8 carrier is arm64-only on macOS")
+        throw ExternalAgentRuntimeError.unsupportedArchitecture(
+            "DeepSeek Harness \(DeepSeekHarnessRuntime.packageVersion) Runtime is arm64-only on macOS"
+        )
         #endif
     }
 
     func makeDriver(request: ExternalAgentRunRequest) throws -> any ExternalAgentProtocolDriver {
         let model = modelOverride?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedModel = model?.isEmpty == false ? model! : request.modelName
-        guard let resolvedModel, !resolvedModel.isEmpty else {
+        let resolvedModel = (model?.isEmpty == false ? model : nil)
+            ?? request.modelName
+            ?? DeepSeekHarnessRuntime.defaultModel
+        guard !resolvedModel.isEmpty else {
             throw ExternalAgentRuntimeError.missingConfiguration("DeepSeek model")
         }
         return DeepSeekHarnessDriver(
@@ -67,7 +95,7 @@ struct DeepSeekHarnessAdapter: ExternalAgentProtocolAdapter {
 
 private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
     let backend = AgentRuntimeBackend.deepSeekHarness
-    let capabilities = AgentRuntimeCapabilities.deepSeekHarnessRC8
+    let capabilities = AgentRuntimeCapabilities.deepSeekHarnessPOC
     let processConfiguration: ExternalAgentProcessConfiguration
 
     private let request: ExternalAgentRunRequest
@@ -170,7 +198,7 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
         }
     }
 
-    /// rc.8 没有 turn cancel。Host 会按一 run 一进程的边界终止 Sidecar。
+    /// 当前 Runtime 没有 turn cancel。Host 会按一 run 一进程的边界终止 Sidecar。
     func cancellationFrame() -> AgentJSONValue? { nil }
 
     func shutdownFrame() -> AgentJSONValue? {

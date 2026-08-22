@@ -1,0 +1,31 @@
+# Starcat Direct 的 DeepSeek Harness 最小配置。
+#
+# 当前 POC 只让 Harness 负责模型循环；仓库上下文由 Starcat 冻结后写入 prompt。
+# 故意不加载 dsh-bash-local / dsh-subprocess-local：Starcat 尚未向 DeepSeek
+# adapter 授予 Shell 工具权限，同时也避免 wheel 首次运行时动态解压 pty.node。
+
+- id: sdk-jsonrpc-server
+  name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
+
+- id: agent-core
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    workspaceContext:
+      maxBytes: 65536
+
+- id: llm-deepseek
+  name: '@deepseek-ai/dsh-llm-deepseek'
+
+- id: sessions
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js process.env.DSH_SESSION_ROOT ?? './.sessions'
+
+- id: session-checkpoints
+  name: '@deepseek-ai/dsh-session-checkpoint-policy'
+
+# 只用于加载空工作目录中的说明文件，不向模型暴露文件读写工具。
+- id: fs-local
+  name: '@deepseek-ai/dsh-fs-local'
+  config:
+    cwd: !!js process.env.DSH_CWD ?? process.cwd()

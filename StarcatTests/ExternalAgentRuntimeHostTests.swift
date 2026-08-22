@@ -103,6 +103,18 @@ struct ExternalAgentRuntimeHostTests {
         #expect(await collector.events == [.assistantDelta("ready"), .completed])
     }
 
+    @Test("Host 在已有输出后仍会终止停止协议活动的进程")
+    func terminatesProcessWhenProtocolActivityStops() async throws {
+        let host = ExternalAgentRuntimeHost(firstOutputTimeout: .milliseconds(100))
+
+        await #expect(throws: ExternalAgentRuntimeError.protocolActivityTimedOut(nil)) {
+            try await host.execute(
+                runID: UUID(),
+                driver: ExternalHostOutputThenSilentFixtureDriver()
+            ) { _ in }
+        }
+    }
+
     @Test("stdout 提前关闭时等待并报告真实退出状态")
     func reportsDelayedProcessExitStatusAndSafeDiagnostic() async throws {
         let host = ExternalAgentRuntimeHost()
@@ -293,6 +305,36 @@ private final class ExternalHostProtocolActivityFixtureDriver: ExternalAgentProt
         default:
             return ExternalAgentProtocolOutput()
         }
+    }
+
+    func cancellationFrame() -> AgentJSONValue? { nil }
+    func shutdownFrame() -> AgentJSONValue? { nil }
+}
+
+private final class ExternalHostOutputThenSilentFixtureDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
+    let backend = AgentRuntimeBackend.codexAppServer
+    let capabilities = AgentRuntimeCapabilities.codexAppServerPOC
+    let processConfiguration = ExternalAgentProcessConfiguration(
+        executableURL: URL(fileURLWithPath: "/bin/sh"),
+        arguments: [
+            "-c",
+            "read first; printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"method\":\"fixture/delta\",\"params\":{\"delta\":\"started\"}}'; sleep 10",
+        ],
+        environment: ExternalAgentProcessEnvironment.filtered(),
+        currentDirectoryURL: FileManager.default.temporaryDirectory
+    )
+
+    func initialFrames() throws -> [AgentJSONValue] {
+        [.jsonRPCRequest(id: 1, method: "fixture/start")]
+    }
+
+    func receive(_ frame: AgentJSONValue) throws -> ExternalAgentProtocolOutput {
+        guard frame[external: "method"]?.stringValue == "fixture/delta" else {
+            return ExternalAgentProtocolOutput()
+        }
+        return ExternalAgentProtocolOutput(events: [
+            .assistantDelta(frame[external: "params"]?[external: "delta"]?.stringValue ?? "")
+        ])
     }
 
     func cancellationFrame() -> AgentJSONValue? { nil }

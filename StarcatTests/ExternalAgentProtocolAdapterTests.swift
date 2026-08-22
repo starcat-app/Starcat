@@ -2,10 +2,11 @@
 //  ExternalAgentProtocolAdapterTests.swift
 //  StarcatTests
 //
-//  Codex App Server 与 DeepSeek Harness rc.8 JSON-RPC fixture 测试。
+//  Codex App Server 与 DeepSeek Harness 0.1.1rc1 JSON-RPC fixture 测试。
 //
 //  常规测试只驱动协议状态机，不依赖用户登录态和网络；显式设置
-//  `STARCAT_RUN_CODEX_INTEGRATION=1` 时，额外执行本机 Codex App Server smoke。
+//  `STARCAT_RUN_CODEX_INTEGRATION=1` / `STARCAT_RUN_DEEPSEEK_INTEGRATION=1`
+//  时，额外执行对应本机 Runtime 的真实 turn smoke。
 //
 
 import Foundation
@@ -19,6 +20,14 @@ private let shouldRunCodexIntegration: Bool = {
     true
 #else
     ProcessInfo.processInfo.environment["STARCAT_RUN_CODEX_INTEGRATION"] == "1"
+#endif
+}()
+
+private let shouldRunDeepSeekIntegration: Bool = {
+#if STARCAT_RUN_DEEPSEEK_INTEGRATION
+    true
+#else
+    ProcessInfo.processInfo.environment["STARCAT_RUN_DEEPSEEK_INTEGRATION"] == "1"
 #endif
 }()
 
@@ -341,6 +350,73 @@ struct ExternalAgentProtocolAdapterTests {
         #expect(events.contains(.completed))
     }
 
+    @Test(
+        "本机 DeepSeek Harness 0.1.1rc1 完成真实 turn",
+        .enabled(if: shouldRunDeepSeekIntegration)
+    )
+    func installedDeepSeekHarnessCompletesRealTurn() async throws {
+        #if arch(arm64)
+        let environment = ProcessInfo.processInfo.environment
+        let executablePath = try #require(environment["STARCAT_DEEPSEEK_RUNTIME_PATH"])
+        let configPath = try #require(environment["STARCAT_DEEPSEEK_CORDIS_PATH"])
+        let apiKey = try #require(environment["DEEPSEEK_API_KEY"])
+        #expect(!apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+        let request = ExternalAgentRunRequest(
+            runID: UUID(),
+            prompt: "Reply with exactly STARCAT_DEEPSEEK_SMOKE_OK and nothing else.",
+            modelName: environment["STARCAT_DEEPSEEK_MODEL"] ?? DeepSeekHarnessRuntime.defaultModel,
+            reasoningEffort: nil,
+            workingDirectory: FileManager.default.temporaryDirectory,
+            tools: []
+        )
+        let adapter = try DeepSeekHarnessAdapter(
+            executableURL: URL(fileURLWithPath: executablePath),
+            provider: DeepSeekHarnessRuntime.defaultProvider,
+            modelOverride: request.modelName,
+            cordisConfigURL: URL(fileURLWithPath: configPath),
+            environment: ExternalAgentProcessEnvironment.filtered(
+                source: environment,
+                allowedCredentialKeys: ["DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL"]
+            )
+        )
+        let collector = CodexIntegrationEventCollector()
+
+        try await ExternalAgentRuntimeHost(firstOutputTimeout: .seconds(180)).execute(
+            runID: request.runID,
+            driver: try adapter.makeDriver(request: request),
+            toolCallHandler: { request in
+                ExternalAgentToolExecutionResult(
+                    output: .object(["error": .string("Unexpected tool: \(request.name)")]),
+                    modelText: "Unexpected tool: \(request.name)",
+                    isError: true,
+                    artifactMarkdown: nil
+                )
+            }
+        ) { event in
+            await collector.append(event)
+        }
+
+        let events = await collector.events
+        let assistantText = events.reduce(into: "") { text, event in
+            switch event {
+            case .assistantDelta(let delta), .assistantMessage(let delta, _):
+                text += delta
+            default:
+                break
+            }
+        }
+        #expect(assistantText.contains("STARCAT_DEEPSEEK_SMOKE_OK"))
+        #expect(events.contains(.completed))
+        #expect(!events.contains { event in
+            guard case .failed = event else { return false }
+            return true
+        })
+        #else
+        #expect(Bool(false), "DeepSeek Harness Runtime wheel only supports macOS arm64")
+        #endif
+    }
+
     @Test("Codex adapter 映射 dynamic tool 请求并回写结果")
     func codexDynamicToolRoundTrip() throws {
         let adapter = CodexAppServerAdapter(executableURL: URL(fileURLWithPath: "/usr/bin/true"))
@@ -618,9 +694,9 @@ struct ExternalAgentProtocolAdapterTests {
         #expect(idle.events == [.completed])
         #expect(idle.isTerminal)
         #else
-        // 官方 rc.8 carrier 没有 Intel 产物；universal 构建仍需明确验证该 slice 拒绝运行。
+        // 官方 0.1.1rc1 Runtime wheel 没有 Intel 产物；universal 构建仍需明确验证该 slice 拒绝运行。
         #expect(throws: ExternalAgentRuntimeError.unsupportedArchitecture(
-            "DeepSeek Harness rc.8 carrier is arm64-only on macOS"
+            "DeepSeek Harness 0.1.1rc1 Runtime is arm64-only on macOS"
         )) {
             _ = try DeepSeekHarnessAdapter(
                 executableURL: URL(fileURLWithPath: "/usr/bin/true"),
@@ -631,6 +707,57 @@ struct ExternalAgentProtocolAdapterTests {
             )
         }
         #endif
+    }
+
+    @Test("DeepSeek adapter 拒绝未授权的本地 Shell Cordis 插件")
+    func deepSeekRejectsLocalShellCordisConfig() throws {
+        #if arch(arm64)
+        let fixture = try DeepSeekCarrierFixture()
+        defer { fixture.cleanup() }
+        try Data("- id: bash\n  name: '@deepseek-ai/dsh-bash-local'\n".utf8)
+            .write(to: fixture.configURL)
+
+        #expect(throws: ExternalAgentRuntimeError.protocolError(
+            "DeepSeek Harness Cordis config enables an unsupported local tool: "
+                + "@deepseek-ai/dsh-bash-local. Run scripts/install-deepseek-harness-runtime.sh "
+                + "and select its Starcat config."
+        )) {
+            _ = try DeepSeekHarnessAdapter(
+                executableURL: fixture.executableURL,
+                provider: DeepSeekHarnessRuntime.defaultProvider,
+                modelOverride: DeepSeekHarnessRuntime.defaultModel,
+                cordisConfigURL: fixture.configURL,
+                environment: [:]
+            )
+        }
+        #endif
+    }
+
+    @Test("DeepSeek Runtime 从 Starcat Provider 配置读取加密凭据")
+    @MainActor
+    func deepSeekRuntimeUsesConfiguredProviderCredential() throws {
+        let suiteName = "ExternalAgentProtocolAdapterTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let keychain = InMemoryKeychain()
+        let settings = AppSettings(defaults: defaults, keychain: keychain)
+        let profile = AIProviderProfile(
+            id: "deepseek-runtime-test",
+            provider: .deepSeek,
+            baseURL: "https://runtime.deepseek.example"
+        )
+        settings.aiProviderProfiles = [profile]
+        try keychain.storeAIKey("fixture-secret", forProvider: profile.id)
+
+        let environment = ExternalAgentRuntimePOCPreferences.deepSeekEnvironment(
+            source: ["PATH": "/usr/bin"],
+            settings: settings,
+            keychain: keychain
+        )
+
+        #expect(environment["DEEPSEEK_API_KEY"] == "fixture-secret")
+        #expect(environment["DEEPSEEK_BASE_URL"] == "https://runtime.deepseek.example")
+        #expect(environment["PATH"] == "/usr/bin")
     }
 
     private func fixtureRequest() -> ExternalAgentRunRequest {

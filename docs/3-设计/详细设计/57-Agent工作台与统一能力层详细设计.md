@@ -1030,7 +1030,7 @@ P0～P3、定向自动化、Release 构建与真实入口门禁验收通过后�
 
 ### P5：可选外部 Agent Runtime
 
-外部 Runtime 不采用“选择一个框架并替换全部 Agent”的路线。Starcat 保留 `LoopAgentRuntime`，通过 `AgentRuntimeRouter`、`ExternalAgentRuntimeHost` 和 Provider Adapter 形成可切换底座；Codex App Server 与 DeepSeek Harness `0.1.0-rc.8` 是首批 adapter。多后端 POC 见 `59-ExternalAgentRuntime多后端POC技术方案.md`，DeepSeek 上游协议与 carrier 评估仍见 `58-DeepSeekHarness集成评估与POC技术方案.md`。
+外部 Runtime 不采用“选择一个框架并替换全部 Agent”的路线。Starcat 保留 `LoopAgentRuntime`，通过 `AgentRuntimeRouter`、`ExternalAgentRuntimeHost` 和 Provider Adapter 形成可切换底座；Codex App Server 与外部安装的 DeepSeek Harness `0.1.1rc1` wheel 是首批 adapter。多后端 POC 见 `59-ExternalAgentRuntime多后端POC技术方案.md`，DeepSeek 上游协议与 carrier 评估仍见 `58-DeepSeekHarness集成评估与POC技术方案.md`。
 
 已落地的底座 POC 链路是：Starcat Direct Debug 通过统一 newline-delimited JSON-RPC Host 控制一次 run 专属 Sidecar，Provider adapter 把原生事件映射为 `AgentRunEvent`。Weekly、Repo Insight、Alternatives 的 `runtimePolicy` 允许 Loop / Codex，Codex 通过 App Server `dynamicTools` 调用现有 Starcat 自动只读工具；Untagged 等带审批写入的 Agent 仍锁定 Loop；General / Research POC 可选择 Codex 或 DeepSeek。外部 Runtime 不开放写工具、不持久化外部 Session，也不经过 `starcat-cli`，显式选择不兼容后端时不静默回退 Loop。
 

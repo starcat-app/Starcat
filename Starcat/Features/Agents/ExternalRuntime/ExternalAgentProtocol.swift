@@ -128,7 +128,7 @@ protocol ExternalAgentProtocolDriver: AnyObject, Sendable {
 
 extension ExternalAgentProtocolDriver {
     /// 不支持双向动态工具的 Provider 明确返回 nil；Host 收到工具请求时会终止而不是
-    /// 伪造成功结果。DeepSeek Harness rc.8 当前走这条兼容路径。
+    /// 伪造成功结果。DeepSeek Harness 当前走这条兼容路径。
     func toolResponseFrame(
         for request: ExternalAgentToolRequest,
         result: ExternalAgentToolExecutionResult
@@ -151,6 +151,7 @@ enum ExternalAgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
     case protocolError(String)
     case processExited(Int32, String?)
     case firstOutputTimedOut(String?)
+    case protocolActivityTimedOut(String?)
     case processClosedBeforeCompletion(String?)
 
     var errorDescription: String? {
@@ -175,6 +176,10 @@ enum ExternalAgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
             return "\(message) \(diagnostic)"
         case .firstOutputTimedOut(let diagnostic):
             let message = "External Agent Runtime did not produce an assistant or tool event before startup timed out."
+            guard let diagnostic, !diagnostic.isEmpty else { return message }
+            return "\(message) \(diagnostic)"
+        case .protocolActivityTimedOut(let diagnostic):
+            let message = "External Agent Runtime stopped producing protocol activity before the turn completed."
             guard let diagnostic, !diagnostic.isEmpty else { return message }
             return "\(message) \(diagnostic)"
         case .processClosedBeforeCompletion(let diagnostic):

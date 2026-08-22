@@ -72,6 +72,8 @@ struct AgentWorkspaceView: View {
     private var preferredCodexModelID = ""
     @AppStorage(ExternalAgentRuntimePOCPreferences.codexReasoningEffortKey)
     private var preferredCodexReasoningEffort = ""
+    @AppStorage(ExternalAgentRuntimePOCPreferences.deepSeekModelKey)
+    private var preferredDeepSeekModel = DeepSeekHarnessRuntime.defaultModel
     @AppStorage(AgentWorkspaceLayoutMetrics.leftWidthDefaultsKey)
     private var persistedLeftColumnWidth = Double(AgentWorkspaceLayoutMetrics.leftIdealWidth)
     @AppStorage(AgentWorkspaceLayoutMetrics.rightWidthDefaultsKey)
@@ -183,6 +185,9 @@ struct AgentWorkspaceView: View {
         .onChange(of: preferredCodexReasoningEffort) { _, _ in
             configureAgentRuntime()
         }
+        .onChange(of: preferredDeepSeekModel) { _, _ in
+            configureAgentRuntime()
+        }
         .animation(.easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)
         .animation(.easeInOut(duration: 0.16), value: chromeState.isRightColumnCollapsed)
         .onPreferenceChange(AgentWorkspaceLeftWidthPreferenceKey.self) { width in
@@ -208,10 +213,15 @@ struct AgentWorkspaceView: View {
             .name
         let runtimeModelName: String?
         let runtimeReasoningEffort: String?
-        if preferredBackend == .codexAppServer {
+        switch preferredBackend {
+        case .codexAppServer:
             runtimeModelName = selectedCodexModelSelection?.modelName
             runtimeReasoningEffort = selectedCodexModelSelection?.reasoningEffort
-        } else {
+        case .deepSeekHarness:
+            // DeepSeek Runtime 拥有独立模型目录，不能继承 Starcat 内置 Loop 当前模型。
+            runtimeModelName = preferredDeepSeekModel
+            runtimeReasoningEffort = nil
+        case .builtinLoop:
             runtimeModelName = starcatModelName
             runtimeReasoningEffort = nil
         }
@@ -270,7 +280,10 @@ struct AgentWorkspaceView: View {
 
         if preferredBackend != .builtinLoop {
             do {
-                let adapter = try ExternalAgentRuntimePOCPreferences.makeAdapter(backend: preferredBackend)
+                let adapter = try ExternalAgentRuntimePOCPreferences.makeAdapter(
+                    backend: preferredBackend,
+                    settings: dependencies.settings
+                )
                 runtimes[preferredBackend] = ExternalAgentRuntime(
                     adapter: adapter,
                     distributionGate: dependencies.distributionGate,
@@ -1248,7 +1261,8 @@ struct AgentWorkspaceView: View {
 
     @ViewBuilder
     private var agentRuntimeModelControls: some View {
-        if selectedRuntimeBackend == .codexAppServer {
+        switch selectedRuntimeBackend {
+        case .codexAppServer:
             if isLoadingCodexModelCatalog, codexModelCatalog.models.isEmpty {
                 ProgressView()
                     .controlSize(.small)
@@ -1258,9 +1272,35 @@ struct AgentWorkspaceView: View {
                !selectedModel.supportedReasoningEfforts.isEmpty {
                 codexReasoningEffortMenu(selectedModel)
             }
-        } else {
+        case .deepSeekHarness:
+            deepSeekModelMenu
+        case .builtinLoop:
             agentModelMenu
         }
+    }
+
+    private var deepSeekModelMenu: some View {
+        Menu {
+            ForEach(DeepSeekHarnessRuntime.supportedModels, id: \.self) { model in
+                Button {
+                    preferredDeepSeekModel = model
+                } label: {
+                    if model == preferredDeepSeekModel {
+                        Label(model, systemImage: "checkmark")
+                    } else {
+                        Text(model)
+                    }
+                }
+            }
+        } label: {
+            Label(preferredDeepSeekModel, systemImage: "sparkles")
+                .font(agentFont(.caption, weight: .semibold))
+                .lineLimit(1)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(viewModel.isRunning)
+        .help(String.l10n("rag.workspace.composer.model"))
     }
 
     private var selectedCodexModelOption: CodexModelOption? {

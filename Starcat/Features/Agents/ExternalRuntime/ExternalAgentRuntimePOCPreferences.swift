@@ -5,7 +5,8 @@
 //  Direct Debug 构建的隐藏 POC 配置入口。
 //
 //  路径、provider 和 model 可以用 Xcode launch arguments / defaults 注入；API Key
-//  只允许来自进程环境，禁止写入 UserDefaults。Release 构建始终返回 builtinLoop。
+//  来自进程环境或 Starcat 已加密保存的 DeepSeek Provider 配置，禁止写入 UserDefaults。
+//  Release 构建始终返回 builtinLoop。
 //
 
 import Foundation
@@ -38,11 +39,14 @@ enum ExternalAgentRuntimePOCPreferences {
         #endif
     }
 
+    @MainActor
     static func makeAdapter(
         backend: AgentRuntimeBackend,
         resolver: ExternalAgentExecutableResolver = ExternalAgentExecutableResolver(),
         defaults: UserDefaults = .standard,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        settings: AppSettings? = nil,
+        keychain: any KeychainManaging = KeychainManager.shared
     ) throws -> any ExternalAgentProtocolAdapter {
         switch backend {
         case .builtinLoop:
@@ -69,17 +73,62 @@ enum ExternalAgentRuntimePOCPreferences {
             }
             return try DeepSeekHarnessAdapter(
                 executableURL: executable,
-                provider: defaults.string(forKey: deepSeekProviderKey) ?? "deepseek-official",
-                modelOverride: defaults.string(forKey: deepSeekModelKey),
+                provider: defaults.string(forKey: deepSeekProviderKey)
+                    ?? DeepSeekHarnessRuntime.defaultProvider,
+                modelOverride: defaults.string(forKey: deepSeekModelKey)
+                    ?? DeepSeekHarnessRuntime.defaultModel,
                 cordisConfigURL: URL(fileURLWithPath: configPath),
                 environment: ExternalAgentProcessEnvironment.filtered(
-                    source: environment,
+                    source: deepSeekEnvironment(
+                        source: environment,
+                        settings: settings,
+                        keychain: keychain
+                    ),
                     allowedCredentialKeys: [
                         "DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL", "OPENAI_API_KEY", "OPENAI_BASE_URL"
                     ]
                 )
             )
         }
+    }
+
+    /// 为外部 DeepSeek Runtime 生成最小凭据环境。
+    ///
+    /// shell 显式注入的环境变量优先；正常从 Finder 启动时环境里通常没有 API Key，
+    /// 此时复用 Starcat 设置页已加密保存的 DeepSeek Provider。只注入当前 Runtime
+    /// 必需的 Key/Base URL，不能把完整 App 环境交给可执行工具的外部进程。
+    @MainActor
+    static func deepSeekEnvironment(
+        source: [String: String],
+        settings: AppSettings?,
+        keychain: any KeychainManaging
+    ) -> [String: String] {
+        guard source["DEEPSEEK_API_KEY"]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false,
+              let settings,
+              let profile = preferredDeepSeekProfile(settings: settings),
+              let apiKey = try? keychain.loadAIKey(forProvider: profile.id),
+              !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return source }
+
+        var environment = source
+        environment["DEEPSEEK_API_KEY"] = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if environment["DEEPSEEK_BASE_URL"]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+            let baseURL = profile.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !baseURL.isEmpty {
+                environment["DEEPSEEK_BASE_URL"] = baseURL
+            }
+        }
+        return environment
+    }
+
+    @MainActor
+    private static func preferredDeepSeekProfile(settings: AppSettings) -> AIProviderProfile? {
+        let profiles = settings.aiProviderProfiles.filter {
+            $0.provider == .deepSeek && $0.isEnabled
+        }
+        return profiles.first(where: { $0.id == settings.aiChatTask.providerID })
+            ?? profiles.first(where: \.isVerifiedConfiguration)
+            ?? profiles.first
     }
 
     static func makeCodexModelCatalogClient(

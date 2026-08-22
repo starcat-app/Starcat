@@ -1,16 +1,16 @@
 # 58 — DeepSeek Harness 集成评估与 POC 技术方案
 
-> 日期：2026-08-16（2026-08-21 按 `0.1.0-rc.8` 修订）
+> 日期：2026-08-16（2026-08-22 按 `deepseek-harness-runtime-bin==0.1.1rc1` 修订）
 >
 > 状态：adapter 评估完成；统一多后端底座 POC 见 `59-ExternalAgentRuntime多后端POC技术方案.md`
 >
 > 范围：Direct 版本中的 General Agent / Research Agent 外部 Runtime 候选，不替换现有固定业务 Agent
 >
-> 上游基线：`deepseek-ai/deepseek-harness` `0.1.0-rc.8`，tag `dsh-v0.1.0-rc.8`，提交 `141eb6f`
+> 上游基线：PyPI `deepseek-harness-runtime-bin==0.1.1rc1` macOS arm64 wheel
 >
 > 关联：`57-Agent工作台与统一能力层详细设计.md`、`34-StarcatCLI与外部MCP桥接设计.md`、`30-本地RAG设计.md`、`分发渠道能力门控规范.md`、`DESIGN.md`
 
-> 说明：本文保留 DeepSeek Harness `rc.8` 的 carrier、协议与安全评估，不再把 Harness 定义成唯一外部 Runtime。公共进程 Host、Runtime Router 与 Codex / DeepSeek 可切换结论以 59 号方案为准。
+> 说明：本文保留 DeepSeek Harness carrier、协议与安全评估，不再把 Harness 定义成唯一外部 Runtime。公共进程 Host、Runtime Router 与 Codex / DeepSeek 可切换结论以 59 号方案为准。
 
 ---
 
@@ -64,9 +64,9 @@ Harness POC 验证的是：
 
 候选入口只包括 `General Agent` 与 `Research Agent`。`github-weekly-report`、`repo-insight`、`repo-alternatives`、`untagged-tidy` 不迁移。
 
-### 2.2 `rc.8` 的匹配点与风险
+### 2.2 `0.1.1rc1` 的匹配点与风险
 
-Harness 使用 Cordis Plugin 组合 Agent Core、模型适配、Session、MCP、Subagent 与交互能力。`rc.8` 已提供：
+Harness 使用 Cordis Plugin 组合 Agent Core、模型适配、Session、MCP、Subagent 与交互能力。`0.1.1rc1` 已提供：
 
 - `code`、`cordis`、`minimal`、`standard` 四个 preset。
 - 基于 Session Event 的多轮 Agent Loop。
@@ -90,7 +90,7 @@ Harness 使用 Cordis Plugin 组合 Agent Core、模型适配、Session、MCP、
 
 ### 3.2 不把普通 CLI 当正式协议
 
-开发环境可以运行 `npx @deepseek-ai/dsh web`，但正式集成不能依赖用户安装 Node / pnpm、用户 shell、`PATH`、`npx` 在线下载或面向人的终端文本输出。Starcat 必须启动固定版本的 Bundle Sidecar，并通过逐行 JSON-RPC 2.0 交互。
+开发环境可以运行 `npx @deepseek-ai/dsh web`，但正式集成不能依赖用户安装 Node / pnpm、用户 shell、`PATH`、`npx` 在线下载或面向人的终端文本输出。Starcat 必须启动外部安装的固定版本 wheel carrier，并通过逐行 JSON-RPC 2.0 交互。
 
 ### 3.3 不使用 Headless 或 ACP 作为唯一接口
 
@@ -120,7 +120,7 @@ flowchart TD
     Router --> DSH["DeepSeekHarnessRuntime - Direct only"]
     Loop --> Capability["Capability and Policy Layer"]
     DSH --> Controller["DshProcessController"]
-    Controller --> Sidecar["Bundled Harness Runtime Carrier"]
+    Controller --> Sidecar["External Harness Runtime Carrier"]
     Sidecar <-->|"stdio JSON-RPC"| RPC["DshJsonRpcClient"]
     RPC --> Mapper["HarnessAgentEventMapper"]
     Mapper --> UI
@@ -167,25 +167,22 @@ dsh-jsonrpc-agent-pkg-macos-arm64-spawn-helper
 
 当前 Runtime 会在启动期检查配套 sidecar 是否齐全，即使 `starcat` profile 没启用对应 Tool，也不能漏包。因此准确结论是：Harness 可作为受控 Sidecar 运行，但不是只复制一个二进制文件。
 
-### 5.2 Bundle 布局
+### 5.2 外部安装布局
 
 ```text
-Starcat.app/Contents/Resources/Harness/
-├── bin/
-│   ├── dsh-jsonrpc-agent-pkg-macos-arm64
-│   ├── dsh-jsonrpc-agent-pkg-macos-arm64-rg
-│   └── dsh-jsonrpc-agent-pkg-macos-arm64-spawn-helper
-├── config/starcat.cordis.yml
-├── manifest.json
-├── LICENSE
-└── THIRD_PARTY_NOTICES.md
+~/Library/Application Support/Starcat/Runtimes/deepseek-harness-0.1.1rc1/
+├── starcat.cordis.yml
+└── venv/lib/python3.*/site-packages/deepseek_harness_runtime/runtime/
+    ├── dsh-jsonrpc-agent-pkg-macos-arm64
+    ├── dsh-jsonrpc-agent-pkg-macos-arm64-rg
+    └── dsh-jsonrpc-agent-pkg-macos-arm64-spawn-helper
 ```
 
-`manifest.json` 至少记录 Harness version、tag、commit、协议版本、CPU 架构、三个文件 SHA-256、Profile 依赖闭包和插件清单。
+安装脚本固定 PyPI 包版本，并由 wheel 元数据记录版本、平台与第三方 License。Runtime 不进入 App / DMG；Starcat 只保存用户配置的可执行文件与 Cordis 路径。
 
 ### 5.3 启动约束
 
-- 使用 `Foundation.Process` 直接启动 Bundle 内明确路径，禁止 `/bin/zsh -lc`、`npx` 和用户 `PATH`。
+- 使用 `Foundation.Process` 直接启动用户配置的绝对路径，禁止 `/bin/zsh -lc`、`npx` 和用户 `PATH`。
 - 通过参数或 `DSH_CORDIS_CONFIG` 显式提供 `starcat.cordis.yml`。
 - stdin / stdout 只承载 newline-delimited JSON-RPC 2.0；stderr 承载日志。
 - 只传当前模型所需的临时凭据和最小环境，禁止继承整个父进程环境。
@@ -339,7 +336,7 @@ Starcat 首版：
 - 只允许编译期锁定、人工审计、进入 manifest 与开源致谢的白名单插件。
 - 新增插件必须重新做权限、License、依赖、Hash、签名与长任务审查。
 
-`dsh plugin --profile ... add` 会调用 pnpm 并要求可写 profile / 依赖目录，不符合已签名 App 边界。新增插件应更新锁定依赖并重建完整 carrier，不能在用户机器上修改 Bundle。
+`dsh plugin --profile ... add` 会调用 pnpm 并要求可写 profile / 依赖目录，不符合固定 Runtime 边界。新增插件应更新锁定的 wheel / Cordis 版本，不能在 Runtime 启动期修改安装内容。
 
 ---
 
@@ -374,8 +371,8 @@ POC 不新增数据库 migration，也不承诺 App 重启恢复：Harness Sessi
 
 - 禁止使用 `latest`、`npx` 或启动时联网安装。
 - 固定 release tag、commit、协议、Profile 依赖和插件版本。
-- 构建阶段获取 carrier 并校验 SHA-256；三个可执行文件分别签名和校验。
-- 首期不做 Harness 独立更新器，随 Starcat Direct 整体发布和回滚。
+- 安装脚本从 PyPI 获取固定 wheel，校验三个 carrier 的可执行权限与已有 code signature，并只移除这些确定文件的 quarantine。
+- 首期不做在线更新器；Runtime 与 Starcat Direct 独立升级和回滚。
 - 更新时使用新的版本化 Session root，不覆盖运行中二进制。
 
 每次升级审查 JSON-RPC、Session Event、carrier 文件、最低 macOS、native dependency、License、preset 默认 Tool、MCP / Approval / Subagent 权限、存储格式和 CPU 架构。
@@ -386,7 +383,7 @@ POC 不新增数据库 migration，也不承诺 App 重启恢复：Harness Sessi
 
 ### POC-0：Runtime Carrier
 
-固定 `rc.8` tag / commit，获取三个 arm64 carrier 文件，建立 manifest，校验 Hash、架构、权限、License，并用最小 Profile 做启动 / 退出 smoke test。不改 UI、不接 MCP、不执行发布脚本。
+固定 `0.1.1rc1` wheel，安装三个 arm64 carrier，校验架构、权限、签名与 License，并用不含 Shell 的最小 Profile 做启动 / 退出 smoke test。不接 MCP、不执行发布脚本。
 
 ### POC-1：JSON-RPC 与进程生命周期
 
@@ -428,7 +425,7 @@ POC 不新增数据库 migration，也不承诺 App 重启恢复：Harness Sessi
 - 原生 Run Surface、Inspector、followup / steer 交互。
 - Light / Dark、窗口缩放、18 locale 与 VoiceOver。
 - 长输出 CPU、内存、滚动与停止响应。
-- Direct 签名构建中的 Sidecar 启动和清理。
+- Direct 构建中的外部 Sidecar 启动、超时与清理。
 
 自动化不能替代签名构建、真实 Provider、长任务和 UI 人工验收。
 
@@ -443,7 +440,7 @@ GO 要求：完整事件可稳定投影；只读 Bridge 不绕过 repo、知识�
 ## 14. 上游依据
 
 - [官方仓库](https://github.com/deepseek-ai/deepseek-harness)
-- [`0.1.0-rc.8` Release](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.0-rc.8)
+- [`deepseek-harness-runtime-bin 0.1.1rc1`](https://pypi.org/project/deepseek-harness-runtime-bin/0.1.1rc1/)
 - [Architecture](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/architecture.md)
 - [Packages Catalog](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/README.md)
 - [Python SDK Runtime](https://github.com/deepseek-ai/deepseek-harness/blob/master/python/sdk-runtime/README.md)

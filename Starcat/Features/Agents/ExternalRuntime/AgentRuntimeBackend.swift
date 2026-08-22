@@ -55,8 +55,9 @@ struct AgentRuntimeCapabilities: Equatable, Sendable {
         supportsReliableCancellation: true
     )
 
-    /// rc.8 的 stdio JSON-RPC 没有 cancel、session close 和双向 approval。
-    static let deepSeekHarnessRC8 = AgentRuntimeCapabilities(
+    /// 当前 `0.1.1rc1` Runtime 的 stdio JSON-RPC adapter 尚未开放 cancel、
+    /// session close 和双向 approval；能力矩阵描述 Starcat 已接入能力，不跟包版本命名。
+    static let deepSeekHarnessPOC = AgentRuntimeCapabilities(
         supportsResume: false,
         supportsSteering: false,
         supportsInteractiveApproval: false,
@@ -83,7 +84,7 @@ struct AgentRuntimePolicy: Hashable, Sendable {
         defaultBackend: .builtinLoop
     )
 
-    /// Codex 通过 dynamic tools 只接入 Starcat 的自动只读工具。DeepSeek rc.8 尚无
+    /// Codex 通过 dynamic tools 只接入 Starcat 的自动只读工具。DeepSeek Harness 尚无
     /// 等价双向工具协议，因此不能把两者伪装成同一能力。
     static let codexReadOnly = AgentRuntimePolicy(
         allowedBackends: [.builtinLoop, .codexAppServer],
