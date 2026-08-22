@@ -1797,8 +1797,8 @@ private struct GitHubNotificationCommentComposer: View {
                     text: $draft,
                     placeholder: GitHubNotificationMapper.copy(
                         locale,
-                        zh: "用 Markdown 写下评论…",
-                        en: "Write a comment with Markdown…"
+                        zh: "用 Markdown 写下评论，支持从剪切板上传图片…",
+                        en: "Write a comment with Markdown. You can paste images from the clipboard…"
                     ),
                     isEditable: !isPosting && !isGenerating,
                     maximumHeight: composerCollapsedMaxHeight,

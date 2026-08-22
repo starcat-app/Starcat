@@ -325202,6 +325202,52 @@
         }
       }
     },
+    "settings.general.openRepositoryMarkdownInApp.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When enabled, Markdown links to this repository in the README open in a separate window. ⌘-click always uses the browser."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启后，README 里指向本仓库的 Markdown 链接会在独立窗口打开。⌘-点击始终用浏览器。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟後，README 裡指向本倉庫的 Markdown 連結會在獨立視窗開啟。⌘-點擊一律使用瀏覽器。"
+          }
+        }
+      }
+    },
+    "settings.general.openRepositoryMarkdownInApp.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open repository docs in the app"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "应用内打开仓库文档"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "應用程式內開啟倉庫文件"
+          }
+        }
+      }
+    },
     "settings.general.other" : {
       "extractionState" : "manual",
       "localizations" : {
