@@ -79,6 +79,7 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     var markNotificationThreadReadHandler: ((_ id: String) async throws -> Void)?
     var markNotificationThreadDoneHandler: ((_ id: String) async throws -> Void)?
     var updateNotificationIssueStateHandler: ((_ path: String, _ state: String) async throws -> Void)?
+    var uploadUserAttachmentHandler: ((_ fileName: String, _ contentType: String, _ repositoryID: Int64, _ data: Data) async throws -> URL)?
 
     // MARK: - 调用记录（供断言用）
     //
@@ -314,6 +315,18 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
             fatalError("MockGitHubAPIClient.updateNotificationIssueStateHandler 未设置")
         }
         try await handler(path, state)
+    }
+
+    func uploadUserAttachment(
+        fileName: String,
+        contentType: String,
+        repositoryID: Int64,
+        data: Data
+    ) async throws -> URL {
+        guard let handler = uploadUserAttachmentHandler else {
+            fatalError("MockGitHubAPIClient.uploadUserAttachmentHandler 未设置")
+        }
+        return try await handler(fileName, contentType, repositoryID, data)
     }
 }
 

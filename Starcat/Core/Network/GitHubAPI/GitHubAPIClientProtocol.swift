@@ -151,6 +151,15 @@ protocol GitHubAPIClientProtocol: Sendable {
     /// `PATCH .../issues/{n}` 改 `state`。公开仓 `public_repo` 即可；私仓可能 404。
     func updateNotificationIssueState(path: String, state: String) async throws
 
+    /// 把图片传到 `uploads.github.com/user-attachments/assets`，返回可写进评论 Markdown 的 URL。
+    /// 未文档化；公开仓 `public_repo` 即可，私仓可能 404。
+    func uploadUserAttachment(
+        fileName: String,
+        contentType: String,
+        repositoryID: Int64,
+        data: Data
+    ) async throws -> URL
+
     // MARK: - Organization Issues（2026-08-21）
 
     /// 拉取当前用户在指定组织内可见的一页 Issue；实现方必须排除 Pull Request。
@@ -248,6 +257,15 @@ extension GitHubAPIClientProtocol {
 
     func updateNotificationIssueState(path: String, state: String) async throws {
         throw NetworkError.clientError(statusCode: 501, message: "Update notification issue state is not implemented by this client")
+    }
+
+    func uploadUserAttachment(
+        fileName: String,
+        contentType: String,
+        repositoryID: Int64,
+        data: Data
+    ) async throws -> URL {
+        throw NetworkError.clientError(statusCode: 501, message: "User attachment upload is not implemented by this client")
     }
 
     func organizationIssues(

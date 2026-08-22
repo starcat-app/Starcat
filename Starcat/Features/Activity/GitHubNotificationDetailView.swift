@@ -1308,6 +1308,8 @@ private struct GitHubNotificationCommentComposer: View {
     /// 点进一行占位后才展开卡片。失焦且草稿空才收回，避免底栏按钮抢焦点时被立刻收掉。
     @State private var isComposerActive = false
     @State private var collapseIdleTask: Task<Void, Never>?
+    /// 粘贴上传进行中禁止发评论，避免把 `starcat-upload:` 占位符发到 GitHub。
+    @State private var uploadingImageCount = 0
 
     private var threadId: String { payload.threadId }
     private var repositoryFullName: String { payload.repositoryFullName }
@@ -1390,6 +1392,7 @@ private struct GitHubNotificationCommentComposer: View {
             || isGenerating
             || isPosting
             || isPreview
+            || uploadingImageCount > 0
             || errorMessage != nil
     }
 
@@ -1491,6 +1494,7 @@ private struct GitHubNotificationCommentComposer: View {
               !isGenerating,
               !isPosting,
               !isPreview,
+              uploadingImageCount == 0,
               !isExpanded,
               paywallContext == nil,
               errorMessage == nil
@@ -1514,7 +1518,8 @@ private struct GitHubNotificationCommentComposer: View {
               trimmed.isEmpty,
               !isGenerating,
               !isPosting,
-              !isPreview
+              !isPreview,
+              uploadingImageCount == 0
         else { return false }
         collapseIdleTask?.cancel()
         withAnimation(composerAnimation) {
@@ -1530,6 +1535,7 @@ private struct GitHubNotificationCommentComposer: View {
         isComposerActive = false
         errorMessage = nil
         measuredEditorHeight = 0
+        uploadingImageCount = 0
     }
 
     private var composerFooter: some View {
@@ -1552,7 +1558,7 @@ private struct GitHubNotificationCommentComposer: View {
                 .controlSize(.small)
                 .focusEffectDisabled()
                 .clickablePointer()
-                .disabled(isPosting || isGenerating || isUpdatingIssueState)
+                .disabled(isPosting || isGenerating || isUpdatingIssueState || uploadingImageCount > 0)
                 .help(issueStateButtonTitle)
             }
             Button {
@@ -1570,7 +1576,7 @@ private struct GitHubNotificationCommentComposer: View {
             .controlSize(.small)
             .focusEffectDisabled()
             .clickablePointer()
-            .disabled(trimmed.isEmpty || isPosting || isGenerating || isUpdatingIssueState)
+            .disabled(trimmed.isEmpty || isPosting || isGenerating || isUpdatingIssueState || uploadingImageCount > 0)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -1661,7 +1667,13 @@ private struct GitHubNotificationCommentComposer: View {
                             scheduleCollapseIfIdle()
                         }
                     },
-                    onEscape: { handleEscape() }
+                    onEscape: { handleEscape() },
+                    onPasteImage: { payload, placeholder in
+                        Task { await uploadPastedImage(payload, placeholder: placeholder) }
+                    },
+                    onPasteImageError: { error in
+                        errorMessage = uploadErrorMessage(error)
+                    }
                 )
             }
         }
@@ -1907,7 +1919,7 @@ private struct GitHubNotificationCommentComposer: View {
 
     private func submit() async {
         let body = trimmed
-        guard !body.isEmpty else { return }
+        guard !body.isEmpty, uploadingImageCount == 0 else { return }
         isPosting = true
         errorMessage = nil
         defer { isPosting = false }
@@ -1925,6 +1937,7 @@ private struct GitHubNotificationCommentComposer: View {
     }
 
     private func applyIssueState() async {
+        guard uploadingImageCount == 0 else { return }
         isUpdatingIssueState = true
         errorMessage = nil
         defer { isUpdatingIssueState = false }
@@ -1989,6 +2002,81 @@ private struct GitHubNotificationCommentComposer: View {
         return String(owner).caseInsensitiveCompare(login) == .orderedSame
     }
 
+    /// 剪贴板图片先占位，上传成功后换成 `![name](user-attachments url)`，预览才能画出来。
+    private func uploadPastedImage(
+        _ payload: GitHubClipboardImage.Payload,
+        placeholder: String
+    ) async {
+        uploadingImageCount += 1
+        errorMessage = nil
+        defer { uploadingImageCount = max(0, uploadingImageCount - 1) }
+        do {
+            let repositoryID = try await resolveAttachmentRepositoryID()
+            let url = try await dependencies.apiClient.uploadUserAttachment(
+                fileName: payload.fileName,
+                contentType: payload.contentType,
+                repositoryID: repositoryID,
+                data: payload.data
+            )
+            let markdown = GitHubUserAttachment.markdownImage(alt: payload.fileName, url: url)
+            draft = GitHubUserAttachment.replacePlaceholder(placeholder, with: markdown, in: draft)
+        } catch {
+            draft = GitHubUserAttachment.replacePlaceholder(placeholder, with: "", in: draft)
+            errorMessage = uploadErrorMessage(error)
+        }
+    }
+
+    private func resolveAttachmentRepositoryID() async throws -> Int64 {
+        if let id = payload.repositoryId ?? repo?.id, id > 0 {
+            return id
+        }
+        let parts = repositoryFullName.split(separator: "/")
+        guard parts.count == 2 else { throw GitHubUserAttachmentError.missingRepositoryID }
+        let remote = try await dependencies.apiClient.repo(
+            owner: String(parts[0]),
+            repo: String(parts[1])
+        )
+        return remote.id
+    }
+
+    private func uploadErrorMessage(_ error: Error) -> String {
+        if let attachment = error as? GitHubUserAttachmentError {
+            switch attachment {
+            case .imageTooLarge:
+                return GitHubNotificationMapper.copy(
+                    locale,
+                    zh: "图片太大，不能超过 10 MB。",
+                    en: "That image is larger than 10 MB."
+                )
+            case .emptyImage, .missingAssetURL, .missingRepositoryID:
+                return GitHubNotificationMapper.copy(
+                    locale,
+                    zh: "无法上传图片。",
+                    en: "Couldn’t upload the image."
+                )
+            }
+        }
+        if let network = error as? NetworkError {
+            switch network {
+            case .notFound:
+                return GitHubNotificationMapper.copy(
+                    locale,
+                    zh: "无法上传图片（可能是私有仓库）。请到 GitHub 打开。",
+                    en: "Couldn’t upload the image (private repo?). Open it on GitHub."
+                )
+            case .clientError(let code, _) where code == 403 || code == 404:
+                return GitHubNotificationMapper.copy(
+                    locale,
+                    zh: "无法上传图片（可能是私有仓库）。请到 GitHub 打开。",
+                    en: "Couldn’t upload the image (private repo?). Open it on GitHub."
+                )
+            default:
+                break
+            }
+        }
+        return submitErrorMessage(error)
+    }
+
     /// 私有仓没 `repo` scope 时常 404；不要假装发出去了。
     private func submitErrorMessage(_ error: Error) -> String {
         if error as? GitHubNotificationInboxError == .cannotComment {
@@ -2040,6 +2128,9 @@ private struct GitHubNotificationCommentTextEditor: NSViewRepresentable {
     var onEditingChange: ((Bool) -> Void)? = nil
     /// 撰写态 first responder 在 NSTextView，Esc 不会回到 SwiftUI，这里回传是否已处理。
     var onEscape: (() -> Bool)? = nil
+    /// 剪贴板有图时拦截 Cmd+V，先插入占位再异步上传。
+    var onPasteImage: ((GitHubClipboardImage.Payload, String) -> Void)? = nil
+    var onPasteImageError: ((GitHubUserAttachmentError) -> Void)? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -2067,6 +2158,8 @@ private struct GitHubNotificationCommentTextEditor: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.placeholder = placeholder
         textView.setAccessibilityLabel(placeholder)
+        textView.onPasteImage = context.coordinator.parent.onPasteImage
+        textView.onPasteImageError = context.coordinator.parent.onPasteImageError
 
         scrollView.documentView = textView
         scrollView.hasVerticalScroller = true
@@ -2095,6 +2188,8 @@ private struct GitHubNotificationCommentTextEditor: NSViewRepresentable {
         }
         textView.placeholder = placeholder
         textView.setAccessibilityLabel(placeholder)
+        textView.onPasteImage = context.coordinator.parent.onPasteImage
+        textView.onPasteImageError = context.coordinator.parent.onPasteImageError
         textView.isEditable = isEditable
         textView.isSelectable = true
         if textView.string != text {
@@ -2210,6 +2305,48 @@ private final class GitHubNotificationCommentScrollView: NSScrollView {
 private final class GitHubNotificationCommentNSTextView: NSTextView {
     static let contentInset = NSSize(width: 8, height: 8)
     var placeholder = ""
+    var onPasteImage: ((GitHubClipboardImage.Payload, String) -> Void)?
+    var onPasteImageError: ((GitHubUserAttachmentError) -> Void)?
+
+    /// 有图就走 GitHub 附件上传；不要让 NSTextView 把图嵌成附件（importsGraphics 已关）。
+    override func paste(_ sender: Any?) {
+        guard isEditable else {
+            super.paste(sender)
+            return
+        }
+        let pasteboard = NSPasteboard.general
+        // 只认 PNG / TIFF 字节。网页复制常同时带文字和预览图，不能靠 NSImage(pasteboard:) 抢粘贴。
+        let hasImage = pasteboard.data(forType: .png) != nil
+            || pasteboard.data(forType: .tiff) != nil
+        guard hasImage else {
+            super.paste(sender)
+            return
+        }
+        guard let payload = GitHubClipboardImage.payload(from: pasteboard) else {
+            onPasteImageError?(.imageTooLarge)
+            return
+        }
+        guard let onPasteImage else {
+            super.paste(sender)
+            return
+        }
+        let placeholder = GitHubUserAttachment.uploadingPlaceholder(
+            fileName: payload.fileName,
+            token: UUID().uuidString
+        )
+        let inserted = GitHubUserAttachment.insertBlock(
+            placeholder,
+            into: string,
+            selectedUTF16: selectedRange()
+        )
+        let fullRange = NSRange(location: 0, length: (string as NSString).length)
+        if shouldChangeText(in: fullRange, replacementString: inserted.text) {
+            string = inserted.text
+            setSelectedRange(inserted.selectedUTF16)
+            didChangeText()
+        }
+        onPasteImage(payload, placeholder)
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)

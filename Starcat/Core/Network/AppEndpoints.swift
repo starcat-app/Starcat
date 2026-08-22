@@ -432,6 +432,19 @@ enum AppEndpoints {
         }
     }
 
+    // MARK: - GitHub Uploads（评论粘贴图片，未文档化）
+
+    /// `uploads.github.com` 与 REST `api.github.com` 不是同一个 host。
+    /// Issue 评论框粘贴图片走这里，成功后再把 URL 写进 Markdown body。
+    enum GitHubUploads {
+        static let baseURL = URL(string: "https://uploads.github.com")!
+
+        enum Paths {
+            /// `POST /user-attachments/assets?name=&content_type=&repository_id=`
+            static let userAttachmentAssets = "/user-attachments/assets"
+        }
+    }
+
     // MARK: - GitHub Blog（Activity PR-3，2026-06-17）
 
     /// GitHub 官方博客 RSS feed。不走 `api.github.com`，独立 host。

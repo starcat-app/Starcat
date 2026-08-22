@@ -293,6 +293,24 @@ actor GitHubAPIClient {
         return payload
     }
 
+    /// POST 到调用方给的绝对 URL（`uploads.github.com` 不走 `api.github.com` base）。
+    /// Token / 401 / 404 映射与 `performBytes` 相同，避免再抄一套错误处理。
+    func postBytes(
+        to url: URL,
+        accept: String,
+        contentType: String,
+        body: Data
+    ) async throws -> BytesResponse {
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(accept, forHTTPHeaderField: "Accept")
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        request.setValue(AppConstants.httpUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+        request.httpBody = body
+        return try await performBytes(request)
+    }
+
     /// 发起 GET 请求并返回原始字节，跳过 JSON 解码。
     ///
     /// 主要服务于 README HTML 端点（`Accept: application/vnd.github.html`）。
