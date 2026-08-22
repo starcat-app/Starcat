@@ -115,12 +115,15 @@ struct ActivityView: View {
             }
         }
         .task {
-            // 两个独立入口各自管理加载与选择；不要为了它们扫描本地 Activity 聚合库。
-            guard selectedCategory != .notification,
-                  selectedCategory != .undoStar
-            else { return }
-            // 首次进入 Activity：全量 ensureLoaded。Weekly 已迁移到 Explore,Activity 只处理本地聚合分类。
+            // 时间线 / Undo Star 自己管中栏列表，但仍要灌侧栏其它分类的本地缓存数字。
+            // 以前默认分类是「全部」，ensureLoaded 会顺便发布计数；现在默认时间线，
+            // 若不在这里读缓存，公告 / 发行版等会一直空白，点进去才出现。
             let model = ensureViewModel()
+            if selectedCategory == .notification || selectedCategory == .undoStar {
+                await model.primeSidebarCategoryCountsIfNeeded()
+                return
+            }
+            // 首次进入本地聚合分类：全量 ensureLoaded。Weekly 已迁移到 Explore。
             async let libraryLoad: Void = reloadLibraryStateMap()
             if settings.libraryFilter != .all {
                 await libraryLoad

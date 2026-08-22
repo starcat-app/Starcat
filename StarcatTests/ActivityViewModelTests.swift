@@ -193,6 +193,38 @@ struct ActivityViewModelTests {
         #expect(!ActivityCategory.allCases.contains { $0.rawValue == "weekly" })
     }
 
+    @Test("进入时间线也从本地缓存发布侧栏分类数字，不打 events 网络")
+    func notificationEntryPublishesSidebarCountsFromCache() async throws {
+        let h = try Harness()
+        let oneHourAgo = Date().addingTimeInterval(-3_600)
+        try await h.eventRepo.upsertMany([
+            ActivityEventRecord(
+                id: "sidebar-ev",
+                eventType: "WatchEvent",
+                actorLogin: "ruanyf",
+                actorAvatarUrl: nil,
+                repoName: "torvalds/linux",
+                repoId: 99001,
+                payloadJson: #"{"action":"started"}"#,
+                isRead: false,
+                createdAt: "2026-06-15T00:00:00Z",
+                fetchedAt: ActivityViewModel.isoString(oneHourAgo)
+            )
+        ])
+        h.mockClient.receivedEventsHandler = { _, _, _ in
+            Issue.record("时间线进页不应为侧栏数字打 events 网络")
+            throw NetworkError.invalidResponse
+        }
+
+        await h.viewModel.primeSidebarCategoryCountsIfNeeded()
+
+        #expect(h.countService.count(for: .following) == 1)
+        #expect(h.countService.count(for: .announcement) == 1)
+        #expect(h.countService.count(for: .star) == 0)
+        #expect(h.mockClient.receivedEventsCalls.count == 0)
+        #expect(h.viewModel.isAggregateReady)
+    }
+
     @Test("ActivityCategoryCountService: 本地分类发布后立即对 Sidebar 可见")
     func categoryCountServicePublishesLocalCountsImmediately() async throws {
         let service = ActivityCategoryCountService()

@@ -413,6 +413,16 @@ final class ActivityViewModel {
         await ensureLoaded(category: category)
     }
 
+    /// 时间线 / Undo Star 进页时不再走 `ensureLoaded(.all)`，侧栏其它分类会一直没数字。
+    /// 只读本地四路缓存并发布计数，不打网络、不改中栏时间线。
+    func primeSidebarCategoryCountsIfNeeded() async {
+        if isAggregateLoaded {
+            publishCategoryCounts(from: allItems)
+            return
+        }
+        await primeCategoryCacheIfAvailable(for: .all)
+    }
+
     /// 用户主动刷新（toolbar 按钮）：强制走当前分类相关网络 + Release 巡检。
     func refresh(category: ActivityCategory) async {
         currentCategory = category

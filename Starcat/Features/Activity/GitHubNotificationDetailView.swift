@@ -65,10 +65,12 @@ struct GitHubNotificationDetailView: View {
 
     private func populatedDetail(_ item: ActivityItem) -> some View {
         VStack(spacing: 0) {
-            // 仓库名在上，Issue / PR 元数据和操作在下，先看属于哪个仓再看这条会话。
+            // 仓库名占中栏筛选条同一高度，横线才能和中栏对齐。
             if let payload = item.notification {
                 headerRepoRow(payload)
             }
+            Divider()
+            // Issue / PR 行在横线下，对应中栏时间线从分割线之下开始。
             headerToolbar(item)
             if let doneError, !doneError.isEmpty {
                 Text(verbatim: doneError)
@@ -77,7 +79,6 @@ struct GitHubNotificationDetailView: View {
                     .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
                     .padding(.bottom, 6)
             }
-            Divider()
             if !isComposerExpanded {
                 ScrollView {
                     // GitHub API 单次 hydration 最多返回 100 条评论，数量有界。这里故意使用
@@ -112,7 +113,7 @@ struct GitHubNotificationDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // 语言色光晕挂在会话详情根上，和账本 / Manage 详情同一套；工具行走透明才能透出来。
         .detailHeroTintBackground(tint: item.accentColor)
-        // 标题进系统导航栏，和中栏「活动 > 通知 / 46 条通知」同一层；下面是仓库名 + 会话工具条。
+        // 标题进系统导航栏，和中栏「活动 > 通知」同一层；横线上方只留仓库名。
         .navigationTitle(item.title)
         .navigationSubtitle(navigationSubtitle(item))
         .onChange(of: item.notification?.threadId) { _, _ in
@@ -187,8 +188,7 @@ struct GitHubNotificationDetailView: View {
         aiErrorToast = message
     }
 
-    /// 第二行：chip + 可点 `Issue #20` 在左，入口 / 上下条在右。
-    /// 高度走 `manageListFilterBarChrome()`，不要只靠相同 padding——Picker 比 chip 高。
+    /// 横线下：chip + 可点 `Issue #20` 在左，入口 / 上下条在右。
     /// 关掉详情靠中栏改选或清空选择，不再单独放关闭钮。
     private func headerToolbar(_ item: ActivityItem) -> some View {
         HStack(spacing: 8) {
@@ -248,8 +248,10 @@ struct GitHubNotificationDetailView: View {
                 .help(GitHubNotificationMapper.copy(locale, zh: "下一条", en: "Next notification"))
             }
         }
-        .manageListFilterBarChrome()
-        // 透明，让根节点语言色光晕透到 chip 行和标题栏背后。
+        .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // 透明，让根节点语言色光晕透到 chip 行背后。
         .background(.clear)
     }
 
@@ -318,9 +320,13 @@ struct GitHubNotificationDetailView: View {
     private func headerRepoRow(_ payload: ActivityNotificationPayload) -> some View {
         repoRow(payload)
             .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
-            .padding(.top, ManageListFilterBarMetrics.topPadding)
-            .padding(.bottom, 2)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: ManageListFilterBarMetrics.barHeight,
+                maxHeight: ManageListFilterBarMetrics.barHeight,
+                alignment: .leading
+            )
+            .background(.clear)
     }
 
     private func repoRow(_ payload: ActivityNotificationPayload) -> some View {
@@ -334,18 +340,18 @@ struct GitHubNotificationDetailView: View {
                     urlString: GitHubNotificationMapper.repositoryAvatarURL(
                         fromFullName: payload.repositoryFullName
                     ),
-                    size: 26,
+                    size: 22,
                     fallbackSymbol: "shippingbox.fill",
                     showBorder: false
                 )
-                // 比评论作者再大一档：title3 是项目里仓库名的常用档，headline 在 macOS 上几乎看不出差。
+                // 锁在筛选条高度里，title3 会顶破横线对齐。
                 Text(verbatim: payload.repositoryFullName)
-                    .font(.title3.weight(.semibold))
+                    .font(.headline.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Image(systemName: "arrow.up.right")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
         }
