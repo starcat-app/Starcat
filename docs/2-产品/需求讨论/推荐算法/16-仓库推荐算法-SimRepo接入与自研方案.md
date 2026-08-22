@@ -1,8 +1,10 @@
 # Starcat 接入 SimRepo 与自研相似仓库推荐系统方案
 
-> 版本：v1.0  
+> 版本：v1.1
 > 适用项目：Starcat macOS App / Starcat Backend  
 > 目标：在 Starcat 中快速实现「相似 GitHub 仓库推荐」，短期复用 SimRepo 非官方接口，中长期建设 Starcat 自研混合推荐系统。
+
+> 2026-08-22 修订：SimRepo 作者已授权 Starcat 使用接口；当前 `starcat-recommend-api` 继续作为过渡适配层。长期权威实现改为独立的 `starcat-recsys-trainer` + `starcat-recsys-api`，详见 [61-Starcat自研仓库推荐系统详细设计](../../../3-设计/详细设计/61-Starcat自研仓库推荐系统详细设计.md)。本文件保留首轮调研和接入历史，涉及最终算法、数据上报和迁移的冲突内容以 60/61 文档为准。
 
 ---
 
@@ -76,6 +78,16 @@ Enhances GitHub by showing similar projects in a repository's sidebar
 ---
 
 ## 3. SimRepo 推荐算法理解
+
+### 3.0 2026-08-22 代码复核结论
+
+原文把 SimRepo 概括为“repo embedding + Qdrant”只准确描述了 v1 和接口形态，不能代表当前全部算法。按 `Mubelotix/simrepo` commit `07c6ef1dcfe2fd96cc050ef91529b7f180a55288` 的公开说明：
+
+- v1 使用 `TruncatedSVD` 生成 100 维 embedding，并使用 Qdrant cosine 检索。
+- v2 使用带时间衰减的 shared-stargazer overlap，并预计算相似 repo，当前被标记为推荐版本。
+- 公开仓库没有包含 v2 的完整构建流水线，因此精确衰减、归一化、采样和反作弊公式不能从接口反推，也不能写成已确认事实。
+
+Starcat 最终采用 v2 可确认的时间衰减 co-star 方向，并结合 Puzer 项目公开可复现的 `EmbeddingBag(mean) + MultiSimilarityLoss` Metric Learning；内容 embedding 负责长尾冷启动，SVD 仅作为 baseline/回退。
 
 ### 3.1 算法类型
 
@@ -1133,13 +1145,13 @@ Find more alternatives
 
 ## 23. Starcat 当前阶段建议
 
-当前最推荐的路线：
+以下是 2026-06-28 的阶段路线，第一阶段已完成。2026-08-22 后的执行路线以 61 文档为准：
 
 ```text
 P0：接入 SimRepo 非官方 Provider
 P0：后端缓存、限流、熔断
 P0：低 star / 查不到时 fallback
-P1：联系 SimRepo 作者确认授权
+P1：联系 SimRepo 作者确认授权（已完成）
 P1：自研 README/topics embedding fallback
 P2：引入 Starcat 用户行为协同过滤
 P3：完整混合推荐系统
@@ -1148,9 +1160,9 @@ P3：完整混合推荐系统
 也就是说：
 
 ```text
-短期：借 SimRepo 的 300M stars 推荐能力，快速上线「相似项目」
-中期：用 Starcat 自己的 metadata + README embedding 补足冷启动
-长期：基于 Starcat 用户行为和技术选型场景做混合推荐系统
+当前：授权使用 SimRepo，通过旧 recommend-api 保持生产能力
+中期：以 Starcat opt-in 数据 + GH Archive 建训练集，同时完成 co-star / Metric / content ablation
+长期：自研 API 灰度替代 SimRepo，删除旧 Provider 和旧服务
 ```
 
 ---
@@ -1169,7 +1181,7 @@ Starcat 可以短期把它作为非官方推荐源接入，但必须做到：
 2. 后端统一中转；
 3. 缓存、限流、熔断；
 4. 低 star / 新项目 fallback；
-5. 联系作者确认授权；
+5. 作者授权已经取得，仍保留服务端隔离、缓存和限流；
 6. 自研推荐系统逐步替换或增强。
 
 最终 Starcat 不应该只复刻 SimRepo，而是做更完整的：
@@ -1185,6 +1197,7 @@ GitHub 项目发现 + 相似推荐 + AI 理解 + 技术选型对比 + 收藏跟�
 ## 25. 参考资料
 
 - SimRepo GitHub 仓库：`https://github.com/Mubelotix/SimRepo`
+- GitHub Repo Embeddings：`https://github.com/Puzer/github-repo-embeddings`
 - SimRepo background.js：`https://raw.githubusercontent.com/Mubelotix/SimRepo/main/source/background.js`
 - SimRepo content-repo.js：`https://raw.githubusercontent.com/Mubelotix/SimRepo/main/source/content-repo.js`
 - SimRepo content-stars.js：`https://raw.githubusercontent.com/Mubelotix/SimRepo/main/source/content-stars.js`

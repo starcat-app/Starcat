@@ -54,6 +54,9 @@
 | 56 | [macOS 桌面小组件详细落地方案](56-macOS桌面小组件详细落地方案.md) | 双渠道 Widget Extension、App Group 快照、用户隔离、三个首发组件、测试、签名与多轮审查的可执行方案 |
 | 57 | [Agent 工作台与统一能力层详细设计](57-Agent工作台与统一能力层详细设计.md) | Agent 当前权威方案：过程/结果双层 Run Surface、RAG Composer/证据链复用、Agent 与 MCP 统一能力、v19 迁移和分阶段发布门禁 |
 | 58 | [DeepSeek Harness 集成评估与 POC 技术方案](58-DeepSeekHarness集成评估与POC技术方案.md) | `rc.8` Direct-only 外部 Runtime：三文件 Sidecar、stdio JSON-RPC、临时 MCP HTTP Bridge、插件与升级边界 |
+| 60 | [Starcat 数据贡献与数据平台详细设计](60-Starcat数据贡献与数据平台详细设计.md) | 两类独立 opt-in、匿名公开 Star 快照、History 日观测、outbox、幂等、删除和隐私边界 |
+| 61 | [Starcat 自研仓库推荐系统详细设计](61-Starcat自研仓库推荐系统详细设计.md) | 独立 Trainer/API、时间衰减 co-star、Metric Learning、内容冷启动、动态融合、评估与 SimRepo 迁移 |
+| 62 | [Starcat 自研星标历史服务详细设计](62-Starcat自研星标历史服务详细设计.md) | 独立 History 服务、群体快照聚合、GH Archive 估算、查询契约、删除重算与 Discovery 迁移 |
 
 ---
 
@@ -81,6 +84,9 @@
 - [GitHub API 设计](05-GitHub%20API设计.md) - GitHub API 调用
 - [活动页设计](16-活动页设计.md) - Release / Events / Starring / Watching 的活动聚合策略
 - [项目健康度与维护活跃度设计](17-项目健康度与维护活跃度设计.md) - Community Profile / Stats / Advisories 接入与缓存
+- [Starcat 数据贡献与数据平台详细设计](60-Starcat数据贡献与数据平台详细设计.md) - 客户端 opt-in、上传 DTO、outbox、删除与隐私边界
+- [Starcat 自研仓库推荐系统详细设计](61-Starcat自研仓库推荐系统详细设计.md) - Trainer / Serving API、混合推荐、评估、灰度与收口
+- [Starcat 自研星标历史服务详细设计](62-Starcat自研星标历史服务详细设计.md) - History ingest、聚合、构建、查询和 Discovery 迁移
 
 ---
 
@@ -88,6 +94,7 @@
 
 | 日期 | 更新内容 |
 |------|---------|
+| 2026-08-22 | 新增 60 / 61 / 62 文档：冻结匿名数据贡献、自研混合推荐、独立 Star History 服务及迁移落地契约 |
 | 2026-08-21 | 修订 58 文档：更新至 Harness `rc.8`，明确 Direct Sidecar、临时 MCP Bridge、插件白名单、版本更新与分阶段 POC |
 | 2026-08-16 | 新增 58 文档：评估 DeepSeek Harness 外部 Runtime，并冻结 Direct-only POC 边界、协议缺口和验收门禁 |
 | 2026-08-14 | 修订 57 文档：补齐 Agent Run Surface 的过程折叠、Activity Group、最终结果、Artifact 渲染与验收契约 |
