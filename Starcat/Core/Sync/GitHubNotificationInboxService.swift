@@ -63,7 +63,7 @@ final class GitHubNotificationInboxService {
     var listSegment: GitHubNotificationSegment = .all
 
     private var dwellTasks: [String: Task<Void, Never>] = [:]
-    /// hydrate / 打开详情后记下 Issue / PR 的 open/closed；关单成功也写这里，避免再加一列。
+    /// Issue / PR 的 `open` / `closed` / `merged`。内存是 UI 即时源，库里的 `issue_state` 是冷启动源。
     private var issueStates: [String: String] = [:]
     /// 同一 thread 并发刷新状态时共用一次 GET，避免选中 hydrate 和评论框各打一遍。
     private var issueStateRefreshTasks: [String: Task<Void, Never>] = [:]
@@ -222,7 +222,7 @@ final class GitHubNotificationInboxService {
                 comments = (try? await client.listNotificationIssueComments(path: commentsPath)) ?? []
             }
             let now = ISO8601DateFormatter.shared.string(from: clock())
-            cacheIssueState(id: id, state: hydration.state)
+            await rememberIssueState(id: id, state: hydration.state)
             try await threadRepository.updateHydration(
                 id: id,
                 actorLogin: hydration.actorLogin,
@@ -277,7 +277,46 @@ final class GitHubNotificationInboxService {
     }
 
     func cachedIssueState(threadId: String) -> String? {
-        issueStates[threadId]
+        GitHubNotificationMapper.normalizedIssueState(issueStates[threadId])
+    }
+
+    /// 列表即时源：内存优先，没有再用库里上次 hydrate / 关闭写下的值。
+    func resolvedIssueState(threadId: String, persisted: String?) -> String? {
+        cachedIssueState(threadId: threadId)
+            ?? GitHubNotificationMapper.normalizedIssueState(persisted)
+    }
+
+    /// 当前页 Issue / PR 缺状态时再 GET subject。已有库值只灌内存，避免每行都打网。
+    /// 不 `postDidChange`：状态变化靠 `@Observable` 的 `issueStates` 刷新行，避免整表重载。
+    func prefetchMissingIssueStates(from rows: [GitHubInboxTimelineRow]) async {
+        var missing: [String] = []
+        for row in rows {
+            guard case .notification(let record, _) = row else { continue }
+            guard GitHubNotificationMapper.canReply(
+                subjectType: record.subjectType,
+                number: record.subjectNumber
+            ) else { continue }
+            if resolvedIssueState(threadId: record.id, persisted: record.issueState) != nil {
+                if issueStates[record.id] == nil,
+                   let persisted = GitHubNotificationMapper.normalizedIssueState(record.issueState) {
+                    issueStates[record.id] = persisted
+                }
+                continue
+            }
+            missing.append(record.id)
+        }
+        // 一页最多补 12 条，避免打开 inbox 就打满 40 次 GET。
+        for id in missing.prefix(12) {
+            await refreshIssueState(threadId: id)
+        }
+    }
+
+    /// 切到打开 / 关闭 / 已合并前补一批缺失状态，否则筛选会把还没 hydrate 的行全挡掉。
+    func backfillMissingIssueStates(limit: Int = 20) async {
+        let ids = (try? await threadRepository.fetchIDsMissingIssueState(limit: limit)) ?? []
+        for id in ids {
+            await refreshIssueState(threadId: id)
+        }
     }
 
     /// 打开详情时再 GET 一次 subject，确认当前是 open 才允许显示「关闭」。
@@ -305,7 +344,7 @@ final class GitHubNotificationInboxService {
         else { return }
         do {
             let hydration = try await apiClient(for: record).hydrateNotificationSubject(path: path)
-            cacheIssueState(id: threadId, state: hydration.state)
+            await rememberIssueState(id: threadId, state: hydration.state)
         } catch {
             AppLog.network.info(
                 "Notification issue state skipped id=\(threadId, privacy: .public): \(error.localizedDescription, privacy: .public)"
@@ -313,12 +352,16 @@ final class GitHubNotificationInboxService {
         }
     }
 
-    private func cacheIssueState(id: String, state: String?) {
-        guard let state, !state.isEmpty else { return }
-        issueStates[id] = state.lowercased()
+    private func rememberIssueState(id: String, state: String?) async {
+        guard let normalized = GitHubNotificationMapper.normalizedIssueState(state) else { return }
+        let changed = issueStates[id] != normalized
+        issueStates[id] = normalized
+        guard changed else { return }
+        try? await threadRepository.updatePersistedIssueState(id: id, state: normalized)
     }
 
     /// `PATCH` Issue / PR 的 `state`。演示 thread 和不能回复的类型直接拒绝。
+    /// 不能 PATCH 成 `merged`：合并只能在 GitHub 上发生，这里只关 / 重开。
     func updateIssueState(threadId: String, state: String) async throws {
         let normalized = state.lowercased()
         guard normalized == "open" || normalized == "closed" else {
@@ -338,6 +381,7 @@ final class GitHubNotificationInboxService {
         do {
             try await apiClient(for: record).updateNotificationIssueState(path: path, state: normalized)
             issueStates[threadId] = normalized
+            try await threadRepository.updatePersistedIssueState(id: threadId, state: normalized)
             postDidChange()
         } catch let network as NetworkError {
             switch network {

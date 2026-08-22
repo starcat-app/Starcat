@@ -341,6 +341,39 @@ struct GitHubNotificationMapperTests {
         )
     }
 
+    @Test("PR 的 closed+merged 收成 merged；普通 Issue 只认 open/closed")
+    func resolvedIssueStatePrefersMerged() {
+        #expect(
+            GitHubNotificationMapper.resolvedIssueState(
+                rawState: "closed",
+                merged: true,
+                mergedAt: nil
+            ) == "merged"
+        )
+        #expect(
+            GitHubNotificationMapper.resolvedIssueState(
+                rawState: "closed",
+                merged: false,
+                mergedAt: "2026-08-22T04:00:00Z"
+            ) == "merged"
+        )
+        #expect(
+            GitHubNotificationMapper.resolvedIssueState(
+                rawState: "closed",
+                merged: false,
+                mergedAt: nil
+            ) == "closed"
+        )
+        #expect(GitHubNotificationMapper.normalizedIssueState("OPEN") == "open")
+        #expect(GitHubNotificationMapper.normalizedIssueState("draft") == nil)
+        let zh = Locale(identifier: "zh-Hans")
+        #expect(GitHubNotificationMapper.issueStateTitle(state: "merged", locale: zh) == "已合并")
+        #expect(
+            GitHubNotificationMapper.issueStateTitle(state: "open", locale: Locale(identifier: "en"))
+            == "Open"
+        )
+    }
+
     @Test("时钟格式 HH:mm")
     func clockLabel() {
         var calendar = Calendar(identifier: .gregorian)
@@ -1094,6 +1127,8 @@ struct GitHubNotificationInboxTests {
         #expect(stored.excerpt == "hello body")
         #expect(stored.htmlUrl == "https://github.com/o/r/issues/1")
         #expect(stored.subjectCreatedAt == "2026-07-19T00:00:00Z")
+        #expect(stored.issueState == "open")
+        #expect(env.inbox.cachedIssueState(threadId: "h1") == "open")
         let comments = GitHubNotificationMapper.decodeComments(stored.commentsJson)
         #expect(comments.count == 1)
         #expect(comments.first?.login == "bob")
@@ -1208,16 +1243,80 @@ struct GitHubNotificationInboxTests {
         #expect(patched.first?.0 == "/repos/o/r/issues/1")
         #expect(patched.first?.1 == "closed")
         #expect(env.inbox.cachedIssueState(threadId: "issue-1") == "closed")
+        #expect(try await env.threads.fetch(id: "issue-1")?.issueState == "closed")
 
         try await env.inbox.reopenIssue(threadId: "issue-1")
         patched = lock.withLock { $0 }
         #expect(patched.count == 2)
         #expect(patched.last?.1 == "open")
         #expect(env.inbox.cachedIssueState(threadId: "issue-1") == "open")
+        #expect(try await env.threads.fetch(id: "issue-1")?.issueState == "open")
 
         await #expect(throws: GitHubNotificationInboxError.cannotClose) {
             try await env.inbox.closeIssue(threadId: "\(GitHubNotificationMapper.demoThreadIDPrefix)x")
         }
+        await #expect(throws: GitHubNotificationInboxError.cannotClose) {
+            try await env.inbox.updateIssueState(threadId: "issue-1", state: "merged")
+        }
+    }
+
+    @Test("缺状态的可见 Issue 会补 GET 并落库；已有 issue_state 不再打网")
+    func prefetchMissingIssueStatesPersistsAndSkipsKnown() async throws {
+        let env = try makeEnv()
+        let fetchedAt = "2026-08-19T00:00:00Z"
+        var hydrateCalls = 0
+        env.mock.hydrateNotificationSubjectHandler = { _ in
+            hydrateCalls += 1
+            return GitHubNotificationSubjectHydration(
+                htmlURL: "https://github.com/o/r/pull/2",
+                actorLogin: "alice",
+                excerpt: "pr body",
+                createdAt: "2026-07-19T00:00:00Z",
+                state: "merged"
+            )
+        }
+        var missing = GitHubNotificationMapper.record(
+            from: GitHubNotificationThreadDTO(
+                id: "need-state",
+                unread: false,
+                reason: "comment",
+                updatedAt: "2026-08-19T10:00:00Z",
+                subject: GitHubNotificationSubjectDTO(
+                    title: "Fix",
+                    url: "https://api.github.com/repos/o/r/pulls/2",
+                    latestCommentUrl: nil,
+                    type: "PullRequest"
+                ),
+                repository: GitHubNotificationRepositoryDTO(
+                    id: 1,
+                    fullName: "o/r",
+                    name: "r",
+                    owner: GitHubNotificationOwnerDTO(login: "o")
+                )
+            ),
+            fetchedAt: fetchedAt,
+            firstSeenAt: fetchedAt
+        )
+        var known = GitHubNotificationMapper.record(
+            from: Self.makeDTO(id: "already-known", reason: "comment"),
+            fetchedAt: fetchedAt,
+            firstSeenAt: fetchedAt
+        )
+        known.issueState = "open"
+        try await env.threads.upsertMany([missing, known])
+        missing = try #require(try await env.threads.fetch(id: "need-state"))
+        known = try #require(try await env.threads.fetch(id: "already-known"))
+
+        await env.inbox.prefetchMissingIssueStates(from: [
+            .notification(missing, language: nil),
+            .notification(known, language: nil)
+        ])
+
+        #expect(hydrateCalls == 1)
+        #expect(env.inbox.cachedIssueState(threadId: "need-state") == "merged")
+        #expect(try await env.threads.fetch(id: "need-state")?.issueState == "merged")
+        #expect(env.inbox.cachedIssueState(threadId: "already-known") == "open")
+        #expect(env.inbox.resolvedIssueState(threadId: "already-known", persisted: "open") == "open")
     }
 
     @Test("已 hydrate 的 thread 打开详情仍会 GET state；closed 不当成可关闭")
@@ -1252,6 +1351,7 @@ struct GitHubNotificationInboxTests {
         await env.inbox.refreshIssueState(threadId: "stale-open")
         #expect(hydrateCalls == 2)
         #expect(env.inbox.cachedIssueState(threadId: "stale-open") == "closed")
+        #expect(try await env.threads.fetch(id: "stale-open")?.issueState == "closed")
 
         let callsBeforeDemo = hydrateCalls
         await env.inbox.refreshIssueState(threadId: "\(GitHubNotificationMapper.demoThreadIDPrefix)x")

@@ -196,6 +196,17 @@ struct GitHubNotificationDetailView: View {
                 title: heading(item),
                 url: item.htmlURL
             )
+            if let payload = item.notification,
+               let state = inbox.resolvedIssueState(
+                threadId: payload.threadId,
+                persisted: payload.issueState
+               ) {
+                GitHubNotificationIssueStateBadge(
+                    state: state,
+                    isPullRequest: payload.subjectType == "PullRequest",
+                    style: .chip
+                )
+            }
             Spacer(minLength: 8)
             HStack(spacing: 4) {
                 detailLinkButtons(item)
@@ -1552,7 +1563,7 @@ private struct GitHubNotificationCommentComposer: View {
         draft.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// 状态按钮：open 关、closed 重开。未知 state 先不画，避免误显示关闭。
+    /// 状态按钮：open 关、closed 重开。merged / 未知都不画——已合并 PR 不能从这里重开。
     private var canShowIssueStateButton: Bool {
         isOwnProject
             && (knownIssueState == "open" || knownIssueState == "closed")
@@ -1940,7 +1951,8 @@ private struct GitHubNotificationCommentComposer: View {
             await inbox.refreshIssueState(threadId: threadId)
         }
         let cached = inbox.cachedIssueState(threadId: threadId)
-        if cached == "open" || cached == "closed" {
+            ?? GitHubNotificationMapper.normalizedIssueState(payload.issueState)
+        if cached == "open" || cached == "closed" || cached == "merged" {
             knownIssueState = cached
         } else {
             knownIssueState = nil

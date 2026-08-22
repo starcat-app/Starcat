@@ -102,7 +102,12 @@ extension GitHubAPIClient {
         let actorLogin = (user?["login"] as? String) ?? (author?["login"] as? String)
         let excerpt = GitHubNotificationMapper.bodyMarkdown(obj["body"] as? String)
         let createdAt = (obj["created_at"] as? String) ?? (obj["published_at"] as? String)
-        let state = obj["state"] as? String
+        // Issues API 的 `state` 对已合并 PR 仍是 closed；PR API 才带 merged / merged_at。
+        let state = GitHubNotificationMapper.resolvedIssueState(
+            rawState: obj["state"] as? String,
+            merged: obj["merged"] as? Bool,
+            mergedAt: obj["merged_at"] as? String
+        )
         return GitHubNotificationSubjectHydration(
             htmlURL: htmlURL,
             actorLogin: actorLogin,

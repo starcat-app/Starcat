@@ -58,7 +58,8 @@ struct GitHubNotificationSubjectHydration: Equatable, Sendable {
     let actorLogin: String?
     let excerpt: String?
     let createdAt: String?
-    /// Issue / PR 的 `open` / `closed`。Release 等没有。
+    /// Issue / PR 的 `open` / `closed` / `merged`。Release 等没有。
+    /// PR 已合并时 hydrate 会把 GitHub 的 `closed + merged` 收成 `merged`。
     let state: String?
 }
 

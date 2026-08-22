@@ -50,6 +50,11 @@ protocol GitHubNotificationThreadRepositoryProtocol: Sendable {
         subjectCreatedAt: String?,
         hydratedAt: String
     ) async throws
+    /// 把 hydrate / 关闭 / 重开得到的 `open|closed|merged` 写回 `issue_state`。
+    /// 通知增量 upsert 用 COALESCE 保这列，避免列表 API 没有状态时把已知值抹掉。
+    func updatePersistedIssueState(id: String, state: String) async throws
+    /// 打开 / 关闭 / 已合并筛选前，先给还没有 `issue_state` 的 Issue / PR 补 GET。
+    func fetchIDsMissingIssueState(limit: Int) async throws -> [String]
 
     func markNotified(ids: [String], notifiedAt: String) async throws
     func fetchFailedMarkRead() async throws -> [GitHubNotificationThreadRecord]

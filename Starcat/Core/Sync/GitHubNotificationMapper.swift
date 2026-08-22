@@ -523,8 +523,10 @@ enum GitHubNotificationMapper {
             return record.subjectType == "Discussion"
         case .release:
             return record.subjectType == "Release"
-        case .star, .unstar, .fork:
-            // 账本分段只含 `user_repo_activity`，GitHub thread 永远对不上。
+        case .open, .closed, .merged:
+            return normalizedIssueState(record.issueState) == segment.issueStateFilter
+        case .star, .unstar, .fork, .inLibrary, .outsideLibrary:
+            // 账本 / 知识库分段只含 `user_repo_activity`，GitHub thread 永远对不上。
             return false
         }
     }
@@ -536,6 +538,62 @@ enum GitHubNotificationMapper {
 
     static func isDemoThread(_ id: String) -> Bool {
         id.hasPrefix(demoThreadIDPrefix)
+    }
+
+    /// 时间线 / 详情只认这三态。其它 GitHub 值（draft、locked）不当状态画。
+    static let displayableIssueStates: Set<String> = ["open", "closed", "merged"]
+
+    static func normalizedIssueState(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return displayableIssueStates.contains(value) ? value : nil
+    }
+
+    /// PR 的 REST `state` 仍是 `closed`，要用 `merged` / `merged_at` 才能和 Closed 分开。
+    static func resolvedIssueState(
+        rawState: String?,
+        merged: Bool?,
+        mergedAt: String?
+    ) -> String? {
+        let hasMergedTimestamp = mergedAt?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty == false
+        if merged == true || hasMergedTimestamp {
+            return "merged"
+        }
+        return normalizedIssueState(rawState)
+    }
+
+    static func issueStateTitle(state: String, locale: Locale) -> String {
+        switch normalizedIssueState(state) {
+        case "open":
+            return copy(locale, zh: "打开", en: "Open")
+        case "closed":
+            return copy(locale, zh: "已关闭", en: "Closed")
+        case "merged":
+            return copy(locale, zh: "已合并", en: "Merged")
+        default:
+            return state
+        }
+    }
+
+    /// 时间列只有 52pt，英文不能用 `In Library`。
+    static func libraryStateStampTitle(state: LibraryState, locale: Locale) -> String {
+        switch state {
+        case .inLibrary:
+            return copy(locale, zh: "已入库", en: "In")
+        case .outsideLibrary:
+            return copy(locale, zh: "未入库", en: "Out")
+        }
+    }
+
+    static func libraryStateFilterTitle(state: LibraryState, locale: Locale) -> String {
+        switch state {
+        case .inLibrary:
+            return copy(locale, zh: "已入库", en: "In Library")
+        case .outsideLibrary:
+            return copy(locale, zh: "未入库", en: "Not in Library")
+        }
     }
 
     /// 评论框状态按钮：对齐 GitHub 网页（Close issue / Reopen issue / Close with comment）。
@@ -833,8 +891,8 @@ enum GitHubNotificationMapper {
 
 /// 通知 inbox 类型筛选。选项变多后顶栏用下拉，不再用分段控件。
 ///
-/// `all` 两表 UNION；`unread` / 主体类型 / `mention` / `review` 只含 GitHub 通知；
-/// `star` / `unstar` / `fork` 只含账本。
+/// `all` 两表 UNION；`unread` / 主体类型 / 打开·关闭·合并 / `mention` / `review` 只含 GitHub 通知；
+/// `star` / `unstar` / `fork` / 入库只含账本。
 enum GitHubNotificationSegment: String, CaseIterable, Identifiable, Sendable {
     case all
     case unread
@@ -842,11 +900,16 @@ enum GitHubNotificationSegment: String, CaseIterable, Identifiable, Sendable {
     case pullRequest
     case discussion
     case release
+    case open
+    case closed
+    case merged
     case mention
     case review
     case star
     case unstar
     case fork
+    case inLibrary
+    case outsideLibrary
 
     var id: String { rawValue }
 
@@ -856,13 +919,33 @@ enum GitHubNotificationSegment: String, CaseIterable, Identifiable, Sendable {
         case .star: return .star
         case .unstar: return .unstar
         case .fork: return .fork
-        case .all, .unread, .issue, .pullRequest, .discussion, .release, .mention, .review: return nil
+        case .all, .unread, .issue, .pullRequest, .discussion, .release,
+             .open, .closed, .merged, .mention, .review, .inLibrary, .outsideLibrary:
+            return nil
         }
     }
 
-    /// 菜单分组：状态 / 主体类型 / Mention·Review / 账本。
+    /// Issue / PR 的 `issue_state`。`closed` 不含 `merged`。
+    var issueStateFilter: String? {
+        switch self {
+        case .open: return "open"
+        case .closed: return "closed"
+        case .merged: return "merged"
+        default: return nil
+        }
+    }
+
+    var libraryStateFilter: LibraryState? {
+        switch self {
+        case .inLibrary: return .inLibrary
+        case .outsideLibrary: return .outsideLibrary
+        default: return nil
+        }
+    }
+
+    /// 菜单分组：未读 / 主体类型 / 工作状态 / Mention·Review / 账本 / 知识库。
     var showsDividerBefore: Bool {
-        self == .issue || self == .mention || self == .star
+        self == .issue || self == .open || self == .mention || self == .star || self == .inLibrary
     }
 
     var systemImage: String {
@@ -873,11 +956,16 @@ enum GitHubNotificationSegment: String, CaseIterable, Identifiable, Sendable {
         case .pullRequest: return "arrow.triangle.pull"
         case .discussion: return "text.bubble"
         case .release: return "tag.circle"
+        case .open: return "circle"
+        case .closed: return "checkmark.circle"
+        case .merged: return "arrow.triangle.merge"
         case .mention: return "at"
         case .review: return "eye"
         case .star: return "star"
         case .unstar: return "star.slash"
         case .fork: return "arrow.triangle.branch"
+        case .inLibrary: return "heart.fill"
+        case .outsideLibrary: return "heart"
         }
     }
 
@@ -906,6 +994,16 @@ enum GitHubNotificationSegment: String, CaseIterable, Identifiable, Sendable {
             return GitHubNotificationMapper.chipTitle(for: .unstar, locale: locale)
         case .fork:
             return GitHubNotificationMapper.chipTitle(for: .fork, locale: locale)
+        case .open:
+            return GitHubNotificationMapper.issueStateTitle(state: "open", locale: locale)
+        case .closed:
+            return GitHubNotificationMapper.issueStateTitle(state: "closed", locale: locale)
+        case .merged:
+            return GitHubNotificationMapper.issueStateTitle(state: "merged", locale: locale)
+        case .inLibrary:
+            return GitHubNotificationMapper.libraryStateFilterTitle(state: .inLibrary, locale: locale)
+        case .outsideLibrary:
+            return GitHubNotificationMapper.libraryStateFilterTitle(state: .outsideLibrary, locale: locale)
         }
     }
 }

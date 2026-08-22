@@ -316,6 +316,37 @@ struct GRDBGitHubNotificationThreadRepository: GitHubNotificationThreadRepositor
         }
     }
 
+    func updatePersistedIssueState(id: String, state: String) async throws {
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                UPDATE github_notification_threads
+                SET issue_state = ?
+                WHERE id = ?
+                """,
+                arguments: [state, id]
+            )
+        }
+    }
+
+    func fetchIDsMissingIssueState(limit: Int) async throws -> [String] {
+        let safeLimit = max(1, limit)
+        return try await database.writer.read { db in
+            try String.fetchAll(
+                db,
+                sql: """
+                SELECT id FROM github_notification_threads
+                WHERE subject_type IN ('Issue', 'PullRequest')
+                  AND subject_number IS NOT NULL
+                  AND (issue_state IS NULL OR issue_state = '')
+                ORDER BY updated_at DESC, id DESC
+                LIMIT ?
+                """,
+                arguments: [safeLimit]
+            )
+        }
+    }
+
     func updateHydration(
         id: String,
         actorLogin: String?,
