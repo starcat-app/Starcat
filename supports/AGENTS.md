@@ -41,7 +41,7 @@
 | `starcat-wiki-api` | 5004 | SQLite(`wiki.db`) | Wiki / 文档索引探测、SWR 缓存 | `starcat-wiki-api` | `golang.org/x/net/html` |
 | `starcat-recommend-api` | 5005 | 进程内缓存 | SimRepo 相似仓库推荐代理 | `starcat-recommend-api` | `github.com/joho/godotenv` |
 | `starcat-discovery-api` | 5006 | SQLite(`discovery.db`) | 探索发现、热门、新发布榜单 | `starcat-discovery-api` | `modernc.org/sqlite`、`robfig/cron` |
-| `starcat-api-kit` | — | — | 共享 auth / envelope / CORS / tokenpool | — | 被各 API `replace` 引用 |
+| `starcat-api-kit` | — | — | 共享 auth / envelope / CORS / tokenpool | — | 被各 API 通过版本化 Go module 引用 |
 | `starcat-api` | 8080 | `/data` 多库 | `X-SC-Svc` 优先、Host 回退，聚合 6 个业务 API（不含 license） | `starcat-api` | 依赖各 API `server` 包 |
 
 > 聚合路线：各业务 API 导出 `server` 包 + 共享 `starcat-api-kit`；`starcat-api` 单进程托管以降低 Fly 常开机成本。`license-api` 保持独立。2026-08-08 已完成 Fly App / Volume / Secrets / 首轮五库种子迁移，并解除维护模式完成六服务 ping 与只读业务验证；旧 App 未停用且仍持续写入，当前属于双跑验证，不是最终数据切流。切流前必须重新进入维护模式并安排最终同步 / 写入冻结窗口。
