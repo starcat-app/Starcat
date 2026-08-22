@@ -253,6 +253,20 @@ struct GitHubRepositoryCommunityProfile: Decodable, Equatable, Sendable {
     }
 }
 
+/// Contents API 返回的目录项；只用于补足 Community Profile 无法表达的多文件 Issue 模板目录。
+private struct GitHubRepositoryContentEntry: Decodable, Equatable, Sendable {
+    let name: String
+    let type: String
+
+    var isIssueTemplateCandidate: Bool {
+        guard type == "file" else { return false }
+        let normalizedName = name.lowercased()
+        guard normalizedName != "config.yml" else { return false }
+        // GitHub 当前只把 .md 识别为传统模板、.yml 识别为 Issue Form；.yaml 不在官方约定内。
+        return normalizedName.hasSuffix(".md") || normalizedName.hasSuffix(".yml")
+    }
+}
+
 /// RAG 既有 Release 远程证据使用的类型化响应。
 struct GitHubRepositoryReleaseMetric: Decodable, Equatable, Sendable {
     let tagName: String
@@ -328,6 +342,11 @@ protocol GitHubRepositoryMetricsClient: Sendable {
         ifNoneMatch: String?,
         observer: GitHubMetricsRequestObserver?
     ) async throws -> GitHubMetricsResponse<GitHubRepositoryCommunityProfile>
+
+    func loadIssueTemplateAvailability(
+        repository: RepoIdentity,
+        observer: GitHubMetricsRequestObserver?
+    ) async throws -> Bool
 
     func loadReleases(
         repository: RepoIdentity,
@@ -436,6 +455,14 @@ extension GitHubRepositoryMetricsClient {
             ifNoneMatch: nil,
             observer: observer
         )
+    }
+
+    /// 测试桩和不支持 Contents API 的实现保留 Community Profile 原语义。
+    func loadIssueTemplateAvailability(
+        repository _: RepoIdentity,
+        observer _: GitHubMetricsRequestObserver?
+    ) async throws -> Bool {
+        false
     }
 
     func loadReleases(
@@ -685,6 +712,22 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
             ifNoneMatch: ifNoneMatch,
             observer: observer
         )
+    }
+
+    func loadIssueTemplateAvailability(
+        repository: RepoIdentity,
+        observer: GitHubMetricsRequestObserver?
+    ) async throws -> Bool {
+        do {
+            let response: GitHubMetricsResponse<[GitHubRepositoryContentEntry]> = try await get(
+                endpoints.repository(repository, suffix: "contents/.github/ISSUE_TEMPLATE"),
+                observer: observer
+            )
+            return response.value.contains(where: \.isIssueTemplateCandidate)
+        } catch GitHubRepositoryMetricsError.unavailable(let statusCode, _) where statusCode == 404 {
+            // 没有 ISSUE_TEMPLATE 目录是正常的“未提供”状态，不应让整个社区信号加载失败。
+            return false
+        }
     }
 
     func loadReleases(

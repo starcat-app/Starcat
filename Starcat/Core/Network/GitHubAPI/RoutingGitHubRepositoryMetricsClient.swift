@@ -109,6 +109,16 @@ struct RoutingGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
         )
     }
 
+    func loadIssueTemplateAvailability(
+        repository: RepoIdentity,
+        observer: GitHubMetricsRequestObserver?
+    ) async throws -> Bool {
+        try await client(for: repository).loadIssueTemplateAvailability(
+            repository: repository,
+            observer: observer
+        )
+    }
+
     func loadReleases(
         repository: RepoIdentity,
         limit: Int,

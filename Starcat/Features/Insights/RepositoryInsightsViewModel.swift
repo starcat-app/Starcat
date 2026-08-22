@@ -148,6 +148,26 @@ struct RepositoryCommunityInsight: Codable, Equatable, Sendable {
         self.licenseHTMLURL = licenseHTMLURL
         self.pullRequestTemplateHTMLURL = pullRequestTemplateHTMLURL
     }
+
+    /// Community Profile 对目录型模板可能返回 null；Contents API 确认后只修正该信号，其余服务端值保持不变。
+    func markingIssueTemplateAvailable(_ isAvailable: Bool) -> Self {
+        guard isAvailable, !hasIssueTemplate else { return self }
+        return Self(
+            healthPercentage: healthPercentage,
+            hasReadme: hasReadme,
+            hasCodeOfConduct: hasCodeOfConduct,
+            hasContributing: hasContributing,
+            hasIssueTemplate: true,
+            hasLicense: hasLicense,
+            hasPullRequestTemplate: hasPullRequestTemplate,
+            readmeHTMLURL: readmeHTMLURL,
+            codeOfConductHTMLURL: codeOfConductHTMLURL,
+            contributingHTMLURL: contributingHTMLURL,
+            issueTemplateHTMLURL: issueTemplateHTMLURL,
+            licenseHTMLURL: licenseHTMLURL,
+            pullRequestTemplateHTMLURL: pullRequestTemplateHTMLURL
+        )
+    }
 }
 
 enum RepositoryLocalInsightResult<Value: Sendable>: Sendable {

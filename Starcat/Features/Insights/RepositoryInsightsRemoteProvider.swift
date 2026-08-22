@@ -989,7 +989,7 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
                 ifNoneMatch: ifNoneMatch
             )
             let profile = response.value
-            let value = RepositoryCommunityInsight(
+            let mappedValue = RepositoryCommunityInsight(
                 healthPercentage: profile.healthPercentage,
                 hasReadme: profile.hasReadme,
                 hasCodeOfConduct: profile.hasCodeOfConduct,
@@ -1004,6 +1004,10 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
                 licenseHTMLURL: profile.licenseHTMLURL,
                 pullRequestTemplateHTMLURL: profile.pullRequestTemplateHTMLURL
             )
+            let value = try await resolvingIssueTemplateAvailability(
+                in: mappedValue,
+                repository: repository
+            )
             try await cache.store(
                 value,
                 repoId: repoID,
@@ -1016,19 +1020,56 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
             return value
         } catch GitHubRepositoryMetricsError.notModified(let responseETag) {
             do {
-                return try await revalidatedCachedValue(
+                let cachedValue = try await revalidatedCachedValue(
                     repoID: repoID,
                     dataset: .communityProfile,
                     fetchedAt: fetchedAt,
                     responseETag: responseETag ?? ifNoneMatch,
                     as: RepositoryCommunityInsight.self
                 )
+                let value = try await resolvingIssueTemplateAvailability(
+                    in: cachedValue,
+                    repository: repository
+                )
+                if value != cachedValue {
+                    // 旧缓存可能保存过 API 的误判；确认目录存在后立即覆盖，避免下一次 304 再回退。
+                    try await cache.store(
+                        value,
+                        repoId: repoID,
+                        dataset: .communityProfile,
+                        range: .all,
+                        fetchedAt: fetchedAt,
+                        responseETag: responseETag ?? ifNoneMatch,
+                        defaultBranchSHA: nil
+                    )
+                }
+                return value
             } catch GitHubRepositoryMetricsError.invalidResponse where ifNoneMatch != nil {
                 return try await refreshCommunityProfile(
                     repository: repository,
                     ifNoneMatch: nil
                 )
             }
+        }
+    }
+
+    private func resolvingIssueTemplateAvailability(
+        in value: RepositoryCommunityInsight,
+        repository: RepoIdentity
+    ) async throws -> RepositoryCommunityInsight {
+        guard !value.hasIssueTemplate else { return value }
+        do {
+            let isAvailable = try await metricsClient.loadIssueTemplateAvailability(
+                repository: repository,
+                observer: nil
+            )
+            return value.markingIssueTemplateAvailable(isAvailable)
+        } catch is CancellationError {
+            // 目录探测只是兼容兜底，但不能吞掉切库或关闭页面触发的任务取消。
+            throw CancellationError()
+        } catch {
+            // 主 Community Profile 已成功时，兜底端点失败不应拖垮整个社区信号区块。
+            return value
         }
     }
 

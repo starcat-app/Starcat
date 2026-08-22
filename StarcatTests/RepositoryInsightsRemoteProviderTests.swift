@@ -538,6 +538,47 @@ struct RepositoryInsightsRemoteProviderTests {
         ])
     }
 
+    @Test("Community Profile 漏报目录型 Issue Forms 时补齐并修复 304 旧缓存")
+    func issueFormsDirectoryRepairsCommunityProfileFalseNegative() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 24, owner: "octo", name: "forms")
+        let httpClient = CommunityIssueFormsHTTPClient()
+        let provider = DefaultRepositoryRemoteInsightsProvider(
+            metricsClient: DefaultGitHubRepositoryMetricsClient(
+                httpClient: httpClient,
+                token: "token",
+                baseURL: URL(string: "https://api.example.test")!
+            ),
+            cache: GRDBRepositoryInsightsCache(database: database),
+            now: { Date(timeIntervalSince1970: 2_100) }
+        )
+        let repository = RepoIdentity(ghRepoID: 24, owner: "octo", name: "forms")
+
+        let initial = try await provider.refreshCommunityProfile(repository: repository)
+        let cachedBeforeRepair = try #require(
+            try await provider.cachedCommunityProfile(repoID: 24)
+        )
+        let repaired = try await provider.refreshCommunityProfile(
+            repository: repository,
+            ifNoneMatch: cachedBeforeRepair.responseETag
+        )
+        let cachedAfterRepair = try #require(
+            try await provider.cachedCommunityProfile(repoID: 24)
+        )
+
+        #expect(!initial.hasIssueTemplate)
+        #expect(cachedBeforeRepair.responseETag == "\"forms-v1\"")
+        #expect(repaired.hasIssueTemplate)
+        #expect(repaired.issueTemplateHTMLURL == nil)
+        #expect(cachedAfterRepair.value == repaired)
+        #expect(await httpClient.paths() == [
+            "/repos/octo/forms/community/profile",
+            "/repos/octo/forms/contents/.github/ISSUE_TEMPLATE",
+            "/repos/octo/forms/community/profile",
+            "/repos/octo/forms/contents/.github/ISSUE_TEMPLATE"
+        ])
+    }
+
     @Test("贡献者集中度忽略负数并在没有有效提交时保持未知")
     func contributorConcentrationRequiresPositiveContributionTotal() {
         let insight = RepositoryContributorsInsight(
@@ -1027,6 +1068,7 @@ private actor FullLoadMetricsHTTPClient: RAGHTTPClientProtocol {
                 "code_of_conduct":null,
                 "code_of_conduct_file":null,
                 "contributing":null,
+                "issue_template":{"html_url":"https://github.com/octo/budget/tree/main/.github/ISSUE_TEMPLATE"},
                 "license":null,
                 "readme":null
               }
@@ -1176,6 +1218,75 @@ private actor ContributorsCommunityHTTPClient: RAGHTTPClientProtocol {
                 statusCode: 200,
                 httpVersion: "HTTP/1.1",
                 headerFields: nil
+            )!
+        )
+    }
+
+    func paths() -> [String] {
+        recordedPaths
+    }
+}
+
+private actor CommunityIssueFormsHTTPClient: RAGHTTPClientProtocol {
+    private var recordedPaths: [String] = []
+    private var directoryRequestCount = 0
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let path = request.url!.path
+        recordedPaths.append(path)
+        let body: String
+        let statusCode: Int
+        switch path {
+        case "/repos/octo/forms/community/profile":
+            if request.value(forHTTPHeaderField: "If-None-Match") == "\"forms-v1\"" {
+                body = ""
+                statusCode = 304
+            } else {
+                body = """
+                {
+                  "health_percentage":87,
+                  "files":{
+                    "readme":{"html_url":"https://github.com/octo/forms#readme"},
+                    "code_of_conduct":null,
+                    "code_of_conduct_file":null,
+                    "contributing":null,
+                    "issue_template":null,
+                    "pull_request_template":null,
+                    "license":null
+                  }
+                }
+                """
+                statusCode = 200
+            }
+        case "/repos/octo/forms/contents/.github/ISSUE_TEMPLATE":
+            directoryRequestCount += 1
+            if directoryRequestCount == 1 {
+                body = """
+                [
+                  {"name":"config.yml","type":"file"},
+                  {"name":"examples","type":"dir"}
+                ]
+                """
+            } else {
+                body = """
+                [
+                  {"name":"config.yml","type":"file"},
+                  {"name":"bug_report.yml","type":"file"},
+                  {"name":"examples","type":"dir"}
+                ]
+                """
+            }
+            statusCode = 200
+        default:
+            throw URLError(.badURL)
+        }
+        return (
+            Data(body.utf8),
+            HTTPURLResponse(
+                url: request.url!,
+                statusCode: statusCode,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["ETag": "\"forms-v1\""]
             )!
         )
     }
