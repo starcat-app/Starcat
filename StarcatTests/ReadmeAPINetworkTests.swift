@@ -223,6 +223,30 @@ struct ReadmeAPINetworkTests {
         #expect(cached?.renderedHtml?.contains(expected) == true)
     }
 
+    @Test("refreshReadme: 304 命中时修复旧缓存里的 GitHub 签名视频地址")
+    func refresh304RepairsCachedGitHubVideoURL() async throws {
+        let (api, mock, repo, readmeRepo, _) = try await makeAPI()
+        let oldHTML = #"<video src="https://private-user-images.githubusercontent.com/123/456-3eb63328-0d64-40fd-9a84-f6d08e309d10.webm?jwt=expired" controls="controls">"#
+        try await readmeRepo.upsert(makeReadme(repoId: repo.id, html: oldHTML))
+
+        mock.readmeHTMLHandler = { _, _, _, _ in
+            BytesResponse.notModified304(etag: "\"old-etag\"")
+        }
+
+        let result = await api.refreshReadme(for: repo)
+        guard case let .notModified(repaired) = result else {
+            Issue.record("期望 .notModified，实际: \(result)")
+            return
+        }
+
+        let expected = "https://github.com/user-attachments/assets/3eb63328-0d64-40fd-9a84-f6d08e309d10"
+        #expect(repaired.renderedHtml?.contains(expected) == true)
+        #expect(repaired.renderedHtml?.contains("private-user-images.githubusercontent.com") == false)
+
+        let cached = try await readmeRepo.find(repoId: repo.id)
+        #expect(cached?.renderedHtml?.contains(expected) == true)
+    }
+
     @Test("refreshReadme: 404 + 本地有旧缓存 → .notFound + 删除旧缓存")
     func refresh404DeletesCache() async throws {
         let (api, mock, repo, readmeRepo, _) = try await makeAPI()
@@ -336,6 +360,23 @@ struct ReadmeAPINetworkTests {
 
         let persisted = try await readmeRepo.find(repoId: repo.id)
         #expect(persisted?.renderedHtml?.contains(expected) == true)
+    }
+
+    @Test("cachedReadme: 本地命中时修复并持久化 GitHub 签名视频地址")
+    func cachedHitRepairsGitHubVideoURL() async throws {
+        let (api, _, repo, readmeRepo, _) = try await makeAPI()
+        let oldHTML = #"<video src="https://private-user-images.githubusercontent.com/123/456-3eb63328-0d64-40fd-9a84-f6d08e309d10.webm?jwt=expired" controls="controls">"#
+        try await readmeRepo.upsert(makeReadme(repoId: repo.id, html: oldHTML))
+
+        let cached = try await api.cachedReadme(for: repo)
+
+        let expected = "https://github.com/user-attachments/assets/3eb63328-0d64-40fd-9a84-f6d08e309d10"
+        #expect(cached?.renderedHtml?.contains(expected) == true)
+        #expect(cached?.renderedHtml?.contains("jwt=expired") == false)
+
+        let persisted = try await readmeRepo.find(repoId: repo.id)
+        #expect(persisted?.renderedHtml?.contains(expected) == true)
+        #expect(persisted?.renderedHtml?.contains("jwt=expired") == false)
     }
 
     @Test("cachedReadme: 本地未命中 → 返回 nil")

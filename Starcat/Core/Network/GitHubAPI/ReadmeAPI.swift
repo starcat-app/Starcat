@@ -193,11 +193,11 @@ struct ReadmeAPI {
         return promoted
     }
 
-    /// 读缓存时也补跑当前图片 URL 修复规则。
+    /// 读缓存时也补跑当前图片与视频 URL 修复规则。
     ///
     /// 仅靠 200/304 刷新路径修复会漏掉 softTtl 内的旧缓存：详情页第一阶段会先把
     /// cached HTML 上屏，若缓存仍新鲜则不会进入网络刷新。这里在 cache hit 边界做一次
-    /// cheap rewrite，确保 `.github/README.md` 这类旧错图不需要用户手动刷新才恢复。
+    /// cheap rewrite，确保 `.github/README.md` 旧错图与过期视频签名不需要用户手动刷新才恢复。
     private func repairCachedReadmeIfNeeded(_ readme: Readme, owner: String, repo: String) -> Readme {
         guard let html = readme.renderedHtml else { return readme }
         let repairedHtml = ReadmeAssetURLRewriter.rewrite(in: html, owner: owner, repo: repo)
@@ -293,8 +293,8 @@ struct ReadmeAPI {
         }
 
         // 200 → 写新缓存
-        // HOM-201 P1-2（2026-06-14）：upsert 前对 HTML 做一次 `<img>` 相对路径重写，
-        // 一次性落库；ReadmeWebView 渲染层不再每次切 repo 重跑正则。
+        // upsert 前统一修复图片路径与 GitHub attachment 视频地址，一次性落库；
+        // ReadmeWebView 渲染层不再每次切 repo 重跑正则。
         let html = String(data: raw.data, encoding: .utf8) ?? ""
         let rewrittenHtml = ReadmeAssetURLRewriter.rewrite(in: html, owner: repo.owner, repo: repo.name)
         let now = Date()
@@ -429,7 +429,7 @@ struct ReadmeAPI {
         }
 
         // 第四步：200 → 写新缓存
-        // HOM-201 P1-2（2026-06-14）：upsert 前 rewrite `<img>` 相对路径,与 manage 路径对齐。
+        // upsert 前统一修复图片与视频资源地址，与 manage 路径对齐。
         let html = String(data: raw.data, encoding: .utf8) ?? ""
         let rewrittenHtml = ReadmeAssetURLRewriter.rewrite(in: html, owner: owner, repo: repo)
         let now = Date()

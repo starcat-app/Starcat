@@ -10,6 +10,7 @@
 
 import Testing
 import Foundation
+import WebKit
 @testable import Starcat
 
 @MainActor
@@ -39,6 +40,37 @@ struct ReadmeWebViewTests {
         #expect(html.contains("script-src 'none'"))
         #expect(html.contains(".readme-image-preview"))
         #expect(html.contains("body.readme-js-ready .markdown-body img:not(.readme-image-loaded)"))
+    }
+
+    @Test("README 视频要求用户主动播放")
+    func configureMediaPlayback_requiresUserActionForAllMedia() {
+        let configuration = WKWebViewConfiguration()
+
+        ReadmeWebView.configureMediaPlayback(configuration)
+
+        #expect(configuration.mediaTypesRequiringUserActionForPlayback == .all)
+    }
+
+    @Test("README 视频使用 HTTPS 媒体策略和原生 controls")
+    func assembleDocument_includesVideoPolicyAndResponsiveStyles() {
+        let html = ReadmeWebView.assembleDocument(
+            fragment: #"<video src="https://example.com/demo.mp4" autoplay></video>"#,
+            isDark: false
+        )
+        let script = ReadmeWebView.readmeEnhancementScript
+
+        // 页面脚本继续禁用；只有 app-owned 脚本能移除 autoplay 并补齐原生 controls。
+        #expect(html.contains("script-src 'none'; media-src https:"))
+        #expect(html.contains(".markdown-body video"))
+        #expect(html.contains("max-width: 100%;"))
+        #expect(html.contains("max-height: 640px;"))
+        #expect(script.contains("function enhanceVideo(video)"))
+        #expect(script.contains("video.removeAttribute('autoplay');"))
+        #expect(script.contains("video.autoplay = false;"))
+        #expect(script.contains("video.controls = true;"))
+        #expect(script.contains("video.preload = 'metadata';"))
+        #expect(script.contains("video.setAttribute('playsinline', '');"))
+        #expect(script.contains("enhanceVideos();"))
     }
 
     @Test("README Mermaid 保留 GitHub enrichment 数据并提供本地渲染样式")

@@ -2,11 +2,11 @@
 //  ReadmeAssetURLRewriterTests.swift
 //  StarcatTests
 //
-//  HOM-201 P1-2 配套（2026-06-14）：`<img>` 相对路径重写工具单测。
+//  README 图片相对路径与 GitHub attachment 视频地址重写单测。
 //
 //  本文件继承原 `ReadmeWebViewTests` 中关于 `rewriteAssetURLs` / `rewriteOneAssetURL`
 //  的 8 个用例（逻辑没改、仅是函数从 UI 层 ReadmeWebView 迁到 IO 层
-//  ReadmeAssetURLRewriter）。新增没有，因为本步是纯位置迁移。
+//  ReadmeAssetURLRewriter）。Issue #107 在同一 IO 边界补充短时效视频 URL 规范化。
 //
 
 import Testing
@@ -100,6 +100,43 @@ struct ReadmeAssetURLRewriterTests {
         let html = #"<img class="badge" src="./shield.svg" loading="lazy" alt="build">"#
         let result = ReadmeAssetURLRewriter.rewrite(in: html, owner: "carol", repo: "baz")
         #expect(result.contains("raw.githubusercontent.com/carol/baz/HEAD/shield.svg"))
+    }
+
+    @Test("GitHub 签名视频地址改写为稳定 attachment URL")
+    func rewrite_githubSignedVideoURL() {
+        let html = #"""
+        <video src="https://private-user-images.githubusercontent.com/123/456-3eb63328-0d64-40fd-9a84-f6d08e309d10.webm?jwt=temporary"
+               data-canonical-src="https://private-user-images.githubusercontent.com/123/456-3eb63328-0d64-40fd-9a84-f6d08e309d10.webm?jwt=temporary"
+               controls="controls" muted="muted">
+        """#
+
+        let result = ReadmeAssetURLRewriter.rewrite(in: html, owner: "alice", repo: "foo")
+        let stableURL = "https://github.com/user-attachments/assets/3eb63328-0d64-40fd-9a84-f6d08e309d10"
+
+        #expect(result.components(separatedBy: stableURL).count == 3)
+        #expect(!result.contains("private-user-images.githubusercontent.com"))
+        #expect(!result.contains("jwt=temporary"))
+        #expect(result.contains(#"controls="controls""#))
+        #expect(result.contains(#"muted="muted""#))
+    }
+
+    @Test("无法提取 UUID 的 GitHub 视频地址保持原样")
+    func rewrite_githubVideoWithoutUUIDKeepsOriginalURL() {
+        let source = "https://private-user-images.githubusercontent.com/123/demo.webm?jwt=temporary"
+        let html = #"<video src="\#(source)" controls="controls">"#
+
+        let result = ReadmeAssetURLRewriter.rewrite(in: html, owner: "alice", repo: "foo")
+
+        #expect(result == html)
+    }
+
+    @Test("普通 HTTPS 视频地址保持原样")
+    func rewrite_externalVideoKeepsOriginalURL() {
+        let html = #"<video src="https://cdn.example.com/demo.mp4" controls="controls">"#
+
+        let result = ReadmeAssetURLRewriter.rewrite(in: html, owner: "alice", repo: "foo")
+
+        #expect(result == html)
     }
 
     // MARK: - rewriteOne (单个 src)

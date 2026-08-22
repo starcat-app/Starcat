@@ -2,7 +2,7 @@
 //  ReadmeAssetURLRewriter.swift
 //  Starcat
 //
-//  README HTML 内 `<img>` 相对路径重写工具（HOM-201 P1-2，2026-06-14）。
+//  README HTML 内图片与视频资源地址重写工具。
 //
 //  ────────────────────────────────────────────────────────────────────────────
 //  从渲染层迁移到 IO 层
@@ -22,7 +22,7 @@
 //  - 一次性、单向（不会有"先存 raw 再渲染时 rewrite"的不一致风险）。
 //
 //  ────────────────────────────────────────────────────────────────────────────
-//  策略（与原 ReadmeWebView 实现一致，**仅是位置迁移**）
+//  图片策略（与原 ReadmeWebView 实现一致，**仅是位置迁移**）
 //  ────────────────────────────────────────────────────────────────────────────
 //
 //  触发原因：GitHub HTML render 端点对原生 HTML `<img>` 不做 URL 重写，
@@ -39,16 +39,23 @@
 //      目录，`img/logo.png` 必须解析到 `.github/img/logo.png`，不能按仓库根拼接
 //  - owner/repo 缺失 → 直接原样返回（保守，宁可坏图不要错重写）
 //
-//  正则只匹配双引号包裹的 src（GitHub render 出来稳定用双引号），不引入新依赖
-//  （SwiftSoup 等）以保留 zero-dep 边界。
+//  视频策略（GitHub Issue #107，2026-08-22）：
+//  - GitHub 上传的视频会被 HTML API 渲染为 `<video src="短时效签名 URL">`；
+//  - `rendered_html` 的缓存寿命远长于签名 URL，直接落库会导致视频很快失效；
+//  - 从 `private-user-images.githubusercontent.com` path 提取 attachment UUID，改写为
+//    `https://github.com/user-attachments/assets/<UUID>`，由 GitHub 在播放时生成新重定向；
+//  - UUID 无法可靠提取时保持原样，避免把第三方或未知地址误改坏。
+//
+//  正则只匹配双引号包裹的属性（GitHub render 出来稳定用双引号），不引入新依赖
+//  （SwiftSoup 等）以保留 zero-dep 边界。签名 URL 不写日志，避免泄露临时访问参数。
 //
 
 import Foundation
 
-/// README HTML `<img>` 相对路径重写工具。详见文件头注释。
+/// README HTML 图片与视频资源地址重写工具。详见文件头注释。
 enum ReadmeAssetURLRewriter {
 
-    /// 把 HTML 中所有 `<img src="相对路径">` 重写为 raw.githubusercontent.com 绝对 URL。
+    /// 规范化 README HTML 中的图片与 GitHub attachment 视频地址。
     ///
     /// 详见文件头 `策略` 节。
     ///
@@ -56,13 +63,29 @@ enum ReadmeAssetURLRewriter {
     ///   - html: GitHub `Accept: application/vnd.github.html` 返回的 HTML 片段
     ///   - owner: 仓库 owner（缺失 / 空字符串则不重写）
     ///   - repo: 仓库 name（缺失 / 空字符串则不重写）
-    /// - Returns: 重写后的 HTML；输入 HTML 不含 `<img>` 时原样返回（不分配新字符串）
+    /// - Returns: 重写后的 HTML；没有命中资源规则时返回原字符串
     static func rewrite(in html: String, owner: String?, repo: String?) -> String {
         guard let owner, let repo, !owner.isEmpty, !repo.isEmpty else { return html }
         let rawRoot = "https://raw.githubusercontent.com/\(owner)/\(repo)/HEAD/"
         let documentDirectory = readmeDocumentDirectory(from: html)
         let rawBase = rawRoot + documentDirectory
 
+        let imageRewritten = rewriteImageSources(
+            in: html,
+            rawBase: rawBase,
+            rawRoot: rawRoot,
+            documentDirectory: documentDirectory
+        )
+        return rewriteGitHubVideoSources(in: imageRewritten)
+    }
+
+    /// 图片规则沿用既有实现，单独收口后让视频规范化不会改变图片匹配边界。
+    private static func rewriteImageSources(
+        in html: String,
+        rawBase: String,
+        rawRoot: String,
+        documentDirectory: String
+    ) -> String {
         // <img ...src="xxx"...> ；捕获 1 = src 前的属性串，捕获 2 = src 值
         let pattern = #"<img\b([^>]*?)\bsrc\s*=\s*"([^"]+)""#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
@@ -92,6 +115,93 @@ enum ReadmeAssetURLRewriter {
         }
         result += nsHtml.substring(from: cursor)
         return result
+    }
+
+    /// 把 GitHub HTML API 生成的短时效视频地址改成稳定 attachment URL。
+    ///
+    /// 同时处理 `src` 与 `data-canonical-src`，避免旧签名继续残留在落库 HTML 中。
+    /// 只扫描 `<video ...>` 开始标签，不触碰 iframe、object 或普通链接。
+    private static func rewriteGitHubVideoSources(in html: String) -> String {
+        let tagPattern = #"<video\b[^>]*>"#
+        guard let tagRegex = try? NSRegularExpression(
+            pattern: tagPattern,
+            options: [.caseInsensitive]
+        ) else {
+            return html
+        }
+
+        let nsHtml = html as NSString
+        let matches = tagRegex.matches(
+            in: html,
+            options: [],
+            range: NSRange(location: 0, length: nsHtml.length)
+        )
+        guard !matches.isEmpty else { return html }
+
+        var result = html
+        for match in matches.reversed() {
+            let tag = nsHtml.substring(with: match.range)
+            let rewrittenTag = rewriteVideoSourceAttributes(in: tag)
+            guard rewrittenTag != tag,
+                  let range = Range(match.range, in: result)
+            else { continue }
+            result.replaceSubrange(range, with: rewrittenTag)
+        }
+        return result
+    }
+
+    /// 只替换视频标签中的资源属性值，保留 GitHub 生成的 controls、muted、class 与 style。
+    private static func rewriteVideoSourceAttributes(in tag: String) -> String {
+        let attributePattern = #"\b(data-canonical-src|src)\s*=\s*"([^"]+)""#
+        guard let attributeRegex = try? NSRegularExpression(
+            pattern: attributePattern,
+            options: [.caseInsensitive]
+        ) else {
+            return tag
+        }
+
+        let nsTag = tag as NSString
+        let matches = attributeRegex.matches(
+            in: tag,
+            options: [],
+            range: NSRange(location: 0, length: nsTag.length)
+        )
+        guard !matches.isEmpty else { return tag }
+
+        var result = tag
+        for match in matches.reversed() {
+            let sourceRange = match.range(at: 2)
+            let source = nsTag.substring(with: sourceRange)
+            guard let stableURL = stableGitHubAttachmentURL(from: source),
+                  let range = Range(sourceRange, in: result)
+            else { continue }
+            result.replaceSubrange(range, with: stableURL)
+        }
+        return result
+    }
+
+    /// GitHub 的签名视频 path 会保留原 attachment UUID；只在 host 与 UUID 都准确时重写。
+    private static func stableGitHubAttachmentURL(from source: String) -> String? {
+        let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed),
+              url.host?.lowercased() == "private-user-images.githubusercontent.com"
+        else { return nil }
+
+        let fileName = url.deletingPathExtension().lastPathComponent
+        let uuidPattern = #"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"#
+        guard let uuidRegex = try? NSRegularExpression(
+            pattern: uuidPattern,
+            options: [.caseInsensitive]
+        ) else { return nil }
+
+        let nsFileName = fileName as NSString
+        let searchRange = NSRange(location: 0, length: nsFileName.length)
+        guard let match = uuidRegex.firstMatch(in: fileName, options: [], range: searchRange),
+              let matchRange = Range(match.range(at: 1), in: fileName),
+              let uuid = UUID(uuidString: String(fileName[matchRange]))
+        else { return nil }
+
+        return "https://github.com/user-attachments/assets/\(uuid.uuidString.lowercased())"
     }
 
     /// 单个 `src` 的重写策略：

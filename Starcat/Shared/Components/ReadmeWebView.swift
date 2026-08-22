@@ -77,6 +77,13 @@ struct ReadmeWebView: View {
         ReadmeWebContentView.Coordinator.readmeEnhancementScript
     }
 
+    /// README 媒体只允许用户主动开始播放；页面里的 autoplay 属性不能绕过这一层。
+    ///
+    /// 保持 internal 便于单测直接验证 WebKit 配置，不为单一策略再引入播放器对象。
+    static func configureMediaPlayback(_ configuration: WKWebViewConfiguration) {
+        configuration.mediaTypesRequiringUserActionForPlayback = .all
+    }
+
     /// GitHub 返回的 HTML 片段（不含 <html>/<head>/<body>）。
     let htmlFragment: String
 
@@ -246,6 +253,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         pagePrefs.allowsContentJavaScript = true
         config.defaultWebpagePreferences = pagePrefs
         config.userContentController = context.coordinator.makeUserContentController()
+        ReadmeWebView.configureMediaPlayback(config)
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
@@ -275,6 +283,8 @@ private struct ReadmeWebContentView: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
+        // WebView 退出 SwiftUI 层级后仍可能持有媒体进程；先暂停并终止请求，避免关窗后残留声音。
+        coordinator.stopMediaPlayback(stopLoading: true)
         coordinator.removeScriptMessageHandler()
     }
 
@@ -313,6 +323,8 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         if context.coordinator.lastLoadedKey != contentKey {
             context.coordinator.lastLoadedKey = contentKey
             context.coordinator.lastAppliedFontSizeAdjustment = readmeFontSizeAdjustment
+            // loadHTMLString 替换 DOM 前主动暂停旧文档，避免切换 repo 的短暂异步窗口继续出声。
+            context.coordinator.stopMediaPlayback(stopLoading: false)
             context.coordinator.prepareForDocumentReload()
 
             // HOM-201 P1-2（2026-06-14）：`htmlFragment` 已是 `ReadmeAPI` rewrite 后的
@@ -371,7 +383,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <meta http-equiv="Content-Security-Policy" content="script-src 'none'; object-src 'none'; base-uri 'none';">
+        <meta http-equiv="Content-Security-Policy" content="script-src 'none'; media-src https:; object-src 'none'; base-uri 'none';">
         <style>\(css)</style>
         </head>
         <body class="\(bodyClass)">
@@ -462,6 +474,18 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             mermaidRuntimeTask?.cancel()
             mermaidRuntimeTask = nil
             userContentController = nil
+        }
+
+        /// 暂停当前 README 的所有媒体；销毁时额外停止尚未完成的网络加载。
+        ///
+        /// 使用 WebKit 的页面级 API，而不是遍历 DOM 调 `pause()`：即使视频处于全屏等媒体展示态，
+        /// WebKit 仍能统一收口；同时不需要把播放器状态复制到 SwiftUI 或 Coordinator。
+        func stopMediaPlayback(stopLoading: Bool) {
+            guard let webView else { return }
+            webView.pauseAllMediaPlayback(completionHandler: nil)
+            if stopLoading {
+                webView.stopLoading()
+            }
         }
 
         /// 内容或主题重载后，旧 DOM 已消失；导航完成时必须把当前翻译状态重新注入。
@@ -725,6 +749,26 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                 var images = document.querySelectorAll('.markdown-body img');
                 for (var index = 0; index < images.length; index += 1) {
                     enhanceImage(images[index]);
+                }
+            }
+
+            function enhanceVideo(video) {
+                if (video.dataset.readmeVideoEnhanced === 'true') { return; }
+                video.dataset.readmeVideoEnhanced = 'true';
+
+                // GitHub HTML 通常已经输出 controls，但这里仍强制统一安全策略：
+                // autoplay 由页面内容控制，不应绕过 Starcat 的用户手势播放约束。
+                video.removeAttribute('autoplay');
+                video.autoplay = false;
+                video.controls = true;
+                video.preload = 'metadata';
+                video.setAttribute('playsinline', '');
+            }
+
+            function enhanceVideos() {
+                var videos = document.querySelectorAll('.markdown-body video');
+                for (var index = 0; index < videos.length; index += 1) {
+                    enhanceVideo(videos[index]);
                 }
             }
 
@@ -1184,6 +1228,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             });
             window.addEventListener('load', report);
             enhanceImages();
+            enhanceVideos();
             extractTranslationSource();
             requestMermaidRendering();
             setTimeout(report, 0);
@@ -1833,6 +1878,18 @@ enum ReadmeCSS {
         opacity: 1;
         filter: blur(0);
         transform: translateY(0);
+    }
+    /* 视频使用 WebKit 原生 controls；这里只约束正文布局，不自绘播放器。 */
+    .markdown-body video {
+        display: block;
+        width: auto;
+        max-width: 100%;
+        height: auto;
+        max-height: 640px;
+        margin: 0 0 16px;
+        background: #000000;
+        border-radius: 8px;
+        object-fit: contain;
     }
     .readme-image-preview {
         position: fixed;
