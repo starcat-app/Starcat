@@ -398,3 +398,15 @@ The vendored CodeFlow page also loads these libraries:
 [MIT](./LICENSE) © 2026 dong4j
 
 Third-party notices: [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)
+
+## Star History
+
+<div align="center">
+<a href="https://star-history.dera.page/#starcat-app/Starcat">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=starcat-app/Starcat&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=starcat-app/Starcat" />
+    <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=starcat-app/Starcat" />
+  </picture>
+</a>
+</div>

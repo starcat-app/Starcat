@@ -398,3 +398,15 @@ Starcat 自己的 CLI、插件和 API 已写在「相关项目」，这里不重
 [MIT](./LICENSE) © 2026 dong4j
 
 第三方声明：[THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)
+
+## Star 历史
+
+<div align="center">
+<a href="https://star-history.dera.page/#starcat-app/Starcat">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=starcat-app/Starcat&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=starcat-app/Starcat" />
+    <img alt="Star 历史图表" src="https://star-history.dera.page/svg?repos=starcat-app/Starcat" />
+  </picture>
+</a>
+</div>
