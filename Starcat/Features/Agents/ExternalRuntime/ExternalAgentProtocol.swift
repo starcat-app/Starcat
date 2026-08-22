@@ -106,6 +106,7 @@ enum ExternalAgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
     case invalidFrame
     case protocolError(String)
     case processExited(Int32)
+    case firstOutputTimedOut(String?)
     case processClosedBeforeCompletion
 
     var errorDescription: String? {
@@ -126,6 +127,10 @@ enum ExternalAgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
             return message
         case .processExited(let status):
             return "External Agent Runtime exited with status \(status)."
+        case .firstOutputTimedOut(let diagnostic):
+            let message = "External Agent Runtime did not produce an assistant or tool event before startup timed out."
+            guard let diagnostic, !diagnostic.isEmpty else { return message }
+            return "\(message) \(diagnostic)"
         case .processClosedBeforeCompletion:
             return "External Agent Runtime closed before the turn completed."
         }

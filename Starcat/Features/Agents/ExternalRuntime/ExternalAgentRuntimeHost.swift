@@ -18,6 +18,11 @@ actor ExternalAgentRuntimeHost {
     ) async -> ExternalAgentToolExecutionResult
 
     private var sessions: [UUID: ExternalAgentProcessSession] = [:]
+    private let firstOutputTimeout: Duration
+
+    init(firstOutputTimeout: Duration = .seconds(90)) {
+        self.firstOutputTimeout = firstOutputTimeout
+    }
 
     func execute(
         runID: UUID,
@@ -25,7 +30,10 @@ actor ExternalAgentRuntimeHost {
         toolCallHandler: ToolCallHandler? = nil,
         onEvent: @escaping EventSink
     ) async throws {
-        let session = ExternalAgentProcessSession(driver: driver)
+        let session = ExternalAgentProcessSession(
+            driver: driver,
+            firstOutputTimeout: firstOutputTimeout
+        )
         sessions[runID] = session
         defer { sessions.removeValue(forKey: runID) }
         try await session.run(toolCallHandler: toolCallHandler, onEvent: onEvent)
@@ -39,14 +47,20 @@ actor ExternalAgentRuntimeHost {
 /// 一个 run 一个子进程。POC 不复用跨 run Session，先证明协议隔离与停止语义可靠。
 private actor ExternalAgentProcessSession {
     private let driver: any ExternalAgentProtocolDriver
+    private let firstOutputTimeout: Duration
+    private let stderrSummary = ExternalAgentStderrSummary()
     private var process: Process?
     private var stdinHandle: FileHandle?
     private var stderrDrainTask: Task<Void, Never>?
+    private var firstOutputWatchdogTask: Task<Void, Never>?
     private var processGroupID: pid_t?
     private var isStopping = false
+    private var didReceiveFirstOutput = false
+    private var didFirstOutputTimeout = false
 
-    init(driver: any ExternalAgentProtocolDriver) {
+    init(driver: any ExternalAgentProtocolDriver, firstOutputTimeout: Duration) {
         self.driver = driver
+        self.firstOutputTimeout = firstOutputTimeout
     }
 
     func run(
@@ -76,15 +90,19 @@ private actor ExternalAgentProcessSession {
             processGroupID = pid
         }
         stdinHandle = stdinPipe.fileHandleForWriting
-        stderrDrainTask = Task.detached(priority: .utility) {
+        stderrDrainTask = Task.detached(priority: .utility) { [stderrSummary] in
             // stderr 必须持续排空，否则长日志会填满 pipe 并反向卡住 Runtime。
-            // POC 不记录原文，避免 Provider 错误把 prompt 或凭据带进统一日志。
+            // 只保存日志级别与 target，不保存原文，避免 Provider 把 prompt 或凭据
+            // 带进诊断信息；有限摘要仍能区分 Codex、MCP 与模型缓存故障。
             do {
-                for try await _ in stderrPipe.fileHandleForReading.bytes.lines {}
+                for try await line in stderrPipe.fileHandleForReading.bytes.lines {
+                    await stderrSummary.record(line)
+                }
             } catch {
                 // 进程终止时关闭 pipe 属于正常清理路径。
             }
         }
+        startFirstOutputWatchdog()
 
         do {
             for frame in try driver.initialFrames() {
@@ -100,6 +118,10 @@ private actor ExternalAgentProcessSession {
                     throw ExternalAgentRuntimeError.invalidFrame
                 }
                 let output = try driver.receive(frame)
+                if output.events.contains(where: \.countsAsFirstOutput)
+                    || !output.toolRequests.isEmpty {
+                    markFirstOutputReceived()
+                }
                 for frame in output.outboundFrames {
                     try write(frame)
                 }
@@ -143,6 +165,9 @@ private actor ExternalAgentProcessSession {
             }
 
             if !reachedTerminal {
+                if didFirstOutputTimeout {
+                    throw ExternalAgentRuntimeError.firstOutputTimedOut(await stderrSummary.diagnostic())
+                }
                 if !process.isRunning, process.terminationStatus != 0 {
                     throw ExternalAgentRuntimeError.processExited(process.terminationStatus)
                 }
@@ -175,6 +200,37 @@ private actor ExternalAgentProcessSession {
         await terminateIfNeeded()
     }
 
+    /// Codex App Server 的握手、MCP 初始化和首轮推理都可能没有可见消息。看门狗只管
+    /// “首个回答/工具事件”，一旦真正开始流式输出就立即解除，不限制后续长任务时长。
+    private func startFirstOutputWatchdog() {
+        firstOutputWatchdogTask = Task { [weak self, firstOutputTimeout] in
+            do {
+                try await Task.sleep(for: firstOutputTimeout)
+            } catch {
+                return
+            }
+            await self?.handleFirstOutputTimeout()
+        }
+    }
+
+    private func markFirstOutputReceived() {
+        guard !didReceiveFirstOutput else { return }
+        didReceiveFirstOutput = true
+        firstOutputWatchdogTask?.cancel()
+        firstOutputWatchdogTask = nil
+    }
+
+    private func handleFirstOutputTimeout() {
+        guard !didReceiveFirstOutput, !isStopping else { return }
+        didFirstOutputTimeout = true
+        // 终止进程让 AsyncBytes 退出；run 的统一 catch 随后负责回收整个进程组。
+        if let processGroupID {
+            Darwin.kill(-processGroupID, SIGTERM)
+        } else {
+            process?.terminate()
+        }
+    }
+
     private func write(_ frame: AgentJSONValue) throws {
         guard let stdinHandle else {
             throw ExternalAgentRuntimeError.processClosedBeforeCompletion
@@ -185,6 +241,8 @@ private actor ExternalAgentProcessSession {
     }
 
     private func terminateIfNeeded() async {
+        firstOutputWatchdogTask?.cancel()
+        firstOutputWatchdogTask = nil
         stdinHandle?.closeFile()
         stdinHandle = nil
         guard let process else {
@@ -216,5 +274,52 @@ private actor ExternalAgentProcessSession {
         stderrDrainTask = nil
         self.process = nil
         processGroupID = nil
+    }
+}
+
+private extension ExternalAgentProtocolEvent {
+    var countsAsFirstOutput: Bool {
+        switch self {
+        case .assistantDelta, .reasoningDelta, .assistantMessage, .toolCall, .toolResult,
+             .artifactMarkdown, .completed, .cancelled, .failed:
+            return true
+        case .usage:
+            return false
+        }
+    }
+}
+
+/// 有界、非原文的 stderr 摘要。这里只保留结构化日志的 level/target；普通文本只记
+/// “unstructured”，因此错误展示不会意外泄露用户 prompt、认证头或环境变量值。
+private actor ExternalAgentStderrSummary {
+    private let maximumEntries = 8
+    private var entries: [String] = []
+    private var lineCount = 0
+
+    func record(_ line: String) {
+        lineCount += 1
+        let entry = Self.classification(for: line)
+        if entries.last != entry {
+            entries.append(entry)
+            if entries.count > maximumEntries {
+                entries.removeFirst(entries.count - maximumEntries)
+            }
+        }
+    }
+
+    func diagnostic() -> String? {
+        guard lineCount > 0 else { return nil }
+        let categories = entries.joined(separator: ", ")
+        return "Codex stderr summary (\(lineCount) lines): \(categories)."
+    }
+
+    private static func classification(for line: String) -> String {
+        guard let data = line.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return "unstructured" }
+        let level = (object["level"] as? String)?.uppercased() ?? "LOG"
+        let fields = object["fields"] as? [String: Any]
+        let target = fields?["target"] as? String ?? object["target"] as? String ?? "unknown"
+        return "\(level) \(target)"
     }
 }

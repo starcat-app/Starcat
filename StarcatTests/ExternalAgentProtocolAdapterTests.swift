@@ -25,14 +25,38 @@ struct ExternalAgentProtocolAdapterTests {
 
         let initialized = try driver.receive(response(id: 1, result: .object([:])))
         #expect(initialized.outboundFrames.map { $0[external: "method"]?.stringValue } == [
-            "initialized", "thread/start"
+            "initialized", "config/read"
         ])
-        let threadStart = initialized.outboundFrames[1]
+        let configRead = try driver.receive(response(id: 2, result: .object([
+            "layers": .array([
+                .object(["config": .object(["mcp_servers": .object([
+                    "user-mcp": .object([
+                        "command": .string("fixture-mcp"),
+                        "args": .array([.string("serve")]),
+                    ]),
+                ])])]),
+                .object(["config": .object(["mcp_servers": .object([
+                    "plugin-mcp": .object(["url": .string("https://example.com/mcp")]),
+                    "user-mcp": .object(["startup_timeout_sec": .number(5)]),
+                ])])]),
+            ]),
+        ])))
+        let threadStart = try #require(configRead.outboundFrames.first)
+        #expect(threadStart[external: "method"]?.stringValue == "thread/start")
         let dynamicTool = threadStart[external: "params"]?[external: "dynamicTools"]?.externalArray?.first
         #expect(dynamicTool?[external: "name"]?.stringValue == "fixture_lookup")
+        let config = threadStart[external: "params"]?[external: "config"]
+        #expect(config?[external: "features"]?[external: "plugins"]?.externalBool == false)
+        #expect(config?[external: "features"]?[external: "hooks"]?.externalBool == false)
+        #expect(config?[external: "features"]?[external: "apps"]?.externalBool == false)
+        #expect(config?[external: "features"]?[external: "enable_mcp_apps"]?.externalBool == false)
+        #expect(config?[external: "mcp_servers"]?[external: "user-mcp"]?[external: "enabled"]?.externalBool == false)
+        #expect(config?[external: "mcp_servers"]?[external: "user-mcp"]?[external: "command"]?.stringValue == "fixture-mcp")
+        #expect(config?[external: "mcp_servers"]?[external: "user-mcp"]?[external: "startup_timeout_sec"]?.externalNumber == 5)
+        #expect(config?[external: "mcp_servers"]?[external: "plugin-mcp"]?[external: "enabled"]?.externalBool == false)
 
         let threadStarted = try driver.receive(response(
-            id: 2,
+            id: 10_000,
             result: .object(["thread": .object(["id": .string("thread-1")])])
         ))
         #expect(threadStarted.outboundFrames.first?[external: "method"]?.stringValue == "turn/start")
@@ -42,6 +66,33 @@ struct ExternalAgentProtocolAdapterTests {
             params: .object(["delta": .string("hello")])
         ))
         #expect(delta.events == [.assistantDelta("hello")])
+
+        let completedItem = try driver.receive(notification(
+            method: "item/completed",
+            params: .object(["item": .object([
+                "type": .string("agentMessage"),
+                "text": .string("hello"),
+            ])])
+        ))
+        #expect(completedItem.events == [.assistantMessage("hello", usage: nil)])
+
+        let usage = try driver.receive(notification(
+            method: "thread/tokenUsage/updated",
+            params: .object(["tokenUsage": .object([
+                "total": .object([
+                    "inputTokens": .number(12),
+                    "outputTokens": .number(3),
+                    "cachedInputTokens": .number(4),
+                    "reasoningOutputTokens": .number(2),
+                ])
+            ])])
+        ))
+        #expect(usage.events == [.usage(AgentUsage(
+            inputTokens: 12,
+            outputTokens: 3,
+            cachedTokens: 4,
+            reasoningTokens: 2
+        ))])
 
         let completed = try driver.receive(notification(
             method: "turn/completed",

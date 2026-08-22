@@ -62,6 +62,18 @@ struct ExternalAgentRuntimeHostTests {
             .completed,
         ])
     }
+
+    @Test("Host 在首个有效输出超时后终止静默进程")
+    func terminatesProcessWhenFirstOutputTimesOut() async throws {
+        let host = ExternalAgentRuntimeHost(firstOutputTimeout: .milliseconds(100))
+
+        await #expect(throws: ExternalAgentRuntimeError.firstOutputTimedOut(nil)) {
+            try await host.execute(
+                runID: UUID(),
+                driver: ExternalHostSilentFixtureDriver()
+            ) { _ in }
+        }
+    }
 }
 
 private actor ExternalHostEventCollector {
@@ -149,6 +161,28 @@ private final class ExternalHostToolFixtureDriver: ExternalAgentProtocolDriver, 
             "id": request.requestID,
             "result": .object(["success": .bool(!result.isError)]),
         ])
+    }
+
+    func cancellationFrame() -> AgentJSONValue? { nil }
+    func shutdownFrame() -> AgentJSONValue? { nil }
+}
+
+private final class ExternalHostSilentFixtureDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
+    let backend = AgentRuntimeBackend.codexAppServer
+    let capabilities = AgentRuntimeCapabilities.codexAppServerPOC
+    let processConfiguration = ExternalAgentProcessConfiguration(
+        executableURL: URL(fileURLWithPath: "/bin/sh"),
+        arguments: ["-c", "read first; sleep 10"],
+        environment: ExternalAgentProcessEnvironment.filtered(),
+        currentDirectoryURL: FileManager.default.temporaryDirectory
+    )
+
+    func initialFrames() throws -> [AgentJSONValue] {
+        [.jsonRPCRequest(id: 1, method: "fixture/start")]
+    }
+
+    func receive(_ frame: AgentJSONValue) throws -> ExternalAgentProtocolOutput {
+        ExternalAgentProtocolOutput()
     }
 
     func cancellationFrame() -> AgentJSONValue? { nil }
