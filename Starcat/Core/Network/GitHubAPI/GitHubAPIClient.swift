@@ -324,11 +324,12 @@ actor GitHubAPIClient {
     func getBytes(
         path: String,
         accept: String,
+        queryItems: [URLQueryItem] = [],
         ifNoneMatch: String? = nil,
         ifModifiedSince: String? = nil,
         requestTimeout: TimeInterval? = nil
     ) async throws -> BytesResponse {
-        var request = try buildRequest(method: "GET", path: path, queryItems: [], accept: accept, body: nil)
+        var request = try buildRequest(method: "GET", path: path, queryItems: queryItems, accept: accept, body: nil)
         if let requestTimeout {
             request.timeoutInterval = requestTimeout
         }

@@ -97,6 +97,18 @@ protocol GitHubAPIClientProtocol: Sendable {
         requestTimeout: TimeInterval?
     ) async throws -> BytesResponse
 
+    /// 拉取仓库内指定文件的 GitHub 渲染 HTML（Contents API）。
+    ///
+    /// 与 `/readme` 不同：这里按 path 取任意 Markdown，用来打开语言版 / CONTRIBUTING 等。
+    func repositoryFileHTML(
+        owner: String,
+        repo: String,
+        path: String,
+        ref: String,
+        ifNoneMatch: String?,
+        requestTimeout: TimeInterval?
+    ) async throws -> BytesResponse
+
     // MARK: - Subscription (Watch)
 
     func getSubscription(owner: String, repo: String) async throws -> GitHubSubscriptionDTO
@@ -204,6 +216,37 @@ extension GitHubAPIClientProtocol {
             repo: repo,
             ifNoneMatch: ifNoneMatch,
             ifModifiedSince: ifModifiedSince,
+            requestTimeout: nil
+        )
+    }
+
+    func repositoryFileHTML(
+        owner: String,
+        repo: String,
+        path: String,
+        ref: String,
+        ifNoneMatch: String?,
+        requestTimeout: TimeInterval?
+    ) async throws -> BytesResponse {
+        throw NetworkError.clientError(
+            statusCode: 501,
+            message: "Repository file HTML is not implemented by this client"
+        )
+    }
+
+    func repositoryFileHTML(
+        owner: String,
+        repo: String,
+        path: String,
+        ref: String,
+        ifNoneMatch: String?
+    ) async throws -> BytesResponse {
+        try await repositoryFileHTML(
+            owner: owner,
+            repo: repo,
+            path: path,
+            ref: ref,
+            ifNoneMatch: ifNoneMatch,
             requestTimeout: nil
         )
     }

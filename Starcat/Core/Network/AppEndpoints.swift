@@ -373,6 +373,21 @@ enum AppEndpoints {
             static func repoReadme(owner: String, repo: String) -> String {
                 "/repos/\(owner)/\(repo)/readme"
             }
+
+            /// `GET /repos/{owner}/{repo}/contents/{path}` —— 指定文件的渲染 HTML / raw。
+            ///
+            /// path 按 `/` 分段编码，避免 `docs/zh/README.md` 被当成一个 segment；
+            /// `ref` 走 query，不写进 path。
+            static func repoContents(owner: String, repo: String, path: String) -> String {
+                let encodedPath = path
+                    .split(separator: "/", omittingEmptySubsequences: true)
+                    .map { component in
+                        String(component).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+                            ?? String(component)
+                    }
+                    .joined(separator: "/")
+                return "/repos/\(owner)/\(repo)/contents/\(encodedPath)"
+            }
             /// `GET /repos/{owner}/{repo}/releases` —— release 列表。
             static func repoReleases(owner: String, repo: String) -> String {
                 "/repos/\(owner)/\(repo)/releases"
