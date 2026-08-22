@@ -68,6 +68,10 @@ struct AgentWorkspaceView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(ExternalAgentRuntimePOCPreferences.backendKey)
     private var externalRuntimeBackendRawValue = AgentRuntimeBackend.builtinLoop.rawValue
+    @AppStorage(ExternalAgentRuntimePOCPreferences.codexModelKey)
+    private var preferredCodexModelID = ""
+    @AppStorage(ExternalAgentRuntimePOCPreferences.codexReasoningEffortKey)
+    private var preferredCodexReasoningEffort = ""
     @AppStorage(AgentWorkspaceLayoutMetrics.leftWidthDefaultsKey)
     private var persistedLeftColumnWidth = Double(AgentWorkspaceLayoutMetrics.leftIdealWidth)
     @AppStorage(AgentWorkspaceLayoutMetrics.rightWidthDefaultsKey)
@@ -80,6 +84,9 @@ struct AgentWorkspaceView: View {
     @State private var lastMeasuredRightColumnWidth: CGFloat?
     @State private var leftWidthPersistenceTask: Task<Void, Never>?
     @State private var rightWidthPersistenceTask: Task<Void, Never>?
+    @State private var codexModelCatalog = CodexModelCatalog.empty
+    @State private var isLoadingCodexModelCatalog = false
+    @State private var codexModelCatalogError: String?
     @FocusState private var isContextPickerSearchFocused: Bool
     let chromeState: WorkspaceChromeState
 
@@ -153,6 +160,9 @@ struct AgentWorkspaceView: View {
             configureAgentRuntime()
             await viewModel.initializeHistory()
         }
+        .task(id: selectedRuntimeBackend) {
+            await loadCodexModelCatalogIfNeeded()
+        }
         .onChange(of: viewModel.selectedModelID) { _, _ in
             configureAgentRuntime()
         }
@@ -165,6 +175,12 @@ struct AgentWorkspaceView: View {
         }
         .onChange(of: externalRuntimeBackendRawValue) { _, _ in
             viewModel.refreshLocalizedDefinitions(availableAgentDefinitions)
+            configureAgentRuntime()
+        }
+        .onChange(of: preferredCodexModelID) { _, _ in
+            configureAgentRuntime()
+        }
+        .onChange(of: preferredCodexReasoningEffort) { _, _ in
             configureAgentRuntime()
         }
         .animation(.easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)
@@ -187,6 +203,23 @@ struct AgentWorkspaceView: View {
     /// 从而保证一次 run 从首个 token 到最终 artifact 始终使用同一模型。
     private func configureAgentRuntime() {
         let preferredBackend = selectedRuntimeBackend
+        let starcatModelName = viewModel.availableModels
+            .first(where: { $0.id == viewModel.selectedModelID })?
+            .name
+        let runtimeModelName: String?
+        let runtimeReasoningEffort: String?
+        if preferredBackend == .codexAppServer {
+            runtimeModelName = selectedCodexModelSelection?.modelName
+            runtimeReasoningEffort = selectedCodexModelSelection?.reasoningEffort
+        } else {
+            runtimeModelName = starcatModelName
+            runtimeReasoningEffort = nil
+        }
+        viewModel.configureRuntimeSelection(
+            backend: preferredBackend,
+            modelName: runtimeModelName,
+            reasoningEffort: runtimeReasoningEffort
+        )
         let externalSearchTool = ExternalSearchAgentTool(
             collector: AppSettingsAgentExternalSearchCollector(settings: dependencies.settings)
         )
@@ -238,13 +271,11 @@ struct AgentWorkspaceView: View {
         if preferredBackend != .builtinLoop {
             do {
                 let adapter = try ExternalAgentRuntimePOCPreferences.makeAdapter(backend: preferredBackend)
-                let selectedModelName = viewModel.availableModels
-                    .first(where: { $0.id == viewModel.selectedModelID })?
-                    .name
                 runtimes[preferredBackend] = ExternalAgentRuntime(
                     adapter: adapter,
                     distributionGate: dependencies.distributionGate,
-                    selectedModelName: selectedModelName,
+                    selectedModelName: runtimeModelName,
+                    reasoningEffort: runtimeReasoningEffort,
                     toolRegistry: toolRegistry
                 )
             } catch {
@@ -255,6 +286,43 @@ struct AgentWorkspaceView: View {
             preferredBackend: preferredBackend,
             runtimes: runtimes
         ))
+    }
+
+    private var selectedCodexModelSelection: CodexModelSelection? {
+        codexModelCatalog.resolvedSelection(
+            preferredModelID: preferredCodexModelID.isEmpty ? nil : preferredCodexModelID,
+            preferredReasoningEffort: preferredCodexReasoningEffort.isEmpty
+                ? nil
+                : preferredCodexReasoningEffort
+        )
+    }
+
+    /// 目录失败时保留 Codex 服务端默认行为：UI 不回退展示 BYOK 模型，turn/start 也不
+    /// 发送 model/effort 覆盖。用户仍可提交，并在切换后端或点击重试时重新拉取目录。
+    @MainActor
+    private func loadCodexModelCatalogIfNeeded() async {
+        guard selectedRuntimeBackend == .codexAppServer else { return }
+        isLoadingCodexModelCatalog = true
+        defer { isLoadingCodexModelCatalog = false }
+        codexModelCatalogError = nil
+        do {
+            let client = try ExternalAgentRuntimePOCPreferences.makeCodexModelCatalogClient()
+            let catalog = try await client.load()
+            guard !Task.isCancelled, selectedRuntimeBackend == .codexAppServer else { return }
+            codexModelCatalog = catalog
+            if let selection = selectedCodexModelSelection {
+                preferredCodexModelID = selection.modelID
+                preferredCodexReasoningEffort = selection.reasoningEffort ?? ""
+            }
+            configureAgentRuntime()
+        } catch is CancellationError {
+            return
+        } catch {
+            guard !Task.isCancelled, selectedRuntimeBackend == .codexAppServer else { return }
+            codexModelCatalog = .empty
+            codexModelCatalogError = error.localizedDescription
+            configureAgentRuntime()
+        }
     }
 
     private var selectedRuntimeBackend: AgentRuntimeBackend {
@@ -640,7 +708,7 @@ struct AgentWorkspaceView: View {
                     .foregroundStyle(.secondary)
             }
 
-            if viewModel.selectedModelID == nil {
+            if selectedRuntimeBackend != .codexAppServer, viewModel.selectedModelID == nil {
                 Label("agent.workspace.model.required", systemImage: "sparkles")
                     .font(agentFont(.caption))
                     .foregroundStyle(.secondary)
@@ -673,7 +741,7 @@ struct AgentWorkspaceView: View {
                 .disabled(viewModel.isRunning || !viewModel.selectedAgentSupportsRepositorySelection)
                 .help("agent.workspace.repositoryPicker.title")
 
-                agentModelMenu
+                agentRuntimeModelControls
 
                 if !viewModel.selectedRepoContexts.isEmpty,
                    case .weeklyHotspots = viewModel.selectedAgent?.workflow.repositoryContext {
@@ -1173,6 +1241,100 @@ struct AgentWorkspaceView: View {
         .fixedSize()
         .disabled(viewModel.isRunning || viewModel.availableModels.isEmpty)
         .help("rag.workspace.composer.model")
+    }
+
+    @ViewBuilder
+    private var agentRuntimeModelControls: some View {
+        if selectedRuntimeBackend == .codexAppServer {
+            if isLoadingCodexModelCatalog, codexModelCatalog.models.isEmpty {
+                ProgressView()
+                    .controlSize(.small)
+            }
+            codexModelMenu
+            if let selectedModel = selectedCodexModelOption,
+               !selectedModel.supportedReasoningEfforts.isEmpty {
+                codexReasoningEffortMenu(selectedModel)
+            }
+        } else {
+            agentModelMenu
+        }
+    }
+
+    private var selectedCodexModelOption: CodexModelOption? {
+        guard let selection = selectedCodexModelSelection else { return nil }
+        return codexModelCatalog.models.first(where: { $0.id == selection.modelID })
+    }
+
+    private var codexModelMenu: some View {
+        Menu {
+            if codexModelCatalog.models.isEmpty {
+                Button("action.retry") {
+                    Task { await loadCodexModelCatalogIfNeeded() }
+                }
+                .disabled(isLoadingCodexModelCatalog)
+            } else {
+                ForEach(codexModelCatalog.models) { model in
+                    Button {
+                        preferredCodexModelID = model.id
+                        let selection = codexModelCatalog.resolvedSelection(
+                            preferredModelID: model.id,
+                            preferredReasoningEffort: preferredCodexReasoningEffort
+                        )
+                        preferredCodexReasoningEffort = selection?.reasoningEffort ?? ""
+                    } label: {
+                        if model.id == selectedCodexModelSelection?.modelID {
+                            Label(model.displayName, systemImage: "checkmark")
+                        } else {
+                            Text(model.displayName)
+                        }
+                    }
+                }
+            }
+        } label: {
+            Label(
+                selectedCodexModelSelection?.displayName ?? "Codex",
+                systemImage: codexModelCatalogError == nil ? "sparkles" : "exclamationmark.triangle"
+            )
+            .font(agentFont(.caption, weight: .semibold))
+            .lineLimit(1)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(viewModel.isRunning)
+        .help(codexModelCatalogError ?? String.l10n("rag.workspace.composer.model"))
+    }
+
+    private func codexReasoningEffortMenu(_ model: CodexModelOption) -> some View {
+        Menu {
+            ForEach(model.supportedReasoningEfforts) { effort in
+                Button {
+                    preferredCodexReasoningEffort = effort.reasoningEffort
+                } label: {
+                    if effort.reasoningEffort == selectedCodexModelSelection?.reasoningEffort {
+                        Label(reasoningEffortDisplayName(effort.reasoningEffort), systemImage: "checkmark")
+                    } else {
+                        Text(reasoningEffortDisplayName(effort.reasoningEffort))
+                    }
+                }
+            }
+        } label: {
+            Label(
+                reasoningEffortDisplayName(selectedCodexModelSelection?.reasoningEffort ?? ""),
+                systemImage: "brain"
+            )
+            .font(agentFont(.caption, weight: .semibold))
+            .lineLimit(1)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(viewModel.isRunning)
+    }
+
+    private func reasoningEffortDisplayName(_ effort: String) -> String {
+        switch effort.lowercased() {
+        case "xhigh": "X-High"
+        default: effort.capitalized
+        }
     }
 
     private var explicitModeMenu: some View {

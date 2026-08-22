@@ -15,6 +15,7 @@ struct ExternalAgentRuntime: AgentRuntime {
     let host: ExternalAgentRuntimeHost
     let distributionGate: DistributionGate
     let selectedModelName: String?
+    let reasoningEffort: String?
     let toolRegistry: AgentToolRegistry?
 
     init(
@@ -22,12 +23,14 @@ struct ExternalAgentRuntime: AgentRuntime {
         host: ExternalAgentRuntimeHost = ExternalAgentRuntimeHost(),
         distributionGate: DistributionGate = DistributionGate(),
         selectedModelName: String? = nil,
+        reasoningEffort: String? = nil,
         toolRegistry: AgentToolRegistry? = nil
     ) {
         self.adapter = adapter
         self.host = host
         self.distributionGate = distributionGate
         self.selectedModelName = selectedModelName
+        self.reasoningEffort = reasoningEffort
         self.toolRegistry = toolRegistry
     }
 
@@ -80,6 +83,7 @@ struct ExternalAgentRuntime: AgentRuntime {
                         runID: runID,
                         prompt: externalPrompt,
                         modelName: selectedModelName,
+                        reasoningEffort: reasoningEffort,
                         workingDirectory: workingDirectory,
                         tools: tools.map(\.definition)
                     )

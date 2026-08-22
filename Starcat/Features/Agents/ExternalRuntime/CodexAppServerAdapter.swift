@@ -17,16 +17,13 @@ struct CodexAppServerAdapter: ExternalAgentProtocolAdapter {
     let capabilities = AgentRuntimeCapabilities.codexAppServerPOC
 
     private let executableURL: URL
-    private let modelOverride: String?
     private let environment: [String: String]
 
     init(
         executableURL: URL,
-        modelOverride: String? = nil,
         environment: [String: String] = ExternalAgentProcessEnvironment.filtered()
     ) {
         self.executableURL = executableURL
-        self.modelOverride = modelOverride?.nilIfBlank
         self.environment = environment
     }
 
@@ -34,7 +31,6 @@ struct CodexAppServerAdapter: ExternalAgentProtocolAdapter {
         CodexAppServerDriver(
             request: request,
             executableURL: executableURL,
-            modelOverride: modelOverride,
             environment: environment
         )
     }
@@ -46,7 +42,6 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
     let processConfiguration: ExternalAgentProcessConfiguration
 
     private let request: ExternalAgentRunRequest
-    private let modelOverride: String?
     private var threadID: String?
     private var turnID: String?
     private var inheritedMCPServerConfigs: [String: AgentJSONValue] = [:]
@@ -58,11 +53,9 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
     init(
         request: ExternalAgentRunRequest,
         executableURL: URL,
-        modelOverride: String?,
         environment: [String: String]
     ) {
         self.request = request
-        self.modelOverride = modelOverride
         processConfiguration = ExternalAgentProcessConfiguration(
             executableURL: executableURL,
             arguments: ["app-server", "--listen", "stdio://"],
@@ -171,19 +164,28 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
                 throw ExternalAgentRuntimeError.protocolError("Codex thread/start response has no thread id.")
             }
             self.threadID = threadID
+            var turnParams: [String: AgentJSONValue] = [
+                "threadId": .string(threadID),
+                "input": .array([
+                    .object([
+                        "type": .string("text"),
+                        "text": .string(request.prompt),
+                    ])
+                ]),
+            ]
+            // Codex 模型与推理强度属于 turn 级覆盖项。不能写进 thread/start，
+            // 更不能沿用 Starcat BYOK 模型，否则 UI 选择与实际执行模型会错位。
+            if let modelName = request.modelName?.nilIfBlank {
+                turnParams["model"] = .string(modelName)
+            }
+            if let reasoningEffort = request.reasoningEffort?.nilIfBlank {
+                turnParams["effort"] = .string(reasoningEffort)
+            }
             return ExternalAgentProtocolOutput(outboundFrames: [
                 .jsonRPCRequest(
                     id: Self.turnStartRequestID,
                     method: "turn/start",
-                    params: .object([
-                        "threadId": .string(threadID),
-                        "input": .array([
-                            .object([
-                                "type": .string("text"),
-                                "text": .string(request.prompt),
-                            ])
-                        ]),
-                    ])
+                    params: .object(turnParams)
                 )
             ])
         case Self.turnStartRequestID:
@@ -226,7 +228,6 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
                 ])
             })
         }
-        if let modelOverride { threadParams["model"] = .string(modelOverride) }
         return .jsonRPCRequest(
             id: Self.threadStartRequestID,
             method: "thread/start",

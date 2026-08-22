@@ -216,6 +216,10 @@ struct AgentRunContext: Codable, Hashable, Sendable {
     var explicitRepos: [AIComposerRepoReference]?
     var explicitRepoMode: AIComposerExplicitRepoMode?
     var selectedModelID: String?
+    /// Runtime 字段保持 optional，确保新增前已经落库的 context JSON 可继续解码。
+    var runtimeBackend: AgentRuntimeBackend?
+    var runtimeModelName: String?
+    var runtimeReasoningEffort: String?
     var githubLinks: [AIComposerGitHubLink]?
     var webSearchEnabled: Bool?
     /// 业务上下文中已经进入知识库的仓库 ID。nil 仅代表旧快照，需兼容旧运行记录。
@@ -230,6 +234,9 @@ struct AgentRunContext: Codable, Hashable, Sendable {
         explicitRepos: [AIComposerRepoReference]? = nil,
         explicitRepoMode: AIComposerExplicitRepoMode? = nil,
         selectedModelID: String? = nil,
+        runtimeBackend: AgentRuntimeBackend? = nil,
+        runtimeModelName: String? = nil,
+        runtimeReasoningEffort: String? = nil,
         githubLinks: [AIComposerGitHubLink]? = nil,
         webSearchEnabled: Bool? = nil,
         knowledgeEligibleRepoIDs: [Int64]? = nil
@@ -242,6 +249,9 @@ struct AgentRunContext: Codable, Hashable, Sendable {
         self.explicitRepos = explicitRepos
         self.explicitRepoMode = explicitRepoMode
         self.selectedModelID = selectedModelID
+        self.runtimeBackend = runtimeBackend
+        self.runtimeModelName = runtimeModelName
+        self.runtimeReasoningEffort = runtimeReasoningEffort
         self.githubLinks = githubLinks
         self.webSearchEnabled = webSearchEnabled
         self.knowledgeEligibleRepoIDs = knowledgeEligibleRepoIDs
@@ -278,6 +288,9 @@ struct AgentRunInput: Hashable, Sendable {
     var githubLinks: [AIComposerGitHubLink]
     var webSearchEnabled: Bool
     var source: String
+    var runtimeBackend: AgentRuntimeBackend? = nil
+    var runtimeModelName: String? = nil
+    var runtimeReasoningEffort: String? = nil
 }
 
 /// 用户显式附加到一次 run 的 UTF-8 文本快照。

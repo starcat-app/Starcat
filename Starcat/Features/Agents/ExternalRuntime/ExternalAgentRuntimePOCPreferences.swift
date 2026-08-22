@@ -14,6 +14,7 @@ enum ExternalAgentRuntimePOCPreferences {
     static let backendKey = "DebugExternalAgentRuntimeBackend"
     static let codexExecutablePathKey = "DebugCodexExecutablePath"
     static let codexModelKey = "DebugCodexModel"
+    static let codexReasoningEffortKey = "DebugCodexReasoningEffort"
     static let deepSeekExecutablePathKey = "DebugDeepSeekHarnessExecutablePath"
     static let deepSeekCordisConfigPathKey = "DebugDeepSeekHarnessCordisConfigPath"
     static let deepSeekProviderKey = "DebugDeepSeekHarnessProvider"
@@ -47,13 +48,11 @@ enum ExternalAgentRuntimePOCPreferences {
         case .builtinLoop:
             throw ExternalAgentRuntimeError.missingConfiguration("External backend")
         case .codexAppServer:
-            let executable = try resolver.resolve(
-                executableName: "codex",
-                explicitPath: defaults.string(forKey: codexExecutablePathKey)
-            )
             return CodexAppServerAdapter(
-                executableURL: executable,
-                modelOverride: defaults.string(forKey: codexModelKey),
+                executableURL: try resolveCodexExecutable(
+                    resolver: resolver,
+                    defaults: defaults
+                ),
                 // Codex 使用本机 CODEX_HOME 登录态。禁止把 Starcat 进程中的 API Key
                 // 交给可调用命令工具的外部 Runtime，避免 prompt 注入读取环境凭据。
                 environment: ExternalAgentProcessEnvironment.filtered(source: environment)
@@ -81,5 +80,27 @@ enum ExternalAgentRuntimePOCPreferences {
                 )
             )
         }
+    }
+
+    static func makeCodexModelCatalogClient(
+        resolver: ExternalAgentExecutableResolver = ExternalAgentExecutableResolver(),
+        defaults: UserDefaults = .standard,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) throws -> CodexModelCatalogClient {
+        CodexModelCatalogClient(
+            executableURL: try resolveCodexExecutable(resolver: resolver, defaults: defaults),
+            // 模型目录与正式 turn 使用相同的本机 Codex 登录态和凭据过滤边界。
+            environment: ExternalAgentProcessEnvironment.filtered(source: environment)
+        )
+    }
+
+    private static func resolveCodexExecutable(
+        resolver: ExternalAgentExecutableResolver,
+        defaults: UserDefaults
+    ) throws -> URL {
+        try resolver.resolve(
+            executableName: "codex",
+            explicitPath: defaults.string(forKey: codexExecutablePathKey)
+        )
     }
 }

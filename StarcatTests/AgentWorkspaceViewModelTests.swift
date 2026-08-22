@@ -30,6 +30,35 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.canSubmit)
     }
 
+    @Test("Codex Runtime 不依赖 Starcat BYOK 模型并冻结自己的模型参数")
+    func codexSubmissionUsesRuntimeModelSelection() async throws {
+        let recorder = AgentRunInputRecorder()
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: EventReplayAgentRuntime(events: [
+                .runStarted(title: "Run"),
+                .runCompleted,
+            ]),
+            contextProvider: RecordingAgentRunContextProvider(recorder: recorder)
+        )
+        viewModel.configureRuntimeSelection(
+            backend: .codexAppServer,
+            modelName: "gpt-fixture",
+            reasoningEffort: "high"
+        )
+
+        #expect(viewModel.selectedModelID == nil)
+        #expect(viewModel.canSubmit)
+        viewModel.run()
+        try await waitUntil { viewModel.status == .completed }
+
+        let input = try #require(await recorder.input())
+        #expect(input.selectedModelID == nil)
+        #expect(input.runtimeBackend == .codexAppServer)
+        #expect(input.runtimeModelName == "gpt-fixture")
+        #expect(input.runtimeReasoningEffort == "high")
+    }
+
     @Test("Repo Insight 必须且只能选择一个仓库")
     func repoInsightSubmissionRequiresSingleRepository() {
         let viewModel = AgentWorkspaceViewModel(agents: [BuiltInAgents.repoInsight])
@@ -1325,6 +1354,9 @@ private struct RecordingAgentRunContextProvider: AgentRunContextProviding {
             explicitRepos: input.explicitRepos,
             explicitRepoMode: input.explicitRepoMode,
             selectedModelID: input.selectedModelID,
+            runtimeBackend: input.runtimeBackend,
+            runtimeModelName: input.runtimeModelName,
+            runtimeReasoningEffort: input.runtimeReasoningEffort,
             githubLinks: input.githubLinks,
             webSearchEnabled: input.webSearchEnabled
         )

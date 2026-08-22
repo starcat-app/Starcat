@@ -14,6 +14,7 @@ struct ExternalAgentRunRequest: Sendable {
     let runID: UUID
     let prompt: String
     let modelName: String?
+    let reasoningEffort: String?
     let workingDirectory: URL
     /// 只有已经过 Agent definition allowlist 与只读权限过滤的工具才会进入 Provider。
     let tools: [AgentToolDefinition]

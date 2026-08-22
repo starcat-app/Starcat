@@ -43,6 +43,7 @@ struct ExternalAgentProtocolAdapterTests {
         ])))
         let threadStart = try #require(configRead.outboundFrames.first)
         #expect(threadStart[external: "method"]?.stringValue == "thread/start")
+        #expect(threadStart[external: "params"]?[external: "model"] == nil)
         let dynamicTool = threadStart[external: "params"]?[external: "dynamicTools"]?.externalArray?.first
         #expect(dynamicTool?[external: "name"]?.stringValue == "fixture_lookup")
         let config = threadStart[external: "params"]?[external: "config"]
@@ -59,7 +60,10 @@ struct ExternalAgentProtocolAdapterTests {
             id: 10_000,
             result: .object(["thread": .object(["id": .string("thread-1")])])
         ))
-        #expect(threadStarted.outboundFrames.first?[external: "method"]?.stringValue == "turn/start")
+        let turnStart = try #require(threadStarted.outboundFrames.first)
+        #expect(turnStart[external: "method"]?.stringValue == "turn/start")
+        #expect(turnStart[external: "params"]?[external: "model"]?.stringValue == "test-model")
+        #expect(turnStart[external: "params"]?[external: "effort"]?.stringValue == "high")
 
         let delta = try driver.receive(notification(
             method: "item/agentMessage/delta",
@@ -100,6 +104,80 @@ struct ExternalAgentProtocolAdapterTests {
         ))
         #expect(completed.events == [.completed])
         #expect(completed.isTerminal)
+    }
+
+    @Test("Codex model/list 解析目录并按服务端默认值修复失效选择")
+    func codexModelCatalogSelectionUsesServerDefaults() throws {
+        let page = try CodexModelCatalog.parsePage(from: .object([
+            "data": .array([
+                .object([
+                    "id": .string("model-default"),
+                    "model": .string("provider-model-default"),
+                    "displayName": .string("Default Model"),
+                    "isDefault": .bool(true),
+                    "defaultReasoningEffort": .string("medium"),
+                    "supportedReasoningEfforts": .array([
+                        .object(["reasoningEffort": .string("low")]),
+                        .object(["reasoningEffort": .string("medium")]),
+                        .object(["reasoningEffort": .string("high")]),
+                    ]),
+                ]),
+                .object([
+                    "id": .string("model-fast"),
+                    "model": .string("provider-model-fast"),
+                    "displayName": .string("Fast Model"),
+                    "isDefault": .bool(false),
+                    "defaultReasoningEffort": .string("low"),
+                    "supportedReasoningEfforts": .array([
+                        .object(["reasoningEffort": .string("low")]),
+                    ]),
+                ]),
+            ]),
+            "nextCursor": .string("cursor-2"),
+        ]))
+
+        #expect(page.nextCursor == "cursor-2")
+        #expect(page.models.map(\.id) == ["model-default", "model-fast"])
+        let catalog = CodexModelCatalog(models: page.models)
+        let selection = try #require(catalog.resolvedSelection(
+            preferredModelID: "removed-model",
+            preferredReasoningEffort: "unsupported"
+        ))
+        #expect(selection.modelID == "model-default")
+        #expect(selection.modelName == "provider-model-default")
+        #expect(selection.reasoningEffort == "medium")
+    }
+
+    @Test("Codex 模型目录 Driver 完成 initialize 与 model/list 握手")
+    func codexModelCatalogDriverHandshake() throws {
+        let resultBox = CodexModelCatalogResultBox()
+        let driver = CodexModelCatalogDriver(
+            executableURL: URL(fileURLWithPath: "/usr/bin/true"),
+            environment: [:],
+            resultBox: resultBox
+        )
+
+        #expect(try driver.initialFrames().first?[external: "method"]?.stringValue == "initialize")
+        let initialized = try driver.receive(response(id: 1, result: .object([:])))
+        #expect(initialized.outboundFrames.map { $0[external: "method"]?.stringValue } == [
+            "initialized", "model/list",
+        ])
+
+        let completed = try driver.receive(response(id: 2, result: .object([
+            "data": .array([
+                .object([
+                    "id": .string("gpt-fixture"),
+                    "model": .string("gpt-fixture"),
+                    "displayName": .string("GPT Fixture"),
+                    "isDefault": .bool(true),
+                    "supportedReasoningEfforts": .array([]),
+                ]),
+            ]),
+        ])))
+
+        #expect(completed.events == [.completed])
+        #expect(completed.isTerminal)
+        #expect(try resultBox.requiredCatalog().models.map(\.id) == ["gpt-fixture"])
     }
 
     @Test("Codex adapter 映射 dynamic tool 请求并回写结果")
@@ -211,6 +289,7 @@ struct ExternalAgentProtocolAdapterTests {
             runID: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
             prompt: "hello",
             modelName: "test-model",
+            reasoningEffort: "high",
             workingDirectory: FileManager.default.temporaryDirectory,
             tools: [AgentToolDefinition(
                 name: "fixture_lookup",

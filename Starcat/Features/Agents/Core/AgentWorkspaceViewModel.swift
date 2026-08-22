@@ -74,6 +74,9 @@ final class AgentWorkspaceViewModel {
     var explicitRepoMode: AIComposerExplicitRepoMode = .only
     var availableModels: [AIModelDescriptor] = []
     var selectedModelID: String?
+    private(set) var runtimeBackend = AgentRuntimeBackend.builtinLoop
+    private(set) var runtimeModelName: String?
+    private(set) var runtimeReasoningEffort: String?
     var webSearchEnabled = false
     var githubLinks: [AIComposerGitHubLink] = []
     var isContextPickerPresented = false
@@ -204,10 +207,15 @@ final class AgentWorkspaceViewModel {
         guard !isRunning,
               let selectedAgent,
               selectedAgent.isEnabled,
-              let selectedModelID,
-              availableModels.contains(where: { $0.id == selectedModelID }),
               !effectivePrompt(for: selectedAgent).isEmpty
         else { return false }
+        // Codex 通过自己的 model/list 与登录态选择模型，不能被 Starcat BYOK
+        // 配置阻断。其它 Runtime 仍沿用既有模型有效性校验。
+        if runtimeBackend != .codexAppServer {
+            guard let selectedModelID,
+                  availableModels.contains(where: { $0.id == selectedModelID })
+            else { return false }
+        }
 
         switch selectedAgent.workflow.repositoryContext {
         case .none, .weeklyHotspots:
@@ -259,6 +267,19 @@ final class AgentWorkspaceViewModel {
     func configureRuntime(_ runtime: any AgentRuntime) {
         guard !isRunning else { return }
         self.runtime = runtime
+    }
+
+    /// 冻结下一次运行实际使用的后端和 Provider 模型。正在运行时拒绝替换，避免 UI
+    /// 中途切换后让历史上下文记录成与当前进程不同的参数。
+    func configureRuntimeSelection(
+        backend: AgentRuntimeBackend,
+        modelName: String?,
+        reasoningEffort: String?
+    ) {
+        guard !isRunning else { return }
+        runtimeBackend = backend
+        runtimeModelName = modelName
+        runtimeReasoningEffort = reasoningEffort
     }
 
     func configureRunRepository(_ repository: any AgentRunRepositoryProtocol) {
@@ -390,11 +411,14 @@ final class AgentWorkspaceViewModel {
             agentID: selectedAgent.id,
             explicitRepos: selectedRepoContexts,
             explicitRepoMode: explicitRepoMode,
-            selectedModelID: selectedModelID,
+            selectedModelID: runtimeBackend == .codexAppServer ? nil : selectedModelID,
             attachments: attachments,
             githubLinks: githubLinks,
             webSearchEnabled: webSearchEnabled,
-            source: "Agent Workspace"
+            source: "Agent Workspace",
+            runtimeBackend: runtimeBackend,
+            runtimeModelName: runtimeModelName,
+            runtimeReasoningEffort: runtimeReasoningEffort
         )
         let contextProvider = contextProvider
         let runtime = runtime
