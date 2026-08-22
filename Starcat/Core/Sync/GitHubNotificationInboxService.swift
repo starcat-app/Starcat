@@ -224,7 +224,8 @@ final class GitHubNotificationInboxService {
         )
         let showEvents = settings.githubIssueEventTimelineEnabled
         let needsLabels = canReply && record.labelsJson == nil
-        // 关事件流时，若上次只补了 subject、没拉过评论，还要补 comments。
+        // 关事件流时，`comments_json == nil` 表示还没拉过评论（含空帖写成 `[]`）。
+        // 事件流开着时故意不写这一列，关掉才能再 GET 全量。
         let needsComments = canReply && record.commentsJson == nil && !showEvents
         let needsSubject = record.hydratedAt == nil || record.subjectCreatedAt == nil || needsLabels
         guard needsSubject || needsComments || showEvents else { return }

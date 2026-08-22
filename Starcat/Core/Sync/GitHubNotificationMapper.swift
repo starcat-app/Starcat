@@ -706,10 +706,11 @@ enum GitHubNotificationMapper {
         return String(commentsPath.dropLast(suffix.count))
     }
 
-    static func encodeComments(_ comments: [GitHubNotificationComment]) -> String? {
-        guard !comments.isEmpty else { return nil }
-        let data = try? JSONEncoder().encode(comments)
-        return data.flatMap { String(data: $0, encoding: .utf8) }
+    /// 空数组也写成 `[]`，用来区分「确认没评论」和「还没拉过」。
+    /// 事件流开着时故意不写这一列，关掉开关才能再 GET 全量。
+    static func encodeComments(_ comments: [GitHubNotificationComment]) -> String {
+        let data = (try? JSONEncoder().encode(comments)) ?? Data("[]".utf8)
+        return String(data: data, encoding: .utf8) ?? "[]"
     }
 
     static func decodeComments(_ json: String?) -> [GitHubNotificationComment] {
