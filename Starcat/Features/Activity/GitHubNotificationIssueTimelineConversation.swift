@@ -4,8 +4,9 @@
 //
 //  Issue 事件流详情：开帖卡 + 评论 / 事件按时间交错。
 //
-//  只读已 hydrate 的标题 / 正文 / 标签。时间线走 Inbox 内存缓存，不写 `comments_json`。
+//  只读已 hydrate 的标题 / 正文 / 标签。时间线走 Inbox：内存 → 文件 → 网络。
 //  发评 / 关帖后 `timelineRevision` 变了会再读一次缓存。
+//  翻译只套评论卡，开帖和事件行保持原文。
 //
 
 import AppKit
@@ -19,6 +20,11 @@ struct GitHubNotificationIssueTimelineConversation: View {
     let inbox: GitHubNotificationInboxService
     /// Inbox 缓存刷新代数。发评 / 关帖后会 +1，用来重读内存时间线。
     let timelineRevision: Int
+    /// 只给评论卡做对照。事件行不读这个。
+    let translation: ReadmeTranslationViewModel?
+
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(AppSettings.self) private var settings
 
     @State private var items: [GitHubNotificationIssueTimelineItem] = []
     @State private var isLoading = false
@@ -131,49 +137,54 @@ struct GitHubNotificationIssueTimelineConversation: View {
     }
 
     private func timelineCommentCard(_ comment: GitHubNotificationComment) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                GitHubNotificationActorAvatar(login: comment.login, size: 22)
-                Text(verbatim: actorName(comment.login))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Text(verbatim: GitHubNotificationMapper.commentCardAction(isOpeningPost: false, locale: locale))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                if let createdAt = GitHubNotificationMapper.parseDate(comment.createdAt) {
-                    Text(verbatim: GitHubNotificationMapper.commentTimeLabel(date: createdAt, locale: locale))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Color.secondary.opacity(0.04))
-
-            Divider()
-
-            if comment.body.isEmpty {
-                Text("activity.notification.detail.noDescription")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .padding(12)
-            } else {
-                GitHubNotificationIssueTimelineMarkdown(
-                    content: comment.body,
-                    repositoryFullName: payload.repositoryFullName
-                )
-                .padding(12)
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+        let document = commentTranslationDocument
+        let isShowing: Bool = {
+            if case .showingTranslation = translation?.displayMode { return true }
+            return false
+        }()
+        let rendered = translation?.renderState.translations ?? []
+        let translationsByID = Dictionary(
+            rendered.map { ($0.id, $0) },
+            uniquingKeysWith: { _, latest in latest }
         )
+        let blocks = document.blocks.filter { block in
+            if case .comment(let id) = block.kind { return id == comment.id }
+            return false
+        }
+        return GitHubNotificationCommentCard(
+            login: comment.login,
+            createdAt: GitHubNotificationMapper.parseDate(comment.createdAt),
+            markdown: comment.body,
+            repositoryFullName: payload.repositoryFullName,
+            isOpeningPost: false,
+            locale: locale,
+            reduceMotion: reduceMotion,
+            blocks: blocks,
+            translations: blocks.compactMap { block in
+                block.segmentId.flatMap { translationsByID[$0] }
+            },
+            isShowingTranslation: isShowing,
+            translationMode: translation?.renderState.mode ?? settings.readmeTranslationMode,
+            prefersAnimatedEntrance: translation?.renderState.prefersAnimatedEntrance ?? false,
+            isJobTranslating: translation?.isTranslating ?? false,
+            translationLanguage: settings.effectiveReadmeTranslationLanguage
+        )
+        .equatable()
+    }
+
+    /// 只切评论正文。开帖和事件不进翻译文档。
+    private var commentTranslationDocument: GitHubNotificationTranslation.Document {
+        let comments: [GitHubNotificationComment] = items.compactMap { item in
+            guard case .comment(let comment) = item else { return nil }
+            return GitHubNotificationComment(
+                id: comment.id,
+                login: comment.login,
+                body: GitHubNotificationMapper.prepareMarkdown(comment.body),
+                htmlURL: comment.htmlURL,
+                createdAt: comment.createdAt
+            )
+        }
+        return GitHubNotificationTranslation.makeDocument(opening: nil, comments: comments)
     }
 
     private func actorName(_ login: String?) -> String {

@@ -72,7 +72,7 @@ final class GitHubNotificationInboxService {
     private var didStartMissingIssueStateBackfill = false
     /// 正在 Done 的 id。取消 dwell 时不要把蓝点闪回来，这条马上要从表里删掉。
     private var completingIDs: Set<String> = []
-    /// 事件流只放内存。关开关后不用，打开同一条命中缓存不再打网。
+    /// 事件流热缓存。关开关后不用；打开同一条先走这里，再读文件，最后才打网。
     private var issueTimelineCache: [String: [GitHubNotificationIssueTimelineItem]] = [:]
     /// 同一 thread 的 timeline GET 合并成一次，避免 hydrate 和详情 `.task` 各打一遍。
     private var issueTimelineTasks: [String: Task<[GitHubNotificationIssueTimelineItem], Error>] = [:]
@@ -80,6 +80,9 @@ final class GitHubNotificationInboxService {
     private var issueTimelineFetchGeneration: [String: Int] = [:]
     /// 详情 `.task` 用这个感知缓存刷新。第一次写入和发评 / 关帖后都会 +1。
     private(set) var issueTimelineRevisions: [String: Int] = [:]
+    /// 本次进程里 thread → 磁盘路径，作废时不用再解析 fullName。
+    private var issueTimelineDiskKeys: [String: (owner: String, repo: String, number: Int)] = [:]
+    private let issueTimelineDiskCache: DiskIssueTimelineCache
 
     init(
         apiClient: any GitHubAPIClientProtocol,
@@ -93,7 +96,8 @@ final class GitHubNotificationInboxService {
         userIDProvider: @escaping () -> Int64? = { nil },
         isProjectAccessAvailable: @escaping () -> Bool = { false },
         clock: @escaping () -> Date = Date.init,
-        dwellNanoseconds: UInt64 = GitHubNotificationMapper.dwellNanoseconds
+        dwellNanoseconds: UInt64 = GitHubNotificationMapper.dwellNanoseconds,
+        issueTimelineDiskCache: DiskIssueTimelineCache = .shared
     ) {
         self.apiClient = apiClient
         self.projectAPIClient = projectAPIClient
@@ -107,6 +111,7 @@ final class GitHubNotificationInboxService {
         self.isProjectAccessAvailable = isProjectAccessAvailable
         self.clock = clock
         self.dwellNanoseconds = dwellNanoseconds
+        self.issueTimelineDiskCache = issueTimelineDiskCache
     }
 
     func fetchCached(limit: Int = GitHubNotificationMapper.backfillLimit) async -> [GitHubNotificationThreadRecord] {
@@ -276,12 +281,24 @@ final class GitHubNotificationInboxService {
         issueTimelineRevisions[threadId] ?? 0
     }
 
+    /// 只抽 timeline 里的评论，给翻译对照用。事件行不进。
+    func cachedIssueTimelineComments(threadId: String) -> [GitHubNotificationComment] {
+        guard let items = issueTimelineCache[threadId] else { return [] }
+        return items.compactMap { item in
+            if case .comment(let comment) = item { return comment }
+            return nil
+        }
+    }
+
     func invalidateIssueTimeline(threadId: String) {
         issueTimelineCache[threadId] = nil
         issueTimelineFetchGeneration[threadId, default: 0] += 1
+        if let key = issueTimelineDiskKeys.removeValue(forKey: threadId) {
+            issueTimelineDiskCache.remove(owner: key.owner, repo: key.repo, number: key.number)
+        }
     }
 
-    /// 进程内缓存。`force` 在发评论 / 关帖后作废再拉。hydrate 与详情共用，避免连打两次。
+    /// 内存 → 文件 → 网络。`force` 在发评论 / 关帖后三层一起作废再拉。
     func loadIssueTimeline(
         threadId: String,
         force: Bool = false
@@ -294,7 +311,9 @@ final class GitHubNotificationInboxService {
             return try await inflight.value
         }
         let generation = issueTimelineFetchGeneration[threadId] ?? 0
-        let task = Task { try await self.fetchIssueTimeline(threadId: threadId, generation: generation) }
+        let task = Task {
+            try await self.fetchIssueTimeline(threadId: threadId, generation: generation, force: force)
+        }
         issueTimelineTasks[threadId] = task
         defer {
             if issueTimelineTasks[threadId] == task {
@@ -306,7 +325,8 @@ final class GitHubNotificationInboxService {
 
     private func fetchIssueTimeline(
         threadId: String,
-        generation: Int
+        generation: Int,
+        force: Bool
     ) async throws -> [GitHubNotificationIssueTimelineItem] {
         guard !GitHubNotificationMapper.isDemoThread(threadId) else { return [] }
         guard let record = try await threadRepository.fetch(id: threadId),
@@ -316,18 +336,89 @@ final class GitHubNotificationInboxService {
               ),
               let number = record.subjectNumber
         else { return [] }
+        if force {
+            removePersistedIssueTimeline(record)
+        } else if let cached = issueTimelineFromDiskIfFresh(record) {
+            rememberIssueTimeline(cached, threadId: threadId, record: record, generation: generation)
+            return cached
+        }
         let path = GitHubNotificationIssueTimelineParser.resourcePath(
             repositoryFullName: record.repositoryFullName,
             number: number
         )
         let items = try await apiClient(for: record).listNotificationIssueTimeline(path: path)
-        // 只收下这一代的响应。发评后旧 GET 回来也不能盖住新缓存。
         guard (issueTimelineFetchGeneration[threadId] ?? 0) == generation else {
             return items
         }
+        rememberIssueTimeline(items, threadId: threadId, record: record, generation: generation)
+        persistIssueTimeline(items, record: record)
+        return items
+    }
+
+    private func issueTimelineFromDiskIfFresh(
+        _ record: GitHubNotificationThreadRecord
+    ) -> [GitHubNotificationIssueTimelineItem]? {
+        guard let number = record.subjectNumber,
+              let parts = Self.repositoryParts(record.repositoryFullName),
+              let snapshot = issueTimelineDiskCache.load(
+                owner: parts.owner,
+                repo: parts.repo,
+                number: number
+              )
+        else { return nil }
+        if let updatedAt = GitHubNotificationMapper.parseDate(record.updatedAt),
+           updatedAt > snapshot.fetchedAt {
+            return nil
+        }
+        return snapshot.items
+    }
+
+    private func persistIssueTimeline(
+        _ items: [GitHubNotificationIssueTimelineItem],
+        record: GitHubNotificationThreadRecord
+    ) {
+        guard let number = record.subjectNumber,
+              let parts = Self.repositoryParts(record.repositoryFullName)
+        else { return }
+        let snapshot = IssueTimelineCacheSnapshot(
+            formatVersion: IssueTimelineCacheSnapshot.currentFormatVersion,
+            owner: parts.owner,
+            repo: parts.repo,
+            number: number,
+            fetchedAt: clock(),
+            items: items
+        )
+        try? issueTimelineDiskCache.save(snapshot: snapshot)
+        issueTimelineDiskKeys[record.id] = (parts.owner, parts.repo, number)
+    }
+
+    private func removePersistedIssueTimeline(_ record: GitHubNotificationThreadRecord) {
+        guard let number = record.subjectNumber,
+              let parts = Self.repositoryParts(record.repositoryFullName)
+        else { return }
+        issueTimelineDiskCache.remove(owner: parts.owner, repo: parts.repo, number: number)
+        issueTimelineDiskKeys[record.id] = nil
+    }
+
+    private func rememberIssueTimeline(
+        _ items: [GitHubNotificationIssueTimelineItem],
+        threadId: String,
+        record: GitHubNotificationThreadRecord,
+        generation: Int
+    ) {
+        guard (issueTimelineFetchGeneration[threadId] ?? 0) == generation else { return }
         issueTimelineCache[threadId] = items
         issueTimelineRevisions[threadId, default: 0] += 1
-        return items
+        if let number = record.subjectNumber,
+           let parts = Self.repositoryParts(record.repositoryFullName) {
+            issueTimelineDiskKeys[threadId] = (parts.owner, parts.repo, number)
+        }
+    }
+
+    private static func repositoryParts(_ fullName: String) -> (owner: String, repo: String)? {
+        let parts = fullName.split(separator: "/").map(String.init)
+        guard parts.count == 2 else { return nil }
+        return (parts[0], parts[1])
     }
 
     /// 发评 / 关帖之后：作废缓存；事件流开着再拉一次，详情靠 revision 刷新。

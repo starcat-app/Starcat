@@ -88,7 +88,8 @@ struct GitHubNotificationDetailView: View {
                                     title: item.title,
                                     locale: locale,
                                     inbox: inbox,
-                                    timelineRevision: inbox.issueTimelineRevision(threadId: payload.threadId)
+                                    timelineRevision: inbox.issueTimelineRevision(threadId: payload.threadId),
+                                    translation: translationVM
                                 )
                             } else {
                                 conversation(payload, title: item.title, translation: translationVM)
@@ -226,8 +227,7 @@ struct GitHubNotificationDetailView: View {
             Spacer(minLength: 8)
             HStack(spacing: 4) {
                 detailLinkButtons(item)
-                if !settings.githubIssueEventTimelineEnabled,
-                   let vm = translationVM,
+                if let vm = translationVM,
                    let payload = item.notification {
                     translationControls(payload: payload, viewModel: vm)
                 }
@@ -488,7 +488,21 @@ struct GitHubNotificationDetailView: View {
     }
 
     private func translationDocument(_ payload: ActivityNotificationPayload) -> GitHubNotificationTranslation.Document {
-        GitHubNotificationTranslation.makeDocument(
+        if settings.githubIssueEventTimelineEnabled {
+            return GitHubNotificationTranslation.makeDocument(
+                opening: nil,
+                comments: inbox.cachedIssueTimelineComments(threadId: payload.threadId).map { comment in
+                    GitHubNotificationComment(
+                        id: comment.id,
+                        login: comment.login,
+                        body: GitHubNotificationMapper.prepareMarkdown(comment.body),
+                        htmlURL: comment.htmlURL,
+                        createdAt: comment.createdAt
+                    )
+                }
+            )
+        }
+        return GitHubNotificationTranslation.makeDocument(
             opening: payload.excerpt.map(GitHubNotificationMapper.prepareMarkdown),
             comments: payload.comments.map { comment in
                 GitHubNotificationComment(
@@ -535,6 +549,10 @@ struct GitHubNotificationDetailView: View {
     /// excerpt / 评论条数变化（同一 thread 后到）才刷新；切帖走 threadId onChange。
     private func translationHydrationSignature(_ item: ActivityItem) -> String {
         guard let payload = item.notification else { return "" }
+        if settings.githubIssueEventTimelineEnabled {
+            let comments = inbox.cachedIssueTimelineComments(threadId: payload.threadId)
+            return "timeline|\(inbox.issueTimelineRevision(threadId: payload.threadId))|\(comments.count)|\(comments.last?.id ?? 0)"
+        }
         return "\(payload.excerpt?.count ?? 0)|\(payload.comments.count)|\(payload.comments.last?.id ?? 0)"
     }
 
@@ -871,7 +889,7 @@ private struct GitHubNotificationUserLink: View {
     }
 }
 
-private struct GitHubNotificationCommentCard: View, @MainActor Equatable {
+struct GitHubNotificationCommentCard: View, @MainActor Equatable {
     let login: String
     let createdAt: Date?
     let markdown: String

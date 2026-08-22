@@ -1431,6 +1431,101 @@ struct GitHubNotificationInboxTests {
         #expect(commentCalls == 1)
     }
 
+    @Test("事件流冷启动读文件缓存，不再打 timeline API")
+    func issueTimelineDiskCacheSurvivesNewInbox() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("starcat-timeline-disk-\(UUID().uuidString)", isDirectory: true)
+        let disk = DiskIssueTimelineCache(rootOverride: root)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let clock = { Date(timeIntervalSince1970: 1_800_000_000) }
+
+        let env = try makeEnv(clock: clock, issueTimelineDiskCache: disk)
+        env.settings.githubIssueEventTimelineEnabled = true
+        env.mock.listNotificationsHandler = { _, _, _, _, _ in
+            Self.listResponse([Self.makeDTO(id: "disk1")])
+        }
+        env.mock.listNotificationIssueTimelineHandler = { _ in
+            [
+                .comment(
+                    GitHubNotificationComment(
+                        id: 11,
+                        login: "bob",
+                        body: "cached comment",
+                        htmlURL: nil,
+                        createdAt: "2026-08-19T00:00:00Z"
+                    )
+                )
+            ]
+        }
+
+        await env.inbox.sync()
+        await env.inbox.hydrate(id: "disk1")
+        #expect(env.mock.listNotificationIssueTimelineCalls.count == 1)
+        #expect(disk.itemCount == 1)
+
+        let inbox2 = GitHubNotificationInboxService(
+            apiClient: env.mock,
+            threadRepository: env.threads,
+            syncStateRepository: env.syncState,
+            notificationService: AppNotificationService(
+                dispatcher: env.dispatcher,
+                settings: env.settings
+            ),
+            settings: env.settings,
+            activityRepository: env.activity,
+            clock: clock,
+            issueTimelineDiskCache: disk
+        )
+        let items = try await inbox2.loadIssueTimeline(threadId: "disk1")
+        #expect(env.mock.listNotificationIssueTimelineCalls.count == 1)
+        #expect(items.count == 1)
+        if case .comment(let comment) = items.first {
+            #expect(comment.body == "cached comment")
+        } else {
+            Issue.record("expected cached comment")
+        }
+    }
+
+    @Test("通知 updated_at 新于文件缓存时会重拉 timeline")
+    func issueTimelineDiskCacheRefetchesWhenThreadNewer() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("starcat-timeline-stale-\(UUID().uuidString)", isDirectory: true)
+        let disk = DiskIssueTimelineCache(rootOverride: root)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let oldClock = { Date(timeIntervalSince1970: 1_700_000_000) }
+
+        let env = try makeEnv(clock: oldClock, issueTimelineDiskCache: disk)
+        env.settings.githubIssueEventTimelineEnabled = true
+        env.mock.listNotificationsHandler = { _, _, _, _, _ in
+            Self.listResponse([Self.makeDTO(id: "stale1")])
+        }
+        var timelineCalls = 0
+        env.mock.listNotificationIssueTimelineHandler = { _ in
+            timelineCalls += 1
+            return []
+        }
+
+        await env.inbox.sync()
+        _ = try await env.inbox.loadIssueTimeline(threadId: "stale1")
+        #expect(timelineCalls == 1)
+
+        let inbox2 = GitHubNotificationInboxService(
+            apiClient: env.mock,
+            threadRepository: env.threads,
+            syncStateRepository: env.syncState,
+            notificationService: AppNotificationService(
+                dispatcher: env.dispatcher,
+                settings: env.settings
+            ),
+            settings: env.settings,
+            activityRepository: env.activity,
+            clock: oldClock,
+            issueTimelineDiskCache: disk
+        )
+        _ = try await inbox2.loadIssueTimeline(threadId: "stale1")
+        #expect(timelineCalls == 2)
+    }
+
     @Test("已 hydrate 但缺 labels_json 的 Issue 会再拉一次 subject")
     func hydrateRefetchesWhenLabelsMissing() async throws {
         let env = try makeEnv()
@@ -2020,9 +2115,14 @@ struct GitHubNotificationInboxTests {
         let dispatcher: RecordingNotificationDispatcher
         let settings: AppSettings
         let inbox: GitHubNotificationInboxService
+        let issueTimelineDiskCache: DiskIssueTimelineCache
     }
 
-    private func makeEnv(dwellNanoseconds: UInt64 = 1_000) throws -> Env {
+    private func makeEnv(
+        dwellNanoseconds: UInt64 = 1_000,
+        clock: @escaping () -> Date = Date.init,
+        issueTimelineDiskCache: DiskIssueTimelineCache? = nil
+    ) throws -> Env {
         let db = try InMemoryDatabaseManager()
         let threads = GRDBGitHubNotificationThreadRepository(database: db)
         let syncState = GRDBGitHubNotificationSyncStateRepository(database: db)
@@ -2037,6 +2137,10 @@ struct GitHubNotificationInboxTests {
         let settings = AppSettings(defaults: defaults, keychain: InMemoryKeychain())
         let dispatcher = RecordingNotificationDispatcher()
         let notifications = AppNotificationService(dispatcher: dispatcher, settings: settings)
+        let disk = issueTimelineDiskCache ?? DiskIssueTimelineCache(
+            rootOverride: FileManager.default.temporaryDirectory
+                .appendingPathComponent("starcat-inbox-timeline-\(UUID().uuidString)", isDirectory: true)
+        )
         let inbox = GitHubNotificationInboxService(
             apiClient: mock,
             threadRepository: threads,
@@ -2044,7 +2148,9 @@ struct GitHubNotificationInboxTests {
             notificationService: notifications,
             settings: settings,
             activityRepository: activity,
-            dwellNanoseconds: dwellNanoseconds
+            clock: clock,
+            dwellNanoseconds: dwellNanoseconds,
+            issueTimelineDiskCache: disk
         )
         return Env(
             db: db,
@@ -2055,7 +2161,8 @@ struct GitHubNotificationInboxTests {
             mock: mock,
             dispatcher: dispatcher,
             settings: settings,
-            inbox: inbox
+            inbox: inbox,
+            issueTimelineDiskCache: disk
         )
     }
 

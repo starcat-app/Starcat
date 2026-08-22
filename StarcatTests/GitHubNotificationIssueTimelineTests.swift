@@ -38,6 +38,22 @@ struct GitHubNotificationIssueTimelineTests {
         #expect(issue.contains("12") || issue.contains("crossRefIssue"))
     }
 
+    @Test("timeline item 可编解码，供文件缓存 round-trip")
+    func timelineItemCodableRoundTrip() throws {
+        let item = GitHubNotificationIssueTimelineItem.comment(
+            GitHubNotificationComment(
+                id: 7,
+                login: "octocat",
+                body: "hello",
+                htmlURL: nil,
+                createdAt: "2026-08-19T00:00:00Z"
+            )
+        )
+        let data = try JSONEncoder().encode(item)
+        let decoded = try JSONDecoder().decode(GitHubNotificationIssueTimelineItem.self, from: data)
+        #expect(decoded == item)
+    }
+
     @Test("commit 只显示短 SHA")
     func shortSHAUsesFirstSeven() {
         #expect(

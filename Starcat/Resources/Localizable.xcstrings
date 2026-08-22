@@ -81405,6 +81405,52 @@
         }
       }
     },
+    "cache.issueTimeline.error.applicationSupportUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not locate the Issue event cache directory. Please retry or restart the app."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法定位 Issue 事件流缓存目录，请重试或重启应用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法定位 Issue 事件流快取目錄，請重試或重新啟動應用程式。"
+          }
+        }
+      }
+    },
+    "cache.issueTimeline.error.unsafePathComponentFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Issue event cache path segment contains invalid characters: %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Issue 事件流缓存路径包含非法字符：%@。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Issue 事件流快取路徑包含無效字元：%@。"
+          }
+        }
+      }
+    },
     "cache.readmeTranslation.error.applicationSupportUnavailable" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -379330,6 +379376,52 @@
         }
       }
     },
+    "settings.storage.clearIssueTimeline.confirm" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear Issue event cache?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除 Issue 事件流缓存？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除 Issue 事件流快取？"
+          }
+        }
+      }
+    },
+    "settings.storage.clearIssueTimeline.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The next time you open that Issue, Starcat will fetch comments and events from GitHub again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下次打开对应 Issue 时会重新向 GitHub 拉取评论和事件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下次打開對應 Issue 時會重新向 GitHub 拉取評論和事件。"
+          }
+        }
+      }
+    },
     "settings.storage.clearRAGHistory.confirm" : {
       "localizations" : {
         "ar" : {
@@ -381582,6 +381674,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "图片"
+          }
+        }
+      }
+    },
+    "settings.storage.issueTimeline" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Issue event cache"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Issue 事件流缓存"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Issue 事件流快取"
+          }
+        }
+      }
+    },
+    "settings.storage.issueTimeline.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Issue comments and events from notification details. Still available locally after you quit the app."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通知详情里的 Issue 评论和事件。关掉 App 后仍可先读本地。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通知詳情裡的 Issue 評論和事件。關掉 App 後仍可先讀本地。"
           }
         }
       }

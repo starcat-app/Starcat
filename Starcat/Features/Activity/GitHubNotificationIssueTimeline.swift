@@ -12,9 +12,42 @@
 import Foundation
 
 /// Timeline 一行：评论卡或一条系统事件。
-enum GitHubNotificationIssueTimelineItem: Equatable, Sendable, Identifiable {
+enum GitHubNotificationIssueTimelineItem: Equatable, Sendable, Identifiable, Codable {
     case comment(GitHubNotificationComment)
     case event(GitHubNotificationIssueTimelineEvent)
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case comment
+        case event
+    }
+
+    private enum ItemType: String, Codable {
+        case comment
+        case event
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(ItemType.self, forKey: .type) {
+        case .comment:
+            self = .comment(try container.decode(GitHubNotificationComment.self, forKey: .comment))
+        case .event:
+            self = .event(try container.decode(GitHubNotificationIssueTimelineEvent.self, forKey: .event))
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .comment(let comment):
+            try container.encode(ItemType.comment, forKey: .type)
+            try container.encode(comment, forKey: .comment)
+        case .event(let event):
+            try container.encode(ItemType.event, forKey: .type)
+            try container.encode(event, forKey: .event)
+        }
+    }
 
     var id: String {
         switch self {
@@ -27,8 +60,8 @@ enum GitHubNotificationIssueTimelineItem: Equatable, Sendable, Identifiable {
 }
 
 /// 一条 GitHub 系统事件。字段按 kind 选用，其余为 nil。
-struct GitHubNotificationIssueTimelineEvent: Equatable, Sendable, Identifiable {
-    enum Kind: String, Equatable, Sendable {
+struct GitHubNotificationIssueTimelineEvent: Equatable, Sendable, Identifiable, Codable {
+    enum Kind: String, Equatable, Sendable, Codable {
         case labeled
         case unlabeled
         case closed
