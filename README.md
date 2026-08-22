@@ -2,14 +2,14 @@
 <a href="https://starcat.ink"><img src="./banner.webp" width="100%" alt="Starcat" align="center"/></a>
 
 <h2>Starcat</h2>
-<p>GitHub Stars management, local RAG knowledge base, Agent workspace, My Projects, library and repository insights, macOS desktop widgets, AI summaries, semantic search, release tracking, browser plugins, Alfred / uTools / Raycast, and more.</p>
+<p>GitHub Stars management, local RAG knowledge base, Agent workspace, GitHub notifications, My Projects, library and repository insights, macOS desktop widgets, AI summaries, semantic search, release tracking, browser plugins, Alfred / uTools / Raycast, and more.</p>
 
 <a href="https://github.com/starcat-app/homebrew-starcat"><img src="https://img.shields.io/badge/Install%20with-Homebrew-FBBF24?style=for-the-badge&logo=homebrew&logoColor=white" width="220" alt="Install with Homebrew"/></a>
 <br/>
 <a href="https://apps.apple.com/app/starcat-for-github/id6788809803?mt=12"><img src="./screenshots/mac-app-store-en.png" alt="Download on the Mac App Store" height="40"/></a>
 <br/>
 <sub>
-<b>macOS 15 Sequoia or newer</b>: Install with <a href="https://github.com/starcat-app/homebrew-starcat">Homebrew</a>, download the <a href="https://starcat.ink/downloads/Starcat-1.3.0-arm64.dmg">current Direct build (1.3.0)</a> for Apple Silicon Macs, or get <b><a href="https://apps.apple.com/app/starcat-for-github/id6788809803?mt=12">Starcat for GitHub</a></b> from the Mac App Store.<br>
+<b>macOS 15 Sequoia or newer</b>: Install with <a href="https://github.com/starcat-app/homebrew-starcat">Homebrew</a>, download the <a href="https://starcat.ink/downloads/Starcat-1.4.0-arm64.dmg">current Direct build (1.4.0)</a> for Apple Silicon Macs, or get <b><a href="https://apps.apple.com/app/starcat-for-github/id6788809803?mt=12">Starcat for GitHub</a></b> from the Mac App Store.<br>
 Previous versions and release notes: <a href="./CHANGELOG.md">Changelog</a> · <a href="https://starcat.ink/changelog.html">Website changelog</a><br>
 Public issue tracker: <a href="https://github.com/starcat-app/starcat-pro/issues">Report a bug or request a feature</a><br>
 User docs: <a href="https://starcat.mintlify.app/">starcat.mintlify.app</a> · Mac App Store: <a href="https://dong4j.app/starcat/">dong4j.app/starcat</a> · Privacy: <a href="https://starcat.ink/privacy.html">Privacy Policy</a> · <a href="https://starcat.ink/eula.html">EULA</a><br>
@@ -22,7 +22,7 @@ User docs: <a href="https://starcat.mintlify.app/">starcat.mintlify.app</a> · M
 <div align="center">
 <a href="https://starcat.ink"><img src="https://img.shields.io/badge/website-starcat.ink-38BDF8?style=flat&color=blue" alt="website"/></a>
 <a href="https://dong4j.app/starcat/"><img src="https://img.shields.io/badge/Mac%20App%20Store-dong4j.app-lightgrey.svg?style=flat&color=blue" alt="Mac App Store"/></a>
-<a href="https://starcat.ink/downloads/Starcat-1.3.0-arm64.dmg"><img src="https://img.shields.io/badge/platform-macOS%2015%2B-lightgrey.svg?style=flat&color=blue" alt="platform"/></a>
+<a href="https://starcat.ink/downloads/Starcat-1.4.0-arm64.dmg"><img src="https://img.shields.io/badge/platform-macOS%2015%2B-lightgrey.svg?style=flat&color=blue" alt="platform"/></a>
 <a href="https://github.com/starcat-app/starcat-localization"><img src="https://img.shields.io/badge/localization-open-lightgrey.svg?style=flat&color=blue" alt="localization"/></a>
 <a href="https://github.com/starcat-app/starcat-pro/issues"><img src="https://img.shields.io/github/issues/starcat-app/starcat-pro?style=flat&color=blue" alt="issues"/></a>
 <a href="https://github.com/starcat-app"><img src="https://img.shields.io/badge/org-starcat--app-lightgrey.svg?style=flat&color=blue" alt="organization"/></a>
@@ -46,7 +46,7 @@ Starcat started as a paid product. Almost nobody bought it. Managing GitHub Star
 <img width="900" src="./main.webp" alt="Starcat main window"/>
 </div>
 
-The current public version is **Starcat 1.3.0**.
+The current public version is **Starcat 1.4.0**.
 
 ## Official builds and source
 
@@ -80,6 +80,12 @@ Sign in with GitHub OAuth, sync starred repos incrementally, and keep the cache 
 - Semantic search by intent, not only exact keywords
 - README rendering with images, Mermaid, and a reading surface
 - JSON import and export compatible with OhMyStar and Astral
+
+### Activity and GitHub notifications
+
+Activity is the in-app inbox for GitHub mentions, review requests, assignments, discussions, releases, and security alerts. Filter by Unread, Mentions, Reviews, Issues, and PRs; group by Today, Yesterday, This week, and Earlier.
+
+Open a notification to read the Issue or PR thread, write or preview a reply, generate an AI draft, and translate comments. Done matches GitHub Inbox Done and does not close the issue. Starcat can also post reminders in Notification Center.
 
 ### Knowledge base
 

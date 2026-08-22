@@ -2,6 +2,12 @@
 
 Release notes for the Mac App Store edition of Starcat.
 
+## 1.5.0-待发布
+
+### New
+
+- README video playback: Play supported GitHub README videos inline with native controls; playback requires an explicit action and stops when switching repositories or closing the detail view. Unsupported sources continue to open in the browser.
+
 ## 1.4.0
 
 Starcat 1.4.0 brings GitHub Notifications into Activity so you can handle mentions, review requests, and Issue / PR threads without leaving the app, while continuing to refine knowledge-base indexing and Explore.

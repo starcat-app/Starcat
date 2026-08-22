@@ -2,14 +2,14 @@
 <a href="https://starcat.ink"><img src="./banner.webp" width="100%" alt="Starcat" align="center"/></a>
 
 <h2>Starcat</h2>
-<p>GitHub Stars 管理、本地知识库 RAG、Agent 工作台、我的项目、全局与仓库洞察、macOS 桌面小组件、AI 摘要与语义搜索、Release 追踪、Browser Plugin、Alfred / uTools / Raycast 等能力。</p>
+<p>GitHub Stars 管理、本地知识库 RAG、Agent 工作台、GitHub 通知、我的项目、全局与仓库洞察、macOS 桌面小组件、AI 摘要与语义搜索、Release 追踪、Browser Plugin、Alfred / uTools / Raycast 等能力。</p>
 
 <a href="https://github.com/starcat-app/homebrew-starcat"><img src="https://img.shields.io/badge/Install%20with-Homebrew-FBBF24?style=for-the-badge&logo=homebrew&logoColor=white" width="220" alt="Install with Homebrew"/></a>
 <br/>
 <a href="https://apps.apple.com/cn/app/starcat-for-github/id6788809803?mt=12"><img src="./screenshots/mac-app-store-zh.png" alt="在 Mac App Store 下载" height="40"/></a>
 <br/>
 <sub>
-<b>macOS 15 Sequoia 或更高版本</b>：优先使用 <a href="https://github.com/starcat-app/homebrew-starcat">Homebrew</a> 安装，也可以下载面向 Apple Silicon Mac 的 <a href="https://starcat.ink/downloads/Starcat-1.3.0-arm64.dmg">当前 Direct 版本（1.3.0）</a>，或在 Mac App Store 获取 <b><a href="https://apps.apple.com/cn/app/starcat-for-github/id6788809803?mt=12">Starcat for GitHub</a></b>。<br>
+<b>macOS 15 Sequoia 或更高版本</b>：优先使用 <a href="https://github.com/starcat-app/homebrew-starcat">Homebrew</a> 安装，也可以下载面向 Apple Silicon Mac 的 <a href="https://starcat.ink/downloads/Starcat-1.4.0-arm64.dmg">当前 Direct 版本（1.4.0）</a>，或在 Mac App Store 获取 <b><a href="https://apps.apple.com/cn/app/starcat-for-github/id6788809803?mt=12">Starcat for GitHub</a></b>。<br>
 历史版本与发布说明：<a href="./CHANGELOG-ZH.md">更新日志</a> · <a href="https://starcat.ink/changelog-zh.html">官网更新记录</a><br>
 公开问题反馈：<a href="https://github.com/starcat-app/starcat-pro/issues">反馈 bug 或提出功能建议</a><br>
 用户文档：<a href="https://starcat.mintlify.app/">starcat.mintlify.app</a> · Mac App Store：<a href="https://dong4j.app/starcat/">dong4j.app/starcat</a> · 隐私：<a href="https://starcat.ink/privacy-zh.html">隐私政策</a> · <a href="https://starcat.ink/eula-zh.html">用户协议</a><br>
@@ -22,7 +22,7 @@ English: <a href="./README.md">README.md</a>
 <div align="center">
 <a href="https://starcat.ink"><img src="https://img.shields.io/badge/website-starcat.ink-38BDF8?style=flat&color=blue" alt="website"/></a>
 <a href="https://dong4j.app/starcat/"><img src="https://img.shields.io/badge/Mac%20App%20Store-dong4j.app-lightgrey.svg?style=flat&color=blue" alt="Mac App Store"/></a>
-<a href="https://starcat.ink/downloads/Starcat-1.3.0-arm64.dmg"><img src="https://img.shields.io/badge/platform-macOS%2015%2B-lightgrey.svg?style=flat&color=blue" alt="platform"/></a>
+<a href="https://starcat.ink/downloads/Starcat-1.4.0-arm64.dmg"><img src="https://img.shields.io/badge/platform-macOS%2015%2B-lightgrey.svg?style=flat&color=blue" alt="platform"/></a>
 <a href="https://github.com/starcat-app/starcat-localization"><img src="https://img.shields.io/badge/localization-open-lightgrey.svg?style=flat&color=blue" alt="localization"/></a>
 <a href="https://github.com/starcat-app/starcat-pro/issues"><img src="https://img.shields.io/github/issues/starcat-app/starcat-pro?style=flat&color=blue" alt="issues"/></a>
 <a href="https://github.com/starcat-app"><img src="https://img.shields.io/badge/org-starcat--app-lightgrey.svg?style=flat&color=blue" alt="organization"/></a>
@@ -46,7 +46,7 @@ Starcat 一开始是按收费产品来做的，上线后几乎没人买。把 Gi
 <img width="900" src="./main.webp" alt="Starcat 主窗口"/>
 </div>
 
-当前公开版本为 **Starcat 1.3.0**。
+当前公开版本为 **Starcat 1.4.0**。
 
 ## 官方包和自己编译
 
@@ -80,6 +80,12 @@ brew install --cask starcat
 - 语义搜索：按意图找仓库，不只靠关键词
 - README 渲染，含图片、Mermaid、专注阅读
 - JSON 导入导出，兼容 OhMyStar / Astral
+
+### 活动与 GitHub 通知
+
+活动页是应用内收件箱，用来处理被 @、评审请求、指派、讨论、Release 和安全公告。可按未读、提及、评审、Issue、PR 筛选，并按今天、昨天、本周和更早分组。
+
+打开通知后可以阅读 Issue / PR 会话、撰写或预览回复、用 AI 起草评论，以及翻译评论。完成等同 GitHub Inbox 的 Done，不会关闭 Issue。也可以在系统通知中心收到提醒。
 
 ### 知识库
 

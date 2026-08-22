@@ -15,7 +15,7 @@ body:
     attributes:
       label: Starcat version or commit
       description: Use the app version for a release build or a full commit SHA for a source build.
-      placeholder: 1.3.0, or a git commit SHA
+      placeholder: 1.4.0, or a git commit SHA
     validations:
       required: true
 
