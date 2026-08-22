@@ -1331,6 +1331,88 @@ struct GitHubNotificationInboxTests {
         #expect(env.inbox.resolvedIssueState(threadId: "already-known", persisted: "open") == "open")
     }
 
+    @Test("缺失 issue_state 同一会话只补一轮，再切打开/关闭不再打网")
+    func missingIssueStateBackfillRunsOncePerSession() async throws {
+        let env = try makeEnv()
+        env.inbox.listSegment = .open
+        var hydrateCalls = 0
+        env.mock.hydrateNotificationSubjectHandler = { _ in
+            hydrateCalls += 1
+            return GitHubNotificationSubjectHydration(
+                htmlURL: "https://github.com/o/r/issues/1",
+                actorLogin: "alice",
+                excerpt: "body",
+                createdAt: "2026-07-19T00:00:00Z",
+                state: "open"
+            )
+        }
+        let fetchedAt = "2026-08-19T00:00:00Z"
+        try await env.threads.upsertMany([
+            GitHubNotificationMapper.record(
+                from: Self.makeDTO(id: "missing-a", reason: "comment", updatedAt: "2026-08-19T02:00:00Z"),
+                fetchedAt: fetchedAt,
+                firstSeenAt: fetchedAt
+            ),
+            GitHubNotificationMapper.record(
+                from: Self.makeDTO(id: "missing-b", reason: "comment", updatedAt: "2026-08-19T01:00:00Z"),
+                fetchedAt: fetchedAt,
+                firstSeenAt: fetchedAt
+            )
+        ])
+
+        await env.inbox.startMissingIssueStateBackfillIfNeeded()
+        #expect(hydrateCalls == 2)
+        #expect(try await env.threads.fetch(id: "missing-a")?.issueState == "open")
+        #expect(try await env.threads.fetch(id: "missing-b")?.issueState == "open")
+
+        env.inbox.listSegment = .closed
+        await env.inbox.startMissingIssueStateBackfillIfNeeded()
+        #expect(hydrateCalls == 2)
+
+        try await env.threads.upsertMany([
+            GitHubNotificationMapper.record(
+                from: Self.makeDTO(id: "missing-c", reason: "comment", updatedAt: "2026-08-19T03:00:00Z"),
+                fetchedAt: fetchedAt,
+                firstSeenAt: fetchedAt
+            )
+        ])
+        env.inbox.listSegment = .merged
+        await env.inbox.startMissingIssueStateBackfillIfNeeded()
+        #expect(hydrateCalls == 2)
+        #expect(try await env.threads.fetch(id: "missing-c")?.issueState == nil)
+    }
+
+    @Test("还没有缺失状态时不锁定本轮补齐，等同步落库后再补")
+    func missingIssueStateBackfillDoesNotLatchWhenEmpty() async throws {
+        let env = try makeEnv()
+        env.inbox.listSegment = .open
+        var hydrateCalls = 0
+        env.mock.hydrateNotificationSubjectHandler = { _ in
+            hydrateCalls += 1
+            return GitHubNotificationSubjectHydration(
+                htmlURL: "https://github.com/o/r/issues/1",
+                actorLogin: "alice",
+                excerpt: "body",
+                createdAt: "2026-07-19T00:00:00Z",
+                state: "closed"
+            )
+        }
+        await env.inbox.startMissingIssueStateBackfillIfNeeded()
+        #expect(hydrateCalls == 0)
+
+        let fetchedAt = "2026-08-19T00:00:00Z"
+        try await env.threads.upsertMany([
+            GitHubNotificationMapper.record(
+                from: Self.makeDTO(id: "after-sync", reason: "comment"),
+                fetchedAt: fetchedAt,
+                firstSeenAt: fetchedAt
+            )
+        ])
+        await env.inbox.startMissingIssueStateBackfillIfNeeded()
+        #expect(hydrateCalls == 1)
+        #expect(try await env.threads.fetch(id: "after-sync")?.issueState == "closed")
+    }
+
     @Test("已 hydrate 的 thread 打开详情仍会 GET state；closed 不当成可关闭")
     func refreshIssueStateAfterHydrateCache() async throws {
         let env = try makeEnv()

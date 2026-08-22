@@ -535,6 +535,11 @@ enum GitHubNotificationMapper {
     static let demoThreadIDPrefix = "starcat-demo-"
     /// 通知时间线每页条数。两表 UNION 游标翻页，对齐 Manage 列表。
     static let timelinePageSize = 40
+    /// 切打开 / 关闭 / 已合并时，同一会话最多补这么多条缺失 `issue_state`。
+    /// GitHub 通知列表不带状态；补齐要打 subject GET，必须限次以免烧额度。
+    static let issueStateBackfillLimit = 20
+    /// 后台补状态并发。太大容易打满 secondary rate limit，太小又回到串行干等。
+    static let issueStateBackfillConcurrency = 4
 
     static func isDemoThread(_ id: String) -> Bool {
         id.hasPrefix(demoThreadIDPrefix)

@@ -65,6 +65,10 @@ struct GitHubNotificationDetailView: View {
 
     private func populatedDetail(_ item: ActivityItem) -> some View {
         VStack(spacing: 0) {
+            // 仓库名在上，Issue / PR 元数据和操作在下，先看属于哪个仓再看这条会话。
+            if let payload = item.notification {
+                headerRepoRow(payload)
+            }
             headerToolbar(item)
             if let doneError, !doneError.isEmpty {
                 Text(verbatim: doneError)
@@ -81,7 +85,6 @@ struct GitHubNotificationDetailView: View {
                     // 反复执行 LazySubviewPlacements，导致主线程陷入 SwiftUI 布局风暴。
                     VStack(alignment: .leading, spacing: 12) {
                         if let payload = item.notification {
-                            repoRow(payload)
                             conversation(payload, translation: translationVM)
                         }
                     }
@@ -109,7 +112,7 @@ struct GitHubNotificationDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // 语言色光晕挂在会话详情根上，和账本 / Manage 详情同一套；工具行走透明才能透出来。
         .detailHeroTintBackground(tint: item.accentColor)
-        // 标题进系统导航栏，和中栏「活动 > 通知 / 46 条通知」同一层；下面只留一行工具条。
+        // 标题进系统导航栏，和中栏「活动 > 通知 / 46 条通知」同一层；下面是仓库名 + 会话工具条。
         .navigationTitle(item.title)
         .navigationSubtitle(navigationSubtitle(item))
         .onChange(of: item.notification?.threadId) { _, _ in
@@ -184,7 +187,7 @@ struct GitHubNotificationDetailView: View {
         aiErrorToast = message
     }
 
-    /// 与中栏分段条同高：chip + 可点 `Issue #20` 在左，入口 / 上下条在右。
+    /// 第二行：chip + 可点 `Issue #20` 在左，入口 / 上下条在右。
     /// 高度走 `manageListFilterBarChrome()`，不要只靠相同 padding——Picker 比 chip 高。
     /// 关掉详情靠中栏改选或清空选择，不再单独放关闭钮。
     private func headerToolbar(_ item: ActivityItem) -> some View {
@@ -310,6 +313,14 @@ struct GitHubNotificationDetailView: View {
 
     private func navigationSubtitle(_ item: ActivityItem) -> String {
         item.notification?.repositoryFullName ?? heading(item)
+    }
+
+    private func headerRepoRow(_ payload: ActivityNotificationPayload) -> some View {
+        repoRow(payload)
+            .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
+            .padding(.top, ManageListFilterBarMetrics.topPadding)
+            .padding(.bottom, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func repoRow(_ payload: ActivityNotificationPayload) -> some View {

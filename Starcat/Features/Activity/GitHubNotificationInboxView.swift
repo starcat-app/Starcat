@@ -100,12 +100,7 @@ struct GitHubNotificationInboxView: View {
             GitHubNotificationSegmentMenu(selection: $segment, locale: locale)
                 .onChange(of: segment) { _, newValue in
                     inbox.listSegment = newValue
-                    Task {
-                        if newValue.issueStateFilter != nil {
-                            await inbox.backfillMissingIssueStates()
-                        }
-                        await reloadFirstPage()
-                    }
+                    Task { await reloadFirstPage() }
                 }
 
             Spacer(minLength: 8)
@@ -329,6 +324,10 @@ struct GitHubNotificationInboxView: View {
         cursor = page.rows.last?.cursor
         lastFetchedAt = fetchedAt
         Task { await inbox.prefetchMissingIssueStates(from: page.rows) }
+        // 状态筛选必须先出本地结果。补缺放到后台，且同一会话只启动一轮。
+        if inbox.listSegment.issueStateFilter != nil {
+            Task { await inbox.startMissingIssueStateBackfillIfNeeded() }
+        }
         if inbox.pendingOpenThreadId != nil {
             consumePendingOpenIfNeeded()
             return

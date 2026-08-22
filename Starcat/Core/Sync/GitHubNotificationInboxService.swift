@@ -67,6 +67,9 @@ final class GitHubNotificationInboxService {
     private var issueStates: [String: String] = [:]
     /// 同一 thread 并发刷新状态时共用一次 GET，避免选中 hydrate 和评论框各打一遍。
     private var issueStateRefreshTasks: [String: Task<Void, Never>] = [:]
+    /// 同一会话只主动补一轮缺失 `issue_state`。来回切打开 / 关闭 / 已合并不再打网。
+    /// 本轮还没找到缺失行时不置位，避免首次同步完成前误锁死。
+    private var didStartMissingIssueStateBackfill = false
     /// 正在 Done 的 id。取消 dwell 时不要把蓝点闪回来，这条马上要从表里删掉。
     private var completingIDs: Set<String> = []
 
@@ -311,11 +314,45 @@ final class GitHubNotificationInboxService {
         }
     }
 
-    /// 切到打开 / 关闭 / 已合并前补一批缺失状态，否则筛选会把还没 hydrate 的行全挡掉。
-    func backfillMissingIssueStates(limit: Int = 20) async {
+    /// 后台补一批缺失 `issue_state`。同一会话只跑一轮，且不挡住本地筛选。
+    ///
+    /// 为什么不每次切档都补：打开 / 关闭 / 已合并会连点，重复 GET 同一批 subject
+    /// 既慢又烧 GitHub 额度。第一轮没找到缺失行时不锁定，等同步落库后再补。
+    func startMissingIssueStateBackfillIfNeeded(
+        limit: Int = GitHubNotificationMapper.issueStateBackfillLimit
+    ) async {
+        guard !didStartMissingIssueStateBackfill else { return }
         let ids = (try? await threadRepository.fetchIDsMissingIssueState(limit: limit)) ?? []
-        for id in ids {
-            await refreshIssueState(threadId: id)
+        guard !ids.isEmpty else { return }
+        didStartMissingIssueStateBackfill = true
+        await backfillMissingIssueStates(ids: ids)
+    }
+
+    func backfillMissingIssueStates(
+        limit: Int = GitHubNotificationMapper.issueStateBackfillLimit
+    ) async {
+        let ids = (try? await threadRepository.fetchIDsMissingIssueState(limit: limit)) ?? []
+        await backfillMissingIssueStates(ids: ids)
+    }
+
+    private func backfillMissingIssueStates(ids: [String]) async {
+        guard !ids.isEmpty else { return }
+        let concurrency = max(1, GitHubNotificationMapper.issueStateBackfillConcurrency)
+        var offset = 0
+        while offset < ids.count {
+            let end = min(offset + concurrency, ids.count)
+            let chunk = Array(ids[offset..<end])
+            await withTaskGroup(of: Void.self) { group in
+                for id in chunk {
+                    group.addTask { await self.refreshIssueState(threadId: id) }
+                }
+            }
+            offset = end
+            // 只有当前就在状态筛选项时才刷新列表。人在「全部」时补状态只改徽章，
+            // 不必整表重载。
+            if listSegment.issueStateFilter != nil {
+                postDidChange()
+            }
         }
     }
 
