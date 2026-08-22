@@ -1,0 +1,325 @@
+# Starcat 推荐、数据贡献与 Star History 文档导航
+
+> 日期: 2026-08-22
+> 状态: 当前需求统一入口
+> 适用范围: Starcat macOS 客户端、推荐训练服务、推荐查询服务、Star History 服务
+> 用途: 为后续开发者和 AI Agent 提供文档优先级、阅读顺序、代码入口与实施边界
+
+## 1. 当前结论
+
+这组需求包含三条关联但职责独立的链路：
+
+1. **Starcat 数据贡献**：用户主动开启后，客户端贡献匿名公开 Star 全量快照和公开 repo 日级 Star 数观测。
+2. **自研仓库推荐**：训练服务基于 Starcat opt-in 数据、GH Archive 和公开 repo metadata 生成推荐产物，在线 API 只读 Serving DB。
+3. **自研 Star History**：独立服务聚合公开 repo 日级快照，并使用 GH Archive 补充估算历史。
+
+当前线上推荐仍由 `starcat-recommend-api` 中转已获作者授权的 SimRepo 接口；当前普通公开仓库 Star History 仍由 `starcat-discovery-api` 提供。两者都是已经使用的过渡实现，不是应立即删除的无效代码。
+
+目标后端拆分为：
+
+```text
+supports/starcat-recsys-trainer   数据接收、数据集、训练、评估、模型发布
+supports/starcat-recsys-api       在线推荐查询，只读已发布 Serving 数据
+supports/starcat-history-api      Star 数观测接收、聚合、历史构建和公共查询
+```
+
+自研服务达到质量、稳定性和迁移门槛后，删除 SimRepo Provider、旧 `starcat-recommend-api` 和 Discovery Star History 路径，不保留永久双轨。
+
+## 2. 当前状态与目标架构
+
+```mermaid
+flowchart TB
+    subgraph Current[当前已实现]
+        A[Starcat 推荐 UI] --> B[starcat-recommend-api]
+        B --> C[SimRepo]
+        D[Starcat Star History UI] --> E[本地快照]
+        D --> F[starcat-discovery-api]
+        F --> G[GH Archive / BigQuery Provider]
+    end
+
+    subgraph Target[目标架构]
+        H[Starcat opt-in 数据贡献] --> I[starcat-recsys-trainer]
+        J[GH Archive + GitHub 公开 metadata] --> I
+        I --> K[(Recommendation Serving DB)]
+        K --> L[starcat-recsys-api]
+        L --> A
+
+        H --> M[starcat-history-api]
+        J --> M
+        M --> N[(History Serving DB)]
+        N --> D
+    end
+```
+
+说明：
+
+- 当前推荐链路已落地，SimRepo 作者授权已经取得。
+- Discovery Star History 路径当前客户端已经使用，生产 GH Archive Provider 仍受真实数据和预算验证门禁。
+- 目标服务目前只有设计文档，尚未创建仓库、数据库或生产部署。
+- 数据贡献开关尚未实现；后端 ingest、status 和 delete 完成前不得先开放客户端开关。
+
+## 3. 文档优先级
+
+后续开发出现文档冲突时，按以下顺序判断：
+
+1. **已发布事实和项目硬性规范**：`AGENTS.md`、开发前问题清单、当前代码、数据库 migration。
+2. **2026-08-22 权威详细设计**：60、61、62。
+3. **当前实现基线**：相似仓库推荐正式方案、50-Star History 整体方案。
+4. **本目录调研与早期草案**：16～21，用于理解背景和备选方案，不能覆盖新设计。
+5. **功能实现总览**：只用于确认项目进度；没有 dong4j 单独授权时禁止修改。
+
+权威性不是“编号越大越正确”。例如 50 记录当前 Discovery 实现事实，62 记录未来迁移目标，两者分别回答“现在是什么”和“后面怎么改”，不能互相替代。
+
+## 4. 本目录文档
+
+| 编号 | 文档 | 当前定位 | 后续开发什么时候读 |
+|---|---|---|---|
+| 16 | [SimRepo 接入与自研方案](16-仓库推荐算法-SimRepo接入与自研方案.md) | SimRepo 接入历史、接口形态、v1/v2 算法复核和自研背景 | 排查现有 SimRepo Provider、理解外部基线时 |
+| 17 | [Meilisearch 调研与本地集成方案](17-Meilisearch-调研与本地集成方案.md) | 全文检索基础设施调研，不是推荐模型权威方案 | 推荐需要关键词召回或检索服务复用时 |
+| 18 | [Qdrant 语义搜索迁移方案](18-Qdrant-语义搜索迁移方案.md) | 向量 Serving 的历史技术选型，不代表生产推荐必须使用 Qdrant | 评估向量数据库和迁移成本时 |
+| 19 | [内容向量、行为训练与数据获取](19-推荐训练-内容向量vs行为训练与用户行为采集.md) | 内容/行为信号基础解释；广义行为采集部分属于历史候选 | 设计训练数据和理解为何需要训练时 |
+| 20 | [Repo Research Agent 设计方案](20-Repo-Research-Agent-设计方案.md) | 推荐系统的上层消费场景之一 | 把推荐候选接入项目调研 Agent 时 |
+| 21 | [自研相似仓库推荐算法草案](21-自研相似仓库推荐算法-设计方案.md) | 早期多路召回总体草案，固定权重和服务边界已被 61 修订 | 回顾备选算法、表结构和演进背景时 |
+
+### 4.1 不能直接照搬的历史内容
+
+- 16 中“SimRepo 统一使用 repo embedding”的描述只适用于早期理解；当前公开说明已区分 SVD v1 和时间衰减 shared-stargazer v2。
+- 19 中点击、浏览、AI 分析、标签、笔记和加入对比等行为不是当前获准上传字段。
+- 21 中固定全局融合权重只作为 baseline；生产方案使用分数校准、行为置信度动态融合和 MMR。
+- 17/18 是搜索与向量基础设施调研，不构成必须采用 Meilisearch 或 Qdrant 的决策。
+
+## 5. 跨目录权威文档
+
+| 文档 | 作用 | 权威范围 |
+|---|---|---|
+| [相似仓库推荐实施方案](../正式方案/相似仓库推荐实施方案.md) | 记录当前客户端与 `starcat-recommend-api` 已落地契约 | 当前推荐实现、SimRepo 适配和客户端兼容边界 |
+| [50-仓库星标历史整体落地方案](../../../3-设计/详细设计/50-仓库星标历史整体落地方案.md) | 记录本地快照、Discovery API、UI 和 v16 已实现事实 | 当前 Star History 行为和现有验收边界 |
+| [60-Starcat 数据贡献与数据平台详细设计](../../../3-设计/详细设计/60-Starcat数据贡献与数据平台详细设计.md) | 定义两个 opt-in、DTO、匿名身份、outbox、幂等、删除和隐私 | 客户端贡献与后端 ingest 契约 |
+| [61-Starcat 自研仓库推荐系统详细设计](../../../3-设计/详细设计/61-Starcat自研仓库推荐系统详细设计.md) | 定义数据源、算法、Trainer、Serving DB、API、评估和迁移 | 自研推荐实现的单一权威方案 |
+| [62-Starcat 自研星标历史服务详细设计](../../../3-设计/详细设计/62-Starcat自研星标历史服务详细设计.md) | 定义群体快照、GH Archive 估算、History API、删除重算和 Discovery 迁移 | 自研 Star History 的单一权威方案 |
+| [57-Agent 工作台与统一能力层详细设计](../../../3-设计/详细设计/57-Agent工作台与统一能力层详细设计.md) | 定义当前 Agent Run Surface 和统一能力边界 | 推荐结果进入 Agent 工作台时的 UI/Runtime 约束 |
+| [开发前问题清单](../../../1-立项/开发前问题清单.md) | 记录 5.18 决策及隐私、服务和迁移边界 | 架构决策基线 |
+| [功能实现总览](../../../功能实现总览.md) | 活文档主进度索引 | 只读核对；修改需要 dong4j 单独授权 |
+
+## 6. 上游项目与算法参考
+
+| 项目 | 可借鉴内容 | 不能假设的内容 |
+|---|---|---|
+| [SimRepo](https://github.com/Mubelotix/simrepo) | v1 SVD、v2 时间衰减 shared-stargazer、单仓/多仓推荐产品形态 | 公开仓库没有 v2 完整训练流水线，不能自行补写精确公式 |
+| [GitHub Repo Embeddings](https://github.com/Puzer/github-repo-embeddings) | GH Archive WatchEvent、user-repo 集合、`EmbeddingBag(mean)`、128D repo embedding、`MultiSimilarityLoss` | README/Qwen 初始化和生产 Serving 没有完整公开实现 |
+| [GH Archive](https://www.gharchive.org/) | GitHub 公开事件和 BigQuery bootstrap 数据 | `WatchEvent` 没有完整 Unstar，不能生成事件级精确历史 |
+
+调研基线 commit：
+
+```text
+Puzer/github-repo-embeddings
+f6a2f836b63f1065b2a2efdee21e8485449923bc
+
+Mubelotix/simrepo
+07c6ef1dcfe2fd96cc050ef91529b7f180a55288
+```
+
+重新实施前应先核对上游最新 commit；算法事实发生变化时更新调研说明，但不能静默改变已经冻结的 Starcat API 和隐私契约。
+
+## 7. 当前代码入口
+
+### 7.1 推荐客户端
+
+| 入口 | 职责 |
+|---|---|
+| [RecommendAPI.swift](../../../../Starcat/Core/Network/RecommendAPI.swift) | 当前推荐网络请求 |
+| [RecommendModels.swift](../../../../Starcat/Core/Network/RecommendModels.swift) | 当前推荐 DTO |
+| [RecommendationContextService.swift](../../../../Starcat/Features/Recommendations/RecommendationContextService.swift) | 推荐结果与仓库上下文协调 |
+| [RepoRecommendationViewModel.swift](../../../../Starcat/Features/Recommendations/RepoRecommendationViewModel.swift) | 推荐加载、分页和状态 |
+| [RepoRecommendationPopover.swift](../../../../Starcat/Features/Recommendations/RepoRecommendationPopover.swift) | 推荐结果 UI |
+| [DiskRecommendationCache.swift](../../../../Starcat/Shared/Services/DiskRecommendationCache.swift) | 推荐本地缓存 |
+
+### 7.2 当前推荐后端
+
+| 入口 | 职责 |
+|---|---|
+| [starcat-recommend-api README](../../../../supports/starcat-recommend-api/README.md) | 当前服务说明、配置和运行方式 |
+| [recommend.go](../../../../supports/starcat-recommend-api/internal/handler/recommend.go) | 推荐 HTTP handler |
+| [simrepo.go](../../../../supports/starcat-recommend-api/internal/provider/simrepo.go) | SimRepo Provider |
+| [cache.go](../../../../supports/starcat-recommend-api/internal/provider/cache.go) | 当前服务端推荐缓存 |
+
+### 7.3 Star History 客户端
+
+| 入口 | 职责 |
+|---|---|
+| [StarHistoryAPI.swift](../../../../Starcat/Core/Network/StarHistoryAPI.swift) | 当前远端历史 API |
+| [RepoStarHistoryRepository.swift](../../../../Starcat/Core/Insights/RepoStarHistoryRepository.swift) | local-first 读取、合并和快照写入 |
+| [RepoStarHistoryPointRecord.swift](../../../../Starcat/Core/Database/Models/RepoStarHistoryPointRecord.swift) | 本地历史点持久化模型 |
+| [StarHistoryViewModel.swift](../../../../Starcat/Features/Insights/StarHistoryViewModel.swift) | 范围、轮询、取消和 UI 状态 |
+
+### 7.4 当前 Discovery History 后端
+
+| 入口 | 职责 |
+|---|---|
+| [star_history.go handler](../../../../supports/starcat-discovery-api/internal/handler/star_history.go) | 当前 Star History 查询和异步构建入口 |
+| [star_history.go store](../../../../supports/starcat-discovery-api/internal/store/star_history.go) | 当前缓存、历史点和构建状态存储 |
+| [star_history.go model](../../../../supports/starcat-discovery-api/internal/model/star_history.go) | 当前后端 DTO |
+
+### 7.5 数据贡献未来会复用的客户端基础
+
+| 入口 | 职责 |
+|---|---|
+| [Repo.swift](../../../../Starcat/Core/Database/Models/Repo.swift) | repo ID、公开性、Star 数和 metadata |
+| [StarredRepo.swift](../../../../Starcat/Core/Database/Models/StarredRepo.swift) | 当前账户与已 Star repo 的本地关系；真实 `userId` 禁止上传 |
+| [RepoRepository.swift](../../../../Starcat/Core/Sync/RepoRepository.swift) | repo、Star 关系和本地 Star History 快照写入入口 |
+| [DatabaseMigrationsV1.swift](../../../../Starcat/Core/Database/Migrations/DatabaseMigrationsV1.swift) | 当前 migration 注册事实；未来只能追加新 `registerVN` |
+| [TestEnvironment.swift](../../../../Starcat/Shared/Utilities/TestEnvironment.swift) | 测试 host 的 Keychain / 系统授权门控 |
+
+### 7.6 现有回归测试入口
+
+| 入口 | 覆盖范围 |
+|---|---|
+| [RecommendationCacheTests.swift](../../../../StarcatTests/RecommendationCacheTests.swift) | 推荐磁盘缓存 |
+| [StarHistoryAPITests.swift](../../../../StarcatTests/StarHistoryAPITests.swift) | History API 契约 |
+| [RepoStarHistoryRepositoryTests.swift](../../../../StarcatTests/RepoStarHistoryRepositoryTests.swift) | local-first 合并和快照存储 |
+| [StarHistoryViewModelTests.swift](../../../../StarcatTests/StarHistoryViewModelTests.swift) | 范围、轮询、取消和派生状态 |
+
+## 8. 按开发任务阅读
+
+### 8.1 修改现有推荐 UI 或 SimRepo 适配
+
+阅读顺序：
+
+```text
+相似仓库推荐实施方案
+    → 16-SimRepo 接入与自研方案
+    → RecommendAPI / RecommendModels / Recommendation ViewModel
+    → starcat-recommend-api handler/provider/tests
+```
+
+约束：保持 `/api/v1/repos/{repo_id}/recommendations` 资源语义；客户端不直连 SimRepo，不持有 SimRepo key。
+
+### 8.2 开发 Starcat 数据贡献
+
+阅读顺序：
+
+```text
+开发前问题清单 5.18
+    → 60-数据贡献与数据平台
+    → Repo / StarredRepo / RepoRepository / 本地 Star History Repository
+    → 数据库设计与现有 migration
+```
+
+实现前置条件：后端 participant 注册、ingest、status 和 delete 已可用。客户端开关默认关闭，推荐贡献和 History 贡献独立授权。
+
+### 8.3 开发推荐训练服务
+
+阅读顺序：
+
+```text
+61-自研仓库推荐系统
+    → 60-推荐快照 DTO 与删除边界
+    → 19-内容与行为训练基础
+    → Puzer / SimRepo 固定 commit
+```
+
+先实现可复现数据集和 A～G ablation，再决定生产存储。不能因为早期文档出现 Qdrant、ALS 或 LightFM 就直接绑定技术栈。
+
+### 8.4 开发在线推荐 API
+
+阅读顺序：
+
+```text
+61-在线 API、Serving、SLO、灰度
+    → 当前相似仓库推荐实施方案
+    → 当前 RecommendModels
+```
+
+在线 API 只读已发布模型和 Serving DB，不能读取匿名快照原始表，也不能在请求进程内训练。
+
+### 8.5 开发独立 Star History 服务
+
+阅读顺序：
+
+```text
+50-当前实现事实
+    → 62-目标 History 服务
+    → 60-History 观测 DTO 与删除
+    → 当前 StarHistoryAPI / Repository / Discovery handler/store
+```
+
+先兼容当前客户端资源和点级 `source/precision` 语义，再做 shadow、历史回填和灰度。稳定前不能删除 Discovery 路径。
+
+### 8.6 将推荐接入 Repo Research Agent
+
+阅读顺序：
+
+```text
+20-Repo Research Agent
+    → 61-多仓推荐 API 与可解释 reasons
+    → 57-Agent 工作台与统一能力层
+```
+
+Agent 只能消费推荐结果和公开 metadata，不能获得匿名参与者、共同 Stargazer 身份或原始训练数据。
+
+## 9. 实施硬约束
+
+### 9.1 数据与隐私
+
+- 两个贡献 Toggle 默认关闭，且与匿名遥测完全独立。
+- 只上传公开 repo ID、可空 `starred_at` 和日级 `stars_count`。
+- 不上传 GitHub user ID/login、Token、Private/Internal repo、标签、笔记、搜索、点击、README、代码、AI/RAG 内容。
+- 关闭 Toggle 只停止新贡献；删除历史贡献必须走独立删除流程。
+- 后端删除能力、删除重算和状态查询必须先于客户端开关上线。
+
+### 9.2 架构
+
+- 推荐 Trainer、推荐在线 API、Star History 是三个独立职责。
+- 可以共用统一域名或 gateway，不能重新塞进 Discovery 或旧 Recommend 服务。
+- 在线推荐 API 不读取匿名原始数据；History 查询 API 不读取参与者身份。
+- SimRepo 和 Discovery 是迁移期 Provider，最终删除，禁止永久双写/双读。
+- 算法结果必须带 model version、source/signal 和可解释降级状态。
+
+### 9.3 Starcat 客户端
+
+- local-first 不变；未参与数据贡献的用户仍可使用公共推荐和 History 查询。
+- Private/Internal History 保持本机处理，公共服务客户端和服务端双重拦截。
+- 正式版数据库变更只能追加新的 `registerVN`，禁止修改 `v1-initial` 或已经发布的 migration。
+- 新增启动期 Keychain 访问必须使用 `TestEnvironment.isRunning` 门控。
+- UI 实施前先读取根目录 `DESIGN.md` 和对应 UI 规范。
+
+### 9.4 文档与协作
+
+- 开发前先读取根目录 `AGENTS.md` 和 [开发前问题清单](../../../1-立项/开发前问题清单.md)。
+- 以当前代码和 Git 状态核对文档，不把“方案已确认”写成“功能已实现”。
+- `supports/` 下各后端是独立 Git 仓库，分别提交和验收。
+- 未经 dong4j 单独确认，禁止修改 [功能实现总览](../../../功能实现总览.md)。
+- 未经授权，不 push、不部署、不执行数据迁移或生产 BigQuery 查询。
+
+## 10. 推荐实施顺序
+
+```text
+1. 冻结并实现后端贡献注册 / ingest / status / delete
+2. Starcat 实现本地 payload builder、隐私过滤、预览和 outbox
+3. 用 GH Archive bootstrap，同时灰度积累 Starcat opt-in 数据
+4. 实现 co-star / Metric Learning / content / SVD baseline 与离线评估
+5. 发布 starcat-recsys-api，shadow 对比 SimRepo 后逐级灰度
+6. 发布 starcat-history-api，回填并 shadow 对比 Discovery
+7. 完成客户端 endpoint 切换和人工验收
+8. 删除 SimRepo Provider、旧 Recommend 服务和 Discovery History 路径
+```
+
+任何阶段都不能通过长期兼容层掩盖未完成迁移。回滚窗口可以保留上一版本产物和短期只读路径，但收口阶段必须删除废弃代码、密钥、表和配置。
+
+## 11. AI Agent 开工检查
+
+后续 AI Agent 在改动前至少回答：
+
+```text
+[ ] 本次任务属于当前实现维护，还是目标架构建设？
+[ ] 已读取对应的 50 / 60 / 61 / 62 权威文档？
+[ ] 是否会接触 Private/Internal、真实 GitHub 身份或本地用户数据？
+[ ] 后端删除和回滚路径是否已经存在？
+[ ] 是否需要追加数据库 migration？
+[ ] 是否错误地把旧 Provider 变成永久双轨？
+[ ] 是否跨越了 supports/ 独立仓库边界？
+[ ] 自动化证明和人工验收边界分别是什么？
+[ ] 是否取得修改功能总览、push、部署或生产数据查询的单独授权？
+```
+
+如果这些问题无法从当前代码和权威文档得到确定答案，应先停止实现并向 dong4j 说明缺口，不能自行扩大数据范围或服务职责。
