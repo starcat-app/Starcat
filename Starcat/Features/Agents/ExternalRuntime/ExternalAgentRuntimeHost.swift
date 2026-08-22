@@ -110,11 +110,33 @@ private actor ExternalAgentProcessSession {
             }
 
             var reachedTerminal = false
+            var stdoutLineNumber = 0
+            var ignoredStdoutDiagnosticCount = 0
             for try await line in stdoutPipe.fileHandleForReading.bytes.lines {
                 try Task.checkCancellation()
-                guard let data = line.data(using: .utf8),
-                      let frame = try? JSONDecoder().decode(AgentJSONValue.self, from: data)
-                else {
+                stdoutLineNumber += 1
+                let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmedLine.isEmpty else { continue }
+
+                let data = Data(trimmedLine.utf8)
+                guard let frame = try? JSONDecoder().decode(AgentJSONValue.self, from: data) else {
+                    // 外部 CLI 或包装脚本可能把启动提示写到 stdout，而 JSON-RPC transport
+                    // 又与它共用同一条 pipe。普通诊断文本不应中断整个 Run；但对象形态的
+                    // 损坏帧必须继续失败，避免吞掉真正的协议错误并拖成首输出超时。
+                    if trimmedLine.first == "{" {
+                        throw ExternalAgentRuntimeError.invalidFrame
+                    }
+                    ignoredStdoutDiagnosticCount += 1
+                    if ignoredStdoutDiagnosticCount <= 3 {
+                        let firstScalar = trimmedLine.unicodeScalars.first?.value ?? 0
+                        let byteCount = data.count
+                        AppLog.ai.warning("External Agent Runtime ignored non-JSON stdout diagnostic (line: \(stdoutLineNumber, privacy: .public), bytes: \(byteCount, privacy: .public), firstScalar: \(firstScalar, privacy: .public)).")
+                    }
+                    continue
+                }
+                guard frame.externalObject != nil else {
+                    // JSON-RPC 顶层只能是对象；合法 JSON 的数组、字符串或数字不是日志，
+                    // 不能按普通 stdout 杂讯忽略。
                     throw ExternalAgentRuntimeError.invalidFrame
                 }
                 let output = try driver.receive(frame)
