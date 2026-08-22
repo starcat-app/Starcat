@@ -465,7 +465,7 @@ private enum ExternalAgentLineReader {
 private extension ExternalAgentProtocolEvent {
     var countsAsFirstOutput: Bool {
         switch self {
-        case .assistantDelta, .reasoningDelta, .assistantMessage, .toolCall, .toolResult,
+        case .trace, .assistantDelta, .reasoningDelta, .assistantMessage, .toolCall, .toolResult,
              .artifactMarkdown, .completed, .cancelled, .failed:
             return true
         case .usage:

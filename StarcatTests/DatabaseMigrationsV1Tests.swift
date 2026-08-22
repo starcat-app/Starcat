@@ -95,6 +95,20 @@ struct DatabaseMigrationsV1Tests {
         }
     }
 
+    @Test("v20 应追加 Runtime trace 表且保持 run 级顺序唯一")
+    func agentRuntimeTraceMigration() throws {
+        let writer = try makeDB()
+        try writer.read { db in
+            var migrator = DatabaseMigrator()
+            DatabaseMigrations.registerAll(into: &migrator)
+            let applied = try migrator.appliedIdentifiers(db)
+            #expect(applied.contains("v20-agent-runtime-trace"))
+            #expect(try db.tableExists("agent_trace_events"))
+            let columns = try db.columns(in: "agent_trace_events").map(\.name)
+            #expect(columns == ["id", "run_id", "sequence", "event_json", "created_at", "updated_at"])
+        }
+    }
+
     @Test("1.4.0 正式迁移应接管任意开发期中间版本")
     func release140MigrationConvergesDevelopmentDatabases() throws {
         let developmentBoundaries = [

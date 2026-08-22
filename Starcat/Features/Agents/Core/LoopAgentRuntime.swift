@@ -443,6 +443,7 @@ struct LoopAgentRuntime: AgentRuntime {
                 parts: [.toolResult(resultMessage)]
             )
             try await persistMessage(toolMessage, runStatus: .running)
+            try await emitTraceEvents(for: toolMessage, continuation: continuation)
             continuation.yield(.messageAppended(toolMessage))
             if let result = restored.execution.result {
                 applyPayload(result.payload, payload: &payload, values: &values)
@@ -533,6 +534,7 @@ struct LoopAgentRuntime: AgentRuntime {
                 usage: response.usage
             )
             try await persistMessage(assistantMessage, runStatus: .running)
+            try await emitTraceEvents(for: assistantMessage, continuation: continuation)
             continuation.yield(.messageAppended(assistantMessage))
             if response.usage != nil {
                 continuation.yield(.usageUpdated(await session.snapshot().usage))
@@ -596,6 +598,7 @@ struct LoopAgentRuntime: AgentRuntime {
                     parts: [.toolResult(resultMessage)]
                 )
                 try await persistMessage(toolMessage, runStatus: .running)
+                try await emitTraceEvents(for: toolMessage, continuation: continuation)
                 continuation.yield(.messageAppended(toolMessage))
 
                 if let result = execution.result {
@@ -1121,6 +1124,106 @@ struct LoopAgentRuntime: AgentRuntime {
         try await runRepository?.appendMessage(message, runStatus: runStatus)
     }
 
+    /// Built-in Loop 没有 Provider item lifecycle，因此从它自己的强类型消息事实生成原生
+    /// trace：reasoning summary、tool call 与带 attempt 的 tool result。这里不猜测固定阶段，
+    /// 同一 prompt 是否出现哪些行完全由该次模型响应决定。
+    private func emitTraceEvents(
+        for message: AgentMessage,
+        continuation: AsyncStream<AgentRunEvent>.Continuation
+    ) async throws {
+        for (partIndex, part) in message.parts.enumerated() {
+            let trace: AgentTraceEvent?
+            switch part {
+            case .reasoning(let summary):
+                trace = AgentTraceEvent(
+                    id: "\(message.runID.uuidString):reasoning:\(message.id.uuidString)",
+                    runID: message.runID,
+                    backend: .builtinLoop,
+                    providerEventID: message.id.uuidString,
+                    sequence: message.sequence * 10 + partIndex,
+                    kind: .reasoningSummary,
+                    status: .completed,
+                    title: String.l10n("agent.workspace.trace.kind.thinking"),
+                    summary: summary,
+                    details: [.init(
+                        label: String.l10n("agent.workspace.timeline.reasoning"),
+                        value: summary,
+                        format: .markdown
+                    )],
+                    startedAt: message.createdAt,
+                    completedAt: message.createdAt
+                )
+            case .toolCall(let call):
+                trace = AgentTraceEvent(
+                    id: "\(message.runID.uuidString):tool:\(call.id)",
+                    runID: message.runID,
+                    backend: .builtinLoop,
+                    providerEventID: call.id,
+                    sequence: call.sequence * 10,
+                    kind: .tool,
+                    status: .running,
+                    title: call.name,
+                    summary: "Tool call",
+                    details: [.init(
+                        label: String.l10n("agent.workspace.trace.input"),
+                        value: call.rawInput ?? (try? call.input.jsonString()) ?? "{}",
+                        format: .json
+                    )],
+                    startedAt: message.createdAt
+                )
+            case .toolResult(let result):
+                var details = [AgentTraceDetail(
+                    label: result.isError
+                        ? String.l10n("error.loadFailed")
+                        : String.l10n("agent.workspace.trace.output"),
+                    value: (try? result.output.jsonString()) ?? "{}",
+                    format: result.isError ? .error : .json
+                )]
+                details.append(contentsOf: result.attempts.map { attempt in
+                    let error = attempt.errorSummary.map { ": \($0)" } ?? ""
+                    return AgentTraceDetail(
+                        label: "Attempt \(attempt.number)",
+                        value: "\(attempt.status.localizedTitle) · \(attempt.elapsedMilliseconds) ms\(error)",
+                        format: attempt.errorSummary == nil ? .text : .error
+                    )
+                })
+                trace = AgentTraceEvent(
+                    id: "\(message.runID.uuidString):tool:\(result.toolCallID)",
+                    runID: message.runID,
+                    backend: .builtinLoop,
+                    providerEventID: result.toolCallID,
+                    sequence: result.sequence * 10,
+                    kind: .tool,
+                    status: Self.traceStatus(from: result.status),
+                    title: result.toolName,
+                    summary: result.status.localizedTitle,
+                    details: details,
+                    attempt: result.attempts.last?.number,
+                    durationMilliseconds: result.elapsedMilliseconds,
+                    // Tool result 自带总耗时但消息时间是完成时间；倒推开始时间可让 upsert
+                    // 保留与 running 行一致的生命周期，而不是在完成时重置计时起点。
+                    startedAt: message.createdAt.addingTimeInterval(
+                        -Double(result.elapsedMilliseconds) / 1_000
+                    ),
+                    completedAt: message.createdAt
+                )
+            case .text:
+                trace = nil
+            }
+            guard let trace else { continue }
+            try await runRepository?.saveTraceEvent(trace)
+            continuation.yield(.traceUpdated(trace))
+        }
+    }
+
+    private static func traceStatus(from status: AgentToolResultStatus) -> AgentTraceStatus {
+        switch status {
+        case .completed: return .completed
+        case .skipped, .rejected: return .skipped
+        case .failed, .timedOut: return .failed
+        }
+    }
+
     private func persistApproval(_ approval: AgentApprovalRequest, runStatus: AgentRunStatus) async throws {
         try await runRepository?.saveApproval(approval, runStatus: runStatus)
     }
@@ -1136,6 +1239,30 @@ struct LoopAgentRuntime: AgentRuntime {
         continuation: AsyncStream<AgentRunEvent>.Continuation
     ) async {
         guard await session.finish(.failed(message)) else { return }
+        let trace = AgentTraceEvent(
+            id: "\(runID.uuidString):runtime-error",
+            runID: runID,
+            backend: .builtinLoop,
+            providerEventID: "runtime-error",
+            sequence: Int.max - 1,
+            kind: .error,
+            status: .failed,
+            title: String.l10n("error.loadFailed"),
+            summary: message,
+            details: [.init(
+                label: String.l10n("error.loadFailed"),
+                value: message,
+                format: .error
+            )],
+            completedAt: Date()
+        )
+        do {
+            try await runRepository?.saveTraceEvent(trace)
+        } catch {
+            // Trace 辅助诊断不能反过来吞掉真正的 run failure；终态持久化仍继续执行。
+            AppLog.database.warning("Agent loop failure trace persistence failed: \(error.localizedDescription, privacy: .public)")
+        }
+        continuation.yield(.traceUpdated(trace))
         await persistRunStatus(runID: runID, status: .failed, errorMessage: message, finishedAt: Date())
         AppLog.ai.error("[AgentRuntime] run.failed runID=\(runID.uuidString, privacy: .public) error=\(message, privacy: .private)")
         continuation.yield(.runFailed(message))

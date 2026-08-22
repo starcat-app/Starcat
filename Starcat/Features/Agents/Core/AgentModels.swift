@@ -425,6 +425,7 @@ struct AgentTraceSpan: Identifiable, Hashable, Sendable {
 /// 替换成模型 tool-calling runtime 或 AgentRunKit runtime 时，Workspace 不需要重写。
 enum AgentRunEvent: Sendable {
     case runStarted(title: String)
+    case traceUpdated(AgentTraceEvent)
     case approvalUpdated(AgentApprovalRequest)
     case messageAppended(AgentMessage)
     case usageUpdated(AgentUsage)

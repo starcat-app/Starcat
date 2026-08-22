@@ -28,6 +28,7 @@ struct ExternalAgentProcessConfiguration: Sendable {
 }
 
 enum ExternalAgentProtocolEvent: Equatable, Sendable {
+    case trace(ExternalAgentTraceEvent)
     case assistantDelta(String)
     case reasoningDelta(String)
     case assistantMessage(String, usage: AgentUsage?)
@@ -38,6 +39,48 @@ enum ExternalAgentProtocolEvent: Equatable, Sendable {
     case completed
     case cancelled
     case failed(String)
+}
+
+/// Provider adapter 输出的 Runtime 原生事件。`sequence` 与 `runID` 由 projector 统一分配，
+/// adapter 只负责保留 Provider 的事件身份、类型和安全可展示字段。
+struct ExternalAgentTraceEvent: Equatable, Sendable {
+    let id: String
+    let parentID: String?
+    let kind: AgentTraceKind
+    let status: AgentTraceStatus
+    let title: String
+    let summary: String?
+    let details: [AgentTraceDetail]
+    let attempt: Int?
+    let durationMilliseconds: Int?
+    let startedAt: Date?
+    let completedAt: Date?
+
+    init(
+        id: String,
+        parentID: String? = nil,
+        kind: AgentTraceKind,
+        status: AgentTraceStatus,
+        title: String,
+        summary: String? = nil,
+        details: [AgentTraceDetail] = [],
+        attempt: Int? = nil,
+        durationMilliseconds: Int? = nil,
+        startedAt: Date? = nil,
+        completedAt: Date? = nil
+    ) {
+        self.id = id
+        self.parentID = parentID
+        self.kind = kind
+        self.status = status
+        self.title = title
+        self.summary = summary
+        self.details = details
+        self.attempt = attempt
+        self.durationMilliseconds = durationMilliseconds
+        self.startedAt = startedAt
+        self.completedAt = completedAt
+    }
 }
 
 /// Provider 请求 Starcat 宿主执行一次动态工具调用。

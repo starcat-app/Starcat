@@ -276,7 +276,8 @@ struct AgentWorkspaceView: View {
                     distributionGate: dependencies.distributionGate,
                     selectedModelName: runtimeModelName,
                     reasoningEffort: runtimeReasoningEffort,
-                    toolRegistry: toolRegistry
+                    toolRegistry: toolRegistry,
+                    runRepository: dependencies.agentRunRepository
                 )
             } catch {
                 runtimes[preferredBackend] = UnavailableAgentRuntime(message: error.localizedDescription)

@@ -37,7 +37,8 @@
 //    `v10-rag-conversation-pinned-at` / `v11-rag-embedding-claim` /
 //    `v12-rag-metadata-revision` / `v13-weekly-multi-source` /
 //    `v14-ai-usage-events` / `v15-repo-pins` / `v16-repository-insights` /
-//    `v17-my-projects` / `v18-rag-structured-citations` / `v19-release-1.4.0`
+//    `v17-my-projects` / `v18-rag-structured-citations` / `v19-release-1.4.0` /
+//    `v20-agent-runtime-trace`
 //
 //  **1.4.0 开发期迁移（已由正式 v19 合并接管）**：
 //  `v19-agent-message-contract` 至 `v26-github-timeline-conversations` 仅在开发构建中出现过。
@@ -90,6 +91,31 @@ enum DatabaseMigrations {
         registerV17(into: &migrator)
         registerV18(into: &migrator)
         registerV19(into: &migrator)
+        registerV20(into: &migrator)
+    }
+
+    // MARK: - v20-agent-runtime-trace：Runtime 原生执行过程（2026-08-22）
+
+    /// 对话消息无法表达 Codex item lifecycle、重试和 Provider warning。单独保存经过
+    /// Adapter 清洗的产品投影，不保存 JSON-RPC 原始帧、环境变量或隐藏思维链。
+    private static func registerV20(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v20-agent-runtime-trace") { db in
+            try db.create(table: "agent_trace_events") { table in
+                table.column("id", .text).primaryKey()
+                table.column("run_id", .text).notNull()
+                    .references("agent_runs", column: "id", onDelete: .cascade)
+                table.column("sequence", .integer).notNull()
+                table.column("event_json", .text).notNull()
+                table.column("created_at", .text).notNull()
+                table.column("updated_at", .text).notNull()
+                table.uniqueKey(["run_id", "sequence"])
+            }
+            try db.create(
+                index: "idx_agent_trace_events_run_sequence",
+                on: "agent_trace_events",
+                columns: ["run_id", "sequence"]
+            )
+        }
     }
 
     // MARK: - v19-release-1.4.0：1.4.0 正式版 schema 收口（2026-08-21）

@@ -252,6 +252,47 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.errorMessage == nil)
     }
 
+    @Test("Runtime trace lifecycle 在工作台按稳定 id 原位更新")
+    func runtimeTraceUpsertsWithoutDuplicatingRows() async throws {
+        let runID = UUID()
+        let started = AgentTraceEvent(
+            id: "\(runID.uuidString):tool-1",
+            runID: runID,
+            backend: .codexAppServer,
+            sequence: 0,
+            kind: .tool,
+            status: .running,
+            title: "fixture_lookup"
+        )
+        let completed = AgentTraceEvent(
+            id: started.id,
+            runID: runID,
+            backend: .codexAppServer,
+            sequence: 0,
+            kind: .tool,
+            status: .completed,
+            title: "fixture_lookup",
+            details: [.init(label: "Output", value: "ok")],
+            completedAt: Date()
+        )
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: EventReplayAgentRuntime(events: [
+                .runStarted(title: BuiltInAgents.githubWeeklyReport.title),
+                .traceUpdated(started),
+                .traceUpdated(completed),
+                .runCompleted,
+            ])
+        )
+        configureRunnable(viewModel)
+        viewModel.prompt = "生成周刊"
+
+        viewModel.run()
+        try await waitUntil { viewModel.status == .completed }
+
+        #expect(viewModel.traceEvents == [completed])
+    }
+
     @Test("Agent 中间区可渲染为连续任务叙事而非调试卡片")
     func runSurfaceRendersEditorialActivityFeed() async throws {
         let runID = UUID()
@@ -870,6 +911,9 @@ struct AgentWorkspaceViewModelTests {
                     starsCount: 8_000
                 )],
                 explicitRepoMode: .exclude,
+                runtimeBackend: .codexAppServer,
+                runtimeModelName: "gpt-fixture",
+                runtimeReasoningEffort: "high",
                 githubLinks: [AIComposerGitHubLink(
                     url: URL(string: "https://github.com/groue/GRDB.swift")!,
                     owner: "groue",
@@ -932,6 +976,19 @@ struct AgentWorkspaceViewModelTests {
             createdAt: Date(timeIntervalSince1970: 1_788_000_120)
         )
         try await repository.appendArtifact(artifact, runID: runID)
+        let trace = AgentTraceEvent(
+            id: "\(runID.uuidString):search-1",
+            runID: runID,
+            backend: .codexAppServer,
+            providerEventID: "search-1",
+            sequence: 0,
+            kind: .webSearch,
+            status: .completed,
+            title: "Web search",
+            summary: "Starcat",
+            completedAt: Date()
+        )
+        try await repository.saveTraceEvent(trace)
         try await repository.updateRunStatus(
             runID: runID,
             status: .completed,
@@ -961,6 +1018,12 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.explicitRepoMode == .exclude)
         #expect(viewModel.githubLinks.first?.repository == "GRDB.swift")
         #expect(viewModel.webSearchEnabled)
+        #expect(viewModel.runtimeBackend == .codexAppServer)
+        #expect(viewModel.runtimeModelName == "gpt-fixture")
+        #expect(viewModel.runtimeReasoningEffort == "high")
+        #expect(viewModel.traceEvents.map(\.id) == [trace.id])
+        #expect(viewModel.traceEvents.first?.kind == .webSearch)
+        #expect(viewModel.traceEvents.first?.summary == "Starcat")
     }
 
     @Test("重启后打开 pending approval 只恢复等待态且不会自动决策")

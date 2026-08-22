@@ -4,9 +4,9 @@
 //
 //  Agent run 的事实型持久化仓储。
 //
-//  `agent_messages` 是 user/assistant/tool/tool-result 的唯一执行事实源；Step、Trace 和
-//  ToolOutput 只允许由消息投影，不能各自落表，否则重启后会出现顺序和状态不一致。
-//  message/approval 写入与 run 状态更新使用同一 GRDB transaction。
+//  `agent_messages` 保存对话事实，`agent_trace_events` 保存 Runtime 原生过程的安全投影。
+//  Trace 使用稳定 id upsert，确保 started/delta/completed 不会在重启后变成重复步骤。
+//  message/approval/trace 写入与 run 更新时间更新使用同一 GRDB transaction。
 //
 
 import Foundation
@@ -219,12 +219,46 @@ struct AgentArtifactRecord: Codable, FetchableRecord, PersistableRecord, Identif
     }
 }
 
+struct AgentTraceEventRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Equatable, Sendable {
+    static let databaseTableName = "agent_trace_events"
+
+    var id: String
+    var runId: String
+    var sequence: Int
+    var eventJSON: String
+    var createdAt: String
+    var updatedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case runId = "run_id"
+        case sequence
+        case eventJSON = "event_json"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+
+    init(event: AgentTraceEvent, updatedAt: Date = Date()) throws {
+        id = event.id
+        runId = event.runID.uuidString
+        sequence = event.sequence
+        eventJSON = try AgentPersistenceJSON.encode(event)
+        createdAt = ISO8601DateFormatter.shared.string(from: event.startedAt)
+        self.updatedAt = ISO8601DateFormatter.shared.string(from: updatedAt)
+    }
+
+    func event() throws -> AgentTraceEvent {
+        try AgentPersistenceJSON.decode(AgentTraceEvent.self, from: eventJSON)
+    }
+}
+
 struct AgentRunSnapshotRecord: Equatable, Sendable {
     var run: AgentRunRecord
     var context: AgentRunContext
     var messages: [AgentMessage]
     var approvals: [AgentApprovalRequest]
     var artifacts: [AgentArtifact]
+    var traceEvents: [AgentTraceEvent] = []
 }
 
 enum AgentRunRepositoryError: Error, LocalizedError, Equatable, Sendable {
@@ -261,6 +295,7 @@ protocol AgentRunRepositoryProtocol: Sendable {
     func restartFailedRun(runID: UUID, usage: AgentUsage) async throws
     func recoverInterruptedRuns(errorMessage: String, recoveredAt: Date) async throws -> Int
     func appendArtifact(_ artifact: AgentArtifact, runID: UUID) async throws
+    func saveTraceEvent(_ event: AgentTraceEvent) async throws
     func recentRuns(limit: Int) async throws -> [AgentRunRecord]
     func snapshot(runID: UUID) async throws -> AgentRunSnapshotRecord?
 }
@@ -419,6 +454,20 @@ struct GRDBAgentRunRepository: AgentRunRepositoryProtocol {
         }
     }
 
+    func saveTraceEvent(_ event: AgentTraceEvent) async throws {
+        let record = try AgentTraceEventRecord(event: event)
+        let now = ISO8601DateFormatter.shared.string(from: Date())
+        try await database.writer.write { db in
+            // Provider 的 item lifecycle 会多次更新同一个 id；replace 会触发外键级联删除，
+            // 因此必须使用 save 生成真正的 UPSERT，保留 run 与后续父子关系。
+            try record.save(db)
+            try db.execute(
+                sql: "UPDATE agent_runs SET updated_at = ? WHERE id = ?",
+                arguments: [now, event.runID.uuidString]
+            )
+        }
+    }
+
     func recentRuns(limit: Int) async throws -> [AgentRunRecord] {
         try await database.writer.read { db in
             try AgentRunRecord
@@ -443,6 +492,10 @@ struct GRDBAgentRunRepository: AgentRunRepositoryProtocol {
                 .filter(Column("run_id") == runID.uuidString)
                 .order(Column("sequence").asc)
                 .fetchAll(db)
+            let traceRecords = try AgentTraceEventRecord
+                .filter(Column("run_id") == runID.uuidString)
+                .order(Column("sequence").asc)
+                .fetchAll(db)
             let messages = try messageRecords.map { try $0.message() }
             try AgentMessageContract.validate(messages)
             return AgentRunSnapshotRecord(
@@ -450,7 +503,8 @@ struct GRDBAgentRunRepository: AgentRunRepositoryProtocol {
                 context: try AgentPersistenceJSON.decode(AgentRunContext.self, from: run.contextJSON),
                 messages: messages,
                 approvals: try approvalRecords.map { try $0.approval() },
-                artifacts: try artifactRecords.map { try $0.artifact() }
+                artifacts: try artifactRecords.map { try $0.artifact() },
+                traceEvents: try traceRecords.map { try $0.event() }
             )
         }
     }

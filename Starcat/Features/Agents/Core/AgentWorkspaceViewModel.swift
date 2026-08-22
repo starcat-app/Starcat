@@ -61,6 +61,8 @@ final class AgentWorkspaceViewModel {
     var status: AgentRunStatus = .idle
     var approvals: [AgentApprovalRequest] = []
     var messages: [AgentMessage] = []
+    /// Runtime 原生过程按稳定 id 原位更新，避免 Codex 的 delta/completed 把一项拆成多行。
+    var traceEvents: [AgentTraceEvent] = []
     var usage: AgentUsage = .zero
     var artifacts: [AgentArtifact] = []
     var historyRuns: [AgentRunRecord] = []
@@ -396,6 +398,7 @@ final class AgentWorkspaceViewModel {
         runTitle = selectedAgent.title
         approvals = []
         messages = []
+        traceEvents = []
         usage = .zero
         artifacts = []
         selectedArtifactID = nil
@@ -740,6 +743,8 @@ final class AgentWorkspaceViewModel {
         case .runStarted(let title):
             runTitle = title
             status = .running
+        case .traceUpdated(let trace):
+            upsert(trace)
         case .approvalUpdated(let approval):
             upsert(approval)
             if approval.status == .pending {
@@ -850,6 +855,11 @@ final class AgentWorkspaceViewModel {
         explicitRepoMode = snapshot.context.explicitRepoMode ?? .only
         githubLinks = snapshot.context.githubLinks ?? []
         webSearchEnabled = snapshot.context.webSearchEnabled ?? false
+        // 历史页的过程标题、模型与推理强度必须来自该次 Run 的冻结上下文，不能继续
+        // 显示当前 Composer 选择，否则 Codex/DeepSeek/Built-in 轨迹会被贴错后端标签。
+        runtimeBackend = snapshot.context.runtimeBackend ?? .builtinLoop
+        runtimeModelName = snapshot.context.runtimeModelName
+        runtimeReasoningEffort = snapshot.context.runtimeReasoningEffort
         if let modelID = snapshot.context.selectedModelID,
            availableModels.contains(where: { $0.id == modelID }) {
             selectedModelID = modelID
@@ -858,6 +868,7 @@ final class AgentWorkspaceViewModel {
         attachments = []
         status = AgentRunStatus(rawValue: snapshot.run.status) ?? .idle
         messages = snapshot.messages
+        traceEvents = snapshot.traceEvents
         usage = snapshot.messages.compactMap(\.usage).reduce(.zero) { partial, next in
             var merged = partial
             merged.merge(next)
@@ -906,6 +917,18 @@ final class AgentWorkspaceViewModel {
             approvals[index] = approval
         } else {
             approvals.append(approval)
+        }
+    }
+
+    private func upsert(_ trace: AgentTraceEvent) {
+        if let index = traceEvents.firstIndex(where: { $0.id == trace.id }) {
+            traceEvents[index] = trace
+        } else {
+            traceEvents.append(trace)
+            traceEvents.sort { lhs, rhs in
+                if lhs.sequence == rhs.sequence { return lhs.startedAt < rhs.startedAt }
+                return lhs.sequence < rhs.sequence
+            }
         }
     }
 

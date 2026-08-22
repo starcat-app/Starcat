@@ -274,6 +274,119 @@ struct ExternalAgentProtocolAdapterTests {
         #expect(contentItem?[external: "text"]?.stringValue == "{\"summary\":\"ok\"}")
     }
 
+    @Test("Codex adapter 保留 reasoning、plan、web search 与 retry 原生事件")
+    func codexRuntimeTraceMapping() throws {
+        let adapter = CodexAppServerAdapter(executableURL: URL(fileURLWithPath: "/usr/bin/true"))
+        let driver = try adapter.makeDriver(request: fixtureRequest())
+
+        let reasoning = try driver.receive(notification(
+            method: "item/reasoning/summaryTextDelta",
+            params: .object(["itemId": .string("reason-1"), "delta": .string("检查仓库范围")])
+        ))
+        #expect(reasoning.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.id == "reason-1" && trace.kind == .reasoningSummary
+        })
+        let completedReasoning = try driver.receive(notification(
+            method: "item/completed",
+            params: .object(["item": .object([
+                "id": .string("reason-1"),
+                "type": .string("reasoning"),
+                "status": .string("completed"),
+            ])])
+        ))
+        #expect(completedReasoning.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.id == "reason-1"
+                && trace.status == .completed
+                && trace.summary == "检查仓库范围"
+        })
+
+        let rawReasoning = try driver.receive(notification(
+            method: "item/reasoning/textDelta",
+            params: .object(["itemId": .string("reason-raw"), "delta": .string("hidden chain")])
+        ))
+        #expect(rawReasoning.events == [.reasoningDelta("hidden chain")])
+        let completedRawReasoning = try driver.receive(notification(
+            method: "item/completed",
+            params: .object(["item": .object([
+                "id": .string("reason-raw"),
+                "type": .string("reasoning"),
+                "text": .string("hidden chain"),
+                "status": .string("completed"),
+            ])])
+        ))
+        #expect(completedRawReasoning.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.id == "reason-raw" && trace.summary == nil && trace.details.isEmpty
+        })
+
+        let plan = try driver.receive(notification(
+            method: "turn/plan/updated",
+            params: .object(["plan": .array([
+                .object(["step": .string("检索候选仓库"), "status": .string("inProgress")]),
+                .object(["step": .string("生成周刊"), "status": .string("pending")]),
+            ])])
+        ))
+        #expect(plan.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.kind == .plan && trace.details.count == 2
+        })
+
+        let search = try driver.receive(notification(
+            method: "item/completed",
+            params: .object(["item": .object([
+                "id": .string("search-1"),
+                "type": .string("webSearch"),
+                "query": .string("GitHub trending Swift"),
+                "status": .string("completed"),
+            ])])
+        ))
+        #expect(search.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.id == "search-1" && trace.kind == .webSearch && trace.status == .completed
+        })
+
+        let retry = try driver.receive(notification(
+            method: "error",
+            params: .object([
+                "willRetry": .bool(true),
+                "error": .object(["message": .string("temporary unavailable")]),
+            ])
+        ))
+        #expect(!retry.isTerminal)
+        #expect(retry.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.kind == .retry && trace.attempt == 1
+        })
+
+        let failed = try driver.receive(notification(
+            method: "turn/completed",
+            params: .object(["turn": .object([
+                "status": .string("failed"),
+                "error": .object(["message": .string("fixture failure")]),
+            ])])
+        ))
+        #expect(failed.isTerminal)
+        #expect(failed.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.kind == .error && trace.status == .failed
+        })
+        #expect(failed.events.contains(.failed("fixture failure")))
+
+        let approval = try driver.receive(.object([
+            "jsonrpc": .string("2.0"),
+            "id": .number(44),
+            "method": .string("item/commandExecution/requestApproval"),
+            "params": .object([:]),
+        ]))
+        #expect(approval.outboundFrames.first?[external: "id"] == .number(44))
+        #expect(approval.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.kind == .approval && trace.status == .skipped
+        })
+    }
+
     @Test("DeepSeek adapter 严格过滤 session 并映射 assistant message")
     func deepSeekSessionFilteringAndMessageMapping() throws {
         #if arch(arm64)
@@ -313,6 +426,42 @@ struct ExternalAgentProtocolAdapterTests {
             ])
         ))
         #expect(message.events == [.assistantMessage("right", usage: nil)])
+
+        let unknown = try driver.receive(notification(
+            method: "session.event",
+            params: .object([
+                "sessionId": .string(sessionID),
+                "event": .object([
+                    "type": .string("harness/custom-progress"),
+                    "data": .object([
+                        "id": .string("custom-1"),
+                        "status": .string("working"),
+                    ]),
+                ]),
+            ])
+        ))
+        #expect(unknown.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.id == "custom-1"
+                && trace.kind == .unknown
+                && trace.title == "harness/custom-progress"
+        })
+
+        let failure = try driver.receive(notification(
+            method: "session.event",
+            params: .object([
+                "sessionId": .string(sessionID),
+                "event": .object([
+                    "type": .string("turn/end"),
+                    "data": .object(["reason": .object(["kind": .string("failed")])]),
+                ]),
+            ])
+        ))
+        #expect(failure.isTerminal)
+        #expect(failure.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.kind == .error && trace.status == .failed
+        })
 
         let idle = try driver.receive(notification(
             method: "session.status",

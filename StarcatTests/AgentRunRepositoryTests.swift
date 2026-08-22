@@ -131,6 +131,51 @@ struct AgentRunRepositoryTests {
         #expect(snapshot.artifacts.first?.sequence == toolMessage.sequence)
     }
 
+    @Test("Runtime trace 按稳定 id 更新并随历史快照恢复")
+    func upsertsAndRestoresRuntimeTrace() async throws {
+        let repository = GRDBAgentRunRepository(database: try InMemoryDatabaseManager())
+        let runID = UUID(uuidString: "00000000-0000-0000-0000-000000000020")!
+        _ = try await repository.createRun(
+            id: runID,
+            definition: BuiltInAgents.githubWeeklyReport,
+            prompt: "生成周刊",
+            context: AgentRunContext(sourceDescription: "Unit"),
+            createdAt: fixedDate(0)
+        )
+        let started = AgentTraceEvent(
+            id: "\(runID.uuidString):item-1",
+            runID: runID,
+            backend: .codexAppServer,
+            providerEventID: "item-1",
+            sequence: 0,
+            kind: .webSearch,
+            status: .running,
+            title: "搜索 GitHub 热门项目",
+            startedAt: fixedDate(1)
+        )
+        let completed = AgentTraceEvent(
+            id: started.id,
+            runID: runID,
+            backend: .codexAppServer,
+            providerEventID: "item-1",
+            sequence: 0,
+            kind: .webSearch,
+            status: .completed,
+            title: "搜索 GitHub 热门项目",
+            summary: "找到 30 个候选仓库",
+            details: [.init(label: "结果", value: "30 repositories")],
+            durationMilliseconds: 120,
+            startedAt: fixedDate(1),
+            completedAt: fixedDate(2)
+        )
+
+        try await repository.saveTraceEvent(started)
+        try await repository.saveTraceEvent(completed)
+
+        let snapshot = try #require(try await repository.snapshot(runID: runID))
+        #expect(snapshot.traceEvents == [completed])
+    }
+
     @Test("knowledge retrieval audit 随 parts_json 完整恢复")
     func restoresKnowledgeRetrievalAuditFromMessageFacts() async throws {
         let repository = GRDBAgentRunRepository(database: try InMemoryDatabaseManager())

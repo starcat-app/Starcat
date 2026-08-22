@@ -228,14 +228,58 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
                 return ExternalAgentProtocolOutput(events: [.cancelled], isTerminal: true)
             }
             if let reason, ["error", "failed"].contains(reason) {
+                let message = "DeepSeek Harness turn ended: \(reason)."
                 return ExternalAgentProtocolOutput(
-                    events: [.failed("DeepSeek Harness turn ended: \(reason).")],
+                    events: [
+                        .trace(ExternalAgentTraceEvent(
+                            id: data[external: "id"]?.stringValue ?? "turn-error:\(UUID().uuidString)",
+                            kind: .error,
+                            status: .failed,
+                            title: String.l10n("error.loadFailed"),
+                            summary: message,
+                            details: [.init(
+                                label: String.l10n("error.loadFailed"),
+                                value: message,
+                                format: .error
+                            )],
+                            completedAt: Date()
+                        )),
+                        .failed(message),
+                    ],
                     isTerminal: true
                 )
             }
             return ExternalAgentProtocolOutput()
+        case "turn/retry", "model/retry":
+            let message = data[external: "message"]?.stringValue
+                ?? data[external: "error"]?[external: "message"]?.stringValue
+                ?? type
+            let attempt = data[external: "attempt"]?.integerValue
+            return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+                id: data[external: "id"]?.stringValue ?? "retry:\(UUID().uuidString)",
+                kind: .retry,
+                status: .running,
+                title: String.l10n("action.retry"),
+                summary: message,
+                details: [.init(label: String.l10n("error.loadFailed"), value: message, format: .error)],
+                attempt: attempt
+            ))])
         default:
-            return ExternalAgentProtocolOutput()
+            // Harness 的事件集合会随版本演进。未知事件不能继续静默吞掉，否则 UI 又会
+            // 退回一套固定阶段；只投影类型、状态和 message，不保存整个协议 data。
+            let eventID = data[external: "id"]?.stringValue
+                ?? data[external: "eventId"]?.stringValue
+                ?? "\(type):\(UUID().uuidString)"
+            let summary = data[external: "message"]?.stringValue
+                ?? data[external: "status"]?.stringValue
+            return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+                id: eventID,
+                kind: .unknown,
+                status: .completed,
+                title: type,
+                summary: summary,
+                completedAt: Date()
+            ))])
         }
     }
 

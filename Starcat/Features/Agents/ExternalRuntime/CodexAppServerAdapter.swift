@@ -45,6 +45,9 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
     private var threadID: String?
     private var turnID: String?
     private var inheritedMCPServerConfigs: [String: AgentJSONValue] = [:]
+    private var itemStartedAt: [String: Date] = [:]
+    private var reasoningSummaries: [String: String] = [:]
+    private var retryCount = 0
 
     private static let configReadRequestID = 2
     private static let threadStartRequestID = 10_000
@@ -279,19 +282,114 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
                 return ExternalAgentProtocolOutput()
             }
             return ExternalAgentProtocolOutput(events: [.assistantDelta(delta)])
-        case "item/completed":
-            guard params?[external: "item"]?[external: "type"]?.stringValue == "agentMessage",
-                  let text = params?[external: "item"]?[external: "text"]?.stringValue,
-                  !text.isEmpty
+        case "item/started":
+            guard let item = params?[external: "item"],
+                  let itemID = item[external: "id"]?.stringValue,
+                  let trace = Self.traceEvent(from: item, status: .running, startedAt: Date())
             else { return ExternalAgentProtocolOutput() }
-            // 某些 App Server / model 组合可能只给 completed item，不保证逐 token delta。
-            // 用完整消息兜底，projector 会让最终文本覆盖已收集的增量而不会重复落库。
-            return ExternalAgentProtocolOutput(events: [.assistantMessage(text, usage: nil)])
-        case "item/reasoning/summaryTextDelta", "item/reasoning/textDelta":
+            itemStartedAt[itemID] = trace.startedAt
+            return ExternalAgentProtocolOutput(events: [.trace(trace)])
+        case "item/completed":
+            guard let item = params?[external: "item"] else { return ExternalAgentProtocolOutput() }
+            var events: [ExternalAgentProtocolEvent] = []
+            if item[external: "type"]?.stringValue == "agentMessage",
+               let text = item[external: "text"]?.stringValue,
+               !text.isEmpty {
+                // 某些 App Server / model 组合可能只给 completed item，不保证逐 token delta。
+                // 用完整消息兜底，projector 会覆盖已收集的增量而不会重复落库。
+                events.append(.assistantMessage(text, usage: nil))
+            }
+            let itemID = item[external: "id"]?.stringValue
+            let completedAt = Date()
+            if item[external: "type"]?.stringValue == "reasoning",
+               let itemID,
+               let summary = reasoningSummaries[itemID],
+               !summary.isEmpty {
+                // summary delta 是用户可见的安全摘要；completed item 在部分 Codex 版本里
+                // 不再重复 summary，必须显式带回，否则 upsert 会把已显示内容覆盖为空。
+                events.append(.trace(ExternalAgentTraceEvent(
+                    id: itemID,
+                    kind: .reasoningSummary,
+                    status: .completed,
+                    title: String.l10n("agent.workspace.trace.kind.thinking"),
+                    summary: summary,
+                    details: [.init(
+                        label: String.l10n("agent.workspace.timeline.reasoning"),
+                        value: summary,
+                        format: .markdown
+                    )],
+                    startedAt: itemStartedAt[itemID],
+                    completedAt: completedAt
+                )))
+            } else if let trace = Self.traceEvent(
+                from: item,
+                status: Self.traceStatus(from: item) ?? .completed,
+                startedAt: itemID.flatMap { itemStartedAt[$0] },
+                completedAt: completedAt
+            ) {
+                events.append(.trace(trace))
+            }
+            return ExternalAgentProtocolOutput(events: events)
+        case "item/reasoning/summaryTextDelta":
+            guard let delta = params?[external: "delta"]?.stringValue else {
+                return ExternalAgentProtocolOutput()
+            }
+            let itemID = params?[external: "itemId"]?.stringValue ?? "reasoning"
+            reasoningSummaries[itemID, default: ""] += delta
+            return ExternalAgentProtocolOutput(events: [
+                .reasoningDelta(delta),
+                .trace(ExternalAgentTraceEvent(
+                    id: itemID,
+                    kind: .reasoningSummary,
+                    status: .running,
+                    title: String.l10n("agent.workspace.trace.kind.thinking"),
+                    summary: reasoningSummaries[itemID],
+                    details: [.init(
+                        label: String.l10n("agent.workspace.timeline.reasoning"),
+                        value: reasoningSummaries[itemID] ?? "",
+                        format: .markdown
+                    )],
+                    startedAt: itemStartedAt[itemID] ?? Date()
+                )),
+            ])
+        case "item/reasoning/textDelta":
+            // raw reasoning 只用于既有的瞬时流式占位，不进入可持久化 trace；产品历史只保存
+            // App Server 明确标记为 summary 的内容，避免暴露隐藏思维链。
             guard let delta = params?[external: "delta"]?.stringValue else {
                 return ExternalAgentProtocolOutput()
             }
             return ExternalAgentProtocolOutput(events: [.reasoningDelta(delta)])
+        case "turn/plan/updated":
+            let plan = params?[external: "plan"]?.externalArray ?? []
+            let details = plan.enumerated().compactMap { index, value -> AgentTraceDetail? in
+                let step = value[external: "step"]?.stringValue
+                    ?? value[external: "text"]?.stringValue
+                    ?? value[external: "title"]?.stringValue
+                guard let step, !step.isEmpty else { return nil }
+                let status = value[external: "status"]?.stringValue ?? "pending"
+                return AgentTraceDetail(label: "\(index + 1). \(status)", value: step)
+            }
+            return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+                id: "plan:\(turnID ?? "current")",
+                kind: .plan,
+                status: .running,
+                title: String.l10n("agent.workspace.trace.kind.plan"),
+                summary: details.isEmpty ? nil : "\(details.count) steps",
+                details: details
+            ))])
+        case "warning", "configWarning":
+            let message = params?[external: "message"]?.stringValue
+                ?? params?[external: "warning"]?.stringValue
+                ?? "Codex reported a warning."
+            return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+                id: "warning:\(UUID().uuidString)",
+                kind: .warning,
+                status: .completed,
+                title: "Warning",
+                summary: message,
+                details: [.init(label: "Message", value: message)],
+                completedAt: Date()
+            ))])
         case "thread/tokenUsage/updated":
             guard let usage = Self.usage(from: params) else { return ExternalAgentProtocolOutput() }
             return ExternalAgentProtocolOutput(events: [.usage(usage)])
@@ -322,35 +420,167 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
             case "failed":
                 let message = params?[external: "turn"]?[external: "error"]?[external: "message"]?.stringValue
                     ?? "Codex turn failed."
-                return ExternalAgentProtocolOutput(events: [.failed(message)], isTerminal: true)
+                return Self.failedOutput(message, id: "turn-error:\(turnID ?? UUID().uuidString)")
             default:
                 return ExternalAgentProtocolOutput()
             }
         case "error":
-            guard params?[external: "willRetry"]?.externalBool != true else {
-                return ExternalAgentProtocolOutput()
-            }
             let message = params?[external: "error"]?[external: "message"]?.stringValue
                 ?? "Codex App Server reported an error."
-            return ExternalAgentProtocolOutput(events: [.failed(message)], isTerminal: true)
+            if params?[external: "willRetry"]?.externalBool == true {
+                retryCount += 1
+                return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+                    id: "retry:\(turnID ?? "current"):\(retryCount)",
+                    kind: .retry,
+                    status: .running,
+                    title: String.l10n("action.retry"),
+                    summary: message,
+                    details: [.init(label: "Previous error", value: message, format: .error)],
+                    attempt: retryCount
+                ))])
+            }
+            return Self.failedOutput(message, id: "error:\(turnID ?? UUID().uuidString)")
         case "item/commandExecution/requestApproval",
              "item/fileChange/requestApproval",
              "item/permissions/requestApproval",
              "item/tool/requestUserInput":
             // POC 没有把 Codex approval 扩展成 Starcat 写入审批；请求必须明确拒绝。
             guard let id = object["id"] else { return ExternalAgentProtocolOutput() }
-            return ExternalAgentProtocolOutput(outboundFrames: [
-                .object([
+            let approvalID = (try? id.jsonString()) ?? UUID().uuidString
+            let message = "Starcat External Agent Runtime POC is read-only."
+            return ExternalAgentProtocolOutput(
+                outboundFrames: [.object([
                     "jsonrpc": .string("2.0"),
                     "id": id,
                     "error": .object([
                         "code": .number(-32_000),
-                        "message": .string("Starcat External Agent Runtime POC is read-only."),
+                        "message": .string(message),
                     ]),
-                ])
-            ])
+                ])],
+                events: [.trace(ExternalAgentTraceEvent(
+                    id: "approval:\(approvalID)",
+                    kind: .approval,
+                    status: .skipped,
+                    title: String.l10n("agent.workspace.timeline.approval"),
+                    summary: message,
+                    details: [.init(label: method, value: message)],
+                    completedAt: Date()
+                ))]
+            )
         default:
             return ExternalAgentProtocolOutput()
+        }
+    }
+
+    private static func traceEvent(
+        from item: AgentJSONValue,
+        status: AgentTraceStatus,
+        startedAt: Date?,
+        completedAt: Date? = nil
+    ) -> ExternalAgentTraceEvent? {
+        guard let type = item[external: "type"]?.stringValue,
+              let id = item[external: "id"]?.stringValue,
+              !["userMessage", "agentMessage"].contains(type)
+        else { return nil }
+
+        let kind: AgentTraceKind
+        let title: String
+        var summary: String?
+        var details: [AgentTraceDetail] = []
+        switch type {
+        case "plan":
+            kind = .plan
+            title = String.l10n("agent.workspace.trace.kind.plan")
+            summary = item[external: "text"]?.stringValue
+        case "reasoning":
+            kind = .reasoningSummary
+            title = String.l10n("agent.workspace.trace.kind.thinking")
+            // completed item 里的 `text` 可能是 raw reasoning；只有 Provider 明确标记的
+            // summary 才允许进入可恢复 Trace，避免把隐藏思维链持久化。
+            summary = item[external: "summary"]?.stringValue
+            if let summary {
+                details.append(.init(
+                    label: String.l10n("agent.workspace.timeline.reasoning"),
+                    value: summary,
+                    format: .markdown
+                ))
+            }
+        case "commandExecution":
+            kind = .command
+            title = item[external: "command"]?.stringValue ?? "Command"
+            summary = item[external: "status"]?.stringValue
+            if let output = item[external: "aggregatedOutput"]?.stringValue
+                ?? item[external: "output"]?.stringValue {
+                details.append(.init(
+                    label: String.l10n("agent.workspace.trace.output"),
+                    value: output,
+                    format: .code
+                ))
+            }
+        case "fileChange":
+            kind = .fileChange
+            title = "File changes"
+            summary = item[external: "status"]?.stringValue
+            if let changes = item[external: "changes"], let value = try? changes.jsonString() {
+                details.append(.init(label: "Changes", value: value, format: .json))
+            }
+        case "mcpToolCall":
+            kind = .mcpTool
+            let server = item[external: "server"]?.stringValue ?? "MCP"
+            let tool = item[external: "tool"]?.stringValue ?? "tool"
+            title = "\(server).\(tool)"
+            summary = item[external: "status"]?.stringValue
+            if let arguments = item[external: "arguments"], let value = try? arguments.jsonString() {
+                details.append(.init(label: String.l10n("agent.workspace.trace.input"), value: value, format: .json))
+            }
+            if let result = item[external: "result"], let value = try? result.jsonString() {
+                details.append(.init(label: String.l10n("agent.workspace.trace.output"), value: value, format: .json))
+            }
+        case "webSearch":
+            kind = .webSearch
+            title = "Web search"
+            summary = item[external: "query"]?.stringValue
+            if let query = item[external: "query"]?.stringValue {
+                details.append(.init(label: "Query", value: query))
+            }
+        case "contextCompaction":
+            kind = .compaction
+            title = "Context compaction"
+            summary = item[external: "status"]?.stringValue
+        case "dynamicToolCall":
+            // Host 会在真实执行边界发出带输入与结果的 tool trace，避免同一次调用出现两行。
+            return nil
+        default:
+            kind = .unknown
+            title = type
+            summary = item[external: "status"]?.stringValue
+        }
+        if let error = item[external: "error"]?[external: "message"]?.stringValue
+            ?? item[external: "error"]?.stringValue {
+            details.append(.init(label: "Error", value: error, format: .error))
+        }
+        return ExternalAgentTraceEvent(
+            id: id,
+            parentID: item[external: "parentId"]?.stringValue,
+            kind: kind,
+            status: status,
+            title: title,
+            summary: summary,
+            details: details,
+            durationMilliseconds: item[external: "durationMs"]?.integerValue,
+            startedAt: startedAt,
+            completedAt: completedAt
+        )
+    }
+
+    private static func traceStatus(from item: AgentJSONValue) -> AgentTraceStatus? {
+        switch item[external: "status"]?.stringValue {
+        case "inProgress", "running": return .running
+        case "completed", "success": return .completed
+        case "failed", "error": return .failed
+        case "declined", "skipped": return .skipped
+        case "cancelled", "interrupted": return .cancelled
+        default: return nil
         }
     }
 
@@ -367,6 +597,26 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
             outputTokens: output,
             cachedTokens: cached,
             reasoningTokens: reasoning
+        )
+    }
+
+    /// Provider 的终态失败同时投影为可展开 Trace 与 Run 终态。仅发 `.failed` 会让用户
+    /// 看到红色横幅，却无法在过程列表里定位是哪个 turn/error 事件结束了执行。
+    private static func failedOutput(_ message: String, id: String) -> ExternalAgentProtocolOutput {
+        ExternalAgentProtocolOutput(
+            events: [
+                .trace(ExternalAgentTraceEvent(
+                    id: id,
+                    kind: .error,
+                    status: .failed,
+                    title: String.l10n("error.loadFailed"),
+                    summary: message,
+                    details: [.init(label: String.l10n("error.loadFailed"), value: message, format: .error)],
+                    completedAt: Date()
+                )),
+                .failed(message),
+            ],
+            isTerminal: true
         )
     }
 
