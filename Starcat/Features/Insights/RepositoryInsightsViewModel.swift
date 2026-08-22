@@ -48,12 +48,28 @@ enum RepositoryRemoteInsightsSectionState<Value: Equatable & Sendable>: Equatabl
     }
 }
 
-struct RepositoryReleaseInsight: Equatable, Sendable {
+struct RepositoryReleaseInsight: Codable, Equatable, Sendable {
     let tagName: String
     let name: String?
     let publishedAt: Date?
     /// GitHub release 页；本地 `releases.html_url` 已有，时间线可直接跳转。
     let htmlURL: URL?
+    /// 最新 Release 的上传附件。洞察页默认只展示前 3 个，展开后看全部。
+    let assets: [ReleaseAsset]
+
+    init(
+        tagName: String,
+        name: String?,
+        publishedAt: Date?,
+        htmlURL: URL?,
+        assets: [ReleaseAsset] = []
+    ) {
+        self.tagName = tagName
+        self.name = name
+        self.publishedAt = publishedAt
+        self.htmlURL = htmlURL
+        self.assets = assets
+    }
 }
 
 /// 从 Release 历史派生的发布节奏。
@@ -404,7 +420,8 @@ struct DefaultRepositoryLocalInsightsProvider: RepositoryLocalInsightsProviding,
             name: record.name,
             // GitHub 时间可能带或不带毫秒；统一走双格式解析，避免 Release 存在但节奏日期全丢失。
             publishedAt: ISO8601DateFormatter.githubDate(from: record.publishedAt),
-            htmlURL: URL(string: record.htmlUrl)
+            htmlURL: URL(string: record.htmlUrl),
+            assets: ReleaseAssetCodec.decode(record.assetsJson)
         )
     }
 
@@ -898,6 +915,7 @@ final class RepositoryInsightsViewModel {
             if !forceRefresh {
                 releaseCadenceState = cached.value.map(RepositoryInsightsSectionState.content)
                     ?? .empty
+                applyLatestReleaseInsight(cached.latest)
             }
             if !cached.isStale, !forceRefresh {
                 return
@@ -923,15 +941,7 @@ final class RepositoryInsightsViewModel {
             return
         case .value(let fresh):
             releaseCadenceState = fresh.cadence.map(RepositoryInsightsSectionState.content) ?? .empty
-            // 本地无订阅 Release 时，用同一次远端响应填 Latest Release 卡片。
-            if let latest = fresh.latest {
-                switch releaseState {
-                case .content:
-                    break
-                case .idle, .loading, .empty, .unavailable, .failed:
-                    releaseState = .content(latest)
-                }
-            }
+            applyLatestReleaseInsight(fresh.latest)
         case .failed(let error as GitHubRepositoryMetricsError):
             if let fallbackValue {
                 releaseCadenceState = .content(fallbackValue)
@@ -951,6 +961,15 @@ final class RepositoryInsightsViewModel {
 
     private func ownsReleaseCadenceResult(generation: UInt64, repoID: Int64) -> Bool {
         releaseCadenceGeneration == generation && activeRepoID == repoID
+    }
+
+    /// 附件记录跟最新 Release 走。本地已有附件时不覆盖；远端缓存 / 刷新只补空。
+    private func applyLatestReleaseInsight(_ latest: RepositoryReleaseInsight?) {
+        guard let latest else { return }
+        if case .content(let current) = releaseState, !current.assets.isEmpty {
+            return
+        }
+        releaseState = .content(latest)
     }
 
     private func loadActivity(

@@ -269,14 +269,36 @@ private struct GitHubRepositoryContentEntry: Decodable, Equatable, Sendable {
 
 /// RAG 既有 Release 远程证据使用的类型化响应。
 struct GitHubRepositoryReleaseMetric: Decodable, Equatable, Sendable {
+    /// Metrics Client 的 decoder 未开 `convertFromSnakeCase`，附件字段必须显式映射。
+    struct Asset: Decodable, Equatable, Sendable {
+        let id: Int64
+        let name: String
+        let contentType: String?
+        let size: Int
+        let url: String?
+        let browserDownloadUrl: String
+        let downloadCount: Int
+        let createdAt: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id, name, size, url
+            case contentType = "content_type"
+            case browserDownloadUrl = "browser_download_url"
+            case downloadCount = "download_count"
+            case createdAt = "created_at"
+        }
+    }
+
     let tagName: String
     let name: String?
     let body: String?
     let htmlURL: String
     let publishedAt: String?
+    /// 旧夹具 / 304 重校验响应可能没有该字段。
+    let assets: [Asset]?
 
     enum CodingKeys: String, CodingKey {
-        case name, body
+        case name, body, assets
         case tagName = "tag_name"
         case htmlURL = "html_url"
         case publishedAt = "published_at"

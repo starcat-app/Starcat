@@ -369,12 +369,34 @@ struct RepositoryCachedRecentActivity: Equatable, Sendable {
     let isStale: Bool
 }
 
+/// 节奏数字与最新 Release 附件记录一起落洞察缓存；附件只存元数据，不落二进制。
+struct RepositoryReleaseCadenceCachePayload: Codable, Equatable, Sendable {
+    var cadence: RepositoryReleaseCadenceInsight?
+    var latest: RepositoryReleaseInsight?
+}
+
 /// Release 节奏允许缓存“确认无 Release”的 nil，避免每次进入仓库都重复请求 GitHub。
 struct RepositoryCachedReleaseCadenceInsight: Equatable, Sendable {
     let value: RepositoryReleaseCadenceInsight?
+    /// 与节奏同一行缓存的最新 Release（含附件记录）。旧缓存可能没有。
+    let latest: RepositoryReleaseInsight?
     let fetchedAt: Date
     let isStale: Bool
     let responseETag: String?
+
+    init(
+        value: RepositoryReleaseCadenceInsight?,
+        latest: RepositoryReleaseInsight? = nil,
+        fetchedAt: Date,
+        isStale: Bool,
+        responseETag: String?
+    ) {
+        self.value = value
+        self.latest = latest
+        self.fetchedAt = fetchedAt
+        self.isStale = isStale
+        self.responseETag = responseETag
+    }
 }
 
 /// 远端 Release 回退结果：节奏缓存与「Latest Release」卡片共用同一次 `/releases` 响应。
@@ -1095,16 +1117,17 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
 
     func cachedReleaseCadence(repoID: Int64) async throws
         -> RepositoryCachedReleaseCadenceInsight? {
-        let cached: RepositoryInsightsCachedValue<RepositoryReleaseCadenceInsight?>?
+        let cached: RepositoryInsightsCachedValue<RepositoryReleaseCadenceCachePayload>?
         cached = try await cache.load(
             repoId: repoID,
             dataset: .releaseCadence,
             range: .all,
-            as: RepositoryReleaseCadenceInsight?.self
+            as: RepositoryReleaseCadenceCachePayload.self
         )
         guard let cached else { return nil }
         return RepositoryCachedReleaseCadenceInsight(
-            value: cached.value,
+            value: cached.value.cadence,
+            latest: cached.value.latest,
             fetchedAt: cached.fetchedAt,
             isStale: cached.isStale(at: now()),
             responseETag: cached.responseETag
@@ -1137,12 +1160,14 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
                     tagName: metric.tagName,
                     name: metric.name,
                     publishedAt: metric.publishedAt.flatMap(ISO8601DateFormatter.githubDate(from:)),
-                    htmlURL: URL(string: metric.htmlURL)
+                    htmlURL: URL(string: metric.htmlURL),
+                    assets: (metric.assets ?? []).map(Self.releaseAsset)
                 )
             }
             let value = RepositoryReleaseCadenceInsight.make(releases: releases, now: fetchedAt)
+            let latest = releases.first
             try await cache.store(
-                value,
+                RepositoryReleaseCadenceCachePayload(cadence: value, latest: latest),
                 repoId: repoID,
                 dataset: .releaseCadence,
                 range: .all,
@@ -1150,17 +1175,20 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
                 responseETag: response.etag,
                 defaultBranchSHA: nil
             )
-            return RepositoryReleaseRemoteSnapshot(cadence: value, latest: releases.first)
+            return RepositoryReleaseRemoteSnapshot(cadence: value, latest: latest)
         } catch GitHubRepositoryMetricsError.notModified(let responseETag) {
             do {
-                let cadence = try await revalidatedCachedValue(
+                let payload = try await revalidatedCachedValue(
                     repoID: repoID,
                     dataset: .releaseCadence,
                     fetchedAt: fetchedAt,
                     responseETag: responseETag ?? ifNoneMatch,
-                    as: RepositoryReleaseCadenceInsight?.self
+                    as: RepositoryReleaseCadenceCachePayload.self
                 )
-                return .cadenceOnly(cadence)
+                return RepositoryReleaseRemoteSnapshot(
+                    cadence: payload.cadence,
+                    latest: payload.latest
+                )
             } catch GitHubRepositoryMetricsError.invalidResponse where ifNoneMatch != nil {
                 // 304 到达前缓存可能被清理；无 payload 时只允许无条件补拉一次。
                 return try await refreshReleaseCadence(
@@ -1169,6 +1197,22 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
                 )
             }
         }
+    }
+
+    /// 远端节奏回退只把附件带回洞察页，不写入 `releases` 订阅表。
+    private static func releaseAsset(
+        _ asset: GitHubRepositoryReleaseMetric.Asset
+    ) -> ReleaseAsset {
+        ReleaseAsset(
+            id: asset.id,
+            name: asset.name,
+            contentType: asset.contentType,
+            size: asset.size,
+            browserDownloadUrl: asset.browserDownloadUrl,
+            apiUrl: asset.url,
+            downloadCount: asset.downloadCount,
+            createdAt: asset.createdAt
+        )
     }
 
     func cachedSecurityAdvisories(repoID: Int64) async throws

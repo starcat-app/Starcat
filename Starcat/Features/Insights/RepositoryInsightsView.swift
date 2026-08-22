@@ -68,6 +68,22 @@ enum StarHistoryRestrictionNoticePolicy {
     }
 }
 
+/// 发布节奏卡片：最新 Release 附件默认露 3 条，避免把洞察页撑成下载列表。
+enum ReleaseCadenceAssetsDisplayPolicy {
+    static let collapsedLimit = 3
+
+    static func visibleAssets<Asset>(_ assets: [Asset], expanded: Bool) -> [Asset] {
+        if expanded || assets.count <= collapsedLimit {
+            return assets
+        }
+        return Array(assets.prefix(collapsedLimit))
+    }
+
+    static func remainingCount(_ total: Int) -> Int {
+        max(0, total - collapsedLimit)
+    }
+}
+
 enum StarHistoryDisplayPolicy {
     /// Starcat 本机快照是所有仓库的共同基线，因此即使暂时没有数据也要常驻在首位。
     /// 其余图例只按当前实际出现的精度追加，避免暗示尚未获取到的远端历史。
@@ -123,6 +139,8 @@ struct RepositoryInsightsView: View {
     @State private var hoveredLocalSignalID: String?
     /// 贡献者卡片悬停。
     @State private var hoveredContributorID: String?
+    /// 发布节奏默认只展示最新 Release 的前 3 个附件。
+    @State private var isReleaseAssetsExpanded = false
     /// 时间线默认只展示最近几条，避免整页被事件列表撑满。
     @State private var isTimelineExpanded = false
     /// 贡献者默认截断；更多走底部「查看全部」，不在网格里再塞 +N。
@@ -236,6 +254,7 @@ struct RepositoryInsightsView: View {
         .onChange(of: repo.id) { _, _ in
             // 切仓库时清掉旧高度，避免短暂锁在上一仓的 contentSize。
             insightsContentHeight = 0
+            isReleaseAssetsExpanded = false
         }
         .accessibilityLabel(Text("insights.repo.mode.insights"))
     }
@@ -2189,36 +2208,17 @@ struct RepositoryInsightsView: View {
         ) {
             switch viewModel.releaseCadenceState {
             case .content(let cadence):
-                HStack(spacing: 8) {
-                    releaseCadenceMetric(
-                        title: "insights.repo.releaseCadence.lastYear",
-                        value: cadence.releasesLastYear.formatted(.number.locale(locale)),
-                        systemImage: "calendar"
-                    )
-                    releaseCadenceMetric(
-                        title: "insights.repo.releaseCadence.averageInterval",
-                        value: cadence.averageIntervalDays.map {
-                            String(
-                                format: String.l10n("insights.repo.releaseCadence.daysFormat"),
-                                locale: locale,
-                                $0
-                            )
-                        } ?? String.l10n("insights.repo.state.noData"),
-                        systemImage: "arrow.left.and.right"
-                    )
-                    releaseCadenceMetric(
-                        title: "insights.repo.releaseCadence.latest",
-                        value: shortDate(cadence.latestPublishedAt),
-                        systemImage: "clock"
-                    )
+                VStack(alignment: .leading, spacing: 10) {
+                    releaseCadenceMetrics(cadence)
+                    if let assetsRelease = latestReleaseWithAssets {
+                        releaseCadenceAssetsBlock(assetsRelease)
+                    }
                 }
+            case .empty:
+                // 无 Release 也保持三枚指标卡，避免整块收成一行空态。
+                releaseCadenceMetrics(nil)
             case .loading, .idle:
                 InsightsSectionSkeleton(kind: .derivedPills(count: 3))
-            case .empty:
-                compactEmptyState(
-                    "insights.repo.releaseCadence.empty",
-                    systemImage: "tag.slash"
-                )
             case .unavailable:
                 compactEmptyState(
                     "insights.repo.releaseCadence.authenticationRequired",
@@ -2230,6 +2230,108 @@ struct RepositoryInsightsView: View {
                     systemImage: "exclamationmark.triangle"
                 )
             }
+        }
+    }
+
+    /// 附件跟最新 Release 走，不跟节奏缓存绑在一起；没有上传附件时整段不占位。
+    private var latestReleaseWithAssets: RepositoryReleaseInsight? {
+        guard case .content(let release) = viewModel.releaseState, !release.assets.isEmpty else {
+            return nil
+        }
+        return release
+    }
+
+    private func releaseCadenceAssetsBlock(_ release: RepositoryReleaseInsight) -> some View {
+        let visibleAssets = ReleaseCadenceAssetsDisplayPolicy.visibleAssets(
+            release.assets,
+            expanded: isReleaseAssetsExpanded
+        )
+        let remaining = ReleaseCadenceAssetsDisplayPolicy.remainingCount(release.assets.count)
+
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(
+                verbatim: String(
+                    format: String.l10n(
+                        "insights.repo.releaseCadence.assets.titleFormat",
+                        defaultValue: "%@ 附件"
+                    ),
+                    locale: locale,
+                    release.tagName
+                )
+            )
+            .font(interfaceScale.font(.caption, weight: .semibold))
+            .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(visibleAssets) { asset in
+                    ReleaseAssetRowView(asset: asset, layout: .compact)
+                }
+            }
+
+            if remaining > 0 {
+                HStack {
+                    Spacer(minLength: 0)
+                    Button {
+                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
+                            isReleaseAssetsExpanded.toggle()
+                        }
+                    } label: {
+                        Group {
+                            if isReleaseAssetsExpanded {
+                                Text(
+                                    verbatim: String.l10n(
+                                        "insights.repo.releaseCadence.assets.collapse",
+                                        defaultValue: "收起"
+                                    )
+                                )
+                            } else {
+                                Text(
+                                    verbatim: String(
+                                        format: String.l10n(
+                                            "insights.repo.releaseCadence.assets.moreFormat",
+                                            defaultValue: "更多（还有 %lld 个）"
+                                        ),
+                                        locale: locale,
+                                        remaining
+                                    )
+                                )
+                            }
+                        }
+                        .font(interfaceScale.font(.caption, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func releaseCadenceMetrics(_ cadence: RepositoryReleaseCadenceInsight?) -> some View {
+        HStack(spacing: 8) {
+            releaseCadenceMetric(
+                title: "insights.repo.releaseCadence.lastYear",
+                value: (cadence?.releasesLastYear ?? 0).formatted(.number.locale(locale)),
+                systemImage: "calendar"
+            )
+            releaseCadenceMetric(
+                title: "insights.repo.releaseCadence.averageInterval",
+                value: cadence?.averageIntervalDays.map {
+                    String(
+                        format: String.l10n("insights.repo.releaseCadence.daysFormat"),
+                        locale: locale,
+                        $0
+                    )
+                } ?? String.l10n("insights.repo.state.noData"),
+                systemImage: "arrow.left.and.right"
+            )
+            releaseCadenceMetric(
+                title: "insights.repo.releaseCadence.latest",
+                value: cadence.map { shortDate($0.latestPublishedAt) }
+                    ?? String.l10n("insights.repo.state.noData"),
+                systemImage: "clock"
+            )
         }
     }
 

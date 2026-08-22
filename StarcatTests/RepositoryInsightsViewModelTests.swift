@@ -45,6 +45,23 @@ struct RepositoryInsightsViewModelTests {
         #expect(RepositoryReleaseCadenceInsight.make(releases: [], now: now) == nil)
     }
 
+    @Test("发布节奏附件默认只露出 3 个，展开后返回全部")
+    func releaseCadenceAssetsDisplayPolicyCollapsesThenExpands() {
+        let assets = ["a", "b", "c", "d", "e"]
+
+        #expect(
+            ReleaseCadenceAssetsDisplayPolicy.visibleAssets(assets, expanded: false) == ["a", "b", "c"]
+        )
+        #expect(ReleaseCadenceAssetsDisplayPolicy.remainingCount(assets.count) == 2)
+        #expect(
+            ReleaseCadenceAssetsDisplayPolicy.visibleAssets(assets, expanded: true) == assets
+        )
+        #expect(
+            ReleaseCadenceAssetsDisplayPolicy.visibleAssets(["a", "b"], expanded: false) == ["a", "b"]
+        )
+        #expect(ReleaseCadenceAssetsDisplayPolicy.remainingCount(2) == 0)
+    }
+
     @Test("页面加载与单面板刷新完成后更新共享洞察 XML")
     func loadAndManualRefreshNotifyContextCoordinator() async {
         let counter = RepositoryInsightsCallCounter()
@@ -136,6 +153,61 @@ struct RepositoryInsightsViewModelTests {
         await viewModel.load(repo: fixtureRepo(id: 3), isAuthenticated: true)
 
         #expect(viewModel.releaseCadenceState == .content(cadence))
+        #expect(await refreshCounter.value() == 0)
+    }
+
+    @Test("远端节奏缓存命中时直接恢复附件记录，不请求 GitHub")
+    func releaseCadenceCacheRestoresLatestAssetsWithoutRefresh() async {
+        let cadence = RepositoryReleaseCadenceInsight(
+            releasesLastYear: 2,
+            averageIntervalDays: 10,
+            latestPublishedAt: Date(timeIntervalSince1970: 5_000)
+        )
+        let latest = RepositoryReleaseInsight(
+            tagName: "v2.0.0",
+            name: "Stable",
+            publishedAt: Date(timeIntervalSince1970: 5_000),
+            htmlURL: URL(string: "https://github.com/octo/demo/releases/tag/v2.0.0"),
+            assets: [
+                ReleaseAsset(
+                    id: 11,
+                    name: "app.dmg",
+                    contentType: "application/octet-stream",
+                    size: 100,
+                    browserDownloadUrl: "https://example.test/app.dmg",
+                    apiUrl: "https://api.example.test/assets/11",
+                    downloadCount: 1,
+                    createdAt: nil
+                )
+            ]
+        )
+        let refreshCounter = RepositoryInsightsCallCounter()
+        let remoteProvider = StubRepositoryRemoteInsightsProvider(
+            cachedHandler: { _, _ in nil },
+            refreshHandler: { _, _ in throw StubError.failed },
+            cachedReleaseCadenceHandler: { _ in
+                RepositoryCachedReleaseCadenceInsight(
+                    value: cadence,
+                    latest: latest,
+                    fetchedAt: Date(timeIntervalSince1970: 5_100),
+                    isStale: false,
+                    responseETag: "\"cadence-assets\""
+                )
+            },
+            refreshReleaseCadenceHandler: { _ in
+                await refreshCounter.increment()
+                return .cadenceOnly(nil)
+            }
+        )
+        let viewModel = RepositoryInsightsViewModel(
+            provider: emptyLocalProvider(),
+            remoteProvider: remoteProvider
+        )
+
+        await viewModel.load(repo: fixtureRepo(id: 31), isAuthenticated: true)
+
+        #expect(viewModel.releaseCadenceState == .content(cadence))
+        #expect(viewModel.releaseState == .content(latest))
         #expect(await refreshCounter.value() == 0)
     }
 
@@ -1417,6 +1489,73 @@ struct RepositoryInsightsViewModelTests {
         #expect(health.maintenanceScore == 90)
         #expect(openSSF == RepositoryOpenSSFInsight(score: 8.7, scoreDate: "2026-07-27"))
         #expect(cachedCommunity == community)
+        #expect(release.assets.isEmpty)
+    }
+
+    @Test("本地最新 Release 把 assetsJson 映射进洞察附件")
+    func defaultProviderMapsLatestReleaseAssets() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 71)
+        let assets = [
+            ReleaseAsset(
+                id: 801,
+                name: "Starcat-1.0.0-arm64.dmg",
+                contentType: "application/octet-stream",
+                size: 18_000_000,
+                browserDownloadUrl: "https://example.test/arm64.dmg",
+                apiUrl: "https://api.example.test/assets/801",
+                downloadCount: 12,
+                createdAt: "2026-07-20T00:00:00Z"
+            ),
+            ReleaseAsset(
+                id: 802,
+                name: "Starcat-1.0.0.zip",
+                contentType: "application/zip",
+                size: 17_000_000,
+                browserDownloadUrl: "https://example.test/app.zip",
+                apiUrl: "https://api.example.test/assets/802",
+                downloadCount: 8,
+                createdAt: "2026-07-20T00:00:00Z"
+            )
+        ]
+        let releaseRepository = GRDBReleaseRepository(database: database)
+        try await releaseRepository.upsertMany(
+            [
+                ReleaseRecord(
+                    id: 710,
+                    repoId: 71,
+                    tagName: "v1.0.0",
+                    name: "Stable",
+                    bodyMarkdown: nil,
+                    htmlUrl: "https://github.com/octo/demo-71/releases/tag/v1.0.0",
+                    isPrerelease: false,
+                    isDraft: false,
+                    publishedAt: "2026-07-20T00:00:00Z",
+                    createdAtRemote: "2026-07-20T00:00:00Z",
+                    assetsJson: ReleaseAssetCodec.encode(assets),
+                    isRead: false,
+                    fetchedAt: "2026-07-27T00:00:00Z"
+                )
+            ],
+            isReadDefault: false
+        )
+
+        let provider = DefaultRepositoryLocalInsightsProvider(
+            releaseRepository: releaseRepository,
+            healthRepository: GRDBRepoHealthRepository(database: database),
+            openSSFRepository: GRDBOpenSSFScoreRepository(database: database),
+            insightsCache: GRDBRepositoryInsightsCache(database: database),
+            database: database,
+            now: { Date(timeIntervalSince1970: 1_785_196_800) }
+        )
+        let snapshot = await provider.snapshot(repoId: 71)
+        guard case .value(let release?) = snapshot.release else {
+            Issue.record("缺少带附件的最新 Release")
+            return
+        }
+
+        #expect(release.tagName == "v1.0.0")
+        #expect(release.assets == assets)
     }
 
     @Test("单事务本地快照中 Community 损坏不影响其它区块")

@@ -671,6 +671,75 @@ struct RepositoryInsightsRemoteProviderTests {
         #expect(!cached.isStale)
     }
 
+    @Test("远端发布节奏把最新 Release 附件带回洞察，但不写入订阅表")
+    func releaseCadenceMapsLatestAssetsWithoutPersistingSubscription() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 29, owner: "octo", name: "assets")
+        let httpClient = ReleaseCadenceHTTPClient(
+            body: """
+            [
+              {
+                "tag_name":"v4",
+                "name":"Version 4",
+                "body":null,
+                "html_url":"https://github.com/octo/assets/releases/tag/v4",
+                "published_at":"2026-07-20T00:00:00Z",
+                "assets":[
+                  {
+                    "id":901,
+                    "name":"app-arm64.dmg",
+                    "content_type":"application/octet-stream",
+                    "size":1800,
+                    "url":"https://api.example.test/assets/901",
+                    "browser_download_url":"https://example.test/app-arm64.dmg",
+                    "download_count":4,
+                    "created_at":"2026-07-20T00:00:00Z"
+                  },
+                  {
+                    "id":902,
+                    "name":"app.zip",
+                    "content_type":"application/zip",
+                    "size":1700,
+                    "url":"https://api.example.test/assets/902",
+                    "browser_download_url":"https://example.test/app.zip",
+                    "download_count":2,
+                    "created_at":"2026-07-20T00:00:00Z"
+                  }
+                ]
+              }
+            ]
+            """
+        )
+        let provider = DefaultRepositoryRemoteInsightsProvider(
+            metricsClient: DefaultGitHubRepositoryMetricsClient(
+                httpClient: httpClient,
+                token: "token",
+                baseURL: URL(string: "https://api.example.test")!
+            ),
+            cache: GRDBRepositoryInsightsCache(database: database),
+            now: { Date(timeIntervalSince1970: 4_000) }
+        )
+
+        let snapshot = try await provider.refreshReleaseCadence(
+            repository: RepoIdentity(ghRepoID: 29, owner: "octo", name: "assets")
+        )
+        let latest = try #require(snapshot.latest)
+        let storedReleases = try await GRDBReleaseRepository(database: database)
+            .fetch(forRepo: 29, limit: 12)
+
+        #expect(latest.tagName == "v4")
+        #expect(latest.assets.count == 2)
+        #expect(latest.assets[0].name == "app-arm64.dmg")
+        #expect(latest.assets[0].browserDownloadUrl == "https://example.test/app-arm64.dmg")
+        #expect(latest.assets[0].apiUrl == "https://api.example.test/assets/901")
+        #expect(latest.assets[1].name == "app.zip")
+        #expect(storedReleases.isEmpty)
+
+        let cached = try #require(try await provider.cachedReleaseCadence(repoID: 29))
+        #expect(cached.latest?.tagName == "v4")
+        #expect(cached.latest?.assets == latest.assets)
+    }
+
     @Test("仓库确认没有 Release 时缓存空结果避免重复请求")
     func releaseCadencePersistsConfirmedEmptyResult() async throws {
         let database = try InMemoryDatabaseManager()
