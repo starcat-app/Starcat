@@ -493,6 +493,25 @@ struct ReadmeStateView: View {
         return "README"
     }
 
+    /// 详情页所属仓库。Manage 从翻译控件拿，Trending / Discovery 从 contentScope 拼。
+    private var markdownWindowContext: ReadmeWindowMarkdownContext? {
+        if let repo = translationControl?.repo {
+            return ReadmeWindowMarkdownContext(
+                owner: repo.owner,
+                repo: repo.name,
+                readmeAPI: dependencies.readmeAPI
+            )
+        }
+        if case .trending(let owner, let repo) = contentScope {
+            return ReadmeWindowMarkdownContext(
+                owner: owner,
+                repo: repo,
+                readmeAPI: dependencies.readmeAPI
+            )
+        }
+        return nil
+    }
+
     private var isStateStaleForScope: Bool {
         switch contentScope {
         case .manage(let repoId):
@@ -547,20 +566,33 @@ struct ReadmeStateView: View {
                 let renderedHtml = html
                 let windowTitle = readmeWindowTitle
                 let documentKey = ReadmeTranslationService.hash(html)
+                let markdownContext = markdownWindowContext
                 ReadmeWebView(
                     htmlFragment: renderedHtml,
                     baseURL: baseURL,
                     onScrollReportChange: onScrollReportChange,
-                    onOpenInNewWindow: { [html = renderedHtml, baseURL, windowTitle, settings] in
+                    onOpenInNewWindow: { [html = renderedHtml, baseURL, windowTitle, settings, markdownContext] in
                         ReadmeWindowController.show(
                             htmlFragment: html,
                             baseURL: baseURL,
                             title: windowTitle,
-                            settings: settings
+                            settings: settings,
+                            markdownContext: markdownContext
                         )
                     },
                     onExportMarkdown: { [dependencies] in
                         exportReadmeMarkdown(dependencies: dependencies)
+                    },
+                    markdownLinkRepositoryOwner: markdownContext?.owner,
+                    markdownLinkRepositoryName: markdownContext?.repo,
+                    onOpenRepositoryMarkdown: markdownContext.map { context in
+                        { target in
+                            ReadmeWindowController.showRepositoryMarkdown(
+                                target: target,
+                                settings: settings,
+                                readmeAPI: context.readmeAPI
+                            )
+                        }
                     },
                     translationRenderState: translationControl?.translationVM.renderState ?? .hidden,
                     onTranslationSourceChange: { snapshot in

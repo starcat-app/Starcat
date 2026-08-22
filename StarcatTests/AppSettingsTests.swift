@@ -92,6 +92,7 @@ struct AppSettingsTests {
         anySearchSettings.isEnabled = true
         settings.setExternalSearchSettings(anySearchSettings, for: .anySearch)
         settings.notificationsEnabled = false
+        settings.openRepositoryMarkdownInApp = true
         settings.hideDockIcon = true
         settings.snakeStyle = .greedy
         settings.keyboardShortcutsEnabled = false
@@ -128,6 +129,7 @@ struct AppSettingsTests {
         #expect(settings.chatHistoryStorageKind == .jsonFiles)
         #expect(settings.externalSearchSettings(for: .anySearch).isEnabled == false)
         #expect(settings.notificationsEnabled == true)
+        #expect(settings.openRepositoryMarkdownInApp == false)
         #expect(settings.hideDockIcon == false)
         #expect(settings.snakeStyle == .off)
         #expect(settings.keyboardShortcutsEnabled == true)
@@ -142,6 +144,18 @@ struct AppSettingsTests {
         #expect(settings.externalSearchAPIKey(for: .anySearch) == nil)
         #expect(settings.isProUser == false)
         #expect(keychain.snapshot.isEmpty)
+    }
+
+    @Test("同仓 Markdown 应用内打开: 默认关闭并持久化")
+    func openRepositoryMarkdownInAppDefaultsOffAndPersists() {
+        let defaults = makeIsolatedDefaults()
+        let settings = AppSettings(defaults: defaults)
+        #expect(settings.openRepositoryMarkdownInApp == false)
+
+        settings.openRepositoryMarkdownInApp = true
+
+        let restored = AppSettings(defaults: defaults)
+        #expect(restored.openRepositoryMarkdownInApp == true)
     }
 
     @Test("macOS 集成: 隐藏 Dock 图标默认关闭并持久化")

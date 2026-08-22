@@ -109,6 +109,19 @@ struct DatabaseMigrationsV1Tests {
         }
     }
 
+    @Test("v21 给通知会话追加 labels_json")
+    func githubIssueLabelsMigration() throws {
+        let writer = try makeDB()
+        try writer.read { db in
+            var migrator = DatabaseMigrator()
+            DatabaseMigrations.registerAll(into: &migrator)
+            let applied = try migrator.appliedIdentifiers(db)
+            #expect(applied.contains("v21-github-issue-labels"))
+            let columns = try db.columns(in: "github_notification_threads").map(\.name)
+            #expect(columns.contains("labels_json"))
+        }
+    }
+
     @Test("1.4.0 正式迁移应接管任意开发期中间版本")
     func release140MigrationConvergesDevelopmentDatabases() throws {
         let developmentBoundaries = [

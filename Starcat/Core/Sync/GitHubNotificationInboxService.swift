@@ -210,7 +210,11 @@ final class GitHubNotificationInboxService {
     func hydrate(id: String) async {
         guard !GitHubNotificationMapper.isDemoThread(id) else { return }
         guard let record = try? await threadRepository.fetch(id: id) else { return }
-        guard record.hydratedAt == nil || record.subjectCreatedAt == nil else { return }
+        let needsLabels = GitHubNotificationMapper.canReply(
+            subjectType: record.subjectType,
+            number: record.subjectNumber
+        ) && record.labelsJson == nil
+        guard record.hydratedAt == nil || record.subjectCreatedAt == nil || needsLabels else { return }
         guard let path = GitHubNotificationMapper.path(fromAbsoluteAPIURL: record.subjectApiUrl),
               !path.isEmpty
         else { return }
@@ -233,7 +237,8 @@ final class GitHubNotificationInboxService {
                 commentsJson: GitHubNotificationMapper.encodeComments(comments),
                 htmlUrl: hydration.htmlURL ?? record.htmlUrl,
                 subjectCreatedAt: hydration.createdAt ?? record.subjectCreatedAt ?? record.updatedAt,
-                hydratedAt: now
+                hydratedAt: now,
+                labelsJson: GitHubNotificationMapper.encodeLabels(hydration.labels)
             )
             postDidChange()
         } catch {
@@ -274,7 +279,8 @@ final class GitHubNotificationInboxService {
             commentsJson: GitHubNotificationMapper.encodeComments(comments),
             htmlUrl: record.htmlUrl,
             subjectCreatedAt: record.subjectCreatedAt,
-            hydratedAt: record.hydratedAt ?? now
+            hydratedAt: record.hydratedAt ?? now,
+            labelsJson: record.labelsJson
         )
         postDidChange()
     }

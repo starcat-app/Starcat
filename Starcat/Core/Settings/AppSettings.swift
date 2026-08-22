@@ -896,6 +896,14 @@ final class AppSettings {
         didSet { persistBool(key: Keys.openFirstDetailOnCategoryChange, value: openFirstDetailOnCategoryChange) }
     }
 
+    /// README 里的同仓 Markdown 链接是否在 App 内打开。
+    ///
+    /// 默认 false：保持「点击即进浏览器」的现有行为，避免用户在没看到开关前
+    /// 被突然改掉的导航吓到。打开后才拦截当前仓库的 `.md` / `.markdown` 链接。
+    var openRepositoryMarkdownInApp: Bool {
+        didSet { persistBool(key: Keys.openRepositoryMarkdownInApp, value: openRepositoryMarkdownInApp) }
+    }
+
     /// AI 服务商配置。API Key 不进 UserDefaults，单独走 KeychainManager 的加密文件。
     var aiProvider: AIServiceProvider {
         didSet { persist(key: Keys.aiProvider, value: aiProvider.rawValue) }
@@ -1687,6 +1695,9 @@ final class AppSettings {
         self.openFirstDetailOnCategoryChange = defaults.object(
             forKey: Keys.openFirstDetailOnCategoryChange
         ) as? Bool ?? false
+        self.openRepositoryMarkdownInApp = defaults.object(
+            forKey: Keys.openRepositoryMarkdownInApp
+        ) as? Bool ?? false
 
         let aiProviderRaw = defaults.string(forKey: Keys.aiProvider)
         let resolvedAIProvider = aiProviderRaw.flatMap(AIServiceProvider.init(rawValue:)) ?? .openAICompatible
@@ -2055,6 +2066,7 @@ final class AppSettings {
         lastActivityCategoryRaw = ""
         listPreferenceValues = [:]
         openFirstDetailOnCategoryChange = false
+        openRepositoryMarkdownInApp = false
 
         let provider = AIServiceProvider.openAICompatible
         let baseURL = provider.defaultBaseURL
@@ -2500,6 +2512,7 @@ final class AppSettings {
         static let lastActivityCategory = "settings.lastActivityCategory"
         static let listPreferenceValues = "settings.listPreferences.values.v1"
         static let openFirstDetailOnCategoryChange = "settings.detail.openFirstOnCategoryChange.v1"
+        static let openRepositoryMarkdownInApp = "settings.readme.openRepositoryMarkdownInApp.v1"
         static let aiProvider = "settings.ai.provider"
         static let aiBaseURL = "settings.ai.baseURL"
         static let aiChatModel = "settings.ai.chatModel"
@@ -2602,6 +2615,7 @@ final class AppSettings {
             lastActivityCategory,
             listPreferenceValues,
             openFirstDetailOnCategoryChange,
+            openRepositoryMarkdownInApp,
             aiProvider,
             aiBaseURL,
             aiChatModel,

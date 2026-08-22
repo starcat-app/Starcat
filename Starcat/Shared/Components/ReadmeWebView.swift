@@ -111,6 +111,14 @@ struct ReadmeWebView: View {
     /// nil 时浮动工具栏不显示该按钮。
     var onExportMarkdown: (() -> Void)? = nil
 
+    /// 当前 README 所属仓库。有值且设置打开「应用内打开仓库文档」时，
+    /// 同仓 Markdown 点击走 `onOpenRepositoryMarkdown`，不再进浏览器。
+    var markdownLinkRepositoryOwner: String? = nil
+    var markdownLinkRepositoryName: String? = nil
+
+    /// 打开同仓 Markdown 独立窗。nil 时即使开关打开也回退浏览器。
+    var onOpenRepositoryMarkdown: ((RepositoryMarkdownLinkTarget) -> Void)? = nil
+
     /// 当前翻译渲染状态。默认隐藏，普通 README 调用方无需感知翻译能力。
     var translationRenderState: ReadmeTranslationRenderState = .hidden
 
@@ -130,7 +138,11 @@ struct ReadmeWebView: View {
             readmeFontSizeAdjustment: settings.readmeFontSizeAdjustment,
             scrollToTopRequestID: scrollToTopRequestID,
             translationRenderState: translationRenderState,
-            onTranslationSourceChange: onTranslationSourceChange
+            onTranslationSourceChange: onTranslationSourceChange,
+            openRepositoryMarkdownInApp: settings.openRepositoryMarkdownInApp,
+            markdownLinkRepositoryOwner: markdownLinkRepositoryOwner,
+            markdownLinkRepositoryName: markdownLinkRepositoryName,
+            onOpenRepositoryMarkdown: onOpenRepositoryMarkdown
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // 工具条必须作为 overlay 贴边悬浮，不能参与 WebView 正文布局。
@@ -232,6 +244,10 @@ private struct ReadmeWebContentView: NSViewRepresentable {
     let scrollToTopRequestID: Int
     let translationRenderState: ReadmeTranslationRenderState
     var onTranslationSourceChange: (ReadmeTranslationSourceSnapshot) -> Void
+    var openRepositoryMarkdownInApp: Bool
+    var markdownLinkRepositoryOwner: String?
+    var markdownLinkRepositoryName: String?
+    var onOpenRepositoryMarkdown: ((RepositoryMarkdownLinkTarget) -> Void)?
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -263,6 +279,10 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         context.coordinator.webView = webView
         context.coordinator.onScrollReportChange = onScrollReportChange
         context.coordinator.onTranslationSourceChange = onTranslationSourceChange
+        context.coordinator.openRepositoryMarkdownInApp = openRepositoryMarkdownInApp
+        context.coordinator.markdownLinkRepositoryOwner = markdownLinkRepositoryOwner
+        context.coordinator.markdownLinkRepositoryName = markdownLinkRepositoryName
+        context.coordinator.onOpenRepositoryMarkdown = onOpenRepositoryMarkdown
         context.coordinator.updateTranslationRenderState(
             translationRenderState,
             reduceMotion: reduceMotion
@@ -274,6 +294,10 @@ private struct ReadmeWebContentView: NSViewRepresentable {
     func updateNSView(_ webView: WKWebView, context: Context) {
         context.coordinator.onScrollReportChange = onScrollReportChange
         context.coordinator.onTranslationSourceChange = onTranslationSourceChange
+        context.coordinator.openRepositoryMarkdownInApp = openRepositoryMarkdownInApp
+        context.coordinator.markdownLinkRepositoryOwner = markdownLinkRepositoryOwner
+        context.coordinator.markdownLinkRepositoryName = markdownLinkRepositoryName
+        context.coordinator.onOpenRepositoryMarkdown = onOpenRepositoryMarkdown
         context.coordinator.updateTranslationRenderState(
             translationRenderState,
             reduceMotion: reduceMotion
@@ -412,6 +436,10 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         var lastScrollToTopRequestID = 0
         var onScrollReportChange: (RepoDetailScrollReport) -> Void = { _ in }
         var onTranslationSourceChange: (ReadmeTranslationSourceSnapshot) -> Void = { _ in }
+        var openRepositoryMarkdownInApp = false
+        var markdownLinkRepositoryOwner: String?
+        var markdownLinkRepositoryName: String?
+        var onOpenRepositoryMarkdown: ((RepositoryMarkdownLinkTarget) -> Void)?
         private weak var userContentController: WKUserContentController?
         private var pendingTranslationRenderState: ReadmeTranslationRenderState = .hidden
         private var lastAppliedTranslationRevision: Int?
@@ -1328,6 +1356,13 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             // 触发的主框架首次导航（url == baseURL，navigationType == .other）也被 cancel，
             // WebView 直接白屏。修复后改为「除 linkActivated 外有条件允许」。
             if navigationAction.navigationType == .linkActivated {
+                if openRepositoryMarkdownIfNeeded(
+                    url: url,
+                    modifierFlags: navigationAction.modifierFlags
+                ) {
+                    decisionHandler(.cancel)
+                    return
+                }
                 NSWorkspace.shared.open(url)
                 decisionHandler(.cancel)
                 return
@@ -1365,6 +1400,27 @@ private struct ReadmeWebContentView: NSViewRepresentable {
 
             // 3. 非主框架（iframe 等）：放行
             decisionHandler(.allow)
+        }
+
+        /// 设置打开且不是 ⌘-点击时，把同仓 Markdown 交给独立窗。
+        ///
+        /// ⌘-点击故意保留浏览器逃生口，避免偶发误拦。开关关闭时本方法直接 false，
+        /// 行为与改之前完全一致。
+        private func openRepositoryMarkdownIfNeeded(
+            url: URL,
+            modifierFlags: NSEvent.ModifierFlags
+        ) -> Bool {
+            guard openRepositoryMarkdownInApp else { return false }
+            guard !modifierFlags.contains(.command) else { return false }
+            guard let owner = markdownLinkRepositoryOwner,
+                  let repo = markdownLinkRepositoryName,
+                  let onOpen = onOpenRepositoryMarkdown
+            else { return false }
+            guard let target = RepositoryMarkdownLink.classify(url, owner: owner, repo: repo) else {
+                return false
+            }
+            onOpen(target)
+            return true
         }
 
         // 渲染失败日志，方便后续排查（沙箱、CSS、HTML 片段异常都会落在这里）

@@ -699,4 +699,58 @@ struct ReadmeAPI {
         }
         return now.timeIntervalSince(cachedDate) < softTtl
     }
+
+    /// 拉取同仓任意 Markdown 的 GitHub 渲染 HTML，只进会话内存，不写 `readmes` 表。
+    ///
+    /// 关键约束：默认 README 缓存是 `repo_id` 一对一。语言文件如果 upsert 进去，
+    /// 刷新 / SWR / 翻译 / AI 都会把默认 README 污染掉。
+    func fetchRenderedRepositoryMarkdown(
+        owner: String,
+        repo: String,
+        path: String,
+        ref: String,
+        cache: RepositoryMarkdownSessionCache = .shared
+    ) async throws -> String {
+        let target = RepositoryMarkdownLinkTarget(owner: owner, repo: repo, ref: ref, path: path)
+        if let cached = await cache.html(for: target.cacheKey) {
+            return cached
+        }
+
+        let response = try await client.repositoryFileHTML(
+            owner: owner,
+            repo: repo,
+            path: path,
+            ref: ref,
+            ifNoneMatch: nil,
+            requestTimeout: nil
+        )
+        guard !response.notModified else {
+            throw NetworkError.invalidResponse
+        }
+        guard let html = String(data: response.data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !html.isEmpty
+        else {
+            throw NetworkError.invalidResponse
+        }
+
+        let rewritten = ReadmeAssetURLRewriter.rewrite(in: html, owner: owner, repo: repo)
+        await cache.store(rewritten, for: target.cacheKey)
+        return rewritten
+    }
+}
+
+/// 同仓 Markdown 的进程内缓存。不落盘，避免和默认 README 表抢 key。
+actor RepositoryMarkdownSessionCache {
+    static let shared = RepositoryMarkdownSessionCache()
+
+    private var htmlByKey: [String: String] = [:]
+
+    func html(for key: String) -> String? {
+        htmlByKey[key]
+    }
+
+    func store(_ html: String, for key: String) {
+        htmlByKey[key] = html
+    }
 }

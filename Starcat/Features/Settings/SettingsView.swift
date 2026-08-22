@@ -362,6 +362,16 @@ struct SettingsView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+
+                Toggle(isOn: $settings.openRepositoryMarkdownInApp) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings.general.openRepositoryMarkdownInApp.title")
+                        Text("settings.general.openRepositoryMarkdownInApp.help")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             } header: {
                 SettingsSectionHeader(
                     "settings.general.detailBehavior",

@@ -101,6 +101,26 @@ struct GitHubNotificationMapperTests {
         )
     }
 
+    @Test("Issue 标签按顺序保留多个，缺色用 GitHub 默认灰")
+    func issueLabelsParseMultipleAndRoundTrip() {
+        let raw: [Any] = [
+            ["name": "bug", "color": "d73a4a"],
+            ["name": "ci", "color": "#ededed"],
+            "docs",
+            ["name": "  "],
+            ["color": "000000"]
+        ]
+        let labels = GitHubNotificationMapper.labels(from: raw)
+        #expect(labels.map(\.name) == ["bug", "ci", "docs"])
+        #expect(labels.map(\.colorHex) == ["d73a4a", "ededed", "6e7781"])
+
+        let encoded = GitHubNotificationMapper.encodeLabels(labels)
+        let decoded = GitHubNotificationMapper.decodeLabels(encoded)
+        #expect(decoded == labels)
+        #expect(GitHubNotificationMapper.decodeLabels(nil).isEmpty)
+        #expect(GitHubNotificationMapper.decodeLabels("[]").isEmpty)
+    }
+
     @Test("列表摘录把 markdown 链接收成可见文字")
     func listSnippetStripsLinks() {
         #expect(
@@ -793,6 +813,83 @@ struct GitHubNotificationTimelinePagingTests {
     }
 }
 
+@Suite("GitHubNotificationTimelineLibraryState")
+struct GitHubNotificationTimelineLibraryStateTests {
+
+    @Test("入库只改匹配账本行的知识库徽章，不改 id 和顺序")
+    func patchesMatchingActivityLibraryStateWithoutReordering() {
+        let selectedID = "star:starcat:42:2026-08-22T12:00:00Z"
+        let otherID = "star:starcat:99:2026-08-22T11:00:00Z"
+        let rows: [GitHubInboxTimelineRow] = [
+            activityRow(id: selectedID, repoId: 42, state: .outsideLibrary),
+            activityRow(id: otherID, repoId: 99, state: .outsideLibrary)
+        ]
+
+        let patched = GitHubNotificationTimelineLibraryState.apply(
+            rows: rows,
+            repoId: 42,
+            state: .inLibrary
+        )
+
+        #expect(patched.map(\.id) == [selectedID, otherID])
+        #expect(libraryState(of: patched[0]) == .inLibrary)
+        #expect(libraryState(of: patched[1]) == .outsideLibrary)
+    }
+
+    @Test("同一仓库的多条账本行一起改徽章；未命中时列表原样返回")
+    func patchesEveryMatchingRepoRowAndIgnoresUnknownRepo() {
+        let first = activityRow(id: "star:starcat:7:2026-08-22T10:00:00Z", repoId: 7, state: .outsideLibrary)
+        let second = activityRow(id: "unstar:starcat:7:2026-08-22T09:00:00Z", repoId: 7, state: .outsideLibrary)
+        let other = activityRow(id: "star:starcat:8:2026-08-22T08:00:00Z", repoId: 8, state: .inLibrary)
+        let rows = [first, second, other]
+
+        let patched = GitHubNotificationTimelineLibraryState.apply(
+            rows: rows,
+            repoId: 7,
+            state: .inLibrary
+        )
+        #expect(libraryState(of: patched[0]) == .inLibrary)
+        #expect(libraryState(of: patched[1]) == .inLibrary)
+        #expect(libraryState(of: patched[2]) == .inLibrary)
+
+        let unchanged = GitHubNotificationTimelineLibraryState.apply(
+            rows: rows,
+            repoId: 100,
+            state: .inLibrary
+        )
+        #expect(unchanged == rows)
+    }
+
+    private func activityRow(id: String, repoId: Int64, state: LibraryState) -> GitHubInboxTimelineRow {
+        let record = UserRepoActivityRecord(
+            id: id,
+            kind: id.hasPrefix("unstar") ? .unstar : .star,
+            source: .starcat,
+            repoId: repoId,
+            fullName: "octo/repo-\(repoId)",
+            htmlUrl: "https://github.com/octo/repo-\(repoId)",
+            occurredAt: "2026-08-22T12:00:00Z",
+            createdAt: "2026-08-22T12:00:00Z",
+            userId: 1,
+            userName: "tester"
+        )
+        return .activity(
+            UserRepoActivityListItem(
+                record: record,
+                snippet: "desc",
+                ownerLogin: "tester",
+                language: "Swift",
+                libraryState: state
+            )
+        )
+    }
+
+    private func libraryState(of row: GitHubInboxTimelineRow) -> LibraryState? {
+        guard case .activity(let item) = row else { return nil }
+        return item.libraryState
+    }
+}
+
 @MainActor
 @Suite("GitHubNotificationInbox")
 struct GitHubNotificationInboxTests {
@@ -1113,7 +1210,11 @@ struct GitHubNotificationInboxTests {
                 actorLogin: "alice",
                 excerpt: "hello body",
                 createdAt: "2026-07-19T00:00:00Z",
-                state: "open"
+                state: "open",
+                labels: [
+                    GitHubNotificationIssueLabel(name: "bug", colorHex: "d73a4a"),
+                    GitHubNotificationIssueLabel(name: "ci", colorHex: "ededed")
+                ]
             )
         }
         env.mock.listNotificationIssueCommentsHandler = { path in
@@ -1145,6 +1246,49 @@ struct GitHubNotificationInboxTests {
         #expect(comments.count == 1)
         #expect(comments.first?.login == "bob")
         #expect(comments.first?.body == "full **markdown** comment")
+        let labels = GitHubNotificationMapper.decodeLabels(stored.labelsJson)
+        #expect(labels.map(\.name) == ["bug", "ci"])
+        #expect(labels.map(\.colorHex) == ["d73a4a", "ededed"])
+    }
+
+    @Test("已 hydrate 但缺 labels_json 的 Issue 会再拉一次 subject")
+    func hydrateRefetchesWhenLabelsMissing() async throws {
+        let env = try makeEnv()
+        env.mock.listNotificationsHandler = { _, _, _, _, _ in
+            Self.listResponse([Self.makeDTO(id: "h-labels")])
+        }
+        var hydrateCalls = 0
+        env.mock.hydrateNotificationSubjectHandler = { _ in
+            hydrateCalls += 1
+            return GitHubNotificationSubjectHydration(
+                htmlURL: "https://github.com/o/r/issues/1",
+                actorLogin: "alice",
+                excerpt: nil,
+                createdAt: "2026-07-19T00:00:00Z",
+                state: "open",
+                labels: [GitHubNotificationIssueLabel(name: "bug", colorHex: "d73a4a")]
+            )
+        }
+        env.mock.listNotificationIssueCommentsHandler = { _ in [] }
+
+        await env.inbox.sync()
+        await env.inbox.hydrate(id: "h-labels")
+        let first = try #require(try await env.threads.fetch(id: "h-labels"))
+        try await env.threads.updateHydration(
+            id: "h-labels",
+            actorLogin: first.actorLogin,
+            excerpt: first.excerpt,
+            commentsJson: first.commentsJson,
+            htmlUrl: first.htmlUrl,
+            subjectCreatedAt: first.subjectCreatedAt,
+            hydratedAt: first.hydratedAt ?? "2026-08-19T00:00:00Z",
+            labelsJson: nil
+        )
+        await env.inbox.hydrate(id: "h-labels")
+
+        #expect(hydrateCalls == 2)
+        let stored = try #require(try await env.threads.fetch(id: "h-labels"))
+        #expect(GitHubNotificationMapper.decodeLabels(stored.labelsJson).map(\.name) == ["bug"])
     }
 
     @Test("发表评论会 POST 并追加到本地 comments_json")
@@ -1163,7 +1307,8 @@ struct GitHubNotificationInboxTests {
             commentsJson: nil,
             htmlUrl: "https://github.com/o/r/issues/1",
             subjectCreatedAt: "2026-07-19T00:00:00Z",
-            hydratedAt: "2026-08-19T00:00:00Z"
+            hydratedAt: "2026-08-19T00:00:00Z",
+            labelsJson: nil
         )
         env.mock.createNotificationIssueCommentHandler = { path, body in
             #expect(path == "/repos/o/r/issues/1/comments")

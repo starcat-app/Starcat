@@ -11,7 +11,7 @@
 //  ReadmeWindowController：
 //  - 只有 README 正文 + 右下角浮动工具栏（字号调节 / 回到顶部）
 //  - 无 hero 区、无仓库元信息卡片、无 AI 助手入口
-//  - 窗口标题 = 仓库全名（owner/repo），仅此一行
+//  - 窗口标题 = 仓库全名，或 `owner/repo · path`（同仓 Markdown）
 //  - 每次点击都开全新窗口（不复用），方便对照阅读多份 README
 //
 //  RepoDetailWindowController：
@@ -27,11 +27,11 @@
 //  设计要点
 //  ─────────────────────────────────────────────────────────
 //
-//  - 从 README 浮动工具栏「新窗口打开」按钮触发。
-//  - 不注入 ReadmeViewModel：传入的 htmlFragment 已是渲染好的内容，
-//    新窗口不需要再调网络。
+//  - 从 README 浮动工具栏「新窗口打开」或同仓 Markdown 点击触发。
+//  - 快照窗：传入的 htmlFragment 已是渲染好的内容，不再调网络。
+//  - 文档窗：先出窗显示 loading，Contents API 成功后再填 HTML；失败关窗并回退浏览器。
+//  - 不写 `readmes` 表。
 //  - 共享 AppSettings（字号偏好在主窗调过的，独立窗同步生效）。
-//  - 窗口关闭自然释放（ARC），不需要 singleton map 清理。
 //
 
 import AppKit
@@ -45,35 +45,77 @@ private enum ReadmeWindowMetrics {
     static let minContentSize = NSSize(width: 500, height: 400)
 }
 
+/// 独立窗里继续拦截同仓 Markdown 所需的仓库身份与拉取入口。
+struct ReadmeWindowMarkdownContext {
+    let owner: String
+    let repo: String
+    let readmeAPI: ReadmeAPI
+}
+
 /// README 独立窗口控制器。
 ///
 /// 每次调用 `show(...)` 都创建新窗口，不复用——用户可能同时打开多个
 /// README 做对照阅读。
 final class ReadmeWindowController: NSWindowController, NSWindowDelegate {
 
-    /// 显示 README 独立窗口。
-    ///
-    /// - Parameters:
-    ///   - htmlFragment: 已渲染的 README HTML 内容（含 GFM CSS）。
-    ///   - baseURL: 用于解析 HTML 内相对链接的基地址。
-    ///   - title: 窗口标题（通常为 `owner/repo`）。
-    ///   - settings: 应用设置（字号偏好等），注入 SwiftUI environment。
+    /// 可见窗口必须自己保住 controller：`NSWindow.delegate` 是弱引用，
+    /// 异步拉 Markdown 时如果只靠局部变量，窗会在回调前被释放。
+    private static var liveWindows: [ObjectIdentifier: ReadmeWindowController] = [:]
+
+    private let settings: AppSettings
+    private let markdownContext: ReadmeWindowMarkdownContext?
+    private let documentTarget: RepositoryMarkdownLinkTarget?
+    private let model: RepositoryMarkdownWindowModel
+    private let hostedContentController: NSViewController
+
+    /// 显示已经渲染好的 README 快照。
     @MainActor
     static func show(
         htmlFragment: String,
         baseURL: URL?,
         title: String,
-        settings: AppSettings
+        settings: AppSettings,
+        markdownContext: ReadmeWindowMarkdownContext? = nil
     ) {
         let controller = ReadmeWindowController(
             htmlFragment: htmlFragment,
             baseURL: baseURL,
             title: title,
-            settings: settings
+            settings: settings,
+            markdownContext: markdownContext,
+            documentTarget: nil
         )
+        retain(controller)
         controller.showWindow(nil)
         positionWindow(controller.window)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// 先开窗再拉指定 Markdown；失败关窗并回退系统浏览器。
+    @MainActor
+    static func showRepositoryMarkdown(
+        target: RepositoryMarkdownLinkTarget,
+        settings: AppSettings,
+        readmeAPI: ReadmeAPI
+    ) {
+        let context = ReadmeWindowMarkdownContext(
+            owner: target.owner,
+            repo: target.repo,
+            readmeAPI: readmeAPI
+        )
+        let controller = ReadmeWindowController(
+            htmlFragment: nil,
+            baseURL: target.contentBaseURL,
+            title: target.windowTitle,
+            settings: settings,
+            markdownContext: context,
+            documentTarget: target
+        )
+        retain(controller)
+        controller.showWindow(nil)
+        positionWindow(controller.window)
+        NSApp.activate(ignoringOtherApps: true)
+        controller.startLoadingIfNeeded()
     }
 
     /// 将新窗口居中于主窗口；找不到主窗口时退化为屏幕居中。
@@ -81,7 +123,6 @@ final class ReadmeWindowController: NSWindowController, NSWindowDelegate {
     private static func positionWindow(_ window: NSWindow?) {
         guard let window else { return }
 
-        // 尝试找到主窗口（通过 frameAutosaveName 匹配）
         if let mainWindow = NSApp.windows.first(where: { w in
             w !== window
                 && w.isVisible
@@ -101,12 +142,27 @@ final class ReadmeWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    @MainActor
+    private static func retain(_ controller: ReadmeWindowController) {
+        liveWindows[ObjectIdentifier(controller)] = controller
+    }
+
     private init(
-        htmlFragment: String,
+        htmlFragment: String?,
         baseURL: URL?,
         title: String,
-        settings: AppSettings
+        settings: AppSettings,
+        markdownContext: ReadmeWindowMarkdownContext?,
+        documentTarget: RepositoryMarkdownLinkTarget?
     ) {
+        self.settings = settings
+        self.markdownContext = markdownContext
+        self.documentTarget = documentTarget
+        self.model = RepositoryMarkdownWindowModel(
+            htmlFragment: htmlFragment,
+            baseURL: baseURL
+        )
+
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: ReadmeWindowMetrics.defaultContentSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -114,14 +170,11 @@ final class ReadmeWindowController: NSWindowController, NSWindowDelegate {
             defer: false
         )
 
-        // 不传 onScrollReportChange / onOpenInNewWindow：独立窗口内不需要
-        // 详情页的滚动联动，也不需要再次"在新窗口打开"（避免无限套娃）。
-        let content = ReadmeWebView(
-            htmlFragment: htmlFragment,
-            baseURL: baseURL
+        let content = RepositoryMarkdownWindowRoot(
+            model: model,
+            settings: settings,
+            markdownContext: markdownContext
         )
-        // README 独立窗不经过 StarcatApp Scene；显式同步语言、字号和动画设置，
-        // 否则工具栏文案与正文控制会回退到系统 locale / standard scale。
         .starcatAnimationOverride()
         .appLocaleEnvironment()
         .environment(\.starcatInterfaceScale, settings.interfaceScale)
@@ -135,6 +188,7 @@ final class ReadmeWindowController: NSWindowController, NSWindowDelegate {
         window.contentMinSize = ReadmeWindowMetrics.minContentSize
         window.minSize = ReadmeWindowMetrics.minContentSize
         window.isReleasedWhenClosed = false
+        self.hostedContentController = hostingController
 
         super.init(window: window)
         window.delegate = self
@@ -145,10 +199,76 @@ final class ReadmeWindowController: NSWindowController, NSWindowDelegate {
         fatalError("ReadmeWindowController does not support storyboard initialization")
     }
 
-    /// 窗口关闭自动释放：无需 singleton 复用，每次都是新窗口。
+    @MainActor
+    private func startLoadingIfNeeded() {
+        guard let target = documentTarget, let markdownContext else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let html = try await markdownContext.readmeAPI.fetchRenderedRepositoryMarkdown(
+                    owner: target.owner,
+                    repo: target.repo,
+                    path: target.path,
+                    ref: target.ref
+                )
+                self.model.htmlFragment = html
+                self.model.baseURL = target.contentBaseURL
+            } catch {
+                AppLog.ui.error(
+                    "Repository markdown window failed: \(error.localizedDescription, privacy: .public)"
+                )
+                NSWorkspace.shared.open(target.browserURL)
+                self.window?.close()
+            }
+        }
+    }
+
     func windowWillClose(_ notification: Notification) {
-        // NSWindow.isReleasedWhenClosed = false 意味着关闭后 controller 仍在内存；
-        // 这里不做额外清理——SwiftUI 子树随 hosting controller 一起在 window 关闭后
-        // 由 ARC 自然回收。
+        Self.liveWindows[ObjectIdentifier(self)] = nil
+    }
+}
+
+/// 独立窗内容状态。快照窗一开始就有 HTML；文档窗先空着再填。
+@MainActor
+@Observable
+private final class RepositoryMarkdownWindowModel {
+    var htmlFragment: String?
+    var baseURL: URL?
+
+    init(htmlFragment: String?, baseURL: URL?) {
+        self.htmlFragment = htmlFragment
+        self.baseURL = baseURL
+    }
+}
+
+private struct RepositoryMarkdownWindowRoot: View {
+    let model: RepositoryMarkdownWindowModel
+    let settings: AppSettings
+    let markdownContext: ReadmeWindowMarkdownContext?
+
+    var body: some View {
+        if let htmlFragment = model.htmlFragment {
+            ReadmeWebView(
+                htmlFragment: htmlFragment,
+                baseURL: model.baseURL,
+                markdownLinkRepositoryOwner: markdownContext?.owner,
+                markdownLinkRepositoryName: markdownContext?.repo,
+                onOpenRepositoryMarkdown: openRepositoryMarkdown
+            )
+        } else {
+            ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private var openRepositoryMarkdown: ((RepositoryMarkdownLinkTarget) -> Void)? {
+        guard let markdownContext else { return nil }
+        return { target in
+            ReadmeWindowController.showRepositoryMarkdown(
+                target: target,
+                settings: settings,
+                readmeAPI: markdownContext.readmeAPI
+            )
+        }
     }
 }

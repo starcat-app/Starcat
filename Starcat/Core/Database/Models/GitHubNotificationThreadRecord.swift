@@ -43,6 +43,8 @@ struct GitHubNotificationThreadRecord: Codable, FetchableRecord, PersistableReco
     var subjectCreatedAt: String?
     var excerpt: String?
     var commentsJson: String?
+    /// GitHub Issue / PR 标签 JSON。`nil` 表示还没拉过；`"[]"` 表示确认没有标签。
+    var labelsJson: String? = nil
     var hydratedAt: String?
     var updatedAt: String
     var firstSeenAt: String
@@ -78,6 +80,7 @@ struct GitHubNotificationThreadRecord: Codable, FetchableRecord, PersistableReco
         case subjectCreatedAt = "subject_created_at"
         case excerpt
         case commentsJson = "comments_json"
+        case labelsJson = "labels_json"
         case hydratedAt = "hydrated_at"
         case updatedAt = "updated_at"
         case firstSeenAt = "first_seen_at"

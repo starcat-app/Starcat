@@ -717,6 +717,60 @@ enum GitHubNotificationMapper {
         return (try? JSONDecoder().decode([GitHubNotificationComment].self, from: data)) ?? []
     }
 
+    /// GitHub 标签可以有多个，顺序跟网页一致。对象缺 `color` 或纯字符串都收成默认灰。
+    static func labels(from raw: Any?) -> [GitHubNotificationIssueLabel] {
+        guard let items = raw as? [Any] else { return [] }
+        var result: [GitHubNotificationIssueLabel] = []
+        result.reserveCapacity(min(items.count, 20))
+        for item in items.prefix(20) {
+            if let name = (item as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !name.isEmpty {
+                result.append(GitHubNotificationIssueLabel(name: name, colorHex: "6e7781"))
+                continue
+            }
+            guard let obj = item as? [String: Any] else { continue }
+            let name = ((obj["name"] as? String) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { continue }
+            var color = ((obj["color"] as? String) ?? "6e7781")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if color.hasPrefix("#") {
+                color.removeFirst()
+            }
+            if color.count != 6 {
+                color = "6e7781"
+            }
+            result.append(GitHubNotificationIssueLabel(name: name, colorHex: color.lowercased()))
+        }
+        return result
+    }
+
+    static func labels(from organization: [GitHubOrganizationIssueLabel]) -> [GitHubNotificationIssueLabel] {
+        organization.prefix(20).compactMap { label in
+            let name = label.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { return nil }
+            var color = label.colorHex.trimmingCharacters(in: .whitespacesAndNewlines)
+            if color.hasPrefix("#") {
+                color.removeFirst()
+            }
+            if color.count != 6 {
+                color = "6e7781"
+            }
+            return GitHubNotificationIssueLabel(name: name, colorHex: color.lowercased())
+        }
+    }
+
+    /// 空数组也写成 `[]`，用来区分「确认没标签」和「还没拉过」。
+    static func encodeLabels(_ labels: [GitHubNotificationIssueLabel]) -> String {
+        let data = (try? JSONEncoder().encode(labels)) ?? Data("[]".utf8)
+        return String(data: data, encoding: .utf8) ?? "[]"
+    }
+
+    static func decodeLabels(_ json: String?) -> [GitHubNotificationIssueLabel] {
+        guard let json, let data = json.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([GitHubNotificationIssueLabel].self, from: data)) ?? []
+    }
+
     static func subtitle(fullName: String, subjectType: String, number: Int?) -> String {
         if let number {
             switch subjectType {

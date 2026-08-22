@@ -51,16 +51,8 @@ struct GitHubNotificationDetailView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "bell")
-                .font(.system(size: 28, weight: .semibold))
-                .foregroundStyle(.secondary)
-            Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "选择一条时间线事件", en: "Select a timeline event"))
-                .font(.headline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.background)
+        GitHubNotificationNoSelectionPlaceholder()
+            .background(.background)
     }
 
     private func populatedDetail(_ item: ActivityItem) -> some View {
@@ -86,7 +78,7 @@ struct GitHubNotificationDetailView: View {
                     // 反复执行 LazySubviewPlacements，导致主线程陷入 SwiftUI 布局风暴。
                     VStack(alignment: .leading, spacing: 12) {
                         if let payload = item.notification {
-                            conversation(payload, translation: translationVM)
+                            conversation(payload, title: item.title, translation: translationVM)
                         }
                     }
                     .padding(18)
@@ -340,13 +332,13 @@ struct GitHubNotificationDetailView: View {
                     urlString: GitHubNotificationMapper.repositoryAvatarURL(
                         fromFullName: payload.repositoryFullName
                     ),
-                    size: 22,
+                    size: 24,
                     fallbackSymbol: "shippingbox.fill",
                     showBorder: false
                 )
-                // 锁在筛选条高度里，title3 会顶破横线对齐。
+                // 行高仍锁筛选条，避免中栏 / 右栏分割线错层；title3 单行能进 42pt。
                 Text(verbatim: payload.repositoryFullName)
-                    .font(.headline.weight(.semibold))
+                    .font(.title3.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -363,6 +355,7 @@ struct GitHubNotificationDetailView: View {
     @ViewBuilder
     private func conversation(
         _ payload: ActivityNotificationPayload,
+        title: String,
         translation: ReadmeTranslationViewModel?
     ) -> some View {
         let document = translationDocument(payload)
@@ -382,8 +375,32 @@ struct GitHubNotificationDetailView: View {
         let isJobTranslating = translation?.isTranslating ?? false
         let translationLanguage = settings.effectiveReadmeTranslationLanguage
         let prefersAnimatedEntrance = translation?.renderState.prefersAnimatedEntrance ?? false
+        let showsOpeningCard = GitHubNotificationMapper.canReply(
+            subjectType: payload.subjectType,
+            number: payload.subjectNumber
+        )
 
-        if let excerpt = payload.excerpt, !excerpt.isEmpty {
+        if showsOpeningCard {
+            GitHubNotificationCommentCard(
+                login: payload.authorLogin ?? "",
+                createdAt: payload.authorCreatedAt,
+                markdown: payload.excerpt ?? "",
+                repositoryFullName: payload.repositoryFullName,
+                isOpeningPost: true,
+                locale: locale,
+                reduceMotion: reduceMotion,
+                blocks: openingBlocks,
+                translations: cardTranslations(for: openingBlocks, from: translationsByID),
+                isShowingTranslation: isShowing,
+                translationMode: translationMode,
+                prefersAnimatedEntrance: prefersAnimatedEntrance,
+                isJobTranslating: isJobTranslating,
+                translationLanguage: translationLanguage,
+                issueTitle: title,
+                labels: payload.labels
+            )
+            .equatable()
+        } else if let excerpt = payload.excerpt, !excerpt.isEmpty {
             GitHubNotificationCommentCard(
                 login: payload.authorLogin ?? "",
                 createdAt: payload.authorCreatedAt,
@@ -847,6 +864,8 @@ private struct GitHubNotificationCommentCard: View, @MainActor Equatable {
     /// 整帖任务还在跑。光圈是否亮看 `isHaloActive`：本卡段到齐就先灭。
     var isJobTranslating: Bool = false
     var translationLanguage: ReadmeTranslationLanguage = .auto
+    var issueTitle: String? = nil
+    var labels: [GitHubNotificationIssueLabel] = []
     @State private var isTextSelectionPresented = false
 
     private var relevantTranslations: [ReadmeRenderedTranslation] {
@@ -899,8 +918,33 @@ private struct GitHubNotificationCommentCard: View, @MainActor Equatable {
 
             Divider()
 
+            if let issueTitle, !issueTitle.isEmpty {
+                Text(verbatim: issueTitle)
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 12)
+            }
+
+            if !labels.isEmpty {
+                GitHubNotificationLabelFlow(spacing: 6) {
+                    ForEach(Array(labels.enumerated()), id: \.offset) { _, label in
+                        GitHubNotificationLabelChip(label: label)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, (issueTitle?.isEmpty == false) ? 8 : 12)
+            }
+
             if !markdown.isEmpty {
                 commentBody
+                    .padding(12)
+            } else if isOpeningPost {
+                Text("activity.notification.detail.noDescription")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
                     .padding(12)
             }
         }
@@ -1057,6 +1101,84 @@ private struct GitHubNotificationCommentCard: View, @MainActor Equatable {
             && lhs.prefersAnimatedEntrance == rhs.prefersAnimatedEntrance
             && lhs.isJobTranslating == rhs.isJobTranslating
             && lhs.translationLanguage == rhs.translationLanguage
+            && lhs.issueTitle == rhs.issueTitle
+            && lhs.labels == rhs.labels
+    }
+}
+
+/// GitHub 标签色是仓库自定义的，必须按亮度选黑/白字，不能走 `.primary`。
+private struct GitHubNotificationLabelChip: View {
+    let label: GitHubNotificationIssueLabel
+
+    var body: some View {
+        Text(verbatim: label.name)
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(contrastingForeground)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(
+                (Color(hex: label.colorHex) ?? Color(hex: "6e7781") ?? .secondary.opacity(0.2)),
+                in: RoundedRectangle(cornerRadius: 5, style: .continuous)
+            )
+    }
+
+    /// YIQ 亮度：浅底用黑字，深底用白字，对齐 GitHub 网页标签。
+    private var contrastingForeground: Color {
+        var hex = label.colorHex.trimmingCharacters(in: .whitespaces)
+        if hex.hasPrefix("#") {
+            hex.removeFirst()
+        }
+        guard hex.count == 6, let rgb = UInt32(hex, radix: 16) else {
+            return .primary
+        }
+        let r = Double((rgb >> 16) & 0xFF)
+        let g = Double((rgb >> 8) & 0xFF)
+        let b = Double(rgb & 0xFF)
+        let yiq = (r * 299 + g * 587 + b * 114) / 1000
+        return yiq >= 148 ? Color.black : Color.white
+    }
+}
+
+/// 多个标签必须能换行，不能挤在一行里被裁掉。
+private struct GitHubNotificationLabelFlow: Layout {
+    let spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? 300
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > maxWidth {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+
+        return CGSize(width: maxWidth, height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > bounds.minX, x + size.width > bounds.maxX {
+                x = bounds.minX
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
     }
 }
 

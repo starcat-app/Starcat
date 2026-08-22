@@ -81,8 +81,8 @@ struct GRDBGitHubNotificationThreadRepository: GitHubNotificationThreadRepositor
                         html_url, actor_login, subject_created_at, excerpt, comments_json, hydrated_at,
                         updated_at, first_seen_at, notified_at, mark_read_state, fetched_at,
                         notification_thread_id, source_kind, organization_login,
-                        credential_source, issue_state
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        credential_source, issue_state, labels_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         reason = excluded.reason,
                         notification_thread_id = excluded.notification_thread_id,
@@ -146,6 +146,12 @@ struct GRDBGitHubNotificationThreadRepository: GitHubNotificationThreadRepositor
                             THEN github_notification_threads.comments_json
                             ELSE NULL
                         END,
+                        labels_json = CASE
+                            WHEN github_notification_threads.subject_api_url = excluded.subject_api_url
+                             AND github_notification_threads.updated_at = excluded.updated_at
+                            THEN github_notification_threads.labels_json
+                            ELSE NULL
+                        END,
                         hydrated_at = CASE
                             WHEN github_notification_threads.subject_api_url = excluded.subject_api_url
                              AND github_notification_threads.updated_at = excluded.updated_at
@@ -191,7 +197,8 @@ struct GRDBGitHubNotificationThreadRepository: GitHubNotificationThreadRepositor
                         "notification",
                         record.organizationLogin,
                         record.credentialSource,
-                        record.issueState
+                        record.issueState,
+                        record.labelsJson
                     ]
                 )
             }
@@ -227,9 +234,9 @@ struct GRDBGitHubNotificationThreadRepository: GitHubNotificationThreadRepositor
                             html_url, actor_login, subject_created_at, excerpt, comments_json, hydrated_at,
                             updated_at, first_seen_at, notified_at, mark_read_state, fetched_at,
                             notification_thread_id, source_kind, organization_login,
-                            credential_source, issue_state
+                            credential_source, issue_state, labels_json
                         ) VALUES (?, 'organization', 0, 0, NULL, ?, ?, 'Issue', ?, ?, ?, ?, ?, ?, NULL, NULL,
-                                  ?, ?, ?, 'synced', ?, NULL, 'organization_issue', ?, ?, ?)
+                                  ?, ?, ?, 'synced', ?, NULL, 'organization_issue', ?, ?, ?, ?)
                         ON CONFLICT(id) DO UPDATE SET
                             repository_full_name = excluded.repository_full_name,
                             subject_title = excluded.subject_title,
@@ -262,6 +269,7 @@ struct GRDBGitHubNotificationThreadRepository: GitHubNotificationThreadRepositor
                                 ELSE excluded.credential_source
                             END,
                             issue_state = excluded.issue_state,
+                            labels_json = excluded.labels_json,
                             source_kind = CASE
                                 WHEN github_notification_threads.notification_thread_id IS NULL
                                 THEN 'organization_issue'
@@ -284,7 +292,10 @@ struct GRDBGitHubNotificationThreadRepository: GitHubNotificationThreadRepositor
                         fetchedAt,
                         issue.organization,
                         credentialSource.rawValue,
-                        issue.state.rawValue
+                        issue.state.rawValue,
+                        GitHubNotificationMapper.encodeLabels(
+                            GitHubNotificationMapper.labels(from: issue.labels)
+                        )
                     ]
                 )
             }
@@ -354,17 +365,27 @@ struct GRDBGitHubNotificationThreadRepository: GitHubNotificationThreadRepositor
         commentsJson: String?,
         htmlUrl: String?,
         subjectCreatedAt: String?,
-        hydratedAt: String
+        hydratedAt: String,
+        labelsJson: String?
     ) async throws {
         try await database.writer.write { db in
             try db.execute(
                 sql: """
                 UPDATE github_notification_threads
                 SET actor_login = ?, excerpt = ?, comments_json = ?, html_url = ?,
-                    subject_created_at = ?, hydrated_at = ?
+                    subject_created_at = ?, hydrated_at = ?, labels_json = ?
                 WHERE id = ?
                 """,
-                arguments: [actorLogin, excerpt, commentsJson, htmlUrl, subjectCreatedAt, hydratedAt, id]
+                arguments: [
+                    actorLogin,
+                    excerpt,
+                    commentsJson,
+                    htmlUrl,
+                    subjectCreatedAt,
+                    hydratedAt,
+                    labelsJson,
+                    id
+                ]
             )
         }
     }

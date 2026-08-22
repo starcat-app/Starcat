@@ -679,4 +679,42 @@ struct ReadmeAPINetworkTests {
 
         #expect(mock.readmeHTMLCalls.count == 1)
     }
+
+    @Test("同仓 Markdown: Contents HTML 进会话缓存且不写 readmes 表")
+    func fetchRenderedRepositoryMarkdownUsesSessionCacheOnly() async throws {
+        let (api, mock, repo, readmeRepo, _) = try await makeAPI()
+        let cache = RepositoryMarkdownSessionCache()
+
+        mock.repositoryFileHTMLHandler = { owner, name, path, ref, _ in
+            #expect(owner == "alice")
+            #expect(name == "foo")
+            #expect(path == "README.zh-CN.md")
+            #expect(ref == "HEAD")
+            return BytesResponse.ok(data: Data("<h1>中文</h1>".utf8), etag: "\"zh\"")
+        }
+
+        let html = try await api.fetchRenderedRepositoryMarkdown(
+            owner: repo.owner,
+            repo: repo.name,
+            path: "README.zh-CN.md",
+            ref: "HEAD",
+            cache: cache
+        )
+        #expect(html.contains("中文"))
+        #expect(try await readmeRepo.find(repoId: repo.id) == nil)
+
+        mock.repositoryFileHTMLHandler = { _, _, _, _, _ in
+            Issue.record("session cache should skip the second network call")
+            return BytesResponse.ok(data: Data("<h1>should-not-fetch</h1>".utf8), etag: "\"x\"")
+        }
+
+        let cached = try await api.fetchRenderedRepositoryMarkdown(
+            owner: repo.owner,
+            repo: repo.name,
+            path: "README.zh-CN.md",
+            ref: "HEAD",
+            cache: cache
+        )
+        #expect(cached.contains("中文"))
+    }
 }

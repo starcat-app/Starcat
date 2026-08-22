@@ -94,7 +94,14 @@ extension GitHubAPIClient {
     /// Issue / PR / Discussion / Release 字段不完全相同，松散取 html_url / user|author.login / body。
     nonisolated private static func parseSubjectHydration(from data: Data) -> GitHubNotificationSubjectHydration {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return GitHubNotificationSubjectHydration(htmlURL: nil, actorLogin: nil, excerpt: nil, createdAt: nil, state: nil)
+            return GitHubNotificationSubjectHydration(
+                htmlURL: nil,
+                actorLogin: nil,
+                excerpt: nil,
+                createdAt: nil,
+                state: nil,
+                labels: []
+            )
         }
         let htmlURL = obj["html_url"] as? String
         let user = obj["user"] as? [String: Any]
@@ -113,7 +120,8 @@ extension GitHubAPIClient {
             actorLogin: actorLogin,
             excerpt: excerpt,
             createdAt: createdAt,
-            state: state
+            state: state,
+            labels: GitHubNotificationMapper.labels(from: obj["labels"])
         )
     }
 

@@ -48,7 +48,8 @@ protocol GitHubNotificationThreadRepositoryProtocol: Sendable {
         commentsJson: String?,
         htmlUrl: String?,
         subjectCreatedAt: String?,
-        hydratedAt: String
+        hydratedAt: String,
+        labelsJson: String?
     ) async throws
     /// 把 hydrate / 关闭 / 重开得到的 `open|closed|merged` 写回 `issue_state`。
     /// 通知增量 upsert 用 COALESCE 保这列，避免列表 API 没有状态时把已知值抹掉。

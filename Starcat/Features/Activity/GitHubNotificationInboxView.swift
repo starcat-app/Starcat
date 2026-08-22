@@ -59,8 +59,16 @@ struct GitHubNotificationInboxView: View {
         .onReceive(NotificationCenter.default.publisher(for: .starcatOpenGitHubNotification)) { _ in
             consumePendingOpenIfNeeded()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .repoLibraryStateDidChange)) { _ in
-            Task { await reloadFirstPage() }
+        .onReceive(NotificationCenter.default.publisher(for: .repoLibraryStateDidChange)) { note in
+            // 入库 / 移出只改 `repo_notes.library_state`。重拉首页会丢掉已翻页，
+            // 选中项不在前 40 条时 `reloadFirstPage` 会把 selectedItem 清成 nil，右栏变空白。
+            guard let repoId = note.userInfo?["repoId"] as? Int64,
+                  let raw = note.userInfo?["libraryState"] as? String else { return }
+            rows = GitHubNotificationTimelineLibraryState.apply(
+                rows: rows,
+                repoId: repoId,
+                state: LibraryState.parse(raw)
+            )
         }
         // dwell 活在 InboxService 上。中栏 SwiftUI 重建 / 切走时不要 cancelAllDwells，
         // 否则 pending 会被恢复成未读，点开看过的条目会反复亮蓝点。
@@ -459,7 +467,8 @@ struct GitHubNotificationInboxView: View {
                 issueState: inbox.resolvedIssueState(
                     threadId: record.id,
                     persisted: record.issueState
-                )
+                ),
+                labels: GitHubNotificationMapper.decodeLabels(record.labelsJson)
             )
         )
     }
@@ -616,6 +625,34 @@ enum GitHubNotificationTimelinePaging {
         requestedGeneration == currentGeneration
             && requestedSegment == currentSegment
             && requestedCursor == currentCursor
+    }
+}
+
+/// 时间线听 `.repoLibraryStateDidChange` 时只改账本行徽章。
+///
+/// 为什么不重拉首页：徽章来自 hydrate 时的 `libraryState`，行 id / 排序 / 分页都没变。
+/// `reloadFirstPage` 会把已加载页换成前 40 条，选中项不在首页就清空右栏。
+enum GitHubNotificationTimelineLibraryState {
+    static func apply(
+        rows: [GitHubInboxTimelineRow],
+        repoId: Int64,
+        state: LibraryState
+    ) -> [GitHubInboxTimelineRow] {
+        rows.map { row in
+            guard case .activity(let item) = row, item.record.repoId == repoId else {
+                return row
+            }
+            guard item.libraryState != state else { return row }
+            return .activity(
+                UserRepoActivityListItem(
+                    record: item.record,
+                    snippet: item.snippet,
+                    ownerLogin: item.ownerLogin,
+                    language: item.language,
+                    libraryState: state
+                )
+            )
+        }
     }
 }
 

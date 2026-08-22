@@ -55,4 +55,25 @@ extension GitHubAPIClient {
             requestTimeout: requestTimeout
         )
     }
+
+    /// 拉取指定 path 的 GitHub 渲染 HTML。
+    ///
+    /// 走 Contents API 而不是 `/readme`：后者只返回 GitHub 认定的默认 README，
+    /// 根目录 `README.zh-CN.md` 必须按 path 取。
+    func repositoryFileHTML(
+        owner: String,
+        repo: String,
+        path: String,
+        ref: String,
+        ifNoneMatch: String? = nil,
+        requestTimeout: TimeInterval? = nil
+    ) async throws -> BytesResponse {
+        try await getBytes(
+            path: AppEndpoints.GitHubREST.Paths.repoContents(owner: owner, repo: repo, path: path),
+            accept: "application/vnd.github.html",
+            queryItems: [URLQueryItem(name: "ref", value: ref)],
+            ifNoneMatch: ifNoneMatch,
+            requestTimeout: requestTimeout
+        )
+    }
 }

@@ -38,7 +38,7 @@
 //    `v12-rag-metadata-revision` / `v13-weekly-multi-source` /
 //    `v14-ai-usage-events` / `v15-repo-pins` / `v16-repository-insights` /
 //    `v17-my-projects` / `v18-rag-structured-citations` / `v19-release-1.4.0` /
-//    `v20-agent-runtime-trace`
+//    `v20-agent-runtime-trace` / `v21-github-issue-labels`
 //
 //  **1.4.0 开发期迁移（已由正式 v19 合并接管）**：
 //  `v19-agent-message-contract` 至 `v26-github-timeline-conversations` 仅在开发构建中出现过。
@@ -92,6 +92,23 @@ enum DatabaseMigrations {
         registerV18(into: &migrator)
         registerV19(into: &migrator)
         registerV20(into: &migrator)
+        registerV21(into: &migrator)
+    }
+
+    // MARK: - v21-github-issue-labels：Issue / PR 标签缓存（2026-08-22）
+
+    /// 详情开帖卡要展示多个 GitHub 标签。列表 API 没有这列，hydrate / 组织 Issue 写入 `labels_json`。
+    /// 表不存在则 no-op。
+    private static func registerV21(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v21-github-issue-labels") { db in
+            guard try db.tableExists("github_notification_threads") else { return }
+            let columns = try db.columns(in: "github_notification_threads").map(\.name)
+            if !columns.contains("labels_json") {
+                try db.alter(table: "github_notification_threads") { t in
+                    t.add(column: "labels_json", .text)
+                }
+            }
+        }
     }
 
     // MARK: - v20-agent-runtime-trace：Runtime 原生执行过程（2026-08-22）

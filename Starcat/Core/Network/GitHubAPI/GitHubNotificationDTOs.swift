@@ -61,6 +61,14 @@ struct GitHubNotificationSubjectHydration: Equatable, Sendable {
     /// Issue / PR 的 `open` / `closed` / `merged`。Release 等没有。
     /// PR 已合并时 hydrate 会把 GitHub 的 `closed + merged` 收成 `merged`。
     let state: String?
+    /// GitHub Issue / PR 标签，按 API 顺序。Release / Discussion 为空。
+    var labels: [GitHubNotificationIssueLabel] = []
+}
+
+/// GitHub 标签。`colorHex` 是 Issues API 的 6 位色值，不含 `#`。
+struct GitHubNotificationIssueLabel: Equatable, Codable, Hashable, Sendable {
+    let name: String
+    let colorHex: String
 }
 
 /// Issue / PR 下的一条评论。详情页按 GitHub 会话顺序渲染 Markdown。
