@@ -356,6 +356,8 @@ private actor ExternalAgentEventProjector {
     private var traceSequence = 0
     private var traceSequences: [String: Int] = [:]
     private var traceStartedAt: [String: Date] = [:]
+    private var traceSummaries: [String: String] = [:]
+    private var traceDetails: [String: [AgentTraceDetail]] = [:]
     private var assistantText = ""
     private var finalAssistantText: String?
     private var runtimeModelName: String?
@@ -450,12 +452,13 @@ private actor ExternalAgentEventProjector {
                 ))]
             )
         case .toolResult(let id, let name, let output, let isError):
+            let resultSummary = Self.nonBlank(output.objectValue?["summary"]?.stringValue)
             await projectTrace(ExternalAgentTraceEvent(
                 id: "tool:\(id)",
                 kind: .tool,
                 status: isError ? .failed : .completed,
                 title: name,
-                summary: isError ? "Tool call failed" : "Tool call completed",
+                summary: resultSummary ?? (isError ? "Tool call failed" : "Tool call completed"),
                 details: [AgentTraceDetail(
                     label: isError
                         ? String.l10n("error.loadFailed")
@@ -590,6 +593,13 @@ private actor ExternalAgentEventProjector {
         }
         let startedAt = traceStartedAt[providerEvent.id] ?? providerEvent.startedAt ?? Date()
         traceStartedAt[providerEvent.id] = startedAt
+        let summary = Self.nonBlank(providerEvent.summary) ?? traceSummaries[providerEvent.id]
+        if let summary { traceSummaries[providerEvent.id] = summary }
+        let details = Self.mergingTraceDetails(
+            traceDetails[providerEvent.id] ?? [],
+            with: providerEvent.details
+        )
+        traceDetails[providerEvent.id] = details
         let event = AgentTraceEvent(
             id: stableID,
             runID: runID,
@@ -600,8 +610,8 @@ private actor ExternalAgentEventProjector {
             kind: providerEvent.kind,
             status: providerEvent.status,
             title: providerEvent.title,
-            summary: providerEvent.summary,
-            details: providerEvent.details,
+            summary: summary,
+            details: details,
             attempt: providerEvent.attempt,
             durationMilliseconds: providerEvent.durationMilliseconds,
             startedAt: startedAt,
@@ -618,6 +628,31 @@ private actor ExternalAgentEventProjector {
             }
         }
         continuation.yield(.traceUpdated(event))
+    }
+
+    /// Provider 的增量帧可能携带空字符串；空值不能覆盖前一帧已经保存的摘要。
+    private static func nonBlank(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// started/delta/completed 会反复 upsert 同一个 Provider event。后续帧经常只携带
+    /// 新增字段，例如 tool completed 只有 Output；按 label 合并才能保留 started 时的 Input，
+    /// 同时让 reasoning summary delta 替换同一块内容而不是无限追加重复详情。
+    private static func mergingTraceDetails(
+        _ existing: [AgentTraceDetail],
+        with incoming: [AgentTraceDetail]
+    ) -> [AgentTraceDetail] {
+        var merged = existing
+        for detail in incoming {
+            if let index = merged.firstIndex(where: { $0.label == detail.label }) {
+                merged[index] = detail
+            } else {
+                merged.append(detail)
+            }
+        }
+        return merged
     }
 
     /// 进程退出、协议损坏与 watchdog 超时发生在 Adapter 事件之外，也必须进入同一条

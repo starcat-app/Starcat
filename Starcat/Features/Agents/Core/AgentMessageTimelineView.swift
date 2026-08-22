@@ -322,11 +322,22 @@ struct AgentMessageTimelineView: View {
                         .foregroundStyle(.primary)
                         .lineLimit(2)
                 }
-                if let summary = event.summary, summary != event.title {
+                if let summary = nonBlank(event.summary), summary != event.title {
                     Text(summary)
                         .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
                         .lineLimit(isExpanded ? nil : 2)
+                } else if event.kind == .reasoningSummary {
+                    Group {
+                        if event.status == .running {
+                            Text("agent.workspace.trace.reasoningPending")
+                        } else {
+                            Text("agent.workspace.trace.reasoningUnavailable")
+                        }
+                    }
+                    .font(interfaceScale.font(.captionSmall))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
                 }
             }
             Spacer(minLength: 8)
@@ -345,37 +356,15 @@ struct AgentMessageTimelineView: View {
         .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
     }
 
+    /// Trace 摘要来自外部 runtime，空白增量不应占据一行 UI。
+    private func nonBlank(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     private func traceDetails(_ event: AgentTraceEvent) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let attempt = event.attempt {
-                Text("\(String.l10n("action.retry")) \(attempt.formatted())")
-                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
-            ForEach(Array(event.details.enumerated()), id: \.offset) { _, detail in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(detail.label)
-                        .font(interfaceScale.font(.captionSmall, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                    Text(detail.value)
-                        .font(detail.format == .code || detail.format == .json
-                            ? interfaceScale.font(.code, design: .monospaced)
-                            : interfaceScale.font(.captionSmall))
-                        .foregroundStyle(detail.format == .error ? Color.red : Color.primary)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.vertical, detail.format == .code || detail.format == .json ? 6 : 0)
-                        .padding(.horizontal, detail.format == .code || detail.format == .json ? 8 : 0)
-                        .background {
-                            if detail.format == .code || detail.format == .json {
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(Color(nsColor: .textBackgroundColor))
-                            }
-                        }
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        AgentTraceDetailsView(event: event)
     }
 
     @ViewBuilder

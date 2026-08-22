@@ -46,7 +46,9 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
     private var turnID: String?
     private var inheritedMCPServerConfigs: [String: AgentJSONValue] = [:]
     private var itemStartedAt: [String: Date] = [:]
-    private var reasoningSummaries: [String: String] = [:]
+    /// App Server 会用 `summaryIndex` 把一次 reasoning 拆成多个可展示摘要段。
+    /// 必须按段累计后再拼接，不能直接把所有 delta 连在一起，否则段落边界会丢失。
+    private var reasoningSummaries: [String: [Int: String]] = [:]
     private var retryCount = 0
 
     private static let configReadRequestID = 2
@@ -175,6 +177,9 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
                         "text": .string(request.prompt),
                     ])
                 ]),
+                // Starcat 的执行时间线需要 Provider 明确授权的 reasoning summary。
+                // `auto` 不暴露 raw chain-of-thought，只请求 App Server 可安全展示的摘要。
+                "summary": .string("auto"),
             ]
             // Codex 模型与推理强度属于 turn 级覆盖项。不能写进 thread/start，
             // 更不能沿用 Starcat BYOK 模型，否则 UI 选择与实际执行模型会错位。
@@ -303,10 +308,11 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
             let completedAt = Date()
             if item[external: "type"]?.stringValue == "reasoning",
                let itemID,
-               let summary = reasoningSummaries[itemID],
-               !summary.isEmpty {
+               let summary = Self.completedReasoningSummary(from: item)
+                    ?? accumulatedReasoningSummary(for: itemID) {
                 // summary delta 是用户可见的安全摘要；completed item 在部分 Codex 版本里
-                // 不再重复 summary，必须显式带回，否则 upsert 会把已显示内容覆盖为空。
+                // 不再重复 summary；另一些版本只在 completed item 返回 summary 数组。
+                // 两条路径必须合并兜底，否则 upsert 会把已显示内容覆盖为空。
                 events.append(.trace(ExternalAgentTraceEvent(
                     id: itemID,
                     kind: .reasoningSummary,
@@ -330,12 +336,25 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
                 events.append(.trace(trace))
             }
             return ExternalAgentProtocolOutput(events: events)
+        case "item/reasoning/summaryPartAdded":
+            guard let itemID = params?[external: "itemId"]?.stringValue else {
+                return ExternalAgentProtocolOutput()
+            }
+            let summaryIndex = params?[external: "summaryIndex"]?.integerValue ?? 0
+            if reasoningSummaries[itemID]?[summaryIndex] == nil {
+                reasoningSummaries[itemID, default: [:]][summaryIndex] = ""
+            }
+            return ExternalAgentProtocolOutput()
         case "item/reasoning/summaryTextDelta":
             guard let delta = params?[external: "delta"]?.stringValue else {
                 return ExternalAgentProtocolOutput()
             }
             let itemID = params?[external: "itemId"]?.stringValue ?? "reasoning"
-            reasoningSummaries[itemID, default: ""] += delta
+            let summaryIndex = params?[external: "summaryIndex"]?.integerValue ?? 0
+            reasoningSummaries[itemID, default: [:]][summaryIndex, default: ""] += delta
+            guard let summary = accumulatedReasoningSummary(for: itemID) else {
+                return ExternalAgentProtocolOutput(events: [.reasoningDelta(delta)])
+            }
             return ExternalAgentProtocolOutput(events: [
                 .reasoningDelta(delta),
                 .trace(ExternalAgentTraceEvent(
@@ -343,10 +362,10 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
                     kind: .reasoningSummary,
                     status: .running,
                     title: String.l10n("agent.workspace.trace.kind.thinking"),
-                    summary: reasoningSummaries[itemID],
+                    summary: summary,
                     details: [.init(
                         label: String.l10n("agent.workspace.timeline.reasoning"),
-                        value: reasoningSummaries[itemID] ?? "",
+                        value: summary,
                         format: .markdown
                     )],
                     startedAt: itemStartedAt[itemID] ?? Date()
@@ -497,7 +516,7 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
             title = String.l10n("agent.workspace.trace.kind.thinking")
             // completed item 里的 `text` 可能是 raw reasoning；只有 Provider 明确标记的
             // summary 才允许进入可恢复 Trace，避免把隐藏思维链持久化。
-            summary = item[external: "summary"]?.stringValue
+            summary = completedReasoningSummary(from: item)
             if let summary {
                 details.append(.init(
                     label: String.l10n("agent.workspace.timeline.reasoning"),
@@ -571,6 +590,24 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
             startedAt: startedAt,
             completedAt: completedAt
         )
+    }
+
+    /// completed reasoning 的 `summary` 是 `[{ type: "summary_text", text: "..." }]`，
+    /// 不是字符串。只接受 Provider 明确标记的 summary_text，raw content 永不进入 Trace。
+    private static func completedReasoningSummary(from item: AgentJSONValue) -> String? {
+        let parts = item[external: "summary"]?.externalArray?.compactMap { part -> String? in
+            guard part[external: "type"]?.stringValue == "summary_text" else { return nil }
+            return part[external: "text"]?.stringValue?.nilIfBlank
+        } ?? []
+        return parts.joined(separator: "\n\n").nilIfBlank
+    }
+
+    private func accumulatedReasoningSummary(for itemID: String) -> String? {
+        reasoningSummaries[itemID]?
+            .sorted { $0.key < $1.key }
+            .compactMap { $0.value.nilIfBlank }
+            .joined(separator: "\n\n")
+            .nilIfBlank
     }
 
     private static func traceStatus(from item: AgentJSONValue) -> AgentTraceStatus? {

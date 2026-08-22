@@ -12,6 +12,16 @@ import Foundation
 import Testing
 @testable import Starcat
 
+/// `xcodebuild` 不会把任意 shell 环境变量转发给 test host。保留环境变量入口供
+/// Xcode Scheme 使用，同时允许 CI 通过 `-DSTARCAT_RUN_CODEX_INTEGRATION` 显式启用。
+private let shouldRunCodexIntegration: Bool = {
+#if STARCAT_RUN_CODEX_INTEGRATION
+    true
+#else
+    ProcessInfo.processInfo.environment["STARCAT_RUN_CODEX_INTEGRATION"] == "1"
+#endif
+}()
+
 @Suite("External Agent Protocol Adapters")
 struct ExternalAgentProtocolAdapterTests {
 
@@ -64,6 +74,7 @@ struct ExternalAgentProtocolAdapterTests {
         #expect(turnStart[external: "method"]?.stringValue == "turn/start")
         #expect(turnStart[external: "params"]?[external: "model"]?.stringValue == "test-model")
         #expect(turnStart[external: "params"]?[external: "effort"]?.stringValue == "high")
+        #expect(turnStart[external: "params"]?[external: "summary"]?.stringValue == "auto")
 
         let delta = try driver.receive(notification(
             method: "item/agentMessage/delta",
@@ -182,7 +193,7 @@ struct ExternalAgentProtocolAdapterTests {
 
     @Test(
         "本机 Codex App Server 完成模型目录与真实 turn",
-        .enabled(if: ProcessInfo.processInfo.environment["STARCAT_RUN_CODEX_INTEGRATION"] == "1")
+        .enabled(if: shouldRunCodexIntegration)
     )
     func installedCodexCompletesModelCatalogAndRealTurn() async throws {
         let executablePath = ProcessInfo.processInfo.environment["STARCAT_CODEX_EXECUTABLE"]
@@ -279,14 +290,34 @@ struct ExternalAgentProtocolAdapterTests {
         let adapter = CodexAppServerAdapter(executableURL: URL(fileURLWithPath: "/usr/bin/true"))
         let driver = try adapter.makeDriver(request: fixtureRequest())
 
+        _ = try driver.receive(notification(
+            method: "item/reasoning/summaryPartAdded",
+            params: .object(["itemId": .string("reason-1"), "summaryIndex": .number(0)])
+        ))
         let reasoning = try driver.receive(notification(
             method: "item/reasoning/summaryTextDelta",
-            params: .object(["itemId": .string("reason-1"), "delta": .string("检查仓库范围")])
+            params: .object([
+                "itemId": .string("reason-1"),
+                "summaryIndex": .number(0),
+                "delta": .string("检查仓库范围"),
+            ])
         ))
         #expect(reasoning.events.contains { event in
             guard case .trace(let trace) = event else { return false }
             return trace.id == "reason-1" && trace.kind == .reasoningSummary
         })
+        _ = try driver.receive(notification(
+            method: "item/reasoning/summaryPartAdded",
+            params: .object(["itemId": .string("reason-1"), "summaryIndex": .number(1)])
+        ))
+        _ = try driver.receive(notification(
+            method: "item/reasoning/summaryTextDelta",
+            params: .object([
+                "itemId": .string("reason-1"),
+                "summaryIndex": .number(1),
+                "delta": .string("准备调用检索工具"),
+            ])
+        ))
         let completedReasoning = try driver.receive(notification(
             method: "item/completed",
             params: .object(["item": .object([
@@ -299,7 +330,26 @@ struct ExternalAgentProtocolAdapterTests {
             guard case .trace(let trace) = event else { return false }
             return trace.id == "reason-1"
                 && trace.status == .completed
-                && trace.summary == "检查仓库范围"
+                && trace.summary == "检查仓库范围\n\n准备调用检索工具"
+        })
+
+        let completedOnlyReasoning = try driver.receive(notification(
+            method: "item/completed",
+            params: .object(["item": .object([
+                "id": .string("reason-2"),
+                "type": .string("reasoning"),
+                "summary": .array([
+                    .object(["type": .string("summary_text"), "text": .string("核对证据来源")]),
+                    .object(["type": .string("summary_text"), "text": .string("组织最终回答")]),
+                ]),
+                "status": .string("completed"),
+            ])])
+        ))
+        #expect(completedOnlyReasoning.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.id == "reason-2"
+                && trace.summary == "核对证据来源\n\n组织最终回答"
+                && trace.details.first?.value == trace.summary
         })
 
         let rawReasoning = try driver.receive(notification(
