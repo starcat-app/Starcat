@@ -92,6 +92,7 @@ struct AppSettingsTests {
         anySearchSettings.isEnabled = true
         settings.setExternalSearchSettings(anySearchSettings, for: .anySearch)
         settings.notificationsEnabled = false
+        settings.githubIssueEventTimelineEnabled = true
         settings.openRepositoryMarkdownInApp = true
         settings.hideDockIcon = true
         settings.snakeStyle = .greedy
@@ -129,6 +130,7 @@ struct AppSettingsTests {
         #expect(settings.chatHistoryStorageKind == .jsonFiles)
         #expect(settings.externalSearchSettings(for: .anySearch).isEnabled == false)
         #expect(settings.notificationsEnabled == true)
+        #expect(settings.githubIssueEventTimelineEnabled == false)
         #expect(settings.openRepositoryMarkdownInApp == false)
         #expect(settings.hideDockIcon == false)
         #expect(settings.snakeStyle == .off)
@@ -144,6 +146,18 @@ struct AppSettingsTests {
         #expect(settings.externalSearchAPIKey(for: .anySearch) == nil)
         #expect(settings.isProUser == false)
         #expect(keychain.snapshot.isEmpty)
+    }
+
+    @Test("Issue 事件流: 默认关闭并持久化")
+    func githubIssueEventTimelineDefaultsOffAndPersists() {
+        let defaults = makeIsolatedDefaults()
+        let settings = AppSettings(defaults: defaults)
+        #expect(settings.githubIssueEventTimelineEnabled == false)
+
+        settings.githubIssueEventTimelineEnabled = true
+
+        let restored = AppSettings(defaults: defaults)
+        #expect(restored.githubIssueEventTimelineEnabled == true)
     }
 
     @Test("同仓 Markdown 应用内打开: 默认关闭并持久化")

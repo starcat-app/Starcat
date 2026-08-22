@@ -1251,6 +1251,186 @@ struct GitHubNotificationInboxTests {
         #expect(labels.map(\.colorHex) == ["d73a4a", "ededed"])
     }
 
+    @Test("事件流打开时 hydrate 只补 subject，不拉 comments")
+    func hydrateSkipsCommentsWhenIssueEventsEnabled() async throws {
+        let env = try makeEnv()
+        env.settings.githubIssueEventTimelineEnabled = true
+        env.mock.listNotificationsHandler = { _, _, _, _, _ in
+            Self.listResponse([Self.makeDTO(id: "ev1")])
+        }
+        var hydrateCalls = 0
+        var commentCalls = 0
+        env.mock.hydrateNotificationSubjectHandler = { _ in
+            hydrateCalls += 1
+            return GitHubNotificationSubjectHydration(
+                htmlURL: "https://github.com/o/r/issues/1",
+                actorLogin: "alice",
+                excerpt: "hello body",
+                createdAt: "2026-07-19T00:00:00Z",
+                state: "open",
+                labels: [GitHubNotificationIssueLabel(name: "bug", colorHex: "d73a4a")]
+            )
+        }
+        env.mock.listNotificationIssueCommentsHandler = { _ in
+            commentCalls += 1
+            return []
+        }
+        env.mock.listNotificationIssueTimelineHandler = { path in
+            #expect(path == "/repos/o/r/issues/1/timeline")
+            return [
+                .comment(
+                    GitHubNotificationComment(
+                        id: 77,
+                        login: "bob",
+                        body: "from timeline",
+                        htmlURL: "https://github.com/o/r/issues/1#issuecomment-77",
+                        createdAt: "2026-08-19T00:00:00Z"
+                    )
+                )
+            ]
+        }
+
+        await env.inbox.sync()
+        await env.inbox.hydrate(id: "ev1")
+        await env.inbox.hydrate(id: "ev1")
+        let cached = try await env.inbox.loadIssueTimeline(threadId: "ev1")
+
+        #expect(hydrateCalls == 1)
+        #expect(commentCalls == 0)
+        #expect(env.mock.listNotificationIssueTimelineCalls.count == 1)
+        #expect(cached.count == 1)
+        let stored = try #require(try await env.threads.fetch(id: "ev1"))
+        #expect(stored.commentsJson == nil)
+        #expect(stored.excerpt == "hello body")
+        #expect(GitHubNotificationMapper.decodeLabels(stored.labelsJson).map(\.name) == ["bug"])
+    }
+
+    @Test("事件流关掉后，只补过 subject 的帖会再拉 comments")
+    func hydrateFetchesCommentsAfterDisablingIssueEvents() async throws {
+        let env = try makeEnv()
+        env.settings.githubIssueEventTimelineEnabled = true
+        env.mock.listNotificationsHandler = { _, _, _, _, _ in
+            Self.listResponse([Self.makeDTO(id: "ev2")])
+        }
+        env.mock.hydrateNotificationSubjectHandler = { _ in
+            GitHubNotificationSubjectHydration(
+                htmlURL: "https://github.com/o/r/issues/1",
+                actorLogin: "alice",
+                excerpt: "hello body",
+                createdAt: "2026-07-19T00:00:00Z",
+                state: "open",
+                labels: []
+            )
+        }
+        var commentCalls = 0
+        env.mock.listNotificationIssueCommentsHandler = { _ in
+            commentCalls += 1
+            return [
+                GitHubNotificationComment(
+                    id: 88,
+                    login: "bob",
+                    body: "after toggle off",
+                    htmlURL: "https://github.com/o/r/issues/1#issuecomment-88",
+                    createdAt: "2026-08-19T00:00:00Z"
+                )
+            ]
+        }
+        env.mock.listNotificationIssueTimelineHandler = { _ in [] }
+
+        await env.inbox.sync()
+        await env.inbox.hydrate(id: "ev2")
+        #expect(commentCalls == 0)
+        #expect(try await env.threads.fetch(id: "ev2")?.commentsJson == nil)
+
+        env.settings.githubIssueEventTimelineEnabled = false
+        await env.inbox.hydrate(id: "ev2")
+
+        #expect(commentCalls == 1)
+        let stored = try #require(try await env.threads.fetch(id: "ev2"))
+        let comments = GitHubNotificationMapper.decodeComments(stored.commentsJson)
+        #expect(comments.map(\.id) == [88])
+    }
+
+    @Test("事件流打开时发评不写 comments_json，并强制重拉 timeline")
+    func postCommentWhileIssueEventsEnabledRefetchesTimeline() async throws {
+        let env = try makeEnv()
+        env.settings.githubIssueEventTimelineEnabled = true
+        let record = GitHubNotificationMapper.record(
+            from: Self.makeDTO(id: "ev3"),
+            fetchedAt: "2026-08-19T00:00:00Z",
+            firstSeenAt: "2026-08-19T00:00:00Z"
+        )
+        try await env.threads.upsertMany([record])
+        try await env.threads.updateHydration(
+            id: "ev3",
+            actorLogin: "alice",
+            excerpt: "opening",
+            commentsJson: GitHubNotificationMapper.encodeComments([
+                GitHubNotificationComment(
+                    id: 1,
+                    login: "old",
+                    body: "stale",
+                    htmlURL: nil,
+                    createdAt: "2026-08-18T00:00:00Z"
+                )
+            ]),
+            htmlUrl: "https://github.com/o/r/issues/1",
+            subjectCreatedAt: "2026-07-19T00:00:00Z",
+            hydratedAt: "2026-08-19T00:00:00Z",
+            labelsJson: nil
+        )
+        var timelineCalls = 0
+        env.mock.listNotificationIssueTimelineHandler = { _ in
+            timelineCalls += 1
+            return [
+                .comment(
+                    GitHubNotificationComment(
+                        id: 501,
+                        login: "dong4j",
+                        body: "hello from starcat",
+                        htmlURL: "https://github.com/o/r/issues/1#issuecomment-501",
+                        createdAt: "2026-08-19T14:32:00Z"
+                    )
+                )
+            ]
+        }
+        env.mock.createNotificationIssueCommentHandler = { _, body in
+            GitHubNotificationComment(
+                id: 501,
+                login: "dong4j",
+                body: body,
+                htmlURL: "https://github.com/o/r/issues/1#issuecomment-501",
+                createdAt: "2026-08-19T14:32:00Z"
+            )
+        }
+
+        _ = try await env.inbox.loadIssueTimeline(threadId: "ev3")
+        #expect(timelineCalls == 1)
+        try await env.inbox.postComment(threadId: "ev3", body: "hello from starcat")
+        #expect(timelineCalls == 2)
+        #expect(env.inbox.issueTimelineRevision(threadId: "ev3") >= 2)
+
+        let stored = try #require(try await env.threads.fetch(id: "ev3"))
+        #expect(stored.commentsJson == nil)
+
+        env.settings.githubIssueEventTimelineEnabled = false
+        var commentCalls = 0
+        env.mock.listNotificationIssueCommentsHandler = { _ in
+            commentCalls += 1
+            return [
+                GitHubNotificationComment(
+                    id: 501,
+                    login: "dong4j",
+                    body: "hello from starcat",
+                    htmlURL: "https://github.com/o/r/issues/1#issuecomment-501",
+                    createdAt: "2026-08-19T14:32:00Z"
+                )
+            ]
+        }
+        await env.inbox.hydrate(id: "ev3")
+        #expect(commentCalls == 1)
+    }
+
     @Test("已 hydrate 但缺 labels_json 的 Issue 会再拉一次 subject")
     func hydrateRefetchesWhenLabelsMissing() async throws {
         let env = try makeEnv()
@@ -1838,6 +2018,7 @@ struct GitHubNotificationInboxTests {
         let activity: GRDBUserRepoActivityRepository
         let mock: MockGitHubAPIClient
         let dispatcher: RecordingNotificationDispatcher
+        let settings: AppSettings
         let inbox: GitHubNotificationInboxService
     }
 
@@ -1873,6 +2054,7 @@ struct GitHubNotificationInboxTests {
             activity: activity,
             mock: mock,
             dispatcher: dispatcher,
+            settings: settings,
             inbox: inbox
         )
     }

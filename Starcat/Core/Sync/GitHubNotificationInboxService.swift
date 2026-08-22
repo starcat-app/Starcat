@@ -72,6 +72,14 @@ final class GitHubNotificationInboxService {
     private var didStartMissingIssueStateBackfill = false
     /// 正在 Done 的 id。取消 dwell 时不要把蓝点闪回来，这条马上要从表里删掉。
     private var completingIDs: Set<String> = []
+    /// 事件流只放内存。关开关后不用，打开同一条命中缓存不再打网。
+    private var issueTimelineCache: [String: [GitHubNotificationIssueTimelineItem]] = [:]
+    /// 同一 thread 的 timeline GET 合并成一次，避免 hydrate 和详情 `.task` 各打一遍。
+    private var issueTimelineTasks: [String: Task<[GitHubNotificationIssueTimelineItem], Error>] = [:]
+    /// `force` / invalidate 递增。过期的 in-flight 写不进缓存，避免发评后再被旧响应盖掉。
+    private var issueTimelineFetchGeneration: [String: Int] = [:]
+    /// 详情 `.task` 用这个感知缓存刷新。第一次写入和发评 / 关帖后都会 +1。
+    private(set) var issueTimelineRevisions: [String: Int] = [:]
 
     init(
         apiClient: any GitHubAPIClientProtocol,
@@ -210,39 +218,123 @@ final class GitHubNotificationInboxService {
     func hydrate(id: String) async {
         guard !GitHubNotificationMapper.isDemoThread(id) else { return }
         guard let record = try? await threadRepository.fetch(id: id) else { return }
-        let needsLabels = GitHubNotificationMapper.canReply(
+        let canReply = GitHubNotificationMapper.canReply(
             subjectType: record.subjectType,
             number: record.subjectNumber
-        ) && record.labelsJson == nil
-        guard record.hydratedAt == nil || record.subjectCreatedAt == nil || needsLabels else { return }
-        guard let path = GitHubNotificationMapper.path(fromAbsoluteAPIURL: record.subjectApiUrl),
-              !path.isEmpty
-        else { return }
-        do {
-            let client = apiClient(for: record)
-            let hydration = try await client.hydrateNotificationSubject(path: path)
-            var comments: [GitHubNotificationComment] = []
-            if let commentsPath = GitHubNotificationMapper.issueCommentsPath(
-                subjectType: record.subjectType,
-                subjectApiURL: record.subjectApiUrl
-            ) {
-                comments = (try? await client.listNotificationIssueComments(path: commentsPath)) ?? []
+        )
+        let showEvents = settings.githubIssueEventTimelineEnabled
+        let needsLabels = canReply && record.labelsJson == nil
+        // 关事件流时，若上次只补了 subject、没拉过评论，还要补 comments。
+        let needsComments = canReply && record.commentsJson == nil && !showEvents
+        let needsSubject = record.hydratedAt == nil || record.subjectCreatedAt == nil || needsLabels
+        guard needsSubject || needsComments || showEvents else { return }
+        if needsSubject || needsComments {
+            guard let path = GitHubNotificationMapper.path(fromAbsoluteAPIURL: record.subjectApiUrl),
+                  !path.isEmpty
+            else { return }
+            do {
+                let client = apiClient(for: record)
+                let hydration = try await client.hydrateNotificationSubject(path: path)
+                var comments: [GitHubNotificationComment] = []
+                if needsComments,
+                   let commentsPath = GitHubNotificationMapper.issueCommentsPath(
+                    subjectType: record.subjectType,
+                    subjectApiURL: record.subjectApiUrl
+                   ) {
+                    comments = (try? await client.listNotificationIssueComments(path: commentsPath)) ?? []
+                }
+                let now = ISO8601DateFormatter.shared.string(from: clock())
+                await rememberIssueState(id: id, state: hydration.state)
+                try await threadRepository.updateHydration(
+                    id: id,
+                    actorLogin: hydration.actorLogin,
+                    excerpt: hydration.excerpt,
+                    commentsJson: needsComments
+                        ? GitHubNotificationMapper.encodeComments(comments)
+                        : record.commentsJson,
+                    htmlUrl: hydration.htmlURL ?? record.htmlUrl,
+                    subjectCreatedAt: hydration.createdAt ?? record.subjectCreatedAt ?? record.updatedAt,
+                    hydratedAt: now,
+                    labelsJson: GitHubNotificationMapper.encodeLabels(hydration.labels)
+                )
+                postDidChange()
+            } catch {
+                AppLog.network.info("Notification hydrate skipped id=\(id, privacy: .public): \(error.localizedDescription, privacy: .public)")
             }
-            let now = ISO8601DateFormatter.shared.string(from: clock())
-            await rememberIssueState(id: id, state: hydration.state)
-            try await threadRepository.updateHydration(
-                id: id,
-                actorLogin: hydration.actorLogin,
-                excerpt: hydration.excerpt,
-                commentsJson: GitHubNotificationMapper.encodeComments(comments),
-                htmlUrl: hydration.htmlURL ?? record.htmlUrl,
-                subjectCreatedAt: hydration.createdAt ?? record.subjectCreatedAt ?? record.updatedAt,
-                hydratedAt: now,
-                labelsJson: GitHubNotificationMapper.encodeLabels(hydration.labels)
-            )
-            postDidChange()
-        } catch {
-            AppLog.network.info("Notification hydrate skipped id=\(id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
+        if showEvents {
+            _ = try? await loadIssueTimeline(threadId: id)
+        }
+    }
+
+    func cachedIssueTimeline(threadId: String) -> [GitHubNotificationIssueTimelineItem]? {
+        issueTimelineCache[threadId]
+    }
+
+    func issueTimelineRevision(threadId: String) -> Int {
+        issueTimelineRevisions[threadId] ?? 0
+    }
+
+    func invalidateIssueTimeline(threadId: String) {
+        issueTimelineCache[threadId] = nil
+        issueTimelineFetchGeneration[threadId, default: 0] += 1
+    }
+
+    /// 进程内缓存。`force` 在发评论 / 关帖后作废再拉。hydrate 与详情共用，避免连打两次。
+    func loadIssueTimeline(
+        threadId: String,
+        force: Bool = false
+    ) async throws -> [GitHubNotificationIssueTimelineItem] {
+        if force {
+            invalidateIssueTimeline(threadId: threadId)
+        } else if let cached = issueTimelineCache[threadId] {
+            return cached
+        } else if let inflight = issueTimelineTasks[threadId] {
+            return try await inflight.value
+        }
+        let generation = issueTimelineFetchGeneration[threadId] ?? 0
+        let task = Task { try await self.fetchIssueTimeline(threadId: threadId, generation: generation) }
+        issueTimelineTasks[threadId] = task
+        defer {
+            if issueTimelineTasks[threadId] == task {
+                issueTimelineTasks[threadId] = nil
+            }
+        }
+        return try await task.value
+    }
+
+    private func fetchIssueTimeline(
+        threadId: String,
+        generation: Int
+    ) async throws -> [GitHubNotificationIssueTimelineItem] {
+        guard !GitHubNotificationMapper.isDemoThread(threadId) else { return [] }
+        guard let record = try await threadRepository.fetch(id: threadId),
+              GitHubNotificationMapper.canReply(
+                subjectType: record.subjectType,
+                number: record.subjectNumber
+              ),
+              let number = record.subjectNumber
+        else { return [] }
+        let path = GitHubNotificationIssueTimelineParser.resourcePath(
+            repositoryFullName: record.repositoryFullName,
+            number: number
+        )
+        let items = try await apiClient(for: record).listNotificationIssueTimeline(path: path)
+        // 只收下这一代的响应。发评后旧 GET 回来也不能盖住新缓存。
+        guard (issueTimelineFetchGeneration[threadId] ?? 0) == generation else {
+            return items
+        }
+        issueTimelineCache[threadId] = items
+        issueTimelineRevisions[threadId, default: 0] += 1
+        return items
+    }
+
+    /// 发评 / 关帖之后：作废缓存；事件流开着再拉一次，详情靠 revision 刷新。
+    private func refreshIssueTimelineAfterMutation(threadId: String) async {
+        if settings.githubIssueEventTimelineEnabled {
+            _ = try? await loadIssueTimeline(threadId: threadId, force: true)
+        } else {
+            invalidateIssueTimeline(threadId: threadId)
         }
     }
 
@@ -272,16 +364,19 @@ final class GitHubNotificationInboxService {
             comments.append(created)
         }
         let now = ISO8601DateFormatter.shared.string(from: clock())
+        let showEvents = settings.githubIssueEventTimelineEnabled
+        // 事件流开着时 comments_json 不是完整快照。写 nil，关掉开关才能再 GET 全量评论。
         try await threadRepository.updateHydration(
             id: threadId,
             actorLogin: record.actorLogin,
             excerpt: record.excerpt,
-            commentsJson: GitHubNotificationMapper.encodeComments(comments),
+            commentsJson: showEvents ? nil : GitHubNotificationMapper.encodeComments(comments),
             htmlUrl: record.htmlUrl,
             subjectCreatedAt: record.subjectCreatedAt,
             hydratedAt: record.hydratedAt ?? now,
             labelsJson: record.labelsJson
         )
+        await refreshIssueTimelineAfterMutation(threadId: threadId)
         postDidChange()
     }
 
@@ -425,6 +520,7 @@ final class GitHubNotificationInboxService {
             try await apiClient(for: record).updateNotificationIssueState(path: path, state: normalized)
             issueStates[threadId] = normalized
             try await threadRepository.updatePersistedIssueState(id: threadId, state: normalized)
+            await refreshIssueTimelineAfterMutation(threadId: threadId)
             postDidChange()
         } catch let network as NetworkError {
             switch network {
@@ -460,6 +556,8 @@ final class GitHubNotificationInboxService {
         if GitHubNotificationMapper.isDemoThread(id) {
             try await threadRepository.delete(id: id)
             issueStates[id] = nil
+            invalidateIssueTimeline(threadId: id)
+            issueTimelineRevisions[id] = nil
             postDidChange()
             return
         }
@@ -483,6 +581,8 @@ final class GitHubNotificationInboxService {
 
         try await threadRepository.removeNotificationThread(id: id)
         issueStates[id] = nil
+        invalidateIssueTimeline(threadId: id)
+        issueTimelineRevisions[id] = nil
         postDidChange()
     }
 

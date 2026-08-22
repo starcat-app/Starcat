@@ -78,7 +78,21 @@ struct GitHubNotificationDetailView: View {
                     // 反复执行 LazySubviewPlacements，导致主线程陷入 SwiftUI 布局风暴。
                     VStack(alignment: .leading, spacing: 12) {
                         if let payload = item.notification {
-                            conversation(payload, title: item.title, translation: translationVM)
+                            if settings.githubIssueEventTimelineEnabled,
+                               GitHubNotificationMapper.canReply(
+                                subjectType: payload.subjectType,
+                                number: payload.subjectNumber
+                               ) {
+                                GitHubNotificationIssueTimelineConversation(
+                                    payload: payload,
+                                    title: item.title,
+                                    locale: locale,
+                                    inbox: inbox,
+                                    timelineRevision: inbox.issueTimelineRevision(threadId: payload.threadId)
+                                )
+                            } else {
+                                conversation(payload, title: item.title, translation: translationVM)
+                            }
                         }
                     }
                     .padding(18)
@@ -114,6 +128,13 @@ struct GitHubNotificationDetailView: View {
             doneError = nil
             aiErrorToast = nil
             aiErrorToastNeedsSettings = false
+            prepareTranslation(for: item)
+        }
+        .onChange(of: settings.githubIssueEventTimelineEnabled) { _, _ in
+            // 开关切换后补对侧数据：开事件流预热 timeline；关则补 comments_json。
+            if let threadId = item.notification?.threadId {
+                Task { await inbox.hydrate(id: threadId) }
+            }
             prepareTranslation(for: item)
         }
         .onChange(of: settings.readmeTranslationLanguage) { _, _ in
@@ -205,7 +226,9 @@ struct GitHubNotificationDetailView: View {
             Spacer(minLength: 8)
             HStack(spacing: 4) {
                 detailLinkButtons(item)
-                if let vm = translationVM, let payload = item.notification {
+                if !settings.githubIssueEventTimelineEnabled,
+                   let vm = translationVM,
+                   let payload = item.notification {
                     translationControls(payload: payload, viewModel: vm)
                 }
                 if item.notification?.canMarkDone == true {

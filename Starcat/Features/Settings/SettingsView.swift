@@ -526,6 +526,24 @@ struct SettingsView: View {
                 )
             }
 
+            Section {
+                Toggle(isOn: $settings.githubIssueEventTimelineEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings.activity.issueEvents.title")
+                        Text("settings.activity.issueEvents.help")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            } header: {
+                SettingsSectionHeader(
+                    "settings.activity.section",
+                    systemImage: "list.bullet.rectangle",
+                    style: .prominent
+                )
+            }
+
             // 2026-06-15 dong4j 需求：无障碍 / 动画偏好。
             //
             // 单独起一个 Section 而不是夹在「外观」里——「关闭应用内动画」

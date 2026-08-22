@@ -151,6 +151,9 @@ protocol GitHubAPIClientProtocol: Sendable {
     /// `GET .../issues/{n}/comments`。失败由调用方忽略，正文仍可用。
     func listNotificationIssueComments(path: String) async throws -> [GitHubNotificationComment]
 
+    /// `GET .../issues/{n}/timeline`。事件流打开时用；未知 event 由解析层丢掉。
+    func listNotificationIssueTimeline(path: String) async throws -> [GitHubNotificationIssueTimelineItem]
+
     /// `POST .../issues/{n}/comments`。公开仓库用现有 `public_repo`；私有仓可能 404。
     func createNotificationIssueComment(path: String, body: String) async throws -> GitHubNotificationComment
 
@@ -284,6 +287,10 @@ extension GitHubAPIClientProtocol {
 
     func listNotificationIssueComments(path: String) async throws -> [GitHubNotificationComment] {
         throw NetworkError.clientError(statusCode: 501, message: "Notification comments are not implemented by this client")
+    }
+
+    func listNotificationIssueTimeline(path: String) async throws -> [GitHubNotificationIssueTimelineItem] {
+        throw NetworkError.clientError(statusCode: 501, message: "Notification issue timeline is not implemented by this client")
     }
 
     func createNotificationIssueComment(path: String, body: String) async throws -> GitHubNotificationComment {

@@ -1270,6 +1270,13 @@ final class AppSettings {
         didSet { persistBool(key: Keys.mcpIssueNotificationsEnabled, value: mcpIssueNotificationsEnabled) }
     }
 
+    // MARK: - 活动（2026-08-23）
+
+    /// 通知详情是否混入 GitHub Issue 事件。默认关闭，只显示评论。
+    var githubIssueEventTimelineEnabled: Bool {
+        didSet { persistBool(key: Keys.githubIssueEventTimelineEnabled, value: githubIssueEventTimelineEnabled) }
+    }
+
     // MARK: - 诊断 / 匿名遥测（2026-06-30）
 
     /// 是否允许发送匿名使用数据与性能摘要。默认关闭。
@@ -1953,6 +1960,7 @@ final class AppSettings {
         self.batchAINotificationsEnabled = defaults.object(forKey: Keys.batchAINotificationsEnabled) as? Bool ?? true
         self.syncIssueNotificationsEnabled = defaults.object(forKey: Keys.syncIssueNotificationsEnabled) as? Bool ?? true
         self.mcpIssueNotificationsEnabled = defaults.object(forKey: Keys.mcpIssueNotificationsEnabled) as? Bool ?? true
+        self.githubIssueEventTimelineEnabled = defaults.object(forKey: Keys.githubIssueEventTimelineEnabled) as? Bool ?? false
         self.telemetryEnabled = defaults.object(forKey: Keys.telemetryEnabled) as? Bool ?? false
         self.mcpServiceEnabled = defaults.object(forKey: Keys.mcpServiceEnabled) as? Bool ?? false
         let storedMCPPort = defaults.object(forKey: Keys.mcpServicePort) as? Int ?? Self.defaultMCPServicePort
@@ -2133,6 +2141,7 @@ final class AppSettings {
         batchAINotificationsEnabled = true
         syncIssueNotificationsEnabled = true
         mcpIssueNotificationsEnabled = true
+        githubIssueEventTimelineEnabled = false
         telemetryEnabled = false
         mcpServiceEnabled = false
         mcpServicePort = Self.defaultMCPServicePort
@@ -2565,6 +2574,7 @@ final class AppSettings {
         static let batchAINotificationsEnabled = "settings.notifications.batchAI.enabled.v1"
         static let syncIssueNotificationsEnabled = "settings.notifications.syncIssues.enabled.v1"
         static let mcpIssueNotificationsEnabled = "settings.notifications.mcpIssues.enabled.v1"
+        static let githubIssueEventTimelineEnabled = "settings.activity.issueEvents.enabled.v1"
         static let telemetryEnabled = "settings.telemetry.enabled.v1"
         static let mcpServiceEnabled = "settings.mcp.enabled.v1"
         static let mcpServicePort = "settings.mcp.port.v1"
@@ -2667,6 +2677,7 @@ final class AppSettings {
             batchAINotificationsEnabled,
             syncIssueNotificationsEnabled,
             mcpIssueNotificationsEnabled,
+            githubIssueEventTimelineEnabled,
             telemetryEnabled,
             mcpServiceEnabled,
             mcpServicePort,
