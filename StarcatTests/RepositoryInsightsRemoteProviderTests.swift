@@ -719,16 +719,23 @@ struct RepositoryInsightsRemoteProviderTests {
         )
         let cached = try #require(try await provider.cachedSecurityAdvisories(repoID: 25))
         let request = try #require(await httpClient.request())
-        let perPage = URLComponents(
+        let queryItems = URLComponents(
             url: try #require(request.url),
             resolvingAgainstBaseURL: false
-        )?.queryItems?.first(where: { $0.name == "per_page" })?.value
+        )?.queryItems ?? []
+        let query = Dictionary(uniqueKeysWithValues: queryItems.compactMap { item in
+            item.value.map { (item.name, $0) }
+        })
 
         #expect(request.url?.path == "/repos/octo/secure/security-advisories")
-        #expect(perPage == "100")
+        #expect(query["per_page"] == "100")
+        #expect(query["state"] == "published")
+        #expect(query["sort"] == "published")
+        #expect(query["direction"] == "desc")
         #expect(refreshed.advisories.map(\.id) == ["GHSA-latest", "GHSA-older"])
         #expect(refreshed.advisories.map(\.severity) == ["low", "critical"])
         #expect(refreshed.advisories.last?.cveID == "CVE-2026-1")
+        #expect(refreshed.advisories.first?.publisherLogin == "security-bot")
         #expect(
             refreshed.advisories.first?.htmlURL?.absoluteString
                 == "https://github.com/octo/secure/security/advisories/GHSA-latest"
@@ -1317,6 +1324,7 @@ private actor SecurityAdvisoriesHTTPClient: RAGHTTPClientProtocol {
             "summary":"Low issue",
             "severity":"low",
             "html_url":"https://github.com/octo/secure/security/advisories/GHSA-latest",
+            "publisher":{"login":"security-bot"},
             "published_at":"2026-07-25T00:00:00Z"
           }
         ]

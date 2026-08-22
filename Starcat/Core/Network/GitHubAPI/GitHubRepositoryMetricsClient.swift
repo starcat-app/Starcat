@@ -285,15 +285,22 @@ struct GitHubRepositoryReleaseMetric: Decodable, Equatable, Sendable {
 
 /// RAG 既有 Security Advisory 远程证据使用的类型化响应。
 struct GitHubRepositorySecurityAdvisoryMetric: Decodable, Equatable, Sendable {
+    private struct Publisher: Decodable, Equatable, Sendable {
+        let login: String
+    }
+
     let ghsaID: String
     let cveID: String?
     let summary: String
     let severity: String
     let htmlURL: String?
     let publishedAt: String
+    private let publisher: Publisher?
+
+    var publisherLogin: String? { publisher?.login }
 
     enum CodingKeys: String, CodingKey {
-        case summary, severity
+        case summary, severity, publisher
         case ghsaID = "ghsa_id"
         case cveID = "cve_id"
         case htmlURL = "html_url"
@@ -757,7 +764,12 @@ actor DefaultGitHubRepositoryMetricsClient: GitHubRepositoryMetricsClient {
             endpoints.repository(
                 repository,
                 suffix: "security-advisories",
-                queryItems: [URLQueryItem(name: "per_page", value: String(max(1, min(limit, 100))))]
+                queryItems: [
+                    URLQueryItem(name: "per_page", value: String(max(1, min(limit, 100)))),
+                    URLQueryItem(name: "state", value: "published"),
+                    URLQueryItem(name: "sort", value: "published"),
+                    URLQueryItem(name: "direction", value: "desc")
+                ]
             ),
             ifNoneMatch: ifNoneMatch,
             observer: observer

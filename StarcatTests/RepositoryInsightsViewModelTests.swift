@@ -203,6 +203,18 @@ struct RepositoryInsightsViewModelTests {
         #expect(insight.latestPublishedAt == latest)
     }
 
+    @Test("旧安全公告缓存缺少发布者字段时仍可解码")
+    func securityAdvisoryCacheWithoutPublisherDecodes() throws {
+        let payload = Data(
+            #"{"id":"GHSA-old-cache","cveID":null,"summary":"Cached","severity":"medium","htmlURL":null,"publishedAt":1000}"#.utf8
+        )
+
+        let decoded = try JSONDecoder().decode(RepositorySecurityAdvisory.self, from: payload)
+
+        #expect(decoded.id == "GHSA-old-cache")
+        #expect(decoded.publisherLogin == nil)
+    }
+
     @Test("活动刷新失败保留 stale 缓存")
     func staleActivitySurvivesRefreshFailure() async {
         let cached = RepositoryActivityCounts(

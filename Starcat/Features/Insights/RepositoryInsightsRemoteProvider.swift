@@ -285,7 +285,27 @@ struct RepositorySecurityAdvisory: Codable, Equatable, Identifiable, Sendable {
     let summary: String
     let severity: String
     let htmlURL: URL?
+    /// GitHub 可能不返回 publisher；保持可选可让既有缓存继续解码。
+    let publisherLogin: String?
     let publishedAt: Date
+
+    init(
+        id: String,
+        cveID: String?,
+        summary: String,
+        severity: String,
+        htmlURL: URL?,
+        publisherLogin: String? = nil,
+        publishedAt: Date
+    ) {
+        self.id = id
+        self.cveID = cveID
+        self.summary = summary
+        self.severity = severity
+        self.htmlURL = htmlURL
+        self.publisherLogin = publisherLogin
+        self.publishedAt = publishedAt
+    }
 }
 
 /// 安全公告的缓存快照；派生统计只基于本次成功获取的公告列表。
@@ -1199,6 +1219,7 @@ struct DefaultRepositoryRemoteInsightsProvider: RepositoryRemoteInsightsProvidin
                     summary: metric.summary,
                     severity: metric.severity.lowercased(),
                     htmlURL: metric.htmlURL.flatMap(URL.init(string:)),
+                    publisherLogin: metric.publisherLogin,
                     publishedAt: publishedAt
                 )
             }

@@ -138,6 +138,8 @@ struct RepositoryInsightsView: View {
 
     /// 折叠态只展示前 4 人；样本人数已在集中度行给出总量。
     private static let visibleContributorLimit = 4
+    /// 洞察页保持紧凑，只展示最近 5 条；完整历史继续交给 GitHub 公告页。
+    private static let visibleSecurityAdvisoryLimit = 5
     private static let collapsedTimelineLimit = 5
     /// 与 RepoDetailScrollReport 同口径，忽略亚像素测高抖动。
     private static let contentHeightTolerance: CGFloat = 0.5
@@ -2545,6 +2547,21 @@ struct RepositoryInsightsView: View {
                         destinationURL: insight.advisories.first?.htmlURL
                     )
                 }
+                ForEach(Array(insight.advisories.prefix(Self.visibleSecurityAdvisoryLimit))) { advisory in
+                    Divider().padding(.leading, 28)
+                    securityAdvisoryRow(advisory)
+                }
+                if !insight.advisories.isEmpty {
+                    Divider().padding(.leading, 28)
+                    localSignalRow(
+                        id: "security.advisories.viewAll",
+                        title: "insights.drilldown.viewAll",
+                        statusText: insight.advisories.count.formatted(.number.locale(locale)),
+                        statusColor: .secondary,
+                        systemImage: "list.bullet",
+                        destinationURL: repositorySecurityAdvisoriesURL
+                    )
+                }
             }
         } else {
             switch viewModel.securityAdvisoriesState {
@@ -2570,6 +2587,110 @@ struct RepositoryInsightsView: View {
             case .content, .stale:
                 EmptyView()
             }
+        }
+    }
+
+    @ViewBuilder
+    private func securityAdvisoryRow(_ advisory: RepositorySecurityAdvisory) -> some View {
+        let severityColor = securityAdvisorySeverityColor(advisory.severity)
+        let isTappable = advisory.htmlURL != nil
+        let isHovered = hoveredLocalSignalID == advisory.id
+        let content = HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.shield")
+                .frame(width: 18)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(verbatim: advisory.summary)
+                    .font(interfaceScale.font(.caption, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                Text(verbatim: securityAdvisoryMetadata(advisory))
+                    .font(interfaceScale.font(.captionSmall))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Text(verbatim: securityAdvisorySeverityTitle(advisory.severity))
+                .font(interfaceScale.font(.captionSmall, weight: .medium))
+                .foregroundStyle(severityColor)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(
+                    Capsule()
+                        .fill(severityColor.opacity(0.12))
+                )
+            if isTappable {
+                Image(systemName: "arrow.up.right.square")
+                    .font(interfaceScale.font(.captionSmall))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.primary.opacity(isHovered && isTappable ? 0.08 : 0))
+        )
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            guard isTappable else { return }
+            if hovering {
+                hoveredLocalSignalID = advisory.id
+            } else if hoveredLocalSignalID == advisory.id {
+                hoveredLocalSignalID = nil
+            }
+        }
+
+        if let destinationURL = advisory.htmlURL {
+            Button {
+                NSWorkspace.shared.open(destinationURL)
+            } label: {
+                content
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(Text(verbatim: destinationURL.absoluteString))
+            .accessibilityAddTraits(.isLink)
+        } else {
+            content
+        }
+    }
+
+    private func securityAdvisoryMetadata(_ advisory: RepositorySecurityAdvisory) -> String {
+        var parts = [advisory.id]
+        if let cveID = advisory.cveID, !cveID.isEmpty {
+            parts.append(cveID)
+        }
+        parts.append(shortDate(advisory.publishedAt))
+        if let publisher = advisory.publisherLogin, !publisher.isEmpty {
+            parts.append("@\(publisher)")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func securityAdvisorySeverityTitle(_ severity: String) -> String {
+        switch severity.lowercased() {
+        case "critical":
+            return String.l10n("insights.repo.securityAdvisory.severity.critical")
+        case "high":
+            return String.l10n("insights.repo.securityAdvisory.severity.high")
+        case "medium", "moderate":
+            return String.l10n("insights.repo.securityAdvisory.severity.medium")
+        case "low":
+            return String.l10n("insights.repo.securityAdvisory.severity.low")
+        default:
+            return severity.capitalized
+        }
+    }
+
+    private func securityAdvisorySeverityColor(_ severity: String) -> Color {
+        switch severity.lowercased() {
+        case "critical": return .red
+        case "high": return .orange
+        case "medium", "moderate": return .orange
+        default: return .secondary
         }
     }
 
