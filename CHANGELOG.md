@@ -7,6 +7,7 @@ Release notes for the Mac App Store edition of Starcat.
 ### New
 
 - README video playback: Play supported GitHub README videos inline with native controls; playback requires an explicit action and stops when switching repositories or closing the detail view. Unsupported sources continue to open in the browser.
+- Repository security advisories: Review the five latest published advisories in Insights with severity, GHSA / CVE identifiers, publication date, and publisher, then open an advisory or the complete list on GitHub.
 
 ### Fixes
 
