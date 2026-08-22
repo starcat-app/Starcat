@@ -1,6 +1,6 @@
 # Agent 产品化收口专项 Checklist
 
-> 状态：工程、真实窗口视觉验收与历史真实 Run 数据闭环完成；Debug 历史页面复验等待模型配置，真实分发验收待授权
+> 状态：工程、真实窗口视觉验收与历史真实 Run 数据闭环保留；2026-08-22 产品入口已回收至 Debug，完全开放需重新验收
 > 创建：2026-08-14
 > 权威设计：`docs/3-设计/详细设计/57-Agent工作台与统一能力层详细设计.md`
 > 目标范围：完成权威设计 P0～P4 与 Definition of Done，不扩张到 P5 外部 CLI Runtime。
@@ -53,6 +53,8 @@
 
 > 验证：2026-08-14 已移除 Agent 工具栏 Debug 开关，Release 构建通过；真实 UI 证明正式入口可见、免费用户进入 AI Chat Pro 付费墙、Pro 用户未配置模型进入配置门禁。修复门禁失败仍误记新手引导完成，以及 Agent 误用 RAG 模型提示文案；Agent 新增文案 18 个 locale 完整、非空且均为 translated。
 
+> 2026-08-22 产品决策覆盖：上述记录只保留为历史验收证据，不再代表当前发布状态；Agent 工作台重新收口为 Debug-only，工程实现和既有门禁继续保留。
+
 ### D. Run Surface 过程 / 结果双层呈现
 
 - [x] 使用 `toolCallID` 把 call/result 投影成单个工具执行节点，不改消息事实和数据库。
@@ -87,6 +89,18 @@
 
 > 当前证据：2026-08-15 已完成 Agent / Capability / MCP 定向套件、最新 2,291 项全量测试（0 failed、8 skipped、1 expected failure）、Run Surface 定向测试、Debug build、App Store / Direct Release build、Agent String Catalog 18 locale 完整性检查与十二轮审查；本轮新增 Runtime 入站合并和安全尾部跟随回归。历史真实 Run `B5B9A14A-E616-4EE4-AC7A-536D8EF42F4F` 在 31 秒内完成 External Search、历史回看及 2,779 字符 Artifact 导出；最新连续任务叙事界面由同一生产视图在真实 `NSWindow + NSHostingView` 中通过像素验收。Debug 数据容器的真实历史页面复验受既有对话模型配置门禁限制，真实分发产物双渠道验收仍等待发版授权。
 
+### F. Debug-only 回收与完全开放清单
+
+- [x] 从主窗口 toolbar、首次操作指引和首次启动介绍移除 Agent 工作台公开入口。
+- [x] 在 `Who's Your Daddy` Debug 菜单增加 `Open Agent Workspace`，继续复用 `AgentWorkspaceWindowController` 与既有 Pro / 模型门禁。
+- [ ] dong4j 明确确认“Agent 工作台完全开放”，不得用工程完成、Release 编译或历史验收替代产品授权。
+- [ ] 恢复 `RepoListView.swift` toolbar 与 `HomeView.swift` 打开回调，并确认 Release 构建只有一套正式打开语义。
+- [ ] 恢复 `GettingStartedOnboarding.swift` 的步骤、anchor、完成通知和进度测试。
+- [ ] 恢复 `FirstRunWelcomeSheet.swift` 的 Agent 介绍步骤，复用 `OnboardingAgent` asset 与既有本地化文案。
+- [ ] 复核 `AIWorkspaceEntryGate`、Pro、有效对话模型、用量、隐私、写入审批和 App Store / Direct 渠道边界。
+- [ ] 通过 Agent 定向测试、StarcatTests 全量测试、Debug/Release 双配置编译和真实 UI 人工验收。
+- [ ] 经单独授权后同步 `docs/功能实现总览.md`，并同步本设计、专项状态与 Release Notes。
+
 ## 4. 明确非目标
 
 - [x] Recall Search 继续归属知识库 RAG，不重复建设 Agent。
@@ -98,7 +112,7 @@
 ## 5. 结束条件
 
 - [ ] 所有本轮实施任务和验收项均有当前证据并正确回填。
-- [x] 代码、需求、设计、专项 checklist 与功能实现总览一致。
+- [ ] 代码、需求、设计、专项 checklist 与功能实现总览一致；功能实现总览等待 dong4j 单独授权后同步当前 Debug-only 决策。
 - [x] 单元测试、全量测试、构建和可执行的真实 UI 验收通过。
 - [x] 连续终审不再发现新的仓库内遗留问题。
 - [x] 所有已完成轮次的审查报告和最终结果报告已保存。

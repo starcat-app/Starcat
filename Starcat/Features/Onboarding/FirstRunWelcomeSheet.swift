@@ -144,7 +144,6 @@ private enum OnboardingScreenshotFallback {
     case intelligence
     case search
     case library
-    case agent
     case rag
 }
 
@@ -262,20 +261,6 @@ struct FirstRunOnboardingView: View {
             screenshotAssetName: "OnboardingRAG",
             screenshotFallback: .rag,
             tint: Color(red: 0.36, green: 0.78, blue: 0.76)
-        ),
-        FirstRunOnboardingStep(
-            id: 5,
-            systemImage: "wand.and.stars",
-            title: "onboarding.step6.title",
-            detail: "onboarding.step6.detail",
-            highlights: [
-                "onboarding.step6.highlight.runs",
-                "onboarding.step6.highlight.tools",
-                "onboarding.step6.highlight.artifacts"
-            ],
-            screenshotAssetName: "OnboardingAgent",
-            screenshotFallback: .agent,
-            tint: Color(red: 0.55, green: 0.58, blue: 1.0)
         )
     ]
 
@@ -980,7 +965,6 @@ private struct FirstRunOnboardingStepPanel: View {
 /// - `OnboardingSearch`
 /// - `OnboardingLibrary`
 /// - `OnboardingRAG`
-/// - `OnboardingAgent`
 ///
 /// 这里故意用运行时 `NSImage(named:)` 检测资源是否存在，而不是直接 `Image("...")`：
 /// 正式资源缺失时仍保留 Swift fallback，避免资产目录异常导致首次引导出现空白。
@@ -1042,8 +1026,6 @@ private struct OnboardingScreenshotPreview: View {
             searchPreview
         case .library:
             libraryPreview
-        case .agent:
-            agentPreview
         case .rag:
             ragPreview
         }
@@ -1167,31 +1149,6 @@ private struct OnboardingScreenshotPreview: View {
                 }
                 .padding(14)
                 .frame(width: 190)
-                .softPanel(accent: step.tint)
-            }
-        }
-    }
-
-    private var agentPreview: some View {
-        previewWindow(title: "Agent Workspace") {
-            HStack(alignment: .top, spacing: 14) {
-                VStack(alignment: .leading, spacing: 10) {
-                    agentStepRow(index: 1, title: "Plan repository cleanup", icon: "checklist", active: false, tint: Color.green)
-                    agentStepRow(index: 2, title: "Read README and tags", icon: "doc.text.magnifyingglass", active: true, tint: step.tint)
-                    agentStepRow(index: 3, title: "Run local tools", icon: "terminal.fill", active: false, tint: Color.orange)
-                    agentStepRow(index: 4, title: "Create artifact", icon: "shippingbox.fill", active: false, tint: Color.blue)
-                }
-                .frame(maxWidth: .infinity)
-
-                VStack(alignment: .leading, spacing: 12) {
-                    inspectorHeader(icon: "doc.richtext.fill", title: "Artifacts")
-                    artifactPreview(title: "Summary.md", icon: "doc.text.fill", tint: step.tint)
-                    artifactPreview(title: "tag-plan.json", icon: "curlybraces", tint: Color.green)
-                    Spacer(minLength: 0)
-                    miniTagRow(["Tool timeline", "Artifacts"], tint: step.tint)
-                }
-                .padding(14)
-                .frame(width: 210)
                 .softPanel(accent: step.tint)
             }
         }
@@ -1536,53 +1493,6 @@ private struct OnboardingScreenshotPreview: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 34)
-        .background {
-            previewCardBackground(cornerRadius: 10)
-        }
-    }
-
-    private func agentStepRow(index: Int, title: String, icon: String, active: Bool, tint: Color) -> some View {
-        HStack(spacing: 10) {
-            Text(verbatim: "\(index)")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(active ? .white : .secondary)
-                .frame(width: 24, height: 24)
-                .background(active ? tint : Color.primary.opacity(0.08), in: Circle())
-            Image(systemName: icon)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(tint)
-                .frame(width: 22)
-            Text(verbatim: title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(active ? .primary : .secondary)
-            Spacer()
-        }
-        .padding(12)
-        .background {
-            previewCardBackground(
-                cornerRadius: 13,
-                tint: active ? tint : nil,
-                tintOpacity: 0.14
-            )
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .stroke(active ? tint.opacity(0.34) : Color.white.opacity(0.05), lineWidth: 1)
-        }
-    }
-
-    private func artifactPreview(title: String, icon: String, tint: Color) -> some View {
-        HStack(spacing: 9) {
-            Image(systemName: icon)
-                .foregroundStyle(tint)
-                .frame(width: 22, height: 22)
-                .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            Text(verbatim: title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.primary)
-            Spacer()
-        }
-        .padding(10)
         .background {
             previewCardBackground(cornerRadius: 10)
         }

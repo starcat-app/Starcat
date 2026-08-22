@@ -457,8 +457,6 @@ struct RepoListView: View {
     var onShowBatchAIPanel: (() -> Void)?
     /// 全局搜索中心由 HomeView 承载；列表 toolbar 只负责触发，不持有浮层状态。
     var onOpenSearchCenter: (() -> Void)?
-    /// 覆盖式 Agent Workspace 由 HomeView 承载；列表 toolbar 只暴露入口。
-    var onOpenAgentWorkspace: (() -> Void)?
     /// 覆盖式知识库 RAG 工作台由 HomeView 承载；列表 toolbar 只暴露入口。
     var onOpenKnowledgeRAGWorkspace: (() -> Void)?
     /// Browser Plugin 的 Open in Starcat 由 HomeView 负责切换根页面和选中详情。
@@ -773,17 +771,6 @@ struct RepoListView: View {
                         lastSyncedAt: lastSyncedAt,
                         onShowBatchAIPanel: onShowBatchAIPanel
                     )
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        onOpenAgentWorkspace?()
-                    } label: {
-                        // systemRed 在明暗主题下都够亮，暗色 toolbar 上也能一眼认出 Agent 入口。
-                        workspaceToolbarIcon("a.circle", tint: Color(nsColor: .systemRed))
-                            .accessibilityLabel(Text("toolbar.agentWorkspace.label"))
-                    }
-                    .help("toolbar.agentWorkspace.help")
-                    .gettingStartedAnchor(.agentWorkspace)
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button {

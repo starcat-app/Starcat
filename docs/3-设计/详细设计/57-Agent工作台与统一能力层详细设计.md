@@ -76,9 +76,20 @@ Starcat Agent 不再按“重新建设一套 AI、上下文、工具和 CLI 集�
 - `recall-search`
 - `release-watcher`
 
-Agent 工具栏入口已解除 `DebugFlags.agentToolbarEntry`，在 Debug / Release 与 App Store / Direct 共用同一产品入口；打开前仍统一校验 AI Chat Pro 权益与有效对话模型。因此现状应定义为：
+2026-08-22 产品决策：Agent 工作台尚未达到完全开放标准，Release、App Store 与 Direct 构建不再提供主窗口 toolbar、首次操作指引或首次启动介绍入口；当前仅允许从 Debug 构建的 `Who's Your Daddy → Open Agent Workspace` 打开。Debug 入口继续统一校验 AI Chat Pro 权益与有效对话模型，不建立绕过生产约束的第二套运行路径。因此现状应定义为：
 
-> Agent P0～P4 的运行、上下文、共享能力、写入审批、产品门禁和 Run Surface 已实现；自动化、人工可观察边界和多轮终审证据在专项目录持续收口。
+> Agent P0～P4 的运行、上下文、共享能力、写入审批、产品门禁和 Run Surface 已实现并保留，但产品入口暂时回收至 Debug；工程完成度不能再直接等同于正式开放状态。
+
+#### 2.2.1 完全开放时的恢复清单
+
+只有 dong4j 再次明确确认“Agent 工作台完全开放”后，才能在同一任务中恢复以下正式入口和配套契约，禁止只打开 toolbar 后遗漏引导、测试或发布验收：
+
+1. 在 `Starcat/Features/Home/RepoListView.swift` 恢复主窗口 toolbar 入口，并在 `Starcat/Features/Home/HomeView.swift` 恢复打开回调；入口必须继续调用 `AgentWorkspaceWindowController.show(dependencies:)`，不得绕过 `AIWorkspaceEntryGate`。
+2. 在 `Starcat/Features/Onboarding/GettingStartedOnboarding.swift` 与 `HomeView.swift` 恢复首次操作指引步骤、anchor、完成通知和进度投影，并同步更新 `StarcatTests/GettingStartedProgressStoreTests.swift`。
+3. 在 `Starcat/Features/Onboarding/FirstRunWelcomeSheet.swift` 恢复 Agent 介绍步骤；复用保留的 `OnboardingAgent` asset 与既有 String Catalog 文案，不新造第二套宣传资源。
+4. 在 `Starcat/App/StarcatApp.swift` 评估是否删除重复的 Debug 菜单入口；无论是否保留，Release 构建只能有一套正式窗口打开语义。
+5. 重新核对 Pro、有效对话模型、用量、隐私、写入审批和 App Store / Direct 渠道边界；通过定向测试、全量测试、Debug/Release 双配置编译及真实 UI 人工验收后，才能认定入口开放完成。
+6. 同步本设计、Agent 产品化专项、Release Notes 与 `docs/功能实现总览.md`；其中 `docs/功能实现总览.md` 仍需 dong4j 对该文件的单独明确授权。
 
 ### 2.3 已解除的数据阻断
 
@@ -1015,7 +1026,7 @@ propose / dry-run
 - Release 入口策略。
 - 自动化证据与真实 UI 人工验收分开记录。
 
-P0～P3、定向自动化、Release 构建与真实入口门禁验收通过后，已于 2026-08-14 解除 `DebugFlags.agentToolbarEntry`；Pro、模型、用量和隐私边界保持不变。
+P0～P3、定向自动化、Release 构建与真实入口门禁验收通过后，曾于 2026-08-14 解除 `DebugFlags.agentToolbarEntry`；2026-08-22 根据新的产品决策重新回收至 Debug 菜单。P4 工程实现继续保留，正式开放必须重新执行 §2.2.1 清单，Pro、模型、用量和隐私边界不得回退。
 
 ### P5：可选外部 Agent Runtime
 

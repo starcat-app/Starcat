@@ -176,13 +176,11 @@ struct StarcatApp: App {
                 settings: dependencies?.settings ?? AppSettings.shared
             )
 
-            // DEBUG-only 菜单：作为后续调试入口的容器（清缓存 / 强制制造网络
-            // 错误 / Dump 数据库等）。语言切换 2026-06-16 移除（已在设置页落地）。
-            // 当前菜单内只放一个 disabled 占位项，等加入第一个真功能时移除占位。
+            // DEBUG-only 菜单承载首次引导重放、Pro 覆盖、未开放工作台和 Runtime POC。
             // Release 包整段不存在；菜单标题 / 选项标签都用 verbatim 文本，
             // 不进入 String Catalog——避免"切到英文后调试菜单也变英文"的循环噩梦。
             #if DEBUG
-            DebugMenuCommands()
+            DebugMenuCommands(dependencies: dependencies)
             #endif
         }
 
@@ -713,6 +711,8 @@ private enum DebugWindowResizer {
 }
 
 struct DebugMenuCommands: Commands {
+    let dependencies: AppDependencies?
+
     @AppStorage(DebugFlags.debugProOverrideKey) private var debugProOverride = false
     @AppStorage(ExternalAgentRuntimePOCPreferences.backendKey)
     private var externalRuntimeBackend = AgentRuntimeBackend.builtinLoop.rawValue
@@ -734,6 +734,16 @@ struct DebugMenuCommands: Commands {
                     }
                 )
             )
+
+            Divider()
+
+            Button("Open Agent Workspace") {
+                guard let dependencies else { return }
+                // Agent 尚未面向正式用户开放。Debug 入口仍复用生产窗口控制器与
+                // Pro / 对话模型门禁，避免调试路径形成第二套运行语义。
+                AgentWorkspaceWindowController.show(dependencies: dependencies)
+            }
+            .disabled(dependencies == nil)
 
             Divider()
 

@@ -458,8 +458,6 @@ struct HomeView: View {
             return .ai
         case .useRAGWorkspace:
             return .ragWorkspace
-        case .useAgentWorkspace:
-            return .agentWorkspace
         case .shareProfile:
             return .shareProfile
         case .unstarRepo:
@@ -762,9 +760,6 @@ struct HomeView: View {
         .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidOpenRAGWorkspace)) { _ in
             gettingStartedStore.markCompleted(.useRAGWorkspace)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidOpenAgentWorkspace)) { _ in
-            gettingStartedStore.markCompleted(.useAgentWorkspace)
-        }
         .onReceive(NotificationCenter.default.publisher(for: .starcatWorkspaceRequiresProPaywall)) { note in
             // Smart Collections 等子视图通过 AppKit 窗口入口请求付费墙；只有主窗口持有
             // `ProPaywallSheet` 的 presentation state，故在这里统一接住并展示。
@@ -928,7 +923,7 @@ struct HomeView: View {
         switch stepID {
         case .selectRepo, .openRepoHomepage, .addRepoToLibrary, .organizeRepo, .useAI, .unstarRepo:
             return true
-        case .signIn, .syncStars, .useSearch, .useRAGWorkspace, .useAgentWorkspace, .shareProfile:
+        case .signIn, .syncStars, .useSearch, .useRAGWorkspace, .shareProfile:
             return false
         }
     }
@@ -1123,15 +1118,6 @@ struct HomeView: View {
             homeViewModel: viewModel,
             openSettings: openSettings
         )
-    }
-
-    private func openAgentWorkspaceForGettingStarted() {
-        searchCenterViewModel.dismiss()
-        // 只有门禁通过且窗口真正打开后才完成引导，不能让付费墙或模型配置提示制造假进度。
-        guard AgentWorkspaceWindowController.show(dependencies: dependencies) else {
-            return
-        }
-        NotificationCenter.default.post(name: .gettingStartedDidOpenAgentWorkspace, object: nil)
     }
 
     private func openRepoHomepageForGettingStarted() {
@@ -1335,9 +1321,6 @@ struct HomeView: View {
                     },
                     onOpenSearchCenter: {
                         presentSearchCenterForGettingStarted()
-                    },
-                    onOpenAgentWorkspace: {
-                        openAgentWorkspaceForGettingStarted()
                     },
                     onOpenKnowledgeRAGWorkspace: {
                         openKnowledgeRAGWorkspaceForGettingStarted()

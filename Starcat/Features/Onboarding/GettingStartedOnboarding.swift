@@ -26,8 +26,6 @@ extension Notification.Name {
     static let gettingStartedDidOpenAI = Notification.Name("starcat.gettingStarted.didOpenAI")
     /// 用户打开过知识库 RAG 工作台后发出，驱动「试用 RAG 工作台」清单项。
     static let gettingStartedDidOpenRAGWorkspace = Notification.Name("starcat.gettingStarted.didOpenRAGWorkspace")
-    /// 用户打开过 Agent 工作台后发出，驱动「试用 Agent 工作台」清单项。
-    static let gettingStartedDidOpenAgentWorkspace = Notification.Name("starcat.gettingStarted.didOpenAgentWorkspace")
     /// 用户点击过详情页项目 Logo 后发出，驱动「打开项目主页」清单项。
     static let gettingStartedDidOpenRepoHomepage = Notification.Name("starcat.gettingStarted.didOpenRepoHomepage")
     /// 用户把仓库加入知识库后发出，驱动「加入知识库」清单项。
@@ -60,7 +58,6 @@ final class GettingStartedProgressStore {
         case useSearch
         case useAI
         case useRAGWorkspace
-        case useAgentWorkspace
         case shareProfile
         case unstarRepo
 
@@ -77,7 +74,6 @@ final class GettingStartedProgressStore {
             .useSearch,
             .useAI,
             .useRAGWorkspace,
-            .useAgentWorkspace,
             .shareProfile,
             .unstarRepo
         ]
@@ -159,7 +155,6 @@ enum GettingStartedAnchorID: Hashable {
     case search
     case ai
     case ragWorkspace
-    case agentWorkspace
     case repoHomepage
     case addToLibrary
     case unstarRepo
@@ -512,8 +507,6 @@ private struct GettingStartedCoachMark: View {
             return 188
         case .useRAGWorkspace:
             return 204
-        case .useAgentWorkspace:
-            return 216
         case .shareProfile:
             return 180
         case .unstarRepo:
@@ -556,7 +549,7 @@ private struct GettingStartedCoachMark: View {
             return .right
         case .addRepoToLibrary:
             return .below
-        case .useRAGWorkspace, .useAgentWorkspace:
+        case .useRAGWorkspace:
             return .below
         case .shareProfile:
             return .right
