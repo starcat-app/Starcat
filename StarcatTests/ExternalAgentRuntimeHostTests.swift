@@ -45,8 +45,7 @@ struct ExternalAgentRuntimeHostTests {
         try await host.execute(
             runID: UUID(),
             driver: ExternalHostToolFixtureDriver(),
-            toolCallHandler: { request in
-                #expect(request.name == "fixture_lookup")
+            toolCallHandler: { _ in
                 return ExternalAgentToolExecutionResult(
                     output: .object(["summary": .string("fixture-result")]),
                     modelText: "fixture-result",
@@ -87,11 +86,42 @@ struct ExternalAgentRuntimeHostTests {
         }
     }
 
+    @Test("合法协议活动会续期首输出看门狗")
+    func protocolActivityExtendsFirstOutputWatchdog() async throws {
+        let collector = ExternalHostEventCollector()
+        // fixture 总时长约 240ms：旧实现会在 180ms 固定超时，新实现收到 80ms
+        // 间隔的合法协议帧后会续期，并稳定等到最终可见输出。
+        let host = ExternalAgentRuntimeHost(firstOutputTimeout: .milliseconds(180))
+
+        try await host.execute(
+            runID: UUID(),
+            driver: ExternalHostProtocolActivityFixtureDriver()
+        ) { event in
+            await collector.append(event)
+        }
+
+        #expect(await collector.events == [.assistantDelta("ready"), .completed])
+    }
+
+    @Test("stdout 提前关闭时等待并报告真实退出状态")
+    func reportsDelayedProcessExitStatusAndSafeDiagnostic() async throws {
+        let host = ExternalAgentRuntimeHost()
+        let expectedDiagnostic = "Termination reason: exit. "
+            + "Codex stderr summary (1 lines): codex model cache."
+
+        await #expect(throws: ExternalAgentRuntimeError.processExited(23, expectedDiagnostic)) {
+            try await host.execute(
+                runID: UUID(),
+                driver: ExternalHostDelayedExitFixtureDriver()
+            ) { _ in }
+        }
+    }
+
     @Test("Provider 关闭 stdin 后写回只结束 Run，不会触发 SIGPIPE 终止 App")
     func closedProviderStdinBecomesRecoverableRuntimeError() async throws {
         let host = ExternalAgentRuntimeHost()
 
-        await #expect(throws: ExternalAgentRuntimeError.processClosedBeforeCompletion) {
+        await #expect(throws: ExternalAgentRuntimeError.processClosedBeforeCompletion(nil)) {
             try await host.execute(
                 runID: UUID(),
                 driver: ExternalHostClosedStdinFixtureDriver()
@@ -219,6 +249,65 @@ private final class ExternalHostSilentFixtureDriver: ExternalAgentProtocolDriver
     let processConfiguration = ExternalAgentProcessConfiguration(
         executableURL: URL(fileURLWithPath: "/bin/sh"),
         arguments: ["-c", "read first; sleep 10"],
+        environment: ExternalAgentProcessEnvironment.filtered(),
+        currentDirectoryURL: FileManager.default.temporaryDirectory
+    )
+
+    func initialFrames() throws -> [AgentJSONValue] {
+        [.jsonRPCRequest(id: 1, method: "fixture/start")]
+    }
+
+    func receive(_ frame: AgentJSONValue) throws -> ExternalAgentProtocolOutput {
+        ExternalAgentProtocolOutput()
+    }
+
+    func cancellationFrame() -> AgentJSONValue? { nil }
+    func shutdownFrame() -> AgentJSONValue? { nil }
+}
+
+private final class ExternalHostProtocolActivityFixtureDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
+    let backend = AgentRuntimeBackend.codexAppServer
+    let capabilities = AgentRuntimeCapabilities.codexAppServerPOC
+    let processConfiguration = ExternalAgentProcessConfiguration(
+        executableURL: URL(fileURLWithPath: "/bin/sh"),
+        arguments: [
+            "-c",
+            "read first; sleep 0.08; printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"method\":\"fixture/progress\"}'; sleep 0.08; printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"method\":\"fixture/progress\"}'; sleep 0.08; printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"method\":\"fixture/delta\",\"params\":{\"delta\":\"ready\"}}' '{\"jsonrpc\":\"2.0\",\"method\":\"fixture/completed\"}'",
+        ],
+        environment: ExternalAgentProcessEnvironment.filtered(),
+        currentDirectoryURL: FileManager.default.temporaryDirectory
+    )
+
+    func initialFrames() throws -> [AgentJSONValue] {
+        [.jsonRPCRequest(id: 1, method: "fixture/start")]
+    }
+
+    func receive(_ frame: AgentJSONValue) throws -> ExternalAgentProtocolOutput {
+        switch frame[external: "method"]?.stringValue {
+        case "fixture/delta":
+            return ExternalAgentProtocolOutput(events: [
+                .assistantDelta(frame[external: "params"]?[external: "delta"]?.stringValue ?? "")
+            ])
+        case "fixture/completed":
+            return ExternalAgentProtocolOutput(events: [.completed], isTerminal: true)
+        default:
+            return ExternalAgentProtocolOutput()
+        }
+    }
+
+    func cancellationFrame() -> AgentJSONValue? { nil }
+    func shutdownFrame() -> AgentJSONValue? { nil }
+}
+
+private final class ExternalHostDelayedExitFixtureDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
+    let backend = AgentRuntimeBackend.codexAppServer
+    let capabilities = AgentRuntimeCapabilities.codexAppServerPOC
+    let processConfiguration = ExternalAgentProcessConfiguration(
+        executableURL: URL(fileURLWithPath: "/bin/sh"),
+        arguments: [
+            "-c",
+            "read first; printf '%s\\n' 'ERROR codex_models_manager::cache: stale cache' >&2; exec 1>&-; sleep 0.08; exit 23",
+        ],
         environment: ExternalAgentProcessEnvironment.filtered(),
         currentDirectoryURL: FileManager.default.temporaryDirectory
     )

@@ -4,8 +4,8 @@
 //
 //  Codex App Server 与 DeepSeek Harness rc.8 JSON-RPC fixture 测试。
 //
-//  测试只驱动协议状态机，不启动真实 Provider 进程；真实 Codex smoke 作为独立 POC
-//  验证执行，避免单测依赖用户登录态和网络。
+//  常规测试只驱动协议状态机，不依赖用户登录态和网络；显式设置
+//  `STARCAT_RUN_CODEX_INTEGRATION=1` 时，额外执行本机 Codex App Server smoke。
 //
 
 import Foundation
@@ -180,6 +180,61 @@ struct ExternalAgentProtocolAdapterTests {
         #expect(try resultBox.requiredCatalog().models.map(\.id) == ["gpt-fixture"])
     }
 
+    @Test(
+        "本机 Codex App Server 完成模型目录与真实 turn",
+        .enabled(if: ProcessInfo.processInfo.environment["STARCAT_RUN_CODEX_INTEGRATION"] == "1")
+    )
+    func installedCodexCompletesModelCatalogAndRealTurn() async throws {
+        let executablePath = ProcessInfo.processInfo.environment["STARCAT_CODEX_EXECUTABLE"]
+            ?? "/opt/homebrew/bin/codex"
+        let executableURL = URL(fileURLWithPath: executablePath)
+        #expect(FileManager.default.isExecutableFile(atPath: executableURL.path))
+
+        let environment = ExternalAgentProcessEnvironment.filtered()
+        let catalog = try await CodexModelCatalogClient(
+            executableURL: executableURL,
+            environment: environment,
+            firstOutputTimeout: .seconds(60)
+        ).load()
+        let selection = try #require(catalog.resolvedSelection(
+            preferredModelID: nil,
+            preferredReasoningEffort: nil
+        ))
+
+        let request = ExternalAgentRunRequest(
+            runID: UUID(),
+            prompt: "Reply with exactly STARCAT_CODEX_SMOKE_OK and nothing else.",
+            modelName: selection.modelName,
+            reasoningEffort: selection.reasoningEffort,
+            workingDirectory: FileManager.default.temporaryDirectory,
+            tools: []
+        )
+        let driver = try CodexAppServerAdapter(
+            executableURL: executableURL,
+            environment: environment
+        ).makeDriver(request: request)
+        let collector = CodexIntegrationEventCollector()
+
+        try await ExternalAgentRuntimeHost(firstOutputTimeout: .seconds(180)).execute(
+            runID: request.runID,
+            driver: driver
+        ) { event in
+            await collector.append(event)
+        }
+
+        let events = await collector.events
+        let assistantText = events.reduce(into: "") { text, event in
+            switch event {
+            case .assistantDelta(let delta), .assistantMessage(let delta, _):
+                text += delta
+            default:
+                break
+            }
+        }
+        #expect(assistantText.contains("STARCAT_CODEX_SMOKE_OK"))
+        #expect(events.contains(.completed))
+    }
+
     @Test("Codex adapter 映射 dynamic tool 请求并回写结果")
     func codexDynamicToolRoundTrip() throws {
         let adapter = CodexAppServerAdapter(executableURL: URL(fileURLWithPath: "/usr/bin/true"))
@@ -331,6 +386,14 @@ struct ExternalAgentProtocolAdapterTests {
                 ])
             ]),
         ])
+    }
+}
+
+private actor CodexIntegrationEventCollector {
+    private(set) var events: [ExternalAgentProtocolEvent] = []
+
+    func append(_ event: ExternalAgentProtocolEvent) {
+        events.append(event)
     }
 }
 

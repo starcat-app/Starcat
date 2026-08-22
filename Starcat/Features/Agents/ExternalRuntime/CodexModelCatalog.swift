@@ -116,7 +116,9 @@ struct CodexModelCatalogClient: Sendable {
     init(
         executableURL: URL,
         environment: [String: String],
-        firstOutputTimeout: Duration = .seconds(15)
+        // Codex 升级后可能需要丢弃旧模型缓存并在线刷新。实测 15 秒会与刷新完成
+        // 发生竞态，因此目录查询使用独立的 45 秒边界，不影响正式 turn 的超时策略。
+        firstOutputTimeout: Duration = .seconds(45)
     ) {
         self.executableURL = executableURL
         self.environment = environment

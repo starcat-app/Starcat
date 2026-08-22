@@ -20,7 +20,7 @@ actor ExternalAgentRuntimeHost {
     private var sessions: [UUID: ExternalAgentProcessSession] = [:]
     private let firstOutputTimeout: Duration
 
-    init(firstOutputTimeout: Duration = .seconds(90)) {
+    init(firstOutputTimeout: Duration = .seconds(180)) {
         self.firstOutputTimeout = firstOutputTimeout
     }
 
@@ -53,6 +53,7 @@ private actor ExternalAgentProcessSession {
     private var stdinHandle: FileHandle?
     private var stderrDrainTask: Task<Void, Never>?
     private var firstOutputWatchdogTask: Task<Void, Never>?
+    private var firstOutputDeadline: ContinuousClock.Instant?
     private var processGroupID: pid_t?
     private var isStopping = false
     private var didReceiveFirstOutput = false
@@ -90,6 +91,12 @@ private actor ExternalAgentProcessSession {
             throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
         try process.run()
+        // spawn 完成后父进程必须立即关闭三条 pipe 的 child-side endpoint。否则父进程
+        // 自己仍持有 stdin read / stdout write / stderr write，Provider 退出后 EOF、EPIPE
+        // 都无法可靠传播，短生命周期的连续 Run 还可能出现上一条 pipe 干扰下一条 Run。
+        stdinPipe.fileHandleForReading.closeFile()
+        stdoutPipe.fileHandleForWriting.closeFile()
+        stderrPipe.fileHandleForWriting.closeFile()
         self.process = process
         // Foundation.Process 没有“新建进程组”选项。父进程在 spawn 返回后立即尝试把
         // Sidecar 设为组长；若系统因 exec 竞态拒绝，清理会安全降级到只终止主进程。
@@ -103,7 +110,9 @@ private actor ExternalAgentProcessSession {
             // 只保存日志级别与 target，不保存原文，避免 Provider 把 prompt 或凭据
             // 带进诊断信息；有限摘要仍能区分 Codex、MCP 与模型缓存故障。
             do {
-                for try await line in stderrPipe.fileHandleForReading.bytes.lines {
+                for try await line in ExternalAgentLineReader.lines(
+                    from: stderrPipe.fileHandleForReading
+                ) {
                     await stderrSummary.record(line)
                 }
             } catch {
@@ -120,7 +129,9 @@ private actor ExternalAgentProcessSession {
             var reachedTerminal = false
             var stdoutLineNumber = 0
             var ignoredStdoutDiagnosticCount = 0
-            for try await line in stdoutPipe.fileHandleForReading.bytes.lines {
+            for try await line in ExternalAgentLineReader.lines(
+                from: stdoutPipe.fileHandleForReading
+            ) {
                 try Task.checkCancellation()
                 stdoutLineNumber += 1
                 let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -147,6 +158,10 @@ private actor ExternalAgentProcessSession {
                     // 不能按普通 stdout 杂讯忽略。
                     throw ExternalAgentRuntimeError.invalidFrame
                 }
+                // initialize/config/thread/reasoning 等协议活动虽然尚未形成用户可见文本，
+                // 但足以证明 Runtime 仍在工作。每个合法 JSON-RPC 对象都会续期看门狗，
+                // 避免 Codex 长握手或长推理被固定的墙钟超时误杀。
+                noteProtocolActivity()
                 let output = try driver.receive(frame)
                 if output.events.contains(where: \.countsAsFirstOutput)
                     || !output.toolRequests.isEmpty {
@@ -198,14 +213,30 @@ private actor ExternalAgentProcessSession {
                 if didFirstOutputTimeout {
                     throw ExternalAgentRuntimeError.firstOutputTimedOut(await stderrSummary.diagnostic())
                 }
-                if !process.isRunning, process.terminationStatus != 0 {
-                    throw ExternalAgentRuntimeError.processExited(process.terminationStatus)
+                if isStopping {
+                    throw CancellationError()
                 }
-                throw ExternalAgentRuntimeError.processClosedBeforeCompletion
+                // stdout EOF 可能早于 Foundation 更新 Process 的退出状态。短暂等待 reaping，
+                // 才能把真实 status/signal 交给 UI，而不是一律报“提前关闭”。
+                await waitForProcessExit(process, timeout: .milliseconds(400))
+                let diagnostic = await processDiagnostic(process)
+                if !process.isRunning, process.terminationStatus != 0 {
+                    throw ExternalAgentRuntimeError.processExited(
+                        process.terminationStatus,
+                        diagnostic
+                    )
+                }
+                throw ExternalAgentRuntimeError.processClosedBeforeCompletion(diagnostic)
             }
             await shutdownGracefully()
         } catch {
             await terminateIfNeeded()
+            if let runtimeError = error as? ExternalAgentRuntimeError,
+               case .processClosedBeforeCompletion(nil) = runtimeError {
+                throw ExternalAgentRuntimeError.processClosedBeforeCompletion(
+                    await stderrSummary.diagnostic()
+                )
+            }
             throw error
         }
     }
@@ -230,22 +261,45 @@ private actor ExternalAgentProcessSession {
         await terminateIfNeeded()
     }
 
-    /// Codex App Server 的握手、MCP 初始化和首轮推理都可能没有可见消息。看门狗只管
-    /// “首个回答/工具事件”，一旦真正开始流式输出就立即解除，不限制后续长任务时长。
+    /// Codex App Server 的握手、配置读取和首轮推理都可能没有可见消息。看门狗限制的
+    /// 是“连续无协议活动”时间；只要收到合法 JSON-RPC 就重新计时。真正开始流式输出
+    /// 后立即解除，不限制后续工具链或报告生成时长。
     private func startFirstOutputWatchdog() {
-        firstOutputWatchdogTask = Task { [weak self, firstOutputTimeout] in
-            do {
-                try await Task.sleep(for: firstOutputTimeout)
-            } catch {
-                return
+        firstOutputDeadline = ContinuousClock.now + firstOutputTimeout
+        guard firstOutputWatchdogTask == nil else { return }
+        firstOutputWatchdogTask = Task { [weak self] in
+            await self?.runFirstOutputWatchdog()
+        }
+    }
+
+    private func noteProtocolActivity() {
+        guard !didReceiveFirstOutput, !isStopping else { return }
+        // 只推进 deadline，不为每个高频 JSON-RPC 帧反复取消和创建 Task；Codex
+        // reasoning/token 事件密集时也只保留一个轻量看门狗。
+        firstOutputDeadline = ContinuousClock.now + firstOutputTimeout
+    }
+
+    private func runFirstOutputWatchdog() async {
+        while !didReceiveFirstOutput, !isStopping {
+            guard let deadline = firstOutputDeadline else { return }
+            let remaining = ContinuousClock.now.duration(to: deadline)
+            if remaining > .zero {
+                do {
+                    try await Task.sleep(for: remaining)
+                } catch {
+                    return
+                }
+                continue
             }
-            await self?.handleFirstOutputTimeout()
+            handleFirstOutputTimeout()
+            return
         }
     }
 
     private func markFirstOutputReceived() {
         guard !didReceiveFirstOutput else { return }
         didReceiveFirstOutput = true
+        firstOutputDeadline = nil
         firstOutputWatchdogTask?.cancel()
         firstOutputWatchdogTask = nil
     }
@@ -266,7 +320,7 @@ private actor ExternalAgentProcessSession {
 
     private func write(_ frame: AgentJSONValue) throws {
         guard let stdinHandle else {
-            throw ExternalAgentRuntimeError.processClosedBeforeCompletion
+            throw ExternalAgentRuntimeError.processClosedBeforeCompletion(nil)
         }
         var data = try JSONEncoder().encode(frame)
         data.append(0x0A)
@@ -277,8 +331,33 @@ private actor ExternalAgentProcessSession {
                 throw error
             }
             // 对端关闭 stdin 是 Runtime 生命周期错误，不允许冒泡为宿主进程信号。
-            throw ExternalAgentRuntimeError.processClosedBeforeCompletion
+            throw ExternalAgentRuntimeError.processClosedBeforeCompletion(nil)
         }
+    }
+
+    private func waitForProcessExit(_ process: Process, timeout: Duration) async {
+        let deadline = ContinuousClock.now + timeout
+        while process.isRunning, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    private func processDiagnostic(_ process: Process) async -> String? {
+        let termination: String?
+        if process.isRunning {
+            termination = "Process stdout closed while the process was still running."
+        } else {
+            switch process.terminationReason {
+            case .exit:
+                termination = "Termination reason: exit."
+            case .uncaughtSignal:
+                termination = "Termination reason: uncaught signal \(process.terminationStatus)."
+            @unknown default:
+                termination = "Termination reason: unknown."
+            }
+        }
+        let stderr = await stderrSummary.diagnostic()
+        return [termination, stderr].compactMap { $0 }.joined(separator: " ")
     }
 
     private static func isBrokenPipe(_ error: Error) -> Bool {
@@ -301,6 +380,7 @@ private actor ExternalAgentProcessSession {
     private func terminateIfNeeded() async {
         firstOutputWatchdogTask?.cancel()
         firstOutputWatchdogTask = nil
+        firstOutputDeadline = nil
         stdinHandle?.closeFile()
         stdinHandle = nil
         guard let process else {
@@ -332,6 +412,53 @@ private actor ExternalAgentProcessSession {
         stderrDrainTask = nil
         self.process = nil
         processGroupID = nil
+    }
+}
+
+/// Foundation 的 `AsyncBytes.lines` / `read(upToCount:)` 在 App-hosted Process pipe 上
+/// 可能等到请求长度或 EOF 才交付数据。Provider 发出 tool call 后会等待 Host 回包，
+/// Host 又等不到尚未 EOF 的这一行，最终形成双向死锁。这里在独立 Dispatch worker
+/// 上直接使用 POSIX `read`：pipe 一有字节就返回，再通过 AsyncThrowingStream 切行。
+/// 阻塞 read 不能放进 Swift cooperative executor，否则 stdout/stderr reader 会占满
+/// 可用线程，让等待 stream 的 Host actor 永远得不到调度。
+private enum ExternalAgentLineReader {
+    static func lines(from handle: FileHandle) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                var buffer = Data()
+                var bytes = [UInt8](repeating: 0, count: 16 * 1024)
+                do {
+                    while true {
+                        let count = Darwin.read(
+                            handle.fileDescriptor,
+                            &bytes,
+                            bytes.count
+                        )
+                        if count > 0 {
+                            buffer.append(contentsOf: bytes.prefix(count))
+                            while let newlineIndex = buffer.firstIndex(of: 0x0A) {
+                                let lineData = buffer[..<newlineIndex]
+                                buffer.removeSubrange(...newlineIndex)
+                                continuation.yield(String(decoding: lineData, as: UTF8.self))
+                            }
+                            continue
+                        }
+                        if count == 0 { break }
+                        if errno == EINTR { continue }
+                        throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                    }
+                    if !buffer.isEmpty {
+                        continuation.yield(String(decoding: buffer, as: UTF8.self))
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable _ in
+                try? handle.close()
+            }
+        }
     }
 }
 
@@ -374,7 +501,15 @@ private actor ExternalAgentStderrSummary {
     private static func classification(for line: String) -> String {
         guard let data = line.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return "unstructured" }
+        else {
+            // Codex 默认 tracing 输出包含 ANSI 颜色而不是 JSON。这里只匹配稳定 target，
+            // 不保存 message 原文，既能定位模型缓存/MCP/panic，也不会泄露 prompt。
+            if line.contains("codex_models_manager::cache") { return "codex model cache" }
+            if line.contains("codex_models_manager::manager") { return "codex model manager" }
+            if line.localizedCaseInsensitiveContains("panic") { return "runtime panic" }
+            if line.localizedCaseInsensitiveContains("mcp") { return "mcp runtime" }
+            return "unstructured"
+        }
         let level = (object["level"] as? String)?.uppercased() ?? "LOG"
         let fields = object["fields"] as? [String: Any]
         let target = fields?["target"] as? String ?? object["target"] as? String ?? "unknown"

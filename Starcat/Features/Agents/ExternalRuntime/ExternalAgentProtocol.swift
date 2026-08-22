@@ -106,9 +106,9 @@ enum ExternalAgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
     case missingConfiguration(String)
     case invalidFrame
     case protocolError(String)
-    case processExited(Int32)
+    case processExited(Int32, String?)
     case firstOutputTimedOut(String?)
-    case processClosedBeforeCompletion
+    case processClosedBeforeCompletion(String?)
 
     var errorDescription: String? {
         switch self {
@@ -126,14 +126,18 @@ enum ExternalAgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
             return "External Agent Runtime returned malformed JSON-RPC."
         case .protocolError(let message):
             return message
-        case .processExited(let status):
-            return "External Agent Runtime exited with status \(status)."
+        case .processExited(let status, let diagnostic):
+            let message = "External Agent Runtime exited with status \(status)."
+            guard let diagnostic, !diagnostic.isEmpty else { return message }
+            return "\(message) \(diagnostic)"
         case .firstOutputTimedOut(let diagnostic):
             let message = "External Agent Runtime did not produce an assistant or tool event before startup timed out."
             guard let diagnostic, !diagnostic.isEmpty else { return message }
             return "\(message) \(diagnostic)"
-        case .processClosedBeforeCompletion:
-            return "External Agent Runtime closed before the turn completed."
+        case .processClosedBeforeCompletion(let diagnostic):
+            let message = "External Agent Runtime closed before the turn completed."
+            guard let diagnostic, !diagnostic.isEmpty else { return message }
+            return "\(message) \(diagnostic)"
         }
     }
 }
