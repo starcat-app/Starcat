@@ -276,6 +276,8 @@ struct AgentWorkspaceView: View {
                     distributionGate: dependencies.distributionGate,
                     selectedModelName: runtimeModelName,
                     reasoningEffort: runtimeReasoningEffort,
+                    localeIdentifier: locale.identifier,
+                    preferredLanguage: preferredOutputLanguage,
                     toolRegistry: toolRegistry,
                     runRepository: dependencies.agentRunRepository
                 )

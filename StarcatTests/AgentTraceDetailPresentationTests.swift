@@ -96,7 +96,61 @@ struct AgentTraceDetailPresentationTests {
         #expect(presentation.rawPayload == nil)
     }
 
+    @Test("Markdown 明细保留语义并由视图层渲染")
+    func keepsMarkdownDetailForRenderer() {
+        let presentation = AgentTraceDetailPresentationBuilder.make(event: traceEvent(
+            kind: .reasoningSummary,
+            title: "Reasoning Summary",
+            summary: "**核对证据**",
+            details: [.init(
+                label: "思考过程",
+                value: "**核对证据**",
+                format: .markdown
+            )]
+        ))
+
+        #expect(presentation.sections.first?.content == .markdown("**核对证据**"))
+    }
+
+    @Test("已知工具显示本地化标题并保留稳定 Tool ID")
+    func localizesKnownToolTitleAndPreservesIdentifier() {
+        let event = traceEvent(kind: .tool, details: [])
+        let presentation = AgentTraceDetailPresentationBuilder.make(event: event)
+
+        #expect(AgentTraceTitlePresentation.title(for: event)
+            == String.l10n("agent.workspace.trace.tool.agentParseGoal"))
+        #expect(presentation.sections.first?.label == String.l10n("agent.workspace.trace.toolID"))
+        #expect(presentation.sections.first?.content == .code("agent_parse_goal"))
+    }
+
+    @Test("历史固定类别标题按当前语言重新解析")
+    func localizesPersistedFixedKindTitle() {
+        let event = traceEvent(
+            kind: .reasoningSummary,
+            title: "Thinking",
+            details: []
+        )
+
+        #expect(AgentTraceTitlePresentation.title(for: event)
+            == String.l10n("agent.workspace.trace.kind.thinking"))
+    }
+
+    @Test("展开后隐藏与明细重复的摘要")
+    func hidesDuplicateSummaryWhenExpanded() {
+        let event = traceEvent(
+            kind: .reasoningSummary,
+            title: "Reasoning Summary",
+            summary: "检查仓库范围",
+            details: [.init(label: "思考过程", value: "检查仓库范围", format: .markdown)]
+        )
+
+        #expect(AgentTraceRowPresentation.shouldShowSummary(for: event, isExpanded: false))
+        #expect(!AgentTraceRowPresentation.shouldShowSummary(for: event, isExpanded: true))
+    }
+
     private func traceEvent(
+        kind: AgentTraceKind = .unknown,
+        title: String = "agent_parse_goal",
         summary: String? = nil,
         details: [AgentTraceDetail]
     ) -> AgentTraceEvent {
@@ -105,9 +159,9 @@ struct AgentTraceDetailPresentationTests {
             runID: UUID(),
             backend: .codexAppServer,
             sequence: 0,
-            kind: .tool,
+            kind: kind,
             status: .completed,
-            title: "agent_parse_goal",
+            title: title,
             summary: summary,
             details: details
         )

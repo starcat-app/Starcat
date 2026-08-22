@@ -74,7 +74,7 @@ struct ExternalAgentProtocolAdapterTests {
         #expect(turnStart[external: "method"]?.stringValue == "turn/start")
         #expect(turnStart[external: "params"]?[external: "model"]?.stringValue == "test-model")
         #expect(turnStart[external: "params"]?[external: "effort"]?.stringValue == "high")
-        #expect(turnStart[external: "params"]?[external: "summary"]?.stringValue == "auto")
+        #expect(turnStart[external: "params"]?[external: "summary"]?.stringValue == "detailed")
 
         let delta = try driver.receive(notification(
             method: "item/agentMessage/delta",
@@ -115,6 +115,77 @@ struct ExternalAgentProtocolAdapterTests {
         ))
         #expect(completed.events == [.completed])
         #expect(completed.isTerminal)
+    }
+
+    @Test("Codex commentary 投影为过程日志且不覆盖最终回答")
+    func codexCommentaryUsesTracePhase() throws {
+        let adapter = CodexAppServerAdapter(executableURL: URL(fileURLWithPath: "/usr/bin/true"))
+        let driver = try adapter.makeDriver(request: fixtureRequest())
+
+        let started = try driver.receive(notification(
+            method: "item/started",
+            params: .object(["item": .object([
+                "id": .string("commentary-1"),
+                "type": .string("agentMessage"),
+                "phase": .string("commentary"),
+                "text": .string(""),
+            ])])
+        ))
+        #expect(started.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.id == "commentary-1" && trace.kind == .commentary && trace.status == .running
+        })
+
+        let delta = try driver.receive(notification(
+            method: "item/agentMessage/delta",
+            params: .object([
+                "itemId": .string("commentary-1"),
+                "delta": .string("**准备检索仓库**"),
+            ])
+        ))
+        #expect(delta.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.summary == "**准备检索仓库**"
+                && trace.details.first?.format == .markdown
+        })
+        #expect(!delta.events.contains { event in
+            if case .assistantDelta = event { return true }
+            return false
+        })
+
+        let completed = try driver.receive(notification(
+            method: "item/completed",
+            params: .object(["item": .object([
+                "id": .string("commentary-1"),
+                "type": .string("agentMessage"),
+                "phase": .string("commentary"),
+                "text": .string("**准备检索仓库**"),
+            ])])
+        ))
+        #expect(completed.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.kind == .commentary && trace.status == .completed
+        })
+        #expect(!completed.events.contains { event in
+            if case .assistantMessage = event { return true }
+            return false
+        })
+    }
+
+    @Test("External prompt 注入 App 语言与用户可见 preamble 约束")
+    func externalPromptCarriesLanguageAndPreambleRules() {
+        let prompt = ExternalAgentPromptBuilder.build(
+            definition: BuiltInAgents.githubWeeklyReport,
+            prompt: "生成周报",
+            context: AgentRunContext(sourceDescription: "Unit Snapshot"),
+            localeIdentifier: "zh-Hans_CN",
+            preferredLanguage: "Simplified Chinese"
+        )
+
+        #expect(prompt.contains("App locale: zh-Hans_CN"))
+        #expect(prompt.contains("Preferred output language: Simplified Chinese"))
+        #expect(prompt.contains("Before each tool call"))
+        #expect(prompt.contains("Do not expose hidden chain-of-thought"))
     }
 
     @Test("Codex model/list 解析目录并按服务端默认值修复失效选择")
@@ -214,11 +285,19 @@ struct ExternalAgentProtocolAdapterTests {
 
         let request = ExternalAgentRunRequest(
             runID: UUID(),
-            prompt: "Reply with exactly STARCAT_CODEX_SMOKE_OK and nothing else.",
+            prompt: "Call fixture_lookup once with query starcat. After the tool result, reply with exactly STARCAT_CODEX_SMOKE_OK and nothing else.",
             modelName: selection.modelName,
             reasoningEffort: selection.reasoningEffort,
             workingDirectory: FileManager.default.temporaryDirectory,
-            tools: []
+            tools: [AgentToolDefinition(
+                name: "fixture_lookup",
+                description: "Returns the Starcat integration fixture.",
+                inputSchema: AgentJSONSchema(
+                    type: .object,
+                    properties: ["query": AgentJSONSchema(type: .string)],
+                    required: ["query"]
+                )
+            )]
         )
         let driver = try CodexAppServerAdapter(
             executableURL: executableURL,
@@ -228,7 +307,15 @@ struct ExternalAgentProtocolAdapterTests {
 
         try await ExternalAgentRuntimeHost(firstOutputTimeout: .seconds(180)).execute(
             runID: request.runID,
-            driver: driver
+            driver: driver,
+            toolCallHandler: { _ in
+                ExternalAgentToolExecutionResult(
+                    output: .object(["summary": .string("fixture-result")]),
+                    modelText: "fixture-result",
+                    isError: false,
+                    artifactMarkdown: nil
+                )
+            }
         ) { event in
             await collector.append(event)
         }
@@ -243,6 +330,14 @@ struct ExternalAgentProtocolAdapterTests {
             }
         }
         #expect(assistantText.contains("STARCAT_CODEX_SMOKE_OK"))
+        #expect(events.contains { event in
+            guard case .toolCall(_, let name, _, _) = event else { return false }
+            return name == "fixture_lookup"
+        })
+        #expect(events.contains { event in
+            guard case .toolResult(_, let name, _, let isError) = event else { return false }
+            return name == "fixture_lookup" && !isError
+        })
         #expect(events.contains(.completed))
     }
 

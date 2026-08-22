@@ -10,6 +10,7 @@
 //
 
 import Foundation
+import MarkdownUI
 import SwiftUI
 
 struct AgentTraceDetailPresentation: Equatable, Sendable {
@@ -36,6 +37,65 @@ struct AgentTraceStructuredField: Equatable, Sendable {
     let value: AgentTraceStructuredValue
 }
 
+/// Trace 持久化继续使用 Runtime/工具的稳定标识；展示层按当前 App 语言给已知工具换成
+/// 可读标题。未知工具保持原名，避免第三方 Runtime 的新事件被错误翻译。
+enum AgentTraceTitlePresentation {
+    private static let toolTitleKeys: [String: String] = [
+        "agent_parse_goal": "agent.workspace.trace.tool.agentParseGoal",
+        "context_resolve_repos": "agent.workspace.trace.tool.contextResolveRepos",
+        "repo_cluster_topics": "agent.workspace.trace.tool.repoClusterTopics",
+        "knowledge_search": "agent.workspace.trace.tool.knowledgeSearch",
+        "external_search": "agent.workspace.trace.tool.externalSearch",
+        "artifact_build_weekly_report": "agent.workspace.trace.tool.buildWeeklyReport",
+        "agent_parse_repo_insight_goal": "agent.workspace.trace.tool.parseRepoInsightGoal",
+        "context_select_repo": "agent.workspace.trace.tool.contextSelectRepo",
+        "artifact_build_repo_insight": "agent.workspace.trace.tool.buildRepoInsight",
+        "agent_parse_repo_alternatives_goal": "agent.workspace.trace.tool.parseRepoAlternativesGoal",
+        "artifact_build_repo_alternatives": "agent.workspace.trace.tool.buildRepoAlternatives",
+        "tag_inspect_untagged": "agent.workspace.trace.tool.inspectUntagged",
+        "tag_preview_untagged": "agent.workspace.trace.tool.previewUntagged",
+        "tag_apply_untagged": "agent.workspace.trace.tool.applyUntagged",
+    ]
+
+    static func title(for event: AgentTraceEvent) -> String {
+        // 固定类别按当前 App 语言即时解析，避免历史 Trace 把生成时的英文标题永久写死。
+        switch event.kind {
+        case .plan:
+            return String.l10n("agent.workspace.trace.kind.plan")
+        case .reasoningSummary:
+            return String.l10n("agent.workspace.trace.kind.thinking")
+        case .commentary:
+            return String.l10n("agent.workspace.trace.kind.commentary")
+        case .fileChange:
+            return String.l10n("agent.workspace.trace.kind.fileChanges")
+        case .webSearch:
+            return String.l10n("agent.workspace.trace.kind.webSearch")
+        case .warning:
+            return String.l10n("agent.workspace.trace.kind.warning")
+        case .compaction:
+            return String.l10n("agent.workspace.trace.kind.contextCompaction")
+        default:
+            break
+        }
+
+        guard event.kind == .tool, let key = toolTitleKeys[event.title] else {
+            return event.title
+        }
+        return String.l10n(key)
+    }
+}
+
+enum AgentTraceRowPresentation {
+    /// 展开区已经包含同一摘要时，主行只保留标题，避免用户连续看到两份相同文本。
+    static func shouldShowSummary(for event: AgentTraceEvent, isExpanded: Bool) -> Bool {
+        guard isExpanded, let summary = event.summary else { return true }
+        return !event.details.contains { detail in
+            detail.value.trimmingCharacters(in: .whitespacesAndNewlines)
+                == summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+}
+
 indirect enum AgentTraceStructuredValue: Equatable, Sendable {
     case scalar(String)
     case object([AgentTraceStructuredField])
@@ -52,6 +112,14 @@ enum AgentTraceDetailPresentationBuilder {
         var sections: [AgentTraceDetailPresentation.Section] = []
         var rawBlocks: [String] = []
         var didStructure = false
+
+        let displayTitle = AgentTraceTitlePresentation.title(for: event)
+        if event.kind == .tool, displayTitle != event.title {
+            sections.append(.init(
+                label: String.l10n("agent.workspace.trace.toolID"),
+                content: .code(event.title)
+            ))
+        }
 
         for detail in event.details {
             rawBlocks.append("\(detail.label)\n\(detail.value)")
@@ -325,12 +393,14 @@ struct AgentTraceDetailsView: View {
     @ViewBuilder
     private func contentView(_ content: AgentTraceDetailPresentation.Content) -> some View {
         switch content {
-        case .text(let text), .markdown(let text):
+        case .text(let text):
             Text(text)
                 .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.primary)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
+        case .markdown(let text):
+            AgentTraceMarkdownText(markdown: text, tone: .primary)
         case .code(let text):
             codeBlock(text)
         case .error(let text):
@@ -356,6 +426,53 @@ struct AgentTraceDetailsView: View {
             .background {
                 RoundedRectangle(cornerRadius: 6)
                     .fill(Color(nsColor: .textBackgroundColor))
+            }
+    }
+}
+
+/// Runtime 的 reasoning summary 与 commentary 都可能包含强调、列表和行内代码。
+/// MarkdownUI 不继承外层 SwiftUI 字号，因此这里显式绑定 Trace 的紧凑排版。
+struct AgentTraceMarkdownText: View {
+    enum Tone {
+        case primary
+        case secondary
+    }
+
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+
+    let markdown: String
+    let tone: Tone
+
+    var body: some View {
+        Markdown(markdown)
+            .markdownTheme(traceTheme)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var traceTheme: Theme {
+        Theme()
+            .text {
+                ForegroundColor(tone == .primary ? .primary : .secondary)
+                FontSize(interfaceScale.scaled(StarcatTypography.captionSmall.pointSize))
+            }
+            .code {
+                FontFamilyVariant(.monospaced)
+                FontSize(.em(0.92))
+                BackgroundColor(.secondary.opacity(0.10))
+            }
+            .link {
+                ForegroundColor(.accentColor)
+            }
+            .paragraph { configuration in
+                configuration.label
+                    .fixedSize(horizontal: false, vertical: true)
+                    .markdownMargin(top: .zero, bottom: .em(0.3))
+            }
+            .list { configuration in
+                configuration.label
+                    .markdownMargin(top: .zero, bottom: .em(0.3))
             }
     }
 }

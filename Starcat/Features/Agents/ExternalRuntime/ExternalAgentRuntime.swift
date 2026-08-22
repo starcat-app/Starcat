@@ -17,6 +17,8 @@ struct ExternalAgentRuntime: AgentRuntime {
     let distributionGate: DistributionGate
     let selectedModelName: String?
     let reasoningEffort: String?
+    let localeIdentifier: String
+    let preferredLanguage: String
     let toolRegistry: AgentToolRegistry?
     let runRepository: (any AgentRunRepositoryProtocol)?
 
@@ -26,6 +28,8 @@ struct ExternalAgentRuntime: AgentRuntime {
         distributionGate: DistributionGate = DistributionGate(),
         selectedModelName: String? = nil,
         reasoningEffort: String? = nil,
+        localeIdentifier: String = Locale.current.identifier,
+        preferredLanguage: String = "English",
         toolRegistry: AgentToolRegistry? = nil,
         runRepository: (any AgentRunRepositoryProtocol)? = nil
     ) {
@@ -34,6 +38,8 @@ struct ExternalAgentRuntime: AgentRuntime {
         self.distributionGate = distributionGate
         self.selectedModelName = selectedModelName
         self.reasoningEffort = reasoningEffort
+        self.localeIdentifier = localeIdentifier
+        self.preferredLanguage = preferredLanguage
         self.toolRegistry = toolRegistry
         self.runRepository = runRepository
     }
@@ -83,7 +89,9 @@ struct ExternalAgentRuntime: AgentRuntime {
                     let externalPrompt = ExternalAgentPromptBuilder.build(
                         definition: definition,
                         prompt: prompt,
-                        context: context
+                        context: context,
+                        localeIdentifier: localeIdentifier,
+                        preferredLanguage: preferredLanguage
                     )
                     let request = ExternalAgentRunRequest(
                         runID: runID,
@@ -433,7 +441,7 @@ private actor ExternalAgentEventProjector {
                 kind: .tool,
                 status: .running,
                 title: name,
-                summary: "Starcat tool call",
+                summary: String.l10n("agent.workspace.trace.tool.running"),
                 details: [AgentTraceDetail(
                     label: String.l10n("agent.workspace.trace.input"),
                     value: rawInput ?? (try? input.jsonString()) ?? "{}",
@@ -458,7 +466,11 @@ private actor ExternalAgentEventProjector {
                 kind: .tool,
                 status: isError ? .failed : .completed,
                 title: name,
-                summary: resultSummary ?? (isError ? "Tool call failed" : "Tool call completed"),
+                summary: resultSummary ?? String.l10n(
+                    isError
+                        ? "agent.workspace.trace.tool.failed"
+                        : "agent.workspace.trace.tool.completed"
+                ),
                 details: [AgentTraceDetail(
                     label: isError
                         ? String.l10n("error.loadFailed")
@@ -690,17 +702,25 @@ private actor ExternalAgentEventProjector {
     }
 }
 
-private enum ExternalAgentPromptBuilder {
+enum ExternalAgentPromptBuilder {
     static func build(
         definition: AgentDefinition,
         prompt: String,
-        context: AgentRunContext
+        context: AgentRunContext,
+        localeIdentifier: String,
+        preferredLanguage: String
     ) -> String {
         var sections = [
             "# Starcat External Agent Runtime POC",
             "You are running inside Starcat's read-only external runtime boundary.",
             "Do not modify files, run shell commands, spawn subagents, or request additional permissions.",
             "Respond in Markdown and use only the user request, Frozen Starcat Context, and available Starcat dynamic tools.",
+            "## Language and progress updates\n"
+                + "App locale: \(localeIdentifier)\n"
+                + "Preferred output language: \(preferredLanguage)\n"
+                + "Write all user-visible reasoning summaries, progress updates, and the final answer in the preferred output language. "
+                + "Before each tool call in a multi-step task, emit one concise user-visible progress update that states what you will do next and why. "
+                + "Do not expose hidden chain-of-thought; provide only a brief, useful summary.",
         ]
         if !definition.promptRules.isEmpty {
             sections.append("## Agent rules\n" + definition.promptRules.map { "- \($0.content)" }.joined(separator: "\n"))

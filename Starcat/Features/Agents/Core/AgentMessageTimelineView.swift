@@ -317,17 +317,17 @@ struct AgentMessageTimelineView: View {
                     Image(systemName: traceKindIcon(event.kind))
                         .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
-                    Text(event.title)
+                    Text(AgentTraceTitlePresentation.title(for: event))
                         .font(interfaceScale.font(.caption, weight: .medium))
                         .foregroundStyle(.primary)
                         .lineLimit(2)
                 }
-                if let summary = nonBlank(event.summary), summary != event.title {
-                    Text(summary)
-                        .font(interfaceScale.font(.captionSmall))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(isExpanded ? nil : 2)
-                } else if event.kind == .reasoningSummary {
+                if let summary = nonBlank(event.summary),
+                   summary != event.title,
+                   AgentTraceRowPresentation.shouldShowSummary(for: event, isExpanded: isExpanded) {
+                    AgentTraceMarkdownText(markdown: summary, tone: .secondary)
+                        .lineLimit(2)
+                } else if event.kind == .reasoningSummary && nonBlank(event.summary) == nil {
                     Group {
                         if event.status == .running {
                             Text("agent.workspace.trace.reasoningPending")

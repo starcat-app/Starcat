@@ -49,6 +49,10 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
     /// App Server 会用 `summaryIndex` 把一次 reasoning 拆成多个可展示摘要段。
     /// 必须按段累计后再拼接，不能直接把所有 delta 连在一起，否则段落边界会丢失。
     private var reasoningSummaries: [String: [Int: String]] = [:]
+    /// agent message 的 delta 不携带 phase；必须在 item/started 记住它，才能把用户可见的
+    /// commentary 作为过程日志投影，而不是误拼进最终回答。
+    private var agentMessagePhases: [String: String] = [:]
+    private var agentMessageTexts: [String: String] = [:]
     private var retryCount = 0
 
     private static let configReadRequestID = 2
@@ -178,8 +182,8 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
                     ])
                 ]),
                 // Starcat 的执行时间线需要 Provider 明确授权的 reasoning summary。
-                // `auto` 不暴露 raw chain-of-thought，只请求 App Server 可安全展示的摘要。
-                "summary": .string("auto"),
+                // `detailed` 仍然只返回可展示摘要，不会暴露 raw chain-of-thought。
+                "summary": .string("detailed"),
             ]
             // Codex 模型与推理强度属于 turn 级覆盖项。不能写进 thread/start，
             // 更不能沿用 Starcat BYOK 模型，否则 UI 选择与实际执行模型会错位。
@@ -286,13 +290,34 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
             guard let delta = params?[external: "delta"]?.stringValue else {
                 return ExternalAgentProtocolOutput()
             }
+            if let itemID = params?[external: "itemId"]?.stringValue,
+               agentMessagePhases[itemID] == "commentary" {
+                agentMessageTexts[itemID, default: ""] += delta
+                return ExternalAgentProtocolOutput(events: [
+                    .trace(commentaryTrace(
+                        id: itemID,
+                        text: agentMessageTexts[itemID] ?? delta,
+                        status: .running
+                    )),
+                ])
+            }
             return ExternalAgentProtocolOutput(events: [.assistantDelta(delta)])
         case "item/started":
             guard let item = params?[external: "item"],
-                  let itemID = item[external: "id"]?.stringValue,
-                  let trace = Self.traceEvent(from: item, status: .running, startedAt: Date())
+                  let itemID = item[external: "id"]?.stringValue
             else { return ExternalAgentProtocolOutput() }
-            itemStartedAt[itemID] = trace.startedAt
+            let startedAt = Date()
+            itemStartedAt[itemID] = startedAt
+            if item[external: "type"]?.stringValue == "agentMessage" {
+                let phase = item[external: "phase"]?.stringValue
+                if let phase { agentMessagePhases[itemID] = phase }
+                guard phase == "commentary" else { return ExternalAgentProtocolOutput() }
+                return ExternalAgentProtocolOutput(events: [
+                    .trace(commentaryTrace(id: itemID, text: nil, status: .running)),
+                ])
+            }
+            guard let trace = Self.traceEvent(from: item, status: .running, startedAt: startedAt)
+            else { return ExternalAgentProtocolOutput() }
             return ExternalAgentProtocolOutput(events: [.trace(trace)])
         case "item/completed":
             guard let item = params?[external: "item"] else { return ExternalAgentProtocolOutput() }
@@ -300,9 +325,27 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
             if item[external: "type"]?.stringValue == "agentMessage",
                let text = item[external: "text"]?.stringValue,
                !text.isEmpty {
-                // 某些 App Server / model 组合可能只给 completed item，不保证逐 token delta。
-                // 用完整消息兜底，projector 会覆盖已收集的增量而不会重复落库。
-                events.append(.assistantMessage(text, usage: nil))
+                let itemID = item[external: "id"]?.stringValue
+                let phase = item[external: "phase"]?.stringValue
+                    ?? itemID.flatMap { agentMessagePhases[$0] }
+                if phase == "commentary", let itemID {
+                    // commentary 是模型主动给用户的过程说明，不是隐藏思维链；持久化为
+                    // Markdown trace，最终回答仍只接收 final_answer 或旧版本的未知 phase。
+                    events.append(.trace(commentaryTrace(
+                        id: itemID,
+                        text: text,
+                        status: .completed,
+                        completedAt: Date()
+                    )))
+                } else {
+                    // 某些 App Server / model 组合可能只给 completed item，不保证逐 token delta。
+                    // 用完整消息兜底，projector 会覆盖已收集的增量而不会重复落库。
+                    events.append(.assistantMessage(text, usage: nil))
+                }
+                if let itemID {
+                    agentMessagePhases[itemID] = nil
+                    agentMessageTexts[itemID] = nil
+                }
             }
             let itemID = item[external: "id"]?.stringValue
             let completedAt = Date()
@@ -393,20 +436,25 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
                 kind: .plan,
                 status: .running,
                 title: String.l10n("agent.workspace.trace.kind.plan"),
-                summary: details.isEmpty ? nil : "\(details.count) steps",
+                summary: details.isEmpty
+                    ? nil
+                    : String.localizedStringWithFormat(
+                        String.l10n("agent.workspace.trace.stepCountFormat"),
+                        details.count
+                    ),
                 details: details
             ))])
         case "warning", "configWarning":
             let message = params?[external: "message"]?.stringValue
                 ?? params?[external: "warning"]?.stringValue
-                ?? "Codex reported a warning."
+                ?? String.l10n("agent.workspace.trace.warningFallback")
             return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
                 id: "warning:\(UUID().uuidString)",
                 kind: .warning,
                 status: .completed,
-                title: "Warning",
+                title: String.l10n("agent.workspace.trace.kind.warning"),
                 summary: message,
-                details: [.init(label: "Message", value: message)],
+                details: [.init(label: String.l10n("agent.workspace.trace.message"), value: message)],
                 completedAt: Date()
             ))])
         case "thread/tokenUsage/updated":
@@ -454,7 +502,11 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
                     status: .running,
                     title: String.l10n("action.retry"),
                     summary: message,
-                    details: [.init(label: "Previous error", value: message, format: .error)],
+                    details: [.init(
+                        label: String.l10n("agent.workspace.trace.previousError"),
+                        value: message,
+                        format: .error
+                    )],
                     attempt: retryCount
                 ))])
             }
@@ -489,6 +541,34 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
         default:
             return ExternalAgentProtocolOutput()
         }
+    }
+
+    /// 把 App Server 的 user-visible commentary 保持为独立 Trace。这里不使用
+    /// `assistantMessage`，否则中间 preamble 会覆盖真正的 final_answer。
+    private func commentaryTrace(
+        id: String,
+        text: String?,
+        status: AgentTraceStatus,
+        completedAt: Date? = nil
+    ) -> ExternalAgentTraceEvent {
+        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let summary = trimmed?.isEmpty == false ? trimmed : nil
+        return ExternalAgentTraceEvent(
+            id: id,
+            kind: .commentary,
+            status: status,
+            title: String.l10n("agent.workspace.trace.kind.commentary"),
+            summary: summary,
+            details: summary.map { value in
+                [.init(
+                    label: String.l10n("agent.workspace.trace.progressUpdate"),
+                    value: value,
+                    format: .markdown
+                )]
+            } ?? [],
+            startedAt: itemStartedAt[id],
+            completedAt: completedAt
+        )
     }
 
     private static func traceEvent(
@@ -526,7 +606,8 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
             }
         case "commandExecution":
             kind = .command
-            title = item[external: "command"]?.stringValue ?? "Command"
+            title = item[external: "command"]?.stringValue
+                ?? String.l10n("agent.workspace.trace.kind.command")
             summary = item[external: "status"]?.stringValue
             if let output = item[external: "aggregatedOutput"]?.stringValue
                 ?? item[external: "output"]?.stringValue {
@@ -538,10 +619,14 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
             }
         case "fileChange":
             kind = .fileChange
-            title = "File changes"
+            title = String.l10n("agent.workspace.trace.kind.fileChanges")
             summary = item[external: "status"]?.stringValue
             if let changes = item[external: "changes"], let value = try? changes.jsonString() {
-                details.append(.init(label: "Changes", value: value, format: .json))
+                details.append(.init(
+                    label: String.l10n("agent.workspace.trace.changes"),
+                    value: value,
+                    format: .json
+                ))
             }
         case "mcpToolCall":
             kind = .mcpTool
@@ -557,14 +642,14 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
             }
         case "webSearch":
             kind = .webSearch
-            title = "Web search"
+            title = String.l10n("agent.workspace.trace.kind.webSearch")
             summary = item[external: "query"]?.stringValue
             if let query = item[external: "query"]?.stringValue {
-                details.append(.init(label: "Query", value: query))
+                details.append(.init(label: String.l10n("agent.workspace.trace.query"), value: query))
             }
         case "contextCompaction":
             kind = .compaction
-            title = "Context compaction"
+            title = String.l10n("agent.workspace.trace.kind.contextCompaction")
             summary = item[external: "status"]?.stringValue
         case "dynamicToolCall":
             // Host 会在真实执行边界发出带输入与结果的 tool trace，避免同一次调用出现两行。
@@ -576,7 +661,11 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
         }
         if let error = item[external: "error"]?[external: "message"]?.stringValue
             ?? item[external: "error"]?.stringValue {
-            details.append(.init(label: "Error", value: error, format: .error))
+            details.append(.init(
+                label: String.l10n("agent.workspace.trace.error"),
+                value: error,
+                format: .error
+            ))
         }
         return ExternalAgentTraceEvent(
             id: id,
