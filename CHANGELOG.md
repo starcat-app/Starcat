@@ -6,13 +6,22 @@ Release notes for the Mac App Store edition of Starcat.
 
 ### New
 
+- In-app repository documents: Enable in Settings to open same-repo Markdown links in a Starcat window; the default remains the browser, and Command-click always uses the browser.
 - README video playback: Play supported GitHub README videos inline with native controls; playback requires an explicit action and stops when switching repositories or closing the detail view. Unsupported sources continue to open in the browser.
 - Repository security advisories: Review the five latest published advisories in Insights with severity, GHSA / CVE identifiers, publication date, and publisher, then open an advisory or the complete list on GitHub.
 - Notification Issue / PR status: Open, Closed, and Merged appear under the timestamp and on the detail header; closing or reopening a thread updates both.
 - Notification library badges and filters: Star, Unstar, and Fork rows show In Library or Not in Library. Filter by Open, Closed, Merged, In Library, or Not in Library.
 - Paste images in comments: Paste a screenshot or image into an Issue / PR comment to upload it and insert the link; Preview shows the image.
 
+- Issue labels: Opening posts show the title and all labels, wrapping as needed; empty bodies show “No description.”
+
+### Improvements
+
+- Timeline empty detail: An illustration prompts you to pick an event in the middle column.
+
 ### Fixes
+
+- Timeline library toggle: Adding a repository to the library updates the badge only, keeping the current item and its detail open.
 
 - Repository community signals: Correctly recognizes directory-based GitHub Issue Forms instead of showing them as missing.
 
