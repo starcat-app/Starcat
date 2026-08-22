@@ -156,6 +156,8 @@ struct GitHubNotificationMapperTests {
         #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .star))
         #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .unstar))
         #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .fork))
+        #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .open))
+        #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .inLibrary))
     }
 
     @Test("Issue / PR 分段按 subject_type 匹配")
@@ -372,6 +374,16 @@ struct GitHubNotificationMapperTests {
             GitHubNotificationMapper.issueStateTitle(state: "open", locale: Locale(identifier: "en"))
             == "Open"
         )
+        #expect(
+            GitHubNotificationMapper.libraryStateStampTitle(state: .inLibrary, locale: zh) == "已入库"
+        )
+        #expect(
+            GitHubNotificationMapper.libraryStateStampTitle(state: .outsideLibrary, locale: Locale(identifier: "en"))
+            == "Out"
+        )
+        #expect(GitHubNotificationSegment.open.issueStateFilter == "open")
+        #expect(GitHubNotificationSegment.closed.issueStateFilter == "closed")
+        #expect(GitHubNotificationSegment.inLibrary.libraryStateFilter == .inLibrary)
     }
 
     @Test("时钟格式 HH:mm")
@@ -1487,6 +1499,106 @@ struct GitHubNotificationInboxTests {
         try await env.inbox.markThreadDone(id: "n1")
         #expect(env.mock.markNotificationThreadDoneCalls == ["n1"])
         #expect(try await env.threads.fetch(id: "n1") == nil)
+    }
+
+    @Test("打开 / 关闭 / 已合并筛选只看 issue_state；closed 不含 merged")
+    func issueStateSegmentsFilterPersistedState() async throws {
+        let env = try makeEnv()
+        let fetchedAt = "2026-08-19T00:00:00Z"
+        var open = GitHubNotificationMapper.record(
+            from: Self.makeDTO(id: "open-1", reason: "comment", updatedAt: "2026-08-19T03:00:00Z"),
+            fetchedAt: fetchedAt,
+            firstSeenAt: fetchedAt
+        )
+        open.issueState = "open"
+        var closed = GitHubNotificationMapper.record(
+            from: Self.makeDTO(id: "closed-1", reason: "comment", updatedAt: "2026-08-19T02:00:00Z"),
+            fetchedAt: fetchedAt,
+            firstSeenAt: fetchedAt
+        )
+        closed.issueState = "closed"
+        var merged = GitHubNotificationMapper.record(
+            from: GitHubNotificationThreadDTO(
+                id: "merged-1",
+                unread: false,
+                reason: "comment",
+                updatedAt: "2026-08-19T01:00:00Z",
+                subject: GitHubNotificationSubjectDTO(
+                    title: "Fix",
+                    url: "https://api.github.com/repos/o/r/pulls/9",
+                    latestCommentUrl: nil,
+                    type: "PullRequest"
+                ),
+                repository: GitHubNotificationRepositoryDTO(
+                    id: 1,
+                    fullName: "o/r",
+                    name: "r",
+                    owner: GitHubNotificationOwnerDTO(login: "o")
+                )
+            ),
+            fetchedAt: fetchedAt,
+            firstSeenAt: fetchedAt
+        )
+        merged.issueState = "merged"
+        try await env.threads.upsertMany([open, closed, merged])
+
+        #expect(GitHubNotificationMapper.matchesSegment(open, segment: .open))
+        #expect(!GitHubNotificationMapper.matchesSegment(merged, segment: .closed))
+        #expect(GitHubNotificationMapper.matchesSegment(merged, segment: .merged))
+
+        env.inbox.listSegment = .open
+        var page = await env.inbox.fetchTimelinePage(cursor: nil)
+        #expect(page.rows.map(\.id) == ["open-1"])
+
+        env.inbox.listSegment = .closed
+        page = await env.inbox.fetchTimelinePage(cursor: nil)
+        #expect(page.rows.map(\.id) == ["closed-1"])
+
+        env.inbox.listSegment = .merged
+        page = await env.inbox.fetchTimelinePage(cursor: nil)
+        #expect(page.rows.map(\.id) == ["merged-1"])
+    }
+
+    @Test("已入库 / 未入库筛选只看账本当前知识库状态")
+    func libraryStateSegmentsFilterActivityRows() async throws {
+        let env = try makeEnv()
+        try await env.repos.upsertStarred(
+            [
+                Self.makeStarredDTO(id: 11, name: "in-lib", starredAt: "2026-08-19T12:00:00Z"),
+                Self.makeStarredDTO(id: 12, name: "out-lib", starredAt: "2026-08-19T11:00:00Z")
+            ],
+            userID: 1,
+            syncedAt: Date()
+        )
+        await env.inbox.backfillUserRepoActivity(userID: 1, login: "tester")
+        let notes = GRDBRepoNoteRepository(database: env.db)
+        try await notes.updateLibraryState(repoId: 11, state: .inLibrary)
+
+        env.inbox.listSegment = .inLibrary
+        var page = await env.inbox.fetchTimelinePage(cursor: nil)
+        let inIDs = page.rows.compactMap { row -> Int64? in
+            guard case .activity(let item) = row else { return nil }
+            return item.record.repoId
+        }
+        #expect(inIDs == [11])
+        if case .activity(let item) = page.rows.first {
+            #expect(item.libraryState == .inLibrary)
+        } else {
+            Issue.record("expected an activity row")
+        }
+
+        env.inbox.listSegment = .outsideLibrary
+        page = await env.inbox.fetchTimelinePage(cursor: nil)
+        let outIDs = page.rows.compactMap { row -> Int64? in
+            guard case .activity(let item) = row else { return nil }
+            return item.record.repoId
+        }
+        #expect(outIDs == [12])
+        if case .activity(let item) = page.rows.first {
+            #expect(item.libraryState == .outsideLibrary)
+        } else {
+            Issue.record("expected an activity row")
+        }
     }
 
     // MARK: - Harness

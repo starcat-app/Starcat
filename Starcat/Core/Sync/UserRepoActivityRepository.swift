@@ -462,6 +462,28 @@ struct GRDBUserRepoActivityRepository: UserRepoActivityRepositoryProtocol, Senda
                     )
                     """
                 arguments.append(kind.rawValue)
+            } else if let libraryState = segment.libraryStateFilter {
+                // 入库筛只看账本当前仓库的知识库边界，不混 Issue / PR。
+                sql = """
+                    SELECT id, occurred_at, source FROM (
+                        SELECT a.id, a.occurred_at, 'activity' AS source
+                        FROM user_repo_activity a
+                        LEFT JOIN repo_notes n ON n.repo_id = a.repo_id
+                        WHERE \(libraryState == .inLibrary
+                            ? "n.library_state = 'in_library'"
+                            : "COALESCE(n.library_state, 'outside_library') != 'in_library'")
+                    )
+                    """
+            } else if let issueState = segment.issueStateFilter {
+                sql = """
+                    SELECT id, occurred_at, source FROM (
+                        SELECT id, updated_at AS occurred_at, 'notification' AS source
+                        FROM github_notification_threads
+                        WHERE subject_type IN ('Issue', 'PullRequest')
+                          AND issue_state = ?
+                    )
+                    """
+                arguments.append(issueState)
             } else {
                 sql = """
                     SELECT id, occurred_at, source FROM (
@@ -509,7 +531,7 @@ struct GRDBUserRepoActivityRepository: UserRepoActivityRepositoryProtocol, Senda
 
     private static func notificationWhereSQL(_ segment: GitHubNotificationSegment) -> String {
         switch segment {
-        case .all, .star, .unstar, .fork:
+        case .all, .star, .unstar, .fork, .open, .closed, .merged, .inLibrary, .outsideLibrary:
             return ""
         case .unread:
             return "WHERE unread = 1"
@@ -565,9 +587,10 @@ struct GRDBUserRepoActivityRepository: UserRepoActivityRepositoryProtocol, Senda
                     db,
                     sql: """
                         SELECT a.*, r.description AS repo_description, r.owner AS repo_owner,
-                               r.language AS repo_language
+                               r.language AS repo_language, n.library_state AS repo_library_state
                         FROM user_repo_activity a
                         LEFT JOIN repos r ON r.id = a.repo_id
+                        LEFT JOIN repo_notes n ON n.repo_id = a.repo_id
                         WHERE a.id IN (\(placeholders))
                         """,
                     arguments: StatementArguments(activityIDs)
@@ -581,7 +604,8 @@ struct GRDBUserRepoActivityRepository: UserRepoActivityRepositoryProtocol, Senda
                         record: record,
                         snippet: snippet,
                         ownerLogin: row["repo_owner"],
-                        language: GitHubInboxTimelineRow.normalizedLanguage(row["repo_language"])
+                        language: GitHubInboxTimelineRow.normalizedLanguage(row["repo_language"]),
+                        libraryState: LibraryState.parse(row["repo_library_state"])
                     )
                 }
             }

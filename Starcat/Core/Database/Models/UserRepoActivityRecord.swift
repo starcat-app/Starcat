@@ -102,6 +102,8 @@ struct UserRepoActivityListItem: Equatable, Identifiable, Sendable {
     let ownerLogin: String?
     /// 本地 `repos.language`；没有仓库行或语言为空时为 nil。
     let language: String?
+    /// 当前仓库是否在知识库。没有 `repo_notes` 行视为未入库。
+    let libraryState: LibraryState
 
     var id: String { record.id }
 }

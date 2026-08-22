@@ -676,7 +676,7 @@ private struct GitHubNotificationSegmentMenu: View {
             .accessibilityValue(selection.displayTitle(locale: locale))
         }
         .fixedSize()
-        .help(GitHubNotificationMapper.copy(locale, zh: "按类型筛选通知", en: "Filter notifications by type"))
+        .help(GitHubNotificationMapper.copy(locale, zh: "按类型或状态筛选", en: "Filter by type or status"))
     }
 }
 
@@ -1011,6 +1011,30 @@ struct GitHubNotificationIssueStateBadge: View {
             }
             return Color(hex: "#8250df") ?? .purple
         default:
+            return .secondary
+        }
+    }
+}
+
+/// Star / Unstar / Fork 时间列：已入库绿、未入库灰。文案短，避免撑破 52pt。
+struct GitHubNotificationLibraryStateBadge: View {
+    let state: LibraryState
+    @Environment(\.locale) private var locale
+
+    var body: some View {
+        Text(verbatim: GitHubNotificationMapper.libraryStateStampTitle(state: state, locale: locale))
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(tint)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .accessibilityLabel(Text(verbatim: GitHubNotificationMapper.libraryStateFilterTitle(state: state, locale: locale)))
+    }
+
+    private var tint: Color {
+        switch state {
+        case .inLibrary:
+            return Color(hex: "#1a7f37") ?? .green
+        case .outsideLibrary:
             return .secondary
         }
     }

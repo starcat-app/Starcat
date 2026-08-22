@@ -8,6 +8,8 @@ Release notes for the Mac App Store edition of Starcat.
 
 - README video playback: Play supported GitHub README videos inline with native controls; playback requires an explicit action and stops when switching repositories or closing the detail view. Unsupported sources continue to open in the browser.
 - Repository security advisories: Review the five latest published advisories in Insights with severity, GHSA / CVE identifiers, publication date, and publisher, then open an advisory or the complete list on GitHub.
+- Notification Issue / PR status: Open, Closed, and Merged appear under the timestamp and on the detail header; closing or reopening a thread updates both.
+- Notification library badges and filters: Star, Unstar, and Fork rows show In Library or Not in Library. Filter by Open, Closed, Merged, In Library, or Not in Library.
 
 ### Fixes
 
