@@ -13,7 +13,10 @@ import Foundation
 
 enum AgentTraceKind: String, Codable, Hashable, Sendable {
     case lifecycle
+    case message
     case plan
+    case todo
+    case request
     case reasoningSummary
     case commentary
     case tool

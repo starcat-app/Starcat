@@ -37,6 +37,28 @@ struct AgentTraceStructuredField: Equatable, Sendable {
     let value: AgentTraceStructuredValue
 }
 
+/// Trace 的完整事实仍由持久化层保存；这里仅限制时间线首屏需要参与 SwiftUI 测量的内容量。
+/// Runtime 返回的大段 Markdown、压缩 JSON 或上百行表格若直接进入嵌套 ScrollView，会让
+/// 展开动画期间的 `sizeThatFits` 在主线程反复遍历整棵视图树，最终表现为应用卡死。
+enum AgentTracePresentationBudget {
+    static let textCharacters = 8_000
+    static let codeCharacters = 12_000
+    static let rawPayloadCharacters = 20_000
+    static let jsonParseCharacters = 256_000
+    static let objectFields = 40
+    static let collectionItems = 50
+    static let nestingDepth = 8
+
+    static var truncationMarker: String {
+        "\n\n… \(String.l10n("agent.workspace.trace.contentTruncated"))"
+    }
+
+    static func bounded(_ value: String, limit: Int) -> String {
+        guard value.count > limit else { return value }
+        return String(value.prefix(limit)) + truncationMarker
+    }
+}
+
 /// Trace 持久化继续使用 Runtime/工具的稳定标识；展示层按当前 App 语言给已知工具换成
 /// 可读标题。未知工具保持原名，避免第三方 Runtime 的新事件被错误翻译。
 enum AgentTraceTitlePresentation {
@@ -60,8 +82,14 @@ enum AgentTraceTitlePresentation {
     static func title(for event: AgentTraceEvent) -> String {
         // 固定类别按当前 App 语言即时解析，避免历史 Trace 把生成时的英文标题永久写死。
         switch event.kind {
+        case .message:
+            return String.l10n("agent.workspace.trace.kind.message")
         case .plan:
             return String.l10n("agent.workspace.trace.kind.plan")
+        case .todo:
+            return String.l10n("agent.workspace.trace.kind.todo")
+        case .request:
+            return String.l10n("agent.workspace.trace.kind.request")
         case .reasoningSummary:
             return String.l10n("agent.workspace.trace.kind.thinking")
         case .commentary:
@@ -122,7 +150,11 @@ enum AgentTraceDetailPresentationBuilder {
         }
 
         for detail in event.details {
-            rawBlocks.append("\(detail.label)\n\(detail.value)")
+            let boundedRawValue = AgentTracePresentationBudget.bounded(
+                detail.value,
+                limit: AgentTracePresentationBudget.rawPayloadCharacters
+            )
+            rawBlocks.append("\(detail.label)\n\(boundedRawValue)")
             if detail.format == .json,
                let json = decodeJSON(detail.value),
                let envelope = toolResultEnvelope(
@@ -141,7 +173,12 @@ enum AgentTraceDetailPresentationBuilder {
 
         return AgentTraceDetailPresentation(
             sections: sections,
-            rawPayload: didStructure ? rawBlocks.joined(separator: "\n\n") : nil
+            rawPayload: didStructure
+                ? AgentTracePresentationBudget.bounded(
+                    rawBlocks.joined(separator: "\n\n"),
+                    limit: AgentTracePresentationBudget.rawPayloadCharacters
+                )
+                : nil
         )
     }
 
@@ -211,24 +248,46 @@ enum AgentTraceDetailPresentationBuilder {
     ) -> (content: AgentTraceDetailPresentation.Content, didStructure: Bool) {
         switch detail.format {
         case .json:
+            guard detail.value.count <= AgentTracePresentationBudget.jsonParseCharacters else {
+                return (.code(AgentTracePresentationBudget.bounded(
+                    detail.value,
+                    limit: AgentTracePresentationBudget.codeCharacters
+                )), false)
+            }
             guard let json = decodeJSON(detail.value) else {
-                return (.code(detail.value), false)
+                return (.code(AgentTracePresentationBudget.bounded(
+                    detail.value,
+                    limit: AgentTracePresentationBudget.codeCharacters
+                )), false)
             }
             return (.structured(structuredValue(from: json)), true)
         case .code:
-            return (.code(detail.value), false)
+            return (.code(AgentTracePresentationBudget.bounded(
+                detail.value,
+                limit: AgentTracePresentationBudget.codeCharacters
+            )), false)
         case .markdown:
-            return (.markdown(detail.value), false)
+            return (.markdown(AgentTracePresentationBudget.bounded(
+                detail.value,
+                limit: AgentTracePresentationBudget.textCharacters
+            )), false)
         case .error:
-            return (.error(detail.value), false)
+            return (.error(AgentTracePresentationBudget.bounded(
+                detail.value,
+                limit: AgentTracePresentationBudget.textCharacters
+            )), false)
         case .text:
-            if let json = decodeJSON(detail.value) {
+            if detail.value.count <= AgentTracePresentationBudget.jsonParseCharacters,
+               let json = decodeJSON(detail.value) {
                 return (.structured(structuredValue(from: json)), true)
             }
             if let fields = keyValueFields(from: detail.value) {
                 return (.structured(.object(fields)), true)
             }
-            return (.text(detail.value), false)
+            return (.text(AgentTracePresentationBudget.bounded(
+                detail.value,
+                limit: AgentTracePresentationBudget.textCharacters
+            )), false)
         }
     }
 
@@ -247,23 +306,51 @@ enum AgentTraceDetailPresentationBuilder {
         return try? JSONDecoder().decode(AgentJSONValue.self, from: data)
     }
 
-    private static func structuredValue(from value: AgentJSONValue) -> AgentTraceStructuredValue {
+    private static func structuredValue(
+        from value: AgentJSONValue,
+        depth: Int = 0
+    ) -> AgentTraceStructuredValue {
+        guard depth < AgentTracePresentationBudget.nestingDepth else {
+            return .scalar(String.l10n("agent.workspace.trace.contentTruncated"))
+        }
+
         switch value {
         case .object(let object):
-            return .object(object.keys.sorted().map { key in
-                AgentTraceStructuredField(key: key, value: structuredValue(from: object[key] ?? .null))
-            })
+            let keys = Array(object.keys.sorted().prefix(AgentTracePresentationBudget.objectFields))
+            var fields = keys.map { key in
+                AgentTraceStructuredField(
+                    key: key,
+                    value: structuredValue(from: object[key] ?? .null, depth: depth + 1)
+                )
+            }
+            if object.count > keys.count {
+                fields.append(.init(
+                    key: "…",
+                    value: .scalar(String.l10n("agent.workspace.trace.contentTruncated"))
+                ))
+            }
+            return .object(fields)
         case .array(let values):
             if let table = table(from: values) { return table }
-            return .list(values.map(structuredValue(from:)))
+            var items = values.prefix(AgentTracePresentationBudget.collectionItems).map {
+                structuredValue(from: $0, depth: depth + 1)
+            }
+            if values.count > items.count {
+                items.append(.scalar(String.l10n("agent.workspace.trace.contentTruncated")))
+            }
+            return .list(Array(items))
         case .string(let text):
-            if let nested = decodeJSON(text) {
-                return structuredValue(from: nested)
+            if text.count <= AgentTracePresentationBudget.jsonParseCharacters,
+               let nested = decodeJSON(text) {
+                return structuredValue(from: nested, depth: depth + 1)
             }
             if let fields = keyValueFields(from: text) {
                 return .object(fields)
             }
-            return .scalar(text)
+            return .scalar(AgentTracePresentationBudget.bounded(
+                text,
+                limit: AgentTracePresentationBudget.textCharacters
+            ))
         case .number(let number):
             return .scalar(numberText(number))
         case .bool(let value):
@@ -281,13 +368,18 @@ enum AgentTraceDetailPresentationBuilder {
         guard !columns.isEmpty, columns.count <= 8 else { return nil }
 
         var rows: [[String]] = []
-        for object in objects {
+        for object in objects.prefix(AgentTracePresentationBudget.collectionItems) {
             var row: [String] = []
             for column in columns {
                 guard let cell = scalarText(object[column] ?? .null) else { return nil }
                 row.append(cell)
             }
             rows.append(row)
+        }
+        if objects.count > rows.count {
+            rows.append([
+                String.l10n("agent.workspace.trace.contentTruncated")
+            ] + Array(repeating: "", count: max(0, columns.count - 1)))
         }
         return .table(columns: columns, rows: rows)
     }
@@ -363,9 +455,9 @@ struct AgentTraceDetailsView: View {
 
             if let rawPayload = presentation.rawPayload {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.16)) {
-                        isRawExpanded.toggle()
-                    }
+                    // 原始 payload 可能接近展示预算上限；禁用高度动画，避免动画帧内反复
+                    // 测量整段等宽文本。折叠状态仍立即更新，不影响整行点击契约。
+                    isRawExpanded.toggle()
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: isRawExpanded ? "chevron.down" : "chevron.right")
@@ -398,7 +490,6 @@ struct AgentTraceDetailsView: View {
                 .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.primary)
                 .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
         case .markdown(let text):
             AgentTraceMarkdownText(markdown: text, tone: .primary)
         case .code(let text):
@@ -408,7 +499,6 @@ struct AgentTraceDetailsView: View {
                 .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(Color.red)
                 .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
         case .structured(let value):
             AgentTraceStructuredValueView(value: value)
         }
@@ -419,7 +509,6 @@ struct AgentTraceDetailsView: View {
             .font(interfaceScale.font(.code, design: .monospaced))
             .foregroundStyle(.primary)
             .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
             .padding(.vertical, 6)
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -447,7 +536,6 @@ struct AgentTraceMarkdownText: View {
         Markdown(markdown)
             .markdownTheme(traceTheme)
             .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -467,7 +555,6 @@ struct AgentTraceMarkdownText: View {
             }
             .paragraph { configuration in
                 configuration.label
-                    .fixedSize(horizontal: false, vertical: true)
                     .markdownMargin(top: .zero, bottom: .em(0.3))
             }
             .list { configuration in
@@ -489,7 +576,6 @@ private struct AgentTraceStructuredValueView: View {
                 .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.primary)
                 .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
         case .object(let fields):
             VStack(alignment: .leading, spacing: 5) {
                 ForEach(Array(fields.enumerated()), id: \.offset) { _, field in

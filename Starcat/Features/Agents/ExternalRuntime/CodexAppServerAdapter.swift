@@ -46,6 +46,11 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
     private var turnID: String?
     private var inheritedMCPServerConfigs: [String: AgentJSONValue] = [:]
     private var itemStartedAt: [String: Date] = [:]
+    /// delta notification 只给 itemId，不重复携带 command/tool/type 等元数据。
+    /// 保存 started item 才能让运行中的同一行持续补充可读标题与详情。
+    private var startedItems: [String: AgentJSONValue] = [:]
+    private var itemOutputTexts: [String: String] = [:]
+    private var itemPlanTexts: [String: String] = [:]
     /// App Server 会用 `summaryIndex` 把一次 reasoning 拆成多个可展示摘要段。
     /// 必须按段累计后再拼接，不能直接把所有 delta 连在一起，否则段落边界会丢失。
     private var reasoningSummaries: [String: [Int: String]] = [:]
@@ -308,6 +313,7 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
             else { return ExternalAgentProtocolOutput() }
             let startedAt = Date()
             itemStartedAt[itemID] = startedAt
+            startedItems[itemID] = item
             if item[external: "type"]?.stringValue == "agentMessage" {
                 let phase = item[external: "phase"]?.stringValue
                 if let phase { agentMessagePhases[itemID] = phase }
@@ -374,11 +380,109 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
                 from: item,
                 status: Self.traceStatus(from: item) ?? .completed,
                 startedAt: itemID.flatMap { itemStartedAt[$0] },
-                completedAt: completedAt
+                completedAt: completedAt,
+                progressText: itemID.flatMap { itemOutputTexts[$0] ?? itemPlanTexts[$0] }
             ) {
                 events.append(.trace(trace))
             }
+            if let itemID {
+                startedItems[itemID] = nil
+                itemOutputTexts[itemID] = nil
+                itemPlanTexts[itemID] = nil
+                itemStartedAt[itemID] = nil
+                reasoningSummaries[itemID] = nil
+            }
             return ExternalAgentProtocolOutput(events: events)
+        case "item/commandExecution/outputDelta":
+            guard let itemID = params?[external: "itemId"]?.stringValue,
+                  let delta = params?[external: "delta"]?.stringValue
+            else { return ExternalAgentProtocolOutput() }
+            itemOutputTexts[itemID, default: ""] += delta
+            let item = startedItems[itemID]
+            return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+                id: itemID,
+                kind: .command,
+                status: .running,
+                title: item?[external: "command"]?.stringValue
+                    ?? String.l10n("agent.workspace.trace.kind.command"),
+                summary: item?[external: "status"]?.stringValue,
+                details: [.init(
+                    label: String.l10n("agent.workspace.trace.output"),
+                    value: itemOutputTexts[itemID] ?? delta,
+                    format: .code
+                )],
+                startedAt: itemStartedAt[itemID]
+            ))])
+        case "item/fileChange/outputDelta":
+            guard let itemID = params?[external: "itemId"]?.stringValue,
+                  let delta = params?[external: "delta"]?.stringValue
+            else { return ExternalAgentProtocolOutput() }
+            itemOutputTexts[itemID, default: ""] += delta
+            return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+                id: itemID,
+                kind: .fileChange,
+                status: .running,
+                title: String.l10n("agent.workspace.trace.kind.fileChanges"),
+                details: [.init(
+                    label: String.l10n("agent.workspace.trace.output"),
+                    value: itemOutputTexts[itemID] ?? delta,
+                    format: .code
+                )],
+                startedAt: itemStartedAt[itemID]
+            ))])
+        case "item/fileChange/patchUpdated":
+            guard let itemID = params?[external: "itemId"]?.stringValue,
+                  let changes = params?[external: "changes"]
+            else { return ExternalAgentProtocolOutput() }
+            return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+                id: itemID,
+                kind: .fileChange,
+                status: .running,
+                title: String.l10n("agent.workspace.trace.kind.fileChanges"),
+                details: ExternalAgentTracePayload.detail(
+                    label: String.l10n("agent.workspace.trace.changes"),
+                    value: changes
+                ).map { [$0] } ?? [],
+                startedAt: itemStartedAt[itemID]
+            ))])
+        case "item/mcpToolCall/progress":
+            guard let itemID = params?[external: "itemId"]?.stringValue else {
+                return ExternalAgentProtocolOutput()
+            }
+            let item = startedItems[itemID]
+            let server = item?[external: "server"]?.stringValue ?? "MCP"
+            let tool = item?[external: "tool"]?.stringValue ?? "tool"
+            let message = params?[external: "message"]?.stringValue
+            return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+                id: itemID,
+                kind: .mcpTool,
+                status: .running,
+                title: "\(server).\(tool)",
+                summary: message,
+                details: message.map {
+                    [.init(label: String.l10n("agent.workspace.trace.progressUpdate"), value: $0)]
+                } ?? [],
+                startedAt: itemStartedAt[itemID]
+            ))])
+        case "item/plan/delta":
+            guard let itemID = params?[external: "itemId"]?.stringValue,
+                  let delta = params?[external: "delta"]?.stringValue
+            else { return ExternalAgentProtocolOutput() }
+            itemPlanTexts[itemID, default: ""] += delta
+            let plan = itemPlanTexts[itemID] ?? delta
+            return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+                id: itemID,
+                kind: .plan,
+                status: .running,
+                title: String.l10n("agent.workspace.trace.kind.plan"),
+                summary: plan,
+                details: [.init(
+                    label: String.l10n("agent.workspace.trace.kind.plan"),
+                    value: plan,
+                    format: .markdown
+                )],
+                startedAt: itemStartedAt[itemID]
+            ))])
         case "item/reasoning/summaryPartAdded":
             guard let itemID = params?[external: "itemId"]?.stringValue else {
                 return ExternalAgentProtocolOutput()
@@ -443,6 +547,55 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
                         details.count
                     ),
                 details: details
+            ))])
+        case "hook/started", "hook/completed":
+            guard let run = params?[external: "run"],
+                  let id = run[external: "id"]?.stringValue
+            else { return ExternalAgentProtocolOutput() }
+            let completed = method == "hook/completed"
+            let title = run[external: "eventName"]?.stringValue
+                ?? run[external: "handlerType"]?.stringValue
+                ?? String.l10n("agent.workspace.trace.kind.lifecycle")
+            let summary = run[external: "status"]?.stringValue
+                ?? run[external: "executionMode"]?.stringValue
+            let visibleRun = run.removingExternalKeys(["sourcePath"])
+            return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+                id: "hook:\(id)",
+                kind: .lifecycle,
+                status: completed ? (Self.traceStatus(from: run) ?? .completed) : .running,
+                title: title,
+                summary: summary,
+                details: ExternalAgentTracePayload.detail(
+                    label: String.l10n("agent.workspace.trace.eventData"),
+                    value: visibleRun
+                ).map { [$0] } ?? [],
+                durationMilliseconds: run[external: "durationMs"]?.integerValue,
+                completedAt: completed ? Date() : nil
+            ))])
+        case "thread/compacted":
+            let id = params?[external: "turnId"]?.stringValue ?? turnID ?? "current"
+            return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+                id: "compaction:\(id)",
+                kind: .compaction,
+                status: .completed,
+                title: String.l10n("agent.workspace.trace.kind.contextCompaction"),
+                completedAt: Date()
+            ))])
+        case "turn/diff/updated":
+            guard let diff = params?[external: "diff"]?.stringValue else {
+                return ExternalAgentProtocolOutput()
+            }
+            let id = params?[external: "turnId"]?.stringValue ?? turnID ?? "current"
+            return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+                id: "diff:\(id)",
+                kind: .fileChange,
+                status: .running,
+                title: String.l10n("agent.workspace.trace.kind.fileChanges"),
+                details: [.init(
+                    label: String.l10n("agent.workspace.trace.changes"),
+                    value: diff,
+                    format: .code
+                )]
             ))])
         case "warning", "configWarning":
             let message = params?[external: "message"]?.stringValue
@@ -539,6 +692,28 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
                 ))]
             )
         default:
+            // App Server 小版本会增加执行期通知。不能静默丢弃，也不能把整帧（含 RPC
+            // 元数据和潜在 secret）直接展示；仅对执行域事件保留脱敏后的 params。
+            if method.hasPrefix("item/")
+                || method.hasPrefix("turn/")
+                || method.hasPrefix("hook/")
+                || method.hasPrefix("thread/compact") {
+                let id = params?[external: "itemId"]?.stringValue
+                    ?? params?[external: "turnId"]?.stringValue
+                    ?? "\(method):\(UUID().uuidString)"
+                let safeParams = ExternalAgentTracePayload.sanitized(params ?? .object([:]))
+                return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+                    id: "event:\(id):\(method)",
+                    kind: .unknown,
+                    status: .completed,
+                    title: method,
+                    details: ExternalAgentTracePayload.detail(
+                        label: String.l10n("agent.workspace.trace.eventData"),
+                        value: safeParams
+                    ).map { [$0] } ?? [],
+                    completedAt: Date()
+                ))])
+            }
             return ExternalAgentProtocolOutput()
         }
     }
@@ -575,7 +750,8 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
         from item: AgentJSONValue,
         status: AgentTraceStatus,
         startedAt: Date?,
-        completedAt: Date? = nil
+        completedAt: Date? = nil,
+        progressText: String? = nil
     ) -> ExternalAgentTraceEvent? {
         guard let type = item[external: "type"]?.stringValue,
               let id = item[external: "id"]?.stringValue,
@@ -586,11 +762,19 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
         let title: String
         var summary: String?
         var details: [AgentTraceDetail] = []
+        var includesEventData = false
         switch type {
         case "plan":
             kind = .plan
             title = String.l10n("agent.workspace.trace.kind.plan")
-            summary = item[external: "text"]?.stringValue
+            summary = item[external: "text"]?.stringValue ?? progressText
+            if let summary {
+                details.append(.init(
+                    label: String.l10n("agent.workspace.trace.kind.plan"),
+                    value: summary,
+                    format: .markdown
+                ))
+            }
         case "reasoning":
             kind = .reasoningSummary
             title = String.l10n("agent.workspace.trace.kind.thinking")
@@ -610,7 +794,8 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
                 ?? String.l10n("agent.workspace.trace.kind.command")
             summary = item[external: "status"]?.stringValue
             if let output = item[external: "aggregatedOutput"]?.stringValue
-                ?? item[external: "output"]?.stringValue {
+                ?? item[external: "output"]?.stringValue
+                ?? progressText {
                 details.append(.init(
                     label: String.l10n("agent.workspace.trace.output"),
                     value: output,
@@ -621,11 +806,19 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
             kind = .fileChange
             title = String.l10n("agent.workspace.trace.kind.fileChanges")
             summary = item[external: "status"]?.stringValue
-            if let changes = item[external: "changes"], let value = try? changes.jsonString() {
-                details.append(.init(
+            if let changes = item[external: "changes"] {
+                if let detail = ExternalAgentTracePayload.detail(
                     label: String.l10n("agent.workspace.trace.changes"),
-                    value: value,
-                    format: .json
+                    value: changes
+                ) {
+                    details.append(detail)
+                }
+            }
+            if let progressText {
+                details.append(.init(
+                    label: String.l10n("agent.workspace.trace.output"),
+                    value: progressText,
+                    format: .code
                 ))
             }
         case "mcpToolCall":
@@ -634,11 +827,21 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
             let tool = item[external: "tool"]?.stringValue ?? "tool"
             title = "\(server).\(tool)"
             summary = item[external: "status"]?.stringValue
-            if let arguments = item[external: "arguments"], let value = try? arguments.jsonString() {
-                details.append(.init(label: String.l10n("agent.workspace.trace.input"), value: value, format: .json))
+            if let arguments = item[external: "arguments"] {
+                if let detail = ExternalAgentTracePayload.detail(
+                    label: String.l10n("agent.workspace.trace.input"),
+                    value: arguments
+                ) {
+                    details.append(detail)
+                }
             }
-            if let result = item[external: "result"], let value = try? result.jsonString() {
-                details.append(.init(label: String.l10n("agent.workspace.trace.output"), value: value, format: .json))
+            if let result = item[external: "result"] {
+                if let detail = ExternalAgentTracePayload.detail(
+                    label: String.l10n("agent.workspace.trace.output"),
+                    value: result
+                ) {
+                    details.append(detail)
+                }
             }
         case "webSearch":
             kind = .webSearch
@@ -651,6 +854,56 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
             kind = .compaction
             title = String.l10n("agent.workspace.trace.kind.contextCompaction")
             summary = item[external: "status"]?.stringValue
+        case "hookPrompt":
+            kind = .message
+            title = String.l10n("agent.workspace.trace.kind.hookPrompt")
+            let count = item[external: "fragments"]?.externalArray?.count ?? 0
+            summary = String.localizedStringWithFormat(
+                String.l10n("agent.workspace.trace.fragmentCountFormat"),
+                count
+            )
+            // Hook prompt 属于模型上下文，普通过程 UI 只显示片段数量，不能展开原文。
+            details.append(.init(
+                label: String.l10n("agent.workspace.trace.eventData"),
+                value: summary ?? count.formatted()
+            ))
+        case "collabAgentToolCall":
+            kind = .tool
+            title = item[external: "tool"]?.stringValue
+                ?? String.l10n("agent.workspace.trace.kind.collaboration")
+            summary = item[external: "status"]?.stringValue
+            includesEventData = true
+        case "subAgentActivity":
+            kind = .lifecycle
+            title = String.l10n("agent.workspace.trace.kind.subAgentActivity")
+            summary = item[external: "kind"]?.stringValue
+            includesEventData = true
+        case "imageView":
+            kind = .tool
+            title = String.l10n("agent.workspace.trace.kind.imageView")
+            summary = item[external: "path"]?.stringValue
+            includesEventData = true
+        case "imageGeneration":
+            kind = .tool
+            title = String.l10n("agent.workspace.trace.kind.imageGeneration")
+            summary = item[external: "status"]?.stringValue
+            includesEventData = true
+        case "sleep":
+            kind = .lifecycle
+            title = String.l10n("agent.workspace.trace.kind.waiting")
+            if let duration = item[external: "durationMs"]?.integerValue {
+                summary = "\(duration.formatted()) ms"
+            }
+            includesEventData = true
+        case "enteredReviewMode", "exitedReviewMode":
+            kind = .lifecycle
+            title = String.l10n(
+                type == "enteredReviewMode"
+                    ? "agent.workspace.trace.kind.enteredReview"
+                    : "agent.workspace.trace.kind.exitedReview"
+            )
+            summary = item[external: "review"]?.stringValue
+            includesEventData = true
         case "dynamicToolCall":
             // Host 会在真实执行边界发出带输入与结果的 tool trace，避免同一次调用出现两行。
             return nil
@@ -658,6 +911,14 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
             kind = .unknown
             title = type
             summary = item[external: "status"]?.stringValue
+            includesEventData = true
+        }
+        if includesEventData,
+           let detail = ExternalAgentTracePayload.detail(
+               label: String.l10n("agent.workspace.trace.eventData"),
+               value: item
+           ) {
+            details.append(detail)
         }
         if let error = item[external: "error"]?[external: "message"]?.stringValue
             ?? item[external: "error"]?.stringValue {

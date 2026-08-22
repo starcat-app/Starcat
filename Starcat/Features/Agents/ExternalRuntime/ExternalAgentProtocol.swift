@@ -144,6 +144,61 @@ struct ExternalAgentProtocolOutput: Sendable {
     var isTerminal = false
 }
 
+/// 把 Provider 的未知或扩展事件降级为可展示的结构化数据，同时阻断凭据、环境变量、
+/// system prompt 与工具 schema 进入普通产品 UI。它保留的是事件业务数据的有界投影，
+/// 不是 JSON-RPC 原始帧；adapter 应优先显式映射已知字段，仅在协议扩展时使用该兜底。
+enum ExternalAgentTracePayload {
+    private static let redactedKeyFragments = [
+        "authorization", "apikey", "accesstoken", "refreshtoken", "bearer",
+        "password", "secret", "credential", "cookie", "environment", "system",
+    ]
+    private static let redactedExactKeys: Set<String> = [
+        "env", "token", "tools", "inputschema",
+    ]
+    private static let maxDepth = 6
+    private static let maxObjectFields = 40
+    private static let maxArrayItems = 50
+    private static let maxStringCharacters = 4_000
+
+    static func detail(label: String, value: AgentJSONValue) -> AgentTraceDetail? {
+        guard let json = try? sanitized(value).jsonString() else { return nil }
+        return AgentTraceDetail(label: label, value: json, format: .json)
+    }
+
+    static func sanitized(_ value: AgentJSONValue, depth: Int = 0) -> AgentJSONValue {
+        guard depth < maxDepth else { return .string("…") }
+        switch value {
+        case .object(let object):
+            let keys = object.keys.sorted()
+            var result: [String: AgentJSONValue] = [:]
+            for key in keys.prefix(maxObjectFields) {
+                if isSensitive(key) {
+                    result[key] = .string("<redacted>")
+                } else {
+                    result[key] = sanitized(object[key] ?? .null, depth: depth + 1)
+                }
+            }
+            if keys.count > maxObjectFields { result["…"] = .string("truncated") }
+            return .object(result)
+        case .array(let values):
+            var result = values.prefix(maxArrayItems).map { sanitized($0, depth: depth + 1) }
+            if values.count > maxArrayItems { result.append(.string("…")) }
+            return .array(Array(result))
+        case .string(let text):
+            guard text.count > maxStringCharacters else { return value }
+            return .string(String(text.prefix(maxStringCharacters)) + "…")
+        case .number, .bool, .null:
+            return value
+        }
+    }
+
+    private static func isSensitive(_ key: String) -> Bool {
+        let normalized = key.lowercased().filter(\.isLetter)
+        return redactedExactKeys.contains(normalized)
+            || redactedKeyFragments.contains { normalized.contains($0) }
+    }
+}
+
 /// 一次 run 对应一个可变协议状态机；Host actor 保证所有调用串行发生。
 protocol ExternalAgentProtocolDriver: AnyObject, Sendable {
     var backend: AgentRuntimeBackend { get }
@@ -308,6 +363,13 @@ extension AgentJSONValue {
 
     subscript(external key: String) -> AgentJSONValue? {
         objectValue?[key]
+    }
+
+    /// Provider 的安全展示通常只允许保留业务元数据；例如 compaction summary 必须排除
+    /// rawOutput 与 system/tool 配置，同时继续把剩余字段作为合法 JSON 交给结构化 renderer。
+    func removingExternalKeys(_ keys: Set<String>) -> AgentJSONValue {
+        guard case .object(let object) = self else { return self }
+        return .object(object.filter { !keys.contains($0.key) })
     }
 
     static func jsonRPCRequest(id: Int, method: String, params: AgentJSONValue? = nil) -> AgentJSONValue {

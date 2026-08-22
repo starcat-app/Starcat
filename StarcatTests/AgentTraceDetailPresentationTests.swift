@@ -148,6 +148,52 @@ struct AgentTraceDetailPresentationTests {
         #expect(!AgentTraceRowPresentation.shouldShowSummary(for: event, isExpanded: true))
     }
 
+    @Test("超长 Markdown 与原始载荷按展示预算裁剪")
+    func boundsLargeTextAndRawPayload() throws {
+        let oversized = String(repeating: "abcdefghij", count: 4_000)
+        let markdown = AgentTraceDetailPresentationBuilder.make(event: traceEvent(details: [.init(
+            label: "Markdown",
+            value: oversized,
+            format: .markdown
+        )]))
+        guard case .markdown(let rendered) = markdown.sections.first?.content else {
+            Issue.record("Markdown 应保持富文本语义")
+            return
+        }
+        #expect(rendered.count < oversized.count)
+        #expect(rendered.contains(String.l10n("agent.workspace.trace.contentTruncated")))
+
+        let json = AgentJSONValue.object(["payload": .string(oversized)])
+        let structured = AgentTraceDetailPresentationBuilder.make(event: traceEvent(details: [.init(
+            label: "JSON",
+            value: try json.jsonString(),
+            format: .json
+        )]))
+        #expect(structured.rawPayload?.count ?? 0
+            <= AgentTracePresentationBudget.rawPayloadCharacters
+                + AgentTracePresentationBudget.truncationMarker.count)
+    }
+
+    @Test("大型集合只创建有界数量的结构化视图节点")
+    func boundsLargeStructuredCollections() throws {
+        // 保持在 AgentTraceDetail 的持久化裁剪阈值内，单独验证 UI 节点预算。
+        let json = AgentJSONValue.array((0..<100).map { index in
+            .object(["index": .number(Double(index)), "name": .string("repo-\(index)")])
+        })
+        let presentation = AgentTraceDetailPresentationBuilder.make(event: traceEvent(details: [.init(
+            label: "Repositories",
+            value: try json.jsonString(),
+            format: .json
+        )]))
+
+        guard case .structured(.table(_, let rows)) = presentation.sections.first?.content else {
+            Issue.record("同构对象数组应保持表格展示")
+            return
+        }
+        #expect(rows.count == AgentTracePresentationBudget.collectionItems + 1)
+        #expect(rows.last?.first == String.l10n("agent.workspace.trace.contentTruncated"))
+    }
+
     private func traceEvent(
         kind: AgentTraceKind = .unknown,
         title: String = "agent_parse_goal",

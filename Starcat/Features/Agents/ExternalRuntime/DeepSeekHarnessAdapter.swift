@@ -146,6 +146,15 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
     /// Harness 的 `tool/result` 不重复工具名，只通过 `message.source.callId` 关联。
     /// 保留同一 session 的 call 映射，避免用 `unknown` 或随机 UUID 掩盖协议字段。
     private var toolNamesByCallID: [String: String] = [:]
+    /// request/header 与 request/context 本身不重复 turn/step；记录当前执行括号后才能把
+    /// 请求配置、消息与工具事件挂回真实 Step，而不是在 UI 中生成无关联的平铺日志。
+    private var currentTurn: Int?
+    private var currentStep: Int?
+    private var activeCompactionID: String?
+    /// request/header 与 request/context、compaction 的 start/summary/end 都会更新同一
+    /// 生命周期行。缓存已公开的详情，避免后一个事件 upsert 时把前一个阶段覆盖掉。
+    private var requestDetailsByID: [String: [AgentTraceDetail]] = [:]
+    private var compactionDetailsByID: [String: [AgentTraceDetail]] = [:]
 
     init(
         request: ExternalAgentRunRequest,
@@ -261,28 +270,141 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
         else { return ExternalAgentProtocolOutput() }
 
         switch type {
+        case "turn/start":
+            let turn = data[external: "turn"]?.integerValue ?? currentTurn ?? 0
+            currentTurn = turn
+            currentStep = nil
+            let detail = ExternalAgentTracePayload.detail(
+                label: String.l10n("agent.workspace.trace.eventData"),
+                value: data
+            )
+            return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+                id: turnTraceID(turn),
+                kind: .lifecycle,
+                status: .running,
+                title: "\(String.l10n("agent.workspace.trace.kind.turn")) \(turn + 1)",
+                details: detail.map { [$0] } ?? [],
+                startedAt: eventDate(value)
+            ))])
+        case "step/start":
+            let turn = data[external: "turn"]?.integerValue ?? currentTurn ?? 0
+            let step = data[external: "step"]?.integerValue ?? 0
+            currentTurn = turn
+            currentStep = step
+            let detail = ExternalAgentTracePayload.detail(
+                label: String.l10n("agent.workspace.trace.eventData"),
+                value: data
+            )
+            return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+                id: stepTraceID(turn: turn, step: step),
+                parentID: turnTraceID(turn),
+                kind: .lifecycle,
+                status: .running,
+                title: "\(String.l10n("agent.workspace.trace.kind.step")) \(step + 1)",
+                details: detail.map { [$0] } ?? [],
+                startedAt: eventDate(value)
+            ))])
+        case "step/end":
+            let turn = data[external: "turn"]?.integerValue ?? currentTurn ?? 0
+            let step = data[external: "step"]?.integerValue ?? currentStep ?? 0
+            currentTurn = turn
+            currentStep = step
+            let detail = ExternalAgentTracePayload.detail(
+                label: String.l10n("agent.workspace.trace.eventData"),
+                value: data
+            )
+            return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+                id: stepTraceID(turn: turn, step: step),
+                parentID: turnTraceID(turn),
+                kind: .lifecycle,
+                status: .completed,
+                title: "\(String.l10n("agent.workspace.trace.kind.step")) \(step + 1)",
+                details: detail.map { [$0] } ?? [],
+                completedAt: eventDate(value)
+            ))])
         case "assistant/chunk":
             let chunk = data[external: "chunk"]
-            guard let deltaType = chunk?[external: "type"]?.stringValue,
-                  let text = chunk?[external: "text"]?.stringValue
-            else { return ExternalAgentProtocolOutput() }
-            if deltaType == "text-delta" {
+            guard let deltaType = chunk?[external: "type"]?.stringValue else {
+                return ExternalAgentProtocolOutput()
+            }
+            switch deltaType {
+            case "text-delta":
+                guard let text = chunk?[external: "text"]?.stringValue else {
+                    return ExternalAgentProtocolOutput()
+                }
                 return ExternalAgentProtocolOutput(events: [.assistantDelta(text)])
-            }
-            if deltaType == "reasoning-delta" {
+            case "reasoning-delta":
+                guard let text = chunk?[external: "text"]?.stringValue else {
+                    return ExternalAgentProtocolOutput()
+                }
                 return ExternalAgentProtocolOutput(events: [.reasoningDelta(text)])
+            case "usage":
+                guard let usage = Self.usage(from: chunk?[external: "usage"] ?? chunk) else {
+                    return ExternalAgentProtocolOutput()
+                }
+                return ExternalAgentProtocolOutput(events: [.usage(usage)])
+            case "block-start", "block-end", "tool-call-delta", "finish":
+                // 这些是 assistant/message、tool/call 与终态的原始组装帧。逐帧生成 UI 行
+                // 会制造噪声和数百个空 disclosure；最终装配事件才是可恢复的产品事实。
+                return ExternalAgentProtocolOutput()
+            default:
+                return genericTrace(type: "assistant/chunk/\(deltaType)", data: chunk ?? data, value: value)
             }
-            return ExternalAgentProtocolOutput()
         case "assistant/message":
             let message = data[external: "message"] ?? data
-            let text = message[external: "content"]?.externalArray?
-                .compactMap { block -> String? in
-                    guard block[external: "type"]?.stringValue == "text" else { return nil }
-                    return block[external: "text"]?.stringValue
-                }
-                .joined() ?? ""
+            let text = contentText(in: message, matching: "text")
+            let reasoning = contentText(in: message, matching: "reasoning")
             let usage = Self.usage(from: data[external: "usage"] ?? message[external: "usage"])
-            return ExternalAgentProtocolOutput(events: [.assistantMessage(text, usage: usage)])
+            var events: [ExternalAgentProtocolEvent] = [.assistantMessage(text, usage: usage)]
+            if let reasoning = Self.nonBlank(reasoning) {
+                let messageID = Self.nonBlank(message[external: "id"]?.stringValue)
+                    ?? stepCorrelationID(prefix: "assistant")
+                events.append(.trace(ExternalAgentTraceEvent(
+                    id: "reasoning:\(messageID)",
+                    parentID: currentStepTraceID,
+                    kind: .reasoningSummary,
+                    status: data[external: "interrupted"]?.externalBool == true ? .cancelled : .completed,
+                    title: String.l10n("agent.workspace.trace.kind.thinking"),
+                    summary: reasoning,
+                    details: [.init(
+                        label: String.l10n("agent.workspace.timeline.reasoning"),
+                        value: reasoning,
+                        format: .markdown
+                    )],
+                    completedAt: eventDate(value)
+                )))
+            }
+            return ExternalAgentProtocolOutput(events: events)
+        case "user/message", "steering/message":
+            let message = data[external: "message"] ?? data
+            let text = contentText(in: message)
+            let messageID = Self.nonBlank(message[external: "id"]?.stringValue)
+                ?? eventIdentifier(type: type, data: data, value: value)
+            var details: [AgentTraceDetail] = []
+            if let text = Self.nonBlank(text) {
+                details.append(.init(
+                    label: String.l10n("agent.workspace.trace.message"),
+                    value: text,
+                    format: .markdown
+                ))
+            }
+            if let source = message[external: "source"],
+               let detail = ExternalAgentTracePayload.detail(
+                   label: String.l10n("agent.workspace.trace.eventData"),
+                   value: source
+               ) {
+                details.append(detail)
+            }
+            return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+                id: "message:\(messageID)",
+                parentID: currentStepTraceID,
+                kind: .message,
+                status: .completed,
+                title: String.l10n("agent.workspace.trace.kind.message"),
+                summary: Self.summary(from: text),
+                details: details,
+                completedAt: eventDate(value)
+            ))])
         case "tool/call":
             guard let id = Self.nonBlank(data[external: "callId"]?.stringValue),
                   let name = Self.nonBlank(data[external: "name"]?.stringValue)
@@ -312,40 +434,127 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
                 .toolResult(
                     id: id,
                     name: name,
-                    output: message,
+                    // error 与 meta 位于 message 外层，必须一起投影，否则重放时看不到失败
+                    // 类型或工具自带的结构化展示数据。
+                    output: data,
                     isError: data[external: "isError"]?.externalBool == true
                         || message[external: "isError"]?.externalBool == true
+                        || data[external: "error"] != nil
                 )
             ])
-        case "turn/end":
-            let reason = data[external: "reason"]?[external: "kind"]?.stringValue
-            if reason == "cancelled" || reason == "interrupted" {
-                return ExternalAgentProtocolOutput(events: [.cancelled], isTerminal: true)
+        case "request/header":
+            let header = data[external: "header"] ?? .object([:])
+            let config = header[external: "config"] ?? .object([:])
+            var requestData: [String: AgentJSONValue] = ["config": config]
+            if let defaults = header[external: "adapterDefaults"] {
+                requestData["adapterDefaults"] = defaults
             }
-            if let reason, ["error", "failed"].contains(reason) {
-                let message = "DeepSeek Harness turn ended: \(reason)."
+            if let reason = data[external: "reason"] { requestData["reason"] = reason }
+            return requestTrace(
+                idPrefix: "request",
+                detailLabel: String.l10n("agent.workspace.trace.requestConfig"),
+                payload: .object(requestData),
+                summary: config[external: "model"]?.stringValue,
+                value: value
+            )
+        case "request/context":
+            return requestTrace(
+                idPrefix: "request",
+                detailLabel: String.l10n("agent.workspace.trace.requestContext"),
+                payload: data,
+                summary: data[external: "model"]?.stringValue,
+                value: value
+            )
+        case "todo/write":
+            let todos = data[external: "todos"] ?? .array([])
+            let items = todos.externalArray ?? []
+            let completed = items.filter {
+                $0[external: "status"]?.stringValue == "completed"
+            }.count
+            let status: AgentTraceStatus = items.contains {
+                $0[external: "status"]?.stringValue == "in_progress"
+            } ? .running : .completed
+            let detail = ExternalAgentTracePayload.detail(
+                label: String.l10n("agent.workspace.trace.todos"),
+                value: todos
+            )
+            return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+                id: "todo",
+                parentID: currentStepTraceID,
+                kind: .todo,
+                status: status,
+                title: String.l10n("agent.workspace.trace.kind.todo"),
+                summary: "\(completed.formatted()) / \(items.count.formatted())",
+                details: detail.map { [$0] } ?? [],
+                completedAt: status == .completed ? eventDate(value) : nil
+            ))])
+        case "turn/end":
+            let turn = data[external: "turn"]?.integerValue ?? currentTurn ?? 0
+            let reasonData = data[external: "reason"] ?? .object(["kind": .string("completed")])
+            let reason = reasonData[external: "kind"]?.stringValue
+                ?? reasonData.stringValue
+                ?? "completed"
+            currentStep = nil
+            if ["aborted", "cancelled", "canceled"].contains(reason) {
+                return ExternalAgentProtocolOutput(events: [
+                    .trace(turnEndTrace(
+                        turn: turn,
+                        summary: String.l10n("agent.workspace.status.cancelled"),
+                        status: .cancelled,
+                        reasonData: reasonData,
+                        value: value
+                    )),
+                    .cancelled,
+                ], isTerminal: true)
+            }
+            if ["error", "failed", "interrupted"].contains(reason) {
+                let message = reasonData[external: "error"]?[external: "message"]?.stringValue
+                    ?? (reason == "interrupted"
+                        ? String.l10n("agent.workspace.trace.deepSeekInterrupted")
+                        : String.l10n("agent.workspace.status.failed"))
                 return ExternalAgentProtocolOutput(
                     events: [
-                        .trace(ExternalAgentTraceEvent(
-                            id: data[external: "id"]?.stringValue ?? "turn-error:\(UUID().uuidString)",
-                            kind: .error,
-                            status: .failed,
-                            title: String.l10n("error.loadFailed"),
+                        .trace(turnEndTrace(
+                            turn: turn,
                             summary: message,
-                            details: [.init(
-                                label: String.l10n("error.loadFailed"),
-                                value: message,
-                                format: .error
-                            )],
-                            completedAt: Date()
+                            status: .failed,
+                            reasonData: reasonData,
+                            value: value
                         )),
                         .failed(message),
                     ],
                     isTerminal: true
                 )
             }
-            return ExternalAgentProtocolOutput()
-        case "turn/retry", "model/retry":
+            if reason == "blocked" {
+                return ExternalAgentProtocolOutput(events: [.trace(turnEndTrace(
+                    turn: turn,
+                    summary: String.l10n("agent.workspace.trace.deepSeekBlocked"),
+                    status: .waiting,
+                    reasonData: reasonData,
+                    value: value
+                ))])
+            }
+            if reason == "max-tokens" {
+                return ExternalAgentProtocolOutput(events: [.trace(turnEndTrace(
+                    turn: turn,
+                    summary: String.l10n("agent.workspace.trace.deepSeekMaxTokens"),
+                    status: .completed,
+                    reasonData: reasonData,
+                    value: value,
+                    kind: .warning
+                ))])
+            }
+            return ExternalAgentProtocolOutput(events: [.trace(turnEndTrace(
+                turn: turn,
+                summary: reason == "completed"
+                    ? String.l10n("agent.workspace.status.completed")
+                    : reason,
+                status: .completed,
+                reasonData: reasonData,
+                value: value
+            ))])
+        case "turn/retry", "model/retry", "llm/retry":
             let message = data[external: "message"]?.stringValue
                 ?? data[external: "error"]?[external: "message"]?.stringValue
                 ?? type
@@ -359,22 +568,233 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
                 details: [.init(label: String.l10n("error.loadFailed"), value: message, format: .error)],
                 attempt: attempt
             ))])
-        default:
-            // Harness 的事件集合会随版本演进。未知事件不能继续静默吞掉，否则 UI 又会
-            // 退回一套固定阶段；只投影类型、状态和 message，不保存整个协议 data。
-            let eventID = data[external: "id"]?.stringValue
-                ?? data[external: "eventId"]?.stringValue
-                ?? "\(type):\(UUID().uuidString)"
-            let summary = data[external: "message"]?.stringValue
-                ?? data[external: "status"]?.stringValue
+        case "compaction/start":
+            let id = Self.nonBlank(data[external: "compactionId"]?.stringValue)
+                ?? eventIdentifier(type: type, data: data, value: value)
+            activeCompactionID = id
             return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
-                id: eventID,
-                kind: .unknown,
-                status: .completed,
-                title: type,
-                summary: summary,
-                completedAt: Date()
+                id: "compaction:\(id)",
+                parentID: currentTurn.map(turnTraceID),
+                kind: .compaction,
+                status: .running,
+                title: String.l10n("agent.workspace.trace.kind.contextCompaction"),
+                startedAt: eventDate(value)
             ))])
+        case "compaction/summary":
+            let id = Self.nonBlank(data[external: "compactionId"]?.stringValue)
+                ?? activeCompactionID
+                ?? eventIdentifier(type: type, data: data, value: value)
+            activeCompactionID = id
+            let summary = contentText(in: data[external: "summary"] ?? .array([]))
+            var details: [AgentTraceDetail] = []
+            if let summary = Self.nonBlank(summary) {
+                details.append(.init(
+                    label: String.l10n("agent.workspace.trace.summary"),
+                    value: summary,
+                    format: .markdown
+                ))
+            }
+            let metadata = data.removingExternalKeys(["summary", "rawOutput", "system", "tools"])
+            if let detail = ExternalAgentTracePayload.detail(
+                label: String.l10n("agent.workspace.trace.eventData"),
+                value: metadata
+            ) {
+                details.append(detail)
+            }
+            compactionDetailsByID[id] = details
+            return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+                id: "compaction:\(id)",
+                parentID: currentTurn.map(turnTraceID),
+                kind: .compaction,
+                status: .running,
+                title: String.l10n("agent.workspace.trace.kind.contextCompaction"),
+                summary: Self.summary(from: summary),
+                details: details
+            ))])
+        case "compaction/end":
+            let id = Self.nonBlank(data[external: "compactionId"]?.stringValue)
+                ?? activeCompactionID
+                ?? eventIdentifier(type: type, data: data, value: value)
+            activeCompactionID = nil
+            let error = data[external: "error"]?[external: "message"]?.stringValue
+                ?? data[external: "error"]?.stringValue
+            var details = compactionDetailsByID.removeValue(forKey: id) ?? []
+            if let error {
+                details.append(.init(
+                    label: String.l10n("agent.workspace.trace.error"),
+                    value: error,
+                    format: .error
+                ))
+            }
+            return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+                id: "compaction:\(id)",
+                parentID: currentTurn.map(turnTraceID),
+                kind: .compaction,
+                status: error == nil ? .completed : .failed,
+                title: String.l10n("agent.workspace.trace.kind.contextCompaction"),
+                summary: error,
+                details: details,
+                completedAt: eventDate(value)
+            ))])
+        case "session/title":
+            let title = data[external: "title"]?.stringValue
+                ?? data[external: "message"]?.stringValue
+                ?? type
+            return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+                id: eventIdentifier(type: type, data: data, value: value),
+                kind: .lifecycle,
+                status: .completed,
+                title: title,
+                completedAt: eventDate(value)
+            ))])
+        case "agent/inbox/spliced", "session/end-seed":
+            return genericTrace(type: type, data: data, value: value, kind: .lifecycle)
+        case let hookType where hookType.hasPrefix("hook/"):
+            return genericTrace(type: type, data: data, value: value, kind: .lifecycle)
+        default:
+            // SessionEventMap 允许插件 declaration merging。未知类型是合法扩展，必须保留
+            // 有界、脱敏后的业务 data，不能继续生成一个无法展开的空标题行。
+            return genericTrace(type: type, data: data, value: value)
+        }
+    }
+
+    private var currentStepTraceID: String? {
+        guard let currentTurn, let currentStep else { return nil }
+        return stepTraceID(turn: currentTurn, step: currentStep)
+    }
+
+    private func turnTraceID(_ turn: Int) -> String { "turn:\(turn)" }
+
+    private func stepTraceID(turn: Int, step: Int) -> String { "turn:\(turn):step:\(step)" }
+
+    private func stepCorrelationID(prefix: String) -> String {
+        if let currentTurn, let currentStep { return "\(prefix):\(currentTurn):\(currentStep)" }
+        return "\(prefix):unknown"
+    }
+
+    private func requestTrace(
+        idPrefix: String,
+        detailLabel: String,
+        payload: AgentJSONValue,
+        summary: String?,
+        value: AgentJSONValue?
+    ) -> ExternalAgentProtocolOutput {
+        let id = stepCorrelationID(prefix: idPrefix)
+        let detail = ExternalAgentTracePayload.detail(label: detailLabel, value: payload)
+        var details = requestDetailsByID[id] ?? []
+        if let detail {
+            details.removeAll { $0.label == detail.label }
+            details.append(detail)
+            requestDetailsByID[id] = details
+        }
+        return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+            id: id,
+            parentID: currentStepTraceID,
+            kind: .request,
+            status: .completed,
+            title: String.l10n("agent.workspace.trace.kind.request"),
+            summary: summary,
+            details: details,
+            completedAt: eventDate(value)
+        ))])
+    }
+
+    private func turnEndTrace(
+        turn: Int,
+        summary: String,
+        status: AgentTraceStatus,
+        reasonData: AgentJSONValue,
+        value: AgentJSONValue?,
+        kind: AgentTraceKind? = nil
+    ) -> ExternalAgentTraceEvent {
+        var details = [AgentTraceDetail(
+            label: String.l10n("agent.workspace.trace.reason"),
+            value: summary,
+            format: status == .failed ? .error : .text
+        )]
+        if let detail = ExternalAgentTracePayload.detail(
+            label: String.l10n("agent.workspace.trace.eventData"),
+            value: reasonData
+        ) {
+            details.append(detail)
+        }
+        return ExternalAgentTraceEvent(
+            id: turnTraceID(turn),
+            kind: kind ?? (status == .failed ? .error : .lifecycle),
+            status: status,
+            title: "\(String.l10n("agent.workspace.trace.kind.turn")) \(turn + 1)",
+            summary: summary,
+            details: details,
+            completedAt: eventDate(value)
+        )
+    }
+
+    private func genericTrace(
+        type: String,
+        data: AgentJSONValue,
+        value: AgentJSONValue?,
+        kind: AgentTraceKind = .unknown
+    ) -> ExternalAgentProtocolOutput {
+        let detail = ExternalAgentTracePayload.detail(
+            label: String.l10n("agent.workspace.trace.eventData"),
+            value: data
+        )
+        let summary = data[external: "message"]?.stringValue
+            ?? data[external: "status"]?.stringValue
+        let status = Self.traceStatus(from: data[external: "status"]?.stringValue)
+        return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+            id: eventIdentifier(type: type, data: data, value: value),
+            parentID: currentStepTraceID,
+            kind: kind,
+            status: status,
+            title: type,
+            summary: summary,
+            details: detail.map { [$0] } ?? [],
+            completedAt: [.pending, .running, .waiting].contains(status) ? nil : eventDate(value)
+        ))])
+    }
+
+    private func eventIdentifier(
+        type: String,
+        data: AgentJSONValue,
+        value: AgentJSONValue?
+    ) -> String {
+        Self.nonBlank(data[external: "id"]?.stringValue)
+            ?? Self.nonBlank(data[external: "eventId"]?.stringValue)
+            ?? value?[external: "seq"]?.integerValue.map { "\(type):\($0)" }
+            ?? stepCorrelationID(prefix: type)
+    }
+
+    private func eventDate(_ value: AgentJSONValue?) -> Date {
+        guard let milliseconds = value?[external: "time"]?.externalNumber else { return Date() }
+        return Date(timeIntervalSince1970: milliseconds / 1_000)
+    }
+
+    private func contentText(in value: AgentJSONValue, matching type: String? = nil) -> String {
+        if let text = value.stringValue { return text }
+        let blocks = value[external: "content"]?.externalArray ?? value.externalArray ?? []
+        return blocks.compactMap { block -> String? in
+            if let type, block[external: "type"]?.stringValue != type { return nil }
+            return block[external: "text"]?.stringValue
+                ?? block[external: "content"]?.stringValue
+        }.joined(separator: "\n\n")
+    }
+
+    private static func summary(from value: String?) -> String? {
+        guard let value = nonBlank(value) else { return nil }
+        let firstLine = value.split(whereSeparator: \.isNewline).first.map(String.init) ?? value
+        return String(firstLine.prefix(240))
+    }
+
+    private static func traceStatus(from value: String?) -> AgentTraceStatus {
+        switch value?.lowercased() {
+        case "pending": return .pending
+        case "running", "working", "in_progress": return .running
+        case "waiting": return .waiting
+        case "failed", "error": return .failed
+        case "cancelled", "canceled", "interrupted": return .cancelled
+        case "skipped": return .skipped
+        default: return .completed
         }
     }
 

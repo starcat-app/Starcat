@@ -41,6 +41,12 @@ struct AgentMessageTimelineView: View {
             || viewModel.traceEvents.contains { [.failed, .waiting].contains($0.status) }
     }
 
+    /// Runtime Trace 取代旧过程区后，审批仍必须保留交互入口。这里只复用旧投影中的
+    /// approval section，避免把 tool/message 再展示一遍，也不伪造 Runtime 事件。
+    private var runtimeApprovalSections: [AgentProcessSection] {
+        presentation.processSections.filter { $0.kind == .approval }
+    }
+
     private var runIdentity: String {
         viewModel.messages.first?.runID.uuidString
             ?? viewModel.selectedHistoryRunID
@@ -233,9 +239,9 @@ struct AgentMessageTimelineView: View {
     private var runtimeTraceSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
-                withAnimation(.easeInOut(duration: 0.16)) {
-                    processExpandedOverride = !isProcessExpanded
-                }
+                // Trace 数量和详情高度由 Runtime 决定。整体高度动画会让 SwiftUI 在每帧
+                // 重算整条时间线，大型 Run 上会复现展开卡死，因此这里使用即时切换。
+                processExpandedOverride = !isProcessExpanded
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: isProcessExpanded ? "chevron.down" : "chevron.right")
@@ -244,7 +250,7 @@ struct AgentMessageTimelineView: View {
                     Text("agent.workspace.timeline.execution")
                         .font(interfaceScale.font(.caption, weight: .semibold))
                         .foregroundStyle(.primary)
-                    Text("· \(viewModel.traceEvents.count.formatted())")
+                    Text("· \((viewModel.traceEvents.count + runtimeApprovalSections.count).formatted())")
                         .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -264,6 +270,9 @@ struct AgentMessageTimelineView: View {
                 VStack(alignment: .leading, spacing: 9) {
                     ForEach(viewModel.traceEvents) { event in
                         traceRow(event)
+                    }
+                    ForEach(runtimeApprovalSections) { section in
+                        processRow(section)
                     }
                 }
                 .padding(.leading, 20)
@@ -666,11 +675,13 @@ struct AgentMessageTimelineView: View {
     }
 
     private func auditText(_ text: String) -> some View {
-        Text(text)
+        Text(AgentTracePresentationBudget.bounded(
+            text,
+            limit: AgentTracePresentationBudget.codeCharacters
+        ))
             .font(interfaceScale.font(.code, design: .monospaced))
             .foregroundStyle(.primary)
             .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
@@ -760,14 +771,14 @@ struct AgentMessageTimelineView: View {
     /// 自动展开只决定首次展示；用户点击后写入显式 expanded/collapsed 集合，后续 delta
     /// 更新同一事件时不能夺回控制权，避免流式状态刷新让折叠行反复跳开。
     private func toggleTrace(_ event: AgentTraceEvent) {
-        withAnimation(.easeInOut(duration: 0.16)) {
-            if isTraceExpanded(event) {
-                expandedItemIDs.remove(event.id)
-                collapsedItemIDs.insert(event.id)
-            } else {
-                collapsedItemIDs.remove(event.id)
-                expandedItemIDs.insert(event.id)
-            }
+        // Trace 明细可能包含 Markdown、JSON 和表格。高度动画会在每一帧同步重算整段
+        // `sizeThatFits`，大 payload 下会阻塞主线程；详情切换因此保持无动画的确定性更新。
+        if isTraceExpanded(event) {
+            expandedItemIDs.remove(event.id)
+            collapsedItemIDs.insert(event.id)
+        } else {
+            collapsedItemIDs.remove(event.id)
+            expandedItemIDs.insert(event.id)
         }
     }
 
@@ -796,7 +807,10 @@ struct AgentMessageTimelineView: View {
     private func traceKindIcon(_ kind: AgentTraceKind) -> String {
         switch kind {
         case .lifecycle: return "bolt.horizontal"
+        case .message: return "text.bubble"
         case .plan: return "list.bullet.clipboard"
+        case .todo: return "checklist"
+        case .request: return "arrow.up.doc"
         case .reasoningSummary: return "brain"
         case .commentary: return "text.bubble"
         case .tool: return "wrench.and.screwdriver"

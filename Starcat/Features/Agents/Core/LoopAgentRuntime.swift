@@ -1163,7 +1163,7 @@ struct LoopAgentRuntime: AgentRuntime {
                     kind: .tool,
                     status: .running,
                     title: call.name,
-                    summary: "Tool call",
+                    summary: String.l10n("agent.workspace.trace.tool.started"),
                     details: [.init(
                         label: String.l10n("agent.workspace.trace.input"),
                         value: call.rawInput ?? (try? call.input.jsonString()) ?? "{}",
@@ -1182,7 +1182,10 @@ struct LoopAgentRuntime: AgentRuntime {
                 details.append(contentsOf: result.attempts.map { attempt in
                     let error = attempt.errorSummary.map { ": \($0)" } ?? ""
                     return AgentTraceDetail(
-                        label: "Attempt \(attempt.number)",
+                        label: String.localizedStringWithFormat(
+                            String.l10n("agent.workspace.trace.attemptFormat"),
+                            attempt.number
+                        ),
                         value: "\(attempt.status.localizedTitle) · \(attempt.elapsedMilliseconds) ms\(error)",
                         format: attempt.errorSummary == nil ? .text : .error
                     )

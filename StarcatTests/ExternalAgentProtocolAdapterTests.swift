@@ -34,6 +34,27 @@ private let shouldRunDeepSeekIntegration: Bool = {
 @Suite("External Agent Protocol Adapters")
 struct ExternalAgentProtocolAdapterTests {
 
+    @Test("未知 Runtime 事件仅保留有界脱敏业务数据")
+    func externalTracePayloadRedactsSensitiveFields() throws {
+        let payload = ExternalAgentTracePayload.sanitized(.object([
+            "apiKey": .string("fixture-api-key"),
+            "env": .object(["HOME": .string("/private/home")]),
+            "token": .string("fixture-token"),
+            "tools": .array([.object(["name": .string("private-tool")])]),
+            "tokenUsage": .object(["inputTokens": .number(12)]),
+            "result": .string("visible result"),
+        ]))
+        let json = try payload.jsonString()
+
+        #expect(json.contains("visible result"))
+        #expect(json.contains("inputTokens"))
+        #expect(json.contains("<redacted>"))
+        #expect(!json.contains("fixture-api-key"))
+        #expect(!json.contains("fixture-token"))
+        #expect(!json.contains("private-tool"))
+        #expect(!json.contains("/private/home"))
+    }
+
     @Test("Codex adapter 完成 initialize、thread 与 turn 握手")
     func codexHandshakeAndDeltaMapping() throws {
         let request = fixtureRequest()
@@ -649,6 +670,107 @@ struct ExternalAgentProtocolAdapterTests {
         })
     }
 
+    @Test("Codex adapter 聚合执行增量、Hook 与未知执行事件")
+    func codexRuntimeProgressEventMapping() throws {
+        let adapter = CodexAppServerAdapter(executableURL: URL(fileURLWithPath: "/usr/bin/true"))
+        let driver = try adapter.makeDriver(request: fixtureRequest())
+
+        _ = try driver.receive(notification(
+            method: "item/started",
+            params: .object(["item": .object([
+                "id": .string("command-1"),
+                "type": .string("commandExecution"),
+                "command": .string("git status --short"),
+                "status": .string("inProgress"),
+            ])])
+        ))
+        _ = try driver.receive(notification(
+            method: "item/commandExecution/outputDelta",
+            params: .object(["itemId": .string("command-1"), "delta": .string("M file\n")])
+        ))
+        let command = try driver.receive(notification(
+            method: "item/commandExecution/outputDelta",
+            params: .object(["itemId": .string("command-1"), "delta": .string("?? new\n")])
+        ))
+        #expect(command.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.id == "command-1"
+                && trace.kind == .command
+                && trace.status == .running
+                && trace.details.first?.value == "M file\n?? new\n"
+        })
+        let completedCommand = try driver.receive(notification(
+            method: "item/completed",
+            params: .object(["item": .object([
+                "id": .string("command-1"),
+                "type": .string("commandExecution"),
+                "command": .string("git status --short"),
+                "status": .string("completed"),
+            ])])
+        ))
+        #expect(completedCommand.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.id == "command-1"
+                && trace.status == .completed
+                && trace.details.first?.value == "M file\n?? new\n"
+        })
+
+        let hook = try driver.receive(notification(
+            method: "hook/completed",
+            params: .object(["run": .object([
+                "id": .string("hook-1"),
+                "eventName": .string("afterToolUse"),
+                "status": .string("completed"),
+                "sourcePath": .string("/private/config/hooks.json"),
+                "entries": .array([.object(["text": .string("formatted")])]),
+            ])])
+        ))
+        #expect(hook.events.contains { event in
+            guard case .trace(let trace) = event,
+                  let payload = trace.details.first?.value
+            else { return false }
+            return trace.id == "hook:hook-1"
+                && trace.status == .completed
+                && payload.contains("formatted")
+                && !payload.contains("/private/config/hooks.json")
+        })
+
+        let unknown = try driver.receive(notification(
+            method: "item/providerExtension/progress",
+            params: .object([
+                "itemId": .string("extension-1"),
+                "result": .string("visible progress"),
+                "apiKey": .string("fixture-secret"),
+            ])
+        ))
+        #expect(unknown.events.contains { event in
+            guard case .trace(let trace) = event,
+                  let payload = trace.details.first?.value
+            else { return false }
+            return trace.kind == .unknown
+                && payload.contains("visible progress")
+                && payload.contains("<redacted>")
+                && !payload.contains("fixture-secret")
+        })
+
+        let imageGeneration = try driver.receive(notification(
+            method: "item/completed",
+            params: .object(["item": .object([
+                "id": .string("image-1"),
+                "type": .string("imageGeneration"),
+                "status": .string("completed"),
+                "result": .string("generated-image"),
+                "savedPath": .string("/tmp/generated.png"),
+            ])])
+        ))
+        #expect(imageGeneration.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.kind == .tool
+                && trace.title == String.l10n("agent.workspace.trace.kind.imageGeneration")
+                && trace.details.first?.value.contains("generated-image") == true
+        })
+    }
+
     @Test("DeepSeek adapter 严格过滤 session 并映射 assistant message")
     func deepSeekSessionFilteringAndMessageMapping() throws {
         #if arch(arm64)
@@ -796,6 +918,221 @@ struct ExternalAgentProtocolAdapterTests {
         #endif
     }
 
+    @Test("DeepSeek adapter 保留步骤、请求、任务与可见 reasoning 内容")
+    func deepSeekProjectsDurableSessionEvents() throws {
+        #if arch(arm64)
+        let fixture = try DeepSeekCarrierFixture()
+        defer { fixture.cleanup() }
+        let request = fixtureRequest()
+        let adapter = try DeepSeekHarnessAdapter(
+            executableURL: fixture.executableURL,
+            provider: "deepseek-official",
+            modelOverride: "deepseek-test",
+            cordisConfigURL: fixture.configURL,
+            environment: [:]
+        )
+        let driver = try adapter.makeDriver(request: request)
+        _ = try driver.receive(response(
+            id: 1,
+            result: .object(["serverInfo": .object(["name": .string("deepseek-harness-sdk-runtime")])])
+        ))
+        let sessionID = request.runID.uuidString.lowercased()
+
+        let turn = try driver.receive(deepSeekEvent(
+            sessionID: sessionID,
+            type: "turn/start",
+            seq: 1,
+            data: .object(["turn": .number(0)])
+        ))
+        #expect(turn.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.id == "turn:0" && trace.status == .running
+        })
+
+        let step = try driver.receive(deepSeekEvent(
+            sessionID: sessionID,
+            type: "step/start",
+            seq: 2,
+            data: .object(["turn": .number(0), "step": .number(0)])
+        ))
+        #expect(step.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.id == "turn:0:step:0"
+                && trace.parentID == "turn:0"
+                && !trace.details.isEmpty
+        })
+
+        let requestHeader = try driver.receive(deepSeekEvent(
+            sessionID: sessionID,
+            type: "request/header",
+            seq: 3,
+            data: .object([
+                "reason": .string("initial"),
+                "header": .object([
+                    "config": .object([
+                        "provider": .string("deepseek-official"),
+                        "model": .string("deepseek-v4-flash"),
+                        "reasoningEffort": .string("high"),
+                    ]),
+                    "system": .string("private system prompt"),
+                    "tools": .array([.object(["apiKey": .string("fixture-secret")])]),
+                ]),
+            ])
+        ))
+        #expect(requestHeader.events.contains { event in
+            guard case .trace(let trace) = event,
+                  trace.kind == .request,
+                  let payload = trace.details.first?.value
+            else { return false }
+            return trace.id == "request:0:0"
+                && payload.contains("deepseek-v4-flash")
+                && !payload.contains("private system prompt")
+                && !payload.contains("fixture-secret")
+        })
+
+        let requestContext = try driver.receive(deepSeekEvent(
+            sessionID: sessionID,
+            type: "request/context",
+            seq: 4,
+            data: .object([
+                "provider": .string("deepseek-official"),
+                "model": .string("deepseek-v4-flash"),
+                "contextWindow": .number(131_072),
+            ])
+        ))
+        #expect(requestContext.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.id == "request:0:0" && trace.details.count == 2
+        })
+
+        let assistant = try driver.receive(deepSeekEvent(
+            sessionID: sessionID,
+            type: "assistant/message",
+            seq: 5,
+            data: .object([
+                "turn": .number(0),
+                "step": .number(0),
+                "message": .object([
+                    "id": .string("assistant-1"),
+                    "content": .array([
+                        .object(["type": .string("reasoning"), "text": .string("先核对仓库范围")]),
+                        .object(["type": .string("text"), "text": .string("已完成")]),
+                    ]),
+                ]),
+            ])
+        ))
+        #expect(assistant.events.contains(.assistantMessage("已完成", usage: nil)))
+        #expect(assistant.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.id == "reasoning:assistant-1"
+                && trace.kind == .reasoningSummary
+                && trace.summary == "先核对仓库范围"
+                && trace.details.first?.format == .markdown
+        })
+
+        let todos = try driver.receive(deepSeekEvent(
+            sessionID: sessionID,
+            type: "todo/write",
+            seq: 6,
+            data: .object(["todos": .array([
+                .object(["content": .string("读取仓库"), "status": .string("completed")]),
+                .object(["content": .string("生成总结"), "status": .string("in_progress")]),
+            ])])
+        ))
+        #expect(todos.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.id == "todo" && trace.kind == .todo && trace.status == .running
+        })
+
+        let unknown = try driver.receive(deepSeekEvent(
+            sessionID: sessionID,
+            type: "plugin/custom",
+            seq: 7,
+            data: .object([
+                "status": .string("working"),
+                "apiKey": .string("fixture-secret"),
+                "result": .string("visible result"),
+            ])
+        ))
+        #expect(unknown.events.contains { event in
+            guard case .trace(let trace) = event,
+                  let payload = trace.details.first?.value
+            else { return false }
+            return trace.kind == .unknown
+                && trace.status == .running
+                && payload.contains("visible result")
+                && payload.contains("<redacted>")
+                && !payload.contains("fixture-secret")
+        })
+
+        _ = try driver.receive(deepSeekEvent(
+            sessionID: sessionID,
+            type: "compaction/start",
+            seq: 8,
+            data: .object(["compactionId": .string("compact-1")])
+        ))
+        _ = try driver.receive(deepSeekEvent(
+            sessionID: sessionID,
+            type: "compaction/summary",
+            seq: 9,
+            data: .object([
+                "compactionId": .string("compact-1"),
+                "summary": .array([.object([
+                    "type": .string("text"),
+                    "text": .string("保留仓库范围与工具结果"),
+                ])]),
+                "rawOutput": .string("private compaction transcript"),
+            ])
+        ))
+        let compactionEnd = try driver.receive(deepSeekEvent(
+            sessionID: sessionID,
+            type: "compaction/end",
+            seq: 10,
+            data: .object(["compactionId": .string("compact-1")])
+        ))
+        #expect(compactionEnd.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.id == "compaction:compact-1"
+                && trace.status == .completed
+                && trace.details.contains { $0.value.contains("保留仓库范围与工具结果") }
+                && !trace.details.contains { $0.value.contains("private compaction transcript") }
+        })
+
+        let blocked = try driver.receive(deepSeekEvent(
+            sessionID: sessionID,
+            type: "turn/end",
+            seq: 11,
+            data: .object([
+                "turn": .number(0),
+                "reason": .object(["kind": .string("blocked")]),
+            ])
+        ))
+        #expect(!blocked.isTerminal)
+        #expect(blocked.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.status == .waiting
+                && trace.summary == String.l10n("agent.workspace.trace.deepSeekBlocked")
+        })
+
+        let maxTokens = try driver.receive(deepSeekEvent(
+            sessionID: sessionID,
+            type: "turn/end",
+            seq: 12,
+            data: .object([
+                "turn": .number(0),
+                "reason": .object(["kind": .string("max-tokens")]),
+            ])
+        ))
+        #expect(maxTokens.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.kind == .warning
+                && trace.summary == String.l10n("agent.workspace.trace.deepSeekMaxTokens")
+        })
+        #else
+        #expect(Bool(true))
+        #endif
+    }
+
     @Test("DeepSeek 每轮 Cordis 配置通过环境变量接入临时 Starcat MCP")
     func deepSeekRunCordisInjectsTransientMCPWithoutPersistingToken() throws {
         #if arch(arm64)
@@ -934,6 +1271,26 @@ struct ExternalAgentProtocolAdapterTests {
                 ])
             ]),
         ])
+    }
+
+    private func deepSeekEvent(
+        sessionID: String,
+        type: String,
+        seq: Int,
+        data: AgentJSONValue
+    ) -> AgentJSONValue {
+        notification(
+            method: "session.event",
+            params: .object([
+                "sessionId": .string(sessionID),
+                "event": .object([
+                    "type": .string(type),
+                    "seq": .number(Double(seq)),
+                    "time": .number(1_777_000_000_000 + Double(seq)),
+                    "data": data,
+                ]),
+            ])
+        )
     }
 }
 
