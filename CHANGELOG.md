@@ -9,6 +9,8 @@ Release notes for the Mac App Store edition of Starcat.
 - In-app repository documents: Enable in Settings to open same-repo Markdown links in a Starcat window; the default remains the browser, and Command-click always uses the browser.
 - README video playback: Play supported GitHub README videos inline with native controls; playback requires an explicit action and stops when switching repositories or closing the detail view. Unsupported sources continue to open in the browser.
 - Repository security advisories: Review the five latest published advisories in Insights with severity, GHSA / CVE identifiers, publication date, and publisher, then open an advisory or the complete list on GitHub.
+- Insights release assets: See the latest release’s first 3 attachments under Release Cadence, expand to view all, then copy links or download them.
+  ![20260823013144_YdoureTM](https://cdn.dong4j.site/source/image/20260823013144_YdoureTM.png)
 - Notification Issue / PR status: Open, Closed, and Merged appear under the timestamp and on the detail header; closing or reopening a thread updates both.
 - Notification library badges and filters: Star, Unstar, and Fork rows show In Library or Not in Library. Filter by Open, Closed, Merged, In Library, or Not in Library.
 - Paste images in comments: Paste a screenshot or image into an Issue / PR comment to upload it and insert the link; Preview shows the image.
