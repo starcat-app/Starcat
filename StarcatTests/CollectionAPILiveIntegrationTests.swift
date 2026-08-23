@@ -32,11 +32,14 @@ struct CollectionAPILiveIntegrationTests {
 
         try await upload(
             repositoryIDs: [1, 2, 3, 4],
+            starredAtOverrides: [3: "2025-07-01T00:00:00Z"],
             accountID: 42,
             using: client
         )
         try await upload(
-            repositoryIDs: [1, 2, 4],
+            // 与第一名主体的训练集合保持差异，保证 SVD 矩阵存在列方差；repo 3
+            // 在这里属于训练窗口，可作为第一名主体未来验证目标的协同信号。
+            repositoryIDs: [1, 3, 4],
             accountID: 43,
             using: client
         )
@@ -44,13 +47,16 @@ struct CollectionAPILiveIntegrationTests {
 
     private func upload(
         repositoryIDs: [Int64],
+        starredAtOverrides: [Int64: String] = [:],
         accountID: Int64,
         using client: CollectionAPIClient
     ) async throws {
         let repositories = repositoryIDs.map { id in
             makeRepo(
                 id: id,
-                starredAt: id == 4 ? nil : "2025-0\(id)-01T00:00:00Z"
+                starredAt: id == 4
+                    ? nil
+                    : starredAtOverrides[id] ?? "2025-0\(id)-01T00:00:00Z"
             )
         }
         let snapshot = try RecommendationSnapshotBuilder.build(

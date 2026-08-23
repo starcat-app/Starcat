@@ -355,7 +355,7 @@ Connector 负责：
 
 - TLS；请求体、chunk、repo 数和时间范围硬上限。
 - 公共 App API Key 仅作为客户端来源门槛，不作为用户身份。
-- IP 和 participant_key 只用于短期限流，不进入训练产物。
+- IP 每分钟最多 600 次公网写请求，participant_key 每分钟最多 60 次 create；两者只在 Collection 单进程内存中保留一个窗口，不写日志、数据库或训练产物。
 - Collector 日志禁止记录请求 body、participant ID 和 Star 集合。
 - Admin 导出接口使用独立 Key，不能由客户端公共 Key 调用。
 - Trainer 继续过滤 private、archived、disabled 和 metadata 不完整的仓库。

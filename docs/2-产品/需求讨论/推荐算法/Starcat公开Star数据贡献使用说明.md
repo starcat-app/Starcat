@@ -89,6 +89,8 @@ uv run starcat-recsys bundle query \
 该配置使用真实 Collection NDJSON 导出，并用本地公开 metadata fixture 补齐 repo 1～4，
 不访问 GitHub API。管道仍完整执行 raw、canonical、dataset、Popular、SVD、co-star、
 ablation、离线评估、ServingBundle 发布、checksum/SQLite 校验和只读查询。
+验收时 `bundle verify` 的 metrics 必须满足 `evaluated_subjects > 0`；只有训练产物而评估主体为
+0 不能视为完整 E2E 通过。
 
 Registry 版本不可覆盖。再次运行时复制配置并同时修改 `run_id`、`workspace`、`registry`
 与 `publish.model_version`。
