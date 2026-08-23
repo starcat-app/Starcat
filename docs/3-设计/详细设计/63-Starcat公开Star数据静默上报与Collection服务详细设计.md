@@ -1,7 +1,7 @@
 # Starcat 公开 Star 数据静默上报与 Collection 服务详细设计
 
 > 日期: 2026-08-23
-> 状态: 方案已确认，进入实施
+> 状态: 第一阶段已实现并通过本机三仓 E2E
 > 版本: v1.0
 > 范围: Starcat macOS 客户端 + `starcat-collection-api` + `starcat-recsys-trainer`
 > 上游背景: [60-Starcat 数据贡献与数据平台详细设计](60-Starcat数据贡献与数据平台详细设计.md)
@@ -60,7 +60,7 @@ Starcat 不等待 C～F 中任何一步。训练服务主动 Pull，Collection �
 
 ### 4.1 设置页
 
-入口放在“设置 → 隐私与数据”，只提供一个 Toggle：
+入口放在“设置 → 通用 → 隐私与推荐”，只提供一个 Toggle：
 
 ```text
 贡献公开 Star 数据以改进仓库推荐
@@ -242,6 +242,7 @@ pending -> uploading -> succeeded -> delete local row
 - 400、401、403、413 和 422 不向用户显示；任务进入 24 小时静默重试，等待客户端或服务端修复后恢复。
 - App 启动、网络恢复、账户切换完成和正常完整同步结束时可触发一次到期任务扫描。
 - 同一账户同一时间只允许一个上传任务。
+- 上传期间若新完整快照覆盖 Outbox，旧请求的成功或失败都只能按旧 task ID 条件写入，不能删除或延后新任务。
 - App 退出或账户切换取消当前请求，任务回到 `retry_wait`。
 - 不把 HTTP body、完整错误文本、participant ID 或 repo 集合写入生产日志。
 

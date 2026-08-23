@@ -89,6 +89,44 @@ struct DataContributionCoordinatorTests {
         #expect(try await outboxAttemptCount(database) == 1)
     }
 
+    @Test("旧请求失败不得把上传期间生成的新快照延后")
+    func replacedSnapshotIsNotDeferredByOldFailure() async throws {
+        let database = try InMemoryDatabaseManager(userId: Self.accountID)
+        try await database.insertRepoFixture(id: 103)
+        let dataRepository = DataContributionRepository(
+            database: database,
+            participantIDProvider: { Self.participantID }
+        )
+        let uploader = ReplacingSnapshotUploader()
+        let coordinator = DataContributionCoordinator(
+            repository: dataRepository,
+            repoRepository: GRDBRepoRepository(database: database),
+            uploader: uploader,
+            retryBaseDelay: 30,
+            jitterProvider: { 1 },
+            automaticallyScheduleRetry: false
+        )
+        await coordinator.activate(accountID: Self.accountID)
+        _ = try await coordinator.setEnabled(true, accountID: Self.accountID)
+
+        await coordinator.handleSuccessfulFullSync(
+            accountID: Self.accountID,
+            capturedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        try await waitUntil { await uploader.attemptCount == 1 }
+
+        // 第一次 HTTP 尚未结束时，下一轮完整同步以新 snapshot ID 覆盖单槽 Outbox。
+        await coordinator.handleSuccessfulFullSync(
+            accountID: Self.accountID,
+            capturedAt: Date(timeIntervalSince1970: 1_700_000_100)
+        )
+        await uploader.failFirstAttempt()
+
+        try await waitUntil { await uploader.attemptCount == 2 }
+        try await waitUntil { try await self.outboxCount(database) == 0 }
+        #expect(try await outboxCount(database) == 0)
+    }
+
     @Test("业务错误固定 24 小时，网络与 5xx 指数退避")
     func retryPolicy() {
         #expect(DataContributionCoordinator.retryDelay(
@@ -152,5 +190,25 @@ private actor RecordingCollectionUploader: CollectionSnapshotUploading {
             from: task.payload
         )
         if let error { throw error }
+    }
+}
+
+/// 固定制造“旧请求挂起 → 新快照覆盖 → 旧请求失败 → 新请求成功”的并发顺序。
+private actor ReplacingSnapshotUploader: CollectionSnapshotUploading {
+    private var firstAttemptContinuation: CheckedContinuation<Void, Never>?
+    private(set) var attemptCount = 0
+
+    func upload(task: DataContributionOutboxTask) async throws {
+        attemptCount += 1
+        guard attemptCount == 1 else { return }
+        await withCheckedContinuation { continuation in
+            firstAttemptContinuation = continuation
+        }
+        throw CollectionAPIError.httpStatus(500)
+    }
+
+    func failFirstAttempt() {
+        firstAttemptContinuation?.resume()
+        firstAttemptContinuation = nil
     }
 }

@@ -125,8 +125,10 @@ actor DataContributionCoordinator {
         defer { finishUploadScan(accountID: accountID) }
         guard activeAccountID == accountID else { return }
 
+        var attemptedTask: DataContributionOutboxTask?
         do {
             guard let task = try await repository.dueTask(accountID: accountID) else { return }
+            attemptedTask = task
             try Task.checkCancellation()
             try await uploader.upload(task: task)
             try Task.checkCancellation()
@@ -137,7 +139,8 @@ actor DataContributionCoordinator {
         } catch DataContributionRepositoryError.accountScopeChanged {
             // 数据库已切换；旧库中的任务保持原样，不能在新库里写重试状态。
         } catch {
-            await deferFailedTask(error: error, accountID: accountID)
+            guard let attemptedTask else { return }
+            await deferFailedTask(error: error, task: attemptedTask, accountID: accountID)
         }
     }
 
@@ -148,10 +151,13 @@ actor DataContributionCoordinator {
         kick()
     }
 
-    private func deferFailedTask(error: Error, accountID: Int64) async {
+    private func deferFailedTask(
+        error: Error,
+        task: DataContributionOutboxTask,
+        accountID: Int64
+    ) async {
         guard activeAccountID == accountID else { return }
         do {
-            guard let task = try await repository.dueTask(accountID: accountID) else { return }
             let nextAttempt = task.attemptCount + 1
             let delay = Self.retryDelay(
                 for: error,
@@ -160,13 +166,17 @@ actor DataContributionCoordinator {
                 jitter: jitterProvider()
             )
             let retryAt = Date().addingTimeInterval(delay)
-            try await repository.markRetry(
+            let didMarkRetry = try await repository.markRetry(
                 taskID: task.id,
                 accountID: accountID,
                 attemptCount: nextAttempt,
                 nextAttemptAt: retryAt
             )
-            scheduleRetry(at: retryAt, accountID: accountID)
+            // 上传期间的新完整快照可以覆盖单槽 Outbox。旧请求失败时只能延后它自己；
+            // UPDATE 未命中说明最新快照已经接管队列，应由 rescan 立即处理，不能被旧错误拖延。
+            if didMarkRetry {
+                scheduleRetry(at: retryAt, accountID: accountID)
+            }
         } catch {
             // 连写本地重试状态失败也不能冒泡；原任务仍在数据库中等待下次启动扫描。
         }

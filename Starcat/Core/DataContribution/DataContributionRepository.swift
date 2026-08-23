@@ -209,15 +209,16 @@ struct DataContributionRepository: Sendable {
         }
     }
 
+    @discardableResult
     func markRetry(
         taskID: String,
         accountID: Int64,
         attemptCount: Int,
         nextAttemptAt: Date,
         now: Date = Date()
-    ) async throws {
+    ) async throws -> Bool {
         try validateScope(accountID: accountID)
-        try await database.writer.write { db in
+        return try await database.writer.write { db in
             try db.execute(
                 sql: """
                     UPDATE data_contribution_outbox
@@ -233,6 +234,9 @@ struct DataContributionRepository: Sendable {
                     String(accountID),
                 ]
             )
+            // 单槽 Outbox 允许新快照覆盖旧任务；调用者必须知道旧 task ID 是否仍然有效，
+            // 才能决定是否为它安排重试定时器。
+            return db.changesCount == 1
         }
     }
 
