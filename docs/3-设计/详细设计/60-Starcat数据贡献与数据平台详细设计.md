@@ -6,6 +6,8 @@
 > 范围: Starcat macOS 客户端数据贡献 + 推荐训练入口 + Star History 观测入口
 > 下游设计: [Starcat 自研仓库推荐系统详细设计](61-Starcat自研仓库推荐系统详细设计.md) / [Starcat 自研星标历史服务详细设计](62-Starcat自研星标历史服务详细设计.md)
 
+> 2026-08-23 实施说明: 第一阶段公开 Star 快照上报已经按产品决定收口为独立、静默、无删除的 `starcat-collection-api` 链路，权威实施契约见 [63-Starcat 公开 Star 数据静默上报与 Collection 服务详细设计](63-Starcat公开Star数据静默上报与Collection服务详细设计.md)。本文保留两类数据贡献和 History 的后续总体规划；与 63 冲突的推荐贡献、删除、状态展示和 Gateway 描述不进入第一阶段代码。
+
 ## 1. 结论
 
 Starcat 后续增加一个默认关闭、用户主动开启的数据贡献能力，使用客户端已经同步到本地的公开 Star 数据，为自研仓库推荐和公开仓库 Star History 提供原始数据。该能力不是现有匿名遥测的扩展，必须有独立开关、独立隐私说明、独立撤回和删除入口。

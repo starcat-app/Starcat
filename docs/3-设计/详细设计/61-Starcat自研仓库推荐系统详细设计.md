@@ -1,20 +1,21 @@
 # Starcat 自研仓库推荐系统详细设计
 
 > 日期: 2026-08-22
-> 状态: 方案已确认，待数据贡献和训练基础设施实施
+> 状态: 方案已确认，数据贡献和训练基础设施实施中
 > 版本: v1.0
-> 范围: `starcat-recsys-trainer` + `starcat-recsys-api` + Starcat 现有推荐契约迁移
-> 客户端数据契约: [Starcat 数据贡献与数据平台详细设计](60-Starcat数据贡献与数据平台详细设计.md)
+> 范围: `starcat-collection-api` + `starcat-recsys-trainer` + `starcat-recsys-api` + Starcat 现有推荐契约迁移
+> 当前客户端数据契约: [Starcat 公开 Star 数据静默上报与 Collection 服务详细设计](63-Starcat公开Star数据静默上报与Collection服务详细设计.md)
 > 调研基线: `Puzer/github-repo-embeddings` commit `f6a2f836b63f1065b2a2efdee21e8485449923bc`；`Mubelotix/simrepo` commit `07c6ef1dcfe2fd96cc050ef91529b7f180a55288`
 
 ## 1. 结论
 
 Starcat 自研推荐采用“时间衰减 co-star + Metric Learning 行为向量 + 内容向量冷启动 + 元数据校正 + MMR 去重”的混合方案。SimRepo 继续作为迁移期外部基线和降级来源；Puzer 项目提供可复现的行为向量训练骨架。两者的思路互补，不直接复制任一实现。
 
-后端拆成两个独立服务：
+后端拆成三个独立服务：
 
-1. **`starcat-recsys-trainer`**：接收匿名快照、导入公开数据、清洗、构建特征、训练、离线评估并发布版本化推荐产物。
-2. **`starcat-recsys-api`**：只读已发布模型和 Serving DB，提供低延迟单仓、多仓和个性化推荐 API。
+1. **`starcat-collection-api`**：独立、静默接收经用户同意的匿名公开 Star 完整快照，只向训练系统提供内部导出。
+2. **`starcat-recsys-trainer`**：主动 Pull Collection 导出、导入公开数据、清洗、构建特征、训练、离线评估并发布版本化推荐产物。
+3. **`starcat-recsys-api`**：只读已发布模型和 Serving DB，提供低延迟单仓、多仓和个性化推荐 API。
 
 现有 `supports/starcat-recommend-api` 保留为 SimRepo 适配器和客户端旧入口。自研 API 达到质量门槛后，先在网关层保持现有客户端契约做 shadow/灰度，再删除 SimRepo Provider 和旧服务，禁止长期双轨。
 
@@ -80,10 +81,12 @@ SimRepo 的公开仓库没有提供 v2 数据生成和训练流水线，无法�
 
 ```mermaid
 flowchart LR
-    A[Starcat 匿名完整 Star 快照] --> B[starcat-recsys-trainer ingest]
+    A[Starcat 匿名完整 Star 快照] --> B[starcat-collection-api]
+    B --> C1[Collection API 内部训练导出]
+    C1 --> B1[starcat-recsys-trainer Pull Connector]
     C[GH Archive BigQuery WatchEvent] --> D[批量导入]
     E[GitHub REST repo metadata/README] --> F[元数据与内容流水线]
-    B --> G[Raw Parquet]
+    B1 --> G[Raw Parquet]
     D --> G
     G --> H[清洗/去重/时间切分]
     F --> I[Feature Store]
@@ -319,12 +322,12 @@ supports/starcat-recsys-trainer/
   model_cards/
 ```
 
-训练任务用 Python；ingest 可使用 Go 或 Python，但同一服务只保留一个公开写入边界。任务由明确 job manifest 驱动，禁止在 API 进程内同步训练。
+训练任务使用 Python。Starcat 公网写入边界由独立 Go 服务 `starcat-collection-api` 承担；Trainer 只通过 Admin Key 保护的内部导出接口主动 Pull，不开放公网写入端口。任务由明确 job manifest 驱动，禁止在 API 进程内同步训练。
 
 ### 9.2 Pipeline DAG
 
 ```text
-ingest_snapshot/import_gharchive
+pull_collection/import_gharchive
           ↓
 validate_and_normalize
           ↓

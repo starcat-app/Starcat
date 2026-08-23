@@ -1,6 +1,6 @@
 # Starcat 推荐、数据贡献与 Star History 文档导航
 
-> 日期: 2026-08-22
+> 日期: 2026-08-23
 > 状态: 当前需求统一入口
 > 适用范围: Starcat macOS 客户端、推荐训练服务、推荐查询服务、Star History 服务
 > 用途: 为后续开发者和 AI Agent 提供文档优先级、阅读顺序、代码入口与实施边界
@@ -9,16 +9,17 @@
 
 这组需求包含三条关联但职责独立的链路：
 
-1. **Starcat 数据贡献**：用户主动开启后，客户端贡献匿名公开 Star 全量快照和公开 repo 日级 Star 数观测。
+1. **Starcat 数据贡献当前阶段**：用户主动开启后，客户端以完全静默的旁路任务向独立 `starcat-collection-api` 贡献匿名公开 Star 全量快照；History 观测暂不实施。
 2. **自研仓库推荐**：训练服务基于 Starcat opt-in 数据、GH Archive 和公开 repo metadata 生成推荐产物，在线 API 只读 Serving DB。
 3. **自研 Star History**：独立服务聚合公开 repo 日级快照，并使用 GH Archive 补充估算历史。
 
 当前线上推荐仍由 `starcat-recommend-api` 中转已获作者授权的 SimRepo 接口；当前普通公开仓库 Star History 仍由 `starcat-discovery-api` 提供。两者都是已经使用的过渡实现，不是应立即删除的无效代码。
 
-目标后端拆分为：
+当前实施与目标后端拆分为：
 
 ```text
-supports/starcat-recsys-trainer   数据接收、数据集、训练、评估、模型发布
+supports/starcat-collection-api  独立接收公开 Star 快照并向 Trainer 提供内部导出
+supports/starcat-recsys-trainer  Pull 数据、构建数据集、训练、评估、模型发布
 supports/starcat-recsys-api       在线推荐查询，只读已发布 Serving 数据
 supports/starcat-history-api      Star 数观测接收、聚合、历史构建和公共查询
 ```
@@ -38,13 +39,14 @@ flowchart TB
     end
 
     subgraph Target[目标架构]
-        H[Starcat opt-in 数据贡献] --> I[starcat-recsys-trainer]
+        H[Starcat opt-in 公开 Star 数据] --> C1[starcat-collection-api]
+        C1 --> I[starcat-recsys-trainer Pull]
         J[GH Archive + GitHub 公开 metadata] --> I
         I --> K[(Recommendation Serving DB)]
         K --> L[starcat-recsys-api]
         L --> A
 
-        H --> M[starcat-history-api]
+        H2[未来独立 History opt-in] --> M[starcat-history-api]
         J --> M
         M --> N[(History Serving DB)]
         N --> D
@@ -55,8 +57,8 @@ flowchart TB
 
 - 当前推荐链路已落地，SimRepo 作者授权已经取得。
 - Discovery Star History 路径当前客户端已经使用，生产 GH Archive Provider 仍受真实数据和预算验证门禁。
-- 目标服务目前只有设计文档，尚未创建仓库、数据库或生产部署。
-- 数据贡献开关尚未实现；后端 ingest、status 和 delete 完成前不得先开放客户端开关。
+- `starcat-collection-api`、静默贡献开关和 Collection Pull Connector 已进入第一阶段实施，尚未生产部署。
+- 第一阶段不实现 History、贡献状态展示和服务端删除；Collection 失败必须与 Starcat 主功能完全隔离。
 
 ## 3. 文档优先级
 
@@ -97,6 +99,7 @@ flowchart TB
 | [60-Starcat 数据贡献与数据平台详细设计](../../../3-设计/详细设计/60-Starcat数据贡献与数据平台详细设计.md) | 定义两个 opt-in、DTO、匿名身份、outbox、幂等、删除和隐私 | 客户端贡献与后端 ingest 契约 |
 | [61-Starcat 自研仓库推荐系统详细设计](../../../3-设计/详细设计/61-Starcat自研仓库推荐系统详细设计.md) | 定义数据源、算法、Trainer、Serving DB、API、评估和迁移 | 自研推荐实现的单一权威方案 |
 | [62-Starcat 自研星标历史服务详细设计](../../../3-设计/详细设计/62-Starcat自研星标历史服务详细设计.md) | 定义群体快照、GH Archive 估算、History API、删除重算和 Discovery 迁移 | 自研 Star History 的单一权威方案 |
+| [63-Starcat 公开 Star 数据静默上报与 Collection 服务详细设计](../../../3-设计/详细设计/63-Starcat公开Star数据静默上报与Collection服务详细设计.md) | 定义当前单 Toggle、静默旁路、独立 Collection API、分块上传和 Trainer Pull | 第一阶段公开 Star 数据链路的单一权威实施契约 |
 | [57-Agent 工作台与统一能力层详细设计](../../../3-设计/详细设计/57-Agent工作台与统一能力层详细设计.md) | 定义当前 Agent Run Surface 和统一能力边界 | 推荐结果进入 Agent 工作台时的 UI/Runtime 约束 |
 | [开发前问题清单](../../../1-立项/开发前问题清单.md) | 记录 5.18 决策及隐私、服务和迁移边界 | 架构决策基线 |
 | [功能实现总览](../../../功能实现总览.md) | 活文档主进度索引 | 只读核对；修改需要 dong4j 单独授权 |
@@ -200,12 +203,13 @@ Mubelotix/simrepo
 
 ```text
 开发前问题清单 5.18
-    → 60-数据贡献与数据平台
+    → 63-公开 Star 数据静默上报与 Collection 服务
+    → 60-数据贡献与数据平台背景
     → Repo / StarredRepo / RepoRepository / 本地 Star History Repository
     → 数据库设计与现有 migration
 ```
 
-实现前置条件：后端 participant 注册、ingest、status 和 delete 已可用。客户端开关默认关闭，推荐贡献和 History 贡献独立授权。
+实现边界：第一阶段只有推荐贡献 Toggle；直接访问独立 Collection 服务。上传完全静默，任何构造、入队或网络失败都不能改变 Stars 同步和其他功能状态。
 
 ### 8.3 开发推荐训练服务
 
