@@ -235,6 +235,10 @@ final class AppDependencies {
     /// 当前“趋势”仍使用 `trendingRepository`，不从 discovery 新趋势候选切换数据源。
     let discoveryRepository: any DiscoveryRepositoryProtocol
 
+    /// Awesome 精选目录、账户订阅、自定义来源和来源证据的本地优先仓储。
+    /// 与普通 Discovery bulk 分开，避免用户按需订阅的长清单进入全量探索缓存。
+    let awesomeRepository: any AwesomeRepositoryProtocol
+
     /// 第三方后端服务健康检查 actor（2026-06-08）。
     /// 设置页"测试连接"按钮 → `await serviceHealthChecker.check(service:baseURL:)`。
     /// 独立 actor + 短超时（5s），不复用业务 API session。
@@ -1310,6 +1314,7 @@ final class AppDependencies {
         let discoveryRepo = DiscoveryRepository(api: discoveryAPIInstance, database: db)
         self.discoveryRepository = discoveryRepo
         self.exploreCatalogStore = ExploreCatalogStore(repository: discoveryRepo)
+        self.awesomeRepository = AwesomeRepository(api: discoveryAPIInstance, database: db)
 
         // MUL-176：Weekly 多来源 API 客户端。端点走 `AppEndpoints.Weekly.baseURL`。
         // 用户在设置页改地址 → AppDependencies.setServiceURL 推送到本 actor 的

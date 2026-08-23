@@ -122,6 +122,23 @@ struct DatabaseMigrationsV1Tests {
         }
     }
 
+    @Test("v22 创建 Awesome 来源、订阅、条目和账户状态表")
+    func awesomeDiscoveryMigration() throws {
+        let writer = try makeDB()
+        try writer.read { db in
+            var migrator = DatabaseMigrator()
+            DatabaseMigrations.registerAll(into: &migrator)
+            let applied = try migrator.appliedIdentifiers(db)
+            #expect(applied.contains("v22-awesome-discovery"))
+            #expect(try db.tableExists("awesome_sources"))
+            #expect(try db.tableExists("awesome_source_subscriptions"))
+            #expect(try db.tableExists("awesome_entries"))
+            #expect(try db.tableExists("awesome_state"))
+            let state = try AwesomeStateRecord.fetchOne(db)
+            #expect(state?.hasCompletedSourceSetup == false)
+        }
+    }
+
     @Test("1.4.0 正式迁移应接管任意开发期中间版本")
     func release140MigrationConvergesDevelopmentDatabases() throws {
         let developmentBoundaries = [
