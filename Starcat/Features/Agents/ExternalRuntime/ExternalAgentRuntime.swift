@@ -112,10 +112,12 @@ struct ExternalAgentRuntime: AgentRuntime {
                         mcpConnection: mcpLease?.connection
                     )
                     do {
-                        let driver = try adapter.makeDriver(request: request)
                         try await host.execute(
                             runID: runID,
-                            driver: driver,
+                            driverFactory: { try adapter.makeDriver(request: request) },
+                            // Bridge 已在 Host 外完成 readiness 探测；只重试 Cordis MCP
+                            // plugin tree 的瞬时冷启动失败，不重试模型 turn 或工具副作用。
+                            mcpStartupRetryLimit: mcpLease == nil ? 0 : 2,
                             toolCallHandler: toolCallHandler
                         ) { event in
                             await projector.consume(event)

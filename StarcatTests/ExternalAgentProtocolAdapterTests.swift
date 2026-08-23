@@ -386,6 +386,49 @@ struct ExternalAgentProtocolAdapterTests {
         #expect(!config.contains("fixture-secret"))
     }
 
+    @Test("DeepSeek adapter 在启动 carrier 前拒绝旧版 LLM Cordis 插件")
+    func deepSeekRejectsLegacyLLMPluginBeforeProcessLaunch() throws {
+        #if arch(arm64)
+        let fixture = try DeepSeekCarrierFixture()
+        defer { fixture.cleanup() }
+        try Data("- id: legacy-llm\n  name: '@deepseek-ai/dsh-llm-deepseek'\n".utf8)
+            .write(to: fixture.configURL)
+        let selection = DeepSeekRuntimeSelection(
+            provider: DeepSeekRuntimeProviderOption(
+                id: "profile",
+                displayName: "DeepSeek",
+                provider: .deepSeek,
+                baseURL: "https://api.deepseek.com",
+                models: []
+            ),
+            model: DeepSeekRuntimeModelOption(
+                id: "deepseek-chat",
+                name: "deepseek-chat",
+                contextWindow: 64_000,
+                maxTokens: 8_000,
+                supportedReasoningEfforts: []
+            ),
+            reasoningEffort: nil
+        )
+
+        #expect(throws: ExternalAgentRuntimeError.protocolError(
+            "DeepSeek Harness Cordis config contains a legacy LLM plugin. "
+                + "Run scripts/install-deepseek-harness-runtime.sh to refresh the Starcat config."
+        )) {
+            _ = try DeepSeekHarnessAdapter(
+                executableURL: fixture.executableURL,
+                provider: DeepSeekHarnessRuntime.defaultProvider,
+                modelOverride: selection.model.name,
+                cordisConfigURL: fixture.configURL,
+                environment: [:],
+                routeConfiguration: selection
+            )
+        }
+        #else
+        #expect(Bool(true))
+        #endif
+    }
+
     @Test("Codex 模型目录 Driver 完成 initialize 与 model/list 握手")
     func codexModelCatalogDriverHandshake() throws {
         let resultBox = CodexModelCatalogResultBox()
@@ -509,6 +552,24 @@ struct ExternalAgentProtocolAdapterTests {
         let configPath = try #require(environment["STARCAT_DEEPSEEK_CORDIS_PATH"])
         let apiKey = try #require(environment["DEEPSEEK_API_KEY"])
         #expect(!apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        let modelName = environment["STARCAT_DEEPSEEK_MODEL"] ?? DeepSeekHarnessRuntime.defaultModel
+        let routeSelection = DeepSeekRuntimeSelection(
+            provider: DeepSeekRuntimeProviderOption(
+                id: "integration-deepseek",
+                displayName: "DeepSeek Integration",
+                provider: .deepSeek,
+                baseURL: environment["DEEPSEEK_BASE_URL"] ?? "https://api.deepseek.com",
+                models: []
+            ),
+            model: DeepSeekRuntimeModelOption(
+                id: modelName,
+                name: modelName,
+                contextWindow: 128_000,
+                maxTokens: 16_384,
+                supportedReasoningEfforts: []
+            ),
+            reasoningEffort: nil
+        )
 
         let workingDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("starcat-deepseek-mcp-smoke-\(UUID().uuidString)", isDirectory: true)
@@ -540,7 +601,7 @@ struct ExternalAgentProtocolAdapterTests {
         let request = ExternalAgentRunRequest(
             runID: UUID(),
             prompt: "Use the Starcat repository search tool with limit 1. Reply with STARCAT_MCP_SMOKE_OK and the returned repository full_name.",
-            modelName: environment["STARCAT_DEEPSEEK_MODEL"] ?? DeepSeekHarnessRuntime.defaultModel,
+            modelName: modelName,
             reasoningEffort: nil,
             workingDirectory: workingDirectory,
             tools: [],
@@ -555,9 +616,15 @@ struct ExternalAgentProtocolAdapterTests {
             modelOverride: request.modelName,
             cordisConfigURL: URL(fileURLWithPath: configPath),
             environment: ExternalAgentProcessEnvironment.filtered(
-                source: environment,
-                allowedCredentialKeys: ["DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL"]
-            )
+                source: environment.merging([
+                    DeepSeekRuntimeSelection.credentialEnvironmentKey: apiKey,
+                ]) { _, injected in injected },
+                allowedCredentialKeys: [
+                    "DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL",
+                    DeepSeekRuntimeSelection.credentialEnvironmentKey,
+                ]
+            ),
+            routeConfiguration: routeSelection
         )
         let collector = CodexIntegrationEventCollector()
 

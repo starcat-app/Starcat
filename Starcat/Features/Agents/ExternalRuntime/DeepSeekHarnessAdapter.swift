@@ -64,6 +64,16 @@ struct DeepSeekHarnessAdapter: ExternalAgentProtocolAdapter {
                     + "Run scripts/install-deepseek-harness-runtime.sh and select its Starcat config."
             )
         }
+        if routeConfiguration != nil,
+           cordisConfig.contains("@deepseek-ai/dsh-llm-") {
+            // Starcat 现在按工作台选择为每轮注入唯一 Provider route。旧版配置里的
+            // dsh-llm-deepseek 会与新 route 同时注册，Cordis 因重复 LLM service 在
+            // plugin tree 激活阶段直接退出；必须在 spawn 前给出可操作错误。
+            throw ExternalAgentRuntimeError.protocolError(
+                "DeepSeek Harness Cordis config contains a legacy LLM plugin. "
+                    + "Run scripts/install-deepseek-harness-runtime.sh to refresh the Starcat config."
+            )
+        }
         self.executableURL = executableURL
         self.provider = provider
         self.modelOverride = modelOverride
@@ -120,9 +130,9 @@ enum DeepSeekHarnessCordisRunConfiguration {
                 "DeepSeek Harness base Cordis config must not preconfigure the Starcat MCP client."
             )
         }
-        if routeConfiguration != nil, base.contains("@deepseek-ai/dsh-llm-pi-ai") {
+        if routeConfiguration != nil, base.contains("@deepseek-ai/dsh-llm-") {
             throw ExternalAgentRuntimeError.protocolError(
-                "DeepSeek Harness base Cordis config must not preconfigure dsh-llm-pi-ai."
+                "DeepSeek Harness base Cordis config must not preconfigure an LLM plugin."
             )
         }
         let runConfigURL = workingDirectory.appendingPathComponent("starcat-run.cordis.yml")
