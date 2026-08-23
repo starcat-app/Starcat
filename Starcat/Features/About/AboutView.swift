@@ -910,6 +910,12 @@ private struct AboutDependency: Identifiable {
             url: URL(string: "https://github.com/gonzalezreal/swift-markdown-ui")
         ),
         AboutDependency(
+            name: "swift-markdown",
+            license: "Apache-2.0 with Runtime Library Exception",
+            copyright: "Copyright (c) 2021 Apple Inc. and the Swift project authors",
+            url: URL(string: "https://github.com/swiftlang/swift-markdown")
+        ),
+        AboutDependency(
             name: "OpenAI",
             license: "MIT",
             copyright: "Copyright (c) 2023 MacPaw Inc.",
