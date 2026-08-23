@@ -52,6 +52,7 @@
 
 - Starcat 专项分支：`codex/collection-pipeline`
 - Collection 仓库：`supports/starcat-collection-api`
+- Collection GitHub：`https://github.com/starcat-app/starcat-collection-api`（PRIVATE；远端为空，未 push）
 - Trainer 专项分支：`codex/collection-api-source`
 - 使用说明：`docs/2-产品/需求讨论/推荐算法/Starcat公开Star数据贡献使用说明.md`
 - 审查报告：`docs/2-产品/需求讨论/推荐算法/审查报告/`
