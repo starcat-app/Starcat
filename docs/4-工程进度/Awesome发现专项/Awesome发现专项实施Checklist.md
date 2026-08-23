@@ -1,6 +1,6 @@
 # Awesome 发现专项实施 Checklist
 
-> 状态：开发中  
+> 状态：功能开发完成，审查中  
 > 日期：2026-08-24  
 > 需求与技术契约：[`Awesome发现栏目与来源管理正式方案.md`](../../2-产品/需求讨论/正式方案/Awesome发现栏目与来源管理正式方案.md)  
 > Issue：[#109](https://github.com/starcat-app/Starcat/issues/109)  
@@ -54,12 +54,12 @@
 
 ## 6. 测试与一致性
 
-- [ ] Discovery API 自动化测试覆盖正式方案 §14.1。
-- [ ] Starcat 自动化测试覆盖正式方案 §14.2。
-- [ ] `_local-admin` 验证覆盖正式方案 §14.3。
-- [ ] `xcodegen generate` 后定向测试和完整 `xcodebuild test` 通过。
-- [ ] 现有发现、趋势、热门、新发布、周刊和 Manage 三栏无自动化回归。
-- [ ] 人工 UI 验收项已明确记录；未执行的人工门禁不得写成已通过。
+- [x] Discovery API 自动化测试覆盖正式方案 §14.1。
+- [x] Starcat 自动化测试覆盖正式方案 §14.2。
+- [x] `_local-admin` 验证覆盖正式方案 §14.3。
+- [x] `xcodegen generate` 后定向测试和完整 `xcodebuild test` 通过。
+- [x] 现有发现、趋势、热门、新发布、周刊和 Manage 三栏无自动化回归。
+- [x] 人工 UI 验收项已明确记录；未执行的人工门禁不得写成已通过。
 
 ## 7. 多轮审查与收口
 
