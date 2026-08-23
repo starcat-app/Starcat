@@ -551,7 +551,12 @@ private actor ExternalAgentStderrSummary {
         lineCount += 1
         let entry = Self.classification(for: line)
         if entry == "mcp startup" { didObserveMCPStartupFailure = true }
-        if entries.last != entry {
+        if let lastEntry = entries.last,
+           entry.hasPrefix("\(lastEntry) (") {
+            // 后续堆栈行可能补充安全的行列号；用更具体的分类替换通用分类，避免
+            // `configuration parse, configuration parse (line...)` 重复占用摘要预算。
+            entries[entries.count - 1] = entry
+        } else if entries.last != entry {
             entries.append(entry)
             if entries.count > maximumEntries {
                 entries.removeFirst(entries.count - maximumEntries)
@@ -585,6 +590,13 @@ private actor ExternalAgentStderrSummary {
             // Provider 默认 tracing 可能包含 ANSI 颜色而不是 JSON。这里只匹配稳定错误
             // 片段，不保存 message 原文，既能定位 Cordis/MCP/Provider，也不会泄露 prompt。
             let normalized = line.lowercased()
+            if normalized.contains("yamlexception")
+                || normalized.contains("failed to parse config file") {
+                if let location = yamlLocation(in: line) {
+                    return "configuration parse (line \(location.line), column \(location.column))"
+                }
+                return "configuration parse"
+            }
             if normalized.contains("initial connection or tool synchronization failed")
                 || (normalized.contains("mcp-client") && normalized.contains("failed to load"))
                 || (normalized.contains("mcp") && normalized.contains("failonstartuperror")) {
@@ -609,5 +621,22 @@ private actor ExternalAgentStderrSummary {
         let fields = object["fields"] as? [String: Any]
         let target = fields?["target"] as? String ?? object["target"] as? String ?? "unknown"
         return "\(level) \(target)"
+    }
+
+    /// 仅提取 js-yaml 稳定的 `(line:column)` 数字，不保留配置绝对路径或原始行内容。
+    private static func yamlLocation(in line: String) -> (line: Int, column: Int)? {
+        guard let expression = try? NSRegularExpression(pattern: #"\(([0-9]+):([0-9]+)\)"#),
+              let match = expression.firstMatch(
+                in: line,
+                range: NSRange(line.startIndex..., in: line)
+              ),
+              let lineRange = Range(match.range(at: 1), in: line),
+              let columnRange = Range(match.range(at: 2), in: line),
+              let parsedLine = Int(line[lineRange]),
+              let parsedColumn = Int(line[columnRange])
+        else {
+            return nil
+        }
+        return (parsedLine, parsedColumn)
     }
 }

@@ -135,6 +135,21 @@ struct ExternalAgentRuntimeHostTests {
         }
     }
 
+    @Test("DeepSeek Cordis YAML 错误只暴露安全行列诊断")
+    func reportsSafeYAMLConfigurationDiagnostic() async throws {
+        let host = ExternalAgentRuntimeHost()
+        let expectedDiagnostic = "Termination reason: exit. "
+            + "DeepSeek Harness stderr summary (2 lines): "
+            + "configuration parse (line 41, column 17)."
+
+        await #expect(throws: ExternalAgentRuntimeError.processExited(1, expectedDiagnostic)) {
+            try await host.execute(
+                runID: UUID(),
+                driver: ExternalHostYAMLFailureFixtureDriver()
+            ) { _ in }
+        }
+    }
+
     @Test("DeepSeek MCP 冷启动失败时重建 carrier 且不重复模型 turn")
     func retriesDeepSeekMCPStartupFailureBeforeTurn() async throws {
         let collector = ExternalHostEventCollector()
@@ -275,6 +290,33 @@ private final class ExternalHostFixtureDriver: ExternalAgentProtocolDriver, @unc
         default:
             return ExternalAgentProtocolOutput()
         }
+    }
+
+    func cancellationFrame() -> AgentJSONValue? { nil }
+    func shutdownFrame() -> AgentJSONValue? { nil }
+}
+
+private final class ExternalHostYAMLFailureFixtureDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
+    let backend = AgentRuntimeBackend.deepSeekHarness
+    let capabilities = AgentRuntimeCapabilities.deepSeekHarnessPOC
+    let processConfiguration = ExternalAgentProcessConfiguration(
+        executableURL: URL(fileURLWithPath: "/bin/sh"),
+        arguments: [
+            "-c",
+            "read first; printf '%s\\n' "
+                + "'Error: plugin tree failed to load: failed to parse config file /private/secret.yml' "
+                + "'YAMLException: bad indentation of a mapping entry (41:17)' >&2; exit 1",
+        ],
+        environment: ExternalAgentProcessEnvironment.filtered(),
+        currentDirectoryURL: FileManager.default.temporaryDirectory
+    )
+
+    func initialFrames() throws -> [AgentJSONValue] {
+        [.jsonRPCRequest(id: 1, method: "fixture/start")]
+    }
+
+    func receive(_ frame: AgentJSONValue) throws -> ExternalAgentProtocolOutput {
+        ExternalAgentProtocolOutput()
     }
 
     func cancellationFrame() -> AgentJSONValue? { nil }

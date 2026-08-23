@@ -146,6 +146,31 @@ struct ExternalAgentRuntime: AgentRuntime {
         }
     }
 
+    /// 外部 Harness 不持久化可恢复的 Provider session。失败重试必须创建全新 Run，
+    /// 但仍复用已持久化的原始 Prompt 与冻结 Context；这样既不会伪装为 session resume，
+    /// 也不会重新读取已经变化的 Workspace 状态。External Runtime 只允许只读工具，
+    /// 仍显式拒绝含审批事实的历史 Run，避免未来扩展写工具后重复执行副作用。
+    func retryFailedRun(
+        snapshot: AgentRunSnapshotRecord,
+        definition: AgentDefinition
+    ) -> AsyncStream<AgentRunEvent> {
+        guard snapshot.run.agentId == definition.id,
+              snapshot.approvals.isEmpty
+        else {
+            return failedStream(String.l10n("agent.loop.error.retryUnavailable"))
+        }
+        do {
+            _ = try AgentRunRetryPolicy.validatedRunID(for: snapshot)
+        } catch {
+            return failedStream(error.localizedDescription)
+        }
+        return run(
+            definition: definition,
+            prompt: snapshot.run.userPrompt,
+            context: snapshot.context
+        )
+    }
+
     func send(_ command: AgentRunCommand) async {
         if case .cancel(let runID) = command {
             await host.cancel(runID: runID)
@@ -196,6 +221,13 @@ struct ExternalAgentRuntime: AgentRuntime {
         }
         if !definition.workflow.allowsEmptyRepositoryContext, context.repos.isEmpty {
             throw LoopAgentRuntimeError.repositoryContextEmpty
+        }
+    }
+
+    private func failedStream(_ message: String) -> AsyncStream<AgentRunEvent> {
+        AsyncStream { continuation in
+            continuation.yield(.runFailed(message))
+            continuation.finish()
         }
     }
 }

@@ -384,6 +384,73 @@ struct ExternalAgentProtocolAdapterTests {
         #expect(config.contains("reasoning: high"))
         #expect(config.contains("thinkingFormat: deepseek"))
         #expect(!config.contains("fixture-secret"))
+        let lines = config.components(separatedBy: .newlines)
+        #expect(lines.contains("      starcat-provider:"))
+        #expect(lines.contains("        displayName: 'Team''s Gateway'"))
+        #expect(lines.contains("        reasoning: high"))
+        #expect(lines.contains("        compat:"))
+        #expect(lines.contains("          thinkingFormat: deepseek"))
+        #expect(lines.contains("        models:"))
+        #expect(lines.contains("          - id: 'deepseek-reasoner'"))
+        #expect(lines.contains("            reasoningEfforts:"))
+        #expect(lines.contains("              off:"))
+        #expect(lines.contains("              high: high"))
+        #expect(!config.contains("                compat:"))
+    }
+
+    @Test("External Runtime 失败重试创建全新只读 Run")
+    @MainActor
+    func externalRuntimeRetryStartsFreshRun() async throws {
+        let definition = AgentDefinition(
+            id: "external-retry-test",
+            title: "External Retry Test",
+            subtitle: "",
+            systemImage: "terminal",
+            capabilityLabels: [],
+            defaultPrompt: "",
+            isEnabled: true,
+            runtimePolicy: .externalPOC
+        )
+        let failedRunID = UUID()
+        let timestamp = ISO8601DateFormatter.shared.string(from: Date(timeIntervalSince1970: 1_788_000_000))
+        let snapshot = AgentRunSnapshotRecord(
+            run: AgentRunRecord(
+                id: failedRunID.uuidString,
+                agentId: definition.id,
+                title: definition.title,
+                userPrompt: "retry original prompt",
+                contextSource: "Unit",
+                contextJSON: "{}",
+                status: AgentRunStatus.failed.rawValue,
+                model: "fixture-model",
+                usageJSON: nil,
+                errorMessage: "fixture failure",
+                createdAt: timestamp,
+                updatedAt: timestamp,
+                finishedAt: timestamp
+            ),
+            context: AgentRunContext(sourceDescription: "Frozen Retry Context"),
+            messages: [],
+            approvals: [],
+            artifacts: []
+        )
+        let recorder = ExternalRetryRequestRecorder()
+        let runtime = ExternalAgentRuntime(
+            adapter: ExternalRetryFixtureAdapter(recorder: recorder),
+            distributionGate: DistributionGate(channel: .direct)
+        )
+
+        var events: [AgentRunEvent] = []
+        for await event in runtime.retryFailedRun(snapshot: snapshot, definition: definition) {
+            events.append(event)
+        }
+
+        let request = try #require(recorder.latestRequest)
+        #expect(request.runID != failedRunID)
+        #expect(request.prompt.contains("retry original prompt"))
+        #expect(events.contains { if case .runStarted = $0 { return true }; return false })
+        #expect(events.contains { if case .runCompleted = $0 { return true }; return false })
+        #expect(!events.contains { if case .runFailed = $0 { return true }; return false })
     }
 
     @Test("DeepSeek adapter 在启动 carrier 前拒绝旧版 LLM Cordis 插件")
@@ -1524,6 +1591,58 @@ private actor CodexIntegrationEventCollector {
     func append(_ event: ExternalAgentProtocolEvent) {
         events.append(event)
     }
+}
+
+private final class ExternalRetryRequestRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var request: ExternalAgentRunRequest?
+
+    var latestRequest: ExternalAgentRunRequest? {
+        lock.withLock { request }
+    }
+
+    func record(_ request: ExternalAgentRunRequest) {
+        lock.withLock { self.request = request }
+    }
+}
+
+private struct ExternalRetryFixtureAdapter: ExternalAgentProtocolAdapter {
+    let backend = AgentRuntimeBackend.deepSeekHarness
+    let capabilities = AgentRuntimeCapabilities.deepSeekHarnessPOC
+    let recorder: ExternalRetryRequestRecorder
+
+    func makeDriver(request: ExternalAgentRunRequest) throws -> any ExternalAgentProtocolDriver {
+        recorder.record(request)
+        return ExternalRetryFixtureDriver()
+    }
+}
+
+private final class ExternalRetryFixtureDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
+    let backend = AgentRuntimeBackend.deepSeekHarness
+    let capabilities = AgentRuntimeCapabilities.deepSeekHarnessPOC
+    let processConfiguration = ExternalAgentProcessConfiguration(
+        executableURL: URL(fileURLWithPath: "/bin/sh"),
+        arguments: [
+            "-c",
+            "read first; printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"method\":\"fixture/completed\"}'",
+        ],
+        environment: ExternalAgentProcessEnvironment.filtered(),
+        currentDirectoryURL: FileManager.default.temporaryDirectory
+    )
+
+    func initialFrames() throws -> [AgentJSONValue] {
+        [.jsonRPCRequest(id: 1, method: "fixture/start")]
+    }
+
+    func receive(_ frame: AgentJSONValue) throws -> ExternalAgentProtocolOutput {
+        guard frame[external: "method"]?.stringValue == "fixture/completed" else {
+            return ExternalAgentProtocolOutput()
+        }
+        return ExternalAgentProtocolOutput(events: [.completed], isTerminal: true)
+    }
+
+    func cancellationFrame() -> AgentJSONValue? { nil }
+    func shutdownFrame() -> AgentJSONValue? { nil }
 }
 
 private struct DeepSeekCarrierFixture {
