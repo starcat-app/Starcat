@@ -266,9 +266,16 @@ actor AwesomeRepository: AwesomeRepositoryProtocol {
         .filter { !enabledOnly || $0.isEnabled }
         .sorted { lhs, rhs in
             if lhs.kind != rhs.kind { return lhs.kind == .managed }
-            if lhs.kind == .managed, lhs.sortOrder != rhs.sortOrder { return lhs.sortOrder < rhs.sortOrder }
+            if lhs.kind == .managed {
+                if lhs.sortOrder != rhs.sortOrder { return lhs.sortOrder < rhs.sortOrder }
+                // 服务端公开目录使用 ID 作同序稳定键，客户端必须保持同一契约，
+                // 避免运营仅修改展示名称就造成用户左栏顺序跳变。
+                return lhs.id < rhs.id
+            }
             if lhs.kind == .custom, lhs.addedAt != rhs.addedAt { return lhs.addedAt < rhs.addedAt }
-            return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+            let nameOrder = lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName)
+            if nameOrder != .orderedSame { return nameOrder == .orderedAscending }
+            return lhs.id < rhs.id
         }
     }
 
@@ -287,7 +294,9 @@ actor AwesomeRepository: AwesomeRepositoryProtocol {
                     if $0.source.sortOrder != $1.source.sortOrder {
                         return $0.source.sortOrder < $1.source.sortOrder
                     }
-                    return $0.entryOrder < $1.entryOrder
+                    if $0.entryOrder != $1.entryOrder { return $0.entryOrder < $1.entryOrder }
+                    // 不能依赖 SQLite 在完全同序时的隐式返回顺序。
+                    return $0.source.id < $1.source.id
                 }
                 guard !evidence.isEmpty else { return nil }
                 return AwesomeRepositoryItem(

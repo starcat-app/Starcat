@@ -42,6 +42,20 @@ struct AwesomeRepositoryTests {
         #expect(await api.catalogETags() == [nil, "catalog-1"])
     }
 
+    @Test("同序精选来源按稳定 ID 排序")
+    func managedSourcesUseStableIDAsTieBreaker() async throws {
+        let api = FakeAwesomeAPI()
+        await api.setCatalog([
+            Self.source(id: "z-source", order: 1, displayName: "A source"),
+            Self.source(id: "a-source", order: 1, displayName: "Z source")
+        ], etag: "catalog-1")
+        let repository = AwesomeRepository(api: api, database: try InMemoryDatabaseManager())
+
+        _ = try await repository.refreshCatalog()
+
+        #expect(await repository.sources().map(\.id) == ["a-source", "z-source"])
+    }
+
     @Test("全部 Awesome 按 GitHub Repo ID 去重并保留多来源证据")
     func aggregateDeduplicatesAndPreservesEvidence() async throws {
         let api = FakeAwesomeAPI()
@@ -63,6 +77,24 @@ struct AwesomeRepositoryTests {
         #expect(repos.first?.updatedAt == ISO8601DateFormatter.githubDate(from: "2026-08-23T12:34:56Z"))
         #expect(repos.first?.evidence.map(\.source.id) == ["one", "two"])
         #expect(await repository.repositories(sourceID: "one").first?.evidence.count == 1)
+    }
+
+    @Test("同序条目证据按来源 ID 稳定排序")
+    func evidenceUsesSourceIDAsFinalTieBreaker() async throws {
+        let api = FakeAwesomeAPI()
+        await api.setCatalog([
+            Self.source(id: "z-source", order: 1),
+            Self.source(id: "a-source", order: 1)
+        ], etag: "catalog-1")
+        await api.setEntries(sourceID: "z-source", entries: [Self.entry(repoID: 42, title: "Z")])
+        await api.setEntries(sourceID: "a-source", entries: [Self.entry(repoID: 42, title: "A")])
+        let repository = AwesomeRepository(api: api, database: try InMemoryDatabaseManager())
+
+        _ = try await repository.refreshCatalog()
+        try await repository.completeSourceSetup(enabledSourceIDs: ["z-source", "a-source"])
+        #expect(await repository.refreshEnabledEntries().isEmpty)
+
+        #expect(await repository.repositories(sourceID: nil).first?.evidence.map(\.source.id) == ["a-source", "z-source"])
     }
 
     @Test("单来源刷新失败保留上次成功条目")
@@ -142,10 +174,10 @@ struct AwesomeRepositoryTests {
         #expect(await repository.sources().isEmpty)
     }
 
-    private static func source(id: String, order: Int) -> AwesomeSourceDTO {
+    private static func source(id: String, order: Int, displayName: String? = nil) -> AwesomeSourceDTO {
         AwesomeSourceDTO(
             id: id,
-            displayName: "Awesome \(id)",
+            displayName: displayName ?? "Awesome \(id)",
             repoFullName: "example/awesome-\(id)",
             repoURL: "https://github.com/example/awesome-\(id)",
             imageURL: nil,
