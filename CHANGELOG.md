@@ -22,6 +22,7 @@ Release notes for the Mac App Store edition of Starcat.
 
 - Timeline empty detail: An illustration prompts you to pick an event in the middle column.
 - Issue event cache: Reopening an Issue after quitting still reads comments and events locally first. Clear it in Settings → Storage.
+- Issue comment drafts: Unsent handwritten or AI replies stay with each thread after you switch Issues or quit. Clear them in Settings → Storage.
 
 ### Fixes
 
