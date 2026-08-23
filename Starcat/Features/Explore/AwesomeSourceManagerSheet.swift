@@ -20,6 +20,7 @@ struct AwesomeSourceManagerSheet: View {
     @State private var actionError: String?
     @State private var isSaving = false
     @State private var initialized = false
+    @State private var pendingConfirmation: AwesomeSourceConfirmation?
 
     private let columns = [
         GridItem(.adaptive(minimum: 280, maximum: 360), spacing: 12)
@@ -45,6 +46,18 @@ struct AwesomeSourceManagerSheet: View {
             guard !initialized else { return }
             initialized = true
             enabledIDs = Set(store.sources.filter(\.isEnabled).map(\.id))
+        }
+        .confirmationDialog(
+            confirmationTitle,
+            isPresented: Binding(
+                get: { pendingConfirmation != nil },
+                set: { if !$0 { pendingConfirmation = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            confirmationActions
+        } message: {
+            confirmationMessage
         }
     }
 
@@ -97,7 +110,7 @@ struct AwesomeSourceManagerSheet: View {
                         sourceCard(source)
                         if source.kind == .custom {
                             Button(role: .destructive) {
-                                removeCustomSource(source)
+                                pendingConfirmation = .delete(source)
                             } label: {
                                 Image(systemName: "trash")
                                     .frame(width: 24, height: 24)
@@ -213,11 +226,23 @@ struct AwesomeSourceManagerSheet: View {
         Task {
             defer { isSaving = false }
             do {
-                let previousIDs = Set(store.sources.map(\.id))
-                try await store.addCustomSource(input: value)
-                if let addedID = Set(store.sources.map(\.id)).subtracting(previousIDs).first {
-                    enabledIDs.insert(addedID)
-                }
+                pendingConfirmation = .add(try await store.previewCustomSource(input: value))
+            } catch {
+                actionError = error.localizedDescription
+            }
+        }
+    }
+
+    private func saveCustomSource(_ preview: AwesomeCustomSourcePreview) {
+        isSaving = true
+        actionError = nil
+        pendingConfirmation = nil
+        Task {
+            defer { isSaving = false }
+            do {
+                try await store.addCustomSource(preview)
+                // 这里只改 Sheet draft；真正订阅仍由底部“完成”统一提交。
+                enabledIDs.insert(preview.source.id)
                 customSourceInput = ""
             } catch {
                 actionError = error.localizedDescription
@@ -228,6 +253,7 @@ struct AwesomeSourceManagerSheet: View {
     private func removeCustomSource(_ source: AwesomeSource) {
         isSaving = true
         actionError = nil
+        pendingConfirmation = nil
         Task {
             defer { isSaving = false }
             do {
@@ -255,6 +281,60 @@ struct AwesomeSourceManagerSheet: View {
             }
         }
     }
+
+    private var confirmationTitle: String {
+        switch pendingConfirmation {
+        case .add(let preview):
+            String(
+                format: String.l10n("awesome.sources.custom.confirm.titleFormat"),
+                preview.source.displayName
+            )
+        case .delete(let source):
+            String(
+                format: String.l10n("awesome.sources.custom.delete.titleFormat"),
+                source.displayName
+            )
+        case nil:
+            ""
+        }
+    }
+
+    @ViewBuilder
+    private var confirmationActions: some View {
+        switch pendingConfirmation {
+        case .add(let preview):
+            Button("awesome.sources.custom.confirm.add") { saveCustomSource(preview) }
+            Button("common.cancel", role: .cancel) { pendingConfirmation = nil }
+        case .delete(let source):
+            Button("awesome.sources.custom.delete.confirm", role: .destructive) {
+                removeCustomSource(source)
+            }
+            Button("common.cancel", role: .cancel) { pendingConfirmation = nil }
+        case nil:
+            EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var confirmationMessage: some View {
+        switch pendingConfirmation {
+        case .add(let preview):
+            Text(String(
+                format: String.l10n("awesome.sources.custom.confirm.messageFormat"),
+                preview.source.githubRepoCount,
+                preview.source.externalEntryCount
+            ))
+        case .delete:
+            Text("awesome.sources.custom.delete.message")
+        case nil:
+            EmptyView()
+        }
+    }
+}
+
+private enum AwesomeSourceConfirmation {
+    case add(AwesomeCustomSourcePreview)
+    case delete(AwesomeSource)
 }
 
 private struct AwesomeSourceImage: View {

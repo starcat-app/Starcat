@@ -47,6 +47,12 @@ enum AwesomeCustomSourceError: LocalizedError, Equatable {
     }
 }
 
+/// 自定义来源解析预览。只有用户在 Sheet 明确确认后才允许交给 Repository 持久化。
+struct AwesomeCustomSourcePreview: Sendable {
+    let source: AwesomeSource
+    let entries: [AwesomeEntryDTO]
+}
+
 actor AwesomeCustomSourceService {
     private let github: any AwesomeGitHubClientProtocol
     private let repository: any AwesomeRepositoryProtocol
@@ -56,8 +62,7 @@ actor AwesomeCustomSourceService {
         self.repository = repository
     }
 
-    @discardableResult
-    func add(input: String) async throws -> AwesomeSource {
+    func preview(input: String) async throws -> AwesomeCustomSourcePreview {
         guard let address = AwesomeSourceInput.parse(input) else {
             throw AwesomeCustomSourceError.invalidInput
         }
@@ -127,12 +132,16 @@ actor AwesomeCustomSourceService {
             githubRepoCount: entries.count,
             externalEntryCount: parsed.externalLinkCount,
             isAvailable: true,
-            isEnabled: true,
+            // 来源确认只负责创建；订阅仍由 Sheet 的“完成”统一提交，取消不会提前启用。
+            isEnabled: false,
             addedAt: now,
             updatedAt: now
         )
-        try await repository.saveCustomSource(source, entries: entries)
-        return source
+        return AwesomeCustomSourcePreview(source: source, entries: entries)
+    }
+
+    func save(_ preview: AwesomeCustomSourcePreview) async throws {
+        try await repository.saveCustomSource(preview.source, entries: preview.entries)
     }
 
     func remove(sourceID: String) async throws {

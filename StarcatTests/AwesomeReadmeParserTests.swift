@@ -57,7 +57,7 @@ struct AwesomeReadmeParserTests {
         let service = AwesomeCustomSourceService(github: github, repository: repository)
 
         await #expect(throws: AwesomeCustomSourceError.sourceMustBePublic) {
-            try await service.add(input: "owner/private-list")
+            try await service.preview(input: "owner/private-list")
         }
         #expect(await repository.savedSource() == nil)
     }
@@ -79,11 +79,15 @@ struct AwesomeReadmeParserTests {
         let repository = FakeAwesomeRepository()
         let service = AwesomeCustomSourceService(github: github, repository: repository)
 
-        let source = try await service.add(input: "https://github.com/owner/awesome-list")
-        let saved = await repository.savedSource()
+        let preview = try await service.preview(input: "https://github.com/owner/awesome-list")
 
-        #expect(source.id == "custom:owner/awesome-list")
-        #expect(source.githubRepoCount == 1)
+        #expect(preview.source.id == "custom:owner/awesome-list")
+        #expect(preview.source.githubRepoCount == 1)
+        #expect(!preview.source.isEnabled)
+        #expect(await repository.savedSource() == nil)
+
+        try await service.save(preview)
+        let saved = await repository.savedSource()
         #expect(saved?.entries.map(\.fullName) == ["acme/valid"])
         #expect(saved?.entries.first?.sectionPath == ["Tools"])
     }
@@ -95,7 +99,7 @@ struct AwesomeReadmeParserTests {
         let service = AwesomeCustomSourceService(github: github, repository: repository)
 
         await #expect(throws: AwesomeCustomSourceError.duplicateSource) {
-            try await service.add(input: "https://github.com/OWNER/AWESOME-LIST")
+            try await service.preview(input: "https://github.com/OWNER/AWESOME-LIST")
         }
     }
 
@@ -111,7 +115,7 @@ struct AwesomeReadmeParserTests {
         let service = AwesomeCustomSourceService(github: github, repository: repository)
 
         await #expect(throws: AwesomeCustomSourceError.noValidRepositories) {
-            try await service.add(input: "owner/awesome-list")
+            try await service.preview(input: "owner/awesome-list")
         }
         #expect(await repository.savedSource() == nil)
     }

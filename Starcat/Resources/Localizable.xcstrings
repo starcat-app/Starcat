@@ -70264,6 +70264,42 @@
         }
       }
     },
+    "awesome.sources.custom.confirm.add" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Add Source" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "添加来源" } }
+      }
+    },
+    "awesome.sources.custom.confirm.messageFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%1$lld public GitHub repositories found; %2$lld external links will not enter the repository list." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "解析到 %1$lld 个公开 GitHub 仓库；%2$lld 个外部链接不会进入项目列表。" } }
+      }
+    },
+    "awesome.sources.custom.confirm.titleFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Add “%@”?" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "添加“%@”？" } }
+      }
+    },
+    "awesome.sources.custom.delete.confirm" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete Source" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "删除来源" } }
+      }
+    },
+    "awesome.sources.custom.delete.message" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This removes the local source, subscription, and parsed entries. Your Stars, library, tags, and notes are not affected." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这会删除本地来源、订阅和解析条目；不会影响你的 Stars、知识库、标签和笔记。" } }
+      }
+    },
+    "awesome.sources.custom.delete.titleFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete “%@”?" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "删除“%@”？" } }
+      }
+    },
     "awesome.sources.custom.placeholder" : {
       "localizations" : {
         "en" : {

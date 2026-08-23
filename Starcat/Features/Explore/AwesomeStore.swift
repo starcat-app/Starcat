@@ -92,8 +92,12 @@ final class AwesomeStore {
         await reloadAfterSubscriptionChange()
     }
 
-    func addCustomSource(input: String) async throws {
-        _ = try await customSourceService.add(input: input)
+    func previewCustomSource(input: String) async throws -> AwesomeCustomSourcePreview {
+        try await customSourceService.preview(input: input)
+    }
+
+    func addCustomSource(_ preview: AwesomeCustomSourcePreview) async throws {
+        try await customSourceService.save(preview)
         sources = await repository.sources()
         await reloadRepositories()
     }

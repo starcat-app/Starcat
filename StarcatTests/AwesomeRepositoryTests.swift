@@ -96,6 +96,19 @@ struct AwesomeRepositoryTests {
         #expect(await repository.repositories(sourceID: custom.id).first?.id == 7)
     }
 
+    @Test("自定义来源确认保存后仍等待 Sheet 完成才启用")
+    func customSourceWaitsForSubscriptionCommit() async throws {
+        let repository = AwesomeRepository(api: FakeAwesomeAPI(), database: try InMemoryDatabaseManager())
+        let custom = Self.customSource(isEnabled: false)
+
+        try await repository.saveCustomSource(custom, entries: [Self.entry(repoID: 7, title: "Custom")])
+        #expect(await repository.sources().map(\.id) == [custom.id])
+        #expect(await repository.enabledSources().isEmpty)
+
+        try await repository.updateSubscriptions(enabledSourceIDs: [custom.id])
+        #expect(await repository.enabledSources().map(\.id) == [custom.id])
+    }
+
     @Test("首次配置状态按账户数据库隔离")
     func setupStateIsIsolatedByAccountDatabase() async throws {
         let first = AwesomeRepository(api: FakeAwesomeAPI(), database: try InMemoryDatabaseManager())
@@ -167,7 +180,7 @@ struct AwesomeRepositoryTests {
         )
     }
 
-    private static func customSource() -> AwesomeSource {
+    private static func customSource(isEnabled: Bool = true) -> AwesomeSource {
         AwesomeSource(
             id: "custom:example/list",
             kind: .custom,
@@ -182,7 +195,7 @@ struct AwesomeRepositoryTests {
             githubRepoCount: 1,
             externalEntryCount: 0,
             isAvailable: true,
-            isEnabled: true,
+            isEnabled: isEnabled,
             addedAt: Date(timeIntervalSince1970: 1),
             updatedAt: Date(timeIntervalSince1970: 1)
         )
