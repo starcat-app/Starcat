@@ -38,13 +38,14 @@
 
 ## 推荐数据链路跨仓分支
 
-`supports/` 下的服务仍是独立 Git 仓库；下表只登记同一需求在三个仓库中的分支对应关系，不表示 Starcat 主仓库管理服务仓库的 Git 历史。
+`supports/` 下的服务仍是独立 Git 仓库；下表只登记同一需求在四个仓库中的分支对应关系，不表示 Starcat 主仓库管理服务仓库的 Git 历史。
 
 | 项目 | 独立仓库位置 | 需求分支 | 当前状态 | 后续归宿 |
 |---|---|---|---|---|
 | Starcat | `../Starcat-collection-pipeline` worktree | `codex/collection-pipeline` | `开发中`；本地分支尚未 push。 | 同步最新 `dev` 并重新验证后合回 `dev`。 |
 | `starcat-collection-api` | `supports/starcat-collection-api` | `codex/collection-pipeline` | `开发中`；基于已推送的 `main@afb8321` 创建，本地分支尚未 push。 | 验收后合回独立仓库 `main`。 |
 | `starcat-recsys-trainer` | `supports/starcat-recsys-trainer` | `codex/collection-api-source` | `已合并`；`HEAD=cd4d963` 已进入并随 `main@122952da` 推送，专项分支仅保留在本地。 | 三仓需求收口后审查并清理本地专项分支。 |
+| `starcat-recommend-api` | `supports/starcat-recommend-api` | `codex/trained-recommendations` | `开发中`；基于 `dev@c296940` 创建，本地分支尚未 push。 | 验收后合回独立仓库 `dev`，保留 v1 SimRepo 接口并交付 v2 自研推荐接口。 |
 
 ## 近期已清理分支
 
