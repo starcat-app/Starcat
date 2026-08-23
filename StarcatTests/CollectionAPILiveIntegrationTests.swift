@@ -5,8 +5,8 @@
 //  Starcat Swift DTO → 本机 starcat-collection-api 的显式 live E2E 入口。
 //
 //  默认测试运行不访问网络；只有显式提供 PUBLIC_KEY 构建设置时才执行真实上传。
-//  固定 repo 1～4 与 trainer 的公开 metadata fixture 对齐；上传两个匿名主体是因为
-//  SVD 基线至少需要 2 个主体，避免客户端上传成功但完整训练验收无法启动。
+//  固定 repo 1～4 与 trainer 的公开 metadata fixture 对齐；上传两个匿名主体是为了
+//  让 E2E 实际训练 SVD，而不是触发单主体冷启动下的显式 skipped 降级。
 //
 
 import Foundation
