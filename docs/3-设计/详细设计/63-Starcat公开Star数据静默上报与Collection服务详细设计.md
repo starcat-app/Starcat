@@ -243,7 +243,7 @@ pending -> uploading -> succeeded -> delete local row
 - App 启动、网络恢复、账户切换完成和正常完整同步结束时可触发一次到期任务扫描。
 - 同一账户同一时间只允许一个上传任务。
 - 上传期间若新完整快照覆盖 Outbox，旧请求的成功或失败都只能按旧 task ID 条件写入，不能删除或延后新任务。
-- App 退出或账户切换取消当前请求，任务回到 `retry_wait`。
+- App 退出或账户切换取消当前请求，任务保留原 `pending` / `retry_wait` 状态。
 - 不把 HTTP body、完整错误文本、participant ID 或 repo 集合写入生产日志。
 
 ## 7. `starcat-collection-api`
@@ -419,3 +419,18 @@ Swift 生成 fixture
 5. 数据贡献是严格旁路逻辑，任何失败不能影响 Starcat 其他功能。
 6. 不实现服务端删除；关闭开关只停止未来上传并清理本地未发送任务。
 7. Trainer 通过内部接口主动 Pull，不由公网服务连接训练 Mac。
+
+## 14. 第一阶段实施 Checklist
+
+- [x] Starcat 数据贡献 Toggle 默认关闭，且只影响当前 GitHub 账户。
+- [x] DTO 在写入 Outbox 前过滤 Private/Internal，只保留公开 `repo_id` 与可空 `starred_at`。
+- [x] v22 migration 追加账户级偏好与单槽 Outbox，没有修改已发布 migration。
+- [x] 完整同步成功边沿接入旁路；增量同步、失败、取消和 304 不生成快照。
+- [x] 三阶段上传、静默重试、网络恢复和账户切换均有自动化测试。
+- [x] Collection 独立仓库、独立鉴权、HMAC 匿名化、幂等 commit 与 active 导出已实现。
+- [x] Collection schema 使用可追加 migration，未提交上传具备 24 小时回收。
+- [x] Trainer 已增加 Collection Pull Connector 并复用完整训练、评估和发布管道。
+- [x] Starcat → Collection → Trainer → ServingBundle 本机真实 E2E 已通过。
+- [x] Swift 全量测试、Go check、Python check 与构建全部通过。
+- [x] 未接入 History、Gateway、服务端删除、状态 UI、在线推荐和第三方 API。
+- [x] 未 push、未部署；`docs/功能实现总览.md` 未经单独授权保持只读。
