@@ -211,6 +211,11 @@ struct SettingsView: View {
         .onAppear {
             dependencies.telemetryManager.track(.settingsOpened)
         }
+        .task(id: dependencies.databaseScopeRevision) {
+            await dependencies.dataContributionSettings.reload(
+                accountID: dependencies.database.currentUserId
+            )
+        }
     }
 
     private var generalTab: some View {
@@ -318,6 +323,38 @@ struct SettingsView: View {
                 SettingsSectionHeader(
                     "settings.general.language",
                     systemImage: "globe",
+                    style: .prominent
+                )
+            }
+
+            // 数据贡献严格默认关闭且按 GitHub 账号隔离。这里只展示一个授权开关；
+            // 上传数量、时间、失败和重试均属于后台旁路状态，不进入用户界面。
+            Section {
+                Toggle(isOn: Binding(
+                    get: { dependencies.dataContributionSettings.isEnabled },
+                    set: { newValue in
+                        guard let accountID = dependencies.database.currentUserId else { return }
+                        Task {
+                            await dependencies.dataContributionSettings.setEnabled(
+                                newValue,
+                                accountID: accountID
+                            )
+                        }
+                    }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings.general.dataContribution.title")
+                        Text("settings.general.dataContribution.help")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .disabled(dependencies.database.currentUserId == nil)
+            } header: {
+                SettingsSectionHeader(
+                    "settings.general.dataContribution.section",
+                    systemImage: "hand.raised.fill",
                     style: .prominent
                 )
             }

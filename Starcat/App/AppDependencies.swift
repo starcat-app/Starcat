@@ -54,6 +54,8 @@ final class AppDependencies {
     let repoRepository: any RepoRepositoryProtocol
     /// 公开 Star 数据贡献旁路；失败不得改变同步和 UI 状态。
     let dataContributionCoordinator: DataContributionCoordinator
+    /// Settings 只读取开关真值，不暴露 Outbox 或网络状态。
+    let dataContributionSettings: DataContributionSettingsModel
     /// Agent run 历史记录仓储。Runtime 写入,Agent 工作台左侧历史读取。
     let agentRunRepository: any AgentRunRepositoryProtocol
     /// Week 3 引入：用户偏好（列表密度等）。
@@ -915,6 +917,9 @@ final class AppDependencies {
             uploader: CollectionAPIClient()
         )
         self.dataContributionCoordinator = dataContributionCoordinator
+        self.dataContributionSettings = DataContributionSettingsModel(
+            coordinator: dataContributionCoordinator
+        )
         let userRepoActivity = GRDBUserRepoActivityRepository(database: db)
         self.userRepoActivityRepository = userRepoActivity
         self.agentRunRepository = GRDBAgentRunRepository(database: db)
@@ -1701,6 +1706,7 @@ final class AppDependencies {
             self.wikiKnowledgeBackfillCoordinator.resumeAfterUserDatabaseChange()
             // 即使 reopen 失败也绑定 database 的真实 currentUserId，不能假设目标账号已生效。
             await self.dataContributionCoordinator.activate(accountID: self.database.currentUserId)
+            await self.dataContributionSettings.reload(accountID: self.database.currentUserId)
 
             // HOM-199 B1：DB 切到新用户后立即 reload StarredRegistry。
             //

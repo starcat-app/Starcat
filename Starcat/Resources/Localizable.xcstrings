@@ -323261,6 +323261,54 @@
         }
       }
     },
+    "settings.general.dataContribution.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After a successful full Stars sync, Starcat silently contributes public repository IDs and Star times to improve recommendations. Private repositories, tags, notes, and browsing activity are never uploaded."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "成功完成 Stars 全量同步后，Starcat 会静默贡献公开仓库 ID 和 Star 时间，用于改进推荐。不会上传私有仓库、标签、笔记或浏览行为。"
+          }
+        }
+      }
+    },
+    "settings.general.dataContribution.section" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privacy & Recommendations"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐私与推荐"
+          }
+        }
+      }
+    },
+    "settings.general.dataContribution.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anonymously contribute public Star data"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "匿名贡献公开 Star 数据"
+          }
+        }
+      }
+    },
     "settings.general.detailBehavior" : {
       "extractionState" : "stale",
       "localizations" : {
