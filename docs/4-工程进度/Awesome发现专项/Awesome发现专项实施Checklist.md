@@ -16,13 +16,13 @@
 
 ## 2. Discovery API
 
-- [ ] 追加 `awesome_sources`、`awesome_entries`、`awesome_sync_runs` 表及索引，保证现有 volume 原地升级。
-- [ ] 实现来源 Store、字段校验、revision 乐观并发和状态机。
-- [ ] 实现 CommonMark/GFM AST README 解析、GitHub URL 归一化和解析限制。
-- [ ] 实现 GitHub 来源核验、Repo enrich、同步事务、失败保留旧快照和 active run 幂等。
-- [ ] 实现精选来源目录和单来源 entries 公共 API，包含 ETag、304、排序与缓存失效。
-- [ ] 实现来源 CRUD、同步、发布、下架和 sync-runs Admin API，并隔离鉴权。
-- [ ] 补齐 API 中英文文档、单元测试并通过 `go test ./...`、`go vet ./...`。
+- [x] 追加 `awesome_sources`、`awesome_entries`、`awesome_sync_runs` 表及索引，保证现有 volume 原地升级。
+- [x] 实现来源 Store、字段校验、revision 乐观并发和状态机。
+- [x] 实现 CommonMark/GFM AST README 解析、GitHub URL 归一化和解析限制。
+- [x] 实现 GitHub 来源核验、Repo enrich、同步事务、失败保留旧快照和 active run 幂等。
+- [x] 实现精选来源目录和单来源 entries 公共 API，包含 ETag、304、排序与缓存失效。
+- [x] 实现来源 CRUD、同步、发布、下架和 sync-runs Admin API，并隔离鉴权。
+- [x] 补齐 API 中英文文档、单元测试并通过 `go test ./...`、`go vet ./...`。
 
 ## 3. 本地运营后台
 
