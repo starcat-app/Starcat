@@ -134,6 +134,7 @@ struct DatabaseMigrationsV1Tests {
             #expect(try db.tableExists("awesome_source_subscriptions"))
             #expect(try db.tableExists("awesome_entries"))
             #expect(try db.tableExists("awesome_state"))
+            #expect(try db.columns(in: "awesome_entries").map(\.name).contains("repo_updated_at"))
             let state = try AwesomeStateRecord.fetchOne(db)
             #expect(state?.hasCompletedSourceSetup == false)
         }

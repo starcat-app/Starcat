@@ -9,6 +9,7 @@
 //
 
 import SwiftUI
+import Kingfisher
 
 struct AwesomeSourceManagerSheet: View {
     let store: AwesomeStore
@@ -80,11 +81,15 @@ struct AwesomeSourceManagerSheet: View {
             ProgressView("awesome.sources.loading")
                 .frame(maxWidth: .infinity, minHeight: 180)
         } else if store.sources.isEmpty {
-            ContentUnavailableView(
-                "awesome.sources.empty.title",
-                systemImage: "sparkles.rectangle.stack",
-                description: Text("awesome.sources.empty.subtitle")
-            )
+            ContentUnavailableView {
+                Label("awesome.sources.empty.title", systemImage: "sparkles.rectangle.stack")
+            } description: {
+                Text("awesome.sources.empty.subtitle")
+            } actions: {
+                Button("action.retry") {
+                    Task { await store.presentSourceManager() }
+                }
+            }
         } else {
             LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
                 ForEach(store.sources) { source in
@@ -146,6 +151,10 @@ struct AwesomeSourceManagerSheet: View {
                         .foregroundStyle(.secondary)
                     if !source.isAvailable {
                         Text("awesome.sources.unavailable")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    } else if store.sourceRefreshErrors[source.id] != nil {
+                        Text("awesome.sources.stale")
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(.secondary)
                     }
@@ -250,39 +259,39 @@ struct AwesomeSourceManagerSheet: View {
 
 private struct AwesomeSourceImage: View {
     let source: AwesomeSource
+    @State private var usesOwnerFallback = false
 
     var body: some View {
         Group {
-            if let imageURL = source.imageURL {
-                AsyncImage(url: imageURL) { phase in
-                    switch phase {
-                    case .success(let image): image.resizable().scaledToFill()
-                    case .failure: fallback
-                    case .empty: ProgressView()
-                    @unknown default: fallback
+            if let url = activeURL {
+                KFImage(url)
+                    .resizable()
+                    .placeholder { symbolFallback }
+                    .fade(duration: 0.15)
+                    .onFailure { _ in
+                        if !usesOwnerFallback, ownerAvatarURL != nil {
+                            usesOwnerFallback = true
+                        }
                     }
-                }
+                    .scaledToFill()
             } else {
-                fallback
+                symbolFallback
             }
         }
         .frame(width: 52, height: 52)
         .clipShape(RoundedRectangle(cornerRadius: 9))
     }
 
-    @ViewBuilder
-    private var fallback: some View {
+    private var ownerAvatarURL: URL? {
         let owner = source.repoFullName.split(separator: "/").first.map(String.init)
-        if let owner,
-           let avatarURL = URL(string: "https://github.com/\(owner).png?size=104") {
-            AsyncImage(url: avatarURL) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
-                symbolFallback
-            }
-        } else {
-            symbolFallback
-        }
+        return owner.flatMap { URL(string: "https://github.com/\($0).png?size=104") }
+    }
+
+    private var activeURL: URL? {
+        // 首选内容管理图片；首次失败后切到来源 owner avatar。两者都走 Kingfisher
+        // 同一内存/磁盘缓存，avatar 再失败时保持 SF Symbol，不进入循环重试。
+        guard !usesOwnerFallback else { return ownerAvatarURL }
+        return source.imageURL ?? ownerAvatarURL
     }
 
     private var symbolFallback: some View {

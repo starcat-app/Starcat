@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import GRDB
 import Testing
 @testable import Starcat
 
@@ -64,6 +65,70 @@ struct AwesomeRepositoryTests {
         #expect(await repository.repositories(sourceID: "one").first?.evidence.count == 1)
     }
 
+    @Test("单来源刷新失败保留上次成功条目")
+    func failedEntryRefreshKeepsPreviousSnapshot() async throws {
+        let api = FakeAwesomeAPI()
+        await api.setCatalog([Self.source(id: "one", order: 1)], etag: "catalog-1")
+        await api.setEntries(sourceID: "one", entries: [Self.entry(repoID: 42, title: "Cached")])
+        let repository = AwesomeRepository(api: api, database: try InMemoryDatabaseManager())
+
+        _ = try await repository.refreshCatalog()
+        try await repository.completeSourceSetup(enabledSourceIDs: ["one"])
+        #expect(await repository.refreshEnabledEntries().isEmpty)
+        await api.setEntryError(sourceID: "one")
+
+        #expect(await repository.refreshEnabledEntries()["one"] != nil)
+        #expect(await repository.repositories(sourceID: "one").first?.fullName == "owner/repo")
+    }
+
+    @Test("精选目录替换保留自定义来源和订阅")
+    func catalogRefreshPreservesCustomSource() async throws {
+        let api = FakeAwesomeAPI()
+        let repository = AwesomeRepository(api: api, database: try InMemoryDatabaseManager())
+        let custom = Self.customSource()
+        try await repository.saveCustomSource(custom, entries: [Self.entry(repoID: 7, title: "Custom")])
+        await api.setCatalog([Self.source(id: "managed", order: 1)], etag: "catalog-1")
+
+        _ = try await repository.refreshCatalog()
+
+        #expect(await repository.sources().map(\.id) == ["managed", custom.id])
+        #expect(await repository.enabledSources().map(\.id) == [custom.id])
+        #expect(await repository.repositories(sourceID: custom.id).first?.id == 7)
+    }
+
+    @Test("首次配置状态按账户数据库隔离")
+    func setupStateIsIsolatedByAccountDatabase() async throws {
+        let first = AwesomeRepository(api: FakeAwesomeAPI(), database: try InMemoryDatabaseManager())
+        let second = AwesomeRepository(api: FakeAwesomeAPI(), database: try InMemoryDatabaseManager())
+
+        try await first.completeSourceSetup(enabledSourceIDs: [])
+
+        #expect(await first.hasCompletedSourceSetup())
+        #expect(await second.hasCompletedSourceSetup() == false)
+    }
+
+    @Test("删除自定义来源不删除已 Star 仓库")
+    func removingCustomSourceDoesNotDeleteStarredRepository() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.writer.write { db in
+            try db.execute(
+                sql: "INSERT INTO repos (id, owner, name, full_name, html_url) VALUES (?, ?, ?, ?, ?)",
+                arguments: [7, "owner", "repo", "owner/repo", "https://github.com/owner/repo"]
+            )
+        }
+        let repository = AwesomeRepository(api: FakeAwesomeAPI(), database: database)
+        let custom = Self.customSource()
+        try await repository.saveCustomSource(custom, entries: [Self.entry(repoID: 7, title: "Custom")])
+
+        try await repository.removeCustomSource(id: custom.id)
+
+        let starredCount = try await database.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM repos WHERE id = 7") ?? 0
+        }
+        #expect(starredCount == 1)
+        #expect(await repository.sources().isEmpty)
+    }
+
     private static func source(id: String, order: Int) -> AwesomeSourceDTO {
         AwesomeSourceDTO(
             id: id,
@@ -101,11 +166,33 @@ struct AwesomeRepositoryTests {
             sourceAnchorURL: "https://github.com/example/list#tools"
         )
     }
+
+    private static func customSource() -> AwesomeSource {
+        AwesomeSource(
+            id: "custom:example/list",
+            kind: .custom,
+            displayName: "Custom List",
+            repoFullName: "example/list",
+            repoURL: URL(string: "https://github.com/example/list")!,
+            imageURL: nil,
+            summaryZH: nil,
+            summaryEN: "Custom source",
+            featured: false,
+            sortOrder: .max,
+            githubRepoCount: 1,
+            externalEntryCount: 0,
+            isAvailable: true,
+            isEnabled: true,
+            addedAt: Date(timeIntervalSince1970: 1),
+            updatedAt: Date(timeIntervalSince1970: 1)
+        )
+    }
 }
 
 private actor FakeAwesomeAPI: AwesomeAPIProtocol {
     private var catalog = AwesomeCatalogResult(sources: [], etag: nil, generatedAt: nil, notModified: false)
     private var entriesBySource: [String: AwesomeEntriesResult] = [:]
+    private var failingEntrySources: Set<String> = []
     private var receivedCatalogETags: [String?] = []
 
     func setCatalog(_ sources: [AwesomeSourceDTO], etag: String) {
@@ -137,6 +224,10 @@ private actor FakeAwesomeAPI: AwesomeAPIProtocol {
         )
     }
 
+    func setEntryError(sourceID: String) {
+        failingEntrySources.insert(sourceID)
+    }
+
     func catalogETags() -> [String?] {
         receivedCatalogETags
     }
@@ -147,7 +238,14 @@ private actor FakeAwesomeAPI: AwesomeAPIProtocol {
     }
 
     func fetchAwesomeEntries(sourceID: String, ifNoneMatch: String?) async throws -> AwesomeEntriesResult {
-        entriesBySource[sourceID]
+        if failingEntrySources.contains(sourceID) {
+            throw FakeAwesomeAPIError.unavailable
+        }
+        return entriesBySource[sourceID]
             ?? AwesomeEntriesResult(snapshot: nil, etag: ifNoneMatch, generatedAt: nil, notModified: true)
     }
+}
+
+private enum FakeAwesomeAPIError: Error {
+    case unavailable
 }

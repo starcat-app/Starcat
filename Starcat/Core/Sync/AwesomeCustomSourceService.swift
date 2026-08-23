@@ -31,6 +31,8 @@ enum AwesomeCustomSourceError: LocalizedError, Equatable {
     case sourceUnavailable
     case invalidReadmeEncoding
     case readmeTooLarge
+    case duplicateSource
+    case noValidRepositories
 
     var errorDescription: String? {
         switch self {
@@ -39,6 +41,8 @@ enum AwesomeCustomSourceError: LocalizedError, Equatable {
         case .sourceUnavailable: return String.l10n("awesome.error.sourceUnavailable")
         case .invalidReadmeEncoding: return String.l10n("awesome.error.invalidReadme")
         case .readmeTooLarge: return String.l10n("awesome.error.readmeTooLarge")
+        case .duplicateSource: return String.l10n("awesome.error.duplicateSource")
+        case .noValidRepositories: return String.l10n("awesome.error.noValidRepositories")
         }
     }
 }
@@ -57,7 +61,19 @@ actor AwesomeCustomSourceService {
         guard let address = AwesomeSourceInput.parse(input) else {
             throw AwesomeCustomSourceError.invalidInput
         }
+        let currentSources = await repository.sources()
+        let existingRepoNames = Set(currentSources.map { $0.repoFullName.lowercased() })
+        guard !existingRepoNames.contains(address.fullName.lowercased())
+        else {
+            throw AwesomeCustomSourceError.duplicateSource
+        }
         let sourceRepo = try await github.awesomeRepository(owner: address.owner, repo: address.repo)
+        guard !existingRepoNames.contains(sourceRepo.fullName.lowercased())
+        else {
+            // GitHub 可能把旧仓库名重定向到新 canonical 名称；核验后必须再检查一次，
+            // 否则同一来源可通过 rename 前的 URL 绕过本地去重。
+            throw AwesomeCustomSourceError.duplicateSource
+        }
         guard !sourceRepo.isPrivate else { throw AwesomeCustomSourceError.sourceMustBePublic }
         guard !sourceRepo.archived, sourceRepo.disabled != true else {
             throw AwesomeCustomSourceError.sourceUnavailable
@@ -91,6 +107,9 @@ actor AwesomeCustomSourceService {
                 // README 中失效链接是来源质量事实，不应让整个自定义来源无法添加。
                 continue
             }
+        }
+        guard !entries.isEmpty else {
+            throw AwesomeCustomSourceError.noValidRepositories
         }
 
         let now = Date()

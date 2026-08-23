@@ -88,6 +88,34 @@ struct AwesomeReadmeParserTests {
         #expect(saved?.entries.first?.sectionPath == ["Tools"])
     }
 
+    @Test("自定义来源拒绝与现有精选或自定义来源重复")
+    func customSourceRejectsDuplicateCanonicalRepository() async throws {
+        let github = FakeAwesomeGitHub()
+        let repository = FakeAwesomeRepository(existingSources: [Self.existingSource()])
+        let service = AwesomeCustomSourceService(github: github, repository: repository)
+
+        await #expect(throws: AwesomeCustomSourceError.duplicateSource) {
+            try await service.add(input: "https://github.com/OWNER/AWESOME-LIST")
+        }
+    }
+
+    @Test("自定义来源没有有效 GitHub Repo 时不保存")
+    func customSourceRequiresAtLeastOneValidRepository() async throws {
+        let github = FakeAwesomeGitHub()
+        await github.setRepo(Self.repo(id: 1, fullName: "owner/awesome-list"))
+        await github.setReadme(
+            "owner/awesome-list",
+            markdown: "- [External](https://example.com/tool) - Not a GitHub repository"
+        )
+        let repository = FakeAwesomeRepository()
+        let service = AwesomeCustomSourceService(github: github, repository: repository)
+
+        await #expect(throws: AwesomeCustomSourceError.noValidRepositories) {
+            try await service.add(input: "owner/awesome-list")
+        }
+        #expect(await repository.savedSource() == nil)
+    }
+
     private static func repo(
         id: Int64,
         fullName: String,
@@ -123,6 +151,27 @@ struct AwesomeReadmeParserTests {
             score: nil
         )
     }
+
+    private static func existingSource() -> AwesomeSource {
+        AwesomeSource(
+            id: "managed",
+            kind: .managed,
+            displayName: "Existing",
+            repoFullName: "owner/awesome-list",
+            repoURL: URL(string: "https://github.com/owner/awesome-list")!,
+            imageURL: nil,
+            summaryZH: nil,
+            summaryEN: nil,
+            featured: false,
+            sortOrder: 1,
+            githubRepoCount: 1,
+            externalEntryCount: 0,
+            isAvailable: true,
+            isEnabled: false,
+            addedAt: .distantPast,
+            updatedAt: .distantPast
+        )
+    }
 }
 
 private actor FakeAwesomeGitHub: AwesomeGitHubClientProtocol {
@@ -153,10 +202,17 @@ private actor FakeAwesomeRepository: AwesomeRepositoryProtocol {
     }
 
     private var saved: Saved?
+    private var existingSources: [AwesomeSource]
+
+    init(existingSources: [AwesomeSource] = []) {
+        self.existingSources = existingSources
+    }
 
     func savedSource() -> Saved? { saved }
-    func sources() async -> [AwesomeSource] { [] }
-    func enabledSources() async -> [AwesomeSource] { [] }
+    func sources() async -> [AwesomeSource] {
+        existingSources + (saved.map { [$0.source] } ?? [])
+    }
+    func enabledSources() async -> [AwesomeSource] { await sources().filter(\.isEnabled) }
     func repositories(sourceID: String?) async -> [AwesomeRepositoryItem] { [] }
     func hasCompletedSourceSetup() async -> Bool { false }
     func refreshCatalog() async throws -> [AwesomeSource] { [] }

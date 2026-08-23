@@ -1007,14 +1007,17 @@ struct SidebarView: View {
             HStack(spacing: 5) {
                 Text(source?.displayName ?? String.l10n("awesome.sidebar.all"))
                     .lineLimit(1)
-                if source?.isAvailable == false {
+                if source?.isAvailable == false || source.flatMap({ dependencies.awesomeStore.sourceRefreshErrors[$0.id] }) != nil {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
-                        .accessibilityLabel(Text("awesome.sources.unavailable"))
+                        .accessibilityLabel(Text(LocalizedStringKey(source?.isAvailable == false
+                            ? "awesome.sources.unavailable"
+                            : "awesome.sources.stale")))
                 }
             }
         }
+        .disabled(source?.isAvailable == false)
     }
 
     @ViewBuilder

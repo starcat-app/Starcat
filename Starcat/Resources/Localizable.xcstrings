@@ -69912,6 +69912,22 @@
         }
       }
     },
+    "awesome.error.duplicateSource" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Awesome source already exists."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个 Awesome 来源已经存在。"
+          }
+        }
+      }
+    },
     "awesome.error.invalidReadme" : {
       "localizations" : {
         "en" : {
@@ -69940,6 +69956,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请输入 owner/repo 或公开 GitHub 仓库的 HTTPS 地址。"
+          }
+        }
+      }
+    },
+    "awesome.error.noValidRepositories" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The README does not contain any available public GitHub repositories."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "README 中没有可用的公开 GitHub 仓库。"
           }
         }
       }
@@ -70436,6 +70468,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已选择"
+          }
+        }
+      }
+    },
+    "awesome.sources.stale" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh failed · showing saved entries"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刷新失败 · 正在显示已保存条目"
           }
         }
       }

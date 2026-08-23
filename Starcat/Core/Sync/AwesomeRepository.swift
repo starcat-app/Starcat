@@ -382,7 +382,9 @@ private extension AwesomeSourceRecord {
             displayName: displayName,
             repoFullName: repoFullName,
             repoURL: repoURL,
-            imageURL: imageURL.flatMap(URL.init(string:)),
+            imageURL: imageURL
+                .flatMap(URL.init(string:))
+                .flatMap { $0.scheme?.lowercased() == "https" ? $0 : nil },
             summaryZH: summaryZH,
             summaryEN: summaryEN,
             featured: featured,
