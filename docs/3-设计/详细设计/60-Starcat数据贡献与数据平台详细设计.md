@@ -287,14 +287,14 @@ pending -> uploading -> succeeded
 ```text
 Starcat App
    │
-   ├── recommendation snapshot ──> starcat-recsys-trainer ingest
+   ├── recommendation snapshot ──> starcat-collection-api ──> starcat-recsys-trainer Pull
    └── history observations ─────> starcat-history-api ingest
 
-starcat-recsys-trainer ──> 训练数据湖 / 模型注册表 / 推荐 Serving DB
+starcat-recsys-trainer ──> ServingBundle ──> starcat-recommend-api /api/v2
 starcat-history-api ─────> 原始观测 / 日聚合 / History Serving DB
 ```
 
-可由统一域名或 gateway 暴露入口，但内部必须保持两个数据所有者，不能重新塞回 `starcat-discovery-api` 或 `starcat-recommend-api`。
+可由统一域名或 gateway 暴露入口，但 Collection 原始快照与 Recommend 在线 Serving 必须隔离。`starcat-recommend-api` 只能读取 Trainer 发布的去身份化 Bundle，不能读取参与者或 snapshot items；History 新链路不能重新塞回 `starcat-discovery-api`。
 
 ### 9.2 推荐原始表
 
@@ -423,6 +423,6 @@ history_daily_series(repo_id, observed_on, stars_count, source, precision, contr
 1. 数据贡献是独立授权，不并入匿名遥测。
 2. 推荐使用匿名完整公开 Star 快照；Star History 使用公开 repo 日级 Star 数观测。
 3. 客户端不上报真实 GitHub 身份和私有数据。
-4. 推荐和 Star History 分属独立后端服务，可以共用 gateway，但不能归入 Discovery 或旧 Recommend 服务。
+4. 推荐在线 Serving 和 Star History 分属独立职责；推荐统一由 `starcat-recommend-api` 承担，History 不能归入 Discovery。
 5. 后端删除能力先于客户端开关上线。
 6. 本轮只完成可实施设计，不修改数据库、客户端代码或后端服务。

@@ -13,18 +13,18 @@
 2. **自研仓库推荐**：训练服务基于 Starcat opt-in 数据、GH Archive 和公开 repo metadata 生成推荐产物，在线 API 只读 Serving DB。
 3. **自研 Star History**：独立服务聚合公开 repo 日级快照，并使用 GH Archive 补充估算历史。
 
-当前线上推荐仍由 `starcat-recommend-api` 中转已获作者授权的 SimRepo 接口；当前普通公开仓库 Star History 仍由 `starcat-discovery-api` 提供。两者都是已经使用的过渡实现，不是应立即删除的无效代码。
+当前线上推荐由 `starcat-recommend-api` 的 `/api/v1` 中转已获作者授权的 SimRepo 接口；该服务同时是长期统一推荐入口，将新增 `/api/v2` 读取自研 ServingBundle。当前普通公开仓库 Star History 仍由 `starcat-discovery-api` 提供。
 
 当前实施与目标后端拆分为：
 
 ```text
 supports/starcat-collection-api  独立接收公开 Star 快照并向 Trainer 提供内部导出
 supports/starcat-recsys-trainer  Pull 数据、构建数据集、训练、评估、模型发布
-supports/starcat-recsys-api       在线推荐查询，只读已发布 Serving 数据
+supports/starcat-recommend-api    /api/v1 代理 SimRepo；/api/v2 只读自研 ServingBundle
 supports/starcat-history-api      Star 数观测接收、聚合、历史构建和公共查询
 ```
 
-自研服务达到质量、稳定性和迁移门槛后，删除 SimRepo Provider、旧 `starcat-recommend-api` 和 Discovery Star History 路径，不保留永久双轨。
+不再创建 `starcat-recsys-api`。自研服务达到质量、稳定性和迁移门槛后，只删除 `starcat-recommend-api` 内的 SimRepo Provider 及对应密钥；统一 Recommend 服务继续保留。History 仍按独立方案迁移 Discovery 路径。
 
 ## 2. 当前状态与目标架构
 
@@ -42,8 +42,8 @@ flowchart TB
         H[Starcat opt-in 公开 Star 数据] --> C1[starcat-collection-api]
         C1 --> I[starcat-recsys-trainer Pull]
         J[GH Archive + GitHub 公开 metadata] --> I
-        I --> K[(Recommendation Serving DB)]
-        K --> L[starcat-recsys-api]
+        I --> K[(ServingBundle Registry)]
+        K --> L[starcat-recommend-api /api/v2]
         L --> A
 
         H2[未来独立 History opt-in] --> M[starcat-history-api]
@@ -234,7 +234,7 @@ Mubelotix/simrepo
     → 当前 RecommendModels
 ```
 
-在线 API 只读已发布模型和 Serving DB，不能读取匿名快照原始表，也不能在请求进程内训练。
+`starcat-recommend-api` 的 v2 Provider 只读已发布模型和 Serving DB，不能读取匿名快照原始表，也不能在请求进程内训练；v1 SimRepo 路径保持原契约。
 
 ### 8.5 开发独立 Star History 服务
 
@@ -273,10 +273,10 @@ Agent 只能消费推荐结果和公开 metadata，不能获得匿名参与者�
 
 ### 9.2 架构
 
-- 推荐 Trainer、推荐在线 API、Star History 是三个独立职责。
-- 可以共用统一域名或 gateway，不能重新塞进 Discovery 或旧 Recommend 服务。
+- 推荐 Trainer、统一 Recommend API、Star History 是三个独立职责。
+- Recommend API 只承接在线 Serving，不能接收原始贡献数据或执行训练；History 不能重新塞进 Discovery。
 - 在线推荐 API 不读取匿名原始数据；History 查询 API 不读取参与者身份。
-- SimRepo 和 Discovery 是迁移期 Provider，最终删除，禁止永久双写/双读。
+- SimRepo 和 Discovery 是迁移期 Provider，最终删除对应 Provider，禁止永久双写/双读。
 - 算法结果必须带 model version、source/signal 和可解释降级状态。
 
 ### 9.3 Starcat 客户端
@@ -302,10 +302,10 @@ Agent 只能消费推荐结果和公开 metadata，不能获得匿名参与者�
 2. Starcat 实现本地 payload builder、隐私过滤、预览和 outbox
 3. 用 GH Archive bootstrap，同时灰度积累 Starcat opt-in 数据
 4. 实现 co-star / Metric Learning / content / SVD baseline 与离线评估
-5. 发布 starcat-recsys-api，shadow 对比 SimRepo 后逐级灰度
+5. 在 starcat-recommend-api 发布 `/api/v2`，shadow 对比 `/api/v1` SimRepo 后逐级灰度
 6. 发布 starcat-history-api，回填并 shadow 对比 Discovery
 7. 完成客户端 endpoint 切换和人工验收
-8. 删除 SimRepo Provider、旧 Recommend 服务和 Discovery History 路径
+8. 删除 SimRepo Provider 和 Discovery History 路径，保留统一 Recommend 服务
 ```
 
 任何阶段都不能通过长期兼容层掩盖未完成迁移。回滚窗口可以保留上一版本产物和短期只读路径，但收口阶段必须删除废弃代码、密钥、表和配置。

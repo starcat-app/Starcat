@@ -1,9 +1,9 @@
 # Starcat 自研仓库推荐系统详细设计
 
-> 日期: 2026-08-22
-> 状态: 方案已确认，数据贡献和训练基础设施实施中
-> 版本: v1.0
-> 范围: `starcat-collection-api` + `starcat-recsys-trainer` + `starcat-recsys-api` + Starcat 现有推荐契约迁移
+> 日期: 2026-08-24
+> 状态: 方案已确认，v2 自研推荐全链路实施中
+> 版本: v1.1
+> 范围: `starcat-collection-api` + `starcat-recsys-trainer` + `starcat-recommend-api` + Starcat Direct
 > 当前客户端数据契约: [Starcat 公开 Star 数据静默上报与 Collection 服务详细设计](63-Starcat公开Star数据静默上报与Collection服务详细设计.md)
 > 调研基线: `Puzer/github-repo-embeddings` commit `f6a2f836b63f1065b2a2efdee21e8485449923bc`；`Mubelotix/simrepo` commit `07c6ef1dcfe2fd96cc050ef91529b7f180a55288`
 
@@ -11,13 +11,13 @@
 
 Starcat 自研推荐采用“时间衰减 co-star + Metric Learning 行为向量 + 内容向量冷启动 + 元数据校正 + MMR 去重”的混合方案。SimRepo 继续作为迁移期外部基线和降级来源；Puzer 项目提供可复现的行为向量训练骨架。两者的思路互补，不直接复制任一实现。
 
-后端拆成三个独立服务：
+后端由三个独立 Git 项目承担三类职责：
 
 1. **`starcat-collection-api`**：独立、静默接收经用户同意的匿名公开 Star 完整快照，只向训练系统提供内部导出。
 2. **`starcat-recsys-trainer`**：主动 Pull Collection 导出、导入公开数据、清洗、构建特征、训练、离线评估并发布版本化推荐产物。
-3. **`starcat-recsys-api`**：只读已发布模型和 Serving DB，提供低延迟单仓、多仓和个性化推荐 API。
+3. **`starcat-recommend-api`**：长期统一推荐入口；`/api/v1` 保持 SimRepo Provider 不变，`/api/v2` 只读 Trainer 发布的 ServingBundle。
 
-现有 `supports/starcat-recommend-api` 保留为 SimRepo 适配器和客户端旧入口。自研 API 达到质量门槛后，先在网关层保持现有客户端契约做 shadow/灰度，再删除 SimRepo Provider 和旧服务，禁止长期双轨。
+不再创建职责重复的 `starcat-recsys-api`。自研链路先通过新增 `/api/v2` 独立验证，不改变现有 `/api/v1` 行为；达到质量门槛后再灰度切换默认 Provider。收口时只删除 SimRepo Provider 和对应密钥，`starcat-recommend-api` 作为统一服务继续保留。
 
 ## 2. 上游调研结论
 
@@ -98,9 +98,11 @@ flowchart LR
     L --> M
     M --> N[Model Registry]
     N --> O[Serving Publisher]
-    O --> P[(Recommendation Serving DB)]
-    P --> Q[starcat-recsys-api]
-    Q --> R[Starcat]
+    O --> P[(ServingBundle Registry)]
+    P --> Q[starcat-recommend-api /api/v2]
+    S[SimRepo] --> T[starcat-recommend-api /api/v1]
+    Q --> R[Starcat Direct]
+    T --> R
 ```
 
 原始 Star 集合不进入在线服务。训练服务发布的只是 repo 向量、repo-repo 边、metadata、模型 manifest 和预计算 Top-K。
@@ -363,7 +365,7 @@ model_deployments(
 )
 ```
 
-发布必须原子切换 manifest 指针。Serving API 每个响应返回 `model_version`，回滚不需要重建客户端缓存 key 之外的协议。
+Trainer 先安装并验证本地不可变 Bundle，再通过 `Publisher` 接口把压缩 Bundle 上传到 `starcat-recommend-api` 内部发布端点。Recommend API 校验 manifest、文件 checksum、SQLite `quick_check` 和必需表后，原子切换 active 指针。每个 v2 响应返回 `model_version`；回滚只切换 active version，不改变客户端协议。
 
 ## 10. Serving 数据设计
 
@@ -380,27 +382,26 @@ repo_recommendations(model_version, repo_id, rank, target_repo_id, score, signal
 
 高流量单仓查询优先读预计算 `repo_recommendations`；多仓和过滤请求使用向量/边在线合并。发布新版本先写新 namespace，再原子切换，旧版本保留至少一个回滚窗口。
 
-## 11. 在线 API 契约
+## 11. `starcat-recommend-api` 在线契约
 
 ### 11.1 单仓推荐
 
 ```http
-GET /api/v1/repos/{repo_id}/recommendations
+GET /api/v2/repos/{repo_id}/recommendations
     ?limit=20
-    &cursor=...
-    &exclude_repo_ids=...
+    &offset=0
 ```
 
 响应：
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 1,
   "data": {
     "repo_id": 41881900,
     "model_version": "hybrid-2026-08-22.1",
-    "source": "starcat_hybrid",
-    "degraded": false,
+    "source": "starcat_trained",
+    "fallback": false,
     "items": [
       {
         "repo_id": 123,
@@ -417,10 +418,12 @@ GET /api/v1/repos/{repo_id}/recommendations
           "content": 0.72,
           "metadata": 0.03
         },
-        "reasons": ["共同 Star 关系较强", "同为活跃的 Swift 工具"]
+        "source": "starcat_trained",
+        "reasons": ["基于公开 Star 共现关系"]
       }
     ],
-    "next_cursor": null
+    "has_more": false,
+    "next_offset": null
   },
   "meta": {
     "cache_status": "fresh",
@@ -432,7 +435,7 @@ GET /api/v1/repos/{repo_id}/recommendations
 ### 11.2 多仓/个性化推荐
 
 ```http
-POST /api/v1/recommendations/query
+POST /api/v2/recommendations/query
 ```
 
 ```json
@@ -450,7 +453,17 @@ POST /api/v1/recommendations/query
 
 限制 positive 20、negative 20、exclude 500。body 不接收 `participant_id`、用户 login、tag 或 note。
 
-### 11.3 错误和缓存
+### 11.3 内部 Bundle 发布
+
+```http
+POST /internal/v1/model-bundles/{model_version}?activate=true
+Authorization: Bearer <MODEL_PUBLISH_KEY>
+Content-Type: application/zip
+```
+
+压缩包只允许包含 `recommendations.sqlite`、`manifest.json` 和 `checksums.json`。服务端拒绝路径穿越、额外文件、版本不一致、checksum 错误、SQLite 损坏和缺少必需表；安装目录不可变，激活指针通过临时文件加原子重命名更新。该端点与客户端 `API_KEYS` 完全隔离，不对第三方开放。
+
+### 11.4 错误和缓存
 
 | 状态 | 语义 |
 |---|---|
@@ -519,7 +532,7 @@ POST /api/v1/recommendations/query
 
 ### Phase 2：Shadow
 
-- `starcat-recommend-api` 对真实请求异步调用自研 API，只记录脱敏差异指标，不改变响应。
+- `starcat-recommend-api` 对真实 v1 请求异步执行同进程 v2 Provider，只记录脱敏差异指标，不改变 v1 响应。
 - 不记录客户端完整已 Star 集合或参与者身份。
 
 ### Phase 3：灰度
@@ -529,9 +542,9 @@ POST /api/v1/recommendations/query
 
 ### Phase 4：收口
 
-- 网关将现有 `/api/v1/repos/{repo_id}/recommendations` 指向 `starcat-recsys-api`。
+- 验证通过后可让现有 `/api/v1/repos/{repo_id}/recommendations` 在服务端灰度选择自研 Provider。
 - 清理客户端对 `source=simrepo` 的产品依赖，保留通用 source/reasons 展示。
-- 删除 `SimRepoProvider`、密钥和旧 `starcat-recommend-api` 部署；不保留永久双写/双读。
+- 删除 `SimRepoProvider` 和密钥；保留 `starcat-recommend-api` 统一服务及自研 Provider，不保留永久双读。
 
 ## 14. 服务 SLO 与运维
 
@@ -575,19 +588,20 @@ POST /api/v1/recommendations/query
 - Starcat 数据和 GH Archive 均能生成版本化、可删除重建的训练集。
 - co-star、Metric Learning、content、SVD baseline 均可独立训练和评估。
 - 动态融合与 MMR 在验证集上优于最强单路模型，并通过长尾分桶审查。
-- Trainer 与 API 服务部署、权限、数据存储和发布职责分离。
-- 在线 API 达到 SLO，响应带 model version、signals、reasons 和 degraded 状态。
+- Trainer 与 Recommend API 的部署、权限、数据存储和发布职责分离。
+- 在线 API 达到 SLO，响应带 model version、signals、reasons 和明确 fallback/degraded 状态。
 - Shadow/灰度/回滚真实演练完成。
-- 自研达到门槛后清理 SimRepo 和旧 Recommend 服务，不留下永久双轨。
+- 自研达到门槛后清理 SimRepo Provider，不删除统一 Recommend 服务，不留下永久双轨。
 
 ## 17. 已采用决策
 
 1. 综合 SimRepo 的时间衰减 co-star 与 Puzer 的 Metric Learning，而不是二选一。
 2. 内容 embedding 负责冷启动，TruncatedSVD 负责 baseline/回退。
 3. 排序使用数据置信度动态融合，不预设长期固定权重。
-4. 训练和在线查询拆为两个服务；在线 API 不接触原始匿名身份。
+4. 训练和在线查询拆为 Trainer 与 Recommend API；在线 API 不接触原始匿名身份。
 5. BigQuery 用于 bootstrap，Starcat opt-in 数据用于持续更新和质量增强。
-6. 现有 Recommend API 是迁移层，最终删除，不长期保留 Provider 双轨。
+6. 现有 Recommend API 是长期统一入口；v1 保持 SimRepo 契约，v2 新增自研契约，最终只删除 SimRepo Provider。
+7. `starcat-recsys-api` 职责与 Recommend API 重复，明确取消，不创建该项目。
 
 ## 18. 参考资料
 

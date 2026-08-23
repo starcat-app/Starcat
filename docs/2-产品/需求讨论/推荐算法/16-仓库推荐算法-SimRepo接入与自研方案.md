@@ -4,7 +4,7 @@
 > 适用项目：Starcat macOS App / Starcat Backend  
 > 目标：在 Starcat 中快速实现「相似 GitHub 仓库推荐」，短期复用 SimRepo 非官方接口，中长期建设 Starcat 自研混合推荐系统。
 
-> 2026-08-22 修订：SimRepo 作者已授权 Starcat 使用接口；当前 `starcat-recommend-api` 继续作为过渡适配层。长期权威实现改为独立的 `starcat-recsys-trainer` + `starcat-recsys-api`，详见 [61-Starcat自研仓库推荐系统详细设计](../../../3-设计/详细设计/61-Starcat自研仓库推荐系统详细设计.md)。本文件保留首轮调研和接入历史，涉及最终算法、数据上报和迁移的冲突内容以 60/61 文档为准。
+> 2026-08-24 修订：SimRepo 作者已授权 Starcat 使用接口；`starcat-recommend-api` 是长期统一推荐入口，`/api/v1` 保持 SimRepo，`/api/v2` 读取 `starcat-recsys-trainer` 发布的自研产物，不再创建 `starcat-recsys-api`。详见 [61-Starcat自研仓库推荐系统详细设计](../../../3-设计/详细设计/61-Starcat自研仓库推荐系统详细设计.md)。本文件保留首轮调研和接入历史，涉及最终算法、数据上报和迁移的冲突内容以 60/61 文档为准。
 
 ---
 
@@ -1160,9 +1160,9 @@ P3：完整混合推荐系统
 也就是说：
 
 ```text
-当前：授权使用 SimRepo，通过旧 recommend-api 保持生产能力
+当前：授权使用 SimRepo，通过 recommend-api `/api/v1` 保持生产能力
 中期：以 Starcat opt-in 数据 + GH Archive 建训练集，同时完成 co-star / Metric / content ablation
-长期：自研 API 灰度替代 SimRepo，删除旧 Provider 和旧服务
+长期：recommend-api `/api/v2` 承载自研模型，灰度替代后只删除 SimRepo Provider
 ```
 
 ---

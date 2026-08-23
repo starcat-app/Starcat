@@ -1,9 +1,9 @@
 # Starcat 公开 Star 数据静默上报与 Collection 服务详细设计
 
 > 日期: 2026-08-23
-> 状态: 第一阶段已实现并通过本机三仓 E2E
-> 版本: v1.0
-> 范围: Starcat macOS 客户端 + `starcat-collection-api` + `starcat-recsys-trainer`
+> 状态: 第一阶段已完成；第二阶段 Recommend v2 全链路实施中
+> 版本: v1.1
+> 范围: Starcat macOS 客户端 + `starcat-collection-api` + `starcat-recsys-trainer` + `starcat-recommend-api`
 > 上游背景: [60-Starcat 数据贡献与数据平台详细设计](60-Starcat数据贡献与数据平台详细设计.md)
 > 下游训练: [61-Starcat 自研仓库推荐系统详细设计](61-Starcat自研仓库推荐系统详细设计.md)
 
@@ -13,7 +13,7 @@
 
 该链路是严格旁路能力。Collection 服务不可用、超时、返回错误、本地构造失败或 Outbox 写入失败，都不能改变 Stars 同步结果、页面状态和 Starcat 其他功能。
 
-第一阶段不实现 Star History 上报、数据预览、上传状态展示、用户错误提示、服务端删除、在线推荐迁移和第三方 API。
+第一阶段不实现 Star History 上报、数据预览、上传状态展示、用户错误提示、服务端删除、在线推荐迁移和第三方 API。第二阶段在不改变上述数据采集边界的前提下，把 Trainer 产物发布到 `starcat-recommend-api /api/v2` 并由 Starcat Direct 消费。
 
 ## 2. 范围与非目标
 
@@ -29,7 +29,7 @@
 ### 2.2 非目标
 
 - 不实现 Star History 数据采集或查询。
-- 不修改 `starcat-discovery-api`、`starcat-recommend-api` 或 `starcat-api`。
+- 第一阶段不修改 `starcat-discovery-api`、`starcat-recommend-api` 或 `starcat-api`；第二阶段只扩展独立 `starcat-recommend-api`，不修改另外两者。
 - 不接入统一 Gateway；Starcat 直接访问 Collection 服务独立地址。
 - 不展示上传数量、成功时间、失败状态、Toast、Alert、通知或红点。
 - 不实现服务端删除、参与者注册、删除 token 或状态查询。
@@ -52,6 +52,8 @@ flowchart LR
     I --> J[canonical / dataset]
     J --> K[Popular / SVD / co-star]
     K --> L[evaluation / ServingBundle]
+    L --> M[starcat-recommend-api /api/v2]
+    M --> N[Starcat Direct 推荐 UI]
 ```
 
 Starcat 不等待 C～F 中任何一步。训练服务主动 Pull，Collection 服务不反向连接训练 Mac。
@@ -434,3 +436,13 @@ Swift 生成 fixture
 - [x] Swift 全量测试、Go check、Python check 与构建全部通过。
 - [x] 未接入 History、Gateway、服务端删除、状态 UI、在线推荐和第三方 API。
 - [x] 未 push、未部署；`docs/功能实现总览.md` 未经单独授权保持只读。
+
+## 15. 第二阶段全链路 Checklist
+
+- [ ] `starcat-recommend-api /api/v1` 保持 SimRepo 行为与契约不变。
+- [ ] 新增 `/api/v2` 单仓与多 seed 自研推荐查询。
+- [ ] 新增独立 Admin Key 保护的 Bundle 上传、校验、不可变安装和原子激活。
+- [ ] Trainer 增加面向 Recommend API 的 Publisher，并保留本地 Registry。
+- [ ] Starcat Direct 调用 `/api/v2`，现有推荐 UI 与缓存继续复用。
+- [ ] 使用主仓库真实 Star 数据完成上报、训练、发布、API 查询和 UI 验收。
+- [ ] 多轮审查报告和包含 BigQuery 查询细节的最终测试报告已生成。
