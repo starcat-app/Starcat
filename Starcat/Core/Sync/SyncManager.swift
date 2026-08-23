@@ -138,6 +138,10 @@ final class SyncManager {
     /// long-lived，正常无循环引用风险）。
     var onSyncCompleted: (@MainActor () async -> Void)?
 
+    /// 数据贡献等旁路能力只消费成功“完整”同步边沿；增量和 ETag 304 不得触发。
+    /// 回调是同步 Void，调用方必须自行启动异步 Task，不能让旁路工作阻塞同步完成态。
+    var onFullSyncCompleted: (@MainActor (_ userID: Int64, _ capturedAt: Date) -> Void)?
+
     // MARK: - 初始化
 
     init(
@@ -400,6 +404,10 @@ final class SyncManager {
             // 漂移（DB 半截写入）。
             if let hook = onSyncCompleted {
                 await hook()
+            }
+
+            if !incrementalMode {
+                onFullSyncCompleted?(userID, Date())
             }
 
             lastRunWroteRepos = totalSynced > 0

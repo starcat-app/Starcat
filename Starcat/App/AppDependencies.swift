@@ -52,6 +52,8 @@ final class AppDependencies {
     /// Week 3 引入：HomeView 在初始化时需要复用这个 repository 构建 ViewModel。
     /// D-01：注入类型从 struct 改为协议，便于测试替换为 Mock。
     let repoRepository: any RepoRepositoryProtocol
+    /// 公开 Star 数据贡献旁路；失败不得改变同步和 UI 状态。
+    let dataContributionCoordinator: DataContributionCoordinator
     /// Agent run 历史记录仓储。Runtime 写入,Agent 工作台左侧历史读取。
     let agentRunRepository: any AgentRunRepositoryProtocol
     /// Week 3 引入：用户偏好（列表密度等）。
@@ -907,6 +909,12 @@ final class AppDependencies {
         // D-01：构造时用具体类型 GRDBRepoRepository，字段类型是协议 any RepoRepositoryProtocol
         let repo = GRDBRepoRepository(database: db)
         self.repoRepository = repo
+        let dataContributionCoordinator = DataContributionCoordinator(
+            repository: DataContributionRepository(database: db),
+            repoRepository: repo,
+            uploader: CollectionAPIClient()
+        )
+        self.dataContributionCoordinator = dataContributionCoordinator
         let userRepoActivity = GRDBUserRepoActivityRepository(database: db)
         self.userRepoActivityRepository = userRepoActivity
         self.agentRunRepository = GRDBAgentRunRepository(database: db)
@@ -1631,6 +1639,15 @@ final class AppDependencies {
             await ragIndexBuilder.refreshMetadataForKnowledgeRepos()
             await widgetRefreshCoordinator.publishReady()
         }
+        self.syncManager.onFullSyncCompleted = { [dataContributionCoordinator] userID, capturedAt in
+            // 不 await：快照和上传是严格旁路，SyncManager 的完成态不等待 Collection 服务。
+            Task {
+                await dataContributionCoordinator.handleSuccessfulFullSync(
+                    accountID: userID,
+                    capturedAt: capturedAt
+                )
+            }
+        }
 
         // AuthSession 登出 / 失效 → bootstrapper.clearOnSignOut() 清空 registry
         session.onSignOut = { [bootstrapper] in
@@ -1660,6 +1677,7 @@ final class AppDependencies {
             await self.wikiKnowledgeBackfillCoordinator.suspendForUserDatabaseChange()
             await self.knowledgeRAGIndexBuilder.suspendForUserDatabaseChange()
             await self.knowledgeBaseMetadataSnapshotCache.removeAll()
+            await self.dataContributionCoordinator.suspendForAccountChange()
             var didSwitchDatabase = false
             do {
                 try await self.switchUserDatabase(to: userId)
@@ -1681,6 +1699,8 @@ final class AppDependencies {
             }
             self.knowledgeRAGIndexBuilder.resumeAfterUserDatabaseChange()
             self.wikiKnowledgeBackfillCoordinator.resumeAfterUserDatabaseChange()
+            // 即使 reopen 失败也绑定 database 的真实 currentUserId，不能假设目标账号已生效。
+            await self.dataContributionCoordinator.activate(accountID: self.database.currentUserId)
 
             // HOM-199 B1：DB 切到新用户后立即 reload StarredRegistry。
             //
@@ -1723,6 +1743,10 @@ final class AppDependencies {
             self.mcpService.refreshForCurrentSettings()
             self.serviceAvailabilityMonitor.startPeriodicChecks()
             self.wikiKnowledgeBackfillCoordinator.start()
+            Task { [dataContributionCoordinator] in
+                await dataContributionCoordinator.start()
+                await dataContributionCoordinator.activate(accountID: db.currentUserId)
+            }
         }
     }
 

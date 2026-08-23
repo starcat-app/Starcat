@@ -277,6 +277,36 @@ struct SyncManagerTests {
 
         #expect(sync.lastRunWroteRepos == true)
     }
+
+    @Test("首次完整同步成功应触发数据贡献边沿")
+    func fullSyncFiresContributionHook() async throws {
+        let (sync, mock, _) = try makeSUT()
+        let calls = Counter()
+        sync.onFullSyncCompleted = { userID, _ in
+            #expect(userID == 904)
+            calls.increment()
+        }
+        mock.starredReposHandler = { _, _, _ in
+            self.makeOnePageResponse(dtos: [self.makeDTO(id: 4)])
+        }
+
+        sync.performFullSync(userID: 904)
+        try await waitForState(sync) { if case .completed = $0 { return true } else { return false } }
+        #expect(calls.value == 1)
+    }
+
+    @Test("ETag 304 不应触发数据贡献边沿")
+    func notModifiedDoesNotFireContributionHook() async throws {
+        let (sync, mock, repo) = try makeSUT()
+        try await repo.updateStarsETag(userID: 905, etag: "\"same\"")
+        let calls = Counter()
+        sync.onFullSyncCompleted = { _, _ in calls.increment() }
+        mock.starredReposHandler = { _, _, _ in throw NetworkError.notModified(etag: "\"same\"") }
+
+        sync.performFullSync(userID: 905)
+        try await waitForState(sync) { if case .completed = $0 { return true } else { return false } }
+        #expect(calls.value == 0)
+    }
 }
 
 /// 引用类型 box,用于 @Sendable handler 闭包里捕获并修改值类型(配合 Counter 一起做测试观察用)。
@@ -384,6 +414,34 @@ extension SyncManagerTests {
         try await waitForNewCompletion(sync, after: prev)
 
         #expect(try await repo.starredCount() == 3)
+    }
+
+    @Test("增量同步成功不应触发数据贡献边沿")
+    func incrementalDoesNotFireContributionHook() async throws {
+        let (sync, mock, _) = try makeSUT()
+        let userID: Int64 = 10_001
+        mock.starredReposHandler = { _, _, _ in
+            self.makePageResponse(
+                dtos: [self.makeDTO(id: 1, starredAt: "2026-05-29T00:00:00Z")],
+                nextPage: nil
+            )
+        }
+        sync.performFullSync(userID: userID)
+        try await waitForState(sync) { if case .completed = $0 { return true } else { return false } }
+
+        let calls = Counter()
+        sync.onFullSyncCompleted = { _, _ in calls.increment() }
+        let previous = currentCompletionDate(sync)
+        mock.starredReposHandler = { _, _, _ in
+            self.makePageResponse(
+                dtos: [self.makeDTO(id: 2, starredAt: "2099-01-01T00:00:00Z")],
+                nextPage: nil
+            )
+        }
+        sync.performFullSync(userID: userID)
+        try await waitForNewCompletion(sync, after: previous)
+
+        #expect(calls.value == 0)
     }
 
     @Test("C3: force=true 走全量,markUnstarredExcept 会清除消失的 repo")
