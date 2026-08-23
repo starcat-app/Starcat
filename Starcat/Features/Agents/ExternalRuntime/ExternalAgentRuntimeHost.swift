@@ -58,6 +58,7 @@ private actor ExternalAgentProcessSession {
     private var isStopping = false
     private var didReceiveFirstOutput = false
     private var didProtocolActivityTimeout = false
+    private var processStartedAt: Date?
 
     init(driver: any ExternalAgentProtocolDriver, firstOutputTimeout: Duration) {
         self.driver = driver
@@ -90,7 +91,9 @@ private actor ExternalAgentProcessSession {
         guard Darwin.fcntl(stdinDescriptor, F_SETNOSIGPIPE, 1) != -1 else {
             throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
+        let processStartedAt = Date()
         try process.run()
+        self.processStartedAt = processStartedAt
         // spawn 完成后父进程必须立即关闭三条 pipe 的 child-side endpoint。否则父进程
         // 自己仍持有 stdin read / stdout write / stderr write，Provider 退出后 EOF、EPIPE
         // 都无法可靠传播，短生命周期的连续 Run 还可能出现上一条 pipe 干扰下一条 Run。
@@ -163,9 +166,12 @@ private actor ExternalAgentProcessSession {
                 // 避免 Codex 长握手或长推理被固定的墙钟超时误杀。
                 noteProtocolActivity()
                 let output = try driver.receive(frame)
-                if output.events.contains(where: \.countsAsFirstOutput)
-                    || !output.toolRequests.isEmpty {
-                    markFirstOutputReceived()
+                if (output.events.contains(where: \.countsAsFirstOutput)
+                    || !output.toolRequests.isEmpty),
+                   let latency = takeFirstOutputLatency() {
+                    // 先交付实测指标，再交付首个产品事件；Projector 会把它并入随后到达的
+                    // Provider usage，并最终随 assistant message 持久化。
+                    await onEvent(.firstOutputLatency(latency))
                 }
                 for frame in output.outboundFrames {
                     try write(frame)
@@ -300,9 +306,10 @@ private actor ExternalAgentProcessSession {
         }
     }
 
-    private func markFirstOutputReceived() {
-        guard !didReceiveFirstOutput else { return }
+    private func takeFirstOutputLatency() -> Int? {
+        guard !didReceiveFirstOutput, let processStartedAt else { return nil }
         didReceiveFirstOutput = true
+        return max(0, Int(Date().timeIntervalSince(processStartedAt) * 1_000))
     }
 
     private func handleProtocolActivityTimeout() {
@@ -469,7 +476,7 @@ private extension ExternalAgentProtocolEvent {
         case .trace, .assistantDelta, .reasoningDelta, .assistantMessage, .toolCall, .toolResult,
              .artifactMarkdown, .completed, .cancelled, .failed:
             return true
-        case .usage:
+        case .usage, .firstOutputLatency:
             return false
         }
     }

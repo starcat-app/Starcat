@@ -22,7 +22,10 @@ struct ExternalAgentRuntimeHostTests {
             await collector.append(event)
         }
 
-        #expect(await collector.events == [.assistantDelta("fixture"), .completed])
+        assertFirstOutputLatency(
+            in: await collector.events,
+            followedBy: [.assistantDelta("fixture"), .completed]
+        )
     }
 
     @Test("Host 不会把对象形态的损坏 JSON 当成诊断文本忽略")
@@ -57,7 +60,7 @@ struct ExternalAgentRuntimeHostTests {
             await collector.append(event)
         }
 
-        #expect(await collector.events == [
+        assertFirstOutputLatency(in: await collector.events, followedBy: [
             .toolCall(
                 id: "call-1",
                 name: "fixture_lookup",
@@ -100,7 +103,10 @@ struct ExternalAgentRuntimeHostTests {
             await collector.append(event)
         }
 
-        #expect(await collector.events == [.assistantDelta("ready"), .completed])
+        assertFirstOutputLatency(
+            in: await collector.events,
+            followedBy: [.assistantDelta("ready"), .completed]
+        )
     }
 
     @Test("Host 在已有输出后仍会终止停止协议活动的进程")
@@ -139,6 +145,22 @@ struct ExternalAgentRuntimeHostTests {
                 driver: ExternalHostClosedStdinFixtureDriver()
             ) { _ in }
         }
+    }
+
+    /// 首输出延迟取决于当前机器调度，测试只校验 Host 在第一个产品事件前发送非负实测值，
+    /// 其余 Provider 事件仍保持原有顺序。
+    private func assertFirstOutputLatency(
+        in events: [ExternalAgentProtocolEvent],
+        followedBy expectedEvents: [ExternalAgentProtocolEvent]
+    ) {
+        guard let firstEvent = events.first,
+              case .firstOutputLatency(let milliseconds) = firstEvent
+        else {
+            Issue.record("Host 未在首个产品事件前报告 firstOutputLatency")
+            return
+        }
+        #expect(milliseconds >= 0)
+        #expect(Array(events.dropFirst()) == expectedEvents)
     }
 }
 

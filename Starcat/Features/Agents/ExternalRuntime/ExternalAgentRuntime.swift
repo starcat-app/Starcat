@@ -396,6 +396,7 @@ private actor ExternalAgentEventProjector {
     private var traceStartedAt: [String: Date] = [:]
     private var traceSummaries: [String: String] = [:]
     private var traceDetails: [String: [AgentTraceDetail]] = [:]
+    private var traceUsages: [String: AgentUsage] = [:]
     private var assistantText = ""
     private var finalAssistantText: String?
     private var runtimeModelName: String?
@@ -462,8 +463,7 @@ private actor ExternalAgentEventProjector {
         case .assistantMessage(let text, let usage):
             if !text.isEmpty { finalAssistantText = text }
             if let usage {
-                latestUsage = usage
-                continuation.yield(.usageUpdated(usage))
+                replaceUsage(usage)
             }
         case .toolCall(let id, let name, let input, let rawInput):
             await projectTrace(ExternalAgentTraceEvent(
@@ -536,8 +536,13 @@ private actor ExternalAgentEventProjector {
             }
             continuation.yield(.artifactCreated(artifact))
         case .usage(let usage):
-            latestUsage = usage
-            continuation.yield(.usageUpdated(usage))
+            replaceUsage(usage)
+        case .firstOutputLatency(let milliseconds):
+            var metrics = latestUsage ?? .zero
+            metrics.firstOutputLatencyMilliseconds = metrics.firstOutputLatencyMilliseconds
+                ?? milliseconds
+            latestUsage = metrics
+            continuation.yield(.usageUpdated(metrics))
         case .completed:
             await complete()
         case .cancelled:
@@ -642,6 +647,8 @@ private actor ExternalAgentEventProjector {
             with: providerEvent.details
         )
         traceDetails[providerEvent.id] = details
+        let usage = providerEvent.usage ?? traceUsages[providerEvent.id]
+        if let usage { traceUsages[providerEvent.id] = usage }
         let event = AgentTraceEvent(
             id: stableID,
             runID: runID,
@@ -656,6 +663,7 @@ private actor ExternalAgentEventProjector {
             details: details,
             attempt: providerEvent.attempt,
             durationMilliseconds: providerEvent.durationMilliseconds,
+            usage: usage,
             startedAt: startedAt,
             completedAt: providerEvent.completedAt
         )
@@ -670,6 +678,13 @@ private actor ExternalAgentEventProjector {
             }
         }
         continuation.yield(.traceUpdated(event))
+    }
+
+    private func replaceUsage(_ providerUsage: AgentUsage) {
+        var next = providerUsage
+        next.inheritRuntimeMetrics(from: latestUsage)
+        latestUsage = next
+        continuation.yield(.usageUpdated(next))
     }
 
     /// Provider 的增量帧可能携带空字符串；空值不能覆盖前一帧已经保存的摘要。

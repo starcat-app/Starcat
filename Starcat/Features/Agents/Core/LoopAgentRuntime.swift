@@ -671,6 +671,8 @@ struct LoopAgentRuntime: AgentRuntime {
         var streamedText = ""
         var streamedReasoning = ""
         var deltaBatcher = AgentStreamDeltaBatcher()
+        let requestStartedAt = Date()
+        var firstOutputLatencyMilliseconds: Int?
         let stream = modelClient.stream(request: AgentModelRequest(
             prompt: promptRequest,
             tools: tools,
@@ -680,6 +682,17 @@ struct LoopAgentRuntime: AgentRuntime {
         do {
             for try await event in stream {
                 try Task.checkCancellation()
+                if firstOutputLatencyMilliseconds == nil {
+                    switch event {
+                    case .textDelta, .reasoningDelta, .toolCallDelta, .completed:
+                        firstOutputLatencyMilliseconds = max(
+                            0,
+                            Int(Date().timeIntervalSince(requestStartedAt) * 1_000)
+                        )
+                    case .usage:
+                        break
+                    }
+                }
                 switch event {
                 case .textDelta(let delta):
                     streamedText += delta
@@ -716,7 +729,12 @@ struct LoopAgentRuntime: AgentRuntime {
             continuation.yield(batchedEvent)
         }
         try Task.checkCancellation()
-        guard let completed else { throw LoopAgentRuntimeError.emptyModelResponse }
+        guard var completed else { throw LoopAgentRuntimeError.emptyModelResponse }
+        if var usage = completed.usage {
+            usage.firstOutputLatencyMilliseconds = usage.firstOutputLatencyMilliseconds
+                ?? firstOutputLatencyMilliseconds
+            completed.usage = usage
+        }
         if streamedText.isEmpty, !completed.text.isEmpty {
             continuation.yield(.assistantDelta(completed.text))
         }
@@ -1131,6 +1149,14 @@ struct LoopAgentRuntime: AgentRuntime {
         for message: AgentMessage,
         continuation: AsyncStream<AgentRunEvent>.Continuation
     ) async throws {
+        // 一次模型响应可能同时含 reasoning 与多个 tool call。usage 只能挂在第一条可展示
+        // Trace 上，避免 Inspector 把同一请求的 token 重复归属给多个步骤。
+        let usagePartIndex = message.parts.firstIndex { part in
+            switch part {
+            case .reasoning, .toolCall: return true
+            case .text, .toolResult: return false
+            }
+        }
         for (partIndex, part) in message.parts.enumerated() {
             let trace: AgentTraceEvent?
             switch part {
@@ -1150,6 +1176,7 @@ struct LoopAgentRuntime: AgentRuntime {
                         value: summary,
                         format: .markdown
                     )],
+                    usage: partIndex == usagePartIndex ? message.usage : nil,
                     startedAt: message.createdAt,
                     completedAt: message.createdAt
                 )
@@ -1169,6 +1196,7 @@ struct LoopAgentRuntime: AgentRuntime {
                         value: call.rawInput ?? (try? call.input.jsonString()) ?? "{}",
                         format: .json
                     )],
+                    usage: partIndex == usagePartIndex ? message.usage : nil,
                     startedAt: message.createdAt
                 )
             case .toolResult(let result):

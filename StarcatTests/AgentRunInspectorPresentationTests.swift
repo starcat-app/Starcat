@@ -25,6 +25,7 @@ struct AgentRunInspectorPresentationTests {
         let presentation = AgentRunInspectorPresentation(
             traceEvents: events,
             messages: [],
+            approvals: [],
             artifacts: [AgentArtifact(type: .markdown, title: "Report", content: "# Report")],
             runRecord: nil
         )
@@ -62,6 +63,26 @@ struct AgentRunInspectorPresentationTests {
         #expect(viewModel.inspectorTab == .context)
         #expect(viewModel.selectedTraceEvent == nil)
         #expect(viewModel.selectedKnowledgeAudit == nil)
+    }
+
+    @Test("旧 usage JSON 可解码且覆盖式更新保留 Host 指标")
+    func usageMetricsRemainBackwardCompatible() throws {
+        let legacy = #"{"inputTokens":10,"outputTokens":2,"cachedTokens":1,"reasoningTokens":0,"totalTokens":12}"#
+        let decoded = try JSONDecoder().decode(AgentUsage.self, from: Data(legacy.utf8))
+        #expect(decoded.cacheWriteTokens == nil)
+        #expect(decoded.contextWindowLimitTokens == nil)
+
+        var providerUpdate = AgentUsage(
+            inputTokens: 20,
+            outputTokens: 4,
+            contextWindowUsedTokens: 24,
+            contextWindowLimitTokens: 128_000
+        )
+        providerUpdate.inheritRuntimeMetrics(from: AgentUsage(firstOutputLatencyMilliseconds: 350))
+
+        #expect(providerUpdate.firstOutputLatencyMilliseconds == 350)
+        #expect(providerUpdate.contextWindowUsedTokens == 24)
+        #expect(providerUpdate.contextWindowLimitTokens == 128_000)
     }
 
     private func trace(

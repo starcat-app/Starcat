@@ -79,6 +79,8 @@ struct AgentTraceEvent: Codable, Hashable, Identifiable, Sendable {
     let details: [AgentTraceDetail]
     let attempt: Int?
     let durationMilliseconds: Int?
+    /// 单步 usage 只在 Provider 能与该事件可靠关联时写入；nil 不是 0，而是未提供。
+    let usage: AgentUsage?
     let startedAt: Date
     let completedAt: Date?
 
@@ -96,6 +98,7 @@ struct AgentTraceEvent: Codable, Hashable, Identifiable, Sendable {
         details: [AgentTraceDetail] = [],
         attempt: Int? = nil,
         durationMilliseconds: Int? = nil,
+        usage: AgentUsage? = nil,
         startedAt: Date = Date(),
         completedAt: Date? = nil
     ) {
@@ -112,6 +115,7 @@ struct AgentTraceEvent: Codable, Hashable, Identifiable, Sendable {
         self.details = details
         self.attempt = attempt
         self.durationMilliseconds = durationMilliseconds
+        self.usage = usage
         self.startedAt = startedAt
         self.completedAt = completedAt
     }

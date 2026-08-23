@@ -70,6 +70,8 @@ enum ExternalAgentProtocolEvent: Equatable, Sendable {
     case toolResult(id: String, name: String, output: AgentJSONValue, isError: Bool)
     case artifactMarkdown(String, toolCallID: String)
     case usage(AgentUsage)
+    /// 由 Host 从子进程启动到首个产品事件实测，不依赖 Provider 自报。
+    case firstOutputLatency(Int)
     case completed
     case cancelled
     case failed(String)
@@ -87,6 +89,7 @@ struct ExternalAgentTraceEvent: Equatable, Sendable {
     let details: [AgentTraceDetail]
     let attempt: Int?
     let durationMilliseconds: Int?
+    let usage: AgentUsage?
     let startedAt: Date?
     let completedAt: Date?
 
@@ -100,6 +103,7 @@ struct ExternalAgentTraceEvent: Equatable, Sendable {
         details: [AgentTraceDetail] = [],
         attempt: Int? = nil,
         durationMilliseconds: Int? = nil,
+        usage: AgentUsage? = nil,
         startedAt: Date? = nil,
         completedAt: Date? = nil
     ) {
@@ -112,6 +116,7 @@ struct ExternalAgentTraceEvent: Equatable, Sendable {
         self.details = details
         self.attempt = attempt
         self.durationMilliseconds = durationMilliseconds
+        self.usage = usage
         self.startedAt = startedAt
         self.completedAt = completedAt
     }

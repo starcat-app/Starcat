@@ -150,6 +150,9 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
     /// 请求配置、消息与工具事件挂回真实 Step，而不是在 UI 中生成无关联的平铺日志。
     private var currentTurn: Int?
     private var currentStep: Int?
+    /// Harness 在 `request/context` 中公布本次请求的模型上下文上限，后续 usage chunk
+    /// 只携带分项计数。跨事件保留该值，才能展示真实上下文压力而不是猜测模型规格。
+    private var currentContextWindowLimit: Int?
     private var activeCompactionID: String?
     /// request/header 与 request/context、compaction 的 start/summary/end 都会更新同一
     /// 生命周期行。缓存已公开的详情，避免后一个事件 upsert 时把前一个阶段覆盖掉。
@@ -339,10 +342,27 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
                 }
                 return ExternalAgentProtocolOutput(events: [.reasoningDelta(text)])
             case "usage":
-                guard let usage = Self.usage(from: chunk?[external: "usage"] ?? chunk) else {
+                guard var usage = Self.usage(from: chunk?[external: "usage"] ?? chunk) else {
                     return ExternalAgentProtocolOutput()
                 }
-                return ExternalAgentProtocolOutput(events: [.usage(usage)])
+                // Harness 将 cacheReadTokens 从 inputTokens 中单独扣出；上下文占用需要
+                // 加回缓存读取，再加本次输出。reasoningTokens 属于 output 的细分项，不能重复累加。
+                usage.contextWindowUsedTokens = usage.inputTokens + usage.cachedTokens + usage.outputTokens
+                usage.contextWindowLimitTokens = currentContextWindowLimit
+                var events: [ExternalAgentProtocolEvent] = [.usage(usage)]
+                if let turn = currentTurn, let step = currentStep {
+                    // Harness 的 usage chunk 带明确 turn/step 归属。把它并入该 step，
+                    // 后续 step/end 只更新终态，Projector 会保留这份单步用量。
+                    events.append(.trace(ExternalAgentTraceEvent(
+                        id: stepTraceID(turn: turn, step: step),
+                        parentID: turnTraceID(turn),
+                        kind: .lifecycle,
+                        status: .running,
+                        title: "\(String.l10n("agent.workspace.trace.kind.step")) \(step + 1)",
+                        usage: usage
+                    )))
+                }
+                return ExternalAgentProtocolOutput(events: events)
             case "block-start", "block-end", "tool-call-delta", "finish":
                 // 这些是 assistant/message、tool/call 与终态的原始组装帧。逐帧生成 UI 行
                 // 会制造噪声和数百个空 disclosure；最终装配事件才是可恢复的产品事实。
@@ -458,6 +478,7 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
                 value: value
             )
         case "request/context":
+            currentContextWindowLimit = data[external: "contextWindow"]?.integerValue
             return requestTrace(
                 idPrefix: "request",
                 detailLabel: String.l10n("agent.workspace.trace.requestContext"),
@@ -802,7 +823,13 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
         guard let value, let object = value.externalObject else { return nil }
         let input = object["inputTokens"]?.integerValue ?? 0
         let output = object["outputTokens"]?.integerValue ?? 0
-        return AgentUsage(inputTokens: input, outputTokens: output)
+        return AgentUsage(
+            inputTokens: input,
+            outputTokens: output,
+            cachedTokens: object["cacheReadTokens"]?.integerValue ?? 0,
+            cacheWriteTokens: object["cacheWriteTokens"]?.integerValue,
+            reasoningTokens: object["reasoningTokens"]?.integerValue ?? 0
+        )
     }
 
     private static func decodeJSON(_ string: String) throws -> AgentJSONValue {

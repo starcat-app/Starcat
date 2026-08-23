@@ -126,6 +126,7 @@ struct AgentRunInspectorView: View {
         AgentRunInspectorPresentation(
             traceEvents: viewModel.traceEvents,
             messages: viewModel.messages,
+            approvals: viewModel.approvals,
             artifacts: viewModel.artifacts,
             runRecord: viewModel.currentRunRecord
         )
@@ -199,7 +200,21 @@ struct AgentRunInspectorView: View {
                 metricRow(String.l10n("agent.workspace.inspector.overview.outputTokens"), viewModel.usage.outputTokens.formatted())
                 metricRow(String.l10n("agent.workspace.inspector.overview.reasoningTokens"), viewModel.usage.reasoningTokens.formatted())
                 metricRow(String.l10n("agent.workspace.inspector.overview.cachedTokens"), viewModel.usage.cachedTokens.formatted())
+                metricRow(String.l10n("agent.workspace.inspector.overview.cacheWriteTokens"), viewModel.usage.cacheWriteTokens?.formatted() ?? String.l10n("agent.workspace.inspector.value.unavailable"))
+                metricRow(String.l10n("agent.workspace.inspector.overview.contextWindow"), contextWindowLabel)
+                metricRow(String.l10n("agent.workspace.inspector.overview.firstOutput"), viewModel.usage.firstOutputLatencyMilliseconds.map(formatDuration) ?? String.l10n("agent.workspace.inspector.value.unavailable"))
                 metricRow(String.l10n("agent.workspace.inspector.overview.cost"), estimatedCostLabel)
+            }
+
+            inspectorGroup(title: String.l10n("agent.workspace.inspector.overview.audit"), icon: "checkmark.shield") {
+                metricRow(String.l10n("agent.workspace.inspector.overview.sources"), presentation.sourceCount.formatted())
+                metricRow(String.l10n("agent.workspace.inspector.overview.knowledgeAudits"), presentation.knowledgeAuditCount.formatted())
+                metricRow(String.l10n("agent.workspace.inspector.overview.approvals"), presentation.approvalRequestCount.formatted())
+                metricRow(String.l10n("agent.workspace.inspector.overview.approved"), presentation.approvedApprovalCount.formatted())
+                metricRow(String.l10n("agent.workspace.inspector.overview.rejected"), presentation.rejectedApprovalCount.formatted())
+                metricRow(String.l10n("agent.workspace.inspector.overview.fileChanges"), presentation.fileChangeCount.formatted())
+                metricRow(String.l10n("agent.workspace.inspector.overview.warnings"), presentation.warningCount.formatted(), valueColor: presentation.warningCount > 0 ? .orange : .primary)
+                metricRow(String.l10n("agent.workspace.inspector.overview.artifacts"), presentation.artifactCount.formatted())
             }
 
             if let error = viewModel.errorMessage {
@@ -349,6 +364,19 @@ struct AgentRunInspectorView: View {
                             Text("agent.workspace.inspector.step.noDetails")
                                 .font(interfaceScale.font(.caption))
                                 .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    if let usage = event.usage {
+                        inspectorGroup(title: String.l10n("agent.workspace.inspector.step.usage"), icon: "gauge.with.dots.needle.50percent") {
+                            metricRow(String.l10n("agent.workspace.inspector.overview.inputTokens"), usage.inputTokens.formatted())
+                            metricRow(String.l10n("agent.workspace.inspector.overview.outputTokens"), usage.outputTokens.formatted())
+                            metricRow(String.l10n("agent.workspace.inspector.overview.reasoningTokens"), usage.reasoningTokens.formatted())
+                            metricRow(String.l10n("agent.workspace.inspector.overview.cachedTokens"), usage.cachedTokens.formatted())
+                            metricRow(String.l10n("agent.workspace.inspector.overview.cacheWriteTokens"), usage.cacheWriteTokens?.formatted() ?? String.l10n("agent.workspace.inspector.value.unavailable"))
+                            metricRow(String.l10n("agent.workspace.inspector.summary.tokens"), usage.totalTokens.formatted())
+                            metricRow(String.l10n("agent.workspace.inspector.overview.contextWindow"), contextWindowLabel(for: usage))
+                            metricRow(String.l10n("agent.workspace.inspector.overview.firstOutput"), usage.firstOutputLatencyMilliseconds.map(formatDuration) ?? String.l10n("agent.workspace.inspector.value.unavailable"))
                         }
                     }
                 }
@@ -570,6 +598,19 @@ struct AgentRunInspectorView: View {
             return String.l10n("agent.workspace.inspector.value.unavailable")
         }
         return NumberFormatter.agentCurrencyUSD.string(from: NSDecimalNumber(decimal: cost)) ?? "$\(cost)"
+    }
+
+    private var contextWindowLabel: String {
+        contextWindowLabel(for: viewModel.usage)
+    }
+
+    private func contextWindowLabel(for usage: AgentUsage) -> String {
+        guard let used = usage.contextWindowUsedTokens,
+              let limit = usage.contextWindowLimitTokens,
+              limit > 0
+        else { return String.l10n("agent.workspace.inspector.value.unavailable") }
+        let percent = min(100, max(0, Double(used) / Double(limit) * 100))
+        return String(format: "%@ / %@ · %.0f%%", used.formatted(), limit.formatted(), percent)
     }
 
     private func dateLabel(_ date: Date?) -> String {

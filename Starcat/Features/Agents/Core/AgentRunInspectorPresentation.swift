@@ -38,6 +38,12 @@ struct AgentRunInspectorPresentation: Equatable, Sendable {
     let compactionCount: Int
     let sourceCount: Int
     let artifactCount: Int
+    let knowledgeAuditCount: Int
+    let approvalRequestCount: Int
+    let approvedApprovalCount: Int
+    let rejectedApprovalCount: Int
+    let fileChangeCount: Int
+    let warningCount: Int
     let startedAt: Date?
     let finishedAt: Date?
     let lastActivityAt: Date?
@@ -45,6 +51,7 @@ struct AgentRunInspectorPresentation: Equatable, Sendable {
     init(
         traceEvents: [AgentTraceEvent],
         messages: [AgentMessage],
+        approvals: [AgentApprovalRequest],
         artifacts: [AgentArtifact],
         runRecord: AgentRunRecord?
     ) {
@@ -73,6 +80,17 @@ struct AgentRunInspectorPresentation: Equatable, Sendable {
             }
         }
         artifactCount = artifacts.count
+        knowledgeAuditCount = messages.reduce(0) { count, message in
+            count + message.parts.count { part in
+                guard case .toolResult(let result) = part else { return false }
+                return result.toolAudit?.knowledgeRetrieval != nil
+            }
+        }
+        approvalRequestCount = approvals.count
+        approvedApprovalCount = approvals.count { $0.status == .approved }
+        rejectedApprovalCount = approvals.count { $0.status == .rejected }
+        fileChangeCount = traceEvents.count { $0.kind == .fileChange }
+        warningCount = traceEvents.count { [.warning, .error].contains($0.kind) }
 
         let recordedStart = runRecord.flatMap { ISO8601DateFormatter.shared.date(from: $0.createdAt) }
         let recordedFinish = runRecord?.finishedAt.flatMap { ISO8601DateFormatter.shared.date(from: $0) }

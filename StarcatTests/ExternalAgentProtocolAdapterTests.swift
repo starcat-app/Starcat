@@ -128,16 +128,31 @@ struct ExternalAgentProtocolAdapterTests {
                     "inputTokens": .number(12),
                     "outputTokens": .number(3),
                     "cachedInputTokens": .number(4),
+                    "cacheWriteInputTokens": .number(1),
                     "reasoningOutputTokens": .number(2),
-                ])
+                    "totalTokens": .number(15),
+                ]),
+                "last": .object(["totalTokens": .number(7)]),
+                "modelContextWindow": .number(128_000),
             ])])
         ))
-        #expect(usage.events == [.usage(AgentUsage(
-            inputTokens: 12,
-            outputTokens: 3,
-            cachedTokens: 4,
-            reasoningTokens: 2
-        ))])
+        #expect(usage.events.contains { event in
+            guard case .usage(let value) = event else { return false }
+            return value.inputTokens == 12
+                && value.outputTokens == 3
+                && value.cachedTokens == 4
+                && value.cacheWriteTokens == 1
+                && value.reasoningTokens == 2
+                && value.totalTokens == 15
+                && value.contextWindowUsedTokens == 7
+                && value.contextWindowLimitTokens == 128_000
+        })
+        #expect(usage.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.id == "usage:current"
+                && trace.kind == .request
+                && trace.usage?.contextWindowLimitTokens == 128_000
+        })
 
         let completed = try driver.receive(notification(
             method: "turn/completed",
@@ -962,10 +977,54 @@ struct ExternalAgentProtocolAdapterTests {
                 && !trace.details.isEmpty
         })
 
+        let requestContext = try driver.receive(deepSeekEvent(
+            sessionID: sessionID,
+            type: "request/context",
+            seq: 3,
+            data: .object([
+                "provider": .string("deepseek-official"),
+                "model": .string("deepseek-v4-flash"),
+                "contextWindow": .number(131_072),
+            ])
+        ))
+        #expect(requestContext.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.id == "request:0:0" && trace.details.count == 1
+        })
+
+        let usage = try driver.receive(deepSeekEvent(
+            sessionID: sessionID,
+            type: "assistant/chunk",
+            seq: 4,
+            data: .object([
+                "turn": .number(0),
+                "step": .number(0),
+                "chunk": .object([
+                    "type": .string("usage"),
+                    "usage": .object([
+                        "inputTokens": .number(20),
+                        "outputTokens": .number(5),
+                        "cacheReadTokens": .number(8),
+                        "cacheWriteTokens": .number(2),
+                        "reasoningTokens": .number(3),
+                    ]),
+                ]),
+            ])
+        ))
+        #expect(usage.events.contains { event in
+            guard case .trace(let trace) = event else { return false }
+            return trace.id == "turn:0:step:0"
+                && trace.usage?.cachedTokens == 8
+                && trace.usage?.cacheWriteTokens == 2
+                && trace.usage?.reasoningTokens == 3
+                && trace.usage?.contextWindowUsedTokens == 33
+                && trace.usage?.contextWindowLimitTokens == 131_072
+        })
+
         let requestHeader = try driver.receive(deepSeekEvent(
             sessionID: sessionID,
             type: "request/header",
-            seq: 3,
+            seq: 5,
             data: .object([
                 "reason": .string("initial"),
                 "header": .object([
@@ -990,25 +1049,10 @@ struct ExternalAgentProtocolAdapterTests {
                 && !payload.contains("fixture-secret")
         })
 
-        let requestContext = try driver.receive(deepSeekEvent(
-            sessionID: sessionID,
-            type: "request/context",
-            seq: 4,
-            data: .object([
-                "provider": .string("deepseek-official"),
-                "model": .string("deepseek-v4-flash"),
-                "contextWindow": .number(131_072),
-            ])
-        ))
-        #expect(requestContext.events.contains { event in
-            guard case .trace(let trace) = event else { return false }
-            return trace.id == "request:0:0" && trace.details.count == 2
-        })
-
         let assistant = try driver.receive(deepSeekEvent(
             sessionID: sessionID,
             type: "assistant/message",
-            seq: 5,
+            seq: 6,
             data: .object([
                 "turn": .number(0),
                 "step": .number(0),

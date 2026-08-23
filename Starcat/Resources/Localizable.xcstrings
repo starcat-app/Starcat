@@ -470535,6 +470535,111 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未提供" } }
       }
     },
+    "agent.workspace.inspector.overview.approvals" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Approval Requests" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "审批请求" } }
+      }
+    },
+    "agent.workspace.inspector.overview.approved" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Approved" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已批准" } }
+      }
+    },
+    "agent.workspace.inspector.overview.artifacts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Artifacts" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "产出物" } }
+      }
+    },
+    "agent.workspace.inspector.overview.audit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Execution Audit" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "执行审计" } }
+      }
+    },
+    "agent.workspace.inspector.overview.cacheWriteTokens" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cache Write Tokens" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "缓存写入 Token" } }
+      }
+    },
+    "agent.workspace.inspector.overview.contextWindow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Context Window" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上下文窗口" } }
+      }
+    },
+    "agent.workspace.inspector.overview.fileChanges" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "File Changes" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "文件变更" } }
+      }
+    },
+    "agent.workspace.inspector.overview.firstOutput" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "First Output" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "首个输出延迟" } }
+      }
+    },
+    "agent.workspace.inspector.overview.knowledgeAudits" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Knowledge Audits" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识检索审计" } }
+      }
+    },
+    "agent.workspace.inspector.overview.rejected" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Rejected" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已拒绝" } }
+      }
+    },
+    "agent.workspace.inspector.overview.sources" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Evidence Sources" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "证据来源" } }
+      }
+    },
+    "agent.workspace.inspector.overview.warnings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Warnings and Errors" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "警告与错误" } }
+      }
+    },
+    "agent.workspace.inspector.step.usage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Step Usage" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "单步用量" } }
+      }
+    },
+    "agent.workspace.trace.kind.tokenUsage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Token Usage" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Token 用量" } }
+      }
+    },
+    "agent.workspace.trace.tokenUsage.summaryFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld tokens used" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已使用 %lld Token" } }
+      }
+    },
     "agent.workspace.inspector.summary.error" : {
       "extractionState" : "manual",
       "localizations" : {

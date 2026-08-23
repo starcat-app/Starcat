@@ -612,7 +612,21 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
             ))])
         case "thread/tokenUsage/updated":
             guard let usage = Self.usage(from: params) else { return ExternalAgentProtocolOutput() }
-            return ExternalAgentProtocolOutput(events: [.usage(usage)])
+            return ExternalAgentProtocolOutput(events: [
+                .usage(usage),
+                .trace(ExternalAgentTraceEvent(
+                    id: "usage:\(turnID ?? "current")",
+                    kind: .request,
+                    status: .completed,
+                    title: String.l10n("agent.workspace.trace.kind.tokenUsage"),
+                    summary: String.localizedStringWithFormat(
+                        String.l10n("agent.workspace.trace.tokenUsage.summaryFormat"),
+                        usage.totalTokens
+                    ),
+                    usage: usage,
+                    completedAt: Date()
+                )),
+            ])
         case "item/tool/call":
             guard let requestID = object["id"],
                   let callID = params?[external: "callId"]?.stringValue,
@@ -978,12 +992,24 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
         let input = object["inputTokens"]?.integerValue ?? object["input_tokens"]?.integerValue ?? 0
         let output = object["outputTokens"]?.integerValue ?? object["output_tokens"]?.integerValue ?? 0
         let cached = object["cachedInputTokens"]?.integerValue ?? object["cached_input_tokens"]?.integerValue ?? 0
+        let cacheWrite = object["cacheWriteInputTokens"]?.integerValue
+            ?? object["cache_write_input_tokens"]?.integerValue
         let reasoning = object["reasoningOutputTokens"]?.integerValue ?? object["reasoning_tokens"]?.integerValue ?? 0
+        let total = object["totalTokens"]?.integerValue ?? object["total_tokens"]?.integerValue
+        let last = usage?[external: "last"]
+        let contextUsed = last?[external: "totalTokens"]?.integerValue
+            ?? last?[external: "total_tokens"]?.integerValue
+        let contextLimit = usage?[external: "modelContextWindow"]?.integerValue
+            ?? usage?[external: "model_context_window"]?.integerValue
         return AgentUsage(
             inputTokens: input,
             outputTokens: output,
             cachedTokens: cached,
-            reasoningTokens: reasoning
+            cacheWriteTokens: cacheWrite,
+            reasoningTokens: reasoning,
+            totalTokens: total,
+            contextWindowUsedTokens: contextUsed,
+            contextWindowLimitTokens: contextLimit
         )
     }
 
