@@ -234,8 +234,10 @@ enum AppEndpoints {
         }
 
         enum Paths {
-            /// `GET /api/v1/repos/{repo_id}/recommendations?limit=&offset=` —— 相似仓库推荐。
-            static let repoRecommendations = "/api/v1/repos"
+            /// `GET /api/v1/repos/{repo_id}/recommendations?limit=&offset=` —— SimRepo 推荐。
+            static let simRepoRecommendations = "/api/v1/repos"
+            /// `GET /api/v2/repos/{repo_id}/recommendations?limit=&offset=` —— 自研 Bundle 推荐。
+            static let trainedRecommendations = "/api/v2/repos"
             /// `GET /api/v1/ping` —— Starcat 客户端「测试连接」专用端点。
             static let ping = "/api/v1/ping"
             /// `GET /healthz` —— 状态栏服务可用性巡检端点。

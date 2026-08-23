@@ -439,10 +439,10 @@ Swift 生成 fixture
 
 ## 15. 第二阶段全链路 Checklist
 
-- [ ] `starcat-recommend-api /api/v1` 保持 SimRepo 行为与契约不变。
-- [ ] 新增 `/api/v2` 单仓与多 seed 自研推荐查询。
-- [ ] 新增独立 Admin Key 保护的 Bundle 上传、校验、不可变安装和原子激活。
-- [ ] Trainer 增加面向 Recommend API 的 Publisher，并保留本地 Registry。
-- [ ] Starcat Direct 调用 `/api/v2`，现有推荐 UI 与缓存继续复用。
+- [x] `starcat-recommend-api /api/v1` 保持 SimRepo 行为与契约不变。
+- [x] 新增 `/api/v2` 单仓与多 seed 自研推荐查询。
+- [x] 新增独立 Admin Key 保护的 Bundle 上传、校验、不可变安装和原子激活。
+- [x] Trainer 增加面向 Recommend API 的 Publisher，并保留本地 Registry。
+- [x] Starcat Direct 调用 `/api/v2`，现有推荐 UI 与缓存继续复用；App Store target 继续使用 `/api/v1`。
 - [ ] 使用主仓库真实 Star 数据完成上报、训练、发布、API 查询和 UI 验收。
 - [ ] 多轮审查报告和包含 BigQuery 查询细节的最终测试报告已生成。

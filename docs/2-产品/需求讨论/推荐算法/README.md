@@ -130,8 +130,8 @@ Mubelotix/simrepo
 
 | 入口 | 职责 |
 |---|---|
-| [RecommendAPI.swift](../../../../Starcat/Core/Network/RecommendAPI.swift) | 当前推荐网络请求 |
-| [RecommendModels.swift](../../../../Starcat/Core/Network/RecommendModels.swift) | 当前推荐 DTO |
+| [RecommendAPI.swift](../../../../Starcat/Core/Network/RecommendAPI.swift) | 显式选择 SimRepo v1 或自研 Bundle v2 的推荐网络请求 |
+| [RecommendModels.swift](../../../../Starcat/Core/Network/RecommendModels.swift) | v1/v2 共用推荐 DTO，v2 额外解码 `model_version` |
 | [RecommendationContextService.swift](../../../../Starcat/Features/Recommendations/RecommendationContextService.swift) | 推荐结果与仓库上下文协调 |
 | [RepoRecommendationViewModel.swift](../../../../Starcat/Features/Recommendations/RepoRecommendationViewModel.swift) | 推荐加载、分页和状态 |
 | [RepoRecommendationPopover.swift](../../../../Starcat/Features/Recommendations/RepoRecommendationPopover.swift) | 推荐结果 UI |
@@ -178,6 +178,7 @@ Mubelotix/simrepo
 | 入口 | 覆盖范围 |
 |---|---|
 | [RecommendationCacheTests.swift](../../../../StarcatTests/RecommendationCacheTests.swift) | 推荐磁盘缓存 |
+| [RecommendAPITests.swift](../../../../StarcatTests/RecommendAPITests.swift) | v1/v2 路由选择与 ServingBundle 响应契约 |
 | [StarHistoryAPITests.swift](../../../../StarcatTests/StarHistoryAPITests.swift) | History API 契约 |
 | [RepoStarHistoryRepositoryTests.swift](../../../../StarcatTests/RepoStarHistoryRepositoryTests.swift) | local-first 合并和快照存储 |
 | [StarHistoryViewModelTests.swift](../../../../StarcatTests/StarHistoryViewModelTests.swift) | 范围、轮询、取消和派生状态 |

@@ -110,6 +110,7 @@ struct RecommendationCacheTests {
             source: "embedding",
             fallback: false,
             repoID: repoID,
+            modelVersion: nil,
             items: items,
             hasMore: false,
             nextOffset: nil

@@ -386,6 +386,8 @@ repo_recommendations(model_version, repo_id, rank, target_repo_id, score, signal
 
 ### 11.1 单仓推荐
 
+Starcat 客户端以 `RecommendationAPIContract` 显式选择版本：Direct target 使用本节 `/api/v2`，App Store target 保持 `/api/v1` SimRepo。两个版本复用推荐卡片 DTO、磁盘缓存和 UI；v2 额外解码可空 `model_version`，未知 `signals` 字段按 Codable 前向兼容规则忽略。
+
 ```http
 GET /api/v2/repos/{repo_id}/recommendations
     ?limit=20

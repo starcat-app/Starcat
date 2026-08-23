@@ -10,6 +10,22 @@
 
 import Foundation
 
+/// Starcat 推荐客户端使用的服务端契约。
+///
+/// v1 和 v2 只在路由与数据来源上不同，返回卡片 DTO 保持兼容。显式建模可以避免
+/// 本地 Direct 验证为了切换服务而复制整套客户端或推荐 UI。
+enum RecommendationAPIContract: Sendable {
+    case simRepoV1
+    case trainedV2
+
+    var repositoriesPath: String {
+        switch self {
+        case .simRepoV1: AppEndpoints.Recommend.Paths.simRepoRecommendations
+        case .trainedV2: AppEndpoints.Recommend.Paths.trainedRecommendations
+        }
+    }
+}
+
 actor RecommendAPI {
     private static let timeout: TimeInterval = 30
 
@@ -17,14 +33,17 @@ actor RecommendAPI {
     private var apiKey: String?
     private let session: URLSession
     private let decoder: JSONDecoder
+    private let contract: RecommendationAPIContract
 
     init(
         baseURL: URL,
         apiKey: String? = nil,
+        contract: RecommendationAPIContract = .simRepoV1,
         session: URLSession? = nil
     ) {
         self.baseURL = baseURL
         self.apiKey = apiKey
+        self.contract = contract
 
         if let session {
             self.session = session
@@ -43,7 +62,7 @@ actor RecommendAPI {
             throw StarcatEnvelopeNetworkError.invalidURL
         }
 
-        let path = "\(AppEndpoints.Recommend.Paths.repoRecommendations)/\(repoID)/recommendations"
+        let path = "\(contract.repositoriesPath)/\(repoID)/recommendations"
         let endpoint = AppEndpoints.appendPath(path, to: baseURL)
         var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
         components?.queryItems = [

@@ -1376,11 +1376,13 @@ final class AppDependencies {
         )
         self.wikiAPI = wikiAPIInstance
 
-        // Recommend 首期只做详情页单查，不在启动期请求。服务 URL / API Key 与其它
-        // 自建后端同样通过设置页热更新。
+        // Recommend 只在详情页按需单查，不在启动期请求。Direct 使用新增的 v2
+        // ServingBundle 路由完成本次自研推荐链路；App Store 继续使用 v1 SimRepo，
+        // 因此本功能分支不会改变已发布渠道的线上行为。
         self.recommendAPI = RecommendAPI(
             baseURL: AppEndpoints.Recommend.baseURL,
-            apiKey: StarcatAPIKeyResolver.resolve(for: .recommend)
+            apiKey: StarcatAPIKeyResolver.resolve(for: .recommend),
+            contract: distributionChannel.isDirect ? .trainedV2 : .simRepoV1
         )
 
         // 2026-06-15 v4.y：Wiki 磁盘缓存 + SWR 编排。装配顺序：

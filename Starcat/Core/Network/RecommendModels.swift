@@ -54,6 +54,8 @@ struct RepoRecommendationPage: Decodable, Sendable, Equatable {
     let source: String
     let fallback: Bool
     let repoID: Int64
+    /// v1 SimRepo 不返回该字段；v2 用它标识当前原子激活的 ServingBundle。
+    let modelVersion: String?
     let items: [RepoRecommendationItem]
     let hasMore: Bool
     let nextOffset: Int?
@@ -62,6 +64,7 @@ struct RepoRecommendationPage: Decodable, Sendable, Equatable {
         case source
         case fallback
         case repoID = "repo_id"
+        case modelVersion = "model_version"
         case items
         case hasMore = "has_more"
         case nextOffset = "next_offset"
