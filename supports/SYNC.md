@@ -71,7 +71,7 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 | 22 | `extensions/starcat-chrome-plugin/` | `starcat-app/starcat-chrome-plugin` |
 | 23 | `extensions/starcat-safari-plugin/` | `starcat-app/starcat-safari-plugin` |
 | 24 | `starcat-recsys-trainer/` | `starcat-app/starcat-recsys-trainer` 🔒 私有 |
-| 25 | `starcat-collection-api/` | `starcat-app/starcat-collection-api` 🔒 私有（远端待创建） |
+| 25 | `starcat-collection-api/` | `starcat-app/starcat-collection-api` 🔒 私有 |
 
 ### 一键拉取所有独立仓库
 

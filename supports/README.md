@@ -21,7 +21,7 @@
 | [`starcat-recommend-api/`](./starcat-recommend-api/) | [`starcat-app/starcat-recommend-api`](https://github.com/starcat-app/starcat-recommend-api) | 5005 | 相似仓库推荐 API |
 | [`starcat-discovery-api/`](./starcat-discovery-api/) | [`starcat-app/starcat-discovery-api`](https://github.com/starcat-app/starcat-discovery-api) | 5006 | 探索发现、热门、新发布榜单 |
 | [`starcat-license-api/`](./starcat-license-api/) | [`starcat-app/starcat-license-api`](https://github.com/starcat-app/starcat-license-api) 🔒 | 5010 | Direct 分发授权 API |
-| [`starcat-collection-api/`](./starcat-collection-api/) | `starcat-app/starcat-collection-api` 🔒（待创建） | 5011 | 静默接收匿名公开 Star 快照，向 Trainer 提供内部导出 |
+| [`starcat-collection-api/`](./starcat-collection-api/) | [`starcat-app/starcat-collection-api`](https://github.com/starcat-app/starcat-collection-api) 🔒 | 5011 | 静默接收匿名公开 Star 快照，向 Trainer 提供内部导出 |
 | [`starcat-api-kit/`](./starcat-api-kit/) | [`starcat-app/starcat-api-kit`](https://github.com/starcat-app/starcat-api-kit) | — | 六个业务 API 共用的 auth / envelope / GitHub / env 等基础包 |
 | [`starcat-api/`](./starcat-api/) | [`starcat-app/starcat-api`](https://github.com/starcat-app/starcat-api) 🔒 | 8080 | 私有聚合部署单元；以 `X-SC-Svc` 分流六个业务 API，不含 license |
 

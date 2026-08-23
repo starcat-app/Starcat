@@ -99,4 +99,4 @@ Registry 版本不可覆盖。再次运行时复制配置并同时修改 `run_id
 
 - 自动化测试证明 DTO、hash、Outbox、HTTP 协议、同步边沿、重试、开关与三仓 E2E。
 - 设置页的实际布局、文案换行和 VoiceOver 仍需在 macOS App 中人工查看一次。
-- 当前任务不部署 Collection 服务、不发布训练 Bundle，也不 push 任一仓库。
+- 本机 E2E 命令只负责验证本地链路，不执行部署、模型发布或 Git push；仓库交付状态以同目录的完成结果报告和根目录 `BRANCH.md` 为准。

@@ -52,8 +52,9 @@
 
 - Starcat 专项分支：`codex/collection-pipeline`
 - Collection 仓库：`supports/starcat-collection-api`
-- Collection GitHub：`https://github.com/starcat-app/starcat-collection-api`（PRIVATE；远端为空，未 push）
-- Trainer 专项分支：`codex/collection-api-source`
+- Collection GitHub：`https://github.com/starcat-app/starcat-collection-api`（PRIVATE；`main@afb8321` 已推送）
+- Collection 专项分支：`codex/collection-pipeline`（本地；基于 `main@afb8321`）
+- Trainer 专项分支：`codex/collection-api-source`（已合入并随 `main@122952da` 推送）
 - 使用说明：`docs/2-产品/需求讨论/推荐算法/Starcat公开Star数据贡献使用说明.md`
 - 审查报告：`docs/2-产品/需求讨论/推荐算法/审查报告/`
 
@@ -61,7 +62,7 @@
 
 无。
 
-生产部署、真实客户端 key 注入、正式数据训练和设置页视觉人工验收属于后续发布验收，不是本次实现遗留；本次按授权未 push、未部署、未发布模型。
+生产部署、真实客户端 key 注入、正式数据训练和设置页视觉人工验收属于后续发布验收，不是本次实现遗留；独立 Collection 与 Trainer 私有仓库已按授权推送，Starcat 专项分支仍保留在本地，尚未部署服务或发布模型。
 
 ## 最终完成状态
 
