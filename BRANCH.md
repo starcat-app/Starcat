@@ -32,6 +32,7 @@
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
+| `codex/collection-pipeline` | 本地；`../Starcat-collection-pipeline` worktree | 实现公开 Star 数据静默上报、独立 `starcat-collection-api` 接收服务与离线训练 Pull Connector。 | `开发中`；基线为 `dev@291aef44`。 | 完成端到端验证与多轮审查后，等待验收并合回 `dev`。 |
 | `dev` | 本地 + `origin/dev`；当前无独立 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；1.4.0 发版准备与 App Store 正式版 Xcode 打包门禁已进入 `main`。 | 后续功能继续在 `dev` 开发；新的发版阻断问题仍回到 `dev` 修复并重新执行门禁。 |
 | `main` | 本地 + `origin/main`；仓库根目录 worktree | 远端默认稳定主线和发布基线。 | `长期保留`；2026-08-21 已完成 1.4.0 发布：App Store Connect 构建有效，Direct 完成公证、官网、Sparkle、GitHub Release 和 Homebrew 发布。 | 保持稳定主线；后续功能与发版阻断修复仍先进入 `dev`。 |
 
