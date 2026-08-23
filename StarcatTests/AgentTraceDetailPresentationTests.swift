@@ -135,17 +135,73 @@ struct AgentTraceDetailPresentationTests {
             == String.l10n("agent.workspace.trace.kind.thinking"))
     }
 
-    @Test("展开后隐藏与明细重复的摘要")
-    func hidesDuplicateSummaryWhenExpanded() {
+    @Test("DeepSeek MCP 工具名去除传输后缀并保留原始 ID")
+    func normalizesDeepSeekMCPToolTitle() {
+        let rawName = "mcp__starcat__starcat_search_repos_12478560673a"
         let event = traceEvent(
-            kind: .reasoningSummary,
-            title: "Reasoning Summary",
-            summary: "检查仓库范围",
-            details: [.init(label: "思考过程", value: "检查仓库范围", format: .markdown)]
+            backend: .deepSeekHarness,
+            kind: .tool,
+            title: rawName,
+            details: []
         )
 
-        #expect(AgentTraceRowPresentation.shouldShowSummary(for: event, isExpanded: false))
-        #expect(!AgentTraceRowPresentation.shouldShowSummary(for: event, isExpanded: true))
+        #expect(AgentTraceTitlePresentation.title(for: event)
+            == String.l10n("agent.workspace.trace.tool.searchRepositories"))
+        let presentation = AgentTraceDetailPresentationBuilder.make(event: event)
+        #expect(presentation.sections.first?.content == .code(rawName))
+    }
+
+    @Test("工具行从 DeepSeek MCP 结果提取仓库数量")
+    func summarizesDeepSeekRepositorySearch() throws {
+        let result = try deepSeekToolResultJSON(text: #"{"repos":[{"name":"one"},{"name":"two"}]}"#)
+        let event = traceEvent(
+            backend: .deepSeekHarness,
+            kind: .tool,
+            title: "mcp__starcat__starcat_search_repos_12478560673a",
+            summary: String.l10n("agent.workspace.trace.tool.completed"),
+            details: [
+                .init(label: "Input", value: #"{"query":"swift"}"#, format: .json),
+                .init(label: "Output", value: try result.jsonString(), format: .json),
+            ]
+        )
+
+        #expect(AgentTraceRowPresentation.summary(for: event)
+            == String(format: String.l10n("agent.workspace.trace.repoCountFormat"), 2))
+    }
+
+    @Test("DeepSeek MCP 嵌套结果解包为业务结构")
+    func unwrapsDeepSeekToolResultEnvelope() throws {
+        let result = try deepSeekToolResultJSON(text: #"{"repos":[{"name":"one","stars":10},{"name":"two","stars":20}]}"#)
+        let event = traceEvent(
+            backend: .deepSeekHarness,
+            kind: .tool,
+            title: "mcp__starcat__starcat_search_repos_12478560673a",
+            details: [.init(label: "Output", value: try result.jsonString(), format: .json)]
+        )
+
+        let presentation = AgentTraceDetailPresentationBuilder.make(event: event)
+        guard case .structured(.object(let fields)) = presentation.sections.last?.content else {
+            Issue.record("DeepSeek message envelope 应解包到 MCP 业务结果")
+            return
+        }
+        #expect(fields.map(\.key) == ["repos"])
+        #expect(presentation.rawPayload?.contains("tool-result") == true)
+    }
+
+    @Test("DeepSeek 时间线隐藏协议脚手架并将终态警告放到末尾")
+    func filtersDeepSeekProtocolNoise() {
+        let runID = UUID()
+        let events = [
+            traceEvent(runID: runID, backend: .deepSeekHarness, sequence: 0, kind: .lifecycle, title: "agent/inbox/spliced", details: []),
+            traceEvent(runID: runID, backend: .deepSeekHarness, sequence: 1, kind: .warning, title: "Turn 1", details: []),
+            traceEvent(runID: runID, backend: .deepSeekHarness, sequence: 2, kind: .message, title: "Runtime message", details: []),
+            traceEvent(runID: runID, backend: .deepSeekHarness, sequence: 3, kind: .request, title: "Model request", details: []),
+            traceEvent(runID: runID, backend: .deepSeekHarness, sequence: 4, kind: .tool, title: "starcat.search_repos", details: []),
+        ]
+
+        let visible = AgentTraceTimelinePresentation.visibleEvents(events)
+
+        #expect(visible.map(\.kind) == [.request, .tool, .warning])
     }
 
     @Test("超长 Markdown 与原始载荷按展示预算裁剪")
@@ -195,6 +251,9 @@ struct AgentTraceDetailPresentationTests {
     }
 
     private func traceEvent(
+        runID: UUID = UUID(),
+        backend: AgentRuntimeBackend = .codexAppServer,
+        sequence: Int = 0,
         kind: AgentTraceKind = .unknown,
         title: String = "agent_parse_goal",
         summary: String? = nil,
@@ -202,14 +261,33 @@ struct AgentTraceDetailPresentationTests {
     ) -> AgentTraceEvent {
         AgentTraceEvent(
             id: UUID().uuidString,
-            runID: UUID(),
-            backend: .codexAppServer,
-            sequence: 0,
+            runID: runID,
+            backend: backend,
+            sequence: sequence,
             kind: kind,
             status: .completed,
             title: title,
             summary: summary,
             details: details
         )
+    }
+
+    private func deepSeekToolResultJSON(text: String) throws -> AgentJSONValue {
+        .object([
+            "message": .object([
+                "content": .array([
+                    .object([
+                        "content": .array([
+                            .object(["text": .string(text), "type": .string("text")]),
+                        ]),
+                        "isError": .bool(false),
+                        "type": .string("tool-result"),
+                    ]),
+                ]),
+                "role": .string("user"),
+            ]),
+            "step": .number(2),
+            "turn": .number(1),
+        ])
     }
 }

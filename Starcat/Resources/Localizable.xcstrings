@@ -30006,6 +30006,12 @@
         }
       }
     },
+    "agent.workspace.trace.repoCountFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%d repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%d 个仓库" } }
+      }
+    },
     "agent.workspace.trace.stepCountFormat" : {
       "localizations" : {
         "en" : {
@@ -30118,10 +30124,28 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "聚类仓库主题" } }
       }
     },
+    "agent.workspace.trace.tool.readReadme" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Read README" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "读取 README" } }
+      }
+    },
+    "agent.workspace.trace.tool.readRepositorySummary" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Read Repository Summary" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "读取仓库摘要" } }
+      }
+    },
     "agent.workspace.trace.tool.running" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Calling Starcat tool" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在调用 Starcat 工具" } }
+      }
+    },
+    "agent.workspace.trace.tool.searchRepositories" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Search Repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "搜索仓库" } }
       }
     },
     "agent.workspace.trace.toolID" : {

@@ -55,15 +55,16 @@ struct AgentRunInspectorPresentation: Equatable, Sendable {
         artifacts: [AgentArtifact],
         runRecord: AgentRunRecord?
     ) {
-        stepCount = traceEvents.count
-        completedStepCount = traceEvents.count { [.completed, .skipped].contains($0.status) }
-        activeStepCount = traceEvents.count { [.pending, .running, .waiting].contains($0.status) }
-        failedStepCount = traceEvents.count { $0.status == .failed }
+        let visibleTraceEvents = AgentTraceTimelinePresentation.visibleEvents(traceEvents)
+        stepCount = visibleTraceEvents.count
+        completedStepCount = visibleTraceEvents.count { [.completed, .skipped].contains($0.status) }
+        activeStepCount = visibleTraceEvents.count { [.pending, .running, .waiting].contains($0.status) }
+        failedStepCount = visibleTraceEvents.count { $0.status == .failed }
 
-        let traceToolCalls = traceEvents.count {
+        let traceToolCalls = visibleTraceEvents.count {
             [.tool, .command, .webSearch, .mcpTool].contains($0.kind)
         }
-        toolCallCount = traceEvents.isEmpty
+        toolCallCount = visibleTraceEvents.isEmpty
             ? messages.reduce(0) { count, message in
                 count + message.parts.count { part in
                     if case .toolCall = part { return true }
@@ -71,8 +72,8 @@ struct AgentRunInspectorPresentation: Equatable, Sendable {
                 }
             }
             : traceToolCalls
-        retryCount = traceEvents.count { $0.kind == .retry }
-        compactionCount = traceEvents.count { $0.kind == .compaction }
+        retryCount = visibleTraceEvents.count { $0.kind == .retry }
+        compactionCount = visibleTraceEvents.count { $0.kind == .compaction }
         sourceCount = messages.reduce(0) { count, message in
             count + message.parts.reduce(0) { partCount, part in
                 guard case .toolResult(let result) = part else { return partCount }
@@ -89,8 +90,8 @@ struct AgentRunInspectorPresentation: Equatable, Sendable {
         approvalRequestCount = approvals.count
         approvedApprovalCount = approvals.count { $0.status == .approved }
         rejectedApprovalCount = approvals.count { $0.status == .rejected }
-        fileChangeCount = traceEvents.count { $0.kind == .fileChange }
-        warningCount = traceEvents.count { [.warning, .error].contains($0.kind) }
+        fileChangeCount = visibleTraceEvents.count { $0.kind == .fileChange }
+        warningCount = visibleTraceEvents.count { [.warning, .error].contains($0.kind) }
 
         let recordedStart = runRecord.flatMap { ISO8601DateFormatter.shared.date(from: $0.createdAt) }
         let recordedFinish = runRecord?.finishedAt.flatMap { ISO8601DateFormatter.shared.date(from: $0) }

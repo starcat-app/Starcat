@@ -13,7 +13,6 @@ import SwiftUI
 struct AgentMessageTimelineView: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @State private var expandedItemIDs: Set<String> = []
-    @State private var collapsedItemIDs: Set<String> = []
     @State private var processExpandedOverride: Bool?
     @State private var messageTail = ScrollTailController()
 
@@ -45,6 +44,10 @@ struct AgentMessageTimelineView: View {
     /// approval section，避免把 tool/message 再展示一遍，也不伪造 Runtime 事件。
     private var runtimeApprovalSections: [AgentProcessSection] {
         presentation.processSections.filter { $0.kind == .approval }
+    }
+
+    private var visibleTraceEvents: [AgentTraceEvent] {
+        AgentTraceTimelinePresentation.visibleEvents(viewModel.traceEvents)
     }
 
     private var runIdentity: String {
@@ -124,7 +127,6 @@ struct AgentMessageTimelineView: View {
             // 不沿用上一 Run 的手动选择或滚动意图。
             processExpandedOverride = nil
             expandedItemIDs.removeAll()
-            collapsedItemIDs.removeAll()
             messageTail.resumeFollowing()
         }
     }
@@ -250,7 +252,7 @@ struct AgentMessageTimelineView: View {
                     Text("agent.workspace.timeline.execution")
                         .font(interfaceScale.font(.caption, weight: .semibold))
                         .foregroundStyle(.primary)
-                    Text("· \((viewModel.traceEvents.count + runtimeApprovalSections.count).formatted())")
+                    Text("· \((visibleTraceEvents.count + runtimeApprovalSections.count).formatted())")
                         .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -268,7 +270,7 @@ struct AgentMessageTimelineView: View {
 
             if isProcessExpanded {
                 VStack(alignment: .leading, spacing: 9) {
-                    ForEach(viewModel.traceEvents) { event in
+                    ForEach(visibleTraceEvents) { event in
                         traceRow(event)
                     }
                     ForEach(runtimeApprovalSections) { section in
@@ -288,35 +290,16 @@ struct AgentMessageTimelineView: View {
     }
 
     private func traceRow(_ event: AgentTraceEvent) -> some View {
-        let isExpanded = isTraceExpanded(event)
-        return VStack(alignment: .leading, spacing: 7) {
-            if event.hasDetails {
-                Button {
-                    viewModel.selectTraceEvent(event.id)
-                    toggleTrace(event)
-                } label: {
-                    traceRowLabel(event, isExpanded: isExpanded, showsDisclosure: true)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .accessibilityHint(String.l10n(isExpanded ? "gettingStarted.collapse" : "gettingStarted.expand"))
-            } else {
-                Button {
-                    viewModel.selectTraceEvent(event.id)
-                } label: {
-                    traceRowLabel(event, isExpanded: false, showsDisclosure: false)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-            }
-
-            if isExpanded {
-                traceDetails(event)
-                    .padding(.leading, 24)
-            }
+        Button {
+            // 中栏只承担步骤导航，结构化输入输出统一进入右侧检查器；避免大 JSON/Markdown
+            // 在主 ScrollView 内展开后重复布局，并保持 Run Surface 的扫描节奏。
+            viewModel.selectTraceEvent(event.id)
+        } label: {
+            traceRowLabel(event)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
         .padding(.horizontal, 7)
         .padding(.vertical, 5)
         .padding(.leading, event.parentID == nil ? 0 : 14)
@@ -333,11 +316,7 @@ struct AgentMessageTimelineView: View {
         }
     }
 
-    private func traceRowLabel(
-        _ event: AgentTraceEvent,
-        isExpanded: Bool,
-        showsDisclosure: Bool
-    ) -> some View {
+    private func traceRowLabel(_ event: AgentTraceEvent) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: traceStatusIcon(event.status))
                 .foregroundStyle(traceStatusTint(event.status))
@@ -353,9 +332,8 @@ struct AgentMessageTimelineView: View {
                         .foregroundStyle(.primary)
                         .lineLimit(2)
                 }
-                if let summary = nonBlank(event.summary),
-                   summary != event.title,
-                   AgentTraceRowPresentation.shouldShowSummary(for: event, isExpanded: isExpanded) {
+                if let summary = AgentTraceRowPresentation.summary(for: event),
+                   summary != event.title {
                     AgentTraceMarkdownText(markdown: summary, tone: .secondary)
                         .lineLimit(2)
                 } else if event.kind == .reasoningSummary && nonBlank(event.summary) == nil {
@@ -377,12 +355,10 @@ struct AgentMessageTimelineView: View {
                     .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
             }
-            if showsDisclosure {
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 2)
-            }
+            Image(systemName: "chevron.right")
+                .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
     }
@@ -392,10 +368,6 @@ struct AgentMessageTimelineView: View {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private func traceDetails(_ event: AgentTraceEvent) -> some View {
-        AgentTraceDetailsView(event: event)
     }
 
     @ViewBuilder
@@ -776,31 +748,6 @@ struct AgentMessageTimelineView: View {
         case .completed: return .green
         case .failed, .timedOut, .rejected: return .red
         case .skipped, nil: return .secondary
-        }
-    }
-
-    private func isTraceExpanded(_ event: AgentTraceEvent) -> Bool {
-        if expandedItemIDs.contains(event.id) { return true }
-        if collapsedItemIDs.contains(event.id) { return false }
-        switch event.status {
-        case .running, .waiting, .failed:
-            return true
-        case .pending, .completed, .cancelled, .skipped:
-            return event.kind == .warning || event.kind == .retry || event.kind == .error
-        }
-    }
-
-    /// 自动展开只决定首次展示；用户点击后写入显式 expanded/collapsed 集合，后续 delta
-    /// 更新同一事件时不能夺回控制权，避免流式状态刷新让折叠行反复跳开。
-    private func toggleTrace(_ event: AgentTraceEvent) {
-        // Trace 明细可能包含 Markdown、JSON 和表格。高度动画会在每一帧同步重算整段
-        // `sizeThatFits`，大 payload 下会阻塞主线程；详情切换因此保持无动画的确定性更新。
-        if isTraceExpanded(event) {
-            expandedItemIDs.remove(event.id)
-            collapsedItemIDs.insert(event.id)
-        } else {
-            collapsedItemIDs.remove(event.id)
-            expandedItemIDs.insert(event.id)
         }
     }
 

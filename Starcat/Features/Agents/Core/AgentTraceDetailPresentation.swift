@@ -77,6 +77,9 @@ enum AgentTraceTitlePresentation {
         "tag_inspect_untagged": "agent.workspace.trace.tool.inspectUntagged",
         "tag_preview_untagged": "agent.workspace.trace.tool.previewUntagged",
         "tag_apply_untagged": "agent.workspace.trace.tool.applyUntagged",
+        "starcat.search_repos": "agent.workspace.trace.tool.searchRepositories",
+        "starcat.get_readme": "agent.workspace.trace.tool.readReadme",
+        "starcat.get_repo_summary": "agent.workspace.trace.tool.readRepositorySummary",
     ]
 
     static func title(for event: AgentTraceEvent) -> String {
@@ -106,21 +109,119 @@ enum AgentTraceTitlePresentation {
             break
         }
 
-        guard event.kind == .tool, let key = toolTitleKeys[event.title] else {
+        guard event.kind == .tool else {
             return event.title
         }
+        let normalizedTitle = normalizedToolName(event.title)
+        guard let key = toolTitleKeys[normalizedTitle] else { return normalizedTitle }
         return String.l10n(key)
+    }
+
+    /// DeepSeek Harness 通过 pi-ai 为每次 MCP 调用附加随机后缀；它属于传输层关联 ID，
+    /// 不是用户要识别的工具名。详情区仍保留完整原始 ID，时间线只显示稳定工具标识。
+    static func normalizedToolName(_ rawName: String) -> String {
+        var name = rawName
+        if name.hasPrefix("mcp__starcat__") {
+            name.removeFirst("mcp__starcat__".count)
+        }
+        if name.hasPrefix("starcat_") {
+            name.removeFirst("starcat_".count)
+            name = "starcat.\(name)"
+        }
+        if let suffix = name.range(of: #"_[0-9a-fA-F]{12}$"#, options: .regularExpression) {
+            name.removeSubrange(suffix)
+        }
+        return name
     }
 }
 
 enum AgentTraceRowPresentation {
-    /// 展开区已经包含同一摘要时，主行只保留标题，避免用户连续看到两份相同文本。
-    static func shouldShowSummary(for event: AgentTraceEvent, isExpanded: Bool) -> Bool {
-        guard isExpanded, let summary = event.summary else { return true }
-        return !event.details.contains { detail in
-            detail.value.trimmingCharacters(in: .whitespacesAndNewlines)
-                == summary.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Runtime 的“工具调用已完成”对用户没有辨识度。已知 MCP 工具优先从真实输入/输出
+    /// 派生一行短摘要，让连续多次搜索或读取仓库时仍能一眼区分每一步。
+    static func summary(for event: AgentTraceEvent) -> String? {
+        guard event.kind == .tool else { return event.summary?.traceNonBlank }
+
+        let normalizedName = AgentTraceTitlePresentation.normalizedToolName(event.title)
+        let payloads = event.details.compactMap { AgentTracePayloadParser.decodeJSON($0.value) }
+        let input = payloads.compactMap(\.objectValue).first { object in
+            object["query"] != nil || object["owner"] != nil || object["name"] != nil
         }
+
+        switch normalizedName {
+        case "starcat.search_repos":
+            let result = payloads.compactMap(AgentTracePayloadParser.deepSeekToolResultPayload).first
+            if let count = result?.objectValue?["repos"]?.arrayValue?.count {
+                return String(format: String.l10n("agent.workspace.trace.repoCountFormat"), count)
+            }
+            return input?["query"]?.stringValue?.traceNonBlank
+        case "starcat.get_readme", "starcat.get_repo_summary":
+            if let owner = input?["owner"]?.stringValue?.traceNonBlank,
+               let name = input?["name"]?.stringValue?.traceNonBlank {
+                return "\(owner)/\(name)"
+            }
+            return input?["repo_id"]?.stringValue?.traceNonBlank
+        default:
+            return event.summary?.traceNonBlank
+        }
+    }
+}
+
+/// 时间线是产品叙事，不是协议抓包器。DeepSeek 的 turn/step、inbox splice 与系统消息
+/// 对排障仍有价值，因此继续完整落库；这里只隐藏中栏噪声，原始事件仍可由持久化数据审计。
+enum AgentTraceTimelinePresentation {
+    static func visibleEvents(_ events: [AgentTraceEvent]) -> [AgentTraceEvent] {
+        let visible = events.filter { event in
+            guard event.backend == .deepSeekHarness else { return true }
+            switch event.kind {
+            case .lifecycle, .message:
+                return false
+            default:
+                return true
+            }
+        }
+
+        // DeepSeek 的 turn/end 会覆盖早先的 turn/start，因此沿用首次 sequence 会把终态警告
+        // 错放到列表顶部。警告与错误放到动作流末尾，符合用户实际看到结果的顺序。
+        return visible.sorted { lhs, rhs in
+            let lhsTerminal = lhs.backend == .deepSeekHarness && [.warning, .error].contains(lhs.kind)
+            let rhsTerminal = rhs.backend == .deepSeekHarness && [.warning, .error].contains(rhs.kind)
+            if lhsTerminal != rhsTerminal { return !lhsTerminal }
+            return lhs.sequence < rhs.sequence
+        }
+    }
+}
+
+private enum AgentTracePayloadParser {
+    static func decodeJSON(_ text: String) -> AgentJSONValue? {
+        guard text.count <= AgentTracePresentationBudget.jsonParseCharacters,
+              let data = text.data(using: .utf8)
+        else { return nil }
+        return try? JSONDecoder().decode(AgentJSONValue.self, from: data)
+    }
+
+    /// DeepSeek 的 tool/result 是 message -> content -> tool-result -> content -> text，
+    /// 其中 text 才是 Starcat MCP 的真实 JSON。只按已知 envelope 解包，结构变化时安全回退。
+    static func deepSeekToolResultPayload(_ value: AgentJSONValue) -> AgentJSONValue? {
+        guard let message = value.objectValue?["message"]?.objectValue,
+              let outerContent = message["content"]?.arrayValue
+        else { return nil }
+
+        for outer in outerContent {
+            guard let innerContent = outer.objectValue?["content"]?.arrayValue else { continue }
+            for inner in innerContent {
+                guard let text = inner.objectValue?["text"]?.stringValue else { continue }
+                if let decoded = decodeJSON(text) { return decoded }
+                return .string(text)
+            }
+        }
+        return nil
+    }
+}
+
+private extension AgentJSONValue {
+    var arrayValue: [AgentJSONValue]? {
+        guard case .array(let values) = self else { return nil }
+        return values
     }
 }
 
@@ -156,14 +257,23 @@ enum AgentTraceDetailPresentationBuilder {
             )
             rawBlocks.append("\(detail.label)\n\(boundedRawValue)")
             if detail.format == .json,
-               let json = decodeJSON(detail.value),
-               let envelope = toolResultEnvelope(
+               let json = decodeJSON(detail.value) {
+                if let runtimePayload = AgentTracePayloadParser.deepSeekToolResultPayload(json) {
+                    sections.append(.init(
+                        label: detail.label,
+                        content: .structured(structuredValue(from: runtimePayload))
+                    ))
+                    didStructure = true
+                    continue
+                }
+                if let envelope = toolResultEnvelope(
                     json,
                     eventSummary: event.summary
-               ) {
-                sections.append(contentsOf: envelope)
-                didStructure = true
-                continue
+                ) {
+                    sections.append(contentsOf: envelope)
+                    didStructure = true
+                    continue
+                }
             }
 
             let result = content(for: detail)
@@ -302,8 +412,7 @@ enum AgentTraceDetailPresentationBuilder {
     }
 
     private static func decodeJSON(_ text: String) -> AgentJSONValue? {
-        guard let data = text.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode(AgentJSONValue.self, from: data)
+        AgentTracePayloadParser.decodeJSON(text)
     }
 
     private static func structuredValue(
