@@ -18,12 +18,15 @@ struct CodexAppServerAdapter: ExternalAgentProtocolAdapter {
 
     private let executableURL: URL
     private let environment: [String: String]
+    private let providerID: String?
 
     init(
         executableURL: URL,
+        providerID: String? = nil,
         environment: [String: String] = ExternalAgentProcessEnvironment.filtered()
     ) {
         self.executableURL = executableURL
+        self.providerID = providerID
         self.environment = environment
     }
 
@@ -31,6 +34,7 @@ struct CodexAppServerAdapter: ExternalAgentProtocolAdapter {
         CodexAppServerDriver(
             request: request,
             executableURL: executableURL,
+            providerID: providerID,
             environment: environment
         )
     }
@@ -67,12 +71,13 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
     init(
         request: ExternalAgentRunRequest,
         executableURL: URL,
+        providerID: String?,
         environment: [String: String]
     ) {
         self.request = request
         processConfiguration = ExternalAgentProcessConfiguration(
             executableURL: executableURL,
-            arguments: ["app-server", "--listen", "stdio://"],
+            arguments: CodexRuntimeProcessArguments.appServer(providerID: providerID),
             environment: environment,
             currentDirectoryURL: request.workingDirectory
         )

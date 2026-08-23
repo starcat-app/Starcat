@@ -275,6 +275,117 @@ struct ExternalAgentProtocolAdapterTests {
         #expect(selection.reasoningEffort == "medium")
     }
 
+    @Test("Codex Provider 目录只读取当前路由与用户声明路由")
+    func codexProviderCatalogParsesConfigWithoutLeakingFields() {
+        let catalog = CodexProviderCatalog.parse("""
+        model_provider = "gateway" # active route
+        api_key = "must-not-appear"
+
+        [model_providers.gateway]
+        name = "Team Gateway"
+        base_url = "https://gateway.example/v1"
+        env_key = "TEAM_API_KEY"
+
+        [model_providers.local]
+        name = "Local Models"
+
+        [model_providers.local.http_headers]
+        X-Client = "Starcat"
+        """)
+
+        #expect(catalog.activeProviderID == "gateway")
+        #expect(catalog.providers.map(\.id) == ["gateway", "openai", "local"])
+        #expect(catalog.providers.map(\.displayName) == ["Team Gateway", "OpenAI", "Local Models"])
+        #expect(catalog.providers.first?.credentialEnvironmentKey == "TEAM_API_KEY")
+        #expect(catalog.providers.last?.isSelectable == true)
+        #expect(catalog.resolvedProviderID(preferredProviderID: "removed") == "gateway")
+        #expect(CodexRuntimeProcessArguments.appServer(providerID: "local").suffix(2) == [
+            "-c", "model_provider=\"local\"",
+        ])
+    }
+
+    @Test("DeepSeek Runtime 目录复用 Starcat 已验证的 Chat Provider")
+    @MainActor
+    func deepSeekProviderCatalogUsesVerifiedProfiles() throws {
+        let suiteName = "ExternalAgentProtocolAdapterTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = AppSettings(defaults: defaults, keychain: InMemoryKeychain())
+        settings.aiProviderProfiles = [
+            AIProviderProfile(
+                id: "verified",
+                provider: .openAICompatible,
+                displayName: "Team Gateway",
+                baseURL: "https://gateway.example/v1",
+                models: [AIModelDescriptor(
+                    providerID: "verified",
+                    name: "reasoning-model",
+                    capability: .chat
+                )],
+                lastTestStatus: .success(modelCount: 1)
+            ),
+            AIProviderProfile(
+                id: "draft",
+                provider: .deepSeek,
+                models: [AIModelDescriptor(providerID: "draft", name: "draft-model")]
+            ),
+        ]
+
+        let selection = try #require(DeepSeekRuntimeProviderCatalog.resolvedSelection(
+            settings: settings,
+            preferredProviderID: "verified",
+            preferredModelName: "reasoning-model",
+            preferredReasoningEffort: "high"
+        ))
+        #expect(selection.provider.displayName == "Team Gateway")
+        #expect(selection.model.name == "reasoning-model")
+        #expect(selection.reasoningEffort == "high")
+        #expect(DeepSeekRuntimeProviderCatalog.providers(settings: settings).map(\.id) == ["verified"])
+    }
+
+    @Test("DeepSeek 每轮 Cordis 配置挂载多 Provider adapter 且不写入凭据")
+    func deepSeekRunCordisInjectsSelectedProvider() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("starcat-deepseek-provider-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let baseURL = directory.appendingPathComponent("base.yml")
+        try Data("- id: agent\n  name: '@deepseek-ai/dsh-agent-spine-demo'\n".utf8)
+            .write(to: baseURL)
+        let selection = DeepSeekRuntimeSelection(
+            provider: DeepSeekRuntimeProviderOption(
+                id: "profile",
+                displayName: "Team's Gateway",
+                provider: .deepSeek,
+                baseURL: "https://gateway.example/v1",
+                models: []
+            ),
+            model: DeepSeekRuntimeModelOption(
+                id: "model",
+                name: "deepseek-reasoner",
+                contextWindow: 64_000,
+                maxTokens: 8_000,
+                supportedReasoningEfforts: ["off", "high"]
+            ),
+            reasoningEffort: "high"
+        )
+
+        let runURL = try DeepSeekHarnessCordisRunConfiguration.prepare(
+            baseConfigURL: baseURL,
+            workingDirectory: directory,
+            mcpConnection: nil,
+            routeConfiguration: selection
+        )
+        let config = try String(contentsOf: runURL, encoding: .utf8)
+        #expect(config.contains("@deepseek-ai/dsh-llm-pi-ai"))
+        #expect(config.contains("starcat-provider:"))
+        #expect(config.contains("apiKeyEnv: STARCAT_RUNTIME_API_KEY"))
+        #expect(config.contains("displayName: 'Team''s Gateway'"))
+        #expect(config.contains("reasoning: high"))
+        #expect(config.contains("thinkingFormat: deepseek"))
+        #expect(!config.contains("fixture-secret"))
+    }
+
     @Test("Codex 模型目录 Driver 完成 initialize 与 model/list 握手")
     func codexModelCatalogDriverHandshake() throws {
         let resultBox = CodexModelCatalogResultBox()
@@ -1252,7 +1363,8 @@ struct ExternalAgentProtocolAdapterTests {
         let profile = AIProviderProfile(
             id: "deepseek-runtime-test",
             provider: .deepSeek,
-            baseURL: "https://runtime.deepseek.example"
+            baseURL: "https://runtime.deepseek.example",
+            lastTestStatus: .success(modelCount: 1)
         )
         settings.aiProviderProfiles = [profile]
         try keychain.storeAIKey("fixture-secret", forProvider: profile.id)
@@ -1265,6 +1377,7 @@ struct ExternalAgentProtocolAdapterTests {
 
         #expect(environment["DEEPSEEK_API_KEY"] == "fixture-secret")
         #expect(environment["DEEPSEEK_BASE_URL"] == "https://runtime.deepseek.example")
+        #expect(environment[DeepSeekRuntimeSelection.credentialEnvironmentKey] == "fixture-secret")
         #expect(environment["PATH"] == "/usr/bin")
     }
 

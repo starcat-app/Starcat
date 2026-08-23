@@ -13,8 +13,8 @@ import Foundation
 
 /// Starcat 已验证的 DeepSeek Harness Runtime 契约。
 ///
-/// Runtime 仍由用户通过外部路径安装，常量只用于协议版本说明与模型选择，绝不表示
-/// carrier 会进入 App bundle 或 DMG。
+/// Runtime 仍由用户通过外部路径安装；默认 Provider/Model 只保留给旧配置和显式
+/// integration smoke。产品 UI 的真实目录来自 Starcat 已验证 AI Provider。
 enum DeepSeekHarnessRuntime {
     static let packageVersion = "0.1.1rc1"
     static let defaultProvider = "deepseek-official"
@@ -31,13 +31,15 @@ struct DeepSeekHarnessAdapter: ExternalAgentProtocolAdapter {
     private let modelOverride: String?
     private let cordisConfigURL: URL
     private let environment: [String: String]
+    private let routeConfiguration: DeepSeekRuntimeSelection?
 
     init(
         executableURL: URL,
         provider: String,
         modelOverride: String?,
         cordisConfigURL: URL,
-        environment: [String: String]
+        environment: [String: String],
+        routeConfiguration: DeepSeekRuntimeSelection? = nil
     ) throws {
         #if arch(arm64)
         let fileManager = FileManager.default
@@ -67,6 +69,7 @@ struct DeepSeekHarnessAdapter: ExternalAgentProtocolAdapter {
         self.modelOverride = modelOverride
         self.cordisConfigURL = cordisConfigURL
         self.environment = environment
+        self.routeConfiguration = routeConfiguration
         #else
         throw ExternalAgentRuntimeError.unsupportedArchitecture(
             "DeepSeek Harness \(DeepSeekHarnessRuntime.packageVersion) Runtime is arm64-only on macOS"
@@ -85,13 +88,15 @@ struct DeepSeekHarnessAdapter: ExternalAgentProtocolAdapter {
         let runCordisConfigURL = try DeepSeekHarnessCordisRunConfiguration.prepare(
             baseConfigURL: cordisConfigURL,
             workingDirectory: request.workingDirectory,
-            mcpConnection: request.mcpConnection
+            mcpConnection: request.mcpConnection,
+            routeConfiguration: routeConfiguration
         )
         return DeepSeekHarnessDriver(
             request: request,
             executableURL: executableURL,
             provider: provider,
             model: resolvedModel,
+            maxTokens: routeConfiguration?.model.maxTokens ?? 16_384,
             cordisConfigURL: runCordisConfigURL,
             mcpConnection: request.mcpConnection,
             environment: environment
@@ -105,17 +110,28 @@ enum DeepSeekHarnessCordisRunConfiguration {
     static func prepare(
         baseConfigURL: URL,
         workingDirectory: URL,
-        mcpConnection: ExternalAgentMCPConnection?
+        mcpConnection: ExternalAgentMCPConnection?,
+        routeConfiguration: DeepSeekRuntimeSelection? = nil
     ) throws -> URL {
-        guard mcpConnection != nil else { return baseConfigURL }
+        guard mcpConnection != nil || routeConfiguration != nil else { return baseConfigURL }
         let base = try String(contentsOf: baseConfigURL, encoding: .utf8)
         guard !base.contains("@deepseek-ai/dsh-mcp-client") else {
             throw ExternalAgentRuntimeError.protocolError(
                 "DeepSeek Harness base Cordis config must not preconfigure the Starcat MCP client."
             )
         }
+        if routeConfiguration != nil, base.contains("@deepseek-ai/dsh-llm-pi-ai") {
+            throw ExternalAgentRuntimeError.protocolError(
+                "DeepSeek Harness base Cordis config must not preconfigure dsh-llm-pi-ai."
+            )
+        }
         let runConfigURL = workingDirectory.appendingPathComponent("starcat-run.cordis.yml")
-        let mcpPlugin = """
+        var additions = ""
+        if let routeConfiguration {
+            additions += providerPlugin(routeConfiguration)
+        }
+        if mcpConnection != nil {
+            additions += """
 
         # Starcat 每轮临时 MCP Bridge。URL 与 Token 只从子进程环境读取。
         - id: starcat-mcp
@@ -129,8 +145,54 @@ enum DeepSeekHarnessCordisRunConfiguration {
             toolCallTimeoutMs: 60000
             failOnStartupError: true
         """
-        try Data((base + mcpPlugin + "\n").utf8).write(to: runConfigURL, options: .atomic)
+        }
+        try Data((base + additions + "\n").utf8).write(to: runConfigURL, options: .atomic)
         return runConfigURL
+    }
+
+    /// JSON-RPC carrier 没有 provider 配置 API，因此每个 Run 只挂载当前选择的一条
+    /// `dsh-llm-pi-ai` 路由。配置只含 endpoint 与模型能力，凭据始终是环境变量引用。
+    private static func providerPlugin(_ selection: DeepSeekRuntimeSelection) -> String {
+        let provider = selection.provider
+        let model = selection.model
+        var reasoning = ""
+        if !model.supportedReasoningEfforts.isEmpty {
+            let levels = model.supportedReasoningEfforts.map { effort in
+                let wireValue = effort == "off" ? "" : effort
+                return "                      \(effort): \(wireValue)"
+            }
+                .joined(separator: "\n")
+            reasoning = "\n                    reasoningEfforts:\n\(levels)"
+        }
+        var compat = "\n                compat:\n"
+            + "                  supportsDeveloperRole: false\n"
+            + "                  maxTokensField: max_tokens"
+        if provider.provider == .deepSeek {
+            compat += "\n                  thinkingFormat: deepseek"
+        }
+        let selectedReasoning = selection.reasoningEffort.map { "\n                reasoning: \($0)" } ?? ""
+        return """
+
+        # Starcat 当前 Run 的 Provider/Model。凭据只从 Keychain 注入的环境变量读取。
+        - id: starcat-llm
+          name: '@deepseek-ai/dsh-llm-pi-ai'
+          config:
+            providers:
+              \(DeepSeekRuntimeSelection.providerRoute):
+                displayName: \(yamlScalar(provider.displayName))
+                apiKeyEnv: \(DeepSeekRuntimeSelection.credentialEnvironmentKey)
+                api: openai-completions
+                baseURL: \(yamlScalar(provider.baseURL))\(selectedReasoning)\(compat)
+                models:
+                  - id: \(yamlScalar(model.name))
+                    name: \(yamlScalar(model.name))
+                    contextWindow: \(model.contextWindow)
+                    maxTokens: \(model.maxTokens)\(reasoning)
+        """
+    }
+
+    private static func yamlScalar(_ value: String) -> String {
+        "'\(value.replacingOccurrences(of: "'", with: "''"))'"
     }
 }
 
@@ -142,6 +204,7 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
     private let request: ExternalAgentRunRequest
     private let provider: String
     private let model: String
+    private let maxTokens: Int
     private let sessionID: String
     /// Harness 的 `tool/result` 不重复工具名，只通过 `message.source.callId` 关联。
     /// 保留同一 session 的 call 映射，避免用 `unknown` 或随机 UUID 掩盖协议字段。
@@ -164,6 +227,7 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
         executableURL: URL,
         provider: String,
         model: String,
+        maxTokens: Int,
         cordisConfigURL: URL,
         mcpConnection: ExternalAgentMCPConnection?,
         environment: [String: String]
@@ -171,6 +235,7 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
         self.request = request
         self.provider = provider
         self.model = model
+        self.maxTokens = max(1, maxTokens)
         sessionID = request.runID.uuidString.lowercased()
         var additionalEnvironment = [
             "DSH_CORDIS_CONFIG": cordisConfigURL.path,
@@ -187,7 +252,8 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
             environment: ExternalAgentProcessEnvironment.filtered(
                 source: environment,
                 allowedCredentialKeys: [
-                    "DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL", "OPENAI_API_KEY", "OPENAI_BASE_URL"
+                    "DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL", "OPENAI_API_KEY", "OPENAI_BASE_URL",
+                    DeepSeekRuntimeSelection.credentialEnvironmentKey,
                 ],
                 additional: additionalEnvironment
             ),
@@ -204,7 +270,7 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
                     "cwd": .string(request.workingDirectory.path),
                     "provider": .string(provider),
                     "model": .string(model),
-                    "maxTokens": .number(16_384),
+                    "maxTokens": .number(Double(maxTokens)),
                 ])
             )
         ]

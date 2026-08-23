@@ -110,17 +110,20 @@ struct CodexModelCatalog: Equatable, Sendable {
 
 struct CodexModelCatalogClient: Sendable {
     private let executableURL: URL
+    private let providerID: String?
     private let environment: [String: String]
     private let firstOutputTimeout: Duration
 
     init(
         executableURL: URL,
+        providerID: String? = nil,
         environment: [String: String],
         // Codex 升级后可能需要丢弃旧模型缓存并在线刷新。实测 15 秒会与刷新完成
         // 发生竞态，因此目录查询使用独立的 45 秒边界，不影响正式 turn 的超时策略。
         firstOutputTimeout: Duration = .seconds(45)
     ) {
         self.executableURL = executableURL
+        self.providerID = providerID
         self.environment = environment
         self.firstOutputTimeout = firstOutputTimeout
     }
@@ -129,6 +132,7 @@ struct CodexModelCatalogClient: Sendable {
         let resultBox = CodexModelCatalogResultBox()
         let driver = CodexModelCatalogDriver(
             executableURL: executableURL,
+            providerID: providerID,
             environment: environment,
             resultBox: resultBox
         )
@@ -152,13 +156,14 @@ final class CodexModelCatalogDriver: ExternalAgentProtocolDriver, @unchecked Sen
 
     init(
         executableURL: URL,
+        providerID: String? = nil,
         environment: [String: String],
         resultBox: CodexModelCatalogResultBox
     ) {
         self.resultBox = resultBox
         processConfiguration = ExternalAgentProcessConfiguration(
             executableURL: executableURL,
-            arguments: ["app-server", "--listen", "stdio://"],
+            arguments: CodexRuntimeProcessArguments.appServer(providerID: providerID),
             environment: environment,
             currentDirectoryURL: FileManager.default.temporaryDirectory
         )

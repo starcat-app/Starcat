@@ -59,6 +59,37 @@ struct AgentWorkspaceViewModelTests {
         #expect(input.runtimeReasoningEffort == "high")
     }
 
+    @Test("DeepSeek Runtime 冻结独立 Provider 与模型且不依赖 Loop 模型")
+    func deepSeekSubmissionUsesRuntimeProviderSelection() async throws {
+        let recorder = AgentRunInputRecorder()
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: EventReplayAgentRuntime(events: [
+                .runStarted(title: "Run"),
+                .runCompleted,
+            ]),
+            contextProvider: RecordingAgentRunContextProvider(recorder: recorder)
+        )
+        viewModel.configureRuntimeSelection(
+            backend: .deepSeekHarness,
+            providerName: "Team Gateway",
+            modelName: "reasoning-model",
+            reasoningEffort: "high"
+        )
+
+        #expect(viewModel.selectedModelID == nil)
+        #expect(viewModel.canSubmit)
+        viewModel.run()
+        try await waitUntil { viewModel.status == .completed }
+
+        let input = try #require(await recorder.input())
+        #expect(input.selectedModelID == nil)
+        #expect(input.runtimeBackend == .deepSeekHarness)
+        #expect(input.runtimeProviderName == "Team Gateway")
+        #expect(input.runtimeModelName == "reasoning-model")
+        #expect(input.runtimeReasoningEffort == "high")
+    }
+
     @Test("Repo Insight 必须且只能选择一个仓库")
     func repoInsightSubmissionRequiresSingleRepository() {
         let viewModel = AgentWorkspaceViewModel(agents: [BuiltInAgents.repoInsight])
@@ -1418,6 +1449,7 @@ private struct RecordingAgentRunContextProvider: AgentRunContextProviding {
             explicitRepoMode: input.explicitRepoMode,
             selectedModelID: input.selectedModelID,
             runtimeBackend: input.runtimeBackend,
+            runtimeProviderName: input.runtimeProviderName,
             runtimeModelName: input.runtimeModelName,
             runtimeReasoningEffort: input.runtimeReasoningEffort,
             githubLinks: input.githubLinks,

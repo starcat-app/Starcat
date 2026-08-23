@@ -225,6 +225,7 @@ struct AgentRunContext: Codable, Hashable, Sendable {
     var selectedModelID: String?
     /// Runtime 字段保持 optional，确保新增前已经落库的 context JSON 可继续解码。
     var runtimeBackend: AgentRuntimeBackend?
+    var runtimeProviderName: String?
     var runtimeModelName: String?
     var runtimeReasoningEffort: String?
     var githubLinks: [AIComposerGitHubLink]?
@@ -242,6 +243,7 @@ struct AgentRunContext: Codable, Hashable, Sendable {
         explicitRepoMode: AIComposerExplicitRepoMode? = nil,
         selectedModelID: String? = nil,
         runtimeBackend: AgentRuntimeBackend? = nil,
+        runtimeProviderName: String? = nil,
         runtimeModelName: String? = nil,
         runtimeReasoningEffort: String? = nil,
         githubLinks: [AIComposerGitHubLink]? = nil,
@@ -257,6 +259,7 @@ struct AgentRunContext: Codable, Hashable, Sendable {
         self.explicitRepoMode = explicitRepoMode
         self.selectedModelID = selectedModelID
         self.runtimeBackend = runtimeBackend
+        self.runtimeProviderName = runtimeProviderName
         self.runtimeModelName = runtimeModelName
         self.runtimeReasoningEffort = runtimeReasoningEffort
         self.githubLinks = githubLinks
@@ -296,6 +299,7 @@ struct AgentRunInput: Hashable, Sendable {
     var webSearchEnabled: Bool
     var source: String
     var runtimeBackend: AgentRuntimeBackend? = nil
+    var runtimeProviderName: String? = nil
     var runtimeModelName: String? = nil
     var runtimeReasoningEffort: String? = nil
 }

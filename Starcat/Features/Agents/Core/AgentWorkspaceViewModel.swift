@@ -82,8 +82,10 @@ final class AgentWorkspaceViewModel {
     var availableModels: [AIModelDescriptor] = []
     var selectedModelID: String?
     private(set) var runtimeBackend = AgentRuntimeBackend.builtinLoop
+    private(set) var runtimeProviderName: String?
     private(set) var runtimeModelName: String?
     private(set) var runtimeReasoningEffort: String?
+    private(set) var runtimeSelectionAvailable = true
     var webSearchEnabled = false
     var githubLinks: [AIComposerGitHubLink] = []
     var isContextPickerPresented = false
@@ -223,13 +225,19 @@ final class AgentWorkspaceViewModel {
         guard !isRunning,
               let selectedAgent,
               selectedAgent.isEnabled,
+              runtimeSelectionAvailable,
               !effectivePrompt(for: selectedAgent).isEmpty
         else { return false }
-        // Codex 通过自己的 model/list 与登录态选择模型，不能被 Starcat BYOK
-        // 配置阻断。其它 Runtime 仍沿用既有模型有效性校验。
-        if runtimeBackend != .codexAppServer {
+        // 外部 Runtime 拥有独立 Provider/Model 目录，不能被内置 Loop 的 selectedModelID
+        // 阻断。DeepSeek 必须已经解析出已验证 Provider；Codex 目录失败时仍允许使用
+        // App Server 默认模型，以保留其官方回退语义。
+        if runtimeBackend == .builtinLoop {
             guard let selectedModelID,
                   availableModels.contains(where: { $0.id == selectedModelID })
+            else { return false }
+        } else if runtimeBackend == .deepSeekHarness {
+            guard runtimeProviderName?.isEmpty == false,
+                  runtimeModelName?.isEmpty == false
             else { return false }
         }
 
@@ -289,13 +297,17 @@ final class AgentWorkspaceViewModel {
     /// 中途切换后让历史上下文记录成与当前进程不同的参数。
     func configureRuntimeSelection(
         backend: AgentRuntimeBackend,
+        providerName: String? = nil,
         modelName: String?,
-        reasoningEffort: String?
+        reasoningEffort: String?,
+        isAvailable: Bool = true
     ) {
         guard !isRunning else { return }
         runtimeBackend = backend
+        runtimeProviderName = providerName
         runtimeModelName = modelName
         runtimeReasoningEffort = reasoningEffort
+        runtimeSelectionAvailable = isAvailable
     }
 
     func configureRunRepository(_ repository: any AgentRunRepositoryProtocol) {
@@ -431,12 +443,13 @@ final class AgentWorkspaceViewModel {
             agentID: selectedAgent.id,
             explicitRepos: selectedRepoContexts,
             explicitRepoMode: explicitRepoMode,
-            selectedModelID: runtimeBackend == .codexAppServer ? nil : selectedModelID,
+            selectedModelID: runtimeBackend == .builtinLoop ? selectedModelID : nil,
             attachments: attachments,
             githubLinks: githubLinks,
             webSearchEnabled: webSearchEnabled,
             source: "Agent Workspace",
             runtimeBackend: runtimeBackend,
+            runtimeProviderName: runtimeProviderName,
             runtimeModelName: runtimeModelName,
             runtimeReasoningEffort: runtimeReasoningEffort
         )
@@ -898,6 +911,7 @@ final class AgentWorkspaceViewModel {
         // 历史页的过程标题、模型与推理强度必须来自该次 Run 的冻结上下文，不能继续
         // 显示当前 Composer 选择，否则 Codex/DeepSeek/Built-in 轨迹会被贴错后端标签。
         runtimeBackend = snapshot.context.runtimeBackend ?? .builtinLoop
+        runtimeProviderName = snapshot.context.runtimeProviderName
         runtimeModelName = snapshot.context.runtimeModelName
         runtimeReasoningEffort = snapshot.context.runtimeReasoningEffort
         if let modelID = snapshot.context.selectedModelID,
