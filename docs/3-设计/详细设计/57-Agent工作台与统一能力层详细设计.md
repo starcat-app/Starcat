@@ -1,6 +1,6 @@
 # 57 — Agent 工作台与统一能力层详细设计
 
-> 日期：2026-08-04（2026-08-21 修订外部 Runtime 边界）
+> 日期：2026-08-04（2026-08-23 修订 ACP 暂缓决策）
 >
 > 状态：新版权威方案，P0～P4 已实现，产品化终审中
 >
@@ -1032,6 +1032,8 @@ P0～P3、定向自动化、Release 构建与真实入口门禁验收通过后�
 
 外部 Runtime 不采用“选择一个框架并替换全部 Agent”的路线。Starcat 保留 `LoopAgentRuntime`，通过 `AgentRuntimeRouter`、`ExternalAgentRuntimeHost` 和 Provider Adapter 形成可切换底座；Codex App Server 与外部安装的 DeepSeek Harness `0.1.1rc1` wheel 是首批 adapter。多后端 POC 见 `59-ExternalAgentRuntime多后端POC技术方案.md`，DeepSeek 上游协议与 carrier 评估仍见 `58-DeepSeekHarness集成评估与POC技术方案.md`。
 
+ACP 只作为独立候选协议保留，不进入当前 P5 实施范围。2026-08-23 决定在 Agent 工作台和现有 External Agent Runtime 完成稳定性与安全验收前暂缓接入，也不迁移现有 Codex、Claude 或 DeepSeek 路径；协议边界、RAG / Agent 双路径候选架构和重新评估门禁见 `64-ACP协议接入评估与暂缓方案.md`。
+
 已落地的底座 POC 链路是：Starcat Direct Debug 通过统一 newline-delimited JSON-RPC Host 控制一次 run 专属 Sidecar，Provider adapter 把原生事件映射为 `AgentRunEvent`。Weekly、Repo Insight、Alternatives 的 `runtimePolicy` 允许 Loop / Codex，Codex 通过 App Server `dynamicTools` 调用现有 Starcat 自动只读工具；Untagged 等带审批写入的 Agent 仍锁定 Loop；General / Research POC 可选择 Codex 或 DeepSeek。外部 Runtime 不开放写工具、不持久化外部 Session，也不经过 `starcat-cli`，显式选择不兼容后端时不静默回退 Loop。
 
 DeepSeek 的临时 Loopback MCP HTTP Bridge、Session 级 tool allowlist、随机 token、repo scope 与 RAG eligible scope 仍是产品化前的独立门禁；Codex dynamic tools 已由宿主执行 definition allowlist、schema 与自动只读权限校验。未完成 Provider 内建工具硬禁用等门禁前，不把多后端底座 POC 表述为完整 P5 交付。
@@ -1095,6 +1097,7 @@ DeepSeek 的临时 Loopback MCP HTTP Bridge、Session 级 tool allowlist、随�
 | Agent 场景文档 | 历史需求输入 | 是否实施、归属与优先级以本文 §10 为准 |
 | `30-本地RAG设计.md` | 当前 RAG 真源 | 本文只定义 Agent 如何复用，不改写 RAG 语义 |
 | `34-StarcatCLI与外部MCP桥接设计.md` | 当前外部集成真源 | CLI/MCP transport 与安全边界继续由该文档负责 |
+| `64-ACP协议接入评估与暂缓方案.md` | 当前 ACP 专题 | ACP 暂缓决策、候选架构与重新评估门禁以该文档为准 |
 
 旧文档保留是为了追溯决策，不代表其中的阶段、框架评估、场景优先级或 CLI Runtime 路线仍有效。
 
