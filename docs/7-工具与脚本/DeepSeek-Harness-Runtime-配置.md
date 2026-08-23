@@ -7,10 +7,10 @@ DeepSeek Harness 只用于 **Starcat Direct Debug / macOS arm64**。Runtime 由�
 
 - Apple Silicon Mac。
 - Python 3.10 或更高版本；推荐 Python 3.12。
-- 已在 Starcat「设置 → AI」中添加并启用 DeepSeek Provider，API Key 保存在 Keychain。
+- 已在 Starcat「设置 → AI」中添加、连接测试并启用至少一个 Chat Provider；API Key 保存在 Keychain。
 
-API Key 不写入 `defaults`、Cordis YAML 或仓库。Starcat 启动 Runtime 时优先读取显式
-`DEEPSEEK_API_KEY` 环境变量；Finder 正常启动时复用已启用的 DeepSeek Provider 凭据。
+API Key 不写入 `defaults`、Cordis YAML 或仓库。Starcat 按工作台当前 Provider ID 从
+Keychain 读取凭据，只通过每轮子进程环境注入；Finder 启动不需要额外导出环境变量。
 
 ## 2. 安装固定 Runtime
 
@@ -48,17 +48,24 @@ defaults write com.starcat.app.direct.debug DebugDeepSeekHarnessExecutablePath -
   "$HOME/Library/Application Support/Starcat/Runtimes/deepseek-harness-0.1.1rc1/venv/lib/python3.12/site-packages/deepseek_harness_runtime/runtime/dsh-jsonrpc-agent-pkg-macos-arm64"
 defaults write com.starcat.app.direct.debug DebugDeepSeekHarnessCordisConfigPath -string \
   "$HOME/Library/Application Support/Starcat/Runtimes/deepseek-harness-0.1.1rc1/starcat.cordis.yml"
-defaults write com.starcat.app.direct.debug DebugDeepSeekHarnessProvider -string deepseek-official
-defaults write com.starcat.app.direct.debug DebugDeepSeekHarnessModel -string deepseek-v4-flash
 ```
 
-可选模型：
+Provider 和模型不再通过 `defaults` 手工写死。启动 `StarcatDirect` 后，在 Agent 工作台按
+以下顺序选择：
 
-- `deepseek-v4-flash`
-- `deepseek-v4-pro`
+1. Runtime：`DeepSeek Harness`
+2. Provider：Starcat「设置 → AI」中已经通过连接测试的配置
+3. Model：该 Provider 下已启用的 Chat 模型
+4. Reasoning：目录能明确识别为推理模型时可选；否则保留服务商默认
 
-启动 `StarcatDirect` 后，Agent 工作台输入框会显示 DeepSeek 自己的模型菜单，不再显示
-Starcat 内置 Loop 的 Provider / Model 选择器。
+DeepSeek Harness JSON-RPC carrier 没有 Provider 目录接口。Starcat 会为每个 Run 生成只含
+当前 endpoint、模型能力和环境变量引用的临时 `dsh-llm-pi-ai` Cordis 配置，并继续使用
+临时 MCP Bridge 调用 Agent definition 允许的 Starcat 只读工具。当前目录只接入已经由
+Starcat 连接测试验证的 OpenAI-compatible Provider；需要 AWS/Azure/OAuth 原生鉴权的
+Harness catalog route 尚未在 Starcat UI 中单独开放。
+
+基础 Cordis 配置故意不预加载 `dsh-llm-deepseek`。这样选择 OpenAI-compatible 的非
+DeepSeek Provider 时，不会因为未配置无关的 `DEEPSEEK_API_KEY` 而在 Runtime 初始化阶段失败。
 
 ## 4. Gatekeeper 与签名
 
@@ -77,4 +84,4 @@ Store/Sandbox 测试宿主里启用了本地 Bash。重新运行安装脚本，�
 defaults write com.starcat.app.direct.debug DebugExternalAgentRuntimeBackend -string builtinLoop
 ```
 
-这只切回 Starcat 内置 Loop，不删除外部 Runtime 或 DeepSeek Provider 凭据。
+这只切回 Starcat 内置 Loop，不删除外部 Runtime 或 AI Provider 凭据。

@@ -175,6 +175,9 @@ struct AgentRunInspectorView: View {
         VStack(alignment: .leading, spacing: 12) {
             inspectorGroup(title: String.l10n("agent.workspace.inspector.overview.runtime"), icon: "cpu") {
                 metricRow(String.l10n("agent.workspace.inspector.overview.backend"), viewModel.runtimeBackend.displayName)
+                if let provider = viewModel.runtimeProviderName {
+                    metricRow(String.l10n("agent.workspace.inspector.overview.provider"), provider)
+                }
                 metricRow(String.l10n("agent.workspace.inspector.overview.model"), runtimeModelLabel)
                 if let effort = viewModel.runtimeReasoningEffort {
                     metricRow(String.l10n("agent.workspace.inspector.overview.reasoning"), effort)

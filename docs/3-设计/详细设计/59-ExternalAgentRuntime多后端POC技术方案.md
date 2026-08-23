@@ -123,11 +123,9 @@ DeepSeek：
 -DebugExternalAgentRuntimeBackend deepSeekHarness
 -DebugDeepSeekHarnessExecutablePath /absolute/path/dsh-jsonrpc-agent-pkg-macos-arm64
 -DebugDeepSeekHarnessCordisConfigPath /absolute/path/starcat.cordis.yml
--DebugDeepSeekHarnessProvider deepseek-official
--DebugDeepSeekHarnessModel <model>
 ```
 
-API Key 不使用 launch argument 或 UserDefaults。Codex adapter 不接收 API Key，只使用本机登录态；DeepSeek adapter 仅按 Provider 白名单透传必要环境变量。
+Provider/Model 由 Agent 工作台选择，不再要求手工写 `defaults`。API Key 不使用 launch argument 或 UserDefaults。Codex adapter 只使用所选 `config.toml` Provider 的本机登录态；声明 `env_key` 的 Provider 不向可运行命令的 Codex 子进程透传凭据，因此在 Starcat 中明确禁用。DeepSeek adapter 复用 Starcat 已验证 AI Provider，并按 profile ID 从 Keychain 注入当前 Run 的最小凭据环境。
 
 ## 7. 当前数据边界
 
@@ -139,7 +137,7 @@ API Key 不使用 launch argument 或 UserDefaults。Codex adapter 不接收 API
 - 不持久化外部 Session 或 event watermark。
 - Codex 可参与 Weekly、Repo Insight、Alternatives 的结构化 Artifact contract；DeepSeek 暂不参与。
 
-Codex 当前不需要 Loopback MCP Bridge，dynamic tool 请求直接进入受控宿主执行器。DeepSeek 的临时 Loopback MCP Bridge 尚未进入本次底座 POC；产品化前必须补齐随机端口、随机 token、tool allowlist、repo scope、RAG eligible scope 和 Session 结束失效验证，不能复用全局 MCP token 或绕过 Capability。
+Codex 当前不需要 Loopback MCP Bridge，dynamic tool 请求直接进入受控宿主执行器。DeepSeek 使用每轮随机端口、随机 token、tool allowlist 且 Run 结束立即失效的临时 Loopback MCP Bridge；Provider/Model 则通过每轮临时 `dsh-llm-pi-ai` Cordis route 注入，配置只保存环境变量引用，不保存 API Key。
 
 上述边界只约束 Starcat 注入的能力。外部 Runtime 自带的命令、文件或网络工具必须由 Provider Profile 或独立 OS sandbox 再限制；仅靠 prompt 和空工作目录不构成安全隔离。
 

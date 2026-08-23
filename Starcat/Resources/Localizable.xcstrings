@@ -470367,6 +470367,13 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模型" } }
       }
     },
+    "agent.workspace.inspector.overview.provider" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Provider" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "服务商" } }
+      }
+    },
     "agent.workspace.inspector.overview.outputTokens" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -473011,6 +473018,55 @@
             "value" : "知識檢索"
           }
         }
+      }
+    },
+    "agent.workspace.runtime.codexProviderHelp" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Providers configured in Codex config.toml" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Codex config.toml 中配置的服务商" } }
+      }
+    },
+    "agent.workspace.runtime.codexCredentialBlocked" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unavailable in Starcat: Codex requires environment credential %1$@, which is not passed to the external Runtime." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Starcat 中不可用：Codex 需要环境凭据 %1$@，该凭据不会传给外部 Runtime。" } }
+      }
+    },
+    "agent.workspace.runtime.deepSeekProviderHelp" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Verified providers from Starcat AI settings" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "来自 Starcat AI 设置的已验证服务商" } }
+      }
+    },
+    "agent.workspace.runtime.noVerifiedProvider" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No verified provider" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有已验证的服务商" } }
+      }
+    },
+    "agent.workspace.runtime.provider" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Provider" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "服务商" } }
+      }
+    },
+    "agent.workspace.runtime.providerDefault" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Provider Default" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "服务商默认" } }
+      }
+    },
+    "agent.workspace.runtime.providerRequired" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Configure and verify an AI provider before using DeepSeek Harness." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "使用 DeepSeek Harness 前，请先配置并验证 AI 服务商。" } }
       }
     },
     "agent.workspace.status.waitingForConfirmation" : {

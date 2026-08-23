@@ -70,10 +70,16 @@ struct AgentWorkspaceView: View {
     private var externalRuntimeBackendRawValue = AgentRuntimeBackend.builtinLoop.rawValue
     @AppStorage(ExternalAgentRuntimePOCPreferences.codexModelKey)
     private var preferredCodexModelID = ""
+    @AppStorage(ExternalAgentRuntimePOCPreferences.codexProviderKey)
+    private var preferredCodexProviderID = ""
     @AppStorage(ExternalAgentRuntimePOCPreferences.codexReasoningEffortKey)
     private var preferredCodexReasoningEffort = ""
     @AppStorage(ExternalAgentRuntimePOCPreferences.deepSeekModelKey)
     private var preferredDeepSeekModel = DeepSeekHarnessRuntime.defaultModel
+    @AppStorage(ExternalAgentRuntimePOCPreferences.deepSeekProviderKey)
+    private var preferredDeepSeekProviderID = ""
+    @AppStorage(ExternalAgentRuntimePOCPreferences.deepSeekReasoningEffortKey)
+    private var preferredDeepSeekReasoningEffort = ""
     @AppStorage(AgentWorkspaceLayoutMetrics.leftWidthDefaultsKey)
     private var persistedLeftColumnWidth = Double(AgentWorkspaceLayoutMetrics.leftIdealWidth)
     @AppStorage(AgentWorkspaceLayoutMetrics.rightWidthDefaultsKey)
@@ -87,6 +93,7 @@ struct AgentWorkspaceView: View {
     @State private var leftWidthPersistenceTask: Task<Void, Never>?
     @State private var rightWidthPersistenceTask: Task<Void, Never>?
     @State private var codexModelCatalog = CodexModelCatalog.empty
+    @State private var codexProviderCatalog = CodexProviderCatalog.load()
     @State private var isLoadingCodexModelCatalog = false
     @State private var codexModelCatalogError: String?
     @FocusState private var isContextPickerSearchFocused: Bool
@@ -159,10 +166,11 @@ struct AgentWorkspaceView: View {
                 defaultProviderID: dependencies.settings.aiChatTask.providerID,
                 defaultModelName: dependencies.settings.aiChatTask.resolvedModelName
             )
+            normalizeRuntimeSelections()
             configureAgentRuntime()
             await viewModel.initializeHistory()
         }
-        .task(id: selectedRuntimeBackend) {
+        .task(id: codexCatalogTaskID) {
             await loadCodexModelCatalogIfNeeded()
         }
         .onChange(of: viewModel.selectedModelID) { _, _ in
@@ -182,10 +190,25 @@ struct AgentWorkspaceView: View {
         .onChange(of: preferredCodexModelID) { _, _ in
             configureAgentRuntime()
         }
+        .onChange(of: preferredCodexProviderID) { _, _ in
+            codexModelCatalog = .empty
+            configureAgentRuntime()
+        }
         .onChange(of: preferredCodexReasoningEffort) { _, _ in
             configureAgentRuntime()
         }
         .onChange(of: preferredDeepSeekModel) { _, _ in
+            configureAgentRuntime()
+        }
+        .onChange(of: preferredDeepSeekProviderID) { _, _ in
+            normalizeDeepSeekSelection()
+            configureAgentRuntime()
+        }
+        .onChange(of: preferredDeepSeekReasoningEffort) { _, _ in
+            configureAgentRuntime()
+        }
+        .onChange(of: dependencies.settings.aiProviderProfiles) { _, _ in
+            normalizeDeepSeekSelection()
             configureAgentRuntime()
         }
         .animation(.easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)
@@ -213,22 +236,32 @@ struct AgentWorkspaceView: View {
             .name
         let runtimeModelName: String?
         let runtimeReasoningEffort: String?
+        let runtimeProviderName: String?
+        let runtimeSelectionAvailable: Bool
         switch preferredBackend {
         case .codexAppServer:
+            runtimeProviderName = selectedCodexProviderOption?.displayName ?? selectedCodexProviderID
             runtimeModelName = selectedCodexModelSelection?.modelName
             runtimeReasoningEffort = selectedCodexModelSelection?.reasoningEffort
+            runtimeSelectionAvailable = selectedCodexProviderOption?.isSelectable != false
         case .deepSeekHarness:
-            // DeepSeek Runtime 拥有独立模型目录，不能继承 Starcat 内置 Loop 当前模型。
-            runtimeModelName = preferredDeepSeekModel
-            runtimeReasoningEffort = nil
+            // JSON-RPC carrier 不提供目录查询；这里冻结设置页已验证 Provider 的能力快照。
+            runtimeProviderName = selectedDeepSeekSelection?.provider.displayName
+            runtimeModelName = selectedDeepSeekSelection?.model.name
+            runtimeReasoningEffort = selectedDeepSeekSelection?.reasoningEffort
+            runtimeSelectionAvailable = selectedDeepSeekSelection != nil
         case .builtinLoop:
+            runtimeProviderName = selectedBuiltinProviderProfile?.displayName
             runtimeModelName = starcatModelName
             runtimeReasoningEffort = nil
+            runtimeSelectionAvailable = true
         }
         viewModel.configureRuntimeSelection(
             backend: preferredBackend,
+            providerName: runtimeProviderName,
             modelName: runtimeModelName,
-            reasoningEffort: runtimeReasoningEffort
+            reasoningEffort: runtimeReasoningEffort,
+            isAvailable: runtimeSelectionAvailable
         )
         let externalSearchTool = ExternalSearchAgentTool(
             collector: AppSettingsAgentExternalSearchCollector(settings: dependencies.settings)
@@ -318,6 +351,20 @@ struct AgentWorkspaceView: View {
         )
     }
 
+    private var selectedCodexProviderID: String {
+        codexProviderCatalog.resolvedProviderID(
+            preferredProviderID: preferredCodexProviderID.isEmpty ? nil : preferredCodexProviderID
+        )
+    }
+
+    private var selectedCodexProviderOption: CodexProviderOption? {
+        codexProviderCatalog.providers.first(where: { $0.id == selectedCodexProviderID })
+    }
+
+    private var codexCatalogTaskID: String {
+        "\(selectedRuntimeBackend.rawValue):\(selectedCodexProviderID)"
+    }
+
     /// 目录失败时保留 Codex 服务端默认行为：UI 不回退展示 BYOK 模型，turn/start 也不
     /// 发送 model/effort 覆盖。用户仍可提交，并在切换后端或点击重试时重新拉取目录。
     @MainActor
@@ -327,7 +374,9 @@ struct AgentWorkspaceView: View {
         defer { isLoadingCodexModelCatalog = false }
         codexModelCatalogError = nil
         do {
-            let client = try ExternalAgentRuntimePOCPreferences.makeCodexModelCatalogClient()
+            let client = try ExternalAgentRuntimePOCPreferences.makeCodexModelCatalogClient(
+                providerID: selectedCodexProviderID
+            )
             let catalog = try await client.load()
             guard !Task.isCancelled, selectedRuntimeBackend == .codexAppServer else { return }
             codexModelCatalog = catalog
@@ -344,6 +393,41 @@ struct AgentWorkspaceView: View {
             codexModelCatalogError = error.localizedDescription
             configureAgentRuntime()
         }
+    }
+
+    private var deepSeekProviderOptions: [DeepSeekRuntimeProviderOption] {
+        DeepSeekRuntimeProviderCatalog.providers(settings: dependencies.settings)
+    }
+
+    private var selectedDeepSeekSelection: DeepSeekRuntimeSelection? {
+        DeepSeekRuntimeProviderCatalog.resolvedSelection(
+            settings: dependencies.settings,
+            preferredProviderID: preferredDeepSeekProviderID.isEmpty ? nil : preferredDeepSeekProviderID,
+            preferredModelName: preferredDeepSeekModel,
+            preferredReasoningEffort: preferredDeepSeekReasoningEffort.isEmpty
+                ? nil
+                : preferredDeepSeekReasoningEffort
+        )
+    }
+
+    private var selectedBuiltinProviderProfile: AIProviderProfile? {
+        guard let model = viewModel.availableModels.first(where: { $0.id == viewModel.selectedModelID }) else {
+            return nil
+        }
+        return dependencies.settings.aiProviderProfiles.first(where: { $0.id == model.providerID })
+    }
+
+    private func normalizeRuntimeSelections() {
+        codexProviderCatalog = CodexProviderCatalog.load()
+        preferredCodexProviderID = selectedCodexProviderID
+        normalizeDeepSeekSelection()
+    }
+
+    private func normalizeDeepSeekSelection() {
+        guard let selection = selectedDeepSeekSelection else { return }
+        preferredDeepSeekProviderID = selection.provider.id
+        preferredDeepSeekModel = selection.model.name
+        preferredDeepSeekReasoningEffort = selection.reasoningEffort ?? ""
     }
 
     private var selectedRuntimeBackend: AgentRuntimeBackend {
@@ -729,10 +813,26 @@ struct AgentWorkspaceView: View {
                     .foregroundStyle(.secondary)
             }
 
-            if selectedRuntimeBackend != .codexAppServer, viewModel.selectedModelID == nil {
+            if selectedRuntimeBackend == .builtinLoop, viewModel.selectedModelID == nil {
                 Label("agent.workspace.model.required", systemImage: "sparkles")
                     .font(agentFont(.caption))
                     .foregroundStyle(.secondary)
+            } else if selectedRuntimeBackend == .deepSeekHarness, selectedDeepSeekSelection == nil {
+                Label("agent.workspace.runtime.providerRequired", systemImage: "server.rack")
+                    .font(agentFont(.caption))
+                    .foregroundStyle(.secondary)
+            } else if selectedRuntimeBackend == .codexAppServer,
+                      let credentialKey = selectedCodexProviderOption?.credentialEnvironmentKey {
+                Label(
+                    String(
+                        format: String.l10n("agent.workspace.runtime.codexCredentialBlocked"),
+                        locale: locale,
+                        credentialKey
+                    ),
+                    systemImage: "exclamationmark.triangle"
+                )
+                .font(agentFont(.caption))
+                .foregroundStyle(.secondary)
             }
 
             AICommandTextEditor(
@@ -1242,7 +1342,7 @@ struct AgentWorkspaceView: View {
 
     private var agentModelMenu: some View {
         Menu {
-            ForEach(viewModel.availableModels) { model in
+            ForEach(builtinModelsForSelectedProvider) { model in
                 Button {
                     viewModel.selectedModelID = model.id
                 } label: {
@@ -1264,10 +1364,42 @@ struct AgentWorkspaceView: View {
         .help("rag.workspace.composer.model")
     }
 
+    private var builtinModelsForSelectedProvider: [AIModelDescriptor] {
+        guard let providerID = selectedBuiltinProviderProfile?.id else { return viewModel.availableModels }
+        return viewModel.availableModels.filter { $0.providerID == providerID }
+    }
+
+    private var builtinProviderMenu: some View {
+        Menu {
+            ForEach(dependencies.settings.aiProviderProfiles.filter(\.isVerifiedConfiguration)) { profile in
+                let firstModel = viewModel.availableModels.first(where: { $0.providerID == profile.id })
+                Button {
+                    if let firstModel { viewModel.selectedModelID = firstModel.id }
+                } label: {
+                    if profile.id == selectedBuiltinProviderProfile?.id {
+                        Label(profile.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(profile.displayName)
+                    }
+                }
+                .disabled(firstModel == nil)
+            }
+        } label: {
+            Label(selectedBuiltinProviderProfile?.displayName ?? "Provider", systemImage: "server.rack")
+                .font(agentFont(.caption, weight: .semibold))
+                .lineLimit(1)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(viewModel.isRunning)
+        .help(String.l10n("agent.workspace.runtime.provider"))
+    }
+
     @ViewBuilder
     private var agentRuntimeModelControls: some View {
         switch selectedRuntimeBackend {
         case .codexAppServer:
+            codexProviderMenu
             if isLoadingCodexModelCatalog, codexModelCatalog.models.isEmpty {
                 ProgressView()
                     .controlSize(.small)
@@ -1278,34 +1410,151 @@ struct AgentWorkspaceView: View {
                 codexReasoningEffortMenu(selectedModel)
             }
         case .deepSeekHarness:
+            deepSeekProviderMenu
             deepSeekModelMenu
+            if let model = selectedDeepSeekSelection?.model,
+               !model.supportedReasoningEfforts.isEmpty {
+                deepSeekReasoningEffortMenu(model)
+            }
         case .builtinLoop:
+            builtinProviderMenu
             agentModelMenu
         }
     }
 
-    private var deepSeekModelMenu: some View {
+    private var codexProviderMenu: some View {
         Menu {
-            ForEach(DeepSeekHarnessRuntime.supportedModels, id: \.self) { model in
+            ForEach(codexProviderCatalog.providers) { provider in
                 Button {
-                    preferredDeepSeekModel = model
+                    preferredCodexProviderID = provider.id
                 } label: {
-                    if model == preferredDeepSeekModel {
-                        Label(model, systemImage: "checkmark")
+                    if provider.id == selectedCodexProviderID {
+                        Label(provider.displayName, systemImage: "checkmark")
                     } else {
-                        Text(model)
+                        Text(provider.displayName)
                     }
                 }
+                .disabled(!provider.isSelectable)
+                .help(
+                    provider.credentialEnvironmentKey.map { key in
+                        String(
+                            format: String.l10n("agent.workspace.runtime.codexCredentialBlocked"),
+                            locale: locale,
+                            key
+                        )
+                    } ?? provider.displayName
+                )
             }
         } label: {
-            Label(preferredDeepSeekModel, systemImage: "sparkles")
+            Label(
+                selectedCodexProviderOption?.displayName ?? selectedCodexProviderID,
+                systemImage: selectedCodexProviderOption?.isSelectable == false
+                    ? "exclamationmark.triangle"
+                    : "server.rack"
+            )
                 .font(agentFont(.caption, weight: .semibold))
                 .lineLimit(1)
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
         .disabled(viewModel.isRunning)
+        .help(String.l10n("agent.workspace.runtime.codexProviderHelp"))
+    }
+
+    private var deepSeekProviderMenu: some View {
+        Menu {
+            if deepSeekProviderOptions.isEmpty {
+                Text("agent.workspace.runtime.noVerifiedProvider")
+            } else {
+                ForEach(deepSeekProviderOptions) { provider in
+                    Button {
+                        preferredDeepSeekProviderID = provider.id
+                        preferredDeepSeekModel = provider.models.first?.name ?? ""
+                        preferredDeepSeekReasoningEffort = ""
+                    } label: {
+                        if provider.id == selectedDeepSeekSelection?.provider.id {
+                            Label(provider.displayName, systemImage: "checkmark")
+                        } else {
+                            Text(provider.displayName)
+                        }
+                    }
+                }
+            }
+        } label: {
+            Label(
+                selectedDeepSeekSelection?.provider.displayName ?? String.l10n("agent.workspace.runtime.provider"),
+                systemImage: "server.rack"
+            )
+            .font(agentFont(.caption, weight: .semibold))
+            .lineLimit(1)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(viewModel.isRunning || deepSeekProviderOptions.isEmpty)
+        .help(String.l10n("agent.workspace.runtime.deepSeekProviderHelp"))
+    }
+
+    private var deepSeekModelMenu: some View {
+        Menu {
+            ForEach(selectedDeepSeekSelection?.provider.models ?? []) { model in
+                Button {
+                    preferredDeepSeekModel = model.name
+                    preferredDeepSeekReasoningEffort = ""
+                } label: {
+                    if model.name == selectedDeepSeekSelection?.model.name {
+                        Label(model.name, systemImage: "checkmark")
+                    } else {
+                        Text(model.name)
+                    }
+                }
+            }
+        } label: {
+            Label(selectedDeepSeekSelection?.model.name ?? "—", systemImage: "sparkles")
+                .font(agentFont(.caption, weight: .semibold))
+                .lineLimit(1)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(viewModel.isRunning || selectedDeepSeekSelection == nil)
         .help(String.l10n("rag.workspace.composer.model"))
+    }
+
+    private func deepSeekReasoningEffortMenu(_ model: DeepSeekRuntimeModelOption) -> some View {
+        Menu {
+            Button {
+                preferredDeepSeekReasoningEffort = ""
+            } label: {
+                if preferredDeepSeekReasoningEffort.isEmpty {
+                    Label("agent.workspace.runtime.providerDefault", systemImage: "checkmark")
+                } else {
+                    Text("agent.workspace.runtime.providerDefault")
+                }
+            }
+            Divider()
+            ForEach(model.supportedReasoningEfforts, id: \.self) { effort in
+                Button {
+                    preferredDeepSeekReasoningEffort = effort
+                } label: {
+                    if effort == preferredDeepSeekReasoningEffort {
+                        Label(reasoningEffortDisplayName(effort), systemImage: "checkmark")
+                    } else {
+                        Text(reasoningEffortDisplayName(effort))
+                    }
+                }
+            }
+        } label: {
+            Label(
+                preferredDeepSeekReasoningEffort.isEmpty
+                    ? String.l10n("agent.workspace.runtime.providerDefault")
+                    : reasoningEffortDisplayName(preferredDeepSeekReasoningEffort),
+                systemImage: "brain"
+            )
+            .font(agentFont(.caption, weight: .semibold))
+            .lineLimit(1)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(viewModel.isRunning)
     }
 
     private var selectedCodexModelOption: CodexModelOption? {
