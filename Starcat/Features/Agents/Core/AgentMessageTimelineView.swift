@@ -291,7 +291,10 @@ struct AgentMessageTimelineView: View {
         let isExpanded = isTraceExpanded(event)
         return VStack(alignment: .leading, spacing: 7) {
             if event.hasDetails {
-                Button { toggleTrace(event) } label: {
+                Button {
+                    viewModel.selectTraceEvent(event.id)
+                    toggleTrace(event)
+                } label: {
                     traceRowLabel(event, isExpanded: isExpanded, showsDisclosure: true)
                         .contentShape(Rectangle())
                 }
@@ -299,7 +302,14 @@ struct AgentMessageTimelineView: View {
                 .focusEffectDisabled()
                 .accessibilityHint(String.l10n(isExpanded ? "gettingStarted.collapse" : "gettingStarted.expand"))
             } else {
-                traceRowLabel(event, isExpanded: false, showsDisclosure: false)
+                Button {
+                    viewModel.selectTraceEvent(event.id)
+                } label: {
+                    traceRowLabel(event, isExpanded: false, showsDisclosure: false)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
             }
 
             if isExpanded {
@@ -307,8 +317,20 @@ struct AgentMessageTimelineView: View {
                     .padding(.leading, 24)
             }
         }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 5)
         .padding(.leading, event.parentID == nil ? 0 : 14)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            if viewModel.selectedTraceEventID == event.id {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.09))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .stroke(Color.accentColor.opacity(0.24), lineWidth: 0.5)
+                    }
+            }
+        }
     }
 
     private func traceRowLabel(

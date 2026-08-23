@@ -28,6 +28,9 @@ final class AgentWorkspaceViewModel {
     private var mentionTask: Task<Void, Never>?
     private var activeRunID: UUID?
     private var currentRunSnapshot: AgentRunSnapshotRecord?
+    /// Composer 在发送后会立即清空附件与临时选择；Inspector 必须持有本次 Run 的冻结上下文，
+    /// 否则实时运行期间只能看到空的“下一次输入”，历史记录与实时记录也会表现不一致。
+    private(set) var currentRunContext: AgentRunContext?
     private var hasInitializedHistory = false
     private var draftsByAgentID: [String: String] = [:]
     private var hasLoadedRepositoryCatalog = false
@@ -66,8 +69,10 @@ final class AgentWorkspaceViewModel {
     var usage: AgentUsage = .zero
     var artifacts: [AgentArtifact] = []
     var historyRuns: [AgentRunRecord] = []
+    var inspectorTab: AgentInspectorTab = .overview
     var selectedArtifactID: UUID?
     var selectedToolCallID: String?
+    var selectedTraceEventID: String?
     var selectedHistoryRunID: String?
     var attachments: [AgentPromptAttachment] = []
     var selectedRepoContexts: [AIComposerRepoReference] = [] {
@@ -133,6 +138,15 @@ final class AgentWorkspaceViewModel {
     var selectedArtifact: AgentArtifact? {
         guard let selectedArtifactID else { return artifacts.first }
         return artifacts.first { $0.id == selectedArtifactID } ?? artifacts.first
+    }
+
+    var selectedTraceEvent: AgentTraceEvent? {
+        guard let selectedTraceEventID else { return nil }
+        return traceEvents.first { $0.id == selectedTraceEventID }
+    }
+
+    var currentRunRecord: AgentRunRecord? {
+        currentRunSnapshot?.run
     }
 
     var selectedKnowledgeAudit: AgentKnowledgeRetrievalAudit? {
@@ -401,11 +415,14 @@ final class AgentWorkspaceViewModel {
         traceEvents = []
         usage = .zero
         artifacts = []
+        inspectorTab = .overview
         selectedArtifactID = nil
         selectedToolCallID = nil
+        selectedTraceEventID = nil
         resetStreamingPresentation(resetUpdateCount: true)
         errorMessage = nil
         currentRunSnapshot = nil
+        currentRunContext = nil
         selectedHistoryRunID = nil
         currentRunUserPrompt = effectivePrompt
 
@@ -437,6 +454,9 @@ final class AgentWorkspaceViewModel {
                 definition: selectedAgent,
                 input: input
             )
+            await MainActor.run {
+                self?.currentRunContext = context
+            }
             let stream = runtime.run(
                 definition: selectedAgent,
                 prompt: input.goal,
@@ -505,12 +525,31 @@ final class AgentWorkspaceViewModel {
     }
 
     func selectArtifact(_ artifactID: UUID) {
+        inspectorTab = .artifacts
         selectedArtifactID = artifactID
         selectedToolCallID = nil
+        selectedTraceEventID = nil
     }
 
     func selectKnowledgeAudit(toolCallID: String) {
         selectedToolCallID = toolCallID
+        selectedTraceEventID = nil
+    }
+
+    func selectInspectorTab(_ tab: AgentInspectorTab) {
+        inspectorTab = tab
+        selectedToolCallID = nil
+        selectedTraceEventID = nil
+    }
+
+    func selectTraceEvent(_ eventID: String) {
+        selectedTraceEventID = eventID
+        selectedToolCallID = nil
+    }
+
+    func clearInspectorDetail() {
+        selectedToolCallID = nil
+        selectedTraceEventID = nil
     }
 
     // MARK: - Composer context
@@ -832,6 +871,7 @@ final class AgentWorkspaceViewModel {
 
     private func apply(_ snapshot: AgentRunSnapshotRecord) {
         currentRunSnapshot = snapshot
+        currentRunContext = snapshot.context
         activeRunID = UUID(uuidString: snapshot.run.id)
         selectedHistoryRunID = snapshot.run.id
         // 历史快照切换 Agent 时保留每个 Agent 尚未发送的草稿；持久化 user_prompt
@@ -876,8 +916,10 @@ final class AgentWorkspaceViewModel {
         }
         approvals = snapshot.approvals
         artifacts = snapshot.artifacts
+        inspectorTab = .overview
         selectedArtifactID = artifacts.first?.id
         selectedToolCallID = nil
+        selectedTraceEventID = nil
         resetStreamingPresentation(resetUpdateCount: true)
         errorMessage = snapshot.run.errorMessage
     }

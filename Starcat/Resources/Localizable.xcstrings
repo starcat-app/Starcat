@@ -26671,7 +26671,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Artifact Inspector"
+            "value" : "Task Inspector"
           }
         },
         "es" : {
@@ -26755,7 +26755,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Artifact Inspector"
+            "value" : "任务检查器"
           }
         },
         "zh-Hant" : {
@@ -29450,6 +29450,270 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "輸出"
+          }
+        }
+      }
+    },
+    "agent.workspace.trace.contentTruncated" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The timeline preview was limited to keep scrolling responsive. Use the runtime log when the complete raw payload is required."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "时间线预览已限制内容量，以保持展开和滚动流畅；如需完整原始载荷，请查看 Runtime 日志。"
+          }
+        }
+      }
+    },
+    "agent.workspace.trace.deepSeekBlocked" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The turn ended because execution was blocked." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本轮执行因阻塞而结束。" } }
+      }
+    },
+    "agent.workspace.trace.deepSeekInterrupted" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The Runtime recovered a previously interrupted turn." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Runtime 恢复到一轮此前异常中断的执行。" } }
+      }
+    },
+    "agent.workspace.trace.deepSeekMaxTokens" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "A model step reached the output token limit." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "某个模型步骤达到了输出 Token 上限。" } }
+      }
+    },
+    "agent.workspace.trace.eventData" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Event Data"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "事件数据"
+          }
+        }
+      }
+    },
+    "agent.workspace.trace.fragmentCountFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%d prompt fragments" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%d 个提示片段" } }
+      }
+    },
+    "agent.workspace.trace.kind.collaboration" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Agent Collaboration" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 协作" } }
+      }
+    },
+    "agent.workspace.trace.kind.enteredReview" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Entered Review Mode" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "进入审查模式" } }
+      }
+    },
+    "agent.workspace.trace.kind.exitedReview" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Exited Review Mode" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "退出审查模式" } }
+      }
+    },
+    "agent.workspace.trace.kind.hookPrompt" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Hook Prompt" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Hook 提示" } }
+      }
+    },
+    "agent.workspace.trace.kind.imageGeneration" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Image Generation" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "图像生成" } }
+      }
+    },
+    "agent.workspace.trace.kind.imageView" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "View Image" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查看图像" } }
+      }
+    },
+    "agent.workspace.trace.kind.lifecycle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lifecycle"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生命周期"
+          }
+        }
+      }
+    },
+    "agent.workspace.trace.kind.subAgentActivity" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sub-agent Activity" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "子 Agent 活动" } }
+      }
+    },
+    "agent.workspace.trace.kind.waiting" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Waiting" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "等待" } }
+      }
+    },
+    "agent.workspace.trace.kind.message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Runtime Message"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Runtime 消息"
+          }
+        }
+      }
+    },
+    "agent.workspace.trace.kind.request" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model Request"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型请求"
+          }
+        }
+      }
+    },
+    "agent.workspace.trace.kind.step" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Step"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "步骤"
+          }
+        }
+      }
+    },
+    "agent.workspace.trace.kind.todo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Task Plan"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "任务计划"
+          }
+        }
+      }
+    },
+    "agent.workspace.trace.kind.turn" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "轮次"
+          }
+        }
+      }
+    },
+    "agent.workspace.trace.reason" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reason"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原因"
+          }
+        }
+      }
+    },
+    "agent.workspace.trace.requestConfig" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Request Configuration"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请求配置"
+          }
+        }
+      }
+    },
+    "agent.workspace.trace.requestContext" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Route Context"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "路由上下文"
+          }
+        }
+      }
+    },
+    "agent.workspace.trace.todos" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tasks"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "任务"
           }
         }
       }
@@ -469863,6 +470127,412 @@
             "value" : "無法匯出選定的產物：%@"
           }
         }
+      }
+    },
+    "agent.workspace.inspector.approval.tool" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tool" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "工具" } }
+      }
+    },
+    "agent.workspace.inspector.artifacts.characters" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Characters" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "字符数" } }
+      }
+    },
+    "agent.workspace.inspector.artifacts.createdAt" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Created" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "创建时间" } }
+      }
+    },
+    "agent.workspace.inspector.artifacts.list" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Artifacts" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "产出物" } }
+      }
+    },
+    "agent.workspace.inspector.artifacts.markdownHint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The full Markdown result is displayed in the run surface." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "完整 Markdown 结果已在运行主区域展示。" } }
+      }
+    },
+    "agent.workspace.inspector.artifacts.selected" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Selected Artifact" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前产出物" } }
+      }
+    },
+    "agent.workspace.inspector.artifacts.toolCall" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tool Call" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "关联工具调用" } }
+      }
+    },
+    "agent.workspace.inspector.artifacts.type" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Type" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "类型" } }
+      }
+    },
+    "agent.workspace.inspector.context.attachmentList" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Attachments" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "附件列表" } }
+      }
+    },
+    "agent.workspace.inspector.context.attachments" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Attachments" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "附件" } }
+      }
+    },
+    "agent.workspace.inspector.context.empty" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Run context is not available yet." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前运行尚无可用上下文。" } }
+      }
+    },
+    "agent.workspace.inspector.context.failure" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Context Error" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上下文错误" } }
+      }
+    },
+    "agent.workspace.inspector.context.generatedAt" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Generated" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "冻结时间" } }
+      }
+    },
+    "agent.workspace.inspector.context.knowledgeEligible" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Knowledge-ready" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "可检索仓库" } }
+      }
+    },
+    "agent.workspace.inspector.context.linkList" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "GitHub Links" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "GitHub 链接" } }
+      }
+    },
+    "agent.workspace.inspector.context.links" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "GitHub Links" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "GitHub 链接" } }
+      }
+    },
+    "agent.workspace.inspector.context.repositories" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库" } }
+      }
+    },
+    "agent.workspace.inspector.context.repositoryList" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Frozen Repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "冻结仓库" } }
+      }
+    },
+    "agent.workspace.inspector.context.snapshot" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Context Snapshot" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上下文快照" } }
+      }
+    },
+    "agent.workspace.inspector.context.source" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Source" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "来源" } }
+      }
+    },
+    "agent.workspace.inspector.context.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Frozen repositories, files, and links" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本次运行冻结的仓库、文件与链接" } }
+      }
+    },
+    "agent.workspace.inspector.context.webSearch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Web Search" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "联网搜索" } }
+      }
+    },
+    "agent.workspace.inspector.overview.active" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Active" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "进行中" } }
+      }
+    },
+    "agent.workspace.inspector.overview.backend" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Runtime" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Runtime" } }
+      }
+    },
+    "agent.workspace.inspector.overview.cachedTokens" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cached Tokens" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "缓存 Token" } }
+      }
+    },
+    "agent.workspace.inspector.overview.compactions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Compactions" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上下文压缩" } }
+      }
+    },
+    "agent.workspace.inspector.overview.completed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Completed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已完成" } }
+      }
+    },
+    "agent.workspace.inspector.overview.cost" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Estimated Cost" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "预估费用" } }
+      }
+    },
+    "agent.workspace.inspector.overview.duration" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Duration" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "运行时长" } }
+      }
+    },
+    "agent.workspace.inspector.overview.execution" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Execution" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "执行概况" } }
+      }
+    },
+    "agent.workspace.inspector.overview.failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Failed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "失败" } }
+      }
+    },
+    "agent.workspace.inspector.overview.inputTokens" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Input Tokens" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "输入 Token" } }
+      }
+    },
+    "agent.workspace.inspector.overview.lastActivity" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Last Activity" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "最后活动" } }
+      }
+    },
+    "agent.workspace.inspector.overview.model" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Model" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模型" } }
+      }
+    },
+    "agent.workspace.inspector.overview.outputTokens" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Output Tokens" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "输出 Token" } }
+      }
+    },
+    "agent.workspace.inspector.overview.reasoning" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reasoning Effort" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "推理强度" } }
+      }
+    },
+    "agent.workspace.inspector.overview.reasoningTokens" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reasoning Tokens" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "推理 Token" } }
+      }
+    },
+    "agent.workspace.inspector.overview.retries" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Retries" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重试" } }
+      }
+    },
+    "agent.workspace.inspector.overview.runtime" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Runtime" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "运行环境" } }
+      }
+    },
+    "agent.workspace.inspector.overview.startedAt" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Started" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "开始时间" } }
+      }
+    },
+    "agent.workspace.inspector.overview.steps" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Steps" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "步骤" } }
+      }
+    },
+    "agent.workspace.inspector.overview.usage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Usage" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "用量" } }
+      }
+    },
+    "agent.workspace.inspector.step.attempt" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Attempt" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "尝试次数" } }
+      }
+    },
+    "agent.workspace.inspector.step.back" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Back" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "返回" } }
+      }
+    },
+    "agent.workspace.inspector.step.details" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Step Details" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "步骤详情" } }
+      }
+    },
+    "agent.workspace.inspector.step.kind" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Event Type" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "事件类型" } }
+      }
+    },
+    "agent.workspace.inspector.step.metadata" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Event Metadata" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "事件元数据" } }
+      }
+    },
+    "agent.workspace.inspector.step.noDetails" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The Runtime did not provide additional content for this event." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Runtime 没有为该事件提供更多内容。" } }
+      }
+    },
+    "agent.workspace.inspector.step.parent" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Parent Event" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "父事件" } }
+      }
+    },
+    "agent.workspace.inspector.step.sequence" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sequence" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "序号" } }
+      }
+    },
+    "agent.workspace.inspector.step.status" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Status" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "状态" } }
+      }
+    },
+    "agent.workspace.inspector.step.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Selected runtime event and structured payload" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前 Runtime 事件与结构化数据" } }
+      }
+    },
+    "agent.workspace.inspector.tab.artifacts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Artifacts" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "产出物" } }
+      }
+    },
+    "agent.workspace.inspector.tab.context" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Context" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上下文" } }
+      }
+    },
+    "agent.workspace.inspector.tab.overview" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Overview" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "概览" } }
+      }
+    },
+    "agent.workspace.inspector.value.disabled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Disabled" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "关闭" } }
+      }
+    },
+    "agent.workspace.inspector.value.enabled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Enabled" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "开启" } }
+      }
+    },
+    "agent.workspace.inspector.value.unavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Not provided" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未提供" } }
       }
     },
     "agent.workspace.inspector.summary.error" : {
