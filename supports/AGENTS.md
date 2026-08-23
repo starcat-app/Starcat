@@ -17,6 +17,7 @@
 | 工具与集成 | `starcat-cli/`、`starcat-skill/`、`extensions/` | CLI/MCP、AI Agent Skill 与浏览器插件 |
 | 分发与协作 | `homebrew-starcat*/`、`starcat-localization/`、`.github/` | Homebrew、本地化和组织主页 |
 | 后端 API | `starcat-*-api/`、`starcat-api-kit/`、`starcat-api/` | 六个业务服务、共享 kit、聚合网关与独立 license；Fly.io 规则只适用于可部署服务 |
+| 数据与离线训练 | `starcat-recsys-trainer/` | 私有 Python 项目；推荐数据采集、标准化、离线训练、评估和 ServingBundle 发布 |
 
 > 官网源码、Changelog 生成与部署统一归 `starcat-site/`，不要在主仓库另建平行站点目录。
 

@@ -8,7 +8,7 @@
 
 ---
 
-## 📦 项目清单（共 24 个）
+## 📦 项目清单（共 25 个）
 
 ### Go 后端项目（9 个）
 
@@ -24,7 +24,7 @@
 | [`starcat-api-kit/`](./starcat-api-kit/) | [`starcat-app/starcat-api-kit`](https://github.com/starcat-app/starcat-api-kit) | — | 六个业务 API 共用的 auth / envelope / GitHub / env 等基础包 |
 | [`starcat-api/`](./starcat-api/) | [`starcat-app/starcat-api`](https://github.com/starcat-app/starcat-api) 🔒 | 8080 | 私有聚合部署单元；以 `X-SC-Svc` 分流六个业务 API，不含 license |
 
-### 其他支撑项目（15 个）
+### 其他支撑项目（16 个）
 
 | 子目录 | GitHub | 说明 |
 |--------|--------|------|
@@ -36,6 +36,7 @@
 | [`homebrew-starcat/`](./homebrew-starcat/) | [`starcat-app/homebrew-starcat`](https://github.com/starcat-app/homebrew-starcat) | Starcat App Homebrew Cask（`brew install --cask starcat`） |
 | [`starcat-skill/`](./starcat-skill/) | [`starcat-app/starcat-skill`](https://github.com/starcat-app/starcat-skill) | 供 Codex / Claude 等 AI Agent 使用的 Starcat Skill |
 | [`starcat-cli/`](./starcat-cli/) | [`starcat-app/starcat-cli`](https://github.com/starcat-app/starcat-cli) | 跨平台 Starcat CLI 与 MCP 运行时 |
+| [`starcat-recsys-trainer/`](./starcat-recsys-trainer/) | [`starcat-app/starcat-recsys-trainer`](https://github.com/starcat-app/starcat-recsys-trainer) 🔒 | 推荐数据采集、标准化、离线训练、评估和 ServingBundle 发布 |
 | [`starcat-alfred-workflow/`](./starcat-alfred-workflow/) | [`starcat-app/starcat-alfred-workflow`](https://github.com/starcat-app/starcat-alfred-workflow) | 在 Alfred 中搜索 Starcat 本地仓库与 GitHub |
 | [`starcat-utools-plugin/`](./starcat-utools-plugin/) | [`starcat-app/starcat-utools-plugin`](https://github.com/starcat-app/starcat-utools-plugin) | 在 uTools 中搜索 Starcat 本地仓库与 GitHub |
 | [`starcat-raycast-extension/`](./starcat-raycast-extension/) | [`starcat-app/starcat-raycast-extension`](https://github.com/starcat-app/starcat-raycast-extension) | 在 Raycast 中搜索 Starcat 本地仓库与 GitHub |
@@ -99,14 +100,14 @@ Starcat App
 ```bash
 cd supports
 
-# 首次 clone 全部 23 个远端目标
+# 首次 clone 全部 24 个远端目标
 ./clone-all.sh
 
 # 后续批量更新
 ./clone-all.sh --pull
 ```
 
-> `starcat-license-api` 与 `starcat-api` 是**私有**仓库，需使用具备 `starcat-app` 组织权限的 `gh auth login` 或 SSH key；`starcat-api-kit` 为公开仓库。
+> `starcat-license-api`、`starcat-api` 与 `starcat-recsys-trainer` 是**私有**仓库，需使用具备 `starcat-app` 组织权限的 `gh auth login` 或 SSH key；`starcat-api-kit` 为公开仓库。
 
 ### 一次性启动全部 API
 
@@ -130,10 +131,10 @@ go run ./cmd/server
 .claude/skills/starcat-support-project-create
 ```
 
-创建流程会补齐开源治理文件和 `README.md` / `README-ZH.md`，并强制同步：
+创建流程会补齐开源治理文件和 README，并强制同步：
 
 - `clone-all.sh`
-- `scripts/sync-starcat-readme-promo.py`
+- `scripts/sync-starcat-readme-promo.py`（私有项目在公开前不登记公开推广区）
 - 本文档与 `SYNC.md`
 - 按项目类型需要的 CI、Release/Audit 和运维入口
 
@@ -162,7 +163,7 @@ secrets 需要单独确认。
 
 ### 独立 git 仓库（各自管理）
 
-- 上表除 `ai-file-wall` 外的 23 个独立仓库目录
+- 上表除 `ai-file-wall` 外的 24 个独立仓库目录
 
 ### 跨机器同步（`sync-untracked.sh`）
 

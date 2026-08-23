@@ -11,6 +11,8 @@
 2. **supports/AGENTS.md** — supports/ 整体结构、独立仓库边界、6 个公共 API 与私有 License API 对照表
 3. **被修改项目的 `AGENTS.md`** — 项目特定的开发规范、命令、commit 规范；若项目没有单独 `AGENTS.md`，以本文件和项目 README 为准
 
+`starcat-recsys-trainer` 是私有 Python 3.12 + uv 离线管道，以项目 `README.md` 和 `docs/使用说明.md` 为准。按建立需求暂不创建 CI workflow，本地变更必须执行 `make check`。
+
 ---
 
 ## 关键约束(强制)
@@ -80,7 +82,7 @@ go vet ./...           # 必须 vet 干净
 ✅ 改 `go.mod` 必须跑 `go mod tidy` 同步 `go.sum`
 ✅ 新增 / 删除 API 服务后必须同步 `supports/start-all.sh`、`supports/Makefile`、`supports/scripts/` 运维脚本和跨服务文档
 ✅ 有 SQLite / Fly volume 的新增服务必须接入 backup / restore / wipe 脚本；无持久化存储的服务必须在文档中说明排除原因
-✅ 新增任意独立支撑项目必须补齐中英文 README、开源治理文件和适合技术栈的 CI
+✅ 新增任意独立支撑项目必须补齐 README、开源治理文件和适合技术栈的 CI；明确的私有项目例外以需求为准
 ✅ 新项目必须登记到 `clone-all.sh`、`sync-starcat-readme-promo.py`、`README.md` 与 `SYNC.md`
 ✅ PR 必须填写 `.github/PULL_REQUEST_TEMPLATE.md`
 ✅ Bug 报告必须用 `.github/ISSUE_TEMPLATE/bug_report.yml`

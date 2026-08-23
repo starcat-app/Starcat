@@ -12,12 +12,13 @@
 #   - starcat-pro / starcat-license-api / starcat-localization
 #   - starcat-skill / starcat-cli / starcat-alfred-workflow / starcat-utools-plugin
 #   - starcat-raycast-extension
+#   - starcat-recsys-trainer (🔒 私有)
 #   - homebrew-starcat-cli
 #   - homebrew-starcat
 #   - .github / starcat-docs / starcat-site
 #   - extensions/ 下 2 个浏览器插件
 #
-# 前置条件: git 可用; starcat-license-api 是私有仓库,需要 gh CLI 或 SSH key 已配置
+# 前置条件: git 可用; 私有仓库需要 gh CLI 或 SSH key 已配置
 # =============================================================================
 
 set -euo pipefail
@@ -74,6 +75,7 @@ if $SHOW_HELP; then
   echo "  starcat-alfred-workflow  Alfred 仓库搜索 Workflow"
   echo "  starcat-utools-plugin  uTools 仓库搜索插件"
   echo "  starcat-raycast-extension  Raycast 仓库搜索扩展"
+  echo "  starcat-recsys-trainer  推荐数据与离线训练管道 (🔒 私有)"
   echo "  homebrew-starcat-cli  Starcat CLI Homebrew Formula tap"
   echo "  .github             组织主页与共享社区健康文件"
   echo "  starcat-docs        Starcat 官方文档"
@@ -107,6 +109,7 @@ PROJECTS=(
   "starcat-alfred-workflow|https://github.com/starcat-app/starcat-alfred-workflow.git|Alfred 仓库搜索 Workflow"
   "starcat-utools-plugin|https://github.com/starcat-app/starcat-utools-plugin.git|uTools 仓库搜索插件"
   "starcat-raycast-extension|https://github.com/starcat-app/starcat-raycast-extension.git|Raycast 仓库搜索扩展"
+  "starcat-recsys-trainer|https://github.com/starcat-app/starcat-recsys-trainer.git|推荐数据与离线训练管道 🔒"
   "homebrew-starcat-cli|https://github.com/starcat-app/homebrew-starcat-cli.git|Starcat CLI Homebrew Formula tap"
   "extensions/starcat-chrome-plugin|https://github.com/starcat-app/starcat-chrome-plugin.git|Chrome 浏览器插件"
   "extensions/starcat-safari-plugin|https://github.com/starcat-app/starcat-safari-plugin.git|Safari 浏览器插件"
@@ -176,7 +179,7 @@ for entry in "${PROJECTS[@]}"; do
         ((SUCCESS++))
       else
         echo -e "    ${RED}✗ clone 失败,请检查网络或仓库权限${NC}"
-        echo -e "    ${YELLOW}  提示: starcat-license-api 是私有仓库,需 gh auth login 或配置 SSH key${NC}"
+        echo -e "    ${YELLOW}  提示: 私有仓库需 gh auth login 或配置 SSH key${NC}"
         ((FAILED++))
       fi
     fi
@@ -195,7 +198,7 @@ print_separator
 
 if [[ $FAILED -gt 0 ]]; then
   echo ""
-  echo -e "${YELLOW}提示: 有项目拉取失败。对于私有仓库 (starcat-license-api),确保:${NC}"
+  echo -e "${YELLOW}提示: 有项目拉取失败。对于私有仓库,确保:${NC}"
   echo -e "  1. gh CLI 已安装并登录: ${CYAN}gh auth login${NC}"
   echo -e "  2. 或已配置 SSH key:   ${CYAN}ssh -T git@github.com${NC}"
 fi
