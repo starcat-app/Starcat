@@ -436,7 +436,7 @@ final class ExploreDiscoveryViewModel {
                     return repo.language?.caseInsensitiveCompare(language) == .orderedSame
                 }
             }
-        case .trending, .weekly:
+        case .trending, .weekly, .awesome:
             break
         }
 
@@ -567,9 +567,9 @@ final class ExploreDiscoveryViewModel {
             return repo.popularityScore ?? repo.score ?? 0
         case .newReleases:
             return repo.releaseScore ?? repo.score ?? 0
-        case .trending, .weekly:
-            // 趋势 / 周刊不应进入 ExploreDiscoveryViewModel；这里保留兜底只为防止未来误传
-            // 导致排序崩溃，正式 UI 分别由 TrendingView / WeeklyContentView 承载。
+        case .trending, .weekly, .awesome:
+            // 趋势 / 周刊 / Awesome 不应进入 ExploreDiscoveryViewModel；这里保留兜底只为
+            // 防止未来误传导致排序崩溃，正式 UI 分别由各自列表承载。
             return repo.trendingScore ?? repo.score ?? 0
         }
     }
@@ -641,7 +641,7 @@ final class ExploreDiscoveryViewModel {
             return snapshot.summary.mode(discoveryMode)?.total == 0
         case .discover:
             return true
-        case .trending, .weekly:
+        case .trending, .weekly, .awesome:
             return false
         }
     }
@@ -650,7 +650,7 @@ final class ExploreDiscoveryViewModel {
         switch mode {
         case .discover:
             return "discover"
-        case .trending, .weekly:
+        case .trending, .weekly, .awesome:
             return ""
         case .popular:
             return "popular"

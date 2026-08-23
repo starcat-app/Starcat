@@ -142,6 +142,7 @@ enum DatabaseMigrations {
                 table.column("language", .text)
                 table.column("stars", .integer).notNull().defaults(to: 0)
                 table.column("is_archived", .boolean).notNull().defaults(to: false)
+                table.column("repo_updated_at", .text)
                 table.column("entry_title", .text).notNull()
                 table.column("entry_description", .text)
                 table.column("section_path_json", .text).notNull().defaults(to: "[]")

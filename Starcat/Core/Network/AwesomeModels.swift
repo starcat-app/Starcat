@@ -58,6 +58,7 @@ struct AwesomeEntryDTO: Codable, Hashable, Sendable {
     let language: String?
     let stars: Int
     let isArchived: Bool
+    let updatedAt: String?
     let entryTitle: String
     let entryDescription: String?
     let sectionPath: [String]
@@ -74,6 +75,7 @@ struct AwesomeEntryDTO: Codable, Hashable, Sendable {
         case language
         case stars
         case isArchived = "is_archived"
+        case updatedAt = "updated_at"
         case entryTitle = "entry_title"
         case entryDescription = "entry_description"
         case sectionPath = "section_path"
@@ -163,5 +165,43 @@ struct AwesomeRepositoryItem: Identifiable, Hashable, Sendable {
     let language: String?
     let stars: Int
     let isArchived: Bool
+    let updatedAt: Date?
     let evidence: [AwesomeEntryEvidence]
+
+    /// 复用 Discovery 现有统一卡片与详情 scaffold 所需的最小公共 Repo 投影。
+    /// Awesome API 不提供 forks/watchers/release 等字段，明确以 0/nil 降级而不是伪造数据。
+    var discoveryDTO: DiscoveryRepoDTO {
+        DiscoveryRepoDTO(
+            repoID: id,
+            fullName: fullName,
+            owner: owner,
+            name: name,
+            description: description,
+            homepage: nil,
+            language: language,
+            stars: stars,
+            forks: 0,
+            watchers: 0,
+            subscribers: 0,
+            openIssues: 0,
+            ownerAvatar: ownerAvatarURL?.absoluteString,
+            defaultBranch: nil,
+            licenseSpdx: nil,
+            topics: [],
+            platforms: [],
+            pushedAt: nil,
+            updatedAt: updatedAt.map { ISO8601DateFormatter.shared.string(from: $0) },
+            createdAt: nil,
+            isArchived: isArchived,
+            isFork: false,
+            latestReleaseTag: nil,
+            latestReleaseAt: nil,
+            latestReleaseURL: nil,
+            releaseDownloadCount: 0,
+            rank: evidence.first?.entryOrder,
+            score: nil,
+            reasons: [],
+            signals: []
+        )
+    }
 }

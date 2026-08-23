@@ -1376,6 +1376,8 @@ struct HomeView: View {
             // Weekly 已迁移到 Explore,右栏仍复用原 WeeklyDetailView；详情选择继续由
             // WeeklySelectionService 管理,不引入 ActivityItem 中间模型。
             WeeklyDetailView(item: dependencies.weeklySelectionService.selectedItem)
+        } else if selectedSidebarPage == .trending, selectedExploreMode == .awesome {
+            AwesomeDetailView(store: dependencies.awesomeStore)
         } else if selectedSidebarPage == .trending, selectedExploreMode != .trending {
             DiscoveryDetailView(item: selectedDiscoveryRepo)
         } else {
@@ -1425,6 +1427,14 @@ struct HomeView: View {
     private func handleDatabaseScopeChange(_ revision: UInt64) async {
         guard revision > 0 else { return }
         viewModel.invalidateRepoPinsForDatabaseChange()
+        dependencies.awesomeStore.resetForAccountChange()
+
+        if authSession.state.isAuthenticated,
+           selectedSidebarPage == .trending,
+           selectedExploreMode == .awesome {
+            await dependencies.awesomeStore.enterAwesome()
+            return
+        }
 
         guard authSession.state.isAuthenticated,
               selectedSidebarPage == .manage
@@ -1618,6 +1628,7 @@ struct HomeView: View {
         selectedTrendingRepo = nil
         selectedDiscoveryRepoID = nil
         selectedDiscoveryRepo = nil
+        dependencies.awesomeStore.selectedRepositoryID = nil
         selectedActivityItem = nil
         // MUL-176 followup：切走 Activity 时一并清掉周刊选中，避免下次回 Activity
         // 时右侧详情停留在上次的周刊项目上。
@@ -2260,7 +2271,7 @@ struct HomeView: View {
             )
         case .weekly:
             selectedWeeklyLanguage = settings.listPreferenceValue(for: ListPreferenceKey.weeklyLanguage, login: login)
-        case .discover:
+        case .discover, .awesome:
             break
         }
     }

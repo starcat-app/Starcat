@@ -1,0 +1,177 @@
+//
+//  AwesomeStore.swift
+//  Starcat
+//
+//  探索 → Awesome 的会话级状态容器，供左栏、中栏、右栏和来源管理 Sheet 共享。
+//
+//  Store 只协调 cached-first 展示与刷新，不复制 Repository 的持久化规则。首次设置状态只有
+//  `completeSourceSelection` 会写入；Sheet 关闭只改变展示状态，保证下次进入仍会自动弹出。
+//
+
+import Foundation
+import Observation
+
+@MainActor
+@Observable
+final class AwesomeStore {
+    private(set) var sources: [AwesomeSource] = []
+    private(set) var repositories: [AwesomeRepositoryItem] = []
+    private(set) var totalAvailableRepositoryCount = 0
+    private(set) var hasCompletedSourceSetup = false
+    private(set) var isLoading = false
+    private(set) var isRefreshing = false
+    private(set) var errorMessage: String?
+    private(set) var sourceRefreshErrors: [String: String] = [:]
+
+    var selectedSourceID: String?
+    var selectedRepositoryID: Int64?
+    var isSourceManagerPresented = false
+
+    private let repository: any AwesomeRepositoryProtocol
+    private let customSourceService: AwesomeCustomSourceService
+    private var loadTask: Task<Void, Never>?
+
+    init(
+        repository: any AwesomeRepositoryProtocol,
+        customSourceService: AwesomeCustomSourceService
+    ) {
+        self.repository = repository
+        self.customSourceService = customSourceService
+    }
+
+    var enabledSources: [AwesomeSource] { sources.filter(\.isEnabled) }
+    var selectedRepository: AwesomeRepositoryItem? {
+        guard let selectedRepositoryID else { return nil }
+        return repositories.first { $0.id == selectedRepositoryID }
+    }
+    var totalRepositoryCount: Int { totalAvailableRepositoryCount }
+
+    func enterAwesome() async {
+        loadTask?.cancel()
+        let task = Task { [weak self] in
+            guard let self else { return }
+            self.isLoading = self.sources.isEmpty
+            await self.loadCachedState()
+            guard !Task.isCancelled else { return }
+            if !self.hasCompletedSourceSetup {
+                self.isSourceManagerPresented = true
+            }
+            await self.refreshCatalogAndEntries()
+            self.isLoading = false
+        }
+        loadTask = task
+        await task.value
+    }
+
+    func presentSourceManager() async {
+        await loadCachedState()
+        isSourceManagerPresented = true
+        do {
+            sources = try await repository.refreshCatalog()
+            errorMessage = nil
+        } catch {
+            // 已有缓存卡片继续展示；错误由 Sheet 作为非阻断提示呈现。
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func dismissSourceManager() {
+        isSourceManagerPresented = false
+    }
+
+    func completeSourceSelection(_ enabledIDs: Set<String>) async throws {
+        try await repository.completeSourceSetup(enabledSourceIDs: enabledIDs)
+        hasCompletedSourceSetup = true
+        isSourceManagerPresented = false
+        await reloadAfterSubscriptionChange()
+    }
+
+    func updateSourceSelection(_ enabledIDs: Set<String>) async throws {
+        try await repository.updateSubscriptions(enabledSourceIDs: enabledIDs)
+        isSourceManagerPresented = false
+        await reloadAfterSubscriptionChange()
+    }
+
+    func addCustomSource(input: String) async throws {
+        _ = try await customSourceService.add(input: input)
+        sources = await repository.sources()
+        await reloadRepositories()
+    }
+
+    func removeCustomSource(id: String) async throws {
+        try await customSourceService.remove(sourceID: id)
+        if selectedSourceID == id { selectedSourceID = nil }
+        sources = await repository.sources()
+        await reloadRepositories()
+    }
+
+    func selectSource(_ sourceID: String?) async {
+        selectedSourceID = sourceID
+        selectedRepositoryID = nil
+        await reloadRepositories()
+    }
+
+    func refresh() async {
+        await refreshCatalogAndEntries()
+    }
+
+    /// 当前账户数据库是 Awesome 订阅和自定义来源的隔离边界。切库时必须先清掉旧快照，
+    /// 不能等下一次进入页面再覆盖，否则新账户可能短暂看到上一账户的来源名称。
+    func resetForAccountChange() {
+        loadTask?.cancel()
+        loadTask = nil
+        sources = []
+        repositories = []
+        totalAvailableRepositoryCount = 0
+        hasCompletedSourceSetup = false
+        isLoading = false
+        isRefreshing = false
+        errorMessage = nil
+        sourceRefreshErrors = [:]
+        selectedSourceID = nil
+        selectedRepositoryID = nil
+        isSourceManagerPresented = false
+    }
+
+    private func loadCachedState() async {
+        async let cachedSources = repository.sources()
+        async let completed = repository.hasCompletedSourceSetup()
+        sources = await cachedSources
+        hasCompletedSourceSetup = await completed
+        await reloadRepositories()
+    }
+
+    private func refreshCatalogAndEntries() async {
+        isRefreshing = true
+        defer { isRefreshing = false }
+        do {
+            sources = try await repository.refreshCatalog()
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        guard !Task.isCancelled else { return }
+        sourceRefreshErrors = await repository.refreshEnabledEntries()
+        guard !Task.isCancelled else { return }
+        sources = await repository.sources()
+        await reloadRepositories()
+    }
+
+    private func reloadAfterSubscriptionChange() async {
+        sources = await repository.sources()
+        sourceRefreshErrors = await repository.refreshEnabledEntries()
+        sources = await repository.sources()
+        await reloadRepositories()
+    }
+
+    private func reloadRepositories() async {
+        async let visibleRepositories = repository.repositories(sourceID: selectedSourceID)
+        async let allRepositories = repository.repositories(sourceID: nil)
+        repositories = await visibleRepositories
+        totalAvailableRepositoryCount = await allRepositories.count
+        if let selectedRepositoryID,
+           !repositories.contains(where: { $0.id == selectedRepositoryID }) {
+            self.selectedRepositoryID = nil
+        }
+    }
+}

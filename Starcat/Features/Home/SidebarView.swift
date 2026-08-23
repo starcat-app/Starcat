@@ -40,6 +40,7 @@ private enum ExploreSidebarSelection: Hashable {
     case language(String?)
     case trendingLanguage(TrendingLanguage)
     case weeklyLanguage(String?)
+    case awesomeSource(String?)
 }
 
 /// 探索侧栏图标色：未选中用语义色；明亮主题选中时跟系统蓝底反成白色。
@@ -202,6 +203,7 @@ struct SidebarView: View {
     }
 
     var body: some View {
+        @Bindable var awesomeStore = dependencies.awesomeStore
         VStack(spacing: 0) {
             sidebarFixedHeader
             sidebarList
@@ -235,6 +237,10 @@ struct SidebarView: View {
                 }
             }
             .appLocaleEnvironment()
+        }
+        .sheet(isPresented: $awesomeStore.isSourceManagerPresented) {
+            AwesomeSourceManagerSheet(store: awesomeStore)
+                .appLocaleEnvironment()
         }
         .onChange(of: hasAnyBackgroundTask) { _, hasTask in
             if !hasTask {
@@ -716,6 +722,8 @@ struct SidebarView: View {
             return .trendingLanguage(selectedTrendingLanguage)
         case .weekly:
             return .weeklyLanguage(selectedWeeklyLanguage)
+        case .awesome:
+            return .awesomeSource(dependencies.awesomeStore.selectedSourceID)
         }
     }
 
@@ -736,14 +744,23 @@ struct SidebarView: View {
             return selectedExploreMode == .trending && selectedTrendingLanguage == language
         case .weeklyLanguage(let key):
             return selectedExploreMode == .weekly && selectedWeeklyLanguage == key
+        case .awesomeSource(let sourceID):
+            return selectedExploreMode == .awesome
+                && dependencies.awesomeStore.selectedSourceID == sourceID
         }
     }
 
     private func applyExploreSelection(_ selection: ExploreSidebarSelection) {
         switch selection {
         case .mode(let mode):
-            guard selectedExploreMode != mode else { return }
             selectedExploreMode = mode
+            if mode == .awesome {
+                guard authSession.state.isAuthenticated else {
+                    showLoginSheet = true
+                    return
+                }
+                Task { await dependencies.awesomeStore.enterAwesome() }
+            }
         case .topic(let code):
             selectedExploreMode = .discover
             selectedDiscoveryTopic = code
@@ -758,6 +775,9 @@ struct SidebarView: View {
         case .weeklyLanguage(let key):
             selectedExploreMode = .weekly
             selectedWeeklyLanguage = key
+        case .awesomeSource(let sourceID):
+            selectedExploreMode = .awesome
+            Task { await dependencies.awesomeStore.selectSource(sourceID) }
         }
     }
 
@@ -909,9 +929,29 @@ struct SidebarView: View {
         ) {
             exploreSidebarSystemIcon(mode.systemImage, color: mode.sidebarIconColor)
         } title: {
-            // 分类备注入口已挪到中栏数量行，侧栏只保留「图标 + 名称 + 计数」。
-            Text(mode.titleKey)
-                .lineLimit(1)
+            HStack(spacing: 4) {
+                Text(mode.titleKey)
+                    .lineLimit(1)
+                if mode == .awesome {
+                    Button {
+                        guard authSession.state.isAuthenticated else {
+                            showLoginSheet = true
+                            return
+                        }
+                        Task { await dependencies.awesomeStore.presentSourceManager() }
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(interfaceScale.font(.captionSmall))
+                            .foregroundStyle(ExploreSidebarIconStyle(semanticColor: .secondary))
+                            .frame(width: 18, height: 18)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .help(Text("awesome.sources.manage"))
+                    .accessibilityLabel(Text("awesome.sources.manage"))
+                }
+            }
         }
     }
 
@@ -923,6 +963,8 @@ struct SidebarView: View {
             return dependencies.exploreCatalogStore.total(for: mode)
         case .weekly:
             return dependencies.weeklySelectionService.total
+        case .awesome:
+            return dependencies.awesomeStore.totalRepositoryCount
         }
     }
 
@@ -937,6 +979,41 @@ struct SidebarView: View {
             trendingSidebarContent
         case .weekly:
             weeklyLanguageSidebarContent
+        case .awesome:
+            awesomeSourceSidebarContent
+        }
+    }
+
+    @ViewBuilder
+    private var awesomeSourceSidebarContent: some View {
+        Section("awesome.sidebar.sources") {
+            awesomeSourceRow(nil)
+            ForEach(dependencies.awesomeStore.enabledSources) { source in
+                awesomeSourceRow(source)
+            }
+        }
+    }
+
+    private func awesomeSourceRow(_ source: AwesomeSource?) -> some View {
+        exploreSelectableRow(
+            selection: .awesomeSource(source?.id),
+            count: source?.githubRepoCount ?? dependencies.awesomeStore.totalRepositoryCount
+        ) {
+            exploreSidebarSystemIcon(
+                source?.kind == .custom ? "person.crop.square" : "sparkles.rectangle.stack",
+                color: source?.isAvailable == false ? .secondary : .purple
+            )
+        } title: {
+            HStack(spacing: 5) {
+                Text(source?.displayName ?? String.l10n("awesome.sidebar.all"))
+                    .lineLimit(1)
+                if source?.isAvailable == false {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(interfaceScale.font(.captionSmall))
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel(Text("awesome.sources.unavailable"))
+                }
+            }
         }
     }
 

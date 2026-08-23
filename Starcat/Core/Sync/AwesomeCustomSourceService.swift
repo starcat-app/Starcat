@@ -131,6 +131,7 @@ actor AwesomeCustomSourceService {
             language: repo.language,
             stars: repo.stargazersCount,
             isArchived: repo.archived,
+            updatedAt: repo.updatedAt,
             entryTitle: candidate.title,
             entryDescription: candidate.description,
             sectionPath: candidate.sectionPath,

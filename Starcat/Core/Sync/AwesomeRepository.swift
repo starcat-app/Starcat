@@ -300,6 +300,7 @@ actor AwesomeRepository: AwesomeRepositoryProtocol {
                     language: first.language,
                     stars: first.stars,
                     isArchived: first.isArchived,
+                    updatedAt: first.repoUpdatedAt.flatMap(ISO8601DateFormatter.githubDate(from:)),
                     evidence: evidence
                 )
             }
@@ -410,6 +411,7 @@ private extension AwesomeEntryRecord {
             language: dto.language,
             stars: dto.stars,
             isArchived: dto.isArchived,
+            repoUpdatedAt: dto.updatedAt,
             entryTitle: dto.entryTitle,
             entryDescription: dto.entryDescription,
             sectionPathJSON: String(decoding: sectionData, as: UTF8.self),

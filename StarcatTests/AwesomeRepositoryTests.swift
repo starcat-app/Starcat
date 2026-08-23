@@ -59,6 +59,7 @@ struct AwesomeRepositoryTests {
         let repos = await repository.repositories(sourceID: nil)
         #expect(repos.count == 1)
         #expect(repos.first?.id == 42)
+        #expect(repos.first?.updatedAt == ISO8601DateFormatter.githubDate(from: "2026-08-23T12:34:56Z"))
         #expect(repos.first?.evidence.map(\.source.id) == ["one", "two"])
         #expect(await repository.repositories(sourceID: "one").first?.evidence.count == 1)
     }
@@ -92,6 +93,7 @@ struct AwesomeRepositoryTests {
             language: "Swift",
             stars: 100,
             isArchived: false,
+            updatedAt: "2026-08-23T12:34:56Z",
             entryTitle: title,
             entryDescription: "Source description",
             sectionPath: ["Tools"],

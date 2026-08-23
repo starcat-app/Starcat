@@ -82,6 +82,7 @@ struct AwesomeEntryRecord: Codable, FetchableRecord, PersistableRecord, Equatabl
     var language: String?
     var stars: Int
     var isArchived: Bool
+    var repoUpdatedAt: String?
     var entryTitle: String
     var entryDescription: String?
     var sectionPathJSON: String
@@ -100,6 +101,7 @@ struct AwesomeEntryRecord: Codable, FetchableRecord, PersistableRecord, Equatabl
         case language
         case stars
         case isArchived = "is_archived"
+        case repoUpdatedAt = "repo_updated_at"
         case entryTitle = "entry_title"
         case entryDescription = "entry_description"
         case sectionPathJSON = "section_path_json"

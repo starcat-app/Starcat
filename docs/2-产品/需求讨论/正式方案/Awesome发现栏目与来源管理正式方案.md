@@ -380,6 +380,7 @@ If-None-Match: "optional-source-etag"
         "language": "Swift",
         "stars": 1200,
         "is_archived": false,
+        "updated_at": "2026-08-23T12:34:56Z",
         "entry_title": "Project",
         "entry_description": "Original Awesome README description",
         "section_path": ["Utilities", "File Transfer"],
@@ -398,6 +399,7 @@ If-None-Match: "optional-source-etag"
 规则：
 
 - 首期按来源返回完整快照，不做远端筛选和分页；客户端只请求用户已勾选来源并本地筛选。
+- `updated_at` 是 GitHub 仓库更新时间；字段缺失时客户端在“最近更新”排序中放到末尾，不得用来源同步时间代替。
 - 必须支持 `ETag`，避免重复下载未变化的长清单。
 - 单来源响应默认压缩；服务端对异常大来源设置明确响应上限并在管理端阻止发布，而不是运行期静默截断。
 - 来源未发布或不存在返回 `404 AWESOME_SOURCE_NOT_FOUND`。
