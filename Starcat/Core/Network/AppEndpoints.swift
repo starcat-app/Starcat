@@ -295,6 +295,24 @@ enum AppEndpoints {
         }
     }
 
+    // MARK: - 独立数据收集服务（不走聚合 Gateway）
+
+    /// 公开 Star 数据贡献使用独立域名和鉴权边界，不属于 ThirdPartyService 设置，
+    /// 也不发送 `X-SC-Svc`。DEBUG 可用进程环境变量对接本机 5011 端口做全链路验收。
+    enum Collection {
+        static let productionURL = URL(string: "https://collection.starcat.ink")!
+
+        static var baseURL: URL {
+#if DEBUG
+            if let raw = ProcessInfo.processInfo.environment["STARCAT_COLLECTION_API_BASE_URL"],
+               let url = URL(string: raw), url.scheme != nil {
+                return url
+            }
+#endif
+            return productionURL
+        }
+    }
+
     // MARK: - Direct License（官网直售授权）
 
     /// Starcat Direct 分发授权 / checkout 后端 endpoint 集合。

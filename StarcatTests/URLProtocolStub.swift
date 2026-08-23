@@ -76,8 +76,11 @@ final class URLProtocolStub: URLProtocol, @unchecked Sendable {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        // 记录原始请求供测试 assert（headers / path / body）
-        URLProtocolStub.receivedRequests.append(request)
+        // URLSession 可能把 URLRequest.httpBody 转成 httpBodyStream 后才交给 URLProtocol。
+        // 测试需要验证 JSON 契约，因此在 stub 边界把一次性 stream 还原成 Data；这里没有
+        // 下游真实网络请求，不会产生“读取两次导致空 body”的副作用。
+        let capturedRequest = Self.materializedRequest(request)
+        URLProtocolStub.receivedRequests.append(capturedRequest)
 
         guard let handler = URLProtocolStub.requestHandler else {
             client?.urlProtocol(self, didFailWithError: URLError(.unknown))
@@ -85,7 +88,7 @@ final class URLProtocolStub: URLProtocol, @unchecked Sendable {
         }
 
         do {
-            let (response, data) = try handler(request)
+            let (response, data) = try handler(capturedRequest)
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: data)
             client?.urlProtocolDidFinishLoading(self)
@@ -96,6 +99,24 @@ final class URLProtocolStub: URLProtocol, @unchecked Sendable {
 
     /// no-op；本 stub 一次性返回所有数据，不存在中途取消逻辑。
     override func stopLoading() {}
+
+    private static func materializedRequest(_ request: URLRequest) -> URLRequest {
+        guard request.httpBody == nil, let stream = request.httpBodyStream else { return request }
+        stream.open()
+        defer { stream.close() }
+
+        var body = Data()
+        var buffer = [UInt8](repeating: 0, count: 4_096)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            guard count > 0 else { break }
+            body.append(buffer, count: count)
+        }
+        var copy = request
+        copy.httpBodyStream = nil
+        copy.httpBody = body
+        return copy
+    }
 }
 
 // MARK: - 测试用 TokenProvider
