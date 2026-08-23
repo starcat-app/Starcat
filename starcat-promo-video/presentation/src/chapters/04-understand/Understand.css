@@ -1,0 +1,283 @@
+/**
+ * understand 舞台样式 v2 —— 三张 AI 截图当主角 + 一步笔记/缓存排版。
+ *
+ * 主导动作按 step 换：整卡揭开+三问 chip 逐个压上 → 双栏排版对开（灯亮 +
+ * 提示条滑入）→ 整卡揭开+配额角标 → 锚定 chip 落下+整卡揭开。
+ * 颜色和字体家族只引用 token；动画时长 ≤ 各步口播估时。
+ */
+
+.un-scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.un-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── 共享：截图卡 ── */
+.un-shot {
+  position: relative;
+  margin: 0;
+  overflow: hidden;
+  border: var(--bw-1) solid var(--rule);
+  border-radius: var(--r-card);
+  box-shadow: 0 40px 120px rgba(0, 0, 0, 0.5);
+  background: var(--surface-2);
+}
+
+.un-shot-img {
+  display: block;
+  width: 1400px;
+  height: 840px;
+  object-fit: cover;
+  object-position: top center;
+}
+
+.un-shot-wipe {
+  clip-path: inset(5% 3% 5% 3%);
+  animation: un-open 1.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes un-open {
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes un-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── step 0：摘要截图 + 三问 chips 压图 ── */
+.un-repo-line {
+  width: 1400px;
+  margin-bottom: 22px;
+  display: flex;
+  align-items: baseline;
+  gap: 28px;
+}
+
+.un-read-tag {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+  animation: un-rise 600ms ease 900ms both;
+}
+
+/* step0 的图略缩，给底部 chips 留出压图空间 */
+.un-repo-line + .un-shot .un-shot-img {
+  height: 700px;
+}
+
+.un-trio {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  padding: 56px 44px 36px;
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.72) 0%,
+    rgba(0, 0, 0, 0.25) 62%,
+    transparent 100%
+  );
+  border-radius: 0 0 var(--r-card) var(--r-card);
+}
+
+.un-field {
+  text-align: center;
+  animation: un-rise 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.un-field-label {
+  margin: 0;
+  font-size: 40px;
+  color: var(--accent);
+}
+
+/* ── step 1：私有笔记 | 缓存提示 双栏 ── */
+.un-notes-step {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 96px;
+  align-items: center;
+}
+
+.un-note-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 36px;
+  animation: un-note-in 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes un-note-in {
+  from {
+    opacity: 0;
+    transform: translateX(-48px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.un-note-sheet {
+  position: relative;
+  width: 520px;
+  height: 300px;
+  padding: 32px;
+}
+
+.un-note-caret {
+  position: absolute;
+  top: 28px;
+  left: 34px;
+  width: 3px;
+  height: 40px;
+  background: var(--accent);
+  animation: caret-blink 1s step-end infinite;
+}
+
+.un-note-label {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+}
+
+.un-note-slogan {
+  margin: 0;
+  font-size: 84px;
+  letter-spacing: -0.03em;
+}
+
+.un-cache-col {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  animation: un-cache-in 1s cubic-bezier(0.16, 1, 0.3, 1) 500ms both;
+}
+
+@keyframes un-cache-in {
+  from {
+    opacity: 0;
+    transform: translateX(48px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.un-cache {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 30px 36px;
+}
+
+.un-lamp {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid var(--rule);
+  display: grid;
+  place-items: center;
+}
+
+.un-lamp-core {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 18px var(--accent-glow);
+  animation: un-lamp-on 600ms ease 1300ms both;
+}
+
+@keyframes un-lamp-on {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.un-cache-label {
+  margin: 0;
+  font-size: 38px;
+}
+
+.un-change {
+  align-self: flex-start;
+  padding: 16px 24px;
+  font-family: var(--font-mono);
+  font-size: 22px;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  border: var(--bw-1) solid var(--accent);
+  background: var(--accent-soft);
+  animation: un-change-slide 800ms cubic-bezier(0.16, 1, 0.3, 1) 2200ms both;
+}
+
+@keyframes un-change-slide {
+  from {
+    opacity: 0;
+    transform: translateY(-18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── step 2 / step 3：整卡截图 + 角标 ── */
+.un-quota-tag,
+.un-chat-anchor {
+  position: relative;
+  z-index: 1;
+  margin-bottom: -54px;
+  padding: 12px 22px;
+  font-family: var(--font-mono);
+  font-size: 24px;
+  letter-spacing: 0.12em;
+  color: var(--text-2);
+  background: rgba(0, 0, 0, 0.6);
+  border: var(--bw-1) solid var(--rule);
+  border-radius: 4px;
+  animation: un-rise 700ms ease 1500ms both;
+}
+
+.un-chat-anchor {
+  display: flex;
+  align-items: baseline;
+  gap: 22px;
+  font-size: 28px;
+  color: var(--text);
+  animation-delay: 200ms;
+}
+
+.un-anchor-label {
+  font-size: 20px;
+  color: var(--accent);
+}

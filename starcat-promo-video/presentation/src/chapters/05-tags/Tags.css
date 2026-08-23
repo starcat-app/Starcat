@@ -1,0 +1,257 @@
+/**
+ * tags 舞台样式 v2。
+ *
+ * 主导动作按 step 换：候选标签逐条压入+置信度条生长 → 大字 verdict 压印
+ * → 确认印章 + 标签逐枚贴上仓库卡。颜色和字体家族只引用 token；
+ * 动画时长 ≤ 各步口播估时（~8s / ~4s / ~5s）。
+ */
+
+.tg-scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.tg-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.tg-kicker {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  margin-bottom: 44px;
+}
+
+/* ── step 0：候选标签 + 置信度条 ── */
+.tg-cands {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  width: 760px;
+}
+
+.tg-cand {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  align-items: center;
+  gap: 28px;
+  animation: tg-press 600ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes tg-press {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tg-cand-name {
+  font-family: var(--font-mono);
+  font-size: 34px;
+  color: var(--text);
+}
+
+.tg-track {
+  height: 14px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.tg-fill {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: var(--accent);
+  transform-origin: left;
+  transform: scaleX(0);
+  animation: tg-grow 900ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* 置信度从高到低，只表达相对强弱，不标假百分比 */
+.tg-cand:nth-child(1) .tg-fill { --w: 0.94; }
+.tg-cand:nth-child(2) .tg-fill { --w: 0.86; }
+.tg-cand:nth-child(3) .tg-fill { --w: 0.72; }
+.tg-cand:nth-child(4) .tg-fill { --w: 0.58; }
+.tg-cand:nth-child(5) .tg-fill { --w: 0.45; }
+
+@keyframes tg-grow {
+  to {
+    transform: scaleX(var(--w));
+  }
+}
+
+.tg-meta {
+  margin-top: 64px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.tg-fourteen {
+  font-size: 96px;
+  line-height: 1;
+}
+
+.tg-fourteen-cap {
+  font-size: 30px;
+  color: var(--text-2);
+}
+
+.tg-syn-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: 28px;
+  padding-left: 28px;
+  border-left: var(--rule-w) var(--rule-style) var(--rule);
+  animation: tg-press 700ms ease 2100ms both;
+}
+
+.tg-syn-tag {
+  padding: 8px 18px;
+  border: var(--bw-1) solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: 22px;
+  color: var(--text-2);
+}
+
+.tg-syn-link {
+  position: relative;
+  width: 72px;
+  height: 2px;
+  background: var(--accent);
+}
+
+.tg-syn-link::after {
+  content: "";
+  position: absolute;
+  right: -2px;
+  top: -4px;
+  border: 5px solid transparent;
+  border-left-color: var(--accent);
+}
+
+/* ── step 1：硬规则大字 ── */
+.tg-verdict {
+  margin: 0;
+  font-size: 168px;
+  letter-spacing: -0.03em;
+  animation: tg-verdict-stamp 800ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes tg-verdict-stamp {
+  from {
+    opacity: 0;
+    transform: scale(1.25);
+    filter: blur(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+.tg-verdict-sub {
+  margin: 26px 0 0;
+  font-size: 36px;
+  color: var(--text-2);
+  animation: tg-press 700ms ease 500ms both;
+}
+
+/* ── step 2：确认后的仓库卡 ── */
+.tg-repo {
+  position: relative;
+  width: 980px;
+  padding: 48px 56px 40px;
+  animation: tg-press 800ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.tg-repo-full {
+  font-family: var(--font-mono);
+  font-size: 24px;
+  color: var(--accent);
+  margin-bottom: 20px;
+}
+
+.tg-repo-desc {
+  margin: 0;
+  font-size: 32px;
+  line-height: 1.35;
+  color: var(--text);
+}
+
+.tg-slots {
+  margin-top: 36px;
+  padding-top: 28px;
+  border-top: var(--rule-w) var(--rule-style) var(--rule);
+  display: flex;
+  gap: 16px;
+}
+
+.tg-on {
+  padding: 10px 22px;
+  background: var(--accent-soft);
+  border: var(--bw-1) solid var(--accent);
+  font-family: var(--font-mono);
+  font-size: 24px;
+  color: var(--accent);
+  animation: tg-stick 500ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes tg-stick {
+  from {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.tg-seal {
+  position: absolute;
+  right: 40px;
+  top: 34px;
+  padding: 10px 20px;
+  border: 3px solid var(--accent);
+  color: var(--accent);
+  font-size: 30px;
+  letter-spacing: 0.2em;
+  transform: rotate(8deg);
+  animation: tg-seal-in 450ms cubic-bezier(0.34, 1.56, 0.64, 1) 2300ms both;
+}
+
+@keyframes tg-seal-in {
+  from {
+    opacity: 0;
+    transform: rotate(8deg) scale(1.6);
+  }
+  to {
+    opacity: 0.92;
+    transform: rotate(8deg) scale(1);
+  }
+}
+
+.tg-sqlite {
+  margin: 40px 0 0;
+  font-family: var(--font-mono);
+  font-size: 22px;
+  letter-spacing: 0.16em;
+  color: var(--text-mute);
+  animation: tg-press 700ms ease 2900ms both;
+}

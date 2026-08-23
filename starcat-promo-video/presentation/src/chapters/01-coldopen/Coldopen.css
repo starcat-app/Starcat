@@ -1,0 +1,384 @@
+/**
+ * coldopen 舞台样式。
+ *
+ * 主导动作按 step 换：打字机 → 鬼行塌缩 → 模糊锐化 → 侧向擦出 → 文字蒸发
+ * → 对切开 → 双向滚河 → 对仗 takeover。禁止全章共用一种 fade。
+ * 颜色和字体家族只引用 token，避免换主题时这一章先破。
+ */
+
+.cd-scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.cd-scene-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+}
+
+.cd-kicker {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+}
+
+/* ── step 0（第1拍）：搜索框打字 ── */
+.cd-search {
+  margin-top: 120px;
+}
+
+.cd-search-kicker {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 22px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  margin-bottom: 18px;
+}
+
+.cd-search-bar {
+  display: flex;
+  align-items: center;
+  width: 920px;
+  height: 96px;
+  padding: 0 32px;
+  border-bottom: 2px solid var(--rule);
+  font-family: var(--font-display-en);
+  font-size: 64px;
+  font-style: italic;
+  color: var(--text);
+}
+
+.cd-search-query {
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  width: 0;
+  animation: cd-type 1.6s steps(3, end) forwards;
+}
+
+.cd-caret {
+  width: 3px;
+  height: 58px;
+  margin-left: 6px;
+  background: var(--accent);
+  animation: caret-blink 1s step-end infinite;
+}
+
+.cd-timer {
+  margin-top: 72px;
+  font-size: 88px;
+  color: var(--accent);
+  letter-spacing: -0.04em;
+  animation: cd-rise 700ms ease-out both;
+}
+
+@keyframes cd-type {
+  to {
+    width: 3.2ch;
+  }
+}
+
+@keyframes cd-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── step 1（第2拍）：上千（模糊锐化） ── */
+.cd-thousand {
+  font-size: 240px;
+  line-height: 0.85;
+  filter: blur(28px);
+  opacity: 0;
+  animation: cd-sharpen 1.4s ease forwards;
+}
+
+.cd-thousand-sub {
+  font-size: 42px;
+  color: var(--text-mute);
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+}
+
+@keyframes cd-sharpen {
+  to {
+    filter: blur(0);
+    opacity: 1;
+  }
+}
+
+/* ── step 2（第3拍）：仓库卡（描述还在 / 理由蒸发） ── */
+.cd-repo {
+  width: 980px;
+  padding: 48px 56px 40px;
+  animation: cd-wipe-left 1.1s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.cd-repo-full {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  color: var(--accent);
+  margin-bottom: 20px;
+}
+
+.cd-repo-desc {
+  margin: 0;
+  font-family: var(--font-display-en);
+  font-size: 36px;
+  font-style: italic;
+  line-height: 1.35;
+  color: var(--text);
+}
+
+.cd-reason {
+  margin-top: 36px;
+  padding-top: 24px;
+  border-top: var(--rule-w) var(--rule-style) var(--rule);
+  display: flex;
+  gap: 24px;
+  align-items: baseline;
+}
+
+.cd-reason-label {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  flex-shrink: 0;
+}
+
+.cd-reason-text {
+  font-family: var(--font-display-cn);
+  font-size: 28px;
+  color: var(--text-2);
+}
+
+.cd-reason.is-gone .cd-reason-text {
+  min-height: 1.2em;
+  border-bottom: 2px solid var(--accent);
+  /* 口播先说「描述还在」，~3.5s 处才念到「全忘了」——蒸发延迟对齐 */
+  animation: cd-evaporate 1s ease 3s forwards;
+}
+
+@keyframes cd-wipe-left {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes cd-evaporate {
+  from {
+    opacity: 1;
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    filter: blur(12px);
+  }
+}
+
+/* ── step 3（第4拍）：对照 ── */
+.cd-split {
+  display: grid;
+  grid-template-columns: 1fr 1px 1fr;
+  gap: 56px;
+  height: 100%;
+  align-items: center;
+}
+
+.cd-split-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.cd-split-pane:first-child {
+  animation: cd-from-left 1.1s ease both;
+}
+
+.cd-split-pane:last-child {
+  animation: cd-from-right 1.1s ease both;
+}
+
+.cd-split-rule {
+  align-self: stretch;
+  background: var(--rule);
+}
+
+.cd-tags {
+  display: flex;
+  gap: 16px;
+}
+
+.cd-tag {
+  width: 120px;
+  height: 44px;
+  border: 1px dashed var(--text-faint);
+}
+
+.cd-split-line {
+  margin: 0;
+  font-size: 56px;
+  color: var(--text);
+}
+
+.cd-tweet {
+  padding: 28px 32px;
+}
+
+.cd-tweet-user {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  color: var(--text-mute);
+  margin-bottom: 12px;
+}
+
+.cd-tweet-body {
+  margin: 0;
+  font-family: var(--font-display-en);
+  font-size: 32px;
+  font-style: italic;
+  color: var(--text);
+}
+
+@keyframes cd-from-left {
+  from {
+    opacity: 0;
+    transform: translateX(-48px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes cd-from-right {
+  from {
+    opacity: 0;
+    transform: translateX(48px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* ── step 4（第5拍）：时间线收束成对仗 takeover ── */
+.cd-river {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 80px;
+  padding: 0 80px;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    var(--text) 12%,
+    var(--text) 88%,
+    transparent 100%
+  );
+}
+
+.cd-river.is-dim {
+  opacity: 0.16;
+}
+
+.cd-river-col {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.cd-river-col span {
+  font-family: var(--font-mono);
+  font-size: 28px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.cd-river-a {
+  animation: cd-scroll 22s linear infinite;
+}
+
+.cd-river-b {
+  animation: cd-scroll 26s linear infinite reverse;
+  padding-top: 64px;
+}
+
+@keyframes cd-scroll {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-50%);
+  }
+}
+
+/* 收束层：时间线上压 caption + 对仗标语，居中一列 */
+.cd-finale {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 48px;
+}
+
+.cd-finale-cap {
+  font-size: 56px;
+  color: var(--text-2);
+  letter-spacing: 0.04em;
+}
+
+.cd-pair {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: center;
+  font-size: 112px;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+.cd-pair-a {
+  color: var(--text);
+  /* 口播先念完时间线，再落对仗 —— 延迟对齐节拍 */
+  animation: cd-pair-in 900ms ease 2600ms both;
+}
+
+.cd-pair-b {
+  color: var(--accent);
+  animation: cd-pair-in 900ms ease 2850ms both;
+}
+
+@keyframes cd-pair-in {
+  from {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}
