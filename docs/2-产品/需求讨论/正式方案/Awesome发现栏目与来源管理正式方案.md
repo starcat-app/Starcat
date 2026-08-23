@@ -132,7 +132,7 @@ Awesome 来源
 
 - 只显示用户已启用的来源。
 - “全部 Awesome”固定为第一行，数量按 Repo 去重后计算。
-- 精选来源按服务端 `sort_order`、名称稳定排序。
+- 精选来源按服务端 `sort_order ASC, id ASC` 稳定排序；显示名称变化不能扰动同顺序来源的位置。
 - 自定义来源排在精选来源后，按用户添加时间排序。
 - README 内部章节不展开到左栏；章节属于中栏筛选，避免形成“来源 → 章节 → Repo”的深层侧栏树。
 - 来源不可用时保留一条禁用状态行，允许用户进入管理 Sheet 处理，不静默消失。
@@ -400,6 +400,7 @@ If-None-Match: "optional-source-etag"
 
 - 首期按来源返回完整快照，不做远端筛选和分页；客户端只请求用户已勾选来源并本地筛选。
 - `updated_at` 是 GitHub 仓库更新时间；字段缺失时客户端在“最近更新”排序中放到末尾，不得用来源同步时间代替。
+- entries 响应中 `source.updated_at` 与 `meta.generated_at` 表示最近成功生成当前条目快照的时间；仅在历史异常数据缺少 `last_synced_at` 时回退来源内容修订时间。
 - 必须支持 `ETag`，避免重复下载未变化的长清单。
 - 单来源响应默认压缩；服务端对异常大来源设置明确响应上限并在管理端阻止发布，而不是运行期静默截断。
 - 来源未发布或不存在返回 `404 AWESOME_SOURCE_NOT_FOUND`。
@@ -621,16 +622,15 @@ git@github.com:{owner}/{repo}.git       # 仅自定义来源输入可接受
 
 | 字段 | 说明 |
 |---|---|
-| `source_id` | `managed:{server_id}` 或 `custom:{uuid}` 主键 |
+| `source_id` | 精选来源使用服务端 ID，自定义来源使用 `custom:{owner/repo}`；本地主键 |
 | `kind` | `managed / custom` |
-| `server_id` | 精选来源服务端 ID，自定义为空 |
 | `repo_full_name` | canonical GitHub 来源仓库 |
 | `display_name / image_url / summary_zh / summary_en` | 卡片数据 |
 | `featured / sort_order` | 精选排序，自定义使用本地默认 |
-| `availability` | `available / unavailable / stale / invalid` |
+| `is_available` | 精选来源是否仍在公开目录；刷新失败的 stale 错误为会话状态 |
 | `github_repo_count / external_entry_count` | 最近成功统计 |
-| `remote_updated_at / last_synced_at` | 新鲜度 |
-| `created_at / updated_at` | 本地时间 |
+| `catalog_etag / entries_etag` | 目录和单来源快照条件请求版本 |
+| `added_at / last_synced_at / updated_at` | 本地添加时间、成功同步时间和内容修订时间 |
 
 #### `awesome_source_subscriptions`
 
@@ -642,11 +642,11 @@ git@github.com:{owner}/{repo}.git       # 仅自定义来源输入可接受
 
 #### `awesome_entries`
 
-保存服务端条目快照和自定义来源本地解析结果，字段与公共 entries DTO 对齐，并额外记录 `source_id`、`fetched_at`。Repo 身份使用 `gh_repo_id`，不把 Awesome 关系写进 `repos.is_starred` 或其他用户关系字段。
+保存服务端条目快照和自定义来源本地解析结果，字段与公共 entries DTO 对齐，并额外记录 `source_id`、`repo_updated_at`、`cached_at`。Repo 身份使用 `gh_repo_id`，不把 Awesome 关系写进 `repos.is_starred` 或其他用户关系字段。
 
-#### `awesome_cache_meta`
+#### `awesome_state`
 
-保存来源目录 ETag、目录检查时间、每个来源 entries ETag/检查时间和 `has_completed_source_setup`。若实现拆成账户 scoped AppSettings，必须继续保证切换账户隔离；不能只用一个全局 UserDefaults Bool。
+单例行保存 `has_completed_source_setup`、来源目录 `catalog_etag` 和 `catalog_checked_at`；每个来源的 entries ETag 保存在 `awesome_sources.entries_etag`。四张表都位于当前账户数据库，不能把首次设置状态改成全局 UserDefaults Bool。
 
 ### 9.2 缓存策略
 
