@@ -343,6 +343,44 @@ struct ExternalAgentProtocolAdapterTests {
         #expect(DeepSeekRuntimeProviderCatalog.providers(settings: settings).map(\.id) == ["verified"])
     }
 
+    @Test("DeepSeek V4 Runtime 默认使用官方 1M 上下文并保留用户覆盖")
+    @MainActor
+    func deepSeekV4ProviderCatalogUsesMillionTokenContext() throws {
+        let suiteName = "ExternalAgentProtocolAdapterTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = AppSettings(defaults: defaults, keychain: InMemoryKeychain())
+        var customParameters = AIModelParameters.defaults(for: .chat)
+        customParameters.contextWindowTokens = 512_000
+        settings.aiProviderProfiles = [
+            AIProviderProfile(
+                id: "deepseek",
+                provider: .deepSeek,
+                models: [
+                    AIModelDescriptor(
+                        providerID: "deepseek",
+                        name: "deepseek-v4-pro",
+                        capability: .chat
+                    ),
+                    AIModelDescriptor(
+                        providerID: "deepseek",
+                        name: "deepseek-v4-flash",
+                        capability: .chat,
+                        parameters: customParameters
+                    ),
+                ],
+                lastTestStatus: .success(modelCount: 2)
+            ),
+        ]
+
+        let provider = try #require(DeepSeekRuntimeProviderCatalog.providers(settings: settings).first)
+        let pro = try #require(provider.models.first { $0.name == "deepseek-v4-pro" })
+        let flash = try #require(provider.models.first { $0.name == "deepseek-v4-flash" })
+        #expect(pro.contextWindow == 1_000_000)
+        #expect(pro.maxTokens == AIModelParameters.defaults(for: .chat).maxCompletionTokens)
+        #expect(flash.contextWindow == 512_000)
+    }
+
     @Test("DeepSeek 每轮 Cordis 配置挂载多 Provider adapter 且不写入凭据")
     func deepSeekRunCordisInjectsSelectedProvider() throws {
         let directory = FileManager.default.temporaryDirectory
@@ -363,7 +401,7 @@ struct ExternalAgentProtocolAdapterTests {
             model: DeepSeekRuntimeModelOption(
                 id: "model",
                 name: "deepseek-reasoner",
-                contextWindow: 64_000,
+                contextWindow: 1_000_000,
                 maxTokens: 8_000,
                 supportedReasoningEfforts: ["off", "high"]
             ),
@@ -392,6 +430,8 @@ struct ExternalAgentProtocolAdapterTests {
         #expect(lines.contains("          thinkingFormat: deepseek"))
         #expect(lines.contains("        models:"))
         #expect(lines.contains("          - id: 'deepseek-reasoner'"))
+        #expect(lines.contains("            contextWindow: 1000000"))
+        #expect(lines.contains("            maxTokens: 8000"))
         #expect(lines.contains("            reasoningEfforts:"))
         #expect(lines.contains("              off:"))
         #expect(lines.contains("              high: high"))

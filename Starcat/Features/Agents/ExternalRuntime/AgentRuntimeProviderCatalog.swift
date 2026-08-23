@@ -188,6 +188,11 @@ struct DeepSeekRuntimeSelection: Equatable, Sendable {
 
 enum DeepSeekRuntimeProviderCatalog {
     static let selectableReasoningEfforts = ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+    private static let deepSeekV4ContextWindowTokens = 1_000_000
+    private static let deepSeekV4ModelIDs: Set<String> = [
+        "deepseek-v4-pro",
+        "deepseek-v4-flash",
+    ]
 
     @MainActor
     static func providers(settings: AppSettings) -> [DeepSeekRuntimeProviderOption] {
@@ -247,12 +252,27 @@ enum DeepSeekRuntimeProviderCatalog {
         return DeepSeekRuntimeModelOption(
             id: descriptor.id,
             name: descriptor.name,
-            contextWindow: parameters.resolvedContextWindowTokens,
+            contextWindow: resolvedContextWindow(descriptor: descriptor, parameters: parameters),
             maxTokens: parameters.maxCompletionTokens,
             supportedReasoningEfforts: supportsReasoning(modelName: descriptor.name)
                 ? selectableReasoningEfforts
                 : []
         )
+    }
+
+    /// DeepSeek V4 官方上下文为 1M。模型目录未保存参数时不能复用通用 32K 保守值，
+    /// 否则 Harness 会把正常的长工具链误判为达到上下文边界；用户显式配置仍然优先。
+    private static func resolvedContextWindow(
+        descriptor: AIModelDescriptor,
+        parameters: AIModelParameters
+    ) -> Int {
+        guard descriptor.parameters == nil else {
+            return parameters.resolvedContextWindowTokens
+        }
+        let modelID = descriptor.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return deepSeekV4ModelIDs.contains(modelID)
+            ? deepSeekV4ContextWindowTokens
+            : parameters.resolvedContextWindowTokens
     }
 
     /// Starcat 的 `/models` 目录没有统一 reasoning capability 字段。只对名称中明确带有
