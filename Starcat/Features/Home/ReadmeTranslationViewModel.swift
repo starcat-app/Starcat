@@ -227,6 +227,37 @@ final class ReadmeTranslationViewModel {
         )
     }
 
+    /// 对照已上屏时评论后到：只补缺段，不切回原文、不重翻已有译文。
+    func continueTranslationIfNeeded(
+        identity: String,
+        cacheOwner: String,
+        cacheRepo: String,
+        repoId: Int64? = nil,
+        sourceHtml: String,
+        sourceSegments: [ReadmeSourceSegment],
+        targetLanguage: ReadmeTranslationLanguage,
+        mode: ReadmeTranslationMode
+    ) {
+        guard case .showingTranslation = displayMode, !isTranslating else { return }
+        let done = Set(renderState.translations.map(\.id))
+        let pending = TranslationSourceLanguageGate.segmentsNeedingTranslation(
+            sourceSegments,
+            target: targetLanguage
+        )
+        guard pending.contains(where: { !done.contains($0.id) }) else { return }
+        startTranslation(
+            identity: identity,
+            cacheOwner: cacheOwner,
+            cacheRepo: cacheRepo,
+            repoId: repoId,
+            sourceHtml: sourceHtml,
+            sourceSegments: sourceSegments,
+            targetLanguage: targetLanguage,
+            mode: mode,
+            force: false
+        )
+    }
+
     func regenerate(
         repo: Repo,
         sourceHtml: String,

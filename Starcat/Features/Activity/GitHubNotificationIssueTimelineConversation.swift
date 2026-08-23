@@ -6,11 +6,10 @@
 //
 //  只读已 hydrate 的标题 / 正文 / 标签。时间线走 Inbox：内存 → 文件 → 网络。
 //  发评 / 关帖后 `timelineRevision` 变了会再读一次缓存。
-//  翻译只套评论卡，开帖和事件行保持原文。
+//  翻译套开帖卡和评论卡，事件行保持原文。
 //
 
 import AppKit
-import MarkdownUI
 import SwiftUI
 
 struct GitHubNotificationIssueTimelineConversation: View {
@@ -20,8 +19,12 @@ struct GitHubNotificationIssueTimelineConversation: View {
     let inbox: GitHubNotificationInboxService
     /// Inbox 缓存刷新代数。发评 / 关帖后会 +1，用来重读内存时间线。
     let timelineRevision: Int
-    /// 只给评论卡做对照。事件行不读这个。
+    /// 开帖卡和评论卡共用这份 VM；事件行不读。
     let translation: ReadmeTranslationViewModel?
+    /// 必须和顶栏翻译按钮用同一份 Document，段 id 才能对上每条评论。
+    let document: GitHubNotificationTranslation.Document
+    /// 时间线评论后到时回传给详情页，避免工具栏仍按空缓存组文档。
+    let onCommentsChange: ([GitHubNotificationComment]) -> Void
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(AppSettings.self) private var settings
@@ -34,7 +37,7 @@ struct GitHubNotificationIssueTimelineConversation: View {
         // `.task` 必须挂在始终在树上的容器上。挂在空 `ForEach` 上时 SwiftUI
         // 不会启动任务，开帖卡出来、事件永远不拉——Issue #3 就是这样。
         VStack(alignment: .leading, spacing: 12) {
-            openingCard
+            openingTranslationCard
             if isLoading && items.isEmpty {
                 ProgressView()
                     .controlSize(.small)
@@ -70,87 +73,44 @@ struct GitHubNotificationIssueTimelineConversation: View {
         }
     }
 
-    private var openingCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                GitHubNotificationActorAvatar(login: payload.authorLogin ?? "", size: 26)
-                Text(verbatim: actorName(payload.authorLogin))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Text(verbatim: GitHubNotificationMapper.commentCardAction(isOpeningPost: true, locale: locale))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                if let createdAt = payload.authorCreatedAt {
-                    Text(verbatim: GitHubNotificationMapper.commentTimeLabel(date: createdAt, locale: locale))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(Color.secondary.opacity(0.08))
-
-            Divider()
-
-            if !title.isEmpty {
-                Text(verbatim: title)
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 12)
-            }
-
-            if !payload.labels.isEmpty {
-                GitHubNotificationIssueTimelineLabelFlow(spacing: 6) {
-                    ForEach(Array(payload.labels.enumerated()), id: \.offset) { _, label in
-                        GitHubNotificationIssueTimelineLabelChip(label: label)
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.top, title.isEmpty ? 12 : 8)
-            }
-
-            if let excerpt = payload.excerpt, !excerpt.isEmpty {
-                GitHubNotificationIssueTimelineMarkdown(
-                    content: excerpt,
-                    repositoryFullName: payload.repositoryFullName
-                )
-                .padding(12)
-            } else {
-                Text("activity.notification.detail.noDescription")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .padding(12)
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
-        )
-    }
-
-    private func timelineCommentCard(_ comment: GitHubNotificationComment) -> some View {
-        let document = commentTranslationDocument
+    private var openingTranslationCard: some View {
         let isShowing: Bool = {
             if case .showingTranslation = translation?.displayMode { return true }
             return false
         }()
         let rendered = translation?.renderState.translations ?? []
-        let translationsByID = Dictionary(
-            rendered.map { ($0.id, $0) },
-            uniquingKeysWith: { _, latest in latest }
+        let blocks = GitHubNotificationTranslation.openingBlocks(in: document)
+        return GitHubNotificationCommentCard(
+            login: payload.authorLogin ?? "",
+            createdAt: payload.authorCreatedAt,
+            markdown: payload.excerpt ?? "",
+            repositoryFullName: payload.repositoryFullName,
+            isOpeningPost: true,
+            locale: locale,
+            reduceMotion: reduceMotion,
+            blocks: blocks,
+            translations: GitHubNotificationTranslation.cardTranslations(
+                for: blocks,
+                from: rendered
+            ),
+            isShowingTranslation: isShowing,
+            translationMode: translation?.renderState.mode ?? settings.readmeTranslationMode,
+            prefersAnimatedEntrance: translation?.renderState.prefersAnimatedEntrance ?? false,
+            isJobTranslating: translation?.isTranslating ?? false,
+            translationLanguage: settings.effectiveReadmeTranslationLanguage,
+            issueTitle: title,
+            labels: payload.labels
         )
-        let blocks = document.blocks.filter { block in
-            if case .comment(let id) = block.kind { return id == comment.id }
+        .equatable()
+    }
+
+    private func timelineCommentCard(_ comment: GitHubNotificationComment) -> some View {
+        let isShowing: Bool = {
+            if case .showingTranslation = translation?.displayMode { return true }
             return false
-        }
+        }()
+        let rendered = translation?.renderState.translations ?? []
+        let blocks = GitHubNotificationTranslation.blocks(in: document, commentID: comment.id)
         return GitHubNotificationCommentCard(
             login: comment.login,
             createdAt: GitHubNotificationMapper.parseDate(comment.createdAt),
@@ -160,9 +120,10 @@ struct GitHubNotificationIssueTimelineConversation: View {
             locale: locale,
             reduceMotion: reduceMotion,
             blocks: blocks,
-            translations: blocks.compactMap { block in
-                block.segmentId.flatMap { translationsByID[$0] }
-            },
+            translations: GitHubNotificationTranslation.cardTranslations(
+                for: blocks,
+                from: rendered
+            ),
             isShowingTranslation: isShowing,
             translationMode: translation?.renderState.mode ?? settings.readmeTranslationMode,
             prefersAnimatedEntrance: translation?.renderState.prefersAnimatedEntrance ?? false,
@@ -172,27 +133,16 @@ struct GitHubNotificationIssueTimelineConversation: View {
         .equatable()
     }
 
-    /// 只切评论正文。开帖和事件不进翻译文档。
-    private var commentTranslationDocument: GitHubNotificationTranslation.Document {
-        let comments: [GitHubNotificationComment] = items.compactMap { item in
-            guard case .comment(let comment) = item else { return nil }
-            return GitHubNotificationComment(
-                id: comment.id,
-                login: comment.login,
-                body: GitHubNotificationMapper.prepareMarkdown(comment.body),
-                htmlURL: comment.htmlURL,
-                createdAt: comment.createdAt
-            )
-        }
-        return GitHubNotificationTranslation.makeDocument(opening: nil, comments: comments)
-    }
-
-    private func actorName(_ login: String?) -> String {
-        let trimmed = login?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if trimmed.isEmpty {
-            return GitHubNotificationMapper.copy(locale, zh: "有人", en: "Someone")
-        }
-        return trimmed
+    /// 时间线里只抽出评论正文。开帖走 `payload.excerpt`，事件行不进 Document。
+    private func preparedComments(
+        from timeline: [GitHubNotificationIssueTimelineItem]
+    ) -> [GitHubNotificationComment] {
+        GitHubNotificationTranslation.preparedComments(
+            timeline.compactMap { item in
+                guard case .comment(let comment) = item else { return nil }
+                return comment
+            }
+        )
     }
 
     private func loadTimeline(force: Bool) async {
@@ -200,6 +150,7 @@ struct GitHubNotificationIssueTimelineConversation: View {
             items = cached
             loadFailed = false
             isLoading = false
+            onCommentsChange(preparedComments(from: cached))
             return
         }
         isLoading = items.isEmpty
@@ -210,6 +161,7 @@ struct GitHubNotificationIssueTimelineConversation: View {
                 force: force
             )
             items = loaded
+            onCommentsChange(preparedComments(from: loaded))
             loadFailed = false
         } catch {
             if items.isEmpty {
@@ -370,26 +322,6 @@ private struct GitHubNotificationIssueTimelineEventRow: View {
     }
 }
 
-private struct GitHubNotificationIssueTimelineMarkdown: View {
-    let content: String
-    let repositoryFullName: String
-
-    var body: some View {
-        Markdown(
-            GitHubNotificationMapper.autolinkIssueReferences(
-                GitHubNotificationMapper.prepareMarkdown(content),
-                repositoryFullName: repositoryFullName
-            )
-        )
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .environment(\.openURL, OpenURLAction { url in
-            guard url.scheme == "http" || url.scheme == "https" else { return .discarded }
-            NSWorkspace.shared.open(url)
-            return .handled
-        })
-    }
-}
-
 /// 验证期副本：不碰详情里已上线的 `GitHubNotificationLabelChip`。
 private struct GitHubNotificationIssueTimelineLabelChip: View {
     let label: GitHubNotificationIssueLabel
@@ -420,48 +352,5 @@ private struct GitHubNotificationIssueTimelineLabelChip: View {
         let b = Double(rgb & 0xFF)
         let yiq = (r * 299 + g * 587 + b * 114) / 1000
         return yiq >= 148 ? Color.black : Color.white
-    }
-}
-
-/// 验证期副本：多个标签必须能换行。
-private struct GitHubNotificationIssueTimelineLabelFlow: Layout {
-    let spacing: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let maxWidth = proposal.width ?? 300
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > maxWidth {
-                x = 0
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-        }
-
-        return CGSize(width: maxWidth, height: y + rowHeight)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX
-        var y = bounds.minY
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > bounds.minX, x + size.width > bounds.maxX {
-                x = bounds.minX
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-        }
     }
 }

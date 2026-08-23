@@ -1653,6 +1653,12 @@ final class AppDependencies {
                 state: userId == nil ? .signedOut : .preparing
             )
             self.ragComposerDraftStore.removeAll()
+            do { try DiskNotificationCommentDraftCache.shared.deleteEverything() }
+            catch {
+                AppLog.general.warning(
+                    "Sign-out: issue comment draft cleanup failed: \(error.localizedDescription, privacy: .public)"
+                )
+            }
             // 摘要 session 是进程内、按当前用户数据库构建的状态。先取消并清空，
             // 避免旧用户尚未完成的生成在切库后继续写入或显示给新用户。
             await self.repoAIInsightSessionStore.removeAll()
@@ -1812,6 +1818,9 @@ final class AppDependencies {
 
         do { try DiskWikiCache.shared.deleteEverything() }
         catch { AppLog.general.warning("Factory reset: Wiki cache cleanup failed: \(error.localizedDescription, privacy: .public)") }
+
+        do { try DiskNotificationCommentDraftCache.shared.deleteEverything() }
+        catch { AppLog.general.warning("Factory reset: issue comment draft cleanup failed: \(error.localizedDescription, privacy: .public)") }
 
         do { try DiskRecommendationCache.shared.deleteEverything() }
         catch { AppLog.general.warning("Factory reset: Recommendation cache cleanup failed: \(error.localizedDescription, privacy: .public)") }

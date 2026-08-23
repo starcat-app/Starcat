@@ -31,6 +31,18 @@ enum GitHubNotificationTranslation {
         let markdown: String
         /// 可送 AI 时才有。围栏代码为 nil。
         let segmentId: String?
+
+        /// ForEach 必须用「评论 id + 段序」，不能只用 `index`。
+        /// 多条评论各自第一段都是 0，撞 id 时 SwiftUI 只会更新最后一张卡。
+        var id: String {
+            if let segmentId { return segmentId }
+            switch kind {
+            case .opening:
+                return "fence:o:\(index)"
+            case .comment(let commentID):
+                return "fence:c:\(commentID):\(index)"
+            }
+        }
     }
 
     struct Document: Equatable, Sendable {
@@ -134,9 +146,54 @@ enum GitHubNotificationTranslation {
             append(kind: .comment(id: comment.id), markdown: comment.body)
         }
 
-        let sourceText = ([opening ?? ""] + comments.map(\.body))
-            .joined(separator: "\n\n---\n\n")
+        // opening 为空时不要先拼一个空串，否则 sourceText 以 `---` 开头，
+        // 全文模式会把第一段对到空内容，后面的评论整体错位。
+        var parts: [String] = []
+        if let opening, !opening.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            parts.append(opening)
+        }
+        parts.append(contentsOf: comments.map(\.body).filter {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        })
+        let sourceText = parts.joined(separator: "\n\n---\n\n")
         return Document(sourceText: sourceText, segments: segments, blocks: blocks)
+    }
+
+    /// 卡片和工具栏必须用同一份 Document，按评论 id 切开对照。
+    static func blocks(in document: Document, commentID: Int64) -> [Block] {
+        document.blocks.filter { block in
+            if case .comment(let id) = block.kind { return id == commentID }
+            return false
+        }
+    }
+
+    static func openingBlocks(in document: Document) -> [Block] {
+        document.blocks.filter { $0.kind == .opening }
+    }
+
+    static func cardTranslations(
+        for blocks: [Block],
+        from rendered: [ReadmeRenderedTranslation]
+    ) -> [ReadmeRenderedTranslation] {
+        let translationsByID = Dictionary(
+            rendered.map { ($0.id, $0) },
+            uniquingKeysWith: { _, latest in latest }
+        )
+        return blocks.compactMap { block in
+            block.segmentId.flatMap { translationsByID[$0] }
+        }
+    }
+
+    static func preparedComments(_ comments: [GitHubNotificationComment]) -> [GitHubNotificationComment] {
+        comments.map { comment in
+            GitHubNotificationComment(
+                id: comment.id,
+                login: comment.login,
+                body: GitHubNotificationMapper.prepareMarkdown(comment.body),
+                htmlURL: comment.htmlURL,
+                createdAt: comment.createdAt
+            )
+        }
     }
 
     static func translation(

@@ -81715,6 +81715,52 @@
         }
       }
     },
+    "cache.issueCommentDraft.error.applicationSupportUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not locate the Issue comment draft directory. Please retry or restart the app."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法定位 Issue 评论草稿目录，请重试或重启应用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法定位 Issue 評論草稿目錄，請重試或重新啟動應用程式。"
+          }
+        }
+      }
+    },
+    "cache.issueCommentDraft.error.unsafePathComponentFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Issue comment draft path segment contains invalid characters: %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Issue 评论草稿路径包含非法字符：%@。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Issue 評論草稿路徑包含無效字元：%@。"
+          }
+        }
+      }
+    },
     "cache.readmeTranslation.error.applicationSupportUnavailable" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -379686,6 +379732,52 @@
         }
       }
     },
+    "settings.storage.clearIssueCommentDraft.confirm" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear Issue comment drafts?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除 Issue 评论草稿？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除 Issue 評論草稿？"
+          }
+        }
+      }
+    },
+    "settings.storage.clearIssueCommentDraft.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unsent comment drafts saved on this Mac will be removed. Comments already posted to GitHub are not affected."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将删除本机保存的未提交评论草稿。已经发到 GitHub 的评论不受影响。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將刪除此裝置上儲存的未提交評論草稿。已發到 GitHub 的評論不受影響。"
+          }
+        }
+      }
+    },
     "settings.storage.clearRAGHistory.confirm" : {
       "localizations" : {
         "ar" : {
@@ -381984,6 +382076,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "通知詳情裡的 Issue 評論和事件。關掉 App 後仍可先讀本地。"
+          }
+        }
+      }
+    },
+    "settings.storage.issueCommentDraft" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Issue comment drafts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Issue 评论草稿"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Issue 評論草稿"
+          }
+        }
+      }
+    },
+    "settings.storage.issueCommentDraft.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unsent Issue / PR comment drafts, including AI replies. Still available after you quit or switch threads."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未提交的 Issue / PR 评论草稿，包括 AI 回复。关掉 App 或切换帖子后仍保留。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未提交的 Issue / PR 評論草稿，包括 AI 回覆。關閉 App 或切換討論串後仍保留。"
           }
         }
       }
