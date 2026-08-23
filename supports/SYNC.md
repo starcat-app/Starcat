@@ -41,7 +41,7 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 
 ---
 
-## 独立仓库目录（24 个）
+## 独立仓库目录（25 个）
 
 以下目录各自是**独立的 git 仓库**，有自己的 GitHub remote、CI/CD 和版本号：
 
@@ -71,20 +71,21 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 | 22 | `extensions/starcat-chrome-plugin/` | `starcat-app/starcat-chrome-plugin` |
 | 23 | `extensions/starcat-safari-plugin/` | `starcat-app/starcat-safari-plugin` |
 | 24 | `starcat-recsys-trainer/` | `starcat-app/starcat-recsys-trainer` 🔒 私有 |
+| 25 | `starcat-collection-api/` | `starcat-app/starcat-collection-api` 🔒 私有（远端待创建） |
 
 ### 一键拉取所有独立仓库
 
 ```bash
 cd supports
 
-# 首次 clone 全部 24 个远端目标
+# 首次 clone 全部 25 个远端目标
 ./clone-all.sh
 
 # 后续更新全部
 ./clone-all.sh --pull
 ```
 
-> `starcat-license-api`、`starcat-api` 与 `starcat-recsys-trainer` 是**私有**仓库，需要使用具备 `starcat-app` 组织权限的 `gh auth login` 或 SSH key；`starcat-api-kit` 为公开仓库。
+> `starcat-license-api`、`starcat-collection-api`、`starcat-api` 与 `starcat-recsys-trainer` 是**私有**仓库，需要使用具备 `starcat-app` 组织权限的 `gh auth login` 或 SSH key；`starcat-api-kit` 为公开仓库。
 
 ### 新增独立仓库登记
 
@@ -115,6 +116,7 @@ notes.md                          # 笔记
 .claude/settings.local.json       # 根目录 IDE 权限（被全局 gitignore 忽略）
 sparkle-private-key               # Sparkle 签名私钥
 supports/starcat-discovery-api/.env
+supports/starcat-collection-api/.env
 supports/starcat-license-api/.env
 supports/starcat-recommend-api/.env
 supports/starcat-sharing-api/.env
@@ -168,6 +170,7 @@ make sync-fly-secrets
 
 | 日期 | 决策 | 原因 |
 |------|------|------|
+| 2026-08-23 | GitHub 独立仓库从 24 个扩展到 25 个 | 新增私有 `starcat-collection-api`，独立承担经同意的公开 Star 快照收集与训练导出 |
 | 2026-08-23 | GitHub 独立仓库从 23 个扩展到 24 个 | 新增私有 `starcat-recsys-trainer`，独立承担推荐数据与离线训练管道 |
 | 2026-07-30 | GitHub 独立仓库从 20 个扩展到 21 个 | 新增 `starcat-raycast-extension`，独立维护 Raycast 搜索适配、测试与开源治理 |
 | 2026-07-29 | GitHub 独立仓库从 19 个扩展到 20 个 | 新增 `starcat-utools-plugin`，独立维护 uTools 搜索适配、测试与开源治理 |

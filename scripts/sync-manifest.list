@@ -20,6 +20,7 @@ sparkle-private-key
 
 # === supports/ 下独立 git 仓库的 .env（gitignore 不管，需跨机器同步） ===
 supports/starcat-discovery-api/.env
+supports/starcat-collection-api/.env
 supports/starcat-license-api/.env
 supports/starcat-recommend-api/.env
 supports/starcat-sharing-api/.env

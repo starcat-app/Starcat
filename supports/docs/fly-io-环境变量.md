@@ -47,6 +47,10 @@ make -C supports fly-health-api  # 必须返回 {"status":"maintenance"}
 
 用户可在 **设置 → 服务** 覆盖 baseURL 指向自托管独立进程；留空则走 §1.1 聚合默认。
 
+`starcat-collection-api` 是独立的数据收集边界，不属于上表当前六个生产业务 App，也不进入
+`starcat-api` 聚合。其预留 Fly app 名为 `starcat-collection-api`、端口 `5011`、Volume 路径
+`/data/collection.db`；当前只完成本地配置，未创建或部署远端 App。
+
 ---
 
 ## 2. 配置来源：三种渠道
@@ -253,6 +257,21 @@ cron 频率在代码内固定（daily/weekly/monthly 等），无需 Fly env。
 | `SYNC_ENABLED` | O | `true` | 首次空部署且未配置真实 PAT 时可临时设为 `false` |
 | `SYNC_CRON` | O | `17 */3 * * *` | 增量同步 |
 | `FULL_SYNC_CRON` | O | `23 2 * * *` | 全量同步 |
+
+---
+
+### 5.7 starcat-collection-api（独立，待部署）
+
+| 变量 | 级别 | 默认值 / Fly 生产值 | 说明 |
+|------|------|---------------------|------|
+| `PORT` | T | `5011` | 不与 license 的 5010 冲突 |
+| `STORE_FILE` | R | `/data/collection.db` | 本地默认 `./collection.db` |
+| `API_KEYS` | R | — | Starcat 客户端静默上报 Bearer 白名单 |
+| `ADMIN_API_KEYS` | R | — | Trainer Pull 导出专用 key，禁止与 `API_KEYS` 复用 |
+| `PARTICIPANT_HMAC_KEY` | R | — | 至少 32 字符；不得随意轮换 |
+
+该服务必须使用独立 Fly App 和 Volume，不配置 `X-SC-Svc`。远端创建、secret 写入和首次部署
+必须在单独授权后执行。
 
 ---
 
@@ -488,6 +507,7 @@ make -C supports fly-health-all
 | `starcat-discovery-api` | `shared-cpu-1x` | 512 MB |
 | sharing / trending / weekly / wiki | `shared-cpu-1x` | 256 MB |
 | `starcat-recommend-api` | 未在 `fly.toml` 显式声明 | 以 Fly 当前 Machine 配置为准 |
+| `starcat-collection-api` | 待创建 | 当前未部署，不存在可验证的远程规格 |
 
 仪表盘显示的 Volume 容量不是 Machine 内存。配置变更需 `fly deploy` 后才生效；真实线上规格仍以 `fly status` / `fly machine status` 为准。
 

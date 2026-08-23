@@ -8,10 +8,12 @@
 ## 必读清单(开工前)
 
 1. **根 Starcat/CLAUDE.md** — 全局规则(本目录所有 AI 协作者必须遵守)
-2. **supports/AGENTS.md** — supports/ 整体结构、独立仓库边界、6 个公共 API 与私有 License API 对照表
+2. **supports/AGENTS.md** — supports/ 整体结构、独立仓库边界、6 个可聚合 API 与私有 License / Collection API 对照表
 3. **被修改项目的 `AGENTS.md`** — 项目特定的开发规范、命令、commit 规范；若项目没有单独 `AGENTS.md`，以本文件和项目 README 为准
 
 `starcat-recsys-trainer` 是私有 Python 3.12 + uv 离线管道，以项目 `README.md` 和 `docs/使用说明.md` 为准。按建立需求暂不创建 CI workflow，本地变更必须执行 `make check`。
+
+`starcat-collection-api` 是私有 Go 1.25 独立服务，不可导入 `starcat-api` Gateway。它与 Trainer 之间只允许 Admin Key 保护的 Pull 导出。
 
 ---
 
@@ -21,7 +23,7 @@
 
 ### 1. Go 版本一致性(2026-06-08 起)
 
-**6 个 API 项目必须保持 Go directive 一致**(2026-06-08 已统一为 `go 1.25.0`):
+**6 个可聚合 API + Collection API 必须保持 Go directive 一致**(2026-06-08 起统一为 `go 1.25.0`):
 
 | 项目 | go.mod | workflows/go.yml |
 |------|--------|-----------------|
@@ -31,9 +33,10 @@
 | starcat-wiki-api | `go 1.25.0` | `go-version: [1.25]` |
 | starcat-recommend-api | `go 1.25.0` | `go-version: [1.25]` |
 | starcat-discovery-api | `go 1.25.0` | `go-version: [1.25]` |
+| starcat-collection-api | `go 1.25.0` | `go-version-file: go.mod` |
 
 **禁止行为**:
-- ❌ 只升级某一个项目的 Go 版本(必须 6 个 API 项目同步)
+- ❌ 只升级某一个可聚合 API 的 Go 版本（六个需同步）；Collection 也必须继续使用同一 Go directive
 - ❌ 升级 Go 后忘了同步 `workflows/go.yml` 的矩阵版本
 - ❌ 升级 Go 后没跑 `go build ./... && go vet ./...` 验证
 
@@ -48,6 +51,7 @@ github.com/starcat-app/starcat-weekly-api
 github.com/starcat-app/starcat-wiki-api
 github.com/starcat-app/starcat-recommend-api
 github.com/starcat-app/starcat-discovery-api
+github.com/starcat-app/starcat-collection-api
 ```
 
 **项目内 import 必须用绝对路径**(用 module path 前缀),不允许相对路径:
@@ -112,6 +116,7 @@ go vet ./...           # 必须 vet 干净
 | `starcat-wiki-api` | `starcat-wiki-api` | 5004 | SQLite / Fly volume |
 | `starcat-recommend-api` | `starcat-recommend-api` | 5005 | 无 Fly volume，仅进程缓存 |
 | `starcat-discovery-api` | `starcat-discovery-api` | 5006 | SQLite / Fly volume |
+| `starcat-collection-api` | `starcat-collection-api`（待创建） | 5011 | SQLite / Fly volume |
 
 ```bash
 cd supports/starcat-xxx-api
@@ -131,7 +136,7 @@ fly status                              # 看状态
 
 | 主题 | 文档 |
 |------|------|
-| 目录整体结构、6 个 API 项目对照 | [`AGENTS.md`](./AGENTS.md) |
+| 目录整体结构、API 项目对照 | [`AGENTS.md`](./AGENTS.md) |
 | 本地一次性启动所有 API | [`start-all.sh`](./start-all.sh) |
 | Fly.io 脚本与环境变量 | [`docs/fly-io-环境变量.md`](./docs/fly-io-环境变量.md) |
 | 全局规则、i18n、UI 规范、Keychain | 根 `../CLAUDE.md` |

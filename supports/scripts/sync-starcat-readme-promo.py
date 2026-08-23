@@ -151,6 +151,14 @@ PROJECTS = [
         "Private backend service for Starcat Direct licensing flows.",
     ),
     Project(
+        Path("supports/starcat-collection-api"),
+        "Starcat Collection API",
+        "private-api",
+        "Starcat 数据收集服务",
+        "这是在用户同意后静默收集匿名公开 Star 快照、并为离线推荐训练交付数据的私有服务。",
+        "Private service that collects consented anonymous public Star snapshots for offline recommendation training.",
+    ),
+    Project(
         Path("supports/starcat-api-kit"),
         "starcat-api-kit",
         "library",

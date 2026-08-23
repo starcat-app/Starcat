@@ -315,7 +315,7 @@ Accept: application/x-ndjson
 ```yaml
 sources:
   - type: starcat_collection_api
-    base_url: http://127.0.0.1:5010
+    base_url: http://127.0.0.1:5011
     admin_key_env: STARCAT_COLLECTION_ADMIN_KEY
     timeout_seconds: 60
     maximum_snapshots: 100000

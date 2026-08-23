@@ -16,8 +16,8 @@
 | 公开支持 | `starcat-pro/` | Issue、公开发布说明与营销图片源 |
 | 工具与集成 | `starcat-cli/`、`starcat-skill/`、`extensions/` | CLI/MCP、AI Agent Skill 与浏览器插件 |
 | 分发与协作 | `homebrew-starcat*/`、`starcat-localization/`、`.github/` | Homebrew、本地化和组织主页 |
-| 后端 API | `starcat-*-api/`、`starcat-api-kit/`、`starcat-api/` | 六个业务服务、共享 kit、聚合网关与独立 license；Fly.io 规则只适用于可部署服务 |
-| 数据与离线训练 | `starcat-recsys-trainer/` | 私有 Python 项目；推荐数据采集、标准化、离线训练、评估和 ServingBundle 发布 |
+| 后端 API | `starcat-*-api/`、`starcat-api-kit/`、`starcat-api/` | 六个业务服务、共享 kit、聚合网关与独立 license / collection；Fly.io 规则只适用于可部署服务 |
+| 数据与离线训练 | `starcat-collection-api/`、`starcat-recsys-trainer/` | 私有数据收集 Go 服务 + Python 离线管道；Collection 只接收快照并导出，Trainer 主动 Pull 后训练 |
 
 > 官网源码、Changelog 生成与部署统一归 `starcat-site/`，不要在主仓库另建平行站点目录。
 
@@ -29,6 +29,7 @@
 | `starcat-wiki-api` | GitHub Wiki / 文档可用性探测 + 缓存 | Starcat 的 README / Wiki 辅助入口 |
 | `starcat-recommend-api` | 相似仓库推荐 API | Starcat 仓库详情页的相关推荐 |
 | `starcat-discovery-api` | 探索发现、热门、新发布榜单 API | Starcat 的「探索」入口 |
+| `starcat-collection-api` | 静默接收匿名公开 Star 快照 | 设置中用户主动开启的推荐数据贡献旁路 |
 
 ---
 
@@ -42,6 +43,7 @@
 | `starcat-wiki-api` | 5004 | SQLite(`wiki.db`) | Wiki / 文档索引探测、SWR 缓存 | `starcat-wiki-api` | `golang.org/x/net/html` |
 | `starcat-recommend-api` | 5005 | 进程内缓存 | SimRepo 相似仓库推荐代理 | `starcat-recommend-api` | `github.com/joho/godotenv` |
 | `starcat-discovery-api` | 5006 | SQLite(`discovery.db`) | 探索发现、热门、新发布榜单 | `starcat-discovery-api` | `modernc.org/sqlite`、`robfig/cron` |
+| `starcat-collection-api` | 5011 | SQLite(`collection.db`) | 公开 Star 快照分块接收、激活与 Trainer 导出 | `starcat-collection-api`（待创建） | `starcat-api-kit`、`modernc.org/sqlite` |
 | `starcat-api-kit` | — | — | 共享 auth / envelope / CORS / tokenpool | — | 被各 API 通过版本化 Go module 引用 |
 | `starcat-api` | 8080 | `/data` 多库 | `X-SC-Svc` 优先、Host 回退，聚合 6 个业务 API（不含 license） | `starcat-api` | 依赖各 API `server` 包 |
 
@@ -51,19 +53,19 @@
 
 ## 通用技术栈
 
-- **Go 1.25.0** — 六个业务 API、`starcat-api-kit` 与 `starcat-api` 的 go.mod 统一
+- **Go 1.25.0** — 六个业务 API、独立 Collection API、`starcat-api-kit` 与 `starcat-api` 的 go.mod 统一
 - **net/http** — 标准库 HTTP 服务,无第三方框架
 - **godotenv** — `github.com/joho/godotenv`,从 `.env` 文件加载环境变量(2026-06-09 R-01 起统一,详见 §R-01 配置规范)
 - **modernc.org/sqlite** — 有状态 API 使用 SQLite(R-01 起 sharing 也改 SQLite,详见对应方案)
 - **Docker** — 多阶段构建,slim / scratch 镜像
-- **Fly.io** — 当前为 6 个业务独立 App；目标为 `starcat-api` 聚合 App，license 继续独立
+- **Fly.io** — 当前为 6 个业务独立 App；目标为 `starcat-api` 聚合 App，license 和 collection 继续独立
 - **GitHub Actions** — CI(`go vet` + `gofmt` + 编译 + 单测) + CD(fly deploy) + Release(多平台二进制 + GitHub Release),三个 workflow 串联: `go.yml` 成功 → `fly-deploy.yml` + `release.yml` 并行跑
 
 ---
 
 ## 通用项目结构(参考)
 
-六个可聚合业务 API 遵循相似的布局；license 和聚合网关按自身边界调整：
+六个可聚合业务 API 遵循相似的布局；license、collection 和聚合网关按自身边界调整：
 
 ```
 starcat-xxx-api/
@@ -242,6 +244,9 @@ R-01 起,各 API 服务**统一**使用 `github.com/joho/godotenv` 加载 `.env`
 | `SIMREPO_API_KEY` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | recommend-api 访问 SimRepo 的服务端密钥 |
 
 > 详细配置说明 + `.env.example` 模板见各 API 的 `docs/R-01-*-改造方案.md`。
+>
+> 独立 `starcat-collection-api` 另用 `PORT=5011`、`STORE_FILE`、`API_KEYS`、
+> `ADMIN_API_KEYS` 和 `PARTICIPANT_HMAC_KEY`；它不进入聚合 Gateway，两类 Bearer key 禁止复用。
 
 ---
 

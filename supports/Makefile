@@ -33,7 +33,7 @@ PREPARE_API_RESTORE := bash $(SCRIPTS)/prepare-starcat-api-restore.sh
 .PHONY: $(foreach s,$(APIS),fly-secrets-$(s) fly-deploy-$(s) fly-status-$(s))
 .PHONY: $(foreach s,$(STATEFUL_APIS),fly-wipe-data-$(s) fly-restore-$(s))
 .PHONY: $(foreach s,$(BACKUP_APIS),fly-backup-$(s))
-.PHONY: fly-backup-all
+.PHONY: fly-backup-all check-collection
 
 help: ## 显示帮助
 	@echo "supports/ Fly.io 运维命令："
@@ -66,6 +66,7 @@ help: ## 显示帮助
 	@echo "  make fly-backup-license     创建平台快照后备份 starcat-license-api（无需停机）"
 	@echo "  make fly-restore-trending   清空整个 Fly /data 后恢复本地库/备份 tar（需 LOCAL_DB 或 RESTORE_ARCHIVE）"
 	@echo "  make fly-wipe-data-all      ⚠️  SSH 清空有状态 App 的 /data 卷（删库重建）"
+	@echo "  make check-collection       本地验证独立 starcat-collection-api（不部署）"
 	@echo ""
 	@echo "  FLY_BACKUP_MACHINE_ID=<id> make fly-backup-weekly   多 Machine 时指定目标 Volume 所在实例"
 	@echo "  make fly-restore-trending LOCAL_DB=./starcat-trending-api/trending.db"
@@ -74,6 +75,9 @@ help: ## 显示帮助
 	@echo ""
 	@echo "文档：docs/fly-io-环境变量.md"
 	@echo "迁库：../docs/4-工程进度/重构专项/API聚合与Kit抽离专项/04-聚合迁库SOP.md"
+
+check-collection: ## 执行 Collection API 格式、测试、race、vet 和构建
+	$(MAKE) -C starcat-collection-api check
 
 # --- secrets：目标聚合架构 ---
 

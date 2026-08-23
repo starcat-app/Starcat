@@ -8,7 +8,7 @@
 #   ./clone-all.sh --help   显示帮助
 #
 # 支撑项目统一放在 supports/ 目录下:
-#   - 6 个 Go API 服务(starcat-*-api)
+#   - 6 个可聚合 Go API + 独立 collection/license API
 #   - starcat-pro / starcat-license-api / starcat-localization
 #   - starcat-skill / starcat-cli / starcat-alfred-workflow / starcat-utools-plugin
 #   - starcat-raycast-extension
@@ -63,11 +63,12 @@ if $SHOW_HELP; then
   echo "  --help, -h  显示此帮助"
   echo ""
   echo "支撑项目列表:"
-  echo "  6 个 Go API 服务  (starcat-*-api)"
+  echo "  6 个可聚合 Go API 服务  (starcat-*-api)"
   echo "  starcat-api-kit    Go API 共享工具包"
   echo "  starcat-api        六业务 API 聚合服务 (🔒 私有)"
   echo "  starcat-pro        公开支持与发布说明"
   echo "  starcat-license-api  Direct 分发授权 API (🔒 私有)"
+  echo "  starcat-collection-api  公开 Star 快照收集 API (🔒 私有)"
   echo "  starcat-localization  本地化资源"
   echo "  homebrew-starcat    Starcat App Homebrew Cask tap"
   echo "  starcat-skill       Starcat AI Agent Skill"
@@ -102,6 +103,7 @@ PROJECTS=(
   "starcat-docs|https://github.com/starcat-app/starcat-docs.git|Starcat 官方文档"
   "starcat-site|https://github.com/starcat-app/starcat-site.git|Starcat 官方网站源码"
   "starcat-license-api|https://github.com/starcat-app/starcat-license-api.git|Direct 分发授权 API 🔒"
+  "starcat-collection-api|https://github.com/starcat-app/starcat-collection-api.git|公开 Star 快照收集 API 🔒"
   "starcat-localization|https://github.com/starcat-app/starcat-localization.git|本地化资源"
   "homebrew-starcat|https://github.com/starcat-app/homebrew-starcat.git|Starcat App Homebrew Cask tap"
   "starcat-skill|https://github.com/starcat-app/starcat-skill.git|Starcat AI Agent Skill"

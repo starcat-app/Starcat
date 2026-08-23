@@ -8,9 +8,9 @@
 
 ---
 
-## 📦 项目清单（共 25 个）
+## 📦 项目清单（共 26 个）
 
-### Go 后端项目（9 个）
+### Go 后端项目（10 个）
 
 | 子目录 | GitHub | 端口 | 角色 |
 |--------|--------|:----:|------|
@@ -21,6 +21,7 @@
 | [`starcat-recommend-api/`](./starcat-recommend-api/) | [`starcat-app/starcat-recommend-api`](https://github.com/starcat-app/starcat-recommend-api) | 5005 | 相似仓库推荐 API |
 | [`starcat-discovery-api/`](./starcat-discovery-api/) | [`starcat-app/starcat-discovery-api`](https://github.com/starcat-app/starcat-discovery-api) | 5006 | 探索发现、热门、新发布榜单 |
 | [`starcat-license-api/`](./starcat-license-api/) | [`starcat-app/starcat-license-api`](https://github.com/starcat-app/starcat-license-api) 🔒 | 5010 | Direct 分发授权 API |
+| [`starcat-collection-api/`](./starcat-collection-api/) | `starcat-app/starcat-collection-api` 🔒（待创建） | 5011 | 静默接收匿名公开 Star 快照，向 Trainer 提供内部导出 |
 | [`starcat-api-kit/`](./starcat-api-kit/) | [`starcat-app/starcat-api-kit`](https://github.com/starcat-app/starcat-api-kit) | — | 六个业务 API 共用的 auth / envelope / GitHub / env 等基础包 |
 | [`starcat-api/`](./starcat-api/) | [`starcat-app/starcat-api`](https://github.com/starcat-app/starcat-api) 🔒 | 8080 | 私有聚合部署单元；以 `X-SC-Svc` 分流六个业务 API，不含 license |
 
@@ -57,7 +58,8 @@ Starcat App
   ├─ 六个业务 API
   │    ├─ 当前业务生产（2026-08-08）：六个独立 starcat-*-api Fly App
   │    └─ 已验证后停机保留：starcat-api.fly.dev + X-SC-Svc → 六个 server 包
-  └─ starcat-license-api（支付 / 授权边界，始终独立）
+  ├─ starcat-license-api（支付 / 授权边界，始终独立）
+  └─ starcat-collection-api（公开 Star 数据贡献边界，始终独立）
 ```
 
 客户端代码已经默认指向聚合 URL。Fly App、Volume、Secrets、首轮五库种子迁移已完成，并曾解除维护模式通过六服务 ping 与只读业务验证；验证后已重新开启维护模式、关闭请求自动唤醒并停止聚合 Machine。六个旧 App 未停用且仍持续写入；1.4.0 正式切流前必须以维护模式启动聚合服务，完成最终同步 / 写入冻结和全链路验收。
@@ -91,6 +93,8 @@ Starcat App
 
 **`starcat-license-api`（5010）🔒 私有** — Direct 分发授权：license activate / validate / deactivate，对接 Creem 支付。
 
+**`starcat-collection-api`（5011）🔒 私有** — 只接收经用户同意的匿名公开 Star 完整快照；不接入 Gateway，不包含 History、状态或删除逻辑。
+
 ---
 
 ## 🚀 快速开始
@@ -100,14 +104,14 @@ Starcat App
 ```bash
 cd supports
 
-# 首次 clone 全部 24 个远端目标
+# 首次 clone 全部 25 个远端目标
 ./clone-all.sh
 
 # 后续批量更新
 ./clone-all.sh --pull
 ```
 
-> `starcat-license-api`、`starcat-api` 与 `starcat-recsys-trainer` 是**私有**仓库，需使用具备 `starcat-app` 组织权限的 `gh auth login` 或 SSH key；`starcat-api-kit` 为公开仓库。
+> `starcat-license-api`、`starcat-collection-api`、`starcat-api` 与 `starcat-recsys-trainer` 是**私有**仓库，需使用具备 `starcat-app` 组织权限的 `gh auth login` 或 SSH key；`starcat-api-kit` 为公开仓库。
 
 ### 一次性启动全部 API
 
@@ -163,7 +167,7 @@ secrets 需要单独确认。
 
 ### 独立 git 仓库（各自管理）
 
-- 上表除 `ai-file-wall` 外的 24 个独立仓库目录
+- 上表除 `ai-file-wall` 外的 25 个独立仓库目录
 
 ### 跨机器同步（`sync-untracked.sh`）
 

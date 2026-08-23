@@ -12,7 +12,7 @@
 #
 # 前置依赖:
 #   - go (>= 1.25.0, 与各项目 go.mod 对齐)
-#   - 端口 5001 / 5002 / 5003 / 5004 / 5005 / 5006 未被占用
+#   - 端口 5001 / 5002 / 5003 / 5004 / 5005 / 5006 / 5011 未被占用
 #
 # 流程:
 #   1. 定位脚本所在目录 = supports/ 根, 校验各项目目录都在
@@ -28,6 +28,7 @@
 #   - starcat-wiki-api     : 5004  (STORE_FILE 走 main.go fallback)
 #   - starcat-recommend-api: 5005  (SIMREPO_* 走 main.go fallback / .env)
 #   - starcat-discovery-api: 5006  (STORE_FILE / SYNC_ENABLED 走 main.go fallback)
+#   - starcat-collection-api : 5011  (STORE_FILE / 三类 key 走项目 .env)
 #   每个服务的 API_KEYS / GitHub Token / Wiki Key 由各自项目根目录 `.env` 提供。
 #   start-all.sh 不再硬编码密钥，避免脚本与 `.env` 出现两套真源导致本地 401。
 #
@@ -65,6 +66,7 @@ SERVICES=(
   "starcat-wiki-api|wiki|5004|STORE_FILE ENABLE_CODEWIKI_BATCHEXECUTE=true"
   "starcat-recommend-api|recommend|5005|SIMREPO_ENDPOINT CACHE_TTL_SUCCESS_SECONDS CACHE_TTL_EMPTY_SECONDS CACHE_TTL_ERROR_SECONDS"
   "starcat-discovery-api|discovery|5006|STORE_FILE SYNC_ENABLED"
+  "starcat-collection-api|collection|5011|STORE_FILE"
 )
 
 # /healthz 健康检查超时 (秒): 启动到第一次 200 OK 之间等待
@@ -184,7 +186,7 @@ for entry in "${SERVICES[@]}"; do
     exit 1
   fi
 done
-echo -e "  ports:        ${GREEN}5001 5002 5003 5004 5005 5006 全部空闲${NC}"
+echo -e "  ports:        ${GREEN}5001 5002 5003 5004 5005 5006 5011 全部空闲${NC}"
 echo ""
 
 # =============================================================================
@@ -345,6 +347,7 @@ if [[ "$all_healthy" -eq 1 ]]; then
   IFS='|' read -r _ _ p4 e4 <<<"${SERVICES[3]}"
   IFS='|' read -r _ _ p5 e5 <<<"${SERVICES[4]}"
   IFS='|' read -r _ _ p6 e6 <<<"${SERVICES[5]}"
+  IFS='|' read -r _ _ p7 e7 <<<"${SERVICES[6]}"
 
   printf "  ${BLUE}%-9s${NC} base  ${GREEN}http://127.0.0.1:%s${NC}\n" "sharing" "$p1"
   printf "             %-5s  http://127.0.0.1:%s/api/v1/share\n"         "POST" "$p1"
@@ -392,6 +395,13 @@ if [[ "$all_healthy" -eq 1 ]]; then
   printf "             %-5s  http://127.0.0.1:%s/internal/sync/discovery\n" "POST" "$p6"
   printf "             %-5s  http://127.0.0.1:%s/healthz\n"              "GET" "$p6"
   printf "             %-5s  API Key 见 starcat-discovery-api/.env\n"  "TIP"
+  echo ""
+
+  printf "  ${BLUE}%-9s${NC} base  ${GREEN}http://127.0.0.1:%s${NC}\n" "collection" "$p7"
+  printf "             %-5s  http://127.0.0.1:%s/api/v1/recommendation-snapshots\n" "POST" "$p7"
+  printf "             %-5s  http://127.0.0.1:%s/internal/v1/training/recommendation-snapshots/export\n" "GET" "$p7"
+  printf "             %-5s  http://127.0.0.1:%s/healthz\n" "GET" "$p7"
+  printf "             %-5s  API / Admin Key 见 starcat-collection-api/.env\n" "TIP"
   echo ""
 
 
