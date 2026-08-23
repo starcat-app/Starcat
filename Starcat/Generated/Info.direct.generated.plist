@@ -37,6 +37,8 @@
 	<true/>
 	<key>STARCAT_APTABASE_APP_KEY</key>
 	<string>$(STARCAT_APTABASE_APP_KEY)</string>
+	<key>STARCAT_COLLECTION_API_BASE_URL</key>
+	<string>$(STARCAT_COLLECTION_API_BASE_URL)</string>
 	<key>STARCAT_COLLECTION_API_KEY</key>
 	<string>$(STARCAT_COLLECTION_API_KEY)</string>
 	<key>STARCAT_DISTRIBUTION</key>

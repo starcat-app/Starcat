@@ -34,6 +34,8 @@ STARCAT_PRODUCTION_API_KEY_RECOMMEND =
 STARCAT_PRODUCTION_API_KEY_DISCOVERY =
 // 独立 Collection 写入 key；不与聚合 Gateway 的内容服务 key 共用。
 STARCAT_COLLECTION_API_KEY =
+// 默认空表示 productionURL；仅本地验收或专用构建显式覆盖。
+STARCAT_COLLECTION_API_BASE_URL =
 
 // MARK: - Direct 分发授权 / 支付后端
 

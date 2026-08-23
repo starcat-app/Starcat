@@ -304,7 +304,9 @@ enum AppEndpoints {
 
         static var baseURL: URL {
 #if DEBUG
-            if let raw = ProcessInfo.processInfo.environment["STARCAT_COLLECTION_API_BASE_URL"],
+            if let raw = Bundle.main.infoDictionary?["STARCAT_COLLECTION_API_BASE_URL"] as? String,
+               !raw.isEmpty,
+               !raw.hasPrefix("$("),
                let url = URL(string: raw), url.scheme != nil {
                 return url
             }
