@@ -63,6 +63,14 @@ PROJECTS = [
         "Official open-source website for Starcat, including Direct and Mac App Store landing pages, the product blog, release notes, and public legal pages.",
     ),
     Project(
+        Path("supports/starcat-admin-console"),
+        "Starcat Admin Console",
+        "admin-console",
+        "Starcat 管理控制台",
+        "这是 Starcat 配套服务、数据工作流、精选发布与 Awesome 来源管理的本地优先运营控制台。",
+        "Local-first operations console for Starcat services, data workflows, curated publishing, and Awesome source management.",
+    ),
+    Project(
         Path("supports/homebrew-starcat"),
         "Homebrew Starcat",
         "homebrew",

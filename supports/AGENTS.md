@@ -1,6 +1,6 @@
 # supports/AGENTS.md — Starcat 配套项目工作区
 
-> 本目录包含 Starcat 的后端 Go 服务、官网、用户文档、CLI、插件、Homebrew tap 等独立配套项目。
+> 本目录包含 Starcat 的后端 Go 服务、官网、管理控制台、用户文档、CLI、插件、Homebrew tap 等独立配套项目。
 > 本文档给所有 AI 协作者(Claude / Cursor / Gemini CLI 等)阅读，重点记录 Go API 通用约定，并说明其它独立仓库的边界。
 
 ---
@@ -11,7 +11,8 @@
 
 | 项目类型 | 目录 | 说明 |
 |----------|------|------|
-| 官网 | `starcat-site/` | Direct、Direct Test、App Store 官网与本地运营控制台的源码单一来源 |
+| 官网 | `starcat-site/` | Direct、Direct Test、App Store 官网源码；旧 `_local-admin` 只保留到新控制台验收 |
+| 管理控制台 | `starcat-admin-console/` | React + shadcn/ui 本地运营控制台；远程部署属于第二阶段 |
 | 用户文档 | `starcat-docs/` | Mintlify 官方使用文档 |
 | 公开支持 | `starcat-pro/` | Issue、公开发布说明与营销图片源 |
 | 工具与集成 | `starcat-cli/`、`starcat-skill/`、`extensions/` | CLI/MCP、AI Agent Skill 与浏览器插件 |
@@ -19,7 +20,8 @@
 | 后端 API | `starcat-*-api/`、`starcat-api-kit/`、`starcat-api/` | 六个业务服务、共享 kit、聚合网关与独立 license；Fly.io 规则只适用于可部署服务 |
 | 数据与离线训练 | `starcat-recsys-trainer/` | 私有 Python 项目；推荐数据采集、标准化、离线训练、评估和 ServingBundle 发布 |
 
-> 官网源码、Changelog 生成与部署统一归 `starcat-site/`，不要在主仓库另建平行站点目录。
+> 官网源码、Changelog 生成与部署统一归 `starcat-site/`；服务运营控制台独立归
+> `starcat-admin-console/`，不要再扩展 `starcat-site/_local-admin`。
 
 | 子项目 | 用途 | 客户端哪里用 |
 |--------|------|--------------|

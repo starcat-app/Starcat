@@ -41,7 +41,7 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 
 ---
 
-## 独立仓库目录（24 个）
+## 独立仓库目录（25 个）
 
 以下目录各自是**独立的 git 仓库**，有自己的 GitHub remote、CI/CD 和版本号：
 
@@ -71,13 +71,14 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 | 22 | `extensions/starcat-chrome-plugin/` | `starcat-app/starcat-chrome-plugin` |
 | 23 | `extensions/starcat-safari-plugin/` | `starcat-app/starcat-safari-plugin` |
 | 24 | `starcat-recsys-trainer/` | `starcat-app/starcat-recsys-trainer` 🔒 私有 |
+| 25 | `starcat-admin-console/` | `starcat-app/starcat-admin-console` |
 
 ### 一键拉取所有独立仓库
 
 ```bash
 cd supports
 
-# 首次 clone 全部 24 个远端目标
+# 首次 clone 全部 25 个远端目标
 ./clone-all.sh
 
 # 后续更新全部
@@ -168,6 +169,7 @@ make sync-fly-secrets
 
 | 日期 | 决策 | 原因 |
 |------|------|------|
+| 2026-08-24 | GitHub 独立仓库从 24 个扩展到 25 个 | 新增 `starcat-admin-console`，独立承担本地服务运营、精选发布与 Awesome 来源管理 |
 | 2026-08-23 | GitHub 独立仓库从 23 个扩展到 24 个 | 新增私有 `starcat-recsys-trainer`，独立承担推荐数据与离线训练管道 |
 | 2026-07-30 | GitHub 独立仓库从 20 个扩展到 21 个 | 新增 `starcat-raycast-extension`，独立维护 Raycast 搜索适配、测试与开源治理 |
 | 2026-07-29 | GitHub 独立仓库从 19 个扩展到 20 个 | 新增 `starcat-utools-plugin`，独立维护 uTools 搜索适配、测试与开源治理 |
