@@ -31,7 +31,8 @@ struct DatabaseMigrationsV1Tests {
             "agent_runs", "agent_messages", "agent_approvals", "agent_artifacts",
             "rag_chunks", "rag_chunks_fts", "rag_conversation_groups",
             "rag_conversations", "rag_messages", "rag_message_citations",
-            "rag_message_remote_contexts", "rag_metadata_revision"
+            "rag_message_remote_contexts", "rag_metadata_revision",
+            "data_contribution_preferences", "data_contribution_outbox"
         ]
         try db.read { db in
             for table in expectedTables {
@@ -119,6 +120,29 @@ struct DatabaseMigrationsV1Tests {
             #expect(applied.contains("v21-github-issue-labels"))
             let columns = try db.columns(in: "github_notification_threads").map(\.name)
             #expect(columns.contains("labels_json"))
+        }
+    }
+
+    @Test("v22 应创建账户级数据贡献设置与单槽 Outbox")
+    func dataContributionMigration() throws {
+        let writer = try makeDB()
+        try writer.read { db in
+            var migrator = DatabaseMigrator()
+            DatabaseMigrations.registerAll(into: &migrator)
+            let applied = try migrator.appliedIdentifiers(db)
+            #expect(applied.contains("v22-data-contribution"))
+            #expect(try db.tableExists("data_contribution_preferences"))
+            #expect(try db.tableExists("data_contribution_outbox"))
+
+            let preferenceColumns = try db.columns(in: "data_contribution_preferences").map(\.name)
+            #expect(preferenceColumns == ["account_id", "is_enabled", "participant_id", "updated_at"])
+
+            let outboxColumns = try db.columns(in: "data_contribution_outbox").map(\.name)
+            #expect(outboxColumns == [
+                "id", "account_id", "participant_id", "schema_version", "payload",
+                "content_hash", "state", "attempt_count", "next_attempt_at",
+                "created_at", "updated_at"
+            ])
         }
     }
 

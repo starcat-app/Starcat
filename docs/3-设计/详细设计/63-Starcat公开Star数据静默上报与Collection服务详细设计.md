@@ -203,6 +203,13 @@ Authorization: Bearer <Starcat Collection API key>
 正式版数据库追加 `registerV22`，禁止修改既有 migration：
 
 ```sql
+CREATE TABLE data_contribution_preferences (
+  account_id TEXT PRIMARY KEY NOT NULL,
+  is_enabled BOOLEAN NOT NULL DEFAULT 0,
+  participant_id TEXT,
+  updated_at DATETIME NOT NULL
+);
+
 CREATE TABLE data_contribution_outbox (
   id TEXT PRIMARY KEY NOT NULL,
   account_id TEXT NOT NULL,
@@ -218,6 +225,8 @@ CREATE TABLE data_contribution_outbox (
   UNIQUE(account_id)
 );
 ```
+
+设置与 Outbox 都位于当前 GitHub 账户的独立数据库中；`account_id` 仍作为异步切库边界的防串号校验。关闭开关只清空未发送 Outbox，不删除 `participant_id`。
 
 每个账户最多保留一个未完成任务。新完整快照使用事务替换旧任务，不累计历史队列。
 

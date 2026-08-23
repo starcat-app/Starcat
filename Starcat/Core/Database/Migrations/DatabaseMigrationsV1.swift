@@ -38,7 +38,8 @@
 //    `v12-rag-metadata-revision` / `v13-weekly-multi-source` /
 //    `v14-ai-usage-events` / `v15-repo-pins` / `v16-repository-insights` /
 //    `v17-my-projects` / `v18-rag-structured-citations` / `v19-release-1.4.0` /
-//    `v20-agent-runtime-trace` / `v21-github-issue-labels`
+//    `v20-agent-runtime-trace` / `v21-github-issue-labels` /
+//    `v22-data-contribution`
 //
 //  **1.4.0 开发期迁移（已由正式 v19 合并接管）**：
 //  `v19-agent-message-contract` 至 `v26-github-timeline-conversations` 仅在开发构建中出现过。
@@ -93,6 +94,42 @@ enum DatabaseMigrations {
         registerV19(into: &migrator)
         registerV20(into: &migrator)
         registerV21(into: &migrator)
+        registerV22(into: &migrator)
+    }
+
+    // MARK: - v22-data-contribution：公开 Star 数据贡献（2026-08-23）
+
+    /// 数据贡献是完全旁路能力：设置和待上传任务都跟随当前用户数据库隔离，
+    /// 不复用 AppSettings，避免切换 GitHub 账号时把一个账号的授权带给另一个账号。
+    /// `participant_id` 在关闭开关时保留；未发送的 Outbox 会由 Repository 同事务清空。
+    private static func registerV22(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v22-data-contribution") { db in
+            try db.create(table: "data_contribution_preferences") { table in
+                table.column("account_id", .text).primaryKey()
+                table.column("is_enabled", .boolean).notNull().defaults(to: false)
+                table.column("participant_id", .text)
+                table.column("updated_at", .text).notNull()
+            }
+
+            try db.create(table: "data_contribution_outbox") { table in
+                table.column("id", .text).primaryKey()
+                table.column("account_id", .text).notNull().unique()
+                table.column("participant_id", .text).notNull()
+                table.column("schema_version", .integer).notNull()
+                table.column("payload", .blob).notNull()
+                table.column("content_hash", .text).notNull()
+                table.column("state", .text).notNull()
+                table.column("attempt_count", .integer).notNull().defaults(to: 0)
+                table.column("next_attempt_at", .text)
+                table.column("created_at", .text).notNull()
+                table.column("updated_at", .text).notNull()
+            }
+            try db.create(
+                index: "idx_data_contribution_outbox_due",
+                on: "data_contribution_outbox",
+                columns: ["state", "next_attempt_at"]
+            )
+        }
     }
 
     // MARK: - v21-github-issue-labels：Issue / PR 标签缓存（2026-08-22）
