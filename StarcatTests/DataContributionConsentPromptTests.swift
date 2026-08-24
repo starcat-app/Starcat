@@ -2,7 +2,7 @@
 //  DataContributionConsentPromptTests.swift
 //  StarcatTests
 //
-//  验证 1.5.0 数据贡献提示的版本、账户隔离与 UI 冲突门控。
+//  验证 1.4.0 数据贡献提示的版本、账户隔离与 UI 冲突门控。
 //
 
 import Foundation
@@ -11,16 +11,16 @@ import Testing
 
 @Suite("Data Contribution Consent Prompt")
 struct DataContributionConsentPromptTests {
-    @Test("1.5.0 之前不提示，1.5.0 及以后允许提示")
+    @Test("1.4.0 之前不提示，1.4.0 及以后允许提示")
     func gatesByAppVersion() throws {
         let testDefaults = try makeDefaults()
         defer { clear(testDefaults) }
         let defaults = testDefaults.defaults
 
-        let beforeLaunch = makePreferences(defaults: defaults, version: "1.4.9")
+        let beforeLaunch = makePreferences(defaults: defaults, version: "1.3.9")
         #expect(!shouldPresent(beforeLaunch))
 
-        let launchVersion = makePreferences(defaults: defaults, version: "1.5.0")
+        let launchVersion = makePreferences(defaults: defaults, version: "1.4.0")
         #expect(shouldPresent(launchVersion))
 
         let laterVersion = makePreferences(defaults: defaults, version: "1.6.0")
@@ -35,7 +35,7 @@ struct DataContributionConsentPromptTests {
         let testDefaults = try makeDefaults()
         defer { clear(testDefaults) }
         let defaults = testDefaults.defaults
-        let preferences = makePreferences(defaults: defaults, version: "1.5.0")
+        let preferences = makePreferences(defaults: defaults, version: "1.4.0")
 
         #expect(!shouldPresent(preferences, authenticatedAccountID: nil))
         #expect(!shouldPresent(preferences, databaseAccountID: 99))
@@ -49,7 +49,7 @@ struct DataContributionConsentPromptTests {
         let testDefaults = try makeDefaults()
         defer { clear(testDefaults) }
         let defaults = testDefaults.defaults
-        let preferences = makePreferences(defaults: defaults, version: "1.5.0")
+        let preferences = makePreferences(defaults: defaults, version: "1.4.0")
 
         #expect(shouldPresent(preferences, authenticatedAccountID: 42, databaseAccountID: 42))
         preferences.markHandled(accountID: 42)

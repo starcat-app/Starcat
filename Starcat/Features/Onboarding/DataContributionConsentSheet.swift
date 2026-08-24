@@ -2,22 +2,22 @@
 //  DataContributionConsentSheet.swift
 //  Starcat
 //
-//  1.5.0 起的数据贡献一次性授权提示。这里只解释授权边界并写入现有账户级开关，
+//  1.4.0 起的数据贡献一次性授权提示。这里只解释授权边界并写入现有账户级开关，
 //  不参与快照构造、上传或重试，确保提示层不会改变旁路上报的可靠性语义。
 //
 
 import Foundation
 import SwiftUI
 
-/// 记录 1.5.0 数据贡献提示是否已由某个 GitHub 账户处理，并集中判断展示条件。
+/// 记录 1.4.0 数据贡献提示是否已由某个 GitHub 账户处理，并集中判断展示条件。
 ///
 /// 使用 UserDefaults 而不是数据库迁移：该状态只是一次性 UI campaign 标记，不是业务授权真值；
 /// 真正的授权仍由 `DataContributionSettingsModel` 写入账户数据库。这样老用户升级时无需改 schema，
 /// 多账户又不会互相吞掉提示。
 struct DataContributionConsentPromptPreferences {
-    static let minimumAppVersion = "1.5.0"
+    static let minimumAppVersion = "1.4.0"
 
-    private static let campaignIdentifier = "v1_5_0"
+    private static let campaignIdentifier = "v1_4_0"
     private let defaults: UserDefaults
     private let appVersionProvider: () -> String
 
@@ -31,7 +31,7 @@ struct DataContributionConsentPromptPreferences {
         self.appVersionProvider = appVersionProvider
     }
 
-    /// 只有 1.5.0 及以后、登录账户与当前数据库一致、没有其他启动/登录覆盖层时才提示。
+    /// 只有 1.4.0 及以后、登录账户与当前数据库一致、没有其他启动/登录覆盖层时才提示。
     ///
     /// `isContributionEnabled` 也参与判断，避免已经主动开启贡献的用户再次被打扰。
     func shouldPresent(

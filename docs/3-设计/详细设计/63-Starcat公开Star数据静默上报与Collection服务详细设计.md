@@ -20,7 +20,7 @@
 ### 2.1 本轮范围
 
 - Starcat 设置页提供一个默认关闭的公开 Star 数据贡献 Toggle。
-- Starcat 1.5.0 及以后为每个已登录 GitHub 账户展示一次默认关闭的贡献授权 Sheet。
+- Starcat 1.4.0 及以后为每个已登录 GitHub 账户展示一次默认关闭的贡献授权 Sheet。
 - 每个 GitHub 账户使用独立随机 `participant_id` 和独立 Outbox。
 - 完整同步成功后构造 `mode=full` 的公开 Star 快照。
 - 独立 `starcat-collection-api` 提供分块写入和内部训练导出。
@@ -77,13 +77,13 @@ Starcat 不等待 C～F 中任何一步。训练服务主动 Pull，Collection �
 - 不提供手动重试、立即上传、删除已上传数据等按钮。
 - 关闭后立即停止新建和发送任务，并清除当前账户未完成的 Outbox；服务端已接收快照保持不变。
 
-### 4.2 1.5.0 一次性授权提示
+### 4.2 1.4.0 一次性授权提示
 
-从 Starcat 1.5.0 起，在启动 splash 和既有首次引导全部退出后，为当前已登录 GitHub 账户展示一次原生 Sheet。提示状态按账户保存在 `UserDefaults`，它只是 UI campaign 标记，不替代账户数据库中的授权真值，因此不新增数据库 migration。
+从 Starcat 1.4.0 起，在启动 splash 和既有首次引导全部退出后，为当前已登录 GitHub 账户展示一次原生 Sheet。提示状态按账户保存在 `UserDefaults`，它只是 UI campaign 标记，不替代账户数据库中的授权真值，因此不新增数据库 migration。
 
 展示门控：
 
-- 当前营销版本必须大于等于 `1.5.0`。
+- 当前营销版本必须大于等于 `1.4.0`。
 - `AuthSession` 的登录账户必须与已切换完成的用户数据库一致；缓存账户先恢复但数据库尚未切换时不得展示。
 - 未登录时延后且不消费提示；登录成功、数据库切换完成后再判断。
 - splash、首次引导或登录 Sheet 正在展示时不得叠加；退出后延迟 400ms 再判断。
