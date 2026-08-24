@@ -596,6 +596,10 @@ private struct StarcatAppCommands: Commands {
                 openExternal(AppWebsiteLinks.current.privacy)
             }
 
+            Button("commands.help.viewOnGitHub") {
+                openExternal(AppWebsiteLinks.sourceRepository)
+            }
+
             Divider()
 
             Button("commands.help.releaseNotes") {

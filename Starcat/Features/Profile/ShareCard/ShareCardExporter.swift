@@ -49,7 +49,8 @@ struct ShareCardPNGMetadata {
     static let description = """
         Created with Starcat — a native, local-first macOS app that turns GitHub Stars into a searchable AI knowledge base.
         """
-    static let source = "https://starcat.ink"
+    static let website = "https://starcat.ink"
+    static let source = AppWebsiteLinks.sourceRepository.absoluteString
     static let xmpNamespace = "https://starcat.ink/ns/share-card/1.0/"
 
     let software: String
@@ -79,7 +80,8 @@ struct ShareCardPNGMetadata {
             "generator": "Starcat",
             "locale": localeIdentifier,
             "schema": "starcat.share-card.v1",
-            "website": Self.source
+            "sourceRepository": Self.source,
+            "website": Self.website
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]) else {
             return nil
@@ -196,7 +198,8 @@ enum ShareCardExporter {
         // X.com Web Intent：query 里只能带 text，图片必须用户手动粘贴（X 无公开图片直传接口）
         // text 跟随 LocaleStore 决定中英文模板（中文用户看到中文推文）；
         // 不带 url 参数避免 X 自动展开为卡片链接遮住用户的图
-        let text = String.l10n("sharecard.shareToX.tweetText")
+        // 分享正文始终带开源仓库链接；图片本身已经有弱品牌角标，不再额外堆营销文案。
+        let text = "\(String.l10n("sharecard.shareToX.tweetText"))\n\n\(AppWebsiteLinks.sourceRepository.absoluteString)"
         var components = URLComponents(string: "https://x.com/intent/post")
         components?.queryItems = [URLQueryItem(name: "text", value: text)]
 

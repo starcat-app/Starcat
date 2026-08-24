@@ -772,7 +772,14 @@ struct RepositoryInsightsView: View {
             systemImage: "star.fill",
             iconColor: .yellow,
             chrome: .emphasized,
-            headerTrailing: { starDataSourceBadge }
+            headerTrailing: {
+                HStack(spacing: 6) {
+                    starDataSourceBadge
+                    GrowthShareCopyButton {
+                        starHistoryShareText
+                    }
+                }
+            }
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 ViewThatFits(in: .horizontal) {
@@ -840,6 +847,26 @@ struct RepositoryInsightsView: View {
                 }
             }
         }
+    }
+
+    /// Star 历史分享只带当前图表范围的公开统计，不外带任何用户私有数据。
+    private var starHistoryShareText: String {
+        var details: [String] = []
+        if let currentStars = displayedStarPoints.last?.count {
+            details.append("Current stars: \(currentStars.formatted(.number.locale(locale)))")
+        }
+        if let first = displayedStarPoints.first,
+           let latest = displayedStarPoints.last,
+           first.id != latest.id {
+            let change = latest.count - first.count
+            let formatted = abs(change).formatted(.number.locale(locale))
+            details.append("Visible change: \(change >= 0 ? "+" : "−")\(formatted)")
+        }
+        return GrowthAttribution.repositoryShareText(
+            title: "Star history for \(repo.fullName)",
+            details: details,
+            repo: repo
+        )
     }
 
     /// 首次拉取尚未落点时，用骨架占位；不再留空白或叠空态。

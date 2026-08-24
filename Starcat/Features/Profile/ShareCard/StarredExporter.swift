@@ -48,13 +48,18 @@ enum StarredExporter {
         user: GitHubUserDTO,
         format: StarredExportFormat,
         scope: RepositoryExportScope = .starred,
+        includeAttribution: Bool = true,
         dependencies: AppDependencies? = nil
     ) async -> URL? {
         // 1. 渲染
         let body: String
         switch (scope, format) {
         case (.starred, .markdown):
-            body = StarredMarkdownRenderer.render(repos: repos, user: user)
+            body = StarredMarkdownRenderer.render(
+                repos: repos,
+                user: user,
+                includeAttribution: includeAttribution
+            )
         case (.starred, .html):
             let supplements: StarredHTMLRenderer.ExportSupplements
             if let dependencies {
@@ -65,7 +70,8 @@ enum StarredExporter {
             body = StarredHTMLRenderer.render(
                 repos: repos,
                 user: user,
-                supplements: supplements
+                supplements: supplements,
+                includeAttribution: includeAttribution
             )
         case (.library, .markdown):
             let supplements: LibraryExportSupplements
@@ -74,7 +80,12 @@ enum StarredExporter {
             } else {
                 supplements = .empty
             }
-            body = LibraryMarkdownRenderer.render(repos: repos, user: user, supplements: supplements)
+            body = LibraryMarkdownRenderer.render(
+                repos: repos,
+                user: user,
+                supplements: supplements,
+                includeAttribution: includeAttribution
+            )
         case (.library, .html):
             let supplements: LibraryExportSupplements
             if let dependencies {
@@ -82,7 +93,12 @@ enum StarredExporter {
             } else {
                 supplements = .empty
             }
-            body = LibraryHTMLRenderer.render(repos: repos, user: user, supplements: supplements)
+            body = LibraryHTMLRenderer.render(
+                repos: repos,
+                user: user,
+                supplements: supplements,
+                includeAttribution: includeAttribution
+            )
         }
 
         guard !body.isEmpty else {

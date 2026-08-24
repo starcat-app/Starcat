@@ -83,7 +83,8 @@ enum StarredHTMLRenderer {
         repos: [Repo],
         user: GitHubUserDTO,
         exportedAt: Date = Date(),
-        supplements: ExportSupplements = .empty
+        supplements: ExportSupplements = .empty,
+        includeAttribution: Bool = true
     ) -> String {
         let dataJSON = encodeData(repos: repos, user: user, exportedAt: exportedAt, supplements: supplements)
         let heroHTML = buildHero(repos: repos, user: user, exportedAt: exportedAt, supplements: supplements)
@@ -97,7 +98,7 @@ enum StarredHTMLRenderer {
             \(heroHTML)
             \(buildToolbar())
             \(buildMain())
-            \(buildFooter())
+            \(buildFooter(includeAttribution: includeAttribution))
           </div>
 
           \(buildAISummaryModal())
@@ -218,7 +219,7 @@ enum StarredHTMLRenderer {
 
             <p class="hero-meta">
               Exported on <time datetime="\(exportedISO)">\(exportedISO)</time>
-              by <a href="\(starcatWebsiteURL)" target="_blank" rel="noopener">Starcat</a>
+              with Starcat
               — a native macOS app to manage your GitHub stars.
             </p>
           </div>
@@ -324,11 +325,12 @@ enum StarredHTMLRenderer {
 
     // MARK: - Footer
 
-    private static func buildFooter() -> String {
+    private static func buildFooter(includeAttribution: Bool) -> String {
+        guard includeAttribution else { return "" }
         return """
         <footer class="footer">
-          Crafted with <a href="\(starcatWebsiteURL)" target="_blank" rel="noopener">Starcat</a>
-          · Single-file export · Works fully offline · No tracking
+          Made with <a href="\(AppWebsiteLinks.sourceRepository.absoluteString)" target="_blank" rel="noopener">Starcat</a>
+          · Open source on GitHub · Works fully offline · No tracking
         </footer>
         """
     }

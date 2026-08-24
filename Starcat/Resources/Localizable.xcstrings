@@ -6506,6 +6506,38 @@
         }
       }
     },
+    "about.support.openSource.detail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View the source code and star the project on GitHub."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 GitHub 查看源码并为 Starcat 点 Star。"
+          }
+        }
+      }
+    },
+    "about.support.openSource.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat is open source"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat 已开源"
+          }
+        }
+      }
+    },
     "about.support.rate.action" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -96740,6 +96772,22 @@
         }
       }
     },
+    "commands.help.viewOnGitHub" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View on GitHub"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 GitHub 查看"
+          }
+        }
+      }
+    },
     "common.cancel" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -125757,6 +125805,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "群組已更新"
+          }
+        }
+      }
+    },
+    "growth.share.copy" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy share summary"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制分享摘要"
           }
         }
       }
@@ -394137,6 +394201,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "個人資料"
+          }
+        }
+      }
+    },
+    "sharecard.export.includeAttribution" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Include Starcat GitHub link"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "包含 Starcat GitHub 链接"
           }
         }
       }

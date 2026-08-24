@@ -321,8 +321,14 @@ private struct SupportPage: View {
                     title: "about.support.issues.title",
                     detail: "about.support.issues.detail",
                     systemImage: "exclamationmark.bubble",
-                    // 源码仓库保持私有，用户反馈统一进入公开的支持仓库。
+                    // 用户反馈仍统一进入支持仓库，避免把产品支持请求混入源码 Issue。
                     url: URL(string: "https://github.com/starcat-app/starcat-pro/issues")
+                )
+                SupportRow(
+                    title: "about.support.openSource.title",
+                    detail: "about.support.openSource.detail",
+                    systemImage: "chevron.left.forwardslash.chevron.right",
+                    url: AppWebsiteLinks.sourceRepository
                 )
                 SupportRow(
                     title: "about.support.website.title",

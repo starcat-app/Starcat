@@ -9,7 +9,7 @@
 //  - 版式选择 + 配色选择（先选结构，再选颜色）
 //  - 卡片预览区（实时跟随主题切换）
 //  - 三个动作按钮：保存为图片 / 分享到 X / 关闭
-//  - 底部品牌注脚（"由 Starcat 生成"，域名跟随当前分发渠道）
+//  - 卡片右下角弱品牌注脚（Starcat · Open source）
 //
 //  设计权衡：
 //  - 把"主题选择 + 预览 + 动作"放在 sheet 而不是 popover：
@@ -60,6 +60,9 @@ struct ShareCardSheet: View {
 
     /// 当前选中的卡片配色。原编号 1-5 的主题现在都是 magazine 版式下的颜色。
     @State private var selectedColor: ShareCardColorSet = .githubGreen
+
+    /// 导出增长归因默认开启，但用户可在菜单内临时关闭；不持久化，避免形成隐蔽偏好。
+    @State private var includeExportAttribution = true
 
     /// 最近一次操作的反馈文案（"已保存到 …" / "已复制到剪贴板…"）。
     /// 不弹系统 alert，仅在 sheet 内顶部 toast-like 提示，3 秒后自动隐藏。
@@ -712,6 +715,12 @@ struct ShareCardSheet: View {
             } label: {
                 Label("sharecard.action.export.library.markdown", systemImage: "heart")
             }
+
+            Divider()
+
+            Toggle(isOn: $includeExportAttribution) {
+                Label("sharecard.export.includeAttribution", systemImage: "link")
+            }
         } label: {
             ZStack {
                 RoundedRectangle(cornerRadius: actionButtonCornerRadius)
@@ -940,6 +949,7 @@ struct ShareCardSheet: View {
             user: user,
             format: format,
             scope: scope,
+            includeAttribution: includeExportAttribution,
             dependencies: dependencies
         ) {
             showFeedback(String(format: String.l10n("sharecard.feedback.exported"), url.lastPathComponent))

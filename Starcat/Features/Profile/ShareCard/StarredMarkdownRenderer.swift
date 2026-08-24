@@ -35,13 +35,21 @@ enum StarredMarkdownRenderer {
     ///   - user: 当前登录用户，用于文档顶部 hero 段。
     ///   - exportedAt: 导出时间戳，注入便于测试；默认 `Date()`。
     /// - Returns: 完整的 Markdown 文档字符串（UTF-8 友好，已包含末尾换行）。
-    static func render(repos: [Repo], user: GitHubUserDTO, exportedAt: Date = Date()) -> String {
+    static func render(
+        repos: [Repo],
+        user: GitHubUserDTO,
+        exportedAt: Date = Date(),
+        includeAttribution: Bool = true
+    ) -> String {
         var out: [String] = []
 
         out.append(buildHeader(repos: repos, user: user, exportedAt: exportedAt))
         out.append(buildOverview(repos: repos))
         out.append(buildLanguageTOC(repos: repos))
         out.append(buildLanguageSections(repos: repos))
+        if includeAttribution {
+            out.append(attributionFooter)
+        }
 
         return out.joined(separator: "\n\n") + "\n"
     }
@@ -90,13 +98,17 @@ enum StarredMarkdownRenderer {
         let dateFormatter = ISO8601DateFormatter()
         dateFormatter.formatOptions = [.withInternetDateTime]
         let exportedISO = dateFormatter.string(from: exportedAt)
-        // 导出内容可能被公开分享，因此链接到公开官网，不暴露无法访问的 Private 源码仓库。
-        lines.append("_Exported on `\(exportedISO)` by [Starcat](https://starcat.ink) — a native macOS app to manage your GitHub stars._")
+        lines.append("_Exported on `\(exportedISO)` with Starcat — a native macOS app to manage your GitHub stars._")
 
         lines.append("")
         lines.append("---")
 
         return lines.joined(separator: "\n")
+    }
+
+    /// 用户可在导出菜单关闭的增长归因；正文仍保持完整、可独立阅读。
+    private static var attributionFooter: String {
+        "---\n\nMade with [Starcat](\(AppWebsiteLinks.sourceRepository.absoluteString)) · Open source on GitHub"
     }
 
     // MARK: - Overview（统计摘要表）

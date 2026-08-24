@@ -128,12 +128,33 @@ struct RepoHealthSheet: View {
             }
             .accessibilityLabel(isRefreshing ? "repoHealth.action.refreshing" : "repoHealth.action.refresh")
 
+            GrowthShareCopyButton {
+                repoHealthShareText
+            }
+
             SheetCloseButton {
                 dismiss()
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
+    }
+
+    /// 只分享评分摘要和公开链接，不携带本地标签、笔记或缓存明细。
+    private var repoHealthShareText: String {
+        let details: [String]
+        if let snapshot {
+            details = [
+                "Score: \(Int(snapshot.overallScore.rounded()))/100 · Grade \(snapshot.grade)"
+            ]
+        } else {
+            details = []
+        }
+        return GrowthAttribution.repositoryShareText(
+            title: "Repo Health for \(repo.fullName)",
+            details: details,
+            repo: repo
+        )
     }
 
     @ViewBuilder

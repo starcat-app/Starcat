@@ -13,6 +13,9 @@ import Foundation
 /// App Store build 只指向 `dong4j.app` 下的合规页面；Direct build 继续指向
 /// `starcat.ink`，用于官网、DMG、Sparkle 和外部支付相关说明。
 struct AppWebsiteLinks: Sendable {
+    /// Starcat 开源仓库与分发渠道无关；增长归因、帮助菜单和 About 必须共用这一入口。
+    static let sourceRepository = URL(string: "https://github.com/starcat-app/Starcat")!
+
     let home: URL
     let support: URL
     let privacy: URL

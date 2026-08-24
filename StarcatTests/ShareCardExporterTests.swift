@@ -69,6 +69,7 @@ struct ShareCardExporterTests {
         #expect(payload["generator"] == "Starcat")
         #expect(payload["contentType"] == "github-stars-profile-share-card")
         #expect(payload["website"] == "https://starcat.ink")
+        #expect(payload["sourceRepository"] == AppWebsiteLinks.sourceRepository.absoluteString)
         #expect(payload["locale"] == "zh-Hans")
     }
 

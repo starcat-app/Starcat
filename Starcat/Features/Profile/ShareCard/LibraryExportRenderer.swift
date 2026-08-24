@@ -49,12 +49,16 @@ enum LibraryMarkdownRenderer {
         repos: [Repo],
         user: GitHubUserDTO,
         exportedAt: Date = Date(),
-        supplements: LibraryExportSupplements = .empty
+        supplements: LibraryExportSupplements = .empty,
+        includeAttribution: Bool = true
     ) -> String {
         var out: [String] = []
         out.append(buildHeader(repos: repos, user: user, exportedAt: exportedAt))
         out.append(buildOverview(repos: repos, supplements: supplements))
         out.append(buildRepoEntries(repos: repos, supplements: supplements))
+        if includeAttribution {
+            out.append(attributionFooter)
+        }
         return out.joined(separator: "\n\n") + "\n"
     }
 
@@ -69,10 +73,15 @@ enum LibraryMarkdownRenderer {
 
         **[@\(escape(user.login))](\(user.htmlUrl ?? "https://github.com/\(user.login)"))** · \(escape(displayName)) · **\(repos.count)** repos
 
-        _Exported on `\(exportedISO)` by [Starcat](\(AppWebsiteLinks.current.home.absoluteString)). This file represents your private Starcat library, not your GitHub Starred list._
+        _Exported on `\(exportedISO)` with Starcat. This file represents your private Starcat library, not your GitHub Starred list._
 
         ---
         """
+    }
+
+    /// 默认附带、可由导出菜单关闭的开源归因。
+    private static var attributionFooter: String {
+        "---\n\nMade with [Starcat](\(AppWebsiteLinks.sourceRepository.absoluteString)) · Open source on GitHub"
     }
 
     private static func buildOverview(repos: [Repo], supplements: LibraryExportSupplements) -> String {
@@ -217,7 +226,8 @@ enum LibraryHTMLRenderer {
         repos: [Repo],
         user: GitHubUserDTO,
         exportedAt: Date = Date(),
-        supplements: LibraryExportSupplements = .empty
+        supplements: LibraryExportSupplements = .empty,
+        includeAttribution: Bool = true
     ) -> String {
         let displayName = nonEmpty(user.name) ?? user.login
         let title = "\(htmlEscape(displayName))'s Starcat Library"
@@ -236,9 +246,20 @@ enum LibraryHTMLRenderer {
             \(hero(repos: repos, user: user, exportedAt: exportedAt, supplements: supplements))
             \(overview(repos: repos, supplements: supplements))
             \(repoGrid(repos: repos, supplements: supplements))
+            \(attributionFooter(includeAttribution: includeAttribution))
           </main>
         </body>
         </html>
+        """
+    }
+
+    private static func attributionFooter(includeAttribution: Bool) -> String {
+        guard includeAttribution else { return "" }
+        return """
+        <footer class="attribution">
+          Made with <a href="\(AppWebsiteLinks.sourceRepository.absoluteString)" target="_blank" rel="noopener">Starcat</a>
+          · Open source on GitHub
+        </footer>
         """
     }
 
@@ -608,6 +629,8 @@ enum LibraryHTMLRenderer {
         .markdown-body pre code { padding: 0; border-radius: 0; background: transparent; }
         .markdown-body hr { border: 0; border-top: 1px solid rgba(255,255,255,.08); margin: 12px 0; }
         .muted { color: #8b949e; font-size: 12px; }
+        .attribution { margin-top: 22px; color: #8b949e; font-size: 12px; text-align: center; }
+        .attribution a { color: #58a6ff; text-decoration: none; }
         @media (max-width: 760px) { .shell { width: min(100vw - 28px, 1120px); padding-top: 24px; } .hero { align-items: flex-start; } h1 { font-size: 28px; } .overview { grid-template-columns: 1fr; } .wide { grid-column: auto; } .facts { grid-template-columns: 1fr; } }
         """
     }

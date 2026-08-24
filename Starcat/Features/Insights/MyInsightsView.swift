@@ -243,9 +243,49 @@ struct MyInsightsView: View {
             ) {
                 refresh()
             }
+
+            if canShareTechnologySummary {
+                GrowthShareCopyButton {
+                    technologyShareText
+                }
+            }
         }
         // 分段控件比 panelTitle 略高，轻微下移与标题文字视觉对齐。
         .padding(.top, 1)
+    }
+
+    /// 技术栈相关筛选才展示分享入口；其它洞察可能包含个人整理状态，不参与增长归因。
+    private var canShareTechnologySummary: Bool {
+        switch selection {
+        case .technologySummary, .languages, .topics, .licenses:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// 聚合统计没有单一仓库，因此只输出当前分类前五项与 Starcat 开源仓库链接。
+    private var technologyShareText: String {
+        let items: [InsightsDistributionItem]
+        switch selection {
+        case .languages:
+            items = snapshot.languageItems
+        case .topics:
+            items = snapshot.topicItems
+        case .licenses:
+            items = snapshot.licenseItems
+        case .technologySummary:
+            items = Array(snapshot.languageItems.prefix(3))
+                + Array(snapshot.topicItems.prefix(3))
+                + Array(snapshot.licenseItems.prefix(3))
+        default:
+            items = []
+        }
+        let details = items.prefix(9).map { "\($0.title): \($0.count)" }
+        return GrowthAttribution.aggregateShareText(
+            title: "My technology stack in Starcat",
+            details: details
+        )
     }
 
     private var metricGrid: some View {
