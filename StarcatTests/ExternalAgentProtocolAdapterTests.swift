@@ -302,8 +302,32 @@ struct ExternalAgentProtocolAdapterTests {
         #expect(catalog.providers.last?.baseURL?.absoluteString == "http://127.0.0.1:3737/bridge/local/v1")
         #expect(catalog.providers.last?.requiresEndpointProbe == true)
         #expect(catalog.resolvedProviderID(preferredProviderID: "removed") == "gateway")
-        #expect(CodexRuntimeProcessArguments.appServer(providerID: "local").suffix(2) == [
+        #expect(CodexRuntimeProcessArguments.appServer(
+            executableURL: URL(fileURLWithPath: "/opt/homebrew/bin/codex"),
+            providerID: "local"
+        ).suffix(2) == [
             "-c", "model_provider=\"local\"",
+        ])
+    }
+
+    @Test("Codex 自动区分完整 CLI 与独立 App Server 启动参数")
+    func codexRuntimeProcessArgumentsMatchExecutableKind() {
+        let cliURL = URL(fileURLWithPath: "/opt/homebrew/bin/codex")
+        #expect(CodexRuntimeProcessArguments.executableKind(for: cliURL) == .codexCLI)
+        #expect(CodexRuntimeProcessArguments.appServer(
+            executableURL: cliURL,
+            providerID: nil
+        ) == ["app-server", "--listen", "stdio://"])
+
+        let standaloneURL = URL(
+            fileURLWithPath: "/tmp/codex-app-server-aarch64-apple-darwin"
+        )
+        #expect(CodexRuntimeProcessArguments.executableKind(for: standaloneURL) == .standaloneAppServer)
+        #expect(CodexRuntimeProcessArguments.appServer(
+            executableURL: standaloneURL,
+            providerID: "team-proxy"
+        ) == [
+            "--listen", "stdio://", "-c", "model_provider=\"team-proxy\"",
         ])
     }
 
