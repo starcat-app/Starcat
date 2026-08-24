@@ -1,10 +1,10 @@
 # Awesome 发现专项实施 Checklist
 
-> 状态：功能开发与技术门禁完成，待 dong4j 人工 UI 验收  
+> 状态：验收问题修复已实现，正在执行完整复验  
 > 日期：2026-08-24  
 > 需求与技术契约：[`Awesome发现栏目与来源管理正式方案.md`](../../2-产品/需求讨论/正式方案/Awesome发现栏目与来源管理正式方案.md)  
 > Issue：[#109](https://github.com/starcat-app/Starcat/issues/109)  
-> 分支：主仓库及两个配套仓库均为 `codex/awesome-discovery`
+> 分支：原专项分支已合入；本轮按 dong4j 要求直接在三个仓库本地 `dev` 修复
 
 ## 1. 开工与工程隔离
 
@@ -74,3 +74,14 @@
 - [x] 已只读检查 `docs/功能实现总览.md`。
 - [x] 已在最终结果报告中起草总览条目、`> 实现：` 和变更日志候选文本。
 - [x] 本任务未获得“同步总览”单独授权，已保持 `docs/功能实现总览.md` 不变；后续只在 dong4j 明确授权后写入。
+
+## 9. 验收问题修复（2026-08-24）
+
+- [x] 修复 entries 响应省略 `is_archived=false` 导致客户端整批解码失败的问题，并增加服务端契约测试与客户端降级解码。
+- [x] 每轮来源同步刷新来源仓库自身 GitHub 元数据，目录 API 增加 `source_stars`，不在 `awesome_sources` 重复保存 Stars。
+- [x] 客户端追加 `v23-awesome-source-metadata` 迁移，缓存来源 Stars 与最近同步时间，现有本机库无需重建。
+- [x] 来源卡片增加 Stars、解析项目数、最近同步/失败状态，并优化头像、层级、间距、选中态和明暗主题语义色。
+- [x] 来源选择改为同步更新高亮、取消旧加载并校验返回代际；快速切换回归测试通过。
+- [x] Discovery API `81` 条测试与 `go vet` 通过；Starcat Awesome/API/Repository/Migration/Store 定向测试与 macOS build 通过。
+- [ ] 完成本轮多轮文档、代码、测试与工程进度审查，并保存独立审查报告。
+- [ ] 更新最终结果报告并交付 dong4j 人工 UI 复验。

@@ -187,7 +187,7 @@ hasCompletedAwesomeSourceSetup == false ?
 │ [图片]  Awesome Mac     │  │ [图片]  Selfhosted     │
 │ 精选 macOS 软件与项目…  │  │ 自托管应用与服务清单…  │
 │ jaywcjlove/awesome-mac  │  │ awesome-selfhosted/... │
-│ 412 个项目          ✓   │  │ 685 个项目             │
+│ ★ 32.1K · 412 个项目 ✓ │  │ ★ 218K · 685 个项目    │
 └────────────────────────┘  └────────────────────────┘
 
 我的来源
@@ -202,9 +202,11 @@ hasCompletedAwesomeSourceSetup == false ?
 
 - `image_url` 图片；加载失败回退到来源仓库 owner avatar，再失败使用 Awesome 模式 SF Symbol。
 - 来源名称。
-- 最多三行介绍。
+- 最多两行介绍。
 - `owner/repo`。
+- 来源仓库自身的 GitHub Stars。
 - 已解析 GitHub Repo 数量。
+- 最近成功同步时间；失败或下架时显示紧凑状态提示。
 - 推荐标识（`featured=true` 时）。
 - 明确的勾选状态。
 
@@ -323,6 +325,7 @@ If-None-Match: "optional-etag"
       "summary_en": "A curated list of macOS software and open-source projects",
       "featured": true,
       "sort_order": 10,
+      "source_stars": 32100,
       "github_repo_count": 412,
       "external_entry_count": 37,
       "last_synced_at": "2026-08-24T08:00:00Z",
@@ -343,6 +346,7 @@ If-None-Match: "optional-etag"
 - `repo_url`：服务端生成的 canonical `https://github.com/{owner}/{repo}`。
 - `image_url`：只允许 `https`；为空时客户端走 fallback。
 - `summary_zh / summary_en`：允许其一为空；客户端按当前 locale、英文、GitHub description 顺序回退。
+- `source_stars`：来源仓库自身的 GitHub Stars；每轮来源同步均刷新，即使 README SHA 未变化也更新。
 - `github_repo_count`：当前已发布快照中有效 GitHub Repo 去重数。
 - `updated_at`：卡片内容修订时间；`last_synced_at`：README 成功同步时间，两者不能混用。
 
@@ -400,6 +404,7 @@ If-None-Match: "optional-source-etag"
 
 - 首期按来源返回完整快照，不做远端筛选和分页；客户端只请求用户已勾选来源并本地筛选。
 - `updated_at` 是 GitHub 仓库更新时间；字段缺失时客户端在“最近更新”排序中放到末尾，不得用来源同步时间代替。
+- `is_archived` 是必返布尔字段；`false` 也不得通过 `omitempty` 省略，避免客户端整批快照解码失败。
 - entries 响应中 `source.updated_at` 与 `meta.generated_at` 表示最近成功生成当前条目快照的时间；仅在历史异常数据缺少 `last_synced_at` 时回退来源内容修订时间。
 - 必须支持 `ETag`，避免重复下载未变化的长清单。
 - 单来源响应默认压缩；服务端对异常大来源设置明确响应上限并在管理端阻止发布，而不是运行期静默截断。
@@ -492,6 +497,8 @@ draft ──首次同步成功──> ready ──publish──> published ─�
 ## 7. Discovery 服务端数据模型
 
 Discovery API 已有 `repos` 作为公开 GitHub Repo 主表。Awesome 只增加来源、条目和同步事实，不复制 Repo 元数据主表。
+
+来源仓库自身也在每轮同步时写入 `repos`；公开目录通过 canonical `repo_full_name` 关联读取 `source_stars`。因此 Stars 不进入 `awesome_sources` 重复保存，README 未变化时也能独立刷新来源元数据。
 
 ### 7.1 `awesome_sources`
 
@@ -627,6 +634,7 @@ git@github.com:{owner}/{repo}.git       # 仅自定义来源输入可接受
 | `repo_full_name` | canonical GitHub 来源仓库 |
 | `display_name / image_url / summary_zh / summary_en` | 卡片数据 |
 | `featured / sort_order` | 精选排序，自定义使用本地默认 |
+| `source_stars` | 来源仓库自身 Stars；精选来自目录 API，自定义来源来自本地 GitHub 核验 |
 | `is_available` | 精选来源是否仍在公开目录；刷新失败的 stale 错误为会话状态 |
 | `github_repo_count / external_entry_count` | 最近成功统计 |
 | `catalog_etag / entries_etag` | 目录和单来源快照条件请求版本 |
@@ -849,6 +857,7 @@ xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
 - Awesome 名称右侧按钮位置与“我的项目”同一视觉节奏。
 - Button 与整行选择点击区域互不误触。
 - 周刊/Awesome 切换时左栏动态区域无残留、跳动或错误选中。
+- 快速连续点击多个 Awesome 来源时，高亮立即落在最后一次选择，旧请求晚返回也不能覆盖新来源。
 - 全部来源、单来源、中栏章节筛选和右栏来源跳转。
 - 网络断开、空来源、下架来源、图片失败和长介绍截断。
 - VoiceOver、键盘导航、Focus Ring、Reduce Motion。
@@ -911,7 +920,8 @@ xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
 - [ ] 取消不完成首次配置；点击完成后不再自动弹出，包括零选择场景。
 - [ ] 精选来源完全来自 Discovery API，App 中没有业务来源硬编码。
 - [ ] `_local-admin` 可以新增、编辑、排序、同步、发布和下架精选来源。
-- [ ] 来源卡片展示图片、名称、介绍、`owner/repo`、项目数、推荐和勾选状态。
+- [ ] 来源卡片展示图片、名称、介绍、`owner/repo`、来源 Stars、项目数、同步状态、推荐和勾选状态。
+- [ ] 连续切换多个来源时子分类不跳动，旧来源加载结果不能覆盖当前选择。
 - [ ] 用户勾选结果按账户保存在本机，不上传公共服务。
 - [ ] 用户可以添加和删除公开 GitHub 自定义来源，来源 URL 不上传 Discovery。
 - [ ] 精选来源服务端解析、自定义来源客户端解析均保留章节、原始描述、顺序和来源 URL。
