@@ -343,10 +343,8 @@ struct AgentWorkspaceView: View {
                     preferredLanguage: preferredOutputLanguage,
                     toolRegistry: toolRegistry,
                     runRepository: dependencies.agentRunRepository,
-                    mcpBridgeFactory: { allowedToolNames in
-                        try await dependencies.mcpService.makeTransientReadOnlyBridge(
-                            allowedToolNames: allowedToolNames
-                        )
+                    mcpBridgeFactory: { toolSet in
+                        try await dependencies.mcpService.makeTransientBridge(toolSet: toolSet)
                     }
                 )
             } catch {

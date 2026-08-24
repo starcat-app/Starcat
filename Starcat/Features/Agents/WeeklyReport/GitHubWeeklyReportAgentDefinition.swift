@@ -43,7 +43,7 @@ enum BuiltInAgents {
             )
         ],
         artifactTitle: String.l10n("agent.runtime.artifact.weeklyReport.title"),
-        runtimePolicy: .codexReadOnly,
+        runtimePolicy: .businessReadOnly,
         loopMaxToolCalls: 96,
         toolIDs: [
             "agent_parse_goal",
@@ -86,7 +86,7 @@ enum BuiltInAgents {
                 content: "Submit exactly one structured artifact_build_repo_insight call. State missing README, license, maintenance, or live activity evidence as limitations rather than inventing it."
             )
         ],
-        runtimePolicy: .codexReadOnly,
+        runtimePolicy: .businessReadOnly,
         loopMaxToolCalls: 96,
         toolIDs: [
             "agent_parse_repo_insight_goal",
@@ -132,7 +132,7 @@ enum BuiltInAgents {
                 content: "Select the frozen source repository before searching, then submit exactly one structured artifact_build_repo_alternatives call. Starcat resolves the source repository identity from the frozen context; do not send a local repository database ID. Use at most 6 candidates. If External Search is unavailable or yields no verified candidate, submit an empty candidates array and state that limitation."
             )
         ],
-        runtimePolicy: .codexReadOnly,
+        runtimePolicy: .businessReadOnly,
         loopMaxToolCalls: 96,
         toolIDs: [
             "agent_parse_repo_alternatives_goal",

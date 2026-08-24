@@ -24,6 +24,16 @@ struct ExternalAgentMCPLease: Sendable {
     let shutdown: @Sendable () async -> Void
 }
 
+/// DeepSeek Harness 的 MCP client 有两种互斥工具来源：通用 Starcat 只读工具，或当前
+/// 业务 Agent 的工具链。后者携带每轮独立的执行闭包，不能保存到设置或跨 Run 复用。
+enum ExternalAgentMCPToolSet: Sendable {
+    case starcatReadOnly(Set<String>)
+    case agent(
+        tools: [AgentToolDefinition],
+        call: @Sendable (ExternalAgentToolRequest) async -> ExternalAgentToolExecutionResult
+    )
+}
+
 struct ExternalAgentRunRequest: Sendable {
     let runID: UUID
     let prompt: String

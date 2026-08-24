@@ -14,8 +14,17 @@
 import Foundation
 import MCP
 
+/// Loopback HTTP 层只依赖这三个生命周期方法。业务 Agent 的临时 MCP Runtime 与
+/// 长期 Starcat MCP Service 共用同一个 HTTP adapter，但不会共享 session 或权限。
 @MainActor
-final class StarcatMCPRuntime {
+protocol StarcatMCPHTTPRuntime: AnyObject, Sendable {
+    func start() async throws
+    func shutdown() async
+    func handle(_ request: HTTPRequest) async -> HTTPResponse
+}
+
+@MainActor
+final class StarcatMCPRuntime: StarcatMCPHTTPRuntime {
     private let facade: StarcatMCPFacade
     private let writeFacade: StarcatMCPWriteFacade
     private let originValidator: OriginValidator

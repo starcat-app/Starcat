@@ -45,30 +45,14 @@ final class StarcatMCPService {
     /// 该入口不依赖设置页 MCP 开关，也不复用长期 API Key：外部 Runtime 已经过
     /// Direct 分发门控，本租约再用随机端口、单次 Token 与工具 allowlist 收窄权限。
     /// Run 结束后 `shutdown` 同时关闭 listener 与 MCP SDK session。
-    func makeTransientReadOnlyBridge(
-        allowedToolNames: Set<String>
+    func makeTransientBridge(
+        toolSet: ExternalAgentMCPToolSet
     ) async throws -> ExternalAgentMCPLease {
-        guard !allowedToolNames.isEmpty else {
-            throw StarcatMCPError.invalidArguments("Transient MCP tool allowlist must not be empty.")
-        }
-        let disallowed = allowedToolNames.subtracting(StarcatMCPToolRegistry.readOnlyToolNames)
-        guard disallowed.isEmpty else {
-            throw StarcatMCPError.invalidArguments(
-                "Transient MCP bridge rejected non-read-only tools: \(disallowed.sorted().joined(separator: ", "))"
-            )
-        }
-
         let token = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
         var lastError: Error?
         for _ in 0..<5 {
             let port = try StarcatMCPPortAvailability.availableDynamicPort()
-            let runtime = StarcatMCPRuntime(
-                facade: facade,
-                writeFacade: writeFacade,
-                originValidator: makeOriginValidator(port: port, allowsRemoteConnections: false),
-                allowedToolNames: allowedToolNames,
-                exposesResources: false
-            )
+            let runtime = try makeTransientRuntime(toolSet: toolSet, port: port)
             try await runtime.start()
             let httpServer = StarcatMCPLoopbackHTTPServer(
                 port: port,
@@ -100,6 +84,46 @@ final class StarcatMCPService {
         throw lastError ?? StarcatMCPError.invalidArguments(
             "Unable to start the transient Starcat MCP bridge."
         )
+    }
+
+    private func makeTransientRuntime(
+        toolSet: ExternalAgentMCPToolSet,
+        port: Int
+    ) throws -> any StarcatMCPHTTPRuntime {
+        let originValidator = makeOriginValidator(port: port, allowsRemoteConnections: false)
+        switch toolSet {
+        case .starcatReadOnly(let allowedToolNames):
+            guard !allowedToolNames.isEmpty else {
+                throw StarcatMCPError.invalidArguments("Transient MCP tool allowlist must not be empty.")
+            }
+            let disallowed = allowedToolNames.subtracting(StarcatMCPToolRegistry.readOnlyToolNames)
+            guard disallowed.isEmpty else {
+                throw StarcatMCPError.invalidArguments(
+                    "Transient MCP bridge rejected non-read-only tools: \(disallowed.sorted().joined(separator: ", "))"
+                )
+            }
+            return StarcatMCPRuntime(
+                facade: facade,
+                writeFacade: writeFacade,
+                originValidator: originValidator,
+                allowedToolNames: allowedToolNames,
+                exposesResources: false
+            )
+        case .agent(let tools, let call):
+            guard !tools.isEmpty else {
+                throw StarcatMCPError.invalidArguments("Transient Agent MCP tools must not be empty.")
+            }
+            guard let nonReadTool = tools.first(where: { !$0.permission.isAutomaticRead }) else {
+                return AgentToolMCPRuntime(
+                    tools: tools,
+                    originValidator: originValidator,
+                    toolCallHandler: call
+                )
+            }
+            throw StarcatMCPError.invalidArguments(
+                "Transient Agent MCP bridge rejected non-read-only tool: \(nonReadTool.name)"
+            )
+        }
     }
 
     init(

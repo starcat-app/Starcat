@@ -85,10 +85,10 @@ struct AgentRuntimePolicy: Hashable, Sendable {
         defaultBackend: .builtinLoop
     )
 
-    /// Codex 通过 dynamic tools 接入 Starcat Host 工具；DeepSeek Harness 通过每轮
-    /// 临时 MCP Bridge 接入只读工具。两条协议独立装配，不能互相伪装。
-    static let codexReadOnly = AgentRuntimePolicy(
-        allowedBackends: [.builtinLoop, .codexAppServer],
+    /// 只读业务 Agent 可在内置 Loop、Codex dynamic tools 与 DeepSeek 每轮 MCP
+    /// Bridge 之间切换。三条协议共享 AgentDefinition，但各自保持独立执行边界。
+    static let businessReadOnly = AgentRuntimePolicy(
+        allowedBackends: [.builtinLoop, .codexAppServer, .deepSeekHarness],
         defaultBackend: .builtinLoop
     )
 

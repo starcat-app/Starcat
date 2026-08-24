@@ -12,7 +12,7 @@
 import Foundation
 
 typealias ExternalAgentMCPBridgeFactory = @MainActor @Sendable (
-    _ allowedToolNames: Set<String>
+    _ toolSet: ExternalAgentMCPToolSet
 ) async throws -> ExternalAgentMCPLease
 
 struct ExternalAgentRuntime: AgentRuntime {
@@ -75,18 +75,21 @@ struct ExternalAgentRuntime: AgentRuntime {
                     await projector.configureCompletionTools(Set(
                         tools.filter(\.definition.completesRun).map { $0.definition.name }
                     ))
+                    let executor: ExternalAgentToolExecutor?
                     let toolCallHandler: ExternalAgentRuntimeHost.ToolCallHandler?
                     if tools.isEmpty {
+                        executor = nil
                         toolCallHandler = nil
                     } else {
-                        let executor = ExternalAgentToolExecutor(
+                        let configuredExecutor = ExternalAgentToolExecutor(
                             registry: try requiredToolRegistry(),
                             allowedToolNames: Set(tools.map { $0.definition.name }),
                             prompt: prompt,
                             context: context
                         )
+                        executor = configuredExecutor
                         toolCallHandler = { request in
-                            await executor.execute(request)
+                            await configuredExecutor.execute(request)
                         }
                     }
                     try FileManager.default.createDirectory(
@@ -95,7 +98,12 @@ struct ExternalAgentRuntime: AgentRuntime {
                     )
                     defer { try? FileManager.default.removeItem(at: workingDirectory) }
 
-                    let mcpLease = try await makeMCPLeaseIfNeeded(definition: definition)
+                    let mcpLease = try await makeMCPLeaseIfNeeded(
+                        definition: definition,
+                        tools: tools.map(\.definition),
+                        executor: executor,
+                        projector: projector
+                    )
 
                     await projector.start(userPrompt: prompt, context: context)
                     let externalPrompt = ExternalAgentPromptBuilder.build(
@@ -202,17 +210,39 @@ struct ExternalAgentRuntime: AgentRuntime {
     }
 
     private func makeMCPLeaseIfNeeded(
-        definition: AgentDefinition
+        definition: AgentDefinition,
+        tools: [AgentToolDefinition],
+        executor: ExternalAgentToolExecutor?,
+        projector: ExternalAgentEventProjector
     ) async throws -> ExternalAgentMCPLease? {
-        guard adapter.backend == .deepSeekHarness,
-              !definition.externalMCPToolIDs.isEmpty
-        else { return nil }
+        guard adapter.backend == .deepSeekHarness else { return nil }
+        let toolSet: ExternalAgentMCPToolSet
+        if !tools.isEmpty {
+            guard let executor else {
+                throw ExternalAgentRuntimeError.protocolError(
+                    "Starcat Agent tool executor is unavailable for this DeepSeek Agent."
+                )
+            }
+            toolSet = .agent(tools: tools) { request in
+                let result = await executor.execute(request)
+                await projector.recordHostedToolExecution(
+                    name: request.name,
+                    callID: request.callID,
+                    result: result
+                )
+                return result
+            }
+        } else if !definition.externalMCPToolIDs.isEmpty {
+            toolSet = .starcatReadOnly(Set(definition.externalMCPToolIDs))
+        } else {
+            return nil
+        }
         guard let mcpBridgeFactory else {
             throw ExternalAgentRuntimeError.protocolError(
                 "Starcat MCP bridge is unavailable for this DeepSeek Agent."
             )
         }
-        return try await mcpBridgeFactory(Set(definition.externalMCPToolIDs))
+        return try await mcpBridgeFactory(toolSet)
     }
 
     private static func validateRequiredContext(
@@ -633,6 +663,29 @@ private actor ExternalAgentEventProjector {
         isTerminal = true
         await persistTerminal(status: .failed, errorMessage: message)
         continuation.yield(.runFailed(message))
+    }
+
+    /// DeepSeek 的业务工具由 MCP Server 执行，Harness 事件只能看到协议包装后的结果。
+    /// 在宿主执行点记录完成工具与 artifact，既避免依赖 `mcp__server__tool` 的展示名，
+    /// 也保证最终报告仍走与 Codex dynamic tools 相同的完整性检查。
+    func recordHostedToolExecution(
+        name: String,
+        callID: String,
+        result: ExternalAgentToolExecutionResult
+    ) async {
+        if requiredCompletionToolNames.contains(name) {
+            if result.isError {
+                if !completionToolSucceeded {
+                    completionToolFailure = Self.nonBlank(result.output.objectValue?["summary"]?.stringValue)
+                }
+            } else {
+                completionToolSucceeded = true
+                completionToolFailure = nil
+            }
+        }
+        if let markdown = result.artifactMarkdown, !result.isError {
+            await consume(.artifactMarkdown(markdown, toolCallID: callID))
+        }
     }
 
     private func complete() async {
