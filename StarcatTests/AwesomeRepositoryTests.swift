@@ -48,6 +48,21 @@ struct AwesomeRepositoryTests {
         #expect(await api.catalogETags() == [nil, "catalog-1"])
     }
 
+    @Test("精选目录缺少语言字段仍能保存真实描述")
+    func catalogMissingLanguageBytesPersistsDescription() async throws {
+        let api = FakeAwesomeAPI()
+        await api.setCatalog(
+            [Self.source(id: "one", order: 1, languageBytes: nil)],
+            etag: "catalog-1"
+        )
+        let repository = AwesomeRepository(api: api, database: try InMemoryDatabaseManager())
+
+        let sources = try await repository.refreshCatalog()
+
+        #expect(sources.first?.repoDescription == "GitHub source description")
+        #expect(sources.first?.languageBytes == [:])
+    }
+
     @Test("六小时内自动刷新完全复用本地目录和条目")
     func freshCacheSkipsAutomaticNetworkRequests() async throws {
         let api = FakeAwesomeAPI()
@@ -262,7 +277,12 @@ struct AwesomeRepositoryTests {
         #expect(await repository.sources().isEmpty)
     }
 
-    private static func source(id: String, order: Int, displayName: String? = nil) -> AwesomeSourceDTO {
+    private static func source(
+        id: String,
+        order: Int,
+        displayName: String? = nil,
+        languageBytes: [String: Int]? = ["Swift": 900, "Shell": 100]
+    ) -> AwesomeSourceDTO {
         AwesomeSourceDTO(
             id: id,
             displayName: displayName ?? "Awesome \(id)",
@@ -280,7 +300,7 @@ struct AwesomeRepositoryTests {
             sourceSubscribers: 73,
             sourceOpenIssues: 28,
             sourceLanguage: "Swift",
-            languageBytes: ["Swift": 900, "Shell": 100],
+            languageBytes: languageBytes,
             githubRepoCount: 1,
             externalEntryCount: 0,
             lastSyncedAt: "2026-08-24T08:00:00Z",
