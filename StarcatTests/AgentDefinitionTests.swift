@@ -35,11 +35,11 @@ struct AgentDefinitionTests {
         #expect(agent.runtimePolicy == .codexReadOnly)
     }
 
-    @Test("外部 POC Agent 显式允许 Codex 与 DeepSeek，不进入固定业务 Agent 列表")
-    func externalPOCAgentsDeclareSwitchableRuntime() {
-        let agent = ExternalAgentPOCAgentDefinitions.general
+    @Test("外部 Agent 显式允许 Codex 与 DeepSeek，不进入固定业务 Agent 列表")
+    func externalAgentsDeclareSwitchableRuntime() {
+        let agent = ExternalAgentDefinitions.general
 
-        #expect(agent.runtimePolicy == .externalPOC)
+        #expect(agent.runtimePolicy == .externalReadOnly)
         #expect(agent.runtimePolicy.allowedBackends == [.codexAppServer, .deepSeekHarness])
         #expect(agent.externalMCPToolIDs == [
             "starcat.get_overview_statistics",

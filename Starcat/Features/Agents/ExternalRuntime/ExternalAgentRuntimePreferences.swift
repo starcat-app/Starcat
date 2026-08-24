@@ -1,44 +1,69 @@
 //
-//  ExternalAgentRuntimePOCPreferences.swift
+//  ExternalAgentRuntimePreferences.swift
 //  Starcat
 //
-//  Direct Debug 构建的隐藏 POC 配置入口。
+//  Direct 渠道外部 Agent Runtime 的持久化配置入口。
 //
 //  可执行文件路径可以用 Xcode launch arguments / defaults 注入；Provider/Model 由
 //  工作台选择。API Key 来自 Starcat 已加密保存的 AI Provider，禁止写入 UserDefaults。
-//  Release 构建始终返回 builtinLoop。
+//  App Store 渠道由 DistributionGate 强制回退 builtinLoop，不能启动外部进程。
 //
 
 import Foundation
 
-enum ExternalAgentRuntimePOCPreferences {
-    static let backendKey = "DebugExternalAgentRuntimeBackend"
-    static let codexExecutablePathKey = "DebugCodexExecutablePath"
-    static let codexProviderKey = "DebugCodexProvider"
-    static let codexModelKey = "DebugCodexModel"
-    static let codexReasoningEffortKey = "DebugCodexReasoningEffort"
-    static let deepSeekExecutablePathKey = "DebugDeepSeekHarnessExecutablePath"
-    static let deepSeekCordisConfigPathKey = "DebugDeepSeekHarnessCordisConfigPath"
-    static let deepSeekProviderKey = "DebugDeepSeekHarnessProvider"
-    static let deepSeekModelKey = "DebugDeepSeekHarnessModel"
-    static let deepSeekReasoningEffortKey = "DebugDeepSeekHarnessReasoningEffort"
+enum ExternalAgentRuntimePreferences {
+    static let backendKey = "AgentRuntimeBackend"
+    static let codexExecutablePathKey = "AgentRuntimeCodexExecutablePath"
+    static let codexProviderKey = "AgentRuntimeCodexProvider"
+    static let codexModelKey = "AgentRuntimeCodexModel"
+    static let codexReasoningEffortKey = "AgentRuntimeCodexReasoningEffort"
+    static let deepSeekExecutablePathKey = "AgentRuntimeDeepSeekHarnessExecutablePath"
+    static let deepSeekCordisConfigPathKey = "AgentRuntimeDeepSeekHarnessCordisConfigPath"
+    static let deepSeekProviderKey = "AgentRuntimeDeepSeekHarnessProvider"
+    static let deepSeekModelKey = "AgentRuntimeDeepSeekHarnessModel"
+    static let deepSeekReasoningEffortKey = "AgentRuntimeDeepSeekHarnessReasoningEffort"
 
-    static var selectedBackend: AgentRuntimeBackend {
-        #if DEBUG
-        let rawValue = UserDefaults.standard.string(forKey: backendKey)
-        return AgentRuntimeBackend(rawValue: rawValue ?? "") ?? .builtinLoop
-        #else
-        return .builtinLoop
-        #endif
+    /// POC 阶段使用过的 defaults 必须一次性迁移，否则升级后的 Direct 用户会丢失
+    /// 已验证可用的 Runtime 路径、Cordis 配置与模型选择。旧键暂不删除，便于降级
+    /// 到旧版本时仍可读取；新版本从此只写产品键。
+    private static let legacyKeyMappings: [(legacy: String, current: String)] = [
+        ("DebugExternalAgentRuntimeBackend", backendKey),
+        ("DebugCodexExecutablePath", codexExecutablePathKey),
+        ("DebugCodexProvider", codexProviderKey),
+        ("DebugCodexModel", codexModelKey),
+        ("DebugCodexReasoningEffort", codexReasoningEffortKey),
+        ("DebugDeepSeekHarnessExecutablePath", deepSeekExecutablePathKey),
+        ("DebugDeepSeekHarnessCordisConfigPath", deepSeekCordisConfigPathKey),
+        ("DebugDeepSeekHarnessProvider", deepSeekProviderKey),
+        ("DebugDeepSeekHarnessModel", deepSeekModelKey),
+        ("DebugDeepSeekHarnessReasoningEffort", deepSeekReasoningEffortKey),
+    ]
+
+    static func migrateLegacyDefaults(_ defaults: UserDefaults = .standard) {
+        for mapping in legacyKeyMappings where defaults.object(forKey: mapping.current) == nil {
+            guard let legacyValue = defaults.object(forKey: mapping.legacy) else { continue }
+            defaults.set(legacyValue, forKey: mapping.current)
+        }
     }
 
-    static func isExternalPOCEnabled(distributionGate: DistributionGate = DistributionGate()) -> Bool {
-        #if DEBUG
-        return selectedBackend != .builtinLoop
-            && distributionGate.isAvailable(.externalAgentRuntime)
-        #else
-        return false
-        #endif
+    static var selectedBackend: AgentRuntimeBackend {
+        selectedBackend(defaults: .standard)
+    }
+
+    static func selectedBackend(
+        defaults: UserDefaults,
+        distributionGate: DistributionGate = DistributionGate()
+    ) -> AgentRuntimeBackend {
+        guard distributionGate.isAvailable(.externalAgentRuntime) else { return .builtinLoop }
+        let rawValue = defaults.string(forKey: backendKey)
+        return AgentRuntimeBackend(rawValue: rawValue ?? "") ?? .builtinLoop
+    }
+
+    static func isExternalRuntimeEnabled(
+        defaults: UserDefaults = .standard,
+        distributionGate: DistributionGate = DistributionGate()
+    ) -> Bool {
+        selectedBackend(defaults: defaults, distributionGate: distributionGate) != .builtinLoop
     }
 
     @MainActor

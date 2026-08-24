@@ -73,19 +73,19 @@ struct AgentWorkspaceView: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @AppStorage(ExternalAgentRuntimePOCPreferences.backendKey)
+    @AppStorage(ExternalAgentRuntimePreferences.backendKey)
     private var externalRuntimeBackendRawValue = AgentRuntimeBackend.builtinLoop.rawValue
-    @AppStorage(ExternalAgentRuntimePOCPreferences.codexModelKey)
+    @AppStorage(ExternalAgentRuntimePreferences.codexModelKey)
     private var preferredCodexModelID = ""
-    @AppStorage(ExternalAgentRuntimePOCPreferences.codexProviderKey)
+    @AppStorage(ExternalAgentRuntimePreferences.codexProviderKey)
     private var preferredCodexProviderID = ""
-    @AppStorage(ExternalAgentRuntimePOCPreferences.codexReasoningEffortKey)
+    @AppStorage(ExternalAgentRuntimePreferences.codexReasoningEffortKey)
     private var preferredCodexReasoningEffort = ""
-    @AppStorage(ExternalAgentRuntimePOCPreferences.deepSeekModelKey)
+    @AppStorage(ExternalAgentRuntimePreferences.deepSeekModelKey)
     private var preferredDeepSeekModel = DeepSeekHarnessRuntime.defaultModel
-    @AppStorage(ExternalAgentRuntimePOCPreferences.deepSeekProviderKey)
+    @AppStorage(ExternalAgentRuntimePreferences.deepSeekProviderKey)
     private var preferredDeepSeekProviderID = ""
-    @AppStorage(ExternalAgentRuntimePOCPreferences.deepSeekReasoningEffortKey)
+    @AppStorage(ExternalAgentRuntimePreferences.deepSeekReasoningEffortKey)
     private var preferredDeepSeekReasoningEffort = ""
     @AppStorage(AgentWorkspaceLayoutMetrics.leftWidthDefaultsKey)
     private var persistedLeftColumnWidth = Double(AgentWorkspaceLayoutMetrics.leftIdealWidth)
@@ -325,7 +325,7 @@ struct AgentWorkspaceView: View {
 
         if preferredBackend != .builtinLoop {
             do {
-                let adapter = try ExternalAgentRuntimePOCPreferences.makeAdapter(
+                let adapter = try ExternalAgentRuntimePreferences.makeAdapter(
                     backend: preferredBackend,
                     settings: dependencies.settings
                 )
@@ -432,7 +432,7 @@ struct AgentWorkspaceView: View {
             }
         }
         do {
-            let client = try ExternalAgentRuntimePOCPreferences.makeCodexModelCatalogClient(
+            let client = try ExternalAgentRuntimePreferences.makeCodexModelCatalogClient(
                 providerID: providerID
             )
             let catalog = try await client.load()
@@ -492,15 +492,10 @@ struct AgentWorkspaceView: View {
     }
 
     private var selectedRuntimeBackend: AgentRuntimeBackend {
-        #if DEBUG
         guard dependencies.distributionGate.isAvailable(.externalAgentRuntime) else {
             return .builtinLoop
         }
         return AgentRuntimeBackend(rawValue: externalRuntimeBackendRawValue) ?? .builtinLoop
-        #else
-        // POC 不得因历史 UserDefaults 残留进入 Direct Release；产品化前只允许 Debug 装配。
-        return .builtinLoop
-        #endif
     }
 
     /// Header 展示 policy 解析后的实际后端。显式选择不兼容外部后端时返回 nil，和
@@ -516,8 +511,10 @@ struct AgentWorkspaceView: View {
     }
 
     private var availableAgentDefinitions: [AgentDefinition] {
-        guard selectedRuntimeBackend != .builtinLoop else { return BuiltInAgents.all }
-        return BuiltInAgents.all + ExternalAgentPOCAgentDefinitions.all
+        guard dependencies.distributionGate.isAvailable(.externalAgentRuntime) else {
+            return BuiltInAgents.all
+        }
+        return BuiltInAgents.all + ExternalAgentDefinitions.all
     }
 
     /// 模型提示词使用英文语言名，避免只支持中英文而让其它 App locale 静默回退英语。
@@ -931,6 +928,10 @@ struct AgentWorkspaceView: View {
                 .foregroundStyle(.secondary)
                 .disabled(viewModel.isRunning || !viewModel.selectedAgentSupportsRepositorySelection)
                 .help("agent.workspace.repositoryPicker.title")
+
+                if dependencies.distributionGate.isAvailable(.externalAgentRuntime) {
+                    runtimeBackendMenu
+                }
 
                 agentRuntimeModelControls
 
@@ -1463,6 +1464,32 @@ struct AgentWorkspaceView: View {
         .fixedSize()
         .disabled(viewModel.isRunning)
         .help(String.l10n("agent.workspace.runtime.provider"))
+    }
+
+    /// Runtime 选择是 Direct 工作台的正式产品状态，和 Provider / Model 分开呈现。
+    /// App Store 不显示该入口，并由 DistributionGate 在路由层再次强制使用内置 Loop。
+    private var runtimeBackendMenu: some View {
+        Menu {
+            ForEach(AgentRuntimeBackend.allCases, id: \.self) { backend in
+                Button {
+                    externalRuntimeBackendRawValue = backend.rawValue
+                } label: {
+                    if backend == selectedRuntimeBackend {
+                        Label(backend.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(backend.displayName)
+                    }
+                }
+            }
+        } label: {
+            Label(selectedRuntimeBackend.displayName, systemImage: "point.3.connected.trianglepath.dotted")
+                .font(agentFont(.caption, weight: .semibold))
+                .lineLimit(1)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(viewModel.isRunning)
+        .help(String.l10n("agent.workspace.runtime.backend"))
     }
 
     @ViewBuilder

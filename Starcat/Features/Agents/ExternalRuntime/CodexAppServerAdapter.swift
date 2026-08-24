@@ -4,7 +4,7 @@
 //
 //  Codex `app-server --listen stdio://` 的 JSON-RPC adapter。
 //
-//  POC 使用用户已安装并登录的 Codex，按 initialize → thread/start → turn/start
+//  使用用户已安装并登录的 Codex，按 initialize → thread/start → turn/start
 //  建立一次性 thread。执行目录是 Starcat 创建的空临时目录，并固定 read-only sandbox；
 //  仅保留本机 CODEX_HOME 登录态，不把 API Key 交给子进程。固定业务 Agent 只能通过
 //  `dynamicTools` 调用 Starcat 明确暴露的只读能力，不能直接访问数据库或文件系统。
@@ -14,7 +14,7 @@ import Foundation
 
 struct CodexAppServerAdapter: ExternalAgentProtocolAdapter {
     let backend = AgentRuntimeBackend.codexAppServer
-    let capabilities = AgentRuntimeCapabilities.codexAppServerPOC
+    let capabilities = AgentRuntimeCapabilities.codexAppServer
 
     private let executableURL: URL
     private let environment: [String: String]
@@ -42,7 +42,7 @@ struct CodexAppServerAdapter: ExternalAgentProtocolAdapter {
 
 private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
     let backend = AgentRuntimeBackend.codexAppServer
-    let capabilities = AgentRuntimeCapabilities.codexAppServerPOC
+    let capabilities = AgentRuntimeCapabilities.codexAppServer
     let processConfiguration: ExternalAgentProcessConfiguration
 
     private let request: ExternalAgentRunRequest
@@ -225,7 +225,7 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
             "sandbox": .string("read-only"),
             "ephemeral": .bool(true),
             "developerInstructions": .string(
-                "This is a Starcat read-only POC. Do not modify files, run shell commands, spawn subagents, or request elevated permissions. Use only the supplied prompt context and Starcat dynamic tools."
+                "This is a Starcat read-only Agent Runtime. Do not modify files, run shell commands, spawn subagents, or request elevated permissions. Use only the supplied prompt context and Starcat dynamic tools."
             ),
             // App Server 会继承用户级 MCP、plugins 与 hooks。Starcat 必须在 session
             // layer 显式关闭它们，避免无关 MCP 启动超时，也确保能力面只来自 dynamicTools。
@@ -687,10 +687,10 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
              "item/fileChange/requestApproval",
              "item/permissions/requestApproval",
              "item/tool/requestUserInput":
-            // POC 没有把 Codex approval 扩展成 Starcat 写入审批；请求必须明确拒绝。
+            // 当前没有把 Codex approval 扩展成 Starcat 写入审批；请求必须明确拒绝。
             guard let id = object["id"] else { return ExternalAgentProtocolOutput() }
             let approvalID = (try? id.jsonString()) ?? UUID().uuidString
-            let message = "Starcat External Agent Runtime POC is read-only."
+            let message = "Starcat External Agent Runtime is read-only."
             return ExternalAgentProtocolOutput(
                 outboundFrames: [.object([
                     "jsonrpc": .string("2.0"),

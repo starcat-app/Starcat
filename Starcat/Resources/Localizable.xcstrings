@@ -474190,6 +474190,13 @@
         }
       }
     },
+    "agent.workspace.runtime.backend" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Agent Runtime" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent Runtime" } }
+      }
+    },
     "agent.workspace.runtime.codexProviderHelp" : {
       "extractionState" : "manual",
       "localizations" : {

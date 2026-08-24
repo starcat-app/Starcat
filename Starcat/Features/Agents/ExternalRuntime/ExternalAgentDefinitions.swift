@@ -1,16 +1,16 @@
 //
-//  ExternalAgentPOCAgentDefinitions.swift
+//  ExternalAgentDefinitions.swift
 //  Starcat
 //
-//  Direct Debug 构建中用于验证多后端路由的 General / Research Agent 定义。
+//  Direct 渠道使用的多后端 General / Research Agent 定义。
 //
-//  这两个定义不进入 `BuiltInAgents.all`，因此 Release、App Store 和现有 Agent
-//  测试基线不会被 POC 污染。只有显式选择外部 backend 后 Workspace 才追加展示。
+//  这两个定义不进入 `BuiltInAgents.all`，由 Workspace 根据发行渠道追加展示。
+//  ID 保留 POC 阶段的历史值，确保升级后既有任务记录仍能恢复到正确 Agent。
 //
 
 import Foundation
 
-enum ExternalAgentPOCAgentDefinitions {
+enum ExternalAgentDefinitions {
     static var all: [AgentDefinition] {
         [general, research]
     }
@@ -39,7 +39,7 @@ enum ExternalAgentPOCAgentDefinitions {
                 )
             ],
             artifactTitle: "External Agent Result",
-            runtimePolicy: .externalPOC,
+            runtimePolicy: .externalReadOnly,
             externalMCPToolIDs: [
                 "starcat.get_overview_statistics",
                 "starcat.search_repos",
@@ -77,7 +77,7 @@ enum ExternalAgentPOCAgentDefinitions {
                 )
             ],
             artifactTitle: "External Research Result",
-            runtimePolicy: .externalPOC,
+            runtimePolicy: .externalReadOnly,
             artifactTypes: [.markdown]
         )
     }

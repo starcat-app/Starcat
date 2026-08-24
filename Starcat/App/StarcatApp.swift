@@ -176,7 +176,7 @@ struct StarcatApp: App {
                 settings: dependencies?.settings ?? AppSettings.shared
             )
 
-            // DEBUG-only 菜单承载首次引导重放、Pro 覆盖、未开放工作台和 Runtime POC。
+            // DEBUG-only 菜单只保留首次引导重放、Pro 覆盖和窗口尺寸工具。
             // Release 包整段不存在；菜单标题 / 选项标签都用 verbatim 文本，
             // 不进入 String Catalog——避免"切到英文后调试菜单也变英文"的循环噩梦。
             #if DEBUG
@@ -434,6 +434,10 @@ struct StarcatApp: App {
         // `Starcat/Core/Settings/LocalizedBundle.swift` 顶部注释。
         LocalizedBundle.install()
 
+        // 外部 Runtime 已从 Debug POC 转为 Direct 正式能力。必须在任何 @AppStorage
+        // 初始化前迁移旧键，避免升级后看似自动回退内置 Loop、实际丢失用户选择。
+        ExternalAgentRuntimePreferences.migrateLegacyDefaults()
+
         AppLog.general.info("Starcat starting (bundle=\(AppConstants.bundleIdentifier, privacy: .public))")
 
         // 2026-06-12 多账号 DB 隔离：DatabaseManager 不再是单例，由 AppDependencies init
@@ -518,6 +522,15 @@ private struct StarcatAppCommands: Commands {
                     : nil
             )
             .disabled(!commandRouter.canOpenKnowledgeRAGWorkspace)
+
+            if dependencies?.distributionGate.isAvailable(.externalAgentRuntime) == true {
+                Button("toolbar.agentWorkspace.help") {
+                    if let dependencies {
+                        AgentWorkspaceWindowController.show(dependencies: dependencies)
+                    }
+                }
+                .disabled(dependencies == nil)
+            }
 
             Button("commands.actions.openSelectedRepoAI") {
                 commandRouter.openCurrentRepositoryAI(preferred: focusedRepositoryAIAction)
@@ -714,8 +727,6 @@ struct DebugMenuCommands: Commands {
     let dependencies: AppDependencies?
 
     @AppStorage(DebugFlags.debugProOverrideKey) private var debugProOverride = false
-    @AppStorage(ExternalAgentRuntimePOCPreferences.backendKey)
-    private var externalRuntimeBackend = AgentRuntimeBackend.builtinLoop.rawValue
 
     var body: some Commands {
         CommandMenu("Who's Your Daddy") {
@@ -734,25 +745,6 @@ struct DebugMenuCommands: Commands {
                     }
                 )
             )
-
-            Divider()
-
-            Button("Open Agent Workspace") {
-                guard let dependencies else { return }
-                // Agent 尚未面向正式用户开放。Debug 入口仍复用生产窗口控制器与
-                // Pro / 对话模型门禁，避免调试路径形成第二套运行语义。
-                AgentWorkspaceWindowController.show(dependencies: dependencies)
-            }
-            .disabled(dependencies == nil)
-
-            Divider()
-
-            Picker("External Agent Runtime POC", selection: $externalRuntimeBackend) {
-                Text("Off · Loop only").tag(AgentRuntimeBackend.builtinLoop.rawValue)
-                Text("Codex App Server").tag(AgentRuntimeBackend.codexAppServer.rawValue)
-                Text("DeepSeek Harness").tag(AgentRuntimeBackend.deepSeekHarness.rawValue)
-            }
-            .disabled(!DistributionGate().isAvailable(.externalAgentRuntime))
 
             Divider()
 

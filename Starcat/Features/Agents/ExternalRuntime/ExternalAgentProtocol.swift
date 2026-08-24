@@ -341,7 +341,7 @@ struct ExternalAgentExecutableResolver: Sendable {
 
 enum ExternalAgentProcessEnvironment {
     /// 外部 Runtime 不应继承 Starcat 的全部环境。这里只保留启动、locale、登录态目录和
-    /// POC Provider 所需的显式凭据变量；这些值从不写日志或 UserDefaults。
+    /// 外部 Provider 所需的显式凭据变量；这些值从不写日志或 UserDefaults。
     static func filtered(
         source: [String: String] = ProcessInfo.processInfo.environment,
         allowedCredentialKeys: Set<String> = [],

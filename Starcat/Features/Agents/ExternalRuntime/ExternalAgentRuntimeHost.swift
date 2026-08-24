@@ -81,7 +81,7 @@ actor ExternalAgentRuntimeHost {
     }
 }
 
-/// 一个 run 一个子进程。POC 不复用跨 run Session，先证明协议隔离与停止语义可靠。
+/// 一个 run 一个子进程。当前不复用跨 run Session，保证协议隔离与停止语义可靠。
 private actor ExternalAgentProcessSession {
     private let driver: any ExternalAgentProtocolDriver
     private let firstOutputTimeout: Duration

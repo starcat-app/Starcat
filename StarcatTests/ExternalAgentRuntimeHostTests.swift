@@ -221,7 +221,7 @@ private final class ExternalHostRetryDriverFactory: @unchecked Sendable {
 
 private final class ExternalHostDeepSeekRetryFixtureDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
     let backend = AgentRuntimeBackend.deepSeekHarness
-    let capabilities = AgentRuntimeCapabilities.deepSeekHarnessPOC
+    let capabilities = AgentRuntimeCapabilities.deepSeekHarness
     let processConfiguration: ExternalAgentProcessConfiguration
 
     init(shouldFail: Bool) {
@@ -264,7 +264,7 @@ private actor ExternalHostEventCollector {
 
 private final class ExternalHostFixtureDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
     let backend = AgentRuntimeBackend.codexAppServer
-    let capabilities = AgentRuntimeCapabilities.codexAppServerPOC
+    let capabilities = AgentRuntimeCapabilities.codexAppServer
     let processConfiguration = ExternalAgentProcessConfiguration(
         executableURL: URL(fileURLWithPath: "/bin/sh"),
         arguments: [
@@ -298,7 +298,7 @@ private final class ExternalHostFixtureDriver: ExternalAgentProtocolDriver, @unc
 
 private final class ExternalHostYAMLFailureFixtureDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
     let backend = AgentRuntimeBackend.deepSeekHarness
-    let capabilities = AgentRuntimeCapabilities.deepSeekHarnessPOC
+    let capabilities = AgentRuntimeCapabilities.deepSeekHarness
     let processConfiguration = ExternalAgentProcessConfiguration(
         executableURL: URL(fileURLWithPath: "/bin/sh"),
         arguments: [
@@ -325,7 +325,7 @@ private final class ExternalHostYAMLFailureFixtureDriver: ExternalAgentProtocolD
 
 private final class ExternalHostMalformedJSONFixtureDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
     let backend = AgentRuntimeBackend.codexAppServer
-    let capabilities = AgentRuntimeCapabilities.codexAppServerPOC
+    let capabilities = AgentRuntimeCapabilities.codexAppServer
     let processConfiguration = ExternalAgentProcessConfiguration(
         executableURL: URL(fileURLWithPath: "/bin/sh"),
         arguments: ["-c", "read first; printf '%s\\n' '{\"jsonrpc\":'"],
@@ -347,7 +347,7 @@ private final class ExternalHostMalformedJSONFixtureDriver: ExternalAgentProtoco
 
 private final class ExternalHostToolFixtureDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
     let backend = AgentRuntimeBackend.codexAppServer
-    let capabilities = AgentRuntimeCapabilities.codexAppServerPOC
+    let capabilities = AgentRuntimeCapabilities.codexAppServer
     let processConfiguration = ExternalAgentProcessConfiguration(
         executableURL: URL(fileURLWithPath: "/bin/sh"),
         arguments: [
@@ -396,7 +396,7 @@ private final class ExternalHostToolFixtureDriver: ExternalAgentProtocolDriver, 
 
 private final class ExternalHostSilentFixtureDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
     let backend = AgentRuntimeBackend.codexAppServer
-    let capabilities = AgentRuntimeCapabilities.codexAppServerPOC
+    let capabilities = AgentRuntimeCapabilities.codexAppServer
     let processConfiguration = ExternalAgentProcessConfiguration(
         executableURL: URL(fileURLWithPath: "/bin/sh"),
         arguments: ["-c", "read first; sleep 10"],
@@ -418,7 +418,7 @@ private final class ExternalHostSilentFixtureDriver: ExternalAgentProtocolDriver
 
 private final class ExternalHostProtocolActivityFixtureDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
     let backend = AgentRuntimeBackend.codexAppServer
-    let capabilities = AgentRuntimeCapabilities.codexAppServerPOC
+    let capabilities = AgentRuntimeCapabilities.codexAppServer
     let processConfiguration = ExternalAgentProcessConfiguration(
         executableURL: URL(fileURLWithPath: "/bin/sh"),
         arguments: [
@@ -452,7 +452,7 @@ private final class ExternalHostProtocolActivityFixtureDriver: ExternalAgentProt
 
 private final class ExternalHostOutputThenSilentFixtureDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
     let backend = AgentRuntimeBackend.codexAppServer
-    let capabilities = AgentRuntimeCapabilities.codexAppServerPOC
+    let capabilities = AgentRuntimeCapabilities.codexAppServer
     let processConfiguration = ExternalAgentProcessConfiguration(
         executableURL: URL(fileURLWithPath: "/bin/sh"),
         arguments: [
@@ -482,7 +482,7 @@ private final class ExternalHostOutputThenSilentFixtureDriver: ExternalAgentProt
 
 private final class ExternalHostDelayedExitFixtureDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
     let backend = AgentRuntimeBackend.codexAppServer
-    let capabilities = AgentRuntimeCapabilities.codexAppServerPOC
+    let capabilities = AgentRuntimeCapabilities.codexAppServer
     let processConfiguration = ExternalAgentProcessConfiguration(
         executableURL: URL(fileURLWithPath: "/bin/sh"),
         arguments: [
@@ -507,7 +507,7 @@ private final class ExternalHostDelayedExitFixtureDriver: ExternalAgentProtocolD
 
 private final class ExternalHostClosedStdinFixtureDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
     let backend = AgentRuntimeBackend.codexAppServer
-    let capabilities = AgentRuntimeCapabilities.codexAppServerPOC
+    let capabilities = AgentRuntimeCapabilities.codexAppServer
     let processConfiguration = ExternalAgentProcessConfiguration(
         executableURL: URL(fileURLWithPath: "/bin/sh"),
         arguments: [

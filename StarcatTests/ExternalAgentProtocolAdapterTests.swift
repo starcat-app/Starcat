@@ -471,7 +471,7 @@ struct ExternalAgentProtocolAdapterTests {
             capabilityLabels: [],
             defaultPrompt: "",
             isEnabled: true,
-            runtimePolicy: .externalPOC
+            runtimePolicy: .externalReadOnly
         )
         let failedRunID = UUID()
         let timestamp = ISO8601DateFormatter.shared.string(from: Date(timeIntervalSince1970: 1_788_000_000))
@@ -1565,7 +1565,7 @@ struct ExternalAgentProtocolAdapterTests {
         settings.aiProviderProfiles = [profile]
         try keychain.storeAIKey("fixture-secret", forProvider: profile.id)
 
-        let environment = ExternalAgentRuntimePOCPreferences.deepSeekEnvironment(
+        let environment = ExternalAgentRuntimePreferences.deepSeekEnvironment(
             source: ["PATH": "/usr/bin"],
             settings: settings,
             keychain: keychain
@@ -1670,7 +1670,7 @@ private final class ExternalRetryRequestRecorder: @unchecked Sendable {
 
 private struct ExternalRetryFixtureAdapter: ExternalAgentProtocolAdapter {
     let backend = AgentRuntimeBackend.deepSeekHarness
-    let capabilities = AgentRuntimeCapabilities.deepSeekHarnessPOC
+    let capabilities = AgentRuntimeCapabilities.deepSeekHarness
     let recorder: ExternalRetryRequestRecorder
 
     func makeDriver(request: ExternalAgentRunRequest) throws -> any ExternalAgentProtocolDriver {
@@ -1681,7 +1681,7 @@ private struct ExternalRetryFixtureAdapter: ExternalAgentProtocolAdapter {
 
 private final class ExternalRetryFixtureDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
     let backend = AgentRuntimeBackend.deepSeekHarness
-    let capabilities = AgentRuntimeCapabilities.deepSeekHarnessPOC
+    let capabilities = AgentRuntimeCapabilities.deepSeekHarness
     let processConfiguration = ExternalAgentProcessConfiguration(
         executableURL: URL(fileURLWithPath: "/bin/sh"),
         arguments: [

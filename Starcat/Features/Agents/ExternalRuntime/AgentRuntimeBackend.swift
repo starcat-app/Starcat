@@ -45,7 +45,7 @@ struct AgentRuntimeCapabilities: Equatable, Sendable {
         supportsReliableCancellation: true
     )
 
-    static let codexAppServerPOC = AgentRuntimeCapabilities(
+    static let codexAppServer = AgentRuntimeCapabilities(
         supportsResume: false,
         supportsSteering: false,
         supportsInteractiveApproval: false,
@@ -57,7 +57,7 @@ struct AgentRuntimeCapabilities: Equatable, Sendable {
 
     /// 当前 `0.1.1rc1` Runtime 的 stdio JSON-RPC adapter 尚未开放 cancel、
     /// session close 和双向 approval；能力矩阵描述 Starcat 已接入能力，不跟包版本命名。
-    static let deepSeekHarnessPOC = AgentRuntimeCapabilities(
+    static let deepSeekHarness = AgentRuntimeCapabilities(
         supportsResume: false,
         supportsSteering: false,
         supportsInteractiveApproval: false,
@@ -91,7 +91,7 @@ struct AgentRuntimePolicy: Hashable, Sendable {
         defaultBackend: .builtinLoop
     )
 
-    static let externalPOC = AgentRuntimePolicy(
+    static let externalReadOnly = AgentRuntimePolicy(
         allowedBackends: [.codexAppServer, .deepSeekHarness],
         defaultBackend: .codexAppServer
     )
@@ -100,7 +100,7 @@ struct AgentRuntimePolicy: Hashable, Sendable {
 /// 把 Workspace 与具体 Runtime 解耦，并保持现有 `AgentRuntime` 协议不变。
 ///
 /// Router 每次 run 都按 definition 的 policy 解析后端。命令广播给已装配的 Runtime：
-/// `AgentRunCommand` 自带 runID，非目标 Runtime 会安全忽略；这样无需为 POC 扩数据库或
+/// `AgentRunCommand` 自带 runID，非目标 Runtime 会安全忽略；这样无需扩数据库或
 /// 修改公共命令协议来保存 runID → backend 映射。
 struct AgentRuntimeRouter: AgentRuntime {
     let preferredBackend: AgentRuntimeBackend

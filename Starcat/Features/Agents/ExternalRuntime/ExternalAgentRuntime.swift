@@ -175,7 +175,7 @@ struct ExternalAgentRuntime: AgentRuntime {
         if case .cancel(let runID) = command {
             await host.cancel(runID: runID)
         }
-        // 外部 POC 首期只读，没有 Starcat approval decision 可转发。
+        // 外部 Runtime 当前保持只读，没有 Starcat approval decision 可转发。
     }
 
     private func visibleTools(for definition: AgentDefinition) throws -> [any AgentTool] {
@@ -790,7 +790,7 @@ enum ExternalAgentPromptBuilder {
         preferredLanguage: String
     ) -> String {
         var sections = [
-            "# Starcat External Agent Runtime POC",
+            "# Starcat External Agent Runtime",
             "You are running inside Starcat's read-only external runtime boundary.",
             "Do not modify files, run shell commands, spawn subagents, or request additional permissions.",
             "Respond in Markdown and use only the user request, Frozen Starcat Context, and available Starcat dynamic tools.",

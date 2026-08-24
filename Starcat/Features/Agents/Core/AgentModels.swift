@@ -62,7 +62,7 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
     let promptRules: [AgentPromptRule]
     /// 最终 Artifact 在 Inspector 中显示的标题；nil 时使用 Agent 标题。
     let artifactTitle: String?
-    /// Runtime 路由契约。默认锁定进程内 Loop，外部 POC Agent 必须显式声明可用后端。
+    /// Runtime 路由契约。默认锁定进程内 Loop，外部 Agent 必须显式声明可用后端。
     let runtimePolicy: AgentRuntimePolicy
     /// 仅覆盖进程内 Loop 的工具调用预算；外部 Runtime 使用各自的会话预算与协议限制。
     let loopMaxToolCalls: Int?

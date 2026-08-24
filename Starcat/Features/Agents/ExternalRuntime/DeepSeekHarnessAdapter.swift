@@ -24,7 +24,7 @@ enum DeepSeekHarnessRuntime {
 
 struct DeepSeekHarnessAdapter: ExternalAgentProtocolAdapter {
     let backend = AgentRuntimeBackend.deepSeekHarness
-    let capabilities = AgentRuntimeCapabilities.deepSeekHarnessPOC
+    let capabilities = AgentRuntimeCapabilities.deepSeekHarness
 
     private let executableURL: URL
     private let provider: String
@@ -49,7 +49,9 @@ struct DeepSeekHarnessAdapter: ExternalAgentProtocolAdapter {
             }
         }
         guard fileManager.fileExists(atPath: cordisConfigURL.path) else {
-            throw ExternalAgentRuntimeError.missingConfiguration("DebugDeepSeekHarnessCordisConfigPath")
+            throw ExternalAgentRuntimeError.missingConfiguration(
+                ExternalAgentRuntimePreferences.deepSeekCordisConfigPathKey
+            )
         }
         let cordisConfig = try String(contentsOf: cordisConfigURL, encoding: .utf8)
         let forbiddenPlugins = [
@@ -216,7 +218,7 @@ enum DeepSeekHarnessCordisRunConfiguration {
 
 private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
     let backend = AgentRuntimeBackend.deepSeekHarness
-    let capabilities = AgentRuntimeCapabilities.deepSeekHarnessPOC
+    let capabilities = AgentRuntimeCapabilities.deepSeekHarness
     let processConfiguration: ExternalAgentProcessConfiguration
 
     private let request: ExternalAgentRunRequest

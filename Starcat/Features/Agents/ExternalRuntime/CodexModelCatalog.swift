@@ -145,7 +145,7 @@ struct CodexModelCatalogClient: Sendable {
 /// Driver 只负责 initialize 与分页 model/list，不创建 thread，也不会触发模型推理。
 final class CodexModelCatalogDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
     let backend = AgentRuntimeBackend.codexAppServer
-    let capabilities = AgentRuntimeCapabilities.codexAppServerPOC
+    let capabilities = AgentRuntimeCapabilities.codexAppServer
     let processConfiguration: ExternalAgentProcessConfiguration
 
     private static let initializeRequestID = 1
