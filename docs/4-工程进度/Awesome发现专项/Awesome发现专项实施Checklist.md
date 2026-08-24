@@ -1,6 +1,6 @@
 # Awesome 发现专项实施 Checklist
 
-> 状态：完整 GitHub 元数据与三列来源 UI 已完成，13 轮审查与自动化门禁全部通过，待人工 UI 验收及部署授权
+> 状态：完整 GitHub 元数据与三列来源 UI 已完成，生产聚合 API 已部署并完成三个验收来源回填，待人工 UI 验收
 > 日期：2026-08-24  
 > 需求与技术契约：[`Awesome发现栏目与来源管理正式方案.md`](../../2-产品/需求讨论/正式方案/Awesome发现栏目与来源管理正式方案.md)  
 > Issue：[#109](https://github.com/starcat-app/Starcat/issues/109)  
@@ -114,3 +114,13 @@
 - [x] Starcat 全量测试、Discovery API 全量/race/vet、聚合 API 测试与三仓静态门禁通过。
 - [x] 第 11 至第 13 轮审查报告全部保存，发现项全部修复并提交。
 - [x] 最终结果报告、人工 UI 清单和 Issue #109 状态与最终实现一致。
+
+## 12. 生产部署与数据回填（2026-08-24）
+
+- [x] 部署前创建 `starcat-api` 生产 Volume 快照，保留 SQLite 回滚点。
+- [x] 从 `supports/` 构建上下文部署聚合 `starcat-api`，确保正式客户端实际使用的 Discovery 分流包含本轮源码。
+- [x] Fly Release v10 完成，Machine、`/healthz` 和六个服务 `/api/v1/ping` 全部健康。
+- [x] 手动刷新 `awesome-mac`、`awesome-design-patterns` 和 `awesome-python`，分别写入 285、29、475 条完整 Repo 元数据。
+- [x] 三个来源的 Stars、forks、watchers、subscribers、open issues、默认分支和创建/推送/更新时间缺失数均为 0。
+- [x] 其余 published 来源继续由每 3 小时定时任务按 README SHA 增量刷新；旧快照在回填期间保持可读。
+- [x] 保存第 14 轮生产部署审查报告并更新 Issue #109；Issue 保持 Open/`Acceptance` 等待人工 UI 验收。
