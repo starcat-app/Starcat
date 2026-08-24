@@ -39,6 +39,7 @@ struct AwesomeRepositoryTests {
         let sources = try await repository.refreshCatalog(policy: .force)
 
         #expect(sources.map(\.id) == ["one"])
+        #expect(sources.first?.repoDescription == "GitHub source description")
         #expect(sources.first?.sourceStars == 9_012)
         #expect(sources.first?.lastSyncedAt == ISO8601DateFormatter.githubDate(from: "2026-08-24T08:00:00Z"))
         #expect(await api.catalogETags() == [nil, "catalog-1"])
@@ -264,6 +265,7 @@ struct AwesomeRepositoryTests {
             displayName: displayName ?? "Awesome \(id)",
             repoFullName: "example/awesome-\(id)",
             repoURL: "https://github.com/example/awesome-\(id)",
+            repoDescription: "GitHub source description",
             imageURL: nil,
             summaryZH: "中文简介",
             summaryEN: "Summary",
@@ -315,6 +317,7 @@ struct AwesomeRepositoryTests {
             displayName: "Custom List",
             repoFullName: "example/list",
             repoURL: URL(string: "https://github.com/example/list")!,
+            repoDescription: "Custom GitHub description",
             imageURL: nil,
             summaryZH: nil,
             summaryEN: "Custom source",

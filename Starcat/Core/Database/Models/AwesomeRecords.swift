@@ -19,6 +19,7 @@ struct AwesomeSourceRecord: Codable, FetchableRecord, PersistableRecord, Equatab
     var displayName: String
     var repoFullName: String
     var repoURL: String
+    var repoDescription: String?
     var imageURL: String?
     var summaryZH: String?
     var summaryEN: String?
@@ -41,6 +42,7 @@ struct AwesomeSourceRecord: Codable, FetchableRecord, PersistableRecord, Equatab
         case displayName = "display_name"
         case repoFullName = "repo_full_name"
         case repoURL = "repo_url"
+        case repoDescription = "repo_description"
         case imageURL = "image_url"
         case summaryZH = "summary_zh"
         case summaryEN = "summary_en"

@@ -21,6 +21,8 @@ struct AwesomeSourceDTO: Codable, Identifiable, Hashable, Sendable {
     let displayName: String
     let repoFullName: String
     let repoURL: String
+    /// GitHub Repository API 返回的仓库真实描述，与内容管理精选说明分离。
+    let repoDescription: String?
     let imageURL: String?
     let summaryZH: String?
     let summaryEN: String?
@@ -38,6 +40,7 @@ struct AwesomeSourceDTO: Codable, Identifiable, Hashable, Sendable {
         case displayName = "display_name"
         case repoFullName = "repo_full_name"
         case repoURL = "repo_url"
+        case repoDescription = "repo_description"
         case imageURL = "image_url"
         case summaryZH = "summary_zh"
         case summaryEN = "summary_en"
@@ -147,6 +150,7 @@ struct AwesomeSource: Identifiable, Hashable, Sendable {
     let displayName: String
     let repoFullName: String
     let repoURL: URL
+    let repoDescription: String?
     let imageURL: URL?
     let summaryZH: String?
     let summaryEN: String?

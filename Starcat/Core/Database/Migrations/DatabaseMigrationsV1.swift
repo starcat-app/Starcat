@@ -42,7 +42,7 @@
 //    `v22-awesome-discovery` / `v22-data-contribution` /
 //    `v23-awesome-source-metadata` / `v24-awesome-cache-freshness` /
 //    `v25-awesome-source-stars-refresh` / `v26-awesome-repository-metadata` /
-//    `v27-ai-usage-estimated-cost`
+//    `v27-ai-usage-estimated-cost` / `v28-awesome-source-description`
 //
 //  **1.4.0 开发期迁移（已由正式 v19 合并接管）**：
 //  `v19-agent-message-contract` 至 `v26-github-timeline-conversations` 仅在开发构建中出现过。
@@ -107,6 +107,26 @@ enum DatabaseMigrations {
         registerV25AwesomeSourceStarsRefresh(into: &migrator)
         registerV26AwesomeRepositoryMetadata(into: &migrator)
         registerV27AIUsageEstimatedCost(into: &migrator)
+        registerV28AwesomeSourceDescription(into: &migrator)
+    }
+
+    // MARK: - v28-awesome-source-description：来源仓库真实描述（2026-08-24）
+
+    /// 内容管理精选说明与 GitHub Repository Description 语义不同。追加独立缓存列，并使
+    /// 已缓存 managed 目录立即重新请求新契约；自定义来源仍只写当前账户数据库。
+    private static func registerV28AwesomeSourceDescription(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v28-awesome-source-description") { db in
+            guard try db.tableExists("awesome_sources") else { return }
+            let columns = Set(try db.columns(in: "awesome_sources").map(\.name))
+            if !columns.contains("repo_description") {
+                try db.alter(table: "awesome_sources") { table in
+                    table.add(column: "repo_description", .text)
+                }
+            }
+            if try db.tableExists("awesome_state") {
+                try db.execute(sql: "UPDATE awesome_state SET catalog_etag = NULL, catalog_checked_at = NULL")
+            }
+        }
     }
 
     // MARK: - v27-ai-usage-estimated-cost：AI 用量预估费用（2026-08-24）

@@ -419,6 +419,7 @@ private extension AwesomeSourceRecord {
             displayName: dto.displayName,
             repoFullName: dto.repoFullName,
             repoURL: dto.repoURL,
+            repoDescription: dto.repoDescription,
             imageURL: dto.imageURL,
             summaryZH: dto.summaryZH,
             summaryEN: dto.summaryEN,
@@ -444,6 +445,7 @@ private extension AwesomeSourceRecord {
             displayName: source.displayName,
             repoFullName: source.repoFullName,
             repoURL: source.repoURL.absoluteString,
+            repoDescription: source.repoDescription,
             imageURL: source.imageURL?.absoluteString,
             summaryZH: source.summaryZH,
             summaryEN: source.summaryEN,
@@ -474,6 +476,7 @@ private extension AwesomeSourceRecord {
             displayName: displayName,
             repoFullName: repoFullName,
             repoURL: repoURL,
+            repoDescription: repoDescription,
             imageURL: imageURL
                 .flatMap(URL.init(string:))
                 .flatMap { $0.scheme?.lowercased() == "https" ? $0 : nil },

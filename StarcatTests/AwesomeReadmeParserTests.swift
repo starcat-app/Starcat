@@ -166,6 +166,7 @@ struct AwesomeReadmeParserTests {
             displayName: "Existing",
             repoFullName: "owner/awesome-list",
             repoURL: URL(string: "https://github.com/owner/awesome-list")!,
+            repoDescription: "Existing GitHub description",
             imageURL: nil,
             summaryZH: nil,
             summaryEN: nil,

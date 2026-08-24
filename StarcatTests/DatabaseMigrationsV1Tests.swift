@@ -158,6 +158,7 @@ struct DatabaseMigrationsV1Tests {
             #expect(applied.contains("v24-awesome-cache-freshness"))
             #expect(applied.contains("v25-awesome-source-stars-refresh"))
             #expect(applied.contains("v26-awesome-repository-metadata"))
+            #expect(applied.contains("v28-awesome-source-description"))
             #expect(try db.tableExists("awesome_sources"))
             #expect(try db.tableExists("awesome_source_subscriptions"))
             #expect(try db.tableExists("awesome_entries"))
@@ -165,6 +166,7 @@ struct DatabaseMigrationsV1Tests {
             #expect(try db.columns(in: "awesome_entries").map(\.name).contains("repo_updated_at"))
             #expect(try db.columns(in: "awesome_sources").map(\.name).contains("source_stars"))
             #expect(try db.columns(in: "awesome_sources").map(\.name).contains("entries_checked_at"))
+            #expect(try db.columns(in: "awesome_sources").map(\.name).contains("repo_description"))
             let state = try AwesomeStateRecord.fetchOne(db)
             #expect(state?.hasCompletedSourceSetup == false)
         }
@@ -240,6 +242,30 @@ struct DatabaseMigrationsV1Tests {
             let source = try #require(fetchedSource)
             #expect(source.entriesETag == nil)
             #expect(source.entriesCheckedAt == nil)
+        }
+    }
+
+    @Test("v28 追加来源仓库真实描述并让目录缓存过期")
+    func awesomeSourceDescriptionMigration() throws {
+        let writer = try DatabaseQueue()
+        var migrator = DatabaseMigrator()
+        DatabaseMigrations.registerAll(into: &migrator)
+        try migrator.migrate(writer, upTo: "v27-ai-usage-estimated-cost")
+        try writer.write { db in
+            try db.execute(
+                sql: "UPDATE awesome_state SET catalog_etag = ?, catalog_checked_at = ?",
+                arguments: ["\"legacy\"", "2026-08-24T08:00:00Z"]
+            )
+        }
+
+        try migrator.migrate(writer)
+
+        try writer.read { db in
+            #expect(try db.columns(in: "awesome_sources").map(\.name).contains("repo_description"))
+            let fetchedState = try AwesomeStateRecord.fetchOne(db)
+            let state = try #require(fetchedState)
+            #expect(state.catalogETag == nil)
+            #expect(state.catalogCheckedAt == nil)
         }
     }
 

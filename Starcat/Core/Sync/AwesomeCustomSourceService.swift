@@ -124,6 +124,7 @@ actor AwesomeCustomSourceService {
             displayName: sourceRepo.name,
             repoFullName: sourceRepo.fullName,
             repoURL: canonicalAddress.canonicalURL,
+            repoDescription: sourceRepo.description,
             imageURL: sourceRepo.owner.avatarUrl.flatMap(URL.init(string:)),
             summaryZH: nil,
             summaryEN: sourceRepo.description,
