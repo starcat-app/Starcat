@@ -63,8 +63,8 @@ struct AgentRuntimeRouterTests {
         #expect(router.resolvedBackend(for: BuiltInAgents.githubWeeklyReport) == .codexAppServer)
     }
 
-    @Test("不兼容外部后端时不静默回退 Loop")
-    func incompatibleExternalBackendDoesNotFallback() {
+    @Test("不兼容外部后端时按 Agent 契约回退默认 Runtime")
+    func incompatibleExternalBackendUsesDefinitionDefault() {
         let router = AgentRuntimeRouter(
             preferredBackend: .codexAppServer,
             runtimes: [
@@ -73,11 +73,11 @@ struct AgentRuntimeRouterTests {
             ]
         )
 
-        #expect(router.resolvedBackend(for: BuiltInAgents.untaggedTidy) == nil)
+        #expect(router.resolvedBackend(for: BuiltInAgents.untaggedTidy) == .builtinLoop)
     }
 
-    @Test("DeepSeek 尚不承载 Starcat 只读业务工具")
-    func deepSeekDoesNotPretendToSupportBusinessTools() {
+    @Test("DeepSeek 不兼容业务工具时回退业务 Agent 默认 Runtime")
+    func deepSeekFallsBackForUnsupportedBusinessTools() {
         let router = AgentRuntimeRouter(
             preferredBackend: .deepSeekHarness,
             runtimes: [
@@ -86,7 +86,7 @@ struct AgentRuntimeRouterTests {
             ]
         )
 
-        #expect(router.resolvedBackend(for: BuiltInAgents.repoInsight) == nil)
+        #expect(router.resolvedBackend(for: BuiltInAgents.repoInsight) == .builtinLoop)
     }
 
     @Test("研究类 Loop Agent 使用 96 次工具预算，写入 Agent 保持默认预算")

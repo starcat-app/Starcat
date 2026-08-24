@@ -247,7 +247,7 @@ struct AgentWorkspaceView: View {
     /// 每次模型选择变化都重建尚未启动的 Runtime；已经运行的实例由 ViewModel 拒绝替换，
     /// 从而保证一次 run 从首个 token 到最终 artifact 始终使用同一模型。
     private func configureAgentRuntime() {
-        let preferredBackend = selectedRuntimeBackend
+        let preferredBackend = activeRuntimeBackend
         let starcatModelName = viewModel.availableModels
             .first(where: { $0.id == viewModel.selectedModelID })?
             .name
@@ -407,7 +407,7 @@ struct AgentWorkspaceView: View {
     }
 
     private var codexCatalogTaskID: String {
-        "\(selectedRuntimeBackend.rawValue):\(selectedCodexProviderID)"
+        "\(viewModel.selectedAgentID):\(activeRuntimeBackend.rawValue):\(selectedCodexProviderID)"
     }
 
     /// 目录失败时保留 Codex 服务端默认行为：UI 不回退展示 BYOK 模型，turn/start 也不
@@ -415,7 +415,7 @@ struct AgentWorkspaceView: View {
     /// 多轮网络重试；用户启动桥接服务后可从模型菜单点击重试。
     @MainActor
     private func loadCodexModelCatalogIfNeeded() async {
-        guard selectedRuntimeBackend == .codexAppServer else { return }
+        guard activeRuntimeBackend == .codexAppServer else { return }
         isLoadingCodexModelCatalog = true
         defer { isLoadingCodexModelCatalog = false }
         codexModelCatalogError = nil
@@ -425,7 +425,7 @@ struct AgentWorkspaceView: View {
             configureAgentRuntime()
             let isAvailable = await CodexProviderEndpointProbe().isAvailable(provider)
             guard !Task.isCancelled,
-                  selectedRuntimeBackend == .codexAppServer,
+                  activeRuntimeBackend == .codexAppServer,
                   selectedCodexProviderID == providerID
             else { return }
             codexProviderEndpointStates[provider.id] = isAvailable ? .available : .unavailable
@@ -442,7 +442,7 @@ struct AgentWorkspaceView: View {
             )
             let catalog = try await client.load()
             guard !Task.isCancelled,
-                  selectedRuntimeBackend == .codexAppServer,
+                  activeRuntimeBackend == .codexAppServer,
                   selectedCodexProviderID == providerID
             else { return }
             codexModelCatalog = catalog
@@ -454,7 +454,7 @@ struct AgentWorkspaceView: View {
         } catch is CancellationError {
             return
         } catch {
-            guard !Task.isCancelled, selectedRuntimeBackend == .codexAppServer else { return }
+            guard !Task.isCancelled, activeRuntimeBackend == .codexAppServer else { return }
             codexModelCatalog = .empty
             codexModelCatalogError = error.localizedDescription
             configureAgentRuntime()
@@ -503,16 +503,17 @@ struct AgentWorkspaceView: View {
         return AgentRuntimeBackend(rawValue: externalRuntimeBackendRawValue) ?? .builtinLoop
     }
 
-    /// Header 展示 policy 解析后的实际后端。显式选择不兼容外部后端时返回 nil，和
-    /// Router 的“禁止静默回退 Loop”语义保持一致。
-    private var resolvedRuntimeBackend: AgentRuntimeBackend? {
-        guard let definition = viewModel.selectedAgent else { return nil }
-        let preferredBackend = selectedRuntimeBackend
-        if definition.runtimePolicy.allowedBackends.contains(preferredBackend) {
-            return preferredBackend
+    /// 全局偏好只表达用户上一次选择；真正展示和执行的后端必须服从当前 Agent 契约。
+    private var activeRuntimeBackend: AgentRuntimeBackend {
+        viewModel.selectedAgent?.runtimePolicy.resolvedBackend(for: selectedRuntimeBackend)
+            ?? selectedRuntimeBackend
+    }
+
+    private var availableRuntimeBackends: [AgentRuntimeBackend] {
+        guard let policy = viewModel.selectedAgent?.runtimePolicy else {
+            return AgentRuntimeBackend.allCases
         }
-        guard preferredBackend == .builtinLoop else { return nil }
-        return definition.runtimePolicy.defaultBackend
+        return AgentRuntimeBackend.allCases.filter(policy.allowedBackends.contains)
     }
 
     private var availableAgentDefinitions: [AgentDefinition] {
@@ -847,7 +848,7 @@ struct AgentWorkspaceView: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
-            Text(resolvedRuntimeBackend?.displayName ?? "Runtime unavailable")
+            Text(activeRuntimeBackend.displayName)
                 .font(agentFont(.caption, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 8)
@@ -912,15 +913,15 @@ struct AgentWorkspaceView: View {
                     .foregroundStyle(.secondary)
             }
 
-            if selectedRuntimeBackend == .builtinLoop, viewModel.selectedModelID == nil {
+            if activeRuntimeBackend == .builtinLoop, viewModel.selectedModelID == nil {
                 Label("agent.workspace.model.required", systemImage: "sparkles")
                     .font(agentFont(.caption))
                     .foregroundStyle(.secondary)
-            } else if selectedRuntimeBackend == .deepSeekHarness, selectedDeepSeekSelection == nil {
+            } else if activeRuntimeBackend == .deepSeekHarness, selectedDeepSeekSelection == nil {
                 Label("agent.workspace.runtime.providerRequired", systemImage: "server.rack")
                     .font(agentFont(.caption))
                     .foregroundStyle(.secondary)
-            } else if selectedRuntimeBackend == .codexAppServer,
+            } else if activeRuntimeBackend == .codexAppServer,
                       let credentialKey = selectedCodexProviderOption?.credentialEnvironmentKey {
                 Label(
                     String(
@@ -932,7 +933,7 @@ struct AgentWorkspaceView: View {
                 )
                 .font(agentFont(.caption))
                 .foregroundStyle(.secondary)
-            } else if selectedRuntimeBackend == .codexAppServer,
+            } else if activeRuntimeBackend == .codexAppServer,
                       let provider = selectedCodexProviderOption,
                       codexProviderEndpointState(for: provider) == .unavailable {
                 Label(
@@ -1511,11 +1512,11 @@ struct AgentWorkspaceView: View {
     /// App Store 不显示该入口，并由 DistributionGate 在路由层再次强制使用内置 Loop。
     private var runtimeBackendMenu: some View {
         Menu {
-            ForEach(AgentRuntimeBackend.allCases, id: \.self) { backend in
+            ForEach(availableRuntimeBackends, id: \.self) { backend in
                 Button {
                     externalRuntimeBackendRawValue = backend.rawValue
                 } label: {
-                    if backend == selectedRuntimeBackend {
+                    if backend == activeRuntimeBackend {
                         Label(backend.displayName, systemImage: "checkmark")
                     } else {
                         Text(backend.displayName)
@@ -1523,7 +1524,7 @@ struct AgentWorkspaceView: View {
                 }
             }
         } label: {
-            Label(selectedRuntimeBackend.displayName, systemImage: "point.3.connected.trianglepath.dotted")
+            Label(activeRuntimeBackend.displayName, systemImage: "point.3.connected.trianglepath.dotted")
                 .font(agentFont(.caption, weight: .semibold))
                 .lineLimit(1)
         }
@@ -1535,7 +1536,7 @@ struct AgentWorkspaceView: View {
 
     @ViewBuilder
     private var agentRuntimeModelControls: some View {
-        switch selectedRuntimeBackend {
+        switch activeRuntimeBackend {
         case .codexAppServer:
             codexProviderMenu
             if isLoadingCodexModelCatalog, codexModelCatalog.models.isEmpty {
