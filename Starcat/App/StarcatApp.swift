@@ -176,7 +176,7 @@ struct StarcatApp: App {
                 settings: dependencies?.settings ?? AppSettings.shared
             )
 
-            // DEBUG-only 菜单只保留首次引导重放、Pro 覆盖和窗口尺寸工具。
+            // DEBUG-only 菜单承载首次引导重放、Pro 覆盖、Agent 工作台和窗口尺寸工具。
             // Release 包整段不存在；菜单标题 / 选项标签都用 verbatim 文本，
             // 不进入 String Catalog——避免"切到英文后调试菜单也变英文"的循环噩梦。
             #if DEBUG
@@ -745,6 +745,15 @@ struct DebugMenuCommands: Commands {
                     }
                 )
             )
+
+            Divider()
+
+            Button("Open Agent Workspace") {
+                guard let dependencies else { return }
+                // Debug 入口仍走正式工作台控制器，避免调试菜单形成第二套窗口与门禁语义。
+                AgentWorkspaceWindowController.show(dependencies: dependencies)
+            }
+            .disabled(dependencies == nil)
 
             Divider()
 
