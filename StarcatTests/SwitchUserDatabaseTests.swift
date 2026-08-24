@@ -218,6 +218,24 @@ struct SwitchUserDatabaseTests {
 
     // MARK: - AuthSession 钩子点
 
+    @Test("AuthSession 缓存恢复先切账户数据库再发布登录态")
+    @MainActor
+    func cachedSessionSwitchesDatabaseBeforeAuthentication() async {
+        let session = Self.makeAuthSession()
+        let user = Self.makeMockUser(id: 12345)
+        var stateSeenWhileSwitching: AuthState?
+
+        session.onUserSessionChanged = { userID in
+            #expect(userID == user.id)
+            stateSeenWhileSwitching = session.state
+        }
+
+        await session.activateCachedSession(user)
+
+        #expect(stateSeenWhileSwitching == .unauthenticated)
+        #expect(session.state == .authenticated(user: user))
+    }
+
     @Test("AuthSession.signOut → onUserSessionChanged(nil) 被触发")
     @MainActor
     func signOutFiresUserSessionChangedWithNil() async throws {

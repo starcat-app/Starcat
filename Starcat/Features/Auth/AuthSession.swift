@@ -156,6 +156,7 @@ final class AuthSession {
     ///
     /// **触发时机**（参数语义：非 nil = 切到该 user 的 DB，nil = 切到 `_anonymous`）：
     /// - `runDeviceFlow` 拿到 user 后、emit `.authenticated` 之前 → 传 `user.id`
+    /// - `restoreSessionIfAvailable` 命中用户资料缓存后、emit `.authenticated` 之前 → 传 `user.id`
     /// - `restoreSessionIfAvailable` `/user` 验证成功后、emit `.authenticated` 之前 → 传 `user.id`
     /// - `signOut` 末尾、调 `onSignOut?()` 之前 → 传 `nil`
     /// - `invalidateSession` 末尾、调 `onSignOut?()` 之前 → 传 `nil`
@@ -232,7 +233,7 @@ final class AuthSession {
         //    让 sidebar / detail 0 ms 就能渲染出内容，避免启动期 200-800ms 空白窗。
         //    随后 ② 路径异步拉 /user 校验 token + 刷新数据，期间 sidebar 已经渲染好了。
         if let cached = userProfileService?.primeFromCache() {
-            self.state = .authenticated(user: cached)
+            await activateCachedSession(cached)
             AppLog.auth.info("restore: primed from cache login=\(cached.login, privacy: .public); verifying via /user...")
         }
 
@@ -266,6 +267,16 @@ final class AuthSession {
             // 网络错误：token 保留 + cached state 也保留（避免离线时把刚 prime 的快照擦掉）
             AppLog.auth.error("restore: network error (token retained): \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// 使用磁盘缓存恢复登录态，但必须先把共享 Repository 切到对应账户数据库。
+    ///
+    /// 缓存资料用于缩短首屏等待时间，不代表可以跳过数据库作用域屏障。若先发布
+    /// `.authenticated`，SwiftUI 会立即挂载依赖账户数据的页面，并在 `_anonymous`
+    /// 数据库上触发读取或写入。把这段顺序收口为独立方法，也便于测试锁定该约束。
+    func activateCachedSession(_ user: GitHubUserDTO) async {
+        await onUserSessionChanged?(user.id)
+        state = .authenticated(user: user)
     }
 
     // MARK: - 登录
