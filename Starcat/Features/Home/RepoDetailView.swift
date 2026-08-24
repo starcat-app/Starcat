@@ -706,16 +706,9 @@ struct ReadmeStateView: View {
                 // 与 ActivityReleaseDetailContent 对齐：body slot 必须吃满 Scaffold 剩余
                 // 高度，否则 WKWebView 在 VStack 里按零 intrinsic 高度布局 → 闪一下后空白。
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // 圆角只为翻译光圈对齐；空闲不加灰描边——README 是阅读区不是卡片，
+                // 彩虹条带自己画环，不依赖静止边框。
                 .clipShape(RoundedRectangle(cornerRadius: StarcatAIHaloMetrics.cornerRadius, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: StarcatAIHaloMetrics.cornerRadius, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
-                        .opacity(isReadmeTranslating ? 0 : 1)
-                        .animation(
-                            .easeInOut(duration: StarcatAIHaloMetrics.fadeDuration(reduceMotion)),
-                            value: isReadmeTranslating
-                        )
-                )
                 // README 与通知评论卡共用连续 CA 光圈；NSView 层才能稳定盖住 WKWebView。
                 .padding(StarcatAIHaloMetrics.glowBleed)
                 .overlay {
