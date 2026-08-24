@@ -1,9 +1,9 @@
 # Awesome 发现需求完成结果报告
 
 - 完成日期：2026-08-24
-- 开发分支：主仓库、`starcat-discovery-api`、`starcat-site` 均为 `codex/awesome-discovery`
+- 开发分支：原专项分支已合入；本轮验收修复按 dong4j 要求直接提交到主仓库、`starcat-discovery-api` 和聚合 `starcat-api` 的本地 `dev`
 - 关联任务：[#109](https://github.com/starcat-app/Starcat/issues/109)
-- 完成状态：代码、文档、自动化测试与三轮技术审查完成，待 dong4j 人工 UI 验收
+- 完成状态：验收问题代码、文档、自动化测试和生产 API 验证完成，继续执行本轮多轮审查；待 dong4j 人工 UI 验收
 
 ## 项目目标
 
@@ -17,6 +17,7 @@
 - 实现来源 CRUD、revision 并发控制、同步、发布、下架和 sync-runs 恢复。
 - 使用 CommonMark/GFM AST 解析 README，完成 GitHub Repo 归一化、enrich、幂等和失败保留旧快照。
 - 提供精选来源目录和单来源 entries 公共 API，支持 ETag/304、稳定排序和准确快照时间。
+- 来源仓库元数据复用共享 `repos`，每轮同步刷新 `source_stars`；entries 始终返回 `is_archived`，包括 `false`。
 
 ### 本地运营后台
 
@@ -26,11 +27,13 @@
 
 ### Starcat 客户端
 
-- 追加 `v22-awesome-discovery` 账户数据库结构，未修改已发布 `v1-initial`。
-- 实现 API DTO、ETag/304、账户隔离缓存、SWR 刷新、下架降级与失败保留旧条目。
+- 追加 `v22-awesome-discovery` 账户数据库结构和 `v23-awesome-source-metadata` 增量迁移，未修改已发布 `v1-initial`。
+- 实现 API DTO、ETag/304、账户隔离缓存、SWR 刷新、下架降级与失败保留旧条目；旧响应省略 `is_archived=false` 时仍可完整解码。
 - 实现自定义来源的预览确认、本地 AST 解析、重复/私有/无效来源拒绝与安全删除。
 - Awesome 位于“探索 → 周刊”下方；与周刊状态隔离，来源管理入口位于 Awesome 名称右侧。
 - 首次进入自动打开来源 Sheet，支持零选择完成、卡片式来源、图片回退和明确的 loading/error/empty/stale/unavailable 状态。
+- 来源卡片展示来源仓库 Stars、解析项目数和同步状态，并使用更清晰的头像、标题、摘要、元数据与选中态层级。
+- 来源点击同步更新高亮，旧加载任务取消并执行 sourceID 代际校验，快速连续切换不会被晚返回结果覆盖。
 - 中栏支持全部/单来源、章节、搜索与四种排序；按 `gh_repo_id` 去重并保留多来源证据。
 - 右栏复用 Repo 详情骨架，显示当前/其他来源、章节、来源描述和安全 README 锚点。
 
@@ -43,8 +46,10 @@
 
 ## 测试情况
 
-- Starcat：`xcodebuild test` 全量 `2595` total、`2584` passed、`10` skipped、`1` expected failure、`0` failed，`exit_code: 0`。
-- Discovery API：`go test ./...` 为 `80` tests / `14` packages 通过；`go vet ./...` 无问题。
+- Starcat：`xcodebuild test` 全量 `2648` total、`2637` passed、`10` skipped、`1` expected failure、`0` failed，`exit_code: 0`。
+- Discovery API：`go test ./...` 为 `81` tests / `14` packages 通过；`go vet ./...` 无问题。
+- 聚合 `starcat-api`：`11` tests / `3` packages 通过；`go vet ./...` 无问题。
+- 生产 live：Fly Machine v9 健康；公开目录 `84` 个 published 来源全部具备正数 `source_stars`；`awesome-mac` 返回 `285` 个条目，全部包含 `stars` 和 `is_archived`。
 - 本地运营后台：`3` 个 Node 测试通过，server/module 和内联 module 语法检查通过。
 - 静态门禁：三仓库 `diff --check`、本地化 JSON 解析和 Awesome UI 颜色/本地化 API 检查均通过。
 - 测试结果中有 `DiagnosticsTests.swift` 的 `4` 条既有 runtime warning，与 Awesome 差异无关。
@@ -55,18 +60,19 @@
 2. 第 2 轮：发现并修复 schema 文档偏差、快照时间语义和排序契约不一致。
 3. 第 3 轮：发现并修复同序精选来源与聚合证据的最终 tie-breaker，完成三仓全量复验。
 
-三轮报告均位于本专项目录的 `审查报告/` 下，各轮发现已修复，无遗留的 Awesome 技术问题。
+前三轮为原需求交付审查；本轮验收修复从第 4 轮继续编号。所有报告均位于本专项目录的 `审查报告/` 下。
 
 ## 本地提交
 
-- 主仓库：本报告提交后共 12 个独立中文 commit，覆盖开工文档、数据层、自定义解析、三栏 UI、边界测试与三轮审查修复。
-- `starcat-discovery-api`：6 个独立中文 commit。
-- `starcat-site`：1 个独立中文 commit。
+- 本轮主仓库：`a45fd21f`、`ad31fee0`、`bee39493`、`c90322ab`、`cf70cf9` 等独立中文 commit。
+- 本轮 `starcat-discovery-api`：`d9f2a9e`、`46ea210`、`558885b`。
+- 聚合 `starcat-api` 直接复用本地 Discovery module，没有为相同源码制造空提交。
 - 所有 commit 仅保存在本地，未 push。
 
 ## 遗留问题与后续门禁
 
-- Awesome 技术范围内遗留问题：无。
+- Awesome 本轮技术修复遗留问题：无。
+- Top 100 内容导入：84 个候选已发布，16 个不支持来源保持草稿；补足到 100 需要另行确认第 101 名以后的替换集合。
 - 人工 UI 验收：待 dong4j 按 [`人工UI验收清单.md`](./人工UI验收清单.md) 执行；自动化测试不替代人工验收。
 - Issue #109：保持 Open 并进入 Project `Acceptance`；仅在 dong4j 明确验收通过后发布完成评论并关闭。
 
