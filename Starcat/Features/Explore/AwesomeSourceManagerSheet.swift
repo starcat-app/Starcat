@@ -147,61 +147,110 @@ struct AwesomeSourceManagerSheet: View {
             guard source.isAvailable else { return }
             if selected { enabledIDs.remove(source.id) } else { enabledIDs.insert(source.id) }
         } label: {
-            HStack(alignment: .top, spacing: 12) {
-                AwesomeSourceImage(source: source)
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(source.displayName)
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                        if source.featured {
-                            Text("awesome.sources.featured")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
+                    AwesomeSourceImage(source: source)
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(source.displayName)
+                                .font(.headline.weight(.semibold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            if source.featured {
+                                Label("awesome.sources.featured", systemImage: "sparkles")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.accentColor.opacity(0.1), in: Capsule())
+                            }
+                            Spacer(minLength: 0)
                         }
-                        Spacer(minLength: 0)
-                        Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(selected ? Color.accentColor : Color.secondary)
-                    }
-                    if let summary = source.localizedSummary(languageCode: locale.language.languageCode?.identifier) {
-                        Text(summary)
-                            .font(.caption)
+                        Text(source.repoFullName)
+                            .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
-                            .lineLimit(3)
+                            .lineLimit(1)
+                        if let summary = source.localizedSummary(languageCode: locale.language.languageCode?.identifier) {
+                            Text(summary)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
                     }
-                    Text(source.repoFullName)
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Text(String(format: String.l10n("awesome.sources.repoCountFormat"), source.githubRepoCount))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    if !source.isAvailable {
-                        Text("awesome.sources.unavailable")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    } else if store.sourceRefreshErrors[source.id] != nil {
-                        Text("awesome.sources.stale")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
+                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                        .font(.title3)
+                        .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                        .frame(width: 22, height: 22)
+                }
+
+                Divider()
+
+                HStack(spacing: 14) {
+                    sourceMetadata(
+                        systemImage: "star.fill",
+                        value: source.sourceStars.formatted(.number.notation(.compactName))
+                    )
+                    sourceMetadata(
+                        systemImage: "square.stack.3d.up.fill",
+                        value: String(
+                            format: String.l10n("awesome.sources.repoCountFormat"),
+                            source.githubRepoCount
+                        )
+                    )
+                    Spacer(minLength: 0)
+                    sourceSyncStatus(source)
                 }
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, minHeight: 124, alignment: .topLeading)
-            .background(.background, in: RoundedRectangle(cornerRadius: 10))
-            .overlay {
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(selected ? Color.accentColor : Color.secondary.opacity(0.25), lineWidth: selected ? 2 : 1)
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
+            .background {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(selected ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.025))
             }
-            .contentShape(RoundedRectangle(cornerRadius: 10))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(selected ? Color.accentColor : Color.secondary.opacity(0.22), lineWidth: selected ? 2 : 1)
+            }
+            .shadow(color: Color.black.opacity(selected ? 0.08 : 0.035), radius: 6, y: 2)
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .opacity(source.isAvailable ? 1 : 0.65)
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .disabled(!source.isAvailable)
         .accessibilityLabel(Text(source.displayName))
         .accessibilityValue(Text(selected ? "awesome.sources.selected" : "awesome.sources.notSelected"))
+    }
+
+    private func sourceMetadata(systemImage: String, value: String) -> some View {
+        Label(value, systemImage: systemImage)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+    }
+
+    @ViewBuilder
+    private func sourceSyncStatus(_ source: AwesomeSource) -> some View {
+        if !source.isAvailable {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.secondary)
+                .help(Text("awesome.sources.unavailable"))
+                .accessibilityLabel(Text("awesome.sources.unavailable"))
+        } else if store.sourceRefreshErrors[source.id] != nil {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.secondary)
+                .help(Text("awesome.sources.stale"))
+                .accessibilityLabel(Text("awesome.sources.stale"))
+        } else if let lastSyncedAt = source.lastSyncedAt {
+            Label {
+                Text(lastSyncedAt, style: .relative)
+                    .lineLimit(1)
+            } icon: {
+                Image(systemName: "clock")
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
     }
 
     private var customSourceSection: some View {
@@ -370,8 +419,13 @@ private struct AwesomeSourceImage: View {
                 symbolFallback
             }
         }
-        .frame(width: 52, height: 52)
-        .clipShape(RoundedRectangle(cornerRadius: 9))
+        .frame(width: 58, height: 58)
+        .background(Color.primary.opacity(0.04))
+        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .stroke(Color.secondary.opacity(0.16), lineWidth: 1)
+        }
     }
 
     private var ownerAvatarURL: URL? {
