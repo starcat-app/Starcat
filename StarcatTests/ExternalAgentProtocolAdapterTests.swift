@@ -515,6 +515,44 @@ struct ExternalAgentProtocolAdapterTests {
         #expect(!events.contains { if case .runFailed = $0 { return true }; return false })
     }
 
+    @Test("External Runtime 完成工具失败后不能用普通 Markdown 伪装完成")
+    @MainActor
+    func externalRuntimeRejectsProseFallbackAfterCompletionToolFailure() async throws {
+        let definition = AgentDefinition(
+            id: "external-completion-test",
+            title: "External Completion Test",
+            subtitle: "",
+            systemImage: "terminal",
+            capabilityLabels: [],
+            defaultPrompt: "",
+            isEnabled: true,
+            runtimePolicy: .externalReadOnly,
+            toolIDs: ["submit_report"],
+            artifactTypes: [.markdown]
+        )
+        let runtime = ExternalAgentRuntime(
+            adapter: ExternalFailedCompletionFixtureAdapter(),
+            distributionGate: DistributionGate(channel: .direct),
+            toolRegistry: try AgentToolRegistry(tools: [FailingExternalCompletionTool()])
+        )
+
+        var events: [AgentRunEvent] = []
+        for await event in runtime.run(
+            definition: definition,
+            prompt: "生成报告",
+            context: .empty
+        ) {
+            events.append(event)
+        }
+
+        #expect(events.contains { event in
+            guard case .runFailed(let message) = event else { return false }
+            return message == "fixture completion failed"
+        })
+        #expect(!events.contains { if case .artifactCreated = $0 { return true }; return false })
+        #expect(!events.contains { if case .runCompleted = $0 { return true }; return false })
+    }
+
     @Test("DeepSeek adapter 在启动 carrier 前拒绝旧版 LLM Cordis 插件")
     func deepSeekRejectsLegacyLLMPluginBeforeProcessLaunch() throws {
         #if arch(arm64)
@@ -1705,6 +1743,105 @@ private final class ExternalRetryFixtureDriver: ExternalAgentProtocolDriver, @un
 
     func cancellationFrame() -> AgentJSONValue? { nil }
     func shutdownFrame() -> AgentJSONValue? { nil }
+}
+
+private struct ExternalFailedCompletionFixtureAdapter: ExternalAgentProtocolAdapter {
+    let backend = AgentRuntimeBackend.deepSeekHarness
+    let capabilities = AgentRuntimeCapabilities.deepSeekHarness
+
+    func makeDriver(request: ExternalAgentRunRequest) throws -> any ExternalAgentProtocolDriver {
+        ExternalFailedCompletionFixtureDriver()
+    }
+}
+
+/// 模拟 Provider 在完成工具失败后仍输出 Markdown 并发送 terminal completed。
+/// 该顺序正是回归场景，不能只单测工具本身而遗漏 Projector 的终态判定。
+private final class ExternalFailedCompletionFixtureDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
+    let backend = AgentRuntimeBackend.deepSeekHarness
+    let capabilities = AgentRuntimeCapabilities.deepSeekHarness
+    let processConfiguration = ExternalAgentProcessConfiguration(
+        executableURL: URL(fileURLWithPath: "/bin/sh"),
+        arguments: [
+            "-c",
+            "read first; printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"method\":\"fixture/tool\"}'; read response; printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"method\":\"fixture/completed\"}'",
+        ],
+        environment: ExternalAgentProcessEnvironment.filtered(),
+        currentDirectoryURL: FileManager.default.temporaryDirectory
+    )
+
+    func initialFrames() throws -> [AgentJSONValue] {
+        [.jsonRPCRequest(id: 1, method: "fixture/start")]
+    }
+
+    func receive(_ frame: AgentJSONValue) throws -> ExternalAgentProtocolOutput {
+        switch frame[external: "method"]?.stringValue {
+        case "fixture/tool":
+            return ExternalAgentProtocolOutput(toolRequests: [ExternalAgentToolRequest(
+                requestID: .number(42),
+                callID: "submit-1",
+                name: "submit_report",
+                input: .object([:]),
+                rawInput: "{}"
+            )])
+        case "fixture/completed":
+            return ExternalAgentProtocolOutput(
+                events: [
+                    .assistantMessage("# untrusted prose fallback", usage: nil),
+                    .completed,
+                ],
+                isTerminal: true
+            )
+        default:
+            return ExternalAgentProtocolOutput()
+        }
+    }
+
+    func toolResponseFrame(
+        for request: ExternalAgentToolRequest,
+        result: ExternalAgentToolExecutionResult
+    ) -> AgentJSONValue? {
+        .object([
+            "jsonrpc": .string("2.0"),
+            "id": request.requestID,
+            "result": .object(["success": .bool(!result.isError)]),
+        ])
+    }
+
+    func cancellationFrame() -> AgentJSONValue? { nil }
+    func shutdownFrame() -> AgentJSONValue? { nil }
+}
+
+private struct FailingExternalCompletionTool: AgentTool {
+    let definition = AgentToolDefinition(
+        name: "submit_report",
+        description: "Fixture completion tool",
+        inputSchema: AgentJSONSchema(type: .object, additionalProperties: false),
+        completesRun: true
+    )
+
+    func execute(_ input: AgentToolInput) async -> AgentToolResult {
+        let message = "fixture completion failed"
+        return AgentToolResult(
+            status: .failed,
+            output: AgentToolOutput(
+                toolName: definition.name,
+                summary: message,
+                detail: message,
+                input: "{}",
+                output: "",
+                log: message
+            ),
+            trace: AgentTraceSpan(
+                kind: "Tool",
+                title: definition.name,
+                summary: message,
+                input: "{}",
+                output: "",
+                log: message,
+                status: .failed
+            )
+        )
+    }
 }
 
 private struct DeepSeekCarrierFixture {

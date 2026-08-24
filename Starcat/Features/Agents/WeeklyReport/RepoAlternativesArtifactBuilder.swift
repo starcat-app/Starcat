@@ -19,7 +19,6 @@ struct RepoAlternativeCandidate: Equatable, Sendable {
 }
 
 struct RepoAlternativesArtifactRequest: Equatable, Sendable {
-    var sourceRepoID: Int64
     var title: String
     var summary: String
     var candidates: [RepoAlternativeCandidate]
@@ -31,10 +30,6 @@ struct RepoAlternativesArtifactRequest: Equatable, Sendable {
         guard let object = arguments.objectValue else {
             throw RepoAlternativesArtifactError.invalidArguments("root must be an object")
         }
-        guard let sourceRepoID = object["sourceRepoID"]?.integerValue else {
-            throw RepoAlternativesArtifactError.invalidArguments("sourceRepoID must be an integer")
-        }
-        self.sourceRepoID = Int64(sourceRepoID)
         self.title = try Self.requiredString("title", in: object)
         self.summary = try Self.requiredString("summary", in: object)
         self.candidates = try Self.candidates(in: object)
@@ -120,7 +115,6 @@ struct RepoAlternativesArtifactRequest: Equatable, Sendable {
 
 enum RepoAlternativesArtifactError: LocalizedError, Equatable, Sendable {
     case invalidArguments(String)
-    case unknownRepositoryID(Int64)
     case sourceRepositoryIncluded(String)
     case duplicateCandidate(String)
     case candidateWithoutExternalEvidence(String)
@@ -131,11 +125,6 @@ enum RepoAlternativesArtifactError: LocalizedError, Equatable, Sendable {
             return String(
                 format: String.l10n("agent.artifact.repoAlternatives.error.invalidArgumentsFormat"),
                 message
-            )
-        case .unknownRepositoryID(let id):
-            return String(
-                format: String.l10n("agent.artifact.repoAlternatives.error.unknownRepositoryFormat"),
-                id
             )
         case .sourceRepositoryIncluded(let fullName):
             return String(
@@ -157,15 +146,24 @@ enum RepoAlternativesArtifactError: LocalizedError, Equatable, Sendable {
 }
 
 enum RepoAlternativesArtifactBuilder {
+    /// Repo Alternatives 是单仓工作流，源仓库身份只能来自运行开始时冻结的 Context。
+    /// 模型既不需要知道本地数据库 ID，也不能用工具参数把分析目标切换到快照之外。
+    static func sourceRepository(in context: AgentRunContext) throws -> AgentRepoSnapshot {
+        guard context.repos.count == 1, let sourceRepo = context.repos.first else {
+            throw RepoAlternativesArtifactError.invalidArguments(
+                "frozen context must contain exactly one source repository"
+            )
+        }
+        return sourceRepo
+    }
+
     static func build(
         request: RepoAlternativesArtifactRequest,
         prompt: String,
         context: AgentRunContext,
         externalContextMarkdown: String
     ) throws -> String {
-        guard let sourceRepo = context.repos.first(where: { $0.id == request.sourceRepoID }) else {
-            throw RepoAlternativesArtifactError.unknownRepositoryID(request.sourceRepoID)
-        }
+        let sourceRepo = try sourceRepository(in: context)
         try validateCandidates(
             request.candidates,
             sourceRepo: sourceRepo,

@@ -172,7 +172,6 @@ struct AgentProductRuntimeTests {
                     id: "build-alternatives",
                     name: "artifact_build_repo_alternatives",
                     arguments: try repoAlternativesArguments(
-                        sourceRepoID: 42,
                         candidateURL: candidateURL
                     ).jsonString()
                 )],
@@ -255,7 +254,6 @@ struct AgentProductRuntimeTests {
                     id: "build-alternatives",
                     name: "artifact_build_repo_alternatives",
                     arguments: try repoAlternativesArguments(
-                        sourceRepoID: 42,
                         candidateURL: candidateURL
                     ).jsonString()
                 )],
@@ -449,11 +447,9 @@ struct AgentProductRuntimeTests {
     }
 
     private func repoAlternativesArguments(
-        sourceRepoID: Int64,
         candidateURL: String
     ) -> AgentJSONValue {
         .object([
-            "sourceRepoID": .number(Double(sourceRepoID)),
             "title": .string("GRDB.swift Alternatives"),
             "summary": .string("SQLite.swift 是公开搜索证据中的候选方案。"),
             "candidates": .array([.object([

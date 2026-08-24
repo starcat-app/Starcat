@@ -701,7 +701,6 @@ enum RepoAlternativesAgentTools {
             name: "artifact_build_repo_alternatives",
             description: "Submit a structured comparison. Every candidate must be a public GitHub repository present in External Search evidence; use an empty candidates array when no evidence is available.",
             properties: [
-                "sourceRepoID": AgentJSONSchema(type: .integer, description: "Selected Starcat source repository ID"),
                 "title": AgentJSONSchema(type: .string, description: "Artifact title"),
                 "summary": AgentJSONSchema(type: .string, description: "Concise evidence-based comparison summary"),
                 "candidates": AgentJSONSchema(
@@ -722,7 +721,7 @@ enum RepoAlternativesAgentTools {
                 "includeSources": AgentJSONSchema(type: .boolean, description: "Include External Search references", defaultValue: .bool(true))
             ],
             required: [
-                "sourceRepoID", "title", "summary", "candidates",
+                "title", "summary", "candidates",
                 "recommendedActions", "limitations"
             ],
             completesRun: true
@@ -737,7 +736,7 @@ enum RepoAlternativesAgentTools {
                     context: input.context,
                     externalContextMarkdown: input.values["externalContextMarkdown"] ?? ""
                 )
-                let sourceRepo = input.context.repos.first(where: { $0.id == request.sourceRepoID })!
+                let sourceRepo = try RepoAlternativesArtifactBuilder.sourceRepository(in: input.context)
                 let sources = [
                     AgentToolResultSource(title: sourceRepo.fullName, url: sourceRepo.htmlUrl, provider: "Starcat")
                 ] + request.candidates.map {

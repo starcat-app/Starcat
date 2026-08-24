@@ -72,6 +72,9 @@ struct ExternalAgentRuntime: AgentRuntime {
                     try distributionGate.requireAvailable(.externalAgentRuntime)
                     try Self.validateRequiredContext(definition: definition, context: context)
                     let tools = try visibleTools(for: definition)
+                    await projector.configureCompletionTools(Set(
+                        tools.filter(\.definition.completesRun).map { $0.definition.name }
+                    ))
                     let toolCallHandler: ExternalAgentRuntimeHost.ToolCallHandler?
                     if tools.isEmpty {
                         toolCallHandler = nil
@@ -436,6 +439,9 @@ private actor ExternalAgentEventProjector {
     private var runtimeModelName: String?
     private var latestUsage: AgentUsage?
     private var artifactCount = 0
+    private var requiredCompletionToolNames: Set<String> = []
+    private var completionToolSucceeded = false
+    private var completionToolFailure: String?
     private var isTerminal = false
     private var hasTerminalErrorTrace = false
 
@@ -451,6 +457,13 @@ private actor ExternalAgentEventProjector {
         self.backend = backend
         self.runRepository = runRepository
         self.continuation = continuation
+    }
+
+    /// `completesRun` 是 Starcat 的产品契约，不是 Provider 的普通 tool-call 提示。
+    /// Projector 必须知道哪些工具承担终态提交，才能阻止外部 Runtime 在提交失败后
+    /// 用一段普通 assistant Markdown 把失败运行伪装成“已完成”。
+    func configureCompletionTools(_ names: Set<String>) {
+        requiredCompletionToolNames = names
     }
 
     func start(userPrompt: String, context: AgentRunContext) async {
@@ -525,6 +538,16 @@ private actor ExternalAgentEventProjector {
             )
         case .toolResult(let id, let name, let output, let isError):
             let resultSummary = Self.nonBlank(output.objectValue?["summary"]?.stringValue)
+            if requiredCompletionToolNames.contains(name) {
+                if isError {
+                    if !completionToolSucceeded {
+                        completionToolFailure = resultSummary
+                    }
+                } else {
+                    completionToolSucceeded = true
+                    completionToolFailure = nil
+                }
+            }
             await projectTrace(ExternalAgentTraceEvent(
                 id: "tool:\(id)",
                 kind: .tool,
@@ -614,6 +637,16 @@ private actor ExternalAgentEventProjector {
 
     private func complete() async {
         guard !isTerminal else { return }
+        if !requiredCompletionToolNames.isEmpty,
+           (!completionToolSucceeded || artifactCount == 0) {
+            let message = completionToolFailure
+                ?? LoopAgentRuntimeError.requiredArtifactMissing.localizedDescription
+            await projectFailureTrace(message)
+            isTerminal = true
+            await persistTerminal(status: .failed, errorMessage: message)
+            continuation.yield(.runFailed(message))
+            return
+        }
         let text = finalAssistantText ?? assistantText
         if !text.isEmpty {
             let messageID = await appendMessage(role: .assistant, parts: [.text(text)], usage: latestUsage)

@@ -129,7 +129,7 @@ enum BuiltInAgents {
             ),
             AgentPromptRule(
                 id: "repo-alternatives-artifact-contract",
-                content: "Select the frozen source repository before searching, then submit exactly one structured artifact_build_repo_alternatives call. Use at most 6 candidates. If External Search is unavailable or yields no verified candidate, submit an empty candidates array and state that limitation."
+                content: "Select the frozen source repository before searching, then submit exactly one structured artifact_build_repo_alternatives call. Starcat resolves the source repository identity from the frozen context; do not send a local repository database ID. Use at most 6 candidates. If External Search is unavailable or yields no verified candidate, submit an empty candidates array and state that limitation."
             )
         ],
         runtimePolicy: .codexReadOnly,
