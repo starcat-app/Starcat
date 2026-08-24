@@ -141326,6 +141326,166 @@
         }
       }
     },
+    "onboarding.dataContribution.anonymity" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub Stars are public data. Before upload, Starcat removes account identity and uses a random anonymous identifier."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub Star 本身是公开数据。上传前，Starcat 会移除账号身份，并使用随机匿名标识。"
+          }
+        }
+      }
+    },
+    "onboarding.dataContribution.decline" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not Now"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂不参与"
+          }
+        }
+      }
+    },
+    "onboarding.dataContribution.githubLink" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Review the Source Code on GitHub"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 GitHub 查看源码"
+          }
+        }
+      }
+    },
+    "onboarding.dataContribution.introduction" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can anonymously contribute public Star data to help Starcat train more relevant repository recommendations."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你可以选择匿名贡献公开 Star 数据，帮助 Starcat 训练更相关的仓库推荐。"
+          }
+        }
+      }
+    },
+    "onboarding.dataContribution.openSource" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Still have concerns? Starcat is open source, so you can review the data collection and upload implementation on GitHub."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仍有顾虑？Starcat 已开源，你可以在 GitHub 审核数据采集与上传实现。"
+          }
+        }
+      }
+    },
+    "onboarding.dataContribution.privacy" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Private repositories, tags, notes, search and browsing history, READMEs, code, GitHub account details, and Tokens are never uploaded."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不会上传私有仓库、标签、笔记、搜索与浏览记录、README、代码、GitHub 账号或 Token。"
+          }
+        }
+      }
+    },
+    "onboarding.dataContribution.save" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save and Continue"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存并继续"
+          }
+        }
+      }
+    },
+    "onboarding.dataContribution.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Help Improve Repository Recommendations"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "帮助改进仓库推荐"
+          }
+        }
+      }
+    },
+    "onboarding.dataContribution.toggle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anonymously contribute public Star data"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "匿名贡献公开 Star 数据"
+          }
+        }
+      }
+    },
+    "onboarding.dataContribution.uploadScope" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only public repository IDs and Star times are uploaded after a successful full Stars sync."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅在 Stars 全量同步成功后上传公开仓库 ID 和 Star 时间。"
+          }
+        }
+      }
+    },
     "onboarding.exit.subtitle" : {
       "localizations" : {
         "ar" : {

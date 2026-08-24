@@ -15,6 +15,11 @@ struct ContentView: View {
 
     @Environment(AuthSession.self) private var authSession
     @Environment(AppDependencies.self) private var dependencies
+    @State private var showDataContributionConsent = false
+    @State private var dataContributionConsentDraft = false
+    @State private var dataContributionPromptAccountID: Int64?
+
+    private let dataContributionPromptPreferences = DataContributionConsentPromptPreferences()
     /// 2026-06-15:用户「关闭应用内动画」开 + 系统「减少动态效果」开
     /// 任一为真时,跳过登录态切换的 .smooth 隐式动画,避免内容树瞬切时
     /// 仍有 SwiftUI 默认 spring 残留。
@@ -33,6 +38,18 @@ struct ContentView: View {
         Binding(
             get: { authSession.isAuthenticating || authSession.shouldShowLoginSheet },
             set: { _ in }
+        )
+    }
+
+    /// 把登录、数据库切换、首次引导和登录 Sheet 合并成一个 task identity。
+    /// 任一边界变化都会取消旧判断，避免缓存用户先恢复、数据库尚未切换时为错误账户弹窗。
+    private var dataContributionPromptEvaluationID: DataContributionPromptEvaluationID {
+        DataContributionPromptEvaluationID(
+            authenticatedAccountID: authSession.state.user?.id,
+            databaseAccountID: dependencies.database.currentUserId,
+            databaseScopeRevision: dependencies.databaseScopeRevision,
+            isOnboardingActive: firstRunOnboardingActive,
+            isAuthSheetPresented: showAuthViewBinding.wrappedValue
         )
     }
 
@@ -82,5 +99,97 @@ struct ContentView: View {
             GithubAuthView()
                 .appLocaleEnvironment()
         }
+        .sheet(isPresented: $showDataContributionConsent) {
+            DataContributionConsentSheet(
+                isEnabled: $dataContributionConsentDraft,
+                onClose: handleDataContributionPromptClose,
+                onSave: handleDataContributionPromptSave
+            )
+            .appLocaleEnvironment()
+        }
+        .task(id: dataContributionPromptEvaluationID) {
+            await evaluateDataContributionPrompt()
+        }
     }
+
+    /// 启动遮罩退出后再判断一次账户级授权提示；短暂延迟让 splash / 首次引导的
+    /// 退出动画先收口，避免 SwiftUI 在同一帧撤 overlay 又 present Sheet。
+    private func evaluateDataContributionPrompt() async {
+        let evaluationID = dataContributionPromptEvaluationID
+        guard !TestEnvironment.isRunning else { return }
+
+        let delay: Duration = reduceMotion ? .zero : .milliseconds(400)
+        try? await Task.sleep(for: delay)
+        guard !Task.isCancelled, evaluationID == dataContributionPromptEvaluationID else { return }
+
+        let accountID = evaluationID.authenticatedAccountID
+        await dependencies.dataContributionSettings.reload(accountID: accountID)
+        guard !Task.isCancelled, evaluationID == dataContributionPromptEvaluationID else { return }
+
+        // 已经在设置页明确开启的用户无需再确认；同时落 campaign 标记，防止以后关闭后被追问。
+        if let accountID,
+           accountID == evaluationID.databaseAccountID,
+           dependencies.dataContributionSettings.isEnabled {
+            dataContributionPromptPreferences.markHandled(accountID: accountID)
+            return
+        }
+
+        guard dataContributionPromptPreferences.shouldPresent(
+            authenticatedAccountID: accountID,
+            databaseAccountID: evaluationID.databaseAccountID,
+            isOnboardingActive: evaluationID.isOnboardingActive,
+            isAuthSheetPresented: evaluationID.isAuthSheetPresented,
+            isContributionEnabled: dependencies.dataContributionSettings.isEnabled
+        ), let accountID else {
+            dismissDataContributionPromptWithoutHandling()
+            return
+        }
+
+        dataContributionConsentDraft = false
+        dataContributionPromptAccountID = accountID
+        showDataContributionConsent = true
+    }
+
+    /// 用户关闭或暂不参与：只记录提示已处理，授权继续保持默认关闭。
+    private func handleDataContributionPromptClose() {
+        guard let accountID = dataContributionPromptAccountID else {
+            showDataContributionConsent = false
+            return
+        }
+        dataContributionPromptPreferences.markHandled(accountID: accountID)
+        showDataContributionConsent = false
+        dataContributionPromptAccountID = nil
+    }
+
+    /// 保存用户选择后立即关闭提示；设置落库失败沿用现有静默回读策略，不在这里打扰用户。
+    private func handleDataContributionPromptSave(isEnabled: Bool) {
+        guard let accountID = dataContributionPromptAccountID else {
+            showDataContributionConsent = false
+            return
+        }
+        dataContributionPromptPreferences.markHandled(accountID: accountID)
+        showDataContributionConsent = false
+        dataContributionPromptAccountID = nil
+
+        guard dependencies.database.currentUserId == accountID else { return }
+        Task {
+            await dependencies.dataContributionSettings.setEnabled(isEnabled, accountID: accountID)
+        }
+    }
+
+    /// 账号、数据库或启动覆盖层变化时撤掉旧账户的弹窗，但不消费它的一次性提示。
+    private func dismissDataContributionPromptWithoutHandling() {
+        guard showDataContributionConsent else { return }
+        showDataContributionConsent = false
+        dataContributionPromptAccountID = nil
+    }
+}
+
+/// 数据贡献提示判断的完整输入快照；只用于 SwiftUI `.task(id:)` 的取消与重启边界。
+private struct DataContributionPromptEvaluationID: Equatable {
+    let authenticatedAccountID: Int64?
+    let databaseAccountID: Int64?
+    let databaseScopeRevision: UInt64
+    let isOnboardingActive: Bool
+    let isAuthSheetPresented: Bool
 }
