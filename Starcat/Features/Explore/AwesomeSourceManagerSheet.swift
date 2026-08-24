@@ -138,7 +138,9 @@ struct AwesomeSourceManagerSheet: View {
                 ForEach(filteredSources) { source in
                     AwesomeSourceCard(
                         source: source,
-                        summary: cardDescription(for: source),
+                        discoveryDescription: source.localizedSummary(
+                            languageCode: locale.language.languageCode?.identifier
+                        ),
                         isSelected: enabledIDs.contains(source.id),
                         hasRefreshError: store.sourceRefreshErrors[source.id] != nil,
                         onToggle: { toggleSource(source) },
@@ -166,14 +168,6 @@ struct AwesomeSourceManagerSheet: View {
             .compactMap { $0 }
             .contains { $0.localizedCaseInsensitiveContains(query) }
         }
-    }
-
-    private func cardDescription(for source: AwesomeSource) -> String? {
-        let repoDescription = source.repoDescription?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let repoDescription, !repoDescription.isEmpty {
-            return repoDescription
-        }
-        return source.localizedSummary(languageCode: locale.language.languageCode?.identifier)
     }
 
     private var emptySourceState: some View {

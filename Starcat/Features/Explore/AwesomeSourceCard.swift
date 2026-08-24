@@ -11,7 +11,7 @@ import SwiftUI
 /// 用稳定高度和克制的胶囊元数据承载来源仓库事实，避免长标题或同步状态改变网格节奏。
 struct AwesomeSourceCard: View {
     let source: AwesomeSource
-    let summary: String?
+    let discoveryDescription: String?
     let isSelected: Bool
     let hasRefreshError: Bool
     let onToggle: () -> Void
@@ -23,15 +23,17 @@ struct AwesomeSourceCard: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Button(action: onToggle) {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 12) {
                     header
-                    summaryText
-                    Spacer(minLength: 0)
+                    descriptionLine(label: "GitHub", value: source.repoDescription)
+                    repositoryMetrics
+                    languageBar
                     Divider()
-                    metadata
+                    managedDescription
+                    footer
                 }
                 .padding(16)
-                .frame(maxWidth: .infinity, minHeight: 198, alignment: .topLeading)
+                .frame(maxWidth: .infinity, minHeight: 292, alignment: .topLeading)
                 .background(cardBackground)
                 .overlay(cardBorder)
                 .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -79,54 +81,117 @@ struct AwesomeSourceCard: View {
                 }
             }
             .padding(11)
+            .frame(maxHeight: .infinity, alignment: .bottom)
         }
     }
 
     private var header: some View {
         HStack(alignment: .top, spacing: 11) {
-            AwesomeSourceLogo(source: source, size: 54) { image in
-                // 卡片色彩来自实际 Logo；避免按仓库名生成伪随机色，确保视觉与来源品牌一致。
-                logoTint = image.awesomeAverageColor.map(Color.init(nsColor:))
-            }
             VStack(alignment: .leading, spacing: 4) {
-                Text(source.displayName)
+                Text(source.repoFullName)
                     .font(.headline.weight(.semibold))
                     .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Text(source.repoFullName)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
                 if source.featured {
                     capsule(systemImage: "sparkles", text: String.l10n("awesome.sources.featured"))
                 }
             }
-            Spacer(minLength: 4)
+            Spacer(minLength: 8)
+            AwesomeSourceLogo(source: source, size: 54) { image in
+                // 卡片色彩来自实际 Logo；避免按仓库名生成伪随机色，确保视觉与来源品牌一致。
+                logoTint = image.awesomeAverageColor.map(Color.init(nsColor:))
+            }
         }
-        .padding(.trailing, onDelete == nil ? 62 : 96)
     }
 
-    private var summaryText: some View {
-        Text(summary ?? source.repoFullName)
-            .font(.caption)
+    private func descriptionLine(label: String, value: String?) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(verbatim: label)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(verbatim: normalizedDescription(value) ?? "—")
+                .font(.caption)
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, minHeight: 32, alignment: .topLeading)
+        }
+    }
+
+    private var repositoryMetrics: some View {
+        HStack(spacing: 4) {
+            metric(systemImage: "star", value: source.sourceStars, help: "GitHub Stars")
+            metric(systemImage: "arrow.triangle.branch", value: source.sourceForks, help: "GitHub Forks")
+            metric(systemImage: "eye", value: source.sourceSubscribers, help: "GitHub Watchers")
+            metric(systemImage: "exclamationmark.circle", value: source.sourceOpenIssues, help: "GitHub Issues")
+            metric(systemImage: "square.stack.3d.up", value: source.githubRepoCount, help: "Parsed projects")
+        }
+    }
+
+    private func metric(systemImage: String, value: Int, help: String) -> some View {
+        Label(value.formatted(.number.notation(.compactName)), systemImage: systemImage)
+            .font(.caption2.weight(.medium))
             .foregroundStyle(.secondary)
-            .lineLimit(2)
-            .frame(maxWidth: .infinity, minHeight: 34, alignment: .topLeading)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity)
+            .help(help)
+            .accessibilityLabel(Text(verbatim: help))
+            .accessibilityValue(Text(value, format: .number))
     }
 
-    private var metadata: some View {
-        HStack(spacing: 7) {
-            capsule(
-                systemImage: "star.fill",
-                text: source.sourceStars.formatted(.number.notation(.compactName))
-            )
-            capsule(
-                systemImage: "square.stack.3d.up.fill",
-                text: source.githubRepoCount.formatted(.number.notation(.compactName))
-            )
-            Spacer(minLength: 0)
-            syncCapsule
+    @ViewBuilder
+    private var languageBar: some View {
+        let segments = languageSegments
+        if !segments.isEmpty {
+            GeometryReader { proxy in
+                HStack(spacing: 0) {
+                    ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
+                        Rectangle()
+                            .fill(LanguageColor.color(for: segment.language))
+                            .frame(width: max(2, proxy.size.width * segment.ratio))
+                            .help("\(segment.language) · \(segment.ratio, format: .percent.precision(.fractionLength(1)))")
+                    }
+                }
+                .clipShape(Capsule())
+            }
+            .frame(height: 6)
+            .accessibilityLabel(Text(verbatim: source.sourceLanguage ?? "Languages"))
         }
+    }
+
+    private var managedDescription: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(source.displayName)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+            descriptionLine(label: "Discovery", value: discoveryDescription)
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 7) {
+            if let language = source.sourceLanguage {
+                capsule(systemImage: "circle.fill", text: language)
+            }
+            syncCapsule
+            Spacer(minLength: onDelete == nil ? 70 : 104)
+        }
+    }
+
+    private var languageSegments: [(language: String, ratio: Double)] {
+        let valid = source.languageBytes.filter { !$0.key.isEmpty && $0.value > 0 }
+        let total = valid.values.reduce(0, +)
+        guard total > 0 else { return [] }
+        return valid
+            .sorted { lhs, rhs in
+                lhs.value == rhs.value ? lhs.key < rhs.key : lhs.value > rhs.value
+            }
+            .map { ($0.key, Double($0.value) / Double(total)) }
+    }
+
+    private func normalizedDescription(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed?.isEmpty == false ? trimmed : nil
     }
 
     @ViewBuilder
