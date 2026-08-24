@@ -336,6 +336,95 @@ struct StarcatMCPRuntimeTests {
         #expect(tools.compactMap { $0["name"] as? String } == ["starcat.search_repos"])
     }
 
+    @Test("业务 Agent MCP Runtime 暴露原始工具定义并回传结构化结果")
+    func agentToolRuntimeListsAndCallsBusinessTool() async throws {
+        let recorder = AgentMCPToolCallRecorder()
+        let definition = AgentToolDefinition(
+            name: "context_resolve_repos",
+            description: "Resolve repositories from frozen Starcat context.",
+            inputSchema: AgentJSONSchema(
+                type: .object,
+                properties: ["limit": AgentJSONSchema(type: .integer)],
+                required: ["limit"]
+            )
+        )
+        let runtime = AgentToolMCPRuntime(
+            tools: [definition],
+            originValidator: .localhost()
+        ) { request in
+            await recorder.record(request)
+            return ExternalAgentToolExecutionResult(
+                output: .object([
+                    "status": .string("completed"),
+                    "summary": .string("30 repos"),
+                ]),
+                modelText: "{\"status\":\"completed\",\"summary\":\"30 repos\"}",
+                isError: false,
+                artifactMarkdown: nil
+            )
+        }
+        try await runtime.start()
+        defer { Task { @MainActor in await runtime.shutdown() } }
+
+        _ = await runtime.handle(Self.request(id: 1, method: "initialize", params: Self.initializeParams()))
+        let list = await runtime.handle(Self.request(id: 2, method: "tools/list"))
+        let listJSON = try Self.jsonObject(from: list)
+        let tools = try #require((listJSON["result"] as? [String: Any])?["tools"] as? [[String: Any]])
+        #expect(tools.compactMap { $0["name"] as? String } == [definition.name])
+        let inputSchema = try #require(tools.first?["inputSchema"] as? [String: Any])
+        #expect(inputSchema["required"] as? [String] == ["limit"])
+
+        let call = await runtime.handle(Self.request(
+            id: 3,
+            method: "tools/call",
+            params: ["name": definition.name, "arguments": ["limit": 30]]
+        ))
+        let callJSON = try Self.jsonObject(from: call)
+        let result = try #require(callJSON["result"] as? [String: Any])
+        let structured = try #require(result["structuredContent"] as? [String: Any])
+        #expect(result["isError"] as? Bool == false)
+        #expect(structured["summary"] as? String == "30 repos")
+        let recordedRequest = await recorder.request()
+        let recorded = try #require(recordedRequest)
+        #expect(recorded.name == definition.name)
+        #expect(recorded.input.objectValue?["limit"]?.integerValue == 30)
+    }
+
+    @Test("业务 Agent MCP Runtime 在 tools/call 入口再次拒绝越权工具")
+    func agentToolRuntimeRejectsToolOutsideAllowlist() async throws {
+        let definition = AgentToolDefinition(
+            name: "context_resolve_repos",
+            description: "Resolve repositories.",
+            inputSchema: AgentJSONSchema(type: .object)
+        )
+        let runtime = AgentToolMCPRuntime(
+            tools: [definition],
+            originValidator: .localhost()
+        ) { _ in
+            Issue.record("越权工具不应进入业务执行器")
+            return ExternalAgentToolExecutionResult(
+                output: .object([:]),
+                modelText: "",
+                isError: false,
+                artifactMarkdown: nil
+            )
+        }
+        try await runtime.start()
+        defer { Task { @MainActor in await runtime.shutdown() } }
+
+        _ = await runtime.handle(Self.request(id: 1, method: "initialize", params: Self.initializeParams()))
+        let denied = await runtime.handle(Self.request(
+            id: 2,
+            method: "tools/call",
+            params: ["name": "artifact_build_weekly_report", "arguments": [:]]
+        ))
+        let deniedJSON = try Self.jsonObject(from: denied)
+        let result = try #require(deniedJSON["result"] as? [String: Any])
+        #expect(result["isError"] as? Bool == true)
+        let structured = try #require(result["structuredContent"] as? [String: Any])
+        #expect((structured["summary"] as? String)?.contains("not allowed") == true)
+    }
+
     @Test("关闭私有笔记读取后知识库统计不返回笔记数量")
     func knowledgeStatisticsRespectPrivateNotesCapability() async throws {
         let runtime = try await Self.makeRuntime(exposePrivateNotes: false)
@@ -611,6 +700,18 @@ struct StarcatMCPRuntimeTests {
         #expect(response.statusCode == 200)
         let body = try #require(response.bodyData)
         return try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+    }
+}
+
+private actor AgentMCPToolCallRecorder {
+    private var value: ExternalAgentToolRequest?
+
+    func record(_ request: ExternalAgentToolRequest) {
+        value = request
+    }
+
+    func request() -> ExternalAgentToolRequest? {
+        value
     }
 }
 

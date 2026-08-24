@@ -1746,8 +1746,10 @@ private final class ExternalRetryFixtureDriver: ExternalAgentProtocolDriver, @un
 }
 
 private struct ExternalFailedCompletionFixtureAdapter: ExternalAgentProtocolAdapter {
-    let backend = AgentRuntimeBackend.deepSeekHarness
-    let capabilities = AgentRuntimeCapabilities.deepSeekHarness
+    // 该 fixture 主动发送宿主 dynamic tool request；这是 Codex 协议路径。
+    // DeepSeek Harness 的同类完整性检查由 Agent MCP Runtime 回归测试覆盖。
+    let backend = AgentRuntimeBackend.codexAppServer
+    let capabilities = AgentRuntimeCapabilities.codexAppServer
 
     func makeDriver(request: ExternalAgentRunRequest) throws -> any ExternalAgentProtocolDriver {
         ExternalFailedCompletionFixtureDriver()
@@ -1757,8 +1759,8 @@ private struct ExternalFailedCompletionFixtureAdapter: ExternalAgentProtocolAdap
 /// 模拟 Provider 在完成工具失败后仍输出 Markdown 并发送 terminal completed。
 /// 该顺序正是回归场景，不能只单测工具本身而遗漏 Projector 的终态判定。
 private final class ExternalFailedCompletionFixtureDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
-    let backend = AgentRuntimeBackend.deepSeekHarness
-    let capabilities = AgentRuntimeCapabilities.deepSeekHarness
+    let backend = AgentRuntimeBackend.codexAppServer
+    let capabilities = AgentRuntimeCapabilities.codexAppServer
     let processConfiguration = ExternalAgentProcessConfiguration(
         executableURL: URL(fileURLWithPath: "/bin/sh"),
         arguments: [

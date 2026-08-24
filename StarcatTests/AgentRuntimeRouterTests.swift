@@ -76,8 +76,8 @@ struct AgentRuntimeRouterTests {
         #expect(router.resolvedBackend(for: BuiltInAgents.untaggedTidy) == .builtinLoop)
     }
 
-    @Test("DeepSeek 不兼容业务工具时回退业务 Agent 默认 Runtime")
-    func deepSeekFallsBackForUnsupportedBusinessTools() {
+    @Test("DeepSeek 可承载只读业务 Agent")
+    func deepSeekSupportsReadOnlyBusinessTools() {
         let router = AgentRuntimeRouter(
             preferredBackend: .deepSeekHarness,
             runtimes: [
@@ -86,7 +86,7 @@ struct AgentRuntimeRouterTests {
             ]
         )
 
-        #expect(router.resolvedBackend(for: BuiltInAgents.repoInsight) == .builtinLoop)
+        #expect(router.resolvedBackend(for: BuiltInAgents.repoInsight) == .deepSeekHarness)
     }
 
     @Test("研究类 Loop Agent 使用 96 次工具预算，写入 Agent 保持默认预算")

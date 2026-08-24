@@ -33,9 +33,9 @@ Keychain 读取凭据，只通过每轮子进程环境注入；Finder 启动不�
     └── dsh-jsonrpc-agent-pkg-macos-arm64-spawn-helper
 ```
 
-`starcat.cordis.yml` 不启用 Harness 自带的 `bash/subprocess`。当前 DeepSeek adapter
-尚未接入 Starcat 双向 Tool Bridge，放行 Shell 会越过权限边界，并可能因动态解压
-`pty.node` 触发 Gatekeeper。
+`starcat.cordis.yml` 不启用 Harness 自带的 `bash/subprocess`。DeepSeek adapter 只通过
+每轮临时 MCP Bridge 暴露当前 Agent 声明的只读业务工具；放行 Shell 会越过这条权限
+边界，并可能因动态解压 `pty.node` 触发 Gatekeeper。
 
 ## 3. 配置 Direct Debug
 

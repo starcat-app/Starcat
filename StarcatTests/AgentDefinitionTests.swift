@@ -45,7 +45,7 @@ struct AgentDefinitionTests {
         #expect(agent.workflow.allowsManualRepositoryOverride)
         #expect(agent.workflow.usesDefaultPromptWhenEmpty)
         #expect(agent.promptRules.map(\.id) == ["weekly-local-facts", "weekly-artifact-contract"])
-        #expect(agent.runtimePolicy == .codexReadOnly)
+        #expect(agent.runtimePolicy == .businessReadOnly)
     }
 
     @Test("外部 Agent 显式允许 Codex 与 DeepSeek，不进入固定业务 Agent 列表")
@@ -83,6 +83,7 @@ struct AgentDefinitionTests {
         #expect(agent.workflow.maximumSelectedRepositories == 1)
         #expect(!agent.workflow.allowsEmptyRepositoryContext)
         #expect(agent.promptRules.map(\.id) == ["repo-insight-selection", "repo-insight-artifact-contract"])
+        #expect(agent.runtimePolicy == .businessReadOnly)
     }
 
     @Test("Repo Alternatives Agent 只读取单仓上下文和公开搜索证据")
@@ -101,6 +102,7 @@ struct AgentDefinitionTests {
         #expect(agent.workflow.repositoryContext == .singleRepository)
         #expect(agent.workflow.maximumSelectedRepositories == 1)
         #expect(!agent.workflow.allowsEmptyRepositoryContext)
+        #expect(agent.runtimePolicy == .businessReadOnly)
         #expect(agent.promptRules.map(\.id) == [
             "repo-alternatives-source",
             "repo-alternatives-evidence",
