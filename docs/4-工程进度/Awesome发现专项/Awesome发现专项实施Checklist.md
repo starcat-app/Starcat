@@ -1,6 +1,6 @@
 # Awesome 发现专项实施 Checklist
 
-> 状态：验收问题修复与技术门禁已完成，待 dong4j 人工 UI 复验  
+> 状态：双层缓存补强与技术门禁已完成，待 dong4j 人工 UI 复验  
 > 日期：2026-08-24  
 > 需求与技术契约：[`Awesome发现栏目与来源管理正式方案.md`](../../2-产品/需求讨论/正式方案/Awesome发现栏目与来源管理正式方案.md)  
 > Issue：[#109](https://github.com/starcat-app/Starcat/issues/109)  
@@ -89,3 +89,15 @@
 - [x] Discovery API `81` 条测试与 `go vet` 通过；Starcat Awesome/API/Repository/Migration/Store 定向测试与 macOS build 通过。
 - [x] 完成本轮第 6/7 轮最终一致性审查，并保存独立审查报告。
 - [x] 更新最终结果报告并交付 dong4j 人工 UI 复验。
+
+## 10. 双层缓存补强（2026-08-24）
+
+- [x] 客户端追加 `v24-awesome-cache-freshness`，独立记录目录与每个来源条目的最近有效检查时间。
+- [x] 客户端自动加载采用 6 小时 freshness，缓存新鲜时不请求远端；缺少缓存、缓存过期或新订阅来源才发起刷新。
+- [x] 客户端手动刷新绕过 freshness 并携带 ETag；`304` 推进检查时间，失败继续展示旧快照。
+- [x] Discovery API 在 SQLite 持久快照之上增加 JSON/gzip/ETag 响应缓存，使用 64 条 / 64 MiB 有界 LRU。
+- [x] Discovery API 合并同 key 并发 miss，并在 CRUD、同步、发布、下架后精确失效，防止旧的在途构建回填。
+- [x] Starcat 全量测试 `2652` total、`2641` passed、`0` failed；Discovery API `85` 条测试、race 定向 `35` 条测试与 `go vet` 通过。
+- [x] 聚合 `starcat-api` `11` 条测试与 `go vet` 通过，直接复用本地 Discovery module。
+- [ ] 完成本轮第 8 至第 10 轮审查并保存独立审查报告。
+- [ ] 更新最终结果报告并将 Issue #109 重新推进到人工验收。

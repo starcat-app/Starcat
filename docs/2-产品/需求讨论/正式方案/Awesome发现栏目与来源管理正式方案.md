@@ -353,7 +353,9 @@ If-None-Match: "optional-etag"
 缓存：
 
 - 成功响应返回 `ETag` 和 `Cache-Control`。
-- 内容 CRUD、发布、下架或成功同步后主动失效目录缓存。
+- SQLite 中的来源和条目快照是可跨重启复用的持久缓存；进程内另缓存已经编码的 JSON、gzip 和强 ETag，避免重复查询、序列化、压缩和哈希。
+- 进程内缓存 TTL 复用 `CACHE_TTL_SECONDS`（默认 10800 秒），采用 64 条 / 64 MiB 双上限 LRU；同一 key 并发 miss 只允许一个请求重建，其余请求等待并复用结果。
+- 内容 CRUD、发布、下架或成功同步后主动精确失效目录和对应来源缓存；失效代际必须阻止旧的在途构建重新写回。
 - `304 Not Modified` 不返回伪造 envelope；客户端复用本地快照并只更新检查时间。
 
 ### 5.2 获取单一来源条目
@@ -638,6 +640,7 @@ git@github.com:{owner}/{repo}.git       # 仅自定义来源输入可接受
 | `is_available` | 精选来源是否仍在公开目录；刷新失败的 stale 错误为会话状态 |
 | `github_repo_count / external_entry_count` | 最近成功统计 |
 | `catalog_etag / entries_etag` | 目录和单来源快照条件请求版本 |
+| `entries_checked_at` | 单来源快照最近完成有效检查的时间；`200` 和 `304` 都更新 |
 | `added_at / last_synced_at / updated_at` | 本地添加时间、成功同步时间和内容修订时间 |
 
 #### `awesome_source_subscriptions`
@@ -654,14 +657,18 @@ git@github.com:{owner}/{repo}.git       # 仅自定义来源输入可接受
 
 #### `awesome_state`
 
-单例行保存 `has_completed_source_setup`、来源目录 `catalog_etag` 和 `catalog_checked_at`；每个来源的 entries ETag 保存在 `awesome_sources.entries_etag`。四张表都位于当前账户数据库，不能把首次设置状态改成全局 UserDefaults Bool。
+单例行保存 `has_completed_source_setup`、来源目录 `catalog_etag` 和 `catalog_checked_at`；每个来源的 entries ETag 和最近检查时间分别保存在 `awesome_sources.entries_etag`、`awesome_sources.entries_checked_at`。四张表都位于当前账户数据库，不能把首次设置状态改成全局 UserDefaults Bool。
+
+首版使用 `v22-awesome-discovery` 建表，来源仓库元数据使用 `v23-awesome-source-metadata` 补齐；客户端缓存 freshness 通过追加 `v24-awesome-cache-freshness` 增量迁移增加 `entries_checked_at`，禁止回写已发布 migration。
 
 ### 9.2 缓存策略
 
 - 打开 Awesome 先读本地目录、订阅和条目，立即渲染可用缓存。
-- 目录过期或手动刷新时请求 sources endpoint。
+- 精选目录和每个精选来源条目分别使用 6 小时 freshness；自动进入 Awesome、打开来源管理和订阅变更只刷新缺少缓存或已经过期的数据。
+- 手动刷新绕过 6 小时 freshness，但仍携带各自 ETag；`304` 只推进对应检查时间，不替换本地快照。
 - 只为已启用精选来源请求 entries endpoint。
 - 每个来源独立 ETag；一个来源失败不阻断其他来源。
+- 自动刷新失败继续展示旧快照并标记 stale，不清空已缓存目录或条目。
 - 远端目录替换只能更新 `managed:*` 记录，不能删除 `custom:*`。
 - 服务端下架来源时标记 unavailable；保留订阅和条目直到用户处理，不能误删 Repo 私人数据。
 - 清理 Awesome 缓存只删除可重建目录/条目，不删除自定义来源配置和用户订阅，除非用户明确执行“删除来源”或“重置 Awesome”。
@@ -802,6 +809,7 @@ Awesome 来源关系与以下关系正交：
 - draft/ready/published/archived 状态机和发布门禁。
 - Public API 只返回 published 来源。
 - sources/entries ETag、304、缓存失效和排序。
+- 进程内响应缓存命中不重复查询/编码、同 key 并发 miss 合并、LRU/字节上限和失效代际。
 - AST fixtures：inline/reference link、嵌套列表、Setext heading、HTML 混合、Badge、TOC、重复 Repo、非 Repo GitHub URL、外部 URL。
 - GitHub canonical `gh_repo_id` 去重。
 - 同步成功事务替换；同步失败保留旧公开快照。
@@ -825,6 +833,7 @@ go vet ./...
 - API DTO、ETag/304、错误 envelope 解码。
 - 精选目录 replace 不删除自定义来源和订阅。
 - 单来源刷新失败保留旧条目。
+- 6 小时内自动进入不重复请求；过期后携带 ETag，`304` 推进检查时间；手动刷新无条件发起条件请求。
 - “全部 Awesome”按 `gh_repo_id` 去重并保留多来源证据。
 - 删除来源不删除 Stars、知识库、Tags、Notes。
 - 自定义来源输入归一化、重复检查、README fixture 解析。
