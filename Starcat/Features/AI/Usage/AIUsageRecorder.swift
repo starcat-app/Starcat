@@ -32,7 +32,24 @@ final class AIUsageRecorder: AIUsageRecording, @unchecked Sendable {
         let database = lock.withLock { self.database }
         guard let database else { return }
         do {
-            try await GRDBAIUsageRepository(database: database).insert(event)
+            var pricedEvent = event
+            if pricedEvent.estimatedCostUSD == nil,
+               let operation = AIUsageOperation(rawValue: pricedEvent.operation),
+               let estimate = await AIModelPricingCatalog.shared.estimate(
+                   model: pricedEvent.model,
+                   providerKind: pricedEvent.providerKind,
+                   operation: operation,
+                   inputTokens: pricedEvent.inputTokens,
+                   outputTokens: pricedEvent.outputTokens,
+                   cachedInputTokens: pricedEvent.cachedInputTokens,
+                   cacheWriteInputTokens: pricedEvent.cacheWriteInputTokens
+               ) {
+                pricedEvent.estimatedCostUSD = NSDecimalNumber(decimal: estimate.usd).doubleValue
+                pricedEvent.costSource = estimate.source
+                pricedEvent.pricingModel = estimate.matchedModel
+                pricedEvent.pricingRevision = estimate.revision
+            }
+            try await GRDBAIUsageRepository(database: database).insert(pricedEvent)
         } catch {
             // 用量统计是旁路能力，绝不能因为磁盘满或迁移异常把用户的 AI 回答改成失败。
             AppLog.ai.error("AI usage event write failed: \(error.localizedDescription, privacy: .public)")
@@ -54,6 +71,7 @@ enum AIUsageEventFactory {
         totalTokens: Int?,
         cachedInputTokens: Int?,
         reasoningOutputTokens: Int?,
+        cacheWriteInputTokens: Int? = nil,
         itemCount: Int,
         usageSource: AIUsageSource? = nil,
         status: AIUsageStatus,
@@ -80,6 +98,7 @@ enum AIUsageEventFactory {
             outputTokens: outputTokens,
             totalTokens: totalTokens,
             cachedInputTokens: cachedInputTokens,
+            cacheWriteInputTokens: cacheWriteInputTokens,
             reasoningOutputTokens: reasoningOutputTokens,
             itemCount: max(1, itemCount),
             usageSource: resolvedUsageSource.rawValue,

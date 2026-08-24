@@ -13,7 +13,7 @@ import Testing
 @Suite("AI 用量事件仓储")
 struct AIUsageRepositoryTests {
 
-    @Test("v14 创建用量表与查询索引")
+    @Test("v14 创建用量表且 v27 追加费用快照字段")
     func migrationCreatesUsageSchema() async throws {
         let database = try InMemoryDatabaseManager()
 
@@ -23,6 +23,9 @@ struct AIUsageRepositoryTests {
             #expect(columns.contains("input_tokens"))
             #expect(columns.contains("usage_source"))
             #expect(columns.contains("correlation_id"))
+            #expect(columns.contains("cache_write_input_tokens"))
+            #expect(columns.contains("estimated_cost_usd"))
+            #expect(columns.contains("pricing_revision"))
 
             let indexes = try db.indexes(on: "ai_usage_events").map(\.name)
             #expect(indexes.contains("idx_ai_usage_events_completed"))
@@ -58,7 +61,8 @@ struct AIUsageRepositoryTests {
             inputTokens: 100,
             totalTokens: 140,
             feature: .rag,
-            model: "chat-a"
+            model: "chat-a",
+            estimatedCostUSD: 0.002
         ))
         try await repository.insert(makeEvent(
             id: "rag-unknown",
@@ -77,7 +81,8 @@ struct AIUsageRepositoryTests {
             feature: .semanticSearch,
             model: "embed-a",
             operation: .embedding,
-            itemCount: 6
+            itemCount: 6,
+            estimatedCostUSD: 0.001
         ))
         try await repository.insert(makeEvent(
             id: "old",
@@ -100,6 +105,9 @@ struct AIUsageRepositoryTests {
         #expect(snapshot.summary.callsWithUsage == 2)
         #expect(snapshot.summary.successfulCallCount == 2)
         #expect(snapshot.summary.embeddingItemCount == 6)
+        #expect(snapshot.summary.estimatedCostUSD == 0.003)
+        #expect(snapshot.summary.callsWithEstimatedCost == 2)
+        #expect(snapshot.summary.pricingCoverageRate == 1)
         #expect(snapshot.byFeature.map(\.key) == [AIUsageFeature.rag.rawValue, AIUsageFeature.semanticSearch.rawValue])
         #expect(snapshot.filterOptions.models == ["chat-a", "chat-b", "embed-a"])
 
@@ -173,7 +181,8 @@ struct AIUsageRepositoryTests {
         model: String = "model",
         status: AIUsageStatus = .succeeded,
         operation: AIUsageOperation = .chat,
-        itemCount: Int = 1
+        itemCount: Int = 1,
+        estimatedCostUSD: Double? = nil
     ) -> AIUsageEvent {
         AIUsageEvent(
             id: id,
@@ -195,7 +204,11 @@ struct AIUsageRepositoryTests {
             usageSource: inputTokens == nil ? AIUsageSource.unavailable.rawValue : AIUsageSource.provider.rawValue,
             status: status.rawValue,
             errorCategory: nil,
-            correlationId: nil
+            correlationId: nil,
+            estimatedCostUSD: estimatedCostUSD,
+            costSource: estimatedCostUSD == nil ? nil : "test",
+            pricingModel: estimatedCostUSD == nil ? nil : model,
+            pricingRevision: estimatedCostUSD == nil ? nil : "test-1"
         )
     }
 }

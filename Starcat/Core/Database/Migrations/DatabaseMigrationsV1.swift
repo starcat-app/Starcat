@@ -41,7 +41,8 @@
 //    `v20-agent-runtime-trace` / `v21-github-issue-labels` /
 //    `v22-awesome-discovery` / `v22-data-contribution` /
 //    `v23-awesome-source-metadata` / `v24-awesome-cache-freshness` /
-//    `v25-awesome-source-stars-refresh` / `v26-awesome-repository-metadata`
+//    `v25-awesome-source-stars-refresh` / `v26-awesome-repository-metadata` /
+//    `v27-ai-usage-estimated-cost`
 //
 //  **1.4.0 开发期迁移（已由正式 v19 合并接管）**：
 //  `v19-agent-message-contract` 至 `v26-github-timeline-conversations` 仅在开发构建中出现过。
@@ -105,6 +106,29 @@ enum DatabaseMigrations {
         registerV24AwesomeCacheFreshness(into: &migrator)
         registerV25AwesomeSourceStarsRefresh(into: &migrator)
         registerV26AwesomeRepositoryMetadata(into: &migrator)
+        registerV27AIUsageEstimatedCost(into: &migrator)
+    }
+
+    // MARK: - v27-ai-usage-estimated-cost：AI 用量预估费用（2026-08-24）
+
+    /// 定价字段追加到已发布的 v14 表。单次调用保存费用快照而不是查询时动态重算，
+    /// 否则 LiteLLM 调价会让历史统计随时间漂移，用户无法复核当时的估算口径。
+    private static func registerV27AIUsageEstimatedCost(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v27-ai-usage-estimated-cost") { db in
+            guard try db.tableExists("ai_usage_events") else { return }
+            let columns = Set(try db.columns(in: "ai_usage_events").map(\.name))
+            try db.alter(table: "ai_usage_events") { table in
+                if !columns.contains("cache_write_input_tokens") {
+                    table.add(column: "cache_write_input_tokens", .integer)
+                }
+                if !columns.contains("estimated_cost_usd") {
+                    table.add(column: "estimated_cost_usd", .double)
+                }
+                if !columns.contains("cost_source") { table.add(column: "cost_source", .text) }
+                if !columns.contains("pricing_model") { table.add(column: "pricing_model", .text) }
+                if !columns.contains("pricing_revision") { table.add(column: "pricing_revision", .text) }
+            }
+        }
     }
 
     // MARK: - v26-awesome-repository-metadata：Awesome 仓库完整元数据（2026-08-24）

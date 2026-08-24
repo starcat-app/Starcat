@@ -44,6 +44,8 @@ struct AIUsageSummary: Equatable, Sendable {
     var callCount: Int
     var successfulCallCount: Int
     var callsWithUsage: Int
+    var estimatedCostUSD: Double
+    var callsWithEstimatedCost: Int
     var embeddingItemCount: Int
 
     var successRate: Double {
@@ -54,6 +56,10 @@ struct AIUsageSummary: Equatable, Sendable {
         callCount == 0 ? 0 : Double(callsWithUsage) / Double(callCount)
     }
 
+    var pricingCoverageRate: Double {
+        callsWithUsage == 0 ? 0 : Double(callsWithEstimatedCost) / Double(callsWithUsage)
+    }
+
     static let empty = AIUsageSummary(
         totalTokens: 0,
         inputTokens: 0,
@@ -61,6 +67,8 @@ struct AIUsageSummary: Equatable, Sendable {
         callCount: 0,
         successfulCallCount: 0,
         callsWithUsage: 0,
+        estimatedCostUSD: 0,
+        callsWithEstimatedCost: 0,
         embeddingItemCount: 0
     )
 }
@@ -71,6 +79,7 @@ struct AIUsageDailyPoint: Equatable, Identifiable, Sendable {
     var outputTokens: Int
     var totalTokens: Int
     var callCount: Int
+    var estimatedCostUSD: Double
 
     var id: String { day }
 }
@@ -81,6 +90,7 @@ struct AIUsageDimensionPoint: Equatable, Identifiable, Sendable {
     var outputTokens: Int
     var totalTokens: Int
     var callCount: Int
+    var estimatedCostUSD: Double
 
     var id: String { key }
 }

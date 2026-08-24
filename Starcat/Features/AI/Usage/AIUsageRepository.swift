@@ -75,6 +75,7 @@ struct GRDBAIUsageRepository: AIUsageRepositoryProtocol {
                     COALESCE(SUM(input_tokens), 0) AS input_tokens,
                     COALESCE(SUM(output_tokens), 0) AS output_tokens,
                     COALESCE(SUM(total_tokens), 0) AS total_tokens,
+                    COALESCE(SUM(estimated_cost_usd), 0) AS estimated_cost_usd,
                     COUNT(*) AS call_count
                 FROM ai_usage_events
                 \(predicate.whereClause)
@@ -87,7 +88,8 @@ struct GRDBAIUsageRepository: AIUsageRepositoryProtocol {
                     inputTokens: row["input_tokens"],
                     outputTokens: row["output_tokens"],
                     totalTokens: row["total_tokens"],
-                    callCount: row["call_count"]
+                    callCount: row["call_count"],
+                    estimatedCostUSD: row["estimated_cost_usd"]
                 )
             }
 
@@ -99,6 +101,7 @@ struct GRDBAIUsageRepository: AIUsageRepositoryProtocol {
                         COALESCE(SUM(input_tokens), 0) AS input_tokens,
                         COALESCE(SUM(output_tokens), 0) AS output_tokens,
                         COALESCE(SUM(total_tokens), 0) AS total_tokens,
+                        COALESCE(SUM(estimated_cost_usd), 0) AS estimated_cost_usd,
                         COUNT(*) AS call_count
                     FROM ai_usage_events
                     \(predicate.whereClause)
@@ -111,7 +114,8 @@ struct GRDBAIUsageRepository: AIUsageRepositoryProtocol {
                         inputTokens: row["input_tokens"],
                         outputTokens: row["output_tokens"],
                         totalTokens: row["total_tokens"],
-                        callCount: row["call_count"]
+                        callCount: row["call_count"],
+                        estimatedCostUSD: row["estimated_cost_usd"]
                     )
                 }
             }
@@ -153,6 +157,8 @@ struct GRDBAIUsageRepository: AIUsageRepositoryProtocol {
                 COUNT(*) AS call_count,
                 SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END) AS successful_count,
                 SUM(CASE WHEN total_tokens IS NOT NULL THEN 1 ELSE 0 END) AS usage_count,
+                COALESCE(SUM(estimated_cost_usd), 0) AS estimated_cost_usd,
+                SUM(CASE WHEN estimated_cost_usd IS NOT NULL THEN 1 ELSE 0 END) AS priced_count,
                 COALESCE(SUM(CASE WHEN operation = 'embedding' THEN item_count ELSE 0 END), 0) AS embedding_items
             FROM ai_usage_events
             \(predicate.whereClause)
@@ -165,6 +171,8 @@ struct GRDBAIUsageRepository: AIUsageRepositoryProtocol {
             callCount: row?["call_count"] ?? 0,
             successfulCallCount: row?["successful_count"] ?? 0,
             callsWithUsage: row?["usage_count"] ?? 0,
+            estimatedCostUSD: row?["estimated_cost_usd"] ?? 0,
+            callsWithEstimatedCost: row?["priced_count"] ?? 0,
             embeddingItemCount: row?["embedding_items"] ?? 0
         )
     }
