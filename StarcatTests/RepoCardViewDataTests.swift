@@ -323,7 +323,7 @@ struct RepoCardViewDataTests {
             evidence: []
         ).discoveryDTO
 
-        // 详情页保留稳定 repoID，但 `.task(id: item)` 必须能观察完整元数据快照变化。
+        // 详情页保留稳定 repoID，但视图和任务 identity 必须能观察完整元数据快照变化。
         #expect(cached.repoID == refreshed.repoID)
         #expect(cached != refreshed)
 

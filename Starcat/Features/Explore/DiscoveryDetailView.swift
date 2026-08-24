@@ -26,7 +26,9 @@ struct DiscoveryDetailView: View {
         ZStack(alignment: .topLeading) {
             if let item {
                 DiscoveryScaffoldShell(item: item, supplementalHeader: supplementalHeader)
-                    .id(item.repoID)
+                    // 同一仓库刷新后 repoID 不变，但 description 和 GitHub 时间可能补齐；
+                    // 完整快照作为 identity 可重建内部 @State，避免继续显示旧的空元数据。
+                    .id(item)
                     .detailContentTransition()
             } else {
                 RepoDetailNoSelectionPlaceholder(messageKey: "explore.detail.empty")
