@@ -40,6 +40,23 @@ enum AgentWorkspaceLayoutMetrics {
     }
 }
 
+/// 会影响 Agent `knowledge_search` 工具装配结果的 RAG 配置快照。
+///
+/// Agent Runtime 会冻结整组 Tool Registry；如果设置页在工作台存活期间修改了回退策略，
+/// 必须让 SwiftUI 观察到快照变化并重新装配，否则外部 Runtime 会继续使用旧 Provider。
+struct AgentRuntimeKnowledgeConfigurationSnapshot: Equatable {
+    let backendConfiguration: RAGBackendConfiguration
+    let retrievalSettings: RAGRetrievalSettings
+    let rerankConfiguration: RAGRerankConfiguration
+
+    @MainActor
+    init(settings: AppSettings) {
+        backendConfiguration = settings.ragBackendConfiguration
+        retrievalSettings = settings.ragRetrievalSettings
+        rerankConfiguration = settings.ragRerankConfiguration
+    }
+}
+
 /// 只测量 `HSplitView` 最终分配的实际栏宽；默认值 0 代表该栏当前未挂载或已折叠。
 private struct AgentWorkspaceLeftWidthPreferenceKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
@@ -105,6 +122,8 @@ struct AgentWorkspaceView: View {
     @State private var codexModelCatalogError: String?
     @State private var codexProviderEndpointStates: [String: CodexProviderEndpointState] = [:]
     @State private var isHistoryExpanded = false
+    /// 运行中的 Runtime 必须保持冻结；设置变更延后到当前 run 结束再装配。
+    @State private var hasPendingKnowledgeConfigurationRefresh = false
     @FocusState private var isContextPickerSearchFocused: Bool
     let chromeState: WorkspaceChromeState
 
@@ -114,6 +133,10 @@ struct AgentWorkspaceView: View {
 
     private var restoredRightColumnWidth: CGFloat {
         AgentWorkspaceLayoutMetrics.clampedRightWidth(persistedRightColumnWidth)
+    }
+
+    private var knowledgeConfigurationSnapshot: AgentRuntimeKnowledgeConfigurationSnapshot {
+        AgentRuntimeKnowledgeConfigurationSnapshot(settings: dependencies.settings)
     }
 
     var body: some View {
@@ -226,6 +249,14 @@ struct AgentWorkspaceView: View {
         }
         .onChange(of: dependencies.settings.aiProviderProfiles) { _, _ in
             normalizeDeepSeekSelection()
+            configureAgentRuntime()
+        }
+        .onChange(of: knowledgeConfigurationSnapshot) { _, _ in
+            refreshRuntimeForKnowledgeConfigurationChange()
+        }
+        .onChange(of: viewModel.isRunning) { wasRunning, isRunning in
+            guard wasRunning, !isRunning, hasPendingKnowledgeConfigurationRefresh else { return }
+            hasPendingKnowledgeConfigurationRefresh = false
             configureAgentRuntime()
         }
         .animation(.easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)
@@ -355,6 +386,15 @@ struct AgentWorkspaceView: View {
             preferredBackend: preferredBackend,
             runtimes: runtimes
         ))
+    }
+
+    private func refreshRuntimeForKnowledgeConfigurationChange() {
+        guard !viewModel.isRunning else {
+            // 当前 run 的工具与参数已经冻结，不能中途替换；完成后再让下一次请求读取新设置。
+            hasPendingKnowledgeConfigurationRefresh = true
+            return
+        }
+        configureAgentRuntime()
     }
 
     private var selectedCodexModelSelection: CodexModelSelection? {

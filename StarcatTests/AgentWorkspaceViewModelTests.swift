@@ -18,6 +18,31 @@ import Testing
 @Suite("AgentWorkspaceViewModel")
 struct AgentWorkspaceViewModelTests {
 
+    @Test("Agent Runtime 知识配置快照跟踪 SQLite 回退、检索与重排设置")
+    func runtimeKnowledgeConfigurationSnapshotTracksRAGSettings() throws {
+        let suiteName = "AgentWorkspaceViewModelTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = AppSettings(defaults: defaults, keychain: InMemoryKeychain())
+        let initial = AgentRuntimeKnowledgeConfigurationSnapshot(settings: settings)
+
+        var backendConfiguration = settings.ragBackendConfiguration
+        backendConfiguration.fallbackToSQLite.toggle()
+        settings.ragBackendConfiguration = backendConfiguration
+        let backendChanged = AgentRuntimeKnowledgeConfigurationSnapshot(settings: settings)
+        #expect(backendChanged != initial)
+
+        settings.ragRetrievalSettings = .strict
+        let retrievalChanged = AgentRuntimeKnowledgeConfigurationSnapshot(settings: settings)
+        #expect(retrievalChanged != backendChanged)
+
+        var rerankConfiguration = settings.ragRerankConfiguration
+        rerankConfiguration.isEnabled.toggle()
+        settings.ragRerankConfiguration = rerankConfiguration
+        let rerankChanged = AgentRuntimeKnowledgeConfigurationSnapshot(settings: settings)
+        #expect(rerankChanged != retrievalChanged)
+    }
+
     @Test("Weekly 可用默认指令和自动时间窗发送，但必须先选择有效模型")
     func weeklySubmissionValidationUsesWorkflowPolicy() {
         let viewModel = AgentWorkspaceViewModel(agents: [BuiltInAgents.githubWeeklyReport])
