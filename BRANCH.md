@@ -32,7 +32,7 @@
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
-| `codex/awesome-discovery` | `../Starcat-awesome-discovery`；基于本地 `dev@60b16b8f` | 实现探索 Awesome 模式、来源管理、Discovery API 集中解析和本地自定义来源。配套仓库 `starcat-discovery-api`、`starcat-site` 使用同名独立分支与嵌套 worktree。 | `开发中`；关联 Issue #109，三个仓库均未 push。 | 完成分仓库测试、多轮审查和人工验收后，分别合回各自 `dev`。 |
+| `codex/awesome-discovery` | `../Starcat-awesome-discovery`；基于本地 `dev@60b16b8f` | 实现探索 Awesome 模式、来源管理、Discovery API 集中解析和本地自定义来源。配套仓库 `starcat-discovery-api`、`starcat-site` 使用同名独立分支与嵌套 worktree。 | `已合并`；2026-08-24 三个仓库均已合入各自本地 `dev`，均未 push。 | 保留分支与 worktree 供 dong4j 在 `dev` 验证；验收后再单独授权清理。 |
 | `dev` | 本地 + `origin/dev`；当前无独立 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；1.4.0 发版准备与 App Store 正式版 Xcode 打包门禁已进入 `main`。 | 后续功能继续在 `dev` 开发；新的发版阻断问题仍回到 `dev` 修复并重新执行门禁。 |
 | `main` | 本地 + `origin/main`；仓库根目录 worktree | 远端默认稳定主线和发布基线。 | `长期保留`；2026-08-21 已完成 1.4.0 发布：App Store Connect 构建有效，Direct 完成公证、官网、Sparkle、GitHub Release 和 Homebrew 发布。 | 保持稳定主线；后续功能与发版阻断修复仍先进入 `dev`。 |
 
