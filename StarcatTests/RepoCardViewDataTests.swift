@@ -293,6 +293,46 @@ struct RepoCardViewDataTests {
         #expect(hero.updatedAt == ISO8601DateFormatter().date(from: "2026-08-23T12:34:56Z"))
     }
 
+    @Test("Awesome 同仓库元数据刷新会改变详情任务 identity")
+    func awesomeMetadataRefreshChangesDiscoveryDetailIdentity() {
+        let cached = AwesomeRepositoryItem(
+            id: 3001,
+            owner: "james-proxy",
+            name: "james",
+            fullName: "james-proxy/james",
+            description: nil,
+            ownerAvatarURL: nil,
+            language: nil,
+            stars: 1_438,
+            isArchived: false,
+            updatedAt: nil,
+            evidence: []
+        ).discoveryDTO
+        let refreshed = AwesomeRepositoryItem(
+            id: 3001,
+            owner: "james-proxy",
+            name: "james",
+            fullName: "james-proxy/james",
+            description: "Web Debugging Proxy Application",
+            ownerAvatarURL: nil,
+            language: nil,
+            stars: 1_438,
+            isArchived: false,
+            updatedAt: Date(timeIntervalSince1970: 1_723_462_774),
+            createdAt: Date(timeIntervalSince1970: 1_435_217_234),
+            evidence: []
+        ).discoveryDTO
+
+        // 详情页保留稳定 repoID，但 `.task(id: item)` 必须能观察完整元数据快照变化。
+        #expect(cached.repoID == refreshed.repoID)
+        #expect(cached != refreshed)
+
+        let repo = refreshed.toEphemeralRepo(isStarred: false)
+        #expect(repo.description == "Web Debugging Proxy Application")
+        #expect(repo.createdAt != nil)
+        #expect(repo.updatedAt != nil)
+    }
+
     // MARK: - Helpers
 
     private func sampleRepo(id: Int64, isStarred: Bool) -> Repo {
