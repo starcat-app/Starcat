@@ -9,9 +9,15 @@
 //  停留在当前账户数据库。
 //
 
+import AppKit
 import SwiftUI
 
 struct AwesomeSourceManagerSheet: View {
+    private enum FocusedInput: Hashable {
+        case search
+        case customSource
+    }
+
     let store: AwesomeStore
 
     @Environment(\.locale) private var locale
@@ -24,6 +30,7 @@ struct AwesomeSourceManagerSheet: View {
     @State private var isAddingCustomSource = false
     @State private var initialized = false
     @State private var pendingConfirmation: AwesomeSourceConfirmation?
+    @FocusState private var focusedInput: FocusedInput?
 
     /// 来源选择是桌面宽 Sheet，固定三列比 adaptive 更能保持卡片位置和视觉节奏。
     private let columns = Array(
@@ -51,6 +58,11 @@ struct AwesomeSourceManagerSheet: View {
             guard !initialized else { return }
             initialized = true
             enabledIDs = Set(store.sources.filter(\.isEnabled).map(\.id))
+            // macOS 会默认把 Sheet 中第一个 TextField 设为 first responder。这里等待首帧
+            // 挂载完成后清空焦点，只取消“自动聚焦”；用户主动点击时仍保留系统 Focus Ring。
+            await Task.yield()
+            focusedInput = nil
+            NSApp.keyWindow?.makeFirstResponder(nil)
         }
         .confirmationDialog(
             confirmationTitle,
@@ -89,6 +101,7 @@ struct AwesomeSourceManagerSheet: View {
 
             TextField("awesome.search.placeholder", text: $searchQuery)
                 .textFieldStyle(.roundedBorder)
+                .focused($focusedInput, equals: .search)
         }
         .padding(20)
     }
@@ -197,6 +210,7 @@ struct AwesomeSourceManagerSheet: View {
             HStack(spacing: 8) {
                 TextField("awesome.sources.custom.placeholder", text: $customSourceInput)
                     .textFieldStyle(.roundedBorder)
+                    .focused($focusedInput, equals: .customSource)
                     .onSubmit(addCustomSource)
                     .disabled(isAddingCustomSource)
                 Button(action: addCustomSource) {
