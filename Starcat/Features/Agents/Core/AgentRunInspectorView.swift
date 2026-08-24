@@ -83,7 +83,7 @@ struct AgentRunInspectorHeader: View {
         if viewModel.selectedTraceEvent != nil { return String.l10n("agent.workspace.inspector.step.subtitle") }
         if viewModel.selectedKnowledgeAudit != nil { return String.l10n("agent.workspace.knowledgeAudit.subtitle") }
         switch viewModel.inspectorTab {
-        case .overview: return String.l10n("agent.workspace.inspector.summary.subtitle")
+        case .run: return String.l10n("agent.workspace.inspector.summary.subtitle")
         case .context: return String.l10n("agent.workspace.inspector.context.subtitle")
         case .artifacts: return String.l10n("agent.workspace.inspector.artifact.subtitle")
         }
@@ -144,7 +144,7 @@ struct AgentRunInspectorView: View {
                 inspectorTabs
                 ScrollView {
                     switch viewModel.inspectorTab {
-                    case .overview: overviewInspector
+                    case .run: runInspector
                     case .context: contextInspector
                     case .artifacts: artifactsInspector
                     }
@@ -171,8 +171,18 @@ struct AgentRunInspectorView: View {
         .padding(.bottom, 10)
     }
 
-    private var overviewInspector: some View {
+    private var runInspector: some View {
         VStack(alignment: .leading, spacing: 12) {
+            inspectorGroup(title: String.l10n("agent.workspace.inspector.overview.execution"), icon: "point.3.connected.trianglepath.dotted") {
+                metricRow(String.l10n("agent.workspace.inspector.overview.events"), presentation.stepCount.formatted())
+                metricRow(String.l10n("agent.workspace.inspector.overview.completed"), presentation.completedStepCount.formatted())
+                metricRow(String.l10n("agent.workspace.inspector.overview.active"), presentation.activeStepCount.formatted())
+                metricRow(String.l10n("agent.workspace.inspector.overview.failed"), presentation.failedStepCount.formatted(), valueColor: presentation.failedStepCount > 0 ? .red : .primary)
+                metricRow(String.l10n("agent.workspace.inspector.summary.toolCalls"), presentation.toolCallCount.formatted())
+                metricRow(String.l10n("agent.workspace.inspector.overview.retries"), presentation.retryCount.formatted())
+                metricRow(String.l10n("agent.workspace.inspector.overview.compactions"), presentation.compactionCount.formatted())
+            }
+
             inspectorGroup(title: String.l10n("agent.workspace.inspector.overview.runtime"), icon: "cpu") {
                 metricRow(String.l10n("agent.workspace.inspector.overview.backend"), viewModel.runtimeBackend.displayName)
                 if let provider = viewModel.runtimeProviderName {
@@ -185,16 +195,6 @@ struct AgentRunInspectorView: View {
                 metricRow(String.l10n("agent.workspace.inspector.overview.startedAt"), dateLabel(presentation.startedAt))
                 metricRow(String.l10n("agent.workspace.inspector.overview.duration"), durationLabel)
                 metricRow(String.l10n("agent.workspace.inspector.overview.lastActivity"), dateLabel(presentation.lastActivityAt))
-            }
-
-            inspectorGroup(title: String.l10n("agent.workspace.inspector.overview.execution"), icon: "point.3.connected.trianglepath.dotted") {
-                metricRow(String.l10n("agent.workspace.inspector.overview.events"), presentation.stepCount.formatted())
-                metricRow(String.l10n("agent.workspace.inspector.overview.completed"), presentation.completedStepCount.formatted())
-                metricRow(String.l10n("agent.workspace.inspector.overview.active"), presentation.activeStepCount.formatted())
-                metricRow(String.l10n("agent.workspace.inspector.overview.failed"), presentation.failedStepCount.formatted(), valueColor: presentation.failedStepCount > 0 ? .red : .primary)
-                metricRow(String.l10n("agent.workspace.inspector.summary.toolCalls"), presentation.toolCallCount.formatted())
-                metricRow(String.l10n("agent.workspace.inspector.overview.retries"), presentation.retryCount.formatted())
-                metricRow(String.l10n("agent.workspace.inspector.overview.compactions"), presentation.compactionCount.formatted())
             }
 
             inspectorGroup(title: String.l10n("agent.workspace.inspector.overview.usage"), icon: "gauge.with.dots.needle.50percent") {

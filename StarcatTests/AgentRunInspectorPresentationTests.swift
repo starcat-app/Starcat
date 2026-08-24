@@ -11,6 +11,11 @@ import Testing
 
 @Suite("AgentRunInspectorPresentation")
 struct AgentRunInspectorPresentationTests {
+    @Test("Inspector 固定为运行、上下文、产出物三个页签")
+    func tabInformationArchitectureIsStable() {
+        #expect(AgentInspectorTab.allCases.map(\.rawValue) == ["run", "context", "artifacts"])
+    }
+
     @Test("执行统计按真实 Trace 类型与状态聚合")
     func aggregatesRecordedTraceFacts() {
         let runID = UUID()

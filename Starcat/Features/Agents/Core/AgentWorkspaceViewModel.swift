@@ -69,7 +69,7 @@ final class AgentWorkspaceViewModel {
     var usage: AgentUsage = .zero
     var artifacts: [AgentArtifact] = []
     var historyRuns: [AgentRunRecord] = []
-    var inspectorTab: AgentInspectorTab = .overview
+    var inspectorTab: AgentInspectorTab = .run
     var selectedArtifactID: UUID?
     var selectedToolCallID: String?
     var selectedTraceEventID: String?
@@ -291,7 +291,7 @@ final class AgentWorkspaceViewModel {
         traceEvents = []
         usage = .zero
         artifacts = []
-        inspectorTab = .overview
+        inspectorTab = .run
         selectedArtifactID = nil
         selectedToolCallID = nil
         selectedTraceEventID = nil
@@ -453,7 +453,7 @@ final class AgentWorkspaceViewModel {
         traceEvents = []
         usage = .zero
         artifacts = []
-        inspectorTab = .overview
+        inspectorTab = .run
         selectedArtifactID = nil
         selectedToolCallID = nil
         selectedTraceEventID = nil
@@ -956,7 +956,7 @@ final class AgentWorkspaceViewModel {
         }
         approvals = snapshot.approvals
         artifacts = snapshot.artifacts
-        inspectorTab = .overview
+        inspectorTab = .run
         selectedArtifactID = artifacts.first?.id
         selectedToolCallID = nil
         selectedTraceEventID = nil

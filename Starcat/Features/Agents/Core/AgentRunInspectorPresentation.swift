@@ -14,13 +14,13 @@ import SwiftUI
 
 /// Agent Inspector 的稳定信息架构；选项顺序即右栏的阅读顺序。
 enum AgentInspectorTab: String, CaseIterable, Hashable, Sendable {
-    case overview
+    case run
     case context
     case artifacts
 
     var titleKey: LocalizedStringKey {
         switch self {
-        case .overview: "agent.workspace.inspector.tab.overview"
+        case .run: "agent.workspace.inspector.tab.run"
         case .context: "agent.workspace.inspector.tab.context"
         case .artifacts: "agent.workspace.inspector.tab.artifacts"
         }

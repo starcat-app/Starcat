@@ -471796,6 +471796,13 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前 Runtime 事件与结构化数据" } }
       }
     },
+    "agent.workspace.inspector.tab.run" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Run" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "运行" } }
+      }
+    },
     "agent.workspace.inspector.tab.artifacts" : {
       "extractionState" : "manual",
       "localizations" : {
