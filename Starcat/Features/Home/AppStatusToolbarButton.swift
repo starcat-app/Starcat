@@ -275,6 +275,7 @@ private struct AppStatusPanel: View {
                 subtitle: githubStatusSubtitle,
                 accessory: {
                     Link("toolbar.status.github.open", destination: GitHubStatusClient.statusPageURL)
+                        .buttonStyle(.bordered)
                         .controlSize(.small)
                         .focusEffectDisabled()
                 }
