@@ -58,7 +58,9 @@ private struct DiscoveryScaffoldShell: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .task(id: item.repoID) {
+        // 同一仓库的 Awesome 缓存刷新只会改变 description / createdAt / updatedAt 等元数据，
+        // repoID 不变；任务必须跟随完整快照，否则 @State 会继续展示刷新前的空字段。
+        .task(id: item) {
             await resolveRepo()
             loadReadmeIfNeeded()
         }
