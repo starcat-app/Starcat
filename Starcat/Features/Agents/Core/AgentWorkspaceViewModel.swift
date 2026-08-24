@@ -28,6 +28,8 @@ final class AgentWorkspaceViewModel {
     private var mentionTask: Task<Void, Never>?
     private var activeRunID: UUID?
     private var currentRunSnapshot: AgentRunSnapshotRecord?
+    private var externalUsageStartedAt: Double?
+    private var hasRecordedExternalUsage = false
     /// Composer 在发送后会立即清空附件与临时选择；Inspector 必须持有本次 Run 的冻结上下文，
     /// 否则实时运行期间只能看到空的“下一次输入”，历史记录与实时记录也会表现不一致。
     private(set) var currentRunContext: AgentRunContext?
@@ -405,6 +407,9 @@ final class AgentWorkspaceViewModel {
         do {
             guard let snapshot = try await runRepository.snapshot(runID: runID) else { return }
             apply(snapshot)
+            if case .usageUpdated(let historicalUsage) = await withEstimatedCost(.usageUpdated(usage)) {
+                usage = historicalUsage
+            }
             if snapshot.run.status == AgentRunStatus.waitingForConfirmation.rawValue,
                let definition = agents.first(where: { $0.id == snapshot.run.agentId }),
                snapshot.approvals.contains(where: { $0.status == .pending }) {
@@ -430,11 +435,15 @@ final class AgentWorkspaceViewModel {
         status = .planning
         errorMessage = nil
         resetStreamingPresentation(resetUpdateCount: true)
+        externalUsageStartedAt = Date().timeIntervalSince1970
+        hasRecordedExternalUsage = false
         let runtime = runtime
         runTask = Task { [weak self] in
             let stream = runtime.retryFailedRun(snapshot: snapshot, definition: definition)
             for await event in stream {
-                await MainActor.run { self?.apply(event) }
+                guard let self else { return }
+                let pricedEvent = await self.withEstimatedCost(event)
+                self.apply(pricedEvent)
             }
             await self?.reloadHistory()
             await self?.refreshActiveRunSnapshot()
@@ -463,6 +472,8 @@ final class AgentWorkspaceViewModel {
         currentRunContext = nil
         selectedHistoryRunID = nil
         currentRunUserPrompt = effectivePrompt
+        externalUsageStartedAt = Date().timeIntervalSince1970
+        hasRecordedExternalUsage = false
 
         let input = AgentRunInput(
             goal: effectivePrompt,
@@ -502,9 +513,9 @@ final class AgentWorkspaceViewModel {
                 context: context
             )
             for await event in stream {
-                await MainActor.run {
-                    self?.apply(event)
-                }
+                guard let self else { return }
+                let pricedEvent = await self.withEstimatedCost(event)
+                self.apply(pricedEvent)
             }
             await self?.reloadHistory()
             await self?.refreshActiveRunSnapshot()
@@ -863,17 +874,84 @@ final class AgentWorkspaceViewModel {
         case .runCompleted:
             flushStreamingPresentation()
             status = .completed
+            recordExternalUsageIfNeeded(status: .succeeded)
             runTask = nil
         case .runFailed(let message):
             flushStreamingPresentation()
             status = .failed
             errorMessage = message
+            recordExternalUsageIfNeeded(status: .failed)
             runTask = nil
         case .runCancelled:
             flushStreamingPresentation()
             status = .cancelled
+            recordExternalUsageIfNeeded(status: .cancelled)
             runTask = nil
         }
+    }
+
+    /// Runtime usage 帧先补齐费用再进入 Observable，避免右侧检查器短暂显示旧价格。
+    /// 内置 Loop 也使用同一计算口径，但不会再次写入聚合事件，因为底层 HTTP 调用已经
+    /// 由 `AIUsageRecorder` 逐次记录。
+    private func withEstimatedCost(_ event: AgentRunEvent) async -> AgentRunEvent {
+        guard case .usageUpdated(var nextUsage) = event,
+              nextUsage.estimatedCost == nil,
+              let model = runtimeModelName ?? currentRunContext?.runtimeModelName,
+              let estimate = await AIModelPricingCatalog.shared.estimate(
+                  model: model,
+                  providerKind: runtimeProviderName ?? currentRunContext?.runtimeProviderName ?? runtimeBackend.rawValue,
+                  operation: .chat,
+                  inputTokens: nextUsage.inputTokens,
+                  outputTokens: nextUsage.outputTokens,
+                  cachedInputTokens: nextUsage.cachedTokens,
+                  cacheWriteInputTokens: nextUsage.cacheWriteTokens
+              )
+        else { return event }
+        nextUsage.estimatedCost = estimate.usd
+        nextUsage.estimatedCostSource = estimate.source
+        nextUsage.pricingModel = estimate.matchedModel
+        nextUsage.pricingRevision = estimate.revision
+        return .usageUpdated(nextUsage)
+    }
+
+    /// 外部 Runtime 不经过 Starcat 的 HTTP adapter，因此在终态补一条聚合事件；内置
+    /// Runtime 已按模型请求逐条采集，若再次写入会造成 Agent 用量与费用翻倍。
+    private func recordExternalUsageIfNeeded(status: AIUsageStatus) {
+        guard runtimeBackend != .builtinLoop,
+              !hasRecordedExternalUsage,
+              let startedAt = externalUsageStartedAt
+        else { return }
+        hasRecordedExternalUsage = true
+        let completedAt = Date().timeIntervalSince1970
+        let hasUsage = usage.totalTokens > 0 || usage.inputTokens > 0 || usage.outputTokens > 0
+        let event = AIUsageEvent(
+            id: UUID().uuidString,
+            startedAt: startedAt,
+            completedAt: completedAt,
+            durationMs: max(0, Int((completedAt - startedAt) * 1_000)),
+            providerId: runtimeProviderName ?? runtimeBackend.rawValue,
+            providerKind: runtimeProviderName ?? runtimeBackend.rawValue,
+            model: runtimeModelName ?? currentRunContext?.runtimeModelName ?? "unknown",
+            feature: AIUsageFeature.agent.rawValue,
+            phase: selectedAgentID,
+            operation: AIUsageOperation.chat.rawValue,
+            inputTokens: hasUsage ? usage.inputTokens : nil,
+            outputTokens: hasUsage ? usage.outputTokens : nil,
+            totalTokens: hasUsage ? usage.totalTokens : nil,
+            cachedInputTokens: hasUsage ? usage.cachedTokens : nil,
+            cacheWriteInputTokens: usage.cacheWriteTokens,
+            reasoningOutputTokens: hasUsage ? usage.reasoningTokens : nil,
+            itemCount: 1,
+            usageSource: hasUsage ? AIUsageSource.provider.rawValue : AIUsageSource.unavailable.rawValue,
+            status: status.rawValue,
+            errorCategory: nil,
+            correlationId: activeRunID?.uuidString,
+            estimatedCostUSD: usage.estimatedCost.map { NSDecimalNumber(decimal: $0).doubleValue },
+            costSource: usage.estimatedCostSource,
+            pricingModel: usage.pricingModel,
+            pricingRevision: usage.pricingRevision
+        )
+        Task { await AIUsageRecorder.shared.record(event) }
     }
 
     private static func makeStreamingPresentationBuffer() -> StreamingTextPresentationBuffer {
@@ -975,7 +1053,9 @@ final class AgentWorkspaceViewModel {
         runTask = Task { [weak self] in
             let stream = runtime.resumePendingRun(snapshot: snapshot, definition: definition)
             for await event in stream {
-                await MainActor.run { self?.apply(event) }
+                guard let self else { return }
+                let pricedEvent = await self.withEstimatedCost(event)
+                self.apply(pricedEvent)
             }
             await self?.reloadHistory()
             await self?.refreshActiveRunSnapshot()

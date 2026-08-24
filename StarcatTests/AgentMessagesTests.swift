@@ -162,13 +162,24 @@ struct AgentMessagesTests {
     @Test("usage merge 会累计 token 和成本")
     func mergesUsage() {
         var usage = AgentUsage(inputTokens: 100, outputTokens: 20, estimatedCost: 0.01)
-        usage.merge(AgentUsage(inputTokens: 50, outputTokens: 10, cachedTokens: 30, estimatedCost: 0.02))
+        usage.merge(AgentUsage(
+            inputTokens: 50,
+            outputTokens: 10,
+            cachedTokens: 30,
+            estimatedCost: 0.02,
+            estimatedCostSource: "litellm-cache",
+            pricingModel: "gpt-test",
+            pricingRevision: "litellm-1"
+        ))
 
         #expect(usage.inputTokens == 150)
         #expect(usage.outputTokens == 30)
         #expect(usage.cachedTokens == 30)
         #expect(usage.totalTokens == 180)
         #expect(usage.estimatedCost == 0.03)
+        #expect(usage.estimatedCostSource == "litellm-cache")
+        #expect(usage.pricingModel == "gpt-test")
+        #expect(usage.pricingRevision == "litellm-1")
     }
 
     @Test("knowledge tool audit 可随消息稳定往返编码")
