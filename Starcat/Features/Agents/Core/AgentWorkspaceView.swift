@@ -1525,9 +1525,9 @@ struct AgentWorkspaceView: View {
                 preferredDeepSeekReasoningEffort = ""
             } label: {
                 if preferredDeepSeekReasoningEffort.isEmpty {
-                    Label("agent.workspace.runtime.providerDefault", systemImage: "checkmark")
+                    Label("agent.workspace.runtime.default", systemImage: "checkmark")
                 } else {
-                    Text("agent.workspace.runtime.providerDefault")
+                    Text("agent.workspace.runtime.default")
                 }
             }
             Divider()
@@ -1545,7 +1545,7 @@ struct AgentWorkspaceView: View {
         } label: {
             Label(
                 preferredDeepSeekReasoningEffort.isEmpty
-                    ? String.l10n("agent.workspace.runtime.providerDefault")
+                    ? String.l10n("agent.workspace.runtime.default")
                     : reasoningEffortDisplayName(preferredDeepSeekReasoningEffort),
                 systemImage: "brain"
             )

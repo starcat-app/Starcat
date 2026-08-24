@@ -473277,6 +473277,13 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "服务商" } }
       }
     },
+    "agent.workspace.runtime.default" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Default" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Default" } }
+      }
+    },
     "agent.workspace.runtime.providerDefault" : {
       "extractionState" : "manual",
       "localizations" : {
