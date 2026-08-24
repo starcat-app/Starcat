@@ -4,6 +4,8 @@ Release notes for the Mac App Store edition of Starcat.
 
 ## 1.5.0-待发布
 
+Starcat 1.5.0 continues the Activity inbox so you can handle Issue / PR status, filters, event history, and image comments in the app, and review README documents, videos, security advisories, and release assets without leaving Starcat.
+
 ### New
 
 - Public Star contribution: An optional, off-by-default privacy setting can anonymously contribute public repository IDs and available Star dates to improve recommendations; uploads stay silent and never block normal sync.
