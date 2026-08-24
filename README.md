@@ -48,6 +48,20 @@ Starcat started as a paid product. Almost nobody bought it. Managing GitHub Star
 
 The current public version is **Starcat 1.4.0**.
 
+## See Starcat in action
+
+### AI-powered repository understanding
+
+https://github.com/user-attachments/assets/bf229a76-7a26-4f82-a3b2-1c4d3c960a7f
+
+### Ask your knowledge base
+
+https://github.com/user-attachments/assets/4785fa1e-d629-4a18-b266-6fa2145f92dd
+
+### Search locally, on GitHub, and across the web
+
+https://github.com/user-attachments/assets/0257850a-d65b-4d9a-9621-028064b7a873
+
 ## Official builds and source
 
 Official channels are the Mac App Store ([Starcat for GitHub](https://apps.apple.com/app/starcat-for-github/id6788809803?mt=12), landing page [dong4j.app/starcat](https://dong4j.app/starcat/)) and Direct (website DMG / Homebrew with Sparkle). Core organization features are free. Pro workflows, higher AI quotas, and code-intelligence features in official builds use App Store in-app purchase or a Direct license.
