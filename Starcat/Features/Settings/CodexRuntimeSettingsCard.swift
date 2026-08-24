@@ -8,13 +8,14 @@
 import AppKit
 import SwiftUI
 
-/// 在设置页管理 Codex CLI 路径，但不接触 Codex 的登录凭据。
+/// 在设置页管理完整 Codex CLI 或独立 App Server 路径，但不接触 Codex 的登录凭据。
 struct CodexRuntimeSettingsCard: View {
     @AppStorage(ExternalAgentRuntimePreferences.codexExecutablePathKey)
     private var customExecutablePath = ""
 
     @State private var status: AgentRuntimeSettingsStatus = .idle
     @State private var resolvedExecutablePath = ""
+    @State private var executableKind: CodexRuntimeProcessArguments.ExecutableKind?
 
     private let resolver: ExternalAgentExecutableResolver
 
@@ -25,7 +26,7 @@ struct CodexRuntimeSettingsCard: View {
     var body: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 10) {
-                Text("settings.integration.agentRuntime.codex.description")
+                Text("settings.integration.agentRuntime.codex.runtimeDescription")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -82,9 +83,21 @@ struct CodexRuntimeSettingsCard: View {
                     .foregroundStyle(.secondary)
             }
         case .ready:
-            Label("settings.integration.agentRuntime.codex.executableAvailable", systemImage: "checkmark.circle.fill")
-                .font(.caption)
+            HStack(spacing: 8) {
+                Label(
+                    "settings.integration.agentRuntime.codex.executableAvailable",
+                    systemImage: "checkmark.circle.fill"
+                )
                 .foregroundStyle(.green)
+
+                Spacer()
+
+                if let executableKind {
+                    Text(verbatim: executableKind.displayName)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .font(.caption)
         case .failed(let message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .font(.caption)
@@ -116,9 +129,11 @@ struct CodexRuntimeSettingsCard: View {
                 explicitPath: customExecutablePath
             )
             resolvedExecutablePath = executable.path
+            executableKind = CodexRuntimeProcessArguments.executableKind(for: executable)
             status = .ready
         } catch {
             resolvedExecutablePath = customExecutablePath
+            executableKind = nil
             status = .failed(error.localizedDescription)
         }
     }

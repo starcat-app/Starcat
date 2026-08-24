@@ -77,7 +77,10 @@ private final class CodexAppServerDriver: ExternalAgentProtocolDriver, @unchecke
         self.request = request
         processConfiguration = ExternalAgentProcessConfiguration(
             executableURL: executableURL,
-            arguments: CodexRuntimeProcessArguments.appServer(providerID: providerID),
+            arguments: CodexRuntimeProcessArguments.appServer(
+                executableURL: executableURL,
+                providerID: providerID
+            ),
             environment: environment,
             currentDirectoryURL: request.workingDirectory
         )

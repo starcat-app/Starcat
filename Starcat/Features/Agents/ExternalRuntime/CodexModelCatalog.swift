@@ -163,7 +163,10 @@ final class CodexModelCatalogDriver: ExternalAgentProtocolDriver, @unchecked Sen
         self.resultBox = resultBox
         processConfiguration = ExternalAgentProcessConfiguration(
             executableURL: executableURL,
-            arguments: CodexRuntimeProcessArguments.appServer(providerID: providerID),
+            arguments: CodexRuntimeProcessArguments.appServer(
+                executableURL: executableURL,
+                providerID: providerID
+            ),
             environment: environment,
             currentDirectoryURL: FileManager.default.temporaryDirectory
         )

@@ -199,16 +199,47 @@ struct CodexProviderCatalog: Equatable, Sendable {
 }
 
 enum CodexRuntimeProcessArguments {
+    enum ExecutableKind: Equatable, Sendable {
+        case codexCLI
+        case standaloneAppServer
+
+        /// 名称属于上游产品名，不需要随 App 语言翻译。
+        var displayName: String {
+            switch self {
+            case .codexCLI: "Codex CLI"
+            case .standaloneAppServer: "Codex App Server"
+            }
+        }
+    }
+
+    /// 官方独立产物以 `codex-app-server` 开头；完整 CLI 则以 `codex` 入口承载子命令。
+    /// 同时检查解析符号链接前后的文件名，兼容 Homebrew 与用户自行建立的软链接。
+    static func executableKind(for executableURL: URL) -> ExecutableKind {
+        let names = [
+            executableURL.lastPathComponent.lowercased(),
+            executableURL.resolvingSymlinksInPath().lastPathComponent.lowercased(),
+        ]
+        return names.contains(where: isStandaloneExecutableName)
+            ? .standaloneAppServer
+            : .codexCLI
+    }
+
     /// Provider 是进程级配置；每个目录查询和每次 Run 都启动独立 App Server，因而可用
-    /// CLI 的标准 `-c model_provider=...` 安全切换，不会污染用户的 config.toml。
-    static func appServer(providerID: String?) -> [String] {
-        var arguments = ["app-server", "--listen", "stdio://"]
+    /// 标准 `-c model_provider=...` 安全切换，不会污染用户的 config.toml。
+    /// 完整 CLI 需要 `app-server` 子命令，官方独立二进制已经是 Server 入口，不能重复添加。
+    static func appServer(executableURL: URL, providerID: String?) -> [String] {
+        var arguments = executableKind(for: executableURL) == .codexCLI ? ["app-server"] : []
+        arguments.append(contentsOf: ["--listen", "stdio://"])
         if let providerID, !providerID.isEmpty {
             let escaped = providerID.replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "\"", with: "\\\"")
             arguments.append(contentsOf: ["-c", "model_provider=\"\(escaped)\""])
         }
         return arguments
+    }
+
+    private static func isStandaloneExecutableName(_ name: String) -> Bool {
+        name == "codex-app-server" || name.hasPrefix("codex-app-server-")
     }
 }
 

@@ -333594,6 +333594,23 @@
         }
       }
     },
+    "settings.integration.agentRuntime.codex.runtimeDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uses either your local Codex CLI or a standalone Codex App Server and its existing authentication. Starcat never copies Codex credentials."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "支持使用本机 Codex CLI 或独立 Codex App Server，并沿用其已有认证；Starcat 不会复制 Codex 凭据。"
+          }
+        }
+      }
+    },
     "settings.integration.agentRuntime.cordisConfig" : {
       "extractionState" : "manual",
       "localizations" : {
