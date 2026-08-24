@@ -48,6 +48,20 @@ Starcat 一开始是按收费产品来做的，上线后几乎没人买。把 Gi
 
 当前公开版本为 **Starcat 1.4.0**。
 
+## 看看 Starcat 如何工作
+
+### AI 驱动的仓库理解
+
+https://github.com/user-attachments/assets/bf229a76-7a26-4f82-a3b2-1c4d3c960a7f
+
+### 向知识库提问
+
+https://github.com/user-attachments/assets/4785fa1e-d629-4a18-b266-6fa2145f92dd
+
+### 同时搜索本地、GitHub 与 Web
+
+https://github.com/user-attachments/assets/0257850a-d65b-4d9a-9621-028064b7a873
+
 ## 官方包和自己编译
 
 官方渠道是 Mac App Store（[Starcat for GitHub](https://apps.apple.com/cn/app/starcat-for-github/id6788809803?mt=12)，落地页 [dong4j.app/starcat](https://dong4j.app/starcat/)）和 Direct（官网 DMG / Homebrew + Sparkle）。核心整理能力可免费使用。官方包里的 Pro 工作流、更高 AI 配额和代码智能，走 App Store 内购或 Direct 授权。
