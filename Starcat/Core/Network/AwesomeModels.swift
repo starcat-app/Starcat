@@ -35,8 +35,8 @@ struct AwesomeSourceDTO: Codable, Identifiable, Hashable, Sendable {
     let sourceSubscribers: Int
     let sourceOpenIssues: Int
     let sourceLanguage: String?
-    /// GitHub Languages API 返回的是字节数，客户端据此计算占比并映射语言色条。
-    let languageBytes: [String: Int]
+    /// GitHub Languages API 返回的是字节数；旧版服务可能省略空结果，因此边界层允许缺失并在入库时归一为空字典。
+    let languageBytes: [String: Int]?
     let githubRepoCount: Int
     let externalEntryCount: Int
     let lastSyncedAt: String?

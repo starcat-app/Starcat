@@ -431,7 +431,7 @@ private extension AwesomeSourceRecord {
             sourceSubscribers: dto.sourceSubscribers,
             sourceOpenIssues: dto.sourceOpenIssues,
             sourceLanguage: dto.sourceLanguage,
-            languageBytesJSON: Self.encodeLanguageBytes(dto.languageBytes),
+            languageBytesJSON: Self.encodeLanguageBytes(dto.languageBytes ?? [:]),
             githubRepoCount: dto.githubRepoCount,
             externalEntryCount: dto.externalEntryCount,
             isAvailable: true,

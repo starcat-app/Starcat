@@ -34,6 +34,18 @@ struct AwesomeAPITests {
         #expect(result.generatedAt == "2026-08-24T08:00:00Z")
     }
 
+    @Test("来源目录兼容旧服务缺失的语言字段")
+    func sourceCatalogDefaultsMissingLanguageBytes() async throws {
+        let api = makeAPI { request in
+            let body = Data(#"{"schema_version":1,"data":[{"id":"awesome-test","display_name":"Awesome Test","repo_full_name":"owner/repo","repo_url":"https://github.com/owner/repo","featured":false,"sort_order":1,"source_stars":10,"source_forks":2,"source_watchers":10,"source_subscribers":1,"source_open_issues":0,"github_repo_count":5,"external_entry_count":0,"updated_at":"2026-08-24T08:00:00Z"}]}"#.utf8)
+            return (Self.response(200, request: request), body)
+        }
+
+        let result = try await api.fetchAwesomeSources()
+
+        #expect(result.sources.first?.languageBytes == nil)
+    }
+
     @Test("来源目录缺少 Stars 时拒绝不完整契约")
     func sourceCatalogRejectsMissingStars() async throws {
         let api = makeAPI { request in
