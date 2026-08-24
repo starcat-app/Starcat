@@ -29454,6 +29454,42 @@
         }
       }
     },
+    "agent.workspace.trace.audit.issues" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Issues" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "异常" } }
+      }
+    },
+    "agent.workspace.trace.audit.model" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Model" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模型" } }
+      }
+    },
+    "agent.workspace.trace.audit.tools" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tools" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "工具" } }
+      }
+    },
+    "agent.workspace.trace.audit.total" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "All" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "全部" } }
+      }
+    },
+    "agent.workspace.trace.mode.allEvents" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "All events" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "全部事件" } }
+      }
+    },
+    "agent.workspace.trace.mode.process" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Process" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "执行过程" } }
+      }
+    },
     "agent.workspace.trace.contentTruncated" : {
       "localizations" : {
         "en" : {
@@ -470494,6 +470530,12 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "运行时长" } }
       }
     },
+    "agent.workspace.inspector.overview.events" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Events" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "事件" } }
+      }
+    },
     "agent.workspace.inspector.overview.execution" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -470604,6 +470646,24 @@
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Back" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "返回" } }
+      }
+    },
+    "agent.workspace.inspector.step.completedAt" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Completed at" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "完成时间" } }
+      }
+    },
+    "agent.workspace.inspector.step.originalTitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Original title" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "原始标题" } }
+      }
+    },
+    "agent.workspace.inspector.step.providerEvent" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Runtime event" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Runtime 事件" } }
       }
     },
     "agent.workspace.inspector.step.details" : {

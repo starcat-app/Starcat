@@ -188,7 +188,7 @@ struct AgentRunInspectorView: View {
             }
 
             inspectorGroup(title: String.l10n("agent.workspace.inspector.overview.execution"), icon: "point.3.connected.trianglepath.dotted") {
-                metricRow(String.l10n("agent.workspace.inspector.overview.steps"), presentation.stepCount.formatted())
+                metricRow(String.l10n("agent.workspace.inspector.overview.events"), presentation.stepCount.formatted())
                 metricRow(String.l10n("agent.workspace.inspector.overview.completed"), presentation.completedStepCount.formatted())
                 metricRow(String.l10n("agent.workspace.inspector.overview.active"), presentation.activeStepCount.formatted())
                 metricRow(String.l10n("agent.workspace.inspector.overview.failed"), presentation.failedStepCount.formatted(), valueColor: presentation.failedStepCount > 0 ? .red : .primary)
@@ -347,7 +347,17 @@ struct AgentRunInspectorView: View {
                         metricRow(String.l10n("agent.workspace.inspector.step.kind"), event.kind.rawValue)
                         metricRow(String.l10n("agent.workspace.inspector.overview.backend"), event.backend.displayName)
                         metricRow(String.l10n("agent.workspace.inspector.step.sequence"), event.sequence.formatted())
+                        if let providerEventID = event.providerEventID {
+                            metricRow(String.l10n("agent.workspace.inspector.step.providerEvent"), providerEventID)
+                        }
+                        if event.title != AgentTraceTitlePresentation.title(for: event) {
+                            metricRow(String.l10n("agent.workspace.inspector.step.originalTitle"), event.title)
+                        }
                         metricRow(String.l10n("agent.workspace.inspector.overview.startedAt"), dateLabel(event.startedAt))
+                        metricRow(
+                            String.l10n("agent.workspace.inspector.step.completedAt"),
+                            event.completedAt.map(dateLabel) ?? String.l10n("agent.workspace.inspector.value.unavailable")
+                        )
                         metricRow(String.l10n("agent.workspace.inspector.overview.duration"), event.durationMilliseconds.map(formatDuration) ?? String.l10n("agent.workspace.inspector.value.unavailable"))
                         if let attempt = event.attempt {
                             metricRow(String.l10n("agent.workspace.inspector.step.attempt"), attempt.formatted())
