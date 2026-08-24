@@ -123,6 +123,20 @@ struct AwesomeStoreTests {
         #expect(await repository.entryRefreshPolicies() == [.ifStale, .force])
     }
 
+    @Test("来源管理刷新只强制更新目录")
+    @MainActor
+    func sourceManagerRefreshDoesNotRefreshEntries() async {
+        let repository = AwesomeStoreRepositoryFake(sources: [Self.source()])
+        let service = AwesomeCustomSourceService(github: AwesomeStoreGitHubFake(), repository: repository)
+        let store = AwesomeStore(repository: repository, customSourceService: service)
+
+        await store.refreshSourceCatalog()
+
+        #expect(await repository.catalogRefreshPolicies() == [.force])
+        #expect(await repository.entryRefreshPolicies().isEmpty)
+        #expect(!store.isCatalogRefreshing)
+    }
+
     @Test("自定义来源保存后立即启用并进入来源列表")
     @MainActor
     func customSourceIsImmediatelyEnabledAfterSave() async throws {

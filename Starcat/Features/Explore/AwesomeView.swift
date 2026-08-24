@@ -71,6 +71,14 @@ struct AwesomeView: View {
             .pickerStyle(.menu)
             .labelsHidden()
             .frame(width: 130)
+
+            SyncIconButton(
+                isRefreshing: store.isRefreshing,
+                disabled: store.isRefreshing,
+                tooltip: String.l10n("explore.refresh.tooltip")
+            ) {
+                Task { await store.refresh() }
+            }
         }
         .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
         .padding(.vertical, 9)

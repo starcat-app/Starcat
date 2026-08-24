@@ -101,6 +101,13 @@ struct AwesomeSourceManagerSheet: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                SyncIconButton(
+                    isRefreshing: store.isCatalogRefreshing,
+                    disabled: store.isCatalogRefreshing || isSaving || isAddingCustomSource,
+                    tooltip: String.l10n("explore.refresh.tooltip")
+                ) {
+                    Task { await store.refreshSourceCatalog() }
+                }
                 SheetCloseButton { store.dismissSourceManager() }
             }
 

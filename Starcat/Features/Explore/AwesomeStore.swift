@@ -20,6 +20,7 @@ final class AwesomeStore {
     private(set) var hasCompletedSourceSetup = false
     private(set) var isLoading = false
     private(set) var isRefreshing = false
+    private(set) var isCatalogRefreshing = false
     private(set) var errorMessage: String?
     private(set) var sourceRefreshErrors: [String: String] = [:]
 
@@ -138,6 +139,20 @@ final class AwesomeStore {
         await refreshCatalogAndEntries(policy: .force)
     }
 
+    /// 来源管理 Sheet 的刷新只更新公共目录，不连带刷新所有已订阅 README 条目。
+    /// 远端是否命中其服务端缓存由 Discovery API 决定；客户端仍明确发起一次强制校验。
+    func refreshSourceCatalog() async {
+        guard !isCatalogRefreshing else { return }
+        isCatalogRefreshing = true
+        defer { isCatalogRefreshing = false }
+        do {
+            sources = try await repository.refreshCatalog(policy: .force)
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     /// 当前账户数据库是 Awesome 订阅和自定义来源的隔离边界。切库时必须先清掉旧快照，
     /// 不能等下一次进入页面再覆盖，否则新账户可能短暂看到上一账户的来源名称。
     func resetForAccountChange() {
@@ -151,6 +166,7 @@ final class AwesomeStore {
         hasCompletedSourceSetup = false
         isLoading = false
         isRefreshing = false
+        isCatalogRefreshing = false
         errorMessage = nil
         sourceRefreshErrors = [:]
         selectedSourceID = nil
