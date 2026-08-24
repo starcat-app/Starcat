@@ -1432,7 +1432,7 @@ struct HomeView: View {
         if authSession.state.isAuthenticated,
            selectedSidebarPage == .trending,
            selectedExploreMode == .awesome {
-            await dependencies.awesomeStore.enterAwesome()
+            await dependencies.awesomeStore.loadAwesome()
             return
         }
 

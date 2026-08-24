@@ -759,7 +759,7 @@ struct SidebarView: View {
                     showLoginSheet = true
                     return
                 }
-                Task { await dependencies.awesomeStore.enterAwesome() }
+                Task { await dependencies.awesomeStore.enterAwesomeFromUserSelection() }
             }
         case .topic(let code):
             selectedExploreMode = .discover

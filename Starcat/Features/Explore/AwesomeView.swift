@@ -33,7 +33,7 @@ struct AwesomeView: View {
                 onRepoCountChange(0)
                 return
             }
-            await store.enterAwesome()
+            await store.loadAwesome()
             reportCount()
         }
         .onChange(of: store.selectedSourceID) { _, _ in

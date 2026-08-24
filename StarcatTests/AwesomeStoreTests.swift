@@ -12,7 +12,7 @@ import Testing
 @Suite("Awesome Store")
 struct AwesomeStoreTests {
 
-    @Test("取消首次来源选择后再次进入仍自动弹出，完成零选择后停止弹出")
+    @Test("后台加载不弹来源选择，用户点击才弹出且完成后停止弹出")
     @MainActor
     func firstSetupOnlyCompletesFromDoneAction() async throws {
         let repository = AwesomeStoreRepositoryFake(sources: [Self.source()])
@@ -22,18 +22,21 @@ struct AwesomeStoreTests {
         )
         let store = AwesomeStore(repository: repository, customSourceService: service)
 
-        await store.enterAwesome()
+        await store.loadAwesome()
+        #expect(!store.isSourceManagerPresented)
+
+        await store.enterAwesomeFromUserSelection()
         #expect(store.isSourceManagerPresented)
 
         store.dismissSourceManager()
-        await store.enterAwesome()
+        await store.enterAwesomeFromUserSelection()
         #expect(store.isSourceManagerPresented)
 
         try await store.completeSourceSelection([])
         #expect(!store.isSourceManagerPresented)
         #expect(store.hasCompletedSourceSetup)
 
-        await store.enterAwesome()
+        await store.enterAwesomeFromUserSelection()
         #expect(!store.isSourceManagerPresented)
     }
 
@@ -47,7 +50,7 @@ struct AwesomeStoreTests {
         )
         let store = AwesomeStore(repository: repository, customSourceService: service)
 
-        await store.enterAwesome()
+        await store.loadAwesome()
         store.selectedSourceID = "one"
         store.selectedRepositoryID = 42
         store.resetForAccountChange()
@@ -92,7 +95,7 @@ struct AwesomeStoreTests {
         let service = AwesomeCustomSourceService(github: AwesomeStoreGitHubFake(), repository: repository)
         let store = AwesomeStore(repository: repository, customSourceService: service)
 
-        await store.enterAwesome()
+        await store.loadAwesome()
         await store.refresh()
 
         #expect(await repository.catalogRefreshPolicies() == [.ifStale, .force])
