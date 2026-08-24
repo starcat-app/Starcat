@@ -47,7 +47,7 @@ enum AwesomeCustomSourceError: LocalizedError, Equatable {
     }
 }
 
-/// 自定义来源解析预览。只有用户在 Sheet 明确确认后才允许交给 Repository 持久化。
+/// 自定义来源解析结果。Sheet 校验成功后立即交给 Repository 在当前账户数据库中持久化。
 struct AwesomeCustomSourcePreview: Sendable {
     let source: AwesomeSource
     let entries: [AwesomeEntryDTO]
@@ -133,8 +133,9 @@ actor AwesomeCustomSourceService {
             githubRepoCount: entries.count,
             externalEntryCount: parsed.externalLinkCount,
             isAvailable: true,
-            // 来源确认只负责创建；订阅仍由 Sheet 的“完成”统一提交，取消不会提前启用。
-            isEnabled: false,
+            // “添加”本身就是用户对自定义来源的明确提交动作；保存后立即启用，避免还要再点
+            // Sheet 底部“完成”才生效。精选来源的批量勾选仍由“完成”统一提交。
+            isEnabled: true,
             addedAt: now,
             lastSyncedAt: now,
             updatedAt: now

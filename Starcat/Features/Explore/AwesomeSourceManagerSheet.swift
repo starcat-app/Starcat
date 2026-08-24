@@ -4,8 +4,9 @@
 //
 //  首次选择与后续管理共用的卡片式 Awesome 来源 Sheet。
 //
-//  勾选只保存在本地 draft；只有“完成”会写入 Repository。关闭/取消不会改变订阅，也不会
-//  完成首次设置。自定义来源的 URL、README 和解析结果始终停留在当前账户数据库。
+//  精选来源勾选只保存在本地 draft；只有“完成”会写入 Repository。自定义来源的“添加”
+//  是独立的明确提交动作，校验成功后立即写入并启用，但 URL、README 和解析结果始终只
+//  停留在当前账户数据库。
 //
 
 import SwiftUI
@@ -16,8 +17,10 @@ struct AwesomeSourceManagerSheet: View {
     @Environment(\.locale) private var locale
     @State private var enabledIDs: Set<String> = []
     @State private var customSourceInput = ""
+    @State private var customSourceError: String?
     @State private var actionError: String?
     @State private var isSaving = false
+    @State private var isAddingCustomSource = false
     @State private var initialized = false
     @State private var pendingConfirmation: AwesomeSourceConfirmation?
 
@@ -154,8 +157,23 @@ struct AwesomeSourceManagerSheet: View {
                 TextField("awesome.sources.custom.placeholder", text: $customSourceInput)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(addCustomSource)
-                Button("awesome.sources.custom.add", action: addCustomSource)
-                    .disabled(customSourceInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
+                    .disabled(isAddingCustomSource)
+                Button(action: addCustomSource) {
+                    if isAddingCustomSource {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel(Text("awesome.sources.custom.add"))
+                    } else {
+                        Text("awesome.sources.custom.add")
+                    }
+                }
+                .disabled(customSourceInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving || isAddingCustomSource)
+            }
+            if let customSourceError {
+                Label(customSourceError, systemImage: "exclamationmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -175,31 +193,17 @@ struct AwesomeSourceManagerSheet: View {
     private func addCustomSource() {
         let value = customSourceInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
-        isSaving = true
-        actionError = nil
+        isAddingCustomSource = true
+        customSourceError = nil
         Task {
-            defer { isSaving = false }
+            defer { isAddingCustomSource = false }
             do {
-                pendingConfirmation = .add(try await store.previewCustomSource(input: value))
-            } catch {
-                actionError = error.localizedDescription
-            }
-        }
-    }
-
-    private func saveCustomSource(_ preview: AwesomeCustomSourcePreview) {
-        isSaving = true
-        actionError = nil
-        pendingConfirmation = nil
-        Task {
-            defer { isSaving = false }
-            do {
+                let preview = try await store.previewCustomSource(input: value)
                 try await store.addCustomSource(preview)
-                // 这里只改 Sheet draft；真正订阅仍由底部“完成”统一提交。
                 enabledIDs.insert(preview.source.id)
                 customSourceInput = ""
             } catch {
-                actionError = error.localizedDescription
+                customSourceError = error.localizedDescription
             }
         }
     }
@@ -238,11 +242,6 @@ struct AwesomeSourceManagerSheet: View {
 
     private var confirmationTitle: String {
         switch pendingConfirmation {
-        case .add(let preview):
-            String(
-                format: String.l10n("awesome.sources.custom.confirm.titleFormat"),
-                preview.source.displayName
-            )
         case .delete(let source):
             String(
                 format: String.l10n("awesome.sources.custom.delete.titleFormat"),
@@ -256,9 +255,6 @@ struct AwesomeSourceManagerSheet: View {
     @ViewBuilder
     private var confirmationActions: some View {
         switch pendingConfirmation {
-        case .add(let preview):
-            Button("awesome.sources.custom.confirm.add") { saveCustomSource(preview) }
-            Button("common.cancel", role: .cancel) { pendingConfirmation = nil }
         case .delete(let source):
             Button("awesome.sources.custom.delete.confirm", role: .destructive) {
                 removeCustomSource(source)
@@ -272,12 +268,6 @@ struct AwesomeSourceManagerSheet: View {
     @ViewBuilder
     private var confirmationMessage: some View {
         switch pendingConfirmation {
-        case .add(let preview):
-            Text(String(
-                format: String.l10n("awesome.sources.custom.confirm.messageFormat"),
-                preview.source.githubRepoCount,
-                preview.source.externalEntryCount
-            ))
         case .delete:
             Text("awesome.sources.custom.delete.message")
         case nil:
@@ -287,6 +277,5 @@ struct AwesomeSourceManagerSheet: View {
 }
 
 private enum AwesomeSourceConfirmation {
-    case add(AwesomeCustomSourcePreview)
     case delete(AwesomeSource)
 }

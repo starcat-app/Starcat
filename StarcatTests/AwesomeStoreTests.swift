@@ -99,10 +99,29 @@ struct AwesomeStoreTests {
         #expect(await repository.entryRefreshPolicies() == [.ifStale, .force])
     }
 
-    private static func source(id: String = "one") -> AwesomeSource {
+    @Test("自定义来源保存后立即启用并进入来源列表")
+    @MainActor
+    func customSourceIsImmediatelyEnabledAfterSave() async throws {
+        let repository = AwesomeStoreRepositoryFake(sources: [])
+        let service = AwesomeCustomSourceService(github: AwesomeStoreGitHubFake(), repository: repository)
+        let store = AwesomeStore(repository: repository, customSourceService: service)
+        let custom = Self.source(id: "custom:example/awesome-one", kind: .custom, isEnabled: true)
+        let preview = AwesomeCustomSourcePreview(source: custom, entries: [])
+
+        try await store.addCustomSource(preview)
+
+        #expect(store.sources.map(\.id) == [custom.id])
+        #expect(store.enabledSources.map(\.id) == [custom.id])
+    }
+
+    private static func source(
+        id: String = "one",
+        kind: AwesomeSourceKind = .managed,
+        isEnabled: Bool = false
+    ) -> AwesomeSource {
         AwesomeSource(
             id: id,
-            kind: .managed,
+            kind: kind,
             displayName: "Awesome One",
             repoFullName: "example/awesome-one",
             repoURL: URL(string: "https://github.com/example/awesome-one")!,
@@ -115,7 +134,7 @@ struct AwesomeStoreTests {
             githubRepoCount: 1,
             externalEntryCount: 0,
             isAvailable: true,
-            isEnabled: false,
+            isEnabled: isEnabled,
             addedAt: Date(timeIntervalSince1970: 0),
             lastSyncedAt: Date(timeIntervalSince1970: 0),
             updatedAt: Date(timeIntervalSince1970: 0)

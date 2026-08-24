@@ -83,7 +83,7 @@ struct AwesomeReadmeParserTests {
 
         #expect(preview.source.id == "custom:owner/awesome-list")
         #expect(preview.source.githubRepoCount == 1)
-        #expect(!preview.source.isEnabled)
+        #expect(preview.source.isEnabled)
         #expect(await repository.savedSource() == nil)
 
         try await service.save(preview)
