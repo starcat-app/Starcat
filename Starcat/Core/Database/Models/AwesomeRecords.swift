@@ -30,6 +30,7 @@ struct AwesomeSourceRecord: Codable, FetchableRecord, PersistableRecord, Equatab
     var isAvailable: Bool
     var catalogETag: String?
     var entriesETag: String?
+    var entriesCheckedAt: String?
     var addedAt: String
     var lastSyncedAt: String?
     var updatedAt: String
@@ -51,6 +52,7 @@ struct AwesomeSourceRecord: Codable, FetchableRecord, PersistableRecord, Equatab
         case isAvailable = "is_available"
         case catalogETag = "catalog_etag"
         case entriesETag = "entries_etag"
+        case entriesCheckedAt = "entries_checked_at"
         case addedAt = "added_at"
         case lastSyncedAt = "last_synced_at"
         case updatedAt = "updated_at"

@@ -85,6 +85,20 @@ struct AwesomeStoreTests {
         #expect(store.repositories.map(\.id) == [2])
     }
 
+    @Test("进入页面遵守缓存策略而手动刷新强制绕过 TTL")
+    @MainActor
+    func manualRefreshForcesRepositoryPolicy() async {
+        let repository = AwesomeStoreRepositoryFake(sources: [Self.source()])
+        let service = AwesomeCustomSourceService(github: AwesomeStoreGitHubFake(), repository: repository)
+        let store = AwesomeStore(repository: repository, customSourceService: service)
+
+        await store.enterAwesome()
+        await store.refresh()
+
+        #expect(await repository.catalogRefreshPolicies() == [.ifStale, .force])
+        #expect(await repository.entryRefreshPolicies() == [.ifStale, .force])
+    }
+
     private static func source(id: String = "one") -> AwesomeSource {
         AwesomeSource(
             id: id,
@@ -137,6 +151,8 @@ private actor AwesomeStoreRepositoryFake: AwesomeRepositoryProtocol {
     private let repositoriesBySource: [String: [AwesomeRepositoryItem]]
     private let delaysBySource: [String: UInt64]
     private var setupCompleted = false
+    private var catalogPolicies: [AwesomeRefreshPolicy] = []
+    private var entryPolicies: [AwesomeRefreshPolicy] = []
 
     init(
         sources: [AwesomeSource],
@@ -161,8 +177,16 @@ private actor AwesomeStoreRepositoryFake: AwesomeRepositoryProtocol {
         return repositoriesBySource[sourceID] ?? []
     }
     func hasCompletedSourceSetup() async -> Bool { setupCompleted }
-    func refreshCatalog() async throws -> [AwesomeSource] { sourceValues }
-    func refreshEnabledEntries() async -> [String: String] { [:] }
+    func refreshCatalog(policy: AwesomeRefreshPolicy) async throws -> [AwesomeSource] {
+        catalogPolicies.append(policy)
+        return sourceValues
+    }
+    func refreshEnabledEntries(policy: AwesomeRefreshPolicy) async -> [String: String] {
+        entryPolicies.append(policy)
+        return [:]
+    }
+    func catalogRefreshPolicies() -> [AwesomeRefreshPolicy] { catalogPolicies }
+    func entryRefreshPolicies() -> [AwesomeRefreshPolicy] { entryPolicies }
 
     func completeSourceSetup(enabledSourceIDs: Set<String>) async throws {
         setupCompleted = true

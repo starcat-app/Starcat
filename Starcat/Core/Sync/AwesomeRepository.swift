@@ -24,21 +24,46 @@ protocol AwesomeRepositoryProtocol: Sendable {
     func enabledSources() async -> [AwesomeSource]
     func repositories(sourceID: String?) async -> [AwesomeRepositoryItem]
     func hasCompletedSourceSetup() async -> Bool
-    func refreshCatalog() async throws -> [AwesomeSource]
-    func refreshEnabledEntries() async -> [String: String]
+    func refreshCatalog(policy: AwesomeRefreshPolicy) async throws -> [AwesomeSource]
+    func refreshEnabledEntries(policy: AwesomeRefreshPolicy) async -> [String: String]
     func completeSourceSetup(enabledSourceIDs: Set<String>) async throws
     func updateSubscriptions(enabledSourceIDs: Set<String>) async throws
     func saveCustomSource(_ source: AwesomeSource, entries: [AwesomeEntryDTO]) async throws
     func removeCustomSource(id: String) async throws
 }
 
+/// 自动刷新遵守本地 TTL；只有用户明确点击刷新时才绕过新鲜度判断。
+enum AwesomeRefreshPolicy: Sendable, Equatable {
+    case ifStale
+    case force
+}
+
+extension AwesomeRepositoryProtocol {
+    func refreshCatalog() async throws -> [AwesomeSource] {
+        try await refreshCatalog(policy: .ifStale)
+    }
+
+    func refreshEnabledEntries() async -> [String: String] {
+        await refreshEnabledEntries(policy: .ifStale)
+    }
+}
+
 actor AwesomeRepository: AwesomeRepositoryProtocol {
+    /// Awesome 内容并非实时信息；六小时窗口可避免每次进入都请求，同时保留手动刷新能力。
+    private static let freshnessInterval: TimeInterval = 6 * 60 * 60
+
     private let api: any AwesomeAPIProtocol
     private let database: any DatabaseManaging
+    private let now: @Sendable () -> Date
 
-    init(api: any AwesomeAPIProtocol, database: any DatabaseManaging) {
+    init(
+        api: any AwesomeAPIProtocol,
+        database: any DatabaseManaging,
+        now: @escaping @Sendable () -> Date = Date.init
+    ) {
         self.api = api
         self.database = database
+        self.now = now
     }
 
     func sources() async -> [AwesomeSource] {
@@ -99,14 +124,26 @@ actor AwesomeRepository: AwesomeRepositoryProtocol {
         }
     }
 
-    func refreshCatalog() async throws -> [AwesomeSource] {
-        let etag = try await database.writer.read { db in
-            try AwesomeStateRecord
+    func refreshCatalog(policy: AwesomeRefreshPolicy) async throws -> [AwesomeSource] {
+        let cache = try await database.writer.read { db in
+            let state = try AwesomeStateRecord
                 .filter(Column("id") == AwesomeStateRecord.singletonID)
-                .fetchOne(db)?.catalogETag
+                .fetchOne(db)
+            let managedCount = try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM awesome_sources WHERE kind = ?",
+                arguments: [AwesomeSourceKind.managed.rawValue]
+            ) ?? 0
+            return (state?.catalogETag, state?.catalogCheckedAt, managedCount)
         }
-        let result = try await api.fetchAwesomeSources(ifNoneMatch: etag)
-        let checkedAt = ISO8601DateFormatter.shared.string(from: Date())
+        if policy == .ifStale,
+           cache.2 > 0,
+           isFresh(cache.1) {
+            return await sources()
+        }
+
+        let result = try await api.fetchAwesomeSources(ifNoneMatch: cache.0)
+        let checkedAt = ISO8601DateFormatter.shared.string(from: now())
         try await database.writer.write { db in
             var state = try AwesomeStateRecord
                 .filter(Column("id") == AwesomeStateRecord.singletonID)
@@ -134,7 +171,8 @@ actor AwesomeRepository: AwesomeRepositoryProtocol {
                         dto,
                         catalogETag: result.etag,
                         addedAt: existing?.addedAt ?? checkedAt,
-                        entriesETag: existing?.entriesETag
+                        entriesETag: existing?.entriesETag,
+                        entriesCheckedAt: existing?.entriesCheckedAt
                     )
                     try record.save(db)
                     if try AwesomeSubscriptionRecord
@@ -154,13 +192,13 @@ actor AwesomeRepository: AwesomeRepositoryProtocol {
     }
 
     /// 逐来源刷新，单一来源失败不阻塞其它来源；返回 source_id -> error 供 UI 非阻断展示。
-    func refreshEnabledEntries() async -> [String: String] {
+    func refreshEnabledEntries(policy: AwesomeRefreshPolicy) async -> [String: String] {
         let managed = await enabledSources().filter { $0.kind == .managed && $0.isAvailable }
         var failures: [String: String] = [:]
         for source in managed {
             do {
                 try Task.checkCancellation()
-                try await refreshEntries(for: source.id)
+                try await refreshEntries(for: source.id, policy: policy)
             } catch is CancellationError {
                 return failures
             } catch {
@@ -211,7 +249,7 @@ actor AwesomeRepository: AwesomeRepositoryProtocol {
 
     func saveCustomSource(_ source: AwesomeSource, entries: [AwesomeEntryDTO]) async throws {
         guard source.kind == .custom else { return }
-        let cachedAt = ISO8601DateFormatter.shared.string(from: Date())
+        let cachedAt = ISO8601DateFormatter.shared.string(from: now())
         try await database.writer.write { db in
             try AwesomeSourceRecord.fromCustom(source).save(db)
             try AwesomeSubscriptionRecord(
@@ -235,25 +273,54 @@ actor AwesomeRepository: AwesomeRepositoryProtocol {
         }
     }
 
-    private func refreshEntries(for sourceID: String) async throws {
-        let currentETag = try await database.writer.read { db in
-            try AwesomeSourceRecord
+    private func refreshEntries(for sourceID: String, policy: AwesomeRefreshPolicy) async throws {
+        let cache = try await database.writer.read { db in
+            let source = try AwesomeSourceRecord
                 .filter(Column("source_id") == sourceID)
-                .fetchOne(db)?.entriesETag
+                .fetchOne(db)
+            let entryCount = try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM awesome_entries WHERE source_id = ?",
+                arguments: [sourceID]
+            ) ?? 0
+            return (source?.entriesETag, source?.entriesCheckedAt, entryCount)
         }
-        let result = try await api.fetchAwesomeEntries(sourceID: sourceID, ifNoneMatch: currentETag)
-        guard !result.notModified, let snapshot = result.snapshot else { return }
-        let cachedAt = ISO8601DateFormatter.shared.string(from: Date())
+        if policy == .ifStale,
+           cache.2 > 0,
+           isFresh(cache.1) {
+            return
+        }
+
+        let result = try await api.fetchAwesomeEntries(sourceID: sourceID, ifNoneMatch: cache.0)
+        let checkedAt = ISO8601DateFormatter.shared.string(from: now())
+        if result.notModified {
+            // 304 代表服务端确认快照仍有效；必须推进校验时间，否则下次进入仍会再次请求。
+            try await database.writer.write { db in
+                try db.execute(
+                    sql: "UPDATE awesome_sources SET entries_etag = COALESCE(?, entries_etag), entries_checked_at = ? WHERE source_id = ?",
+                    arguments: [result.etag, checkedAt, sourceID]
+                )
+            }
+            return
+        }
+        guard let snapshot = result.snapshot else { return }
         try await database.writer.write { db in
             try db.execute(sql: "DELETE FROM awesome_entries WHERE source_id = ?", arguments: [sourceID])
             for entry in snapshot.entries {
-                try AwesomeEntryRecord.from(entry, sourceID: sourceID, cachedAt: cachedAt).insert(db)
+                try AwesomeEntryRecord.from(entry, sourceID: sourceID, cachedAt: checkedAt).insert(db)
             }
             try db.execute(
-                sql: "UPDATE awesome_sources SET entries_etag = ?, github_repo_count = ?, last_synced_at = ? WHERE source_id = ?",
-                arguments: [result.etag, snapshot.entries.count, result.generatedAt ?? cachedAt, sourceID]
+                sql: "UPDATE awesome_sources SET entries_etag = ?, entries_checked_at = ?, github_repo_count = ?, last_synced_at = ? WHERE source_id = ?",
+                arguments: [result.etag, checkedAt, snapshot.entries.count, result.generatedAt ?? checkedAt, sourceID]
             )
         }
+    }
+
+    private func isFresh(_ checkedAt: String?) -> Bool {
+        guard let checkedAt,
+              let date = ISO8601DateFormatter.githubDate(from: checkedAt) else { return false }
+        let age = now().timeIntervalSince(date)
+        return age >= 0 && age < Self.freshnessInterval
     }
 
     private static func readSources(db: Database, enabledOnly: Bool) throws -> [AwesomeSource] {
@@ -332,7 +399,8 @@ private extension AwesomeSourceRecord {
         _ dto: AwesomeSourceDTO,
         catalogETag: String?,
         addedAt: String,
-        entriesETag: String?
+        entriesETag: String?,
+        entriesCheckedAt: String?
     ) -> AwesomeSourceRecord {
         AwesomeSourceRecord(
             sourceID: dto.id,
@@ -351,6 +419,7 @@ private extension AwesomeSourceRecord {
             isAvailable: true,
             catalogETag: catalogETag,
             entriesETag: entriesETag,
+            entriesCheckedAt: entriesCheckedAt,
             addedAt: addedAt,
             lastSyncedAt: dto.lastSyncedAt,
             updatedAt: dto.updatedAt
@@ -375,6 +444,7 @@ private extension AwesomeSourceRecord {
             isAvailable: source.isAvailable,
             catalogETag: nil,
             entriesETag: nil,
+            entriesCheckedAt: nil,
             addedAt: ISO8601DateFormatter.shared.string(from: source.addedAt),
             lastSyncedAt: ISO8601DateFormatter.shared.string(from: source.updatedAt),
             updatedAt: ISO8601DateFormatter.shared.string(from: source.updatedAt)

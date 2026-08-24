@@ -122,7 +122,7 @@ final class AwesomeStore {
     }
 
     func refresh() async {
-        await refreshCatalogAndEntries()
+        await refreshCatalogAndEntries(policy: .force)
     }
 
     /// 当前账户数据库是 Awesome 订阅和自定义来源的隔离边界。切库时必须先清掉旧快照，
@@ -153,17 +153,17 @@ final class AwesomeStore {
         await reloadRepositories()
     }
 
-    private func refreshCatalogAndEntries() async {
+    private func refreshCatalogAndEntries(policy: AwesomeRefreshPolicy = .ifStale) async {
         isRefreshing = true
         defer { isRefreshing = false }
         do {
-            sources = try await repository.refreshCatalog()
+            sources = try await repository.refreshCatalog(policy: policy)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
         }
         guard !Task.isCancelled else { return }
-        sourceRefreshErrors = await repository.refreshEnabledEntries()
+        sourceRefreshErrors = await repository.refreshEnabledEntries(policy: policy)
         guard !Task.isCancelled else { return }
         sources = await repository.sources()
         await reloadRepositories()

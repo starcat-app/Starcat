@@ -36,12 +36,88 @@ struct AwesomeRepositoryTests {
         _ = try await repository.refreshCatalog()
 
         await api.setCatalogNotModified(etag: "catalog-1")
-        let sources = try await repository.refreshCatalog()
+        let sources = try await repository.refreshCatalog(policy: .force)
 
         #expect(sources.map(\.id) == ["one"])
         #expect(sources.first?.sourceStars == 9_012)
         #expect(sources.first?.lastSyncedAt == ISO8601DateFormatter.githubDate(from: "2026-08-24T08:00:00Z"))
         #expect(await api.catalogETags() == [nil, "catalog-1"])
+    }
+
+    @Test("六小时内自动刷新完全复用本地目录和条目")
+    func freshCacheSkipsAutomaticNetworkRequests() async throws {
+        let api = FakeAwesomeAPI()
+        await api.setCatalog([Self.source(id: "one", order: 1)], etag: "catalog-1")
+        await api.setEntries(sourceID: "one", entries: [Self.entry(repoID: 42, title: "Cached")])
+        let now = Date(timeIntervalSince1970: 1_777_000_000)
+        let repository = AwesomeRepository(
+            api: api,
+            database: try InMemoryDatabaseManager(),
+            now: { now }
+        )
+
+        _ = try await repository.refreshCatalog()
+        try await repository.completeSourceSetup(enabledSourceIDs: ["one"])
+        #expect(await repository.refreshEnabledEntries().isEmpty)
+
+        _ = try await repository.refreshCatalog()
+        #expect(await repository.refreshEnabledEntries().isEmpty)
+
+        #expect(await api.catalogETags() == [nil])
+        #expect(await api.entryETags(sourceID: "one") == [nil])
+        #expect(await repository.repositories(sourceID: "one").map(\.id) == [42])
+    }
+
+    @Test("缓存过期后使用 ETag 后台校验并由 304 推进检查时间")
+    func staleCacheUsesConditionalRequests() async throws {
+        let api = FakeAwesomeAPI()
+        await api.setCatalog([Self.source(id: "one", order: 1)], etag: "catalog-1")
+        await api.setEntries(sourceID: "one", entries: [Self.entry(repoID: 42, title: "Cached")])
+        let database = try InMemoryDatabaseManager()
+        let initial = Date(timeIntervalSince1970: 1_777_000_000)
+        let first = AwesomeRepository(api: api, database: database, now: { initial })
+
+        _ = try await first.refreshCatalog()
+        try await first.completeSourceSetup(enabledSourceIDs: ["one"])
+        #expect(await first.refreshEnabledEntries().isEmpty)
+
+        await api.setCatalogNotModified(etag: "catalog-1")
+        await api.setEntriesNotModified(sourceID: "one", etag: "entries-one")
+        let expired = initial.addingTimeInterval(7 * 60 * 60)
+        let second = AwesomeRepository(api: api, database: database, now: { expired })
+
+        _ = try await second.refreshCatalog()
+        #expect(await second.refreshEnabledEntries().isEmpty)
+        #expect(await api.catalogETags() == [nil, "catalog-1"])
+        #expect(await api.entryETags(sourceID: "one") == [nil, "entries-one"])
+
+        #expect(await second.refreshEnabledEntries().isEmpty)
+        #expect(await api.entryETags(sourceID: "one") == [nil, "entries-one"])
+    }
+
+    @Test("手动刷新绕过六小时新鲜缓存")
+    func manualRefreshBypassesFreshCache() async throws {
+        let api = FakeAwesomeAPI()
+        await api.setCatalog([Self.source(id: "one", order: 1)], etag: "catalog-1")
+        await api.setEntries(sourceID: "one", entries: [Self.entry(repoID: 42, title: "Cached")])
+        let now = Date(timeIntervalSince1970: 1_777_000_000)
+        let repository = AwesomeRepository(
+            api: api,
+            database: try InMemoryDatabaseManager(),
+            now: { now }
+        )
+
+        _ = try await repository.refreshCatalog()
+        try await repository.completeSourceSetup(enabledSourceIDs: ["one"])
+        #expect(await repository.refreshEnabledEntries().isEmpty)
+
+        await api.setCatalogNotModified(etag: "catalog-1")
+        await api.setEntriesNotModified(sourceID: "one", etag: "entries-one")
+        _ = try await repository.refreshCatalog(policy: .force)
+        #expect(await repository.refreshEnabledEntries(policy: .force).isEmpty)
+
+        #expect(await api.catalogETags() == [nil, "catalog-1"])
+        #expect(await api.entryETags(sourceID: "one") == [nil, "entries-one"])
     }
 
     @Test("同序精选来源按稳定 ID 排序")
@@ -111,7 +187,7 @@ struct AwesomeRepositoryTests {
         #expect(await repository.refreshEnabledEntries().isEmpty)
         await api.setEntryError(sourceID: "one")
 
-        #expect(await repository.refreshEnabledEntries()["one"] != nil)
+        #expect(await repository.refreshEnabledEntries(policy: .force)["one"] != nil)
         #expect(await repository.repositories(sourceID: "one").first?.fullName == "owner/repo")
     }
 
@@ -244,6 +320,7 @@ private actor FakeAwesomeAPI: AwesomeAPIProtocol {
     private var entriesBySource: [String: AwesomeEntriesResult] = [:]
     private var failingEntrySources: Set<String> = []
     private var receivedCatalogETags: [String?] = []
+    private var receivedEntryETags: [String: [String?]] = [:]
 
     func setCatalog(_ sources: [AwesomeSourceDTO], etag: String) {
         catalog = AwesomeCatalogResult(
@@ -278,8 +355,21 @@ private actor FakeAwesomeAPI: AwesomeAPIProtocol {
         failingEntrySources.insert(sourceID)
     }
 
+    func setEntriesNotModified(sourceID: String, etag: String) {
+        entriesBySource[sourceID] = AwesomeEntriesResult(
+            snapshot: nil,
+            etag: etag,
+            generatedAt: nil,
+            notModified: true
+        )
+    }
+
     func catalogETags() -> [String?] {
         receivedCatalogETags
+    }
+
+    func entryETags(sourceID: String) -> [String?] {
+        receivedEntryETags[sourceID] ?? []
     }
 
     func fetchAwesomeSources(ifNoneMatch: String?) async throws -> AwesomeCatalogResult {
@@ -288,6 +378,7 @@ private actor FakeAwesomeAPI: AwesomeAPIProtocol {
     }
 
     func fetchAwesomeEntries(sourceID: String, ifNoneMatch: String?) async throws -> AwesomeEntriesResult {
+        receivedEntryETags[sourceID, default: []].append(ifNoneMatch)
         if failingEntrySources.contains(sourceID) {
             throw FakeAwesomeAPIError.unavailable
         }

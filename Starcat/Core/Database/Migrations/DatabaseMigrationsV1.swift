@@ -39,7 +39,8 @@
 //    `v14-ai-usage-events` / `v15-repo-pins` / `v16-repository-insights` /
 //    `v17-my-projects` / `v18-rag-structured-citations` / `v19-release-1.4.0` /
 //    `v20-agent-runtime-trace` / `v21-github-issue-labels` /
-//    `v22-awesome-discovery` / `v22-data-contribution`
+//    `v22-awesome-discovery` / `v22-data-contribution` /
+//    `v23-awesome-source-metadata` / `v24-awesome-cache-freshness`
 //
 //  **1.4.0 开发期迁移（已由正式 v19 合并接管）**：
 //  `v19-agent-message-contract` 至 `v26-github-timeline-conversations` 仅在开发构建中出现过。
@@ -100,6 +101,7 @@ enum DatabaseMigrations {
         registerV22AwesomeDiscovery(into: &migrator)
         registerV22DataContribution(into: &migrator)
         registerV23AwesomeSourceMetadata(into: &migrator)
+        registerV24AwesomeCacheFreshness(into: &migrator)
     }
 
     // MARK: - v23-awesome-source-metadata：Awesome 来源仓库元数据（2026-08-24）
@@ -113,6 +115,20 @@ enum DatabaseMigrations {
             guard !columns.contains("source_stars") else { return }
             try db.alter(table: "awesome_sources") { table in
                 table.add(column: "source_stars", .integer).notNull().defaults(to: 0)
+            }
+        }
+    }
+
+    // MARK: - v24-awesome-cache-freshness：Awesome 缓存新鲜度（2026-08-24）
+
+    /// 已发布开发库必须通过追加迁移记录条目校验时间；表不存在时允许其它并行专项库安全 no-op。
+    private static func registerV24AwesomeCacheFreshness(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v24-awesome-cache-freshness") { db in
+            guard try db.tableExists("awesome_sources") else { return }
+            let columns = try db.columns(in: "awesome_sources").map(\.name)
+            guard !columns.contains("entries_checked_at") else { return }
+            try db.alter(table: "awesome_sources") { table in
+                table.add(column: "entries_checked_at", .text)
             }
         }
     }

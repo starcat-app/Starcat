@@ -146,7 +146,7 @@ struct DatabaseMigrationsV1Tests {
         }
     }
 
-    @Test("v22 创建 Awesome 表且 v23 补齐来源仓库元数据")
+    @Test("v22 创建 Awesome 表且后续迁移补齐来源元数据与缓存新鲜度")
     func awesomeDiscoveryMigration() throws {
         let writer = try makeDB()
         try writer.read { db in
@@ -155,12 +155,14 @@ struct DatabaseMigrationsV1Tests {
             let applied = try migrator.appliedIdentifiers(db)
             #expect(applied.contains("v22-awesome-discovery"))
             #expect(applied.contains("v23-awesome-source-metadata"))
+            #expect(applied.contains("v24-awesome-cache-freshness"))
             #expect(try db.tableExists("awesome_sources"))
             #expect(try db.tableExists("awesome_source_subscriptions"))
             #expect(try db.tableExists("awesome_entries"))
             #expect(try db.tableExists("awesome_state"))
             #expect(try db.columns(in: "awesome_entries").map(\.name).contains("repo_updated_at"))
             #expect(try db.columns(in: "awesome_sources").map(\.name).contains("source_stars"))
+            #expect(try db.columns(in: "awesome_sources").map(\.name).contains("entries_checked_at"))
             let state = try AwesomeStateRecord.fetchOne(db)
             #expect(state?.hasCompletedSourceSetup == false)
         }

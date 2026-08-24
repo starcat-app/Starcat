@@ -221,8 +221,8 @@ private actor FakeAwesomeRepository: AwesomeRepositoryProtocol {
     func enabledSources() async -> [AwesomeSource] { await sources().filter(\.isEnabled) }
     func repositories(sourceID: String?) async -> [AwesomeRepositoryItem] { [] }
     func hasCompletedSourceSetup() async -> Bool { false }
-    func refreshCatalog() async throws -> [AwesomeSource] { [] }
-    func refreshEnabledEntries() async -> [String: String] { [:] }
+    func refreshCatalog(policy: AwesomeRefreshPolicy) async throws -> [AwesomeSource] { [] }
+    func refreshEnabledEntries(policy: AwesomeRefreshPolicy) async -> [String: String] { [:] }
     func completeSourceSetup(enabledSourceIDs: Set<String>) async throws {}
     func updateSubscriptions(enabledSourceIDs: Set<String>) async throws {}
     func removeCustomSource(id: String) async throws {}
