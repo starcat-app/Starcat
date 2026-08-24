@@ -6,12 +6,14 @@
 //
 
 import Kingfisher
+import AppKit
 import SwiftUI
 
 /// Sheet 与侧边栏共用同一图片回退和 Kingfisher 缓存策略，避免来源列表退化成重复的占位图标。
 struct AwesomeSourceLogo: View {
     let source: AwesomeSource
     var size: CGFloat = 52
+    var onImageLoaded: ((NSImage) -> Void)?
 
     @State private var usesOwnerFallback = false
 
@@ -22,6 +24,9 @@ struct AwesomeSourceLogo: View {
                     .resizable()
                     .placeholder { symbolFallback }
                     .fade(duration: 0.15)
+                    .onSuccess { result in
+                        onImageLoaded?(result.image)
+                    }
                     .onFailure { _ in
                         if !usesOwnerFallback, source.imageURL != nil, ownerAvatarURL != nil {
                             usesOwnerFallback = true
