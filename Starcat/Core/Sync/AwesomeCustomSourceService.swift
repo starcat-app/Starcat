@@ -131,6 +131,14 @@ actor AwesomeCustomSourceService {
             featured: false,
             sortOrder: Int.max,
             sourceStars: sourceRepo.stargazersCount,
+            sourceForks: sourceRepo.forksCount,
+            sourceWatchers: sourceRepo.watchersCount,
+            sourceSubscribers: 0,
+            sourceOpenIssues: sourceRepo.openIssuesCount ?? 0,
+            sourceLanguage: sourceRepo.language,
+            // 自定义来源只调用本机已有的仓库详情接口；没有额外请求 Languages API 时，
+            // 用主要语言构造单色分布，避免把用户来源发送给 Discovery API。
+            languageBytes: sourceRepo.language.map { [$0: 1] } ?? [:],
             githubRepoCount: entries.count,
             externalEntryCount: parsed.externalLinkCount,
             isAvailable: true,

@@ -41,6 +41,9 @@ struct AwesomeRepositoryTests {
         #expect(sources.map(\.id) == ["one"])
         #expect(sources.first?.repoDescription == "GitHub source description")
         #expect(sources.first?.sourceStars == 9_012)
+        #expect(sources.first?.sourceForks == 812)
+        #expect(sources.first?.sourceSubscribers == 73)
+        #expect(sources.first?.languageBytes == ["Swift": 900, "Shell": 100])
         #expect(sources.first?.lastSyncedAt == ISO8601DateFormatter.githubDate(from: "2026-08-24T08:00:00Z"))
         #expect(await api.catalogETags() == [nil, "catalog-1"])
     }
@@ -272,6 +275,12 @@ struct AwesomeRepositoryTests {
             featured: order == 1,
             sortOrder: order,
             sourceStars: 9_012,
+            sourceForks: 812,
+            sourceWatchers: 9_012,
+            sourceSubscribers: 73,
+            sourceOpenIssues: 28,
+            sourceLanguage: "Swift",
+            languageBytes: ["Swift": 900, "Shell": 100],
             githubRepoCount: 1,
             externalEntryCount: 0,
             lastSyncedAt: "2026-08-24T08:00:00Z",
@@ -324,6 +333,12 @@ struct AwesomeRepositoryTests {
             featured: false,
             sortOrder: .max,
             sourceStars: 321,
+            sourceForks: 12,
+            sourceWatchers: 321,
+            sourceSubscribers: 5,
+            sourceOpenIssues: 2,
+            sourceLanguage: "Swift",
+            languageBytes: ["Swift": 1],
             githubRepoCount: 1,
             externalEntryCount: 0,
             isAvailable: true,

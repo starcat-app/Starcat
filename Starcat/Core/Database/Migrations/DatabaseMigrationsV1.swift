@@ -43,6 +43,7 @@
 //    `v23-awesome-source-metadata` / `v24-awesome-cache-freshness` /
 //    `v25-awesome-source-stars-refresh` / `v26-awesome-repository-metadata` /
 //    `v27-ai-usage-estimated-cost` / `v28-awesome-source-description`
+//    `v29-awesome-source-card-metadata`
 //
 //  **1.4.0 开发期迁移（已由正式 v19 合并接管）**：
 //  `v19-agent-message-contract` 至 `v26-github-timeline-conversations` 仅在开发构建中出现过。
@@ -108,6 +109,39 @@ enum DatabaseMigrations {
         registerV26AwesomeRepositoryMetadata(into: &migrator)
         registerV27AIUsageEstimatedCost(into: &migrator)
         registerV28AwesomeSourceDescription(into: &migrator)
+        registerV29AwesomeSourceCardMetadata(into: &migrator)
+    }
+
+    // MARK: - v29-awesome-source-card-metadata：来源卡片 GitHub 元数据（2026-08-24）
+
+    /// 来源卡片的事实字段和语言字节分布来自 GitHub API。这里只缓存 Discovery 目录快照，
+    /// 不把自定义来源上传远端；清除目录 ETag 使已有用户在下次进入时获得新契约。
+    private static func registerV29AwesomeSourceCardMetadata(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v29-awesome-source-card-metadata") { db in
+            guard try db.tableExists("awesome_sources") else { return }
+            let columns = Set(try db.columns(in: "awesome_sources").map(\.name))
+            try db.alter(table: "awesome_sources") { table in
+                if !columns.contains("source_forks") {
+                    table.add(column: "source_forks", .integer).notNull().defaults(to: 0)
+                }
+                if !columns.contains("source_watchers") {
+                    table.add(column: "source_watchers", .integer).notNull().defaults(to: 0)
+                }
+                if !columns.contains("source_subscribers") {
+                    table.add(column: "source_subscribers", .integer).notNull().defaults(to: 0)
+                }
+                if !columns.contains("source_open_issues") {
+                    table.add(column: "source_open_issues", .integer).notNull().defaults(to: 0)
+                }
+                if !columns.contains("source_language") { table.add(column: "source_language", .text) }
+                if !columns.contains("language_bytes_json") {
+                    table.add(column: "language_bytes_json", .text).notNull().defaults(to: "{}")
+                }
+            }
+            if try db.tableExists("awesome_state") {
+                try db.execute(sql: "UPDATE awesome_state SET catalog_etag = NULL, catalog_checked_at = NULL")
+            }
+        }
     }
 
     // MARK: - v28-awesome-source-description：来源仓库真实描述（2026-08-24）

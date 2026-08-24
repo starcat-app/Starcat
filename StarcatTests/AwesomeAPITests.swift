@@ -16,7 +16,7 @@ struct AwesomeAPITests {
     func sourceCatalogDecodesManagedCards() async throws {
         let api = makeAPI { request in
             let body = Data(#"""
-            {"schema_version":1,"data":[{"id":"awesome-swift","display_name":"Awesome Swift","repo_full_name":"matteocrippa/awesome-swift","repo_url":"https://github.com/matteocrippa/awesome-swift","image_url":"https://example.com/awesome.png","summary_zh":"Swift 资源","summary_en":"Swift resources","featured":true,"sort_order":2,"source_stars":9012,"github_repo_count":123,"external_entry_count":4,"last_synced_at":"2026-08-24T08:00:00Z","updated_at":"2026-08-24T08:00:00Z"}],"meta":{"total":1,"generated_at":"2026-08-24T08:00:00Z"}}
+            {"schema_version":1,"data":[{"id":"awesome-swift","display_name":"Awesome Swift","repo_full_name":"matteocrippa/awesome-swift","repo_url":"https://github.com/matteocrippa/awesome-swift","repo_description":"Swift resources","image_url":"https://example.com/awesome.png","summary_zh":"Swift 资源","summary_en":"Swift resources","featured":true,"sort_order":2,"source_stars":9012,"source_forks":812,"source_watchers":9012,"source_subscribers":73,"source_open_issues":28,"source_language":"Swift","language_bytes":{"Swift":900,"Shell":100},"github_repo_count":123,"external_entry_count":4,"last_synced_at":"2026-08-24T08:00:00Z","updated_at":"2026-08-24T08:00:00Z"}],"meta":{"total":1,"generated_at":"2026-08-24T08:00:00Z"}}
             """#.utf8)
             return (Self.response(200, request: request, headers: ["ETag": "\"catalog-1\""]), body)
         }
@@ -26,6 +26,9 @@ struct AwesomeAPITests {
         #expect(result.sources.first?.id == "awesome-swift")
         #expect(result.sources.first?.featured == true)
         #expect(result.sources.first?.sourceStars == 9012)
+        #expect(result.sources.first?.sourceForks == 812)
+        #expect(result.sources.first?.sourceSubscribers == 73)
+        #expect(result.sources.first?.languageBytes == ["Swift": 900, "Shell": 100])
         #expect(result.sources.first?.githubRepoCount == 123)
         #expect(result.etag == "\"catalog-1\"")
         #expect(result.generatedAt == "2026-08-24T08:00:00Z")

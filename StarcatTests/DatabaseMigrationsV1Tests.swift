@@ -159,6 +159,7 @@ struct DatabaseMigrationsV1Tests {
             #expect(applied.contains("v25-awesome-source-stars-refresh"))
             #expect(applied.contains("v26-awesome-repository-metadata"))
             #expect(applied.contains("v28-awesome-source-description"))
+            #expect(applied.contains("v29-awesome-source-card-metadata"))
             #expect(try db.tableExists("awesome_sources"))
             #expect(try db.tableExists("awesome_source_subscriptions"))
             #expect(try db.tableExists("awesome_entries"))
@@ -167,6 +168,7 @@ struct DatabaseMigrationsV1Tests {
             #expect(try db.columns(in: "awesome_sources").map(\.name).contains("source_stars"))
             #expect(try db.columns(in: "awesome_sources").map(\.name).contains("entries_checked_at"))
             #expect(try db.columns(in: "awesome_sources").map(\.name).contains("repo_description"))
+            #expect(try db.columns(in: "awesome_sources").map(\.name).contains("language_bytes_json"))
             let state = try AwesomeStateRecord.fetchOne(db)
             #expect(state?.hasCompletedSourceSetup == false)
         }
@@ -262,6 +264,34 @@ struct DatabaseMigrationsV1Tests {
 
         try writer.read { db in
             #expect(try db.columns(in: "awesome_sources").map(\.name).contains("repo_description"))
+            let fetchedState = try AwesomeStateRecord.fetchOne(db)
+            let state = try #require(fetchedState)
+            #expect(state.catalogETag == nil)
+            #expect(state.catalogCheckedAt == nil)
+        }
+    }
+
+    @Test("v29 追加来源卡片元数据并让目录缓存过期")
+    func awesomeSourceCardMetadataMigration() throws {
+        let writer = try DatabaseQueue()
+        var migrator = DatabaseMigrator()
+        DatabaseMigrations.registerAll(into: &migrator)
+        try migrator.migrate(writer, upTo: "v28-awesome-source-description")
+        try writer.write { db in
+            try db.execute(
+                sql: "UPDATE awesome_state SET catalog_etag = ?, catalog_checked_at = ?",
+                arguments: ["\"legacy\"", "2026-08-24T08:00:00Z"]
+            )
+        }
+
+        try migrator.migrate(writer)
+
+        try writer.read { db in
+            let columns = Set(try db.columns(in: "awesome_sources").map(\.name))
+            #expect(columns.isSuperset(of: [
+                "source_forks", "source_watchers", "source_subscribers", "source_open_issues",
+                "source_language", "language_bytes_json",
+            ]))
             let fetchedState = try AwesomeStateRecord.fetchOne(db)
             let state = try #require(fetchedState)
             #expect(state.catalogETag == nil)

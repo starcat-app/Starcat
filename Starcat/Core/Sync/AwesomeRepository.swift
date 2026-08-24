@@ -426,6 +426,12 @@ private extension AwesomeSourceRecord {
             featured: dto.featured,
             sortOrder: dto.sortOrder,
             sourceStars: dto.sourceStars,
+            sourceForks: dto.sourceForks,
+            sourceWatchers: dto.sourceWatchers,
+            sourceSubscribers: dto.sourceSubscribers,
+            sourceOpenIssues: dto.sourceOpenIssues,
+            sourceLanguage: dto.sourceLanguage,
+            languageBytesJSON: Self.encodeLanguageBytes(dto.languageBytes),
             githubRepoCount: dto.githubRepoCount,
             externalEntryCount: dto.externalEntryCount,
             isAvailable: true,
@@ -452,6 +458,12 @@ private extension AwesomeSourceRecord {
             featured: false,
             sortOrder: source.sortOrder,
             sourceStars: source.sourceStars,
+            sourceForks: source.sourceForks,
+            sourceWatchers: source.sourceWatchers,
+            sourceSubscribers: source.sourceSubscribers,
+            sourceOpenIssues: source.sourceOpenIssues,
+            sourceLanguage: source.sourceLanguage,
+            languageBytesJSON: Self.encodeLanguageBytes(source.languageBytes),
             githubRepoCount: source.githubRepoCount,
             externalEntryCount: source.externalEntryCount,
             isAvailable: source.isAvailable,
@@ -485,6 +497,12 @@ private extension AwesomeSourceRecord {
             featured: featured,
             sortOrder: sortOrder,
             sourceStars: sourceStars,
+            sourceForks: sourceForks,
+            sourceWatchers: sourceWatchers,
+            sourceSubscribers: sourceSubscribers,
+            sourceOpenIssues: sourceOpenIssues,
+            sourceLanguage: sourceLanguage,
+            languageBytes: Self.decodeLanguageBytes(languageBytesJSON),
             githubRepoCount: githubRepoCount,
             externalEntryCount: externalEntryCount,
             isAvailable: isAvailable,
@@ -493,6 +511,16 @@ private extension AwesomeSourceRecord {
             lastSyncedAt: lastSyncedAt.flatMap(ISO8601DateFormatter.githubDate(from:)),
             updatedAt: updatedAt
         )
+    }
+
+    /// 语言分布是可重建目录缓存，编码失败时使用空对象，不能阻断用户的来源订阅写入。
+    private static func encodeLanguageBytes(_ values: [String: Int]) -> String {
+        guard let data = try? JSONEncoder().encode(values) else { return "{}" }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private static func decodeLanguageBytes(_ value: String) -> [String: Int] {
+        (try? JSONDecoder().decode([String: Int].self, from: Data(value.utf8))) ?? [:]
     }
 }
 

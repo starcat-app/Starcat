@@ -30,6 +30,13 @@ struct AwesomeSourceDTO: Codable, Identifiable, Hashable, Sendable {
     let sortOrder: Int
     /// 精选来源必须来自已核验的 GitHub Repo，因此 Stars 是公共目录的必返事实字段。
     let sourceStars: Int
+    let sourceForks: Int
+    let sourceWatchers: Int
+    let sourceSubscribers: Int
+    let sourceOpenIssues: Int
+    let sourceLanguage: String?
+    /// GitHub Languages API 返回的是字节数，客户端据此计算占比并映射语言色条。
+    let languageBytes: [String: Int]
     let githubRepoCount: Int
     let externalEntryCount: Int
     let lastSyncedAt: String?
@@ -47,6 +54,12 @@ struct AwesomeSourceDTO: Codable, Identifiable, Hashable, Sendable {
         case featured
         case sortOrder = "sort_order"
         case sourceStars = "source_stars"
+        case sourceForks = "source_forks"
+        case sourceWatchers = "source_watchers"
+        case sourceSubscribers = "source_subscribers"
+        case sourceOpenIssues = "source_open_issues"
+        case sourceLanguage = "source_language"
+        case languageBytes = "language_bytes"
         case githubRepoCount = "github_repo_count"
         case externalEntryCount = "external_entry_count"
         case lastSyncedAt = "last_synced_at"
@@ -157,6 +170,12 @@ struct AwesomeSource: Identifiable, Hashable, Sendable {
     let featured: Bool
     let sortOrder: Int
     let sourceStars: Int
+    let sourceForks: Int
+    let sourceWatchers: Int
+    let sourceSubscribers: Int
+    let sourceOpenIssues: Int
+    let sourceLanguage: String?
+    let languageBytes: [String: Int]
     let githubRepoCount: Int
     let externalEntryCount: Int
     let isAvailable: Bool

@@ -26,6 +26,12 @@ struct AwesomeSourceRecord: Codable, FetchableRecord, PersistableRecord, Equatab
     var featured: Bool
     var sortOrder: Int
     var sourceStars: Int
+    var sourceForks: Int
+    var sourceWatchers: Int
+    var sourceSubscribers: Int
+    var sourceOpenIssues: Int
+    var sourceLanguage: String?
+    var languageBytesJSON: String
     var githubRepoCount: Int
     var externalEntryCount: Int
     var isAvailable: Bool
@@ -49,6 +55,12 @@ struct AwesomeSourceRecord: Codable, FetchableRecord, PersistableRecord, Equatab
         case featured
         case sortOrder = "sort_order"
         case sourceStars = "source_stars"
+        case sourceForks = "source_forks"
+        case sourceWatchers = "source_watchers"
+        case sourceSubscribers = "source_subscribers"
+        case sourceOpenIssues = "source_open_issues"
+        case sourceLanguage = "source_language"
+        case languageBytesJSON = "language_bytes_json"
         case githubRepoCount = "github_repo_count"
         case externalEntryCount = "external_entry_count"
         case isAvailable = "is_available"
