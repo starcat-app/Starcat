@@ -13,7 +13,9 @@
 2. **自研仓库推荐**：训练服务基于 Starcat opt-in 数据、GH Archive 和公开 repo metadata 生成推荐产物，在线 API 只读 Serving DB。
 3. **自研 Star History**：独立服务聚合公开 repo 日级快照，并使用 GH Archive 补充估算历史。
 
-当前线上推荐由 `starcat-recommend-api` 的 `/api/v1` 中转已获作者授权的 SimRepo 接口；该服务同时是长期统一推荐入口，将新增 `/api/v2` 读取自研 ServingBundle。当前普通公开仓库 Star History 仍由 `starcat-discovery-api` 提供。
+当前线上推荐由 `starcat-recommend-api` 的 `/api/v1` 中转已获作者授权的 SimRepo 接口；该服务同时是长期统一推荐入口，已新增 `/api/v2` 读取自研 ServingBundle。当前普通公开仓库 Star History 仍由 `starcat-discovery-api` 提供。
+
+2026-08-24 本机真实数据全链路结果见 [公开 Star 自研推荐全链路最终测试报告](公开Star自研推荐全链路最终测试报告.md)，交付收口见 [公开 Star 自研推荐全链路需求完成结果报告](公开Star自研推荐全链路需求完成结果报告.md)。
 
 当前实施与目标后端拆分为：
 

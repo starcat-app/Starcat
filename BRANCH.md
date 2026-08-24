@@ -32,7 +32,7 @@
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
-| `codex/collection-pipeline` | 本地；`../Starcat-collection-pipeline` worktree | 实现公开 Star 数据静默上报，并协调独立 Collection 服务与离线训练 Pull Connector。 | `开发中`；基线为 `dev@291aef44`，三仓端到端验证已通过；当前与 `dev` 双向分叉。 | 合回 `dev` 前先同步最新 `dev`，解决分叉后重新验证。 |
+| `codex/collection-pipeline` | 本地；`../Starcat-collection-pipeline` worktree | 实现公开 Star 数据静默上报，并协调独立 Collection、Trainer 与 Recommend API v2。 | `开发中`；基线为 `dev@291aef44`，四仓本机真实全链路和 Direct UI 已通过；当前与 `dev` 双向分叉。 | 合回 `dev` 前先同步最新 `dev`，解决分叉后重新验证。 |
 | `dev` | 本地 + `origin/dev`；当前无独立 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；1.4.0 发版准备与 App Store 正式版 Xcode 打包门禁已进入 `main`。 | 后续功能继续在 `dev` 开发；新的发版阻断问题仍回到 `dev` 修复并重新执行门禁。 |
 | `main` | 本地 + `origin/main`；仓库根目录 worktree | 远端默认稳定主线和发布基线。 | `长期保留`；2026-08-21 已完成 1.4.0 发布：App Store Connect 构建有效，Direct 完成公证、官网、Sparkle、GitHub Release 和 Homebrew 发布。 | 保持稳定主线；后续功能与发版阻断修复仍先进入 `dev`。 |
 
@@ -42,10 +42,10 @@
 
 | 项目 | 独立仓库位置 | 需求分支 | 当前状态 | 后续归宿 |
 |---|---|---|---|---|
-| Starcat | `../Starcat-collection-pipeline` worktree | `codex/collection-pipeline` | `开发中`；本地分支尚未 push。 | 同步最新 `dev` 并重新验证后合回 `dev`。 |
+| Starcat | `../Starcat-collection-pipeline` worktree | `codex/collection-pipeline` | `开发中`；真实上报、训练、发布、v2 查询和 Direct UI 已验收，本地分支尚未 push。 | 同步最新 `dev` 并重新验证后合回 `dev`。 |
 | `starcat-collection-api` | `supports/starcat-collection-api` | `codex/collection-pipeline` | `开发中`；基于已推送的 `main@afb8321` 创建，本地分支尚未 push。 | 验收后合回独立仓库 `main`。 |
-| `starcat-recsys-trainer` | `supports/starcat-recsys-trainer` | `codex/collection-api-source` | `已合并`；`HEAD=cd4d963` 已进入并随 `main@122952da` 推送，专项分支仅保留在本地。 | 三仓需求收口后审查并清理本地专项分支。 |
-| `starcat-recommend-api` | `supports/starcat-recommend-api` | `codex/trained-recommendations` | `开发中`；基于 `dev@c296940` 创建，本地分支尚未 push。 | 验收后合回独立仓库 `dev`，保留 v1 SimRepo 接口并交付 v2 自研推荐接口。 |
+| `starcat-recsys-trainer` | `supports/starcat-recsys-trainer` | `codex/collection-api-source` | `开发中`；`HEAD=5525a5c`，包含 Collection Pull、单主体降级、Recommend Publisher 与真实交付收口，本地分支尚未 push。 | 验收后合回独立仓库 `main`。 |
+| `starcat-recommend-api` | `supports/starcat-recommend-api` | `codex/trained-recommendations` | `开发中`；`HEAD=5f5c98a`，v1 保持不变且 v2/Registry 已通过真实 Bundle 验收，本地分支尚未 push。 | 验收后合回独立仓库 `dev`，保留 v1 SimRepo 接口并交付 v2 自研推荐接口。 |
 
 ## 近期已清理分支
 

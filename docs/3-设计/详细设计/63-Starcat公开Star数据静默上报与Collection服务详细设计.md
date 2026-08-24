@@ -1,7 +1,7 @@
 # Starcat 公开 Star 数据静默上报与 Collection 服务详细设计
 
 > 日期: 2026-08-23
-> 状态: 第一阶段已完成；第二阶段 Recommend v2 全链路实施中
+> 状态: 第一阶段与第二阶段 Recommend v2 本机真实全链路均已完成
 > 版本: v1.1
 > 范围: Starcat macOS 客户端 + `starcat-collection-api` + `starcat-recsys-trainer` + `starcat-recommend-api`
 > 上游背景: [60-Starcat 数据贡献与数据平台详细设计](60-Starcat数据贡献与数据平台详细设计.md)
@@ -444,5 +444,5 @@ Swift 生成 fixture
 - [x] 新增独立 Admin Key 保护的 Bundle 上传、校验、不可变安装和原子激活。
 - [x] Trainer 增加面向 Recommend API 的 Publisher，并保留本地 Registry。
 - [x] Starcat Direct 调用 `/api/v2`，现有推荐 UI 与缓存继续复用；App Store target 继续使用 `/api/v1`。
-- [ ] 使用主仓库真实 Star 数据完成上报、训练、发布、API 查询和 UI 验收。
-- [ ] 多轮审查报告和包含 BigQuery 查询细节的最终测试报告已生成。
+- [x] 使用主仓库真实 Star 数据完成上报、训练、发布、API 查询和 UI 验收。
+- [x] 多轮审查报告和包含 BigQuery 查询细节的最终测试报告已生成。

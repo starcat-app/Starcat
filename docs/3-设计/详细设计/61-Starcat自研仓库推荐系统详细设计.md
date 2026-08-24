@@ -1,7 +1,7 @@
 # Starcat 自研仓库推荐系统详细设计
 
 > 日期: 2026-08-24
-> 状态: 方案已确认，v2 自研推荐全链路实施中
+> 状态: 离线基线与 v2 本机真实全链路已完成；生产级混合模型、shadow 和灰度属于后续阶段
 > 版本: v1.1
 > 范围: `starcat-collection-api` + `starcat-recsys-trainer` + `starcat-recommend-api` + Starcat Direct
 > 当前客户端数据契约: [Starcat 公开 Star 数据静默上报与 Collection 服务详细设计](63-Starcat公开Star数据静默上报与Collection服务详细设计.md)
