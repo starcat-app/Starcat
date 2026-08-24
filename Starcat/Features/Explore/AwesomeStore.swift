@@ -52,30 +52,29 @@ final class AwesomeStore {
     /// SwiftUI 的 `.task`、账户数据库切换和导航恢复都会调用这个入口；这些生命周期
     /// 事件不等同于用户点击 Awesome 分类，因此不能擅自打开来源选择 Sheet。
     func loadAwesome() async {
-        await loadAwesome(presentSourceSetupIfNeeded: false)
-    }
-
-    /// 响应用户明确点击 Awesome 分类；首次配置尚未完成时自动打开来源选择 Sheet。
-    func enterAwesomeFromUserSelection() async {
-        await loadAwesome(presentSourceSetupIfNeeded: true)
-    }
-
-    /// 统一复用缓存加载与远端刷新，仅由两个语义明确的公开入口决定是否允许展示 Sheet。
-    private func loadAwesome(presentSourceSetupIfNeeded: Bool) async {
         loadTask?.cancel()
         let task = Task { [weak self] in
             guard let self else { return }
             self.isLoading = self.sources.isEmpty
             await self.loadCachedState()
             guard !Task.isCancelled else { return }
-            if presentSourceSetupIfNeeded, !self.hasCompletedSourceSetup {
-                self.isSourceManagerPresented = true
-            }
             await self.refreshCatalogAndEntries()
             self.isLoading = false
         }
         loadTask = task
         await task.value
+    }
+
+    /// 响应用户明确点击 Awesome 分类；首次配置尚未完成时自动打开来源选择 Sheet。
+    ///
+    /// 首次状态判断刻意放在可取消的后台刷新任务之外。分类点击与 `AwesomeView.task`
+    /// 可能同时发生，后者可以取消重复刷新，但不能吞掉已经发生的用户展示意图。
+    func enterAwesomeFromUserSelection() async {
+        await loadCachedState()
+        if !hasCompletedSourceSetup {
+            isSourceManagerPresented = true
+        }
+        await loadAwesome()
     }
 
     func presentSourceManager() async {

@@ -40,6 +40,27 @@ struct AwesomeStoreTests {
         #expect(!store.isSourceManagerPresented)
     }
 
+    @Test("页面自动加载与分类点击并发时不会吞掉首次来源选择")
+    @MainActor
+    func concurrentLifecycleLoadKeepsUserPresentationIntent() async throws {
+        let repository = AwesomeStoreRepositoryFake(
+            sources: [Self.source()],
+            setupDelayNanoseconds: 50_000_000
+        )
+        let service = AwesomeCustomSourceService(
+            github: AwesomeStoreGitHubFake(),
+            repository: repository
+        )
+        let store = AwesomeStore(repository: repository, customSourceService: service)
+
+        let userSelection = Task { await store.enterAwesomeFromUserSelection() }
+        try await Task.sleep(for: .milliseconds(5))
+        await store.loadAwesome()
+        await userSelection.value
+
+        #expect(store.isSourceManagerPresented)
+    }
+
     @Test("账户数据库切换立即清除旧账户来源与选择")
     @MainActor
     func accountResetClearsVisibleSnapshot() async {
@@ -173,6 +194,7 @@ private actor AwesomeStoreRepositoryFake: AwesomeRepositoryProtocol {
     private var sourceValues: [AwesomeSource]
     private let repositoriesBySource: [String: [AwesomeRepositoryItem]]
     private let delaysBySource: [String: UInt64]
+    private let setupDelayNanoseconds: UInt64
     private var setupCompleted = false
     private var catalogPolicies: [AwesomeRefreshPolicy] = []
     private var entryPolicies: [AwesomeRefreshPolicy] = []
@@ -180,11 +202,13 @@ private actor AwesomeStoreRepositoryFake: AwesomeRepositoryProtocol {
     init(
         sources: [AwesomeSource],
         repositoriesBySource: [String: [AwesomeRepositoryItem]] = [:],
-        delaysBySource: [String: UInt64] = [:]
+        delaysBySource: [String: UInt64] = [:],
+        setupDelayNanoseconds: UInt64 = 0
     ) {
         sourceValues = sources
         self.repositoriesBySource = repositoriesBySource
         self.delaysBySource = delaysBySource
+        self.setupDelayNanoseconds = setupDelayNanoseconds
     }
 
     func sources() async -> [AwesomeSource] { sourceValues }
@@ -199,7 +223,15 @@ private actor AwesomeStoreRepositoryFake: AwesomeRepositoryProtocol {
         guard let sourceID else { return repositoriesBySource.values.flatMap { $0 } }
         return repositoriesBySource[sourceID] ?? []
     }
-    func hasCompletedSourceSetup() async -> Bool { setupCompleted }
+    func hasCompletedSourceSetup() async -> Bool {
+        if setupDelayNanoseconds > 0 {
+            // 模拟不响应父任务取消的数据库读取，稳定覆盖并发加载时序。
+            await Task.detached {
+                try? await Task.sleep(nanoseconds: self.setupDelayNanoseconds)
+            }.value
+        }
+        return setupCompleted
+    }
     func refreshCatalog(policy: AwesomeRefreshPolicy) async throws -> [AwesomeSource] {
         catalogPolicies.append(policy)
         return sourceValues
