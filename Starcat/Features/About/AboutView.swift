@@ -1008,6 +1008,12 @@ private struct AboutDependency: Identifiable {
             url: URL(string: "https://github.com/yamadashy/repomix")
         ),
         AboutDependency(
+            name: "LiteLLM Model Pricing",
+            license: "MIT",
+            copyright: "Copyright (c) 2023 Berri AI",
+            url: URL(string: "https://github.com/BerriAI/litellm")
+        ),
+        AboutDependency(
             name: "OpenSSF",
             license: "CDLA-2.0 / Apache-2.0",
             copyright: "Copyright 2020 OpenSSF Scorecard Authors",
