@@ -119,6 +119,7 @@ make setup-production-api-keys     # 从 starcat-api/.env 共用 Key 写入 Secr
 
 | 变量（聚合前缀） | 裸名 / 独立 App | 路径 |
 |------------------|-----------------|------|
+| `RECOMMEND_MODEL_REGISTRY_DIR` | `MODEL_REGISTRY_DIR` | `/data/recommend-model-registry` |
 | `WIKI_STORE_FILE` | `STORE_FILE` | `/data/wiki.db` |
 | `SHARING_STORE_FILE` | `STORE_FILE` | `/data/sharing.db` |
 | `TRENDING_STORE_FILE` | `STORE_FILE` | `/data/trending.db` |
