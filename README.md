@@ -1,10 +1,11 @@
 <div align="center">
 <a href="https://starcat.ink"><img src="./banner.webp" width="100%" alt="Starcat" align="center"/></a>
 
-<h2>Starcat</h2>
-<p>GitHub Stars management, local RAG knowledge base, Agent workspace, GitHub notifications, My Projects, library and repository insights, macOS desktop widgets, AI summaries, semantic search, release tracking, browser plugins, Alfred / uTools / Raycast, and more.</p>
+<h1>Starcat — Native GitHub Stars Manager &amp; AI Knowledge Base for macOS</h1>
+<p>Organize, search, and ask questions across your GitHub Stars — locally on your Mac.</p>
 
 <a href="https://github.com/starcat-app/homebrew-starcat"><img src="https://img.shields.io/badge/Install%20with-Homebrew-FBBF24?style=for-the-badge&logo=homebrew&logoColor=white" width="220" alt="Install with Homebrew"/></a>
+<a href="https://github.com/starcat-app/Starcat"><img src="https://img.shields.io/github/stars/starcat-app/Starcat?style=for-the-badge&logo=github&label=Star%20Starcat&color=24292f" alt="Star Starcat on GitHub"/></a>
 <br/>
 <a href="https://apps.apple.com/app/starcat-for-github/id6788809803?mt=12"><img src="./screenshots/mac-app-store-en.png" alt="Download on the Mac App Store" height="40"/></a>
 <br/>
@@ -40,13 +41,15 @@ While building Starcat I started thinking about what a GitHub Star is. We treat 
 
 A public Star is still an endorsement. Repositories you plan to learn, use, or keep go into the Starcat knowledge base. Starring does not create a backlog you must tidy. Only ingested repos enter search, summaries, and RAG.
 
-Starcat started as a paid product. Almost nobody bought it. Managing GitHub Stars this deeply turned out to be a niche of one. The related projects are now open source, except [`starcat-license-api`](https://github.com/starcat-app/starcat-license-api), which stays private because it issues Direct licenses. Official **Mac App Store** and **Direct** ([starcat.ink](https://starcat.ink)) builds remain available and will keep being maintained. You can also build from this repository and run your own stack.
-
 <div align="center">
 <img width="900" src="./main.webp" alt="Starcat main window"/>
 </div>
 
 The current public version is **Starcat 1.4.0**.
+
+### Why Starcat is open source
+
+Starcat began as a paid product, but the market for deeply managing GitHub Stars proved smaller than expected. Opening the ecosystem makes it easier for the people who need it to inspect, extend, and self-host it. The related projects are now open source, except [`starcat-license-api`](https://github.com/starcat-app/starcat-license-api), which stays private because it issues Direct licenses. Official **Mac App Store** and **Direct** ([starcat.ink](https://starcat.ink)) builds remain available and will keep being maintained.
 
 ## Official builds and source
 

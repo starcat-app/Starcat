@@ -1,10 +1,11 @@
 <div align="center">
 <a href="https://starcat.ink"><img src="./banner.webp" width="100%" alt="Starcat" align="center"/></a>
 
-<h2>Starcat</h2>
-<p>GitHub Stars 管理、本地知识库 RAG、Agent 工作台、GitHub 通知、我的项目、全局与仓库洞察、macOS 桌面小组件、AI 摘要与语义搜索、Release 追踪、Browser Plugin、Alfred / uTools / Raycast 等能力。</p>
+<h1>Starcat — 原生 macOS GitHub Stars 管理器与 AI 知识库</h1>
+<p>在本地整理、搜索并追问你的 GitHub Stars。</p>
 
 <a href="https://github.com/starcat-app/homebrew-starcat"><img src="https://img.shields.io/badge/Install%20with-Homebrew-FBBF24?style=for-the-badge&logo=homebrew&logoColor=white" width="220" alt="Install with Homebrew"/></a>
+<a href="https://github.com/starcat-app/Starcat"><img src="https://img.shields.io/github/stars/starcat-app/Starcat?style=for-the-badge&logo=github&label=Star%20Starcat&color=24292f" alt="在 GitHub Star Starcat"/></a>
 <br/>
 <a href="https://apps.apple.com/cn/app/starcat-for-github/id6788809803?mt=12"><img src="./screenshots/mac-app-store-zh.png" alt="在 Mac App Store 下载" height="40"/></a>
 <br/>
@@ -40,13 +41,15 @@ English: <a href="./README.md">README.md</a>
 
 Star 本身还是公开的认同。真正准备学习、使用或长期保留的项目，再进入 Starcat 知识库。点 Star 不自动变成待整理清单，入库才进入检索、摘要和 RAG 问答的范围。
 
-Starcat 一开始是按收费产品来做的，上线后几乎没人买。把 GitHub Stars 管到这个深度，需求可能太小众了。所以现在把相关项目全部开源，只保留 [`starcat-license-api`](https://github.com/starcat-app/starcat-license-api) 为私有，它负责 Direct 渠道授权。**Mac App Store** 和 **Direct**（[starcat.ink](https://starcat.ink)）仍会提供下载并继续维护。你也可以用本仓库自己编译、自己部署。
-
 <div align="center">
 <img width="900" src="./main.webp" alt="Starcat 主窗口"/>
 </div>
 
 当前公开版本为 **Starcat 1.4.0**。
+
+### 为什么开源 Starcat
+
+Starcat 最初是收费产品，但深度管理 GitHub Stars 的市场比预期更小。开放整个生态后，真正需要它的人可以审查代码、扩展功能并自建服务。相关项目现已开源，仅保留负责 Direct 渠道授权的 [`starcat-license-api`](https://github.com/starcat-app/starcat-license-api) 为私有。官方 **Mac App Store** 和 **Direct**（[starcat.ink](https://starcat.ink)）版本仍会持续提供和维护。
 
 ## 官方包和自己编译
 
