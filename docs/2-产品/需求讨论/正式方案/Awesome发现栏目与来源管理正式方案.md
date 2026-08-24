@@ -1,7 +1,7 @@
 # Awesome 发现栏目与来源管理正式方案
 
 > 日期：2026-08-24  
-> 状态：需求与方向已确认，待实施  
+> 状态：已实现并完成自动化门禁，待人工 UI 验收
 > 单一信任源：本文  
 > Issue：[#109](https://github.com/starcat-app/Starcat/issues/109)  
 > 范围：Starcat「探索 → Awesome」、`supports/starcat-discovery-api`、`supports/starcat-site/_local-admin`
@@ -183,14 +183,13 @@ hasCompletedAwesomeSourceSetup == false ?
 ```text
 选择 Awesome 来源
 
-┌────────────────────────┐  ┌────────────────────────┐
-│ [图片]  Awesome Mac     │  │ [图片]  Selfhosted     │
-│ 精选 macOS 软件与项目…  │  │ 自托管应用与服务清单…  │
-│ jaywcjlove/awesome-mac  │  │ awesome-selfhosted/... │
-│ ★ 32.1K · 412 个项目 ✓ │  │ ★ 218K · 685 个项目    │
-└────────────────────────┘  └────────────────────────┘
+┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
+│ [Logo] Awesome A │ │ [Logo] Awesome B │ │ [Logo] Awesome C │
+│ owner/repo       │ │ owner/repo       │ │ owner/repo       │
+│ ★ 32.1K  ▣ 412  │ │ ★ 218K   ▣ 685  │ │ ★ 15K    ▣ 96   │
+└──────────────────┘ └──────────────────┘ └──────────────────┘
 
-我的来源
+新增 Awesome 项目
 ┌────────────────────────┐
 │ ＋ 添加自定义来源       │
 └────────────────────────┘
@@ -213,6 +212,8 @@ hasCompletedAwesomeSourceSetup == false ?
 交互要求：
 
 - 整张卡片可点击切换勾选，不能只有小勾选框可点。
+- Sheet 使用固定三列桌面网格和稳定卡片高度，来源标题或同步状态变化不能导致列数与位置跳动。
+- Stars、项目数和同步状态使用克制的 Repo 风格胶囊；Stars 必须来自 GitHub 事实，不能以“未知”或缺字段时的 `0` 冒充。
 - 使用系统语义色和轻量选中边框，不做营销型大图卡片。
 - 支持键盘焦点、Space 切换和 VoiceOver。
 - Sheet header 右上角关闭按钮使用 `SheetCloseButton`。
@@ -383,10 +384,21 @@ If-None-Match: "optional-source-etag"
         "full_name": "example/project",
         "description": "GitHub repository description",
         "owner_avatar": "https://avatars.githubusercontent.com/u/1?v=4",
+        "homepage": "https://example.com/project",
         "language": "Swift",
         "stars": 1200,
+        "forks": 120,
+        "watchers": 1200,
+        "subscribers": 42,
+        "open_issues": 18,
+        "default_branch": "main",
+        "license_spdx": "MIT",
+        "topics": ["swift", "macos"],
         "is_archived": false,
+        "is_fork": false,
+        "pushed_at": "2026-08-23T11:00:00Z",
         "updated_at": "2026-08-23T12:34:56Z",
+        "created_at": "2020-01-02T03:04:05Z",
         "entry_title": "Project",
         "entry_description": "Original Awesome README description",
         "section_path": ["Utilities", "File Transfer"],
@@ -405,8 +417,9 @@ If-None-Match: "optional-source-etag"
 规则：
 
 - 首期按来源返回完整快照，不做远端筛选和分页；客户端只请求用户已勾选来源并本地筛选。
-- `updated_at` 是 GitHub 仓库更新时间；字段缺失时客户端在“最近更新”排序中放到末尾，不得用来源同步时间代替。
-- `is_archived` 是必返布尔字段；`false` 也不得通过 `omitempty` 省略，避免客户端整批快照解码失败。
+- `stars / forks / watchers / subscribers / open_issues` 是必返数字字段；包括真实为 `0` 的仓库也不得省略。
+- `default_branch / topics / is_archived / is_fork / updated_at / created_at` 是基础事实强契约；客户端拒绝缺字段的旧响应，避免把契约错误伪装成零值。
+- `pushed_at / homepage / license_spdx` 允许 GitHub 返回空值；不得用来源同步时间或占位文本冒充。
 - entries 响应中 `source.updated_at` 与 `meta.generated_at` 表示最近成功生成当前条目快照的时间；仅在历史异常数据缺少 `last_synced_at` 时回退来源内容修订时间。
 - 必须支持 `ETag`，避免重复下载未变化的长清单。
 - 单来源响应默认压缩；服务端对异常大来源设置明确响应上限并在管理端阻止发布，而不是运行期静默截断。
@@ -568,7 +581,7 @@ Discovery API 已有 `repos` 作为公开 GitHub Repo 主表。Awesome 只增加
 读取来源配置
   → GitHub 核验仓库公开且可用
   → 读取默认分支 README 与 SHA/ETag
-  → SHA 未变化则完成 no-op run
+  → SHA 未变化且仓库元数据版本已是最新则完成 no-op run
   → Markdown AST 解析标题、列表与链接
   → URL 归一化与目标分类
   → 批量 GitHub Repo 核验/enrich
@@ -577,6 +590,8 @@ Discovery API 已有 `repos` 作为公开 GitHub Repo 主表。Awesome 只增加
 ```
 
 同步失败时不能先清空旧条目。只有完整解析、核验和事务提交成功后，才能把本轮未出现的旧条目标记为 inactive。
+
+新增公共 Repo 字段时提升持久化 `repo_metadata_version`。旧库启动升级只清空一次来源的成功 SHA，下一轮同步强制重新 enrich；成功后恢复 SHA no-op，进程重启不能反复解析相同 README。
 
 ### 8.2 Markdown 解析规则
 
@@ -653,13 +668,13 @@ git@github.com:{owner}/{repo}.git       # 仅自定义来源输入可接受
 
 #### `awesome_entries`
 
-保存服务端条目快照和自定义来源本地解析结果，字段与公共 entries DTO 对齐，并额外记录 `source_id`、`repo_updated_at`、`cached_at`。Repo 身份使用 `gh_repo_id`，不把 Awesome 关系写进 `repos.is_starred` 或其他用户关系字段。
+保存服务端条目快照和自定义来源本地解析结果，字段与公共 entries DTO 对齐，包括 homepage、forks、watchers、subscribers、open issues、默认分支、license、topics、fork/archive 状态和创建/推送/更新时间；并额外记录 `source_id`、`repo_updated_at`、`cached_at`。Repo 身份使用 `gh_repo_id`，不把 Awesome 关系写进 `repos.is_starred` 或其他用户关系字段。
 
 #### `awesome_state`
 
 单例行保存 `has_completed_source_setup`、来源目录 `catalog_etag` 和 `catalog_checked_at`；每个来源的 entries ETag 和最近检查时间分别保存在 `awesome_sources.entries_etag`、`awesome_sources.entries_checked_at`。四张表都位于当前账户数据库，不能把首次设置状态改成全局 UserDefaults Bool。
 
-首版使用 `v22-awesome-discovery` 建表，来源仓库元数据使用 `v23-awesome-source-metadata` 补齐；客户端缓存 freshness 通过追加 `v24-awesome-cache-freshness` 增量迁移增加 `entries_checked_at`，禁止回写已发布 migration。
+首版使用 `v22-awesome-discovery` 建表，来源仓库卡片元数据使用 `v23-awesome-source-metadata` 补齐；`v24-awesome-cache-freshness` 增加独立检查时间，`v25-awesome-source-stars-refresh` 让历史零 Stars 目录失效，`v26-awesome-repository-metadata` 追加完整 Repo 事实列并让 managed entries 重新校验。所有变更均追加 migration，禁止回写已发布 migration。
 
 ### 9.2 缓存策略
 
@@ -702,6 +717,8 @@ git@github.com:{owner}/{repo}.git       # 仅自定义来源输入可接受
 |---|---|
 | `Starcat/Features/Explore/ExploreModels.swift` | 增加 `.awesome`、标题、图标、顺序和 API 归属 |
 | `Starcat/Features/Home/SidebarView.swift` | Awesome 行、名称右侧管理按钮、动态来源区、选中态 |
+| `Starcat/Features/Explore/AwesomeSourceCard.swift` | 固定三列 Repo 风格来源卡片与元数据胶囊 |
+| `Starcat/Features/Explore/AwesomeSourceLogo.swift` | Sheet/侧边栏共享内容图片、owner avatar 与图标回退 |
 | `Starcat/Features/Home/HomeView.swift` | Awesome 选择状态、首次 Sheet、三栏路由和账户切换恢复 |
 | `Starcat/Features/Explore/ExploreView.swift` | Awesome 中栏与详情分支；必要时拆分专用 View |
 | `Starcat/Features/Explore/DiscoveryDetailView.swift` | 复用详情骨架并注入来源证据区，不复制仓库详情 |
