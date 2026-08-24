@@ -31,10 +31,10 @@ starcat_debug_build_fingerprint() {
   local cache_owner="$1"
   local xcode_version sdk_path sdk_version sdk_build_version
 
-  xcode_version="$(xcodebuild -version | tr '\n' ';')"
-  sdk_path="$(xcrun --sdk macosx --show-sdk-path)"
-  sdk_version="$(xcrun --sdk macosx --show-sdk-version)"
-  sdk_build_version="$(xcrun --sdk macosx --show-sdk-build-version)"
+  xcode_version="$(xcodebuild -version | tr '\n' ';')" || return 1
+  sdk_path="$(xcrun --sdk macosx --show-sdk-path)" || return 1
+  sdk_version="$(xcrun --sdk macosx --show-sdk-version)" || return 1
+  sdk_build_version="$(xcrun --sdk macosx --show-sdk-build-version)" || return 1
 
   printf '%s\n' \
     "format=1" \
@@ -71,10 +71,12 @@ starcat_prepare_debug_derived_data() {
   local stamp_path="$derived_data/.starcat-build-environment"
   local existing_fingerprint=""
 
-  starcat_assert_debug_derived_data_path "$project_root" "$derived_data"
+  # Bash 在函数整体位于 `if` 条件中时会抑制 errexit，因此安全边界必须显式传递失败，
+  # 不能只依赖文件顶部的 `set -e`。
+  starcat_assert_debug_derived_data_path "$project_root" "$derived_data" || return 1
 
   if [ -z "$current_fingerprint" ]; then
-    current_fingerprint="$(starcat_debug_build_fingerprint "$cache_owner")"
+    current_fingerprint="$(starcat_debug_build_fingerprint "$cache_owner")" || return 1
   fi
 
   if [ -f "$stamp_path" ]; then
@@ -83,10 +85,9 @@ starcat_prepare_debug_derived_data() {
 
   if [ -d "$derived_data" ] && [ "$existing_fingerprint" != "$current_fingerprint" ]; then
     echo "==> 检测到 $cache_owner 的 Xcode / SDK 缓存指纹变化，重建专用 DerivedData..."
-    rm -rf "$derived_data"
+    rm -rf "$derived_data" || return 1
   fi
 
-  mkdir -p "$derived_data"
-  printf '%s\n' "$current_fingerprint" >"$stamp_path"
+  mkdir -p "$derived_data" || return 1
+  printf '%s\n' "$current_fingerprint" >"$stamp_path" || return 1
 }
-

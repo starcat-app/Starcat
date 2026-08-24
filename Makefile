@@ -39,7 +39,7 @@ APPSTORE_ARCHIVE := $(CURDIR)/dist/appstore/Starcat-AppStore.xcarchive
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build-appstore build-direct run-appstore run-direct test reset-db reset-anysearch-cache reset-chat-cache reset-all show-data clean start-supports build-dmg release-store release-dry-run package-appstore open-appstore-archive package-direct package-direct-notarized release-direct release-direct-retry release-direct-unnotarized pr-helper bump-version linguist sync-fly-secrets setup-production-api-keys deploy-pages deploy-pages-test
+.PHONY: help build-appstore build-direct run-appstore run-direct test test-build-scripts reset-db reset-anysearch-cache reset-chat-cache reset-all show-data clean start-supports build-dmg release-store release-dry-run package-appstore open-appstore-archive package-direct package-direct-notarized release-direct release-direct-retry release-direct-unnotarized pr-helper bump-version linguist sync-fly-secrets setup-production-api-keys deploy-pages deploy-pages-test
 
 help: ## 列出所有可用命令
 	@echo "Starcat 常用命令："
@@ -49,6 +49,7 @@ help: ## 列出所有可用命令
 	@echo "  make run-appstore           执行 scripts/run-debug-appstore.sh（App Store / 沙盒 Debug）"
 	@echo "  make run-direct             执行 scripts/run-debug-direct.sh（Direct / 非 App Store Debug）"
 	@echo "  make test                   跑全量单测（xcodegen + xcodebuild test）"
+	@echo "  make test-build-scripts     验证 Debug 构建缓存的工具链隔离逻辑"
 	@echo ""
 	@echo "App Store："
 	@echo "  make package-appstore       生成 App Store archive，不上传"
@@ -92,6 +93,9 @@ run-appstore: ## App Store / 沙盒 Debug
 
 run-direct: ## Direct / 非 App Store Debug
 	@bash scripts/run-debug-direct.sh
+
+test-build-scripts: ## 验证 Debug 构建缓存的工具链隔离逻辑
+	@bash scripts/tests/test-debug-build-environment.sh
 
 test: ## 跑全量单测（先 xcodegen 同步项目，再 xcodebuild test）
 	@echo "⚠️  提醒：跑测前请先关闭 Xcode IDE（Cmd+Q），否则会与 xcodebuild 抢 testmanagerd 导致挂起。"
