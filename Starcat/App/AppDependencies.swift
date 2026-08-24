@@ -254,6 +254,8 @@ final class AppDependencies {
     /// 状态栏五个自建 API 的 `/healthz` 可用性巡检。
     /// 与 `serviceHealthChecker` 分开：前者只判断后端进程是否在线，后者校验 URL + API Key。
     let serviceAvailabilityMonitor: ServiceAvailabilityMonitor
+    /// GitHub 官方 Statuspage 状态；只把 API Requests 降级纳入主 toolbar 故障聚合。
+    let githubStatusMonitor: GitHubStatusMonitor
 
     // MARK: - MUL-176 Weekly（阮一峰周刊）
 
@@ -1437,6 +1439,9 @@ final class AppDependencies {
         // 2026-06-21：状态栏 API 可用性巡检。构造期不阻塞网络；启动后由后台任务立刻检查一次，
         // 后续每 10 分钟刷新，失败会通过 @Observable 状态更新 toolbar。
         self.serviceAvailabilityMonitor = ServiceAvailabilityMonitor()
+        // GitHub 官方状态与自建服务主动探活语义不同，保持独立 monitor，避免状态源请求失败
+        // 被误判成 GitHub 服务故障。
+        self.githubStatusMonitor = GitHubStatusMonitor()
 
         // HOM-47：Release 订阅追踪。
         // 装配顺序：Repository → Monitor（依赖 API + Repository + RepoRepository）
@@ -1775,6 +1780,7 @@ final class AppDependencies {
             }
             self.mcpService.refreshForCurrentSettings()
             self.serviceAvailabilityMonitor.startPeriodicChecks()
+            self.githubStatusMonitor.startPeriodicChecks()
             self.wikiKnowledgeBackfillCoordinator.start()
             Task { [dataContributionCoordinator] in
                 await dataContributionCoordinator.start()

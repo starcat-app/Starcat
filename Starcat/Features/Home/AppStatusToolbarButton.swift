@@ -78,6 +78,7 @@ struct AppStatusToolbarButton: View {
                 browserPluginState: pluginConfiguration.serverStatus,
                 browserPluginEnabled: pluginConfiguration.isEnabled,
                 browserPluginEndpointURL: "http://127.0.0.1:\(pluginConfiguration.port)",
+                githubStatusMonitor: dependencies.githubStatusMonitor,
                 serviceSummary: dependencies.serviceAvailabilityMonitor.summary,
                 diagnosticSummary: diagnosticSummary,
                 aiUsageRepository: dependencies.aiUsageRepository,
@@ -99,6 +100,7 @@ struct AppStatusToolbarButton: View {
             .task {
                 await refreshDiagnostics()
                 await dependencies.serviceAvailabilityMonitor.refreshNow()
+                await dependencies.githubStatusMonitor.refreshNow()
             }
         }
         .task {
@@ -112,6 +114,7 @@ struct AppStatusToolbarButton: View {
             Task {
                 await refreshDiagnostics()
                 await dependencies.serviceAvailabilityMonitor.refreshNow()
+                await dependencies.githubStatusMonitor.refreshNow()
             }
         }
     }
@@ -156,6 +159,7 @@ struct AppStatusToolbarButton: View {
         diagnosticSummary.issueCount > 0
             || isMCPFailed
             || isBrowserPluginFailed
+            || dependencies.githubStatusMonitor.hasRelevantIssue
             || dependencies.serviceAvailabilityMonitor.summary.hasIssue
             || dependencies.initialWarmupCoordinator.job?.phase == .paused
     }
@@ -234,6 +238,7 @@ private struct AppStatusPanel: View {
     let browserPluginState: CompanionConfiguration.ServerStatus
     let browserPluginEnabled: Bool
     let browserPluginEndpointURL: String
+    let githubStatusMonitor: GitHubStatusMonitor
     let serviceSummary: ServiceAvailabilitySummary
     let diagnosticSummary: DiagnosticLogSummary
     let aiUsageRepository: any AIUsageRepositoryProtocol
@@ -262,6 +267,17 @@ private struct AppStatusPanel: View {
                 title: "toolbar.status.sync.title",
                 subtitle: syncSubtitle,
                 accessory: { syncAccessory }
+            )
+            statusRow(
+                icon: githubStatusIcon,
+                tint: githubStatusTint,
+                title: "toolbar.status.github.title",
+                subtitle: githubStatusSubtitle,
+                accessory: {
+                    Link("toolbar.status.github.open", destination: GitHubStatusClient.statusPageURL)
+                        .controlSize(.small)
+                        .focusEffectDisabled()
+                }
             )
             statusRow(
                 icon: taskIcon,
@@ -784,6 +800,76 @@ private struct AppStatusPanel: View {
         if serviceSummary.hasIssue { return "exclamationmark.triangle.fill" }
         if serviceSummary.isAllAvailable { return "checkmark.circle.fill" }
         return "globe"
+    }
+
+    private var githubStatusIcon: String {
+        if githubStatusMonitor.isChecking { return "arrow.triangle.2.circlepath" }
+        guard let status = githubStatusMonitor.snapshot?.apiRequestsStatus else {
+            return "questionmark.circle"
+        }
+        switch status {
+        case .operational: return "checkmark.circle.fill"
+        case .degradedPerformance, .partialOutage: return "exclamationmark.triangle.fill"
+        case .majorOutage: return "xmark.octagon.fill"
+        case .underMaintenance: return "wrench.and.screwdriver.fill"
+        case .unknown: return "questionmark.circle"
+        }
+    }
+
+    private var githubStatusTint: Color {
+        if githubStatusMonitor.isChecking { return .accentColor }
+        guard let status = githubStatusMonitor.snapshot?.apiRequestsStatus else { return .secondary }
+        switch status {
+        case .operational: return .green
+        case .degradedPerformance, .partialOutage: return .orange
+        case .majorOutage: return .red
+        case .underMaintenance: return .accentColor
+        case .unknown: return .secondary
+        }
+    }
+
+    private var githubStatusSubtitle: String {
+        if githubStatusMonitor.isChecking && githubStatusMonitor.snapshot == nil {
+            return String.l10n("toolbar.status.github.checking")
+        }
+        guard let snapshot = githubStatusMonitor.snapshot else {
+            return String.l10n("toolbar.status.github.unavailable")
+        }
+
+        let state = switch snapshot.apiRequestsStatus {
+        case .operational: String.l10n("toolbar.status.github.state.operational")
+        case .degradedPerformance: String.l10n("toolbar.status.github.state.degraded")
+        case .partialOutage: String.l10n("toolbar.status.github.state.partialOutage")
+        case .majorOutage: String.l10n("toolbar.status.github.state.majorOutage")
+        case .underMaintenance: String.l10n("toolbar.status.github.state.maintenance")
+        case .unknown: String.l10n("toolbar.status.github.state.unknown")
+        }
+        let updatedAt = relativePastDate(snapshot.fetchedAt)
+        let summary: String
+        if snapshot.relevantIncidentCount > 0 {
+            summary = String(
+                format: String.l10n("toolbar.status.github.summaryWithIncidentsFormat"),
+                state,
+                snapshot.relevantIncidentCount,
+                updatedAt
+            )
+        } else if snapshot.otherIncidentCount > 0 {
+            summary = String(
+                format: String.l10n("toolbar.status.github.summaryWithOtherIncidentsFormat"),
+                state,
+                snapshot.otherIncidentCount,
+                updatedAt
+            )
+        } else {
+            summary = String(
+                format: String.l10n("toolbar.status.github.summaryFormat"),
+                state,
+                updatedAt
+            )
+        }
+
+        guard githubStatusMonitor.lastRefreshFailed else { return summary }
+        return String(format: String.l10n("toolbar.status.github.staleFormat"), summary)
     }
 
     private var serviceTint: Color {
