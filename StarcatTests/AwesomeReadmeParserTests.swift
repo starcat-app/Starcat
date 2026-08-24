@@ -168,11 +168,13 @@ struct AwesomeReadmeParserTests {
             summaryEN: nil,
             featured: false,
             sortOrder: 1,
+            sourceStars: 0,
             githubRepoCount: 1,
             externalEntryCount: 0,
             isAvailable: true,
             isEnabled: false,
             addedAt: .distantPast,
+            lastSyncedAt: .distantPast,
             updatedAt: .distantPast
         )
     }

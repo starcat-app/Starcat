@@ -24,6 +24,7 @@ struct AwesomeSourceRecord: Codable, FetchableRecord, PersistableRecord, Equatab
     var summaryEN: String?
     var featured: Bool
     var sortOrder: Int
+    var sourceStars: Int
     var githubRepoCount: Int
     var externalEntryCount: Int
     var isAvailable: Bool
@@ -44,6 +45,7 @@ struct AwesomeSourceRecord: Codable, FetchableRecord, PersistableRecord, Equatab
         case summaryEN = "summary_en"
         case featured
         case sortOrder = "sort_order"
+        case sourceStars = "source_stars"
         case githubRepoCount = "github_repo_count"
         case externalEntryCount = "external_entry_count"
         case isAvailable = "is_available"

@@ -26,6 +26,7 @@ struct AwesomeSourceDTO: Codable, Identifiable, Hashable, Sendable {
     let summaryEN: String?
     let featured: Bool
     let sortOrder: Int
+    let sourceStars: Int?
     let githubRepoCount: Int
     let externalEntryCount: Int
     let lastSyncedAt: String?
@@ -41,6 +42,7 @@ struct AwesomeSourceDTO: Codable, Identifiable, Hashable, Sendable {
         case summaryEN = "summary_en"
         case featured
         case sortOrder = "sort_order"
+        case sourceStars = "source_stars"
         case githubRepoCount = "github_repo_count"
         case externalEntryCount = "external_entry_count"
         case lastSyncedAt = "last_synced_at"
@@ -57,7 +59,7 @@ struct AwesomeEntryDTO: Codable, Hashable, Sendable {
     let ownerAvatar: String?
     let language: String?
     let stars: Int
-    let isArchived: Bool
+    let isArchived: Bool?
     let updatedAt: String?
     let entryTitle: String
     let entryDescription: String?
@@ -127,11 +129,13 @@ struct AwesomeSource: Identifiable, Hashable, Sendable {
     let summaryEN: String?
     let featured: Bool
     let sortOrder: Int
+    let sourceStars: Int
     let githubRepoCount: Int
     let externalEntryCount: Int
     let isAvailable: Bool
     let isEnabled: Bool
     let addedAt: Date
+    let lastSyncedAt: Date?
     let updatedAt: Date
 
     func localizedSummary(languageCode: String?) -> String? {

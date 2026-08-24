@@ -16,7 +16,7 @@ struct AwesomeAPITests {
     func sourceCatalogDecodesManagedCards() async throws {
         let api = makeAPI { request in
             let body = Data(#"""
-            {"schema_version":1,"data":[{"id":"awesome-swift","display_name":"Awesome Swift","repo_full_name":"matteocrippa/awesome-swift","repo_url":"https://github.com/matteocrippa/awesome-swift","image_url":"https://example.com/awesome.png","summary_zh":"Swift 资源","summary_en":"Swift resources","featured":true,"sort_order":2,"github_repo_count":123,"external_entry_count":4,"last_synced_at":"2026-08-24T08:00:00Z","updated_at":"2026-08-24T08:00:00Z"}],"meta":{"total":1,"generated_at":"2026-08-24T08:00:00Z"}}
+            {"schema_version":1,"data":[{"id":"awesome-swift","display_name":"Awesome Swift","repo_full_name":"matteocrippa/awesome-swift","repo_url":"https://github.com/matteocrippa/awesome-swift","image_url":"https://example.com/awesome.png","summary_zh":"Swift 资源","summary_en":"Swift resources","featured":true,"sort_order":2,"source_stars":9012,"github_repo_count":123,"external_entry_count":4,"last_synced_at":"2026-08-24T08:00:00Z","updated_at":"2026-08-24T08:00:00Z"}],"meta":{"total":1,"generated_at":"2026-08-24T08:00:00Z"}}
             """#.utf8)
             return (Self.response(200, request: request, headers: ["ETag": "\"catalog-1\""]), body)
         }
@@ -25,6 +25,7 @@ struct AwesomeAPITests {
 
         #expect(result.sources.first?.id == "awesome-swift")
         #expect(result.sources.first?.featured == true)
+        #expect(result.sources.first?.sourceStars == 9012)
         #expect(result.sources.first?.githubRepoCount == 123)
         #expect(result.etag == "\"catalog-1\"")
         #expect(result.generatedAt == "2026-08-24T08:00:00Z")
@@ -62,6 +63,19 @@ struct AwesomeAPITests {
         #expect(entry.updatedAt == "2026-08-23T12:34:56Z")
         #expect(entry.sectionPath == ["Languages"])
         #expect(entry.entryDescription == "The language")
+    }
+
+    @Test("旧响应省略 false 归档字段时仍可解码整批条目")
+    func entrySnapshotDefaultsMissingArchivedState() async throws {
+        let api = makeAPI { request in
+            let body = Data(#"{"schema_version":1,"data":{"source":{"id":"swift","display_name":"Awesome Swift","updated_at":"2026-08-24T08:00:00Z"},"entries":[{"gh_repo_id":42,"owner":"apple","name":"swift","full_name":"apple/swift","stars":70000,"entry_title":"Swift","section_path":[],"entry_order":1}]}}"#.utf8)
+            return (Self.response(200, request: request), body)
+        }
+
+        let result = try await api.fetchAwesomeEntries(sourceID: "swift")
+
+        #expect(result.snapshot?.entries.first?.isArchived == nil)
+        #expect(result.snapshot?.entries.count == 1)
     }
 
     @Test("服务端错误 envelope 保留 Awesome 稳定错误码")

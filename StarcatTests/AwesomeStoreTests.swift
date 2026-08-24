@@ -71,11 +71,13 @@ struct AwesomeStoreTests {
             summaryEN: "Test source",
             featured: true,
             sortOrder: 1,
+            sourceStars: 9_012,
             githubRepoCount: 1,
             externalEntryCount: 0,
             isAvailable: true,
             isEnabled: false,
             addedAt: Date(timeIntervalSince1970: 0),
+            lastSyncedAt: Date(timeIntervalSince1970: 0),
             updatedAt: Date(timeIntervalSince1970: 0)
         )
     }
@@ -126,11 +128,13 @@ private actor AwesomeStoreRepositoryFake: AwesomeRepositoryProtocol {
                 summaryEN: source.summaryEN,
                 featured: source.featured,
                 sortOrder: source.sortOrder,
+                sourceStars: source.sourceStars,
                 githubRepoCount: source.githubRepoCount,
                 externalEntryCount: source.externalEntryCount,
                 isAvailable: source.isAvailable,
                 isEnabled: enabledSourceIDs.contains(source.id),
                 addedAt: source.addedAt,
+                lastSyncedAt: source.lastSyncedAt,
                 updatedAt: source.updatedAt
             )
         }

@@ -345,6 +345,7 @@ private extension AwesomeSourceRecord {
             summaryEN: dto.summaryEN,
             featured: dto.featured,
             sortOrder: dto.sortOrder,
+            sourceStars: dto.sourceStars ?? 0,
             githubRepoCount: dto.githubRepoCount,
             externalEntryCount: dto.externalEntryCount,
             isAvailable: true,
@@ -368,6 +369,7 @@ private extension AwesomeSourceRecord {
             summaryEN: source.summaryEN,
             featured: false,
             sortOrder: source.sortOrder,
+            sourceStars: source.sourceStars,
             githubRepoCount: source.githubRepoCount,
             externalEntryCount: source.externalEntryCount,
             isAvailable: source.isAvailable,
@@ -398,11 +400,13 @@ private extension AwesomeSourceRecord {
             summaryEN: summaryEN,
             featured: featured,
             sortOrder: sortOrder,
+            sourceStars: sourceStars,
             githubRepoCount: githubRepoCount,
             externalEntryCount: externalEntryCount,
             isAvailable: isAvailable,
             isEnabled: isEnabled,
             addedAt: addedAt,
+            lastSyncedAt: lastSyncedAt.flatMap(ISO8601DateFormatter.githubDate(from:)),
             updatedAt: updatedAt
         )
     }
@@ -421,7 +425,8 @@ private extension AwesomeEntryRecord {
             ownerAvatar: dto.ownerAvatar,
             language: dto.language,
             stars: dto.stars,
-            isArchived: dto.isArchived,
+            // 旧版 Discovery 曾在 false 时省略字段；按 GitHub 默认语义降级，避免整批快照丢失。
+            isArchived: dto.isArchived ?? false,
             repoUpdatedAt: dto.updatedAt,
             entryTitle: dto.entryTitle,
             entryDescription: dto.entryDescription,

@@ -129,12 +129,14 @@ actor AwesomeCustomSourceService {
             summaryEN: sourceRepo.description,
             featured: false,
             sortOrder: Int.max,
+            sourceStars: sourceRepo.stargazersCount,
             githubRepoCount: entries.count,
             externalEntryCount: parsed.externalLinkCount,
             isAvailable: true,
             // 来源确认只负责创建；订阅仍由 Sheet 的“完成”统一提交，取消不会提前启用。
             isEnabled: false,
             addedAt: now,
+            lastSyncedAt: now,
             updatedAt: now
         )
         return AwesomeCustomSourcePreview(source: source, entries: entries)

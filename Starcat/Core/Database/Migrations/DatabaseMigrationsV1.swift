@@ -99,6 +99,22 @@ enum DatabaseMigrations {
         // GRDB 会按 identifier 跳过已执行的一支，并补跑另一支。
         registerV22AwesomeDiscovery(into: &migrator)
         registerV22DataContribution(into: &migrator)
+        registerV23AwesomeSourceMetadata(into: &migrator)
+    }
+
+    // MARK: - v23-awesome-source-metadata：Awesome 来源仓库元数据（2026-08-24）
+
+    /// v22 已在开发构建中执行过，因此用追加迁移为现有本机库补齐来源 Stars。
+    /// 表不存在时 no-op，避免中间开发库缺少 v22 草稿表而阻断后续迁移。
+    private static func registerV23AwesomeSourceMetadata(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v23-awesome-source-metadata") { db in
+            guard try db.tableExists("awesome_sources") else { return }
+            let columns = try db.columns(in: "awesome_sources").map(\.name)
+            guard !columns.contains("source_stars") else { return }
+            try db.alter(table: "awesome_sources") { table in
+                table.add(column: "source_stars", .integer).notNull().defaults(to: 0)
+            }
+        }
     }
 
     // MARK: - v22-data-contribution：公开 Star 数据贡献（2026-08-23）

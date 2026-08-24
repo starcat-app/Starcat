@@ -39,6 +39,8 @@ struct AwesomeRepositoryTests {
         let sources = try await repository.refreshCatalog()
 
         #expect(sources.map(\.id) == ["one"])
+        #expect(sources.first?.sourceStars == 9_012)
+        #expect(sources.first?.lastSyncedAt == ISO8601DateFormatter.githubDate(from: "2026-08-24T08:00:00Z"))
         #expect(await api.catalogETags() == [nil, "catalog-1"])
     }
 
@@ -185,6 +187,7 @@ struct AwesomeRepositoryTests {
             summaryEN: "Summary",
             featured: order == 1,
             sortOrder: order,
+            sourceStars: 9_012,
             githubRepoCount: 1,
             externalEntryCount: 0,
             lastSyncedAt: "2026-08-24T08:00:00Z",
@@ -224,11 +227,13 @@ struct AwesomeRepositoryTests {
             summaryEN: "Custom source",
             featured: false,
             sortOrder: .max,
+            sourceStars: 321,
             githubRepoCount: 1,
             externalEntryCount: 0,
             isAvailable: true,
             isEnabled: isEnabled,
             addedAt: Date(timeIntervalSince1970: 1),
+            lastSyncedAt: Date(timeIntervalSince1970: 1),
             updatedAt: Date(timeIntervalSince1970: 1)
         )
     }
