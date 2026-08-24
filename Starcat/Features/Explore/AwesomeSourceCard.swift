@@ -33,7 +33,9 @@ struct AwesomeSourceCard: View {
                     footer
                 }
                 .padding(16)
-                .frame(maxWidth: .infinity, minHeight: 292, alignment: .topLeading)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                // 固定高度与三列网格共同保证搜索、勾选和刷新时卡片位置不跳动。
+                .frame(height: 292, alignment: .topLeading)
                 .background(cardBackground)
                 .overlay(cardBorder)
                 .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
