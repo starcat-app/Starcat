@@ -255,6 +255,44 @@ struct RepoCardViewDataTests {
         #expect(discoveryCard.isInLibrary)
     }
 
+    @Test("RepoDetailHero 从 Repo 透传订阅数与 GitHub 时间")
+    func repoDetailHeroKeepsSubscribersAndDates() {
+        let repo = Repo(
+            id: 2001,
+            owner: "alice",
+            name: "metadata",
+            fullName: "alice/metadata",
+            description: "Metadata fixture",
+            language: "Swift",
+            starsCount: 120,
+            forksCount: 12,
+            watchersCount: 18,
+            topics: nil,
+            license: "MIT",
+            homepage: nil,
+            htmlUrl: "https://github.com/alice/metadata",
+            cloneUrl: nil,
+            sshUrl: nil,
+            isPrivate: false,
+            isFork: false,
+            isArchived: false,
+            isStarred: false,
+            pushedAt: "2026-08-24T10:30:00Z",
+            createdAt: "2024-02-03T04:05:06Z",
+            updatedAt: "2026-08-23T12:34:56Z",
+            starredAt: nil,
+            cachedAt: nil,
+            subscribersCount: 9
+        )
+
+        let hero = RepoDetailHero(repo: repo)
+
+        #expect(hero.watchersCount == 18)
+        #expect(hero.subscribersCount == 9)
+        #expect(hero.createdAt == ISO8601DateFormatter().date(from: "2024-02-03T04:05:06Z"))
+        #expect(hero.updatedAt == ISO8601DateFormatter().date(from: "2026-08-23T12:34:56Z"))
+    }
+
     // MARK: - Helpers
 
     private func sampleRepo(id: Int64, isStarred: Bool) -> Repo {

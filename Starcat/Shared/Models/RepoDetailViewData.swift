@@ -130,9 +130,7 @@ extension RepoDetailHero {
         self.starsCount = repo.starsCount
         self.forksCount = repo.forksCount
         self.watchersCount = repo.watchersCount
-        // Repo 当前无 subscribersCount 字段（GitHub watchers/subscribers 字段名混淆历史问题）；
-        // hero 渲染时此 chip 为 nil 即不显示，与现状一致。
-        self.subscribersCount = nil
+        self.subscribersCount = repo.subscribersCount
         self.topics = repo.topicsArray
         self.licenseSpdx = repo.license
         self.updatedAt = Self.parseISO8601(repo.updatedAt)

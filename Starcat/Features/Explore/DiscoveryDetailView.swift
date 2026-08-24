@@ -98,18 +98,8 @@ private struct DiscoveryScaffoldShell: View {
     }
 
     private func resolveRepo() async {
-        do {
-            if let local = try await dependencies.repoRepository.findByOwnerName(
-                owner: item.owner,
-                name: item.name
-            ) {
-                displayRepo = local
-                return
-            }
-        } catch {
-            AppLog.sync.error("discovery: local repo lookup failed: \(error.localizedDescription, privacy: .public)")
-        }
-
+        // Discovery 详情必须以服务端最新公共元数据为准。若先返回本地 starred 缓存，
+        // 老记录中缺失的 subscribers / created_at / updated_at 会永久遮蔽 API 真值。
         let isStarred = dependencies.starredRegistry.contains(ghRepoId: item.repoID)
         displayRepo = item.toEphemeralRepo(isStarred: isStarred)
     }
