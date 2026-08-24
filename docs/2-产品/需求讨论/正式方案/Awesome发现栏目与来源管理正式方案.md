@@ -365,7 +365,7 @@ If-None-Match: "optional-etag"
 - `repo_url`：服务端生成的 canonical `https://github.com/{owner}/{repo}`。
 - `repo_description`：来源仓库的 GitHub 官方 description；从共享 `repos` 真值读取，不在 `awesome_sources` 重复维护。
 - `image_url`：只允许 `https`；为空时客户端走 fallback。
-- `summary_zh / summary_en`：允许其一为空；客户端按 locale 选择，并与 `repo_description` 分成两条展示。
+- `summary_zh / summary_en`：允许其一为空；保留给目录搜索与内容运营，来源卡片不展示，避免与 GitHub `repo_description` 重复并拉长卡片。
 - `source_stars`：来源仓库自身的 GitHub Stars；每轮来源同步均刷新，即使 README SHA 未变化也更新。
 - `source_forks / source_watchers / source_subscribers / source_open_issues`：来源仓库 GitHub 事实字段，与 Stars 同轮刷新。
 - `source_language / language_bytes`：主要语言和 Languages API 原始字节分布；仅抓取 Awesome 来源仓库，不为 README 子项目批量抓取语言列表。
