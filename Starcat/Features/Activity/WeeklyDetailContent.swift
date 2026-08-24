@@ -39,9 +39,8 @@
 //    为外键，未命中本地的 ephemeral repo（id=0,见 `WeeklyDetailView.resolveRepo`
 //    步骤 2/3）会撞坏 `readme_translations(repo_id)` 命名空间,所以未命中时
 //    显式传 nil 关闭入口。
-//  - 与 `translationVM` 共享 HomeView 全局实例（`@Environment` 注入），不为
-//    weekly 单独建一份；按钮触发翻译时按 `control.repo` 派发，不依赖 HomeView
-//    的 `selectedRepoID` 链路 prepare（点击瞬间 VM 自己会用最新 repo 重置）。
+//  - 与 `translationVM` 共享 HomeView 全局实例。切周刊项目时由 `ReadmeStateView`
+//    按当前仓 prepare，不再依赖 HomeView.selectedRepoID。
 //
 
 import SwiftUI

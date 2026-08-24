@@ -637,7 +637,7 @@ struct HomeView: View {
             handleTrendingRepoIDChange(newID)
         }
         // HOM-68：README 加载完成后把源 HTML 喂给翻译 VM，用于刷新 cacheIsStale。
-        // 仅 Manage 详情页（selectedRepo 非 nil）需要，Trending 路径不接翻译入口。
+        // 探索 / 活动 / 周刊由 ReadmeStateView 自己 bind；这里只补 Manage 全局 readmeVM。
         .onChange(of: readmeStateSignature) { _, _ in
             refreshTranslationSourceIfNeeded()
         }
@@ -1492,15 +1492,16 @@ struct HomeView: View {
         } else {
             readmeVM.reset()
         }
-        // Trending repo 没有本地 Repo.id，HOM-68 第一版不为 trending 提供翻译入口
-        // （翻译缓存需要 repo_id 外键，trending 走独立 trending_readmes 表，
-        //  避免引入复杂的双写路径；用户切到 Manage 后再翻译即可）。这里只清状态。
-        translationVM.prepare(
-            repo: nil,
-            sourceHtml: nil,
-            targetLanguage: settings.effectiveReadmeTranslationLanguage,
-            mode: settings.readmeTranslationMode
-        )
+        // 有详情页时由 ReadmeStateView 按当前仓 bind。这里只在取消选中时清掉共享 VM，
+        // 避免切到空态后上一仓翻译还在跑。
+        if newID == nil {
+            translationVM.prepare(
+                repo: nil,
+                sourceHtml: nil,
+                targetLanguage: settings.effectiveReadmeTranslationLanguage,
+                mode: settings.readmeTranslationMode
+            )
+        }
     }
 
     private func refreshTranslationSourceIfNeeded() {

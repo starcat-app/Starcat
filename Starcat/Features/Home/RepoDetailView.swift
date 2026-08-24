@@ -315,6 +315,10 @@ struct ReadmeStateView: View {
     @State private var translationSourceDocumentKey: String?
     @State private var translationSourceSnapshot: ReadmeTranslationSourceSnapshot = .empty
 
+    /// 主窗口各详情页共用一份翻译 VM。星标有 HomeView.selectedRepoID 的 prepare，
+    /// 探索 / 活动 / 周刊没有；这里按当前仓 bind，避免 A 的译文和光圈留在 B 上。
+    @Environment(ReadmeTranslationViewModel.self) private var sharedTranslationVM
+
     let state: ReadmeViewModel.LoadState
     let contentScope: ReadmeContentScope
     let baseURL: URL?
@@ -398,6 +402,19 @@ struct ReadmeStateView: View {
             isEnabled: !readmeVM.isRefreshing,
             action: onRetry
         )
+        .onChange(of: translationSyncKey, initial: true) { _, _ in
+            syncSharedTranslationToCurrentRepo()
+        }
+        .onChange(of: settings.readmeTranslationLanguage) { _, newLanguage in
+            applyTranslationLanguage(newLanguage)
+        }
+        .onChange(of: locale.identifier) { _, _ in
+            guard settings.readmeTranslationLanguage == .auto else { return }
+            applyTranslationLanguage(.auto)
+        }
+        .onChange(of: settings.readmeTranslationMode) { _, newMode in
+            applyTranslationMode(newMode)
+        }
     }
 
     /// 注册身份必须随真实 README 对象变化，避免详情切换后 Settings 仍刷新上一仓库。
@@ -550,7 +567,92 @@ struct ReadmeStateView: View {
     }
 
     private var isReadmeTranslating: Bool {
-        translationControl?.translationVM.isTranslating ?? false
+        guard let identity = currentReadmeTranslationIdentity else { return false }
+        return translationVMForBinding.isActivelyTranslating(matching: identity)
+    }
+
+    /// 只上屏当前仓的译文。共享 VM 在切探索 / 活动条目后仍可能短暂握着上一仓的状态。
+    private var scopedTranslationRenderState: ReadmeTranslationRenderState {
+        guard let identity = currentReadmeTranslationIdentity else { return .hidden }
+        return translationVMForBinding.visibleRenderState(matching: identity)
+    }
+
+    private var translationVMForBinding: ReadmeTranslationViewModel {
+        translationControl?.translationVM ?? sharedTranslationVM
+    }
+
+    private var currentReadmeTranslationIdentity: String? {
+        guard let repo = translationControl?.repo else { return nil }
+        return ReadmeTranslationViewModel.readmeIdentity(for: repo)
+    }
+
+    /// repo + 已对齐的 HTML。scope 未对齐时不算 loaded，避免用 A 的 HTML 给 B prepare。
+    private var translationSyncKey: String {
+        let repoKey = translationControl.map { "\($0.repo.owner)/\($0.repo.name)" } ?? "none"
+        let htmlKey: String
+        if isStateStaleForScope {
+            htmlKey = "stale"
+        } else if case .loaded(let html, _) = state {
+            htmlKey = ReadmeTranslationService.hash(html)
+        } else {
+            htmlKey = "unloaded"
+        }
+        return "\(repoKey)|\(htmlKey)"
+    }
+
+    private func syncSharedTranslationToCurrentRepo() {
+        let vm = translationVMForBinding
+        let language = settings.effectiveReadmeTranslationLanguage
+        let mode = settings.readmeTranslationMode
+        guard let control = translationControl else {
+            vm.prepare(
+                repo: nil,
+                sourceHtml: nil,
+                targetLanguage: language,
+                mode: mode
+            )
+            return
+        }
+        let html: String?
+        if !isStateStaleForScope, case .loaded(let value, _) = state {
+            html = value
+        } else {
+            html = nil
+        }
+        vm.prepare(
+            repo: control.repo,
+            sourceHtml: html,
+            targetLanguage: language,
+            mode: mode
+        )
+    }
+
+    private func applyTranslationLanguage(_ newLanguage: ReadmeTranslationLanguage) {
+        guard let control = translationControl else { return }
+        let html: String? = {
+            if !isStateStaleForScope, case .loaded(let value, _) = state { return value }
+            return nil
+        }()
+        control.translationVM.changeLanguage(
+            to: newLanguage.resolved(),
+            repo: control.repo,
+            sourceHtml: html,
+            mode: settings.readmeTranslationMode
+        )
+    }
+
+    private func applyTranslationMode(_ newMode: ReadmeTranslationMode) {
+        guard let control = translationControl else { return }
+        let html: String? = {
+            if !isStateStaleForScope, case .loaded(let value, _) = state { return value }
+            return nil
+        }()
+        control.translationVM.changeMode(
+            to: newMode,
+            repo: control.repo,
+            sourceHtml: html,
+            targetLanguage: settings.effectiveReadmeTranslationLanguage
+        )
     }
 
     @ViewBuilder
@@ -594,7 +696,7 @@ struct ReadmeStateView: View {
                             )
                         }
                     },
-                    translationRenderState: translationControl?.translationVM.renderState ?? .hidden,
+                    translationRenderState: scopedTranslationRenderState,
                     onTranslationSourceChange: { snapshot in
                         translationSourceDocumentKey = documentKey
                         translationSourceSnapshot = snapshot
@@ -740,9 +842,9 @@ struct ReadmeStateView: View {
 /// 详情页注入 `ReadmeStateView` 的翻译控件描述（值类型 + closure 传递必要依赖）。
 ///
 /// 不让 ReadmeStateView 直接依赖 `ReadmeTranslationViewModel` / `AppSettings` 的好处：
-/// - ReadmeStateView 是个无副作用的状态视图，多个详情页（Manage / Trending）都在共用，
-///   Trending 路径暂不接翻译；用可选值表达"是否需要翻译入口"比把环境注入条件化更直接；
-/// - 单元测试 / Preview 可以传 nil 跳过翻译控件，不需要 mock 翻译 VM。
+/// - 翻译入口是否出现仍由可选 `translationControl` 表达（ephemeral repo 传 nil）；
+/// - 共享 VM 的切仓 bind 由 ReadmeStateView 经 Environment 完成，探索 / 活动 /
+///   周刊与星标走同一条路径。
 @MainActor
 struct ReadmeTranslationControl {
     let repo: Repo
@@ -786,15 +888,23 @@ struct ReadmeTranslationFooterButton: View {
     }
 
     /// 判断当前是否展示译文，用于按钮文字 / icon 切换。
+    /// 必须绑当前仓：共享 VM 在探索 / 活动切条目后，displayMode 可能还停在上一仓。
     private var isShowingTranslation: Bool {
-        if case .showingTranslation = translationVM.displayMode { return true }
-        return false
+        translationVM.isShowingTranslation(matching: currentRepoIdentity)
+    }
+
+    private var isTranslatingCurrentRepo: Bool {
+        translationVM.isActivelyTranslating(matching: currentRepoIdentity)
+    }
+
+    private var currentRepoIdentity: String {
+        ReadmeTranslationViewModel.readmeIdentity(for: control.repo)
     }
 
     var body: some View {
         HStack(spacing: 4) {
             Button {
-                if translationVM.isTranslating {
+                if isTranslatingCurrentRepo {
                     // 翻译中点击 = 用户主动停止：调 VM.cancelTranslation 取消正在跑的
                     // Task + 复位 isTranslating + 不弹错误。下方 onHover 会在按钮失焦后
                     // 把 isHoveringWhileTranslating 复位，恢复默认 icon 形态。
@@ -822,7 +932,7 @@ struct ReadmeTranslationFooterButton: View {
             //   - 翻译中：永远可点（点击 = 取消）；
             //   - 非翻译中 + sourceHtml 为空：disabled（无内容可翻译 / 切换）。
             .disabled(
-                !translationVM.isTranslating
+                !isTranslatingCurrentRepo
                     && (sourceHtml.isEmpty || selectedSourceSegments.isEmpty)
             )
             .help(buttonTooltip)
@@ -831,7 +941,7 @@ struct ReadmeTranslationFooterButton: View {
                 // 普通态时 isHoveringWhileTranslating 也被复位，防止下次进入翻译时
                 // 因残留 true 直接显示 stop 图标（虽然实际 hover 离开会立刻 false，
                 // 但额外守门更稳）。
-                if translationVM.isTranslating {
+                if isTranslatingCurrentRepo {
                     isHoveringWhileTranslating = hovering
                 } else if isHoveringWhileTranslating {
                     isHoveringWhileTranslating = false
@@ -856,7 +966,7 @@ struct ReadmeTranslationFooterButton: View {
     /// 让 hover 切换有淡入淡出，避免硬切。
     @ViewBuilder
     private var iconView: some View {
-        if translationVM.isTranslating {
+        if isTranslatingCurrentRepo {
             ZStack {
                 ProgressView()
                     .controlSize(.small)
@@ -888,7 +998,7 @@ struct ReadmeTranslationFooterButton: View {
 
     private var buttonTooltip: LocalizedStringKey {
         // 翻译中 + hover → "停止翻译"，明确点击会取消而非其它操作。
-        if translationVM.isTranslating && isHoveringWhileTranslating {
+        if isTranslatingCurrentRepo && isHoveringWhileTranslating {
             return "readme.translate.tooltip.stop"
         }
         if isShowingTranslation { return "readme.translate.tooltip.showOriginal" }
@@ -943,7 +1053,7 @@ struct ReadmeTranslationFooterButton: View {
                 Label("readme.translate.menu.regenerate", systemImage: "arrow.clockwise")
             }
             .disabled(
-                translationVM.isTranslating
+                isTranslatingCurrentRepo
                     || sourceHtml.isEmpty
                     || selectedSourceSegments.isEmpty
             )

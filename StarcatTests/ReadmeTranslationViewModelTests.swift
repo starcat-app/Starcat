@@ -3,7 +3,8 @@
 //  StarcatTests
 //
 //  切仓 / 取消后，过期的缓存命中和 onBatch 不能写进当前详情页。
-//  用可挂起的假 Service 卡住 await，再切换 identity，复现串帖。
+//  共享 VM 还要按 identity 过滤可见 renderState，覆盖探索 / 活动未走
+//  HomeView.selectedRepoID prepare 的路径。
 //
 
 import Foundation
@@ -107,6 +108,34 @@ struct ReadmeTranslationViewModelTests {
         #expect(vm.displayMode == .showingOriginal)
         #expect(!vm.renderState.isVisible)
         #expect(vm.renderState.translations.isEmpty)
+        fake.finishHangingWork()
+    }
+
+    @Test("未切 identity 时，B 详情也不得把 A 的译文当成可见状态")
+    func visibleRenderStateIsScopedToIdentity() async {
+        let (vm, fake) = makeHarness()
+        let alpha = makePage(
+            owner: "alpha",
+            repo: "one",
+            translatedText: "ALPHA-TRANSLATION"
+        )
+        let bravo = makePage(
+            owner: "bravo",
+            repo: "two",
+            translatedText: "BRAVO-TRANSLATION"
+        )
+        fake.store(alpha)
+
+        vm.prepare(page: alpha)
+        await settle()
+        vm.toggle(page: alpha)
+        await settle()
+
+        #expect(vm.visibleRenderState(matching: alpha.identity).isVisible)
+        #expect(vm.isShowingTranslation(matching: alpha.identity))
+        #expect(!vm.visibleRenderState(matching: bravo.identity).isVisible)
+        #expect(!vm.isShowingTranslation(matching: bravo.identity))
+        #expect(!vm.isActivelyTranslating(matching: bravo.identity))
         fake.finishHangingWork()
     }
 

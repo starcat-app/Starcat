@@ -15,6 +15,9 @@
 //  - repo、语言或翻译方式切换后，旧异步回调必须过 isCurrentGeneration：
 //    identity + 语言 + mode + !Task.isCancelled。缓存命中、onBatch、完成、
 //    alreadyInTargetLanguage 都走同一道门，否则会把 A 的译文贴进 B 的 DOM。
+//  - 主窗口共用一份 VM（星标 / 探索 / 活动 / 周刊 / Trending）。切条目时必须
+//    由当前详情页 prepare 成新 identity；上屏还要按 identity 过滤，避免 B 的
+//    WebView 吃到 A 的 renderState。
 //
 
 import Foundation
@@ -72,7 +75,7 @@ final class ReadmeTranslationViewModel {
         mode: ReadmeTranslationMode
     ) {
         prepare(
-            identity: repo.map { "readme:\($0.owner)/\($0.name)" },
+            identity: repo.map { Self.readmeIdentity(for: $0) },
             cacheOwner: repo?.owner,
             cacheRepo: repo?.name,
             sourceHtml: sourceHtml,
@@ -184,7 +187,7 @@ final class ReadmeTranslationViewModel {
         mode: ReadmeTranslationMode
     ) {
         toggleTranslation(
-            identity: "readme:\(repo.owner)/\(repo.name)",
+            identity: Self.readmeIdentity(for: repo),
             cacheOwner: repo.owner,
             cacheRepo: repo.name,
             repoId: repo.id,
@@ -268,7 +271,7 @@ final class ReadmeTranslationViewModel {
         mode: ReadmeTranslationMode
     ) {
         regenerate(
-            identity: "readme:\(repo.owner)/\(repo.name)",
+            identity: Self.readmeIdentity(for: repo),
             cacheOwner: repo.owner,
             cacheRepo: repo.name,
             repoId: repo.id,
@@ -319,6 +322,34 @@ final class ReadmeTranslationViewModel {
 
     func dismissPaywall() {
         paywallContext = nil
+    }
+
+    /// README 详情用 `readme:owner/name`。探索 / 活动 / 周刊和星标必须同一套，不能只用 repoId。
+    static func readmeIdentity(owner: String, repo: String) -> String {
+        "readme:\(owner)/\(repo)"
+    }
+
+    static func readmeIdentity(for repo: Repo) -> String {
+        readmeIdentity(owner: repo.owner, repo: repo.name)
+    }
+
+    /// 只把「属于这个 identity」的译文交给 WebView。共享 VM 在切仓后的一帧里
+    /// 仍可能带着上一仓的 renderState。
+    func visibleRenderState(matching identity: String) -> ReadmeTranslationRenderState {
+        guard renderState.isVisible, currentIdentity == identity else {
+            return .hidden
+        }
+        return renderState
+    }
+
+    func isActivelyTranslating(matching identity: String) -> Bool {
+        isTranslating && currentIdentity == identity
+    }
+
+    func isShowingTranslation(matching identity: String) -> Bool {
+        guard currentIdentity == identity else { return false }
+        if case .showingTranslation = displayMode { return true }
+        return false
     }
 
     // MARK: - 翻译流程
