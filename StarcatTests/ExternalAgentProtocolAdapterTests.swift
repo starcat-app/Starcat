@@ -288,6 +288,7 @@ struct ExternalAgentProtocolAdapterTests {
 
         [model_providers.local]
         name = "Local Models"
+        base_url = "http://127.0.0.1:3737/bridge/local/v1"
 
         [model_providers.local.http_headers]
         X-Client = "Starcat"
@@ -297,11 +298,32 @@ struct ExternalAgentProtocolAdapterTests {
         #expect(catalog.providers.map(\.id) == ["gateway", "openai", "local"])
         #expect(catalog.providers.map(\.displayName) == ["Team Gateway", "OpenAI", "Local Models"])
         #expect(catalog.providers.first?.credentialEnvironmentKey == "TEAM_API_KEY")
-        #expect(catalog.providers.last?.isSelectable == true)
+        #expect(catalog.providers.first?.requiresEndpointProbe == false)
+        #expect(catalog.providers.last?.baseURL?.absoluteString == "http://127.0.0.1:3737/bridge/local/v1")
+        #expect(catalog.providers.last?.requiresEndpointProbe == true)
         #expect(catalog.resolvedProviderID(preferredProviderID: "removed") == "gateway")
         #expect(CodexRuntimeProcessArguments.appServer(providerID: "local").suffix(2) == [
             "-c", "model_provider=\"local\"",
         ])
+    }
+
+    @Test("Codex 本机 Provider 只在桥接端点可连接时可用")
+    func codexProviderEndpointProbeRejectsOfflineBridge() async throws {
+        let provider = try #require(CodexProviderCatalog.parse("""
+        model_provider = "local"
+        [model_providers.local]
+        base_url = "http://localhost:3737/bridge/local/v1"
+        """).providers.first)
+
+        let offlineProbe = CodexProviderEndpointProbe { _ in
+            throw URLError(.cannotConnectToHost)
+        }
+        #expect(await offlineProbe.isAvailable(provider) == false)
+
+        let onlineProbe = CodexProviderEndpointProbe { request in
+            #expect(request.httpMethod == "HEAD")
+        }
+        #expect(await onlineProbe.isAvailable(provider) == true)
     }
 
     @Test("DeepSeek Runtime 目录复用 Starcat 已验证的 Chat Provider")

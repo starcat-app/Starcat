@@ -473249,6 +473249,13 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Codex config.toml 中配置的服务商" } }
       }
     },
+    "agent.workspace.runtime.codexEndpointUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The %@ endpoint is unavailable. Start its local bridge, then retry." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法连接 %@ 端点。请启动对应的本地桥接服务后重试。" } }
+      }
+    },
     "agent.workspace.runtime.codexCredentialBlocked" : {
       "extractionState" : "manual",
       "localizations" : {

@@ -17,8 +17,52 @@ struct CodexProviderOption: Identifiable, Equatable, Sendable {
     let isActive: Bool
     /// Starcat 不把任意 Provider API Key 交给可运行命令的 Codex 子进程。
     let credentialEnvironmentKey: String?
+    /// 只保留公开端点地址，用于识别必须先启动本机桥接服务的 Provider。
+    let baseURL: URL?
 
     var isSelectable: Bool { credentialEnvironmentKey == nil }
+
+    /// 远端服务交给 Codex 自己处理鉴权与重试；只有 loopback 端点需要 Starcat
+    /// 预检，否则桥接进程未启动时 Codex 会进入多轮网络重试，看起来像界面卡死。
+    var requiresEndpointProbe: Bool {
+        guard let host = baseURL?.host?.lowercased() else { return false }
+        return host == "localhost"
+            || host == "127.0.0.1"
+            || host == "::1"
+            || host.hasSuffix(".localhost")
+    }
+}
+
+struct CodexProviderEndpointProbe: Sendable {
+    typealias Request = @Sendable (URLRequest) async throws -> Void
+
+    private let timeoutInterval: TimeInterval
+    private let request: Request?
+
+    init(timeoutInterval: TimeInterval = 1, request: Request? = nil) {
+        self.timeoutInterval = timeoutInterval
+        self.request = request
+    }
+
+    /// 任意 HTTP 响应都说明本机桥接端口已在线；401/404 等协议响应应继续交给
+    /// Codex 处理。这里只把连接拒绝、超时等传输错误判定为不可用。
+    func isAvailable(_ provider: CodexProviderOption) async -> Bool {
+        guard provider.requiresEndpointProbe, let baseURL = provider.baseURL else { return true }
+        var urlRequest = URLRequest(url: baseURL)
+        urlRequest.httpMethod = "HEAD"
+        urlRequest.cachePolicy = .reloadIgnoringLocalCacheData
+        urlRequest.timeoutInterval = timeoutInterval
+        do {
+            if let request {
+                try await request(urlRequest)
+            } else {
+                _ = try await URLSession.shared.data(for: urlRequest)
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
 }
 
 struct CodexProviderCatalog: Equatable, Sendable {
@@ -47,6 +91,7 @@ struct CodexProviderCatalog: Equatable, Sendable {
         var declaredOrder: [String] = []
         var displayNames: [String: String] = [:]
         var credentialEnvironmentKeys: [String: String] = [:]
+        var baseURLs: [String: URL] = [:]
 
         for rawLine in source.split(whereSeparator: \.isNewline) {
             let line = stripComment(String(rawLine)).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -69,6 +114,11 @@ struct CodexProviderCatalog: Equatable, Sendable {
                       assignment.key == "env_key",
                       let value = tomlString(assignment.value) {
                 credentialEnvironmentKeys[providerID] = value
+            } else if let providerID = providerID(fromSection: section),
+                      assignment.key == "base_url",
+                      let value = tomlString(assignment.value),
+                      let url = URL(string: value) {
+                baseURLs[providerID] = url
             }
         }
 
@@ -83,7 +133,8 @@ struct CodexProviderCatalog: Equatable, Sendable {
                     id: id,
                     displayName: displayNames[id] ?? defaultDisplayName(for: id),
                     isActive: id == activeProviderID,
-                    credentialEnvironmentKey: credentialEnvironmentKeys[id]
+                    credentialEnvironmentKey: credentialEnvironmentKeys[id],
+                    baseURL: baseURLs[id]
                 )
             },
             activeProviderID: activeProviderID
