@@ -94,15 +94,7 @@ struct AwesomeSourceManagerSheet: View {
             ProgressView("awesome.sources.loading")
                 .frame(maxWidth: .infinity, minHeight: 180)
         } else if store.sources.isEmpty {
-            ContentUnavailableView {
-                Label("awesome.sources.empty.title", systemImage: "sparkles.rectangle.stack")
-            } description: {
-                Text("awesome.sources.empty.subtitle")
-            } actions: {
-                Button("action.retry") {
-                    Task { await store.presentSourceManager() }
-                }
-            }
+            emptySourceState
         } else {
             LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
                 ForEach(store.sources) { source in
@@ -124,6 +116,29 @@ struct AwesomeSourceManagerSheet: View {
                 }
             }
         }
+    }
+
+    private var emptySourceState: some View {
+        // ContentUnavailableView 在 Sheet 的 ScrollView 中会用自带的大块留白撑开内容，
+        // 这里使用紧凑空态，让用户仍能在同一视野内看到自定义来源入口。
+        VStack(spacing: 8) {
+            Image(systemName: "sparkles.rectangle.stack")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+            Text("awesome.sources.empty.title")
+                .font(.headline)
+            Text("awesome.sources.empty.subtitle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button("action.retry") {
+                Task { await store.presentSourceManager() }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 24)
+        .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func sourceCard(_ source: AwesomeSource) -> some View {
@@ -190,12 +205,9 @@ struct AwesomeSourceManagerSheet: View {
     }
 
     private var customSourceSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("awesome.sources.custom.title")
                 .font(.headline)
-            Text("awesome.sources.custom.subtitle")
-                .font(.caption)
-                .foregroundStyle(.secondary)
             HStack(spacing: 8) {
                 TextField("awesome.sources.custom.placeholder", text: $customSourceInput)
                     .textFieldStyle(.roundedBorder)
