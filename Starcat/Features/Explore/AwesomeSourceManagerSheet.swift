@@ -81,11 +81,16 @@ struct AwesomeSourceManagerSheet: View {
     private var header: some View {
         VStack(spacing: 14) {
             HStack(spacing: 12) {
-                Image(systemName: "sparkles.rectangle.stack.fill")
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 42, height: 42)
-                    .background(.purple.opacity(0.16), in: RoundedRectangle(cornerRadius: 11))
+                Image("AwesomeBrandLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .padding(4)
+                    .frame(width: 58, height: 44)
+                    .background(.background, in: RoundedRectangle(cornerRadius: 9))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 9)
+                            .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+                    }
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 3) {
