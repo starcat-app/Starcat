@@ -1,6 +1,6 @@
 # Awesome 发现专项实施 Checklist
 
-> 状态：完整 GitHub 元数据与三列来源 UI 已完成，生产聚合 API 已部署并完成三个验收来源回填，待人工 UI 验收
+> 状态：来源添加、真实描述、搜索、卡片视觉和详情元数据验收修复已完成；Discovery API 代码待重新部署，客户端待人工 UI 验收
 > 日期：2026-08-24  
 > 需求与技术契约：[`Awesome发现栏目与来源管理正式方案.md`](../../2-产品/需求讨论/正式方案/Awesome发现栏目与来源管理正式方案.md)  
 > Issue：[#109](https://github.com/starcat-app/Starcat/issues/109)  
@@ -124,3 +124,16 @@
 - [x] 三个来源的 Stars、forks、watchers、subscribers、open issues、默认分支和创建/推送/更新时间缺失数均为 0。
 - [x] 其余 published 来源继续由每 3 小时定时任务按 README SHA 增量刷新；旧快照在回填期间保持可读。
 - [x] 保存第 14 轮生产部署审查报告并更新 Issue #109；Issue 保持 Open/`Acceptance` 等待人工 UI 验收。
+
+## 13. 来源管理与详情验收修复（2026-08-24）
+
+- [x] 自定义来源点击“添加”后立即保存并启用；失败在输入区显示明确错误，不再依赖二次确认弹窗。
+- [x] Discovery 来源目录新增 `repo_description`，从共享 `repos` 真值读取来源仓库 GitHub 官方描述。
+- [x] 客户端追加 `v28-awesome-source-description`，缓存 `repo_description` 并主动清除旧目录 ETag 触发刷新。
+- [x] 来源 Sheet 增加左上角 Awesome 图标、持久搜索框和搜索无结果空态；搜索覆盖名称、仓库、官方描述和内容摘要。
+- [x] 来源卡片优先显示 GitHub 官方描述，增加 GitHub 跳转按钮、Logo 采样渐变、元数据胶囊和稳定三列布局。
+- [x] Discovery 详情改为当前 entries 公共元数据优先，避免本地旧 starred 缓存遮蔽 watchers、subscribers 和创建/更新时间。
+- [x] `RepoDetailHero(repo:)` 透传 `subscribersCount`，并增加订阅数与时间字段回归测试。
+- [x] Starcat 全量 `2665` 项测试通过（`0` failed）；最终低风险 UI 修复后 Awesome 定向测试再次通过。
+- [x] Discovery API `86` 项测试与 `go vet` 通过；正式方案、专项结果报告和人工 UI 清单已同步。
+- [x] 完成第 15、16 轮审查，发现项全部修复并保存独立报告；`docs/功能实现总览.md` 未获单独授权，保持不变。

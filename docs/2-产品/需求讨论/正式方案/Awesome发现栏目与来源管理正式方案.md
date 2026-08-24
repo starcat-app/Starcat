@@ -183,6 +183,11 @@ hasCompletedAwesomeSourceSetup == false ?
 ```text
 选择 Awesome 来源
 
+🔮 选择 Awesome 来源
+┌──────────────────────────────────────────────┐
+│ 搜索名称、owner/repo 或 GitHub 仓库描述       │
+└──────────────────────────────────────────────┘
+
 ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
 │ [Logo] Awesome A │ │ [Logo] Awesome B │ │ [Logo] Awesome C │
 │ owner/repo       │ │ owner/repo       │ │ owner/repo       │
@@ -201,21 +206,23 @@ hasCompletedAwesomeSourceSetup == false ?
 
 - `image_url` 图片；加载失败回退到来源仓库 owner avatar，再失败使用 Awesome 模式 SF Symbol。
 - 来源名称。
-- 最多两行介绍。
+- 最多两行 GitHub 来源仓库官方 description；旧缓存缺失时才回退内容管理摘要。
 - `owner/repo`。
 - 来源仓库自身的 GitHub Stars。
 - 已解析 GitHub Repo 数量。
 - 最近成功同步时间；失败或下架时显示紧凑状态提示。
 - 推荐标识（`featured=true` 时）。
 - 明确的勾选状态。
+- 打开来源 GitHub 仓库的独立跳转按钮。
 
 交互要求：
 
 - 整张卡片可点击切换勾选，不能只有小勾选框可点。
 - Sheet 使用固定三列桌面网格和稳定卡片高度，来源标题或同步状态变化不能导致列数与位置跳动。
 - Stars、项目数和同步状态使用克制的 Repo 风格胶囊；Stars 必须来自 GitHub 事实，不能以“未知”或缺字段时的 `0` 冒充。
-- 使用系统语义色和轻量选中边框，不做营销型大图卡片。
+- 卡片背景使用 Logo 采样色生成低透明度渐变，图片不可用时使用统一语义兜底色；同时保留系统语义文字色和轻量选中边框。
 - 支持键盘焦点、Space 切换和 VoiceOver。
+- Sheet header 左上角展示 Awesome 图标；搜索框过滤名称、`owner/repo`、GitHub description 和内容管理摘要，无结果时显示搜索空态。
 - Sheet header 右上角关闭按钮使用 `SheetCloseButton`。
 - Sheet 失败时保留本地缓存卡片，并显示非阻断刷新错误。
 - 首次进入且本地完全没有目录缓存、远端也失败时，展示重试和“添加自定义来源”，不能显示假卡片。
@@ -263,6 +270,7 @@ Awesome 收录来源
 - “查看原始 README 条目”只打开经过校验的 `https` URL。
 - 来源证据不等于 Starcat 推荐结论，文案统一使用“收录来源”。
 - Repo 已 Star、已入库、属于“我的项目”等状态继续读取原有单一真值。
+- Discovery 详情的公共 GitHub 元数据以当前 entries 响应为准，不允许本地旧 starred 缓存遮蔽 watchers、subscribers 和创建/更新时间；本地只提供用户关系真值。
 
 ## 4. 总体架构与责任边界
 
@@ -321,6 +329,7 @@ If-None-Match: "optional-etag"
       "display_name": "Awesome Mac",
       "repo_full_name": "jaywcjlove/awesome-mac",
       "repo_url": "https://github.com/jaywcjlove/awesome-mac",
+      "repo_description": " Now we have become very big, Different from the original idea.",
       "image_url": "https://cdn.example.com/awesome/awesome-mac.png",
       "summary_zh": "精选 macOS 软件与开源项目",
       "summary_en": "A curated list of macOS software and open-source projects",
@@ -345,8 +354,9 @@ If-None-Match: "optional-etag"
 - `id`：发布后不可更改的 kebab-case 稳定键。
 - `repo_full_name`：服务端 GitHub 核验后的 canonical 大小写。
 - `repo_url`：服务端生成的 canonical `https://github.com/{owner}/{repo}`。
+- `repo_description`：来源仓库的 GitHub 官方 description；从共享 `repos` 真值读取，不在 `awesome_sources` 重复维护。
 - `image_url`：只允许 `https`；为空时客户端走 fallback。
-- `summary_zh / summary_en`：允许其一为空；客户端按当前 locale、英文、GitHub description 顺序回退。
+- `summary_zh / summary_en`：允许其一为空；客户端仅在 `repo_description` 缺失时按当前 locale 和英文顺序回退。
 - `source_stars`：来源仓库自身的 GitHub Stars；每轮来源同步均刷新，即使 README SHA 未变化也更新。
 - `github_repo_count`：当前已发布快照中有效 GitHub Repo 去重数。
 - `updated_at`：卡片内容修订时间；`last_synced_at`：README 成功同步时间，两者不能混用。
@@ -649,7 +659,7 @@ git@github.com:{owner}/{repo}.git       # 仅自定义来源输入可接受
 | `source_id` | 精选来源使用服务端 ID，自定义来源使用 `custom:{owner/repo}`；本地主键 |
 | `kind` | `managed / custom` |
 | `repo_full_name` | canonical GitHub 来源仓库 |
-| `display_name / image_url / summary_zh / summary_en` | 卡片数据 |
+| `display_name / repo_description / image_url / summary_zh / summary_en` | 卡片数据；`repo_description` 随目录缓存，内容摘要仅作回退 |
 | `featured / sort_order` | 精选排序，自定义使用本地默认 |
 | `source_stars` | 来源仓库自身 Stars；精选来自目录 API，自定义来源来自本地 GitHub 核验 |
 | `is_available` | 精选来源是否仍在公开目录；刷新失败的 stale 错误为会话状态 |
@@ -698,8 +708,8 @@ git@github.com:{owner}/{repo}.git       # 仅自定义来源输入可接受
 4. 检查是否与精选或自定义来源 canonical repo 重复。
 5. 下载 README Markdown。
 6. 使用 CommonMark/GFM AST 本地解析；解析规则与 §8 对齐。
-7. 批量核验解析出的公开 Repo，生成预览统计。
-8. 用户确认后写入 `custom:*` 来源、订阅和条目。
+7. 批量核验解析出的公开 Repo；没有有效 Repo 时在输入区显示明确错误且不保存。
+8. 点击“添加”成功后立即写入并启用 `custom:*` 来源、订阅和条目，不再要求第二次确认。
 
 自定义来源删除时：
 
@@ -717,8 +727,8 @@ git@github.com:{owner}/{repo}.git       # 仅自定义来源输入可接受
 |---|---|
 | `Starcat/Features/Explore/ExploreModels.swift` | 增加 `.awesome`、标题、图标、顺序和 API 归属 |
 | `Starcat/Features/Home/SidebarView.swift` | Awesome 行、名称右侧管理按钮、动态来源区、选中态 |
-| `Starcat/Features/Explore/AwesomeSourceCard.swift` | 固定三列 Repo 风格来源卡片与元数据胶囊 |
-| `Starcat/Features/Explore/AwesomeSourceLogo.swift` | Sheet/侧边栏共享内容图片、owner avatar 与图标回退 |
+| `Starcat/Features/Explore/AwesomeSourceCard.swift` | 固定三列 Repo 风格来源卡片、Logo 采样渐变、GitHub 跳转与元数据胶囊 |
+| `Starcat/Features/Explore/AwesomeSourceLogo.swift` | Sheet/侧边栏共享内容图片、owner avatar、图标回退与卡片取色回调 |
 | `Starcat/Features/Home/HomeView.swift` | Awesome 选择状态、首次 Sheet、三栏路由和账户切换恢复 |
 | `Starcat/Features/Explore/ExploreView.swift` | Awesome 中栏与详情分支；必要时拆分专用 View |
 | `Starcat/Features/Explore/DiscoveryDetailView.swift` | 复用详情骨架并注入来源证据区，不复制仓库详情 |
