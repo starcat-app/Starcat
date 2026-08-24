@@ -206,7 +206,7 @@ hasCompletedAwesomeSourceSetup == false ?
 
 - `image_url` 图片；加载失败回退到来源仓库 owner avatar，再失败使用 Awesome 模式 SF Symbol。
 - 来源名称。
-- 独立展示 GitHub 来源仓库官方 description 和 Discovery 内容管理摘要，两条语义不能互相覆盖。
+- 只展示 GitHub 来源仓库官方 `repo_description`；Discovery 内容管理摘要不在卡片中展示，避免卡片过长。
 - `owner/repo`。
 - 来源仓库自身的 GitHub Stars、Forks、Watchers、Open Issues。
 - 来源仓库 Languages API 字节占比生成的主要语言多色色条。
@@ -670,7 +670,7 @@ git@github.com:{owner}/{repo}.git       # 仅自定义来源输入可接受
 | `source_id` | 精选来源使用服务端 ID，自定义来源使用 `custom:{owner/repo}`；本地主键 |
 | `kind` | `managed / custom` |
 | `repo_full_name` | canonical GitHub 来源仓库 |
-| `display_name / repo_description / image_url / summary_zh / summary_en` | 卡片数据；GitHub description 与内容管理摘要独立缓存、分两条展示 |
+| `display_name / repo_description / image_url / summary_zh / summary_en` | 来源数据；卡片只展示 GitHub `repo_description`，内容管理摘要保留用于目录搜索与运营 |
 | `featured / sort_order` | 精选排序，自定义使用本地默认 |
 | `source_stars` | 来源仓库自身 Stars；精选来自目录 API，自定义来源来自本地 GitHub 核验 |
 | `source_forks / source_watchers / source_subscribers / source_open_issues` | 来源仓库 GitHub 基础指标 |

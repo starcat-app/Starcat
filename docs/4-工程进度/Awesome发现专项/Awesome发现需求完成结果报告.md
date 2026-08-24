@@ -3,7 +3,7 @@
 - 完成日期：2026-08-24
 - 开发分支：原专项分支已合入；本轮按 dong4j 要求直接提交到主仓库、`starcat-discovery-api` 和聚合 `starcat-api` 的本地 `dev`
 - 关联任务：[#109](https://github.com/starcat-app/Starcat/issues/109)
-- 完成状态：双描述来源卡片、来源仓库元数据与语言分布、主动刷新和时间迁移修复已完成；20 轮审查通过，本轮 Discovery API 增量待单独授权部署，客户端待人工 UI 验收
+- 完成状态：来源卡片、目录契约、完整 Repo 元数据、缓存与生产聚合 API v13 已收口；21 轮审查通过，客户端待人工 UI 验收
 
 ## 项目目标
 
@@ -42,7 +42,7 @@
 - Awesome 位于“探索 → 周刊”下方；与周刊状态隔离，管理入口位于 Awesome 名称右侧。
 - 首次进入自动打开来源 Sheet；Sheet 固定三列，Repo 风格卡片使用真实 Stars、项目数与状态胶囊，整卡可点击且高度稳定。
 - Sheet 增加左上角 Awesome 图标、搜索框和搜索空态；卡片优先展示 GitHub 官方 description，并增加 Logo 采样渐变与独立 GitHub 跳转按钮。
-- Sheet 初次打开不自动聚焦输入框；标题使用 Awesome 品牌图标；来源卡片固定高度并分别展示 GitHub description 与 Discovery 内容管理摘要。
+- Sheet 初次打开不自动聚焦输入框；标题使用 Awesome 品牌图标；来源卡片缩短固定高度并只展示来源仓库 GitHub `repo_description`。
 - 来源卡片增加 Stars、Forks、Watchers、Issues、解析项目数和主要语言多色色条，继续保留 Logo 取色渐变与系统语义文字色。
 - Sheet 刷新只强制校验来源目录；中栏刷新同时校验目录和已启用来源条目，均复用 `SyncIconButton`。
 - v30 为早期开发库补齐 `repo_updated_at` 并失效 managed entries ETag，下一次成功刷新自动回填详情创建与更新时间。
@@ -56,19 +56,19 @@
 ## 文档同步情况
 
 - 正式方案已与最终 API、schema、缓存、完整 Repo 字段、三列来源 UI 和自定义来源本地边界对齐。
-- 专项 Checklist、人工 UI 验收清单和第 1 至第 20 轮审查报告已同步。
+- 专项 Checklist、人工 UI 验收清单和第 1 至第 21 轮审查报告已同步。
 - Discovery API 中英文 API 文档与本地运营后台交互已同步。
 - `docs/功能实现总览.md` 仅做只读检查，因未获得专门写入授权而保持不变。
 
 ## 测试情况
 
-- Starcat：本轮 `xcodebuild test` 全量 2604 项、303 个 suites 通过，1 个 known issue、0 个失败；Awesome API、Repository、Store 与迁移定向测试均通过。
-- Discovery API：本轮 `go test ./...`、`go vet ./...` 和 `go test -race ./internal/github ./internal/awesome ./internal/store ./internal/handler` 通过。
+- Starcat：本轮统一通过 `make test` 执行全量测试，退出码为 0；Awesome API、Repository、Store 与详情映射测试均通过。
+- Discovery API：本轮 `go test ./...` 89 项、race 定向 60 项与 `go vet ./...` 通过。
 - 聚合 `starcat-api`：`go test ./...` 共 `11` 个测试通过；`go vet ./...` 通过。
 - 静态门禁：三仓库 `git diff --check`、本地化 Catalog JSON 解析和新增 Awesome UI 规范检查通过。
 - Starcat 测试中仍有 `DiagnosticsTests.swift` 的 4 条既有 Swift Concurrency runtime warning；测试均通过，告警与本轮 Awesome 差异无关。
-- 生产部署：Fly `starcat-api` Release v10、Machine 健康检查和六个聚合服务 ping 全部通过；生产 Volume 已在部署前创建快照。
-- 生产数据：`awesome-mac`、`awesome-design-patterns`、`awesome-python` 分别刷新 285、29、475 条；基础数值、默认分支与三个时间字段缺失数均为 0。
+- 生产部署：Fly `starcat-api` Machine v13、Machine 健康检查与聚合 `/healthz` 全部通过，部署重启同步失效进程内 Awesome 响应缓存。
+- 生产数据：目录 84/84 来源均返回 `language_bytes` 与非空 `repo_description`；`awesome-mac` 285/285 条目含创建时间和条目级更新时间。
 
 ## 审查轮次
 
@@ -85,6 +85,7 @@
 11. 第 18 轮：发现来源卡片仅设置最小高度仍可能随双描述变化，修复为固定高度并完成增量构建。
 12. 第 19 轮：完成架构影响、并发安全、双层缓存、迁移与文档一致性复审，未发现新增代码问题。
 13. 第 20 轮：完成最终提交、全量测试、工作区隔离、发布权限和结果报告终审，无遗留代码问题。
+14. 第 21 轮：发现并修复单描述卡片、v13 部署和当前测试结果在专项文档中的滞后记录。
 
 全部报告均保存在本专项目录的 `审查报告/` 下。
 
@@ -94,6 +95,8 @@
 - 本次增量主仓库提交：`2381320d`（取消初始聚焦）、`69437e3a`（品牌图标）、`b5ba6802`（来源元数据缓存）、`ca9bb878`（双描述卡片）、`b2bb9e9b`（刷新入口）、`9b2e55a7`（时间迁移）、`ff1e0fb0`（固定高度）和 `9095a90b`（文档同步）。
 - Discovery API 本轮功能提交：`ae65296`（目录返回来源仓库真实描述）；此前 `3985832`、`72a07a5` 继续负责完整 Repo 元数据与历史快照回填。
 - Discovery API 本次增量提交：`ac68064`（来源 Languages API）与 `57ecec1`（目录元数据和语言持久缓存）。
+- 本轮主仓库提交：`514afd57`（目录兼容解码）、`fcc00df6`（单描述短卡片）、`8741a8b9`（初始焦点）和 `d8f37a45`（详情完整快照 identity）。
+- 本轮 Discovery API 提交：`17cfb0e`（稳定返回空语言对象）。
 - 本轮文档与审查提交：`938566b3`、`8beb3024`、`a423b0d` 及最终文档收口提交。
 - 聚合 `starcat-api` 直接复用本地 Discovery module，没有为相同源码制造空提交。
 - 所有 commit 仅保存在本地，未 push。
@@ -101,7 +104,7 @@
 ## 遗留问题与后续门禁
 
 - Awesome 本轮代码遗留问题：无。
-- 本次 Discovery API 增量尚未部署生产；需 dong4j 单独确认后部署聚合 API、触发 published 来源同步并验证 `language_bytes` 与新增指标。
+- 本次 Discovery API 增量已随聚合 `starcat-api` v13 部署，生产目录 84 条均包含 `language_bytes`，进程内响应缓存已随重启失效。
 - 生产部署：`ae65296` 已随聚合 API v11 上线；目录 84 条来源均返回非空 `repo_description`，Stars 零值数量为 0。
 - 生产聚合 API 已部署；其余 published 来源由每 3 小时定时任务执行一次性元数据回填和后续 README SHA 增量刷新。
 - 人工 UI 验收：待 dong4j 按 [`人工UI验收清单.md`](./人工UI验收清单.md) 执行；自动化测试不替代人工验收。
@@ -119,4 +122,4 @@
 
 ## 最终完成状态
 
-本地代码、专项文档、自动化测试和 20 轮审查均已完成，审查问题全部修复；此前生产聚合 API v11 已通过真实描述与六服务健康验证，本次语言分布和来源指标增量待单独授权部署，客户端交付 dong4j 人工 UI 验收。
+本地代码、专项文档、自动化测试和 21 轮审查均已完成，审查问题全部修复；生产聚合 API v13 已通过来源目录、条目时间和六服务健康验证，客户端交付 dong4j 人工 UI 验收。

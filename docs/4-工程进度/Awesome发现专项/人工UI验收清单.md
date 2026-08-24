@@ -28,7 +28,7 @@
 - [ ] 来源 Sheet 在标准宽度下始终为三列；勾选、刷新和滚动时卡片位置及高度不跳动。
 - [ ] Sheet 左上角使用带轻微圆角的 Awesome 品牌图标；初次打开搜索框不自动聚焦，用户点击后系统 Focus Ring 正常。
 - [ ] 卡片完整展示名称、`owner/repo`、Stars、Forks、Watchers、Issues、项目数、主要语言色条、同步/失败状态、推荐和勾选状态。
-- [ ] 卡片分两条展示 GitHub 官方 description 与 Discovery 内容管理摘要；Logo 采样渐变在明暗主题下克制可读，GitHub 跳转按钮打开正确仓库且不切换勾选。
+- [ ] 卡片只展示来源仓库 GitHub 官方 description，不展示 Discovery 内容管理摘要；Logo 采样渐变在明暗主题下克制可读，GitHub 跳转按钮打开正确仓库且不切换勾选。
 - [ ] 卡片 Stars 为真实 GitHub 数字而非“未知”或批量 `0`；Stars、项目数和同步状态胶囊在明暗主题下清晰。
 - [ ] “新增 Awesome 项目”标题和输入框位于卡片网格下方，不显示上传 Discovery 的误导文案。
 - [ ] 无目录缓存且请求失败时同时可见错误、重试和添加自定义来源入口。

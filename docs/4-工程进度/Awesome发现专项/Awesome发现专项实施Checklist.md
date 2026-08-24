@@ -147,15 +147,26 @@
 - [x] 生产 Awesome 目录共 84 条，84 条均返回非空 `repo_description`，`source_stars=0` 数量为 0。
 - [x] 保存第 17 轮生产部署审查报告；未修改 Secrets、未导入数据、未 push。
 
-## 15. 来源卡片双描述与刷新修复（2026-08-24）
+## 15. 来源卡片描述与刷新修复（2026-08-24）
 
 - [x] Sheet 初次打开清除系统自动 first responder，用户主动点击输入框时保留系统 Focus Ring。
 - [x] Sheet 标题使用 Awesome 品牌图标并按 macOS 图标规范增加轻微圆角。
 - [x] Discovery API 仅为 Awesome 来源仓库获取 Languages API 字节分布，并返回 Forks、Watchers、Subscribers、Issues 与主要语言。
 - [x] 服务端使用独立 `awesome_source_languages` 表持久缓存语言分布，不扩散修改共享 `repos` schema。
 - [x] 客户端追加 `v29-awesome-source-card-metadata`，缓存来源仓库指标与语言分布并失效旧目录 ETag。
-- [x] 来源卡片保持 Logo 取色渐变，按 Repo 原型重排，并分两条展示 GitHub description 与 Discovery 内容管理摘要。
+- [x] 来源卡片保持 Logo 取色渐变，按 Repo 原型重排，只展示来源仓库 GitHub `repo_description`，不再展示 Discovery 内容管理摘要。
 - [x] 来源卡片增加 Stars、Forks、Watchers、Issues、解析项目数、GitHub 跳转和多语言比例色条。
 - [x] Sheet 增加只刷新来源目录的按钮；中栏增加刷新目录和已启用来源条目的按钮，均复用 `SyncIconButton`。
 - [x] 客户端追加 `v30-awesome-entry-updated-at`，补齐旧开发库时间列并失效 managed entries ETag，保留旧快照离线可读。
 - [x] 自定义来源继续只调用 Starcat 本地 GitHub/README 链路，不上传 Discovery API。
+
+## 16. 来源目录契约与生产收口（2026-08-25）
+
+- [x] Discovery 公共目录固定返回 `language_bytes` 对象，无语言数据时返回 `{}`，客户端同时兼容旧响应缺失该字段。
+- [x] Awesome Sheet 卡片移除 Discovery 内容管理摘要并缩短固定高度，只保留 GitHub `repo_description`。
+- [x] Sheet 首帧输入框不参与焦点链，挂载后恢复正常键盘与点击焦点，避免蓝色 Focus Ring 闪烁。
+- [x] 详情 scaffold 使用完整 Repo 快照作为 identity，description、创建时间和更新时间补齐后重建旧状态。
+- [x] 当前账号与匿名账号的 Awesome 四张功能表已清零；未删除其他 Starcat 业务数据。
+- [x] 聚合 `starcat-api` v13 已部署，六服务健康；生产 84/84 来源含 `language_bytes` 与 `repo_description`。
+- [x] 生产 `awesome-mac` 285/285 条目含 `created_at`，285/285 条目含条目级 `updated_at`。
+- [x] Starcat `make test`、Discovery API 89 项全量测试、60 项 race 测试与聚合 API 11 项测试通过，两个 Go 工程 `go vet` 通过。
