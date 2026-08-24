@@ -19,10 +19,10 @@
 
 | 项目 | 分支 | 测试基线/关键提交 | 作用 |
 |---|---|---|---|
-| Starcat | `codex/collection-pipeline` | `1124e94` 及后续文档提交 | Direct 客户端、隐私开关、上报、v2 消费 |
-| `starcat-collection-api` | `codex/collection-pipeline` | `afb8321` | 快照接收、匿名化、active 存储和训练导出 |
-| `starcat-recsys-trainer` | `codex/collection-api-source` | `08131a0` | 数据处理、训练、Bundle 和发布 |
-| `starcat-recommend-api` | `codex/trained-recommendations` | `5f5c98a` | v1 SimRepo、v2 自研查询和模型 Registry |
+| Starcat | `dev` | `1730c6be`（链路合并点） | Direct 客户端、隐私开关、上报、v2 消费 |
+| `starcat-collection-api` | `main` | `afb8321` | 快照接收、匿名化、active 存储和训练导出 |
+| `starcat-recsys-trainer` | `main` | `5525a5c` | 数据处理、训练、Bundle 和发布 |
+| `starcat-recommend-api` | `dev` | `5f5c98a` | v1 SimRepo、v2 自研查询和模型 Registry |
 
 - 机器：Apple Silicon Mac Studio，macOS 26.6.1。
 - Starcat：Direct Debug，bundle id `com.starcat.app.direct.debug`，复用主账户数据库。
@@ -227,7 +227,7 @@ Recommend API 服务端重新校验文件白名单、manifest、checksums、SQLi
 
 | 项目 | 命令/证据 | 结果 |
 |---|---|---|
-| Starcat 全量 | `xcodebuild ... test` + `.xcresult` | Passed；总计 2582，通过 2571，失败 0，跳过 10，预期失败 1 |
+| Starcat 全量 | `xcodebuild ... test` + `.xcresult` | 合并后 Passed；总计 2628，通过 2617，失败 0，跳过 10，预期失败 1 |
 | Starcat v2 live | `RecommendAPILiveIntegrationTests` + REQUIRED 环境变量 | 1/1 通过 |
 | Collection | `make check` | 普通测试、race、vet、build 全部通过 |
 | Trainer | `make check` | Ruff format/lint、strict mypy、58 pytest 全部通过，覆盖率 88% |
@@ -235,7 +235,11 @@ Recommend API 服务端重新校验文件白名单、manifest、checksums、SQLi
 | Bundle | `bundle verify` / `bundle query` | 通过 |
 | 服务恢复 | Recommend 进程停止并用原 Registry 重启 | active model 与 v2 查询恢复 |
 
-Starcat `.xcresult` 还记录了 4 条来自既有 `DiagnosticsTests.swift` 的“background threads publish” runtime warning；没有测试失败，也没有指向本专项新增文件，作为既有测试告警记录，不计为本链路失败。
+合并后的 Starcat `.xcresult` 仍记录既有测试中的“background threads publish” runtime warning；没有测试失败，也没有指向数据贡献或推荐接口新增文件，作为既有测试告警记录，不计为本链路失败。
+
+### 5.1 合并后回归
+
+2026-08-24 将本地 `dev@65c965b8` 合入专项分支时，人工解决了分支登记、两组并行数据库迁移、迁移测试和文档清单冲突。Awesome 与数据贡献都曾在开发分支使用 `v22` 前缀，因此保留 `v22-awesome-discovery` 与 `v22-data-contribution` 两个唯一 identifier；GRDB 会跳过已执行项并补跑另一项，兼容两类开发库且不重复建表。定向 migration suite、Starcat 全量测试、三服务 `make check` 和强制 Direct v2 live test 均通过后，Starcat fast-forward 合入本地 `dev`；Trainer 合入本地 `main`，Recommend API 合入本地 `dev`，Collection API 的需求分支与 `main` 原本一致。全过程未 push。
 
 ## 6. BigQuery 当前查询逻辑
 
@@ -361,5 +365,6 @@ Google Cloud 当前按需查询免费层是每月前 1 TiB 查询数据免费；
 - 本地 Bundle：`/tmp/starcat-recommend-e2e.YkSuWV/trainer-registry/versions/real-star-e2e-20260824-v2`
 - Recommend Registry：`/tmp/starcat-recommend-e2e.YkSuWV/model-registry`
 - Starcat 全量 `.xcresult`：`/tmp/starcat-recommend-e2e.YkSuWV/starcat-test-derived/Logs/Test/Test-Starcat-2026.08.24_03-13-26-+0800.xcresult`
+- 合并后 Starcat 全量 `.xcresult`：`~/Library/Developer/Xcode/DerivedData/Starcat-bdlovpbcpgtcpbeimbkvaehbcmtv/Logs/Test/Test-Starcat-2026.08.24_10-25-17-+0800.xcresult`
 
 这些是本机测试证据，不是长期生产存储；`/tmp` 可能被系统清理。
