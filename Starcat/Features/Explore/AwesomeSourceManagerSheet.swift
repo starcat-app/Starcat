@@ -145,9 +145,6 @@ struct AwesomeSourceManagerSheet: View {
                 ForEach(filteredSources) { source in
                     AwesomeSourceCard(
                         source: source,
-                        discoveryDescription: source.localizedSummary(
-                            languageCode: locale.language.languageCode?.identifier
-                        ),
                         isSelected: enabledIDs.contains(source.id),
                         hasRefreshError: store.sourceRefreshErrors[source.id] != nil,
                         onToggle: { toggleSource(source) },

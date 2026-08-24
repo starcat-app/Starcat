@@ -11,7 +11,6 @@ import SwiftUI
 /// 用稳定高度和克制的胶囊元数据承载来源仓库事实，避免长标题或同步状态改变网格节奏。
 struct AwesomeSourceCard: View {
     let source: AwesomeSource
-    let discoveryDescription: String?
     let isSelected: Bool
     let hasRefreshError: Bool
     let onToggle: () -> Void
@@ -25,17 +24,16 @@ struct AwesomeSourceCard: View {
             Button(action: onToggle) {
                 VStack(alignment: .leading, spacing: 12) {
                     header
-                    descriptionLine(label: "GitHub", value: source.repoDescription)
+                    repositoryDescription
                     repositoryMetrics
                     languageBar
                     Divider()
-                    managedDescription
                     footer
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 // 固定高度与三列网格共同保证搜索、勾选和刷新时卡片位置不跳动。
-                .frame(height: 292, alignment: .topLeading)
+                .frame(height: 226, alignment: .topLeading)
                 .background(cardBackground)
                 .overlay(cardBorder)
                 .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -90,10 +88,14 @@ struct AwesomeSourceCard: View {
     private var header: some View {
         HStack(alignment: .top, spacing: 11) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(source.repoFullName)
+                Text(source.displayName)
                     .font(.headline.weight(.semibold))
                     .foregroundStyle(.primary)
-                    .lineLimit(2)
+                    .lineLimit(1)
+                Text(source.repoFullName)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 if source.featured {
                     capsule(systemImage: "sparkles", text: String.l10n("awesome.sources.featured"))
                 }
@@ -106,17 +108,13 @@ struct AwesomeSourceCard: View {
         }
     }
 
-    private func descriptionLine(label: String, value: String?) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(verbatim: label)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(verbatim: normalizedDescription(value) ?? "—")
-                .font(.caption)
-                .foregroundStyle(.primary)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, minHeight: 32, alignment: .topLeading)
-        }
+    private var repositoryDescription: some View {
+        // 来源卡片只展示 GitHub Repo API 的原始描述，内容管理简介不参与展示。
+        Text(verbatim: normalizedDescription(source.repoDescription) ?? "—")
+            .font(.caption)
+            .foregroundStyle(.primary)
+            .lineLimit(2)
+            .frame(maxWidth: .infinity, minHeight: 32, alignment: .topLeading)
     }
 
     private var repositoryMetrics: some View {
@@ -157,16 +155,6 @@ struct AwesomeSourceCard: View {
             }
             .frame(height: 6)
             .accessibilityLabel(Text(verbatim: source.sourceLanguage ?? "Languages"))
-        }
-    }
-
-    private var managedDescription: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(source.displayName)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-            descriptionLine(label: "Discovery", value: discoveryDescription)
         }
     }
 
