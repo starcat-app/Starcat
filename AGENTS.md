@@ -98,6 +98,27 @@
 
 ---
 
+## 🛠️ 本地构建与启动（强制）
+
+本项目同时维护 App Store / Direct 两套 scheme，并允许本机安装多个 Xcode。Agent 不得根据全局 `xcode-select` 临时拼接构建命令，统一使用 Makefile：
+
+```bash
+# 只构建并校验产物，不停止或启动 App
+make build-appstore
+make build-direct
+
+# 构建、校验并启动对应渠道
+make run-appstore
+make run-direct
+```
+
+- 上述入口固定使用 `/Applications/Xcode.app`；如稳定版 Xcode 安装在其他位置，显式设置 `STARCAT_STABLE_XCODE_DEVELOPER_DIR`。
+- `build/DerivedData-Sandbox` 只属于 App Store Debug，`build/DerivedData-NoSandbox` 只属于 Direct Debug。脚本会记录 Xcode / SDK / scheme 所有权指纹，环境变化时仅重建对应的可再生缓存。
+- **禁止**裸 `xcodebuild build` 写入这两个固定目录，也禁止把其他 scheme、Xcode Beta 或一次性诊断构建指向它们。
+- 需要新增构建场景时，先补 Makefile / 脚本标准入口；一次性裸 `xcodebuild` 必须使用独立的 `/tmp` DerivedData，不能借用项目固定缓存。
+
+---
+
 ## 🧪 如何跑单测（必读，2026-05-31 起生效）
 
 **当前最低要求**：跑测前**关闭 Xcode IDE**（Cmd+Q），否则 `xcodebuild test` 与 IDE 抢占同一 `testmanagerd` 实例，可能挂起。
@@ -105,18 +126,21 @@
 ### A. 命令行（CI 友好，推荐 AI Agent 用）
 
 ```bash
-# 1) 把 xcodegen 生成的 project 同步到最新（每次新增 / 删除 swift 文件后必跑）
-xcodegen generate
+# 跑全部单测；入口会执行 xcodegen、固定稳定版 Xcode，并创建独立临时 DerivedData
+make test
 
-# 2) 跑全部单测
-xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
-
-# 2.1) 只跑某个 Suite（迭代时省时间）
-xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' \
+# 只跑某个 Suite（迭代时省时间）；裸命令也必须隔离缓存
+TEST_DERIVED_DATA="$(mktemp -d "${TMPDIR:-/tmp}/starcat-tests-derived-data.XXXXXX")"
+trap 'rm -rf "$TEST_DERIVED_DATA"' EXIT
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
+  -scheme Starcat -destination 'platform=macOS,arch=arm64' \
+  -derivedDataPath "$TEST_DERIVED_DATA" \
   -only-testing:StarcatTests/TagRepositoryTests test
 
-# 2.2) 同时跑多个 Suite
-xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' \
+# 同时跑多个 Suite（复用上面同一个临时目录）
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
+  -scheme Starcat -destination 'platform=macOS,arch=arm64' \
+  -derivedDataPath "$TEST_DERIVED_DATA" \
   -only-testing:StarcatTests/TagRepositoryTests \
   -only-testing:StarcatTests/RepoTagRepositoryTests test
 ```

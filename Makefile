@@ -48,7 +48,7 @@ help: ## 列出所有可用命令
 	@echo "  make build-direct           构建并校验 Direct / 非 App Store Debug，不启动"
 	@echo "  make run-appstore           执行 scripts/run-debug-appstore.sh（App Store / 沙盒 Debug）"
 	@echo "  make run-direct             执行 scripts/run-debug-direct.sh（Direct / 非 App Store Debug）"
-	@echo "  make test                   跑全量单测（xcodegen + xcodebuild test）"
+	@echo "  make test                   使用稳定版 Xcode 和隔离缓存跑全量单测"
 	@echo "  make test-build-scripts     验证 Debug 构建缓存的工具链隔离逻辑"
 	@echo ""
 	@echo "App Store："

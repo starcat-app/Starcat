@@ -101,6 +101,24 @@
 
 ---
 
+## 🛠️ 本地构建与启动（强制）
+
+Starcat 同时维护 App Store / Direct scheme，并允许本机安装多个 Xcode。不要继承全局 `xcode-select` 临时拼裸命令，统一使用：
+
+```bash
+make build-appstore  # 只构建并校验，不启动
+make build-direct
+make run-appstore    # 构建、校验并启动
+make run-direct
+```
+
+- Makefile 入口固定使用稳定版 `/Applications/Xcode.app`，并按 Xcode / SDK / scheme 指纹管理渠道专用缓存。
+- `build/DerivedData-Sandbox` 只属于 App Store Debug；`build/DerivedData-NoSandbox` 只属于 Direct Debug。
+- 禁止裸 `xcodebuild build`、Xcode Beta 或其他 scheme 写入上述固定缓存。
+- 一次性诊断构建必须使用独立 `/tmp` DerivedData；需要长期复用的场景应新增 Makefile / 脚本入口。
+
+---
+
 ## 🧪 如何跑单测（必读，2026-05-31 起生效）
 
 **先决条件**：跑测前**关闭 Xcode IDE**（Cmd+Q），或者就直接在 IDE 里 Cmd+U 跑——不要并发跑命令行 + IDE，会抢同一个 `testmanagerd`。
@@ -108,14 +126,15 @@
 ### 命令行
 
 ```bash
-# 同步 project（每次新增 / 删除 swift 文件后必跑）
-xcodegen generate
+# 跑全部；脚本会同步 project、固定稳定版 Xcode，并使用独立临时 DerivedData
+make test
 
-# 跑全部
-xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
-
-# 只跑某个 Suite
-xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' \
+# 只跑某个 Suite；裸命令必须显式隔离缓存
+TEST_DERIVED_DATA="$(mktemp -d "${TMPDIR:-/tmp}/starcat-tests-derived-data.XXXXXX")"
+trap 'rm -rf "$TEST_DERIVED_DATA"' EXIT
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
+  -scheme Starcat -destination 'platform=macOS,arch=arm64' \
+  -derivedDataPath "$TEST_DERIVED_DATA" \
   -only-testing:StarcatTests/TagRepositoryTests test
 ```
 
