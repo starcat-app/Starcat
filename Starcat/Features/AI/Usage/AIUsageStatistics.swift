@@ -91,6 +91,7 @@ struct AIUsageDimensionPoint: Equatable, Identifiable, Sendable {
     var totalTokens: Int
     var callCount: Int
     var estimatedCostUSD: Double
+    var pricedCallCount: Int
 
     var id: String { key }
 }

@@ -214,6 +214,15 @@ struct AIUsageDashboardView: View {
                 icon: "point.3.connected.trianglepath.dotted",
                 tint: .orange
             )
+            metricCard(
+                title: "agent.workspace.inspector.overview.cost",
+                value: summary.callsWithEstimatedCost > 0
+                    ? currency(summary.estimatedCostUSD)
+                    : String.l10n("agent.workspace.inspector.value.unavailable"),
+                detail: "\(String.l10n("ai.usage.source.estimated")) · \(percent(summary.pricingCoverageRate))",
+                icon: "dollarsign.circle",
+                tint: .mint
+            )
         }
     }
 
@@ -367,6 +376,9 @@ struct AIUsageDashboardView: View {
                         Text(compact(point.totalTokens))
                             .fontWeight(.medium)
                             .frame(width: 80, alignment: .trailing)
+                        Text(point.pricedCallCount > 0 ? currency(point.estimatedCostUSD) : "—")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 90, alignment: .trailing)
                         Text(String(format: String.l10n("ai.usage.calls.shortFormat"), point.callCount))
                             .foregroundStyle(.secondary)
                             .frame(width: 80, alignment: .trailing)
@@ -422,6 +434,12 @@ struct AIUsageDashboardView: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 .width(min: 70, ideal: 86, max: 100)
+
+                TableColumn("agent.workspace.inspector.overview.cost") { event in
+                    Text(event.estimatedCostUSD.map(currency) ?? "—")
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                .width(min: 76, ideal: 92, max: 110)
 
                 TableColumn("ai.usage.calls.source") { event in
                     Text(sourceTitle(event.usageSource))
@@ -513,6 +531,14 @@ struct AIUsageDashboardView: View {
 
     private func percent(_ value: Double) -> String {
         value.formatted(.percent.precision(.fractionLength(0)).locale(locale))
+    }
+
+    private func currency(_ value: Double) -> String {
+        value.formatted(
+            .currency(code: "USD")
+                .precision(.fractionLength(2 ... 6))
+                .locale(locale)
+        )
     }
 
     private func callDate(_ timestamp: Double) -> String {

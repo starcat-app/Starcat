@@ -109,6 +109,10 @@ struct AIUsageRepositoryTests {
         #expect(snapshot.summary.callsWithEstimatedCost == 2)
         #expect(snapshot.summary.pricingCoverageRate == 1)
         #expect(snapshot.byFeature.map(\.key) == [AIUsageFeature.rag.rawValue, AIUsageFeature.semanticSearch.rawValue])
+        #expect(snapshot.byFeature[0].estimatedCostUSD == 0.002)
+        #expect(snapshot.byFeature[0].pricedCallCount == 1)
+        #expect(snapshot.byFeature[1].estimatedCostUSD == 0.001)
+        #expect(snapshot.byFeature[1].pricedCallCount == 1)
         #expect(snapshot.filterOptions.models == ["chat-a", "chat-b", "embed-a"])
 
         let summary = try await repository.summary(

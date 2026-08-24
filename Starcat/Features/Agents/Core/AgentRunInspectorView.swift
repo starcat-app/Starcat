@@ -115,6 +115,7 @@ struct AgentRunInspectorHeader: View {
 /// Agent Run 的统一任务检查器。页签负责浏览 Run，时间线选择负责查看单步事实。
 struct AgentRunInspectorView: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.locale) private var locale
 
     let viewModel: AgentWorkspaceViewModel
 
@@ -207,6 +208,9 @@ struct AgentRunInspectorView: View {
                 metricRow(String.l10n("agent.workspace.inspector.overview.contextWindow"), contextWindowLabel)
                 metricRow(String.l10n("agent.workspace.inspector.overview.firstOutput"), viewModel.usage.firstOutputLatencyMilliseconds.map(formatDuration) ?? String.l10n("agent.workspace.inspector.value.unavailable"))
                 metricRow(String.l10n("agent.workspace.inspector.overview.cost"), estimatedCostLabel)
+                if let source = viewModel.usage.estimatedCostSource {
+                    metricRow(String.l10n("ai.usage.calls.source"), pricingSourceLabel(source))
+                }
             }
 
             inspectorGroup(title: String.l10n("agent.workspace.inspector.overview.audit"), icon: "checkmark.shield") {
@@ -610,7 +614,21 @@ struct AgentRunInspectorView: View {
         guard let cost = viewModel.usage.estimatedCost else {
             return String.l10n("agent.workspace.inspector.value.unavailable")
         }
-        return NumberFormatter.agentCurrencyUSD.string(from: NSDecimalNumber(decimal: cost)) ?? "$\(cost)"
+        return NSDecimalNumber(decimal: cost).doubleValue.formatted(
+            .currency(code: "USD")
+                .precision(.fractionLength(2 ... 6))
+                .locale(locale)
+        )
+    }
+
+    private func pricingSourceLabel(_ source: String) -> String {
+        switch source {
+        case "litellm-live": "LiteLLM · Live"
+        case "litellm-cache": "LiteLLM · Cache"
+        case "litellm-stale-cache": "LiteLLM · Stale Cache"
+        case "litellm-seed": "LiteLLM · Offline"
+        default: source
+        }
     }
 
     private var contextWindowLabel: String {
@@ -647,14 +665,4 @@ struct AgentRunInspectorView: View {
     private func artifactIcon(_ artifact: AgentArtifact) -> String {
         artifact.type == .markdown ? "doc.richtext" : "doc.text.magnifyingglass"
     }
-}
-
-private extension NumberFormatter {
-    static let agentCurrencyUSD: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = "USD"
-        formatter.maximumFractionDigits = 4
-        return formatter
-    }()
 }
