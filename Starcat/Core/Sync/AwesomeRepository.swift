@@ -413,7 +413,7 @@ private extension AwesomeSourceRecord {
             summaryEN: dto.summaryEN,
             featured: dto.featured,
             sortOrder: dto.sortOrder,
-            sourceStars: dto.sourceStars ?? 0,
+            sourceStars: dto.sourceStars,
             githubRepoCount: dto.githubRepoCount,
             externalEntryCount: dto.externalEntryCount,
             isAvailable: true,

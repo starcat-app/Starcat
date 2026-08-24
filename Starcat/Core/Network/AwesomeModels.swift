@@ -26,7 +26,8 @@ struct AwesomeSourceDTO: Codable, Identifiable, Hashable, Sendable {
     let summaryEN: String?
     let featured: Bool
     let sortOrder: Int
-    let sourceStars: Int?
+    /// 精选来源必须来自已核验的 GitHub Repo，因此 Stars 是公共目录的必返事实字段。
+    let sourceStars: Int
     let githubRepoCount: Int
     let externalEntryCount: Int
     let lastSyncedAt: String?

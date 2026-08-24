@@ -31,6 +31,18 @@ struct AwesomeAPITests {
         #expect(result.generatedAt == "2026-08-24T08:00:00Z")
     }
 
+    @Test("来源目录缺少 Stars 时拒绝不完整契约")
+    func sourceCatalogRejectsMissingStars() async throws {
+        let api = makeAPI { request in
+            let body = Data(#"{"schema_version":1,"data":[{"id":"awesome-swift","display_name":"Awesome Swift","repo_full_name":"matteocrippa/awesome-swift","repo_url":"https://github.com/matteocrippa/awesome-swift","featured":true,"sort_order":2,"github_repo_count":123,"external_entry_count":4,"updated_at":"2026-08-24T08:00:00Z"}]}"#.utf8)
+            return (Self.response(200, request: request), body)
+        }
+
+        await #expect(throws: StarcatEnvelopeNetworkError.self) {
+            _ = try await api.fetchAwesomeSources()
+        }
+    }
+
     @Test("条目 304 发送已有 ETag 且不要求响应体")
     func entriesNotModifiedUsesConditionalRequest() async throws {
         let api = makeAPI { request in

@@ -156,6 +156,7 @@ struct DatabaseMigrationsV1Tests {
             #expect(applied.contains("v22-awesome-discovery"))
             #expect(applied.contains("v23-awesome-source-metadata"))
             #expect(applied.contains("v24-awesome-cache-freshness"))
+            #expect(applied.contains("v25-awesome-source-stars-refresh"))
             #expect(try db.tableExists("awesome_sources"))
             #expect(try db.tableExists("awesome_source_subscriptions"))
             #expect(try db.tableExists("awesome_entries"))
@@ -165,6 +166,42 @@ struct DatabaseMigrationsV1Tests {
             #expect(try db.columns(in: "awesome_sources").map(\.name).contains("entries_checked_at"))
             let state = try AwesomeStateRecord.fetchOne(db)
             #expect(state?.hasCompletedSourceSetup == false)
+        }
+    }
+
+    @Test("v25 让来源 Stars 为零的旧目录缓存立即过期")
+    func awesomeSourceStarsRefreshMigration() throws {
+        let writer = try DatabaseQueue()
+        var migrator = DatabaseMigrator()
+        DatabaseMigrations.registerAll(into: &migrator)
+        try migrator.migrate(writer, upTo: "v24-awesome-cache-freshness")
+        try writer.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO awesome_sources (
+                    source_id, kind, display_name, repo_full_name, repo_url,
+                    source_stars, added_at, updated_at
+                ) VALUES (?, 'managed', ?, ?, ?, 0, ?, ?)
+                """,
+                arguments: [
+                    "awesome-swift", "Awesome Swift", "matteocrippa/awesome-swift",
+                    "https://github.com/matteocrippa/awesome-swift",
+                    "2026-08-24T08:00:00Z", "2026-08-24T08:00:00Z",
+                ]
+            )
+            try db.execute(
+                sql: "UPDATE awesome_state SET catalog_etag = ?, catalog_checked_at = ?",
+                arguments: ["\"legacy\"", "2026-08-24T08:00:00Z"]
+            )
+        }
+
+        try migrator.migrate(writer)
+
+        try writer.read { db in
+            let fetchedState = try AwesomeStateRecord.fetchOne(db)
+            let state = try #require(fetchedState)
+            #expect(state.catalogETag == nil)
+            #expect(state.catalogCheckedAt == nil)
         }
     }
 

@@ -40,7 +40,8 @@
 //    `v17-my-projects` / `v18-rag-structured-citations` / `v19-release-1.4.0` /
 //    `v20-agent-runtime-trace` / `v21-github-issue-labels` /
 //    `v22-awesome-discovery` / `v22-data-contribution` /
-//    `v23-awesome-source-metadata` / `v24-awesome-cache-freshness`
+//    `v23-awesome-source-metadata` / `v24-awesome-cache-freshness` /
+//    `v25-awesome-source-stars-refresh`
 //
 //  **1.4.0 开发期迁移（已由正式 v19 合并接管）**：
 //  `v19-agent-message-contract` 至 `v26-github-timeline-conversations` 仅在开发构建中出现过。
@@ -102,6 +103,27 @@ enum DatabaseMigrations {
         registerV22DataContribution(into: &migrator)
         registerV23AwesomeSourceMetadata(into: &migrator)
         registerV24AwesomeCacheFreshness(into: &migrator)
+        registerV25AwesomeSourceStarsRefresh(into: &migrator)
+    }
+
+    // MARK: - v25-awesome-source-stars-refresh：旧来源 Stars 缓存失效（2026-08-24）
+
+    /// v23 为已存在的开发库补列时只能把历史行初始化为 0；随后 v24 的 freshness 会把
+    /// 这批不完整目录当作新鲜缓存。只要存在这种 managed 行，就清除目录条件请求状态，
+    /// 让下一次进入 Awesome 获取包含必返 `source_stars` 的完整目录，不动订阅和条目。
+    private static func registerV25AwesomeSourceStarsRefresh(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v25-awesome-source-stars-refresh") { db in
+            guard try db.tableExists("awesome_sources"),
+                  try db.tableExists("awesome_state"),
+                  try db.columns(in: "awesome_sources").map(\.name).contains("source_stars")
+            else { return }
+            let hasIncompleteManagedSource = try Bool.fetchOne(
+                db,
+                sql: "SELECT EXISTS(SELECT 1 FROM awesome_sources WHERE kind = 'managed' AND source_stars = 0)"
+            ) ?? false
+            guard hasIncompleteManagedSource else { return }
+            try db.execute(sql: "UPDATE awesome_state SET catalog_etag = NULL, catalog_checked_at = NULL")
+        }
     }
 
     // MARK: - v23-awesome-source-metadata：Awesome 来源仓库元数据（2026-08-24）
