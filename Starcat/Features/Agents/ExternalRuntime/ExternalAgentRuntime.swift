@@ -112,10 +112,12 @@ struct ExternalAgentRuntime: AgentRuntime {
                         mcpConnection: mcpLease?.connection
                     )
                     do {
-                        let driver = try adapter.makeDriver(request: request)
                         try await host.execute(
                             runID: runID,
-                            driver: driver,
+                            driverFactory: { try adapter.makeDriver(request: request) },
+                            // Bridge 已在 Host 外完成 readiness 探测；只重试 Cordis MCP
+                            // plugin tree 的瞬时冷启动失败，不重试模型 turn 或工具副作用。
+                            mcpStartupRetryLimit: mcpLease == nil ? 0 : 2,
                             toolCallHandler: toolCallHandler
                         ) { event in
                             await projector.consume(event)
@@ -142,6 +144,31 @@ struct ExternalAgentRuntime: AgentRuntime {
                 Task { await host.cancel(runID: runID) }
             }
         }
+    }
+
+    /// 外部 Harness 不持久化可恢复的 Provider session。失败重试必须创建全新 Run，
+    /// 但仍复用已持久化的原始 Prompt 与冻结 Context；这样既不会伪装为 session resume，
+    /// 也不会重新读取已经变化的 Workspace 状态。External Runtime 只允许只读工具，
+    /// 仍显式拒绝含审批事实的历史 Run，避免未来扩展写工具后重复执行副作用。
+    func retryFailedRun(
+        snapshot: AgentRunSnapshotRecord,
+        definition: AgentDefinition
+    ) -> AsyncStream<AgentRunEvent> {
+        guard snapshot.run.agentId == definition.id,
+              snapshot.approvals.isEmpty
+        else {
+            return failedStream(String.l10n("agent.loop.error.retryUnavailable"))
+        }
+        do {
+            _ = try AgentRunRetryPolicy.validatedRunID(for: snapshot)
+        } catch {
+            return failedStream(error.localizedDescription)
+        }
+        return run(
+            definition: definition,
+            prompt: snapshot.run.userPrompt,
+            context: snapshot.context
+        )
     }
 
     func send(_ command: AgentRunCommand) async {
@@ -194,6 +221,13 @@ struct ExternalAgentRuntime: AgentRuntime {
         }
         if !definition.workflow.allowsEmptyRepositoryContext, context.repos.isEmpty {
             throw LoopAgentRuntimeError.repositoryContextEmpty
+        }
+    }
+
+    private func failedStream(_ message: String) -> AsyncStream<AgentRunEvent> {
+        AsyncStream { continuation in
+            continuation.yield(.runFailed(message))
+            continuation.finish()
         }
     }
 }

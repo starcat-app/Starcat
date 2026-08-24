@@ -96,17 +96,44 @@ struct ReadmeTranslationRequest: Sendable {
     }
 }
 
+/// 每批译文回填回调。提到文件级是为了让 VM 协议和 Service 共用同一签名。
+typealias ReadmeTranslationBatchProgressHandler = @MainActor (
+    _ rendered: [ReadmeRenderedTranslation],
+    _ completedCount: Int,
+    _ totalCount: Int
+) -> Void
+
+/// VM 只依赖这四个方法，便于单测挂起缓存 / 翻译回调，验证切仓后旧任务不能写 UI。
 @MainActor
-final class ReadmeTranslationService {
+protocol ReadmeTranslationServiceProtocol: AnyObject {
+    func cachedTranslation(
+        owner: String,
+        repo: String,
+        targetLanguage: ReadmeTranslationLanguage,
+        mode: ReadmeTranslationMode
+    ) async throws -> ReadmeTranslation?
+
+    func isCacheFresh(cached: ReadmeTranslation, sourceHtml: String) -> Bool
+
+    func renderedTranslations(
+        from cached: ReadmeTranslation,
+        matching sourceSegments: [ReadmeSourceSegment]
+    ) -> [ReadmeRenderedTranslation]
+
+    func translate(
+        request: ReadmeTranslationRequest,
+        cached: ReadmeTranslation?,
+        onBatch: ReadmeTranslationBatchProgressHandler?
+    ) async throws -> ReadmeTranslation
+}
+
+@MainActor
+final class ReadmeTranslationService: ReadmeTranslationServiceProtocol {
 
     /// README 后续批次的固定并发上限。首批仍单独串行完成，以保证最快首屏反馈。
     nonisolated static let maxConcurrentBatchCount = 4
 
-    typealias BatchProgressHandler = @MainActor (
-        _ rendered: [ReadmeRenderedTranslation],
-        _ completedCount: Int,
-        _ totalCount: Int
-    ) -> Void
+    typealias BatchProgressHandler = ReadmeTranslationBatchProgressHandler
 
     private let translationRepository: any ReadmeTranslationRepositoryProtocol
     private let settings: AppSettings

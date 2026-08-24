@@ -1,0 +1,402 @@
+/**
+ * local-native 舞台样式 v2。
+ *
+ * 主导动作按 step 换：Mac 剪影+数据点落屏 → 数据边界板（对开 + 分流线
+ * 自绘 + 锁落位）→ BYOK 截图整卡揭开 + provider 名单逐个压上 → 大字
+ * lockup 整行揭开。颜色和字体家族只引用 token；动画 ≤ 各步口播估时。
+ */
+
+.ln-scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.ln-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.ln-kicker {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+}
+
+@keyframes ln-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── step 0：Mac 剪影 ── */
+.ln-mac-wrap {
+  position: relative;
+  width: 720px;
+  margin-top: 40px;
+}
+
+.ln-mac {
+  width: 100%;
+}
+
+.ln-mac-lid,
+.ln-mac-hinge {
+  fill: var(--surface-3);
+  stroke: var(--rule);
+  stroke-width: 1.5;
+}
+
+.ln-mac-glass {
+  fill: var(--surface);
+  stroke: var(--rule);
+  stroke-width: 1.5;
+}
+
+.ln-mac-catch {
+  fill: none;
+  stroke: none;
+}
+
+.ln-mac-cam {
+  fill: var(--text-faint);
+}
+
+.ln-mac-deck {
+  fill: var(--surface-3);
+  stroke: var(--rule);
+  stroke-width: 1.5;
+}
+
+.ln-mac-slot {
+  fill: var(--rule);
+}
+
+.ln-dots .ln-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  animation: ln-dot-drop 900ms ease forwards;
+}
+
+/* 六个落点散在屏幕区，纯装饰不对应口播清单 */
+.ln-dots .ln-dot:nth-child(1) { left: 30%; top: 34%; animation-delay: 1200ms; }
+.ln-dots .ln-dot:nth-child(2) { left: 52%; top: 28%; animation-delay: 1500ms; }
+.ln-dots .ln-dot:nth-child(3) { left: 68%; top: 44%; animation-delay: 1800ms; }
+.ln-dots .ln-dot:nth-child(4) { left: 40%; top: 56%; animation-delay: 2100ms; }
+.ln-dots .ln-dot:nth-child(5) { left: 58%; top: 62%; animation-delay: 2400ms; }
+.ln-dots .ln-dot:nth-child(6) { left: 47%; top: 46%; animation-delay: 2700ms; }
+
+@keyframes ln-dot-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-22px) scale(0.6);
+  }
+  60% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.85;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.ln-hero {
+  margin: 36px 0 14px;
+  font-size: 96px;
+  letter-spacing: -0.03em;
+  animation: ln-rise 800ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.ln-offline {
+  padding: 10px 24px;
+  border: var(--bw-1) solid var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-family: var(--font-mono);
+  font-size: 24px;
+  letter-spacing: 0.1em;
+  animation: ln-rise 700ms ease 2200ms both;
+}
+
+/* ── step 1：数据边界板 ── */
+.ln-boundary {
+  justify-content: center;
+  gap: 64px;
+}
+
+.ln-split {
+  display: grid;
+  grid-template-columns: 1fr 1px 1fr;
+  gap: 72px;
+  align-items: center;
+  width: 100%;
+  animation: ln-rise 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.ln-col {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.ln-cut {
+  align-self: stretch;
+  background: var(--rule);
+}
+
+.ln-col-hero {
+  margin: 0;
+  font-size: 88px;
+  letter-spacing: -0.03em;
+}
+
+.ln-col-cap {
+  margin: 0;
+  font-size: 26px;
+  color: var(--text-mute);
+}
+
+.ln-keep {
+  margin: 0;
+  display: flex;
+  gap: 18px;
+}
+
+.ln-keep span {
+  padding: 8px 20px;
+  border: var(--bw-1) solid var(--rule);
+  border-radius: var(--r-sm);
+  font-size: 24px;
+  color: var(--text-2);
+}
+
+.ln-sync {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  width: 980px;
+}
+
+.ln-sync-row {
+  display: grid;
+  grid-template-columns: 260px 1fr 200px;
+  align-items: center;
+  gap: 32px;
+}
+
+.ln-sync-src {
+  font-family: var(--font-display-cn);
+  font-size: 30px;
+  color: var(--text);
+  text-align: right;
+}
+
+.ln-sync-line {
+  width: 100%;
+  height: 24px;
+}
+
+.ln-sync-draw,
+.ln-sync-halt {
+  stroke-width: 3;
+  stroke-dasharray: 320;
+  stroke-dashoffset: 320;
+}
+
+.ln-sync-ok .ln-sync-draw {
+  stroke: var(--text-2);
+  animation: ln-wire 1s ease-out 1400ms forwards;
+}
+
+.ln-sync-block .ln-sync-halt {
+  stroke: var(--text-mute);
+  animation: ln-wire-halt 700ms ease 2300ms forwards;
+}
+
+@keyframes ln-wire {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes ln-wire-halt {
+  to {
+    stroke-dashoffset: 152; /* 只画到 168/320 处，被 X 截停 */
+  }
+}
+
+.ln-sync-x-a,
+.ln-sync-x-b {
+  stroke: var(--accent);
+  stroke-width: 4;
+  stroke-linecap: round;
+  opacity: 0;
+}
+
+.ln-sync-block .ln-sync-x-a {
+  animation: ln-x-in 300ms ease 3000ms forwards;
+}
+
+.ln-sync-block .ln-sync-x-b {
+  animation: ln-x-in 300ms ease 3100ms forwards;
+}
+
+@keyframes ln-x-in {
+  to {
+    opacity: 1;
+  }
+}
+
+.ln-sync-dst {
+  font-size: 28px;
+  color: var(--text-2);
+}
+
+.ln-lock {
+  width: 52px;
+  height: 70px;
+  justify-self: center;
+}
+
+.ln-lock-shackle {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 5;
+  stroke-dasharray: 130;
+  stroke-dashoffset: 130;
+  animation: ln-shackle 500ms ease 3600ms forwards;
+}
+
+@keyframes ln-shackle {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.ln-lock-body {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+  stroke-width: 4;
+  opacity: 0;
+  animation: ln-rise 400ms ease 3800ms forwards;
+}
+
+.ln-lock-hole {
+  fill: var(--accent);
+  opacity: 0;
+  animation: ln-rise 400ms ease 3950ms forwards;
+}
+
+.ln-sync-key .ln-sync-src {
+  animation-delay: 3400ms;
+}
+
+.ln-sync-key .ln-sync-dst {
+  animation: ln-rise 600ms ease 4100ms both;
+}
+
+.ln-boundary .ln-split,
+.ln-sync-row > * {
+  min-width: 0;
+}
+
+/* ── step 2：BYOK 截图主角 ── */
+.ln-byok-line {
+  display: flex;
+  align-items: baseline;
+  gap: 28px;
+  margin-bottom: 30px;
+}
+
+.ln-byok-title {
+  font-size: 84px;
+  line-height: 1;
+  color: var(--text);
+  animation: ln-rise 800ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.ln-byok-sub {
+  font-family: var(--font-display-cn);
+  font-size: 32px;
+  color: var(--text-2);
+  animation: ln-rise 700ms ease 600ms both;
+}
+
+.ln-shot {
+  margin: 0;
+  overflow: hidden;
+  border: var(--bw-1) solid var(--rule);
+  border-radius: var(--r-card);
+  box-shadow: 0 40px 120px rgba(0, 0, 0, 0.5);
+  clip-path: inset(5% 3% 5% 3%);
+  animation: ln-shot-open 1.3s cubic-bezier(0.16, 1, 0.3, 1) 250ms forwards;
+}
+
+@keyframes ln-shot-open {
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.ln-shot-img {
+  display: block;
+  width: 1280px;
+  height: 660px;
+  object-fit: cover;
+  object-position: top center;
+}
+
+.ln-providers {
+  display: flex;
+  gap: 18px;
+  z-index: 1;
+  margin-top: -38px;
+}
+
+.ln-provider {
+  padding: 14px 26px;
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--rule);
+  border-radius: var(--r-sm);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+  font-family: var(--font-mono);
+  font-size: 24px;
+  color: var(--text-2);
+  animation: ln-rise 550ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ── step 3：大字收束 ── */
+.ln-lockup {
+  margin: 0;
+  font-size: 132px;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  clip-path: inset(0 100% 0 0);
+  animation: ln-lockup-wipe 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.ln-lockup-slash {
+  color: var(--accent);
+  padding: 0 24px;
+}
+
+@keyframes ln-lockup-wipe {
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}

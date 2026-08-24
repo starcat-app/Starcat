@@ -20,7 +20,7 @@ import Testing
 struct ExploreDiscoveryViewModelTests {
 
     @Test("ExploreMode: Weekly identity / title / discovery normalization")
-    func exploreModeWeeklyIdentity() {
+    func exploreModeWeeklyIdentity() throws {
         #expect(ExploreMode(rawValue: "weekly") == .weekly)
         #expect(ExploreMode.weekly.id == "weekly")
         #expect(ExploreMode.weekly.localizedTitle == String.l10n("explore.mode.weekly"))
@@ -28,6 +28,10 @@ struct ExploreDiscoveryViewModelTests {
         #expect(ExploreMode.weekly.usesDiscoveryAPI == false)
         #expect(ExploreMode.weekly.discoveryListMode == nil)
         #expect(ExploreMode.allCases.contains(.weekly))
+        let weeklyIndex = try #require(ExploreMode.allCases.firstIndex(of: .weekly))
+        let awesomeIndex = try #require(ExploreMode.allCases.firstIndex(of: .awesome))
+        #expect(awesomeIndex == ExploreMode.allCases.index(after: weeklyIndex))
+        #expect(ExploreMode.awesome.usesDiscoveryAPI == false)
     }
 
     @Test("探索导航统一展示三级筛选")

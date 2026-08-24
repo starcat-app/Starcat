@@ -17,13 +17,19 @@ Release notes for the Mac App Store edition of Starcat.
 - Paste images in comments: Paste a screenshot or image into an Issue / PR comment to upload it and insert the link; Preview shows the image.
 
 - Issue labels: Opening posts show the title and all labels, wrapping as needed; empty bodies show “No description.”
+- Issue event timeline: Turn on Show issue events in Settings to insert label changes, closes, commit references, and related PRs between comments. Comments only by default.
 
 ### Improvements
 
 - Timeline empty detail: An illustration prompts you to pick an event in the middle column.
+- Issue event cache: Reopening an Issue after quitting still reads comments and events locally first. Clear it in Settings → Storage.
+- Issue comment drafts: Unsent handwritten or AI replies stay with each thread after you switch Issues or quit. Clear them in Settings → Storage.
 
 ### Fixes
 
+- README translation on repo change: Switching repositories during translation no longer writes the previous README’s translation into the current detail view.
+- Event-timeline translation: Opening posts and every comment get side-by-side translations; event rows stay original.
+- Comment box on thread change: Switching Issues collapses the AI reply box and stops generation so drafts do not carry over.
 - Timeline library toggle: Adding a repository to the library updates the badge only, keeping the current item and its detail open.
 
 - Repository community signals: Correctly recognizes directory-based GitHub Issue Forms instead of showing them as missing.

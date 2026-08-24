@@ -239,6 +239,14 @@ final class AppDependencies {
     /// 当前“趋势”仍使用 `trendingRepository`，不从 discovery 新趋势候选切换数据源。
     let discoveryRepository: any DiscoveryRepositoryProtocol
 
+    /// Awesome 精选目录、账户订阅、自定义来源和来源证据的本地优先仓储。
+    /// 与普通 Discovery bulk 分开，避免用户按需订阅的长清单进入全量探索缓存。
+    let awesomeRepository: any AwesomeRepositoryProtocol
+    /// 自定义来源只使用当前账户 GitHub token 在本机核验与解析，结果不上传 Discovery。
+    let awesomeCustomSourceService: AwesomeCustomSourceService
+    /// Awesome 三栏与来源管理 Sheet 的共享会话状态。
+    let awesomeStore: AwesomeStore
+
     /// 第三方后端服务健康检查 actor（2026-06-08）。
     /// 设置页"测试连接"按钮 → `await serviceHealthChecker.check(service:baseURL:)`。
     /// 独立 actor + 短超时（5s），不复用业务 API session。
@@ -1323,6 +1331,17 @@ final class AppDependencies {
         let discoveryRepo = DiscoveryRepository(api: discoveryAPIInstance, database: db)
         self.discoveryRepository = discoveryRepo
         self.exploreCatalogStore = ExploreCatalogStore(repository: discoveryRepo)
+        let awesomeRepository = AwesomeRepository(api: discoveryAPIInstance, database: db)
+        self.awesomeRepository = awesomeRepository
+        let awesomeCustomSourceService = AwesomeCustomSourceService(
+            github: api,
+            repository: awesomeRepository
+        )
+        self.awesomeCustomSourceService = awesomeCustomSourceService
+        self.awesomeStore = AwesomeStore(
+            repository: awesomeRepository,
+            customSourceService: awesomeCustomSourceService
+        )
 
         // MUL-176：Weekly 多来源 API 客户端。端点走 `AppEndpoints.Weekly.baseURL`。
         // 用户在设置页改地址 → AppDependencies.setServiceURL 推送到本 actor 的
@@ -1677,6 +1696,12 @@ final class AppDependencies {
                 state: userId == nil ? .signedOut : .preparing
             )
             self.ragComposerDraftStore.removeAll()
+            do { try DiskNotificationCommentDraftCache.shared.deleteEverything() }
+            catch {
+                AppLog.general.warning(
+                    "Sign-out: issue comment draft cleanup failed: \(error.localizedDescription, privacy: .public)"
+                )
+            }
             // 摘要 session 是进程内、按当前用户数据库构建的状态。先取消并清空，
             // 避免旧用户尚未完成的生成在切库后继续写入或显示给新用户。
             await self.repoAIInsightSessionStore.removeAll()
@@ -1844,6 +1869,9 @@ final class AppDependencies {
 
         do { try DiskWikiCache.shared.deleteEverything() }
         catch { AppLog.general.warning("Factory reset: Wiki cache cleanup failed: \(error.localizedDescription, privacy: .public)") }
+
+        do { try DiskNotificationCommentDraftCache.shared.deleteEverything() }
+        catch { AppLog.general.warning("Factory reset: issue comment draft cleanup failed: \(error.localizedDescription, privacy: .public)") }
 
         do { try DiskRecommendationCache.shared.deleteEverything() }
         catch { AppLog.general.warning("Factory reset: Recommendation cache cleanup failed: \(error.localizedDescription, privacy: .public)") }

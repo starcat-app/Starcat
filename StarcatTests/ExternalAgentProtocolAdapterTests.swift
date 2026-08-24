@@ -288,6 +288,7 @@ struct ExternalAgentProtocolAdapterTests {
 
         [model_providers.local]
         name = "Local Models"
+        base_url = "http://127.0.0.1:3737/bridge/local/v1"
 
         [model_providers.local.http_headers]
         X-Client = "Starcat"
@@ -297,11 +298,32 @@ struct ExternalAgentProtocolAdapterTests {
         #expect(catalog.providers.map(\.id) == ["gateway", "openai", "local"])
         #expect(catalog.providers.map(\.displayName) == ["Team Gateway", "OpenAI", "Local Models"])
         #expect(catalog.providers.first?.credentialEnvironmentKey == "TEAM_API_KEY")
-        #expect(catalog.providers.last?.isSelectable == true)
+        #expect(catalog.providers.first?.requiresEndpointProbe == false)
+        #expect(catalog.providers.last?.baseURL?.absoluteString == "http://127.0.0.1:3737/bridge/local/v1")
+        #expect(catalog.providers.last?.requiresEndpointProbe == true)
         #expect(catalog.resolvedProviderID(preferredProviderID: "removed") == "gateway")
         #expect(CodexRuntimeProcessArguments.appServer(providerID: "local").suffix(2) == [
             "-c", "model_provider=\"local\"",
         ])
+    }
+
+    @Test("Codex 本机 Provider 只在桥接端点可连接时可用")
+    func codexProviderEndpointProbeRejectsOfflineBridge() async throws {
+        let provider = try #require(CodexProviderCatalog.parse("""
+        model_provider = "local"
+        [model_providers.local]
+        base_url = "http://localhost:3737/bridge/local/v1"
+        """).providers.first)
+
+        let offlineProbe = CodexProviderEndpointProbe { _ in
+            throw URLError(.cannotConnectToHost)
+        }
+        #expect(await offlineProbe.isAvailable(provider) == false)
+
+        let onlineProbe = CodexProviderEndpointProbe { request in
+            #expect(request.httpMethod == "HEAD")
+        }
+        #expect(await onlineProbe.isAvailable(provider) == true)
     }
 
     @Test("DeepSeek Runtime 目录复用 Starcat 已验证的 Chat Provider")
@@ -343,6 +365,44 @@ struct ExternalAgentProtocolAdapterTests {
         #expect(DeepSeekRuntimeProviderCatalog.providers(settings: settings).map(\.id) == ["verified"])
     }
 
+    @Test("DeepSeek V4 Runtime 默认使用官方 1M 上下文并保留用户覆盖")
+    @MainActor
+    func deepSeekV4ProviderCatalogUsesMillionTokenContext() throws {
+        let suiteName = "ExternalAgentProtocolAdapterTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = AppSettings(defaults: defaults, keychain: InMemoryKeychain())
+        var customParameters = AIModelParameters.defaults(for: .chat)
+        customParameters.contextWindowTokens = 512_000
+        settings.aiProviderProfiles = [
+            AIProviderProfile(
+                id: "deepseek",
+                provider: .deepSeek,
+                models: [
+                    AIModelDescriptor(
+                        providerID: "deepseek",
+                        name: "deepseek-v4-pro",
+                        capability: .chat
+                    ),
+                    AIModelDescriptor(
+                        providerID: "deepseek",
+                        name: "deepseek-v4-flash",
+                        capability: .chat,
+                        parameters: customParameters
+                    ),
+                ],
+                lastTestStatus: .success(modelCount: 2)
+            ),
+        ]
+
+        let provider = try #require(DeepSeekRuntimeProviderCatalog.providers(settings: settings).first)
+        let pro = try #require(provider.models.first { $0.name == "deepseek-v4-pro" })
+        let flash = try #require(provider.models.first { $0.name == "deepseek-v4-flash" })
+        #expect(pro.contextWindow == 1_000_000)
+        #expect(pro.maxTokens == AIModelParameters.defaults(for: .chat).maxCompletionTokens)
+        #expect(flash.contextWindow == 512_000)
+    }
+
     @Test("DeepSeek 每轮 Cordis 配置挂载多 Provider adapter 且不写入凭据")
     func deepSeekRunCordisInjectsSelectedProvider() throws {
         let directory = FileManager.default.temporaryDirectory
@@ -363,7 +423,7 @@ struct ExternalAgentProtocolAdapterTests {
             model: DeepSeekRuntimeModelOption(
                 id: "model",
                 name: "deepseek-reasoner",
-                contextWindow: 64_000,
+                contextWindow: 1_000_000,
                 maxTokens: 8_000,
                 supportedReasoningEfforts: ["off", "high"]
             ),
@@ -384,6 +444,118 @@ struct ExternalAgentProtocolAdapterTests {
         #expect(config.contains("reasoning: high"))
         #expect(config.contains("thinkingFormat: deepseek"))
         #expect(!config.contains("fixture-secret"))
+        let lines = config.components(separatedBy: .newlines)
+        #expect(lines.contains("      starcat-provider:"))
+        #expect(lines.contains("        displayName: 'Team''s Gateway'"))
+        #expect(lines.contains("        reasoning: high"))
+        #expect(lines.contains("        compat:"))
+        #expect(lines.contains("          thinkingFormat: deepseek"))
+        #expect(lines.contains("        models:"))
+        #expect(lines.contains("          - id: 'deepseek-reasoner'"))
+        #expect(lines.contains("            contextWindow: 1000000"))
+        #expect(lines.contains("            maxTokens: 8000"))
+        #expect(lines.contains("            reasoningEfforts:"))
+        #expect(lines.contains("              off:"))
+        #expect(lines.contains("              high: high"))
+        #expect(!config.contains("                compat:"))
+    }
+
+    @Test("External Runtime 失败重试创建全新只读 Run")
+    @MainActor
+    func externalRuntimeRetryStartsFreshRun() async throws {
+        let definition = AgentDefinition(
+            id: "external-retry-test",
+            title: "External Retry Test",
+            subtitle: "",
+            systemImage: "terminal",
+            capabilityLabels: [],
+            defaultPrompt: "",
+            isEnabled: true,
+            runtimePolicy: .externalPOC
+        )
+        let failedRunID = UUID()
+        let timestamp = ISO8601DateFormatter.shared.string(from: Date(timeIntervalSince1970: 1_788_000_000))
+        let snapshot = AgentRunSnapshotRecord(
+            run: AgentRunRecord(
+                id: failedRunID.uuidString,
+                agentId: definition.id,
+                title: definition.title,
+                userPrompt: "retry original prompt",
+                contextSource: "Unit",
+                contextJSON: "{}",
+                status: AgentRunStatus.failed.rawValue,
+                model: "fixture-model",
+                usageJSON: nil,
+                errorMessage: "fixture failure",
+                createdAt: timestamp,
+                updatedAt: timestamp,
+                finishedAt: timestamp
+            ),
+            context: AgentRunContext(sourceDescription: "Frozen Retry Context"),
+            messages: [],
+            approvals: [],
+            artifacts: []
+        )
+        let recorder = ExternalRetryRequestRecorder()
+        let runtime = ExternalAgentRuntime(
+            adapter: ExternalRetryFixtureAdapter(recorder: recorder),
+            distributionGate: DistributionGate(channel: .direct)
+        )
+
+        var events: [AgentRunEvent] = []
+        for await event in runtime.retryFailedRun(snapshot: snapshot, definition: definition) {
+            events.append(event)
+        }
+
+        let request = try #require(recorder.latestRequest)
+        #expect(request.runID != failedRunID)
+        #expect(request.prompt.contains("retry original prompt"))
+        #expect(events.contains { if case .runStarted = $0 { return true }; return false })
+        #expect(events.contains { if case .runCompleted = $0 { return true }; return false })
+        #expect(!events.contains { if case .runFailed = $0 { return true }; return false })
+    }
+
+    @Test("DeepSeek adapter 在启动 carrier 前拒绝旧版 LLM Cordis 插件")
+    func deepSeekRejectsLegacyLLMPluginBeforeProcessLaunch() throws {
+        #if arch(arm64)
+        let fixture = try DeepSeekCarrierFixture()
+        defer { fixture.cleanup() }
+        try Data("- id: legacy-llm\n  name: '@deepseek-ai/dsh-llm-deepseek'\n".utf8)
+            .write(to: fixture.configURL)
+        let selection = DeepSeekRuntimeSelection(
+            provider: DeepSeekRuntimeProviderOption(
+                id: "profile",
+                displayName: "DeepSeek",
+                provider: .deepSeek,
+                baseURL: "https://api.deepseek.com",
+                models: []
+            ),
+            model: DeepSeekRuntimeModelOption(
+                id: "deepseek-chat",
+                name: "deepseek-chat",
+                contextWindow: 64_000,
+                maxTokens: 8_000,
+                supportedReasoningEfforts: []
+            ),
+            reasoningEffort: nil
+        )
+
+        #expect(throws: ExternalAgentRuntimeError.protocolError(
+            "DeepSeek Harness Cordis config contains a legacy LLM plugin. "
+                + "Run scripts/install-deepseek-harness-runtime.sh to refresh the Starcat config."
+        )) {
+            _ = try DeepSeekHarnessAdapter(
+                executableURL: fixture.executableURL,
+                provider: DeepSeekHarnessRuntime.defaultProvider,
+                modelOverride: selection.model.name,
+                cordisConfigURL: fixture.configURL,
+                environment: [:],
+                routeConfiguration: selection
+            )
+        }
+        #else
+        #expect(Bool(true))
+        #endif
     }
 
     @Test("Codex 模型目录 Driver 完成 initialize 与 model/list 握手")
@@ -509,6 +681,24 @@ struct ExternalAgentProtocolAdapterTests {
         let configPath = try #require(environment["STARCAT_DEEPSEEK_CORDIS_PATH"])
         let apiKey = try #require(environment["DEEPSEEK_API_KEY"])
         #expect(!apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        let modelName = environment["STARCAT_DEEPSEEK_MODEL"] ?? DeepSeekHarnessRuntime.defaultModel
+        let routeSelection = DeepSeekRuntimeSelection(
+            provider: DeepSeekRuntimeProviderOption(
+                id: "integration-deepseek",
+                displayName: "DeepSeek Integration",
+                provider: .deepSeek,
+                baseURL: environment["DEEPSEEK_BASE_URL"] ?? "https://api.deepseek.com",
+                models: []
+            ),
+            model: DeepSeekRuntimeModelOption(
+                id: modelName,
+                name: modelName,
+                contextWindow: 128_000,
+                maxTokens: 16_384,
+                supportedReasoningEfforts: []
+            ),
+            reasoningEffort: nil
+        )
 
         let workingDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("starcat-deepseek-mcp-smoke-\(UUID().uuidString)", isDirectory: true)
@@ -540,7 +730,7 @@ struct ExternalAgentProtocolAdapterTests {
         let request = ExternalAgentRunRequest(
             runID: UUID(),
             prompt: "Use the Starcat repository search tool with limit 1. Reply with STARCAT_MCP_SMOKE_OK and the returned repository full_name.",
-            modelName: environment["STARCAT_DEEPSEEK_MODEL"] ?? DeepSeekHarnessRuntime.defaultModel,
+            modelName: modelName,
             reasoningEffort: nil,
             workingDirectory: workingDirectory,
             tools: [],
@@ -555,9 +745,15 @@ struct ExternalAgentProtocolAdapterTests {
             modelOverride: request.modelName,
             cordisConfigURL: URL(fileURLWithPath: configPath),
             environment: ExternalAgentProcessEnvironment.filtered(
-                source: environment,
-                allowedCredentialKeys: ["DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL"]
-            )
+                source: environment.merging([
+                    DeepSeekRuntimeSelection.credentialEnvironmentKey: apiKey,
+                ]) { _, injected in injected },
+                allowedCredentialKeys: [
+                    "DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL",
+                    DeepSeekRuntimeSelection.credentialEnvironmentKey,
+                ]
+            ),
+            routeConfiguration: routeSelection
         )
         let collector = CodexIntegrationEventCollector()
 
@@ -1457,6 +1653,58 @@ private actor CodexIntegrationEventCollector {
     func append(_ event: ExternalAgentProtocolEvent) {
         events.append(event)
     }
+}
+
+private final class ExternalRetryRequestRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var request: ExternalAgentRunRequest?
+
+    var latestRequest: ExternalAgentRunRequest? {
+        lock.withLock { request }
+    }
+
+    func record(_ request: ExternalAgentRunRequest) {
+        lock.withLock { self.request = request }
+    }
+}
+
+private struct ExternalRetryFixtureAdapter: ExternalAgentProtocolAdapter {
+    let backend = AgentRuntimeBackend.deepSeekHarness
+    let capabilities = AgentRuntimeCapabilities.deepSeekHarnessPOC
+    let recorder: ExternalRetryRequestRecorder
+
+    func makeDriver(request: ExternalAgentRunRequest) throws -> any ExternalAgentProtocolDriver {
+        recorder.record(request)
+        return ExternalRetryFixtureDriver()
+    }
+}
+
+private final class ExternalRetryFixtureDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
+    let backend = AgentRuntimeBackend.deepSeekHarness
+    let capabilities = AgentRuntimeCapabilities.deepSeekHarnessPOC
+    let processConfiguration = ExternalAgentProcessConfiguration(
+        executableURL: URL(fileURLWithPath: "/bin/sh"),
+        arguments: [
+            "-c",
+            "read first; printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"method\":\"fixture/completed\"}'",
+        ],
+        environment: ExternalAgentProcessEnvironment.filtered(),
+        currentDirectoryURL: FileManager.default.temporaryDirectory
+    )
+
+    func initialFrames() throws -> [AgentJSONValue] {
+        [.jsonRPCRequest(id: 1, method: "fixture/start")]
+    }
+
+    func receive(_ frame: AgentJSONValue) throws -> ExternalAgentProtocolOutput {
+        guard frame[external: "method"]?.stringValue == "fixture/completed" else {
+            return ExternalAgentProtocolOutput()
+        }
+        return ExternalAgentProtocolOutput(events: [.completed], isTerminal: true)
+    }
+
+    func cancellationFrame() -> AgentJSONValue? { nil }
+    func shutdownFrame() -> AgentJSONValue? { nil }
 }
 
 private struct DeepSeekCarrierFixture {

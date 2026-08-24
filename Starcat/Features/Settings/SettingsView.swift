@@ -1271,6 +1271,7 @@ private struct StorageSettingsTab: View {
     @Environment(AppSettings.self) private var settings
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
+    @Environment(\.locale) private var locale
 
     let readmeRepository: ReadmeRepository
 
@@ -1312,6 +1313,7 @@ private struct StorageSettingsTab: View {
 
     /// Issue / PR 事件流磁盘缓存：按 owner/repo/number 落盘。
     @State private var issueTimelineCache = DiskIssueTimelineCache.shared
+    @State private var issueCommentDraftCache = DiskNotificationCommentDraftCache.shared
 
     /// 推荐结果磁盘缓存（2026-06-29，与 wiki 同款形态）：按 repoID 落盘，
     /// TTL 7d（有 items）/ 1h（空）。详情页 `RecommendationContextService` 读取 + 写盘。
@@ -1325,7 +1327,7 @@ private struct StorageSettingsTab: View {
     /// 单项缓存使用系统 alert 二次确认，保持 macOS 标准标题 / 正文层级；
     /// "删除全部缓存"已经升级为危险区 sheet，但保留 `.all` 作为执行分支，避免复制清理代码。
     private enum PendingAction: Identifiable {
-        case readme, image, archive, translation, anySearch, wiki, issueTimeline, recommendation, chatHistory
+        case readme, image, archive, translation, anySearch, wiki, issueTimeline, issueCommentDraft, recommendation, chatHistory
         case ragIndex, ragHistory, aiContext, codeFlow, codebaseMemory, all
         var id: String {
             switch self {
@@ -1336,6 +1338,7 @@ private struct StorageSettingsTab: View {
             case .anySearch:    return "anySearch"
             case .wiki:         return "wiki"
             case .issueTimeline: return "issueTimeline"
+            case .issueCommentDraft: return "issueCommentDraft"
             case .recommendation: return "recommendation"
             case .chatHistory:  return "chatHistory"
             case .ragIndex:     return "ragIndex"
@@ -1346,7 +1349,7 @@ private struct StorageSettingsTab: View {
             case .all:          return "all"
             }
         }
-        var confirmTitle: String {
+        func confirmTitle(locale: Locale) -> String {
             switch self {
             case .readme:       return String.l10n("settings.storage.clearReadme.confirm")
             case .image:        return String.l10n("settings.storage.clearImage.confirm")
@@ -1355,6 +1358,7 @@ private struct StorageSettingsTab: View {
             case .anySearch:    return String.l10n("settings.storage.clearAnySearch.confirm")
             case .wiki:         return String.l10n("settings.storage.clearWiki.confirm")
             case .issueTimeline: return String.l10n("settings.storage.clearIssueTimeline.confirm")
+            case .issueCommentDraft: return String.l10n("settings.storage.clearIssueCommentDraft.confirm")
             case .recommendation: return String.l10n("settings.storage.clearRecommendation.confirm")
             case .chatHistory:  return String.l10n("settings.storage.clearChatHistory.confirm")
             case .ragIndex:     return String.l10n("settings.storage.clearRAGIndex.confirm")
@@ -1365,23 +1369,24 @@ private struct StorageSettingsTab: View {
             case .all:          return String.l10n("settings.storage.clearAll.confirm")
             }
         }
-        var confirmMessageKey: LocalizedStringKey {
+        func confirmMessage(locale: Locale) -> String {
             switch self {
-            case .readme:       return "settings.storage.clearReadme.message"
-            case .image:        return "settings.storage.clearImage.message"
-            case .archive:      return "settings.storage.clearArchive.message"
-            case .translation:  return "settings.storage.clearTranslation.message"
-            case .anySearch:    return "settings.storage.clearAnySearch.message"
-            case .wiki:         return "settings.storage.clearWiki.message"
-            case .issueTimeline: return "settings.storage.clearIssueTimeline.message"
-            case .recommendation: return "settings.storage.clearRecommendation.message"
-            case .chatHistory:  return "settings.storage.clearChatHistory.message"
-            case .ragIndex:     return "settings.storage.clearRAGIndex.message"
-            case .ragHistory:   return "settings.storage.clearRAGHistory.message"
-            case .aiContext:    return "settings.storage.clearAiContext.message"
-            case .codeFlow:     return "settings.storage.clearCodeFlow.message"
-            case .codebaseMemory: return "settings.storage.clearCodebaseMemory.message"
-            case .all:          return "settings.storage.clearAll.message"
+            case .readme:       return String.l10n("settings.storage.clearReadme.message")
+            case .image:        return String.l10n("settings.storage.clearImage.message")
+            case .archive:      return String.l10n("settings.storage.clearArchive.message")
+            case .translation:  return String.l10n("settings.storage.clearTranslation.message")
+            case .anySearch:    return String.l10n("settings.storage.clearAnySearch.message")
+            case .wiki:         return String.l10n("settings.storage.clearWiki.message")
+            case .issueTimeline: return String.l10n("settings.storage.clearIssueTimeline.message")
+            case .issueCommentDraft: return String.l10n("settings.storage.clearIssueCommentDraft.message")
+            case .recommendation: return String.l10n("settings.storage.clearRecommendation.message")
+            case .chatHistory:  return String.l10n("settings.storage.clearChatHistory.message")
+            case .ragIndex:     return String.l10n("settings.storage.clearRAGIndex.message")
+            case .ragHistory:   return String.l10n("settings.storage.clearRAGHistory.message")
+            case .aiContext:    return String.l10n("settings.storage.clearAiContext.message")
+            case .codeFlow:     return String.l10n("settings.storage.clearCodeFlow.message")
+            case .codebaseMemory: return String.l10n("settings.storage.clearCodebaseMemory.message")
+            case .all:          return String.l10n("settings.storage.clearAll.message")
             }
         }
     }
@@ -1394,6 +1399,7 @@ private struct StorageSettingsTab: View {
             && externalSearchCache.itemCount == 0
             && wikiCache.itemCount == 0
             && issueTimelineCache.itemCount == 0
+            && issueCommentDraftCache.itemCount == 0
             && recommendationCache.itemCount == 0
             && chatHistoryStore.sessionCount == 0
             && ragIndexBytes == 0
@@ -1551,6 +1557,14 @@ private struct StorageSettingsTab: View {
                     revealItem: .issueTimeline
                 )
                 usageRow(
+                    titleKey: "settings.storage.issueCommentDraft",
+                    usageText: issueCommentDraftUsageText,
+                    isEmpty: issueCommentDraftCache.itemCount == 0,
+                    action: .issueCommentDraft,
+                    helpKey: "settings.storage.issueCommentDraft.help",
+                    revealItem: .issueCommentDraft
+                )
+                usageRow(
                     titleKey: "settings.storage.recommendation",
                     usageText: recommendationUsageText,
                     isEmpty: recommendationCache.itemCount == 0,
@@ -1693,11 +1707,12 @@ private struct StorageSettingsTab: View {
             translationCache.reload()
             externalSearchCache.reload()
             issueTimelineCache.reload()
+            issueCommentDraftCache.reload()
             chatHistoryStore.reload()
             await refreshRAGStorageStatistics()
         }
         .alert(
-            pendingAction?.confirmTitle ?? "",
+            pendingAction?.confirmTitle(locale: locale) ?? "",
             isPresented: Binding(
                 get: { pendingAction != nil },
                 set: { if !$0 { pendingAction = nil } }
@@ -1709,7 +1724,7 @@ private struct StorageSettingsTab: View {
             }
             Button("general.cancel", role: .cancel) { pendingAction = nil }
         } message: { action in
-            Text(action.confirmMessageKey)
+            Text(verbatim: action.confirmMessage(locale: locale))
         }
         .alert(
             "settings.storage.actionFailed",
@@ -1886,6 +1901,9 @@ private struct StorageSettingsTab: View {
         case .issueTimeline:
             do { try issueTimelineCache.deleteEverything() }
             catch { storageActionError = error.localizedDescription }
+        case .issueCommentDraft:
+            do { try issueCommentDraftCache.deleteEverything() }
+            catch { storageActionError = error.localizedDescription }
         case .recommendation:
             do { try recommendationCache.deleteEverything() }
             catch { storageActionError = error.localizedDescription }
@@ -1923,6 +1941,10 @@ private struct StorageSettingsTab: View {
                 if storageActionError == nil { storageActionError = error.localizedDescription }
             }
             do { try issueTimelineCache.deleteEverything() }
+            catch {
+                if storageActionError == nil { storageActionError = error.localizedDescription }
+            }
+            do { try issueCommentDraftCache.deleteEverything() }
             catch {
                 if storageActionError == nil { storageActionError = error.localizedDescription }
             }
@@ -1992,6 +2014,7 @@ private struct StorageSettingsTab: View {
             externalSearchCache.reload()
             wikiCache.reload()
             issueTimelineCache.reload()
+            issueCommentDraftCache.reload()
             recommendationCache.reload()
             chatHistoryStore.reload()
             aiContextStorage.reload()
@@ -2115,6 +2138,17 @@ private struct StorageSettingsTab: View {
             format: String.l10n("settings.storage.translationUsageFormat"),
             issueTimelineCache.itemCount,
             issueTimelineCache.totalBytes.formattedByteSize
+        )
+    }
+
+    private var issueCommentDraftUsageText: String {
+        if issueCommentDraftCache.itemCount == 0 {
+            return String.l10n("settings.storage.translation.empty")
+        }
+        return String(
+            format: String.l10n("settings.storage.translationUsageFormat"),
+            issueCommentDraftCache.itemCount,
+            issueCommentDraftCache.totalBytes.formattedByteSize
         )
     }
 

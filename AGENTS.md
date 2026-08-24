@@ -397,7 +397,7 @@ Section {
 ### 国际化规范（i18n，强制）
 
 > 单一信任源：[`docs/5-规范/国际化-规范.md`](docs/5-规范/国际化-规范.md) + [`docs/5-规范/i18n-军规.md`](docs/5-规范/i18n-军规.md)
-> 关键 7 条：`String.l10n` / `Text("key")` / `.appLocaleEnvironment()` / locale 注入 / `Localizable.xcstrings` 命名 `{section}.{subsection}.{component}` / 目录编辑必须保持 `"key" : value` 并禁止整文件格式化 / **禁止脚本读写 Catalog，只允许相邻 key 关键词局部匹配；diff 出现上万行删除必须停手，禁止抢救脚本**。
+> 关键 7 条：`String.l10n` / `Text("key")` / `.appLocaleEnvironment()` / locale 注入 / `Localizable.xcstrings` 命名 `{section}.{subsection}.{component}` / 目录编辑必须保持 `"key" : value` 并禁止整文件格式化 / **Catalog 禁止 StrReplace/ApplyPatch 与 JSON 重排写回；只允许 Xcode 或经验证的按行插入（diff 只能新增）**。
 > 自检：提交前 `rg "String\(localized:"` 与 `rg "NSLocalizedString"` 应只命中注释。
 
 ### 问题处理

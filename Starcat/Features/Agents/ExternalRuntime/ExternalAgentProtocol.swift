@@ -244,6 +244,7 @@ enum ExternalAgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
     case invalidFrame
     case protocolError(String)
     case processExited(Int32, String?)
+    case mcpStartupFailed(Int32, String?)
     case firstOutputTimedOut(String?)
     case protocolActivityTimedOut(String?)
     case processClosedBeforeCompletion(String?)
@@ -268,6 +269,10 @@ enum ExternalAgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
             let message = "External Agent Runtime exited with status \(status)."
             guard let diagnostic, !diagnostic.isEmpty else { return message }
             return "\(message) \(diagnostic)"
+        case .mcpStartupFailed(let status, let diagnostic):
+            let message = "DeepSeek Harness could not initialize the Starcat MCP bridge (status \(status))."
+            guard let diagnostic, !diagnostic.isEmpty else { return message }
+            return "\(message) \(diagnostic)"
         case .firstOutputTimedOut(let diagnostic):
             let message = "External Agent Runtime did not produce an assistant or tool event before startup timed out."
             guard let diagnostic, !diagnostic.isEmpty else { return message }
@@ -281,6 +286,13 @@ enum ExternalAgentRuntimeError: Error, LocalizedError, Equatable, Sendable {
             guard let diagnostic, !diagnostic.isEmpty else { return message }
             return "\(message) \(diagnostic)"
         }
+    }
+
+    /// 仅标识“进程尚未进入 turn，MCP client 初始化失败”这一可安全重试的错误。
+    /// Provider 鉴权、模型请求或 turn 中途失败不能复用该策略，否则会重复用户请求。
+    var isMCPStartupFailure: Bool {
+        if case .mcpStartupFailed = self { return true }
+        return false
     }
 }
 

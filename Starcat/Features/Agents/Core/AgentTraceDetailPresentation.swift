@@ -77,9 +77,17 @@ enum AgentTraceTitlePresentation {
         "tag_inspect_untagged": "agent.workspace.trace.tool.inspectUntagged",
         "tag_preview_untagged": "agent.workspace.trace.tool.previewUntagged",
         "tag_apply_untagged": "agent.workspace.trace.tool.applyUntagged",
+        "starcat.search_repos": "agent.workspace.trace.tool.searchRepositories",
+        "starcat.get_readme": "agent.workspace.trace.tool.readReadme",
+        "starcat.get_repo_summary": "agent.workspace.trace.tool.readRepositorySummary",
     ]
 
     static func title(for event: AgentTraceEvent) -> String {
+        if event.backend == .deepSeekHarness,
+           let providerEventID = event.providerEventID,
+           let hierarchyTitle = deepSeekHierarchyTitle(providerEventID) {
+            return hierarchyTitle
+        }
         // 固定类别按当前 App 语言即时解析，避免历史 Trace 把生成时的英文标题永久写死。
         switch event.kind {
         case .message:
@@ -106,21 +114,279 @@ enum AgentTraceTitlePresentation {
             break
         }
 
-        guard event.kind == .tool, let key = toolTitleKeys[event.title] else {
+        guard event.kind == .tool else {
             return event.title
         }
+        let normalizedTitle = normalizedToolName(event.title)
+        guard let key = toolTitleKeys[normalizedTitle] else { return normalizedTitle }
         return String.l10n(key)
+    }
+
+    /// turn/end 会用 warning/error 覆盖 turn/start 的 kind，但 providerEventID 始终稳定。
+    /// 因此层级标题必须从 ID 恢复，不能让“轮次 1”在终态突然变成泛化的“警告”。
+    private static func deepSeekHierarchyTitle(_ providerEventID: String) -> String? {
+        let components = providerEventID.split(separator: ":")
+        guard components.first == "turn",
+              components.count >= 2,
+              let turn = Int(components[1])
+        else { return nil }
+        if components.count >= 4,
+           components[2] == "step",
+           let step = Int(components[3]) {
+            return "\(String.l10n("agent.workspace.trace.kind.step")) \(step + 1)"
+        }
+        return "\(String.l10n("agent.workspace.trace.kind.turn")) \(turn + 1)"
+    }
+
+    /// DeepSeek Harness 通过 pi-ai 为每次 MCP 调用附加随机后缀；它属于传输层关联 ID，
+    /// 不是用户要识别的工具名。详情区仍保留完整原始 ID，时间线只显示稳定工具标识。
+    static func normalizedToolName(_ rawName: String) -> String {
+        var name = rawName
+        if name.hasPrefix("mcp__starcat__") {
+            name.removeFirst("mcp__starcat__".count)
+        }
+        if name.hasPrefix("starcat_") {
+            name.removeFirst("starcat_".count)
+            name = "starcat.\(name)"
+        }
+        if let suffix = name.range(of: #"_[0-9a-fA-F]{12}$"#, options: .regularExpression) {
+            name.removeSubrange(suffix)
+        }
+        return name
     }
 }
 
 enum AgentTraceRowPresentation {
-    /// 展开区已经包含同一摘要时，主行只保留标题，避免用户连续看到两份相同文本。
-    static func shouldShowSummary(for event: AgentTraceEvent, isExpanded: Bool) -> Bool {
-        guard isExpanded, let summary = event.summary else { return true }
-        return !event.details.contains { detail in
-            detail.value.trimmingCharacters(in: .whitespacesAndNewlines)
-                == summary.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Runtime 的“工具调用已完成”对用户没有辨识度。已知 MCP 工具优先从真实输入/输出
+    /// 派生一行短摘要，让连续多次搜索或读取仓库时仍能一眼区分每一步。
+    static func summary(for event: AgentTraceEvent) -> String? {
+        guard event.kind == .tool else { return event.summary?.traceNonBlank }
+
+        let normalizedName = AgentTraceTitlePresentation.normalizedToolName(event.title)
+        let payloads = event.details.compactMap { AgentTracePayloadParser.decodeJSON($0.value) }
+        let input = payloads.compactMap(\.objectValue).first { object in
+            object["query"] != nil || object["owner"] != nil || object["name"] != nil
         }
+
+        switch normalizedName {
+        case "starcat.search_repos":
+            let result = payloads.compactMap(AgentTracePayloadParser.deepSeekToolResultPayload).first
+            if let count = result?.objectValue?["repos"]?.arrayValue?.count {
+                return String(format: String.l10n("agent.workspace.trace.repoCountFormat"), count)
+            }
+            return input?["query"]?.stringValue?.traceNonBlank
+        case "starcat.get_readme", "starcat.get_repo_summary":
+            if let owner = input?["owner"]?.stringValue?.traceNonBlank,
+               let name = input?["name"]?.stringValue?.traceNonBlank {
+                return "\(owner)/\(name)"
+            }
+            return input?["repo_id"]?.stringValue?.traceNonBlank
+        default:
+            return event.summary?.traceNonBlank
+        }
+    }
+}
+
+enum AgentTraceTimelineMode: String, CaseIterable, Hashable {
+    case process
+    case allEvents
+
+    var titleKey: LocalizedStringKey {
+        switch self {
+        case .process: "agent.workspace.trace.mode.process"
+        case .allEvents: "agent.workspace.trace.mode.allEvents"
+        }
+    }
+}
+
+/// 产品过程视图中的递归事件节点。节点只保存对原始 `AgentTraceEvent` 的编排结果，
+/// 不复制或改写 Runtime 数据；因此切到“全部事件”时仍能按原始 sequence 完整审计。
+struct AgentTraceTimelineNode: Identifiable, Equatable, Sendable {
+    let event: AgentTraceEvent
+    let children: [AgentTraceTimelineNode]
+
+    var id: String { event.id }
+
+    var eventCount: Int {
+        1 + children.reduce(0) { $0 + $1.eventCount }
+    }
+}
+
+struct AgentTraceTimelineSnapshot: Equatable, Sendable {
+    let orderedEvents: [AgentTraceEvent]
+    let roots: [AgentTraceTimelineNode]
+
+    var eventCount: Int { orderedEvents.count }
+}
+
+struct AgentTraceTimelineRow: Identifiable, Equatable, Sendable {
+    let event: AgentTraceEvent
+    let depth: Int
+    let childCount: Int
+
+    var id: String { event.id }
+    var hasChildren: Bool { childCount > 0 }
+}
+
+/// 同一批持久化事件同时生成两种视图：过程模式按真实父子关系编排，审计模式按首次
+/// sequence 平铺。任何事件都不能因为“噪声”被过滤；高频 delta 应由 Adapter 合并到
+/// 稳定事件，而不是由 UI 丢弃，这样数量、历史恢复与原始顺序才有同一事实来源。
+enum AgentTraceTimelinePresentation {
+    /// 保留给只需要平铺事件的调用方；语义已经从“可见关键步骤”改为“全部持久化事件”。
+    static func visibleEvents(_ events: [AgentTraceEvent]) -> [AgentTraceEvent] {
+        makeSnapshot(events).orderedEvents
+    }
+
+    static func makeSnapshot(_ events: [AgentTraceEvent]) -> AgentTraceTimelineSnapshot {
+        let ordered = events.sorted { lhs, rhs in
+            if lhs.sequence != rhs.sequence { return lhs.sequence < rhs.sequence }
+            return lhs.id < rhs.id
+        }
+        let effectiveParents = inferredParents(for: ordered)
+        let eventIDs = Set(ordered.map(\.id))
+        var childrenByParent: [String: [AgentTraceEvent]] = [:]
+        var roots: [AgentTraceEvent] = []
+
+        for event in ordered {
+            if let parentID = effectiveParents[event.id],
+               parentID != event.id,
+               eventIDs.contains(parentID),
+               !formsParentCycle(childID: event.id, parentID: parentID, parents: effectiveParents) {
+                childrenByParent[parentID, default: []].append(event)
+            } else {
+                roots.append(event)
+            }
+        }
+
+        func node(for event: AgentTraceEvent, ancestors: Set<String>) -> AgentTraceTimelineNode {
+            // Runtime 扩展可能返回损坏的循环 parentID。过程视图必须安全退化为叶子，
+            // 不能让一次异常 Trace 在递归构建阶段拖垮整个 Agent 工作台。
+            guard !ancestors.contains(event.id) else {
+                return AgentTraceTimelineNode(event: event, children: [])
+            }
+            let nextAncestors = ancestors.union([event.id])
+            return AgentTraceTimelineNode(
+                event: event,
+                children: (childrenByParent[event.id] ?? []).map {
+                    node(for: $0, ancestors: nextAncestors)
+                }
+            )
+        }
+
+        return AgentTraceTimelineSnapshot(
+            orderedEvents: ordered,
+            roots: roots.map { node(for: $0, ancestors: []) }
+        )
+    }
+
+    static func processRows(
+        snapshot: AgentTraceTimelineSnapshot,
+        collapsedNodeIDs: Set<String>
+    ) -> [AgentTraceTimelineRow] {
+        var rows: [AgentTraceTimelineRow] = []
+
+        func append(_ node: AgentTraceTimelineNode, depth: Int) {
+            rows.append(AgentTraceTimelineRow(
+                event: node.event,
+                depth: depth,
+                childCount: node.eventCount - 1
+            ))
+            guard !collapsedNodeIDs.contains(node.id) else { return }
+            for child in node.children {
+                append(child, depth: depth + 1)
+            }
+        }
+
+        for root in snapshot.roots {
+            append(root, depth: 0)
+        }
+        return rows
+    }
+
+    /// DeepSeek 的 tool/call 经公共协议投影后没有 parentID，但它在持久化序列中严格位于
+    /// `step/start` 与下一次 `step/start` 之间。这里仅为 UI 推断父级，既修复新 Run，
+    /// 也让已经落库的历史 Run 获得相同层级，而不迁移或伪造 Runtime 原始字段。
+    private static func inferredParents(for events: [AgentTraceEvent]) -> [String: String] {
+        var result: [String: String] = [:]
+        var currentDeepSeekTurnID: String?
+        var currentDeepSeekStepID: String?
+
+        for event in events {
+            if let parentID = event.parentID {
+                result[event.id] = parentID
+            }
+            guard event.backend == .deepSeekHarness else { continue }
+
+            if let providerID = event.providerEventID {
+                if providerID.hasPrefix("turn:"), providerID.contains(":step:") {
+                    currentDeepSeekStepID = event.id
+                    if result[event.id] == nil, let currentDeepSeekTurnID {
+                        result[event.id] = currentDeepSeekTurnID
+                    }
+                    continue
+                }
+                if providerID.hasPrefix("turn:"), !providerID.contains(":step:") {
+                    currentDeepSeekTurnID = event.id
+                    currentDeepSeekStepID = nil
+                    continue
+                }
+            }
+
+            // 公共工具协议是当前唯一会丢失 DeepSeek step parentID 的路径；session/end-seed、
+            // retry 与进程级错误必须保持根事件，不能因为发生在某一步之后就被误归组。
+            if result[event.id] == nil, event.kind == .tool {
+                result[event.id] = currentDeepSeekStepID ?? currentDeepSeekTurnID
+            }
+        }
+        return result
+    }
+
+    private static func formsParentCycle(
+        childID: String,
+        parentID: String,
+        parents: [String: String]
+    ) -> Bool {
+        var visited: Set<String> = [childID]
+        var cursor: String? = parentID
+        while let current = cursor {
+            guard visited.insert(current).inserted else { return true }
+            cursor = parents[current]
+        }
+        return false
+    }
+}
+
+private enum AgentTracePayloadParser {
+    static func decodeJSON(_ text: String) -> AgentJSONValue? {
+        guard text.count <= AgentTracePresentationBudget.jsonParseCharacters,
+              let data = text.data(using: .utf8)
+        else { return nil }
+        return try? JSONDecoder().decode(AgentJSONValue.self, from: data)
+    }
+
+    /// DeepSeek 的 tool/result 是 message -> content -> tool-result -> content -> text，
+    /// 其中 text 才是 Starcat MCP 的真实 JSON。只按已知 envelope 解包，结构变化时安全回退。
+    static func deepSeekToolResultPayload(_ value: AgentJSONValue) -> AgentJSONValue? {
+        guard let message = value.objectValue?["message"]?.objectValue,
+              let outerContent = message["content"]?.arrayValue
+        else { return nil }
+
+        for outer in outerContent {
+            guard let innerContent = outer.objectValue?["content"]?.arrayValue else { continue }
+            for inner in innerContent {
+                guard let text = inner.objectValue?["text"]?.stringValue else { continue }
+                if let decoded = decodeJSON(text) { return decoded }
+                return .string(text)
+            }
+        }
+        return nil
+    }
+}
+
+private extension AgentJSONValue {
+    var arrayValue: [AgentJSONValue]? {
+        guard case .array(let values) = self else { return nil }
+        return values
     }
 }
 
@@ -156,14 +422,23 @@ enum AgentTraceDetailPresentationBuilder {
             )
             rawBlocks.append("\(detail.label)\n\(boundedRawValue)")
             if detail.format == .json,
-               let json = decodeJSON(detail.value),
-               let envelope = toolResultEnvelope(
+               let json = decodeJSON(detail.value) {
+                if let runtimePayload = AgentTracePayloadParser.deepSeekToolResultPayload(json) {
+                    sections.append(.init(
+                        label: detail.label,
+                        content: .structured(structuredValue(from: runtimePayload))
+                    ))
+                    didStructure = true
+                    continue
+                }
+                if let envelope = toolResultEnvelope(
                     json,
                     eventSummary: event.summary
-               ) {
-                sections.append(contentsOf: envelope)
-                didStructure = true
-                continue
+                ) {
+                    sections.append(contentsOf: envelope)
+                    didStructure = true
+                    continue
+                }
             }
 
             let result = content(for: detail)
@@ -302,8 +577,7 @@ enum AgentTraceDetailPresentationBuilder {
     }
 
     private static func decodeJSON(_ text: String) -> AgentJSONValue? {
-        guard let data = text.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode(AgentJSONValue.self, from: data)
+        AgentTracePayloadParser.decodeJSON(text)
     }
 
     private static func structuredValue(

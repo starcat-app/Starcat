@@ -52,6 +52,80 @@ struct GitHubNotificationTranslationTests {
         #expect(document.segments[0].text == "Intro text.")
     }
 
+    @Test("多条评论各自编号，ForEach 不能只靠段内 index")
+    func multipleCommentsGetDistinctBlockIds() {
+        let comments = [
+            GitHubNotificationComment(id: 1, login: "a", body: "First comment.", htmlURL: nil, createdAt: nil),
+            GitHubNotificationComment(id: 2, login: "b", body: "Second comment.", htmlURL: nil, createdAt: nil),
+            GitHubNotificationComment(id: 3, login: "c", body: "Third comment.", htmlURL: nil, createdAt: nil)
+        ]
+        let document = GitHubNotificationTranslation.makeDocument(opening: nil, comments: comments)
+        #expect(document.segments.map(\.id) == ["c:1:0", "c:2:0", "c:3:0"])
+        let blockIDs = document.blocks.map(\.id)
+        #expect(blockIDs == ["c:1:0", "c:2:0", "c:3:0"])
+        #expect(Set(blockIDs).count == blockIDs.count)
+        #expect(document.blocks.map(\.index) == [0, 0, 0])
+
+        let rendered = [
+            ReadmeRenderedTranslation(id: "c:1:0", translatedText: "第一"),
+            ReadmeRenderedTranslation(id: "c:2:0", translatedText: "第二"),
+            ReadmeRenderedTranslation(id: "c:3:0", translatedText: "第三")
+        ]
+        for comment in comments {
+            let blocks = GitHubNotificationTranslation.blocks(in: document, commentID: comment.id)
+            let translations = GitHubNotificationTranslation.cardTranslations(
+                for: blocks,
+                from: rendered
+            )
+            #expect(blocks.count == 1)
+            #expect(translations.count == 1)
+            #expect(translations[0].id == "c:\(comment.id):0")
+        }
+    }
+
+    @Test("没有开帖时 sourceText 不以分隔符开头")
+    func sourceTextDoesNotLeadWithSeparatorWhenOpeningMissing() {
+        let document = GitHubNotificationTranslation.makeDocument(
+            opening: nil,
+            comments: [
+                GitHubNotificationComment(id: 1, login: "a", body: "Hi.", htmlURL: nil, createdAt: nil),
+                GitHubNotificationComment(id: 2, login: "b", body: "There.", htmlURL: nil, createdAt: nil)
+            ]
+        )
+        #expect(document.sourceText == "Hi.\n\n---\n\nThere.")
+    }
+
+    @Test("开帖和后续评论都能对上各自译文")
+    func openingAndEachCommentGetOwnTranslation() {
+        let comments = [
+            GitHubNotificationComment(id: 11, login: "a", body: "Reply one.", htmlURL: nil, createdAt: nil),
+            GitHubNotificationComment(id: 12, login: "b", body: "Reply two.", htmlURL: nil, createdAt: nil)
+        ]
+        let document = GitHubNotificationTranslation.makeDocument(
+            opening: "Issue opening body.",
+            comments: comments
+        )
+        #expect(document.segments.map(\.id) == ["o:0", "c:11:0", "c:12:0"])
+        let rendered = [
+            ReadmeRenderedTranslation(id: "o:0", translatedText: "开帖译文"),
+            ReadmeRenderedTranslation(id: "c:11:0", translatedText: "回复一"),
+            ReadmeRenderedTranslation(id: "c:12:0", translatedText: "回复二")
+        ]
+        let openingBlocks = GitHubNotificationTranslation.openingBlocks(in: document)
+        let openingTranslations = GitHubNotificationTranslation.cardTranslations(
+            for: openingBlocks,
+            from: rendered
+        )
+        #expect(openingBlocks.count == 1)
+        #expect(openingTranslations.map(\.translatedText) == ["开帖译文"])
+        #expect(
+            GitHubNotificationTranslation.cardTranslations(
+                for: GitHubNotificationTranslation.blocks(in: document, commentID: 11),
+                from: rendered
+            ).map(\.translatedText) == ["回复一"]
+        )
+    }
+
     @Test("开贴和评论各自编号，拼成一份文档指纹")
     func openingAndCommentsGetDistinctSegmentIds() {
         let comments = [

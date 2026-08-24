@@ -58,6 +58,9 @@ packages:
   MarkdownUI:
     url: https://github.com/gonzalezreal/swift-markdown-ui
     from: "2.4.1"
+  SwiftMarkdown:
+    url: https://github.com/swiftlang/swift-markdown
+    exactVersion: "0.8.0"
   OpenAI:
     url: https://github.com/MacPaw/OpenAI.git
     branch: main
@@ -158,6 +161,8 @@ targets:
       - package: KeychainAccess
       - package: Kingfisher
       - package: MarkdownUI
+      - package: SwiftMarkdown
+        product: Markdown
       - package: OpenAI
       - package: ConfettiSwiftUI
       - package: ZIPFoundation
@@ -282,6 +287,8 @@ targets:
       - package: KeychainAccess
       - package: Kingfisher
       - package: MarkdownUI
+      - package: SwiftMarkdown
+        product: Markdown
       - package: OpenAI
       - package: ConfettiSwiftUI
       - package: ZIPFoundation

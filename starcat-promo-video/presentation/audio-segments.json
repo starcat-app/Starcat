@@ -1,0 +1,206 @@
+[
+  {
+    "chapter": "coldopen",
+    "step": 1,
+    "text": "上周想找一个 RAG 库，我在收藏夹里翻了二十分钟。",
+    "audio": "coldopen/1.mp3"
+  },
+  {
+    "chapter": "coldopen",
+    "step": 2,
+    "text": "还是没翻到。GitHub 上，我 Star 过上千个仓库。",
+    "audio": "coldopen/2.mp3"
+  },
+  {
+    "chapter": "coldopen",
+    "step": 3,
+    "text": "三个月前点开的那一个，描述还在。当时为什么收藏，全忘了。",
+    "audio": "coldopen/3.mp3"
+  },
+  {
+    "chapter": "coldopen",
+    "step": 4,
+    "text": "标签懒得打。库更新了，也总是刷到别人的推文才知道。",
+    "audio": "coldopen/4.mp3"
+  },
+  {
+    "chapter": "coldopen",
+    "step": 5,
+    "text": "Star 列表就是这样，一条往下滚的时间线。收藏很多，能用的很少。",
+    "audio": "coldopen/5.mp3"
+  },
+  {
+    "chapter": "product",
+    "step": 1,
+    "text": "所以有了 Starcat。",
+    "audio": "product/1.mp3"
+  },
+  {
+    "chapter": "product",
+    "step": 2,
+    "text": "一款 macOS 原生 App。SwiftUI 三栏、Liquid Glass，不是 Electron 那类套壳。",
+    "audio": "product/2.mp3"
+  },
+  {
+    "chapter": "product",
+    "step": 3,
+    "text": "GitHub Stars 进来，就变成你自己的本地知识库。",
+    "audio": "product/3.mp3"
+  },
+  {
+    "chapter": "product",
+    "step": 4,
+    "text": "它做四件事：整理、理解、找回、评估。",
+    "audio": "product/4.mp3"
+  },
+  {
+    "chapter": "find",
+    "step": 1,
+    "text": "先说找回。仓库名、描述、Topics、还有你的笔记，全部建进全文索引。",
+    "audio": "find/1.mp3"
+  },
+  {
+    "chapter": "find",
+    "step": 2,
+    "text": "自然语言直接搜，也能按语言、标签、状态组合过滤。结果在本机毫秒级回来，不走云。",
+    "audio": "find/2.mp3"
+  },
+  {
+    "chapter": "find",
+    "step": 3,
+    "text": "搜 RAG？三个月前那个库，就在第一页。",
+    "audio": "find/3.mp3"
+  },
+  {
+    "chapter": "find",
+    "step": 4,
+    "text": "记不清名字也没事。语义搜索按意图找，不挑关键词。",
+    "audio": "find/4.mp3"
+  },
+  {
+    "chapter": "understand",
+    "step": 1,
+    "text": "点开那个 RAG 库，AI 先读完整个 README，给你一份中文摘要：做什么、解决什么、技术栈是什么。",
+    "audio": "understand/1.mp3"
+  },
+  {
+    "chapter": "understand",
+    "step": 2,
+    "text": "每个仓库都能写私有笔记。摘要按仓库缓存，README 变了会提醒你重新生成。",
+    "audio": "understand/2.mp3"
+  },
+  {
+    "chapter": "understand",
+    "step": 3,
+    "text": "英文 README 也能一键翻译，排版原样保留。命中缓存，不扣配额。",
+    "audio": "understand/3.mp3"
+  },
+  {
+    "chapter": "understand",
+    "step": 4,
+    "text": "有拿不准的，直接对着这个仓库问。多轮对话，带着上下文。",
+    "audio": "understand/4.mp3"
+  },
+  {
+    "chapter": "tags",
+    "step": 1,
+    "text": "标签也不用自己想。AI 推荐三到八个，带置信度，十四套预设分类自动归并同义词。",
+    "audio": "tags/1.mp3"
+  },
+  {
+    "chapter": "tags",
+    "step": 2,
+    "text": "但硬规则只有一条：AI 只给建议。",
+    "audio": "tags/2.mp3"
+  },
+  {
+    "chapter": "tags",
+    "step": 3,
+    "text": "你点了确认才写入。标签不会自己贴上去。",
+    "audio": "tags/3.mp3"
+  },
+  {
+    "chapter": "organize",
+    "step": 1,
+    "text": "库更新了呢？订阅你关心的仓库，新版本第一时间通知。安装包按平台过滤，链接一键复制。",
+    "audio": "organize/1.mp3"
+  },
+  {
+    "chapter": "organize",
+    "step": 2,
+    "text": "收藏夹还能按规则自己排队：没看过的进 Needs Review，一年没动静的进 Unmaintained。",
+    "audio": "organize/2.mp3"
+  },
+  {
+    "chapter": "organize",
+    "step": 3,
+    "text": "高价值、没打标签的、正在用、最近活跃，都能单独列出来。",
+    "audio": "organize/3.mp3"
+  },
+  {
+    "chapter": "assess",
+    "step": 1,
+    "text": "一个仓库还值不值得跟？Health 把活跃度和维护风险汇总成分数。",
+    "audio": "assess/1.mp3"
+  },
+  {
+    "chapter": "assess",
+    "step": 2,
+    "text": "OpenSSF Scorecard 再用雷达图打一份公开安全分。",
+    "audio": "assess/2.mp3"
+  },
+  {
+    "chapter": "assess",
+    "step": 3,
+    "text": "想摸架构，不用离开 App。CodeFlow 把依赖和调用链路画出来。",
+    "audio": "assess/3.mp3"
+  },
+  {
+    "chapter": "assess",
+    "step": 4,
+    "text": "侧边栏还有发现、趋势、热门、新发布和周刊。",
+    "audio": "assess/4.mp3"
+  },
+  {
+    "chapter": "local-native",
+    "step": 1,
+    "text": "这些数据都存在你自己的 Mac 上。GRDB 加 SQLite，离线也能打开。",
+    "audio": "local-native/1.mp3"
+  },
+  {
+    "chapter": "local-native",
+    "step": 2,
+    "text": "仓库缓存丢了能重建；标签、笔记、状态不能丢。CloudKit 只同步用户数据，密钥锁在 Keychain。",
+    "audio": "local-native/2.mp3"
+  },
+  {
+    "chapter": "local-native",
+    "step": 3,
+    "text": "AI 的 Key 走 BYOK：自建代理、Gemini、DeepSeek、OpenAI 兼容、Ollama 都行。",
+    "audio": "local-native/3.mp3"
+  },
+  {
+    "chapter": "local-native",
+    "step": 4,
+    "text": "你的 Key，你的配额。",
+    "audio": "local-native/4.mp3"
+  },
+  {
+    "chapter": "cta",
+    "step": 1,
+    "text": "目前只有 macOS 15 以上、Apple Silicon 原生包。iOS、Windows、Android，都没有。",
+    "audio": "cta/1.mp3"
+  },
+  {
+    "chapter": "cta",
+    "step": 2,
+    "text": "Starcat 现在完全开源了。基础功能免费使用：可以自己本地编译，也可以从 App Store 或官网直接下载。",
+    "audio": "cta/2.mp3"
+  },
+  {
+    "chapter": "cta",
+    "step": 3,
+    "text": "去 starcat.ink 下载，把吃灰的 Stars 翻出来用。",
+    "audio": "cta/3.mp3"
+  }
+]

@@ -5,7 +5,7 @@
 //  探索页中栏容器。
 //
 //  设计意图：
-//  - 「发现 / 趋势 / 热门 / 新发布 / 周刊」是左侧探索入口下的子分类，中栏只渲染当前模式内容；
+//  - 「发现 / 趋势 / 热门 / 新发布 / 周刊 / Awesome」是左侧探索入口下的子分类；
 //  - 趋势继续复用现有 TrendingView，保证 GitHub Trending 缓存、README 和批量操作不回归；
 //  - 发现 / 热门 / 新发布共用 Discovery 列表，筛选栏和分页逻辑保持一致。
 //
@@ -46,6 +46,8 @@ struct ExploreView: View {
                 trendingContent
             case .weekly:
                 weeklyContent
+            case .awesome:
+                awesomeContent
             case .discover, .popular, .newReleases:
                 discoveryContent
             }
@@ -58,6 +60,9 @@ struct ExploreView: View {
             case .trending:
                 clearDiscoverySelection()
             case .weekly:
+                clearTrendingSelection()
+                clearDiscoverySelection()
+            case .awesome:
                 clearTrendingSelection()
                 clearDiscoverySelection()
             case .discover, .popular, .newReleases:
@@ -83,6 +88,13 @@ struct ExploreView: View {
             selectedPlatform: $selectedDiscoveryPlatform,
             selectedRepoID: $selectedDiscoveryRepoID,
             selectedRepo: $selectedDiscoveryRepo,
+            onRepoCountChange: onRepoCountChange
+        )
+    }
+
+    private var awesomeContent: some View {
+        AwesomeView(
+            store: dependencies.awesomeStore,
             onRepoCountChange: onRepoCountChange
         )
     }
@@ -512,7 +524,7 @@ private struct ExploreDiscoveryListView: View {
             return discoverySignalMetadata(for: repo)
         case .newReleases:
             return releaseFooterMetadata(for: repo)
-        case .trending, .weekly:
+        case .trending, .weekly, .awesome:
             return nil
         }
     }

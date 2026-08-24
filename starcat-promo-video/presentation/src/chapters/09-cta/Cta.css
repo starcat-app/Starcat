@@ -1,0 +1,250 @@
+/**
+ * cta 舞台样式 v2。
+ *
+ * 主导动作按 step 换：Direct 包描边自绘 + 平台名延迟划掉 → Free 定价卡
+ * 揭开 + 额度三枚一组落位 → 三档价格卡逐张立起 → 域名下划线拉开收束。
+ * 颜色和字体家族只引用 token；动画 ≤ 各步口播估时。
+ */
+
+.ct-scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.ct-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.ct-kicker {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  margin-bottom: 40px;
+}
+
+@keyframes ct-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── step 0：平台边界 ── */
+.ct-os-row {
+  display: flex;
+  align-items: baseline;
+  gap: 22px;
+  margin-bottom: 40px;
+  animation: ct-rise 800ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.ct-os {
+  font-size: 72px;
+}
+
+.ct-fifteen {
+  font-size: 150px;
+  line-height: 0.9;
+  color: var(--accent);
+}
+
+.ct-plus {
+  font-size: 72px;
+  color: var(--accent);
+}
+
+.ct-direct {
+  margin: 0;
+  font-size: 56px;
+  letter-spacing: -0.02em;
+}
+
+.ct-pack {
+  width: 300px;
+  animation: ct-rise 900ms cubic-bezier(0.16, 1, 0.3, 1) 400ms both;
+}
+
+.ct-pack-stroke {
+  fill: var(--surface-3);
+  stroke: var(--text);
+  stroke-width: 2.5;
+}
+
+.ct-pack-lid { fill: var(--surface-2); }
+
+.ct-outs {
+  list-style: none;
+  margin: 48px 0 0;
+  padding: 28px 0 0;
+  border-top: var(--rule-w) var(--rule-style) var(--rule);
+  display: flex;
+  gap: 56px;
+}
+
+.ct-out {
+  position: relative;
+  font-size: 44px;
+  color: var(--text-mute);
+  animation: ct-rise 600ms ease both;
+}
+
+.ct-strike {
+  position: absolute;
+  left: -6%;
+  top: 54%;
+  width: 0;
+  height: 4px;
+  background: var(--accent);
+  transform: rotate(-6deg);
+}
+
+.ct-out:nth-child(1) .ct-strike { animation: ct-strike 450ms ease 3300ms forwards; }
+.ct-out:nth-child(2) .ct-strike { animation: ct-strike 450ms ease 3750ms forwards; }
+.ct-out:nth-child(3) .ct-strike { animation: ct-strike 450ms ease 4200ms forwards; }
+
+@keyframes ct-strike {
+  to {
+    width: 112%;
+  }
+}
+
+/* ── step 1：开源 + 获取路径 ── */
+.ct-oss-head {
+  display: flex;
+  align-items: baseline;
+  gap: 36px;
+  margin-bottom: 72px;
+}
+
+.ct-oss {
+  margin: 0;
+  font-size: 150px;
+  line-height: 1;
+  color: var(--text);
+  animation: ct-rise 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.ct-oss-free {
+  padding: 12px 26px;
+  border: var(--bw-1) solid var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-size: 34px;
+  animation: ct-rise 700ms ease 900ms both;
+}
+
+.ct-paths {
+  display: flex;
+  gap: 36px;
+}
+
+.ct-path {
+  width: 380px;
+  padding: 44px 40px;
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--rule);
+  border-top: 3px solid var(--accent);
+  border-radius: var(--r-card);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.45);
+  text-align: center;
+  animation: ct-path-in 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes ct-path-in {
+  from {
+    opacity: 0;
+    transform: translateY(34px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.ct-path-name {
+  margin: 0 0 10px;
+  font-size: 44px;
+  color: var(--text);
+}
+
+.ct-path-sub {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 22px;
+  letter-spacing: 0.12em;
+  color: var(--text-mute);
+}
+
+/* ── step 3：logo + 域名收束 ── */
+.ct-logo {
+  animation: ct-rise 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.ct-url-wrap {
+  position: relative;
+  margin-top: 36px;
+}
+
+.ct-url {
+  margin: 0;
+  font-size: 132px;
+  line-height: 1.05;
+  color: var(--text);
+  animation: ct-rise 900ms cubic-bezier(0.16, 1, 0.3, 1) 250ms both;
+}
+
+.ct-url-rule {
+  position: absolute;
+  left: 0;
+  bottom: -14px;
+  width: 100%;
+  height: 4px;
+  background: var(--accent);
+  transform-origin: left;
+  transform: scaleX(0);
+  animation: ct-rule 900ms cubic-bezier(0.16, 1, 0.3, 1) 900ms forwards;
+}
+
+@keyframes ct-rule {
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.ct-slogan {
+  margin: 64px 0 0;
+  font-size: 52px;
+  color: var(--text-2);
+  animation: ct-rise 800ms cubic-bezier(0.16, 1, 0.3, 1) 1400ms both;
+}
+
+/* 开源地址：域名下划线拉开后再入场 */
+.ct-gh {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin: 40px 0 0;
+  font-size: 30px;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+  animation: ct-rise 700ms ease 1200ms both;
+}
+
+.ct-gh-tag {
+  padding: 6px 14px;
+  border: var(--bw-1) solid var(--accent);
+  color: var(--accent);
+  font-size: 20px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}

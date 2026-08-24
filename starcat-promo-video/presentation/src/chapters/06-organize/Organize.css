@@ -1,0 +1,341 @@
+/**
+ * organize 舞台样式 v2。
+ *
+ * 主导动作按 step 换：左右排版组对开（钟摆入+芯片点亮+链接行滑入）→
+ * 截图整卡揭开 + 口播点名的两枚集合压图高亮 → 图缩小让位 + 四枚集合芯片
+ * 逐组补齐。颜色和字体家族只引用 token；动画 ≤ 各步口播估时。
+ */
+
+.og-scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.og-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.og-kicker {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 22px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+}
+
+/* ── step 0：订阅通知 | 过滤与复制 ── */
+.og-release-step {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 96px;
+  align-items: center;
+}
+
+.og-release-left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 36px;
+  animation: og-from-left 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.og-release-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 32px;
+  animation: og-from-right 1s cubic-bezier(0.16, 1, 0.3, 1) 250ms both;
+}
+
+@keyframes og-from-left {
+  from {
+    opacity: 0;
+    transform: translateX(-48px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes og-from-right {
+  from {
+    opacity: 0;
+    transform: translateX(48px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.og-bell {
+  width: 120px;
+  height: 120px;
+}
+
+.og-bell-ring {
+  fill: none;
+  stroke: var(--rule);
+  stroke-width: 2;
+}
+
+.og-bell-body {
+  fill: var(--surface-3);
+  stroke: var(--text);
+  stroke-width: 2.5;
+}
+
+.og-bell-clapper {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+.og-bell-pip {
+  fill: var(--accent);
+  animation: og-pip-pulse 2.2s ease-in-out 1.2s infinite;
+}
+
+@keyframes og-pip-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.og-note {
+  padding: 34px 44px;
+  text-align: center;
+}
+
+.og-note-hero {
+  margin: 14px 0 8px;
+  font-size: 84px;
+  letter-spacing: -0.03em;
+}
+
+.og-note-sub {
+  margin: 0;
+  font-size: 28px;
+  color: var(--text-2);
+}
+
+.og-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.og-chip {
+  padding: 12px 26px;
+  border: var(--bw-1) solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: 26px;
+}
+
+.og-chip.is-on {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.og-chip.is-off {
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+
+.og-copyline {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-top: 16px;
+}
+
+.og-copy {
+  font-size: 56px;
+  color: var(--text);
+}
+
+.og-copy-url {
+  padding: 12px 20px;
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--rule);
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 22px;
+  color: var(--text-2);
+  position: relative;
+}
+
+.og-copy-url::after {
+  content: "已复制";
+  position: absolute;
+  right: -6px;
+  top: -34px;
+  padding: 4px 10px;
+  font-size: 18px;
+  letter-spacing: 0.1em;
+  color: var(--shell);
+  background: var(--accent);
+  border-radius: 3px;
+  opacity: 0;
+  animation: og-copied-pop 500ms cubic-bezier(0.34, 1.56, 0.64, 1) 2600ms forwards;
+}
+
+@keyframes og-copied-pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ── 共享：截图卡 ── */
+.og-shot {
+  position: relative;
+  margin: 0;
+  overflow: hidden;
+  border: var(--bw-1) solid var(--rule);
+  border-radius: var(--r-card);
+  box-shadow: 0 40px 120px rgba(0, 0, 0, 0.5);
+  background: var(--surface-2);
+}
+
+.og-shot-img {
+  display: block;
+  width: 1440px;
+  height: 780px;
+  object-fit: cover;
+  object-position: center top;
+}
+
+.og-shot-wipe {
+  clip-path: inset(5% 3% 5% 3%);
+  animation: og-open 1.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes og-open {
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+/* ── step 1：口播点名的两枚集合压图 ── */
+.og-hot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 40px;
+  padding: 60px 60px 40px;
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.78) 0%,
+    rgba(0, 0, 0, 0.3) 70%,
+    transparent 100%
+  );
+}
+
+.og-hot-item {
+  text-align: center;
+}
+
+.og-hot-name {
+  margin: 0 0 6px;
+  font-size: 52px;
+  color: var(--accent);
+}
+
+.og-hot-gloss {
+  margin: 0;
+  font-size: 30px;
+  color: var(--text-2);
+}
+
+.og-hot-rule {
+  width: var(--bw-1);
+  height: 88px;
+  background: var(--rule);
+}
+
+.og-hot-item:first-child {
+  animation: og-rise 700ms cubic-bezier(0.16, 1, 0.3, 1) 1200ms both;
+}
+
+.og-hot-rule {
+  animation: og-rise 700ms ease 1500ms both;
+}
+
+.og-hot-item:last-child {
+  animation: og-rise 700ms cubic-bezier(0.16, 1, 0.3, 1) 3600ms both;
+}
+
+@keyframes og-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── step 2：图缩小 + 其余四枚集合芯片 ── */
+.og-shot-mini .og-shot-img {
+  width: 1080px;
+  height: 520px;
+  filter: brightness(0.72);
+}
+
+.og-more {
+  display: flex;
+  gap: 28px;
+  z-index: 1;
+  margin-top: -46px;
+}
+
+.og-more-item {
+  padding: 20px 30px;
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--rule);
+  border-radius: var(--r-card);
+  text-align: center;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  animation: og-rise 600ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.og-more-name {
+  margin: 0 0 4px;
+  font-size: 32px;
+  color: var(--text);
+}
+
+.og-more-gloss {
+  margin: 0;
+  font-size: 22px;
+  color: var(--text-mute);
+}
+
+.og-alone {
+  margin: 44px 0 0;
+  font-size: 40px;
+  color: var(--text-2);
+  animation: og-rise 700ms ease 2300ms both;
+}

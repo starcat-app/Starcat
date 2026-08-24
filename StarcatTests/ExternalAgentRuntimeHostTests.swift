@@ -125,7 +125,7 @@ struct ExternalAgentRuntimeHostTests {
     func reportsDelayedProcessExitStatusAndSafeDiagnostic() async throws {
         let host = ExternalAgentRuntimeHost()
         let expectedDiagnostic = "Termination reason: exit. "
-            + "Codex stderr summary (1 lines): codex model cache."
+            + "Codex App Server stderr summary (1 lines): codex model cache."
 
         await #expect(throws: ExternalAgentRuntimeError.processExited(23, expectedDiagnostic)) {
             try await host.execute(
@@ -133,6 +133,42 @@ struct ExternalAgentRuntimeHostTests {
                 driver: ExternalHostDelayedExitFixtureDriver()
             ) { _ in }
         }
+    }
+
+    @Test("DeepSeek Cordis YAML 错误只暴露安全行列诊断")
+    func reportsSafeYAMLConfigurationDiagnostic() async throws {
+        let host = ExternalAgentRuntimeHost()
+        let expectedDiagnostic = "Termination reason: exit. "
+            + "DeepSeek Harness stderr summary (2 lines): "
+            + "configuration parse (line 41, column 17)."
+
+        await #expect(throws: ExternalAgentRuntimeError.processExited(1, expectedDiagnostic)) {
+            try await host.execute(
+                runID: UUID(),
+                driver: ExternalHostYAMLFailureFixtureDriver()
+            ) { _ in }
+        }
+    }
+
+    @Test("DeepSeek MCP 冷启动失败时重建 carrier 且不重复模型 turn")
+    func retriesDeepSeekMCPStartupFailureBeforeTurn() async throws {
+        let collector = ExternalHostEventCollector()
+        let factory = ExternalHostRetryDriverFactory()
+        let host = ExternalAgentRuntimeHost()
+
+        try await host.execute(
+            runID: UUID(),
+            driverFactory: { factory.makeDriver() },
+            mcpStartupRetryLimit: 1
+        ) { event in
+            await collector.append(event)
+        }
+
+        #expect(factory.attemptCount == 2)
+        assertFirstOutputLatency(
+            in: await collector.events,
+            followedBy: [.completed]
+        )
     }
 
     @Test("Provider 关闭 stdin 后写回只结束 Run，不会触发 SIGPIPE 终止 App")
@@ -162,6 +198,60 @@ struct ExternalAgentRuntimeHostTests {
         #expect(milliseconds >= 0)
         #expect(Array(events.dropFirst()) == expectedEvents)
     }
+}
+
+/// 用同步锁保护 factory 计数，因为 Host 的 driverFactory 是同步 `@Sendable` 闭包；
+/// 测试必须证明第一次 Cordis MCP 激活失败后确实创建了全新的 carrier driver。
+private final class ExternalHostRetryDriverFactory: @unchecked Sendable {
+    private let lock = NSLock()
+    private var attempts = 0
+
+    var attemptCount: Int {
+        lock.withLock { attempts }
+    }
+
+    func makeDriver() -> any ExternalAgentProtocolDriver {
+        let shouldFail = lock.withLock {
+            attempts += 1
+            return attempts == 1
+        }
+        return ExternalHostDeepSeekRetryFixtureDriver(shouldFail: shouldFail)
+    }
+}
+
+private final class ExternalHostDeepSeekRetryFixtureDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
+    let backend = AgentRuntimeBackend.deepSeekHarness
+    let capabilities = AgentRuntimeCapabilities.deepSeekHarnessPOC
+    let processConfiguration: ExternalAgentProcessConfiguration
+
+    init(shouldFail: Bool) {
+        let command: String
+        if shouldFail {
+            command = "read first; printf '%s\\n' 'mcp-client(starcat): initial connection or tool synchronization failed' >&2; exit 1"
+        } else {
+            command = "read first; printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"method\":\"fixture/completed\"}'"
+        }
+        processConfiguration = ExternalAgentProcessConfiguration(
+            executableURL: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", command],
+            environment: ExternalAgentProcessEnvironment.filtered(),
+            currentDirectoryURL: FileManager.default.temporaryDirectory
+        )
+    }
+
+    func initialFrames() throws -> [AgentJSONValue] {
+        [.jsonRPCRequest(id: 1, method: "fixture/start")]
+    }
+
+    func receive(_ frame: AgentJSONValue) throws -> ExternalAgentProtocolOutput {
+        guard frame[external: "method"]?.stringValue == "fixture/completed" else {
+            return ExternalAgentProtocolOutput()
+        }
+        return ExternalAgentProtocolOutput(events: [.completed], isTerminal: true)
+    }
+
+    func cancellationFrame() -> AgentJSONValue? { nil }
+    func shutdownFrame() -> AgentJSONValue? { nil }
 }
 
 private actor ExternalHostEventCollector {
@@ -200,6 +290,33 @@ private final class ExternalHostFixtureDriver: ExternalAgentProtocolDriver, @unc
         default:
             return ExternalAgentProtocolOutput()
         }
+    }
+
+    func cancellationFrame() -> AgentJSONValue? { nil }
+    func shutdownFrame() -> AgentJSONValue? { nil }
+}
+
+private final class ExternalHostYAMLFailureFixtureDriver: ExternalAgentProtocolDriver, @unchecked Sendable {
+    let backend = AgentRuntimeBackend.deepSeekHarness
+    let capabilities = AgentRuntimeCapabilities.deepSeekHarnessPOC
+    let processConfiguration = ExternalAgentProcessConfiguration(
+        executableURL: URL(fileURLWithPath: "/bin/sh"),
+        arguments: [
+            "-c",
+            "read first; printf '%s\\n' "
+                + "'Error: plugin tree failed to load: failed to parse config file /private/secret.yml' "
+                + "'YAMLException: bad indentation of a mapping entry (41:17)' >&2; exit 1",
+        ],
+        environment: ExternalAgentProcessEnvironment.filtered(),
+        currentDirectoryURL: FileManager.default.temporaryDirectory
+    )
+
+    func initialFrames() throws -> [AgentJSONValue] {
+        [.jsonRPCRequest(id: 1, method: "fixture/start")]
+    }
+
+    func receive(_ frame: AgentJSONValue) throws -> ExternalAgentProtocolOutput {
+        ExternalAgentProtocolOutput()
     }
 
     func cancellationFrame() -> AgentJSONValue? { nil }

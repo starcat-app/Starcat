@@ -39,7 +39,7 @@
 //    `v14-ai-usage-events` / `v15-repo-pins` / `v16-repository-insights` /
 //    `v17-my-projects` / `v18-rag-structured-citations` / `v19-release-1.4.0` /
 //    `v20-agent-runtime-trace` / `v21-github-issue-labels` /
-//    `v22-data-contribution`
+//    `v22-awesome-discovery` / `v22-data-contribution`
 //
 //  **1.4.0 开发期迁移（已由正式 v19 合并接管）**：
 //  `v19-agent-message-contract` 至 `v26-github-timeline-conversations` 仅在开发构建中出现过。
@@ -94,7 +94,11 @@ enum DatabaseMigrations {
         registerV19(into: &migrator)
         registerV20(into: &migrator)
         registerV21(into: &migrator)
-        registerV22(into: &migrator)
+        // Awesome 与数据贡献曾在两个并行专项分支中各自以 v22 进入开发库。
+        // 保留两个已经落地的唯一 identifier，避免任一开发库因改名重复建表；
+        // GRDB 会按 identifier 跳过已执行的一支，并补跑另一支。
+        registerV22AwesomeDiscovery(into: &migrator)
+        registerV22DataContribution(into: &migrator)
     }
 
     // MARK: - v22-data-contribution：公开 Star 数据贡献（2026-08-23）
@@ -102,7 +106,7 @@ enum DatabaseMigrations {
     /// 数据贡献是完全旁路能力：设置和待上传任务都跟随当前用户数据库隔离，
     /// 不复用 AppSettings，避免切换 GitHub 账号时把一个账号的授权带给另一个账号。
     /// `participant_id` 在关闭开关时保留；未发送的 Outbox 会由 Repository 同事务清空。
-    private static func registerV22(into migrator: inout DatabaseMigrator) {
+    private static func registerV22DataContribution(into migrator: inout DatabaseMigrator) {
         migrator.registerMigration("v22-data-contribution") { db in
             try db.create(table: "data_contribution_preferences") { table in
                 table.column("account_id", .text).primaryKey()
@@ -128,6 +132,85 @@ enum DatabaseMigrations {
                 index: "idx_data_contribution_outbox_due",
                 on: "data_contribution_outbox",
                 columns: ["state", "next_attempt_at"]
+            )
+        }
+    }
+
+    // MARK: - v22-awesome-discovery：Awesome 来源、订阅与条目（2026-08-24）
+
+    /// Awesome 同时包含可重建公共快照和账户本地配置。四张独立表避免污染 starred repos，
+    /// 并让删除/重建精选缓存时不会误删用户自定义来源或首次设置状态。
+    private static func registerV22AwesomeDiscovery(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v22-awesome-discovery") { db in
+            try db.create(table: "awesome_sources") { table in
+                table.column("source_id", .text).primaryKey()
+                table.column("kind", .text).notNull()
+                table.column("display_name", .text).notNull()
+                table.column("repo_full_name", .text).notNull()
+                table.column("repo_url", .text).notNull()
+                table.column("image_url", .text)
+                table.column("summary_zh", .text)
+                table.column("summary_en", .text)
+                table.column("featured", .boolean).notNull().defaults(to: false)
+                table.column("sort_order", .integer).notNull().defaults(to: 0)
+                table.column("github_repo_count", .integer).notNull().defaults(to: 0)
+                table.column("external_entry_count", .integer).notNull().defaults(to: 0)
+                table.column("is_available", .boolean).notNull().defaults(to: true)
+                table.column("catalog_etag", .text)
+                table.column("entries_etag", .text)
+                table.column("added_at", .text).notNull()
+                table.column("last_synced_at", .text)
+                table.column("updated_at", .text).notNull()
+            }
+
+            try db.create(table: "awesome_source_subscriptions") { table in
+                table.column("source_id", .text).primaryKey()
+                    .references("awesome_sources", column: "source_id", onDelete: .cascade)
+                table.column("is_enabled", .boolean).notNull().defaults(to: false)
+                table.column("enabled_at", .text)
+            }
+
+            try db.create(table: "awesome_entries") { table in
+                table.column("source_id", .text).notNull()
+                    .references("awesome_sources", column: "source_id", onDelete: .cascade)
+                table.column("gh_repo_id", .integer).notNull()
+                table.column("owner", .text).notNull()
+                table.column("name", .text).notNull()
+                table.column("full_name", .text).notNull()
+                table.column("description", .text)
+                table.column("owner_avatar", .text)
+                table.column("language", .text)
+                table.column("stars", .integer).notNull().defaults(to: 0)
+                table.column("is_archived", .boolean).notNull().defaults(to: false)
+                table.column("repo_updated_at", .text)
+                table.column("entry_title", .text).notNull()
+                table.column("entry_description", .text)
+                table.column("section_path_json", .text).notNull().defaults(to: "[]")
+                table.column("entry_order", .integer).notNull()
+                table.column("source_anchor_url", .text)
+                table.column("cached_at", .text).notNull()
+                table.primaryKey(["source_id", "gh_repo_id"])
+            }
+            try db.create(
+                index: "idx_awesome_entries_repo_id",
+                on: "awesome_entries",
+                columns: ["gh_repo_id"]
+            )
+            try db.create(
+                index: "idx_awesome_entries_source_order",
+                on: "awesome_entries",
+                columns: ["source_id", "entry_order"]
+            )
+
+            try db.create(table: "awesome_state") { table in
+                table.column("id", .integer).primaryKey()
+                table.column("has_completed_source_setup", .boolean).notNull().defaults(to: false)
+                table.column("catalog_etag", .text)
+                table.column("catalog_checked_at", .text)
+            }
+            try db.execute(
+                sql: "INSERT INTO awesome_state (id, has_completed_source_setup) VALUES (?, 0)",
+                arguments: [AwesomeStateRecord.singletonID]
             )
         }
     }

@@ -28,6 +28,8 @@ struct GitHubNotificationDetailView: View {
     @State private var doneError: String?
     @State private var translationVM: ReadmeTranslationViewModel?
     @State private var translationPaywall: ProPaywallContext?
+    /// 事件流评论以时间线实际渲染的条目为准，避免工具栏和卡片各组一份文档。
+    @State private var timelineTranslationComments: [GitHubNotificationComment] = []
     /// 翻译 / AI 撰写共用 toast：未配置 AI 时不能只写一行 caption，评论框还会把提示收掉。
     @State private var aiErrorToast: String?
     @State private var aiErrorToastNeedsSettings = false
@@ -89,7 +91,13 @@ struct GitHubNotificationDetailView: View {
                                     locale: locale,
                                     inbox: inbox,
                                     timelineRevision: inbox.issueTimelineRevision(threadId: payload.threadId),
-                                    translation: translationVM
+                                    translation: translationVM,
+                                    document: translationDocument(payload),
+                                    onCommentsChange: { comments in
+                                        if timelineTranslationComments != comments {
+                                            timelineTranslationComments = comments
+                                        }
+                                    }
                                 )
                             } else {
                                 conversation(payload, title: item.title, translation: translationVM)
@@ -129,6 +137,7 @@ struct GitHubNotificationDetailView: View {
             doneError = nil
             aiErrorToast = nil
             aiErrorToastNeedsSettings = false
+            timelineTranslationComments = []
             prepareTranslation(for: item)
         }
         .onChange(of: settings.githubIssueEventTimelineEnabled) { _, _ in
@@ -489,30 +498,19 @@ struct GitHubNotificationDetailView: View {
 
     private func translationDocument(_ payload: ActivityNotificationPayload) -> GitHubNotificationTranslation.Document {
         if settings.githubIssueEventTimelineEnabled {
+            let comments = timelineTranslationComments.isEmpty
+                ? GitHubNotificationTranslation.preparedComments(
+                    inbox.cachedIssueTimelineComments(threadId: payload.threadId)
+                )
+                : timelineTranslationComments
             return GitHubNotificationTranslation.makeDocument(
-                opening: nil,
-                comments: inbox.cachedIssueTimelineComments(threadId: payload.threadId).map { comment in
-                    GitHubNotificationComment(
-                        id: comment.id,
-                        login: comment.login,
-                        body: GitHubNotificationMapper.prepareMarkdown(comment.body),
-                        htmlURL: comment.htmlURL,
-                        createdAt: comment.createdAt
-                    )
-                }
+                opening: payload.excerpt.map(GitHubNotificationMapper.prepareMarkdown),
+                comments: comments
             )
         }
         return GitHubNotificationTranslation.makeDocument(
             opening: payload.excerpt.map(GitHubNotificationMapper.prepareMarkdown),
-            comments: payload.comments.map { comment in
-                GitHubNotificationComment(
-                    id: comment.id,
-                    login: comment.login,
-                    body: GitHubNotificationMapper.prepareMarkdown(comment.body),
-                    htmlURL: comment.htmlURL,
-                    createdAt: comment.createdAt
-                )
-            }
+            comments: GitHubNotificationTranslation.preparedComments(payload.comments)
         )
     }
 
@@ -550,21 +548,43 @@ struct GitHubNotificationDetailView: View {
     private func translationHydrationSignature(_ item: ActivityItem) -> String {
         guard let payload = item.notification else { return "" }
         if settings.githubIssueEventTimelineEnabled {
-            let comments = inbox.cachedIssueTimelineComments(threadId: payload.threadId)
-            return "timeline|\(inbox.issueTimelineRevision(threadId: payload.threadId))|\(comments.count)|\(comments.last?.id ?? 0)"
+            let comments = timelineTranslationComments.isEmpty
+                ? inbox.cachedIssueTimelineComments(threadId: payload.threadId)
+                : timelineTranslationComments
+            return "timeline|\(inbox.issueTimelineRevision(threadId: payload.threadId))|\(payload.excerpt?.count ?? 0)|\(comments.count)|\(comments.last?.id ?? 0)"
         }
         return "\(payload.excerpt?.count ?? 0)|\(payload.comments.count)|\(payload.comments.last?.id ?? 0)"
     }
 
-    /// 评论后到时：原文态重新探测缓存；对照已上屏或正在翻译则不动，避免闪回原文。
+    /// 评论后到时：原文态重新探测缓存；对照已上屏则只补缺段，避免闪回原文。
     private func refreshTranslationSourceIfNeeded(for item: ActivityItem) {
         guard let vm = translationVM else {
             prepareTranslation(for: item)
             return
         }
         if vm.isTranslating { return }
-        if case .showingTranslation = vm.displayMode { return }
+        if case .showingTranslation = vm.displayMode {
+            continueTranslationIfNeeded(for: item, viewModel: vm)
+            return
+        }
         prepareTranslation(for: item)
+    }
+
+    private func continueTranslationIfNeeded(
+        for item: ActivityItem,
+        viewModel: ReadmeTranslationViewModel
+    ) {
+        guard let payload = item.notification else { return }
+        let document = translationDocument(payload)
+        viewModel.continueTranslationIfNeeded(
+            identity: GitHubNotificationTranslation.identity(threadId: payload.threadId),
+            cacheOwner: GitHubNotificationTranslation.cacheOwner,
+            cacheRepo: GitHubNotificationTranslation.cacheRepo(threadId: payload.threadId),
+            sourceHtml: document.sourceText,
+            sourceSegments: document.segments,
+            targetLanguage: settings.effectiveReadmeTranslationLanguage,
+            mode: settings.readmeTranslationMode
+        )
     }
 
     private var translationPaywallBinding: Binding<ProPaywallContext?> {
@@ -1040,7 +1060,7 @@ struct GitHubNotificationCommentCard: View, @MainActor Equatable {
     private var commentBody: some View {
         if isShowingTranslation, !blocks.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                ForEach(blocks, id: \.index) { block in
+                ForEach(blocks, id: \.id) { block in
                     translatedBlock(block)
                 }
             }
@@ -1473,8 +1493,14 @@ private struct GitHubNotificationCommentComposer: View {
     @State private var collapseIdleTask: Task<Void, Never>?
     /// 粘贴上传进行中禁止发评论，避免把 `starcat-upload:` 占位符发到 GitHub。
     @State private var uploadingImageCount = 0
+    /// 当前框绑定的帖。切帖时先按这个 id 落盘，再清 `@State`，避免把 A 的稿写到 B。
+    @State private var boundDraftThreadId: String?
+    @State private var persistDraftTask: Task<Void, Never>?
+    /// `adoptThread` 清草稿时会触发 `onChange(of: draft)`，不能把刚写入的旧帖缓存立刻删掉。
+    @State private var isAdoptingThread = false
 
     private var threadId: String { payload.threadId }
+    private var draftCache: DiskNotificationCommentDraftCache { .shared }
     private var repositoryFullName: String { payload.repositoryFullName }
     private var inbox: GitHubNotificationInboxService {
         dependencies.githubNotificationInboxService
@@ -1530,16 +1556,21 @@ private struct GitHubNotificationCommentComposer: View {
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
         .task(id: threadId) {
-            resetComposerForThreadChange()
+            adoptThread(threadId)
             await refreshCloseEligibility(fetchRemoteState: true)
+        }
+        .onChange(of: draft) { _, _ in
+            schedulePersistDraft()
         }
         .onReceive(NotificationCenter.default.publisher(for: .githubNotificationInboxDidChange)) { _ in
             Task { await refreshCloseEligibility(fetchRemoteState: false) }
         }
         .onDisappear {
+            persistDraftNow(for: boundDraftThreadId ?? threadId)
             generateTask?.cancel()
             successResetTask?.cancel()
             collapseIdleTask?.cancel()
+            persistDraftTask?.cancel()
         }
         // 预览态焦点在 SwiftUI；撰写态在 NSTextView，Esc 由 textView doCommandBy 再走同一套。
         .onKeyPress(.escape) {
@@ -1691,8 +1722,74 @@ private struct GitHubNotificationCommentComposer: View {
         return true
     }
 
+    /// 详情页复用同一个 Composer，`@State` 会跟着带到下一帖。
+    /// 先把旧帖未提交正文落盘，再取消生成并恢复新帖缓存。
+    private func adoptThread(_ newId: String) {
+        if let oldId = boundDraftThreadId, oldId != newId {
+            persistDraftNow(for: oldId)
+        }
+        guard boundDraftThreadId != newId else { return }
+        isAdoptingThread = true
+        resetComposerForThreadChange()
+        restoreDraft(for: newId)
+        boundDraftThreadId = newId
+        isAdoptingThread = false
+    }
+
+    private func persistableDraftText() -> String {
+        DiskNotificationCommentDraftCache.persistableDraft(
+            current: draft,
+            previous: previousDraft,
+            isGenerating: isGenerating
+        )
+    }
+
+    private func persistDraftNow(for id: String) {
+        persistDraftTask?.cancel()
+        guard !isAdoptingThread else { return }
+        guard !id.isEmpty, !GitHubNotificationMapper.isDemoThread(id) else { return }
+        guard authSession.state.user != nil else { return }
+        draftCache.upsert(threadId: id, draft: persistableDraftText())
+    }
+
+    private func schedulePersistDraft() {
+        guard !isAdoptingThread else { return }
+        persistDraftTask?.cancel()
+        persistDraftTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled, !isAdoptingThread else { return }
+            persistDraftNow(for: boundDraftThreadId ?? threadId)
+        }
+    }
+
+    private func restoreDraft(for id: String) {
+        guard !GitHubNotificationMapper.isDemoThread(id),
+              let snapshot = draftCache.load(threadId: id),
+              !snapshot.draft.isEmpty
+        else { return }
+        draft = snapshot.draft
+        isComposerActive = true
+    }
+
+    private func discardPersistedDraft(for id: String) {
+        persistDraftTask?.cancel()
+        draftCache.remove(threadId: id)
+    }
+
+    /// 详情页复用同一个 Composer，`@State` 会跟着带到下一帖。
+    /// AI 生成中也必须收成一行：`showsFullComposer` 含 `isGenerating`，不取消就会把光圈框留在新 Issue 上，
+    /// 流式回调还可能把 A 的草稿写进 B。
     private func resetComposerForThreadChange() {
+        persistDraftTask?.cancel()
         collapseIdleTask?.cancel()
+        generateTask?.cancel()
+        generateTask = nil
+        successResetTask?.cancel()
+        successResetTask = nil
+        isGenerating = false
+        didGenerate = false
+        previousDraft = nil
+        paywallContext = nil
         draft = ""
         isPreview = false
         isComposerActive = false
@@ -2007,52 +2104,63 @@ private struct GitHubNotificationCommentComposer: View {
     }
 
     private func generateComment() async {
+        // payload / title 是 live 的；切帖后 self 已指向 B，必须用启动时的快照，避免把 A 的请求结果写进 B。
+        let requestedThreadId = threadId
+        let snapshotPayload = payload
+        let snapshotTitle = issueTitle
+        let snapshotRepo = repo
         let snapshot = previousDraft ?? draft
         let login = authSession.state.user?.login ?? "user"
         var summary: String?
-        if let repo,
-           let insight = try? await dependencies.repoAIInsightService.cachedInsightFast(for: repo) {
+        if let snapshotRepo,
+           let insight = try? await dependencies.repoAIInsightService.cachedInsightFast(for: snapshotRepo) {
             summary = insight.summaryMarkdown ?? insight.summary
         }
+        guard isCurrentGeneration(for: requestedThreadId) else { return }
         let pack = GitHubNotificationCommentAI.pack(
-            title: issueTitle,
-            payload: payload,
-            repo: repo,
+            title: snapshotTitle,
+            payload: snapshotPayload,
+            repo: snapshotRepo,
             summaryMarkdown: summary,
             currentUserLogin: login,
             draft: snapshot
         )
         do {
             let result = try await dependencies.repoAIInsightService.generateGitHubCommentDraft(pack: pack) { partial in
-                guard !Task.isCancelled else { return }
+                guard isCurrentGeneration(for: requestedThreadId) else { return }
                 draft = partial
             }
-            guard !Task.isCancelled else {
-                isGenerating = false
-                return
-            }
+            guard isCurrentGeneration(for: requestedThreadId) else { return }
             draft = result
             isGenerating = false
             didGenerate = true
             scheduleSuccessReset()
         } catch is CancellationError {
+            guard isCurrentGeneration(for: requestedThreadId) else { return }
             isGenerating = false
             if let previousDraft {
                 draft = previousDraft
             }
         } catch let error as EntitlementGateError {
+            guard isCurrentGeneration(for: requestedThreadId) else { return }
             isGenerating = false
             if let previousDraft {
                 draft = previousDraft
             }
             paywallContext = ProPaywallContext(feature: error.feature, message: error.localizedDescription)
         } catch {
+            guard isCurrentGeneration(for: requestedThreadId) else { return }
             isGenerating = false
             if let previousDraft {
                 draft = previousDraft
             }
             presentAIGenerationFailure(error)
         }
+    }
+
+    /// 切到另一帖后，旧 Task 可能还没走到 cancel 检查；不能再改新帖的草稿 / 光圈 / toast。
+    private func isCurrentGeneration(for requestedThreadId: String) -> Bool {
+        !Task.isCancelled && threadId == requestedThreadId
     }
 
     /// 生成前配置检查与请求失败共用：友好文案 + 诊断记录 + 详情页 toast。
@@ -2093,6 +2201,7 @@ private struct GitHubNotificationCommentComposer: View {
             )
             draft = ""
             isPreview = false
+            discardPersistedDraft(for: threadId)
             collapseComposerIfIdle()
         } catch {
             errorMessage = submitErrorMessage(error)
@@ -2110,6 +2219,7 @@ private struct GitHubNotificationCommentComposer: View {
                 try await inbox.postComment(threadId: threadId, body: trimmed)
                 draft = ""
                 isPreview = false
+                discardPersistedDraft(for: threadId)
                 collapseComposerIfIdle()
             }
             if shouldReopen {

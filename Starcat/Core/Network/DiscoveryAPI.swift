@@ -96,6 +96,54 @@ actor DiscoveryAPI {
         )
     }
 
+    /// 拉取精选 Awesome 来源目录。304 是正常缓存状态，不能交给通用 envelope decoder 当错误。
+    func fetchAwesomeSources(ifNoneMatch: String? = nil) async throws -> AwesomeCatalogResult {
+        let url = AppEndpoints.appendPath(AppEndpoints.Discovery.Paths.awesomeSources, to: baseURL)
+        let (data, response) = try await performRequest(url: url, ifNoneMatch: ifNoneMatch)
+        let http = try requireHTTPResponse(response)
+        if http.statusCode == 304 {
+            return AwesomeCatalogResult(
+                sources: [],
+                etag: http.value(forHTTPHeaderField: "ETag") ?? ifNoneMatch,
+                generatedAt: nil,
+                notModified: true
+            )
+        }
+        let envelope = try decodeEnvelope([AwesomeSourceDTO].self, data: data, response: response)
+        return AwesomeCatalogResult(
+            sources: envelope.data,
+            etag: http.value(forHTTPHeaderField: "ETag"),
+            generatedAt: envelope.meta?.generatedAt,
+            notModified: false
+        )
+    }
+
+    /// 拉取一个已发布 Awesome 来源的完整 GitHub Repo 条目快照。
+    func fetchAwesomeEntries(
+        sourceID: String,
+        ifNoneMatch: String? = nil
+    ) async throws -> AwesomeEntriesResult {
+        let path = AppEndpoints.Discovery.Paths.awesomeEntries(sourceID: sourceID)
+        let url = AppEndpoints.appendPath(path, to: baseURL)
+        let (data, response) = try await performRequest(url: url, ifNoneMatch: ifNoneMatch)
+        let http = try requireHTTPResponse(response)
+        if http.statusCode == 304 {
+            return AwesomeEntriesResult(
+                snapshot: nil,
+                etag: http.value(forHTTPHeaderField: "ETag") ?? ifNoneMatch,
+                generatedAt: nil,
+                notModified: true
+            )
+        }
+        let envelope = try decodeEnvelope(AwesomeEntriesSnapshotDTO.self, data: data, response: response)
+        return AwesomeEntriesResult(
+            snapshot: envelope.data,
+            etag: http.value(forHTTPHeaderField: "ETag"),
+            generatedAt: envelope.meta?.generatedAt,
+            notModified: false
+        )
+    }
+
     func updateBaseURL(_ url: URL) {
         baseURL = url
     }
@@ -143,7 +191,11 @@ actor DiscoveryAPI {
         )
     }
 
-    private func performRequest(url: URL, ignoresCache: Bool = false) async throws -> (Data, URLResponse) {
+    private func performRequest(
+        url: URL,
+        ignoresCache: Bool = false,
+        ifNoneMatch: String? = nil
+    ) async throws -> (Data, URLResponse) {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = ignoresCache
@@ -157,6 +209,9 @@ actor DiscoveryAPI {
         }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("Starcat/1.0", forHTTPHeaderField: "User-Agent")
+        if let ifNoneMatch, !ifNoneMatch.isEmpty {
+            request.setValue(ifNoneMatch, forHTTPHeaderField: "If-None-Match")
+        }
         if let apiKey, !apiKey.isEmpty {
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
@@ -166,6 +221,13 @@ actor DiscoveryAPI {
         } catch {
             throw StarcatEnvelopeNetworkError.transport(error)
         }
+    }
+
+    private func requireHTTPResponse(_ response: URLResponse) throws -> HTTPURLResponse {
+        guard let http = response as? HTTPURLResponse else {
+            throw StarcatEnvelopeNetworkError.transport(URLError(.badServerResponse))
+        }
+        return http
     }
 
     private func decodeEnvelope<T: Decodable & Sendable>(

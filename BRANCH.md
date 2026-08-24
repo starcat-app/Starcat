@@ -32,7 +32,8 @@
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
-| `codex/collection-pipeline` | 本地；`../Starcat-collection-pipeline` worktree | 实现公开 Star 数据静默上报，并协调独立 Collection、Trainer 与 Recommend API v2。 | `开发中`；基线为 `dev@291aef44`，四仓本机真实全链路和 Direct UI 已通过；当前与 `dev` 双向分叉。 | 合回 `dev` 前先同步最新 `dev`，解决分叉后重新验证。 |
+| `codex/collection-pipeline` | 本地；`../Starcat-collection-pipeline` worktree | 实现公开 Star 数据静默上报，并协调独立 Collection、Trainer 与 Recommend API v2。 | `开发中`；已合入本地 `dev@f50c2b28`，正在执行合并后验证。 | 验证通过后合回本地 `dev`。 |
+| `codex/awesome-discovery` | 仅保留本地分支，无 worktree；基于本地 `dev@60b16b8f` | 实现探索 Awesome 模式、来源管理、Discovery API 集中解析和本地自定义来源。配套仓库 `starcat-discovery-api`、`starcat-site` 使用同名独立分支。 | `已合并`；2026-08-24 三个仓库均已合入各自本地 `dev`，Awesome worktree 已安全移除，均未 push。 | 保留本地分支作为短期回滚参照；验收后再单独授权删除。 |
 | `dev` | 本地 + `origin/dev`；当前无独立 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；1.4.0 发版准备与 App Store 正式版 Xcode 打包门禁已进入 `main`。 | 后续功能继续在 `dev` 开发；新的发版阻断问题仍回到 `dev` 修复并重新执行门禁。 |
 | `main` | 本地 + `origin/main`；仓库根目录 worktree | 远端默认稳定主线和发布基线。 | `长期保留`；2026-08-21 已完成 1.4.0 发布：App Store Connect 构建有效，Direct 完成公证、官网、Sparkle、GitHub Release 和 Homebrew 发布。 | 保持稳定主线；后续功能与发版阻断修复仍先进入 `dev`。 |
 

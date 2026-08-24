@@ -12,7 +12,9 @@
 //  关键约束：
 //  - SwiftUI 是翻译状态的单一来源；WKWebView 只执行段落提取和 DOM 注入；
 //  - 取消不会清掉已完成段落，Service 已逐批落盘，下次点击从缺失段落继续；
-//  - repo、语言或翻译方式切换后，旧异步回调必须通过三者守门，不能串到新页面。
+//  - repo、语言或翻译方式切换后，旧异步回调必须过 isCurrentGeneration：
+//    identity + 语言 + mode + !Task.isCancelled。缓存命中、onBatch、完成、
+//    alreadyInTargetLanguage 都走同一道门，否则会把 A 的译文贴进 B 的 DOM。
 //
 
 import Foundation
@@ -55,9 +57,9 @@ final class ReadmeTranslationViewModel {
     private var currentMode: ReadmeTranslationMode?
     private var currentTask: Task<Void, Never>?
     private var renderRevision = 0
-    private let service: ReadmeTranslationService
+    private let service: any ReadmeTranslationServiceProtocol
 
-    init(service: ReadmeTranslationService) {
+    init(service: any ReadmeTranslationServiceProtocol) {
         self.service = service
     }
 
@@ -124,11 +126,11 @@ final class ReadmeTranslationViewModel {
                     targetLanguage: requestedLanguage,
                     mode: requestedMode
                 )
-                guard !Task.isCancelled,
-                      self.currentIdentity == requestedIdentity,
-                      self.currentLanguage == requestedLanguage,
-                      self.currentMode == requestedMode
-                else { return }
+                guard self.isCurrentGeneration(
+                    identity: requestedIdentity,
+                    language: requestedLanguage,
+                    mode: requestedMode
+                ) else { return }
 
                 if let cached, let sourceHtml, !sourceHtml.isEmpty {
                     self.cacheIsStale = !self.service.isCacheFresh(
@@ -214,6 +216,37 @@ final class ReadmeTranslationViewModel {
             return
         }
 
+        startTranslation(
+            identity: identity,
+            cacheOwner: cacheOwner,
+            cacheRepo: cacheRepo,
+            repoId: repoId,
+            sourceHtml: sourceHtml,
+            sourceSegments: sourceSegments,
+            targetLanguage: targetLanguage,
+            mode: mode,
+            force: false
+        )
+    }
+
+    /// 对照已上屏时评论后到：只补缺段，不切回原文、不重翻已有译文。
+    func continueTranslationIfNeeded(
+        identity: String,
+        cacheOwner: String,
+        cacheRepo: String,
+        repoId: Int64? = nil,
+        sourceHtml: String,
+        sourceSegments: [ReadmeSourceSegment],
+        targetLanguage: ReadmeTranslationLanguage,
+        mode: ReadmeTranslationMode
+    ) {
+        guard case .showingTranslation = displayMode, !isTranslating else { return }
+        let done = Set(renderState.translations.map(\.id))
+        let pending = TranslationSourceLanguageGate.segmentsNeedingTranslation(
+            sourceSegments,
+            target: targetLanguage
+        )
+        guard pending.contains(where: { !done.contains($0.id) }) else { return }
         startTranslation(
             identity: identity,
             cacheOwner: cacheOwner,
@@ -357,6 +390,11 @@ final class ReadmeTranslationViewModel {
                 targetLanguage: targetLanguage,
                 mode: mode
             )
+            guard isCurrentGeneration(
+                identity: requestedIdentity,
+                language: requestedLanguage,
+                mode: requestedMode
+            ) else { return }
 
             if let cached {
                 let rendered = service.renderedTranslations(
@@ -396,9 +434,11 @@ final class ReadmeTranslationViewModel {
                 cached: cached,
                 onBatch: { [weak self] rendered, completed, total in
                     guard let self,
-                          self.currentIdentity == requestedIdentity,
-                          self.currentLanguage == requestedLanguage,
-                          self.currentMode == requestedMode
+                          self.isCurrentGeneration(
+                            identity: requestedIdentity,
+                            language: requestedLanguage,
+                            mode: requestedMode
+                          )
                     else { return }
                     self.completedSegmentCount = completed
                     self.totalSegmentCount = total
@@ -412,10 +452,11 @@ final class ReadmeTranslationViewModel {
                 }
             )
 
-            guard currentIdentity == requestedIdentity,
-                  currentLanguage == requestedLanguage,
-                  currentMode == requestedMode
-            else { return }
+            guard isCurrentGeneration(
+                identity: requestedIdentity,
+                language: requestedLanguage,
+                mode: requestedMode
+            ) else { return }
 
             let rendered = service.renderedTranslations(from: record, matching: sourceSegments)
             applyTranslations(
@@ -430,15 +471,21 @@ final class ReadmeTranslationViewModel {
             isTranslating = false
             currentTask = nil
         } catch is CancellationError {
-            // 主动取消不是错误；状态已经由 cancelTranslation 立即复位。
+            // 主动取消不是错误；状态已经由 cancelTranslation / prepare 立即复位。
         } catch ReadmeTranslationError.alreadyInTargetLanguage {
+            guard isCurrentGeneration(
+                identity: requestedIdentity,
+                language: requestedLanguage,
+                mode: requestedMode
+            ) else { return }
             isTranslating = false
             currentTask = nil
         } catch {
-            guard currentIdentity == requestedIdentity,
-                  currentLanguage == requestedLanguage,
-                  currentMode == requestedMode
-            else { return }
+            guard isCurrentGeneration(
+                identity: requestedIdentity,
+                language: requestedLanguage,
+                mode: requestedMode
+            ) else { return }
             isTranslating = false
             currentTask = nil
             presentPaywallIfNeeded(error)
@@ -455,6 +502,19 @@ final class ReadmeTranslationViewModel {
                 service: "ai-provider"
             )
         }
+    }
+
+    /// 切仓 / 切语言 / 取消后，旧 Task 可能还停在 await 之后。
+    /// 过期回调不能再改当前页的译文、进度或 `currentTask`。
+    private func isCurrentGeneration(
+        identity: String,
+        language: ReadmeTranslationLanguage,
+        mode: ReadmeTranslationMode
+    ) -> Bool {
+        !Task.isCancelled
+            && currentIdentity == identity
+            && currentLanguage == language
+            && currentMode == mode
     }
 
     private func applyTranslations(

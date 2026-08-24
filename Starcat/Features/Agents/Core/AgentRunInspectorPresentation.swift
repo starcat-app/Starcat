@@ -55,15 +55,18 @@ struct AgentRunInspectorPresentation: Equatable, Sendable {
         artifacts: [AgentArtifact],
         runRecord: AgentRunRecord?
     ) {
-        stepCount = traceEvents.count
-        completedStepCount = traceEvents.count { [.completed, .skipped].contains($0.status) }
-        activeStepCount = traceEvents.count { [.pending, .running, .waiting].contains($0.status) }
-        failedStepCount = traceEvents.count { $0.status == .failed }
+        // Inspector 与中栏必须共用无损事件集合；否则主时间线恢复了协议事件，右栏统计
+        // 仍会停留在旧的“关键步骤”数量，形成两个互相矛盾的事实来源。
+        let orderedTraceEvents = AgentTraceTimelinePresentation.makeSnapshot(traceEvents).orderedEvents
+        stepCount = orderedTraceEvents.count
+        completedStepCount = orderedTraceEvents.count { [.completed, .skipped].contains($0.status) }
+        activeStepCount = orderedTraceEvents.count { [.pending, .running, .waiting].contains($0.status) }
+        failedStepCount = orderedTraceEvents.count { $0.status == .failed }
 
-        let traceToolCalls = traceEvents.count {
+        let traceToolCalls = orderedTraceEvents.count {
             [.tool, .command, .webSearch, .mcpTool].contains($0.kind)
         }
-        toolCallCount = traceEvents.isEmpty
+        toolCallCount = orderedTraceEvents.isEmpty
             ? messages.reduce(0) { count, message in
                 count + message.parts.count { part in
                     if case .toolCall = part { return true }
@@ -71,8 +74,8 @@ struct AgentRunInspectorPresentation: Equatable, Sendable {
                 }
             }
             : traceToolCalls
-        retryCount = traceEvents.count { $0.kind == .retry }
-        compactionCount = traceEvents.count { $0.kind == .compaction }
+        retryCount = orderedTraceEvents.count { $0.kind == .retry }
+        compactionCount = orderedTraceEvents.count { $0.kind == .compaction }
         sourceCount = messages.reduce(0) { count, message in
             count + message.parts.reduce(0) { partCount, part in
                 guard case .toolResult(let result) = part else { return partCount }
@@ -89,8 +92,8 @@ struct AgentRunInspectorPresentation: Equatable, Sendable {
         approvalRequestCount = approvals.count
         approvedApprovalCount = approvals.count { $0.status == .approved }
         rejectedApprovalCount = approvals.count { $0.status == .rejected }
-        fileChangeCount = traceEvents.count { $0.kind == .fileChange }
-        warningCount = traceEvents.count { [.warning, .error].contains($0.kind) }
+        fileChangeCount = orderedTraceEvents.count { $0.kind == .fileChange }
+        warningCount = orderedTraceEvents.count { [.warning, .error].contains($0.kind) }
 
         let recordedStart = runRecord.flatMap { ISO8601DateFormatter.shared.date(from: $0.createdAt) }
         let recordedFinish = runRecord?.finishedAt.flatMap { ISO8601DateFormatter.shared.date(from: $0) }

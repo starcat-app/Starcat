@@ -57,6 +57,13 @@ private struct AgentWorkspaceRightWidthPreferenceKey: PreferenceKey {
     }
 }
 
+private enum CodexProviderEndpointState: Equatable {
+    case unknown
+    case checking
+    case available
+    case unavailable
+}
+
 struct AgentWorkspaceView: View {
 
     private static let contextPickerPanelHeight: CGFloat = 420
@@ -96,6 +103,7 @@ struct AgentWorkspaceView: View {
     @State private var codexProviderCatalog = CodexProviderCatalog.load()
     @State private var isLoadingCodexModelCatalog = false
     @State private var codexModelCatalogError: String?
+    @State private var codexProviderEndpointStates: [String: CodexProviderEndpointState] = [:]
     @FocusState private var isContextPickerSearchFocused: Bool
     let chromeState: WorkspaceChromeState
 
@@ -192,6 +200,10 @@ struct AgentWorkspaceView: View {
         }
         .onChange(of: preferredCodexProviderID) { _, _ in
             codexModelCatalog = .empty
+            // 离开不可用 Provider 后允许下次重新选择并触发新预检，避免一次失败永久锁死菜单项。
+            codexProviderEndpointStates = codexProviderEndpointStates.filter {
+                $0.key == selectedCodexProviderID
+            }
             configureAgentRuntime()
         }
         .onChange(of: preferredCodexReasoningEffort) { _, _ in
@@ -243,7 +255,7 @@ struct AgentWorkspaceView: View {
             runtimeProviderName = selectedCodexProviderOption?.displayName ?? selectedCodexProviderID
             runtimeModelName = selectedCodexModelSelection?.modelName
             runtimeReasoningEffort = selectedCodexModelSelection?.reasoningEffort
-            runtimeSelectionAvailable = selectedCodexProviderOption?.isSelectable != false
+            runtimeSelectionAvailable = selectedCodexProviderOption.map(isCodexProviderAvailable) ?? false
         case .deepSeekHarness:
             // JSON-RPC carrier 不提供目录查询；这里冻结设置页已验证 Provider 的能力快照。
             runtimeProviderName = selectedDeepSeekSelection?.provider.displayName
@@ -361,24 +373,73 @@ struct AgentWorkspaceView: View {
         codexProviderCatalog.providers.first(where: { $0.id == selectedCodexProviderID })
     }
 
+    private func codexProviderEndpointState(for provider: CodexProviderOption) -> CodexProviderEndpointState {
+        guard provider.requiresEndpointProbe else { return .available }
+        return codexProviderEndpointStates[provider.id] ?? .unknown
+    }
+
+    private func isCodexProviderAvailable(_ provider: CodexProviderOption) -> Bool {
+        guard provider.isSelectable else { return false }
+        return codexProviderEndpointState(for: provider) == .available
+    }
+
+    private func isCodexProviderMenuSelectable(_ provider: CodexProviderOption) -> Bool {
+        guard provider.isSelectable else { return false }
+        switch codexProviderEndpointState(for: provider) {
+        case .checking, .unavailable:
+            return false
+        case .unknown, .available:
+            return true
+        }
+    }
+
+    private func codexEndpointUnavailableMessage(for provider: CodexProviderOption) -> String {
+        String(
+            format: String.l10n("agent.workspace.runtime.codexEndpointUnavailable"),
+            locale: locale,
+            provider.displayName
+        )
+    }
+
     private var codexCatalogTaskID: String {
         "\(selectedRuntimeBackend.rawValue):\(selectedCodexProviderID)"
     }
 
     /// 目录失败时保留 Codex 服务端默认行为：UI 不回退展示 BYOK 模型，turn/start 也不
-    /// 发送 model/effort 覆盖。用户仍可提交，并在切换后端或点击重试时重新拉取目录。
+    /// 发送 model/effort 覆盖。本机桥接端点是例外：必须先预检，避免 Codex 自己进入
+    /// 多轮网络重试；用户启动桥接服务后可从模型菜单点击重试。
     @MainActor
     private func loadCodexModelCatalogIfNeeded() async {
         guard selectedRuntimeBackend == .codexAppServer else { return }
         isLoadingCodexModelCatalog = true
         defer { isLoadingCodexModelCatalog = false }
         codexModelCatalogError = nil
+        let providerID = selectedCodexProviderID
+        if let provider = selectedCodexProviderOption, provider.requiresEndpointProbe {
+            codexProviderEndpointStates[provider.id] = .checking
+            configureAgentRuntime()
+            let isAvailable = await CodexProviderEndpointProbe().isAvailable(provider)
+            guard !Task.isCancelled,
+                  selectedRuntimeBackend == .codexAppServer,
+                  selectedCodexProviderID == providerID
+            else { return }
+            codexProviderEndpointStates[provider.id] = isAvailable ? .available : .unavailable
+            configureAgentRuntime()
+            guard isAvailable else {
+                codexModelCatalog = .empty
+                codexModelCatalogError = codexEndpointUnavailableMessage(for: provider)
+                return
+            }
+        }
         do {
             let client = try ExternalAgentRuntimePOCPreferences.makeCodexModelCatalogClient(
-                providerID: selectedCodexProviderID
+                providerID: providerID
             )
             let catalog = try await client.load()
-            guard !Task.isCancelled, selectedRuntimeBackend == .codexAppServer else { return }
+            guard !Task.isCancelled,
+                  selectedRuntimeBackend == .codexAppServer,
+                  selectedCodexProviderID == providerID
+            else { return }
             codexModelCatalog = catalog
             if let selection = selectedCodexModelSelection {
                 preferredCodexModelID = selection.modelID
@@ -829,6 +890,15 @@ struct AgentWorkspaceView: View {
                         locale: locale,
                         credentialKey
                     ),
+                    systemImage: "exclamationmark.triangle"
+                )
+                .font(agentFont(.caption))
+                .foregroundStyle(.secondary)
+            } else if selectedRuntimeBackend == .codexAppServer,
+                      let provider = selectedCodexProviderOption,
+                      codexProviderEndpointState(for: provider) == .unavailable {
+                Label(
+                    codexEndpointUnavailableMessage(for: provider),
                     systemImage: "exclamationmark.triangle"
                 )
                 .font(agentFont(.caption))
@@ -1434,7 +1504,7 @@ struct AgentWorkspaceView: View {
                         Text(provider.displayName)
                     }
                 }
-                .disabled(!provider.isSelectable)
+                .disabled(!isCodexProviderMenuSelectable(provider))
                 .help(
                     provider.credentialEnvironmentKey.map { key in
                         String(
@@ -1442,13 +1512,15 @@ struct AgentWorkspaceView: View {
                             locale: locale,
                             key
                         )
-                    } ?? provider.displayName
+                    } ?? (codexProviderEndpointState(for: provider) == .unavailable
+                        ? codexEndpointUnavailableMessage(for: provider)
+                        : provider.displayName)
                 )
             }
         } label: {
             Label(
                 selectedCodexProviderOption?.displayName ?? selectedCodexProviderID,
-                systemImage: selectedCodexProviderOption?.isSelectable == false
+                systemImage: selectedCodexProviderOption.map(isCodexProviderAvailable) == false
                     ? "exclamationmark.triangle"
                     : "server.rack"
             )
@@ -1525,9 +1597,9 @@ struct AgentWorkspaceView: View {
                 preferredDeepSeekReasoningEffort = ""
             } label: {
                 if preferredDeepSeekReasoningEffort.isEmpty {
-                    Label("agent.workspace.runtime.providerDefault", systemImage: "checkmark")
+                    Label("agent.workspace.runtime.default", systemImage: "checkmark")
                 } else {
-                    Text("agent.workspace.runtime.providerDefault")
+                    Text("agent.workspace.runtime.default")
                 }
             }
             Divider()
@@ -1545,7 +1617,7 @@ struct AgentWorkspaceView: View {
         } label: {
             Label(
                 preferredDeepSeekReasoningEffort.isEmpty
-                    ? String.l10n("agent.workspace.runtime.providerDefault")
+                    ? String.l10n("agent.workspace.runtime.default")
                     : reasoningEffortDisplayName(preferredDeepSeekReasoningEffort),
                 systemImage: "brain"
             )

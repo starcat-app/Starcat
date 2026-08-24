@@ -274,6 +274,12 @@ enum AppEndpoints {
             static let summary = "/api/v1/discovery/summary"
             /// `GET /api/v1/discovery/bulk` —— 发现 / 热门 / 新发布本地优先全量快照。
             static let bulk = "/api/v1/discovery/bulk"
+            /// `GET /api/v1/discovery/awesome/sources` —— Starcat 精选 Awesome 来源目录。
+            static let awesomeSources = "/api/v1/discovery/awesome/sources"
+            /// `GET /api/v1/discovery/awesome/sources/{source_id}/entries` —— 单来源完整 Repo 快照。
+            static func awesomeEntries(sourceID: String) -> String {
+                "/api/v1/discovery/awesome/sources/\(sourceID)/entries"
+            }
             /// `GET /api/v1/discovery/languages` —— Discovery 可用语言。
             static let languages = "/api/v1/discovery/languages"
             /// `GET /api/v1/discovery/topics` —— Discovery 主题元数据。

@@ -64,6 +64,16 @@ struct DeepSeekHarnessAdapter: ExternalAgentProtocolAdapter {
                     + "Run scripts/install-deepseek-harness-runtime.sh and select its Starcat config."
             )
         }
+        if routeConfiguration != nil,
+           cordisConfig.contains("@deepseek-ai/dsh-llm-") {
+            // Starcat 现在按工作台选择为每轮注入唯一 Provider route。旧版配置里的
+            // dsh-llm-deepseek 会与新 route 同时注册，Cordis 因重复 LLM service 在
+            // plugin tree 激活阶段直接退出；必须在 spawn 前给出可操作错误。
+            throw ExternalAgentRuntimeError.protocolError(
+                "DeepSeek Harness Cordis config contains a legacy LLM plugin. "
+                    + "Run scripts/install-deepseek-harness-runtime.sh to refresh the Starcat config."
+            )
+        }
         self.executableURL = executableURL
         self.provider = provider
         self.modelOverride = modelOverride
@@ -120,9 +130,9 @@ enum DeepSeekHarnessCordisRunConfiguration {
                 "DeepSeek Harness base Cordis config must not preconfigure the Starcat MCP client."
             )
         }
-        if routeConfiguration != nil, base.contains("@deepseek-ai/dsh-llm-pi-ai") {
+        if routeConfiguration != nil, base.contains("@deepseek-ai/dsh-llm-") {
             throw ExternalAgentRuntimeError.protocolError(
-                "DeepSeek Harness base Cordis config must not preconfigure dsh-llm-pi-ai."
+                "DeepSeek Harness base Cordis config must not preconfigure an LLM plugin."
             )
         }
         let runConfigURL = workingDirectory.appendingPathComponent("starcat-run.cordis.yml")
@@ -155,40 +165,48 @@ enum DeepSeekHarnessCordisRunConfiguration {
     private static func providerPlugin(_ selection: DeepSeekRuntimeSelection) -> String {
         let provider = selection.provider
         let model = selection.model
-        var reasoning = ""
-        if !model.supportedReasoningEfforts.isEmpty {
-            let levels = model.supportedReasoningEfforts.map { effort in
-                let wireValue = effort == "off" ? "" : effort
-                return "                      \(effort): \(wireValue)"
-            }
-                .joined(separator: "\n")
-            reasoning = "\n                    reasoningEfforts:\n\(levels)"
+        // Swift 多行字符串会对字面量执行统一去缩进，但不会调整插值字符串内部的
+        // 空格。这里必须逐行构造 YAML，否则 compat/reasoning 等可选块一经插值就会
+        // 比相邻字段多缩进一层，Harness 会在 plugin tree 加载前直接报 YAMLException。
+        var lines = [
+            "",
+            "# Starcat 当前 Run 的 Provider/Model。凭据只从 Keychain 注入的环境变量读取。",
+            "- id: starcat-llm",
+            "  name: '@deepseek-ai/dsh-llm-pi-ai'",
+            "  config:",
+            "    providers:",
+            "      \(DeepSeekRuntimeSelection.providerRoute):",
+            "        displayName: \(yamlScalar(provider.displayName))",
+            "        apiKeyEnv: \(DeepSeekRuntimeSelection.credentialEnvironmentKey)",
+            "        api: openai-completions",
+            "        baseURL: \(yamlScalar(provider.baseURL))",
+        ]
+        if let reasoningEffort = selection.reasoningEffort {
+            lines.append("        reasoning: \(reasoningEffort)")
         }
-        var compat = "\n                compat:\n"
-            + "                  supportsDeveloperRole: false\n"
-            + "                  maxTokensField: max_tokens"
+        lines += [
+            "        compat:",
+            "          supportsDeveloperRole: false",
+            "          maxTokensField: max_tokens",
+        ]
         if provider.provider == .deepSeek {
-            compat += "\n                  thinkingFormat: deepseek"
+            lines.append("          thinkingFormat: deepseek")
         }
-        let selectedReasoning = selection.reasoningEffort.map { "\n                reasoning: \($0)" } ?? ""
-        return """
-
-        # Starcat 当前 Run 的 Provider/Model。凭据只从 Keychain 注入的环境变量读取。
-        - id: starcat-llm
-          name: '@deepseek-ai/dsh-llm-pi-ai'
-          config:
-            providers:
-              \(DeepSeekRuntimeSelection.providerRoute):
-                displayName: \(yamlScalar(provider.displayName))
-                apiKeyEnv: \(DeepSeekRuntimeSelection.credentialEnvironmentKey)
-                api: openai-completions
-                baseURL: \(yamlScalar(provider.baseURL))\(selectedReasoning)\(compat)
-                models:
-                  - id: \(yamlScalar(model.name))
-                    name: \(yamlScalar(model.name))
-                    contextWindow: \(model.contextWindow)
-                    maxTokens: \(model.maxTokens)\(reasoning)
-        """
+        lines += [
+            "        models:",
+            "          - id: \(yamlScalar(model.name))",
+            "            name: \(yamlScalar(model.name))",
+            "            contextWindow: \(model.contextWindow)",
+            "            maxTokens: \(model.maxTokens)",
+        ]
+        if !model.supportedReasoningEfforts.isEmpty {
+            lines.append("            reasoningEfforts:")
+            for effort in model.supportedReasoningEfforts {
+                let wireValue = effort == "off" ? "" : " \(effort)"
+                lines.append("              \(effort):\(wireValue)")
+            }
+        }
+        return lines.joined(separator: "\n")
     }
 
     private static func yamlScalar(_ value: String) -> String {

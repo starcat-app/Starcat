@@ -1,0 +1,202 @@
+/**
+ * assess 舞台样式 v2 —— 真截图主角 + 扫描线 + 探索芯片。
+ *
+ * 主导动作按 step 换：整卡揭开+三轴 chip 压图 → 大字标题+整卡 →
+ * 大字标题+整卡 → 五枚入口芯片逐个压入。颜色和字体家族只引用 token；
+ * 动画时长 ≤ 各步口播估时（~6s / ~5s / ~7s / ~5s）。
+ */
+
+.as-scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.as-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.as-kicker {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  margin-bottom: 20px;
+  animation: as-rise 600ms ease both;
+}
+
+@keyframes as-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── 截图卡 ── */
+.as-shot {
+  position: relative;
+  margin: 0;
+  overflow: hidden;
+  border: var(--bw-1) solid var(--rule);
+  border-radius: var(--r-card);
+  box-shadow: 0 40px 120px rgba(0, 0, 0, 0.5);
+  background: var(--surface-2);
+}
+
+.as-shot-img {
+  display: block;
+  width: 1360px;
+  height: 680px;
+  object-fit: cover;
+  object-position: top center;
+}
+
+.as-shot-wipe {
+  clip-path: inset(4% 3% 4% 3%);
+  animation: as-open 1.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes as-open {
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+/* 评估扫描线：一次扫过，表达「正在打分」。accent 全走 token（color-mix） */
+.as-scan {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 6%;
+  height: 90px;
+  pointer-events: none;
+  opacity: 0;
+  animation: as-scan-sweep 1.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  background:
+    linear-gradient(
+      to bottom,
+      transparent,
+      color-mix(in srgb, var(--accent) 14%, transparent) 45%,
+      var(--accent) 50%,
+      color-mix(in srgb, var(--accent) 14%, transparent) 55%,
+      transparent
+    );
+}
+
+@keyframes as-scan-sweep {
+  0% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+  8% {
+    opacity: 1;
+  }
+  92% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(700px);
+  }
+}
+
+/* ── step 0：Health 三轴压图 ── */
+.as-axes {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  gap: 28px;
+  padding: 64px 44px 36px;
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.72) 0%,
+    rgba(0, 0, 0, 0.25) 65%,
+    transparent 100%
+  );
+}
+
+.as-axis {
+  padding: 12px 30px;
+  border: var(--bw-1) solid var(--accent);
+  background: rgba(0, 0, 0, 0.55);
+  font-family: var(--font-display-cn);
+  font-size: 32px;
+  color: var(--accent);
+  animation: as-rise 650ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.as-cap {
+  margin: 16px 0 0;
+  font-size: 34px;
+  color: var(--text-2);
+  animation: as-rise 700ms ease 3200ms both;
+}
+
+/* ── step 1/2 标题 ── */
+.as-title {
+  margin: 0 0 24px;
+  font-size: 80px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  animation: as-rise 800ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.as-title span {
+  color: var(--accent);
+  font-style: italic;
+}
+
+/* step2 CodeFlow：推镜落定，与 step1 的扫描线区分主导动作 */
+.as-img-settle {
+  transform: scale(1.12);
+  transform-origin: 50% 40%;
+  animation: as-settle 2.2s cubic-bezier(0.22, 1, 0.36, 1) 300ms forwards;
+}
+
+@keyframes as-settle {
+  to {
+    transform: scale(1);
+  }
+}
+
+/* ── step 3：探索入口五芯片 ── */
+.as-explore {
+  display: flex;
+  gap: 26px;
+}
+
+.as-entry {
+  padding: 34px 44px;
+  border: var(--bw-1) solid var(--rule);
+  border-top: 3px solid var(--accent);
+  background: var(--surface-2);
+  border-radius: var(--r-card);
+  font-family: var(--font-display-cn);
+  font-size: 44px;
+  color: var(--text);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  animation: as-entry-in 650ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes as-entry-in {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

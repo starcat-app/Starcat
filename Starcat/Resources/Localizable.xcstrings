@@ -29454,6 +29454,42 @@
         }
       }
     },
+    "agent.workspace.trace.audit.issues" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Issues" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "异常" } }
+      }
+    },
+    "agent.workspace.trace.audit.model" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Model" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "模型" } }
+      }
+    },
+    "agent.workspace.trace.audit.tools" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tools" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "工具" } }
+      }
+    },
+    "agent.workspace.trace.audit.total" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "All" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "全部" } }
+      }
+    },
+    "agent.workspace.trace.mode.allEvents" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "All events" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "全部事件" } }
+      }
+    },
+    "agent.workspace.trace.mode.process" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Process" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "执行过程" } }
+      }
+    },
     "agent.workspace.trace.contentTruncated" : {
       "localizations" : {
         "en" : {
@@ -30006,6 +30042,12 @@
         }
       }
     },
+    "agent.workspace.trace.repoCountFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%d repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%d 个仓库" } }
+      }
+    },
     "agent.workspace.trace.stepCountFormat" : {
       "localizations" : {
         "en" : {
@@ -30118,10 +30160,28 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "聚类仓库主题" } }
       }
     },
+    "agent.workspace.trace.tool.readReadme" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Read README" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "读取 README" } }
+      }
+    },
+    "agent.workspace.trace.tool.readRepositorySummary" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Read Repository Summary" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "读取仓库摘要" } }
+      }
+    },
     "agent.workspace.trace.tool.running" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Calling Starcat tool" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在调用 Starcat 工具" } }
+      }
+    },
+    "agent.workspace.trace.tool.searchRepositories" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Search Repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "搜索仓库" } }
       }
     },
     "agent.workspace.trace.toolID" : {
@@ -69816,6 +69876,762 @@
         }
       }
     },
+    "awesome.detail.currentSource" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Current source"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前来源"
+          }
+        }
+      }
+    },
+    "awesome.detail.openSourceEntry" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View original README entry"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看原始 README 条目"
+          }
+        }
+      }
+    },
+    "awesome.detail.sectionFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Section: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所属章节：%@"
+          }
+        }
+      }
+    },
+    "awesome.detail.sources.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Awesome Sources"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Awesome 收录来源"
+          }
+        }
+      }
+    },
+    "awesome.empty.noSources.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Starcat Picks or add a public GitHub Awesome repository."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请选择 Starcat 精选来源，或添加一个公开 GitHub Awesome 仓库。"
+          }
+        }
+      }
+    },
+    "awesome.empty.noSources.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Awesome Sources"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未选择 Awesome 来源"
+          }
+        }
+      }
+    },
+    "awesome.error.duplicateSource" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Awesome source already exists."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个 Awesome 来源已经存在。"
+          }
+        }
+      }
+    },
+    "awesome.error.invalidReadme" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The README is not valid UTF-8 text."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "README 不是有效的 UTF-8 文本。"
+          }
+        }
+      }
+    },
+    "awesome.error.invalidSource" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter owner/repo or a public HTTPS GitHub repository URL."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请输入 owner/repo 或公开 GitHub 仓库的 HTTPS 地址。"
+          }
+        }
+      }
+    },
+    "awesome.error.noValidRepositories" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The README does not contain any available public GitHub repositories."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "README 中没有可用的公开 GitHub 仓库。"
+          }
+        }
+      }
+    },
+    "awesome.error.partialRefreshFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d source(s) could not be refreshed. Cached results remain available."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 个来源刷新失败，已继续使用本地缓存。"
+          }
+        }
+      }
+    },
+    "awesome.error.publicOnly" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Custom Awesome sources must be public repositories."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自定义 Awesome 来源必须是公开仓库。"
+          }
+        }
+      }
+    },
+    "awesome.error.readmeTooLarge" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This README exceeds the local parsing limit."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该 README 超出本地解析大小限制。"
+          }
+        }
+      }
+    },
+    "awesome.error.sourceUnavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Awesome source is archived or unavailable."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该 Awesome 来源已归档或不可用。"
+          }
+        }
+      }
+    },
+    "awesome.repo.sourceCountFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d sources"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 个收录来源"
+          }
+        }
+      }
+    },
+    "awesome.search.placeholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search Awesome repositories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索 Awesome 项目"
+          }
+        }
+      }
+    },
+    "awesome.section.all" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Sections"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全部章节"
+          }
+        }
+      }
+    },
+    "awesome.section.other" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其他"
+          }
+        }
+      }
+    },
+    "awesome.section.results" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repositories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "项目"
+          }
+        }
+      }
+    },
+    "awesome.section.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Section"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "章节"
+          }
+        }
+      }
+    },
+    "awesome.sidebar.all" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Awesome"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全部 Awesome"
+          }
+        }
+      }
+    },
+    "awesome.sidebar.sources" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Awesome Sources"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Awesome 来源"
+          }
+        }
+      }
+    },
+    "awesome.sort.name" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名称"
+          }
+        }
+      }
+    },
+    "awesome.sort.original" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Original Order"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原始顺序"
+          }
+        }
+      }
+    },
+    "awesome.sort.stars" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stars"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stars"
+          }
+        }
+      }
+    },
+    "awesome.sort.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sort"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "排序"
+          }
+        }
+      }
+    },
+    "awesome.sort.updated" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recently Updated"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近更新"
+          }
+        }
+      }
+    },
+    "awesome.sources.custom.add" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加"
+          }
+        }
+      }
+    },
+    "awesome.sources.custom.confirm.add" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Add Source" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "添加来源" } }
+      }
+    },
+    "awesome.sources.custom.confirm.messageFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%1$lld public GitHub repositories found; %2$lld external links will not enter the repository list." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "解析到 %1$lld 个公开 GitHub 仓库；%2$lld 个外部链接不会进入项目列表。" } }
+      }
+    },
+    "awesome.sources.custom.confirm.titleFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Add “%@”?" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "添加“%@”？" } }
+      }
+    },
+    "awesome.sources.custom.delete.confirm" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete Source" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "删除来源" } }
+      }
+    },
+    "awesome.sources.custom.delete.message" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This removes the local source, subscription, and parsed entries. Your Stars, library, tags, and notes are not affected." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这会删除本地来源、订阅和解析条目；不会影响你的 Stars、知识库、标签和笔记。" } }
+      }
+    },
+    "awesome.sources.custom.delete.titleFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete “%@”?" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "删除“%@”？" } }
+      }
+    },
+    "awesome.sources.custom.placeholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "owner/repo or https://github.com/owner/repo"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "owner/repo 或 https://github.com/owner/repo"
+          }
+        }
+      }
+    },
+    "awesome.sources.custom.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parsed locally and never uploaded to Discovery."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅在本机解析，不会上传到 Discovery。"
+          }
+        }
+      }
+    },
+    "awesome.sources.custom.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "My Sources"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "我的来源"
+          }
+        }
+      }
+    },
+    "awesome.sources.done" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完成"
+          }
+        }
+      }
+    },
+    "awesome.sources.empty.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retry the catalog or add a custom public GitHub source."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请重试来源目录，或添加一个公开 GitHub 自定义来源。"
+          }
+        }
+      }
+    },
+    "awesome.sources.empty.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Starcat Picks Available"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无 Starcat 精选来源"
+          }
+        }
+      }
+    },
+    "awesome.sources.featured" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Featured"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "推荐"
+          }
+        }
+      }
+    },
+    "awesome.sources.loading" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading Awesome sources…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在加载 Awesome 来源…"
+          }
+        }
+      }
+    },
+    "awesome.sources.manage" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manage Awesome Sources"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理 Awesome 来源"
+          }
+        }
+      }
+    },
+    "awesome.sources.notSelected" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not selected"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未选择"
+          }
+        }
+      }
+    },
+    "awesome.sources.removeCustom" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove Custom Source"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除自定义来源"
+          }
+        }
+      }
+    },
+    "awesome.sources.repoCountFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d repositories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 个项目"
+          }
+        }
+      }
+    },
+    "awesome.sources.selected" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selected"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已选择"
+          }
+        }
+      }
+    },
+    "awesome.sources.stale" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh failed · showing saved entries"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刷新失败 · 正在显示已保存条目"
+          }
+        }
+      }
+    },
+    "awesome.sources.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Starcat Picks or add your own public Awesome repository."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "勾选 Starcat 精选来源，或添加自己的公开 Awesome 仓库。"
+          }
+        }
+      }
+    },
+    "awesome.sources.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Awesome Sources"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择 Awesome 来源"
+          }
+        }
+      }
+    },
+    "awesome.sources.unavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unavailable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来源不可用"
+          }
+        }
+      }
+    },
     "batch.addTags" : {
       "localizations" : {
         "ar" : {
@@ -81711,6 +82527,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Issue 事件流快取路徑包含無效字元：%@。"
+          }
+        }
+      }
+    },
+    "cache.issueCommentDraft.error.applicationSupportUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not locate the Issue comment draft directory. Please retry or restart the app."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法定位 Issue 评论草稿目录，请重试或重启应用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法定位 Issue 評論草稿目錄，請重試或重新啟動應用程式。"
+          }
+        }
+      }
+    },
+    "cache.issueCommentDraft.error.unsafePathComponentFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Issue comment draft path segment contains invalid characters: %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Issue 评论草稿路径包含非法字符：%@。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Issue 評論草稿路徑包含無效字元：%@。"
           }
         }
       }
@@ -110643,6 +111505,134 @@
         }
       }
     },
+    "explore.help.awesome.cache.offline" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline handling: the last successful source and entry snapshots remain available."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "离线处理：继续展示上次成功的来源与条目快照。"
+          }
+        }
+      }
+    },
+    "explore.help.awesome.cache.ttl" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cache lifetime: managed snapshots follow the Discovery service refresh cycle; custom sources refresh on demand."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "缓存周期：内置来源跟随 Discovery 服务刷新，自定义来源按需刷新。"
+          }
+        }
+      }
+    },
+    "explore.help.awesome.cache.update" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update method: load the local cache first, then refresh enabled sources without blocking browsing."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新方式：先加载本地缓存，再后台刷新已启用来源，不阻断浏览。"
+          }
+        }
+      }
+    },
+    "explore.help.awesome.open" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "About Awesome sources"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "了解 Awesome 来源"
+          }
+        }
+      }
+    },
+    "explore.help.awesome.rule.deduplication" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repositories are deduplicated by GitHub repository ID while every source reference is retained."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "项目按 GitHub Repository ID 去重，同时保留全部来源证据。"
+          }
+        }
+      }
+    },
+    "explore.help.awesome.rule.readme" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub repository links are parsed from README lists; external non-GitHub links are only counted."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从 README 列表解析 GitHub 仓库链接；外部非 GitHub 链接仅计数。"
+          }
+        }
+      }
+    },
+    "explore.help.awesome.rule.subscription" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only sources enabled for the current account appear in the sidebar and repository list."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只有当前账户启用的来源会出现在左栏和项目列表中。"
+          }
+        }
+      }
+    },
+    "explore.help.awesome.source" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Managed Awesome catalogs from the Discovery API and public GitHub repositories added locally."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discovery API 提供的内置 Awesome 目录，以及用户在本机添加的公开 GitHub 仓库。"
+          }
+        }
+      }
+    },
     "explore.help.weekly.cache.ttl" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -111767,6 +112757,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "趨勢"
+          }
+        }
+      }
+    },
+    "explore.mode.awesome" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Awesome"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Awesome"
           }
         }
       }
@@ -379734,6 +380740,52 @@
         }
       }
     },
+    "settings.storage.clearIssueCommentDraft.confirm" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear Issue comment drafts?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除 Issue 评论草稿？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除 Issue 評論草稿？"
+          }
+        }
+      }
+    },
+    "settings.storage.clearIssueCommentDraft.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unsent comment drafts saved on this Mac will be removed. Comments already posted to GitHub are not affected."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将删除本机保存的未提交评论草稿。已经发到 GitHub 的评论不受影响。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將刪除此裝置上儲存的未提交評論草稿。已發到 GitHub 的評論不受影響。"
+          }
+        }
+      }
+    },
     "settings.storage.clearRAGHistory.confirm" : {
       "localizations" : {
         "ar" : {
@@ -382032,6 +383084,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "通知詳情裡的 Issue 評論和事件。關掉 App 後仍可先讀本地。"
+          }
+        }
+      }
+    },
+    "settings.storage.issueCommentDraft" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Issue comment drafts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Issue 评论草稿"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Issue 評論草稿"
+          }
+        }
+      }
+    },
+    "settings.storage.issueCommentDraft.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unsent Issue / PR comment drafts, including AI replies. Still available after you quit or switch threads."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未提交的 Issue / PR 评论草稿，包括 AI 回复。关掉 App 或切换帖子后仍保留。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未提交的 Issue / PR 評論草稿，包括 AI 回覆。關閉 App 或切換討論串後仍保留。"
           }
         }
       }
@@ -470380,6 +471478,12 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "运行时长" } }
       }
     },
+    "agent.workspace.inspector.overview.events" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Events" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "事件" } }
+      }
+    },
     "agent.workspace.inspector.overview.execution" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -470490,6 +471594,24 @@
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Back" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "返回" } }
+      }
+    },
+    "agent.workspace.inspector.step.completedAt" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Completed at" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "完成时间" } }
+      }
+    },
+    "agent.workspace.inspector.step.originalTitle" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Original title" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "原始标题" } }
+      }
+    },
+    "agent.workspace.inspector.step.providerEvent" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Runtime event" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Runtime 事件" } }
       }
     },
     "agent.workspace.inspector.step.details" : {
@@ -473075,6 +474197,13 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Codex config.toml 中配置的服务商" } }
       }
     },
+    "agent.workspace.runtime.codexEndpointUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The %@ endpoint is unavailable. Start its local bridge, then retry." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法连接 %@ 端点。请启动对应的本地桥接服务后重试。" } }
+      }
+    },
     "agent.workspace.runtime.codexCredentialBlocked" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -473101,6 +474230,13 @@
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Provider" } },
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "服务商" } }
+      }
+    },
+    "agent.workspace.runtime.default" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Default" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Default" } }
       }
     },
     "agent.workspace.runtime.providerDefault" : {

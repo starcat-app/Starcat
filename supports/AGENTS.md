@@ -1,6 +1,6 @@
 # supports/AGENTS.md — Starcat 配套项目工作区
 
-> 本目录包含 Starcat 的后端 Go 服务、官网、用户文档、CLI、插件、Homebrew tap 等独立配套项目。
+> 本目录包含 Starcat 的后端 Go 服务、官网、管理控制台、用户文档、CLI、插件、Homebrew tap 等独立配套项目。
 > 本文档给所有 AI 协作者(Claude / Cursor / Gemini CLI 等)阅读，重点记录 Go API 通用约定，并说明其它独立仓库的边界。
 
 ---
@@ -11,7 +11,8 @@
 
 | 项目类型 | 目录 | 说明 |
 |----------|------|------|
-| 官网 | `starcat-site/` | Direct、Direct Test、App Store 官网与本地运营控制台的源码单一来源 |
+| 官网 | `starcat-site/` | Direct、Direct Test、App Store 官网源码；旧 `_local-admin` 只保留到新控制台验收 |
+| 管理控制台 | `starcat-admin-console/` | React + shadcn/ui 本地运营控制台；远程部署属于第二阶段 |
 | 用户文档 | `starcat-docs/` | Mintlify 官方使用文档 |
 | 公开支持 | `starcat-pro/` | Issue、公开发布说明与营销图片源 |
 | 工具与集成 | `starcat-cli/`、`starcat-skill/`、`extensions/` | CLI/MCP、AI Agent Skill 与浏览器插件 |
@@ -19,7 +20,8 @@
 | 后端 API | `starcat-*-api/`、`starcat-api-kit/`、`starcat-api/` | 六个业务服务、共享 kit、聚合网关与独立 license / collection；Fly.io 规则只适用于可部署服务 |
 | 数据与离线训练 | `starcat-collection-api/`、`starcat-recsys-trainer/` | 私有数据收集 Go 服务 + Python 离线管道；Collection 只接收快照并导出，Trainer 主动 Pull 后训练 |
 
-> 官网源码、Changelog 生成与部署统一归 `starcat-site/`，不要在主仓库另建平行站点目录。
+> 官网源码、Changelog 生成与部署统一归 `starcat-site/`；服务运营控制台独立归
+> `starcat-admin-console/`，不要再扩展 `starcat-site/_local-admin`。
 
 | 子项目 | 用途 | 客户端哪里用 |
 |--------|------|--------------|
@@ -43,7 +45,7 @@
 | `starcat-wiki-api` | 5004 | SQLite(`wiki.db`) | Wiki / 文档索引探测、SWR 缓存 | `starcat-wiki-api` | `golang.org/x/net/html` |
 | `starcat-recommend-api` | 5005 | 进程内缓存 | SimRepo 相似仓库推荐代理 | `starcat-recommend-api` | `github.com/joho/godotenv` |
 | `starcat-discovery-api` | 5006 | SQLite(`discovery.db`) | 探索发现、热门、新发布榜单 | `starcat-discovery-api` | `modernc.org/sqlite`、`robfig/cron` |
-| `starcat-collection-api` | 5011 | SQLite(`collection.db`) | 公开 Star 快照分块接收、激活与 Trainer 导出 | `starcat-collection-api`（待创建） | `starcat-api-kit`、`modernc.org/sqlite` |
+| `starcat-collection-api` | 5011 | SQLite(`collection.db`) | 公开 Star 快照分块接收、激活与 Trainer 导出 | `starcat-app/starcat-collection-api`（私有） | `starcat-api-kit`、`modernc.org/sqlite` |
 | `starcat-api-kit` | — | — | 共享 auth / envelope / CORS / tokenpool | — | 被各 API 通过版本化 Go module 引用 |
 | `starcat-api` | 8080 | `/data` 多库 | `X-SC-Svc` 优先、Host 回退，聚合 6 个业务 API（不含 license） | `starcat-api` | 依赖各 API `server` 包 |
 

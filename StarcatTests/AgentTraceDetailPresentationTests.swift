@@ -135,17 +135,155 @@ struct AgentTraceDetailPresentationTests {
             == String.l10n("agent.workspace.trace.kind.thinking"))
     }
 
-    @Test("展开后隐藏与明细重复的摘要")
-    func hidesDuplicateSummaryWhenExpanded() {
+    @Test("DeepSeek MCP 工具名去除传输后缀并保留原始 ID")
+    func normalizesDeepSeekMCPToolTitle() {
+        let rawName = "mcp__starcat__starcat_search_repos_12478560673a"
         let event = traceEvent(
-            kind: .reasoningSummary,
-            title: "Reasoning Summary",
-            summary: "检查仓库范围",
-            details: [.init(label: "思考过程", value: "检查仓库范围", format: .markdown)]
+            backend: .deepSeekHarness,
+            kind: .tool,
+            title: rawName,
+            details: []
         )
 
-        #expect(AgentTraceRowPresentation.shouldShowSummary(for: event, isExpanded: false))
-        #expect(!AgentTraceRowPresentation.shouldShowSummary(for: event, isExpanded: true))
+        #expect(AgentTraceTitlePresentation.title(for: event)
+            == String.l10n("agent.workspace.trace.tool.searchRepositories"))
+        let presentation = AgentTraceDetailPresentationBuilder.make(event: event)
+        #expect(presentation.sections.first?.content == .code(rawName))
+    }
+
+    @Test("工具行从 DeepSeek MCP 结果提取仓库数量")
+    func summarizesDeepSeekRepositorySearch() throws {
+        let result = try deepSeekToolResultJSON(text: #"{"repos":[{"name":"one"},{"name":"two"}]}"#)
+        let event = traceEvent(
+            backend: .deepSeekHarness,
+            kind: .tool,
+            title: "mcp__starcat__starcat_search_repos_12478560673a",
+            summary: String.l10n("agent.workspace.trace.tool.completed"),
+            details: [
+                .init(label: "Input", value: #"{"query":"swift"}"#, format: .json),
+                .init(label: "Output", value: try result.jsonString(), format: .json),
+            ]
+        )
+
+        #expect(AgentTraceRowPresentation.summary(for: event)
+            == String(format: String.l10n("agent.workspace.trace.repoCountFormat"), 2))
+    }
+
+    @Test("DeepSeek MCP 嵌套结果解包为业务结构")
+    func unwrapsDeepSeekToolResultEnvelope() throws {
+        let result = try deepSeekToolResultJSON(text: #"{"repos":[{"name":"one","stars":10},{"name":"two","stars":20}]}"#)
+        let event = traceEvent(
+            backend: .deepSeekHarness,
+            kind: .tool,
+            title: "mcp__starcat__starcat_search_repos_12478560673a",
+            details: [.init(label: "Output", value: try result.jsonString(), format: .json)]
+        )
+
+        let presentation = AgentTraceDetailPresentationBuilder.make(event: event)
+        guard case .structured(.object(let fields)) = presentation.sections.last?.content else {
+            Issue.record("DeepSeek message envelope 应解包到 MCP 业务结果")
+            return
+        }
+        #expect(fields.map(\.key) == ["repos"])
+        #expect(presentation.rawPayload?.contains("tool-result") == true)
+    }
+
+    @Test("DeepSeek 时间线保留全部事件并遵循原始顺序")
+    func preservesEveryDeepSeekEvent() {
+        let runID = UUID()
+        let events = [
+            traceEvent(runID: runID, backend: .deepSeekHarness, sequence: 0, kind: .lifecycle, title: "agent/inbox/spliced", details: []),
+            traceEvent(runID: runID, backend: .deepSeekHarness, sequence: 1, kind: .warning, title: "Turn 1", details: []),
+            traceEvent(runID: runID, backend: .deepSeekHarness, sequence: 2, kind: .message, title: "Runtime message", details: []),
+            traceEvent(runID: runID, backend: .deepSeekHarness, sequence: 3, kind: .request, title: "Model request", details: []),
+            traceEvent(runID: runID, backend: .deepSeekHarness, sequence: 4, kind: .tool, title: "starcat.search_repos", details: []),
+        ]
+
+        let snapshot = AgentTraceTimelinePresentation.makeSnapshot(events)
+
+        #expect(snapshot.orderedEvents.map(\.kind) == [.lifecycle, .warning, .message, .request, .tool])
+        #expect(snapshot.eventCount == events.count)
+    }
+
+    @Test("DeepSeek 过程视图按 turn step 归组并推断工具父级")
+    func groupsDeepSeekEventsWithoutDroppingAuditFacts() {
+        let runID = UUID()
+        let turnID = "\(runID.uuidString):turn:0"
+        let stepID = "\(runID.uuidString):turn:0:step:0"
+        let events = [
+            traceEvent(
+                id: "\(runID.uuidString):session",
+                runID: runID,
+                backend: .deepSeekHarness,
+                providerEventID: "session/title",
+                sequence: 0,
+                kind: .lifecycle,
+                title: "Session",
+                details: []
+            ),
+            traceEvent(
+                id: turnID,
+                runID: runID,
+                backend: .deepSeekHarness,
+                providerEventID: "turn:0",
+                sequence: 1,
+                kind: .warning,
+                title: "Warning",
+                details: []
+            ),
+            traceEvent(
+                id: stepID,
+                runID: runID,
+                backend: .deepSeekHarness,
+                providerEventID: "turn:0:step:0",
+                parentID: turnID,
+                sequence: 2,
+                kind: .lifecycle,
+                title: "Step 1",
+                details: []
+            ),
+            traceEvent(
+                id: "\(runID.uuidString):request",
+                runID: runID,
+                backend: .deepSeekHarness,
+                providerEventID: "request:0:0",
+                parentID: stepID,
+                sequence: 3,
+                kind: .request,
+                title: "Model request",
+                details: []
+            ),
+            traceEvent(
+                id: "\(runID.uuidString):tool",
+                runID: runID,
+                backend: .deepSeekHarness,
+                providerEventID: "tool:call-1",
+                sequence: 4,
+                kind: .tool,
+                title: "starcat.search_repos",
+                details: []
+            ),
+        ]
+
+        let snapshot = AgentTraceTimelinePresentation.makeSnapshot(events)
+        let rows = AgentTraceTimelinePresentation.processRows(
+            snapshot: snapshot,
+            collapsedNodeIDs: []
+        )
+
+        #expect(snapshot.roots.map(\.id) == [events[0].id, turnID])
+        #expect(rows.map(\.depth) == [0, 0, 1, 2, 2])
+        #expect(rows.map(\.id) == events.map(\.id))
+        #expect(AgentTraceTitlePresentation.title(for: events[1])
+            == "\(String.l10n("agent.workspace.trace.kind.turn")) 1")
+        #expect(rows[1].childCount == 3)
+        #expect(rows[2].childCount == 2)
+
+        let collapsedRows = AgentTraceTimelinePresentation.processRows(
+            snapshot: snapshot,
+            collapsedNodeIDs: [stepID]
+        )
+        #expect(collapsedRows.map(\.id) == [events[0].id, turnID, stepID])
     }
 
     @Test("超长 Markdown 与原始载荷按展示预算裁剪")
@@ -195,21 +333,48 @@ struct AgentTraceDetailPresentationTests {
     }
 
     private func traceEvent(
+        id: String = UUID().uuidString,
+        runID: UUID = UUID(),
+        backend: AgentRuntimeBackend = .codexAppServer,
+        providerEventID: String? = nil,
+        parentID: String? = nil,
+        sequence: Int = 0,
         kind: AgentTraceKind = .unknown,
         title: String = "agent_parse_goal",
         summary: String? = nil,
         details: [AgentTraceDetail]
     ) -> AgentTraceEvent {
         AgentTraceEvent(
-            id: UUID().uuidString,
-            runID: UUID(),
-            backend: .codexAppServer,
-            sequence: 0,
+            id: id,
+            runID: runID,
+            backend: backend,
+            providerEventID: providerEventID,
+            parentID: parentID,
+            sequence: sequence,
             kind: kind,
             status: .completed,
             title: title,
             summary: summary,
             details: details
         )
+    }
+
+    private func deepSeekToolResultJSON(text: String) throws -> AgentJSONValue {
+        .object([
+            "message": .object([
+                "content": .array([
+                    .object([
+                        "content": .array([
+                            .object(["text": .string(text), "type": .string("text")]),
+                        ]),
+                        "isError": .bool(false),
+                        "type": .string("tool-result"),
+                    ]),
+                ]),
+                "role": .string("user"),
+            ]),
+            "step": .number(2),
+            "turn": .number(1),
+        ])
     }
 }
