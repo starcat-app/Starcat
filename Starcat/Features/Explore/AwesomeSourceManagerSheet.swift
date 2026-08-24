@@ -17,6 +17,7 @@ struct AwesomeSourceManagerSheet: View {
     @Environment(\.locale) private var locale
     @State private var enabledIDs: Set<String> = []
     @State private var customSourceInput = ""
+    @State private var searchQuery = ""
     @State private var customSourceError: String?
     @State private var actionError: String?
     @State private var isSaving = false
@@ -66,16 +67,28 @@ struct AwesomeSourceManagerSheet: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("awesome.sources.title")
-                    .font(.title3.weight(.semibold))
-                Text("awesome.sources.subtitle")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        VStack(spacing: 14) {
+            HStack(spacing: 12) {
+                Image(systemName: "sparkles.rectangle.stack.fill")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 42, height: 42)
+                    .background(.purple.gradient, in: RoundedRectangle(cornerRadius: 11))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("awesome.sources.title")
+                        .font(.title3.weight(.semibold))
+                    Text("awesome.sources.subtitle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                SheetCloseButton { store.dismissSourceManager() }
             }
-            Spacer()
-            SheetCloseButton { store.dismissSourceManager() }
+
+            TextField("awesome.search.placeholder", text: $searchQuery)
+                .textFieldStyle(.roundedBorder)
         }
         .padding(20)
     }
@@ -99,9 +112,12 @@ struct AwesomeSourceManagerSheet: View {
                 .frame(maxWidth: .infinity, minHeight: 180)
         } else if store.sources.isEmpty {
             emptySourceState
+        } else if filteredSources.isEmpty {
+            ContentUnavailableView.search(text: searchQuery)
+                .frame(maxWidth: .infinity, minHeight: 180)
         } else {
             LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
-                ForEach(store.sources) { source in
+                ForEach(filteredSources) { source in
                     AwesomeSourceCard(
                         source: source,
                         summary: source.localizedSummary(languageCode: locale.language.languageCode?.identifier),
@@ -114,6 +130,23 @@ struct AwesomeSourceManagerSheet: View {
                     )
                 }
             }
+        }
+    }
+
+    private var filteredSources: [AwesomeSource] {
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return store.sources }
+
+        let languageCode = locale.language.languageCode?.identifier
+        return store.sources.filter { source in
+            [
+                source.displayName,
+                source.repoFullName,
+                source.repoDescription,
+                source.localizedSummary(languageCode: languageCode)
+            ]
+            .compactMap { $0 }
+            .contains { $0.localizedCaseInsensitiveContains(query) }
         }
     }
 
