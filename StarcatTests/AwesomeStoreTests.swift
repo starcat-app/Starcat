@@ -59,9 +59,35 @@ struct AwesomeStoreTests {
         #expect(!store.hasCompletedSourceSetup)
     }
 
-    private static func source() -> AwesomeSource {
+    @Test("快速切换来源时同步更新高亮且旧结果不能覆盖新来源")
+    @MainActor
+    func rapidSourceSelectionKeepsNewestResult() async throws {
+        let first = Self.source(id: "one")
+        let second = Self.source(id: "two")
+        let repository = AwesomeStoreRepositoryFake(
+            sources: [first, second],
+            repositoriesBySource: [
+                first.id: [Self.repositoryItem(id: 1, source: first)],
+                second.id: [Self.repositoryItem(id: 2, source: second)]
+            ],
+            delaysBySource: [first.id: 150_000_000]
+        )
+        let service = AwesomeCustomSourceService(github: AwesomeStoreGitHubFake(), repository: repository)
+        let store = AwesomeStore(repository: repository, customSourceService: service)
+
+        store.selectSource(first.id)
+        #expect(store.selectedSourceID == first.id)
+        store.selectSource(second.id)
+        #expect(store.selectedSourceID == second.id)
+        try await Task.sleep(for: .milliseconds(250))
+
+        #expect(store.selectedSourceID == second.id)
+        #expect(store.repositories.map(\.id) == [2])
+    }
+
+    private static func source(id: String = "one") -> AwesomeSource {
         AwesomeSource(
-            id: "one",
+            id: id,
             kind: .managed,
             displayName: "Awesome One",
             repoFullName: "example/awesome-one",
@@ -81,19 +107,59 @@ struct AwesomeStoreTests {
             updatedAt: Date(timeIntervalSince1970: 0)
         )
     }
+
+    private static func repositoryItem(id: Int64, source: AwesomeSource) -> AwesomeRepositoryItem {
+        AwesomeRepositoryItem(
+            id: id,
+            owner: "example",
+            name: "repo-\(id)",
+            fullName: "example/repo-\(id)",
+            description: nil,
+            ownerAvatarURL: nil,
+            language: "Swift",
+            stars: Int(id),
+            isArchived: false,
+            updatedAt: nil,
+            evidence: [AwesomeEntryEvidence(
+                source: source,
+                entryTitle: "Repo \(id)",
+                entryDescription: nil,
+                sectionPath: [],
+                entryOrder: 0,
+                sourceAnchorURL: nil
+            )]
+        )
+    }
 }
 
 private actor AwesomeStoreRepositoryFake: AwesomeRepositoryProtocol {
     private var sourceValues: [AwesomeSource]
+    private let repositoriesBySource: [String: [AwesomeRepositoryItem]]
+    private let delaysBySource: [String: UInt64]
     private var setupCompleted = false
 
-    init(sources: [AwesomeSource]) {
+    init(
+        sources: [AwesomeSource],
+        repositoriesBySource: [String: [AwesomeRepositoryItem]] = [:],
+        delaysBySource: [String: UInt64] = [:]
+    ) {
         sourceValues = sources
+        self.repositoriesBySource = repositoriesBySource
+        self.delaysBySource = delaysBySource
     }
 
     func sources() async -> [AwesomeSource] { sourceValues }
     func enabledSources() async -> [AwesomeSource] { sourceValues.filter(\.isEnabled) }
-    func repositories(sourceID: String?) async -> [AwesomeRepositoryItem] { [] }
+    func repositories(sourceID: String?) async -> [AwesomeRepositoryItem] {
+        if let sourceID, let nanoseconds = delaysBySource[sourceID] {
+            // 模拟不响应父任务取消的底层读取，验证 Store 自己的代际检查。
+            await Task.detached {
+                try? await Task.sleep(nanoseconds: nanoseconds)
+            }.value
+        }
+        guard let sourceID else { return repositoriesBySource.values.flatMap { $0 } }
+        return repositoriesBySource[sourceID] ?? []
+    }
     func hasCompletedSourceSetup() async -> Bool { setupCompleted }
     func refreshCatalog() async throws -> [AwesomeSource] { sourceValues }
     func refreshEnabledEntries() async -> [String: String] { [:] }

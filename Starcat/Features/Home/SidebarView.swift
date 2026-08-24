@@ -777,7 +777,7 @@ struct SidebarView: View {
             selectedWeeklyLanguage = key
         case .awesomeSource(let sourceID):
             selectedExploreMode = .awesome
-            Task { await dependencies.awesomeStore.selectSource(sourceID) }
+            dependencies.awesomeStore.selectSource(sourceID)
         }
     }
 

@@ -30,6 +30,7 @@ final class AwesomeStore {
     private let repository: any AwesomeRepositoryProtocol
     private let customSourceService: AwesomeCustomSourceService
     private var loadTask: Task<Void, Never>?
+    private var selectionLoadTask: Task<Void, Never>?
 
     init(
         repository: any AwesomeRepositoryProtocol,
@@ -109,10 +110,15 @@ final class AwesomeStore {
         await reloadRepositories()
     }
 
-    func selectSource(_ sourceID: String?) async {
+    /// 选中态必须在 List binding 的 setter 中同步落地，否则 SwiftUI 下一次读取 binding 时
+    /// 会看到旧 sourceID 并把高亮弹回旧行。数据读取独立异步执行，并取消上一轮选择任务。
+    func selectSource(_ sourceID: String?) {
+        selectionLoadTask?.cancel()
         selectedSourceID = sourceID
         selectedRepositoryID = nil
-        await reloadRepositories()
+        selectionLoadTask = Task { [weak self] in
+            await self?.reloadRepositories()
+        }
     }
 
     func refresh() async {
@@ -124,6 +130,8 @@ final class AwesomeStore {
     func resetForAccountChange() {
         loadTask?.cancel()
         loadTask = nil
+        selectionLoadTask?.cancel()
+        selectionLoadTask = nil
         sources = []
         repositories = []
         totalAvailableRepositoryCount = 0
@@ -169,10 +177,14 @@ final class AwesomeStore {
     }
 
     private func reloadRepositories() async {
-        async let visibleRepositories = repository.repositories(sourceID: selectedSourceID)
+        let requestedSourceID = selectedSourceID
+        async let visibleRepositories = repository.repositories(sourceID: requestedSourceID)
         async let allRepositories = repository.repositories(sourceID: nil)
-        repositories = await visibleRepositories
-        totalAvailableRepositoryCount = await allRepositories.count
+        let (visible, all) = await (visibleRepositories, allRepositories)
+        // GRDB/测试替身不保证响应取消；旧选择即使晚返回，也不能覆盖当前来源。
+        guard !Task.isCancelled, selectedSourceID == requestedSourceID else { return }
+        repositories = visible
+        totalAvailableRepositoryCount = all.count
         if let selectedRepositoryID,
            !repositories.contains(where: { $0.id == selectedRepositoryID }) {
             self.selectedRepositoryID = nil
