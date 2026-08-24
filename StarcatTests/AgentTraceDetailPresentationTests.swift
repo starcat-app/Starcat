@@ -188,8 +188,8 @@ struct AgentTraceDetailPresentationTests {
         #expect(presentation.rawPayload?.contains("tool-result") == true)
     }
 
-    @Test("DeepSeek 时间线隐藏协议脚手架并将终态警告放到末尾")
-    func filtersDeepSeekProtocolNoise() {
+    @Test("DeepSeek 时间线保留全部事件并遵循原始顺序")
+    func preservesEveryDeepSeekEvent() {
         let runID = UUID()
         let events = [
             traceEvent(runID: runID, backend: .deepSeekHarness, sequence: 0, kind: .lifecycle, title: "agent/inbox/spliced", details: []),
@@ -199,9 +199,91 @@ struct AgentTraceDetailPresentationTests {
             traceEvent(runID: runID, backend: .deepSeekHarness, sequence: 4, kind: .tool, title: "starcat.search_repos", details: []),
         ]
 
-        let visible = AgentTraceTimelinePresentation.visibleEvents(events)
+        let snapshot = AgentTraceTimelinePresentation.makeSnapshot(events)
 
-        #expect(visible.map(\.kind) == [.request, .tool, .warning])
+        #expect(snapshot.orderedEvents.map(\.kind) == [.lifecycle, .warning, .message, .request, .tool])
+        #expect(snapshot.eventCount == events.count)
+    }
+
+    @Test("DeepSeek 过程视图按 turn step 归组并推断工具父级")
+    func groupsDeepSeekEventsWithoutDroppingAuditFacts() {
+        let runID = UUID()
+        let turnID = "\(runID.uuidString):turn:0"
+        let stepID = "\(runID.uuidString):turn:0:step:0"
+        let events = [
+            traceEvent(
+                id: "\(runID.uuidString):session",
+                runID: runID,
+                backend: .deepSeekHarness,
+                providerEventID: "session/title",
+                sequence: 0,
+                kind: .lifecycle,
+                title: "Session",
+                details: []
+            ),
+            traceEvent(
+                id: turnID,
+                runID: runID,
+                backend: .deepSeekHarness,
+                providerEventID: "turn:0",
+                sequence: 1,
+                kind: .warning,
+                title: "Warning",
+                details: []
+            ),
+            traceEvent(
+                id: stepID,
+                runID: runID,
+                backend: .deepSeekHarness,
+                providerEventID: "turn:0:step:0",
+                parentID: turnID,
+                sequence: 2,
+                kind: .lifecycle,
+                title: "Step 1",
+                details: []
+            ),
+            traceEvent(
+                id: "\(runID.uuidString):request",
+                runID: runID,
+                backend: .deepSeekHarness,
+                providerEventID: "request:0:0",
+                parentID: stepID,
+                sequence: 3,
+                kind: .request,
+                title: "Model request",
+                details: []
+            ),
+            traceEvent(
+                id: "\(runID.uuidString):tool",
+                runID: runID,
+                backend: .deepSeekHarness,
+                providerEventID: "tool:call-1",
+                sequence: 4,
+                kind: .tool,
+                title: "starcat.search_repos",
+                details: []
+            ),
+        ]
+
+        let snapshot = AgentTraceTimelinePresentation.makeSnapshot(events)
+        let rows = AgentTraceTimelinePresentation.processRows(
+            snapshot: snapshot,
+            collapsedNodeIDs: []
+        )
+
+        #expect(snapshot.roots.map(\.id) == [events[0].id, turnID])
+        #expect(rows.map(\.depth) == [0, 0, 1, 2, 2])
+        #expect(rows.map(\.id) == events.map(\.id))
+        #expect(AgentTraceTitlePresentation.title(for: events[1])
+            == "\(String.l10n("agent.workspace.trace.kind.turn")) 1")
+        #expect(rows[1].childCount == 3)
+        #expect(rows[2].childCount == 2)
+
+        let collapsedRows = AgentTraceTimelinePresentation.processRows(
+            snapshot: snapshot,
+            collapsedNodeIDs: [stepID]
+        )
+        #expect(collapsedRows.map(\.id) == [events[0].id, turnID, stepID])
     }
 
     @Test("超长 Markdown 与原始载荷按展示预算裁剪")
@@ -251,8 +333,11 @@ struct AgentTraceDetailPresentationTests {
     }
 
     private func traceEvent(
+        id: String = UUID().uuidString,
         runID: UUID = UUID(),
         backend: AgentRuntimeBackend = .codexAppServer,
+        providerEventID: String? = nil,
+        parentID: String? = nil,
         sequence: Int = 0,
         kind: AgentTraceKind = .unknown,
         title: String = "agent_parse_goal",
@@ -260,9 +345,11 @@ struct AgentTraceDetailPresentationTests {
         details: [AgentTraceDetail]
     ) -> AgentTraceEvent {
         AgentTraceEvent(
-            id: UUID().uuidString,
+            id: id,
             runID: runID,
             backend: backend,
+            providerEventID: providerEventID,
+            parentID: parentID,
             sequence: sequence,
             kind: kind,
             status: .completed,
