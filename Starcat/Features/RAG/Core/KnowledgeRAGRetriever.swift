@@ -10,6 +10,21 @@
 
 import Foundation
 
+/// 两条检索分支同时失败时，不能只把第一条底层网络错误抛给 Agent。
+/// Provider 名称属于可公开的运行诊断；具体错误仍沿用各 Provider 已脱敏的 LocalizedError。
+struct RAGRetrievalBranchesError: LocalizedError, Sendable {
+    let keywordBackend: String
+    let keywordError: String
+    let vectorBackend: String
+    let vectorError: String
+
+    var errorDescription: String? {
+        "Knowledge retrieval failed on both branches. "
+            + "Keyword [\(keywordBackend)]: \(keywordError) "
+            + "Vector [\(vectorBackend)]: \(vectorError)"
+    }
+}
+
 /// Parent 扩展与命中裁剪需要同时回传；正文仍只存在 bundle，不写入会话轨迹。
 private struct RAGBundleBuildResult {
     var bundles: [RepoContextBundle]
@@ -158,7 +173,16 @@ struct KnowledgeRAGRetriever: Sendable {
         }
         progress(.keywordSearchCompleted(eligibleKeywordHits.count))
         progress(.semanticSearchCompleted(eligibleVectorHits.count))
-        if failures.count == 2, let error = failures.first { throw error }
+        if failures.count == 2,
+           let keywordError = keyword.error,
+           let vectorError = vector.error {
+            throw RAGRetrievalBranchesError(
+                keywordBackend: keywordProvider.backendName,
+                keywordError: keywordError.localizedDescription,
+                vectorBackend: vectorProvider.backendName,
+                vectorError: vectorError.localizedDescription
+            )
+        }
         // 身份仓与 @repo prefer 共用加分，避免高星关键词噪音把实体列表挤出 bundle。
         var preferred = Set(identityRepoIDs)
         if explicitMode == .prefer {

@@ -2350,6 +2350,46 @@ struct KnowledgeRAGCoreTests {
         #expect(snapshot.vectorFailure == nil)
     }
 
+    @Test("keyword 与 vector 同时失败时报告两路 Provider，而不是只返回第一条网络错误")
+    func bothRetrievalBranchesReportProviderDiagnostics() async throws {
+        let database = try InMemoryDatabaseManager()
+        let chunkRepository = try await vectorReadyRepository(database: database, repoIDs: [1])
+        let retriever = KnowledgeRAGRetriever(
+            chunkRepository: chunkRepository,
+            keywordProvider: StubRAGKeywordProvider(
+                backendName: "Meilisearch (SQLite fallback disabled)",
+                hits: [],
+                shouldThrow: true
+            ),
+            vectorProvider: StubRAGVectorProvider(
+                backendName: "Qdrant (SQLite fallback disabled)",
+                hits: [],
+                shouldThrow: true
+            ),
+            embeddingClient: SpyRAGAIClient(),
+            embeddingModel: "embed"
+        )
+
+        do {
+            _ = try await retriever.retrieve(
+                semanticQuery: "database",
+                candidates: [RAGRepoCandidate(
+                    repo: fixtureRepo(id: 1, isPrivate: false),
+                    status: .using,
+                    libraryUpdatedAt: nil,
+                    tagNames: []
+                )],
+                explicitMode: .only,
+                explicitRepoIDs: [1]
+            )
+            Issue.record("两条检索分支都失败时不应返回成功")
+        } catch {
+            let message = error.localizedDescription
+            #expect(message.contains("Keyword [Meilisearch (SQLite fallback disabled)]"))
+            #expect(message.contains("Vector [Qdrant (SQLite fallback disabled)]"))
+        }
+    }
+
     @Test("Retriever 为 Metadata FTS5 命中附加完整正文并生成引用")
     func retrieverAttachesFullMetadataForMetadataHit() async throws {
         let database = try InMemoryDatabaseManager()
@@ -5827,6 +5867,43 @@ struct KnowledgeRAGCoreTests {
         }
     }
 
+    @Test("外部检索连接失败时报告脱敏 endpoint 与具体 Provider")
+    func externalBackendConnectionFailureReportsSafeEndpoint() async throws {
+        let database = try InMemoryDatabaseManager()
+        let repository = GRDBRAGChunkRepository(database: database)
+        var meilisearchConfiguration = RAGMeilisearchConfiguration()
+        meilisearchConfiguration.endpoint = "http://user:secret@127.0.0.1:7700"
+        var qdrantConfiguration = RAGQdrantConfiguration()
+        qdrantConfiguration.endpoint = "http://user:secret@127.0.0.1:6333"
+        let meilisearch = MeilisearchRAGProvider(
+            configuration: meilisearchConfiguration,
+            apiKey: nil,
+            repository: repository,
+            httpClient: FailingRAGHTTPClient()
+        )
+        let qdrant = QdrantRAGProvider(
+            configuration: qdrantConfiguration,
+            apiKey: nil,
+            repository: repository,
+            httpClient: FailingRAGHTTPClient()
+        )
+
+        for (backend, operation) in [
+            ("Meilisearch", { try await meilisearch.testConnection() }),
+            ("Qdrant", { try await qdrant.testConnection() })
+        ] {
+            do {
+                try await operation()
+                Issue.record("连接失败时不应返回成功")
+            } catch {
+                let message = error.localizedDescription
+                #expect(message.contains(backend))
+                #expect(message.contains("127.0.0.1"))
+                #expect(!message.contains("secret"))
+            }
+        }
+    }
+
     @Test("Meilisearch 报错或空命中时回退 SQLite provider")
     func keywordBackendFallback() async throws {
         let expected = RAGChildHit(chunk: fixtureChunk(id: 90, repoID: 9, source: .readme), score: 0.8, kind: .keyword)
@@ -6941,6 +7018,12 @@ private struct StaticRAGHTTPClient: RAGHTTPClientProtocol {
             headerFields: nil
         )!
         return (data, response)
+    }
+}
+
+private struct FailingRAGHTTPClient: RAGHTTPClientProtocol {
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        throw URLError(.cannotConnectToHost)
     }
 }
 

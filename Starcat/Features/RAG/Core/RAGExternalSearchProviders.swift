@@ -121,7 +121,9 @@ struct FallbackRAGKeywordSearchProvider: RAGKeywordSearchProvider {
         self.primary = primary
         self.fallback = fallback
         self.fallbackToSQLite = fallbackToSQLite
-        self.backendName = fallbackToSQLite ? "\(primary.backendName) → \(fallback.backendName)" : primary.backendName
+        self.backendName = fallbackToSQLite
+            ? "\(primary.backendName) → \(fallback.backendName)"
+            : "\(primary.backendName) (SQLite fallback disabled)"
     }
 
     func search(query: RAGKeywordSearchQuery, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit] {
@@ -151,7 +153,9 @@ struct FallbackRAGVectorSearchProvider: RAGVectorSearchProvider {
         self.primary = primary
         self.fallback = fallback
         self.fallbackToSQLite = fallbackToSQLite
-        self.backendName = fallbackToSQLite ? "\(primary.backendName) → \(fallback.backendName)" : primary.backendName
+        self.backendName = fallbackToSQLite
+            ? "\(primary.backendName) → \(fallback.backendName)"
+            : "\(primary.backendName) (SQLite fallback disabled)"
     }
 
     func search(queryVector: [Float], model: String, repoIDs: [Int64], limit: Int) async throws -> [RAGChildHit] {
@@ -310,12 +314,34 @@ struct MeilisearchRAGProvider: RAGKeywordSearchProvider {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let apiKey, !apiKey.isEmpty { request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
         if let json { request.httpBody = try JSONSerialization.data(withJSONObject: json) }
-        let (data, response) = try await httpClient.data(for: request)
+        let dataAndResponse: (Data, HTTPURLResponse)
+        do {
+            dataAndResponse = try await httpClient.data(for: request)
+        } catch {
+            if error is CancellationError { throw error }
+            throw RAGExternalBackendError.operationFailed(
+                backend: "\(backendName) [\(Self.safeEndpoint(configuration.endpoint))]",
+                message: error.localizedDescription
+            )
+        }
+        let (data, response) = dataAndResponse
         guard (200..<300).contains(response.statusCode) else {
             throw RAGExternalBackendError.http(backend: backendName, status: response.statusCode, message: String(data: data, encoding: .utf8) ?? "")
         }
         return data
     }
+
+    /// Endpoint 需要出现在故障诊断里，但用户名、密码、query 和 fragment 可能携带凭据。
+    private static func safeEndpoint(_ rawValue: String) -> String {
+        guard var components = URLComponents(string: rawValue) else { return backendNameForInvalidURL }
+        components.user = nil
+        components.password = nil
+        components.query = nil
+        components.fragment = nil
+        return components.string ?? backendNameForInvalidURL
+    }
+
+    private static let backendNameForInvalidURL = "invalid endpoint"
 
     /// Meilisearch 写 API 只返回已入队 task。必须等 task 成功后再执行下一步，既保证
     /// delete -> import -> settings 的顺序，也避免把异步失败误报成“外部索引已完成”。
@@ -575,11 +601,31 @@ struct QdrantRAGProvider: RAGVectorSearchProvider {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let apiKey, !apiKey.isEmpty { request.setValue(apiKey, forHTTPHeaderField: "api-key") }
         if let json { request.httpBody = try JSONSerialization.data(withJSONObject: json) }
-        let (data, response) = try await httpClient.data(for: request)
+        let dataAndResponse: (Data, HTTPURLResponse)
+        do {
+            dataAndResponse = try await httpClient.data(for: request)
+        } catch {
+            if error is CancellationError { throw error }
+            throw RAGExternalBackendError.operationFailed(
+                backend: "\(backendName) [\(Self.safeEndpoint(configuration.endpoint))]",
+                message: error.localizedDescription
+            )
+        }
+        let (data, response) = dataAndResponse
         guard accepted.contains(response.statusCode) else {
             throw RAGExternalBackendError.http(backend: backendName, status: response.statusCode, message: String(data: data, encoding: .utf8) ?? "")
         }
         return (data, response.statusCode)
+    }
+
+    /// 与 Meilisearch 使用同一脱敏边界，避免把 endpoint 中的认证信息带进 Agent Trace。
+    private static func safeEndpoint(_ rawValue: String) -> String {
+        guard var components = URLComponents(string: rawValue) else { return "invalid endpoint" }
+        components.user = nil
+        components.password = nil
+        components.query = nil
+        components.fragment = nil
+        return components.string ?? "invalid endpoint"
     }
 
 }
