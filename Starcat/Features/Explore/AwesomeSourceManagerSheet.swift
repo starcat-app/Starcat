@@ -71,9 +71,9 @@ struct AwesomeSourceManagerSheet: View {
             HStack(spacing: 12) {
                 Image(systemName: "sparkles.rectangle.stack.fill")
                     .font(.title2.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .frame(width: 42, height: 42)
-                    .background(.purple.gradient, in: RoundedRectangle(cornerRadius: 11))
+                    .background(.purple.opacity(0.16), in: RoundedRectangle(cornerRadius: 11))
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 3) {
@@ -120,8 +120,7 @@ struct AwesomeSourceManagerSheet: View {
                 ForEach(filteredSources) { source in
                     AwesomeSourceCard(
                         source: source,
-                        summary: source.repoDescription
-                            ?? source.localizedSummary(languageCode: locale.language.languageCode?.identifier),
+                        summary: cardDescription(for: source),
                         isSelected: enabledIDs.contains(source.id),
                         hasRefreshError: store.sourceRefreshErrors[source.id] != nil,
                         onToggle: { toggleSource(source) },
@@ -149,6 +148,14 @@ struct AwesomeSourceManagerSheet: View {
             .compactMap { $0 }
             .contains { $0.localizedCaseInsensitiveContains(query) }
         }
+    }
+
+    private func cardDescription(for source: AwesomeSource) -> String? {
+        let repoDescription = source.repoDescription?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let repoDescription, !repoDescription.isEmpty {
+            return repoDescription
+        }
+        return source.localizedSummary(languageCode: locale.language.languageCode?.identifier)
     }
 
     private var emptySourceState: some View {
