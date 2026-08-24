@@ -9,7 +9,6 @@
 //  停留在当前账户数据库。
 //
 
-import AppKit
 import SwiftUI
 
 struct AwesomeSourceManagerSheet: View {
@@ -29,6 +28,7 @@ struct AwesomeSourceManagerSheet: View {
     @State private var isSaving = false
     @State private var isAddingCustomSource = false
     @State private var initialized = false
+    @State private var acceptsInputFocus = false
     @State private var pendingConfirmation: AwesomeSourceConfirmation?
     @FocusState private var focusedInput: FocusedInput?
 
@@ -58,11 +58,10 @@ struct AwesomeSourceManagerSheet: View {
             guard !initialized else { return }
             initialized = true
             enabledIDs = Set(store.sources.filter(\.isEnabled).map(\.id))
-            // macOS 会默认把 Sheet 中第一个 TextField 设为 first responder。这里等待首帧
-            // 挂载完成后清空焦点，只取消“自动聚焦”；用户主动点击时仍保留系统 Focus Ring。
+            // 首帧先不让输入框参与焦点链，避免系统自动聚焦后再清除造成蓝框闪烁。
+            // 挂载完成后恢复正常焦点能力，用户点击和键盘导航仍使用系统 Focus Ring。
             await Task.yield()
-            focusedInput = nil
-            NSApp.keyWindow?.makeFirstResponder(nil)
+            acceptsInputFocus = true
         }
         .confirmationDialog(
             confirmationTitle,
@@ -113,6 +112,7 @@ struct AwesomeSourceManagerSheet: View {
 
             TextField("awesome.search.placeholder", text: $searchQuery)
                 .textFieldStyle(.roundedBorder)
+                .focusable(acceptsInputFocus)
                 .focused($focusedInput, equals: .search)
         }
         .padding(20)
@@ -213,6 +213,7 @@ struct AwesomeSourceManagerSheet: View {
             HStack(spacing: 8) {
                 TextField("awesome.sources.custom.placeholder", text: $customSourceInput)
                     .textFieldStyle(.roundedBorder)
+                    .focusable(acceptsInputFocus)
                     .focused($focusedInput, equals: .customSource)
                     .onSubmit(addCustomSource)
                     .disabled(isAddingCustomSource)
