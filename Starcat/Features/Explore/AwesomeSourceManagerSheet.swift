@@ -9,7 +9,6 @@
 //
 
 import SwiftUI
-import Kingfisher
 
 struct AwesomeSourceManagerSheet: View {
     let store: AwesomeStore
@@ -22,9 +21,11 @@ struct AwesomeSourceManagerSheet: View {
     @State private var initialized = false
     @State private var pendingConfirmation: AwesomeSourceConfirmation?
 
-    private let columns = [
-        GridItem(.adaptive(minimum: 280, maximum: 360), spacing: 12)
-    ]
+    /// 来源选择是桌面宽 Sheet，固定三列比 adaptive 更能保持卡片位置和视觉节奏。
+    private let columns = Array(
+        repeating: GridItem(.flexible(minimum: 280), spacing: 14, alignment: .top),
+        count: 3
+    )
 
     var body: some View {
         VStack(spacing: 0) {
@@ -41,7 +42,7 @@ struct AwesomeSourceManagerSheet: View {
             Divider()
             footer
         }
-        .frame(minWidth: 680, idealWidth: 760, minHeight: 520, idealHeight: 620)
+        .frame(minWidth: 1_000, idealWidth: 1_100, minHeight: 600, idealHeight: 700)
         .task {
             guard !initialized else { return }
             initialized = true
@@ -96,23 +97,18 @@ struct AwesomeSourceManagerSheet: View {
         } else if store.sources.isEmpty {
             emptySourceState
         } else {
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
                 ForEach(store.sources) { source in
-                    HStack(alignment: .top, spacing: 6) {
-                        sourceCard(source)
-                        if source.kind == .custom {
-                            Button(role: .destructive) {
-                                pendingConfirmation = .delete(source)
-                            } label: {
-                                Image(systemName: "trash")
-                                    .frame(width: 24, height: 24)
-                            }
-                            .buttonStyle(.plain)
-                            .focusEffectDisabled()
-                            .help(Text("awesome.sources.removeCustom"))
-                            .accessibilityLabel(Text("awesome.sources.removeCustom"))
-                        }
-                    }
+                    AwesomeSourceCard(
+                        source: source,
+                        summary: source.localizedSummary(languageCode: locale.language.languageCode?.identifier),
+                        isSelected: enabledIDs.contains(source.id),
+                        hasRefreshError: store.sourceRefreshErrors[source.id] != nil,
+                        onToggle: { toggleSource(source) },
+                        onDelete: source.kind == .custom
+                            ? { pendingConfirmation = .delete(source) }
+                            : nil
+                    )
                 }
             }
         }
@@ -141,115 +137,12 @@ struct AwesomeSourceManagerSheet: View {
         .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
     }
 
-    private func sourceCard(_ source: AwesomeSource) -> some View {
-        let selected = enabledIDs.contains(source.id)
-        return Button {
-            guard source.isAvailable else { return }
-            if selected { enabledIDs.remove(source.id) } else { enabledIDs.insert(source.id) }
-        } label: {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 12) {
-                    AwesomeSourceImage(source: source)
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text(source.displayName)
-                                .font(.headline.weight(.semibold))
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-                            if source.featured {
-                                Label("awesome.sources.featured", systemImage: "sparkles")
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Color.accentColor.opacity(0.1), in: Capsule())
-                            }
-                            Spacer(minLength: 0)
-                        }
-                        Text(source.repoFullName)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                        if let summary = source.localizedSummary(languageCode: locale.language.languageCode?.identifier) {
-                            Text(summary)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                        }
-                    }
-                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                        .font(.title3)
-                        .foregroundStyle(selected ? Color.accentColor : Color.secondary)
-                        .frame(width: 22, height: 22)
-                }
-
-                Divider()
-
-                HStack(spacing: 14) {
-                    sourceMetadata(
-                        systemImage: "star.fill",
-                        value: source.sourceStars.formatted(.number.notation(.compactName))
-                    )
-                    sourceMetadata(
-                        systemImage: "square.stack.3d.up.fill",
-                        value: String(
-                            format: String.l10n("awesome.sources.repoCountFormat"),
-                            source.githubRepoCount
-                        )
-                    )
-                    Spacer(minLength: 0)
-                    sourceSyncStatus(source)
-                }
-            }
-            .padding(14)
-            .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
-            .background {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(selected ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.025))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(selected ? Color.accentColor : Color.secondary.opacity(0.22), lineWidth: selected ? 2 : 1)
-            }
-            .shadow(color: Color.black.opacity(selected ? 0.08 : 0.035), radius: 6, y: 2)
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .opacity(source.isAvailable ? 1 : 0.65)
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .disabled(!source.isAvailable)
-        .accessibilityLabel(Text(source.displayName))
-        .accessibilityValue(Text(selected ? "awesome.sources.selected" : "awesome.sources.notSelected"))
-    }
-
-    private func sourceMetadata(systemImage: String, value: String) -> some View {
-        Label(value, systemImage: systemImage)
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-    }
-
-    @ViewBuilder
-    private func sourceSyncStatus(_ source: AwesomeSource) -> some View {
-        if !source.isAvailable {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.secondary)
-                .help(Text("awesome.sources.unavailable"))
-                .accessibilityLabel(Text("awesome.sources.unavailable"))
-        } else if store.sourceRefreshErrors[source.id] != nil {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.secondary)
-                .help(Text("awesome.sources.stale"))
-                .accessibilityLabel(Text("awesome.sources.stale"))
-        } else if let lastSyncedAt = source.lastSyncedAt {
-            Label {
-                Text(lastSyncedAt, style: .relative)
-                    .lineLimit(1)
-            } icon: {
-                Image(systemName: "clock")
-            }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
+    private func toggleSource(_ source: AwesomeSource) {
+        guard source.isAvailable else { return }
+        if enabledIDs.contains(source.id) {
+            enabledIDs.remove(source.id)
+        } else {
+            enabledIDs.insert(source.id)
         }
     }
 
@@ -396,55 +289,4 @@ struct AwesomeSourceManagerSheet: View {
 private enum AwesomeSourceConfirmation {
     case add(AwesomeCustomSourcePreview)
     case delete(AwesomeSource)
-}
-
-private struct AwesomeSourceImage: View {
-    let source: AwesomeSource
-    @State private var usesOwnerFallback = false
-
-    var body: some View {
-        Group {
-            if let url = activeURL {
-                KFImage(url)
-                    .resizable()
-                    .placeholder { symbolFallback }
-                    .fade(duration: 0.15)
-                    .onFailure { _ in
-                        if !usesOwnerFallback, ownerAvatarURL != nil {
-                            usesOwnerFallback = true
-                        }
-                    }
-                    .scaledToFill()
-            } else {
-                symbolFallback
-            }
-        }
-        .frame(width: 58, height: 58)
-        .background(Color.primary.opacity(0.04))
-        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .stroke(Color.secondary.opacity(0.16), lineWidth: 1)
-        }
-    }
-
-    private var ownerAvatarURL: URL? {
-        let owner = source.repoFullName.split(separator: "/").first.map(String.init)
-        return owner.flatMap { URL(string: "https://github.com/\($0).png?size=104") }
-    }
-
-    private var activeURL: URL? {
-        // 首选内容管理图片；首次失败后切到来源 owner avatar。两者都走 Kingfisher
-        // 同一内存/磁盘缓存，avatar 再失败时保持 SF Symbol，不进入循环重试。
-        guard !usesOwnerFallback else { return ownerAvatarURL }
-        return source.imageURL ?? ownerAvatarURL
-    }
-
-    private var symbolFallback: some View {
-        Image(systemName: "sparkles.rectangle.stack")
-            .font(.title2)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(.quaternary)
-    }
 }

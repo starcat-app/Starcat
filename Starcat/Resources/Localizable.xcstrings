@@ -70555,13 +70555,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "My Sources"
+            "value" : "Add Awesome Project"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "我的来源"
+            "value" : "新增 Awesome 项目"
           }
         }
       }

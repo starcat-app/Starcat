@@ -999,10 +999,12 @@ struct SidebarView: View {
             selection: .awesomeSource(source?.id),
             count: source?.githubRepoCount ?? dependencies.awesomeStore.totalRepositoryCount
         ) {
-            exploreSidebarSystemIcon(
-                source?.kind == .custom ? "person.crop.square" : "sparkles.rectangle.stack",
-                color: source?.isAvailable == false ? .secondary : .purple
-            )
+            if let source {
+                AwesomeSourceLogo(source: source, size: 18)
+                    .id(source.imageURL?.absoluteString ?? source.repoFullName)
+            } else {
+                exploreSidebarSystemIcon("sparkles.rectangle.stack", color: .purple)
+            }
         } title: {
             HStack(spacing: 5) {
                 Text(source?.displayName ?? String.l10n("awesome.sidebar.all"))
