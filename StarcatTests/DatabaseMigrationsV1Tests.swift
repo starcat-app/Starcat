@@ -160,6 +160,7 @@ struct DatabaseMigrationsV1Tests {
             #expect(applied.contains("v26-awesome-repository-metadata"))
             #expect(applied.contains("v28-awesome-source-description"))
             #expect(applied.contains("v29-awesome-source-card-metadata"))
+            #expect(applied.contains("v30-awesome-entry-updated-at"))
             #expect(try db.tableExists("awesome_sources"))
             #expect(try db.tableExists("awesome_source_subscriptions"))
             #expect(try db.tableExists("awesome_entries"))
@@ -296,6 +297,41 @@ struct DatabaseMigrationsV1Tests {
             let state = try #require(fetchedState)
             #expect(state.catalogETag == nil)
             #expect(state.catalogCheckedAt == nil)
+        }
+    }
+
+    @Test("v30 补齐 Awesome 更新时间并让 managed 条目缓存过期")
+    func awesomeEntryUpdatedAtMigration() throws {
+        let writer = try DatabaseQueue()
+        var migrator = DatabaseMigrator()
+        DatabaseMigrations.registerAll(into: &migrator)
+        try migrator.migrate(writer, upTo: "v29-awesome-source-card-metadata")
+        try writer.write { db in
+            // 模拟执行过早期 v22 草稿、但缺少 repo_updated_at 的真实开发库。
+            try db.execute(sql: "ALTER TABLE awesome_entries DROP COLUMN repo_updated_at")
+            try db.execute(
+                sql: """
+                INSERT INTO awesome_sources (
+                    source_id, kind, display_name, repo_full_name, repo_url,
+                    entries_etag, entries_checked_at, added_at, updated_at
+                ) VALUES (?, 'managed', ?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: [
+                    "awesome-swift", "Awesome Swift", "matteocrippa/awesome-swift",
+                    "https://github.com/matteocrippa/awesome-swift", "\"legacy\"",
+                    "2026-08-24T08:00:00Z", "2026-08-24T08:00:00Z", "2026-08-24T08:00:00Z",
+                ]
+            )
+        }
+
+        try migrator.migrate(writer)
+
+        try writer.read { db in
+            #expect(try db.columns(in: "awesome_entries").map(\.name).contains("repo_updated_at"))
+            let fetchedSource = try AwesomeSourceRecord.fetchOne(db, key: "awesome-swift")
+            let source = try #require(fetchedSource)
+            #expect(source.entriesETag == nil)
+            #expect(source.entriesCheckedAt == nil)
         }
     }
 

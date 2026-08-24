@@ -43,7 +43,7 @@
 //    `v23-awesome-source-metadata` / `v24-awesome-cache-freshness` /
 //    `v25-awesome-source-stars-refresh` / `v26-awesome-repository-metadata` /
 //    `v27-ai-usage-estimated-cost` / `v28-awesome-source-description`
-//    `v29-awesome-source-card-metadata`
+//    `v29-awesome-source-card-metadata` / `v30-awesome-entry-updated-at`
 //
 //  **1.4.0 开发期迁移（已由正式 v19 合并接管）**：
 //  `v19-agent-message-contract` 至 `v26-github-timeline-conversations` 仅在开发构建中出现过。
@@ -110,6 +110,29 @@ enum DatabaseMigrations {
         registerV27AIUsageEstimatedCost(into: &migrator)
         registerV28AwesomeSourceDescription(into: &migrator)
         registerV29AwesomeSourceCardMetadata(into: &migrator)
+        registerV30AwesomeEntryUpdatedAt(into: &migrator)
+    }
+
+    // MARK: - v30-awesome-entry-updated-at：Awesome 仓库更新时间修复（2026-08-24）
+
+    /// 早期开发库先执行了尚未包含 `repo_updated_at` 的 v22 草稿，而 v26 只补了其它事实列。
+    /// 追加迁移补齐真实列，并仅失效 managed 条目条件请求状态；保留旧条目供离线展示，
+    /// 下一次成功刷新会通过现有事务回填 GitHub `updated_at` 与 `created_at`。
+    private static func registerV30AwesomeEntryUpdatedAt(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v30-awesome-entry-updated-at") { db in
+            guard try db.tableExists("awesome_entries") else { return }
+            let columns = Set(try db.columns(in: "awesome_entries").map(\.name))
+            if !columns.contains("repo_updated_at") {
+                try db.alter(table: "awesome_entries") { table in
+                    table.add(column: "repo_updated_at", .text)
+                }
+            }
+            if try db.tableExists("awesome_sources") {
+                try db.execute(
+                    sql: "UPDATE awesome_sources SET entries_etag = NULL, entries_checked_at = NULL WHERE kind = 'managed'"
+                )
+            }
+        }
     }
 
     // MARK: - v29-awesome-source-card-metadata：来源卡片 GitHub 元数据（2026-08-24）
