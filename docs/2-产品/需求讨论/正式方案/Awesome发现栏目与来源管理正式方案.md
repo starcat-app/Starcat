@@ -206,9 +206,10 @@ hasCompletedAwesomeSourceSetup == false ?
 
 - `image_url` 图片；加载失败回退到来源仓库 owner avatar，再失败使用 Awesome 模式 SF Symbol。
 - 来源名称。
-- 最多两行 GitHub 来源仓库官方 description；旧缓存缺失时才回退内容管理摘要。
+- 独立展示 GitHub 来源仓库官方 description 和 Discovery 内容管理摘要，两条语义不能互相覆盖。
 - `owner/repo`。
-- 来源仓库自身的 GitHub Stars。
+- 来源仓库自身的 GitHub Stars、Forks、Watchers、Open Issues。
+- 来源仓库 Languages API 字节占比生成的主要语言多色色条。
 - 已解析 GitHub Repo 数量。
 - 最近成功同步时间；失败或下架时显示紧凑状态提示。
 - 推荐标识（`featured=true` 时）。
@@ -223,6 +224,8 @@ hasCompletedAwesomeSourceSetup == false ?
 - 卡片背景使用 Logo 采样色生成低透明度渐变，图片不可用时使用统一语义兜底色；同时保留系统语义文字色和轻量选中边框。
 - 支持键盘焦点、Space 切换和 VoiceOver。
 - Sheet header 左上角展示 Awesome 图标；搜索框过滤名称、`owner/repo`、GitHub description 和内容管理摘要，无结果时显示搜索空态。
+- Sheet 初次打开不自动聚焦输入框；用户主动点击输入框后仍显示系统 Focus Ring。
+- Sheet header 提供目录刷新按钮，只强制校验公共来源目录；中栏刷新按钮同时校验目录和已启用来源条目。
 - Sheet header 右上角关闭按钮使用 `SheetCloseButton`。
 - Sheet 失败时保留本地缓存卡片，并显示非阻断刷新错误。
 - 首次进入且本地完全没有目录缓存、远端也失败时，展示重试和“添加自定义来源”，不能显示假卡片。
@@ -336,6 +339,12 @@ If-None-Match: "optional-etag"
       "featured": true,
       "sort_order": 10,
       "source_stars": 32100,
+      "source_forks": 2100,
+      "source_watchers": 32100,
+      "source_subscribers": 380,
+      "source_open_issues": 42,
+      "source_language": "Swift",
+      "language_bytes": {"Swift": 921337, "Shell": 28351},
       "github_repo_count": 412,
       "external_entry_count": 37,
       "last_synced_at": "2026-08-24T08:00:00Z",
@@ -356,8 +365,10 @@ If-None-Match: "optional-etag"
 - `repo_url`：服务端生成的 canonical `https://github.com/{owner}/{repo}`。
 - `repo_description`：来源仓库的 GitHub 官方 description；从共享 `repos` 真值读取，不在 `awesome_sources` 重复维护。
 - `image_url`：只允许 `https`；为空时客户端走 fallback。
-- `summary_zh / summary_en`：允许其一为空；客户端仅在 `repo_description` 缺失时按当前 locale 和英文顺序回退。
+- `summary_zh / summary_en`：允许其一为空；客户端按 locale 选择，并与 `repo_description` 分成两条展示。
 - `source_stars`：来源仓库自身的 GitHub Stars；每轮来源同步均刷新，即使 README SHA 未变化也更新。
+- `source_forks / source_watchers / source_subscribers / source_open_issues`：来源仓库 GitHub 事实字段，与 Stars 同轮刷新。
+- `source_language / language_bytes`：主要语言和 Languages API 原始字节分布；仅抓取 Awesome 来源仓库，不为 README 子项目批量抓取语言列表。
 - `github_repo_count`：当前已发布快照中有效 GitHub Repo 去重数。
 - `updated_at`：卡片内容修订时间；`last_synced_at`：README 成功同步时间，两者不能混用。
 
@@ -659,9 +670,11 @@ git@github.com:{owner}/{repo}.git       # 仅自定义来源输入可接受
 | `source_id` | 精选来源使用服务端 ID，自定义来源使用 `custom:{owner/repo}`；本地主键 |
 | `kind` | `managed / custom` |
 | `repo_full_name` | canonical GitHub 来源仓库 |
-| `display_name / repo_description / image_url / summary_zh / summary_en` | 卡片数据；`repo_description` 随目录缓存，内容摘要仅作回退 |
+| `display_name / repo_description / image_url / summary_zh / summary_en` | 卡片数据；GitHub description 与内容管理摘要独立缓存、分两条展示 |
 | `featured / sort_order` | 精选排序，自定义使用本地默认 |
 | `source_stars` | 来源仓库自身 Stars；精选来自目录 API，自定义来源来自本地 GitHub 核验 |
+| `source_forks / source_watchers / source_subscribers / source_open_issues` | 来源仓库 GitHub 基础指标 |
+| `source_language / language_bytes_json` | 主要语言及服务端语言字节分布的本地目录缓存 |
 | `is_available` | 精选来源是否仍在公开目录；刷新失败的 stale 错误为会话状态 |
 | `github_repo_count / external_entry_count` | 最近成功统计 |
 | `catalog_etag / entries_etag` | 目录和单来源快照条件请求版本 |
@@ -684,13 +697,14 @@ git@github.com:{owner}/{repo}.git       # 仅自定义来源输入可接受
 
 单例行保存 `has_completed_source_setup`、来源目录 `catalog_etag` 和 `catalog_checked_at`；每个来源的 entries ETag 和最近检查时间分别保存在 `awesome_sources.entries_etag`、`awesome_sources.entries_checked_at`。四张表都位于当前账户数据库，不能把首次设置状态改成全局 UserDefaults Bool。
 
-首版使用 `v22-awesome-discovery` 建表，来源仓库卡片元数据使用 `v23-awesome-source-metadata` 补齐；`v24-awesome-cache-freshness` 增加独立检查时间，`v25-awesome-source-stars-refresh` 让历史零 Stars 目录失效，`v26-awesome-repository-metadata` 追加完整 Repo 事实列并让 managed entries 重新校验。所有变更均追加 migration，禁止回写已发布 migration。
+首版使用 `v22-awesome-discovery` 建表，来源仓库卡片元数据使用 `v23-awesome-source-metadata` 补齐；`v24-awesome-cache-freshness` 增加独立检查时间，`v25-awesome-source-stars-refresh` 让历史零 Stars 目录失效，`v26-awesome-repository-metadata` 追加完整 Repo 事实列，`v28-awesome-source-description` 缓存 GitHub 描述，`v29-awesome-source-card-metadata` 缓存来源指标和语言分布，`v30-awesome-entry-updated-at` 修复早期开发库缺失的 Repo 更新时间列并让 managed entries 重新校验。所有变更均追加 migration，禁止回写已发布 migration。
 
 ### 9.2 缓存策略
 
 - 打开 Awesome 先读本地目录、订阅和条目，立即渲染可用缓存。
 - 精选目录和每个精选来源条目分别使用 6 小时 freshness；自动进入 Awesome、打开来源管理和订阅变更只刷新缺少缓存或已经过期的数据。
 - 手动刷新绕过 6 小时 freshness，但仍携带各自 ETag；`304` 只推进对应检查时间，不替换本地快照。
+- 来源 Sheet 的显式刷新只请求目录；中栏显式刷新请求目录及全部已启用来源，远端仍可按自身缓存返回。
 - 只为已启用精选来源请求 entries endpoint。
 - 每个来源独立 ETag；一个来源失败不阻断其他来源。
 - 自动刷新失败继续展示旧快照并标记 stale，不清空已缓存目录或条目。
