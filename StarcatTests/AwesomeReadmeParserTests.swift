@@ -89,6 +89,9 @@ struct AwesomeReadmeParserTests {
         try await service.save(preview)
         let saved = await repository.savedSource()
         #expect(saved?.entries.map(\.fullName) == ["acme/valid"])
+        #expect(saved?.entries.first?.forks == 1)
+        #expect(saved?.entries.first?.watchers == 10)
+        #expect(saved?.entries.first?.defaultBranch == "main")
         #expect(saved?.entries.first?.sectionPath == ["Tools"])
     }
 

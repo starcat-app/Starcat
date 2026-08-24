@@ -152,6 +152,12 @@ struct AwesomeRepositoryTests {
         let repos = await repository.repositories(sourceID: nil)
         #expect(repos.count == 1)
         #expect(repos.first?.id == 42)
+        #expect(repos.first?.forks == 7)
+        #expect(repos.first?.watchers == 80)
+        #expect(repos.first?.subscribers == 9)
+        #expect(repos.first?.openIssues == 3)
+        #expect(repos.first?.topics == ["swift", "tooling"])
+        #expect(repos.first?.createdAt == ISO8601DateFormatter.githubDate(from: "2020-01-02T03:04:05Z"))
         #expect(repos.first?.updatedAt == ISO8601DateFormatter.githubDate(from: "2026-08-23T12:34:56Z"))
         #expect(repos.first?.evidence.map(\.source.id) == ["one", "two"])
         #expect(await repository.repositories(sourceID: "one").first?.evidence.count == 1)
@@ -279,10 +285,21 @@ struct AwesomeRepositoryTests {
             fullName: "owner/repo",
             description: "Official description",
             ownerAvatar: "https://avatars.githubusercontent.com/u/1?v=4",
+            homepage: "https://example.com/repo",
             language: "Swift",
             stars: 100,
+            forks: 7,
+            watchers: 80,
+            subscribers: 9,
+            openIssues: 3,
+            defaultBranch: "main",
+            licenseSpdx: "MIT",
+            topics: ["swift", "tooling"],
             isArchived: false,
+            isFork: false,
+            pushedAt: "2026-08-23T11:00:00Z",
             updatedAt: "2026-08-23T12:34:56Z",
+            createdAt: "2020-01-02T03:04:05Z",
             entryTitle: title,
             entryDescription: "Source description",
             sectionPath: ["Tools"],

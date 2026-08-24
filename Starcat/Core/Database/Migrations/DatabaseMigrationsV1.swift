@@ -41,7 +41,7 @@
 //    `v20-agent-runtime-trace` / `v21-github-issue-labels` /
 //    `v22-awesome-discovery` / `v22-data-contribution` /
 //    `v23-awesome-source-metadata` / `v24-awesome-cache-freshness` /
-//    `v25-awesome-source-stars-refresh`
+//    `v25-awesome-source-stars-refresh` / `v26-awesome-repository-metadata`
 //
 //  **1.4.0 开发期迁移（已由正式 v19 合并接管）**：
 //  `v19-agent-message-contract` 至 `v26-github-timeline-conversations` 仅在开发构建中出现过。
@@ -104,6 +104,36 @@ enum DatabaseMigrations {
         registerV23AwesomeSourceMetadata(into: &migrator)
         registerV24AwesomeCacheFreshness(into: &migrator)
         registerV25AwesomeSourceStarsRefresh(into: &migrator)
+        registerV26AwesomeRepositoryMetadata(into: &migrator)
+    }
+
+    // MARK: - v26-awesome-repository-metadata：Awesome 仓库完整元数据（2026-08-24）
+
+    /// 为已发布的本地库追加 GitHub 仓库事实列，并让 managed 来源下一次进入时重新验证
+    /// entries 契约。保留旧条目用于离线兜底，刷新成功后再由现有事务整体替换。
+    private static func registerV26AwesomeRepositoryMetadata(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v26-awesome-repository-metadata") { db in
+            guard try db.tableExists("awesome_entries") else { return }
+            let existingColumns = Set(try db.columns(in: "awesome_entries").map(\.name))
+            try db.alter(table: "awesome_entries") { table in
+                if !existingColumns.contains("homepage") { table.add(column: "homepage", .text) }
+                if !existingColumns.contains("forks") { table.add(column: "forks", .integer).notNull().defaults(to: 0) }
+                if !existingColumns.contains("watchers") { table.add(column: "watchers", .integer).notNull().defaults(to: 0) }
+                if !existingColumns.contains("subscribers") { table.add(column: "subscribers", .integer).notNull().defaults(to: 0) }
+                if !existingColumns.contains("open_issues") { table.add(column: "open_issues", .integer).notNull().defaults(to: 0) }
+                if !existingColumns.contains("default_branch") { table.add(column: "default_branch", .text) }
+                if !existingColumns.contains("license_spdx") { table.add(column: "license_spdx", .text) }
+                if !existingColumns.contains("topics_json") { table.add(column: "topics_json", .text).notNull().defaults(to: "[]") }
+                if !existingColumns.contains("is_fork") { table.add(column: "is_fork", .boolean).notNull().defaults(to: false) }
+                if !existingColumns.contains("pushed_at") { table.add(column: "pushed_at", .text) }
+                if !existingColumns.contains("created_at") { table.add(column: "created_at", .text) }
+            }
+            if try db.tableExists("awesome_sources") {
+                try db.execute(
+                    sql: "UPDATE awesome_sources SET entries_etag = NULL, entries_checked_at = NULL WHERE kind = 'managed'"
+                )
+            }
+        }
     }
 
     // MARK: - v25-awesome-source-stars-refresh：旧来源 Stars 缓存失效（2026-08-24）

@@ -58,10 +58,21 @@ struct AwesomeEntryDTO: Codable, Hashable, Sendable {
     let fullName: String
     let description: String?
     let ownerAvatar: String?
+    let homepage: String?
     let language: String?
     let stars: Int
-    let isArchived: Bool?
-    let updatedAt: String?
+    let forks: Int
+    let watchers: Int
+    let subscribers: Int
+    let openIssues: Int
+    let defaultBranch: String
+    let licenseSpdx: String?
+    let topics: [String]
+    let isArchived: Bool
+    let isFork: Bool
+    let pushedAt: String?
+    let updatedAt: String
+    let createdAt: String
     let entryTitle: String
     let entryDescription: String?
     let sectionPath: [String]
@@ -75,10 +86,21 @@ struct AwesomeEntryDTO: Codable, Hashable, Sendable {
         case fullName = "full_name"
         case description
         case ownerAvatar = "owner_avatar"
+        case homepage
         case language
         case stars
+        case forks
+        case watchers
+        case subscribers
+        case openIssues = "open_issues"
+        case defaultBranch = "default_branch"
+        case licenseSpdx = "license_spdx"
+        case topics
         case isArchived = "is_archived"
+        case isFork = "is_fork"
+        case pushedAt = "pushed_at"
         case updatedAt = "updated_at"
+        case createdAt = "created_at"
         case entryTitle = "entry_title"
         case entryDescription = "entry_description"
         case sectionPath = "section_path"
@@ -167,14 +189,74 @@ struct AwesomeRepositoryItem: Identifiable, Hashable, Sendable {
     let fullName: String
     let description: String?
     let ownerAvatarURL: URL?
+    let homepage: String?
     let language: String?
     let stars: Int
+    let forks: Int
+    let watchers: Int
+    let subscribers: Int
+    let openIssues: Int
+    let defaultBranch: String?
+    let licenseSpdx: String?
+    let topics: [String]
     let isArchived: Bool
+    let isFork: Bool
+    let pushedAt: Date?
     let updatedAt: Date?
+    let createdAt: Date?
     let evidence: [AwesomeEntryEvidence]
 
-    /// 复用 Discovery 现有统一卡片与详情 scaffold 所需的最小公共 Repo 投影。
-    /// Awesome API 不提供 forks/watchers/release 等字段，明确以 0/nil 降级而不是伪造数据。
+    /// 默认值仅服务于迁移前的离线缓存和测试夹具；网络快照与自定义来源映射必须显式传入事实字段。
+    init(
+        id: Int64,
+        owner: String,
+        name: String,
+        fullName: String,
+        description: String?,
+        ownerAvatarURL: URL?,
+        homepage: String? = nil,
+        language: String?,
+        stars: Int,
+        forks: Int = 0,
+        watchers: Int = 0,
+        subscribers: Int = 0,
+        openIssues: Int = 0,
+        defaultBranch: String? = nil,
+        licenseSpdx: String? = nil,
+        topics: [String] = [],
+        isArchived: Bool,
+        isFork: Bool = false,
+        pushedAt: Date? = nil,
+        updatedAt: Date?,
+        createdAt: Date? = nil,
+        evidence: [AwesomeEntryEvidence]
+    ) {
+        self.id = id
+        self.owner = owner
+        self.name = name
+        self.fullName = fullName
+        self.description = description
+        self.ownerAvatarURL = ownerAvatarURL
+        self.homepage = homepage
+        self.language = language
+        self.stars = stars
+        self.forks = forks
+        self.watchers = watchers
+        self.subscribers = subscribers
+        self.openIssues = openIssues
+        self.defaultBranch = defaultBranch
+        self.licenseSpdx = licenseSpdx
+        self.topics = topics
+        self.isArchived = isArchived
+        self.isFork = isFork
+        self.pushedAt = pushedAt
+        self.updatedAt = updatedAt
+        self.createdAt = createdAt
+        self.evidence = evidence
+    }
+
+    /// 复用 Discovery 现有统一卡片与详情 scaffold；所有 GitHub 仓库事实都来自
+    /// Discovery 中央缓存或用户自定义来源的本地 GitHub 响应，不用占位值伪造。
     var discoveryDTO: DiscoveryRepoDTO {
         DiscoveryRepoDTO(
             repoID: id,
@@ -182,23 +264,23 @@ struct AwesomeRepositoryItem: Identifiable, Hashable, Sendable {
             owner: owner,
             name: name,
             description: description,
-            homepage: nil,
+            homepage: homepage,
             language: language,
             stars: stars,
-            forks: 0,
-            watchers: 0,
-            subscribers: 0,
-            openIssues: 0,
+            forks: forks,
+            watchers: watchers,
+            subscribers: subscribers,
+            openIssues: openIssues,
             ownerAvatar: ownerAvatarURL?.absoluteString,
-            defaultBranch: nil,
-            licenseSpdx: nil,
-            topics: [],
+            defaultBranch: defaultBranch,
+            licenseSpdx: licenseSpdx,
+            topics: topics,
             platforms: [],
-            pushedAt: nil,
+            pushedAt: pushedAt.map { ISO8601DateFormatter.shared.string(from: $0) },
             updatedAt: updatedAt.map { ISO8601DateFormatter.shared.string(from: $0) },
-            createdAt: nil,
+            createdAt: createdAt.map { ISO8601DateFormatter.shared.string(from: $0) },
             isArchived: isArchived,
-            isFork: false,
+            isFork: isFork,
             latestReleaseTag: nil,
             latestReleaseAt: nil,
             latestReleaseURL: nil,

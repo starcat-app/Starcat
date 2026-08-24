@@ -373,10 +373,21 @@ actor AwesomeRepository: AwesomeRepositoryProtocol {
                     fullName: first.fullName,
                     description: first.description,
                     ownerAvatarURL: first.ownerAvatar.flatMap(URL.init(string:)),
+                    homepage: first.homepage,
                     language: first.language,
                     stars: first.stars,
+                    forks: first.forks,
+                    watchers: first.watchers,
+                    subscribers: first.subscribers,
+                    openIssues: first.openIssues,
+                    defaultBranch: first.defaultBranch,
+                    licenseSpdx: first.licenseSpdx,
+                    topics: first.topics,
                     isArchived: first.isArchived,
+                    isFork: first.isFork,
+                    pushedAt: first.pushedAt.flatMap(ISO8601DateFormatter.githubDate(from:)),
                     updatedAt: first.repoUpdatedAt.flatMap(ISO8601DateFormatter.githubDate(from:)),
+                    createdAt: first.createdAt.flatMap(ISO8601DateFormatter.githubDate(from:)),
                     evidence: evidence
                 )
             }
@@ -485,6 +496,7 @@ private extension AwesomeSourceRecord {
 private extension AwesomeEntryRecord {
     static func from(_ dto: AwesomeEntryDTO, sourceID: String, cachedAt: String) -> AwesomeEntryRecord {
         let sectionData = (try? JSONEncoder().encode(dto.sectionPath)) ?? Data("[]".utf8)
+        let topicsData = (try? JSONEncoder().encode(dto.topics)) ?? Data("[]".utf8)
         return AwesomeEntryRecord(
             sourceID: sourceID,
             ghRepoID: dto.ghRepoID,
@@ -493,11 +505,21 @@ private extension AwesomeEntryRecord {
             fullName: dto.fullName,
             description: dto.description,
             ownerAvatar: dto.ownerAvatar,
+            homepage: dto.homepage,
             language: dto.language,
             stars: dto.stars,
-            // 旧版 Discovery 曾在 false 时省略字段；按 GitHub 默认语义降级，避免整批快照丢失。
-            isArchived: dto.isArchived ?? false,
+            forks: dto.forks,
+            watchers: dto.watchers,
+            subscribers: dto.subscribers,
+            openIssues: dto.openIssues,
+            defaultBranch: dto.defaultBranch,
+            licenseSpdx: dto.licenseSpdx,
+            topicsJSON: String(decoding: topicsData, as: UTF8.self),
+            isArchived: dto.isArchived,
+            isFork: dto.isFork,
+            pushedAt: dto.pushedAt,
             repoUpdatedAt: dto.updatedAt,
+            createdAt: dto.createdAt,
             entryTitle: dto.entryTitle,
             entryDescription: dto.entryDescription,
             sectionPathJSON: String(decoding: sectionData, as: UTF8.self),
@@ -519,5 +541,10 @@ private extension AwesomeEntryRecord {
             entryOrder: entryOrder,
             sourceAnchorURL: anchor
         )
+    }
+
+    var topics: [String] {
+        topicsJSON.data(using: .utf8)
+            .flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
     }
 }

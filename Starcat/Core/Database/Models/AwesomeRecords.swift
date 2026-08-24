@@ -83,10 +83,21 @@ struct AwesomeEntryRecord: Codable, FetchableRecord, PersistableRecord, Equatabl
     var fullName: String
     var description: String?
     var ownerAvatar: String?
+    var homepage: String?
     var language: String?
     var stars: Int
+    var forks: Int
+    var watchers: Int
+    var subscribers: Int
+    var openIssues: Int
+    var defaultBranch: String?
+    var licenseSpdx: String?
+    var topicsJSON: String
     var isArchived: Bool
+    var isFork: Bool
+    var pushedAt: String?
     var repoUpdatedAt: String?
+    var createdAt: String?
     var entryTitle: String
     var entryDescription: String?
     var sectionPathJSON: String
@@ -102,10 +113,21 @@ struct AwesomeEntryRecord: Codable, FetchableRecord, PersistableRecord, Equatabl
         case fullName = "full_name"
         case description
         case ownerAvatar = "owner_avatar"
+        case homepage
         case language
         case stars
+        case forks
+        case watchers
+        case subscribers
+        case openIssues = "open_issues"
+        case defaultBranch = "default_branch"
+        case licenseSpdx = "license_spdx"
+        case topicsJSON = "topics_json"
         case isArchived = "is_archived"
+        case isFork = "is_fork"
+        case pushedAt = "pushed_at"
         case repoUpdatedAt = "repo_updated_at"
+        case createdAt = "created_at"
         case entryTitle = "entry_title"
         case entryDescription = "entry_description"
         case sectionPathJSON = "section_path_json"

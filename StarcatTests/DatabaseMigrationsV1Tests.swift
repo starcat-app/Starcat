@@ -157,6 +157,7 @@ struct DatabaseMigrationsV1Tests {
             #expect(applied.contains("v23-awesome-source-metadata"))
             #expect(applied.contains("v24-awesome-cache-freshness"))
             #expect(applied.contains("v25-awesome-source-stars-refresh"))
+            #expect(applied.contains("v26-awesome-repository-metadata"))
             #expect(try db.tableExists("awesome_sources"))
             #expect(try db.tableExists("awesome_source_subscriptions"))
             #expect(try db.tableExists("awesome_entries"))
@@ -202,6 +203,43 @@ struct DatabaseMigrationsV1Tests {
             let state = try #require(fetchedState)
             #expect(state.catalogETag == nil)
             #expect(state.catalogCheckedAt == nil)
+        }
+    }
+
+    @Test("v26 追加 Awesome 仓库事实列并让 managed 条目缓存过期")
+    func awesomeRepositoryMetadataMigration() throws {
+        let writer = try DatabaseQueue()
+        var migrator = DatabaseMigrator()
+        DatabaseMigrations.registerAll(into: &migrator)
+        try migrator.migrate(writer, upTo: "v25-awesome-source-stars-refresh")
+        try writer.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO awesome_sources (
+                    source_id, kind, display_name, repo_full_name, repo_url,
+                    entries_etag, entries_checked_at, added_at, updated_at
+                ) VALUES (?, 'managed', ?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: [
+                    "awesome-swift", "Awesome Swift", "matteocrippa/awesome-swift",
+                    "https://github.com/matteocrippa/awesome-swift", "\"legacy\"",
+                    "2026-08-24T08:00:00Z", "2026-08-24T08:00:00Z", "2026-08-24T08:00:00Z",
+                ]
+            )
+        }
+
+        try migrator.migrate(writer)
+
+        try writer.read { db in
+            let columns = Set(try db.columns(in: "awesome_entries").map(\.name))
+            #expect(columns.isSuperset(of: [
+                "homepage", "forks", "watchers", "subscribers", "open_issues",
+                "default_branch", "license_spdx", "topics_json", "is_fork", "pushed_at", "created_at",
+            ]))
+            let fetchedSource = try AwesomeSourceRecord.fetchOne(db, key: "awesome-swift")
+            let source = try #require(fetchedSource)
+            #expect(source.entriesETag == nil)
+            #expect(source.entriesCheckedAt == nil)
         }
     }
 

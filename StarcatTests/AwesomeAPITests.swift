@@ -63,7 +63,7 @@ struct AwesomeAPITests {
     func entrySnapshotDecodesRepositoryAndEvidence() async throws {
         let api = makeAPI { request in
             let body = Data(#"""
-            {"schema_version":1,"data":{"source":{"id":"swift","display_name":"Awesome Swift","updated_at":"2026-08-24T08:00:00Z"},"entries":[{"gh_repo_id":42,"owner":"apple","name":"swift","full_name":"apple/swift","description":"Language","stars":70000,"is_archived":false,"updated_at":"2026-08-23T12:34:56Z","entry_title":"Swift","entry_description":"The language","section_path":["Languages"],"entry_order":3,"source_anchor_url":"https://github.com/example/awesome#languages"}]},"meta":{"total":1,"generated_at":"2026-08-24T08:00:00Z"}}
+            {"schema_version":1,"data":{"source":{"id":"swift","display_name":"Awesome Swift","updated_at":"2026-08-24T08:00:00Z"},"entries":[{"gh_repo_id":42,"owner":"apple","name":"swift","full_name":"apple/swift","description":"Language","homepage":"https://swift.org","stars":70000,"forks":12000,"watchers":70000,"subscribers":900,"open_issues":330,"default_branch":"main","license_spdx":"Apache-2.0","topics":["swift","language"],"is_archived":false,"is_fork":false,"pushed_at":"2026-08-23T11:00:00Z","updated_at":"2026-08-23T12:34:56Z","created_at":"2015-10-23T00:00:00Z","entry_title":"Swift","entry_description":"The language","section_path":["Languages"],"entry_order":3,"source_anchor_url":"https://github.com/example/awesome#languages"}]},"meta":{"total":1,"generated_at":"2026-08-24T08:00:00Z"}}
             """#.utf8)
             return (Self.response(200, request: request), body)
         }
@@ -72,22 +72,27 @@ struct AwesomeAPITests {
         let entry = try #require(result.snapshot?.entries.first)
 
         #expect(entry.ghRepoID == 42)
+        #expect(entry.forks == 12_000)
+        #expect(entry.watchers == 70_000)
+        #expect(entry.subscribers == 900)
+        #expect(entry.openIssues == 330)
+        #expect(entry.topics == ["swift", "language"])
+        #expect(entry.createdAt == "2015-10-23T00:00:00Z")
         #expect(entry.updatedAt == "2026-08-23T12:34:56Z")
         #expect(entry.sectionPath == ["Languages"])
         #expect(entry.entryDescription == "The language")
     }
 
-    @Test("旧响应省略 false 归档字段时仍可解码整批条目")
-    func entrySnapshotDefaultsMissingArchivedState() async throws {
+    @Test("条目缺少 GitHub 基础事实时拒绝不完整契约")
+    func entrySnapshotRejectsMissingRepositoryFacts() async throws {
         let api = makeAPI { request in
             let body = Data(#"{"schema_version":1,"data":{"source":{"id":"swift","display_name":"Awesome Swift","updated_at":"2026-08-24T08:00:00Z"},"entries":[{"gh_repo_id":42,"owner":"apple","name":"swift","full_name":"apple/swift","stars":70000,"entry_title":"Swift","section_path":[],"entry_order":1}]}}"#.utf8)
             return (Self.response(200, request: request), body)
         }
 
-        let result = try await api.fetchAwesomeEntries(sourceID: "swift")
-
-        #expect(result.snapshot?.entries.first?.isArchived == nil)
-        #expect(result.snapshot?.entries.count == 1)
+        await #expect(throws: StarcatEnvelopeNetworkError.self) {
+            _ = try await api.fetchAwesomeEntries(sourceID: "swift")
+        }
     }
 
     @Test("服务端错误 envelope 保留 Awesome 稳定错误码")
