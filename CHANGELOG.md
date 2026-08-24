@@ -26,6 +26,7 @@ Release notes for the Mac App Store edition of Starcat.
 
 ### Fixes
 
+- README translation on repo change: Switching repositories during translation no longer writes the previous README’s translation into the current detail view.
 - Event-timeline translation: Opening posts and every comment get side-by-side translations; event rows stay original.
 - Comment box on thread change: Switching Issues collapses the AI reply box and stops generation so drafts do not carry over.
 - Timeline library toggle: Adding a repository to the library updates the badge only, keeping the current item and its detail open.
