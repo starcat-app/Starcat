@@ -813,6 +813,71 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.prompt == "insight draft")
     }
 
+    @Test("切换 Agent 清空上一任务展示并保留各自草稿")
+    func selectingAnotherAgentClearsRunPresentation() async throws {
+        let runID = UUID()
+        let runtime = EventReplayAgentRuntime(events: [
+            .runStarted(title: "Weekly"),
+            .messageAppended(AgentMessage(
+                runID: runID,
+                role: .assistant,
+                turn: 0,
+                sequence: 0,
+                parts: [.text("old output")]
+            )),
+            .artifactCreated(AgentArtifact(type: .markdown, title: "Old", content: "old")),
+            .usageUpdated(AgentUsage(inputTokens: 10, outputTokens: 20)),
+            .runCompleted,
+        ])
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport, BuiltInAgents.repoInsight],
+            runtime: runtime
+        )
+        configureRunnable(viewModel)
+        viewModel.prompt = "weekly draft"
+        viewModel.run()
+        try await waitUntil { viewModel.status == .completed }
+
+        viewModel.selectAgent(BuiltInAgents.repoInsight)
+
+        #expect(viewModel.status == .idle)
+        #expect(viewModel.messages.isEmpty)
+        #expect(viewModel.traceEvents.isEmpty)
+        #expect(viewModel.artifacts.isEmpty)
+        #expect(viewModel.usage == .zero)
+        #expect(viewModel.currentRunContext == nil)
+        #expect(viewModel.currentRunRecord == nil)
+        #expect(viewModel.currentRunUserPrompt.isEmpty)
+        #expect(viewModel.selectedHistoryRunID == nil)
+        #expect(viewModel.errorMessage == nil)
+        #expect(viewModel.prompt.isEmpty)
+    }
+
+    @Test("历史任务默认展示五条并可展开全部")
+    func historyPresentationUsesFiveItemCollapsedLimit() {
+        let runs = (0..<8).map { index in
+            let timestamp = ISO8601DateFormatter.shared.string(from: Date())
+            return AgentRunRecord(
+                id: UUID().uuidString,
+                agentId: BuiltInAgents.githubWeeklyReport.id,
+                title: "Run \(index)",
+                userPrompt: "Prompt",
+                contextSource: "Unit",
+                contextJSON: "{}",
+                status: AgentRunStatus.completed.rawValue,
+                model: nil,
+                usageJSON: nil,
+                errorMessage: nil,
+                createdAt: timestamp,
+                updatedAt: timestamp,
+                finishedAt: timestamp
+            )
+        }
+
+        #expect(AgentHistoryPresentation.visibleRuns(runs, isExpanded: false).count == 5)
+        #expect(AgentHistoryPresentation.visibleRuns(runs, isExpanded: true).count == 8)
+    }
+
     @Test("发送瞬间冻结结构化 Run Input")
     func freezesStructuredRunInputBeforeAsyncContextBuild() async throws {
         let recorder = AgentRunInputRecorder()

@@ -14,6 +14,19 @@ import Testing
 @Suite("AgentDefinition")
 struct AgentDefinitionTests {
 
+    @Test("工作台分类以通用 Agent 开始且每个 Agent 只出现一次")
+    func workspaceTaxonomyStartsWithGeneralAgentWithoutDuplicates() throws {
+        let definitions = ExternalAgentDefinitions.all + BuiltInAgents.all
+        let groupedIDs = AgentWorkspaceTaxonomy.sections.flatMap { section in
+            AgentWorkspaceTaxonomy.agents(in: section, from: definitions).map(\.id)
+        }
+
+        #expect(groupedIDs.first == "external-general-poc")
+        #expect(Set(groupedIDs).count == groupedIDs.count)
+        #expect(groupedIDs.contains("github-weekly-report"))
+        #expect(groupedIDs.contains("external-research-poc"))
+    }
+
     @Test("Weekly Agent 声明正式工具 allowlist 和产物类型")
     func weeklyAgentDeclaresToolAllowlist() {
         let agent = BuiltInAgents.githubWeeklyReport

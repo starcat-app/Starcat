@@ -257,10 +257,11 @@ final class AgentWorkspaceViewModel {
     }
 
     func selectAgent(_ agent: AgentDefinition) {
-        guard !isRunning else { return }
+        guard !isRunning, agent.id != selectedAgentID else { return }
         draftsByAgentID[selectedAgentID] = prompt
         selectedAgentID = agent.id
         prompt = draftsByAgentID[agent.id] ?? ""
+        clearRunPresentationForAgentChange()
         if agent.workflow.maximumSelectedRepositories == 0 {
             selectedRepoContexts = []
         } else if selectedRepoContexts.count > agent.workflow.maximumSelectedRepositories {
@@ -272,6 +273,31 @@ final class AgentWorkspaceViewModel {
             explicitRepoMode = .only
         }
         handlePromptChanged()
+    }
+
+    /// 切换业务分类后，中栏必须表达“新 Agent 尚未运行”，不能继续展示上一个 Agent
+    /// 的消息、步骤、用量或错误。Composer 草稿与仓库选择单独管理，不在这里误删。
+    private func clearRunPresentationForAgentChange() {
+        runTask?.cancel()
+        runTask = nil
+        activeRunID = nil
+        currentRunSnapshot = nil
+        currentRunContext = nil
+        currentRunUserPrompt = ""
+        runTitle = String.l10n("agent.workspace.status.ready")
+        status = .idle
+        approvals = []
+        messages = []
+        traceEvents = []
+        usage = .zero
+        artifacts = []
+        inspectorTab = .overview
+        selectedArtifactID = nil
+        selectedToolCallID = nil
+        selectedTraceEventID = nil
+        selectedHistoryRunID = nil
+        resetStreamingPresentation(resetUpdateCount: true)
+        errorMessage = nil
     }
 
     /// `.xcstrings` 运行时切换后重建定义中的已解析 String，同时保留当前 Agent 身份。

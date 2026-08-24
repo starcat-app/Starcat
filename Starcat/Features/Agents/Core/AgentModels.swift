@@ -110,6 +110,60 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
     }
 }
 
+/// 左栏信息架构的稳定定义。分类只引用 Agent ID，定义本身仍由各 Runtime/业务模块提供，
+/// 避免 UI 通过 policy 或数组位置猜测分类并再次出现重复条目。
+struct AgentRailSectionDefinition: Identifiable, Equatable, Sendable {
+    let id: String
+    let titleKey: String
+    let agentIDs: [String]
+}
+
+enum AgentWorkspaceTaxonomy {
+    static let sections: [AgentRailSectionDefinition] = [
+        AgentRailSectionDefinition(
+            id: "general",
+            titleKey: "agent.workspace.section.general",
+            agentIDs: ["external-general-poc"]
+        ),
+        AgentRailSectionDefinition(
+            id: "discovery",
+            titleKey: "agent.workspace.section.discovery",
+            agentIDs: ["github-weekly-report", "repo-alternatives"]
+        ),
+        AgentRailSectionDefinition(
+            id: "analysis",
+            titleKey: "agent.workspace.section.analysis",
+            agentIDs: ["repo-insight", "external-research-poc"]
+        ),
+        AgentRailSectionDefinition(
+            id: "organize",
+            titleKey: "agent.workspace.section.organize",
+            agentIDs: ["untagged-tidy", "overlap-scan"]
+        ),
+        AgentRailSectionDefinition(
+            id: "monitor",
+            titleKey: "agent.workspace.section.monitor",
+            agentIDs: ["release-watcher"]
+        ),
+    ]
+
+    static func agents(
+        in section: AgentRailSectionDefinition,
+        from definitions: [AgentDefinition]
+    ) -> [AgentDefinition] {
+        let definitionsByID = Dictionary(uniqueKeysWithValues: definitions.map { ($0.id, $0) })
+        return section.agentIDs.compactMap { definitionsByID[$0] }
+    }
+}
+
+enum AgentHistoryPresentation {
+    static let collapsedLimit = 5
+
+    static func visibleRuns(_ runs: [AgentRunRecord], isExpanded: Bool) -> [AgentRunRecord] {
+        isExpanded ? runs : Array(runs.prefix(collapsedLimit))
+    }
+}
+
 /// 一次 Agent run 的状态。
 enum AgentRunStatus: String, Codable, Hashable, Sendable {
     case idle

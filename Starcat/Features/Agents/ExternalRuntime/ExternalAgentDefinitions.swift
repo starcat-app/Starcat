@@ -18,11 +18,15 @@ enum ExternalAgentDefinitions {
     static var general: AgentDefinition {
         AgentDefinition(
             id: "external-general-poc",
-            title: "General Agent (POC)",
-            subtitle: "验证 Codex / DeepSeek 可切换 Runtime 与原生 Run Surface",
+            title: String.l10n("agent.definition.general.title"),
+            subtitle: String.l10n("agent.definition.general.subtitle"),
             systemImage: "terminal",
-            capabilityLabels: ["External", "Read-only", "Session"],
-            defaultPrompt: "请根据提供的 Starcat 上下文回答问题。",
+            capabilityLabels: [
+                String.l10n("agent.capability.externalRuntime"),
+                String.l10n("agent.capability.readOnly"),
+                String.l10n("agent.capability.session")
+            ],
+            defaultPrompt: String.l10n("agent.definition.general.defaultPrompt"),
             isEnabled: true,
             workflow: AgentWorkflowPolicy(
                 repositoryContext: .none,
@@ -38,7 +42,7 @@ enum ExternalAgentDefinitions {
                     content: "Remain read-only. Use the Starcat MCP tools for repository questions. Do not use shell, filesystem mutation, browser automation, or subagents."
                 )
             ],
-            artifactTitle: "External Agent Result",
+            artifactTitle: String.l10n("agent.definition.general.artifactTitle"),
             runtimePolicy: .externalReadOnly,
             externalMCPToolIDs: [
                 "starcat.get_overview_statistics",
@@ -56,11 +60,15 @@ enum ExternalAgentDefinitions {
     static var research: AgentDefinition {
         AgentDefinition(
             id: "external-research-poc",
-            title: "Research Agent (POC)",
-            subtitle: "基于显式冻结仓库上下文验证外部长期 Session",
+            title: String.l10n("agent.definition.research.title"),
+            subtitle: String.l10n("agent.definition.research.subtitle"),
             systemImage: "books.vertical",
-            capabilityLabels: ["Research", "Repositories", "Read-only"],
-            defaultPrompt: "请比较所选仓库并给出有依据的研究结论。",
+            capabilityLabels: [
+                String.l10n("agent.capability.research"),
+                String.l10n("agent.capability.repositories"),
+                String.l10n("agent.capability.readOnly")
+            ],
+            defaultPrompt: String.l10n("agent.definition.research.defaultPrompt"),
             isEnabled: true,
             workflow: AgentWorkflowPolicy(
                 repositoryContext: .selectedRepositories,
@@ -76,7 +84,7 @@ enum ExternalAgentDefinitions {
                     content: "Treat Frozen Starcat Context as the complete repository scope. State missing evidence instead of inventing facts."
                 )
             ],
-            artifactTitle: "External Research Result",
+            artifactTitle: String.l10n("agent.definition.research.artifactTitle"),
             runtimePolicy: .externalReadOnly,
             artifactTypes: [.markdown]
         )

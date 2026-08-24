@@ -104,6 +104,7 @@ struct AgentWorkspaceView: View {
     @State private var isLoadingCodexModelCatalog = false
     @State private var codexModelCatalogError: String?
     @State private var codexProviderEndpointStates: [String: CodexProviderEndpointState] = [:]
+    @State private var isHistoryExpanded = false
     @FocusState private var isContextPickerSearchFocused: Bool
     let chromeState: WorkspaceChromeState
 
@@ -162,6 +163,10 @@ struct AgentWorkspaceView: View {
         .defaultCursorShield()
         .task {
             viewModel.refreshLocalizedDefinitions(availableAgentDefinitions)
+            if dependencies.distributionGate.isAvailable(.externalAgentRuntime),
+               let generalAgent = availableAgentDefinitions.first(where: { $0.id == "external-general-poc" }) {
+                viewModel.selectAgent(generalAgent)
+            }
             let repositoryCatalog = GRDBAgentRepositoryCatalog(database: dependencies.database)
             viewModel.configureContextProvider(RepositoryAgentRunContextProvider(
                 repoRepository: dependencies.repoRepository,
@@ -514,7 +519,7 @@ struct AgentWorkspaceView: View {
         guard dependencies.distributionGate.isAvailable(.externalAgentRuntime) else {
             return BuiltInAgents.all
         }
-        return BuiltInAgents.all + ExternalAgentDefinitions.all
+        return ExternalAgentDefinitions.all + BuiltInAgents.all
     }
 
     /// 模型提示词使用英文语言名，避免只支持中英文而让其它 App locale 静默回退英语。
@@ -534,12 +539,11 @@ struct AgentWorkspaceView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    agentSection("agent.workspace.section.discovery", agents: viewModel.agents.filter { ["github-weekly-report", "repo-alternatives"].contains($0.id) })
-                    agentSection("agent.workspace.section.digest", agents: viewModel.agents.filter { ["repo-insight", "release-watcher"].contains($0.id) })
-                    agentSection("agent.workspace.section.organize", agents: viewModel.agents.filter { ["overlap-scan", "untagged-tidy"].contains($0.id) })
-                    let externalAgents = viewModel.agents.filter { $0.runtimePolicy != .builtinOnly }
-                    if !externalAgents.isEmpty {
-                        agentSection("External Runtime POC", agents: externalAgents)
+                    ForEach(AgentWorkspaceTaxonomy.sections) { section in
+                        let agents = AgentWorkspaceTaxonomy.agents(in: section, from: viewModel.agents)
+                        if !agents.isEmpty {
+                            agentSection(section.titleKey, agents: agents)
+                        }
                     }
                     historySection
                 }
@@ -666,11 +670,48 @@ struct AgentWorkspaceView: View {
                 .padding(11)
                 .background(Color(nsColor: .separatorColor).opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
             } else {
-                ForEach(viewModel.historyRuns) { run in
+                ForEach(AgentHistoryPresentation.visibleRuns(
+                    viewModel.historyRuns,
+                    isExpanded: isHistoryExpanded
+                )) { run in
                     historyRunButton(run)
+                }
+
+                if viewModel.historyRuns.count > AgentHistoryPresentation.collapsedLimit {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.16)) {
+                            isHistoryExpanded.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: isHistoryExpanded ? "chevron.up" : "ellipsis.circle")
+                                .frame(width: 18)
+                            Text(historyDisclosureTitle)
+                                .font(agentFont(.caption, weight: .medium))
+                            Spacer()
+                        }
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
                 }
             }
         }
+    }
+
+    private var historyDisclosureTitle: String {
+        if isHistoryExpanded {
+            return String.l10n("agent.workspace.history.collapse")
+        }
+        let remainingCount = viewModel.historyRuns.count - AgentHistoryPresentation.collapsedLimit
+        return String(
+            format: String.l10n("agent.workspace.history.moreFormat"),
+            locale: locale,
+            remainingCount
+        )
     }
 
     private func historyRunButton(_ run: AgentRunRecord) -> some View {

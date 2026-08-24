@@ -26990,6 +26990,132 @@
         }
       }
     },
+    "agent.capability.externalRuntime" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Runtime" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "外部 Runtime" } }
+      }
+    },
+    "agent.capability.readOnly" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Read-only" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "只读" } }
+      }
+    },
+    "agent.capability.repositories" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库" } }
+      }
+    },
+    "agent.capability.research" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Research" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "研究" } }
+      }
+    },
+    "agent.capability.session" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Session" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "会话" } }
+      }
+    },
+    "agent.definition.general.artifactTitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Agent Result" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Agent 结果" } }
+      }
+    },
+    "agent.definition.general.defaultPrompt" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Answer using the provided Starcat context." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请根据提供的 Starcat 上下文回答问题。" } }
+      }
+    },
+    "agent.definition.general.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "General read-only tasks across supported Agent Runtimes" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "通过可切换 Agent Runtime 完成通用只读任务" } }
+      }
+    },
+    "agent.definition.general.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "General Agent" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "通用 Agent" } }
+      }
+    },
+    "agent.definition.research.artifactTitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Research Result" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "研究结果" } }
+      }
+    },
+    "agent.definition.research.defaultPrompt" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Compare the selected repositories and provide evidence-backed conclusions." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请比较所选仓库并给出有依据的研究结论。" } }
+      }
+    },
+    "agent.definition.research.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Compare repositories using an explicit frozen context" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "基于显式冻结的仓库上下文完成对比研究" } }
+      }
+    },
+    "agent.definition.research.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Research Agent" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "研究 Agent" } }
+      }
+    },
+    "agent.workspace.history.collapse" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Show Less" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "收起" } }
+      }
+    },
+    "agent.workspace.history.moreFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "More (%d)" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "更多（%d）" } }
+      }
+    },
+    "agent.workspace.section.analysis" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Analysis" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分析" } }
+      }
+    },
+    "agent.workspace.section.general" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "General" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "通用" } }
+      }
+    },
+    "agent.workspace.section.monitor" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Monitor" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "监控" } }
+      }
+    },
     "agent.workspace.section.digest" : {
       "localizations" : {
         "ar" : {
