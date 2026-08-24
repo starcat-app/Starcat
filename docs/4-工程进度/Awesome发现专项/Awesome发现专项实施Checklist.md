@@ -1,6 +1,6 @@
 # Awesome 发现专项实施 Checklist
 
-> 状态：来源添加、真实描述、搜索、卡片视觉和详情元数据验收修复已完成；Discovery API 代码待重新部署，客户端待人工 UI 验收
+> 状态：来源管理与详情验收修复已完成并部署至生产聚合 API v11，客户端待人工 UI 验收
 > 日期：2026-08-24  
 > 需求与技术契约：[`Awesome发现栏目与来源管理正式方案.md`](../../2-产品/需求讨论/正式方案/Awesome发现栏目与来源管理正式方案.md)  
 > Issue：[#109](https://github.com/starcat-app/Starcat/issues/109)  
@@ -137,3 +137,12 @@
 - [x] Starcat 全量 `2665` 项测试通过（`0` failed）；最终低风险 UI 修复后 Awesome 定向测试再次通过。
 - [x] Discovery API `86` 项测试与 `go vet` 通过；正式方案、专项结果报告和人工 UI 清单已同步。
 - [x] 完成第 15、16 轮审查，发现项全部修复并保存独立报告；`docs/功能实现总览.md` 未获单独授权，保持不变。
+
+## 14. 验收修复生产部署（2026-08-24）
+
+- [x] 部署前创建 Volume 快照 `vs_70QnnxagZbJGt98z2keM3mvb`，状态为 `created`。
+- [x] 从 `supports/` 构建上下文 remote-only 部署聚合 `starcat-api`，Fly Release v11 完成。
+- [x] Machine `185de96f791908` 为 `started`，Fly health check 和 `/healthz` 均通过。
+- [x] recommend、wiki、sharing、trending、weekly、discovery 六个鉴权 `/api/v1/ping` 均返回 `ok=true`。
+- [x] 生产 Awesome 目录共 84 条，84 条均返回非空 `repo_description`，`source_stars=0` 数量为 0。
+- [x] 保存第 17 轮生产部署审查报告；未修改 Secrets、未导入数据、未 push。
