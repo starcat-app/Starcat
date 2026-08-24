@@ -2,7 +2,7 @@
 
 > 状态：待 dong4j 人工验收  
 > 日期：2026-08-24  
-> 自动化门禁：Starcat 全量 `2595` total，`2584` passed，`10` skipped，`1` expected failure，`0` failed；本文件中的项目未由 AI 冒充通过。
+> 自动化门禁：Starcat 全量 `2648` total，`2637` passed，`10` skipped，`1` expected failure，`0` failed；本文件中的项目未由 AI 冒充通过。
 
 ## 验收前置
 
