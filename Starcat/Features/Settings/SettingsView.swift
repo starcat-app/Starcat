@@ -37,7 +37,7 @@ import SwiftUI
 extension Notification.Name {
     /// 跨 Settings Tab 跳转。`object: String` 取值：`"general"` / `"storage"` /
     /// `"pro"` / `"ai"` / `"ai.chat"` / `"ai.embedding"` / `"ai.repoContext"` / `"services"` / `"integrations"` /
-    /// `"integrations.localAPIKey"` / `"integrations.externalSearch"` /
+    /// `"integrations.agentRuntime"` / `"integrations.localAPIKey"` / `"integrations.externalSearch"` /
     /// `"integrations.codebaseMemory"` / `"diagnostics"`。
     static let starcatJumpToSettingsTab: Notification.Name = .init("starcat.settings.jumpToTab")
     /// SettingsView 切到 AI Tab 并完成一轮布局后，再通知 AISettingsView 展开并定位。
@@ -200,7 +200,7 @@ struct SettingsView: View {
                 }
             case "mcp":          selectedTab = .mcp
             case "services":     selectedTab = .services
-            case "integrations", "integrations.localAPIKey", "integrations.browserPlugin",
+            case "integrations", "integrations.agentRuntime", "integrations.localAPIKey", "integrations.browserPlugin",
                  "integrations.externalSearch", "integrations.codebaseMemory":
                 selectedTab = .integrations
             case "storage":      selectedTab = .storage

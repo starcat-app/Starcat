@@ -333509,6 +333509,329 @@
         }
       }
     },
+    "settings.integration.agentRuntime.chooseCordisConfig" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Cordis Config"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择 Cordis 配置"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.chooseExecutable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Executable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择可执行文件"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.codex.description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uses your local Codex CLI and its existing authentication. Starcat never copies Codex credentials."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用本机 Codex CLI 及其已有认证；Starcat 不会复制 Codex 凭据。"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.codex.executableAvailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Executable found. Confirm authentication with codex login status."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已找到可执行文件；请用 codex login status 确认认证状态。"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.codex.openPanel.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose the Codex executable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择 Codex 可执行文件"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.cordisConfig" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cordis Config"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cordis 配置"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.deepSeek.configurationReady" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Carrier, Cordis config, and verified AI Provider are ready."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Carrier、Cordis 配置和已验证 AI Provider 均已就绪。"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.deepSeek.cordisOpenPanel.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose the Starcat Cordis configuration"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择 Starcat Cordis 配置"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.deepSeek.description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requires the macOS arm64 carrier, Starcat's restricted Cordis config, and a verified AI Provider."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要 macOS arm64 carrier、Starcat 受限 Cordis 配置及已验证的 AI Provider。"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.deepSeek.openPanel.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose the DeepSeek Harness executable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择 DeepSeek Harness 可执行文件"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "External runtimes are available in Starcat Direct only. Configure local executables here, then choose a Runtime in Agent Workspace."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外部 Runtime 仅适用于 Starcat Direct。在此配置本地可执行文件，然后在 Agent 工作台选择 Runtime。"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.detectAgain" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detect Again"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新检测"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.detecting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checking local configuration…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在检查本地配置…"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.executable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Executable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可执行文件"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.notConfigured" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not configured"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未配置"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.openGuide" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Setup and Troubleshooting Guide"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配置与故障排查指南"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.openPanel.prompt" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.restoreAutomatic" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use Automatic Detection"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢复自动检测"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent Runtime"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent Runtime"
+          }
+        }
+      }
+    },
     "settings.integration.codebaseMemory.executable.choose" : {
       "extractionState" : "manual",
       "localizations" : {

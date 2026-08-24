@@ -10,6 +10,7 @@ import AppKit
 import SwiftUI
 
 struct IntegrationSettingsTab: View {
+    private static let agentRuntimeAnchor = "settings.integrations.agentRuntime"
     private static let localAPIKeyAnchor = "settings.integrations.localAPIKey"
     private static let browserPluginAnchor = "settings.integrations.browserPlugin"
     private static let externalSearchAnchor = "settings.integrations.externalSearch"
@@ -49,6 +50,19 @@ struct IntegrationSettingsTab: View {
     var body: some View {
         ScrollViewReader { proxy in
             Form {
+                if DistributionGate().isAvailable(.externalAgentRuntime) {
+                    Section {
+                        AgentRuntimeSettingsView()
+                    } header: {
+                        SettingsSectionHeader(
+                            "settings.integration.agentRuntime.title",
+                            systemImage: "point.3.connected.trianglepath.dotted",
+                            style: .prominent
+                        )
+                    }
+                    .id(Self.agentRuntimeAnchor)
+                }
+
                 localAPIKeySection
                     .id(Self.localAPIKeyAnchor)
                 browserPluginSection
@@ -225,6 +239,8 @@ struct IntegrationSettingsTab: View {
             .onReceive(NotificationCenter.default.publisher(for: .starcatJumpToSettingsTab)) { note in
                 let anchor: String
                 switch note.object as? String {
+                case "integrations.agentRuntime":
+                    anchor = Self.agentRuntimeAnchor
                 case "integrations.localAPIKey":
                     anchor = Self.localAPIKeyAnchor
                 case "integrations.browserPlugin":
