@@ -1,6 +1,6 @@
 # Awesome 发现专项实施 Checklist
 
-> 状态：完整 GitHub 元数据与三列来源 UI 已完成，正在执行第 11 至第 13 轮复审
+> 状态：完整 GitHub 元数据与三列来源 UI 已完成，第 12 轮全量测试审查通过，正在执行第 13 轮终审
 > 日期：2026-08-24  
 > 需求与技术契约：[`Awesome发现栏目与来源管理正式方案.md`](../../2-产品/需求讨论/正式方案/Awesome发现栏目与来源管理正式方案.md)  
 > Issue：[#109](https://github.com/starcat-app/Starcat/issues/109)  
@@ -111,6 +111,6 @@
 - [x] 自定义来源继续只调用 GitHub API 并写当前账户本地库，不上传 Discovery；本地映射 forks、watchers、topics 和时间等事实。
 - [x] 来源 Sheet 固定三列，卡片使用 Repo 风格胶囊、稳定高度、整卡点击、hover/选中态和真实来源 Logo。
 - [x] 侧边栏来源行复用内容管理图片或 GitHub owner avatar；输入区标题改为“新增 Awesome 项目”。
-- [ ] Starcat 全量测试、Discovery API 全量/race/vet、聚合 API 测试与三仓静态门禁通过。
+- [x] Starcat 全量测试、Discovery API 全量/race/vet、聚合 API 测试与三仓静态门禁通过。
 - [ ] 第 11 至第 13 轮审查报告全部保存，发现项全部修复并提交。
 - [ ] 最终结果报告、人工 UI 清单和 Issue #109 状态与最终实现一致。
