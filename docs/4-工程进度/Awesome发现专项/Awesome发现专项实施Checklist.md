@@ -99,5 +99,5 @@
 - [x] Discovery API 合并同 key 并发 miss，并在 CRUD、同步、发布、下架后精确失效，防止旧的在途构建回填。
 - [x] Starcat 全量测试 `2652` total、`2641` passed、`0` failed；Discovery API `85` 条测试、race 定向 `35` 条测试与 `go vet` 通过。
 - [x] 聚合 `starcat-api` `11` 条测试与 `go vet` 通过，直接复用本地 Discovery module。
-- [ ] 完成本轮第 8 至第 10 轮审查并保存独立审查报告。
-- [ ] 更新最终结果报告并将 Issue #109 重新推进到人工验收。
+- [x] 完成本轮第 8 至第 10 轮审查并保存独立审查报告。
+- [x] 更新最终结果报告并将 Issue #109 重新推进到人工验收。
