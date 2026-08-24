@@ -1,6 +1,6 @@
 # DeepSeek Harness Runtime 配置
 
-DeepSeek Harness 只用于 **Starcat Direct Debug / macOS arm64**。Runtime 由用户安装在
+DeepSeek Harness 只用于 **Starcat Direct / macOS arm64**。Runtime 由用户安装在
 `~/Library/Application Support/Starcat/Runtimes/`，不会复制进 `Starcat.app` 或 DMG。
 
 ## 1. 前置条件
@@ -14,10 +14,20 @@ Keychain 读取凭据，只通过每轮子进程环境注入；Finder 启动不�
 
 ## 2. 安装固定 Runtime
 
-在 Starcat 仓库根目录执行：
+从源码运行时，在 Starcat 仓库根目录执行：
 
 ```bash
 ./scripts/install-deepseek-harness-runtime.sh
+```
+
+从 DMG 安装 Starcat Direct 1.5.0 后，可单独下载并检查发布标签中的安装脚本：
+
+```bash
+curl -fL \
+  https://raw.githubusercontent.com/starcat-app/Starcat/v1.5.0/scripts/install-deepseek-harness-runtime.sh \
+  -o /tmp/install-starcat-deepseek-runtime.sh
+less /tmp/install-starcat-deepseek-runtime.sh
+bash /tmp/install-starcat-deepseek-runtime.sh
 ```
 
 脚本通过 PyPI macOS arm64 wheel 安装
@@ -37,18 +47,26 @@ Keychain 读取凭据，只通过每轮子进程环境注入；Finder 启动不�
 每轮临时 MCP Bridge 暴露当前 Agent 声明的只读业务工具；放行 Shell 会越过这条权限
 边界，并可能因动态解压 `pty.node` 触发 Gatekeeper。
 
-## 3. 配置 Direct Debug
+## 3. 配置 Starcat Direct
 
-安装脚本会在结尾打印可直接执行的命令。默认配置如下，路径中的 `python3.*` 以脚本
-实际输出为准：
+安装脚本默认直接写入正式版 `com.starcat.app.direct` 的以下产品配置键，不再要求用户
+手工复制 Runtime 路径：
+
+```text
+AgentRuntimeBackend = deepSeekHarness
+AgentRuntimeDeepSeekHarnessExecutablePath = <安装脚本检测到的绝对路径>
+AgentRuntimeDeepSeekHarnessCordisConfigPath = <安装脚本生成的安全配置路径>
+```
+
+开发者需要配置 Direct Debug 时显式覆盖 bundle ID：
 
 ```bash
-defaults write com.starcat.app.direct.debug DebugExternalAgentRuntimeBackend -string deepSeekHarness
-defaults write com.starcat.app.direct.debug DebugDeepSeekHarnessExecutablePath -string \
-  "$HOME/Library/Application Support/Starcat/Runtimes/deepseek-harness-0.1.1rc1/venv/lib/python3.12/site-packages/deepseek_harness_runtime/runtime/dsh-jsonrpc-agent-pkg-macos-arm64"
-defaults write com.starcat.app.direct.debug DebugDeepSeekHarnessCordisConfigPath -string \
-  "$HOME/Library/Application Support/Starcat/Runtimes/deepseek-harness-0.1.1rc1/starcat.cordis.yml"
+STARCAT_BUNDLE_ID=com.starcat.app.direct.debug \
+  ./scripts/install-deepseek-harness-runtime.sh
 ```
+
+安装后完全退出并重新启动 Starcat。也可以在「设置 → 集成 → Agent Runtime」查看路径
+与可用性状态，或重新选择可执行文件和 Cordis 配置。
 
 Provider 和模型不再通过 `defaults` 手工写死。启动 `StarcatDirect` 后，在 Agent 工作台按
 以下顺序选择：
@@ -75,13 +93,13 @@ Starcat DMG 公证。安装脚本只对 wheel 的三个确定文件移除下载�
 第三方 Runtime，也不会修改整个用户缓存目录。
 
 若看到“未打开 `pty.node`”，说明使用了 wheel 自带的默认 Cordis 配置，或误在 App
-Store/Sandbox 测试宿主里启用了本地 Bash。重新运行安装脚本，并把
-`DebugDeepSeekHarnessCordisConfigPath` 指向脚本生成的 `starcat.cordis.yml`。
+Store/Sandbox 测试宿主里启用了本地 Bash。重新运行安装脚本，并确认
+`AgentRuntimeDeepSeekHarnessCordisConfigPath` 指向脚本生成的 `starcat.cordis.yml`。
 
-## 5. 关闭 POC
+## 5. 切回内置 Runtime
 
 ```bash
-defaults write com.starcat.app.direct.debug DebugExternalAgentRuntimeBackend -string builtinLoop
+defaults write com.starcat.app.direct AgentRuntimeBackend -string builtinLoop
 ```
 
 这只切回 Starcat 内置 Loop，不删除外部 Runtime 或 AI Provider 凭据。
