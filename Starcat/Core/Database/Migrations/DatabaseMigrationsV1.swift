@@ -93,6 +93,86 @@ enum DatabaseMigrations {
         registerV19(into: &migrator)
         registerV20(into: &migrator)
         registerV21(into: &migrator)
+        registerV22(into: &migrator)
+    }
+
+    // MARK: - v22-awesome-discovery：Awesome 来源、订阅与条目（2026-08-24）
+
+    /// Awesome 同时包含可重建公共快照和账户本地配置。四张独立表避免污染 starred repos，
+    /// 并让删除/重建精选缓存时不会误删用户自定义来源或首次设置状态。
+    private static func registerV22(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v22-awesome-discovery") { db in
+            try db.create(table: "awesome_sources") { table in
+                table.column("source_id", .text).primaryKey()
+                table.column("kind", .text).notNull()
+                table.column("display_name", .text).notNull()
+                table.column("repo_full_name", .text).notNull()
+                table.column("repo_url", .text).notNull()
+                table.column("image_url", .text)
+                table.column("summary_zh", .text)
+                table.column("summary_en", .text)
+                table.column("featured", .boolean).notNull().defaults(to: false)
+                table.column("sort_order", .integer).notNull().defaults(to: 0)
+                table.column("github_repo_count", .integer).notNull().defaults(to: 0)
+                table.column("external_entry_count", .integer).notNull().defaults(to: 0)
+                table.column("is_available", .boolean).notNull().defaults(to: true)
+                table.column("catalog_etag", .text)
+                table.column("entries_etag", .text)
+                table.column("added_at", .text).notNull()
+                table.column("last_synced_at", .text)
+                table.column("updated_at", .text).notNull()
+            }
+
+            try db.create(table: "awesome_source_subscriptions") { table in
+                table.column("source_id", .text).primaryKey()
+                    .references("awesome_sources", column: "source_id", onDelete: .cascade)
+                table.column("is_enabled", .boolean).notNull().defaults(to: false)
+                table.column("enabled_at", .text)
+            }
+
+            try db.create(table: "awesome_entries") { table in
+                table.column("source_id", .text).notNull()
+                    .references("awesome_sources", column: "source_id", onDelete: .cascade)
+                table.column("gh_repo_id", .integer).notNull()
+                table.column("owner", .text).notNull()
+                table.column("name", .text).notNull()
+                table.column("full_name", .text).notNull()
+                table.column("description", .text)
+                table.column("owner_avatar", .text)
+                table.column("language", .text)
+                table.column("stars", .integer).notNull().defaults(to: 0)
+                table.column("is_archived", .boolean).notNull().defaults(to: false)
+                table.column("repo_updated_at", .text)
+                table.column("entry_title", .text).notNull()
+                table.column("entry_description", .text)
+                table.column("section_path_json", .text).notNull().defaults(to: "[]")
+                table.column("entry_order", .integer).notNull()
+                table.column("source_anchor_url", .text)
+                table.column("cached_at", .text).notNull()
+                table.primaryKey(["source_id", "gh_repo_id"])
+            }
+            try db.create(
+                index: "idx_awesome_entries_repo_id",
+                on: "awesome_entries",
+                columns: ["gh_repo_id"]
+            )
+            try db.create(
+                index: "idx_awesome_entries_source_order",
+                on: "awesome_entries",
+                columns: ["source_id", "entry_order"]
+            )
+
+            try db.create(table: "awesome_state") { table in
+                table.column("id", .integer).primaryKey()
+                table.column("has_completed_source_setup", .boolean).notNull().defaults(to: false)
+                table.column("catalog_etag", .text)
+                table.column("catalog_checked_at", .text)
+            }
+            try db.execute(
+                sql: "INSERT INTO awesome_state (id, has_completed_source_setup) VALUES (?, 0)",
+                arguments: [AwesomeStateRecord.singletonID]
+            )
+        }
     }
 
     // MARK: - v21-github-issue-labels：Issue / PR 标签缓存（2026-08-22）

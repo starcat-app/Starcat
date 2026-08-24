@@ -15,11 +15,17 @@ import SwiftUI
 struct DiscoveryDetailView: View {
 
     let item: DiscoveryRepoDTO?
+    let supplementalHeader: AnyView?
+
+    init(item: DiscoveryRepoDTO?, supplementalHeader: AnyView? = nil) {
+        self.item = item
+        self.supplementalHeader = supplementalHeader
+    }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             if let item {
-                DiscoveryScaffoldShell(item: item)
+                DiscoveryScaffoldShell(item: item, supplementalHeader: supplementalHeader)
                     .id(item.repoID)
                     .detailContentTransition()
             } else {
@@ -34,6 +40,7 @@ struct DiscoveryDetailView: View {
 private struct DiscoveryScaffoldShell: View {
 
     let item: DiscoveryRepoDTO
+    let supplementalHeader: AnyView?
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
@@ -71,8 +78,14 @@ private struct DiscoveryScaffoldShell: View {
                 try await handleStarTapped(repo: repo)
             },
             body: { onScrollReport in
-                DiscoveryReadmeContent(repo: repo, onScrollReport: onScrollReport)
-                    .environment(readmeVM)
+                VStack(spacing: 0) {
+                    if let supplementalHeader {
+                        supplementalHeader
+                        Divider()
+                    }
+                    DiscoveryReadmeContent(repo: repo, onScrollReport: onScrollReport)
+                        .environment(readmeVM)
+                }
             }
         )
     }

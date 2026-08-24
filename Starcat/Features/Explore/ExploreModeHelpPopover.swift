@@ -53,6 +53,12 @@ extension ExploreMode {
                 "explore.help.weekly.rule.inclusion",
                 "explore.help.weekly.rule.priority",
             ]
+        case .awesome:
+            return [
+                "explore.help.awesome.rule.subscription",
+                "explore.help.awesome.rule.readme",
+                "explore.help.awesome.rule.deduplication",
+            ]
         }
     }
 }

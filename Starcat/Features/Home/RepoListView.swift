@@ -105,6 +105,7 @@ private struct RepoListNavigationSubtitleModifier: ViewModifier {
     let trendingLanguageStore: TrendingLanguageStore
     let weeklyLanguageStore: WeeklyLanguageStore
     let weeklySelectionService: WeeklySelectionService
+    let awesomeStore: AwesomeStore
     let activityCategoryCountService: ActivityCategoryCountService
 
     @Environment(\.locale) private var locale
@@ -170,6 +171,9 @@ private struct RepoListNavigationSubtitleModifier: ViewModifier {
             discoveryTopic: selectedDiscoveryTopic,
             discoveryPlatform: selectedDiscoveryPlatform,
             weeklyLanguage: selectedWeeklyLanguage,
+            awesomeSourceName: awesomeStore.enabledSources.first {
+                $0.id == awesomeStore.selectedSourceID
+            }?.displayName,
             topics: exploreCatalogStore.displayTopics,
             platforms: exploreCatalogStore.displayPlatforms
         )
@@ -228,6 +232,11 @@ private struct RepoListNavigationSubtitleModifier: ViewModifier {
                 aggregates.first { $0.key == selectedLanguage }?.count
             } ?? total ?? 0
             return (current, total)
+        case .awesome:
+            return (
+                awesomeStore.repositories.count,
+                awesomeStore.selectedSourceID == nil ? nil : awesomeStore.totalRepositoryCount
+            )
         }
     }
 }
@@ -744,6 +753,7 @@ struct RepoListView: View {
                 trendingLanguageStore: dependencies.trendingLanguageStore,
                 weeklyLanguageStore: dependencies.weeklyLanguageStore,
                 weeklySelectionService: dependencies.weeklySelectionService,
+                awesomeStore: dependencies.awesomeStore,
                 activityCategoryCountService: dependencies.activityCategoryCountService
             ))
             .navigationTitle(navigationTitle)
@@ -2496,6 +2506,9 @@ struct RepoListView: View {
             discoveryTopic: selectedDiscoveryTopic,
             discoveryPlatform: selectedDiscoveryPlatform,
             weeklyLanguage: selectedWeeklyLanguage,
+            awesomeSourceName: dependencies.awesomeStore.enabledSources.first {
+                $0.id == dependencies.awesomeStore.selectedSourceID
+            }?.displayName,
             topics: dependencies.exploreCatalogStore.displayTopics,
             platforms: dependencies.exploreCatalogStore.displayPlatforms
         )
