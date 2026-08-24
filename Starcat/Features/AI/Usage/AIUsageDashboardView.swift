@@ -70,65 +70,73 @@ struct AIUsageDashboardView: View {
                 ) { reload() }
             }
 
+            // 左贴齐分段、右贴齐下拉组；中间 Spacer 吃掉剩余宽度。
+            // 不要给分段/Menu 设固定或 maxWidth 外框：默认居中对齐会让短控件在格子里
+            // 左右留白，看起来既不左对齐、三个下拉间距也被拉开。
             HStack(spacing: 12) {
-                Picker("ai.usage.filter.range", selection: $viewModel.filter.timeRange) {
+                Picker(selection: $viewModel.filter.timeRange) {
                     ForEach(AIUsageTimeRange.allCases) { range in
                         Text(range.titleKey).tag(range)
                     }
+                } label: {
+                    EmptyView()
                 }
                 .labelsHidden()
                 .pickerStyle(.segmented)
-                .frame(width: 260)
+                .fixedSize()
+                .accessibilityLabel(Text("ai.usage.filter.range"))
                 .onChange(of: viewModel.filter.timeRange) { _, _ in reload() }
 
                 Spacer(minLength: 20)
 
-                filterMenu(
-                    title: "ai.usage.filter.feature",
-                    selection: featureFilterTitle
-                ) {
-                    Button("ai.usage.filter.allFeatures") {
-                        Task { await viewModel.selectFeature(nil) }
-                    }
-                    Divider()
-                    ForEach(AIUsageFeature.allCases.filter { $0 != .unknown }) { feature in
-                        Button(feature.titleKey) {
-                            Task { await viewModel.selectFeature(feature) }
+                HStack(spacing: 8) {
+                    filterMenu(
+                        title: "ai.usage.filter.feature",
+                        selection: featureFilterTitle
+                    ) {
+                        Button("ai.usage.filter.allFeatures") {
+                            Task { await viewModel.selectFeature(nil) }
+                        }
+                        Divider()
+                        ForEach(AIUsageFeature.allCases.filter { $0 != .unknown }) { feature in
+                            Button(feature.titleKey) {
+                                Task { await viewModel.selectFeature(feature) }
+                            }
                         }
                     }
-                }
 
-                filterMenu(
-                    title: "ai.usage.filter.provider",
-                    selection: viewModel.filter.providerID.map(providerFilterTitle)
-                        ?? String.l10n("ai.usage.filter.allProviders"),
-                    tooltip: viewModel.filter.providerID
-                ) {
-                    Button("ai.usage.filter.allProviders") {
-                        viewModel.filter.providerID = nil
-                        reload()
-                    }
-                    if !viewModel.snapshot.filterOptions.providerIDs.isEmpty { Divider() }
-                    ForEach(viewModel.snapshot.filterOptions.providerIDs, id: \.self) { provider in
-                        Button(providerFilterTitle(provider)) {
-                            viewModel.filter.providerID = provider
+                    filterMenu(
+                        title: "ai.usage.filter.provider",
+                        selection: viewModel.filter.providerID.map(providerFilterTitle)
+                            ?? String.l10n("ai.usage.filter.allProviders"),
+                        tooltip: viewModel.filter.providerID
+                    ) {
+                        Button("ai.usage.filter.allProviders") {
+                            viewModel.filter.providerID = nil
                             reload()
                         }
+                        if !viewModel.snapshot.filterOptions.providerIDs.isEmpty { Divider() }
+                        ForEach(viewModel.snapshot.filterOptions.providerIDs, id: \.self) { provider in
+                            Button(providerFilterTitle(provider)) {
+                                viewModel.filter.providerID = provider
+                                reload()
+                            }
+                        }
                     }
-                }
 
-                filterMenu(
-                    title: "ai.usage.filter.model",
-                    selection: viewModel.filter.model ?? String.l10n("ai.usage.filter.allModels"),
-                    tooltip: viewModel.filter.model
-                ) {
-                    Button("ai.usage.filter.allModels") {
-                        Task { await viewModel.selectModel(nil) }
-                    }
-                    if !viewModel.snapshot.filterOptions.models.isEmpty { Divider() }
-                    ForEach(viewModel.snapshot.filterOptions.models, id: \.self) { model in
-                        Button(model) {
-                            Task { await viewModel.selectModel(model) }
+                    filterMenu(
+                        title: "ai.usage.filter.model",
+                        selection: viewModel.filter.model ?? String.l10n("ai.usage.filter.allModels"),
+                        tooltip: viewModel.filter.model
+                    ) {
+                        Button("ai.usage.filter.allModels") {
+                            Task { await viewModel.selectModel(nil) }
+                        }
+                        if !viewModel.snapshot.filterOptions.models.isEmpty { Divider() }
+                        ForEach(viewModel.snapshot.filterOptions.models, id: \.self) { model in
+                            Button(model) {
+                                Task { await viewModel.selectModel(model) }
+                            }
                         }
                     }
                 }
@@ -149,11 +157,14 @@ struct AIUsageDashboardView: View {
         } label: {
             Text(selection)
                 .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: 145, alignment: .leading)
         }
-        // 按钮保持紧凑，完整模型名或历史 Provider ID 仍可通过悬停查看。
+        // macOS Menu 会吃满父视图提议的宽度。maxWidth 只加在文字上，再 hug 内容，
+        // 长模型名截断后仍可通过悬停看完整值；短标题不会被撑成等宽格子。
         .help(tooltip ?? selection)
         .accessibilityLabel(Text(title) + Text(": ") + Text(selection))
-        .frame(maxWidth: 145)
+        .fixedSize()
     }
 
     private var dashboard: some View {
