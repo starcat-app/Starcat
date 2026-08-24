@@ -39,11 +39,13 @@ APPSTORE_ARCHIVE := $(CURDIR)/dist/appstore/Starcat-AppStore.xcarchive
 
 .DEFAULT_GOAL := help
 
-.PHONY: help run-appstore run-direct test reset-db reset-anysearch-cache reset-chat-cache reset-all show-data clean start-supports build-dmg release-store release-dry-run package-appstore open-appstore-archive package-direct package-direct-notarized release-direct release-direct-retry release-direct-unnotarized pr-helper bump-version linguist sync-fly-secrets setup-production-api-keys deploy-pages deploy-pages-test
+.PHONY: help build-appstore build-direct run-appstore run-direct test reset-db reset-anysearch-cache reset-chat-cache reset-all show-data clean start-supports build-dmg release-store release-dry-run package-appstore open-appstore-archive package-direct package-direct-notarized release-direct release-direct-retry release-direct-unnotarized pr-helper bump-version linguist sync-fly-secrets setup-production-api-keys deploy-pages deploy-pages-test
 
 help: ## 列出所有可用命令
 	@echo "Starcat 常用命令："
 	@echo ""
+	@echo "  make build-appstore         构建并校验 App Store / 沙盒 Debug，不启动"
+	@echo "  make build-direct           构建并校验 Direct / 非 App Store Debug，不启动"
 	@echo "  make run-appstore           执行 scripts/run-debug-appstore.sh（App Store / 沙盒 Debug）"
 	@echo "  make run-direct             执行 scripts/run-debug-direct.sh（Direct / 非 App Store Debug）"
 	@echo "  make test                   跑全量单测（xcodegen + xcodebuild test）"
@@ -78,6 +80,12 @@ help: ## 列出所有可用命令
 	@echo "  make deploy-pages                部署生产 nginx + 静态页到 https://starcat.ink"
 	@echo "  make deploy-pages-test           部署测试 nginx + 静态页到 https://test.starcat.ink"
 	@echo ""
+
+build-appstore: ## 构建并校验 App Store / 沙盒 Debug，不启动
+	@bash scripts/run-debug-appstore.sh --build-only
+
+build-direct: ## 构建并校验 Direct / 非 App Store Debug，不启动
+	@bash scripts/run-debug-direct.sh --build-only
 
 run-appstore: ## App Store / 沙盒 Debug
 	@bash scripts/run-debug-appstore.sh

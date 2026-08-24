@@ -16,11 +16,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/lib/debug-build-environment.sh"
 DERIVED_DATA="$PROJECT_ROOT/build/DerivedData-NoSandbox"
 APP_PATH="$DERIVED_DATA/Build/Products/Debug/Starcat.app"
 APP_EXECUTABLE="$APP_PATH/Contents/MacOS/Starcat"
 WIDGET_EXTENSION_PATH="$APP_PATH/Contents/PlugIns/StarcatDirectWidgets.appex"
-STABLE_XCODE_DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
 DIRECT_DEBUG_BUNDLE_ID="com.starcat.app.direct.debug"
 DIRECT_RELEASE_BUNDLE_ID="com.starcat.app.direct"
 DIRECT_DEBUG_WIDGET_BUNDLE_ID="com.starcat.app.direct.debug.widgets"
@@ -32,20 +32,24 @@ DEVELOPMENT_TEAM_ID="${STARCAT_DEVELOPMENT_TEAM:-8WCUMGCWMB}"
 # 默认钉死 Starcat 主账号那张；可用 STARCAT_DEBUG_SIGN_IDENTITY 覆盖。
 DEBUG_SIGN_IDENTITY="${STARCAT_DEBUG_SIGN_IDENTITY:-Apple Development: liwen gong (MZ4R5J393K)}"
 
+RUN_MODE="run"
+case "${1:-}" in
+  "")
+    ;;
+  --build-only)
+    RUN_MODE="build-only"
+    ;;
+  *)
+    echo "用法：$0 [--build-only]"
+    exit 2
+    ;;
+esac
+
 # Direct 日常调试固定使用稳定版 Xcode，避免系统当前选中 Xcode Beta 时继承其
 # 未安装的可选 Metal Toolchain。必须在关闭现有 App 前完成前置检查，否则一次
 # 工具链配置错误也会中断正在运行的调试实例。
-if [ ! -x "$STABLE_XCODE_DEVELOPER_DIR/usr/bin/xcodebuild" ]; then
-  echo "ERROR: 未找到稳定版 Xcode：$STABLE_XCODE_DEVELOPER_DIR"
-  echo "       请确认 /Applications/Xcode.app 已安装且可用。"
-  exit 1
-fi
-export DEVELOPER_DIR="$STABLE_XCODE_DEVELOPER_DIR"
-if ! xcrun metal --version >/dev/null 2>&1; then
-  echo "ERROR: 稳定版 Xcode 的 Metal Toolchain 不可用，无法编译 .metal 文件。"
-  echo "       请在 Xcode > Settings > Components 中安装 Metal Toolchain。"
-  exit 1
-fi
+starcat_select_stable_xcode
+starcat_prepare_debug_derived_data "$PROJECT_ROOT" "$DERIVED_DATA" "direct-debug"
 
 BUILD_VERSION="$(git -C "$PROJECT_ROOT" rev-list --count HEAD 2>/dev/null || true)"
 if ! [[ "$BUILD_VERSION" =~ ^[1-9][0-9]*$ ]]; then
@@ -87,40 +91,42 @@ running_target_pids() {
 
 cd "$PROJECT_ROOT"
 
-echo "==> 关闭已运行的 StarcatDirect（如有）..."
-if ! DIRECT_PIDS="$(running_target_pids)"; then
-  echo "ERROR: 无法查询 Direct bundle id / executable 进程，拒绝继续。"
-  exit 1
-fi
-if [ -n "$DIRECT_PIDS" ]; then
-  while IFS= read -r pid; do
-    if [ -n "$pid" ]; then
-      kill "$pid" 2>/dev/null || true
-    fi
-  done <<<"$DIRECT_PIDS"
-fi
-
-# `kill` 只向 Direct PID 发送终止信号，数据库收尾等异步清理可能明显超过固定 0.3 秒。
-# 如果旧实例仍在退出，普通 `open` 会把启动请求误判为“激活已有实例”，随后旧实例
-# 退出，最终表现为构建成功但没有应用进程。这里等待真实退出，超时则保留现场并报错，
-# 不升级成 SIGKILL，避免强杀时损坏用户数据。
-for _ in {1..100}; do
+if [ "$RUN_MODE" = "run" ]; then
+  echo "==> 关闭已运行的 StarcatDirect（如有）..."
   if ! DIRECT_PIDS="$(running_target_pids)"; then
-    echo "ERROR: 无法查询 Direct bundle id / executable 进程，拒绝继续启动。"
+    echo "ERROR: 无法查询 Direct bundle id / executable 进程，拒绝继续。"
     exit 1
   fi
-  if [ -z "$DIRECT_PIDS" ]; then
-    break
+  if [ -n "$DIRECT_PIDS" ]; then
+    while IFS= read -r pid; do
+      if [ -n "$pid" ]; then
+        kill "$pid" 2>/dev/null || true
+      fi
+    done <<<"$DIRECT_PIDS"
   fi
-  sleep 0.1
-done
-if [ -n "$DIRECT_PIDS" ]; then
-  echo "ERROR: 等待旧 StarcatDirect 退出超时，拒绝启动新实例。"
-  echo "       Direct PID:"
-  while IFS= read -r pid; do
-    printf '       %s\n' "$pid"
-  done <<<"$DIRECT_PIDS"
-  exit 1
+
+  # `kill` 只向 Direct PID 发送终止信号，数据库收尾等异步清理可能明显超过固定 0.3 秒。
+  # 如果旧实例仍在退出，普通 `open` 会把启动请求误判为“激活已有实例”，随后旧实例
+  # 退出，最终表现为构建成功但没有应用进程。这里等待真实退出，超时则保留现场并报错，
+  # 不升级成 SIGKILL，避免强杀时损坏用户数据。
+  for _ in {1..100}; do
+    if ! DIRECT_PIDS="$(running_target_pids)"; then
+      echo "ERROR: 无法查询 Direct bundle id / executable 进程，拒绝继续启动。"
+      exit 1
+    fi
+    if [ -z "$DIRECT_PIDS" ]; then
+      break
+    fi
+    sleep 0.1
+  done
+  if [ -n "$DIRECT_PIDS" ]; then
+    echo "ERROR: 等待旧 StarcatDirect 退出超时，拒绝启动新实例。"
+    echo "       Direct PID:"
+    while IFS= read -r pid; do
+      printf '       %s\n' "$pid"
+    done <<<"$DIRECT_PIDS"
+    exit 1
+  fi
 fi
 
 echo "==> 生成 Xcode 工程..."
@@ -153,14 +159,14 @@ ACTUAL_BUNDLE_ID=$(/usr/libexec/PlistBuddy \
   -c "Print :CFBundleIdentifier" \
   "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)
 if [ "$ACTUAL_BUNDLE_ID" != "$DIRECT_DEBUG_BUNDLE_ID" ]; then
-  echo "ERROR: Direct Debug bundle id 应为 $DIRECT_DEBUG_BUNDLE_ID，当前为 ${ACTUAL_BUNDLE_ID:-<missing>}，拒绝启动。"
+  echo "ERROR: Direct Debug bundle id 应为 ${DIRECT_DEBUG_BUNDLE_ID}，当前为 ${ACTUAL_BUNDLE_ID:-<missing>}，拒绝启动。"
   exit 1
 fi
 ACTUAL_WIDGET_BUNDLE_ID=$(/usr/libexec/PlistBuddy \
   -c "Print :CFBundleIdentifier" \
   "$WIDGET_EXTENSION_PATH/Contents/Info.plist" 2>/dev/null || true)
 if [ "$ACTUAL_WIDGET_BUNDLE_ID" != "$DIRECT_DEBUG_WIDGET_BUNDLE_ID" ]; then
-  echo "ERROR: Direct Debug Widget bundle id 应为 $DIRECT_DEBUG_WIDGET_BUNDLE_ID，当前为 ${ACTUAL_WIDGET_BUNDLE_ID:-<missing>}，拒绝启动。"
+  echo "ERROR: Direct Debug Widget bundle id 应为 ${DIRECT_DEBUG_WIDGET_BUNDLE_ID}，当前为 ${ACTUAL_WIDGET_BUNDLE_ID:-<missing>}，拒绝启动。"
   exit 1
 fi
 
@@ -175,11 +181,11 @@ ACTUAL_WIDGET_BUILD=$(/usr/libexec/PlistBuddy \
   -c "Print :CFBundleVersion" \
   "$WIDGET_EXTENSION_PATH/Contents/Info.plist" 2>/dev/null || true)
 if [ "$ACTUAL_APP_BUILD" != "$BUILD_VERSION" ]; then
-  echo "ERROR: Direct Debug App build version 应为 $BUILD_VERSION，当前为 ${ACTUAL_APP_BUILD:-<missing>}，拒绝启动。"
+  echo "ERROR: Direct Debug App build version 应为 ${BUILD_VERSION}，当前为 ${ACTUAL_APP_BUILD:-<missing>}，拒绝启动。"
   exit 1
 fi
 if [ "$ACTUAL_WIDGET_BUILD" != "$BUILD_VERSION" ]; then
-  echo "ERROR: Direct Debug Widget build version 应为 $BUILD_VERSION，当前为 ${ACTUAL_WIDGET_BUILD:-<missing>}，拒绝启动。"
+  echo "ERROR: Direct Debug Widget build version 应为 ${BUILD_VERSION}，当前为 ${ACTUAL_WIDGET_BUILD:-<missing>}，拒绝启动。"
   exit 1
 fi
 if ! /usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$APP_PATH/Contents/Info.plist" >/dev/null 2>&1; then
@@ -221,15 +227,6 @@ if ! codesign --verify --deep --strict "$APP_PATH"; then
   exit 1
 fi
 
-echo "==> 注册当前 Direct Debug Widget Extension..."
-# 本地 DerivedData 路径会被反复覆盖。显式移除该路径的旧注册后再登记当前产物，
-# 让 pluginkit 解析到刚完成签名的扩展；失败时不启动宿主，避免桌面继续绑定旧副本。
-pluginkit -r "$WIDGET_EXTENSION_PATH" >/dev/null 2>&1 || true
-if ! pluginkit -a "$WIDGET_EXTENSION_PATH"; then
-  echo "ERROR: 无法注册 Direct Debug Widget Extension，拒绝启动。"
-  exit 1
-fi
-
 echo "==> 签名摘要:"
 codesign -dv --verbose=2 "$APP_PATH" 2>&1 | sed -n '1,12p'
 echo "==> 当前模式: direct"
@@ -240,6 +237,20 @@ echo "    preferences: ~/Library/Preferences/${DIRECT_DEBUG_BUNDLE_ID}.plist"
 echo "    data: ~/Library/Application Support/com.starcat.app"
 echo "    app support: ~/Library/Application Support/com.starcat.app"
 echo "    app: $APP_PATH"
+
+if [ "$RUN_MODE" = "build-only" ]; then
+  echo "==> StarcatDirect 构建与产物校验成功（build-only，未停止或启动应用）"
+  exit 0
+fi
+
+echo "==> 注册当前 Direct Debug Widget Extension..."
+# 本地 DerivedData 路径会被反复覆盖。显式移除该路径的旧注册后再登记当前产物，
+# 让 pluginkit 解析到刚完成签名的扩展；失败时不启动宿主，避免桌面继续绑定旧副本。
+pluginkit -r "$WIDGET_EXTENSION_PATH" >/dev/null 2>&1 || true
+if ! pluginkit -a "$WIDGET_EXTENSION_PATH"; then
+  echo "ERROR: 无法注册 Direct Debug Widget Extension，拒绝启动。"
+  exit 1
+fi
 
 echo "==> 启动 StarcatDirect..."
 if ! open "$APP_PATH"; then

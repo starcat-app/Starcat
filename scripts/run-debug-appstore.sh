@@ -14,34 +14,40 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/lib/debug-build-environment.sh"
 DERIVED_DATA="$PROJECT_ROOT/build/DerivedData-Sandbox"
 APP_PATH="$DERIVED_DATA/Build/Products/Debug/Starcat.app"
-STABLE_XCODE_DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
 
 # 正式 Apple Developer Team ID。后续如果换账号，可用环境变量覆盖：
 #   STARCAT_DEVELOPMENT_TEAM=XXXXXXXXXX ./scripts/run-debug-appstore.sh
 DEVELOPMENT_TEAM_ID="${STARCAT_DEVELOPMENT_TEAM:-8WCUMGCWMB}"
 
+RUN_MODE="run"
+case "${1:-}" in
+  "")
+    ;;
+  --build-only)
+    RUN_MODE="build-only"
+    ;;
+  *)
+    echo "用法：$0 [--build-only]"
+    exit 2
+    ;;
+esac
+
 # App Store 日常调试固定使用稳定版 Xcode，避免系统当前选中 Xcode Beta 时继承其
 # 未安装的可选 Metal Toolchain。必须在关闭现有 App 前完成前置检查，否则一次
 # 工具链配置错误也会中断正在运行的调试实例。
-if [ ! -x "$STABLE_XCODE_DEVELOPER_DIR/usr/bin/xcodebuild" ]; then
-  echo "ERROR: 未找到稳定版 Xcode：$STABLE_XCODE_DEVELOPER_DIR"
-  echo "       请确认 /Applications/Xcode.app 已安装且可用。"
-  exit 1
-fi
-export DEVELOPER_DIR="$STABLE_XCODE_DEVELOPER_DIR"
-if ! xcrun metal --version >/dev/null 2>&1; then
-  echo "ERROR: 稳定版 Xcode 的 Metal Toolchain 不可用，无法编译 .metal 文件。"
-  echo "       请在 Xcode > Settings > Components 中安装 Metal Toolchain。"
-  exit 1
-fi
+starcat_select_stable_xcode
+starcat_prepare_debug_derived_data "$PROJECT_ROOT" "$DERIVED_DATA" "appstore-debug"
 
 cd "$PROJECT_ROOT"
 
-echo "==> 关闭已运行的 Starcat（如有）..."
-pkill -x Starcat 2>/dev/null || true
-sleep 0.3
+if [ "$RUN_MODE" = "run" ]; then
+  echo "==> 关闭已运行的 Starcat（如有）..."
+  pkill -x Starcat 2>/dev/null || true
+  sleep 0.3
+fi
 
 echo "==> 生成 Xcode 工程..."
 xcodegen generate
@@ -76,5 +82,10 @@ echo "    preferences: ~/Library/Containers/com.starcat.app.store/Data/Library/P
 echo "    data: ~/Library/Containers/com.starcat.app.store/Data"
 echo "    app support: ~/Library/Containers/com.starcat.app.store/Data/Library/Application Support/com.starcat.app"
 echo "    app: $APP_PATH"
+
+if [ "$RUN_MODE" = "build-only" ]; then
+  echo "==> Starcat App Store 构建与产物校验成功（build-only，未停止或启动应用）"
+  exit 0
+fi
 
 open "$APP_PATH"
