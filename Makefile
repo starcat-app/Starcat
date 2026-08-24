@@ -9,8 +9,8 @@
 #   shell 行内必须用双引号包变量；定义处不带引号（否则引号会被当成路径字符）。
 # - 默认 target 设为 help，单独 `make` 时不会误触 destructive 操作。
 #
-# 跑测 / 单测命令仍按 AGENTS.md「如何跑单测」一节用 xcodebuild，
-# 因为 IDE/CLI 抢 testmanagerd 的提示需要场景化判断，不适合做成一键。
+# 跑测统一走 scripts/run-tests.sh：脚本会检查 Xcode IDE 是否退出，并使用独立
+# 临时 DerivedData，避免测试缓存污染 App Store / Direct 的固定构建目录。
 
 # --- 路径常量 ---
 
@@ -97,12 +97,8 @@ run-direct: ## Direct / 非 App Store Debug
 test-build-scripts: ## 验证 Debug 构建缓存的工具链隔离逻辑
 	@bash scripts/tests/test-debug-build-environment.sh
 
-test: ## 跑全量单测（先 xcodegen 同步项目，再 xcodebuild test）
-	@echo "⚠️  提醒：跑测前请先关闭 Xcode IDE（Cmd+Q），否则会与 xcodebuild 抢 testmanagerd 导致挂起。"
-	@echo "    详见 AGENTS.md「如何跑单测」一节。"
-	@echo ""
-	xcodegen generate
-	xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
+test: ## 使用稳定版 Xcode 和独立临时 DerivedData 跑全量单测
+	@bash scripts/run-tests.sh
 
 ## 打包 Release DMG（VERSION=0.1.0）
 build-dmg: 
