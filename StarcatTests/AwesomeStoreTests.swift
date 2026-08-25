@@ -135,6 +135,7 @@ struct AwesomeStoreTests {
         #expect(await repository.catalogRefreshPolicies() == [.force])
         #expect(await repository.entryRefreshPolicies().isEmpty)
         #expect(!store.isCatalogRefreshing)
+        #expect(store.ogPrefetchGeneration == 1)
     }
 
     @Test("自定义来源核验后立即启用并进入来源列表")

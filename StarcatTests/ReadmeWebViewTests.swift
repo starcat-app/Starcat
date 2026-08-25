@@ -11,6 +11,7 @@
 import Testing
 import Foundation
 import WebKit
+import AppKit
 @testable import Starcat
 
 @MainActor
@@ -40,6 +41,17 @@ struct ReadmeWebViewTests {
         #expect(html.contains("script-src 'none'"))
         #expect(html.contains(".readme-image-preview"))
         #expect(html.contains("body.readme-js-ready .markdown-body img:not(.readme-image-loaded)"))
+    }
+
+    @Test("README 页内查找请求用 generation 区分同一查询的再次执行")
+    func findRequestGenerationChangesIdentity() {
+        let first = ReadmeFindRequest(query: "WKWebView", generation: 1, backwards: false)
+        let sameQueryNext = ReadmeFindRequest(query: "WKWebView", generation: 2, backwards: false)
+        let previous = ReadmeFindRequest(query: "WKWebView", generation: 3, backwards: true)
+
+        #expect(first != sameQueryNext)
+        #expect(sameQueryNext != previous)
+        #expect(ReadmeFindRequest().generation == 0)
     }
 
     @Test("README 视频要求用户主动播放")
