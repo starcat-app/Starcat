@@ -62,6 +62,58 @@ struct AwesomeReadmeParserTests {
         #expect(await repository.savedSource() == nil)
     }
 
+    @Test("自定义来源添加只核验来源仓库并立即落卡")
+    func customSourceCreateDoesNotWaitForReadme() async throws {
+        let github = FakeAwesomeGitHub()
+        await github.setRepo(Self.repo(id: 1, fullName: "owner/awesome-list"))
+        await github.setReadme("owner/awesome-list", markdown: "- [Repo](https://github.com/acme/repo)")
+        let repository = FakeAwesomeRepository()
+        let service = AwesomeCustomSourceService(
+            github: github,
+            repository: repository,
+            now: { Date(timeIntervalSince1970: 123) }
+        )
+
+        let creation = try await service.create(input: "owner/awesome-list")
+
+        #expect(creation.source.id == "custom:owner/awesome-list")
+        #expect(creation.source.githubRepoCount == 0)
+        #expect(await github.readmeRequestCount() == 0)
+        #expect(await repository.savedSource()?.entries.isEmpty == true)
+        #expect(await repository.customSourceParseStates().first?.phase == .queued)
+    }
+
+    @Test("自定义来源后台解析按阶段持久化并产出条目")
+    func customSourceParsesInBackgroundWithProgress() async throws {
+        let github = FakeAwesomeGitHub()
+        await github.setRepo(Self.repo(id: 1, fullName: "owner/awesome-list"))
+        await github.setRepo(Self.repo(id: 2, fullName: "acme/valid"))
+        await github.setReadme(
+            "owner/awesome-list",
+            markdown: "- [Valid](https://github.com/acme/valid) - Works"
+        )
+        let repository = FakeAwesomeRepository()
+        let service = AwesomeCustomSourceService(github: github, repository: repository)
+        let recorder = AwesomeParseStateRecorder()
+        let creation = try await service.create(input: "owner/awesome-list")
+
+        try await service.parse(
+            source: creation.source,
+            defaultBranch: creation.defaultBranch
+        ) { state in
+            await recorder.append(state)
+        }
+
+        #expect(await recorder.phases() == [
+            .readingReadme,
+            .enrichingRepositories,
+            .enrichingRepositories,
+            .completed,
+        ])
+        #expect(await repository.savedSource()?.entries.map(\.fullName) == ["acme/valid"])
+        #expect(await repository.customSourceParseStates().first?.phase == .completed)
+    }
+
     @Test("自定义来源解析完成后一次性保存并跳过失效 Repo")
     func customSourceSavesVerifiedSnapshot() async throws {
         let github = FakeAwesomeGitHub()
@@ -190,14 +242,23 @@ struct AwesomeReadmeParserTests {
     }
 }
 
+private actor AwesomeParseStateRecorder {
+    private var values: [AwesomeCustomSourceParseState] = []
+
+    func append(_ state: AwesomeCustomSourceParseState) { values.append(state) }
+    func phases() -> [AwesomeCustomSourceParsePhase] { values.map(\.phase) }
+}
+
 private actor FakeAwesomeGitHub: AwesomeGitHubClientProtocol {
     private var repos: [String: GitHubRepoDTO] = [:]
     private var readmes: [String: Data] = [:]
     private var missing: Set<String> = []
+    private var readmeRequests = 0
 
     func setRepo(_ repo: GitHubRepoDTO) { repos[repo.fullName.lowercased()] = repo }
     func setReadme(_ fullName: String, markdown: String) { readmes[fullName.lowercased()] = Data(markdown.utf8) }
     func markMissing(_ fullName: String) { missing.insert(fullName.lowercased()) }
+    func readmeRequestCount() -> Int { readmeRequests }
 
     func awesomeRepository(owner: String, repo: String) async throws -> GitHubRepoDTO {
         let key = "\(owner)/\(repo)".lowercased()
@@ -207,7 +268,8 @@ private actor FakeAwesomeGitHub: AwesomeGitHubClientProtocol {
     }
 
     func awesomeReadme(owner: String, repo: String) async throws -> Data {
-        readmes["\(owner)/\(repo)".lowercased()] ?? Data()
+        readmeRequests += 1
+        return readmes["\(owner)/\(repo)".lowercased()] ?? Data()
     }
 }
 
@@ -219,6 +281,7 @@ private actor FakeAwesomeRepository: AwesomeRepositoryProtocol {
 
     private var saved: Saved?
     private var existingSources: [AwesomeSource]
+    private var parseStates: [String: AwesomeCustomSourceParseState] = [:]
 
     init(existingSources: [AwesomeSource] = []) {
         self.existingSources = existingSources
@@ -236,8 +299,34 @@ private actor FakeAwesomeRepository: AwesomeRepositoryProtocol {
     func completeSourceSetup(enabledSourceIDs: Set<String>) async throws {}
     func updateSubscriptions(enabledSourceIDs: Set<String>) async throws {}
     func removeCustomSource(id: String) async throws {}
-    func customSourceParseStates() async -> [AwesomeCustomSourceParseState] { [] }
-    func updateCustomSourceParseState(_ state: AwesomeCustomSourceParseState) async throws {}
+    func customSourceParseStates() async -> [AwesomeCustomSourceParseState] {
+        Array(parseStates.values)
+    }
+    func updateCustomSourceParseState(_ state: AwesomeCustomSourceParseState) async throws {
+        parseStates[state.sourceID] = state
+    }
+    func customSourceEntryFullNames(sourceID: String) async -> Set<String> {
+        Set(saved?.entries.map { $0.fullName.lowercased() } ?? [])
+    }
+    func customSourceEntryCount(sourceID: String) async -> Int { saved?.entries.count ?? 0 }
+    func saveCustomSourceEntries(
+        _ entries: [AwesomeEntryDTO],
+        sourceID: String,
+        parseState: AwesomeCustomSourceParseState
+    ) async throws {
+        guard let saved else { return }
+        var byID = Dictionary(uniqueKeysWithValues: saved.entries.map { ($0.ghRepoID, $0) })
+        entries.forEach { byID[$0.ghRepoID] = $0 }
+        self.saved = Saved(source: saved.source, entries: Array(byID.values))
+        parseStates[sourceID] = parseState
+    }
+    func completeCustomSourceParsing(
+        sourceID: String,
+        externalEntryCount: Int,
+        parseState: AwesomeCustomSourceParseState
+    ) async throws {
+        parseStates[sourceID] = parseState
+    }
 
     func saveCustomSource(_ source: AwesomeSource, entries: [AwesomeEntryDTO]) async throws {
         saved = Saved(source: source, entries: entries)
@@ -249,5 +338,6 @@ private actor FakeAwesomeRepository: AwesomeRepositoryProtocol {
         parseState: AwesomeCustomSourceParseState
     ) async throws {
         saved = Saved(source: source, entries: entries)
+        parseStates[source.id] = parseState
     }
 }

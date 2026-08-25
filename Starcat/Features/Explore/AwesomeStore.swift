@@ -23,6 +23,7 @@ final class AwesomeStore {
     private(set) var isCatalogRefreshing = false
     private(set) var errorMessage: String?
     private(set) var sourceRefreshErrors: [String: String] = [:]
+    private(set) var customSourceParseStates: [String: AwesomeCustomSourceParseState] = [:]
 
     var selectedSourceID: String?
     var selectedRepositoryID: Int64?
@@ -32,6 +33,7 @@ final class AwesomeStore {
     private let customSourceService: AwesomeCustomSourceService
     private var loadTask: Task<Void, Never>?
     private var selectionLoadTask: Task<Void, Never>?
+    private var customSourceParseTasks: [String: Task<Void, Never>] = [:]
 
     init(
         repository: any AwesomeRepositoryProtocol,
@@ -117,8 +119,33 @@ final class AwesomeStore {
         await reloadRepositories()
     }
 
+    /// 快速核验来源仓库后立即返回，让 Sheet 当场显示卡片；README 解析由独立任务继续，
+    /// 不再把输入框的 loading 状态绑定到几百个 GitHub 请求。
+    func addCustomSource(input: String) async throws -> AwesomeSource {
+        let creation = try await customSourceService.create(input: input)
+        sources = await repository.sources()
+        customSourceParseStates[creation.source.id] = AwesomeCustomSourceParseState(
+            sourceID: creation.source.id,
+            phase: .queued,
+            processedCount: 0,
+            totalCount: nil,
+            errorMessage: nil,
+            updatedAt: creation.source.updatedAt
+        )
+        startCustomSourceParsing(creation.source, defaultBranch: creation.defaultBranch)
+        return creation.source
+    }
+
+    func retryCustomSourceParsing(sourceID: String) {
+        guard let source = sources.first(where: { $0.id == sourceID && $0.kind == .custom }) else { return }
+        startCustomSourceParsing(source, force: true)
+    }
+
     func removeCustomSource(id: String) async throws {
+        customSourceParseTasks[id]?.cancel()
+        customSourceParseTasks[id] = nil
         try await customSourceService.remove(sourceID: id)
+        customSourceParseStates[id] = nil
         if selectedSourceID == id { selectedSourceID = nil }
         sources = await repository.sources()
         await reloadRepositories()
@@ -160,6 +187,8 @@ final class AwesomeStore {
         loadTask = nil
         selectionLoadTask?.cancel()
         selectionLoadTask = nil
+        customSourceParseTasks.values.forEach { $0.cancel() }
+        customSourceParseTasks = [:]
         sources = []
         repositories = []
         totalAvailableRepositoryCount = 0
@@ -169,6 +198,7 @@ final class AwesomeStore {
         isCatalogRefreshing = false
         errorMessage = nil
         sourceRefreshErrors = [:]
+        customSourceParseStates = [:]
         selectedSourceID = nil
         selectedRepositoryID = nil
         isSourceManagerPresented = false
@@ -177,9 +207,15 @@ final class AwesomeStore {
     private func loadCachedState() async {
         async let cachedSources = repository.sources()
         async let completed = repository.hasCompletedSourceSetup()
+        async let cachedParseStates = repository.customSourceParseStates()
         sources = await cachedSources
         hasCompletedSourceSetup = await completed
+        let parseStates = await cachedParseStates
+        customSourceParseStates = Dictionary(
+            uniqueKeysWithValues: parseStates.map { ($0.sourceID, $0) }
+        )
         await reloadRepositories()
+        resumeActiveCustomSourceParses()
     }
 
     private func refreshCatalogAndEntries(policy: AwesomeRefreshPolicy = .ifStale) async {
@@ -217,6 +253,54 @@ final class AwesomeStore {
         if let selectedRepositoryID,
            !repositories.contains(where: { $0.id == selectedRepositoryID }) {
             self.selectedRepositoryID = nil
+        }
+    }
+
+    private func resumeActiveCustomSourceParses() {
+        for source in sources where source.kind == .custom {
+            guard customSourceParseStates[source.id]?.isActive == true else { continue }
+            startCustomSourceParsing(source)
+        }
+    }
+
+    private func startCustomSourceParsing(
+        _ source: AwesomeSource,
+        defaultBranch: String? = nil,
+        force: Bool = false
+    ) {
+        guard customSourceParseTasks[source.id] == nil else { return }
+        if !force, customSourceParseStates[source.id]?.isActive != true { return }
+
+        let sourceID = source.id
+        customSourceParseTasks[sourceID] = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await customSourceService.parse(
+                    source: source,
+                    defaultBranch: defaultBranch
+                ) { [weak self] state in
+                    await self?.applyCustomSourceParseState(state)
+                }
+            } catch is CancellationError {
+                // 删除来源、切换账户或 Store 销毁时只停止任务；不把用户主动取消标成失败。
+            } catch {
+                AppLog.network.warning(
+                    "Awesome custom source parsing failed for \(sourceID, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
+            }
+            customSourceParseTasks[sourceID] = nil
+        }
+    }
+
+    private func applyCustomSourceParseState(_ state: AwesomeCustomSourceParseState) async {
+        customSourceParseStates[state.sourceID] = state
+        switch state.phase {
+        case .enrichingRepositories, .completed:
+            // Repository 每批会更新条目数；同步重读即可让卡片计数与中栏部分结果逐步增长。
+            sources = await repository.sources()
+            await reloadRepositories()
+        case .queued, .readingReadme, .failed:
+            break
         }
     }
 }

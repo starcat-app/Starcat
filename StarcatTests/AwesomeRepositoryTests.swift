@@ -282,6 +282,60 @@ struct AwesomeRepositoryTests {
         #expect(await repository.customSourceParseStates() == [failed])
     }
 
+    @Test("自定义来源增量条目与完成状态原子更新")
+    func customSourceIncrementalEntriesUpdateCounts() async throws {
+        let completedAt = Date(timeIntervalSince1970: 789)
+        let repository = AwesomeRepository(
+            api: FakeAwesomeAPI(),
+            database: try InMemoryDatabaseManager(),
+            now: { completedAt }
+        )
+        let custom = Self.customSource(lastSyncedAt: nil)
+        try await repository.saveCustomSource(custom, entries: [], parseState: AwesomeCustomSourceParseState(
+            sourceID: custom.id,
+            phase: .queued,
+            processedCount: 0,
+            totalCount: nil,
+            errorMessage: nil,
+            updatedAt: .distantPast
+        ))
+        #expect(await repository.sources().first?.lastSyncedAt == nil)
+        let progress = AwesomeCustomSourceParseState(
+            sourceID: custom.id,
+            phase: .enrichingRepositories,
+            processedCount: 1,
+            totalCount: 2,
+            errorMessage: nil,
+            updatedAt: completedAt
+        )
+
+        try await repository.saveCustomSourceEntries(
+            [Self.entry(repoID: 7, title: "Custom")],
+            sourceID: custom.id,
+            parseState: progress
+        )
+        #expect(await repository.sources().first?.githubRepoCount == 1)
+        #expect(await repository.customSourceEntryFullNames(sourceID: custom.id) == ["owner/repo"])
+
+        let completed = AwesomeCustomSourceParseState(
+            sourceID: custom.id,
+            phase: .completed,
+            processedCount: 2,
+            totalCount: 2,
+            errorMessage: nil,
+            updatedAt: completedAt
+        )
+        try await repository.completeCustomSourceParsing(
+            sourceID: custom.id,
+            externalEntryCount: 3,
+            parseState: completed
+        )
+
+        #expect(await repository.sources().first?.externalEntryCount == 3)
+        #expect(await repository.sources().first?.lastSyncedAt == completedAt)
+        #expect(await repository.customSourceParseStates() == [completed])
+    }
+
     @Test("首次配置状态按账户数据库隔离")
     func setupStateIsIsolatedByAccountDatabase() async throws {
         let first = AwesomeRepository(api: FakeAwesomeAPI(), database: try InMemoryDatabaseManager())
@@ -377,7 +431,10 @@ struct AwesomeRepositoryTests {
         )
     }
 
-    private static func customSource(isEnabled: Bool = true) -> AwesomeSource {
+    private static func customSource(
+        isEnabled: Bool = true,
+        lastSyncedAt: Date? = Date(timeIntervalSince1970: 1)
+    ) -> AwesomeSource {
         AwesomeSource(
             id: "custom:example/list",
             kind: .custom,
@@ -402,7 +459,7 @@ struct AwesomeRepositoryTests {
             isAvailable: true,
             isEnabled: isEnabled,
             addedAt: Date(timeIntervalSince1970: 1),
-            lastSyncedAt: Date(timeIntervalSince1970: 1),
+            lastSyncedAt: lastSyncedAt,
             updatedAt: Date(timeIntervalSince1970: 1)
         )
     }

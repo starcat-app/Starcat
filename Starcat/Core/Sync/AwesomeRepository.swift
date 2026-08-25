@@ -36,6 +36,18 @@ protocol AwesomeRepositoryProtocol: Sendable {
     ) async throws
     func customSourceParseStates() async -> [AwesomeCustomSourceParseState]
     func updateCustomSourceParseState(_ state: AwesomeCustomSourceParseState) async throws
+    func customSourceEntryFullNames(sourceID: String) async -> Set<String>
+    func customSourceEntryCount(sourceID: String) async -> Int
+    func saveCustomSourceEntries(
+        _ entries: [AwesomeEntryDTO],
+        sourceID: String,
+        parseState: AwesomeCustomSourceParseState
+    ) async throws
+    func completeCustomSourceParsing(
+        sourceID: String,
+        externalEntryCount: Int,
+        parseState: AwesomeCustomSourceParseState
+    ) async throws
     func removeCustomSource(id: String) async throws
 }
 
@@ -311,6 +323,95 @@ actor AwesomeRepository: AwesomeRepositoryProtocol {
         }
     }
 
+    func customSourceEntryFullNames(sourceID: String) async -> Set<String> {
+        do {
+            return try await database.writer.read { db in
+                Set(try String.fetchAll(
+                    db,
+                    sql: "SELECT full_name FROM awesome_entries WHERE source_id = ?",
+                    arguments: [sourceID]
+                ).map { $0.lowercased() })
+            }
+        } catch {
+            if error is CancellationError || Task.isCancelled { return [] }
+            AppLog.database.warning(
+                "Awesome custom entry names read failed: \(error.localizedDescription, privacy: .public)"
+            )
+            return []
+        }
+    }
+
+    func customSourceEntryCount(sourceID: String) async -> Int {
+        do {
+            return try await database.writer.read { db in
+                try Int.fetchOne(
+                    db,
+                    sql: "SELECT COUNT(*) FROM awesome_entries WHERE source_id = ?",
+                    arguments: [sourceID]
+                ) ?? 0
+            }
+        } catch {
+            if error is CancellationError || Task.isCancelled { return 0 }
+            AppLog.database.warning(
+                "Awesome custom entry count read failed: \(error.localizedDescription, privacy: .public)"
+            )
+            return 0
+        }
+    }
+
+    /// 单批条目和进度必须原子提交。应用重启后只会从最后一批已提交位置恢复，不能出现
+    /// UI 已显示进度、对应条目却尚未落库的假进度。
+    func saveCustomSourceEntries(
+        _ entries: [AwesomeEntryDTO],
+        sourceID: String,
+        parseState: AwesomeCustomSourceParseState
+    ) async throws {
+        let cachedAt = ISO8601DateFormatter.shared.string(from: now())
+        try await database.writer.write { db in
+            for entry in entries {
+                try AwesomeEntryRecord.from(entry, sourceID: sourceID, cachedAt: cachedAt).save(db)
+            }
+            let entryCount = try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM awesome_entries WHERE source_id = ?",
+                arguments: [sourceID]
+            ) ?? 0
+            try db.execute(
+                sql: "UPDATE awesome_sources SET github_repo_count = ?, updated_at = ? WHERE source_id = ? AND kind = ?",
+                arguments: [entryCount, cachedAt, sourceID, AwesomeSourceKind.custom.rawValue]
+            )
+            try AwesomeCustomSourceParseRecord.from(parseState).save(db)
+        }
+    }
+
+    func completeCustomSourceParsing(
+        sourceID: String,
+        externalEntryCount: Int,
+        parseState: AwesomeCustomSourceParseState
+    ) async throws {
+        let completedAt = ISO8601DateFormatter.shared.string(from: now())
+        try await database.writer.write { db in
+            let entryCount = try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM awesome_entries WHERE source_id = ?",
+                arguments: [sourceID]
+            ) ?? 0
+            try db.execute(
+                sql: """
+                UPDATE awesome_sources
+                SET github_repo_count = ?, external_entry_count = ?,
+                    last_synced_at = ?, updated_at = ?
+                WHERE source_id = ? AND kind = ?
+                """,
+                arguments: [
+                    entryCount, externalEntryCount, completedAt, completedAt,
+                    sourceID, AwesomeSourceKind.custom.rawValue,
+                ]
+            )
+            try AwesomeCustomSourceParseRecord.from(parseState).save(db)
+        }
+    }
+
     func removeCustomSource(id: String) async throws {
         try await database.writer.write { db in
             try db.execute(
@@ -518,7 +619,8 @@ private extension AwesomeSourceRecord {
             entriesETag: nil,
             entriesCheckedAt: nil,
             addedAt: ISO8601DateFormatter.shared.string(from: source.addedAt),
-            lastSyncedAt: ISO8601DateFormatter.shared.string(from: source.updatedAt),
+            // 刚创建的空卡片尚未完成 README 解析，不能把创建时间伪装成同步完成时间。
+            lastSyncedAt: source.lastSyncedAt.map { ISO8601DateFormatter.shared.string(from: $0) },
             updatedAt: ISO8601DateFormatter.shared.string(from: source.updatedAt)
         )
     }
