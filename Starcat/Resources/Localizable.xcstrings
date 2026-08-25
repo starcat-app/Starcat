@@ -333584,6 +333584,176 @@
         }
       }
     },
+    "settings.integration.agentRuntime.codex.directoryOpenPanel.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose the Codex Runtime directory"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择 Codex Runtime 目录"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.codex.error.codeModeHostNotFound" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code Mode host is missing or not executable: %@. Install the complete Codex Runtime package."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code Mode Host 缺失或不可执行：%@。请安装完整的 Codex Runtime 包。"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.codex.error.directoryNotFound" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex Runtime directory does not exist: %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex Runtime 目录不存在：%@。"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.codex.error.runtimeNotFound" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No runnable codex-app-server or codex was found in %@ or its bin directory."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 %@ 或其 bin 子目录中未找到可执行的 codex-app-server 或 codex。"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.codex.info.note" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat stores only the directory path and reuses Codex authentication. A standalone App Server or selected CLI directory must include an executable codex-code-mode-host."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat 只保存目录路径并沿用 Codex 认证。独立 App Server 或所选 CLI 目录必须包含可执行的 codex-code-mode-host。"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.codex.info.summary" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a complete Codex Runtime directory. Binaries may be placed directly in the directory or in the bin subdirectory of the official package."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请选择完整的 Codex Runtime 目录。二进制文件可直接位于该目录，或位于官方包根目录的 bin 子目录。"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.deepSeek.info.note" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep the three carrier files in one directory. At least one verified provider is also required in AI Service settings."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "三个 carrier 文件必须位于同一目录；同时还需在 AI 服务设置中配置至少一个已验证服务商。"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.deepSeek.info.summary" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DeepSeek Harness keeps separate selectors for the carrier executable and the restricted Cordis configuration."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DeepSeek Harness 继续分别选择 carrier 可执行文件与受限 Cordis 配置。"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.info.button" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Runtime requirements"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Runtime 配置说明"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.info.requiredComponents" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Required components"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "必要组件"
+          }
+        }
+      }
+    },
     "settings.integration.agentRuntime.codex.executableAvailable" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -333788,6 +333958,23 @@
         }
       }
     },
+    "settings.integration.agentRuntime.guide.notice" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Setup, authentication, and troubleshooting are in the runtime guide."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安装、认证和故障排查步骤见配置指南。"
+          }
+        }
+      }
+    },
     "settings.integration.agentRuntime.notConfigured" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -333822,6 +334009,23 @@
         }
       }
     },
+    "settings.integration.agentRuntime.openGuide.action" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Guide"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开指南"
+          }
+        }
+      }
+    },
     "settings.integration.agentRuntime.openPanel.prompt" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -333852,6 +334056,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "恢复自动检测"
+          }
+        }
+      }
+    },
+    "settings.integration.agentRuntime.status.ready" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ready"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "就绪"
           }
         }
       }

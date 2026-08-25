@@ -331,6 +331,49 @@ struct ExternalAgentProtocolAdapterTests {
         ])
     }
 
+    @Test("Codex Runtime 目录解析官方包根目录与 bin 组件")
+    func codexRuntimeDirectoryResolvesOfficialPackageLayout() throws {
+        let fixture = try CodexRuntimeDirectoryFixture(layout: .officialPackage)
+        defer { fixture.cleanup() }
+
+        let installation = try CodexRuntimeInstallationResolver(
+            executableResolver: ExternalAgentExecutableResolver(environment: [:])
+        ).resolve(configuredPath: fixture.rootURL.path)
+
+        #expect(installation.configurationDirectoryURL == fixture.rootURL.standardizedFileURL)
+        #expect(installation.executableURL == fixture.executableURL.standardizedFileURL)
+        #expect(installation.kind == .standaloneAppServer)
+    }
+
+    @Test("Codex Runtime 目录在 Code Mode Host 缺失时提前拒绝")
+    func codexRuntimeDirectoryRejectsMissingCodeModeHost() throws {
+        let fixture = try CodexRuntimeDirectoryFixture(layout: .standaloneWithoutHost)
+        defer { fixture.cleanup() }
+
+        #expect(throws: CodexRuntimeInstallationError.codeModeHostNotFound(
+            fixture.executableURL.deletingLastPathComponent()
+                .appendingPathComponent("codex-code-mode-host").path
+        )) {
+            _ = try CodexRuntimeInstallationResolver(
+                executableResolver: ExternalAgentExecutableResolver(environment: [:])
+            ).resolve(configuredPath: fixture.rootURL.path)
+        }
+    }
+
+    @Test("Codex Runtime 继续兼容旧版 CLI 文件路径")
+    func codexRuntimeKeepsLegacyCLIFilePathCompatible() throws {
+        let fixture = try CodexRuntimeDirectoryFixture(layout: .legacyCLIFile)
+        defer { fixture.cleanup() }
+
+        let installation = try CodexRuntimeInstallationResolver(
+            executableResolver: ExternalAgentExecutableResolver(environment: [:])
+        ).resolve(configuredPath: fixture.executableURL.path)
+
+        #expect(installation.configurationDirectoryURL == fixture.rootURL.standardizedFileURL)
+        #expect(installation.executableURL == fixture.executableURL.standardizedFileURL)
+        #expect(installation.kind == .codexCLI)
+    }
+
     @Test("Codex 本机 Provider 只在桥接端点可连接时可用")
     func codexProviderEndpointProbeRejectsOfflineBridge() async throws {
         let provider = try #require(CodexProviderCatalog.parse("""
@@ -1894,5 +1937,46 @@ private struct DeepSeekCarrierFixture {
 
     func cleanup() {
         try? FileManager.default.removeItem(at: directoryURL)
+    }
+}
+
+private struct CodexRuntimeDirectoryFixture {
+    enum Layout {
+        case officialPackage
+        case standaloneWithoutHost
+        case legacyCLIFile
+    }
+
+    let rootURL: URL
+    let executableURL: URL
+
+    init(layout: Layout) throws {
+        rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("starcat-codex-runtime-fixture-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+
+        switch layout {
+        case .officialPackage:
+            let binURL = rootURL.appendingPathComponent("bin", isDirectory: true)
+            try FileManager.default.createDirectory(at: binURL, withIntermediateDirectories: true)
+            executableURL = binURL.appendingPathComponent("codex-app-server")
+            try Self.createExecutable(at: executableURL)
+            try Self.createExecutable(at: binURL.appendingPathComponent("codex-code-mode-host"))
+        case .standaloneWithoutHost:
+            executableURL = rootURL.appendingPathComponent("codex-app-server-aarch64-apple-darwin")
+            try Self.createExecutable(at: executableURL)
+        case .legacyCLIFile:
+            executableURL = rootURL.appendingPathComponent("codex")
+            try Self.createExecutable(at: executableURL)
+        }
+    }
+
+    func cleanup() {
+        try? FileManager.default.removeItem(at: rootURL)
+    }
+
+    private static func createExecutable(at url: URL) throws {
+        _ = FileManager.default.createFile(atPath: url.path, contents: Data())
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
     }
 }

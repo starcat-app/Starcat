@@ -8,13 +8,16 @@
 import AppKit
 import SwiftUI
 
-/// 在设置页管理完整 Codex CLI 或独立 App Server 路径，但不接触 Codex 的登录凭据。
+/// 在设置页管理完整 Codex CLI 或独立 App Server 目录，但不接触 Codex 的登录凭据。
+///
+/// 视觉对齐 CodeFlow 输出目录行：去掉 GroupBox 和刷新按钮。选择文件后会立刻复检；
+/// 路径行只保留短「选择」、重置、Finder；重置在「选择」前面，两个图标共用 15pt + 28pt。
 struct CodexRuntimeSettingsCard: View {
     @AppStorage(ExternalAgentRuntimePreferences.codexExecutablePathKey)
     private var customExecutablePath = ""
 
     @State private var status: AgentRuntimeSettingsStatus = .idle
-    @State private var resolvedExecutablePath = ""
+    @State private var resolvedRuntimeDirectoryPath = ""
     @State private var executableKind: CodexRuntimeProcessArguments.ExecutableKind?
 
     private let resolver: ExternalAgentExecutableResolver
@@ -24,128 +27,69 @@ struct CodexRuntimeSettingsCard: View {
     }
 
     var body: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("settings.integration.agentRuntime.codex.runtimeDescription")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text(verbatim: "Codex App Server")
+                    .font(.callout.weight(.semibold))
+                AgentRuntimeInfoButton(kind: .codex)
+                Spacer(minLength: 8)
+                AgentRuntimeStatusChip(
+                    status: status,
+                    readyDetail: executableKind?.displayName
+                )
+            }
 
-                LabeledContent("settings.integration.agentRuntime.executable") {
-                    pathValue(resolvedExecutablePath)
-                }
-
-                statusView
-
-                HStack(spacing: 8) {
-                    Spacer()
-
-                    Button("settings.integration.agentRuntime.detectAgain") {
-                        refresh()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.regular)
-                    .disabled(status.isChecking)
-
-                    Button("settings.integration.agentRuntime.chooseExecutable") {
-                        chooseExecutable()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.regular)
-                    .disabled(status.isChecking)
-
-                    Button("settings.integration.agentRuntime.restoreAutomatic") {
+            AgentRuntimePathRow(path: resolvedRuntimeDirectoryPath) {
+                AgentRuntimePathTrailingActions(
+                    path: resolvedRuntimeDirectoryPath,
+                    isDisabled: status.isChecking,
+                    onChoose: chooseRuntimeDirectory
+                ) {
+                    ResetIconButton(help: Text("settings.integration.agentRuntime.restoreAutomatic")) {
                         customExecutablePath = ""
                         refresh()
                     }
                     .disabled(customExecutablePath.isEmpty || status.isChecking)
                 }
             }
-            .padding(.vertical, 4)
-        } label: {
-            Label {
-                Text(verbatim: "Codex App Server")
-            } icon: {
-                Image(systemName: "terminal")
+
+            if let message = status.failureMessage {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
             }
         }
         .task { refresh() }
     }
 
-    @ViewBuilder
-    private var statusView: some View {
-        switch status {
-        case .idle, .checking:
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("settings.integration.agentRuntime.detecting")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        case .ready:
-            HStack(spacing: 8) {
-                Label(
-                    "settings.integration.agentRuntime.codex.executableAvailable",
-                    systemImage: "checkmark.circle.fill"
-                )
-                .foregroundStyle(.green)
-
-                Spacer()
-
-                if let executableKind {
-                    Text(verbatim: executableKind.displayName)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .font(.caption)
-        case .failed(let message):
-            Label(message, systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
-                .foregroundStyle(.red)
-                .textSelection(.enabled)
-        }
-    }
-
-    @ViewBuilder
-    private func pathValue(_ path: String) -> some View {
-        Text(verbatim: path.isEmpty ? String.l10n("settings.integration.agentRuntime.notConfigured") : path)
-            .font(.caption.monospaced())
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .truncationMode(.middle)
-            .textSelection(.enabled)
-            .help(path)
-    }
-
-    /// 检测只验证可执行文件，认证状态继续由 `codex login status` 负责。
+    /// 检测目录布局与必要 Host，认证状态继续由 `codex login status` 负责。
     /// 这样 Starcat 不需要读取 `CODEX_HOME` 中的任何凭据文件。
     @MainActor
     private func refresh() {
         guard !status.isChecking else { return }
         status = .checking
         do {
-            let executable = try resolver.resolve(
-                executableName: "codex",
-                explicitPath: customExecutablePath
-            )
-            resolvedExecutablePath = executable.path
-            executableKind = CodexRuntimeProcessArguments.executableKind(for: executable)
+            let installation = try CodexRuntimeInstallationResolver(executableResolver: resolver)
+                .resolve(configuredPath: customExecutablePath)
+            resolvedRuntimeDirectoryPath = installation.configurationDirectoryURL.path
+            executableKind = installation.kind
             status = .ready
         } catch {
-            resolvedExecutablePath = customExecutablePath
+            resolvedRuntimeDirectoryPath = customExecutablePath
             executableKind = nil
             status = .failed(error.localizedDescription)
         }
     }
 
-    /// 用户选择后先保存绝对路径，再复用同一检测流程验证可执行权限。
+    /// 设置只保存目录；运行层会在目录或其 `bin/` 下解析完整 CLI / App Server。
     @MainActor
-    private func chooseExecutable() {
+    private func chooseRuntimeDirectory() {
         let panel = NSOpenPanel()
-        panel.title = String.l10n("settings.integration.agentRuntime.codex.openPanel.title")
+        panel.title = String.l10n("settings.integration.agentRuntime.codex.directoryOpenPanel.title")
         panel.prompt = String.l10n("settings.integration.agentRuntime.openPanel.prompt")
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
 

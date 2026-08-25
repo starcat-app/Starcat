@@ -8,6 +8,7 @@
 //  - 只承接全 App 重复出现的轻量工具按钮，避免每个页面手写字号 / 命中区 / focus ring。
 //  - 删除入口默认不使用红色；危险色留给确认弹窗中的最终 destructive 按钮。
 //  - 重置入口使用同一个 `arrow.counterclockwise.circle` 语义，调用方按所在 surface 传入尺寸。
+//  - Finder 入口与重置共用设置页 15pt / 28pt 口径，避免和 SyncIconButton 默认 18pt 混用。
 //  - 点击成功后短暂显示绿色 `checkmark.circle.fill`（与 CopyFeedbackButton 同窗口）。
 //
 
@@ -115,5 +116,45 @@ struct ResetIconButton: View {
                 didReset = false
             }
         }
+    }
+}
+
+/// icon-only「在 Finder 中显示」入口。
+///
+/// 设置页与 `ResetIconButton` 共用 15pt glyph + 28pt 命中区 + `.secondary`。
+/// 不要改用 `SyncIconButton` 的 18pt caption 默认值：`folder` 和圆形重置在那套尺寸下
+/// 会一眼看出大小不一致（Agent Runtime 设置页已经踩过）。
+struct RevealInFinderIconButton: View {
+    let help: Text
+    let action: () -> Void
+    var font: Font = .system(size: 15, weight: .medium)
+    var frameSize: CGFloat = 28
+
+    init(
+        help: Text,
+        font: Font = .system(size: 15, weight: .medium),
+        frameSize: CGFloat = 28,
+        action: @escaping () -> Void
+    ) {
+        self.help = help
+        self.action = action
+        self.font = font
+        self.frameSize = frameSize
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "folder")
+                .font(font)
+                .foregroundStyle(.secondary)
+                .frame(width: frameSize, height: frameSize)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .pressableHover()
+        .help(help)
+        .accessibilityLabel(help)
+        .fixedSize()
     }
 }

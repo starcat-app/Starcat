@@ -9,6 +9,9 @@ import AppKit
 import SwiftUI
 
 /// 管理 DeepSeek Harness 的两个外部文件路径，并复用正式 adapter 的校验规则。
+///
+/// 两个路径各占一行，避免 LabeledContent 把超长 Application Support 路径折成密密麻麻的两列。
+/// 选择后会立刻复检；不再单独放刷新按钮。每行提供 Finder 入口，方便定位埋在 venv 里的 carrier。
 struct DeepSeekRuntimeSettingsCard: View {
     @Environment(AppSettings.self) private var settings
 
@@ -27,90 +30,50 @@ struct DeepSeekRuntimeSettingsCard: View {
     }
 
     var body: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("settings.integration.agentRuntime.deepSeek.description")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                LabeledContent("settings.integration.agentRuntime.executable") {
-                    pathValue(resolvedExecutablePath.isEmpty ? executablePath : resolvedExecutablePath)
-                }
-
-                LabeledContent("settings.integration.agentRuntime.cordisConfig") {
-                    pathValue(cordisConfigPath)
-                }
-
-                statusView
-
-                HStack(spacing: 8) {
-                    Spacer()
-
-                    Button("settings.integration.agentRuntime.detectAgain") {
-                        refresh()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.regular)
-                    .disabled(status.isChecking)
-
-                    Button("settings.integration.agentRuntime.chooseExecutable") {
-                        chooseExecutable()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.regular)
-                    .disabled(status.isChecking)
-
-                    Button("settings.integration.agentRuntime.chooseCordisConfig") {
-                        chooseCordisConfig()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.regular)
-                    .disabled(status.isChecking)
-                }
-            }
-            .padding(.vertical, 4)
-        } label: {
-            Label {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
                 Text(verbatim: "DeepSeek Harness")
-            } icon: {
-                Image(systemName: "point.3.connected.trianglepath.dotted")
+                    .font(.callout.weight(.semibold))
+                AgentRuntimeInfoButton(kind: .deepSeek)
+                Spacer(minLength: 8)
+                AgentRuntimeStatusChip(status: status)
+            }
+
+            AgentRuntimePathRow(
+                caption: "settings.integration.agentRuntime.executable",
+                path: displayedExecutablePath
+            ) {
+                AgentRuntimePathTrailingActions(
+                    path: displayedExecutablePath,
+                    isDisabled: status.isChecking,
+                    onChoose: chooseExecutable
+                )
+            }
+
+            AgentRuntimePathRow(
+                caption: "settings.integration.agentRuntime.cordisConfig",
+                path: cordisConfigPath
+            ) {
+                AgentRuntimePathTrailingActions(
+                    path: cordisConfigPath,
+                    isDisabled: status.isChecking,
+                    onChoose: chooseCordisConfig
+                )
+            }
+
+            if let message = status.failureMessage {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
             }
         }
         .task { refresh() }
     }
 
-    @ViewBuilder
-    private var statusView: some View {
-        switch status {
-        case .idle, .checking:
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("settings.integration.agentRuntime.detecting")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        case .ready:
-            Label("settings.integration.agentRuntime.deepSeek.configurationReady", systemImage: "checkmark.circle.fill")
-                .font(.caption)
-                .foregroundStyle(.green)
-        case .failed(let message):
-            Label(message, systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
-                .foregroundStyle(.red)
-                .textSelection(.enabled)
-        }
-    }
-
-    @ViewBuilder
-    private func pathValue(_ path: String) -> some View {
-        Text(verbatim: path.isEmpty ? String.l10n("settings.integration.agentRuntime.notConfigured") : path)
-            .font(.caption.monospaced())
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .truncationMode(.middle)
-            .textSelection(.enabled)
-            .help(path)
+    /// 解析成功用 resolver 给出的绝对路径；失败时仍展示用户刚选的路径，方便对照 Finder。
+    private var displayedExecutablePath: String {
+        resolvedExecutablePath.isEmpty ? executablePath : resolvedExecutablePath
     }
 
     /// 与正式 Run 共用 adapter 构造校验，确保 carrier 三件套、Cordis 安全边界和

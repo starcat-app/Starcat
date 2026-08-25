@@ -11,6 +11,136 @@
 
 import Foundation
 
+/// Codex Runtime 目录解析后的稳定结果。设置页展示用户选择的目录，运行层只消费已经
+/// 验证可执行的入口，避免 UI 与正式 turn 各自猜测应启动哪个文件。
+struct CodexRuntimeInstallation: Equatable, Sendable {
+    let configurationDirectoryURL: URL
+    let executableURL: URL
+    let kind: CodexRuntimeProcessArguments.ExecutableKind
+}
+
+enum CodexRuntimeInstallationError: Error, LocalizedError, Equatable, Sendable {
+    case directoryNotFound(String)
+    case runtimeNotFound(String)
+    case codeModeHostNotFound(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .directoryNotFound(let path):
+            return String(
+                format: String.l10n("settings.integration.agentRuntime.codex.error.directoryNotFound"),
+                path
+            )
+        case .runtimeNotFound(let path):
+            return String(
+                format: String.l10n("settings.integration.agentRuntime.codex.error.runtimeNotFound"),
+                path
+            )
+        case .codeModeHostNotFound(let path):
+            return String(
+                format: String.l10n("settings.integration.agentRuntime.codex.error.codeModeHostNotFound"),
+                path
+            )
+        }
+    }
+}
+
+/// 从用户选择的目录中定位 Codex CLI 或独立 App Server。
+///
+/// 官方发布物存在两种布局：文件直接位于所选目录，或位于包根目录的 `bin/`。
+/// 用户主动选择目录时同时检查 `codex-code-mode-host`，把 Code Mode 缺组件的问题提前
+/// 阻断在设置页；自动检测与旧版 CLI 文件路径仍保持兼容，不破坏已经可用的安装。
+struct CodexRuntimeInstallationResolver: Sendable {
+    private let executableResolver: ExternalAgentExecutableResolver
+
+    init(executableResolver: ExternalAgentExecutableResolver = ExternalAgentExecutableResolver()) {
+        self.executableResolver = executableResolver
+    }
+
+    func resolve(configuredPath: String?) throws -> CodexRuntimeInstallation {
+        let trimmedPath = configuredPath?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmedPath.isEmpty else {
+            let executableURL = try executableResolver.resolve(executableName: "codex", explicitPath: nil)
+            return installation(
+                directoryURL: executableURL.deletingLastPathComponent(),
+                executableURL: executableURL
+            )
+        }
+
+        let configuredURL = URL(fileURLWithPath: trimmedPath).standardizedFileURL
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: configuredURL.path, isDirectory: &isDirectory) else {
+            throw CodexRuntimeInstallationError.directoryNotFound(configuredURL.path)
+        }
+
+        // 1.5.0 之前保存的是具体可执行文件。继续读取旧值，让升级用户无需重新选择；
+        // 独立 App Server 仍必须有 Host，因为缺失时 Code Mode 一定会 fail closed。
+        guard isDirectory.boolValue else {
+            let executableURL = try executableResolver.resolve(
+                executableName: "codex",
+                explicitPath: configuredURL.path
+            )
+            if CodexRuntimeProcessArguments.executableKind(for: executableURL) == .standaloneAppServer {
+                try validateCodeModeHost(beside: executableURL)
+            }
+            return installation(
+                directoryURL: executableURL.deletingLastPathComponent(),
+                executableURL: executableURL
+            )
+        }
+
+        for binaryDirectory in [
+            configuredURL,
+            configuredURL.appendingPathComponent("bin", isDirectory: true),
+        ] {
+            guard let executableURL = firstRuntimeExecutable(in: binaryDirectory) else { continue }
+            try validateCodeModeHost(beside: executableURL)
+            return installation(directoryURL: configuredURL, executableURL: executableURL)
+        }
+
+        throw CodexRuntimeInstallationError.runtimeNotFound(configuredURL.path)
+    }
+
+    private func installation(directoryURL: URL, executableURL: URL) -> CodexRuntimeInstallation {
+        CodexRuntimeInstallation(
+            configurationDirectoryURL: directoryURL.standardizedFileURL,
+            executableURL: executableURL.standardizedFileURL,
+            kind: CodexRuntimeProcessArguments.executableKind(for: executableURL)
+        )
+    }
+
+    /// 优先使用独立 App Server；完整 CLI 作为同一 Harness 的兼容入口。
+    private func firstRuntimeExecutable(in directoryURL: URL) -> URL? {
+        let fileManager = FileManager.default
+        let appServerURL = directoryURL.appendingPathComponent("codex-app-server")
+        if fileManager.isExecutableFile(atPath: appServerURL.path) { return appServerURL }
+
+        // 单文件 release 可能保留平台后缀。App Server 仍会查找无后缀 Host，下面的
+        // `validateCodeModeHost` 会给出明确安装提示，而不是让 Agent turn 启动后失败。
+        if let entries = try? fileManager.contentsOfDirectory(
+            at: directoryURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ), let suffixedAppServer = entries
+            .filter({ $0.lastPathComponent.hasPrefix("codex-app-server-") })
+            .sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
+            .first(where: { fileManager.isExecutableFile(atPath: $0.path) }) {
+            return suffixedAppServer
+        }
+
+        let cliURL = directoryURL.appendingPathComponent("codex")
+        return fileManager.isExecutableFile(atPath: cliURL.path) ? cliURL : nil
+    }
+
+    private func validateCodeModeHost(beside executableURL: URL) throws {
+        let hostURL = executableURL.deletingLastPathComponent()
+            .appendingPathComponent("codex-code-mode-host")
+        guard FileManager.default.isExecutableFile(atPath: hostURL.path) else {
+            throw CodexRuntimeInstallationError.codeModeHostNotFound(hostURL.path)
+        }
+    }
+}
+
 enum ExternalAgentRuntimePreferences {
     static let backendKey = "AgentRuntimeBackend"
     static let codexExecutablePathKey = "AgentRuntimeCodexExecutablePath"
@@ -206,9 +336,8 @@ enum ExternalAgentRuntimePreferences {
         resolver: ExternalAgentExecutableResolver,
         defaults: UserDefaults
     ) throws -> URL {
-        try resolver.resolve(
-            executableName: "codex",
-            explicitPath: defaults.string(forKey: codexExecutablePathKey)
-        )
+        try CodexRuntimeInstallationResolver(executableResolver: resolver)
+            .resolve(configuredPath: defaults.string(forKey: codexExecutablePathKey))
+            .executableURL
     }
 }
