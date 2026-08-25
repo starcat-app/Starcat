@@ -264087,6 +264087,23 @@
         }
       }
     },
+    "repo.hero.copyName" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy repository name"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制仓库名"
+          }
+        }
+      }
+    },
     "repo.lastEditedFormat" : {
       "extractionState" : "stale",
       "localizations" : {
