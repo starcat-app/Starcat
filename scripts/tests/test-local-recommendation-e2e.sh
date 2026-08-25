@@ -12,8 +12,9 @@ trap 'rm -rf "$TEST_DIR"' EXIT
 
 export STARCAT_E2E_RUNS_ROOT="$TEST_DIR/runs"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+E2E_SCRIPT="$SCRIPT_DIR/../local-recommendation-e2e.sh"
 # shellcheck source=../local-recommendation-e2e.sh
-source "$SCRIPT_DIR/../local-recommendation-e2e.sh"
+source "$E2E_SCRIPT"
 
 fail() {
   printf '测试失败：%s\n' "$*" >&2
@@ -23,6 +24,12 @@ fail() {
 assert_equal() {
   [ "$1" = "$2" ] || fail "预期 '$1'，实际 '$2'"
 }
+
+# macOS 自带 Bash 3.2 在 nounset 模式下可能把紧邻变量的中文标点继续解析为
+# 变量名字节。统一要求 `${name}`，避免再次出现 `expected�: unbound variable`。
+if LC_ALL=C grep -nE '\$[A-Za-z_][A-Za-z0-9_]*[^ -~]' "$E2E_SCRIPT"; then
+  fail "发现未加花括号且紧邻非 ASCII 字符的变量"
+fi
 
 mkdir -p "$RUNS_ROOT/run-safe"
 : >"$RUNS_ROOT/run-safe/$RUN_MARKER"

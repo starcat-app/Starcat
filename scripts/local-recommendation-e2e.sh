@@ -180,7 +180,7 @@ stop_run_process() {
     warn "$service PID $pid 未在 5 秒内退出；未使用 SIGKILL。"
     return 1
   fi
-  success "$service 已停止（PID $pid）"
+  success "$service 已停止（PID ${pid}）"
 }
 
 stop_run_services() {
@@ -403,7 +403,7 @@ wait_for_real_snapshot() {
     "2. 回到 Manage/Stars，执行一次完整的“刷新仓库列表/详情”" \
     "3. 保持本脚本运行；收到快照后会自动继续" \
     "" \
-    "目标数据库公开 Star：$expected；最低有效交集：$minimum"
+    "目标数据库公开 Star：${expected}；最低有效交集：${minimum}"
 
   for attempt in {1..360}; do
     summary="$(snapshot_overlap_summary "$run_directory" "$database" 2>/dev/null || printf '0|0')"
@@ -605,7 +605,7 @@ validate_training_result() {
 
   final_rows="$(jq -r '.final_rows // 0' "$run_path/dataset/quality-report.json")"
   [[ "$final_rows" =~ ^[0-9]+$ ]] && [ "$final_rows" -gt 0 ] \
-    || die "Trainer final_rows=$final_rows，拒绝接受空数据集。"
+    || die "Trainer final_rows=${final_rows}，拒绝接受空数据集。"
   [ "$(sqlite3 -readonly "$bundle_path/recommendations.sqlite" 'PRAGMA quick_check;')" = "ok" ] \
     || die "ServingBundle SQLite quick_check 失败。"
   recommendation_count="$(sqlite3 -readonly "$bundle_path/recommendations.sqlite" \
@@ -622,7 +622,7 @@ validate_training_result() {
     "http://127.0.0.1:$RECOMMEND_PORT/internal/v1/model-bundles/active" \
     | jq -r '.data.model_version // .model_version // empty')"
   [ "$active_version" = "$model_version" ] \
-    || die "Recommend active version=$active_version，预期 $model_version。"
+    || die "Recommend active version=${active_version}，预期 ${model_version}。"
 
   curl -fsS \
     -H "Authorization: Bearer $RECOMMEND_CLIENT_KEY" \
@@ -941,7 +941,7 @@ cleanup_history() {
     *)
       if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#directories[@]}" ]; then
         directory="${directories[$((choice - 1))]}"
-        confirm "确认删除 $directory？" && cleanup_run "$directory"
+        confirm "确认删除 ${directory}？" && cleanup_run "$directory"
       else
         warn "无效选择。"
       fi
