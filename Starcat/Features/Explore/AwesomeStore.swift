@@ -21,6 +21,8 @@ final class AwesomeStore {
     private(set) var isLoading = false
     private(set) var isRefreshing = false
     private(set) var isCatalogRefreshing = false
+    /// Sheet 预拉 / 刷新 OG 完成后递增，卡片据此清掉上一次真失败标记再试缓存。
+    private(set) var ogPrefetchGeneration = 0
     private(set) var errorMessage: String?
     private(set) var sourceRefreshErrors: [String: String] = [:]
     private(set) var customSourceParseStates: [String: AwesomeCustomSourceParseState] = [:]
@@ -156,18 +158,31 @@ final class AwesomeStore {
         await refreshCatalogAndEntries(policy: .force)
     }
 
-    /// 来源管理 Sheet 的刷新只更新公共目录，不连带刷新所有已订阅 README 条目。
-    /// 远端是否命中其服务端缓存由 Discovery API 决定；客户端仍明确发起一次强制校验。
+    /// 来源管理 Sheet 打开时预拉全部 OG：Kingfisher 有缓存就跳过网络。
+    func prefetchOpenGraphImages() async {
+        await AwesomeSourceOpenGraph.prefetch(urls: AwesomeSourceOpenGraph.imageURLs(for: sources))
+        ogPrefetchGeneration += 1
+    }
+
+    /// 来源管理 Sheet 的刷新：Discovery 目录 与 OG 预拉并行。
+    /// OG 仍走缓存优先，不 forceRefresh；小时键没变就不会打 GitHub CDN。
+    /// 不连带刷新所有已订阅 README 条目。
     func refreshSourceCatalog() async {
         guard !isCatalogRefreshing else { return }
         isCatalogRefreshing = true
         defer { isCatalogRefreshing = false }
+
+        let urlsBeforeRefresh = AwesomeSourceOpenGraph.imageURLs(for: sources)
+        async let ogWarmup: Void = AwesomeSourceOpenGraph.prefetch(urls: urlsBeforeRefresh)
         do {
             sources = try await repository.refreshCatalog(policy: .force)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
         }
+        await ogWarmup
+        await AwesomeSourceOpenGraph.prefetch(urls: AwesomeSourceOpenGraph.imageURLs(for: sources))
+        ogPrefetchGeneration += 1
     }
 
     /// 当前账户数据库是 Awesome 订阅和自定义来源的隔离边界。切库时必须先清掉旧快照，
@@ -186,6 +201,7 @@ final class AwesomeStore {
         isLoading = false
         isRefreshing = false
         isCatalogRefreshing = false
+        ogPrefetchGeneration = 0
         errorMessage = nil
         sourceRefreshErrors = [:]
         customSourceParseStates = [:]

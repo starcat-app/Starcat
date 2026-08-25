@@ -207,8 +207,11 @@ final class KnowledgeRAGIndexBuilder {
     private var workGeneration: UInt64 = 0
     /// 当前正在执行的那一轮 generation；`cancel()` 先加 generation，后到的 HTTP 就不能再改 status。
     private var activeWorkGeneration: UInt64 = 0
-    private var exclusiveRunning = false
-    private var pendingAuto = RAGPendingAutoIndexWork()
+    /// 调度屏障，不进 Observation。wikiCache 等 Notification Task 会在 SwiftUI body
+    /// 求值期间 hop 回主线程读这些字段；若走 ObservationTracked getter，会把本对象
+    /// 挂进当前 AccessList，和高频 UI 变更叠在一起会 PAC 崩。
+    @ObservationIgnored private var exclusiveRunning = false
+    @ObservationIgnored private var pendingAuto = RAGPendingAutoIndexWork()
     private var refreshSummaryRestoreTask: Task<Void, Never>?
     private var observationTasks: [Task<Void, Never>] = []
     private var debouncedSourceTasks: [Int64: Task<Void, Never>] = [:]
@@ -220,7 +223,8 @@ final class KnowledgeRAGIndexBuilder {
     /// 关键词 / 向量指纹分开：Meilisearch 先同步不能把 Qdrant 也标成已初始化。
     private var lastKeywordSyncFingerprint: RAGExternalIndexSyncFingerprint?
     private var lastVectorSyncFingerprint: RAGExternalIndexSyncFingerprint?
-    private var isSuspendedForDatabaseChange = false
+    /// 切库屏障。不驱动 UI，禁止 Observation 跟踪；见 `exclusiveRunning`。
+    @ObservationIgnored private var isSuspendedForDatabaseChange = false
     private var activeOperationCount = 0
     private var idleContinuations: [CheckedContinuation<Void, Never>] = []
 

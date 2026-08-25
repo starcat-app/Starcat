@@ -93,6 +93,9 @@ enum AppLocale: String, CaseIterable, Identifiable, Sendable {
     /// `system` 用 i18n key 是有意为之：用户切到任何语言都能看到本语言下的"跟随系统"
     /// 字样，与同 Section 下的"语言"标题、说明文字风格一致；它不存在"看不懂找不到入口"
     /// 风险，因为语言选项始终保留各自的母语名称。
+    ///
+    /// 菜单展示请用 `menuTitle`：跟随系统用 🌐 与各国旗同一列，但文案仍走本 key，
+    /// 不能把地球写进 Catalog，否则 18 种语言都要改 `Localizable.xcstrings`。
     var displayName: LocalizedStringKey {
         switch self {
         case .system:              return "settings.general.language.system"
@@ -115,6 +118,18 @@ enum AppLocale: String, CaseIterable, Identifiable, Sendable {
         case .indonesian:          return LocalizedStringKey("🇮🇩 Bahasa Indonesia")
         case .arabic:              return LocalizedStringKey("🇸🇦 العربية")
         }
+    }
+
+    /// 设置页语言菜单的一行。
+    ///
+    /// 具体语言已经把国旗写进 `displayName`；跟随系统没有对应国家，用地球 emoji
+    /// 占同一列，避免菜单第一项左边空一格。文案继续走 SwiftUI 查表，这样切界面
+    /// 语言后「跟随系统」仍会本地化（`String.l10n` 走 Bundle，跟不上 in-app locale）。
+    var menuTitle: Text {
+        if self == .system {
+            return Text("🌐 ") + Text(displayName)
+        }
+        return Text(displayName)
     }
 
     /// SwiftUI `.environment(\.locale, _)` 实际写入的 Locale 值。

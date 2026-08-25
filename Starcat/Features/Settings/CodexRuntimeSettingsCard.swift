@@ -18,7 +18,6 @@ struct CodexRuntimeSettingsCard: View {
 
     @State private var status: AgentRuntimeSettingsStatus = .idle
     @State private var resolvedRuntimeDirectoryPath = ""
-    @State private var executableKind: CodexRuntimeProcessArguments.ExecutableKind?
 
     private let resolver: ExternalAgentExecutableResolver
 
@@ -33,10 +32,7 @@ struct CodexRuntimeSettingsCard: View {
                     .font(.callout.weight(.semibold))
                 AgentRuntimeInfoButton(kind: .codex)
                 Spacer(minLength: 8)
-                AgentRuntimeStatusChip(
-                    status: status,
-                    readyDetail: executableKind?.displayName
-                )
+                AgentRuntimeStatusChip(status: status)
             }
 
             AgentRuntimePathRow(path: resolvedRuntimeDirectoryPath) {
@@ -73,11 +69,9 @@ struct CodexRuntimeSettingsCard: View {
             let installation = try CodexRuntimeInstallationResolver(executableResolver: resolver)
                 .resolve(configuredPath: customExecutablePath)
             resolvedRuntimeDirectoryPath = installation.configurationDirectoryURL.path
-            executableKind = installation.kind
             status = .ready
         } catch {
             resolvedRuntimeDirectoryPath = customExecutablePath
-            executableKind = nil
             status = .failed(error.localizedDescription)
         }
     }

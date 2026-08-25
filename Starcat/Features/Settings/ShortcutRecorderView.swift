@@ -39,12 +39,31 @@ struct ShortcutRecorderView: View {
             Group {
                 if isRecording {
                     Text("settings.general.shortcuts.recording")
+                        .font(.system(.body, design: .monospaced).weight(.medium))
+                        .foregroundStyle(Color.accentColor)
                 } else {
-                    Text(verbatim: shortcut.displayText)
+                    // 每个修饰键和主键单独成帽，避免 ⇧⌘F 挤成一坨无法扫读。
+                    HStack(spacing: 4) {
+                        ForEach(Array(shortcut.displaySegments.enumerated()), id: \.offset) { _, segment in
+                            Text(verbatim: segment)
+                                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.primary)
+                                .frame(minWidth: 16)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                        .fill(Color.primary.opacity(0.06))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                        .strokeBorder(Color.secondary.opacity(0.22), lineWidth: 1)
+                                )
+                        }
+                    }
+                    .padding(.trailing, shortcut == defaultShortcut ? 0 : 18)
                 }
             }
-            .font(.system(.body, design: .monospaced).weight(.medium))
-            .foregroundStyle(isRecording ? Color.accentColor : .primary)
 
             ShortcutCaptureView(
                 isRecording: $isRecording,
@@ -71,8 +90,8 @@ struct ShortcutRecorderView: View {
                 }
             }
         }
-        // 恢复入口收进录制框后使用接近原生快捷键 Recorder 的宽度，避免键位显示过于局促。
-        .frame(width: 128, height: 28)
+        // 分段键帽比紧凑符号串更宽；给 ⌘⇧F 这类三键组合留出间距，恢复按钮叠在右侧。
+        .frame(width: 156, height: 28)
         .help(helpKey)
     }
 
@@ -88,7 +107,7 @@ struct ShortcutRecorderView: View {
 /// 设置页中的单个可配置应用快捷键行。
 ///
 /// 开关只控制键盘注册，不会清空已经录制的组合，也不会禁用对应菜单或按钮。
-/// 即使当前关闭，键位仍参与五项命令的冲突检查，保证重新启用时不会抢占。
+/// 即使当前关闭，键位仍参与六项命令的冲突检查，保证重新启用时不会抢占。
 struct ConfigurableShortcutSettingRow: View {
     let titleKey: LocalizedStringKey
     @Binding var shortcut: KeyboardShortcutConfiguration

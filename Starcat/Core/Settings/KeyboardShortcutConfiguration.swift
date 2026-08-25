@@ -28,8 +28,18 @@ struct KeyboardShortcutConfiguration: Codable, Equatable, Sendable {
         shift: false
     )
 
-    /// 列表 toolbar 常规搜索（SmartSearchField）默认 Command+F。
+    /// 列表 toolbar 常规搜索（SmartSearchField）默认 Shift+Command+F。
+    /// 与 README 页内查找的 Command+F 拆开，避免再按光标所在栏分流。
     static let regularSearchDefault = KeyboardShortcutConfiguration(
+        key: "f",
+        command: true,
+        option: false,
+        control: false,
+        shift: true
+    )
+
+    /// 拆键位之前常规搜索的出厂默认。仍写在磁盘上的旧值视为未自定义，启动时迁到 `regularSearchDefault`。
+    static let legacyRegularSearchDefault = KeyboardShortcutConfiguration(
         key: "f",
         command: true,
         option: false,
@@ -57,12 +67,18 @@ struct KeyboardShortcutConfiguration: Codable, Equatable, Sendable {
     }
 
     var displayText: String {
-        var value = ""
-        if control { value += "⌃" }
-        if option { value += "⌥" }
-        if shift { value += "⇧" }
-        if command { value += "⌘" }
-        return value + key.uppercased()
+        displaySegments.joined()
+    }
+
+    /// 设置页录制框用分段键帽；菜单 / tooltip 仍拼成紧凑的 `displayText`。
+    var displaySegments: [String] {
+        var segments: [String] = []
+        if control { segments.append("⌃") }
+        if option { segments.append("⌥") }
+        if shift { segments.append("⇧") }
+        if command { segments.append("⌘") }
+        segments.append(key.uppercased())
+        return segments
     }
 
     enum ValidationError: Equatable {
@@ -86,7 +102,7 @@ struct KeyboardShortcutConfiguration: Codable, Equatable, Sendable {
 
     /// 在固定键位校验之外，再检查同一设置分组内的其他可配置动作。
     ///
-    /// 这里不把另一项搜索快捷键并入全局保留集合，因为 `⌘K` / `⌘F` 本身都允许
+    /// 这里不把搜索类快捷键并入全局保留集合，因为 `⌘K` / `⌘⇧F` / `⌘F` 本身都允许
     /// 用户重新分配；只有候选值与当前另一项完全相同时才构成冲突。
     func validationError(
         conflictingWith configuredShortcuts: Set<KeyboardShortcutConfiguration>
@@ -130,9 +146,13 @@ enum StarcatShortcutCatalog {
     static let openSelectedRepoAIDefault = KeyboardShortcutConfiguration(
         key: "a", command: true, option: false, control: false, shift: true
     )
+    /// README 页内查找默认 Command+F，对应浏览器「在页面中查找」。
+    static let readmeFindDefault = KeyboardShortcutConfiguration(
+        key: "f", command: true, option: false, control: false, shift: false
+    )
 
     /// 只有不可由用户改写的系统 / 上下文语义留在保留集合。
-    /// 五个可配置动作通过设置页的完整冲突矩阵互斥，不能把它们放进这里，
+    /// 六个可配置动作通过设置页的完整冲突矩阵互斥，不能把它们放进这里，
     /// 否则动作自己的默认值也会被录制器判定为非法。
     static let fixedReserved: Set<KeyboardShortcutConfiguration> = [
         .init(key: ",", command: true, option: false, control: false, shift: false),

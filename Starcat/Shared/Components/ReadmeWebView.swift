@@ -128,6 +128,11 @@ struct ReadmeWebView: View {
 
     @Environment(AppSettings.self) private var settings
     @State private var scrollToTopRequestID = 0
+    @State private var isFindBarVisible = false
+    @State private var findQuery = ""
+    @State private var findRequest = ReadmeFindRequest()
+    @State private var findHasMatch: Bool?
+    @FocusState private var isFindFieldFocused: Bool
     @State private var isFontToolbarExpanded = false
 
     var body: some View {
@@ -137,6 +142,8 @@ struct ReadmeWebView: View {
             onScrollReportChange: handleScrollReport,
             readmeFontSizeAdjustment: settings.readmeFontSizeAdjustment,
             scrollToTopRequestID: scrollToTopRequestID,
+            findRequest: findRequest,
+            onFindResult: { findHasMatch = $0 },
             translationRenderState: translationRenderState,
             onTranslationSourceChange: onTranslationSourceChange,
             openRepositoryMarkdownInApp: settings.openRepositoryMarkdownInApp,
@@ -145,6 +152,18 @@ struct ReadmeWebView: View {
             onOpenRepositoryMarkdown: onOpenRepositoryMarkdown
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .top) {
+            if isFindBarVisible {
+                ReadmeFindBar(
+                    query: $findQuery,
+                    hasMatch: findHasMatch,
+                    isFindFieldFocused: $isFindFieldFocused,
+                    onNext: { submitFind(query: findQuery, backwards: false) },
+                    onPrevious: { submitFind(query: findQuery, backwards: true) },
+                    onClose: hideFindBar
+                )
+            }
+        }
         // 工具条必须作为 overlay 贴边悬浮，不能参与 WebView 正文布局。
         .overlay(alignment: .bottomTrailing) {
             ReadmeFloatingToolbar(
@@ -169,6 +188,16 @@ struct ReadmeWebView: View {
         .onReceive(NotificationCenter.default.publisher(for: .repoDetailScrollToTopRequested)) { _ in
             scrollToTop()
         }
+        .onChange(of: findQuery) { _, newValue in
+            guard isFindBarVisible else { return }
+            submitFind(query: newValue, backwards: false)
+        }
+        .onChange(of: readmeFindCommandIdentity) { _, _ in
+            hideFindBar()
+        }
+        .starcatReadmeFindCommand(identity: readmeFindCommandIdentity) {
+            showFindBar()
+        }
     }
 
     private func decreaseFontSize() {
@@ -191,6 +220,36 @@ struct ReadmeWebView: View {
         scrollToTopRequestID &+= 1
     }
 
+    /// 唤出页内查找条。系统 `NSTextFinder` 不能在 SwiftUI `updateNSView` 里同步弹出：
+    /// 那正好处于 AppKit 布局，`performTextFinderAction` 会改视图层级，macOS 26 上
+    /// 变成 unrecognized selector + layout 递归崩溃。改用公开的 `WKWebView.find`。
+    private func showFindBar() {
+        isFindBarVisible = true
+        isFindFieldFocused = true
+        if !findQuery.isEmpty {
+            submitFind(query: findQuery, backwards: false)
+        }
+    }
+
+    private func hideFindBar() {
+        guard isFindBarVisible else { return }
+        isFindBarVisible = false
+        isFindFieldFocused = false
+        findHasMatch = nil
+        submitFind(query: "", backwards: false)
+    }
+
+    private func submitFind(query: String, backwards: Bool) {
+        findRequest.generation &+= 1
+        findRequest.query = query
+        findRequest.backwards = backwards
+    }
+
+    /// 切仓时重新登记查找动作，避免闭包还指向上一份 HTML 的 WebView。
+    private var readmeFindCommandIdentity: String {
+        "\(baseURL?.absoluteString ?? "")|\(htmlFragment.count)|\(htmlFragment.prefix(48))"
+    }
+
     private func toggleFontToolbar() {
         withAnimation(.easeInOut(duration: 0.16)) {
             isFontToolbarExpanded.toggle()
@@ -198,6 +257,10 @@ struct ReadmeWebView: View {
     }
 
     private func handleScrollReport(_ report: RepoDetailScrollReport) {
+        // 阅读 README 时常常只滚不点；滚动仍记成详情栏，供 ⌘R 刷新详情而不是列表。
+        // 走 shared、不 `@Environment` 订阅 router：否则本视图会成为 CommandRouter
+        // 的观察者，滚动触发 activate 后又立刻重绘 WebView 宿主。
+        StarcatCommandRouter.shared.activate(.detail)
         onScrollReportChange(report)
         collapseToolbarForScroll()
     }
@@ -242,6 +305,8 @@ private struct ReadmeWebContentView: NSViewRepresentable {
     var onScrollReportChange: (RepoDetailScrollReport) -> Void
     let readmeFontSizeAdjustment: Int
     let scrollToTopRequestID: Int
+    let findRequest: ReadmeFindRequest
+    var onFindResult: (Bool?) -> Void
     let translationRenderState: ReadmeTranslationRenderState
     var onTranslationSourceChange: (ReadmeTranslationSourceSnapshot) -> Void
     var openRepositoryMarkdownInApp: Bool
@@ -304,10 +369,12 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         )
         loadIfNeeded(into: webView, context: context)
         scrollToTopIfNeeded(in: webView, context: context)
+        performFindIfNeeded(in: webView, context: context)
     }
 
     static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
         // WebView 退出 SwiftUI 层级后仍可能持有媒体进程；先暂停并终止请求，避免关窗后残留声音。
+        coordinator.cancelFind()
         coordinator.stopMediaPlayback(stopLoading: true)
         coordinator.removeScriptMessageHandler()
     }
@@ -386,6 +453,13 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         webView.evaluateJavaScript("window.scrollTo({ top: 0, behavior: 'smooth' });")
     }
 
+    /// 用 WebKit 公开的 `find` API 高亮正文。不能走 `NSTextFinder`：那会在宿主
+    /// `WKWebView` 上插入 Find Bar 子视图，和 SwiftUI representable 的布局冲突。
+    private func performFindIfNeeded(in webView: WKWebView, context: Context) {
+        context.coordinator.onFindResult = onFindResult
+        context.coordinator.performFind(findRequest, in: webView)
+    }
+
     /// 将 GitHub 的 HTML 片段包装为完整文档（带 GFM 主题 CSS）。
     static func assembleDocument(
         fragment: String,
@@ -436,6 +510,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         var lastScrollToTopRequestID = 0
         var onScrollReportChange: (RepoDetailScrollReport) -> Void = { _ in }
         var onTranslationSourceChange: (ReadmeTranslationSourceSnapshot) -> Void = { _ in }
+        var onFindResult: (Bool?) -> Void = { _ in }
         var openRepositoryMarkdownInApp = false
         var markdownLinkRepositoryOwner: String?
         var markdownLinkRepositoryName: String?
@@ -447,6 +522,37 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         private var translationReduceMotion = false
         private var mermaidDocumentRevision = 0
         private var mermaidRuntimeTask: Task<Void, Never>?
+        private var findTask: Task<Void, Never>?
+        private var lastFindGeneration: UInt64 = 0
+
+        /// 在 layout 之外的下一拍执行查找，避免和 SwiftUI `updateNSView` 抢同一轮视图更新。
+        func performFind(_ request: ReadmeFindRequest, in webView: WKWebView) {
+            guard request.generation != lastFindGeneration else { return }
+            lastFindGeneration = request.generation
+            guard request.generation > 0 else { return }
+            findTask?.cancel()
+            let query = request.query
+            let backwards = request.backwards
+            findTask = Task { @MainActor [weak self] in
+                guard let self, !Task.isCancelled else { return }
+                let configuration = WKFindConfiguration()
+                configuration.backwards = backwards
+                configuration.wraps = true
+                if query.isEmpty {
+                    _ = try? await webView.find("", configuration: configuration)
+                    self.onFindResult(nil)
+                    return
+                }
+                let result = try? await webView.find(query, configuration: configuration)
+                guard !Task.isCancelled, let result else { return }
+                self.onFindResult(result.matchFound)
+            }
+        }
+
+        func cancelFind() {
+            findTask?.cancel()
+            findTask = nil
+        }
 
         /// 上次已应用的 README 字号调整量。
         ///
@@ -1558,6 +1664,86 @@ private enum ReadmeTranslationDOM {
     """
 }
 
+private struct ReadmeFindBar: View {
+    @Binding var query: String
+    var hasMatch: Bool?
+    var isFindFieldFocused: FocusState<Bool>.Binding
+    let onNext: () -> Void
+    let onPrevious: () -> Void
+    let onClose: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("readme.find.placeholder", text: $query)
+                .textFieldStyle(.plain)
+                .focused(isFindFieldFocused)
+                .onSubmit(onNext)
+            if let hasMatch, !query.isEmpty, !hasMatch {
+                Text("readme.find.noMatch")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            findStepButton(
+                systemImage: "chevron.up",
+                helpKey: "readme.find.previous",
+                action: onPrevious
+            )
+            findStepButton(
+                systemImage: "chevron.down",
+                helpKey: "readme.find.next",
+                action: onNext
+            )
+            Button(action: onClose) {
+                Image(systemName: "xmark.circle.fill")
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.secondary)
+                    .font(.system(size: 14))
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("readme.find.close")
+            .accessibilityLabel(Text("readme.find.close"))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        // 不能顶满详情栏铺一条矩形：宿主顶部是圆角，材质会跟着切圆，底边却仍是直角。
+        // 四角同一套 continuous 圆角，并与字号浮窗留白对齐。
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.16), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.09), radius: 8, x: 0, y: 4)
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .onExitCommand(perform: onClose)
+        .onAppear {
+            isFindFieldFocused.wrappedValue = true
+        }
+    }
+
+    private func findStepButton(
+        systemImage: String,
+        helpKey: LocalizedStringKey,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(query.isEmpty ? Color.secondary.opacity(0.38) : Color.secondary)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .disabled(query.isEmpty)
+        .help(helpKey)
+        .accessibilityLabel(Text(helpKey))
+    }
+}
+
 private struct ReadmeFloatingToolbar: View {
     let fontSizeAdjustment: Int
     let isExpanded: Bool
@@ -1757,6 +1943,13 @@ private extension NSView {
         }
         return nil
     }
+}
+
+/// README 页内查找请求。generation 变化才真正执行，避免 SwiftUI 每帧重复 find。
+struct ReadmeFindRequest: Equatable {
+    var query = ""
+    var generation: UInt64 = 0
+    var backwards = false
 }
 
 /// 缓存键：HTML 片段 + 主题，用于 updateNSView 时判断是否需要重新 loadHTMLString。

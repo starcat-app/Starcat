@@ -72,11 +72,12 @@ struct SettingsView: View {
     /// 快捷键录制失败时只在 General 页就地提示，不修改已保存配置。
     @State private var shortcutValidationError: KeyboardShortcutConfiguration.ValidationError?
 
-    /// 五个可配置应用命令的设置页标识。
+    /// 六个可配置应用命令的设置页标识。
     /// 这里只负责冲突矩阵和“恢复默认”级联，不参与菜单动作路由。
     private enum ConfigurableShortcutAction: CaseIterable, Hashable {
         case globalSearch
         case regularSearch
+        case readmeFind
         case refreshCurrentContent
         case knowledgeRAG
         case selectedRepoAI
@@ -87,6 +88,8 @@ struct SettingsView: View {
                 return .globalSearchDefault
             case .regularSearch:
                 return .regularSearchDefault
+            case .readmeFind:
+                return StarcatShortcutCatalog.readmeFindDefault
             case .refreshCurrentContent:
                 return StarcatShortcutCatalog.refreshCurrentContentDefault
             case .knowledgeRAG:
@@ -295,9 +298,10 @@ struct SettingsView: View {
             //    + `.id(...)` 配合下整棵 view 树立刻重建，不需要重启 App。
             // 2. 默认 `system`：跟随系统设置，`Locale.autoupdatingCurrent` 让
             //    macOS Language & Region 改变时 Starcat 自动同步。
-            // 3. 18 种语言均显示“国旗 + 母语名称”，故意不跟随当前 UI locale
-            //    翻译，与 macOS Language & Region 列出语言时的惯例一致——哪怕
-            //    用户误切到看不懂的语言，也能从国旗和母语写法找回入口。
+            // 3. 跟随系统用 🌐、其余 18 种语言用“国旗 + 母语名称”。具体语言故意
+            //    不跟随当前 UI locale 翻译，与 macOS Language & Region 列出语言时
+            //    的惯例一致——哪怕用户误切到看不懂的语言，也能从国旗和母语写法
+            //    找回入口。
             // 4. 已知局限（与 DEBUG 菜单 picker 一致，写在 `LocaleStore.swift`
             //    顶部注释里）：`.environment(\.locale, _)` 只覆盖 SwiftUI 视图层
             //    `Text("key")` 等查表行为；macOS 顶部菜单栏 NSMenu 与部分
@@ -308,7 +312,7 @@ struct SettingsView: View {
             Section {
                 Picker(selection: $localeStore.selection) {
                     ForEach(AppLocale.allCases) { option in
-                        Text(option.displayName).tag(option)
+                        option.menuTitle.tag(option)
                     }
                 } label: {
                     Text("settings.general.language.label")
@@ -470,6 +474,19 @@ struct SettingsView: View {
                     helpKey: "settings.general.shortcuts.regularSearch.help",
                     onShortcutChanged: { shortcutValidationError = nil },
                     onRestoreDefault: { restoreShortcutDefault(.regularSearch) }
+                )
+                .disabled(!settings.keyboardShortcutsEnabled)
+
+                ConfigurableShortcutSettingRow(
+                    titleKey: "settings.general.shortcuts.readmeFind.title",
+                    shortcut: $settings.readmeFindShortcut,
+                    defaultShortcut: ConfigurableShortcutAction.readmeFind.defaultShortcut,
+                    isEnabled: $settings.readmeFindShortcutEnabled,
+                    onValidationError: { shortcutValidationError = $0 },
+                    conflictingShortcuts: conflictingShortcuts(excluding: .readmeFind),
+                    helpKey: "settings.general.shortcuts.readmeFind.help",
+                    onShortcutChanged: { shortcutValidationError = nil },
+                    onRestoreDefault: { restoreShortcutDefault(.readmeFind) }
                 )
                 .disabled(!settings.keyboardShortcutsEnabled)
 
@@ -731,7 +748,7 @@ struct SettingsView: View {
         }
     }
 
-    /// 返回除当前动作外的四个已保存键位。
+    /// 返回除当前动作外的五个已保存键位。
     /// 关闭状态仍参与冲突检查，确保重新开启时不会与其它命令竞争同一组合。
     private func conflictingShortcuts(
         excluding action: ConfigurableShortcutAction
@@ -744,7 +761,7 @@ struct SettingsView: View {
     /// 恢复默认值时递归释放被其它动作占用的默认组合。
     ///
     /// 例如 A 使用 B 的默认键、B 又使用 A 的默认键时，先把整条占用链恢复到各自默认，
-    /// 再落当前动作；`visited` 用于打断这种交换环，最终仍保持五项唯一。
+    /// 再落当前动作；`visited` 用于打断这种交换环，最终仍保持六项唯一。
     private func restoreShortcutDefault(_ action: ConfigurableShortcutAction) {
         var visited: Set<ConfigurableShortcutAction> = []
 
@@ -771,6 +788,8 @@ struct SettingsView: View {
             return settings.globalSearchShortcut
         case .regularSearch:
             return settings.regularSearchShortcut
+        case .readmeFind:
+            return settings.readmeFindShortcut
         case .refreshCurrentContent:
             return settings.refreshCurrentContentShortcut
         case .knowledgeRAG:
@@ -789,6 +808,8 @@ struct SettingsView: View {
             settings.globalSearchShortcut = shortcut
         case .regularSearch:
             settings.regularSearchShortcut = shortcut
+        case .readmeFind:
+            settings.readmeFindShortcut = shortcut
         case .refreshCurrentContent:
             settings.refreshCurrentContentShortcut = shortcut
         case .knowledgeRAG:

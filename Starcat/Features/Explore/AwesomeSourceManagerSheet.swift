@@ -53,7 +53,8 @@ struct AwesomeSourceManagerSheet: View {
             Divider()
             footer
         }
-        .frame(minWidth: 1_000, idealWidth: 1_100, minHeight: 600, idealHeight: 700)
+        // 卡片约 252pt；Sheet 保持能看见两行三列，不必为旧的 356pt 卡片加高。
+        .frame(minWidth: 1_000, idealWidth: 1_100, minHeight: 640, idealHeight: 740)
         .task {
             guard !initialized else { return }
             initialized = true
@@ -62,6 +63,11 @@ struct AwesomeSourceManagerSheet: View {
             // 挂载完成后恢复正常焦点能力，用户点击和键盘导航仍使用系统 Focus Ring。
             await Task.yield()
             acceptsInputFocus = true
+        }
+        // 进 Sheet 就预拉当前目录里全部 OG，不只是可见格子。URL 签名变了再拉一轮：
+        // 新来源或 UTC 小时键变了才会出现新 URL；Kingfisher 对已缓存的 URL 直接 skip。
+        .task(id: ogPrefetchSignature) {
+            await store.prefetchOpenGraphImages()
         }
         .confirmationDialog(
             confirmationTitle,
@@ -82,12 +88,18 @@ struct AwesomeSourceManagerSheet: View {
             HStack(spacing: 12) {
                 Image("AwesomeBrandLogo")
                     .resizable()
+                    .interpolation(.high)
                     .scaledToFit()
-                    .padding(4)
-                    .frame(width: 58, height: 44)
-                    .background(.background, in: RoundedRectangle(cornerRadius: 9))
+                    .padding(3)
+                    .frame(width: 32, height: 32)
+                    // 透明品牌图；圆角打在容器上。不要再用 `.background` 实心块，浅色会变回白方。
+                    .background(
+                        Color.primary.opacity(0.06),
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .overlay {
-                        RoundedRectangle(cornerRadius: 9)
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
                     }
                     .accessibilityHidden(true)
@@ -148,6 +160,7 @@ struct AwesomeSourceManagerSheet: View {
                         isSelected: enabledIDs.contains(source.id),
                         hasRefreshError: store.sourceRefreshErrors[source.id] != nil,
                         parseState: store.customSourceParseStates[source.id],
+                        ogRetryToken: store.ogPrefetchGeneration,
                         onToggle: { toggleSource(source) },
                         onRetry: source.kind == .custom
                             ? { store.retryCustomSourceParsing(sourceID: source.id) }
@@ -159,6 +172,13 @@ struct AwesomeSourceManagerSheet: View {
                 }
             }
         }
+    }
+
+    /// 用全部来源的 OG URL 当预拉签名，搜索过滤不能缩小预拉范围。
+    private var ogPrefetchSignature: String {
+        AwesomeSourceOpenGraph.imageURLs(for: store.sources)
+            .map(\.absoluteString)
+            .joined(separator: "\n")
     }
 
     private var filteredSources: [AwesomeSource] {

@@ -712,21 +712,23 @@ struct RepoListView: View {
         .hidden()
     }
 
-    /// 常规搜索（列表 toolbar SmartSearchField）快捷键。默认 Command+F，仅 Manage 页生效。
+    /// 常规搜索（列表 toolbar SmartSearchField）。默认 Shift+Command+F，仅 Manage 页启用。
+    private var isListRegularSearchEnabled: Bool {
+        selectedPage == .manage
+            && settings.keyboardShortcutsEnabled
+            && settings.regularSearchShortcutEnabled
+    }
+
     private var smartSearchShortcutButton: some View {
-        Button {
-            viewModel.smartSearchMode = .keyword
-            smartSearchExpandToken += 1
-        } label: {
-            EmptyView()
-        }
-        .keyboardShortcut(
-            settings.keyboardShortcutsEnabled && settings.regularSearchShortcutEnabled
-                ? settings.regularSearchShortcut.swiftUIShortcut
-                : nil
-        )
-        .disabled(selectedPage != .manage)
-        .hidden()
+        Color.clear
+            .frame(width: 0, height: 0)
+            .starcatListSearchCommand(
+                identity: "list-search-\(selectedPage.rawValue)-\(isListRegularSearchEnabled)",
+                isEnabled: isListRegularSearchEnabled
+            ) {
+                viewModel.smartSearchMode = .keyword
+                smartSearchExpandToken += 1
+            }
     }
 
     /// 中栏前景层：navigation / inset / toolbar / 列表内容（叠在 `DetailHeroTintBackground` 上）。

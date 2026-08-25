@@ -47,7 +47,10 @@ struct AgentRuntimeGuideNotice: View {
 
 /// CodeFlow 同款路径行：路径在左截断，操作按钮固定在右，避免长路径把按钮挤换行。
 ///
-/// `layoutPriority(-1)` 让路径先被压缩；按钮侧不设负优先级，保持「重置 / 选择 / Finder」完整可见。
+/// 关键约束：macOS 上 `.textSelection(.enabled)` 会按完整路径报告固有宽度，
+/// 点选后 `Text` 画出截断槽、盖住「选择 / Finder」。所以路径必须 `minWidth: 0`
+/// 才能被 HStack 压到剩余宽度，再 `.clipped()` 把选中态限制在自己的槽里；
+/// 按钮侧提高 `layoutPriority`，不被路径挤没。
 struct AgentRuntimePathRow<Actions: View>: View {
     var caption: LocalizedStringKey?
     let path: String
@@ -79,12 +82,12 @@ struct AgentRuntimePathRow<Actions: View>: View {
                     .truncationMode(.middle)
                     .textSelection(.enabled)
                     .help(path)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                    .clipped()
                     .layoutPriority(-1)
 
-                Spacer(minLength: 0)
-
                 actions
+                    .layoutPriority(1)
             }
         }
     }
@@ -146,10 +149,10 @@ extension AgentRuntimePathTrailingActions where Reset == EmptyView {
     }
 }
 
-/// 标题行右侧的轻量状态。就绪只保留短标签；失败细节放到路径行下方，避免再占一整句。
+/// 标题行右侧的轻量状态。就绪只保留短标签「就绪」；失败细节放到路径行下方，
+/// 避免再占一整句，也不要用产品名（Codex App Server 等）替换就绪文案。
 struct AgentRuntimeStatusChip: View {
     let status: AgentRuntimeSettingsStatus
-    var readyDetail: String?
 
     var body: some View {
         switch status {
@@ -157,7 +160,7 @@ struct AgentRuntimeStatusChip: View {
             EmptyView()
         case .ready:
             Label {
-                Text(verbatim: readyDetail ?? String.l10n("settings.integration.agentRuntime.status.ready"))
+                Text("settings.integration.agentRuntime.status.ready")
             } icon: {
                 Image(systemName: "checkmark.circle.fill")
             }

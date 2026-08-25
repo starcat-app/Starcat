@@ -180,6 +180,8 @@ final class ReadmeWindowController: NSWindowController, NSWindowDelegate {
         .environment(\.starcatInterfaceScale, settings.interfaceScale)
         .dynamicTypeSize(settings.interfaceScale.dynamicTypeSize)
         .environment(settings)
+        // README 页内查找要登记到进程内共享路由；漏掉会在 @Environment 读取时断言崩溃。
+        .starcatCommandRouterEnvironment()
 
         let hostingController = NSHostingController(rootView: content)
         window.contentViewController = hostingController

@@ -500,6 +500,8 @@ private struct StarcatAppCommands: Commands {
     let settings: AppSettings
     @FocusedValue(\.starcatRefreshAction) private var focusedRefreshAction
     @FocusedValue(\.starcatRepositoryAIAction) private var focusedRepositoryAIAction
+    @FocusedValue(\.starcatReadmeFindAction) private var focusedReadmeFindAction
+    @FocusedValue(\.starcatListSearchAction) private var focusedListSearchAction
 
     var body: some Commands {
         CommandMenu("commands.actions.menu") {
@@ -512,6 +514,21 @@ private struct StarcatAppCommands: Commands {
                     : nil
             )
             .disabled(!commandRouter.canOpenGlobalSearch)
+
+            Button("commands.actions.findInList") {
+                commandRouter.performListSearch(preferred: focusedListSearchAction)
+            }
+            .keyboardShortcut(
+                settings.keyboardShortcutsEnabled && settings.regularSearchShortcutEnabled
+                    ? settings.regularSearchShortcut.swiftUIShortcut
+                    : nil
+            )
+            .disabled(!commandRouter.isListSearchAvailable(preferred: focusedListSearchAction))
+
+            Button("commands.actions.findInReadme") {
+                commandRouter.performReadmeFind(preferred: focusedReadmeFindAction)
+            }
+            .disabled(!commandRouter.isReadmeFindAvailable(preferred: focusedReadmeFindAction))
 
             Button("commands.actions.openKnowledgeRAGWorkspace") {
                 commandRouter.openKnowledgeRAGWorkspace()
@@ -581,6 +598,19 @@ private struct StarcatAppCommands: Commands {
             Button("diagnostics.export.button") {
                 exportDiagnostics()
             }
+        }
+
+        // 替换系统 Edit > Find，避免 ⌘F 被默认文本查找吃掉，而 README WebView 收不到。
+        CommandGroup(replacing: .textEditing) {
+            Button("commands.actions.findInReadme") {
+                commandRouter.performReadmeFind(preferred: focusedReadmeFindAction)
+            }
+            .keyboardShortcut(
+                settings.keyboardShortcutsEnabled && settings.readmeFindShortcutEnabled
+                    ? settings.readmeFindShortcut.swiftUIShortcut
+                    : nil
+            )
+            .disabled(!commandRouter.isReadmeFindAvailable(preferred: focusedReadmeFindAction))
         }
 
         CommandGroup(replacing: .help) {
