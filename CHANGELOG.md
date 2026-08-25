@@ -8,6 +8,7 @@ Starcat 1.5.0 continues the Activity inbox so you can handle Issue / PR status, 
 
 ### New
 
+- README in-page search: Press Command-F in a README to open the find bar and step through matches. List search defaults to Shift-Command-F, and both shortcuts can be changed in Settings.
 - Public Star contribution: An optional, off-by-default privacy setting can anonymously contribute public repository IDs and available Star dates to improve recommendations; uploads stay silent and never block normal sync.
 - In-app repository documents: Enable in Settings to open same-repo Markdown links in a Starcat window; the default remains the browser, and Command-click always uses the browser.
 - README video playback: Play supported GitHub README videos inline with native controls; playback requires an explicit action and stops when switching repositories or closing the detail view. Unsupported sources continue to open in the browser.
@@ -23,6 +24,7 @@ Starcat 1.5.0 continues the Activity inbox so you can handle Issue / PR status, 
 
 ### Improvements
 
+- Shortcut recorder: Modifier keys and the letter appear as separate keycaps so combinations are easier to read.
 - Timeline empty detail: An illustration prompts you to pick an event in the middle column.
 - Issue event cache: Reopening an Issue after quitting still reads comments and events locally first. Clear it in Settings → Storage.
 - Issue comment drafts: Unsent handwritten or AI replies stay with each thread after you switch Issues or quit. Clear them in Settings → Storage.
