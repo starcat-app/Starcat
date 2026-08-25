@@ -5,6 +5,7 @@
 > 版本: v1.1
 > 范围: `starcat-collection-api` + `starcat-recsys-trainer` + `starcat-recommend-api` + Starcat Direct
 > 当前客户端数据契约: [Starcat 公开 Star 数据静默上报与 Collection 服务详细设计](63-Starcat公开Star数据静默上报与Collection服务详细设计.md)
+> 本地数据与发布契约: [Starcat 本地数据湖与云端 Serving 同步详细设计](66-Starcat本地数据湖与云端Serving同步详细设计.md)
 > 调研基线: `Puzer/github-repo-embeddings` commit `f6a2f836b63f1065b2a2efdee21e8485449923bc`；`Mubelotix/simrepo` commit `07c6ef1dcfe2fd96cc050ef91529b7f180a55288`
 
 ## 1. 结论
@@ -138,14 +139,16 @@ snapshot_id      string nullable
 - 仓库转移/重命名始终保持 repo ID；删除或改为私有后从下次发布产物移除。
 - `source_weight` 是数据可信度和采样修正，不是最终推荐固定权重。
 
-### 5.3 数据湖与 OLTP
+### 5.3 本地数据湖与 OLTP
 
-原始训练数据采用按日期/source 分区的 Parquet，放对象存储；不要把数亿 user-repo 边塞进在线 Postgres。Postgres 只保存：
+BigQuery 和 Collection 原始训练数据采用按日期/source/schema 分区的 Parquet，只保存在本地唯一 Raw Dataset。History 和 Trainer 通过 Artifact URI 只读复用同一份 WatchEvent，不把原始文件复制到各自仓库或云端。不要把数亿 user-repo 边塞进在线 Postgres；本地 PostgreSQL 只保存：
 
 - ingest job、watermark、数据质量报告；
 - model run、参数、指标、artifact URI；
 - deployment、active version、回滚记录；
 - repo metadata 和小规模控制表。
+
+DuckDB 直接读取 Raw/Silver Parquet 完成清洗、时间切分和训练数据构建。目录、partition manifest、checksum、水位线、容量和多机 Worker Lease 统一遵循 66 文档；云端 Recommend API 永远不能访问 Raw/Silver 或本地 Catalog。
 
 ## 6. 数据清洗和样本构造
 
@@ -372,9 +375,11 @@ model_deployments(
 
 Trainer 先安装并验证本地不可变 Bundle，再通过 `Publisher` 接口把压缩 Bundle 上传到 `starcat-recommend-api` 内部发布端点。Recommend API 校验 manifest、文件 checksum、SQLite `quick_check` 和必需表后，原子切换 active 指针。每个 v2 响应返回 `model_version`；回滚只切换 active version，不改变客户端协议。
 
+本地 Dataset 可以每日增量，推荐模型不要求随每个输入分区立刻重训。训练由固定周期或新增有效互动量阈值触发；发布失败保留本地不可变 Bundle，不能回退为重新查询 BigQuery 或覆盖已有 model version。
+
 ## 10. Serving 数据设计
 
-小中规模第一版可用 Postgres + pgvector；大规模预计算边建议对象存储构建后批量导入专用 KV/SQLite 分片或 ClickHouse。具体实现以压测决定，不提前绑定 Qdrant。
+当前已实现的小中规模第一版继续使用单文件 `recommendations.sqlite` ServingBundle，不改为在线 Postgres，也不提前绑定 Qdrant、ClickHouse 或其它分布式存储。
 
 逻辑表：
 
@@ -386,6 +391,8 @@ repo_recommendations(model_version, repo_id, rank, target_repo_id, score, signal
 ```
 
 高流量单仓查询优先读预计算 `repo_recommendations`；多仓和过滤请求使用向量/边在线合并。发布新版本先写新 namespace，再原子切换，旧版本保留至少一个回滚窗口。
+
+当完整 Bundle 的生成、上传、安装或回滚时间超过 SLO 后，按 `source_repo_id % 256` 拆为只读 SQLite shard。新 model manifest 描述完整 shard 集合，并通过内容 checksum 复用未变化 shard、只上传变化文件；所有 shard 验证完成后才能原子切换 active manifest。该优化只减少传输量，禁止把不同模型版本的行直接混写。
 
 ## 11. `starcat-recommend-api` 在线契约
 
@@ -469,6 +476,8 @@ Content-Type: application/zip
 ```
 
 压缩包只允许包含 `recommendations.sqlite`、`manifest.json` 和 `checksums.json`。服务端拒绝路径穿越、额外文件、版本不一致、checksum 错误、SQLite 损坏和缺少必需表；安装目录不可变，激活指针通过临时文件加原子重命名更新。该端点与客户端 `API_KEYS` 完全隔离，不对第三方开放。
+
+分片 ServingBundle 属于达到真实规模门槛后的协议扩展，仍使用独立 Publish Key、staging 校验和完整 model manifest 原子激活；首期不为尚未出现的体积问题改写当前单文件发布契约。
 
 ### 11.4 错误和缓存
 
@@ -560,7 +569,8 @@ Content-Type: application/zip
 | 单仓预计算查询 P95 | < 150 ms（不含公网） |
 | 多仓在线融合 P95 | < 500 ms |
 | 可用性 | 99.9% 月度 |
-| 推荐新版本发布 | 至少每周，数据规模允许后每日增量 |
+| 推荐输入处理 | 每日增量推进 Dataset watermark |
+| 推荐新版本发布 | 初期至少每周；数据、耗时和质量门禁稳定后可每日发布完整模型版本 |
 | 回滚 | 10 分钟内切回上一 active version |
 | 训练可复现 | 相同 manifest/seed 产物 checksum 可追踪 |
 
@@ -609,6 +619,8 @@ Content-Type: application/zip
 5. BigQuery 用于 bootstrap：WatchEvent 提供关系、PushEvent 提供批量基础目录；GitHub API 只补 Top N 权威 metadata，Starcat opt-in 数据用于持续更新和质量增强。
 6. 现有 Recommend API 是长期统一入口；v1 保持 SimRepo 契约，v2 新增自研契约，最终只删除 SimRepo Provider。
 7. `starcat-recsys-api` 职责与 Recommend API 重复，明确取消，不创建该项目。
+8. BigQuery Raw 只保存在本地唯一数据湖；云端仅接收不含主体身份的推荐 ServingBundle。
+9. Recommend 首期保持单文件 Bundle，达到实际 SLO 门槛后再做内容寻址分片；增量传输不得破坏 model version 一致性。
 
 ## 18. 参考资料
 

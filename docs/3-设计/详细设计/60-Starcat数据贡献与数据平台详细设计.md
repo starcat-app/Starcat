@@ -1,12 +1,12 @@
 # Starcat 数据贡献与数据平台详细设计
 
 > 日期: 2026-08-22
-> 状态: 方案已确认，待后端具备接收、查询和删除能力后实施
+> 状态: 历史总体方案；推荐贡献实施以 63 为准，History 实施以 62/66 为准
 > 版本: v1.0
 > 范围: Starcat macOS 客户端数据贡献 + 推荐训练入口 + Star History 观测入口
 > 下游设计: [Starcat 自研仓库推荐系统详细设计](61-Starcat自研仓库推荐系统详细设计.md) / [Starcat 自研星标历史服务详细设计](62-Starcat自研星标历史服务详细设计.md)
 
-> 2026-08-23 实施说明: 第一阶段公开 Star 快照上报已经按产品决定收口为独立、静默、无删除的 `starcat-collection-api` 链路，权威实施契约见 [63-Starcat 公开 Star 数据静默上报与 Collection 服务详细设计](63-Starcat公开Star数据静默上报与Collection服务详细设计.md)。本文保留两类数据贡献和 History 的后续总体规划；与 63 冲突的推荐贡献、删除、状态展示和 Gateway 描述不进入第一阶段代码。
+> 2026-08-26 实施修订: 公开 Star 快照上报已经收口为独立、静默、无删除的 `starcat-collection-api` 链路，权威实施契约见 [63-Starcat 公开 Star 数据静默上报与 Collection 服务详细设计](63-Starcat公开Star数据静默上报与Collection服务详细设计.md)。History 不再建设用户贡献、群体快照、状态或删除链路，改为复用本地唯一 WatchEvent Raw 并发布派生 Delta/Snapshot，权威契约见 [62-Starcat 自研星标历史服务详细设计](62-Starcat自研星标历史服务详细设计.md) 和 [66-Starcat 本地数据湖与云端 Serving 同步详细设计](66-Starcat本地数据湖与云端Serving同步详细设计.md)。本文第 7 节及与两个 Toggle、History 观测、删除重算相关内容只保留为历史设计背景，不得用于新实现。
 
 ## 1. 结论
 

@@ -1,17 +1,19 @@
 # Starcat 推荐、数据贡献与 Star History 文档导航
 
-> 日期: 2026-08-23
+> 日期: 2026-08-26
 > 状态: 当前需求统一入口
-> 适用范围: Starcat macOS 客户端、推荐训练服务、推荐查询服务、Star History 服务
+> 适用范围: Starcat macOS 客户端、本地数据平台、推荐训练服务、推荐查询服务、Star History 服务
 > 用途: 为后续开发者和 AI Agent 提供文档优先级、阅读顺序、代码入口与实施边界
 
 ## 1. 当前结论
 
 这组需求包含三条关联但职责独立的链路：
 
-1. **Starcat 数据贡献当前阶段**：用户主动开启后，客户端以完全静默的旁路任务向独立 `starcat-collection-api` 贡献匿名公开 Star 全量快照；History 观测暂不实施。
+1. **Starcat 数据贡献当前阶段**：用户主动开启后，客户端以完全静默的旁路任务向独立 `starcat-collection-api` 贡献匿名公开 Star 全量快照；不建设 History 用户观测贡献。
 2. **自研仓库推荐**：训练服务基于 Starcat opt-in 数据、GH Archive 和公开 repo metadata 生成推荐产物，在线 API 只读 Serving DB。
-3. **自研 Star History**：独立服务聚合公开 repo 日级快照，并使用 GH Archive 补充估算历史。
+3. **自研 Star History**：独立服务读取本地 WatchEvent 日级聚合，按不处理 Unstar 的固定口径提供公共估算历史；当前不增加 History 用户贡献。
+
+三条业务链路共用一套本地数据基础设施：BigQuery Raw 只在本地保存一份，History 和 Trainer 通过 Artifact URI 只读复用；云端只接收派生 History DB 和 Recommendation ServingBundle。
 
 当前线上推荐由 `starcat-recommend-api` 的 `/api/v1` 中转已获作者授权的 SimRepo 接口；该服务同时是长期统一推荐入口，已新增 `/api/v2` 读取自研 ServingBundle。当前普通公开仓库 Star History 仍由 `starcat-discovery-api` 提供。
 
@@ -23,7 +25,8 @@
 supports/starcat-collection-api  独立接收公开 Star 快照并向 Trainer 提供内部导出
 supports/starcat-recsys-trainer  Pull 数据、构建数据集、训练、评估、模型发布
 supports/starcat-recommend-api    /api/v1 代理 SimRepo；/api/v2 只读自研 ServingBundle
-supports/starcat-history-api      Star 数观测接收、聚合、历史构建和公共查询
+supports/starcat-history-api      接收本地 History Delta/Snapshot 并提供公共查询
+本地数据平台                     唯一保存 BigQuery Raw，负责 Catalog、分析和派生产物发布
 ```
 
 不再创建 `starcat-recsys-api`。自研服务达到质量、稳定性和迁移门槛后，只删除 `starcat-recommend-api` 内的 SimRepo Provider 及对应密钥；统一 Recommend 服务继续保留。History 仍按独立方案迁移 Discovery 路径。
@@ -43,13 +46,14 @@ flowchart TB
     subgraph Target[目标架构]
         H[Starcat opt-in 公开 Star 数据] --> C1[starcat-collection-api]
         C1 --> I[starcat-recsys-trainer Pull]
-        J[GH Archive + GitHub 公开 metadata] --> I
+        J[本地唯一 GH Archive Raw] --> I
         I --> K[(ServingBundle Registry)]
         K --> L[starcat-recommend-api /api/v2]
         L --> A
 
-        H2[未来独立 History opt-in] --> M[starcat-history-api]
-        J --> M
+        J --> HB[本地 History Builder]
+        HB --> HD[History Delta / Snapshot]
+        HD --> M[starcat-history-api]
         M --> N[(History Serving DB)]
         N --> D
     end
@@ -58,18 +62,18 @@ flowchart TB
 说明：
 
 - 当前推荐链路已落地，SimRepo 作者授权已经取得。
-- Discovery Star History 路径当前客户端已经使用，生产 GH Archive Provider 仍受真实数据和预算验证门禁。
+- Discovery Star History 路径当前客户端已经使用；目标改为本地批量处理 GH Archive，再把派生 DB 发布到独立 History 服务。
 - `starcat-collection-api`、静默贡献开关和 Collection Pull Connector 已进入第一阶段实施，尚未生产部署。
-- 第一阶段不实现 History、贡献状态展示和服务端删除；Collection 失败必须与 Starcat 主功能完全隔离。
+- 当前不实现 History 用户贡献、贡献状态展示和服务端删除；Collection 失败必须与 Starcat 主功能完全隔离。
 
 ## 3. 文档优先级
 
 后续开发出现文档冲突时，按以下顺序判断：
 
 1. **已发布事实和项目硬性规范**：`AGENTS.md`、开发前问题清单、当前代码、数据库 migration。
-2. **2026-08-22 权威详细设计**：60、61、62。
+2. **当前权威详细设计**：61、62、63、66。
 3. **当前实现基线**：相似仓库推荐正式方案、50-Star History 整体方案。
-4. **本目录调研与早期草案**：16～21，用于理解背景和备选方案，不能覆盖新设计。
+4. **历史总体方案、调研与早期草案**：60、16～21，用于理解背景和备选方案，不能覆盖新设计。
 5. **功能实现总览**：只用于确认项目进度；没有 dong4j 单独授权时禁止修改。
 
 权威性不是“编号越大越正确”。例如 50 记录当前 Discovery 实现事实，62 记录未来迁移目标，两者分别回答“现在是什么”和“后面怎么改”，不能互相替代。
@@ -99,10 +103,11 @@ flowchart TB
 |---|---|---|
 | [相似仓库推荐实施方案](../正式方案/相似仓库推荐实施方案.md) | 记录当前客户端与 `starcat-recommend-api` 已落地契约 | 当前推荐实现、SimRepo 适配和客户端兼容边界 |
 | [50-仓库星标历史整体落地方案](../../../3-设计/详细设计/50-仓库星标历史整体落地方案.md) | 记录本地快照、Discovery API、UI 和 v16 已实现事实 | 当前 Star History 行为和现有验收边界 |
-| [60-Starcat 数据贡献与数据平台详细设计](../../../3-设计/详细设计/60-Starcat数据贡献与数据平台详细设计.md) | 定义两个 opt-in、DTO、匿名身份、outbox、幂等、删除和隐私 | 客户端贡献与后端 ingest 契约 |
+| [60-Starcat 数据贡献与数据平台详细设计](../../../3-设计/详细设计/60-Starcat数据贡献与数据平台详细设计.md) | 保留推荐与 History 两类贡献的历史总体设计 | 理解早期隐私和备选 DTO；新实现不得覆盖 62/63/66 |
 | [61-Starcat 自研仓库推荐系统详细设计](../../../3-设计/详细设计/61-Starcat自研仓库推荐系统详细设计.md) | 定义数据源、算法、Trainer、Serving DB、API、评估和迁移 | 自研推荐实现的单一权威方案 |
-| [62-Starcat 自研星标历史服务详细设计](../../../3-设计/详细设计/62-Starcat自研星标历史服务详细设计.md) | 定义群体快照、GH Archive 估算、History API、删除重算和 Discovery 迁移 | 自研 Star History 的单一权威方案 |
+| [62-Starcat 自研星标历史服务详细设计](../../../3-设计/详细设计/62-Starcat自研星标历史服务详细设计.md) | 定义本地 WatchEvent 聚合、单锚点估算、Delta/Snapshot、History API 和 Discovery 迁移 | 自研 Star History 的单一权威方案 |
 | [63-Starcat 公开 Star 数据静默上报与 Collection 服务详细设计](../../../3-设计/详细设计/63-Starcat公开Star数据静默上报与Collection服务详细设计.md) | 定义当前单 Toggle、静默旁路、独立 Collection API、分块上传和 Trainer Pull | 第一阶段公开 Star 数据链路的单一权威实施契约 |
+| [66-Starcat 本地数据湖与云端 Serving 同步详细设计](../../../3-设计/详细设计/66-Starcat本地数据湖与云端Serving同步详细设计.md) | 定义 BigQuery 本地唯一 Raw、Catalog、History 日增量、Recommend 分片和云端发布 | 数据存储、分析、增长与同步的单一权威方案 |
 | [57-Agent 工作台与统一能力层详细设计](../../../3-设计/详细设计/57-Agent工作台与统一能力层详细设计.md) | 定义当前 Agent Run Surface 和统一能力边界 | 推荐结果进入 Agent 工作台时的 UI/Runtime 约束 |
 | [开发前问题清单](../../../1-立项/开发前问题清单.md) | 记录 5.18 决策及隐私、服务和迁移边界 | 架构决策基线 |
 | [功能实现总览](../../../功能实现总览.md) | 活文档主进度索引 | 只读核对；修改需要 dong4j 单独授权 |
@@ -221,6 +226,7 @@ Mubelotix/simrepo
 
 ```text
 61-自研仓库推荐系统
+    → 66-本地数据湖与云端 Serving 同步
     → 60-推荐快照 DTO 与删除边界
     → 19-内容与行为训练基础
     → Puzer / SimRepo 固定 commit
@@ -247,7 +253,7 @@ Mubelotix/simrepo
 ```text
 50-当前实现事实
     → 62-目标 History 服务
-    → 60-History 观测 DTO 与删除
+    → 66-本地数据湖、History Delta 与 Snapshot
     → 当前 StarHistoryAPI / Repository / Discovery handler/store
 ```
 
@@ -269,17 +275,18 @@ Agent 只能消费推荐结果和公开 metadata，不能获得匿名参与者�
 
 ### 9.1 数据与隐私
 
-- 两个贡献 Toggle 默认关闭，且与匿名遥测完全独立。
-- 只上传公开 repo ID、可空 `starred_at` 和日级 `stars_count`。
+- 当前只有推荐贡献 Toggle，默认关闭，且与匿名遥测完全独立；不增加 History 贡献 Toggle。
+- Collection 只接收公开 repo ID 和可空 `starred_at`；History 不上传本机日级 `stars_count`。
 - 不上传 GitHub user ID/login、Token、Private/Internal repo、标签、笔记、搜索、点击、README、代码、AI/RAG 内容。
-- 关闭 Toggle 只停止新贡献；删除历史贡献必须走独立删除流程。
-- 后端删除能力、删除重算和状态查询必须先于客户端开关上线。
+- 关闭 Toggle 停止未来推荐贡献并清理本地待发送任务；当前不实现服务端删除、状态查询或 History 删除重算。
 
 ### 9.2 架构
 
 - 推荐 Trainer、统一 Recommend API、Star History 是三个独立职责。
 - Recommend API 只承接在线 Serving，不能接收原始贡献数据或执行训练；History 不能重新塞进 Discovery。
 - 在线推荐 API 不读取匿名原始数据；History 查询 API 不读取参与者身份。
+- BigQuery Raw 只保存在本地唯一数据湖；History 和 Trainer 只读复用，不向云端或业务仓库复制。
+- History 使用日级 Delta 和月度 Snapshot；Recommend 使用完整 model manifest 原子激活，不能把不同模型版本增量混写。
 - SimRepo 和 Discovery 是迁移期 Provider，最终删除对应 Provider，禁止永久双写/双读。
 - 算法结果必须带 model version、source/signal 和可解释降级状态。
 
@@ -302,14 +309,13 @@ Agent 只能消费推荐结果和公开 metadata，不能获得匿名参与者�
 ## 10. 推荐实施顺序
 
 ```text
-1. 冻结并实现后端贡献注册 / ingest / status / delete
-2. Starcat 实现本地 payload builder、隐私过滤、预览和 outbox
-3. 用 GH Archive bootstrap，同时灰度积累 Starcat opt-in 数据
-4. 实现 co-star / Metric Learning / content / SVD baseline 与离线评估
-5. 在 starcat-recommend-api 发布 `/api/v2`，shadow 对比 `/api/v1` SimRepo 后逐级灰度
-6. 发布 starcat-history-api，回填并 shadow 对比 Discovery
-7. 完成客户端 endpoint 切换和人工验收
-8. 删除 SimRepo Provider 和 Discovery History 路径，保留统一 Recommend 服务
+1. 保持已完成的 Collection、Trainer、Recommend v2 和 Starcat Direct 链路稳定
+2. 登记本地唯一 WatchEvent Raw，建立 Catalog、watermark、checksum 和容量统计
+3. 构建 History 日级 Silver、Delta、月 Snapshot 和独立 History API
+4. 回填并 shadow 对比 Discovery，完成客户端 endpoint 切换和人工验收
+5. 用本地增量 Dataset 完成 co-star / Metric Learning / content / SVD 评估和版本化发布
+6. 真实 Bundle 达到 SLO 门槛后再实施内容寻址分片
+7. 自研质量达标后删除 SimRepo Provider 和 Discovery History 路径，保留统一 Recommend 服务
 ```
 
 任何阶段都不能通过长期兼容层掩盖未完成迁移。回滚窗口可以保留上一版本产物和短期只读路径，但收口阶段必须删除废弃代码、密钥、表和配置。
@@ -320,7 +326,7 @@ Agent 只能消费推荐结果和公开 metadata，不能获得匿名参与者�
 
 ```text
 [ ] 本次任务属于当前实现维护，还是目标架构建设？
-[ ] 已读取对应的 50 / 60 / 61 / 62 权威文档？
+[ ] 已读取对应的 50 / 60 / 61 / 62 / 63 / 66 权威文档？
 [ ] 是否会接触 Private/Internal、真实 GitHub 身份或本地用户数据？
 [ ] 后端删除和回滚路径是否已经存在？
 [ ] 是否需要追加数据库 migration？
