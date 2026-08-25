@@ -58,6 +58,7 @@
 | 61 | [Starcat 自研仓库推荐系统详细设计](61-Starcat自研仓库推荐系统详细设计.md) | 独立 Trainer/API、时间衰减 co-star、Metric Learning、内容冷启动、动态融合、评估与 SimRepo 迁移 |
 | 62 | [Starcat 自研星标历史服务详细设计](62-Starcat自研星标历史服务详细设计.md) | 独立 History 服务、群体快照聚合、GH Archive 估算、查询契约、删除重算与 Discovery 迁移 |
 | 64 | [ACP 协议接入评估与暂缓方案](64-ACP协议接入评估与暂缓方案.md) | ACP 协议边界、RAG / Agent 双路径候选架构、现有适配器不迁移决策与重新评估门禁 |
+| 65 | [Agent Runtime、RAG 与 AI 服务统一路由方案](65-AgentRuntime与AI服务统一路由方案.md) | Agent / RAG 共享路由、AI 服务 / CLI / Harness / MCP、标准与 Agentic RAG，以及 16 项开发任务与交付门禁 |
 
 ---
 
@@ -95,6 +96,7 @@
 
 | 日期 | 更新内容 |
 |------|---------|
+| 2026-08-25 | 新增 65 文档：统一 Agent / RAG 执行路由，规划 AI 服务、CLI、Harness、MCP、Agentic RAG 与安全桥接 |
 | 2026-08-23 | 新增 64 文档：冻结 ACP 候选架构，明确当前暂缓接入、现有路径不迁移和重新评估门禁 |
 | 2026-08-22 | 新增 60 / 61 / 62 文档：冻结匿名数据贡献、自研混合推荐、独立 Star History 服务及迁移落地契约 |
 | 2026-08-22 | DeepSeek Harness POC 升级到外部安装的 `0.1.1rc1` wheel，明确不进入 App / DMG，并补充首次配置说明 |
