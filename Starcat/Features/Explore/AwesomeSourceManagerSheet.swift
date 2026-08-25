@@ -147,7 +147,11 @@ struct AwesomeSourceManagerSheet: View {
                         source: source,
                         isSelected: enabledIDs.contains(source.id),
                         hasRefreshError: store.sourceRefreshErrors[source.id] != nil,
+                        parseState: store.customSourceParseStates[source.id],
                         onToggle: { toggleSource(source) },
+                        onRetry: source.kind == .custom
+                            ? { store.retryCustomSourceParsing(sourceID: source.id) }
+                            : nil,
                         onDelete: source.kind == .custom
                             ? { pendingConfirmation = .delete(source) }
                             : nil
@@ -257,9 +261,8 @@ struct AwesomeSourceManagerSheet: View {
         Task {
             defer { isAddingCustomSource = false }
             do {
-                let preview = try await store.previewCustomSource(input: value)
-                try await store.addCustomSource(preview)
-                enabledIDs.insert(preview.source.id)
+                let source = try await store.addCustomSource(input: value)
+                enabledIDs.insert(source.id)
                 customSourceInput = ""
             } catch {
                 customSourceError = error.localizedDescription

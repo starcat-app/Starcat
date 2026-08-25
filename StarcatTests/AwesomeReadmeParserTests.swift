@@ -57,7 +57,7 @@ struct AwesomeReadmeParserTests {
         let service = AwesomeCustomSourceService(github: github, repository: repository)
 
         await #expect(throws: AwesomeCustomSourceError.sourceMustBePublic) {
-            try await service.preview(input: "owner/private-list")
+            try await service.create(input: "owner/private-list")
         }
         #expect(await repository.savedSource() == nil)
     }
@@ -114,8 +114,8 @@ struct AwesomeReadmeParserTests {
         #expect(await repository.customSourceParseStates().first?.phase == .completed)
     }
 
-    @Test("自定义来源解析完成后一次性保存并跳过失效 Repo")
-    func customSourceSavesVerifiedSnapshot() async throws {
+    @Test("自定义来源后台解析跳过失效 Repo 并保留完整元数据")
+    func customSourceSkipsMissingRepository() async throws {
         let github = FakeAwesomeGitHub()
         await github.setRepo(Self.repo(id: 1, fullName: "owner/awesome-list"))
         await github.setRepo(Self.repo(id: 2, fullName: "acme/valid"))
@@ -131,14 +131,12 @@ struct AwesomeReadmeParserTests {
         let repository = FakeAwesomeRepository()
         let service = AwesomeCustomSourceService(github: github, repository: repository)
 
-        let preview = try await service.preview(input: "https://github.com/owner/awesome-list")
+        let creation = try await service.create(input: "https://github.com/owner/awesome-list")
+        try await service.parse(
+            source: creation.source,
+            defaultBranch: creation.defaultBranch
+        ) { _ in }
 
-        #expect(preview.source.id == "custom:owner/awesome-list")
-        #expect(preview.source.githubRepoCount == 1)
-        #expect(preview.source.isEnabled)
-        #expect(await repository.savedSource() == nil)
-
-        try await service.save(preview)
         let saved = await repository.savedSource()
         #expect(saved?.entries.map(\.fullName) == ["acme/valid"])
         #expect(saved?.entries.first?.forks == 1)
@@ -154,12 +152,12 @@ struct AwesomeReadmeParserTests {
         let service = AwesomeCustomSourceService(github: github, repository: repository)
 
         await #expect(throws: AwesomeCustomSourceError.duplicateSource) {
-            try await service.preview(input: "https://github.com/OWNER/AWESOME-LIST")
+            try await service.create(input: "https://github.com/OWNER/AWESOME-LIST")
         }
     }
 
-    @Test("自定义来源没有有效 GitHub Repo 时不保存")
-    func customSourceRequiresAtLeastOneValidRepository() async throws {
+    @Test("自定义来源没有有效 GitHub Repo 时保留卡片并标记失败")
+    func customSourceWithoutValidRepositoryRetainsFailedCard() async throws {
         let github = FakeAwesomeGitHub()
         await github.setRepo(Self.repo(id: 1, fullName: "owner/awesome-list"))
         await github.setReadme(
@@ -169,10 +167,47 @@ struct AwesomeReadmeParserTests {
         let repository = FakeAwesomeRepository()
         let service = AwesomeCustomSourceService(github: github, repository: repository)
 
+        let creation = try await service.create(input: "owner/awesome-list")
         await #expect(throws: AwesomeCustomSourceError.noValidRepositories) {
-            try await service.preview(input: "owner/awesome-list")
+            try await service.parse(
+                source: creation.source,
+                defaultBranch: creation.defaultBranch
+            ) { _ in }
         }
-        #expect(await repository.savedSource() == nil)
+        #expect(await repository.savedSource()?.source.id == creation.source.id)
+        #expect(await repository.customSourceParseStates().first?.phase == .failed)
+    }
+
+    @Test("自定义来源中途失败保留已解析批次和进度")
+    func customSourceFailureRetainsCommittedBatch() async throws {
+        let github = FakeAwesomeGitHub()
+        await github.setRepo(Self.repo(id: 1, fullName: "owner/awesome-list"))
+        for index in 1 ... 20 {
+            await github.setRepo(Self.repo(id: Int64(index + 1), fullName: "acme/repo-\(index)"))
+        }
+        await github.markFailing("acme/repo-21")
+        await github.setReadme(
+            "owner/awesome-list",
+            markdown: (1 ... 21)
+                .map { "- [Repo \($0)](https://github.com/acme/repo-\($0))" }
+                .joined(separator: "\n")
+        )
+        let repository = FakeAwesomeRepository()
+        let service = AwesomeCustomSourceService(github: github, repository: repository)
+        let creation = try await service.create(input: "owner/awesome-list")
+
+        await #expect(throws: FakeAwesomeGitHubError.rateLimited) {
+            try await service.parse(
+                source: creation.source,
+                defaultBranch: creation.defaultBranch
+            ) { _ in }
+        }
+
+        #expect(await repository.savedSource()?.entries.count == 20)
+        let failed = await repository.customSourceParseStates().first
+        #expect(failed?.phase == .failed)
+        #expect(failed?.processedCount == 20)
+        #expect(failed?.totalCount == 21)
     }
 
     private static func repo(
@@ -253,15 +288,18 @@ private actor FakeAwesomeGitHub: AwesomeGitHubClientProtocol {
     private var repos: [String: GitHubRepoDTO] = [:]
     private var readmes: [String: Data] = [:]
     private var missing: Set<String> = []
+    private var failing: Set<String> = []
     private var readmeRequests = 0
 
     func setRepo(_ repo: GitHubRepoDTO) { repos[repo.fullName.lowercased()] = repo }
     func setReadme(_ fullName: String, markdown: String) { readmes[fullName.lowercased()] = Data(markdown.utf8) }
     func markMissing(_ fullName: String) { missing.insert(fullName.lowercased()) }
+    func markFailing(_ fullName: String) { failing.insert(fullName.lowercased()) }
     func readmeRequestCount() -> Int { readmeRequests }
 
     func awesomeRepository(owner: String, repo: String) async throws -> GitHubRepoDTO {
         let key = "\(owner)/\(repo)".lowercased()
+        if failing.contains(key) { throw FakeAwesomeGitHubError.rateLimited }
         if missing.contains(key) { throw NetworkError.notFound }
         guard let value = repos[key] else { throw NetworkError.notFound }
         return value
@@ -271,6 +309,10 @@ private actor FakeAwesomeGitHub: AwesomeGitHubClientProtocol {
         readmeRequests += 1
         return readmes["\(owner)/\(repo)".lowercased()] ?? Data()
     }
+}
+
+private enum FakeAwesomeGitHubError: Error {
+    case rateLimited
 }
 
 private actor FakeAwesomeRepository: AwesomeRepositoryProtocol {

@@ -13,7 +13,9 @@ struct AwesomeSourceCard: View {
     let source: AwesomeSource
     let isSelected: Bool
     let hasRefreshError: Bool
+    let parseState: AwesomeCustomSourceParseState?
     let onToggle: () -> Void
+    let onRetry: (() -> Void)?
     let onDelete: (() -> Void)?
 
     @State private var isHovering = false
@@ -49,6 +51,17 @@ struct AwesomeSourceCard: View {
             )))
 
             HStack(spacing: 7) {
+                if parseState?.phase == .failed, let onRetry {
+                    SyncIconButton(
+                        isRefreshing: false,
+                        tooltip: String.l10n("action.retry"),
+                        action: onRetry
+                    )
+                    .padding(5)
+                    .background(.regularMaterial, in: Circle())
+                    .help(parseState?.errorMessage ?? String.l10n("action.retry"))
+                }
+
                 Link(destination: source.repoURL) {
                     Image(systemName: "arrow.up.right.square")
                         .font(.caption.weight(.semibold))
@@ -160,11 +173,66 @@ struct AwesomeSourceCard: View {
 
     private var footer: some View {
         HStack(spacing: 7) {
-            if let language = source.sourceLanguage {
-                capsule(systemImage: "circle.fill", text: language)
+            if source.kind == .custom, let parseState {
+                sourceParseStatus(parseState)
+            } else {
+                if let language = source.sourceLanguage {
+                    capsule(systemImage: "circle.fill", text: language)
+                }
+                syncCapsule
             }
-            syncCapsule
             Spacer(minLength: onDelete == nil ? 70 : 104)
+        }
+    }
+
+    /// 自定义来源先显示卡片，再在固定 footer 内更新后台解析状态，避免网格因进度变化跳动。
+    @ViewBuilder
+    private func sourceParseStatus(_ state: AwesomeCustomSourceParseState) -> some View {
+        switch state.phase {
+        case .queued:
+            parseStatusLabel("awesome.sources.custom.parse.queued")
+        case .readingReadme:
+            parseStatusLabel("awesome.sources.custom.parse.readingReadme")
+        case .enrichingRepositories:
+            VStack(alignment: .leading, spacing: 4) {
+                Text(
+                    String(
+                        format: String.l10n("awesome.sources.custom.parse.progressFormat"),
+                        state.processedCount,
+                        state.totalCount ?? 0
+                    )
+                )
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                if let progress = state.progress {
+                    ProgressView(value: progress)
+                        .progressViewStyle(.linear)
+                        .frame(maxWidth: 130)
+                } else {
+                    ProgressView()
+                        .controlSize(.mini)
+                }
+            }
+        case .completed:
+            syncCapsule
+        case .failed:
+            Label("awesome.sources.custom.parse.failed", systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .help(state.errorMessage ?? "")
+        }
+    }
+
+    private func parseStatusLabel(_ key: LocalizedStringKey) -> some View {
+        HStack(spacing: 6) {
+            ProgressView()
+                .controlSize(.mini)
+            Text(key)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 

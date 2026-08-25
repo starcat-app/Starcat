@@ -137,19 +137,18 @@ struct AwesomeStoreTests {
         #expect(!store.isCatalogRefreshing)
     }
 
-    @Test("自定义来源保存后立即启用并进入来源列表")
+    @Test("自定义来源核验后立即启用并进入来源列表")
     @MainActor
-    func customSourceIsImmediatelyEnabledAfterSave() async throws {
+    func customSourceIsImmediatelyEnabledAfterValidation() async throws {
         let repository = AwesomeStoreRepositoryFake(sources: [])
         let service = AwesomeCustomSourceService(github: AwesomeStoreGitHubFake(), repository: repository)
         let store = AwesomeStore(repository: repository, customSourceService: service)
-        let custom = Self.source(id: "custom:example/awesome-one", kind: .custom, isEnabled: true)
-        let preview = AwesomeCustomSourcePreview(source: custom, entries: [])
 
-        try await store.addCustomSource(preview)
+        let custom = try await store.addCustomSource(input: "example/awesome-one")
 
         #expect(store.sources.map(\.id) == [custom.id])
         #expect(store.enabledSources.map(\.id) == [custom.id])
+        #expect(store.customSourceParseStates[custom.id] != nil)
     }
 
     private static func source(
@@ -338,10 +337,37 @@ private actor AwesomeStoreRepositoryFake: AwesomeRepositoryProtocol {
 
 private actor AwesomeStoreGitHubFake: AwesomeGitHubClientProtocol {
     func awesomeRepository(owner: String, repo: String) async throws -> GitHubRepoDTO {
-        throw NetworkError.notFound
+        GitHubRepoDTO(
+            id: 1,
+            name: repo,
+            fullName: "\(owner)/\(repo)",
+            owner: GitHubUserDTO(id: 1, login: owner, name: nil, avatarUrl: nil),
+            description: "Description",
+            language: "Swift",
+            stargazersCount: 10,
+            forksCount: 1,
+            watchersCount: 10,
+            topics: [],
+            license: nil,
+            homepage: nil,
+            htmlUrl: "https://github.com/\(owner)/\(repo)",
+            cloneUrl: nil,
+            sshUrl: nil,
+            isPrivate: false,
+            fork: false,
+            archived: false,
+            pushedAt: nil,
+            createdAt: nil,
+            updatedAt: nil,
+            openIssuesCount: 0,
+            defaultBranch: "main",
+            disabled: false,
+            isTemplate: false,
+            score: nil
+        )
     }
 
     func awesomeReadme(owner: String, repo: String) async throws -> Data {
-        throw NetworkError.notFound
+        Data()
     }
 }

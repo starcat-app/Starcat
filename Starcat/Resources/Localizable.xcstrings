@@ -70534,6 +70534,30 @@
         }
       }
     },
+    "awesome.sources.custom.parse.failed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Parsing failed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "解析失败" } }
+      }
+    },
+    "awesome.sources.custom.parse.progressFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Parsing %1$lld / %2$lld" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在解析 %1$lld / %2$lld" } }
+      }
+    },
+    "awesome.sources.custom.parse.queued" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Waiting to parse" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "等待解析" } }
+      }
+    },
+    "awesome.sources.custom.parse.readingReadme" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reading README" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在读取 README" } }
+      }
+    },
     "awesome.sources.custom.subtitle" : {
       "localizations" : {
         "en" : {

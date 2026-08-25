@@ -109,16 +109,6 @@ final class AwesomeStore {
         await reloadAfterSubscriptionChange()
     }
 
-    func previewCustomSource(input: String) async throws -> AwesomeCustomSourcePreview {
-        try await customSourceService.preview(input: input)
-    }
-
-    func addCustomSource(_ preview: AwesomeCustomSourcePreview) async throws {
-        try await customSourceService.save(preview)
-        sources = await repository.sources()
-        await reloadRepositories()
-    }
-
     /// 快速核验来源仓库后立即返回，让 Sheet 当场显示卡片；README 解析由独立任务继续，
     /// 不再把输入框的 loading 状态绑定到几百个 GitHub 请求。
     func addCustomSource(input: String) async throws -> AwesomeSource {
