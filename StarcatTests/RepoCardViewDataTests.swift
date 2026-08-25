@@ -293,6 +293,14 @@ struct RepoCardViewDataTests {
         #expect(hero.updatedAt == ISO8601DateFormatter().date(from: "2026-08-23T12:34:56Z"))
     }
 
+    @Test("详情页日期同时兼容 GitHub 原始格式与 Awesome 毫秒格式")
+    func repoDateStatAcceptsBothISO8601Formats() {
+        #expect(repoDateStatLabel(from: "2025-06-15T17:28:56Z") == "2025-06-15")
+        #expect(repoDateStatLabel(from: "2025-06-15T17:28:56.000Z") == "2025-06-15")
+        #expect(repoDateStatLabel(from: nil) == "-")
+        #expect(repoDateStatLabel(from: "invalid") == "-")
+    }
+
     @Test("Awesome 同仓库元数据刷新会改变详情任务 identity")
     func awesomeMetadataRefreshChangesDiscoveryDetailIdentity() {
         let cached = AwesomeRepositoryItem(

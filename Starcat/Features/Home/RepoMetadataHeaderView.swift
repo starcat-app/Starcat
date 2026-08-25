@@ -992,7 +992,7 @@ private struct RepoDateStatItem: View {
                 Image(systemName: systemImage)
                     .foregroundStyle(.secondary)
                     .font(interfaceScale.font(.bodyEmphasis))
-                Text(formattedDate)
+                Text(repoDateStatLabel(from: value))
                     .monospacedDigit()
                     .lineLimit(1)
                     .font(interfaceScale.font(.bodyEmphasis, weight: .medium))
@@ -1003,12 +1003,15 @@ private struct RepoDateStatItem: View {
         }
     }
 
-    private var formattedDate: String {
-        guard let value, let date = ISO8601DateFormatter().date(from: value) else {
-            return "-"
-        }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
+}
+
+/// 把 GitHub ISO 8601 时间转换成详情页统计行使用的短日期。
+///
+/// Awesome 会先把服务端时间解析成 `Date`，再通过带毫秒的 formatter 写回 DTO；
+/// 因此这里必须同时兼容 `...56Z` 与 `...56.000Z`，不能使用只接受前一种格式的默认解析器。
+func repoDateStatLabel(from value: String?) -> String {
+    guard let date = ISO8601DateFormatter.githubDate(from: value) else {
+        return "-"
     }
+    return date.formatted(.iso8601.year().month().day())
 }
