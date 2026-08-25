@@ -637,6 +637,16 @@ struct SettingsView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+
+                Toggle(isOn: $settings.spotlightSearchEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings.general.spotlightSearch.title")
+                        Text("settings.general.spotlightSearch.help")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             } header: {
                 SettingsSectionHeader(
                     "settings.general.macOSIntegration",

@@ -13,6 +13,7 @@
 //  - 注：要"立刻试 Device Flow"时把 useMockOAuth 改为 false 即可
 //
 
+import AppIntents
 import Foundation
 
 @MainActor
@@ -60,6 +61,8 @@ final class AppDependencies {
     let agentRunRepository: any AgentRunRepositoryProtocol
     /// Week 3 引入：用户偏好（列表密度等）。
     let settings: AppSettings
+    /// 用户明确授权后，维护 starred repositories 与 macOS Spotlight 的本机索引。
+    let repositorySpotlightService: RepositorySpotlightService
     /// 匿名遥测协调器。业务层只依赖本对象，不直接接触 Aptabase / MetricKit。
     let telemetryManager: TelemetryManager
     /// StoreKit 2 订阅协调器。它是 Pro 权益的单一真相源。
@@ -935,6 +938,9 @@ final class AppDependencies {
         self.agentRunRepository = GRDBAgentRunRepository(database: db)
         let settings = AppSettings.shared
         self.settings = settings
+        let repositorySpotlightService = RepositorySpotlightService(database: db, settings: settings)
+        self.repositorySpotlightService = repositorySpotlightService
+        repositorySpotlightService.registerAppIntentDependency()
         let telemetry = TelemetryManager(settings: settings)
         if !TestEnvironment.isRunning, let appKey = TelemetryConfiguration.aptabaseAppKey {
             telemetry.configure(
@@ -1013,7 +1019,10 @@ final class AppDependencies {
                 session?.state.user?.id
             }
         )
-        self.mainWindowNavigationDispatcher = MainWindowNavigationDispatcher()
+        let mainWindowNavigationDispatcher = MainWindowNavigationDispatcher()
+        self.mainWindowNavigationDispatcher = mainWindowNavigationDispatcher
+        // OpenIntent 在主 App 被系统唤醒后，通过同一个 dispatcher 推进三栏导航状态。
+        AppDependencyManager.shared.add(dependency: mainWindowNavigationDispatcher)
         self.companionActionDispatcher = CompanionActionDispatcher()
 
         // Week 4 新增：README 子系统
@@ -1662,13 +1671,14 @@ final class AppDependencies {
 
         // SyncManager 全量 / 增量同步成功完成 → bootstrapper.reload() 同步 registry 到 DB
         // 注：weak 不需要，bootstrapper 与 syncManager 都由 self 强持（生命周期一致）
-        self.syncManager.onSyncCompleted = { [bootstrapper, starListSyncService = self.githubStarListSyncService, session, ragIndexBuilder = self.knowledgeRAGIndexBuilder, widgetRefreshCoordinator = self.widgetRefreshCoordinator] in
+        self.syncManager.onSyncCompleted = { [bootstrapper, starListSyncService = self.githubStarListSyncService, session, ragIndexBuilder = self.knowledgeRAGIndexBuilder, widgetRefreshCoordinator = self.widgetRefreshCoordinator, repositorySpotlightService] in
             await bootstrapper.reload()
             if let login = session.state.user?.login {
                 await starListSyncService.sync(login: login)
             }
             await ragIndexBuilder.refreshMetadataForKnowledgeRepos()
             await widgetRefreshCoordinator.publishReady()
+            repositorySpotlightService.scheduleRebuild()
         }
         self.syncManager.onFullSyncCompleted = { [dataContributionCoordinator] userID, capturedAt in
             // 不 await：快照和上传是严格旁路，SyncManager 的完成态不等待 Collection 服务。
@@ -1696,6 +1706,9 @@ final class AppDependencies {
         // 还能看到自己的数据，不会进入"无 DB 可用"的死状态。
         session.onUserSessionChanged = { [weak self] userId in
             guard let self else { return }
+            // 自定义索引跨账号共用同一名称；切库前先清空，避免旧账号 private repo
+            // 或笔记在新账号会话窗口中短暂残留。
+            await self.repositorySpotlightService.removeAll()
             // 先清空共享快照再切数据库，避免 Widget 在切换窗口继续展示旧账号内容。
             self.widgetRefreshCoordinator.publishEmpty(
                 state: userId == nil ? .signedOut : .preparing
@@ -1755,12 +1768,14 @@ final class AppDependencies {
             // 失败容忍：reload 内部已 try/catch + 日志，不会向外抛错破坏 closure 语义。
             await self.starredRegistryBootstrapper.reload()
             if didSwitchDatabase, userId != nil {
+                self.repositorySpotlightService.scheduleRebuild()
                 await self.widgetRefreshCoordinator.publishReady()
             }
         }
 
         // 启动期 reload：异步 Task，不阻塞 init。测试 host 跳过避免触发 DB 启动期成本。
         if !TestEnvironment.isRunning {
+            repositorySpotlightService.startObserving()
             self.widgetRefreshCoordinator.startObserving()
             Task { [bootstrapper] in
                 await bootstrapper.reload()

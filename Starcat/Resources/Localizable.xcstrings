@@ -330133,6 +330133,52 @@
         }
       }
     },
+    "settings.general.spotlightSearch.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Indexes all starred repositories, including private repository names and your notes, on this Mac. This content may appear in macOS Spotlight results. Turning this off removes the Starcat Spotlight index."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在这台 Mac 上索引全部已 Star 仓库，包括私有仓库名称和你的笔记；这些内容可能出现在 macOS Spotlight 结果中。关闭后会删除 Starcat 的 Spotlight 索引。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在這台 Mac 上索引全部已加星號的倉庫，包括私有倉庫名稱和你的筆記；這些內容可能出現在 macOS Spotlight 結果中。關閉後會刪除 Starcat 的 Spotlight 索引。"
+          }
+        }
+      }
+    },
+    "settings.general.spotlightSearch.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search Starcat repositories with Spotlight"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 Spotlight 搜索 Starcat 仓库"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 Spotlight 搜尋 Starcat 倉庫"
+          }
+        }
+      }
+    },
     "settings.general.title" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -429083,6 +429129,54 @@
             "value" : "Stars"
           }
         }
+      }
+    },
+    "spotlight.repository.entity.type" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repository" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "倉庫" } }
+      }
+    },
+    "spotlight.repository.open.target" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repository" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "倉庫" } }
+      }
+    },
+    "spotlight.repository.open.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open Repository" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "打开仓库" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "開啟倉庫" } }
+      }
+    },
+    "spotlight.repository.property.name" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Name" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "名称" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "名稱" } }
+      }
+    },
+    "spotlight.repository.property.owner" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Owner" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "所有者" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "擁有者" } }
+      }
+    },
+    "spotlight.repository.property.repositoryID" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repository ID" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库 ID" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "倉庫 ID" } }
       }
     },
     "storage.outputDirectory.bookmarkExpired" : {

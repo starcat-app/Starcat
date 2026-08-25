@@ -1177,6 +1177,18 @@ final class AppSettings {
         didSet { persistBool(key: Keys.hideDockIcon, value: hideDockIcon) }
     }
 
+    /// 是否允许 Starcat 把全部 starred repositories（含 private 与用户笔记）写入 Spotlight。
+    ///
+    /// 默认关闭，必须由用户在设置中明确授权。开关变化通过通知交给索引服务处理，
+    /// AppSettings 本身不直接触碰 Core Spotlight，避免偏好层承担系统副作用。
+    var spotlightSearchEnabled: Bool {
+        didSet {
+            persistBool(key: Keys.spotlightSearchEnabled, value: spotlightSearchEnabled)
+            guard oldValue != spotlightSearchEnabled else { return }
+            NotificationCenter.default.post(name: .spotlightSearchPreferenceDidChange, object: nil)
+        }
+    }
+
     /// 开启后 AI 多行输入必须按 Command+Return 才发送；普通 Return 始终换行。
     /// 这是输入行为偏好，不属于应用命令快捷键，不受下方总开关或逐项开关影响。
     var aiChatRequiresCommandReturn: Bool {
@@ -1887,6 +1899,7 @@ final class AppSettings {
         // 缺失值时默认 false(动画全开),老用户首启不受影响。
         self.disableAnimations = defaults.object(forKey: Keys.disableAnimations) as? Bool ?? false
         self.hideDockIcon = defaults.object(forKey: Keys.hideDockIcon) as? Bool ?? false
+        self.spotlightSearchEnabled = defaults.object(forKey: Keys.spotlightSearchEnabled) as? Bool ?? false
         self.aiChatRequiresCommandReturn = defaults.object(forKey: Keys.aiChatRequiresCommandReturn) as? Bool ?? false
         self.keyboardShortcutsEnabled = defaults.object(forKey: Keys.keyboardShortcutsEnabled) as? Bool ?? true
         self.globalSearchShortcutEnabled = defaults.object(forKey: Keys.globalSearchShortcutEnabled) as? Bool ?? true
@@ -2152,6 +2165,7 @@ final class AppSettings {
         readmeTranslationMode = .segmented
         disableAnimations = false
         hideDockIcon = false
+        spotlightSearchEnabled = false
         aiChatRequiresCommandReturn = false
         keyboardShortcutsEnabled = true
         globalSearchShortcut = .globalSearchDefault
@@ -2587,6 +2601,7 @@ final class AppSettings {
         static let isProUser = "settings.pro.isProUser"  // HOM-151
         static let disableAnimations = "settings.general.disableAnimations.v1"  // 2026-06-15
         static let hideDockIcon = "settings.general.hideDockIcon.v1"  // 2026-07-02
+        static let spotlightSearchEnabled = "settings.general.spotlightSearch.enabled.v1"
         static let aiChatRequiresCommandReturn = "settings.general.shortcuts.aiCommandReturn.v1"
         static let keyboardShortcutsEnabled = "settings.general.shortcuts.enabled.v1"
         static let globalSearchShortcut = "settings.general.shortcuts.globalSearch.v1"

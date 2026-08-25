@@ -98,6 +98,8 @@ final class MainWindowNavigationDispatcher {
         case insights
         /// Universal Link 只携带稳定的 owner / repo，不把网页端数据写入本地库。
         case repository(RepositoryDeepLink)
+        /// Spotlight 只按稳定 ID 打开当前数据库实体，允许用户已授权索引的 private repository。
+        case spotlightRepository(Int64)
         /// Widget Release 行打开现有 Release 时间线，并尽量定位到对应记录。
         case repositoryRelease(RepositoryReleaseDeepLink)
     }

@@ -1747,6 +1747,13 @@ struct HomeView: View {
             Task { await openRepositoryDeepLink(repository) }
             return
 
+        case .spotlightRepository(let repositoryID):
+            // Spotlight 已由用户授权索引本机 private repo；必须走 local-only 路由，
+            // 不能借公开 Universal Link 绕过 ProjectPrivacyPolicy。
+            dependencies.mainWindowNavigationDispatcher.pendingRequest = nil
+            Task { await openSpotlightRepository(repositoryID: repositoryID) }
+            return
+
         case .repositoryRelease(let release):
             viewModel.clearTemporaryGlobalFilters()
             releaseTimelineTargetID = release.releaseID
@@ -1761,19 +1768,7 @@ struct HomeView: View {
     @MainActor
     private func openRepositoryDeepLink(_ target: RepositoryDeepLink) async {
         do {
-            if let repositoryID = target.repositoryID,
-               let localRepo = try await dependencies.repoRepository.findById(repositoryID) {
-                guard ProjectPrivacyPolicy.allowsUniversalLink(for: localRepo) else {
-                    repositoryDeepLinkErrorMessage = String.l10n("repo.share.open.error.unavailable")
-                    return
-                }
-                openCompanionRepository(localRepo)
-                return
-            }
-            if let localRepo = try await dependencies.repoRepository.findByOwnerName(
-                owner: target.owner,
-                name: target.name
-            ) {
+            if let localRepo = try await findLocalRepository(for: target) {
                 guard ProjectPrivacyPolicy.allowsUniversalLink(for: localRepo) else {
                     repositoryDeepLinkErrorMessage = String.l10n("repo.share.open.error.unavailable")
                     return
@@ -1800,6 +1795,36 @@ struct HomeView: View {
             )
             repositoryDeepLinkErrorMessage = String.l10n("repo.share.open.error.unavailable")
         }
+    }
+
+    /// Spotlight 条目来自当前用户数据库，只允许本地命中；这样既能打开 private repo，
+    /// 又不会把 private 身份转成可公开传播的 URL，也不会因过期索引触发 GitHub 网络拉取。
+    @MainActor
+    private func openSpotlightRepository(repositoryID: Int64) async {
+        do {
+            guard let localRepo = try await dependencies.repoRepository.findById(repositoryID) else {
+                repositoryDeepLinkErrorMessage = String.l10n("repo.share.open.error.unavailable")
+                return
+            }
+            openCompanionRepository(localRepo)
+        } catch {
+            AppLog.ui.error(
+                "Spotlight repository navigation failed: \(error.localizedDescription, privacy: .public)"
+            )
+            repositoryDeepLinkErrorMessage = String.l10n("repo.share.open.error.unavailable")
+        }
+    }
+
+    /// stable GitHub ID 优先，owner/name 只作为 rename 前链接或旧索引的兼容回退。
+    private func findLocalRepository(for target: RepositoryDeepLink) async throws -> Repo? {
+        if let repositoryID = target.repositoryID,
+           let repository = try await dependencies.repoRepository.findById(repositoryID) {
+            return repository
+        }
+        return try await dependencies.repoRepository.findByOwnerName(
+            owner: target.owner,
+            name: target.name
+        )
     }
 
     // MARK: - 辅助

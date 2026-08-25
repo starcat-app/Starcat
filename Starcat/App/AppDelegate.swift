@@ -29,13 +29,16 @@
 //
 
 import AppKit
+import AppIntents
+import CoreSpotlight
 import UserNotifications
 
-/// 两件事：
+/// 三件事：
 /// 1. `applicationWillFinishLaunching` 注册 `NSAppleEventManager` handler 拦截
 ///    `kAEGetURL` — 存在即声明"已有实例监听 URL scheme"，Launch Services 不开新进程
 /// 2. handler 内解析 URL → 通过 `NotificationCenter` 转发给 SwiftUI view 层
 ///    （`NSAppleEventManager` 会消费事件，导致 `.onOpenURL` 收不到——必须显式转发）
+/// 3. 接收 Core Spotlight 的 `NSUserActivity`，把稳定 repository ID 转交主窗口路由。
 ///
 /// 这里也承接 Dock reopen / 前台激活兜底。SwiftUI 只能挂一个
 /// `NSApplicationDelegateAdaptor`，所以 AppKit 生命周期职责必须收敛在同一个 delegate，
@@ -78,6 +81,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // AppKit/SwiftUI 会继续执行默认 WindowGroup reopen，和 openWindow fallback
         // 叠加后会一次打开两个主窗口。
         return false
+    }
+
+    /// macOS 打开 Core Spotlight 条目时实际发送 `CSSearchableItemActionType` activity。
+    ///
+    /// App Intents 的 `OpenIntent` 仍保留给系统可用的执行路径；这里是 AppKit 原生回调，
+    /// 两条入口最终都只发布 repository ID，避免 SwiftUI 出现第二套导航状态。
+    func application(
+        _ application: NSApplication,
+        continue userActivity: NSUserActivity,
+        restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void
+    ) -> Bool {
+        Self.handleSpotlightUserActivity(
+            userActivity,
+            using: Self.dependencies?.mainWindowNavigationDispatcher
+        )
+    }
+
+    /// 解析和路由保持同步且位于 MainActor；测试可以注入独立 dispatcher，
+    /// 无需启动 NSApplication 或访问真实 Spotlight 索引。
+    @discardableResult
+    static func handleSpotlightUserActivity(
+        _ userActivity: NSUserActivity,
+        using dispatcher: MainWindowNavigationDispatcher?
+    ) -> Bool {
+        guard userActivity.activityType == CSSearchableItemActionType else { return false }
+        guard let identifier = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
+              let repositoryID = repositoryID(fromSpotlightActivityIdentifier: identifier)
+        else {
+            let identifier = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String ?? "<missing>"
+            // GitHub repository IDs are public; logging the malformed value is necessary to diagnose
+            // OS-version-specific AppEntity identifier envelopes without exposing notes or credentials.
+            AppLog.general.warning(
+                "Core Spotlight repository activity has an invalid identifier: \(identifier, privacy: .public)"
+            )
+            return false
+        }
+        guard let dispatcher else {
+            AppLog.general.error("Core Spotlight repository activity arrived before app dependencies were ready")
+            return false
+        }
+
+        dispatcher.navigate(to: .spotlightRepository(repositoryID))
+        AppLog.general.info("Core Spotlight repository activity routed to the main window")
+        return true
+    }
+
+    private static func repositoryID(fromSpotlightActivityIdentifier identifier: String) -> Int64? {
+        if let entityIdentifier = EntityIdentifier(activityIdentifier: identifier),
+           ObjectIdentifier(entityIdentifier.entityType) == ObjectIdentifier(RepositorySpotlightEntity.self)
+        {
+            return Int64(entityIdentifier.identifier)
+        }
+
+        // `indexAppEntities` 在当前 macOS 上把 searchable-item unique identifier 编码为
+        // `<AppEntity 类型>/<实体 ID>`；它不是 `EntityIdentifier` 的 activity envelope。
+        // 这里只接受 Starcat 自己的精确类型前缀，避免把其它 Spotlight 条目的尾部数字误当仓库 ID。
+        let components = identifier.split(separator: "/", omittingEmptySubsequences: false)
+        guard components.count == 2,
+              components[0] == Substring(String(describing: RepositorySpotlightEntity.self))
+        else { return nil }
+        return Int64(components[1])
     }
 
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {

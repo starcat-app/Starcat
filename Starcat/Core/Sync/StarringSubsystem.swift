@@ -242,6 +242,11 @@ final class StarActionService {
 
         // 4. registry._add（fileprivate 同文件可见）
         registry._add(saved.id)
+        NotificationCenter.default.post(
+            name: .repositorySpotlightSourceDidChange,
+            object: nil,
+            userInfo: ["repoId": saved.id]
+        )
 
         // 5. 从 Undo Star 历史中移除（如果存在）
         do {
@@ -314,6 +319,11 @@ final class StarActionService {
         try await repoRepository.markUnstarred(repoId: ghRepoId, userID: userID)
 
         registry._remove(ghRepoId)
+        NotificationCenter.default.post(
+            name: .repositorySpotlightSourceDidChange,
+            object: nil,
+            userInfo: ["repoId": ghRepoId]
+        )
         await homeRefresher?.refreshAfterStarChange()
 
         // 记录到 Undo Star 历史（去重：同 ghRepoId 更新 unstarred_at）

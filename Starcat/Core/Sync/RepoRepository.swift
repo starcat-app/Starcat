@@ -274,6 +274,11 @@ struct GRDBRepoRepository {
                 arguments: [state.rawValue, reason, checkedAtISO, repoId]
             )
         }
+        NotificationCenter.default.post(
+            name: .repositorySpotlightSourceDidChange,
+            object: nil,
+            userInfo: ["repoId": repoId]
+        )
     }
 
     // MARK: - 查询
