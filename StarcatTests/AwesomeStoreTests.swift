@@ -276,6 +276,17 @@ private actor AwesomeStoreRepositoryFake: AwesomeRepositoryProtocol {
         sourceValues.append(source)
     }
 
+    func saveCustomSource(
+        _ source: AwesomeSource,
+        entries: [AwesomeEntryDTO],
+        parseState: AwesomeCustomSourceParseState
+    ) async throws {
+        sourceValues.append(source)
+    }
+
+    func customSourceParseStates() async -> [AwesomeCustomSourceParseState] { [] }
+    func updateCustomSourceParseState(_ state: AwesomeCustomSourceParseState) async throws {}
+
     func removeCustomSource(id: String) async throws {
         sourceValues.removeAll { $0.id == id }
     }

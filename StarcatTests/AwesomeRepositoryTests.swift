@@ -244,6 +244,44 @@ struct AwesomeRepositoryTests {
         #expect(await repository.enabledSources().map(\.id) == [custom.id])
     }
 
+    @Test("自定义来源与初始解析状态在同一事务持久化")
+    func customSourcePersistsInitialParseState() async throws {
+        let repository = AwesomeRepository(api: FakeAwesomeAPI(), database: try InMemoryDatabaseManager())
+        let custom = Self.customSource()
+        let queued = AwesomeCustomSourceParseState(
+            sourceID: custom.id,
+            phase: .queued,
+            processedCount: 0,
+            totalCount: nil,
+            errorMessage: nil,
+            updatedAt: Date(timeIntervalSince1970: 123)
+        )
+
+        try await repository.saveCustomSource(custom, entries: [], parseState: queued)
+
+        #expect(await repository.sources().map(\.id) == [custom.id])
+        #expect(await repository.customSourceParseStates() == [queued])
+    }
+
+    @Test("自定义来源解析状态可独立更新")
+    func customSourceParseStateCanUpdate() async throws {
+        let repository = AwesomeRepository(api: FakeAwesomeAPI(), database: try InMemoryDatabaseManager())
+        let custom = Self.customSource()
+        try await repository.saveCustomSource(custom, entries: [])
+        let failed = AwesomeCustomSourceParseState(
+            sourceID: custom.id,
+            phase: .failed,
+            processedCount: 4,
+            totalCount: 10,
+            errorMessage: "rate limited",
+            updatedAt: Date(timeIntervalSince1970: 456)
+        )
+
+        try await repository.updateCustomSourceParseState(failed)
+
+        #expect(await repository.customSourceParseStates() == [failed])
+    }
+
     @Test("首次配置状态按账户数据库隔离")
     func setupStateIsIsolatedByAccountDatabase() async throws {
         let first = AwesomeRepository(api: FakeAwesomeAPI(), database: try InMemoryDatabaseManager())

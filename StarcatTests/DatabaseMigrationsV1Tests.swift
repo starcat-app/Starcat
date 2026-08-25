@@ -335,6 +335,44 @@ struct DatabaseMigrationsV1Tests {
         }
     }
 
+    @Test("v31 建立自定义 Awesome 解析状态并随来源级联删除")
+    func awesomeCustomSourceParsingMigration() throws {
+        let writer = try DatabaseQueue()
+        var migrator = DatabaseMigrator()
+        DatabaseMigrations.registerAll(into: &migrator)
+        try migrator.migrate(writer, upTo: "v30-awesome-entry-updated-at")
+        try migrator.migrate(writer)
+
+        try writer.write { db in
+            #expect(try db.tableExists("awesome_custom_source_parse_states"))
+            try db.execute(
+                sql: """
+                INSERT INTO awesome_sources (
+                    source_id, kind, display_name, repo_full_name, repo_url, added_at, updated_at
+                ) VALUES (?, 'custom', ?, ?, ?, ?, ?)
+                """,
+                arguments: [
+                    "custom:example/list", "Example", "example/list",
+                    "https://github.com/example/list",
+                    "2026-08-25T08:00:00Z", "2026-08-25T08:00:00Z",
+                ]
+            )
+            try AwesomeCustomSourceParseRecord(
+                sourceID: "custom:example/list",
+                phase: AwesomeCustomSourceParsePhase.queued.rawValue,
+                processedCount: 0,
+                totalCount: nil,
+                errorMessage: nil,
+                updatedAt: "2026-08-25T08:00:00Z"
+            ).insert(db)
+            try db.execute(
+                sql: "DELETE FROM awesome_sources WHERE source_id = ?",
+                arguments: ["custom:example/list"]
+            )
+            #expect(try AwesomeCustomSourceParseRecord.fetchCount(db) == 0)
+        }
+    }
+
     @Test("1.4.0 正式迁移应接管任意开发期中间版本")
     func release140MigrationConvergesDevelopmentDatabases() throws {
         let developmentBoundaries = [

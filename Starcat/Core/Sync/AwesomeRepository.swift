@@ -29,6 +29,13 @@ protocol AwesomeRepositoryProtocol: Sendable {
     func completeSourceSetup(enabledSourceIDs: Set<String>) async throws
     func updateSubscriptions(enabledSourceIDs: Set<String>) async throws
     func saveCustomSource(_ source: AwesomeSource, entries: [AwesomeEntryDTO]) async throws
+    func saveCustomSource(
+        _ source: AwesomeSource,
+        entries: [AwesomeEntryDTO],
+        parseState: AwesomeCustomSourceParseState
+    ) async throws
+    func customSourceParseStates() async -> [AwesomeCustomSourceParseState]
+    func updateCustomSourceParseState(_ state: AwesomeCustomSourceParseState) async throws
     func removeCustomSource(id: String) async throws
 }
 
@@ -45,6 +52,21 @@ extension AwesomeRepositoryProtocol {
 
     func refreshEnabledEntries() async -> [String: String] {
         await refreshEnabledEntries(policy: .ifStale)
+    }
+
+    func saveCustomSource(_ source: AwesomeSource, entries: [AwesomeEntryDTO]) async throws {
+        try await saveCustomSource(
+            source,
+            entries: entries,
+            parseState: AwesomeCustomSourceParseState(
+                sourceID: source.id,
+                phase: .completed,
+                processedCount: entries.count,
+                totalCount: entries.count,
+                errorMessage: nil,
+                updatedAt: source.updatedAt
+            )
+        )
     }
 }
 
@@ -247,7 +269,11 @@ actor AwesomeRepository: AwesomeRepositoryProtocol {
         }
     }
 
-    func saveCustomSource(_ source: AwesomeSource, entries: [AwesomeEntryDTO]) async throws {
+    func saveCustomSource(
+        _ source: AwesomeSource,
+        entries: [AwesomeEntryDTO],
+        parseState: AwesomeCustomSourceParseState
+    ) async throws {
         guard source.kind == .custom else { return }
         let cachedAt = ISO8601DateFormatter.shared.string(from: now())
         try await database.writer.write { db in
@@ -261,6 +287,27 @@ actor AwesomeRepository: AwesomeRepositoryProtocol {
             for entry in entries {
                 try AwesomeEntryRecord.from(entry, sourceID: source.id, cachedAt: cachedAt).insert(db)
             }
+            try AwesomeCustomSourceParseRecord.from(parseState).save(db)
+        }
+    }
+
+    func customSourceParseStates() async -> [AwesomeCustomSourceParseState] {
+        do {
+            return try await database.writer.read { db in
+                try AwesomeCustomSourceParseRecord.fetchAll(db).compactMap(\.domain)
+            }
+        } catch {
+            if error is CancellationError || Task.isCancelled { return [] }
+            AppLog.database.warning(
+                "Awesome custom parse states read failed: \(error.localizedDescription, privacy: .public)"
+            )
+            return []
+        }
+    }
+
+    func updateCustomSourceParseState(_ state: AwesomeCustomSourceParseState) async throws {
+        try await database.writer.write { db in
+            try AwesomeCustomSourceParseRecord.from(state).save(db)
         }
     }
 
@@ -577,5 +624,32 @@ private extension AwesomeEntryRecord {
     var topics: [String] {
         topicsJSON.data(using: .utf8)
             .flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
+    }
+}
+
+private extension AwesomeCustomSourceParseRecord {
+    static func from(_ state: AwesomeCustomSourceParseState) -> AwesomeCustomSourceParseRecord {
+        AwesomeCustomSourceParseRecord(
+            sourceID: state.sourceID,
+            phase: state.phase.rawValue,
+            processedCount: state.processedCount,
+            totalCount: state.totalCount,
+            errorMessage: state.errorMessage,
+            updatedAt: ISO8601DateFormatter.shared.string(from: state.updatedAt)
+        )
+    }
+
+    var domain: AwesomeCustomSourceParseState? {
+        guard let phase = AwesomeCustomSourceParsePhase(rawValue: phase),
+              let updatedAt = ISO8601DateFormatter.githubDate(from: updatedAt)
+        else { return nil }
+        return AwesomeCustomSourceParseState(
+            sourceID: sourceID,
+            phase: phase,
+            processedCount: processedCount,
+            totalCount: totalCount,
+            errorMessage: errorMessage,
+            updatedAt: updatedAt
+        )
     }
 }

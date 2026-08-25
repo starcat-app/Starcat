@@ -43,7 +43,8 @@
 //    `v23-awesome-source-metadata` / `v24-awesome-cache-freshness` /
 //    `v25-awesome-source-stars-refresh` / `v26-awesome-repository-metadata` /
 //    `v27-ai-usage-estimated-cost` / `v28-awesome-source-description`
-//    `v29-awesome-source-card-metadata` / `v30-awesome-entry-updated-at`
+//    `v29-awesome-source-card-metadata` / `v30-awesome-entry-updated-at` /
+//    `v31-awesome-custom-source-parsing`
 //
 //  **1.4.0 开发期迁移（已由正式 v19 合并接管）**：
 //  `v19-agent-message-contract` 至 `v26-github-timeline-conversations` 仅在开发构建中出现过。
@@ -111,6 +112,27 @@ enum DatabaseMigrations {
         registerV28AwesomeSourceDescription(into: &migrator)
         registerV29AwesomeSourceCardMetadata(into: &migrator)
         registerV30AwesomeEntryUpdatedAt(into: &migrator)
+        registerV31AwesomeCustomSourceParsing(into: &migrator)
+    }
+
+    // MARK: - v31-awesome-custom-source-parsing：自定义来源后台解析状态（2026-08-25）
+
+    /// 自定义来源提交后先落库、再后台解析 README。独立状态表让进度可跨重启恢复，且通过
+    /// 外键级联删除绑定来源生命周期；表不存在的中间开发库继续 no-op，避免阻断迁移。
+    private static func registerV31AwesomeCustomSourceParsing(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v31-awesome-custom-source-parsing") { db in
+            guard try db.tableExists("awesome_sources") else { return }
+            try db.create(table: "awesome_custom_source_parse_states", ifNotExists: true) { table in
+                table.column("source_id", .text)
+                    .primaryKey()
+                    .references("awesome_sources", column: "source_id", onDelete: .cascade)
+                table.column("phase", .text).notNull()
+                table.column("processed_count", .integer).notNull().defaults(to: 0)
+                table.column("total_count", .integer)
+                table.column("error_message", .text)
+                table.column("updated_at", .text).notNull()
+            }
+        }
     }
 
     // MARK: - v30-awesome-entry-updated-at：Awesome 仓库更新时间修复（2026-08-24）
