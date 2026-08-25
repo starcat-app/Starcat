@@ -112,8 +112,8 @@ flowchart TB
 | 项目 | 可借鉴内容 | 不能假设的内容 |
 |---|---|---|
 | [SimRepo](https://github.com/Mubelotix/simrepo) | v1 SVD、v2 时间衰减 shared-stargazer、单仓/多仓推荐产品形态 | 公开仓库没有 v2 完整训练流水线，不能自行补写精确公式 |
-| [GitHub Repo Embeddings](https://github.com/Puzer/github-repo-embeddings) | GH Archive WatchEvent、user-repo 集合、`EmbeddingBag(mean)`、128D repo embedding、`MultiSimilarityLoss` | README/Qwen 初始化和生产 Serving 没有完整公开实现 |
-| [GH Archive](https://www.gharchive.org/) | GitHub 公开事件和 BigQuery bootstrap 数据 | `WatchEvent` 没有完整 Unstar，不能生成事件级精确历史 |
+| [GitHub Repo Embeddings](https://github.com/Puzer/github-repo-embeddings) | GH Archive WatchEvent user-repo 集合、PushEvent repo 基础目录、`EmbeddingBag(mean)`、128D repo embedding、`MultiSimilarityLoss` | README/Qwen 初始化和生产 Serving 没有完整公开实现；Push 时间不是权威仓库创建/更新时间 |
+| [GH Archive](https://www.gharchive.org/) | GitHub 公开事件和 BigQuery bootstrap 数据 | `WatchEvent` 没有完整 Unstar；`PushEvent` 不能替代 GitHub 当前完整 metadata |
 
 调研基线 commit：
 

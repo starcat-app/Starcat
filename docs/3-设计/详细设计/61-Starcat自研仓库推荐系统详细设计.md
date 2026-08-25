@@ -25,7 +25,7 @@ Starcat 自研推荐采用“时间衰减 co-star + Metric Learning 行为向量
 
 公开代码可确认的核心链路：
 
-- 从 GH Archive BigQuery 提取 `WatchEvent`。
+- 从 GH Archive BigQuery 提取 `WatchEvent` 训练 user-repo 关系，并用 `PushEvent` 批量建立 repo ID、最新名称和 Push 时间目录。
 - 按 `actor_id` 聚合成 `user -> repo_ids` 的隐式反馈集合。
 - 过滤过少或过多行为的用户和低支持度 repo。
 - 对每个用户的 Star 集合随机切分 train/test。
@@ -84,10 +84,12 @@ flowchart LR
     A[Starcat 匿名完整 Star 快照] --> B[starcat-collection-api]
     B --> C1[Collection API 内部训练导出]
     C1 --> B1[starcat-recsys-trainer Pull Connector]
-    C[GH Archive BigQuery WatchEvent] --> D[批量导入]
+    C[GH Archive BigQuery WatchEvent] --> D[行为批量导入]
+    C2[GH Archive BigQuery PushEvent] --> D2[仓库基础目录]
     E[GitHub REST repo metadata/README] --> F[元数据与内容流水线]
     B1 --> G[Raw Parquet]
     D --> G
+    D2 --> F
     G --> H[清洗/去重/时间切分]
     F --> I[Feature Store]
     H --> J[Co-star Builder]
@@ -112,10 +114,12 @@ flowchart LR
 ### 5.1 优先级
 
 1. **Starcat 用户主动贡献**：持续、合法边界清晰，可保留 `starred_at`，但早期规模有限。
-2. **GH Archive BigQuery**：用于冷启动和覆盖扩展，按 `WatchEvent` 构建公开 user-repo 关系。
-3. **GitHub REST/GraphQL**：只补 repo 公开 metadata、topics、README、状态和重命名，不批量抓取受限 Stargazer 列表。
+2. **GH Archive BigQuery**：用于冷启动和覆盖扩展；`WatchEvent` 构建公开 user-repo 关系，`PushEvent` 批量建立仓库基础目录。
+3. **GitHub REST/GraphQL**：只对最终 Top N 候选补 repo 当前 metadata、topics、README、状态和重命名，不对数百万仓库逐个请求，也不批量抓取受限 Stargazer 列表。
 
 上报少时使用 BigQuery，不应等待数据规模自然增长后才验证算法。BigQuery 导入仍需要预算门禁、分区裁剪、dry run 和水位线。
+
+PushEvent 目录只把查询范围内的最新仓库名、首次/末次观察到的 Push 时间作为低精度基础 metadata；首次时间不是权威创建时间，末次时间也不保证等于 GitHub 当前 `pushed_at`。Canonical 合并时 GitHub API 的当前描述、Topics、语言、License、Star/Fork 数和 archived/disabled/visibility 状态必须覆盖 PushEvent 缺省值。
 
 ### 5.2 统一训练事件
 
@@ -147,8 +151,8 @@ snapshot_id      string nullable
 
 ### 6.1 用户过滤
 
-- 少于 2 个有效公开 repo 的用户不能形成正样本。
-- 超大 Star 集合不直接丢弃，采用 `1 / log2(2 + repo_count)` 权重或分桶采样。
+- 少于配置下限的有效公开 repo 用户不能形成正样本；大规模 BigQuery 示例采用 10。
+- 超过配置上限的 Star 集合先隔离疑似机器人/采集账号；当前 BigQuery 示例采用 800，保留的主体再使用 `1 / log2(2 + repo_count)` 权重或分桶采样。
 - 高频短时、规则化命名、异常单一 owner 集合进入机器人/采集账号隔离集。
 - 每个训练 batch 限制单用户贡献 pair 数，避免组合爆炸。
 
@@ -156,6 +160,7 @@ snapshot_id      string nullable
 
 - 排除 private、archived、disabled、DMCA/安全隔离和 metadata 长期不可获取的 repo。
 - 训练最小支持度按数据规模配置，但评估必须单独报告长尾，不得只保留热门 repo 后宣称整体效果。
+- 当前实现以查询窗口内去重后的来源内主体数作为 repo 支持度；这是观察到的 Star 近似值，不得写成 GitHub 当前 `stargazers_count`。
 - Fork 默认保留为候选特征，若与上游内容近重复则由去重/MMR 控制；不在清洗阶段全量删除。
 
 ### 6.3 时间切分
@@ -601,7 +606,7 @@ Content-Type: application/zip
 2. 内容 embedding 负责冷启动，TruncatedSVD 负责 baseline/回退。
 3. 排序使用数据置信度动态融合，不预设长期固定权重。
 4. 训练和在线查询拆为 Trainer 与 Recommend API；在线 API 不接触原始匿名身份。
-5. BigQuery 用于 bootstrap，Starcat opt-in 数据用于持续更新和质量增强。
+5. BigQuery 用于 bootstrap：WatchEvent 提供关系、PushEvent 提供批量基础目录；GitHub API 只补 Top N 权威 metadata，Starcat opt-in 数据用于持续更新和质量增强。
 6. 现有 Recommend API 是长期统一入口；v1 保持 SimRepo 契约，v2 新增自研契约，最终只删除 SimRepo Provider。
 7. `starcat-recsys-api` 职责与 Recommend API 重复，明确取消，不创建该项目。
 
