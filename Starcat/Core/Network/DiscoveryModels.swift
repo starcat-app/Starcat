@@ -390,7 +390,7 @@ extension DiscoveryRepoDTO {
             avatarURL: ownerAvatar.flatMap(URL.init(string:)),
             description: description,
             language: language,
-            starsCount: stars,
+            starsCount: registry.displayedStarsCount(base: stars, ghRepoId: repoID),
             forksCount: forks,
             isArchived: isArchived,
             isFork: isFork,

@@ -41,7 +41,7 @@ struct ActivityReleaseDetailScaffoldShell: View {
             }
         }
         .task(id: item.id) {
-            displayRepo = item.repo
+            displayRepo = item.repo.map { dependencies.starredRegistry.applyingDisplayState(to: $0) }
             releases = item.releases
             await reloadReleases()
         }
@@ -132,10 +132,7 @@ struct ActivityReleaseDetailScaffoldShell: View {
         }
         try await dependencies.starActionService.toggle(repo: repo)
 
-        let nowStarred = dependencies.starredRegistry.contains(ghRepoId: repo.id)
-        var updated = repo
-        updated.isStarred = nowStarred
-        displayRepo = updated
+        displayRepo = dependencies.starredRegistry.applyingDisplayState(to: repo)
 
         await homeViewModel.refreshAfterExternalStarChange()
     }

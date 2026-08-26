@@ -459,7 +459,7 @@ struct ActivityView: View {
                     inlineMetadata: inlineMetadata(for: item),
                     isInLibrary: isInLibrary(repo.id),
                     openSSFScore: dependencies.openSSFScoreStore.badge(for: repo.id)
-                ),
+                ).overlayingSessionStars(dependencies.starredRegistry),
                 isSelected: isSelected
             )
             // HOM-201 P1-1（2026-06-14）：activity 行 hover 500ms 后预拉 manage 表的 README，

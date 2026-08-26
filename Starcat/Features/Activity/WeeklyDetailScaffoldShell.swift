@@ -225,7 +225,7 @@ struct WeeklyDetailScaffoldShell: View {
         // .task(id: project.id) 触发,project.id 不变 task 不重跑),所以无需
         // D-27 时代的 `displayRepo?.fullName != project.fullName` 守卫。
         if displayRepo?.id != item.ghRepoId {
-            displayRepo = makeFallbackRepo(from: item)
+            displayRepo = dependencies.starredRegistry.applyingDisplayState(to: makeFallbackRepo(from: item))
             sourceEvents = []
             isLocalHit = false
         }
@@ -240,7 +240,7 @@ struct WeeklyDetailScaffoldShell: View {
         do {
             let detail = try await dependencies.weeklyAPI.fetchDetail(repoID: item.ghRepoId)
             guard detail.repo.card.ghRepoId == item.ghRepoId else { return }
-            displayRepo = detail.repo.card.toEphemeralRepo()
+            displayRepo = dependencies.starredRegistry.applyingDisplayState(to: detail.repo.card.toEphemeralRepo())
             sourceEvents = detail.events
             isLocalHit = false
         } catch {
@@ -264,7 +264,7 @@ struct WeeklyDetailScaffoldShell: View {
         if let cached = displayRepo, cached.id > 0 {
             do {
                 if let local = try await dependencies.repoRepository.findById(item.ghRepoId) {
-                    displayRepo = local
+                    displayRepo = dependencies.starredRegistry.applyingDisplayState(to: local)
                     isLocalHit = true
                     return
                 }
@@ -279,7 +279,7 @@ struct WeeklyDetailScaffoldShell: View {
                 owner: item.owner,
                 name: item.name
             ) {
-                displayRepo = local
+                displayRepo = dependencies.starredRegistry.applyingDisplayState(to: local)
                 isLocalHit = true
                 return
             }
@@ -293,11 +293,13 @@ struct WeeklyDetailScaffoldShell: View {
         do {
             let dto = try await dependencies.apiClient.repo(owner: item.owner, repo: item.name)
             let cachedAt = ISO8601DateFormatter.shared.string(from: Date())
-            displayRepo = GRDBRepoRepository.repoFromDTO(
-                dto,
-                starredAt: nil,
-                cachedAt: cachedAt,
-                isStarred: false
+            displayRepo = dependencies.starredRegistry.applyingDisplayState(
+                to: GRDBRepoRepository.repoFromDTO(
+                    dto,
+                    starredAt: nil,
+                    cachedAt: cachedAt,
+                    isStarred: false
+                )
             )
             isLocalHit = false
         } catch {
@@ -365,11 +367,7 @@ struct WeeklyDetailScaffoldShell: View {
         }
         try await dependencies.starActionService.toggle(repo: repo)
 
-        // D-22 followup:registry 派生新 isStarred 显式更新 displayRepo,让 hero 当帧拿真值。
-        let nowStarred = dependencies.starredRegistry.contains(ghRepoId: repo.id)
-        var updated = repo
-        updated.isStarred = nowStarred
-        displayRepo = updated
+        displayRepo = dependencies.starredRegistry.applyingDisplayState(to: repo)
 
         await homeViewModel.refreshAfterExternalStarChange()
         await resolveRepo(for: item)

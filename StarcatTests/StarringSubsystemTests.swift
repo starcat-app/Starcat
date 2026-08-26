@@ -11,6 +11,7 @@
 //    5. StarredRegistryBootstrapper.clearOnSignOut 清空 registry
 //    6. StarActionService.star API 失败时 registry 不变（不污染状态）
 //    7. StarActionService 未登录时抛 .notAuthenticated
+//    8. star/unstar 会话星标数：Explore 快照 toggle 按 overlay ±1；asCardData 读 overlay
 //
 //  ⚠️ 不测「fileprivate 写权限」契约——编译期已保证（任何 View / ViewModel 试图
 //  调 `registry._add` 都编译失败）。把这条契约放在文件头注释 + 设计文档 §4.3.2。
@@ -210,6 +211,62 @@ struct StarringSubsystemTests {
             displayedStarsCount: 101
         )
         #expect(deps.registry.displayedStarsCount(base: 100, ghRepoId: saved.id) == 100)
+    }
+
+    @Test("toggle unstar: 列表仍持接口快照时按会话展示数 -1，而不是再对快照减一次")
+    func toggleUnstarUsesSessionOverlayNotStaleSnapshot() async throws {
+        let deps = try makeDeps()
+        deps.api.starHandler = { _, _ in }
+        deps.api.repoHandler = { owner, repo in
+            self.makeRepoDTO(id: 8888, owner: owner, name: repo, stargazersCount: 100)
+        }
+        deps.api.unstarHandler = { _, _ in }
+
+        let saved = try await deps.service.star(
+            owner: "alice",
+            repo: "snapshot",
+            displayedStarsCount: 100
+        )
+        #expect(deps.registry.displayedStarsCount(base: 100, ghRepoId: saved.id) == 101)
+
+        // Explore / Activity 详情的 displayRepo 仍是点 star 前的快照：starsCount=100。
+        var staleSnapshot = saved
+        staleSnapshot.starsCount = 100
+        staleSnapshot.isStarred = true
+
+        try await deps.service.toggle(repo: staleSnapshot)
+        #expect(deps.registry.displayedStarsCount(base: 100, ghRepoId: saved.id) == 100)
+    }
+
+    @Test("asCardData(registry:): 探索卡片星标数读会话 overlay，不停留在接口快照")
+    func asCardDataUsesSessionStarsCount() async throws {
+        let deps = try makeDeps()
+        deps.api.starHandler = { _, _ in }
+        deps.api.repoHandler = { owner, repo in
+            self.makeRepoDTO(id: 8888, owner: owner, name: repo, stargazersCount: 100)
+        }
+
+        _ = try await deps.service.star(
+            owner: "alice",
+            repo: "snapshot",
+            displayedStarsCount: 100
+        )
+
+        let dto = StarcatRepoCardDTO(
+            ghRepoId: 8888,
+            fullName: "alice/snapshot",
+            owner: "alice",
+            repo: "snapshot",
+            stars: 100,
+            forks: 0
+        )
+        let card = dto.asCardData(registry: deps.registry)
+        #expect(card.isStarred == true)
+        #expect(card.starsCount == 101)
+
+        let snapshot = deps.registry.applyingDisplayState(to: dto.toEphemeralRepo())
+        #expect(snapshot.isStarred == true)
+        #expect(snapshot.starsCount == 101)
     }
 
     @Test("star: 已入库未 star repo 重新 star 后保留 libraryState")

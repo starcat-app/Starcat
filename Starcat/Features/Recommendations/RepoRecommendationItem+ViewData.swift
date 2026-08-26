@@ -36,7 +36,7 @@ extension RepoRecommendationItem {
             avatarURL: nil,
             description: description,
             language: language,
-            starsCount: stars,
+            starsCount: registry.displayedStarsCount(base: stars, ghRepoId: repoID),
             forksCount: forks,
             isArchived: archived,
             isFork: false,

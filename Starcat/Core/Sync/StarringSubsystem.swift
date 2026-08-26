@@ -133,6 +133,18 @@ final class StarredRegistry {
         sessionStarsCounts[ghRepoId] ?? base
     }
 
+    /// 把当前会话的 star 状态和展示星标数覆到一份 Repo 上。
+    ///
+    /// Explore / Activity 详情的 `displayRepo` 来自接口快照，star/unstar 后
+    /// `resolveRepo()` 还会用快照重建。调用方必须用本方法收口，避免只改 ✓
+    /// 不改数字，也避免每个 shell 自己抄一遍。
+    func applyingDisplayState(to repo: Repo) -> Repo {
+        var updated = repo
+        updated.isStarred = contains(ghRepoId: repo.id)
+        updated.starsCount = displayedStarsCount(base: repo.starsCount, ghRepoId: repo.id)
+        return updated
+    }
+
     // MARK: - fileprivate 写 API（仅同文件 StarActionService / Bootstrapper 可调）
 
     // ⚠️ 不要把 fileprivate 改成 internal，否则会破坏「写入路径唯一」契约。
@@ -332,7 +344,10 @@ final class StarActionService {
             ghRepoId: repo.id,
             owner: repo.owner,
             name: repo.name,
-            displayedStarsCount: repo.starsCount
+            displayedStarsCount: registry.displayedStarsCount(
+                base: repo.starsCount,
+                ghRepoId: repo.id
+            )
         )
     }
 
@@ -350,7 +365,6 @@ final class StarActionService {
             throw StarActionError.notAuthenticated
         }
 
-        let wasStarred = registry.contains(ghRepoId: ghRepoId)
         let baseline: Int?
         if let displayedStarsCount {
             baseline = displayedStarsCount
@@ -364,7 +378,10 @@ final class StarActionService {
         try await repoRepository.markUnstarred(repoId: ghRepoId, userID: userID)
 
         registry._remove(ghRepoId)
-        if wasStarred, let baseline {
+        // Explore / Activity 快照路径上 registry 可能还没含这个 id（启动期 reload
+        // 未完成），但用户已经从详情页点了取消。只要本次 unstar 成功，就必须写下
+        // 展示数；不能因为 wasStarred == false 就让列表继续停在接口快照。
+        if let baseline {
             registry._setSessionStarsCount(max(0, baseline - 1), ghRepoId: ghRepoId)
         }
         NotificationCenter.default.post(
@@ -485,13 +502,21 @@ final class StarActionService {
     //     view 层不需要兜「刚 star 完」corner case(此时 displayRepo 重解析后
     //     就是真值),保留单信任源避免 UI 闪烁。
     func toggle(repo: Repo) async throws {
+        // 点之前用户看见的数字（含本次会话 overlay）。Explore 快照不会跟着变，
+        // 不能直接信 `repo.starsCount`，否则 star 100→101 后再 unstar 会减成 99。
+        let displayed = registry.displayedStarsCount(base: repo.starsCount, ghRepoId: repo.id)
         if repo.isStarred || registry.contains(ghRepoId: repo.id) {
-            try await unstar(repo: repo)
+            try await unstar(
+                ghRepoId: repo.id,
+                owner: repo.owner,
+                name: repo.name,
+                displayedStarsCount: displayed
+            )
         } else {
             _ = try await star(
                 owner: repo.owner,
                 repo: repo.name,
-                displayedStarsCount: repo.starsCount
+                displayedStarsCount: displayed
             )
         }
     }

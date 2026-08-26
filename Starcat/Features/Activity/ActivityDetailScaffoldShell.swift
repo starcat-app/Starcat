@@ -91,7 +91,7 @@ struct ActivityDetailScaffoldShell: View {
         .task(id: item.id) {
             // 同步先行:从 item.repo 直接设 displayRepo(item.repo 已经是本地真值,
             // 不需要任何 API 调用,与 trending/weekly 的 makeFallbackRepo 同位)。
-            displayRepo = item.repo
+            displayRepo = item.repo.map { dependencies.starredRegistry.applyingDisplayState(to: $0) }
             await loadReadmeIfNeeded()
         }
     }
@@ -202,11 +202,7 @@ struct ActivityDetailScaffoldShell: View {
         }
         try await dependencies.starActionService.toggle(repo: repo)
 
-        // D-24:registry 派生新 isStarred 显式更新 displayRepo,让 hero 当帧拿真值。
-        let nowStarred = dependencies.starredRegistry.contains(ghRepoId: repo.id)
-        var updated = repo
-        updated.isStarred = nowStarred
-        displayRepo = updated
+        displayRepo = dependencies.starredRegistry.applyingDisplayState(to: repo)
 
         await homeViewModel.refreshAfterExternalStarChange()
     }

@@ -104,8 +104,10 @@ private struct DiscoveryScaffoldShell: View {
     private func resolveRepo() async {
         // Discovery 详情必须以服务端最新公共元数据为准。若先返回本地 starred 缓存，
         // 老记录中缺失的 subscribers / created_at / updated_at 会永久遮蔽 API 真值。
-        let isStarred = dependencies.starredRegistry.contains(ghRepoId: item.repoID)
-        displayRepo = item.toEphemeralRepo(isStarred: isStarred)
+        // star/unstar 后的数字走 Registry 会话 overlay，不能只用接口快照。
+        displayRepo = dependencies.starredRegistry.applyingDisplayState(
+            to: item.toEphemeralRepo(isStarred: false)
+        )
     }
 
     private func handleStarTapped(repo: Repo) async throws {
@@ -115,9 +117,7 @@ private struct DiscoveryScaffoldShell: View {
         }
         try await dependencies.starActionService.toggle(repo: repo)
 
-        var updated = repo
-        updated.isStarred = dependencies.starredRegistry.contains(ghRepoId: repo.id)
-        displayRepo = updated
+        displayRepo = dependencies.starredRegistry.applyingDisplayState(to: repo)
 
         await homeViewModel.refreshAfterExternalStarChange()
         await resolveRepo()

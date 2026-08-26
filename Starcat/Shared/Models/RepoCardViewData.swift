@@ -144,6 +144,44 @@ struct RepoCardViewData: Identifiable, Hashable, Sendable {
 
 extension RepoCardViewData {
 
+    /// 用本次会话 star/unstar 后的展示星标数覆盖卡片快照。
+    ///
+    /// Manage / Activity 走 `Repo.asCardData()`，转换层碰不到 `StarredRegistry`。
+    /// 列表父视图在 body 里调用本方法，才能同时刷新 ✓ 和数字。
+    @MainActor
+    func overlayingSessionStars(_ registry: StarredRegistry) -> RepoCardViewData {
+        let displayed = registry.displayedStarsCount(base: starsCount, ghRepoId: ghRepoId)
+        guard displayed != starsCount else { return self }
+        return withStarsCount(displayed)
+    }
+
+    func withStarsCount(_ count: Int) -> RepoCardViewData {
+        RepoCardViewData(
+            ghRepoId: ghRepoId,
+            fullName: fullName,
+            owner: owner,
+            repo: repo,
+            avatarURL: avatarURL,
+            description: description,
+            language: language,
+            starsCount: count,
+            forksCount: forksCount,
+            isArchived: isArchived,
+            isFork: isFork,
+            isPrivate: isPrivate,
+            isStarred: isStarred,
+            isInLibrary: isInLibrary,
+            badge: badge,
+            weeklySources: weeklySources,
+            weeklySourceLabel: weeklySourceLabel,
+            inlineMetadata: inlineMetadata,
+            footerMetadata: footerMetadata,
+            readStatus: readStatus,
+            openSSFScore: openSSFScore,
+            healthBadge: healthBadge
+        )
+    }
+
     /// 返回只替换知识库状态的新卡片数据。
     ///
     /// `RepoCardViewData` 是不可变值类型，Search Center 在用户点击 ❤️ 后需要
@@ -302,7 +340,7 @@ extension StarcatRepoCardDTO {
             avatarURL: self.ownerAvatar,
             description: self.description,
             language: self.language,
-            starsCount: self.stars,
+            starsCount: registry.displayedStarsCount(base: self.stars, ghRepoId: self.ghRepoId),
             forksCount: self.forks,
             isArchived: self.isArchived,
             isFork: self.isFork,
@@ -353,7 +391,7 @@ extension TrendingRepo {
             avatarURL: self.ownerAvatar,
             description: self.description,
             language: self.language,
-            starsCount: self.starsCount,
+            starsCount: registry.displayedStarsCount(base: self.starsCount, ghRepoId: self.ghRepoId),
             forksCount: self.forksCount,
             isArchived: false,
             isFork: false,
@@ -398,7 +436,7 @@ extension WeeklyFeedItem {
             avatarURL: card.ownerAvatar,
             description: card.description,
             language: card.language,
-            starsCount: card.stars,
+            starsCount: registry.displayedStarsCount(base: card.stars, ghRepoId: card.ghRepoId),
             forksCount: card.forks,
             isArchived: card.isArchived,
             isFork: card.isFork,

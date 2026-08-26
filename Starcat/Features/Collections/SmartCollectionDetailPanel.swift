@@ -514,7 +514,13 @@ private struct SmartCollectionRepoCard: View {
     /// 与 Manage `UnifiedRepoRow` chip 行对齐：Stars / Forks / Watchers / Issues 单行横排。
     private var statsRow: some View {
         HStack(spacing: 8) {
-            StarsBadge(count: repo.starsCount, style: .full)
+            StarsBadge(
+                count: dependencies.starredRegistry.displayedStarsCount(
+                    base: repo.starsCount,
+                    ghRepoId: repo.id
+                ),
+                style: .full
+            )
             MetaBadge(systemImage: "tuningfork", text: repo.forksCount.formattedShort, tint: .secondary)
             MetaBadge(systemImage: "eye", text: repo.watchersCount.formattedShort, tint: .secondary)
             MetaBadge(

@@ -3022,7 +3022,7 @@ private struct ManageRepoRowContent: View {
                 isInLibrary: viewModel.libraryState(for: repo.id) == .inLibrary,
                 openSSFScore: dependencies.openSSFScoreStore.badge(for: repo.id),
                 healthBadge: dependencies.repoHealthStore.badge(for: repo.id)
-            ),
+            ).overlayingSessionStars(dependencies.starredRegistry),
             isSelected: isSelected,
             isPinned: viewModel.isRepoPinned(repo.id),
             semanticHit: viewModel.semanticHit(for: repo.id),
