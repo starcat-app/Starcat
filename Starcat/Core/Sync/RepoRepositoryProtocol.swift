@@ -40,7 +40,7 @@ protocol RepoRepositoryProtocol: Sendable {
     func markUnstarredExcept(remoteRepoIDs: Set<Int64>, userID: Int64) async throws -> Set<Int64>
 
     /// W4 B1：把单个 repo 标记为 is_starred = false。
-    /// 同时清理 starred_repos 中对应行。
+    /// 同时清理 starred_repos 中对应行，并把本地 stars_count 减 1（下限 0）。
     /// 不删除 repo / 笔记 / 标签 —— 用户后续若 re-star 仍能拿回原数据。
     func markUnstarred(repoId: Int64, userID: Int64) async throws
 

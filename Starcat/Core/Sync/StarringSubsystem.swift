@@ -106,6 +106,14 @@ final class StarredRegistry {
     /// 对外只读（`private(set)`）；SwiftUI Observation 监听这个字段即可触发跨场景刷新。
     private(set) var ids: Set<Int64> = []
 
+    /// 本次会话里 star / unstar 后的展示用星标数。
+    ///
+    /// Explore / Activity / 搜索等列表拿的是接口快照，`starsCount` 不会跟着 GitHub
+    /// 写操作变。这里存「点完之后用户应立刻看到的数字」，详情 chip 和
+    /// `asCardData(registry:)` 都读它；没有记录时退回快照/DB 原值。
+    /// 用绝对值而不是 delta，避免 Manage 已把 DB 减 1 后再叠加一次。
+    private(set) var sessionStarsCounts: [Int64: Int] = [:]
+
     init() {}
 
     // MARK: - 公开只读 API
@@ -119,6 +127,11 @@ final class StarredRegistry {
 
     /// 当前已 star 数量（外部展示 / 调试用）。
     var count: Int { ids.count }
+
+    /// 列表 / hero 展示用星标数：本次会话写过则用会话值，否则用调用方快照。
+    func displayedStarsCount(base: Int, ghRepoId: Int64) -> Int {
+        sessionStarsCounts[ghRepoId] ?? base
+    }
 
     // MARK: - fileprivate 写 API（仅同文件 StarActionService / Bootstrapper 可调）
 
@@ -135,6 +148,16 @@ final class StarredRegistry {
 
     fileprivate func _replace(with snapshot: Set<Int64>) {
         ids = snapshot
+    }
+
+    fileprivate func _setSessionStarsCount(_ count: Int, ghRepoId: Int64) {
+        var next = sessionStarsCounts
+        next[ghRepoId] = max(0, count)
+        sessionStarsCounts = next
+    }
+
+    fileprivate func _clearSessionStarsCounts() {
+        sessionStarsCounts = [:]
     }
 }
 
@@ -221,7 +244,7 @@ final class StarActionService {
     /// - returns: 写入本地后的完整 `Repo`（含 cachedAt / starredAt）
     /// - throws:  `StarActionError.notAuthenticated` 未登录 / 网络层 `NetworkError` /
     ///            DB 错误。任意一步失败都不会污染 registry / DB（只有最后步骤命中才写）。
-    func star(owner: String, repo: String) async throws -> Repo {
+    func star(owner: String, repo: String, displayedStarsCount: Int? = nil) async throws -> Repo {
         guard let userID = userIDProvider() else {
             throw StarActionError.notAuthenticated
         }
@@ -241,7 +264,14 @@ final class StarActionService {
         )
 
         // 4. registry._add（fileprivate 同文件可见）
+        let alreadyStarred = registry.contains(ghRepoId: saved.id)
         registry._add(saved.id)
+        if !alreadyStarred {
+            // 详情/列表点 star 时带上当前展示数，避免 GitHub GET 仍返回旧计数。
+            // 批量 star 没有展示数时退回 GET 结果。
+            let nextCount = displayedStarsCount.map { $0 + 1 } ?? saved.starsCount
+            registry._setSessionStarsCount(nextCount, ghRepoId: saved.id)
+        }
         NotificationCenter.default.post(
             name: .repositorySpotlightSourceDidChange,
             object: nil,
@@ -298,7 +328,12 @@ final class StarActionService {
     ///
     /// - throws: 同 star。失败不修改 registry。
     func unstar(repo: Repo) async throws {
-        try await unstar(ghRepoId: repo.id, owner: repo.owner, name: repo.name)
+        try await unstar(
+            ghRepoId: repo.id,
+            owner: repo.owner,
+            name: repo.name,
+            displayedStarsCount: repo.starsCount
+        )
     }
 
     /// Unstar 入口的 by-id overload（W12 toolbar 专项 PR-4 引入）。
@@ -310,15 +345,28 @@ final class StarActionService {
     ///
     /// **同文件依赖**：访问 `registry._remove` 是 fileprivate，必须留在本文件内，
     /// 与 StarringSubsystem 的「写入路径唯一」契约一致（详见文件头注释）。
-    func unstar(ghRepoId: Int64, owner: String, name: String) async throws {
+    func unstar(ghRepoId: Int64, owner: String, name: String, displayedStarsCount: Int? = nil) async throws {
         guard let userID = userIDProvider() else {
             throw StarActionError.notAuthenticated
+        }
+
+        let wasStarred = registry.contains(ghRepoId: ghRepoId)
+        let baseline: Int?
+        if let displayedStarsCount {
+            baseline = displayedStarsCount
+        } else if let sessionCount = registry.sessionStarsCounts[ghRepoId] {
+            baseline = sessionCount
+        } else {
+            baseline = try await repoRepository.findById(ghRepoId)?.starsCount
         }
 
         try await apiClient.unstar(owner: owner, repo: name)
         try await repoRepository.markUnstarred(repoId: ghRepoId, userID: userID)
 
         registry._remove(ghRepoId)
+        if wasStarred, let baseline {
+            registry._setSessionStarsCount(max(0, baseline - 1), ghRepoId: ghRepoId)
+        }
         NotificationCenter.default.post(
             name: .repositorySpotlightSourceDidChange,
             object: nil,
@@ -440,7 +488,11 @@ final class StarActionService {
         if repo.isStarred || registry.contains(ghRepoId: repo.id) {
             try await unstar(repo: repo)
         } else {
-            _ = try await star(owner: repo.owner, repo: repo.name)
+            _ = try await star(
+                owner: repo.owner,
+                repo: repo.name,
+                displayedStarsCount: repo.starsCount
+            )
         }
     }
 }
@@ -506,6 +558,7 @@ final class StarredRegistryBootstrapper {
     /// 登出时清空 registry。
     func clearOnSignOut() {
         registry._replace(with: [])
+        registry._clearSessionStarsCounts()
         AppLog.sync.info("StarredRegistry cleared on sign out")
     }
 }

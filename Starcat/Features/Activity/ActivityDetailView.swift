@@ -87,6 +87,7 @@ struct ActivityDetailView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(AppSettings.self) private var settings
     @Environment(\.locale) private var locale
+    @Environment(AppDependencies.self) private var dependencies
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -437,7 +438,13 @@ struct ActivityDetailView: View {
                 }
 
                 HStack(spacing: 8) {
-                    StarsBadge(count: repo.starsCount, style: .full)
+                    StarsBadge(
+                        count: dependencies.starredRegistry.displayedStarsCount(
+                            base: repo.starsCount,
+                            ghRepoId: repo.id
+                        ),
+                        style: .full
+                    )
                     MetaBadge(systemImage: "tuningfork", text: repo.forksCount.formattedShort, tint: .secondary)
                     MetaBadge(systemImage: "eye", text: repo.watchersCount.formattedShort, tint: StatSemanticColor.watchers.resolved(colorScheme: colorScheme))
                     if repo.isArchived {

@@ -57,7 +57,7 @@ struct StarringSubsystemTests {
     }
 
     /// 构造一个 GitHubRepoDTO（默认字段足够 upsert 不挂）。
-    private func makeRepoDTO(id: Int64, owner: String, name: String) -> GitHubRepoDTO {
+    private func makeRepoDTO(id: Int64, owner: String, name: String, stargazersCount: Int = 100) -> GitHubRepoDTO {
         let user = GitHubUserDTO(
             id: 1, login: owner, name: nil, avatarUrl: nil,
             publicRepos: nil, followers: nil, following: nil,
@@ -71,7 +71,7 @@ struct StarringSubsystemTests {
             owner: user,
             description: "desc",
             language: "Swift",
-            stargazersCount: 100,
+            stargazersCount: stargazersCount,
             forksCount: 10,
             watchersCount: 5,
             topics: ["a"],
@@ -165,6 +165,51 @@ struct StarringSubsystemTests {
         #expect(stillThere != nil)
         #expect(stillThere?.isStarred == false)
         #expect(try await deps.note.fetchLibraryState(repoId: saved.id) == .inLibrary)
+    }
+
+    @Test("unstar: 本地 starsCount 从 1 回到 0（不依赖 GitHub GET 的最终一致性）")
+    func unstarDecrementsLocalStarsCount() async throws {
+        let deps = try makeDeps()
+        deps.api.starHandler = { _, _ in }
+        deps.api.repoHandler = { owner, repo in
+            self.makeRepoDTO(id: 7777, owner: owner, name: repo, stargazersCount: 1)
+        }
+        deps.api.unstarHandler = { _, _ in }
+
+        let saved = try await deps.service.star(owner: "alice", repo: "zero-star")
+        #expect(saved.starsCount == 1)
+
+        try await deps.service.unstar(repo: saved)
+
+        let local = try await deps.repo.findById(7777)
+        #expect(local?.isStarred == false)
+        #expect(local?.starsCount == 0)
+        #expect(deps.registry.displayedStarsCount(base: 1, ghRepoId: 7777) == 0)
+    }
+
+    @Test("star/unstar: 会话星标数按点击前展示值 ±1，不依赖 GitHub GET")
+    func sessionStarsCountFollowsDisplayedSnapshot() async throws {
+        let deps = try makeDeps()
+        deps.api.starHandler = { _, _ in }
+        deps.api.repoHandler = { owner, repo in
+            self.makeRepoDTO(id: 8888, owner: owner, name: repo, stargazersCount: 100)
+        }
+        deps.api.unstarHandler = { _, _ in }
+
+        let saved = try await deps.service.star(
+            owner: "alice",
+            repo: "snapshot",
+            displayedStarsCount: 100
+        )
+        #expect(deps.registry.displayedStarsCount(base: 100, ghRepoId: saved.id) == 101)
+
+        try await deps.service.unstar(
+            ghRepoId: saved.id,
+            owner: "alice",
+            name: "snapshot",
+            displayedStarsCount: 101
+        )
+        #expect(deps.registry.displayedStarsCount(base: 100, ghRepoId: saved.id) == 100)
     }
 
     @Test("star: 已入库未 star repo 重新 star 后保留 libraryState")

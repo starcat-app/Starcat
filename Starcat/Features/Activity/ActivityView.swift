@@ -675,6 +675,7 @@ struct ActivityView: View {
 private struct ActivityRowView: View {
     let item: ActivityItem
     let isSelected: Bool
+    @Environment(AppDependencies.self) private var dependencies
 
     var body: some View {
         // R-01 §3.1.1（2026-06-10 P1）：RepoListDensity 已删，直接渲染 card。
@@ -719,7 +720,13 @@ private struct ActivityRowView: View {
                         if let language = repo.language, !language.isEmpty {
                             LanguageBadge(language: language, style: .full)
                         }
-                        StarsBadge(count: repo.starsCount, style: .full)
+                        StarsBadge(
+                            count: dependencies.starredRegistry.displayedStarsCount(
+                                base: repo.starsCount,
+                                ghRepoId: repo.id
+                            ),
+                            style: .full
+                        )
                     }
                     MetaBadge(systemImage: item.category.systemImage, text: item.category.localizedTitle, tint: .secondary)
                     if let date = item.createdAt {

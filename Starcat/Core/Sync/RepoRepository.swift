@@ -127,10 +127,23 @@ struct GRDBRepoRepository {
     /// W4 B1：单个 repo unstar。
     /// 复用 markUnstarredExcept 的同款语义：UPDATE is_starred=0 + DELETE starred_repos 行。
     /// 不删 repo / 笔记 / 标签关联，给用户保留 re-star 后立刻恢复数据的可能。
+    ///
+    /// 同时把 `stars_count` 减 1（下限 0）。`star()` 会 GET `/repos` 把含自己那颗星的
+    /// 新计数写回本地；`unstar` 若只改 `is_starred`，列表 / hero 星标数会停在旧值
+    /// （0 星仓库 star 后变 1，取消后仍显示 1）。不在这里再 GET：GitHub 取消后短时间
+    /// 仍可能返回旧计数。只在当前仍是 starred 时减，避免重复 unstar 把计数打穿。
     func markUnstarred(repoId: Int64, userID: Int64) async throws {
         try await database.writer.write { db in
             try db.execute(
-                sql: "UPDATE repos SET is_starred = 0 WHERE id = ?",
+                sql: """
+                    UPDATE repos
+                    SET is_starred = 0,
+                        stars_count = CASE
+                            WHEN is_starred = 1 THEN MAX(0, stars_count - 1)
+                            ELSE stars_count
+                        END
+                    WHERE id = ?
+                    """,
                 arguments: [repoId]
             )
             try db.execute(

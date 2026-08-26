@@ -2383,9 +2383,12 @@ private struct SearchRemoteRepoDetailView: View {
         starredOverride ?? isStarred
     }
 
-    /// stats 行星标数：优先用 Star/Unstar 成功后的本地覆盖值。
+    /// stats 行星标数：Star/Unstar 成功后 Registry 会话值优先，其次本地覆盖，再退回快照。
     private func effectiveStarsCount(for repo: Repo) -> Int {
-        starsCountOverride ?? repo.starsCount
+        dependencies.starredRegistry.displayedStarsCount(
+            base: starsCountOverride ?? repo.starsCount,
+            ghRepoId: repo.id
+        )
     }
 
     private var effectiveIsInLibrary: Bool {

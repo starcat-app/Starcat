@@ -26,7 +26,8 @@ struct RepoRepositoryTests {
         name: String,
         fork: Bool = false,
         ownerLogin: String = "tester",
-        createdAt: String? = nil
+        createdAt: String? = nil,
+        stargazersCount: Int = 10
     ) -> StarredRepoDTO {
         let user = GitHubUserDTO(id: 1, login: ownerLogin, name: nil, avatarUrl: nil,
                                  publicRepos: nil, followers: nil, following: nil,
@@ -39,7 +40,7 @@ struct RepoRepositoryTests {
             owner: user,
             description: "desc \(name)",
             language: "Swift",
-            stargazersCount: 10,
+            stargazersCount: stargazersCount,
             forksCount: 1,
             watchersCount: 2,
             topics: ["a", "b"],
@@ -179,6 +180,27 @@ struct RepoRepositoryTests {
             let stillExists = try Int.fetchOne(db, sql: "SELECT count(*) FROM repos WHERE id = 2") ?? 0
             #expect(stillExists == 1)
         }
+    }
+
+    @Test("markUnstarred 会把本地 stars_count 减 1，且不会减到负数")
+    func markUnstarredDecrementsStarsCount() async throws {
+        let (repo, _) = try makeRepo()
+        try await repo.upsertStarred(
+            [makeDTO(id: 1, name: "zero-star", stargazersCount: 1)],
+            userID: 100,
+            syncedAt: Date()
+        )
+        #expect(try await repo.findById(1)?.starsCount == 1)
+
+        try await repo.markUnstarred(repoId: 1, userID: 100)
+
+        let afterUnstar = try await repo.findById(1)
+        #expect(afterUnstar?.isStarred == false)
+        #expect(afterUnstar?.starsCount == 0)
+
+        // 幂等：已经 unstar 过的行不能再把 stars_count 减下去。
+        try await repo.markUnstarred(repoId: 1, userID: 100)
+        #expect(try await repo.findById(1)?.starsCount == 0)
     }
 
     @Test("findByOwnerName 大小写不敏感匹配 full_name")

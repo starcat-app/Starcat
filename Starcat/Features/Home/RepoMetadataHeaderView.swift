@@ -224,6 +224,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
             StarStatChipButton(
                 isStarred: repo.isStarred,
                 count: repo.starsCount,
+                ghRepoId: repo.id,
                 helpKey: starHelpKey,
                 action: onStarTapped
             )

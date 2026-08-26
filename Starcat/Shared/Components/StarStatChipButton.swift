@@ -65,6 +65,7 @@ struct StarStatChipButton: View {
 
     let isStarred: Bool
     let count: Int
+    let ghRepoId: Int64
     let helpKey: LocalizedStringKey
 
     /// 点击后执行的异步闭包。
@@ -84,6 +85,13 @@ struct StarStatChipButton: View {
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(AppDependencies.self) private var dependencies
+
+    /// 探索/活动详情的 `count` 来自接口快照；star/unstar 后读 Registry 会话值，
+    /// 与列表 `asCardData(registry:)` 同一条源，避免只改 ✓ 不改数字。
+    private var displayedCount: Int {
+        dependencies.starredRegistry.displayedStarsCount(base: count, ghRepoId: ghRepoId)
+    }
 
     var body: some View {
         Button {
@@ -104,7 +112,7 @@ struct StarStatChipButton: View {
         VStack(alignment: .center, spacing: 2) {
             HStack(spacing: 4) {
                 iconOrSpinner
-                Text(count, format: .number)
+                Text(displayedCount, format: .number)
                     .monospacedDigit()
                     .font(interfaceScale.font(.bodyEmphasis, weight: .medium))
             }
