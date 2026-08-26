@@ -113,6 +113,23 @@ enum DatabaseMigrations {
         registerV29AwesomeSourceCardMetadata(into: &migrator)
         registerV30AwesomeEntryUpdatedAt(into: &migrator)
         registerV31AwesomeCustomSourceParsing(into: &migrator)
+        registerV32GitHubStarListAIRules(into: &migrator)
+    }
+
+    /// AI 分组规则是 Starcat 用户数据，必须与 GitHub 远端 description 分表保存。
+    /// 外键级联保证用户删除 GitHub List 后，本地私有规则不会成为孤儿。
+    private static func registerV32GitHubStarListAIRules(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v32-github-star-list-ai-rules") { db in
+            guard try db.tableExists("github_star_lists") else { return }
+            try db.create(table: "github_star_list_ai_rules", ifNotExists: true) { table in
+                table.column("list_id", .text)
+                    .primaryKey()
+                    .references("github_star_lists", column: "id", onDelete: .cascade)
+                table.column("instruction", .text).notNull().defaults(to: "")
+                table.column("auto_apply_enabled", .boolean).notNull().defaults(to: false)
+                table.column("updated_at", .text).notNull()
+            }
+        }
     }
 
     // MARK: - v31-awesome-custom-source-parsing：自定义来源后台解析状态（2026-08-25）

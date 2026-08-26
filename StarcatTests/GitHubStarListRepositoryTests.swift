@@ -131,6 +131,53 @@ struct GitHubStarListRepositoryTests {
         #expect(try await repo.repoCountsByList()["list-b"] == 1)
     }
 
+    @Test("fetchAllListAssignments: 一个仓库可同时属于多个 Lists")
+    func fetchAllAssignmentsKeepsManyToManyMemberships() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 1, owner: "octo", name: "one")
+        try await repo.replaceRemoteSnapshot(
+            lists: [
+                remoteList(id: "list-a", name: "A", position: 0),
+                remoteList(id: "list-b", name: "B", position: 1)
+            ],
+            memberships: [
+                GitHubStarListRemoteMembership(listId: "list-a", repoFullName: "octo/one"),
+                GitHubStarListRemoteMembership(listId: "list-b", repoFullName: "octo/one")
+            ],
+            syncedAt: Date(timeIntervalSince1970: 0)
+        )
+
+        let assignments = try await repo.fetchAllListAssignments()
+        #expect(assignments[1]?.map(\.id) == ["list-a", "list-b"])
+    }
+
+    @Test("AI 规则: 远端快照不覆盖本地规则，删除 List 后级联清理")
+    func aiRuleSurvivesSnapshotAndCascadesOnDelete() async throws {
+        let (repo, _) = try makeRepo()
+        try await repo.replaceRemoteSnapshot(
+            lists: [remoteList(id: "list-1", name: "Original")],
+            memberships: [],
+            syncedAt: Date(timeIntervalSince1970: 0)
+        )
+        let rule = GitHubStarListAIRule(
+            listId: "list-1",
+            instruction: "Only native Swift tools",
+            autoApplyEnabled: true,
+            updatedAt: "2026-08-26T00:00:00Z"
+        )
+        try await repo.upsertAIRule(rule)
+
+        try await repo.replaceRemoteSnapshot(
+            lists: [remoteList(id: "list-1", name: "Renamed")],
+            memberships: [],
+            syncedAt: Date(timeIntervalSince1970: 1)
+        )
+        #expect(try await repo.findAIRule(listId: "list-1") == rule)
+
+        try await repo.deleteList(id: "list-1")
+        #expect(try await repo.findAIRule(listId: "list-1") == nil)
+    }
+
     @Test("ungroupedRepoCount: 统计没有任何 GitHub List 的 starred repo")
     func ungroupedRepoCount() async throws {
         let (repo, db) = try makeRepo()
@@ -152,4 +199,3 @@ struct GitHubStarListRepositoryTests {
         #expect(try await repo.ungroupedRepoCount() == 1)
     }
 }
-

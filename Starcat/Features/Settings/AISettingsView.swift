@@ -170,6 +170,8 @@ struct AISettingsTab: View {
             // 自动整理分类放到 Prompt 之后——按"配置链路从上到下"顺序排：
             // Provider → 模型 → 模型配置 → Prompt → 自动化（消费上面所有配置）→ 隐私说明。
             autoTidySection
+            // 仓库分组不是标签分类的子能力：独立顶级 Section 承载全局授权与专属阈值。
+            githubListGroupingSection
             // 2026-06-12 向量索引改进：AI 索引（向量化）配置，放在自动整理之后
             // 因为索引依赖摘要 / README 等上游配置就绪。
             aiIndexSection
@@ -824,6 +826,51 @@ struct AISettingsTab: View {
         }
     }
 
+    /// 仓库分组的独立全局配置。
+    ///
+    /// 标签是 Starcat 本地数据，而仓库分组会写入 GitHub Lists。两者的授权边界和
+    /// 置信度不能放在同一个配置组里，否则调整标签策略时可能意外改变远端写入行为。
+    private var githubListGroupingSection: some View {
+        Section {
+            Toggle(isOn: autoTidyBinding(\.generateGitHubListGrouping)) {
+                autoTidyLabel(
+                    title: "settings.githubListGrouping.enabled.title",
+                    description: "settings.githubListGrouping.enabled.description"
+                )
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                LabeledContent("settings.githubListGrouping.threshold.label") {
+                    Text(verbatim: githubListGroupingThresholdPercentString)
+                        .font(.callout.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(.tint)
+                }
+                Slider(
+                    value: autoTidyBinding(\.githubListGroupingConfidenceThreshold),
+                    in: 0.5...1.0,
+                    step: 0.05
+                )
+                .controlSize(.mini)
+                Text(String(
+                    format: String.l10n("settings.githubListGrouping.threshold.hintFormat"),
+                    githubListGroupingThresholdPercentString
+                ))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            .disabled(!settings.autoTidySettings.generateGitHubListGrouping)
+            .opacity(settings.autoTidySettings.generateGitHubListGrouping ? 1.0 : 0.5)
+        } header: {
+            SettingsSectionHeader(
+                "settings.githubListGrouping.section",
+                systemImage: "folder.badge.gearshape",
+                style: .prominent
+            )
+        } footer: {
+            Text("settings.githubListGrouping.footer")
+        }
+    }
+
     @ViewBuilder
     private var autoTidyContent: some View {
         // 2026-07-18：DisclosureGroup 内不会自动出现 Form 行分隔线，
@@ -1009,8 +1056,8 @@ struct AISettingsTab: View {
         Divider()
 
         // HOM-126 follow-up (dong4j 反馈 2026-06-07，截图：阈值 label 没有独立开关)：
-        // 阈值区两层 disable：
-        //   - 外层（整组）：`generateTags = false` → 阈值 Toggle 和滑块全 disable（标签都关了阈值无意义）；
+        // 标签阈值区两层 disable：
+        //   - 外层（整组）：标签关闭时整组 disable；
         //   - 内层（仅滑块）：`useConfidenceThreshold = false` → 阈值 Toggle 行还能点开，但滑块 disable，
         //     `makeBatchOptions` 把下游阈值降级为 0（不过滤，所有标签都自动应用）。
         Group {
@@ -1117,6 +1164,11 @@ struct AISettingsTab: View {
 
     private var thresholdPercentString: String {
         "\(Int((settings.autoTidySettings.confidenceThreshold * 100).rounded()))%"
+    }
+
+    /// 仓库分组拥有独立阈值，不能与标签自动应用共用同一显示值。
+    private var githubListGroupingThresholdPercentString: String {
+        "\(Int((settings.autoTidySettings.githubListGroupingConfidenceThreshold * 100).rounded()))%"
     }
 
     // MARK: - Auto Tidy Bindings

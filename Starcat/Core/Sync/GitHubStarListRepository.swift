@@ -194,4 +194,27 @@ struct GRDBGitHubStarListRepository: GitHubStarListRepositoryProtocol {
             return result
         }
     }
+
+    // MARK: - Starcat AI 分组规则
+
+    func upsertAIRule(_ rule: GitHubStarListAIRule) async throws {
+        try await database.writer.write { db in
+            try rule.save(db)
+        }
+    }
+
+    func findAIRule(listId: String) async throws -> GitHubStarListAIRule? {
+        try await database.writer.read { db in
+            try GitHubStarListAIRule.fetchOne(db, key: listId)
+        }
+    }
+
+    func fetchAllAIRules() async throws -> [GitHubStarListAIRule] {
+        try await database.writer.read { db in
+            try GitHubStarListAIRule.fetchAll(
+                db,
+                sql: "SELECT * FROM github_star_list_ai_rules ORDER BY list_id ASC"
+            )
+        }
+    }
 }

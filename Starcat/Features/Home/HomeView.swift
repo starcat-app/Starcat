@@ -1552,6 +1552,12 @@ struct HomeView: View {
         // → 不动任何业务状态，避免误清缓存导致 UI 无谓重渲。
         guard oldUserID != newUserID else { return }
 
+        // AI Lists 建议和队列快照都属于账号作用域。真正换账号或登出时立即取消旧请求，
+        // 并在 runLoop 退出后清掉内存态，避免旧账号建议出现在新账号审核页。
+        Task { @MainActor in
+            await dependencies.batchAIQueueService.resetForAccountChange()
+        }
+
         if let newUser = newState.user {
             // 登录态变化统一走 `handleAuthenticatedEntry`（区分会话恢复 vs 真换账号）。
             handleAuthenticatedEntry(oldUserID: oldUserID, user: newUser)
@@ -1848,6 +1854,12 @@ struct HomeView: View {
         dependencies.batchAIQueueService.onTagsChanged = {
             Task { @MainActor in
                 await viewModel.refreshSidebar()
+            }
+        }
+        dependencies.batchAIQueueService.onGitHubStarListsChanged = {
+            Task { @MainActor in
+                await viewModel.refreshSidebar()
+                await viewModel.reloadItems(forceRefresh: true)
             }
         }
 

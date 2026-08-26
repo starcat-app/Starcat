@@ -140,6 +140,12 @@ struct BatchAIJob: Identifiable, Equatable, Sendable {
     /// 是否生成了 AI 摘要（用于 UI 区分"只跑了标签"和"摘要 + 标签都跑了"）。
     var didGenerateSummary: Bool = false
 
+    /// GitHub Lists 建议只保存在当前批次，手动审核确认前不得写入 GitHub。
+    var suggestedGitHubLists: [GitHubStarListAISuggestion] = []
+
+    /// 自动模式或人工确认后实际新增成功的 GitHub List 名称。
+    var appliedGitHubListNames: [String] = []
+
     init(repoId: Int64, repoFullName: String) {
         self.repoId = repoId
         self.repoFullName = repoFullName
@@ -155,6 +161,8 @@ struct BatchAIJob: Identifiable, Equatable, Sendable {
               lhs.errorDiagnostic == rhs.errorDiagnostic,
               lhs.copyDiagnostic == rhs.copyDiagnostic,
               lhs.appliedTagNames == rhs.appliedTagNames,
+              lhs.suggestedGitHubLists == rhs.suggestedGitHubLists,
+              lhs.appliedGitHubListNames == rhs.appliedGitHubListNames,
               lhs.finishedAt == rhs.finishedAt,
               lhs.didGenerateSummary == rhs.didGenerateSummary,
               lhs.ignoredTagsBelowThreshold.count == rhs.ignoredTagsBelowThreshold.count
@@ -178,6 +186,8 @@ enum BatchAIAction: String, CaseIterable, Codable, Hashable, Sendable {
     case summary
     /// 推荐并应用 / 暂存标签（依 Options.autoApplyTags 决定是否落库）。
     case tags
+    /// 推荐加入用户已创建的 GitHub Lists；手动模式只暂存，自动模式受双重开关约束。
+    case githubLists
 }
 
 // MARK: - BatchAIQueueOptions
@@ -214,6 +224,27 @@ struct BatchAIQueueOptions: Equatable, Sendable {
     /// 不可重试错误的判别由 BatchAIQueueService.isPermanentError 实现。
     var maxRetries: Int = 3
 
-    /// 至少要选一个子任务才能启动队列。
-    var isValidForStart: Bool { !actions.isEmpty }
+    /// GitHub Lists AI 分组的封闭候选集。只有 actions 含 `.githubLists` 时读取。
+    var githubListGrouping: GitHubStarListAIGroupingConfiguration?
+
+    /// Auto Tidy 把不同候选范围合并进一个队列时，限制摘要/标签只处理原“未打标签”集合。
+    /// nil 保持现有手动批量整理对全部入队 repo 执行的语义。
+    var standardActionRepoIDs: Set<Int64>?
+
+    /// 至少要选一个子任务；Lists 子任务还必须带规则非空的封闭候选集。
+    var isValidForStart: Bool {
+        guard !actions.isEmpty else { return false }
+        guard actions.contains(.githubLists) else { return true }
+        return githubListGrouping?.hasCandidates == true
+    }
+
+    func shouldRun(_ action: BatchAIAction, forRepoID repoID: Int64) -> Bool {
+        guard actions.contains(action) else { return false }
+        switch action {
+        case .summary, .tags:
+            return standardActionRepoIDs?.contains(repoID) ?? true
+        case .githubLists:
+            return githubListGrouping?.eligibleRepoIDs?.contains(repoID) ?? true
+        }
+    }
 }

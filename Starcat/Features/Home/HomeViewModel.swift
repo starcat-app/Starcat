@@ -514,6 +514,12 @@ final class HomeViewModel {
     private(set) var githubStarListCounts: [String: Int] = [:]
     /// 虚拟「未分组」计数。
     private(set) var githubStarListUngroupedCount: Int = 0
+    /// repo id → GitHub List ids。右键菜单只读这份随 Sidebar 一起刷新的快照，
+    /// 避免 View 构建期间逐行访问数据库，也避免把多对多关系误判成唯一归属。
+    private(set) var githubStarListIDsByRepo: [Int64: Set<String>] = [:]
+    /// list id → Starcat 私有 AI 规则。只缓存是否存在有效规则等 Sidebar 展示所需状态，
+    /// 真正运行时仍由 Sheet 重新读取并冻结快照，避免编辑期间使用过期上下文。
+    private(set) var githubStarListAIRulesByListID: [String: GitHubStarListAIRule] = [:]
     /// 用户自定义智能集合。内置集合由 `SmartCollectionKind` 提供，不入库。
     private(set) var userSmartCollections: [UserSmartCollection] = []
     /// Release 时间线入口右侧计数：只统计当前激活订阅，已取消订阅的保留行不计入。
@@ -1440,6 +1446,8 @@ final class HomeViewModel {
         githubStarLists = []
         githubStarListCounts = [:]
         githubStarListUngroupedCount = 0
+        githubStarListIDsByRepo = [:]
+        githubStarListAIRulesByListID = [:]
         userSmartCollections = []
         releaseSubscriptionCount = 0
 
@@ -1530,6 +1538,8 @@ final class HomeViewModel {
             async let githubListsResult = fetchGitHubStarLists()
             async let githubListCountsResult = fetchGitHubStarListCounts()
             async let githubUngroupedCountResult = fetchGitHubStarListUngroupedCount()
+            async let githubAssignmentsResult = fetchGitHubStarListAssignments()
+            async let githubAIRulesResult = fetchGitHubStarListAIRules()
             async let smartCollectionsResult = fetchUserSmartCollections()
             async let releaseSubscriptionCountResult = fetchReleaseSubscriptionCount()
             // HOM-179：一并刷新 repo→tagIds 映射，让 selectedTagIds 多选过滤实时生效。
@@ -1548,6 +1558,11 @@ final class HomeViewModel {
             self.githubStarLists = try await githubListsResult
             self.githubStarListCounts = try await githubListCountsResult
             self.githubStarListUngroupedCount = try await githubUngroupedCountResult
+            let githubAssignments = try await githubAssignmentsResult
+            self.githubStarListIDsByRepo = githubAssignments.mapValues { Set($0.map(\.id)) }
+            self.githubStarListAIRulesByListID = Dictionary(
+                uniqueKeysWithValues: try await githubAIRulesResult.map { ($0.listId, $0) }
+            )
             self.userSmartCollections = try await smartCollectionsResult
             self.releaseSubscriptionCount = try await releaseSubscriptionCountResult
             let assignments = try await tagAssignmentsResult
@@ -1831,6 +1846,27 @@ final class HomeViewModel {
     private func fetchGitHubStarListUngroupedCount() async throws -> Int {
         guard let githubStarListRepository else { return 0 }
         return try await githubStarListRepository.ungroupedRepoCount()
+    }
+
+    private func fetchGitHubStarListAssignments() async throws -> [Int64: [GitHubStarList]] {
+        guard let githubStarListRepository else { return [:] }
+        return try await githubStarListRepository.fetchAllListAssignments()
+    }
+
+    private func fetchGitHubStarListAIRules() async throws -> [GitHubStarListAIRule] {
+        guard let githubStarListRepository else { return [] }
+        return try await githubStarListRepository.fetchAllAIRules()
+    }
+
+    var hasGitHubStarListAIRules: Bool {
+        githubStarListAIRulesByListID.values.contains {
+            !$0.instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
+    /// 一个仓库可以同时属于多个 GitHub Lists；菜单通过这个查询展示每一项的独立状态。
+    func isRepo(_ repoID: Int64, inGitHubStarList listID: String) -> Bool {
+        githubStarListIDsByRepo[repoID]?.contains(listID) == true
     }
 
     private func fetchReleaseSubscriptionCount() async throws -> Int {

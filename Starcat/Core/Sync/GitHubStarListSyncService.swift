@@ -6,7 +6,7 @@
 //
 //  设计约束：
 //  - GitHub 是远端真源；所有用户写操作必须先 mutation 成功，再更新本地缓存。
-//  - `updateUserListsForItem` 是替换式写入，所以 add/remove/move 都先读取本地完整
+//  - `updateUserListsForItem` 是替换式写入，所以 add/remove/批量新增都先读取本地完整
 //    membership，计算目标集合后一次提交。
 //  - 本服务只处理 GitHub List，不处理 Starcat Tags / Smart Collections。
 //
@@ -74,7 +74,9 @@ final class GitHubStarListSyncService {
         name: String,
         description: String?,
         isPrivate: Bool,
-        colorHex: String?
+        colorHex: String?,
+        aiInstruction: String = "",
+        autoApplyEnabled: Bool = false
     ) async throws -> GitHubStarList {
         let remote = try await apiClient.createUserList(
             name: name,
@@ -82,6 +84,11 @@ final class GitHubStarListSyncService {
             isPrivate: isPrivate
         )
         try await repository.upsertList(remote, colorHex: colorHex, syncedAt: Date())
+        try await saveAIRule(
+            listID: remote.id,
+            instruction: aiInstruction,
+            autoApplyEnabled: autoApplyEnabled
+        )
         return try await requireList(id: remote.id)
     }
 
@@ -91,7 +98,9 @@ final class GitHubStarListSyncService {
         name: String,
         description: String?,
         isPrivate: Bool,
-        colorHex: String?
+        colorHex: String?,
+        aiInstruction: String = "",
+        autoApplyEnabled: Bool = false
     ) async throws -> GitHubStarList {
         let existing = try await repository.findList(id: id)
         var remote = try await apiClient.updateUserList(
@@ -104,6 +113,11 @@ final class GitHubStarListSyncService {
         // 编辑本地缓存时沿用已有 position，避免某个 list 被编辑后跳到首位。
         remote.position = existing?.position ?? remote.position
         try await repository.upsertList(remote, colorHex: colorHex, syncedAt: Date())
+        try await saveAIRule(
+            listID: id,
+            instruction: aiInstruction,
+            autoApplyEnabled: autoApplyEnabled
+        )
         return try await requireList(id: id)
     }
 
@@ -112,22 +126,60 @@ final class GitHubStarListSyncService {
         try await repository.deleteList(id: id)
     }
 
+    func aiRule(forList listID: String) async throws -> GitHubStarListAIRule? {
+        try await repository.findAIRule(listId: listID)
+    }
+
+    func allAIRules() async throws -> [GitHubStarListAIRule] {
+        try await repository.fetchAllAIRules()
+    }
+
+    /// 手动/自动 AI 整理在启动时读取完整快照，避免依赖当前 Sidebar 是否已经展开。
+    func allLists() async throws -> [GitHubStarList] {
+        try await repository.fetchAllLists()
+    }
+
+    func allListAssignments() async throws -> [Int64: [GitHubStarList]] {
+        try await repository.fetchAllListAssignments()
+    }
+
+    /// 保存本地 AI 规则。这里不经过 GitHub API，避免把 Starcat 私有上下文混进远端描述。
+    func saveAIRule(
+        listID: String,
+        instruction: String,
+        autoApplyEnabled: Bool
+    ) async throws {
+        let normalizedInstruction = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        try await repository.upsertAIRule(GitHubStarListAIRule(
+            listId: listID,
+            instruction: normalizedInstruction,
+            // 空规则不能参与自动整理，即使旧 UI 状态仍保留了开关值也必须收敛为 false。
+            autoApplyEnabled: !normalizedInstruction.isEmpty && autoApplyEnabled,
+            updatedAt: ISO8601DateFormatter.shared.string(from: Date())
+        ))
+    }
+
     func addRepo(_ repo: Repo, toList listID: String) async throws {
-        var listIDs = Set(try await repository.listIds(forRepo: repo.id))
-        listIDs.insert(listID)
-        try await replaceRepoLists(repo, with: Array(listIDs))
+        _ = try await addRepo(repo, toLists: [listID])
+    }
+
+    /// 把同一仓库的多个批准建议合并成至多一次 GitHub mutation。
+    ///
+    /// 应用前重新读取最新 membership，保证用户在 AI 审核期间手动新增的其它 Lists 不会
+    /// 被替换式 mutation 覆盖。目标已经全部存在时直接 no-op，实现安全重试幂等。
+    @discardableResult
+    func addRepo(_ repo: Repo, toLists requestedListIDs: Set<String>) async throws -> Set<String> {
+        guard !requestedListIDs.isEmpty else { return [] }
+        let existingListIDs = Set(try await repository.listIds(forRepo: repo.id))
+        let addedListIDs = requestedListIDs.subtracting(existingListIDs)
+        guard !addedListIDs.isEmpty else { return [] }
+        try await replaceRepoLists(repo, with: Array(existingListIDs.union(addedListIDs)))
+        return addedListIDs
     }
 
     func removeRepo(_ repo: Repo, fromList listID: String) async throws {
         var listIDs = Set(try await repository.listIds(forRepo: repo.id))
         listIDs.remove(listID)
-        try await replaceRepoLists(repo, with: Array(listIDs))
-    }
-
-    func moveRepo(_ repo: Repo, from sourceListID: String, to targetListID: String) async throws {
-        var listIDs = Set(try await repository.listIds(forRepo: repo.id))
-        listIDs.remove(sourceListID)
-        listIDs.insert(targetListID)
         try await replaceRepoLists(repo, with: Array(listIDs))
     }
 
@@ -171,6 +223,9 @@ final class GitHubStarListSyncService {
             name: repo.name,
             listIds: sortedIDs
         )
+        // 账号切换会取消批量队列。远端 mutation 若恰好已完成，仍必须在写当前数据库前
+        // 再检查一次取消，避免旧账号结果落进刚切换的新账号作用域；旧账号下次同步会回读远端。
+        try Task.checkCancellation()
         try await repository.setListIds(forRepo: repo.id, listIds: sortedIDs)
     }
 
@@ -181,6 +236,7 @@ final class GitHubStarListSyncService {
             name: target.name,
             listIds: sortedIDs
         )
+        try Task.checkCancellation()
         try await repository.setListIds(forRepo: target.ghRepoId, listIds: sortedIDs)
     }
 

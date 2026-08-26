@@ -46,6 +46,7 @@ final class AutoTidyScheduler {
     private let settings: AppSettings
     private let repoRepository: any RepoRepositoryProtocol
     private let batchService: BatchAIQueueService
+    private let githubStarListSyncService: GitHubStarListSyncService?
     private let syncManager: SyncManager
     private let entitlementGate: EntitlementGate?
 
@@ -87,6 +88,7 @@ final class AutoTidyScheduler {
         repoRepository: any RepoRepositoryProtocol,
         batchService: BatchAIQueueService,
         syncManager: SyncManager,
+        githubStarListSyncService: GitHubStarListSyncService? = nil,
         entitlementGate: EntitlementGate? = nil,
         minTriggerInterval: TimeInterval = 300
     ) {
@@ -94,6 +96,7 @@ final class AutoTidyScheduler {
         self.repoRepository = repoRepository
         self.batchService = batchService
         self.syncManager = syncManager
+        self.githubStarListSyncService = githubStarListSyncService
         self.entitlementGate = entitlementGate
         self.minTriggerInterval = minTriggerInterval
     }
@@ -144,8 +147,11 @@ final class AutoTidyScheduler {
     ///   原生 SwiftUI 订阅入口，让它把状态变化转发给 scheduler 即可，零额外机制。
     func notifySyncStateChanged(_ newState: SyncState) {
         defer { lastObservedSyncState = newState }
-        guard settings.autoTidySettings.enabled,
-              settings.autoTidySettings.triggerOnSync else { return }
+        let snapshot = settings.autoTidySettings
+        let shouldRunStandardActions = snapshot.enabled && snapshot.triggerOnSync
+        // 仓库分组是独立能力：全局开关打开后固定接 GitHub Stars 同步完成事件，
+        // 不再依赖标签分类的「同步后整理」开关。
+        guard shouldRunStandardActions || snapshot.generateGitHubListGrouping else { return }
         // 边沿检测：仅在「曾观察到 syncing 且现在 completed」时触发，避免
         // .completed 被反复写入相同时间戳导致的重复触发。
         guard case .completed = newState else { return }
@@ -169,8 +175,10 @@ final class AutoTidyScheduler {
             try? await Task.sleep(for: .seconds(60))
             await MainActor.run {
                 guard let self else { return }
-                guard self.settings.autoTidySettings.enabled,
-                      self.settings.autoTidySettings.triggerOnLaunch else { return }
+                let snapshot = self.settings.autoTidySettings
+                let shouldRunStandardActions = snapshot.enabled && snapshot.triggerOnLaunch
+                // 仓库分组独立启用后也在启动暖机完成时检查一次，不借用标签分类开关。
+                guard shouldRunStandardActions || snapshot.generateGitHubListGrouping else { return }
                 AppLog.ai.notice("[autoTidy] trigger via launch delay (60s)")
                 self.triggerNow(reason: "launch")
             }
@@ -237,11 +245,7 @@ final class AutoTidyScheduler {
     }
 
     private func runOnce(skipDebounce: Bool, reason: String) {
-        guard settings.autoTidySettings.enabled else {
-            AppLog.ai.debug("[autoTidy] runOnce(\(reason, privacy: .public)) skipped: disabled")
-            return
-        }
-        guard settings.autoTidySettings.hasAnyAction else {
+        guard settings.autoTidySettings.hasEnabledBackgroundAction else {
             AppLog.ai.debug("[autoTidy] runOnce(\(reason, privacy: .public)) skipped: no action enabled")
             return
         }
@@ -281,19 +285,43 @@ final class AutoTidyScheduler {
     @MainActor
     private func executeRound(reason: String) async {
         let snapshot = settings.autoTidySettings  // 快照防 setter 在 sleep 期间改值
+        let needsStandardActions = snapshot.enabled && snapshot.hasAnyAction
+        let needsGitHubListGrouping = snapshot.generateGitHubListGrouping
         let untagged: [Repo]
+        let allStarred: [Repo]
         do {
-            untagged = try await repoRepository.fetchUntagged()
+            async let untaggedResult: [Repo] = needsStandardActions
+                ? repoRepository.fetchUntagged()
+                : []
+            async let allStarredResult: [Repo] = needsGitHubListGrouping
+                ? repoRepository.fetchAllStarred()
+                : []
+            untagged = try await untaggedResult
+            allStarred = try await allStarredResult
         } catch {
-            AppLog.ai.error("[autoTidy] fetchUntagged failed: \(error.localizedDescription, privacy: .public)")
+            AppLog.ai.error("[autoTidy] load candidate repos failed: \(error.localizedDescription, privacy: .public)")
             return
         }
-        guard !untagged.isEmpty else {
-            AppLog.ai.notice("[autoTidy] executeRound(\(reason, privacy: .public)) no untagged repos, no-op")
+
+        // 两类动作的范围不同：摘要/标签仍只处理未打标签仓库，Lists 才覆盖全部 Stars。
+        // 先保留原有未分类仓库的处理额度，再用剩余额度补 Lists 候选，避免开启新功能后
+        // 较新的已分类仓库把原有 Auto Tidy 的摘要/标签任务长期挤出队列。
+        let standardPicked = snapshot.sortOrder.pick(from: untagged, limit: snapshot.maxPerRun)
+        let standardPickedIDs = Set(standardPicked.map(\.id))
+        let remainingLimit = max(snapshot.maxPerRun - standardPicked.count, 0)
+        let groupingOnlyCandidates = allStarred.filter { !standardPickedIDs.contains($0.id) }
+        let groupingOnlyPicked = snapshot.sortOrder.pick(from: groupingOnlyCandidates, limit: remainingLimit)
+        let picked = standardPicked + groupingOnlyPicked
+        guard !picked.isEmpty else {
+            AppLog.ai.notice("[autoTidy] executeRound(\(reason, privacy: .public)) no candidate repos, no-op")
             return
         }
-        let picked = snapshot.sortOrder.pick(from: untagged, limit: snapshot.maxPerRun)
-        guard !picked.isEmpty else { return }
+
+        let pickedIDs = Set(picked.map(\.id))
+        let standardRepoIDs = standardPickedIDs
+        let githubListGrouping = await makeAutomaticGitHubListGroupingConfiguration(
+            eligibleRepoIDs: needsGitHubListGrouping ? pickedIDs : []
+        )
 
         // 再次确认 batchService 仍空闲（fetchUntagged 是 async，期间可能有用户手动启动）
         guard !batchService.isRunning else {
@@ -301,9 +329,61 @@ final class AutoTidyScheduler {
             return
         }
 
-        let options = snapshot.makeBatchOptions()
-        AppLog.ai.notice("[autoTidy] executeRound(\(reason, privacy: .public)) starting: untagged=\(untagged.count, privacy: .public), picked=\(picked.count, privacy: .public), summary=\(snapshot.generateSummary, privacy: .public), tags=\(snapshot.generateTags, privacy: .public), threshold=\(snapshot.confidenceThreshold, privacy: .public)")
+        let options = snapshot.makeBatchOptions(
+            githubListGrouping: githubListGrouping,
+            standardActionRepoIDs: standardRepoIDs
+        )
+        guard options.isValidForStart else {
+            AppLog.ai.notice("[autoTidy] executeRound(\(reason, privacy: .public)) no eligible actions, no-op")
+            return
+        }
+        AppLog.ai.notice("[autoTidy] executeRound(\(reason, privacy: .public)) starting: untagged=\(untagged.count, privacy: .public), starred=\(allStarred.count, privacy: .public), picked=\(picked.count, privacy: .public), summary=\(needsStandardActions && snapshot.generateSummary, privacy: .public), tags=\(needsStandardActions && snapshot.generateTags, privacy: .public), lists=\(githubListGrouping != nil, privacy: .public), tagThreshold=\(snapshot.confidenceThreshold, privacy: .public), groupingThreshold=\(snapshot.githubListGroupingConfidenceThreshold, privacy: .public)")
         batchService.start(repos: picked, options: options, silent: true)
+    }
+
+    /// 构造后台自动分组的双重授权快照。没有全局开关、没有服务、没有规则或 List 级
+    /// 开关关闭时均返回 nil，底层队列因此没有任何 GitHub Lists 写入路径。
+    private func makeAutomaticGitHubListGroupingConfiguration(
+        eligibleRepoIDs: Set<Int64>
+    ) async -> GitHubStarListAIGroupingConfiguration? {
+        guard settings.autoTidySettings.generateGitHubListGrouping,
+              !eligibleRepoIDs.isEmpty,
+              let githubStarListSyncService
+        else { return nil }
+
+        do {
+            async let listsResult = githubStarListSyncService.allLists()
+            async let rulesResult = githubStarListSyncService.allAIRules()
+            async let assignmentsResult = githubStarListSyncService.allListAssignments()
+            let lists = try await listsResult
+            let rules = try await rulesResult
+            let assignments = try await assignmentsResult
+            let ruleByID = Dictionary(uniqueKeysWithValues: rules.map { ($0.listId, $0) })
+            let candidates = lists.compactMap { list -> GitHubStarListAIContext? in
+                guard let rule = ruleByID[list.id],
+                      rule.autoApplyEnabled,
+                      !rule.instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                else { return nil }
+                return GitHubStarListAIContext(
+                    listId: list.id,
+                    name: list.name,
+                    instruction: rule.instruction,
+                    autoApplyEnabled: true
+                )
+            }
+            guard !candidates.isEmpty else { return nil }
+            return GitHubStarListAIGroupingConfiguration(
+                candidates: candidates,
+                existingListIDsByRepo: assignments.mapValues { Set($0.map(\.id)) },
+                eligibleRepoIDs: eligibleRepoIDs,
+                autoApply: true,
+                // 仓库分组的远端写入边界独立于标签分类，不能读取标签阈值。
+                confidenceThreshold: settings.autoTidySettings.githubListGroupingConfidenceThreshold
+            )
+        } catch {
+            AppLog.ai.error("[autoTidy] load GitHub Lists grouping snapshot failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
     }
 
     // MARK: - 写回运行结果

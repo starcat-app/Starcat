@@ -126,6 +126,8 @@ struct SidebarView: View {
     @State private var hoveredSummaryTaskID: RepoAISummaryBackgroundTask.ID?
     /// GitHub Stars List 创建 / 编辑 Sheet。
     @State private var gitHubStarListEditorItem: GitHubStarListEditorItem?
+    /// GitHub Lists AI 手动整理与审核 Sheet。
+    @State private var showGitHubStarListAIGroupingSheet = false
     /// “我的项目”独立授权和同步状态 Sheet。
     @State private var showProjectAccessSheet = false
     /// 探索页当前由系统 `List(selection:)` 高亮的行。
@@ -221,6 +223,20 @@ struct SidebarView: View {
                 list: item.list,
                 service: dependencies.githubStarListSyncService,
                 onSaved: {
+                    await viewModel.refreshSidebar()
+                    await viewModel.reloadItems(forceRefresh: true)
+                }
+            )
+            .appLocaleEnvironment()
+        }
+        .sheet(isPresented: $showGitHubStarListAIGroupingSheet) {
+            GitHubStarListAIGroupingSheet(
+                repoRepository: dependencies.repoRepository,
+                listService: dependencies.githubStarListSyncService,
+                queueService: dependencies.batchAIQueueService,
+                insightService: dependencies.repoAIInsightService,
+                entitlementGate: dependencies.entitlementGate,
+                onApplied: {
                     await viewModel.refreshSidebar()
                     await viewModel.reloadItems(forceRefresh: true)
                 }
@@ -1372,6 +1388,33 @@ struct SidebarView: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .help(Text("sidebar.githubStarLists.add"))
+
+            Button {
+                do {
+                    try dependencies.entitlementGate.requirePro(.batchAI)
+                    showGitHubStarListAIGroupingSheet = true
+                } catch {
+                    // 付费墙由 HomeView 统一承载，避免在 Sidebar 再维护一套 sheet 状态。
+                    NotificationCenter.default.post(
+                        name: .starcatWorkspaceRequiresProPaywall,
+                        object: ProFeature.batchAI
+                    )
+                }
+            } label: {
+                Image(systemName: "sparkles")
+                    .font(interfaceScale.font(.iconMedium, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .disabled(
+                !viewModel.hasGitHubStarListAIRules
+                    || authSession.state.user == nil
+                    || (dependencies.batchAIQueueService.isRunning && !dependencies.batchAIQueueService.silent)
+            )
+            .help(Text("sidebar.githubStarLists.aiGrouping"))
 
             SyncIconButton(
                 isRefreshing: dependencies.githubStarListSyncService.isSyncing,

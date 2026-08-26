@@ -2245,11 +2245,10 @@ struct RepoListView: View {
     /// Manage repo 列表右键菜单：Pin + 分组移入 / 移出 / 移动。
     ///
     /// **2026-07-05 优化（扁平化）**：
-    /// 之前用 `Menu` 嵌套做「添加到... / 移动到...」子菜单，macOS 上层级展开箭头需要精确
-    /// 鼠标横向移动，分组一多就容易滑错关闭。改为扁平 Button 列表：
-    /// - 颜色圆点匹配侧边栏，一眼识别分组
-    /// - 数量尾标辅助判断目标分组大小
-    /// - 当前分组不可点（"移动到"模式），避免无意义操作
+    /// GitHub Lists 是多对多关系，因此所有 Manage 分类统一展示完整分组清单：
+    /// - checkmark 表示当前 membership，不再把当前 Sidebar 分组误当成唯一归属；
+    /// - 每项独立添加或取消，只修改这一条 membership；
+    /// - 数量尾标继续辅助判断目标分组大小。
     @ViewBuilder
     private func repoContextMenu(for repo: Repo) -> some View {
         if selectedPage == .manage {
@@ -2269,53 +2268,22 @@ struct RepoListView: View {
 
             Divider()
 
-            if case .githubStarList(let currentListID) = viewModel.selection {
-                // ──── 在某个分组内：移出 + 移到其他分组 ────
-                if let currentList = viewModel.githubStarLists.first(where: { $0.id == currentListID }) {
+            if viewModel.githubStarLists.isEmpty {
+                Text("githubStarLists.context.noGroups")
+            } else {
+                Text("githubStarLists.context.addToGroupSection")
+                ForEach(viewModel.githubStarLists) { list in
+                    let isMember = viewModel.isRepo(repo.id, inGitHubStarList: list.id)
                     Button {
                         mutateGitHubStarListMembership {
-                            try await dependencies.githubStarListSyncService.removeRepo(repo, fromList: currentListID)
-                        }
-                    } label: {
-                        Text(String(
-                            format: String.l10n("githubStarLists.context.removeFromGroupFormat"),
-                            currentList.name
-                        ))
-                    }
-                }
-
-                let targets = viewModel.githubStarLists.filter { $0.id != currentListID }
-                if !targets.isEmpty {
-                    Divider()
-                    // section header：移到其他分组
-                    Text("githubStarLists.context.moveToOtherGroupSection")
-                    ForEach(targets) { list in
-                        Button {
-                            mutateGitHubStarListMembership {
-                                try await dependencies.githubStarListSyncService.moveRepo(
-                                    repo, from: currentListID, to: list.id
-                                )
-                            }
-                        } label: {
-                            gitHubStarListMenuItemLabel(list)
-                        }
-                    }
-                }
-            } else {
-                // ──── 不在分组内（全部星标 / Tags / Languages）：添加到分组 ────
-                if viewModel.githubStarLists.isEmpty {
-                    Text("githubStarLists.context.noGroups")
-                } else {
-                    // section header：添加到分组
-                    Text("githubStarLists.context.addToGroupSection")
-                    ForEach(viewModel.githubStarLists) { list in
-                        Button {
-                            mutateGitHubStarListMembership {
+                            if isMember {
+                                try await dependencies.githubStarListSyncService.removeRepo(repo, fromList: list.id)
+                            } else {
                                 try await dependencies.githubStarListSyncService.addRepo(repo, toList: list.id)
                             }
-                        } label: {
-                            gitHubStarListMenuItemLabel(list)
                         }
+                    } label: {
+                        gitHubStarListMenuItemLabel(list, isMember: isMember)
                     }
                 }
             }
@@ -2337,15 +2305,17 @@ struct RepoListView: View {
         }
     }
 
-    /// 分组菜单项标签：颜色圆点（匹配侧边栏）+ 名称 + 数量。
+    /// 分组菜单项标签：已加入显示原生语义 checkmark，未加入保留颜色圆点。
     ///
     /// 颜色圆点使用非 template NSImage，确保在 NSMenuItem 中保留原色而非被系统 tint 覆盖。
-    private func gitHubStarListMenuItemLabel(_ list: GitHubStarList) -> some View {
+    private func gitHubStarListMenuItemLabel(_ list: GitHubStarList, isMember: Bool) -> some View {
         let count = viewModel.githubStarListCounts[list.id] ?? 0
         return Label(
             title: { Text(verbatim: "\(list.name)  (\(count))") },
             icon: {
-                if let dot = Self.colorDotImage(hex: list.colorHex) {
+                if isMember {
+                    Image(systemName: "checkmark")
+                } else if let dot = Self.colorDotImage(hex: list.colorHex) {
                     Image(nsImage: dot)
                 }
             }

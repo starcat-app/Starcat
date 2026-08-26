@@ -57553,6 +57553,28 @@
         }
       }
     },
+    "ai.usage.feature.repo_grouping" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repository Grouping"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仓库分组"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "倉庫分組"
+          }
+        }
+      }
+    },
     "ai.usage.feature.repo_tags" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -124205,6 +124227,622 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "描述"
+          }
+        }
+      }
+    },
+    "githubStarLists.editor.description.placeholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Describe this group"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "描述这个分组"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "描述這個分組"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.applyResultFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Applied to %d repositories, %d failed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已应用到 %d 个仓库，%d 个失败"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已套用到 %d 個倉庫，%d 個失敗"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.applySelected" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apply Selected"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "应用选中项"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "套用所選項目"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.applying" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Applying…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在应用…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在套用…"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.closedSet" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organize into your existing Lists"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "整理到你已有的分组"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "整理到你已有的分組"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.error.noRepos" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "There are no starred repositories to organize."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有可整理的星标仓库。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有可整理的星標倉庫。"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.error.noRules" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add an AI grouping rule to at least one repository group first."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先为至少一个仓库分组添加 AI 分组规则。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請先為至少一個倉庫分組新增 AI 分組規則。"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.explanation" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI can suggest zero, one, or multiple existing Lists for each repository. It never creates Lists, removes memberships, or writes anything before you review the suggestions."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 可以为每个仓库建议零个、一个或多个已有分组。AI 不会创建分组、移除已有关系，也不会在你审核前写入任何内容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 可以為每個倉庫建議零個、一個或多個已有分組。AI 不會建立分組、移除已有關係，也不會在你審核前寫入任何內容。"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.failed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed repositories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失败的仓库"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失敗的倉庫"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.noSuggestions" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No new grouping suggestions"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有新的分组建议"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有新的分組建議"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.noSuggestions.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The repositories either do not match a rule or already belong to the matching Lists."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这些仓库没有匹配规则，或已经属于匹配的分组。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這些倉庫沒有符合規則，或已經屬於符合的分組。"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.preparing" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preparing…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在准备…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在準備…"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.privacy" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grouping rules and required repository metadata are sent to your configured AI provider. Rules remain local to Starcat and are never synced to GitHub."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分组规则和任务所需的仓库元数据会发送给你配置的 AI Provider。规则只保存在 Starcat 本地，不会同步到 GitHub。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分組規則和任務所需的倉庫中繼資料會傳送給你設定的 AI Provider。規則只保存在 Starcat 本機，不會同步到 GitHub。"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.progressFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Processed %d of %d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已处理 %d / %d"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已處理 %d / %d"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.retryFailed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retry Failed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重试失败项"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重試失敗項目"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.reviewFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d suggestions · %d repositories selected"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 条建议 · 已选择 %d 个仓库"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 條建議 · 已選擇 %d 個倉庫"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.running" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generating grouping suggestions"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在生成分组建议"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在產生分組建議"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.start" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start Organizing"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始整理"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開始整理"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI suggestions require your review before GitHub is updated"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 建议需要你审核后才会更新 GitHub"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 建議需要你審核後才會更新 GitHub"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI Repository Grouping"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 仓库分组"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 倉庫分組"
+          }
+        }
+      }
+    },
+    "githubStarLists.editor.aiRule" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI Grouping Rule (Starcat only)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 分组规则（仅 Starcat）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 分組規則（僅 Starcat）"
+          }
+        }
+      }
+    },
+    "githubStarLists.editor.aiRule.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI Grouping Rule"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 分组规则"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 分組規則"
+          }
+        }
+      }
+    },
+    "githubStarLists.editor.aiRule.autoApply" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow background auto-grouping into this List"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许后台自动添加到此分组"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允許背景自動加入此分組"
+          }
+        }
+      }
+    },
+    "githubStarLists.editor.aiRule.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Describe which repositories belong here. The rule stays local, but is sent to your configured AI provider when grouping runs."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "说明什么样的仓库才能加入此分组。规则保存在本地，但运行 AI 整理时会发送给你配置的 AI Provider。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "說明什麼樣的倉庫才能加入此分組。規則保存在本機，但執行 AI 整理時會傳送給你設定的 AI Provider。"
+          }
+        }
+      }
+    },
+    "githubStarLists.editor.aiRule.placeholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "For example: Native macOS tools built with Swift or SwiftUI; exclude tutorials and cross-platform frameworks."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "例如：只收录使用 Swift 或 SwiftUI 开发的 macOS 原生工具，不包含教程和跨平台框架。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "例如：只收錄使用 Swift 或 SwiftUI 開發的 macOS 原生工具，不包含教學和跨平台框架。"
+          }
+        }
+      }
+    },
+    "githubStarLists.editor.githubDescription" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub Description"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub 描述"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub 描述"
+          }
+        }
+      }
+    },
+    "githubStarLists.editor.githubDescription.placeholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Visible in GitHub Lists"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示在 GitHub Lists 中"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示在 GitHub Lists 中"
+          }
+        }
+      }
+    },
+    "sidebar.githubStarLists.aiGrouping" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organize repositories with AI"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 AI 整理仓库分组"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 AI 整理倉庫分組"
           }
         }
       }
@@ -316163,6 +316801,50 @@
         }
       }
     },
+    "settings.autoTidy.actions.githubListGrouping" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatically add to repository groups"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动添加到仓库分组"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動加入倉庫分組"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.actions.githubListGrouping.description" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Writes memberships to GitHub in the background only when the target List also enables auto-grouping. This is off by default."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅当目标分组也开启自动整理时，才会在后台向 GitHub 写入分组关系。此功能默认关闭。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "僅當目標分組也開啟自動整理時，才會在背景向 GitHub 寫入分組關係。此功能預設關閉。"
+          }
+        }
+      }
+    },
     "settings.autoTidy.actions.generateSummary" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -338302,6 +338984,138 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "API Key"
+          }
+        }
+      }
+    },
+    "settings.githubListGrouping.enabled.description" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analyze starred repositories after app launch and Stars sync, then add only high-confidence matches to permitted groups."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在应用启动和 Stars 同步完成后分析仓库，仅将高置信度结果添加到已授权的分组。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在應用啟動和 Stars 同步完成後分析倉庫，僅將高置信度結果加入已授權的分組。"
+          }
+        }
+      }
+    },
+    "settings.githubListGrouping.enabled.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enable AI auto-grouping"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用 AI 自动分组"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "啟用 AI 自動分組"
+          }
+        }
+      }
+    },
+    "settings.githubListGrouping.footer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Each group must also allow background auto-grouping in its editor before AI can add repositories to it."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每个分组还需要在分组编辑器中允许后台自动分组，AI 才能向其中添加仓库。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每個分組還需要在分組編輯器中允許背景自動分組，AI 才能向其中加入倉庫。"
+          }
+        }
+      }
+    },
+    "settings.githubListGrouping.section" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repository Grouping"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仓库分组"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "倉庫分組"
+          }
+        }
+      }
+    },
+    "settings.githubListGrouping.threshold.hintFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only suggestions at or above %@ are applied automatically."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅自动应用置信度达到 %@ 的建议。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "僅自動套用置信度達到 %@ 的建議。"
+          }
+        }
+      }
+    },
+    "settings.githubListGrouping.threshold.label" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minimum confidence"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最低置信度"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最低置信度"
           }
         }
       }

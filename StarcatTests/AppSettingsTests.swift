@@ -1635,6 +1635,8 @@ struct AutoTidySettingsTests {
         #expect(t.sortOrder == .recentlyStarred)
         #expect(t.generateSummary == false, "默认只跑标签，摘要烧 token 更多")
         #expect(t.generateTags == true)
+        #expect(t.generateGitHubListGrouping == false, "后台 GitHub 写入默认必须关闭")
+        #expect(t.githubListGroupingConfidenceThreshold == 0.90)
         #expect(t.useConfidenceThreshold == true, "默认启用阈值过滤，保险地只应用高置信度标签")
         #expect(t.confidenceThreshold == 0.90)
         #expect(t.lastRunAt == nil)
@@ -1653,6 +1655,8 @@ struct AutoTidySettingsTests {
         t.maxPerRun = 200
         t.sortOrder = .random
         t.generateSummary = true
+        t.generateGitHubListGrouping = true
+        t.githubListGroupingConfidenceThreshold = 0.80
         t.useConfidenceThreshold = false
         t.confidenceThreshold = 0.75
         t.lastRunAt = Date(timeIntervalSince1970: 1_700_000_000)
@@ -1666,6 +1670,8 @@ struct AutoTidySettingsTests {
         #expect(s2.autoTidySettings.maxPerRun == 200)
         #expect(s2.autoTidySettings.sortOrder == .random)
         #expect(s2.autoTidySettings.generateSummary == true)
+        #expect(s2.autoTidySettings.generateGitHubListGrouping == true)
+        #expect(s2.autoTidySettings.githubListGroupingConfidenceThreshold == 0.80)
         #expect(s2.autoTidySettings.useConfidenceThreshold == false)
         #expect(s2.autoTidySettings.confidenceThreshold == 0.75, "用户值在 toggle 关掉时也应保留，便于再次开启时还原")
         #expect(s2.autoTidySettings.lastRunAt?.timeIntervalSince1970 == 1_700_000_000)
@@ -1686,6 +1692,8 @@ struct AutoTidySettingsTests {
         #expect(decoded.useConfidenceThreshold == true, "老 build 没写本字段，应该回落到 default = true（保持 v1 行为）")
         #expect(decoded.generateTags == true)
         #expect(decoded.generateSummary == false)
+        #expect(decoded.generateGitHubListGrouping == false)
+        #expect(decoded.githubListGroupingConfidenceThreshold == 0.90)
         #expect(decoded.scheduledIntervalHours == 1, "老 build 无定期间隔字段，回落默认 1 小时")
     }
 
@@ -1710,6 +1718,8 @@ struct AutoTidySettingsTests {
             sortOrder: .recentlyStarred,
             generateSummary: false,
             generateTags: true,
+            generateGitHubListGrouping: false,
+            githubListGroupingConfidenceThreshold: 0.9,
             useConfidenceThreshold: true,
             confidenceThreshold: 0.9,
             lastRunAt: nil,
@@ -1722,6 +1732,7 @@ struct AutoTidySettingsTests {
     @Test("makeBatchOptions: 只勾摘要 → actions={summary}, autoApply=false")
     func batchOptionsSummaryOnly() {
         var t = AutoTidySettings.default
+        t.enabled = true
         t.generateSummary = true
         t.generateTags = false
         let opts = t.makeBatchOptions()
@@ -1731,7 +1742,9 @@ struct AutoTidySettingsTests {
 
     @Test("makeBatchOptions: 勾了标签 → autoApplyTags=true（自动模式明示同意）")
     func batchOptionsAutoApply() {
-        let opts = AutoTidySettings.default.makeBatchOptions()
+        var t = AutoTidySettings.default
+        t.enabled = true
+        let opts = t.makeBatchOptions()
         #expect(opts.actions == [.tags])
         #expect(opts.autoApplyTags == true)
         #expect(opts.confidenceThreshold == 0.90)
@@ -1740,12 +1753,24 @@ struct AutoTidySettingsTests {
     @Test("makeBatchOptions: useConfidenceThreshold=false 时把 confidenceThreshold 降级为 0（不过滤）")
     func batchOptionsThresholdDisabled() {
         var t = AutoTidySettings.default
+        t.enabled = true
         t.useConfidenceThreshold = false
         t.confidenceThreshold = 0.75  // 用户历史值，should be preserved in settings but not passed down
         let opts = t.makeBatchOptions()
         #expect(opts.confidenceThreshold == 0, "toggle 关掉后下游收到 0，等价于不过滤、所有 AI 建议都应用")
         // 用户值未被破坏（仍保留在 settings 字段中），便于再次开启时还原
         #expect(t.confidenceThreshold == 0.75)
+    }
+
+    @Test("仓库分组全局开关不依赖标签自动整理总开关")
+    func githubListGroupingHasIndependentGlobalSwitch() {
+        var t = AutoTidySettings.default
+        t.enabled = false
+        t.generateGitHubListGrouping = true
+
+        #expect(t.hasEnabledBackgroundAction == true)
+        #expect(t.githubListGroupingConfidenceThreshold == 0.90)
+        #expect(t.makeBatchOptions().actions.isEmpty, "没有有效分组快照时不能误跑默认开启的标签动作")
     }
 
     @Test("pick(recentlyStarred): 取最近 star 在前的 N 条")

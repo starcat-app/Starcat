@@ -5,7 +5,7 @@
 //  GitHub Stars List 创建 / 编辑 Sheet。
 //
 //  设计约束：
-//  - name / description / private 写 GitHub；颜色只写 Starcat 本地缓存。
+//  - name / description / private 写 GitHub；颜色和 AI 分组规则只写 Starcat 本地缓存。
 //  - 新建时用户不选颜色则传 nil，保存成功后由 `list.id` 稳定 hash 生成默认色。
 //  - 删除 list 是远端 destructive mutation，必须二次确认。
 //
@@ -24,6 +24,9 @@ struct GitHubStarListEditorSheet: View {
     @State private var description: String
     @State private var isPrivate: Bool
     @State private var selectedColorHex: String?
+    @State private var aiInstruction = ""
+    @State private var autoApplyEnabled = false
+    @State private var isLoadingAIRule = false
     @State private var isSaving = false
     @State private var errorMessage: String?
     @State private var showDeleteConfirmation = false
@@ -54,6 +57,9 @@ struct GitHubStarListEditorSheet: View {
         }
         .frame(width: 520)
         .frame(minHeight: 420)
+        .task(id: list?.id) {
+            await loadAIRule()
+        }
         .alert("githubStarLists.editor.delete.title", isPresented: $showDeleteConfirmation) {
             Button("action.delete", role: .destructive) {
                 Task { await deleteList() }
@@ -94,20 +100,43 @@ struct GitHubStarListEditorSheet: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("githubStarLists.editor.description")
                         .font(.subheadline.weight(.semibold))
-                    TextEditor(text: $description)
-                        .font(.body)
-                        .frame(minHeight: 92)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
-                                .allowsHitTesting(false)
-                        }
+                    TextField(
+                        "githubStarLists.editor.description.placeholder",
+                        text: $description,
+                        axis: .vertical
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(3...6)
                 }
 
                 Toggle("githubStarLists.editor.private", isOn: $isPrivate)
                     .toggleStyle(.checkbox)
 
                 colorSection
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("githubStarLists.editor.aiRule.title")
+                        .font(.subheadline.weight(.semibold))
+                    TextField(
+                        "githubStarLists.editor.aiRule.placeholder",
+                        text: $aiInstruction,
+                        axis: .vertical
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(4...8)
+                    .disabled(isLoadingAIRule)
+
+                    Text("githubStarLists.editor.aiRule.help")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Toggle("githubStarLists.editor.aiRule.autoApply", isOn: $autoApplyEnabled)
+                    .toggleStyle(.checkbox)
+                    .disabled(isLoadingAIRule || aiInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                 if let errorMessage {
                     Text(verbatim: errorMessage)
@@ -194,7 +223,7 @@ struct GitHubStarListEditorSheet: View {
                 Task { await save() }
             }
             .buttonStyle(.borderedProminent)
-            .disabled(isSaving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(isSaving || isLoadingAIRule || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
@@ -215,18 +244,35 @@ struct GitHubStarListEditorSheet: View {
                     name: trimmedName,
                     description: trimmedDescription.isEmpty ? nil : trimmedDescription,
                     isPrivate: isPrivate,
-                    colorHex: selectedColorHex
+                    colorHex: selectedColorHex,
+                    aiInstruction: aiInstruction,
+                    autoApplyEnabled: autoApplyEnabled
                 )
             } else {
                 _ = try await service.createList(
                     name: trimmedName,
                     description: trimmedDescription.isEmpty ? nil : trimmedDescription,
                     isPrivate: isPrivate,
-                    colorHex: selectedColorHex
+                    colorHex: selectedColorHex,
+                    aiInstruction: aiInstruction,
+                    autoApplyEnabled: autoApplyEnabled
                 )
             }
             await onSaved()
             dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func loadAIRule() async {
+        guard let list else { return }
+        isLoadingAIRule = true
+        defer { isLoadingAIRule = false }
+        do {
+            guard let rule = try await service.aiRule(forList: list.id) else { return }
+            aiInstruction = rule.instruction
+            autoApplyEnabled = rule.autoApplyEnabled
         } catch {
             errorMessage = error.localizedDescription
         }

@@ -1148,6 +1148,7 @@ final class AppDependencies {
             tagRepository: tagRepo,
             repoTagRepository: repoTagRepo,
             aiSummaryRepository: summaryRepo,
+            githubStarListSyncService: self.githubStarListSyncService,
             entitlementGate: self.entitlementGate,
             notificationService: notificationService
         )
@@ -1161,6 +1162,7 @@ final class AppDependencies {
             repoRepository: repo,
             batchService: batchSvc,
             syncManager: self.syncManager,
+            githubStarListSyncService: self.githubStarListSyncService,
             entitlementGate: self.entitlementGate
         )
         let embeddingRepo = GRDBRepoEmbeddingRepository(database: db)

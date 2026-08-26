@@ -32,13 +32,29 @@ struct DatabaseMigrationsV1Tests {
             "rag_chunks", "rag_chunks_fts", "rag_conversation_groups",
             "rag_conversations", "rag_messages", "rag_message_citations",
             "rag_message_remote_contexts", "rag_metadata_revision",
-            "data_contribution_preferences", "data_contribution_outbox"
+            "data_contribution_preferences", "data_contribution_outbox",
+            "github_star_list_ai_rules"
         ]
         try db.read { db in
             for table in expectedTables {
                 let exists = try db.tableExists(table)
                 #expect(exists, "Table \(table) should exist")
             }
+        }
+    }
+
+    @Test("v32 应追加 Starcat 私有 GitHub List AI 规则表")
+    func githubStarListAIRulesMigration() throws {
+        let writer = try makeDB()
+        try writer.read { db in
+            var migrator = DatabaseMigrator()
+            DatabaseMigrations.registerAll(into: &migrator)
+            let applied = try migrator.appliedIdentifiers(db)
+            #expect(applied.contains("v32-github-star-list-ai-rules"))
+            #expect(try db.tableExists("github_star_list_ai_rules"))
+            #expect(try db.columns(in: "github_star_list_ai_rules").map(\.name) == [
+                "list_id", "instruction", "auto_apply_enabled", "updated_at"
+            ])
         }
     }
 
