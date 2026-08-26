@@ -2242,13 +2242,10 @@ struct RepoListView: View {
 
     // MARK: - Repo 右键菜单
 
-    /// Manage repo 列表右键菜单：Pin + 分组移入 / 移出 / 移动。
+    /// Manage repo 列表右键菜单：Pin + 分组 membership Toggle。
     ///
-    /// **2026-07-05 优化（扁平化）**：
-    /// GitHub Lists 是多对多关系，因此所有 Manage 分类统一展示完整分组清单：
-    /// - checkmark 表示当前 membership，不再把当前 Sidebar 分组误当成唯一归属；
-    /// - 每项独立添加或取消，只修改这一条 membership；
-    /// - 数量尾标继续辅助判断目标分组大小。
+    /// GitHub Lists 是多对多：点某一组只 add/remove 这一条 membership，其它分组保持不变。
+    /// 用 `Toggle` 映射到 NSMenuItem.state，系统 checkmark 表示已加入；颜色圆点走 `image` 列。
     @ViewBuilder
     private func repoContextMenu(for repo: Repo) -> some View {
         if selectedPage == .manage {
@@ -2274,20 +2271,33 @@ struct RepoListView: View {
                 Text("githubStarLists.context.addToGroupSection")
                 ForEach(viewModel.githubStarLists) { list in
                     let isMember = viewModel.isRepo(repo.id, inGitHubStarList: list.id)
-                    Button {
-                        mutateGitHubStarListMembership {
-                            if isMember {
-                                try await dependencies.githubStarListSyncService.removeRepo(repo, fromList: list.id)
-                            } else {
-                                try await dependencies.githubStarListSyncService.addRepo(repo, toList: list.id)
-                            }
-                        }
-                    } label: {
-                        gitHubStarListMenuItemLabel(list, isMember: isMember)
+                    Toggle(isOn: gitHubStarListMembershipBinding(repo: repo, listID: list.id, isMember: isMember)) {
+                        gitHubStarListMenuItemLabel(list)
                     }
                 }
             }
         }
+    }
+
+    /// Toggle 的 set 只启动远端 mutation；真正勾选态仍以 refresh 后的 membership 映射为准。
+    private func gitHubStarListMembershipBinding(
+        repo: Repo,
+        listID: String,
+        isMember: Bool
+    ) -> Binding<Bool> {
+        Binding(
+            get: { isMember },
+            set: { shouldBelong in
+                guard shouldBelong != isMember else { return }
+                mutateGitHubStarListMembership {
+                    if shouldBelong {
+                        try await dependencies.githubStarListSyncService.addRepo(repo, toList: listID)
+                    } else {
+                        try await dependencies.githubStarListSyncService.removeRepo(repo, fromList: listID)
+                    }
+                }
+            }
+        )
     }
 
     /// Pin 写库成功后再发布列表顺序，避免数据库失败时 UI 与持久化状态分叉。
@@ -2305,17 +2315,15 @@ struct RepoListView: View {
         }
     }
 
-    /// 分组菜单项标签：已加入显示原生语义 checkmark，未加入保留颜色圆点。
+    /// 分组菜单项标签：颜色圆点始终走 image 列，勾选态由 Toggle / NSMenuItem.state 承担。
     ///
     /// 颜色圆点使用非 template NSImage，确保在 NSMenuItem 中保留原色而非被系统 tint 覆盖。
-    private func gitHubStarListMenuItemLabel(_ list: GitHubStarList, isMember: Bool) -> some View {
+    private func gitHubStarListMenuItemLabel(_ list: GitHubStarList) -> some View {
         let count = viewModel.githubStarListCounts[list.id] ?? 0
         return Label(
             title: { Text(verbatim: "\(list.name)  (\(count))") },
             icon: {
-                if isMember {
-                    Image(systemName: "checkmark")
-                } else if let dot = Self.colorDotImage(hex: list.colorHex) {
+                if let dot = Self.colorDotImage(hex: list.colorHex) {
                     Image(nsImage: dot)
                 }
             }

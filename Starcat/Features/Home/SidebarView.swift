@@ -126,6 +126,10 @@ struct SidebarView: View {
     @State private var hoveredSummaryTaskID: RepoAISummaryBackgroundTask.ID?
     /// GitHub Stars List 创建 / 编辑 Sheet。
     @State private var gitHubStarListEditorItem: GitHubStarListEditorItem?
+    /// 侧边栏分组行 hover 时才显示编辑入口，避免每行常驻铅笔切断扫描线。
+    @State private var hoveredGitHubStarListID: String?
+    /// 分组行右键删除的二次确认对象。「未分组」没有删除入口。
+    @State private var gitHubStarListPendingDelete: GitHubStarList?
     /// GitHub Lists AI 手动整理与审核 Sheet。
     @State private var showGitHubStarListAIGroupingSheet = false
     /// “我的项目”独立授权和同步状态 Sheet。
@@ -262,6 +266,21 @@ struct SidebarView: View {
             if !hasTask {
                 showBackgroundTaskPopover = false
             }
+        }
+        .alert(
+            "githubStarLists.editor.delete.title",
+            isPresented: Binding(
+                get: { gitHubStarListPendingDelete != nil },
+                set: { if !$0 { gitHubStarListPendingDelete = nil } }
+            ),
+            presenting: gitHubStarListPendingDelete
+        ) { list in
+            Button("action.delete", role: .destructive) {
+                Task { await deleteGitHubStarListFromSidebar(list) }
+            }
+            Button("common.cancel", role: .cancel) {}
+        } message: { _ in
+            Text("githubStarLists.editor.delete.message")
         }
     }
 
@@ -1401,7 +1420,7 @@ struct SidebarView: View {
                     )
                 }
             } label: {
-                Image(systemName: "sparkles")
+                Image(systemName: "sparkles.2")
                     .font(interfaceScale.font(.iconMedium, weight: .medium))
                     .foregroundStyle(.secondary)
                     .frame(width: 20, height: 20)
@@ -2125,28 +2144,19 @@ struct SidebarView: View {
         row(.githubStarListUngrouped, count: viewModel.githubStarListUngroupedCount)
     }
 
-    /// GitHub Stars List 真实分组行：颜色点 + 名称 + 编辑按钮 + 计数。
+    /// GitHub Stars List 真实分组行：颜色点 + 名称 + 计数。
+    ///
+    /// 编辑入口不常驻：hover 时叠在计数左侧，右键提供编辑 / 删除，双击名称打开同一张 sheet。
+    /// 计数列仍走 `trailingFixedWidth`，避免 hover 时数字跳动。
     @ViewBuilder
     private func githubStarListRow(_ list: GitHubStarList) -> some View {
         let item = SidebarItem.githubStarList(list.id)
+        let isHovered = hoveredGitHubStarListID == list.id
         Label {
             HStack(spacing: 4) {
                 Text(verbatim: list.name)
                     .lineLimit(1)
                     .truncationMode(.tail)
-
-                Button {
-                    gitHubStarListEditorItem = GitHubStarListEditorItem(list: list)
-                } label: {
-                    Image(systemName: "square.and.pencil")
-                        .font(interfaceScale.font(.captionSmall))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 18, height: 18)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help(Text("sidebar.githubStarLists.edit"))
 
                 Spacer(minLength: 4)
 
@@ -2161,6 +2171,15 @@ struct SidebarView: View {
                 }
                 .frame(width: Self.trailingFixedWidth, alignment: .trailing)
             }
+            .overlay(alignment: .trailing) {
+                HStack(spacing: 2) {
+                    githubStarListEditButton(list)
+                        .opacity(isHovered ? 1 : 0)
+                        .allowsHitTesting(isHovered)
+                    Color.clear
+                        .frame(width: Self.trailingFixedWidth, height: 1)
+                }
+            }
         } icon: {
             Circle()
                 .fill(
@@ -2171,12 +2190,62 @@ struct SidebarView: View {
                 .frame(width: 14, height: 14)
         }
         .tag(item)
+        .contextMenu {
+            Button {
+                gitHubStarListEditorItem = GitHubStarListEditorItem(list: list)
+            } label: {
+                Label("sidebar.githubStarLists.edit", systemImage: "rectangle.and.pencil.and.ellipsis")
+            }
+            Divider()
+            Button(role: .destructive) {
+                gitHubStarListPendingDelete = list
+            } label: {
+                Label("action.delete", systemImage: "trash")
+            }
+        }
+        .simultaneousGesture(
+            TapGesture(count: 2).onEnded {
+                gitHubStarListEditorItem = GitHubStarListEditorItem(list: list)
+            }
+        )
         .onHover { isHovering in
             if isHovering {
+                hoveredGitHubStarListID = list.id
                 for candidate in item.prefetchCandidates {
                     viewModel.prefetch(selection: candidate)
                 }
+            } else if hoveredGitHubStarListID == list.id {
+                hoveredGitHubStarListID = nil
             }
+        }
+    }
+
+    private func githubStarListEditButton(_ list: GitHubStarList) -> some View {
+        Button {
+            gitHubStarListEditorItem = GitHubStarListEditorItem(list: list)
+        } label: {
+            Image(systemName: "rectangle.and.pencil.and.ellipsis")
+                .font(interfaceScale.font(.captionSmall))
+                .foregroundStyle(.secondary)
+                .frame(width: 18, height: 18)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(Text("sidebar.githubStarLists.edit"))
+    }
+
+    /// 侧边栏右键删除必须二次确认：这是远端 destructive mutation，失败时不能先改本地 selection。
+    private func deleteGitHubStarListFromSidebar(_ list: GitHubStarList) async {
+        do {
+            try await dependencies.githubStarListSyncService.deleteList(id: list.id)
+            if viewModel.selection == .githubStarList(list.id) {
+                viewModel.selection = .githubStarListUngrouped
+            }
+            await viewModel.refreshSidebar()
+            await viewModel.reloadItems(forceRefresh: true)
+        } catch {
+            AppLog.network.error("Delete GitHub star list from sidebar failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 

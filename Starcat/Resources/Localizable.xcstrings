@@ -124737,6 +124737,22 @@
         }
       }
     },
+    "githubStarLists.editor.aiRule.autoApply.disabledHelp" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add a rule before enabling background auto-grouping."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "填写规则后才能开启后台自动添加。"
+          }
+        }
+      }
+    },
     "githubStarLists.editor.aiRule.help" : {
       "localizations" : {
         "en" : {
@@ -124821,6 +124837,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "顯示在 GitHub Lists 中"
+          }
+        }
+      }
+    },
+    "githubStarLists.editor.githubDescription.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Syncs to GitHub. This is not the AI grouping rule."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "会同步到 GitHub，不是 AI 分组规则。"
+          }
+        }
+      }
+    },
+    "githubStarLists.editor.section.github" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub"
+          }
+        }
+      }
+    },
+    "githubStarLists.editor.section.starcat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat"
           }
         }
       }
@@ -125181,6 +125245,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "私有"
+          }
+        }
+      }
+    },
+    "githubStarLists.editor.private.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only visible to you on GitHub."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 GitHub 上仅自己可见。"
           }
         }
       }

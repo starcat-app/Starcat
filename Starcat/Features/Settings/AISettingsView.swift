@@ -105,6 +105,9 @@ struct AISettingsTab: View {
     /// （已发现模型 / 模型配置 / Prompt / AI 索引 / AI 代码上下文）的默认折叠风格统一，
     /// 避免设置页一进来一堆分组同时展开造成视觉拥挤；用户主动展开后由 SceneStorage 持久化。
     @SceneStorage("settings.ai.autoTidy.expanded") private var isAutoTidyExpanded: Bool = false
+    /// 「仓库分组」与「标签分类」保持同级、同款折叠交互；默认折叠，避免独立配置区
+    /// 始终展开破坏设置页的信息层级，用户主动展开后由 SceneStorage 记住偏好。
+    @SceneStorage("settings.ai.githubListGrouping.expanded") private var isGitHubListGroupingExpanded: Bool = false
 
     /// 2026-06-12 向量索引改进："AI 索引"分组默认收起，避免设置页一进来 6 个分组太挤；
     /// 用户主动点开后偏好持久化。
@@ -832,42 +835,56 @@ struct AISettingsTab: View {
     /// 置信度不能放在同一个配置组里，否则调整标签策略时可能意外改变远端写入行为。
     private var githubListGroupingSection: some View {
         Section {
-            Toggle(isOn: autoTidyBinding(\.generateGitHubListGrouping)) {
-                autoTidyLabel(
-                    title: "settings.githubListGrouping.enabled.title",
-                    description: "settings.githubListGrouping.enabled.description"
-                )
-            }
+            DisclosureGroup(isExpanded: $isGitHubListGroupingExpanded) {
+                // DisclosureGroup 内不会自动生成 Form 行分隔线；显式分隔两项配置，
+                // 保持与展开前的视觉节奏一致。
+                VStack(alignment: .leading, spacing: 0) {
+                    Toggle(isOn: autoTidyBinding(\.generateGitHubListGrouping)) {
+                        autoTidyLabel(
+                            title: "settings.githubListGrouping.enabled.title",
+                            description: "settings.githubListGrouping.enabled.description"
+                        )
+                    }
+                    .padding(.vertical, 8)
 
-            VStack(alignment: .leading, spacing: 6) {
-                LabeledContent("settings.githubListGrouping.threshold.label") {
-                    Text(verbatim: githubListGroupingThresholdPercentString)
-                        .font(.callout.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(.tint)
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        LabeledContent("settings.githubListGrouping.threshold.label") {
+                            Text(verbatim: githubListGroupingThresholdPercentString)
+                                .font(.callout.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(.tint)
+                        }
+                        Slider(
+                            value: autoTidyBinding(\.githubListGroupingConfidenceThreshold),
+                            in: 0.5...1.0,
+                            step: 0.05
+                        )
+                        .controlSize(.mini)
+                        Text(String(
+                            format: String.l10n("settings.githubListGrouping.threshold.hintFormat"),
+                            githubListGroupingThresholdPercentString
+                        ))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 8)
+                    .disabled(!settings.autoTidySettings.generateGitHubListGrouping)
+                    .opacity(settings.autoTidySettings.generateGitHubListGrouping ? 1.0 : 0.5)
                 }
-                Slider(
-                    value: autoTidyBinding(\.githubListGroupingConfidenceThreshold),
-                    in: 0.5...1.0,
-                    step: 0.05
+                .padding(.top, 4)
+            } label: {
+                disclosureLabel(
+                    "settings.githubListGrouping.section",
+                    systemImage: "folder.badge.gearshape",
+                    isExpanded: $isGitHubListGroupingExpanded
                 )
-                .controlSize(.mini)
-                Text(String(
-                    format: String.l10n("settings.githubListGrouping.threshold.hintFormat"),
-                    githubListGroupingThresholdPercentString
-                ))
-                .font(.caption)
-                .foregroundStyle(.secondary)
             }
-            .disabled(!settings.autoTidySettings.generateGitHubListGrouping)
-            .opacity(settings.autoTidySettings.generateGitHubListGrouping ? 1.0 : 0.5)
-        } header: {
-            SettingsSectionHeader(
-                "settings.githubListGrouping.section",
-                systemImage: "folder.badge.gearshape",
-                style: .prominent
-            )
         } footer: {
-            Text("settings.githubListGrouping.footer")
+            // 折叠时只保留标题行，避免说明文字悬在已收起的配置组下方。
+            if isGitHubListGroupingExpanded {
+                Text("settings.githubListGrouping.footer")
+            }
         }
     }
 
