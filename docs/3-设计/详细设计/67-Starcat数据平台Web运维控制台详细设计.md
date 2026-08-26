@@ -15,7 +15,7 @@ Starcat 数据平台需要 Web 运维控制台，但不新建第三套前端项�
 首期采用单机、本地优先方案：
 
 - Web 与 BFF 继续只绑定 `127.0.0.1`，不开放公网，不新增登录、RBAC 或多租户。
-- BFF 通过固定 Action Registry 创建结构化 Job，不提供任意 Shell、任意 SQL 或任意 URL 请求入口。
+- BFF 通过固定 Action Registry 创建结构化 Job，不提供任意 Shell 或任意 URL 请求入口；BigQuery 测试场景提供受控 SQL Lab，必须遵守本设计第 10.4 节的只读、dry run、预算和结果上限。
 - PostgreSQL Catalog 是 Dataset、Partition、Job、Artifact、Deployment 和状态的单一真源。
 - 首期 JobRunner 内置在 BFF 进程中，以并发度 1 串行调用现有 CLI/API；浏览器关闭不影响任务。
 - BigQuery 下载、DuckDB 分析、History 构建、推荐训练和发布逻辑仍由各自 CLI/API 实现，控制台不复制业务计算。
@@ -63,7 +63,7 @@ Web 控制台不替代数据管道，而是为现有数据管道提供统一控�
 ### 3.2 本方案不负责
 
 - 不把 Raw、Silver、主体行为、`actor_id` 或匿名训练主体展示到浏览器。
-- 不提供通用 SQL 工作台、通用数据库编辑器、文件管理器或任意 Shell 终端。
+- 不提供面向任意数据库的通用 SQL 工作台、通用数据库编辑器、文件管理器或任意 Shell 终端；唯一例外是本机 BigQuery SQL Lab。
 - 不把 Trainer、History Builder 或 Publisher 的业务逻辑重写到 Node BFF。
 - 不让控制台直接修改 Raw Parquet、Serving SQLite 或线上 active pointer。
 - 不在首期支持公网访问、远程登录、RBAC、多用户审批或移动端适配。
@@ -223,7 +223,11 @@ flowchart LR
 | `lake.register-existing-watch-events` | Dataset、现有目录 | Catalog Partition 与校验摘要 |
 | `bigquery.watch-events.incremental` | UTC 日期、扫描预算 | Raw Partition |
 | `bigquery.watch-events.backfill` | UTC 日期范围、每日/总预算 | 多个 Raw Partition |
+| `bigquery.push-events.incremental` | UTC 日期、扫描预算 | 精简 PushEvent Raw Partition |
+| `bigquery.push-events.backfill` | UTC 日期范围、每日/总预算 | 多个精简 PushEvent Raw Partition |
 | `bigquery.push-catalog.refresh` | 年份范围、总预算 | PushEvent repo catalog |
+| `bigquery.sql-lab.dry-run` | SQL、Location、扫描预算 | SQL hash、schema 与预计扫描量 |
+| `bigquery.sql-lab.query` | 已 dry run 的 SQL hash、扫描预算、结果上限 | 临时结果页与查询回执 |
 | `lake.validate-partition` | Dataset、Partition | Quality Check |
 | `lake.compact-silver` | Silver Dataset、日期范围 | 新 Silver Artifact |
 | `history.build-delta` | event date | History Delta |
@@ -320,7 +324,7 @@ leased/running/validating
 - Token、Authorization header、环境变量全集；
 - `actor_id`、participant/subject 明细；
 - 本地绝对私有路径和家庭网络地址；
-- BigQuery 原始行、Collection 原始快照或训练 user-repo 边。
+- Collection 原始快照或训练 user-repo 边；BigQuery SQL Lab 的临时结果属于第 10.4 节明确约束的本机测试例外，不进入日志或 Catalog。
 
 完整本地日志采用大小和天数双上限，仅管理员主机可读取。
 
@@ -344,6 +348,9 @@ GET  /api/data-platform/storage
 GET  /api/data-platform/history/releases
 GET  /api/data-platform/recommend/models
 GET  /api/data-platform/deployments
+POST /api/data-platform/bigquery/sql/dry-run
+POST /api/data-platform/bigquery/sql/query
+GET  /api/data-platform/bigquery/downloads
 ```
 
 创建 Job 示例：
@@ -381,7 +388,7 @@ BFF 返回 Job ID，不等待任务完成：
 
 ### 10.1 Query Catalog
 
-页面不接收任意 SQL。每个 Query 定义固定保存：
+生产采集页面不接收任意 SQL。每个 Query 定义固定保存：
 
 ```text
 query_name
@@ -423,6 +430,23 @@ dry run 失败、预算超限、日期范围超上限或目标分区已存在冲
 - failed 或 checksum 不符 Partition 只能隔离后重采。
 - 日期缺口按 UTC 日展示，不允许后续日期掩盖前序缺口。
 - Job 页面必须区分 BigQuery 查询完成、Parquet 写入、footer 校验、checksum 校验和 Catalog ready。
+
+### 10.4 本机受控 SQL Lab
+
+SQL Lab 只用于管理员在本机验证 GH Archive BigQuery 数据，不属于 Query Catalog 生产采集链路。它是“不提供任意 SQL”的唯一例外，必须同时满足：
+
+- Web 与 BFF 只绑定 `127.0.0.1`，页面固定标识 `Local Data Platform`，不跟随业务服务 Test/Production Profile。
+- 只接受一条只读 `SELECT` 或 `WITH ... SELECT`；BigQuery dry run 返回的 statement type 必须为 `SELECT`。
+- 禁止 DDL、DML、`EXPORT DATA`、脚本、多语句、远程函数和写入 destination table。
+- 首期只允许引用 `githubarchive` 公共项目的数据表；GCP ADC、billing project 和凭据只存在于本地执行进程。
+- 每次执行前必须 dry run，并展示 SQL SHA-256、输出 schema、预计扫描量、当前月累计计费量和剩余额度。
+- 正式查询只接受同一次 dry run 对应的 SQL hash 与预算；SQL 或预算变化后必须重新 dry run。
+- 请求必须提供 `maximum_bytes_billed`，并继续受项目月度 80% 警告、90% 停止保护。
+- 首期最多返回 200 行、2 MiB；达到任一上限即截断响应，但不能把 `LIMIT` 冒充扫描成本保护。
+- SQL 文本和结果行不写 PostgreSQL、日志、浏览器存储或活动记录；Catalog 只记录 SQL hash、BigQuery job ID、扫描量、状态和时间。
+- BFF 不直接实现 BigQuery SDK 逻辑，只通过固定 argv 调用 Trainer 的结构化 SQL Lab CLI；SQL 使用受限输入文件传递，不进入 shell 字符串或进程 argv。
+
+SQL Lab 返回的是管理员主动查询的公开 GitHub 数据样本。它不允许查询 Collection、Starcat 本地数据库、训练主体边或任何 Private/Internal 数据，也不能保存为 Raw Dataset；需要长期落地的数据仍必须新增 Query Catalog 定义并经过代码评审。
 
 ## 11. History 运维
 
@@ -589,6 +613,8 @@ storage-scrub
 - Private/Internal repo；
 - 本地真实路径和家庭网络拓扑。
 
+SQL Lab 可以在本机浏览器当前页面临时展示管理员主动查询的公开 GH Archive 字段，但不得持久化、导出、进入截图报告或复用为业务 API 响应；页面离开或刷新后即丢弃。
+
 ## 18. 失败与恢复
 
 | 故障 | 控制台行为 |
@@ -663,6 +689,8 @@ Dashboard 优先展示需要采取动作的信息：
 
 - 建立 Action Registry、Job API 和 Local JobRunner。
 - 接入现有 WatchEvent 增量、分区校验和 Catalog 登记。
+- 接入 WatchEvent / PushEvent 后台下载状态、启动、停止、重启与月度额度保护。
+- 接入 BigQuery SQL Lab 的 dry run、预算确认和有上限只读查询。
 - 接入 History Delta/Snapshot 构建与发布。
 - 接入 Recommend 训练、评估、Bundle 发布和回滚。
 - 完成取消、幂等重试、SSE 进度和脱敏日志。
@@ -693,12 +721,14 @@ Dashboard 优先展示需要采取动作的信息：
 - 密钥脱敏、路径别名和日志清洗。
 - Job 状态机、取消、重试、Lease 过期和恢复。
 - Query Catalog、dry run 和扫描预算门禁。
+- SQL Lab 只读语句、引用数据集、SQL hash、结果上限和不持久化约束。
 - Dataset/Partition/Artifact/Deployment ViewModel 转换。
 
 ### 22.2 集成测试
 
 - 使用临时 PostgreSQL 创建、领取、执行和恢复 Job。
 - 使用 fixture CLI 验证 argv、环境白名单、Signal 和 JSON 结果。
+- 使用 fixture CLI 验证 SQL 通过受限文件而非 argv/shell 传递。
 - 使用临时目录验证 Artifact 原子写入和 checksum。
 - 使用 stub API 验证 Collection、History、Recommend 发布与失败语义。
 - 验证相同幂等键不会重复查询、重复安装或重复激活。
@@ -706,6 +736,7 @@ Dashboard 优先展示需要采取动作的信息：
 ### 22.3 Playwright
 
 - 数据平台导航和环境标识。
+- SQL Lab dry run、预算确认、表格结果截断和刷新后清空。
 - Dataset/Partition 缺口与筛选。
 - L1/L2/L3 操作确认。
 - Job 实时进度、失败、取消和重试。
@@ -741,9 +772,8 @@ Dashboard 优先展示需要采取动作的信息：
 3. 首期继续本机运行，不开放公网，也不做登录、RBAC 和多租户。
 4. 首期 JobRunner 内置 BFF，避免新增独立控制服务；多机阶段再抽取 Worker Lease。
 5. PostgreSQL Catalog 是任务和数据状态真源；页面不从脚本日志猜测状态。
-6. 控制台只创建固定 Action Job，不提供任意 Shell、任意 SQL、通用 DB 编辑器或任意 URL 代理。
+6. 控制台只创建固定 Action Job，不提供任意 Shell、通用 DB 编辑器或任意 URL 代理；只在本机提供受第 10.4 节完整门禁约束的 BigQuery SQL Lab。
 7. Trainer、History Builder、Publisher 和现有 CLI/API 继续拥有业务逻辑，控制台只负责编排。
 8. `_local-admin` 不再扩展，但在功能对齐和人工验收前不删除。
 9. Raw、主体数据、密钥、真实路径和家庭网络信息不得进入浏览器。
 10. 远程访问属于独立后续决策，不能把首期本地 BFF 直接暴露到局域网或公网。
-
