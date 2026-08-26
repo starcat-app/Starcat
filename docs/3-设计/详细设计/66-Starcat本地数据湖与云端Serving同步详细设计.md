@@ -4,7 +4,7 @@
 > 状态: 方案已确认，待实施
 > 版本: v1.0
 > 范围: BigQuery 本地长期存储、离线分析、History 日增量、Recommend 模型发布与云端同步
-> 关联设计: [Starcat 自研仓库推荐系统详细设计](61-Starcat自研仓库推荐系统详细设计.md)、[Starcat 自研星标历史服务详细设计](62-Starcat自研星标历史服务详细设计.md)
+> 关联设计: [Starcat 自研仓库推荐系统详细设计](61-Starcat自研仓库推荐系统详细设计.md)、[Starcat 自研星标历史服务详细设计](62-Starcat自研星标历史服务详细设计.md)、[Starcat 数据平台 Web 运维控制台详细设计](67-Starcat数据平台Web运维控制台详细设计.md)
 
 ## 1. 结论
 
@@ -37,7 +37,7 @@ Starcat 数据平台采用“本地轻量 Lakehouse + 云端只读 Serving”架
 - 不让 `starcat-history-api` 或 `starcat-recommend-api` 查询本地 Raw 数据。
 - 不把 BigQuery Raw、训练 user-repo 边或 `actor_id` 上传云端。
 - 不在第一阶段引入 Spark、Iceberg、Trino、ClickHouse 或 Kubernetes。
-- 不在本文件确定 Web 运维控制台的页面、权限和交互；控制台作为本地数据平台的后续控制面另行讨论和设计。
+- 不在本文件重复定义 Web 运维控制台的页面、权限和交互；控制面由 [67-Starcat 数据平台 Web 运维控制台详细设计](67-Starcat数据平台Web运维控制台详细设计.md) 统一定义。
 - 不处理 GH Archive 未提供的 Unstar 事件；History 口径以 WatchEvent 累积估算为准。
 
 ## 3. 总体架构
@@ -552,7 +552,7 @@ worker_lease_total{state,worker}
 - Mac Studio/MBP 通过 Worker Lease 承接聚合和训练任务。
 - 把长期 Raw/Silver 迁移到家庭存储池，T0 保留为热层和 Scratch。
 - 完成容量预测、checksum scrub、备份和恢复演练。
-- 在真实运维流程稳定后，再决定 Web 控制台的功能和权限边界。
+- 按 67 号设计逐步接入只读控制面、单机任务闭环和多机 Worker；远程访问仍需在真实运维流程稳定后单独决策。
 
 ## 16. 验证矩阵
 
@@ -603,7 +603,7 @@ worker_lease_total{state,worker}
 5. Recommend 首期继续发布完整 ServingBundle；规模达到实际门槛后改为内容寻址分片。
 6. 推荐的增量是文件传输优化，线上仍按完整 model version 原子切换。
 7. 本地只能主动 Push 到云端，不开放家庭网络入站端口。
-8. Web 运维控制台属于后续独立设计，本文件只提供它将要管理的数据和任务控制面。
+8. Web 运维控制台复用 `starcat-admin-console`，其页面、任务、权限和交互由 67 号设计定义；本文件继续作为它管理的数据和任务契约。
 
 ## 19. 参考资料
 

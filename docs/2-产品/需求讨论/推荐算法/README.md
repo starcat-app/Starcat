@@ -108,8 +108,9 @@ flowchart TB
 | [62-Starcat 自研星标历史服务详细设计](../../../3-设计/详细设计/62-Starcat自研星标历史服务详细设计.md) | 定义本地 WatchEvent 聚合、单锚点估算、Delta/Snapshot、History API 和 Discovery 迁移 | 自研 Star History 的单一权威方案 |
 | [63-Starcat 公开 Star 数据静默上报与 Collection 服务详细设计](../../../3-设计/详细设计/63-Starcat公开Star数据静默上报与Collection服务详细设计.md) | 定义当前单 Toggle、静默旁路、独立 Collection API、分块上传和 Trainer Pull | 第一阶段公开 Star 数据链路的单一权威实施契约 |
 | [66-Starcat 本地数据湖与云端 Serving 同步详细设计](../../../3-设计/详细设计/66-Starcat本地数据湖与云端Serving同步详细设计.md) | 定义 BigQuery 本地唯一 Raw、Catalog、History 日增量、Recommend 分片和云端发布 | 数据存储、分析、增长与同步的单一权威方案 |
+| [67-Starcat 数据平台 Web 运维控制台详细设计](../../../3-设计/详细设计/67-Starcat数据平台Web运维控制台详细设计.md) | 定义 Admin Console 复用、数据平台页面、结构化 Job、单机 Runner 和多机 Worker | 本地数据平台可视化与操作控制面的单一权威方案 |
 | [57-Agent 工作台与统一能力层详细设计](../../../3-设计/详细设计/57-Agent工作台与统一能力层详细设计.md) | 定义当前 Agent Run Surface 和统一能力边界 | 推荐结果进入 Agent 工作台时的 UI/Runtime 约束 |
-| [开发前问题清单](../../../1-立项/开发前问题清单.md) | 记录 5.18 决策及隐私、服务和迁移边界 | 架构决策基线 |
+| [开发前问题清单](../../../1-立项/开发前问题清单.md) | 记录 5.18、5.20、5.21 的隐私、服务、数据湖和控制台边界 | 架构决策基线 |
 | [功能实现总览](../../../功能实现总览.md) | 活文档主进度索引 | 只读核对；修改需要 dong4j 单独授权 |
 
 ## 6. 上游项目与算法参考
@@ -271,6 +272,19 @@ Mubelotix/simrepo
 
 Agent 只能消费推荐结果和公开 metadata，不能获得匿名参与者、共同 Stargazer 身份或原始训练数据。
 
+### 8.7 开发数据平台 Web 运维控制台
+
+阅读顺序：
+
+```text
+66-本地数据湖与云端 Serving 同步
+    → 67-数据平台 Web 运维控制台
+    → starcat-admin-console 落地方案与 AGENTS.md
+    → Collection / Trainer / History / Recommend 管理接口
+```
+
+复用现有 `starcat-admin-console`，不新建第三套前端。页面只创建固定 Action Job，不提供任意 Shell、SQL、数据库编辑器或 URL 代理；首期只绑定本机回环地址，远程访问另行设计。
+
 ## 9. 实施硬约束
 
 ### 9.1 数据与隐私
@@ -326,7 +340,7 @@ Agent 只能消费推荐结果和公开 metadata，不能获得匿名参与者�
 
 ```text
 [ ] 本次任务属于当前实现维护，还是目标架构建设？
-[ ] 已读取对应的 50 / 60 / 61 / 62 / 63 / 66 权威文档？
+[ ] 已读取对应的 50 / 60 / 61 / 62 / 63 / 66 / 67 权威文档？
 [ ] 是否会接触 Private/Internal、真实 GitHub 身份或本地用户数据？
 [ ] 后端删除和回滚路径是否已经存在？
 [ ] 是否需要追加数据库 migration？
