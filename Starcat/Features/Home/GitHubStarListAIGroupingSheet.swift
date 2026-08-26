@@ -2,53 +2,22 @@
 //  GitHubStarListAIGroupingSheet.swift
 //  Starcat
 //
-//  GitHub Lists AI 手动整理与审核 Sheet。
+//  GitHub Lists AI 分组的人工审核窗口。
 //
-//  模块职责：
-//  - 冻结用户已创建 Lists、Starcat 私有规则和当前 membership；
-//  - 复用 BatchAIQueueService 展示进度、暂停、取消与 AI 失败重试；
-//  - 在用户确认后按仓库聚合建议，并以每仓库至多一次 GitHub mutation 应用。
-//
-//  关键约束：建议只存在队列会话内；选中项确认前不调用 GitHub。应用失败时保留选择，
-//  再次应用依赖 SyncService 的集合并集与 no-op 语义安全重试。
+//  页面默认只展示待处理结果，并通过缓存快照、搜索防抖和 100 条渐进加载承载大库。
+//  每个仓库的选择始终是 List ID 集合，一个项目可以同时加入多个用户已创建的分组。
 //
 
 import SwiftUI
 
-private struct GitHubStarListAISuggestionSelection: Hashable {
-    let repoID: Int64
-    let listID: String
-}
-
-private struct GitHubStarListAIReviewRow: Identifiable {
-    var id: GitHubStarListAISuggestionSelection { selection }
-
-    let selection: GitHubStarListAISuggestionSelection
-    let repoFullName: String
-    let listName: String
-    let suggestion: GitHubStarListAISuggestion
-}
-
 struct GitHubStarListAIGroupingSheet: View {
-    let repoRepository: any RepoRepositoryProtocol
-    let listService: GitHubStarListSyncService
-    let queueService: BatchAIQueueService
-    let insightService: RepoAIInsightService
-    let entitlementGate: EntitlementGate
+    let session: GitHubStarListAIGroupingSession
     let onApplied: @MainActor () async -> Void
 
     @Environment(\.dismiss) private var dismiss
-
-    @State private var reposByID: [Int64: Repo] = [:]
-    @State private var listNamesByID: [String: String] = [:]
-    @State private var selectedSuggestions: Set<GitHubStarListAISuggestionSelection> = []
-    @State private var appliedSuggestions: Set<GitHubStarListAISuggestionSelection> = []
-    @State private var didSeedSelection = false
-    @State private var isPreparing = false
-    @State private var isApplying = false
-    @State private var appliedCount = 0
-    @State private var applicationFailureCount = 0
-    @State private var errorMessage: String?
+    @State private var presentation = GitHubStarListAIGroupingPresentationStore()
+    @State private var showApplyConfirmation = false
+    @State private var showDiscardConfirmation = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -58,27 +27,58 @@ struct GitHubStarListAIGroupingSheet: View {
             Divider()
             footer
         }
-        .frame(width: 760, height: 620)
+        .frame(width: 880, height: 640)
         .task {
-            // 全局 Batch 队列也承载普通摘要/标签和自动分组。只有上一轮“手动 Lists
-            // 审核”结果可在重新打开时继续查看，其余已结束批次不能占住本 Sheet 的空态。
-            if !queueService.isRunning,
-               queueService.options?.actions == [.githubLists],
-               queueService.options?.githubListGrouping?.autoApply == false {
-                seedSuggestionSelectionIfNeeded()
-            } else if !queueService.isRunning {
-                queueService.reset()
+            session.onMembershipsChanged = {
+                Task { await onApplied() }
             }
+            await session.prepareManualContext()
+            presentation.synchronizeImmediately(from: session)
         }
-        .onChange(of: queueService.isFinished) { _, finished in
-            if finished { seedSuggestionSelectionIfNeeded() }
+        .onChange(of: session.presentationRevision) { _, _ in
+            presentation.scheduleSynchronize(from: session)
+        }
+        .onDisappear {
+            session.releaseManualContextIfUnused()
+        }
+        .confirmationDialog(
+            "githubStarLists.aiGrouping.applyConfirm.title",
+            isPresented: $showApplyConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("action.apply") { session.applySelected() }
+            Button("general.cancel", role: .cancel) {}
+        } message: {
+            Text(String(
+                format: String.l10n("githubStarLists.aiGrouping.applyConfirm.messageFormat"),
+                presentation.snapshot.selectedRepositoryCount,
+                presentation.snapshot.selectedListCount
+            ))
+        }
+        .confirmationDialog(
+            "githubStarLists.aiGrouping.discard.title",
+            isPresented: $showDiscardConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("githubStarLists.aiGrouping.discard.action", role: .destructive) {
+                session.discardManualSession()
+                Task {
+                    await session.prepareManualContext()
+                    presentation.synchronizeImmediately(from: session)
+                }
+            }
+            Button("general.cancel", role: .cancel) {}
+        } message: {
+            Text("githubStarLists.aiGrouping.discard.message")
         }
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Image(systemName: "sparkles")
+                .font(.title3)
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text("githubStarLists.aiGrouping.title")
                     .font(.headline)
@@ -87,354 +87,299 @@ struct GitHubStarListAIGroupingSheet: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            Label(progressTitleKey, systemImage: progressStatusIcon)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(.quaternary, in: .capsule)
             SheetCloseButton { dismiss() }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .frame(height: 64)
     }
 
     @ViewBuilder
     private var content: some View {
-        if queueService.jobs.isEmpty {
+        if session.isLoadingContext || !presentation.isReady {
+            loadingState
+        } else if let message = session.contextErrorMessage {
+            ContentUnavailableView(
+                "githubStarLists.aiGrouping.loadFailed",
+                systemImage: "exclamationmark.triangle",
+                description: Text(verbatim: message)
+            )
+        } else if presentation.snapshot.totalCount == 0 {
             introduction
-        } else if queueService.isFinished {
-            reviewResults
         } else {
-            runningProgress
+            reviewWorkspace
         }
+    }
+
+    private var loadingState: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text("githubStarLists.aiGrouping.preparing")
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var introduction: some View {
         VStack(alignment: .leading, spacing: 18) {
             Label("githubStarLists.aiGrouping.closedSet", systemImage: "checklist")
                 .font(.title3.weight(.semibold))
-
-            Text("githubStarLists.aiGrouping.explanation")
+            Text("githubStarLists.aiGrouping.closedSet")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            GroupBox {
-                Label {
-                    Text("githubStarLists.aiGrouping.privacy")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                } icon: {
-                    Image(systemName: "hand.raised")
-                        .foregroundStyle(.secondary)
-                }
-                .padding(4)
+            LabeledContent("githubStarLists.aiGrouping.preflight.repositories") {
+                Text(session.preparedRepositoryCount, format: .number)
+                    .monospacedDigit()
+            }
+            LabeledContent("githubStarLists.aiGrouping.preflight.groups") {
+                Text(candidateListDisplays.count, format: .number)
+                    .monospacedDigit()
             }
 
-            if let errorMessage {
-                Label(errorMessage, systemImage: "exclamationmark.triangle")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer()
-        }
-        .padding(24)
-    }
-
-    private var runningProgress: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("githubStarLists.aiGrouping.running")
-                .font(.title3.weight(.semibold))
-            ProgressView(
-                value: Double(queueService.finishedCount),
-                total: Double(max(queueService.totalCount, 1))
-            )
-            Text(
-                String(
-                    format: String.l10n("githubStarLists.aiGrouping.progressFormat"),
-                    queueService.finishedCount,
-                    queueService.totalCount
-                )
-            )
-            .font(.callout)
-            .foregroundStyle(.secondary)
-
-            if let current = queueService.jobs.first(where: { $0.repoId == queueService.currentJobId }) {
-                Text(current.repoFullName)
-                    .font(.callout.monospaced())
-                    .lineLimit(1)
-            }
-
-            if !queueService.failedJobs.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("githubStarLists.aiGrouping.failed")
-                        .font(.subheadline.weight(.semibold))
-                    ForEach(queueService.failedJobs.prefix(5)) { job in
-                        Text("\(job.repoFullName): \(job.failure?.localizedMessage ?? String.l10n("batchAI.panel.row.failedUnknown"))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                }
-            }
-            Spacer()
-        }
-        .padding(24)
-    }
-
-    private var reviewResults: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text(
-                    String(
-                        format: String.l10n("githubStarLists.aiGrouping.reviewFormat"),
-                        reviewRows.count,
-                        Set(selectedSuggestions.map(\.repoID)).count
-                    )
-                )
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                Spacer()
-                if queueService.failedCount > 0 {
-                    Button("githubStarLists.aiGrouping.retryFailed") {
-                        // 重试成功后会产生新的建议集合，必须重新生成默认选择。
-                        didSeedSelection = false
-                        queueService.retryAllFailed()
-                    }
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-
-            Divider()
-
-            if reviewRows.isEmpty {
-                ContentUnavailableView(
-                    "githubStarLists.aiGrouping.noSuggestions",
-                    systemImage: "checkmark.circle",
-                    description: Text("githubStarLists.aiGrouping.noSuggestions.help")
-                )
-            } else {
-                List {
-                    ForEach(groupedReviewRows, id: \.0) { listName, rows in
-                        Section(listName) {
-                            ForEach(rows) { row in
-                                Toggle(isOn: selectionBinding(for: row.selection)) {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        HStack {
-                                            Text(row.repoFullName)
-                                                .font(.body.monospaced())
-                                            Spacer()
-                                            Text(row.suggestion.confidence, format: .percent.precision(.fractionLength(0)))
-                                                .font(.caption.monospacedDigit())
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        if !row.suggestion.reason.isEmpty {
-                                            Text(row.suggestion.reason)
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                                .fixedSize(horizontal: false, vertical: true)
-                                        }
-                                    }
-                                }
-                                .toggleStyle(.checkbox)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(candidateListDisplays) { list in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label {
+                                Text(verbatim: list.name)
+                                    .font(.subheadline.weight(.semibold))
+                            } icon: {
+                                Circle()
+                                    .fill(Color(hex: list.colorHex) ?? .accentColor)
+                                    .frame(width: 8, height: 8)
                             }
+                            Text(verbatim: list.instruction)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 8)
+                        Divider()
                     }
                 }
             }
+            .frame(maxHeight: 260)
 
-            if appliedCount > 0 || applicationFailureCount > 0 {
-                Text(
-                    String(
-                        format: String.l10n("githubStarLists.aiGrouping.applyResultFormat"),
-                        appliedCount,
-                        applicationFailureCount
-                    )
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 8)
+            GroupBox {
+                Label("githubStarLists.aiGrouping.privacy", systemImage: "lock.shield")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
+            Spacer(minLength: 0)
+        }
+        .padding(24)
+    }
+
+    private var reviewWorkspace: some View {
+        VStack(spacing: 0) {
+            progressSummary
+            Divider()
+            resultToolbar
+            Divider()
+            GitHubStarListAIGroupingResultList(
+                items: presentation.visibleItems,
+                searchText: presentation.searchText,
+                availableLists: presentation.snapshot.availableLists,
+                onToggleList: session.toggleSelection,
+                onSelectAllSuggestions: session.selectAllSuggestions,
+                onClearSelection: session.clearSelection,
+                onIgnore: session.ignore,
+                onRetryAnalysis: session.retryAnalysis,
+                onRetryApply: session.retryApply,
+                onLoadMore: presentation.loadMore
+            )
         }
     }
 
-    private var footer: some View {
-        HStack {
-            if !queueService.jobs.isEmpty, !queueService.isFinished {
-                if queueService.isPaused {
-                    Button("batchAI.panel.resume") { queueService.resume() }
-                } else {
-                    Button("batchAI.panel.pause") { queueService.pause() }
-                }
-                Button("common.cancel") { queueService.cancel() }
+    private var progressSummary: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Text(progressTitleKey)
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(String(
+                    format: String.l10n("githubStarLists.aiGrouping.progressFormat"),
+                    presentation.snapshot.analyzedCount,
+                    presentation.snapshot.totalCount
+                ))
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.secondary)
             }
-
-            Spacer()
-
-            Button("action.close") { dismiss() }
-                .disabled(isPreparing || isApplying)
-
-            if queueService.jobs.isEmpty {
-                Button(isPreparing ? "githubStarLists.aiGrouping.preparing" : "githubStarLists.aiGrouping.start") {
-                    Task { await startGrouping() }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isPreparing)
-            } else if queueService.isFinished, !reviewRows.isEmpty {
-                Button(isApplying ? "githubStarLists.aiGrouping.applying" : "githubStarLists.aiGrouping.applySelected") {
-                    Task { await applySelectedSuggestions() }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isApplying || selectedSuggestions.isEmpty)
+            ProgressView(
+                value: Double(presentation.snapshot.analyzedCount),
+                total: Double(max(presentation.snapshot.totalCount, 1))
+            )
+            HStack(spacing: 22) {
+                metricButton(
+                    "githubStarLists.aiGrouping.metric.suggested",
+                    value: presentation.snapshot.suggestionCount,
+                    icon: "sparkles",
+                    filter: .suggestions
+                )
+                metricButton(
+                    "githubStarLists.aiGrouping.metric.noMatch",
+                    value: presentation.snapshot.noMatchCount,
+                    icon: "minus.circle",
+                    filter: .noMatch
+                )
+                metricButton(
+                    "githubStarLists.aiGrouping.filter.analysisFailed",
+                    value: presentation.snapshot.analysisFailedCount,
+                    icon: "exclamationmark.triangle",
+                    filter: .analysisFailed
+                )
+                metricButton(
+                    "githubStarLists.aiGrouping.filter.applyFailed",
+                    value: presentation.snapshot.applyFailedCount,
+                    icon: "icloud.slash",
+                    filter: .applyFailed
+                )
+                Spacer()
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .padding(.vertical, 11)
     }
 
-    private var reviewRows: [GitHubStarListAIReviewRow] {
-        queueService.jobs.flatMap { job in
-            job.suggestedGitHubLists.compactMap { suggestion in
-                guard let listName = listNamesByID[suggestion.listId] else { return nil }
-                let selection = GitHubStarListAISuggestionSelection(repoID: job.repoId, listID: suggestion.listId)
-                guard !appliedSuggestions.contains(selection) else { return nil }
-                return GitHubStarListAIReviewRow(
-                    selection: selection,
-                    repoFullName: job.repoFullName,
-                    listName: listName,
-                    suggestion: suggestion
-                )
+    private var resultToolbar: some View {
+        @Bindable var store = presentation
+        return HStack(spacing: 12) {
+            Picker("githubStarLists.aiGrouping.filter.label", selection: $store.filter) {
+                filterLabel(.actionable, count: store.snapshot.actionableCount).tag(GitHubStarListAIResultFilter.actionable)
+                filterLabel(.suggestions, count: store.snapshot.suggestionCount).tag(GitHubStarListAIResultFilter.suggestions)
+                filterLabel(.applyFailed, count: store.snapshot.applyFailedCount).tag(GitHubStarListAIResultFilter.applyFailed)
+                filterLabel(.applied, count: store.snapshot.appliedCount).tag(GitHubStarListAIResultFilter.applied)
+                filterLabel(.all, count: store.snapshot.totalCount).tag(GitHubStarListAIResultFilter.all)
             }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 500)
+
+            TextField("githubStarLists.aiGrouping.search.placeholder", text: $store.searchText)
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 220)
+
+            if store.snapshot.applyFailedCount > 0 {
+                Button("githubStarLists.aiGrouping.retryRecoverable") {
+                    session.retryAllRecoverableApplyFailures()
+                }
+                .disabled(session.isApplying)
+            }
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 9)
+    }
+
+    private var footer: some View {
+        HStack(spacing: 10) {
+            if presentation.snapshot.totalCount == 0 {
+                Spacer()
+                Button("action.close") { dismiss() }
+                Button("githubStarLists.aiGrouping.start") {
+                    Task { await session.startManual() }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(
+                    session.isLoadingContext
+                        || session.preparedRepositoryCount == 0
+                        || candidateListDisplays.isEmpty
+                )
+            } else {
+                if session.isRunning {
+                    Button("githubStarLists.aiGrouping.stop", action: session.stopAnalysis)
+                } else if presentation.snapshot.hasContinuableJobs {
+                    Button("githubStarLists.aiGrouping.continue", action: session.continueManual)
+                }
+
+                if !session.isRunning, !session.isApplying {
+                    Button("githubStarLists.aiGrouping.discard.action", role: .destructive) {
+                        showDiscardConfirmation = true
+                    }
+                }
+
+                Spacer()
+                Text(String(
+                    format: String.l10n("githubStarLists.aiGrouping.selectionSummaryFormat"),
+                    presentation.snapshot.selectedRepositoryCount,
+                    presentation.snapshot.selectedListCount
+                ))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+
+                Button("action.close") { dismiss() }
+                Button("githubStarLists.aiGrouping.applySelected") {
+                    showApplyConfirmation = true
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(presentation.snapshot.selectedRepositoryCount == 0 || session.isApplying)
+            }
+        }
+        .padding(.horizontal, 20)
+        .frame(height: 58)
+    }
+
+    private var candidateListDisplays: [GitHubStarListAIListDisplay] {
+        presentation.snapshot.availableLists.filter {
+            !$0.instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
 
-    private var groupedReviewRows: [(String, [GitHubStarListAIReviewRow])] {
-        Dictionary(grouping: reviewRows, by: \.listName)
-            .map { ($0.key, $0.value.sorted { $0.repoFullName < $1.repoFullName }) }
-            .sorted { $0.0.localizedCaseInsensitiveCompare($1.0) == .orderedAscending }
-    }
-
-    private func selectionBinding(for selection: GitHubStarListAISuggestionSelection) -> Binding<Bool> {
-        Binding(
-            get: { selectedSuggestions.contains(selection) },
-            set: { enabled in
-                if enabled { selectedSuggestions.insert(selection) }
-                else { selectedSuggestions.remove(selection) }
-            }
-        )
-    }
-
-    private func seedSuggestionSelectionIfNeeded() {
-        guard !didSeedSelection else { return }
-        selectedSuggestions = Set(reviewRows.map(\.selection))
-        didSeedSelection = true
-    }
-
-    @MainActor
-    private func startGrouping() async {
-        isPreparing = true
-        errorMessage = nil
-        defer { isPreparing = false }
-
-        do {
-            try entitlementGate.requirePro(.batchAI)
-            // AI 配置在读取仓库和启动批次之前一次性校验。无可用模型时不进入任何
-            // repo context 构造或 provider 请求路径，避免无意义的数据读取与失败风暴。
-            try insightService.ensureGenerationClientsReady(includeSummary: false, includeTags: true)
-            async let listsResult = listService.allLists()
-            async let rulesResult = listService.allAIRules()
-            async let assignmentsResult = listService.allListAssignments()
-            async let reposResult = repoRepository.fetchAllStarred()
-
-            let lists = try await listsResult
-            let rules = try await rulesResult
-            let assignments = try await assignmentsResult
-            let repos = try await reposResult
-            let ruleByID = Dictionary(uniqueKeysWithValues: rules.map { ($0.listId, $0) })
-            let candidates = lists.compactMap { list -> GitHubStarListAIContext? in
-                guard let rule = ruleByID[list.id],
-                      !rule.instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                else { return nil }
-                return GitHubStarListAIContext(
-                    listId: list.id,
-                    name: list.name,
-                    instruction: rule.instruction,
-                    autoApplyEnabled: rule.autoApplyEnabled
-                )
-            }
-            guard !candidates.isEmpty else {
-                errorMessage = String.l10n("githubStarLists.aiGrouping.error.noRules")
-                return
-            }
-            guard !repos.isEmpty else {
-                errorMessage = String.l10n("githubStarLists.aiGrouping.error.noRepos")
-                return
-            }
-
-            reposByID = Dictionary(uniqueKeysWithValues: repos.map { ($0.id, $0) })
-            listNamesByID = Dictionary(uniqueKeysWithValues: candidates.map { ($0.listId, $0.name) })
-            let memberships = assignments.mapValues { Set($0.map(\.id)) }
-            await queueService.preemptAutomaticRunForManualStart()
-            if !queueService.isRunning { queueService.reset() }
-            queueService.start(
-                repos: repos,
-                options: BatchAIQueueOptions(
-                    actions: [.githubLists],
-                    autoApplyTags: false,
-                    confidenceThreshold: 0.90,
-                    maxRetries: 3,
-                    githubListGrouping: GitHubStarListAIGroupingConfiguration(
-                        candidates: candidates,
-                        existingListIDsByRepo: memberships,
-                        eligibleRepoIDs: nil,
-                        autoApply: false
-                    )
-                )
-            )
-        } catch {
-            errorMessage = error.localizedDescription
+    private var progressTitleKey: LocalizedStringKey {
+        if session.isApplying {
+            "githubStarLists.aiGrouping.applying"
+        } else if session.isRunning {
+            "githubStarLists.aiGrouping.running"
+        } else if presentation.snapshot.totalCount > 0,
+                  presentation.snapshot.analyzedCount == presentation.snapshot.totalCount {
+            "githubStarLists.aiGrouping.status.finished"
+        } else {
+            "batchAI.panel.paused"
         }
     }
 
-    @MainActor
-    private func applySelectedSuggestions() async {
-        isApplying = true
-        applicationFailureCount = 0
-        defer { isApplying = false }
+    private var progressStatusIcon: String {
+        if session.isApplying { "icloud.and.arrow.up" }
+        else if session.isRunning { "sparkles" }
+        else if presentation.snapshot.totalCount > 0,
+                presentation.snapshot.analyzedCount == presentation.snapshot.totalCount { "checkmark.circle" }
+        else { "pause.circle" }
+    }
 
-        let selectedByRepo = Dictionary(grouping: selectedSuggestions, by: \.repoID)
-        var succeededRepos = 0
-        var failedRepos = 0
-        var successfulSelections: Set<GitHubStarListAISuggestionSelection> = []
-
-        for (repoID, selections) in selectedByRepo {
-            guard let repo = reposByID[repoID] else { continue }
-            let suggestions = queueService.jobs
-                .first(where: { $0.repoId == repoID })?
-                .suggestedGitHubLists ?? []
-            let approvedListIDs = GitHubStarListAISuggestionPolicy.confirmedListIDs(
-                from: suggestions,
-                selectedListIDs: Set(selections.map(\.listID)),
-                // 本方法只能由“应用所选分组”确认按钮触发；仍把确认建模为显式执行门。
-                confirmationGranted: true
-            )
-            guard !approvedListIDs.isEmpty else { continue }
-            do {
-                _ = try await listService.addRepo(repo, toLists: approvedListIDs)
-                successfulSelections.formUnion(selections)
-                succeededRepos += 1
-            } catch {
-                // 规则、Prompt 和 provider 原文都不进入错误日志；只记录 repo ID 与脱敏错误。
-                AppLog.network.error(
-                    "GitHub star list AI apply failed for repo=\(repoID, privacy: .public): \(error.localizedDescription, privacy: .public)"
-                )
-                failedRepos += 1
+    private func metricButton(
+        _ title: LocalizedStringKey,
+        value: Int,
+        icon: String,
+        filter: GitHubStarListAIResultFilter
+    ) -> some View {
+        Button {
+            presentation.filter = filter
+        } label: {
+            HStack(spacing: 5) {
+                Label(title, systemImage: icon)
+                Text(value, format: .number)
+                    .monospacedDigit()
             }
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+    }
 
-        selectedSuggestions.subtract(successfulSelections)
-        appliedSuggestions.formUnion(successfulSelections)
-        appliedCount += succeededRepos
-        applicationFailureCount = failedRepos
-        if succeededRepos > 0 { await onApplied() }
+    private func filterLabel(_ filter: GitHubStarListAIResultFilter, count: Int) -> some View {
+        HStack(spacing: 4) {
+            Text(LocalizedStringKey(filter.titleKey))
+            Text(count, format: .number)
+                .monospacedDigit()
+        }
     }
 }

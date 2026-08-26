@@ -124253,6 +124253,1084 @@
         }
       }
     },
+    "githubStarLists.aiGrouping.action.acceptAll" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accept All Suggestions"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接受全部建议"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接受全部建議"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.action.clearSelection" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear Selection"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清空选择"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除選取"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.action.ignore" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ignore Repository"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "忽略此仓库"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "忽略此倉庫"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.action.modifyGroups" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change Groups"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "修改分组"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "修改分組"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.action.noAvailableGroups" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No available groups"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有可选分组"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有可選分組"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.action.selectVisible" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select Visible Suggestions"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择当前结果"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選取目前結果"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.applyConfirm.messageFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add %d repositories to %d existing groups? No current group memberships will be removed."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将把 %d 个仓库添加到 %d 个已有分组，不会移除任何当前分组。是否继续？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將把 %d 個倉庫加入 %d 個已有分組，不會移除任何目前分組。是否繼續？"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.applyConfirm.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apply Grouping Changes?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "应用分组修改？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "套用分組修改？"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.currentGroupsFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Current groups: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前分组：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目前分組：%@"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.error.queueBusy" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Another batch AI task is currently running."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前有另一个批量 AI 任务正在运行。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目前有另一個批次 AI 任務正在執行。"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.filter.failed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失败"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失敗"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.filter.label" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Result Filter"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "结果筛选"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "結果篩選"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.filter.noMatch" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Match"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无匹配"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無符合"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.filter.suggestions" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suggested"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有建议"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有建議"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.inspector.aiSuggestions" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI Suggestions"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 建议"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 建議"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.inspector.currentGroups" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Current Groups"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前分组"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目前分組"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.inspector.empty" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select a Repository"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择一个仓库"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選取一個倉庫"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.inspector.empty.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Review its AI suggestions, confidence, reasons, and current groups here."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在这里审核 AI 建议、置信度、判断依据和当前分组。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在這裡審核 AI 建議、信心度、判斷依據和目前分組。"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.inspector.language" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Language"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语言"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "語言"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.inspector.metadataUnavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repository metadata is unavailable."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仓库元数据不可用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "倉庫中繼資料無法使用。"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.inspector.noCurrentGroups" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not in any group"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未加入任何分组"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未加入任何分組"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.inspector.reason" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reason"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "判断依据"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "判斷依據"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.inspector.repositoryMetadata" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repository Details"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仓库信息"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "倉庫資訊"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.inspector.rule" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Group Description"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分组描述"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分組描述"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.inspector.stars" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stars"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stars"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stars"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.inspector.topics" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Topics"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Topics"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Topics"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.metric.failed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失败"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失敗"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.metric.noMatch" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Match"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无匹配"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無符合"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.metric.remaining" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remaining"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "待处理"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "待處理"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.metric.suggested" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suggested"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有建议"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有建議"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.mode.review" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Review Mode"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "审核模式"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "審核模式"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.moreSuggestionsFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+%d more suggestions"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "另有 %d 个建议"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "另有 %d 個建議"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.noMatch.detail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI determined that this repository does not match any existing group description."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 判断该仓库不符合任何已有分组的描述。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 判斷此倉庫不符合任何已有分組的描述。"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.preflight.summaryFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d repositories · %d eligible groups"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 个仓库 · %d 个可匹配分组"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 個倉庫 · %d 個可符合分組"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.results.empty" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Results"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有结果"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有結果"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.results.empty.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try a different filter or search term."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请调整筛选条件或搜索内容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請調整篩選條件或搜尋內容。"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.search.placeholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search repositories or groups"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索仓库或分组"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜尋倉庫或分組"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.selection.acceptRepo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select all suggestions for this repository"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择此仓库的全部建议"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選取此倉庫的全部建議"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.selection.add" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select this group"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择这个分组"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選取這個分組"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.selection.clearRepo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear selections for this repository"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除此仓库的选择"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除此倉庫的選取"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.selection.remove" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deselect this group"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消选择这个分组"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消選取這個分組"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.status.applied" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Applied"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已应用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已套用"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.status.failed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失败"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失敗"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.status.finished" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analysis Complete"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分析完成"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分析完成"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.status.ignored" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ignored"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已忽略"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已忽略"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.status.noMatch" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No matching group"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无匹配分组"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無符合分組"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.status.processing" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analyzing"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分析中"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分析中"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.status.queued" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等待中"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等待中"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.status.suggested" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suggested"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有建议"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有建議"
+          }
+        }
+      }
+    },
     "githubStarLists.aiGrouping.applyResultFormat" : {
       "localizations" : {
         "en" : {
@@ -126051,6 +127129,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "這不是 token 範圍或本地資料錯誤，而是 GitHub 組織層級的 OAuth 應用程式政策；一般 Star 使用者通常沒有申請授權的途徑。"
+          }
+        }
+      }
+    },
+    "githubStarLists.error.orgOAuthRestricted.openGitHub" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open on GitHub"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 GitHub 打开"
           }
         }
       }
@@ -487328,6 +488422,31 @@
     "curatedPublisher.source.create" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Create category" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "新增分类" } } } },
     "curatedPublisher.source.nameEN" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "English name" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "英文名称" } } } },
     "curatedPublisher.source.nameZH" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Chinese name" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "中文名称" } } } },
+    "githubStarLists.aiGrouping.noAvailableGroups" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "No available groups" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有可用分组" } } } },
+    "githubStarLists.aiGrouping.applyFailure.organizationRestriction" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "GitHub blocks third-party apps from updating this organization repository." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "GitHub 限制第三方应用操作此组织仓库。" } } } },
+    "githubStarLists.aiGrouping.applyFailure.network" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Network error. Try again." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "网络错误，请重试。" } } } },
+    "githubStarLists.aiGrouping.applyFailure.rateLimited" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "GitHub rate limit reached. Try again later." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "GitHub 请求已限流，请稍后重试。" } } } },
+    "githubStarLists.aiGrouping.applyFailure.authentication" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "GitHub authorization expired. Sign in again." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "GitHub 授权已失效，请重新登录。" } } } },
+    "githubStarLists.aiGrouping.applyFailure.repositoryUnavailable" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Repository is unavailable or no longer starred." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库不可用或已不再 Star。" } } } },
+    "githubStarLists.aiGrouping.applyFailure.unknown" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not update this GitHub List." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法更新此 GitHub 分组。" } } } },
+    "githubStarLists.aiGrouping.applyFailure.openGitHub" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Open on GitHub" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "在 GitHub 中打开" } } } },
+    "githubStarLists.aiGrouping.filter.analysisFailed" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Analysis Failed" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分析失败" } } } },
+    "githubStarLists.aiGrouping.filter.applyFailed" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Apply Failed" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "应用失败" } } } },
+    "githubStarLists.aiGrouping.filter.applied" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Applied" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已应用" } } } },
+    "githubStarLists.aiGrouping.discard.title" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Discard this grouping session?" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "放弃本次分组整理？" } } } },
+    "githubStarLists.aiGrouping.discard.action" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Discard Session" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "放弃本次整理" } } } },
+    "githubStarLists.aiGrouping.discard.message" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Analysis results and review selections will be removed. GitHub changes already applied are not affected." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分析结果和审核选择将被清除，已经成功写入 GitHub 的分组不会受到影响。" } } } },
+    "githubStarLists.aiGrouping.loadFailed" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Could Not Load Grouping Context" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法加载分组整理上下文" } } } },
+    "githubStarLists.aiGrouping.preflight.repositories" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库" } } } },
+    "githubStarLists.aiGrouping.preflight.groups" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Eligible groups" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "可用分组" } } } },
+    "githubStarLists.aiGrouping.retryRecoverable" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Retry Recoverable Failures" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重试可恢复失败" } } } },
+    "githubStarLists.aiGrouping.selectionSummaryFormat" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "%d repositories · %d groups selected" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已选择 %d 个仓库 · %d 个分组" } } } },
+    "githubStarLists.aiGrouping.stop" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Stop Analysis" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "停止分析" } } } },
+    "githubStarLists.aiGrouping.continue" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Continue Analysis" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "继续分析" } } } },
+    "sidebar.githubStarLists.aiGrouping.runningFormat" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "AI grouping %d/%d" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 仓库分组 %d/%d" } } } },
+    "sidebar.githubStarLists.aiGrouping.tooltip" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "View AI repository grouping progress" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查看 AI 仓库分组进度" } } } },
+    "sidebar.githubStarLists.aiGrouping.popover.title" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "AI Repository Grouping" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 仓库分组" } } } },
+    "sidebar.githubStarLists.aiGrouping.openReview" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Open Review" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "打开审核" } } } },
     "curatedPublisher.window.title" : {
       "localizations" : {
         "en" : {

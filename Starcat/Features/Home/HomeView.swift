@@ -1856,13 +1856,6 @@ struct HomeView: View {
                 await viewModel.refreshSidebar()
             }
         }
-        dependencies.batchAIQueueService.onGitHubStarListsChanged = {
-            Task { @MainActor in
-                await viewModel.refreshSidebar()
-                await viewModel.reloadItems(forceRefresh: true)
-            }
-        }
-
         // HOM-126：启动自动后台 AI 整理调度器。
         // - `start()` 内部幂等，HomeView 多次进入只装一次。
         // - 启动后挂启动延迟（60s 后触发一次）+ 24h 定时器 + onBatchFinished 回调。

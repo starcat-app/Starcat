@@ -115,7 +115,7 @@ struct AutoTidySettings: Codable, Equatable, Sendable {
 
     // MARK: - 1. 总开关 + 触发时机
 
-    /// 标签 / 摘要自动整理的总开关。仓库分组有独立全局开关，不能再被本字段隐式门控。
+    /// 标签 / 摘要自动整理的总开关。
     var enabled: Bool
 
     /// 开启后：App 启动延迟 60s 自动整理一次。关闭后：启动时不触发（不是立刻执行）。
@@ -153,14 +153,6 @@ struct AutoTidySettings: Codable, Equatable, Sendable {
     /// 注意：本字段同时控制"推荐标签"与"自动应用"，因为自动模式没法弹确认框，
     /// 用户开了标签就视作同意自动应用（与 HOM-52 的 autoApply Toggle 解耦）。
     var generateTags: Bool
-
-    /// 是否把高置信度建议自动加入用户已显式允许的 GitHub Lists。默认关闭；只有本全局
-    /// 开关与 List 自身的 `autoApplyEnabled` 同时开启时，BatchAIQueueService 才会写 GitHub。
-    var generateGitHubListGrouping: Bool
-
-    /// 仓库分组独立的自动应用置信度阈值。不能复用标签阈值，否则两个不同能力会在
-    /// 设置页和运行时互相影响，用户调整标签策略时可能意外改变 GitHub 写入边界。
-    var githubListGroupingConfidenceThreshold: Double
 
     /// 是否启用置信度阈值过滤。默认 true（保持 HOM-126 第一版"保险地只应用高置信度"语义）。
     ///
@@ -201,8 +193,6 @@ struct AutoTidySettings: Codable, Equatable, Sendable {
         sortOrder: .recentlyStarred,
         generateSummary: false,
         generateTags: true,
-        generateGitHubListGrouping: false,
-        githubListGroupingConfidenceThreshold: 0.90,
         useConfidenceThreshold: true,
         confidenceThreshold: 0.90,
         lastRunAt: nil,
@@ -217,7 +207,7 @@ struct AutoTidySettings: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case enabled, triggerOnLaunch, triggerOnSync, triggerScheduled, scheduledIntervalHours
         case maxPerRun, sortOrder
-        case generateSummary, generateTags, generateGitHubListGrouping, githubListGroupingConfidenceThreshold
+        case generateSummary, generateTags
         case useConfidenceThreshold, confidenceThreshold
         case lastRunAt, lastRunStats
     }
@@ -232,8 +222,6 @@ struct AutoTidySettings: Codable, Equatable, Sendable {
         sortOrder: AutoTidySortOrder,
         generateSummary: Bool,
         generateTags: Bool,
-        generateGitHubListGrouping: Bool,
-        githubListGroupingConfidenceThreshold: Double,
         useConfidenceThreshold: Bool,
         confidenceThreshold: Double,
         lastRunAt: Date?,
@@ -248,8 +236,6 @@ struct AutoTidySettings: Codable, Equatable, Sendable {
         self.sortOrder = sortOrder
         self.generateSummary = generateSummary
         self.generateTags = generateTags
-        self.generateGitHubListGrouping = generateGitHubListGrouping
-        self.githubListGroupingConfidenceThreshold = githubListGroupingConfidenceThreshold
         self.useConfidenceThreshold = useConfidenceThreshold
         self.confidenceThreshold = confidenceThreshold
         self.lastRunAt = lastRunAt
@@ -270,9 +256,6 @@ struct AutoTidySettings: Codable, Equatable, Sendable {
         self.sortOrder = (try? c.decode(AutoTidySortOrder.self, forKey: .sortOrder)) ?? d.sortOrder
         self.generateSummary = (try? c.decode(Bool.self, forKey: .generateSummary)) ?? d.generateSummary
         self.generateTags = (try? c.decode(Bool.self, forKey: .generateTags)) ?? d.generateTags
-        self.generateGitHubListGrouping = (try? c.decode(Bool.self, forKey: .generateGitHubListGrouping)) ?? d.generateGitHubListGrouping
-        self.githubListGroupingConfidenceThreshold = (try? c.decode(Double.self, forKey: .githubListGroupingConfidenceThreshold))
-            ?? d.githubListGroupingConfidenceThreshold
         self.useConfidenceThreshold = (try? c.decode(Bool.self, forKey: .useConfidenceThreshold)) ?? d.useConfidenceThreshold
         self.confidenceThreshold = (try? c.decode(Double.self, forKey: .confidenceThreshold)) ?? d.confidenceThreshold
         self.lastRunAt = try? c.decodeIfPresent(Date.self, forKey: .lastRunAt)
@@ -294,11 +277,8 @@ struct AutoTidySettings: Codable, Equatable, Sendable {
     /// 标签分类自动整理下至少要选一个子操作，供该 Section 的手动触发按钮判断。
     var hasAnyAction: Bool { generateSummary || generateTags }
 
-    /// 后台调度器是否存在真正启用的工作。仓库分组使用独立全局开关，因此即使标签
-    /// 自动整理总开关关闭，也仍可在启动和 Stars 同步完成后独立运行。
-    var hasEnabledBackgroundAction: Bool {
-        (enabled && hasAnyAction) || generateGitHubListGrouping
-    }
+    /// 标签 / 摘要后台调度器是否存在真正启用的工作。
+    var hasEnabledBackgroundAction: Bool { enabled && hasAnyAction }
 
     /// 把自动整理偏好映射成底层 `BatchAIQueueOptions`。
     ///
@@ -308,20 +288,15 @@ struct AutoTidySettings: Codable, Equatable, Sendable {
     /// - confidenceThreshold：`useConfidenceThreshold == false` 时降级为 0（等价于"不过滤"，
     ///   所有 AI 建议都会被自动应用）；为 true 时透传用户值；
     /// - maxRetries：复用底层默认 3，自动模式不暴露给用户。
-    func makeBatchOptions(
-        githubListGrouping: GitHubStarListAIGroupingConfiguration? = nil,
-        standardActionRepoIDs: Set<Int64>? = nil
-    ) -> BatchAIQueueOptions {
+    func makeBatchOptions(standardActionRepoIDs: Set<Int64>? = nil) -> BatchAIQueueOptions {
         var actions: Set<BatchAIAction> = []
         if enabled, generateSummary { actions.insert(.summary) }
         if enabled, generateTags { actions.insert(.tags) }
-        if generateGitHubListGrouping, githubListGrouping != nil { actions.insert(.githubLists) }
         return BatchAIQueueOptions(
             actions: actions,
             autoApplyTags: enabled && generateTags,
             confidenceThreshold: useConfidenceThreshold ? confidenceThreshold : 0,
             maxRetries: 3,
-            githubListGrouping: githubListGrouping,
             standardActionRepoIDs: standardActionRepoIDs
         )
     }

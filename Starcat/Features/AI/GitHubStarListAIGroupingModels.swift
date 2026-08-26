@@ -47,37 +47,6 @@ struct GitHubStarListAISuggestion: Codable, Equatable, Hashable, Identifiable, S
     }
 }
 
-/// 批量队列一次运行所需的 Lists 快照。
-struct GitHubStarListAIGroupingConfiguration: Equatable, Sendable {
-    let candidates: [GitHubStarListAIContext]
-    let existingListIDsByRepo: [Int64: Set<String>]
-    /// Auto Tidy 合并“未打标签仓库”和“全部 Stars”两个范围时，用它限制 Lists 子任务。
-    /// nil 表示手动模式中的全部入队仓库。
-    let eligibleRepoIDs: Set<Int64>?
-    /// true 只用于用户明确开启的后台 Auto Tidy；手动审核必须保持 false。
-    let autoApply: Bool
-    /// 自动分组始终需要阈值，即使用户为旧的自动标签关闭了“使用阈值”。手动审核为 nil。
-    let confidenceThreshold: Double?
-
-    init(
-        candidates: [GitHubStarListAIContext],
-        existingListIDsByRepo: [Int64: Set<String>],
-        eligibleRepoIDs: Set<Int64>?,
-        autoApply: Bool,
-        confidenceThreshold: Double? = nil
-    ) {
-        self.candidates = candidates
-        self.existingListIDsByRepo = existingListIDsByRepo
-        self.eligibleRepoIDs = eligibleRepoIDs
-        self.autoApply = autoApply
-        self.confidenceThreshold = confidenceThreshold
-    }
-
-    var hasCandidates: Bool {
-        candidates.contains { !$0.instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-    }
-}
-
 /// 封闭候选集的最终执行边界。
 enum GitHubStarListAISuggestionPolicy {
     /// 清洗模型建议，并且只返回本轮候选集内、尚未存在的新增 membership。
@@ -143,5 +112,22 @@ enum GitHubStarListAISuggestionPolicy {
     ) -> Set<String> {
         guard confirmationGranted else { return [] }
         return Set(suggestions.map(\.listId)).intersection(selectedListIDs)
+    }
+
+    /// 人工审核页允许用户纠正 AI，把仓库改选到任意一个已经存在的分组。
+    ///
+    /// 这条路径不再受“AI 本轮建议了哪些分组”限制，因为最终选择来自用户本人；但仍必须
+    /// 同时满足三道边界：用户完成最终确认、目标分组存在、仓库尚未属于该分组。这样既支持
+    /// 人工纠错，也不会借机创建未知分组或把“添加”误实现成删除 / 移动。
+    static func confirmedExistingListIDs(
+        selectedListIDs: Set<String>,
+        availableListIDs: Set<String>,
+        existingListIDs: Set<String>,
+        confirmationGranted: Bool
+    ) -> Set<String> {
+        guard confirmationGranted else { return [] }
+        return selectedListIDs
+            .intersection(availableListIDs)
+            .subtracting(existingListIDs)
     }
 }

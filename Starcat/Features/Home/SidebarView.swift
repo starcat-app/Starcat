@@ -235,11 +235,7 @@ struct SidebarView: View {
         }
         .sheet(isPresented: $showGitHubStarListAIGroupingSheet) {
             GitHubStarListAIGroupingSheet(
-                repoRepository: dependencies.repoRepository,
-                listService: dependencies.githubStarListSyncService,
-                queueService: dependencies.batchAIQueueService,
-                insightService: dependencies.repoAIInsightService,
-                entitlementGate: dependencies.entitlementGate,
+                session: dependencies.githubStarListAIGroupingSession,
                 onApplied: {
                     await viewModel.refreshSidebar()
                     await viewModel.reloadItems(forceRefresh: true)
@@ -265,6 +261,15 @@ struct SidebarView: View {
         .onChange(of: hasAnyBackgroundTask) { _, hasTask in
             if !hasTask {
                 showBackgroundTaskPopover = false
+            }
+        }
+        .onAppear {
+            // 后台自动分组不依赖审核 Sheet 是否打开；回调必须在 Sidebar 生命周期内常驻。
+            dependencies.githubStarListAIGroupingSession.onMembershipsChanged = {
+                Task { @MainActor in
+                    await viewModel.refreshSidebar()
+                    await viewModel.reloadItems(forceRefresh: true)
+                }
             }
         }
         .alert(
@@ -299,8 +304,14 @@ struct SidebarView: View {
         dependencies.repoAIInsightSessionStore.backgroundTasks
     }
 
+    private var isGitHubListGroupingActive: Bool {
+        let session = dependencies.githubStarListAIGroupingSession
+        return session.isRunning || session.isApplying
+    }
+
     private var hasAnyBackgroundTask: Bool {
         isManualBatchRunning
+            || isGitHubListGroupingActive
             || autoTidyScheduler.isAutoTidyRunning
             || !summaryBackgroundTasks.isEmpty
     }
@@ -349,6 +360,22 @@ struct SidebarView: View {
 
     private var backgroundTaskStatusText: String {
         let summaryCount = summaryBackgroundTasks.count
+        if isGitHubListGroupingActive {
+            let session = dependencies.githubStarListAIGroupingSession
+            let grouping = String(
+                format: String.l10n("sidebar.githubStarLists.aiGrouping.runningFormat"),
+                session.analyzedCount,
+                session.totalCount
+            )
+            if summaryCount > 0 {
+                return String(
+                    format: String.l10n("sidebar.background.combinedFormat"),
+                    grouping,
+                    summaryCount
+                )
+            }
+            return grouping
+        }
         if isManualBatchRunning {
             let service = dependencies.batchAIQueueService
             let tidy = String(
@@ -392,6 +419,9 @@ struct SidebarView: View {
     }
 
     private var backgroundTaskTooltipKey: LocalizedStringKey {
+        if isGitHubListGroupingActive {
+            return "sidebar.githubStarLists.aiGrouping.tooltip"
+        }
         if isManualBatchRunning {
             return "sidebar.background.manual.tooltip"
         }
@@ -419,14 +449,16 @@ struct SidebarView: View {
                 .focusEffectDisabled()
             }
 
-            if isManualBatchRunning {
+            if isGitHubListGroupingActive {
+                githubStarListGroupingPopoverSection
+            } else if isManualBatchRunning {
                 manualBatchPopoverSection
             } else if autoTidyScheduler.isAutoTidyRunning {
                 autoTidyPopoverSection
             }
 
             if !summaryBackgroundTasks.isEmpty {
-                if isManualBatchRunning || autoTidyScheduler.isAutoTidyRunning {
+                if isGitHubListGroupingActive || isManualBatchRunning || autoTidyScheduler.isAutoTidyRunning {
                     Divider()
                 }
                 summaryTasksPopoverSection
@@ -437,12 +469,38 @@ struct SidebarView: View {
     }
 
     private var backgroundTaskPopoverTitleKey: LocalizedStringKey {
-        if isManualBatchRunning {
+        if isGitHubListGroupingActive {
+            "sidebar.githubStarLists.aiGrouping.popover.title"
+        } else if isManualBatchRunning {
             "sidebar.background.manual.popover.title"
         } else if autoTidyScheduler.isAutoTidyRunning {
             "sidebar.autoTidy.popover.title"
         } else {
             "sidebar.background.summary.popover.title"
+        }
+    }
+
+    private var githubStarListGroupingPopoverSection: some View {
+        let session = dependencies.githubStarListAIGroupingSession
+        return VStack(alignment: .leading, spacing: 10) {
+            ProgressView(
+                value: Double(session.analyzedCount),
+                total: Double(max(session.totalCount, 1))
+            )
+            Text(String(
+                format: String.l10n("sidebar.autoTidy.popover.progressFormat"),
+                session.analyzedCount,
+                session.totalCount
+            ))
+            .font(interfaceScale.font(.captionSmall))
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+
+            Button("sidebar.githubStarLists.aiGrouping.openReview") {
+                showBackgroundTaskPopover = false
+                showGitHubStarListAIGroupingSheet = true
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
 
@@ -1420,7 +1478,7 @@ struct SidebarView: View {
                     )
                 }
             } label: {
-                Image(systemName: "sparkles.2")
+                Image(systemName: "circle.dotted.circle")
                     .font(interfaceScale.font(.iconMedium, weight: .medium))
                     .foregroundStyle(.secondary)
                     .frame(width: 20, height: 20)
@@ -1431,7 +1489,6 @@ struct SidebarView: View {
             .disabled(
                 !viewModel.hasGitHubStarListAIRules
                     || authSession.state.user == nil
-                    || (dependencies.batchAIQueueService.isRunning && !dependencies.batchAIQueueService.silent)
             )
             .help(Text("sidebar.githubStarLists.aiGrouping"))
 
@@ -2146,8 +2203,11 @@ struct SidebarView: View {
 
     /// GitHub Stars List 真实分组行：颜色点 + 名称 + 计数。
     ///
-    /// 编辑入口不常驻：hover 时叠在计数左侧，右键提供编辑 / 删除，双击名称打开同一张 sheet。
-    /// 计数列仍走 `trailingFixedWidth`，避免 hover 时数字跳动。
+    /// 编辑入口不常驻：hover 时紧跟分组名，计数仍走右侧固定槽。
+    /// 未 hover 时按钮不进视图树，避免抢走 List 选中。右键提供编辑 / 删除。「未分组」没有这些入口。
+    ///
+    /// 不要在 Label 上挂 `TapGesture`：macOS `List(selection:)` 会把单击交给手势，
+    /// 结果变成点名称无法选中、只能点行空白。
     @ViewBuilder
     private func githubStarListRow(_ list: GitHubStarList) -> some View {
         let item = SidebarItem.githubStarList(list.id)
@@ -2157,6 +2217,10 @@ struct SidebarView: View {
                 Text(verbatim: list.name)
                     .lineLimit(1)
                     .truncationMode(.tail)
+
+                if isHovered {
+                    githubStarListEditButton(list)
+                }
 
                 Spacer(minLength: 4)
 
@@ -2170,15 +2234,6 @@ struct SidebarView: View {
                         .lineLimit(1)
                 }
                 .frame(width: Self.trailingFixedWidth, alignment: .trailing)
-            }
-            .overlay(alignment: .trailing) {
-                HStack(spacing: 2) {
-                    githubStarListEditButton(list)
-                        .opacity(isHovered ? 1 : 0)
-                        .allowsHitTesting(isHovered)
-                    Color.clear
-                        .frame(width: Self.trailingFixedWidth, height: 1)
-                }
             }
         } icon: {
             Circle()
@@ -2194,7 +2249,7 @@ struct SidebarView: View {
             Button {
                 gitHubStarListEditorItem = GitHubStarListEditorItem(list: list)
             } label: {
-                Label("sidebar.githubStarLists.edit", systemImage: "rectangle.and.pencil.and.ellipsis")
+                Label("sidebar.githubStarLists.edit", systemImage: "slider.horizontal.2.square")
             }
             Divider()
             Button(role: .destructive) {
@@ -2203,11 +2258,6 @@ struct SidebarView: View {
                 Label("action.delete", systemImage: "trash")
             }
         }
-        .simultaneousGesture(
-            TapGesture(count: 2).onEnded {
-                gitHubStarListEditorItem = GitHubStarListEditorItem(list: list)
-            }
-        )
         .onHover { isHovering in
             if isHovering {
                 hoveredGitHubStarListID = list.id
@@ -2224,10 +2274,11 @@ struct SidebarView: View {
         Button {
             gitHubStarListEditorItem = GitHubStarListEditorItem(list: list)
         } label: {
-            Image(systemName: "rectangle.and.pencil.and.ellipsis")
-                .font(interfaceScale.font(.captionSmall))
+            Image(systemName: "slider.horizontal.2.square")
+                .font(interfaceScale.font(.iconMedium, weight: .medium))
+                .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(.secondary)
-                .frame(width: 18, height: 18)
+                .frame(width: 20, height: 20)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

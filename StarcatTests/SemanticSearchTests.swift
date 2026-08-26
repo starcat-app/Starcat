@@ -225,6 +225,37 @@ struct RepoAIInsightTests {
         #expect(tags[0].name == "local-ai")
     }
 
+    @Test("GitHub Lists: 批量建议按 repo_id 解码")
+    func decodeGitHubListBatchSuggestions() throws {
+        let raw = #"{"results":[{"repo_id":1,"suggestions":[{"list_id":"swift","confidence":0.96,"reason":"match"}]},{"repo_id":2,"suggestions":[]}]}"#
+        let result = try RepoAIInsightService.decodeGitHubListBatchSuggestions(
+            json: raw,
+            expectedRepoIDs: [1, 2]
+        )
+        #expect(result[1]?.first?.listId == "swift")
+        #expect(result[1]?.first?.confidence == 0.96)
+        #expect(result[2]?.isEmpty == true)
+    }
+
+    @Test("GitHub Lists: 批量建议漏回或重复 repo_id 时拒绝整批")
+    func rejectsIncompleteGitHubListBatchSuggestions() {
+        let missing = #"{"results":[{"repo_id":1,"suggestions":[]}]}"#
+        #expect(throws: RepoAIInsightError.invalidJSON) {
+            try RepoAIInsightService.decodeGitHubListBatchSuggestions(
+                json: missing,
+                expectedRepoIDs: [1, 2]
+            )
+        }
+
+        let duplicate = #"{"results":[{"repo_id":1,"suggestions":[]},{"repo_id":1,"suggestions":[]}]}"#
+        #expect(throws: RepoAIInsightError.invalidJSON) {
+            try RepoAIInsightService.decodeGitHubListBatchSuggestions(
+                json: duplicate,
+                expectedRepoIDs: [1]
+            )
+        }
+    }
+
     @Test("AI Tags: 本地策略优先复用标准拼写并限制新标签")
     func normalizesTagSuggestionsAgainstVocabulary() {
         let raw = [

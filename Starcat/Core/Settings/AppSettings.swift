@@ -1513,6 +1513,17 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.autoTidySettings, value: autoTidySettings) }
     }
 
+    /// GitHub Lists 后台自动分组偏好。它会触发 GitHub 远端写入，因此必须与仅写本地
+    /// 标签/摘要的 `autoTidySettings` 使用不同 key，避免一个 Toggle 改动另一项能力。
+    var githubStarListAutoGroupingSettings: GitHubStarListAutoGroupingSettings {
+        didSet {
+            persistJSON(
+                key: Keys.githubStarListAutoGroupingSettings,
+                value: githubStarListAutoGroupingSettings
+            )
+        }
+    }
+
     // MARK: - 第三方服务自定义 URL（2026-06-08 新增）
 
     /// 第三方后端服务（Trending / Weekly / Sharing / Wiki）的用户自定义 URL 字典。
@@ -2016,6 +2027,23 @@ final class AppSettings {
         // HOM-126：自动整理偏好。缺失时回落到 `AutoTidySettings.default`（总开关关 +
         // 启动/同步触发 + 50 个 + 最近 star + 仅标签 + 90% 阈值），与任务描述一致。
         self.autoTidySettings = Self.decodeJSON(AutoTidySettings.self, key: Keys.autoTidySettings, defaults: defaults) ?? .default
+        let storedGroupingSettings = Self.decodeJSON(
+            GitHubStarListAutoGroupingSettings.self,
+            key: Keys.githubStarListAutoGroupingSettings,
+            defaults: defaults
+        )
+        let migratedGroupingSettings = GitHubStarListAutoGroupingSettings.migratedFromLegacyAutoTidyJSON(
+            defaults.string(forKey: Keys.autoTidySettings)
+        )
+        let resolvedGroupingSettings = storedGroupingSettings
+            ?? migratedGroupingSettings
+            ?? .default
+        self.githubStarListAutoGroupingSettings = resolvedGroupingSettings
+        // 迁移只写新 key，不回写旧 AutoTidy JSON；新类型解码本来就会忽略遗留字段。
+        if storedGroupingSettings == nil,
+           let data = try? JSONEncoder().encode(resolvedGroupingSettings) {
+            defaults.set(String(decoding: data, as: UTF8.self), forKey: Keys.githubStarListAutoGroupingSettings)
+        }
 
         // AI 向量索引（2026-06-12）：截断长度 / 阈值预设 / 主体阈值 / 笔记阈值 / 自动预拉。
         // 缺失值兜底：截断 12000、预设 .standard、body 10%、notes 20%、自动预拉 false。
@@ -2197,6 +2225,7 @@ final class AppSettings {
         mcpAllowDestructiveWrites = false
         isProUser = false
         autoTidySettings = .default
+        githubStarListAutoGroupingSettings = .default
         aiReadmeTruncateLength = ReadmePreprocessor.defaultMaxLength
         applyAIIndexPreset(.standard)
         aiIndexAutoPrefetchEnabled = false
@@ -2632,6 +2661,7 @@ final class AppSettings {
         static let mcpAllowBatchWrites = "settings.mcp.allowBatchWrites.v1"
         static let mcpAllowDestructiveWrites = "settings.mcp.allowDestructiveWrites.v1"
         static let autoTidySettings = "settings.ai.autoTidy.v1"  // HOM-126
+        static let githubStarListAutoGroupingSettings = "settings.ai.githubStarListAutoGrouping.v1"
         static let customServiceURLs = "settings.services.customURLs.v1"  // 2026-06-08
         // R-01 v1.2 2026-06-09 引入；2026-06-10 迁 Keychain。
         // 本 key 仅作「启动期一次性迁移识别」用，迁移完成后会被 init 内的 removeObject 清空。
@@ -2737,6 +2767,7 @@ final class AppSettings {
             mcpAllowBatchWrites,
             mcpAllowDestructiveWrites,
             autoTidySettings,
+            githubStarListAutoGroupingSettings,
             customServiceURLs,
             customServiceAPIKeys,
             aiReadmeTruncateLength,

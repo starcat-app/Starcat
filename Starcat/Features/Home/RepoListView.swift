@@ -495,7 +495,7 @@ struct RepoListView: View {
     @State private var paywallContext: ProPaywallContext?
     @State private var ruleEditorSheetItem: SmartCollectionRuleEditorItem?
     /// GitHub 组织可限制第三方 OAuth App 访问仓库节点；这类错误需要结构化解释原因。
-    @State private var showGitHubStarListOAuthRestrictionSheet = false
+    @State private var gitHubStarListOAuthRestrictedRepo: Repo?
     /// 列表顶栏「同步于」文案；会话内跟 `SyncManager.state`，冷启动读 DB `last_sync_at`。
     @State private var lastSyncedAt: Date?
     /// 列表计数由独立观察对象承载，避免计数发布让整个 RepoListView 根层重算。
@@ -553,8 +553,8 @@ struct RepoListView: View {
         .toast(message: $toastMessage, icon: "doc.on.clipboard")
         .toast(message: $repoPinToastMessage, icon: "pin.fill")
         .toast(message: $shareCompletionMessage, icon: "link.circle")
-        .sheet(isPresented: $showGitHubStarListOAuthRestrictionSheet) {
-            GitHubStarListOAuthRestrictionSheet()
+        .sheet(item: $gitHubStarListOAuthRestrictedRepo) { repo in
+            GitHubStarListOAuthRestrictionSheet(repo: repo)
                 .appLocaleEnvironment()
         }
         .sheet(item: $sharePresentation) { presentation in
@@ -2289,7 +2289,7 @@ struct RepoListView: View {
             get: { isMember },
             set: { shouldBelong in
                 guard shouldBelong != isMember else { return }
-                mutateGitHubStarListMembership {
+                mutateGitHubStarListMembership(for: repo) {
                     if shouldBelong {
                         try await dependencies.githubStarListSyncService.addRepo(repo, toList: listID)
                     } else {
@@ -2359,7 +2359,10 @@ struct RepoListView: View {
         )
     }
 
-    private func mutateGitHubStarListMembership(_ operation: @escaping () async throws -> Void) {
+    private func mutateGitHubStarListMembership(
+        for repo: Repo,
+        _ operation: @escaping () async throws -> Void
+    ) {
         Task {
             do {
                 try await operation()
@@ -2369,7 +2372,7 @@ struct RepoListView: View {
             } catch {
                 AppLog.network.error("GitHub star list mutation failed: \(error.localizedDescription, privacy: .public)")
                 if isGitHubOrganizationOAuthRestriction(error) {
-                    showGitHubStarListOAuthRestrictionSheet = true
+                    gitHubStarListOAuthRestrictedRepo = repo
                 } else {
                     toastMessage = "githubStarLists.toast.failed"
                 }
@@ -3165,7 +3168,10 @@ private enum FilterMenuLanguageIconCache {
 /// GitHub 组织限制 OAuth App 访问时的结构化说明。
 ///
 /// 不使用系统 Alert：该错误不是一句失败文案能解释清楚，用户需要知道原因、影响范围和可执行处理方式。
+/// 底部提供仓库 GitHub 页跳转：组织策略拦的是 OAuth App，网页端登录后仍可改 Lists。
 private struct GitHubStarListOAuthRestrictionSheet: View {
+
+    let repo: Repo
 
     @Environment(\.dismiss) private var dismiss
 
@@ -3218,14 +3224,34 @@ private struct GitHubStarListOAuthRestrictionSheet: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            HStack {
+            HStack(spacing: 8) {
                 Spacer()
                 Button("common.close") {
                     dismiss()
                 }
                 .keyboardShortcut(.cancelAction)
+                Button {
+                    openRepositoryOnGitHub()
+                } label: {
+                    Label("githubStarLists.error.orgOAuthRestricted.openGitHub", systemImage: "arrow.up.right.square")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(repositoryGitHubURL == nil)
             }
         }
+    }
+
+    /// 优先用仓库缓存的 `html_url`；缺省时按 owner/name 拼官方仓库页。
+    private var repositoryGitHubURL: URL? {
+        if let url = URL(string: repo.htmlUrl), url.scheme == "https" {
+            return url
+        }
+        return URL(string: "https://github.com/\(repo.owner)/\(repo.name)")
+    }
+
+    private func openRepositoryOnGitHub() {
+        guard let url = repositoryGitHubURL else { return }
+        NSWorkspace.shared.open(url)
     }
 
     private func restrictionRow(_ systemImage: String, _ key: LocalizedStringKey) -> some View {

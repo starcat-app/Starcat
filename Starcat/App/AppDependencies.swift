@@ -200,6 +200,10 @@ final class AppDependencies {
     /// BatchAIQueuePanel / BatchAIUntaggedBanner，无需多余的 @State 传参。
     let batchAIQueueService: BatchAIQueueService
 
+    /// GitHub Lists AI 分组独立会话。关闭审核 Sheet 后仍保留进度与选择，不再占用
+    /// 标签/摘要批处理队列，也不会把分组状态显示成“AI 标签整理”。
+    let githubStarListAIGroupingSession: GitHubStarListAIGroupingSession
+
     /// HOM-126：自动后台 AI 整理调度器（会话级单例）。
     ///
     /// 依赖装配顺序：必须晚于 settings / repoRepository / batchAIQueueService / syncManager。
@@ -1148,11 +1152,17 @@ final class AppDependencies {
             tagRepository: tagRepo,
             repoTagRepository: repoTagRepo,
             aiSummaryRepository: summaryRepo,
-            githubStarListSyncService: self.githubStarListSyncService,
             entitlementGate: self.entitlementGate,
             notificationService: notificationService
         )
         self.batchAIQueueService = batchSvc
+
+        self.githubStarListAIGroupingSession = GitHubStarListAIGroupingSession(
+            repoRepository: repo,
+            listService: self.githubStarListSyncService,
+            insightService: aiInsight,
+            entitlementGate: self.entitlementGate
+        )
 
         // HOM-126：自动后台 AI 整理调度器。
         // 装配顺序：必须晚于 settings / repoRepository / batchService / syncManager。
@@ -1161,8 +1171,8 @@ final class AppDependencies {
             settings: self.settings,
             repoRepository: repo,
             batchService: batchSvc,
+            githubStarListGroupingSession: self.githubStarListAIGroupingSession,
             syncManager: self.syncManager,
-            githubStarListSyncService: self.githubStarListSyncService,
             entitlementGate: self.entitlementGate
         )
         let embeddingRepo = GRDBRepoEmbeddingRepository(database: db)

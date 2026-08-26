@@ -839,7 +839,7 @@ struct AISettingsTab: View {
                 // DisclosureGroup 内不会自动生成 Form 行分隔线；显式分隔两项配置，
                 // 保持与展开前的视觉节奏一致。
                 VStack(alignment: .leading, spacing: 0) {
-                    Toggle(isOn: autoTidyBinding(\.generateGitHubListGrouping)) {
+                    Toggle(isOn: githubListGroupingBinding(\.enabled)) {
                         autoTidyLabel(
                             title: "settings.githubListGrouping.enabled.title",
                             description: "settings.githubListGrouping.enabled.description"
@@ -856,7 +856,7 @@ struct AISettingsTab: View {
                                 .foregroundStyle(.tint)
                         }
                         Slider(
-                            value: autoTidyBinding(\.githubListGroupingConfidenceThreshold),
+                            value: githubListGroupingBinding(\.confidenceThreshold),
                             in: 0.5...1.0,
                             step: 0.05
                         )
@@ -869,8 +869,8 @@ struct AISettingsTab: View {
                         .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 8)
-                    .disabled(!settings.autoTidySettings.generateGitHubListGrouping)
-                    .opacity(settings.autoTidySettings.generateGitHubListGrouping ? 1.0 : 0.5)
+                    .disabled(!settings.githubStarListAutoGroupingSettings.enabled)
+                    .opacity(settings.githubStarListAutoGroupingSettings.enabled ? 1.0 : 0.5)
                 }
                 .padding(.top, 4)
             } label: {
@@ -1185,7 +1185,7 @@ struct AISettingsTab: View {
 
     /// 仓库分组拥有独立阈值，不能与标签自动应用共用同一显示值。
     private var githubListGroupingThresholdPercentString: String {
-        "\(Int((settings.autoTidySettings.githubListGroupingConfidenceThreshold * 100).rounded()))%"
+        "\(Int((settings.githubStarListAutoGroupingSettings.confidenceThreshold * 100).rounded()))%"
     }
 
     // MARK: - Auto Tidy Bindings
@@ -1199,6 +1199,20 @@ struct AISettingsTab: View {
                 var s = self.settings.autoTidySettings
                 s[keyPath: keyPath] = newValue
                 self.settings.autoTidySettings = s
+            }
+        )
+    }
+
+    /// GitHub Lists 自动分组使用独立 settings/key，不能借用标签分类的 Binding helper。
+    private func githubListGroupingBinding<T>(
+        _ keyPath: WritableKeyPath<GitHubStarListAutoGroupingSettings, T>
+    ) -> Binding<T> {
+        Binding(
+            get: { self.settings.githubStarListAutoGroupingSettings[keyPath: keyPath] },
+            set: { newValue in
+                var grouping = self.settings.githubStarListAutoGroupingSettings
+                grouping[keyPath: keyPath] = newValue
+                self.settings.githubStarListAutoGroupingSettings = grouping
             }
         )
     }

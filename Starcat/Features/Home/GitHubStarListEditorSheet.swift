@@ -8,7 +8,8 @@
 //  - name / description / private 写 GitHub；颜色和 AI 分组规则只写 Starcat 本地缓存。
 //  - 新建时用户不选颜色则传 nil，保存成功后由 `list.id` 稳定 hash 生成默认色。
 //  - 删除 list 是远端 destructive mutation，必须二次确认。
-//  - 顶部预览是分组身份；GitHub / Starcat 分成两段，避免创建时把 AI 规则当成必填项。
+//  - 顶部用分组名预览身份，图标与侧栏编辑 / 新建入口同一套 square 符号，不用颜色圆点。
+//  - GitHub / Starcat 分成两段，避免创建时把 AI 规则当成必填项。
 //
 
 import SwiftUI
@@ -20,6 +21,7 @@ struct GitHubStarListEditorSheet: View {
     let onSaved: @MainActor () async -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @State private var name: String
@@ -42,17 +44,6 @@ struct GitHubStarListEditorSheet: View {
 
     private var hasAIInstruction: Bool {
         !aiInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    /// 预览色点：手动选择优先；未选时编辑态用 list id 的稳定 hash，新建态用默认蓝。
-    private var previewColor: Color {
-        if let selectedColorHex, let color = Color(hex: selectedColorHex) {
-            return color
-        }
-        if let list {
-            return Color(hex: GitHubStarListColor.defaultColorHex(forListID: list.id)) ?? .accentColor
-        }
-        return Color(hex: GitHubStarListColor.defaultHex) ?? .accentColor
     }
 
     init(
@@ -96,7 +87,11 @@ struct GitHubStarListEditorSheet: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            previewSwatch
+            Image(systemName: isEditing ? "slider.horizontal.2.square" : "plus.square")
+                .font(interfaceScale.font(.iconMedium, weight: .medium))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.secondary)
+                .frame(width: 20, height: 20)
 
             VStack(alignment: .leading, spacing: 1) {
                 if trimmedName.isEmpty {
@@ -121,19 +116,6 @@ struct GitHubStarListEditorSheet: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
-    }
-
-    @ViewBuilder
-    private var previewSwatch: some View {
-        if selectedColorHex == nil {
-            Circle()
-                .strokeBorder(Color.secondary.opacity(0.45), style: StrokeStyle(lineWidth: 1.5, dash: [3, 2]))
-                .frame(width: 14, height: 14)
-        } else {
-            Circle()
-                .fill(previewColor)
-                .frame(width: 14, height: 14)
-        }
     }
 
     private var formBody: some View {
@@ -162,19 +144,14 @@ struct GitHubStarListEditorSheet: View {
                     .textFieldStyle(.roundedBorder)
             }
 
-            labeledField("githubStarLists.editor.githubDescription") {
+            labeledField("githubStarLists.editor.description") {
                 TextField(
-                    "githubStarLists.editor.githubDescription.placeholder",
+                    "githubStarLists.editor.description.placeholder",
                     text: $description,
                     axis: .vertical
                 )
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(2...4)
-
-                Text("githubStarLists.editor.githubDescription.help")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Toggle(isOn: $isPrivate) {
@@ -263,7 +240,7 @@ struct GitHubStarListEditorSheet: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .frame(width: 12)
-                    Text("githubStarLists.editor.aiRule")
+                    Text("githubStarLists.editor.aiRule.title")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                     Spacer(minLength: 0)

@@ -72,16 +72,12 @@ final class BatchAIQueueService {
     /// 本轮是否已有标签落库，退出 runLoop 时据此合并一次 Sidebar 刷新。
     private var hasPendingTagsChangedNotification: Bool = false
 
-    /// 本轮是否已有 GitHub Lists membership 远端写入成功；同样只在队列退出时合并刷新。
-    private var hasPendingGitHubStarListsChangedNotification: Bool = false
-
     // MARK: - 依赖（按 AppDependencies 装配顺序注入）
 
     private let insightService: RepoAIInsightService
     private let tagRepository: any TagRepositoryProtocol
     private let repoTagRepository: any RepoTagRepositoryProtocol
     private let aiSummaryRepository: any AISummaryRepositoryProtocol
-    private let githubStarListSyncService: GitHubStarListSyncService?
     private let entitlementGate: EntitlementGate?
     private let notificationService: ReleaseNotificationService?
 
@@ -92,9 +88,6 @@ final class BatchAIQueueService {
     /// SwiftUI diff 叠加，形成整窗动画停顿。
     /// 设计上用闭包而非 NotificationCenter，避免跨模块字符串通知名飘移。
     var onTagsChanged: (() -> Void)?
-
-    /// 一批自动建议确实写入 GitHub 后，通知 Home 合并刷新 membership 与 Sidebar 计数。
-    var onGitHubStarListsChanged: (() -> Void)?
 
     /// HOM-126：本轮（自动 / 手动皆触发）全部进入终态后回调。
     ///
@@ -111,7 +104,6 @@ final class BatchAIQueueService {
         tagRepository: any TagRepositoryProtocol,
         repoTagRepository: any RepoTagRepositoryProtocol,
         aiSummaryRepository: any AISummaryRepositoryProtocol,
-        githubStarListSyncService: GitHubStarListSyncService? = nil,
         entitlementGate: EntitlementGate? = nil,
         notificationService: ReleaseNotificationService? = nil
     ) {
@@ -119,7 +111,6 @@ final class BatchAIQueueService {
         self.tagRepository = tagRepository
         self.repoTagRepository = repoTagRepository
         self.aiSummaryRepository = aiSummaryRepository
-        self.githubStarListSyncService = githubStarListSyncService
         self.entitlementGate = entitlementGate
         self.notificationService = notificationService
     }
@@ -190,7 +181,6 @@ final class BatchAIQueueService {
         self.isRunning = true
         self.cancelRequested = false
         self.hasPendingTagsChangedNotification = false
-        self.hasPendingGitHubStarListsChangedNotification = false
         self.startedAt = Date()
         self.currentJobId = nil
         AppLog.ai.notice("[batch-ai] start: count=\(repos.count, privacy: .public), autoApplyTags=\(options.autoApplyTags, privacy: .public), threshold=\(options.confidenceThreshold, privacy: .public), silent=\(silent, privacy: .public)")
@@ -278,7 +268,6 @@ final class BatchAIQueueService {
         cancelRequested = false
         silent = false
         hasPendingTagsChangedNotification = false
-        hasPendingGitHubStarListsChangedNotification = false
     }
 
     /// 重试单个失败的 job。
@@ -388,7 +377,6 @@ final class BatchAIQueueService {
             isRunning = false
             currentJobId = nil
             notifyTagsChangedIfNeeded()
-            notifyGitHubStarListsChangedIfNeeded()
             if isFinished {
                 AppLog.ai.notice("[batch-ai] finished: completed=\(self.completedCount, privacy: .public), ignored=\(self.ignoredCount, privacy: .public), failed=\(self.failedCount, privacy: .public)")
                 // HOM-126：仅在自然 finished（不是 cancel）时通知订阅方写回结果，
@@ -416,7 +404,6 @@ final class BatchAIQueueService {
         var insight: RepoAIInsightGeneration?
         var repo: Repo
         var existingTagHints: AITagHints
-        var suggestedGitHubLists: [GitHubStarListAISuggestion]
     }
 
     /// 调 RepoAIInsightService 拉取摘要 / 标签建议；本方法**不写库**，
@@ -465,21 +452,10 @@ final class BatchAIQueueService {
             insight = nil
         }
 
-        let suggestedGitHubLists: [GitHubStarListAISuggestion]
-        if options.shouldRun(.githubLists, forRepoID: jobId), let grouping = options.githubListGrouping {
-            suggestedGitHubLists = try await insightService.generateGitHubListSuggestions(
-                for: repo,
-                candidates: grouping.candidates,
-                existingListIDs: grouping.existingListIDsByRepo[repo.id] ?? []
-            )
-        } else {
-            suggestedGitHubLists = []
-        }
         return JobOutcome(
             insight: insight,
             repo: repo,
-            existingTagHints: hints,
-            suggestedGitHubLists: suggestedGitHubLists
+            existingTagHints: hints
         )
     }
 
@@ -493,10 +469,7 @@ final class BatchAIQueueService {
         let suggestions = result.insight?.insight.suggestedTags ?? []
         let didSummary = options.shouldRun(.summary, forRepoID: jobId)
         let didTags = options.shouldRun(.tags, forRepoID: jobId)
-        let didGitHubLists = options.shouldRun(.githubLists, forRepoID: jobId)
         var shouldMarkIgnored = false
-
-        jobs[idx].suggestedGitHubLists = result.suggestedGitHubLists
 
         // 标签子分支：
         // - 没勾选标签 → 直接 completed（summary 已写）。
@@ -521,38 +494,10 @@ final class BatchAIQueueService {
             }
         }
 
-        if didGitHubLists,
-           let grouping = options.githubListGrouping,
-           grouping.autoApply {
-            let candidateByID = Dictionary(uniqueKeysWithValues: grouping.candidates.map { ($0.listId, $0) })
-            let approved = GitHubStarListAISuggestionPolicy.automaticSuggestions(
-                from: result.suggestedGitHubLists,
-                candidates: grouping.candidates,
-                confidenceThreshold: grouping.confidenceThreshold ?? options.confidenceThreshold
-            )
-            if approved.isEmpty, !result.suggestedGitHubLists.isEmpty {
-                shouldMarkIgnored = true
-            } else if !approved.isEmpty {
-                guard let githubStarListSyncService else {
-                    throw RepoAIInsightError.invalidJSON
-                }
-                let addedIDs = try await githubStarListSyncService.addRepo(
-                    result.repo,
-                    toLists: Set(approved.map(\.listId))
-                )
-                guard let currentIndex = jobs.firstIndex(where: { $0.repoId == jobId }) else { return }
-                jobs[currentIndex].appliedGitHubListNames = addedIDs.compactMap { candidateByID[$0]?.name }.sorted()
-                if !addedIDs.isEmpty {
-                    hasPendingGitHubStarListsChangedNotification = true
-                }
-            }
-        }
-
         guard let finalIndex = jobs.firstIndex(where: { $0.repoId == jobId }) else { return }
         jobs[finalIndex].didGenerateSummary = didSummary
         jobs[finalIndex].finishedAt = Date()
         let wroteAnything = !jobs[finalIndex].appliedTagNames.isEmpty
-            || !jobs[finalIndex].appliedGitHubListNames.isEmpty
         jobs[finalIndex].status = shouldMarkIgnored && !didSummary && !wroteAnything ? .ignored : .completed
     }
 
@@ -562,13 +507,6 @@ final class BatchAIQueueService {
         guard hasPendingTagsChangedNotification else { return }
         hasPendingTagsChangedNotification = false
         onTagsChanged?()
-    }
-
-    /// GitHub Lists 与标签共用“整批退出后刷新一次”的节流策略，避免每个 repo 都重查 Sidebar。
-    private func notifyGitHubStarListsChangedIfNeeded() {
-        guard hasPendingGitHubStarListsChangedNotification else { return }
-        hasPendingGitHubStarListsChangedNotification = false
-        onGitHubStarListsChanged?()
     }
 
     /// 把通过阈值过滤的建议落库为 repo_tags 关联，但只允许复用已有标签。
