@@ -158,6 +158,51 @@ struct AwesomeStoreTests {
         #expect(store.selectedRepositoryID == repo.id)
     }
 
+    @Test("Awesome 仓库遵守探索全局筛选")
+    func awesomeRepositoriesUseGlobalFilters() {
+        let repo = Self.repositoryItem(id: 42, source: Self.source(), language: "Swift")
+        let neutralFacts = AwesomeGlobalFilterFacts(
+            isStarred: true,
+            isInLibrary: true,
+            wikiAvailability: true,
+            hasHealthData: true,
+            hasOpenSSFData: true
+        )
+        let matchingOptions = AwesomeGlobalFilterOptions(
+            hideArchived: true,
+            hideForks: true,
+            starFilter: .starred,
+            libraryFilter: .inLibrary,
+            languages: ["swift"],
+            wikiFilter: .available,
+            healthFilter: .available,
+            openSSFFilter: .available
+        )
+
+        #expect(AwesomeGlobalFilterPolicy.matches(repo, options: matchingOptions, facts: neutralFacts))
+
+        let languageMismatch = AwesomeGlobalFilterOptions(
+            hideArchived: false,
+            hideForks: false,
+            starFilter: .all,
+            libraryFilter: .all,
+            languages: ["Rust"],
+            wikiFilter: .unknown,
+            healthFilter: .unknown,
+            openSSFFilter: .unknown
+        )
+        #expect(!AwesomeGlobalFilterPolicy.matches(repo, options: languageMismatch, facts: neutralFacts))
+
+        let missingWikiFacts = AwesomeGlobalFilterFacts(
+            isStarred: true,
+            isInLibrary: true,
+            wikiAvailability: nil,
+            hasHealthData: true,
+            hasOpenSSFData: true
+        )
+        #expect(!AwesomeGlobalFilterPolicy.matches(repo, options: matchingOptions, facts: missingWikiFacts))
+    }
+
     @Test("进入页面遵守缓存策略而手动刷新强制绕过 TTL")
     @MainActor
     func manualRefreshForcesRepositoryPolicy() async {
@@ -236,7 +281,11 @@ struct AwesomeStoreTests {
         )
     }
 
-    private static func repositoryItem(id: Int64, source: AwesomeSource) -> AwesomeRepositoryItem {
+    private static func repositoryItem(
+        id: Int64,
+        source: AwesomeSource,
+        language: String? = "Swift"
+    ) -> AwesomeRepositoryItem {
         AwesomeRepositoryItem(
             id: id,
             owner: "example",
@@ -244,7 +293,7 @@ struct AwesomeStoreTests {
             fullName: "example/repo-\(id)",
             description: nil,
             ownerAvatarURL: nil,
-            language: "Swift",
+            language: language,
             stars: Int(id),
             isArchived: false,
             updatedAt: nil,

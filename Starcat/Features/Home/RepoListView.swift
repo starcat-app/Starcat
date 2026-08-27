@@ -234,7 +234,7 @@ private struct RepoListNavigationSubtitleModifier: ViewModifier {
             return (current, total)
         case .awesome:
             return (
-                awesomeStore.repositories.count,
+                metrics.trendingRepoCount,
                 awesomeStore.selectedSourceID == nil ? nil : awesomeStore.totalRepositoryCount
             )
         }

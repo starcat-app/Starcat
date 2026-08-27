@@ -15,10 +15,13 @@ struct AwesomeView: View {
     let onRepoCountChange: (Int) -> Void
 
     @Environment(AppDependencies.self) private var dependencies
+    @Environment(AppSettings.self) private var settings
     @Environment(AuthSession.self) private var authSession
     @State private var searchText = ""
     @State private var selectedSection: String?
     @State private var sort: AwesomeSortOption = .original
+    @State private var libraryStateMap: [Int64: LibraryState] = [:]
+    @State private var wikiAvailabilityMap: [Int64: Bool] = [:]
 
     var body: some View {
         @Bindable var store = store
@@ -35,6 +38,13 @@ struct AwesomeView: View {
             }
             await store.loadAwesome()
             reportCount()
+        }
+        .task {
+            await reloadLibraryStateMap()
+            await observeLibraryStateChanges()
+        }
+        .task(id: wikiAvailabilityTaskIdentity) {
+            await reloadWikiAvailabilityMap()
         }
         .onChange(of: store.selectedSourceID) { _, _ in
             selectedSection = nil
@@ -213,6 +223,7 @@ struct AwesomeView: View {
     private var filteredRepositories: [AwesomeRepositoryItem] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let filtered = store.repositories.filter { repo in
+            guard matchesGlobalFilters(repo) else { return false }
             let matchesSection = selectedSection == nil || repo.evidence.contains {
                 $0.sectionPath.joined(separator: " / ") == selectedSection
             }
@@ -268,6 +279,63 @@ struct AwesomeView: View {
         multiStore.retain(visibleIDs: Set(visibleIDs))
     }
 
+    private func matchesGlobalFilters(_ repo: AwesomeRepositoryItem) -> Bool {
+        AwesomeGlobalFilterPolicy.matches(
+            repo,
+            options: AwesomeGlobalFilterOptions(
+                hideArchived: settings.hideArchived,
+                hideForks: settings.hideForks,
+                starFilter: settings.starFilter,
+                libraryFilter: settings.libraryFilter,
+                languages: settings.globalFilterLanguages,
+                wikiFilter: settings.wikiAvailabilityFilter,
+                healthFilter: settings.healthAvailabilityFilter,
+                openSSFFilter: settings.openSSFAvailabilityFilter
+            ),
+            facts: AwesomeGlobalFilterFacts(
+                isStarred: dependencies.starredRegistry.contains(ghRepoId: repo.id),
+                isInLibrary: libraryStateMap[repo.id] == .inLibrary,
+                wikiAvailability: wikiAvailabilityMap[repo.id],
+                hasHealthData: dependencies.repoHealthStore.snapshot(for: repo.id) != nil,
+                hasOpenSSFData: dependencies.openSSFScoreStore.record(for: repo.id)?.badgeData != nil
+            )
+        )
+    }
+
+    private var wikiAvailabilityTaskIdentity: AwesomeWikiAvailabilityTaskIdentity {
+        AwesomeWikiAvailabilityTaskIdentity(
+            filter: settings.wikiAvailabilityFilter,
+            repositoryIDs: store.repositories.map(\.id)
+        )
+    }
+
+    private func reloadLibraryStateMap() async {
+        libraryStateMap = (try? await dependencies.repoNoteRepository.fetchAllLibraryStateMap()) ?? [:]
+    }
+
+    private func reloadWikiAvailabilityMap() async {
+        guard settings.wikiAvailabilityFilter != .unknown else {
+            wikiAvailabilityMap = [:]
+            return
+        }
+        let requests = store.repositories.map {
+            WikiAvailabilityRequest(id: $0.id, owner: $0.owner, repo: $0.name)
+        }
+        let snapshot = await WikiAvailabilitySnapshotLoader.load(requests: requests)
+        guard !Task.isCancelled else { return }
+        wikiAvailabilityMap = snapshot
+    }
+
+    private func observeLibraryStateChanges() async {
+        let stream = NotificationCenter.default.notifications(named: .repoLibraryStateDidChange)
+        for await note in stream {
+            guard !Task.isCancelled else { break }
+            guard let repoID = note.userInfo?["repoId"] as? Int64,
+                  let raw = note.userInfo?["libraryState"] as? String else { continue }
+            libraryStateMap[repoID] = LibraryState.parse(raw)
+        }
+    }
+
     private func reportCount() {
         onRepoCountChange(filteredRepositories.count)
     }
@@ -288,6 +356,72 @@ enum AwesomeListSelectionPolicy {
             )
         } else {
             awesomeStore.selectedRepositoryID = repo.id
+        }
+    }
+}
+
+/// Awesome 与其它 Explore 列表共用同一组持久筛选设置，但仓库来自独立来源。
+/// 这里把筛选需要的设置和本地事实显式建模，避免 UI 分支各自解释 `unknown` 的含义。
+struct AwesomeGlobalFilterOptions {
+    let hideArchived: Bool
+    let hideForks: Bool
+    let starFilter: RepoStarFilter
+    let libraryFilter: RepoLibraryFilter
+    let languages: [String]
+    let wikiFilter: RepoSignalAvailabilityFilter
+    let healthFilter: RepoSignalAvailabilityFilter
+    let openSSFFilter: RepoSignalAvailabilityFilter
+}
+
+struct AwesomeGlobalFilterFacts {
+    let isStarred: Bool
+    let isInLibrary: Bool
+    let wikiAvailability: Bool?
+    let hasHealthData: Bool
+    let hasOpenSSFData: Bool
+}
+
+enum AwesomeGlobalFilterPolicy {
+    static func matches(
+        _ repo: AwesomeRepositoryItem,
+        options: AwesomeGlobalFilterOptions,
+        facts: AwesomeGlobalFilterFacts
+    ) -> Bool {
+        guard options.starFilter.matches(isStarred: facts.isStarred) else { return false }
+        if options.hideArchived, repo.isArchived { return false }
+        if options.hideForks, repo.isFork { return false }
+        if !options.languages.isEmpty {
+            guard let language = repo.language else { return false }
+            guard options.languages.contains(where: {
+                $0.caseInsensitiveCompare(language) == .orderedSame
+            }) else { return false }
+        }
+        switch options.libraryFilter {
+        case .all:
+            break
+        case .inLibrary:
+            guard facts.isInLibrary else { return false }
+        case .outsideLibrary:
+            guard !facts.isInLibrary else { return false }
+        }
+        if options.wikiFilter != .unknown {
+            guard let wikiAvailability = facts.wikiAvailability,
+                  matchesAvailability(wikiAvailability, filter: options.wikiFilter)
+            else { return false }
+        }
+        guard matchesAvailability(facts.hasHealthData, filter: options.healthFilter) else { return false }
+        guard matchesAvailability(facts.hasOpenSSFData, filter: options.openSSFFilter) else { return false }
+        return true
+    }
+
+    private static func matchesAvailability(
+        _ available: Bool,
+        filter: RepoSignalAvailabilityFilter
+    ) -> Bool {
+        switch filter {
+        case .unknown: return true
+        case .available: return available
+        case .missing: return !available
         }
     }
 }
@@ -313,4 +447,9 @@ private struct AwesomeSectionGroup: Identifiable {
     let title: String
     let repositories: [AwesomeRepositoryItem]
     var id: String { title }
+}
+
+private struct AwesomeWikiAvailabilityTaskIdentity: Hashable {
+    let filter: RepoSignalAvailabilityFilter
+    let repositoryIDs: [Int64]
 }
