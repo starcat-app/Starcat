@@ -191,7 +191,8 @@ struct ActivityReleaseDetailContent: View {
            !markdown.isEmpty {
             Markdown(markdown)
                 .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // 与订阅发布时间线同一套：大截图按详情栏宽度等比缩小，避免被卡片裁切。
+                .fittedGitHubMarkdownImages()
         } else {
             Text("activity.release.noNotes")
                 .font(.body)

@@ -477,10 +477,11 @@ private struct ReleaseTimelineRow: View {
             )
             .help(isBodyExpanded ? Text("releases.row.collapseNotes") : Text("releases.row.expandNotes"))
             if isBodyExpanded {
+                // MarkdownUI 默认按截图像素尺寸排版，会撑破 540–620pt 窗口；这里按容器宽度等比适配。
                 Markdown(body)
                     .font(interfaceScale.font(.caption))
                     .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fittedGitHubMarkdownImages()
             }
         }
     }

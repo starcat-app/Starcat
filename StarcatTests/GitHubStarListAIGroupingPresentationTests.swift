@@ -123,13 +123,46 @@ struct GitHubStarListAIGroupingPresentationTests {
         #expect(item.isIgnored)
         #expect(item.automaticallyIgnoredFailure == restriction)
         #expect(item.matches(filter: .all, searchText: ""))
+        #expect(item.matches(filter: .automaticallyIgnored, searchText: ""))
         #expect(!item.matches(filter: .actionable, searchText: ""))
         #expect(!item.matches(filter: .suggestions, searchText: ""))
         #expect(!item.matches(filter: .applyFailed, searchText: ""))
         #expect(snapshot.actionableCount == 0)
         #expect(snapshot.suggestionCount == 0)
         #expect(snapshot.applyFailedCount == 0)
+        #expect(snapshot.automaticallyIgnoredCount == 1)
+        #expect(snapshot.count(for: .automaticallyIgnored) == 1)
+        #expect(!item.matches(filter: .ignored, searchText: ""))
+        #expect(snapshot.count(for: .ignored) == 0)
         #expect(snapshot.selectedRepositoryCount == 0)
+    }
+
+    @Test("用户主动忽略与组织自动忽略分进不同 Tab")
+    func userIgnoredIsSeparateFromAutomaticallyIgnored() {
+        var suggested = GitHubStarListAIGroupingJob(repo: makeRepo(id: 1))
+        suggested.status = .completed
+        suggested.suggestions = [GitHubStarListAISuggestion(listId: "swift", confidence: 0.96, reason: "Swift")]
+        var restricted = GitHubStarListAIGroupingJob(repo: makeRepo(id: 2))
+        restricted.status = .completed
+        restricted.applyState = .ignored(
+            GitHubStarListAIApplyFailure(kind: .organizationOAuthRestriction, detail: nil)
+        )
+
+        let snapshot = GitHubStarListAIGroupingPresentationSnapshot(
+            jobs: [suggested, restricted],
+            availableLists: [swiftList],
+            existingListIDsByRepo: [:],
+            selectedListIDsByRepo: [:],
+            ignoredRepoIDs: [1]
+        )
+
+        #expect(snapshot.count(for: .ignored) == 1)
+        #expect(snapshot.count(for: .automaticallyIgnored) == 1)
+        #expect(snapshot.count(for: .suggestions) == 0)
+        #expect(snapshot.count(for: .actionable) == 0)
+        #expect(snapshot.items.first { $0.id == 1 }?.matches(filter: .ignored, searchText: "") == true)
+        #expect(snapshot.items.first { $0.id == 2 }?.matches(filter: .automaticallyIgnored, searchText: "") == true)
+        #expect(snapshot.items.first { $0.id == 2 }?.matches(filter: .ignored, searchText: "") == false)
     }
 
     @Test("只有网络和限流错误计入可恢复失败")
@@ -236,9 +269,14 @@ struct GitHubStarListAIGroupingPresentationTests {
         noMatchJob.status = .completed
         var failedJob = GitHubStarListAIGroupingJob(repo: makeRepo(id: 3))
         failedJob.status = .failed
+        var ignoredJob = GitHubStarListAIGroupingJob(repo: makeRepo(id: 4))
+        ignoredJob.status = .completed
+        ignoredJob.applyState = .ignored(
+            GitHubStarListAIApplyFailure(kind: .organizationOAuthRestriction, detail: nil)
+        )
 
         let snapshot = GitHubStarListAIGroupingPresentationSnapshot(
-            jobs: [suggestionJob, noMatchJob, failedJob],
+            jobs: [suggestionJob, noMatchJob, failedJob, ignoredJob],
             availableLists: [swiftList],
             existingListIDsByRepo: [:],
             selectedListIDsByRepo: [:],

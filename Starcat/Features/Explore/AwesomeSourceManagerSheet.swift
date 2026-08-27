@@ -161,6 +161,7 @@ struct AwesomeSourceManagerSheet: View {
                         hasRefreshError: store.sourceRefreshErrors[source.id] != nil,
                         parseState: store.customSourceParseStates[source.id],
                         ogRetryToken: store.ogPrefetchGeneration,
+                        ogRevealSession: store.sourceManagerPresentationGeneration,
                         onToggle: { toggleSource(source) },
                         onRetry: source.kind == .custom
                             ? { store.retryCustomSourceParsing(sourceID: source.id) }

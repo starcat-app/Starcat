@@ -12,7 +12,6 @@ import SwiftUI
 
 struct GitHubStarListAIGroupingSheet: View {
     let session: GitHubStarListAIGroupingSession
-    let autoGroupingSettings: GitHubStarListAutoGroupingSettings
     let onApplied: @MainActor () async -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -27,10 +26,13 @@ struct GitHubStarListAIGroupingSheet: View {
             header
             Divider()
             content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
             footer
         }
-        .frame(width: 880, height: 640)
+        // 固定窗口：min/max 同值，避免 macOS sheet 按内容把窗口撑出屏幕。
+        .frame(minWidth: 960, maxWidth: 960, minHeight: 640, maxHeight: 640)
+        .clipped()
         .task {
             session.onMembershipsChanged = {
                 Task { await onApplied() }
@@ -118,7 +120,7 @@ struct GitHubStarListAIGroupingSheet: View {
         } else if presentation.snapshot.totalCount == 0 {
             GitHubStarListAIGroupingPreflightView(
                 snapshot: presentation.snapshot,
-                autoGroupingSettings: autoGroupingSettings
+                session: session
             )
         } else {
             reviewWorkspace
@@ -143,6 +145,7 @@ struct GitHubStarListAIGroupingSheet: View {
             GitHubStarListAIGroupingResultList(
                 items: presentation.visibleItems,
                 searchText: presentation.searchText,
+                filter: presentation.filter,
                 availableLists: presentation.snapshot.availableLists,
                 onToggleList: session.toggleSelection,
                 onSelectAllSuggestions: session.selectAllSuggestions,
@@ -209,27 +212,37 @@ struct GitHubStarListAIGroupingSheet: View {
 
     private var resultToolbar: some View {
         @Bindable var store = presentation
-        return HStack(spacing: 12) {
+        return HStack(spacing: 8) {
             Picker("githubStarLists.aiGrouping.filter.label", selection: $store.filter) {
                 filterLabel(.actionable, snapshot: store.snapshot).tag(GitHubStarListAIResultFilter.actionable)
                 filterLabel(.suggestions, snapshot: store.snapshot).tag(GitHubStarListAIResultFilter.suggestions)
                 filterLabel(.applyFailed, snapshot: store.snapshot).tag(GitHubStarListAIResultFilter.applyFailed)
                 filterLabel(.applied, snapshot: store.snapshot).tag(GitHubStarListAIResultFilter.applied)
                 filterLabel(.all, snapshot: store.snapshot).tag(GitHubStarListAIResultFilter.all)
+                filterLabel(.automaticallyIgnored, snapshot: store.snapshot).tag(GitHubStarListAIResultFilter.automaticallyIgnored)
+                filterLabel(.ignored, snapshot: store.snapshot).tag(GitHubStarListAIResultFilter.ignored)
             }
             .pickerStyle(.segmented)
             .controlSize(.regular)
+            .labelsHidden()
+            // 分段控件按内容宽度贴左，不要拉满整行把每个 tab 撑出大块留白。
+            .fixedSize(horizontal: true, vertical: false)
 
-            TextField("githubStarLists.aiGrouping.search.repositories", text: $store.searchText)
+            Spacer(minLength: 8)
+
+            TextField("githubStarLists.aiGrouping.search.tab", text: $store.searchText)
                 .textFieldStyle(.roundedBorder)
                 .font(interfaceScale.font(.caption))
                 .controlSize(.small)
-                .frame(width: 168)
+                .frame(width: 128)
+                .layoutPriority(1)
 
-            Button("githubStarLists.aiGrouping.retryFailed") {
+            Button("githubStarLists.aiGrouping.retryFailed.tab") {
                 session.retryAllRecoverableApplyFailures()
             }
             .controlSize(.small)
+            .fixedSize()
+            .layoutPriority(1)
             .disabled(session.isApplying || store.snapshot.recoverableApplyFailureCount == 0)
         }
         .padding(.horizontal, 20)
@@ -243,7 +256,7 @@ struct GitHubStarListAIGroupingSheet: View {
                 Label("githubStarLists.aiGrouping.privacy", systemImage: "lock.shield")
                     .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Button("action.close") { dismiss() }
                 Button("githubStarLists.aiGrouping.start") {
@@ -288,8 +301,8 @@ struct GitHubStarListAIGroupingSheet: View {
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-        .frame(minHeight: 58)
+        .padding(.vertical, 10)
+        .frame(height: 58)
     }
 
     private var candidateListDisplays: [GitHubStarListAIListDisplay] {
@@ -361,7 +374,7 @@ struct GitHubStarListAIGroupingSheet: View {
         snapshot: GitHubStarListAIGroupingPresentationSnapshot
     ) -> some View {
         // 单个 Text 让标题和数字成为一个原生 segment，而不是两个可分别命中的子视图。
-        Text(verbatim: "\(String.l10n(filter.titleKey))  \(snapshot.count(for: filter).formatted())")
+        Text(verbatim: "\(String.l10n(filter.tabTitleKey))  \(snapshot.count(for: filter).formatted(.number.locale(locale)))")
             .monospacedDigit()
     }
 }

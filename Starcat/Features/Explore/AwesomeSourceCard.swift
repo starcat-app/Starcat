@@ -11,6 +11,8 @@
 //  暗色不整图压黑，只在 OG 底部淡入票根。
 //  LazyVGrid 里禁止在 KFImage onSuccess 写 @State，否则会取消请求并被当成失败。
 //  取消不当失败；进 Sheet 由 Store 预拉全部 URL（缓存优先）。
+//  刷新同一张 OG 不能改 KFImage identity；每次打开 Sheet、以及小时键变了换图，
+//  都走同一套「先糊后清晰」。不要用 Kingfisher `.blur` 处理器。
 //
 
 import Kingfisher
@@ -22,16 +24,27 @@ struct AwesomeSourceCard: View {
     let isSelected: Bool
     let hasRefreshError: Bool
     let parseState: AwesomeCustomSourceParseState?
-    /// Store 预拉完成后递增；用来清掉上一次真失败，再走缓存展示。
+    /// 用户点刷新后递增；只清掉真失败标记，不当 KFImage 的 identity。
     let ogRetryToken: Int
+    /// 每次弹出 Sheet 换一次；入场糊化跟这个走，不跟 URL 走。
+    let ogRevealSession: Int
     let onToggle: () -> Void
     let onRetry: (() -> Void)?
     let onDelete: (() -> Void)?
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var isHovering = false
     /// 只在 OG 真正失败（403/404 等）时置位，取消请求不当失败。
     @State private var ogLoadFailed = false
+    /// 正在展示的 OG URL。小时键变了先保持旧 URL，糊住后再切，避免 KFImage 卸掉闪 Logo。
+    @State private var displayedOGURL: URL?
+    /// 替换时糊住旧图的半径。不要用 Kingfisher `.blur`（那是处理器，会改 cache key）。
+    /// 入场首帧就必须是糊的，否则缓存命中会先闪清晰图。
+    private static let ogReplaceBlurRadius: CGFloat = 10
+    private static let ogReplaceBlurInDuration: TimeInterval = 0.10
+    private static let ogReplaceBlurOutDuration: TimeInterval = 0.24
+    @State private var ogRevealBlur: CGFloat = Self.ogReplaceBlurRadius
 
     /// 160pt 在三列约 320pt 宽时接近 GitHub OG 的 2:1。
     private let ogHeight: CGFloat = 160
@@ -71,8 +84,13 @@ struct AwesomeSourceCard: View {
         .onChange(of: ogRetryToken) { _, _ in
             ogLoadFailed = false
         }
-        .onChange(of: ogImageURL) { _, _ in
-            ogLoadFailed = false
+        .onAppear {
+            if reduceMotion {
+                ogRevealBlur = 0
+            }
+        }
+        .task(id: ogRevealTaskID) {
+            await revealOpenGraphIfNeeded()
         }
         .accessibilityLabel(Text(source.displayName))
         .accessibilityValue(Text(LocalizedStringKey(
@@ -83,7 +101,7 @@ struct AwesomeSourceCard: View {
     private var ogBanner: some View {
         ZStack(alignment: .topLeading) {
             Group {
-                if let url = ogImageURL, !ogLoadFailed {
+                if let url = displayedOGURL ?? ogImageURL, !ogLoadFailed {
                     KFImage(url)
                         .resizable()
                         .placeholder { ogPlaceholder }
@@ -92,10 +110,10 @@ struct AwesomeSourceCard: View {
                             if isCancelledOGLoad(error) { return }
                             ogLoadFailed = true
                         }
+                        .loadDiskFileSynchronously()
                         .startLoadingBeforeViewAppear()
                         .fade(duration: 0.15)
                         .scaledToFill()
-                        .id(ogRetryToken)
                         .overlay {
                             // GitHub OG 是白底分享图。暗色里当照片贴在深色票根上，只在底部淡入，避免整图压脏。
                             if colorScheme == .dark {
@@ -114,6 +132,7 @@ struct AwesomeSourceCard: View {
                     ogPlaceholder
                 }
             }
+            .blur(radius: ogRevealBlur)
             .frame(maxWidth: .infinity)
             .frame(height: ogHeight)
             .clipped()
@@ -132,6 +151,11 @@ struct AwesomeSourceCard: View {
             updatedAt: source.updatedAt,
             lastSyncedAt: source.lastSyncedAt
         )
+    }
+
+    /// 打开 Sheet 和换小时键都要跑揭示；同一张图刷新不换 id，避免再闪。
+    private var ogRevealTaskID: String {
+        "\(ogRevealSession)|\(ogImageURL?.absoluteString ?? "")"
     }
 
     /// 加载中和 OG 失败都用居中小 Logo，不要把方形头像 scaledToFill 拉成整条 banner。
@@ -388,6 +412,66 @@ struct AwesomeSourceCard: View {
                 isSelected ? Color.accentColor : Color.secondary.opacity(isHovering ? 0.34 : 0.2),
                 lineWidth: isSelected ? 2 : 1
             )
+    }
+
+    /// 打开 Sheet：首帧已是糊的，等缓存后拉清晰。小时键变了：先糊旧图再换新图。
+    @MainActor
+    private func revealOpenGraphIfNeeded() async {
+        ogLoadFailed = false
+        guard let ogImageURL else {
+            displayedOGURL = nil
+            ogRevealBlur = 0
+            return
+        }
+        if displayedOGURL == nil || displayedOGURL == ogImageURL {
+            await playUnblurReveal(ogImageURL)
+            return
+        }
+        await replaceOpenGraph(with: ogImageURL)
+    }
+
+    @MainActor
+    private func playUnblurReveal(_ url: URL) async {
+        displayedOGURL = url
+        if reduceMotion {
+            ogRevealBlur = 0
+            return
+        }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            ogRevealBlur = Self.ogReplaceBlurRadius
+        }
+        await AwesomeSourceOpenGraph.retrieve(url: url)
+        guard !Task.isCancelled else { return }
+        await Task.yield()
+        guard !Task.isCancelled else { return }
+        withAnimation(.easeOut(duration: Self.ogReplaceBlurOutDuration)) {
+            ogRevealBlur = 0
+        }
+    }
+
+    @MainActor
+    private func replaceOpenGraph(with newURL: URL) async {
+        if reduceMotion {
+            displayedOGURL = newURL
+            ogRevealBlur = 0
+            return
+        }
+
+        async let ready: Void = AwesomeSourceOpenGraph.retrieve(url: newURL)
+        withAnimation(.easeIn(duration: Self.ogReplaceBlurInDuration)) {
+            ogRevealBlur = Self.ogReplaceBlurRadius
+        }
+        try? await Task.sleep(for: .seconds(Self.ogReplaceBlurInDuration))
+        await ready
+        guard !Task.isCancelled else { return }
+        displayedOGURL = newURL
+        await Task.yield()
+        guard !Task.isCancelled else { return }
+        withAnimation(.easeOut(duration: Self.ogReplaceBlurOutDuration)) {
+            ogRevealBlur = 0
+        }
     }
 }
 

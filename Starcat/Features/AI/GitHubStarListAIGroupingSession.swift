@@ -255,6 +255,40 @@ final class GitHubStarListAIGroupingSession {
         }
     }
 
+    /// 开始页改规则后只重载 Lists / 规则，不重拉近 2,000 个仓库，也不清空已有审核会话。
+    func reloadListsAndRules() async {
+        do {
+            async let listsResult = listService.allLists()
+            async let rulesResult = listService.allAIRules()
+            availableLists = try await listsResult
+            let rules = try await rulesResult
+            rulesByListID = Dictionary(uniqueKeysWithValues: rules.map { ($0.listId, $0) })
+        } catch {
+            AppLog.ai.error("[githubListGrouping] reload lists/rules failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// 空规则不能开自动整理。开始页卡片就地保存，不经过分组编辑 Sheet。
+    func saveRule(listID: String, instruction: String, autoApplyEnabled: Bool) async {
+        let normalized = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        let enabled = !normalized.isEmpty && autoApplyEnabled
+        do {
+            try await listService.saveAIRule(
+                listID: listID,
+                instruction: normalized,
+                autoApplyEnabled: enabled
+            )
+            rulesByListID[listID] = GitHubStarListAIRule(
+                listId: listID,
+                instruction: normalized,
+                autoApplyEnabled: enabled,
+                updatedAt: ISO8601DateFormatter.shared.string(from: Date())
+            )
+        } catch {
+            AppLog.ai.error("[githubListGrouping] save rule failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     func startManual() async {
         do {
             try entitlementGate.requirePro(.batchAI)

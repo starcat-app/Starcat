@@ -19,6 +19,8 @@ struct GitHubStarListEditorSheet: View {
     let list: GitHubStarList?
     let service: GitHubStarListSyncService
     let onSaved: @MainActor () async -> Void
+    /// 开始页「添加 / 修改 AI 规则」需要一进来就看到规则区，避免还要再点一次折叠标题。
+    let expandAIRuleOnOpen: Bool
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -49,17 +51,19 @@ struct GitHubStarListEditorSheet: View {
     init(
         list: GitHubStarList?,
         service: GitHubStarListSyncService,
+        expandAIRuleOnOpen: Bool = false,
         onSaved: @escaping @MainActor () async -> Void
     ) {
         self.list = list
         self.service = service
+        self.expandAIRuleOnOpen = expandAIRuleOnOpen
         self.onSaved = onSaved
         _name = State(initialValue: list?.name ?? "")
         _description = State(initialValue: list?.description ?? "")
         _isPrivate = State(initialValue: list?.isPrivate ?? false)
         _selectedColorHex = State(initialValue: list?.colorHex)
         // 新建默认折叠；编辑态等规则加载后再决定是否展开，避免空规则占掉第一眼。
-        _isAIRuleExpanded = State(initialValue: false)
+        _isAIRuleExpanded = State(initialValue: expandAIRuleOnOpen)
     }
 
     var body: some View {

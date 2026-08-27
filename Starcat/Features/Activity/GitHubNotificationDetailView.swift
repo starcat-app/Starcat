@@ -2764,7 +2764,7 @@ private struct GitHubNotificationRemoteImage: View {
     var body: some View {
         KFImage(url)
             .requestModifier(AnyModifier { request in
-                GitHubNotificationImageRequestModifier.modify(request)
+                GitHubRemoteImageRequestModifier.modify(request)
             })
             .placeholder {
                 ProgressView()
@@ -2800,18 +2800,3 @@ private func notificationAIErrorNeedsSettings(_ error: Error) -> Bool {
     return false
 }
 
-/// user-attachments 在私有 Issue 里要带 token；测试 host 禁止碰 Keychain。
-private enum GitHubNotificationImageRequestModifier {
-    static func modify(_ request: URLRequest) -> URLRequest {
-        var request = request
-        request.setValue(AppConstants.httpUserAgent, forHTTPHeaderField: "User-Agent")
-        guard !TestEnvironment.isRunning else { return request }
-        guard let host = request.url?.host?.lowercased(),
-              host.contains("github.com") || host.contains("githubusercontent.com"),
-              let token = try? KeychainManager.shared.loadGithubToken(),
-              !token.isEmpty
-        else { return request }
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        return request
-    }
-}

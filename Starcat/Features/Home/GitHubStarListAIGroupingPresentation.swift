@@ -51,6 +51,10 @@ enum GitHubStarListAIResultFilter: String, CaseIterable, Identifiable, Sendable 
     case analysisFailed
     case applyFailed
     case applied
+    /// 组织 OAuth 限制导致 GitHub 不允许改 Lists，系统跳过，不是用户点忽略。
+    case automaticallyIgnored
+    /// 用户在审核列表里主动点忽略。
+    case ignored
 
     var id: Self { self }
 
@@ -63,6 +67,23 @@ enum GitHubStarListAIResultFilter: String, CaseIterable, Identifiable, Sendable 
         case .analysisFailed: "githubStarLists.aiGrouping.filter.analysisFailed"
         case .applyFailed: "githubStarLists.aiGrouping.filter.applyFailed"
         case .applied: "githubStarLists.aiGrouping.filter.applied"
+        case .automaticallyIgnored: "githubStarLists.aiGrouping.filter.automaticallyIgnored"
+        case .ignored: "githubStarLists.aiGrouping.filter.ignored"
+        }
+    }
+
+    /// 分段控件宽度按英文最长标签估算。Tab 文案必须短于完整状态名。
+    var tabTitleKey: String {
+        switch self {
+        case .actionable: "githubStarLists.aiGrouping.filter.tab.actionable"
+        case .all: "general.all"
+        case .suggestions: "githubStarLists.aiGrouping.filter.tab.suggestions"
+        case .noMatch: "githubStarLists.aiGrouping.filter.noMatch"
+        case .analysisFailed: "githubStarLists.aiGrouping.filter.analysisFailed"
+        case .applyFailed: "githubStarLists.aiGrouping.filter.tab.applyFailed"
+        case .applied: "githubStarLists.aiGrouping.filter.tab.applied"
+        case .automaticallyIgnored: "githubStarLists.aiGrouping.filter.tab.automaticallyIgnored"
+        case .ignored: "githubStarLists.aiGrouping.filter.tab.ignored"
         }
     }
 }
@@ -125,6 +146,10 @@ struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
             applyFailure != nil
         case .applied:
             isApplied
+        case .automaticallyIgnored:
+            automaticallyIgnoredFailure != nil
+        case .ignored:
+            isIgnoredByUser && automaticallyIgnoredFailure == nil
         }
         guard matchesFilter else { return false }
 
@@ -158,7 +183,7 @@ struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
 
 /// 将会话状态一次性投影为审核页快照。
 ///
-/// 这里故意把映射、排序与五类计数收敛成单次刷新，避免 SwiftUI 高频调用 `body`
+/// 这里故意把映射、排序与筛选计数收敛成单次刷新，避免 SwiftUI 高频调用 `body`
 /// 时重复扫描近 2,000 个任务。多分组使用 `Set<String>` 保留，不做单选降级。
 struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
     let items: [GitHubStarListAIReviewItem]
@@ -175,6 +200,8 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
     let applyFailedCount: Int
     let recoverableApplyFailureCount: Int
     let appliedCount: Int
+    let automaticallyIgnoredCount: Int
+    let ignoredCount: Int
     let actionableCount: Int
     let selectedRepositoryCount: Int
     let selectedListCount: Int
@@ -234,6 +261,8 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
         var applyFailedCount = 0
         var recoverableApplyFailureCount = 0
         var appliedCount = 0
+        var automaticallyIgnoredCount = 0
+        var ignoredCount = 0
         var actionableCount = 0
         var selectedRepositoryCount = 0
         var selectedListIDs: Set<String> = []
@@ -272,6 +301,8 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
             if item.applyFailure != nil { applyFailedCount += 1 }
             if item.applyFailure?.isRetryable == true { recoverableApplyFailureCount += 1 }
             if item.isApplied { appliedCount += 1 }
+            if item.automaticallyIgnoredFailure != nil { automaticallyIgnoredCount += 1 }
+            if item.isIgnoredByUser && item.automaticallyIgnoredFailure == nil { ignoredCount += 1 }
             if item.isActionable { actionableCount += 1 }
             if !selection.isEmpty {
                 selectedRepositoryCount += 1
@@ -296,6 +327,8 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
         self.applyFailedCount = applyFailedCount
         self.recoverableApplyFailureCount = recoverableApplyFailureCount
         self.appliedCount = appliedCount
+        self.automaticallyIgnoredCount = automaticallyIgnoredCount
+        self.ignoredCount = ignoredCount
         self.actionableCount = actionableCount
         self.selectedRepositoryCount = selectedRepositoryCount
         self.selectedListCount = selectedListIDs.count
@@ -312,6 +345,8 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
         case .analysisFailed: analysisFailedCount
         case .applyFailed: applyFailedCount
         case .applied: appliedCount
+        case .automaticallyIgnored: automaticallyIgnoredCount
+        case .ignored: ignoredCount
         }
     }
 

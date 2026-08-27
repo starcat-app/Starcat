@@ -21,7 +21,7 @@ final class AwesomeStore {
     private(set) var isLoading = false
     private(set) var isRefreshing = false
     private(set) var isCatalogRefreshing = false
-    /// Sheet 预拉 / 刷新 OG 完成后递增，卡片据此清掉上一次真失败标记再试缓存。
+    /// 仅用户点刷新后递增，卡片据此清掉上一次真失败标记再试缓存；不当 KFImage 的 identity。
     private(set) var ogPrefetchGeneration = 0
     private(set) var errorMessage: String?
     private(set) var sourceRefreshErrors: [String: String] = [:]
@@ -30,6 +30,8 @@ final class AwesomeStore {
     var selectedSourceID: String?
     var selectedRepositoryID: Int64?
     var isSourceManagerPresented = false
+    /// 每次弹出 Sheet 递增；卡片用来重放入场「模糊→清晰」，避免 macOS 复用 Sheet 内容时跳过动画。
+    private(set) var sourceManagerPresentationGeneration = 0
 
     private let repository: any AwesomeRepositoryProtocol
     private let customSourceService: AwesomeCustomSourceService
@@ -77,14 +79,14 @@ final class AwesomeStore {
     func enterAwesomeFromUserSelection() async {
         await loadCachedState()
         if !hasCompletedSourceSetup {
-            isSourceManagerPresented = true
+            showSourceManager()
         }
         await loadAwesome()
     }
 
     func presentSourceManager() async {
         await loadCachedState()
-        isSourceManagerPresented = true
+        showSourceManager()
         do {
             sources = try await repository.refreshCatalog()
             errorMessage = nil
@@ -159,9 +161,9 @@ final class AwesomeStore {
     }
 
     /// 来源管理 Sheet 打开时预拉全部 OG：Kingfisher 有缓存就跳过网络。
+    /// 预拉成功不 bump generation，避免把已经显示的 KFImage 卸掉重挂。
     func prefetchOpenGraphImages() async {
         await AwesomeSourceOpenGraph.prefetch(urls: AwesomeSourceOpenGraph.imageURLs(for: sources))
-        ogPrefetchGeneration += 1
     }
 
     /// 来源管理 Sheet 的刷新：Discovery 目录 与 OG 预拉并行。
@@ -202,6 +204,7 @@ final class AwesomeStore {
         isRefreshing = false
         isCatalogRefreshing = false
         ogPrefetchGeneration = 0
+        sourceManagerPresentationGeneration = 0
         errorMessage = nil
         sourceRefreshErrors = [:]
         customSourceParseStates = [:]
@@ -222,6 +225,14 @@ final class AwesomeStore {
         )
         await reloadRepositories()
         resumeActiveCustomSourceParses()
+    }
+
+    /// 从关闭到打开才换 generation，避免 Sheet 已打开时 refreshCatalog 把入场动画重放一遍。
+    private func showSourceManager() {
+        if !isSourceManagerPresented {
+            sourceManagerPresentationGeneration += 1
+        }
+        isSourceManagerPresented = true
     }
 
     private func refreshCatalogAndEntries(policy: AwesomeRefreshPolicy = .ifStale) async {

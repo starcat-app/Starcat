@@ -53,6 +53,18 @@ enum AwesomeSourceOpenGraph: Sendable {
         return urls
     }
 
+    /// 等单张 OG 进入 Kingfisher 缓存。已有缓存会立刻返回；测试 host 不打 CDN。
+    /// 给卡片「先糊后换再清晰」用：换 URL 时必须等新图就绪，避免 KFImage 卸掉后闪 Logo。
+    static func retrieve(url: URL) async {
+        guard !TestEnvironment.isRunning else { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let resume = ResumeOnce(continuation)
+            KingfisherManager.shared.retrieveImage(with: url) { _ in
+                resume.finish()
+            }
+        }
+    }
+
     /// 缓存优先预拉。测试 host 不打 CDN，避免单测挂网。
     /// Prefetcher 必须被 completion 抓住，否则 start() 后对象释放会把任务全部 cancel。
     static func prefetch(urls: [URL]) async {
@@ -106,5 +118,20 @@ private final class PrefetcherHolder: @unchecked Sendable {
         self.continuation = nil
         continuation.resume()
         prefetcher = nil
+    }
+}
+
+/// Kingfisher 回调只 resume 一次，避免缓存命中同步完成时重复 resume。
+private final class ResumeOnce: @unchecked Sendable {
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    init(_ continuation: CheckedContinuation<Void, Never>) {
+        self.continuation = continuation
+    }
+
+    func finish() {
+        guard let continuation else { return }
+        self.continuation = nil
+        continuation.resume()
     }
 }

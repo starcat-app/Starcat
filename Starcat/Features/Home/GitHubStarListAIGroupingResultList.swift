@@ -13,6 +13,7 @@ import SwiftUI
 struct GitHubStarListAIGroupingResultList: View {
     let items: [GitHubStarListAIReviewItem]
     let searchText: String
+    let filter: GitHubStarListAIResultFilter
     let availableLists: [GitHubStarListAIListDisplay]
     let onToggleList: (Int64, String) -> Void
     let onSelectAllSuggestions: (Int64) -> Void
@@ -23,46 +24,72 @@ struct GitHubStarListAIGroupingResultList: View {
     let onRetryApply: (Int64) -> Void
     let onLoadMore: () -> Void
 
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
     @State private var expandedRepoID: Int64?
 
     var body: some View {
-        ZStack {
-            if items.isEmpty {
-                if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    ContentUnavailableView(
-                        "githubStarLists.aiGrouping.results.empty",
-                        systemImage: "tray",
-                        description: Text("githubStarLists.aiGrouping.results.empty.help")
-                    )
+        VStack(spacing: 0) {
+            if filter == .automaticallyIgnored {
+                autoIgnoredExplanation
+                Divider()
+            }
+            ZStack {
+                if items.isEmpty {
+                    if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        ContentUnavailableView(
+                            "githubStarLists.aiGrouping.results.empty",
+                            systemImage: "tray",
+                            description: Text("githubStarLists.aiGrouping.results.empty.help")
+                        )
+                    } else {
+                        ContentUnavailableView.search(text: searchText)
+                    }
                 } else {
-                    ContentUnavailableView.search(text: searchText)
-                }
-            } else {
-                List(items) { item in
-                    GitHubStarListAIGroupingResultRow(
-                        item: item,
-                        availableLists: availableLists,
-                        isExpanded: expandedRepoID == item.id,
-                        onToggleExpansion: { toggleExpansion(for: item) },
-                        onToggleList: { onToggleList(item.id, $0) },
-                        onSelectAllSuggestions: { onSelectAllSuggestions(item.id) },
-                        onClearSelection: { onClearSelection(item.id) },
-                        onApply: { onApply(item.id) },
-                        onIgnore: { onIgnore(item.id) },
-                        onRetryAnalysis: { onRetryAnalysis(item.id) },
-                        onRetryApply: { onRetryApply(item.id) }
-                    )
-                    .onAppear {
-                        if item.id == items.last?.id {
-                            onLoadMore()
+                    List(items) { item in
+                        GitHubStarListAIGroupingResultRow(
+                            item: item,
+                            availableLists: availableLists,
+                            isExpanded: expandedRepoID == item.id,
+                            onToggleExpansion: { toggleExpansion(for: item) },
+                            onToggleList: { onToggleList(item.id, $0) },
+                            onSelectAllSuggestions: { onSelectAllSuggestions(item.id) },
+                            onClearSelection: { onClearSelection(item.id) },
+                            onApply: { onApply(item.id) },
+                            onIgnore: { onIgnore(item.id) },
+                            onRetryAnalysis: { onRetryAnalysis(item.id) },
+                            onRetryApply: { onRetryApply(item.id) }
+                        )
+                        .onAppear {
+                            if item.id == items.last?.id {
+                                onLoadMore()
+                            }
                         }
                     }
+                    .listStyle(.inset)
                 }
-                .listStyle(.inset)
             }
+            // 空态和列表态共享完全相同的剩余空间，切换任意 Tab 都不会重新分配工具栏高度。
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        // 空态和列表态共享完全相同的剩余空间，切换任意 Tab 都不会重新分配工具栏高度。
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// 组织 OAuth 限制说明固定在自动忽略面板顶部，有没有仓库都要看见。
+    private var autoIgnoredExplanation: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.circle")
+                .font(interfaceScale.font(.iconMedium))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text("githubStarLists.aiGrouping.filter.automaticallyIgnored.reason")
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func toggleExpansion(for item: GitHubStarListAIReviewItem) {
@@ -93,6 +120,7 @@ private struct GitHubStarListAIGroupingResultRow: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 selectionButton
+                    .frame(width: 16)
                 summaryButton
             }
             if isExpanded {
@@ -105,10 +133,8 @@ private struct GitHubStarListAIGroupingResultRow: View {
 
     @ViewBuilder
     private var selectionButton: some View {
-        if item.isIgnored {
-            statusIcon
-                .frame(width: 16)
-        } else if item.hasSelection {
+        // 左侧只留勾选列，状态图标跟在仓库名后面，logo 和名称才能跨行对齐。
+        if item.hasSelection {
             Button("githubStarLists.aiGrouping.selection.clearRepo", systemImage: "checkmark.square.fill", action: onClearSelection)
                 .labelStyle(.iconOnly)
                 .foregroundStyle(.tint)
@@ -121,23 +147,31 @@ private struct GitHubStarListAIGroupingResultRow: View {
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
         } else {
-            statusIcon
-                .frame(width: 16)
+            Color.clear
+                .frame(width: 16, height: 16)
+                .accessibilityHidden(true)
         }
     }
 
     private var summaryButton: some View {
         Button(action: onToggleExpansion) {
             HStack(spacing: 10) {
-                if item.hasSelection || item.hasActionableSuggestions {
-                    statusIcon
-                        .frame(width: 16)
-                }
+                RemoteAvatar(
+                    urlString: item.repo.ownerAvatar ?? RepoAvatarURL.from(owner: item.repo.owner),
+                    size: 22,
+                    fallbackSymbol: "shippingbox.circle.fill"
+                )
+                .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(verbatim: item.repoFullName)
-                        .font(interfaceScale.font(.rowTitle))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(verbatim: item.repoFullName)
+                            .font(interfaceScale.font(.rowTitle))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        statusIcon
+                            .frame(width: 16, height: 16)
+                            .layoutPriority(1)
+                    }
                     summaryLine
                 }
                 Spacer(minLength: 8)
@@ -315,6 +349,10 @@ private struct GitHubStarListAIGroupingResultRow: View {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
                 .accessibilityLabel("githubStarLists.aiGrouping.status.applied")
+        } else if item.automaticallyIgnoredFailure != nil {
+            Image(systemName: "exclamationmark.circle")
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("githubStarLists.aiGrouping.filter.automaticallyIgnored")
         } else if item.isIgnored {
             Image(systemName: "minus.circle")
                 .foregroundStyle(.secondary)
@@ -348,6 +386,8 @@ private struct GitHubStarListAIGroupingResultRow: View {
             Text("githubStarLists.aiGrouping.applying")
         } else if item.isApplied {
             Text("githubStarLists.aiGrouping.status.applied")
+        } else if item.automaticallyIgnoredFailure != nil {
+            Text("githubStarLists.aiGrouping.filter.automaticallyIgnored")
         } else if item.isIgnored {
             Text("githubStarLists.aiGrouping.status.ignored")
         } else if item.applyFailure != nil {

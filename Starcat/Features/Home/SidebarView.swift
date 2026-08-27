@@ -236,7 +236,6 @@ struct SidebarView: View {
         .sheet(isPresented: $showGitHubStarListAIGroupingSheet) {
             GitHubStarListAIGroupingSheet(
                 session: dependencies.githubStarListAIGroupingSession,
-                autoGroupingSettings: dependencies.settings.githubStarListAutoGroupingSettings,
                 onApplied: {
                     await viewModel.refreshSidebar()
                     await viewModel.reloadItems(forceRefresh: true)
