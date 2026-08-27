@@ -4,7 +4,7 @@ Release notes for the Mac App Store edition of Starcat.
 
 ## 1.5.0-待发布
 
-Starcat 1.5.0 continues the Activity inbox so you can handle Issue / PR status, filters, event history, and image comments in the app, and review README documents, videos, security advisories, and release assets without leaving Starcat.
+Starcat 1.5.0 continues the Activity inbox so you can handle Issue / PR status, filters, event history, image comments, and comment actions in the app, and review README documents, videos, security advisories, and release assets without leaving Starcat.
 
 ### New
 
@@ -21,6 +21,7 @@ Starcat 1.5.0 continues the Activity inbox so you can handle Issue / PR status, 
 
 - Issue labels: Opening posts show the title and all labels, wrapping as needed; empty bodies show “No description.”
 - Issue event timeline: Turn on Show issue events in Settings to insert label changes, closes, commit references, and related PRs between comments. Comments only by default.
+- Issue comment menu: Copy a comment link or Markdown, quote a reply into the composer, and edit your own opening post or comments in place.
 
 ### Improvements
 
