@@ -130,7 +130,7 @@ flowchart LR
 /Volumes/T0/Starcat/bigquery/watch-events-2016-2026
 ```
 
-下载完成前禁止移动或重命名。第一阶段把它登记为 `githubarchive_watch_event/schema=v1` 的 Raw Dataset，History 和 Trainer 通过相同的 `file://` Artifact URI 只读访问。后续迁移到家庭存储服务器时只做一次受控移动和 URI 更新，不为两个业务各复制一份。
+下载完成前禁止移动或重命名。第一阶段把 WatchEvent 与 PushEvent 分别登记为 `githubarchive_watch_event/schema=v1`、`githubarchive_push_event/schema=v1` Raw Dataset，Catalog 与 Web 统一使用 `lake://` 逻辑 URI；真实 workspace 只由 BFF 和 Trainer 在本机解析。History 和 Trainer 通过同一逻辑 Dataset 只读访问。后续迁移到家庭存储服务器时只做一次受控移动和 BFF/Worker 映射更新，不为两个业务各复制一份。
 
 ### 4.2 存储介质
 
@@ -177,7 +177,7 @@ Raw 按时间分区，不按高基数 `repo_id` 或 `actor_id` 建目录。后�
 }
 ```
 
-Token、GCP 凭据、billing account、本机用户名和绝对路径不得写入可发布 Artifact；本地 Catalog 可保存受控 `file://` URI。
+Token、GCP 凭据、billing account、本机用户名和绝对路径不得写入可发布 Artifact 或 Catalog；本地 Catalog 只保存受控 `lake://`、`storage://` 逻辑 URI，真实路径由本机 BFF/Worker 配置解析。
 
 ### 5.3 幂等和水位线
 

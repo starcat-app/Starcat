@@ -220,7 +220,8 @@ flowchart LR
 
 | Action ID | 参数 | 结果 |
 |---|---|---|
-| `lake.register-existing-watch-events` | Dataset、现有目录 | Catalog Partition 与校验摘要 |
+| `lake.register-existing-watch-events` | 无浏览器参数；workspace 来自 BFF 本机配置 | WatchEvent Catalog Partition 与校验摘要 |
+| `lake.register-existing-push-events` | 无浏览器参数；workspace 来自 BFF 本机配置 | PushEvent Catalog Partition 与校验摘要 |
 | `bigquery.watch-events.incremental` | UTC 日期、扫描预算 | Raw Partition |
 | `bigquery.watch-events.backfill` | UTC 日期范围、每日/总预算 | 多个 Raw Partition |
 | `bigquery.push-events.incremental` | UTC 日期、扫描预算 | 精简 PushEvent Raw Partition |
@@ -745,7 +746,7 @@ Dashboard 优先展示需要采取动作的信息：
 
 ### 22.4 真实验收
 
-- 登记当前 `/Volumes/T0/Starcat/bigquery/watch-events-2016-2026`，不移动、不复制原始文件。
+- 登记当前 WatchEvent 与 PushEvent workspace，不移动、不复制原始文件；浏览器和 Catalog 只出现逻辑 URI。
 - 从页面创建一个单日 WatchEvent 增量并确认预算、分区和 checksum。
 - 生成一个 History Delta，发布后验证云端 watermark。
 - 运行一次推荐训练，发布后验证 active model 和 Starcat v2 查询。
