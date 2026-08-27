@@ -81,7 +81,9 @@ final class GitHubStarListAIGroupingPresentationStore {
             availableLists: availableLists,
             existingListIDsByRepo: session.existingListIDsByRepo,
             selectedListIDsByRepo: session.selectedListIDsByRepo,
-            ignoredRepoIDs: session.ignoredRepoIDs
+            ignoredRepoIDs: session.ignoredRepoIDs,
+            preparedRepositories: session.preparedRepositoriesForPresentation,
+            rulesByListID: session.rulesByListID
         )
         isReady = true
         rebuildVisibleItems()

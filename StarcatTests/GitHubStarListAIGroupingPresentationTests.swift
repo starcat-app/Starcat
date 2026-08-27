@@ -70,10 +70,7 @@ struct GitHubStarListAIGroupingPresentationTests {
         #expect(applied.matches(filter: .applied, searchText: ""))
         #expect(!applied.matches(filter: .suggestions, searchText: ""))
 
-        let failure = GitHubStarListAIApplyFailure(
-            kind: .organizationOAuthRestriction,
-            detail: nil
-        )
+        let failure = GitHubStarListAIApplyFailure(kind: .transport, detail: "offline")
         let applyFailed = makeItem(
             id: 2,
             status: .completed,
@@ -93,12 +90,67 @@ struct GitHubStarListAIGroupingPresentationTests {
         ))
         #expect(restriction.kind == .organizationOAuthRestriction)
         #expect(!restriction.isRetryable)
+        #expect(restriction.shouldAutomaticallyIgnore)
 
         let transport = GitHubStarListAIApplyFailure.classify(NetworkError.transport(
             underlying: URLError(.networkConnectionLost)
         ))
         #expect(transport.kind == .transport)
         #expect(transport.isRetryable)
+        #expect(!transport.shouldAutomaticallyIgnore)
+    }
+
+    @Test("组织限制作为已忽略终态，不再进入待处理、建议或应用失败")
+    func organizationRestrictionIsAutomaticallyIgnored() {
+        let restriction = GitHubStarListAIApplyFailure(
+            kind: .organizationOAuthRestriction,
+            detail: nil
+        )
+        var job = GitHubStarListAIGroupingJob(repo: makeRepo(id: 1))
+        job.status = .completed
+        job.suggestions = [GitHubStarListAISuggestion(listId: "swift", confidence: 0.96, reason: "Swift")]
+        job.applyState = .ignored(restriction)
+
+        let snapshot = GitHubStarListAIGroupingPresentationSnapshot(
+            jobs: [job],
+            availableLists: [swiftList],
+            existingListIDsByRepo: [:],
+            selectedListIDsByRepo: [:],
+            ignoredRepoIDs: []
+        )
+
+        let item = try! #require(snapshot.items.first)
+        #expect(item.isIgnored)
+        #expect(item.automaticallyIgnoredFailure == restriction)
+        #expect(item.matches(filter: .all, searchText: ""))
+        #expect(!item.matches(filter: .actionable, searchText: ""))
+        #expect(!item.matches(filter: .suggestions, searchText: ""))
+        #expect(!item.matches(filter: .applyFailed, searchText: ""))
+        #expect(snapshot.actionableCount == 0)
+        #expect(snapshot.suggestionCount == 0)
+        #expect(snapshot.applyFailedCount == 0)
+        #expect(snapshot.selectedRepositoryCount == 0)
+    }
+
+    @Test("只有网络和限流错误计入可恢复失败")
+    func countsOnlyRecoverableApplyFailures() {
+        var retryable = GitHubStarListAIGroupingJob(repo: makeRepo(id: 1))
+        retryable.status = .completed
+        retryable.applyState = .failed(GitHubStarListAIApplyFailure(kind: .transport, detail: "offline"))
+        var permanent = GitHubStarListAIGroupingJob(repo: makeRepo(id: 2))
+        permanent.status = .completed
+        permanent.applyState = .failed(GitHubStarListAIApplyFailure(kind: .authentication, detail: nil))
+
+        let snapshot = GitHubStarListAIGroupingPresentationSnapshot(
+            jobs: [retryable, permanent],
+            availableLists: [swiftList],
+            existingListIDsByRepo: [:],
+            selectedListIDsByRepo: [1: ["swift"], 2: ["swift"]],
+            ignoredRepoIDs: []
+        )
+
+        #expect(snapshot.applyFailedCount == 2)
+        #expect(snapshot.recoverableApplyFailureCount == 1)
     }
 
     @Test("展示快照一次统计全部状态并保留一个仓库的多个分组选择")
@@ -132,6 +184,71 @@ struct GitHubStarListAIGroupingPresentationTests {
         #expect(snapshot.selectedListCount == 2)
         #expect(snapshot.items.first?.selectedListIDs == ["swift", "database"])
         #expect(snapshot.items.first?.actionableSuggestions.count == 2)
+    }
+
+    @Test("整理前统计按仓库去重并保留一仓多组的各组计数")
+    func preflightCountsOverlappingMemberships() {
+        let databaseList = GitHubStarListAIListDisplay(
+            id: "database",
+            name: "Databases",
+            instruction: "Database projects",
+            colorHex: "#34C759"
+        )
+        let repos = [makeRepo(id: 1), makeRepo(id: 2), makeRepo(id: 3)]
+        let rules = [
+            "swift": GitHubStarListAIRule(
+                listId: "swift",
+                instruction: "Native Swift developer tools",
+                autoApplyEnabled: true,
+                updatedAt: "2026-08-27T00:00:00Z"
+            )
+        ]
+
+        let snapshot = GitHubStarListAIGroupingPresentationSnapshot(
+            jobs: [],
+            availableLists: [swiftList, databaseList],
+            existingListIDsByRepo: [
+                1: ["swift", "database"],
+                2: ["swift"]
+            ],
+            selectedListIDsByRepo: [:],
+            ignoredRepoIDs: [],
+            preparedRepositories: repos,
+            rulesByListID: rules
+        )
+
+        #expect(snapshot.preparedRepositoryCount == 3)
+        #expect(snapshot.groupedRepositoryCount == 2)
+        #expect(snapshot.ungroupedRepositoryCount == 1)
+        #expect(snapshot.candidateListCount == 1)
+        #expect(snapshot.preflightGroups.first(where: { $0.id == "swift" })?.repositoryCount == 2)
+        #expect(snapshot.preflightGroups.first(where: { $0.id == "database" })?.repositoryCount == 1)
+    }
+
+    @Test("每个 Tab 的数字等于该筛选实际结果数")
+    func tabCountsMatchFilterResults() {
+        var suggestionJob = GitHubStarListAIGroupingJob(repo: makeRepo(id: 1))
+        suggestionJob.status = .completed
+        suggestionJob.suggestions = [
+            GitHubStarListAISuggestion(listId: "swift", confidence: 0.96, reason: "Swift")
+        ]
+        var noMatchJob = GitHubStarListAIGroupingJob(repo: makeRepo(id: 2))
+        noMatchJob.status = .completed
+        var failedJob = GitHubStarListAIGroupingJob(repo: makeRepo(id: 3))
+        failedJob.status = .failed
+
+        let snapshot = GitHubStarListAIGroupingPresentationSnapshot(
+            jobs: [suggestionJob, noMatchJob, failedJob],
+            availableLists: [swiftList],
+            existingListIDsByRepo: [:],
+            selectedListIDsByRepo: [:],
+            ignoredRepoIDs: []
+        )
+
+        for filter in GitHubStarListAIResultFilter.allCases {
+            let actual = snapshot.items.filter { $0.matches(filter: filter, searchText: "") }.count
+            #expect(snapshot.count(for: filter) == actual)
+        }
     }
 
     private var suggestion: GitHubStarListAISuggestionDisplay {

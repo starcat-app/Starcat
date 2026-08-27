@@ -49,6 +49,12 @@ struct GitHubStarListAIApplyFailure: Equatable, Sendable {
         kind == .transport || kind == .rateLimited
     }
 
+    /// 组织 OAuth 策略是仓库级确定性限制，重复调用不会恢复。
+    /// 这类结果应直接结束本轮审核，避免用户逐条重试或手动忽略。
+    var shouldAutomaticallyIgnore: Bool {
+        kind == .organizationOAuthRestriction
+    }
+
     var localizedMessage: String {
         switch kind {
         case .organizationOAuthRestriction:
@@ -108,6 +114,7 @@ enum GitHubStarListAIApplyState: Equatable, Sendable {
     case idle
     case applying
     case applied(Set<String>)
+    case ignored(GitHubStarListAIApplyFailure)
     case failed(GitHubStarListAIApplyFailure)
 }
 
@@ -184,6 +191,10 @@ final class GitHubStarListAIGroupingSession {
 
     var totalCount: Int { jobs.count }
     var preparedRepositoryCount: Int { preparedRepos.count }
+    /// 展示层只读复用已准备好的仓库快照，用于一次性生成整理前统计。
+    ///
+    /// 数组是 Copy-on-Write；这里不会复制近 2,000 个仓库，也不会把仓库查询搬进 SwiftUI `body`。
+    var preparedRepositoriesForPresentation: [Repo] { preparedRepos }
     var analyzedCount: Int { jobs.filter { $0.status == .completed || $0.status == .failed }.count }
     var suggestedCount: Int { jobs.filter { !$0.suggestions.isEmpty }.count }
     var noMatchCount: Int { jobs.filter { $0.status == .completed && $0.suggestions.isEmpty }.count }
@@ -431,13 +442,15 @@ final class GitHubStarListAIGroupingSession {
     func retryApply(repoID: Int64) {
         guard mode == .manual,
               !isApplying,
-              let repo = jobs.first(where: { $0.id == repoID })?.repo
+              let job = jobs.first(where: { $0.id == repoID }),
+              case .failed(let failure) = job.applyState,
+              failure.isRetryable
         else { return }
         isApplying = true
         applyTask = Task { [weak self] in
             guard let self else { return }
             await self.refreshMembershipsBeforeApply()
-            await self.applyOne(repo: repo, allowAutomaticRetry: true)
+            await self.applyOne(repo: job.repo, allowAutomaticRetry: true)
             self.isApplying = false
             self.applyTask = nil
         }
@@ -631,9 +644,18 @@ final class GitHubStarListAIGroupingSession {
                 return
             } catch {
                 let failure = GitHubStarListAIApplyFailure.classify(error)
+                if failure.shouldAutomaticallyIgnore {
+                    // 组织限制作用于整个仓库，不区分目标 List。清空该仓库的全部选择并记录终态，
+                    // 让批处理继续，同时保留原因供“全部”筛选审计。
+                    selectedListIDsByRepo[repo.id] = []
+                    if let latestIndex = jobs.firstIndex(where: { $0.id == repo.id }) {
+                        jobs[latestIndex].applyState = .ignored(failure)
+                    }
+                    return
+                }
                 lastFailure = failure
                 guard failure.isRetryable, attempt < maximumAttempts, !Task.isCancelled else { break }
-                // 仅网络/5xx/限流做短退避；组织限制、认证和永久 4xx 立即交给用户处理。
+                // 仅网络/5xx/限流做短退避；认证和永久 4xx 立即交给用户处理。
                 try? await Task.sleep(for: .milliseconds(Int64(attempt * 600)))
             }
         }

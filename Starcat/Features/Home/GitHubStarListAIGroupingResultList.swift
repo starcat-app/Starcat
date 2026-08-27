@@ -25,42 +25,48 @@ struct GitHubStarListAIGroupingResultList: View {
     @State private var expandedRepoID: Int64?
 
     var body: some View {
-        if items.isEmpty {
-            if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                ContentUnavailableView(
-                    "githubStarLists.aiGrouping.results.empty",
-                    systemImage: "tray",
-                    description: Text("githubStarLists.aiGrouping.results.empty.help")
-                )
+        ZStack {
+            if items.isEmpty {
+                if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    ContentUnavailableView(
+                        "githubStarLists.aiGrouping.results.empty",
+                        systemImage: "tray",
+                        description: Text("githubStarLists.aiGrouping.results.empty.help")
+                    )
+                } else {
+                    ContentUnavailableView.search(text: searchText)
+                }
             } else {
-                ContentUnavailableView.search(text: searchText)
-            }
-        } else {
-            List(items) { item in
-                GitHubStarListAIGroupingResultRow(
-                    item: item,
-                    availableLists: availableLists,
-                    isExpanded: expandedRepoID == item.id,
-                    onToggleExpansion: { toggleExpansion(for: item) },
-                    onToggleList: { onToggleList(item.id, $0) },
-                    onSelectAllSuggestions: { onSelectAllSuggestions(item.id) },
-                    onClearSelection: { onClearSelection(item.id) },
-                    onIgnore: { onIgnore(item.id) },
-                    onRetryAnalysis: { onRetryAnalysis(item.id) },
-                    onRetryApply: { onRetryApply(item.id) }
-                )
-                .onAppear {
-                    if item.id == items.last?.id {
-                        onLoadMore()
+                List(items) { item in
+                    GitHubStarListAIGroupingResultRow(
+                        item: item,
+                        availableLists: availableLists,
+                        isExpanded: expandedRepoID == item.id,
+                        onToggleExpansion: { toggleExpansion(for: item) },
+                        onToggleList: { onToggleList(item.id, $0) },
+                        onSelectAllSuggestions: { onSelectAllSuggestions(item.id) },
+                        onClearSelection: { onClearSelection(item.id) },
+                        onIgnore: { onIgnore(item.id) },
+                        onRetryAnalysis: { onRetryAnalysis(item.id) },
+                        onRetryApply: { onRetryApply(item.id) }
+                    )
+                    .onAppear {
+                        if item.id == items.last?.id {
+                            onLoadMore()
+                        }
                     }
                 }
+                .listStyle(.inset)
             }
-            .listStyle(.inset)
         }
+        // 空态和列表态共享完全相同的剩余空间，切换任意 Tab 都不会重新分配工具栏高度。
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func toggleExpansion(for item: GitHubStarListAIReviewItem) {
-        guard item.hasSuggestions || item.applyFailure != nil || item.status == .failed else { return }
+        guard item.automaticallyIgnoredFailure != nil
+                || (!item.isIgnoredByUser && (item.hasSuggestions || item.applyFailure != nil || item.status == .failed))
+        else { return }
         expandedRepoID = expandedRepoID == item.id ? nil : item.id
     }
 }
@@ -96,7 +102,10 @@ private struct GitHubStarListAIGroupingResultRow: View {
 
     @ViewBuilder
     private var selectionButton: some View {
-        if item.hasSelection {
+        if item.isIgnored {
+            statusIcon
+                .frame(width: 16)
+        } else if item.hasSelection {
             Button("githubStarLists.aiGrouping.selection.clearRepo", systemImage: "checkmark.square.fill", action: onClearSelection)
                 .labelStyle(.iconOnly)
                 .foregroundStyle(.tint)
@@ -164,11 +173,15 @@ private struct GitHubStarListAIGroupingResultRow: View {
                 }
             }
             .lineLimit(1)
-        } else if let failure = item.applyFailure {
+        } else if let failure = item.automaticallyIgnoredFailure ?? item.applyFailure {
             Text(verbatim: failure.localizedMessage)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+        } else if item.isIgnoredByUser {
+            Text("githubStarLists.aiGrouping.status.ignored")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         } else if item.status == .failed {
             Text(verbatim: item.analysisFailureMessage ?? String.l10n("batchAI.panel.row.failedUnknown"))
                 .font(.caption)
@@ -205,33 +218,54 @@ private struct GitHubStarListAIGroupingResultRow: View {
         .foregroundStyle(.secondary)
     }
 
+    @ViewBuilder
     private var groupPickerButton: some View {
-        Button {
-            showGroupPicker = true
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "slider.horizontal.3")
-                Text("githubStarLists.aiGrouping.action.modifyGroups")
-                if !item.selectedListIDs.isEmpty {
-                    Text(item.selectedListIDs.count, format: .number)
-                        .monospacedDigit()
+        if item.automaticallyIgnoredFailure == nil {
+            Button {
+                showGroupPicker = true
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "slider.horizontal.3")
+                    Text("githubStarLists.aiGrouping.action.modifyGroups")
+                    if !item.selectedListIDs.isEmpty {
+                        Text(item.selectedListIDs.count, format: .number)
+                            .monospacedDigit()
+                    }
                 }
             }
-        }
-        .controlSize(.small)
-        .popover(isPresented: $showGroupPicker, arrowEdge: .bottom) {
-            GitHubStarListAIMultiGroupPicker(
-                item: item,
-                availableLists: availableLists,
-                onToggleList: onToggleList
-            )
-            .appLocaleEnvironment()
+            .controlSize(.small)
+            .popover(isPresented: $showGroupPicker, arrowEdge: .bottom) {
+                GitHubStarListAIMultiGroupPicker(
+                    item: item,
+                    availableLists: availableLists,
+                    onToggleList: onToggleList
+                )
+                .appLocaleEnvironment()
+            }
         }
     }
 
     @ViewBuilder
     private var expandedContent: some View {
-        if let failure = item.applyFailure {
+        if let failure = item.automaticallyIgnoredFailure {
+            VStack(alignment: .leading, spacing: 7) {
+                Label {
+                    Text(verbatim: failure.localizedMessage)
+                } icon: {
+                    Image(systemName: "building.2.crop.circle")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                if let destination = URL(string: "https://github.com/\(item.repoFullName)") {
+                    Link("githubStarLists.aiGrouping.applyFailure.openGitHub", destination: destination)
+                }
+            }
+        } else if item.isIgnoredByUser {
+            Text("githubStarLists.aiGrouping.status.ignored")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else if let failure = item.applyFailure {
             VStack(alignment: .leading, spacing: 7) {
                 Label {
                     Text(verbatim: failure.localizedMessage)
@@ -248,8 +282,10 @@ private struct GitHubStarListAIGroupingResultRow: View {
                        let destination = URL(string: "https://github.com/\(item.repoFullName)") {
                         Link("githubStarLists.aiGrouping.applyFailure.openGitHub", destination: destination)
                     }
-                    Button("action.retry", action: onRetryApply)
-                        .controlSize(.small)
+                    if failure.isRetryable {
+                        Button("action.retry", action: onRetryApply)
+                            .controlSize(.small)
+                    }
                     Button("githubStarLists.aiGrouping.action.ignore", action: onIgnore)
                         .controlSize(.small)
                 }
@@ -308,6 +344,10 @@ private struct GitHubStarListAIGroupingResultRow: View {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
                 .accessibilityLabel("githubStarLists.aiGrouping.status.applied")
+        } else if item.isIgnored {
+            Image(systemName: "minus.circle")
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("githubStarLists.aiGrouping.status.ignored")
         } else if item.applyFailure != nil || item.status == .failed {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.red)
@@ -337,6 +377,8 @@ private struct GitHubStarListAIGroupingResultRow: View {
             Text("githubStarLists.aiGrouping.applying")
         } else if item.isApplied {
             Text("githubStarLists.aiGrouping.status.applied")
+        } else if item.isIgnored {
+            Text("githubStarLists.aiGrouping.status.ignored")
         } else if item.applyFailure != nil {
             Text("githubStarLists.aiGrouping.filter.applyFailed")
         } else if item.status == .failed {
@@ -364,7 +406,8 @@ private struct GitHubStarListAIGroupingResultRow: View {
     }
 
     private var canExpand: Bool {
-        item.hasSuggestions || item.applyFailure != nil || item.status == .failed
+        item.automaticallyIgnoredFailure != nil
+            || (!item.isIgnoredByUser && (item.hasSuggestions || item.applyFailure != nil || item.status == .failed))
     }
 
     private var selectedGroupDisplays: [SelectedGroupDisplay] {

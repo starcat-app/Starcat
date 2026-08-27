@@ -12,6 +12,7 @@ import SwiftUI
 
 struct GitHubStarListAIGroupingSheet: View {
     let session: GitHubStarListAIGroupingSession
+    let autoGroupingSettings: GitHubStarListAutoGroupingSettings
     let onApplied: @MainActor () async -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -110,7 +111,10 @@ struct GitHubStarListAIGroupingSheet: View {
                 description: Text(verbatim: message)
             )
         } else if presentation.snapshot.totalCount == 0 {
-            introduction
+            GitHubStarListAIGroupingPreflightView(
+                snapshot: presentation.snapshot,
+                autoGroupingSettings: autoGroupingSettings
+            )
         } else {
             reviewWorkspace
         }
@@ -123,59 +127,6 @@ struct GitHubStarListAIGroupingSheet: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var introduction: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Label("githubStarLists.aiGrouping.closedSet", systemImage: "checklist")
-                .font(.title3.weight(.semibold))
-            Text("githubStarLists.aiGrouping.closedSet")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            LabeledContent("githubStarLists.aiGrouping.preflight.repositories") {
-                Text(session.preparedRepositoryCount, format: .number)
-                    .monospacedDigit()
-            }
-            LabeledContent("githubStarLists.aiGrouping.preflight.groups") {
-                Text(candidateListDisplays.count, format: .number)
-                    .monospacedDigit()
-            }
-
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(candidateListDisplays) { list in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Label {
-                                Text(verbatim: list.name)
-                                    .font(.subheadline.weight(.semibold))
-                            } icon: {
-                                Circle()
-                                    .fill(Color(hex: list.colorHex) ?? .accentColor)
-                                    .frame(width: 8, height: 8)
-                            }
-                            Text(verbatim: list.instruction)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 8)
-                        Divider()
-                    }
-                }
-            }
-            .frame(maxHeight: 260)
-
-            GroupBox {
-                Label("githubStarLists.aiGrouping.privacy", systemImage: "lock.shield")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(24)
     }
 
     private var reviewWorkspace: some View {
@@ -253,20 +204,22 @@ struct GitHubStarListAIGroupingSheet: View {
         @Bindable var store = presentation
         return HStack(spacing: 12) {
             Picker("githubStarLists.aiGrouping.filter.label", selection: $store.filter) {
-                filterLabel(.actionable, count: store.snapshot.actionableCount).tag(GitHubStarListAIResultFilter.actionable)
-                filterLabel(.suggestions, count: store.snapshot.suggestionCount).tag(GitHubStarListAIResultFilter.suggestions)
-                filterLabel(.applyFailed, count: store.snapshot.applyFailedCount).tag(GitHubStarListAIResultFilter.applyFailed)
-                filterLabel(.applied, count: store.snapshot.appliedCount).tag(GitHubStarListAIResultFilter.applied)
-                filterLabel(.all, count: store.snapshot.totalCount).tag(GitHubStarListAIResultFilter.all)
+                filterLabel(.actionable, snapshot: store.snapshot).tag(GitHubStarListAIResultFilter.actionable)
+                filterLabel(.suggestions, snapshot: store.snapshot).tag(GitHubStarListAIResultFilter.suggestions)
+                filterLabel(.applyFailed, snapshot: store.snapshot).tag(GitHubStarListAIResultFilter.applyFailed)
+                filterLabel(.applied, snapshot: store.snapshot).tag(GitHubStarListAIResultFilter.applied)
+                filterLabel(.all, snapshot: store.snapshot).tag(GitHubStarListAIResultFilter.all)
             }
             .pickerStyle(.segmented)
-            .frame(maxWidth: 500)
+            .frame(width: 450)
 
             TextField("githubStarLists.aiGrouping.search.placeholder", text: $store.searchText)
                 .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 220)
+                .frame(width: 180)
 
-            if store.snapshot.applyFailedCount > 0 {
+            Spacer(minLength: 0)
+
+            if store.snapshot.recoverableApplyFailureCount > 0 {
                 Button("githubStarLists.aiGrouping.retryRecoverable") {
                     session.retryAllRecoverableApplyFailures()
                 }
@@ -275,7 +228,8 @@ struct GitHubStarListAIGroupingSheet: View {
         }
         .controlSize(.small)
         .padding(.horizontal, 20)
-        .padding(.vertical, 9)
+        // 工具栏高度固定并从左侧开始排版；空结果只影响下方容器，不再把此行垂直居中。
+        .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44, alignment: .leading)
     }
 
     private var footer: some View {
@@ -375,11 +329,12 @@ struct GitHubStarListAIGroupingSheet: View {
         .focusEffectDisabled()
     }
 
-    private func filterLabel(_ filter: GitHubStarListAIResultFilter, count: Int) -> some View {
-        HStack(spacing: 4) {
-            Text(LocalizedStringKey(filter.titleKey))
-            Text(count, format: .number)
-                .monospacedDigit()
-        }
+    private func filterLabel(
+        _ filter: GitHubStarListAIResultFilter,
+        snapshot: GitHubStarListAIGroupingPresentationSnapshot
+    ) -> some View {
+        // 单个 Text 让标题和数字成为一个原生 segment，而不是两个可分别命中的子视图。
+        Text(verbatim: "\(String.l10n(filter.titleKey))  \(snapshot.count(for: filter).formatted())")
+            .monospacedDigit()
     }
 }

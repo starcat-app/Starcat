@@ -22,6 +22,19 @@ struct GitHubStarListAIListDisplay: Identifiable, Equatable, Sendable {
     let colorHex: String
 }
 
+/// 整理开始前展示的已有分组摘要。
+///
+/// 只保留计数和少量样例名称，避免为了画概览卡片长期复制每个分组的完整仓库数组。
+struct GitHubStarListAIPreflightGroupDisplay: Identifiable, Equatable, Sendable {
+    var id: String { list.id }
+
+    let list: GitHubStarListAIListDisplay
+    let repositoryCount: Int
+    let sampleRepositoryNames: [String]
+    let hasAIRule: Bool
+    let autoApplyEnabled: Bool
+}
+
 struct GitHubStarListAISuggestionDisplay: Identifiable, Equatable, Sendable {
     var id: String { list.id }
 
@@ -74,19 +87,23 @@ struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
     }
     var hasActionableSuggestions: Bool { !actionableSuggestions.isEmpty }
     var hasSelection: Bool { !selectedListIDs.isEmpty }
+    var isIgnored: Bool { isIgnoredByUser || automaticallyIgnoredFailure != nil }
     var isActionable: Bool {
-        status == .analyzing
+        !isIgnored && (status == .analyzing
             || status == .failed
             || applyFailure != nil
-            || (hasActionableSuggestions && !isApplied)
+            || (hasActionableSuggestions && !isApplied))
     }
-    var isNoMatch: Bool { status == .completed && suggestions.isEmpty }
+    var isNoMatch: Bool { !isIgnored && status == .completed && suggestions.isEmpty }
     var isApplied: Bool {
         if case .applied = applyState { true } else { false }
     }
     var isApplying: Bool { applyState == .applying }
     var applyFailure: GitHubStarListAIApplyFailure? {
         if case .failed(let failure) = applyState { failure } else { nil }
+    }
+    var automaticallyIgnoredFailure: GitHubStarListAIApplyFailure? {
+        if case .ignored(let failure) = applyState { failure } else { nil }
     }
     var appliedListIDs: Set<String> {
         if case .applied(let ids) = applyState { ids } else { [] }
@@ -99,7 +116,7 @@ struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
         case .all:
             true
         case .suggestions:
-            hasActionableSuggestions && applyFailure == nil
+            hasActionableSuggestions && applyFailure == nil && !isIgnored
         case .noMatch:
             isNoMatch
         case .analysisFailed:
@@ -130,11 +147,12 @@ struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
     private var sortRank: Int {
         if status == .analyzing { return 0 }
         if applyFailure != nil { return 1 }
+        if isIgnored { return 6 }
         if hasActionableSuggestions { return 2 }
         if status == .failed { return 3 }
         if isApplied { return 4 }
         if isNoMatch { return 5 }
-        return 6
+        return 7
     }
 }
 
@@ -145,11 +163,17 @@ struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
 struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
     let items: [GitHubStarListAIReviewItem]
     let availableLists: [GitHubStarListAIListDisplay]
+    let preparedRepositoryCount: Int
+    let groupedRepositoryCount: Int
+    let ungroupedRepositoryCount: Int
+    let candidateListCount: Int
+    let preflightGroups: [GitHubStarListAIPreflightGroupDisplay]
     let analyzedCount: Int
     let suggestionCount: Int
     let noMatchCount: Int
     let analysisFailedCount: Int
     let applyFailedCount: Int
+    let recoverableApplyFailureCount: Int
     let appliedCount: Int
     let actionableCount: Int
     let selectedRepositoryCount: Int
@@ -163,10 +187,43 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
         availableLists: [GitHubStarListAIListDisplay],
         existingListIDsByRepo: [Int64: Set<String>],
         selectedListIDsByRepo: [Int64: Set<String>],
-        ignoredRepoIDs: Set<Int64>
+        ignoredRepoIDs: Set<Int64>,
+        preparedRepositories: [Repo] = [],
+        rulesByListID: [String: GitHubStarListAIRule] = [:]
     ) {
         let orderedLists = availableLists.sorted { $0.name < $1.name }
         let listsByID = Dictionary(uniqueKeysWithValues: orderedLists.map { ($0.id, $0) })
+        let preparedRepoIDs = Set(preparedRepositories.map(\.id))
+        let preparedRepoNamesByID = Dictionary(
+            uniqueKeysWithValues: preparedRepositories.map { ($0.id, $0.fullName) }
+        )
+        var groupedRepoIDs: Set<Int64> = []
+        var membershipCountByListID: [String: Int] = [:]
+        var samplesByListID: [String: [String]] = [:]
+
+        // membership 允许一仓多组，因此分组内计数可以重叠；顶部“已分组”只按仓库去重。
+        for (repoID, listIDs) in existingListIDsByRepo where preparedRepoIDs.contains(repoID) {
+            let knownListIDs = listIDs.filter { listsByID[$0] != nil }
+            guard !knownListIDs.isEmpty else { continue }
+            groupedRepoIDs.insert(repoID)
+            for listID in knownListIDs {
+                membershipCountByListID[listID, default: 0] += 1
+                if let name = preparedRepoNamesByID[repoID], samplesByListID[listID, default: []].count < 3 {
+                    samplesByListID[listID, default: []].append(name)
+                }
+            }
+        }
+
+        let preflightGroups = orderedLists.map { list in
+            let rule = rulesByListID[list.id]
+            return GitHubStarListAIPreflightGroupDisplay(
+                list: list,
+                repositoryCount: membershipCountByListID[list.id, default: 0],
+                sampleRepositoryNames: samplesByListID[list.id, default: []],
+                hasAIRule: !(rule?.instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
+                autoApplyEnabled: rule?.autoApplyEnabled ?? false
+            )
+        }
         var projectedItems: [GitHubStarListAIReviewItem] = []
         projectedItems.reserveCapacity(jobs.count)
 
@@ -175,6 +232,7 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
         var noMatchCount = 0
         var analysisFailedCount = 0
         var applyFailedCount = 0
+        var recoverableApplyFailureCount = 0
         var appliedCount = 0
         var actionableCount = 0
         var selectedRepositoryCount = 0
@@ -212,6 +270,7 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
             if item.isNoMatch { noMatchCount += 1 }
             if job.status == .failed { analysisFailedCount += 1 }
             if item.applyFailure != nil { applyFailedCount += 1 }
+            if item.applyFailure?.isRetryable == true { recoverableApplyFailureCount += 1 }
             if item.isApplied { appliedCount += 1 }
             if item.isActionable { actionableCount += 1 }
             if !selection.isEmpty {
@@ -225,16 +284,35 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
 
         self.items = projectedItems.sorted(by: GitHubStarListAIReviewItem.ordered)
         self.availableLists = orderedLists
+        self.preparedRepositoryCount = preparedRepositories.count
+        self.groupedRepositoryCount = groupedRepoIDs.count
+        self.ungroupedRepositoryCount = max(0, preparedRepositories.count - groupedRepoIDs.count)
+        self.candidateListCount = preflightGroups.filter(\.hasAIRule).count
+        self.preflightGroups = preflightGroups
         self.analyzedCount = analyzedCount
         self.suggestionCount = suggestionCount
         self.noMatchCount = noMatchCount
         self.analysisFailedCount = analysisFailedCount
         self.applyFailedCount = applyFailedCount
+        self.recoverableApplyFailureCount = recoverableApplyFailureCount
         self.appliedCount = appliedCount
         self.actionableCount = actionableCount
         self.selectedRepositoryCount = selectedRepositoryCount
         self.selectedListCount = selectedListIDs.count
         self.hasContinuableJobs = hasContinuableJobs
+    }
+
+    /// 分段控件显示的数字与对应筛选严格复用同一份判断，避免“数字可点但不是 Tab 数据”的歧义。
+    func count(for filter: GitHubStarListAIResultFilter) -> Int {
+        switch filter {
+        case .actionable: actionableCount
+        case .all: totalCount
+        case .suggestions: suggestionCount
+        case .noMatch: noMatchCount
+        case .analysisFailed: analysisFailedCount
+        case .applyFailed: applyFailedCount
+        case .applied: appliedCount
+        }
     }
 
     static let empty = Self(
