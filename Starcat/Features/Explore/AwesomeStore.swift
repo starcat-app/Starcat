@@ -52,7 +52,14 @@ final class AwesomeStore {
         guard let selectedRepositoryID else { return nil }
         return repositories.first { $0.id == selectedRepositoryID }
     }
-    var totalRepositoryCount: Int { totalAvailableRepositoryCount }
+    /// 当前来源的总数必须来自该来源自己的目录元数据，不能误用全部已启用来源的去重总数。
+    /// 后者只适用于“全部 Awesome”；混用会把 awesome-react 显示成 `2 / 267`。
+    var totalRepositoryCount: Int {
+        guard let selectedSourceID,
+              let source = sources.first(where: { $0.id == selectedSourceID })
+        else { return totalAvailableRepositoryCount }
+        return source.githubRepoCount
+    }
 
     /// 加载 Awesome 本地快照并按缓存策略刷新，不触发任何页面展示副作用。
     ///

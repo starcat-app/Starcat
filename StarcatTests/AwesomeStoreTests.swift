@@ -109,6 +109,32 @@ struct AwesomeStoreTests {
         #expect(store.repositories.map(\.id) == [2])
     }
 
+    @Test("选中来源的总数使用来源目录计数而不是全部来源去重数")
+    @MainActor
+    func selectedSourceUsesItsOwnRepositoryTotal() async throws {
+        let selected = Self.source(id: "selected", githubRepoCount: 130)
+        let other = Self.source(id: "other", githubRepoCount: 200)
+        let repository = AwesomeStoreRepositoryFake(
+            sources: [selected, other],
+            repositoriesBySource: [
+                selected.id: [
+                    Self.repositoryItem(id: 1, source: selected),
+                    Self.repositoryItem(id: 2, source: selected)
+                ],
+                other.id: [Self.repositoryItem(id: 3, source: other)]
+            ]
+        )
+        let service = AwesomeCustomSourceService(github: AwesomeStoreGitHubFake(), repository: repository)
+        let store = AwesomeStore(repository: repository, customSourceService: service)
+
+        await store.loadAwesome()
+        store.selectSource(selected.id)
+        try await Task.sleep(for: .milliseconds(20))
+
+        #expect(store.repositories.count == 2)
+        #expect(store.totalRepositoryCount == 130)
+    }
+
     @Test("进入页面遵守缓存策略而手动刷新强制绕过 TTL")
     @MainActor
     func manualRefreshForcesRepositoryPolicy() async {
@@ -155,7 +181,8 @@ struct AwesomeStoreTests {
     private static func source(
         id: String = "one",
         kind: AwesomeSourceKind = .managed,
-        isEnabled: Bool = false
+        isEnabled: Bool = false,
+        githubRepoCount: Int = 1
     ) -> AwesomeSource {
         AwesomeSource(
             id: id,
@@ -176,7 +203,7 @@ struct AwesomeStoreTests {
             sourceOpenIssues: 28,
             sourceLanguage: "Swift",
             languageBytes: ["Swift": 900, "Shell": 100],
-            githubRepoCount: 1,
+            githubRepoCount: githubRepoCount,
             externalEntryCount: 0,
             isAvailable: true,
             isEnabled: isEnabled,
