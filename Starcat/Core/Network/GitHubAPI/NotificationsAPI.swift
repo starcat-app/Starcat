@@ -156,6 +156,22 @@ extension GitHubAPIClient {
         try await patch(path: path, body: Payload(state: state))
     }
 
+    /// 编辑自己的评论。返回值不解码：本地已经有 id / login / html_url。
+    func updateNotificationIssueComment(path: String, body: String) async throws {
+        struct Payload: Encodable {
+            let body: String
+        }
+        try await patch(path: path, body: Payload(body: body))
+    }
+
+    /// 编辑开帖正文。不要和改 `state` 合成一次 PATCH，避免关帖误带上旧 body。
+    func updateNotificationIssueBody(path: String, body: String) async throws {
+        struct Payload: Encodable {
+            let body: String
+        }
+        try await patch(path: path, body: Payload(body: body))
+    }
+
     nonisolated private static func parseIssueComments(from data: Data) -> [GitHubNotificationComment] {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase

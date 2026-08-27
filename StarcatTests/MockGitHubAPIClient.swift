@@ -78,6 +78,8 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     var listNotificationIssueCommentsHandler: ((_ path: String) async throws -> [GitHubNotificationComment])?
     var listNotificationIssueTimelineHandler: ((_ path: String) async throws -> [GitHubNotificationIssueTimelineItem])?
     var createNotificationIssueCommentHandler: ((_ path: String, _ body: String) async throws -> GitHubNotificationComment)?
+    var updateNotificationIssueCommentHandler: ((_ path: String, _ body: String) async throws -> Void)?
+    var updateNotificationIssueBodyHandler: ((_ path: String, _ body: String) async throws -> Void)?
     var markNotificationThreadReadHandler: ((_ id: String) async throws -> Void)?
     var markNotificationThreadDoneHandler: ((_ id: String) async throws -> Void)?
     var updateNotificationIssueStateHandler: ((_ path: String, _ state: String) async throws -> Void)?
@@ -105,6 +107,8 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     private let _markNotificationThreadReadCalls = OSAllocatedUnfairLock<[String]>(initialState: [])
     private let _markNotificationThreadDoneCalls = OSAllocatedUnfairLock<[String]>(initialState: [])
     private let _createNotificationIssueCommentCalls = OSAllocatedUnfairLock<[(path: String, body: String)]>(initialState: [])
+    private let _updateNotificationIssueCommentCalls = OSAllocatedUnfairLock<[(path: String, body: String)]>(initialState: [])
+    private let _updateNotificationIssueBodyCalls = OSAllocatedUnfairLock<[(path: String, body: String)]>(initialState: [])
     private let _listNotificationIssueTimelineCalls = OSAllocatedUnfairLock<[String]>(initialState: [])
 
     /// 快照 getter：测试断言用 `mock.readmeHTMLCalls.count` 继续生效。
@@ -140,6 +144,12 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     }
     var createNotificationIssueCommentCalls: [(path: String, body: String)] {
         _createNotificationIssueCommentCalls.withLock { $0 }
+    }
+    var updateNotificationIssueCommentCalls: [(path: String, body: String)] {
+        _updateNotificationIssueCommentCalls.withLock { $0 }
+    }
+    var updateNotificationIssueBodyCalls: [(path: String, body: String)] {
+        _updateNotificationIssueBodyCalls.withLock { $0 }
     }
     var listNotificationIssueTimelineCalls: [String] {
         _listNotificationIssueTimelineCalls.withLock { $0 }
@@ -320,6 +330,22 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
             fatalError("MockGitHubAPIClient.createNotificationIssueCommentHandler 未设置")
         }
         return try await handler(path, body)
+    }
+
+    func updateNotificationIssueComment(path: String, body: String) async throws {
+        _updateNotificationIssueCommentCalls.withLock { $0.append((path, body)) }
+        guard let handler = updateNotificationIssueCommentHandler else {
+            fatalError("MockGitHubAPIClient.updateNotificationIssueCommentHandler 未设置")
+        }
+        try await handler(path, body)
+    }
+
+    func updateNotificationIssueBody(path: String, body: String) async throws {
+        _updateNotificationIssueBodyCalls.withLock { $0.append((path, body)) }
+        guard let handler = updateNotificationIssueBodyHandler else {
+            fatalError("MockGitHubAPIClient.updateNotificationIssueBodyHandler 未设置")
+        }
+        try await handler(path, body)
     }
 
     func markNotificationThreadRead(id: String) async throws {

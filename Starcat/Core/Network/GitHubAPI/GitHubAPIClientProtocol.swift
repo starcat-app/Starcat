@@ -157,6 +157,12 @@ protocol GitHubAPIClientProtocol: Sendable {
     /// `POST .../issues/{n}/comments`。公开仓库用现有 `public_repo`；私有仓可能 404。
     func createNotificationIssueComment(path: String, body: String) async throws -> GitHubNotificationComment
 
+    /// `PATCH .../issues/comments/{id}`。公开仓 `public_repo`；私仓 / 非作者可能 403/404。
+    func updateNotificationIssueComment(path: String, body: String) async throws
+
+    /// `PATCH .../issues/{n}` 只改 `body`。开帖人才能成功。
+    func updateNotificationIssueBody(path: String, body: String) async throws
+
     /// `PATCH /notifications/threads/{id}` 标已读。成功含 205。
     func markNotificationThreadRead(id: String) async throws
 
@@ -295,6 +301,14 @@ extension GitHubAPIClientProtocol {
 
     func createNotificationIssueComment(path: String, body: String) async throws -> GitHubNotificationComment {
         throw NetworkError.clientError(statusCode: 501, message: "Create notification comment is not implemented by this client")
+    }
+
+    func updateNotificationIssueComment(path: String, body: String) async throws {
+        throw NetworkError.clientError(statusCode: 501, message: "Update notification comment is not implemented by this client")
+    }
+
+    func updateNotificationIssueBody(path: String, body: String) async throws {
+        throw NetworkError.clientError(statusCode: 501, message: "Update notification issue body is not implemented by this client")
     }
 
     func markNotificationThreadRead(id: String) async throws {

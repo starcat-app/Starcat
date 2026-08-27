@@ -25,9 +25,12 @@ struct GitHubNotificationIssueTimelineConversation: View {
     let document: GitHubNotificationTranslation.Document
     /// 时间线评论后到时回传给详情页，避免工具栏仍按空缓存组文档。
     let onCommentsChange: ([GitHubNotificationComment]) -> Void
+    /// 开帖 / 评论 permalink 的基底，来自 ActivityItem.htmlURL。
+    var issueHTMLURL: String? = nil
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(AppSettings.self) private var settings
+    @Environment(AuthSession.self) private var authSession
 
     @State private var items: [GitHubNotificationIssueTimelineItem] = []
     @State private var isLoading = false
@@ -99,7 +102,15 @@ struct GitHubNotificationIssueTimelineConversation: View {
             isJobTranslating: translation?.isTranslating ?? false,
             translationLanguage: settings.effectiveReadmeTranslationLanguage,
             issueTitle: title,
-            labels: payload.labels
+            labels: payload.labels,
+            actions: .make(
+                payload: payload,
+                issueHTMLURL: issueHTMLURL,
+                authorLogin: payload.authorLogin ?? "",
+                comment: nil,
+                markdown: payload.excerpt ?? "",
+                currentLogin: authSession.state.user?.login
+            )
         )
         .equatable()
     }
@@ -128,7 +139,15 @@ struct GitHubNotificationIssueTimelineConversation: View {
             translationMode: translation?.renderState.mode ?? settings.readmeTranslationMode,
             prefersAnimatedEntrance: translation?.renderState.prefersAnimatedEntrance ?? false,
             isJobTranslating: translation?.isTranslating ?? false,
-            translationLanguage: settings.effectiveReadmeTranslationLanguage
+            translationLanguage: settings.effectiveReadmeTranslationLanguage,
+            actions: .make(
+                payload: payload,
+                issueHTMLURL: issueHTMLURL,
+                authorLogin: comment.login,
+                comment: comment,
+                markdown: comment.body,
+                currentLogin: authSession.state.user?.login
+            )
         )
         .equatable()
     }

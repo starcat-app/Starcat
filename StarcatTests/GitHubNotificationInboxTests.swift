@@ -622,6 +622,103 @@ struct GitHubNotificationMapperTests {
         #expect(!GitHubNotificationMapper.canReply(subjectType: "Issue", number: nil))
     }
 
+    @Test("引用回复给每行加 >，空行写成 >")
+    func quotedMarkdownPrefixesEveryLine() {
+        #expect(GitHubNotificationMapper.quotedMarkdown("  hello\n\nworld  ") == "> hello\n>\n> world")
+        #expect(GitHubNotificationMapper.quotedMarkdown("   ") == "")
+        #expect(
+            GitHubNotificationMapper.prependQuotedReply(quote: "hi", onto: "") == "> hi\n\n"
+        )
+        #expect(
+            GitHubNotificationMapper.prependQuotedReply(quote: "hi", onto: "draft") == "> hi\n\ndraft"
+        )
+        #expect(GitHubNotificationMapper.prependQuotedReply(quote: "  ", onto: "keep") == "keep")
+    }
+
+    @Test("评论 permalink 优先 html_url，否则拼 issuecomment")
+    func commentPermalinkPrefersHTMLURLThenFragment() {
+        #expect(
+            GitHubNotificationMapper.commentPermalink(
+                htmlURL: "https://github.com/o/r/issues/1#issuecomment-9",
+                issueHTMLURL: "https://github.com/o/r/issues/1",
+                commentID: 9
+            ) == "https://github.com/o/r/issues/1#issuecomment-9"
+        )
+        #expect(
+            GitHubNotificationMapper.commentPermalink(
+                htmlURL: nil,
+                issueHTMLURL: "https://github.com/o/r/issues/1",
+                commentID: 42
+            ) == "https://github.com/o/r/issues/1#issuecomment-42"
+        )
+        #expect(
+            GitHubNotificationMapper.commentPermalink(
+                htmlURL: " ",
+                issueHTMLURL: "https://github.com/o/r/issues/1#discussion_r1",
+                commentID: 7
+            ) == "https://github.com/o/r/issues/1#issuecomment-7"
+        )
+        #expect(
+            GitHubNotificationMapper.issueCommentResourcePath(
+                repositoryFullName: "o/r",
+                commentID: 88
+            ) == "/repos/o/r/issues/comments/88"
+        )
+        #expect(GitHubNotificationMapper.issueCommentResourcePath(repositoryFullName: "o", commentID: 1) == nil)
+        #expect(GitHubNotificationMapper.isSameGitHubLogin("Dong4j", "dong4j"))
+        #expect(!GitHubNotificationMapper.isSameGitHubLogin("dong4j", "tasselx"))
+        #expect(!GitHubNotificationMapper.isSameGitHubLogin("", "dong4j"))
+    }
+
+    @Test("评论卡只给作者显示编辑")
+    func commentCardActionsEditOnlyForAuthor() {
+        let payload = ActivityNotificationPayload(
+            threadId: "t1",
+            reason: "comment",
+            chip: .comment,
+            subjectType: "Issue",
+            subjectNumber: 1,
+            repositoryFullName: "o/r",
+            actorLogin: "alice",
+            authorLogin: "alice",
+            authorCreatedAt: nil,
+            excerpt: "hello",
+            comments: [],
+            people: []
+        )
+        let comment = GitHubNotificationComment(
+            id: 3,
+            login: "bob",
+            body: "reply",
+            htmlURL: nil,
+            createdAt: nil
+        )
+        let opening = GitHubNotificationCommentCardActions.make(
+            payload: payload,
+            issueHTMLURL: "https://github.com/o/r/issues/1",
+            authorLogin: "alice",
+            comment: nil,
+            markdown: "hello",
+            currentLogin: "Alice"
+        )
+        #expect(opening.canEdit)
+        #expect(opening.canQuote)
+        #expect(opening.commentID == nil)
+        #expect(opening.permalink == "https://github.com/o/r/issues/1")
+
+        let other = GitHubNotificationCommentCardActions.make(
+            payload: payload,
+            issueHTMLURL: "https://github.com/o/r/issues/1",
+            authorLogin: comment.login,
+            comment: comment,
+            markdown: comment.body,
+            currentLogin: "alice"
+        )
+        #expect(!other.canEdit)
+        #expect(other.canQuote)
+        #expect(other.permalink == "https://github.com/o/r/issues/1#issuecomment-3")
+    }
+
     @Test("Issue 开帖人是 subject.user，不是最后一条评论")
     func openingPostAuthorIsNotLastCommenter() {
         var record = GitHubNotificationMapper.record(
@@ -1604,6 +1701,103 @@ struct GitHubNotificationInboxTests {
         let comments = GitHubNotificationMapper.decodeComments(stored.commentsJson)
         #expect(comments.map(\.id) == [501])
         #expect(comments.first?.body == "hello from starcat")
+    }
+
+    @Test("编辑评论会 PATCH 并回写 comments_json")
+    func updateCommentPatchesLocally() async throws {
+        let env = try makeEnv()
+        let record = GitHubNotificationMapper.record(
+            from: Self.makeDTO(id: "c-edit"),
+            fetchedAt: "2026-08-19T00:00:00Z",
+            firstSeenAt: "2026-08-19T00:00:00Z"
+        )
+        try await env.threads.upsertMany([record])
+        let existing = GitHubNotificationComment(
+            id: 501,
+            login: "dong4j",
+            body: "old",
+            htmlURL: "https://github.com/o/r/issues/1#issuecomment-501",
+            createdAt: "2026-08-19T14:32:00Z"
+        )
+        try await env.threads.updateHydration(
+            id: "c-edit",
+            actorLogin: "alice",
+            excerpt: "opening",
+            commentsJson: GitHubNotificationMapper.encodeComments([existing]),
+            htmlUrl: "https://github.com/o/r/issues/1",
+            subjectCreatedAt: "2026-07-19T00:00:00Z",
+            hydratedAt: "2026-08-19T00:00:00Z",
+            labelsJson: nil
+        )
+        env.mock.updateNotificationIssueCommentHandler = { path, body in
+            #expect(path == "/repos/o/r/issues/comments/501")
+            #expect(body == "new body")
+        }
+
+        try await env.inbox.updateComment(threadId: "c-edit", commentId: 501, body: "  new body  ")
+
+        #expect(env.mock.updateNotificationIssueCommentCalls.count == 1)
+        let stored = try #require(try await env.threads.fetch(id: "c-edit"))
+        let comments = GitHubNotificationMapper.decodeComments(stored.commentsJson)
+        #expect(comments.map(\.id) == [501])
+        #expect(comments.first?.body == "new body")
+        #expect(comments.first?.login == "dong4j")
+    }
+
+    @Test("编辑开帖会 PATCH issue body 并回写 excerpt")
+    func updateOpeningBodyPatchesExcerpt() async throws {
+        let env = try makeEnv()
+        let record = GitHubNotificationMapper.record(
+            from: Self.makeDTO(id: "open-edit"),
+            fetchedAt: "2026-08-19T00:00:00Z",
+            firstSeenAt: "2026-08-19T00:00:00Z"
+        )
+        try await env.threads.upsertMany([record])
+        try await env.threads.updateHydration(
+            id: "open-edit",
+            actorLogin: "alice",
+            excerpt: "old opening",
+            commentsJson: "[]",
+            htmlUrl: "https://github.com/o/r/issues/1",
+            subjectCreatedAt: "2026-07-19T00:00:00Z",
+            hydratedAt: "2026-08-19T00:00:00Z",
+            labelsJson: nil
+        )
+        env.mock.updateNotificationIssueBodyHandler = { path, body in
+            #expect(path == "/repos/o/r/issues/1")
+            #expect(body == "new opening")
+        }
+
+        try await env.inbox.updateOpeningBody(threadId: "open-edit", body: " new opening ")
+
+        #expect(env.mock.updateNotificationIssueBodyCalls.count == 1)
+        let stored = try #require(try await env.threads.fetch(id: "open-edit"))
+        #expect(stored.excerpt == "new opening")
+    }
+
+    @Test("编辑评论 403 收成 cannotEdit；演示帖拒绝")
+    func updateCommentForbiddenAndDemoRejected() async throws {
+        let env = try makeEnv()
+        let record = GitHubNotificationMapper.record(
+            from: Self.makeDTO(id: "c-403"),
+            fetchedAt: "2026-08-19T00:00:00Z",
+            firstSeenAt: "2026-08-19T00:00:00Z"
+        )
+        try await env.threads.upsertMany([record])
+        env.mock.updateNotificationIssueCommentHandler = { _, _ in
+            throw NetworkError.clientError(statusCode: 403, message: "Resource not accessible")
+        }
+        await #expect(throws: GitHubNotificationInboxError.cannotEdit) {
+            try await env.inbox.updateComment(threadId: "c-403", commentId: 9, body: "nope")
+        }
+        await #expect(throws: GitHubNotificationInboxError.cannotEdit) {
+            try await env.inbox.updateComment(
+                threadId: "\(GitHubNotificationMapper.demoThreadIDPrefix)x",
+                commentId: 1,
+                body: "nope"
+            )
+        }
+        #expect(env.mock.updateNotificationIssueCommentCalls.count == 1)
     }
 
     @Test("403 视为缺 notifications scope")

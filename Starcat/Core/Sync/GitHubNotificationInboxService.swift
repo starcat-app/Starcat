@@ -27,12 +27,17 @@ extension Notification.Name {
     static let starcatOpenGitHubNotification = Notification.Name("starcat.openGitHubNotification")
     /// 右栏「在 Starcat 中查看」：切到 Manage 并选中本地仓库。
     static let starcatRevealRepoInManage = Notification.Name("starcat.revealRepoInManage")
+    /// 评论卡「引用回复」：composer 按 threadId 把 Markdown 收成引用插进草稿。
+    static let githubNotificationQuoteReply = Notification.Name("starcat.githubNotificationQuoteReply")
+    /// 评论卡菜单复制成功。Menu 关掉后自身没有 checkmark，详情根用 toast 确认。
+    static let githubNotificationCopiedToPasteboard = Notification.Name("starcat.githubNotificationCopiedToPasteboard")
 }
 
 enum GitHubNotificationInboxError: Error, Equatable {
     case missingScope
     case cannotComment
     case cannotClose
+    case cannotEdit
     case cannotDone
 }
 
@@ -470,6 +475,123 @@ final class GitHubNotificationInboxService {
         )
         await refreshIssueTimelineAfterMutation(threadId: threadId)
         postDidChange()
+    }
+
+    /// `PATCH .../issues/comments/{id}`。公开仓 `public_repo` 即可；私仓 / 非作者会 403/404。
+    func updateComment(threadId: String, commentId: Int64, body: String) async throws {
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw GitHubNotificationInboxError.cannotEdit
+        }
+        guard !GitHubNotificationMapper.isDemoThread(threadId) else {
+            throw GitHubNotificationInboxError.cannotEdit
+        }
+        guard let record = try await threadRepository.fetch(id: threadId),
+              GitHubNotificationMapper.canReply(
+                subjectType: record.subjectType,
+                number: record.subjectNumber
+              ),
+              let path = GitHubNotificationMapper.issueCommentResourcePath(
+                repositoryFullName: record.repositoryFullName,
+                commentID: commentId
+              )
+        else {
+            throw GitHubNotificationInboxError.cannotEdit
+        }
+        do {
+            try await apiClient(for: record).updateNotificationIssueComment(path: path, body: trimmed)
+        } catch let network as NetworkError {
+            throw mappedEditError(network)
+        }
+        let showEvents = settings.githubIssueEventTimelineEnabled
+        if !showEvents {
+            var comments = GitHubNotificationMapper.decodeComments(record.commentsJson)
+            if let index = comments.firstIndex(where: { $0.id == commentId }) {
+                comments[index] = comments[index].withBody(trimmed)
+            }
+            let now = ISO8601DateFormatter.shared.string(from: clock())
+            try await threadRepository.updateHydration(
+                id: threadId,
+                actorLogin: record.actorLogin,
+                excerpt: record.excerpt,
+                commentsJson: GitHubNotificationMapper.encodeComments(comments),
+                htmlUrl: record.htmlUrl,
+                subjectCreatedAt: record.subjectCreatedAt,
+                hydratedAt: record.hydratedAt ?? now,
+                labelsJson: record.labelsJson
+            )
+        }
+        patchCachedTimelineComment(threadId: threadId, commentId: commentId, body: trimmed)
+        await refreshIssueTimelineAfterMutation(threadId: threadId)
+        postDidChange()
+    }
+
+    /// `PATCH .../issues/{n}` 只改 `body`，不动 state。开帖人才能成功。
+    func updateOpeningBody(threadId: String, body: String) async throws {
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw GitHubNotificationInboxError.cannotEdit
+        }
+        guard !GitHubNotificationMapper.isDemoThread(threadId) else {
+            throw GitHubNotificationInboxError.cannotEdit
+        }
+        guard let record = try await threadRepository.fetch(id: threadId),
+              GitHubNotificationMapper.canReply(
+                subjectType: record.subjectType,
+                number: record.subjectNumber
+              ),
+              let path = GitHubNotificationMapper.issueResourcePath(
+                subjectType: record.subjectType,
+                subjectApiURL: record.subjectApiUrl
+              )
+        else {
+            throw GitHubNotificationInboxError.cannotEdit
+        }
+        do {
+            try await apiClient(for: record).updateNotificationIssueBody(path: path, body: trimmed)
+        } catch let network as NetworkError {
+            throw mappedEditError(network)
+        }
+        let now = ISO8601DateFormatter.shared.string(from: clock())
+        let showEvents = settings.githubIssueEventTimelineEnabled
+        try await threadRepository.updateHydration(
+            id: threadId,
+            actorLogin: record.actorLogin,
+            excerpt: GitHubNotificationMapper.bodyMarkdown(trimmed),
+            commentsJson: showEvents ? nil : record.commentsJson,
+            htmlUrl: record.htmlUrl,
+            subjectCreatedAt: record.subjectCreatedAt,
+            hydratedAt: record.hydratedAt ?? now,
+            labelsJson: record.labelsJson
+        )
+        await refreshIssueTimelineAfterMutation(threadId: threadId)
+        postDidChange()
+    }
+
+    private func mappedEditError(_ network: NetworkError) -> Error {
+        switch network {
+        case .notFound:
+            return GitHubNotificationInboxError.cannotEdit
+        case .clientError(let code, _) where code == 403 || code == 404:
+            return GitHubNotificationInboxError.cannotEdit
+        default:
+            return network
+        }
+    }
+
+    /// 事件流开着时 comments_json 不是快照；先改内存时间线，卡片不用等下一轮 GET。
+    private func patchCachedTimelineComment(threadId: String, commentId: Int64, body: String) {
+        guard var items = issueTimelineCache[threadId] else { return }
+        var changed = false
+        for index in items.indices {
+            guard case .comment(let comment) = items[index], comment.id == commentId else { continue }
+            items[index] = .comment(comment.withBody(body))
+            changed = true
+            break
+        }
+        guard changed else { return }
+        issueTimelineCache[threadId] = items
+        issueTimelineRevisions[threadId, default: 0] += 1
     }
 
     func cachedIssueState(threadId: String) -> String? {

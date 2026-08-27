@@ -78,4 +78,15 @@ struct GitHubNotificationComment: Equatable, Codable, Sendable, Identifiable {
     let body: String
     let htmlURL: String?
     let createdAt: String?
+
+    /// 本地编辑成功后只换正文，id / 链接 / 作者保持原值。
+    func withBody(_ body: String) -> GitHubNotificationComment {
+        GitHubNotificationComment(
+            id: id,
+            login: login,
+            body: body,
+            htmlURL: htmlURL,
+            createdAt: createdAt
+        )
+    }
 }

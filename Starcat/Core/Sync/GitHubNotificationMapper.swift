@@ -863,6 +863,74 @@ enum GitHubNotificationMapper {
         return subjectType == "Issue" || subjectType == "PullRequest"
     }
 
+    /// 引用回复：整段原文每行加 `>`，空行写成 `>`，对齐 GitHub 网页。
+    static func quotedMarkdown(_ markdown: String) -> String {
+        let normalized = markdown
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return "" }
+        return normalized
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line -> String in
+                line.isEmpty ? ">" : "> \(line)"
+            }
+            .joined(separator: "\n")
+    }
+
+    /// 有未发草稿时把引用插到最前面，不覆盖。
+    static func prependQuotedReply(quote: String, onto draft: String) -> String {
+        let quoted = quotedMarkdown(quote)
+        guard !quoted.isEmpty else { return draft }
+        let existing = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if existing.isEmpty {
+            return quoted + "\n\n"
+        }
+        return quoted + "\n\n" + existing
+    }
+
+    /// 评论 permalink：优先 API 给的 html_url，否则用开帖 URL + `#issuecomment-{id}`。
+    static func commentPermalink(
+        htmlURL: String?,
+        issueHTMLURL: String?,
+        commentID: Int64
+    ) -> String? {
+        if let htmlURL {
+            let trimmed = htmlURL.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty, URL(string: trimmed) != nil {
+                return trimmed
+            }
+        }
+        guard commentID > 0 else { return nil }
+        let issue = issueHTMLURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !issue.isEmpty, URL(string: issue) != nil else { return nil }
+        if let hash = issue.firstIndex(of: "#") {
+            return String(issue[..<hash]) + "#issuecomment-\(commentID)"
+        }
+        return issue + "#issuecomment-\(commentID)"
+    }
+
+    /// `PATCH /repos/{owner}/{repo}/issues/comments/{id}`。
+    static func issueCommentResourcePath(repositoryFullName: String, commentID: Int64) -> String? {
+        guard commentID > 0 else { return nil }
+        let parts = repositoryFullName.split(separator: "/").map(String.init)
+        guard parts.count == 2,
+              !parts[0].isEmpty,
+              !parts[1].isEmpty
+        else { return nil }
+        return "/repos/\(parts[0])/\(parts[1])/issues/comments/\(commentID)"
+    }
+
+    static func isSameGitHubLogin(_ lhs: String?, _ rhs: String?) -> Bool {
+        let left = lhs?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let right = rhs?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !left.isEmpty, !right.isEmpty else { return false }
+        return left.compare(right, options: .caseInsensitive) == .orderedSame
+    }
+
+    static let quoteReplyThreadIdKey = "threadId"
+    static let quoteReplyMarkdownKey = "markdown"
+    static let copiedPasteboardMessageKey = "message"
+
     static func commentCardHeader(login: String, isOpeningPost: Bool, locale: Locale) -> String {
         "\(login) \(commentCardAction(isOpeningPost: isOpeningPost, locale: locale))"
     }

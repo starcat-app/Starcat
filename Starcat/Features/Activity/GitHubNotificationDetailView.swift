@@ -33,6 +33,8 @@ struct GitHubNotificationDetailView: View {
     /// 翻译 / AI 撰写共用 toast：未配置 AI 时不能只写一行 caption，评论框还会把提示收掉。
     @State private var aiErrorToast: String?
     @State private var aiErrorToastNeedsSettings = false
+    /// 评论菜单复制成功。和 AI 错误 toast 分开，避免互相顶掉。
+    @State private var copyToast: String?
 
     private var inbox: GitHubNotificationInboxService {
         dependencies.githubNotificationInboxService
@@ -97,10 +99,16 @@ struct GitHubNotificationDetailView: View {
                                         if timelineTranslationComments != comments {
                                             timelineTranslationComments = comments
                                         }
-                                    }
+                                    },
+                                    issueHTMLURL: item.htmlURL?.absoluteString
                                 )
                             } else {
-                                conversation(payload, title: item.title, translation: translationVM)
+                                conversation(
+                                    payload,
+                                    title: item.title,
+                                    issueHTMLURL: item.htmlURL?.absoluteString,
+                                    translation: translationVM
+                                )
                             }
                         }
                     }
@@ -137,6 +145,7 @@ struct GitHubNotificationDetailView: View {
             doneError = nil
             aiErrorToast = nil
             aiErrorToastNeedsSettings = false
+            copyToast = nil
             timelineTranslationComments = []
             prepareTranslation(for: item)
         }
@@ -157,9 +166,9 @@ struct GitHubNotificationDetailView: View {
         .onChange(of: settings.readmeTranslationMode) { _, _ in
             prepareTranslation(for: item)
         }
-        .onChange(of: translationHydrationSignature(item)) { _, _ in
-            // 评论后到时不要把已显示的对照打回原文；只在原文态刷新缓存探测。
-            refreshTranslationSourceIfNeeded(for: item)
+        .onChange(of: translationHydrationSignature(item)) { oldValue, _ in
+            // 评论后到时不要把已显示的对照打回原文；正文编辑条数不变，靠 body 指纹收回对照。
+            refreshTranslationSourceIfNeeded(for: item, previousSignature: oldValue)
         }
         .onAppear {
             prepareTranslation(for: item)
@@ -174,6 +183,17 @@ struct GitHubNotificationDetailView: View {
             actionLabel: aiErrorToastActionLabel,
             onAction: aiErrorToastOnAction
         )
+        .toast(
+            message: $copyToast,
+            icon: "doc.on.clipboard",
+            bottomPadding: isComposerExpanded ? 20 : 56
+        )
+        .onReceive(NotificationCenter.default.publisher(for: .githubNotificationCopiedToPasteboard)) { note in
+            guard let message = note.userInfo?[GitHubNotificationMapper.copiedPasteboardMessageKey] as? String,
+                  !message.isEmpty
+            else { return }
+            copyToast = message
+        }
         .onChange(of: translationVM?.errorMessage) { _, newValue in
             if let msg = newValue {
                 aiErrorToastNeedsSettings = translationVM?.translationErrorKind == .aiConfiguration
@@ -388,6 +408,7 @@ struct GitHubNotificationDetailView: View {
     private func conversation(
         _ payload: ActivityNotificationPayload,
         title: String,
+        issueHTMLURL: String?,
         translation: ReadmeTranslationViewModel?
     ) -> some View {
         let document = translationDocument(payload)
@@ -411,12 +432,14 @@ struct GitHubNotificationDetailView: View {
             subjectType: payload.subjectType,
             number: payload.subjectNumber
         )
+        let currentLogin = authSession.state.user?.login
+        let openingMarkdown = payload.excerpt ?? ""
 
         if showsOpeningCard {
             GitHubNotificationCommentCard(
                 login: payload.authorLogin ?? "",
                 createdAt: payload.authorCreatedAt,
-                markdown: payload.excerpt ?? "",
+                markdown: openingMarkdown,
                 repositoryFullName: payload.repositoryFullName,
                 isOpeningPost: true,
                 locale: locale,
@@ -429,7 +452,15 @@ struct GitHubNotificationDetailView: View {
                 isJobTranslating: isJobTranslating,
                 translationLanguage: translationLanguage,
                 issueTitle: title,
-                labels: payload.labels
+                labels: payload.labels,
+                actions: .make(
+                    payload: payload,
+                    issueHTMLURL: issueHTMLURL,
+                    authorLogin: payload.authorLogin ?? "",
+                    comment: nil,
+                    markdown: openingMarkdown,
+                    currentLogin: currentLogin
+                )
             )
             .equatable()
         } else if let excerpt = payload.excerpt, !excerpt.isEmpty {
@@ -447,7 +478,15 @@ struct GitHubNotificationDetailView: View {
                 translationMode: translationMode,
                 prefersAnimatedEntrance: prefersAnimatedEntrance,
                 isJobTranslating: isJobTranslating,
-                translationLanguage: translationLanguage
+                translationLanguage: translationLanguage,
+                actions: .make(
+                    payload: payload,
+                    issueHTMLURL: issueHTMLURL,
+                    authorLogin: payload.authorLogin ?? "",
+                    comment: nil,
+                    markdown: excerpt,
+                    currentLogin: currentLogin
+                )
             )
             .equatable()
         }
@@ -468,7 +507,15 @@ struct GitHubNotificationDetailView: View {
                 translationMode: translationMode,
                 prefersAnimatedEntrance: prefersAnimatedEntrance,
                 isJobTranslating: isJobTranslating,
-                translationLanguage: translationLanguage
+                translationLanguage: translationLanguage,
+                actions: .make(
+                    payload: payload,
+                    issueHTMLURL: issueHTMLURL,
+                    authorLogin: comment.login,
+                    comment: comment,
+                    markdown: comment.body,
+                    currentLogin: currentLogin
+                )
             )
             .equatable()
         }
@@ -544,27 +591,40 @@ struct GitHubNotificationDetailView: View {
         )
     }
 
-    /// excerpt / 评论条数变化（同一 thread 后到）才刷新；切帖走 threadId onChange。
+    /// 结构（条数 / 最新 id / timeline 代数）和正文分开，编辑不会被当成「又来一条评论」。
     private func translationHydrationSignature(_ item: ActivityItem) -> String {
         guard let payload = item.notification else { return "" }
+        let comments: [GitHubNotificationComment]
+        let structure: String
         if settings.githubIssueEventTimelineEnabled {
-            let comments = timelineTranslationComments.isEmpty
+            comments = timelineTranslationComments.isEmpty
                 ? inbox.cachedIssueTimelineComments(threadId: payload.threadId)
                 : timelineTranslationComments
-            return "timeline|\(inbox.issueTimelineRevision(threadId: payload.threadId))|\(payload.excerpt?.count ?? 0)|\(comments.count)|\(comments.last?.id ?? 0)"
+            structure = "timeline|\(inbox.issueTimelineRevision(threadId: payload.threadId))|\(comments.count)|\(comments.last?.id ?? 0)"
+        } else {
+            comments = payload.comments
+            structure = "comments|\(comments.count)|\(comments.last?.id ?? 0)"
         }
-        return "\(payload.excerpt?.count ?? 0)|\(payload.comments.count)|\(payload.comments.last?.id ?? 0)"
+        let bodies = comments.map { "\($0.id):\($0.body)" }.joined(separator: "\u{1e}")
+        return "\(structure)||\(payload.excerpt ?? "")\u{1e}\(bodies)"
     }
 
     /// 评论后到时：原文态重新探测缓存；对照已上屏则只补缺段，避免闪回原文。
-    private func refreshTranslationSourceIfNeeded(for item: ActivityItem) {
+    /// 同一条评论/开帖被编辑时结构不变，必须收回对照，否则会继续显示旧译文。
+    private func refreshTranslationSourceIfNeeded(for item: ActivityItem, previousSignature: String) {
         guard let vm = translationVM else {
             prepareTranslation(for: item)
             return
         }
         if vm.isTranslating { return }
         if case .showingTranslation = vm.displayMode {
-            continueTranslationIfNeeded(for: item, viewModel: vm)
+            let oldPrefix = previousSignature.components(separatedBy: "||").first ?? previousSignature
+            let newPrefix = translationHydrationSignature(item).components(separatedBy: "||").first
+            if oldPrefix != newPrefix {
+                continueTranslationIfNeeded(for: item, viewModel: vm)
+            } else {
+                prepareTranslation(for: item)
+            }
             return
         }
         prepareTranslation(for: item)
@@ -909,6 +969,49 @@ private struct GitHubNotificationUserLink: View {
     }
 }
 
+/// 评论卡右上角菜单要用的写路径。闭包不进 Equatable，所以把可比较字段收成值类型。
+struct GitHubNotificationCommentCardActions: Equatable {
+    let threadId: String
+    let commentID: Int64?
+    let permalink: String?
+    let canQuote: Bool
+    let canEdit: Bool
+
+    static func make(
+        payload: ActivityNotificationPayload,
+        issueHTMLURL: String?,
+        authorLogin: String,
+        comment: GitHubNotificationComment?,
+        markdown: String,
+        currentLogin: String?
+    ) -> GitHubNotificationCommentCardActions {
+        let isDemo = GitHubNotificationMapper.isDemoThread(payload.threadId)
+        let canReply = !isDemo && GitHubNotificationMapper.canReply(
+            subjectType: payload.subjectType,
+            number: payload.subjectNumber
+        )
+        let permalink: String?
+        if let comment {
+            permalink = GitHubNotificationMapper.commentPermalink(
+                htmlURL: comment.htmlURL,
+                issueHTMLURL: issueHTMLURL,
+                commentID: comment.id
+            )
+        } else {
+            let trimmed = issueHTMLURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            permalink = trimmed.isEmpty ? nil : trimmed
+        }
+        let hasBody = !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return GitHubNotificationCommentCardActions(
+            threadId: payload.threadId,
+            commentID: comment?.id,
+            permalink: permalink,
+            canQuote: canReply && hasBody,
+            canEdit: canReply && GitHubNotificationMapper.isSameGitHubLogin(authorLogin, currentLogin)
+        )
+    }
+}
+
 struct GitHubNotificationCommentCard: View, @MainActor Equatable {
     let login: String
     let createdAt: Date?
@@ -927,7 +1030,16 @@ struct GitHubNotificationCommentCard: View, @MainActor Equatable {
     var translationLanguage: ReadmeTranslationLanguage = .auto
     var issueTitle: String? = nil
     var labels: [GitHubNotificationIssueLabel] = []
+    /// 复制 / 引用 / 编辑。缺省没有菜单，避免非会话卡片误带操作。
+    var actions: GitHubNotificationCommentCardActions? = nil
     @State private var isTextSelectionPresented = false
+    @State private var isEditing = false
+    @State private var editDraft = ""
+    @State private var isSavingEdit = false
+    @State private var editError: String?
+    @State private var measuredEditorHeight: CGFloat = 0
+
+    @Environment(AppDependencies.self) private var dependencies
 
     private var relevantTranslations: [ReadmeRenderedTranslation] {
         // 父视图已经按 segmentId 过滤，避免每个翻译分段让所有评论卡片失效。
@@ -966,11 +1078,14 @@ struct GitHubNotificationCommentCard: View, @MainActor Equatable {
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 Spacer(minLength: 8)
-                if let createdAt {
+                if let createdAt, !isEditing {
                     Text(verbatim: GitHubNotificationMapper.commentTimeLabel(date: createdAt, locale: locale))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                }
+                if showsOverflowMenu {
+                    overflowMenu
                 }
             }
             .padding(.horizontal, 12)
@@ -999,7 +1114,10 @@ struct GitHubNotificationCommentCard: View, @MainActor Equatable {
                 .padding(.top, (issueTitle?.isEmpty == false) ? 8 : 12)
             }
 
-            if !markdown.isEmpty {
+            if isEditing {
+                editBody
+                    .padding(12)
+            } else if !markdown.isEmpty {
                 commentBody
                     .padding(12)
             } else if isOpeningPost {
@@ -1146,6 +1264,243 @@ struct GitHubNotificationCommentCard: View, @MainActor Equatable {
         }
     }
 
+    private var showsOverflowMenu: Bool {
+        guard !isEditing, let actions else { return false }
+        return actions.permalink != nil
+            || !markdown.isEmpty
+            || actions.canQuote
+            || actions.canEdit
+    }
+
+    private var overflowMenu: some View {
+        Menu {
+            if let permalink = actions?.permalink, !permalink.isEmpty {
+                Button {
+                    copyToPasteboard(
+                        permalink,
+                        toast: GitHubNotificationMapper.copy(locale, zh: "已复制链接", en: "Link copied")
+                    )
+                } label: {
+                    Label {
+                        Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "复制链接", en: "Copy link"))
+                    } icon: {
+                        Image(systemName: "link")
+                    }
+                }
+            }
+            if !markdown.isEmpty {
+                Button {
+                    copyToPasteboard(
+                        markdown,
+                        toast: GitHubNotificationMapper.copy(locale, zh: "已复制 Markdown", en: "Markdown copied")
+                    )
+                } label: {
+                    Label {
+                        Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "复制 Markdown", en: "Copy Markdown"))
+                    } icon: {
+                        Image(systemName: "doc.on.doc")
+                    }
+                }
+            }
+            if actions?.canQuote == true, !markdown.isEmpty {
+                Button(action: quoteReply) {
+                    Label {
+                        Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "引用回复", en: "Quote reply"))
+                    } icon: {
+                        Image(systemName: "text.quote")
+                    }
+                }
+            }
+            if actions?.canEdit == true {
+                Divider()
+                Button(action: beginEditing) {
+                    Label {
+                        Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "编辑", en: "Edit"))
+                    } icon: {
+                        Image(systemName: "pencil")
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .frame(width: 22, height: 22)
+        .focusEffectDisabled()
+        .help(GitHubNotificationMapper.copy(locale, zh: "更多操作", en: "More actions"))
+    }
+
+    private var editBody: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            GitHubNotificationCommentTextEditor(
+                text: $editDraft,
+                placeholder: GitHubNotificationMapper.copy(
+                    locale,
+                    zh: "用 Markdown 编辑…",
+                    en: "Edit with Markdown…"
+                ),
+                isEditable: !isSavingEdit,
+                maximumHeight: editEditorMaxHeight,
+                shouldBecomeFirstResponder: true,
+                onHeightChange: { measuredEditorHeight = $0 },
+                onEscape: {
+                    cancelEditing()
+                    return true
+                }
+            )
+            .frame(height: editEditorHeight)
+            if let editError, !editError.isEmpty {
+                Text(verbatim: editError)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            HStack {
+                Button {
+                    cancelEditing()
+                } label: {
+                    Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "取消", en: "Cancel"))
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .disabled(isSavingEdit)
+                Spacer()
+                Button {
+                    Task { await saveEdit() }
+                } label: {
+                    if isSavingEdit {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text(verbatim: GitHubNotificationMapper.copy(
+                            locale,
+                            zh: isOpeningPost ? "更新" : "更新评论",
+                            en: isOpeningPost ? "Update" : "Update comment"
+                        ))
+                    }
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .disabled(isSavingEdit || !canSaveEdit)
+            }
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private var editEditorMaxHeight: CGFloat {
+        ceil(NSFont.systemFont(ofSize: NSFont.systemFontSize).pointSize * 12)
+    }
+
+    private var editEditorHeight: CGFloat {
+        let minHeight = ceil(NSFont.systemFont(ofSize: NSFont.systemFontSize).pointSize * 4)
+        let measured = measuredEditorHeight > 0 ? measuredEditorHeight : minHeight
+        return min(max(measured, minHeight), editEditorMaxHeight)
+    }
+
+    private var canSaveEdit: Bool {
+        let trimmed = editDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty && trimmed != markdown.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func copyToPasteboard(_ string: String, toast: String) {
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        guard pasteboard.setString(trimmed, forType: .string) else { return }
+        NotificationCenter.default.post(
+            name: .githubNotificationCopiedToPasteboard,
+            object: nil,
+            userInfo: [GitHubNotificationMapper.copiedPasteboardMessageKey: toast]
+        )
+    }
+
+    private func quoteReply() {
+        guard let actions, actions.canQuote else { return }
+        NotificationCenter.default.post(
+            name: .githubNotificationQuoteReply,
+            object: nil,
+            userInfo: [
+                GitHubNotificationMapper.quoteReplyThreadIdKey: actions.threadId,
+                GitHubNotificationMapper.quoteReplyMarkdownKey: markdown
+            ]
+        )
+    }
+
+    private func beginEditing() {
+        editDraft = markdown
+        editError = nil
+        isSavingEdit = false
+        isEditing = true
+    }
+
+    private func cancelEditing() {
+        isEditing = false
+        editDraft = ""
+        editError = nil
+        isSavingEdit = false
+    }
+
+    @MainActor
+    private func saveEdit() async {
+        guard let actions, actions.canEdit, canSaveEdit else { return }
+        let trimmed = editDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        isSavingEdit = true
+        editError = nil
+        defer { isSavingEdit = false }
+        do {
+            if let commentID = actions.commentID {
+                try await dependencies.githubNotificationInboxService.updateComment(
+                    threadId: actions.threadId,
+                    commentId: commentID,
+                    body: trimmed
+                )
+            } else {
+                try await dependencies.githubNotificationInboxService.updateOpeningBody(
+                    threadId: actions.threadId,
+                    body: trimmed
+                )
+            }
+            cancelEditing()
+        } catch {
+            editError = editErrorMessage(error)
+        }
+    }
+
+    private func editErrorMessage(_ error: Error) -> String {
+        if error as? GitHubNotificationInboxError == .cannotEdit {
+            return GitHubNotificationMapper.copy(
+                locale,
+                zh: "无法更新（可能没有写权限或仓库是私有的）。请到 GitHub 打开。",
+                en: "Couldn’t update this (no write access, or private repo?). Open it on GitHub."
+            )
+        }
+        if let network = error as? NetworkError {
+            switch network {
+            case .notFound:
+                return GitHubNotificationMapper.copy(
+                    locale,
+                    zh: "无法更新（可能是私有仓库）。请到 GitHub 打开。",
+                    en: "Couldn’t update this (private repo?). Open it on GitHub."
+                )
+            case .clientError(let code, _) where code == 403 || code == 404:
+                return GitHubNotificationMapper.copy(
+                    locale,
+                    zh: "无法更新（可能没有写权限或仓库是私有的）。请到 GitHub 打开。",
+                    en: "Couldn’t update this (no write access, or private repo?). Open it on GitHub."
+                )
+            default:
+                break
+            }
+        }
+        return error.localizedDescription
+    }
+
     /// 只比较渲染输入；popover 的本地展示状态不能触发兄弟卡片重算。
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.login == rhs.login
@@ -1162,8 +1517,9 @@ struct GitHubNotificationCommentCard: View, @MainActor Equatable {
             && lhs.prefersAnimatedEntrance == rhs.prefersAnimatedEntrance
             && lhs.isJobTranslating == rhs.isJobTranslating
             && lhs.translationLanguage == rhs.translationLanguage
-            && lhs.issueTitle == rhs.issueTitle
+            &&             lhs.issueTitle == rhs.issueTitle
             && lhs.labels == rhs.labels
+            && lhs.actions == rhs.actions
     }
 }
 
@@ -1562,6 +1918,9 @@ private struct GitHubNotificationCommentComposer: View {
         .onChange(of: draft) { _, _ in
             schedulePersistDraft()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .githubNotificationQuoteReply)) { note in
+            insertQuotedReply(from: note)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .githubNotificationInboxDidChange)) { _ in
             Task { await refreshCloseEligibility(fetchRemoteState: false) }
         }
@@ -1670,6 +2029,22 @@ private struct GitHubNotificationCommentComposer: View {
         collapseIdleTask?.cancel()
         withAnimation(composerAnimation) {
             isComposerActive = true
+        }
+    }
+
+    /// 卡片菜单「引用回复」：只收当前帖，引用插到未发草稿前面。
+    private func insertQuotedReply(from note: Notification) {
+        guard let quotedThreadId = note.userInfo?[GitHubNotificationMapper.quoteReplyThreadIdKey] as? String,
+              quotedThreadId == threadId,
+              let markdown = note.userInfo?[GitHubNotificationMapper.quoteReplyMarkdownKey] as? String
+        else { return }
+        let next = GitHubNotificationMapper.prependQuotedReply(quote: markdown, onto: draft)
+        guard next != draft else { return }
+        collapseIdleTask?.cancel()
+        isPreview = false
+        withAnimation(composerAnimation) {
+            isComposerActive = true
+            draft = next
         }
     }
 
