@@ -1057,7 +1057,7 @@ struct SidebarView: View {
         case .weekly:
             return dependencies.weeklySelectionService.total
         case .awesome:
-            return dependencies.awesomeStore.totalRepositoryCount
+            return dependencies.awesomeStore.allRepositoryCount
         }
     }
 
@@ -1090,7 +1090,7 @@ struct SidebarView: View {
     private func awesomeSourceRow(_ source: AwesomeSource?) -> some View {
         exploreSelectableRow(
             selection: .awesomeSource(source?.id),
-            count: source?.githubRepoCount ?? dependencies.awesomeStore.totalRepositoryCount
+            count: source?.githubRepoCount ?? dependencies.awesomeStore.allRepositoryCount
         ) {
             if let source {
                 AwesomeSourceLogo(source: source, size: 18)

@@ -109,11 +109,11 @@ struct AwesomeStoreTests {
         #expect(store.repositories.map(\.id) == [2])
     }
 
-    @Test("选中来源的总数使用来源目录计数而不是全部来源去重数")
+    @Test("选中来源只改变中栏计数而侧栏全量计数保持稳定")
     @MainActor
-    func selectedSourceUsesItsOwnRepositoryTotal() async throws {
-        let selected = Self.source(id: "selected", githubRepoCount: 130)
-        let other = Self.source(id: "other", githubRepoCount: 200)
+    func selectedSourceKeepsAllRepositoryCountStable() async throws {
+        let selected = Self.source(id: "selected", isEnabled: true, githubRepoCount: 130)
+        let other = Self.source(id: "other", isEnabled: true, githubRepoCount: 200)
         let repository = AwesomeStoreRepositoryFake(
             sources: [selected, other],
             repositoriesBySource: [
@@ -132,7 +132,8 @@ struct AwesomeStoreTests {
         try await Task.sleep(for: .milliseconds(20))
 
         #expect(store.repositories.count == 2)
-        #expect(store.totalRepositoryCount == 130)
+        #expect(store.allRepositoryCount == 330)
+        #expect(store.currentRepositoryCount == 130)
     }
 
     @Test("Awesome 多选只切换批量集合而单选才打开详情")
