@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
 #
-# run-tests.sh — 使用隔离 DerivedData 执行 Starcat 命令行单元测试。
+# run-tests.sh — 使用固定的测试 DerivedData 执行 Starcat 命令行单元测试。
 #
-# Xcode IDE、App Store Debug、Direct Debug 和命令行测试不能共享编译缓存。
-# 每次测试创建独立临时目录并在退出时清理，避免不同 scheme 或 Xcode 版本留下的
-# PCM / dependency graph 污染下一次构建。
+# 为什么不用 mktemp：每次临时目录都会冷编译十几分钟，Agent 会话里一插话就被掐掉。
+# 测试缓存必须和 App Store / Direct Debug 分开，所以固定写 build/DerivedData-Tests，
+# 用与 Debug 相同的 Xcode/SDK 指纹：工具链变了再清，日常复用增量缓存。
+#
+# 额外参数原样传给 xcodebuild，例如：
+#   ./scripts/run-tests.sh -only-testing:StarcatTests/TagRepositoryTests
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/lib/debug-build-environment.sh"
+
+TEST_DERIVED_DATA="$PROJECT_ROOT/build/DerivedData-Tests"
 
 starcat_select_stable_xcode
 
@@ -22,19 +27,18 @@ if pgrep -x Xcode >/dev/null 2>&1; then
   exit 1
 fi
 
-TEST_DERIVED_DATA="$(mktemp -d "${TMPDIR:-/tmp}/starcat-tests-derived-data.XXXXXX")"
-trap 'rm -rf "$TEST_DERIVED_DATA"' EXIT
+starcat_prepare_debug_derived_data "$PROJECT_ROOT" "$TEST_DERIVED_DATA" "cli-tests"
 
 cd "$PROJECT_ROOT"
 
 echo "==> 生成 Xcode 工程..."
 xcodegen generate
 
-echo "==> 使用隔离缓存执行 Starcat 全量单测..."
+echo "==> 使用测试专用缓存执行 Starcat 单测..."
 echo "    derived data: $TEST_DERIVED_DATA"
 xcodebuild \
   -scheme Starcat \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath "$TEST_DERIVED_DATA" \
-  test
-
+  test \
+  "$@"

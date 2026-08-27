@@ -47,13 +47,14 @@ starcat_debug_build_fingerprint() {
     "arch=arm64"
 }
 
-# 防止未来调用方传错路径后扩大清理范围。这里只允许管理 build/ 下两个专用缓存。
+# 防止未来调用方传错路径后扩大清理范围。这里只允许管理 build/ 下三个专用缓存：
+# App Store Debug、Direct Debug、命令行单测。测试不得写入两个 Debug 目录。
 starcat_assert_debug_derived_data_path() {
   local project_root="$1"
   local derived_data="$2"
 
   case "$derived_data" in
-    "$project_root/build/DerivedData-Sandbox"|"$project_root/build/DerivedData-NoSandbox")
+    "$project_root/build/DerivedData-Sandbox"|"$project_root/build/DerivedData-NoSandbox"|"$project_root/build/DerivedData-Tests")
       ;;
     *)
       echo "ERROR: 拒绝管理未登记的 DerivedData 路径：$derived_data"

@@ -113,7 +113,7 @@ make run-direct
 ```
 
 - Makefile 入口固定使用稳定版 `/Applications/Xcode.app`，并按 Xcode / SDK / scheme 指纹管理渠道专用缓存。
-- `build/DerivedData-Sandbox` 只属于 App Store Debug；`build/DerivedData-NoSandbox` 只属于 Direct Debug。
+- `build/DerivedData-Sandbox` 只属于 App Store Debug；`build/DerivedData-NoSandbox` 只属于 Direct Debug；`build/DerivedData-Tests` 只属于命令行单测。
 - 禁止裸 `xcodebuild build`、Xcode Beta 或其他 scheme 写入上述固定缓存。
 - 一次性诊断构建必须使用独立 `/tmp` DerivedData；需要长期复用的场景应新增 Makefile / 脚本入口。
 
@@ -126,16 +126,11 @@ make run-direct
 ### 命令行
 
 ```bash
-# 跑全部；脚本会同步 project、固定稳定版 Xcode，并使用独立临时 DerivedData
+# 跑全部；脚本会同步 project、固定稳定版 Xcode，并复用 build/DerivedData-Tests
 make test
 
-# 只跑某个 Suite；裸命令必须显式隔离缓存
-TEST_DERIVED_DATA="$(mktemp -d "${TMPDIR:-/tmp}/starcat-tests-derived-data.XXXXXX")"
-trap 'rm -rf "$TEST_DERIVED_DATA"' EXIT
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
-  -scheme Starcat -destination 'platform=macOS,arch=arm64' \
-  -derivedDataPath "$TEST_DERIVED_DATA" \
-  -only-testing:StarcatTests/TagRepositoryTests test
+# 只跑某个 Suite（同样走测试专用缓存，禁止 mktemp，禁止写入 Sandbox / NoSandbox）
+make test TEST_ARGS="-only-testing:StarcatTests/TagRepositoryTests"
 ```
 
 预期：`✔ Test run with NNN tests in M suites passed after X.X seconds.`

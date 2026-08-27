@@ -9,8 +9,8 @@
 #   shell 行内必须用双引号包变量；定义处不带引号（否则引号会被当成路径字符）。
 # - 默认 target 设为 help，单独 `make` 时不会误触 destructive 操作。
 #
-# 跑测统一走 scripts/run-tests.sh：脚本会检查 Xcode IDE 是否退出，并使用独立
-# 临时 DerivedData，避免测试缓存污染 App Store / Direct 的固定构建目录。
+# 跑测统一走 scripts/run-tests.sh：脚本会检查 Xcode IDE 是否退出，并使用固定的
+# build/DerivedData-Tests，避免测试缓存污染 App Store / Direct 的 Debug 目录。
 
 # --- 路径常量 ---
 
@@ -26,9 +26,11 @@ DEBUG_APP_SUPPORT := $(HOME)/Library/Application Support/com.starcat.app
 #   make build-dmg VERSION=0.1.0
 #   make release VERSION=v0.1.0 RELEASE_FLAGS="--dry-run"
 #   make linguist LINGUIST_ARGS="--local /tmp/languages.yml"
+#   make test TEST_ARGS="-only-testing:StarcatTests/TagRepositoryTests"
 VERSION ?= 0.0.1
 RELEASE_FLAGS ?=
 LINGUIST_ARGS ?=
+TEST_ARGS ?=
 APPSTORE_TEAM ?= 8WCUMGCWMB
 NOTARY_PROFILE ?= starcat-notary
 SUBMISSION_ID ?=
@@ -48,7 +50,8 @@ help: ## 列出所有可用命令
 	@echo "  make build-direct           构建并校验 Direct / 非 App Store Debug，不启动"
 	@echo "  make run-appstore           执行 scripts/run-debug-appstore.sh（App Store / 沙盒 Debug）"
 	@echo "  make run-direct             执行 scripts/run-debug-direct.sh（Direct / 非 App Store Debug）"
-	@echo "  make test                   使用稳定版 Xcode 和隔离缓存跑全量单测"
+	@echo "  make test                   使用稳定版 Xcode 和 build/DerivedData-Tests 跑全量单测"
+	@echo "  make test TEST_ARGS=\"...\"   向 xcodebuild 追加参数，例如 -only-testing:StarcatTests/Foo"
 	@echo "  make test-build-scripts     验证 Debug 构建缓存的工具链隔离逻辑"
 	@echo ""
 	@echo "App Store："
@@ -97,8 +100,8 @@ run-direct: ## Direct / 非 App Store Debug
 test-build-scripts: ## 验证 Debug 构建缓存的工具链隔离逻辑
 	@bash scripts/tests/test-debug-build-environment.sh
 
-test: ## 使用稳定版 Xcode 和独立临时 DerivedData 跑全量单测
-	@bash scripts/run-tests.sh
+test: ## 使用稳定版 Xcode 和固定测试缓存跑单测（可用 TEST_ARGS 过滤 Suite）
+	@bash scripts/run-tests.sh $(TEST_ARGS)
 
 ## 打包 Release DMG（VERSION=0.1.0）
 build-dmg: 
@@ -241,7 +244,7 @@ reset-all: reset-db reset-anysearch-cache reset-chat-cache ## 聚合 reset-db + 
 clean: ## 删除 build/ 目录（清掉 xcodebuild 的 DerivedData 与产物）
 	@echo "即将删除：$(CURDIR)/build"
 	@rm -rf build
-	@echo "已删除 build/，下次 make run-appstore 或 make run-direct 会重新跑 xcodegen + 全量构建。"
+	@echo "已删除 build/，下次 make run-appstore、make run-direct 或 make test 会重新跑 xcodegen + 全量构建。"
 
 ## 启动 supports/ 目录下的后端服务总入口
 start-supports: ## 启动 supports/ 目录下的后端服务总入口

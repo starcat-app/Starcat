@@ -64,5 +64,14 @@ if starcat_prepare_debug_derived_data \
   fail "未登记路径不应被构建缓存工具管理"
 fi
 
+TEST_DERIVED_DATA="$PROJECT_ROOT/build/DerivedData-Tests"
+TEST_STAMP_PATH="$TEST_DERIVED_DATA/.starcat-build-environment"
+starcat_prepare_debug_derived_data \
+  "$PROJECT_ROOT" \
+  "$TEST_DERIVED_DATA" \
+  "cli-tests" \
+  $'format=1\nowner=cli-tests\nxcode=Xcode-A'
+assert_file_contains "$TEST_STAMP_PATH" "owner=cli-tests"
+
 echo "PASS: Debug 构建环境缓存边界测试通过"
 
