@@ -16,6 +16,8 @@ struct GitHubStarListAIGroupingSheet: View {
     let onApplied: @MainActor () async -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.locale) private var locale
     @State private var presentation = GitHubStarListAIGroupingPresentationStore()
     @State private var showApplyConfirmation = false
     @State private var showDiscardConfirmation = false
@@ -77,23 +79,26 @@ struct GitHubStarListAIGroupingSheet: View {
     private var header: some View {
         HStack(spacing: 12) {
             Image(systemName: "sparkles")
-                .font(.title3)
+                .font(interfaceScale.font(.iconLarge))
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text("githubStarLists.aiGrouping.title")
-                    .font(.headline)
-                Text("githubStarLists.aiGrouping.subtitle")
-                    .font(.caption)
+                    .font(interfaceScale.font(.workspaceTitle))
+                Text("githubStarLists.aiGrouping.subtitle.compact")
+                    .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Label(progressTitleKey, systemImage: progressStatusIcon)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
-                .background(.quaternary, in: .capsule)
+            // 开始页没有分析任务，不展示暂停/进行中 pill，避免和原型里误放到预览稿的状态抢标题。
+            if presentation.snapshot.totalCount > 0 {
+                Label(progressTitleKey, systemImage: progressStatusIcon)
+                    .font(interfaceScale.font(.captionStrong))
+                    .foregroundStyle(progressStatusTint)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(progressStatusTint.opacity(0.18), in: .capsule)
+            }
             SheetCloseButton { dismiss() }
         }
         .padding(.horizontal, 20)
@@ -142,6 +147,7 @@ struct GitHubStarListAIGroupingSheet: View {
                 onToggleList: session.toggleSelection,
                 onSelectAllSuggestions: session.selectAllSuggestions,
                 onClearSelection: session.clearSelection,
+                onApply: { session.applySelected(repoIDs: Set([$0])) },
                 onIgnore: session.ignore,
                 onRetryAnalysis: session.retryAnalysis,
                 onRetryApply: session.retryApply,
@@ -151,53 +157,54 @@ struct GitHubStarListAIGroupingSheet: View {
     }
 
     private var progressSummary: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack {
-                Text(progressTitleKey)
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                Text(String(
-                    format: String.l10n("githubStarLists.aiGrouping.progressFormat"),
-                    presentation.snapshot.analyzedCount,
-                    presentation.snapshot.totalCount
-                ))
-                .font(.callout.monospacedDigit())
-                .foregroundStyle(.secondary)
-            }
+        VStack(alignment: .leading, spacing: 8) {
+            Text(String(
+                format: String.l10n("githubStarLists.aiGrouping.progressFormat"),
+                locale: locale,
+                presentation.snapshot.analyzedCount,
+                presentation.snapshot.totalCount
+            ))
+            .font(interfaceScale.font(.caption))
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
             ProgressView(
                 value: Double(presentation.snapshot.analyzedCount),
                 total: Double(max(presentation.snapshot.totalCount, 1))
             )
-            HStack(spacing: 22) {
+            HStack(spacing: 18) {
                 metricButton(
-                    "githubStarLists.aiGrouping.metric.suggested",
+                    "githubStarLists.aiGrouping.metric.pendingReview",
                     value: presentation.snapshot.suggestionCount,
-                    icon: "sparkles",
+                    icon: "circle.fill",
+                    tint: .accentColor,
                     filter: .suggestions
                 )
                 metricButton(
                     "githubStarLists.aiGrouping.metric.noMatch",
                     value: presentation.snapshot.noMatchCount,
                     icon: "minus.circle",
+                    tint: .secondary,
                     filter: .noMatch
                 )
                 metricButton(
                     "githubStarLists.aiGrouping.filter.analysisFailed",
                     value: presentation.snapshot.analysisFailedCount,
-                    icon: "exclamationmark.triangle",
+                    icon: "exclamationmark.triangle.fill",
+                    tint: .orange,
                     filter: .analysisFailed
                 )
                 metricButton(
                     "githubStarLists.aiGrouping.filter.applyFailed",
                     value: presentation.snapshot.applyFailedCount,
-                    icon: "icloud.slash",
+                    icon: "exclamationmark.circle.fill",
+                    tint: .red,
                     filter: .applyFailed
                 )
                 Spacer()
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 11)
+        .padding(.vertical, 10)
     }
 
     private var resultToolbar: some View {
@@ -211,31 +218,33 @@ struct GitHubStarListAIGroupingSheet: View {
                 filterLabel(.all, snapshot: store.snapshot).tag(GitHubStarListAIResultFilter.all)
             }
             .pickerStyle(.segmented)
-            .frame(width: 450)
+            .controlSize(.regular)
 
-            TextField("githubStarLists.aiGrouping.search.placeholder", text: $store.searchText)
+            TextField("githubStarLists.aiGrouping.search.repositories", text: $store.searchText)
                 .textFieldStyle(.roundedBorder)
-                .frame(width: 180)
+                .font(interfaceScale.font(.caption))
+                .controlSize(.small)
+                .frame(width: 168)
 
-            Spacer(minLength: 0)
-
-            if store.snapshot.recoverableApplyFailureCount > 0 {
-                Button("githubStarLists.aiGrouping.retryRecoverable") {
-                    session.retryAllRecoverableApplyFailures()
-                }
-                .disabled(session.isApplying)
+            Button("githubStarLists.aiGrouping.retryFailed") {
+                session.retryAllRecoverableApplyFailures()
             }
+            .controlSize(.small)
+            .disabled(session.isApplying || store.snapshot.recoverableApplyFailureCount == 0)
         }
-        .controlSize(.small)
         .padding(.horizontal, 20)
         // 工具栏高度固定并从左侧开始排版；空结果只影响下方容器，不再把此行垂直居中。
-        .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 48, maxHeight: 48, alignment: .leading)
     }
 
     private var footer: some View {
         HStack(spacing: 10) {
             if presentation.snapshot.totalCount == 0 {
-                Spacer()
+                Label("githubStarLists.aiGrouping.privacy", systemImage: "lock.shield")
+                    .font(interfaceScale.font(.caption))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Button("action.close") { dismiss() }
                 Button("githubStarLists.aiGrouping.start") {
                     Task { await session.startManual() }
@@ -262,10 +271,11 @@ struct GitHubStarListAIGroupingSheet: View {
                 Spacer()
                 Text(String(
                     format: String.l10n("githubStarLists.aiGrouping.selectionSummaryFormat"),
+                    locale: locale,
                     presentation.snapshot.selectedRepositoryCount,
                     presentation.snapshot.selectedListCount
                 ))
-                .font(.caption)
+                .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
 
@@ -278,7 +288,8 @@ struct GitHubStarListAIGroupingSheet: View {
             }
         }
         .padding(.horizontal, 20)
-        .frame(height: 58)
+        .padding(.vertical, 12)
+        .frame(minHeight: 58)
     }
 
     private var candidateListDisplays: [GitHubStarListAIListDisplay] {
@@ -308,21 +319,37 @@ struct GitHubStarListAIGroupingSheet: View {
         else { "pause.circle" }
     }
 
+    private var progressStatusTint: Color {
+        if session.isApplying || session.isRunning {
+            .accentColor
+        } else if presentation.snapshot.totalCount > 0,
+                  presentation.snapshot.analyzedCount == presentation.snapshot.totalCount {
+            .green
+        } else {
+            .orange
+        }
+    }
+
     private func metricButton(
         _ title: LocalizedStringKey,
         value: Int,
         icon: String,
+        tint: Color,
         filter: GitHubStarListAIResultFilter
     ) -> some View {
         Button {
             presentation.filter = filter
         } label: {
             HStack(spacing: 5) {
-                Label(title, systemImage: icon)
-                Text(value, format: .number)
+                Image(systemName: icon)
+                    .font(interfaceScale.font(.captionSmall))
+                    .foregroundStyle(tint)
+                    .accessibilityHidden(true)
+                Text(title)
+                Text(value, format: .number.locale(locale))
                     .monospacedDigit()
             }
-            .font(.caption)
+            .font(interfaceScale.font(.caption))
             .foregroundStyle(.secondary)
         }
         .buttonStyle(.plain)

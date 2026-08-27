@@ -199,6 +199,8 @@ Accent color 只用于可操作状态和当前选择，不用于大面积铺底�
 
 浅色模式应该接近 `NSColor.windowBackgroundColor` / `controlBackgroundColor` 的层级；深色模式应该依赖系统背景和材质，不要强行做纯黑科技风。选中态通常是 `Color.accentColor.opacity(0.12)` 加轻量描边，而不是高饱和填充。
 
+Sheet / 浮层里如果用卡片分区，相邻表面必须有可见明度差，不要靠大阴影。窗口底用 `surface-*`，卡片用 `panel-*`：浅色白卡 `#FFFFFF` 叠在 `#F5F5F7` 上；深色 `#2C2C2E` 叠在 `#1C1C1E` 上。macOS 深色里 `controlBackgroundColor` 几乎等于窗口底，再铺一层卡片会消失。内层卡片或 chip 再抬一档，深色用 `separator-dark` `#3A3A3C` 或略提亮的 fill，描边用 `separator-*`。
+
 ## Typography
 
 字体跟随 Apple 系统字体。SwiftUI 中优先使用 `.title3`、`.headline`、`.subheadline`、`.callout`、`.caption`、`.caption2` 等动态层级，并通过 `starcatInterfaceScale` 接入已验证页面的字号倍率。
@@ -260,6 +262,8 @@ Agent 工作台遵循覆盖式 run layout：
 Starcat 通过系统背景、`Divider`、轻量材质和选中态表达层级。不要用大阴影、发光、渐变光斑、玻璃球、bokeh、营销页背景或深色科技感装饰。
 
 `.thinMaterial` 只用于局部按钮、状态块、轻量浮层和已存在的玻璃态交互，不要把每个 section 都做成浮动卡片。主页面 section 应该像 macOS 原生应用一样贴合窗口和分栏，不要卡片套卡片。
+
+必须分区时，嵌套表面按 Colors 里的 `surface` → `panel` → 内层 fill 抬升；深色主题尤其禁止把同色 `controlBackgroundColor` 叠两层。
 
 ## Shapes
 

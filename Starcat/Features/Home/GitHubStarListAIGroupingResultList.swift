@@ -4,8 +4,8 @@
 //
 //  AI 仓库分组的紧凑审核列表。
 //
-//  默认只渲染展示缓存给出的首批结果；行内保持单行摘要，只有当前仓库展开判断依据
-//  或失败信息。分组选择使用独立 Popover，明确支持一个仓库同时加入多个 List。
+//  默认只渲染展示缓存给出的首批结果；行内保持单行摘要，展开后用芯片墙改分组。
+//  一个仓库可以同时加入多个 List；已有 membership 不能从这里移除。
 //
 
 import SwiftUI
@@ -17,6 +17,7 @@ struct GitHubStarListAIGroupingResultList: View {
     let onToggleList: (Int64, String) -> Void
     let onSelectAllSuggestions: (Int64) -> Void
     let onClearSelection: (Int64) -> Void
+    let onApply: (Int64) -> Void
     let onIgnore: (Int64) -> Void
     let onRetryAnalysis: (Int64) -> Void
     let onRetryApply: (Int64) -> Void
@@ -46,6 +47,7 @@ struct GitHubStarListAIGroupingResultList: View {
                         onToggleList: { onToggleList(item.id, $0) },
                         onSelectAllSuggestions: { onSelectAllSuggestions(item.id) },
                         onClearSelection: { onClearSelection(item.id) },
+                        onApply: { onApply(item.id) },
                         onIgnore: { onIgnore(item.id) },
                         onRetryAnalysis: { onRetryAnalysis(item.id) },
                         onRetryApply: { onRetryApply(item.id) }
@@ -79,18 +81,19 @@ private struct GitHubStarListAIGroupingResultRow: View {
     let onToggleList: (String) -> Void
     let onSelectAllSuggestions: () -> Void
     let onClearSelection: () -> Void
+    let onApply: () -> Void
     let onIgnore: () -> Void
     let onRetryAnalysis: () -> Void
     let onRetryApply: () -> Void
 
-    @State private var showGroupPicker = false
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 selectionButton
                 summaryButton
-                groupPickerButton
             }
             if isExpanded {
                 expandedContent
@@ -132,18 +135,18 @@ private struct GitHubStarListAIGroupingResultRow: View {
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(verbatim: item.repoFullName)
-                        .font(.subheadline.weight(.semibold).monospaced())
+                        .font(interfaceScale.font(.rowTitle))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                     summaryLine
                 }
                 Spacer(minLength: 8)
                 statusLabel
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(interfaceScale.font(.caption))
+                    .foregroundStyle(statusLabelColor)
                 if canExpand {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.caption)
+                        .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
                         .accessibilityHidden(true)
                 }
@@ -158,180 +161,148 @@ private struct GitHubStarListAIGroupingResultRow: View {
 
     @ViewBuilder
     private var summaryLine: some View {
-        if !selectedGroupDisplays.isEmpty {
-            HStack(spacing: 6) {
-                Text("githubStarLists.aiGrouping.status.suggested")
-                    .font(.caption)
+        if let summary = suggestionSummaryDisplay {
+            HStack(spacing: 4) {
+                Text("githubStarLists.aiGrouping.suggestJoinPrefix")
                     .foregroundStyle(.secondary)
-                ForEach(selectedGroupDisplays.prefix(3)) { selection in
-                    groupChip(selection)
-                }
-                if selectedGroupDisplays.count > 3 {
-                    Text(verbatim: "+\(selectedGroupDisplays.count - 3)")
-                        .font(.caption.monospacedDigit())
+                Text(verbatim: summary.list.name)
+                    .foregroundStyle(Color(hex: summary.list.colorHex) ?? .accentColor)
+                    .fontWeight(.semibold)
+                if let confidence = summary.confidence {
+                    Text(verbatim: "·")
                         .foregroundStyle(.secondary)
+                    Text(confidence, format: .percent.precision(.fractionLength(0)).locale(locale))
+                        .foregroundStyle(confidenceColor(confidence))
+                        .monospacedDigit()
+                        .fontWeight(.semibold)
                 }
             }
+            .font(interfaceScale.font(.caption))
             .lineLimit(1)
         } else if let failure = item.automaticallyIgnoredFailure ?? item.applyFailure {
             Text(verbatim: failure.localizedMessage)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.red)
                 .lineLimit(1)
         } else if item.isIgnoredByUser {
             Text("githubStarLists.aiGrouping.status.ignored")
-                .font(.caption)
+                .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
         } else if item.status == .failed {
             Text(verbatim: item.analysisFailureMessage ?? String.l10n("batchAI.panel.row.failedUnknown"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.red)
                 .lineLimit(1)
+        } else if item.isApplied, let applied = appliedSummaryDisplay {
+            HStack(spacing: 4) {
+                Text("githubStarLists.aiGrouping.appliedJoinPrefix")
+                    .foregroundStyle(.secondary)
+                Text(verbatim: applied.list.name)
+                    .foregroundStyle(Color(hex: applied.list.colorHex) ?? .green)
+                    .fontWeight(.semibold)
+                if let confidence = applied.confidence {
+                    Text(verbatim: "·")
+                        .foregroundStyle(.secondary)
+                    Text(confidence, format: .percent.precision(.fractionLength(0)).locale(locale))
+                        .foregroundStyle(confidenceColor(confidence))
+                        .monospacedDigit()
+                        .fontWeight(.semibold)
+                }
+            }
+            .font(interfaceScale.font(.caption))
+            .lineLimit(1)
         } else if !item.currentLists.isEmpty {
             Text(String(
                 format: String.l10n("githubStarLists.aiGrouping.currentGroupsFormat"),
+                locale: locale,
                 item.currentLists.map(\.name).joined(separator: ", ")
             ))
-            .font(.caption)
+            .font(interfaceScale.font(.caption))
             .foregroundStyle(.secondary)
             .lineLimit(1)
         } else {
             statusDetail
-                .font(.caption)
+                .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
-        }
-    }
-
-    private func groupChip(_ selection: SelectedGroupDisplay) -> some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(Color(hex: selection.list.colorHex) ?? .accentColor)
-                .frame(width: 6, height: 6)
-                .accessibilityHidden(true)
-            Text(verbatim: selection.list.name)
-            if let confidence = selection.confidence {
-                Text(confidence, format: .percent.precision(.fractionLength(0)))
-                    .monospacedDigit()
-            }
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-    }
-
-    @ViewBuilder
-    private var groupPickerButton: some View {
-        if item.automaticallyIgnoredFailure == nil {
-            Button {
-                showGroupPicker = true
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "slider.horizontal.3")
-                    Text("githubStarLists.aiGrouping.action.modifyGroups")
-                    if !item.selectedListIDs.isEmpty {
-                        Text(item.selectedListIDs.count, format: .number)
-                            .monospacedDigit()
-                    }
-                }
-            }
-            .controlSize(.small)
-            .popover(isPresented: $showGroupPicker, arrowEdge: .bottom) {
-                GitHubStarListAIMultiGroupPicker(
-                    item: item,
-                    availableLists: availableLists,
-                    onToggleList: onToggleList
-                )
-                .appLocaleEnvironment()
-            }
         }
     }
 
     @ViewBuilder
     private var expandedContent: some View {
         if let failure = item.automaticallyIgnoredFailure {
-            VStack(alignment: .leading, spacing: 7) {
-                Label {
+            failureBox {
+                VStack(alignment: .leading, spacing: 7) {
                     Text(verbatim: failure.localizedMessage)
-                } icon: {
-                    Image(systemName: "building.2.crop.circle")
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-                if let destination = URL(string: "https://github.com/\(item.repoFullName)") {
-                    Link("githubStarLists.aiGrouping.applyFailure.openGitHub", destination: destination)
+                        .font(interfaceScale.font(.caption))
+                        .foregroundStyle(.secondary)
+                    if let destination = URL(string: "https://github.com/\(item.repoFullName)") {
+                        Link("githubStarLists.aiGrouping.applyFailure.openGitHub", destination: destination)
+                            .font(interfaceScale.font(.caption))
+                    }
                 }
             }
         } else if item.isIgnoredByUser {
             Text("githubStarLists.aiGrouping.status.ignored")
-                .font(.caption)
+                .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
         } else if let failure = item.applyFailure {
-            VStack(alignment: .leading, spacing: 7) {
-                Label {
+            failureBox {
+                VStack(alignment: .leading, spacing: 7) {
                     Text(verbatim: failure.localizedMessage)
-                } icon: {
-                    Image(systemName: failure.kind == .organizationOAuthRestriction
-                        ? "building.2.crop.circle"
-                        : "icloud.slash")
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-                HStack(spacing: 8) {
-                    if failure.kind == .organizationOAuthRestriction,
-                       let destination = URL(string: "https://github.com/\(item.repoFullName)") {
-                        Link("githubStarLists.aiGrouping.applyFailure.openGitHub", destination: destination)
+                        .font(interfaceScale.font(.caption))
+                        .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        if failure.kind == .organizationOAuthRestriction,
+                           let destination = URL(string: "https://github.com/\(item.repoFullName)") {
+                            Link("githubStarLists.aiGrouping.applyFailure.openGitHub", destination: destination)
+                                .font(interfaceScale.font(.caption))
+                        }
+                        if failure.isRetryable {
+                            Button("action.retry", action: onRetryApply)
+                                .controlSize(.small)
+                        }
                     }
-                    if failure.isRetryable {
-                        Button("action.retry", action: onRetryApply)
-                            .controlSize(.small)
-                    }
-                    Button("githubStarLists.aiGrouping.action.ignore", action: onIgnore)
-                        .controlSize(.small)
                 }
             }
         } else if item.status == .failed {
-            HStack(spacing: 8) {
-                Text(verbatim: item.analysisFailureMessage ?? String.l10n("batchAI.panel.row.failedUnknown"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button("action.retry", action: onRetryAnalysis)
-                    .controlSize(.small)
+            failureBox {
+                HStack(spacing: 8) {
+                    Text(verbatim: item.analysisFailureMessage ?? String.l10n("batchAI.panel.row.failedUnknown"))
+                        .font(interfaceScale.font(.caption))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("action.retry", action: onRetryAnalysis)
+                        .controlSize(.small)
+                }
             }
         } else {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(item.actionableSuggestions) { suggestion in
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack {
-                            Text(verbatim: suggestion.list.name)
-                                .font(.callout.weight(.semibold))
-                            Spacer()
-                            Text(suggestion.confidence, format: .percent.precision(.fractionLength(0)))
-                                .font(.callout.monospacedDigit())
-                                .foregroundStyle(.tint)
-                        }
-                        if !suggestion.reason.isEmpty {
-                            Text(verbatim: suggestion.reason)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        if !suggestion.list.instruction.isEmpty {
-                            Text(verbatim: suggestion.list.instruction)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                        }
-                    }
-                }
+            VStack(alignment: .leading, spacing: 10) {
+                GitHubStarListAIGroupingChipBar(
+                    lists: availableLists,
+                    item: item,
+                    onToggleList: onToggleList
+                )
                 HStack(spacing: 8) {
-                    Button("githubStarLists.aiGrouping.action.acceptAll", action: onSelectAllSuggestions)
+                    Button("action.apply", action: onApply)
+                        .buttonStyle(.borderedProminent)
                         .controlSize(.small)
+                        .disabled(!item.hasSelection || item.isApplying)
                     Button("githubStarLists.aiGrouping.action.ignore", action: onIgnore)
                         .controlSize(.small)
+                        .disabled(item.isApplying)
                 }
             }
         }
+    }
+
+    private func failureBox<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                Color.primary.opacity(0.055),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
     }
 
     @ViewBuilder
@@ -353,8 +324,8 @@ private struct GitHubStarListAIGroupingResultRow: View {
                 .foregroundStyle(.red)
                 .accessibilityLabel("githubStarLists.aiGrouping.status.failed")
         } else if item.status == .analyzing {
-            ProgressView()
-                .controlSize(.mini)
+            Image(systemName: "sparkles")
+                .foregroundStyle(.secondary)
                 .accessibilityLabel("githubStarLists.aiGrouping.status.processing")
         } else if item.hasActionableSuggestions {
             Image(systemName: "sparkles")
@@ -410,6 +381,31 @@ private struct GitHubStarListAIGroupingResultRow: View {
             || (!item.isIgnoredByUser && (item.hasSuggestions || item.applyFailure != nil || item.status == .failed))
     }
 
+    private var statusLabelColor: Color {
+        if item.applyFailure != nil || item.status == .failed {
+            .red
+        } else if item.hasActionableSuggestions {
+            .accentColor
+        } else {
+            .secondary
+        }
+    }
+
+    private var suggestionSummaryDisplay: SelectedGroupDisplay? {
+        let displays = selectedGroupDisplays
+        if let first = displays.first { return first }
+        return item.actionableSuggestions.first.map {
+            SelectedGroupDisplay(list: $0.list, confidence: $0.confidence)
+        }
+    }
+
+    private var appliedSummaryDisplay: SelectedGroupDisplay? {
+        guard let list = item.currentLists.first else { return nil }
+        let confidence = item.suggestions.first(where: { $0.id == list.id })?.confidence
+            ?? item.suggestions.first?.confidence
+        return SelectedGroupDisplay(list: list, confidence: confidence)
+    }
+
     private var selectedGroupDisplays: [SelectedGroupDisplay] {
         let listsByID = Dictionary(uniqueKeysWithValues: availableLists.map { ($0.id, $0) })
         let suggestionsByID = Dictionary(uniqueKeysWithValues: item.actionableSuggestions.map { ($0.id, $0) })
@@ -420,9 +416,175 @@ private struct GitHubStarListAIGroupingResultRow: View {
         .sorted { $0.list.name < $1.list.name }
     }
 
+    private func confidenceColor(_ confidence: Double) -> Color {
+        if confidence >= 0.9 { .green }
+        else if confidence >= 0.7 { .accentColor }
+        else { .orange }
+    }
+
     private struct SelectedGroupDisplay: Identifiable {
         var id: String { list.id }
         let list: GitHubStarListAIListDisplay
         let confidence: Double?
+    }
+}
+
+/// 审核展开区的分组芯片墙：默认只露出一行，溢出才出现「显示更多」。
+private struct GitHubStarListAIGroupingChipBar: View {
+    let lists: [GitHubStarListAIListDisplay]
+    let item: GitHubStarListAIReviewItem
+    let onToggleList: (String) -> Void
+
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.locale) private var locale
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var showsAllRows = false
+    @State private var fullHeight: CGFloat = 0
+
+    private let rowHeight: CGFloat = 32
+    private var hasOverflow: Bool { fullHeight > rowHeight + 2 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ZStack(alignment: .topLeading) {
+                chipFlow
+                    .fixedSize(horizontal: false, vertical: true)
+                    .hidden()
+                    .accessibilityHidden(true)
+                chipFlow
+                    .frame(
+                        maxHeight: showsAllRows || !hasOverflow ? nil : rowHeight,
+                        alignment: .top
+                    )
+                    .clipped()
+            }
+            .onPreferenceChange(GitHubStarListAIGroupingChipHeightKey.self) { fullHeight = $0 }
+
+            if hasOverflow {
+                Button {
+                    showsAllRows.toggle()
+                } label: {
+                    Text(showsAllRows
+                         ? "githubStarLists.aiGrouping.showLess"
+                         : "githubStarLists.aiGrouping.showMore")
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .font(interfaceScale.font(.captionStrong))
+                .foregroundStyle(.tint)
+            }
+        }
+    }
+
+    private var chipFlow: some View {
+        GitHubStarListAIGroupingFlowLayout(spacing: 8) {
+            ForEach(lists) { list in
+                chip(list)
+            }
+        }
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: GitHubStarListAIGroupingChipHeightKey.self,
+                    value: proxy.size.height
+                )
+            }
+        )
+    }
+
+    private func chip(_ list: GitHubStarListAIListDisplay) -> some View {
+        let groupColor = Color(hex: list.colorHex) ?? .accentColor
+        let isLocked = item.currentLists.contains { $0.id == list.id }
+        let isSelected = isLocked || item.selectedListIDs.contains(list.id)
+        let suggestion = item.actionableSuggestions.first { $0.id == list.id }
+        // 选中靠勾 + 分组淡底 + 主色文字；未选靠灰底 + 次要文字。不用铺满高饱和色。
+        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        let fill: Color = isSelected
+            ? groupColor.opacity(colorScheme == .dark ? 0.34 : 0.18)
+            : Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05)
+        let stroke: Color = isSelected
+            ? groupColor.opacity(colorScheme == .dark ? 0.70 : 0.45)
+            : Color.primary.opacity(colorScheme == .dark ? 0.16 : 0.12)
+
+        return Button {
+            guard !isLocked else { return }
+            onToggleList(list.id)
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(groupColor)
+                    .accessibilityHidden(true)
+                Text(verbatim: list.name)
+                    .lineLimit(1)
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+                if let suggestion {
+                    Text(suggestion.confidence, format: .percent.precision(.fractionLength(0)).locale(locale))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            }
+            .font(interfaceScale.font(.captionStrong))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(fill, in: shape)
+            .overlay(shape.stroke(stroke, lineWidth: isSelected ? 1.5 : 1))
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .disabled(isLocked)
+        .help(list.name)
+        .accessibilityLabel(isSelected
+            ? "githubStarLists.aiGrouping.selection.remove"
+            : "githubStarLists.aiGrouping.selection.add")
+    }
+}
+
+private struct GitHubStarListAIGroupingChipHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+/// 横向自动换行。只给分组芯片墙用，避免把设置页 FlowLayout 抽成共享依赖。
+private struct GitHubStarListAIGroupingFlowLayout: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        layout(in: proposal.replacingUnspecifiedDimensions().width, subviews: subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = layout(in: bounds.width, subviews: subviews)
+        for (index, origin) in result.origins.enumerated() {
+            subviews[index].place(
+                at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y),
+                proposal: .unspecified
+            )
+        }
+    }
+
+    private func layout(in width: CGFloat, subviews: Subviews) -> (origins: [CGPoint], size: CGSize) {
+        var origins: [CGPoint] = []
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        let maxWidth = max(width, 1)
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > maxWidth {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            origins.append(CGPoint(x: x, y: y))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+
+        return (origins, CGSize(width: maxWidth, height: y + rowHeight))
     }
 }
