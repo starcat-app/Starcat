@@ -41,7 +41,10 @@ struct AwesomeView: View {
             sort = .original
             reportCount()
         }
-        .onChange(of: filteredRepositories.count) { _, _ in reportCount() }
+        .onChange(of: filteredRepositoryIDs) { _, visibleIDs in
+            reportCount()
+            retainVisibleMultiSelection(visibleIDs)
+        }
     }
 
     private var filterBar: some View {
@@ -132,7 +135,8 @@ struct AwesomeView: View {
     }
 
     private var repositoryList: some View {
-        List {
+        let multiStore = dependencies.exploreMultiSelectionStore
+        return List {
             ForEach(sectionGroups) { group in
                 Section(group.title) {
                     ForEach(group.repositories) { repo in
@@ -145,11 +149,27 @@ struct AwesomeView: View {
         .alternatingRowBackgrounds()
         .scrollContentBackground(.hidden)
         .refreshable { await store.refresh() }
+        .background {
+            // Cmd+A 的语义与其它列表一致：只选择当前搜索、章节与全局筛选后的可见仓库。
+            Button {
+                multiStore.selectAll(filteredRepositories.map { selectionSnapshot(for: $0) })
+            } label: {
+                EmptyView()
+            }
+            .keyboardShortcut("a", modifiers: .command)
+            .disabled(!multiStore.isActive)
+            .hidden()
+        }
     }
 
     private func repositoryRow(_ repo: AwesomeRepositoryItem) -> some View {
-        Button {
-            store.selectedRepositoryID = repo.id
+        let multiStore = dependencies.exploreMultiSelectionStore
+        return Button {
+            AwesomeListSelectionPolicy.select(
+                repo,
+                awesomeStore: store,
+                multiSelectionStore: multiStore
+            )
         } label: {
             UnifiedRepoRow(
                 card: repo.discoveryDTO.asCardData(
@@ -157,7 +177,9 @@ struct AwesomeView: View {
                     footerMetadata: footerMetadata(for: repo),
                     openSSFScore: dependencies.openSSFScoreStore.badge(for: repo.id)
                 ),
-                isSelected: store.selectedRepositoryID == repo.id,
+                isSelected: multiStore.isActive
+                    ? multiStore.contains(ghRepoId: repo.id)
+                    : (store.selectedRepositoryID == repo.id),
                 showStarredCheckmark: true
             )
         }
@@ -232,8 +254,41 @@ struct AwesomeView: View {
         return order.map { AwesomeSectionGroup(title: $0, repositories: grouped[$0] ?? []) }
     }
 
+    private var filteredRepositoryIDs: [Int64] {
+        filteredRepositories.map(\.id)
+    }
+
+    private func selectionSnapshot(for repo: AwesomeRepositoryItem) -> SelectionSnapshot {
+        SelectionSnapshot(ghRepoId: repo.id, owner: repo.owner, name: repo.name)
+    }
+
+    private func retainVisibleMultiSelection(_ visibleIDs: [Int64]) {
+        let multiStore = dependencies.exploreMultiSelectionStore
+        guard multiStore.isActive else { return }
+        multiStore.retain(visibleIDs: Set(visibleIDs))
+    }
+
     private func reportCount() {
         onRepoCountChange(filteredRepositories.count)
+    }
+}
+
+/// Awesome 行点击必须与顶部全局多选按钮共享同一状态机。
+/// 抽出策略后可直接覆盖“多选只切换集合、单选才打开详情”的关键分支，避免 UI 回归。
+@MainActor
+enum AwesomeListSelectionPolicy {
+    static func select(
+        _ repo: AwesomeRepositoryItem,
+        awesomeStore: AwesomeStore,
+        multiSelectionStore: MultiSelectionStore
+    ) {
+        if multiSelectionStore.isActive {
+            multiSelectionStore.toggle(
+                SelectionSnapshot(ghRepoId: repo.id, owner: repo.owner, name: repo.name)
+            )
+        } else {
+            awesomeStore.selectedRepositoryID = repo.id
+        }
     }
 }
 

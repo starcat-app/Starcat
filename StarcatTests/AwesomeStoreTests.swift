@@ -135,6 +135,29 @@ struct AwesomeStoreTests {
         #expect(store.totalRepositoryCount == 130)
     }
 
+    @Test("Awesome 多选只切换批量集合而单选才打开详情")
+    @MainActor
+    func awesomeSelectionPolicyUsesSharedMultiSelectionStore() {
+        let source = Self.source()
+        let repo = Self.repositoryItem(id: 42, source: source)
+        let repository = AwesomeStoreRepositoryFake(sources: [source])
+        let service = AwesomeCustomSourceService(github: AwesomeStoreGitHubFake(), repository: repository)
+        let store = AwesomeStore(repository: repository, customSourceService: service)
+        let multiStore = MultiSelectionStore()
+
+        multiStore.enter()
+        AwesomeListSelectionPolicy.select(repo, awesomeStore: store, multiSelectionStore: multiStore)
+        #expect(multiStore.contains(ghRepoId: repo.id))
+        #expect(store.selectedRepositoryID == nil)
+
+        AwesomeListSelectionPolicy.select(repo, awesomeStore: store, multiSelectionStore: multiStore)
+        #expect(!multiStore.contains(ghRepoId: repo.id))
+
+        multiStore.exit()
+        AwesomeListSelectionPolicy.select(repo, awesomeStore: store, multiSelectionStore: multiStore)
+        #expect(store.selectedRepositoryID == repo.id)
+    }
+
     @Test("进入页面遵守缓存策略而手动刷新强制绕过 TTL")
     @MainActor
     func manualRefreshForcesRepositoryPolicy() async {
