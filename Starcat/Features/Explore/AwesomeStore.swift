@@ -21,6 +21,7 @@ final class AwesomeStore {
     private(set) var sources: [AwesomeSource] = []
     private(set) var repositories: [AwesomeRepositoryItem] = []
     private(set) var resources: [AwesomeResourceItem] = []
+    private(set) var repositorySections: [String] = []
     private(set) var repositoryTotalCount = 0
     private(set) var hasMoreRepositories = false
     private(set) var isLoadingMoreRepositories = false
@@ -190,6 +191,12 @@ final class AwesomeStore {
     /// 当成全部数据。该入口只在用户真的启用这些能力时补齐剩余本地页，不发远端请求。
     func loadAllRepositoryPages() async {
         while hasMoreRepositories, !Task.isCancelled {
+            // 用户开始搜索时，列表末尾可能恰好正在预取。等待该页回写后再继续，
+            // 否则一次性的搜索 task 会提前返回，并把已加载前缀误当成完整结果。
+            if isLoadingMoreRepositories {
+                try? await Task.sleep(for: .milliseconds(20))
+                continue
+            }
             await loadRepositoryPage(append: true)
         }
     }
@@ -237,6 +244,7 @@ final class AwesomeStore {
         sources = []
         repositories = []
         resources = []
+        repositorySections = []
         repositoryTotalCount = 0
         hasMoreRepositories = false
         isLoadingMoreRepositories = false
@@ -305,6 +313,7 @@ final class AwesomeStore {
     }
 
     private func loadRepositoryPage(append: Bool) async {
+        if append, isLoadingMoreRepositories { return }
         let requestedSourceID = selectedSourceID
         let offset = append ? repositories.count : 0
         if append { isLoadingMoreRepositories = true }
@@ -312,13 +321,27 @@ final class AwesomeStore {
             if append { isLoadingMoreRepositories = false }
         }
 
-        async let visiblePage = repository.repositoryPage(
-            sourceID: requestedSourceID,
-            limit: Self.repositoryPageSize,
-            offset: offset
-        )
-        async let visibleResources = repository.resources(sourceID: requestedSourceID)
-        let (page, resourceItems) = await (visiblePage, visibleResources)
+        let page: AwesomeRepositoryPage
+        let resourceItems: [AwesomeResourceItem]
+        let sections: [String]
+        if append {
+            page = await repository.repositoryPage(
+                sourceID: requestedSourceID,
+                limit: Self.repositoryPageSize,
+                offset: offset
+            )
+            resourceItems = resources
+            sections = repositorySections
+        } else {
+            async let visiblePage = repository.repositoryPage(
+                sourceID: requestedSourceID,
+                limit: Self.repositoryPageSize,
+                offset: offset
+            )
+            async let visibleResources = repository.resources(sourceID: requestedSourceID)
+            async let visibleSections = repository.repositorySections(sourceID: requestedSourceID)
+            (page, resourceItems, sections) = await (visiblePage, visibleResources, visibleSections)
+        }
         // GRDB/测试替身不保证响应取消；旧选择即使晚返回，也不能覆盖当前来源。
         guard !Task.isCancelled, selectedSourceID == requestedSourceID else { return }
         if append {
@@ -327,6 +350,7 @@ final class AwesomeStore {
         } else {
             repositories = page.repositories
             resources = resourceItems
+            repositorySections = sections
         }
         repositoryTotalCount = page.totalCount
         hasMoreRepositories = page.hasMore

@@ -47,9 +47,17 @@ struct AwesomeView: View {
         .task(id: wikiAvailabilityTaskIdentity) {
             await reloadWikiAvailabilityMap()
         }
+        .task(id: completeDataTaskIdentity) {
+            guard requiresCompleteRepositorySet else { return }
+            await store.loadAllRepositoryPages()
+        }
+        .task(id: filteredDisplayItemIDs) {
+            await fillVisiblePageIfNeeded()
+        }
         .onChange(of: store.selectedSourceID) { _, _ in
             selectedSection = nil
             sort = .original
+            dependencies.exploreMultiSelectionStore.clearSelection()
             reportCount()
         }
         .onChange(of: filteredDisplayItemIDs) { _, _ in
@@ -154,6 +162,10 @@ struct AwesomeView: View {
                         switch item {
                         case .repository(let repo):
                             repositoryRow(repo)
+                                .task {
+                                    guard !requiresCompleteRepositorySet else { return }
+                                    await store.loadMoreRepositoriesIfNeeded(currentRepositoryID: repo.id)
+                                }
                         case .resource(let resource):
                             resourceRow(resource)
                         }
@@ -168,7 +180,7 @@ struct AwesomeView: View {
         .background {
             // Cmd+A 的语义与其它列表一致：只选择当前搜索、章节与全局筛选后的可见仓库。
             Button {
-                multiStore.selectAll(filteredRepositories.map { selectionSnapshot(for: $0) })
+                Task { await selectAllVisibleRepositories(in: multiStore) }
             } label: {
                 EmptyView()
             }
@@ -260,13 +272,7 @@ struct AwesomeView: View {
     }
 
     private var availableSections: [String] {
-        var seen: Set<String> = []
-        return (store.repositories.map { AwesomeDisplayItem.repository($0) }
-            + store.resources.map { AwesomeDisplayItem.resource($0) }).compactMap { item in
-            let section = item.sectionPath.joined(separator: " / ")
-            guard !section.isEmpty, seen.insert(section).inserted else { return nil }
-            return section
-        }
+        store.repositorySections
     }
 
     private var filteredRepositories: [AwesomeRepositoryItem] {
@@ -327,16 +333,18 @@ struct AwesomeView: View {
     }
 
     private var sectionGroups: [AwesomeSectionGroup] {
+        let items = filteredDisplayItems
         guard store.selectedSourceID != nil, sort == .original, selectedSection == nil else {
-            return [AwesomeSectionGroup(title: String.l10n("awesome.section.results"), items: filteredDisplayItems)]
+            return [AwesomeSectionGroup(title: String.l10n("awesome.section.results"), items: items)]
         }
         var order: [String] = []
-        let grouped = Dictionary(grouping: filteredDisplayItems) { item in
+        var seen: Set<String> = []
+        let grouped = Dictionary(grouping: items) { item in
             item.sectionPath.joined(separator: " / ").nilIfEmpty ?? String.l10n("awesome.section.other")
         }
-        for item in filteredDisplayItems {
+        for item in items {
             let title = item.sectionPath.joined(separator: " / ").nilIfEmpty ?? String.l10n("awesome.section.other")
-            if !order.contains(title) { order.append(title) }
+            if seen.insert(title).inserted { order.append(title) }
         }
         return order.map { AwesomeSectionGroup(title: $0, items: grouped[$0] ?? []) }
     }
@@ -355,8 +363,27 @@ struct AwesomeView: View {
 
     private func retainVisibleMultiSelection(_ visibleIDs: [Int64]) {
         let multiStore = dependencies.exploreMultiSelectionStore
-        guard multiStore.isActive else { return }
+        // 分页未完成时 visibleIDs 只是已加载前缀，不能拿它删除后续页已有的选中项。
+        guard multiStore.isActive, !store.hasMoreRepositories else { return }
         multiStore.retain(visibleIDs: Set(visibleIDs))
+    }
+
+    private func selectAllVisibleRepositories(in multiStore: MultiSelectionStore) async {
+        await store.loadAllRepositoryPages()
+        guard !Task.isCancelled else { return }
+        multiStore.selectAll(filteredRepositories.map { selectionSnapshot(for: $0) })
+    }
+
+    /// 全局筛选可能让一页 40 条只剩少量结果。继续读取本地页直到凑满一个可滚动首屏，
+    /// 否则空结果页没有行可触发预取，用户会误以为整个来源没有匹配仓库。
+    private func fillVisiblePageIfNeeded() async {
+        guard !requiresCompleteRepositorySet else { return }
+        while filteredRepositories.count < AwesomeStore.repositoryPageSize,
+              store.hasMoreRepositories,
+              let lastRepositoryID = store.repositories.last?.id,
+              !Task.isCancelled {
+            await store.loadMoreRepositoriesIfNeeded(currentRepositoryID: lastRepositoryID)
+        }
     }
 
     private func matchesGlobalFilters(_ repo: AwesomeRepositoryItem) -> Bool {
@@ -417,7 +444,26 @@ struct AwesomeView: View {
     }
 
     private func reportCount() {
-        onRepoCountChange(filteredDisplayItems.count)
+        if store.hasMoreRepositories, !requiresCompleteRepositorySet {
+            // 默认分页浏览时不能把已加载 40 条冒充完整结果数。
+            onRepoCountChange(store.currentRepositoryCount)
+        } else {
+            onRepoCountChange(filteredDisplayItems.count)
+        }
+    }
+
+    private var requiresCompleteRepositorySet: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || selectedSection != nil
+            || sort != .original
+    }
+
+    private var completeDataTaskIdentity: AwesomeCompleteDataTaskIdentity {
+        AwesomeCompleteDataTaskIdentity(
+            searchText: searchText.trimmingCharacters(in: .whitespacesAndNewlines),
+            selectedSection: selectedSection,
+            sort: sort
+        )
     }
 }
 
@@ -506,7 +552,7 @@ enum AwesomeGlobalFilterPolicy {
     }
 }
 
-private enum AwesomeSortOption: String, CaseIterable, Identifiable {
+private enum AwesomeSortOption: String, CaseIterable, Identifiable, Hashable {
     case original
     case stars
     case updated
@@ -605,4 +651,10 @@ private extension String {
 private struct AwesomeWikiAvailabilityTaskIdentity: Hashable {
     let filter: RepoSignalAvailabilityFilter
     let repositoryIDs: [Int64]
+}
+
+private struct AwesomeCompleteDataTaskIdentity: Hashable {
+    let searchText: String
+    let selectedSection: String?
+    let sort: AwesomeSortOption
 }

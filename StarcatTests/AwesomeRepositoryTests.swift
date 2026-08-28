@@ -215,6 +215,24 @@ struct AwesomeRepositoryTests {
         #expect(first.repositories.first?.evidence.map(\.source.id) == ["one", "two"])
     }
 
+    @Test("章节目录使用轻量查询返回完整顺序")
+    func repositorySectionsDoNotDependOnLoadedPage() async throws {
+        let api = FakeAwesomeAPI()
+        await api.setCatalog([Self.source(id: "one", order: 1, githubRepoCount: 2)], etag: "catalog-1")
+        await api.setEntries(sourceID: "one", entries: [
+            Self.entry(repoID: 1, title: "First", order: 1, sectionPath: ["Apps", "Editors"]),
+            Self.entry(repoID: 2, title: "Second", order: 2, sectionPath: ["Tools"])
+        ])
+        let repository = AwesomeRepository(api: api, database: try InMemoryDatabaseManager())
+
+        _ = try await repository.refreshCatalog()
+        try await repository.completeSourceSetup(enabledSourceIDs: ["one"])
+        #expect(await repository.refreshEnabledEntries().isEmpty)
+
+        #expect(await repository.repositorySections(sourceID: "one") == ["Apps / Editors", "Tools"])
+        #expect(await repository.repositorySections(sourceID: nil).isEmpty)
+    }
+
     @Test("远端资源条目不会进入只接纳 GitHub 仓库的本地缓存")
     func remoteResourcesAreDroppedAtPersistenceBoundary() async throws {
         let api = FakeAwesomeAPI()
@@ -505,7 +523,12 @@ struct AwesomeRepositoryTests {
         )
     }
 
-    private static func entry(repoID: Int64, title: String, order: Int = 1) -> AwesomeEntryDTO {
+    private static func entry(
+        repoID: Int64,
+        title: String,
+        order: Int = 1,
+        sectionPath: [String] = ["Tools"]
+    ) -> AwesomeEntryDTO {
         AwesomeEntryDTO(
             ghRepoID: repoID,
             owner: "owner",
@@ -530,7 +553,7 @@ struct AwesomeRepositoryTests {
             createdAt: "2020-01-02T03:04:05Z",
             entryTitle: title,
             entryDescription: "Source description",
-            sectionPath: ["Tools"],
+            sectionPath: sectionPath,
             entryOrder: order,
             sourceAnchorURL: "https://github.com/example/list#tools"
         )

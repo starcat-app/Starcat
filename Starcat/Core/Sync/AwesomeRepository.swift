@@ -24,6 +24,7 @@ protocol AwesomeRepositoryProtocol: Sendable {
     func enabledSources() async -> [AwesomeSource]
     func repositories(sourceID: String?) async -> [AwesomeRepositoryItem]
     func repositoryPage(sourceID: String?, limit: Int, offset: Int) async -> AwesomeRepositoryPage
+    func repositorySections(sourceID: String?) async -> [String]
     func resources(sourceID: String?) async -> [AwesomeResourceItem]
     func hasCompletedSourceSetup() async -> Bool
     func refreshCatalog(policy: AwesomeRefreshPolicy) async throws -> [AwesomeSource]
@@ -71,6 +72,16 @@ extension AwesomeRepositoryProtocol {
             totalCount: all.count,
             hasMore: safeOffset + page.count < all.count
         )
+    }
+
+    func repositorySections(sourceID: String?) async -> [String] {
+        guard sourceID != nil else { return [] }
+        var seen: Set<String> = []
+        return await repositories(sourceID: sourceID).compactMap { repository in
+            let section = repository.evidence.first?.sectionPath.joined(separator: " / ") ?? ""
+            guard !section.isEmpty, seen.insert(section).inserted else { return nil }
+            return section
+        }
     }
 
     func resources(sourceID _: String? = nil) async -> [AwesomeResourceItem] { [] }
@@ -253,6 +264,39 @@ actor AwesomeRepository: AwesomeRepositoryProtocol {
             }
             AppLog.database.warning("Awesome repository page read failed: \(error.localizedDescription, privacy: .public)")
             return AwesomeRepositoryPage(repositories: [], totalCount: 0, hasMore: false)
+        }
+    }
+
+    func repositorySections(sourceID: String?) async -> [String] {
+        guard let sourceID else { return [] }
+        do {
+            return try await database.writer.read { db in
+                let enabledSourceIDs = try Self.readSources(db: db, enabledOnly: true).map(\.id)
+                guard enabledSourceIDs.contains(sourceID) else { return [] }
+                let encodedPaths = try String.fetchAll(
+                    db,
+                    sql: """
+                        SELECT section_path_json
+                        FROM awesome_entries
+                        WHERE source_id = ?
+                        GROUP BY section_path_json
+                        ORDER BY MIN(entry_order), section_path_json
+                        """,
+                    arguments: [sourceID]
+                )
+                var seen: Set<String> = []
+                return encodedPaths.compactMap { encodedPath in
+                    let path = encodedPath.data(using: .utf8)
+                        .flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
+                    let title = path.joined(separator: " / ")
+                    guard !title.isEmpty, seen.insert(title).inserted else { return nil }
+                    return title
+                }
+            }
+        } catch {
+            if error is CancellationError || Task.isCancelled { return [] }
+            AppLog.database.warning("Awesome repository sections read failed: \(error.localizedDescription, privacy: .public)")
+            return []
         }
     }
 
