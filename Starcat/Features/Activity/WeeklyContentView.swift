@@ -545,12 +545,15 @@ struct WeeklyContentView: View {
                 )
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
-                .onAppear {
-                    // 到达接近底部时触发下一页：用倒数第 3 行作触发点，给网络一点提前量，
-                    // 避免用户滚到最后一行才看到 ProgressView。
-                    if viewModel.shouldTriggerLoadMore(at: index) {
-                        Task { await viewModel.loadMoreIfNeeded() }
-                    }
+                .automaticListPagination(
+                    appearingIndex: index,
+                    visibleItemCount: visibleItems.count,
+                    loadedItemCount: viewModel.items.count,
+                    hasMore: viewModel.hasMore,
+                    isLoading: viewModel.isLoading || viewModel.isLoadingMore,
+                    identity: "weekly-\(viewModel.itemsRevision)"
+                ) {
+                    await viewModel.loadMoreIfNeeded()
                 }
             }
 
@@ -568,6 +571,15 @@ struct WeeklyContentView: View {
         }
         .listStyle(.inset)
         .alternatingRowBackgrounds()
+        .automaticListPaginationFill(
+            visibleItemCount: visibleItems.count,
+            loadedItemCount: viewModel.items.count,
+            hasMore: viewModel.hasMore,
+            isLoading: viewModel.isLoading || viewModel.isLoadingMore,
+            identity: "weekly-\(viewModel.itemsRevision)"
+        ) {
+            await viewModel.loadMoreIfNeeded()
+        }
         // W12 PR-5：Cmd+A 全选当前可见 weekly project（仅 multi-select active 时生效）。
         // 4 场景同款机制：隐藏按钮 + keyboardShortcut。
         .background {
@@ -1245,12 +1257,13 @@ final class WeeklyContentViewModel {
         }
     }
 
-    /// 给 List `.onAppear` 判断是否该触发下一页。
-    /// 倒数第 3 行（或最后一行不足 3 时直接最后一行）触发，留一点网络余量。
+    /// 给非 SwiftUI 调用方保留的统一预取判断；列表本身使用 `automaticListPagination`。
     func shouldTriggerLoadMore(at index: Int) -> Bool {
-        guard hasMore, !isLoading, !isLoadingMore else { return false }
-        let threshold = max(items.count - 3, 0)
-        return index >= threshold
+        !isLoading && !isLoadingMore && ListPaginationPolicy.shouldPrefetch(
+            appearingIndex: index,
+            itemCount: items.count,
+            hasMore: hasMore
+        )
     }
 
     // MARK: - Private: SWR

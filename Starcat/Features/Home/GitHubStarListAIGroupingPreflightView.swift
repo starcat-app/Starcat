@@ -118,6 +118,7 @@ struct GitHubStarListAIGroupingPreflightView: View {
                     .font(interfaceScale.font(.panelTitle))
                 Spacer(minLength: 0)
                 Button {
+                    PerformanceTracer.shared.mark(.gitHubStarListCreateRequested)
                     showCreateGroupSheet = true
                 } label: {
                     Image(systemName: "plus.circle.fill")
@@ -145,6 +146,7 @@ struct GitHubStarListAIGroupingPreflightView: View {
                         Text("githubStarLists.aiGrouping.results.empty.help")
                     } actions: {
                         Button("sidebar.githubStarLists.add") {
+                            PerformanceTracer.shared.mark(.gitHubStarListCreateRequested)
                             showCreateGroupSheet = true
                         }
                     }

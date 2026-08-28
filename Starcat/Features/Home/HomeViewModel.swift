@@ -233,6 +233,12 @@ final class HomeViewModel {
     /// `RepoListView` 根据这个值决定是否 attach `.onAppear` 触发 `loadMoreIfNeeded()`。
     private(set) var hasMore: Bool = false
 
+    /// 自动分页统一观察的 busy 状态；数据库 append 也必须暴露，否则尾部 row 在该阶段出现后
+    /// 看不到 loading 的 false 边沿，SwiftUI 就没有机会重新评估被 guard 掉的分页需求。
+    var isAutomaticPaginationLoading: Bool {
+        isLoading || isRefreshing || isDatabasePageAppendInFlight
+    }
+
     /// 同步刷新扩张了一个用户已经滚到底的列表时，视图需要主动补一页。
     ///
     /// 这里必须区分“真实的深滚动恢复”和“首次首页从无数据变成有下一页”：后者如果也自动

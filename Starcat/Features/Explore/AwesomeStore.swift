@@ -16,7 +16,6 @@ import Observation
 final class AwesomeStore {
     /// 与主 Repo List 保持一致，首屏只读取 40 条；距离页尾 10 行时预取下一页。
     static let repositoryPageSize = 40
-    private static let repositoryPrefetchLead = 10
 
     private(set) var sources: [AwesomeSource] = []
     private(set) var repositories: [AwesomeRepositoryItem] = []
@@ -182,7 +181,11 @@ final class AwesomeStore {
         guard hasMoreRepositories,
               !isLoadingMoreRepositories,
               let index = repositories.firstIndex(where: { $0.id == currentRepositoryID }),
-              index >= max(0, repositories.count - Self.repositoryPrefetchLead)
+              ListPaginationPolicy.shouldPrefetch(
+                  appearingIndex: index,
+                  itemCount: repositories.count,
+                  hasMore: hasMoreRepositories
+              )
         else { return }
         await loadRepositoryPage(append: true)
     }

@@ -43,7 +43,8 @@
 //  关键约束：
 //  - `Canvas` 在 List/ScrollView 中要给定 `frame(height:)` 否则尺寸坍缩。
 //  - 不要加 `drawingGroup()`：Canvas 本身是 immediate 模式，再叠 MTL renderer 反而拖慢。
-//  - `TimelineView(.animation)` 在 window 不在前台时自动暂停，不耗电。
+//  - `TimelineView(.animation)` 在 window 不在前台时自动暂停，但 macOS Sheet 不会让
+//    宿主窗口退出前台；Sheet 展示期间必须由宿主注入暂停状态，避免后台 Canvas 抢占转场预算。
 //
 
 import SwiftUI
@@ -76,6 +77,9 @@ struct ContributionGraphView: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    /// Sheet 不会让宿主窗口失去前台状态，不能依赖 TimelineView 自动停表。
+    /// 宿主明确暂停时改画静态草坪，彻底卸掉 display-link 更新。
+    @Environment(\.starcatContinuousAnimationsPaused) private var continuousAnimationsPaused
     /// 相对时间 helper 需要显式 `\.locale`，否则 formatter 会回到系统语言。
     @Environment(\.locale) private var locale
     /// HOM-SNAKE-MODES：读取用户选的玩法。
@@ -206,7 +210,7 @@ struct ContributionGraphView: View {
 
     /// 草坪 + 蛇身合成视图。
     ///
-    /// reduceMotion 开启或 animator nil（off 玩法 / 数据未到）→ 仅画静态草坪；
+    /// reduceMotion / 宿主暂停开启，或 animator nil（off 玩法 / 数据未到）→ 仅画静态草坪；
     /// 否则 `TimelineView(.animation)` 驱动每帧重绘，由 elapsed time 算 step。
     ///
     /// **scale 由 Canvas 内部算**：Canvas closure 的 `size` 参数就是实际渲染尺寸；
@@ -214,7 +218,7 @@ struct ContributionGraphView: View {
     /// 即可（scaleX == scaleY，取 width 即可）。
     @ViewBuilder
     private var gridContent: some View {
-        if reduceMotion || animator == nil {
+        if reduceMotion || continuousAnimationsPaused || animator == nil {
             Canvas { ctx, size in
                 let scale = size.width / intrinsicSize.width
                 drawGrid(ctx: ctx, scale: scale, frame: .empty)

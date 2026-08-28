@@ -23,6 +23,8 @@ struct GitHubStarListAIGroupingSheet: View {
     @State private var showDiscardConfirmation = false
     /// 新建分组挂在本窗口根上，避免 Preflight 再 nested 一层；macOS nested sheet 会误触发父视图 onDisappear。
     @State private var showCreateGroupSheet = false
+    /// nested Sheet 可能让父内容重复触发 onAppear；首帧事件每次窗口生命周期只记一次。
+    @State private var hasMarkedFirstFrame = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -36,6 +38,11 @@ struct GitHubStarListAIGroupingSheet: View {
         // 固定窗口：min/max 同值，避免 macOS sheet 按内容把窗口撑出屏幕。
         .frame(minWidth: 960, maxWidth: 960, minHeight: 640, maxHeight: 640)
         .clipped()
+        .onAppear {
+            guard !hasMarkedFirstFrame else { return }
+            hasMarkedFirstFrame = true
+            PerformanceTracer.shared.mark(.gitHubStarListAIGroupingFirstFrame)
+        }
         .task {
             session.onMembershipsChanged = {
                 Task { await onApplied() }
@@ -55,6 +62,9 @@ struct GitHubStarListAIGroupingSheet: View {
                     session.onMembershipsChanged?()
                 }
             )
+            .onAppear {
+                PerformanceTracer.shared.mark(.gitHubStarListCreateFirstFrame)
+            }
             // 与侧栏新建分组同一口径。不要套 appSheetRootEnvironment：嵌套 sheet 再注入整棵
             // AppDependencies 会让首帧变慢，而且编辑器并不读取那些环境对象。
             .appLocaleEnvironment()
@@ -163,6 +173,7 @@ struct GitHubStarListAIGroupingSheet: View {
                 searchText: presentation.searchText,
                 filter: presentation.filter,
                 availableLists: presentation.snapshot.availableLists,
+                hasMore: presentation.canLoadMore,
                 onToggleList: session.toggleSelection,
                 onSelectAllSuggestions: session.selectAllSuggestions,
                 onClearSelection: session.clearSelection,

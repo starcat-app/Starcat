@@ -162,8 +162,14 @@ struct AwesomeView: View {
                         switch item {
                         case .repository(let repo):
                             repositoryRow(repo)
-                                .task {
-                                    guard !requiresCompleteRepositorySet else { return }
+                                .automaticListPagination(
+                                    appearingIndex: store.repositories.firstIndex(where: { $0.id == repo.id }) ?? 0,
+                                    visibleItemCount: store.repositories.count,
+                                    loadedItemCount: store.repositories.count,
+                                    hasMore: store.hasMoreRepositories && !requiresCompleteRepositorySet,
+                                    isLoading: store.isLoading || store.isRefreshing || store.isLoadingMoreRepositories,
+                                    identity: "awesome-\(store.selectedSourceID ?? "__all__")"
+                                ) {
                                     await store.loadMoreRepositoriesIfNeeded(currentRepositoryID: repo.id)
                                 }
                         case .resource(let resource):

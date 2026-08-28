@@ -2094,14 +2094,17 @@ struct RepoListView: View {
                     .contextMenu {
                         repoContextMenu(for: repo)
                     }
-                    // R-07：滚到倒数第 3 行 → 追加下一页（Weekly 同款范式）。
-                    // 用 `viewModel.items.count` 实时读，配合 hasMore 守卫天然幂等：
-                    // loadMoreIfNeeded 内部 guard hasMore 防止已加载完后继续追加。
-                    // 用 item.index 比 indexOf(repo) 快（O(1)）。
-                    .onAppear {
-                        if viewModel.hasMore && item.index >= viewModel.items.count - 3 {
-                            viewModel.loadMoreIfNeeded()
-                        }
+                    // 快速滚动时，尾部 row 可能在刷新或上一页 append 期间一次性出现。
+                    // 统一触发器会在 busy 结束后按最新 items.count 重新评估，不丢掉这次需求。
+                    .automaticListPagination(
+                        appearingIndex: item.index,
+                        visibleItemCount: viewModel.items.count,
+                        loadedItemCount: viewModel.items.count,
+                        hasMore: viewModel.hasMore,
+                        isLoading: viewModel.isAutomaticPaginationLoading,
+                        identity: "manage-\(viewModel.itemsRevision)"
+                    ) {
+                        viewModel.loadMoreIfNeeded()
                     }
                 }
             }

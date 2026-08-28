@@ -172,7 +172,7 @@ struct ReleaseTimelineView: View {
                 // 用户只能看到「资产 N 个」标题，看不到文件名与下载按钮（dong4j 2026-06-17 反馈）。
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(vm.entries) { entry in
+                        ForEach(Array(vm.entries.enumerated()), id: \.element.id) { index, entry in
                             ReleaseTimelineRow(
                                 entry: entry,
                                 assetFilter: assetFilter,
@@ -185,8 +185,15 @@ struct ReleaseTimelineView: View {
                                 }
                             )
                             .id(entry.id)
-                            .onAppear {
-                                Task { await vm.loadMoreIfNeeded(currentEntry: entry) }
+                            .automaticListPagination(
+                                appearingIndex: index,
+                                visibleItemCount: vm.entries.count,
+                                loadedItemCount: vm.entries.count,
+                                hasMore: vm.hasMore,
+                                isLoading: vm.isLoading || vm.isLoadingMore,
+                                identity: "release-timeline"
+                            ) {
+                                await vm.loadMoreIfNeeded(currentEntry: entry)
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
@@ -297,7 +304,12 @@ final class ReleaseTimelineViewModel {
 
     func loadMoreIfNeeded(currentEntry entry: ReleaseTimelineEntry) async {
         guard hasMore, !isLoading, !isLoadingMore else { return }
-        guard entries.suffix(5).contains(where: { $0.id == entry.id }) else { return }
+        guard let index = entries.firstIndex(where: { $0.id == entry.id }),
+              ListPaginationPolicy.shouldPrefetch(
+                  appearingIndex: index,
+                  itemCount: entries.count,
+                  hasMore: hasMore
+              ) else { return }
 
         isLoadingMore = true
         defer { isLoadingMore = false }

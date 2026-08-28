@@ -303,11 +303,13 @@ final class ActivityViewModel {
         hasMoreItems = filteredItems.count > items.count
     }
 
-    /// 倒数第 3 行触发加载更多（对齐 Weekly）。
+    /// 使用全局统一的 10 行预取窗口判断是否加载更多。
     func shouldTriggerLoadMore(at index: Int) -> Bool {
-        guard hasMoreItems, !isLoading else { return false }
-        let threshold = max(items.count - 3, 0)
-        return index >= threshold
+        !isLoading && !isApplyingCategoryFilter && ListPaginationPolicy.shouldPrefetch(
+            appearingIndex: index,
+            itemCount: items.count,
+            hasMore: hasMoreItems
+        )
     }
 
     /// `ForEach(items)` 路径下的 loadMore 触发（按 item 查下标）。

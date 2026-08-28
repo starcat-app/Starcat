@@ -784,7 +784,7 @@ struct GitHubNotificationTimelinePagingTests {
         let window = GitHubNotificationTimelinePaging.prefetchRowCount
         #expect(
             GitHubNotificationTimelinePaging.shouldPrefetchNextPage(
-                rowIndex: count - window - 1,
+                rowIndex: count - window - 2,
                 rowCount: count,
                 hasMore: true,
                 isLoading: false
@@ -792,7 +792,7 @@ struct GitHubNotificationTimelinePagingTests {
         )
         #expect(
             GitHubNotificationTimelinePaging.shouldPrefetchNextPage(
-                rowIndex: count - window,
+                rowIndex: count - window - 1,
                 rowCount: count,
                 hasMore: true,
                 isLoading: false

@@ -269,15 +269,29 @@ struct ActivityView: View {
                 )
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
-                .onAppear {
-                    if viewModel.shouldTriggerLoadMore(for: item) {
-                        viewModel.loadMoreIfNeeded()
-                    }
+                .automaticListPagination(
+                    appearingIndex: index,
+                    visibleItemCount: visibleItems.count,
+                    loadedItemCount: viewModel.items.count,
+                    hasMore: viewModel.hasMoreItems,
+                    isLoading: viewModel.isLoading || viewModel.isApplyingCategoryFilter,
+                    identity: "activity-\(viewModel.rowRevealRevision)"
+                ) {
+                    viewModel.loadMoreIfNeeded()
                 }
             }
         }
         .listStyle(.inset)
         .alternatingRowBackgrounds()
+        .automaticListPaginationFill(
+            visibleItemCount: visibleItems.count,
+            loadedItemCount: viewModel.items.count,
+            hasMore: viewModel.hasMoreItems,
+            isLoading: viewModel.isLoading || viewModel.isApplyingCategoryFilter,
+            identity: "activity-\(viewModel.rowRevealRevision)"
+        ) {
+            viewModel.loadMoreIfNeeded()
+        }
         .task(id: viewModel.itemsRevision) {
             let repos = viewModel.items.compactMap(\.repo)
             let repoIds = repos.map(\.id)

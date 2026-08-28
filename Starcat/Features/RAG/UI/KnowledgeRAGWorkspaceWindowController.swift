@@ -835,7 +835,11 @@ private final class KnowledgeRAGBrowserViewModel {
     func loadMoreRepositoriesIfNeeded(rowIndex: Int) async {
         guard hasMoreRepositories,
               !isLoadingMoreRepositories,
-              rowIndex >= max(candidates.count - Self.repositoryPrefetchLeadCount, 0) else { return }
+              ListPaginationPolicy.shouldPrefetch(
+                  appearingIndex: rowIndex,
+                  itemCount: candidates.count,
+                  hasMore: hasMoreRepositories
+              ) else { return }
         isLoadingMoreRepositories = true
         defer { isLoadingMoreRepositories = false }
         await loadRepositories(limit: Self.repositoryPageSize, append: true)
@@ -1099,8 +1103,6 @@ private final class KnowledgeRAGBrowserViewModel {
     }
 
     private static let repositoryPageSize = 20
-    /// 距列表尾部还有这么多行时开始续页，保证滚到底前数据已接上。
-    private static let repositoryPrefetchLeadCount = 8
     private static let initialChunkPageSize = 10
     private static let additionalChunkPageSize = 10
 
@@ -1520,9 +1522,15 @@ private struct KnowledgeRAGBrowserView: View {
                         ForEach(Array(viewModel.candidates.enumerated()), id: \.element.repo.id) { rowIndex, candidate in
                             repositoryRow(candidate)
                                 .id(candidate.repo.id)
-                                .onAppear {
-                                    // 距尾部 8 行即续载，避免贴底才请求造成停顿。
-                                    Task { await viewModel.loadMoreRepositoriesIfNeeded(rowIndex: rowIndex) }
+                                .automaticListPagination(
+                                    appearingIndex: rowIndex,
+                                    visibleItemCount: viewModel.candidates.count,
+                                    loadedItemCount: viewModel.candidates.count,
+                                    hasMore: viewModel.hasMoreRepositories,
+                                    isLoading: viewModel.isLoading || viewModel.isLoadingMoreRepositories,
+                                    identity: "knowledge-repositories"
+                                ) {
+                                    await viewModel.loadMoreRepositoriesIfNeeded(rowIndex: rowIndex)
                                 }
                         }
                         if viewModel.isLoadingMoreRepositories {

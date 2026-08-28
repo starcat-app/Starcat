@@ -432,23 +432,49 @@ private struct ExploreDiscoveryListView: View {
                 )
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
-                .onAppear {
-                    Task {
-                        await viewModel.loadMoreIfNeeded(
-                            repository: dependencies.discoveryRepository,
-                            currentRepo: repo,
-                            mode: mode,
-                            language: mode == .discover ? nil : selectedLanguage,
-                            topic: mode == .discover ? selectedTopic : nil,
-                            platform: mode == .discover ? selectedPlatform : nil,
-                            sort: currentSort
-                        )
-                    }
+                .automaticListPagination(
+                    appearingIndex: item.index,
+                    visibleItemCount: indexedRepos.count,
+                    loadedItemCount: viewModel.repos.count,
+                    hasMore: viewModel.nextPage != nil,
+                    isLoading: viewModel.isLoading || viewModel.isRefreshing,
+                    identity: queryIdentity
+                ) {
+                    await viewModel.loadMoreIfNeeded(
+                        repository: dependencies.discoveryRepository,
+                        currentRepo: repo,
+                        appearingIndex: item.index,
+                        visibleItemCount: indexedRepos.count,
+                        mode: mode,
+                        language: mode == .discover ? nil : selectedLanguage,
+                        topic: mode == .discover ? selectedTopic : nil,
+                        platform: mode == .discover ? selectedPlatform : nil,
+                        sort: currentSort
+                    )
                 }
             }
         }
         .listStyle(.inset)
         .alternatingRowBackgrounds()
+        .automaticListPaginationFill(
+            visibleItemCount: indexedRepos.count,
+            loadedItemCount: viewModel.repos.count,
+            hasMore: viewModel.nextPage != nil,
+            isLoading: viewModel.isLoading || viewModel.isRefreshing,
+            identity: queryIdentity
+        ) {
+            await viewModel.loadMoreIfNeeded(
+                repository: dependencies.discoveryRepository,
+                currentRepo: viewModel.repos.last,
+                appearingIndex: nil,
+                visibleItemCount: indexedRepos.count,
+                mode: mode,
+                language: mode == .discover ? nil : selectedLanguage,
+                topic: mode == .discover ? selectedTopic : nil,
+                platform: mode == .discover ? selectedPlatform : nil,
+                sort: currentSort
+            )
+        }
         .scrollContentBackground(.hidden)
         .refreshable {
             let requestedIdentity = queryIdentity

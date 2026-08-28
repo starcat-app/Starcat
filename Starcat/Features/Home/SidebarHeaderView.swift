@@ -29,6 +29,8 @@ struct SidebarHeaderView: View {
     @Environment(\.openSettings) private var openSettings
     /// 系统级"减少动效"开关，开启时把"渐变流动"退化为静态版（仍保留四周淡出 + 颜色切换补间）。
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    /// Sheet 转场期间让装饰性渐变切到静态帧，避免宿主窗口仍在前台时继续跑 TimelineView。
+    @Environment(\.starcatContinuousAnimationsPaused) private var continuousAnimationsPaused
     /// HOM-173：分享卡需要消费贡献草坪 payload；ContributionService 已在 AppDependencies 注入。
     @Environment(ContributionService.self) private var contributionService
     /// HOM-174：Pro 用户标识需要从 AppSettings 获取。
@@ -187,7 +189,7 @@ struct SidebarHeaderView: View {
     /// 中心区需要提一档保证视觉存在感。`.allowsHitTesting(false)` 不挡上层按钮点击。
     private var sidebarTintBackground: some View {
         Group {
-            if reduceMotion {
+            if reduceMotion || continuousAnimationsPaused {
                 sidebarTintFrame(time: 0)
             } else {
                 // 横纵两层 mask 共用同一个时钟。旧实现建了两个 30 FPS

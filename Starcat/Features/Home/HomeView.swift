@@ -2183,6 +2183,7 @@ struct HomeView: View {
     private func startGitHubStarListAIGrouping() {
         do {
             try dependencies.entitlementGate.requirePro(.batchAI)
+            PerformanceTracer.shared.mark(.gitHubStarListAIGroupingRequested)
             showGitHubStarListAIGroupingSheet = true
         } catch {
             paywallContext = ProPaywallContext(feature: .batchAI, message: error.localizedDescription)

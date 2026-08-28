@@ -239,7 +239,9 @@ final class ExploreDiscoveryViewModel {
 
     func loadMoreIfNeeded(
         repository: any DiscoveryRepositoryProtocol,
-        currentRepo: DiscoveryRepoDTO,
+        currentRepo: DiscoveryRepoDTO?,
+        appearingIndex: Int? = nil,
+        visibleItemCount: Int? = nil,
         mode: ExploreMode,
         language: String?,
         topic: String?,
@@ -256,7 +258,20 @@ final class ExploreDiscoveryViewModel {
         guard publishedQueryIdentity == queryIdentity else { return }
         guard let nextPage else { return }
         guard !isLoading, !isRefreshing else { return }
-        guard repos.suffix(4).contains(currentRepo) else { return }
+        if let appearingIndex, let visibleItemCount {
+            guard ListPaginationPolicy.shouldPrefetch(
+                appearingIndex: appearingIndex,
+                itemCount: visibleItemCount,
+                hasMore: true
+            ) else { return }
+        } else if let currentRepo {
+            guard let sourceIndex = repos.firstIndex(of: currentRepo),
+                  ListPaginationPolicy.shouldPrefetch(
+                      appearingIndex: sourceIndex,
+                      itemCount: repos.count,
+                      hasMore: true
+                  ) else { return }
+        }
 
         page = nextPage
         let upperBound = min(page * Self.pageSize, filteredLocalRepos.count)

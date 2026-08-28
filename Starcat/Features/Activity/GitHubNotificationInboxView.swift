@@ -234,17 +234,15 @@ struct GitHubNotificationInboxView: View {
                                 Task { await select(row) }
                             }
                         )
-                        .onAppear {
-                            // LazyVStack 只在行进入可视区附近才 onAppear。
-                            // 索引在时间线构建时一次生成，避免每行出现都线性扫描 rows。
-                            if GitHubNotificationTimelinePaging.shouldPrefetchNextPage(
-                                rowIndex: rowIndex,
-                                rowCount: rows.count,
-                                hasMore: hasMore,
-                                isLoading: isLoadingPage
-                            ) {
-                                Task { await loadNextPageIfNeeded() }
-                            }
+                        .automaticListPagination(
+                            appearingIndex: rowIndex,
+                            visibleItemCount: rows.count,
+                            loadedItemCount: rows.count,
+                            hasMore: hasMore,
+                            isLoading: isLoadingPage,
+                            identity: "notification-\(String(describing: segment))-\(pagingGeneration)"
+                        ) {
+                            await loadNextPageIfNeeded()
                         }
                     }
                 }
@@ -593,8 +591,8 @@ private struct GitHubNotificationTimelineDisplay: Equatable {
 
 /// 时间线翻页触发点。抽出谓词是为了单测「快到底部」而不是「碰到最后一行」。
 enum GitHubNotificationTimelinePaging {
-    /// 行高约 56pt，8 行大约一屏。本地 SQLite 分页便宜，提前量可以比 Weekly 网络分页的 3 行更大。
-    static let prefetchRowCount = 8
+    /// 与其它自动分页列表共享 10 行提前量；本地 SQLite keyset 分页足够轻量。
+    static let prefetchRowCount = ListPaginationPolicy.prefetchDistance
 
     static func shouldPrefetchNextPage(
         rowIndex: Int,
@@ -602,14 +600,11 @@ enum GitHubNotificationTimelinePaging {
         hasMore: Bool,
         isLoading: Bool
     ) -> Bool {
-        guard hasMore,
-              !isLoading,
-              rowCount > 0,
-              rowIndex >= 0,
-              rowIndex < rowCount else {
-            return false
-        }
-        return rowIndex >= max(rowCount - prefetchRowCount, 0)
+        !isLoading && ListPaginationPolicy.shouldPrefetch(
+            appearingIndex: rowIndex,
+            itemCount: rowCount,
+            hasMore: hasMore
+        )
     }
 
     /// `await` 返回时再次核对请求上下文。只靠 `isLoading` 不能阻止筛选切换或首页重载期间

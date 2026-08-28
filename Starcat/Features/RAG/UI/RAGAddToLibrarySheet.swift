@@ -18,7 +18,7 @@ enum RAGAddToLibraryLogic {
     /// 列表首屏条数；之后按页追加。
     static let pageSize = 30
     /// 距当前已加载列表底部还剩这么多条时触发下一页。
-    static let prefetchDistance = 8
+    static let prefetchDistance = ListPaginationPolicy.prefetchDistance
 
     /// 已 star 且尚未入库（无 `repo_notes` 行按 outside 处理）。
     static func outsideLibraryStars(
@@ -55,10 +55,12 @@ enum RAGAddToLibraryLogic {
         displayedLimit: Int,
         filteredCount: Int
     ) -> Bool {
-        guard displayedLimit < filteredCount else { return false }
-        // index 从 0 开始：当前行出现后，尾部剩余数为 displayedLimit - index - 1。
-        // 因此剩余 <= prefetchDistance 的首个索引是 displayedLimit - prefetchDistance - 1。
-        return appearingIndex >= max(displayedLimit - prefetchDistance - 1, 0)
+        let displayedCount = min(displayedLimit, filteredCount)
+        return ListPaginationPolicy.shouldPrefetch(
+            appearingIndex: appearingIndex,
+            itemCount: displayedCount,
+            hasMore: displayedLimit < filteredCount
+        )
     }
 
     static func nextDisplayLimit(current: Int, filteredCount: Int) -> Int {

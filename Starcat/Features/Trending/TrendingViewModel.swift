@@ -353,7 +353,11 @@ final class TrendingViewModel {
     func loadMoreIfNeeded(currentIndex: Int, totalAvailable: Int) {
         guard totalAvailable > visibleLimit else { return }
         let currentPageCount = min(visibleLimit, totalAvailable)
-        guard currentIndex >= max(0, currentPageCount - 4) else { return }
+        guard ListPaginationPolicy.shouldPrefetch(
+            appearingIndex: currentIndex,
+            itemCount: currentPageCount,
+            hasMore: true
+        ) else { return }
         visibleLimit = min(visibleLimit + Self.pageSize, totalAvailable)
     }
 

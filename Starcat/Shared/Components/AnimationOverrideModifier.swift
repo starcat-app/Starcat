@@ -88,6 +88,15 @@ private struct StarcatReduceMotionKey: EnvironmentKey {
     static let defaultValue: Bool = false
 }
 
+/// 暂停仅用于装饰的持续刷新源，例如 `TimelineView` / Canvas 动画。
+///
+/// 它与 reduce motion 的语义不同：后者是用户无障碍偏好；这里是宿主在 Sheet
+/// 转场等高优先级交互期间临时让出主线程和渲染预算。默认不暂停，只有明确知道
+/// 自己覆盖着持续动画的宿主才注入 true。
+private struct StarcatContinuousAnimationsPausedKey: EnvironmentKey {
+    static let defaultValue: Bool = false
+}
+
 extension EnvironmentValues {
     /// Starcat 子树内统一读这个键来判断"是否应关动画"。
     /// 由 `AnimationOverrideModifier` 在 root 注入；未挂 modifier
@@ -95,6 +104,13 @@ extension EnvironmentValues {
     var starcatReduceMotion: Bool {
         get { self[StarcatReduceMotionKey.self] }
         set { self[StarcatReduceMotionKey.self] = newValue }
+    }
+
+    /// 是否临时暂停装饰性持续动画。暂停时视图应切到静态分支，而不是只把 opacity 设为 0；
+    /// 后者仍会保留 display-link 并持续触发 SwiftUI 更新。
+    var starcatContinuousAnimationsPaused: Bool {
+        get { self[StarcatContinuousAnimationsPausedKey.self] }
+        set { self[StarcatContinuousAnimationsPausedKey.self] = newValue }
     }
 }
 

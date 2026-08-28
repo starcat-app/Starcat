@@ -15,6 +15,7 @@ struct GitHubStarListAIGroupingResultList: View {
     let searchText: String
     let filter: GitHubStarListAIResultFilter
     let availableLists: [GitHubStarListAIListDisplay]
+    let hasMore: Bool
     let onToggleList: (Int64, String) -> Void
     let onSelectAllSuggestions: (Int64) -> Void
     let onClearSelection: (Int64) -> Void
@@ -45,7 +46,7 @@ struct GitHubStarListAIGroupingResultList: View {
                         ContentUnavailableView.search(text: searchText)
                     }
                 } else {
-                    List(items) { item in
+                    List(Array(items.enumerated()), id: \.element.id) { index, item in
                         GitHubStarListAIGroupingResultRow(
                             item: item,
                             availableLists: availableLists,
@@ -59,10 +60,15 @@ struct GitHubStarListAIGroupingResultList: View {
                             onRetryAnalysis: { onRetryAnalysis(item.id) },
                             onRetryApply: { onRetryApply(item.id) }
                         )
-                        .onAppear {
-                            if item.id == items.last?.id {
-                                onLoadMore()
-                            }
+                        .automaticListPagination(
+                            appearingIndex: index,
+                            visibleItemCount: items.count,
+                            loadedItemCount: items.count,
+                            hasMore: hasMore,
+                            isLoading: false,
+                            identity: "github-list-ai-\(filter.rawValue)-\(searchText)"
+                        ) {
+                            onLoadMore()
                         }
                     }
                     .listStyle(.inset)

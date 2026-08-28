@@ -212,6 +212,9 @@ struct SidebarView: View {
         @Bindable var awesomeStore = dependencies.awesomeStore
         VStack(spacing: 0) {
             sidebarFixedHeader
+                // macOS Sheet 不会让宿主窗口退出前台。AI 分组及其 nested 新建 Sheet
+                // 展示期间把侧栏的 12/20 FPS 装饰时钟切成静态分支，让出转场渲染预算。
+                .environment(\.starcatContinuousAnimationsPaused, showGitHubStarListAIGroupingSheet)
             sidebarList
             // 后台任务区统一承载自动/手动整理与面板已关闭的单仓摘要。
             // 手动整理会抢占本轮自动整理，因此两者不会同时出现。
@@ -529,6 +532,7 @@ struct SidebarView: View {
 
             Button("sidebar.githubStarLists.aiGrouping.openReview") {
                 showBackgroundTaskPopover = false
+                PerformanceTracer.shared.mark(.gitHubStarListAIGroupingRequested)
                 showGitHubStarListAIGroupingSheet = true
             }
             .frame(maxWidth: .infinity, alignment: .trailing)

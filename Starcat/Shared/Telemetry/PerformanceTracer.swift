@@ -38,6 +38,17 @@ enum PerformanceSpan: Sendable {
     case repoContextPack
 }
 
+/// 用户交互到首帧之间的离散时间点。
+///
+/// 这里刻意使用固定事件名，不携带仓库、分组或搜索内容；在 Instruments 的 Points of
+/// Interest 里用相邻 requested / first_frame 事件即可量出 Sheet 呈现延迟。
+enum PerformanceEvent: Sendable {
+    case gitHubStarListAIGroupingRequested
+    case gitHubStarListAIGroupingFirstFrame
+    case gitHubStarListCreateRequested
+    case gitHubStarListCreateFirstFrame
+}
+
 /// 可跨 await 保存的 signpost interval token；只允许由 PerformanceTracer 创建和结束。
 struct PerformanceIntervalToken: @unchecked Sendable {
     fileprivate let name: StaticString
@@ -77,6 +88,11 @@ final class PerformanceTracer: @unchecked Sendable {
 
     func end(_ token: PerformanceIntervalToken) {
         signposter.endInterval(token.name, token.state)
+    }
+
+    /// 记录不需要跨 async 保存 token 的离散性能事件。
+    func mark(_ event: PerformanceEvent) {
+        signposter.emitEvent(name(for: event))
     }
 
     @discardableResult
@@ -144,6 +160,19 @@ final class PerformanceTracer: @unchecked Sendable {
             return "ai.stream_response"
         case .repoContextPack:
             return "repo_context.pack"
+        }
+    }
+
+    private func name(for event: PerformanceEvent) -> StaticString {
+        switch event {
+        case .gitHubStarListAIGroupingRequested:
+            return "github_star_list.ai_grouping.requested"
+        case .gitHubStarListAIGroupingFirstFrame:
+            return "github_star_list.ai_grouping.first_frame"
+        case .gitHubStarListCreateRequested:
+            return "github_star_list.create.requested"
+        case .gitHubStarListCreateFirstFrame:
+            return "github_star_list.create.first_frame"
         }
     }
 
