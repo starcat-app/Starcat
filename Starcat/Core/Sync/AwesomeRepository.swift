@@ -23,6 +23,7 @@ protocol AwesomeRepositoryProtocol: Sendable {
     func sources() async -> [AwesomeSource]
     func enabledSources() async -> [AwesomeSource]
     func repositories(sourceID: String?) async -> [AwesomeRepositoryItem]
+    func repositoryPage(sourceID: String?, limit: Int, offset: Int) async -> AwesomeRepositoryPage
     func resources(sourceID: String?) async -> [AwesomeResourceItem]
     func hasCompletedSourceSetup() async -> Bool
     func refreshCatalog(policy: AwesomeRefreshPolicy) async throws -> [AwesomeSource]
@@ -59,6 +60,19 @@ enum AwesomeRefreshPolicy: Sendable, Equatable {
 }
 
 extension AwesomeRepositoryProtocol {
+    /// 测试替身和轻量实现可继续只提供全量读取；生产仓储会覆写为真正的 SQL 分页。
+    func repositoryPage(sourceID: String?, limit: Int, offset: Int) async -> AwesomeRepositoryPage {
+        let all = await repositories(sourceID: sourceID)
+        let safeOffset = max(0, offset)
+        let safeLimit = max(0, limit)
+        let page = Array(all.dropFirst(safeOffset).prefix(safeLimit))
+        return AwesomeRepositoryPage(
+            repositories: page,
+            totalCount: all.count,
+            hasMore: safeOffset + page.count < all.count
+        )
+    }
+
     func resources(sourceID _: String? = nil) async -> [AwesomeResourceItem] { [] }
 
     func refreshCatalog() async throws -> [AwesomeSource] {
@@ -145,6 +159,100 @@ actor AwesomeRepository: AwesomeRepositoryProtocol {
             if error is CancellationError || Task.isCancelled { return [] }
             AppLog.database.warning("Awesome repositories read failed: \(error.localizedDescription, privacy: .public)")
             return []
+        }
+    }
+
+    func repositoryPage(sourceID: String?, limit: Int, offset: Int) async -> AwesomeRepositoryPage {
+        let safeLimit = max(1, limit)
+        let safeOffset = max(0, offset)
+        do {
+            return try await database.writer.read { db in
+                let sources = try Self.readSources(db: db, enabledOnly: true)
+                let visibleSources = sourceID.map { id in sources.filter { $0.id == id } } ?? sources
+                guard !visibleSources.isEmpty else {
+                    return AwesomeRepositoryPage(repositories: [], totalCount: 0, hasMore: false)
+                }
+
+                let sourceIDs = visibleSources.map(\.id)
+                let sourcePlaceholders = Array(repeating: "?", count: sourceIDs.count).joined(separator: ", ")
+                let totalCount = try Int.fetchOne(
+                    db,
+                    sql: """
+                        SELECT COUNT(DISTINCT gh_repo_id)
+                        FROM awesome_entries
+                        WHERE source_id IN (\(sourcePlaceholders))
+                        """,
+                    arguments: StatementArguments(sourceIDs)
+                ) ?? 0
+
+                // “全部 Awesome”需要先按 Repo ID 去重再分页。sourceRank 复用 readSources 的
+                // 稳定顺序，避免先 LIMIT 原始条目造成跨来源重复仓库挤占页容量或跨页重现。
+                var pageArguments: [any DatabaseValueConvertible] = []
+                let sourceRankSQL = visibleSources.enumerated().map { rank, source in
+                    pageArguments.append(source.id)
+                    pageArguments.append(rank)
+                    return "WHEN ? THEN ?"
+                }.joined(separator: " ")
+                pageArguments.append(contentsOf: sourceIDs)
+                pageArguments.append(safeLimit)
+                pageArguments.append(safeOffset)
+                let pageIDs = try Int64.fetchAll(
+                    db,
+                    sql: """
+                        WITH visible AS (
+                            SELECT gh_repo_id, source_id, entry_order,
+                                   CASE source_id \(sourceRankSQL) ELSE 2147483647 END AS source_rank
+                            FROM awesome_entries
+                            WHERE source_id IN (\(sourcePlaceholders))
+                        ), ranked AS (
+                            SELECT gh_repo_id, source_id, entry_order, source_rank,
+                                   ROW_NUMBER() OVER (
+                                       PARTITION BY gh_repo_id
+                                       ORDER BY source_rank, entry_order, source_id, gh_repo_id
+                                   ) AS occurrence
+                            FROM visible
+                        )
+                        SELECT gh_repo_id
+                        FROM ranked
+                        WHERE occurrence = 1
+                        ORDER BY source_rank, entry_order, source_id, gh_repo_id
+                        LIMIT ? OFFSET ?
+                        """,
+                    arguments: StatementArguments(pageArguments)
+                )
+                guard !pageIDs.isEmpty else {
+                    return AwesomeRepositoryPage(repositories: [], totalCount: totalCount, hasMore: false)
+                }
+
+                var recordArguments: [any DatabaseValueConvertible] = sourceIDs
+                recordArguments.append(contentsOf: pageIDs)
+                let repoPlaceholders = Array(repeating: "?", count: pageIDs.count).joined(separator: ", ")
+                let records = try AwesomeEntryRecord.fetchAll(
+                    db,
+                    sql: """
+                        SELECT * FROM awesome_entries
+                        WHERE source_id IN (\(sourcePlaceholders))
+                          AND gh_repo_id IN (\(repoPlaceholders))
+                        """,
+                    arguments: StatementArguments(recordArguments)
+                )
+                let sourceMap = Dictionary(uniqueKeysWithValues: visibleSources.map { ($0.id, $0) })
+                let aggregatedByID = Dictionary(
+                    uniqueKeysWithValues: Self.aggregate(records: records, sourceMap: sourceMap).map { ($0.id, $0) }
+                )
+                let repositories = pageIDs.compactMap { aggregatedByID[$0] }
+                return AwesomeRepositoryPage(
+                    repositories: repositories,
+                    totalCount: totalCount,
+                    hasMore: safeOffset + repositories.count < totalCount
+                )
+            }
+        } catch {
+            if error is CancellationError || Task.isCancelled {
+                return AwesomeRepositoryPage(repositories: [], totalCount: 0, hasMore: false)
+            }
+            AppLog.database.warning("Awesome repository page read failed: \(error.localizedDescription, privacy: .public)")
+            return AwesomeRepositoryPage(repositories: [], totalCount: 0, hasMore: false)
         }
     }
 

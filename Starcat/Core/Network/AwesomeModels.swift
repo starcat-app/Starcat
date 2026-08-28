@@ -460,3 +460,13 @@ struct AwesomeRepositoryItem: Identifiable, Hashable, Sendable {
         )
     }
 }
+
+/// Awesome 中栏的本地数据库分页结果。
+///
+/// `totalCount` 是当前来源范围内去重后的真实仓库数，不等于当前已经加载的行数；
+/// Sidebar 和标题栏因此可以继续显示完整计数，而 List 只保留当前页前缀。
+struct AwesomeRepositoryPage: Equatable, Sendable {
+    let repositories: [AwesomeRepositoryItem]
+    let totalCount: Int
+    let hasMore: Bool
+}

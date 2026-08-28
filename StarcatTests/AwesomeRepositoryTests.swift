@@ -182,6 +182,39 @@ struct AwesomeRepositoryTests {
         #expect(await repository.repositories(sourceID: "one").first?.evidence.count == 1)
     }
 
+    @Test("Awesome 仓库分页按去重结果返回真实总数与后续页")
+    func repositoryPagesUseDistinctRepositoryIDs() async throws {
+        let api = FakeAwesomeAPI()
+        await api.setCatalog([
+            Self.source(id: "one", order: 1, githubRepoCount: 55),
+            Self.source(id: "two", order: 2, githubRepoCount: 2)
+        ], etag: "catalog-1")
+        await api.setEntries(
+            sourceID: "one",
+            entries: (1 ... 55).map { Self.entry(repoID: Int64($0), title: "Repo \($0)", order: $0) }
+        )
+        await api.setEntries(sourceID: "two", entries: [
+            Self.entry(repoID: 1, title: "Duplicate", order: 1),
+            Self.entry(repoID: 56, title: "Repo 56", order: 2)
+        ])
+        let repository = AwesomeRepository(api: api, database: try InMemoryDatabaseManager())
+
+        _ = try await repository.refreshCatalog()
+        try await repository.completeSourceSetup(enabledSourceIDs: ["one", "two"])
+        #expect(await repository.refreshEnabledEntries().isEmpty)
+
+        let first = await repository.repositoryPage(sourceID: nil, limit: 40, offset: 0)
+        let second = await repository.repositoryPage(sourceID: nil, limit: 40, offset: 40)
+
+        #expect(first.repositories.count == 40)
+        #expect(first.totalCount == 56)
+        #expect(first.hasMore)
+        #expect(second.repositories.map(\.id) == Array(41 ... 56).map(Int64.init))
+        #expect(second.totalCount == 56)
+        #expect(!second.hasMore)
+        #expect(first.repositories.first?.evidence.map(\.source.id) == ["one", "two"])
+    }
+
     @Test("远端资源条目不会进入只接纳 GitHub 仓库的本地缓存")
     func remoteResourcesAreDroppedAtPersistenceBoundary() async throws {
         let api = FakeAwesomeAPI()
@@ -472,7 +505,7 @@ struct AwesomeRepositoryTests {
         )
     }
 
-    private static func entry(repoID: Int64, title: String) -> AwesomeEntryDTO {
+    private static func entry(repoID: Int64, title: String, order: Int = 1) -> AwesomeEntryDTO {
         AwesomeEntryDTO(
             ghRepoID: repoID,
             owner: "owner",
@@ -498,7 +531,7 @@ struct AwesomeRepositoryTests {
             entryTitle: title,
             entryDescription: "Source description",
             sectionPath: ["Tools"],
-            entryOrder: 1,
+            entryOrder: order,
             sourceAnchorURL: "https://github.com/example/list#tools"
         )
     }
