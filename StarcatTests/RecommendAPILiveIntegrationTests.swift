@@ -45,6 +45,12 @@ struct RecommendAPILiveIntegrationTests {
         #expect(page.fallback == false)
         #expect(!page.items.isEmpty)
         #expect(page.items.allSatisfy { $0.source == "starcat_trained" })
+        if environment["STARCAT_RECOMMEND_LIVE_DISPLAY_SCORE_REQUIRED"] == "1" {
+            #expect(page.items.allSatisfy {
+                guard let displayScore = $0.displayScore else { return false }
+                return (0...1).contains(displayScore)
+            })
+        }
         if let expectedModelVersion {
             #expect(page.modelVersion == expectedModelVersion)
         } else {
