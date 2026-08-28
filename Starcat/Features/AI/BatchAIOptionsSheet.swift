@@ -30,6 +30,7 @@ import SwiftUI
 struct BatchAIOptionsSheet: View {
 
     let pendingCount: Int
+    let usesSelectedRepositories: Bool
     @Binding var options: BatchAIQueueOptions
     let configurationIssue: String?
     let canPrepareCodeContext: Bool
@@ -84,7 +85,14 @@ struct BatchAIOptionsSheet: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("batchAI.generateTags.title")
                     .font(.headline)
-                Text(String(format: String.l10n("batchAI.options.subtitleFormat"), pendingCount))
+                Text(String(
+                    format: String.l10n(
+                        usesSelectedRepositories
+                            ? "batch.selectedCountFormat"
+                            : "batchAI.options.subtitleFormat"
+                    ),
+                    pendingCount
+                ))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }

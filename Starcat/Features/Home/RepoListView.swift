@@ -463,6 +463,8 @@ struct RepoListView: View {
     /// HOM-52：Untagged 视图顶部 banner 的"启动整理 / 查看进度"回调。
     /// 这两个动作产生 sheet 由 HomeView 统一承载（避免 RepoListView 多持一个 @State）。
     var onStartBatchAI: (() -> Void)?
+    /// Manage 多选底栏的 AI 整理入口；参数是用户点击时的完整仓库值快照。
+    var onStartSelectedBatchAI: (([Repo]) -> Void)?
     var onShowBatchAIPanel: (() -> Void)?
     /// 未分组中栏横幅的启动回调。Sheet 仍由 Sidebar / HomeView 共用一份状态承载。
     var onStartGitHubStarListAIGrouping: (() -> Void)?
@@ -905,18 +907,22 @@ struct RepoListView: View {
         case .manage:
             let store = dependencies.manageMultiSelectionStore
             if store.isActive {
-                BatchActionBar(context: .manage, store: store)
+                BatchActionBar(
+                    context: .manage,
+                    store: store,
+                    onStartSelectedBatchAI: onStartSelectedBatchAI
+                )
             }
         case .trending:
             let store = exploreMultiSelectionStore
             if store.isActive {
-                BatchActionBar(context: .explore, store: store)
+                BatchActionBar(context: .explore, store: store, onStartSelectedBatchAI: nil)
             }
         case .activity:
             if selectedActivityCategory == .undoStar {
                 let store = dependencies.undoStarMultiSelectionStore
                 if store.isActive {
-                    BatchActionBar(context: .explore, store: store)
+                    BatchActionBar(context: .explore, store: store, onStartSelectedBatchAI: nil)
                 }
             } else {
                 EmptyView()

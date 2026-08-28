@@ -40,6 +40,8 @@ struct BatchActionBar: View {
 
     let context: BatchActionContext
     let store: MultiSelectionStore
+    /// Manage 多选入口把仓库值快照交给 HomeView；Sheet 与队列仍由主窗口统一承载。
+    let onStartSelectedBatchAI: (([Repo]) -> Void)?
 
     @Environment(AppDependencies.self) private var dependencies
     /// 仅 manage 上下文需要；explore 上下文中为 nil（该环境未注入）。
@@ -156,8 +158,15 @@ struct BatchActionBar: View {
 
             Spacer()
 
-            // 打标签：仅 manage 上下文，打开前自增 refreshID 强制刷新标签数据
+            // AI 整理与手动打标签只属于本地 Manage 仓库；Explore 数据可能尚未落本地库。
             if context == .manage {
+                Button(action: startSelectedBatchAI) {
+                    Label("batchAI.generateTags.title", systemImage: "sparkles")
+                }
+                .labelStyle(.iconOnly)
+                .disabled(count == 0)
+                .help(Text("batchAI.generateTags.title"))
+
                 Button {
                     tagSheetRefreshID &+= 1
                     showTagSheet = true
@@ -335,6 +344,22 @@ struct BatchActionBar: View {
     }
 
     // MARK: - 业务路由
+
+    /// 固定点击时的完整 Repo 快照，后续打开配置 Sheet 或刷新列表都不能改变任务范围。
+    private func startSelectedBatchAI() {
+        guard let onStartSelectedBatchAI else { return }
+        let repositoriesByID = Dictionary(uniqueKeysWithValues: viewModel.items.map { ($0.id, $0) })
+        let repositories = store.sortedSnapshots.compactMap { repositoriesByID[$0.ghRepoId] }
+        // MultiSelectionStore 会在列表刷新后剔除不可见项；这里仍做最后一道一致性校验，
+        // 防止刷新与点击同帧发生时悄悄少处理某个已选仓库。
+        guard !repositories.isEmpty, repositories.count == store.count else {
+            AppLog.ai.error(
+                "[batch-ai] selected repository snapshot mismatch: selected=\(self.store.count, privacy: .public), resolved=\(repositories.count, privacy: .public)"
+            )
+            return
+        }
+        onStartSelectedBatchAI(repositories)
+    }
 
     /// 点击「批量取消 Star」：> 5 条走确认 sheet，否则直接 enqueue。
     private func handleBatchUnstarTap() {

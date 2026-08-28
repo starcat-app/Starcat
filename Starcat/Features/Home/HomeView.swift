@@ -103,6 +103,8 @@ struct HomeView: View {
     @State private var showBatchAIOptions: Bool = false
     /// HOM-52：批量 AI 整理进度面板 sheet 显示状态。
     @State private var showBatchAIPanel: Bool = false
+    /// 配置 Sheet 当前对应的仓库范围；默认入口仍是全部未分类仓库。
+    @State private var batchAIRepositoryScope: BatchAIRepositoryScope = .allUntagged
     /// HOM-52：当前正在编辑的 Options。
     /// 手动入口固定生成标签，自动应用与摘要默认关闭；不能改全局 Options 默认值，
     /// 因为自动整理仍依赖其“摘要 + 标签”的既有组合。摘要的两个上下文选项会在每次打开
@@ -498,16 +500,17 @@ struct HomeView: View {
         // HOM-52：批量 AI 整理"操作选择" sheet
         .sheet(isPresented: $showBatchAIOptions) {
             BatchAIOptionsSheet(
-                pendingCount: viewModel.untaggedCount,
+                pendingCount: batchAIRepositoryScope.pendingCount(
+                    untaggedCount: viewModel.untaggedCount
+                ),
+                usesSelectedRepositories: batchAIRepositoryScope.isSelectionScoped,
                 options: $batchAIOptions,
                 configurationIssue: dependencies.batchAIQueueService.configurationIssue(
                     for: batchAIOptions
                 ),
                 canPrepareCodeContext: dependencies.repoAIInsightService.canPrepareCodeContext,
                 hasUsableExternalSearchProvider: hasUsableExternalSearchProvider,
-                onCancel: {
-                    showBatchAIOptions = false
-                },
+                onCancel: dismissBatchAIOptions,
                 onStart: {
                     Task {
                         await startBatchAIIntegration()
@@ -1327,14 +1330,10 @@ struct HomeView: View {
                     selectedActivityItem: $selectedActivityItem,
                     undoStarAutoSelectRequestID: undoStarAutoSelectRequestID,
                     onStartBatchAI: {
-                        let service = dependencies.batchAIQueueService
-                        if service.hasPendingTagReview {
-                            // 未确认结果只存在当前队列会话中；优先带用户回到审核窗口，
-                            // 不能打开新批次后静默覆盖已经生成的标签。
-                            showBatchAIPanel = true
-                        } else {
-                            presentBatchAIOptions()
-                        }
+                        requestBatchAIOptions(scope: .allUntagged)
+                    },
+                    onStartSelectedBatchAI: { repositories in
+                        requestBatchAIOptions(scope: .selected(repositories))
                     },
                     onShowBatchAIPanel: {
                         showBatchAIPanel = true
@@ -2190,11 +2189,10 @@ struct HomeView: View {
         }
     }
 
-    /// HOM-52：用户点击 banner"开始整理"后的真正启动入口。
+    /// HOM-52：用户确认配置后的真正启动入口。
     ///
     /// 流程：
-    /// 1. 从 RepoRepository 拉取 fetchUntagged() 作为本次整理输入集（不依赖 viewModel.items，
-    ///    避免搜索过滤后的子集被误处理）。
+    /// 1. 顶部横幅延迟拉取最新未分类全集；多选入口使用点击时固定的 Repo 值快照。
     /// 2. 调 BatchAIQueueService.start 启动队列。
     /// 3. 立刻打开进度面板让用户看到第一帧。
     ///
@@ -2213,33 +2211,57 @@ struct HomeView: View {
             // 仍去拉仓库或抢占正在运行的自动整理。
             return
         }
-        let untagged: [Repo]
+        let repositories: [Repo]
         do {
-            untagged = try await dependencies.repoRepository.fetchUntagged()
+            repositories = try await batchAIRepositoryScope.resolveRepositories {
+                try await dependencies.repoRepository.fetchUntagged()
+            }
         } catch {
-            AppLog.ai.error("[batch-ai] fetchUntagged failed: \(error.localizedDescription, privacy: .public)")
+            AppLog.ai.error("[batch-ai] resolve repositories failed: \(error.localizedDescription, privacy: .public)")
             return
         }
-        guard !untagged.isEmpty else { return }
+        guard !repositories.isEmpty else { return }
+        let wasSelectionScoped = batchAIRepositoryScope.isSelectionScoped
         // 用户主动整理优先于静默自动轮次。必须等待旧 runLoop 完全退出后再复用
         // BatchAIQueueService，避免两轮同时改写 jobs / options 和标签数据。
         await dependencies.batchAIQueueService.preemptAutomaticRunForManualStart()
-        guard dependencies.batchAIQueueService.start(repos: untagged, options: batchAIOptions) else {
+        guard dependencies.batchAIQueueService.start(repos: repositories, options: batchAIOptions) else {
             return
         }
+        if wasSelectionScoped {
+            dependencies.manageMultiSelectionStore.exit()
+        }
+        batchAIRepositoryScope = .allUntagged
         showBatchAIOptions = false
         showBatchAIPanel = true
     }
 
-    /// 打开手动批量生成标签 Sheet，并把全局摘要上下文设置复制成“本次任务”初始值。
+    /// 根据入口固定本次仓库范围，并把全局摘要上下文设置复制成“本次任务”初始值。
     ///
     /// 这里故意只读 `AppSettings`，后续交互只改 `batchAIOptions`，因此用户在 Sheet 中
     /// 临时开关代码上下文或外部搜索，不会污染单仓摘要面板与下一次打开时的全局默认值。
-    private func presentBatchAIOptions() {
+    private func presentBatchAIOptions(scope: BatchAIRepositoryScope) {
+        batchAIRepositoryScope = scope
         batchAIOptions.actions.insert(.tags)
         batchAIOptions.codeContextEnabledOverride = dependencies.settings.aiRepoContextEnabled
         batchAIOptions.externalContextEnabledOverride = dependencies.settings.externalContextEnabled
         showBatchAIOptions = true
+    }
+
+    /// 新任务不能覆盖尚未确认的标签；两个入口共用同一条守门逻辑。
+    private func requestBatchAIOptions(scope: BatchAIRepositoryScope) {
+        guard scope.pendingCount(untaggedCount: viewModel.untaggedCount) > 0 else { return }
+        if dependencies.batchAIQueueService.hasPendingTagReview {
+            showBatchAIPanel = true
+        } else {
+            presentBatchAIOptions(scope: scope)
+        }
+    }
+
+    /// 取消配置只清理临时任务范围，不退出多选，让用户可以继续调整勾选结果。
+    private func dismissBatchAIOptions() {
+        showBatchAIOptions = false
+        batchAIRepositoryScope = .allUntagged
     }
 
     private var hasUsableExternalSearchProvider: Bool {
