@@ -27,6 +27,8 @@ struct RecommendAPITests {
         #expect(page.source == "simrepo")
         #expect(page.modelVersion == nil)
         #expect(page.items.first?.repoID == 84)
+        #expect(page.items.first?.displayScore == nil)
+        #expect(page.items.first?.asSemanticSearchHit().displayScore == 0.9)
     }
 
     @Test("自研契约使用 v2 路由并解码 ServingBundle 版本")
@@ -46,6 +48,8 @@ struct RecommendAPITests {
         #expect(page.modelVersion == "costar-real-v1")
         #expect(page.items.first?.source == "starcat_trained")
         #expect(page.items.first?.reasons == ["costar", "source_repo_id:42"])
+        #expect(page.items.first?.displayScore == 0.956)
+        #expect(page.items.first?.asSemanticSearchHit().displayScore == 0.956)
     }
 
     private func makeAPI(contract: RecommendationAPIContract) -> RecommendAPI {
@@ -73,6 +77,6 @@ struct RecommendAPITests {
     """
 
     private static let v2Body = """
-    {"schema_version":1,"data":{"source":"starcat_trained","fallback":false,"repo_id":42,"model_version":"costar-real-v1","items":[{"repo_id":84,"full_name":"owner/trained","stars":10,"forks":1,"archived":false,"score":0.9,"source":"starcat_trained","reasons":["costar","source_repo_id:42"],"signals":{"costar_score":0.9}}],"has_more":false}}
+    {"schema_version":1,"data":{"source":"starcat_trained","fallback":false,"repo_id":42,"model_version":"costar-real-v1","items":[{"repo_id":84,"full_name":"owner/trained","stars":10,"forks":1,"archived":false,"score":0.05,"display_score":0.956,"source":"starcat_trained","reasons":["costar","source_repo_id:42"],"signals":{"costar_score":0.05}}],"has_more":false}}
     """
 }

@@ -59,7 +59,10 @@ extension RepoRecommendationItem {
     /// 直接调用 `SemanticScoreBadge(score:reason:)` 的扩展 init 即可（它内部会合成 hit），
     /// 这里是中间步骤保留：如果未来推荐需要在卡片上直接拿 hit 做排序 / 过滤，扩展点更直观。
     func asSemanticSearchHit() -> SemanticSearchHit {
-        let clampedScore = max(0, min(1, score))
+        // 自研模型的 raw score 是带 support shrinkage 的排序分，不能与 SimRepo
+        // 向量相似度直接比较。新 Bundle 返回模型全局百分位；旧 Bundle / v1 则
+        // 回退原分，保证客户端对增量字段前向兼容。
+        let clampedScore = max(0, min(1, displayScore ?? score))
         let tier: Int
         switch clampedScore {
         case 0.85...: tier = 4
@@ -81,8 +84,8 @@ extension RepoRecommendationItem {
             score: score,
             displayScore: clampedScore,
             tier: tier,
-            // 百分比是协同相似度而非置信度；tooltip 先给稳定的本地化语义，
-            // 再附加服务端的模型理由供诊断。
+            // 百分比是模型内校准后的相对强度而非统计置信度；tooltip 先给稳定的
+            // 本地化语义，再附加服务端的模型理由供诊断。
             reason: String.l10n("repo.recommendations.empty.info") + " · " + reasonText
         )
     }
