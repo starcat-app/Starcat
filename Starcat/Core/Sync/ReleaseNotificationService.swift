@@ -40,6 +40,27 @@ struct SystemNotificationDispatcher: NotificationDispatching {
     }
 }
 
+/// GitHub Inbox 的一条待派发系统通知。
+///
+/// `record` 决定点击后打开哪个 thread；`kind` 只负责把远端变化翻译成用户可读文案。
+/// 分开建模可以让后台同步负责判断状态变化，而系统通知层只关心展示与派发。
+struct GitHubInboxSystemNotification {
+    enum Kind {
+        case highSignal
+        case issueUpdated
+        case issueClosed
+        case issueReopened
+        case pullRequestUpdated
+        case pullRequestClosed
+        case pullRequestReopened
+        case pullRequestMerged
+        case discussionUpdated
+    }
+
+    let record: GitHubNotificationThreadRecord
+    let kind: Kind
+}
+
 @MainActor
 final class AppNotificationService {
 
@@ -108,22 +129,25 @@ final class AppNotificationService {
         }
     }
 
-    /// 高信号 GitHub 通知（mention / assign / review / security）。回填路径不会走到这里。
-    func dispatchGitHubInbox(_ records: [GitHubNotificationThreadRecord]) async {
-        guard !records.isEmpty else { return }
+    /// 增量 GitHub Inbox 通知。首次历史回填不会走到这里。
+    func dispatchGitHubInbox(_ notifications: [GitHubInboxSystemNotification]) async {
+        guard !notifications.isEmpty else { return }
         guard settings.notificationsEnabled, settings.githubInboxNotificationsEnabled else { return }
 
-        for record in records {
+        for notification in notifications {
+            let record = notification.record
             let content = UNMutableNotificationContent()
             content.title = record.repositoryFullName
-            content.body = record.subjectTitle
+            content.body = makeGitHubInboxBody(for: notification)
             content.sound = .default
             content.userInfo = [
                 "kind": "githubInbox",
                 "threadId": record.id
             ]
+            // 同一 thread 的不同远端版本必须使用不同 identifier，否则通知中心会把后续更新
+            // 当成同一请求覆盖；数据库的 notified_at 负责拦住同一版本的重复轮询。
             let request = UNNotificationRequest(
-                identifier: "github-inbox-\(record.id)",
+                identifier: "github-inbox-\(record.id)-\(record.updatedAt)",
                 content: content,
                 trigger: nil
             )
@@ -183,6 +207,66 @@ final class AppNotificationService {
             return String(format: String.l10n("release.notification.bodyFormat"), release.tagName, name)
         }
         return release.tagName
+    }
+
+    private func makeGitHubInboxBody(for notification: GitHubInboxSystemNotification) -> String {
+        let record = notification.record
+        let number = record.subjectNumber.map { " #\($0)" } ?? ""
+        let locale = Locale.current
+
+        switch notification.kind {
+        case .highSignal:
+            // mention / assign / review_requested 等原因本身已足够明确，保持既有简洁文案。
+            return record.subjectTitle
+        case .issueUpdated:
+            return GitHubNotificationMapper.copy(
+                locale,
+                zh: "Issue\(number) 已更新：\(record.subjectTitle)",
+                en: "Issue\(number) updated: \(record.subjectTitle)"
+            )
+        case .issueClosed:
+            return GitHubNotificationMapper.copy(
+                locale,
+                zh: "Issue\(number) 已关闭：\(record.subjectTitle)",
+                en: "Issue\(number) closed: \(record.subjectTitle)"
+            )
+        case .issueReopened:
+            return GitHubNotificationMapper.copy(
+                locale,
+                zh: "Issue\(number) 已重新打开：\(record.subjectTitle)",
+                en: "Issue\(number) reopened: \(record.subjectTitle)"
+            )
+        case .pullRequestUpdated:
+            return GitHubNotificationMapper.copy(
+                locale,
+                zh: "PR\(number) 已更新：\(record.subjectTitle)",
+                en: "PR\(number) updated: \(record.subjectTitle)"
+            )
+        case .pullRequestClosed:
+            return GitHubNotificationMapper.copy(
+                locale,
+                zh: "PR\(number) 已关闭：\(record.subjectTitle)",
+                en: "PR\(number) closed: \(record.subjectTitle)"
+            )
+        case .pullRequestReopened:
+            return GitHubNotificationMapper.copy(
+                locale,
+                zh: "PR\(number) 已重新打开：\(record.subjectTitle)",
+                en: "PR\(number) reopened: \(record.subjectTitle)"
+            )
+        case .pullRequestMerged:
+            return GitHubNotificationMapper.copy(
+                locale,
+                zh: "PR\(number) 已合并：\(record.subjectTitle)",
+                en: "PR\(number) merged: \(record.subjectTitle)"
+            )
+        case .discussionUpdated:
+            return GitHubNotificationMapper.copy(
+                locale,
+                zh: "讨论已更新：\(record.subjectTitle)",
+                en: "Discussion updated: \(record.subjectTitle)"
+            )
+        }
     }
 
     private func dispatchNotification(

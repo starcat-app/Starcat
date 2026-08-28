@@ -2,7 +2,7 @@
 //  GitHubNotificationThreadRepository.swift
 //  Starcat
 //
-//  通知 thread upsert 必须保留 first_seen_at / notified_at，并且 pending/synced
+//  通知 thread upsert 必须保留 first_seen_at，并按 updated_at 重置 notified_at；pending/synced
 //  期间不能被 GitHub 仍 unread 的增量结果把蓝点打回去（方案 §5.1）。
 //
 
@@ -90,6 +90,8 @@ struct GRDBGitHubNotificationThreadRepository: GitHubNotificationThreadRepositor
                         notified_at = CASE
                             WHEN github_notification_threads.notification_thread_id IS NULL
                             THEN excluded.notified_at
+                            WHEN excluded.updated_at != github_notification_threads.updated_at
+                            THEN NULL
                             ELSE github_notification_threads.notified_at
                         END,
                         github_unread = excluded.github_unread,

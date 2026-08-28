@@ -58,6 +58,9 @@ final class GitHubNotificationInboxService {
     private let clock: () -> Date
     private let dwellNanoseconds: UInt64
 
+    /// 一轮后台同步最多补全 20 个 Issue / PR 状态，避免大量更新时触发 GitHub secondary rate limit。
+    private nonisolated static let systemNotificationHydrationLimit = 20
+
     /// Inbox 刷新按钮绑定这个旗标。必须可被 Observation 跟踪，否则 `SyncIconButton` 不转。
     private(set) var isSyncing = false
     private(set) var missingScope = false
@@ -971,14 +974,97 @@ final class GitHubNotificationInboxService {
     private func dispatchNewSystemNotifications() async throws {
         let unnotified = try await threadRepository.fetchUnnotified()
         let now = ISO8601DateFormatter.shared.string(from: clock())
-        let highSignal = unnotified.filter { record in
-            record.unread
-                && GitHubNotificationMapper.systemNotificationReasons.contains(record.reason)
+        var hydrationBudget = Self.systemNotificationHydrationLimit
+        var notifications: [GitHubInboxSystemNotification] = []
+
+        for record in unnotified where record.unread {
+            let subjectType = record.subjectType.lowercased()
+            let shouldHydrate = hydrationBudget > 0
+                && (subjectType == "issue" || subjectType == "pullrequest")
+            if shouldHydrate {
+                hydrationBudget -= 1
+            }
+            if let notification = await makeSystemNotification(
+                for: record,
+                shouldHydrate: shouldHydrate
+            ) {
+                notifications.append(notification)
+            }
         }
-        if !highSignal.isEmpty {
-            await notificationService.dispatchGitHubInbox(highSignal)
+        if !notifications.isEmpty {
+            await notificationService.dispatchGitHubInbox(notifications)
         }
         try await threadRepository.markNotified(ids: unnotified.map(\.id), notifiedAt: now)
+    }
+
+    /// GitHub 的 `reason` 是 thread 级原因，后续更新时可能仍保持旧值，不能用它判断
+    /// “已关闭 / 已合并”。Issue / PR 在有限预算内读取 subject 当前状态，再和库中旧状态比较。
+    private func makeSystemNotification(
+        for record: GitHubNotificationThreadRecord,
+        shouldHydrate: Bool
+    ) async -> GitHubInboxSystemNotification? {
+        let highSignal = GitHubNotificationMapper.systemNotificationReasons.contains(record.reason)
+        let previousState = GitHubNotificationMapper.normalizedIssueState(record.issueState)
+        let subjectType = record.subjectType.lowercased()
+
+        switch subjectType {
+        case "issue", "pullrequest":
+            var currentState: String?
+            if shouldHydrate,
+               let path = GitHubNotificationMapper.path(fromAbsoluteAPIURL: record.subjectApiUrl),
+               !path.isEmpty {
+                do {
+                    let hydration = try await apiClient(for: record).hydrateNotificationSubject(path: path)
+                    currentState = GitHubNotificationMapper.normalizedIssueState(hydration.state)
+                    await rememberIssueState(id: record.id, state: currentState)
+                } catch {
+                    AppLog.network.info(
+                        "Notification state hydrate skipped id=\(record.id, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                    )
+                }
+            }
+
+            let kind = systemNotificationKind(
+                subjectType: subjectType,
+                previousState: previousState,
+                currentState: currentState,
+                highSignal: highSignal
+            )
+            return GitHubInboxSystemNotification(record: record, kind: kind)
+        case "discussion":
+            return GitHubInboxSystemNotification(
+                record: record,
+                kind: highSignal ? .highSignal : .discussionUpdated
+            )
+        default:
+            // Release 继续由 ReleasePoller 负责，避免和现有订阅通知重复；其它类型只保留
+            // mention / assign / review 等既有高信号通知。
+            guard highSignal else { return nil }
+            return GitHubInboxSystemNotification(record: record, kind: .highSignal)
+        }
+    }
+
+    private func systemNotificationKind(
+        subjectType: String,
+        previousState: String?,
+        currentState: String?,
+        highSignal: Bool
+    ) -> GitHubInboxSystemNotification.Kind {
+        let isPullRequest = subjectType == "pullrequest"
+
+        if isPullRequest, currentState == "merged", previousState != "merged" {
+            return .pullRequestMerged
+        }
+        if currentState == "closed", previousState != "closed" {
+            return isPullRequest ? .pullRequestClosed : .issueClosed
+        }
+        if currentState == "open", previousState == "closed" || previousState == "merged" {
+            return isPullRequest ? .pullRequestReopened : .issueReopened
+        }
+        if highSignal {
+            return .highSignal
+        }
+        return isPullRequest ? .pullRequestUpdated : .issueUpdated
     }
 
     private func retryFailedMarkRead() async throws {

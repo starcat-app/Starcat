@@ -1108,6 +1108,10 @@ struct GitHubNotificationInboxTests {
             markReadState: .synced,
             githubUnread: false
         )
+        try await env.threads.markNotified(
+            ids: ["t-new"],
+            notifiedAt: "2026-08-01T00:00:00Z"
+        )
 
         let incoming = GitHubNotificationMapper.record(
             from: Self.makeDTO(id: "t-new", unread: true, updatedAt: "2026-08-19T12:00:00Z"),
@@ -1119,6 +1123,7 @@ struct GitHubNotificationInboxTests {
         let stored = try #require(try await env.threads.fetch(id: "t-new"))
         #expect(stored.unread == true)
         #expect(stored.markReadStateValue == .idle)
+        #expect(stored.notifiedAt == nil)
     }
 
     @Test("totalCount 是全部 thread，unreadCount 只计未读")
@@ -1828,8 +1833,119 @@ struct GitHubNotificationInboxTests {
         #expect(env.dispatcher.requestIdentifiers.isEmpty)
 
         await env.inbox.sync()
-        #expect(env.dispatcher.requestIdentifiers.contains("github-inbox-new"))
-        #expect(!env.dispatcher.requestIdentifiers.contains("github-inbox-old"))
+        #expect(env.dispatcher.requestIdentifiers.contains("github-inbox-new-2026-08-19T00:00:00Z"))
+        #expect(!env.dispatcher.requestIdentifiers.contains { $0.contains("github-inbox-old-") })
+    }
+
+    @Test("不进入时间线时，Issue 关闭也会由增量同步发系统通知")
+    func incrementalIssueClosedNotifies() async throws {
+        let env = try makeEnv()
+        var round = 0
+        env.mock.listNotificationsHandler = { _, _, _, _, _ in
+            round += 1
+            let updatedAt = round == 1 ? "2026-08-19T00:00:00Z" : "2026-08-19T01:00:00Z"
+            return Self.listResponse([
+                Self.makeDTO(
+                    id: "issue-closed",
+                    reason: "subscribed",
+                    updatedAt: updatedAt
+                )
+            ])
+        }
+        env.mock.hydrateNotificationSubjectHandler = { _ in
+            GitHubNotificationSubjectHydration(
+                htmlURL: nil,
+                actorLogin: nil,
+                excerpt: nil,
+                createdAt: nil,
+                state: "closed"
+            )
+        }
+
+        await env.inbox.sync()
+        try await env.threads.updatePersistedIssueState(id: "issue-closed", state: "open")
+        await env.inbox.sync()
+
+        let request = try #require(env.dispatcher.requests.last)
+        #expect(request.identifier == "github-inbox-issue-closed-2026-08-19T01:00:00Z")
+        #expect(request.body.contains("已关闭") || request.body.contains("closed"))
+        #expect(request.threadID == "issue-closed")
+    }
+
+    @Test("不进入时间线时，PR 合并会通知且同一远端版本不重复")
+    func incrementalPullRequestMergedNotifiesOnce() async throws {
+        let env = try makeEnv()
+        var round = 0
+        env.mock.listNotificationsHandler = { _, _, _, _, _ in
+            round += 1
+            let updatedAt = round == 1 ? "2026-08-19T00:00:00Z" : "2026-08-19T02:00:00Z"
+            return Self.listResponse([
+                Self.makeDTO(
+                    id: "pr-merged",
+                    reason: "subscribed",
+                    updatedAt: updatedAt,
+                    subjectType: "PullRequest"
+                )
+            ])
+        }
+        env.mock.hydrateNotificationSubjectHandler = { _ in
+            GitHubNotificationSubjectHydration(
+                htmlURL: nil,
+                actorLogin: nil,
+                excerpt: nil,
+                createdAt: nil,
+                state: "merged"
+            )
+        }
+
+        await env.inbox.sync()
+        try await env.threads.updatePersistedIssueState(id: "pr-merged", state: "open")
+        await env.inbox.sync()
+        await env.inbox.sync()
+
+        #expect(env.dispatcher.requests.count == 1)
+        let request = try #require(env.dispatcher.requests.first)
+        #expect(request.identifier == "github-inbox-pr-merged-2026-08-19T02:00:00Z")
+        #expect(request.body.contains("已合并") || request.body.contains("merged"))
+        #expect(request.threadID == "pr-merged")
+    }
+
+    @Test("Discussion 更新直接通知，不额外请求 Issue 状态")
+    func incrementalDiscussionUpdateNotifiesWithoutHydration() async throws {
+        let env = try makeEnv()
+        let hydrationCalls = OSAllocatedUnfairLock<Int>(initialState: 0)
+        var round = 0
+        env.mock.listNotificationsHandler = { _, _, _, _, _ in
+            round += 1
+            let updatedAt = round == 1 ? "2026-08-19T00:00:00Z" : "2026-08-19T03:00:00Z"
+            return Self.listResponse([
+                Self.makeDTO(
+                    id: "discussion-updated",
+                    reason: "subscribed",
+                    updatedAt: updatedAt,
+                    subjectType: "Discussion"
+                )
+            ])
+        }
+        env.mock.hydrateNotificationSubjectHandler = { _ in
+            hydrationCalls.withLock { $0 += 1 }
+            return GitHubNotificationSubjectHydration(
+                htmlURL: nil,
+                actorLogin: nil,
+                excerpt: nil,
+                createdAt: nil,
+                state: nil
+            )
+        }
+
+        await env.inbox.sync()
+        await env.inbox.sync()
+
+        #expect(hydrationCalls.withLock { $0 } == 0)
+        let request = try #require(env.dispatcher.requests.last)
+        #expect(request.identifier == "github-inbox-discussion-updated-2026-08-19T03:00:00Z")
+        #expect(request.body.contains("讨论已更新") || request.body.contains("Discussion updated"))
+        #expect(request.threadID == "discussion-updated")
     }
 
     @Test("残留演示 thread 能按前缀删掉")
@@ -2364,18 +2480,28 @@ struct GitHubNotificationInboxTests {
         id: String,
         unread: Bool = true,
         reason: String = "mention",
-        updatedAt: String = "2026-08-19T00:00:00Z"
+        updatedAt: String = "2026-08-19T00:00:00Z",
+        subjectType: String = "Issue"
     ) -> GitHubNotificationThreadDTO {
-        GitHubNotificationThreadDTO(
+        let subjectURL: String
+        switch subjectType {
+        case "PullRequest":
+            subjectURL = "https://api.github.com/repos/o/r/pulls/1"
+        case "Discussion":
+            subjectURL = "https://api.github.com/repos/o/r/discussions/1"
+        default:
+            subjectURL = "https://api.github.com/repos/o/r/issues/1"
+        }
+        return GitHubNotificationThreadDTO(
             id: id,
             unread: unread,
             reason: reason,
             updatedAt: updatedAt,
             subject: GitHubNotificationSubjectDTO(
                 title: "Issue \(id)",
-                url: "https://api.github.com/repos/o/r/issues/1",
+                url: subjectURL,
                 latestCommentUrl: nil,
-                type: "Issue"
+                type: subjectType
             ),
             repository: GitHubNotificationRepositoryDTO(
                 id: 1,
@@ -2451,17 +2577,33 @@ struct GitHubNotificationInboxTests {
     }
 }
 
+private struct RecordedNotification: Sendable {
+    let identifier: String
+    let title: String
+    let body: String
+    let threadID: String?
+}
+
 private final class RecordingNotificationDispatcher: NotificationDispatching, @unchecked Sendable {
-    private let lock = OSAllocatedUnfairLock<[String]>(initialState: [])
+    private let lock = OSAllocatedUnfairLock<[RecordedNotification]>(initialState: [])
 
     func requestAuthorization() async throws -> Bool { true }
 
     func add(request: UNNotificationRequest) async throws {
-        let identifier = request.identifier
-        lock.withLock { $0.append(identifier) }
+        let snapshot = RecordedNotification(
+            identifier: request.identifier,
+            title: request.content.title,
+            body: request.content.body,
+            threadID: request.content.userInfo["threadId"] as? String
+        )
+        lock.withLock { $0.append(snapshot) }
     }
 
     var requestIdentifiers: [String] {
+        lock.withLock { $0.map(\.identifier) }
+    }
+
+    var requests: [RecordedNotification] {
         lock.withLock { $0 }
     }
 }
