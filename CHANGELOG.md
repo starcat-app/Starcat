@@ -31,6 +31,8 @@ Starcat 1.5.0 continues the Activity inbox so you can handle Issue / PR status, 
 - Issue event cache: Reopening an Issue after quitting still reads comments and events locally first. Clear it in Settings → Storage.
 - Issue comment drafts: Unsent handwritten or AI replies stay with each thread after you switch Issues or quit. Clear them in Settings → Storage.
 
+- Ungrouped AI organization: The start button now sits in a middle-column banner like Untagged, and the grouping start page can create a new group.
+
 ### Fixes
 
 - Release notes images: Screenshots in the subscription timeline now shrink to the window width instead of being clipped.
