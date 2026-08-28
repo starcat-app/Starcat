@@ -32,6 +32,7 @@ Starcat 1.5.0 continues the Activity inbox so you can handle Issue / PR status, 
 - Issue comment drafts: Unsent handwritten or AI replies stay with each thread after you switch Issues or quit. Clear them in Settings → Storage.
 
 - Ungrouped AI organization: The start button now sits in a middle-column banner like Untagged, and the grouping start page can create a new group.
+- Suggested tags: Multiple recommendations appear as zebra-striped rows, with the hovered row highlighted.
 
 ### Fixes
 
@@ -41,6 +42,7 @@ Starcat 1.5.0 continues the Activity inbox so you can handle Issue / PR status, 
 - Comment box on thread change: Switching Issues collapses the AI reply box and stops generation so drafts do not carry over.
 - Timeline library toggle: Adding a repository to the library updates the badge only, keeping the current item and its detail open.
 - Star and Unstar counts: After starring or unstarring in Manage, Explore, or Activity, list and detail counts update immediately instead of staying on the old number.
+- AI summary overlay: The panel now sits below the README / Insights tabs instead of covering them.
 
 - Repository community signals: Correctly recognizes directory-based GitHub Issue Forms instead of showing them as missing.
 
