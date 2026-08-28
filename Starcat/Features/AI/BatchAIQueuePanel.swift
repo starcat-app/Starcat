@@ -152,13 +152,13 @@ struct BatchAIQueuePanel: View {
     @ViewBuilder
     private var currentJobLabel: some View {
         if service.isCancelling {
-            // 取消已生效但当前 AI 调用未结束：明确告诉用户在等什么。
+            // 取消已传给当前 AI 调用；这里只展示短暂的状态收口，不再误导为等待正常完成。
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.small)
-                Text("batchAI.panel.cancellingDetail")
+                Text("batchAI.panel.cancelling")
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
         } else if let currentId = service.currentJobId,

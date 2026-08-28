@@ -259,6 +259,23 @@ struct AIEmbeddingSelection: Equatable, Sendable {
     let parameters: AIModelParameters
 }
 
+/// 一次 Chat 类任务调用所需的已校验配置快照。
+///
+/// 摘要、标签、翻译和对话都依赖 Chat capability。统一在这里校验用户显式选择，
+/// 避免业务层在模型为空或已停用时继续回退到历史全局模型并发起请求。
+struct AIChatSelection: Equatable, Sendable {
+    let profile: AIProviderProfile
+    let modelName: String
+}
+
+/// Chat 类任务在网络请求前即可确定的配置错误。
+enum AIChatSelectionError: Error, Equatable, Sendable {
+    case missingProvider
+    case providerUnavailable
+    case missingModel
+    case incompatibleModel(String)
+}
+
 extension AppSettings {
     /// 设置页「模型配置 → 对话」是否已经指向一个可用模型。
     ///
@@ -285,6 +302,36 @@ extension AppSettings {
                 && $0.isEnabled
                 && ($0.capability == .chat || $0.capability == .unknown)
         }
+    }
+
+    /// 解析并校验一个 Chat 类任务当前显式选择的 Provider 与模型。
+    ///
+    /// 这里不读取 API Key：本地 Provider 可以合法地没有 Key，Keychain 校验继续由
+    /// 创建客户端的业务服务负责。自定义模型没有 descriptor，只要 Provider 已验证且
+    /// 名称非空即可放行；实际端点兼容性由请求期错误负责。
+    func resolveChatSelection(for task: AIModelTaskConfiguration) throws -> AIChatSelection {
+        guard let profile = aiProviderProfiles.first(where: { $0.id == task.providerID }) else {
+            throw AIChatSelectionError.missingProvider
+        }
+        guard profile.isVerifiedConfiguration else {
+            throw AIChatSelectionError.providerUnavailable
+        }
+
+        let modelName = task.resolvedModelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !modelName.isEmpty else {
+            throw AIChatSelectionError.missingModel
+        }
+
+        if !task.useCustomModel {
+            guard let model = profile.models.first(where: { $0.name == task.modelID && $0.isEnabled }) else {
+                throw AIChatSelectionError.missingModel
+            }
+            guard model.capability == .chat || model.capability == .unknown else {
+                throw AIChatSelectionError.incompatibleModel(modelName)
+            }
+        }
+
+        return AIChatSelection(profile: profile, modelName: modelName)
     }
 
     /// 解析并校验设置页当前选择的向量化配置。

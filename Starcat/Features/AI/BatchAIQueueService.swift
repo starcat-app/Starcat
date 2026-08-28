@@ -62,11 +62,11 @@ final class BatchAIQueueService {
     /// 本次批次的开始时刻，用于估算剩余时间（已用时 / 完成数 → 平均耗时）。
     private(set) var startedAt: Date?
 
-    /// 用户主动取消标志位：在 processNext 循环开始处轮询，命中即跳出。
+    /// 用户主动取消标志位：与 `runLoopTask.cancel()` 共同表达用户终止意图。
     private var cancelRequested: Bool = false
 
-    /// 当前串行队列 Task。普通“取消”保持协作式语义；手动任务抢占自动任务时，
-    /// 通过本句柄取消 in-flight AI 请求并等待旧循环完全退出，避免两轮并发写库。
+    /// 当前串行队列 Task。取消句柄会把 cancellation 传给 in-flight AI 请求；
+    /// runLoop 仍负责统一收口 job 与 UI 状态，避免调用方直接改写状态机。
     private var runLoopTask: Task<Void, Never>?
 
     /// 本轮是否已有标签落库，退出 runLoop 时据此合并一次 Sidebar 刷新。
@@ -74,7 +74,7 @@ final class BatchAIQueueService {
 
     // MARK: - 依赖（按 AppDependencies 装配顺序注入）
 
-    private let insightService: RepoAIInsightService
+    private let insightService: any BatchAIInsightProviding
     private let tagRepository: any TagRepositoryProtocol
     private let repoTagRepository: any RepoTagRepositoryProtocol
     private let aiSummaryRepository: any AISummaryRepositoryProtocol
@@ -100,7 +100,7 @@ final class BatchAIQueueService {
     var onBatchFinished: ((_ completed: Int, _ ignored: Int, _ failed: Int, _ total: Int) -> Void)?
 
     init(
-        insightService: RepoAIInsightService,
+        insightService: any BatchAIInsightProviding,
         tagRepository: any TagRepositoryProtocol,
         repoTagRepository: any RepoTagRepositoryProtocol,
         aiSummaryRepository: any AISummaryRepositoryProtocol,
@@ -156,10 +156,11 @@ final class BatchAIQueueService {
     ///   订阅方（HomeView / 浮动面板 / Banner）应避免主动弹任何 sheet / 强提示；
     ///   Sidebar 改用「AI 自动整理中 N/M」轻量行展示进度。默认 `false` 维持 HOM-52
     ///   手动模式行为不变。
-    func start(repos: [Repo], options: BatchAIQueueOptions, silent: Bool = false) {
+    @discardableResult
+    func start(repos: [Repo], options: BatchAIQueueOptions, silent: Bool = false) -> Bool {
         guard !isRunning else {
             AppLog.ai.warning("[batch-ai] start() ignored: already running")
-            return
+            return false
         }
         do {
             try entitlementGate?.requirePro(.batchAI)
@@ -167,11 +168,18 @@ final class BatchAIQueueService {
             // 批量整理可能由 UI 或自动调度器触发。这里做底层硬门控，避免绕过付费墙后
             // 仍能直接启动队列；UI 入口会把同一个错误转换成 ProPaywallSheet。
             AppLog.ai.warning("[batch-ai] start() blocked by entitlement: \(error.localizedDescription, privacy: .public)")
-            return
+            return false
         }
         guard options.isValidForStart, !repos.isEmpty else {
             AppLog.ai.warning("[batch-ai] start() ignored: invalid options or empty repo list")
-            return
+            return false
+        }
+        do {
+            try validateConfiguration(for: options)
+        } catch {
+            // 只记录一次批次级配置错误，不能把同一个缺失项扩散成数千条 job 失败。
+            AppLog.ai.warning("[batch-ai] start() blocked by AI configuration: \(error.localizedDescription, privacy: .public)")
+            return false
         }
         self.options = options
         self.silent = silent
@@ -185,6 +193,19 @@ final class BatchAIQueueService {
         self.currentJobId = nil
         AppLog.ai.notice("[batch-ai] start: count=\(repos.count, privacy: .public), autoApplyTags=\(options.autoApplyTags, privacy: .public), threshold=\(options.confidenceThreshold, privacy: .public), silent=\(silent, privacy: .public)")
         launchRunLoop()
+        return true
+    }
+
+    /// 整理弹窗的只读预检结果。UI 与 `start()` 复用同一校验入口，避免按钮显示可用，
+    /// 点击后却创建整批失败任务。返回值已经本地化，可直接作为错误说明展示。
+    func configurationIssue(for options: BatchAIQueueOptions) -> String? {
+        guard options.isValidForStart else { return nil }
+        do {
+            try validateConfiguration(for: options)
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
     }
 
     /// 暂停。当前 job 跑完即停；不杀进行中的 AI 调用（强中断会触发 partial 状态难处理）。
@@ -207,18 +228,23 @@ final class BatchAIQueueService {
     /// 用户反馈（HOM-52 2026-06-06 17:26 dong4j）：原版本只设标志位，
     /// AI 调用可能要 5-10 秒，用户看不到任何视觉反馈以为"按钮没效果"。
     ///
-    /// 改进后的行为：
+    /// 当前行为：
     /// 1. **立即清空所有 queued jobs** —— 列表长度立刻下降，给用户可见反馈。
-    /// 2. **设置 cancelRequested 标志**，runLoop 在当前 await 完成后立刻 break。
+    /// 2. **取消 runLoopTask**，把 cancellation 传给当前 AI / HTTP await。
     /// 3. **派生 isCancelling 状态**供 UI 显示"正在终止..."提示，按钮 disable。
-    /// 4. **当前 in-flight 的 AI 调用不强制中断**：OpenAIClient 没有 cancel 通道，
-    ///    且强中断后的 partial response 处理代价大；当前 job 跑完即丢弃结果。
-    /// 5. **runLoop 退出时**把残留 processing 状态的 job 标记为 failed("用户取消")，
+    /// 4. **runLoop 退出时**把残留 processing 状态的 job 标记为 failed("用户取消")，
     ///    避免 UI 上留下"永远在 processing"的孤儿行。
     func cancel() {
         guard isRunning else { return }
         cancelRequested = true
         isPaused = false
+        if let runLoopTask {
+            runLoopTask.cancel()
+        } else {
+            // 暂停态的旧 runLoop 已经退出但 isRunning 仍为 true；重新进入一次循环，
+            // 让统一收口逻辑消费 cancelRequested，避免队列永远卡在“正在终止”。
+            launchRunLoop()
+        }
         // 立即清空所有未开始的 job，给用户立即可见的反馈。
         // 已完成 / 已忽略 / 已失败 / processing 的 job 保留，不破坏历史记录。
         let removed = jobs.filter { $0.status == .queued }.count
@@ -228,7 +254,7 @@ final class BatchAIQueueService {
 
     /// 用户明确启动手动整理时，强制抢占正在运行的自动整理轮次。
     ///
-    /// 与面板里的普通 `cancel()` 不同：这里会取消当前 AI await，并等待旧 runLoop
+    /// 与面板里的普通 `cancel()` 相同都会取消当前 AI await；这里额外等待旧 runLoop
     /// 完全退出后才返回。调用方随后启动手动批次，保证“用户操作 > 自动后台任务”，
     /// 同时避免两个批次共享同一 jobs / options 状态。
     func preemptAutomaticRunForManualStart() async {
@@ -254,7 +280,7 @@ final class BatchAIQueueService {
     }
 
     /// UI 派生：true 时显示"正在终止当前 AI 调用..."提示。
-    /// 触发后 runLoop 仍在等 in-flight job 跑完（最多几十秒），需要给用户解释。
+    /// 触发后 runLoop 正在等待取消传播并收口当前 job，不再等待 Provider 正常完成。
     var isCancelling: Bool { cancelRequested && isRunning }
 
     /// 重置：清空全部 jobs / options / 进度。
@@ -330,7 +356,7 @@ final class BatchAIQueueService {
         guard let options else { return }
 
         while true {
-            if cancelRequested {
+            if cancelRequested || Task.isCancelled {
                 // 取消：把所有 queued 标 failed("用户取消")？不——保留 queued 状态，
                 // 让用户能在终止后继续。取消只意味着退出循环。
                 break
@@ -347,11 +373,12 @@ final class BatchAIQueueService {
 
             do {
                 let result = try await processSingle(jobId: jobSnapshot.repoId, options: options)
-                // 用户在 AI 调用期间点了取消 → 丢弃结果，循环顶部下一轮会 break。
+                // Provider 可能在最后一个 checkpoint 后正常返回；写库前再确认用户未取消。
+                try Task.checkCancellation()
                 if cancelRequested { break }
                 try await applyResult(jobId: jobSnapshot.repoId, result: result, options: options)
             } catch {
-                if cancelRequested { break }
+                if cancelRequested || Task.isCancelled || error is CancellationError { break }
                 handleFailure(jobId: jobSnapshot.repoId, error: error, options: options)
             }
 
@@ -441,12 +468,11 @@ final class BatchAIQueueService {
 
         let insight: RepoAIInsightGeneration?
         if options.shouldRun(.summary, forRepoID: jobId) || options.shouldRun(.tags, forRepoID: jobId) {
-            insight = try await insightService.generateInsight(
+            insight = try await insightService.generateBatchInsight(
                 for: repo,
                 existingTagHints: hints,
                 includeSummary: options.shouldRun(.summary, forRepoID: jobId),
-                includeTags: options.shouldRun(.tags, forRepoID: jobId),
-                allowExternalContext: false
+                includeTags: options.shouldRun(.tags, forRepoID: jobId)
             )
         } else {
             insight = nil
@@ -456,6 +482,17 @@ final class BatchAIQueueService {
             insight: insight,
             repo: repo,
             existingTagHints: hints
+        )
+    }
+
+    /// 在创建 jobs 前一次性校验本批次会调用到的任务配置。
+    ///
+    /// 校验必须留在 Service 层：手动弹窗和自动调度器都能启动队列，只在 UI 禁用按钮
+    /// 会留下绕过路径。`ensureGenerationClientsReady` 只构造客户端，不发网络请求。
+    private func validateConfiguration(for options: BatchAIQueueOptions) throws {
+        try insightService.ensureGenerationClientsReady(
+            includeSummary: options.actions.contains(.summary),
+            includeTags: options.actions.contains(.tags)
         )
     }
 

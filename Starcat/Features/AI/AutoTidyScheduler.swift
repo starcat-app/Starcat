@@ -322,17 +322,20 @@ final class AutoTidyScheduler {
             return
         }
 
+        var startedStandardCount = 0
         if needsStandardActions, !standardPicked.isEmpty {
             if batchService.isRunning {
                 AppLog.ai.debug("[autoTidy] standard actions skipped: batchService became running mid-flight")
             } else {
                 let options = snapshot.makeBatchOptions(standardActionRepoIDs: Set(standardPicked.map(\.id)))
                 if options.isValidForStart {
-                    batchService.start(repos: standardPicked, options: options, silent: true)
+                    let didStart = batchService.start(repos: standardPicked, options: options, silent: true)
+                    startedStandardCount = didStart ? standardPicked.count : 0
                 }
             }
         }
 
+        var startedGroupingCount = 0
         if needsGitHubListGrouping, !groupingPicked.isEmpty {
             if githubStarListGroupingSession.mode == .manual || githubStarListGroupingSession.isRunning {
                 AppLog.ai.debug("[autoTidy] GitHub Lists grouping skipped: manual/previous grouping is active")
@@ -342,13 +345,14 @@ final class AutoTidyScheduler {
                     confidenceThreshold: groupingSnapshot.confidenceThreshold
                 )
                 if didStart {
+                    startedGroupingCount = groupingPicked.count
                     var advancedSettings = settings.githubStarListAutoGroupingSettings
                     advancedSettings.nextCandidateOffset = groupingPage.nextOffset
                     settings.githubStarListAutoGroupingSettings = advancedSettings
                 }
             }
         }
-        AppLog.ai.notice("[autoTidy] executeRound(\(reason, privacy: .public)) started: standard=\(standardPicked.count, privacy: .public), grouping=\(groupingPicked.count, privacy: .public), summary=\(needsStandardActions && snapshot.generateSummary, privacy: .public), tags=\(needsStandardActions && snapshot.generateTags, privacy: .public), groupingThreshold=\(groupingSnapshot.confidenceThreshold, privacy: .public)")
+        AppLog.ai.notice("[autoTidy] executeRound(\(reason, privacy: .public)) started: standard=\(startedStandardCount, privacy: .public), grouping=\(startedGroupingCount, privacy: .public), summary=\(needsStandardActions && snapshot.generateSummary, privacy: .public), tags=\(needsStandardActions && snapshot.generateTags, privacy: .public), groupingThreshold=\(groupingSnapshot.confidenceThreshold, privacy: .public)")
     }
 
     /// 从已按最近 Star 排序的全集里取下一页；到末尾时不跨页拼接，下一轮从 0 开始。

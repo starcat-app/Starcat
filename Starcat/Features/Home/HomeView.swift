@@ -490,11 +490,13 @@ struct HomeView: View {
             BatchAIOptionsSheet(
                 pendingCount: viewModel.untaggedCount,
                 options: $batchAIOptions,
+                configurationIssue: dependencies.batchAIQueueService.configurationIssue(
+                    for: batchAIOptions
+                ),
                 onCancel: {
                     showBatchAIOptions = false
                 },
                 onStart: {
-                    showBatchAIOptions = false
                     Task {
                         await startBatchAIIntegration()
                     }
@@ -2173,6 +2175,11 @@ struct HomeView: View {
             paywallContext = ProPaywallContext(feature: .batchAI, message: error.localizedDescription)
             return
         }
+        guard dependencies.batchAIQueueService.configurationIssue(for: batchAIOptions) == nil else {
+            // Sheet 会用同一预检结果展示具体原因并保持打开；这里防止设置在点击瞬间变化后
+            // 仍去拉仓库或抢占正在运行的自动整理。
+            return
+        }
         let untagged: [Repo]
         do {
             untagged = try await dependencies.repoRepository.fetchUntagged()
@@ -2184,7 +2191,10 @@ struct HomeView: View {
         // 用户主动整理优先于静默自动轮次。必须等待旧 runLoop 完全退出后再复用
         // BatchAIQueueService，避免两轮同时改写 jobs / options 和标签数据。
         await dependencies.batchAIQueueService.preemptAutomaticRunForManualStart()
-        dependencies.batchAIQueueService.start(repos: untagged, options: batchAIOptions)
+        guard dependencies.batchAIQueueService.start(repos: untagged, options: batchAIOptions) else {
+            return
+        }
+        showBatchAIOptions = false
         showBatchAIPanel = true
     }
 

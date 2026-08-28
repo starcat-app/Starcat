@@ -809,6 +809,10 @@ final class RepoAIInsightService {
     ///（`.missingProvider` / `.missingAPIKey`），让 UI 在下载 ZIP / 生成 XML 之前提示用户去设置。
     func ensureGenerationClientsReady(includeSummary: Bool, includeTags: Bool) throws {
         if includeSummary {
+            try validateGenerationTask(
+                settings.aiSummaryTask,
+                taskName: String.l10n("ai.taskName.summary")
+            )
             _ = try makeClient(
                 task: settings.aiSummaryTask,
                 fallbackModel: settings.aiChatModel,
@@ -816,6 +820,10 @@ final class RepoAIInsightService {
             )
         }
         if includeTags {
+            try validateGenerationTask(
+                settings.aiTagsTask,
+                taskName: String.l10n("ai.taskName.tagRecommendation")
+            )
             _ = try makeClient(
                 task: settings.aiTagsTask,
                 fallbackModel: settings.aiChatModel,
@@ -1205,6 +1213,18 @@ final class RepoAIInsightService {
             embeddingModel: settings.aiEmbeddingTask.resolvedModelName,
             timeoutInterval: settings.effectiveParameters(for: task).timeoutSeconds
         )), model)
+    }
+
+    /// 批量摘要 / 标签在创建客户端前必须使用任务显式选择，禁止回退历史全局模型。
+    private func validateGenerationTask(
+        _ task: AIModelTaskConfiguration,
+        taskName: String
+    ) throws {
+        do {
+            _ = try settings.resolveChatSelection(for: task)
+        } catch is AIChatSelectionError {
+            throw RepoAIInsightError.missingProvider(taskName)
+        }
     }
 
     /// AI 摘要缓存 key。

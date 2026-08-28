@@ -30,6 +30,7 @@ struct BatchAIOptionsSheet: View {
 
     let pendingCount: Int
     @Binding var options: BatchAIQueueOptions
+    let configurationIssue: String?
     let onCancel: () -> Void
     let onStart: () -> Void
 
@@ -45,6 +46,20 @@ struct BatchAIOptionsSheet: View {
             header
             actionsSection
             autoApplyCard
+            if let configurationIssue {
+                Label {
+                    Text(verbatim: configurationIssue)
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                .accessibilityElement(children: .combine)
+            }
             footer
         }
         .padding(20)
@@ -199,7 +214,7 @@ struct BatchAIOptionsSheet: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .keyboardShortcut(.defaultAction)
-            .disabled(!options.isValidForStart || pendingCount == 0)
+            .disabled(!options.isValidForStart || pendingCount == 0 || configurationIssue != nil)
         }
     }
 
