@@ -130,6 +130,10 @@ struct BatchAIJob: Identifiable, Equatable, Sendable {
     let repoId: Int64
     /// 仅用于 UI 显示，避免每次渲染都回查 Repository。
     let repoFullName: String
+    /// 列表中单行展示的仓库描述；会话启动时从 Repo 快照复制，不额外查询数据库。
+    let repoDescription: String?
+    /// 优先使用 GitHub 同步得到的 owner 头像；为空时 UI 按 owner login 走公共 fallback。
+    let ownerAvatarURL: String?
 
     var status: BatchAIJobStatus = .queued
 
@@ -173,15 +177,24 @@ struct BatchAIJob: Identifiable, Equatable, Sendable {
     /// 是否生成了 AI 摘要（用于 UI 区分"只跑了标签"和"摘要 + 标签都跑了"）。
     var didGenerateSummary: Bool = false
 
-    init(repoId: Int64, repoFullName: String) {
+    init(
+        repoId: Int64,
+        repoFullName: String,
+        repoDescription: String? = nil,
+        ownerAvatarURL: String? = nil
+    ) {
         self.repoId = repoId
         self.repoFullName = repoFullName
+        self.repoDescription = repoDescription
+        self.ownerAvatarURL = ownerAvatarURL
     }
 
     // `ignoredTagsBelowThreshold` 含元组数组，Equatable 需要手写。
     static func == (lhs: BatchAIJob, rhs: BatchAIJob) -> Bool {
         guard lhs.repoId == rhs.repoId,
               lhs.repoFullName == rhs.repoFullName,
+              lhs.repoDescription == rhs.repoDescription,
+              lhs.ownerAvatarURL == rhs.ownerAvatarURL,
               lhs.status == rhs.status,
               lhs.attempts == rhs.attempts,
               lhs.failure == rhs.failure,

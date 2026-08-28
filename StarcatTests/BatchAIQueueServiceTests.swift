@@ -95,6 +95,8 @@ struct BatchAIQueueServiceTests {
         )
         var repo = Repo.makeMinimal(owner: "acme", name: "review")
         repo.id = 505
+        repo.description = "A compact repository description"
+        repo.ownerAvatar = "https://avatars.example.com/acme.png"
         var options = BatchAIQueueOptions()
         options.actions = [.tags]
         options.autoApplyTags = false
@@ -103,6 +105,8 @@ struct BatchAIQueueServiceTests {
         await waitUntilStopped(service)
 
         let job = try #require(service.jobs.first)
+        #expect(job.repoDescription == repo.description)
+        #expect(job.ownerAvatarURL == repo.ownerAvatar)
         #expect(job.suggestedTags == Self.sampleSuggestions)
         #expect(job.selectedSuggestedTagIDs == Set(Self.sampleSuggestions.map(\.id)))
         #expect(job.tagReviewState == .pending)

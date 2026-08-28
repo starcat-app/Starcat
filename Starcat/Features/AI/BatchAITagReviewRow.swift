@@ -14,6 +14,7 @@ import SwiftUI
 
 struct BatchAITagReviewRow: View {
     let job: BatchAIJob
+    let rowIndex: Int
     let isExpanded: Bool
     let onToggleExpansion: () -> Void
     let onToggleTag: (String) -> Void
@@ -24,6 +25,10 @@ struct BatchAITagReviewRow: View {
     let onRetryGeneration: () -> Void
 
     @Environment(\.locale) private var locale
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+    @State private var isHovered = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -36,38 +41,64 @@ struct BatchAITagReviewRow: View {
             }
             if isExpanded {
                 expandedContent
-                    .padding(.leading, 26)
+                    .padding(.leading, 36)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
+        .background(rowBackground)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.14)) {
+                isHovered = hovering
+            }
+        }
     }
 
     private var summaryButton: some View {
         Button(action: onToggleExpansion) {
             HStack(alignment: .top, spacing: 10) {
-                statusIcon
-                    .frame(width: 16, height: 16)
-                    .padding(.top, 1)
+                RemoteAvatar(
+                    urlString: resolvedAvatarURL,
+                    size: 26,
+                    fallbackSymbol: "shippingbox.circle.fill"
+                )
+                .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(verbatim: job.repoFullName)
-                        .font(.subheadline.monospaced())
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(verbatim: job.repoFullName)
+                            .font(interfaceScale.font(.bodyEmphasis, weight: .semibold).monospaced())
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        statusIcon
+                            .frame(width: 16, height: 16)
+                            .layoutPriority(1)
+                    }
+                    if let displayDescription {
+                        Text(verbatim: displayDescription)
+                            .font(interfaceScale.font(.captionSmall))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .help(displayDescription)
+                    }
                     if let detailText {
                         Text(verbatim: detailText)
-                            .font(.caption)
+                            .font(interfaceScale.font(.captionSmall))
                             .foregroundStyle(detailColor)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                     }
                 }
                 Spacer(minLength: 6)
                 if canExpand {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.caption2.bold())
+                        .font(interfaceScale.font(.captionSmall).bold())
                         .foregroundStyle(.secondary)
                         .accessibilityHidden(true)
+                        .padding(.top, 2)
                 }
             }
             .contentShape(Rectangle())
@@ -78,11 +109,38 @@ struct BatchAITagReviewRow: View {
         .help(job.repoFullName)
     }
 
+    /// 优先复用同步得到的头像地址；缺失时沿用所有仓库列表共用的 GitHub owner fallback。
+    private var resolvedAvatarURL: String {
+        if let ownerAvatarURL = job.ownerAvatarURL?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !ownerAvatarURL.isEmpty {
+            return ownerAvatarURL
+        }
+        let owner = job.repoFullName.split(separator: "/", maxSplits: 1).first.map(String.init)
+            ?? job.repoFullName
+        return RepoAvatarURL.from(owner: owner)
+    }
+
+    /// 空白描述不占位；有效描述始终只渲染一行，避免长文本撑高或撑宽窗口。
+    private var displayDescription: String? {
+        guard let description = job.repoDescription?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !description.isEmpty
+        else { return nil }
+        return description
+    }
+
+    /// 斑马纹使用项目既有 4.5% primary；hover 以 accent 覆盖，明暗主题下都保持可辨识。
+    private var rowBackground: Color {
+        if isHovered {
+            return Color.accentColor.opacity(0.10)
+        }
+        return rowIndex.isMultiple(of: 2) ? .clear : Color.primary.opacity(0.045)
+    }
+
     @ViewBuilder
     private var expandedContent: some View {
         if !job.suggestedTags.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                tagGrid
+                tagChips
                 reviewActions
             }
         } else if let diagnostic = job.errorDiagnostic {
@@ -90,60 +148,54 @@ struct BatchAITagReviewRow: View {
         }
     }
 
-    private var tagGrid: some View {
-        LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 150), spacing: 8)],
-            alignment: .leading,
-            spacing: 8
-        ) {
+    /// 与 GitHub Lists 推荐分组保持同一套紧凑芯片视觉，只保留选择状态、名称和置信度。
+    private var tagChips: some View {
+        BatchAITagFlowLayout(spacing: 8) {
             ForEach(job.suggestedTags) { suggestion in
-                let isSelected = job.selectedSuggestedTagIDs.contains(suggestion.id)
-                Button {
-                    onToggleTag(suggestion.id)
-                } label: {
-                    HStack(spacing: 7) {
-                        Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                            .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-                            .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(verbatim: suggestion.name)
-                                .font(.caption.bold())
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-                            Text(verbatim: suggestion.reason)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                        Spacer(minLength: 4)
-                        Text(
-                            suggestion.confidence,
-                            format: .percent.precision(.fractionLength(0)).locale(locale)
-                        )
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                    }
-                    .padding(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        isSelected ? Color.accentColor.opacity(0.10) : Color.primary.opacity(0.04),
-                        in: RoundedRectangle(cornerRadius: 8)
-                    )
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(
-                                isSelected ? Color.accentColor.opacity(0.45) : Color.secondary.opacity(0.16),
-                                lineWidth: 1
-                            )
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .disabled(!canEditSelection)
-                .help(suggestion.reason)
+                tagChip(suggestion)
             }
         }
+    }
+
+    private func tagChip(_ suggestion: AITagSuggestion) -> some View {
+        let isSelected = job.selectedSuggestedTagIDs.contains(suggestion.id)
+        let shape = RoundedRectangle(cornerRadius: 6)
+        let fill = isSelected
+            ? Color.accentColor.opacity(colorScheme == .dark ? 0.34 : 0.18)
+            : Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05)
+        let stroke = isSelected
+            ? Color.accentColor.opacity(colorScheme == .dark ? 0.70 : 0.45)
+            : Color.primary.opacity(colorScheme == .dark ? 0.16 : 0.12)
+
+        return Button {
+            onToggleTag(suggestion.id)
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                    .accessibilityHidden(true)
+                Text(verbatim: suggestion.name)
+                    .lineLimit(1)
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+                Text(
+                    suggestion.confidence,
+                    format: .percent.precision(.fractionLength(0)).locale(locale)
+                )
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            }
+            .font(interfaceScale.font(.captionStrong))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(fill, in: shape)
+            .overlay(shape.stroke(stroke, lineWidth: isSelected ? 1.5 : 1))
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .disabled(!canEditSelection)
+        .help(suggestion.name)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     @ViewBuilder

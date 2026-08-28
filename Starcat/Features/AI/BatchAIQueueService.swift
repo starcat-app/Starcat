@@ -204,7 +204,14 @@ final class BatchAIQueueService {
         }
         self.options = options
         self.silent = silent
-        self.jobs = repos.map { BatchAIJob(repoId: $0.id, repoFullName: $0.fullName) }
+        self.jobs = repos.map { repo in
+            BatchAIJob(
+                repoId: repo.id,
+                repoFullName: repo.fullName,
+                repoDescription: repo.description,
+                ownerAvatarURL: repo.ownerAvatar
+            )
+        }
         self.repoCache = Dictionary(uniqueKeysWithValues: repos.map { ($0.id, $0) })
         self.isPaused = false
         self.isRunning = true

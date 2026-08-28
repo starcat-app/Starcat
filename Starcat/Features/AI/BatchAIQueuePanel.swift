@@ -10,7 +10,7 @@
 //  - 完成后允许用户关闭并 reset 队列。
 //
 //  关键约束：
-//  - 状态列表用 ScrollView + LazyVStack 强行限定最大高度 320pt，避免"处理 1000 项时 UI 爆炸"
+//  - 状态列表用 ScrollView + LazyVStack 强行限定最大高度 400pt，避免"处理 1000 项时 UI 爆炸"
 //    （dong4j 2026-06-06 16:13 评审第 3 条）。
 //  - 面板用 .sheet 承载：关闭面板不会停止队列（队列继续在后台跑，再开面板可恢复观察），
 //    对应"支持后台继续"验收点。
@@ -37,13 +37,13 @@ struct BatchAIQueuePanel: View {
             progressSummary
             Divider()
             jobList
-                .frame(minHeight: 200, maxHeight: 320)
+                .frame(minHeight: 240, maxHeight: 400)
             if service.failedCount > 0 {
                 Divider()
                 failedFooter
             }
         }
-        .frame(width: 520)
+        .frame(width: 620)
         .padding(0)
     }
 
@@ -231,9 +231,10 @@ struct BatchAIQueuePanel: View {
     private var jobList: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(displayedJobs) { job in
+                ForEach(Array(displayedJobs.enumerated()), id: \.element.id) { rowIndex, job in
                     BatchAITagReviewRow(
                         job: job,
+                        rowIndex: rowIndex,
                         isExpanded: expandedRepoID == job.repoId,
                         onToggleExpansion: { toggleExpansion(for: job) },
                         onToggleTag: {

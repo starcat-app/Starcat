@@ -121,24 +121,7 @@ struct ManageDetailContent: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Spacer(minLength: 12)
-
-                // 复用 Starcat 自绘胶囊控件，避免 macOS 原生 segmented Picker
-                // 在详情页中显得厚重；右对齐后也不会抢占 README 阅读区的视觉焦点。
-                // horizontal 24 与 RepoLocalSections / Hero 一致，让「AI 生成」与「洞察」右缘齐平。
-                PillSegmentedControl(
-                    items: ManageDetailContentMode.allCases,
-                    selection: $contentMode,
-                    title: \.titleKey,
-                    size: .compact
-                )
-                .accessibilityLabel(Text("insights.repo.mode.label"))
-            }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 8)
-
-            Divider()
+            modeSwitcherChrome
 
             // README ↔ 洞察与我的洞察同款「轻轻落下」；顶栏胶囊固定，不参与内容重建。
             ZStack(alignment: .topLeading) {
@@ -160,6 +143,39 @@ struct ManageDetailContent: View {
                 // README 可能在切换前已把 Hero 折叠；洞察页首帧先恢复顶部 Metadata，
                 // 后续再由自己的 ScrollView 持续上报 offset。
                 onScrollReport(RepoDetailScrollReport(offsetY: 0, scrollOverflow: 0))
+            }
+        }
+    }
+
+    /// README / 洞察切换行。高度通过 PreferenceKey 上报给 Scaffold，
+    /// 让 AI 浮层顶边贴在本行底部分隔线下方，而不是盖住 tab。
+    private var modeSwitcherChrome: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Spacer(minLength: 12)
+
+                // 复用 Starcat 自绘胶囊控件，避免 macOS 原生 segmented Picker
+                // 在详情页中显得厚重；右对齐后也不会抢占 README 阅读区的视觉焦点。
+                // horizontal 24 与 RepoLocalSections / Hero 一致，让「AI 生成」与「洞察」右缘齐平。
+                PillSegmentedControl(
+                    items: ManageDetailContentMode.allCases,
+                    selection: $contentMode,
+                    title: \.titleKey,
+                    size: .compact
+                )
+                .accessibilityLabel(Text("insights.repo.mode.label"))
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 8)
+
+            Divider()
+        }
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: RepoDetailAIOverlayTopInsetPreference.self,
+                    value: proxy.size.height
+                )
             }
         }
     }
@@ -283,5 +299,21 @@ struct ManageDetailContent: View {
 
     private func makeStarHistoryViewModel() -> StarHistoryViewModel {
         StarHistoryViewModel(repository: dependencies.repoStarHistoryRepository)
+    }
+}
+
+/// Manage 详情把 README / 洞察切换行（含底部分隔线）的高度上报给 Scaffold。
+///
+/// 为什么用 PreferenceKey 而不是写死高度：AI 浮层挂在整个 body 上，必须知道 tab
+/// 行实际占了多少；Trending / Weekly / Activity 没有这条切换行，不写入 preference
+/// （默认 0），浮层保持原来的 16pt 顶距。
+///
+/// 关键词：`PreferenceKey` / `onPreferenceChange`。项目内同类：`GitHubMarkdownFitWidthImage`。
+/// 官方搜索词：`SwiftUI PreferenceKey onPreferenceChange`。
+struct RepoDetailAIOverlayTopInsetPreference: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
