@@ -129,6 +129,18 @@ struct GitHubStarListAIGroupingJob: Identifiable, Equatable, Sendable {
     var finishedAt: Date?
 }
 
+/// 仓库分组开始页使用的轻量内存快照。
+///
+/// HomeViewModel 已经为 Sidebar 缓存了相同数据；打开 Sheet 时直接传递这份值，
+/// 避免为了四个统计数字和分组规则再次查询 SQLite。完整仓库仍只在开始整理后加载。
+struct GitHubStarListAIGroupingPreflightContext: Equatable, Sendable {
+    let repositoryCount: Int
+    let ungroupedRepositoryCount: Int
+    let availableLists: [GitHubStarList]
+    let membershipCountByListID: [String: Int]
+    let rulesByListID: [String: GitHubStarListAIRule]
+}
+
 @MainActor
 @Observable
 final class GitHubStarListAIGroupingSession {
@@ -236,11 +248,10 @@ final class GitHubStarListAIGroupingSession {
         }
     }
 
-    /// Sheet 打开时只准备开始页计数。已存在的人工会话直接复用，避免关闭再开重置选择与结果。
+    /// 缺少 Sidebar 内存快照时的兜底路径。已存在的人工会话直接复用，避免重置选择与结果。
     ///
     /// 开始页不调用 `fetchAllStarred()`：近 2,000 个完整 `Repo` 会把主线程卡在 spinner 上。
-    /// 用户还没有任何分组时 `availableLists` 为空，必须用 `hasPreparedManualContext` 判断，
-    /// 否则 nested sheet 触发 `.task` 重启会反复准备。
+    /// 用户还没有任何分组时 `availableLists` 为空，必须用 `hasPreparedManualContext` 判断是否已经准备。
     func prepareManualContext() async {
         if hasPreparedManualContext, mode == .manual { return }
         if mode == .automatic {
@@ -270,6 +281,29 @@ final class GitHubStarListAIGroupingSession {
         } catch {
             contextErrorMessage = error.localizedDescription
             hasPreparedManualContext = false
+        }
+    }
+
+    /// 使用 Sidebar 已经加载到内存的快照进入人工整理，不再阻塞 Sheet 首帧查询数据库。
+    ///
+    /// 已经存在的人工审核任务必须继续复用冻结上下文，不能被 Sidebar 后续刷新覆盖；
+    /// 只有尚未开始的开始页才接受最新缓存。
+    func prepareManualContext(from context: GitHubStarListAIGroupingPreflightContext) {
+        if mode == .manual, !jobs.isEmpty { return }
+        if mode == .automatic {
+            stopAnalysis()
+        }
+        preparedRepositoryCount = context.repositoryCount
+        ungroupedRepositoryCount = context.ungroupedRepositoryCount
+        availableLists = context.availableLists
+        membershipCountByListID = context.membershipCountByListID
+        rulesByListID = context.rulesByListID
+        mode = .manual
+        hasPreparedManualContext = true
+        contextErrorMessage = nil
+        if jobs.isEmpty {
+            selectedListIDsByRepo = [:]
+            ignoredRepoIDs = []
         }
     }
 

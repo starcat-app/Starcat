@@ -212,8 +212,8 @@ struct SidebarView: View {
         @Bindable var awesomeStore = dependencies.awesomeStore
         VStack(spacing: 0) {
             sidebarFixedHeader
-                // macOS Sheet 不会让宿主窗口退出前台。AI 分组及其 nested 新建 Sheet
-                // 展示期间把侧栏的 12/20 FPS 装饰时钟切成静态分支，让出转场渲染预算。
+                // macOS Sheet 不会让宿主窗口退出前台。AI 分组窗口展示期间把侧栏的
+                // 12/20 FPS 装饰时钟切成静态分支，让出转场渲染预算。
                 .environment(\.starcatContinuousAnimationsPaused, showGitHubStarListAIGroupingSheet)
             sidebarList
             // 后台任务区统一承载自动/手动整理与面板已关闭的单仓摘要。
@@ -239,17 +239,23 @@ struct SidebarView: View {
         .sheet(isPresented: $showGitHubStarListAIGroupingSheet) {
             GitHubStarListAIGroupingSheet(
                 session: dependencies.githubStarListAIGroupingSession,
+                preflightContext: GitHubStarListAIGroupingPreflightContext(
+                    repositoryCount: viewModel.totalCount,
+                    ungroupedRepositoryCount: viewModel.githubStarListUngroupedCount,
+                    availableLists: viewModel.githubStarLists,
+                    membershipCountByListID: viewModel.githubStarListCounts,
+                    rulesByListID: viewModel.githubStarListAIRulesByListID
+                ),
                 onApplied: {
                     await viewModel.refreshSidebar()
                     await viewModel.reloadItems(forceRefresh: true)
                 }
             )
-            // 开始页会再打开新建分组 Sheet；显式注入避免 macOS nested sheet 丢 environment。
+            // 统一注入 Sheet 依赖的设置、字号与本地化环境。
             .appSheetRootEnvironment(dependencies)
         }
         .onChange(of: showGitHubStarListAIGroupingSheet) { _, isPresented in
-            // 不能绑在分组窗口的 onDisappear：macOS 弹出新建分组 nested sheet 时父视图
-            // 经常走 disappear，会把刚准备好的上下文清掉并再次全量准备。
+            // 只释放未启动的人工会话；开始页数据仍由 HomeViewModel 的 Sidebar 内存快照持有。
             if !isPresented {
                 dependencies.githubStarListAIGroupingSession.releaseManualContextIfUnused()
             }

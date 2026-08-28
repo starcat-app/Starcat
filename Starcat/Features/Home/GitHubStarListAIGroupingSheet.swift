@@ -12,6 +12,7 @@ import SwiftUI
 
 struct GitHubStarListAIGroupingSheet: View {
     let session: GitHubStarListAIGroupingSession
+    let preflightContext: GitHubStarListAIGroupingPreflightContext
     let onApplied: @MainActor () async -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -44,7 +45,7 @@ struct GitHubStarListAIGroupingSheet: View {
             session.onMembershipsChanged = {
                 Task { await onApplied() }
             }
-            await session.prepareManualContext()
+            session.prepareManualContext(from: preflightContext)
             presentation.synchronizeImmediately(from: session)
         }
         .onChange(of: session.presentationRevision) { _, _ in
@@ -71,10 +72,8 @@ struct GitHubStarListAIGroupingSheet: View {
         ) {
             Button("githubStarLists.aiGrouping.discard.action", role: .destructive) {
                 session.discardManualSession()
-                Task {
-                    await session.prepareManualContext()
-                    presentation.synchronizeImmediately(from: session)
-                }
+                session.prepareManualContext(from: preflightContext)
+                presentation.synchronizeImmediately(from: session)
             }
             Button("general.cancel", role: .cancel) {}
         } message: {
@@ -113,17 +112,15 @@ struct GitHubStarListAIGroupingSheet: View {
 
     @ViewBuilder
     private var content: some View {
-        if session.isLoadingContext || !presentation.isReady {
-            loadingState
-        } else if let message = session.contextErrorMessage {
+        if let message = session.contextErrorMessage {
             ContentUnavailableView(
                 "githubStarLists.aiGrouping.loadFailed",
                 systemImage: "exclamationmark.triangle",
                 description: Text(verbatim: message)
             )
-        } else if presentation.snapshot.totalCount == 0 {
+        } else if snapshot.totalCount == 0 {
             GitHubStarListAIGroupingPreflightView(
-                snapshot: presentation.snapshot,
+                snapshot: snapshot,
                 session: session
             )
         } else {
@@ -131,13 +128,10 @@ struct GitHubStarListAIGroupingSheet: View {
         }
     }
 
-    private var loadingState: some View {
-        VStack(spacing: 12) {
-            ProgressView()
-            Text("githubStarLists.aiGrouping.preparing")
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    /// PresentationStore 在 Sheet 首次 `.task` 前还没有同步；第一帧直接使用 Sidebar
+    /// 已有的内存快照，避免用“正在准备”占位等待相同数据再次从 SQLite 返回。
+    private var snapshot: GitHubStarListAIGroupingPresentationSnapshot {
+        presentation.isReady ? presentation.snapshot : preflightContext.presentationSnapshot
     }
 
     private var reviewWorkspace: some View {

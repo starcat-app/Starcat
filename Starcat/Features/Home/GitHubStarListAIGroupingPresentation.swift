@@ -35,6 +35,32 @@ struct GitHubStarListAIPreflightGroupDisplay: Identifiable, Equatable, Sendable 
     let autoApplyEnabled: Bool
 }
 
+extension GitHubStarListAIGroupingPreflightContext {
+    /// Sheet 的第一帧直接使用内存快照；这里最多转换 GitHub Lists 的少量分组行，
+    /// 不读取完整仓库，也不触发数据库或网络请求。
+    var presentationSnapshot: GitHubStarListAIGroupingPresentationSnapshot {
+        let listDisplays = availableLists.map { list in
+            GitHubStarListAIListDisplay(
+                id: list.id,
+                name: list.name,
+                instruction: rulesByListID[list.id]?.instruction ?? "",
+                colorHex: list.colorHex
+            )
+        }
+        return GitHubStarListAIGroupingPresentationSnapshot(
+            jobs: [],
+            availableLists: listDisplays,
+            existingListIDsByRepo: [:],
+            selectedListIDsByRepo: [:],
+            ignoredRepoIDs: [],
+            preparedRepositoryCount: repositoryCount,
+            ungroupedRepositoryCount: ungroupedRepositoryCount,
+            membershipCountByListID: membershipCountByListID,
+            rulesByListID: rulesByListID
+        )
+    }
+}
+
 struct GitHubStarListAISuggestionDisplay: Identifiable, Equatable, Sendable {
     var id: String { list.id }
 
