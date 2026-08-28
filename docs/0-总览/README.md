@@ -61,6 +61,7 @@ docs/
 │   ├── UI-Focus-Ring-规范.md
 │   ├── UI-Sheet-关闭图标-规范.md
 │   ├── UI-刷新图标-规范.md
+│   ├── UI-列表分页加载规范.md
 │   ├── UI-禁止Stepper-规范.md
 │   ├── UI-设置页按钮对齐-规范.md
 │   ├── 开源致谢同步-规范.md

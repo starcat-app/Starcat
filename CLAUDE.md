@@ -351,6 +351,11 @@ Button { ... }
 > 所有 icon-only 刷新触发器必须走 `SyncIconButton`,SF Symbol `arrow.triangle.2.circlepath`,静止 `.secondary` / 刷新中 `.accentColor` + 旋转。
 > **禁止** `arrow.clockwise` / `ProgressView` / `.symbolEffect(.rotate, value:)`。
 
+### UI 规范：列表分页加载（强制，2026-08-28 起生效）
+
+> 单一信任源：[`docs/5-规范/UI-列表分页加载规范.md`](docs/5-规范/UI-列表分页加载规范.md)
+> 所有滚动驱动的增量列表统一使用 `ListPaginationPolicy` 与 `automaticListPagination`；剩余 10 个可见项时预取，快速滚动期间不得丢失加载需求，筛选、排序或来源变化时必须重置分页身份。
+
 ### UI 规范：禁止 Stepper（强制，2026-06-20 起生效）
 
 > 单一信任源：[`docs/5-规范/UI-禁止Stepper-规范.md`](docs/5-规范/UI-禁止Stepper-规范.md)
