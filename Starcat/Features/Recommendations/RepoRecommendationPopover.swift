@@ -146,6 +146,7 @@ struct RepoRecommendationPopover: View {
             UnifiedRepoRow(
                 card: recommendation.card,
                 semanticHit: recommendation.hit,
+                semanticScoreFormatKey: "search.detail.score.format",
                 showStarredCheckmark: true
             )
         }

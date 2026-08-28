@@ -24,6 +24,14 @@ enum RecommendationAPIContract: Sendable {
         case .trainedV2: AppEndpoints.Recommend.Paths.trainedRecommendations
         }
     }
+
+    /// 缓存作用域只需要区分 HTTP 契约，不包含 API Key 等敏感信息。
+    var cacheKey: String {
+        switch self {
+        case .simRepoV1: "simrepo-v1"
+        case .trainedV2: "trained-v2"
+        }
+    }
 }
 
 actor RecommendAPI {
@@ -104,5 +112,13 @@ actor RecommendAPI {
 
     func updateAPIKey(_ key: String?) {
         apiKey = key
+    }
+
+    /// 返回当前服务地址与契约组成的稳定缓存作用域。
+    ///
+    /// 设置页可热切换 URL；缓存若只按 repoID 命中，会把本地模型结果误当成线上
+    /// SimRepo 结果。作用域不包含 API Key，既能隔离服务又不会把凭据写入磁盘。
+    func recommendationCacheScope() -> String {
+        "\(contract.cacheKey)|\(baseURL.absoluteString)"
     }
 }

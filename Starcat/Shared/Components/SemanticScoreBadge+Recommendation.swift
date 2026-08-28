@@ -66,12 +66,14 @@ extension SemanticScoreBadge {
             cachedAt: nil
         )
 
-        self.hit = SemanticSearchHit(
-            repo: placeholderRepo,
-            score: score,
-            displayScore: clampedScore,
-            tier: tier,
-            reason: reason
+        self.init(
+            hit: SemanticSearchHit(
+                repo: placeholderRepo,
+                score: score,
+                displayScore: clampedScore,
+                tier: tier,
+                reason: reason
+            )
         )
     }
 }

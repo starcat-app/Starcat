@@ -32,10 +32,17 @@ struct CompanionRecommendationHandler {
                 try await repoRepository.findByOwnerName(owner: owner, name: name)
             },
             loadNextPage: { repoID in
-                guard let current = service.cachedSnapshot(repoID: repoID) else {
+                let serviceScope = await service.currentServiceScope()
+                guard let current = await service.cachedSnapshot(
+                    repoID: repoID,
+                    serviceScope: serviceScope
+                ) else {
                     // 缓存被设置页清理后，首次“加载更多”退化为重建第一页；插件端
                     // 会按 repoID/fullName 去重，不会把已有卡片重复插入。
-                    let fresh = try await service.refresh(repoID: repoID)
+                    let fresh = try await service.refresh(
+                        repoID: repoID,
+                        serviceScope: serviceScope
+                    )
                     return CompanionRecommendationsPageResponse(
                         schemaVersion: 1,
                         status: "ok",
@@ -44,16 +51,18 @@ struct CompanionRecommendationHandler {
                     )
                 }
 
-                let added = try await service.refreshNextPage(
+                let updated = try await service.refreshNextPage(
                     repoID: repoID,
                     currentSnapshot: current
                 )
-                let hasMore = service.cachedSnapshot(repoID: repoID)?.hasMore ?? false
+                // ContextService 返回合并后的完整快照；插件协议只返回本次新增项，
+                // 否则浏览器端每次翻页都会重复传输已经展示过的卡片。
+                let added = updated.items.dropFirst(current.items.count)
                 return CompanionRecommendationsPageResponse(
                     schemaVersion: 1,
                     status: "ok",
                     recommendations: added.map(CompanionContextProvider.recommendationDTO(_:)),
-                    hasMore: hasMore
+                    hasMore: updated.hasMore
                 )
             },
             isProUser: {

@@ -80,10 +80,17 @@ struct CompanionContextProvider {
             guard let recommendationContextService else {
                 return CompanionRecommendationPageSource(items: [], hasMore: false)
             }
-            if let cached = await MainActor.run(body: { recommendationContextService.cachedSnapshot(repoID: repoID) }) {
+            let serviceScope = await recommendationContextService.currentServiceScope()
+            if let cached = await recommendationContextService.cachedSnapshot(
+                repoID: repoID,
+                serviceScope: serviceScope
+            ) {
                 return CompanionRecommendationPageSource(items: cached.items, hasMore: cached.hasMore)
             }
-            let fresh = try await recommendationContextService.refresh(repoID: repoID)
+            let fresh = try await recommendationContextService.refresh(
+                repoID: repoID,
+                serviceScope: serviceScope
+            )
             return CompanionRecommendationPageSource(items: fresh.items, hasMore: fresh.hasMore)
         }
         isProUser = {

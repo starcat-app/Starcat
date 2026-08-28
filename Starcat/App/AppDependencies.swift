@@ -1906,7 +1906,7 @@ final class AppDependencies {
         do { try DiskNotificationCommentDraftCache.shared.deleteEverything() }
         catch { AppLog.general.warning("Factory reset: issue comment draft cleanup failed: \(error.localizedDescription, privacy: .public)") }
 
-        do { try DiskRecommendationCache.shared.deleteEverything() }
+        do { try await DiskRecommendationCache.shared.deleteEverything() }
         catch { AppLog.general.warning("Factory reset: Recommendation cache cleanup failed: \(error.localizedDescription, privacy: .public)") }
 
         do { try DiskChatHistoryStore.shared.deleteEverything() }

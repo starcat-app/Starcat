@@ -7,10 +7,10 @@
 //  模块职责：
 //  - 把 `RecommendAPI.fetchRecommendations(repoID:)` 一次往返拿到的 `[RepoRecommendationItem]`
 //    落盘，后续命中直接读盘，省掉重复网络往返。
-//  - 给 `RepoRecommendationViewModel` 用 SWR 模式消费：
-//      1) 详情页打开 → 同步读 cache 立刻显示（秒返回）；
-//      2) 后台触发 `RecommendationContextService.refreshInBackground` 异步拉新 + 写盘；
-//      3) 同一 repo 多次进入详情页都吃 cache，TTL 过期才重拉。
+//  - 给 `RepoRecommendationViewModel` 用 cache-first 模式消费：
+//      1) 详情页打开 → 后台 actor 读 cache，MainActor 不做文件 I/O；
+//      2) fresh 快照直接使用，stale / miss 才异步拉新 + 写盘；
+//      3) 每次只向 UI 暴露 10 条，更多缓存由用户点击“更多”后分批展示。
 //  - 暴露 `@Observable` 派生量给设置页存储 Tab 渲染「推荐缓存 X 项 · Y KB」+ 清除按钮。
 //
 //  与 `DiskWikiCache` 的差异（已踩过的坑 / 推荐场景的特殊性）：
@@ -22,13 +22,13 @@
 //    3. **不做 stale 后台刷新**：wiki 有 SWR 模式（cachedLinks + refreshInBackground
 //       并发去重）是因为 wiki 列表通常较稳定；推荐是"看到新东西"的发现型能力，
 //       stale 直接重新拉即可，不保留旧值。`RecommendationContextService` 提供
-//       最小同步接口，VM 走简单两段式（cache → fetch）。
+//       最小异步接口，VM 走简单两段式（cache → fetch）。
 //    4. **不做单 repo 清理入口**：与 wiki 同款决策 —— 推荐与 star 状态解耦，
 //       unstar 不删 cache。设置页只有"清除全部"一个总闸。
 //    5. **错误不落盘**：与 wiki 同款（wiki 也只在 save 成功路径上写盘）。API 失败
 //       时保留旧 cache（如果有），下次 loadInitial 自然重试。
-//    6. **不做 LRU**：推荐数据极小（每 repo < 1KB，10000 repos < 10MB），TTL 自然
-//       控制重探频率。**少一套机制少一套 bug**。
+//    6. **不做 LRU**：缓存按需生成且可重建，TTL 控制重探频率；设置页保留一键清理，
+//       当前无需引入额外淘汰状态机。
 //
 
 import Foundation
@@ -61,6 +61,13 @@ struct RecommendationCacheSnapshot: Codable, Sendable, Equatable {
 
     /// GitHub repo id（gh_repo_id）。与 `RepoRecommendationItem.repoID` / `Repo.id` 同类型。
     let repoID: Int64
+
+    /// 缓存所属服务，由 base URL + API contract 组成。旧缓存没有该字段时为 nil，
+    /// 编排层会把它视为 miss，避免本地 v2 与线上 v1 互相污染。
+    let serviceScope: String?
+
+    /// 生成本快照的 ServingBundle 版本。v1 没有模型版本时为 nil。
+    let modelVersion: String?
 
     /// 本次探测时刻（UTC）。给排查 / UI 显示用，**不参与 fresh / stale 判定**——
     /// 判定一律看 `nextProbeAt`。
@@ -108,10 +115,10 @@ struct RecommendationCacheSnapshot: Codable, Sendable, Equatable {
     nonisolated static let longTTL: TimeInterval = 7 * 24 * 60 * 60
 }
 
-/// 推荐磁盘缓存（线程：所有公开方法 `@MainActor`）。
+/// 推荐磁盘缓存的 MainActor 门面。
 ///
-/// 单例由 `DiskRecommendationCache.shared` 暴露；测试通过 `init(rootOverride:)`
-/// 注入临时目录隔离。
+/// 可观察统计留在 MainActor，真正的文件读写交给 `DiskRecommendationCacheStorage`
+/// actor。这样设置页仍能自动刷新，同时详情页不再同步读取磁盘。
 @MainActor
 @Observable
 final class DiskRecommendationCache {
@@ -127,30 +134,15 @@ final class DiskRecommendationCache {
     /// 全部缓存文件总字节数。
     private(set) var totalBytes: Int64 = 0
 
-    // MARK: - 内部状态
-
-    private let fileManager: FileManager
-    private let rootOverride: URL?
-
-    private let encoder: JSONEncoder = {
-        let enc = JSONEncoder()
-        enc.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        enc.dateEncodingStrategy = .iso8601
-        return enc
-    }()
-
-    private let decoder: JSONDecoder = {
-        let dec = JSONDecoder()
-        dec.dateDecodingStrategy = .iso8601
-        return dec
-    }()
+    private let storage: DiskRecommendationCacheStorage
 
     /// 默认走 `Application Support/com.starcat.app/recommendation-cache/`。
     /// `rootOverride` 仅供单元测试隔离用。
-    init(fileManager: FileManager = .default, rootOverride: URL? = nil) {
-        self.fileManager = fileManager
-        self.rootOverride = rootOverride
-        reload()
+    init(rootOverride: URL? = nil) {
+        self.storage = DiskRecommendationCacheStorage(rootOverride: rootOverride)
+        Task { [weak self] in
+            await self?.reload()
+        }
     }
 
     // MARK: - 读
@@ -159,118 +151,37 @@ final class DiskRecommendationCache {
     ///
     /// **不删过期文件**：本 cache 没 sweep / LRU，stale 文件留盘，下次 write 时覆写。
     /// fresh / stale 由调用方根据 `snapshot.freshness(at:)` 决策。
-    func load(repoID: Int64) -> RecommendationCacheSnapshot? {
-        guard repoID > 0 else { return nil }
-        let url: URL
-        do {
-            url = try cacheFileURL(repoID: repoID)
-        } catch {
-            AppLog.network.warning("Recommendation cache: invalid path repoID=\(repoID, privacy: .public)")
-            return nil
+    func load(repoID: Int64) async -> RecommendationCacheSnapshot? {
+        let result = await storage.load(repoID: repoID)
+        if let statistics = result.statistics {
+            apply(statistics)
         }
-        guard fileManager.fileExists(atPath: url.path) else { return nil }
-
-        let data: Data
-        do {
-            data = try Data(contentsOf: url)
-        } catch {
-            AppLog.network.warning("Recommendation cache: read failed path=\(url.path, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
-            return nil
-        }
-
-        do {
-            return try decoder.decode(RecommendationCacheSnapshot.self, from: data)
-        } catch {
-            // 损坏 JSON → 删文件让下次 miss 后重新写入（与 wiki / AnySearch / chat history 同款兜底）。
-            AppLog.network.warning("Recommendation cache: decode failed, removing path=\(url.path, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
-            try? fileManager.removeItem(at: url)
-            reload()
-            return nil
-        }
+        return result.snapshot
     }
 
     // MARK: - 写
 
     /// 写入一份新快照（覆写同一 repoID 下旧文件）。
-    func save(snapshot: RecommendationCacheSnapshot) throws {
-        let url = try cacheFileURL(repoID: snapshot.repoID)
-        try fileManager.createDirectory(
-            at: url.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        let data = try encoder.encode(snapshot)
-        try data.write(to: url, options: .atomic)
-        reload()
+    func save(snapshot: RecommendationCacheSnapshot) async throws {
+        apply(try await storage.save(snapshot: snapshot))
     }
 
     // MARK: - 清理
 
     /// 设置页"清除推荐缓存"按钮入口：删整个 `recommendation-cache/` 目录后立即 reload。
-    func deleteEverything() throws {
-        let root = try rootURL()
-        if fileManager.fileExists(atPath: root.path) {
-            try fileManager.removeItem(at: root)
-        }
-        reload()
+    func deleteEverything() async throws {
+        apply(try await storage.deleteEverything())
     }
 
     // MARK: - 重扫盘：刷新 totalBytes / itemCount
 
     /// 扫盘更新派生量。**只读统计，不删任何文件**（与 `DiskWikiCache.reload` 同款语义）。
-    func reload() {
-        var total: Int64 = 0
-        var count: Int = 0
-
-        guard let root = try? rootURL(),
-              fileManager.fileExists(atPath: root.path) else {
-            self.totalBytes = 0
-            self.itemCount = 0
-            return
-        }
-
-        for file in collectJSONFiles(under: root) {
-            if let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize {
-                total += Int64(size)
-                count += 1
-            }
-        }
-
-        self.totalBytes = total
-        self.itemCount = count
+    func reload() async {
+        apply(await storage.statistics())
     }
 
-    // MARK: - 私有：路径
-
-    private func rootURL() throws -> URL {
-        if let rootOverride { return rootOverride }
-        guard let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-            throw DiskRecommendationCacheError.applicationSupportUnavailable
-        }
-        return appSupport
-            .appendingPathComponent(AppConstants.bundleIdentifier, isDirectory: true)
-            .appendingPathComponent("recommendation-cache", isDirectory: true)
-    }
-
-    /// `recommendation-cache/<repoID>.json`。
-    ///
-    /// 用 Int64 而非 owner/repo 字符串：RecommendAPI 的入参就是 repoID，且推荐
-    /// 不面向 ephemeral repo（trending/weekly id=0），所以路径段都是纯数字，
-    /// 不需要 path-traversal 校验。
-    private func cacheFileURL(repoID: Int64) throws -> URL {
-        try rootURL()
-            .appendingPathComponent("\(repoID).json")
-    }
-
-    private func collectJSONFiles(under dir: URL) -> [URL] {
-        var out: [URL] = []
-        let children = (try? fileManager.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
-        for child in children {
-            if child.hasDirectoryPath {
-                out.append(contentsOf: collectJSONFiles(under: child))
-            } else if child.pathExtension == "json" {
-                out.append(child)
-            }
-        }
-        return out
+    private func apply(_ statistics: RecommendationCacheStatistics) {
+        itemCount = statistics.itemCount
+        totalBytes = statistics.totalBytes
     }
 }

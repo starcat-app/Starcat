@@ -1936,7 +1936,7 @@ private struct StorageSettingsTab: View {
             do { try issueCommentDraftCache.deleteEverything() }
             catch { storageActionError = error.localizedDescription }
         case .recommendation:
-            do { try recommendationCache.deleteEverything() }
+            do { try await recommendationCache.deleteEverything() }
             catch { storageActionError = error.localizedDescription }
         case .chatHistory:
             do { try chatHistoryStore.deleteEverything() }
@@ -1979,7 +1979,7 @@ private struct StorageSettingsTab: View {
             catch {
                 if storageActionError == nil { storageActionError = error.localizedDescription }
             }
-            do { try recommendationCache.deleteEverything() }
+            do { try await recommendationCache.deleteEverything() }
             catch {
                 if storageActionError == nil { storageActionError = error.localizedDescription }
             }
@@ -2046,7 +2046,7 @@ private struct StorageSettingsTab: View {
             wikiCache.reload()
             issueTimelineCache.reload()
             issueCommentDraftCache.reload()
-            recommendationCache.reload()
+            await recommendationCache.reload()
             chatHistoryStore.reload()
             aiContextStorage.reload()
             codeFlowStorage.reload()

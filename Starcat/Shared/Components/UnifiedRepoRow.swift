@@ -116,6 +116,9 @@ struct UnifiedRepoRow: View {
     /// chip 行右侧紧跟 SemanticScoreBadge 显示相似度分数。
     let semanticHit: SemanticSearchHit?
 
+    /// 推荐场景可复用现有本地化格式显示“匹配度 29%”；语义搜索保持原百分比。
+    let semanticScoreFormatKey: String?
+
     /// 是否在 row 上显示「已 star ✓」标记(v1.8 修订, 2026-06-10)。
     ///
     /// **默认 false** —— 调用方必须显式按场景决定:
@@ -155,6 +158,7 @@ struct UnifiedRepoRow: View {
         isSelected: Bool = false,
         isPinned: Bool = false,
         semanticHit: SemanticSearchHit? = nil,
+        semanticScoreFormatKey: String? = nil,
         showStarredCheckmark: Bool = false,
         showLibraryBadge: Bool = true,
         showReadStatusBadge: Bool = true,
@@ -165,6 +169,7 @@ struct UnifiedRepoRow: View {
         self.isSelected = isSelected
         self.isPinned = isPinned
         self.semanticHit = semanticHit
+        self.semanticScoreFormatKey = semanticScoreFormatKey
         self.showStarredCheckmark = showStarredCheckmark
         self.showLibraryBadge = showLibraryBadge
         self.showReadStatusBadge = showReadStatusBadge
@@ -262,7 +267,10 @@ struct UnifiedRepoRow: View {
                         }
                         Spacer(minLength: 8)
                         if let semanticHit {
-                            SemanticScoreBadge(hit: semanticHit)
+                            SemanticScoreBadge(
+                                hit: semanticHit,
+                                formatKey: semanticScoreFormatKey
+                            )
                         }
                     }
                 }
@@ -538,7 +546,13 @@ private struct RepoCardInlineMetadataBadge: View {
 /// 一并迁移到 UnifiedRepoRow.swift（唯一调用方），保持单一真源。
 struct SemanticScoreBadge: View {
     let hit: SemanticSearchHit
+    let formatKey: String?
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+
+    init(hit: SemanticSearchHit, formatKey: String? = nil) {
+        self.hit = hit
+        self.formatKey = formatKey
+    }
 
     var body: some View {
         HStack(spacing: 4) {
@@ -561,7 +575,9 @@ struct SemanticScoreBadge: View {
     }
 
     private var scoreText: String {
-        "\(Int((max(0, min(hit.displayScore, 1)) * 100).rounded()))%"
+        let percentage = "\(Int((max(0, min(hit.displayScore, 1)) * 100).rounded()))%"
+        guard let formatKey else { return percentage }
+        return String(format: String.l10n(formatKey), percentage)
     }
 }
 

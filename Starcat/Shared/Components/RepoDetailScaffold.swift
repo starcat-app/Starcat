@@ -395,7 +395,11 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         .onReceive(NotificationCenter.default.publisher(for: .wikiCacheDidReset)) { notification in
             reloadWikiLinksIfReset(notification, for: repo)
         }
-        .task(id: repo.id) {
+        .task(id: repo.id, priority: .utility) {
+            // 先让出一次执行权，确保详情 Hero / README 首帧提交后再启动旁路推荐。
+            // 真正的磁盘 I/O 已在 cache actor 中执行，这里只负责最终 UI 状态赋值。
+            await Task.yield()
+            guard !Task.isCancelled else { return }
             guard ProjectPrivacyPolicy.allowsDiscoveryLookup(for: repo) else {
                 recommendationVM.clear()
                 return

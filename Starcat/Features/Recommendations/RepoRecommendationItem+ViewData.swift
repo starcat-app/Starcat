@@ -81,14 +81,16 @@ extension RepoRecommendationItem {
             score: score,
             displayScore: clampedScore,
             tier: tier,
-            reason: reasonText
+            // 百分比是协同相似度而非置信度；tooltip 先给稳定的本地化语义，
+            // 再附加服务端的模型理由供诊断。
+            reason: String.l10n("repo.recommendations.empty.info") + " · " + reasonText
         )
     }
 
     /// hover tooltip 文案：取 reasons[0]（后端给的最强推荐理由），为空则用通用文案。
     var reasonText: String {
         if let first = reasons.first, !first.isEmpty { return first }
-        return "repo.recommendations.open"
+        return String.l10n("repo.recommendations.open")
     }
 
     /// 拆分 `owner/repo` 格式的 fullName。

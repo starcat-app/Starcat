@@ -89,6 +89,9 @@ struct RemoteAvatar: View {
             if let url = GitHubAvatarURL.imageURL(from: urlString, displayDiameter: size) {
                 KFImage(source: imageSource(for: url))
                     .resizable()
+                    // 列表/推荐弹窗快速滚动或关闭时取消离屏请求，避免大量头像下载
+                    // 继续争用网络与解码资源。
+                    .cancelOnDisappear(true)
                     .placeholder { placeholder }
                     .fade(duration: 0.15)
                     .scaledToFill()
