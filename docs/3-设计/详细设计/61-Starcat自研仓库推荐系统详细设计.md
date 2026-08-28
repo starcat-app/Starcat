@@ -426,6 +426,7 @@ GET /api/v2/repos/{repo_id}/recommendations
         "forks": 80,
         "archived": false,
         "score": 0.874,
+        "display_score": 0.956,
         "signals": {
           "co_star": 0.91,
           "metric": 0.84,
@@ -446,7 +447,9 @@ GET /api/v2/repos/{repo_id}/recommendations
 }
 ```
 
-客户端详情页每次只请求并展示 10 条推荐；磁盘已经缓存多页时，“更多”先按 10 条解锁本地结果，只有缓存前缀全部展示后才请求下一页。缓存文件读写和 JSON 编解码由独立 actor 执行，不占用 MainActor；缓存键额外包含服务地址与 API contract，避免 Direct 本地 v2 和线上 SimRepo v1 结果互相污染。弹窗中的百分比统一标记为“匹配度”，它表示模型相似度，不表示统计置信度。
+客户端详情页每次只请求并展示 10 条推荐；磁盘已经缓存多页时，“更多”先按 10 条解锁本地结果，只有缓存前缀全部展示后才请求下一页。缓存文件读写和 JSON 编解码由独立 actor 执行，不占用 MainActor；缓存键额外包含服务地址与 API contract，避免 Direct 本地 v2 和线上 SimRepo v1 结果互相污染。弹窗中的百分比统一标记为“匹配度”，它表示模型校准后的相对强度，不表示统计置信度。
+
+`score` 始终保留 Trainer 的原始排序分。由于 co-star shrinkage 分数与 SimRepo/Qdrant 向量分数不在同一尺度，ServingBundle 额外按全部有效推荐边的经验累积分布生成 `display_score`：它表示该关系在当前模型中的全局百分位，最高封顶 `0.99`，不改变原始排序。单仓 v2 接口返回该可选字段；多 seed 正负加权结果不再服从单边分布，因此不返回展示分。客户端优先展示 `display_score`，旧 Bundle 和 v1 响应缺失时回退 `score`。
 
 `starcat-recommend-api` 按不可变 `model_version` 复用只读 SQLite 连接池。模型激活切换时，正在执行的旧版本请求继续持有原 Bundle；旧连接仅在引用归零后回收，服务退出时统一关闭。该连接池只优化 v2 ServingBundle 查询，不改变 `/api/v1` SimRepo 缓存语义。
 
