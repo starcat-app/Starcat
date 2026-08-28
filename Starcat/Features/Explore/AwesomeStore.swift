@@ -14,9 +14,16 @@ import Observation
 @MainActor
 @Observable
 final class AwesomeStore {
+    /// 与主 Repo List 保持一致，首屏只读取 40 条；距离页尾 10 行时预取下一页。
+    static let repositoryPageSize = 40
+    private static let repositoryPrefetchLead = 10
+
     private(set) var sources: [AwesomeSource] = []
     private(set) var repositories: [AwesomeRepositoryItem] = []
     private(set) var resources: [AwesomeResourceItem] = []
+    private(set) var repositoryTotalCount = 0
+    private(set) var hasMoreRepositories = false
+    private(set) var isLoadingMoreRepositories = false
     private(set) var hasCompletedSourceSetup = false
     private(set) var isLoading = false
     private(set) var isRefreshing = false
@@ -168,6 +175,25 @@ final class AwesomeStore {
         }
     }
 
+    /// List 行进入预取区时追加下一页。使用 Repo ID 而不是数组 index，避免排序后的 UI
+    /// 把瞬时 index 传回 Store 后又因新页插入而失效。
+    func loadMoreRepositoriesIfNeeded(currentRepositoryID: Int64) async {
+        guard hasMoreRepositories,
+              !isLoadingMoreRepositories,
+              let index = repositories.firstIndex(where: { $0.id == currentRepositoryID }),
+              index >= max(0, repositories.count - Self.repositoryPrefetchLead)
+        else { return }
+        await loadRepositoryPage(append: true)
+    }
+
+    /// 搜索、非原始排序和需要全局事实的筛选必须在完整结果集上执行，不能把当前 40 条
+    /// 当成全部数据。该入口只在用户真的启用这些能力时补齐剩余本地页，不发远端请求。
+    func loadAllRepositoryPages() async {
+        while hasMoreRepositories, !Task.isCancelled {
+            await loadRepositoryPage(append: true)
+        }
+    }
+
     func refresh() async {
         await refreshCatalogAndEntries(policy: .force)
     }
@@ -211,6 +237,9 @@ final class AwesomeStore {
         sources = []
         repositories = []
         resources = []
+        repositoryTotalCount = 0
+        hasMoreRepositories = false
+        isLoadingMoreRepositories = false
         hasCompletedSourceSetup = false
         isLoading = false
         isRefreshing = false
@@ -271,14 +300,36 @@ final class AwesomeStore {
     }
 
     private func reloadRepositories() async {
+        isLoadingMoreRepositories = false
+        await loadRepositoryPage(append: false)
+    }
+
+    private func loadRepositoryPage(append: Bool) async {
         let requestedSourceID = selectedSourceID
-        async let visibleRepositories = repository.repositories(sourceID: requestedSourceID)
+        let offset = append ? repositories.count : 0
+        if append { isLoadingMoreRepositories = true }
+        defer {
+            if append { isLoadingMoreRepositories = false }
+        }
+
+        async let visiblePage = repository.repositoryPage(
+            sourceID: requestedSourceID,
+            limit: Self.repositoryPageSize,
+            offset: offset
+        )
         async let visibleResources = repository.resources(sourceID: requestedSourceID)
-        let (visible, resourceItems) = await (visibleRepositories, visibleResources)
+        let (page, resourceItems) = await (visiblePage, visibleResources)
         // GRDB/测试替身不保证响应取消；旧选择即使晚返回，也不能覆盖当前来源。
         guard !Task.isCancelled, selectedSourceID == requestedSourceID else { return }
-        repositories = visible
-        resources = resourceItems
+        if append {
+            let existingIDs = Set(repositories.map(\.id))
+            repositories.append(contentsOf: page.repositories.filter { !existingIDs.contains($0.id) })
+        } else {
+            repositories = page.repositories
+            resources = resourceItems
+        }
+        repositoryTotalCount = page.totalCount
+        hasMoreRepositories = page.hasMore
         if let selectedRepositoryID,
            !repositories.contains(where: { $0.id == selectedRepositoryID }) {
             self.selectedRepositoryID = nil

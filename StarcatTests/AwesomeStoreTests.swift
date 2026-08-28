@@ -109,6 +109,37 @@ struct AwesomeStoreTests {
         #expect(store.repositories.map(\.id) == [2])
     }
 
+    @Test("Awesome Store 首屏只加载四十条并在页尾预取下一页")
+    @MainActor
+    func repositoryListLoadsIncrementalPages() async {
+        let source = Self.source(id: "large", isEnabled: true, githubRepoCount: 95)
+        let items = (1 ... 95).map { Self.repositoryItem(id: Int64($0), source: source) }
+        let repository = AwesomeStoreRepositoryFake(
+            sources: [source],
+            repositoriesBySource: [source.id: items]
+        )
+        let service = AwesomeCustomSourceService(github: AwesomeStoreGitHubFake(), repository: repository)
+        let store = AwesomeStore(repository: repository, customSourceService: service)
+
+        store.selectSource(source.id)
+        try? await Task.sleep(for: .milliseconds(20))
+
+        #expect(store.repositories.count == 40)
+        #expect(store.repositoryTotalCount == 95)
+        #expect(store.hasMoreRepositories)
+
+        await store.loadMoreRepositoriesIfNeeded(currentRepositoryID: 20)
+        #expect(store.repositories.count == 40)
+
+        await store.loadMoreRepositoriesIfNeeded(currentRepositoryID: 31)
+        #expect(store.repositories.count == 80)
+        #expect(store.hasMoreRepositories)
+
+        await store.loadAllRepositoryPages()
+        #expect(store.repositories.count == 95)
+        #expect(!store.hasMoreRepositories)
+    }
+
     @Test("选中来源只改变中栏计数而侧栏全量计数保持稳定")
     @MainActor
     func selectedSourceKeepsAllRepositoryCountStable() async throws {
@@ -394,6 +425,15 @@ private actor AwesomeStoreRepositoryFake: AwesomeRepositoryProtocol {
         }
         guard let sourceID else { return repositoriesBySource.values.flatMap { $0 } }
         return repositoriesBySource[sourceID] ?? []
+    }
+    func repositoryPage(sourceID: String?, limit: Int, offset: Int) async -> AwesomeRepositoryPage {
+        let all = await repositories(sourceID: sourceID)
+        let page = Array(all.dropFirst(offset).prefix(limit))
+        return AwesomeRepositoryPage(
+            repositories: page,
+            totalCount: all.count,
+            hasMore: offset + page.count < all.count
+        )
     }
     func resources(sourceID: String?) async -> [AwesomeResourceItem] {
         guard let sourceID else { return resourcesBySource.values.flatMap { $0 } }
