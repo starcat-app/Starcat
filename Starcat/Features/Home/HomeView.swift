@@ -1317,9 +1317,16 @@ struct HomeView: View {
                     selectedActivityItem: $selectedActivityItem,
                     undoStarAutoSelectRequestID: undoStarAutoSelectRequestID,
                     onStartBatchAI: {
-                        // HOM-52：点击 banner"开始整理" → 弹 Options sheet。
-                        // 复用上一次 batchAIOptions，让"再开一次"沿用最近偏好。
-                        showBatchAIOptions = true
+                        let service = dependencies.batchAIQueueService
+                        if service.hasPendingTagReview {
+                            // 未确认结果只存在当前队列会话中；优先带用户回到审核窗口，
+                            // 不能打开新批次后静默覆盖已经生成的标签。
+                            showBatchAIPanel = true
+                        } else {
+                            // “批量生成标签”的手动入口始终包含标签任务；摘要只保留为附加选项。
+                            batchAIOptions.actions.insert(.tags)
+                            showBatchAIOptions = true
+                        }
                     },
                     onShowBatchAIPanel: {
                         showBatchAIPanel = true
@@ -2191,6 +2198,7 @@ struct HomeView: View {
             paywallContext = ProPaywallContext(feature: .batchAI, message: error.localizedDescription)
             return
         }
+        batchAIOptions.actions.insert(.tags)
         guard dependencies.batchAIQueueService.configurationIssue(for: batchAIOptions) == nil else {
             // Sheet 会用同一预检结果展示具体原因并保持打开；这里防止设置在点击瞬间变化后
             // 仍去拉仓库或抢占正在运行的自动整理。

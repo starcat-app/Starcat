@@ -124,6 +124,21 @@ final class BatchAIQueueService {
     var queuedCount: Int { jobs.lazy.filter { $0.status == .queued }.count }
     var finishedCount: Int { completedCount + failedCount + ignoredCount }
 
+    /// 已生成标签但仍需用户在批量窗口内确认的仓库数。
+    /// 应用失败仍属于待确认，避免关闭窗口或新开批次时静默丢掉选择。
+    var pendingTagReviewCount: Int {
+        jobs.lazy.filter { job in
+            switch job.tagReviewState {
+            case .pending, .applying, .failed:
+                true
+            case .notRequired, .applied, .ignored:
+                false
+            }
+        }.count
+    }
+
+    var hasPendingTagReview: Bool { pendingTagReviewCount > 0 }
+
     /// 全部 job 都进入终态时认为本次批次结束。
     var isFinished: Bool { !jobs.isEmpty && finishedCount == jobs.count }
 
@@ -160,6 +175,12 @@ final class BatchAIQueueService {
     func start(repos: [Repo], options: BatchAIQueueOptions, silent: Bool = false) -> Bool {
         guard !isRunning else {
             AppLog.ai.warning("[batch-ai] start() ignored: already running")
+            return false
+        }
+        guard !hasPendingTagReview else {
+            // 人工审核结果只存在当前会话内。新批次直接替换 jobs 会造成不可恢复的数据丢失，
+            // 因此必须先回到现有窗口应用或忽略，再允许开始下一轮。
+            AppLog.ai.warning("[batch-ai] start() ignored: pending tag review exists")
             return false
         }
         do {
@@ -336,6 +357,126 @@ final class BatchAIQueueService {
         }
     }
 
+    // MARK: - 人工标签审核
+
+    /// 切换单个候选标签的选中状态。
+    func toggleSuggestedTag(repoId: Int64, suggestionID: String) {
+        guard let index = jobs.firstIndex(where: { $0.repoId == repoId }),
+              jobs[index].suggestedTags.contains(where: { $0.id == suggestionID })
+        else { return }
+        switch jobs[index].tagReviewState {
+        case .pending, .failed:
+            break
+        case .notRequired, .applying, .applied, .ignored:
+            return
+        }
+
+        if jobs[index].selectedSuggestedTagIDs.contains(suggestionID) {
+            jobs[index].selectedSuggestedTagIDs.remove(suggestionID)
+        } else {
+            jobs[index].selectedSuggestedTagIDs.insert(suggestionID)
+        }
+        // 用户调整选择即开始新一轮审核，清掉上一次应用失败的展示状态。
+        jobs[index].tagReviewState = .pending
+    }
+
+    func selectAllSuggestedTags(repoId: Int64) {
+        guard let index = jobs.firstIndex(where: { $0.repoId == repoId }) else { return }
+        switch jobs[index].tagReviewState {
+        case .pending, .failed:
+            jobs[index].selectedSuggestedTagIDs = Set(jobs[index].suggestedTags.map(\.id))
+            jobs[index].tagReviewState = .pending
+        case .notRequired, .applying, .applied, .ignored:
+            return
+        }
+    }
+
+    func clearSuggestedTagSelection(repoId: Int64) {
+        guard let index = jobs.firstIndex(where: { $0.repoId == repoId }) else { return }
+        switch jobs[index].tagReviewState {
+        case .pending, .failed:
+            jobs[index].selectedSuggestedTagIDs = []
+            jobs[index].tagReviewState = .pending
+        case .notRequired, .applying, .applied, .ignored:
+            return
+        }
+    }
+
+    /// 用户明确放弃本仓库的全部候选标签。
+    func ignoreSuggestedTags(repoId: Int64) {
+        guard let index = jobs.firstIndex(where: { $0.repoId == repoId }) else { return }
+        switch jobs[index].tagReviewState {
+        case .pending, .failed:
+            jobs[index].selectedSuggestedTagIDs = []
+            jobs[index].tagReviewState = .ignored
+        case .notRequired, .applying, .applied, .ignored:
+            return
+        }
+    }
+
+    /// 将用户在单个仓库行内确认的标签落库。
+    ///
+    /// 与详情页手动应用保持同一语义：先按 canonical key 复用已有标签，确实不存在时
+    /// 才创建新标签。每成功一个就从待办集合移除，途中失败后重试不会重复制造记录。
+    func applySelectedSuggestedTags(repoId: Int64) async {
+        guard let initialIndex = jobs.firstIndex(where: { $0.repoId == repoId }) else { return }
+        switch jobs[initialIndex].tagReviewState {
+        case .pending, .failed:
+            break
+        case .notRequired, .applying, .applied, .ignored:
+            return
+        }
+
+        let selectedIDs = jobs[initialIndex].selectedSuggestedTagIDs
+        let suggestions = jobs[initialIndex].suggestedTags.filter { selectedIDs.contains($0.id) }
+        guard !suggestions.isEmpty else { return }
+        jobs[initialIndex].tagReviewState = .applying
+
+        do {
+            let tags = try await tagRepository.fetchAll()
+            var tagsByCanonicalKey = Dictionary(
+                tags.map { (AITagSuggestionPolicy.canonicalKey($0.name), $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            guard let loadedIndex = jobs.firstIndex(where: { $0.repoId == repoId }) else { return }
+            var appliedNames = Set(jobs[loadedIndex].appliedTagNames)
+
+            for suggestion in suggestions {
+                try Task.checkCancellation()
+                let normalized = AITagSuggestionPolicy.normalizedDisplayName(suggestion.name)
+                let key = AITagSuggestionPolicy.canonicalKey(normalized)
+                guard !normalized.isEmpty, !key.isEmpty else {
+                    if let latestIndex = jobs.firstIndex(where: { $0.repoId == repoId }) {
+                        jobs[latestIndex].selectedSuggestedTagIDs.remove(suggestion.id)
+                    }
+                    continue
+                }
+
+                let tag: Tag
+                if let existing = tagsByCanonicalKey[key] {
+                    tag = existing
+                } else {
+                    tag = makeUserConfirmedTag(named: normalized)
+                    try await tagRepository.create(tag)
+                    tagsByCanonicalKey[key] = tag
+                }
+                try await repoTagRepository.addTag(repoId: repoId, tagId: tag.id)
+                appliedNames.insert(tag.name)
+                if let latestIndex = jobs.firstIndex(where: { $0.repoId == repoId }) {
+                    jobs[latestIndex].selectedSuggestedTagIDs.remove(suggestion.id)
+                    jobs[latestIndex].appliedTagNames = appliedNames.sorted()
+                }
+            }
+
+            guard let finalIndex = jobs.firstIndex(where: { $0.repoId == repoId }) else { return }
+            jobs[finalIndex].tagReviewState = .applied
+            onTagsChanged?()
+        } catch {
+            guard let finalIndex = jobs.firstIndex(where: { $0.repoId == repoId }) else { return }
+            jobs[finalIndex].tagReviewState = .failed(BatchAIFailure(error: error))
+        }
+    }
+
     // MARK: - 主循环
 
     private func launchRunLoop() {
@@ -508,11 +649,21 @@ final class BatchAIQueueService {
         let didTags = options.shouldRun(.tags, forRepoID: jobId)
         var shouldMarkIgnored = false
 
+        if didTags {
+            jobs[idx].suggestedTags = suggestions
+            // 只有用户主动打开的批量窗口承载人工审核。静默自动整理仍沿用原有后台语义，
+            // 不能在 Sidebar 留下一批用户没有主动创建、也无法感知来源的待确认任务。
+            if !silent, !options.autoApplyTags, !suggestions.isEmpty {
+                jobs[idx].selectedSuggestedTagIDs = Set(suggestions.map(\.id))
+                jobs[idx].tagReviewState = .pending
+            }
+        }
+
         // 标签子分支：
         // - 没勾选标签 → 直接 completed（summary 已写）。
         // - 勾选 + autoApply=true → 按置信度阈值过滤后落库；全部低于阈值 → ignored；否则 completed。
-        // - 勾选 + autoApply=false → 标签建议留在 ai_summaries 缓存里，由用户后续在详情页"AI 标签确认"流应用。
-        //   这种情况 status = completed（任务本身没失败，只是不自动写库）。
+        // - 勾选 + autoApply=false → 标签建议保留在当前批量会话中，由用户在同一窗口逐仓确认。
+        //   这种情况 status = completed（生成任务本身已完成），审核进度由 tagReviewState 单独表达。
         if didTags, options.autoApplyTags {
             let belowThreshold = suggestions.filter { $0.confidence < options.confidenceThreshold }
             let aboveThreshold = suggestions.filter { $0.confidence >= options.confidenceThreshold }
@@ -536,6 +687,23 @@ final class BatchAIQueueService {
         jobs[finalIndex].finishedAt = Date()
         let wroteAnything = !jobs[finalIndex].appliedTagNames.isEmpty
         jobs[finalIndex].status = shouldMarkIgnored && !didSummary && !wroteAnything ? .ignored : .completed
+    }
+
+    /// 为用户明确确认的新标签补齐与详情页一致的默认视觉属性。
+    private func makeUserConfirmedTag(named name: String) -> Tag {
+        let now = ISO8601DateFormatter.shared.string(from: Date())
+        let visual = TagAutoVisual.pick(for: name)
+        return Tag(
+            id: UUID().uuidString,
+            name: name,
+            color: visual.colorHex,
+            icon: visual.iconName,
+            sortOrder: 0,
+            isPreset: false,
+            parentId: nil,
+            createdAt: now,
+            updatedAt: now
+        )
     }
 
     /// 合并发布标签变更。自然完成与取消都会走这里：取消前已经落库的标签也必须最终

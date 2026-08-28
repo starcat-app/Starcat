@@ -81,14 +81,114 @@ struct BatchAIQueueServiceTests {
         #expect(provider.generationCount == 0)
     }
 
+    @Test("人工模式保留全部标签建议并默认全选")
+    func manualRunKeepsSuggestionsForInlineReview() async throws {
+        let provider = ImmediateBatchAIInsightProvider(suggestions: Self.sampleSuggestions)
+        let database = try InMemoryDatabaseManager()
+        let tagRepository = GRDBTagRepository(database: database)
+        let repoTagRepository = GRDBRepoTagRepository(database: database)
+        let service = makeService(
+            insightProvider: provider,
+            database: database,
+            tagRepository: tagRepository,
+            repoTagRepository: repoTagRepository
+        )
+        var repo = Repo.makeMinimal(owner: "acme", name: "review")
+        repo.id = 505
+        var options = BatchAIQueueOptions()
+        options.actions = [.tags]
+        options.autoApplyTags = false
+
+        #expect(service.start(repos: [repo], options: options))
+        await waitUntilStopped(service)
+
+        let job = try #require(service.jobs.first)
+        #expect(job.suggestedTags == Self.sampleSuggestions)
+        #expect(job.selectedSuggestedTagIDs == Set(Self.sampleSuggestions.map(\.id)))
+        #expect(job.tagReviewState == .pending)
+        #expect(service.pendingTagReviewCount == 1)
+        #expect(try await repoTagRepository.fetchTags(forRepo: repo.id).isEmpty)
+    }
+
+    @Test("确认只应用用户保留的标签并创建新标签")
+    func confirmAppliesOnlySelectedSuggestions() async throws {
+        let provider = ImmediateBatchAIInsightProvider(suggestions: Self.sampleSuggestions)
+        let database = try InMemoryDatabaseManager()
+        let tagRepository = GRDBTagRepository(database: database)
+        let repoTagRepository = GRDBRepoTagRepository(database: database)
+        let service = makeService(
+            insightProvider: provider,
+            database: database,
+            tagRepository: tagRepository,
+            repoTagRepository: repoTagRepository
+        )
+        var repo = Repo.makeMinimal(owner: "acme", name: "apply")
+        repo.id = 606
+        // repo_tags 有外键约束；生产环境中的批量输入必然来自 repositories 表，
+        // 测试也必须先建立同样的前置状态，避免把 fixture 缺失误判为应用逻辑失败。
+        try await database.insertRepoFixture(id: repo.id, owner: "acme", name: "apply")
+        var options = BatchAIQueueOptions()
+        options.actions = [.tags]
+
+        #expect(service.start(repos: [repo], options: options))
+        await waitUntilStopped(service)
+        service.toggleSuggestedTag(repoId: repo.id, suggestionID: Self.sampleSuggestions[1].id)
+        await service.applySelectedSuggestedTags(repoId: repo.id)
+
+        let tags = try await repoTagRepository.fetchTags(forRepo: repo.id)
+        #expect(tags.map(\.name) == ["Swift"])
+        #expect(try await tagRepository.fetchAll().map(\.name) == ["Swift"])
+        #expect(service.jobs.first?.tagReviewState == .applied)
+        #expect(service.pendingTagReviewCount == 0)
+    }
+
+    @Test("待确认结果会阻止新批次覆盖直到用户忽略")
+    func pendingReviewBlocksReplacementBatch() async throws {
+        let provider = ImmediateBatchAIInsightProvider(suggestions: Self.sampleSuggestions)
+        let service = try makeService(insightProvider: provider)
+        var first = Repo.makeMinimal(owner: "acme", name: "first-review")
+        first.id = 707
+        var second = Repo.makeMinimal(owner: "acme", name: "second-review")
+        second.id = 808
+        var options = BatchAIQueueOptions()
+        options.actions = [.tags]
+
+        #expect(service.start(repos: [first], options: options))
+        await waitUntilStopped(service)
+        #expect(!service.start(repos: [second], options: options))
+
+        service.ignoreSuggestedTags(repoId: first.id)
+        #expect(service.start(repos: [second], options: options))
+        await waitUntilStopped(service)
+    }
+
+    private static let sampleSuggestions = [
+        AITagSuggestion(name: "Swift", confidence: 0.96, reason: "主要开发语言"),
+        AITagSuggestion(name: "CLI", confidence: 0.82, reason: "提供命令行工具")
+    ]
+
     private func makeService(
         insightProvider: any BatchAIInsightProviding
     ) throws -> BatchAIQueueService {
         let database = try InMemoryDatabaseManager()
-        return BatchAIQueueService(
-            insightService: insightProvider,
+        return makeService(
+            insightProvider: insightProvider,
+            database: database,
             tagRepository: GRDBTagRepository(database: database),
-            repoTagRepository: GRDBRepoTagRepository(database: database),
+            repoTagRepository: GRDBRepoTagRepository(database: database)
+        )
+    }
+
+    private func makeService(
+        insightProvider: any BatchAIInsightProviding,
+        database: InMemoryDatabaseManager,
+        tagRepository: any TagRepositoryProtocol,
+        repoTagRepository: any RepoTagRepositoryProtocol
+    ) -> BatchAIQueueService {
+        BatchAIQueueService(
+            insightService: insightProvider,
+            tagRepository: tagRepository,
+            repoTagRepository: repoTagRepository,
             aiSummaryRepository: GRDBAISummaryRepository(database: database)
         )
     }
@@ -228,5 +328,46 @@ private final class BlockingBatchAIInsightProvider: BatchAIInsightProviding {
         await withCheckedContinuation { continuation in
             generationStartWaiters.append(continuation)
         }
+    }
+}
+
+/// 立即返回固定标签的 Provider，用于验证“生成后审核”与落库边界。
+@MainActor
+private final class ImmediateBatchAIInsightProvider: BatchAIInsightProviding {
+    let suggestions: [AITagSuggestion]
+
+    init(suggestions: [AITagSuggestion]) {
+        self.suggestions = suggestions
+    }
+
+    func ensureGenerationClientsReady(includeSummary: Bool, includeTags: Bool) throws {}
+
+    func generateBatchInsight(
+        for repo: Repo,
+        existingTagHints: AITagHints,
+        includeSummary: Bool,
+        includeTags: Bool
+    ) async throws -> RepoAIInsightGeneration {
+        RepoAIInsightGeneration(
+            insight: RepoAIInsight(
+                oneLiner: "",
+                summary: "",
+                summaryMarkdown: nil,
+                platforms: [],
+                suitableFor: [],
+                strengths: [],
+                risks: [],
+                minimalExample: nil,
+                suggestedTags: includeTags ? suggestions : [],
+                model: "test-model",
+                generatedAt: ISO8601DateFormatter.shared.string(from: Date()),
+                contextMetadata: nil,
+                externalContextMarkdown: nil,
+                generationContextSettings: nil
+            ),
+            tagErrorMessage: nil,
+            contextDegradationReason: nil,
+            externalContextDegradationReason: nil
+        )
     }
 }

@@ -301,6 +301,15 @@ struct SidebarView: View {
         return service.isRunning && !service.silent
     }
 
+    private var isManualBatchReviewPending: Bool {
+        let service = dependencies.batchAIQueueService
+        return service.hasPendingTagReview && !service.silent
+    }
+
+    private var isManualBatchActive: Bool {
+        isManualBatchRunning || isManualBatchReviewPending
+    }
+
     private var summaryBackgroundTasks: [RepoAISummaryBackgroundTask] {
         dependencies.repoAIInsightSessionStore.backgroundTasks
     }
@@ -311,7 +320,7 @@ struct SidebarView: View {
     }
 
     private var hasAnyBackgroundTask: Bool {
-        isManualBatchRunning
+        isManualBatchActive
             || isGitHubListGroupingActive
             || autoTidyScheduler.isAutoTidyRunning
             || !summaryBackgroundTasks.isEmpty
@@ -328,9 +337,16 @@ struct SidebarView: View {
                 showBackgroundTaskPopover.toggle()
             } label: {
                 HStack(spacing: 6) {
-                    ProgressView()
-                        .controlSize(.mini)
-                        .frame(width: 12, height: 12)
+                    if isManualBatchReviewPending, !isManualBatchRunning {
+                        Image(systemName: "checklist")
+                            .font(interfaceScale.font(.captionSmall))
+                            .foregroundStyle(Color.accentColor)
+                            .frame(width: 12, height: 12)
+                    } else {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .frame(width: 12, height: 12)
+                    }
                     Text(backgroundTaskStatusText)
                         .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
@@ -377,13 +393,20 @@ struct SidebarView: View {
             }
             return grouping
         }
-        if isManualBatchRunning {
+        if isManualBatchActive {
             let service = dependencies.batchAIQueueService
-            let tidy = String(
-                format: String.l10n("sidebar.background.manual.runningFormat"),
-                service.finishedCount,
-                service.totalCount
-            )
+            let tidy = if isManualBatchReviewPending, !isManualBatchRunning {
+                String(
+                    format: String.l10n("sidebar.background.manual.pendingReviewFormat"),
+                    service.pendingTagReviewCount
+                )
+            } else {
+                String(
+                    format: String.l10n("sidebar.background.manual.runningFormat"),
+                    service.finishedCount,
+                    service.totalCount
+                )
+            }
             if summaryCount > 0 {
                 return String(
                     format: String.l10n("sidebar.background.combinedFormat"),
@@ -423,7 +446,7 @@ struct SidebarView: View {
         if isGitHubListGroupingActive {
             return "sidebar.githubStarLists.aiGrouping.tooltip"
         }
-        if isManualBatchRunning {
+        if isManualBatchActive {
             return "sidebar.background.manual.tooltip"
         }
         if autoTidyScheduler.isAutoTidyRunning {
@@ -452,14 +475,14 @@ struct SidebarView: View {
 
             if isGitHubListGroupingActive {
                 githubStarListGroupingPopoverSection
-            } else if isManualBatchRunning {
+            } else if isManualBatchActive {
                 manualBatchPopoverSection
             } else if autoTidyScheduler.isAutoTidyRunning {
                 autoTidyPopoverSection
             }
 
             if !summaryBackgroundTasks.isEmpty {
-                if isGitHubListGroupingActive || isManualBatchRunning || autoTidyScheduler.isAutoTidyRunning {
+                if isGitHubListGroupingActive || isManualBatchActive || autoTidyScheduler.isAutoTidyRunning {
                     Divider()
                 }
                 summaryTasksPopoverSection
@@ -472,7 +495,7 @@ struct SidebarView: View {
     private var backgroundTaskPopoverTitleKey: LocalizedStringKey {
         if isGitHubListGroupingActive {
             "sidebar.githubStarLists.aiGrouping.popover.title"
-        } else if isManualBatchRunning {
+        } else if isManualBatchActive {
             "sidebar.background.manual.popover.title"
         } else if autoTidyScheduler.isAutoTidyRunning {
             "sidebar.autoTidy.popover.title"
@@ -521,6 +544,20 @@ struct SidebarView: View {
                 .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+            }
+
+            if service.pendingTagReviewCount > 0 {
+                Label {
+                    Text(String(
+                        format: String.l10n("sidebar.background.manual.pendingReviewFormat"),
+                        service.pendingTagReviewCount
+                    ))
+                    .monospacedDigit()
+                } icon: {
+                    Image(systemName: "checklist")
+                }
+                .font(interfaceScale.font(.captionSmall))
+                .foregroundStyle(Color.accentColor)
             }
 
             // 与自动整理同一套三卡片口径：已应用 / 已忽略 / 失败。

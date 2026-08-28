@@ -14,7 +14,7 @@
 //  - 状态枚举与 "ignored" 的引入：dong4j 2026-06-06 16:21 评审决议——
 //    当开启"自动应用标签"时，置信度低于阈值的推荐应被**自动忽略**（不计入失败、不重试）。
 //    `ignored` 与 `failed` 在 UX 上必须区分，否则用户会误以为 AI 失败率虚高。
-//  - 操作集 Options.actions 用 Set<Action> 保证多选幂等；UI 默认勾选「摘要 + 标签」。
+//  - 操作集 Options.actions 用 Set<Action> 保证多选幂等；手动入口固定生成标签，摘要可选。
 //
 
 import Foundation
@@ -41,6 +41,27 @@ enum BatchAIJobStatus: String, Codable, Equatable, Sendable {
     case completed
     case ignored
     case failed
+}
+
+// MARK: - BatchAITagReviewState
+
+/// 标签生成完成后的人工审核状态。
+///
+/// 生成状态与审核状态必须分离：AI 队列可以继续处理后续仓库，已经完成的仓库则留在
+/// 同一窗口等待用户确认。否则把“待确认”塞回 `BatchAIJobStatus` 会让进度永远无法完成。
+enum BatchAITagReviewState: Equatable, Sendable {
+    /// 本仓库不需要人工审核：没有生成标签、未执行标签任务，或已经走自动应用。
+    case notRequired
+    /// 已生成候选标签，等待用户调整选择并确认。
+    case pending
+    /// 正在创建 / 复用标签并写入 repo_tags。
+    case applying
+    /// 用户选择的标签已经成功落库。
+    case applied
+    /// 用户明确忽略本仓库的全部候选标签。
+    case ignored
+    /// 人工应用失败；保留尚未成功的选择，允许用户重试。
+    case failed(BatchAIFailure)
 }
 
 // MARK: - BatchAIFailure
@@ -130,6 +151,18 @@ struct BatchAIJob: Identifiable, Equatable, Sendable {
     /// 用 [String] 而非 [Tag]，避免 ViewModel 跨线程持有 GRDB 实体。
     var appliedTagNames: [String] = []
 
+    /// AI 为本仓库生成的全部候选标签。
+    ///
+    /// 只保存在当前批量会话中；用户确认前不写入标签表。关闭再打开面板仍可继续审核，
+    /// App 重启后随队列一起清空，维持现有 BatchAIQueueService 的会话级边界。
+    var suggestedTags: [AITagSuggestion] = []
+
+    /// 当前人工选择的候选标签 ID。默认包含全部建议，用户可在展开区逐项取消。
+    var selectedSuggestedTagIDs: Set<String> = []
+
+    /// 与 AI 生成终态分离的人工审核状态。
+    var tagReviewState: BatchAITagReviewState = .notRequired
+
     /// 因低于置信度阈值被忽略的标签（status == .ignored 时填）。
     /// 仍保留 `(name, confidence)` 二元组以便 UI 提示"X% < 阈值 Y%"。
     var ignoredTagsBelowThreshold: [(name: String, confidence: Double)] = []
@@ -155,6 +188,9 @@ struct BatchAIJob: Identifiable, Equatable, Sendable {
               lhs.errorDiagnostic == rhs.errorDiagnostic,
               lhs.copyDiagnostic == rhs.copyDiagnostic,
               lhs.appliedTagNames == rhs.appliedTagNames,
+              lhs.suggestedTags == rhs.suggestedTags,
+              lhs.selectedSuggestedTagIDs == rhs.selectedSuggestedTagIDs,
+              lhs.tagReviewState == rhs.tagReviewState,
               lhs.finishedAt == rhs.finishedAt,
               lhs.didGenerateSummary == rhs.didGenerateSummary,
               lhs.ignoredTagsBelowThreshold.count == rhs.ignoredTagsBelowThreshold.count
@@ -176,7 +212,7 @@ struct BatchAIJob: Identifiable, Equatable, Sendable {
 enum BatchAIAction: String, CaseIterable, Codable, Hashable, Sendable {
     /// 生成 AI 摘要（写入 ai_summaries 表）。
     case summary
-    /// 推荐并应用 / 暂存标签（依 Options.autoApplyTags 决定是否落库）。
+    /// 生成标签；自动应用关闭时在批量窗口内等待用户逐仓确认。
     case tags
 }
 
@@ -184,9 +220,10 @@ enum BatchAIAction: String, CaseIterable, Codable, Hashable, Sendable {
 
 /// 单次启动批量整理时的执行配置。
 ///
-/// 默认值与 dong4j 2026-06-06 评审一致：
+/// 默认值保留自动整理与旧调用方所需的「摘要 + 标签」组合；手动入口会强制包含 `.tags`，
+/// 并把摘要作为可选项展示：
 /// - actions = [.summary, .tags]
-/// - autoApplyTags = false（默认走详情页确认流，避免新用户误产生大量未确认标签）
+/// - autoApplyTags = false（默认在同一个批量窗口内人工确认，避免静默写入）
 /// - confidenceThreshold = 0.90（dong4j 16:22 明确要求默认 90%）
 /// - maxRetries = 3（任务描述明确）
 struct BatchAIQueueOptions: Equatable, Sendable {

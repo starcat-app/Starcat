@@ -5,13 +5,13 @@
 //  HOM-52 - 批量整理启动前的操作选择 Sheet。
 //
 //  模块职责：
-//  - 让用户选择本次要跑哪些 AI 子任务（摘要 / 标签）。
+//  - 固定生成标签，并让用户选择是否同时生成 AI 摘要。
 //  - 让用户决定是否"自动应用推荐标签"+ 设置置信度阈值。
 //  - 显示本次将处理的 repo 数量与简单时长估算。
 //
 //  关键约束：
-//  - 默认值与 dong4j 2026-06-06 评审决议一致：actions=[summary,tags]、autoApply=false、threshold=0.90。
-//  - 启动按钮在 actions 为空 / repo 数为 0 时禁用，避免误触发。
+//  - 生成标签固定开启；autoApply=false 时，建议在进度窗口逐仓展开并人工应用。
+//  - 启动按钮在 repo 数为 0 或 AI 配置不可用时禁用，避免误触发。
 //
 //  UI 设计（2026-06-06 17:51 dong4j 反馈"系统 toggle 太丑"重做）：
 //  - 抛弃 `Toggle(...).toggleStyle(.switch)`：macOS 26 的系统 switch 颗粒粗、
@@ -19,8 +19,8 @@
 //  - 改用 **可点击卡片 + 圆形 checkmark**：整行点击切换，圆形勾选标记替代 toggle，
 //    视觉重量更轻。选中态用 tint 淡色背景 + 描边明确反馈。
 //  - hover 反馈复用项目共享 `PressableHover`，与详情页可点击元素一致。
-//  - 自动应用作为"标签"的子设置：未选标签时整卡 disabled；阈值滑条仅在
-//    autoApply 打开时显示，与上方 OptionCard 左右对齐（不再额外缩进，避免
+//  - 自动应用作为"标签"的子设置：阈值滑条仅在 autoApply 打开时显示，
+//    与上方 OptionCard 左右对齐（不再额外缩进，避免
 //    左缘错落破坏视觉节奏）。
 //
 
@@ -45,7 +45,6 @@ struct BatchAIOptionsSheet: View {
         VStack(alignment: .leading, spacing: 18) {
             header
             actionsSection
-            autoApplyCard
             if let configurationIssue {
                 Label {
                     Text(verbatim: configurationIssue)
@@ -80,7 +79,7 @@ struct BatchAIOptionsSheet: View {
             .frame(width: 36, height: 36)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("batchAI.options.title")
+                Text("batchAI.generateTags.title")
                     .font(.headline)
                 Text(String(format: String.l10n("batchAI.options.subtitleFormat"), pendingCount))
                     .font(.subheadline)
@@ -108,7 +107,7 @@ struct BatchAIOptionsSheet: View {
         .background(Color.secondary.opacity(0.08), in: Capsule())
     }
 
-    // MARK: - Actions Section（两个操作卡片）
+    // MARK: - Actions Section
 
     private var actionsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -119,18 +118,20 @@ struct BatchAIOptionsSheet: View {
 
             VStack(spacing: 8) {
                 OptionCard(
+                    icon: "tag",
+                    title: "batchAI.generateTags.action.tags",
+                    subtitle: "batchAI.generateTags.action.tags.desc",
+                    isSelected: true,
+                    isDisabled: true,
+                    onToggle: {}
+                )
+                autoApplyCard
+                OptionCard(
                     icon: "doc.text",
                     title: "batchAI.options.action.summary",
                     subtitle: "batchAI.options.action.summary.desc",
                     isSelected: options.actions.contains(.summary),
                     onToggle: { toggleAction(.summary) }
-                )
-                OptionCard(
-                    icon: "tag",
-                    title: "batchAI.options.action.tags",
-                    subtitle: "batchAI.options.action.tags.desc",
-                    isSelected: options.actions.contains(.tags),
-                    onToggle: { toggleAction(.tags) }
                 )
             }
         }
@@ -139,22 +140,18 @@ struct BatchAIOptionsSheet: View {
     // MARK: - Auto-apply Card（带子设置：阈值滑条）
 
     private var autoApplyCard: some View {
-        let tagsEnabled = options.actions.contains(.tags)
-
         return VStack(alignment: .leading, spacing: 10) {
             OptionCard(
                 icon: "checkmark.seal",
                 title: "batchAI.options.autoApply",
                 subtitle: "batchAI.options.autoApply.desc",
                 isSelected: options.autoApplyTags,
-                isDisabled: !tagsEnabled,
                 onToggle: {
-                    guard tagsEnabled else { return }
                     options.autoApplyTags.toggle()
                 }
             )
 
-            if options.autoApplyTags, tagsEnabled {
+            if options.autoApplyTags {
                 thresholdSlider
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
             }
@@ -209,7 +206,7 @@ struct BatchAIOptionsSheet: View {
             Button {
                 onStart()
             } label: {
-                Text(String(format: String.l10n("batchAI.options.startFormat"), pendingCount))
+                Text(String(format: String.l10n("batchAI.generateTags.startFormat"), pendingCount))
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
@@ -244,7 +241,7 @@ struct BatchAIOptionsSheet: View {
 /// - 选中态：背景 `tint.opacity(0.08)` + 描边 `tint.opacity(0.35)`
 /// - 未选中态：背景透明 + 描边 `secondary.opacity(0.18)`
 /// - hover：背景叠加 `secondary.opacity(0.05)`
-/// - disabled：整卡 opacity 0.45，不响应点击
+/// - disabled：保留选中态视觉但不响应点击，用于表达“生成标签”为必选项
 ///
 /// 比起 `.toggleStyle(.switch)` 的好处：
 /// - macOS 26 的 system switch 颗粒粗（~30×18pt），三个堆在一起视觉很重；
@@ -291,7 +288,6 @@ private struct OptionCard: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .disabled(isDisabled)
-        .opacity(isDisabled ? 0.45 : 1.0)
         .onHover { hovering in
             withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.12)) {
                 isHovered = hovering && !isDisabled

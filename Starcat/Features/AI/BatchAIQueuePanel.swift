@@ -25,6 +25,7 @@ import SwiftUI
 struct BatchAIQueuePanel: View {
 
     @Bindable var service: BatchAIQueueService
+    @State private var expandedRepoID: Int64?
 
     /// 调用方提供的关闭回调（关闭 sheet）。
     let onClose: () -> Void
@@ -52,7 +53,7 @@ struct BatchAIQueuePanel: View {
         HStack(spacing: 8) {
             Image(systemName: "sparkles")
                 .foregroundStyle(.tint)
-            Text("batchAI.panel.title")
+            Text("batchAI.generateTags.title")
                 .font(.headline)
             Spacer()
             if !service.isFinished, service.isRunning {
@@ -85,7 +86,7 @@ struct BatchAIQueuePanel: View {
             }
             SheetCloseButton(
                 action: {
-                    if service.isFinished {
+                    if service.isFinished, !service.hasPendingTagReview {
                         service.reset()
                     }
                     onClose()
@@ -172,6 +173,11 @@ struct BatchAIQueuePanel: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
+        } else if service.hasPendingTagReview {
+            Label("batchAI.panel.review.pending", systemImage: "checklist")
+                .font(.caption)
+                .foregroundStyle(Color.accentColor)
+                .lineLimit(1)
         } else if service.isFinished {
             Label("batchAI.panel.finished", systemImage: "checkmark.seal.fill")
                 .font(.caption)
@@ -200,6 +206,13 @@ struct BatchAIQueuePanel: View {
             if service.failedCount > 0 {
                 counter(label: "batchAI.panel.counter.failed", count: service.failedCount, color: .red)
             }
+            if service.pendingTagReviewCount > 0 {
+                counter(
+                    label: "batchAI.panel.counter.pendingReview",
+                    count: service.pendingTagReviewCount,
+                    color: .accentColor
+                )
+            }
             Spacer()
         }
     }
@@ -219,9 +232,21 @@ struct BatchAIQueuePanel: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(displayedJobs) { job in
-                    JobRow(job: job, onRetry: {
-                        service.retry(jobId: job.repoId)
-                    })
+                    BatchAITagReviewRow(
+                        job: job,
+                        isExpanded: expandedRepoID == job.repoId,
+                        onToggleExpansion: { toggleExpansion(for: job) },
+                        onToggleTag: {
+                            service.toggleSuggestedTag(repoId: job.repoId, suggestionID: $0)
+                        },
+                        onSelectAll: { service.selectAllSuggestedTags(repoId: job.repoId) },
+                        onClearSelection: { service.clearSuggestedTagSelection(repoId: job.repoId) },
+                        onApply: {
+                            Task { await service.applySelectedSuggestedTags(repoId: job.repoId) }
+                        },
+                        onIgnore: { service.ignoreSuggestedTags(repoId: job.repoId) },
+                        onRetryGeneration: { service.retry(jobId: job.repoId) }
+                    )
                     Divider()
                 }
             }
@@ -229,11 +254,30 @@ struct BatchAIQueuePanel: View {
         .background(Color(nsColor: .textBackgroundColor).opacity(0.4))
     }
 
-    /// 失败置顶，组内保持原队列相对顺序，方便用户先处理问题项。
+    /// 生成失败置顶、待审核项次之，组内保持原队列相对顺序。
     private var displayedJobs: [BatchAIJob] {
         let failed = service.jobs.filter { $0.status == .failed }
-        let others = service.jobs.filter { $0.status != .failed }
-        return failed + others
+        let pendingReview = service.jobs.filter {
+            $0.status != .failed && needsTagReview($0)
+        }
+        let others = service.jobs.filter {
+            $0.status != .failed && !needsTagReview($0)
+        }
+        return failed + pendingReview + others
+    }
+
+    private func needsTagReview(_ job: BatchAIJob) -> Bool {
+        switch job.tagReviewState {
+        case .pending, .applying, .failed:
+            true
+        case .notRequired, .applied, .ignored:
+            false
+        }
+    }
+
+    private func toggleExpansion(for job: BatchAIJob) {
+        guard !job.suggestedTags.isEmpty || job.errorDiagnostic != nil else { return }
+        expandedRepoID = expandedRepoID == job.repoId ? nil : job.repoId
     }
 
     // MARK: - 失败底栏
@@ -269,184 +313,5 @@ struct BatchAIQueuePanel: View {
         }
         let minutes = Int((seconds / 60).rounded())
         return String(format: String.l10n("batchAI.panel.remainingMinutesFormat"), minutes)
-    }
-}
-
-// MARK: - JobRow
-
-/// 单 job 行：图标 + repo 名 + 状态文本 + 右侧 retry 按钮（仅 failed 显示）。
-///
-/// 性能：用 LazyVStack 懒加载，行内只渲染轻量元素（无 markdown / 图像）。
-/// 大批次（1000+）滚动时也只渲染可视行，不会爆 CPU。
-/// 失败行默认只显示短文案；有诊断详情时才露出「查看详情」折叠区。
-private struct JobRow: View {
-    let job: BatchAIJob
-    let onRetry: () -> Void
-
-    @State private var isDiagnosticExpanded = false
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            statusIcon
-                .frame(width: 16, height: 16)
-                .padding(.top, 1)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(verbatim: job.repoFullName)
-                    .font(.subheadline.monospaced())
-                    .lineLimit(1)
-                if let detail = detailText {
-                    Text(detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(isDiagnosticExpanded ? nil : 2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if job.status == .failed, let diagnostic = expandableDiagnostic {
-                    diagnosticDisclosure(diagnostic)
-                }
-            }
-
-            Spacer(minLength: 6)
-
-            if job.status == .failed {
-                Button {
-                    onRetry()
-                } label: {
-                    Text("batchAI.panel.retry")
-                }
-                .controlSize(.small)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-    }
-
-    @ViewBuilder
-    private func diagnosticDisclosure(_ diagnostic: String) -> some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isDiagnosticExpanded.toggle()
-            }
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
-                    .rotationEffect(.degrees(isDiagnosticExpanded ? 90 : 0))
-                Text(isDiagnosticExpanded ? "batchAI.panel.row.hideDetails" : "batchAI.panel.row.showDetails")
-                    .font(.caption)
-            }
-            .foregroundStyle(.secondary)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-
-        if isDiagnosticExpanded {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(verbatim: diagnostic)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                // 展开区只渲染短诊断；完整 Request / Response JSON 到用户点击复制时才读取。
-                // 图标与文案固定占位，避免反馈态撑缩 sheet。
-                CopyFeedbackButton(
-                    providesContent: { copyableFailureReport },
-                    tooltip: "batchAI.panel.row.copyDetails"
-                ) { didCopy in
-                    HStack(spacing: 4) {
-                        Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
-                            .font(.system(size: 11, weight: .regular))
-                            .frame(width: 12, height: 12)
-                            .foregroundStyle(didCopy ? Color.green : .secondary)
-                            .contentTransition(.symbolEffect(.replace))
-                        ZStack(alignment: .leading) {
-                            // 用更长的「复制详情」撑开宽度，避免切到「已复制」时整行收缩。
-                            Text("batchAI.panel.row.copyDetails")
-                                .font(.caption)
-                                .hidden()
-                            Text(didCopy ? "batchAI.panel.row.copiedDetails" : "batchAI.panel.row.copyDetails")
-                                .font(.caption)
-                                .foregroundStyle(didCopy ? Color.green : .secondary)
-                        }
-                    }
-                }
-            }
-            .padding(8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-        }
-    }
-
-    /// 剪贴板内容：短文案 + 完整诊断；payload 不参与上方展开区的 Text 渲染。
-    private var copyableFailureReport: String {
-        BatchAIQueueService.copyableFailureReport(
-            repoFullName: job.repoFullName,
-            message: failureMessage,
-            diagnostic: job.copyDiagnostic ?? job.errorDiagnostic
-        )
-    }
-
-    @ViewBuilder
-    private var statusIcon: some View {
-        switch job.status {
-        case .queued:
-            Image(systemName: "circle")
-                .foregroundStyle(.secondary)
-        case .processing:
-            ProgressView()
-                .controlSize(.small)
-        case .completed:
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-        case .ignored:
-            Image(systemName: "minus.circle.fill")
-                .foregroundStyle(.gray)
-        case .failed:
-            Image(systemName: "xmark.octagon.fill")
-                .foregroundStyle(.red)
-        }
-    }
-
-    /// 副标题：根据状态拼接（已应用标签 / 被忽略的标签 / 错误信息）。
-    private var detailText: String? {
-        switch job.status {
-        case .queued:
-            return nil
-        case .processing:
-            return String.l10n("batchAI.panel.row.processing")
-        case .completed:
-            if !job.appliedTagNames.isEmpty {
-                let tagsStr = job.appliedTagNames.prefix(5).joined(separator: ", ")
-                return String(format: String.l10n("batchAI.panel.row.appliedTagsFormat"), tagsStr)
-            }
-            return job.didGenerateSummary
-                ? String.l10n("batchAI.panel.row.summaryOnly")
-                : String.l10n("batchAI.panel.row.completedNoTags")
-        case .ignored:
-            let names = job.ignoredTagsBelowThreshold.prefix(3).map { suggestion in
-                "\(suggestion.name)(\(Int((suggestion.confidence * 100).rounded()))%)"
-            }.joined(separator: ", ")
-            return String(format: String.l10n("batchAI.panel.row.ignoredFormat"), names)
-        case .failed:
-            return failureMessage
-        }
-    }
-
-    /// 每次渲染都从结构化失败重新查表，应用语言切换后不会残留失败发生时的旧语言。
-    private var failureMessage: String {
-        job.failure?.localizedMessage ?? String.l10n("batchAI.panel.row.failedUnknown")
-    }
-
-    /// 仅当诊断与短文案不同时才提供展开入口。
-    private var expandableDiagnostic: String? {
-        guard let diagnostic = job.errorDiagnostic?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-              !diagnostic.isEmpty
-        else { return nil }
-        let short = failureMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard diagnostic != short else { return nil }
-        return diagnostic
     }
 }
