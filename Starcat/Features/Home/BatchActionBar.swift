@@ -151,10 +151,15 @@ struct BatchActionBar: View {
     private var idleContent: some View {
         let count = store.count
         return HStack(spacing: 10) {
-            Text(String(format: String.l10n("batch.selectedCountFormat"), count))
+            // 多选状态操作较多，视觉上只保留数字以节省水平空间；
+            // VoiceOver 仍使用完整的“已选 N 个”文案，避免失去语义。
+            Text(count, format: .number)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+                .accessibilityLabel(
+                    Text(String(format: String.l10n("batch.selectedCountFormat"), count))
+                )
 
             Spacer()
 

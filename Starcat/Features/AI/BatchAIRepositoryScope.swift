@@ -8,6 +8,8 @@
 //  点击按钮当刻的仓库快照，避免用户打开配置 Sheet 后列表刷新导致任务范围漂移。
 //
 
+import Foundation
+
 enum BatchAIRepositoryScope {
     case allUntagged
     case selected([Repo])
@@ -46,5 +48,21 @@ enum BatchAIRepositoryScope {
         case .selected(let repositories):
             repositories
         }
+    }
+}
+
+/// 批量标签配置 Sheet 的一次性展示载荷。
+///
+/// 仓库范围和跳过数必须作为同一个 `sheet(item:)` 参数传入，避免首次展示时
+/// `sheet(isPresented:)` 的内容闭包读到上一轮的全部未分类状态。
+struct BatchAIOptionsPresentation: Identifiable {
+    let id = UUID()
+    let scope: BatchAIRepositoryScope
+    let skippedTaggedCount: Int
+
+    var usesSelectedRepositories: Bool { scope.isSelectionScoped }
+
+    func pendingCount(untaggedCount: Int) -> Int {
+        scope.pendingCount(untaggedCount: untaggedCount)
     }
 }

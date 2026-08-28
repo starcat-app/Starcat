@@ -17,13 +17,10 @@ struct GitHubStarListAIGroupingSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
-    @Environment(AppDependencies.self) private var dependencies
     @State private var presentation = GitHubStarListAIGroupingPresentationStore()
     @State private var showApplyConfirmation = false
     @State private var showDiscardConfirmation = false
-    /// 新建分组挂在本窗口根上，避免 Preflight 再 nested 一层；macOS nested sheet 会误触发父视图 onDisappear。
-    @State private var showCreateGroupSheet = false
-    /// nested Sheet 可能让父内容重复触发 onAppear；首帧事件每次窗口生命周期只记一次。
+    /// 首帧事件每次窗口生命周期只记一次，避免视图重算重复记录。
     @State private var hasMarkedFirstFrame = false
 
     var body: some View {
@@ -52,24 +49,6 @@ struct GitHubStarListAIGroupingSheet: View {
         }
         .onChange(of: session.presentationRevision) { _, _ in
             presentation.scheduleSynchronize(from: session)
-        }
-        .sheet(isPresented: $showCreateGroupSheet) {
-            GitHubStarListEditorSheet(
-                list: nil,
-                service: dependencies.githubStarListSyncService,
-                onSaved: {
-                    await session.reloadListsAndRules()
-                    session.onMembershipsChanged?()
-                }
-            )
-            .onAppear {
-                PerformanceTracer.shared.mark(.gitHubStarListCreateFirstFrame)
-            }
-            // 与侧栏新建分组同一口径。不要套 appSheetRootEnvironment：嵌套 sheet 再注入整棵
-            // AppDependencies 会让首帧变慢，而且编辑器并不读取那些环境对象。
-            .appLocaleEnvironment()
-            .starcatAnimationOverride()
-            .environment(\.starcatInterfaceScale, interfaceScale)
         }
         .confirmationDialog(
             "githubStarLists.aiGrouping.applyConfirm.title",
@@ -145,8 +124,7 @@ struct GitHubStarListAIGroupingSheet: View {
         } else if presentation.snapshot.totalCount == 0 {
             GitHubStarListAIGroupingPreflightView(
                 snapshot: presentation.snapshot,
-                session: session,
-                showCreateGroupSheet: $showCreateGroupSheet
+                session: session
             )
         } else {
             reviewWorkspace

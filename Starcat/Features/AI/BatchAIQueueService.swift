@@ -80,7 +80,7 @@ final class BatchAIQueueService {
     /// 可重试失败的最早再次执行时刻，避免 429 / 5xx 立即空转轰炸 Provider。
     private var retryNotBeforeByRepoID: [Int64: Date] = [:]
 
-    /// 遇到 429 后的临时单路窗口；窗口结束后恢复默认 2 路并发。
+    /// 遇到 429 后的临时单路窗口；窗口结束后恢复默认 5 路并发。
     private var rateLimitCooldownUntil: Date?
 
     /// 本轮是否已有标签落库，退出 runLoop 时据此合并一次 Sidebar 刷新。
@@ -95,7 +95,8 @@ final class BatchAIQueueService {
     private let entitlementGate: EntitlementGate?
     private let notificationService: ReleaseNotificationService?
 
-    private static let defaultConcurrency = 2
+    /// 正常状态下保留 5 个长驻 Worker；每个 Worker 完成一个仓库后立即领取下一项。
+    private static let defaultConcurrency = 5
     private static let rateLimitCooldown: TimeInterval = 30
 
     /// 一批任务内确实应用过标签后，通知外部刷新 Sidebar 计数 / 当前列表。
@@ -879,7 +880,7 @@ final class BatchAIQueueService {
         friendly.record(category: "ai", operation: "batchAI.job", service: "ai-provider")
 
         // 即使当前 job 已达到重试上限，剩余 queued jobs 仍需立即继承降速窗口，
-        // 不能继续以两路并发撞击同一个已限流 Provider。
+        // 不能继续以五路并发撞击同一个已限流 Provider。
         if isRateLimited(error) {
             rateLimitCooldownUntil = .now.addingTimeInterval(Self.rateLimitCooldown)
         }

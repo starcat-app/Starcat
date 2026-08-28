@@ -132,7 +132,7 @@ struct BatchAIQueueServiceTests {
         #expect(provider.lastExternalContextEnabledOverride == true)
     }
 
-    @Test("标签任务按仓库消费并限制为两路并发")
+    @Test("标签任务按仓库消费并限制为五路并发")
     func tagGenerationUsesBoundedWorkerConcurrency() async throws {
         let provider = ConcurrentBatchAIInsightProvider(delay: .milliseconds(40))
         let service = try makeService(insightProvider: provider)
@@ -145,7 +145,7 @@ struct BatchAIQueueServiceTests {
 
         #expect(provider.batchSizes.isEmpty)
         #expect(provider.individualCallCount == 20)
-        #expect(provider.maximumActiveIndividualCalls == 2)
+        #expect(provider.maximumActiveIndividualCalls == 5)
         #expect(service.jobs.allSatisfy { $0.status == .completed })
         #expect(service.processingJobIDs.isEmpty)
     }
@@ -177,7 +177,7 @@ struct BatchAIQueueServiceTests {
         #expect(service.finishedCount == 3)
     }
 
-    @Test("摘要任务保持单仓请求并限制为两路并发")
+    @Test("摘要任务保持单仓请求并限制为五路并发")
     func summaryGenerationUsesBoundedIndividualConcurrency() async throws {
         let provider = ConcurrentBatchAIInsightProvider(delay: .milliseconds(40))
         let service = try makeService(insightProvider: provider)
@@ -190,7 +190,7 @@ struct BatchAIQueueServiceTests {
 
         #expect(provider.batchSizes.isEmpty)
         #expect(provider.individualCallCount == 5)
-        #expect(provider.maximumActiveIndividualCalls == 2)
+        #expect(provider.maximumActiveIndividualCalls == 5)
         #expect(service.jobs.allSatisfy { $0.didGenerateSummary })
     }
 

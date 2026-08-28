@@ -99,14 +99,10 @@ struct HomeView: View {
     /// 开始使用清单的“添加标签”应直接打开 Tags 管理里的新建标签 sheet。
     @State private var showNewTagSheetOnTagManagementOpen: Bool = false
 
-    /// HOM-52：批量 AI 整理"操作选择" sheet 显示状态。
-    @State private var showBatchAIOptions: Bool = false
+    /// HOM-52：批量 AI 整理“操作选择” Sheet 的一次性展示载荷。
+    @State private var batchAIOptionsPresentation: BatchAIOptionsPresentation?
     /// HOM-52：批量 AI 整理进度面板 sheet 显示状态。
     @State private var showBatchAIPanel: Bool = false
-    /// 配置 Sheet 当前对应的仓库范围；默认入口仍是全部未分类仓库。
-    @State private var batchAIRepositoryScope: BatchAIRepositoryScope = .allUntagged
-    /// 多选入口中因已有标签而被跳过的数量，仅用于当前配置 Sheet 的透明反馈。
-    @State private var batchAISkippedTaggedCount = 0
     /// 全部选中项均已有标签时给出轻量提示，避免点击按钮后毫无反馈。
     @State private var batchAISelectionNotice: String?
     /// HOM-52：当前正在编辑的 Options。
@@ -502,13 +498,13 @@ struct HomeView: View {
             }
         }
         // HOM-52：批量 AI 整理"操作选择" sheet
-        .sheet(isPresented: $showBatchAIOptions) {
+        .sheet(item: $batchAIOptionsPresentation) { presentation in
             BatchAIOptionsSheet(
-                pendingCount: batchAIRepositoryScope.pendingCount(
+                pendingCount: presentation.pendingCount(
                     untaggedCount: viewModel.untaggedCount
                 ),
-                usesSelectedRepositories: batchAIRepositoryScope.isSelectionScoped,
-                skippedTaggedCount: batchAISkippedTaggedCount,
+                usesSelectedRepositories: presentation.usesSelectedRepositories,
+                skippedTaggedCount: presentation.skippedTaggedCount,
                 options: $batchAIOptions,
                 configurationIssue: dependencies.batchAIQueueService.configurationIssue(
                     for: batchAIOptions
@@ -518,7 +514,7 @@ struct HomeView: View {
                 onCancel: dismissBatchAIOptions,
                 onStart: {
                     Task {
-                        await startBatchAIIntegration()
+                        await startBatchAIIntegration(scope: presentation.scope)
                     }
                 }
             )
@@ -2210,7 +2206,7 @@ struct HomeView: View {
     ///
     /// 错误处理：fetchUntagged 失败仅记日志，不弹错——这是用户主动触发的场景，
     /// 失败时按钮仍可继续点（dependencies 状态未变，第二次点击会重试）。
-    private func startBatchAIIntegration() async {
+    private func startBatchAIIntegration(scope: BatchAIRepositoryScope) async {
         do {
             try dependencies.entitlementGate.requirePro(.batchAI)
         } catch {
@@ -2225,7 +2221,7 @@ struct HomeView: View {
         }
         let repositories: [Repo]
         do {
-            repositories = try await batchAIRepositoryScope.resolveRepositories {
+            repositories = try await scope.resolveRepositories {
                 try await dependencies.repoRepository.fetchUntagged()
             }
         } catch {
@@ -2233,7 +2229,7 @@ struct HomeView: View {
             return
         }
         guard !repositories.isEmpty else { return }
-        let wasSelectionScoped = batchAIRepositoryScope.isSelectionScoped
+        let wasSelectionScoped = scope.isSelectionScoped
         // 用户主动整理优先于静默自动轮次。必须等待旧 runLoop 完全退出后再复用
         // BatchAIQueueService，避免两轮同时改写 jobs / options 和标签数据。
         await dependencies.batchAIQueueService.preemptAutomaticRunForManualStart()
@@ -2243,9 +2239,7 @@ struct HomeView: View {
         if wasSelectionScoped {
             dependencies.manageMultiSelectionStore.exit()
         }
-        batchAIRepositoryScope = .allUntagged
-        batchAISkippedTaggedCount = 0
-        showBatchAIOptions = false
+        batchAIOptionsPresentation = nil
         showBatchAIPanel = true
     }
 
@@ -2253,18 +2247,23 @@ struct HomeView: View {
     ///
     /// 这里故意只读 `AppSettings`，后续交互只改 `batchAIOptions`，因此用户在 Sheet 中
     /// 临时开关代码上下文或外部搜索，不会污染单仓摘要面板与下一次打开时的全局默认值。
-    private func presentBatchAIOptions(scope: BatchAIRepositoryScope) {
-        batchAIRepositoryScope = scope
+    private func presentBatchAIOptions(
+        scope: BatchAIRepositoryScope,
+        skippedTaggedCount: Int = 0
+    ) {
         batchAIOptions.actions.insert(.tags)
         batchAIOptions.codeContextEnabledOverride = dependencies.settings.aiRepoContextEnabled
         batchAIOptions.externalContextEnabledOverride = dependencies.settings.externalContextEnabled
-        showBatchAIOptions = true
+        // 最后一次性设置 item，让 SwiftUI 在创建 Sheet 时直接拿到本轮范围快照。
+        batchAIOptionsPresentation = BatchAIOptionsPresentation(
+            scope: scope,
+            skippedTaggedCount: skippedTaggedCount
+        )
     }
 
     /// 新任务不能覆盖尚未确认的标签；两个入口共用同一条守门逻辑。
     private func requestBatchAIOptions(scope: BatchAIRepositoryScope) {
         guard scope.pendingCount(untaggedCount: viewModel.untaggedCount) > 0 else { return }
-        batchAISkippedTaggedCount = 0
         if dependencies.batchAIQueueService.hasPendingTagReview {
             showBatchAIPanel = true
         } else {
@@ -2296,19 +2295,20 @@ struct HomeView: View {
             repositories,
             tagAssignments: assignments
         )
-        batchAISkippedTaggedCount = repositories.count - eligible.count
+        let skippedTaggedCount = repositories.count - eligible.count
         guard !eligible.isEmpty else {
             batchAISelectionNotice = String.l10n("batchAI.selection.allTagged")
             return
         }
-        presentBatchAIOptions(scope: .selected(eligible))
+        presentBatchAIOptions(
+            scope: .selected(eligible),
+            skippedTaggedCount: skippedTaggedCount
+        )
     }
 
     /// 取消配置只清理临时任务范围，不退出多选，让用户可以继续调整勾选结果。
     private func dismissBatchAIOptions() {
-        showBatchAIOptions = false
-        batchAIRepositoryScope = .allUntagged
-        batchAISkippedTaggedCount = 0
+        batchAIOptionsPresentation = nil
     }
 
     private var hasUsableExternalSearchProvider: Bool {

@@ -28,6 +28,22 @@ struct BatchAIRepositoryScopeTests {
         #expect(resolved.map(\.id) == [101])
     }
 
+    @Test("配置 Sheet 首次展示使用已选范围而非未分类总数")
+    func optionsPresentationUsesSelectedScopeOnFirstDisplay() {
+        var first = Repo.makeMinimal(owner: "acme", name: "first-selected")
+        first.id = 111
+        var second = Repo.makeMinimal(owner: "acme", name: "second-selected")
+        second.id = 112
+        let presentation = BatchAIOptionsPresentation(
+            scope: .selected([first, second]),
+            skippedTaggedCount: 3
+        )
+
+        #expect(presentation.usesSelectedRepositories)
+        #expect(presentation.pendingCount(untaggedCount: 1_945) == 2)
+        #expect(presentation.skippedTaggedCount == 3)
+    }
+
     @Test("全部未分类范围在开始时读取最新仓库")
     func allUntaggedScopeFetchesAtStart() async {
         var repo = Repo.makeMinimal(owner: "acme", name: "untagged")

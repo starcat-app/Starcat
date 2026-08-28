@@ -7,8 +7,7 @@
 //  页面展示全部仓库、去重后的已分组/未分组数量，以及每个现有分组的规则。
 //  所有统计都由 PresentationSnapshot 一次性生成，SwiftUI body 不扫描完整仓库集合。
 //  置信度写入 GitHubStarListAutoGroupingSettings。分组 AI 规则在卡片内折叠填写，
-//  空规则不能打开自动整理。开始页「新增分组」把 sheet 状态交给外层审核窗口，
-//  避免 macOS nested sheet 误触发父视图 onDisappear / 再次 prepare。
+//  空规则不能打开自动整理。
 //
 
 import SwiftUI
@@ -22,7 +21,6 @@ struct GitHubStarListAIGroupingPreflightView: View {
     @Environment(\.locale) private var locale
     @Environment(\.colorScheme) private var colorScheme
     @State private var searchText = ""
-    @Binding var showCreateGroupSheet: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -117,20 +115,6 @@ struct GitHubStarListAIGroupingPreflightView: View {
                 Text("githubStarLists.aiGrouping.preflight.existingGroups")
                     .font(interfaceScale.font(.panelTitle))
                 Spacer(minLength: 0)
-                Button {
-                    PerformanceTracer.shared.mark(.gitHubStarListCreateRequested)
-                    showCreateGroupSheet = true
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(interfaceScale.font(.iconMedium, weight: .medium))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 20, height: 20)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help(Text("sidebar.githubStarLists.add"))
                 TextField("githubStarLists.aiGrouping.search.groups", text: $searchText)
                     .textFieldStyle(.roundedBorder)
                     .controlSize(.small)
@@ -144,11 +128,6 @@ struct GitHubStarListAIGroupingPreflightView: View {
                         Label("githubStarLists.aiGrouping.noAvailableGroups", systemImage: "tray")
                     } description: {
                         Text("githubStarLists.aiGrouping.results.empty.help")
-                    } actions: {
-                        Button("sidebar.githubStarLists.add") {
-                            PerformanceTracer.shared.mark(.gitHubStarListCreateRequested)
-                            showCreateGroupSheet = true
-                        }
                     }
                 } else if filteredGroups.isEmpty {
                     ContentUnavailableView(
