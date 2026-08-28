@@ -306,6 +306,27 @@ struct AwesomeStoreTests {
         #expect(store.customSourceParseStates[custom.id] != nil)
     }
 
+    @Test("来源选择列表不会展示零项目来源")
+    @MainActor
+    func sourcePickerHidesZeroRepositorySources() {
+        let available = Self.source(id: "available", githubRepoCount: 12)
+        let empty = Self.source(id: "empty", githubRepoCount: 0)
+
+        let defaultResults = AwesomeSourceManagerSheet.filterSources(
+            [empty, available],
+            query: "",
+            languageCode: "zh"
+        )
+        let searchResults = AwesomeSourceManagerSheet.filterSources(
+            [empty, available],
+            query: "awesome-one",
+            languageCode: "zh"
+        )
+
+        #expect(defaultResults.map(\.id) == ["available"])
+        #expect(searchResults.map(\.id) == ["available"])
+    }
+
     private static func source(
         id: String = "one",
         kind: AwesomeSourceKind = .managed,

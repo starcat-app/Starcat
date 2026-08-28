@@ -147,7 +147,7 @@ struct AwesomeSourceManagerSheet: View {
         if store.sources.isEmpty, store.isLoading || store.isRefreshing {
             ProgressView("awesome.sources.loading")
                 .frame(maxWidth: .infinity, minHeight: 180)
-        } else if store.sources.isEmpty {
+        } else if selectableSources.isEmpty {
             emptySourceState
         } else if filteredSources.isEmpty {
             ContentUnavailableView.search(text: searchQuery)
@@ -182,12 +182,30 @@ struct AwesomeSourceManagerSheet: View {
             .joined(separator: "\n")
     }
 
-    private var filteredSources: [AwesomeSource] {
-        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return store.sources }
+    private var selectableSources: [AwesomeSource] {
+        Self.filterSources(store.sources, query: "", languageCode: nil)
+    }
 
-        let languageCode = locale.language.languageCode?.identifier
-        return store.sources.filter { source in
+    private var filteredSources: [AwesomeSource] {
+        Self.filterSources(
+            store.sources,
+            query: searchQuery,
+            languageCode: locale.language.languageCode?.identifier
+        )
+    }
+
+    /// 零仓库来源仍保留在 Discovery 目录中供后续重新同步，但不进入客户端可选卡片列表。
+    /// 过滤必须先于搜索执行，避免用户通过关键词再次搜出不可用的零项目来源。
+    static func filterSources(
+        _ sources: [AwesomeSource],
+        query: String,
+        languageCode: String?
+    ) -> [AwesomeSource] {
+        let selectableSources = sources.filter { $0.githubRepoCount > 0 }
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedQuery.isEmpty else { return selectableSources }
+
+        return selectableSources.filter { source in
             [
                 source.displayName,
                 source.repoFullName,
@@ -195,7 +213,7 @@ struct AwesomeSourceManagerSheet: View {
                 source.localizedSummary(languageCode: languageCode)
             ]
             .compactMap { $0 }
-            .contains { $0.localizedCaseInsensitiveContains(query) }
+            .contains { $0.localizedCaseInsensitiveContains(normalizedQuery) }
         }
     }
 
