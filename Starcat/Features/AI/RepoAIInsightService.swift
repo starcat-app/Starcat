@@ -589,6 +589,106 @@ final class RepoAIInsightService {
         )
     }
 
+    /// 一次请求为一小批仓库生成标签建议。
+    ///
+    /// 与 GitHub Lists 批量分组相同，批量只承载轻量元数据与截断 README，不准备代码、
+    /// 洞察或外部搜索。用户自定义的 Tags Prompt 仍会逐仓渲染；全库标签词表只在请求
+    /// 顶层注入一次，避免 8 个仓库重复携带同一份 12K 字符词表撑爆上下文。
+    func generateTagSuggestions(
+        for repos: [Repo],
+        tagHintsByRepoID: [Int64: AITagHints]
+    ) async throws -> [Int64: [AITagSuggestion]] {
+        try enforceGenerationEntitlement(includeSummary: false, includeTags: true)
+        try ensureGenerationClientsReady(includeSummary: false, includeTags: true)
+        guard !repos.isEmpty else { return [:] }
+
+        let task = settings.aiTagsTask
+        let (client, model) = try makeClient(
+            task: task,
+            fallbackModel: settings.aiChatModel,
+            taskName: String.l10n("ai.taskName.tagRecommendation")
+        )
+        let outputLanguage = Self.outputLanguageDescriptor()
+        let baseSystemPrompt = task.prompt.renderedSystemPrompt(placeholders: [
+            "outputLanguage": outputLanguage
+        ])
+        let systemPrompt = baseSystemPrompt + """
+
+
+        # Batch Output Override (STRICT)
+        This request contains multiple independently rendered repository tagging requests.
+        Replace the single-repository output schema above with exactly this JSON object:
+        {"results":[{"repo_id":123,"suggestedTags":[{"name":"string","confidence":0.0,"reason":"string"}]}]}
+        Return exactly one results entry for every provided repo_id. Do not omit, duplicate, or invent repo_id values.
+        Apply all tag constraints above independently to each repository.
+        """
+
+        var sharedLibraryTags: [String] = []
+        var seenLibraryKeys: Set<String> = []
+        for repo in repos {
+            for name in tagHintsByRepoID[repo.id]?.libraryTags ?? [] {
+                let key = AITagSuggestionPolicy.canonicalKey(name)
+                guard !key.isEmpty, seenLibraryKeys.insert(key).inserted else { continue }
+                sharedLibraryTags.append(name)
+            }
+        }
+
+        var repositoryRequests: [[String: Any]] = []
+        repositoryRequests.reserveCapacity(repos.count)
+        for repo in repos {
+            try Task.checkCancellation()
+            let source = try await makeSource(for: repo, includeInsights: false)
+            let hints = tagHintsByRepoID[repo.id] ?? .empty
+            let renderedPrompt = task.prompt.renderedUserPrompt(placeholders: [
+                "metadata": source.metadata,
+                // 批量请求必须给每个仓库单独设上限，避免一个超长 README 挤掉整批结果。
+                "readme": String(source.readme.prefix(4_000)),
+                "codeContext": "",
+                "repoTags": hints.repoTags.joined(separator: ", "),
+                "libraryTags": "Use exact names from <shared_library_tags> below."
+            ])
+            repositoryRequests.append([
+                "repo_id": repo.id,
+                "tagging_request": renderedPrompt
+            ])
+        }
+
+        let requestsJSON = String(
+            decoding: try JSONSerialization.data(withJSONObject: repositoryRequests),
+            as: UTF8.self
+        )
+        let userPrompt = """
+        <shared_library_tags>
+        \(sharedLibraryTags.joined(separator: ", "))
+        </shared_library_tags>
+        <repository_tagging_requests>
+        \(requestsJSON)
+        </repository_tagging_requests>
+        """
+        let response = try await client.chat(request: AIChatRequest(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            model: model,
+            parameters: settings.effectiveParameters(for: task),
+            responseFormat: .jsonObject,
+            usageContext: AIUsageContext(feature: .repoTags, phase: "batch-recommendation")
+        ))
+        try Task.checkCancellation()
+
+        let decoded = try Self.decodeBatchTagSuggestions(
+            json: response.content,
+            expectedRepoIDs: Set(repos.map(\.id))
+        )
+        return Dictionary(uniqueKeysWithValues: repos.map { repo in
+            let hints = tagHintsByRepoID[repo.id] ?? .empty
+            let suggestions = AITagSuggestionPolicy.normalizedSuggestions(
+                decoded[repo.id] ?? [],
+                vocabulary: hints.repoTags + hints.libraryTags
+            )
+            return (repo.id, suggestions)
+        })
+    }
+
     /// 为一个仓库生成 GitHub Lists 建议，但不执行任何 GitHub 写入。
     ///
     /// Lists 规则、README 与仓库描述都属于不可信数据区；固定 system 指令明确限制模型
@@ -1298,16 +1398,74 @@ final class RepoAIInsightService {
         async let repoTagsResult: [Tag] = {
             (try? await repoTagRepository.fetchTags(forRepo: repo.id)) ?? []
         }()
+        async let sharedLibraryResult = makeSharedTagLibrary(
+            repoTagRepository: repoTagRepository,
+            tagRepository: tagRepository,
+            libraryCharacterBudget: libraryCharacterBudget
+        )
+        let repoTags = await repoTagsResult
+        let sharedLibrary = await sharedLibraryResult
+        return makeTagHints(repoTags: repoTags, sharedLibraryTags: sharedLibrary)
+    }
+
+    /// 为一个批次构造一次全库标签词表。
+    ///
+    /// 批量队列必须复用这个快照，不能对近 2,000 个仓库分别执行 `fetchAll` 与
+    /// `repoCountsByTag`；批次期间新应用的标签留到下一轮进入词表，保证本轮 Prompt 稳定。
+    static func makeSharedTagLibrary(
+        repoTagRepository: any RepoTagRepositoryProtocol,
+        tagRepository: any TagRepositoryProtocol,
+        libraryCharacterBudget: Int = 12_000
+    ) async -> [String] {
         async let allTagsResult: [Tag] = {
             (try? await tagRepository.fetchAll()) ?? []
         }()
         async let countsResult: [String: Int] = {
             (try? await repoTagRepository.repoCountsByTag()) ?? [:]
         }()
-
-        let repoTags = await repoTagsResult
         let allTags = await allTagsResult
         let counts = await countsResult
+
+        let sortedLibraryNames = allTags
+            .map { (name: $0.name.trimmingCharacters(in: .whitespacesAndNewlines), id: $0.id) }
+            .filter { !$0.name.isEmpty }
+            .sorted { lhs, rhs in
+                let lhsCount = counts[lhs.id] ?? 0
+                let rhsCount = counts[rhs.id] ?? 0
+                if lhsCount != rhsCount { return lhsCount > rhsCount }
+                return lhs.name < rhs.name
+            }
+            .map(\.name)
+
+        var libraryNames: [String] = []
+        var seenKeys: Set<String> = []
+        var usedCharacters = 0
+        let budget = max(0, libraryCharacterBudget)
+        for name in sortedLibraryNames {
+            let key = AITagSuggestionPolicy.canonicalKey(name)
+            guard !key.isEmpty, seenKeys.insert(key).inserted else { continue }
+            let additionalCharacters = name.count + (libraryNames.isEmpty ? 0 : 2)
+            guard usedCharacters + additionalCharacters <= budget else { continue }
+            libraryNames.append(name)
+            usedCharacters += additionalCharacters
+        }
+        return libraryNames
+    }
+
+    /// 用批次共享词表补齐单仓强信号；只查询本仓标签，不重复扫描全库标签。
+    static func makeTagHints(
+        for repo: Repo,
+        repoTagRepository: any RepoTagRepositoryProtocol,
+        sharedLibraryTags: [String]
+    ) async -> AITagHints {
+        let repoTags = (try? await repoTagRepository.fetchTags(forRepo: repo.id)) ?? []
+        return makeTagHints(repoTags: repoTags, sharedLibraryTags: sharedLibraryTags)
+    }
+
+    private static func makeTagHints(
+        repoTags: [Tag],
+        sharedLibraryTags: [String]
+    ) -> AITagHints {
 
         // repo 已有标签：trim + 去空 + 去重 + 排序（稳定 hash）。
         // 不按 useCount 排——repo 自身这几个标签信号同等重要，按 name 字典序最稳。
@@ -1323,37 +1481,11 @@ final class RepoAIInsightService {
             }
         }()
 
-        // 全库标签：剔除 repo 已有项 → 按 (useCount DESC, name ASC) 排 → 按字符预算截断。
-        // 旧版只传 Top 30，模型看不到大量长尾标签，因而不断创造同义新词。标签名本身很短，
-        // 用字符预算比固定数量更贴近 Prompt 体积：当前约 900 个标签仍可完整放入 12K；
-        // 将来词表继续增长时也不会无界挤占 README / code context。
+        // 共享词表已经完成排序、预算截断和内部去重；这里只剔除 repo 已有项，避免同一
+        // 标签同时出现在“已覆盖概念”和“可推荐词表”两个互相冲突的 Prompt 区域。
         let repoNameKeys = Set(repoNames.map(AITagSuggestionPolicy.canonicalKey))
-        let sortedLibraryNames: [String] = allTags
-            .map { (name: $0.name.trimmingCharacters(in: .whitespacesAndNewlines), id: $0.id) }
-            .filter {
-                !$0.name.isEmpty
-                    && !repoNameKeys.contains(AITagSuggestionPolicy.canonicalKey($0.name))
-            }
-            .sorted { lhs, rhs in
-                let lc = counts[lhs.id] ?? 0
-                let rc = counts[rhs.id] ?? 0
-                if lc != rc { return lc > rc }
-                return lhs.name < rhs.name
-            }
-            .map(\.name)
-
-        var libraryNames: [String] = []
-        var seenKeys = repoNameKeys
-        var usedCharacters = 0
-        let budget = max(0, libraryCharacterBudget)
-        for name in sortedLibraryNames {
-            let key = AITagSuggestionPolicy.canonicalKey(name)
-            guard !key.isEmpty, seenKeys.insert(key).inserted else { continue }
-            // 与实际 `joined(separator: ", ")` 一致计入分隔符，避免边界附近超预算。
-            let additionalCharacters = name.count + (libraryNames.isEmpty ? 0 : 2)
-            guard usedCharacters + additionalCharacters <= budget else { continue }
-            libraryNames.append(name)
-            usedCharacters += additionalCharacters
+        let libraryNames = sharedLibraryTags.filter {
+            !repoNameKeys.contains(AITagSuggestionPolicy.canonicalKey($0))
         }
 
         return AITagHints(repoTags: repoNames, libraryTags: libraryNames)
@@ -1556,6 +1688,28 @@ final class RepoAIInsightService {
         }
     }
 
+    nonisolated static func decodeBatchTagSuggestions(
+        json raw: String,
+        expectedRepoIDs: Set<Int64>
+    ) throws -> [Int64: [AITagSuggestion]] {
+        let json = extractJSONObject(from: raw)
+        guard let data = json.data(using: .utf8) else { throw RepoAIInsightError.invalidJSON }
+        do {
+            let envelope = try JSONDecoder().decode(AIBatchTagSuggestionEnvelope.self, from: data)
+            var decoded: [Int64: [AITagSuggestion]] = [:]
+            decoded.reserveCapacity(envelope.results.count)
+            for result in envelope.results {
+                // 漏项不能伪装成“没有标签”，重复项也不能静默覆盖前一个结果。
+                guard decoded[result.repoID] == nil else { throw RepoAIInsightError.invalidJSON }
+                decoded[result.repoID] = result.suggestedTags
+            }
+            guard Set(decoded.keys) == expectedRepoIDs else { throw RepoAIInsightError.invalidJSON }
+            return decoded
+        } catch {
+            throw RepoAIInsightError.invalidJSON
+        }
+    }
+
     nonisolated static func decodeGitHubListSuggestions(json raw: String) throws -> [GitHubStarListAISuggestion] {
         let json = extractJSONObject(from: raw)
         guard let data = json.data(using: .utf8) else { throw RepoAIInsightError.invalidJSON }
@@ -1653,6 +1807,20 @@ final class RepoAIInsightService {
 
 private struct AITagSuggestionEnvelope: Codable {
     var suggestedTags: [AITagSuggestion]
+}
+
+private struct AIBatchTagSuggestionEnvelope: Decodable {
+    let results: [Result]
+
+    struct Result: Decodable {
+        let repoID: Int64
+        let suggestedTags: [AITagSuggestion]
+
+        private enum CodingKeys: String, CodingKey {
+            case repoID = "repo_id"
+            case suggestedTags
+        }
+    }
 }
 
 private struct GitHubStarListAISuggestionEnvelope: Codable {

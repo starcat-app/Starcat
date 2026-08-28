@@ -5,9 +5,9 @@
 //  HOM-52 批量未分类仓库 AI 整理 - 队列状态机 + UI 可观察对象。
 //
 //  模块职责：
-//  - 维护单一全局批量整理队列（同时只跑一个批次，避免 AI 配额尖刺）。
-//  - 串行处理 jobs：取下一个 queued → 调 RepoAIInsightService.generateInsight
-//    → 按 Options 落库标签 → 写终态。
+//  - 维护单一全局批量整理队列，并用有界并发避免 AI 配额尖刺。
+//  - 标签专用路径按 8 个仓库组批、同时执行 2 批；摘要路径保持单仓请求、最多 2 路并发。
+//  - AI 结果可乱序返回，但落库与 Observable 状态整合始终收口在 MainActor。
 //  - 暴露 @Observable 状态供 BatchAIQueuePanel / 入口 Banner 直接绑定。
 //
 //  关键约束：
@@ -16,8 +16,8 @@
 //    不重复消耗配额；(2) 落库要新增 batch_ai_jobs 表 + 迁移 + Repository，
 //    与 dong4j 强调的"最小代码"冲突；(3) 用户预期的"后台继续"指 panel 关闭后仍跑，
 //    而非跨进程恢复——若未来真有需求，再独立 V8 迁移即可。
-//  - **串行执行**：一次只处理一个 repo。AI provider 多数有速率限制，且串行能让
-//    "暂停"语义干净（当前 job 跑完即停）。如需提速，后续可加 concurrency 配置。
+//  - **有界并发**：暂停只阻止下一波派发，终止则取消整组 in-flight Task；429 会临时
+//    降为单路并发，避免为了吞吐量把 Provider 推入持续限流。
 //  - **重试不可重试错误甄别**：API Key 缺失 / Provider 缺失这类配置错误**不消耗重试次数**——
 //    用户没改配置之前永远不会成功，重试只会让 panel 失败计数误增。
 //
@@ -32,8 +32,13 @@ final class BatchAIQueueService {
     // MARK: - 可观察状态（@Observable 自动生成 didSet / willSet 跟踪）
 
     /// 当前队列中的所有 jobs（含已完成 / 已失败 / 已忽略 / 仍在排队）。
-    /// UI 用 ForEach 直接绑定。新批次开始时整个数组被替换（不保留上一轮记录）。
-    private(set) var jobs: [BatchAIJob] = []
+    /// 展示层通过分页快照读取；新批次开始时整个数组被替换（不保留上一轮记录）。
+    private(set) var jobs: [BatchAIJob] = [] {
+        didSet { presentationRevision &+= 1 }
+    }
+
+    /// 列表层只观察轻量 revision，再按帧合并生成当前分页范围内的展示快照。
+    private(set) var presentationRevision: UInt64 = 0
 
     /// 本次启动时的执行配置。空表示当前没有进行中的批次。
     private(set) var options: BatchAIQueueOptions?
@@ -56,8 +61,8 @@ final class BatchAIQueueService {
     /// 生命周期：在 `start(...)` 时设置，`reset()` 清回 false。
     private(set) var silent: Bool = false
 
-    /// 当前正在处理的 job repoId（用于 UI 高亮当前行）。
-    private(set) var currentJobId: Int64?
+    /// 当前这一波正在处理的 repo id；批量标签最多 16 个，摘要最多 2 个。
+    private(set) var processingJobIDs: Set<Int64> = []
 
     /// 本次批次的开始时刻，用于估算剩余时间（已用时 / 完成数 → 平均耗时）。
     private(set) var startedAt: Date?
@@ -65,9 +70,21 @@ final class BatchAIQueueService {
     /// 用户主动取消标志位：与 `runLoopTask.cancel()` 共同表达用户终止意图。
     private var cancelRequested: Bool = false
 
-    /// 当前串行队列 Task。取消句柄会把 cancellation 传给 in-flight AI 请求；
+    /// 当前队列 Task。取消句柄会把 cancellation 传给整波 in-flight AI 请求；
     /// runLoop 仍负责统一收口 job 与 UI 状态，避免调用方直接改写状态机。
     private var runLoopTask: Task<Void, Never>?
+
+    /// 批次级全库标签词表快照；每轮只查询一次，避免逐仓重复扫描标签表和使用次数。
+    private var sharedTagLibrary: [String]?
+
+    /// 可重试失败的最早再次执行时刻，避免 429 / 5xx 立即空转轰炸 Provider。
+    private var retryNotBeforeByRepoID: [Int64: Date] = [:]
+
+    /// 同一标签批连续失败两次后切回单仓请求，缩小无效 JSON 或异常仓库的影响范围。
+    private var individualTagFallbackRepoIDs: Set<Int64> = []
+
+    /// 遇到 429 后的临时单路窗口；窗口结束后恢复默认 2 路并发。
+    private var rateLimitCooldownUntil: Date?
 
     /// 本轮是否已有标签落库，退出 runLoop 时据此合并一次 Sidebar 刷新。
     private var hasPendingTagsChangedNotification: Bool = false
@@ -80,6 +97,10 @@ final class BatchAIQueueService {
     private let aiSummaryRepository: any AISummaryRepositoryProtocol
     private let entitlementGate: EntitlementGate?
     private let notificationService: ReleaseNotificationService?
+
+    private static let tagBatchSize = 8
+    private static let defaultConcurrency = 2
+    private static let rateLimitCooldown: TimeInterval = 30
 
     /// 一批任务内确实应用过标签后，通知外部刷新 Sidebar 计数 / 当前列表。
     ///
@@ -218,7 +239,11 @@ final class BatchAIQueueService {
         self.cancelRequested = false
         self.hasPendingTagsChangedNotification = false
         self.startedAt = Date()
-        self.currentJobId = nil
+        self.processingJobIDs = []
+        self.sharedTagLibrary = nil
+        self.retryNotBeforeByRepoID = [:]
+        self.individualTagFallbackRepoIDs = []
+        self.rateLimitCooldownUntil = nil
         AppLog.ai.notice("[batch-ai] start: count=\(repos.count, privacy: .public), autoApplyTags=\(options.autoApplyTags, privacy: .public), threshold=\(options.confidenceThreshold, privacy: .public), silent=\(silent, privacy: .public)")
         launchRunLoop()
         return true
@@ -318,10 +343,14 @@ final class BatchAIQueueService {
         jobs = []
         options = nil
         startedAt = nil
-        currentJobId = nil
+        processingJobIDs = []
         cancelRequested = false
         silent = false
         hasPendingTagsChangedNotification = false
+        sharedTagLibrary = nil
+        retryNotBeforeByRepoID = [:]
+        individualTagFallbackRepoIDs = []
+        rateLimitCooldownUntil = nil
     }
 
     /// 重试单个失败的 job。
@@ -336,6 +365,8 @@ final class BatchAIQueueService {
         jobs[idx].errorDiagnostic = nil
         jobs[idx].copyDiagnostic = nil
         jobs[idx].finishedAt = nil
+        retryNotBeforeByRepoID[jobId] = nil
+        individualTagFallbackRepoIDs.remove(jobId)
         if !isRunning {
             isRunning = true
             isPaused = false
@@ -354,6 +385,8 @@ final class BatchAIQueueService {
             jobs[idx].errorDiagnostic = nil
             jobs[idx].copyDiagnostic = nil
             jobs[idx].finishedAt = nil
+            retryNotBeforeByRepoID[jobs[idx].repoId] = nil
+            individualTagFallbackRepoIDs.remove(jobs[idx].repoId)
             touched = true
         }
         if touched, !isRunning {
@@ -495,13 +528,19 @@ final class BatchAIQueueService {
         }
     }
 
-    /// 串行拉取 queued 的 job 处理，直到全部进入终态、被暂停或被取消。
+    /// 按波次拉取 queued jobs，直到全部进入终态、被暂停或被取消。
     ///
-    /// 注意：方法本身是 async；start / resume / retry 都 fire-and-forget 调用一次，
-    /// 不重入（循环开始时若已无 queued 直接退出）。多次触发只会再 enter 一次循环但
-    /// 立刻退出，不会产生并发。
+    /// 标签专用任务优先走 8 仓一批、2 批并发；摘要或标签批量降级任务走单仓、2 路并发。
+    /// 每个子任务只负责网络与解析，所有 jobs 写入和数据库应用都在 group 返回后串行整合。
     private func runLoop() async {
         guard let options else { return }
+
+        if options.actions.contains(.tags), sharedTagLibrary == nil {
+            sharedTagLibrary = await RepoAIInsightService.makeSharedTagLibrary(
+                repoTagRepository: repoTagRepository,
+                tagRepository: tagRepository
+            )
+        }
 
         while true {
             if cancelRequested || Task.isCancelled {
@@ -510,29 +549,34 @@ final class BatchAIQueueService {
                 break
             }
             if isPaused { break }
-            guard let nextIdx = jobs.firstIndex(where: { $0.status == .queued }) else {
+            let queuedJobIDs = Array(jobs.lazy
+                .filter { $0.status == .queued }
+                .map(\.repoId))
+            guard !queuedJobIDs.isEmpty else {
                 break
             }
-
-            currentJobId = jobs[nextIdx].repoId
-            jobs[nextIdx].status = .processing
-            jobs[nextIdx].attempts += 1
-            let jobSnapshot = jobs[nextIdx]
-
-            do {
-                let result = try await processSingle(jobId: jobSnapshot.repoId, options: options)
-                // Provider 可能在最后一个 checkpoint 后正常返回；写库前再确认用户未取消。
-                try Task.checkCancellation()
-                if cancelRequested { break }
-                try await applyResult(jobId: jobSnapshot.repoId, result: result, options: options)
-            } catch {
-                if cancelRequested || Task.isCancelled || error is CancellationError { break }
-                handleFailure(jobId: jobSnapshot.repoId, error: error, options: options)
+            let now = Date.now
+            let eligibleJobIDs = queuedJobIDs.filter {
+                (retryNotBeforeByRepoID[$0] ?? .distantPast) <= now
+            }
+            if eligibleJobIDs.isEmpty {
+                await waitForRetryWindow()
+                continue
             }
 
-            currentJobId = nil
+            let workUnits = makeWorkWave(from: eligibleJobIDs, options: options)
+            let waveRepoIDs = Set(workUnits.flatMap(\.repoIDs))
+            markProcessing(repoIDs: waveRepoIDs)
+            let outcomes = await execute(workUnits: workUnits, options: options)
 
-            // 每完成一个 job 就让出主线程，让 UI 渲染 panel 进度
+            if !cancelRequested, !Task.isCancelled {
+                for outcome in outcomes {
+                    await integrate(outcome, options: options)
+                }
+            }
+            processingJobIDs.subtract(waveRepoIDs)
+
+            // 每完成一波就让出主线程，让 UI 合并 revision 并渲染分页快照。
             await Task.yield()
         }
 
@@ -550,7 +594,7 @@ final class BatchAIQueueService {
                 }
             }
             isRunning = false
-            currentJobId = nil
+            processingJobIDs = []
             notifyTagsChangedIfNeeded()
             if isFinished {
                 AppLog.ai.notice("[batch-ai] finished: completed=\(self.completedCount, privacy: .public), ignored=\(self.ignoredCount, privacy: .public), failed=\(self.failedCount, privacy: .public)")
@@ -568,17 +612,148 @@ final class BatchAIQueueService {
         }
     }
 
-    // MARK: - 单 job 处理
+    // MARK: - 波次调度与单 job 处理
 
-    /// 处理单个 repo 的执行结果（成功路径携带的产出）。
-    ///
-    /// 注：`existingTagHints` 当前在 `applyResult` 内未被读取，属于历史遗留 dead 字段。
-    /// 2026-06-14 hints 类型从 `[String]` 升级到 `AITagHints` 时同步升级该字段类型保持
-    /// 编译，未在本次手术中删除（不擅自清理 pre-existing dead code）。
-    private struct JobOutcome {
-        var insight: RepoAIInsightGeneration?
-        var repo: Repo
-        var existingTagHints: AITagHints
+    private struct JobOutcome: Sendable {
+        var suggestions: [AITagSuggestion]
+    }
+
+    private enum WorkUnit: Sendable {
+        case tagBatch([Int64])
+        case individual(Int64)
+
+        var repoIDs: [Int64] {
+            switch self {
+            case .tagBatch(let repoIDs): repoIDs
+            case .individual(let repoID): [repoID]
+            }
+        }
+
+        var isBatch: Bool {
+            if case .tagBatch = self { true } else { false }
+        }
+    }
+
+    /// Error existential 只从子任务搬回 MainActor，返回后不再跨线程访问或修改。
+    private struct TransportedError: @unchecked Sendable {
+        let value: Error
+    }
+
+    private enum WorkOutcome: Sendable {
+        case success([Int64: JobOutcome])
+        case failure(repoIDs: [Int64], error: TransportedError, usedBatch: Bool)
+    }
+
+    private func makeWorkWave(
+        from eligibleJobIDs: [Int64],
+        options: BatchAIQueueOptions
+    ) -> [WorkUnit] {
+        let concurrency = activeConcurrency
+        guard let firstJobID = eligibleJobIDs.first else { return [] }
+        let canBatchFirst = canUseTagBatch(for: firstJobID, options: options)
+        if canBatchFirst {
+            let batchCandidates = eligibleJobIDs
+                .filter { canUseTagBatch(for: $0, options: options) }
+                .prefix(Self.tagBatchSize * concurrency)
+            let ids = Array(batchCandidates)
+            return stride(from: 0, to: ids.count, by: Self.tagBatchSize).map { start in
+                .tagBatch(Array(ids[start..<min(start + Self.tagBatchSize, ids.count)]))
+            }
+        }
+        return eligibleJobIDs.prefix(concurrency).map(WorkUnit.individual)
+    }
+
+    private var activeConcurrency: Int {
+        guard let rateLimitCooldownUntil else { return Self.defaultConcurrency }
+        return rateLimitCooldownUntil > .now ? 1 : Self.defaultConcurrency
+    }
+
+    private func canUseTagBatch(for repoID: Int64, options: BatchAIQueueOptions) -> Bool {
+        options.shouldRun(.tags, forRepoID: repoID)
+            && !options.shouldRun(.summary, forRepoID: repoID)
+            && !individualTagFallbackRepoIDs.contains(repoID)
+    }
+
+    private func markProcessing(repoIDs: Set<Int64>) {
+        processingJobIDs = repoIDs
+        for index in jobs.indices where repoIDs.contains(jobs[index].repoId) {
+            jobs[index].status = .processing
+            jobs[index].attempts += 1
+        }
+    }
+
+    private func execute(
+        workUnits: [WorkUnit],
+        options: BatchAIQueueOptions
+    ) async -> [WorkOutcome] {
+        await withTaskGroup(of: WorkOutcome.self, returning: [WorkOutcome].self) { group in
+            for unit in workUnits {
+                group.addTask { [weak self] in
+                    guard let self else {
+                        return .failure(
+                            repoIDs: unit.repoIDs,
+                            error: TransportedError(value: CancellationError()),
+                            usedBatch: false
+                        )
+                    }
+                    do {
+                        switch unit {
+                        case .tagBatch(let repoIDs):
+                            return .success(try await self.processTagBatch(repoIDs: repoIDs))
+                        case .individual(let repoID):
+                            let outcome = try await self.processSingle(jobId: repoID, options: options)
+                            return .success([repoID: outcome])
+                        }
+                    } catch {
+                        return .failure(
+                            repoIDs: unit.repoIDs,
+                            error: TransportedError(value: error),
+                            usedBatch: unit.isBatch
+                        )
+                    }
+                }
+            }
+
+            var outcomes: [WorkOutcome] = []
+            outcomes.reserveCapacity(workUnits.count)
+            for await outcome in group {
+                outcomes.append(outcome)
+            }
+            return outcomes
+        }
+    }
+
+    private func integrate(_ outcome: WorkOutcome, options: BatchAIQueueOptions) async {
+        switch outcome {
+        case .success(let results):
+            for (repoID, result) in results {
+                do {
+                    try Task.checkCancellation()
+                    try await applyResult(jobId: repoID, result: result, options: options)
+                    retryNotBeforeByRepoID[repoID] = nil
+                } catch {
+                    if cancelRequested || Task.isCancelled || error is CancellationError { continue }
+                    handleFailure(jobId: repoID, error: error, options: options)
+                }
+            }
+        case .failure(let repoIDs, let transportedError, let usedBatch):
+            let error = transportedError.value
+            guard !cancelRequested, !Task.isCancelled, !(error is CancellationError) else { return }
+            for repoID in repoIDs {
+                if usedBatch,
+                   let index = jobs.firstIndex(where: { $0.repoId == repoID }),
+                   jobs[index].attempts >= 2 {
+                    individualTagFallbackRepoIDs.insert(repoID)
+                }
+                handleFailure(jobId: repoID, error: error, options: options)
+            }
+        }
+    }
+
+    private func waitForRetryWindow() async {
+        let nextRetry = retryNotBeforeByRepoID.values.min() ?? .now
+        let seconds = max(0.05, min(1, nextRetry.timeIntervalSinceNow))
+        try? await Task.sleep(for: .milliseconds(Int(seconds * 1_000)))
     }
 
     /// 调 RepoAIInsightService 拉取摘要 / 标签建议；本方法**不写库**，
@@ -593,22 +768,12 @@ final class BatchAIQueueService {
             throw RepoAIInsightError.invalidJSON  // 复用现有 error 类型；不应发生
         }
 
-        // 标签生成 hints：repo 自身标签（强信号）+ 字符预算内的全库复用词表。
-        // 与单仓 AI 摘要应用标签路径（RepoAIInsightViewModel.generate）共享
-        // `RepoAIInsightService.makeTagHints` 工厂方法，信号源单一信任源；
-        // 详细约束见 `AITagHints` + `makeTagHints` 注释。
-        // includeTags == false 时跳过构造，节省两次 DB 查询。
-        //
-        // 2026-06-14 修订（dong4j 反馈）：原版只用 `tagRepository.fetchAll().prefix(50).map(\.name)`，
-        // 漏掉了 repo 自身标签——这些 repo 专属标签往往不在全局 Top 50 里，AI 看不到 →
-        // 大概率生成同义新标签，与用户已有的 repo 标签重复。helper 现在显式拉 repo 自身标签
-        // 单独排前面强信号注入，全库标签按使用频率排序、canonical 去重后作为复用词表。
         let hints: AITagHints
         if options.shouldRun(.tags, forRepoID: jobId) {
             hints = await RepoAIInsightService.makeTagHints(
                 for: repo,
                 repoTagRepository: repoTagRepository,
-                tagRepository: tagRepository
+                sharedLibraryTags: sharedTagLibrary ?? []
             )
         } else {
             hints = .empty
@@ -616,9 +781,9 @@ final class BatchAIQueueService {
 
         let includesSummary = options.shouldRun(.summary, forRepoID: jobId)
         let includesTags = options.shouldRun(.tags, forRepoID: jobId)
-        let insight: RepoAIInsightGeneration?
+        let suggestions: [AITagSuggestion]
         if includesSummary || includesTags {
-            insight = try await insightService.generateBatchInsight(
+            let insight = try await insightService.generateBatchInsight(
                 for: repo,
                 existingTagHints: hints,
                 includeSummary: includesSummary,
@@ -627,15 +792,41 @@ final class BatchAIQueueService {
                 codeContextEnabledOverride: includesSummary ? options.codeContextEnabledOverride : nil,
                 externalContextEnabledOverride: includesSummary ? options.externalContextEnabledOverride : nil
             )
+            suggestions = insight.insight.suggestedTags
         } else {
-            insight = nil
+            suggestions = []
         }
 
-        return JobOutcome(
-            insight: insight,
-            repo: repo,
-            existingTagHints: hints
+        return JobOutcome(suggestions: suggestions)
+    }
+
+    private func processTagBatch(repoIDs: [Int64]) async throws -> [Int64: JobOutcome] {
+        let repos = try repoIDs.map { repoID in
+            guard let repo = repoCache[repoID] else { throw RepoAIInsightError.invalidJSON }
+            return repo
+        }
+        var hintsByRepoID: [Int64: AITagHints] = [:]
+        hintsByRepoID.reserveCapacity(repos.count)
+        for repo in repos {
+            try Task.checkCancellation()
+            hintsByRepoID[repo.id] = await RepoAIInsightService.makeTagHints(
+                for: repo,
+                repoTagRepository: repoTagRepository,
+                sharedLibraryTags: sharedTagLibrary ?? []
+            )
+        }
+        let suggestions = try await insightService.generateBatchTagSuggestions(
+            for: repos,
+            tagHintsByRepoID: hintsByRepoID
         )
+        // 批量结果必须与请求仓库一一对应；缺项不能被当成“该仓库没有推荐”，
+        // 否则 Provider 的截断响应会静默把任务标记为成功。
+        guard Set(suggestions.keys) == Set(repoIDs) else {
+            throw RepoAIInsightError.invalidJSON
+        }
+        return Dictionary(uniqueKeysWithValues: repoIDs.map { repoID in
+            (repoID, JobOutcome(suggestions: suggestions[repoID] ?? []))
+        })
     }
 
     /// 在创建 jobs 前一次性校验本批次会调用到的任务配置。
@@ -651,12 +842,12 @@ final class BatchAIQueueService {
 
     /// 把 processSingle 的产出按 Options 落库 + 写 job 终态。
     ///
-    /// async 而非 fire-and-forget：主循环必须等"落库 + 写终态"全部完成，
-    /// 否则下一轮 currentJobId 切换时，前一个 job 仍停在 .processing，UI 出现"两个 processing"假象。
+    /// async 而非 fire-and-forget：一波 AI 结果返回后仍须逐仓完成落库与终态写入，
+    /// 下一波才能开始，避免多个任务并行创建同名标签或重复绑定 repo_tags。
     private func applyResult(jobId: Int64, result: JobOutcome, options: BatchAIQueueOptions) async throws {
         guard let idx = jobs.firstIndex(where: { $0.repoId == jobId }) else { return }
 
-        let suggestions = result.insight?.insight.suggestedTags ?? []
+        let suggestions = result.suggestions
         let didSummary = options.shouldRun(.summary, forRepoID: jobId)
         let didTags = options.shouldRun(.tags, forRepoID: jobId)
         var shouldMarkIgnored = false
@@ -795,14 +986,26 @@ final class BatchAIQueueService {
         )
         friendly.record(category: "ai", operation: "batchAI.job", service: "ai-provider")
 
+        // 即使当前 job 已达到重试上限，剩余 queued jobs 仍需立即继承降速窗口，
+        // 不能继续以两路并发撞击同一个已限流 Provider。
+        if isRateLimited(error) {
+            rateLimitCooldownUntil = .now.addingTimeInterval(Self.rateLimitCooldown)
+        }
+
         if isPermanentError(error) || jobs[idx].attempts >= options.maxRetries {
             jobs[idx].status = .failed
             jobs[idx].failure = failure
             jobs[idx].errorDiagnostic = diagnostic
             jobs[idx].copyDiagnostic = copyDiagnostic
-            jobs[idx].finishedAt = Date()
+            jobs[idx].finishedAt = .now
+            retryNotBeforeByRepoID[jobId] = nil
         } else {
-            // 可重试：回退到 queued，主循环下一轮会重新拉取（重试次数已在 processNext 入口 +1）。
+            // 可重试：指数退避后回到队列，避免 429 / 5xx 立即空转轰炸 Provider。
+            // 少量 jitter 让两批同时失败后不要在同一毫秒再次撞上限流窗口。
+            let exponent = max(0, jobs[idx].attempts - 1)
+            let baseDelay = min(8, pow(2, Double(exponent)))
+            let jitter = Double.random(in: 0...0.25)
+            retryNotBeforeByRepoID[jobId] = .now.addingTimeInterval(baseDelay + jitter)
             jobs[idx].status = .queued
         }
     }
@@ -903,6 +1106,12 @@ final class BatchAIQueueService {
                 return false
             }
         }
+        return false
+    }
+
+    private func isRateLimited(_ error: Error) -> Bool {
+        guard let aiError = error as? AIClientError else { return false }
+        if case .rateLimited = aiError { return true }
         return false
     }
 

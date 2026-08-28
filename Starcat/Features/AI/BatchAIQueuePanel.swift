@@ -10,8 +10,7 @@
 //  - 完成后允许用户关闭并 reset 队列。
 //
 //  关键约束：
-//  - 状态列表用 ScrollView + LazyVStack 强行限定最大高度 400pt，避免"处理 1000 项时 UI 爆炸"
-//    （dong4j 2026-06-06 16:13 评审第 3 条）。
+//  - 状态列表每次只投影 100 条并渐进加载；完整选择与任务状态仍保留在 Service。
 //  - 面板用 .sheet 承载：关闭面板不会停止队列（队列继续在后台跑，再开面板可恢复观察），
 //    对应"支持后台继续"验收点。
 //  - 区分三档终态视觉：completed=绿色 / ignored=灰色 / failed=红色，搭配文字补充原因。
@@ -26,6 +25,7 @@ struct BatchAIQueuePanel: View {
 
     @Bindable var service: BatchAIQueueService
     @State private var expandedRepoID: Int64?
+    @State private var presentation = BatchAIQueuePresentationStore()
 
     /// 调用方提供的关闭回调（关闭 sheet）。
     let onClose: () -> Void
@@ -45,6 +45,12 @@ struct BatchAIQueuePanel: View {
         }
         .frame(width: 620)
         .padding(0)
+        .task {
+            presentation.synchronizeImmediately(from: service)
+        }
+        .onChange(of: service.presentationRevision) { _, _ in
+            presentation.scheduleSynchronize(from: service)
+        }
     }
 
     // MARK: - 顶部 header（标题 + 操作按钮）
@@ -162,7 +168,20 @@ struct BatchAIQueuePanel: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
-        } else if let currentId = service.currentJobId,
+        } else if service.processingJobIDs.count > 1 {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(String(
+                    format: String.l10n("batch.progress.processingFormat"),
+                    service.finishedCount + service.processingJobIDs.count,
+                    service.totalCount
+                ))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+        } else if let currentId = service.processingJobIDs.first,
            let currentJob = service.jobs.first(where: { $0.repoId == currentId }) {
             HStack(spacing: 6) {
                 ProgressView()
@@ -231,7 +250,7 @@ struct BatchAIQueuePanel: View {
     private var jobList: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(displayedJobs.enumerated()), id: \.element.id) { rowIndex, job in
+                ForEach(Array(presentation.visibleJobs.enumerated()), id: \.element.id) { rowIndex, job in
                     BatchAITagReviewRow(
                         job: job,
                         rowIndex: rowIndex,
@@ -249,31 +268,17 @@ struct BatchAIQueuePanel: View {
                         onRetryGeneration: { service.retry(jobId: job.repoId) }
                     )
                     Divider()
+                    if job.id == presentation.visibleJobs.last?.id {
+                        Color.clear
+                            .frame(height: 1)
+                            .onAppear {
+                                presentation.loadMore()
+                            }
+                    }
                 }
             }
         }
         .background(Color(nsColor: .textBackgroundColor).opacity(0.4))
-    }
-
-    /// 生成失败置顶、待审核项次之，组内保持原队列相对顺序。
-    private var displayedJobs: [BatchAIJob] {
-        let failed = service.jobs.filter { $0.status == .failed }
-        let pendingReview = service.jobs.filter {
-            $0.status != .failed && needsTagReview($0)
-        }
-        let others = service.jobs.filter {
-            $0.status != .failed && !needsTagReview($0)
-        }
-        return failed + pendingReview + others
-    }
-
-    private func needsTagReview(_ job: BatchAIJob) -> Bool {
-        switch job.tagReviewState {
-        case .pending, .applying, .failed:
-            true
-        case .notRequired, .applied, .ignored:
-            false
-        }
     }
 
     private func toggleExpansion(for job: BatchAIJob) {

@@ -132,6 +132,65 @@ struct BatchAIQueueServiceTests {
         #expect(provider.lastExternalContextEnabledOverride == true)
     }
 
+    @Test("标签任务按最多八仓一批且同时只执行两批")
+    func tagGenerationUsesBoundedBatchConcurrency() async throws {
+        let provider = ConcurrentBatchAIInsightProvider(delay: .milliseconds(40))
+        let service = try makeService(insightProvider: provider)
+        let repos = makeRepos(count: 20, startingAt: 1_000)
+        var options = BatchAIQueueOptions()
+        options.actions = [.tags]
+
+        #expect(service.start(repos: repos, options: options))
+        await waitUntilStopped(service)
+
+        #expect(provider.batchSizes.sorted() == [4, 8, 8])
+        #expect(provider.maximumActiveBatchCalls == 2)
+        #expect(provider.individualCallCount == 0)
+        #expect(service.jobs.allSatisfy { $0.status == .completed })
+        #expect(service.processingJobIDs.isEmpty)
+    }
+
+    @Test("摘要任务保持单仓请求并限制为两路并发")
+    func summaryGenerationUsesBoundedIndividualConcurrency() async throws {
+        let provider = ConcurrentBatchAIInsightProvider(delay: .milliseconds(40))
+        let service = try makeService(insightProvider: provider)
+        let repos = makeRepos(count: 5, startingAt: 2_000)
+        var options = BatchAIQueueOptions()
+        options.actions = [.summary]
+
+        #expect(service.start(repos: repos, options: options))
+        await waitUntilStopped(service)
+
+        #expect(provider.batchSizes.isEmpty)
+        #expect(provider.individualCallCount == 5)
+        #expect(provider.maximumActiveIndividualCalls == 2)
+        #expect(service.jobs.allSatisfy { $0.didGenerateSummary })
+    }
+
+    @Test("队列展示快照每次渐进加载一百条且保留完整总数")
+    func presentationStorePaginatesLargeQueue() async throws {
+        let provider = ConcurrentBatchAIInsightProvider(delay: .milliseconds(5))
+        let service = try makeService(insightProvider: provider)
+        let repos = makeRepos(count: 205, startingAt: 3_000)
+        var options = BatchAIQueueOptions()
+        options.actions = [.tags]
+
+        #expect(service.start(repos: repos, options: options))
+        await waitUntilStopped(service)
+
+        let presentation = BatchAIQueuePresentationStore()
+        presentation.synchronizeImmediately(from: service)
+        #expect(presentation.totalJobCount == 205)
+        #expect(presentation.visibleJobs.count == 100)
+        #expect(presentation.canLoadMore)
+
+        presentation.loadMore()
+        #expect(presentation.visibleJobs.count == 200)
+        presentation.loadMore()
+        #expect(presentation.visibleJobs.count == 205)
+        #expect(!presentation.canLoadMore)
+    }
+
     @Test("确认只应用用户保留的标签并创建新标签")
     func confirmAppliesOnlySelectedSuggestions() async throws {
         let provider = ImmediateBatchAIInsightProvider(suggestions: Self.sampleSuggestions)
@@ -188,6 +247,14 @@ struct BatchAIQueueServiceTests {
         AITagSuggestion(name: "Swift", confidence: 0.96, reason: "主要开发语言"),
         AITagSuggestion(name: "CLI", confidence: 0.82, reason: "提供命令行工具")
     ]
+
+    private func makeRepos(count: Int, startingAt firstID: Int64) -> [Repo] {
+        (0..<count).map { offset in
+            var repo = Repo.makeMinimal(owner: "acme", name: "repo-\(offset)")
+            repo.id = firstID + Int64(offset)
+            return repo
+        }
+    }
 
     private func makeService(
         insightProvider: any BatchAIInsightProviding
@@ -325,6 +392,23 @@ private final class BlockingBatchAIInsightProvider: BatchAIInsightProviding {
         if let validationError { throw validationError }
     }
 
+    func generateBatchTagSuggestions(
+        for repos: [Repo],
+        tagHintsByRepoID: [Int64: AITagHints]
+    ) async throws -> [Int64: [AITagSuggestion]] {
+        generationCount += 1
+        let waiters = generationStartWaiters
+        generationStartWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+        do {
+            try await Task.sleep(for: .seconds(30))
+        } catch is CancellationError {
+            didObserveCancellation = true
+            throw CancellationError()
+        }
+        throw CancellationError()
+    }
+
     func generateBatchInsight(
         for repo: Repo,
         existingTagHints: AITagHints,
@@ -368,6 +452,13 @@ private final class ImmediateBatchAIInsightProvider: BatchAIInsightProviding {
 
     func ensureGenerationClientsReady(includeSummary: Bool, includeTags: Bool) throws {}
 
+    func generateBatchTagSuggestions(
+        for repos: [Repo],
+        tagHintsByRepoID: [Int64: AITagHints]
+    ) async throws -> [Int64: [AITagSuggestion]] {
+        Dictionary(uniqueKeysWithValues: repos.map { ($0.id, suggestions) })
+    }
+
     func generateBatchInsight(
         for repo: Repo,
         existingTagHints: AITagHints,
@@ -391,6 +482,73 @@ private final class ImmediateBatchAIInsightProvider: BatchAIInsightProviding {
                 suggestedTags: includeTags ? suggestions : [],
                 model: "test-model",
                 generatedAt: ISO8601DateFormatter.shared.string(from: Date()),
+                contextMetadata: nil,
+                externalContextMarkdown: nil,
+                generationContextSettings: nil
+            ),
+            tagErrorMessage: nil,
+            contextDegradationReason: nil,
+            externalContextDegradationReason: nil
+        )
+    }
+}
+
+/// 记录同时活跃调用数的 Provider，用于验证队列只并发网络阶段、不并发状态写入。
+@MainActor
+private final class ConcurrentBatchAIInsightProvider: BatchAIInsightProviding {
+    private let delay: Duration
+    private var activeBatchCalls = 0
+    private var activeIndividualCalls = 0
+
+    private(set) var batchSizes: [Int] = []
+    private(set) var individualCallCount = 0
+    private(set) var maximumActiveBatchCalls = 0
+    private(set) var maximumActiveIndividualCalls = 0
+
+    init(delay: Duration) {
+        self.delay = delay
+    }
+
+    func ensureGenerationClientsReady(includeSummary: Bool, includeTags: Bool) throws {}
+
+    func generateBatchTagSuggestions(
+        for repos: [Repo],
+        tagHintsByRepoID: [Int64: AITagHints]
+    ) async throws -> [Int64: [AITagSuggestion]] {
+        batchSizes.append(repos.count)
+        activeBatchCalls += 1
+        maximumActiveBatchCalls = max(maximumActiveBatchCalls, activeBatchCalls)
+        defer { activeBatchCalls -= 1 }
+        try await Task.sleep(for: delay)
+        return Dictionary(uniqueKeysWithValues: repos.map { ($0.id, []) })
+    }
+
+    func generateBatchInsight(
+        for repo: Repo,
+        existingTagHints: AITagHints,
+        includeSummary: Bool,
+        includeTags: Bool,
+        codeContextEnabledOverride: Bool?,
+        externalContextEnabledOverride: Bool?
+    ) async throws -> RepoAIInsightGeneration {
+        individualCallCount += 1
+        activeIndividualCalls += 1
+        maximumActiveIndividualCalls = max(maximumActiveIndividualCalls, activeIndividualCalls)
+        defer { activeIndividualCalls -= 1 }
+        try await Task.sleep(for: delay)
+        return RepoAIInsightGeneration(
+            insight: RepoAIInsight(
+                oneLiner: "",
+                summary: "",
+                summaryMarkdown: nil,
+                platforms: [],
+                suitableFor: [],
+                strengths: [],
+                risks: [],
+                minimalExample: nil,
+                suggestedTags: [],
+                model: "test-model",
+                generatedAt: ISO8601DateFormatter.shared.string(from: .now),
                 contextMetadata: nil,
                 externalContextMarkdown: nil,
                 generationContextSettings: nil

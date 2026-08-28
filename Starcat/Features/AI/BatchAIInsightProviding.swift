@@ -18,6 +18,12 @@ import Foundation
 protocol BatchAIInsightProviding: AnyObject {
     func ensureGenerationClientsReady(includeSummary: Bool, includeTags: Bool) throws
 
+    /// 标签专用批量入口。一个请求承载多个仓库，返回值必须包含每个 repo id。
+    func generateBatchTagSuggestions(
+        for repos: [Repo],
+        tagHintsByRepoID: [Int64: AITagHints]
+    ) async throws -> [Int64: [AITagSuggestion]]
+
     func generateBatchInsight(
         for repo: Repo,
         existingTagHints: AITagHints,
@@ -29,6 +35,16 @@ protocol BatchAIInsightProviding: AnyObject {
 }
 
 extension RepoAIInsightService: BatchAIInsightProviding {
+    func generateBatchTagSuggestions(
+        for repos: [Repo],
+        tagHintsByRepoID: [Int64: AITagHints]
+    ) async throws -> [Int64: [AITagSuggestion]] {
+        try await generateTagSuggestions(
+            for: repos,
+            tagHintsByRepoID: tagHintsByRepoID
+        )
+    }
+
     func generateBatchInsight(
         for repo: Repo,
         existingTagHints: AITagHints,
