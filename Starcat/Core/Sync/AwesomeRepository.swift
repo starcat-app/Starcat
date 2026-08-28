@@ -245,6 +245,30 @@ actor AwesomeRepository: AwesomeRepositoryProtocol {
                         ).insert(db)
                     }
                 }
+
+                // 远端下架的内置来源仍保留行与订阅状态，方便用户在管理 Sheet 识别并取消；
+                // 但条目属于可重建缓存，必须立即清空。否则该来源因 is_available=false 不再
+                // 进入刷新队列，旧版外链或仓库文件会永久残留在中栏。
+                let unavailableManagedSourceSQL = """
+                    SELECT source_id FROM awesome_sources
+                    WHERE kind = ? AND is_available = 0
+                    """
+                try db.execute(
+                    sql: "DELETE FROM awesome_entries WHERE source_id IN (\(unavailableManagedSourceSQL))",
+                    arguments: [AwesomeSourceKind.managed.rawValue]
+                )
+                try db.execute(
+                    sql: "DELETE FROM awesome_resource_entries WHERE source_id IN (\(unavailableManagedSourceSQL))",
+                    arguments: [AwesomeSourceKind.managed.rawValue]
+                )
+                try db.execute(
+                    sql: """
+                        UPDATE awesome_sources
+                        SET github_repo_count = 0, external_entry_count = 0, resource_entry_count = 0
+                        WHERE kind = ? AND is_available = 0
+                        """,
+                    arguments: [AwesomeSourceKind.managed.rawValue]
+                )
             }
             try state.save(db)
         }
@@ -486,21 +510,18 @@ actor AwesomeRepository: AwesomeRepositoryProtocol {
             try db.execute(sql: "DELETE FROM awesome_entries WHERE source_id = ?", arguments: [sourceID])
             try db.execute(sql: "DELETE FROM awesome_resource_entries WHERE source_id = ?", arguments: [sourceID])
             for entry in snapshot.entries {
-                if entry.targetType == .externalResource || entry.targetType == .repositoryResource {
-                    if let record = AwesomeResourceEntryRecord.from(entry, sourceID: sourceID, cachedAt: checkedAt) {
-                        try record.insert(db)
-                    }
-                } else if let record = AwesomeEntryRecord.from(entry, sourceID: sourceID, cachedAt: checkedAt) {
+                // Discovery 的公开契约只允许独立 GitHub 仓库。客户端再次收紧入口，
+                // 即使服务端缓存或旧版本误返回资源条目，也不会写入本地数据库。
+                if (entry.targetType == nil || entry.targetType == .githubRepository),
+                   let record = AwesomeEntryRecord.from(entry, sourceID: sourceID, cachedAt: checkedAt) {
                     try record.insert(db)
                 }
             }
             let githubCount = snapshot.entries.count { $0.targetType == nil || $0.targetType == .githubRepository }
-            let externalCount = snapshot.entries.count { $0.targetType == .externalResource }
-            let resourceCount = snapshot.entries.count { $0.targetType == .repositoryResource }
             try db.execute(
                 sql: "UPDATE awesome_sources SET entries_etag = ?, entries_checked_at = ?, github_repo_count = ?, external_entry_count = ?, resource_entry_count = ?, last_synced_at = ? WHERE source_id = ?",
                 arguments: [
-                    result.etag, checkedAt, githubCount, externalCount, resourceCount,
+                    result.etag, checkedAt, githubCount, 0, 0,
                     result.generatedAt ?? checkedAt, sourceID,
                 ]
             )

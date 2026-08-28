@@ -182,8 +182,8 @@ struct AwesomeRepositoryTests {
         #expect(await repository.repositories(sourceID: "one").first?.evidence.count == 1)
     }
 
-    @Test("外部资源与仓库文件独立持久化且不伪造 GitHub 仓库")
-    func resourcesPersistWithoutFakeRepositoryFacts() async throws {
+    @Test("远端资源条目不会进入只接纳 GitHub 仓库的本地缓存")
+    func remoteResourcesAreDroppedAtPersistenceBoundary() async throws {
         let api = FakeAwesomeAPI()
         await api.setCatalog([
             Self.source(
@@ -215,14 +215,39 @@ struct AwesomeRepositoryTests {
         #expect(await repository.refreshEnabledEntries().isEmpty)
 
         #expect(await repository.repositories(sourceID: "resources").isEmpty)
-        let resources = await repository.resources(sourceID: "resources")
-        #expect(resources.map(\.targetType) == [.externalResource, .repositoryResource])
-        #expect(resources.map(\.title) == ["Design resource", "Cursor rule"])
-        #expect(resources.map(\.url.absoluteString) == [
-            "https://getdesign.md/resource",
-            "https://github.com/PatrickJS/awesome-cursorrules/blob/main/rules/swift.md"
+        #expect(await repository.resources(sourceID: "resources").isEmpty)
+        #expect(await repository.sources().first?.totalEntryCount == 0)
+    }
+
+    @Test("远端下架内置来源会清理条目缓存但保留用户订阅状态")
+    func unavailableManagedSourceClearsRebuildableEntries() async throws {
+        let api = FakeAwesomeAPI()
+        await api.setCatalog([Self.source(id: "one", order: 1)], etag: "catalog-1")
+        await api.setEntries(sourceID: "one", entries: [
+            Self.entry(repoID: 42, title: "Cached"),
+            Self.resourceEntry(
+                type: .externalResource,
+                title: "Legacy resource",
+                url: "https://example.com/resource",
+                order: 2
+            )
         ])
-        #expect(await repository.sources().first?.totalEntryCount == 2)
+        let repository = AwesomeRepository(api: api, database: try InMemoryDatabaseManager())
+
+        _ = try await repository.refreshCatalog()
+        try await repository.completeSourceSetup(enabledSourceIDs: ["one"])
+        #expect(await repository.refreshEnabledEntries().isEmpty)
+        #expect(await repository.repositories(sourceID: "one").count == 1)
+
+        await api.setCatalog([], etag: "catalog-2")
+        _ = try await repository.refreshCatalog(policy: .force)
+
+        let source = await repository.sources().first
+        #expect(source?.isAvailable == false)
+        #expect(source?.isEnabled == true)
+        #expect(source?.totalEntryCount == 0)
+        #expect(await repository.repositories(sourceID: "one").isEmpty)
+        #expect(await repository.resources(sourceID: "one").isEmpty)
     }
 
     @Test("同序条目证据按来源 ID 稳定排序")
